@@ -1,5 +1,7 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
- *   Copyright (c) 2006 Werner Mayer <wmayer[at]users.sourceforge.net>     *
+ *   Copyright (c) 2024 Ondsel (PL Boyer) <development@ondsel.com>         *
  *                                                                         *
  *   This file is part of the FreeCAD CAx development system.              *
  *                                                                         *
@@ -20,39 +22,69 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef GUI_VIEWPROVIDERATTACHEXTENSION_H
-#define GUI_VIEWPROVIDERATTACHEXTENSION_H
+#include <App/Document.h>
+#include <App/DocumentObjectGroup.h>
+#include <Gui/Application.h>
+#include <Gui/Command.h>
+#include <Gui/Control.h>
+#include <Gui/View3DInventor.h>
+#include <Gui/View3DInventorViewer.h>
 
-#include <Gui/ViewProviderExtensionPython.h>
-#include <Mod/Part/PartGlobal.h>
+#include "ViewProviderDatum.h"
 
 
-namespace PartGui
+using namespace PartGui;
+
+PROPERTY_SOURCE_WITH_EXTENSIONS(PartGui::ViewProviderLine, Gui::ViewProviderLine)
+
+ViewProviderLine::ViewProviderLine()
 {
+    PartGui::ViewProviderAttachExtension::initExtension(this);
+}
 
-class PartGuiExport ViewProviderAttachExtension : public Gui::ViewProviderExtension
+bool ViewProviderLine::doubleClicked()
 {
-    EXTENSION_PROPERTY_HEADER_WITH_OVERRIDE(PartGui::ViewProviderAttachExtension);
+    showAttachmentEditor();
+    return true;
+}
 
-public:
-    /// Constructor
-    ViewProviderAttachExtension();
-    ~ViewProviderAttachExtension() override = default;
+PROPERTY_SOURCE_WITH_EXTENSIONS(PartGui::ViewProviderPlane, Gui::ViewProviderPlane)
 
-    void extensionGetExtraIcons(std::vector<std::pair<QByteArray, QPixmap> > &) const override;
-    bool extensionGetToolTip(const QByteArray &tag, QString &tooltip) const override;
-    bool extensionIconMouseEvent(QMouseEvent *, const QByteArray &) override;
+ViewProviderPlane::ViewProviderPlane()
+{
+    PartGui::ViewProviderAttachExtension::initExtension(this);
+}
 
-    void extensionUpdateData(const App::Property*) override;
-    void extensionSetupContextMenu(QMenu*, QObject*, const char*) override;
+bool ViewProviderPlane::doubleClicked()
+{
+    showAttachmentEditor();
+    return true;
+}
 
-    /// Public, as upstream has it: the datum view providers open it on a
-    /// double click (Part/Gui/ViewProviderDatum.cpp).
-    void showAttachmentEditor();
-};
 
-using ViewProviderAttachExtensionPython = Gui::ViewProviderExtensionPythonT<PartGui::ViewProviderAttachExtension>;
+PROPERTY_SOURCE_WITH_EXTENSIONS(PartGui::ViewProviderPoint, Gui::ViewProviderPoint)
 
-} //namespace Part::Gui
+ViewProviderPoint::ViewProviderPoint()
+{
+    PartGui::ViewProviderAttachExtension::initExtension(this);
+}
 
-#endif // GUI_VIEWPROVIDERATTACHMENTEXTENSION_H
+bool ViewProviderPoint::doubleClicked()
+{
+    showAttachmentEditor();
+    return true;
+}
+
+
+PROPERTY_SOURCE_WITH_EXTENSIONS(PartGui::ViewProviderLCS, Gui::ViewProviderOrigin)
+
+ViewProviderLCS::ViewProviderLCS()
+{
+    PartGui::ViewProviderAttachExtension::initExtension(this);
+}
+
+bool ViewProviderLCS::doubleClicked()
+{
+    showAttachmentEditor();
+    return true;
+}

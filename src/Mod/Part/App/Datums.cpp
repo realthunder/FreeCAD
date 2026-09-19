@@ -1,5 +1,7 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
- *   Copyright (c) 2006 Werner Mayer <wmayer[at]users.sourceforge.net>     *
+ *   Copyright (c) 2024 Ondsel (PL Boyer) <development@ondsel.com>         *
  *                                                                         *
  *   This file is part of the FreeCAD CAx development system.              *
  *                                                                         *
@@ -20,39 +22,44 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef GUI_VIEWPROVIDERATTACHEXTENSION_H
-#define GUI_VIEWPROVIDERATTACHEXTENSION_H
 
-#include <Gui/ViewProviderExtensionPython.h>
-#include <Mod/Part/PartGlobal.h>
+#include "Datums.h"
 
 
-namespace PartGui
+using namespace Part;
+using namespace Attacher;
+
+PROPERTY_SOURCE_WITH_EXTENSIONS(Part::DatumPlane, App::Plane)
+
+Part::DatumPlane::DatumPlane()
 {
+    AttachExtension::initExtension(this);
+    this->setAttacher(new AttachEnginePlane);
+}
 
-class PartGuiExport ViewProviderAttachExtension : public Gui::ViewProviderExtension
+
+PROPERTY_SOURCE_WITH_EXTENSIONS(Part::DatumLine, App::Line)
+
+Part::DatumLine::DatumLine()
 {
-    EXTENSION_PROPERTY_HEADER_WITH_OVERRIDE(PartGui::ViewProviderAttachExtension);
+    setBaseDirection(Base::Vector3d(0, 0, 1));
+    AttachExtension::initExtension(this);
+    this->setAttacher(new AttachEngineLine);
+}
 
-public:
-    /// Constructor
-    ViewProviderAttachExtension();
-    ~ViewProviderAttachExtension() override = default;
 
-    void extensionGetExtraIcons(std::vector<std::pair<QByteArray, QPixmap> > &) const override;
-    bool extensionGetToolTip(const QByteArray &tag, QString &tooltip) const override;
-    bool extensionIconMouseEvent(QMouseEvent *, const QByteArray &) override;
+PROPERTY_SOURCE_WITH_EXTENSIONS(Part::DatumPoint, App::Point)
 
-    void extensionUpdateData(const App::Property*) override;
-    void extensionSetupContextMenu(QMenu*, QObject*, const char*) override;
+Part::DatumPoint::DatumPoint()
+{
+    AttachExtension::initExtension(this);
+    this->setAttacher(new AttachEnginePoint);
+}
 
-    /// Public, as upstream has it: the datum view providers open it on a
-    /// double click (Part/Gui/ViewProviderDatum.cpp).
-    void showAttachmentEditor();
-};
 
-using ViewProviderAttachExtensionPython = Gui::ViewProviderExtensionPythonT<PartGui::ViewProviderAttachExtension>;
+PROPERTY_SOURCE_WITH_EXTENSIONS(Part::LocalCoordinateSystem, App::LocalCoordinateSystem)
 
-} //namespace Part::Gui
-
-#endif // GUI_VIEWPROVIDERATTACHMENTEXTENSION_H
+Part::LocalCoordinateSystem::LocalCoordinateSystem()
+{
+    AttachExtension::initExtension(this);
+}

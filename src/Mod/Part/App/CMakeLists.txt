@@ -217,6 +217,8 @@ SET(Features_SRCS
     BodyBase.cpp
     DatumFeature.cpp
     DatumFeature.h
+    Datums.cpp
+    Datums.h
     AttachExtension.h
     AttachExtension.cpp
     SubShapeBinder.h

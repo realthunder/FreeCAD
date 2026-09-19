@@ -1,5 +1,7 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
- *   Copyright (c) 2006 Werner Mayer <wmayer[at]users.sourceforge.net>     *
+ *   Copyright (c) 2024 Ondsel (PL Boyer) <development@ondsel.com>         *
  *                                                                         *
  *   This file is part of the FreeCAD CAx development system.              *
  *                                                                         *
@@ -20,39 +22,67 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef GUI_VIEWPROVIDERATTACHEXTENSION_H
-#define GUI_VIEWPROVIDERATTACHEXTENSION_H
+#pragma once
 
-#include <Gui/ViewProviderExtensionPython.h>
+#include <App/Datums.h>
+
 #include <Mod/Part/PartGlobal.h>
 
+#include "AttachExtension.h"
 
-namespace PartGui
+namespace Part
 {
 
-class PartGuiExport ViewProviderAttachExtension : public Gui::ViewProviderExtension
+class PartExport DatumPlane: public App::Plane, public AttachExtension
 {
-    EXTENSION_PROPERTY_HEADER_WITH_OVERRIDE(PartGui::ViewProviderAttachExtension);
+    PROPERTY_HEADER_WITH_EXTENSIONS(Part::DatumPlane);
 
 public:
-    /// Constructor
-    ViewProviderAttachExtension();
-    ~ViewProviderAttachExtension() override = default;
-
-    void extensionGetExtraIcons(std::vector<std::pair<QByteArray, QPixmap> > &) const override;
-    bool extensionGetToolTip(const QByteArray &tag, QString &tooltip) const override;
-    bool extensionIconMouseEvent(QMouseEvent *, const QByteArray &) override;
-
-    void extensionUpdateData(const App::Property*) override;
-    void extensionSetupContextMenu(QMenu*, QObject*, const char*) override;
-
-    /// Public, as upstream has it: the datum view providers open it on a
-    /// double click (Part/Gui/ViewProviderDatum.cpp).
-    void showAttachmentEditor();
+    DatumPlane();
+    ~DatumPlane() override = default;
+    const char* getViewProviderName() const override
+    {
+        return "PartGui::ViewProviderPlane";
+    }
 };
 
-using ViewProviderAttachExtensionPython = Gui::ViewProviderExtensionPythonT<PartGui::ViewProviderAttachExtension>;
+class PartExport DatumLine: public App::Line, public AttachExtension
+{
+    PROPERTY_HEADER_WITH_EXTENSIONS(Part::DatumLine);
 
-} //namespace Part::Gui
+public:
+    DatumLine();
+    ~DatumLine() override = default;
+    const char* getViewProviderName() const override
+    {
+        return "PartGui::ViewProviderLine";
+    }
+};
 
-#endif // GUI_VIEWPROVIDERATTACHMENTEXTENSION_H
+class PartExport DatumPoint: public App::Point, public AttachExtension
+{
+    PROPERTY_HEADER_WITH_EXTENSIONS(Part::DatumPoint);
+
+public:
+    DatumPoint();
+    ~DatumPoint() override = default;
+    const char* getViewProviderName() const override
+    {
+        return "PartGui::ViewProviderPoint";
+    }
+};
+
+class PartExport LocalCoordinateSystem: public App::LocalCoordinateSystem, public AttachExtension
+{
+    PROPERTY_HEADER_WITH_EXTENSIONS(Part::LocalCoordinateSystem);
+
+public:
+    LocalCoordinateSystem();
+    ~LocalCoordinateSystem() override = default;
+    const char* getViewProviderName() const override
+    {
+        return "PartGui::ViewProviderLCS";
+    }
+};
+
+}  // namespace Part
