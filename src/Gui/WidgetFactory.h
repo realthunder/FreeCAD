@@ -229,7 +229,7 @@ public:
  * preference pages and widgets.
  * \author Werner Mayer
  */
-class WidgetFactorySupplier
+class GuiExport WidgetFactorySupplier
 {
 private:
     // Singleton
