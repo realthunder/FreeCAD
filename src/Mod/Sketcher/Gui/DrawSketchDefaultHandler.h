@@ -578,8 +578,7 @@ protected:
     void reset()
     {
         clearEdit();
-        // Upstream also resets the parallel/perpendicular hint here; group C,
-        // which owns it, is not ported yet.
+        resetParallelPerpendicularHint();
 
         for (auto& ac : sugConstraints) {
             ac.clear();

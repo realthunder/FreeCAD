@@ -101,18 +101,18 @@ private:
             case SelectMode::SeekFirst: {
                 seekAndRenderAutoConstraint(sugConstraints[0], onSketchPos, Base::Vector2d(0.f, 0.f));
 
-                // Upstream offers the line-extension hint's snap point here;
-                // group C, which produces it, is not ported yet.
-                startPoint = onSketchPos;
+                Base::Vector2d snapPoint;
+                startPoint = getLineExtensionAutoConstraintSnapPoint(snapPoint) ? snapPoint
+                                                                                : onSketchPos;
 
                 toolWidgetManager.drawPositionAtCursor(startPoint);
             } break;
             case SelectMode::SeekSecond: {
                 seekAndRenderAutoConstraint(sugConstraints[1], onSketchPos, onSketchPos - startPoint);
 
-                // Upstream offers the line-extension hint's snap point here;
-                // group C, which produces it, is not ported yet.
-                endPoint = onSketchPos;
+                Base::Vector2d snapPoint;
+                endPoint = getLineExtensionAutoConstraintSnapPoint(snapPoint) ? snapPoint
+                                                                              : onSketchPos;
 
                 toolWidgetManager.drawDirectionAtCursor(endPoint, startPoint);
 
@@ -252,6 +252,15 @@ private:
         widthSign = 0;
         capturedDirection = Base::Vector2d(0.0, 0.0);
         toolWidgetManager.resetControls();
+    }
+
+    bool getStartPointOfCurrentSegment(Base::Vector2d& point) const override
+    {
+        if (state() == SelectMode::SeekSecond) {
+            point = startPoint;
+            return true;
+        }
+        return false;
     }
 
 private:
