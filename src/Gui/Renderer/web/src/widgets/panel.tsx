@@ -43,6 +43,32 @@ function str(model: WidgetModel, key: string): string {
   return typeof value === 'string' ? value : '';
 }
 
+/// A Qt label may carry RICH TEXT. Sketcher's selection hint is a whole
+/// `<html><head/><body><p>&quot;Ctrl&quot;: multiple selection</p>...`
+/// document, and drawing that as characters is what the first live run
+/// put on screen. Two reasons it cannot simply be left alone: it reads as
+/// markup soup, and as one `nowrap` line its min-content was ~900px, which
+/// dragged the whole card out to 950px and left every list sized against a
+/// width the card does not have.
+///
+/// Parsed, never injected. The string is the desktop's, so it is turned
+/// into TEXT and the tags only decide where the newlines go; nothing here
+/// puts host markup into the page's DOM.
+function qtText(raw: string): string {
+  if (!/^\s*<(?:!doctype|html|body|p|span|div|b|i|ul|table)\b/i.test(raw.trim())) return raw;
+  try {
+    const parsed = new DOMParser().parseFromString(raw, 'text/html');
+    parsed.querySelectorAll('br').forEach((br) => br.replaceWith('\n'));
+    parsed.querySelectorAll('p, div, li, tr, h1, h2, h3').forEach((el) => el.append('\n'));
+    const text = (parsed.body.textContent || '').replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{2,}/g, '\n').trim();
+    return text || raw;
+  }
+  catch {
+    return raw;
+  }
+}
+
 function bool(model: WidgetModel, key: string): boolean {
   return model.state[key] === true;
 }
@@ -190,7 +216,15 @@ export function TaskPanelCard(props: {
       case 'QLabelModel': {
         const picture = str(w, 'pixmap');
         if (picture.startsWith('img:')) return <Picture client={ensure} name={picture} />;
-        return <div class="fc-panel-label" title={title}>{str(w, 'text')}</div>;
+        const raw = str(w, 'text');
+        const shown = qtText(raw);
+        // A hint that was rich text, or that carries its own newlines, is
+        // a paragraph and wraps; a plain form label stays on one line.
+        return (
+          <div class="fc-panel-label"
+               classList={{ 'fc-panel-rich': shown !== raw || shown.includes('\n') }}
+               title={title}>{shown}</div>
+        );
       }
       case 'QPushButtonModel':
       case 'QToolButtonModel':
