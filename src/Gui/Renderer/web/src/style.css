@@ -1572,10 +1572,37 @@
 .fc-panel-sep { flex: 1; border: 0; border-top: 1px solid rgba(255, 255, 255, 0.12); }
 .fc-panel-pic { max-width: 100%; }
 
+/* An item view (widgets/panel.tsx, W2).  The row is a grid so the header
+ * and the cells share their columns; the first track is the twisty, which
+ * a leaf keeps as an empty span so its text still lines up with a
+ * parent's. */
 .fc-panel-rows { display: flex; flex-direction: column; width: 100%; }
-.fc-panel-row { display: flex; gap: 8px; padding: 2px 0; }
-.fc-panel-row span { color: #cfd3d7; white-space: nowrap; }
+.fc-panel-row { gap: 8px; padding: 2px 0; align-items: center; }
+.fc-panel-row span {
+  color: #cfd3d7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
 .fc-panel-kids { padding-left: 12px; }
+.fc-panel-head-row { border-bottom: 1px solid rgba(255, 255, 255, 0.12); }
+.fc-panel-head-row span { color: #9aa0a6; font-weight: 600; }
+.fc-panel-row-on { background: rgba(122, 162, 247, 0.18); border-radius: 4px; }
+.fc-panel-row-off span { color: #6b7076; }
+.fc-panel-twisty {
+  width: 14px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #9aa0a6;
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
 
 /* A completion list (widgets/completion.tsx).  Wide: in the editor's own
  * flow, a bordered box under the editor -- the console is overflow:hidden

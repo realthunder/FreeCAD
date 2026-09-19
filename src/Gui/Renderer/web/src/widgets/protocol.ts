@@ -55,17 +55,32 @@ export interface LayoutSpec {
   [extra: string]: Json;
 }
 
+/// One cell, as `Fw::ItemCell::toMap` writes it: SPARSE, so a key that is
+/// not here is unset rather than empty -- `check` absent means the cell has
+/// no check box at all, which is the host's own rule (an invalid QVariant),
+/// not a check box that happens to be clear.
 export interface ItemCell {
   text?: string;
   icon?: string;
   toolTip?: string;
+  statusTip?: string;
+  whatsThis?: string;
+  /// Qt::CheckState as an int; absent means no check box.
   check?: number;
   flags?: number;
-  fg?: string;
-  bg?: string;
+  /// A colour as the host's QVariantList, not a CSS string.
+  fg?: number[];
+  bg?: number[];
   bold?: boolean;
   align?: number;
 }
+
+/// Qt::ItemFlag, the two a row's `flags` is read for here.
+export const ITEM_ENABLED = 32;
+export const ITEM_CHECKABLE = 16;
+/// Qt::CheckState.
+export const CHECK_OFF = 0;
+export const CHECK_ON = 2;
 
 export interface ItemRow {
   id: number;
@@ -157,10 +172,35 @@ function findRow(rows: ItemRow[], id: number): ItemRow | null {
   return null;
 }
 
+/// The list a row sits in and where: a remove has to splice the PARENT's
+/// own array, and the tree is nested here rather than flat with parent ids
+/// the way the host holds it.
+function locate(rows: ItemRow[], id: number): { list: ItemRow[]; index: number } | null {
+  const index = rows.findIndex((row) => row.id === id);
+  if (index >= 0) return { list: rows, index };
+  for (const row of rows) {
+    const hit = row.children ? locate(row.children, id) : null;
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/// Qt sorts on the column's text, and `order` is a Qt::SortOrder (0
+/// ascending). One level only: the host's op sorts the whole view when its
+/// id is 0 and that row's children otherwise (FwQtView `sort`), so this
+/// does the same rather than recursing.
+function sortRows(rows: ItemRow[], col: number, order: number): void {
+  rows.sort((a, b) => {
+    const left = a.cells[col]?.text ?? '';
+    const right = b.cells[col]?.text ?? '';
+    return order === 1 ? right.localeCompare(left) : left.localeCompare(right);
+  });
+}
+
 /// What an item op did, so a view can repaint the rows rather than the tree
 /// (8.4: Sketcher refills 162 ops in one solve -- the view coalesces per
 /// frame, which it can only do if the store says what moved).
-export type ItemChange = 'clear' | 'insert' | 'set' | 'none';
+export type ItemChange = 'clear' | 'insert' | 'set' | 'row' | 'remove' | 'sort' | 'none';
 
 /// The models the page holds, and the reduction of one frame onto them.
 export class WidgetStore {
@@ -280,6 +320,112 @@ export class WidgetStore {
       this.lastItemChange = 'set';
       return true;
     }
+    // The row's own state rather than a cell's. The recorded corpus has
+    // none of these -- a Sketcher list never nests -- but a tree sends one
+    // the moment anything is expanded, collapsed or hidden, and a store
+    // that dropped it would fail the gate's "every frame applied" against
+    // the first real tree instead of here.
+    if (op === 'row') {
+      const row = findRow(model.items ?? [], Number(content.id));
+      if (!row) return false;
+      const patch = (content.row ?? {}) as Partial<ItemRow>;
+      if (patch.expanded !== undefined) row.expanded = patch.expanded;
+      if (patch.hidden !== undefined) row.hidden = patch.hidden;
+      if (patch.flags !== undefined) row.flags = patch.flags;
+      this.lastItemChange = 'row';
+      return true;
+    }
+    if (op === 'remove') {
+      const at = locate(model.items ?? [], Number(content.id));
+      if (!at) return false;
+      // The children go with it: the host erases the subtree
+      // (`ItemView::eraseRow` recurses), and here they hang off the row
+      // being spliced out, so they leave with their parent.
+      at.list.splice(at.index, 1);
+      this.lastItemChange = 'remove';
+      return true;
+    }
+    if (op === 'sort') {
+      const id = Number(content.id ?? 0);
+      const list = id === 0
+        ? model.items
+        : findRow(model.items ?? [], id)?.children;
+      if (!list) return false;
+      sortRows(list, Number(content.col ?? 0), Number(content.order ?? 0));
+      this.lastItemChange = 'sort';
+      return true;
+    }
     return false;
   }
+}
+
+/// An item OP a client sends back -- the same shape the host pushes out.
+///
+/// The op/event distinction decides whether anything happens on the
+/// desktop, so it is worth stating once. `Fw::Store::commCustom` sends a
+/// content carrying `item` to `ItemView::applyItemOp`, which changes the
+/// rows AND calls `emitItemOp` -> `Backend::itemsChanged` -> the real Qt
+/// widget -> the panel's own slot. A content carrying `event` instead
+/// reaches `Widget::dispatchEvent`, which for an item view updates the
+/// model's private copy and calls no backend at all. So a write sent as an
+/// event passes every pure check here and does nothing on screen.
+///
+/// `itemEdited` travels the OTHER way: the backend emits it (FwQtView)
+/// when the desktop user edits a cell. It is not a client's to send.
+export interface ItemOp {
+  item: string;
+  id?: number;
+  col?: number;
+  cell?: ItemCell;
+  row?: Partial<ItemRow>;
+  parent?: number;
+  index?: number;
+  rows?: ItemRow[];
+  order?: number;
+  /// As `LayoutSpec` carries one: without it an interface is not a
+  /// `Record<string, unknown>`, and these go straight to `client.custom`.
+  [extra: string]: Json;
+}
+
+/// An event a client sends back to a mirrored widget -- a notification,
+/// not a change. `commCustom` reads `event` and `args` and hands them to
+/// `Widget::dispatchEvent`.
+export interface ItemEvent {
+  event: string;
+  args: Json[];
+  [extra: string]: Json;
+}
+
+/// A check write, and any other single-cell edit: a `set`, which is what
+/// reaches the desktop. The host's own test writes a constraint's check
+/// exactly this way and asserts the sketch really moves it to virtual
+/// space (Mod/Test/SandboxPanelMirror.py `test_sketcher_constraints`).
+export function itemEditOp(id: number, col: number, cell: ItemCell): ItemOp {
+  return { item: 'set', id, col, cell };
+}
+
+/// Expand or collapse one row. A `row` op, because that is the one the
+/// backend turns into `setExpanded` on the real tree; the host echoes it
+/// back like any other op.
+export function itemExpandOp(id: number, expanded: boolean): ItemOp {
+  return { item: 'row', id, row: { expanded } };
+}
+
+/// A click, for a panel that acts on one. Genuinely an event -- it
+/// notifies, and it does NOT move the selection; see `selectionWrite`.
+export function itemClickOp(id: number, col: number, twice = false): ItemEvent {
+  return { event: twice ? 'itemDoubleClicked' : 'itemClicked', args: [id, col] };
+}
+
+/// Selection is STATE, not an event. The backend drives the desktop's real
+/// `selectionModel` from these properties and sends them back when the
+/// desktop user selects (FwQtView), so a client's click writes them
+/// through `widgets.update`. Sending `itemClicked` instead would fire the
+/// panel's click handlers while the selection never moved.
+export function selectionWrite(ids: number[], current: number, column = 0): {
+  selection: number[];
+  currentId: number;
+  currentColumn: number;
+} {
+  return { selection: ids, currentId: current, currentColumn: column };
 }

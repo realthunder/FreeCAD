@@ -29,7 +29,9 @@ import { PanelClient } from './client.ts';
 import { ExpressionDialog, Field } from './field.tsx';
 import { planLayout } from './layout.ts';
 import type { LayoutPlan, PlannedItem } from './layout.ts';
-import type { ItemRow, WidgetModel } from './protocol.ts';
+import { CHECK_OFF, CHECK_ON, ITEM_ENABLED, itemEditOp, itemExpandOp, selectionWrite }
+  from './protocol.ts';
+import type { ItemCell, ItemRow, WidgetModel } from './protocol.ts';
 
 const POS_KEY = 'fcviewer.taskpanel.pos';
 
@@ -271,7 +273,9 @@ export function TaskPanelCard(props: {
       case 'QTreeWidgetModel':
       case 'QTreeViewModel':
       case 'QTableWidgetModel':
-        return <Rows rows={w.items ?? []} />;
+      case 'QListViewModel':
+      case 'QTableViewModel':
+        return <ItemsView w={w} />;
       default:
         // A container, or a class with no view yet: its layout still
         // renders, so an unfamiliar widget costs its own box and not the
@@ -336,6 +340,126 @@ export function TaskPanelCard(props: {
     );
   };
 
+  /// An item view's rows (W2): the header, the nesting, the checks, the
+  /// selection. Qt's own rules are kept rather than guessed at:
+  ///
+  ///   - a cell gets a check box only when the host sent `check` -- an
+  ///     invalid QVariant there means "no check box", not an empty one;
+  ///   - a row is dead when its flags clear Qt::ItemIsEnabled;
+  ///   - children show only while the row is expanded, as a QTreeWidget
+  ///     does, and a row arrives collapsed unless the host says otherwise;
+  ///   - selection is STATE. The backend drives the desktop's real
+  ///     selectionModel from `selection`/`currentId` and sends them back
+  ///     when the desktop user selects, so a click here WRITES them. An
+  ///     `itemClicked` would fire the panel's handlers with the selection
+  ///     still where it was;
+  ///   - a check and an expand go back as item OPS, never as events. Only
+  ///     an op reaches the desktop's real widget -- see `ItemOp`.
+  ///
+  /// Colours (`fg`/`bg`) are deliberately not drawn: the host sends them as
+  /// QVariantLists and guessing the packing would paint the wrong thing.
+  const ItemsView = (p: { w: WidgetModel }): JSX.Element => {
+    const columns = (): string[] => {
+      const value = p.w.state.columns;
+      return Array.isArray(value) ? (value as unknown[]).map(String) : [];
+    };
+    const colCount = () => Math.max(columns().length, num(p.w, 'columnCount'), 1);
+    const expandable = () => p.w.state.itemsExpandable !== false;
+    const selected = (): number[] => {
+      const value = p.w.state.selection;
+      return Array.isArray(value) ? (value as unknown[]).map(Number) : [];
+    };
+
+    /// Header and rows share one grid, or the columns would not line up:
+    /// a leading track for the twisty, then one per column.
+    const gridStyle = (): JSX.CSSProperties => ({
+      display: 'grid',
+      'grid-template-columns': `14px repeat(${colCount()}, minmax(0, 1fr))`,
+    });
+
+    const cellStyle = (cell: ItemCell): JSX.CSSProperties => {
+      const style: JSX.CSSProperties = {};
+      if (cell.bold) style['font-weight'] = '600';
+      // Qt::AlignRight, Qt::AlignHCenter
+      if (cell.align && cell.align & 2) style['text-align'] = 'right';
+      else if (cell.align && cell.align & 4) style['text-align'] = 'center';
+      return style;
+    };
+
+    const pick = (row: ItemRow, column: number) => {
+      if (props.viewOnly()) return;
+      write(p.w.id, selectionWrite([row.id], row.id, column));
+    };
+
+    const toggleCheck = (row: ItemRow, column: number, on: boolean) => {
+      if (props.viewOnly()) return;
+      void client?.custom(p.w.id,
+                          itemEditOp(row.id, column, { check: on ? CHECK_ON : CHECK_OFF }));
+    };
+
+    const toggleExpand = (row: ItemRow) => {
+      // Applied here as well as sent. The host echoes the row op back, so
+      // this is not the only thing that would move the arrow -- it is what
+      // moves it NOW, rather than a round trip later.
+      const open = row.expanded !== true;
+      row.expanded = open;
+      setVersion((n) => n + 1);
+      void client?.custom(p.w.id, itemExpandOp(row.id, open));
+    };
+
+    const Level = (q: { rows: ItemRow[] }): JSX.Element => (
+      <For each={q.rows.filter((row) => !row.hidden)}>
+        {(row) => {
+          const dead = () => row.flags !== undefined && !(row.flags & ITEM_ENABLED);
+          const kids = () => row.children ?? [];
+          const open = () => row.expanded === true;
+          const on = () => selected().includes(row.id) || num(p.w, 'currentId') === row.id;
+          return (
+            <>
+              <div class="fc-panel-row" style={gridStyle()}
+                   classList={{ 'fc-panel-row-on': on(), 'fc-panel-row-off': dead() }}>
+                <Show when={expandable() && kids().length > 0}
+                      fallback={<span class="fc-panel-twisty" />}>
+                  <button class="fc-panel-twisty" title={open() ? 'Collapse' : 'Expand'}
+                          onClick={() => toggleExpand(row)}>{open() ? '-' : '+'}</button>
+                </Show>
+                <For each={row.cells.length ? row.cells : [{} as ItemCell]}>
+                  {(cell, column) => (
+                    <span style={cellStyle(cell)} title={cell.toolTip}
+                          onClick={() => pick(row, column())}>
+                      <Show when={cell.check !== undefined}>
+                        <input type="checkbox" checked={cell.check === CHECK_ON}
+                               disabled={props.viewOnly() || dead()}
+                               onChange={(e) =>
+                                 toggleCheck(row, column(), e.currentTarget.checked)} />
+                      </Show>
+                      {cell.text ?? ''}
+                    </span>
+                  )}
+                </For>
+              </div>
+              <Show when={kids().length > 0 && open()}>
+                <div class="fc-panel-kids"><Level rows={kids()} /></div>
+              </Show>
+            </>
+          );
+        }}
+      </For>
+    );
+
+    return (
+      <div class="fc-panel-rows">
+        <Show when={p.w.state.headerHidden !== true && columns().length > 0}>
+          <div class="fc-panel-row fc-panel-head-row" style={gridStyle()}>
+            <span class="fc-panel-twisty" />
+            <For each={columns()}>{(label) => <span>{label}</span>}</For>
+          </div>
+        </Show>
+        <Level rows={p.w.items ?? []} />
+      </div>
+    );
+  };
+
   const title = () => {
     const root = model(rootId() ?? undefined);
     return root ? str(root, 'windowTitle') || 'Task panel' : 'Task panel';
@@ -380,27 +504,6 @@ export function TaskPanelCard(props: {
         </Show>
       </div>
     </Show>
-  );
-}
-
-/// An item view's rows, flat: W1 shows what the desktop holds, W2 makes the
-/// checks and the nesting work.
-function Rows(props: { rows: ItemRow[] }): JSX.Element {
-  return (
-    <div class="fc-panel-rows">
-      <For each={props.rows}>
-        {(row) => (
-          <>
-            <div class="fc-panel-row">
-              <For each={row.cells}>{(cell) => <span>{cell.text ?? ''}</span>}</For>
-            </div>
-            <Show when={row.children?.length}>
-              <div class="fc-panel-kids"><Rows rows={row.children as ItemRow[]} /></div>
-            </Show>
-          </>
-        )}
-      </For>
-    </div>
   );
 }
 

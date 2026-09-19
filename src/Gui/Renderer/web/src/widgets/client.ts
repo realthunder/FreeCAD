@@ -51,9 +51,34 @@ export class PanelClient {
   private stopPush: (() => void) | null = null;
   private images = new Map<string, string>();
   private icons = new Map<string, string>();
+  private pendingWake = 0;
 
   constructor(notify: () => void = () => {}) {
     this.notify = notify;
+  }
+
+  /// Wake the view ONCE per animation frame, not once per op.
+  ///
+  /// There is no batching on the host side: `Fw::Store` calls its sink per
+  /// item op, so a Sketcher solve that refills its list arrives as 162
+  /// separate pushes (8.4), each its own `fc:control` event. Waking the
+  /// view on each is 162 reflows for one solve, which is the thing W2 is
+  /// not allowed to do. Coalescing here rather than in the card fixes it
+  /// for every consumer of the stream at once.
+  ///
+  /// rAF and not a microtask: the pushes land in separate tasks, so a
+  /// microtask drains between them and coalesces nothing. A frame is also
+  /// the right unit -- there is no point repainting faster than the page
+  /// draws. Where there is no rAF (a test, node) a timeout stands in.
+  private wake(): void {
+    if (this.pendingWake) return;
+    const fire = (): void => {
+      this.pendingWake = 0;
+      this.notify();
+    };
+    this.pendingWake = typeof requestAnimationFrame === 'function'
+      ? requestAnimationFrame(fire)
+      : (setTimeout(fire, 16) as unknown as number);
   }
 
   /// The panel root the mirror has up, if any. A root is `panel:<n>`; the
@@ -75,7 +100,7 @@ export class PanelClient {
   async subscribe(): Promise<BootState> {
     if (!this.stopPush) {
       this.stopPush = onPush('widgets', (msg: Frame) => {
-        if (this.store.apply(msg)) this.notify();
+        if (this.store.apply(msg)) this.wake();
       });
     }
     const reply = await sendOp('widgets.subscribe', { panels: true });
@@ -95,6 +120,10 @@ export class PanelClient {
   async dispose(): Promise<void> {
     this.stopPush?.();
     this.stopPush = null;
+    if (this.pendingWake && typeof cancelAnimationFrame === 'function') {
+      cancelAnimationFrame(this.pendingWake);
+    }
+    this.pendingWake = 0;
     try {
       await sendOp('widgets.unsubscribe', { panels: true });
     }

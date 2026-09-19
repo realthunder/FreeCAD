@@ -52,7 +52,7 @@ runs in the guest.**
     host widget layer: core, Qt view built       H0: src/Gui/Fw/ (Fw:: models, FwQt:: backend, the store, FreeCADGui.FormWidgets), src/Tools/fwuic.py (7.12)
     native panels on the layer       sized       H1-H3: the first ports, the form-only majority, the item views; DOM walker later (7.4, 7.12)
     the task panel mirror            M3 built    7.19: the desktop's task panel walked into models, streamed (Pad, Draft's OrthoArray, a CAM op, no workbench edited); M2: item rows reflected (Sketcher's constraint list), pictures and icons by image id; M3: top-level dialogs as dialog:<n> roots (a panel slot's QMessageBox, its exec code from a client's click), mouse replay into pictures; M4 measured 2026-09-11 (sec 8.4: a repaint burst re-reads 10-20 widgets in 0.3 ms and sends nothing; a panel at rest sends nothing; a keystroke costs the other clients 70-150 B)
-    the panels in the browser (G7)  W1 building 7.22: the DOM view over the widget layer -- the walker, the layout plan, the panel container, the item views; W1-W5, 2.2-3.3k of TypeScript in src/Gui/Renderer/web, and one 20-line host change (a client is never told how the host corrected its own write); the five questions RULED 2026-09-16 (chrome-flavoured, the echo taken, dialogs in scope, a FLOATING card, the pure-plan gate) and W1 started; W1's host half BUILT 2026-09-16 (Store::messageTo, the gate in test_widgetStream, FormWidgets 22/22), the fixture corpus (6 cases) recorded and the walker core, the layout plan and the replay gate BUILT 2026-09-16 (62 checks ALL GREEN) and the client + views + floating card BUILT the same day (typecheck and bundle clean; NOT yet rendered against a live desktop), W2 next
+    the panels in the browser (G7)  W2 built   7.22: the DOM view over the widget layer -- the walker, the layout plan, the panel container, the item views; W1-W5, 2.2-3.3k of TypeScript in src/Gui/Renderer/web, and one 20-line host change (a client is never told how the host corrected its own write); the five questions RULED 2026-09-16 (chrome-flavoured, the echo taken, dialogs in scope, a FLOATING card, the pure-plan gate) and W1 started; W1's host half BUILT 2026-09-16 (Store::messageTo, the gate in test_widgetStream, FormWidgets 22/22), the fixture corpus (6 cases) recorded and the walker core, the layout plan and the replay gate BUILT 2026-09-16 (62 checks ALL GREEN) and the client + views + floating card BUILT the same day (typecheck and bundle clean), and W1 PROVEN on screen 2026-09-16 (demo-taskpanel.py through renderer-serve.sh, driven by scripts/panel-drive.js); W2 BUILT 2026-09-19 -- the row/remove/sort ops the corpus never carried, the header, the nesting, the checks and the selection, and one view wake per frame because the host pushes one per op; gate 85 -> 102 checks, 17 of them the item views'; the op-vs-event trap (only an item op reaches the real widget) caught against the host's own test -- but NOT proven on screen: this box has no chrome/puppeteer, so panel-drive.js cannot run, and it reports rows as flat text anyway; W3 next
     the session document (commands) built       S1: a workbench reaches every open document, live ActiveDocument, app.write, save, picker-blessed saveAs; S2: Gui.doCommand / addModule in the guest under gui.doCommand, Draft's commit and Arch_Site end to end; gate SandboxSessionDoc (7.13)
     routing ON by default            built       preference Expression/Sandbox:Evaluate, ON since 2026-09-16: the corpus gate green (94 files, 195 of 195 same); the Proxy-restore half that rode the same preference was REMOVED 2026-09-18 (7.31)
     Proxy import restriction (native) built       item 1 of sec 11: PropertyPythonObject restore
@@ -8344,6 +8344,64 @@ pixels, and the replay gate has neither.
 Then W2 to W5 as staged: the item views properly (the checks, the
 nesting, the refill coalesced), the pictures and icons, the dialogs and
 modality, and the measurement against 8.4.
+
+**W2 BUILT 2026-09-19, and NOT proven on screen.**  Four pieces.  *The
+store's missing ops*: it applied `clear`/`insert`/`set` and dropped
+`row`, `remove` and `sort` on the floor -- the recorded corpus carries
+none of them, because a Sketcher list never nests, never deletes a row
+and never sorts, so the gate's "every frame applied" would have gone red
+against the first real tree rather than here.  *The view*: the header
+from `columns` (header and cells share one CSS grid, or nothing lines
+up), the nesting gated on `expanded` as a QTreeWidget does, a check box
+only where the host sent `check` -- an invalid QVariant there means no
+box, not an empty one -- a row dead when its flags clear
+`Qt::ItemIsEnabled`, and the selection.  *One wake per frame*: there is
+no batching on the host side (`Fw::Store` calls its sink per item op), so
+8.4's 162-op solve arrives as 162 pushes in 162 tasks; the client
+coalesces on `requestAnimationFrame`, which is where it fixes every
+consumer of the stream at once rather than one card.  A microtask would
+coalesce nothing -- the pushes land in separate tasks.  *The gate*: 17
+new checks, the gate going 85 -> 102 ALL GREEN, typecheck and build
+clean.
+
+**The trap, and it would have passed the gate.**  A check write sent as
+an `itemEdited` event does nothing on the desktop.
+`Fw::Store::commCustom` routes a content carrying `item` to
+`ItemView::applyItemOp`, which changes the rows AND calls `emitItemOp` ->
+`Backend::itemsChanged` -> the real Qt widget -> the panel's own slot; a
+content carrying `event` reaches `Widget::dispatchEvent`, which for an
+item view updates the model's private copy and calls no backend at all.
+So the event form passes every pure check and moves nothing on screen --
+and `itemEdited` is not even a client's to send: the backend emits it
+(FwQtView) when the DESKTOP user edits a cell.  Written wrong first,
+caught by reading what the host's own test does: `test_sketcher_
+constraints` in `src/Mod/Test/SandboxPanelMirror.py` writes a
+constraint's check as `{"item": "set", "id": ..., "col": 0, "cell":
+{"check": 0}}` and asserts the sketch really moves it to virtual space.
+So a check is a `set` op, an expand is a `row` op (the branch the backend
+turns into `setExpanded` on the real tree), a click stays an event
+because it only notifies, and the SELECTION is state -- the backend
+drives the desktop's real `selectionModel` from `selection`/`currentId`
+and sends them back when the desktop user selects, so a click in the
+page writes those properties.  The gate now asserts the distinction
+instead of the mistake.
+
+**What is not done.**  The on-screen check cannot run on this box: all
+three of `docs/Testing.md`'s puppeteer paths are missing
+(`~/works/sw/fcad-probes/node_modules/puppeteer-core`,
+`~/.cache/puppeteer/chrome/*`), so `scripts/panel-drive.js` has nothing
+to drive -- and it reports rows as flat text, with its `checks` coming
+from `.fc-panel-check` (the QCheckBox widget class, not an item's box),
+so it needs extending for the header, the nesting and the item checks
+before it could prove anything here.  The live scene wants a Sketcher
+panel rather than Pad's: `test_sketcher_constraints` is the recipe
+(`SketcherGui::ConstraintView`, `listWidgetConstraints`, a check on every
+row).  W2 is therefore in exactly the state W1 was in on 2026-09-16
+before its proof.  Also deliberately left: the cell colours, because the
+host sends `fg`/`bg` as QVariantLists and guessing the packing would
+paint the wrong thing; and one correction to the W1 note above -- this
+tree emits no `panel.js`, the card ships inside `inspector.js` (the
+`inspector` entry is `src/main.tsx`, 85.5 kB).
 
 **Cost** (new; TypeScript unless noted):
 
