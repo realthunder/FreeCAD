@@ -1296,10 +1296,9 @@ framework first**, as its own unit --
 hand-translating upstream's spelling back in nineteen files and paying it
 again at the next resync.
 
-Still outside both groups: `DrawSketchHandlerExternal.h`, which needs
-`App/Datums.h` and `Mod/Part/App/Datums.h` (upstream moved the datum
-features; neither header exists here) on top of being the most
-thin-client-local file in the family, and `DrawSketchHandlerLine.h`,
+Still outside both groups: `DrawSketchHandlerExternal.h` (**and it stays
+outside -- see "External.h is not a resync" below**), and
+`DrawSketchHandlerLine.h`,
 `LineSet.h` and `Point.h`, which want group C's directional hints.
 `DrawSketchHandlerBSplineByInterpolation.h` is fork-only and has no
 upstream blob at all.
@@ -1541,6 +1540,47 @@ unprojected, so the residual between where the tool put it and what
 `world_y_of_pixel()` predicts measures the helper against the mirror's
 own arithmetic. It was exactly `-1.0` px before and is `-0.0000` px
 after.
+
+### External.h is not a resync, and the datum types were the real pick
+
+The ledger above expected `DrawSketchHandlerExternal.h` to be resynced
+once `App/Datums.h` existed. Reading it after the Datums port landed
+says otherwise, and it is worth recording so the 417-line gap is not
+mistaken for drift again.
+
+**The fork's file is a much larger implementation than upstream's** --
+382 lines against 265, and the difference is features, not spelling:
+cross-document external geometry through `Part.importExternalObject`,
+`attachExternal` for reattaching existing external geometry,
+`SketchAutoTransparentPick` with its `ParameterGrp` observer, Alt-key
+whole-object selection, the task panel's face-pick gate, element-map
+naming through `Data::IndexedName`, and the thin-client session
+selection (docs/ThinClient.md 8.11 item 3). Upstream has none of
+it. Taking upstream's blob would delete all of it, and nothing would
+fail to compile.
+
+What the Datums port did unblock is much smaller and entirely
+worthwhile: **a datum element can now be external geometry.** Neither
+end of the path could handle one, because a datum carries no shape --
+`SketchObjectExternal.cpp` built a face for `App::Plane` and asked
+`Part::Feature::getTopoShape` for everything else, and the selection
+gate rejected anything shapeless with "No shape" before it ever reached
+its own closing `App::Plane` check, which was therefore unreachable.
+Now the projection builds an edge from an `App::Line` and a vertex from
+an `App::Point` (so an origin axis and the origin point can be
+referenced, and `Part::DatumLine`/`DatumPoint` with them), and the gate
+lets a shapeless datum through the shape check while still holding it to
+`isExternalAllowed()`.
+
+Read `getBasePoint()`/`getDirection()` and not `Placement` when adding
+to this: a datum inside a placed `LocalCoordinateSystem` carries that
+placement too, and for an `Origin` the two agree.
+
+Tests: `testOriginAxisIsExternalGeometry`,
+`testOriginPointIsExternalGeometry` and
+`testOriginExternalsSurviveSaveAndLoad` in
+`TestSketchExternalGeometry.py` -- the last because external geometry is
+re-projected on restore, so the new branches have to hold there too.
 
 ## 8. Phases
 
