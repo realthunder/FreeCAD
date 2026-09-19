@@ -24,6 +24,9 @@
 #define SKETCHERGUI_DrawSketchHandlerExternal_H
 
 #include <array>
+
+#include <App/Datums.h>
+
 #include "Utils.h"
 #include <Gui/ViewerContext.h>
 
@@ -49,7 +52,14 @@ public:
 
         this->notAllowedReason = "";
 
-        bool checkShape = true;
+        // An App datum element -- an origin plane, axis or point, or a
+        // Part::DatumLine/DatumPoint -- carries no shape of its own; the
+        // sketch builds one when it projects (SketchObjectExternal.cpp).
+        // The shape check below therefore cannot speak for them, and
+        // rejects every one with "No shape" if it is allowed to try.
+        const bool shapelessDatum = pObj->isDerivedFrom<App::DatumElement>();
+
+        bool checkShape = !shapelessDatum;
         if (sSubName && sSubName[0]) {
             for (auto type : allowedTypes) {
                 if (boost::starts_with(sSubName, type)) {
@@ -92,7 +102,10 @@ public:
             }
         }
 
-        if (!ViewProviderSketch::allowFaceExternalPick() && boost::starts_with(sSubName, "Face")) {
+        // sSubName can be null here now: a shapeless datum skips the block
+        // above, which is what used to guarantee it had been set.
+        if (!ViewProviderSketch::allowFaceExternalPick() && sSubName
+                && boost::starts_with(sSubName, "Face")) {
             this->notAllowedReason = QT_TR_NOOP("Face picking disabled in the task panel. ");
             return false;
         }
@@ -126,16 +139,22 @@ public:
         // return false;
         //}
 
-        std::string element(sSubName);
+        // A datum is taken whole: a shapeless one has no sub-element to
+        // name, and a Part::Datum is a single face, edge or vertex
+        // already. Checked after isExternalAllowed() above, so a datum
+        // does not get a pass on the circular-reference and other-body
+        // rules.
+        if (shapelessDatum || pObj->isDerivedFrom<Part::Datum>()) {
+            return true;
+        }
+
+        std::string element(sSubName ? sSubName : "");
         if (intersection ||
             boost::starts_with(element, "Edge") ||
             boost::starts_with(element, "Vertex") ||
             boost::starts_with(element, "Face") ||
             boost::starts_with(element, "Wire"))
         {
-            return true;
-        }
-        if (pObj->isDerivedFrom<App::Plane>() || pObj->isDerivedFrom<Part::Datum>()) {
             return true;
         }
         return false;
