@@ -187,6 +187,7 @@ SbColor ViewProviderSketch::ConstrIcoColor                          (1.0f,0.149f
 SbColor ViewProviderSketch::NonDrivingConstrDimColor                (0.0f,0.149f,1.0f);   // #0026FF -> (  0, 38,255)
 SbColor ViewProviderSketch::ExprBasedConstrDimColor                 (1.0f,0.5f,0.149f);   // #FF7F26 -> (255, 127,38)
 SbColor ViewProviderSketch::InformationColor                        (0.0f,1.0f,0.0f);     // #00FF00 -> (  0,255,  0)
+SbColor ViewProviderSketch::DirectionalHintColor                    (0.7f,0.7f,0.7f);     // #B2B2B2 -> (178,178,178)
 SbColor ViewProviderSketch::PreselectColor                          (0.88f,0.88f,0.0f);   // #E1E100 -> (225,225,  0)
 SbColor ViewProviderSketch::SelectColor                             (0.11f,0.68f,0.11f);  // #1CAD1C -> ( 28,173, 28)
 SbColor ViewProviderSketch::PreselectSelectedColor                  (0.36f,0.48f,0.11f);  // #5D7B1C -> ( 93,123, 28)
@@ -255,6 +256,12 @@ struct EditData {
     RootCrossSet(0),
     EditCurveSet(0),
     EditMarkerSet(0),
+    LineExtensionAutoConstraintHintMaterials(0),
+    LineExtensionAutoConstraintHintCoordinate(0),
+    LineExtensionAutoConstraintHintSet(0),
+    ParallelPerpendicularHintMaterials(0),
+    ParallelPerpendicularHintCoordinate(0),
+    ParallelPerpendicularHintSet(0),
     PointSet(0),
     SelectedPointSet(0),
     PreSelectedPointSet(0),
@@ -399,6 +406,13 @@ struct EditData {
     SoLineSet     *RootCrossSet;
     SoLineSet     *EditCurveSet;
     SoMarkerSet   *EditMarkerSet;
+    // the directional auto-constraint hints, on the information layer
+    SoMaterial    *LineExtensionAutoConstraintHintMaterials;
+    SoCoordinate3 *LineExtensionAutoConstraintHintCoordinate;
+    SoLineSet     *LineExtensionAutoConstraintHintSet;
+    SoMaterial    *ParallelPerpendicularHintMaterials;
+    SoCoordinate3 *ParallelPerpendicularHintCoordinate;
+    SoLineSet     *ParallelPerpendicularHintSet;
     SoMarkerSet   *PointSet;
     // the marker every visible vertex uses; a group member's vertices get NONE instead
     int32_t defaultMarkerIndex = 0;
@@ -7446,6 +7460,95 @@ void ViewProviderSketch::drawEditMarkers(const std::vector<Base::Vector2d> &Edit
     edit->EditMarkerSet->markerIndex.finishEditing();
 }
 
+void ViewProviderSketch::drawLineExtensionAutoConstraintHint(const std::vector<Base::Vector2d> &HintCurve)
+{
+    assert(edit);
+
+    const int hintCurveSize = static_cast<int>(HintCurve.size());
+
+    edit->LineExtensionAutoConstraintHintSet->numVertices.setNum(1);
+    edit->LineExtensionAutoConstraintHintSet->numVertices.set1Value(0, hintCurveSize);
+    edit->LineExtensionAutoConstraintHintCoordinate->point.setNum(hintCurveSize);
+    edit->LineExtensionAutoConstraintHintMaterials->diffuseColor.setNum(hintCurveSize);
+
+    if (hintCurveSize == 0)
+        return;
+
+    SbVec3f *verts = edit->LineExtensionAutoConstraintHintCoordinate->point.startEditing();
+    SbColor *color = edit->LineExtensionAutoConstraintHintMaterials->diffuseColor.startEditing();
+
+    int i = 0;
+    for (const auto &point : HintCurve) {
+        verts[i].setValue(point.x, point.y, zEdit);
+        color[i] = InformationColor;
+        ++i;
+    }
+
+    edit->LineExtensionAutoConstraintHintCoordinate->point.finishEditing();
+    edit->LineExtensionAutoConstraintHintMaterials->diffuseColor.finishEditing();
+}
+
+bool ViewProviderSketch::isLineExtensionAutoConstraintHintVisible(
+        const std::vector<Base::Vector2d> &HintCurve) const
+{
+    // The edit session's viewer, and its viewport region rather than a
+    // widget's size: a client's mirror has the size the browser stated and
+    // no widget of its own (docs/ThinClient.md sec 8.3).
+    Gui::ViewerContext* viewer = editViewer();
+    if (!edit || !viewer)
+        return false;
+
+    short width, height;
+    viewer->getViewportRegion().getViewportSizePixels().getValue(width, height);
+    if (width <= 0 || height <= 0)
+        return false;
+
+    Base::Matrix4D mat = getEditingPlacement();
+
+    for (const auto &point : HintCurve) {
+        Base::Vector3d pos(point.x, point.y, 0.0);
+        pos = mat * pos;
+        SbVec2s p = viewer->getPointOnViewport(SbVec3f(pos.x, pos.y, pos.z));
+        if (p[0] < 0 || p[0] > width || p[1] < 0 || p[1] > height)
+            return false;
+    }
+
+    return true;
+}
+
+void ViewProviderSketch::drawParallelPerpendicularHint(const std::vector<Base::Vector2d> &HintLines,
+                                                       int activeLineIndex)
+{
+    assert(edit);
+
+    // the points come in pairs, one pair per reference line
+    const int numPoints = static_cast<int>(HintLines.size());
+    const int numLines = numPoints / 2;
+
+    edit->ParallelPerpendicularHintSet->numVertices.setNum(numLines);
+    edit->ParallelPerpendicularHintCoordinate->point.setNum(numLines * 2);
+    edit->ParallelPerpendicularHintMaterials->diffuseColor.setNum(numLines);
+
+    if (numLines == 0)
+        return;
+
+    int32_t *index = edit->ParallelPerpendicularHintSet->numVertices.startEditing();
+    SbVec3f *verts = edit->ParallelPerpendicularHintCoordinate->point.startEditing();
+    SbColor *color = edit->ParallelPerpendicularHintMaterials->diffuseColor.startEditing();
+
+    for (int i = 0; i < numLines * 2; ++i)
+        verts[i].setValue(HintLines[i].x, HintLines[i].y, zEdit);
+
+    for (int line = 0; line < numLines; ++line) {
+        index[line] = 2;
+        color[line] = line == activeLineIndex ? InformationColor : DirectionalHintColor;
+    }
+
+    edit->ParallelPerpendicularHintSet->numVertices.finishEditing();
+    edit->ParallelPerpendicularHintCoordinate->point.finishEditing();
+    edit->ParallelPerpendicularHintMaterials->diffuseColor.finishEditing();
+}
+
 void ViewProviderSketch::updateData(const App::Property *prop)
 {
     inherited::updateData(prop);
@@ -8100,12 +8203,72 @@ void ViewProviderSketch::createEditInventorNodes(void)
     edit->infoGroup = new SoGroup();
     edit->infoGroup->setName("InformationGroup");
 
+    // the line a tool would extend to reach an auto-constraint ++++++++++++++
+    SoSeparator* lineExtensionHintRoot = new SoSeparator;
+    lineExtensionHintRoot->setName("LineExtensionAutoConstraintHintRoot");
+
+    SoPickStyle* lineExtensionHintPickStyle = new SoPickStyle;
+    lineExtensionHintPickStyle->style = SoPickStyle::UNPICKABLE;
+    lineExtensionHintRoot->addChild(lineExtensionHintPickStyle);
+
+    SoDrawStyle* lineExtensionHintDrawStyle = new SoDrawStyle;
+    lineExtensionHintDrawStyle->setName("LineExtensionAutoConstraintHintDrawStyle");
+    lineExtensionHintDrawStyle->lineWidth = 1 * edit->pixelScalingFactor;
+    lineExtensionHintDrawStyle->linePattern = 0x0f0f; // a 50% dashed pattern
+    lineExtensionHintRoot->addChild(lineExtensionHintDrawStyle);
+
+    edit->LineExtensionAutoConstraintHintMaterials = new SoMaterial;
+    edit->LineExtensionAutoConstraintHintMaterials->setName("LineExtensionAutoConstraintHintMaterials");
+    lineExtensionHintRoot->addChild(edit->LineExtensionAutoConstraintHintMaterials);
+
+    edit->LineExtensionAutoConstraintHintCoordinate = new SoCoordinate3;
+    edit->LineExtensionAutoConstraintHintCoordinate->setName("LineExtensionAutoConstraintHintCoordinate");
+    lineExtensionHintRoot->addChild(edit->LineExtensionAutoConstraintHintCoordinate);
+
+    edit->LineExtensionAutoConstraintHintSet = new SoLineSet;
+    edit->LineExtensionAutoConstraintHintSet->setName("LineExtensionAutoConstraintHintLineSet");
+    lineExtensionHintRoot->addChild(edit->LineExtensionAutoConstraintHintSet);
+
+    // the parallel / perpendicular reference lines +++++++++++++++++++++++++
+    SoSeparator* parallelPerpendicularHintRoot = new SoSeparator;
+    parallelPerpendicularHintRoot->setName("ParallelPerpendicularHintRoot");
+
+    SoPickStyle* parallelPerpendicularHintPickStyle = new SoPickStyle;
+    parallelPerpendicularHintPickStyle->style = SoPickStyle::UNPICKABLE;
+    parallelPerpendicularHintRoot->addChild(parallelPerpendicularHintPickStyle);
+
+    SoDrawStyle* parallelPerpendicularHintDrawStyle = new SoDrawStyle;
+    parallelPerpendicularHintDrawStyle->setName("ParallelPerpendicularHintDrawStyle");
+    parallelPerpendicularHintDrawStyle->lineWidth = 1 * edit->pixelScalingFactor;
+    parallelPerpendicularHintDrawStyle->linePattern = 0x0f0f; // a 50% dashed pattern
+    parallelPerpendicularHintRoot->addChild(parallelPerpendicularHintDrawStyle);
+
+    // one colour per line, so the active one can be lit on its own
+    auto parallelPerpendicularHintMtlBind = new SoMaterialBinding;
+    parallelPerpendicularHintMtlBind->setName("ParallelPerpendicularHintMaterialBinding");
+    parallelPerpendicularHintMtlBind->value = SoMaterialBinding::PER_FACE;
+    parallelPerpendicularHintRoot->addChild(parallelPerpendicularHintMtlBind);
+
+    edit->ParallelPerpendicularHintMaterials = new SoMaterial;
+    edit->ParallelPerpendicularHintMaterials->setName("ParallelPerpendicularHintMaterials");
+    parallelPerpendicularHintRoot->addChild(edit->ParallelPerpendicularHintMaterials);
+
+    edit->ParallelPerpendicularHintCoordinate = new SoCoordinate3;
+    edit->ParallelPerpendicularHintCoordinate->setName("ParallelPerpendicularHintCoordinate");
+    parallelPerpendicularHintRoot->addChild(edit->ParallelPerpendicularHintCoordinate);
+
+    edit->ParallelPerpendicularHintSet = new SoLineSet;
+    edit->ParallelPerpendicularHintSet->setName("ParallelPerpendicularHintLineSet");
+    parallelPerpendicularHintRoot->addChild(edit->ParallelPerpendicularHintSet);
+
     // Reorder child nodes of edit root, because we are now using SoAnnoation as
     // edit root.
     edit->EditRoot->addChild(crossRoot);
     edit->EditRoot->addChild(infoMtlBind);
     edit->EditRoot->addChild(edit->InformationDrawStyle);
     edit->EditRoot->addChild(edit->infoGroup);
+    edit->EditRoot->addChild(lineExtensionHintRoot);
+    edit->EditRoot->addChild(parallelPerpendicularHintRoot);
     edit->EditRoot->addChild(edit->CurveSwitch);
     edit->EditRoot->addChild(editCurvesRoot);
     edit->EditRoot->addChild(Coordsep);
