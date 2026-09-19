@@ -1583,6 +1583,29 @@ build the edge by hand looks harmless and is not: it leaves
 inherit. `Part::DatumPoint` rides along, being an `App::Point`;
 `Part::DatumLine` already worked, being an `App::Line`.
 
+**There are three shape-synthesis mechanisms for datums here, and it is
+worth knowing which one a type uses before deciding it has no shape:**
+
+| type | where the shape comes from |
+|---|---|
+| `App::Line`, `App::Plane` | `Part::Feature::getTopoShape()`, lazily -- `PartFeature.cpp` returns a static infinite edge / face placed by the resolution matrix |
+| `Part::Datum` subclasses (PartDesign's Plane, Line, Point, CoordinateSystem) | the object's own `makeShape()`, eagerly, from the constructor and `onDocumentRestored()`, stored in the `Shape` property. Its comment says why: "used by the Sketcher... to avoid a dependency of Sketcher on the PartDesign module" |
+| `App::Point` | nowhere -- which is the whole of what this change adds |
+
+Measured with `Part.getShape()`: Face/Edge/Vertex for every
+`PartDesign::*` datum and for `App::Line`/`App::Plane`, null only for
+`App::Point`. Note `Part::Datum` is **not** an `App::DatumElement`, so
+the gate change below cannot affect PartDesign's datums at all.
+
+The `Part::Datum*` types added by the Part half of the Datums port
+inherit the first mechanism, not the second: `Part::DatumPlane` and
+`Part::DatumLine` are an `App::Plane` and an `App::Line` and so already
+had shapes, while `Part::DatumPoint` is an `App::Point` and is the one
+that needed the new branch. Verified: `Part::DatumPlane` and
+`PartDesign::Plane` project identically (three line segments onto a
+perpendicular sketch, and the same refusal when coplanar), and
+`Part::DatumPoint` projects a point.
+
 The selection gate's change is correspondingly narrow: a shape that is
 null is accepted, instead of rejected with "No shape", **only** when the
 object is an `App::DatumElement`, and that object is then taken whole.
