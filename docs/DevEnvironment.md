@@ -1115,6 +1115,23 @@ $RUN cmake -S . -B build/conda-relwithdebinfo-801 \
   -DBUILD_EXPR_PYODIDE_HOST=ON -DBUILD_EXPR_IMAGE_HOST=ON
 ```
 
+**The guest wheel can now be DOWNLOADED** (2026-09-19): it is published as
+`fcx-image` on PyPI, one file per ABI tag, so the cross build below is only
+needed to produce a *new* wheel, not to get a working sandbox. Fetch it with
+the platform named -- a plain `pip install` finds nothing -- and rename the
+PEP 783 spelling PyPI requires to the one the loader wants:
+
+```sh
+pip download --no-deps --only-binary=:all: \
+    --platform pyemscripten_2026_0_wasm32 \
+    --python-version 3.14 --implementation cp --abi cp314 fcx-image
+mv fcx_image-0.1.0-cp314-cp314-pyemscripten_2026_0_wasm32.whl \
+   fcx_image-0.1.0-cp314-cp314-pyodide_2026_0_wasm32.whl
+```
+
+See `docs/PyodideHost.md` sec 12.3 for why the two spellings differ. The rest
+of this section is the cross build that produces the wheel in the first place.
+
 **The guest wheel.** With the host built, `install_runtime()` still refuses:
 
     RuntimeUnsupported: no fcx_image wheel for pyodide ABI 2026_0 (have: none)
