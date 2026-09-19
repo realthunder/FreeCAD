@@ -24,10 +24,52 @@
 #define RENAMEOBJECTIDENTIFIEREXPRESSIONVISITOR_H
 
 #include <functional>
-#include "Document.h"
 #include "Expression.h"
+#ifndef FC_EXPR_IMAGE
+// The modifier visitors below tie expressions to the property/link and
+// document systems; only GenericExpressionVisitor (at the bottom) is part
+// of the core surface the sandbox image compiles.
+#include "Document.h"
+#include "PropertyLinks.h"
+#endif
 
 namespace App {
+
+#ifndef FC_EXPR_IMAGE
+
+/** Base class of visitors that modify an expression while it is owned by a
+ * property, taking care of the property change signalling. Lives here, on
+ * the host-only side of the expression code, because it ties expressions to
+ * the property/link system; the expression core (Expression.h) must not
+ * depend on App/PropertyLinks.h.
+ */
+template<class P> class ExpressionModifier : public ExpressionVisitor {
+public:
+    explicit ExpressionModifier(P & _prop)
+        : prop(_prop)
+        , propLink(Base::freecad_dynamic_cast<App::PropertyLinkBase>(&prop))
+        , signaller(_prop,false)
+    {}
+
+    ~ExpressionModifier() override = default;
+
+    void aboutToChange() override{
+        ++_changed;
+        signaller.aboutToChange();
+    }
+
+    int changed() const override { return _changed; }
+
+    void reset() override {_changed = 0;}
+
+    App::PropertyLinkBase* getPropertyLink() override {return propLink;}
+
+protected:
+    P & prop;
+    App::PropertyLinkBase *propLink;
+    typename AtomicPropertyChangeInterface<P>::AtomicPropertyChange signaller;
+    int _changed{0};
+};
 
 /**
  * @brief The RenameObjectIdentifierExpressionVisitor class is a functor used to visit each node of an expression, and
@@ -144,6 +186,8 @@ private:
     CellAddress src;
     CellAddress dst;
 };
+
+#endif  // FC_EXPR_IMAGE
 
 class GenericExpressionVisitor : public ExpressionVisitor {
 public:

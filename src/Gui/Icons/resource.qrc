@@ -83,6 +83,8 @@
         <file>edit-undo.svg</file>
         <file>edit-edit.svg</file>
         <file>edit-cleartext.svg</file>
+        <file>expression-sandbox-off.svg</file>
+        <file>expression-sandbox-on.svg</file>
         <file>info.svg</file>
         <file>critical-info.svg</file>
         <file>tree-item-drag.svg</file>

@@ -35,11 +35,17 @@
 #include <Base/Console.h>
 #include <Base/Interpreter.h>
 #include <Base/Reader.h>
+#include <Base/Type.h>
 #include <Base/Writer.h>
 
 #include "DocumentObjectPy.h"
 #include "Application.h"
 #include "DocumentObject.h"
+#include "FeaturePythonHook.h"
+#ifdef FC_EXPR_IMAGE_HOST
+#include "ExpressionEvaluator.h"
+#include "ExpressionGuestProxy.h"
+#endif
 
 using namespace App;
 using namespace Base;
@@ -345,6 +351,29 @@ void PropertyPythonObject::Save (Base::Writer &writer) const
     }
 }
 
+namespace {
+// A Proxy's module name comes from the document, so its native import
+// is RESTRICTED the way Base::Type::importModule's is (docs/Sandbox.md
+// sec 11 item 1, sec 13): a module already loaded, or one that resolves
+// into a registered Mod root, for BOTH containers -- a document
+// object's Proxy and a view provider's.  Anything else is refused
+// before importing and the object is left without a Proxy, logged.
+bool proxyModuleAllowed(const App::Property& prop, const char* module, const char* cls)
+{
+    if (Base::Type::moduleAllowed(module))
+        return true;
+    const App::PropertyContainer* owner = prop.getContainer();
+    std::string who = owner ? owner->getFullName() : std::string("?");
+    if (prop.getName())
+        who += std::string(".") + prop.getName();
+    Base::Console().Error("PropertyPythonObject::Restore: %s names Proxy %s.%s, and '%s' is"
+                          " not a FreeCAD module (not loaded and not under a Mod directory);"
+                          " not imported, the object is left without a Proxy\n",
+                          who.c_str(), module, cls, module);
+    return false;
+}
+}
+
 void PropertyPythonObject::Restore(Base::XMLReader &reader)
 {
     reader.readElement("Python");
@@ -352,6 +381,10 @@ void PropertyPythonObject::Restore(Base::XMLReader &reader)
     bool load_json=false;
     bool load_pickle=false;
     bool load_failed=false;
+    // a refused Proxy module: no import, and no payload either -- with
+    // no object to take it, fromString would make the state itself the
+    // value (a plain object's __dict__ as the Proxy)
+    bool refused=false;
 
     std::string buffer;
     if(reader.hasAttribute("value")) {
@@ -376,33 +409,49 @@ void PropertyPythonObject::Restore(Base::XMLReader &reader)
         start = buffer.begin();
         end = buffer.end();
         if (reader.hasAttribute("module") && reader.hasAttribute("class")) {
-            Py::Module mod(PyImport_ImportModule(reader.getAttribute("module")),true);
-            if (mod.isNull())
-                throw Py::Exception();
-            PyObject* cls = mod.getAttr(reader.getAttribute("class")).ptr();
-            if (!cls) {
-                std::stringstream s;
-                s << "Module " << reader.getAttribute("module")
-                    << " has no class " << reader.getAttribute("class");
-                throw Py::AttributeError(s.str());
-            }
-            if (PyType_Check(cls)) {
-                this->object = PyType_GenericAlloc((PyTypeObject*)cls, 0);
+            const char* module = reader.getAttribute("module");
+            const char* cls = reader.getAttribute("class");
+            auto* owner = dynamic_cast<App::DocumentObject*>(getContainer());
+            if (!proxyModuleAllowed(*this, module, cls)) {
+                (void)owner;
+                this->object = Py::None();
+                refused = true;
             }
             else {
-                throw Py::TypeError("neither class nor type object");
+                Py::Module mod(PyImport_ImportModule(module), true);
+                if (mod.isNull())
+                    throw Py::Exception();
+                PyObject* pycls = mod.getAttr(cls).ptr();
+                if (!pycls) {
+                    std::stringstream s;
+                    s << "Module " << module << " has no class " << cls;
+                    throw Py::AttributeError(s.str());
+                }
+                if (PyType_Check(pycls)) {
+                    this->object = PyType_GenericAlloc((PyTypeObject*)pycls, 0);
+                }
+                else {
+                    throw Py::TypeError("neither class nor type object");
+                }
+                load_json = true;
             }
-            load_json = true;
         }
         else if (boost::regex_search(start, end, what, pickle)) {
             std::string nam = std::string(what[1].first, what[1].second);
             std::string cls = std::string(what[2].first, what[2].second);
-            Py::Module mod(PyImport_ImportModule(nam.c_str()),true);
-            if (mod.isNull())
-                throw Py::Exception();
-            this->object = PyObject_CallObject(mod.getAttr(cls).ptr(), NULL);
-            load_pickle = true;
-            buffer = std::string(what[2].second, end);
+            if (!proxyModuleAllowed(*this, nam.c_str(), cls.c_str())) {
+                // the legacy pickle name feeds the same check
+                this->object = Py::None();
+                refused = true;
+            }
+            else {
+                Py::Module mod(PyImport_ImportModule(nam.c_str()),true);
+                if (mod.isNull())
+                    throw Py::Exception();
+                this->object = PyObject_CallObject(mod.getAttr(cls).ptr(), NULL);
+                load_pickle = true;
+                buffer = std::string(what[2].second, end);
+            }
         }
         else if (reader.hasAttribute("json")) {
             load_json = true;
@@ -421,11 +470,14 @@ void PropertyPythonObject::Restore(Base::XMLReader &reader)
     if(reader.getAttributeAsInteger("cdata","")) {
         buffer = reader.readCharacters();
         reader.readEndElement("Python");
-    } else if (reader.hasAttribute("file")) {
+    } else if (reader.hasAttribute("file") && !refused) {
+        // an archive entry nobody registers is skipped by the reader
         std::string file(reader.getAttribute("file"));
         reader.addFile(file.c_str(),this);
     } 
     
+    if(refused)
+        buffer.clear();
     if(!buffer.empty()) {
         if (load_json)
             this->fromString(buffer);
@@ -492,4 +544,14 @@ bool PropertyPythonObject::isSame(const Property &_other) const
     if(res < 0) 
         PyErr_Clear();
     return false;
+}
+
+void PropertyPythonObject::hasSetValue()
+{
+    // A ProxyExp chain may have resolved a callable out of this very object --
+    // a scripted object's Proxy, a spreadsheet cell now holding a lambda -- and
+    // no signal reaches the features that linked to it.  One counter for the
+    // whole process; the chains compare it and rebuild.  docs/ProxyChain.md 2.4
+    ProxyChain::bump();
+    Property::hasSetValue();
 }

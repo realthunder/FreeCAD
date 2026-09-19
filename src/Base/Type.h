@@ -91,7 +91,29 @@ public:
     void* createInstance();
     /// creates a instance of the named type
     static void* createInstanceByName(const char* TypeName, bool bLoadModule = false);
+    /** Import the module a type name's prefix names ("Part::Feature" ->
+     * Part), once.  The name comes from document content (a saved
+     * property type, a PropertyPersistentObject), so the import is
+     * RESTRICTED: the module must already be loaded, or resolve into one
+     * of the registered module roots (addModuleRoot -- the Mod
+     * directories); anything else -- a stdlib or site-packages module a
+     * file happens to name -- throws Base::RuntimeError without importing.
+     * A module that does not exist at all still fails the way it did (the
+     * interpreter's own error).  User ruling 2026-09-05 (docs/Sandbox.md 13).
+     */
     static void importModule(const char* TypeName);
+    /// A directory a type-string import may resolve into (a Mod root);
+    /// registered by the application before any document loads.
+    static void addModuleRoot(const std::string& dir);
+    /// The registered module roots, in registration order.
+    static const std::vector<std::string>& getModuleRoots();
+    /// Whether a document-chosen module name may be imported natively:
+    /// already loaded, or found under a registered root -- for a dotted
+    /// name ("draftobjects.wire") every level not yet loaded must be
+    /// (None from the finder counts as allowed: the import fails on its
+    /// own with the usual error).  importModule's rule, shared with
+    /// PropertyPythonObject::Restore for a Proxy's module.
+    static bool moduleAllowed(const std::string& module);
 
     using instantiationMethod = void* (*)();
 
@@ -165,6 +187,7 @@ private:
     static std::map<std::string, unsigned int> typemap;
     static std::vector<TypeData*> typedata;
     static std::set<std::string> loadModuleSet;
+    static std::vector<std::string> moduleRoots;
 };
 
 

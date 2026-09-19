@@ -4,11 +4,17 @@
 import { render } from 'solid-js/web';
 import { createSignal } from 'solid-js';
 import { Inspector } from './inspector';
+import { SheetPanel } from './sheet';
+import { ConsolePanel } from './console';
+import { TaskPanelCard } from './widgets/panel';
 import { HudCard } from './hud';
 import { LauncherMenu } from './menu';
 import { LoupeOverlay } from './loupe';
+import { OnViewParams } from './onview';
+import type { OnViewParam, OnViewPlace } from './onview';
 import { SplitOverlay } from './splitview';
 import { OmniBox } from './omni';
+import { ToolbarStrip } from './toolbar';
 import type { LoupeMark } from './loupe';
 import { NARROW } from './panel';
 import { sendOp } from './control';
@@ -45,6 +51,22 @@ const [hud, setHud] = createSignal<string | null>(null);
 window.addEventListener('fc:hud', (e: Event) => {
   const d = (e as CustomEvent).detail;
   setHud(typeof d === 'string' ? d : null);
+});
+
+// The entry boxes an edit mode has open (docs/ThinClient.md sec 8.7).
+// Two feeds because they change at different rates: what the boxes SAY
+// arrives when the tool changes it, and where they SIT arrives from the
+// viewer every frame it moves -- projected there, from the world anchor,
+// with the camera of the frame being drawn.
+const [onView, setOnView] = createSignal<OnViewParam[]>([]);
+const [onViewPlaces, setOnViewPlaces] = createSignal<OnViewPlace[]>([]);
+window.addEventListener('fc:onview', (e: Event) => {
+  const d = (e as CustomEvent).detail;
+  setOnView(Array.isArray(d) ? d as OnViewParam[] : []);
+});
+window.addEventListener('fc:onviewlayout', (e: Event) => {
+  const d = (e as CustomEvent).detail;
+  setOnViewPlaces(Array.isArray(d) ? d as OnViewPlace[] : []);
 });
 
 // Where the touch loupe is picking, for the mark drawn over the canvas.
@@ -102,6 +124,14 @@ const [viewOnly, setViewOnly] = createSignal(!!window.fcviewerViewOnly);
 window.addEventListener('fc:viewonly', (e: Event) => {
   setViewOnly(!!(e as CustomEvent).detail);
 });
+// And whether it is a host (docs/ShareAccess.md sec 2.2): the desktop's
+// owner, whose tool bars and command list are not held to the browser
+// allowlist. The server judges either way; this only draws what it allows.
+const [access, setAccess] = createSignal<string>(window.fcviewerAccess ?? '');
+window.addEventListener('fc:access', (e: Event) => {
+  setAccess(String((e as CustomEvent).detail));
+});
+const isHost = () => access() === 'host';
 
 // The name the host's sharing roster shows for this connection
 // (docs/MultiDocServe.md §6). ?client= wins at load; after that this is
@@ -152,6 +182,22 @@ const openCard = (subject: Subject) =>
 // The card covers the menu's corner only as a bottom sheet, which is
 // the narrow layout; anywhere else both are on screen at once.
 const [cardOpen, setCardOpen] = createSignal(false);
+
+// The spreadsheet panel (docs/SpreadsheetRemote.md sec 3). Opened from the
+// launcher: a sheet has no geometry, so unlike every other card in this
+// chrome it can never be reached by picking something in the view. `?sheet`
+// opens it on load, so a link can point straight at the numbers -- and so a
+// headless run can screenshot the panel, which no click can reach.
+const [sheetOpen, setSheetOpen] = createSignal(
+  new URLSearchParams(location.search).has('sheet'));
+
+// The Python console (docs/Sandbox.md 7.20 C4): a guest in this page, booted
+// the first time the panel opens, reaching the served document as this
+// client over the viewer's own socket. `?console` opens it on load. The
+// token is the link's own, which boot.json is admitted by.
+const [consoleOpen, setConsoleOpen] = createSignal(
+  new URLSearchParams(location.search).has('console'));
+const linkToken = new URLSearchParams(location.search).get('token') ?? undefined;
 
 // The selection menu: mode (single/multi) and pick filter, pushed to
 // the viewer as it changes (docs/ThinClientUI.md). Session-local on
@@ -239,21 +285,65 @@ const cyclesItems = () => {
   ];
 };
 
+// The desktop's tool bars, streamed (docs/ThinClient.md 8.11 item 4). A
+// switch in the launcher, remembered per browser; the default is on where
+// there is room and a fine pointer, off on a phone, where a row of desktop
+// icons costs the view more than it gives.
+const TOOLBARS_KEY = 'fcviewer.toolbars';
+const [narrow, setNarrow] = createSignal(window.innerWidth <= NARROW);
+window.addEventListener('resize', () => setNarrow(window.innerWidth <= NARROW));
+const [toolbarsOn, setToolbarsOn] = createSignal((() => {
+  try {
+    const v = localStorage.getItem(TOOLBARS_KEY);
+    if (v === '1' || v === '0') return v === '1';
+  }
+  catch { /* no memory: the default */ }
+  return window.innerWidth > NARROW && !window.matchMedia('(pointer: coarse)').matches;
+})());
+const toggleToolbars = () => {
+  const on = !toolbarsOn();
+  setToolbarsOn(on);
+  try { localStorage.setItem(TOOLBARS_KEY, on ? '1' : '0'); }
+  catch { /* this session only */ }
+};
+// The desktop's task panel, mirrored (docs/Sandbox.md 7.22): a card like
+// the console's, opened from the launcher. Subscribing is what starts
+// the host's mirror, so a closed card costs the desktop nothing. `?panel`
+// opens it on load, for the same reason `?sheet` does: a headless run has
+// no way to reach the launcher, and this card is the one W1 must be seen
+// rendering.
+const [taskPanelOpen, setTaskPanelOpen] = createSignal(
+  new URLSearchParams(location.search).has('panel'));
+
 const host = document.createElement('div');
 host.id = 'fc-ui';
 document.body.appendChild(host);
+// How far the top-anchored panels move down to clear the strip.
+const setTopInset = (px: number) => host.style.setProperty('--fc-top', `${px}px`);
 
 render(() => (
   <>
     <SplitOverlay />
+    <ToolbarStrip enabled={toolbarsOn} viewOnly={viewOnly} host={isHost} narrow={narrow}
+                  onTopInset={setTopInset} />
     <Inspector selection={selection} request={request}
                onCardOpen={setCardOpen} viewOnly={viewOnly} />
+    <SheetPanel open={sheetOpen} onClose={() => setSheetOpen(false)}
+                viewOnly={viewOnly} doc={() => docs().current} />
     <OmniBox open={omniOpen} onClose={() => setOmniOpen(false)}
-             selection={selection} viewOnly={viewOnly} />
+             selection={selection} viewOnly={viewOnly} host={isHost} />
+    <ConsolePanel open={consoleOpen} onClose={() => setConsoleOpen(false)}
+                  doc={() => docs().current} viewOnly={viewOnly}
+                  server={location.origin} token={linkToken} client={clientName}
+                  viewerSocket />
+    <TaskPanelCard open={taskPanelOpen} onClose={() => setTaskPanelOpen(false)}
+                   viewOnly={viewOnly} />
     <LoupeOverlay mark={loupe} />
+    <OnViewParams params={onView} places={onViewPlaces} />
     <HudCard text={hud} onClose={() => window.fcviewerSetHud?.(false)} />
     <LauncherMenu
-      hidden={() => cardOpen() && window.innerWidth <= NARROW}
+      hidden={() => (cardOpen() || taskPanelOpen() || sheetOpen()
+                     || consoleOpen()) && window.innerWidth <= NARROW}
       items={[
         ...docItems(),
         { label: 'View & document properties',
@@ -261,6 +351,18 @@ render(() => (
         { label: 'Search  /', onSelect: () => setOmniOpen(true) },
         { label: clientName() ? `Name: ${clientName()}` : 'Set name…',
           onSelect: askName },
+        { label: 'Spreadsheet',
+          checked: () => sheetOpen(),
+          onSelect: () => setSheetOpen(!sheetOpen()) },
+        { label: 'Toolbars',
+          checked: () => toolbarsOn(),
+          onSelect: toggleToolbars },
+        { label: 'Python console',
+          checked: () => consoleOpen(),
+          onSelect: () => setConsoleOpen(!consoleOpen()) },
+        { label: 'Task panel',
+          checked: () => taskPanelOpen(),
+          onSelect: () => setTaskPanelOpen(!taskPanelOpen()) },
         { label: 'HUD',
           checked: () => hud() !== null,
           onSelect: () => window.fcviewerSetHud?.(hud() === null) },
@@ -268,7 +370,8 @@ render(() => (
       ]}
     />
     <LauncherMenu
-      hidden={() => cardOpen() && window.innerWidth <= NARROW}
+      hidden={() => (cardOpen() || taskPanelOpen() || sheetOpen()
+                     || consoleOpen()) && window.innerWidth <= NARROW}
       glyph={
         /* Cursor-arrow "select" icon, inline so every device draws the
            same thing (a text glyph already came out as tofu once). */

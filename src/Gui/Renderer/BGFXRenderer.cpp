@@ -2580,14 +2580,11 @@ void BGFXRendererLibP::shutdown()
     Vg2D::instance().shutdown();
     bgfx::shutdown();
 #ifndef FC_RENDERER_STANDALONE
-    if (window) {
-        window->deleteLater();
-        window = nullptr;
-    }
     context.reset();
     offscreen.reset();
 #endif
     currentType = RendererType::Noop;
+    noBackbuffer = false;
     // The device identity dies with the device. resolveDeviceName()
     // answers once and caches, so a name left standing here is handed
     // to every capture taken after a backend switch -- the sidecar then

@@ -17,41 +17,49 @@
       <Documentation>
         <UserDocu>Create and add an object with given type and name to the group</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="addObject">
         <Documentation>
             <UserDocu>Add an object to the group. Returns all objects that have been added.</UserDocu>
         </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="addObjects">
         <Documentation>
             <UserDocu>Adds multiple objects to the group. Expects a list and returns all objects that have been added.</UserDocu>
         </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="setObjects">
         <Documentation>
             <UserDocu>Sets the objects of the group. Expects a list and returns all objects that are now in the group.</UserDocu>
         </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="removeObject">
         <Documentation>
             <UserDocu>Remove an object from the group and returns all objects that have been removed.</UserDocu>
         </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="removeObjects">
         <Documentation>
             <UserDocu>Remove multiple objects from the group. Expects a list and returns all objects that have been removed.</UserDocu>
         </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="removeObjectsFromDocument">
       <Documentation>
         <UserDocu>Remove all child objects from the group and document</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="getObject">
       <Documentation>
         <UserDocu>Return the object with the given name</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="getObjectsOfType">
       <Documentation>
@@ -60,6 +68,7 @@
 Return the child objects of the given type. The type is given by name,
 for instance "Part::Feature". Objects of a derived type are included.</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="hasObject">
         <Documentation>
@@ -69,6 +78,7 @@ for instance "Part::Feature". Objects of a derived type are included.</UserDocu>
                 @param recursive  if true check also if the obj is child of some sub group (default is false).
             </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <CustomAttributes />
   </PythonExport>

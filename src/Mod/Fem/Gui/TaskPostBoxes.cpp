@@ -1019,7 +1019,7 @@ void TaskPostDataAlongLine::resolutionChanged(int val)
 void TaskPostDataAlongLine::pointCallback(void* ud, SoEventCallback* n)
 {
     const SoMouseButtonEvent* mbe = static_cast<const SoMouseButtonEvent*>(n->getEvent());
-    Gui::View3DInventorViewer* view = static_cast<Gui::View3DInventorViewer*>(n->getUserData());
+    Gui::View3DInventorViewer* view = Gui::View3DInventorViewer::fromEventCallback(n);
     PointMarker* pm = static_cast<PointMarker*>(ud);
 
     // Mark all incoming mouse button events as handled, especially,
@@ -1298,7 +1298,7 @@ void TaskPostDataAtPoint::centerChanged(double)
 void TaskPostDataAtPoint::pointCallback(void* ud, SoEventCallback* n)
 {
     const SoMouseButtonEvent* mbe = static_cast<const SoMouseButtonEvent*>(n->getEvent());
-    Gui::View3DInventorViewer* view = static_cast<Gui::View3DInventorViewer*>(n->getUserData());
+    Gui::View3DInventorViewer* view = Gui::View3DInventorViewer::fromEventCallback(n);
     auto taskPost = static_cast<TaskPostDataAtPoint*>(ud);
 
     // Mark all incoming mouse button events as handled, especially,

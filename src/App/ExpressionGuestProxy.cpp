@@ -1,0 +1,665 @@
+/***************************************************************************
+ *   Copyright (c) 2026 FreeCAD Project Association                        *
+ *                                                                         *
+ *   This file is part of FreeCAD.                                         *
+ *                                                                         *
+ *   FreeCAD is free software: you can redistribute it and/or modify it    *
+ *   under the terms of the GNU Lesser General Public License as           *
+ *   published by the Free Software Foundation, either version 2.1 of the  *
+ *   License, or (at your option) any later version.                       *
+ *                                                                         *
+ *   FreeCAD is distributed in the hope that it will be useful, but        *
+ *   WITHOUT ANY WARRANTY; without even the implied warranty of            *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU     *
+ *   Lesser General Public License for more details.                       *
+ *                                                                         *
+ *   You should have received a copy of the GNU Lesser General Public      *
+ *   License along with FreeCAD. If not, see                               *
+ *   <https://www.gnu.org/licenses/>.                                      *
+ **************************************************************************/
+
+#include "PreCompiled.h"
+
+#include <algorithm>
+#include <cctype>
+#include <cstddef>
+#include <cstring>
+#include <map>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+#include <Base/Console.h>
+
+#include <Base/Interpreter.h>
+
+#include "Document.h"
+#include "DocumentObject.h"
+#include "DocumentObjectPy.h"
+#include "ExpressionEvaluator.h"
+#include "ExpressionGuestProxy.h"
+#include "ExpressionImageHost.h"
+#include "ExpressionSecurityRuntime.h"
+#include "PropertyPythonObject.h"
+
+using json = nlohmann::json;
+
+namespace App
+{
+namespace ExpressionSandbox
+{
+
+namespace
+{
+
+struct GuestProxyObject
+{
+    PyObject_HEAD
+    PyObject* dict;
+    uint64_t id;
+    /// the guest (ImageHost::bootCount()) whose proxy `id` names: a
+    /// fresh guest numbers its proxies from 1 again, so a stand-in of
+    /// a guest that was reset must neither answer for, nor drop, the
+    /// new guest's proxy of the same number
+    int boot;
+};
+
+PyObject* baseType = nullptr;
+
+/// (boot, id): the identity of a guest proxy across resets.
+uint64_t liveKey(int boot, uint64_t id)
+{
+    return (static_cast<uint64_t>(static_cast<unsigned>(boot)) << 40) ^ id;
+}
+
+/// The live stand-ins by guest and proxy id (borrowed): one guest proxy
+/// has ONE stand-in, so a descriptor decoded twice (the same handler
+/// registered twice) names the same object and a dying duplicate can
+/// never drop a proxy that is still in use.
+std::unordered_map<uint64_t, PyObject*>& liveStandIns()
+{
+    static std::unordered_map<uint64_t, PyObject*> table;
+    return table;
+}
+
+/// A stand-in of a guest that was reset: its proxy is gone with that
+/// guest, and the number it holds now names something else in the
+/// live one.  ReferenceError, as the guest itself answers for a
+/// dropped proxy.
+bool staleStandIn(const GuestProxyObject* o)
+{
+    if (o->boot == ImageHost::instance().bootCount())
+        return false;
+    PyErr_Format(PyExc_ReferenceError,
+                 "guest proxy %llu belongs to a sandbox guest that was reset",
+                 static_cast<unsigned long long>(o->id));
+    return true;
+}
+
+void guestProxyDealloc(PyObject* self)
+{
+    auto* o = reinterpret_cast<GuestProxyObject*>(self);
+    if (o->id) {
+        auto& live = liveStandIns();
+        auto it = live.find(liveKey(o->boot, o->id));
+        if (it != live.end() && it->second == self)
+            live.erase(it);
+        ImageHost::instance().dropProxy(o->id, o->boot);
+    }
+    Py_CLEAR(o->dict);
+    PyTypeObject* type = Py_TYPE(self);
+    type->tp_free(self);
+    // A heap type's instance dealloc decrefs its type; the per-class
+    // subtype (made by type()) relies on this base doing it, since
+    // subtype_dealloc skips the decref when the base is a heap type too.
+    Py_DECREF(type);
+}
+
+PyObject* guestProxyRepr(PyObject* self)
+{
+    auto* o = reinterpret_cast<GuestProxyObject*>(self);
+    PyObject* mod = PyObject_GetAttrString(self, "__module__");
+    const char* modName = mod && PyUnicode_Check(mod) ? PyUnicode_AsUTF8(mod) : "?";
+    PyObject* r = PyUnicode_FromFormat("<guest proxy %s.%s #%llu>", modName,
+                                       Py_TYPE(self)->tp_name,
+                                       static_cast<unsigned long long>(o->id));
+    Py_XDECREF(mod);
+    if (!r)
+        PyErr_Clear();
+    return r;
+}
+
+/// Raise a failed guest round trip on the host: the guest's exception
+/// type when it is a builtin, else a RuntimeError carrying both fields
+/// -- as the guest bridge does for host errors.
+void raiseGuestError(const ImageResult& r)
+{
+    // The guest's traceback follows the message: a failed execute()
+    // reports "Failed to recompute X: <message>" and, natively, the
+    // traceback; the guest's is the only record of where it failed.
+    std::string message = r.message;
+    if (!r.traceback.empty())
+        message += "\n" + r.traceback;
+    PyObject* builtins = PyEval_GetBuiltins();
+    PyObject* type = builtins ? PyDict_GetItemString(builtins, r.excType.c_str()) : nullptr;
+    if (type && PyExceptionClass_Check(type))
+        PyErr_SetString(type, message.c_str());
+    else
+        PyErr_Format(PyExc_RuntimeError, "%s: %s", r.excType.c_str(), message.c_str());
+}
+
+/// The hook forwarder: `self` is the (proxy id, hook name) pair bound
+/// into the PyCFunction; the first positional argument, when it is a
+/// document object, is the owner the guest may write.
+PyObject* hookCall(PyObject* self, PyObject* args, PyObject* kwargs)
+{
+    if (!PyTuple_Check(self) || PyTuple_GET_SIZE(self) != 3) {
+        PyErr_SetString(PyExc_SystemError, "guest proxy hook without its binding");
+        return nullptr;
+    }
+    const uint64_t id = PyLong_AsUnsignedLongLong(PyTuple_GET_ITEM(self, 0));
+    const char* hook = PyUnicode_AsUTF8(PyTuple_GET_ITEM(self, 1));
+    const int boot = static_cast<int>(PyLong_AsLong(PyTuple_GET_ITEM(self, 2)));
+    if (!hook || PyErr_Occurred())
+        return nullptr;
+    if (boot != ImageHost::instance().bootCount()) {
+        PyErr_Format(PyExc_ReferenceError,
+                     "guest proxy %llu belongs to a sandbox guest that was reset",
+                     static_cast<unsigned long long>(id));
+        return nullptr;
+    }
+    const App::DocumentObject* owner = nullptr;
+    if (args && PyTuple_Check(args) && PyTuple_GET_SIZE(args) > 0) {
+        PyObject* first = PyTuple_GET_ITEM(args, 0);
+        if (PyObject_TypeCheck(first, &DocumentObjectPy::Type))
+            owner = static_cast<DocumentObjectPy*>(first)->getDocumentObjectPtr();
+    }
+    ImageResult r = ImageHost::instance().proxyCall(id, hook, args, kwargs, owner);
+    if (!r.ok) {
+        raiseGuestError(r);
+        return nullptr;
+    }
+    PyObject* value = ImageHost::instance().decodeResult(r);
+    if (!value && !PyErr_Occurred())
+        PyErr_SetString(PyExc_RuntimeError, "guest proxy hook returned an undecodable value");
+    return value;
+}
+
+PyMethodDef HookDef = {"hook", reinterpret_cast<PyCFunction>(reinterpret_cast<void (*)()>(hookCall)),
+                       METH_VARARGS | METH_KEYWORDS,
+                       "A guest proxy hook: forwards to the Proxy living in the sandbox guest."};
+
+/// A forwarder bound to (id, name, boot): what a hook attribute is, and
+/// what a callable attribute read through the guest becomes.
+PyObject* makeForwarder(uint64_t id, const char* name)
+{
+    PyObject* binding = Py_BuildValue("(Ksi)", static_cast<unsigned long long>(id), name,
+                                      ImageHost::instance().bootCount());
+    PyObject* fwd = binding ? PyCFunction_NewEx(&HookDef, binding, nullptr) : nullptr;
+    Py_XDECREF(binding);
+    return fwd;
+}
+
+bool isForwarder(PyObject* obj)
+{
+    return obj && PyCFunction_Check(obj)
+        && PyCFunction_GET_FUNCTION(obj)
+            == reinterpret_cast<PyCFunction>(reinterpret_cast<void (*)()>(hookCall));
+}
+
+/// Attribute read (G1d, docs/Sandbox.md 7.6): what the stand-in holds
+/// itself -- its hooks, the class attributes -- answers at once; any
+/// other name is the guest instance's, read through proxy_get.  A
+/// dunder never crosses: Python probes them by the dozen (copy,
+/// pickle, repr) and a Proxy defines none the host needs.  A method
+/// read once is kept as a forwarder on the stand-in, so `hasattr`
+/// followed by the call is one trip, not two; data is read every
+/// time, since the guest instance may change it.
+/// The hook names FeaturePythonImp probes on every Proxy (the guest
+/// prelude's HOOKS, kept in step): a hook the descriptor did not list
+/// is one the class does not define, answered without a trip.
+bool isHookName(const char* attr)
+{
+    static const char* const hooks[] = {
+        "execute", "mustExecute", "skipRecompute", "onBeforeChange", "onBeforeChangeLabel",
+        "onChanged", "onDocumentRestored", "unsetupObject", "getViewProviderName",
+        "getSubObject", "getSubObjects", "getLinkedObject", "canLinkProperties",
+        "allowDuplicateLabel", "redirectSubName", "canLoadPartial", "hasChildElement",
+        "isElementVisible", "isElementVisibleEx", "setElementVisible", "getElementMapVersion",
+        "editProperty", "dumps", "loads",
+        // the GUI objects a workbench registers (docs/Sandbox.md 7.9, the
+        // prelude's CMD_HOOKS and WB_HOOKS): the command manager's
+        // hasattr("IsActive") on every poll costs no trip
+        "GetResources", "Activated", "IsActive", "GetCommands", "GetDefaultCommand",
+        "OnActionInit", "CmdHelpURL", "Initialize", "Deactivated", "ContextMenu",
+        "GetClassName",
+        // the guest's comm manager (docs/Sandbox.md 7.3, the prelude's
+        // COMM_HOOKS): what the host's widget manager calls
+        "host_msg", "host_close", "host_open",
+        // a task panel shown from the guest (docs/Sandbox.md 7.11, the
+        // prelude's PANEL_HOOKS): what TaskDialogPython probes
+        "accept", "reject", "clicked", "open", "getStandardButtons", "modifyStandardButtons",
+        "needsFullSpace", "isAllowedAlterDocument", "isAllowedAlterView",
+        "isAllowedAlterSelection", "helpRequested", "shouldShow"};
+    for (const char* h : hooks)
+        if (std::strcmp(h, attr) == 0)
+            return true;
+    return false;
+}
+
+PyObject* guestProxyGetAttr(PyObject* self, PyObject* name)
+{
+    PyObject* value = PyObject_GenericGetAttr(self, name);
+    if (value || !PyErr_ExceptionMatches(PyExc_AttributeError))
+        return value;
+    auto* o = reinterpret_cast<GuestProxyObject*>(self);
+    const char* attr = PyUnicode_Check(name) ? PyUnicode_AsUTF8(name) : nullptr;
+    if (!attr || o->id == 0 || (attr[0] == '_' && attr[1] == '_') || isHookName(attr))
+        return nullptr;
+    PyErr_Clear();
+    if (staleStandIn(o))
+        return nullptr;
+    ImageResult r = ImageHost::instance().proxyGet(o->id, attr);
+    if (!r.ok) {
+        raiseGuestError(r);
+        return nullptr;
+    }
+    value = ImageHost::instance().decodeResult(r);
+    if (!value) {
+        if (!PyErr_Occurred())
+            PyErr_Format(PyExc_RuntimeError, "guest proxy attribute '%s' is not transferable", attr);
+        return nullptr;
+    }
+    if (isForwarder(value) && PyObject_GenericSetAttr(self, name, value) != 0)
+        PyErr_Clear();
+    return value;
+}
+
+/// Attribute write: the guest instance's, through proxy_set (a value
+/// only; a host object would be a handle no transaction outlives).
+/// The stand-in's own dict is written by makeGuestProxy alone.
+int guestProxySetAttr(PyObject* self, PyObject* name, PyObject* value)
+{
+    auto* o = reinterpret_cast<GuestProxyObject*>(self);
+    const char* attr = PyUnicode_Check(name) ? PyUnicode_AsUTF8(name) : nullptr;
+    if (!attr)
+        return -1;
+    if (o->id == 0)
+        return PyObject_GenericSetAttr(self, name, value);
+    if (!value) {
+        PyErr_Format(PyExc_AttributeError, "cannot delete attribute '%s' of a guest proxy", attr);
+        return -1;
+    }
+    if (staleStandIn(o))
+        return -1;
+    ImageResult r = ImageHost::instance().proxySet(o->id, attr, value);
+    if (!r.ok) {
+        raiseGuestError(r);
+        return -1;
+    }
+    // a forwarder cached by a read is now shadowed by the guest's value
+    if (PyObject_GenericSetAttr(self, name, nullptr) != 0)
+        PyErr_Clear();
+    return 0;
+}
+
+PyMemberDef GuestProxyMembers[] = {
+    {"__dictoffset__", Py_T_PYSSIZET, offsetof(GuestProxyObject, dict), Py_READONLY, nullptr},
+    {nullptr, 0, 0, 0, nullptr},
+};
+
+PyType_Slot GuestProxySlots[] = {
+    {Py_tp_dealloc, reinterpret_cast<void*>(guestProxyDealloc)},
+    {Py_tp_repr, reinterpret_cast<void*>(guestProxyRepr)},
+    {Py_tp_getattro, reinterpret_cast<void*>(guestProxyGetAttr)},
+    {Py_tp_setattro, reinterpret_cast<void*>(guestProxySetAttr)},
+    {Py_tp_members, GuestProxyMembers},
+    {Py_tp_new, reinterpret_cast<void*>(PyType_GenericNew)},
+    {Py_tp_doc, const_cast<char*>("Stand-in for a scripted object's Proxy that lives in the"
+                                  " sandbox guest; its hooks forward there.")},
+    {0, nullptr},
+};
+
+PyType_Spec GuestProxySpec = {
+    "FreeCAD.ExpressionSandbox.GuestProxy",
+    sizeof(GuestProxyObject),
+    0,
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
+    GuestProxySlots,
+};
+
+PyObject* guestProxyBase()
+{
+    if (!baseType)
+        baseType = PyType_FromSpec(&GuestProxySpec);
+    return baseType;
+}
+
+/// The per-class heap subtype: `class <cls>(GuestProxy)` with the
+/// guest module's name, one per module.class, kept for the process.
+PyObject* classFor(const std::string& module, const std::string& cls)
+{
+    static std::unordered_map<std::string, PyObject*> classes;
+    const std::string key = module + "." + cls;
+    auto it = classes.find(key);
+    if (it != classes.end())
+        return it->second;
+    PyObject* base = guestProxyBase();
+    if (!base)
+        return nullptr;
+    PyObject* ns = Py_BuildValue("{s:s}", "__module__", module.c_str());
+    if (!ns)
+        return nullptr;
+    PyObject* type = PyObject_CallFunction(reinterpret_cast<PyObject*>(&PyType_Type), "s(O)O",
+                                           cls.c_str(), base, ns);
+    Py_DECREF(ns);
+    if (type)
+        classes[key] = type;  // the table keeps the reference
+    return type;
+}
+
+}  // namespace
+
+PyObject* makeGuestProxy(const json& desc)
+{
+    auto id = desc.find("id");
+    const std::string module = desc.value("mod", "");
+    const std::string cls = desc.value("cls", "");
+    if (id == desc.end() || !id->is_number_integer() || module.empty() || cls.empty()) {
+        PyErr_SetString(PyExc_ValueError, "malformed guest proxy descriptor");
+        return nullptr;
+    }
+    auto& live = liveStandIns();
+    const int boot = ImageHost::instance().bootCount();
+    auto existing = live.find(liveKey(boot, id->get<uint64_t>()));
+    if (existing != live.end()) {
+        Py_INCREF(existing->second);
+        return existing->second;
+    }
+    PyObject* type = classFor(module, cls);
+    if (!type)
+        return nullptr;
+    PyObject* inst = PyObject_CallNoArgs(type);
+    if (!inst)
+        return nullptr;
+    auto* o = reinterpret_cast<GuestProxyObject*>(inst);
+    const uint64_t pid = id->get<uint64_t>();
+    // the hooks go into the stand-in's own dict (id still 0: the
+    // setattr slot forwards to the guest once it is bound)
+    auto hooks = desc.find("hooks");
+    if (hooks != desc.end() && hooks->is_array()) {
+        for (const auto& h : *hooks) {
+            if (!h.is_string())
+                continue;
+            const std::string& name = h.get_ref<const std::string&>();
+            PyObject* fwd = makeForwarder(pid, name.c_str());
+            PyObject* key = fwd ? PyUnicode_FromString(name.c_str()) : nullptr;
+            int rc = key ? PyObject_GenericSetAttr(inst, key, fwd) : -1;
+            Py_XDECREF(key);
+            Py_XDECREF(fwd);
+            if (rc != 0) {
+                Py_DECREF(inst);
+                return nullptr;
+            }
+        }
+    }
+    o->id = pid;
+    o->boot = boot;
+    live[liveKey(boot, pid)] = inst;
+    return inst;
+}
+
+PyObject* makeGuestMethod(uint64_t id, const std::string& name)
+{
+    return makeForwarder(id, name.c_str());
+}
+
+bool isGuestProxy(PyObject* obj)
+{
+    PyObject* base = baseType;  // never built: no stand-in exists
+    return obj && base && PyObject_TypeCheck(obj, reinterpret_cast<PyTypeObject*>(base));
+}
+
+uint64_t guestProxyId(PyObject* obj)
+{
+    if (!isGuestProxy(obj))
+        return 0;
+    return reinterpret_cast<GuestProxyObject*>(obj)->id;
+}
+
+// ---- a function a routed evaluation left (docs/Sandbox.md 7.17 P3) ----
+
+namespace
+{
+
+struct RoutedFunctionObject
+{
+    PyObject_HEAD
+    /// the evaluation owner's Python face, held as native ExpressionPy
+    /// holds its owner's
+    PyObject* owner;
+    std::string* source;
+    std::string* name;
+    int options;
+};
+
+/// bindRoutedFunction's callable: the function and the object it runs as.
+struct RunAsObject
+{
+    PyObject_HEAD
+    PyObject* func;
+    PyObject* self;
+};
+
+PyObject* routedFunctionType = nullptr;
+PyObject* runAsType = nullptr;
+
+/// The document object behind a Python face, while it still has one.
+const App::DocumentObject* liveObject(PyObject* py)
+{
+    if (!py || !PyObject_TypeCheck(py, &DocumentObjectPy::Type))
+        return nullptr;
+    // the Python face's own isValid(), which DocumentObjectPy's method hides
+    auto* face = static_cast<DocumentObjectPy*>(py);
+    if (!static_cast<Base::PyObjectBase*>(face)->isValid())
+        return nullptr;
+    const App::DocumentObject* obj = face->getDocumentObjectPtr();
+    return obj && obj->getDocument() ? obj : nullptr;
+}
+
+PyObject* callRouted(RoutedFunctionObject* fn,
+                     const App::DocumentObject* runAs,
+                     PyObject* args,
+                     PyObject* kwargs)
+{
+    const App::DocumentObject* owner = liveObject(fn->owner);
+    if (!owner || !fn->source) {
+        PyErr_SetString(PyExc_ReferenceError, "Owner document object expired");
+        return nullptr;
+    }
+    auto& host = ImageHost::instance();
+    ImageResult r =
+        host.callFunction(owner, *fn->source, fn->options, args, kwargs, runAs);
+    // decoded before the handles go: a host object in the result resolves
+    // against the live table
+    PyObject* value = r.ok ? host.decodeResult(r) : nullptr;
+    host.clearHandles();
+    if (!r.ok) {
+        raiseGuestError(r);
+        return nullptr;
+    }
+    if (!value && !PyErr_Occurred())
+        PyErr_SetString(PyExc_RuntimeError,
+                        "a routed function returned a value the host cannot decode");
+    return value;
+}
+
+PyObject* routedFunctionCall(PyObject* self, PyObject* args, PyObject* kwargs)
+{
+    return callRouted(reinterpret_cast<RoutedFunctionObject*>(self), nullptr, args, kwargs);
+}
+
+PyObject* functionRepr(const std::string* name)
+{
+    if (!name || name->empty())
+        return PyUnicode_FromString("<Function>");
+    return PyUnicode_FromFormat("<Function %s>", name->c_str());
+}
+
+PyObject* routedFunctionRepr(PyObject* self)
+{
+    return functionRepr(reinterpret_cast<RoutedFunctionObject*>(self)->name);
+}
+
+void routedFunctionDealloc(PyObject* self)
+{
+    auto* fn = reinterpret_cast<RoutedFunctionObject*>(self);
+    Py_CLEAR(fn->owner);
+    delete fn->source;
+    fn->source = nullptr;
+    delete fn->name;
+    fn->name = nullptr;
+    PyTypeObject* type = Py_TYPE(self);
+    type->tp_free(self);
+    Py_DECREF(type);
+}
+
+PyType_Slot RoutedFunctionSlots[] = {
+    {Py_tp_dealloc, reinterpret_cast<void*>(routedFunctionDealloc)},
+    {Py_tp_repr, reinterpret_cast<void*>(routedFunctionRepr)},
+    {Py_tp_call, reinterpret_cast<void*>(routedFunctionCall)},
+    {Py_tp_doc, const_cast<char*>("A function a sandboxed evaluation returned: a call evaluates"
+                                  " its source again in the sandbox guest and calls it there.")},
+    {0, nullptr},
+};
+
+PyType_Spec RoutedFunctionSpec = {
+    "FreeCAD.ExpressionSandbox.RoutedFunction",
+    sizeof(RoutedFunctionObject),
+    0,
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_DISALLOW_INSTANTIATION,
+    RoutedFunctionSlots,
+};
+
+PyObject* runAsCall(PyObject* self, PyObject* args, PyObject* kwargs)
+{
+    auto* bound = reinterpret_cast<RunAsObject*>(self);
+    const App::DocumentObject* runAs = liveObject(bound->self);
+    if (!runAs && bound->self) {
+        // a view provider's chain: the object it shows
+        if (PyObject* shown = PyObject_GetAttrString(bound->self, "Object")) {
+            runAs = liveObject(shown);
+            Py_DECREF(shown);
+        }
+        else {
+            PyErr_Clear();
+        }
+    }
+    if (!runAs) {
+        PyErr_SetString(PyExc_ReferenceError,
+                        "the object a chain method runs as has expired");
+        return nullptr;
+    }
+    return callRouted(reinterpret_cast<RoutedFunctionObject*>(bound->func), runAs, args, kwargs);
+}
+
+PyObject* runAsRepr(PyObject* self)
+{
+    auto* bound = reinterpret_cast<RunAsObject*>(self);
+    return functionRepr(reinterpret_cast<RoutedFunctionObject*>(bound->func)->name);
+}
+
+void runAsDealloc(PyObject* self)
+{
+    auto* bound = reinterpret_cast<RunAsObject*>(self);
+    Py_CLEAR(bound->func);
+    Py_CLEAR(bound->self);
+    PyTypeObject* type = Py_TYPE(self);
+    type->tp_free(self);
+    Py_DECREF(type);
+}
+
+PyType_Slot RunAsSlots[] = {
+    {Py_tp_dealloc, reinterpret_cast<void*>(runAsDealloc)},
+    {Py_tp_repr, reinterpret_cast<void*>(runAsRepr)},
+    {Py_tp_call, reinterpret_cast<void*>(runAsCall)},
+    {Py_tp_doc, const_cast<char*>("A sandboxed function a ProxyExp chain resolved: it runs as the"
+                                  " object the chain extends.")},
+    {0, nullptr},
+};
+
+PyType_Spec RunAsSpec = {
+    "FreeCAD.ExpressionSandbox.RoutedChainFunction",
+    sizeof(RunAsObject),
+    0,
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_DISALLOW_INSTANTIATION,
+    RunAsSlots,
+};
+
+bool isType(PyObject* obj, PyObject* type)
+{
+    return obj && type && PyObject_TypeCheck(obj, reinterpret_cast<PyTypeObject*>(type));
+}
+
+}  // namespace
+
+PyObject* makeRoutedFunction(const App::DocumentObject* owner,
+                             const std::string& source,
+                             int options,
+                             const std::string& name)
+{
+    if (!owner) {
+        PyErr_SetString(PyExc_ValueError, "a routed function needs the evaluation's owner");
+        return nullptr;
+    }
+    if (!routedFunctionType && !(routedFunctionType = PyType_FromSpec(&RoutedFunctionSpec)))
+        return nullptr;
+    PyObject* self = PyType_GenericAlloc(reinterpret_cast<PyTypeObject*>(routedFunctionType), 0);
+    if (!self)
+        return nullptr;
+    auto* fn = reinterpret_cast<RoutedFunctionObject*>(self);
+    fn->owner = const_cast<App::DocumentObject*>(owner)->getPyObject();
+    fn->source = new std::string(source);
+    fn->name = new std::string(name);
+    fn->options = options;
+    return self;
+}
+
+bool isRoutedFunction(PyObject* obj)
+{
+    return isType(obj, routedFunctionType) || isType(obj, runAsType);
+}
+
+std::string routedFunctionName(PyObject* obj)
+{
+    if (isType(obj, runAsType))
+        obj = reinterpret_cast<RunAsObject*>(obj)->func;
+    if (!isType(obj, routedFunctionType))
+        return {};
+    auto* fn = reinterpret_cast<RoutedFunctionObject*>(obj);
+    return fn->name ? *fn->name : std::string();
+}
+
+PyObject* bindRoutedFunction(PyObject* func, PyObject* self)
+{
+    if (isType(func, runAsType))
+        func = reinterpret_cast<RunAsObject*>(func)->func;
+    if (!isType(func, routedFunctionType) || !self) {
+        PyErr_SetString(PyExc_TypeError, "bindRoutedFunction: a routed function and an object");
+        return nullptr;
+    }
+    if (!runAsType && !(runAsType = PyType_FromSpec(&RunAsSpec)))
+        return nullptr;
+    PyObject* bound = PyType_GenericAlloc(reinterpret_cast<PyTypeObject*>(runAsType), 0);
+    if (!bound)
+        return nullptr;
+    Py_INCREF(func);
+    Py_INCREF(self);
+    reinterpret_cast<RunAsObject*>(bound)->func = func;
+    reinterpret_cast<RunAsObject*>(bound)->self = self;
+    return bound;
+}
+
+}  // namespace ExpressionSandbox
+}  // namespace App

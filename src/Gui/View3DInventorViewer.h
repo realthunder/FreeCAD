@@ -48,6 +48,7 @@
 #include "InventorBase.h"
 #include "Inventor/SoFCDisplayModeElement.h"
 #include "View3DInventorSelection.h"
+#include "ViewerContext.h"
 #include "Quarter/SoQTQuarterAdaptor.h"
 
 class SoTranslation;
@@ -120,7 +121,9 @@ class AbstractMouseSelection;
 /** GUI view into a 3D scene provided by View3DInventor
  *
  */
-class GuiExport View3DInventorViewer : public Quarter::SoQTQuarterAdaptor, public SelectionObserver
+class GuiExport View3DInventorViewer : public Quarter::SoQTQuarterAdaptor,
+                                      public SelectionObserver,
+                                      public ViewerContext
 {
     using inherited = Quarter::SoQTQuarterAdaptor;
     Q_OBJECT
@@ -167,11 +170,9 @@ public:
     /** @name Render mode
       */
     //@{
-    enum RenderType {
-        Native,
-        Framebuffer,
-        Image
-    };
+    /// RenderType and its enumerators are ViewerContext's now, and reached
+    /// through this class as before.
+    using ViewerContext::RenderType;
     //@}
 
     /** @name Background
@@ -189,6 +190,45 @@ public:
     ~View3DInventorViewer() override;
 
     void init();
+
+    /** @name ViewerContext rows that Quarter already answers
+     *
+     * These exist on QuarterWidget and SoQTQuarterAdaptor as plain members.
+     * Redeclaring them here is what makes them overrides of the ViewerContext
+     * virtuals -- and what keeps the name unambiguous, since it is now
+     * reachable through two bases. The bodies forward; there is no behaviour
+     * here.
+     */
+    //@{
+    SoNode* getSceneGraph() const override;
+    SoRenderManager* getSoRenderManager() const override;
+    SoEventManager* getSoEventManager() const override;
+    const SbViewportRegion& getViewportRegion() const override;
+    float getPickRadius() const override;
+    double devicePixelRatio() const override;
+    QWidget* getWidget() const override;
+    QWidget* getGLWidget() const override;
+    /// Non-const overloads Quarter offers, kept reachable past the redeclaration above.
+    QWidget* getWidget();
+    QWidget* getGLWidget();
+    /// Which mouse buttons are down, from this view's own event handling.
+    Qt::MouseButtons mouseButtons() const override;
+    double logicalDotsPerInchX() const override;
+    void setFocusToView() override;
+    /** Quarter's camera accessor, named the same as ViewerContext's.
+     *
+     * Both walk to the same node -- the render manager's -- and a view that
+     * inherits two of them makes the name ambiguous at every call site, so
+     * one is chosen here. Quarter's, because it is the one this class's own
+     * code has always called.
+     */
+    using Quarter::SoQTQuarterAdaptor::getCamera;
+    /// An on-view entry box is a child of the MDI window, over the canvas.
+    QWidget* datumEditorParent() const override;
+    /// A key an entry box did not claim goes back to this widget.
+    bool sendKeyEvent(QKeyEvent* event) override;
+    static View3DInventorViewer* fromEventCallback(const SoEventCallback* node);
+    //@}
 
     /// Observer message from the Selection
     void onSelectionChanged(const SelectionChanges &Reason) override;
@@ -248,7 +288,7 @@ public:
     /// AntiAliasing default does. A negative value gives the preference
     /// back.
     void setNumSamples(int samples);
-    void setRenderType(RenderType type);
+    void setRenderType(RenderType type) override;
     RenderType getRenderType() const;
     void renderToFramebuffer(QtGLFramebufferObject*);
     QImage grabFramebuffer();
@@ -311,16 +351,11 @@ public:
     ViewProvider* getViewProviderByPathFromTail(SoPath*) const;
     /// get all view providers of given type
     std::vector<ViewProvider*> getViewProvidersOfType(const Base::Type& typeId) const;
-    /// set the ViewProvider in special edit mode
-    void setEditingViewProvider(Gui::ViewProvider* vp, int ModNum);
-    /// return whether a view provider is edited
-    bool isEditingViewProvider() const;
-    /// reset from edit mode
-    void resetEditingViewProvider();
-    void setupEditingRoot(SoNode *node=nullptr, const Base::Matrix4D *mat=nullptr);
-    void resetEditingRoot(bool updateLinks=true);
-    void setEditingTransform(const Base::Matrix4D &mat);
-    SoSeparator * getEditRootNode() const { return pcEditingRoot; }
+    // The edit-mode rows -- setEditingViewProvider, resetEditingViewProvider,
+    // setupEditingRoot, resetEditingRoot, setEditingTransform,
+    // getEditRootNode -- are ViewerContext's now: none of them was view work.
+    // What this view still does for itself is hang pcEditingRoot under the
+    // aux root, which it does once at construction.
     /** Helper method to get picked entities while editing.
      * It's in the responsibility of the caller to delete the returned instance.
      */
@@ -444,7 +479,7 @@ public:
     void stopSelection();
     bool isSelecting() const;
     std::vector<SbVec2f> getGLPolygon(SelectionRole* role=nullptr) const;
-    std::vector<SbVec2f> getGLPolygon(const std::vector<SbVec2s>&) const;
+    std::vector<SbVec2f> getGLPolygon(const std::vector<SbVec2s>&) const override;
     const std::vector<SbVec2s>& getPolygon(SelectionRole* role=nullptr) const;
     void setSelectionEnabled(bool enable);
     bool isSelectionEnabled() const;
@@ -458,6 +493,14 @@ public:
     //@{
     void setEditing(bool edit);
     bool isEditing() const { return this->editing; }
+
+protected:
+    /// Under the aux root, a sibling of the render-cache-captured
+    /// selectionRoot, so an edit never reaches the main scene feed and is
+    /// captured separately (editingCapture).
+    void hangEditingRoot(EditingRoot* root, bool hang) override;
+
+public:
     void setEditingCursor (const QCursor& cursor);
     void setComponentCursor(const QCursor& cursor);
     void setRedirectToSceneGraph(bool redirect) { this->redirected = redirect; }
@@ -527,7 +570,6 @@ public:
     /** Converts Inventor coordinates into Qt coordinates.
      * The conversion takes the device pixel ratio into account.
      */
-    QPoint toQPoint(const SbVec2s&) const;
 
     /** Converts Qt coordinates into Inventor coordinates.
      * The conversion takes the device pixel ratio into account.
@@ -776,7 +818,6 @@ public:
     void updateHatchTexture();
     void refreshRenderCache();
 
-    void getDimensions(float& fHeight, float& fWidth) const;
     float getMaxDimension() const;
     SbVec3f getCenterPointOnFocalPlane() const;
 
@@ -785,7 +826,7 @@ public:
     void setDocument(Gui::Document *pcDocument);
     Gui::Document* getDocument();
 
-    virtual PyObject *getPyObject();
+    PyObject *getPyObject() override;
 
     const SoPath *getGroupOnTopPath();
 
@@ -976,7 +1017,6 @@ private:
     NaviCube* naviCube;
     std::set<ViewProvider*> _ViewProviderSet;
     std::list<GLGraphicsItem*> graphicsItems;
-    ViewProvider* editViewProvider;
     SoFCBackgroundGradient *pcBackGround;
     SoSwitch               *pcBackGroundSwitch;
     SoSeparator * backgroundroot;
@@ -1002,9 +1042,6 @@ private:
     std::unique_ptr<SoFCSelectionAction> selectionAction;
     std::unique_ptr<SoFCHighlightAction> highlightAction;
 
-    SoSeparator * pcEditingRoot;
-    SoTransform * pcEditingTransform;
-    bool restoreEditingRoot;
     SoEventCallback* pEventCallback;
     NavigationStyle* navigation;
     SoFCUnifiedSelection* selectionRoot;

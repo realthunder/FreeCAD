@@ -41,6 +41,7 @@ namespace Gui
 {
 class SoTransformDragger;
 class View3DInventorViewer;
+class ViewerContext;
 }  // namespace Gui
 
 namespace AssemblyGui
@@ -124,7 +125,7 @@ public:
     //@{
     bool setEdit(int ModNum) override;
     void unsetEdit(int ModNum) override;
-    void setEditViewer(Gui::View3DInventorViewer*, int ModNum) override;
+    void setEditViewer(Gui::ViewerContext*, int ModNum) override;
     bool isInEditMode() const;
 
     /// Ask the view provider if it accepts object deletions while in edit
@@ -142,13 +143,13 @@ public:
     /// is called when the Provider is in edit and a key event ocours. Only ESC ends edit.
     bool keyPressed(bool pressed, int key) override;
     /// is called when the provider is in edit and the mouse is moved
-    bool mouseMove(const SbVec2s& cursorPos, Gui::View3DInventorViewer* viewer) override;
+    bool mouseMove(const SbVec2s& cursorPos, Gui::ViewerContext* viewer) override;
     /// is called when the Provider is in edit and the mouse is clicked
     bool mouseButtonPressed(
         int Button,
         bool pressed,
         const SbVec2s& cursorPos,
-        const Gui::View3DInventorViewer* viewer
+        const Gui::ViewerContext* viewer
     ) override;
     // Function to handle double click event
     void doubleClickedIn3dView();
@@ -156,7 +157,7 @@ public:
 
     /// Finds what drag mode should be used based on the user selection.
     DragMode findDragMode();
-    void initMove(const SbVec2s& cursorPos, Gui::View3DInventorViewer* viewer);
+    void initMove(const SbVec2s& cursorPos, Gui::ViewerContext* viewer);
     void endMove();
     virtual void setEnableMovement(bool enable = true)
     {
@@ -254,8 +255,8 @@ public:
         signalSetUp;
 
 private:
-    bool tryMouseMove(const SbVec2s& cursorPos, Gui::View3DInventorViewer* viewer);
-    void tryInitMove(const SbVec2s& cursorPos, Gui::View3DInventorViewer* viewer);
+    bool tryMouseMove(const SbVec2s& cursorPos, Gui::ViewerContext* viewer);
+    void tryInitMove(const SbVec2s& cursorPos, Gui::ViewerContext* viewer);
 
     void collectMovableObjects(
         App::DocumentObject* selRoot,

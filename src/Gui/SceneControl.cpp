@@ -21,6 +21,9 @@
 
 #include "PreCompiled.h"
 
+#include <algorithm>
+#include <map>
+
 #include <set>
 #include <vector>
 
@@ -42,14 +45,21 @@
 #include <Base/Rotation.h>
 #include <Base/Vector3D.h>
 
+#include "Action.h"
 #include "Application.h"
+#include "Command.h"
 #include "Document.h"
+#include "MirrorViewer.h"
 #include "OmniControl.h"
 #include "OmniSearch.h"
 #include "SceneControl.h"
+#include "SceneWidgets.h"
 #include "SceneControlP.h"
 #include "SceneServeSource.h"
+#include "Selection.h"
 #include "View3DInventor.h"
+#include "ViewProvider.h"
+#include "ViewerContext.h"
 #include "ViewProviderDocumentObject.h"
 #include "Renderer/SceneServer.h"
 
@@ -89,6 +99,21 @@ App::PropertyContainer *sceneView(const std::string &boundDoc)
         }
     }
     return SceneServeSource::renderProperties();
+}
+
+/// Ops registered by workbenches (registerSceneControlOp). A plain
+/// static map: registration happens once per module at Gui init and
+/// dispatch is GUI-thread only, so there is nothing to race with.
+struct RegisteredOp {
+    bool mutating;
+    SceneControlOpHandler handler;
+    SceneControlClientOpHandler clientHandler;
+};
+
+std::map<QString, RegisteredOp> &registeredOps()
+{
+    static std::map<QString, RegisteredOp> ops;
+    return ops;
 }
 
 App::Document *homeDocument(const std::string &boundDoc)
@@ -662,18 +687,422 @@ QJsonObject setProperty(const QJsonObject &req,
     return reply;
 }
 
+/// Enter an edit mode from a client (docs/ThinClient.md sec 8.9 step 4).
+///
+/// The one thing this has to get right that a desktop command does not
+/// is WHICH view the session belongs to. Gui::Document::setEdit finds
+/// one by asking the main window what is active, which in a process
+/// serving several browsers names either nothing or somebody else's --
+/// so the connection's own mirror is made current for the call
+/// (Gui::ViewerScope) and setEdit binds to that.
+///
+/// A served document with no mirror for this connection is refused
+/// rather than let through: setEdit's fallback would CREATE a 3D view
+/// for the document, which is a thing only a desktop may do and which
+/// in a serving process would open a GL context nobody asked for.
+QJsonObject setEditOp(const QJsonObject &req, const std::string &boundDoc,
+                      uint64_t client)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+
+    // A named document only when it is in this connection's reach
+    const QString docName = req.value(QLatin1String("doc")).toString();
+    App::Document *doc = requestDocument(req, boundDoc);
+    if (!doc)
+        return errorReply(id, "UnknownDocument", docName);
+
+    Gui::Document *gdoc = Application::Instance->getDocument(doc);
+    if (!gdoc)
+        return errorReply(id, "UnknownDocument",
+                          QString::fromUtf8(doc->getName()));
+
+    const QString objName = req.value(QLatin1String("obj")).toString();
+    App::DocumentObject *obj = doc->getObject(objName.toUtf8().constData());
+    if (!obj)
+        return errorReply(id, "UnknownObject", objName);
+    ViewProvider *vp = Application::Instance->getViewProvider(obj);
+    if (!vp)
+        return errorReply(id, "NoViewProvider", objName);
+
+    ViewerContext *viewer = nullptr;
+    if (SceneServeSource *source = SceneServeSource::sourceFor(doc)) {
+        viewer = source->viewerFor(client);
+        if (!viewer)
+            return errorReply(id, "NoView",
+                              QStringLiteral("state a camera before editing"));
+    }
+
+    const int mode = req.value(QLatin1String("mode")).toInt(0);
+    const QString subname = req.value(QLatin1String("subname")).toString();
+    const QByteArray sub = subname.toUtf8();
+
+    // The desktop's edit modes clear the selection as they start, as a
+    // convenience -- and that convenience belongs to the room, not to the
+    // client: what stops being highlighted is the object every viewer can
+    // see, while everything the edit mode does with selection afterwards
+    // is this client's own (docs/ThinClient.md sec 8.4). Inside the scope
+    // below it would have cleared an instance that was empty anyway, and
+    // left the sketch green in everybody's scene for the whole session.
+    Gui::SelectionRoom().rmvPreselect();
+    Gui::SelectionRoom().clearSelection();
+
+    bool ok = false;
+    try {
+        // In the client's view, and so in the client's selection: an edit
+        // mode's own observers attach while this is open, and an observer
+        // that attached to the room here would hear nothing this browser
+        // picked (SelectionObserver::attachSelectionToCurrent).
+        ViewerScope scope(viewer);
+        ok = gdoc->setEdit(vp, mode, subname.isEmpty() ? nullptr : sub.constData());
+    }
+    catch (Base::Exception &e) {
+        return errorReply(id, "EditFailed",
+                          QString::fromUtf8(e.what()));
+    }
+    if (!ok)
+        return errorReply(id, "EditRefused", objName);
+
+    QJsonObject reply;
+    reply[QLatin1String("id")] = id;
+    reply[QLatin1String("ok")] = true;
+    reply[QLatin1String("doc")] = QString::fromUtf8(doc->getName());
+    reply[QLatin1String("obj")] = objName;
+    reply[QLatin1String("mode")] = mode;
+    return reply;
+}
+
+/// Leave the edit mode this document is in, whoever started it. One
+/// editing view provider per document is the first cut (sec 8.10), so
+/// there is only ever one to leave.
+QJsonObject resetEditOp(const QJsonObject &req, const std::string &boundDoc)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+
+    // A named document only when it is in this connection's reach
+    const QString docName = req.value(QLatin1String("doc")).toString();
+    App::Document *doc = requestDocument(req, boundDoc);
+    if (!doc)
+        return errorReply(id, "UnknownDocument", docName);
+
+    Gui::Document *gdoc = Application::Instance->getDocument(doc);
+    if (!gdoc)
+        return errorReply(id, "UnknownDocument",
+                          QString::fromUtf8(doc->getName()));
+
+    // No scope opened here: Gui::Document::resetEdit opens one over the
+    // view it was running in, for every caller. It has to, because the
+    // path that matters most does not come through this op at all --
+    // Escape defers resetEdit through a timer, with no scope open
+    // (docs/ThinClient.md sec 8.4 and sec 8.10).
+    gdoc->resetEdit();
+
+    QJsonObject reply;
+    reply[QLatin1String("id")] = id;
+    reply[QLatin1String("ok")] = true;
+    reply[QLatin1String("doc")] = QString::fromUtf8(doc->getName());
+    return reply;
+}
+
 } // namespace
+
+namespace Gui {
+namespace SceneControlDetail {
+
+/// The browser allowlist, for the `command` op and `command.run` on a
+/// connection that is not a host (the rationale is on runCommandOp below).
+/// The web client keeps a copy to draw a button disabled rather than let
+/// it be refused (web/src/control.ts); this one decides.
+bool isBrowserSafeCommand(const QString &name)
+{
+    return name.startsWith(QLatin1String("Sketcher_Create"))
+        || name == QLatin1String("Sketcher_External")
+        || name == QLatin1String("Sketcher_CarbonCopy");
+}
+
+/// The command a group's member `index` (1-based) runs, by the route the
+/// tool bar mirror names it: the member action's owning Action. Empty when
+/// `group` is no group or the member is a separator or out of range.
+QString groupMemberCommand(Command *group, int index)
+{
+    group->initAction();
+    auto actions = qobject_cast<ActionGroup *>(group->getAction());
+    if (!actions)
+        return {};
+    const QList<QAction *> members = actions->actions();
+    if (index < 1 || index > members.size())
+        return {};
+    auto owner = qobject_cast<Action *>(members.at(index - 1)->parent());
+    Command *cmd = owner ? owner->command() : nullptr;
+    return cmd ? QString::fromUtf8(cmd->getName()) : QString();
+}
+
+} // namespace SceneControlDetail
+} // namespace Gui
+
+namespace {
+
+/// Run a sketch tool in this client's view (docs/ThinClient.md sec 8.7).
+///
+/// A tool is what puts on-view parameters on the screen, and a browser has
+/// no other way to start one: the sketcher's own shortcuts are Qt shortcuts
+/// on a main window, and its ShortcutListener answers to Delete alone.
+///
+/// **The name is allowlisted, and narrowly.** A command in a serving process
+/// is not the same authority as a command on a desktop: many of them open a
+/// MODAL dialog, and a modal dialog on the GUI thread of a process serving
+/// several browsers stops serving all of them, with nobody at the machine to
+/// dismiss it. So this admits the Sketcher_Create* family -- which is exactly
+/// the family that drives a DrawSketchHandler, and so exactly the family this
+/// section is about -- plus the two pick tools of 8.11 item 3,
+/// Sketcher_External and Sketcher_CarbonCopy, which activate a handler the
+/// same way and open nothing. Widening it further is gated on an answer to
+/// modality, not on taste.
+///
+/// A host connection (docs/ShareAccess.md sec 2.2) is not held to it: that
+/// is the desktop's owner, who takes the modal risk as at the machine.
+QJsonObject runCommandOp(const QJsonObject &req, const std::string &boundDoc,
+                         uint64_t client)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+    const QString name = req.value(QLatin1String("name")).toString();
+    // "index": a group command's member, 1-based as the widget layer's
+    // `commandIndex` counts (docs/Sandbox.md 7.18). The allowlist judges
+    // what will RUN: a member of a group -- the Sketcher's create tools
+    // sit in Sketcher_Comp* groups on its tool bars -- is admitted by its
+    // own name, and a group named without an index by the group's, which
+    // no group passes (the default member is the caller's to name).
+    const int index = req.value(QLatin1String("index")).toInt(0);
+    QByteArray cmd = name.toUtf8();
+    QString member;
+    const bool host = sceneControlAccess() == Render::ClientAccess::Host;
+    if (index > 0) {
+        Command *group = Application::Instance->commandManager()
+                             .getCommandByName(cmd.constData());
+        if (!group)
+            return errorReply(id, "UnknownCommand", name);
+        member = groupMemberCommand(group, index);
+        if (member.isEmpty() || (!host && !isBrowserSafeCommand(member)))
+            return errorReply(id, "CommandRefused",
+                              member.isEmpty() ? name : member);
+    }
+    else if (!host && !isBrowserSafeCommand(name))
+        return errorReply(id, "CommandRefused", name);
+
+    // A named document only when it is in this connection's reach
+    const QString docName = req.value(QLatin1String("doc")).toString();
+    App::Document *doc = requestDocument(req, boundDoc);
+    if (!doc)
+        return errorReply(id, "UnknownDocument", docName);
+
+    ViewerContext *viewer = nullptr;
+    if (SceneServeSource *source = SceneServeSource::sourceFor(doc)) {
+        viewer = source->viewerFor(client);
+        if (!viewer)
+            return errorReply(id, "NoView",
+                              QStringLiteral("state a camera before editing"));
+    }
+    // The tool asks its view for a cursor, for the on-view parameters and
+    // for the editing root, and every one of those questions has a wrong
+    // answer in a process with several browsers connected.
+    ViewerScope scope(viewer);
+    try {
+        if (index > 0) {
+            // A click on a member is two things on the desktop: the
+            // member's own action runs its command, and the group's
+            // ActionGroup::onActivated moves the default with
+            // invoke(index, TriggerChildAction) -- which ONLY moves it, a
+            // group's activated() runs nothing on that trigger. Both, then,
+            // or the default moves and no tool starts.
+            auto &manager = Application::Instance->commandManager();
+            manager.runCommandByName(member.toUtf8().constData());
+            if (Command *group = manager.getCommandByName(cmd.constData()))
+                group->invoke(index - 1, Command::TriggerChildAction);
+        }
+        else
+            Application::Instance->commandManager().runCommandByName(cmd.constData());
+    }
+    catch (Base::Exception &e) {
+        return errorReply(id, "CommandFailed", QString::fromUtf8(e.what()));
+    }
+
+    QJsonObject reply;
+    reply[QLatin1String("id")] = id;
+    reply[QLatin1String("ok")] = true;
+    reply[QLatin1String("name")] = name;
+    return reply;
+}
+
+/// Give one on-view entry box the keys, at the client's asking.
+///
+/// The only thing about those boxes a client decides. What is typed into
+/// one is decided here -- the key goes up as an ordinary input frame and
+/// reaches the box through DrawSketchKeyboardManager, the same rule and the
+/// same widget the desktop uses (sec 8.7).
+QJsonObject onViewFocusOp(const QJsonObject &req, const std::string &boundDoc,
+                          uint64_t client)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+
+    // A named document only when it is in this connection's reach
+    const QString docName = req.value(QLatin1String("doc")).toString();
+    App::Document *doc = requestDocument(req, boundDoc);
+    if (!doc)
+        return errorReply(id, "UnknownDocument", docName);
+
+    SceneServeSource *source = SceneServeSource::sourceFor(doc);
+    MirrorViewer *mirror = source ? source->mirrorViewerFor(client) : nullptr;
+    if (!mirror)
+        return errorReply(id, "NoView",
+                          QStringLiteral("state a camera before editing"));
+
+    const int index = req.value(QLatin1String("index")).toInt(-1);
+    if (!mirror->focusOnViewParameter(index))
+        return errorReply(id, "NoSuchParameter", QString::number(index));
+
+    QJsonObject reply;
+    reply[QLatin1String("id")] = id;
+    reply[QLatin1String("ok")] = true;
+    reply[QLatin1String("index")] = index;
+    return reply;
+}
+
+
+/// The `undo` and `redo` ops (docs/ThinClient.md 8.11 item 2): the
+/// document's transactions, which under the shared session are everyone's
+/// -- one document, one undo stack. What Ctrl+Z does on the desktop,
+/// through Gui::Document::undo, and nothing else: no scope is opened, so
+/// the room's selection is cleared as the desktop's is; then every
+/// client's own instance is cleared too, and told, since a selection
+/// made in the state being undone is as stale in one as in the other.
+///
+/// Refused, not prompted: Gui::Document::checkTransactionID asks through
+/// a QMessageBox when a grouped transaction in another document has
+/// others in front of it, and a modal on the GUI thread of a process
+/// serving several browsers stops serving all of them. The reply carries
+/// the stacks after the op, by transaction name, for a client's menu.
+QJsonObject undoRedoOp(const QJsonObject &req, const std::string &boundDoc, bool redo)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+
+    // A named document only when it is in this connection's reach
+    const QString docName = req.value(QLatin1String("doc")).toString();
+    App::Document *doc = requestDocument(req, boundDoc);
+    if (!doc)
+        return errorReply(id, "UnknownDocument", docName);
+    Gui::Document *gdoc = Application::Instance->getDocument(doc);
+    if (!gdoc)
+        return errorReply(id, "UnknownDocument", QString::fromUtf8(doc->getName()));
+
+    const QJsonValue stepsValue = req.value(QLatin1String("steps"));
+    const int steps = stepsValue.isUndefined() ? 1 : stepsValue.toInt(0);
+    if (steps < 1)
+        return errorReply(id, "BadRequest", QStringLiteral("steps must be >= 1"));
+    const int available = redo ? doc->getAvailableRedos() : doc->getAvailableUndos();
+    if (available < steps)
+        return errorReply(id, redo ? "NothingToRedo" : "NothingToUndo",
+                          QStringLiteral("%1 of %2 available").arg(steps).arg(available));
+    if (gdoc->undoRedoWouldPrompt(!redo, steps))
+        return errorReply(id, "GroupedTransactions",
+                          QStringLiteral("grouped transactions in other documents "
+                                         "need the desktop user's answer"));
+
+    if (redo)
+        gdoc->redo(steps);
+    else
+        gdoc->undo(steps);
+    if (SceneServeSource *source = SceneServeSource::sourceFor(doc))
+        source->clearClientSelections();
+
+    QJsonObject reply;
+    reply[QLatin1String("id")] = id;
+    reply[QLatin1String("ok")] = true;
+    reply[QLatin1String("doc")] = QString::fromUtf8(doc->getName());
+    QJsonArray undos;
+    for (const auto &name : gdoc->getUndoVector())
+        undos.append(QString::fromUtf8(name.c_str()));
+    QJsonArray redos;
+    for (const auto &name : gdoc->getRedoVector())
+        redos.append(QString::fromUtf8(name.c_str()));
+    reply[QLatin1String("undos")] = undos;
+    reply[QLatin1String("redos")] = redos;
+    return reply;
+}
+
+} // namespace
+
+void Gui::registerSceneControlOp(const QString &op, bool mutating,
+                                 SceneControlOpHandler handler)
+{
+    registeredOps()[op] = RegisteredOp{mutating, std::move(handler), nullptr};
+}
+
+void Gui::registerSceneControlOp(const QString &op, bool mutating,
+                                 SceneControlClientOpHandler handler)
+{
+    registeredOps()[op] = RegisteredOp{mutating, nullptr, std::move(handler)};
+}
+
+QJsonObject Gui::sceneControlError(const QJsonValue &id, const char *code,
+                                   const QString &message)
+{
+    return errorReply(id, code, message);
+}
+
+App::Document *Gui::sceneControlDocument(const QJsonObject &req,
+                                         const std::string &boundDoc)
+{
+    return requestDocument(req, boundDoc);
+}
+
+namespace {
+
+/// The access of the request being answered (sceneControlAccess). GUI
+/// thread only, like the dispatch; a scope puts the outer value back, as
+/// an op may run a nested event loop that answers another request.
+Render::ClientAccess &currentAccess()
+{
+    static Render::ClientAccess access = Render::ClientAccess::Host;
+    return access;
+}
+
+struct AccessScope
+{
+    explicit AccessScope(Render::ClientAccess access)
+        : saved(currentAccess())
+    {
+        currentAccess() = access;
+    }
+    ~AccessScope()
+    {
+        currentAccess() = saved;
+    }
+    AccessScope(const AccessScope &) = delete;
+    AccessScope &operator=(const AccessScope &) = delete;
+    Render::ClientAccess saved;
+};
+
+} // namespace
+
+Render::ClientAccess Gui::sceneControlAccess()
+{
+    return currentAccess();
+}
 
 std::string Gui::handleSceneControlRequest(const std::string &json,
                                            const std::string &boundDoc,
-                                           bool viewOnly)
+                                           Render::ClientAccess access,
+                                           uint64_t client)
 {
     // The catalogs the omni search mirror keeps announce themselves
     // when they change (docs/OmniSearch.md sec 6). Hooked from here,
     // not only from installSceneControlHandler(): a served document
     // routes its requests through its own handler (SceneServeSource),
-    // and the first request is early enough.
+    // and the first request is early enough. The widget stream's ops
+    // likewise (docs/Sandbox.md 7.18): registered only by the default
+    // group's handler, every widgets.* op on a served document was an
+    // UnknownOp, and the tool bars never reached a browser.
     OmniControl::install();
+    installSceneWidgetOps();
     QJsonParseError err;
     QJsonDocument parsed = QJsonDocument::fromJson(
             QByteArray(json.data(), int(json.size())), &err);
@@ -688,15 +1117,47 @@ std::string Gui::handleSceneControlRequest(const std::string &json,
         // the mode rides the request rather than being enforced by the
         // transport (docs/MultiDocServe.md §8). Reads stay answered —
         // a view-only client's property inspector keeps working.
+        auto registered = registeredOps().find(op);
         const bool mutating = op == QLatin1String("setProperty")
-            || OmniControl::isMutating(op);
-        if (viewOnly && mutating)
+            || op == QLatin1String("edit")
+            || op == QLatin1String("resetEdit")
+            || op == QLatin1String("command")
+            || op == QLatin1String("onViewFocus")
+            || op == QLatin1String("undo")
+            || op == QLatin1String("redo")
+            || (registered != registeredOps().end() && registered->second.mutating);
+        // The few that reach beyond the document -- the host's
+        // preferences -- need a host (docs/ShareAccess.md sec 2.2)
+        const Render::ClientAccess required =
+            std::max(mutating ? Render::ClientAccess::Edit : Render::ClientAccess::View,
+                     OmniControl::requiredAccess(op));
+        AccessScope scope(access);
+        if (access < required && access == Render::ClientAccess::View)
             reply = errorReply(req.value(QLatin1String("id")), "ViewOnly",
                                QStringLiteral("this connection may not edit"));
+        else if (access < required)
+            reply = errorReply(req.value(QLatin1String("id")), "Forbidden",
+                               QStringLiteral("this connection may not act on the host"));
         else if (op == QLatin1String("getProperties"))
             reply = getProperties(req, boundDoc);
         else if (op == QLatin1String("setProperty"))
             reply = setProperty(req, boundDoc);
+        else if (registered != registeredOps().end())
+            reply = registered->second.clientHandler
+                ? registered->second.clientHandler(req, boundDoc, client)
+                : registered->second.handler(req, boundDoc);
+        else if (op == QLatin1String("edit"))
+            reply = setEditOp(req, boundDoc, client);
+        else if (op == QLatin1String("resetEdit"))
+            reply = resetEditOp(req, boundDoc);
+        else if (op == QLatin1String("command"))
+            reply = runCommandOp(req, boundDoc, client);
+        else if (op == QLatin1String("onViewFocus"))
+            reply = onViewFocusOp(req, boundDoc, client);
+        else if (op == QLatin1String("undo"))
+            reply = undoRedoOp(req, boundDoc, false);
+        else if (op == QLatin1String("redo"))
+            reply = undoRedoOp(req, boundDoc, true);
         else if (OmniControl::handle(op, req, boundDoc, reply))
             ;
         else
@@ -709,6 +1170,8 @@ std::string Gui::handleSceneControlRequest(const std::string &json,
 
 void Gui::installSceneControlHandler(const std::string &docName)
 {
+    // the widget stream's ops ride this channel (docs/Sandbox.md 7.18)
+    installSceneWidgetOps();
     OmniControl::install();
     // Installed on the named document's group (empty = the default
     // group). The document is bound by NAME and re-resolved per request
@@ -726,7 +1189,8 @@ void Gui::installSceneControlHandler(const std::string &docName)
                     shared->reply(
                             handleSceneControlRequest(shared->json,
                                                       docName,
-                                                      shared->viewOnly));
+                                                      shared->access,
+                                                      shared->client));
                 }, Qt::QueuedConnection);
             }, docName);
 }

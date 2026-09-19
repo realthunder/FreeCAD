@@ -8,8 +8,10 @@
     "jsxImportSource": "solid-js",
     "types": ["vite/client"],
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "isolatedModules": true,
     "skipLibCheck": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/widgets/gate.ts"]
 }

@@ -25,6 +25,7 @@
 #define GUI_EDITABLEDATUMLABEL_H
 
 #include <QObject>
+#include <QString>
 #include <Gui/QuantitySpinBox.h>
 
 #include "SoDatumLabel.h"
@@ -33,10 +34,11 @@
 
 class SoNodeSensor;
 class SoTransform;
+class QKeyEvent;
 
 namespace Gui {
 
-class View3DInventorViewer;
+class ViewerContext;
 
 
 class GuiExport EditableDatumLabel : public QObject
@@ -50,7 +52,7 @@ public:
         Dimensioning
     };
 
-    EditableDatumLabel(View3DInventorViewer* view, const Base::Placement& plc, SbColor color, bool autoDistance = false, bool avoidMouseCursor = false);
+    EditableDatumLabel(ViewerContext* view, const Base::Placement& plc, SbColor color, bool autoDistance = false, bool avoidMouseCursor = false);
 
     ~EditableDatumLabel() override;
 
@@ -79,6 +81,26 @@ public:
 
     Function getFunction();
 
+    /** @name What a view that cannot show a widget streams instead
+     *
+     * The entry box is the same QuantitySpinBox on either tier; on a mirror
+     * it is simply never parented and never shown, and these are read to
+     * put it on the client's screen (docs/ThinClient.md section 8.7). All
+     * of it is display state -- the value, its text, where it belongs and
+     * what is selected in it -- because every decision about the text is
+     * taken on this side.
+     */
+    //@{
+    /// Where the box belongs, in world coordinates. The client projects it.
+    SbVec3f getAnchorPoint() const;
+    /// The box's text exactly as a desktop user would read it.
+    QString getText() const;
+    /// What selectNumber() left selected, so the client can show the same.
+    void getSelection(int& start, int& length) const;
+    /// Deliver a key to the box, the desktop's focus having done it there.
+    bool sendKeyEvent(QKeyEvent* event);
+    //@}
+
     // NOLINTBEGIN
     SoDatumLabel* label;
     bool isSet;
@@ -94,11 +116,13 @@ Q_SIGNALS:
 private:
     void positionSpinbox();
     SbVec3f getTextCenterPoint() const;
+    /// Tell the view its on-view set moved, so a mirror can restate it.
+    void notifyChanged();
 
 private:
     SoSeparator* root;
     SoTransform* transform;
-    View3DInventorViewer* viewer;
+    ViewerContext* viewer;
     QuantitySpinBox* spinBox;
     SoNodeSensor* cameraSensor;
     SbVec3f midpos;

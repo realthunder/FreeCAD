@@ -416,7 +416,6 @@ class _ArchReportDocObserver:
 
 
 class _ArchReport:
-
     def __init__(self, obj):
         self.setProperties(obj)
         # Keep a reference to the host object so helper methods can persist data

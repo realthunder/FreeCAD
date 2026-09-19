@@ -64,6 +64,13 @@ public:
     QStringList getPaths() const;
     /// Returns the absolute file names of icons found in the given search paths
     QStringList findIconFiles() const;
+    /// The bytes behind an icon name for a client that caches icons by
+    /// name (docs/Sandbox.md 7.18): the SVG file's text (`format` "svg")
+    /// when the name -- a theme name, a file path, an override -- is
+    /// served from an SVG, else a PNG rendered at `size` px (`format`
+    /// "png") from whatever pixmap the name resolves to; empty, with
+    /// `format` cleared, when the name resolves to nothing.
+    QByteArray iconSource(const char* name, int size, QString& format);
     /// Adds a build in XPM pixmap under a given name
     void addXPM(const char* name, const char** pXPM);
     /** Adds a build in XPM pixmap under a given name

@@ -331,7 +331,7 @@ bool ViewProviderPointMarker::isPartOfPhysicalObject() const
 
 void ViewProviderMeasureDistance::measureDistanceCallback(void * ud, SoEventCallback * n)
 {
-    auto view  = static_cast<Gui::View3DInventorViewer*>(n->getUserData());
+    auto view  = Gui::View3DInventorViewer::fromEventCallback(n);
     auto pm = static_cast<PointMarker*>(ud);
     const SoEvent* ev = n->getEvent();
     if (ev->isOfType(SoKeyboardEvent::getClassTypeId())) {

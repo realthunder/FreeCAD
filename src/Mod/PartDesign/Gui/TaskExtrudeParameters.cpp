@@ -30,10 +30,13 @@
 #include <Base/Tools.h>
 #include <Base/UnitsApi.h>
 #include <Gui/Command.h>
+#include <Gui/Fw/FwQtView.h>
+#include <Gui/Fw/FwWidgets.h>
+#include <Gui/Widgets.h>
 #include <Mod/PartDesign/App/FeatureExtrude.h>
 #include <Mod/PartDesign/App/FeatureExtrusion.h>
 
-#include "ui_TaskPadPocketParameters.h"
+#include "fwui_TaskPadPocketParameters.h"
 #include "TaskExtrudeParameters.h"
 #include "ReferenceSelection.h"
 #include "Utils.h"
@@ -50,26 +53,29 @@ TaskExtrudeParameters::TaskExtrudeParameters(ViewProviderSketchBased *SketchBase
                                          const QString& parname)
     : TaskSketchBasedParameters(SketchBasedView, parent, pixmapname, parname)
 {
-    // we need a separate container widget to add all controls to
-    proxy = new QWidget(this);
+    // the form as models, realized by the Qt backend into the proxy
+    form.reset(new Gui::Fw::UiForm());
     ui.reset(new Ui_TaskPadPocketParameters());
-    ui->setupUi(proxy);
+    ui->setupUi(form.get());
+    proxy = Gui::FwQt::realize(form.get(), this);
 
-    addBlinkWidget(ui->lineFaceName);
+    QWidget* lineFaceName = Gui::FwQt::widgetOf(ui->lineFaceName);
+    addBlinkWidget(lineFaceName);
 
-    ui->lineFaceName->installEventFilter(this);
-    ui->lineFaceName->setMouseTracking(true);
+    lineFaceName->installEventFilter(this);
+    lineFaceName->setMouseTracking(true);
 
-    ui->directionCB->installEventFilter(this);
+    Gui::FwQt::widgetOf(ui->directionCB)->installEventFilter(this);
 
     this->initUI(proxy);
     if (vp && vp->getObject()) {
-        hookPropertyBool(vp->getObject(), "Linearize", ui->checkBoxLinearize, "Linearize");
+        hookPropertyBool(vp->getObject(), "Linearize",
+                         Gui::FwQt::widgetOf(ui->checkBoxLinearize), "Linearize");
     }
 
     Gui::ButtonGroup* group = new Gui::ButtonGroup(this);
-    group->addButton(ui->checkBoxMidplane);
-    group->addButton(ui->checkBoxReversed);
+    group->addButton(qobject_cast<QAbstractButton*>(Gui::FwQt::widgetOf(ui->checkBoxMidplane)));
+    group->addButton(qobject_cast<QAbstractButton*>(Gui::FwQt::widgetOf(ui->checkBoxReversed)));
     group->setExclusive(true);
 
     this->groupLayout()->addWidget(proxy);
@@ -176,8 +182,10 @@ void TaskExtrudeParameters::refresh()
     double innerAngle = extrude->TaperInnerAngle.getValue();
     double innerAngle2 = extrude->TaperInnerAngleRev.getValue();
 
-    // Temporarily prevent unnecessary feature recomputes
-    for (QWidget* child : proxy->findChildren<QWidget*>())
+    // Temporarily prevent unnecessary feature recomputes: the slots hang
+    // on the models' signals (the backend's mirror is not a signal and
+    // still reaches the widgets)
+    for (auto* child : form->findChildren<Gui::Fw::Widget*>())
         child->blockSignals(true);
 
     // Fill data into dialog elements
@@ -230,8 +238,7 @@ void TaskExtrudeParameters::refresh()
 
     ui->autoInnerTaperAngle->setChecked(extrude->AutoTaperInnerAngle.getValue());
 
-    // Temporarily prevent unnecessary feature recomputes
-    for (QWidget* child : proxy->findChildren<QWidget*>())
+    for (auto* child : form->findChildren<Gui::Fw::Widget*>())
         child->blockSignals(false);
 
     setCheckboxes();
@@ -260,54 +267,55 @@ void TaskExtrudeParameters::connectSlots()
 {
     QMetaObject::connectSlotsByName(this);
 
-    Base::connect(ui->lengthEdit, qOverload<double>(&Gui::PrefQuantitySpinBox::valueChanged),
+    Base::connect(ui->lengthEdit, qOverload<double>(&Gui::Fw::QuantitySpinBox::valueChanged),
         this, &TaskExtrudeParameters::onLengthChanged);
-    Base::connect(ui->lengthEdit2, qOverload<double>(&Gui::PrefQuantitySpinBox::valueChanged),
+    Base::connect(ui->lengthEdit2, qOverload<double>(&Gui::Fw::QuantitySpinBox::valueChanged),
         this, &TaskExtrudeParameters::onLength2Changed);
-    Base::connect(ui->offsetEdit, qOverload<double>(&Gui::PrefQuantitySpinBox::valueChanged),
+    Base::connect(ui->offsetEdit, qOverload<double>(&Gui::Fw::QuantitySpinBox::valueChanged),
         this, &TaskExtrudeParameters::onOffsetChanged);
-    Base::connect(ui->taperAngleEdit, qOverload<double>(&Gui::PrefQuantitySpinBox::valueChanged),
+    Base::connect(ui->taperAngleEdit, qOverload<double>(&Gui::Fw::QuantitySpinBox::valueChanged),
         this, &TaskExtrudeParameters::onTaperChanged);
-    Base::connect(ui->taperAngleEdit2, qOverload<double>(&Gui::PrefQuantitySpinBox::valueChanged),
+    Base::connect(ui->taperAngleEdit2, qOverload<double>(&Gui::Fw::QuantitySpinBox::valueChanged),
         this, &TaskExtrudeParameters::onTaper2Changed);
-    Base::connect(ui->innerTaperEdit, qOverload<double>(&Gui::PrefQuantitySpinBox::valueChanged),
+    Base::connect(ui->innerTaperEdit, qOverload<double>(&Gui::Fw::QuantitySpinBox::valueChanged),
         this, &TaskExtrudeParameters::onInnerAngleChanged);
-    Base::connect(ui->innerTaperEdit2, qOverload<double>(&Gui::PrefQuantitySpinBox::valueChanged),
+    Base::connect(ui->innerTaperEdit2, qOverload<double>(&Gui::Fw::QuantitySpinBox::valueChanged),
         this, &TaskExtrudeParameters::onInnerAngle2Changed);
-    Base::connect(ui->directionCB, qOverload<int>(&QComboBox::activated),
+    Base::connect(ui->directionCB, qOverload<int>(&Gui::Fw::QComboBox::activated),
         this, &TaskExtrudeParameters::onDirectionCBChanged);
-    Base::connect(ui->directionCB, QOverload<int>::of(&QComboBox::highlighted),
+    Base::connect(ui->directionCB, QOverload<int>::of(&Gui::Fw::QComboBox::highlighted),
         [this](int index) {
             if (index >= 3 && index < (int)axesInList.size())
                 PartDesignGui::highlightObjectOnTop(axesInList[index]);
             else
                 Gui::Selection().rmvPreselect();
         });
-    Base::connect(ui->checkBoxAlongDirection, &QCheckBox::toggled,
+    Base::connect(ui->checkBoxAlongDirection, &Gui::Fw::QCheckBox::toggled,
         this, &TaskExtrudeParameters::onAlongSketchNormalChanged);
-    Base::connect(ui->groupBoxDirection, &QGroupBox::toggled,
+    Base::connect(ui->groupBoxDirection, &Gui::Fw::QGroupBox::toggled,
         this, &TaskExtrudeParameters::onDirectionToggled);
-    Base::connect(ui->XDirectionEdit, qOverload<double>(&Gui::DoubleSpinBox::valueChanged),
+    Base::connect(ui->XDirectionEdit, qOverload<double>(&Gui::Fw::DoubleSpinBox::valueChanged),
         this, &TaskExtrudeParameters::onXDirectionEditChanged);
-    Base::connect(ui->YDirectionEdit, qOverload<double>(&Gui::DoubleSpinBox::valueChanged),
+    Base::connect(ui->YDirectionEdit, qOverload<double>(&Gui::Fw::DoubleSpinBox::valueChanged),
         this, &TaskExtrudeParameters::onYDirectionEditChanged);
-    Base::connect(ui->ZDirectionEdit, qOverload<double>(&Gui::DoubleSpinBox::valueChanged),
+    Base::connect(ui->ZDirectionEdit, qOverload<double>(&Gui::Fw::DoubleSpinBox::valueChanged),
         this, &TaskExtrudeParameters::onZDirectionEditChanged);
-    Base::connect(ui->checkBoxMidplane, &QCheckBox::toggled,
+    Base::connect(ui->checkBoxMidplane, &Gui::Fw::QCheckBox::toggled,
         this, &TaskExtrudeParameters::onMidplaneChanged);
-    Base::connect(ui->checkBoxReversed, &QCheckBox::toggled,
+    Base::connect(ui->checkBoxReversed, &Gui::Fw::QCheckBox::toggled,
         this, &TaskExtrudeParameters::onReversedChanged);
-    Base::connect(ui->checkBoxUsePipe, &QCheckBox::toggled,
+    Base::connect(ui->checkBoxUsePipe, &Gui::Fw::QCheckBox::toggled,
         this, &TaskExtrudeParameters::onUsePipeChanged);
-    Base::connect(ui->checkFaceLimits, &QCheckBox::toggled,
+    Base::connect(ui->checkFaceLimits, &Gui::Fw::QCheckBox::toggled,
         this, &TaskExtrudeParameters::onCheckFaceLimitsChanged);
-    Base::connect(ui->changeMode, qOverload<int>(&QComboBox::currentIndexChanged),
+    Base::connect(ui->changeMode, qOverload<int>(&Gui::Fw::QComboBox::currentIndexChanged),
         this, &TaskExtrudeParameters::onModeChanged);
-    Base::connect(ui->buttonFace, &QPushButton::toggled,
+    Base::connect(ui->buttonFace, &Gui::Fw::QPushButton::toggled,
         this, &TaskExtrudeParameters::onButtonFace);
-    Base::connect(ui->lineFaceName, &QLineEdit::textEdited,
+    Base::connect(ui->lineFaceName, &Gui::Fw::QLineEdit::textEdited,
         this, &TaskExtrudeParameters::onFaceName);
-    Base::connect(static_cast<QAbstractButton*>(ui->autoInnerTaperAngle), &QCheckBox::toggled, [this](bool checked) {
+    Base::connect(static_cast<Gui::Fw::QAbstractButton*>(ui->autoInnerTaperAngle),
+                  &Gui::Fw::QAbstractButton::toggled, [this](bool checked) {
         PartDesign::FeatureExtrude* extrude = static_cast<PartDesign::FeatureExtrude*>(vp->getObject());
         setupTransaction();
         extrude->AutoTaperInnerAngle.setValue(checked);
@@ -330,7 +338,7 @@ void TaskExtrudeParameters::onButtonFace(const bool pressed)
     if (vp->getObject()->isDerivedFrom(PartDesign::Extrusion::getClassTypeId())) {
         flags |= AllowSelection::POINT | AllowSelection::EDGE;
     }
-    TaskSketchBasedParameters::onSelectReference(ui->buttonFace, flags);
+    TaskSketchBasedParameters::onSelectReference(Gui::FwQt::widgetOf(ui->buttonFace), flags);
 }
 
 void TaskExtrudeParameters::onSelectionModeChanged(SelectionMode)
@@ -377,7 +385,7 @@ bool TaskExtrudeParameters::eventFilter(QObject *o, QEvent *ev)
         Gui::Selection().rmvPreselect();
         break;
     case QEvent::Enter:
-        if (vp && o == ui->lineFaceName) {
+        if (vp && o == Gui::FwQt::widgetOf(ui->lineFaceName)) {
             auto extrude = static_cast<PartDesign::FeatureExtrude*>(vp->getObject());
             auto obj = extrude->UpToFace.getValue();
             if (obj) {
@@ -681,7 +689,7 @@ void TaskExtrudeParameters::onDirectionCBChanged(int num)
         // enter reference selection mode
         // to distinguish that this is the direction selection
         setDirectionMode(num);
-        TaskSketchBasedParameters::onSelectReference(ui->labelEdge, SelectionMode::refAxis,
+        TaskSketchBasedParameters::onSelectReference(Gui::FwQt::widgetOf(ui->labelEdge), SelectionMode::refAxis,
                                                      AllowSelection::EDGE |
                                                      AllowSelection::PLANAR |
                                                      AllowSelection::CIRCLE);
@@ -996,7 +1004,7 @@ void TaskExtrudeParameters::changeEvent(QEvent *e)
         QSignalBlocker face(ui->lineFaceName);
         QSignalBlocker mode(ui->changeMode);
 
-        addBlinkWidget(ui->lineFaceName);
+        addBlinkWidget(Gui::FwQt::widgetOf(ui->lineFaceName));
 
         // Save all items
         QStringList items;
@@ -1005,7 +1013,7 @@ void TaskExtrudeParameters::changeEvent(QEvent *e)
 
         // Translate direction items
         int index = ui->directionCB->currentIndex();
-        ui->retranslateUi(proxy);
+        // (the realized form retranslates itself on the language change)
 
         // Keep custom items
         for (int i = 0; i < ui->directionCB->count(); i++)

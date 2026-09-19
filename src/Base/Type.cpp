@@ -25,6 +25,8 @@
 #ifndef _PreComp_
 #include <cassert>
 #endif
+#include <filesystem>
+#include <system_error>
 
 /// Here the FreeCAD includes sorted by Base,App,Gui......
 #include "Type.h"
@@ -95,6 +97,11 @@ void Type::importModule(const char* TypeName)
         // remember already loaded modules
         set<string>::const_iterator pos = loadModuleSet.find(Mod);
         if (pos == loadModuleSet.end()) {
+            if (!moduleAllowed(Mod)) {
+                throw RuntimeError("type '" + string(TypeName) + "' names module '" + Mod
+                                   + "', which is not a FreeCAD module (not loaded and not "
+                                     "under a Mod directory); not imported");
+            }
             Interpreter().loadModule(Mod.c_str());
 #ifdef FC_LOGLOADMODULE
             Console().Log("Act: Module %s loaded through class %s \n", Mod.c_str(), TypeName);
@@ -102,6 +109,187 @@ void Type::importModule(const char* TypeName)
             loadModuleSet.insert(Mod);
         }
     }
+}
+
+vector<string> Type::moduleRoots;
+
+void Type::addModuleRoot(const std::string& dir)
+{
+    if (dir.empty()) {
+        return;
+    }
+    std::error_code ec;
+    std::filesystem::path p = std::filesystem::weakly_canonical(dir, ec);
+    if (ec) {
+        p = std::filesystem::path(dir).lexically_normal();
+    }
+    string s = p.generic_string();
+    while (s.size() > 1 && s.back() == '/') {
+        s.pop_back();
+    }
+    for (const auto& r : moduleRoots) {
+        if (r == s) {
+            return;
+        }
+    }
+    moduleRoots.push_back(s);
+}
+
+const std::vector<std::string>& Type::getModuleRoots()
+{
+    return moduleRoots;
+}
+
+namespace
+{
+/// Is `file` inside `root` (a canonical directory), at a separator boundary?
+bool underRoot(const std::string& file, const std::string& root)
+{
+    std::error_code ec;
+    std::filesystem::path p = std::filesystem::weakly_canonical(file, ec);
+    if (ec) {
+        p = std::filesystem::path(file).lexically_normal();
+    }
+    const string f = p.generic_string();
+    return f.size() > root.size() && f.compare(0, root.size(), root) == 0
+        && f[root.size()] == '/';
+}
+}  // namespace
+
+namespace
+{
+/// The locations a spec would import from: its origin (a file) and, for
+/// a package, its search directories (a namespace package has only
+/// those).  "built-in" and "frozen" are not paths and match no root.
+std::vector<std::string> specLocations(PyObject* spec)
+{
+    std::vector<std::string> locations;
+    PyObject* origin = PyObject_GetAttrString(spec, "origin");
+    if (origin && PyUnicode_Check(origin)) {
+        locations.emplace_back(PyUnicode_AsUTF8(origin));
+    }
+    Py_XDECREF(origin);
+    PyObject* dirs = PyObject_GetAttrString(spec, "submodule_search_locations");
+    if (dirs && PySequence_Check(dirs)) {
+        PyObject* seq = PySequence_Fast(dirs, "locations");
+        if (seq) {
+            for (Py_ssize_t i = 0; i < PySequence_Fast_GET_SIZE(seq); ++i) {
+                PyObject* d = PySequence_Fast_GET_ITEM(seq, i);
+                if (PyUnicode_Check(d)) {
+                    locations.emplace_back(PyUnicode_AsUTF8(d));
+                }
+            }
+            Py_DECREF(seq);
+        }
+    }
+    Py_XDECREF(dirs);
+    PyErr_Clear();
+    return locations;
+}
+
+/// Where the code that produced a spec lives: the file of the module the
+/// loader's class is defined in.  A spec with no location at all comes
+/// from a meta-path finder -- FEM's femtools.migrate_app maps a saved
+/// legacy name onto today's module -- and such a finder is admitted by
+/// where it was defined, as the module it stands for would be.
+std::string loaderHome(PyObject* spec)
+{
+    std::string home;
+    PyObject* loader = PyObject_GetAttrString(spec, "loader");
+    if (loader && loader != Py_None) {
+        PyObject* modName = PyObject_GetAttrString((PyObject*)Py_TYPE(loader), "__module__");
+        if (modName && PyUnicode_Check(modName)) {
+            PyObject* mods = PyImport_GetModuleDict();
+            PyObject* mod = mods ? PyDict_GetItem(mods, modName) : nullptr;
+            if (mod) {
+                PyObject* file = PyObject_GetAttrString(mod, "__file__");
+                if (file && PyUnicode_Check(file)) {
+                    home = PyUnicode_AsUTF8(file);
+                }
+                Py_XDECREF(file);
+            }
+        }
+        Py_XDECREF(modName);
+    }
+    Py_XDECREF(loader);
+    PyErr_Clear();
+    return home;
+}
+}  // namespace
+
+bool Type::moduleAllowed(const std::string& module)
+{
+    if (!Py_IsInitialized()) {
+        return false;
+    }
+    PyGILStateLocker lock;
+    // already loaded: nothing new runs
+    PyObject* mods = PyImport_GetModuleDict();
+    if (mods && PyDict_GetItemString(mods, module.c_str())) {
+        return true;
+    }
+    PyObject* util = PyImport_ImportModule("importlib.util");
+    if (!util) {
+        PyErr_Clear();
+        return false;
+    }
+    // Where would the import come from?  importlib.util.find_spec on a
+    // top-level name imports nothing itself; on a dotted name it imports
+    // the PARENT, so the name is walked one level at a time and a level
+    // is looked up only once the levels above it are loaded or found
+    // under a root -- a loaded stdlib package ("xml") does not admit an
+    // unloaded submodule of its own ("xml.etree.ElementTree"), and the
+    // parent an inner find_spec imports is one this check has admitted.
+    bool allowed = true;
+    std::string::size_type pos = 0;
+    while (allowed && pos <= module.size()) {
+        std::string::size_type dot = module.find('.', pos);
+        if (dot == std::string::npos) {
+            dot = module.size();
+        }
+        const std::string prefix = module.substr(0, dot);
+        pos = dot + 1;
+        if (mods && PyDict_GetItemString(mods, prefix.c_str())) {
+            continue;
+        }
+        PyObject* spec = PyObject_CallMethod(util, "find_spec", "s", prefix.c_str());
+        if (!spec) {
+            // an invalid name, a broken finder: let the import report it
+            PyErr_Clear();
+            break;
+        }
+        if (spec == Py_None) {
+            // no such module anywhere: the import fails with its own error
+            Py_DECREF(spec);
+            break;
+        }
+        std::vector<std::string> locations = specLocations(spec);
+        if (locations.empty()) {
+            // no file: a finder's answer -- judged by the finder's home
+            // ("built-in" and "frozen" origins are locations, and match
+            // no root)
+            const std::string home = loaderHome(spec);
+            if (!home.empty()) {
+                locations.push_back(home);
+            }
+        }
+        Py_DECREF(spec);
+        bool under = false;
+        for (const auto& loc : locations) {
+            for (const auto& root : moduleRoots) {
+                if (underRoot(loc, root)) {
+                    under = true;
+                    break;
+                }
+            }
+            if (under) {
+                break;
+            }
+        }
+        allowed = under;
+    }
+    Py_DECREF(util);
+    return allowed;
 }
 
 string Type::getModuleName(const char* ClassName)

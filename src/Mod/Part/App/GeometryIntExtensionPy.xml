@@ -22,6 +22,7 @@
             </UserDocu>
         </Documentation>
         <Parameter Name="Value" Type="Long"/>
+        <Sandbox tier="value"/>
     </Attribute>
   </PythonExport>
 </GenerateModel>

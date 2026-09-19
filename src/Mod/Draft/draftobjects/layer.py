@@ -45,6 +45,7 @@ class Layer:
     This class is normally used to extend a base `App::FeaturePython` object.
     """
 
+
     def __init__(self, obj):
         self.Type = "Layer"
         self.Object = obj
@@ -185,6 +186,7 @@ class LayerContainer:
     This class is normally used to extend
     a base `App::DocumentObjectGroupPython` object.
     """
+
 
     def __init__(self, obj):
         self.Type = "LayerContainer"

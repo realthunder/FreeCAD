@@ -29,6 +29,7 @@
 #include <QString>
 
 #include <FCGlobal.h>
+#include <Gui/Renderer/ClientAccess.h>
 
 namespace Gui {
 
@@ -49,8 +50,13 @@ namespace Gui {
  */
 namespace OmniControl {
 
-/// Whether \a op writes: the transport refuses it on a view-only connection
-GuiExport bool isMutating(const QString &op);
+/** What \a op needs of a connection (docs/ShareAccess.md sec 2.2): the
+ * parameter writes change the host's preferences for everyone the
+ * process serves, so they need a host; command.run changes the
+ * document, and the command it names is judged when it runs. View for
+ * everything else, an op that is not ours included.
+ */
+GuiExport Render::ClientAccess requiredAccess(const QString &op);
 
 /** Answer \a op when it is one of ours; false leaves \a reply untouched.
  * \a boundDoc names the served document the connection is joined to, as

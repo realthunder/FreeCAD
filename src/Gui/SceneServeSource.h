@@ -23,6 +23,7 @@
 #ifndef GUI_SCENESERVESOURCE_H
 #define GUI_SCENESERVESOURCE_H
 
+#include <cstdint>
 #include <memory>
 
 #include <QObject>
@@ -50,6 +51,8 @@ namespace Gui
 
 class Document;
 class SoFCUnifiedSelection;
+class ViewerContext;
+class MirrorViewer;
 
 /*!
  * Publishes a document to streaming viewers with no 3D view behind it
@@ -139,6 +142,26 @@ public:
      */
     void schedulePublish();
 
+    /** The selection sync toggle (docs/ThinClient.md 8.11).
+     *
+     * In a session a browser started, whether that session's selection
+     * is forwarded into the room so the desktop's tree, panels and
+     * highlight follow it. Default on; off leaves the desktop's chrome
+     * where its user left it. Set from a client through the
+     * `selectionSync` control op.
+     */
+    void setSelectionSync(bool on);
+    bool selectionSync() const;
+
+    /** Clear every client's own selection instance.
+     *
+     * What Gui::Document::undo does to the room, done to each mirror's
+     * instance, so that an undo from any view leaves no client holding a
+     * selection made in the state that is gone (docs/ThinClient.md 8.11
+     * item 2). Each client is told through its selection push.
+     */
+    void clearClientSelections();
+
     /// Traverse and publish now, on the calling thread. Returns false if
     /// nothing was published (invalid source, or the feeds had not
     /// changed).
@@ -146,11 +169,40 @@ public:
 
     /*!
      * Select what a world ray hits, as a remote viewer's click asks
-     * (docs/ThinClient.md). Picked against this source's graph and its
-     * synthetic camera, since there is no view to pick against. \a ctrl
-     * toggles rather than replaces the selection. GUI thread only.
+     * (docs/ThinClient.md sec 8.3). Resolved through \a client's mirror
+     * viewer -- its own camera and canvas, so its pick radius in pixels
+     * means what it means on the desktop -- and against this source's
+     * synthetic camera when that client has stated no camera, or is not
+     * named at all.
+     *
+     * \a flags is what the click MEANT, as the client resolved it against
+     * its own selection: a set operation, a scope and the element kind its
+     * pick filter admits (Render::ScenePickRequest::modifiers, and
+     * docs/ThinClient.md sec 8.5). The grammar stays on the client, where
+     * the state it depends on is; this side supplies the vocabulary.
+     *
+     * The pick commits into the room selection, which is what every
+     * viewer and every panel already reads. GUI thread only.
      */
-    void pickAndSelect(const SbVec3f &origin, const SbVec3f &dir, bool ctrl);
+    void pickAndSelect(const SbVec3f &origin, const SbVec3f &dir,
+                       uint32_t flags, uint64_t client = 0);
+
+    /*!
+     * The view  client is looking through -- its mirror viewer
+     * (docs/ThinClient.md sec 8.3) -- or null when it has stated no
+     * camera. This is the type an edit mode is given, and it is what an
+     * edit entered from a browser has to be bound to: a served document
+     * has no 3D view, so there is nothing else for setEdit to find. GUI
+     * thread only.
+     */
+    ViewerContext *viewerFor(uint64_t client) const;
+
+    /*!
+     * The same view as the mirror it is, for the few things that are the
+     * mirror's own rather than any view's -- its on-view parameter set
+     * (docs/ThinClient.md sec 8.7). GUI thread only.
+     */
+    MirrorViewer *mirrorViewerFor(uint64_t client) const;
 
 private Q_SLOTS:
     void onPublishTimeout();

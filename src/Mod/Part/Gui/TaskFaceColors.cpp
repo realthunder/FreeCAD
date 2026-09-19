@@ -198,7 +198,7 @@ public:
     }
     static void selectionCallback(void* ud, SoEventCallback* cb)
     {
-        Gui::View3DInventorViewer* view = static_cast<Gui::View3DInventorViewer*>(cb->getUserData());
+        Gui::View3DInventorViewer* view = Gui::View3DInventorViewer::fromEventCallback(cb);
         view->removeEventCallback(SoMouseButtonEvent::getClassTypeId(), selectionCallback, ud);
         view->setSelectionEnabled(true);
 

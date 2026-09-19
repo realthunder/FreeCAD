@@ -505,7 +505,7 @@ void InteractiveScale::setDistance(const SbVec3f& pos3d)
 void InteractiveScale::findPointOnImagePlane(SoEventCallback * ecb)
 {
     const SoEvent * mbe = ecb->getEvent();
-    auto view  = static_cast<Gui::View3DInventorViewer*>(ecb->getUserData());
+    auto view  = Gui::View3DInventorViewer::fromEventCallback(ecb);
     std::unique_ptr<SoPickedPoint> pp(view->getPointOnRay(mbe->getPosition(), viewProv));
     if (pp) {
         auto pos3d = pp->getPoint();
@@ -543,7 +543,7 @@ void InteractiveScale::getMousePosition(void * ud, SoEventCallback * ecb)
 {
     auto scale = static_cast<InteractiveScale*>(ud);
     const SoEvent* l2e = ecb->getEvent();
-    auto view  = static_cast<Gui::View3DInventorViewer*>(ecb->getUserData());
+    auto view  = Gui::View3DInventorViewer::fromEventCallback(ecb);
 
     if (scale->points.size() == 1) {
         ecb->setHandled();

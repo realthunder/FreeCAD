@@ -40,6 +40,7 @@
                 </UserDocu>
             </Documentation>
             <Parameter Name="MaxDegree" Type="Long"/>
+            <Sandbox tier="value"/>
         </Attribute>
         <Attribute Name="NbUPoles" ReadOnly="true">
             <Documentation>
@@ -165,6 +166,7 @@
                     Returns the parametric bounds (U1, U2, V1, V2) of this B-Spline surface.
                 </UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="isURational" Const="true">
             <Documentation>
@@ -441,6 +443,7 @@
             <Documentation>
                 <UserDocu>Returns the table of poles of this B-Spline surface.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="setWeight">
             <Documentation>
@@ -713,6 +716,7 @@
                     the y starting point Y0 and increment dY
                 </UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="buildFromPolesMultsKnots" Keyword="true">
             <Documentation>

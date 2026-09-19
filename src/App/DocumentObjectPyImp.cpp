@@ -32,6 +32,7 @@
 #include "Document.h"
 #include "DocumentObserver.h"
 #include "ExpressionParser.h"
+#include "ExpressionSecurityRuntime.h"
 #include "GeoFeature.h"
 #include "GeoFeatureGroupExtension.h"
 #include "GroupExtension.h"
@@ -369,8 +370,12 @@ PyObject*  DocumentObjectPy::evalExpression(PyObject *self, PyObject * args)
 
     PY_TRY {
         std::shared_ptr<Expression> shared_expr(Expression::parse(obj, expr));
-        if (shared_expr)
+        if (shared_expr) {
+            // The caller is host Python: evaluate as the session principal,
+            // not as the owner document.
+            ExpressionSecurity::Runtime::Scope secScope("session");
             return Py::new_reference_to(shared_expr->getPyValue());
+        }
         Py_Return;
     } PY_CATCH
 }

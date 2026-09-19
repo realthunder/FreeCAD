@@ -19,24 +19,28 @@
                 <UserDocu>X component of this Vertex.</UserDocu>
             </Documentation>
             <Parameter Name="X" Type="Float"/>
+            <Sandbox tier="value"/>
         </Attribute>
         <Attribute Name="Y" ReadOnly="true">
             <Documentation>
                 <UserDocu>Y component of this Vertex.</UserDocu>
             </Documentation>
             <Parameter Name="Y" Type="Float"/>
+            <Sandbox tier="value"/>
         </Attribute>
         <Attribute Name="Z" ReadOnly="true">
             <Documentation>
                 <UserDocu>Z component of this Vertex.</UserDocu>
             </Documentation>
             <Parameter Name="Z" Type="Float"/>
+            <Sandbox tier="value"/>
         </Attribute>
         <Attribute Name="Point" ReadOnly="true">
             <Documentation>
                 <UserDocu>Position of this Vertex as a Vector</UserDocu>
             </Documentation>
             <Parameter Name="Point" Type="Object"/>
+            <Sandbox tier="value"/>
         </Attribute>
         <Attribute Name="Tolerance">
             <Documentation>

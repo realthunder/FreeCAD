@@ -45,6 +45,7 @@
 #include <atomic>
 #include <cctype>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <deque>
 #include <cstdio>
@@ -390,9 +391,31 @@ public:
     /// The door's answer for one presentation.
     struct Judgement {
         bool admitted = false;
-        bool viewOnly = false;
+        ClientAccess access = ClientAccess::Edit;
         uint64_t grant = 0;   ///< admitting grant id; 0 = legacy door
     };
+
+    /// Whether a host grant's identity pattern makes \a identity a host
+    /// (docs/ShareAccess.md sec 2.2): only a literal naming the verified
+    /// identity itself. A pattern admits a crowd, and a crowd does not
+    /// get the desktop user's reach; a connection with no verified
+    /// identity has only a name it chose.
+    static bool hostIdentity(const std::string &pattern,
+                             const std::string &identity)
+    {
+        return !identity.empty() && !pattern.empty()
+            && pattern.find_first_of("*?") == std::string::npos
+            && patternMatches(pattern, identity);
+    }
+
+    /// What a connection is told its access with: `viewOnly` for the
+    /// viewers that predate the levels, `access` by name.
+    static std::string configJson(ClientAccess access)
+    {
+        return std::string("{\"cmd\":\"config\",\"viewOnly\":")
+            + (access == ClientAccess::View ? "true" : "false")
+            + ",\"access\":\"" + clientAccessName(access) + "\"}";
+    }
 
     /// Judge a presentation against a grant list (docs/ShareAccess.md
     /// §2): the most specific matching grant decides, and no match —
@@ -429,7 +452,10 @@ public:
         if (!best || best->access == 2)
             return out;
         out.admitted = true;
-        out.viewOnly = best->access == 1;
+        out.access = best->access == 1 ? ClientAccess::View
+            : best->access == 3 && hostIdentity(best->identity, identity)
+                ? ClientAccess::Host
+                : ClientAccess::Edit;
         out.grant = best->id;
         return out;
     }
@@ -532,7 +558,10 @@ public:
         /// marshaling code and must not be looked up under the payload
         /// lock.
         std::function<void(const ScenePickRequest &)> pickHandler;
+        std::function<void(const SceneCameraFrame &)> cameraHandler;
+        std::function<void(const SceneInputFrame &)> inputHandler;
         std::function<void(SceneControlRequest &&)> controlHandler;
+        std::function<void(SceneBridgeRequest &&)> bridgeHandler;
         std::function<void()> workNotifier;
         std::function<void(uint64_t)> clientClosedHandler;
 
@@ -1083,6 +1112,7 @@ public:
             Text,    ///< a control JSON: a text frame
             Scene,   ///< the versioned scene bytes: a binary frame
             Frame,   ///< a streamed frame (sendBinary): a binary frame
+            Bridge,  ///< a sandbox bridge answer (sendBridge): binary, never replaced
             Close    ///< the end: a close frame, then hang up
         };
         Kind kind = Text;
@@ -1162,13 +1192,17 @@ public:
         /// then no payload is pushed and no verb but the hello works.
         /// Owner-thread-only, like group.
         bool authorized = true;
-        /// View-only (guarded by connMutex, the host flips it from the
-        /// GUI thread): picks dropped, mutating ops refused.
-        bool viewOnly = false;
+        /// What this connection may do (guarded by connMutex, the host
+        /// changes it from the GUI thread): View drops picks and refuses
+        /// mutating ops, Host may act beyond the document.
+        ClientAccess access = ClientAccess::Edit;
         /// The host asked this connection closed (guarded by
         /// connMutex): its farewell is on the outbox, and its own loop
         /// sends that and hangs up. Set only through kick().
         bool kicked = false;
+        /// Sandbox bridge ops forwarded and not yet answered
+        /// (SceneBridgeRequest). connMutex.
+        int bridgeInFlight = 0;
         /// The stamp a reload was already pushed for — one push per
         /// bundle generation, no loops.
         std::string reloadPushed;
@@ -1176,6 +1210,20 @@ public:
         /// when it is not counted. Owner-thread-only: written at each
         /// admission and cleared at the close.
         std::string userKey;
+        /// Uplink accounting (docs/ThinClient.md sec 8.10a), guarded
+        /// by connMutex: messages, payload bytes and wire bytes this
+        /// connection has sent, with the camera frames and the picks
+        /// counted apart so the speculative half of the uplink can be
+        /// told from the asked-for half.
+        uint64_t uplinkMsgs = 0;
+        uint64_t uplinkBytes = 0;
+        uint64_t uplinkWire = 0;
+        uint64_t cameraMsgs = 0;
+        uint64_t cameraWire = 0;
+        uint64_t pickMsgs = 0;
+        uint64_t pickWire = 0;
+        uint64_t inputMsgs = 0;
+        uint64_t inputWire = 0;
         /// A wake is posted and has not run yet (guarded by connMutex):
         /// the next nudge is free. Cleared by the transport on the
         /// strand before it acts, so anything queued after that clear
@@ -1209,6 +1257,17 @@ public:
             Outgoing item;
             item.kind = Outgoing::Scene;
             item.data = std::move(body);
+            outbox.push_back(std::move(item));
+            nudge();
+        }
+
+        /// Queue a sandbox bridge answer, in order and never replaced:
+        /// the guest is waiting on every one. connMutex held.
+        void queueBridge(std::vector<uint8_t> &&data)
+        {
+            Outgoing item;
+            item.kind = Outgoing::Bridge;
+            item.data = std::move(data);
             outbox.push_back(std::move(item));
             nudge();
         }
@@ -1332,7 +1391,9 @@ public:
         g.liveOnly = true;
         {
             std::lock_guard<std::mutex> guard(connMutex);
-            g.access = conn.viewOnly ? 1 : 0;
+            // Never host: an easing is keyed on a name, and a name is
+            // only what the client chose (docs/ShareAccess.md sec 2.2)
+            g.access = conn.access == ClientAccess::View ? 1 : 0;
         }
         {
             std::lock_guard<std::mutex> guard(tokenMutex);
@@ -1389,9 +1450,10 @@ public:
                     changed = true;
                 }
                 else {
-                    if (!list.empty()
-                            && conn->viewOnly != entry.viewOnly) {
-                        conn->viewOnly = entry.viewOnly;
+                    if (!list.empty() && conn->access != entry.access) {
+                        conn->access = entry.access;
+                        // told, as a mode set by hand is
+                        conn->queueText(configJson(entry.access));
                         changed = true;
                     }
                     conn->grant = entry.grant;
@@ -1419,28 +1481,37 @@ public:
             info.identity = conn->identity;
             info.grant = conn->grant;
             info.viewer = conn->viewer;
-            info.viewOnly = conn->viewOnly;
+            info.access = conn->access;
             info.connectedMs = uint64_t(
                 std::chrono::duration_cast<std::chrono::milliseconds>(
                     now - conn->since).count());
+            info.uplinkMsgs = conn->uplinkMsgs;
+            info.uplinkBytes = conn->uplinkBytes;
+            info.uplinkWire = conn->uplinkWire;
+            info.cameraMsgs = conn->cameraMsgs;
+            info.cameraWire = conn->cameraWire;
+            info.pickMsgs = conn->pickMsgs;
+            info.pickWire = conn->pickWire;
+            info.inputMsgs = conn->inputMsgs;
+            info.inputWire = conn->inputWire;
             out.push_back(std::move(info));
         }
         return int(out.size());
     }
 
-    bool setClientViewOnly(uint64_t id, bool viewOnly)
+    bool setClientAccess(uint64_t id, ClientAccess access)
     {
         bool found = false;
         {
             std::lock_guard<std::mutex> guard(connMutex);
             for (Conn *conn : conns) {
                 if (conn->id == id) {
-                    conn->viewOnly = viewOnly;
+                    // A host is a verified person, never a chosen name
+                    if (access == ClientAccess::Host && conn->identity.empty())
+                        return false;
+                    conn->access = access;
                     // Tell the client its mode, so its UI can say so.
-                    conn->queueText(
-                        viewOnly
-                            ? "{\"cmd\":\"config\",\"viewOnly\":true}"
-                            : "{\"cmd\":\"config\",\"viewOnly\":false}");
+                    conn->queueText(configJson(access));
                     found = true;
                     break;
                 }
@@ -1714,6 +1785,48 @@ public:
         return true;
     }
 
+    /// The HTTP mounts (SceneServer.h, setHttpMount). Their own mutex,
+    /// held only to copy the list, never across a provider call.
+    struct HttpMount {
+        std::string prefix;
+        std::function<bool(const std::string &, SceneHttpFile &)> provider;
+        bool gated = false;
+    };
+    std::mutex mountMutex;
+    std::vector<HttpMount> mounts;
+
+    /// A GET answered by a mount of the given gating, when one claims
+    /// it. The path gets the bundle's checks before a provider sees it.
+    bool serveMount(const HttpRequest &req, bool gated, HttpReply &reply)
+    {
+        if (req.method != "GET")
+            return false;
+        const std::string &path = req.path;
+        if (path.find("..") != std::string::npos)
+            return false;
+        for (char c : path)
+            if (!std::isalnum(static_cast<unsigned char>(c))
+                    && !std::strchr("/._+-", c))
+                return false;
+        std::vector<HttpMount> claim;
+        {
+            std::lock_guard<std::mutex> guard(mountMutex);
+            for (const auto &m : mounts)
+                if (m.gated == gated
+                        && path.compare(0, m.prefix.size(), m.prefix) == 0)
+                    claim.push_back(m);
+        }
+        for (const auto &m : claim) {
+            SceneHttpFile file;
+            if (!m.provider(path.substr(m.prefix.size()), file))
+                continue;
+            reply.set(file.status, file.contentType, file.cacheControl);
+            reply.body = std::move(file.body);
+            return true;
+        }
+        return false;
+    }
+
     /// Queue a cache-busting reload for a viewer whose reported bundle
     /// build no longer matches the on-disk stamp (once per stamp; the
     /// page-side bust-parameter guard also refuses repeats). Caller
@@ -1756,6 +1869,28 @@ public:
             handler(req);
     }
 
+    void dispatchCamera(DocGroup &g, const SceneCameraFrame &frame)
+    {
+        std::function<void(const SceneCameraFrame &)> handler;
+        {
+            std::lock_guard<std::mutex> guard(handlerMutex);
+            handler = g.cameraHandler;
+        }
+        if (handler)
+            handler(frame);
+    }
+
+    void dispatchInput(DocGroup &g, const SceneInputFrame &frame)
+    {
+        std::function<void(const SceneInputFrame &)> handler;
+        {
+            std::lock_guard<std::mutex> guard(handlerMutex);
+            handler = g.inputHandler;
+        }
+        if (handler)
+            handler(frame);
+    }
+
     /// Queue \a json for the connection identified by \a connId, if it
     /// is still with us. Any thread.
     void replyTo(uint64_t connId, const std::string &json)
@@ -1782,7 +1917,7 @@ public:
             // The semantic layer refuses mutations for a view-only
             // connection; only it knows which ops write.
             std::lock_guard<std::mutex> guard(connMutex);
-            req.viewOnly = conn.viewOnly;
+            req.access = conn.access;
         }
         const uint64_t connId = conn.id;
         req.client = connId;
@@ -1986,6 +2121,10 @@ public:
         // scene data.
         if (wsKey.empty() && serveViewerFile(path, reply))
             return Route::Reply;
+        // An ungated mount (SceneServer.h, setHttpMount): published code
+        // for the same page, under the same reasoning.
+        if (wsKey.empty() && serveMount(req, false, reply))
+            return Route::Reply;
 
         std::string presentedToken = queryValue(query, "token");
         Judgement entry = judge(presentedToken, identity,
@@ -1996,6 +2135,11 @@ public:
             reply.status = 403;
             return Route::Reply;
         }
+
+        // A gated mount (SceneServer.h, setHttpMount): behind the door,
+        // ahead of the scene routes, which share no prefix with one.
+        if (wsKey.empty() && serveMount(req, true, reply))
+            return Route::Reply;
 
         // /blob?key=<content key>: one out-of-band texture payload
         // (SceneDump.h, v26). Content addressed and immutable, so the
@@ -2242,7 +2386,7 @@ public:
         conn.sent = boot.held;
         conn.authorized = boot.entry.admitted;
         conn.admitted = boot.entry.admitted;
-        conn.viewOnly = boot.entry.viewOnly;
+        conn.access = boot.entry.access;
         conn.grant = boot.entry.grant;
         conn.presentedToken = boot.presentedToken;
         conn.addr = boot.addr;
@@ -3109,12 +3253,54 @@ public:
         done.get_future().wait();
     }
 
+    /// What one client message costs on the link: its payload plus the
+    /// RFC 6455 header a client sends it under -- two bytes, a
+    /// four-byte mask (a client always masks), and the extended length
+    /// when the payload does not fit in seven bits. Exact for one
+    /// unfragmented frame per message, which is what every viewer
+    /// message is; a fragmented one is undercounted by the headers of
+    /// the continuations, and Beast has already reassembled it by the
+    /// time we see it.
+    static uint64_t clientFrameBytes(size_t payload)
+    {
+        return uint64_t(payload) + 2 + 4
+            + (payload < 126 ? 0 : (payload < 65536 ? 2 : 8));
+    }
+
+    /// Uplink accounting (docs/ThinClient.md sec 8.10a). Counted at the
+    /// one point every client message passes and *before* any gate: a
+    /// frame the door drops still crossed the link, and what this
+    /// answers is what the link carried, not what we agreed to act on.
+    void countUplink(Conn &conn, bool text, const uint8_t *bytes,
+                     size_t size)
+    {
+        const uint64_t wire = clientFrameBytes(size);
+        const uint8_t tag = (!text && size) ? bytes[0] : 0;
+        std::lock_guard<std::mutex> guard(connMutex);
+        ++conn.uplinkMsgs;
+        conn.uplinkBytes += uint64_t(size);
+        conn.uplinkWire += wire;
+        if (tag == 'C') {
+            ++conn.cameraMsgs;
+            conn.cameraWire += wire;
+        }
+        else if (tag == 'P' || tag == 'B' || tag == 'Q') {
+            ++conn.pickMsgs;
+            conn.pickWire += wire;
+        }
+        else if (tag == 'E') {
+            ++conn.inputMsgs;
+            conn.inputWire += wire;
+        }
+    }
+
     /// A complete client message: JSON control text (hello, and the
     /// dumpFrame answers' metadata rides binary), or one of the binary
     /// viewer events.
     void handleMessage(Conn &conn, bool text,
                        const uint8_t *bytes, size_t size)
     {
+        countUplink(conn, text, bytes, size);
         if (text) {
             std::string json(reinterpret_cast<const char *>(bytes), size);
             // The door, at the moment the name arrives (docs/
@@ -3150,8 +3336,13 @@ public:
                     conn.admitted = true;
                     conn.presentedToken = offered;
                     conn.grant = entry.grant;
-                    if (grants)
-                        conn.viewOnly = entry.viewOnly;
+                    if (grants) {
+                        conn.access = entry.access;
+                        // Said at once, so the page offers only what
+                        // this connection may do
+                        if (entry.access != ClientAccess::Edit)
+                            conn.queueText(configJson(entry.access));
+                    }
                     // The user is known only now when the grant or the
                     // name decided it (sec 7.4).
                     if (!admitUser(conn)) {
@@ -3329,6 +3520,10 @@ public:
         }
         if (!conn.authorized)
             return;
+        if (size > 0 && bytes[0] == 'S') {
+            handleBridge(conn, bytes, size);
+            return;
+        }
         if (size > 0 && bytes[0] == 'D') {
             handleFrameDump(conn, bytes, size);
             return;
@@ -3357,6 +3552,66 @@ public:
         }
         std::vector<uint8_t> data(bytes, bytes + size);
         handleEvent(conn, data);
+    }
+
+    /// A guest waits for each bridge answer before it asks again, so a
+    /// connection this far ahead of its answers is not a guest.
+    static constexpr int kBridgeInFlightMax = 64;
+
+    /// The downlink of a bridge answer (SceneBridgeRequest): `FCSB`, the
+    /// seq as u32 LE, the reply bytes.
+    static std::vector<uint8_t> bridgeFrame(uint32_t seq,
+                                            const std::vector<uint8_t> &reply)
+    {
+        std::vector<uint8_t> frame = {'F', 'C', 'S', 'B'};
+        for (int i = 0; i < 4; ++i)
+            frame.push_back(uint8_t(seq >> (8 * i)));
+        frame.insert(frame.end(), reply.begin(), reply.end());
+        return frame;
+    }
+
+    /// A sandbox bridge frame (SceneBridgeRequest): 'S', kind u8, seq
+    /// u32 LE, payload. Forwarded in the order it came; an Op no handler
+    /// takes is answered empty at once, so the guest fails fast rather
+    /// than waiting on an answer nobody will send.
+    void handleBridge(Conn &conn, const uint8_t *bytes, size_t size)
+    {
+        if (size < 6 || bytes[1] > SceneBridgeRequest::End)
+            return;
+        SceneBridgeRequest req;
+        req.kind = bytes[1];
+        for (int i = 3; i >= 0; --i)
+            req.seq = (req.seq << 8) | bytes[2 + i];
+        req.payload.assign(bytes + 6, bytes + size);
+        req.client = conn.id;
+        std::function<void(SceneBridgeRequest &&)> handler;
+        if (conn.group) {
+            std::lock_guard<std::mutex> guard(handlerMutex);
+            handler = conn.group->bridgeHandler;
+        }
+        {
+            std::lock_guard<std::mutex> guard(connMutex);
+            req.access = conn.access;
+            req.identity = conn.identity;
+            req.grant = conn.grant;
+            req.label = conn.client;
+            req.address = conn.fwd.empty() ? conn.addr : conn.fwd;
+            if (req.kind == SceneBridgeRequest::Op) {
+                if (!handler) {
+                    conn.queueBridge(bridgeFrame(req.seq, {}));
+                    return;
+                }
+                if (conn.bridgeInFlight >= kBridgeInFlightMax) {
+                    conn.queueText(
+                        "{\"cmd\":\"error\",\"code\":\"BridgeFlood\"}");
+                    conn.kick();
+                    return;
+                }
+                ++conn.bridgeInFlight;
+            }
+        }
+        if (handler)
+            handler(std::move(req));
     }
 
     /// A viewer's dumpFrame answer: 'D', u32 request id, u32 metadata
@@ -3398,23 +3653,159 @@ public:
         }
     }
 
+    /// The two viewer event frames, in bytes: the camera ('C', a type
+    /// byte, the canvas as two u16, thirteen floats) and the pick
+    /// ('P', a flags byte, six floats). Named because 'Q' carries one
+    /// of each and has to find the boundary between them.
+    static constexpr size_t kCameraFrameSize = 6 + 13 * sizeof(float);
+    static constexpr size_t kPickFrameSize = 2 + 6 * sizeof(float);
+    /// The input frame ('E', kind, modifiers, code u16, x/y/delta i16,
+    /// time u32) -- fifteen bytes, distinct in size from both of those,
+    /// which is what tells the three apart on the wire.
+    static constexpr size_t kInputFrameSize = 15;
+
+    /// Camera frame: 'C', type byte, viewport width and height as
+    /// little-endian u16, then thirteen little-endian floats --
+    /// position, orientation, height-or-angle, near, far, aspect,
+    /// device pixel ratio, pick radius (docs/ThinClient.md sec 8.5).
+    /// Fifty-eight bytes. Returns false when the frame is not one, or
+    /// is not usable: this is the trust boundary, and a NaN here would
+    /// poison a mirror's view volume and every pick made through it.
+    static bool parseCamera(const std::vector<uint8_t> &data,
+                            SceneCameraFrame &frame)
+    {
+        if (data.size() != kCameraFrameSize || data[0] != 'C')
+            return false;
+        uint16_t w, h;
+        std::memcpy(&w, data.data() + 2, 2);
+        std::memcpy(&h, data.data() + 4, 2);
+        float v[13];
+        std::memcpy(v, data.data() + 6, sizeof(v));
+        for (float f : v) {
+            if (!std::isfinite(f))
+                return false;
+        }
+        if (!w || !h)
+            return false;
+        frame.type = data[1] ? 1 : 0;
+        frame.width = w;
+        frame.height = h;
+        for (int i = 0; i < 3; ++i)
+            frame.position[i] = v[i];
+        for (int i = 0; i < 4; ++i)
+            frame.orientation[i] = v[3 + i];
+        frame.heightOrAngle = v[7];
+        frame.nearDistance = v[8];
+        frame.farDistance = v[9];
+        frame.aspectRatio = v[10];
+        // The last two ride the same frame but describe the input
+        // device, not the camera, so they are clamped rather than
+        // refused -- a client that states a silly pick radius should
+        // still be able to look at the model.
+        frame.devicePixelRatio = std::min(std::max(v[11], 0.25f), 8.0f);
+        frame.pickRadius = std::min(std::max(v[12], 0.0f), 64.0f);
+        // A camera with no extent picks nothing and projects nothing;
+        // refusing it here keeps a degenerate frame from ever becoming
+        // a mirror's state.
+        return frame.heightOrAngle > 0 && frame.aspectRatio > 0
+            && frame.farDistance > frame.nearDistance;
+    }
+
+    /// Input frame: 'E', a kind byte, a modifiers byte, a little-endian
+    /// u16 code, three little-endian i16 (x, y, wheel delta) and a
+    /// little-endian u32 client timestamp in milliseconds
+    /// (docs/ThinClient.md sec 8.5). Returns false when the frame is not
+    /// one, or names a kind this server does not have -- a mirror turns
+    /// the kind into a Coin event type, and an unknown one would become
+    /// whichever event the default branch happened to build.
+    static bool parseInput(const std::vector<uint8_t> &data,
+                           SceneInputFrame &frame)
+    {
+        if (data.size() != kInputFrameSize || data[0] != 'E')
+            return false;
+        if (data[1] > 5)
+            return false;
+        uint16_t code;
+        int16_t x, y, delta;
+        uint32_t timeMs;
+        std::memcpy(&code, data.data() + 3, 2);
+        std::memcpy(&x, data.data() + 5, 2);
+        std::memcpy(&y, data.data() + 7, 2);
+        std::memcpy(&delta, data.data() + 9, 2);
+        std::memcpy(&timeMs, data.data() + 11, 4);
+        frame.kind = data[1];
+        frame.modifiers = data[2];
+        frame.code = code;
+        frame.x = x;
+        frame.y = y;
+        frame.delta = delta;
+        frame.timeMs = timeMs;
+        return true;
+    }
+
     void handleEvent(Conn &conn, const std::vector<uint8_t> &data)
     {
+        // The camera is not an edit: it says where this viewer is
+        // looking from, which a view-only connection is entitled to do
+        // and which nothing but that connection's own mirror reads.
+        // Parsed before the gate for exactly that reason.
+        SceneCameraFrame frame;
+        if (parseCamera(data, frame)) {
+            frame.client = conn.id;
+            if (conn.group)
+                dispatchCamera(*conn.group, frame);
+            return;
+        }
+        // Combined camera + pick: 'Q', then a 'C' frame verbatim, then
+        // a 'P' frame verbatim (docs/ThinClient.md sec 8.10a). A client
+        // that states its camera only when it clicks sends one message
+        // instead of two, and the pairing is atomic rather than merely
+        // ordered. Split here into the two subframes and given to the
+        // two paths that already exist -- the camera before the
+        // view-only gate, the pick after it -- so neither is
+        // reimplemented, and a camera the parser refuses leaves the
+        // pick to resolve through the mirror the client had, exactly as
+        // a refused 'C' does.
+        std::vector<uint8_t> embedded;
+        if (data.size() == 1 + kCameraFrameSize + kPickFrameSize
+                && data[0] == 'Q') {
+            const std::vector<uint8_t> cam(
+                    data.begin() + 1, data.begin() + 1 + kCameraFrameSize);
+            SceneCameraFrame carried;
+            if (parseCamera(cam, carried)) {
+                carried.client = conn.id;
+                if (conn.group)
+                    dispatchCamera(*conn.group, carried);
+            }
+            embedded.assign(data.begin() + 1 + kCameraFrameSize, data.end());
+        }
+        const std::vector<uint8_t> &event = embedded.empty() ? data : embedded;
         // A view-only connection's picks are dropped: selection is
         // shared room state, so changing it IS an edit
         // (docs/MultiDocServe.md §8).
         {
             std::lock_guard<std::mutex> guard(connMutex);
-            if (conn.viewOnly)
+            if (conn.access == ClientAccess::View)
                 return;
+        }
+        // Input event: an edit mode's pointer and keyboard stream
+        // (docs/ThinClient.md sec 8.5). Behind the view-only gate with
+        // the picks, and for a stronger reason -- these move geometry.
+        SceneInputFrame input;
+        if (parseInput(event, input)) {
+            input.client = conn.id;
+            if (conn.group)
+                dispatchInput(*conn.group, input);
+            return;
         }
         // Pick request: 'P', flags byte, six little-endian floats
         // (world ray origin + direction).
-        if (data.size() == 2 + 6 * sizeof(float) && data[0] == 'P') {
+        if (event.size() == kPickFrameSize && event[0] == 'P') {
             ScenePickRequest req;
-            req.modifiers = data[1];
+            req.client = conn.id;
+            req.modifiers = event[1];
             float v[6];
-            std::memcpy(v, data.data() + 2, sizeof(v));
+            std::memcpy(v, event.data() + 2, sizeof(v));
             for (int i = 0; i < 3; ++i) {
                 req.origin[i] = v[i];
                 req.dir[i] = v[3 + i];
@@ -3427,16 +3818,17 @@ public:
         // selections into one message; each ray is dispatched in order so the
         // backend Gui::Selection ends up matching the client, and the queued
         // GUI-thread picks coalesce into a single scene republish.
-        else if (data.size() >= 2 && data[0] == 'B') {
+        else if (event.size() >= 2 && event[0] == 'B') {
             const size_t stride = 1 + 6 * sizeof(float);
-            const uint8_t n = data[1];
-            if (data.size() == 2 + size_t(n) * stride) {
+            const uint8_t n = event[1];
+            if (event.size() == 2 + size_t(n) * stride) {
                 size_t off = 2;
                 for (uint8_t i = 0; i < n; ++i) {
                     ScenePickRequest req;
-                    req.modifiers = data[off];
+                    req.client = conn.id;
+                    req.modifiers = event[off];
                     float v[6];
-                    std::memcpy(v, data.data() + off + 1, sizeof(v));
+                    std::memcpy(v, event.data() + off + 1, sizeof(v));
                     for (int k = 0; k < 3; ++k) {
                         req.origin[k] = v[k];
                         req.dir[k] = v[3 + k];
@@ -3531,6 +3923,23 @@ std::string SceneStreamServer::identityHeader()
     return p->identityHeaderName;
 }
 
+void SceneStreamServer::setHttpMount(
+        const std::string &prefix,
+        std::function<bool(const std::string &, SceneHttpFile &)> provider,
+        bool gated)
+{
+    Private *p = ensure();
+    std::lock_guard<std::mutex> guard(p->mountMutex);
+    auto &list = p->mounts;
+    list.erase(std::remove_if(list.begin(), list.end(),
+                              [&](const Private::HttpMount &m) {
+                                  return m.prefix == prefix;
+                              }),
+               list.end());
+    if (provider)
+        list.push_back({prefix, std::move(provider), gated});
+}
+
 void SceneStreamServer::setGrants(const std::vector<SceneGrant> &list)
 {
     Private *p = ensure();
@@ -3616,9 +4025,9 @@ int SceneStreamServer::clients(std::vector<SceneClientInfo> &out)
     return ensure()->clients(out);
 }
 
-bool SceneStreamServer::setClientViewOnly(uint64_t id, bool viewOnly)
+bool SceneStreamServer::setClientAccess(uint64_t id, ClientAccess access)
 {
-    return pimpl ? pimpl->setClientViewOnly(id, viewOnly) : false;
+    return pimpl ? pimpl->setClientAccess(id, access) : false;
 }
 
 bool SceneStreamServer::kickClient(uint64_t id)
@@ -3779,6 +4188,34 @@ void SceneStreamServer::setPickHandler(
     g->pickHandler = std::move(handler);
 }
 
+void SceneStreamServer::setCameraHandler(
+        std::function<void(const SceneCameraFrame &)> handler,
+        const std::string &doc)
+{
+    Private *p = ensure();
+    Private::DocGroup *g;
+    {
+        std::lock_guard<std::mutex> guard(p->mutex);
+        g = &p->group(doc);
+    }
+    std::lock_guard<std::mutex> guard(p->handlerMutex);
+    g->cameraHandler = std::move(handler);
+}
+
+void SceneStreamServer::setInputHandler(
+        std::function<void(const SceneInputFrame &)> handler,
+        const std::string &doc)
+{
+    Private *p = ensure();
+    Private::DocGroup *g;
+    {
+        std::lock_guard<std::mutex> guard(p->mutex);
+        g = &p->group(doc);
+    }
+    std::lock_guard<std::mutex> guard(p->handlerMutex);
+    g->inputHandler = std::move(handler);
+}
+
 void SceneStreamServer::setControlHandler(
         std::function<void(SceneControlRequest &&)> handler,
         const std::string &doc)
@@ -3791,6 +4228,20 @@ void SceneStreamServer::setControlHandler(
     }
     std::lock_guard<std::mutex> guard(p->handlerMutex);
     g->controlHandler = std::move(handler);
+}
+
+void SceneStreamServer::setBridgeHandler(
+        std::function<void(SceneBridgeRequest &&)> handler,
+        const std::string &doc)
+{
+    Private *p = ensure();
+    Private::DocGroup *g;
+    {
+        std::lock_guard<std::mutex> guard(p->mutex);
+        g = &p->group(doc);
+    }
+    std::lock_guard<std::mutex> guard(p->handlerMutex);
+    g->bridgeHandler = std::move(handler);
 }
 
 void SceneStreamServer::setWorkNotifier(std::function<void()> notifier,
@@ -3839,6 +4290,23 @@ bool SceneStreamServer::sendBinary(uint64_t client, std::vector<uint8_t> &&data)
     for (Private::Conn *conn : p->conns) {
         if (conn->id == client) {
             conn->queueFrame(std::move(data));
+            return true;
+        }
+    }
+    return false;
+}
+
+bool SceneStreamServer::sendBridge(uint64_t client, uint32_t seq,
+                                   std::vector<uint8_t> &&reply)
+{
+    Private *p = ensure();
+    std::vector<uint8_t> frame = Private::bridgeFrame(seq, reply);
+    std::lock_guard<std::mutex> guard(p->connMutex);
+    for (Private::Conn *conn : p->conns) {
+        if (conn->id == client) {
+            if (conn->bridgeInFlight > 0)
+                --conn->bridgeInFlight;
+            conn->queueBridge(std::move(frame));
             return true;
         }
     }
@@ -3904,7 +4372,10 @@ void SceneStreamServer::releaseGroup(const std::string &doc)
     {
         std::lock_guard<std::mutex> guard(pimpl->handlerMutex);
         g->pickHandler = nullptr;
+        g->cameraHandler = nullptr;
+        g->inputHandler = nullptr;
         g->controlHandler = nullptr;
+        g->bridgeHandler = nullptr;
         g->workNotifier = nullptr;
         g->clientClosedHandler = nullptr;
     }

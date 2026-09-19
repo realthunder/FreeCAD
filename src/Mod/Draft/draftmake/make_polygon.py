@@ -34,7 +34,9 @@ import FreeCAD as App
 import draftutils.gui_utils as gui_utils
 
 from draftobjects.polygon import Polygon
-from draftviewproviders.view_base import ViewProviderDraft
+
+if App.GuiUp:
+    from draftviewproviders.view_base import ViewProviderDraft
 
 
 def make_polygon(nfaces, radius=1, inscribed=True, placement=None, face=None, support=None):

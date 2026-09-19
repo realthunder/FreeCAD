@@ -80,6 +80,7 @@
 #include "ViewArea.h"
 #include "ViewPlacement.h"
 #include "View3DInventorViewer.h"
+#include "ViewerContext.h"
 #include "RenderParams.h"
 #include "RenderTiming.h"
 #include "ViewParams.h"
@@ -125,6 +126,9 @@ struct DocumentP
     int                         _editMode;
     int                         _editModePrevious = 0;
     CoinPtr<SoNode>             _editRootNode;
+    /// The session root (Document::editingRoot); _editRootNode is its
+    /// node while a session runs.
+    std::unique_ptr<EditingRoot> _editRoot;
     ViewProvider*               _editViewProvider;
     ViewProvider*               _editViewProviderPrevious = nullptr;
     bool                        _editWantsRestore = false;
@@ -134,7 +138,7 @@ struct DocumentP
     std::string                 _editSubname;
     std::string                 _editSubElement;
     Base::Matrix4D              _editingTransform;
-    View3DInventorViewer*       _editingViewer;
+    ViewerContext*              _editingViewer;
     std::set<const App::DocumentObject*> _editObjs;
 
     std::vector<CameraInfo>     _savedViews;
@@ -638,12 +642,26 @@ bool Document::setEdit(Gui::ViewProvider* p, int ModNum, const char *subname)
         }
     }
 
-    auto view3d = dynamic_cast<View3DInventor *>(getActiveView());
-    // if the currently active view is not the 3d view search for it and activate it
-    if (view3d)
-        getMainWindow()->setActiveWindow(view3d);
-    else
-        view3d = dynamic_cast<View3DInventor *>(setActiveView(vp));
+    // The view this edit session belongs to. A replayed client event names
+    // its own before it is handled, and there is no other way to know which
+    // it was: reaching for the active window in a process serving several
+    // browsers names either nothing or somebody else's (docs/ThinClient.md
+    // sec 8.9). Nothing on the desktop opens such a scope, so there the
+    // active 3D view is found and activated exactly as before -- and one is
+    // created for the document if it has none, which is a thing only a
+    // desktop may do.
+    ViewerContext *editViewer = ViewerContext::current();
+    View3DInventor *view3d = nullptr;
+    if (!editViewer) {
+        view3d = dynamic_cast<View3DInventor *>(getActiveView());
+        // if the currently active view is not the 3d view search for it and activate it
+        if (view3d)
+            getMainWindow()->setActiveWindow(view3d);
+        else
+            view3d = dynamic_cast<View3DInventor *>(setActiveView(vp));
+        if (view3d)
+            editViewer = view3d->getViewer();
+    }
 
     EditDocumentGuard guard;
     Application::Instance->setEditDocument(this);
@@ -682,10 +700,22 @@ bool Document::setEdit(Gui::ViewProvider* p, int ModNum, const char *subname)
         return false;
     }
 
-    if(view3d) {
-        view3d->getViewer()->setEditingViewProvider(d->_editViewProvider,ModNum);
-        d->_editingViewer = view3d->getViewer();
-        d->_editRootNode = view3d->getViewer()->getEditRootNode();
+    if(editViewer) {
+        EditingRoot *root = editingRoot();
+        editViewer->setEditingViewProvider(d->_editViewProvider, ModNum, root);
+        d->_editingViewer = editViewer;
+        d->_editRootNode = root->node();
+        // One session, every view (docs/ThinClient.md 8.11): the other 3D
+        // windows of this document join it -- the same root hung, their
+        // events routed to the same tool -- so a sketch entered in one
+        // window is drawn in from any of them. A client's mirror joins
+        // through the serving source, on signalInEdit below, since the
+        // document does not hold mirrors.
+        for (auto view : d->baseViews) {
+            auto view3d = dynamic_cast<View3DInventor *>(view);
+            if (view3d && view3d->getViewer() && view3d->getViewer() != editViewer)
+                view3d->getViewer()->joinEditing(d->_editViewProvider, root);
+        }
     }
     Gui::TaskView::TaskDialog* dlg = Gui::Control().activeDialog();
     if (dlg)
@@ -708,9 +738,25 @@ const Base::Matrix4D &Document::getEditingTransform() const {
 void Document::setEditingTransform(const Base::Matrix4D &mat) {
     d->_editObjs.clear();
     d->_editingTransform = mat;
-    auto activeView = dynamic_cast<View3DInventor *>(getActiveView());
-    if (activeView)
+    // The view the session is bound to, not the one that happens to be
+    // active -- with two 3D views open those are the same view only until
+    // someone clicks the other, and the editing transform belongs to the
+    // one doing the editing. Outside a session there is nothing bound and
+    // the active view is still the only candidate.
+    if (d->_editingViewer)
+        d->_editingViewer->setEditingTransform(mat);
+    else if (auto activeView = dynamic_cast<View3DInventor *>(getActiveView()))
         activeView->getViewer()->setEditingTransform(mat);
+}
+
+ViewerContext *Document::editingViewer() const {
+    return d->_editingViewer;
+}
+
+EditingRoot *Document::editingRoot() {
+    if (!d->_editRoot)
+        d->_editRoot = std::make_unique<EditingRoot>(this);
+    return d->_editRoot.get();
 }
 
 void Document::resetEdit() {
@@ -719,6 +765,20 @@ void Document::resetEdit() {
     int modeToRestore = d->_editModePrevious;
     Gui::ViewProvider* vpToRestore = d->_editViewProviderPrevious;
     bool shouldRestorePrevious = d->_editWantsRestorePrevious;
+
+    // In the view the session was running in, for as long as leaving it
+    // takes. What an edit mode does to selection on its way out -- the
+    // sketcher selects the sketch it just left, as a convenience -- is
+    // that view's business, and for a client's mirror it must land in
+    // that client's own instance rather than in the room every other
+    // viewer shares (docs/ThinClient.md sec 8.4).
+    //
+    // Here rather than at the call sites, because leaving is not always
+    // asked for. Escape does not call this directly: it defers it through
+    // a timer (ViewProvider::eventCallback), and a deferred call runs with
+    // no scope open at all -- which is the hazard sec 8.10 names, and this
+    // is the one path known to walk into it.
+    ViewerScope scope(d->_editingViewer);
 
     Application::Instance->setEditDocument(nullptr);
 
@@ -739,9 +799,17 @@ void Document::_resetEdit()
 {
     std::list<Gui::BaseView*>::iterator it;
     if (d->_editViewProvider) {
+        // The initiator first: it gives the view provider its geometry
+        // back out of the shared root, and a view that is not one of this
+        // document's -- a client's mirror, which belongs to the serving
+        // source rather than to the document -- is not in the list below.
+        // Then every other view leaves the session it joined. Both are
+        // idempotent, so the initiator being named twice is unharmed.
+        if (d->_editingViewer)
+            d->_editingViewer->resetEditingViewProvider();
         for (it = d->baseViews.begin();it != d->baseViews.end();++it) {
             auto activeView = dynamic_cast<View3DInventor *>(*it);
-            if (activeView)
+            if (activeView && activeView->getViewer())
                 activeView->getViewer()->resetEditingViewProvider();
         }
 
@@ -802,7 +870,14 @@ ViewProvider *Document::getInEdit(ViewProviderDocumentObject **parentVp,
     if (d->_editViewProvider) {
         // there is only one 3d view which is in edit mode
         auto activeView = dynamic_cast<View3DInventor *>(getActiveView());
-        if (activeView && activeView->getViewer()->isEditingViewProvider())
+        if (activeView)
+            return activeView->getViewer()->isEditingViewProvider()
+                ? d->_editViewProvider : nullptr;
+        // No 3D view of this document to ask. A served document has none --
+        // its edit session is bound to a client's mirror instead
+        // (docs/ThinClient.md sec 8.9) -- so ask the view the session was
+        // actually bound to.
+        if (d->_editingViewer && d->_editingViewer->isEditingViewProvider())
             return d->_editViewProvider;
     }
 
@@ -3955,6 +4030,10 @@ View3DInventor *Document::createView3D()
         }
 
         auto view3D = new View3DInventor(this, getMainWindow(), shareWidget);
+        // A window opened while a session runs shows it too
+        // (docs/ThinClient.md 8.11).
+        if (d->_editViewProvider && d->_editingViewer && view3D->getViewer())
+            view3D->getViewer()->joinEditing(d->_editViewProvider, editingRoot());
 
         // Views can now have independent draw styles (i.e. override modes)
         //
@@ -4566,18 +4645,16 @@ std::vector<std::string> Document::getRedoVector() const
     return getDocument()->getAvailableRedoNames();
 }
 
-bool Document::checkTransactionID(bool undo, int iSteps) {
-    if(!iSteps)
-        return false;
-
+void Document::groupedTransactions(bool undo, int iSteps,
+                                   std::set<App::Document*>& prompts,
+                                   std::map<App::Document*, int>& dmap) const
+{
     std::vector<int> ids;
     for (int i=0;i<iSteps;i++) {
         int id = getDocument()->getTransactionID(undo,i);
         if(!id) break;
         ids.push_back(id);
     }
-    std::set<App::Document*> prompts;
-    std::map<App::Document*,int> dmap;
     for(auto doc : App::GetApplication().getDocuments()) {
         if(doc == getDocument())
             continue;
@@ -4591,6 +4668,25 @@ bool Document::checkTransactionID(bool undo, int iSteps) {
                 currentSteps = steps;
         }
     }
+}
+
+bool Document::undoRedoWouldPrompt(bool undo, int iSteps) const
+{
+    if (iSteps <= 0)
+        return false;
+    std::set<App::Document*> prompts;
+    std::map<App::Document*,int> dmap;
+    groupedTransactions(undo, iSteps, prompts, dmap);
+    return !prompts.empty();
+}
+
+bool Document::checkTransactionID(bool undo, int iSteps) {
+    if(!iSteps)
+        return false;
+
+    std::set<App::Document*> prompts;
+    std::map<App::Document*,int> dmap;
+    groupedTransactions(undo, iSteps, prompts, dmap);
     if(!prompts.empty()) {
         std::ostringstream str;
         int i=0;
@@ -4769,6 +4865,7 @@ void Document::handleChildren3D(ViewProvider* viewProvider, bool deleting)
                 foreachView<View3DInventor>([=](View3DInventor* view){
                     view->getViewer()->toggleViewProvider(vp);
                 });
+                signalToggleInSceneGraph(*vp);
             }
         }
 
@@ -4795,6 +4892,11 @@ void Document::handleChildren3D(ViewProvider* viewProvider, bool deleting)
                 view->getViewer()->toggleViewProvider(vpd);
         }
     });
+    for(auto vpd : oldChildren) {
+        auto obj = vpd->getObject();
+        if(obj && obj->getNameInDocument())
+            signalToggleInSceneGraph(*vpd);
+    }
 }
 
 bool Document::isClaimed3D(ViewProvider *vp) const {
@@ -4805,6 +4907,8 @@ void Document::toggleInSceneGraph(ViewProvider *vp) {
     foreachView<View3DInventor>([&](View3DInventor *view) {
         view->getViewer()->toggleViewProvider(vp);
     });
+    if (auto vpd = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(vp))
+        signalToggleInSceneGraph(*vpd);
 }
 
 void Document::slotChangePropertyEditor(const App::Document &doc, const App::Property &Prop) {

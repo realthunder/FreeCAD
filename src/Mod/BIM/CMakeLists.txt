@@ -230,6 +230,7 @@ SET(nativeifc_SRCS
 
 SET(bimtests_SRCS
     bimtests/__init__.py
+    bimtests/bim_test_objects.py
     bimtests/TestArchAxis.py
     bimtests/TestArchAxisGui.py
     bimtests/TestArchBase.py
@@ -335,6 +336,7 @@ add_custom_command(
 #   `fc_copy_sources` and `fc_target_copy_resource` output a dependency of the
 #   BIM target. Thus building the BIM target triggers populating the build tree
 #   with the workbench sources and resources, if needed.
+
 ADD_CUSTOM_TARGET(BIM ALL
     DEPENDS ${Arch_QRC_SRCS} ${Arch_QRC_COPIED} ${BIM_GENERATED_PARSER}
     SOURCES ${Arch_SRCS}

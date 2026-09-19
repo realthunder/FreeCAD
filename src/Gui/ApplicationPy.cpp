@@ -263,12 +263,18 @@ PyMethodDef Application::Methods[] = {
    "\n"
    "The scene stream server's connected clients, one dict each: id,\n"
    "client (label), identity (verified by the front door, may be\n"
-   "empty), doc, address, viewer, viewOnly, connectedMs."},
+   "empty), doc, address, viewer, viewOnly, access ('view', 'edit' or\n"
+   "'host'), connectedMs, and the\n"
+   "uplink counters uplinkMsgs/uplinkBytes/uplinkWire with the camera\n"
+   "frames (cameraMsgs/cameraWire), picks (pickMsgs/pickWire) and\n"
+   "input events (inputMsgs/inputWire) of that total counted apart."},
   {"serveSetClientMode",      (PyCFunction) Application::sServeSetClientMode, METH_VARARGS,
-   "serveSetClientMode(id, viewOnly) -> bool\n"
+   "serveSetClientMode(id, mode) -> bool\n"
    "\n"
-   "Make a connected client view-only (picks dropped, mutating control\n"
-   "ops refused) or give it editing back. False when it is gone."},
+   "Set a connected client's access for this session: mode True is\n"
+   "view-only (picks dropped, mutating control ops refused), False is\n"
+   "edit, or 'view', 'edit' or 'host'. False when it is gone, or when\n"
+   "'host' is asked for a client no front door verified an identity for."},
   {"serveKickClient",         (PyCFunction) Application::sServeKickClient, METH_VARARGS,
    "serveKickClient(id) -> bool\n"
    "\n"
@@ -279,7 +285,8 @@ PyMethodDef Application::Methods[] = {
    "\n"
    "The scene stream server's live grant list (the door), one dict\n"
    "each: id, token, identity, client, address, access (0 edit,\n"
-   "1 view-only, 2 banned), liveOnly."},
+   "1 view-only, 2 banned, 3 host -- a host only for the identity it\n"
+   "names literally, edit for anyone else it matches), liveOnly."},
   {"serveSetGrants",          (PyCFunction) Application::sServeSetGrants, METH_VARARGS,
    "serveSetGrants(list) -> None\n"
    "\n"
@@ -947,10 +954,18 @@ PyObject* Application::sSendActiveView(PyObject * /*self*/, PyObject *args)
         return nullptr;
 
     const char* ppReturn = nullptr;
-    if (!Instance->sendMsgToActiveView(psCommandStr,&ppReturn)) {
-        if (!Base::asBoolean(suppress))
-            Base::Console().Warning("Unknown view command: %s\n",psCommandStr);
-    }
+    // The view's onMsg runs host code that can THROW -- MacroManager::run
+    // behind the editor's "Run" is a host.exec chokepoint (F1,
+    // docs/Sandbox.md 7.29).  A C++ exception must not unwind through the
+    // CPython eval loop that called this: its frame cleanup is skipped and
+    // the next import dereferences the wreckage (a SIGSEGV inside
+    // shiboken's feature_import).  Convert it at the boundary instead.
+    PY_TRY {
+        if (!Instance->sendMsgToActiveView(psCommandStr,&ppReturn)) {
+            if (!Base::asBoolean(suppress))
+                Base::Console().Warning("Unknown view command: %s\n",psCommandStr);
+        }
+    } PY_CATCH;
 
     // Print the return value to the output
     if (ppReturn) {
@@ -968,10 +983,13 @@ PyObject* Application::sSendFocusView(PyObject * /*self*/, PyObject *args)
         return nullptr;
 
     const char* ppReturn = nullptr;
-    if (!Instance->sendMsgToFocusView(psCommandStr,&ppReturn)) {
-        if (!Base::asBoolean(suppress))
-            Base::Console().Warning("Unknown view command: %s\n",psCommandStr);
-    }
+    // as in sSendActiveView: convert a throw at the boundary
+    PY_TRY {
+        if (!Instance->sendMsgToFocusView(psCommandStr,&ppReturn)) {
+            if (!Base::asBoolean(suppress))
+                Base::Console().Warning("Unknown view command: %s\n",psCommandStr);
+        }
+    } PY_CATCH;
 
     // Print the return value to the output
     if (ppReturn) {
@@ -1197,9 +1215,26 @@ PyObject* Application::sServeClients(PyObject * /*self*/, PyObject *args)
         entry.setItem("peer", Py::String(c.peer));
         entry.setItem("proxied", Py::Boolean(c.proxied));
         entry.setItem("viewer", Py::Boolean(c.viewer));
-        entry.setItem("viewOnly", Py::Boolean(c.viewOnly));
+        entry.setItem("viewOnly", Py::Boolean(c.access == Render::ClientAccess::View));
+        entry.setItem("access", Py::String(Render::clientAccessName(c.access)));
         entry.setItem("connectedMs", Py::Long(
             static_cast<unsigned long long>(c.connectedMs)));
+        // Uplink accounting (docs/ThinClient.md sec 8.10a): counted on
+        // this side, so a client's sending policy is measured rather
+        // than self-reported.
+        auto count = [&entry](const char *name, uint64_t v) {
+            entry.setItem(name,
+                          Py::Long(static_cast<unsigned long long>(v)));
+        };
+        count("uplinkMsgs", c.uplinkMsgs);
+        count("uplinkBytes", c.uplinkBytes);
+        count("uplinkWire", c.uplinkWire);
+        count("cameraMsgs", c.cameraMsgs);
+        count("cameraWire", c.cameraWire);
+        count("pickMsgs", c.pickMsgs);
+        count("pickWire", c.pickWire);
+        count("inputMsgs", c.inputMsgs);
+        count("inputWire", c.inputWire);
         list.append(entry);
     }
     return Py::new_reference_to(list);
@@ -1208,11 +1243,23 @@ PyObject* Application::sServeClients(PyObject * /*self*/, PyObject *args)
 PyObject* Application::sServeSetClientMode(PyObject * /*self*/, PyObject *args)
 {
     unsigned long long id = 0;
-    int viewOnly = 0;
-    if (!PyArg_ParseTuple(args, "Kp", &id, &viewOnly))
+    PyObject *mode = nullptr;
+    if (!PyArg_ParseTuple(args, "KO", &id, &mode))
         return nullptr;
-    bool ok = Render::SceneStreamServer::instance().setClientViewOnly(
-        id, viewOnly != 0);
+    Render::ClientAccess access = Render::ClientAccess::Edit;
+    if (PyUnicode_Check(mode)) {
+        if (!Render::clientAccessFromName(PyUnicode_AsUTF8(mode), access)) {
+            PyErr_SetString(PyExc_ValueError, "mode is 'view', 'edit' or 'host'");
+            return nullptr;
+        }
+    }
+    else {
+        const int viewOnly = PyObject_IsTrue(mode);
+        if (viewOnly < 0)
+            return nullptr;
+        access = viewOnly ? Render::ClientAccess::View : Render::ClientAccess::Edit;
+    }
+    bool ok = Render::SceneStreamServer::instance().setClientAccess(id, access);
     return Py::new_reference_to(Py::Boolean(ok));
 }
 
@@ -1969,7 +2016,13 @@ PyObject* Application::sRunCommand(PyObject * /*self*/, PyObject *args)
 
     Command* cmd = Application::Instance->commandManager().getCommandByName(pName);
     if (cmd) {
-        cmd->invoke(item);
+        // A command that throws must not unwind through the CPython eval
+        // loop: with a sandbox principal active, Command::_invoke now hands
+        // the refusal back rather than asking in a modal nobody can answer
+        // (docs/Sandbox.md 7.29), and this is where it would cross.
+        PY_TRY {
+            cmd->invoke(item);
+        } PY_CATCH;
         Py_Return;
     }
     else {

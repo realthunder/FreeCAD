@@ -20,6 +20,7 @@
 add(solid)
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
   </PythonExport>
 </GenerateModel>

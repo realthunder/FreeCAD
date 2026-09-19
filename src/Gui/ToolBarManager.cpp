@@ -1079,6 +1079,7 @@ void ToolBarManager::setup(ToolBarItem* toolBarItems)
         toolbar->toggleViewAction()->setVisible(false);
         setToolBarVisible(toolbar, false);
     }
+    Q_EMIT toolBarsChanged();
 }
 
 void ToolBarManager::setToolBarVisible(QToolBar *toolbar, bool show)
@@ -1511,6 +1512,11 @@ std::map<QString, QPointer<QToolBar>> ToolBarManager::toolBars()
                 && parent != statusBarArea
                 && parent != menuBarLeftArea
                 && parent != menuBarRightArea)
+            continue;
+        // a status bar item a workbench registered (MainWindow::
+        // addStatusBarItem, docs/Sandbox.md 7.15) is the main window's:
+        // not adopted into the status bar area, not hidden on a switch
+        if (parent == mw->statusBar() && mw->isStatusBarItem(tb))
             continue;
         QString name = tb->objectName();
         if (name.isEmpty() || name.startsWith(QStringLiteral("*")))
@@ -2041,6 +2047,8 @@ void ToolBarManager::setState(const QList<QString>& names, State state)
         }
         setToolBarVisible(tb, visible);
     }
+    if (state != State::SaveState)
+        Q_EMIT toolBarsChanged();
 }
 
 void ToolBarManager::setupToolBarIconSize()

@@ -1,6 +1,6 @@
 # Test suites and their status
 
-Status as of **2026-08-28**, measured on `build/conda-relwithdebinfo-801`
+Status as of **2026-09-02**, measured on `build/conda-relwithdebinfo-801`
 (OCCT 8.0.1). Both suites are green.
 
 *** **The suites run on the RelWithDebInfo tree.** `conda-relwithdebinfo-801`
@@ -11,12 +11,54 @@ as "the primary tree"; that was wrong.
 
 | Suite | Result |
 |---|---|
-| Python (`FreeCADCmd -t 0`) | **2628 tests, OK** -- 0 failures, 0 errors, 49 skipped, 6 expected failures |
-| C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **453 of 453 passing**, 0 failures, 1 ctest entry disabled |
+| Python (`FreeCADCmd -t 0`) | **2778 tests, OK** -- 0 failures, 0 errors, 50 skipped, 6 expected failures (re-measured 2026-09-18 on `932b16a201` and unchanged, which is what clears the Proxy-routing removal: it deletes 15 `__new__` hooks from BIM and Draft product code, and Draft, Arch, Path and Fem are all in this run; 2026-09-14, after the SecurePython merge, unchanged after merging 7.17 D4; SecurePython alone 2778, RemoteEdit alone 2688). Pass `FCX_PYODIDE` here too: in a fresh `FREECAD_USER_HOME` without it the 28 `SandboxProgram` / `FeaturePythonChain` cases skip ("no sandbox guest in this build") and the run still says OK -- 78 skipped is the tell |
+| C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **661 of 661 passing** (2026-09-18 on `932b16a201`, the Proxy-routing removal: it takes 8 sandbox cases out, and `FormWidgets_Tests_run` needed the exposure fix below to pass in company; 667 of 667 on 2026-09-14, after merging SecurePython sandbox 7.17 D4, which adds 10; 657 with GuiServeClaimChildren; 656 after the first SecurePython merge; SecurePython alone 625, RemoteEdit alone 634), 0 failures, 8 ctest entries disabled, 1 skipped -- 60 of them need the sandbox guest runtime: in a FRESH `FREECAD_USER_HOME` pass `FCX_PYODIDE=$HOME/.local/share/FreeCAD/Pyodide/314.0.6` or they fail with "expression sandbox image is not available". **A merge that brings guest image changes (`src/App/ExpressionImage/`) needs `cmake --build build/pyodide-guest` and `--target fcx_image_wheel` first**: the host build keeps the old wheel, and the first run of this merge failed 16 sandbox cases (`module '_fcx' has no attribute 'surface'`) for that reason alone |
 | C++ on Windows (`build/win-relwithdebinfo-801`) | **497 of 497 passing** (2026-09-12, including the two new `FileWriterTest` cases; 487 on 2026-09-10, 477 on 2026-09-06/08), 1 disabled -- see "C++ on Windows" |
 | C++ on macOS (`build/mac-relwithdebinfo-801`) | **490 of 490 passing** (2026-09-10), 1 disabled -- see "C++ on macOS" |
 | Python on macOS | **2680 tests** (2026-09-10, the first full run there), 2 failures + 1 error, 49 skipped, 6 expected failures -- all three are this box's missing meshers, see "Python on macOS" |
 | Python on Windows | **2600 tests, OK** (2026-09-15; 2590 on 2026-09-12, the ten new are `FileBlobs.BlobArchiveStoreCases`) -- 0 failures, 0 errors, 49 skipped, 6 expected failures. The nine Windows-only failures it carried from 2026-09-07 are fixed; see "Python on Windows" |
+
+Two traps when running the suites (2026-09-09): give the Python suite and
+`Tests_run` **separate `FREECAD_USER_HOME`s** if they run at the same time
+-- the expression routing suites in `Tests_run` flip
+`Expression/Sandbox:Evaluate` in the shared `user.cfg` while they run, and
+the Python suite then restores every Proxy through the sandbox guest (46
+failures that vanish alone, on 2026-09-09; **since 2026-09-18 this half
+is history**: docs/Sandbox.md 7.31 removed Proxy routing, so a saved
+Proxy always restores natively and no suite needs an import grant.
+What follows is the record of what routed runs used to need.  A Proxy
+whose module the guest could not serve was HELD until the document's
+`host.import:<module>` was answered, docs/Sandbox.md 7.28, so a ROUTED
+module run needed its grants -- `TestFemApp` routed with none held 81
+Proxies and fails 2, and with `--grant host.import:femobjects --grant
+host.import:femsolver` (the TOP-LEVEL packages, the COARSE form: the
+dotted-ancestor chain covers every submodule under them, which is what
+suits a suite run; the GUI modal instead grants the EXACT submodule a
+file named, 14 distinct ones in a routed CAM run) is 90 OK, 0 held, 0
+refusals, and
+`TestCAMApp` holds 411 and fails 10 with 17 errors on none but is 1343 OK
+with `--grant host.import:Path` alone -- and
+what remains under routing beyond that is `TestArch`'s 11 guest-behaviour
+cases); and the home directory must **exist** before
+the run, or FreeCAD falls back to the real one.
+
+A third trap, found 2026-09-18 by running the full `ctest` for the
+first time in a while: `FormWidgets_Tests_run`'s three panel-mirror
+cases passed alone and failed in company (21 passed, 2 failed), which
+reads as a mirror bug and is not one.  The mirror's watch is
+PAINT-driven (`QEvent::Paint` -> `markDirty` -> `_dirty`, and
+`flush()` returns early when that set is empty), and `QWidget::show()`
+makes a window visible but not necessarily EXPOSED: after any earlier
+case has put a window up, the next one is mapped late, no paint
+arrives, and the store emits nothing.  Every other state variable is
+identical between a passing and a failing run -- same ids, same store
+count, same running mirror -- so only the emitted-message count tells
+them apart.  The fix is `QVERIFY(QTest::qWaitForWindowExposed(&host))`
+after the `show()`; no amount of `processEvents()` or `qWait()` helps,
+because waiting cannot map a window that was never mapped.  `Tests_run` gained
+`ProxyImport.*` (7) and four `TypeImport.*` cases on 2026-09-09 (the
+Proxy import rule, docs/Sandbox.md sec 11 item 1); the per-binary counts
+below predate that.
 
 **Read the python total as a checksum on the build, not just on the code.**
 A short count means a module is missing rather than a test failing, and the
@@ -36,11 +78,32 @@ in section 6.
 ### Python
 
     cd build/conda-relwithdebinfo-801
-    script -qec "~/works/sw/fcad/.conda/run.sh ./bin/FreeCADCmd -t 0" /dev/null > pytest.log
+    mkdir -p /tmp/fchome
+    QT_QPA_PLATFORM=offscreen PYTHONPATH=$HOME/works/sw/pyifc \
+      FREECAD_USER_HOME=/tmp/fchome \
+      script -qec "~/works/sw/fcad/.conda/run.sh ./bin/FreeCADCmd -t 0" /dev/null > pytest.log
 
-**The `script -qec ... /dev/null` wrapper is not optional.** `FreeCADCmd -t 0`
-needs a pty; without one a CAM sanity test dies on `[Errno 9] Bad file
-descriptor` and takes the rest of the run down with it.
+**Every part of that line is load-bearing** (verified 2026-08-30 by leaving
+each out):
+
+- `script -qec ... /dev/null`: `FreeCADCmd -t 0` needs a pty; without one a
+  CAM sanity test dies on `[Errno 9] Bad file descriptor` and takes the rest
+  of the run down with it.
+- `PYTHONPATH=$HOME/works/sw/pyifc`: supplies ifcopenshell (the fork's own
+  0.9 source build, staged there and RPATH-linked into
+  `~/works/sw/ifcopenshell-build-801`). `TestArch` imports it at module
+  level, so without it the whole ~280-test module collapses into one loader
+  error and the run shrinks to ~2349 tests. Do NOT fix this by
+  `conda install ifcopenshell` into `.conda/freecad`: the packaged build
+  depends on a conda `occt`, which must never enter the dev prefix (see the
+  smesh discussion in `docs/DevEnvironment.md`).
+- `FREECAD_USER_HOME=/tmp/fchome` (any scratch dir): keeps user-installed
+  addons out of the headless run. `~/.FreeCAD/Mod/FreeCAD_SketchArch` calls
+  `FreeCADGui.addCommand` at import time, which errors ~117 Arch tests
+  under `FreeCADCmd`.
+- The env also needs `pyyaml` and `ply` (CAM and FEM import them at module
+  level); they are pip-installed into `.conda/freecad` (2026-08-30) --
+  pip, not conda, so nothing else in the env is re-solved.
 
 **That form is GNU `script`, and it fails on macOS.** BSD `script` has no `-c`
 and rejects it outright (`script: illegal option -- e`), so on the mac box the
@@ -79,6 +142,38 @@ for m in ("pivy", "typing_extensions", "ply", "yaml", "requests",
         out.write("MISSING %-20s (%s)\n" % (m, e))
 out.close()
 ```
+
+### Python that needs the GUI
+
+`FreeCADCmd -t 0` above is headless, and the Gui binary has no `-t` mode, so
+a unittest module that needs a real view provider or a real widget cannot run
+in either. Those modules run from `scripts/sandbox-gui-gate.py`, which the GUI
+executes at startup; `$SANDBOX_GUI_GATE_MODULES` selects them and the verdict
+is the last line of `$SANDBOX_GUI_GATE_RESULT`, not the exit code.
+
+    cd build/conda-relwithdebinfo-801
+    QT_QPA_PLATFORM=offscreen FREECAD_USER_HOME=/tmp/fchome2 \
+      SANDBOX_GUI_GATE_MODULES=ViewProviderHooks,ViewProviderChain \
+      SANDBOX_GUI_GATE_RESULT=/tmp/gate.txt \
+      timeout -k 5 300 ~/works/sw/fcad/.conda/run.sh \
+      ./bin/FreeCAD ~/works/sw/fcad/scripts/sandbox-gui-gate.py
+
+Most of the default module list is the sandbox gates of `docs/Sandbox.md` 7.9,
+which need `xcb` under Xvfb and a guest runtime. `ViewProviderHooks` and
+`ViewProviderChain` are the exceptions and run on `offscreen` with neither:
+between them they are the only cover the tree has for
+`ViewProviderFeaturePythonImp`, every hook of which is invisible to both
+suites above. `ViewProviderHooks` (8 cases) pins which hook each view query
+reaches and what arguments the Proxy is handed, per the table in
+`docs/ProxyChain.md` sec 3; `ViewProviderChain` (17) is the view half of the
+proxy chain -- `ViewProxyExp`, the walk, the deferred attach and a
+spreadsheet as an extension (`docs/ProxyChain.md` sec 4.4). Its App-side twin,
+`FeaturePythonChain`, is headless and rides the Python suite.
+
+**Editing a test module means copying it into the build tree.** The modules
+are installed, not read from `src/`, so an edit to `src/Mod/Test/<M>.py` does
+nothing until `cmake --build` copies it, or you copy it yourself into
+`build/<tree>/Mod/Test/`.
 
 ### C++
 
@@ -389,7 +484,7 @@ link dies on `CVT1100: duplicate resource`. Listing the `.manifest` as a
 The Linux run had none of these, which was the point: they were the first
 thing this suite had ever said about the Windows file layer.
 
-## 2. Why ctest says 453 and the binaries add up to 1305
+## 2. Why ctest says 522 and the binaries add up to 1389
 
 Both numbers are right; they count different things.
 
@@ -398,27 +493,29 @@ Both numbers are right; they count different things.
 and its own process. Every other suite is registered with a plain
 `add_test(NAME X COMMAND X)`, so the whole binary is one entry.
 
-    427 expanded cases (Tests_run 324, Material 39, Part 38, Sketcher 18,
+    496 expanded cases (Tests_run 393, Material 39, Part 38, Sketcher 18,
                         Mesh 7, Points 1)
-    +  1 disabled entry (Part_tests_run's DISABLED_testHistory)
+    +  7 disabled entries (Tests_run's six ExpressionImageBenchTest benches,
+                           Part_tests_run's DISABLED_testHistory)
     + 26 whole-binary entries
-    = 454 registered, 453 run
+    = 529 registered, 522 run
 
 Counting individual test cases instead, across all 32 binaries, gives
-**1305 passing**.
+**1389 passing** (1336 gtest cases plus the 53 QtTest cases of
+`InventorBuilder_Tests_run` and `QuantitySpinBox_Tests_run`).
 
 ## 3. The C++ suites
 
 | Binary | Cases | Notes |
 |---|---|---|
-| `Tests_run` | 329 | The legacy suite: Base and App; +5 `ParamRegistry*` since 2026-09-11 (docs/OmniSearch.md) |
+| `Tests_run` | 457 | The legacy suite: Base and App (incl. the ExpressionSecurity contract cases and the ExpressionImageHost suite; +6 disabled benches, section 4); +5 `ParamRegistry*` since 2026-09-11 (docs/OmniSearch.md) |
 | `src/App/Toponaming_tests_run` | 256 | Element map, MappedName, IndexedName |
-| `src/App/PropertyMaterialList_tests_run` | 88 | |
+| `src/App/PropertyMaterialList_tests_run` | 103 | |
 | `src/Mod/Part/TopoShapeEx_tests_run` | 86 | +3 disabled, section 4 |
 | `src/Gui/SceneLadder_tests_run` | 64 | |
 | `src/Base/InventorBuilder_Tests_run` | 48 | QtTest |
 | `src/Gui/MaskedOcclusion_tests_run` | 41 | |
-| `src/Gui/SceneDump_tests_run` | 39 | |
+| `src/Gui/SceneDump_tests_run` | 46 | |
 | `Part_tests_run` | 38 | +1 disabled, section 4 |
 | `Material_tests_run` | 39 | |
 | `src/Gui/MeshSimplify_tests_run` | 33 | |
@@ -607,6 +704,82 @@ being filled, all live at once.
 | `GuiLiveImportNestedLoop_tests_run` | the live-import nested-loop crash (`docs/DocumentLoad.md` sec 15.2): a command pumps a nested event loop while the chess set is still importing, so the tree populates inside the user-edit guard | 25 s |
 | `GuiServeSelectionEcho_tests_run` | a remote pick on a headless serve source (`Gui.serveDocument`) comes back as a scene push (`docs/ThinClient.md` sec 8.9 step 0): a raw-socket client in a thread sends `'P'` rays and times the frame back; also that a no-change pick pushes nothing and a `'B'` batch pushes one frame | 10 s |
 
+The table is the two oldest; `tests/gui/CMakeLists.txt` is the list that is
+current.
+
+**Seven of them are not registered, and are meant not to be**:
+`camera-uplink-browser.py` and `serve-edit-browser.py` drive a real Chrome
+through the built WASM viewer, `sandbox-console-browser.py` boots the
+sandbox guest in a page served by FreeCAD (docs/Sandbox.md 7.20, C1; its
+endpoints without a browser are the registered `GuiSandboxConsoleServe`), and
+`sandbox-bridge-browser.py` has that guest read and write the served document
+over the socket (C2; the same wire without a browser is the registered
+`GuiSandboxBridgeServe`, which also carries C3's client principal), and
+`sandbox-console-panel-browser.py` uses the console panel on top of it the way
+a person does -- lines, a block, Tab, the history, a paste, Interrupt, a
+document switch -- from a gate page with no WASM viewer (C4), and
+`sandbox-console-viewer-browser.py` opens the real viewer page with
+`?console` to show the console rides the viewer's own connection (one
+client, its view-only mode, its document switch), and
+`sandbox-latency-browser.py` times the statements a console user types with
+`scripts/delay-proxy.js` holding the page's connection at a LAN's or a
+tunnel's round-trip time, and reads the page's processes' memory (C5), so
+they need what this repository does not carry -- `build/wasm` (for the console
+page only the web bundle, `npm run build` in `src/Gui/Renderer/web`), a
+`puppeteer-core` install, and a Chrome binary -- and they skip rather than fail
+when any is missing. Registering them would
+put a test in the ctest count that says SKIP on every box but this one, which
+is a worse lie than an unregistered test. Run them by hand:
+
+    PUPPETEER_PATH=~/works/sw/fcad-probes/node_modules/puppeteer-core \
+    CHROME=~/.cache/puppeteer/chrome/*/chrome-linux64/chrome \
+    scripts/gui-test.sh tests/gui/serve-edit-browser.py /tmp/edit-web \
+        --timeout 600
+
+Setting the browser tooling up again (done 2026-09-14, when none of it was
+left on the box): node comes with emsdk
+(`~/works/sw/emsdk-5.0.3/node/24.19.0_64bit/bin`, pass it as `NODE` or put it
+on PATH); `npm i puppeteer-core @puppeteer/browsers` in
+`~/works/sw/fcad-probes`, then `npx @puppeteer/browsers install chrome@stable
+--path ~/.cache/puppeteer`. Chrome for Testing links `libasound.so.2`, which
+the system does not have and there is no sudo to install: symlink the conda
+env's copy into `~/.cache/puppeteer/lib` and pass that directory as
+`CHROME_LIBS` (`scripts/console-drive.js` prepends it to the browser's
+`LD_LIBRARY_PATH`; the older drivers need it in `LD_LIBRARY_PATH` itself).
+
+    PUPPETEER_PATH=~/works/sw/fcad-probes/node_modules/puppeteer-core \
+    CHROME=$(ls ~/.cache/puppeteer/chrome/linux-*/chrome-linux64/chrome) \
+    CHROME_LIBS=~/.cache/puppeteer/lib \
+    NODE=~/works/sw/emsdk-5.0.3/node/24.19.0_64bit/bin/node \
+    scripts/gui-test.sh tests/gui/sandbox-console-browser.py /tmp/console-web \
+        --timeout 600
+
+`sandbox-bridge-browser.py`, `sandbox-console-panel-browser.py`,
+`sandbox-console-viewer-browser.py` and `sandbox-latency-browser.py` take the
+same four variables (the latency one also `SANDBOX_LATENCY_RTTS` and
+`SANDBOX_LATENCY_MODES`, and about seven minutes for the prefetch on and off).
+
+`build/wasm` on this box (configured 2026-09-15; the CMakeLists' own
+instructions name `~/works/sw/emsdk`, which is not here): the emsdk of the
+guest wheel, the cmake and ninja of the conda env, node from emsdk, and the
+host shaderc the relwithdebinfo tree builds --
+
+    source src/App/PyodideHost/guest/emsdk-env.sh
+    export PATH=$PATH:$PWD/.conda/freecad/bin:~/works/sw/emsdk-5.0.3/node/24.19.0_64bit/bin
+    emcmake cmake -S src/Gui/Renderer/wasm -B build/wasm -G Ninja -DCMAKE_BUILD_TYPE=Release \
+        -DFCVIEWER_SHADERC=$PWD/build/conda-relwithdebinfo-801/src/3rdParty/bgfx/cmake/bgfx/shaderc
+    cmake --build build/wasm
+
+It builds the web bundle into `build/wasm/web` as well, emptying it first.
+
+`EDIT_REAL=1` (`CAMUP_REAL=1` for the other) moves it off headless
+swiftshader onto the WSLg desktop's real GPU; neither is judged by pixels, so
+either tier answers. `serve-edit-browser.py` is worth the trouble: it found
+three crashes on its first run that the synthetic socket client next to it
+could not reach, because a browser sends a *stream* of pointer moves and the
+paths that break are the ones a single event never gets to
+(`docs/ThinClient.md` sec 8.9 step 4).
+
 **On Windows they do not register**, and cannot: `tests/gui/CMakeLists.txt`
 wants `xvfb-run` and `.conda/run.sh`, and the box has neither. Run one by
 hand instead -- nothing in these scripts needs a display of its own, only a
@@ -745,8 +918,16 @@ Seven cases. **None of them is a known defect**; each is a place where this
 fork decided something different from upstream, or a case whose subject the
 fork has retired.
 
-### Four disabled
+### Ten disabled
 
+- `Tests_run` carries six `ExpressionImageBenchTest.DISABLED_Bench*` cases
+  (`tests/src/App/ExpressionImageHost.cpp`). They are timing benches for the
+  expression sandbox -- native engine, image round trip, bridge hop,
+  instantiation, breakdown, transport floor -- not correctness tests; they
+  print microseconds and assert nothing a pass/fail run cares about. Run
+  them on purpose with `--gtest_also_run_disabled_tests
+  --gtest_filter='ExpressionImageBenchTest.*'`; the numbers they produced
+  are recorded in `docs/Sandbox.md` sec 8.1.
 - `TopoShapeEx_tests_run` carries three, each ruled an accepted difference
   by phase 4 of the topological-naming harvest rather than a bug. The reason
   is written above each case; in short:

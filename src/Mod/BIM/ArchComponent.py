@@ -1514,15 +1514,12 @@ class AreaCalculator:
         import TechDraw
         import DraftGeomUtils
 
-        # In TechDraw edges longer than 9999.9 (ca. 10m) are considered 'crazy'.
-        # See also Draft/draftobjects/hatch.py.
-        param_grp = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/TechDraw/debug")
-        if "allowCrazyEdge" not in param_grp.GetBools():
-            old_allow_crazy_edge = None
-        else:
-            old_allow_crazy_edge = param_grp.GetBool("allowCrazyEdge")
-        param_grp.SetBool("allowCrazyEdge", True)
-
+        # In TechDraw edges longer than 9999.9 (ca. 10m) are considered 'crazy'
+        # and dropped; a building's outline is longer than that legitimately.
+        # findShapeOutline takes allowCrazyEdge=True for the length of the call
+        # (the scoped form of the Mod/TechDraw/debug preference), so a recompute
+        # never writes the user's parameter store.  See also
+        # Draft/draftobjects/hatch.py.
         direction = FreeCAD.Vector(0, 0, 1)
         projectedFaces = []
         for face in horizontalAreaFaces:
@@ -1538,9 +1535,8 @@ class AreaCalculator:
                             )
                         )
                         self.resetAreas()
-                        self._restoreCrazyEdge(param_grp, old_allow_crazy_edge)
                         return
-                    wire = TechDraw.findShapeOutline(face, 1, direction)
+                    wire = TechDraw.findShapeOutline(face, 1, direction, allowCrazyEdge=True)
                     projectedFace = Part.makeFace([wire], "Part::FaceMakerSimple")
                 else:
                     edges = TechDraw.project(face, direction)[0].Edges
@@ -1559,10 +1555,7 @@ class AreaCalculator:
                     )
                 )
                 self.resetAreas()
-                self._restoreCrazyEdge(param_grp, old_allow_crazy_edge)
                 return
-
-        self._restoreCrazyEdge(param_grp, old_allow_crazy_edge)
 
         fusedFace = None
         if projectedFaces:
@@ -1587,15 +1580,6 @@ class AreaCalculator:
                 perimeterLength = fusedFace.Faces[0].OuterWire.Length
                 if self.obj.PerimeterLength.Value != perimeterLength:
                     self.obj.PerimeterLength = perimeterLength
-
-
-    def _restoreCrazyEdge(self, param_grp, old_allow_crazy_edge):
-        """Put TechDraw's allowCrazyEdge debug parameter back as it was."""
-
-        if old_allow_crazy_edge is None:
-            param_grp.RemBool("allowCrazyEdge")
-        else:
-            param_grp.SetBool("allowCrazyEdge", old_allow_crazy_edge)
 
 
 class ViewProviderComponent:

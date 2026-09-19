@@ -3435,7 +3435,7 @@ bool ViewProviderLink::setEdit(int ModNum)
 
 static QPointer<TaskCSysDragger> _TaskDragger;
 
-void ViewProviderLink::setEditViewer(Gui::View3DInventorViewer* viewer, int ModNum)
+void ViewProviderLink::setEditViewer(Gui::ViewerContext* viewer, int ModNum)
 {
     if (ModNum == ViewProvider::Color) {
         auto ext = getLinkExtension();
@@ -3495,7 +3495,7 @@ void ViewProviderLink::setEditViewer(Gui::View3DInventorViewer* viewer, int ModN
     }
 }
 
-void ViewProviderLink::unsetEditViewer(Gui::View3DInventorViewer* viewer)
+void ViewProviderLink::unsetEditViewer(Gui::ViewerContext* viewer)
 {
     dragPlacementIndex = -1;
     SoNode *child = static_cast<SoFCUnifiedSelection*>(viewer->getSceneGraph())->getChild(0);

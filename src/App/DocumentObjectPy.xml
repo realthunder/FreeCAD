@@ -21,6 +21,7 @@
                     locked: prevent the property from being removed again (Property.LockDynamic).
                 </UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="removeProperty">
             <Documentation>
@@ -29,6 +30,7 @@
                     Note, you can only remove user-defined properties but not built-in ones.
                 </UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="renameProperty">
             <Documentation>
@@ -37,6 +39,7 @@
                     Note, you can only rename user-defined properties but not built-in ones.
                 </UserDocu>
             </Documentation>
+          <Sandbox tier="call"/>
         </Methode>
         <Methode Name="supportedProperties">
             <Documentation>
@@ -47,11 +50,13 @@
             <Documentation>
                 <UserDocu>Mark the object as changed (touched)</UserDocu>
             </Documentation>
+          <Sandbox tier="call"/>
         </Methode>
         <Methode Name="purgeTouched">
             <Documentation>
                 <UserDocu>Mark the object as unchanged</UserDocu>
             </Documentation>
+          <Sandbox tier="call"/>
         </Methode>
         <Methode Name="enforceRecompute">
             <Documentation>
@@ -62,6 +67,7 @@
             <Documentation>
                 <UserDocu>Register an expression for a property</UserDocu>
             </Documentation>
+          <Sandbox tier="call"/>
         </Methode>
         <Methode Name="getExpression">
             <Documentation>
@@ -100,6 +106,7 @@ tuple(typename, start, end, children, refs, hiddenRefs) with the following eleme
             <Documentation>
                 <UserDocu>recompute(recursive=False): Recomputes this object</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="getStatusString" const="True">
             <Documentation>
@@ -114,11 +121,13 @@ If the object is valid but touched then &apos;Touched&apos; will be returned,
             <Documentation>
                 <UserDocu>Returns True if the object is valid, False otherwise</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="isAttachedToDocument" const="True">
             <Documentation>
                 <UserDocu>Returns True if the object is part of a document, False otherwise</UserDocu>
             </Documentation>
+          <Sandbox tier="call"/>
         </Methode>
         <Methode Name="getSubObject" Keyword="true">
             <Documentation>
@@ -150,6 +159,7 @@ referencing subobject.
 * depth: current recursive depth
                 </UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="getSubObjectList">
             <Documentation>
@@ -192,6 +202,7 @@ documents each contribute their own transformation. A scaled transformation
 cannot be expressed as a placement, and its scale is dropped.
                 </UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="expandSubObjectNames" Keyword="true">
             <Documentation>
@@ -248,6 +259,7 @@ containing the accumulated transformation matrix
 * depth: current recursive depth
                 </UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="setElementVisible">
             <Documentation>
@@ -292,6 +304,7 @@ found, 0 if invisible, or else 1
                           Note that an object can only be in a single group, hence only a single return 
                           value.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="getParentGeoFeatureGroup">
             <Documentation>
@@ -299,6 +312,7 @@ found, 0 if invisible, or else 1
                           is in or None if it is not part of a group. Note that an object can only be 
                           in a single group, hence only a single return value.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="getParent">
             <Documentation>
@@ -308,6 +322,7 @@ found, 0 if invisible, or else 1
                           The parent can be a simple group as with getParentGroup() or a
                           GeoFeature group as with getParentGeoFeatureGroup().</UserDocu>
             </Documentation>
+          <Sandbox tier="call"/>
         </Methode>
         <Methode Name="getPropertyReferrers" Const="true">
             <Documentation>
@@ -389,48 +404,56 @@ return A List holding all parents (or requested parent if given) and correspondi
         <UserDocu>A list of all objects this object links to.</UserDocu>
       </Documentation>
       <Parameter Name="OutList" Type="List"/>
+      <Sandbox tier="handle"/>
     </Attribute>
     <Attribute Name="OutListRecursive" ReadOnly="true">
       <Documentation>
         <UserDocu>A list of all objects this object links to recursively.</UserDocu>
       </Documentation>
       <Parameter Name="OutListRecursive" Type="List"/>
+      <Sandbox tier="handle"/>
     </Attribute>
     <Attribute Name="InList" ReadOnly="true">
       <Documentation>
         <UserDocu>A list of all objects which link to this object.</UserDocu>
       </Documentation>
       <Parameter Name="InList" Type="List"/>
+      <Sandbox tier="handle"/>
     </Attribute>
     <Attribute Name="InListRecursive" ReadOnly="true">
       <Documentation>
         <UserDocu>A list of all objects which link to this object recursively.</UserDocu>
       </Documentation>
       <Parameter Name="InListRecursive" Type="List"/>
+      <Sandbox tier="handle"/>
     </Attribute>
     <Attribute Name="FullName" ReadOnly="true">
         <Documentation>
             <UserDocu>Return the document name and internal name of this object</UserDocu>
         </Documentation>
         <Parameter Name="FullName" Type="String"/>
+        <Sandbox tier="value"/>
     </Attribute>
     <Attribute Name="Name" ReadOnly="true">
             <Documentation>
                 <UserDocu>Return the internal name of this object</UserDocu>
             </Documentation>
             <Parameter Name="Name" Type="String"/>
+            <Sandbox tier="value"/>
         </Attribute>
                 <Attribute Name="Document" ReadOnly="true">
                         <Documentation>
                                 <UserDocu>Return the document this object is part of</UserDocu>
                         </Documentation>
                         <Parameter Name="Document" Type="Object"/>
+                        <Sandbox tier="handle"/>
                 </Attribute>
                 <Attribute Name="State" ReadOnly="true">
             <Documentation>
                 <UserDocu>State of the object in the document</UserDocu>
             </Documentation>
             <Parameter Name="State" Type="List"/>
+          <Sandbox tier="value"/>
         </Attribute>
         <CustomAttributes />
         <Attribute Name="MustExecute" ReadOnly="true">

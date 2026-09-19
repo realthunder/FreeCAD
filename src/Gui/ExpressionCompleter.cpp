@@ -24,6 +24,7 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+# include <unordered_set>
 # include <boost/algorithm/string/predicate.hpp>
 # include <QAbstractItemView>
 # include <QApplication>
@@ -39,12 +40,13 @@
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/ExpressionParser.h>
+#include <App/ExpressionSecurityRuntime.h>
 #include <App/GeoFeature.h>
 #include <App/ObjectIdentifier.h>
-#include <App/ExpressionParser.h>
 #include <App/PropertyLinks.h>
 #include <Base/Tools.h>
 #include "ExpressionCompleter.h"
+#include "ExpressionSyntaxHighlighter.h"
 #include "Application.h"
 #include "ViewProvider.h"
 #include "BitmapFactory.h"
@@ -59,6 +61,35 @@ using namespace App;
 using namespace Gui;
 
 static PropertyBool _FakeProp;
+
+// The completer's item model wants each pseudo property (_shape, _pla, ...)
+// as a fake App::Property so it can slot into the same rows as real
+// properties. The core table (ObjectIdentifier::getPseudoPropertyInfos())
+// is plain constant data, so the fakes are built here, presentation-side.
+static const std::vector<std::pair<const char *, App::Property*> > &getPseudoProperties()
+{
+    static PropertyContainer dummy;
+    static std::vector<std::pair<const char *, App::Property*> > pseudoProps;
+    if(pseudoProps.empty()) {
+        for(const auto &info : ObjectIdentifier::getPseudoPropertyInfos()) {
+            auto prop = static_cast<PropertyInteger*>(
+                    dummy.addDynamicProperty("App::PropertyInteger", info.name, 0, info.doc));
+            prop->setValue(info.type);
+            pseudoProps.emplace_back(info.name, prop);
+        }
+    }
+    return pseudoProps;
+}
+
+static bool isPseudoProperty(const App::Property *prop)
+{
+    static std::unordered_set<const App::Property*> propSet;
+    if(propSet.empty()) {
+        for(auto &v : getPseudoProperties())
+            propSet.insert(v.second);
+    }
+    return propSet.count(prop)!=0;
+}
 
 class ExpressionCompleterModel: public QAbstractItemModel {
 public:
@@ -283,7 +314,13 @@ public:
             name = QString::fromUtf8(obj->getNameInDocument());
             label = QString::fromUtf8(quote(obj->Label.getStrValue()).c_str());
 
-            auto vp = Gui::Application::Instance->getViewProvider(obj);
+            // No Gui::Application at all is a real caller now: the
+            // widget stream answers completion for a remote panel
+            // (docs/Sandbox.md 7.23), and its gate runs with no GUI
+            // application object. An icon is what is lost, not the
+            // completion.
+            auto vp = Gui::Application::Instance
+                ? Gui::Application::Instance->getViewProvider(obj) : nullptr;
             if(vp)
                 icon = vp->getIcon();
 
@@ -368,8 +405,12 @@ public:
         }
 
         App::DocumentObject *getObject() const {
-            // make sure the document is still there
-            if(!Gui::Application::Instance->getDocument(doc))
+            // make sure the document is still there.  With no
+            // Gui::Application there is no GUI document to ask, and
+            // "no GUI document" must not read as "the document is
+            // gone" -- that would answer nothing at all to a remote
+            // panel's completion (docs/Sandbox.md 7.23).
+            if(Gui::Application::Instance && !Gui::Application::Instance->getDocument(doc))
                 return nullptr;
             return doc->getObjectByID(objID);
         }
@@ -438,7 +479,7 @@ public:
                 --row;
             }
 
-            const auto &pseudoProps = ObjectIdentifier::getPseudoProperties();
+            const auto &pseudoProps = getPseudoProperties();
             int pseudoSize = (int)pseudoProps.size();
             if(row < pseudoSize) {
                 res = pseudoProps[row];
@@ -460,7 +501,7 @@ public:
                 return nullptr;
 
             int offset = (int)outRows.size() + (int)propList.size()
-                + ObjectIdentifier::getPseudoProperties().size();
+                + getPseudoProperties().size();
             if(row < offset)
                 return nullptr;
 
@@ -487,7 +528,7 @@ public:
             return (int)outRows.size()
                 + (int)propList.size()
                 + (root ? 1 : 0)
-                + ObjectIdentifier::getPseudoProperties().size()
+                + getPseudoProperties().size()
                 + (root?0:elementCount);
         }
     };
@@ -585,7 +626,8 @@ public:
                 return txt;
             }
             case Qt::DecorationRole: {
-                auto vp = Gui::Application::Instance->getViewProvider(obj);
+                auto vp = Gui::Application::Instance
+                    ? Gui::Application::Instance->getViewProvider(obj) : nullptr;
                 if(vp)
                     return vp->getIcon();
                 return QIcon();
@@ -1585,9 +1627,11 @@ public:
 
             const char *propName = propInfo.first;
             Base::PyGILStateLocker lock;
-            if(ObjectIdentifier::isPseudoProperty(prop)) {
+            if(isPseudoProperty(prop)) {
                 App::ObjectIdentifier path(owner, propName);
                 try {
+                    // completer evaluation is interactive: session principal
+                    App::ExpressionSecurity::Runtime::Scope secScope("session");
                     this->pyObj = Py::new_reference_to(path.getPyValue());
                     PythonData::init();
                 } catch (Base::Exception &e) {
@@ -1645,6 +1689,7 @@ public:
 
             const auto &path = paths[row].path;
             try {
+                App::ExpressionSecurity::Runtime::Scope secScope("session");
                 child.pyObj = Py::new_reference_to(path.getPyValue(true));
                 return true;
             } catch (Py::Exception &) {
@@ -1796,6 +1841,7 @@ public:
             // list/map index accessor, which cannot be completed.
             if(l.last().startsWith(QLatin1Char('.'))) {
                 Base::PyGILStateLocker lock;
+                App::ExpressionSecurity::Runtime::Scope secScope("session");
                 Py::Object value = vexpr->getPyValue();
                 if(!value.isNone()) {
                     if(!vexpr->hasComponent()) {
@@ -2522,6 +2568,45 @@ void ExpressionCompleter::slotUpdate(const QString & prefix, int pos)
     }
 }
 
+QStringList ExpressionCompleter::completionsFor(const QString &text, int pos,
+                                                int &start, int &end,
+                                                QStringList *details)
+{
+    start = end = 0;
+    init();
+    // One rule for every remote client, whatever the desktop user set in
+    // the popup's context menu (docs/Sandbox.md 7.25, ruled 2026-09-17):
+    // any keyword, ignoring case, and the list filtered -- with
+    // UnfilteredPopupCompletion completionCount() is the whole model.
+    setCaseSensitivity(Qt::CaseInsensitive);
+    setCompletionMode(QCompleter::PopupCompletion);
+    setFilterMode(Qt::MatchContains);
+    if (tokenizer.perform(text, pos).isEmpty())
+        return {};
+    static_cast<ExpressionCompleterModel*>(model())->setSearchUnit(tokenizer.isSearchingUnit());
+    setCompletionPrefix(tokenizer.getCurrentPrefix());
+    // The tokenizer's own range, not getPrefixRange's: that one rewrites
+    // the prefix to the saved one when the caller's string IS the current
+    // prefix, which is the popup's "nothing was really chosen" case. A
+    // remote caller splices a whole completion over [start, end).
+    start = tokenizer.getPrefixStart();
+    end = tokenizer.getPrefixEnd();
+    QStringList items;
+    const int rows = completionCount();
+    for (int i = 0; i < rows; ++i) {
+        if (!setCurrentRow(i))
+            break;
+        // currentCompletion() runs pathFromIndex, so what comes back is
+        // what activating that row would have inserted
+        items << currentCompletion();
+        if (details) {
+            const QModelIndex idx = completionModel()->index(i, 0);
+            details->append(completionModel()->data(idx, Qt::ToolTipRole).toString());
+        }
+    }
+    return items;
+}
+
 void ExpressionCompleter::showPopup(bool show) {
     if (show && widget()->hasFocus()) {
         QRect rect;
@@ -2742,6 +2827,9 @@ ExpressionTextEdit::ExpressionTextEdit(QWidget *parent, char lead)
 {
     connect(this, SIGNAL(textChanged()), this, SLOT(slotTextChanged()));
     LineEditStyle::setup(this);
+    auto highlighter = new ExpressionSyntaxHighlighter(this);
+    highlighter->loadEditorColors();
+    highlighter->setDocument(document());
 }
 
 void ExpressionTextEdit::setLeadChar(char lead)

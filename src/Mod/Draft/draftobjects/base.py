@@ -30,6 +30,8 @@
 
 ## \addtogroup draftobjects
 # @{
+import FreeCAD as App
+
 
 
 class DraftObject(object):
@@ -75,6 +77,7 @@ class DraftObject(object):
     This class attribute is accessible through the `Proxy` object:
     `obj.Proxy.Type`.
     """
+
 
     def __init__(self, obj, tp="Unknown"):
         # This class is assigned to the Proxy attribute

@@ -160,6 +160,18 @@ public:
     virtual bool allowExternalPick() const {return false;}
     virtual bool allowExternalDocument() const {return false;}
 
+    /** Whether the tool is between the clicks of a multi-click sequence.
+     *
+     * What ViewProviderSketch::isGestureInProgress answers with, so that
+     * while one view's click has a line waiting for its second point,
+     * another view's pointer does not move that point (docs/ThinClient.md
+     * 8.11). A one-click tool has no sequence.
+     */
+    virtual bool inSequence() const
+    {
+        return false;
+    }
+
     // Called when the corresponding tool button is pressed while this handler
     // is active 'next' is the new handler of the pressed button. Return true to
     // discard the 'next' handler and reuse the current handler.
@@ -313,7 +325,23 @@ protected:
 
     void signalToolChanged() const;
 
-    Gui::View3DInventorViewer* getViewer();
+    /** The view this sketch is being edited in, or null.
+     *
+     * The sketch's own view provider is asked, not the application: a
+     * tool's state machine runs inside one edit session, in one view,
+     * and "which window is active" is a different question that in a
+     * process serving several browsers has no useful answer
+     * (docs/ThinClient.md sec 8.3).
+     */
+    Gui::ViewerContext* getViewer();
+    /** The same view, when it is a desktop one with a widget.
+     *
+     * Null for a client's mirror, which is how the surfaces that need a
+     * Qt widget -- the cursor, the on-view parameters -- find out they
+     * cannot run here. Those are the DOM layer's job instead
+     * (docs/ThinClient.md sec 8.7).
+     */
+    Gui::View3DInventorViewer* getDesktopViewer();
 
 private:
     void setSvgCursor(const QString& svgName,

@@ -34,8 +34,10 @@
 #include <App/DocumentObject.h>
 #include <App/DocumentObserver.h>
 #include <App/Expression.h>
+#include <App/ExpressionEvaluator.h>
 #include <App/ExpressionParser.h>
 #include <App/ExpressionVisitors.h>
+#include <App/FeaturePythonHook.h>
 #include <App/Property.h>
 #include <Base/Console.h>
 #include <Base/Interpreter.h>
@@ -263,13 +265,27 @@ void PropertySheet::setDirty()
     }
 }
 
-App::ExpressionPtr PropertySheet::eval(const App::Expression *expr) const {
+Py::Object PropertySheet::evalPy(const App::Expression *expr) const {
     if(!expr)
-        return App::ExpressionPtr();
+        return Py::Object();
+    // The switch-over seam for the spreadsheet (docs/ExpressionImage.md
+    // "The evaluation switch-over"): this is the ONE place a stored cell
+    // expression is evaluated as a whole, so it is where routing decides
+    // -- exactly as PropertyExpressionEngine does for bindings.  The
+    // cell's own eval options, python mode included, cross with it.
+    // Nested reads inside the cell stay on Expression's own accessors.
     int option = App::Expression::OptionCallFrame;
     if(owner && owner->PythonMode.getValue())
         option |= App::Expression::OptionPythonMode;
-    return expr->eval(option);
+    Base::PyGILStateLocker lock;
+    return Py::Object(App::ExpressionSandbox::evaluatePy(expr, option), true);
+}
+
+App::ExpressionPtr PropertySheet::eval(const App::Expression *expr) const {
+    if(!expr)
+        return App::ExpressionPtr();
+    Base::PyGILStateLocker lock;
+    return App::expressionFromPy(expr->getOwner(), evalPy(expr));
 }
 
 App::ExpressionPtr PropertySheet::parse(const char *txt, std::size_t len, bool verbose) const {
@@ -1749,6 +1765,11 @@ void PropertySheet::recomputeDependencies(CellAddress key)
 
 void PropertySheet::hasSetValue()
 {
+    // A cell of this sheet may be a method some feature's ProxyExp chain
+    // resolved; re-typing it is a definition change nothing else reports.
+    // docs/ProxyChain.md sec 2.4.
+    App::ProxyChain::bump();
+
     if (updateCount == 0 || !owner || !owner->isAttachedToDocument() || owner->isRestoring()
         || this != &owner->cells || testFlag(LinkDetached)) {
         PropertyExpressionContainer::hasSetValue();

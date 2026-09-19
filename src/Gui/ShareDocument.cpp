@@ -27,6 +27,7 @@
 #include <QClipboard>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QStandardItemModel>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
@@ -246,6 +247,24 @@ struct ShareGrant
     /// runtime (never stored); 0 for persistent grants.
     uint64_t liveId = 0;
 };
+
+/// Whether a grant's identity field names one person (docs/ShareAccess.md
+/// sec 2.2): full control goes only to an identity written out in full,
+/// never to a pattern, which the server would admit as editors anyway.
+bool literalIdentity(const QString &identity)
+{
+    return !identity.isEmpty() && !identity.contains(QLatin1Char('*'))
+        && !identity.contains(QLatin1Char('?'));
+}
+
+/// A combo's item enabled or not (the model is a QStandardItemModel)
+void setItemEnabled(QComboBox *box, int index, bool enabled)
+{
+    if (auto *model = qobject_cast<QStandardItemModel *>(box->model())) {
+        if (auto *item = model->item(index))
+            item->setEnabled(enabled);
+    }
+}
 
 /// The same invitation, for finding a row's grant in the stored list —
 /// what it grants (access, enabled) may be the very thing being edited.
@@ -556,15 +575,27 @@ public:
         auto *inviteMode = new QComboBox(this);
         inviteMode->addItem(tr("Can edit"));
         inviteMode->addItem(tr("View only"));
+        inviteMode->addItem(tr("Full control"));
+        inviteMode->setItemData(2, tr("Acts as you would at this desktop: any command, the "
+                   "preferences, the tool bars. Only for one signed-in "
+                   "identity written out in full; on a pattern the grant "
+                   "admits editors."), Qt::ToolTipRole);
         auto *inviteBtn = new QPushButton(tr("Invite"), this);
         auto invite = [this, inviteMode]() {
             const QString id = inviteEdit->text().trimmed();
             if (id.isEmpty())
                 return;
+            const int mode = inviteMode->currentIndex();
+            if (mode == 2 && !literalIdentity(id)) {
+                QMessageBox::warning(this, tr("Invite"),
+                    tr("Full control goes to one signed-in identity, "
+                       "written out in full -- not a pattern."));
+                return;
+            }
             ShareGrant g;
             g.identity = id;
             g.name = g.address = QStringLiteral("*");
-            g.access = inviteMode->currentIndex();
+            g.access = mode == 2 ? 3 : mode;
             auto list = loadGrants();
             list.push_back(g);
             saveGrants(list);
@@ -618,7 +649,8 @@ public:
             // the row was first built, and the row must follow it.
             sig.emplace_back(c.id
                 ^ (uint64_t(qHash(QString::fromUtf8(c.client.c_str())))
-                   << 20), c.viewOnly);
+                   << 20) + (uint64_t(c.access) << 61),
+                c.access == Render::ClientAccess::View);
         }
         for (const auto &g : grants) {
             sig.emplace_back((uint64_t(qHash(g.token + g.identity + g.name
@@ -668,7 +700,16 @@ public:
             auto *mode = new QComboBox(tree);
             mode->addItem(tr("Can edit"));
             mode->addItem(tr("View only"));
-            mode->setCurrentIndex(c.viewOnly ? 1 : 0);
+            mode->addItem(tr("Full control"));
+            mode->setItemData(2, tr("Acts as you would at this desktop: any command, the "
+                   "preferences, the tool bars. Only for one signed-in "
+                   "identity written out in full; on a pattern the grant "
+                   "admits editors."), Qt::ToolTipRole);
+            // A name is what a client chose: only a verified identity may
+            // be a host (docs/ShareAccess.md sec 2.2)
+            setItemEnabled(mode, 2, !c.identity.empty());
+            mode->setCurrentIndex(c.access == Render::ClientAccess::View ? 1
+                                  : c.access == Render::ClientAccess::Host ? 2 : 0);
             mode->setToolTip(tr(
                 "This connection alone, for this session. A durable "
                 "decision is a grant — the rows below."));
@@ -676,7 +717,9 @@ public:
             connect(mode, qOverload<int>(&QComboBox::currentIndexChanged),
                     this, [id](int index) {
                         Render::SceneStreamServer::instance()
-                            .setClientViewOnly(id, index == 1);
+                            .setClientAccess(id, index == 1 ? Render::ClientAccess::View
+                                                 : index == 2 ? Render::ClientAccess::Host
+                                                              : Render::ClientAccess::Edit);
                     });
             tree->setItemWidget(item, 4, mode);
 
@@ -810,6 +853,12 @@ public:
                 mode->addItem(tr("Can edit"));
                 mode->addItem(tr("View only"));
                 mode->addItem(tr("Banned"));
+                mode->addItem(tr("Full control"));
+                mode->setItemData(3, tr("Acts as you would at this desktop: any command, the "
+                   "preferences, the tool bars. Only for one signed-in "
+                   "identity written out in full; on a pattern the grant "
+                   "admits editors."), Qt::ToolTipRole);
+                setItemEnabled(mode, 3, g.access == 3 || literalIdentity(g.identity));
                 mode->setCurrentIndex(g.access);
                 mode->setToolTip(ruleHelp());
                 connect(mode,
@@ -908,6 +957,11 @@ private:
         modeBox->addItem(tr("Can edit"));
         modeBox->addItem(tr("View only"));
         modeBox->addItem(tr("Banned"));
+        modeBox->addItem(tr("Full control"));
+        modeBox->setItemData(3, tr("Acts as you would at this desktop: any command, the "
+                   "preferences, the tool bars. Only for one signed-in "
+                   "identity written out in full; on a pattern the grant "
+                   "admits editors."), Qt::ToolTipRole);
         modeBox->setToolTip(ruleHelp());
         form->addRow(tr("Token:"), tokenEdit);
         form->addRow(tr("Identity:"), idEdit);
@@ -934,6 +988,12 @@ private:
         if (g.address.isEmpty())
             g.address = QStringLiteral("*");
         g.access = modeBox->currentIndex();
+        if (g.access == 3 && !literalIdentity(g.identity)) {
+            QMessageBox::warning(this, tr("Add grant"),
+                tr("Full control goes to one signed-in identity, written "
+                   "out in full -- not a pattern. The grant was not added."));
+            return;
+        }
         auto list = loadGrants();
         list.push_back(g);
         saveGrants(list);

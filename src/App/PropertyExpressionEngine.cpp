@@ -34,6 +34,7 @@
 #include <Base/Writer.h>
 #include <CXX/Objects.hxx>
 
+#include "ExpressionEvaluator.h"
 #include "InputStratum.h"
 #include "PropertyExpressionEngine.h"
 #include "PropertyUnits.h"
@@ -276,7 +277,7 @@ void PropertyExpressionEngine::updateHiddenReference(const std::string &key) {
         Base::StateLocker guard(it->second.busy);
         App::any value;
         try {
-            value = it->second.expression->getValueAsAny();
+            value = ExpressionSandbox::evaluate(it->second.expression.get());
             // if(!isAnyEqual(value, myProp->getPathValue(var)))
             myProp->setPathValue(var, value);
         }catch(Base::Exception &e) {
@@ -846,7 +847,8 @@ void PropertyExpressionEngine::evaluateBinding(const ObjectIdentifier &path,
     App::any value;
     try {
         // Evaluate expression
-        value = expression->getValueAsAny(Expression::OptionCallFrame);
+        value = ExpressionSandbox::evaluate(expression.get(),
+                                            Expression::OptionCallFrame);
         prop->setPathValue(path, value);
         if(touched && !*touched)
             *touched = prop->isTouched();

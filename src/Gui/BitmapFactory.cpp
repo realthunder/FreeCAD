@@ -26,6 +26,7 @@
 # include <QApplication>
 # include <QBitmap>
 # include <QDir>
+# include <QBuffer>
 # include <QFile>
 # include <QFileInfo>
 # include <QMap>
@@ -412,6 +413,53 @@ QIcon BitmapFactoryInst::iconFromTheme(const char* name, bool silent, const QIco
 
     // Neither ours nor themed. Repeat the lookup so a miss is reported as it used to be.
     return pixmap(name, silent);
+}
+
+QByteArray BitmapFactoryInst::iconSource(const char* name, int size, QString& format)
+{
+    format.clear();
+    if (!name || *name == '\0')
+        return QByteArray();
+    QString fn = QString::fromUtf8(name);
+    // an SVG file, by the lookup pixmap() uses: a path as given, an
+    // override's file, a name in the icons search paths with or
+    // without its suffix
+    QString iconPath;
+    QPixmap cached;
+    std::string cachedPath;
+    if (findPixmapInCache(name, cached, nullptr, &cachedPath))
+        iconPath = QString::fromUtf8(cachedPath.c_str());
+    if (iconPath.isEmpty()) {
+        for (const QString& candidate : {fn, QStringLiteral("icons:") + fn,
+                                         QStringLiteral("icons:") + fn + QStringLiteral(".svg")}) {
+            QFileInfo fi(candidate);
+            if (fi.exists() && fi.isFile()) {
+                iconPath = fi.filePath();
+                break;
+            }
+        }
+    }
+    if (!iconPath.isEmpty() && iconPath.endsWith(QStringLiteral(".svg"), Qt::CaseInsensitive)) {
+        QFile file(iconPath);
+        if (file.open(QIODevice::ReadOnly)) {
+            format = QStringLiteral("svg");
+            return file.readAll();
+        }
+    }
+    // else a pixmap, at the asked size
+    QIcon icon = iconFromTheme(name, true);
+    if (icon.isNull())
+        return QByteArray();
+    QPixmap px = icon.pixmap(QSize(size > 0 ? size : 24, size > 0 ? size : 24));
+    if (px.isNull())
+        return QByteArray();
+    QByteArray bytes;
+    QBuffer buffer(&bytes);
+    buffer.open(QIODevice::WriteOnly);
+    if (!px.save(&buffer, "PNG"))
+        return QByteArray();
+    format = QStringLiteral("png");
+    return bytes;
 }
 
 bool BitmapFactoryInst::loadPixmap(const QString& filename, QPixmap& icon) const

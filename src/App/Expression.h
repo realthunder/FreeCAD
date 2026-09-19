@@ -29,7 +29,6 @@
 #include <string>
 #include <boost/pool/pool_alloc.hpp>
 #include <boost/tuple/tuple.hpp>
-#include <App/PropertyLinks.h>
 #include <App/ObjectIdentifier.h>
 #include <App/Range.h>
 #include <Base/Exception.h>
@@ -46,6 +45,7 @@ namespace App  {
 class DocumentObject;
 class Expression;
 class Document;
+class PropertyLinkBase;
 
 using ExpressionPtr = std::unique_ptr<Expression>;
 
@@ -53,7 +53,7 @@ AppExport bool isAnyEqual(const App::any &v1, const App::any &v2);
 AppExport Base::Quantity anyToQuantity(const App::any &value, const char *errmsg = nullptr);
 
 // Map of depending objects to a map of depending property name to the full referencing object identifier
-using ExpressionDeps = std::map<App::DocumentObject*, std::map<std::string, std::vector<ObjectIdentifier> > >;
+using ExpressionDeps = std::map<ExpressionObjectT*, std::map<std::string, std::vector<ObjectIdentifier> > >;
 
 class AppExport ExpressionVisitor {
 public:
@@ -82,34 +82,6 @@ protected:
                         const CellAddress &origin,
                         const CellAddress &src,
                         const CellAddress &dst);
-};
-
-template<class P> class ExpressionModifier : public ExpressionVisitor {
-public:
-    explicit ExpressionModifier(P & _prop)
-        : prop(_prop)
-        , propLink(Base::freecad_dynamic_cast<App::PropertyLinkBase>(&prop))
-        , signaller(_prop,false)
-    {}
-
-    ~ExpressionModifier() override = default;
-
-    void aboutToChange() override{
-        ++_changed;
-        signaller.aboutToChange();
-    }
-
-    int changed() const override { return _changed; }
-
-    void reset() override {_changed = 0;}
-
-    App::PropertyLinkBase* getPropertyLink() override {return propLink;}
-
-protected:
-    P & prop;
-    App::PropertyLinkBase *propLink;
-    typename AtomicPropertyChangeInterface<P>::AtomicPropertyChange signaller;
-    int _changed{0};
 };
 
 // The reason of not using boost::pool_allocator directly is because the one
@@ -152,6 +124,16 @@ _ExpressionAllocDefine(_ExpressionAllocator,boost::pool_allocator);
   *
   */
 
+/** Significant digits NumberExpression::toString prints (per thread).
+ * Default digits10 (15), the long-standing display and persistence form.
+ * The sandbox router raises it to max_digits10 (17) around the
+ * serialization it SHIPS to the guest, so an in-memory literal reaches
+ * the sandbox with every bit the native evaluator sees -- at 15 digits
+ * `1.000000000000001` arrives as `1`, and `1 >= 1.000000000000001 ? 0 : 1`
+ * flips.  Persistence is untouched: saved documents keep 15.
+ */
+AppExport int& expressionNumberPrecision();
+
 class AppExport Expression : public Base::BaseClass {
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
@@ -160,7 +142,7 @@ public:
     Expression(const Expression&) = delete;
     void operator=(const Expression &)=delete;
 
-    explicit Expression(const App::DocumentObject * _owner);
+    explicit Expression(const ExpressionObjectT * _owner);
 
     ~Expression() override;
 
@@ -253,7 +235,7 @@ public:
         explicit Exception(const char *sMessage) : Base::Exception(sMessage) { }
     };
 
-    App::DocumentObject *getOwner() const { return owner; }
+    ExpressionObjectT *getOwner() const { return owner; }
 
     struct Component;
     typedef std::unique_ptr<Component> ComponentPtr;
@@ -306,7 +288,7 @@ protected:
     friend ExpressionVisitor;
 
 protected:
-    App::DocumentObject * owner; /**< The document object used to access unqualified variables (i.e local scope) */
+    ExpressionObjectT * owner; /**< The document object used to access unqualified variables (i.e local scope) */
 
     ComponentList components;
 

@@ -210,6 +210,15 @@ void queueLevelGuiWork(const void *tag, std::function<void()> body,
 /// rebuild ran under is what the instruments could not do).
 bool inLandingPump();
 
+/// Stop the level worker threads -- the refine pool and the reaper --
+/// and join them. Hooked to the application's aboutToQuit and its
+/// post routines the first time a worker starts, so the statics they
+/// wait on are never destroyed under them (glibc's
+/// pthread_cond_destroy blocks on a parked waiter: the exit() hang).
+/// Idempotent, safe to call with no worker started. Queued jobs are
+/// dropped, their descents settled; a build in flight finishes first.
+void shutdownMeshLevelWorkers();
+
 /// The coarse-first tessellation level for display builds; negative
 /// means tessellate at the full display deviation as always. Resolved
 /// from the CoarseTessellation render parameter — per-view

@@ -39,20 +39,28 @@
 #include <QPointer>
 #include <algorithm>
 #include <cmath>
+#include <iomanip>
+#include <set>
+#include <locale>
+#include <sstream>
 #include <cstring>
 #include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <unordered_set>
 #include <vector>
 #endif
 
 #include <App/Application.h>
+#include <Base/Tools.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <Base/Console.h>
 
 #include "SceneServeSource.h"
+#include "SandboxRemote.h"
+#include "SandboxServe.h"
 
 #include "Document.h"
 #include "Inventor/SoFCRenderCache.h"
@@ -63,6 +71,8 @@
 #include "Renderer/Renderer.h"
 #include "Renderer/SceneServer.h"
 #include "RenderParams.h"
+#include "MirrorViewer.h"
+#include "ViewerContext.h"
 #include "ObjectMetaFeed.h"
 #include "SceneControl.h"
 #include "Selection.h"
@@ -74,6 +84,51 @@ using namespace Gui;
 
 namespace
 {
+/// A float as JSON, with a finite value guaranteed.
+///
+/// A NaN or an infinity prints as a bare token no JSON parser accepts, so
+/// the message a client is about to be sent would not parse at all -- one
+/// bad number costing the whole frame. Zero instead, which is wrong in a
+/// way the client can draw.
+std::string floatJson(float value)
+{
+    if (!std::isfinite(value))
+        return "0";
+    std::ostringstream out;
+    out.imbue(std::locale::classic());
+    out << std::setprecision(7) << value;
+    return out.str();
+}
+
+/// Append the text to the JSON buffer as a quoted JSON string.
+///
+/// The text here is whatever a user typed into an entry box, so it is not
+/// assumed to be free of quotes, backslashes or control characters.
+void jsonQuoted(std::string &json, const std::string &text)
+{
+    json += '"';
+    for (unsigned char ch : text) {
+        switch (ch) {
+            case '"': json += "\\\""; break;
+            case '\\': json += "\\\\"; break;
+            case '\n': json += "\\n"; break;
+            case '\r': json += "\\r"; break;
+            case '\t': json += "\\t"; break;
+            default:
+                if (ch < 0x20) {
+                    char buf[8];
+                    std::snprintf(buf, sizeof(buf), "\\u%04x", ch);
+                    json += buf;
+                }
+                else {
+                    json += char(ch);
+                }
+                break;
+        }
+    }
+    json += '"';
+}
+
 /// The viewport a synthesized camera is built for. Only the framing a
 /// joining viewer adopts before it frames the scene itself, so this has
 /// to be sane rather than right.
@@ -230,6 +285,9 @@ public:
     /// document rename mid-serve keeps the stream's identity.
     std::string groupName;
     SoFCUnifiedSelection *root = nullptr;
+    /// The view providers whose root hangs under \a root: the viewer's
+    /// _ViewProviderSet, so a new object is one insert, not a findChild.
+    std::unordered_set<const ViewProviderDocumentObject *> attached;
     SoOrthographicCamera *camera = nullptr;
     /*!
      * Where the Render_* overrides live with no 3D view to hold them
@@ -252,6 +310,332 @@ public:
     /// its definition below.
     std::unique_ptr<SelectionMirror> selectionMirror;
 
+    /** One client's own selection, told back to that client
+     * (docs/ThinClient.md 8.11, view mode).
+     *
+     * A pick from a client with a mirror lands in the mirror's own
+     * instance rather than in the room, so nothing on the desktop moves
+     * and no other client's highlight changes; what the server resolved
+     * is told to the one client it belongs to as a `selection` message,
+     * coalesced onto the publish timer like the on-view parameters. One
+     * per mirror, attached to that mirror's instance; see the definition
+     * below.
+     */
+    struct ClientSelection;
+    std::map<uint64_t, std::unique_ptr<ClientSelection>> clientSelections;
+    /// The clients whose instance changed since the last publish.
+    std::set<uint64_t> selectionDirty;
+
+    /** A browser-started session's selection, forwarded into the room
+     * (8.11, the sync toggle).
+     *
+     * The session's instance is the initiating mirror's; the sketcher's
+     * observer sits on it and every view's in-edit events select into
+     * it. What the desktop's tree, panels and highlight follow is the
+     * room, so with the toggle on this observer replays the session's
+     * add, remove, clear and preselect into the room -- one way, with a
+     * re-entrancy guard -- and with it off nothing is forwarded and the
+     * desktop's chrome stays where its user left it. Never switches the
+     * instance: the sketcher's observer remembered it at attach time.
+     * In a desktop-started session the instance IS the room and there
+     * is nothing to forward. See the definition below.
+     */
+    struct SessionForwarder;
+    std::unique_ptr<SessionForwarder> forwarder;
+    bool selectionSync = true;
+    /// Whether anything reached the room through a forwarder during the
+    /// session in progress, so its end knows whether there is anything
+    /// to take back -- whatever the toggle says by then.
+    bool sessionForwarded = false;
+
+    void flushClientSelections();
+    void announceSelection(uint64_t client);
+    /// Start or stop forwarding for the session the document is in.
+    void updateForwarder();
+    /// Drop the forwarder; with \a takeBack, clear from the room what it
+    /// forwarded.
+    void endForwarder(bool takeBack);
+
+    /*!
+     * One mirror viewer per connected client (docs/ThinClient.md sec 8.3).
+     *
+     * Built when a client first states a camera, updated on every later
+     * statement, and dropped when the connection closes. Until a client
+     * has one, its picks fall back to the synthetic camera, which is
+     * what every client did before the 'C' frame existed. GUI thread
+     * only -- both the camera handler and the pick handler marshal.
+     */
+    std::map<uint64_t, std::unique_ptr<MirrorViewer>> mirrors;
+
+    /// Adopt what a client stated, building its mirror on first sight.
+    void setClientCamera(const Render::SceneCameraFrame &frame)
+    {
+        if (!root || !frame.client)
+            return;
+        auto &mirror = mirrors[frame.client];
+        if (!mirror) {
+            mirror = std::make_unique<MirrorViewer>(
+                doc, root, root->getRenderManager(), renderer.get());
+            // What this client selects from now on is its own, and it
+            // is told (8.11).
+            clientSelections[frame.client] = std::make_unique<ClientSelection>(
+                this, frame.client, mirror->selectionInstance());
+            // The entry boxes an edit mode opens in this view have no
+            // widget to draw themselves on, so they are restated to the
+            // client that owns the view whenever they change
+            // (docs/ThinClient.md sec 8.7).
+            const uint64_t client = frame.client;
+            mirror->setOnViewParametersCallback([this, client]() {
+                // Coalesced onto the publish timer rather than sent here:
+                // one replayed pointer move restates the points of every
+                // box in the set, and a tool changing mode rebuilds the
+                // set entirely. The zero-timer is already the point at
+                // which the scene those numbers describe goes out.
+                onViewDirty.insert(client);
+                if (owner)
+                    owner->schedulePublish();
+            });
+        }
+        MirrorViewer::Camera camera;
+        camera.perspective = frame.type != 0;
+        camera.position.setValue(frame.position[0], frame.position[1],
+                                 frame.position[2]);
+        camera.orientation.setValue(frame.orientation[0], frame.orientation[1],
+                                    frame.orientation[2], frame.orientation[3]);
+        camera.heightOrAngle = frame.heightOrAngle;
+        camera.nearDistance = frame.nearDistance;
+        camera.farDistance = frame.farDistance;
+        camera.aspectRatio = frame.aspectRatio;
+        camera.sizePixels.setValue(short(frame.width), short(frame.height));
+        camera.devicePixelRatio = frame.devicePixelRatio;
+        camera.pickRadius = frame.pickRadius;
+        mirror->setCamera(camera);
+        // A view stated while a session runs joins it and is told so,
+        // like a desktop window opened mid-edit (8.11).
+        if (doc && !mirror->isEditingViewProvider()) {
+            ViewerContext *initiator = doc->editingViewer();
+            ViewProvider *vp = doc->getInEdit();
+            if (initiator && vp && initiator != mirror.get()) {
+                mirror->joinEditing(vp, doc->editingRoot());
+                if (auto vpd = dynamic_cast<ViewProviderDocumentObject *>(vp))
+                    announceEdit(true, *vpd, frame.client);
+            }
+        }
+    }
+
+    /** Replay one client's input event in that client's own view.
+     *
+     * Nothing happens for a client with no mirror: an event is a place
+     * in a view, and without a stated camera there is no view to place
+     * it in. The publish afterwards is what carries the result back --
+     * an edit mode's geometry lives under the mirror's editing root,
+     * which is in the served graph exactly so that the change-driven
+     * traversal sees it. Coalesced, so a drag's worth of moves costs
+     * one traversal rather than one each. GUI thread only.
+     */
+    void replayInput(const Render::SceneInputFrame &frame)
+    {
+        MirrorViewer *mirror = mirrorFor(frame.client);
+        if (!mirror)
+            return;
+        MirrorViewer::Input input;
+        switch (frame.kind) {
+            case 1: input.kind = MirrorViewer::Input::Press; break;
+            case 2: input.kind = MirrorViewer::Input::Release; break;
+            case 3: input.kind = MirrorViewer::Input::Wheel; break;
+            case 4: input.kind = MirrorViewer::Input::KeyDown; break;
+            case 5: input.kind = MirrorViewer::Input::KeyUp; break;
+            default: input.kind = MirrorViewer::Input::Move; break;
+        }
+        input.x = frame.x;
+        input.y = frame.y;
+        input.code = frame.code;
+        input.delta = frame.delta;
+        input.shift = (frame.modifiers & 1) != 0;
+        input.ctrl = (frame.modifiers & 2) != 0;
+        input.alt = (frame.modifiers & 4) != 0;
+        input.time = double(frame.timeMs) / 1000.0;
+        mirror->handleInput(input);
+    }
+
+    /// The mirror of \a client, or null when it has stated no camera.
+    ///
+    /// **How fresh this camera is depends on the client's uplink policy**
+    /// (docs/ThinClient.md sec 8.10b). Under the default one a viewer
+    /// states its camera with the click it computed the ray for and at no
+    /// other time, so between clicks the camera here is as old as the last
+    /// click -- which is exactly right for the one reader this has, and
+    /// wrong for a reader that wants to know where a client is looking
+    /// NOW (prioritising the level ladder by view, say). A second reader
+    /// of that kind is a reason to revisit the policy, not to assume this
+    /// is current: it will not look stale, it will look plausible.
+    MirrorViewer *mirrorFor(uint64_t client) const
+    {
+        auto it = mirrors.find(client);
+        return it == mirrors.end() ? nullptr : it->second.get();
+    }
+
+    /// Which connection's mirror \a viewer is, or 0 for none of them --
+    /// a desktop view, or a mirror already erased.
+    uint64_t clientOf(const ViewerContext *viewer) const
+    {
+        if (!viewer)
+            return 0;
+        for (const auto &entry : mirrors) {
+            if (entry.second.get() == viewer)
+                return entry.first;
+        }
+        return 0;
+    }
+
+    /** Tell the client whose view it is that its edit session started or
+     * ended (docs/ThinClient.md sec 8.9 step 4).
+     *
+     * The leaving edge is the one that has to exist. A session can end
+     * without the client asking -- an Escape the sketcher handled itself,
+     * a host resetting the edit, the object being deleted -- and a
+     * browser that only ever heard about the sessions it requested would
+     * go on sending its left button up the 'E' channel to an edit mode
+     * that is no longer there. The client cannot infer it either: the
+     * scene delta that comes back from leaving looks like any other.
+     *
+     * Sent to that one connection, because that is who is in the session:
+     * one editor per document is the first cut (sec 8.10), and everyone
+     * else is looking at the same graph as a spectator.
+     */
+    void announceEdit(bool editing, const ViewProviderDocumentObject &vp,
+                      uint64_t onlyClient = 0)
+    {
+        // Every client with a view, not only the one whose view started
+        // the session: under docs/ThinClient.md 8.11 the session is
+        // shared, each mirror has joined it (joinEditing), and each
+        // browser's left button is an 'E' frame while it runs. A client
+        // with no mirror yet has no view to edit in and is told when it
+        // states one (setClientCamera). \a onlyClient restates the state
+        // to that one connection.
+        std::string json = "{\"cmd\":\"edit\",\"editing\":";
+        json += editing ? "true" : "false";
+        if (const App::DocumentObject *obj = vp.getObject()) {
+            json += ",\"obj\":\"";
+            json += obj->getNameInDocument() ? obj->getNameInDocument() : "";
+            json += "\"";
+        }
+        json += ",\"doc\":\"" + groupName + "\"}";
+        auto &server = Render::SceneStreamServer::instance();
+        if (onlyClient) {
+            server.sendControl(onlyClient, json);
+            return;
+        }
+        for (const auto &entry : mirrors)
+            server.sendControl(entry.first, json);
+    }
+
+    /// Every mirror that did not start the document's session joins it
+    /// (docs/ThinClient.md 8.11): the shared root in its served graph,
+    /// its replayed events routed to the one tool.
+    void joinEditing()
+    {
+        if (!doc)
+            return;
+        ViewerContext *initiator = doc->editingViewer();
+        ViewProvider *vp = doc->getInEdit();
+        if (!initiator || !vp)
+            return;
+        EditingRoot *root = doc->editingRoot();
+        for (auto &entry : mirrors) {
+            if (entry.second.get() != initiator)
+                entry.second->joinEditing(vp, root);
+        }
+    }
+
+    void leaveEditing()
+    {
+        for (auto &entry : mirrors)
+            entry.second->leaveEditing();
+    }
+
+    /** Restate one client's on-view parameters to it (sec 8.7).
+     *
+     * Sent whole rather than as a delta: there are a handful of boxes at
+     * most, the set turns over completely whenever a tool changes mode,
+     * and a client that has just reconnected must be able to draw them
+     * from one message.
+     *
+     * The anchor goes up in WORLD coordinates and the client projects it
+     * with the camera of the frame it is drawing. That is the only camera
+     * that cannot be behind the picture: under the default uplink policy
+     * the server is not told where a client is looking between clicks
+     * (sec 8.10b), so a position computed here would lag every orbit.
+     */
+    /// The clients whose on-view set has moved since the last publish.
+    std::set<uint64_t> onViewDirty;
+    /// The source that owns this, for the coalescing above.
+    SceneServeSource *owner = nullptr;
+
+    void flushOnViewParameters()
+    {
+        if (onViewDirty.empty())
+            return;
+        std::set<uint64_t> dirty;
+        dirty.swap(onViewDirty);
+        for (uint64_t client : dirty)
+            announceOnViewParameters(client);
+    }
+
+    /// The selection message: {"cmd":"selection","doc":..,"items":
+    /// [{"obj":..,"sub":..},..]}, the whole of that client's instance.
+    /// Whole rather than a delta for the same reason the on-view set is:
+    /// a handful of items, and a client that reconnects must be able to
+    /// paint from one message.
+    void announceSelectionTo(uint64_t client, SelectionSingleton *instance)
+    {
+        if (!instance)
+            return;
+        std::string json = "{\"cmd\":\"selection\",\"doc\":\"" + groupName
+            + "\",\"items\":[";
+        bool first = true;
+        for (const auto &sel : instance->getSelection(nullptr, ResolveMode::NoResolve)) {
+            if (!first)
+                json += ',';
+            first = false;
+            json += "{\"obj\":";
+            jsonQuoted(json, sel.FeatName ? sel.FeatName : "");
+            json += ",\"sub\":";
+            jsonQuoted(json, sel.SubName ? sel.SubName : "");
+            json += '}';
+        }
+        json += "]}";
+        Render::SceneStreamServer::instance().sendControl(client, json);
+    }
+
+    void announceOnViewParameters(uint64_t client)
+    {
+        MirrorViewer *mirror = mirrorFor(client);
+        if (!mirror)
+            return;
+        std::string json = "{\"cmd\":\"onview\",\"doc\":\"" + groupName
+            + "\",\"params\":[";
+        bool first = true;
+        int index = 0;
+        for (const auto &param : mirror->onViewParameters()) {
+            if (!first)
+                json += ',';
+            first = false;
+            json += "{\"i\":" + std::to_string(index++);
+            json += ",\"x\":" + floatJson(param.anchor[0]);
+            json += ",\"y\":" + floatJson(param.anchor[1]);
+            json += ",\"z\":" + floatJson(param.anchor[2]);
+            json += ",\"text\":";
+            jsonQuoted(json, param.text);
+            json += ",\"sel\":[" + std::to_string(param.selStart) + ','
+                + std::to_string(param.selLength) + ']';
+            json += param.focus ? ",\"focus\":true" : ",\"focus\":false";
+            json += param.set ? ",\"set\":true}" : ",\"set\":false}";
+        }
+        json += "]}";
+        Render::SceneStreamServer::instance().sendControl(client, json);
+    }
+
     /// The served Cycles viewports (sec 7.1) and what they were last
     /// fed: the scene as translated for them, kept so a stream that
     /// starts between publishes gets it without another translation,
@@ -270,7 +654,15 @@ public:
 
     ~Private()
     {
-        // The path tracers first: each joins its encoder thread and
+        // The mirrors first: each borrows the scene root, which this
+        // body unrefs below -- and a destructor body runs before any
+        // member is destroyed, so leaving them to their own turn would
+        // leave every one of them holding a freed graph in between.
+        // The observers on the mirrors' instances before the mirrors.
+        forwarder.reset();
+        clientSelections.clear();
+        mirrors.clear();
+        // The path tracers next: each joins its encoder thread and
         // tears its session down, and nothing below feeds them again.
         {
             std::lock_guard<std::mutex> lock(streams->mutex);
@@ -293,25 +685,57 @@ public:
     }
 
     /// Hang every view provider of the document under the root, the way
-    /// View3DInventorViewer::addViewProvider does for a real view.
+    /// View3DInventorViewer::addViewProvider does for a real view. Once,
+    /// at construction; after that each object comes and goes on its own
+    /// signal -- a sweep per new object was O(N^2) for each, O(N^3) for a
+    /// load drained into a served document.
     void attachViewProviders()
     {
         if (!doc || !root)
             return;
         for (auto *vp : doc->getViewProvidersOfType(
-                 ViewProviderDocumentObject::getClassTypeId())) {
-            auto *vpd = static_cast<ViewProviderDocumentObject *>(vp);
-            SoSeparator *vproot = vpd->getRoot();
-            if (!vproot || doc->isClaimed3D(vpd) || !vpd->canAddToSceneGraph())
-                continue;
-            // Only the physical objects. A real viewer puts the rest in
-            // its nonObjectGroup, which is view furniture — the same
-            // reason the overlays are not published either.
-            if (!vpd->isPartOfPhysicalObject())
-                continue;
-            if (root->findChild(vproot) < 0)
-                root->addChild(vproot);
+                 ViewProviderDocumentObject::getClassTypeId()))
+            addViewProvider(static_cast<ViewProviderDocumentObject &>(*vp));
+    }
+
+    void addViewProvider(const ViewProviderDocumentObject &vp)
+    {
+        auto &vpd = const_cast<ViewProviderDocumentObject &>(vp);
+        SoSeparator *vproot = vpd.getRoot();
+        if (!doc || !root || !vproot || attached.count(&vp)
+            || doc->isClaimed3D(&vpd) || !vpd.canAddToSceneGraph())
+            return;
+        // Only the physical objects. A real viewer puts the rest in
+        // its nonObjectGroup, which is view furniture -- the same
+        // reason the overlays are not published either.
+        if (!vpd.isPartOfPhysicalObject())
+            return;
+        attached.insert(&vp);
+        root->addChild(vproot);
+    }
+
+    void removeViewProvider(const ViewProviderDocumentObject &vp)
+    {
+        if (!attached.erase(&vp) || !root)
+            return;
+        if (SoSeparator *vproot = vp.getRoot()) {
+            int index = root->findChild(vproot);
+            if (index >= 0)
+                root->removeChild(index);
         }
+    }
+
+    /// View3DInventorViewer::toggleViewProvider: a claim on \a vp was
+    /// made or dropped, or it stopped (or started) being addable. Without
+    /// this an object put into a group keeps drawing at the top level too,
+    /// with none of the group's placement.
+    void toggleViewProvider(const ViewProviderDocumentObject &vp)
+    {
+        auto &vpd = const_cast<ViewProviderDocumentObject &>(vp);
+        if (!attached.count(&vp))
+            addViewProvider(vp);
+        else if (doc->isClaimed3D(&vpd) || !vpd.canAddToSceneGraph())
+            removeViewProvider(vp);
     }
 
     /// Frame the synthetic camera on the scene, and hand back the
@@ -661,10 +1085,227 @@ struct SceneServeSource::Private::SelectionMirror : public SelectionObserver
     }
 };
 
+/*!
+ * One client's own selection told back to it; see Private::clientSelections.
+ */
+struct SceneServeSource::Private::ClientSelection : public SelectionObserver
+{
+    Private *p;
+    uint64_t client;
+
+    ClientSelection(Private *priv, uint64_t c, SelectionSingleton *instance)
+        : SelectionObserver(false, ResolveMode::NoResolve)
+        , p(priv)
+        , client(c)
+    {
+        // Attached to the mirror's instance: the scope makes it current
+        // for the one call that reads it.
+        if (instance) {
+            SelectionScope scope(*instance);
+            attachSelectionToCurrent();
+        }
+    }
+
+    void onSelectionChanged(const SelectionChanges &reason) override
+    {
+        switch (reason.Type) {
+        case SelectionChanges::SetSelection:
+        case SelectionChanges::AddSelection:
+        case SelectionChanges::RmvSelection:
+        case SelectionChanges::ClrSelection:
+            break;
+        default:
+            // Preselection is the client's own already (8.2a): it hovers
+            // locally and is never told.
+            return;
+        }
+        p->selectionDirty.insert(client);
+        if (p->owner)
+            p->owner->schedulePublish();
+    }
+};
+
+/*!
+ * A browser-started session's selection forwarded into the room; see
+ * Private::forwarder.
+ */
+struct SceneServeSource::Private::SessionForwarder : public SelectionObserver
+{
+    Private *p;
+    SelectionSingleton *instance;
+    /// Set while a replay into the room runs: whatever that raises is
+    /// not forwarded again.
+    bool forwarding = false;
+
+    SessionForwarder(Private *priv, SelectionSingleton *inst)
+        : SelectionObserver(false, ResolveMode::NoResolve)
+        , p(priv)
+        , instance(inst)
+    {
+        if (instance) {
+            SelectionScope scope(*instance);
+            attachSelectionToCurrent();
+        }
+    }
+
+    void onSelectionChanged(const SelectionChanges &msg) override
+    {
+        if (forwarding || !instance)
+            return;
+        Base::StateLocker guard(forwarding);
+        SelectionSingleton &room = SelectionRoom();
+        // An in-edit pick names an element of the object in edit, which
+        // the room's top-parent check would refuse as the desktop's own
+        // in-edit picks are let through.
+        SelectionNoTopParentCheck noParentCheck;
+        switch (msg.Type) {
+        case SelectionChanges::AddSelection:
+            room.addSelection(msg.pDocName, msg.pObjectName, msg.pSubName,
+                              msg.x, msg.y, msg.z);
+            p->sessionForwarded = true;
+            break;
+        case SelectionChanges::RmvSelection:
+            room.rmvSelection(msg.pDocName, msg.pObjectName, msg.pSubName);
+            p->sessionForwarded = true;
+            break;
+        case SelectionChanges::ClrSelection:
+            room.clearSelection(msg.pDocName && *msg.pDocName ? msg.pDocName : nullptr);
+            p->sessionForwarded = true;
+            break;
+        case SelectionChanges::SetSelection:
+            // The set replaced whole: the room follows item by item.
+            room.clearSelection();
+            for (const auto &sel : instance->getSelection(nullptr, ResolveMode::NoResolve))
+                room.addSelection(sel.DocName, sel.FeatName, sel.SubName,
+                                  sel.x, sel.y, sel.z);
+            p->sessionForwarded = true;
+            break;
+        case SelectionChanges::SetPreselect:
+            room.setPreselect(msg.pDocName, msg.pObjectName, msg.pSubName,
+                              msg.x, msg.y, msg.z);
+            p->sessionForwarded = true;
+            break;
+        case SelectionChanges::RmvPreselect:
+            room.rmvPreselect();
+            break;
+        default:
+            break;
+        }
+    }
+};
+
+void SceneServeSource::Private::flushClientSelections()
+{
+    if (selectionDirty.empty())
+        return;
+    std::set<uint64_t> dirty;
+    dirty.swap(selectionDirty);
+    for (uint64_t client : dirty)
+        announceSelection(client);
+}
+
+void SceneServeSource::Private::announceSelection(uint64_t client)
+{
+    MirrorViewer *mirror = mirrorFor(client);
+    if (mirror)
+        announceSelectionTo(client, mirror->selectionInstance());
+}
+
+void SceneServeSource::Private::updateForwarder()
+{
+    // Only a session a mirror started has an instance that is not the
+    // room. Idempotent: the same session asked twice keeps its forwarder.
+    if (!doc || !selectionSync) {
+        forwarder.reset();
+        return;
+    }
+    ViewerContext *initiator = doc->editingViewer();
+    if (!initiator || !clientOf(initiator) || !initiator->selectionInstance()) {
+        forwarder.reset();
+        return;
+    }
+    if (forwarder && forwarder->instance == initiator->selectionInstance())
+        return;
+    forwarder = std::make_unique<SessionForwarder>(this, initiator->selectionInstance());
+}
+
+void SceneServeSource::Private::endForwarder(bool takeBack)
+{
+    forwarder.reset();
+    if (!takeBack)
+        return;
+    const bool clear = sessionForwarded;
+    sessionForwarded = false;
+    if (clear) {
+        SelectionSingleton &room = SelectionRoom();
+        room.rmvPreselect();
+        room.clearSelection();
+    }
+}
+
+void SceneServeSource::setSelectionSync(bool on)
+{
+    if (pimpl->selectionSync == on)
+        return;
+    pimpl->selectionSync = on;
+    if (on)
+        pimpl->updateForwarder();
+    else
+        // Off leaves the desktop's chrome where its user left it (8.11):
+        // nothing taken back.
+        pimpl->endForwarder(false);
+}
+
+bool SceneServeSource::selectionSync() const
+{
+    return pimpl->selectionSync;
+}
+
+void SceneServeSource::clearClientSelections()
+{
+    for (auto &entry : pimpl->mirrors) {
+        if (SelectionSingleton *instance = entry.second->selectionInstance())
+            instance->clearCompleteSelection();
+    }
+}
+
+namespace
+{
+/// The `selectionSync` control op: {"op":"selectionSync","on":bool} sets
+/// the toggle for the bound document, without "on" it reads it; either
+/// way the reply carries "on". Mutating, so a view-only connection may
+/// not flip it.
+void installSelectionSyncOp()
+{
+    static bool installed = false;
+    if (installed)
+        return;
+    installed = true;
+    registerSceneControlOp(QStringLiteral("selectionSync"), true,
+        [](const QJsonObject &req, const std::string &boundDoc, uint64_t) {
+            App::Document *adoc = App::GetApplication().getDocument(boundDoc.c_str());
+            SceneServeSource *src = SceneServeSource::sourceFor(adoc);
+            if (!src)
+                return sceneControlError(req.value(QLatin1String("id")), "NoDocument",
+                                         QStringLiteral("no served document is bound"));
+            const QJsonValue on = req.value(QLatin1String("on"));
+            if (on.isBool())
+                src->setSelectionSync(on.toBool());
+            QJsonObject reply;
+            reply[QLatin1String("id")] = req.value(QLatin1String("id"));
+            reply[QLatin1String("ok")] = true;
+            reply[QLatin1String("on")] = src->selectionSync();
+            return reply;
+        });
+}
+}  // namespace
+
 SceneServeSource::SceneServeSource(Document *doc)
     : pimpl(new Private)
 {
     pimpl->doc = doc;
+    pimpl->owner = this;
+    installSelectionSyncOp();
 
     const std::string &type = RenderParams::getType();
     if (type.empty() || type == "Default") {
@@ -715,8 +1356,8 @@ SceneServeSource::SceneServeSource(Document *doc)
 
     if (doc) {
         pimpl->connections.emplace_back(doc->signalNewObject.connect(
-            [this](const ViewProviderDocumentObject &) {
-                pimpl->attachViewProviders();
+            [this](const ViewProviderDocumentObject &vp) {
+                pimpl->addViewProvider(vp);
                 schedulePublish();
             }));
         pimpl->connections.emplace_back(doc->signalDeletedObject.connect(
@@ -725,11 +1366,12 @@ SceneServeSource::SceneServeSource(Document *doc)
                 // with no view, the root's own child ref would keep the
                 // deleted object's geometry in every later publish -- a
                 // ghost no viewer can get rid of.
-                if (SoSeparator *vproot = vp.getRoot(); vproot && pimpl->root) {
-                    int index = pimpl->root->findChild(vproot);
-                    if (index >= 0)
-                        pimpl->root->removeChild(index);
-                }
+                pimpl->removeViewProvider(vp);
+                schedulePublish();
+            }));
+        pimpl->connections.emplace_back(doc->signalToggleInSceneGraph.connect(
+            [this](const ViewProviderDocumentObject &vp) {
+                pimpl->toggleViewProvider(vp);
                 schedulePublish();
             }));
         pimpl->connections.emplace_back(doc->signalChangedObject.connect(
@@ -744,6 +1386,29 @@ SceneServeSource::SceneServeSource(Document *doc)
         // through the call -- and it runs before the Gui::Document
         // itself is destroyed. Nothing may follow the unserve() call:
         // this source is gone when it returns.
+        // Both edges of an edit session, for the client running it. On
+        // the way out this fires while the document still names the view
+        // it was running in (Gui::Document::_resetEdit signals after
+        // finishEditing and before it forgets), which is what makes the
+        // connection findable -- so this must stay a signalResetEdit
+        // handler rather than anything that runs later.
+        pimpl->connections.emplace_back(doc->signalInEdit.connect(
+            [this](const ViewProviderDocumentObject &vp) {
+                pimpl->joinEditing();
+                pimpl->updateForwarder();
+                pimpl->announceEdit(true, vp);
+            }));
+        pimpl->connections.emplace_back(doc->signalResetEdit.connect(
+            [this](const ViewProviderDocumentObject &vp) {
+                // The forwarder goes with the session, and takes what it
+                // forwarded out of the room: no client's selection
+                // outlives its edit session, on the desktop's chrome any
+                // more than in its own instance. Before the mirrors
+                // leave, since it is attached to the initiator's instance.
+                pimpl->endForwarder(true);
+                pimpl->leaveEditing();
+                pimpl->announceEdit(false, vp);
+            }));
         pimpl->connections.emplace_back(doc->signalDeleteDocument.connect(
             [this](const Document &) { unserve(pimpl->doc); }));
     }
@@ -786,14 +1451,47 @@ void SceneServeSource::installHandlers()
     QPointer<SceneServeSource> self(this);
 
     // Remote-viewer click selection: a viewer's click arrives as a world
-    // ray, picked against this source's graph and synthetic camera.
+    // ray, picked against this source's graph and -- once that viewer
+    // has stated one -- through its own mirror's camera.
     server.setPickHandler([self](const Render::ScenePickRequest &req) {
         Render::ScenePickRequest r = req;
         QMetaObject::invokeMethod(qApp, [self, r]() {
             if (self)
                 self->pickAndSelect(SbVec3f(r.origin[0], r.origin[1], r.origin[2]),
                                     SbVec3f(r.dir[0], r.dir[1], r.dir[2]),
-                                    r.modifiers & 1);
+                                    r.modifiers, r.client);
+        }, Qt::QueuedConnection);
+    }, pimpl->groupName);
+
+    // A viewer's camera and canvas (docs/ThinClient.md sec 8.5). It
+    // mutates no document -- it says where one client is looking from --
+    // and nothing but that client's own mirror ever reads it. Ordered
+    // with the picks behind it because one connection's uplink keeps
+    // its order and a queued invocation preserves it.
+    server.setCameraHandler([self](const Render::SceneCameraFrame &frame) {
+        Render::SceneCameraFrame f = frame;
+        QMetaObject::invokeMethod(qApp, [self, f]() {
+            if (self)
+                self->pimpl->setClientCamera(f);
+        }, Qt::QueuedConnection);
+    }, pimpl->groupName);
+
+    // A viewer's pointer and keyboard, replayed against its own mirror
+    // (docs/ThinClient.md sec 8.5, the 'E' frame). This is the channel
+    // an edit mode runs on: unlike the camera it can move geometry, so
+    // the server has already dropped it for a view-only connection by
+    // the time it gets here.
+    server.setInputHandler([self](const Render::SceneInputFrame &frame) {
+        Render::SceneInputFrame f = frame;
+        QMetaObject::invokeMethod(qApp, [self, f]() {
+            if (!self)
+                return;
+            self->pimpl->replayInput(f);
+            // Unconditionally, not only when something claimed the
+            // event: a preselect highlight changes the scene without
+            // the event being handled, and a publish with nothing to
+            // say costs one traversal and sends nothing.
+            self->schedulePublish();
         }, Qt::QueuedConnection);
     }, pimpl->groupName);
 
@@ -842,16 +1540,36 @@ void SceneServeSource::installHandlers()
                     return;
                 }
                 shared->reply(handleSceneControlRequest(shared->json, docName,
-                                                        shared->viewOnly));
+                                                        shared->access,
+                                                        shared->client));
             }, Qt::QueuedConnection);
         }, docName);
 
-    // A viewer that leaves takes its served viewport with it -- the
-    // session is the expensive part, and nobody is looking.
-    server.setClientClosedHandler([streams](uint64_t client) {
-        QMetaObject::invokeMethod(qApp, [streams, client]() {
+    // A sandbox guest in a viewer's page reaches back through its own
+    // socket (docs/Sandbox.md 7.20, C2). Every frame hops to the GUI
+    // thread -- a bridge op touches the document -- in the order the
+    // connection sent them, and runs against THIS document.
+    server.setBridgeHandler([self](Render::SceneBridgeRequest &&req) {
+        auto shared = std::make_shared<Render::SceneBridgeRequest>(std::move(req));
+        QMetaObject::invokeMethod(qApp, [self, shared]() {
+            Document *gdoc = self ? self->document() : nullptr;
+            SandboxRemote::handle(gdoc ? gdoc->getDocument() : nullptr, *shared);
+        }, Qt::QueuedConnection);
+    }, docName);
+
+    // A viewer that leaves takes its served viewport and its mirror with
+    // it -- the session is the expensive part, and nobody is looking.
+    server.setClientClosedHandler([self, streams](uint64_t client) {
+        QMetaObject::invokeMethod(qApp, [self, streams, client]() {
+            SandboxRemote::drop(client);
             auto gone = streams->take(client, -1);
             gone.clear();
+            if (self) {
+                // The observer before the instance it observes.
+                self->pimpl->clientSelections.erase(client);
+                self->pimpl->selectionDirty.erase(client);
+                self->pimpl->mirrors.erase(client);
+            }
         }, Qt::QueuedConnection);
     }, docName);
 
@@ -874,23 +1592,134 @@ void SceneServeSource::installHandlers()
     server.setDocumentInfo(pimpl->groupName, label ? label : "");
 }
 
+MirrorViewer *SceneServeSource::mirrorViewerFor(uint64_t client) const
+{
+    return pimpl->mirrorFor(client);
+}
+
+ViewerContext *SceneServeSource::viewerFor(uint64_t client) const
+{
+    return pimpl->mirrorFor(client);
+}
+
+namespace
+{
+
+/// The set operation a client's pick asks for (docs/ThinClient.md sec 8.5).
+enum PickMode
+{
+    PickReplace = 0,
+    PickToggle = 1,
+    PickExtend = 2,
+};
+/// Scope: the object as a whole rather than the element the ray hit.
+constexpr uint32_t kPickWholeObject = 1u << 2;
+
+/// Whether the element a subname ends in is of the kind the client's pick
+/// filter admits. Kind 0 admits everything, and is what a client with no
+/// filter set sends.
+bool elementKindMatches(const std::string &subname, unsigned kind)
+{
+    if (kind == 0)
+        return true;
+    const size_t dot = subname.rfind('.');
+    const char *element =
+        subname.c_str() + (dot == std::string::npos ? 0 : dot + 1);
+    switch (kind) {
+        case 1: return std::strncmp(element, "Face", 4) == 0;
+        case 2: return std::strncmp(element, "Edge", 4) == 0;
+        case 3: return std::strncmp(element, "Vertex", 6) == 0;
+        default: return true;
+    }
+}
+
+/// A subname with its element name taken off: the object as a whole.
+///
+/// Empty for a plain object, and for a pick inside a link the sub-object
+/// path that names it -- trailing dot kept, which is what tells FreeCAD's
+/// subname convention an object from an element of one.
+std::string wholeObjectSubname(const std::string &subname)
+{
+    const size_t dot = subname.rfind('.');
+    return dot == std::string::npos ? std::string() : subname.substr(0, dot + 1);
+}
+
+}  // namespace
+
 void SceneServeSource::pickAndSelect(const SbVec3f &origin, const SbVec3f &dir,
-                                     bool ctrl)
+                                     uint32_t flags, uint64_t client)
 {
     if (!isValid())
         return;
 
-    auto hGrp = App::GetApplication().GetParameterGroupByPath(
-        "User parameter:BaseApp/Preferences/View");
-    SbViewportRegion viewport{short(kDefaultWidth), short(kDefaultHeight)};
+    // What the click meant, as the client resolved it against its own
+    // selection (docs/ThinClient.md sec 8.5). The grammar -- Shift
+    // promoting to the whole object, the sticky-multi mode, the pick
+    // filter, the plain-click cycle -- stays over there, where the state
+    // it depends on is; what arrives is the conclusion, and this side
+    // supplies a vocabulary rather than a second copy of the policy.
+    const unsigned mode = flags & 3u;
+    const bool wholeObject = (flags & kPickWholeObject) != 0;
+    const unsigned kind = (flags >> 3) & 7u;
 
-    SoRayPickAction rp(viewport);
-    rp.setRay(origin, dir);
-    rp.setRadius(hGrp->GetFloat("PickRadius", 5.0f));
-    auto pickroot = pimpl->pickRoot();
-    rp.apply(pickroot);
+    // Through this client's mirror when it has stated a camera: the ray
+    // goes back to the viewport point it was made from, so the client's
+    // pick radius in pixels applies and an edge or a vertex is as
+    // pickable from a browser as from the desktop (docs/ThinClient.md
+    // sec 8.3). Without one there is nothing to resolve against, so the
+    // ray is picked as it arrives -- and Coin gives an explicitly set
+    // ray a radius of essentially zero whatever setRadius says, which
+    // is why only geometry hit dead-on came back that way.
+    std::unique_ptr<SoPickedPoint> picked;
+    MirrorViewer *mirror = pimpl->mirrorFor(client);
 
-    SoPickedPoint *pp = rp.getPickedPoint();
+    // And it commits in that client's view: the scope names the mirror,
+    // and with it the SESSION's selection instance (docs/ThinClient.md
+    // 8.11) -- the mirror's own in view mode, so a browser's click moves
+    // neither the desktop's tree nor another client's highlight and is
+    // told back to that one client (ClientSelection); the initiator's
+    // inside an edit session, where the tool state machine listens. A
+    // client with no mirror has no view to land in and commits into the
+    // room as before. Held open past the pick, because it is the
+    // addSelection below that has to land in the right instance.
+    std::unique_ptr<ViewerScope> inView;
+    if (mirror)
+        inView = std::make_unique<ViewerScope>(mirror);
+
+    if (mirror) {
+        // With an element kind asked for, the hits are offered front to
+        // back until one resolves to that kind: the nearest is usually the
+        // face standing in front of the edge the client's filter is after.
+        // A filtered click that found nothing locally still arrives here,
+        // the served geometry being the real one and the client's a
+        // tessellation of it.
+        std::function<bool(const SoPickedPoint &)> accept;
+        if (kind != 0) {
+            accept = [this, kind](const SoPickedPoint &hit) {
+                std::string name;
+                ViewProviderDocumentObject *vp =
+                    pimpl->doc ? pimpl->doc->getViewProviderByPathFromHead(
+                                     static_cast<SoFullPath *>(hit.getPath()))
+                               : nullptr;
+                return vp && vp->getObject()
+                    && vp->getObject()->isAttachedToDocument()
+                    && vp->getElementPicked(&hit, name)
+                    && elementKindMatches(name, kind);
+            };
+        }
+        picked.reset(mirror->pickRay(origin, dir, accept));
+    }
+    else {
+        SbViewportRegion viewport{short(kDefaultWidth), short(kDefaultHeight)};
+        SoRayPickAction rp(viewport);
+        rp.setRay(origin, dir);
+        auto pickroot = pimpl->pickRoot();
+        rp.apply(pickroot);
+        if (SoPickedPoint *hit = rp.getPickedPoint())
+            picked = std::make_unique<SoPickedPoint>(*hit);
+    }
+
+    SoPickedPoint *pp = picked.get();
     ViewProviderDocumentObject *vpd = nullptr;
     std::string subname;
     if (pp && pimpl->doc) {
@@ -901,27 +1730,75 @@ void SceneServeSource::pickAndSelect(const SbVec3f &origin, const SbVec3f &dir,
             vpd = nullptr;
     }
     if (!vpd) {
-        if (!ctrl)
+        // A miss still clears, because a plain click on nothing is how a
+        // selection is dropped -- and only a replace does: a toggle or an
+        // extend that hit nothing changes nothing.
+        if (mode == PickReplace)
             Gui::Selection().clearSelection();
         return;
     }
 
     const char *docname = vpd->getObject()->getDocument()->getName();
     const char *objname = vpd->getObject()->getNameInDocument();
+    if (wholeObject)
+        subname = wholeObjectSubname(subname);
     const auto &pt = pp->getPoint();
     SelectionNoTopParentCheck guard;
-    if (ctrl) {
-        if (Gui::Selection().isSelected(docname, objname, subname.c_str(),
-                                        ResolveMode::NoResolve))
-            Gui::Selection().rmvSelection(docname, objname, subname.c_str());
-        else
+
+    // A whole-object selection and that object's element selections are
+    // mutually exclusive, whichever way round the add goes -- an object is
+    // either selected entire or by its parts. Stated here rather than left
+    // to the client because the room's selection is what the tree, the
+    // property panel and every other viewer read.
+    auto dropConflicting = [&]() {
+        const bool addingWhole = subname.empty() || subname.back() == '.';
+        // Collected before anything is removed. A SelObj holds BORROWED
+        // char pointers into the selection's own storage, and removing an
+        // entry while walking them is only safe because of what that
+        // storage happens to be several layers down. Copying first costs
+        // nothing here and does not depend on that.
+        std::vector<std::string> conflicting;
+        for (const auto &sel : Gui::Selection().getSelection(
+                 docname, ResolveMode::NoResolve)) {
+            if (!sel.FeatName || std::strcmp(sel.FeatName, objname) != 0)
+                continue;
+            std::string other = sel.SubName ? sel.SubName : "";
+            if (other == subname)
+                continue;
+            const bool otherWhole = other.empty() || other.back() == '.';
+            if (addingWhole || otherWhole)
+                conflicting.push_back(std::move(other));
+        }
+        for (const std::string &other : conflicting)
+            Gui::Selection().rmvSelection(docname, objname, other.c_str());
+    };
+
+    switch (mode) {
+        case PickToggle:
+            if (Gui::Selection().isSelected(docname, objname, subname.c_str(),
+                                            ResolveMode::NoResolve)) {
+                Gui::Selection().rmvSelection(docname, objname,
+                                              subname.c_str());
+                break;
+            }
+            dropConflicting();
             Gui::Selection().addSelection(docname, objname, subname.c_str(),
                                           pt[0], pt[1], pt[2]);
-    }
-    else {
-        Gui::Selection().clearSelection();
-        Gui::Selection().addSelection(docname, objname, subname.c_str(),
-                                      pt[0], pt[1], pt[2]);
+            break;
+        case PickExtend:
+            if (Gui::Selection().isSelected(docname, objname, subname.c_str(),
+                                            ResolveMode::NoResolve))
+                break;
+            dropConflicting();
+            Gui::Selection().addSelection(docname, objname, subname.c_str(),
+                                          pt[0], pt[1], pt[2]);
+            break;
+        case PickReplace:
+        default:
+            Gui::Selection().clearSelection();
+            Gui::Selection().addSelection(docname, objname, subname.c_str(),
+                                          pt[0], pt[1], pt[2]);
+            break;
     }
     // A selection changes the feeds, and nothing else will ask.
     schedulePublish();
@@ -953,6 +1830,11 @@ SceneServeSource *SceneServeSource::serve(Document *doc, int port)
 {
     if (!doc)
         return nullptr;
+
+    // The browser console's guest files ride the same server
+    // (docs/Sandbox.md 7.20, C1); re-resolved on every serve, so a
+    // runtime installed since is picked up.
+    SandboxServe::install();
 
     auto &sources = servedDocuments();
     auto it = sources.find(doc);
@@ -1061,6 +1943,10 @@ void SceneServeSource::schedulePublish()
 void SceneServeSource::onPublishTimeout()
 {
     publishNow();
+    // After the publish, so a client has the geometry these numbers
+    // describe before it is told the numbers (docs/ThinClient.md sec 8.7).
+    pimpl->flushOnViewParameters();
+    pimpl->flushClientSelections();
 }
 
 bool SceneServeSource::publishNow()

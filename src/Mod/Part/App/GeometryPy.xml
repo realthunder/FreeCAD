@@ -27,26 +27,31 @@ It describes the common behavior of these objects when:
       <Documentation>
         <UserDocu>Rotates this geometric object at angle Ang (in radians) about axis</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="scale">
       <Documentation>
         <UserDocu>Applies a scaling transformation on this geometric object with a center and scaling factor</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="transform">
       <Documentation>
         <UserDocu>Applies a transformation to this geometric object</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="translate">
       <Documentation>
         <UserDocu>Translates this geometric object</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="copy" Const="true">
       <Documentation>
         <UserDocu>Create a copy of this geometry</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="clone" Const="true">
         <Documentation>
@@ -107,6 +112,7 @@ Test if two geometries are the same.
         <UserDocu>Gives the tag of the geometry as string.</UserDocu>
       </Documentation>
       <Parameter Name="Tag" Type="String"/>
+      <Sandbox tier="value"/>
     </Attribute>
   </PythonExport>
 </GenerateModel>

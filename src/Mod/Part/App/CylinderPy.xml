@@ -35,18 +35,21 @@
                 <UserDocu>The radius of the cylinder.</UserDocu>
             </Documentation>
             <Parameter Name="Radius" Type="Float"/>
+            <Sandbox tier="value"/>
         </Attribute>
         <Attribute Name="Center" ReadOnly="false">
             <Documentation>
                 <UserDocu>Center of the cylinder.</UserDocu>
             </Documentation>
             <Parameter Name="Center" Type="Object"/>
+            <Sandbox tier="value"/>
         </Attribute>
         <Attribute Name="Axis" ReadOnly="false">
             <Documentation>
                 <UserDocu>The axis direction of the cylinder</UserDocu>
             </Documentation>
             <Parameter Name="Axis" Type="Object"/>
+            <Sandbox tier="value"/>
         </Attribute>
     </PythonExport>
 </GenerateModel>

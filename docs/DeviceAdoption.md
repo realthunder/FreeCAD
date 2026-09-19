@@ -204,6 +204,35 @@ nothing to `BGFXView::blit` standing aside -- is incomplete. That is true, and
 there is a second independent cause. Under this route bgfx needs no `nwh` at
 all, so the honest change is deleting the surface path rather than repairing it.
 
+**Retired 2026-09-13.** The non-GL branch of `prepare()` now brings bgfx up
+headless -- all-null `PlatformData`, a 0x0 backbuffer, no swapchain on any
+backend -- and the `QWindow` is gone. What forced it was Linux, not macOS: on Qt
+Wayland that window is a `wl_surface` with no role, never mapped, so the
+compositor sends it no frame callbacks, and Mesa's Wayland WSI in FIFO mode
+waits for one before every present with no timeout. A Vulkan session froze at
+zero CPU inside `SwapChainVK::present`. X11 hid it, because a present to an
+unmapped X11 window completes.
+
+Deleting the window exposed two traps, both of which crashed dzn in
+`vkCmdBeginRenderPass` on a null framebuffer a few frames into a real scene:
+
+- **`bgfx::touch()` is an empty SUBMIT, not a no-op.** The frame touches three
+  draw-nothing views -- the capture and id-readback blit anchors, and the
+  trailing present view that exists to make bgfx resolve the MSAA scene target
+  by leaving it (`BGFXFrame.cpp`, `configPresent`) -- and all three sat on
+  `BGFX_INVALID_HANDLE`, i.e. on a backbuffer that no longer exists. They now
+  sit on the view's 1x1 discard target (`sinkFbo`) at a 1x1 rect whenever
+  `BGFXRendererLibP::noBackbuffer` is set. The resolve is unaffected: leaving
+  `bgfxFbo` triggers it whatever the next target is, and a blit ignores its
+  view's framebuffer. GL keeps the backbuffer it really has.
+- **bgfx's Vulkan backend called a headless backbuffer renderable.**
+  `FrameBufferVK::isRenderable()` answered true for "no window handle", which is
+  right for an owned framebuffer and wrong for the backbuffer, which has no
+  window, no attachments and no `VkFramebuffer`. Fixed in the bgfx fork
+  (`renderer_vk.cpp`) as a backstop, so a view left on the backbuffer is skipped
+  instead of crashing the driver. D3D12 already guards on its swapchain; Metal
+  was not checked on a device.
+
 ## 7. The Coin audit, part one: what the residual traversal costs
 
 Run here 2026-09-08, `FC_BGFX_METAL=1` with render cache 3 and

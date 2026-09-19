@@ -214,6 +214,10 @@ of the request).
    path). Cells hosting 3D views are never candidates, and a 3D-view V
    skips this step entirely. If the chosen child REFUSES to close (unsaved
    editor), fall through to a new split rather than fighting the veto.
+   An opener may also name views to KEEP (`place()`'s `keep` predicate,
+   2026-09-14): their cells are not candidates either. The expression
+   editor keeps the views of the objects it edits, so opening it on a
+   spreadsheet's expressions never replaces that spreadsheet.
 7. Otherwise (single cell, or NewSplit, or step 6 refused):
    `A->splitCell(activeCell, direction, V)` where direction comes from the
    split-direction preference (sec 4.1); `Auto` picks the longer side of the

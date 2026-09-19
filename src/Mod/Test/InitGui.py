@@ -93,3 +93,5 @@ Gui.addWorkbench(TestWorkbench())
 
 # Base system tests
 FreeCAD.__unit_test__ += ["Workbench", "Menu", "Menu.MenuDeleteCases", "Menu.MenuCreateCases"]
+# the sandbox guest registering commands and workbenches (docs/Sandbox.md 7.9)
+FreeCAD.__unit_test__ += ["SandboxGui"]

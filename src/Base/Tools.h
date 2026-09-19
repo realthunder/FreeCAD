@@ -34,7 +34,9 @@
 #include <vector>
 #include <string>
 #include <fastsignals/signal.h>
+#ifndef FC_NO_QT
 #include <QString>
+#endif
 
 #include "Exception.h"
 #include "Console.h"
@@ -408,9 +410,11 @@ struct BaseExport Tools
     static std::string escapedUnicodeFromUtf8(const char* s);
     static std::string escapedUnicodeToUtf8(const std::string& s);
 
+#ifndef FC_NO_QT
     static QString escapeEncodeString(const QString& s);
-    static std::string escapeEncodeString(const std::string& s);
     static QString escapeEncodeFilename(const QString& s);
+#endif
+    static std::string escapeEncodeString(const std::string& s);
     static std::string escapeEncodeFilename(const std::string& s);
 
     /**
@@ -428,8 +432,11 @@ struct BaseExport Tools
      * @return A quoted Python literal; "''" if the string cannot be encoded.
      */
     static std::string pythonLiteral(const std::string& s);
+#ifndef FC_NO_QT
     static std::string pythonLiteral(const QString& s);
+#endif
 
+#ifndef FC_NO_QT
     /**
      * @brief toStdString Convert a QString into a UTF-8 encoded std::string.
      * @param s String to convert.
@@ -450,6 +457,7 @@ struct BaseExport Tools
     {
         return QString::fromUtf8(s.c_str(), static_cast<int>(s.size()));
     }
+#endif
 
     /**
      * @brief quoted Creates a quoted string.

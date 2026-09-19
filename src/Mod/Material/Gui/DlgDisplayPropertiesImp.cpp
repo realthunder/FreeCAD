@@ -211,7 +211,7 @@ DlgDisplayPropertiesImp::DlgDisplayPropertiesImp(QWidget* parent, Qt::WindowFlag
         setPropertiesFromSelection();
     }
 
-    Gui::Selection().Attach(this);
+    Gui::SelectionRoom().Attach(this);
 
     // NOLINTBEGIN
     d->connectChangedObject = Gui::Application::Instance->signalChangedObject.connect(
@@ -229,7 +229,7 @@ DlgDisplayPropertiesImp::~DlgDisplayPropertiesImp()
     d->connectChangedObject.disconnect();
     d->connectDeletedObject.disconnect();
     d->connectDeleteDocument.disconnect();
-    Gui::Selection().Detach(this);
+    Gui::SelectionRoom().Detach(this);
 }
 
 namespace

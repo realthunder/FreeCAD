@@ -825,30 +825,21 @@ class HatchTessellator(Tessellator):
         if self.filename and pattern_name:
             pat_shape = None
             try:
-                param_grp = FreeCAD.ParamGet(
-                    "User parameter:BaseApp/Preferences/Mod/TechDraw/debug"
-                )
-                old_allow = (
-                    param_grp.GetBool("allowCrazyEdge")
-                    if "allowCrazyEdge" in param_grp.GetBools()
-                    else None
-                )
-                param_grp.SetBool("allowCrazyEdge", True)
-
+                # Hatch lines longer than 10 m are "crazy" to TechDraw and
+                # dropped; allowCrazyEdge=True keeps them for this call only,
+                # so a recompute never writes the user's parameter store.
                 try:
                     pat_shape = TechDraw.makeGeomHatch(
-                        substrate, float(self.scale), str(pattern_name), str(self.filename)
+                        substrate,
+                        float(self.scale),
+                        str(pattern_name),
+                        str(self.filename),
+                        allowCrazyEdge=True,
                     )
                 except Exception as e:
                     FreeCAD.Console.PrintWarning(
                         f"ArchTessellation: Hatch generation failed: {e}\n"
                     )
-
-                # Restore preferences
-                if old_allow is None:
-                    param_grp.RemBool("allowCrazyEdge")
-                else:
-                    param_grp.SetBool("allowCrazyEdge", old_allow)
 
                 hatch_succeeded = bool(pat_shape and pat_shape.Edges)
 

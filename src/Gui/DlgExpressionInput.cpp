@@ -34,6 +34,7 @@
 #include <App/Application.h>
 #include <App/DocumentObject.h>
 #include <App/ExpressionParser.h>
+#include <App/ExpressionSecurityRuntime.h>
 #include <Base/Console.h>
 #include <Base/Tools.h>
 
@@ -236,6 +237,8 @@ void DlgExpressionInput::onTimer()
             if (!error.empty())
                 THROWM(Base::RuntimeError, error.c_str())
 
+            // preview of what the user is typing right now: session principal
+            App::ExpressionSecurity::Runtime::Scope secScope("session");
             std::unique_ptr<Expression> result(expr->eval());
 
             expression = expr;

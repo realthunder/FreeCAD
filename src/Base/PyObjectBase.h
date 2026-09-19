@@ -337,6 +337,18 @@ public:
      */
     void trackReturnedItem(PyObject* child, Py_ssize_t index);
 
+    /** Stamp `child` as attribute `attr` of `parent`, exactly as
+     * __getattro() stamps every PyObjectBase an attribute hands out --
+     * for a parent that is NOT a PyObjectBase.  The sandbox guest's
+     * handle proxies are Python classes; a Placement they hand out for
+     * `shape.Placement` must still write itself back on
+     * `shape.Placement.Rotation = r` (ArchFrame does exactly that), and
+     * the write-back is a generic setattr on the parent, which the
+     * proxy turns into the host op.  A const or not-tracking child is
+     * left alone, as __getattro() leaves it.
+     */
+    static void trackAttributeOf(PyObject* child, const char* attr, PyObject* parent);
+
     /** Forget which parent this value came out of
      *
      * After this it notifies nobody, which is what a value being handed

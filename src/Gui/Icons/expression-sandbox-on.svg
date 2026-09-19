@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Expression sandbox indicator, confined state: a closed padlock.
+     Paired with expression-sandbox-off.svg: one object in two states, so
+     the status-bar button reads as a switch rather than as a badge.
+     (No double hyphen in this comment: XML forbids it.) -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <path d="M4.7 7.4V5.5a3.3 3.3 0 0 1 6.6 0v1.9"
+        fill="none" stroke="#256b3f" stroke-width="1.7" stroke-linecap="round"/>
+  <rect x="2.9" y="7.1" width="10.2" height="6.9" rx="1.4"
+        fill="#3aa163" stroke="#256b3f" stroke-width="1"/>
+  <circle cx="8" cy="9.9" r="1.25" fill="#f0faf3"/>
+  <rect x="7.45" y="10.2" width="1.1" height="2.3" rx="0.55" fill="#f0faf3"/>
+</svg>

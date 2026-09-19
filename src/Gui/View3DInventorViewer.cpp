@@ -24,6 +24,7 @@
 
 #ifndef _PreComp_
 # include <cfloat>
+# include <optional>
 # ifdef FC_OS_WIN32
 #  include <windows.h>
 # endif
@@ -88,6 +89,7 @@
 # include <QDir>
 # include <QElapsedTimer>
 # include <QPointer>
+# include <QScreen>
 # include <QEventLoop>
 # include <QKeyEvent>
 # include <QMessageBox>
@@ -1326,6 +1328,11 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
     // backend (and the WASM viewer) sharing the main scene camera; the
     // world-space geometry lines up with the main scene for free. Gated on
     // there being edit content (more than just the editing transform).
+    // The root is the session's and changes between sessions (a private
+    // one idle, the document's in edit): a capture built on the last one
+    // is dropped before a new one is built.
+    if (editingCapture.manager && editingCapture.root != owner->pcEditingRoot)
+        dropCapture(editingCapture, OverlayEditing);
     if (owner->pcEditingRoot && owner->pcEditingRoot->getNumChildren() > 1) {
         if (!editingCapture.manager)
             initCapture(editingCapture, owner->pcEditingRoot);
@@ -1441,7 +1448,6 @@ void View3DInventorViewer::Private::clearOverlayCaptures()
 View3DInventorViewer::View3DInventorViewer(QWidget* parent, const QtGLWidget* sharewidget)
     : Quarter::SoQTQuarterAdaptor(parent, sharewidget)
     , SelectionObserver(false, ResolveMode::NoResolve)
-    , editViewProvider(nullptr)
     , nonObjectGroup(nullptr)
     , navigation(nullptr)
     , renderType(Native)
@@ -1461,7 +1467,6 @@ View3DInventorViewer::View3DInventorViewer(QWidget* parent, const QtGLWidget* sh
 View3DInventorViewer::View3DInventorViewer(const QtGLFormat& format, QWidget* parent, const QtGLWidget* sharewidget)
     : Quarter::SoQTQuarterAdaptor(format, parent, sharewidget)
     , SelectionObserver(false, ResolveMode::NoResolve)
-    , editViewProvider(nullptr)
     , nonObjectGroup(nullptr)
     , navigation(nullptr)
     , renderType(Native)
@@ -1478,10 +1483,102 @@ View3DInventorViewer::View3DInventorViewer(const QtGLFormat& format, QWidget* pa
     init();
 }
 
+// The ViewerContext rows Quarter already answers. Forwarding only: the
+// qualified calls bind non-virtually, so none of these re-enters itself.
+SoNode* View3DInventorViewer::getSceneGraph() const
+{
+    return inherited::getSceneGraph();
+}
+
+SoRenderManager* View3DInventorViewer::getSoRenderManager() const
+{
+    return inherited::getSoRenderManager();
+}
+
+SoEventManager* View3DInventorViewer::getSoEventManager() const
+{
+    return inherited::getSoEventManager();
+}
+
+const SbViewportRegion& View3DInventorViewer::getViewportRegion() const
+{
+    return inherited::getViewportRegion();
+}
+
+float View3DInventorViewer::getPickRadius() const
+{
+    return inherited::getPickRadius();
+}
+
+double View3DInventorViewer::devicePixelRatio() const
+{
+    return inherited::devicePixelRatio();
+}
+
+QWidget* View3DInventorViewer::getWidget() const
+{
+    return inherited::getWidget();
+}
+
+QWidget* View3DInventorViewer::getGLWidget() const
+{
+    return inherited::getGLWidget();
+}
+
+QWidget* View3DInventorViewer::datumEditorParent() const
+{
+    // The MDI window rather than this widget: an entry box floats over the
+    // canvas, and a child of the canvas would be clipped by it.
+    return parentWidget();
+}
+
+bool View3DInventorViewer::sendKeyEvent(QKeyEvent* event)
+{
+    // Posted to this widget, which is where it would have gone had the
+    // entry box not held the keyboard focus.
+    return QApplication::sendEvent(this, event);
+}
+
+QWidget* View3DInventorViewer::getWidget()
+{
+    return inherited::getWidget();
+}
+
+QWidget* View3DInventorViewer::getGLWidget()
+{
+    return inherited::getGLWidget();
+}
+
+Qt::MouseButtons View3DInventorViewer::mouseButtons() const
+{
+    // One pointer on a desktop, so the application's answer is this view's
+    // answer. A mirror answers from the button bits its client sent instead,
+    // which is the whole reason the question is asked of a context.
+    return QApplication::mouseButtons();
+}
+
+double View3DInventorViewer::logicalDotsPerInchX() const
+{
+    if (auto* scr = screen()) {
+        return scr->logicalDotsPerInchX();
+    }
+    return 96.0;
+}
+
+void View3DInventorViewer::setFocusToView()
+{
+    setFocus();
+}
+
+View3DInventorViewer* View3DInventorViewer::fromEventCallback(const SoEventCallback* node)
+{
+    // Checked, because the user data is a ViewerContext and the other
+    // implementation of that is not a widget at all.
+    return dynamic_cast<View3DInventorViewer*>(ViewerContext::fromEventCallback(node));
+}
+
 void View3DInventorViewer::init()
 {
-    pcEditingRoot = nullptr;
-
     _pimpl.reset(new Private(this));
 
     // A redraw held back by the throttle comes back through this timer, so a
@@ -1623,7 +1720,12 @@ void View3DInventorViewer::init()
     setSceneGraph(pcViewProviderRoot);
     // Event callback node
     pEventCallback = new SoEventCallback();
-    pEventCallback->setUserData(this);
+    // The base subobject, deliberately: a pointer to this object and a pointer
+    // to its ViewerContext base are different addresses, so storing one and
+    // reading back the other through void* would read the wrong bytes. Readers
+    // go through ViewerContext::fromEventCallback, or the checked
+    // View3DInventorViewer::fromEventCallback for the desktop viewer.
+    pEventCallback->setUserData(static_cast<ViewerContext*>(this));
     pEventCallback->ref();
     pcViewProviderRoot->addChild(pEventCallback);
     pEventCallback->addEventCallback(SoEvent::getClassTypeId(), handleEventCB, this);
@@ -1651,16 +1753,10 @@ void View3DInventorViewer::init()
 
     pcClipPlane = nullptr;
 
-    pcEditingRoot = new SoSeparator;
-    pcEditingRoot->ref();
-    pcEditingRoot->setName("EditingRoot");
-    pcEditingTransform = new SoTransform;
-    pcEditingTransform->ref();
-    pcEditingTransform->setName("EditingTransform");
-    restoreEditingRoot = false;
-    pcEditingRoot->addChild(pcEditingTransform);
-
-    inventorSelection->getAuxRoot()->addChild(pcEditingRoot);
+    // The editing root is the session's (Gui::Document's); where it hangs is
+    // this view's, and it is hung when a session binds it here
+    // (hangEditingRoot) rather than at construction: idle, a view shows
+    // through a private empty root that is in no graph at all.
 
     // Create group for the non physical object
     nonObjectGroup = new SoGroup();
@@ -1749,8 +1845,19 @@ View3DInventorViewer::~View3DInventorViewer()
     // closed 3D view is in edit mode the corresponding view provider must be restored
     // because otherwise it might be left in a broken state
     // See https://forum.freecad.org/viewtopic.php?f=3&t=39720
-    if (restoreEditingRoot) {
-        resetEditingRoot(false);
+    // The initiator gives the geometry back; every view, initiator or
+    // joiner, takes the session's root out of its own graph here, while
+    // that graph is still there to unhang from (the base destructor
+    // cannot reach this class's hangEditingRoot).
+    if (isEditingViewProvider()) {
+        if (isEditingInitiator()) {
+            resetEditingRoot(false);
+        }
+        removeEventCallback(SoEvent::getClassTypeId(), ViewProvider::eventCallback,
+                            editViewProvider);
+        editViewProvider = nullptr;
+        joinedEditing = false;
+        unbindEditingRoot();
     }
 
     // cleanup
@@ -1795,9 +1902,6 @@ View3DInventorViewer::~View3DInventorViewer()
     this->environment = nullptr;
 
     inventorSelection.reset(nullptr);
-
-    this->pcEditingRoot->unref();
-    this->pcEditingTransform->unref();
 
     if (this->pcClipPlane) {
         this->pcClipPlane->unref();
@@ -2521,105 +2625,6 @@ bool View3DInventorViewer::feedCanvasCyclesViewport(const QColor &col, const SbM
     return true;
 }
 
-void View3DInventorViewer::setEditingTransform(const Base::Matrix4D &mat)
-{
-    // NOLINTBEGIN
-    if (pcEditingTransform) {
-        double dMtrx[16];
-        mat.getGLMatrix(dMtrx);
-        pcEditingTransform->setMatrix(SbMatrix(
-                    dMtrx[0], dMtrx[1], dMtrx[2],  dMtrx[3],
-                    dMtrx[4], dMtrx[5], dMtrx[6],  dMtrx[7],
-                    dMtrx[8], dMtrx[9], dMtrx[10], dMtrx[11],
-                    dMtrx[12],dMtrx[13],dMtrx[14], dMtrx[15]));
-    }
-    // NOLINTEND
-}
-
-void View3DInventorViewer::setupEditingRoot(SoNode *node, const Base::Matrix4D *mat) {
-    if(!editViewProvider) {
-        return;
-    }
-
-    resetEditingRoot(false);
-    if(mat) {
-        setEditingTransform(*mat);
-    }
-    else {
-        setEditingTransform(getDocument()->getEditingTransform());
-    }
-    if(node) {
-        restoreEditingRoot = false;
-        pcEditingRoot->addChild(node);
-        return;
-    }
-
-    restoreEditingRoot = true;
-    auto root = editViewProvider->getRoot();
-    for(int i=0,count=root->getNumChildren();i<count;++i) {
-        SoNode *node = root->getChild(i);
-        if(node != editViewProvider->getTransformNode()) {
-            pcEditingRoot->addChild(node);
-        }
-    }
-    coinRemoveAllChildren(root);
-    ViewProviderLink::updateLinks(editViewProvider);
-}
-
-void View3DInventorViewer::resetEditingRoot(bool updateLinks)
-{
-    if(!editViewProvider || pcEditingRoot->getNumChildren()<=1) {
-        return;
-    }
-    if(!restoreEditingRoot) {
-        pcEditingRoot->getChildren()->truncate(1);
-        return;
-    }
-    restoreEditingRoot = false;
-    auto root = editViewProvider->getRoot();
-    if (root->getNumChildren()) {
-        FC_ERR("WARNING!!! Editing view provider root node is tampered");
-    }
-    root->addChild(editViewProvider->getTransformNode());
-    for (int i=1,count=pcEditingRoot->getNumChildren();i<count;++i) {
-        root->addChild(pcEditingRoot->getChild(i));
-    }
-    pcEditingRoot->getChildren()->truncate(1);
-
-    // handle exceptions eventually raised by ViewProviderLink
-    try {
-        if (updateLinks) {
-            ViewProviderLink::updateLinks(editViewProvider);
-        }
-    }
-    catch (const Py::Exception& e) {
-        /* coverity[UNCAUGHT_EXCEPT] Uncaught exception */
-        // Coverity created several reports when removeViewProvider()
-        // is used somewhere in a destructor which indirectly invokes
-        // resetEditingRoot().
-        // Now theoretically Py::type can throw an exception which nowhere
-        // will be handled and thus terminates the application. So, add an
-        // extra try/catch block here.
-        try {
-            Py::Object py = Py::type(e);
-            if (py.isString()) {
-                Py::String str(py);
-                Base::Console().Warning("%s\n", str.as_std_string("utf-8").c_str());
-            }
-            else {
-                Py::String str(py.repr());
-                Base::Console().Warning("%s\n", str.as_std_string("utf-8").c_str());
-            }
-            // Prints message to console window if we are in interactive mode
-            PyErr_Print();
-        }
-        catch (Py::Exception& e) {
-            e.clear();
-            Base::Console().Error("Unexpected exception raised in View3DInventorViewer::resetEditingRoot\n");
-        }
-    }
-}
-
 SoPickedPoint* View3DInventorViewer::getPointOnRay(const SbVec2s& pos, const ViewProvider* vp) const
 {
     return _pimpl->getPointOnRay(pos, vp);
@@ -2728,40 +2733,6 @@ SoPickedPoint* View3DInventorViewer::getPointOnRay(const SbVec3f& pos, const SbV
     SoPickedPoint* pick = rp.getPickedPoint();
     //return (pick ? pick->copy() : 0); // needs the same instance of CRT under MS Windows
     return (pick ? new SoPickedPoint(*pick) : nullptr);
-}
-
-void View3DInventorViewer::setEditingViewProvider(Gui::ViewProvider* vp, int ModNum)
-{
-    this->editViewProvider = vp;
-    this->editViewProvider->setEditViewer(this, ModNum);
-    addEventCallback(SoEvent::getClassTypeId(), Gui::ViewProvider::eventCallback,this->editViewProvider);
-}
-
-/// reset from edit mode
-void View3DInventorViewer::resetEditingViewProvider()
-{
-    if (this->editViewProvider) {
-
-        // In case the event action still has grabbed a node when leaving edit mode
-        // force to release it now
-        SoEventManager* mgr = getSoEventManager();
-        SoHandleEventAction* heaction = mgr->getHandleEventAction();
-        if (heaction && heaction->getGrabber()) {
-            heaction->releaseGrabber();
-        }
-
-        resetEditingRoot();
-
-        this->editViewProvider->unsetEditViewer(this);
-        removeEventCallback(SoEvent::getClassTypeId(), Gui::ViewProvider::eventCallback,this->editViewProvider);
-        this->editViewProvider = nullptr;
-    }
-}
-
-/// reset from edit mode
-bool View3DInventorViewer::isEditingViewProvider() const
-{
-    return this->editViewProvider != nullptr;
 }
 
 /// display override mode
@@ -3700,6 +3671,8 @@ void View3DInventorViewer::setSceneGraph(SoNode* root)
     if (!root) {
         _ViewProviderSet.clear();
         editViewProvider = nullptr;
+        joinedEditing = false;
+        unbindEditingRoot();
         return;
     }
 
@@ -6769,39 +6742,6 @@ float View3DInventorViewer::getMaxDimension() const {
     return std::max(fHeight, fWidth);
 }
 
-void View3DInventorViewer::getDimensions(float& fHeight, float& fWidth) const
-{
-    SoCamera* camera = getSoRenderManager()->getCamera();
-    if (!camera) {
-        // no camera there
-        return;
-    }
-
-    float aspectRatio = getViewportRegion().getViewportAspectRatio();
-
-    SoType type = camera->getTypeId();
-    if (type.isDerivedFrom(SoOrthographicCamera::getClassTypeId())) {
-        // NOLINTBEGIN
-        fHeight = static_cast<SoOrthographicCamera*>(camera)->height.getValue();
-        fWidth = fHeight;
-        // NOLINTEND
-    }
-    else if (type.isDerivedFrom(SoPerspectiveCamera::getClassTypeId())) {
-        // NOLINTBEGIN
-        float fHeightAngle = static_cast<SoPerspectiveCamera*>(camera)->heightAngle.getValue();
-        fHeight = std::tan(fHeightAngle / 2.0) * 2.0 * camera->focalDistance.getValue();
-        fWidth = fHeight;
-        // NOLINTEND
-    }
-
-    if (aspectRatio > 1.0) {
-        fWidth *= aspectRatio;
-    }
-    else {
-        fHeight *= aspectRatio;
-    }
-}
-
 void View3DInventorViewer::printDimension() const
 {
     float fHeight = -1.0;
@@ -6851,6 +6791,16 @@ bool View3DInventorViewer::processSoEvent(const SoEvent* ev)
     // Every event the view sees is a person interacting with it; the redraw
     // throttle gets out of their way for the next little while.
     _pimpl->noteInput();
+
+    // In an edit session every event is handled AS this view, so that
+    // what it selects lands in the SESSION's instance (docs/ThinClient.md
+    // 8.11): the room for a session the desktop started, which is what
+    // Gui::Selection() answered here anyway, and the initiating client's
+    // own for one a browser started, where the tool state machine listens.
+    std::optional<ViewerScope> sessionScope;
+    if (editViewProvider) {
+        sessionScope.emplace(this);
+    }
 
     if (naviCubeEnabled && naviCube->processSoEvent(ev)) {
         return true;
@@ -7124,19 +7074,6 @@ SbVec2s View3DInventorViewer::getPointOnViewport(const SbVec3f& pnt) const
     return {xpos, ypos};
 }
 
-QPoint View3DInventorViewer::toQPoint(const SbVec2s& pnt) const
-{
-    const SbViewportRegion& vp = this->getSoRenderManager()->getViewportRegion();
-    const SbVec2s& vps = vp.getViewportSizePixels();
-    int xpos = pnt[0];
-    int ypos = vps[1] - pnt[1] - 1;
-
-    qreal dev_pix_ratio = devicePixelRatio();
-    xpos = int(std::roundf(xpos / dev_pix_ratio));
-    ypos = int(std::roundf(ypos / dev_pix_ratio));
-
-    return {xpos, ypos};
-}
 
 SbVec2s View3DInventorViewer::fromQPoint(const QPoint& pnt) const
 {
@@ -8769,6 +8706,25 @@ void View3DInventorViewer::setCursorRepresentation(int modearg)
     default:
         assert(0);
         break;
+    }
+}
+
+void View3DInventorViewer::hangEditingRoot(EditingRoot* root, bool hang)
+{
+    // A sibling of the render-cache-captured selectionRoot, so an edit
+    // never reaches the main scene feed and is captured separately
+    // (Private::editingCapture, which re-inits itself on the new node).
+    // The same node may hang under another view's aux root and inside a
+    // served graph at the same time: one session, N views.
+    if (!inventorSelection || !root) {
+        return;
+    }
+    SoGroup* aux = inventorSelection->getAuxRoot();
+    if (hang) {
+        root->hangUnder(aux);
+    }
+    else {
+        root->unhangFrom(aux);
     }
 }
 

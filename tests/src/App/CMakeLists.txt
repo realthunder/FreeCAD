@@ -1,3 +1,14 @@
+if(BUILD_EXPR_IMAGE_HOST)
+    set(ExpressionImageHost_TEST_SRC
+        ${CMAKE_CURRENT_SOURCE_DIR}/ExpressionImageHost.cpp)
+    if(BUILD_EXPR_PYODIDE_HOST)
+        list(APPEND ExpressionImageHost_TEST_SRC
+            ${CMAKE_CURRENT_SOURCE_DIR}/ExpressionPyodide.cpp)
+    endif()
+else()
+    set(ExpressionImageHost_TEST_SRC)
+endif()
+
 target_sources(
     Tests_run
         PRIVATE
@@ -5,10 +16,15 @@ target_sources(
             ${CMAKE_CURRENT_SOURCE_DIR}/Branding.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/Document.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/Expression.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/ExpressionSecurity.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/ExpressionSecurityRuntime.cpp
+            ${ExpressionImageHost_TEST_SRC}
             ${CMAKE_CURRENT_SOURCE_DIR}/License.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/Metadata.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/ParamRegistry.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/Property.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/ProxyImport.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/TypeImport.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/TypeRename.cpp
 )
 

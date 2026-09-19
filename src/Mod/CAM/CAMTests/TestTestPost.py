@@ -93,6 +93,11 @@ class TestTestPost(PathTestUtils.PathTestBase):
         # reinitialize the postprocessor data structures between tests
         #
         self.post.reinitialize()
+        # Preserve the persistent output preferences so a test that calls
+        # setOutputFileDefaults (e.g. test00138) does not leak into the
+        # user's configuration; restored in tearDown even if the test fails.
+        self._saved_output_file = Path.Preferences.defaultOutputFile()
+        self._saved_output_policy = Path.Preferences.defaultOutputPolicy()
 
     def tearDown(self):
         """tearDown()...
@@ -100,7 +105,9 @@ class TestTestPost(PathTestUtils.PathTestBase):
         This method is called after each test() method. Add cleanup instructions here.
         Such cleanup instructions will likely undo those in the setUp() method.
         """
-        pass
+        Path.Preferences.setOutputFileDefaults(
+            self._saved_output_file, self._saved_output_policy
+        )
 
     def single_compare(self, test_path, expected, args, debug=False):
         """Perform a test with a single line of gcode comparison."""

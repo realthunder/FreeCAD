@@ -35,6 +35,7 @@
 which is equal to the number of poles minus 1.</UserDocu>
             </Documentation>
             <Parameter Name="Degree" Type="Long"/>
+            <Sandbox tier="value"/>
         </Attribute>
         <Attribute Name="MaxDegree" ReadOnly="true">
             <Documentation>
@@ -42,6 +43,7 @@ which is equal to the number of poles minus 1.</UserDocu>
 Bezier curve curve. This value is 25.</UserDocu>
             </Documentation>
             <Parameter Name="MaxDegree" Type="Long"/>
+            <Sandbox tier="value"/>
         </Attribute>
         <Attribute Name="NbPoles" ReadOnly="true">
             <Documentation>
@@ -54,17 +56,20 @@ Bezier curve curve. This value is 25.</UserDocu>
                 <UserDocu>Returns the start point of this Bezier curve.</UserDocu>
             </Documentation>
             <Parameter Name="StartPoint" Type="Object"/>
+            <Sandbox tier="value"/>
         </Attribute>
         <Attribute Name="EndPoint" ReadOnly="true">
             <Documentation>
                 <UserDocu>Returns the end point of this Bezier curve.</UserDocu>
             </Documentation>
             <Parameter Name="EndPoint" Type="Object"/>
+            <Sandbox tier="value"/>
         </Attribute>
         <Methode Name="isRational" Const="true">
             <Documentation>
                 <UserDocu>Returns false if the weights of all the poles of this Bezier curve are equal.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="isPeriodic" Const="true">
             <Documentation>
@@ -76,6 +81,7 @@ Bezier curve curve. This value is 25.</UserDocu>
                 <UserDocu>Returns true if the distance between the start point and end point of
                     this Bezier curve is less than or equal to gp::Resolution().</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="increase">
             <Documentation>
@@ -83,6 +89,7 @@ Bezier curve curve. This value is 25.</UserDocu>
 Increases the degree of this Bezier curve to Degree.
 As a result, the poles and weights tables are modified.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="insertPoleAfter">
             <Documentation>
@@ -119,6 +126,7 @@ If this Bezier curve is rational, it can become non-rational.</UserDocu>
             <Documentation>
                 <UserDocu>Get all poles of the Bezier curve.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="setPoles">
             <Documentation>
@@ -126,6 +134,7 @@ If this Bezier curve is rational, it can become non-rational.</UserDocu>
 
                 Takes a list of 3D Base.Vector objects.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="setWeight">
             <Documentation>
@@ -160,6 +169,7 @@ ensures that:
                 Example :
                 bezier.interpolate([[pt1, deriv11, deriv12], [pt2,], [pt3, deriv31]], [0, 0.4, 1.0])</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
     </PythonExport>
 </GenerateModel>

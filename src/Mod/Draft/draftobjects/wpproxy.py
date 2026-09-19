@@ -39,6 +39,7 @@ from draftutils import gui_utils
 class WorkingPlaneProxy:
     """The Draft working plane proxy object"""
 
+
     def __init__(self, obj):
         obj.Proxy = self
 

@@ -308,6 +308,11 @@ public:
     void setStatusBarItemEnabled(const QByteArray& id, bool enabled);
     /// Appends a checkable toggle action for every registered item to \a menu.
     void buildStatusBarContextMenu(QMenu& menu);
+    /// The registered widget under \a id, null when there is none.
+    QWidget* statusBarItem(const QByteArray& id) const;
+    /// Whether \a widget is a registered item (the tool bar manager then
+    /// leaves such a tool bar where it is instead of adopting it).
+    bool isStatusBarItem(const QWidget* widget) const;
     //@}
 
     void initDockWindows(bool show);

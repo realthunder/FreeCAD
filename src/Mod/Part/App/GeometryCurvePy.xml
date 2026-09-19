@@ -19,6 +19,7 @@
             <Documentation>
                 <UserDocu>Return the shape for the geometry.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="discretize" Const="true" Keyword="true">
             <Documentation>
@@ -54,6 +55,7 @@ p=c.discretize(Angular=0.09,Curvature=0.01,Last=3.14,Minimum=100)
 s=Part.Compound([Part.Vertex(i) for i in p])
 Part.show(s)</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="getD0" Const="true">
             <Documentation>
@@ -85,22 +87,26 @@ Part.show(s)</UserDocu>
                 <UserDocu>Computes the length of a curve
 length([uMin,uMax,Tol]) -&gt; Float</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="parameterAtDistance" Const="true">
             <Documentation>
                 <UserDocu>Returns the parameter on the curve of a point at the given distance from a starting parameter.
 parameterAtDistance([abscissa, startingParameter]) -&gt; Float the</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="value" Const="true">
             <Documentation>
                 <UserDocu>Computes the point of parameter u on this curve</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="tangent" Const="true">
             <Documentation>
                 <UserDocu>Computes the tangent of parameter u on this curve</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="makeRuledSurface" Const="true">
             <Documentation>
@@ -122,11 +128,13 @@ parameterAtDistance([abscissa, startingParameter]) -&gt; Float the</UserDocu>
                 <UserDocu>Returns the parameter on the curve
 of the nearest orthogonal projection of the point.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="normal" Const="true">
             <Documentation>
                 <UserDocu>Vector = normal(pos) - Get the normal vector at the given parameter [First|Last] if defined</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="projectPoint" Const="true" Keyword="true">
             <Documentation>
@@ -140,6 +148,7 @@ projectPoint(Vector,&quot;Distance&quot;) -&gt; list of floats
 projectPoint(Vector,&quot;Parameter&quot;) -&gt; list of floats
 projectPoint(Vector,&quot;Point&quot;) -&gt; list of points</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="curvature" Const="true">
             <Documentation>
@@ -157,6 +166,7 @@ projectPoint(Vector,&quot;Point&quot;) -&gt; list of points</UserDocu>
 
                   arguments: curve/surface (for the intersection), precision (float)</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="intersectCS" Const="true">
             <Documentation>
@@ -173,6 +183,7 @@ projectPoint(Vector,&quot;Point&quot;) -&gt; list of points</UserDocu>
                 <UserDocu>Converts a curve of any type (only part from First to Last)
                     toBSpline([Float=First, Float=Last]) -&gt; B-Spline curve</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="toNurbs" Const="true">
             <Documentation>
@@ -191,11 +202,13 @@ projectPoint(Vector,&quot;Point&quot;) -&gt; list of points</UserDocu>
                 <UserDocu>Approximates a curve of any type to a B-Spline curve
                     approximateBSpline(Tolerance, MaxSegments, MaxDegree, [Order='C2']) -&gt; B-Spline curve</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="reverse">
             <Documentation>
                 <UserDocu>Changes the direction of parametrization of the curve.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="reversedParameter" Const="true">
             <Documentation>
@@ -218,6 +231,7 @@ or raises an exception if it is not periodic.</UserDocu>
             <Documentation>
                 <UserDocu>Returns true if the curve is closed.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="isLinear" Const="true">
           <Documentation>
@@ -239,24 +253,28 @@ or raises an exception if it is not periodic.</UserDocu>
                 <UserDocu>Returns the global continuity of the curve.</UserDocu>
             </Documentation>
             <Parameter Name="Continuity" Type="String"/>
+            <Sandbox tier="value"/>
         </Attribute>
         <Attribute Name="FirstParameter" ReadOnly="true">
             <Documentation>
                 <UserDocu>Returns the value of the first parameter.</UserDocu>
             </Documentation>
             <Parameter Name="FirstParameter" Type="Float"/>
+            <Sandbox tier="value"/>
         </Attribute>
         <Attribute Name="LastParameter" ReadOnly="true">
             <Documentation>
                 <UserDocu>Returns the value of the last parameter.</UserDocu>
             </Documentation>
             <Parameter Name="LastParameter" Type="Float"/>
+            <Sandbox tier="value"/>
         </Attribute>
         <Attribute Name="Rotation" ReadOnly="true">
             <Documentation>
                 <UserDocu>Returns a rotation object to describe the orientation for curve that supports it</UserDocu>
             </Documentation>
             <Parameter Name="Rotation" Type="Object"/>
+            <Sandbox tier="value"/>
         </Attribute>
     </PythonExport>
 </GenerateModel>

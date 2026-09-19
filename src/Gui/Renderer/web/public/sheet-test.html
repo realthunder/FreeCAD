@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>spreadsheet panel -- harness</title>
+<link rel="stylesheet" href="./inspector.css">
+<style> body { margin: 0; background: #0e1013; min-height: 100vh } </style>
+</head>
+<body>
+<!--
+  The sheet panel with no WASM viewer behind it (sheetharness.ts): this page
+  opens the scene socket itself and provides the two hooks the DOM chrome
+  needs, so the spreadsheet tier can be exercised on its own.
+
+      scripts/renderer-serve.sh scripts/demo-sheet.py 8077
+      python3 -m http.server -d build/wasm/web
+      http://127.0.0.1:8000/sheet-test.html?scene=http://127.0.0.1:8077
+-->
+<script type="module" src="./sheetharness.js"></script>
+</body>
+</html>

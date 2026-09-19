@@ -35,6 +35,7 @@ Part.Line(Point1,Point2)
         <UserDocu>Returns the direction of this line.</UserDocu>
       </Documentation>
       <Parameter Name="Direction" Type="Object"/>
+      <Sandbox tier="value"/>
     </Attribute>
   </PythonExport>
 </GenerateModel>

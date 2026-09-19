@@ -18,6 +18,7 @@
             <Documentation>
                 <UserDocu>Offset the shape by a given amount. DEPRECATED - use makeOffset2D instead.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="add">
             <Documentation>
@@ -25,6 +26,7 @@
 add(edge)
                 </UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="fixWire">
             <Documentation>
@@ -34,6 +36,7 @@ fixWire([face, tolerance])
 A face and a tolerance can optionally be supplied to the algorithm:
                 </UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="makeHomogenousWires" Const="true">
         <Documentation>
@@ -48,6 +51,7 @@ makeHomogenousWires(wire) -> Wire
 makePipe(profile) -> Shape
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="makePipeShell" Const="true">
       <Documentation>
@@ -57,6 +61,7 @@ makePipeShell(shapeList,[isSolid=False,isFrenet=False,transition=0]) -> Shape
 Transition can be 0 (default), 1 (right corners) or 2 (rounded corners).
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="makeEvolved" Const="true" Keyword="true">
         <Documentation>
@@ -111,12 +116,14 @@ s=Part.Compound([Part.Vertex(i) for i in p])
 Part.show(s)
         </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Attribute Name="Mass" ReadOnly="true">
       <Documentation>
         <UserDocu>Returns the mass of the current system.</UserDocu>
       </Documentation>
       <Parameter Name="Mass" Type="Object"/>
+      <Sandbox tier="value"/>
     </Attribute>
     <Attribute Name="CenterOfMass" ReadOnly="true">
       <Documentation>
@@ -126,6 +133,7 @@ The coordinates returned for the center of mass are expressed in the
 absolute Cartesian coordinate system.</UserDocu>
       </Documentation>
       <Parameter Name="CenterOfMass" Type="Object"/>
+      <Sandbox tier="value"/>
     </Attribute>
     <Attribute Name="MatrixOfInertia" ReadOnly="true">
       <Documentation>
@@ -175,18 +183,21 @@ coordinate system.</UserDocu>
        <UserDocu>List of ordered edges in this shape.</UserDocu>
       </Documentation>
       <Parameter Name="OrderedEdges" Type="List"/>
+      <Sandbox tier="handle"/>
    </Attribute>
    <Attribute Name="Continuity" ReadOnly="true">
        <Documentation>
            <UserDocu>Returns the continuity</UserDocu>
        </Documentation>
        <Parameter Name="Continuity" Type="String"/>
+       <Sandbox tier="value"/>
    </Attribute>
    <Attribute Name="OrderedVertexes" ReadOnly="true">
      <Documentation>
       <UserDocu>List of ordered vertexes in this shape.</UserDocu>
      </Documentation>
      <Parameter Name="OrderedVertexes" Type="List"/>
+     <Sandbox tier="handle"/>
   </Attribute>
   </PythonExport>
 </GenerateModel>

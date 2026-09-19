@@ -30,6 +30,7 @@
 # pragma clang diagnostic ignored "-Wdelete-non-virtual-dtor"
 #endif
 
+#include <algorithm>
 #include <atomic>
 #include <boost/algorithm/string.hpp>
 #include <boost/intrusive/list.hpp>
@@ -40,12 +41,26 @@
 #include <sstream>
 #include <stack>
 #include <string>
+#include <unordered_set>
 #include <cctype>
 
+#ifdef FC_EXPR_IMAGE
+// The sandbox image build: the document world is the S1 adapter
+// (bindings pack + bridge ops), and the host-only Python bindings of
+// Expression/DocumentObject are absent (helpers below stub their type
+// checks).  See docs/ExpressionImage.md.
+#include <App/ExpressionImage/FcxDocument.h>
+#include <App/ExpressionImage/ImageDispatch.h>
+#include <Base/BaseClassPy.h>
+#else
 #include <App/Application.h>
 #include <App/DocumentObject.h>
+#include <App/ExpressionLibrary.h>
+#endif
 #include <App/ObjectIdentifier.h>
+#ifndef FC_EXPR_IMAGE
 #include <App/PropertyUnits.h>
+#endif
 #include <Base/Console.h>
 #include <Base/Exception.h>
 #include <Base/Interpreter.h>
@@ -53,14 +68,18 @@
 #include <Base/PlacementPy.h>
 #include <Base/QuantityPy.h>
 #include <Base/RotationPy.h>
+#ifndef FC_EXPR_IMAGE
 #include <Base/Sequencer.h>
-#include <Base/Tools.h>
+#endif
 #include <Base/Unit.h>
 #include <Base/VectorPy.h>
 #include "ExpressionParser.h"
+#include "ExpressionSecurityRuntime.h"
 #include "ExpressionVisitors.h"
-#include "ExpressionPy.h"
+#include <App/ExpressionPy.h>
+#ifndef FC_EXPR_IMAGE
 #include "DocumentObjectPy.h"
+#endif
 
 /** \defgroup Expression Expressions framework
     \ingroup APP
@@ -72,6 +91,22 @@ using namespace App;
 namespace bi = boost::intrusive;
 
 FC_LOG_LEVEL_INIT("Expression", true, true)
+
+// Host Python bindings of the document world are absent in the sandbox
+// image; there, no Python object ever IS a DocumentObjectPy.  ExpressionPy,
+// the function object, is compiled into the image (docs/Sandbox.md 7.17 D1).
+#ifdef FC_EXPR_IMAGE
+static inline bool _isDocumentObjectPy(PyObject *) {
+    return false;
+}
+#else
+static inline bool _isDocumentObjectPy(PyObject *o) {
+    return PyObject_TypeCheck(o, &DocumentObjectPy::Type);
+}
+#endif
+static inline bool _isExpressionPy(PyObject *o) {
+    return PyObject_TypeCheck(o, &ExpressionPy::Type);
+}
 
 #ifndef M_PI
 #define M_PI       3.14159265358979323846
@@ -365,61 +400,6 @@ void ExpressionBlocker::check()
 //
 void ExpressionVisitor::getIdentifiers(Expression &e, std::map<App::ObjectIdentifier,bool> &ids) {
     e._getIdentifiers(ids);
-}
-
-bool ExpressionVisitor::adjustLinks(Expression &e, const std::set<App::DocumentObject*> &inList) {
-    return e._adjustLinks(inList,*this);
-}
-
-void ExpressionVisitor::importSubNames(Expression &e, const ObjectIdentifier::SubNameMap &subNameMap) {
-    e._importSubNames(subNameMap);
-}
-
-void ExpressionVisitor::updateLabelReference(Expression &e, 
-        DocumentObject *obj, const std::string &ref, const char *newLabel) 
-{
-    e._updateLabelReference(obj,ref,newLabel);
-}
-
-bool ExpressionVisitor::updateElementReference(Expression &e, App::DocumentObject *feature, bool reverse) {
-    return e._updateElementReference(feature,reverse,*this);
-}
-
-bool ExpressionVisitor::relabeledDocument(
-        Expression &e, const std::string &oldName, const std::string &newName) 
-{
-    return e._relabeledDocument(oldName,newName,*this);
-}
-
-bool ExpressionVisitor::renameObjectIdentifier(Expression &e,
-        const std::map<ObjectIdentifier,ObjectIdentifier> &paths, const ObjectIdentifier &path)
-{
-    return e._renameObjectIdentifier(paths,path,*this);
-}
-
-void ExpressionVisitor::collectReplacement(Expression &e,
-        std::map<ObjectIdentifier,ObjectIdentifier> &paths,
-        const App::DocumentObject *parent, App::DocumentObject *oldObj, App::DocumentObject *newObj) const
-{
-    return e._collectReplacement(paths,parent,oldObj,newObj);
-}
-
-void ExpressionVisitor::moveCells(Expression &e, const CellAddress &address, int rowCount, int colCount)
-{
-    e._moveCells(address,rowCount,colCount,*this);
-}
-
-void ExpressionVisitor::offsetCells(Expression &e, int rowOffset, int colOffset)
-{
-    e._offsetCells(rowOffset,colOffset,*this);
-}
-
-void ExpressionVisitor::transposeCells(Expression &e,
-                                       const CellAddress &origin,
-                                       const CellAddress &src,
-                                       const CellAddress &dst)
-{
-    e._transposeCells(origin, src, dst, *this);
 }
 
 /////////////////////////////////////////////////////////////////////////////////////
@@ -1146,7 +1126,7 @@ struct EvalFrame {
     }
 
     bool isDocumentObjectVar(Py::Object &obj) {
-        return PyObject_TypeCheck(obj.ptr(),&DocumentObjectPy::Type);
+        return _isDocumentObjectPy(obj.ptr());
     }
 
     void push() {
@@ -1316,8 +1296,8 @@ struct EvalFrame {
                         << "expression: " << expr->toStr());
             break;
         case F_Warn2:
-            if(_EvalCallFrame->funcOwner 
-                    && pyobj && PyObject_TypeCheck(pyobj,&DocumentObjectPy::Type)
+            if(_EvalCallFrame->funcOwner
+                    && pyobj && _isDocumentObjectPy(pyobj)
                     && _EvalCallFrame->canWarn(code))
             {
                 FC_WARN("Object property assignment may break dependency tracking"
@@ -1469,154 +1449,16 @@ std::map<App::ObjectIdentifier,bool> Expression::getIdentifiers()  const {
     return deps;
 }
 
-class AdjustLinksExpressionVisitor : public ExpressionVisitor {
-public:
-    explicit AdjustLinksExpressionVisitor(const std::set<App::DocumentObject*> &inList)
-        :inList(inList)
-    {}
-
-    void visit(Expression &e) override {
-        if(this->adjustLinks(e,inList))
-            res = true;
-    }
-
-    const std::set<App::DocumentObject*> &inList;
-    bool res{false};
-};
-
-bool Expression::adjustLinks(const std::set<App::DocumentObject*> &inList) {
-    AdjustLinksExpressionVisitor v(inList);
-    visit(v);
-    return v.res;
-}
-
-class ImportSubNamesExpressionVisitor : public ExpressionVisitor {
-public:
-    explicit ImportSubNamesExpressionVisitor(const ObjectIdentifier::SubNameMap &subNameMap)
-        :subNameMap(subNameMap)
-    {}
-
-    void visit(Expression &e) override {
-        this->importSubNames(e,subNameMap);
-    }
-
-    const ObjectIdentifier::SubNameMap &subNameMap;
-};
-
-ExpressionPtr Expression::importSubNames(const std::map<std::string,std::string> &nameMap) const {
-    if(!owner || !owner->getDocument())
-        return nullptr;
-    ObjectIdentifier::SubNameMap subNameMap;
-    for(auto &dep : getDeps(DepAll)) {
-        for(auto &info : dep.second) {
-            for(auto &path : info.second) {
-                auto obj = path.getDocumentObject();
-                if(!obj)
-                    continue;
-                auto it = nameMap.find(obj->getExportName(true));
-                if(it!=nameMap.end())
-                    subNameMap.emplace(std::make_pair(obj,std::string()),it->second);
-                auto key = std::make_pair(obj,path.getSubObjectName());
-                if(key.second.empty() || subNameMap.count(key))
-                    continue;
-                std::string imported = PropertyLinkBase::tryImportSubName(
-                               obj,key.second.c_str(),owner->getDocument(), nameMap);
-                if(!imported.empty())
-                    subNameMap.emplace(std::move(key),std::move(imported));
-            }
-        }
-    }
-    if(subNameMap.empty())
-        return ExpressionPtr();
-    ImportSubNamesExpressionVisitor v(subNameMap);
-    auto res = copy();
-    res->visit(v);
-    return res;
-}
-
-class UpdateLabelExpressionVisitor : public ExpressionVisitor {
-public:
-    UpdateLabelExpressionVisitor(App::DocumentObject *obj, const std::string &ref, const char *newLabel)
-        :obj(obj),ref(ref),newLabel(newLabel)
-    {}
-
-    void visit(Expression &e) override {
-        this->updateLabelReference(e,obj,ref,newLabel);
-    }
-
-    App::DocumentObject *obj;
-    const std::string &ref;
-    const char *newLabel;
-};
-
-ExpressionPtr Expression::updateLabelReference(
-        App::DocumentObject *obj, const std::string &ref, const char *newLabel) const 
-{
-    if(ref.size()<=2)
-        return {};
-    std::vector<std::string> labels;
-    for(auto &v : getIdentifiers())
-        v.first.getDepLabels(labels);
-    for(auto &label : labels) {
-        // ref contains something like $label. and we need to strip '$' and '.'
-        if(ref.compare(1,ref.size()-2,label)==0) {
-            UpdateLabelExpressionVisitor v(obj,ref,newLabel);
-            ExpressionPtr expr(copy());
-            expr->visit(v);
-            return expr;
-        }
-    }
-    return {};
-}
-
-class ReplaceObjectExpressionVisitor : public ExpressionVisitor {
-public:
-    ReplaceObjectExpressionVisitor(const DocumentObject *parent,
-            DocumentObject *oldObj, DocumentObject *newObj)
-        : parent(parent),oldObj(oldObj),newObj(newObj)
-    {
-    }
-
-    void visit(Expression &e) override {
-        if(collect)
-            this->collectReplacement(e,paths,parent,oldObj,newObj);
-        else
-            this->renameObjectIdentifier(e,paths,dummy);
-    }
-
-    const DocumentObject *parent;
-    DocumentObject *oldObj;
-    DocumentObject *newObj;
-    ObjectIdentifier dummy;
-    std::map<ObjectIdentifier, ObjectIdentifier> paths;
-    bool collect = true;
-};
-
-ExpressionPtr Expression::replaceObject(const DocumentObject *parent,
-        DocumentObject *oldObj, DocumentObject *newObj) const
-{
-    ReplaceObjectExpressionVisitor v(parent,oldObj,newObj);
-
-    // First pass, collect any changes. We have to const_cast it, as visit() is
-    // not const. This is ugly...
-    const_cast<Expression*>(this)->visit(v);
-
-    if(v.paths.empty())
-        return {};
-
-    // Now make a copy and do the actual replacement
-    ExpressionPtr expr(copy());
-    v.collect = false;
-    expr->visit(v);
-    return expr;
-}
-
 App::any Expression::getValueAsAny(int options) const {
     Base::PyGILStateLocker lock;
     return pyObjectToAny(getPyValue(options));
 }
 
 Py::Object Expression::getPyValue(int options, int *jumpCode) const {
+    // C1: establish the evaluation principal (expression sandbox step 3b).
+    // No-op if an outer scope -- e.g. "session" from the expression editor
+    // -- is already active.
+    ExpressionSecurity::Runtime::Scope _secScope(owner);
     if(options & OptionCallFrame) {
         options &= ~OptionCallFrame;
         EvalFrame frame;
@@ -1674,7 +1516,27 @@ bool Expression::isSame(const Expression &other, bool checkComment) const {
 std::string Expression::toString(bool persistent, bool checkPriority, int indent) const {
     std::ostringstream ss;
     toString(ss,persistent,checkPriority,indent);
-    return ss.str();
+    std::string text = ss.str();
+    // A compound statement that is the whole expression, its body on the
+    // same line -- `if x: y`, `def f(): return 1` -- ends at a line end in
+    // the grammar (suite: simple_stmt NEWLINE), and the lexer supplies none
+    // at the end of a one-line text.  Printed without it, the text did not
+    // parse again: a sheet cell saved so failed on reopen, and the sandbox
+    // router, which ships the printed form, failed at once.  Nested printing
+    // goes through the stream form and is untouched, and so is any text that
+    // already spans lines, which parses as it is.  The statement may still
+    // wear the wrappers the grammar's stmt rule makes, one inside another
+    // when nothing reduced them.  A C++ cast, not the type system's: this
+    // runs where no type is registered.
+    const Expression *last = this;
+    while(auto stmt = dynamic_cast<const SimpleStatement*>(last)) {
+        if(!stmt->getSize())
+            break;
+        last = stmt->getExpr(stmt->getSize() - 1);
+    }
+    if(indent == 0 && last->needLineEnd() && text.find('\n') == std::string::npos)
+        text += '\n';
+    return text;
 }
 
 FC_STATIC std::vector<ExpressionNode*> _ExpressionNodeStack;
@@ -1886,6 +1748,12 @@ void NumberExpression::negate()
     setQuantity(-getQuantity());
 }
 
+int& App::expressionNumberPrecision()
+{
+    static thread_local int digits = std::numeric_limits<double>::digits10;
+    return digits;
+}
+
 void NumberExpression::_toString(std::ostream &ss, bool,int) const
 {
     // Restore the old implementation because using digits10 + 2 causes
@@ -1896,7 +1764,7 @@ void NumberExpression::_toString(std::ostream &ss, bool,int) const
     // https://en.cppreference.com/w/cpp/types/numeric_limits/max_digits10
     // https://www.boost.org/doc/libs/1_63_0/libs/multiprecision/doc/html/boost_multiprecision/tut/limits/constants.html
     boost::io::ios_flags_saver ifs(ss);
-    ss << std::setprecision(std::numeric_limits<double>::digits10) << getValue();
+    ss << std::setprecision(expressionNumberPrecision()) << getValue();
     if (!getQuantity().getUnit().isEmpty()) {
         ss << ' ';
         UnitExpression::_toString(ss, false, 0);
@@ -2443,6 +2311,10 @@ public:
     PyTypeObject *pytype = nullptr;
     const char * msg = nullptr;
     std::string info;
+    // attributed module of an allowed callable; the permission service is
+    // consulted per call against this, so the cache never holds a verdict
+    // that a grant could change
+    std::string module;
 };
 
 static std::unordered_map<PyObjectNode::Key,
@@ -2510,92 +2382,63 @@ bool PyObjectNode::isCached()
 //
 // Internal class to manager user defined import modules
 //
-class ImportModules: public ParameterGrp::ObserverType {
+class ImportModules {
 public:
-    ImportModules() {
-        defModules = {
-            "builtins",
-            "FreeCAD",
-            "FreeCADGui",
-            "App",
-            "Gui",
-            "Base",
-            "__FreeCADConsole__",
-            "Units",
-            "Selection",
-            "Part",
-            "PartDesign",
-            "Sketcher",
-            "Spreadsheet",
-            "collections",
-            "math",
-            "re",
-            "_sre", // re built-in C extension
-            "freecad.fc_cadquery",
-        };
-        for (auto mod : defModules)
-            modules[mod] = nullptr;
-
-        handle = GetApplication().GetParameterGroupByPath(
-                "User parameter:BaseApp/Preferences/Expression/PyModules");
-        handle->Attach(this);
-        for (auto &m : handle->GetBoolMap())
-            modules[m.first] = m.second ? nullptr : Py_None;
-    }
-
-    void OnChange(Base::Subject<const char*> &, const char* sReason) {
-        if(!sReason)
-            return;
-        if(!handle->GetBool(sReason,false)) {
-            // Check if there is really an entry with value false. That would
-            // indicate an intention to forbid that module and all its sub
-            // modules. And we mark it by setting the value to None.
-            //
-            // Note that a non-None entry (including null entry) indicates that
-            // the module and all its submodule (not explicitly forbidden) are
-            // allowed. A null entry just means the module hasn't been
-            // explicitly imported by expression statement 'import_py' yet. 
-            if (!handle->GetBool(sReason, true)) {
-                auto & pyobj = modules[sReason];
-                if (pyobj && pyobj != Py_None) {
-                    Py_DECREF(pyobj);
-                    imports.erase(pyobj);
-                }
-                pyobj = Py_None;
-            } else {
-                auto it = modules.find(sReason);
-                if (it != modules.end()) {
-                    if (defModules.count(sReason)) {
-                        if (it->second == Py_None)
-                            it->second = nullptr;
-                    } else {
-                        if (it->second && it->second != Py_None) {
-                            imports.erase(it->second);
-                            Py_DECREF(it->second);
-                        }
-                        modules.erase(it);
-                    }
-                }
-            }
-        } else {
-            auto & pyobj = modules[sReason];
-            if (pyobj == Py_None)
-                pyobj = nullptr;
-        }
-        PyObjectNode::clearCache();
-    }
+    // Expression sandbox phase 1 step 3b: module access is decided by the
+    // permission service (host.import:<name> grants, with FreeCAD/Gui
+    // mapped to app.query/gui and the Ring-0 set free), replacing the old
+    // PyModules parameter allowlist. 'modules' is now purely an import
+    // cache; 'imports' still answers isImported() for module attribution.
+    ImportModules() = default;
 
     Py::Object getModule(const std::string &name, const Expression *e) {
-        auto it = modules.find(name);
-        if(it == modules.end() || it->second == Py_None)
-            __EXPR_THROW(ImportError, "Python module '" << name << "' access denied.", e);
-        if(it->second)
-            return Py::Object(it->second);
-        it->second = PyImport_ImportModule(name.c_str());
-        if(!it->second) 
+        // A library of the owner's document (docs/Sandbox.md 7.17 (c)) is
+        // the document's own code, not a host import: it resolves before
+        // the permission check and never enters the process-wide cache,
+        // which would let two documents' `brackets` meet.
+#ifdef FC_EXPR_IMAGE
+        if (PyObject *lib = FcxImage::libraryModule(name, e ? e->getOwner() : nullptr))
+            return Py::asObject(lib);
+#else
+        if (e) {
+            Py::Object lib = ExpressionLibrary::importModule(e->getOwner(), name);
+            if (!lib.isNone())
+                return lib;
+        }
+#endif
+        try {
+            ExpressionSecurity::checkModuleImport(name);
+        } catch (ExpressionSecurity::PermissionNeededException &) {
+            throw;
+        } catch (Base::Exception &err) {
+            __EXPR_THROW(ImportError, err.what(), e);
+        }
+        auto &entry = modules[name];
+        if(entry)
+            return Py::Object(entry);
+        entry = PyImport_ImportModule(name.c_str());
+        if(!entry) {
+#ifdef FC_EXPR_IMAGE
+            // The expression language's `import x` in the sandbox guest:
+            // nothing in an expression can catch the failure, so this is
+            // the uncaught case the guest's error reply asks the host
+            // about (pkg.missing, docs/Sandbox.md 5.5) -- but the reply
+            // sees a Base exception by then, the Python type gone.  Ask
+            // here, while it is still a ModuleNotFoundError, and make
+            // the offer the message (2026-09-05: the meta_path finder
+            // that used to answer at import time is retired).
+            if (PyErr_ExceptionMatches(PyExc_ModuleNotFoundError)) {
+                std::string offer = FcxImage::missingImportOffer(name);
+                if (!offer.empty()) {
+                    PyErr_Clear();
+                    __EXPR_THROW(ImportError, offer, e);
+                }
+            }
+#endif
             EXPR_PY_THROW(e);
-        imports.insert(it->second);
-        return Py::Object(it->second);
+        }
+        imports.insert(entry);
+        return Py::Object(entry);
     }
 
     bool isImported(PyObject *module) const {
@@ -2609,30 +2452,36 @@ public:
         return inst;
     }
 
-    ParameterGrp::handle getHandle() {
-        return handle;
+    /// inspect.getmodule, imported on FIRST USE rather than on every
+    /// callable check.  Only the two fallback paths below need it; the
+    /// common cases (a module, a BaseClassPy, a __module__ attribute, a
+    /// dotted tp_name) answer without it.  Deferring the import keeps the
+    /// sandbox image free of a large stdlib subtree, and an interpreter
+    /// that cannot import it at all still fails CLOSED -- attribution
+    /// simply yields no name, which is the "unknown module" denial below.
+    PyObject *inspectGetModule()
+    {
+        if (inspect.isNone()) {
+            if (inspectTried)
+                return nullptr;
+            inspectTried = true;
+            PyObject *pymod = PyImport_ImportModule("inspect");
+            PyObject *pyfunc = nullptr;
+            if (pymod) {
+                Py::Object module = Py::asObject(pymod);
+                pyfunc = PyObject_GetAttrString(pymod, "getmodule");
+            }
+            if (!pyfunc) {
+                PyErr_Clear();
+                return nullptr;
+            }
+            this->inspect = Py::asObject(pyfunc);
+        }
+        return this->inspect.ptr();
     }
 
     bool checkCallable(PyObjectNode & node, PyObject *pyobj)
     {
-        if (inspect.isNone()) {
-            Py::Object module;
-            PyObject *pymod = PyImport_ImportModule("inspect");
-            PyObject *pyfunc = nullptr;
-            if (pymod) {
-                module = Py::asObject(pymod);
-                pyfunc = PyObject_GetAttrString(pymod, "getmodule");
-            }
-            if (!pyfunc) {
-                Base::PyException e;
-                if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_TRACE))
-                    e.ReportException();
-                node.init(pyobj, "Failed to inspect module of callable");
-                return false;
-            }
-            this->inspect = Py::asObject(pyfunc);
-        }
-
         const char *name = nullptr;
         std::string _name;
 
@@ -2666,7 +2515,9 @@ public:
             }
 
             if (!name || !name[0]) {
-                PyObject * module = PyObject_CallFunction(this->inspect.ptr(), "O", pyobj);
+                PyObject *getmodule = inspectGetModule();
+                PyObject * module = getmodule
+                    ? PyObject_CallFunction(getmodule, "O", pyobj) : nullptr;
                 if (module) {
                     if (PyModule_Check(module)) {
                         name = PyModule_GetName(module);
@@ -2718,8 +2569,10 @@ public:
                             name = nullptr;
                     }
                     if (!name || !name[0]) {
-                        PyObject *module = PyObject_CallFunction(
-                                this->inspect.ptr(), "O", self->ob_type);
+                        PyObject *getmodule = inspectGetModule();
+                        PyObject *module = getmodule
+                            ? PyObject_CallFunction(getmodule, "O", self->ob_type)
+                            : nullptr;
                         if (module) {
                             if (PyModule_Check(module)) {
                                 name = PyModule_GetName(module);
@@ -2748,35 +2601,22 @@ public:
             if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_TRACE))
                 e.ReportException();
             node.init(pyobj, "Access denied of callable in unknown module");
+            node.module.clear();
         } else {
-            auto it = modules.lower_bound(name);
-            if (it != modules.end()
-                    && it->second != Py_None
-                    && boost::starts_with(name, it->first)
-                    && (name[it->first.size()] == 0
-                        || name[it->first.size()] == '.'))
-            {
-                node.init(pyobj, nullptr);
-            } else {
-                node.init(pyobj, "Access denied of callable in module ", name);
-            }
+            // The cache keeps only the ATTRIBUTION (which module this
+            // callable belongs to); the permission verdict is resolved per
+            // call by securityCheck() so grants apply without restart.
+            node.init(pyobj, nullptr);
+            node.module = name;
         }
         return node.msg == nullptr;
     }
 
 private:
-    std::map<std::string, PyObject*, std::greater<std::string> > modules;
-    std::unordered_set<const char *, App::CStringHasher, App::CStringHasher> defModules;
+    std::map<std::string, PyObject*> modules;
     std::set<PyObject*> imports;
-    ParameterGrp::handle handle;
     Py::Object inspect;
-};
-
-class ImportParamLock: public ParameterLock {
-public:
-    ImportParamLock()
-        :ParameterLock(ImportModules::instance()->getHandle())
-    {}
+    bool inspectTried = false;
 };
 
 static int _HiddenReference;
@@ -3293,30 +3133,7 @@ Py::Object FunctionExpression::evaluate(const Expression *expr, int f, const Exp
         return evalAggregate(expr, f, args);
 
     switch(f) {
-    case GET_VAR: 
-        if(args.size()<2)
-            _EXPR_THROW("Function expects 2 or 3 arguments.",expr);
-        // fall through
-    case HAS_VAR: {
-        Py::Object value = args[0]->getPyValue();
-        if(!value.isString())
-            _EXPR_THROW("Expects the first argument evaluating to a string.",expr);
-        Py::Object pyobj;
-        bool found = Base::Interpreter().getVariable(value.as_string().c_str(),pyobj);
-        if(f == HAS_VAR)
-            return Py::Boolean(found);
-#if 1
-        // getvar() may pose as a security problem. Disable it for now.
-        __EXPR_THROW(Base::NotImplementedError, "getvar() is disabled.", expr);
-#else
-        if(!found) {
-            if(args.size()==2)
-                return args[1]->getPyValue();
-            _EXPR_THROW("Variable not found.",expr);
-        }
-        return pyobj;
-#endif
-    } case LIST: {
+    case LIST: {
         if (args.size() == 1 && args[0]->isDerivedFrom(RangeExpression::getClassTypeId()))
             return args[0]->getPyValue();
         Py::List list(args.size());
@@ -4365,6 +4182,18 @@ void VariableExpression::setVarInfo(VarInfo &info, bool mustExist, bool noassign
 
 // To disable dependency tracking inside function statement
 static int _FunctionDepth;
+// ... unless the caller asked for what a body reads as well
+static int _FunctionBodyIdentifiers;
+
+FunctionBodyIdentifiers::FunctionBodyIdentifiers()
+{
+    ++_FunctionBodyIdentifiers;
+}
+
+FunctionBodyIdentifiers::~FunctionBodyIdentifiers()
+{
+    --_FunctionBodyIdentifiers;
+}
 class FunctionDepth {
 public:
     FunctionDepth() {
@@ -4377,174 +4206,12 @@ public:
 
 void VariableExpression::_getIdentifiers(std::map<App::ObjectIdentifier,bool> &deps) const
 {
-    if(_FunctionDepth)
+    if(_FunctionDepth && !_FunctionBodyIdentifiers)
         return;
     bool hidden = HiddenReference::isHidden();
     auto res = deps.insert(std::make_pair(var,hidden));
     if(!hidden || res.second)
         res.first->second = hidden;
-}
-
-bool VariableExpression::_relabeledDocument(const std::string &oldName,
-        const std::string &newName, ExpressionVisitor &v)
-{
-    return var.relabeledDocument(v, oldName, newName);
-}
-
-bool VariableExpression::_adjustLinks(
-        const std::set<App::DocumentObject *> &inList, ExpressionVisitor &v) 
-{
-    return var.adjustLinks(v,inList);
-}
-
-void VariableExpression::_importSubNames(const ObjectIdentifier::SubNameMap &subNameMap) 
-{
-    var.importSubNames(subNameMap);
-}
-
-void VariableExpression::_updateLabelReference(
-        App::DocumentObject *obj, const std::string &ref, const char *newLabel)
-{
-    var.updateLabelReference(obj,ref,newLabel);
-}
-
-bool VariableExpression::_updateElementReference(
-        App::DocumentObject *feature, bool reverse, ExpressionVisitor &v)
-{
-    return var.updateElementReference(v,feature,reverse);
-}
-
-bool VariableExpression::_renameObjectIdentifier(
-    const std::map<ObjectIdentifier, ObjectIdentifier>& paths,
-    const ObjectIdentifier& path,
-    ExpressionVisitor& visitor)
-{
-    const auto& oldPath = var.canonicalPath();
-    auto it = paths.find(oldPath);
-    if (it != paths.end()) {
-        visitor.aboutToChange();
-        const bool originalHasDocumentObjectName = var.hasDocumentObjectName();
-        ObjectIdentifier::String originalDocumentObjectName = var.getDocumentObjectName();
-        std::string originalSubObjectName = var.getSubObjectName();
-        if (path.getOwner()) {
-            var = it->second.relativeTo(path);
-        }
-        else {
-            var = it->second;
-        }
-        if (originalHasDocumentObjectName) {
-            var.setDocumentObjectName(std::move(originalDocumentObjectName),
-                                      true,
-                                      originalSubObjectName);
-        }
-        return true;
-    }
-    return false;
-}
-
-void VariableExpression::_collectReplacement(
-        std::map<ObjectIdentifier,ObjectIdentifier> &paths,
-        const App::DocumentObject *parent,
-        App::DocumentObject *oldObj,
-        App::DocumentObject *newObj) const
-{
-    ObjectIdentifier path;
-    if(var.replaceObject(path,parent,oldObj,newObj))
-        paths[var.canonicalPath()] = std::move(path);
-}
-
-void VariableExpression::_moveCells(const CellAddress &address,
-        int rowCount, int colCount, ExpressionVisitor &v)
-{
-    if(var.hasDocumentObjectName(true))
-        return;
-
-    int idx = 0;
-    const auto &comp = var.getPropertyComponent(0,&idx);
-    CellAddress addr = stringToAddress(comp.getName().c_str(),true);
-    if(!addr.isValid())
-        return;
-
-    int thisRow = addr.row();
-    int thisCol = addr.col();
-    if (thisRow >= address.row() || thisCol >= address.col()) {
-        v.aboutToChange();
-        addr.setRow(thisRow + rowCount);
-        addr.setCol(thisCol + colCount);
-        var.setComponent(idx,ObjectIdentifier::SimpleComponent(addr.toString()));
-    }
-}
-
-void VariableExpression::_offsetCells(int rowOffset, int colOffset, ExpressionVisitor &v) {
-    if(var.hasDocumentObjectName(true))
-        return;
-
-    int idx = 0;
-    const auto &comp = var.getPropertyComponent(0,&idx);
-    CellAddress addr = stringToAddress(comp.getName().c_str(),true);
-    if(!addr.isValid() || (addr.isAbsoluteCol() && addr.isAbsoluteRow()))
-        return;
-
-    if(!addr.isAbsoluteCol())
-        addr.setCol(addr.col()+colOffset);
-    if(!addr.isAbsoluteRow())
-        addr.setRow(addr.row()+rowOffset);
-    if(!addr.isValid()) {
-        FC_WARN("Not changing relative cell reference '"
-                << comp.getName() << "' due to invalid offset "
-                << '(' << colOffset << ", " << rowOffset << ')');
-    } else {
-        v.aboutToChange();
-        var.setComponent(idx,ObjectIdentifier::SimpleComponent(addr.toString()));
-    }
-}
-
-static void transposeCellAddress(CellAddress &addr,
-                                 const CellAddress &origin,
-                                 const CellAddress &src,
-                                 const CellAddress &dst)
-{
-    if(!addr.isValid())
-        return;
-
-    int absRow = origin.row() + src.col() - origin.col();
-    int absCol = origin.col() + src.row() - origin.row();
-    int row = dst.row() + addr.col() - src.col();
-    int col = dst.col() + addr.row() - src.row();
-
-    if (addr.isAbsoluteCol() && addr.isAbsoluteRow())
-        addr = CellAddress(absRow, absCol, /*absRow*/true, /*absCol*/true);
-    else if (addr.isAbsoluteRow())
-        addr = CellAddress(row, absCol, /*absRow*/false, /*absCol*/true);
-    else if (addr.isAbsoluteCol())
-        addr = CellAddress(absRow, col, /*absRow*/true, /*absCol*/false);
-    else
-        addr = CellAddress(row, col);
-}
-
-void VariableExpression::_transposeCells(const CellAddress &origin,
-                                         const CellAddress &src,
-                                         const CellAddress &dst,
-                                         ExpressionVisitor &v)
-{
-    if(var.hasDocumentObjectName(true))
-        return;
-
-    int idx = 0;
-    const auto &comp = var.getPropertyComponent(0,&idx);
-    CellAddress addr = stringToAddress(comp.getName().c_str(),true);
-    if(!addr.isValid())
-        return;
-
-    transposeCellAddress(addr, origin, src, dst);
-
-    if(!addr.isValid()) {
-        FC_WARN("Not changing relative cell reference '"
-                << comp.getName() << "' due to invalid address after transpose");
-    } else {
-        v.aboutToChange();
-        var.setComponent(idx,ObjectIdentifier::SimpleComponent(addr.toString()));
-    }
 }
 
 const VariableExpression *VariableExpression::isDoubleBinding(const Expression *expr)
@@ -4651,8 +4318,12 @@ VarInfo CallableExpression::getVarInfo(bool mustExist) const {
 }
 
 void CallableExpression::_toString(std::ostream &ss, bool persistent,int) const {
+    // The callee with its parentheses when it needs them: a printed
+    // `(lambda k: k * k)(i)` that lost them re-parsed as another program
+    // -- in a saved document, and in every routed evaluation, which ships
+    // the printed form (docs/Sandbox.md 7.17 D1).
     if(expr)
-        ss << expr->toStr(persistent);
+        ss << expr->toStr(persistent, true);
     else 
         ss << name;
     ss << '(';
@@ -4779,12 +4450,156 @@ enum JumpType {
     JUMP_RAISE,
 };
 
+// A library module (docs/Sandbox.md 7.17 (c)).  The engine's functions
+// capture nothing: a body resolves a free name through the frames of
+// whoever called it.  A library's function must see its MODULE instead, so
+// it carries the module's dict and runs on an evaluation stack of its own
+// whose base frame holds the dict's names.
+static PyObject *_LibraryGlobals;      // the dict a function made now resolves in
+static PyObject *_LibraryBuildDict;    // the dict of the module being built ...
+static EvalFrame *_LibraryBuildFrame;  // ... and the frame its statements bind in
+
+namespace {
+
+/// The evaluation stack replaced for a scope: empty, or one base frame
+/// that is not pushed (it pops nothing when it dies).
+struct EvalStackSwap {
+    std::vector<EvalFrame*> saved;
+    EvalFrame *savedCallFrame;
+    explicit EvalStackSwap(EvalFrame *base)
+        : savedCallFrame(_EvalCallFrame)
+    {
+        saved.swap(_EvalStack);
+        if (base)
+            _EvalStack.push_back(base);
+        _EvalCallFrame = nullptr;
+    }
+    ~EvalStackSwap() {
+        _EvalStack.swap(saved);
+        _EvalCallFrame = savedCallFrame;
+    }
+};
+
+struct LibraryGlobalsScope {
+    PyObject *savedGlobals;
+    PyObject *savedDict;
+    EvalFrame *savedFrame;
+    LibraryGlobalsScope(PyObject *globals, PyObject *buildDict=nullptr, EvalFrame *buildFrame=nullptr)
+        : savedGlobals(_LibraryGlobals), savedDict(_LibraryBuildDict), savedFrame(_LibraryBuildFrame)
+    {
+        _LibraryGlobals = globals;
+        if (buildDict) {
+            _LibraryBuildDict = buildDict;
+            _LibraryBuildFrame = buildFrame;
+        }
+    }
+    ~LibraryGlobalsScope() {
+        _LibraryGlobals = savedGlobals;
+        _LibraryBuildDict = savedDict;
+        _LibraryBuildFrame = savedFrame;
+    }
+};
+
+} // anonymous namespace
+
+void CallableExpression::setGlobals(PyObject *dict) {
+    Py_XINCREF(dict);
+    Py_XDECREF(globals);
+    globals = dict;
+}
+
+CallableExpression::~CallableExpression() {
+    if (globals) {
+        Base::PyGILStateLocker lock;
+        Py_DECREF(globals);
+    }
+}
+
+Py::Object ExpressionParser::buildLibraryModule(const App::DocumentObject *owner,
+        const std::string &name, const char *text)
+{
+    Base::PyGILStateLocker lock;
+    PyObject *pymod = PyModule_New(name.c_str());
+    if (!pymod)
+        Base::PyException::ThrowException();
+    Py::Object mod(pymod, true);
+    if (!text || !text[0])
+        return mod;
+    ExpressionPtr expr = parse(owner, text);
+    if (!expr)
+        return mod;
+    PyObject *dict = PyModule_GetDict(pymod);
+    // nothing of the evaluation that imported the module is visible to it
+    EvalStackSwap stack(nullptr);
+    EvalFrame frame("<module>");
+    frame.push();
+    {
+        LibraryGlobalsScope scope(dict, dict, &frame);
+        int jumpCode = 0;
+        expr->getPyValue(0, &jumpCode);
+    }
+    for (auto &v : frame.vars) {
+        if (v.second && v.second->obj.ptr()
+                && PyDict_SetItemString(dict, v.first.c_str(), v.second->obj.ptr()) < 0)
+            Base::PyException::ThrowException();
+    }
+    return mod;
+}
+
+std::vector<std::string> ExpressionParser::importedModules(const App::Expression *expr)
+{
+    struct Collector : ExpressionVisitor {
+        std::vector<std::string> names;
+        void add(const std::string &name) {
+            if (std::find(names.begin(), names.end(), name) == names.end())
+                names.push_back(name);
+        }
+        void visit(Expression &e) override {
+            if (auto s = freecad_dynamic_cast<ImportStatement>(&e)) {
+                for (auto &module : s->getModules())
+                    add(module);
+            }
+            else if (auto s = freecad_dynamic_cast<FromStatement>(&e))
+                add(s->getModule());
+        }
+    } collector;
+    if (expr)
+        const_cast<Expression*>(expr)->visit(collector);
+    return collector.names;
+}
+
 Py::Object CallableExpression::evaluate(PyObject *pyargs, PyObject *pykwds) {
 
     if(ftype != FUNC_PARSED)
         PY_THROW("Unexpected callable expression type: " << ftype);
     if(!expr)
         PY_THROW("Invalid callable expression");
+
+    std::unique_ptr<EvalFrame> moduleFrame;
+    std::unique_ptr<EvalStackSwap> moduleStack;
+    std::unique_ptr<LibraryGlobalsScope> moduleScope;
+    if (globals) {
+        EvalFrame *base;
+        if (globals == _LibraryBuildDict && _LibraryBuildFrame) {
+            // called while its module is still being built: the dict is
+            // filled only when the build ends, the frame already binds
+            base = _LibraryBuildFrame;
+        }
+        else {
+            moduleFrame.reset(new EvalFrame);
+            PyObject *key, *value;
+            Py_ssize_t pos = 0;
+            while (PyDict_Next(globals, &pos, &key, &value)) {
+                if (PyUnicode_Check(key))
+                    *moduleFrame->getVar(this, PyUnicode_AsUTF8(key), BindLocalOnly) =
+                        Py::Object(value);
+            }
+            base = moduleFrame.get();
+        }
+        moduleStack.reset(new EvalStackSwap(base));
+        // a def run inside the call belongs to the same module
+        moduleScope.reset(new LibraryGlobalsScope(globals));
+    }
 
     EvalFrame frame(name.c_str(),getOwner());
 
@@ -4908,10 +4723,12 @@ void CallableExpression::securityCheck(PyObject *pyobj, const Expression *expr)
     if (_LastCache && _LastCache->pyobj == pyobj) {
         if (_LastCache->msg)
             _EXPR_THROW(_LastCache->msg << _LastCache->info, expr);
+        if (!_LastCache->module.empty())
+            ExpressionSecurity::checkCallablePermission(_LastCache->module, pyobj);
         return;
     }
 
-    if (!pyobj || PyObject_TypeCheck(pyobj, &ExpressionPy::Type))
+    if (!pyobj || _isExpressionPy(pyobj))
         return;
 
     if (ExpressionFunctionCallDisabler::isFunctionCallDisabled())
@@ -4922,6 +4739,8 @@ void CallableExpression::securityCheck(PyObject *pyobj, const Expression *expr)
         ImportModules::instance()->checkCallable(node, pyobj);
     if (node.msg)
         _EXPR_THROW(node.msg << node.info, expr);
+    if (!node.module.empty())
+        ExpressionSecurity::checkCallablePermission(node.module, pyobj);
 }
 
 void CallableExpression::securityCheck(PyObject *pyobj, PyObject *pyattr)
@@ -5105,7 +4924,6 @@ Py::Object CallableExpression::_getPyValue(int *) const {
     }
     try {
         ExpressionBlocker blocker(this);
-        ImportParamLock lock;
         return Py::Callable(pyobj).apply(tuple,dict);
     } catch (Py::Exception&) {
         EXPR_PY_THROW(this);
@@ -5120,6 +4938,10 @@ ExpressionPtr CallableExpression::_copy() const {
     copy_vector(res->args,args);
     res->name = name;
     res->ftype = ftype;
+    if (globals) {
+        Base::PyGILStateLocker lock;
+        res->setGlobals(globals);
+    }
     return _res;
 }
 
@@ -5604,7 +5426,7 @@ ExpressionPtr RangeExpression::_copy() const
 
 void RangeExpression::_getIdentifiers(std::map<App::ObjectIdentifier,bool> &deps) const
 {
-    if(_FunctionDepth)
+    if(_FunctionDepth && !_FunctionBodyIdentifiers)
         return;
 
     bool hidden = HiddenReference::isHidden();
@@ -5643,6 +5465,21 @@ Range RangeExpression::getRange() const
     if(c1.isValid() && c2.isValid())
         return Range(c1,c2);
 
+#ifdef FC_EXPR_IMAGE
+    // Alias resolution is the one identifier-resolution step the
+    // bindings pack cannot pre-know for a dynamic range; it rides the
+    // dedicated resolve_alias bridge op instead of a generic
+    // permission-gated call on the owner proxy.
+    try {
+        if(!c1.isValid())
+            c1 = CellAddress(Fcx::resolveAlias(begin));
+        if(!c2.isValid())
+            c2 = CellAddress(Fcx::resolveAlias(end));
+    } catch(Base::Exception &e) {
+        _EXPR_RETHROW(e,"Invalid cell range '" << begin << ':' << end << "': ",this);
+    }
+    return Range(c1,c2);
+#else
     Base::PyGILStateLocker lock;
     static const std::string attr("getCellFromAlias");
     Py::Object pyobj(owner->getPyObject(),true);
@@ -5676,103 +5513,7 @@ Range RangeExpression::getRange() const
         }
     }
     return Range(c1,c2);
-}
-
-bool RangeExpression::_renameObjectIdentifier(
-        const std::map<ObjectIdentifier,ObjectIdentifier> &paths, 
-        const ObjectIdentifier &path, ExpressionVisitor &v)
-{
-    (void)path;
-    bool touched =false;
-    auto it = paths.find(ObjectIdentifier(owner,begin));
-    if (it != paths.end()) {
-        v.aboutToChange();
-        begin = it->second.getPropertyName();
-        touched = true;
-    }
-    it = paths.find(ObjectIdentifier(owner,end));
-    if (it != paths.end()) {
-        v.aboutToChange();
-        end = it->second.getPropertyName();
-        touched = true;
-    }
-    return touched;
-}
-
-void RangeExpression::_moveCells(const CellAddress &address,
-        int rowCount, int colCount, ExpressionVisitor &v) 
-{
-    CellAddress addr = stringToAddress(begin.c_str(),true);
-    if(addr.isValid()) {
-        int thisRow = addr.row();
-        int thisCol = addr.col();
-        if (thisRow >= address.row() || thisCol >= address.col()) {
-            v.aboutToChange();
-            addr.setRow(thisRow+rowCount);
-            addr.setCol(thisCol+colCount);
-            begin = addr.toString();
-        }
-    }
-    addr = stringToAddress(end.c_str(),true);
-    if(addr.isValid()) {
-        int thisRow = addr.row();
-        int thisCol = addr.col();
-        if (thisRow >= address.row() || thisCol >= address.col()) {
-            v.aboutToChange();
-            addr.setRow(thisRow + rowCount);
-            addr.setCol(thisCol + colCount);
-            end = addr.toString();
-        }
-    }
-}
-
-void RangeExpression::_offsetCells(int rowOffset, int colOffset, ExpressionVisitor &v) 
-{
-    CellAddress addr = stringToAddress(begin.c_str(),true);
-    if(addr.isValid() && (!addr.isAbsoluteRow() || !addr.isAbsoluteCol())) {
-        v.aboutToChange();
-        if(!addr.isAbsoluteRow())
-            addr.setRow(addr.row()+rowOffset, /*clip*/true);
-        if(!addr.isAbsoluteCol()) 
-            addr.setCol(addr.col()+colOffset, /*clip*/true);
-        begin = addr.toString();
-    }
-    addr = stringToAddress(end.c_str(),true);
-    if(addr.isValid() && (!addr.isAbsoluteRow() || !addr.isAbsoluteCol())) {
-        v.aboutToChange();
-        if(!addr.isAbsoluteRow())
-            addr.setRow(addr.row()+rowOffset, /*clip*/true);
-        if(!addr.isAbsoluteCol()) 
-            addr.setCol(addr.col()+colOffset, /*clip*/true);
-        end = addr.toString();
-    }
-}
-
-void RangeExpression::_transposeCells(const CellAddress &origin,
-                                      const CellAddress &src,
-                                      const CellAddress &dst,
-                                      ExpressionVisitor &v)
-{
-    CellAddress beginAddr = stringToAddress(end.c_str(),true);
-    transposeCellAddress(beginAddr, origin, src, dst);
-
-    CellAddress endAddr = stringToAddress(begin.c_str(),true);
-    transposeCellAddress(endAddr, origin, src, dst);
-
-    if (!beginAddr.isValid() || !endAddr.isValid()) {
-        FC_WARN("Not changing relative range reference '"
-                << toString() << "' due to invalid address after transpose");
-        return;
-    }
-
-    Range range(beginAddr, endAddr, /*normalize*/true);
-    std::string newBegin = range.from().toString();
-    std::string newEnd = range.to().toString();
-    if (newBegin != begin || newEnd != end) {
-        v.aboutToChange();
-        begin = std::move(newBegin);
-        end = std::move(newEnd);
-    }
+#endif  // FC_EXPR_IMAGE
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -6610,8 +6351,16 @@ Py::Object WhileStatement::_getPyValue(int *jumpCode) const {
                 // fall through
             case JUMP_NONE:
                 res = Py::Object();
-                if(limit>0 && (++count % limit)==0)
+                if(limit>0 && (++count % limit)==0) {
+#ifndef FC_EXPR_IMAGE
+                    // In-image the runaway-loop backstop is wasmtime
+                    // fuel/epochs, strictly stronger (seam S10).  The
+                    // braces matter: without them the image build made
+                    // this `if` govern the `continue` below, and every
+                    // while loop in the image ran exactly once.
                     Base::Sequencer().checkAbort();
+#endif
+                }
                 continue;
             default:
                 assert(0);
@@ -6957,6 +6706,16 @@ void LambdaExpression::_toString(std::ostream &ss, bool persistent, int) const {
     ss << " : " << body->toStr(persistent);
 }
 
+int LambdaExpression::priority() const
+{
+    return 0;
+}
+
+int FunctionStatement::priority() const
+{
+    return Expression::priority();
+}
+
 bool LambdaExpression::isTouched() const
 {
     if(body->isTouched())
@@ -7005,6 +6764,8 @@ static Py::Object makeFunc(const Expression *owner,
                                           FunctionExpression::FUNC_PARSED,
                                           std::string(name?name:""),
                                           false);
+    if (_LibraryGlobals)
+        static_cast<CallableExpression*>(res.get())->setGlobals(_LibraryGlobals);
     Py::Object pyobj(new ExpressionPy(res.release()),false);
     if(name && _EvalStack.size()) {
         auto var = _EvalStack.back()->getVar(owner,name,BindLocalOnly);
@@ -7365,6 +7126,65 @@ void ImportStatement::_toString(std::ostream &ss, bool, int) const {
     }
 }
 
+#ifndef FC_EXPR_IMAGE
+/// Importing a library of the owner's document depends on its text and on
+/// the name it answers to (docs/Sandbox.md 7.17 (c)): the DAG orders the
+/// library first, an edit recomputes the consumer, and so does a rename,
+/// after which the import fails as it should.  What the library imports
+/// in turn is followed too: an edit there changes this library's module.
+/// Any other module name adds nothing.
+///
+/// A linked library (Source) depends through every link to the text it
+/// reaches: each library on the way contributes its name, its link, its pin
+/// and its text, and what the text imports resolves in the document holding
+/// the text.  A pinned library ends the walk -- its text is its Snapshot.
+static void addLibraryIdentifier(const Expression *e, const App::Document *doc,
+                                 const std::string &module,
+                                 std::map<App::ObjectIdentifier,bool> &deps,
+                                 std::set<const ExpressionLibrary*> *visited = nullptr)
+{
+    auto owner = e->getOwner();
+    if (!owner || !owner->isAttachedToDocument())
+        return;
+    auto lib = ExpressionLibrary::find(doc, module);
+    if (!lib || lib == owner)
+        return;
+    std::set<const ExpressionLibrary*> seen;
+    if (!visited)
+        visited = &seen;
+    if (!visited->insert(lib).second)
+        return;
+    std::set<const ExpressionLibrary*> chain;
+    for (auto cur = lib; cur && chain.insert(cur).second;) {
+        for (const char *prop : {"Text", "Module", "Source", "Pinned", "Snapshot"}) {
+            ObjectIdentifier id(owner);
+            id.setDocumentObjectName(cur, true);
+            id << ObjectIdentifier::SimpleComponent(prop);
+            deps.emplace(std::move(id), false);
+        }
+        if (!cur->isLiveLink())
+            break;
+        cur = freecad_dynamic_cast<ExpressionLibrary>(cur->Source.getValue());
+    }
+    auto holder = lib->getHolder();
+    if (!holder)
+        return;
+    for (auto &name : holder->importedModules())
+        addLibraryIdentifier(e, holder->getDocument(), name, deps, visited);
+}
+#endif
+
+void ImportStatement::_getIdentifiers(std::map<App::ObjectIdentifier,bool> &deps) const {
+#ifndef FC_EXPR_IMAGE
+    for (auto &module : modules) {
+        if (owner && owner->isAttachedToDocument())
+            addLibraryIdentifier(this, owner->getDocument(), module, deps);
+    }
+#else
+    (void)deps;
+#endif
+}
+
 ExpressionPtr ImportStatement::_copy() const {
     _EXPR_NEW(res,ImportStatement,owner);
     res->names = names;
@@ -7425,6 +7245,15 @@ void FromStatement::_toString(std::ostream &ss, bool, int) const {
     }
 }
 
+void FromStatement::_getIdentifiers(std::map<App::ObjectIdentifier,bool> &deps) const {
+#ifndef FC_EXPR_IMAGE
+    if (owner && owner->isAttachedToDocument())
+        addLibraryIdentifier(this, owner->getDocument(), module, deps);
+#else
+    (void)deps;
+#endif
+}
+
 ExpressionPtr FromStatement::_copy() const {
     _EXPR_NEW(res,FromStatement,owner);
     res->names = names;
@@ -7462,21 +7291,6 @@ Py::Object FromStatement::_getPyValue(int *) const {
 }
 
 ////////////////////////////////////////////////////////////////////////////////////
-
-static Base::XMLReader *_Reader = nullptr;
-ExpressionParser::ExpressionImporter::ExpressionImporter(Base::XMLReader &reader) {
-    assert(!_Reader);
-    _Reader = &reader;
-}
-
-ExpressionParser::ExpressionImporter::~ExpressionImporter() {
-    assert(_Reader);
-    _Reader = nullptr;
-}
-
-Base::XMLReader *ExpressionParser::ExpressionImporter::reader() {
-    return _Reader;
-}
 
 namespace App {
 

@@ -33,6 +33,7 @@ ro : bool
 hd : bool
     Hidden property.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="removeProperty">
             <Documentation>
@@ -44,6 +45,7 @@ Only user-defined properties can be removed, not built-in ones.
 name : str
     Property name.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="supportedProperties">
             <Documentation>
@@ -58,6 +60,7 @@ A list of supported property types.</UserDocu>
 
 Show the object.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="hide">
             <Documentation>
@@ -65,6 +68,7 @@ Show the object.</UserDocu>
 
 Hide the object.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="isVisible">
             <Documentation>
@@ -72,6 +76,7 @@ Hide the object.</UserDocu>
 
 Check if the object is visible.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="canDragObject">
             <Documentation>
@@ -203,6 +208,7 @@ mode : str
 
 Show a list of all display modes.</UserDocu>
             </Documentation>
+            <Sandbox tier="call"/>
         </Methode>
         <Methode Name="toString">
             <Documentation>
@@ -299,7 +305,8 @@ subname: dot separated string reference to the sub element
 
 Trigger icon changed signal.</UserDocu>
 			</Documentation>
-		</Methode>
+            <Sandbox tier="call"/>
+        </Methode>
         <Methode Name="getBoundingBox" Keyword="true">
             <Documentation>
                 <UserDocu>obtain the bounding box of this view object

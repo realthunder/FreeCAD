@@ -68,6 +68,7 @@ class IfcRoot:
     This class is further segmented down into IfcProduct and IfcContext.
     """
 
+
     def setProperties(self, obj):
         """Give the object properties for storing IFC data.
 

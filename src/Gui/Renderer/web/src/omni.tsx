@@ -1,7 +1,7 @@
 // The omni search box in the browser (docs/OmniSearch.md sec 6): the
 // mirror of the desktop's Std_OmniSearch over the control channel.
 // One line at the top centre, '/' opens it, and the same grammar --
-// "/ Box.Length", "/cmd draw style", "/param sync select", "#.Comment",
+// "/ Box.Length", "/cmd draw style", "#.Comment",
 // "#.View2.DrawStyle", ".Height" for the selection.
 //
 // Latency is the design constraint. The box re-filters on every
@@ -16,10 +16,13 @@
 // counter drops the ones a later keystroke made stale.
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, untrack } from 'solid-js';
 import type { JSX } from 'solid-js';
+import { PickList, moveInList } from './widgets/picker.tsx';
+import type { PickRow } from './widgets/picker.tsx';
 import {
   commandChildren,
   getContainerProperties,
   getProperties,
+  isBrowserSafeCommand,
   omniObjects,
   omniResolve,
   omniRows,
@@ -52,9 +55,10 @@ export interface Input {
   offset: number;
 }
 
+/// No '/param ' here: the host's preferences are not a browser's to change
+/// (docs/ShareAccess.md sec 2.2), so the mirror does not offer the mode.
 const PREFIXES: [string, Mode][] = [
   ['/cmd ', 'command'],
-  ['/param ', 'param'],
   ['/ ', 'object'],
 ];
 
@@ -88,10 +92,7 @@ interface PropTarget {
   title: string;
 }
 
-interface Row {
-  key: string;
-  title: string;
-  desc?: string;
+interface Row extends PickRow {
   /// What the text becomes when the row is picked
   complete?: string;
   kind: 'mode' | 'command' | 'param' | 'object' | 'property' | 'member';
@@ -111,8 +112,6 @@ const MODE_ROWS: Row[] = [
   { key: '/ ', kind: 'mode', title: '/ ', desc: 'Objects, properties, documents and views',
     complete: '/ ' },
   { key: '/cmd ', kind: 'mode', title: '/cmd ', desc: 'Commands, by keyword', complete: '/cmd ' },
-  { key: '/param ', kind: 'mode', title: '/param ', desc: 'Application parameters, by keyword',
-    complete: '/param ' },
 ];
 
 const stripLabel = (s: string) =>
@@ -200,6 +199,8 @@ export function OmniBox(props: {
   onClose: () => void;
   selection: () => SelectionItem[];
   viewOnly?: () => boolean;
+  /// A host connection: not held to the browser allowlist
+  host?: () => boolean;
 }) {
   const [text, setText] = createSignal('/');
   const input = createMemo(() => parseInput(text()));
@@ -501,6 +502,16 @@ export function OmniBox(props: {
 
   const inactive = (row: Row) =>
     row.kind === 'command' && detail()[row.key]?.active === false;
+  /// A command the server will not run for this connection: anything off
+  /// the browser allowlist unless it is a host (docs/ShareAccess.md sec
+  /// 2.2). A group row is not judged here: what it runs is only known once
+  /// its children are fetched, and each child is judged by its `command`.
+  const refused = (row: Row) =>
+    row.kind === 'command' && !row.group && !props.host?.() && !isBrowserSafeCommand(row.key);
+  /// The same for one row of a group's menu, by the member it runs. An
+  /// unnamed row (a recent file, say) is refused too, as the server does.
+  const refusedChild = (item: CommandChild) =>
+    !props.host?.() && !isBrowserSafeCommand(item.command ?? '');
 
   // ---- actions
 
@@ -598,6 +609,10 @@ export function OmniBox(props: {
         complete(row);
         break;
       case 'command':
+        if (refused(row)) {
+          setStatus({ text: `${row.title} runs only for the desktop's owner`, error: true });
+          break;
+        }
         if (inactive(row)) { setStatus({ text: `${row.title} is not active`, error: true }); break; }
         run(row.key);
         break;
@@ -626,19 +641,13 @@ export function OmniBox(props: {
 
   const onKey = (e: KeyboardEvent) => {
     const rows = listed().rows;
+    const to = moveInList(e, rows.length, hi());
+    if (to !== null) { e.preventDefault(); setHi(to); return; }
     switch (e.key) {
       case 'Escape':
         e.preventDefault();
         if (panel()) setPanel(null);
         else close();
-        break;
-      case 'ArrowDown':
-        e.preventDefault();
-        if (rows.length) setHi(Math.min(hi() + 1, rows.length - 1));
-        break;
-      case 'ArrowUp':
-        e.preventDefault();
-        if (rows.length) setHi(Math.max(hi() - 1, 0));
         break;
       case 'Tab': {
         e.preventDefault();
@@ -781,8 +790,10 @@ export function OmniBox(props: {
             </div>
             <For each={pn.items.filter((i) => i.visible !== false)}>
               {(item) => item.separator ? <div class="fc-omni-sep" /> : (
-                <button class="fc-omni-menu-item" disabled={item.enabled === false}
-                        title={item.tooltip ?? ''}
+                <button class="fc-omni-menu-item"
+                        disabled={item.enabled === false || refusedChild(item)}
+                        title={refusedChild(item) ? 'Runs only for the desktop\'s owner'
+                                                  : (item.tooltip ?? '')}
                         onClick={() => run(pn.name, item.index)}>
                   <span class="fc-menu-tick">
                     {item.checkable ? (item.checked ? (pn.exclusive ? '\u25CF' : '\u2713') : '') : ''}
@@ -826,42 +837,34 @@ export function OmniBox(props: {
             autocapitalize="off"
             spellcheck={false}
             value={text()}
-            placeholder="/ object, /cmd command, /param parameter"
+            placeholder="/ object, /cmd command"
             onInput={(e) => { setText(e.currentTarget.value); setHi(-1); setStatus(null); }}
             onKeyDown={onKey}
           />
           <button class="fc-close" onClick={close} aria-label="Close">x</button>
         </div>
-        <div class="fc-omni-list" role="listbox">
-          <For each={listed().rows}>
-            {(row, i) => (
-              <div
-                class="fc-omni-row"
-                role="option"
-                aria-selected={hi() === i()}
-                classList={{ 'fc-omni-hi': hi() === i(), 'fc-omni-inactive': inactive(row) }}
-                title={row.desc ?? ''}
-                onPointerEnter={() => setHi(i())}
-                onClick={() => pick(row, true)}
-              >
-                <div class="fc-omni-main">
-                  <span class="fc-omni-title">{row.title}</span>
-                  <Show when={row.desc}><span class="fc-omni-desc">{row.desc}</span></Show>
-                </div>
-                <Show when={row.kind === 'param'}>
-                  <span class="fc-omni-right">{detail()[row.key]?.value ?? ''}</span>
-                </Show>
-                <Show when={row.kind === 'command' && row.group}>
-                  <button class="fc-omni-arrow" title="Show the group's menu"
-                          onClick={(e) => { e.stopPropagation(); openChildren(row); }}>
-                    {'\u25B8'}
-                  </button>
-                </Show>
-              </div>
-            )}
-          </For>
-          <Show when={note()}><div class="fc-note">{note()}</div></Show>
-        </div>
+        <PickList
+          rows={() => listed().rows.map((r) => ({ ...r, inactive: inactive(r) || refused(r) }))}
+          hi={hi}
+          onHi={setHi}
+          onPick={(row) => pick(row, true)}
+          limit={LIMIT}
+          note={note}
+          class="fc-omni-list"
+          right={(row) => (
+            <>
+              <Show when={row.kind === 'param'}>
+                <span class="fc-omni-right">{detail()[row.key]?.value ?? ''}</span>
+              </Show>
+              <Show when={row.kind === 'command' && row.group}>
+                <button class="fc-omni-arrow" title="Show the group's menu"
+                        onClick={(e) => { e.stopPropagation(); openChildren(row); }}>
+                  {'\u25B8'}
+                </button>
+              </Show>
+            </>
+          )}
+        />
         <Show when={panel()}>
           {(pn) => <div class="fc-omni-panel">{renderPanel(pn())}</div>}
         </Show>

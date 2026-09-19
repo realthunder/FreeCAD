@@ -28,23 +28,29 @@
 
 #include <boost/algorithm/string.hpp>
 
+#ifndef FC_EXPR_IMAGE
 #include <App/DocumentObjectPy.h>
+#endif
 #include <Base/Console.h>
 #include <Base/Interpreter.h>
 #include <Base/GeometryPyCXX.h>
-#include <Base/Tools.h>
 #include <Base/QuantityPy.h>
-#include <Base/Reader.h>
 #include <CXX/Objects.hxx>
 
 #include "ObjectIdentifier.h"
+#ifdef FC_EXPR_IMAGE
+// The sandbox image build resolves against the S1 adapter world
+// (bindings pack + bridge ops); see docs/ExpressionImage.md.
+#include <App/ExpressionImage/FcxDocument.h>
+#else
 #include "Application.h"
-#include "ComplexGeoData.h"
 #include "DocumentObserver.h"
 #include "Document.h"
-#include "ExpressionParser.h"
 #include "Link.h"
 #include "Property.h"
+#endif
+#include "ExpressionParser.h"
+#include "ExpressionSecurityRuntime.h"
 
 
 FC_LOG_LEVEL_INIT("Expression",true,true)
@@ -223,6 +229,10 @@ ObjectIdentifier::ObjectIdentifier(const Property &prop, int index)
     DocumentObject * docObj = freecad_dynamic_cast<DocumentObject>(prop.getContainer());
     if (docObj)
         addComponent(SimpleComponent(prop.getName()));
+#ifndef FC_EXPR_IMAGE
+    // Recovering the object from a nested/extension property needs the
+    // DocumentObserver machinery; image properties are always directly
+    // owned by their object.
     else {
         App::DocumentObjectT objT(&prop);
         docObj = objT.getObject();
@@ -246,6 +256,7 @@ ObjectIdentifier::ObjectIdentifier(const Property &prop, int index)
             }
         }
     }
+#endif  // FC_EXPR_IMAGE
 
     if (!docObj)
         FC_THROWM(Base::TypeError, "Property must be owned by a document object.");
@@ -540,40 +551,6 @@ std::size_t ObjectIdentifier::hash() const
     return _hash;
 }
 
-bool ObjectIdentifier::replaceObject(ObjectIdentifier &res, const App::DocumentObject *parent,
-            App::DocumentObject *oldObj, App::DocumentObject *newObj) const
-{
-    ResolveResults result(*this);
-
-    if(!result.resolvedDocumentObject)
-        return false;
-
-    auto r = PropertyLinkBase::tryReplaceLink(owner, result.resolvedDocumentObject,
-            parent, oldObj, newObj, subObjectName.getString().c_str());
-
-    if(!r.first)
-        return false;
-
-    res = *this;
-    if(r.first != result.resolvedDocumentObject) {
-        if(r.first->getDocument()!=owner->getDocument()) {
-            auto doc = r.first->getDocument();
-            bool useLabel = res.documentName.isRealString();
-            const char *name = useLabel?doc->Label.getValue():doc->getName();
-            res.setDocumentName(String(name, useLabel), true);
-        }
-        if(documentObjectName.isRealString())
-            res.documentObjectName = String(r.first->Label.getValue(),true);
-        else
-            res.documentObjectName = String(r.first->getNameInDocument(),false,true);
-    }
-    res.subObjectName = String(r.second,true);
-    res._cache.clear();
-    res.shadowSub.first.clear();
-    res.shadowSub.second.clear();
-    return true;
-}
-
 /**
  * @brief Escape toString representation so it is suitable for being embedded in a python command.
  * @return Escaped string.
@@ -581,85 +558,18 @@ bool ObjectIdentifier::replaceObject(ObjectIdentifier &res, const App::DocumentO
 
 std::string ObjectIdentifier::toEscapedString() const
 {
-    return Base::Tools::escapeEncodeString(toString());
-}
-
-bool ObjectIdentifier::updateLabelReference(
-        App::DocumentObject *obj, const std::string &ref, const char *newLabel)
-{
-    if(!owner)
-        return false;
-
-    ResolveResults result(*this);
-
-    if(!subObjectName.getString().empty() && result.resolvedDocumentObject) {
-        std::string sub = PropertyLinkBase::updateLabelReference(
-                result.resolvedDocumentObject, subObjectName.getString().c_str(), obj,ref,newLabel);
-        if(!sub.empty()) {
-            subObjectName = String(sub,true);
-            _cache.clear();
-            return true;
-        }
+    // Local copy of Base::Tools::escapeEncodeString(std::string), kept here
+    // so the core expression TUs do not pull in Base/Tools.h (it drags in
+    // QString, which the sandbox core build cannot have).
+    const std::string s(toString());
+    std::string result;
+    result.reserve(s.size());
+    for (char c : s) {
+        if (c == '\\' || c == '\"' || c == '\'')
+            result += '\\';
+        result += c;
     }
-
-    if(result.resolvedDocument != obj->getDocument())
-        return false;
-
-    if(!documentObjectName.getString().empty()) {
-        if(documentObjectName.isForceIdentifier())
-            return false;
-
-        if(!documentObjectName.isRealString() &&
-           documentObjectName.getString()==obj->getNameInDocument())
-            return false;
-
-        if(documentObjectName.getString()!=obj->Label.getValue())
-            return false;
-
-        documentObjectName = ObjectIdentifier::String(newLabel, true);
-
-        _cache.clear();
-        return true;
-    }
-
-    if (result.resolvedDocumentObject==obj &&
-        result.propertyIndex == 1 &&
-        result.resolvedDocumentObjectName.isRealString() &&
-        result.resolvedDocumentObjectName.getString()==obj->Label.getValue())
-    {
-        components[0].name = ObjectIdentifier::String(newLabel, true);
-        _cache.clear();
-        return true;
-    }
-
-    // If object identifier uses the label then resolving the document object will fail.
-    // So, it must be checked if using the new label will succeed
-    if (components.size()>1 && components[0].getName()==obj->Label.getValue()) {
-        ObjectIdentifier id(*this);
-        id.components[0].name.str = newLabel;
-
-        ResolveResults result(id);
-
-        if (result.propertyIndex == 1 && result.resolvedDocumentObject == obj) {
-            components[0].name = id.components[0].name;
-            _cache.clear();
-            return true;
-        }
-    }
-
-    return false;
-}
-
-bool ObjectIdentifier::relabeledDocument(ExpressionVisitor &v,
-        const std::string &oldLabel, const std::string &newLabel)
-{
-    if (documentNameSet && documentName.isRealString() && documentName.getString()==oldLabel) {
-        v.aboutToChange();
-        documentName = String(newLabel,true);
-        _cache.clear();
-        return true;
-    }
-    return false;
+    return result;
 }
 
 /**
@@ -739,6 +649,9 @@ Py::Object ObjectIdentifier::Component::get(const Py::Object &pyobj) const {
             FC_THROWM(Base::AttributeError, "No attribute named '" << getName() << "'");
         res = pyobj.getAttr(getName());
         CallableExpression::securityCheck(pyobj.ptr(), res.ptr());
+        // C7 gate: attribute walks into arbitrary Python instances need
+        // unsafe.getattr; a module result is an import in disguise.
+        ExpressionSecurity::checkGetattr(pyobj.ptr(), getName().c_str(), res.ptr());
     } else if(isArray()) {
         if(pyobj.isMapping())
             res = Py::Mapping(pyobj).getItem(Py::Int(begin));
@@ -771,6 +684,9 @@ void ObjectIdentifier::Component::set(Py::Object &pyobj, const Py::Object &value
             FC_THROWM(Base::RuntimeError, "Cannot modify attribute " << getName());
         if (PyModule_Check(pyobj.ptr()))
             FC_THROWM(Base::RuntimeError, "Cannot modify module attribute " << getName());
+        // same classification as the read gate: setattr on an arbitrary
+        // Python instance needs unsafe.getattr
+        ExpressionSecurity::checkGetattr(pyobj.ptr(), getName().c_str(), nullptr);
         if(PyObject_SetAttrString(*pyobj, getName().c_str(), *value) == -1)
             Base::PyException::ThrowException();
     } else if(isArray()) {
@@ -1320,6 +1236,44 @@ void ObjectIdentifier::getDep(
     }
 }
 
+static void _addPropertyDep(ObjectIdentifier::Dependencies &deps,
+        DocumentObject *obj, Property *prop, const char *propName);
+
+void ObjectIdentifier::getDepStructural(
+        Dependencies &deps, std::vector<std::string> *labels) const
+{
+    ResolveResults result(*this);
+    if(labels)
+        getDepLabels(result,*labels);
+
+    if(!result.resolvedDocumentObject)
+        return;
+
+    if(!result.resolvedProperty) {
+        if(!result.propertyName.empty())
+            deps[result.resolvedDocumentObject].insert(result.propertyName);
+        return;
+    }
+
+    // Mirror exactly what access() records before it starts evaluating.
+    App::DocumentObject *lastObj = result.resolvedDocumentObject;
+    if(result.resolvedSubObject) {
+        _addPropertyDep(deps,lastObj,nullptr,nullptr);
+        lastObj = result.resolvedSubObject;
+    }
+    if(result.propertyType == PseudoNone)
+        _addPropertyDep(deps,lastObj,result.resolvedProperty,
+                result.resolvedProperty->getName());
+    else
+        _addPropertyDep(deps,lastObj,nullptr,nullptr);
+
+    // Components past the resolved property may reach further objects, but
+    // those are only discoverable by evaluating the chain. Over-approximate
+    // with an all-property dependency on the last resolved object.
+    if(result.propertyIndex+1 < (int)components.size())
+        _addPropertyDep(deps,lastObj,nullptr,nullptr);
+}
+
 /**
  * @brief Get components as a string list.
  * @return List of strings.
@@ -1594,61 +1548,44 @@ Property *ObjectIdentifier::getProperty(int *ptype) const
     return result.resolvedProperty;
 }
 
-const std::vector<std::pair<const char *, App::Property*> > &ObjectIdentifier::getPseudoProperties()
-{
-    static PropertyContainer dummy;
-    static std::vector<std::pair<const char *, App::Property*> > pseudoProps;
-    if(pseudoProps.empty()) {
-        auto addProp = [](PropertyContainer &pc, std::vector<std::pair<const char *, App::Property *> > &props,
-                          const char *name, const char *doc, int type)
-        {
-            auto prop = static_cast<PropertyInteger*>(pc.addDynamicProperty("App::PropertyInteger", name, 0, doc));
-            prop->setValue(type);
-            props.emplace_back(name, prop);
-        };
-        addProp(dummy, pseudoProps,
-                "ViewObject", "Return the view object (view provider) of the (sub)object; None without a GUI", PseudoViewObject);
-        addProp(dummy, pseudoProps,
-                "_shape",  "Return a geometry shape of the (sub)object using Part.getShape()", PseudoShape); 
-        addProp(dummy, pseudoProps,
-                "_pla",    "Return the accumulated placement of the (sub)object", PseudoPlacement);
-        addProp(dummy, pseudoProps,
-                "_matrix", "Return the accumulated transformation matrix of the (sub)object", PseudoMatrix);
-        addProp(dummy, pseudoProps,
-                "__pla",   "Return the accumulated placement of the (sub)object including any App::Link", PseudoLinkPlacement);
-        addProp(dummy, pseudoProps,
-                "__matrix","Return the accumulated transformation matrix of the (sub)object including any App::Link", PseudoLinkMatrix);
-        addProp(dummy, pseudoProps,
-                "_self",   "Return the object itself in order to access its Python attributes", PseudoSelf);
-        addProp(dummy, pseudoProps,
-                "_ref",   "Return a (sub)object reference that is suitable for assigning to a link type property", PseudoRef);
-        addProp(dummy, pseudoProps,
-                "_app",    "Return the FreeCAD Python module", PseudoApp);
-        addProp(dummy, pseudoProps,
-                "_part",   "Return the Part Python module", PseudoPart);
-        addProp(dummy, pseudoProps,
-                "_re",     "Return the Python regex module", PseudoRegex);
-        addProp(dummy, pseudoProps,
-                "_py",     "Return the Python builtin module", PseudoBuiltins);
-        addProp(dummy, pseudoProps,
-                "_math",   "Return the Python math module", PseudoMath);
-        addProp(dummy, pseudoProps,
-                "_coll",   "Return the Python collections module", PseudoCollections);
-        addProp(dummy, pseudoProps,
-                "_gui",    "Return the FreeCADGui Python module", PseudoGui);
-        addProp(dummy, pseudoProps,
-               "_cq",     "Return the CadQuery Python module", PseudoCadquery);
-    };
-    return pseudoProps;
-}
+static constexpr ObjectIdentifier::PseudoPropertyInfo _pseudoPropertyInfos[] = {
+    {"ViewObject", PseudoViewObject,
+        "Return the view object (view provider) of the (sub)object; None without a GUI"},
+    {"_shape",  PseudoShape,
+        "Return a geometry shape of the (sub)object using Part.getShape()"},
+    {"_pla",    PseudoPlacement,
+        "Return the accumulated placement of the (sub)object"},
+    {"_matrix", PseudoMatrix,
+        "Return the accumulated transformation matrix of the (sub)object"},
+    {"__pla",   PseudoLinkPlacement,
+        "Return the accumulated placement of the (sub)object including any App::Link"},
+    {"__matrix",PseudoLinkMatrix,
+        "Return the accumulated transformation matrix of the (sub)object including any App::Link"},
+    {"_self",   PseudoSelf,
+        "Return the object itself in order to access its Python attributes"},
+    {"_ref",    PseudoRef,
+        "Return a (sub)object reference that is suitable for assigning to a link type property"},
+    {"_app",    PseudoApp,
+        "Return the FreeCAD Python module"},
+    {"_part",   PseudoPart,
+        "Return the Part Python module"},
+    {"_re",     PseudoRegex,
+        "Return the Python regex module"},
+    {"_py",     PseudoBuiltins,
+        "Return the Python builtin module"},
+    {"_math",   PseudoMath,
+        "Return the Python math module"},
+    {"_coll",   PseudoCollections,
+        "Return the Python collections module"},
+    {"_gui",    PseudoGui,
+        "Return the FreeCADGui Python module"},
+    {"_cq",     PseudoCadquery,
+        "Return the CadQuery Python module"},
+};
 
-bool ObjectIdentifier::isPseudoProperty(const App::Property *prop) {
-    static std::unordered_set<const App::Property*> propSet;
-    if(propSet.empty()) {
-        for(auto &v : getPseudoProperties())
-            propSet.insert(v.second);
-    }
-    return propSet.count(prop)!=0;
+std::span<const ObjectIdentifier::PseudoPropertyInfo> ObjectIdentifier::getPseudoPropertyInfos()
+{
+    return _pseudoPropertyInfos;
 }
 
 Property *ObjectIdentifier::resolveProperty(const App::DocumentObject *obj, 
@@ -1665,8 +1602,8 @@ Property *ObjectIdentifier::resolveProperty(const App::DocumentObject *obj,
 
     static std::unordered_map<const char*,int, CStringHasher, CStringHasher> _props;
     if(_props.empty()) {
-        for(auto &info : getPseudoProperties())
-            _props[info.first] = static_cast<PropertyInteger*>(info.second)->getValue();
+        for(auto &info : getPseudoPropertyInfos())
+            _props[info.name] = info.type;
     }
 
     auto getSubObject = [](const DocumentObject *obj, const char *s) -> DocumentObject* {
@@ -1967,48 +1904,6 @@ void ObjectIdentifier::String::toString(std::ostream &s, bool toPython) const
         s << str;
 }
 
-void ObjectIdentifier::String::checkImport(const App::DocumentObject *owner,
-        const App::DocumentObject *obj, String *objName)
-{
-    if(owner && owner->getDocument() && !str.empty() &&
-       ExpressionParser::ExpressionImporter::reader()) {
-        auto reader = ExpressionParser::ExpressionImporter::reader();
-        if (obj || objName) {
-            bool restoreLabel = false;
-            str = PropertyLinkBase::importSubName(*reader,str.c_str(),restoreLabel);
-            if (restoreLabel) {
-                if (!obj) {
-                    std::bitset<32> flags;
-                    obj = getDocumentObject(owner->getDocument(),*objName,flags);
-                    if (!obj) {
-                        FC_ERR("Cannot find object " << objName->toString());
-                    }
-                }
-
-                if (obj) {
-                    PropertyLinkBase::restoreLabelReference(obj,str);
-                }
-            }
-        }
-        else if (str.back()!='@') {
-            str = reader->getName(str.c_str());
-        }
-        else {
-            str.resize(str.size()-1);
-            auto mapped = reader->getName(str.c_str());
-            auto objForMapped = owner->getDocument()->getObject(mapped);
-            if (!objForMapped || objForMapped->testStatus(ObjectStatus::Remove)) {
-                FC_ERR("Cannot find object " << str);
-            }
-            else {
-                isString = true;
-                forceIdentifier = false;
-                str = objForMapped->Label.getValue();
-            }
-        }
-    }
-}
-
 namespace {
 
 // PropertyContainer attribute change notification is disabled for some reason.
@@ -2037,6 +1932,11 @@ public:
 
     void attach(PyObject *pyObj)
     {
+#ifdef FC_EXPR_IMAGE
+        // Container-change notification is a host concern; no
+        // PropertyContainerPy exists in the image.
+        (void)pyObj;
+#else
         if(pyObj && pyObj != pyBase && PyObject_TypeCheck(pyObj, &PropertyContainerPy::Type)) {
             detach();
             pyBase = static_cast<PyObjectBase*>(pyObj);
@@ -2044,12 +1944,46 @@ public:
             shouldNotify = pyBase->shouldNotify();
             pyBase->setShouldNotify(true);
         }
+#endif
     }
 
 public:
     PyObjectBase *pyBase = nullptr;
     bool shouldNotify = false;
 };
+}
+
+// Record a dependency on (obj, propName) the way expression evaluation
+// discovers them. Shared by access() and getDepStructural(); pure C++, no
+// Python involved.
+static void _addPropertyDep(ObjectIdentifier::Dependencies &deps,
+        DocumentObject *obj, Property *prop, const char *propName)
+{
+    if(!obj)
+        return;
+    if(prop && prop->getContainer()!=obj) {
+        auto linkTouched = Base::freecad_dynamic_cast<PropertyBool>(
+                obj->getPropertyByName("_LinkTouched"));
+        if(linkTouched)
+            propName = linkTouched->getName();
+        else {
+            auto propOwner = Base::freecad_dynamic_cast<DocumentObject>(prop->getContainer());
+            if(propOwner)
+                obj = propOwner;
+            else
+                propName = 0;
+        }
+    }
+    auto &propset = deps[obj];
+    // inserting a blank name in the propset indicates the dependency is
+    // on all properties of the corresponding object.
+    if(propset.size()!=1 || !propset.begin()->empty()) {
+        if(!propName) {
+            propset.clear();
+            propName = "";
+        }
+        propset.insert(propName);
+    }
 }
 
 Py::Object ObjectIdentifier::access(const ResolveResults &result,
@@ -2064,6 +1998,52 @@ Py::Object ObjectIdentifier::access(const ResolveResults &result,
 
     Py::Object pyobj;
     int ptype = result.propertyType;
+
+    // Permission wall (expression sandbox phase 1 step 3b): the frozen
+    // pseudo-property -> permission mapping of
+    // docs/ExpressionSandboxPhase0.md sec 6.1, plus the cross-document
+    // wall. Ring-0 pseudo modules (_math/_re/_coll/_py) and the
+    // placement/matrix adapters need no permission beyond the document
+    // read below.
+    {
+        namespace Sec = ExpressionSecurity;
+        switch(ptype) {
+        case PseudoApp:
+            Sec::checkPermission(Sec::Permission::AppQuery);
+            break;
+        case PseudoGui:
+            Sec::checkPermission(Sec::Permission::Gui);
+            break;
+        case PseudoPart:
+            Sec::checkPermission(Sec::Permission::HostImport, "Part");
+            break;
+        case PseudoCadquery:
+            Sec::checkPermission(Sec::Permission::HostImport, "freecad.fc_cadquery");
+            break;
+        case PseudoShape:
+            Sec::checkPermission(Sec::Permission::GeomCall);
+            break;
+        case PseudoSelf:
+            // _self reaching anything but a plain property of the object
+            // is the sec 7.1 drill-down (unsafe.getattr); the local
+            // property shortcut (_self.MyProp) stays a document read.
+            if(result.propertyIndex+1 >= (int)components.size()
+                    || !result.resolvedDocumentObject->getPropertyByName(
+                        components[result.propertyIndex+1].getName().c_str()))
+                Sec::checkPermission(Sec::Permission::UnsafeGetattr);
+            break;
+        default:
+            break;
+        }
+        if(owner && owner->getDocument()
+                && result.resolvedDocumentObject->getDocument()
+                && result.resolvedDocumentObject->getDocument() != owner->getDocument())
+            Sec::checkPermission(Sec::Permission::DocForeign,
+                    result.resolvedDocumentObject->getDocument()->getName());
+        else
+            Sec::checkPermission(value ? Sec::Permission::DocWriteSelf
+                                       : Sec::Permission::DocReadSelf);
+    }
 
     // NOTE! We do not keep reference of the imported module, assuming once
     // imported they'll live (because of sys.modules) till the application
@@ -2220,32 +2200,8 @@ Py::Object ObjectIdentifier::access(const ResolveResults &result,
     }
 
     auto setPropDep = [deps](DocumentObject *obj, Property *prop, const char *propName) {
-        if(!deps || !obj)
-            return;
-        if(prop && prop->getContainer()!=obj) {
-            auto linkTouched = Base::freecad_dynamic_cast<PropertyBool>(
-                    obj->getPropertyByName("_LinkTouched"));
-            if(linkTouched) 
-                propName = linkTouched->getName();
-            else {
-                auto propOwner = Base::freecad_dynamic_cast<DocumentObject>(prop->getContainer());
-                if(propOwner) 
-                    obj = propOwner;
-                else 
-                    propName = 0;
-            }
-        }
-        auto &propset = (*deps)[obj];
-        // inserting a blank name in the propset indicates the dependency is
-        // on all properties of the corresponding object.
-        if(propset.size()!=1 || !propset.begin()->empty()) {
-            if(!propName) {
-                propset.clear();
-                propName = "";
-            }
-            propset.insert(propName);
-        }
-        return;
+        if(deps)
+            _addPropertyDep(*deps,obj,prop,propName);
     };
 
     App::DocumentObject *lastObj = result.resolvedDocumentObject;
@@ -2268,8 +2224,12 @@ Py::Object ObjectIdentifier::access(const ResolveResults &result,
     ContainerNotifierEnabler notificationEnabler(pyobj.ptr());
 
     for(;idx<count;++idx)  {
+#ifndef FC_EXPR_IMAGE
+        // In-image no live DocumentObjectPy exists (host objects are
+        // handle proxies) and dependency tracking is host work.
         if(PyObject_TypeCheck(*pyobj, &DocumentObjectPy::Type))
             lastObj = static_cast<DocumentObjectPy*>(*pyobj)->getDocumentObjectPtr();
+#endif
 
         if(lastObj) {
             const char *attr = components[idx].getName().c_str();
@@ -2311,6 +2271,21 @@ Py::Object ObjectIdentifier::access(const ResolveResults &result,
 
 App::any ObjectIdentifier::getValue(bool pathValue, bool *isPseudoProperty) const
 {
+    ExpressionSecurity::Runtime::Scope _secScope(owner);
+
+#ifdef FC_EXPR_IMAGE
+    // Bindings pack first; see getPyValue.
+    if (auto tx = Fcx::EvalTransaction::current()) {
+        Py::Object packed;
+        if (tx->lookup(toString(), packed)) {
+            if (isPseudoProperty)
+                *isPseudoProperty = false;
+            Base::PyGILStateLocker lock;
+            return pyObjectToAny(packed);
+        }
+    }
+#endif
+
     ResolveResults rs(*this);
 
     if(isPseudoProperty) {
@@ -2338,6 +2313,24 @@ App::any ObjectIdentifier::getValue(bool pathValue, bool *isPseudoProperty) cons
 
 Py::Object ObjectIdentifier::getPyValue(bool pathValue, bool *isPseudoProperty, bool *isReadOnly) const
 {
+    ExpressionSecurity::Runtime::Scope _secScope(owner);
+
+#ifdef FC_EXPR_IMAGE
+    // The bindings pack first (docs/ExpressionSandbox.md 7.3): the host
+    // pre-resolved this identifier's value with its own permission
+    // checks; a hit costs zero crossings and zero resolution work.
+    if (auto tx = Fcx::EvalTransaction::current()) {
+        Py::Object packed;
+        if (tx->lookup(toString(), packed)) {
+            if (isPseudoProperty)
+                *isPseudoProperty = false;
+            if (isReadOnly)
+                *isReadOnly = true;
+            return packed;
+        }
+    }
+#endif
+
     ResolveResults rs(*this);
 
     if(isPseudoProperty || isReadOnly) {
@@ -2389,6 +2382,7 @@ void ObjectIdentifier::setValue(const App::any &value) const
 
 void ObjectIdentifier::setPyValue(Py::Object value) const
 {
+    ExpressionSecurity::Runtime::Scope _secScope(owner);
     ResolveResults rs(*this);
     if(!rs.resolvedProperty)
         FC_THROWM(Base::RuntimeError,"Property not found " << toString());
@@ -2417,76 +2411,6 @@ const std::string &ObjectIdentifier::getSubObjectName(bool newStyle) const {
 
 const std::string &ObjectIdentifier::getSubObjectName() const {
     return subObjectName.getString();
-}
-
-void ObjectIdentifier::importSubNames(const ObjectIdentifier::SubNameMap &subNameMap)
-{
-    if(!owner || !owner->getDocument())
-        return;
-    ResolveResults result(*this);
-    auto it = subNameMap.find(std::make_pair(result.resolvedDocumentObject,std::string()));
-    if(it!=subNameMap.end()) {
-        auto obj = owner->getDocument()->getObject(it->second.c_str());
-        if(!obj || obj->testStatus(ObjectStatus::Remove)) {
-            FC_ERR("Failed to find import object " << it->second << " from "
-                    << result.resolvedDocumentObject->getFullName());
-            return;
-        }
-        documentNameSet = false;
-        documentName.str.clear();
-        if(documentObjectName.isRealString())
-            documentObjectName.str = obj->Label.getValue();
-        else
-            documentObjectName.str = obj->getNameInDocument();
-        _cache.clear();
-    }
-    if(subObjectName.getString().empty())
-        return;
-    it = subNameMap.find(std::make_pair(
-                result.resolvedDocumentObject,subObjectName.str));
-    if(it==subNameMap.end())
-        return;
-    subObjectName = String(it->second,true);
-    _cache.clear();
-    shadowSub.first.clear();
-    shadowSub.second.clear();
-}
-
-bool ObjectIdentifier::updateElementReference(ExpressionVisitor &v,
-        App::DocumentObject *feature, bool reverse)
-{
-    assert(v.getPropertyLink());
-    if(subObjectName.getString().empty())
-        return false;
-
-    ResolveResults result(*this);
-    if(!result.resolvedSubObject)
-        return false;
-    if(v.getPropertyLink()->_updateElementReference(
-            feature,result.resolvedDocumentObject,subObjectName.str,shadowSub,reverse)) {
-        _cache.clear();
-        v.aboutToChange();
-        return true;
-    }
-    return false;
-}
-
-bool ObjectIdentifier::adjustLinks(ExpressionVisitor &v, const std::set<App::DocumentObject *> &inList) {
-    ResolveResults result(*this);
-    if(!result.resolvedDocumentObject)
-        return false;
-    if(result.resolvedSubObject) {
-        PropertyLinkSub prop;
-        prop.setValue(result.resolvedDocumentObject, {subObjectName.getString()});
-        if(prop.adjustLink(inList)) {
-            v.aboutToChange();
-            documentObjectName = String(prop.getValue()->getNameInDocument(),false,true);
-            subObjectName = String(prop.getSubValues().front(),true);
-            _cache.clear();
-            return true;
-        }
-    }
-    return false;
 }
 
 bool ObjectIdentifier::isTouched() const {

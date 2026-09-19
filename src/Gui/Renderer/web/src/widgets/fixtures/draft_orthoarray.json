@@ -1,0 +1,2605 @@
+{
+ "case": "draft_orthoarray",
+ "frames": [
+  {
+   "client": 7,
+   "frame": {
+    "id": "panel",
+    "layout": {
+     "class": "QVBoxLayout",
+     "items": [],
+     "name": ""
+    },
+    "method": "open",
+    "model": "QWidgetModel",
+    "op": "widgets",
+    "qtClass": "QWidget",
+    "state": {
+     "q_actions": [],
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "panel",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "panel",
+    "layout": {
+     "class": "QVBoxLayout",
+     "items": [],
+     "name": ""
+    },
+    "method": "open",
+    "model": "QWidgetModel",
+    "op": "widgets",
+    "qtClass": "QWidget",
+    "state": {
+     "q_actions": [],
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "panel",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:92",
+    "method": "open",
+    "model": "QPushButtonModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:91",
+    "qtClass": "QPushButton",
+    "state": {
+     "q_actions": [],
+     "q_autoExclusive": false,
+     "q_checkable": true,
+     "q_checked": true,
+     "q_default": false,
+     "q_enabled": true,
+     "q_flat": false,
+     "q_focus": false,
+     "q_font": {},
+     "q_icon": "",
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_menu": null,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "button_linear_mode",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "Switch to Ortho Mode",
+     "q_toolTip": "Toggles between orthogonal and linear mode",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:93",
+    "method": "open",
+    "model": "QRadioButtonModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:91",
+    "qtClass": "QRadioButton",
+    "state": {
+     "q_actions": [],
+     "q_autoExclusive": true,
+     "q_checkable": true,
+     "q_checked": true,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_icon": "",
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_menu": null,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "radiobutton_x_axis",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "X axis",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:94",
+    "method": "open",
+    "model": "QRadioButtonModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:91",
+    "qtClass": "QRadioButton",
+    "state": {
+     "q_actions": [],
+     "q_autoExclusive": true,
+     "q_checkable": true,
+     "q_checked": false,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_icon": "",
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_menu": null,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "radiobutton_y_axis",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "Y axis",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:95",
+    "method": "open",
+    "model": "QRadioButtonModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:91",
+    "qtClass": "QRadioButton",
+    "state": {
+     "q_actions": [],
+     "q_autoExclusive": true,
+     "q_checkable": true,
+     "q_checked": false,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_icon": "",
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_menu": null,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "radiobutton_z_axis",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "Z axis",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:97",
+    "method": "open",
+    "model": "QLabelModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:96",
+    "qtClass": "QLabel",
+    "state": {
+     "q_actions": [],
+     "q_alignment": 129,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "label_n_X",
+     "q_openExternalLinks": false,
+     "q_pixmap": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "X",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": "",
+     "q_wordWrap": false
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:98",
+    "method": "open",
+    "model": "QLabelModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:96",
+    "qtClass": "QLabel",
+    "state": {
+     "q_actions": [],
+     "q_alignment": 129,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "label_n_Y",
+     "q_openExternalLinks": false,
+     "q_pixmap": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "Y",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": "",
+     "q_wordWrap": false
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:99",
+    "method": "open",
+    "model": "QSpinBoxModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:96",
+    "qtClass": "QSpinBox",
+    "state": {
+     "q_actions": [],
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximum": 1000000,
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimum": 1,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "spinbox_n_Y",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_prefix": "",
+     "q_readOnly": false,
+     "q_singleStep": 1,
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_suffix": "",
+     "q_toolTip": "",
+     "q_value": 2,
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:100",
+    "method": "open",
+    "model": "QLabelModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:96",
+    "qtClass": "QLabel",
+    "state": {
+     "q_actions": [],
+     "q_alignment": 129,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "label_n_Z",
+     "q_openExternalLinks": false,
+     "q_pixmap": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "Z",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": "",
+     "q_wordWrap": false
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:101",
+    "method": "open",
+    "model": "QSpinBoxModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:96",
+    "qtClass": "QSpinBox",
+    "state": {
+     "q_actions": [],
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximum": 1000000,
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimum": 1,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "spinbox_n_Z",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_prefix": "",
+     "q_readOnly": false,
+     "q_singleStep": 1,
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_suffix": "",
+     "q_toolTip": "",
+     "q_value": 2,
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:96",
+    "layout": {
+     "class": "QGridLayout",
+     "items": [
+      {
+       "layout": {
+        "class": "QGridLayout",
+        "items": [
+         {
+          "pos": [
+           0,
+           0,
+           1,
+           1
+          ],
+          "widget": "IPY_MODEL_pw:97"
+         },
+         {
+          "pos": [
+           1,
+           0,
+           1,
+           1
+          ],
+          "widget": "IPY_MODEL_pw:98"
+         },
+         {
+          "pos": [
+           1,
+           1,
+           1,
+           1
+          ],
+          "widget": "IPY_MODEL_pw:99"
+         },
+         {
+          "pos": [
+           2,
+           0,
+           1,
+           1
+          ],
+          "widget": "IPY_MODEL_pw:100"
+         },
+         {
+          "pos": [
+           2,
+           1,
+           1,
+           1
+          ],
+          "widget": "IPY_MODEL_pw:101"
+         }
+        ],
+        "margins": [
+         0,
+         0,
+         0,
+         0
+        ],
+        "name": "grid_number",
+        "spacing": 6
+       },
+       "pos": [
+        0,
+        0,
+        1,
+        1
+       ]
+      }
+     ],
+     "margins": [
+      9,
+      9,
+      9,
+      9
+     ],
+     "name": "gridLayout_5",
+     "spacing": 6
+    },
+    "method": "open",
+    "model": "QGroupBoxModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:91",
+    "qtClass": "QGroupBox",
+    "state": {
+     "q_actions": [],
+     "q_checkable": false,
+     "q_checked": false,
+     "q_enabled": true,
+     "q_flat": false,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "group_copies",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_title": "Number of Elements",
+     "q_toolTip": "Number of elements in the array in the specified direction, including a copy of the original object.\nThe number must be at least 1 in each direction.",
+     "q_visible": false,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:103",
+    "method": "open",
+    "model": "QLabelModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:102",
+    "qtClass": "QLabel",
+    "state": {
+     "q_actions": [],
+     "q_alignment": 129,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "",
+     "q_openExternalLinks": false,
+     "q_pixmap": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "Number of elements",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": "",
+     "q_wordWrap": false
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:104",
+    "method": "open",
+    "model": "QSpinBoxModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:102",
+    "qtClass": "QSpinBox",
+    "state": {
+     "q_actions": [],
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximum": 1000000,
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimum": 1,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "spinbox_n_X",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_prefix": "",
+     "q_readOnly": false,
+     "q_singleStep": 1,
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_suffix": "",
+     "q_toolTip": "",
+     "q_value": 2,
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:105",
+    "method": "open",
+    "model": "QLabelModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:102",
+    "qtClass": "QLabel",
+    "state": {
+     "q_actions": [],
+     "q_alignment": 129,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "",
+     "q_openExternalLinks": false,
+     "q_pixmap": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "Interval",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": "",
+     "q_wordWrap": false
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:106",
+    "method": "open",
+    "model": "InputFieldModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:102",
+    "qtClass": "Gui::InputField",
+    "state": {
+     "q_actions": [],
+     "q_clearButtonEnabled": false,
+     "q_decimals": 2,
+     "q_echoMode": 0,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_format": "f",
+     "q_historySize": 5,
+     "q_maxLength": 32767,
+     "q_maximum": 1.7976931348623157e+308,
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimum": -1.7976931348623157e+308,
+     "q_minimumHeight": 26,
+     "q_minimumWidth": 52,
+     "q_objectName": "input_X_x",
+     "q_placeholderText": "",
+     "q_precision": 2,
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_quantityString": "100.00 mm",
+     "q_rawValue": 100,
+     "q_readOnly": false,
+     "q_singleStep": 1,
+     "q_statusTip": "",
+     "q_styleSheet": "QLineEdit { padding-right: 24px } ",
+     "q_text": "100.00 mm",
+     "q_toolTip": "",
+     "q_unit": "mm",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:107",
+    "method": "open",
+    "model": "QPushButtonModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:102",
+    "qtClass": "QPushButton",
+    "state": {
+     "q_actions": [],
+     "q_autoExclusive": false,
+     "q_checkable": false,
+     "q_checked": false,
+     "q_default": false,
+     "q_enabled": true,
+     "q_flat": false,
+     "q_focus": false,
+     "q_font": {},
+     "q_icon": "",
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_menu": null,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "button_reset_X",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "Reset X",
+     "q_toolTip": "Resets the distances",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:102",
+    "layout": {
+     "class": "QGridLayout",
+     "items": [
+      {
+       "pos": [
+        0,
+        0,
+        1,
+        1
+       ],
+       "widget": "IPY_MODEL_pw:103"
+      },
+      {
+       "pos": [
+        0,
+        1,
+        1,
+        1
+       ],
+       "widget": "IPY_MODEL_pw:104"
+      },
+      {
+       "pos": [
+        1,
+        0,
+        1,
+        1
+       ],
+       "widget": "IPY_MODEL_pw:105"
+      },
+      {
+       "pos": [
+        1,
+        1,
+        1,
+        1
+       ],
+       "widget": "IPY_MODEL_pw:106"
+      },
+      {
+       "pos": [
+        2,
+        0,
+        1,
+        2
+       ],
+       "widget": "IPY_MODEL_pw:107"
+      }
+     ],
+     "margins": [
+      9,
+      9,
+      9,
+      9
+     ],
+     "name": "gridLayout_5",
+     "spacing": 6
+    },
+    "method": "open",
+    "model": "QGroupBoxModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:91",
+    "qtClass": "QGroupBox",
+    "state": {
+     "q_actions": [],
+     "q_checkable": false,
+     "q_checked": false,
+     "q_enabled": true,
+     "q_flat": false,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "group_linearmode",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_title": "X-Axis",
+     "q_toolTip": "Currently selected axis",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:109",
+    "method": "open",
+    "model": "QLabelModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:108",
+    "qtClass": "QLabel",
+    "state": {
+     "q_actions": [],
+     "q_alignment": 129,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "label_X_x",
+     "q_openExternalLinks": false,
+     "q_pixmap": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "X",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": "",
+     "q_wordWrap": false
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:110",
+    "method": "open",
+    "model": "QLabelModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:108",
+    "qtClass": "QLabel",
+    "state": {
+     "q_actions": [],
+     "q_alignment": 129,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "label_X_y",
+     "q_openExternalLinks": false,
+     "q_pixmap": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "Y",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": "",
+     "q_wordWrap": false
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:111",
+    "method": "open",
+    "model": "InputFieldModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:108",
+    "qtClass": "Gui::InputField",
+    "state": {
+     "q_actions": [],
+     "q_clearButtonEnabled": false,
+     "q_decimals": 2,
+     "q_echoMode": 0,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_format": "f",
+     "q_historySize": 5,
+     "q_maxLength": 32767,
+     "q_maximum": 1.7976931348623157e+308,
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimum": -1.7976931348623157e+308,
+     "q_minimumHeight": 26,
+     "q_minimumWidth": 52,
+     "q_objectName": "input_X_y",
+     "q_placeholderText": "",
+     "q_precision": 2,
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_quantityString": "0.00 mm",
+     "q_rawValue": 0,
+     "q_readOnly": false,
+     "q_singleStep": 1,
+     "q_statusTip": "",
+     "q_styleSheet": "QLineEdit { padding-right: 24px } ",
+     "q_text": "0.00 mm",
+     "q_toolTip": "",
+     "q_unit": "mm",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:112",
+    "method": "open",
+    "model": "QLabelModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:108",
+    "qtClass": "QLabel",
+    "state": {
+     "q_actions": [],
+     "q_alignment": 129,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "label_X_z",
+     "q_openExternalLinks": false,
+     "q_pixmap": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "Z",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": "",
+     "q_wordWrap": false
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:113",
+    "method": "open",
+    "model": "InputFieldModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:108",
+    "qtClass": "Gui::InputField",
+    "state": {
+     "q_actions": [],
+     "q_clearButtonEnabled": false,
+     "q_decimals": 2,
+     "q_echoMode": 0,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_format": "f",
+     "q_historySize": 5,
+     "q_maxLength": 32767,
+     "q_maximum": 1.7976931348623157e+308,
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimum": -1.7976931348623157e+308,
+     "q_minimumHeight": 26,
+     "q_minimumWidth": 52,
+     "q_objectName": "input_X_z",
+     "q_placeholderText": "",
+     "q_precision": 2,
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_quantityString": "0.00 mm",
+     "q_rawValue": 0,
+     "q_readOnly": false,
+     "q_singleStep": 1,
+     "q_statusTip": "",
+     "q_styleSheet": "QLineEdit { padding-right: 24px } ",
+     "q_text": "0.00 mm",
+     "q_toolTip": "",
+     "q_unit": "mm",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:108",
+    "layout": {
+     "class": "QGridLayout",
+     "items": [
+      {
+       "layout": {
+        "class": "QGridLayout",
+        "items": [
+         {
+          "pos": [
+           0,
+           0,
+           1,
+           1
+          ],
+          "widget": "IPY_MODEL_pw:109"
+         },
+         {
+          "pos": [
+           1,
+           0,
+           1,
+           1
+          ],
+          "widget": "IPY_MODEL_pw:110"
+         },
+         {
+          "pos": [
+           1,
+           1,
+           1,
+           1
+          ],
+          "widget": "IPY_MODEL_pw:111"
+         },
+         {
+          "pos": [
+           2,
+           0,
+           1,
+           1
+          ],
+          "widget": "IPY_MODEL_pw:112"
+         },
+         {
+          "pos": [
+           2,
+           1,
+           1,
+           1
+          ],
+          "widget": "IPY_MODEL_pw:113"
+         }
+        ],
+        "margins": [
+         0,
+         0,
+         0,
+         0
+        ],
+        "name": "grid_X",
+        "spacing": 6
+       },
+       "pos": [
+        0,
+        0,
+        1,
+        1
+       ]
+      }
+     ],
+     "margins": [
+      9,
+      9,
+      9,
+      9
+     ],
+     "name": "gridLayout_2",
+     "spacing": 6
+    },
+    "method": "open",
+    "model": "QGroupBoxModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:91",
+    "qtClass": "QGroupBox",
+    "state": {
+     "q_actions": [],
+     "q_checkable": false,
+     "q_checked": false,
+     "q_enabled": true,
+     "q_flat": false,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "group_X",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_title": "X Intervals",
+     "q_toolTip": "Distance between the elements in the X-direction.\nNormally, only the X value is necessary; the other two values can give an additional shift in their respective directions.\nNegative values will result in copies produced in the negative direction.",
+     "q_visible": false,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:115",
+    "method": "open",
+    "model": "QLabelModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:114",
+    "qtClass": "QLabel",
+    "state": {
+     "q_actions": [],
+     "q_alignment": 129,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "label_Y_x",
+     "q_openExternalLinks": false,
+     "q_pixmap": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "X",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": "",
+     "q_wordWrap": false
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:116",
+    "method": "open",
+    "model": "InputFieldModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:114",
+    "qtClass": "Gui::InputField",
+    "state": {
+     "q_actions": [],
+     "q_clearButtonEnabled": false,
+     "q_decimals": 2,
+     "q_echoMode": 0,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_format": "f",
+     "q_historySize": 5,
+     "q_maxLength": 32767,
+     "q_maximum": 1.7976931348623157e+308,
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimum": -1.7976931348623157e+308,
+     "q_minimumHeight": 26,
+     "q_minimumWidth": 52,
+     "q_objectName": "input_Y_x",
+     "q_placeholderText": "",
+     "q_precision": 2,
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_quantityString": "0.00 mm",
+     "q_rawValue": 0,
+     "q_readOnly": false,
+     "q_singleStep": 1,
+     "q_statusTip": "",
+     "q_styleSheet": "QLineEdit { padding-right: 24px } ",
+     "q_text": "0.00 mm",
+     "q_toolTip": "",
+     "q_unit": "mm",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:117",
+    "method": "open",
+    "model": "QLabelModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:114",
+    "qtClass": "QLabel",
+    "state": {
+     "q_actions": [],
+     "q_alignment": 129,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "label_Y_y",
+     "q_openExternalLinks": false,
+     "q_pixmap": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "Y",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": "",
+     "q_wordWrap": false
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:118",
+    "method": "open",
+    "model": "InputFieldModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:114",
+    "qtClass": "Gui::InputField",
+    "state": {
+     "q_actions": [],
+     "q_clearButtonEnabled": false,
+     "q_decimals": 2,
+     "q_echoMode": 0,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_format": "f",
+     "q_historySize": 5,
+     "q_maxLength": 32767,
+     "q_maximum": 1.7976931348623157e+308,
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimum": -1.7976931348623157e+308,
+     "q_minimumHeight": 26,
+     "q_minimumWidth": 52,
+     "q_objectName": "input_Y_y",
+     "q_placeholderText": "",
+     "q_precision": 2,
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_quantityString": "100.00 mm",
+     "q_rawValue": 100,
+     "q_readOnly": false,
+     "q_singleStep": 1,
+     "q_statusTip": "",
+     "q_styleSheet": "QLineEdit { padding-right: 24px } ",
+     "q_text": "100.00 mm",
+     "q_toolTip": "",
+     "q_unit": "mm",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:119",
+    "method": "open",
+    "model": "QLabelModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:114",
+    "qtClass": "QLabel",
+    "state": {
+     "q_actions": [],
+     "q_alignment": 129,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "label_Y_z",
+     "q_openExternalLinks": false,
+     "q_pixmap": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "Z",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": "",
+     "q_wordWrap": false
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:120",
+    "method": "open",
+    "model": "InputFieldModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:114",
+    "qtClass": "Gui::InputField",
+    "state": {
+     "q_actions": [],
+     "q_clearButtonEnabled": false,
+     "q_decimals": 2,
+     "q_echoMode": 0,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_format": "f",
+     "q_historySize": 5,
+     "q_maxLength": 32767,
+     "q_maximum": 1.7976931348623157e+308,
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimum": -1.7976931348623157e+308,
+     "q_minimumHeight": 26,
+     "q_minimumWidth": 52,
+     "q_objectName": "input_Y_z",
+     "q_placeholderText": "",
+     "q_precision": 2,
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_quantityString": "0.00 mm",
+     "q_rawValue": 0,
+     "q_readOnly": false,
+     "q_singleStep": 1,
+     "q_statusTip": "",
+     "q_styleSheet": "QLineEdit { padding-right: 24px } ",
+     "q_text": "0.00 mm",
+     "q_toolTip": "",
+     "q_unit": "mm",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:121",
+    "method": "open",
+    "model": "QPushButtonModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:114",
+    "qtClass": "QPushButton",
+    "state": {
+     "q_actions": [],
+     "q_autoExclusive": false,
+     "q_checkable": false,
+     "q_checked": false,
+     "q_default": false,
+     "q_enabled": true,
+     "q_flat": false,
+     "q_focus": false,
+     "q_font": {},
+     "q_icon": "",
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_menu": null,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "button_reset_Y",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "Reset Y",
+     "q_toolTip": "Resets the distances",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:114",
+    "layout": {
+     "class": "QGridLayout",
+     "items": [
+      {
+       "layout": {
+        "class": "QGridLayout",
+        "items": [
+         {
+          "pos": [
+           0,
+           0,
+           1,
+           1
+          ],
+          "widget": "IPY_MODEL_pw:115"
+         },
+         {
+          "pos": [
+           0,
+           1,
+           1,
+           1
+          ],
+          "widget": "IPY_MODEL_pw:116"
+         },
+         {
+          "pos": [
+           1,
+           0,
+           1,
+           1
+          ],
+          "widget": "IPY_MODEL_pw:117"
+         },
+         {
+          "pos": [
+           1,
+           1,
+           1,
+           1
+          ],
+          "widget": "IPY_MODEL_pw:118"
+         },
+         {
+          "pos": [
+           2,
+           0,
+           1,
+           1
+          ],
+          "widget": "IPY_MODEL_pw:119"
+         },
+         {
+          "pos": [
+           2,
+           1,
+           1,
+           1
+          ],
+          "widget": "IPY_MODEL_pw:120"
+         }
+        ],
+        "margins": [
+         0,
+         0,
+         0,
+         0
+        ],
+        "name": "grid_Y",
+        "spacing": 6
+       },
+       "pos": [
+        0,
+        0,
+        1,
+        1
+       ]
+      },
+      {
+       "pos": [
+        1,
+        0,
+        1,
+        1
+       ],
+       "widget": "IPY_MODEL_pw:121"
+      }
+     ],
+     "margins": [
+      9,
+      9,
+      9,
+      9
+     ],
+     "name": "gridLayout_1",
+     "spacing": 6
+    },
+    "method": "open",
+    "model": "QGroupBoxModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:91",
+    "qtClass": "QGroupBox",
+    "state": {
+     "q_actions": [],
+     "q_checkable": false,
+     "q_checked": false,
+     "q_enabled": true,
+     "q_flat": false,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "group_Y",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_title": "Y Intervals",
+     "q_toolTip": "Distance between the elements in the Y-direction.\nNormally, only the Y value is necessary; the other two values can give an additional shift in their respective directions.\nNegative values will result in copies produced in the negative direction.",
+     "q_visible": false,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:123",
+    "method": "open",
+    "model": "QLabelModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:122",
+    "qtClass": "QLabel",
+    "state": {
+     "q_actions": [],
+     "q_alignment": 129,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "label_Z_x",
+     "q_openExternalLinks": false,
+     "q_pixmap": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "X",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": "",
+     "q_wordWrap": false
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:124",
+    "method": "open",
+    "model": "InputFieldModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:122",
+    "qtClass": "Gui::InputField",
+    "state": {
+     "q_actions": [],
+     "q_clearButtonEnabled": false,
+     "q_decimals": 2,
+     "q_echoMode": 0,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_format": "f",
+     "q_historySize": 5,
+     "q_maxLength": 32767,
+     "q_maximum": 1.7976931348623157e+308,
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimum": -1.7976931348623157e+308,
+     "q_minimumHeight": 26,
+     "q_minimumWidth": 52,
+     "q_objectName": "input_Z_x",
+     "q_placeholderText": "",
+     "q_precision": 2,
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_quantityString": "0.00 mm",
+     "q_rawValue": 0,
+     "q_readOnly": false,
+     "q_singleStep": 1,
+     "q_statusTip": "",
+     "q_styleSheet": "QLineEdit { padding-right: 24px } ",
+     "q_text": "0.00 mm",
+     "q_toolTip": "",
+     "q_unit": "mm",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:125",
+    "method": "open",
+    "model": "QLabelModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:122",
+    "qtClass": "QLabel",
+    "state": {
+     "q_actions": [],
+     "q_alignment": 129,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "label_Z_y",
+     "q_openExternalLinks": false,
+     "q_pixmap": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "Y",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": "",
+     "q_wordWrap": false
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:126",
+    "method": "open",
+    "model": "InputFieldModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:122",
+    "qtClass": "Gui::InputField",
+    "state": {
+     "q_actions": [],
+     "q_clearButtonEnabled": false,
+     "q_decimals": 2,
+     "q_echoMode": 0,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_format": "f",
+     "q_historySize": 5,
+     "q_maxLength": 32767,
+     "q_maximum": 1.7976931348623157e+308,
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimum": -1.7976931348623157e+308,
+     "q_minimumHeight": 26,
+     "q_minimumWidth": 52,
+     "q_objectName": "input_Z_y",
+     "q_placeholderText": "",
+     "q_precision": 2,
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_quantityString": "0.00 mm",
+     "q_rawValue": 0,
+     "q_readOnly": false,
+     "q_singleStep": 1,
+     "q_statusTip": "",
+     "q_styleSheet": "QLineEdit { padding-right: 24px } ",
+     "q_text": "0.00 mm",
+     "q_toolTip": "",
+     "q_unit": "mm",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:127",
+    "method": "open",
+    "model": "QLabelModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:122",
+    "qtClass": "QLabel",
+    "state": {
+     "q_actions": [],
+     "q_alignment": 129,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "label_Z_z",
+     "q_openExternalLinks": false,
+     "q_pixmap": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "Z",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": "",
+     "q_wordWrap": false
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:128",
+    "method": "open",
+    "model": "InputFieldModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:122",
+    "qtClass": "Gui::InputField",
+    "state": {
+     "q_actions": [],
+     "q_clearButtonEnabled": false,
+     "q_decimals": 2,
+     "q_echoMode": 0,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_format": "f",
+     "q_historySize": 5,
+     "q_maxLength": 32767,
+     "q_maximum": 1.7976931348623157e+308,
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimum": -1.7976931348623157e+308,
+     "q_minimumHeight": 26,
+     "q_minimumWidth": 52,
+     "q_objectName": "input_Z_z",
+     "q_placeholderText": "",
+     "q_precision": 2,
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_quantityString": "100.00 mm",
+     "q_rawValue": 100,
+     "q_readOnly": false,
+     "q_singleStep": 1,
+     "q_statusTip": "",
+     "q_styleSheet": "QLineEdit { padding-right: 24px } ",
+     "q_text": "100.00 mm",
+     "q_toolTip": "",
+     "q_unit": "mm",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:129",
+    "method": "open",
+    "model": "QCheckBoxModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:122",
+    "qtClass": "QCheckBox",
+    "state": {
+     "q_actions": [],
+     "q_autoExclusive": false,
+     "q_checkable": true,
+     "q_checked": true,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_icon": "",
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_menu": null,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "checkbox_build_shape",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "Build shape",
+     "q_toolTip": "Enable this option to build compound shape if 'Fuse' is disabled.\nIt is recommended to disable this option if you are using the array\nfor assembly purpose and not for further modeling, to make the\nrecomputation faster with complex shapes.",
+     "q_tristate": false,
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:130",
+    "method": "open",
+    "model": "QPushButtonModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:122",
+    "qtClass": "QPushButton",
+    "state": {
+     "q_actions": [],
+     "q_autoExclusive": false,
+     "q_checkable": false,
+     "q_checked": false,
+     "q_default": false,
+     "q_enabled": true,
+     "q_flat": false,
+     "q_focus": false,
+     "q_font": {},
+     "q_icon": "",
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_menu": null,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "button_reset_Z",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "Reset Z",
+     "q_toolTip": "Resets the distances",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:122",
+    "layout": {
+     "class": "QGridLayout",
+     "items": [
+      {
+       "layout": {
+        "class": "QGridLayout",
+        "items": [
+         {
+          "pos": [
+           0,
+           0,
+           1,
+           1
+          ],
+          "widget": "IPY_MODEL_pw:123"
+         },
+         {
+          "pos": [
+           0,
+           1,
+           1,
+           1
+          ],
+          "widget": "IPY_MODEL_pw:124"
+         },
+         {
+          "pos": [
+           1,
+           0,
+           1,
+           1
+          ],
+          "widget": "IPY_MODEL_pw:125"
+         },
+         {
+          "pos": [
+           1,
+           1,
+           1,
+           1
+          ],
+          "widget": "IPY_MODEL_pw:126"
+         },
+         {
+          "pos": [
+           2,
+           0,
+           1,
+           1
+          ],
+          "widget": "IPY_MODEL_pw:127"
+         },
+         {
+          "pos": [
+           2,
+           1,
+           1,
+           1
+          ],
+          "widget": "IPY_MODEL_pw:128"
+         },
+         {
+          "pos": [
+           0,
+           0,
+           1,
+           1
+          ],
+          "widget": "IPY_MODEL_pw:129"
+         }
+        ],
+        "margins": [
+         0,
+         0,
+         0,
+         0
+        ],
+        "name": "grid_Z",
+        "spacing": 6
+       },
+       "pos": [
+        0,
+        0,
+        1,
+        1
+       ]
+      },
+      {
+       "pos": [
+        1,
+        0,
+        1,
+        1
+       ],
+       "widget": "IPY_MODEL_pw:130"
+      }
+     ],
+     "margins": [
+      9,
+      9,
+      9,
+      9
+     ],
+     "name": "gridLayout",
+     "spacing": 6
+    },
+    "method": "open",
+    "model": "QGroupBoxModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:91",
+    "qtClass": "QGroupBox",
+    "state": {
+     "q_actions": [],
+     "q_checkable": false,
+     "q_checked": false,
+     "q_enabled": true,
+     "q_flat": false,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "group_Z",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_title": "Z Intervals",
+     "q_toolTip": "Distance between the elements in the Z direction.\nNormally, only the Z value is necessary; the other two values can give an additional shift in their respective directions.\nNegative values will result in copies produced in the negative direction.",
+     "q_visible": false,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:131",
+    "method": "open",
+    "model": "QCheckBoxModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:91",
+    "qtClass": "QCheckBox",
+    "state": {
+     "q_actions": [],
+     "q_autoExclusive": false,
+     "q_checkable": true,
+     "q_checked": false,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_icon": "",
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_menu": null,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "checkbox_fuse",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "Fuse",
+     "q_toolTip": "If checked, the resulting objects in the array will be fused if they touch each other.\nThis only works if \"Link array\" is off.",
+     "q_tristate": false,
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:132",
+    "method": "open",
+    "model": "QCheckBoxModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:91",
+    "qtClass": "QCheckBox",
+    "state": {
+     "q_actions": [],
+     "q_autoExclusive": false,
+     "q_checkable": true,
+     "q_checked": true,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_icon": "",
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_menu": null,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "checkbox_link",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "Link array",
+     "q_toolTip": "If checked, the resulting object will be a \"Link array\" instead of a regular array.\nA Link array is more efficient when creating multiple copies, but it cannot be fused together.",
+     "q_tristate": false,
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:91",
+    "layout": {
+     "class": "QGridLayout",
+     "items": [
+      {
+       "pos": [
+        0,
+        0,
+        1,
+        1
+       ],
+       "widget": "IPY_MODEL_pw:92"
+      },
+      {
+       "layout": {
+        "class": "QGridLayout",
+        "items": [
+         {
+          "pos": [
+           0,
+           0,
+           1,
+           1
+          ],
+          "widget": "IPY_MODEL_pw:93"
+         },
+         {
+          "pos": [
+           1,
+           0,
+           1,
+           1
+          ],
+          "widget": "IPY_MODEL_pw:94"
+         },
+         {
+          "pos": [
+           2,
+           0,
+           1,
+           1
+          ],
+          "widget": "IPY_MODEL_pw:95"
+         }
+        ],
+        "margins": [
+         0,
+         0,
+         0,
+         0
+        ],
+        "name": "grid_axis_select",
+        "spacing": 6
+       },
+       "pos": [
+        1,
+        0,
+        1,
+        1
+       ]
+      },
+      {
+       "pos": [
+        2,
+        0,
+        1,
+        1
+       ],
+       "widget": "IPY_MODEL_pw:96"
+      },
+      {
+       "pos": [
+        3,
+        0,
+        1,
+        1
+       ],
+       "widget": "IPY_MODEL_pw:102"
+      },
+      {
+       "pos": [
+        4,
+        0,
+        1,
+        1
+       ],
+       "widget": "IPY_MODEL_pw:108"
+      },
+      {
+       "pos": [
+        5,
+        0,
+        1,
+        1
+       ],
+       "widget": "IPY_MODEL_pw:114"
+      },
+      {
+       "pos": [
+        6,
+        0,
+        1,
+        1
+       ],
+       "widget": "IPY_MODEL_pw:122"
+      },
+      {
+       "layout": {
+        "class": "QVBoxLayout",
+        "items": [
+         {
+          "widget": "IPY_MODEL_pw:131"
+         },
+         {
+          "widget": "IPY_MODEL_pw:132"
+         }
+        ],
+        "margins": [
+         0,
+         0,
+         0,
+         0
+        ],
+        "name": "vertical_layout",
+        "spacing": 6
+       },
+       "pos": [
+        7,
+        0,
+        1,
+        1
+       ]
+      },
+      {
+       "pos": [
+        8,
+        0,
+        1,
+        1
+       ],
+       "spacer": [
+        20,
+        40,
+        1,
+        7
+       ]
+      }
+     ],
+     "margins": [
+      11,
+      11,
+      11,
+      11
+     ],
+     "name": "gridLayout_3",
+     "spacing": 6
+    },
+    "method": "open",
+    "model": "QWidgetModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:90",
+    "qtClass": "QWidget",
+    "state": {
+     "q_actions": [],
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 250,
+     "q_objectName": "DraftOrthoArrayTaskPanel",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": "Orthogonal Array"
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:90",
+    "layout": {
+     "class": "QVBoxLayout",
+     "items": [
+      {
+       "widget": "IPY_MODEL_pw:91"
+      }
+     ],
+     "margins": [
+      4,
+      4,
+      4,
+      4
+     ],
+     "name": "",
+     "spacing": 0
+    },
+    "method": "open",
+    "model": "QGroupBoxModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_panel:2",
+    "qtClass": "Gui::TaskView::TaskBox",
+    "state": {
+     "q_actions": [],
+     "q_checkable": true,
+     "q_checked": true,
+     "q_enabled": true,
+     "q_flat": false,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_title": "Orthogonal Array",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:134",
+    "method": "open",
+    "model": "QPushButtonModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:133",
+    "qtClass": "QPushButton",
+    "state": {
+     "q_actions": [],
+     "q_autoExclusive": false,
+     "q_checkable": false,
+     "q_checked": false,
+     "q_default": true,
+     "q_enabled": true,
+     "q_flat": false,
+     "q_focus": false,
+     "q_font": {},
+     "q_icon": "img:eb9b7542fdc9525b927ca30fca4d1b046fb6476f",
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_menu": null,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_standardButton": 1024,
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "OK",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:135",
+    "method": "open",
+    "model": "QPushButtonModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:133",
+    "qtClass": "QPushButton",
+    "state": {
+     "q_actions": [],
+     "q_autoExclusive": false,
+     "q_checkable": false,
+     "q_checked": false,
+     "q_default": false,
+     "q_enabled": true,
+     "q_flat": false,
+     "q_focus": false,
+     "q_font": {},
+     "q_icon": "img:4c8c80a069ca30e985687bbc5d8366fba0843bce",
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_menu": null,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_standardButton": 4194304,
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "Cancel",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:133",
+    "layout": {
+     "class": "QHBoxLayout",
+     "items": [
+      {
+       "widget": "IPY_MODEL_pw:134"
+      },
+      {
+       "widget": "IPY_MODEL_pw:135"
+      }
+     ],
+     "name": ""
+    },
+    "method": "open",
+    "model": "QDialogButtonBoxModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_panel:2",
+    "qtClass": "QDialogButtonBox",
+    "state": {
+     "q_actions": [],
+     "q_centerButtons": true,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "",
+     "q_orientation": 1,
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_standardButtons": 4195328,
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "panel:2",
+    "layout": {
+     "class": "QVBoxLayout",
+     "items": [
+      {
+       "widget": "IPY_MODEL_pw:90"
+      },
+      {
+       "widget": "IPY_MODEL_pw:133"
+      }
+     ],
+     "name": ""
+    },
+    "method": "open",
+    "model": "QDialogModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_panel",
+    "qtClass": "Gui::TaskView::TaskDialog",
+    "state": {
+     "q_actions": [],
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_height": 0,
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_modal": false,
+     "q_objectName": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_result": 0,
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_width": 0,
+     "q_windowIcon": "",
+     "q_windowTitle": "Orthogonal Array"
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {
+     "layoutSpec": {
+      "class": "QVBoxLayout",
+      "items": [
+       {
+        "widget": "IPY_MODEL_panel:2"
+       }
+      ],
+      "name": ""
+     }
+    },
+    "id": "panel",
+    "method": "update",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {},
+    "id": "panel:2",
+    "method": "close",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {
+     "layoutSpec": {
+      "class": "QVBoxLayout",
+      "items": [],
+      "name": ""
+     }
+    },
+    "id": "panel",
+    "method": "update",
+    "op": "widgets"
+   }
+  }
+ ],
+ "subscribeReplies": [
+  {
+   "dialogs": [],
+   "id": 1,
+   "locale": "C",
+   "ok": true,
+   "panel": null,
+   "subscribed": true,
+   "theme": ""
+  }
+ ]
+}

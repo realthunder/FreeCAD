@@ -9,7 +9,15 @@ import re
 from types import CodeType, FrameType
 from typing import TypeVar
 
-from typing_extensions import deprecated as _pep702_deprecated
+import sys
+
+if sys.version_info >= (3, 13):
+    # PEP 702 is in the stdlib from 3.13; the sandbox guest (3.14) has
+    # no typing_extensions package, and a failed import there is a
+    # question to the host (docs/Sandbox.md sec 5.5), so ask for neither.
+    from warnings import deprecated as _pep702_deprecated
+else:
+    from typing_extensions import deprecated as _pep702_deprecated
 
 _T = TypeVar("_T")
 _RELEASE_RE = re.compile(r"^\d+\.\d+(?:\.\d+)?$")

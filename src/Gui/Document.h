@@ -26,6 +26,7 @@
 #include <list>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <fastsignals/signal.h>
 #include <QString>
@@ -58,6 +59,8 @@ class BaseView;
 class MDIView;
 class View3DInventor;
 class ViewProvider;
+class ViewerContext;
+class EditingRoot;
 class ViewProviderDocumentObject;
 class Application;
 class DocumentPy;
@@ -114,6 +117,11 @@ public:
         of the referenced document object, not of the view provider */
     mutable fastsignals::signal<void (const Gui::ViewProviderDocumentObject&,
                                           const App::Property&)>                   signalChangedObject;
+    /** signal where every 3D view is told to toggle the object in its
+        scene graph (View3DInventorViewer::toggleViewProvider): a claim on
+        it was made or dropped, or canAddToSceneGraph() changed. For a
+        scene with no view to keep in step, e.g. a served document. */
+    mutable fastsignals::signal<void (const Gui::ViewProviderDocumentObject&)> signalToggleInSceneGraph;
     /// signal on renamed Object
     mutable fastsignals::signal<void (const Gui::ViewProviderDocumentObject&)> signalRelabelObject;
     /// signal on activated Object
@@ -341,6 +349,23 @@ public:
     bool setEdit(Gui::ViewProvider* p, int ModNum=0, const char *subname=nullptr);
     const Base::Matrix4D &getEditingTransform() const;
     void setEditingTransform(const Base::Matrix4D &mat);
+    /** The view the current edit session is bound to, or null.
+     *
+     * Asked by a view that is going away while an edit is running in
+     * it: a client's mirror dies with its connection, and the document
+     * must not be left pointing at it. The INITIATOR: every other view
+     * of the document joins the session it started (docs/ThinClient.md
+     * 8.11) and is not this.
+     */
+    ViewerContext *editingViewer() const;
+    /** The one editing root of this document's edit sessions.
+     *
+     * Built on first need and kept for the document's life; every view of
+     * the document, desktop window or client mirror, hangs this same node
+     * while a session runs, which is what makes one edit visible in all
+     * of them (docs/ThinClient.md 8.11).
+     */
+    EditingRoot *editingRoot();
     /// reset from edit mode, this cause all document to reset edit
     void resetEdit();
     /** Set whether leaving edit mode should restore the previous edit session
@@ -386,6 +411,15 @@ public:
     void undo(int iSteps);
     /// Will REDO one or more steps
     void redo(int iSteps) ;
+    /** Whether undo/redo of \a iSteps here would ask the user first.
+     *
+     * checkTransactionID puts up a QMessageBox when a grouped transaction
+     * in another document has other transactions in front of it. A
+     * caller with nobody at the machine to answer -- a control op in a
+     * serving process -- asks this and refuses instead (docs/ThinClient.md
+     * 8.11 item 2).
+     */
+    bool undoRedoWouldPrompt(bool undo, int iSteps) const;
     /** Check if the document is performing undo/redo transaction
      *
      * Unlike App::Document::isPerformingTransaction(), Gui::Document will
@@ -452,6 +486,12 @@ private:
 
     /// Check other documents for the same transaction ID
     bool checkTransactionID(bool undo, int iSteps);
+    /// The scan behind checkTransactionID: the other documents that hold
+    /// the same transaction ids, how many steps each, and which of them
+    /// would need the user asked.
+    void groupedTransactions(bool undo, int iSteps,
+                             std::set<App::Document*>& prompts,
+                             std::map<App::Document*, int>& dmap) const;
     /// Ask for user interaction if saving has failed
     bool askIfSavingFailed(const QString&);
 

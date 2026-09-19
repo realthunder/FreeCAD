@@ -84,12 +84,12 @@ TaskSketcherGeneral::TaskSketcherGeneral(ViewProviderSketch *sketchView)
     this->groupLayout()->addWidget(widget);
     QSignalBlocker block(widget);
     
-    Gui::Selection().Attach(this);
+    Gui::SelectionRoom().Attach(this);
 }
 
 TaskSketcherGeneral::~TaskSketcherGeneral()
 {
-    Gui::Selection().Detach(this);
+    Gui::SelectionRoom().Detach(this);
 }
 
 /// @cond DOXERR

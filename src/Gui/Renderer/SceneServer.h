@@ -33,7 +33,16 @@
 /// version + SceneDump payload immediately and on every publish().
 /// Client frames carry viewer events back — currently the pick request
 /// ('P', flags byte, six little-endian floats: world ray origin +
-/// direction) dispatched to the installed pick handler.
+/// direction) dispatched to the installed pick handler, and the camera
+/// frame ('C', see SceneCameraFrame) that says which viewer's framing
+/// that ray was computed in. 'Q' carries the two together in one
+/// message -- a 'C' frame verbatim followed by a 'P' frame verbatim --
+/// for a client that states its camera only when it clicks
+/// (docs/ThinClient.md sec 8.10a): one frame instead of two, and the
+/// pairing is atomic rather than merely ordered. 'S' is a sandbox
+/// guest in the viewer's page reaching back to this process
+/// (SceneBridgeRequest, docs/Sandbox.md 7.20 C2); its answer is a
+/// binary frame starting `FCSB`.
 ///
 /// Fallback transport: plain HTTP polling. GET /scene?v=<last-seen>
 /// answers 204 while unchanged, else 200 with the same version-prefixed
@@ -46,6 +55,7 @@
 #include <string>
 #include <vector>
 
+#include "ClientAccess.h"
 #include "Renderer.h"
 #include "SceneDump.h"
 
@@ -55,7 +65,92 @@ namespace Render {
 struct ScenePickRequest {
     float origin[3];
     float dir[3];
-    uint32_t modifiers = 0;   ///< bit 0 = ctrl (toggle selection)
+    /** What the click MEANT, as the client resolved it.
+     *
+     * Not the modifiers that produced it (docs/ThinClient.md sec 8.5). The
+     * client's selection grammar -- Shift promoting to the whole object,
+     * the sticky-multi mode, the pick filter, the plain-click cycle -- is
+     * the DOM layer's and depends on what is already selected THERE, so
+     * what travels is the conclusion:
+     *
+     *  bits 0-1  the set operation: 0 replace, 1 toggle, 2 extend
+     *  bit 2     the scope: the whole object rather than the element hit
+     *  bits 3-5  the element kind the pick filter admits, 0 for any,
+     *            then 1 face, 2 edge, 3 vertex
+     *
+     * Bit 0 alone still reads as "extend rather than replace", which is
+     * what it meant before there was anything else in the byte.
+     */
+    uint32_t modifiers = 0;
+    /// The connection it arrived on (SceneClientInfo::id), so the
+    /// publisher can resolve it against that client's own camera --
+    /// its mirror viewer (docs/ThinClient.md sec 8.3) -- rather than
+    /// against a framing no viewer is actually looking through.
+    uint64_t client = 0;
+};
+
+/// A viewer's camera, as it last stated it (docs/ThinClient.md sec 8.5,
+/// the `'C'` uplink frame). Sent as SoCamera fields rather than as
+/// matrices, so that the pick radius and the pixel tolerances a mirror
+/// computes are the client's exactly.
+struct SceneCameraFrame {
+    /// The connection it arrived on (SceneClientInfo::id).
+    uint64_t client = 0;
+    /// 0 = orthographic, 1 = perspective.
+    uint8_t type = 0;
+    /// Viewport size in DEVICE pixels -- what the client renders at,
+    /// and the units \a pickRadius is in.
+    uint16_t width = 0;
+    uint16_t height = 0;
+    float position[3] = {0, 0, 0};
+    float orientation[4] = {0, 0, 0, 1};   ///< quaternion x, y, z, w
+    /// Orthographic height, or perspective height angle in radians.
+    float heightOrAngle = 0;
+    float nearDistance = 0;
+    float farDistance = 0;
+    float aspectRatio = 1;
+    /// The last two describe the input device rather than the camera,
+    /// and are the client's own rather than a preference of this
+    /// process: a fingertip wants a bigger pick radius than a mouse,
+    /// and only the client knows which it has (docs/ThinClient.md sec
+    /// 8.10). Clamped rather than refused -- a silly radius should
+    /// still leave the model visible.
+    float devicePixelRatio = 1;
+    float pickRadius = 5;   ///< in device pixels, like \a width
+};
+
+/// One viewer input event, as it was made in that client's own canvas
+/// (docs/ThinClient.md sec 8.5, the `'E'` uplink frame).
+///
+/// Client coordinates throughout: device pixels with the origin at the
+/// TOP left, which is what a canvas reports. Nothing here is converted
+/// on the way up -- the flip into Coin's bottom-up viewport happens in
+/// that client's mirror, against the canvas height the mirror is
+/// resolving its picks against, so a resize in flight cannot leave the
+/// two disagreeing.
+///
+/// Unlike the camera, an input event IS an edit: it can move geometry,
+/// so a view-only connection's is dropped at the same gate its picks
+/// are (docs/MultiDocServe.md sec 8).
+struct SceneInputFrame {
+    /// The connection it arrived on (SceneClientInfo::id).
+    uint64_t client = 0;
+    /// 0 move, 1 press, 2 release, 3 wheel, 4 key down, 5 key up.
+    uint8_t kind = 0;
+    /// bit 0 shift, bit 1 ctrl, bit 2 alt.
+    uint8_t modifiers = 0;
+    /// 1 left, 2 middle, 3 right for the button kinds; a Coin key code
+    /// (SoKeyboardEvent::Key) for the key kinds.
+    uint16_t code = 0;
+    /// Pointer position in DEVICE pixels, origin top left.
+    int16_t x = 0;
+    int16_t y = 0;
+    /// Wheel movement; 120 units is one notch.
+    int16_t delta = 0;
+    /// The client's own clock, in milliseconds. A replayed event with
+    /// no time makes every gesture instantaneous, which is what the
+    /// double-click and drag thresholds read.
+    uint32_t timeMs = 0;
 };
 
 /// One semantic control request from a viewer (docs/ThinClient.md
@@ -67,17 +162,59 @@ struct ScenePickRequest {
 /// answer a timeout, never a mixup).
 struct SceneControlRequest {
     std::string json;
-    /// The connection is view-only (docs/MultiDocServe.md §8): the
-    /// handler must refuse anything that mutates the document. Carried
-    /// on the request rather than enforced here because only the
-    /// semantic layer knows which ops write.
-    bool viewOnly = false;
+    /// What the connection may do (ClientAccess): a view-only one must
+    /// be refused anything that mutates the document, and only a host
+    /// one may act beyond it. Carried on the request rather than
+    /// enforced here because only the semantic layer knows which ops
+    /// write (docs/MultiDocServe.md sec 8, docs/ShareAccess.md sec 2.2).
+    ClientAccess access = ClientAccess::Edit;
     /// The connection it arrived on (SceneClientInfo::id), for a
     /// handler that keeps per-connection state -- a served viewport
     /// (docs/CyclesIntegration.md sec 7.1) -- and answers it later
     /// through sendControl/sendBinary.
     uint64_t client = 0;
     std::function<void(const std::string &)> reply;
+};
+
+/** One sandbox bridge frame from a guest in a viewer's page
+ * (docs/Sandbox.md 7.20, C2): the guest's host call, carried over this
+ * connection instead of a wasm import.
+ *
+ * Uplink, a binary message:  'S', kind u8, seq u32 LE, payload.
+ *   kind 0  one bridge op; the payload is the request bytes exactly as
+ *           the guest wrote them (FcxWire.h: CBOR, or the fixed layout).
+ *           Answered by sendBridge with the same seq.
+ *   kind 1  the end of a statement: the endpoint drops the handles the
+ *           statement minted.  No payload, no answer.
+ * Downlink, a binary message:  `FCSB`, seq u32 LE, reply bytes.  An
+ * EMPTY reply means no bridge answers here (no handler, no host), and
+ * the guest raises "host bridge unavailable".  A scene payload starts
+ * with its 64-bit version and a streamed frame with `FCCY`; no version
+ * reaches `FCSB` either.
+ *
+ * The server knows nothing of what the bytes mean: it forwards, keeps
+ * the order of one connection, and caps the ops in flight -- a guest
+ * waits for each answer, so a connection past the cap is not a guest
+ * and is kicked.
+ */
+struct SceneBridgeRequest {
+    enum Kind : uint8_t { Op = 0, End = 1 };
+    uint8_t kind = Op;
+    uint32_t seq = 0;
+    std::vector<uint8_t> payload;
+    /// The connection's access (docs/MultiDocServe.md sec 8): a view-only
+    /// one may read, an edit one may write, a host one may run what the
+    /// desktop's owner may.
+    ClientAccess access = ClientAccess::Edit;
+    /// The connection it arrived on (SceneClientInfo::id).
+    uint64_t client = 0;
+    /// Who sent it, as the door knows the connection at the moment the
+    /// frame arrived (SceneClientInfo's fields of the same names): the
+    /// client principal is made of these (docs/Sandbox.md 7.20, C3).
+    std::string identity;
+    uint64_t grant = 0;
+    std::string label;
+    std::string address;
 };
 
 /// One entry of the door's grant list (docs/ShareAccess.md §2): an
@@ -100,7 +237,11 @@ struct SceneGrant {
     std::string identity;  ///< pattern on the verified identity
     std::string client;    ///< pattern on the self-declared name
     std::string address;   ///< pattern on the address, matched portless
-    int access = 0;        ///< 0 = edit, 1 = view-only, 2 = banned
+    /// 0 = edit, 1 = view-only, 2 = banned, 3 = host (full control),
+    /// which admits as host only a connection whose verified identity
+    /// the grant names literally, and as edit anything else it matches
+    /// (docs/ShareAccess.md sec 2.2)
+    int access = 0;
     /// Exists only in this run and is never persisted — the rename
     /// easings of docs/ShareAccess.md §2, minted by the server itself
     /// so a renamed client can reconnect; the panel shows them apart,
@@ -130,11 +271,41 @@ struct SceneClientInfo {
     /// self-declared \a client label is all there is.
     std::string identity;
     bool viewer = false;      ///< sent a hello (a probe may not)
-    bool viewOnly = false;    ///< picks and mutating ops refused
+    /// View: picks and mutating ops refused; Host: may act beyond the
+    /// document (ClientAccess)
+    ClientAccess access = ClientAccess::Edit;
     uint64_t connectedMs = 0; ///< how long this connection has been up
     /// The grant that admitted this connection (SceneGrant::id), 0
     /// under the legacy single-token door or while unauthorized.
     uint64_t grant = 0;
+
+    /// Uplink accounting (docs/ThinClient.md sec 8.10a): what this
+    /// connection has sent us, counted here rather than by the client.
+    /// A client counting its own sends is the client marking its own
+    /// work -- the same rule sec 8.6 applies to selection -- and only
+    /// this side can see what a coalescing or throttling policy
+    /// actually put on the link.
+    ///
+    /// \a uplinkBytes is message payload; \a uplinkWire adds the RFC
+    /// 6455 header a client sends it under (two bytes, a four-byte
+    /// mask, and the extended length when it does not fit in seven
+    /// bits), which is what the link carries and is exact for the one
+    /// unfragmented frame per message every viewer message is.
+    uint64_t uplinkMsgs = 0;
+    uint64_t uplinkBytes = 0;
+    uint64_t uplinkWire = 0;
+    /// The camera frames ('C') of that total, and the picks ('P', 'B'
+    /// and the combined 'Q'), in wire bytes -- so the speculative half
+    /// can be told from the half a user asked for.
+    uint64_t cameraMsgs = 0;
+    uint64_t cameraWire = 0;
+    uint64_t pickMsgs = 0;
+    uint64_t pickWire = 0;
+    /// Input events ('E'), counted apart from the picks because they
+    /// are the channel an edit mode runs on and the one whose rate is
+    /// worth knowing on its own.
+    uint64_t inputMsgs = 0;
+    uint64_t inputWire = 0;
 };
 
 /// One viewer's answer to a dumpFrame control request
@@ -146,6 +317,15 @@ struct ViewerFrameDump {
     int height = 0;
     std::vector<uint8_t> rgba;   ///< tightly packed RGBA8, bottom-up rows
     std::string meta;            ///< viewer-supplied JSON (may be empty)
+};
+
+/// One answer of an HTTP mount (SceneStreamServer::setHttpMount).
+struct SceneHttpFile {
+    int status = 200;
+    std::vector<uint8_t> body;
+    /// Static strings: the reply keeps the pointers, not copies.
+    const char *contentType = "application/octet-stream";
+    const char *cacheControl = "no-store";
 };
 
 class RendererExport SceneStreamServer {
@@ -246,14 +426,35 @@ public:
     /// of docs/ShareAccess.md §2. False when the id is unknown.
     bool removeGrant(uint64_t id);
 
+    /// Answer GET <prefix><rest> from \a provider: files served next to
+    /// the scene that the renderer layer cannot find by itself -- the
+    /// pyodide runtime and wheels of the browser console
+    /// (docs/Sandbox.md 7.20, C1). \a gated puts the mount behind the
+    /// door like every scene route; ungated it answers before the door,
+    /// as the viewer bundle does, which is only for published code a
+    /// page fetches without the link's ?token= tail. The provider runs
+    /// on a server thread and returns false for a path it does not
+    /// serve; the request then falls through to the other routes (and
+    /// 404s). The path has passed the bundle's checks first: no "..",
+    /// nothing outside [A-Za-z0-9/._+-]. Installing a prefix again
+    /// replaces its provider; a null provider removes the mount.
+    void setHttpMount(const std::string &prefix,
+                      std::function<bool(const std::string &rest,
+                                         SceneHttpFile &file)> provider,
+                      bool gated);
+
     /// The connected clients, for the sharing roster. Returns how many.
     int clients(std::vector<SceneClientInfo> &out);
 
-    /// Make the identified connection view-only (or full again):
+    /// Set the identified connection's access for this session:
     /// view-only clients still receive every publish, but their picks
     /// are dropped and their mutating control ops answered with a
-    /// ViewOnly error. False when the connection is gone.
-    bool setClientViewOnly(uint64_t id, bool viewOnly);
+    /// ViewOnly error; a host one may act beyond its document. The
+    /// client is told ({"cmd":"config",...}). False when the connection
+    /// is gone -- or when Host is asked for a connection no front door
+    /// verified an identity for, since a name is only what it says. A
+    /// later change of the grant list re-judges it like any other.
+    bool setClientAccess(uint64_t id, ClientAccess access);
 
     /// Disconnect the identified client: it is told
     /// {"cmd":"error","code":"Kicked"} and closed by its own loop. Not
@@ -365,6 +566,24 @@ public:
     void setPickHandler(std::function<void(const ScenePickRequest &)> handler,
                         const std::string &doc = {});
 
+    /// Install the consumer of viewer camera frames (docs/ThinClient.md
+    /// sec 8.5). Same contract as setPickHandler: called on a server
+    /// connection thread, so the handler marshals itself. A frame
+    /// arrives whenever a client's camera or canvas changed, at most
+    /// once per client frame, and always before the picks computed in
+    /// it -- one connection's uplink keeps its order.
+    void setCameraHandler(std::function<void(const SceneCameraFrame &)> handler,
+                          const std::string &doc = {});
+
+    /// Install the consumer of viewer input events (docs/ThinClient.md
+    /// sec 8.5, the `'E'` frame). Same contract as setPickHandler:
+    /// called on a server connection thread, so the handler marshals
+    /// itself. Moves are coalesced by the client, presses and releases
+    /// never are, and the order within one connection is the order they
+    /// were made in.
+    void setInputHandler(std::function<void(const SceneInputFrame &)> handler,
+                         const std::string &doc = {});
+
     /// Install the consumer of semantic control requests — the `"op"`
     /// JSON vocabulary of the property/operation channel
     /// (docs/ThinClient.md §4.2). Called on a server connection thread;
@@ -375,6 +594,14 @@ public:
     void setControlHandler(
             std::function<void(SceneControlRequest &&)> handler,
             const std::string &doc = {});
+
+    /// Install the consumer of sandbox bridge frames (SceneBridgeRequest,
+    /// docs/Sandbox.md 7.20 C2). Called on a server connection thread, in
+    /// the order the connection sent them; the handler marshals itself
+    /// and answers each Op through sendBridge. No handler installed =
+    /// every Op is answered empty.
+    void setBridgeHandler(std::function<void(SceneBridgeRequest &&)> handler,
+                          const std::string &doc = {});
 
     /// Install the publisher's cue that queued work finished (a level
     /// was generated): without it an idle backend sits on finished
@@ -400,6 +627,10 @@ public:
     /// a frame is a state, not an event, and a slow link should see
     /// the newest one. Any thread.
     bool sendBinary(uint64_t client, std::vector<uint8_t> &&data);
+    /// Answer bridge op \a seq of ONE connection (SceneBridgeRequest):
+    /// queued in order, never replaced -- unlike a streamed frame, every
+    /// answer is awaited. False when the connection is gone. Any thread.
+    bool sendBridge(uint64_t client, uint32_t seq, std::vector<uint8_t> &&reply);
 
     /// Declare \a doc served: give its group the display label the
     /// `docs` document listing shows, mark it joinable by name on the

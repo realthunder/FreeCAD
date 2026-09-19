@@ -35,14 +35,30 @@ class Camera(SceneDetail):
         self.key = "the_cam"
 
     def _viewer(self):
+        """The 3D view whose camera this saves and restores, or None when
+        the document has none.
+
+        A document served to browsers has no 3D view at all: each client
+        keeps its own camera and the server mirrors it (docs/ThinClient.md
+        sec 8.3). Indexing the empty list raised IndexError out of every
+        edit mode that saves the camera through TempoVis, which is every
+        sketch edit -- logged rather than fatal, but a traceback per
+        session all the same, and the restore afterwards was lost with it.
+        """
         gdoc = FreeCADGui.getDocument(self.doc.Name)
         v = gdoc.activeView()
         if not hasattr(v, "getCamera"):
-            v = gdoc.mdiViewsOfType("Gui::View3DInventor")[0]
+            views = gdoc.mdiViewsOfType("Gui::View3DInventor")
+            v = views[0] if views else None
         return v
 
     def scene_value(self):
-        return self._viewer().getCamera()
+        v = self._viewer()
+        return v.getCamera() if v else None
 
     def apply_data(self, val):
-        self._viewer().setCamera(val)
+        # Nothing was saved (no view to save from), so there is nothing to
+        # put back -- and a client's camera is the client's own anyway.
+        v = self._viewer()
+        if v and val is not None:
+            v.setCamera(val)

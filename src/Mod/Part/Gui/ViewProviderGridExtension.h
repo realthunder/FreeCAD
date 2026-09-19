@@ -66,7 +66,7 @@ public:
     void getClosestGridPoint(double &x, double &y) const;
     double getGridSize() const;
 
-    void attachViewer(Gui::View3DInventorViewer *viewer);
+    void attachViewer(Gui::ViewerContext *viewer);
     void detachViewer();
 
 protected:

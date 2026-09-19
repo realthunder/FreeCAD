@@ -182,6 +182,7 @@ class NoneWorkbench ( Workbench ):
         """Return the name of the associated C++ class."""
         return "Gui::NoneWorkbench"
 
+
 def InitApplications():
     import sys,os,traceback
     import io as cStringIO

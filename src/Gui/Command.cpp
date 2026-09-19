@@ -45,6 +45,7 @@
 #include <App/DocumentObject.h>
 #include <App/DocumentParams.h>
 #include <App/AutoTransaction.h>
+#include <App/ExpressionSecurityRuntime.h>
 #include <Base/Console.h>
 #include <Base/Exception.h>
 #include <Base/Interpreter.h>
@@ -652,6 +653,11 @@ void Command::_invoke(int id, bool disablelog)
     }
     catch (Base::PyException &e) {
         e.ReportException();
+        // With a sandbox principal active this is the guest's answer: the
+        // refusal converted at the binding boundary.  Hand it back so the
+        // op can reply with it, as for Base::Exception below.
+        if (App::ExpressionSecurity::Runtime::scopeActive())
+            throw;
     }
     catch (Py::Exception&) {
         Base::PyGILStateLocker lock;
@@ -662,6 +668,20 @@ void Command::_invoke(int id, bool disablelog)
     }
     catch (Base::Exception &e) {
         e.ReportException();
+        // Swallowing this tells the guest the command RAN: nothing
+        // propagates, so gui.cmd.run answers ok(true) and a refusal comes
+        // back as a success.  That is the defect, dialog or no dialog.
+        // The modal compounds it wherever nobody is at the keyboard -- a
+        // gate under Xvfb, a served or headless session -- because the
+        // guest is parked in wasm until this returns; with a user there,
+        // it is answerable, and only the false success remains.  A modal a
+        // command opens as its NORMAL work (Std_Open's picker) is
+        // untouched: it throws nothing, and answering it is exactly how a
+        // picked path gets blessed.  A cancelled dialog is Base::
+        // AbortException, caught above and still swallowed: cancel is not
+        // an error.  F1 first made a Std command throw here.
+        if (App::ExpressionSecurity::Runtime::scopeActive())
+            throw;
         // Pop-up a dialog for FreeCAD-specific exceptions
         QMessageBox::critical(Gui::getMainWindow(),
                               QObject::tr("Exception"),

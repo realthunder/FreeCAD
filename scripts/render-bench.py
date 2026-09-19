@@ -56,11 +56,12 @@
 # and none of them reaches the screen -- they render and capture, and
 # Coin draws the viewport. That does not affect what is measured here.
 #
-# On Linux run a non-GL leg under QT_QPA_PLATFORM=xcb. On Qt Wayland the
-# never-shown window bgfx presented into is an unmapped wl_surface and
-# Mesa's WSI waits forever in FIFO mode for a frame callback that never
-# comes -- the GUI freezes at zero CPU inside present (RemoteEdit
-# 607fc43a19; e08ebea685 then made the non-GL backends headless).
+# Any Qt platform plugin works for a non-GL leg on Linux since RemoteEdit
+# e08ebea685 made those backends headless. Before it such a leg had to run
+# under QT_QPA_PLATFORM=xcb: on Qt Wayland the never-shown window bgfx
+# presented into was an unmapped wl_surface, and Mesa's WSI waited forever
+# in FIFO mode for a frame callback that never came -- the GUI froze at
+# zero CPU inside present (607fc43a19).
 #
 # One leg, on Windows:
 #

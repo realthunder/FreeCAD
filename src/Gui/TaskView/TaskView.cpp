@@ -306,7 +306,7 @@ TaskView::TaskView(QWidget *parent)
     // this->scrollarea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     this->scrollarea->setMinimumWidth(200);
 
-    Gui::Selection().Attach(this);
+    Gui::SelectionRoom().Attach(this);
 
     //NOLINTBEGIN
     connectApplicationActiveDocument =
@@ -336,7 +336,7 @@ TaskView::~TaskView()
     connectApplicationDeleteDocument.disconnect();
     connectApplicationUndoDocument.disconnect();
     connectApplicationRedoDocument.disconnect();
-    Gui::Selection().Detach(this);
+    Gui::SelectionRoom().Detach(this);
 
     if (ActiveWatcher.size()) {
         auto panel = Gui::Control().taskPanel();

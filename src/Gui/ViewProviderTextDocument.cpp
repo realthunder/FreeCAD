@@ -28,12 +28,14 @@
 #endif
 
 #include <App/Application.h>
+#include <App/ExpressionLibrary.h>
 #include <Base/Type.h>
 
 #include "ViewProviderTextDocument.h"
 #include "ActionFunction.h"
 #include "Application.h"
 #include "Document.h"
+#include "ExpressionSyntaxHighlighter.h"
 #include "MainWindow.h"
 #include "PythonEditor.h"
 #include "TextDocumentEditorView.h"
@@ -45,7 +47,7 @@
 using namespace Gui;
 
 PROPERTY_SOURCE(Gui::ViewProviderTextDocument, Gui::ViewProviderDocumentObject)
-const char* ViewProviderTextDocument::SyntaxEnums[]= {"None","Python",nullptr};
+const char* ViewProviderTextDocument::SyntaxEnums[]= {"None","Python","Expression",nullptr};
 
 ViewProviderTextDocument::ViewProviderTextDocument()
 {
@@ -102,6 +104,15 @@ bool ViewProviderTextDocument::doubleClicked()
     return true;
 }
 
+void ViewProviderTextDocument::attach(App::DocumentObject* pcObject)
+{
+    ViewProviderDocumentObject::attach(pcObject);
+    // A library is written in the expression language. A saved choice is
+    // restored after this and wins.
+    if (pcObject && pcObject->isDerivedFrom(App::ExpressionLibrary::getClassTypeId()))
+        SyntaxHighlighter.setValue(2L);
+}
+
 void ViewProviderTextDocument::onChanged(const App::Property* prop)
 {
     if (editorWidget) {
@@ -113,15 +124,18 @@ void ViewProviderTextDocument::onChanged(const App::Property* prop)
             editorWidget->setFont(font);
         }
         else if (prop == &SyntaxHighlighter) {
+            // At most one: a switch replaces the one there is.
+            if (auto shl = editorWidget->findChild<QSyntaxHighlighter*>())
+                delete shl;
             long value = SyntaxHighlighter.getValue();
             if (value == 1) {
                 auto pythonSyntax = new PythonSyntaxHighlighter(editorWidget);
                 pythonSyntax->setDocument(editorWidget->document());
             }
-            else {
-                auto shl = editorWidget->findChild<QSyntaxHighlighter*>();
-                if (shl)
-                    shl->deleteLater();
+            else if (value == 2) {
+                auto expressionSyntax = new ExpressionSyntaxHighlighter(editorWidget);
+                expressionSyntax->loadEditorColors();
+                expressionSyntax->setDocument(editorWidget->document());
             }
         }
     }

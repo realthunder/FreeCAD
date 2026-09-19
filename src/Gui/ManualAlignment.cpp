@@ -1198,7 +1198,7 @@ void ManualAlignment::probePickedCallback(void * ud, SoEventCallback * n)
 {
     Q_UNUSED(ud);
 
-    auto view  = static_cast<Gui::View3DInventorViewer*>(n->getUserData());
+    auto view  = Gui::View3DInventorViewer::fromEventCallback(n);
     const SoEvent* ev = n->getEvent();
     if (ev->getTypeId() == SoMouseButtonEvent::getClassTypeId()) {
         // set as handled

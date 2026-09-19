@@ -99,6 +99,11 @@
 #include "DocumentParams.h"
 #include "DocumentPy.h"
 #include "ExpressionParser.h"
+#include "ExpressionEvaluator.h"
+#include "ExpressionSecurityRuntime.h"
+#ifdef FC_EXPR_IMAGE_HOST
+#include "ExpressionImageBridge.h"
+#endif
 #include "FeatureTest.h"
 #include "FeaturePython.h"
 #include "GeoFeature.h"
@@ -129,6 +134,7 @@
 #include "StringHasherPy.h"
 #include "StringIDPy.h"
 #include "TextDocument.h"
+#include "ExpressionLibrary.h"
 #include "Transactions.h"
 #include "VRMLObject.h"
 
@@ -373,6 +379,10 @@ void Application::setupPythonTypes()
 
     Py_INCREF(pUnitsModule);
     PyModule_AddObject(pAppModule, "Units", pUnitsModule);
+
+    // expression permission service (grant management)
+    ExpressionSecurity::initPyModule(pAppModule);
+    ExpressionSandbox::initPyModule(pAppModule);
 
     Base::ProgressIndicatorPy::init_type();
     Base::Interpreter().addType(Base::ProgressIndicatorPy::type_object(),
@@ -979,6 +989,15 @@ Document* Application::openDocumentPrivate(const char * FileName,
         bool isMainDoc, bool createView,
         std::vector<std::string> &&objNames)
 {
+    // The document loader's chokepoint (F1, docs/Sandbox.md 7.29):
+    // openDocument, openDocuments, loadFile and a link's
+    // addPendingDocument all funnel here, so a guest that reached any of
+    // them -- by name through Gui.runCommand("Std_RecentFiles"), or
+    // directly -- is answered once, for the path.  Before the existence
+    // check below, which is itself an answer about the host's disk.
+    ExpressionSecurity::checkHostPath(ExpressionSecurity::Permission::FsRead,
+                                      FileName ? FileName : "");
+
     FileInfo File(FileName);
 
     if (!File.exists()) {
@@ -2455,6 +2474,7 @@ void Application::initTypes()
     App::MaterialObject            ::init();
     App::MaterialObjectPython      ::init();
     App::TextDocument              ::init();
+    App::ExpressionLibrary         ::init();
     App::Placement                 ::init();
     App::PlacementPython           ::init();
     App::OriginFeature             ::init();
@@ -2602,6 +2622,8 @@ void parseProgramOptions(int ac, char ** av, const string& exe, variables_map& v
     ("python-path,P", value< vector<string> >()->composing(),"Additional python paths")
     ("single-instance", "Allow to run a single instance of the application")
     ("pass", value< vector<string> >()->multitoken(), "Ignores the following arguments and pass them through to be used by a script")
+    ("grant", value< vector<string> >()->composing(), "Grant an expression permission process-wide, as <permission>[:<target>], e.g. --grant doc.foreign or --grant host.import:numpy")
+    ("policy", value<string>(), "Expression permission policy file (grants.json schema) used instead of the user grant store")
     ;
 
 
@@ -2824,6 +2846,21 @@ void processProgramOptions(const variables_map& vm, std::map<std::string,std::st
     if (vm.count("system-cfg")) {
         mConfig["SystemParameter"] = vm["system-cfg"].as<string>();
     }
+
+    if (vm.count("grant")) {
+        // consumed by ExpressionSecurity::Runtime on first use
+        const auto &specs = vm["grant"].as< vector<string> >();
+        string joined;
+        for (const auto &spec : specs) {
+            if (!joined.empty())
+                joined += "\n";
+            joined += spec;
+        }
+        mConfig["ExpressionGrants"] = joined;
+    }
+
+    if (vm.count("policy"))
+        mConfig["ExpressionPolicyFile"] = vm["policy"].as<string>();
 
     if (vm.count("run-test")) {
         string testCase = vm["run-test"].as<string>();
@@ -3131,6 +3168,44 @@ void Application::initApplication()
     if (!(mConfig["Verbose"] == "Strict"))
         Base::Console().Log("Create Application\n");
     Application::_pcSingleton = new Application(mConfig);
+#ifdef FC_EXPR_IMAGE_HOST
+    // the expression surface's record on save and open (docs/Sandbox.md
+    // 7.17 (b)); it connects application signals, so not before this
+    ExpressionSandbox::connectSurfaceRecord();
+#endif
+
+    // The module roots a type string in a document may import from
+    // (Base::Type::importModule): the same Mod directories FreeCADInit
+    // puts on sys.path -- the installation's, the user's, the macro
+    // directory's, and --module-path.  Nothing else: a saved
+    // "json::Whatever" must not import the stdlib (user ruling
+    // 2026-09-05, docs/Sandbox.md 13).
+    Base::Type::addModuleRoot(mConfig["AppHomePath"] + "Mod");
+    Base::Type::addModuleRoot(getUserAppDataDir() + "Mod");
+    Base::Type::addModuleRoot(getUserMacroDir() + "Mod");
+    {
+        const std::string& extra = mConfig["AdditionalModulePaths"];
+        std::string::size_type start = 0;
+        while (start <= extra.size() && !extra.empty()) {
+            std::string::size_type end = extra.find(';', start);
+            if (end == std::string::npos)
+                end = extra.size();
+            if (end > start)
+                Base::Type::addModuleRoot(extra.substr(start, end - start));
+            start = end + 1;
+        }
+    }
+
+    // The host CODE chokepoint (F1, docs/Sandbox.md 7.29): every host
+    // Python file the interpreter is asked to run is host.exec under
+    // whatever sandbox principal is on the scope stack.  Base cannot see
+    // this runtime, so it takes the check as a callback; with no
+    // principal active -- the user's own click, every startup script --
+    // it decides nothing and runFile behaves as it always did.
+    Base::Interpreter().setFileGuard([](const char* fileName) {
+        ExpressionSecurity::checkHostPath(ExpressionSecurity::Permission::HostExec,
+                                          fileName ? fileName : "");
+    });
 
     // set up Unit system default
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath

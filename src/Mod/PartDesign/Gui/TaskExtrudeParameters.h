@@ -27,10 +27,14 @@
 #include "ViewProviderSketchBased.h"
 
 
-class Ui_TaskPadPocketParameters;
-
 namespace App {
 class Property;
+}
+
+namespace Gui {
+namespace Fw {
+class UiForm;
+}
 }
 
 namespace PartDesign {
@@ -39,7 +43,15 @@ class ProfileBased;
 
 namespace PartDesignGui {
 
+class Ui_TaskPadPocketParameters;
 
+/* Pad's and Pocket's form is models of the host widget layer
+ * (docs/Sandbox.md 7.12, H1b): `ui` is generated from
+ * TaskPadPocketParameters.ui by src/Tools/fwuic.py, its fields
+ * `Gui::Fw::QuantitySpinBox` and `Gui::Fw::DoubleSpinBox` with the
+ * expression binding on the model; `proxy` is the Qt backend's
+ * rendering of `form`.  The box around it, and the widgets
+ * TaskSketchBasedParameters builds in code, stay Qt. */
 class TaskExtrudeParameters : public TaskSketchBasedParameters
 {
     Q_OBJECT
@@ -138,6 +150,7 @@ private:
 
 protected:
     QWidget* proxy;
+    std::unique_ptr<Gui::Fw::UiForm> form;
     std::unique_ptr<Ui_TaskPadPocketParameters> ui;
     bool selectionFace;
     std::vector<App::SubObjectT> axesInList;

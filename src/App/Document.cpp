@@ -108,6 +108,10 @@ recompute path. Also, it enables more complicated dependencies beyond trees.
 #include "DocumentObject.h"
 #include "DocumentParams.h"
 #include "ExpressionParser.h"
+#include "ExpressionSecurityRuntime.h"
+#ifdef FC_EXPR_IMAGE_HOST
+#include "ExpressionGuestProxy.h"
+#endif
 #include "GeoFeature.h"
 #include "InputStratum.h"
 #include "License.h"
@@ -2486,6 +2490,12 @@ static std::string checkFileName(const char *file) {
 bool Document::saveAs(const char* _file)
 {
     std::string file = checkFileName(_file);
+    // Naming a host file to write is fs.write (F1, docs/Sandbox.md 7.29).
+    // save() writes the document's OWN file and stays the guest's to call
+    // (S1); saveAs chooses a path, so it is gated -- and a path the user
+    // picked in a dialog under this guest is blessed and passes.
+    // checkFileName may have appended .FCStd: gate what will be written.
+    ExpressionSecurity::checkHostPath(ExpressionSecurity::Permission::FsWrite, file);
     Base::FileInfo fi(file.c_str());
     if (this->FileName.getStrValue() != file) {
         this->FileName.setValue(file);
@@ -2499,6 +2509,8 @@ bool Document::saveAs(const char* _file)
 bool Document::saveCopy(const char* _file) const
 {
     std::string file = checkFileName(_file);
+    // a copy is a host file written by path, exactly as saveAs (7.29)
+    ExpressionSecurity::checkHostPath(ExpressionSecurity::Permission::FsWrite, file);
     if (this->FileName.getStrValue() != file) {
         bool result = saveToFile(file.c_str());
         return result;

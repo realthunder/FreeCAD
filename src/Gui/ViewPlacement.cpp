@@ -159,17 +159,20 @@ ViewArea *hostArea(ViewPlacement::Category cat, Gui::Document *doc)
 }
 
 // docs/ViewPlacement.md sec 3.2 steps 5-7. False = fall back to a tab.
-bool placeInArea(ViewArea *area, MDIView *view, Target target)
+bool placeInArea(ViewArea *area, MDIView *view, Target target,
+                 const std::function<bool(MDIView *)> &keep = {})
 {
     if (auto mc = area->maximizedCell())
         area->toggleMaximizeCell(mc);
 
     // The reuse step: strictly non-3D content replacing non-3D content
     // -- a 3D view's cell is never taken, and a new 3D view always
-    // splits (ruled 2026-08-28).
+    // splits (ruled 2026-08-28). Nor is the cell of a view the caller
+    // keeps: an expression editor does not evict the spreadsheet whose
+    // cells it edits.
     if (target == Target::Split && !is3DView(view)) {
-        if (auto cell = area->lastUsedCell([](MDIView *child) {
-                return child && !is3DView(child);
+        if (auto cell = area->lastUsedCell([&keep](MDIView *child) {
+                return child && !is3DView(child) && !(keep && keep(child));
             })) {
             if (area->setCellView(cell, view))
                 return true;
@@ -270,6 +273,12 @@ void ViewPlacement::reveal(MDIView *view, Gui::Document *doc, bool alreadyOpen)
 
 void ViewPlacement::place(MDIView *view, Category cat, Gui::Document *doc)
 {
+    place(view, cat, doc, {});
+}
+
+void ViewPlacement::place(MDIView *view, Category cat, Gui::Document *doc,
+                          const std::function<bool(MDIView *)> &keep)
+{
     if (!view)
         return;
     Target target = targetFor(cat);
@@ -287,7 +296,7 @@ void ViewPlacement::place(MDIView *view, Category cat, Gui::Document *doc)
 
     if (target == Target::Split || target == Target::NewSplit) {
         if (auto area = hostArea(cat, doc)) {
-            if (placeInArea(area, view, target))
+            if (placeInArea(area, view, target, keep))
                 return;
         }
         // No area to join (or the split was refused): a tab.

@@ -1545,6 +1545,11 @@ void ToolTip::showText(const QPoint & pos,
 
 void ToolTip::hideText(int delay, bool hideOverlay)
 {
+    // A process with no Qt application (a headless test driving the
+    // selection) has no tooltip to hide, and building one would need
+    // the application.
+    if (!QCoreApplication::instance())
+        return;
     if (delay > 0) {
         auto &timer = hideOverlay ? instance()->hideTimer : instance()->hideTimerNoOverlay;
         if (!timer.isActive()) {

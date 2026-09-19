@@ -216,6 +216,7 @@ public:
     void setIsMode(bool check) { _isMode = check; }
 
     void setDropDownMenu(bool check) { _dropDown = check; }
+    bool hasDropDownMenu() const { return _dropDown; }
     QAction* addAction(QAction*);
     QAction* addAction(const QString&);
     QList<QAction*> actions() const;
@@ -251,6 +252,10 @@ private:
     bool _dropDown;
     bool _isMode;
     QList<QAction*> _actions;
+    /// _actions keeps what Qt dropped from the group but never a dead
+    /// QAction: every action listed is tracked to its destruction
+    static void track(QAction* action);
+    static bool isAlive(QAction* action);
 
 private:
     Q_DISABLE_COPY(ActionGroup)

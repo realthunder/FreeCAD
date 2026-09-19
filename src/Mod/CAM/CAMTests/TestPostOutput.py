@@ -101,6 +101,12 @@ class TestFileNameGenerator(unittest.TestCase):
     def setUpClass(cls):
         FreeCAD.ConfigSet("SuppressRecomputeRequiredDialog", "True")
 
+        # Preserve the persistent post-processor output preferences so the
+        # test cases below (which call setOutputFileDefaults) do not leak
+        # into the user's configuration and leave stray output files behind.
+        cls._saved_output_file = Path.Preferences.defaultOutputFile()
+        cls._saved_output_policy = Path.Preferences.defaultOutputPolicy()
+
         # Create a new document instead of opening external file
         cls.doc = FreeCAD.newDocument("TestFileNaming")
         cls.testfilename = cls.doc.Name
@@ -153,6 +159,10 @@ class TestFileNameGenerator(unittest.TestCase):
     def tearDownClass(cls):
         FreeCAD.closeDocument(cls.doc.Name)
         FreeCAD.ConfigSet("SuppressRecomputeRequiredDialog", "")
+        # Restore the output preferences the test cases mutated.
+        Path.Preferences.setOutputFileDefaults(
+            cls._saved_output_file, cls._saved_output_policy
+        )
 
     def test000(self):
         # Test basic name generation with empty string

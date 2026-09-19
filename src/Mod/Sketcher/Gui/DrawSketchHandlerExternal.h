@@ -26,6 +26,8 @@
 #include <array>
 #include "GeometryCreationMode.h"
 #include "Utils.h"
+#include <Gui/ViewerContext.h>
+
 #include "ViewProviderSketch.h"
 
 
@@ -59,7 +61,7 @@ public:
                 }
             }
         }
-        else if (!(QApplication::queryKeyboardModifiers() & Qt::AltModifier)) {
+        else if (!(Gui::ViewerContext::currentKeyboardModifiers() & Qt::AltModifier)) {
             this->notAllowedReason = QT_TR_NOOP("Hold Alt key to enable whole object selection.");
             return false;
         }
@@ -158,6 +160,8 @@ public:
     ParameterGrp::handle hGrpView;
     bool _activated = false;
     bool _busy = false;
+    /// The instance the gate went on (the session's), for the destructor.
+    Gui::SelectionSingleton* gateOn = nullptr;
 
     DrawSketchHandlerExternal(bool defining=false, bool intersection=false)
         :attaching(0)
@@ -186,7 +190,8 @@ public:
     {
         hGrp->Detach(this);
         hGrpView->Detach(this);
-        Gui::Selection().rmvSelectionGate();
+        if (gateOn)
+            gateOn->rmvSelectionGate();
         if (restoreHighlightPick)
             Gui::ViewParams::setAutoTransparentPick(false);
     }
@@ -230,16 +235,18 @@ public:
         if(attaching.size())
             sketchgui->showGeometry(false);
         sketchgui->setAxisPickStyle(false);
-        Gui::MDIView *mdi = Gui::Application::Instance->activeDocument()->getActiveView();
-        Gui::View3DInventorViewer *viewer;
-        viewer = static_cast<Gui::View3DInventor *>(mdi)->getViewer();
+        // The object under the pointer is picked by each view's own
+        // selection root, which the edit turned off: back on in every
+        // view of the session, and the gate on the instance the session
+        // selects into (docs/ThinClient.md 8.11 item 3). Not the active
+        // window's viewer, which a serving process does not have.
+        sketchgui->setSessionSelectionEnabled(true);
 
-        SoNode* root = viewer->getSceneGraph();
-        static_cast<Gui::SoFCUnifiedSelection*>(root)->selectionRole.setValue(true);
-
-        Gui::Selection().clearSelection();
-        Gui::Selection().rmvSelectionGate();
-        Gui::Selection().addSelectionGate(new ExternalSelection(sketchgui->getObject(), intersection));
+        Gui::SelectionSingleton &sel = sketchgui->sessionSelection();
+        sel.clearSelection();
+        sel.rmvSelectionGate();
+        sel.addSelectionGate(new ExternalSelection(sketchgui->getObject(), intersection));
+        gateOn = &sel;
     }
 
     QString getCrosshairCursorSVGName() const override {
@@ -264,7 +271,7 @@ public:
     void mouseMove(Base::Vector2d onSketchPos) override
     {
         Q_UNUSED(onSketchPos);
-        if (Gui::Selection().hasPreselection()) {
+        if (sketchgui->sessionSelection().hasPreselection()) {
             applyCursor();
         }
     }
@@ -299,7 +306,7 @@ public:
             }
 
             if (msg.Object.getOldElementName().empty()
-                    && !(QApplication::queryKeyboardModifiers() & Qt::AltModifier)) {
+                    && !(Gui::ViewerContext::currentKeyboardModifiers() & Qt::AltModifier)) {
                 return false;
             }
 
@@ -347,7 +354,7 @@ public:
                                 ss.str());
                     }
 
-                    Gui::Selection().clearSelection();
+                    sketchgui->sessionSelection().clearSelection();
 
                     // adding external geometry does not require a solve() per se (the DoF is the same),
                     // however a solve is required to update the amount of solver geometry, because we only

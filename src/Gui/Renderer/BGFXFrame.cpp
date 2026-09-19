@@ -308,7 +308,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // re-upload. Relinking on WebGL2 is just as slow as it is on a
     // native driver, and re-streaming the scene there is worse.
     const bool progChanged =
-        _BGFXLib.standaloneSamples != view->msaaSamples
+        _BGFXLib.effectiveSamples(_BGFXLib.standaloneSamples)
+            != view->msaaSamples
         || _BGFXLib.shaderGeneration != view->shaderGen;
     // What the scene colour's format follows. Off the frame's config
     // rather than view->outputTransform, which a debug view mode zeroes
@@ -384,7 +385,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
     const bool progChanged =
         _BGFXLib.shaderGeneration != view->shaderGen
         || (_BGFXLib.desktopSamples >= 0
-            && _BGFXLib.desktopSamples != view->msaaSamples);
+            && _BGFXLib.effectiveSamples(_BGFXLib.desktopSamples)
+                != view->msaaSamples);
     // The lost-framebuffer case rebuilds once, not every frame:
     // view->targetsFailed says the last attempt found the handle pool
     // full, and a bailed frame never reaches bgfx::frame(), which is
@@ -3779,14 +3781,36 @@ bool BGFXRenderer::Private::render(const QColor &col,
         bgfx::setViewTransform(id, nullptr, nullptr);
         bgfx::setViewMode(id, bgfx::ViewMode::Default);
     };
+    // Where a view that draws nothing sits: the blit anchors below and
+    // the trailing present view. They used to sit on the backbuffer,
+    // which is only real on GL. Every other backend runs headless
+    // (BGFXRendererLibP::prepare), and bgfx::touch() is an empty SUBMIT,
+    // not a no-op -- so a touched view on the missing backbuffer began a
+    // render pass on a null framebuffer and dzn crashed in
+    // vkCmdBeginRenderPass. Park them on the discard target instead, at
+    // its own 1x1: a render area larger than the framebuffer is invalid
+    // as well. Nothing about what they are for changes. Blits do not
+    // care which framebuffer their view targets, and the MSAA resolve is
+    // triggered by LEAVING bgfxFbo, whatever the next target is.
+    const bool parkAnchors =
+        _BGFXLib.noBackbuffer && bgfx::isValid(view->sinkFbo);
+    auto anchorView = [&](uint16_t id) {
+        if (parkAnchors) {
+            bgfx::setViewFrameBuffer(id, view->sinkFbo);
+            bgfx::setViewRect(id, 0, 0, 1, 1);
+        }
+        else {
+            bgfx::setViewFrameBuffer(id, BGFX_INVALID_HANDLE);
+            bgfx::setViewRect(id, 0, 0, width, height);
+        }
+    };
     auto configCapture = [&](int, uint16_t id) {
-        // Blit-only, exactly like configIdReadback: no framebuffer,
-        // nothing drawn. It is last so the copies see the finished
-        // frame.
-        bgfx::setViewFrameBuffer(id, BGFX_INVALID_HANDLE);
+        // Blit-only, exactly like configIdReadback: no framebuffer of
+        // its own, nothing drawn. It is last so the copies see the
+        // finished frame.
+        anchorView(id);
         bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
                            clearColor, 1.0f, 0);
-        bgfx::setViewRect(id, 0, 0, width, height);
         bgfx::setViewTransform(id, nullptr, nullptr);
         bgfx::touch(id);
     };
@@ -3796,10 +3820,9 @@ bool BGFXRenderer::Private::render(const QColor &col,
         // copies -- bgfx runs a view's blits BEFORE its draws, so
         // asking for the copy on ViewDebugScene itself would read
         // the previous frame's image.
-        bgfx::setViewFrameBuffer(id, BGFX_INVALID_HANDLE);
+        anchorView(id);
         bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
                            clearColor, 1.0f, 0);
-        bgfx::setViewRect(id, 0, 0, width, height);
         bgfx::setViewTransform(id, nullptr, nullptr);
         bgfx::touch(id);
     };
@@ -3960,16 +3983,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
         // texture the composite blit reads stayed stale under MSAA (an
         // empty viewport). That is also what orders the resolve BEFORE
         // the present pass samples the scene colour.
-        bgfx::FrameBufferHandle target = BGFX_INVALID_HANDLE;
-#ifndef FC_RENDERER_STANDALONE
-        if (view->outputTransform != Render::OutputConfig::None
-                && bgfx::isValid(view->presentFbo))
-            target = view->presentFbo;
-#endif
-        bgfx::setViewFrameBuffer(id, target);
-        bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
-                           clearColor, 1.0f, 0);
 #ifdef FC_RENDERER_STANDALONE
+        bgfx::setViewFrameBuffer(id, BGFX_INVALID_HANDLE);
         // A split-view submit presents into its sub-view's rect of the
         // backbuffer; the source UV stays 0..1 of this sub-view's own
         // full scene target (vs_fc_comp.sc), so this one rect is the
@@ -3980,8 +3995,18 @@ bool BGFXRenderer::Private::render(const QColor &col,
         else
             bgfx::setViewRect(id, 0, 0, width, height);
 #else
-        bgfx::setViewRect(id, 0, 0, width, height);
+        // With nothing to encode this is the resolve anchor alone, and
+        // headless it has no backbuffer to sit on (anchorView above).
+        if (view->outputTransform != Render::OutputConfig::None
+                && bgfx::isValid(view->presentFbo)) {
+            bgfx::setViewFrameBuffer(id, view->presentFbo);
+            bgfx::setViewRect(id, 0, 0, width, height);
+        }
+        else
+            anchorView(id);
 #endif
+        bgfx::setViewClear(id, uint16_t(BGFX_CLEAR_NONE),
+                           clearColor, 1.0f, 0);
         bgfx::setViewTransform(id, nullptr, nullptr);
         bgfx::setViewMode(id, bgfx::ViewMode::Default);
         bgfx::touch(id);

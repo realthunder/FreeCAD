@@ -68,7 +68,7 @@ protected:
     void updateData(const App::Property*) override;
 
     bool setEdit(int ModNum) override;
-    void setEditViewer(View3DInventorViewer*, int ModNum) override;
+    void setEditViewer(ViewerContext*, int ModNum) override;
 
 private:
     bool prevColorOverride = false;

@@ -226,6 +226,25 @@ public:
     void checkAutoAlias();
 
 private:
+    /** Evaluate a WHOLE cell expression the way a recompute would --
+     * through PropertySheet::eval, so it carries the sheet's own eval
+     * options (call frame, python mode) and goes through the sandbox
+     * router when routing is on.  The edit-mode and paste-value paths
+     * below evaluate stored cell expressions too; leaving them on
+     * Expression::eval() would run cell code in-process behind the
+     * boundary, and would also make an editor show a different value
+     * than the recompute produced.  Falls back to the expression's own
+     * eval only for an ownerless cell, which has no sheet and so no
+     * routing decision to make.
+     *
+     * The edit-mode config lists evaluate one ITEM of the stored
+     * expression rather than the whole of it; they go through here too.
+     * That is still one round trip for one expression -- not the
+     * per-value crossing the switch-over rejected, which was about
+     * every identifier inside a single walk.
+     */
+    App::ExpressionPtr evalWhole(const App::Expression* expr) const;
+
     void setParseException(const std::string& e);
 
     void setExpression(App::ExpressionPtr &&expr, int type=PasteAll);

@@ -29,6 +29,7 @@ configure_file(project_utility.py ${NAMESPACE_DIR}/project_utility.py)
 configure_file(UiTools.py ${NAMESPACE_DIR}/UiTools.py)
 configure_file(utils.py ${NAMESPACE_DIR}/utils.py)
 configure_file(deprecation.py ${NAMESPACE_DIR}/deprecation.py)
+configure_file(prefs.py ${NAMESPACE_DIR}/prefs.py)
 
 # MCP debug console (pure-Python; requires the 'mcp' package at runtime)
 configure_file(mcp_console/__init__.py ${NAMESPACE_DIR}/mcp_console/__init__.py COPYONLY)
@@ -37,6 +38,15 @@ configure_file(mcp_console/server.py ${NAMESPACE_DIR}/mcp_console/server.py COPY
 # Render-effect factory: instantiates the bundled effect packages
 # (share/Renderer/effects) into user documents (docs/RenderEngine.md §5.11)
 configure_file(rendereffects/__init__.py ${NAMESPACE_DIR}/rendereffects/__init__.py COPYONLY)
+
+# The pyodide bootstrap: installs the sandbox runtime and its packages
+# per user (docs/PyodideHost.md sec 12).  Pure Python, host side.
+configure_file(pyodide/__init__.py ${NAMESPACE_DIR}/pyodide/__init__.py COPYONLY)
+
+# The host side of the sandbox's forms (docs/Sandbox.md 7.3): the widget
+# manager the guest's ipywidgets comm traffic reaches, and its Qt views.
+configure_file(widgets/__init__.py ${NAMESPACE_DIR}/widgets/__init__.py COPYONLY)
+configure_file(widgets/qt.py ${NAMESPACE_DIR}/widgets/qt.py COPYONLY)
 
 if (INSTALL_TO_SITEPACKAGES)
     SET(SITE_PACKAGE_DIR ${PYTHON_MAIN_DIR}/freecad)
@@ -48,6 +58,7 @@ INSTALL(
     FILES
         ${NAMESPACE_INIT}
         deprecation.py
+        prefs.py
         project_utility.py
         UiTools.py
         utils.py
@@ -68,6 +79,21 @@ INSTALL(
         rendereffects/__init__.py
     DESTINATION
         ${SITE_PACKAGE_DIR}/rendereffects
+)
+
+INSTALL(
+    FILES
+        pyodide/__init__.py
+    DESTINATION
+        ${SITE_PACKAGE_DIR}/pyodide
+)
+
+INSTALL(
+    FILES
+        widgets/__init__.py
+        widgets/qt.py
+    DESTINATION
+        ${SITE_PACKAGE_DIR}/widgets
 )
 
 add_subdirectory(fc_cadquery)

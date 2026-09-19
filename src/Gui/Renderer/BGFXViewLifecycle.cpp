@@ -813,7 +813,7 @@ void BGFXView::init(bool keepShared)
     // renderbuffer plus a resolve texture; the present pass samples
     // the resolve (WebGL2 backs both via renderbufferStorageMultisample
     // + blitFramebuffer).
-    int samples = _BGFXLib.standaloneSamples;
+    int samples = _BGFXLib.effectiveSamples(_BGFXLib.standaloneSamples);
     msaaSamples = samples;
 #else
     width = uint16_t(_BGFXLib.viewWidth(widget));
@@ -822,11 +822,17 @@ void BGFXView::init(bool keepShared)
     // bgfx owns MSAA in its own offscreen target: prefer the preference
     // override (BGFXRenderer::setMSAASamples) over the host widget's GL
     // format, so an AntiAliasing change need not recreate the Qt view.
-    int samples = _BGFXLib.desktopSamples >= 0
-        ? _BGFXLib.desktopSamples
-        : widget->format().samples();
+    int samples = _BGFXLib.effectiveSamples(
+        _BGFXLib.desktopSamples >= 0 ? _BGFXLib.desktopSamples
+                                     : widget->format().samples());
     msaaSamples = samples;
 #endif
+    // \a samples came through _BGFXLib.effectiveSamples above, which is
+    // where a backend that has already failed to build multisampled
+    // scene targets is held to one sample (docs/ThinClient.md sec
+    // 8.10c). It is applied there, and not with a clamp here, so that
+    // the frame path's "do the targets still match what was asked for"
+    // test can ask the same question and get the same answer.
     std::printf("bgfx: view init %ux%u msaa %d\n",
                 unsigned(width), unsigned(height), msaaSamples);
     shaderGen = _BGFXLib.shaderGeneration;
@@ -927,6 +933,29 @@ void BGFXView::init(bool keepShared)
     // (textures) or an invalid framebuffer -- and both end here, so the
     // latch is read off the result rather than off which call failed.
     targetsFailed = !bgfx::isValid(bgfxFbo);
+    // Before calling it a lost view: it may be the MULTISAMPLING that
+    // could not be had rather than the memory (docs/ThinClient.md sec
+    // 8.10c). On WebGL2 a multisampled RGBA16F attachment fails to
+    // create while the capability bit says it would not, and every
+    // browser viewer defaults to four samples -- so this branch was the
+    // whole browser tier drawing nothing, once per frame, for ever,
+    // while the log said only that a pool had run dry.
+    //
+    // Latched for the process and retried at once, because there is
+    // nothing to be gained by discovering it again on the next view or
+    // the next frame. The retry does NOT keep the shared resources: an
+    // MSAA change re-decides m_oit and so which program set exists,
+    // which is exactly what init(false) is for. Returning after it is
+    // what makes this a retry rather than two half-built views.
+    if (targetsFailed && msaaSamples > 1
+            && !_BGFXLib.msaaTargetsUnavailable) {
+        _BGFXLib.msaaTargetsUnavailable = true;
+        std::printf("bgfx: %dx MSAA scene targets could not be created on "
+                    "this backend -- rebuilding without multisampling\n",
+                    msaaSamples);
+        init(false);
+        return;
+    }
     if (targetsFailed) {
         static bool warned = false;
         if (!warned) {

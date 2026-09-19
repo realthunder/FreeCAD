@@ -30,6 +30,8 @@
 
 #include <Base/TypePy.h>
 
+#include <array>
+
 #include "DocumentPy.h"
 #include "MainWindowPy.h"
 #include "MainWindow.h"
@@ -69,6 +71,9 @@ void MainWindowPy::init_type()
     add_varargs_method("removeStatusBarItem",
                        &MainWindowPy::removeStatusBarItem,
                        "removeStatusBarItem(id)");
+    add_varargs_method("statusBarItem",
+                       &MainWindowPy::statusBarItem,
+                       "statusBarItem(id) -> widget or None");
 }
 
 PyObject *MainWindowPy::extension_object_new(struct _typeobject * /*type*/, PyObject * /*args*/, PyObject * /*kwds*/)
@@ -103,7 +108,8 @@ Py::Object MainWindowPy::createWrapper(MainWindow *mw)
     std::list<std::string> attr = {"getWindows", "getWindowsOfType", "setActiveWindow",
                                    "getActiveWindow", "addWindow", "removeWindow",
                                    "showHint", "hideHint",
-                                   "addStatusBarItem", "removeStatusBarItem"};
+                                   "addStatusBarItem", "removeStatusBarItem",
+                                   "statusBarItem"};
 
     Py::Object py = wrap.fromQWidget(mw, "QMainWindow");
     Py::ExtensionObject<MainWindowPy> inst(create(mw));
@@ -357,4 +363,19 @@ Py::Object MainWindowPy::removeStatusBarItem(const Py::Tuple& args)
         _mw->removeStatusBarItem(QByteArray(id));
     }
     return Py::None();
+}
+
+Py::Object MainWindowPy::statusBarItem(const Py::Tuple& args)
+{
+    const char* id {};
+    if (!PyArg_ParseTuple(args.ptr(), "s", &id)) {
+        throw Py::Exception();
+    }
+    QWidget* widget = _mw ? _mw->statusBarItem(QByteArray(id)) : nullptr;
+    if (!widget) {
+        return Py::None();
+    }
+    PythonWrapper wrap;
+    wrap.loadWidgetsModule();
+    return wrap.fromQWidget(widget);
 }

@@ -340,7 +340,7 @@ void ViewProviderDragger::unsetEdit(int ModNum)
   Gui::Control().closeDialog();
 }
 
-void ViewProviderDragger::setEditViewer(Gui::View3DInventorViewer* viewer, int ModNum)
+void ViewProviderDragger::setEditViewer(Gui::ViewerContext* viewer, int ModNum)
 {
     Q_UNUSED(ModNum);
 
@@ -365,7 +365,7 @@ void ViewProviderDragger::setEditViewer(Gui::View3DInventorViewer* viewer, int M
     }
 }
 
-void ViewProviderDragger::unsetEditViewer(Gui::View3DInventorViewer* viewer)
+void ViewProviderDragger::unsetEditViewer(Gui::ViewerContext* viewer)
 {
     auto selection = static_cast<SoGroup*>(viewer->getSceneGraph());
     SoNode *child = selection->getChild(0);

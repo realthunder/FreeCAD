@@ -20,6 +20,7 @@
                 <UserDocu>Sets or gets the direction of revolution.</UserDocu>
             </Documentation>
             <Parameter Name="Direction" Type="Object"/>
+            <Sandbox tier="value"/>
         </Attribute>
         <Attribute Name="BasisCurve">
             <Documentation>

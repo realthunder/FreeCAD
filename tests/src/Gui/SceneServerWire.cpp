@@ -26,6 +26,7 @@
 #include <cstring>
 #include <memory>
 #include <functional>
+#include <limits>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -333,6 +334,75 @@ bool findClient(const std::string& label, Render::SceneClientInfo& info)
     return false;
 }
 
+/// The 'C' camera frame a viewer sends (docs/ThinClient.md sec 8.5):
+/// 'C', a type byte, the canvas as two little-endian u16, then thirteen
+/// little-endian floats. Fifty-eight bytes.
+std::vector<uint8_t> cameraFrame(float eyeZ = 60.0f, float heightAngle = 0.785398f)
+{
+    std::vector<uint8_t> out(6 + 13 * sizeof(float));
+    out[0] = 'C';
+    out[1] = 1;
+    const uint16_t w = 800, h = 600;
+    std::memcpy(out.data() + 2, &w, 2);
+    std::memcpy(out.data() + 4, &h, 2);
+    const float v[13] = {0.0f, 0.0f, eyeZ, 0.0f, 0.0f, 0.0f, 1.0f,
+                         heightAngle, 10.0f, 200.0f, 800.0f / 600.0f,
+                         1.0f, 5.0f};
+    std::memcpy(out.data() + 6, v, sizeof(v));
+    return out;
+}
+
+/// The 'P' pick a viewer sends: 'P', a flags byte, six little-endian
+/// floats (world ray origin then direction). Twenty-six bytes.
+std::vector<uint8_t> pickFrame(float originX = 0.0f, uint8_t flags = 0)
+{
+    std::vector<uint8_t> out(2 + 6 * sizeof(float));
+    out[0] = 'P';
+    out[1] = flags;
+    const float v[6] = {originX, 0.0f, 60.0f, 0.0f, 0.0f, -1.0f};
+    std::memcpy(out.data() + 2, v, sizeof(v));
+    return out;
+}
+
+/// The 'E' input frame of sec 8.5: 'E', a kind byte, a modifiers byte,
+/// a little-endian u16 code, three little-endian i16 (x, y, wheel
+/// delta) and a little-endian u32 client timestamp. Fifteen bytes.
+std::vector<uint8_t> inputFrame(uint8_t kind, int16_t x, int16_t y,
+                                uint16_t code = 0, uint8_t modifiers = 0,
+                                int16_t delta = 0, uint32_t timeMs = 0)
+{
+    std::vector<uint8_t> out(15);
+    out[0] = 'E';
+    out[1] = kind;
+    out[2] = modifiers;
+    std::memcpy(out.data() + 3, &code, 2);
+    std::memcpy(out.data() + 5, &x, 2);
+    std::memcpy(out.data() + 7, &y, 2);
+    std::memcpy(out.data() + 9, &delta, 2);
+    std::memcpy(out.data() + 11, &timeMs, 4);
+    return out;
+}
+
+/// The 'Q' of sec 8.10a: a camera frame and a pick in one message, each
+/// verbatim, so both halves are the frames the two paths already parse.
+std::vector<uint8_t> cameraAndPick(const std::vector<uint8_t>& cam,
+                                   const std::vector<uint8_t>& pick)
+{
+    std::vector<uint8_t> out;
+    out.push_back('Q');
+    out.insert(out.end(), cam.begin(), cam.end());
+    out.insert(out.end(), pick.begin(), pick.end());
+    return out;
+}
+
+/// What a client message of \a payload bytes costs on the link: the
+/// payload plus the RFC 6455 header a client masks it under.
+uint64_t wireBytes(size_t payload)
+{
+    return uint64_t(payload) + 2 + 4
+        + (payload < 126 ? 0 : (payload < 65536 ? 2 : 8));
+}
+
 class SceneServerWire: public ::testing::Test
 {
 protected:
@@ -454,7 +524,7 @@ TEST_F(SceneServerWire, handshakeThenHelloThenSnapshot)
     Render::SceneClientInfo info;
     ASSERT_TRUE(waitFor([&] { return findClient("wire-snapshot", info); }));
     EXPECT_TRUE(info.viewer) << "a hello makes a viewer";
-    EXPECT_FALSE(info.viewOnly);
+    EXPECT_EQ(info.access, Render::ClientAccess::Edit);
     EXPECT_NE(info.peer.find("127.0.0.1:"), std::string::npos);
     EXPECT_EQ(info.address, info.peer) << "no proxy, so the judged address is the peer";
     EXPECT_FALSE(info.proxied);
@@ -508,13 +578,13 @@ TEST_F(SceneServerWire, controlOpReachesTheHandlerAndItsReplyComesBack)
     std::mutex mutex;
     std::vector<std::string> seen;
     uint64_t from = 0;
-    bool viewOnly = true;
+    Render::ClientAccess access = Render::ClientAccess::View;
     server.setControlHandler([&](Render::SceneControlRequest&& req) {
         {
             std::lock_guard<std::mutex> guard(mutex);
             seen.push_back(req.json);
             from = req.client;
-            viewOnly = req.viewOnly;
+            access = req.access;
         }
         req.reply("{\"id\":7,\"ok\":true,\"echo\":\"answered\"}");
     });
@@ -533,7 +603,7 @@ TEST_F(SceneServerWire, controlOpReachesTheHandlerAndItsReplyComesBack)
         std::lock_guard<std::mutex> guard(mutex);
         ASSERT_EQ(seen.size(), 1u);
         EXPECT_EQ(seen[0], "{\"op\":\"probe\",\"id\":7}");
-        EXPECT_FALSE(viewOnly);
+        EXPECT_EQ(access, Render::ClientAccess::Edit);
     }
     Render::SceneClientInfo info;
     ASSERT_TRUE(findClient("wire-op", info));
@@ -541,10 +611,10 @@ TEST_F(SceneServerWire, controlOpReachesTheHandlerAndItsReplyComesBack)
 
     // A mode change is announced to the client, and then carried on
     // every request, for the layer that knows which ops write.
-    ASSERT_TRUE(server.setClientViewOnly(info.id, true));
+    ASSERT_TRUE(server.setClientAccess(info.id, Render::ClientAccess::View));
     m = c.read();
     ASSERT_TRUE(m.ok) << m.ec.message();
-    EXPECT_EQ(m.data, "{\"cmd\":\"config\",\"viewOnly\":true}");
+    EXPECT_EQ(m.data, "{\"cmd\":\"config\",\"viewOnly\":true,\"access\":\"view\"}");
     c.sendText("{\"op\":\"probe\",\"id\":8}");
     m = c.read();
     ASSERT_TRUE(m.ok) << m.ec.message();
@@ -552,7 +622,7 @@ TEST_F(SceneServerWire, controlOpReachesTheHandlerAndItsReplyComesBack)
     {
         std::lock_guard<std::mutex> guard(mutex);
         ASSERT_EQ(seen.size(), 2u);
-        EXPECT_TRUE(viewOnly);
+        EXPECT_EQ(access, Render::ClientAccess::View);
     }
 
     // No handler: a structured refusal correlated on the id, never
@@ -660,7 +730,7 @@ TEST_F(SceneServerWire, fragmentedMessagesAreReassembled)
     // A view-only connection's picks are dropped, not refused.
     Render::SceneClientInfo info;
     ASSERT_TRUE(findClient("wire-frag", info));
-    ASSERT_TRUE(server.setClientViewOnly(info.id, true));
+    ASSERT_TRUE(server.setClientAccess(info.id, Render::ClientAccess::View));
     m = c.read();
     ASSERT_TRUE(m.ok) << m.ec.message();
     EXPECT_TRUE(has(m.data, "\"viewOnly\":true")) << m.data;
@@ -966,6 +1036,90 @@ TEST_F(SceneServerWire, anOversizeControlFrameEndsTheConnection)
     EXPECT_NE(m.ec, net::error::timed_out) << "closed, not merely quiet";
 }
 
+/// A host grant (access 3) makes a host only of the verified identity it
+/// names literally; on a pattern it admits editors, a hand promotion needs
+/// a verified identity too, and a grant change re-judges and says so
+/// (docs/ShareAccess.md sec 2.2).
+TEST_F(SceneServerWire, aHostGrantMakesAHostOnlyOfTheIdentityItNames)
+{
+    auto& server = Render::SceneStreamServer::instance();
+    server.setTrustProxy(true);
+    struct Restore
+    {
+        ~Restore()
+        {
+            auto& s = Render::SceneStreamServer::instance();
+            s.setGrants({});
+            s.setTrustProxy(false);
+        }
+    } restore;
+    auto grant = [](const char* identity, int access) {
+        Render::SceneGrant g;
+        g.identity = identity;
+        g.access = access;
+        return g;
+    };
+    server.setGrants({grant("owner@example.test", 3), grant("*@example.test", 3), grant("", 0)});
+
+    auto open = [&](const char* email, const char* label) {
+        WsClient::Headers h {{"X-Forwarded-For", "203.0.113.9"}};
+        if (email) {
+            h.emplace_back("X-Forwarded-Email", email);
+        }
+        auto c = std::make_unique<WsClient>(port, "/scene", h);
+        c->hello(label);
+        return c;
+    };
+    // The mode a connection was told next, empty when none came within
+    // the wait. Binary frames are passed over: the snapshot a hello gets
+    // may come after its config or before it.
+    auto told = [&](WsClient& c) -> std::string {
+        for (int i = 0; i < 6; ++i) {
+            WsClient::Msg m = c.read(2000);
+            if (!m.ok) {
+                return {};
+            }
+            if (!m.text) {
+                continue;
+            }
+            if (has(m.data, "\"cmd\":\"config\"")) {
+                return m.data;
+            }
+        }
+        return {};
+    };
+    Render::SceneClientInfo info;
+
+    auto owner = open("owner@example.test", "host-owner");
+    EXPECT_TRUE(has(told(*owner), "\"access\":\"host\"")) << "a host is told at once";
+    ASSERT_TRUE(waitFor([&] { return findClient("host-owner", info); }));
+    EXPECT_EQ(info.access, Render::ClientAccess::Host);
+
+    auto guest = open("guest@example.test", "host-guest");
+    EXPECT_EQ(told(*guest), "") << "a host grant on a pattern admits an editor";
+    ASSERT_TRUE(waitFor([&] { return findClient("host-guest", info); }));
+    EXPECT_EQ(info.access, Render::ClientAccess::Edit);
+    const uint64_t guestId = info.id;
+
+    auto anon = open(nullptr, "host-anon");
+    EXPECT_EQ(told(*anon), "");
+    ASSERT_TRUE(waitFor([&] { return findClient("host-anon", info); }));
+    EXPECT_FALSE(server.setClientAccess(info.id, Render::ClientAccess::Host))
+        << "a chosen name is never a host";
+    ASSERT_TRUE(findClient("host-anon", info));
+    EXPECT_EQ(info.access, Render::ClientAccess::Edit);
+
+    EXPECT_TRUE(server.setClientAccess(guestId, Render::ClientAccess::Host))
+        << "by hand, for a verified identity";
+    EXPECT_TRUE(has(told(*guest), "\"access\":\"host\""));
+
+    // Demoted by the grant list: re-judged, and told
+    server.setGrants({grant("owner@example.test", 0), grant("", 0)});
+    EXPECT_TRUE(has(told(*owner), "\"access\":\"edit\""));
+    ASSERT_TRUE(findClient("host-owner", info));
+    EXPECT_EQ(info.access, Render::ClientAccess::Edit);
+}
+
 TEST_F(SceneServerWire, theCapCountsUsersNotAddresses)
 {
     auto& server = Render::SceneStreamServer::instance();
@@ -1050,6 +1204,356 @@ TEST_F(SceneServerWire, theCapCountsUsersNotAddresses)
     // uses -- is counted nowhere: with three users in, it still gets in.
     WsClient local(port, "/scene");
     EXPECT_TRUE(served(local, "cap-local"));
+}
+
+/// The uplink is counted on this side (docs/ThinClient.md sec 8.10a).
+///
+/// Which is the point of counting it here at all: the three camera
+/// policies of sec 8.10a are client policies, and a client reporting
+/// how much it sent is the client marking its own work -- the same
+/// objection sec 8.6 makes to letting the browser judge its own
+/// selection. What the server counts is what the link carried.
+TEST_F(SceneServerWire, theUplinkIsCountedPerConnectionOnThisSide)
+{
+    auto& server = Render::SceneStreamServer::instance();
+    server.setCameraHandler(nullptr);
+    server.setPickHandler(nullptr);
+
+    WsClient c(port, "/scene");
+    const std::string helloText =
+        "{\"cmd\":\"hello\",\"client\":\"wire-uplink\",\"snapshot\":"
+        + std::to_string(Render::sceneDumpVersion()) + "}";
+    c.sendText(helloText);
+    WsClient::Msg m = c.readBinary();
+    ASSERT_TRUE(m.ok) << m.ec.message();
+
+    Render::SceneClientInfo info;
+    ASSERT_TRUE(waitFor([&] {
+        return findClient("wire-uplink", info) && info.uplinkMsgs >= 1;
+    }));
+    EXPECT_EQ(info.uplinkMsgs, 1u);
+    EXPECT_EQ(info.uplinkBytes, uint64_t(helloText.size()));
+    EXPECT_EQ(info.uplinkWire, wireBytes(helloText.size()));
+    EXPECT_EQ(info.cameraMsgs, 0u) << "a hello is neither a camera nor a pick";
+    EXPECT_EQ(info.pickMsgs, 0u);
+
+    const std::vector<uint8_t> cam = cameraFrame();
+    const std::vector<uint8_t> pick = pickFrame();
+    ASSERT_EQ(cam.size(), 58u) << "the 'C' frame is what sec 8.5 states";
+    ASSERT_EQ(pick.size(), 26u);
+    c.sendBinary(cam);
+    c.sendBinary(cam);
+    c.sendBinary(pick);
+    ASSERT_TRUE(waitFor([&] {
+        return findClient("wire-uplink", info) && info.uplinkMsgs >= 4;
+    }));
+    EXPECT_EQ(info.uplinkMsgs, 4u);
+    EXPECT_EQ(info.cameraMsgs, 2u);
+    EXPECT_EQ(info.cameraWire, 2 * wireBytes(cam.size()));
+    EXPECT_EQ(info.pickMsgs, 1u);
+    EXPECT_EQ(info.pickWire, wireBytes(pick.size()));
+    EXPECT_EQ(info.uplinkBytes,
+              uint64_t(helloText.size() + 2 * cam.size() + pick.size()));
+    EXPECT_EQ(info.uplinkWire,
+              wireBytes(helloText.size()) + 2 * wireBytes(cam.size())
+                  + wireBytes(pick.size()))
+        << "the header a client masks its frames under is part of what "
+           "the link carried";
+
+    // A second connection is counted apart: the question sec 8.10a asks
+    // is what one viewer's policy costs, and two viewers on one number
+    // would answer it wrong.
+    WsClient other(port, "/scene");
+    other.hello("wire-uplink-2");
+    m = other.readBinary();
+    ASSERT_TRUE(m.ok) << m.ec.message();
+    other.sendBinary(cam);
+    Render::SceneClientInfo second;
+    ASSERT_TRUE(waitFor([&] {
+        return findClient("wire-uplink-2", second) && second.cameraMsgs >= 1;
+    }));
+    EXPECT_EQ(second.cameraMsgs, 1u);
+    ASSERT_TRUE(findClient("wire-uplink", info));
+    EXPECT_EQ(info.cameraMsgs, 2u) << "the first connection's count did not move";
+}
+
+/// The dropped frames of a refused connection still crossed the link,
+/// so they are still counted: the counter answers what the uplink
+/// carried, not what we agreed to act on.
+TEST_F(SceneServerWire, aDroppedPickIsStillCountedAsUplink)
+{
+    auto& server = Render::SceneStreamServer::instance();
+    std::mutex mutex;
+    int picks = 0;
+    server.setPickHandler([&](const Render::ScenePickRequest&) {
+        std::lock_guard<std::mutex> guard(mutex);
+        ++picks;
+    });
+
+    WsClient c(port, "/scene");
+    c.hello("wire-uplink-viewonly");
+    WsClient::Msg m = c.readBinary();
+    ASSERT_TRUE(m.ok) << m.ec.message();
+    Render::SceneClientInfo info;
+    ASSERT_TRUE(waitFor([&] { return findClient("wire-uplink-viewonly", info); }));
+    ASSERT_TRUE(server.setClientAccess(info.id, Render::ClientAccess::View));
+    m = c.read();
+    ASSERT_TRUE(m.ok) << m.ec.message();
+
+    const std::vector<uint8_t> pick = pickFrame();
+    c.sendBinary(pick);
+    ASSERT_TRUE(waitFor([&] {
+        return findClient("wire-uplink-viewonly", info) && info.pickMsgs >= 1;
+    }));
+    EXPECT_EQ(info.pickWire, wireBytes(pick.size()));
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        EXPECT_EQ(picks, 0) << "a view-only connection's pick is still dropped";
+    }
+    server.setPickHandler(nullptr);
+}
+
+/// 'Q' is a camera and a pick in one message (docs/ThinClient.md sec
+/// 8.10a): both halves arrive, the camera first, and the pick is the
+/// one the message carried rather than the camera's bytes read as a
+/// ray. One frame instead of two is the saving; the pairing being
+/// atomic rather than merely ordered is the reason it is worth having.
+TEST_F(SceneServerWire, aCombinedFrameIsBothItsHalvesInOrder)
+{
+    auto& server = Render::SceneStreamServer::instance();
+    std::mutex mutex;
+    std::vector<std::string> order;
+    Render::SceneCameraFrame gotCamera;
+    Render::ScenePickRequest gotPick;
+    server.setCameraHandler([&](const Render::SceneCameraFrame& f) {
+        std::lock_guard<std::mutex> guard(mutex);
+        gotCamera = f;
+        order.push_back("camera");
+    });
+    server.setPickHandler([&](const Render::ScenePickRequest& r) {
+        std::lock_guard<std::mutex> guard(mutex);
+        gotPick = r;
+        order.push_back("pick");
+    });
+
+    WsClient c(port, "/scene");
+    c.hello("wire-combined");
+    WsClient::Msg m = c.readBinary();
+    ASSERT_TRUE(m.ok) << m.ec.message();
+    Render::SceneClientInfo info;
+    ASSERT_TRUE(waitFor([&] { return findClient("wire-combined", info); }));
+
+    const std::vector<uint8_t> cam = cameraFrame(/*eyeZ*/ 42.0f);
+    const std::vector<uint8_t> pick = pickFrame(/*originX*/ 3.5f, /*flags*/ 1);
+    c.sendBinary(cameraAndPick(cam, pick));
+    ASSERT_TRUE(waitFor([&] {
+        std::lock_guard<std::mutex> guard(mutex);
+        return order.size() >= 2;
+    }));
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        ASSERT_EQ(order.size(), 2u);
+        EXPECT_EQ(order[0], "camera") << "the ray is resolved in the framing "
+                                         "the same message stated";
+        EXPECT_EQ(order[1], "pick");
+        EXPECT_EQ(gotCamera.client, info.id);
+        EXPECT_FLOAT_EQ(gotCamera.position[2], 42.0f);
+        EXPECT_EQ(gotCamera.width, 800);
+        EXPECT_EQ(gotPick.client, info.id);
+        EXPECT_FLOAT_EQ(gotPick.origin[0], 3.5f);
+        EXPECT_FLOAT_EQ(gotPick.dir[2], -1.0f);
+        EXPECT_EQ(gotPick.modifiers, 1u);
+    }
+    ASSERT_TRUE(waitFor([&] {
+        return findClient("wire-combined", info) && info.pickMsgs >= 1;
+    }));
+    EXPECT_EQ(info.pickMsgs, 1u);
+    EXPECT_EQ(info.cameraMsgs, 0u)
+        << "a 'Q' is one message and counts as one, under the pick it was "
+           "sent for";
+    EXPECT_LT(info.pickWire, wireBytes(cam.size()) + wireBytes(pick.size()))
+        << "one frame costs less than two";
+
+    // A 'Q' whose camera half is refused still resolves its pick: the
+    // mirror keeps the camera it had, exactly as a refused 'C' leaves
+    // it. A NaN is the refusal that matters -- it would poison a view
+    // volume.
+    std::vector<uint8_t> bad = cameraFrame();
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    std::memcpy(bad.data() + 6 + 7 * sizeof(float), &nan, sizeof(nan));
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        order.clear();
+    }
+    c.sendBinary(cameraAndPick(bad, pick));
+    ASSERT_TRUE(waitFor([&] {
+        std::lock_guard<std::mutex> guard(mutex);
+        return !order.empty();
+    }));
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        ASSERT_EQ(order.size(), 1u);
+        EXPECT_EQ(order[0], "pick") << "the unusable camera was refused, not "
+                                       "adopted, and the pick still ran";
+    }
+
+    // A 'Q' of the wrong length is not a pick at all -- neither half is
+    // taken from a message whose halves cannot be found.
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        order.clear();
+    }
+    std::vector<uint8_t> truncated = cameraAndPick(cam, pick);
+    truncated.pop_back();
+    c.sendBinary(truncated);
+    c.sendBinary(pickFrame());   // a fence: this one must arrive
+    ASSERT_TRUE(waitFor([&] {
+        std::lock_guard<std::mutex> guard(mutex);
+        return !order.empty();
+    }));
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        ASSERT_EQ(order.size(), 1u);
+        EXPECT_EQ(order[0], "pick");
+    }
+
+    server.setCameraHandler(nullptr);
+    server.setPickHandler(nullptr);
+}
+
+TEST_F(SceneServerWire, anInputEventArrivesInTheClientsOwnCoordinates)
+{
+    // The 'E' frame (docs/ThinClient.md sec 8.5). Nothing about it is
+    // converted on the way up: the client's canvas pixels, the client's
+    // clock, the client's modifier bits. What reads them is that
+    // client's mirror, which is the only thing that knows what its
+    // canvas is.
+    auto& server = Render::SceneStreamServer::instance();
+    std::mutex mutex;
+    std::vector<Render::SceneInputFrame> got;
+    server.setInputHandler([&](const Render::SceneInputFrame& f) {
+        std::lock_guard<std::mutex> guard(mutex);
+        got.push_back(f);
+    });
+
+    WsClient c(port, "/scene");
+    c.hello("wire-input");
+    WsClient::Msg m = c.readBinary();
+    ASSERT_TRUE(m.ok) << m.ec.message();
+    Render::SceneClientInfo info;
+    ASSERT_TRUE(waitFor([&] { return findClient("wire-input", info); }));
+
+    // A move, a left press with shift and alt, a wheel notch, and a key.
+    c.sendBinary(inputFrame(0, 533, 150, 0, 0, 0, 1500));
+    c.sendBinary(inputFrame(1, 533, 150, 1, 0x05, 0, 1520));
+    c.sendBinary(inputFrame(3, 533, 150, 0, 0, -120, 1540));
+    c.sendBinary(inputFrame(4, 0, 0, 0x001B, 0, 0, 1560));
+    ASSERT_TRUE(waitFor([&] {
+        std::lock_guard<std::mutex> guard(mutex);
+        return got.size() >= 4;
+    }));
+
+    std::lock_guard<std::mutex> guard(mutex);
+    ASSERT_EQ(got.size(), 4u);
+    for (const auto& f : got)
+        EXPECT_EQ(f.client, info.id);
+
+    EXPECT_EQ(got[0].kind, 0);
+    EXPECT_EQ(got[0].x, 533);
+    EXPECT_EQ(got[0].y, 150) << "top-left origin, untouched on the way up";
+    EXPECT_EQ(got[0].timeMs, 1500u);
+
+    EXPECT_EQ(got[1].kind, 1);
+    EXPECT_EQ(got[1].code, 1);
+    EXPECT_EQ(got[1].modifiers, 0x05) << "shift and alt, not ctrl";
+
+    EXPECT_EQ(got[2].kind, 3);
+    EXPECT_EQ(got[2].delta, -120) << "a wheel delta is signed";
+
+    EXPECT_EQ(got[3].kind, 4);
+    EXPECT_EQ(got[3].code, 0x001B);
+
+    server.setInputHandler(nullptr);
+}
+
+TEST_F(SceneServerWire, aMalformedInputFrameIsNotAnEvent)
+{
+    // The trust boundary. A kind this server does not have would be
+    // turned into whichever Coin event the mirror's default branch
+    // built, which is a wrong event rather than none; and a frame of
+    // the wrong length is not an 'E' at all. Both are refused, and the
+    // fence behind them says the connection is still live.
+    auto& server = Render::SceneStreamServer::instance();
+    std::mutex mutex;
+    std::vector<Render::SceneInputFrame> got;
+    server.setInputHandler([&](const Render::SceneInputFrame& f) {
+        std::lock_guard<std::mutex> guard(mutex);
+        got.push_back(f);
+    });
+
+    WsClient c(port, "/scene");
+    c.hello("wire-input-bad");
+    WsClient::Msg m = c.readBinary();
+    ASSERT_TRUE(m.ok) << m.ec.message();
+    Render::SceneClientInfo info;
+    ASSERT_TRUE(waitFor([&] { return findClient("wire-input-bad", info); }));
+
+    c.sendBinary(inputFrame(6, 10, 10));            // no such kind
+    std::vector<uint8_t> shortFrame = inputFrame(0, 10, 10);
+    shortFrame.pop_back();
+    c.sendBinary(shortFrame);                       // not fifteen bytes
+    c.sendBinary(inputFrame(0, 7, 9, 0, 0, 0, 99)); // the fence
+
+    ASSERT_TRUE(waitFor([&] {
+        std::lock_guard<std::mutex> guard(mutex);
+        return !got.empty();
+    }));
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    std::lock_guard<std::mutex> guard(mutex);
+    ASSERT_EQ(got.size(), 1u);
+    EXPECT_EQ(got[0].x, 7);
+    EXPECT_EQ(got[0].timeMs, 99u);
+
+    server.setInputHandler(nullptr);
+}
+
+TEST_F(SceneServerWire, aViewOnlyConnectionSendsNoInput)
+{
+    // An input event can move geometry, so it is behind the same gate
+    // the picks are (docs/MultiDocServe.md sec 8) -- and it still gets
+    // counted, because the link carried it either way.
+    auto& server = Render::SceneStreamServer::instance();
+    std::mutex mutex;
+    int seen = 0;
+    server.setInputHandler([&](const Render::SceneInputFrame&) {
+        std::lock_guard<std::mutex> guard(mutex);
+        ++seen;
+    });
+
+    WsClient c(port, "/scene");
+    c.hello("wire-input-viewonly");
+    WsClient::Msg m = c.readBinary();
+    ASSERT_TRUE(m.ok) << m.ec.message();
+    Render::SceneClientInfo info;
+    ASSERT_TRUE(waitFor([&] { return findClient("wire-input-viewonly", info); }));
+    ASSERT_TRUE(server.setClientAccess(info.id, Render::ClientAccess::View));
+
+    const std::vector<uint8_t> frame = inputFrame(0, 11, 13);
+    c.sendBinary(frame);
+    ASSERT_TRUE(waitFor([&] {
+        return findClient("wire-input-viewonly", info) && info.inputMsgs >= 1;
+    }));
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        EXPECT_EQ(seen, 0) << "a view-only connection may not drive an edit";
+    }
+    EXPECT_EQ(info.inputMsgs, 1u);
+    EXPECT_EQ(info.inputWire, wireBytes(frame.size()));
+    EXPECT_EQ(info.pickMsgs, 0u) << "input is counted apart from picks";
+
+    server.setInputHandler(nullptr);
 }
 
 TEST_F(SceneServerWire, stopClosesEveryConnectionAndARestartServesAgain)

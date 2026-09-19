@@ -134,19 +134,35 @@ bool SelectionObserver::isSelectionAttached() const
 
 void SelectionObserver::attachSelection()
 {
+    // The room, not the current instance: an observer outlives any scope
+    // that happens to be open while it is built, and what a mirror picks
+    // must not drive the room's panels. docs/ThinClient.md section 8.4.
+    // An observer that belongs to one client's edit session says so with
+    // attachSelectionToCurrent() instead.
+    attachTo(SelectionRoom());
+}
+
+void SelectionObserver::attachSelectionToCurrent()
+{
+    attachTo(Selection());
+}
+
+void SelectionObserver::attachTo(SelectionSingleton& sel)
+{
     if (!connectSelection.connected()) {
+        observed = &sel;
         bool newStyle = (resolve >= ResolveMode::NewStyleElement);
         bool oldStyle = (resolve == ResolveMode::OldStyleElement);
-        auto &signal = newStyle ? Selection().signalSelectionChanged3 :
-                       oldStyle ? Selection().signalSelectionChanged2 :
-                                  Selection().signalSelectionChanged  ;
+        auto &signal = newStyle ? sel.signalSelectionChanged3 :
+                       oldStyle ? sel.signalSelectionChanged2 :
+                                  sel.signalSelectionChanged  ;
         //NOLINTBEGIN
         connectSelection = signal.connect(std::bind
             (&SelectionObserver::_onSelectionChanged, this, sp::_1));
         //NOLINTEND
 
         if (!filterDocName.empty()) {
-            Selection().addSelectionGate(
+            sel.addSelectionGate(
                     new SelectionGateFilterExternal(filterDocName.c_str(),filterObjName.c_str()));
         }
     }
@@ -177,8 +193,9 @@ void SelectionObserver::detachSelection()
     if (connectSelection.connected()) {
         connectSelection.disconnect();
         if (!filterDocName.empty())
-            Selection().rmvSelectionGate();
+            (observed ? *observed : SelectionRoom()).rmvSelectionGate();
     }
+    observed = nullptr;
 }
 
 // -------------------------------------------
@@ -921,7 +938,11 @@ SelectionSingleton::setPreselect(const char* pDocName, const char* pObjectName, 
 
     CurrentPreselection = Chng;
 
-    auto vp = Application::Instance->getViewProvider(Chng.Object.getObject());
+    // A process with no Gui application (a headless test over a mirror's
+    // instance) has no view providers to warm.
+    auto vp = Application::Instance
+        ? Application::Instance->getViewProvider(Chng.Object.getObject())
+        : nullptr;
     if (vp) {
         // Trigger populating bounding box cache. This also makes sure the
         // invisible object gets their geometry visual populated.
@@ -2048,7 +2069,7 @@ SelectionSingleton::SelectionSingleton() :
     ActiveGate = nullptr;
     gateResolve = ResolveMode::OldStyleElement;
     //NOLINTBEGIN
-    App::GetApplication().signalDeletedObject.connect(std::bind(&Gui::SelectionSingleton::slotDeletedObject, this, sp::_1));
+    connectDeletedObject = App::GetApplication().signalDeletedObject.connect(std::bind(&Gui::SelectionSingleton::slotDeletedObject, this, sp::_1));
     signalSelectionChanged.connect(std::bind(&Gui::SelectionSingleton::slotSelectionChanged, this, sp::_1));
     //NOLINTEND
 
@@ -2064,19 +2085,69 @@ SelectionSingleton::SelectionSingleton() :
 SelectionSingleton::~SelectionSingleton() = default;
 
 SelectionSingleton* SelectionSingleton::_pcSingleton = nullptr;
+SelectionSingleton* SelectionSingleton::_pcRoom = nullptr;
+std::vector<SelectionSingleton*> SelectionSingleton::_InstanceStack;
 
 SelectionSingleton& SelectionSingleton::instance()
 {
     if (!_pcSingleton)
-        _pcSingleton = new SelectionSingleton;
+        roomInstance();
     return *_pcSingleton;
+}
+
+SelectionSingleton& SelectionSingleton::roomInstance()
+{
+    if (!_pcRoom) {
+        _pcRoom = new SelectionSingleton;
+        // Only becomes current if nothing is standing on top of it, which
+        // pushInstance() guarantees by building the room before it pushes.
+        if (_InstanceStack.empty())
+            _pcSingleton = _pcRoom;
+    }
+    return *_pcRoom;
+}
+
+void SelectionSingleton::pushInstance(SelectionSingleton &sel)
+{
+    roomInstance();
+    _InstanceStack.push_back(_pcSingleton);
+    _pcSingleton = &sel;
+}
+
+void SelectionSingleton::popInstance(SelectionSingleton &sel)
+{
+    if (_InstanceStack.empty()) {
+        FC_ERR("Selection scope closed without a matching open");
+        return;
+    }
+    if (_pcSingleton != &sel)
+        FC_WARN("Selection scopes closed out of order");
+    _pcSingleton = _InstanceStack.back();
+    _InstanceStack.pop_back();
 }
 
 void SelectionSingleton::destruct ()
 {
-    if (_pcSingleton)
-        delete _pcSingleton;
+    // Only the room is ours to delete; an instance a scope pushed belongs to
+    // whoever built it, and one still standing here is that owner's bug.
+    if (!_InstanceStack.empty()) {
+        FC_WARN("Selection scope still open at shutdown");
+        _InstanceStack.clear();
+    }
+    delete _pcRoom;
+    _pcRoom = nullptr;
     _pcSingleton = nullptr;
+}
+
+SelectionScope::SelectionScope(SelectionSingleton &sel)
+    : pushed(&sel)
+{
+    SelectionSingleton::pushInstance(sel);
+}
+
+SelectionScope::~SelectionScope()
+{
+    SelectionSingleton::popInstance(*pushed);
 }
 
 //**************************************************************************

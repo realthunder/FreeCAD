@@ -83,6 +83,49 @@ grant's name pattern a constraint on **first join only** ("this invite was issue
 delta"); after that the session token is the identity and renames are free. Otherwise
 every rename becomes a door problem and live rules exist only to work around our own gate.
 
+### 2.2 Full control: the host level
+
+Added 2026-09-14. A grant's access is one of four: **edit** (0), **view only** (1),
+**banned** (2) and **full control** (3), which makes the connection a **host**: it may
+act as the desktop user would, beyond the document it is joined to -- the host's
+preferences, and the commands and tool bar actions an editing connection is refused.
+An editing connection asking for one of those is answered `Forbidden`. It is for the
+desktop's owner reaching their own machine from another device.
+
+The rules that keep it that:
+
+- **Only a verified identity, named literally.** A full-control grant makes a host only
+  of a connection whose front-door identity (sec 4) the grant's identity field names
+  exactly -- no `*` or `?`. On a pattern, or for a connection with no verified identity,
+  the same grant admits an editor. A name is what a client chose and an address is where
+  it appears to be; neither is a person.
+- **By hand, the same.** Making a live connection a host for the session needs a
+  verified identity too (`SceneStreamServer::setClientAccess`,
+  `Gui.serveSetClientMode(id, 'host')`).
+- **The panel says so.** The Share panel offers "Full control" in the invite row, the
+  grant editor, a grant's row and a live connection's row, disabled where it cannot
+  apply -- a grant whose identity is a pattern, a connection with no verified identity
+  -- and an invite or a new grant of full control on a pattern is refused with a
+  warning rather than stored as a host grant that would admit editors.
+- **An easing never carries it.** The live-only rule a rename mints is at most edit.
+- **Re-judged like any access.** A change of the grant list re-judges every connection,
+  a hand promotion included, and the client is told its level
+  (`{"cmd":"config","viewOnly":...,"access":"view|edit|host"}`) -- at that change, at a
+  hand change, and at the hello whenever the level is not edit.
+- **The process's own callers are hosts.** `FormWidgets.control()` and the C++ tests
+  answer as the desktop unless they say which connection they stand in for.
+
+Which ops need a host is the control channel's to say: an op's level is checked before it
+runs (`OmniControl::requiredAccess` for the omni ops -- `param.set`/`param.reset`), and an
+op whose answer depends on what it touches asks `Gui::sceneControlAccess()`.
+
+The browser viewer draws what the level allows, and the server judges either way. The
+config message's `access` reaches the page as `window.fcviewerAccess` and an `fc:access`
+event (wasm `fcviewer_access_event`). A host's tool bars and `/cmd` rows are not drawn
+refused; an editor's commands off the browser allowlist are. The omni box offers no
+`/param` mode to anyone: the host's preferences are not a browser's to change, whatever
+its level.
+
 ## 3. Prior art
 
 - **Ticket exchange** — a long-lived credential buys a short-lived, often single-use

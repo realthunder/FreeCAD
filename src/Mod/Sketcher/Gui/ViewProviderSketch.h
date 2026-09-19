@@ -73,6 +73,7 @@ struct EditData;
 
 namespace Gui {
 class View3DInventorViewer;
+class ViewerContext;
 }
 
 namespace Sketcher {
@@ -198,6 +199,27 @@ public:
     void activateHandler(DrawSketchHandler *newHandler);
     /// removes the active handler
     void purgeHandler();
+    /** Turn the views' own selection on or off for the whole session.
+     *
+     * Entering the edit turns it off in every view (the initiator through
+     * setEditViewer, the joiners through joinEditing) so a click reaches
+     * the tool; the External and CarbonCopy tools need it back on, in
+     * EVERY view of the session and not the initiator's alone, because
+     * the object they pick is resolved by each view's own selection root
+     * (docs/ThinClient.md 8.11 item 3). purgeHandler turns it off again.
+     */
+    void setSessionSelectionEnabled(bool on);
+    /** The selection instance this edit session selects into.
+     *
+     * The initiator's: the room for a session the desktop started, the
+     * client's own for one a browser started (docs/ThinClient.md 8.11).
+     * It is where attachSelectionToCurrent put this provider's observer,
+     * so a tool's selection gate goes on it too -- Gui::Selection() at a
+     * tool's activation is whatever scope the command ran under, which
+     * is the same instance from a client and the room from the desktop
+     * chrome.
+     */
+    Gui::SelectionSingleton& sessionSelection() const;
     /// obtain the current active handler
     DrawSketchHandler *currentHandler() const;
     /// set the pick style of the sketch coordinate axes
@@ -243,18 +265,18 @@ public:
 
     /// give projecting line of position
     void getProjectingLine(const SbVec2s&,
-                           const Gui::View3DInventorViewer *viewer,
+                           const Gui::ViewerContext *viewer,
                            SbLine&) const;
 
     /// helper to detect preselection
     bool detectPreselection(const SoPickedPoint *Point,
-                            const Gui::View3DInventorViewer *viewer,
+                            const Gui::ViewerContext *viewer,
                             const SbVec2s &cursorPos,
                             bool preselect=true);
 
     /// Helper for detectPreselection(), for constraints only.
     std::set<int> detectPreselectionConstr(const SoPickedPoint *Point,
-                                           const Gui::View3DInventorViewer *viewer,
+                                           const Gui::ViewerContext *viewer,
                                            const SbVec2s &cursorPos,
                                            bool preselect=true);
 
@@ -263,7 +285,7 @@ public:
 
     /// box selection method
     void doBoxSelection(const SbVec2s &startPos, const SbVec2s &endPos,
-                        const Gui::View3DInventorViewer *viewer);
+                        const Gui::ViewerContext *viewer);
 
     /// helper change the color of the sketch according to selection and solver status
     void updateColor();
@@ -315,14 +337,16 @@ public:
     /// is called by the tree if the user double clicks on the object
     bool doubleClicked() override;
     /// is called when the Provider is in edit and the mouse is moved
-    bool mouseMove(const SbVec2s& pos, Gui::View3DInventorViewer* viewer) override;
+    bool mouseMove(const SbVec2s& pos, Gui::ViewerContext* viewer) override;
+    /// The active tool's sequence (DrawSketchHandler::inSequence).
+    bool isGestureInProgress() const override;
     /// is called when the Provider is in edit and a key event ocours. Only ESC ends edit.
     bool keyPressed(bool pressed, int key) override;
     /// is called when the Provider is in edit and the mouse is clicked
     bool mouseButtonPressed(int Button,
                             bool pressed,
                             const SbVec2s& cursorPos,
-                            const Gui::View3DInventorViewer* viewer) override;
+                            const Gui::ViewerContext* viewer) override;
     //@}
 
     void deleteSelected();
@@ -391,8 +415,8 @@ protected:
     //@{
     bool setEdit(int ModNum) override;
     void unsetEdit(int ModNum) override;
-    void setEditViewer(Gui::View3DInventorViewer*, int ModNum) override;
-    void unsetEditViewer(Gui::View3DInventorViewer*) override;
+    void setEditViewer(Gui::ViewerContext*, int ModNum) override;
+    void unsetEditViewer(Gui::ViewerContext*) override;
     //@}
 
     /// update solver information based on last solving at SketchObject
@@ -413,6 +437,15 @@ protected:
     void createEditInventorNodes();
     /// pointer to the edit data structure if the ViewProvider is in edit.
     std::unique_ptr<EditData> edit;
+    /** The view an event of this edit is being handled in.
+     *
+     * A session has one initiator (edit->viewer) and N views that joined
+     * it (docs/ThinClient.md 8.11); camera math for an event -- a pick
+     * ray, a near plane, a scale factor, a dot pitch -- is the math of the
+     * view the event came through, which ViewerScope names. Outside any
+     * scope, or in one that is not a view of this edit, the initiator's.
+     */
+    Gui::ViewerContext* editViewer() const;
     /// build up the visual of the constraints
     void rebuildConstraintsVisual();
 

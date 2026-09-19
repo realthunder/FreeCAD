@@ -791,6 +791,54 @@ TEST(SceneDump, aFloatMapHalvesToTheSizeCap)
     EXPECT_EQ(floatsOf(pixels), (std::vector<float> {5.5f, 6.5f, 7.5f}));
 }
 
+/// Every scanline of an UNCOMPRESSED Radiance file, not only the first.
+/// A picture eight or more wide is expected to be run-length encoded;
+/// stb reads a scanline that is not by jumping into its flat loop, which
+/// is a different entry from the under-eight case above. gcc 15.2 at -O2
+/// miscompiled that loop (jump threading): only the first scanline was
+/// written and the rest of the buffer stayed as it was, so kHdr2x2 read
+/// back half garbage on Linux while MSVC was fine. ImageDecode.cpp now
+/// builds without -fthread-jumps on GCC; this is the wide half of the
+/// guard. Exponent 136 again, so every float is its own byte.
+TEST(SceneDump, anUncompressedRadianceFileDecodesEveryScanline)
+{
+    const int width = 8;
+    const int height = 2;
+    const std::string header =
+        "#?RADIANCE\nFORMAT=32-bit_rle_rgbe\n\n-Y 2 +X 8\n";
+    std::vector<uint8_t> file(header.begin(), header.end());
+    auto value = [](int y, int x, int c) {
+        return uint8_t(1 + x + width * y + 20 * c);
+    };
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            file.push_back(value(y, x, 0));
+            file.push_back(value(y, x, 1));
+            file.push_back(value(y, x, 2));
+            file.push_back(136);
+        }
+    }
+    // Rows bottom-up like GL: the file's last scanline comes first.
+    std::vector<float> expected;
+    for (int y = height - 1; y >= 0; --y) {
+        for (int x = 0; x < width; ++x) {
+            for (int c = 0; c < 3; ++c) {
+                expected.push_back(float(value(y, x, c)));
+            }
+        }
+    }
+    ASSERT_TRUE(Render::isEncodedImage(file.data(), file.size()));
+    int w = 0;
+    int h = 0;
+    std::vector<uint8_t> pixels;
+    ASSERT_TRUE(Render::decodeImage(file.data(), file.size(), 3, 0, w, h,
+                                    pixels, true));
+    EXPECT_EQ(w, width);
+    EXPECT_EQ(h, height);
+    EXPECT_EQ(floatsOf(pixels), expected)
+        << "a scanline after the first came back unwritten";
+}
+
 /// A texture in flight when the next publish lands is filled where the
 /// draws look (v75's memo, SceneSnapshot::textureMemo): the second
 /// parse of the same shader chunk hands back the FIRST parse's texture

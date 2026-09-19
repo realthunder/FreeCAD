@@ -400,7 +400,7 @@ struct EditData {
     int           cursorDragging = -1;
     std::string   lastPreselection;
     std::vector<int> lastCstrPreselections;
-    Gui::View3DInventorViewer * viewer = nullptr;
+    Gui::ViewerContext * viewer = nullptr;
 
     bool enableExternalPick = false;
 
@@ -695,7 +695,7 @@ void ViewProviderSketch::activateHandler(DrawSketchHandler *newHandler)
     // ViewProviderSketch::keyPressed() and dismiss the active handler, and not the entire
     // sketcher editor
     if (edit->viewer)
-        edit->viewer->setFocus();
+        edit->viewer->setFocusToView();
 }
 
 void ViewProviderSketch::deactivateHandler()
@@ -720,9 +720,37 @@ void ViewProviderSketch::purgeHandler(void)
     deactivateHandler();
     Gui::Selection().clearSelection();
 
-    if (edit && edit->viewer) {
-        edit->viewer->setSelectionEnabled(false);
+    setSessionSelectionEnabled(false);
+}
+
+void ViewProviderSketch::setSessionSelectionEnabled(bool on)
+{
+    if (!edit || !edit->viewer) {
+        return;
     }
+    if (Gui::EditingRoot* root = edit->viewer->editingRoot()) {
+        // A copy: setSelectionEnabled on a desktop view touches its root
+        // node, not the list.
+        const std::vector<Gui::ViewerContext*> views = root->views();
+        if (!views.empty()) {
+            for (Gui::ViewerContext* view : views) {
+                view->setSelectionEnabled(on);
+            }
+            return;
+        }
+    }
+    edit->viewer->setSelectionEnabled(on);
+}
+
+Gui::SelectionSingleton& ViewProviderSketch::sessionSelection() const
+{
+    if (edit && edit->viewer) {
+        if (Gui::SelectionSingleton* instance = edit->viewer->sessionSelectionInstance()) {
+            return *instance;
+        }
+        return Gui::SelectionRoom();
+    }
+    return Gui::Selection();
 }
 
 void ViewProviderSketch::setAxisPickStyle(bool on)
@@ -738,18 +766,27 @@ void ViewProviderSketch::moveCursorToSketchPoint(Base::Vector2d point) {
 
     SbVec3f sbpoint(point.x,point.y,0.f);
 
-    if (!edit->viewer)
+    if (!editViewer())
         return;
 
-    auto viewer = edit->viewer;
+    auto viewer = editViewer();
+
+    // Warping the pointer is the one thing here that genuinely needs a
+    // window: it moves the physical cursor of whoever is at this machine.
+    // A client's mirror has no widget (docs/ThinClient.md sec 8.3), and a
+    // sketch being dragged from a browser must not reach across and move
+    // the cursor of the person sitting at the server.
+    QWidget *glWidget = viewer->getGLWidget();
+    if (!glWidget)
+        return;
 
     SbVec2s screencoords = viewer->getPointOnViewport(sbpoint);
 
     short x,y; screencoords.getValue(x,y);
 
-    short height = viewer->getGLWidget()->height(); // Coin3D origin bottom left, QT origin top left
+    short height = glWidget->height(); // Coin3D origin bottom left, QT origin top left
 
-    QPoint newPos = viewer->getGLWidget()->mapToGlobal(QPoint(x,height-y));
+    QPoint newPos = glWidget->mapToGlobal(QPoint(x,height-y));
 
 
     // QScreen *screen = view->windowHandle()->screen();
@@ -780,10 +817,10 @@ void ViewProviderSketch::preselectAtPoint(Base::Vector2d point)
 
         SbVec3f sbpoint(point.x,point.y,0.f);
 
-        if (!edit->viewer)
+        if (!editViewer())
             return;
 
-        auto viewer = edit->viewer;
+        auto viewer = editViewer();
         SbVec2s screencoords = viewer->getPointOnViewport(sbpoint);
 
         std::unique_ptr<SoPickedPoint> Point(this->getPointOnRay(screencoords, viewer));
@@ -866,7 +903,7 @@ void ViewProviderSketch::setAngleSnapping(bool enable, Base::Vector2d referenceP
     snapManager->setAngleSnapping(enable, referencePoint);
 }
 
-void ViewProviderSketch::getProjectingLine(const SbVec2s& pnt, const Gui::View3DInventorViewer *viewer, SbLine& line) const
+void ViewProviderSketch::getProjectingLine(const SbVec2s& pnt, const Gui::ViewerContext *viewer, SbLine& line) const
 {
     const SbViewportRegion& vp = viewer->getSoRenderManager()->getViewportRegion();
 
@@ -934,7 +971,7 @@ void ViewProviderSketch::getCoordsOnSketchPlane(const SbVec3f& point, const SbVe
 }
 
 bool ViewProviderSketch::mouseButtonPressed(int Button, bool pressed, const SbVec2s &cursorPos,
-                                            const Gui::View3DInventorViewer *viewer)
+                                            const Gui::ViewerContext *viewer)
 {
     if (!edit)
         return inherited::mouseButtonPressed(
@@ -994,7 +1031,7 @@ bool ViewProviderSketch::mouseButtonPressed(int Button, bool pressed, const SbVe
 
     // Both Mouse button is down, cancel current mode to avoid conflict with
     // some navigation method.
-    auto btns = QApplication::mouseButtons();
+    auto btns = viewer->mouseButtons();
     if ((btns & Qt::RightButton) && (btns & Qt::LeftButton)) {
         switch(_Mode) {
         case STATUS_SKETCH_UseHandler:
@@ -1003,9 +1040,9 @@ bool ViewProviderSketch::mouseButtonPressed(int Button, bool pressed, const SbVe
         case STATUS_SKETCH_UseRubberBand:
             rubberband->setWorking(false);
 
-            const_cast<Gui::View3DInventorViewer *>(viewer)->setRenderType(Gui::View3DInventorViewer::Native);
+            const_cast<Gui::ViewerContext *>(viewer)->setRenderType(Gui::ViewerContext::Native);
             draw(true,false);
-            const_cast<Gui::View3DInventorViewer*>(viewer)->redraw();
+            const_cast<Gui::ViewerContext*>(viewer)->redraw();
             setSketchMode(STATUS_NONE);
             break;
         default:
@@ -1281,7 +1318,7 @@ bool ViewProviderSketch::mouseButtonPressed(int Button, bool pressed, const SbVe
 
                     // a redraw is required in order to clear the rubberband
                     draw(true,false);
-                    const_cast<Gui::View3DInventorViewer*>(viewer)->redraw();
+                    const_cast<Gui::ViewerContext*>(viewer)->redraw();
                     setSketchMode(STATUS_NONE);
                     return true;
                 case STATUS_SKETCH_UseHandler: {
@@ -1360,9 +1397,9 @@ const char* ViewProviderSketch::getDefaultDisplayMode() const
 
 bool ViewProviderSketch::getElementPicked(const SoPickedPoint *pp, std::string &subname) const
 {
-    if (edit && edit->viewer) {
+    if (edit && editViewer()) {
         const_cast<ViewProviderSketch*>(this)->detectPreselection(
-                pp, edit->viewer, edit->curCursorPos, false);
+                pp, editViewer(), edit->curCursorPos, false);
         if (edit->lastPreselection.empty())
             return false;
         if (edit->lastCstrPreselections.empty()) {
@@ -1431,7 +1468,15 @@ bool ViewProviderSketch::getDetailPath(
     return inherited::getDetailPath(subname, pPath, append, det);
 }
 
-bool ViewProviderSketch::mouseMove(const SbVec2s &cursorPos, Gui::View3DInventorViewer *viewer)
+bool ViewProviderSketch::isGestureInProgress() const
+{
+    // The drags of the sketch's own modes run between a press and a
+    // release, which the session sees for itself; only a tool's sequence
+    // needs saying.
+    return edit && edit->sketchHandler && edit->sketchHandler->inSequence();
+}
+
+bool ViewProviderSketch::mouseMove(const SbVec2s &cursorPos, Gui::ViewerContext *viewer)
 {
     if (!edit)
         return inherited::mouseMove(cursorPos, viewer);
@@ -1705,13 +1750,20 @@ bool ViewProviderSketch::mouseMove(const SbVec2s &cursorPos, Gui::View3DInventor
             return true;
         }
         case STATUS_SKETCH_UseRubberBand: {
-            // Here we must use the device-pixel-ratio to compute the correct y coordinate (#0003130)
-            qreal dpr = viewer->getGLWidget()->devicePixelRatioF();
+            // In the pixels the cursor is reported in: device pixels of
+            // the viewport, Coin's origin at the bottom. This used to take
+            // the GL widget's height and correct it by the device pixel
+            // ratio (#0003130) -- the same number wherever there is a
+            // widget, and a null dereference where there is not. A
+            // client's mirror has none (docs/ThinClient.md sec 8.3), and a
+            // browser dragging across empty space starts a rubber band
+            // like any other client.
+            const int height = viewer->getViewportRegion().getViewportSizePixels()[1];
             newCursorPos = cursorPos;
             rubberband->setCoords(prvCursorPos.getValue()[0],
-                       viewer->getGLWidget()->height()*dpr - prvCursorPos.getValue()[1],
+                       height - prvCursorPos.getValue()[1],
                        newCursorPos.getValue()[0],
-                       viewer->getGLWidget()->height()*dpr - newCursorPos.getValue()[1]);
+                       height - newCursorPos.getValue()[1]);
             viewer->redraw();
             return true;
         }
@@ -1960,7 +2012,7 @@ Base::Vector3d ViewProviderSketch::seekConstraintPosition(const Base::Vector3d &
                                                           const SoNode *constraint)
 {
     assert(edit);
-    Gui::View3DInventorViewer *viewer = edit->viewer;
+    Gui::ViewerContext *viewer = editViewer();
     if (!viewer)
         return Base::Vector3d();
 
@@ -2236,7 +2288,7 @@ void ViewProviderSketch::onSelectionChanged(const Gui::SelectionChanges& msg)
 }
 
 std::set<int> ViewProviderSketch::detectPreselectionConstr(const SoPickedPoint *Point,
-                                                           const Gui::View3DInventorViewer *viewer,
+                                                           const Gui::ViewerContext *viewer,
                                                            const SbVec2s &cursorPos,
                                                            bool preselect)
 {
@@ -2248,7 +2300,9 @@ std::set<int> ViewProviderSketch::detectPreselectionConstr(const SoPickedPoint *
 
     SoPath *path = Point->getPath();
     SoNode *tail = path->getTail();
-    int r = static_cast<int>(Gui::ViewParams::getPickRadius());
+    // The radius this view picks with, which is the client's on a mirror:
+    // a finger wants a wider one than a mouse.
+    int r = static_cast<int>(viewer->getPickRadius());
 
     for (int i=1; i<path->getLength(); ++i) {
         SoNode * tailFather = path->getNodeFromTail(i);
@@ -2321,8 +2375,16 @@ std::set<int> ViewProviderSketch::detectPreselectionConstr(const SoPickedPoint *
                         Gui::ViewVolumeProjection proj(pCam->getViewVolume());
                         Base::Vector3d screencoords = proj(pos);
 
-                        int width = viewer->getGLWidget()->width(),
-                            height = viewer->getGLWidget()->height();
+                        // The viewport, not the widget: these pixels
+                        // are compared against a Coin cursor position,
+                        // which is in device pixels of the viewport -- so
+                        // the widget's LOGICAL size was already the wrong
+                        // unit wherever the ratio is not 1, and it is no
+                        // unit at all for a client's mirror, which has no
+                        // widget (docs/ThinClient.md sec 8.3).
+                        const SbVec2s viewportPx =
+                            viewer->getViewportRegion().getViewportSizePixels();
+                        int width = viewportPx[0], height = viewportPx[1];
 
                         if (width >= height) {
                             // "Landscape" orientation, to square
@@ -2394,7 +2456,7 @@ std::set<int> ViewProviderSketch::detectPreselectionConstr(const SoPickedPoint *
 }
 
 bool ViewProviderSketch::detectPreselection(const SoPickedPoint *Point,
-                                            const Gui::View3DInventorViewer *viewer,
+                                            const Gui::ViewerContext *viewer,
                                             const SbVec2s &cursorPos,
                                             bool preselect)
 {
@@ -2623,7 +2685,7 @@ SbVec3s ViewProviderSketch::getDisplayedSize(const SoImage *iconPtr) const
 
 void ViewProviderSketch::centerSelection()
 {
-    if (!edit || !edit->viewer)
+    if (!edit || !editViewer())
         return;
 
     SoGroup* group = new SoGroup();
@@ -2637,7 +2699,7 @@ void ViewProviderSketch::centerSelection()
         }
     }
 
-    Gui::View3DInventorViewer* viewer = edit->viewer;
+    Gui::ViewerContext* viewer = editViewer();
     SoGetBoundingBoxAction action(viewer->getSoRenderManager()->getViewportRegion());
     action.apply(group);
     group->unref();
@@ -2654,7 +2716,7 @@ void ViewProviderSketch::centerSelection()
 }
 
 void ViewProviderSketch::doBoxSelection(const SbVec2s &startPos, const SbVec2s &endPos,
-                                        const Gui::View3DInventorViewer *viewer)
+                                        const Gui::ViewerContext *viewer)
 {
     std::vector<SbVec2s> corners0;
     corners0.push_back(startPos);
@@ -3205,7 +3267,7 @@ void ViewProviderSketch::updateColor(void)
     updateVirtualSpace();
 
     SbVec3f pnt, dir;
-    edit->viewer->getNearPlane(pnt, dir);
+    editViewer()->getNearPlane(pnt, dir);
     auto transform = getEditingPlacement();
     Base::Vector3d v0, v1;
     transform.multVec(Base::Vector3d(0,0,0), v0);
@@ -4040,7 +4102,7 @@ void ViewProviderSketch::drawConstraintIcons()
             SbVec3f pos0(startingpoint.x,startingpoint.y,startingpoint.z);
             SbVec3f pos1(endpoint.x,endpoint.y,endpoint.z);
 
-            Gui::View3DInventorViewer *viewer = edit->viewer;
+            Gui::ViewerContext *viewer = editViewer();
             if (!viewer)
                 return;
             SoCamera* pCam = viewer->getSoRenderManager()->getCamera();
@@ -4417,8 +4479,8 @@ void ViewProviderSketch::drawTypicalConstraintIcon(const constrIconQueueItem &i)
 
 float ViewProviderSketch::getScaleFactor()
 {
-    if (edit && edit->viewer) {
-        Gui::View3DInventorViewer *viewer = edit->viewer;
+    if (edit && editViewer()) {
+        Gui::ViewerContext *viewer = editViewer();
         SoCamera* camera = viewer->getSoRenderManager()->getCamera();
         float aspectRatio = camera->aspectRatio.getValue();
         float scale = camera->getViewVolume(aspectRatio).getWorldToScreenScale(SbVec3f(0.f, 0.f, 0.f), 0.1f) / (5*aspectRatio);
@@ -4555,8 +4617,8 @@ void ViewProviderSketch::initParams()
 #if QT_VERSION < QT_VERSION_CHECK(5,14,0)
         dpi = QApplication::desktop()->logicalDpiX();
 #else
-        if (edit->viewer)
-            dpi = edit->viewer->screen()->logicalDotsPerInchX();
+        if (editViewer())
+            dpi = editViewer()->logicalDotsPerInchX();
         else
             dpi = Gui::getMainWindow()->screen()->logicalDotsPerInchX();
 #endif
@@ -6861,7 +6923,7 @@ Restart:
         }
     }
 
-    edit->viewer->redraw();
+    editViewer()->redraw();
 }
 
 void ViewProviderSketch::rebuildConstraintsVisual(void)
@@ -7370,7 +7432,11 @@ bool ViewProviderSketch::setEdit(int ModNum)
     Gui::Selection().clearSelection();
     Gui::Selection().rmvPreselect();
 
-    this->attachSelection();
+    // The selection of the view this edit is starting in, which on the
+    // desktop is the room and from a browser is that client's own: this
+    // observer is what colours the edit geometry, so it has to hear the
+    // instance the picks are going into (docs/ThinClient.md sec 8.4).
+    this->attachSelectionToCurrent();
 
     auto gridnode = getGridNode();
     Base::Placement plm = getEditingPlacement();
@@ -7959,7 +8025,16 @@ void ViewProviderSketch::unsetEdit(int ModNum)
     inherited::unsetEdit(ModNum); // notify grid that edit mode is being left
 }
 
-void ViewProviderSketch::setEditViewer(Gui::View3DInventorViewer* viewer, int ModNum)
+Gui::ViewerContext* ViewProviderSketch::editViewer() const
+{
+    if (Gui::ViewerContext* current = Gui::ViewerContext::current()) {
+        if (current->getEditingViewProvider() == this)
+            return current;
+    }
+    return edit ? edit->viewer : nullptr;
+}
+
+void ViewProviderSketch::setEditViewer(Gui::ViewerContext* viewer, int ModNum)
 {
     if (ModNum == Transform || ModNum == TransformAt)
         return inherited::setEditViewer(viewer, ModNum);
@@ -8009,7 +8084,14 @@ void ViewProviderSketch::setEditViewer(Gui::View3DInventorViewer* viewer, int Mo
     else
         editSubName.resize(dot-editSubName.c_str()+1);
 
-    if (_AdjustCamera) {
+    // A client's camera is not turned: it is stated over the wire and
+    // restated on the client's next frame (ViewerContext::cameraIsRemote),
+    // so an adjustment here would only disagree with the picture the
+    // client draws until then, and every pointer event resolved in between
+    // would land somewhere the client cannot see -- which is how a
+    // browser's click in a sketch picked nothing on the move and something
+    // else on the press.
+    if (_AdjustCamera && !viewer->cameraIsRemote()) {
         auto transform = getEditingPlacement();
 
         // Will the sketch be visible from the new position (#0000957)?
@@ -8073,7 +8155,7 @@ void ViewProviderSketch::setEditViewer(Gui::View3DInventorViewer* viewer, int Mo
     inherited::setEditViewer(viewer, ModNum);
 }
 
-void ViewProviderSketch::unsetEditViewer(Gui::View3DInventorViewer* viewer)
+void ViewProviderSketch::unsetEditViewer(Gui::ViewerContext* viewer)
 {
     if (edit) {
         viewer->removeGraphicsItem(rubberband.get());
@@ -8484,7 +8566,7 @@ void ViewProviderSketch::generateContextMenu()
     if (Gui::Selection().hasPreselection()) {
         auto sel = Gui::Selection().getPreselection();
         if (!Gui::Selection().isSelected(sel.pDocName, sel.pObjectName, sel.pSubName, Gui::ResolveMode::NoResolve)) {
-            if (!(QApplication::queryKeyboardModifiers() & Qt::ShiftModifier))
+            if (!(Gui::ViewerContext::currentKeyboardModifiers() & Qt::ShiftModifier))
                 Gui::Selection().clearSelection();
             Gui::SelectionNoTopParentCheck guard;
             Gui::Selection().addSelection(sel.pDocName, sel.pObjectName, sel.pSubName);

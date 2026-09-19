@@ -35,6 +35,8 @@
 #include <Base/Interpreter.h>
 
 #include "UiLoader.h"
+#include <QToolBar>
+
 #include "PythonWrapper.h"
 #include "WidgetFactory.h"
 
@@ -48,6 +50,10 @@ QWidget* createFromWidgetFactory(const QString & className, QWidget * parent, co
     QWidget* widget = nullptr;
     if (WidgetFactory().CanProduce((const char*)className.toUtf8()))
         widget = WidgetFactory().createWidget((const char*)className.toUtf8(), parent);
+    // upstream's Gui::ToolBar (a QToolBar the tool bar manager decorates):
+    // Draft's and BIM's status bar widgets ask the loader for one by name
+    if (!widget && className == QLatin1String("Gui::ToolBar"))
+        widget = new QToolBar(parent);
     if (widget)
         widget->setObjectName(name);
     return widget;

@@ -34,6 +34,7 @@
 # include <TopoDS_Wire.hxx>
 #endif
 
+#include <array>
 #include <boost_regex.hpp>
 
 #include <App/DocumentObject.h>
@@ -131,8 +132,9 @@ public:
         add_varargs_method("findOuterWire", &Module::findOuterWire,
             "wire = findOuterWire(edgeList) -- Planar graph traversal finds OuterWire in edge pile."
         );
-        add_varargs_method("findShapeOutline", &Module::findShapeOutline,
-            "wire = findShapeOutline(shape, scale, direction) -- Project shape in direction and find outer wire of result."
+        add_keyword_method("findShapeOutline", &Module::findShapeOutline,
+            "wire = findShapeOutline(shape, scale, direction, allowCrazyEdge=False) -- Project shape in direction and find outer wire of result.\n"
+            " allowCrazyEdge=True keeps edges the projector would drop as implausible (longer than 10 m on paper), the scoped form of the Mod/TechDraw/debug allowCrazyEdge preference."
         );
         add_varargs_method("viewPartAsDxf", &Module::viewPartAsDxf,
             "string = viewPartAsDxf(DrawViewPart) -- Return the edges of a DrawViewPart in Dxf format."
@@ -158,8 +160,9 @@ public:
         add_varargs_method("makeDistanceDim3d", &Module::makeDistanceDim3d,
             "makeDistanceDim(DrawViewPart, dimType, 3dFromPoint, 3dToPoint) -- draw a Length dimension between fromPoint to toPoint.  FromPoint and toPoint are unscaled 3d model points. dimType is one of ['Distance', 'DistanceX', 'DistanceY'."
         );
-        add_varargs_method("makeGeomHatch", &Module::makeGeomHatch,
-            "makeGeomHatch(face, [patScale], [patName], [patFile]) -- draw a geom hatch on a given face, using optionally the given scale (default 1) and a given pattern name (ex. Diamond) and .pat file (the default pattern name and/or .pat files set in preferences are used if none are given). Returns a Part compound shape."
+        add_keyword_method("makeGeomHatch", &Module::makeGeomHatch,
+            "makeGeomHatch(face, [patScale], [patName], [patFile], allowCrazyEdge=False) -- draw a geom hatch on a given face, using optionally the given scale (default 1) and a given pattern name (ex. Diamond) and .pat file (the default pattern name and/or .pat files set in preferences are used if none are given). Returns a Part compound shape.\n"
+            " allowCrazyEdge=True keeps hatch lines the pattern trimmer would drop as implausible (longer than 10 m), the scoped form of the Mod/TechDraw/debug allowCrazyEdge preference."
         );
         add_varargs_method("project", &Module::project,
             "[visiblyG0, visiblyG1, hiddenG0, hiddenG1] = project(TopoShape[, App.Vector Direction, string type])\n"
@@ -346,16 +349,22 @@ private:
         return Py::asObject(outerWire);
     }
 
-    Py::Object findShapeOutline(const Py::Tuple& args)
+    Py::Object findShapeOutline(const Py::Tuple& args, const Py::Dict& kwds)
     {
         PyObject *pcObjShape(nullptr);
         double scale(1.0);
         PyObject *pcObjDir(nullptr);
-        if (!PyArg_ParseTuple(args.ptr(), "OdO", &pcObjShape,
-                                                 &scale,
-                                                 &pcObjDir)) {
-            throw Py::TypeError("expected (shape, scale, direction");
+        int allowCrazyEdge = 0;
+        static const std::array<const char*, 5> kwlist {"shape", "scale", "direction",
+                                                        "allowCrazyEdge", nullptr};
+        if (!PyArg_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "OdO|p",
+                                         const_cast<char**>(kwlist.data()),
+                                         &pcObjShape, &scale, &pcObjDir, &allowCrazyEdge)) {
+            throw Py::TypeError("expected (shape, scale, direction, allowCrazyEdge=False)");
         }
+        // The caller vouches for its edges for the length of this
+        // call; the preference itself is not touched.
+        DrawUtil::CrazyEdgeAllowance crazyOK(allowCrazyEdge != 0);
 
         if (!PyObject_TypeCheck(pcObjShape, &(TopoShapePy::Type))) {
             throw Py::TypeError("expected arg1 to be 'Shape'");
@@ -963,21 +972,29 @@ private:
     }
 
 
-    Py::Object makeGeomHatch(const Py::Tuple& args)
+    Py::Object makeGeomHatch(const Py::Tuple& args, const Py::Dict& kwds)
     {
         PyObject* pFace(nullptr);
         double scale = 1.0;
         const char* pPatName = {nullptr};
         const char* pPatFile = {nullptr};
+        int allowCrazyEdge = 0;
         TechDraw::DrawViewPart* source = nullptr;
         TopoDS_Face face;
 
-        if (!PyArg_ParseTuple(args.ptr(), "O|dss", &pFace, &scale, &pPatName, &pPatFile)) {
-            throw Py::TypeError("expected (face, [scale], [patName], [patFile])");
+        static const std::array<const char*, 6> kwlist {"face", "patScale", "patName", "patFile",
+                                                        "allowCrazyEdge", nullptr};
+        if (!PyArg_ParseTupleAndKeywords(args.ptr(), kwds.ptr(), "O|dssp",
+                                         const_cast<char**>(kwlist.data()),
+                                         &pFace, &scale, &pPatName, &pPatFile, &allowCrazyEdge)) {
+            throw Py::TypeError("expected (face, [scale], [patName], [patFile], allowCrazyEdge=False)");
         }
+        // The caller vouches for its hatch lines for the length of this
+        // call; the preference itself is not touched.
+        DrawUtil::CrazyEdgeAllowance crazyOK(allowCrazyEdge != 0);
 
-        std::string patName = std::string(pPatName);
-        std::string patFile = std::string(pPatFile);
+        std::string patName = pPatName ? std::string(pPatName) : std::string();
+        std::string patFile = pPatFile ? std::string(pPatFile) : std::string();
 
         if (PyObject_TypeCheck(pFace, &(TopoShapeFacePy::Type))) {
             const TopoDS_Shape& shape = static_cast<TopoShapePy*>(pFace)->getTopoShapePtr()->getShape();

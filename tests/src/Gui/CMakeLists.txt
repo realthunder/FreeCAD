@@ -22,6 +22,24 @@ add_test(NAME ClipConvention_tests_run COMMAND ClipConvention_tests_run)
 # Qt tests
 setup_qt_test(QuantitySpinBox)
 
+# The host widget layer (docs/Sandbox.md 7.12, H0): the property core,
+# the generator's output for Draft's OrthoArray form, and the Qt backend
+# binding uic's widgets to the models.  The header is generated here
+# from the .ui in the tree by the generator under test.
+set(_fw_test_ui ${CMAKE_SOURCE_DIR}/src/Mod/Draft/Resources/ui/TaskPanel_OrthoArray.ui)
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/fwui_TaskPanel_OrthoArray.h
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/src/Tools/fwuic.py ${_fw_test_ui}
+            -o ${CMAKE_CURRENT_BINARY_DIR}/fwui_TaskPanel_OrthoArray.h
+    DEPENDS ${_fw_test_ui} ${CMAKE_SOURCE_DIR}/src/Tools/fwuic.py
+    COMMENT "fwuic: TaskPanel_OrthoArray.ui as host widget models")
+setup_qt_test(FormWidgets)
+target_sources(FormWidgets_Tests_run PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/fwui_TaskPanel_OrthoArray.h)
+target_include_directories(FormWidgets_Tests_run PRIVATE
+    ${CMAKE_CURRENT_BINARY_DIR}
+    ${CMAKE_SOURCE_DIR}/src/Gui)
+target_compile_definitions(FormWidgets_Tests_run PRIVATE FW_TEST_UI_FILE="${_fw_test_ui}")
+
 # The omni search layer without its box (docs/OmniSearch.md): the input
 # grammar, object and property resolution over a document, the parameter
 # search over App::ParamRegistry and the editor factory over Gui's
@@ -112,6 +130,90 @@ if(TARGET FreeCADGui)
                           gtest_main FreeCADGui FreeCADApp FreeCADBase)
     add_test(NAME RenderProperties_tests_run
              COMMAND RenderProperties_tests_run)
+
+    # The selection instance stack (docs/ThinClient.md section 8.4). What
+    # it asserts -- which instance Gui::Selection() resolves to, and that
+    # an observer stays pinned to the room -- is settled entirely inside
+    # SelectionSingleton, so the test needs no document, no main window
+    # and no QApplication, and links FreeCADGui only to reach the class.
+    add_executable(SelectionStack_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/SelectionStack.cpp)
+    target_include_directories(SelectionStack_tests_run PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_BINARY_DIR}/src
+        ${Python3_INCLUDE_DIRS}
+        ${XercesC_INCLUDE_DIRS}
+        ${COIN3D_INCLUDE_DIRS}
+        ${Boost_INCLUDE_DIRS})
+    target_link_libraries(SelectionStack_tests_run
+                          gtest_main FreeCADGui FreeCADApp FreeCADBase)
+    add_test(NAME SelectionStack_tests_run
+             COMMAND SelectionStack_tests_run)
+
+    # The per-client mirror viewer (docs/ThinClient.md sec 8.3): the
+    # ray-to-pixel round trip and the pick radius that Coin refuses to
+    # apply to an explicitly set ray. A mirror is a camera, a viewport and
+    # a scene graph, so this needs Coin but no document, no main window and
+    # no QApplication -- FreeCADGui only to reach the class.
+    add_executable(MirrorViewer_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/MirrorViewer.cpp)
+    target_include_directories(MirrorViewer_tests_run PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_BINARY_DIR}/src
+        ${Python3_INCLUDE_DIRS}
+        ${XercesC_INCLUDE_DIRS}
+        ${COIN3D_INCLUDE_DIRS}
+        ${Boost_INCLUDE_DIRS})
+    target_link_libraries(MirrorViewer_tests_run
+                          gtest_main FreeCADGui FreeCADApp FreeCADBase)
+    add_test(NAME MirrorViewer_tests_run
+             COMMAND MirrorViewer_tests_run)
+
+    # The on-view parameters an edit mode opens in a view with no widget
+    # (docs/ThinClient.md sec 8.7). Unlike the mirror set above this one
+    # DOES need a QApplication, because the claim being tested is that the
+    # entry box is a real QuantitySpinBox that simply is never shown -- it
+    # builds widgets, types into them with replayed key frames and reads
+    # them back, all under the offscreen platform the test asks for
+    # itself.
+    add_executable(OnViewParameter_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/OnViewParameter.cpp)
+    target_include_directories(OnViewParameter_tests_run PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_BINARY_DIR}/src
+        ${Python3_INCLUDE_DIRS}
+        ${XercesC_INCLUDE_DIRS}
+        ${COIN3D_INCLUDE_DIRS}
+        ${Boost_INCLUDE_DIRS})
+    target_link_libraries(OnViewParameter_tests_run
+                          gtest_main FreeCADGui FreeCADApp FreeCADBase
+                          ${QtCore_LIBRARIES} ${QtWidgets_LIBRARIES})
+    add_test(NAME OnViewParameter_tests_run
+             COMMAND OnViewParameter_tests_run)
+
+    # The expression editor (src/Gui/ExpressionEditorView.h): the text
+    # form's parse, and its dump and apply over a live document, the line
+    # diff, and the formats the expression highlighter gives. A highlighter
+    # formats a QTextDocument, so there is a QApplication, under the
+    # offscreen platform; no window is shown.
+    add_executable(ExpressionEditor_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/ExpressionEditor.cpp)
+    target_include_directories(ExpressionEditor_tests_run PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_BINARY_DIR}/src
+        ${Python3_INCLUDE_DIRS}
+        ${XercesC_INCLUDE_DIRS}
+        ${COIN3D_INCLUDE_DIRS}
+        ${Boost_INCLUDE_DIRS})
+    target_link_libraries(ExpressionEditor_tests_run
+                          gtest_main FreeCADGui FreeCADApp FreeCADBase
+                          ${QtCore_LIBRARIES} ${QtWidgets_LIBRARIES})
+    add_test(NAME ExpressionEditor_tests_run
+             COMMAND ExpressionEditor_tests_run)
 endif()
 
 if(TARGET FreeCADRenderer)

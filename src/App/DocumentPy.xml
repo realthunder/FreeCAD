@@ -26,11 +26,13 @@ segments.</UserDocu>
       <Documentation>
         <UserDocu>Save the document to disk</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="saveAs">
       <Documentation>
         <UserDocu>Save the document under a new name to disk</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="saveCopy">
       <Documentation>
@@ -56,6 +58,7 @@ segments.</UserDocu>
       <Documentation>
         <UserDocu>Get the program version that a project file was created with</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="getFileName">
       <Documentation>
@@ -86,6 +89,7 @@ If more than one document is changed, all newly created transactions will have
 the same internal ID and will be undo/redo together.
           </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="getBookedTransactionID">
       <Documentation>
@@ -99,11 +103,13 @@ there is none open.</UserDocu>
       <Documentation>
         <UserDocu>Abort an Undo/Redo transaction (rollback)</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="commitTransaction">
       <Documentation>
         <UserDocu>Commit an Undo/Redo transaction</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="addObject" Keyword="true">
       <Documentation>
@@ -120,6 +126,7 @@ attach (Boolean): if True, then bind the document object first before adding to 
         the document, it will try to call Python binding object's attach(obj) method.
 viewType (String): override the view provider type directly, only effective when attach is False.</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="addProperty" Keyword="true">
         <Documentation>
@@ -143,6 +150,7 @@ viewType (String): override the view provider type directly, only effective when
       <Documentation>
         <UserDocu>Remove an object from the document</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="removeObjects">
       <Documentation>
@@ -161,6 +169,7 @@ return_all: if True, return all copied objects, or else return only the copied
             object corresponding to the input objects.
           </UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="moveObject">
       <Documentation>
@@ -221,6 +230,7 @@ object of this document.
       <Documentation>
         <UserDocu>recompute(objs=None): Recompute the document and returns the amount of recomputed features</UserDocu>
       </Documentation>
+      <Sandbox tier="call"/>
     </Methode>
     <Methode Name="mustExecute">
       <Documentation>
@@ -241,12 +251,14 @@ object of this document.
     <Documentation>
       <UserDocu>Return the object with the given name</UserDocu>
     </Documentation>
+    <Sandbox tier="call"/>
   </Methode>
   <Methode Name="getObjectsByLabel">
     <Documentation>
       <UserDocu>Return the objects with the given label name.
 NOTE: It's possible that several objects have the same label name.</UserDocu>
     </Documentation>
+    <Sandbox tier="call"/>
   </Methode>
     <Methode Name="findObjects" Keyword="true">
     <Documentation>
@@ -254,6 +266,7 @@ NOTE: It's possible that several objects have the same label name.</UserDocu>
 Return a list of objects that match the specified type, name or label.
 Name and label support regular expressions. All parameters are optional.</UserDocu>
     </Documentation>
+    <Sandbox tier="call"/>
   </Methode>
     <Methode Name="getLinksTo">
         <Documentation>
@@ -306,6 +319,7 @@ Reorder object(s) in the tree view before a given object
       <Documentation>
         <UserDocu>The active object of the document</UserDocu>
       </Documentation>
+      <Sandbox tier="handle"/>
       <Parameter Name="ActiveObject" Type="Object" />
     </Attribute>
     <Attribute Name="Objects" ReadOnly="true">
@@ -313,6 +327,7 @@ Reorder object(s) in the tree view before a given object
         <UserDocu>The list of object handled by this document</UserDocu>
       </Documentation>
       <Parameter Name="Objects" Type="List" />
+      <Sandbox tier="handle"/>
     </Attribute>
     <Attribute Name="TopologicalSortedObjects" ReadOnly="true">
       <Documentation>
@@ -324,6 +339,7 @@ Reorder object(s) in the tree view before a given object
       <Documentation>
         <UserDocu>The list of root object of this document</UserDocu>
       </Documentation>
+      <Sandbox tier="handle"/>
       <Parameter Name="RootObjects" Type="List" />
     </Attribute>
     <Attribute Name="UndoMode" ReadOnly="false">
@@ -342,6 +358,7 @@ Reorder object(s) in the tree view before a given object
       <Documentation>
         <UserDocu>Number of possible Undos</UserDocu>
       </Documentation>
+      <Sandbox tier="value"/>
       <Parameter Name="UndoCount" Type="Int" />
     </Attribute>
     <Attribute Name="RedoCount" ReadOnly="true">
@@ -354,6 +371,7 @@ Reorder object(s) in the tree view before a given object
       <Documentation>
         <UserDocu>A list of Undo names</UserDocu>
       </Documentation>
+      <Sandbox tier="value"/>
       <Parameter Name="UndoNames" Type="List"/>
     </Attribute>
     <Attribute Name="RedoNames" ReadOnly="true">
@@ -367,6 +385,7 @@ Reorder object(s) in the tree view before a given object
         <UserDocu>The internal name of the document</UserDocu>
       </Documentation>
       <Parameter Name="Name" Type="String"/>
+      <Sandbox tier="value"/>
     </Attribute>
     <Attribute Name="RecomputesFrozen">
       <Documentation>
@@ -397,6 +416,7 @@ Reorder object(s) in the tree view before a given object
           <UserDocu>Indicate if the document is restoring</UserDocu>
     </Documentation>
     <Parameter Name="Restoring" Type="Boolean" />
+    <Sandbox tier="value"/>
   </Attribute>
   <Attribute Name="Partial" ReadOnly="true">
     <Documentation>
@@ -421,6 +441,7 @@ Reorder object(s) in the tree view before a given object
           <UserDocu>Indicate if the document is recomputing</UserDocu>
     </Documentation>
     <Parameter Name="Recomputing" Type="Boolean" />
+    <Sandbox tier="value"/>
   </Attribute>
   <Attribute Name="Hasher" ReadOnly="true">
     <Documentation>
@@ -433,6 +454,7 @@ Reorder object(s) in the tree view before a given object
           <UserDocu>Indicate whether the document is undoing/redoing</UserDocu>
     </Documentation>
     <Parameter Name="Transacting" Type="Boolean" />
+    <Sandbox tier="value"/>
   </Attribute>
     <Attribute Name="OldLabel" ReadOnly="true">
         <Documentation>

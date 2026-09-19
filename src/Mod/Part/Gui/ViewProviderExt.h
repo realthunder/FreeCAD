@@ -311,7 +311,7 @@ public:
     /** @name Edit methods */
     //@{
     void setupContextMenu(QMenu*, QObject*, const char*) override;
-    virtual void setEditViewer(Gui::View3DInventorViewer*, int ModNum) override;
+    virtual void setEditViewer(Gui::ViewerContext*, int ModNum) override;
 
     virtual void setShapePropertyName(const char *propName);
     const char *getShapePropertyName() const;

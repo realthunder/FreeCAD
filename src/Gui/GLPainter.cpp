@@ -252,7 +252,7 @@ void GLPainter::drawPoint(int x, int y)
 
 //-----------------------------------------------
 
-Rubberband::Rubberband(View3DInventorViewer* v) : viewer(v)
+Rubberband::Rubberband(ViewerContext* v) : viewer(v)
 {
     x_old = y_old = x_new = y_new = 0;
     working = false;
@@ -283,7 +283,7 @@ void Rubberband::setWorking(bool on)
     working = on;
 }
 
-void Rubberband::setViewer(View3DInventorViewer* v)
+void Rubberband::setViewer(ViewerContext* v)
 {
     viewer = v;
 }
@@ -405,7 +405,7 @@ SoSeparator *Rubberband::getOverlaySceneGraph()
 
 // -----------------------------------------------------------------------------------
 
-Polyline::Polyline(View3DInventorViewer* v) : viewer(v)
+Polyline::Polyline(ViewerContext* v) : viewer(v)
 {
     x_new = y_new = 0;
     working = false;
@@ -445,7 +445,7 @@ bool Polyline::isWorking() const
     return working;
 }
 
-void Polyline::setViewer(View3DInventorViewer* v)
+void Polyline::setViewer(ViewerContext* v)
 {
     viewer = v;
 }

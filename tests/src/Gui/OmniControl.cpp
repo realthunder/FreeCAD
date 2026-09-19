@@ -56,10 +56,10 @@ private Q_SLOTS:
         doc = nullptr;
     }
 
-    QJsonObject ask(const QJsonObject &req, bool viewOnly = false)
+    QJsonObject ask(const QJsonObject &req, Render::ClientAccess access = Render::ClientAccess::Host)
     {
         std::string json = QJsonDocument(req).toJson(QJsonDocument::Compact).toStdString();
-        std::string answer = Gui::handleSceneControlRequest(json, doc->getName(), viewOnly);
+        std::string answer = Gui::handleSceneControlRequest(json, doc->getName(), access);
         lastBytes = answer.size();
         return QJsonDocument::fromJson(QByteArray::fromStdString(answer)).object();
     }
@@ -72,6 +72,20 @@ private Q_SLOTS:
         for (const auto &f : fields)
             req[f.first] = f.second;
         return req;
+    }
+
+    /// The widget stream's ops (docs/Sandbox.md 7.18) ride the same
+    /// handler. A served document calls it directly, and its ops used to
+    /// be registered only by the default group's install: every widgets.*
+    /// op on a served document answered UnknownOp.
+    void test_widgetOpsOnTheServedPath()  // NOLINT
+    {
+        auto reply = ask(op("widgets.unsubscribe"));
+        QVERIFY2(reply.value("ok").toBool(),
+                 QJsonDocument(reply).toJson(QJsonDocument::Compact).constData());
+        // mutating: refused by mode, which needs the op to be known first
+        reply = ask(op("widgets.subscribe", {{"toolbars", true}}), Render::ClientAccess::View);
+        QCOMPARE(reply.value("code").toString(), QStringLiteral("ViewOnly"));
     }
 
     void test_paramCatalog()  // NOLINT
@@ -191,13 +205,23 @@ private Q_SLOTS:
         QCOMPARE(reply.value("code").toString(), QStringLiteral("UnknownParam"));
 
         // Writes are refused on a view-only connection, reads answered
-        reply = ask(op("param.set", {{"key", key}, {"value", flipped}}), true);
+        reply = ask(op("param.set", {{"key", key}, {"value", flipped}}), Render::ClientAccess::View);
         QCOMPARE(reply.value("code").toString(), QStringLiteral("ViewOnly"));
-        reply = ask(op("param.reset", {{"key", key}}), true);
+        reply = ask(op("param.reset", {{"key", key}}), Render::ClientAccess::View);
         QCOMPARE(reply.value("code").toString(), QStringLiteral("ViewOnly"));
-        reply = ask(op("param.get", {{"key", key}}), true);
+        // and on an editing one, since they change the host's preferences for
+        // everyone the process serves (docs/ShareAccess.md sec 2.2): a host
+        // connection is the desktop's own reach
+        reply = ask(op("param.set", {{"key", key}, {"value", flipped}}), Render::ClientAccess::Edit);
+        QCOMPARE(reply.value("code").toString(), QStringLiteral("Forbidden"));
+        QVERIFY(!ParamRegistry::instance().isSet(*info));
+        reply = ask(op("param.reset", {{"key", key}}), Render::ClientAccess::Edit);
+        QCOMPARE(reply.value("code").toString(), QStringLiteral("Forbidden"));
+        reply = ask(op("param.get", {{"key", key}}), Render::ClientAccess::Edit);
         QVERIFY(reply.value("ok").toBool());
-        reply = ask(op("omni.catalog", {{"list", "params"}}), true);
+        reply = ask(op("param.get", {{"key", key}}), Render::ClientAccess::View);
+        QVERIFY(reply.value("ok").toBool());
+        reply = ask(op("omni.catalog", {{"list", "params"}}), Render::ClientAccess::View);
         QVERIFY(reply.value("ok").toBool());
     }
 
@@ -350,6 +374,44 @@ private Q_SLOTS:
         App::GetApplication().closeDocument(other->getName());
     }
 
+    /** The ops that act on a document they name -- entering and leaving
+     * an edit mode, a sketch tool, an on-view entry box, undo and redo --
+     * are held to the same reach as the omni ops: another open document
+     * answers UnknownDocument, and nothing happens to it. They used to
+     * look the name up directly, so a connection joined to one served
+     * document could undo the desktop user's work in any other.
+     */
+    void test_documentReachOfEditOps()  // NOLINT
+    {
+        auto other = App::GetApplication().newDocument("OmniControlElsewhere");
+        auto thing = other->addObject("App::DocumentObjectGroup", "Thing");
+        other->setUndoMode(1);
+        other->openTransaction("Rename");
+        thing->Label.setValue("renamed");
+        other->commitTransaction();
+        QCOMPARE(other->getAvailableUndos(), 1);
+        const QString name = QString::fromUtf8(other->getName());
+
+        const std::pair<const char *, QJsonObject> requests[] = {
+            {"edit", op("edit", {{"doc", name}, {"obj", "Thing"}})},
+            {"resetEdit", op("resetEdit", {{"doc", name}})},
+            {"command", op("command", {{"doc", name}, {"name", "Sketcher_CreateLine"}})},
+            {"onViewFocus", op("onViewFocus", {{"doc", name}, {"index", 0}})},
+            {"undo", op("undo", {{"doc", name}})},
+            {"redo", op("redo", {{"doc", name}})},
+        };
+        for (const auto &r : requests) {
+            auto reply = ask(r.second);
+            QVERIFY2(reply.value("code").toString() == QStringLiteral("UnknownDocument"),
+                     (std::string(r.first) + ": "
+                      + QJsonDocument(reply).toJson(QJsonDocument::Compact).toStdString())
+                         .c_str());
+        }
+        QCOMPARE(other->getAvailableUndos(), 1);
+        QCOMPARE(QString::fromUtf8(thing->Label.getValue()), QStringLiteral("renamed"));
+        App::GetApplication().closeDocument(other->getName());
+    }
+
     void test_commandsWithoutGui()  // NOLINT
     {
         auto reply = ask(op("omni.catalog", {{"list", "commands"}}));
@@ -360,7 +422,7 @@ private Q_SLOTS:
         QCOMPARE(reply.value("code").toString(), QStringLiteral("NoGui"));
         reply = ask(op("command.children", {{"name", "Std_DrawStyle"}}));
         QCOMPARE(reply.value("code").toString(), QStringLiteral("NoGui"));
-        reply = ask(op("command.run", {{"name", "Std_New"}}), true);
+        reply = ask(op("command.run", {{"name", "Std_New"}}), Render::ClientAccess::View);
         QCOMPARE(reply.value("code").toString(), QStringLiteral("ViewOnly"));
         reply = ask(op("omni.rows", {{"list", "commands"}, {"keys", QJsonArray{QStringLiteral("Std_New")}}}));
         QVERIFY(reply.value("ok").toBool());

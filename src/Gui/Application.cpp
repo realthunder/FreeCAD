@@ -68,6 +68,7 @@
 #include <App/Document.h>
 #include <App/DocumentObjectPy.h>
 #include <App/DocumentParams.h>
+#include <App/ExpressionSecurityRuntime.h>
 #include <Base/Console.h>
 #include <Base/Interpreter.h>
 #include <Base/Exception.h>
@@ -90,6 +91,8 @@
 #include "AxisOriginPy.h"
 #include "BitmapFactory.h"
 #include "Command.h"
+#include "SandboxGui.h"
+#include "Fw/FwPy.h"
 #include "CommandActionPy.h"
 #include "CommandPy.h"
 #include "Control.h"
@@ -106,6 +109,7 @@
 #include "LinkViewPy.h"
 #include "InputHintPy.h"
 #include "LiveViewInteraction.h"
+#include "DlgDocumentPermissions.h"
 #include "MainWindow.h"
 #include "Macro.h"
 #include "MDIViewWithCamera.h"
@@ -137,6 +141,7 @@
 #include "UiLoader.h"
 #include "View3DViewerPy.h"
 #include "View3DInventor.h"
+#include "ViewerContext.h"
 #include "ViewProviderAnnotation.h"
 #include "ViewProviderDocumentObject.h"
 #include "ViewProviderDocumentObjectGroup.h"
@@ -492,6 +497,9 @@ Application::Application(bool GUIenabled)
 {
     //App::GetApplication().Attach(this);
     if (GUIenabled) {
+        // the sandbox guest's FreeCADGui reaches the host through the
+        // gui.* bridge ops (docs/Sandbox.md 7.9)
+        SandboxGui::registerOps();
         //NOLINTBEGIN
         App::GetApplication().signalNewDocument.connect(
             std::bind(&Gui::Application::slotNewDocument, this, sp::_1, sp::_2));
@@ -622,6 +630,9 @@ Application::Application(bool GUIenabled)
         Base::Interpreter().addType(ExpressionBindingPy::type_object(),
             module,"ExpressionBinding");
 
+        // the host widget layer's store (docs/Sandbox.md 7.12)
+        Fw::addPyModule(module);
+
         //insert Selection module
         static struct PyModuleDef SelectionModuleDef = {
             PyModuleDef_HEAD_INIT,
@@ -745,6 +756,14 @@ Application::~Application()
 
 void Application::open(const char* FileName, const char* Module)
 {
+    // Reading a host file by path is fs.read (F1, docs/Sandbox.md 7.29).
+    // Every Std file command, drag-and-drop, Std_RecentFiles and
+    // Gui.open land here; an FCStd goes on to the loader's own gate,
+    // while a Module import (importIFC.insert and friends) reads the
+    // file itself, so this is the only place that sees it.
+    App::ExpressionSecurity::checkHostPath(App::ExpressionSecurity::Permission::FsRead,
+                                           FileName ? FileName : "");
+
     WaitCursor wc;
     wc.setIgnoreEvents(WaitCursor::NoEvents);
     Base::FileInfo File(FileName);
@@ -816,6 +835,10 @@ void Application::open(const char* FileName, const char* Module)
 
 void Application::importFrom(const char* FileName, const char* DocName, const char* Module)
 {
+    // an import reads a host file: fs.read (F1, docs/Sandbox.md 7.29)
+    App::ExpressionSecurity::checkHostPath(App::ExpressionSecurity::Permission::FsRead,
+                                           FileName ? FileName : "");
+
     WaitCursor wc;
     wc.setIgnoreEvents(WaitCursor::NoEvents);
     Base::FileInfo File(FileName);
@@ -942,6 +965,10 @@ void Application::importFrom(const char* FileName, const char* DocName, const ch
 
 void Application::exportTo(const char* FileName, const char* DocName, const char* Module)
 {
+    // an export writes a host file: fs.write (F1, docs/Sandbox.md 7.29)
+    App::ExpressionSecurity::checkHostPath(App::ExpressionSecurity::Permission::FsWrite,
+                                           FileName ? FileName : "");
+
     WaitCursor wc;
     wc.setIgnoreEvents(WaitCursor::NoEvents);
     Base::FileInfo File(FileName);
@@ -1344,6 +1371,24 @@ void Application::activateView(const Base::Type& type, bool create)
 /// Getter for the active view
 Gui::Document* Application::activeDocument() const
 {
+    // The document of the view whose input is being handled, when one is
+    // being handled at all (docs/ThinClient.md sec 8.7). "Active" is
+    // desktop state -- it is whichever document the main window last put
+    // in front -- and in a process serving several browsers it names
+    // nothing, or somebody else's. The same answer setEdit was given for
+    // the active WINDOW, one level up: ask the view the event arrived
+    // through first.
+    //
+    // Nothing on the desktop opens a ViewerScope, so the desktop answer
+    // does not move. What this reaches is the code a served event runs
+    // through that was never given a view to ask -- a Command's
+    // getActiveGuiDocument() above all, which is how a sketch tool finds
+    // the view provider to hand its handler to.
+    if (ViewerContext* viewer = ViewerContext::current()) {
+        if (Gui::Document* doc = viewer->getDocument()) {
+            return doc;
+        }
+    }
     return d->activeDocument;
 }
 
@@ -1673,6 +1718,12 @@ std::string Application::initializeWorkbench(const char *name, Py::Object handle
             Py::Tuple args;
             Py::String result(method.apply(args));
             type = result.as_std_string("ascii");
+            // no workbench under this name yet: a handler registered anew
+            // (removeWorkbench dropped the old one, and a sandbox guest
+            // re-registers its workbenches after a reset, docs/Sandbox.md
+            // 7.9 G2b) must run its Initialize() whatever the once-only
+            // guard below remembers of the name
+            const bool fresh = WorkbenchManager::instance()->getWorkbench(name) == nullptr;
             if (Base::Type::fromName(type.c_str())
                     .isDerivedFrom(Gui::PythonBaseWorkbench::getClassTypeId())) {
                 Workbench* wb = WorkbenchManager::instance()->createWorkbench(name, type);
@@ -1698,7 +1749,7 @@ std::string Application::initializeWorkbench(const char *name, Py::Object handle
             // whole of Initialize() a second time and doubling every message it
             // prints. Command.cpp's own _sPendingWorkbench guard does not cover
             // it, because the outer call came from activateWorkbench().
-            if (d->initializedWorkbenches.insert(name).second) {
+            if (d->initializedWorkbenches.insert(name).second || fresh) {
                 try {
                     Py::Callable activate(handler.getAttr(std::string("Initialize")));
                     activate.apply(args);
@@ -2125,7 +2176,15 @@ void Application::refreshLiveLoad(const App::Document* starting)
         loading.insert(starting->getName());
     }
     for (auto doc : App::GetApplication().getDocuments()) {
-        if (doc->testStatus(App::Document::Restoring)) {
+        if (doc->testStatus(App::Document::Restoring)
+            && !doc->testStatus(App::Document::Importing)) {
+            // Restoring WITH Importing is an import into an open document
+            // -- copyObject, mergeProject -- reading a fragment through the
+            // restore path: the command's own doing, not a load the user
+            // is watching.  Claimed, it refused the command's next write,
+            // the view provider attach of the copied object (any command
+            // calling doc.copyObject aborted with "still being filled in";
+            // found by Draft_Heal from the sandbox guest, 2026-09-07).
             loading.insert(doc->getName());
             continue;
         }

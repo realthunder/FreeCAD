@@ -65,6 +65,11 @@
 #   ifndef FC_OS_WASM
 #   define FC_OS_WASM
 #   endif
+#elif defined(__wasi__)
+// wasm32-wasi (the expression sandbox image): no host OS at all.
+#   ifndef FC_OS_WASM
+#   define FC_OS_WASM
+#   endif
 #elif defined(linux) || defined(__linux) || defined(__linux__) || defined(__GLIBC__)
 #   ifndef FC_OS_LINUX
 #   define FC_OS_LINUX

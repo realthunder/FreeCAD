@@ -55,6 +55,7 @@ class DraftAnnotation(object):
     Text
     """
 
+
     def onDocumentRestored(self, obj):
         """Execute code when the document is restored.
 

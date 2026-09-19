@@ -1019,6 +1019,22 @@ void QuantitySpinBox::selectNumber()
     }
 }
 
+void QuantitySpinBox::getSelection(int& start, int& length) const
+{
+    start = 0;
+    length = 0;
+    const QLineEdit* edit = lineEdit();
+    if (!edit) {
+        return;
+    }
+    start = edit->selectionStart();
+    if (start < 0) {
+        start = edit->cursorPosition();
+        return;
+    }
+    length = int(edit->selectedText().size());
+}
+
 QString QuantitySpinBox::textFromValue(const Base::Quantity& value) const
 {
     double factor;

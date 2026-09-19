@@ -66,6 +66,7 @@
 #endif
 
 #include <QWidgetAction>
+#include <algorithm>
 
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -101,6 +102,7 @@
 #include "FileDialog.h"
 #include "MenuManager.h"
 #include "OverlayWidgets.h"
+#include "DlgDocumentPermissions.h"
 #include "NotificationArea.h"
 #include "OverlayManager.h"
 #include "ProgressBar.h"
@@ -343,6 +345,7 @@ struct MainWindowP
     QPointer<QAction> lastMenuBarAction;
 
     QString overrideIcons;
+
     bool hasOverrideIcons = false;
     QString overrideExtraIcons;
     bool hasOverrideExtraIcons = false;
@@ -614,6 +617,17 @@ MainWindow::MainWindow(QWidget * parent, Qt::WindowFlags f)
                       0});
     addStatusBarItem(d->sizeLabel,
                      {"sizeLabel", QString(), StatusBarSlot::Right, 1000, true, 0});
+
+    // The expression sandbox's two lights (docs/Sandbox.md 7.15), between
+    // the notifications and the unit system, no title: not user-toggled.
+    // The permission indicator (a popup-blocker analog) lights up while
+    // expressions are blocked pending a grant; the sandbox indicator is
+    // permanently lit, warning while expression Python runs in this
+    // process, and a click flips it.
+    addStatusBarItem(new Dialog::PermissionIndicator(statusBar()),
+                     {"SB_PermissionIndicator", QString(), StatusBarSlot::Right, 900, false, 0});
+    addStatusBarItem(new Dialog::SandboxIndicator(statusBar()),
+                     {"SB_SandboxIndicator", QString(), StatusBarSlot::Right, 910, false, 0});
 
     auto hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/NotificationArea");
 
@@ -3534,6 +3548,29 @@ void MainWindow::buildStatusBarContextMenu(QMenu& menu)
             setStatusBarItemEnabled(id, on);
         });
     }
+}
+
+QWidget* MainWindow::statusBarItem(const QByteArray& id) const
+{
+    for (const auto& item : d->statusBarItems) {
+        if (item.spec.id == id) {
+            return item.widget;
+        }
+    }
+    return nullptr;
+}
+
+bool MainWindow::isStatusBarItem(const QWidget* widget) const
+{
+    if (!widget) {
+        return false;
+    }
+    for (const auto& item : d->statusBarItems) {
+        if (item.widget == widget) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void MainWindow::showStatus(int type, const QString& message)

@@ -299,7 +299,7 @@ void ViewProvider2DObjectGrid::attach(App::DocumentObject *pcFeat)
         createGrid();
 }
 
-void ViewProvider2DObjectGrid::updateGridScale(Gui::View3DInventorViewer *viewer)
+void ViewProvider2DObjectGrid::updateGridScale(Gui::ViewerContext *viewer)
 {
     bool init = false;
     Gui::Document *gdoc;
@@ -353,7 +353,7 @@ void ViewProvider2DObjectGrid::updateGridScale(Gui::View3DInventorViewer *viewer
     }
 }
 
-void ViewProvider2DObjectGrid::setEditViewer(Gui::View3DInventorViewer *viewer, int ModNum)
+void ViewProvider2DObjectGrid::setEditViewer(Gui::ViewerContext *viewer, int ModNum)
 {
     if (ModNum == Transform || ModNum == TransformAt)
         return ViewProvider2DObject::setEditViewer(viewer, ModNum);
@@ -371,7 +371,7 @@ void ViewProvider2DObjectGrid::setEditViewer(Gui::View3DInventorViewer *viewer, 
     ViewProvider2DObject::setEditViewer(viewer, ModNum);
 }
 
-void ViewProvider2DObjectGrid::unsetEditViewer(Gui::View3DInventorViewer *viewer)
+void ViewProvider2DObjectGrid::unsetEditViewer(Gui::ViewerContext *viewer)
 {
     if (CameraSensor)
         CameraSensor->detach();

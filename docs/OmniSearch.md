@@ -417,8 +417,8 @@ retried: offline is reported, not queued.
 | `omni.rows`        | `list`, `keys`                         | `rows`: key -> `{value, set}` or `{active}`              |
 | `omni.objects`     | `doc` (optional)                       | `doc`, `label`, `objects[{name,label,type,children}]`, `views[{name,title,served}]` |
 | `omni.resolve`     | `query`, `doc` (optional)              | `kind` `object` (`doc`,`obj`,`top`,`sub`,`label`,`type`) or `property` (`doc`,`obj`,`scope`,`view`,`prop`) |
-| `command.run`      | `name`, `child` (optional row index)   | ok; `Inactive`, `UnknownCommand`, `NotGroup`, `CommandFailed` |
-| `command.children` | `name`                                 | `exclusive`, `items[{index,text,tooltip,checkable,checked,enabled,visible,separator}]` |
+| `command.run`      | `name`, `child` (optional row index)   | ok; `Forbidden`, `Inactive`, `UnknownCommand`, `NotGroup`, `CommandFailed` |
+| `command.children` | `name`                                 | `exclusive`, `items[{index,text,command,tooltip,checkable,checked,enabled,visible,separator}]` (`command`: what the row runs, absent when unnamed) |
 | `param.get`/`set`/`reset` | `key` (`ParamInfo::fullPath()`), `value` for set | `key`, `value`, `set`                        |
 | `omni.changed` (push) | --                                  | `list`, `session`, `version`                             |
 
@@ -432,8 +432,11 @@ over the items (value the index, or the item data), a colour input for
 checkbox, a text field for the rest. Values travel in
 `ParamRegistry::getValue()` text form.
 
-`command.run`, `param.set` and `param.reset` are mutating and refused on
-a view-only connection like `setProperty` (`OmniControl::isMutating`).
+`command.run` is mutating and refused on a view-only connection like
+`setProperty`. `param.set` and `param.reset` change the host's preferences for
+everyone the process serves, so they need a host connection
+(docs/ShareAccess.md sec 2.2) and an editing one is answered `Forbidden`
+(`OmniControl::requiredAccess`).
 
 `getProperties` and `setProperty` with subject/target `view3d` take an
 optional `view`, a persistent view name, for `#.View2.DrawStyle`; without
@@ -459,6 +462,12 @@ when the named view is the served one.
 - A group command's arrow (or Right on the row) asks `command.children`
   and shows the rows as a menu; a row runs `command.run` with its index,
   which triggers the same `QAction` the desktop menu would.
+- No `/param` mode (removed 2026-09-14): the host's preferences are not a
+  browser's to change, whatever its level, so the box does not offer them;
+  `param.set`/`param.reset` on the wire need a host connection
+  (docs/ShareAccess.md sec 2.2). And a command a connection may not run --
+  off the browser allowlist, unless it is a host -- is drawn refused and not
+  sent.
 - No icons, no `<<label>>` rows: the label is the object row's
   description, and `<<Label>>` still resolves when typed.
 - ~~Building the web layer on the Windows box needs WSL and a
@@ -492,6 +501,8 @@ the page being believed:
 | a group command's child | `/cmd draw style`, the row's arrow, then Wireframe | the menu came back with its radio tick on As Is; the DESKTOP view's draw style became Wireframe |
 | `param.set` / `param.reset` | `/param sync selection`, the checkbox, then Reset | stored false, then the stored value removed and the default back; the Reset button's own disabled state tracks whether anything is stored |
 | the leading-dot selection | two objects selected, `.Height`, one commit | BOTH objects went to 33 -- one `setProperty` each |
+
+The `/param` row records a mode the browser box no longer offers (sec 6.3).
 
 The **Hex colour editor**, the corner these notes called the one most
 likely to be wrong, is right: the picker's `#123456` is stored as
@@ -569,14 +580,31 @@ and were refused with the answer a name belonging to no document gets;
 the same ops named `Library` and answered. `tests/src/Gui/OmniControl.cpp`
 `test_documentReach` is the same shape without a socket.
 
+**Extended 2026-09-14** to the ops that act on a document they name
+outside the mirror: `edit`, `resetEdit`, `command`, `onViewFocus`,
+`undo`, `redo`, and Spreadsheet's `sheet.list`/`sheet.get`/`sheet.set`,
+the last through `Gui::sceneControlDocument()`, the exported form of the
+same resolution for a module's handler. They used to look the name up
+directly, so an editing connection could undo, enter or leave an edit
+mode, or write cells in any document the process had open -- and
+`sheet.list`/`sheet.get`, being reads, answered a view-only connection
+too. `test_documentReachOfEditOps` covers the first six.
+
 **Still open, and the gate does not close it:** `command.run` and the
 parameter ops are not document-addressed. A command runs against
 whatever the desktop's own command layer considers active -- its active
 document and its selection -- and `param.set` writes a process-wide
 preference. So an *editing* connection joined to one served document can
 still act outside it through those two ops. Both are refused on a
-view-only connection (`OmniControl::isMutating`), which is the whole of
-the containment today. Scoping them properly means either making the
+view-only connection, and since 2026-09-14 both need more of an editing one
+(docs/ShareAccess.md sec 2.2): the parameter writes need a host connection, and
+`command.run` holds a connection that is not a host to the browser allowlist the
+`command` op keeps, judged on what will run -- a group row by its member -- and
+answered `Forbidden` ahead of `Inactive` (an ordering of error codes only: whether a
+command is active is already public through `omni.rows` and `command.children`). A
+group's member rows carry the `command` they run, so the browser draws a refused one
+disabled; the server still decides. So the hazards below are
+a host's, who is the desktop's owner. Scoping them properly means either making the
 command layer take a document (it takes none) or activating the served
 document around the call (which moves the desktop user's focus), and
 neither is a change to make in passing.

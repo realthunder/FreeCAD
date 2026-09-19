@@ -48,6 +48,7 @@
 #include "Command.h"
 #include "OmniControl.h"
 #include "OmniSearch.h"
+#include "SceneControl.h"
 #include "SceneControlP.h"
 #include "ShortcutManager.h"
 #include "ViewProviderDocumentObject.h"
@@ -551,10 +552,24 @@ QJsonObject opCommandRun(const QJsonObject &req)
     auto cmd = manager.getCommandByName(name.constData());
     if (!cmd)
         return errorReply(idOf(req), "UnknownCommand", QString::fromUtf8(name));
+    const QJsonValue child = req.value(QLatin1String("child"));
+    // What will RUN is judged, not the name asked for: a row of a group
+    // runs its member's command. An editing connection is held to the
+    // browser allowlist and a host is not (docs/ShareAccess.md sec 2.2).
+    // The refusal comes first so a refused command answers Forbidden, not
+    // Inactive; it hides nothing, omni.rows and command.children already
+    // report active/enabled.
+    if (sceneControlAccess() < Render::ClientAccess::Host) {
+        const QString runs = child.isDouble()
+            ? groupMemberCommand(cmd, int(child.toDouble()) + 1)
+            : QString::fromUtf8(name);
+        if (!isBrowserSafeCommand(runs))
+            return errorReply(idOf(req), "Forbidden",
+                              runs.isEmpty() ? QString::fromUtf8(name) : runs);
+    }
     if (!cmd->isActive())
         return errorReply(idOf(req), "Inactive", QString::fromUtf8(name));
     try {
-        const QJsonValue child = req.value(QLatin1String("child"));
         if (child.isDouble()) {
             // One row of a group command's menu, as a click on it
             cmd->initAction();
@@ -613,6 +628,12 @@ QJsonObject opCommandChildren(const QJsonObject &req)
         QString text = action->text();
         text.remove(QLatin1Char('&'));
         o[QLatin1String("text")] = text;
+        // The command a click on this row runs (index is 1-based by now),
+        // so a client can draw a member off its allowlist disabled.
+        // command.run still decides.
+        const QString runs = groupMemberCommand(cmd, index);
+        if (!runs.isEmpty())
+            o[QLatin1String("command")] = runs;
         const QString tip = action->toolTip();
         if (!tip.isEmpty() && tip != text)
             o[QLatin1String("tooltip")] = tip;
@@ -690,11 +711,13 @@ uint64_t OmniControl::catalogVersion(const QString &list)
     return catalog->version;
 }
 
-bool OmniControl::isMutating(const QString &op)
+Render::ClientAccess OmniControl::requiredAccess(const QString &op)
 {
-    return op == QLatin1String("command.run")
-        || op == QLatin1String("param.set")
-        || op == QLatin1String("param.reset");
+    if (op == QLatin1String("param.set") || op == QLatin1String("param.reset"))
+        return Render::ClientAccess::Host;
+    if (op == QLatin1String("command.run"))
+        return Render::ClientAccess::Edit;
+    return Render::ClientAccess::View;
 }
 
 bool OmniControl::handle(const QString &op, const QJsonObject &req, const std::string &boundDoc,
