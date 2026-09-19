@@ -461,13 +461,13 @@ SET(Document_CPP_SRCS
     OriginGroupExtension.cpp
     PartPyImp.cpp
     Part.cpp
+    Datums.cpp
     Origin.cpp
     Path.cpp
     InventorObject.cpp
     MeasureDistance.cpp
     Placement.cpp
     ProjectFile.cpp
-    OriginFeature.cpp
     Transactions.cpp
     TransactionalObject.cpp
     VRMLObject.cpp
@@ -527,6 +527,7 @@ SET(Document_HPP_SRCS
     ImagePlane.h
     OriginGroupExtension.h
     Part.h
+    Datums.h
     Origin.h
     Path.h
     InventorObject.h

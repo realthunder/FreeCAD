@@ -417,7 +417,9 @@ class DocumentBasicCases(unittest.TestCase):
         # Use the names of the origin's features. They are not in OutList here:
         # OriginFeatures is a Prop_Output link, so it declares no dependency, and
         # iterating OutList would leave this check testing nothing at all.
-        self.assertEqual(len(obj2.OriginFeatures), 6)
+        # Seven: three axes, three planes and the origin point that came
+        # with App::Point in the Datums port.
+        self.assertEqual(len(obj2.OriginFeatures), 7)
         # a subname names a whole object only with the trailing '.', the same rule
         # GroupExtension applies -- without it the name does not resolve
         for i in obj2.OriginFeatures:
