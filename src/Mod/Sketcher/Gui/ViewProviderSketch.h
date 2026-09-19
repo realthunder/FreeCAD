@@ -179,6 +179,23 @@ public:
     /// draw the edit markers
     void drawEditMarkers(const std::vector<Base::Vector2d> &EditMarkers, unsigned int augmentationlevel = 0);
 
+    /** @name The directional auto-constraint hints
+     *
+     * What a tool draws to show where a constraint it is about to suggest
+     * would come from: the dashed prolongation of a line the cursor is
+     * near, and the parallel/perpendicular reference lines of the geometry
+     * under the pointer. Both live on the information layer and neither is
+     * pickable.
+     */
+    //@{
+    void drawLineExtensionAutoConstraintHint(const std::vector<Base::Vector2d> &HintCurve);
+    /// whether every point of the hint would land inside the edit view
+    bool isLineExtensionAutoConstraintHintVisible(const std::vector<Base::Vector2d> &HintCurve) const;
+    /// HintLines is a flat list of point pairs; activeLineIndex is drawn lit
+    void drawParallelPerpendicularHint(const std::vector<Base::Vector2d> &HintLines,
+                                       int activeLineIndex = -1);
+    //@}
+
     void moveCursorToSketchPoint(Base::Vector2d point);
     void ensureFocus();
 
@@ -638,6 +655,7 @@ protected:
     static SbColor SelectColor;
     static SbColor PreselectSelectedColor;
     static SbColor InformationColor;
+    static SbColor DirectionalHintColor;
     static SbColor DeactivatedConstrDimColor;
     static SbColor InternalAlignedGeoColor;
     static SbColor FullyConstraintElementColor;
