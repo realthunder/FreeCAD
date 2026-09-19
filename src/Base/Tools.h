@@ -130,13 +130,13 @@ inline T sgn(T t)
 #endif
 
 template<class T>
-inline T toRadians(T d)
+constexpr T toRadians(T d)
 {
     return static_cast<T>((d * M_PI) / 180.0);
 }
 
 template<class T>
-inline T toDegrees(T r)
+constexpr T toDegrees(T r)
 {
     return static_cast<T>((r / M_PI) * 180.0);
 }
