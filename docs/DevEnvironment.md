@@ -1115,6 +1115,19 @@ $RUN cmake -S . -B build/conda-relwithdebinfo-801 \
   -DBUILD_EXPR_PYODIDE_HOST=ON -DBUILD_EXPR_IMAGE_HOST=ON
 ```
 
+*** **And the same trap runs the other way, so check which one you are in.**
+The rule above -- force it with `-D`, because a preset does not reach a tree
+that already exists -- assumes the tree is configured once by hand. On a box
+whose build script re-runs `cmake --preset` on every build, as
+`build-fcad.cmd` does on the Windows one, the preset is reapplied each time
+and a hand-forced `-D` is silently REVERTED; there the setting has to live in
+`CMakeUserPresets.json` instead. Reported from that box 2026-09-19, where it
+cost two build cycles with `BUILD_FEM` before the same shape was recognised
+for `BUILD_EXPR_PYODIDE_HOST` / `BUILD_EXPR_IMAGE_HOST` /
+`FREECAD_FCX_IMAGE_WHEEL`. Neither direction is wrong: which one bites
+depends on how the tree gets configured, so the question to ask before
+forcing anything is whether a preset will run again behind you.
+
 **The guest wheel can now be DOWNLOADED** (2026-09-19): it is published as
 `fcx-image` on PyPI, one file per ABI tag, so the cross build below is only
 needed to produce a *new* wheel, not to get a working sandbox. Fetch it with

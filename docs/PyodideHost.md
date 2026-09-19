@@ -717,6 +717,18 @@ because the same script wraps the pivy guest wheel.  PyPI metadata
 cannot be edited after an upload, only yanked, so it was rehearsed on
 TestPyPI (0.1.1) first.
 
+*** **TestPyPI carries a HIGHER version than production, and that is a
+trap.**  The rehearsals went up as `0.1.0` and `0.1.1` on TestPyPI while
+production has only `0.1.0`, so a box that pulled from TestPyPI first
+and then switched to PyPI appears to go 0.1.1 -> 0.1.0 -- a downgrade,
+and one that is easy to "fix" by pinning the TestPyPI artifact.  They
+are DIFFERENT bytes (TestPyPI 0.1.1 is sha256 `f8acc197...`, 399113 B;
+production 0.1.0 is sha256 `8253da84...`, 399116 B -- the version string
+itself differs).  Only the production 0.1.0 has been proven the whole
+way: fetched from the index it serves, renamed, 26/26.  TestPyPI is a
+rehearsal index, never a source: use `pypi.org`.  Found by the Windows
+box on 2026-09-19, between the two messages announcing the publish.
+
 ### 12.4 The package installer (B4)
 
 `install_package(name, source="index")`: resolves `name` and its
