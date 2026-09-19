@@ -732,6 +732,22 @@ defaults ON in the repo anyway -- the user presets used to override it OFF, and
 that override is why the FEM suites sat out every local test run.) The separate
 `build/fem-eval` tree the FEM port used is retired.
 
+*** **`ply` is a runtime requirement of FEM, not an optional extra** (found
+2026-09-19, on the first Windows run with FEM in). `femtools/tokrules.py`
+imports `ply.lex` and `ply.yacc`, so without the package
+`test_pyimport_all_FEM_modules` errors with `ModuleNotFoundError: No module
+named 'ply'` and the whole Python suite reports FAILED over that one line. It
+is a dependency-free noarch package, so installing it moves nothing else in the
+prefix -- dry-run it anyway, the way every install into this env is:
+
+```sh
+conda install -p ~/works/sw/fcad/.conda/freecad --override-channels \
+  -c conda-forge ply
+```
+
+On the Windows box `conda-forge` is served by `https://prefix.dev/conda-forge`
+(see `.condarc`), since anaconda.org is unreachable from that network.
+
 Everything FEM needs lives in `.conda/freecad` itself -- there is **no separate
 dependency prefix**, and the presets pass no VTK/SMESH/MEDFile/HDF5 paths at
 all. That only works because the env now matches the stack these packages are
@@ -2177,7 +2193,7 @@ inherits `conda-windows-release` and overrides:
 | `BUILD_BGFX=ON` | the renderer |
 | `FREECAD_USE_PCL=OFF` | same trim as the Linux local preset |
 | `BUILD_WEB=ON` | the env above installs a matched `qt6-webengine`, so Web/Help/AddonManager build; the version-skew dance later in this section is only for an env already pinned to an older Qt. It costs the Web module's targets and a `-DQTWEBENGINE` on every FreeCADGui TU, so decide before the cold build rather than after |
-| `BUILD_FEM/FREECAD_USE_EXTERNAL_SMESH=OFF` | Windows only -- both are **ON** on Linux now |
+| `BUILD_FEM=ON`, `FREECAD_USE_EXTERNAL_SMESH=OFF`, `BUILD_FEM_NETGEN=OFF` | 2026-09-19: FEM builds here against the **bundled** `src/3rdParty/salomesmesh`, so it needs no `smesh` package at all -- which is what makes it reachable on this box, the `realthunder` channel being unreachable from this network. MEDFile resolves straight out of `.conda/freecad`, and `ply` must be installed there too. `BUILD_FEM_NETGEN` must stay OFF: MSVC defaults it ON, but it adds `-DFCWithNetgen` and links `NETGENPlugin`, a target only the external smesh package supplies. Linux uses the external SMESH instead |
 | `ENABLE_DEVELOPER_TESTS=ON` | as on Linux since 2026-09-04; see "Running the C++ (GoogleTest) suites" |
 
 **`OCCT_CMAKE_FALLBACK` must be OFF.** The repo's `conda` preset turns it ON, which
