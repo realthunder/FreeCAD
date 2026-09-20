@@ -1686,6 +1686,90 @@ count is not a baseline. The marker grep from the CarbonCopy lesson would
 have caught this one too -- `toggle(` is on its list -- and the count was
 believed over the grep.
 
+### The Gui rename pair: names taken, sizing kept
+
+The datums port left three Gui names open, deferred because
+`Gui::ViewProviderDatum` was taken here by a live class -- the abstract
+extents base whose only subclasses were PartDesign's, and which
+`ViewProviderOriginGroupExtension` reached into to size datums. The ruling
+was to follow upstream and keep backward compatibility as far as it goes.
+
+**The premise turned out to be wrong in a way that matters.** Upstream's
+classes are not the fork's classes renamed; they are re-implementations,
+and taking them wholesale would have deleted behaviour with no compile
+error -- the same shape of trap as the LineSet line count above.
+
+What the comparison found, at upstream's tip:
+
+- `Gui::ViewProviderDatum` drops the `Size` property for a screen-space
+  `SoShapeScale`. `active` defaults to `true` and `updateScale` recomputes
+  per frame: `nsize = scaleFactor / viewportWidthPixels`, then
+  `sf = vv.getWorldToScreenScale(center, nsize)` at the datum's own world
+  position. The size is a constant fraction of the viewport, independent of
+  zoom and of the model, and `scaleFactor` comes from one global preference
+  (`LocalCoordinateSystemSize`, default 1.0) rather than from anything
+  per-origin.
+- `Gui::ViewProviderCoordinateSystem` drops `Size` and `Margin` and rebases
+  onto `ViewProviderGeoFeatureGroup`.
+- `ViewProviderOriginGroupExtension.cpp` is 102 lines upstream. The whole
+  `updateOriginSize` chain is gone, which is the consequence of the first
+  two, not a separate decision.
+
+**Two of those cannot be taken here.** The landed App half made
+`App::LocalCoordinateSystem` a plain `GeoFeature`, deliberately not
+inheriting `GeoFeatureGroupExtension` publicly, because `App::Origin`
+carries the fork's private `OriginExtension` instead. There is no object
+model under `ViewProviderGeoFeatureGroup` to rebase onto. And the
+screen-space default is tuned for upstream's UX, where an origin is a
+transient per-edit aid shown one at a time -- which is what
+`setTemporaryVisibility`, `setTemporaryScale` and `setPlaneLabelVisibility`
+are for. This is the Link fork: nested Links and Parts mean many
+coordinate systems visible at once and persistently, and constant
+on-screen size draws every one of them identically whatever it belongs to,
+so a small bracket and a large frame get the same gizmo and two nearby
+bodies get two interpenetrating plane-triples. Sizing each origin to its
+own group's bbox is also the mainstream CAD convention: reference planes
+scale to the model, and constant screen size is what manipulators do.
+
+So the pair took **upstream's names and upstream's file layout, and kept
+the fork's sizing**. Three commits:
+
+- `4ae4f29d11` dissolves the extents base into
+  `PartDesignGui::ViewProviderDatum`, as upstream did, freeing the name.
+  `updateOriginSize` keeps working without it: the datums already size
+  themselves against the same model from their own `updateData`, so the
+  `setExtents` push goes away, and the datums-as-base-points rule is kept
+  by testing the object rather than the view provider -- `Part::Datum` by
+  name, because Part sits above Gui in the link order, and its base point
+  is its placement position. The type is looked up per call, since a
+  cached one would stay bad for the process's life if Part happened not to
+  be loaded on the first pass.
+- `b81c3dcc29` renames `ViewProviderOriginFeature` to `ViewProviderDatum`.
+- The third renames `ViewProviderOrigin` to
+  `ViewProviderCoordinateSystem`.
+
+Backward compatibility is kept at every point it can be:
+`Base::Type::addLegacyName` for both renamed view providers, so a
+`GuiDocument.xml` written before the rename still restores; shim headers
+left at `ViewProviderOriginFeature.h` and `ViewProviderOrigin.h`;
+`getOriginFeatureRoot()` kept as a forwarder to upstream's
+`getDatumRoot()`. `Size` and `Margin` survive, so no saved value is
+dropped and no macro breaks. The one thing that cannot be aliased is the
+`Gui::ViewProviderDatum` name itself, which now denotes a different class
+than it did -- flagged, not papered over.
+
+Deliberately not taken, and separable:
+
+- upstream's screen-space `SoShapeScale` default. The fork's own
+  `SoShapeScale` has its auto-scale body `#if 0`'d out ("Auto scale is now
+  done with SoAutoZoomTranslation"), so wiring it in with `active=false`
+  would have been inert code that also silently forces scale to
+  `(1,1,1)`; it is left for a real decision with a preference behind it.
+- upstream's `setTemporaryVisibility(DatumElements)` bitmask. It is a pure
+  API-shape change across 16 call sites in Part and PartDesign with no
+  behavioural gain, and keeping `(bool axis, bool planes)` also keeps
+  out-of-tree callers compiling.
+
 ## 8. Phases
 
 0. Groundwork: ledger, the split, the App-level Python tests.
