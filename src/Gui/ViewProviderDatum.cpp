@@ -41,7 +41,7 @@
 #include "ViewProviderDatum.h"
 #include "SoFCSelection.h"
 #include "SoFCUnifiedSelection.h"
-#include "ViewProviderOrigin.h"
+#include "ViewProviderCoordinateSystem.h"
 #include "BitmapFactory.h"
 
 
@@ -50,10 +50,10 @@ using namespace Gui;
 PROPERTY_SOURCE(Gui::ViewProviderDatum, Gui::ViewProviderGeometryObject)
 
 ViewProviderDatum::ViewProviderDatum () {
-    ADD_PROPERTY_TYPE ( Size, (ViewProviderOrigin::defaultSize()), 0, App::Prop_ReadOnly,
+    ADD_PROPERTY_TYPE ( Size, (ViewProviderCoordinateSystem::defaultSize()), 0, App::Prop_ReadOnly,
     QT_TRANSLATE_NOOP("App::Property", "Visual size of the feature"));
 
-    ShapeColor.setValue ( ViewProviderOrigin::defaultColor ); // Set default color for origin (light-blue)
+    ShapeColor.setValue ( ViewProviderCoordinateSystem::defaultColor ); // Set default color for origin (light-blue)
     BoundingBox.setStatus(App::Property::Hidden, true); // Hide Boundingbox from the user due to it doesn't make sense
 
     // Create node for scaling the origin
@@ -129,7 +129,7 @@ void ViewProviderDatum::attach(App::DocumentObject* pcObject)
 {
     ViewProviderGeometryObject::attach(pcObject);
 
-    float defaultSz = ViewProviderOrigin::baseSize();
+    float defaultSz = ViewProviderCoordinateSystem::baseSize();
     float sz = Size.getValue () / defaultSz;
 
     // Create an external separator
@@ -159,7 +159,7 @@ void ViewProviderDatum::attach(App::DocumentObject* pcObject)
     float fontRatio = 10.0f;
     if ( pcObject->is<App::Line>() ) {
         // keep font size on axes equal to font size on planes
-        fontRatio *= ViewProviderOrigin::axesScaling;
+        fontRatio *= ViewProviderCoordinateSystem::axesScaling;
         const char* axisName = pcObject->getNameInDocument();
         auto axisRoles = App::Origin::AxisRoles;
         if ( strncmp(axisName, axisRoles[0], strlen(axisRoles[0]) ) == 0 ) {
@@ -234,7 +234,7 @@ void ViewProviderDatum::updateData ( const App::Property* prop ) {
 
 void ViewProviderDatum::onChanged ( const App::Property* prop ) {
     if (prop == &Size) {
-        float sz = Size.getValue () / ViewProviderOrigin::baseSize();
+        float sz = Size.getValue () / ViewProviderCoordinateSystem::baseSize();
         pScale->scaleFactor = SbVec3f (sz, sz, sz);
     }
     ViewProviderGeometryObject::onChanged(prop);

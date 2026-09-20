@@ -37,7 +37,7 @@
 #include "Base/Console.h"
 #include <Base/Vector3D.h>
 
-#include "ViewProviderOrigin.h"
+#include "ViewProviderCoordinateSystem.h"
 #include "Application.h"
 #include "Command.h"
 #include "Document.h"
@@ -49,12 +49,12 @@
 using namespace Gui;
 
 
-PROPERTY_SOURCE(Gui::ViewProviderOrigin, Gui::ViewProviderDocumentObject)
+PROPERTY_SOURCE(Gui::ViewProviderCoordinateSystem, Gui::ViewProviderDocumentObject)
 
 /**
  * Creates the view provider for an object group.
  */
-ViewProviderOrigin::ViewProviderOrigin()
+ViewProviderCoordinateSystem::ViewProviderCoordinateSystem()
 {
     auto sz = defaultSize();
     ADD_PROPERTY_TYPE ( Size, (Base::Vector3d(sz,sz,sz)), 0, App::Prop_None,
@@ -79,38 +79,38 @@ ViewProviderOrigin::ViewProviderOrigin()
     pcRoot->insertChild(lm, 0);
 }
 
-ViewProviderOrigin::~ViewProviderOrigin() {
+ViewProviderCoordinateSystem::~ViewProviderCoordinateSystem() {
     pcGroupChildren->unref();
     pcGroupChildren = nullptr;
 }
 
-std::vector<App::DocumentObject*> ViewProviderOrigin::claimChildren() const {
+std::vector<App::DocumentObject*> ViewProviderCoordinateSystem::claimChildren() const {
     return static_cast<App::Origin*>( getObject() )->OriginFeatures.getValues ();
 }
 
-std::vector<App::DocumentObject*> ViewProviderOrigin::claimChildren3D() const {
+std::vector<App::DocumentObject*> ViewProviderCoordinateSystem::claimChildren3D() const {
     return claimChildren ();
 }
 
-void ViewProviderOrigin::attach(App::DocumentObject* pcObject)
+void ViewProviderCoordinateSystem::attach(App::DocumentObject* pcObject)
 {
     Gui::ViewProviderDocumentObject::attach(pcObject);
     addDisplayMaskMode(pcGroupChildren, "Base");
 }
 
-std::vector<std::string> ViewProviderOrigin::getDisplayModes() const
+std::vector<std::string> ViewProviderCoordinateSystem::getDisplayModes() const
 {
     return { "Base" };
 }
 
-void ViewProviderOrigin::setDisplayMode(const char* ModeName)
+void ViewProviderCoordinateSystem::setDisplayMode(const char* ModeName)
 {
     if (strcmp(ModeName, "Base") == 0)
         setDisplayMaskMode("Base");
     ViewProviderDocumentObject::setDisplayMode(ModeName);
 }
 
-void ViewProviderOrigin::setTemporaryVisibility(bool axis, bool plane) {
+void ViewProviderCoordinateSystem::setTemporaryVisibility(bool axis, bool plane) {
     auto origin = static_cast<App::Origin*>( getObject() );
 
     bool saveState = tempVisMap.empty();
@@ -151,7 +151,7 @@ void ViewProviderOrigin::setTemporaryVisibility(bool axis, bool plane) {
 
 }
 
-void ViewProviderOrigin::resetTemporaryVisibility() {
+void ViewProviderCoordinateSystem::resetTemporaryVisibility() {
     for(const auto &pair : tempVisMap) {
         if (auto vp = Gui::Application::Instance->getViewProvider(pair.first))
             vp->setVisible(pair.second);
@@ -159,21 +159,21 @@ void ViewProviderOrigin::resetTemporaryVisibility() {
     tempVisMap.clear ();
 }
 
-double ViewProviderOrigin::defaultSize()
+double ViewProviderCoordinateSystem::defaultSize()
 {
     return 0.25 * ViewParams::getNewDocumentCameraScale();
 }
 
-double ViewProviderOrigin::baseSize()
+double ViewProviderCoordinateSystem::baseSize()
 {
     return 10;
 }
 
-bool ViewProviderOrigin::isTemporaryVisibility() {
+bool ViewProviderCoordinateSystem::isTemporaryVisibility() {
     return !tempVisMap.empty();
 }
 
-void ViewProviderOrigin::updateData(const App::Property *prop) {
+void ViewProviderCoordinateSystem::updateData(const App::Property *prop) {
     App::Origin* origin = static_cast<App::Origin*> ( getObject() );
     if(origin) {
         if(prop == &origin->OriginFeatures && origin->OriginFeatures.getSize()
@@ -186,14 +186,14 @@ void ViewProviderOrigin::updateData(const App::Property *prop) {
     ViewProviderDocumentObject::updateData ( prop );
 }
 
-bool ViewProviderOrigin::doubleClicked() {
+bool ViewProviderCoordinateSystem::doubleClicked() {
     App::Origin* origin = static_cast<App::Origin*> ( getObject() );
     if(origin)
         origin->initObjects();
     return true;
 }
 
-void ViewProviderOrigin::setupContextMenu(QMenu* menu, QObject* receiver, const char* member)
+void ViewProviderCoordinateSystem::setupContextMenu(QMenu* menu, QObject* receiver, const char* member)
 {
     App::Origin* origin = static_cast<App::Origin*> ( getObject() );
     if(origin && !origin->OriginFeatures.getSize()) {
@@ -202,14 +202,14 @@ void ViewProviderOrigin::setupContextMenu(QMenu* menu, QObject* receiver, const 
     }
 }
 
-bool ViewProviderOrigin::setEdit(int ModNum)
+bool ViewProviderCoordinateSystem::setEdit(int ModNum)
 {
     if(ModNum == ViewProvider::Default)
         return doubleClicked();
     return false;
 }
 
-void ViewProviderOrigin::onChanged(const App::Property* prop) {
+void ViewProviderCoordinateSystem::onChanged(const App::Property* prop) {
     App::Origin* origin = static_cast<App::Origin*> ( getObject() );
     if(!origin) {
         ViewProviderDocumentObject::onChanged ( prop );
@@ -265,7 +265,7 @@ void ViewProviderOrigin::onChanged(const App::Property* prop) {
     ViewProviderDocumentObject::onChanged ( prop );
 }
 
-bool ViewProviderOrigin::onDelete(const std::vector<std::string> &) {
+bool ViewProviderCoordinateSystem::onDelete(const std::vector<std::string> &) {
     auto origin = static_cast<App::Origin*>( getObject() );
 
     if ( !origin->getInList().empty() ) {

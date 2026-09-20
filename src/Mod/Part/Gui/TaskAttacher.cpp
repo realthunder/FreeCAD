@@ -43,7 +43,7 @@
 #include <Gui/Document.h>
 #include <Gui/DocumentObserver.h>
 #include <Gui/Selection.h>
-#include <Gui/ViewProviderOrigin.h>
+#include <Gui/ViewProviderCoordinateSystem.h>
 #include <Mod/Part/App/AttachExtension.h>
 #include <Mod/Part/App/DatumFeature.h>
 #include <Mod/Part/App/SubShapeBinder.h>
@@ -224,7 +224,7 @@ TaskAttacher::TaskAttacher(Gui::ViewProviderDocumentObject *ViewProvider, QWidge
         if (refnames.empty()) {
             auto group = App::GeoFeatureGroupExtension::getGroupOfObject(ViewProvider->getObject());
             if (group && group->hasExtension(App::OriginGroupExtension::getExtensionClassTypeId())) {
-                auto originVp = Base::freecad_dynamic_cast<Gui::ViewProviderOrigin>(
+                auto originVp = Base::freecad_dynamic_cast<Gui::ViewProviderCoordinateSystem>(
                         Gui::Application::Instance->getViewProvider(
                             group->getExtensionByType<App::OriginGroupExtension>()->getOrigin()));
                 if (originVp) {
@@ -334,7 +334,7 @@ TaskAttacher::~TaskAttacher()
 
     detachSelection();
 
-    auto originVp = Base::freecad_dynamic_cast<Gui::ViewProviderOrigin>(
+    auto originVp = Base::freecad_dynamic_cast<Gui::ViewProviderCoordinateSystem>(
             Gui::Application::Instance->getViewProvider(originFeat.getObject()));
     if (originVp)
         originVp->resetTemporaryVisibility();

@@ -36,7 +36,7 @@
 #include <Gui/Command.h>
 #include <Gui/Document.h>
 #include <Gui/MainWindow.h>
-#include <Gui/ViewProviderOrigin.h>
+#include <Gui/ViewProviderCoordinateSystem.h>
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/FeaturePrimitive.h>
 
@@ -76,8 +76,8 @@ TaskBoxPrimitives::TaskBoxPrimitives(ViewProviderPrimitive* vp, QWidget* parent)
     if(body) {
         try {
             App::Origin *origin = body->getOrigin();
-            Gui::ViewProviderOrigin* vpOrigin;
-            vpOrigin = static_cast<Gui::ViewProviderOrigin*>(Gui::Application::Instance->getViewProvider(origin));
+            Gui::ViewProviderCoordinateSystem* vpOrigin;
+            vpOrigin = static_cast<Gui::ViewProviderCoordinateSystem*>(Gui::Application::Instance->getViewProvider(origin));
             vpOrigin->setTemporaryVisibility(true, true);
         } catch (const Base::Exception &ex) {
             Base::Console().Error ("%s\n", ex.what () );
@@ -195,8 +195,8 @@ TaskBoxPrimitives::~TaskBoxPrimitives()
         PartDesign::Body * body = vp ? PartDesign::Body::findBodyOf(vp->getObject()) : 0;
         if (body) {
             App::Origin *origin = body->getOrigin();
-            Gui::ViewProviderOrigin* vpOrigin;
-            vpOrigin = static_cast<Gui::ViewProviderOrigin*>(Gui::Application::Instance->getViewProvider(origin));
+            Gui::ViewProviderCoordinateSystem* vpOrigin;
+            vpOrigin = static_cast<Gui::ViewProviderCoordinateSystem*>(Gui::Application::Instance->getViewProvider(origin));
             vpOrigin->resetTemporaryVisibility();
         }
     } catch (const Base::Exception &ex) {

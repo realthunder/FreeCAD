@@ -118,14 +118,10 @@ public:
     LocalCoordinateSystem();
     ~LocalCoordinateSystem() override;
 
-    /** returns the type name of the ViewProvider
-     *
-     * Upstream names Gui::ViewProviderCoordinateSystem here. That rename is
-     * still to come; the ViewProviderDatum half of the pair has landed.
-     */
+    /// returns the type name of the ViewProvider
     const char* getViewProviderName() const override
     {
-        return "Gui::ViewProviderOrigin";
+        return "Gui::ViewProviderCoordinateSystem";
     }
 
     /** @name Axis and plane access
