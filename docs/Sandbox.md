@@ -1765,10 +1765,27 @@ shapes bound as handles, each answer normalised (shapes to kind,
 measures and counts; values rounded) and equal as text on both
 runtimes; 11 of the 116 fail identically on both sides (curve-only
 functions fed an edge, the deprecated `sortEdges`, a `NameError` in
-Draft's own `get_spline_normal`, `removeSplitter` on a clean box) --
-parity, not a sandbox gap.  What the gate forced into the guest is
-listed in 3.2 and above (`bool`/`str` ops, type references,
-`ShapeList` as list, `GuiUp`/`Console`/`Base`/unit constants).
+Draft's own `get_spline_normal`, `removeSplitter` on a clean box, and
+`circlefrom2Lines1Point`/`circleFrom2tan1pt` reaching
+`DraftVecUtils.crossproduct`, which Draft calls at
+`draftgeoutils/circles.py:119` and `:257` and which has never existed)
+-- parity, not a sandbox gap.  **Those last two take their point OFF
+the l/l3 bisector deliberately (2026-09-20, `V(1, 0.5, 0)`).**  At
+`V(1, 1, 0)` the point lies exactly on the bisector of the two lines,
+so `mirror()` maps it onto itself and which exception comes back is
+decided by rounding noise: `findDistance()` projects to
+`(7.9e-17, -7.9e-17, 0)` here and slips past its `if not dist` and
+`if dist.Length == 0` guards, where the Windows box gets `None` and
+`point.add(None)` raises `TypeError` instead of the `AttributeError`
+a degenerate `edg()` gives here.  That was the entire
+`draftgeoutilsOnHandles` failure seen on Windows 2026-09-19 -- a corpus
+entry comparing floating point rather than geometry, in a call that
+cannot succeed on either platform anyway while `crossproduct` is
+missing.  Off the bisector both sides reach that missing attribute
+deterministically, so the entry compares what it was meant to.
+What the gate forced into the guest is listed in 3.2 and above
+(`bool`/`str` ops, type references, `ShapeList` as list,
+`GuiUp`/`Console`/`Base`/unit constants).
 The traffic it measured, 116 calls: `release` 4977, `get_attr` 2738,
 `call` 587, `mod_call` 153, `bool` 50, `read_prop` 29, `str` 18 --
 about 74 hops per call, and 58 percent of them were releases of
@@ -1777,9 +1794,30 @@ made releases ride the next request or the reply (3.2): the same 116
 calls now make 3575 hops -- `get_attr` 2738, `call` 587, `mod_call`
 153, `bool` 50, `read_prop` 29, `str` 18, `release` 0 -- 31 per call,
 ~0.2 ms of crossing per call at sec 8.1's hop cost, and the per-eval
-pack cost lost its release hop (8.1).  What remains is dominated by
-`get_attr` on shapes and curves; a snapshot op would target exactly
-those reads, and this is the count to size it from.
+pack cost lost its release hop (8.1).  Re-measured 2026-09-20, after
+the bisector fix above took two calls off the degenerate path they
+used to short-circuit on: 3613 hops -- `get_attr` 2764, `call` 593,
+`mod_call` 155, `bool` 50, `read_prop` 29, `str` 16, `write_prop` 6,
+`release` 0 -- still 31 per call.  Compare that against **3581**, not
+the 3575 above: the 2026-09-04 list omits `write_prop` 6, so the
+like-for-like pre-fix total is 3581 and the fix added 32 hops, those
+two calls running further into `circlefrom1Line2Points` before they
+stop.  The figure moved because the corpus did, not because the bridge
+did.
+
+**The hop count does not detect the host divergence, and that is worth
+knowing before anyone uses it as a cross-box check.**  Both boxes
+measured exactly 3581 before the fix, despite one of them raising
+`TypeError` where the other raised `AttributeError`.  That is expected
+rather than surprising: the ops counted are the GUEST's hops to the
+host, and the guest took the identical path on both machines -- it was
+the host halves that diverged, and the host does not hop.  So a
+matching op count is evidence the guest agrees, never evidence the two
+sides agree; only the per-call text comparison shows that.
+
+What remains is dominated by `get_attr` on shapes and curves; a
+snapshot op would target exactly those reads, and this is the count to
+size it from.
 **G1b BUILT 2026-09-04** (`draftWheelInGuest`): Draft's App side boots
 with the pyodide guest as the bundled `fcx_draft` wheel (5.6) -- no
 `exec`, no stubs; every module of the wheel imports in the guest (the

@@ -1682,7 +1682,16 @@ const char* const GeoUtilsCalls[] = {
     "circles.findClosestCircle(V(0, 0, 0), [c, c2])",
     "circles.getCircleFromSpline(b)",
     "circles.circlefrom1Line2Points(l, V(0, 1, 0), V(2, 1, 0))",
-    "circles.circlefrom2Lines1Point(l, l3, V(1, 1, 0))",
+    // Deliberately NOT V(1, 1, 0).  That point lies exactly on the
+    // bisector of l (the x axis) and l3 (the y axis), so mirror() maps
+    // it onto itself and the whole call is decided by rounding noise:
+    // findDistance() projects to (7.9e-17, -7.9e-17, 0) here and hits
+    // its `if not dist` / `if dist.Length == 0` guards on Windows,
+    // returning None.  Both sides then raise, but on DIFFERENT
+    // exceptions -- AttributeError from `.Curve` on a degenerate edge
+    // here, TypeError from `point.add(None)` there -- so the guest/host
+    // comparison disagreed about floating point rather than geometry.
+    "circles.circlefrom2Lines1Point(l, l3, V(1, 0.5, 0))",
     "circles.circleFrom2LinesRadius(l, l3, 1.0)",
     "circles.circleFrom3LineTangents(l, l2, l3)",
     "circles.circleFromPointLineRadius(V(1, 1, 0), l, 1.0)",
@@ -1722,7 +1731,9 @@ const char* const GeoUtilsCalls[] = {
     "circles_apollonius.innerSoddyCircle(c, c2, c3)",
     "circles_apollonius.circleFrom3CircleTangents(c, c2, c3)",
     // circles_incomplete
-    "circles_incomplete.circleFrom2tan1pt(l, l3, V(1, 1, 0))",
+    // Off the l/l3 bisector for the reason given at circlefrom2Lines1Point
+    // above -- this call delegates straight to it.
+    "circles_incomplete.circleFrom2tan1pt(l, l3, V(1, 0.5, 0))",
     "circles_incomplete.circleFrom2tan1rad(l, l3, 0.5)",
     "circles_incomplete.circleFrom1tan2pt(l, V(0, 1, 0), V(2, 1, 0))",
     "circles_incomplete.circleFrom1tan1pt1rad(l, V(1, 1, 0), 1.0)",
