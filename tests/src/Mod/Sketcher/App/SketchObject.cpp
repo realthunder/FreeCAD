@@ -2,6 +2,8 @@
 
 #include <FCConfig.h>
 
+#include <algorithm>
+
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/Expression.h>
@@ -978,4 +980,67 @@ TEST_F(SketchObjectTest, testConstraintActiveInSketch)
     EXPECT_TRUE(getObject()->isConstraintActiveInSketch(onLonerPtr));
     EXPECT_TRUE(getObject()->isConstraintActiveInSketch(groupPtr));
     EXPECT_FALSE(getObject()->isConstraintActiveInSketch(nullptr));
+}
+
+// A solve that leaves the geometry exactly where it was still has to publish its
+// diagnosis. SketchObject only copies the solved elements back when they differ, and
+// the diagnosis rides on those elements, so it used to be dropped in that case --
+// leaving whatever the previous solve had concluded on the geometry that
+// ViewProviderSketch colours and that getGeometryWithDependentParameters() reads.
+TEST_F(SketchObjectTest, testSolverDiagnosisSurvivesAnUnchangedSolve)
+{
+    // Arrange: a line nothing constrains. The solver has nothing to move, so the
+    // copy-back is skipped and only the hand-over under test can deliver a diagnosis.
+    Base::Vector3d start(0.0, 0.0, 0.0), end(1.0, 0.0, 0.0);
+    std::unique_ptr<Part::GeomLineSegment> line(new Part::GeomLineSegment());
+    line->setPoints(start, end);
+    int geoId = getObject()->addGeometry(line.get());
+
+    // Act
+    getObject()->solve();
+
+    // Assert: four free parameters, and the element says so.
+    EXPECT_EQ(getObject()->getLastDoF(), 4);
+
+    std::vector<std::pair<int, Sketcher::PointPos>> dependent;
+    getObject()->getGeometryWithDependentParameters(dependent);
+
+    EXPECT_FALSE(dependent.empty());
+    EXPECT_TRUE(std::any_of(dependent.begin(), dependent.end(), [geoId](const auto& element) {
+        return element.first == geoId;
+    }));
+
+    // Act: pin it down where it already is, so again nothing moves -- but now the
+    // diagnosis is the opposite one and must replace what is on the element.
+    auto* toOrigin = new Sketcher::Constraint();
+    toOrigin->Type = Sketcher::ConstraintType::Coincident;
+    toOrigin->First = geoId;
+    toOrigin->FirstPos = Sketcher::PointPos::start;
+    toOrigin->Second = Sketcher::GeoEnum::RtPnt;
+    toOrigin->SecondPos = Sketcher::PointPos::start;
+    getObject()->addConstraint(toOrigin);
+
+    auto* alongX = new Sketcher::Constraint();
+    alongX->Type = Sketcher::ConstraintType::DistanceX;
+    alongX->First = geoId;
+    alongX->FirstPos = Sketcher::PointPos::end;
+    alongX->setValue(end.x);
+    getObject()->addConstraint(alongX);
+
+    auto* alongY = new Sketcher::Constraint();
+    alongY->Type = Sketcher::ConstraintType::DistanceY;
+    alongY->First = geoId;
+    alongY->FirstPos = Sketcher::PointPos::end;
+    alongY->setValue(end.y);
+    getObject()->addConstraint(alongY);
+
+    getObject()->solve();
+
+    // Assert: fully constrained, and no element left claiming a free parameter.
+    EXPECT_EQ(getObject()->getLastDoF(), 0);
+
+    dependent.clear();
+    getObject()->getGeometryWithDependentParameters(dependent);
+
+    EXPECT_TRUE(dependent.empty());
 }
