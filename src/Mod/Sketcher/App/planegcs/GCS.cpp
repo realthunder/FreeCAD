@@ -5249,6 +5249,70 @@ void System::makeSparseQRDecomposition(
 }
 #endif  // EIGEN_SPARSEQR_COMPATIBLE
 
+// A parameter that no constraint touches is, trivially, a dependent (i.e. not fully
+// constrained) parameter: its column of the Jacobian is all zeros, so a QR decomposition can
+// say nothing about it that we do not already know.
+//
+// Handing those columns to the QR is not merely wasted work. Eigen's rank-revealing SparseQR
+// takes every column it finds past the rank, shifts it to the end of the pivot permutation and
+// then recomputes the entire column elimination tree (the "Zero pivot found" branch of
+// SparseQR::factorize), both of which cost O(columns) -- so the total is quadratic in the number
+// of unconstrained parameters. That is not a corner case: a sketch of 92 B-splines carrying no
+// constraints at all has a 368 x 38732 Jacobian of which 37996 columns are zero, so all but 736
+// of them take that branch. Splitting them off takes that sketch's solve from 5.5s to 1.1s.
+//
+// So split the two sets here, let the decomposition diagnose only the parameters a constraint
+// actually reaches, and add the others back as dependent afterwards. The test is for an exact
+// zero, which is the conservative direction: a column with any non-zero in it, however small,
+// still goes to the QR and is diagnosed exactly as before.
+void System::splitUnconstrainedParameters(
+    const Eigen::MatrixXd& J,
+    const std::map<int, int>& jacobianconstraintmap,
+    const GCS::VEC_pD& pdiagnoselist,
+    Eigen::MatrixXd& Jconstrained,
+    GCS::VEC_pD& pconstrainedlist,
+    GCS::VEC_pD& punconstrainedlist
+) const
+{
+    // Only the first jacobianconstraintmap.size() rows of J were filled in by
+    // makeReducedJacobian, and the decompositions read no further than those either.
+    const auto constrNum = static_cast<Eigen::Index>(jacobianconstraintmap.size());
+
+    std::vector<Eigen::Index> constrainedcols;
+    constrainedcols.reserve(J.cols());
+
+    for (Eigen::Index col = 0; col < J.cols(); ++col) {
+        if (J.col(col).head(constrNum).isZero(0.0)) {
+            punconstrainedlist.push_back(pdiagnoselist[col]);
+        }
+        else {
+            constrainedcols.push_back(col);
+        }
+    }
+
+    Jconstrained.resize(J.rows(), static_cast<Eigen::Index>(constrainedcols.size()));
+    pconstrainedlist.reserve(constrainedcols.size());
+
+    for (std::size_t i = 0; i < constrainedcols.size(); ++i) {
+        Jconstrained.col(static_cast<Eigen::Index>(i)) = J.col(constrainedcols[i]);
+        pconstrainedlist.push_back(pdiagnoselist[constrainedcols[i]]);
+    }
+}
+
+void System::addUnconstrainedDependentParameters(const GCS::VEC_pD& punconstrainedlist)
+{
+    pDependentParameters.insert(
+        pDependentParameters.end(),
+        punconstrainedlist.begin(),
+        punconstrainedlist.end()
+    );
+
+    // Nothing constrains these, so nothing is grouped with them: each is a group of one.
+    for (auto* param : punconstrainedlist) {
+        pDependentParametersGroups.emplace_back(1, param);
+    }
+}
+
 void System::identifyDependentParametersDenseQR(
     const Eigen::MatrixXd& J,
     const std::map<int, int>& jacobianconstraintmap,
@@ -5256,14 +5320,39 @@ void System::identifyDependentParametersDenseQR(
     bool silent
 )
 {
-    Eigen::FullPivHouseholderQR<Eigen::MatrixXd> qrJ;
-    Eigen::MatrixXd Rparams;
+    Eigen::MatrixXd Jconstrained;
+    GCS::VEC_pD pconstrainedlist;
+    GCS::VEC_pD punconstrainedlist;
 
-    int rank;
+    splitUnconstrainedParameters(
+        J,
+        jacobianconstraintmap,
+        pdiagnoselist,
+        Jconstrained,
+        pconstrainedlist,
+        punconstrainedlist
+    );
 
-    makeDenseQRDecomposition(J, jacobianconstraintmap, qrJ, rank, Rparams, false, true);
+    if (!pconstrainedlist.empty()) {
+        Eigen::FullPivHouseholderQR<Eigen::MatrixXd> qrJ;
+        Eigen::MatrixXd Rparams;
 
-    identifyDependentParameters(qrJ, Rparams, rank, pdiagnoselist, silent);
+        int rank = 0;
+
+        makeDenseQRDecomposition(
+            Jconstrained,
+            jacobianconstraintmap,
+            qrJ,
+            rank,
+            Rparams,
+            false,
+            true
+        );
+
+        identifyDependentParameters(qrJ, Rparams, rank, pconstrainedlist, silent);
+    }
+
+    addUnconstrainedDependentParameters(punconstrainedlist);
 }
 
 #ifdef EIGEN_SPARSEQR_COMPATIBLE
@@ -5274,22 +5363,39 @@ void System::identifyDependentParametersSparseQR(
     bool silent
 )
 {
-    Eigen::SparseQR<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int>> SqrJ;
-    Eigen::MatrixXd Rparams;
+    Eigen::MatrixXd Jconstrained;
+    GCS::VEC_pD pconstrainedlist;
+    GCS::VEC_pD punconstrainedlist;
 
-    int nontransprank;
-
-    makeSparseQRDecomposition(
+    splitUnconstrainedParameters(
         J,
         jacobianconstraintmap,
-        SqrJ,
-        nontransprank,
-        Rparams,
-        false,
-        true
-    );  // do not transpose allow one to diagnose parameters
+        pdiagnoselist,
+        Jconstrained,
+        pconstrainedlist,
+        punconstrainedlist
+    );
 
-    identifyDependentParameters(SqrJ, Rparams, nontransprank, pdiagnoselist, silent);
+    if (!pconstrainedlist.empty()) {
+        Eigen::SparseQR<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int>> SqrJ;
+        Eigen::MatrixXd Rparams;
+
+        int nontransprank = 0;
+
+        makeSparseQRDecomposition(
+            Jconstrained,
+            jacobianconstraintmap,
+            SqrJ,
+            nontransprank,
+            Rparams,
+            false,
+            true
+        );  // do not transpose allow one to diagnose parameters
+
+        identifyDependentParameters(SqrJ, Rparams, nontransprank, pconstrainedlist, silent);
+    }
+
+    addUnconstrainedDependentParameters(punconstrainedlist);
 }
 #endif
 
