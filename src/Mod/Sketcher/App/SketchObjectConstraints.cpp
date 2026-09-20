@@ -242,8 +242,40 @@ SketchSolveStatus SketchObject::solve(bool updateGeoAfterSolving /*=true*/)
         Part::PropertyGeometryList tmp;
         tmp.setValues(std::move(geomlist));
         // Only set values if there is actual changes
-        if (!Geometry.isSame(tmp))
+        if (!Geometry.isSame(tmp)) {
             Geometry.moveValues(std::move(tmp));
+        }
+        else {
+            // The elements did not move, but the solver diagnosis that rides on them
+            // may still have changed: it records which parameters of each element the
+            // constraints now fix. isSame() cannot see that. The diagnosis is a
+            // non-persistent extension, and Geometry::hasSameExtensions compares only
+            // the persistent ones -- deliberately, because a transient diagnosis is no
+            // part of an element's value. So carry it over by hand, onto the elements
+            // already held: that leaves the property's value untouched and notifies
+            // nothing, which is the whole point of taking this branch.
+            //
+            // Without this the elements keep the diagnosis of an earlier solve, and
+            // everything reading it back off the geometry -- ViewProviderSketch's
+            // fully-constrained colour, getGeometryWithDependentParameters() -- answers
+            // from stale information. Whether a solve lands on exactly the geometry it
+            // started from decides which, so the colour of an unedited sketch could
+            // differ between two runs of the same file.
+            const auto& solved = tmp.getValues();
+            const auto& current = Geometry.getValues();
+
+            if (solved.size() == current.size()) {
+                for (size_t i = 0; i < current.size(); i++) {
+                    const auto* diagnosis = solved[i]->getExtensionPtr(
+                        Sketcher::SolverGeometryExtension::getClassTypeId()
+                    );
+
+                    if (diagnosis) {
+                        current[i]->setExtension(diagnosis->copy());
+                    }
+                }
+            }
+        }
     }
     else if (status != SketchSolveStatus::Success) {
         // if solver failed, invalid constraints were likely added before solving
