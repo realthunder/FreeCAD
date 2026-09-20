@@ -23,7 +23,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { WidgetStore, layoutRefs, refId } from './protocol.ts';
+import { CHECK_ON, WidgetStore, itemClickOp, itemEditOp, itemExpandOp, layoutRefs, refId,
+         selectionWrite } from './protocol.ts';
 import type { Frame } from './protocol.ts';
 import { isKnownLayoutClass, planLayout } from './layout.ts';
 import type { LayoutPlan } from './layout.ts';
@@ -165,10 +166,113 @@ function main(): void {
   check('sketcher_constraints', 'item ops leave rows', rows.length > 0, `${rows.length} rows`);
   check('sketcher_constraints', 'cells carry text', texts.length > 0, String(texts.slice(0, 3)));
 
+  checkItems();
   checkCompletion();
 
   console.log(failures === 0 ? '\nALL GREEN' : `\n${failures} FAILURE(S)`);
   process.exit(failures === 0 ? 0 : 1);
+}
+
+/// The item views (docs/Sandbox.md 7.22, W2). The recorded corpus carries
+/// clear/insert/set with text and icon cells and nothing else -- Sketcher's
+/// list never nests, never checks and never deletes a row -- so what a real
+/// tree does is CONSTRUCTED here against the same store. The op names and
+/// their payloads are the host's own (`Fw::ItemView::applyItemOp`), which
+/// is the only reason this can stand in for a fixture.
+function checkItems(): void {
+  const t = 'item views';
+  const store = new WidgetStore();
+  store.apply({
+    method: 'open', id: 'v', model: 'QTreeWidgetModel', qtClass: 'QTreeWidget',
+    state: { q_columns: ['A', 'B'] },
+  } as Frame);
+  const custom = (content: Record<string, unknown>): boolean =>
+    store.apply({ method: 'custom', id: 'v', content } as Frame);
+  const rows = () => store.get('v')?.items ?? [];
+
+  custom({ item: 'insert', parent: 0, index: 0, rows: [
+    { id: 1, cells: [{ text: 'one' }, { check: 0 }], children: [{ id: 2, cells: [{ text: 'kid' }] }] },
+    { id: 3, cells: [{ text: 'two' }] },
+  ] });
+  check(t, 'a nested insert keeps the tree',
+        rows().length === 2 && rows()[0].children?.length === 1,
+        `${rows().length} top`);
+
+  check(t, 'a row op expands',
+        custom({ item: 'row', id: 1, row: { expanded: true } }) && rows()[0].expanded === true);
+  check(t, 'a row op hides',
+        custom({ item: 'row', id: 3, row: { hidden: true } }) && rows()[1].hidden === true);
+  check(t, 'a row op reaches a nested row',
+        custom({ item: 'row', id: 2, row: { flags: 32 } })
+        && rows()[0].children?.[0].flags === 32);
+
+  custom({ item: 'set', id: 1, col: 0, cell: { icon: 'img:x' } });
+  check(t, 'a set merges rather than replaces',
+        rows()[0].cells[0].text === 'one' && rows()[0].cells[0].icon === 'img:x',
+        JSON.stringify(rows()[0].cells[0]));
+
+  check(t, 'a remove takes its children with it',
+        custom({ item: 'remove', id: 1 }) && rows().length === 1 && rows()[0].id === 3,
+        `${rows().length} left`);
+
+  custom({ item: 'insert', parent: 0, index: 0, rows: [{ id: 4, cells: [{ text: 'aaa' }] }] });
+  check(t, 'sort orders one level by the column text',
+        custom({ item: 'sort', id: 0, col: 0, order: 0 })
+        && (rows()[0].cells[0].text ?? '') === 'aaa',
+        rows().map((r) => r.cells[0]?.text).join(','));
+  check(t, 'sort descending reverses it',
+        custom({ item: 'sort', id: 0, col: 0, order: 1 })
+        && (rows()[0].cells[0].text ?? '') === 'two',
+        rows().map((r) => r.cells[0]?.text).join(','));
+
+  check(t, 'an unknown item op is refused', !custom({ item: 'wat' }));
+  check(t, 'a set on a row that is gone is refused',
+        !custom({ item: 'set', id: 99, col: 0, cell: { text: 'x' } }));
+  // An event is not an item op: the store reports it and changes nothing.
+  check(t, 'an event frame still applies', custom({ event: 'itemClicked', args: [3, 0] }));
+
+  // The write path, and the distinction the whole thing turns on: what a
+  // client sends must be an item OP. `commCustom` hands an `item` to
+  // `applyItemOp`, which calls `emitItemOp` and so reaches the desktop's
+  // real widget and the panel slot behind it; an `event` reaches
+  // `dispatchEvent`, which updates the model's own copy and calls no
+  // backend -- a write that passes every check in this file and does
+  // nothing on screen. (`itemEdited` goes the other way: the backend
+  // emits it when the DESKTOP user edits a cell.) The host's own test
+  // writes a check this way and asserts the constraint really moves --
+  // Mod/Test/SandboxPanelMirror.py `test_sketcher_constraints`.
+  const edit = itemEditOp(7, 1, { check: CHECK_ON });
+  check(t, 'a check write is an item op, not an event',
+        edit.item === 'set' && !('event' in edit), JSON.stringify(edit));
+  check(t, 'the check write names the row, the column and the cell',
+        edit.id === 7 && edit.col === 1
+        && JSON.stringify(edit.cell) === JSON.stringify({ check: 2 }),
+        JSON.stringify(edit));
+  const expand = itemExpandOp(7, true);
+  check(t, 'an expand is the row op the real tree follows',
+        expand.item === 'row' && !('event' in expand)
+        && JSON.stringify(expand.row) === JSON.stringify({ expanded: true }),
+        JSON.stringify(expand));
+  check(t, 'a click stays an event: it notifies, it does not select',
+        itemClickOp(7, 0).event === 'itemClicked');
+
+  // What a client sends is the shape the host pushes, so the same store
+  // applies it -- the cheapest proof that the two halves speak one wire.
+  const back = new WidgetStore();
+  back.apply({ method: 'open', id: 'w', model: 'QTreeWidgetModel', state: {} } as Frame);
+  back.apply({
+    method: 'custom', id: 'w',
+    content: { item: 'insert', parent: 0, index: 0, rows: [{ id: 7, cells: [{}, { check: 0 }] }] },
+  } as Frame);
+  check(t, 'a client op is the shape the store already applies',
+        back.apply({ method: 'custom', id: 'w', content: edit } as Frame)
+        && back.get('w')?.items?.[0]?.cells?.[1]?.check === CHECK_ON,
+        JSON.stringify(back.get('w')?.items));
+  const sel = selectionWrite([7], 7, 1);
+  check(t, 'selection is state, never an event',
+        !('event' in sel) && JSON.stringify(sel.selection) === '[7]'
+        && sel.currentId === 7 && sel.currentColumn === 1,
+        JSON.stringify(sel));
 }
 
 /// The completion rules (docs/Sandbox.md 7.23). No fixture: these are

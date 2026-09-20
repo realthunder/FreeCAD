@@ -31,8 +31,13 @@ using App::ExpressionSandbox::ImageHost;
 namespace
 {
 
-/// setenv and unsetenv are POSIX and absent from the MSVC CRT, which offers
-/// _putenv_s instead; there an empty value removes the variable.
+/// `setenv` and `unsetenv` are POSIX and absent from the MSVC CRT, so the
+/// guard below goes through these two instead of calling them directly.
+/// On Windows `_putenv_s` with an EMPTY value removes the variable, which
+/// is what `unsetenv` does; setting it blank would leave a defined-but-
+/// empty variable behind, and what these tests turn on is whether a
+/// variable is defined at all. Found building the suite on Windows for
+/// the first time, 2026-09-19.
 void setEnv(const char* name, const char* value)
 {
 #ifdef _WIN32

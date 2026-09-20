@@ -65,6 +65,47 @@ function readCard() {
     })),
     buttons: [...card.querySelectorAll('.fc-panel-btn')].map(text),
     rows: [...card.querySelectorAll('.fc-panel-row')].map(text),
+    // W2's item views, read STRUCTURALLY rather than as text: the flat
+    // `rows` above cannot tell a header from a row, a nested child from a
+    // top-level one, or an item's check box from the QCheckBox widget the
+    // `checks` field reports. One entry per item view on the card.
+    items: [...card.querySelectorAll('.fc-panel-rows')].map((box) => {
+      const isHead = (el) => el.classList.contains('fc-panel-head-row');
+      const depth = (el) => {
+        let n = 0;
+        for (let p = el.parentElement; p && p !== box; p = p.parentElement)
+          if (p.classList.contains('fc-panel-kids')) n++;
+        return n;
+      };
+      const body = [...box.querySelectorAll('.fc-panel-row')].filter((r) => !isHead(r));
+      return {
+        header: [...box.querySelectorAll(':scope > .fc-panel-head-row span')]
+          .map(text).filter((s) => s !== ''),
+        // The header and the rows must share one template or nothing lines
+        // up, so report it from a row rather than from the header.
+        tracks: body.length ? getComputedStyle(body[0]).gridTemplateColumns : '',
+        count: body.length,
+        checked: body.filter((r) => r.querySelector('input[type=checkbox]:checked')).length,
+        selected: body.filter((r) => r.classList.contains('fc-panel-row-on')).length,
+        maxDepth: body.reduce((m, r) => Math.max(m, depth(r)), 0),
+        rows: body.slice(0, 12).map((r) => {
+          // A leaf renders its twisty as an empty span, not a button, so
+          // this is null for most rows -- `text` takes an element.
+          const twisty = r.querySelector('button.fc-panel-twisty');
+          return {
+            depth: depth(r),
+            // The twisty is a span too, and counting it as a cell shifts
+            // every column in the report by one.
+            cells: [...r.querySelectorAll(':scope > span')]
+              .filter((s) => !s.classList.contains('fc-panel-twisty')).map(text),
+            boxes: [...r.querySelectorAll('input[type=checkbox]')].map((c) => c.checked),
+            twisty: twisty ? text(twisty) : '',
+            on: r.classList.contains('fc-panel-row-on'),
+            dim: r.classList.contains('fc-panel-row-off'),
+          };
+        }),
+      };
+    }),
     pictures: card.querySelectorAll('.fc-panel-pic').length,
     // A grid that planned a NaN track would collapse; report the tracks so
     // the corpus's two-wide form rows are visible in the result.
@@ -150,6 +191,31 @@ function readCard() {
       });
       card.typed = { wrote: typed, before, after };
     }
+    // W2's write path: click an item's check box (FC_PANEL_CHECK=<n>, the
+    // nth box across the card's item views) and report what the card holds
+    // after the round trip. This half only shows the page agreeing with
+    // itself -- the real check is on the HOST, where a Sketcher constraint
+    // must move into virtual space, and that is read from the process
+    // rather than from here.
+    const checkNth = process.env.FC_PANEL_CHECK;
+    if (checkNth !== undefined && card) {
+      const nth = +checkNth;
+      const before = await page.evaluate((i) => {
+        const boxes = [...document.querySelectorAll(
+          '.fc-panel-rows .fc-panel-row input[type=checkbox]')];
+        if (!boxes[i]) return null;
+        const was = boxes[i].checked;
+        boxes[i].click();
+        return was;
+      }, nth);
+      await new Promise((r) => setTimeout(r, 2500));
+      const after = await page.evaluate((i) => {
+        const boxes = [...document.querySelectorAll(
+          '.fc-panel-rows .fc-panel-row input[type=checkbox]')];
+        return boxes[i] ? boxes[i].checked : null;
+      }, nth);
+      card.checkWrite = { index: nth, before, after };
+    }
     // Completion (docs/Sandbox.md 7.23). Real key events, not a .value
     // write: the whole controller hangs off the input handler, and
     // setting the property fires nothing.
@@ -231,5 +297,9 @@ function readCard() {
   }
   console.log('REPORT ' + JSON.stringify(card));
   if (!card) process.exit(2);
-  process.exit(card.fields.length || card.combos.length ? 0 : 1);
+  // An item view alone is a drawn panel too (W2): Sketcher's Elements and
+  // Constraints carry no field between them, and calling that empty would
+  // report the very thing this harness exists to check as a failure.
+  const drewItems = (card.items || []).some((view) => view.count > 0);
+  process.exit(card.fields.length || card.combos.length || drewItems ? 0 : 1);
 })();

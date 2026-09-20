@@ -1412,7 +1412,25 @@
 
 .fc-panel-stack, .fc-panel-grid { min-width: 0; }
 .fc-panel-cell { min-width: 0; display: flex; align-items: center; }
+/* A flex CHILD defaults to min-width:auto, so one wide thing anywhere
+ * inside -- a long label, a five-column item view -- refuses to shrink and
+ * drags the whole card wider than its own 360px. Every box in the chain
+ * has to be allowed to shrink, not just the cell. */
+.fc-panel-cell > *, .fc-panel-box { min-width: 0; }
+/* A cell lays its one widget out in a ROW, so a child that does not grow
+ * is sized to its content: that is why Sketcher's constraint box stopped
+ * at 246px inside a 374px cell while Elements, with wider content,
+ * reached 372px. Qt gives a group box and an item view an EXPANDING size
+ * policy, so these grow -- and only these, because stretching a button or
+ * a label to the full width is what Qt does not do. */
+.fc-panel-cell > .fc-panel-box,
+.fc-panel-cell > .fc-panel-rows,
+.fc-panel-cell > .fc-panel-stack,
+.fc-panel-cell > .fc-panel-grid { flex: 1 1 auto; }
 .fc-panel-label { color: #cfd3d7; white-space: nowrap; }
+/* A rich-text hint is a paragraph: it wraps, and it is why the rule above
+ * matters (see qtText in widgets/panel.tsx). */
+.fc-panel-rich { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .fc-panel-field {
   flex: 1;
@@ -1572,10 +1590,51 @@
 .fc-panel-sep { flex: 1; border: 0; border-top: 1px solid rgba(255, 255, 255, 0.12); }
 .fc-panel-pic { max-width: 100%; }
 
-.fc-panel-rows { display: flex; flex-direction: column; width: 100%; }
-.fc-panel-row { display: flex; gap: 8px; padding: 2px 0; }
-.fc-panel-row span { color: #cfd3d7; white-space: nowrap; }
+/* An item view (widgets/panel.tsx, W2).  The row is a grid so the header
+ * and the cells share their columns; the first track is the twisty, which
+ * a leaf keeps as an empty span so its text still lines up with a
+ * parent's. */
+/* Lighter than the card, the way a desktop item view sits in its panel:
+ * the same wash the fields use, so a list reads as a sunken widget rather
+ * than as text lying on the panel. */
+.fc-panel-rows {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+.fc-panel-row { gap: 8px; padding: 2px 0; align-items: center;
+                width: 100%; box-sizing: border-box; }
+.fc-panel-row span {
+  color: #cfd3d7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
 .fc-panel-kids { padding-left: 12px; }
+.fc-panel-head-row { border-bottom: 1px solid rgba(255, 255, 255, 0.12); }
+.fc-panel-head-row span { color: #9aa0a6; font-weight: 600; }
+.fc-panel-row-on { background: rgba(122, 162, 247, 0.18); border-radius: 4px; }
+.fc-panel-row-off span { color: #6b7076; }
+.fc-panel-twisty {
+  width: 14px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #9aa0a6;
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
 
 /* A completion list (widgets/completion.tsx).  Wide: in the editor's own
  * flow, a bordered box under the editor -- the console is overflow:hidden

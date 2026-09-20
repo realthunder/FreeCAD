@@ -99,15 +99,22 @@ std::unique_ptr<ImageRuntime> makeRuntime(const std::string& name)
     if (name == "wasi")
         return makeWasmtimeRuntime();
 #endif
-    FC_ERR("unknown expression sandbox runtime '" << name
-           << "' (this build has:"
+    // The list is assembled BEFORE the macro call, not spliced into its
+    // argument list. A preprocessor directive between the parentheses of a
+    // macro invocation is undefined behaviour; gcc and clang accept it as an
+    // extension, MSVC rejects it outright (C2121 "'#': invalid character",
+    // then a cascade as `ifdef`, `endif` and the macro names fall through as
+    // identifiers). Found building this file on Windows for the first time,
+    // 2026-09-19. Do not fold this back into the FC_ERR.
+    std::string have;
 #ifdef FC_EXPR_PYODIDE_HOST
-           << " pyodide"
+    have += " pyodide";
 #endif
 #ifdef FC_EXPR_WASI_RUNTIME
-           << " wasi"
+    have += " wasi";
 #endif
-           << ")");
+    FC_ERR("unknown expression sandbox runtime '" << name
+           << "' (this build has:" << have << ")");
     return nullptr;
 }
 

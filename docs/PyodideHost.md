@@ -250,7 +250,7 @@ pyodide guest carries the SAME slice:
   project.  An `add_executable` with a `.so` suffix, NOT
   `add_library(MODULE)`: CMake's Emscripten platform archives a MODULE
   with emar, and an archive is not a side module.  Output:
-  `dist/fcx_image-0.1-cp314-cp314-pyodide_2026_0_wasm32.whl` (1.9 MB
+  `dist/fcx_image-0.1.0-cp314-cp314-pyodide_2026_0_wasm32.whl` (1.9 MB
   .so; the whole slice compiled against Python 3.14 headers with zero
   errors).
 
@@ -677,8 +677,57 @@ console can call it.
 `FREECAD_FCX_IMAGE_WHEEL=<path>` installs the wheel under
 `<datadir>/Pyodide/wheels/` and mirrors it into the build tree;
 `FREECAD_PYODIDE_DIR` keeps bundling a whole distribution for dev
-trees.  The PyPI route (`fcx-image==<FreeCAD version>`, one file per
-ABI tag) stays the recorded later upgrade path.
+trees.
+
+**The PyPI route is BUILT, 2026-09-19: `fcx-image` 0.1.0 is published**
+(https://pypi.org/project/fcx-image/0.1.0/), one file per ABI tag, and
+it closes the last gap in "a box can test the sandbox without building
+it": v8-embed is a package for all five platforms, the runtime
+downloads itself, and now the guest wheel is fetched rather than
+cross-compiled.  The version is NOT the FreeCAD version after all --
+nothing reads it (the filename parse takes only the `fcx_image-` prefix
+and the ABI), and what actually couples guest to host is the ABI tag
+plus the surface stamp, so the wheel carries its own 0.1.0.
+
+**The one oddity, and it is not avoidable.**  PyPI accepts only the
+PEP 783 platform tag `pyemscripten_<major>_<minor>_wasm32` (warehouse's
+`_pyemscripten_platform_re`; there is no `pyodide` platform at all),
+while Pyodide and `ExpressionPyodideRuntime.cpp` want
+`pyodide_<abi>_wasm32`.  Warehouse validates the tag from the FILENAME
+and never cross-checks the inner `WHEEL` metadata -- confirmed by
+publishing -- so the artifact is the ordinary wheel under a different
+FILENAME, inner tag untouched, and a consumer renames it back.  The
+bytes are identical; the round trip is proven (download from the index,
+rename, 26/26 on `ExpressionImageEvalTest`).
+
+    pip download --no-deps --only-binary=:all: \
+        --platform pyemscripten_2026_0_wasm32 \
+        --python-version 3.14 --implementation cp --abi cp314 \
+        fcx-image
+    # then rename pyemscripten_2026_0_wasm32 -> pyodide_2026_0_wasm32
+
+A plain `pip install fcx-image` finds nothing: pip refuses a foreign
+platform wheel unless the platform is named.  **Never repack the
+wheel** to change the tag -- a repack breaks loading even with `RECORD`
+rebuilt correctly (measured: 24 of 26 tests fail), which is why the
+published file is a byte-identical copy rather than a retagged one.
+`make_wheel.py` grew `--license`, `--requires-python`, `--homepage`,
+`--description-file` and `--classifier` for the page, all optional
+because the same script wraps the pivy guest wheel.  PyPI metadata
+cannot be edited after an upload, only yanked, so it was rehearsed on
+TestPyPI (0.1.1) first.
+
+*** **TestPyPI carries a HIGHER version than production, and that is a
+trap.**  The rehearsals went up as `0.1.0` and `0.1.1` on TestPyPI while
+production has only `0.1.0`, so a box that pulled from TestPyPI first
+and then switched to PyPI appears to go 0.1.1 -> 0.1.0 -- a downgrade,
+and one that is easy to "fix" by pinning the TestPyPI artifact.  They
+are DIFFERENT bytes (TestPyPI 0.1.1 is sha256 `f8acc197...`, 399113 B;
+production 0.1.0 is sha256 `8253da84...`, 399116 B -- the version string
+itself differs).  Only the production 0.1.0 has been proven the whole
+way: fetched from the index it serves, renamed, 26/26.  TestPyPI is a
+rehearsal index, never a source: use `pypi.org`.  Found by the Windows
+box on 2026-09-19, between the two messages announcing the publish.
 
 ### 12.4 The package installer (B4)
 

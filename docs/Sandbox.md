@@ -52,7 +52,7 @@ runs in the guest.**
     host widget layer: core, Qt view built       H0: src/Gui/Fw/ (Fw:: models, FwQt:: backend, the store, FreeCADGui.FormWidgets), src/Tools/fwuic.py (7.12)
     native panels on the layer       sized       H1-H3: the first ports, the form-only majority, the item views; DOM walker later (7.4, 7.12)
     the task panel mirror            M3 built    7.19: the desktop's task panel walked into models, streamed (Pad, Draft's OrthoArray, a CAM op, no workbench edited); M2: item rows reflected (Sketcher's constraint list), pictures and icons by image id; M3: top-level dialogs as dialog:<n> roots (a panel slot's QMessageBox, its exec code from a client's click), mouse replay into pictures; M4 measured 2026-09-11 (sec 8.4: a repaint burst re-reads 10-20 widgets in 0.3 ms and sends nothing; a panel at rest sends nothing; a keystroke costs the other clients 70-150 B)
-    the panels in the browser (G7)  W1 building 7.22: the DOM view over the widget layer -- the walker, the layout plan, the panel container, the item views; W1-W5, 2.2-3.3k of TypeScript in src/Gui/Renderer/web, and one 20-line host change (a client is never told how the host corrected its own write); the five questions RULED 2026-09-16 (chrome-flavoured, the echo taken, dialogs in scope, a FLOATING card, the pure-plan gate) and W1 started; W1's host half BUILT 2026-09-16 (Store::messageTo, the gate in test_widgetStream, FormWidgets 22/22), the fixture corpus (6 cases) recorded and the walker core, the layout plan and the replay gate BUILT 2026-09-16 (62 checks ALL GREEN) and the client + views + floating card BUILT the same day (typecheck and bundle clean; NOT yet rendered against a live desktop), W2 next
+    the panels in the browser (G7)  W2 built   7.22: the DOM view over the widget layer -- the walker, the layout plan, the panel container, the item views; W1-W5, 2.2-3.3k of TypeScript in src/Gui/Renderer/web, and one 20-line host change (a client is never told how the host corrected its own write); the five questions RULED 2026-09-16 (chrome-flavoured, the echo taken, dialogs in scope, a FLOATING card, the pure-plan gate) and W1 started; W1's host half BUILT 2026-09-16 (Store::messageTo, the gate in test_widgetStream, FormWidgets 22/22), the fixture corpus (6 cases) recorded and the walker core, the layout plan and the replay gate BUILT 2026-09-16 (62 checks ALL GREEN) and the client + views + floating card BUILT the same day (typecheck and bundle clean), and W1 PROVEN on screen 2026-09-16 (demo-taskpanel.py through renderer-serve.sh, driven by scripts/panel-drive.js); W2 BUILT 2026-09-19 -- the row/remove/sort ops the corpus never carried, the header, the nesting, the checks and the selection, and one view wake per frame because the host pushes one per op; gate 85 -> 102 checks, 17 of them the item views'; the op-vs-event trap (only an item op reaches the real widget) caught against the host's own test; PROVEN on screen 2026-09-19 with demo-sketcherpanel.py -- 12 checked constraint rows, the Elements header over real tracks, and a check clicked in headless Chrome leaving Constraints[0].InVirtualSpace True on the host -- which also caught a column headed "1" invented over every QListWidget; nesting and cell colours stay unproven; W3 next
     the session document (commands) built       S1: a workbench reaches every open document, live ActiveDocument, app.write, save, picker-blessed saveAs; S2: Gui.doCommand / addModule in the guest under gui.doCommand, Draft's commit and Arch_Site end to end; gate SandboxSessionDoc (7.13)
     routing ON by default            built       preference Expression/Sandbox:Evaluate, ON since 2026-09-16: the corpus gate green (94 files, 195 of 195 same); the Proxy-restore half that rode the same preference was REMOVED 2026-09-18 (7.31)
     Proxy import restriction (native) built       item 1 of sec 11: PropertyPythonObject restore
@@ -1765,10 +1765,27 @@ shapes bound as handles, each answer normalised (shapes to kind,
 measures and counts; values rounded) and equal as text on both
 runtimes; 11 of the 116 fail identically on both sides (curve-only
 functions fed an edge, the deprecated `sortEdges`, a `NameError` in
-Draft's own `get_spline_normal`, `removeSplitter` on a clean box) --
-parity, not a sandbox gap.  What the gate forced into the guest is
-listed in 3.2 and above (`bool`/`str` ops, type references,
-`ShapeList` as list, `GuiUp`/`Console`/`Base`/unit constants).
+Draft's own `get_spline_normal`, `removeSplitter` on a clean box, and
+`circlefrom2Lines1Point`/`circleFrom2tan1pt` reaching
+`DraftVecUtils.crossproduct`, which Draft calls at
+`draftgeoutils/circles.py:119` and `:257` and which has never existed)
+-- parity, not a sandbox gap.  **Those last two take their point OFF
+the l/l3 bisector deliberately (2026-09-20, `V(1, 0.5, 0)`).**  At
+`V(1, 1, 0)` the point lies exactly on the bisector of the two lines,
+so `mirror()` maps it onto itself and which exception comes back is
+decided by rounding noise: `findDistance()` projects to
+`(7.9e-17, -7.9e-17, 0)` here and slips past its `if not dist` and
+`if dist.Length == 0` guards, where the Windows box gets `None` and
+`point.add(None)` raises `TypeError` instead of the `AttributeError`
+a degenerate `edg()` gives here.  That was the entire
+`draftgeoutilsOnHandles` failure seen on Windows 2026-09-19 -- a corpus
+entry comparing floating point rather than geometry, in a call that
+cannot succeed on either platform anyway while `crossproduct` is
+missing.  Off the bisector both sides reach that missing attribute
+deterministically, so the entry compares what it was meant to.
+What the gate forced into the guest is listed in 3.2 and above
+(`bool`/`str` ops, type references, `ShapeList` as list,
+`GuiUp`/`Console`/`Base`/unit constants).
 The traffic it measured, 116 calls: `release` 4977, `get_attr` 2738,
 `call` 587, `mod_call` 153, `bool` 50, `read_prop` 29, `str` 18 --
 about 74 hops per call, and 58 percent of them were releases of
@@ -1777,9 +1794,30 @@ made releases ride the next request or the reply (3.2): the same 116
 calls now make 3575 hops -- `get_attr` 2738, `call` 587, `mod_call`
 153, `bool` 50, `read_prop` 29, `str` 18, `release` 0 -- 31 per call,
 ~0.2 ms of crossing per call at sec 8.1's hop cost, and the per-eval
-pack cost lost its release hop (8.1).  What remains is dominated by
-`get_attr` on shapes and curves; a snapshot op would target exactly
-those reads, and this is the count to size it from.
+pack cost lost its release hop (8.1).  Re-measured 2026-09-20, after
+the bisector fix above took two calls off the degenerate path they
+used to short-circuit on: 3613 hops -- `get_attr` 2764, `call` 593,
+`mod_call` 155, `bool` 50, `read_prop` 29, `str` 16, `write_prop` 6,
+`release` 0 -- still 31 per call.  Compare that against **3581**, not
+the 3575 above: the 2026-09-04 list omits `write_prop` 6, so the
+like-for-like pre-fix total is 3581 and the fix added 32 hops, those
+two calls running further into `circlefrom1Line2Points` before they
+stop.  The figure moved because the corpus did, not because the bridge
+did.
+
+**The hop count does not detect the host divergence, and that is worth
+knowing before anyone uses it as a cross-box check.**  Both boxes
+measured exactly 3581 before the fix, despite one of them raising
+`TypeError` where the other raised `AttributeError`.  That is expected
+rather than surprising: the ops counted are the GUEST's hops to the
+host, and the guest took the identical path on both machines -- it was
+the host halves that diverged, and the host does not hop.  So a
+matching op count is evidence the guest agrees, never evidence the two
+sides agree; only the per-call text comparison shows that.
+
+What remains is dominated by `get_attr` on shapes and curves; a
+snapshot op would target exactly those reads, and this is the count to
+size it from.
 **G1b BUILT 2026-09-04** (`draftWheelInGuest`): Draft's App side boots
 with the pyodide guest as the bundled `fcx_draft` wheel (5.6) -- no
 `exec`, no stubs; every module of the wheel imports in the guest (the
@@ -8344,6 +8382,98 @@ pixels, and the replay gate has neither.
 Then W2 to W5 as staged: the item views properly (the checks, the
 nesting, the refill coalesced), the pictures and icons, the dialogs and
 modality, and the measurement against 8.4.
+
+**W2 BUILT 2026-09-19, and PROVEN on screen the same day.**  Four pieces.  *The
+store's missing ops*: it applied `clear`/`insert`/`set` and dropped
+`row`, `remove` and `sort` on the floor -- the recorded corpus carries
+none of them, because a Sketcher list never nests, never deletes a row
+and never sorts, so the gate's "every frame applied" would have gone red
+against the first real tree rather than here.  *The view*: the header
+from `columns` (header and cells share one CSS grid, or nothing lines
+up), the nesting gated on `expanded` as a QTreeWidget does, a check box
+only where the host sent `check` -- an invalid QVariant there means no
+box, not an empty one -- a row dead when its flags clear
+`Qt::ItemIsEnabled`, and the selection.  *One wake per frame*: there is
+no batching on the host side (`Fw::Store` calls its sink per item op), so
+8.4's 162-op solve arrives as 162 pushes in 162 tasks; the client
+coalesces on `requestAnimationFrame`, which is where it fixes every
+consumer of the stream at once rather than one card.  A microtask would
+coalesce nothing -- the pushes land in separate tasks.  *The gate*: 17
+new checks, the gate going 85 -> 102 ALL GREEN, typecheck and build
+clean.
+
+**The trap, and it would have passed the gate.**  A check write sent as
+an `itemEdited` event does nothing on the desktop.
+`Fw::Store::commCustom` routes a content carrying `item` to
+`ItemView::applyItemOp`, which changes the rows AND calls `emitItemOp` ->
+`Backend::itemsChanged` -> the real Qt widget -> the panel's own slot; a
+content carrying `event` reaches `Widget::dispatchEvent`, which for an
+item view updates the model's private copy and calls no backend at all.
+So the event form passes every pure check and moves nothing on screen --
+and `itemEdited` is not even a client's to send: the backend emits it
+(FwQtView) when the DESKTOP user edits a cell.  Written wrong first,
+caught by reading what the host's own test does: `test_sketcher_
+constraints` in `src/Mod/Test/SandboxPanelMirror.py` writes a
+constraint's check as `{"item": "set", "id": ..., "col": 0, "cell":
+{"check": 0}}` and asserts the sketch really moves it to virtual space.
+So a check is a `set` op, an expand is a `row` op (the branch the backend
+turns into `setExpanded` on the real tree), a click stays an event
+because it only notifies, and the SELECTION is state -- the backend
+drives the desktop's real `selectionModel` from `selection`/`currentId`
+and sends them back when the desktop user selects, so a click in the
+page writes those properties.  The gate now asserts the distinction
+instead of the mistake.
+
+**W2 PROVEN on screen 2026-09-19, and the write reached the sketch.**
+Pad's panel cannot show W2 -- its Profile list is flat, unchecked and
+single-column -- so `scripts/demo-sketcherpanel.py` serves Sketcher's
+edit panel instead, which carries both shapes at once: Elements, a
+`SketcherGui::ElementView` tree with five columns, and Constraints, a
+`SketcherGui::ConstraintView` list with a check on every row.
+`scripts/panel-drive.js` grew what W2 needs -- rows read STRUCTURALLY
+(header, nesting depth, the item check boxes, selection, the grid
+tracks) rather than as flat text, and `FC_PANEL_CHECK=<n>` to click the
+nth box.  The result: 12 constraint rows each with a check box, all
+checked; the Elements header drawn as `Type/Name/Reference/Flags/Mapped`
+over six real px tracks, no NaN.  **And the write went the whole way**:
+clicking the first check box in headless Chrome left the host holding
+`Constraints[0].InVirtualSpace` True, having been False before -- the
+page's `set` op through `commCustom` -> `applyItemOp` -> `emitItemOp` ->
+the real QListWidget -> Sketcher's own `itemChanged` slot -> the sketch.
+That is the op-vs-event ruling above confirmed by the machine rather
+than by argument: the event form would have gone green here and moved
+nothing.
+
+**What the screen found that the gate could not.**  *A column headed
+"1" over the constraint list.*  Qt draws no header on a QListWidget, but
+the model still carries `columns` -- those are QStandardItemModel's
+default labels -- so trusting `columns` alone invents a header for every
+list.  The view now asks the model's CLASS, not its state.  Fixed and
+re-proven in the same run.  Two blind spots remain, both named rather
+than papered over: nothing in this scene NESTS (`maxDepth` 0), so the
+twisty and the expand op are still unproven on screen, and the cell
+colours are deliberately undrawn because the host sends `fg`/`bg` as
+QVariantLists and guessing the packing would paint the wrong thing.
+
+**Two corrections to the record.**  This tree emits no `panel.js`; the
+card ships inside `inspector.js` (the `inspector` entry is
+`src/main.tsx`, 85.5 kB).  And the earlier claim here that the box had
+no chrome or puppeteer was simply wrong -- both are installed, and what
+looked like absence was a `~` and a `*` that the shell never expanded.
+The fourth knob is the one to remember: `CHROME_LIBS`, a directory
+holding a `libasound.so.2` symlink, prepended to the browser's
+`LD_LIBRARY_PATH`, because Chrome for Testing links a library this
+system does not have and there is no sudo to install it
+(`docs/Testing.md`; `docs/DevEnvironment.md` now points at it).
+
+**A note on how the scene was debugged**, since it is the first use of
+the console installed the same morning: the demo script's own
+`Console.PrintMessage` lines never reached `/tmp/fc-serve-8078.log`,
+because passing `FC_MCP_PORT` starts the MCP console and its capture
+swallows everything printed after `start()` -- the trap recorded in
+`docs/DevEnvironment.md` that same day.  They were read back out of the
+ring with the `get_log` tool, and `run_python` answered what the panel
+was doing (`setEdit -> True`, 12 constraints) without a rebuild.
 
 **Cost** (new; TypeScript unless noted):
 
