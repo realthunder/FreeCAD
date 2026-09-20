@@ -42,7 +42,7 @@
 #include "Document.h"
 #include "View3DInventor.h"
 #include "View3DInventorViewer.h"
-#include "ViewProviderOrigin.h"
+#include "ViewProviderCoordinateSystem.h"
 #include "ViewProviderDatum.h"
 
 
@@ -232,9 +232,9 @@ void ViewProviderOriginGroupExtension::updateOriginSize () {
     SbVec3f min = bboxOrigins.getMin();
 
     // obtain an Origin and it's ViewProvider
-    Gui::ViewProviderOrigin* vpOrigin = 0;
+    Gui::ViewProviderCoordinateSystem* vpOrigin = 0;
     try {
-        vpOrigin = Base::freecad_dynamic_cast<ViewProviderOrigin>(
+        vpOrigin = Base::freecad_dynamic_cast<ViewProviderCoordinateSystem>(
                 Application::Instance->getViewProvider(group->getOrigin()));
     } catch (const Base::Exception &e) {
         e.ReportException();
@@ -247,7 +247,7 @@ void ViewProviderOriginGroupExtension::updateOriginSize () {
     for (uint_fast8_t i=0; i<3; i++) {
         size[i] = std::max ( fabs ( max[i] ), fabs ( min[i] ) );
         if (min[i]>max[i] || size[i] < 1e-7 ) {
-            size[i] = Gui::ViewProviderOrigin::defaultSize();
+            size[i] = Gui::ViewProviderCoordinateSystem::defaultSize();
         }
     }
 

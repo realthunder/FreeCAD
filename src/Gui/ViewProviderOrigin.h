@@ -1,6 +1,5 @@
 /***************************************************************************
- *   Copyright (c) 2015 Stefan Tröger <stefantroeger@gmx.net>              *
- *   Copyright (c) 2015 Alexander Golubev (Fat-Zer) <fatzer2@gmail.com>    *
+ *   Copyright (c) 2025 Zheng, Lei <realthunder.dev@gmail.com>             *
  *                                                                         *
  *   This file is part of the FreeCAD CAx development system.              *
  *                                                                         *
@@ -21,90 +20,19 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef GUI_VIEWPROVIDER_ViewProviderOrigin_H
-#define GUI_VIEWPROVIDER_ViewProviderOrigin_H
+#ifndef GUI_VIEWPROVIDERORIGIN_H
+#define GUI_VIEWPROVIDERORIGIN_H
 
-#include <App/PropertyGeo.h>
+/* Former home of Gui::ViewProviderOrigin, which is now
+ * Gui::ViewProviderCoordinateSystem (the name upstream gives it). Kept so that
+ * code including this header, in this tree or outside it, still compiles.
+ */
 
-#include "ViewProviderDocumentObject.h"
+#include "ViewProviderCoordinateSystem.h"
 
-
-namespace Gui {
-
-class Document;
-
-class GuiExport ViewProviderOrigin : public ViewProviderDocumentObject
+namespace Gui
 {
-    PROPERTY_HEADER_WITH_OVERRIDE(Gui::ViewProviderOrigin);
+using ViewProviderOrigin = ViewProviderCoordinateSystem;
+}
 
-public:
-    /// Size of the origin as set by the part.
-    App::PropertyVector Size;
-    /// Margin added to the size of the origin.
-    App::PropertyVector Margin;
-
-    /// constructor.
-    ViewProviderOrigin();
-    /// destructor.
-    ~ViewProviderOrigin() override;
-
-    /// @name Override methods
-    ///@{
-    std::vector<App::DocumentObject*> claimChildren() const override;
-    std::vector<App::DocumentObject*> claimChildren3D() const override;
-
-    SoGroup* getChildRoot() const override {return pcGroupChildren;}
-
-    void attach(App::DocumentObject* pcObject) override;
-    std::vector<std::string> getDisplayModes() const override;
-    void setDisplayMode(const char* ModeName) override;
-    ///@}
-
-    /** @name Temporary visibility mode
-     * Control the visibility of origin and associated objects when needed
-     */
-    ///@{
-    /// Set temporary visibility of some of origin's objects e.g. while rotating or mirroring
-    void setTemporaryVisibility (bool axis, bool planes);
-    /// Returns true if the origin in temporary visibility mode
-    bool isTemporaryVisibility ();
-    /// Reset the visibility
-    void resetTemporaryVisibility ();
-    ///@}
-
-    bool canDragObjects() const override {
-        return false;
-    }
-
-    bool doubleClicked() override;
-
-    void setupContextMenu(QMenu* menu, QObject* receiver, const char* member) override;
-
-    /// Returns default size. Use this if it is not possible to determine appropriate size by other means
-    static double defaultSize();
-
-    /// Base size of scaling
-    static double baseSize();
-
-    // the factor by which the axes are longer than the planes
-    static constexpr float axesScaling = 1.5f;
-
-    // default color for origini: light-blue (50, 150, 250, 255 stored as 0xRRGGBBAA)
-    static const uint32_t defaultColor = 0x3296faff;
-
-protected:
-    void onChanged(const App::Property* prop) override;
-    bool onDelete(const std::vector<std::string> &) override;
-    void updateData(const App::Property *prop) override;
-    bool setEdit(int) override;
-
-private:
-    SoGroup *pcGroupChildren;
-
-    std::map<App::DocumentObject*, bool> tempVisMap;
-};
-
-} // namespace Gui
-
-#endif // GUI_VIEWPROVIDER_ViewProviderOrigin_H
-
+#endif // GUI_VIEWPROVIDERORIGIN_H

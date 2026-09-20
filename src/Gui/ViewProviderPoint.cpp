@@ -35,7 +35,7 @@
 #include <App/Application.h>
 
 #include "ViewProviderPoint.h"
-#include "ViewProviderOrigin.h"
+#include "ViewProviderCoordinateSystem.h"
 
 
 using namespace Gui;
@@ -53,7 +53,7 @@ ViewProviderPoint::~ViewProviderPoint() = default;
 void ViewProviderPoint::attach ( App::DocumentObject *obj ) {
     ViewProviderDatum::attach ( obj );
 
-    static const float size = ViewProviderOrigin::baseSize ();
+    static const float size = ViewProviderCoordinateSystem::baseSize ();
 
     SoSeparator *sep = getDatumRoot ();
 

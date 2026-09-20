@@ -159,7 +159,7 @@
 #include "ViewProviderMaterialObject.h"
 #include "ViewProviderMeasureDistance.h"
 #include "ViewProviderShaderObject.h"
-#include "ViewProviderOrigin.h"
+#include "ViewProviderCoordinateSystem.h"
 #include "ViewProviderDatum.h"
 #include "ViewProviderOriginGroup.h"
 #include "ViewProviderPlacement.h"
@@ -2501,7 +2501,7 @@ void Application::initTypes()
     Gui::ViewProviderGeoFeatureGroupPython      ::init();
     Gui::ViewProviderOriginGroup                ::init();
     Gui::ViewProviderPart                       ::init();
-    Gui::ViewProviderOrigin                     ::init();
+    Gui::ViewProviderCoordinateSystem                     ::init();
     Gui::ViewProviderMaterialObject             ::init();
     Gui::ViewProviderMaterialObjectPython       ::init();
     Gui::ViewProviderTextDocument               ::init();
@@ -2524,6 +2524,8 @@ void Application::initTypes()
                               "Gui::ViewProviderAppearancePython");
     Base::Type::addLegacyName(Gui::ViewProviderDatum::getClassTypeId(),
                               "Gui::ViewProviderOriginFeature");
+    Base::Type::addLegacyName(Gui::ViewProviderCoordinateSystem::getClassTypeId(),
+                              "Gui::ViewProviderOrigin");
     Gui::AxisOrigin                             ::init();
     Gui::ViewProviderSavedView                  ::init();
 

@@ -39,7 +39,7 @@
 #include "SoFCUnifiedSelection.h"
 #include "SoFCSelection.h"
 #include "ViewProviderPlane.h"
-#include "ViewProviderOrigin.h"
+#include "ViewProviderCoordinateSystem.h"
 
 
 using namespace Gui;
@@ -56,7 +56,7 @@ ViewProviderPlane::~ViewProviderPlane() = default;
 
 void ViewProviderPlane::attach ( App::DocumentObject *obj ) {
     ViewProviderDatum::attach ( obj );
-    static const float size = ViewProviderOrigin::baseSize ();
+    static const float size = ViewProviderCoordinateSystem::baseSize ();
 
     static const SbVec3f verts[4] = {
         SbVec3f(size,size,0),   SbVec3f(size,-size,0),
@@ -86,7 +86,7 @@ void ViewProviderPlane::attach ( App::DocumentObject *obj ) {
     material->transparency.setValue(0.95f);
     SbColor color;
     float alpha = 0.0f;
-    color.setPackedValue(ViewProviderOrigin::defaultColor, alpha);
+    color.setPackedValue(ViewProviderCoordinateSystem::defaultColor, alpha);
     material->ambientColor.setValue(color);
     material->diffuseColor.setValue(color);
     faceSeparator->addChild(material);

@@ -44,7 +44,7 @@
 #include <Base/Console.h>
 #include <Gui/Selection.h>
 #include <Gui/Command.h>
-#include <Gui/ViewProviderOrigin.h>
+#include <Gui/ViewProviderCoordinateSystem.h>
 #include <Mod/PartDesign/App/FeaturePolarPattern.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 #include <Mod/PartDesign/App/DatumLine.h>
@@ -149,8 +149,8 @@ void TaskPolarPatternParameters::setupUI()
     if(body) {
         try {
             App::Origin *origin = body->getOrigin();
-            ViewProviderOrigin* vpOrigin;
-            vpOrigin = static_cast<ViewProviderOrigin*>(Gui::Application::Instance->getViewProvider(origin));
+            ViewProviderCoordinateSystem* vpOrigin;
+            vpOrigin = static_cast<ViewProviderCoordinateSystem*>(Gui::Application::Instance->getViewProvider(origin));
             vpOrigin->setTemporaryVisibility(true, false);
         } catch (const Base::Exception &ex) {
             Base::Console().Error ("%s\n", ex.what () );
@@ -346,8 +346,8 @@ TaskPolarPatternParameters::~TaskPolarPatternParameters()
         PartDesign::Body * body = PartDesign::Body::findBodyOf ( getObject() );
         if ( body ) {
             App::Origin *origin = body->getOrigin();
-            ViewProviderOrigin* vpOrigin;
-            vpOrigin = static_cast<ViewProviderOrigin*>(Gui::Application::Instance->getViewProvider(origin));
+            ViewProviderCoordinateSystem* vpOrigin;
+            vpOrigin = static_cast<ViewProviderCoordinateSystem*>(Gui::Application::Instance->getViewProvider(origin));
             vpOrigin->resetTemporaryVisibility ();
         }
     } catch (const Base::Exception &ex) {

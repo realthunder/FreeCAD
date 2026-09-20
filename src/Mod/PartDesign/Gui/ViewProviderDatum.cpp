@@ -57,7 +57,7 @@
 #include <Gui/MDIView.h>
 #include <Gui/View3DInventor.h>
 #include <Gui/View3DInventorViewer.h>
-#include <Gui/ViewProviderOrigin.h>
+#include <Gui/ViewProviderCoordinateSystem.h>
 #include <Mod/Part/App/DatumFeature.h>
 
 #include "ViewProviderDatum.h"
@@ -364,7 +364,7 @@ SbBox3f ViewProviderDatum::defaultBoundBox () {
 }
 
 double ViewProviderDatum::defaultSize() {
-    return Gui::ViewProviderOrigin::defaultSize();
+    return Gui::ViewProviderCoordinateSystem::defaultSize();
 }
 
 bool ViewProviderDatum::isPickable() {

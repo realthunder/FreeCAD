@@ -38,7 +38,7 @@
 #include <Gui/Application.h>
 #include <Gui/Command.h>
 #include <Gui/Selection.h>
-#include <Gui/ViewProviderOrigin.h>
+#include <Gui/ViewProviderCoordinateSystem.h>
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/FeatureMirrored.h>
 
@@ -109,8 +109,8 @@ void TaskMirroredParameters::setupUI()
     if(body) {
         try {
             App::Origin *origin = body->getOrigin();
-            ViewProviderOrigin* vpOrigin;
-            vpOrigin = static_cast<ViewProviderOrigin*>(Gui::Application::Instance->getViewProvider(origin));
+            ViewProviderCoordinateSystem* vpOrigin;
+            vpOrigin = static_cast<ViewProviderCoordinateSystem*>(Gui::Application::Instance->getViewProvider(origin));
             vpOrigin->setTemporaryVisibility(false, true);
         } catch (const Base::Exception &ex) {
             Base::Console().Error ("%s\n", ex.what () );
@@ -220,8 +220,8 @@ TaskMirroredParameters::~TaskMirroredParameters()
         PartDesign::Body * body = PartDesign::Body::findBodyOf ( getObject() );
         if ( body ) {
             App::Origin *origin = body->getOrigin();
-            ViewProviderOrigin* vpOrigin;
-            vpOrigin = static_cast<ViewProviderOrigin*>(Gui::Application::Instance->getViewProvider(origin));
+            ViewProviderCoordinateSystem* vpOrigin;
+            vpOrigin = static_cast<ViewProviderCoordinateSystem*>(Gui::Application::Instance->getViewProvider(origin));
             vpOrigin->resetTemporaryVisibility();
         }
     } catch (const Base::Exception &ex) {
