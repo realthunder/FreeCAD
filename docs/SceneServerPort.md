@@ -788,6 +788,8 @@ refuses `GLEngine` (the CGL renderer bundle, dlopened at context
 creation), `*GLDriver`/`*MTLDriver` (the vendor bundles),
 `/System/Library/Extensions/` (where those bundles live) and `AppleGVA`.
 None of the five is mapped after a publish. Linux's list is unchanged.
+The Windows analogue -- `EnumProcessModules` where this uses dyld, and
+what it found when someone finally ran it -- is 7.9.
 
 ### 7.7 The rest of the macOS tree, and what it cost
 
@@ -939,6 +941,60 @@ digest of the catalog content instead -- or letting the request carry
 one the server can compare -- turns a reconnect after a restart into
 the 106-byte "current" answer. That saves more than compressing the
 resend does, and the two compose.
+
+### 7.9 The psapi port: what a publish-only process maps on Windows
+
+`noGraphicsDeviceIsCreated` now enumerates the loaded images on all
+three platforms -- `/proc/self/maps` on Linux, dyld on macOS (7.6),
+`EnumProcessModules` plus `GetModuleFileNameExA` on Windows. With that,
+`PublishOnly_tests_run` builds on Windows for the first time
+(`1bbb558119`) and is **5 of 5 there**, nothing skipped.
+
+The target had been `if(UNIX)` since it was written, and the gate's
+comment blamed two things. Only the second was ever real. It also spoke
+to the server over raw BSD sockets -- its own `socket`/`bind`/
+`getsockname`, a hand-rolled read loop and a duplicate `freePort()` --
+ten lines above a target that had been testing the same server over
+Boost.Beast on every platform since stage 5 (7.5). That half was
+self-inflicted and is gone: `freePort()` is now the Asio three-liner,
+`httpGet()` a Beast exchange returning a parsed reply, and Windows
+links `ws2_32 mswsock` the way `SceneServerWire_tests_run` always has.
+
+The enumeration was the real constraint, and it is answered rather than
+gated around. Windows draws the same line the other two do: the
+client-side API is not a device. `opengl32.dll`, `gdi32.dll` and
+`dxgi.dll` map into processes that never draw, so naming them would
+fail the case on a machine that did nothing wrong. What only a real
+device brings in is what sits behind them -- the vendor OpenGL ICD
+(`nvoglv`, `atioglxx`, `atig`, `icd`), the Direct3D user-mode driver
+(`nvwgf2um`, `amdxc`, `igd10iumd`, `igd12umd`), `d3d10warp` when there
+is no hardware to pick, and the Vulkan loader.
+
+**Measured 2026-09-20, and the discrimination is real rather than
+vacuous.** Baselined against an innocent process first: Explorer maps
+381 modules and hits two of those names -- `nvwgf2umx.dll` under the
+`DriverStore` and `C:\Windows\SYSTEM32\D3D10Warp.dll` -- while the
+publish-only process mapped neither. The names are reachable on that
+machine, and the case separated a publishing process from a drawing
+one. It also reported OK rather than SKIPPED, which is what shows the
+enumeration ran at all: an empty list is a skip, not a pass, so a green
+result that came from an empty list would prove nothing.
+
+Two things stay open. `icd` and `atig` matched nothing there -- no
+false positive, but one machine's evidence, and nothing is known about
+AMD or Intel hardware. And the retry for a process mapping more than
+256 modules did not execute -- measured, not assumed: instrumented on
+that box the process maps **180** modules against a buffer that starts
+at 256. `written` bounds the walk to the slots `EnumProcessModules`
+actually filled, so `GetModuleFileNameEx` is never handed a null module
+and cannot pad the list with copies of the executable, but that is
+inspection rather than measurement, and a green result says nothing
+about a branch that did not run. The failure would be benign for the
+verdict either way -- a phantom entry is the test executable's own path,
+and that matches no forbidden name. Contriving 180 modules past 256 is
+not worth it; the cure, if that branch is to be covered at all, is to
+start the buffer far smaller so the resize runs on every platform on
+every run, at the price of one extra call.
 
 ## 8. Open questions for next session
 

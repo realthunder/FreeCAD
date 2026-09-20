@@ -410,6 +410,59 @@ existed only inside that file. Every `git push` over SSH fails with
 and re-enters the passphrase. Exclude `ssh-agent-*.sock`, or sweep only
 `*.tmp`, which is where all the growth actually is.
 
+**2026-09-20: `PublishOnly_tests_run` compiles and passes here, the first
+time that target has been built on any Windows box.** It had been wrapped
+in `if(UNIX)` since it was written; the gate blamed two things, BSD
+sockets and image enumeration, and only the second was ever real
+(`1bbb558119` -- `SceneServerWire_tests_run` ten lines below had been
+testing the same server over Boost.Beast on every platform all along).
+5 of 5 pass in 1.17 s, `putsARealSceneOnTheWire` among them: a real Beast
+HTTP exchange against the live scene server, in 6 ms.
+
+The case worth the words is `noGraphicsDeviceIsCreated`, which reports
+**OK rather than SKIPPED**. That matters because `mappedImages()` returning
+an empty list is a skip, not a pass -- so an OK here is evidence the
+`EnumProcessModules`/`GetModuleFileNameExA` port actually ran and the
+forbidden-name scan really happened. **And the scan discriminates on this
+box rather than matching nothing.** Baselined first against an innocent
+process: Explorer maps 381 modules and hits two of the forbidden names --
+`nvwgf2umx.dll` under `DriverStore\FileRepository\nvbl.inf_amd64_...` and
+`C:\Windows\SYSTEM32\D3D10Warp.dll` -- while the publish-only process
+mapped neither. The names are present and reachable on this machine, and
+the test told a publishing process apart from a drawing one. `nvwgf2um`
+matched the longer real `nvwgf2umx.dll`, so the substring is doing work.
+
+Two limits, recorded rather than smoothed over. `icd` and `atig` matched
+nothing here: no false positive, but one machine's evidence, and it says
+nothing about an AMD or Intel box. And the buffer-resize path in
+`mappedImages()` -- the retry when a process maps more than 256 modules --
+is UNRUN, and that is now measured rather than assumed: instrumented on
+that box, the process maps **180** modules against the 256 the buffer
+starts at, so the resize never happened. The code is correct by
+inspection -- `written` bounds the walk to the slots
+`EnumProcessModules` actually filled, so `GetModuleFileNameEx` is never
+handed a null module -- but inspection is all it has, and a green result
+says nothing about a branch that did not execute. The same run reported
+a self-path count of 1, which is healthy but only on the path that was
+never at risk. That failure mode would be benign for the verdict in any
+case: the phantom entries would be copies of the test executable's own
+path, which matches no forbidden name. Forcing 180 past 256 would take
+something contrived; the cheaper cure is to shrink the initial buffer so
+the resize runs everywhere on every run.
+
+**The binary cannot be run standalone on Windows.** Invoking
+`PublishOnly_tests_run.exe` directly dies with `0xC0000135`
+(`STATUS_DLL_NOT_FOUND`); it has to go through `ctest`, which is what
+supplies the per-test `PATH`. Same root cause as the rpath story above,
+and the same answer -- run it under `ctest`, not by hand.
+
+Same box, same run: `draftgeoutilsOnHandles` passes, 116 of 116 agreeing
+by the per-call text comparison, and `ctest -R ExpressionImage` is 63 of
+63. That case was this box's only failure before `4accc24224` -- see
+`Sandbox.md` 7.6 for why a corpus point sitting exactly on the l/l3
+bisector made the two runtimes disagree about floating point rather than
+about geometry.
+
 ### Python on Windows
 
 Green: **2590 tests, OK** on 2026-09-12, on `build/win-relwithdebinfo-801`
