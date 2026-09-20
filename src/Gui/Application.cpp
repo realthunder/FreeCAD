@@ -170,7 +170,6 @@
 #include "ViewProviderTextDocument.h"
 #include "ViewProviderSavedView.h"
 #include "ViewProviderSavedViewPy.h"
-#include "ViewProviderDatum.h"
 
 #include "ViewProviderVRMLObject.h"
 #include "WaitCursor.h"
@@ -2525,7 +2524,6 @@ void Application::initTypes()
                               "Gui::ViewProviderAppearancePython");
     Gui::AxisOrigin                             ::init();
     Gui::ViewProviderSavedView                  ::init();
-    Gui::ViewProviderDatum                      ::init();
 
     // Workbench
     Gui::Workbench                              ::init();
