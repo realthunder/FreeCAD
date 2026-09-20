@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (c) 2015 Alexander Golubev (Fat-Zer) <fatzer2@gmail.com>    *
+ *   Copyright (c) 2025 Zheng, Lei <realthunder.dev@gmail.com>             *
  *                                                                         *
  *   This file is part of the FreeCAD CAx development system.              *
  *                                                                         *
@@ -20,63 +20,19 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef VIEWPROVIDEORIGINFEATURE_H_BYJRZNDL
-#define VIEWPROVIDEORIGINFEATURE_H_BYJRZNDL
+#ifndef GUI_VIEWPROVIDERORIGINFEATURE_H
+#define GUI_VIEWPROVIDERORIGINFEATURE_H
 
-#include "ViewProviderGeometryObject.h"
+/* Former home of Gui::ViewProviderOriginFeature, which is now
+ * Gui::ViewProviderDatum (the name upstream gives it). Kept so that code
+ * including this header, in this tree or outside it, still compiles.
+ */
 
-class SoAsciiText;
-class SoScale;
+#include "ViewProviderDatum.h"
 
 namespace Gui
 {
+using ViewProviderOriginFeature = ViewProviderDatum;
+}
 
-class SoFCSelection;
-
-/**
- * View provider associated with an App::OriginFeature.
- */
-class GuiExport ViewProviderOriginFeature: public ViewProviderGeometryObject {
-    PROPERTY_HEADER_WITH_OVERRIDE(Gui::ViewProviderOriginFeature);
-
-public:
-    /// The display size of the feature
-    App::PropertyFloat  Size;
-
-    ViewProviderOriginFeature ();
-    ~ViewProviderOriginFeature () override;
-
-    /// Get point derived classes will add their specific stuff
-    SoSeparator * getOriginFeatureRoot () { return pOriginFeatureRoot; }
-
-    /// Get pointer to the text label associated with the feature
-    SoAsciiText * getLabel () { return pLabel; }
-
-    void attach(App::DocumentObject *) override;
-    void updateData(const App::Property *) override;
-    std::vector<std::string> getDisplayModes () const override;
-    void setDisplayMode (const char* ModeName) override;
-
-    /// @name Suppress ViewProviderGeometryObject's behaviour
-    ///@{
-    bool setEdit ( int ) override
-        { return false; }
-    void unsetEdit ( int ) override
-        { }
-    ///@}
-
-    QIcon getIcon() const override;
-
-protected:
-    void onChanged ( const App::Property* prop ) override;
-    bool onDelete ( const std::vector<std::string> & ) override;
-protected:
-    SoSeparator    * pOriginFeatureRoot;
-    SoFCSelection  * pHighlight;
-    SoScale        * pScale;
-    SoAsciiText    * pLabel;
-};
-
-} /* Gui */
-
-#endif /* end of include guard: VIEWPROVIDEORIGINFEATURE_H_BYJRZNDL */
+#endif // GUI_VIEWPROVIDERORIGINFEATURE_H

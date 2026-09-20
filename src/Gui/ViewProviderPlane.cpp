@@ -44,7 +44,7 @@
 
 using namespace Gui;
 
-PROPERTY_SOURCE(Gui::ViewProviderPlane, Gui::ViewProviderOriginFeature)
+PROPERTY_SOURCE(Gui::ViewProviderPlane, Gui::ViewProviderDatum)
 
 
 ViewProviderPlane::ViewProviderPlane()
@@ -55,7 +55,7 @@ ViewProviderPlane::ViewProviderPlane()
 ViewProviderPlane::~ViewProviderPlane() = default;
 
 void ViewProviderPlane::attach ( App::DocumentObject *obj ) {
-    ViewProviderOriginFeature::attach ( obj );
+    ViewProviderDatum::attach ( obj );
     static const float size = ViewProviderOrigin::baseSize ();
 
     static const SbVec3f verts[4] = {
@@ -66,7 +66,7 @@ void ViewProviderPlane::attach ( App::DocumentObject *obj ) {
     // indexes used to create the edges
     static const int32_t lines[6] = { 0, 1, 2, 3, 0, -1 };
 
-    SoSeparator *sep = getOriginFeatureRoot ();
+    SoSeparator *sep = getDatumRoot ();
 
     auto pCoords = new SoCoordinate3 ();
     pCoords->point.setNum (4);

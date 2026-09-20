@@ -42,10 +42,9 @@ namespace PartDesignGui {
  *
  * This used to be split in two: an abstract Gui::ViewProviderDatum carrying the
  * extents machinery, and this class carrying the editing. Upstream dissolved the
- * Gui half into this one and reused the Gui::ViewProviderDatum name for the datum
- * element view provider (what this fork called Gui::ViewProviderOriginFeature), so
- * the two halves are joined here. PartDesign is the only consumer either half ever
- * had, which is why the extents logic belongs at this level rather than in Gui.
+ * Gui half into this one, and gave the Gui::ViewProviderDatum name to the datum
+ * element view provider instead. The two halves are joined here, which is where
+ * they belong: PartDesign is the only consumer either half ever had.
  */
 class PartDesignGuiExport ViewProviderDatum : public Gui::ViewProviderGeometryObject, PartGui::ViewProviderAttachExtension
 {
