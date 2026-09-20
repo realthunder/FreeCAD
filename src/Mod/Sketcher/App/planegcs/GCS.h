@@ -158,6 +158,19 @@ private:
         std::map<int, int>& tagmultiplicity
     );
 
+    // Splits the parameters a constraint actually touches from those it does not.
+    // See the definition for why the QR decompositions must not be given the latter.
+    void splitUnconstrainedParameters(
+        const Eigen::MatrixXd& J,
+        const std::map<int, int>& jacobianconstraintmap,
+        const GCS::VEC_pD& pdiagnoselist,
+        Eigen::MatrixXd& Jconstrained,
+        GCS::VEC_pD& pconstrainedlist,
+        GCS::VEC_pD& punconstrainedlist
+    ) const;
+
+    void addUnconstrainedDependentParameters(const GCS::VEC_pD& punconstrainedlist);
+
     void makeDenseQRDecomposition(
         const Eigen::MatrixXd& J,
         const std::map<int, int>& jacobianconstraintmap,
