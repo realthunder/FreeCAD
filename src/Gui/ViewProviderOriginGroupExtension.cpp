@@ -32,12 +32,12 @@
 
 #include <App/Document.h>
 #include <App/DocumentObserver.h>
+#include <App/GeoFeature.h>
 #include <App/Origin.h>
 #include <App/OriginGroupExtension.h>
 #include <Base/Console.h>
 
 #include "ViewProviderOriginGroupExtension.h"
-#include "ViewProviderDatum.h"
 #include "Application.h"
 #include "Document.h"
 #include "View3DInventor.h"
@@ -167,32 +167,64 @@ void ViewProviderOriginGroupExtension::updateOriginSize () {
 
     const auto & model = group->getFullModel ();
 
+    // Part::Datum sits above Gui in the link order, so it is named rather than
+    // included. Its base point is its placement position, which is exactly what
+    // Part::Datum::getBasePoint() returns. Looked up per call on purpose: a
+    // cached type would stay bad for the life of the process if Part happened
+    // not to be loaded the first time through.
+    const Base::Type datumType = Base::Type::fromName("Part::Datum");
+
     // BBox for Datums is calculated from all visible objects but treating datums as their basepoints only
-    SbBox3f bboxDatums = ViewProviderDatum::getRelevantBoundBox ( model );
+    SbBox3f bboxDatums;
     // BBox for origin should take into account datums size also
     SbBox3f bboxOrigins(0,0,0,0,0,0);
-    bool isDatumEmpty = bboxDatums.isEmpty();
-    if(!isDatumEmpty)
-        bboxOrigins.extendBy(bboxDatums);
 
     for(App::DocumentObject* obj : model) {
-        if (auto vp = Base::freecad_dynamic_cast<ViewProviderDatum>(
-                                        Gui::Application::Instance->getViewProvider(obj)))
-        {
-            if (!vp || !vp->isVisible()) { continue; }
+        if(!obj || !obj->getNameInDocument())
+            continue;
 
-            if(!isDatumEmpty)
-                vp->setExtents ( bboxDatums );
+        auto vp = Application::Instance->getViewProvider(obj);
+        if(!vp || !vp->isVisible())
+            continue;
 
-            // Why is the following necessary?
-            //
-            // if(App::GroupExtension::getGroupOfObject(obj))
-            //     continue;
-
+        if(!datumType.isBad() && obj->isDerivedFrom(datumType)) {
+            // Treat datums only as their basepoint. A datum sizes itself against
+            // this same model, so letting its extent feed back in here would grow
+            // the origin a little further on every recompute.
+            if(auto geo = Base::freecad_dynamic_cast<App::GeoFeature>(obj)) {
+                Base::Vector3d base = geo->Placement.getValue().getPosition();
+                bboxDatums.extendBy ( SbVec3f(base.x, base.y, base.z) );
+            }
+        } else {
             auto bbox = vp->getBoundingBox();
             if(bbox.IsValid())
-                bboxOrigins.extendBy ( SbBox3f(bbox.MinX,bbox.MinY,bbox.MinZ,bbox.MaxX,bbox.MaxY,bbox.MaxZ) );
+                bboxDatums.extendBy ( SbBox3f(bbox.MinX,bbox.MinY,bbox.MinZ,
+                                              bbox.MaxX,bbox.MaxY,bbox.MaxZ) );
         }
+    }
+
+    if(!bboxDatums.isEmpty())
+        bboxOrigins.extendBy(bboxDatums);
+
+    // Each datum sizes itself against the model from its own updateData, in
+    // PartDesignGui::ViewProviderDatum::updateExtents, so the origin only has to
+    // take the result in. It used to push setExtents() into them from here,
+    // which needed an abstract datum base sitting in Gui purely for PartDesign's
+    // benefit; the base now lives in PartDesign, where its only callers are.
+    for(App::DocumentObject* obj : model) {
+        if(!obj || !obj->getNameInDocument())
+            continue;
+        if(datumType.isBad() || !obj->isDerivedFrom(datumType))
+            continue;
+
+        auto vp = Application::Instance->getViewProvider(obj);
+        if(!vp || !vp->isVisible())
+            continue;
+
+        auto bbox = vp->getBoundingBox();
+        if(bbox.IsValid())
+            bboxOrigins.extendBy ( SbBox3f(bbox.MinX,bbox.MinY,bbox.MinZ,
+                                           bbox.MaxX,bbox.MaxY,bbox.MaxZ) );
     }
 
     // get the bounding box values
