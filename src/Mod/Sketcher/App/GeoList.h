@@ -24,6 +24,7 @@
 #define SKETCHER_GeoList_H
 
 #include <memory>
+#include <type_traits>
 #include <vector>
 
 #include "GeoEnum.h"
@@ -95,6 +96,24 @@ protected:
     explicit GeoListModel(const std::vector<T>& geometrylist, int intgeocount);
 
 public:
+    /** @brief What a facade query gives back, which depends on the model.
+     *
+     * A GeoList holds naked Part::Geometry pointers, so there is no facade
+     * to hand out and one has to be built: the caller owns it. A
+     * GeoListFacade already owns its facades, so the caller only borrows one
+     * and must not free it.
+     *
+     * The two used to share the return type -- a bare pointer, owning in the
+     * first case and borrowed in the second -- with a comment asking the
+     * caller of a GeoList to delete it. Nothing distinguished the two at the
+     * call site, and no caller ever deleted anything, so the GeoList form
+     * leaked a facade per call. Spelling the ownership in the type is what
+     * keeps them apart.
+     */
+    using GeometryFacadeRef = std::conditional_t<std::is_same_v<T, Part::Geometry*>,
+                                                 std::unique_ptr<const Sketcher::GeometryFacade>,
+                                                 const Sketcher::GeometryFacade*>;
+
     /** @brief Destructor having type dependent behaviour
      *
      * @warning
@@ -143,16 +162,13 @@ public:
      */
     const Part::Geometry* getGeometryFromGeoId(int geoId) const;
 
-    /** @brief returns a geometryfacade
-     * @warning If the underlying model of the list is a naked pointed (Part::Geometry *), i.e. a
-     * GeoList instantiation, the client (the user) bears responsibility for releasing the
-     * GeometryFacade pointer!!
+    /** @brief returns a geometry facade
      *
-     * This is not a problem when the model of the list is a
-     * std::unique_ptr<Sketcher::GeometryFacade>, because the lifetime is tied to the
-     * GeometryFacade. It will destruct the pointer if it is the owner.
+     * For a GeoList the facade is built here and returned owning, as a
+     * unique_ptr; for a GeoListFacade it is borrowed from the model, as a
+     * plain pointer. See GeometryFacadeRef.
      */
-    const Sketcher::GeometryFacade* getGeometryFacadeFromGeoId(int geoId) const;
+    GeometryFacadeRef getGeometryFacadeFromGeoId(int geoId) const;
 
     /** @brief
      * returns the GeoId index from the index in the geometry in geomlist format with which it was
@@ -175,14 +191,12 @@ public:
                                                       int geoId);
 
     /** @brief returns a geometry facade
-     * @warning If the underlying model of the list is a naked pointed (Part::Geometry *), the
-     * client (the user) bears responsibility for releasing the GeometryFacade pointer!!
      *
-     * This is not a problem when the model of the list is a
-     * std::unique_ptr<Sketcher::GeometryFacade>, because the lifetime is tied to the model itself.
+     * Owning for a GeoList, borrowed for a GeoListFacade; see
+     * GeometryFacadeRef.
      */
-    static const Sketcher::GeometryFacade*
-    getGeometryFacadeFromGeoId(const std::vector<T>& geometrylist, int geoId);
+    static GeometryFacadeRef getGeometryFacadeFromGeoId(const std::vector<T>& geometrylist,
+                                                        int geoId);
 
     /** @brief
      *  Obtain a GeoElementId class {GeoId, Pos} given a VertexId.

@@ -117,15 +117,18 @@ const Part::Geometry* GeoListModel<T>::getGeometryFromGeoId(const std::vector<T>
 }
 
 template<typename T>
-const Sketcher::GeometryFacade*
+typename GeoListModel<T>::GeometryFacadeRef
 GeoListModel<T>::getGeometryFacadeFromGeoId(const std::vector<T>& geometrylist, int geoId)
 {
     if constexpr (std::is_same<T, GeometryPtr>()) {
+        // Built here, so returned owning. getFacade() on a non-const geometry
+        // is deliberate: it gives the geometry a sketch extension when it has
+        // none, where the const overload would throw.
         if (geoId >= 0) {
-            return GeometryFacade::getFacade(geometrylist[geoId]).release();
+            return GeometryFacade::getFacade(geometrylist[geoId]);
         }
         else {
-            return GeometryFacade::getFacade(geometrylist[geometrylist.size() + geoId]).release();
+            return GeometryFacade::getFacade(geometrylist[geometrylist.size() + geoId]);
         }
     }
     else if constexpr (std::is_same<T, GeometryFacadeUniquePtr>()) {
@@ -147,7 +150,8 @@ const Part::Geometry* GeoListModel<T>::getGeometryFromGeoId(int geoId) const
 }
 
 template<typename T>
-const Sketcher::GeometryFacade* GeoListModel<T>::getGeometryFacadeFromGeoId(int geoId) const
+typename GeoListModel<T>::GeometryFacadeRef
+GeoListModel<T>::getGeometryFacadeFromGeoId(int geoId) const
 {
     return GeoListModel<T>::getGeometryFacadeFromGeoId(geomlist, geoId);
 }
