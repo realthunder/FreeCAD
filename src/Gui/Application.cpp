@@ -160,7 +160,7 @@
 #include "ViewProviderMeasureDistance.h"
 #include "ViewProviderShaderObject.h"
 #include "ViewProviderOrigin.h"
-#include "ViewProviderOriginFeature.h"
+#include "ViewProviderDatum.h"
 #include "ViewProviderOriginGroup.h"
 #include "ViewProviderPlacement.h"
 #include "ViewProviderPlane.h"
@@ -2493,7 +2493,7 @@ void Application::initTypes()
                            &Gui::ViewProviderGeometryPython::create);
     Gui::ViewProviderPlacement                  ::init();
     Gui::ViewProviderPlacementPython            ::init();
-    Gui::ViewProviderOriginFeature              ::init();
+    Gui::ViewProviderDatum              ::init();
     Gui::ViewProviderPlane                      ::init();
     Gui::ViewProviderLine                       ::init();
     Gui::ViewProviderPoint                      ::init();
@@ -2522,6 +2522,8 @@ void Application::initTypes()
                               "Gui::ViewProviderAppearance");
     Base::Type::addLegacyName(Gui::ViewProviderShaderBindingPython::getClassTypeId(),
                               "Gui::ViewProviderAppearancePython");
+    Base::Type::addLegacyName(Gui::ViewProviderDatum::getClassTypeId(),
+                              "Gui::ViewProviderOriginFeature");
     Gui::AxisOrigin                             ::init();
     Gui::ViewProviderSavedView                  ::init();
 

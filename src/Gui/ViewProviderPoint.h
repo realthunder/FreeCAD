@@ -24,18 +24,14 @@
 #ifndef GUI_ViewProviderPoint_H
 #define GUI_ViewProviderPoint_H
 
-#include "ViewProviderOriginFeature.h"
+#include "ViewProviderDatum.h"
 
 namespace Gui
 {
 
 /** The view provider of App::Point, the origin point of a coordinate system.
- *
- * Upstream derives this from Gui::ViewProviderDatum. This fork still calls
- * that base ViewProviderOriginFeature; the rename is deferred because the
- * ViewProviderDatum name is held by another class here (see App/Datums.h).
  */
-class GuiExport ViewProviderPoint : public ViewProviderOriginFeature {
+class GuiExport ViewProviderPoint : public ViewProviderDatum {
     PROPERTY_HEADER_WITH_OVERRIDE(Gui::ViewProviderPoint);
 public:
     /// Constructor

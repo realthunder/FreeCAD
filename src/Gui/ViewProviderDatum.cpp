@@ -38,7 +38,7 @@
 #include <App/OriginFeature.h>
 #include <App/Origin.h>
 
-#include "ViewProviderOriginFeature.h"
+#include "ViewProviderDatum.h"
 #include "SoFCSelection.h"
 #include "SoFCUnifiedSelection.h"
 #include "ViewProviderOrigin.h"
@@ -47,9 +47,9 @@
 
 using namespace Gui;
 
-PROPERTY_SOURCE(Gui::ViewProviderOriginFeature, Gui::ViewProviderGeometryObject)
+PROPERTY_SOURCE(Gui::ViewProviderDatum, Gui::ViewProviderGeometryObject)
 
-ViewProviderOriginFeature::ViewProviderOriginFeature () {
+ViewProviderDatum::ViewProviderDatum () {
     ADD_PROPERTY_TYPE ( Size, (ViewProviderOrigin::defaultSize()), 0, App::Prop_ReadOnly,
     QT_TRANSLATE_NOOP("App::Property", "Visual size of the feature"));
 
@@ -77,7 +77,7 @@ ViewProviderOriginFeature::ViewProviderOriginFeature () {
 }
 
 
-ViewProviderOriginFeature::~ViewProviderOriginFeature () {
+ViewProviderDatum::~ViewProviderDatum () {
     pScale->unref ();
     pOriginFeatureRoot->unref ();
     pLabel->unref ();
@@ -125,7 +125,7 @@ private:
     SoColorPacker packer;
 };
 
-void ViewProviderOriginFeature::attach(App::DocumentObject* pcObject)
+void ViewProviderDatum::attach(App::DocumentObject* pcObject)
 {
     ViewProviderGeometryObject::attach(pcObject);
 
@@ -225,14 +225,14 @@ void ViewProviderOriginFeature::attach(App::DocumentObject* pcObject)
     addDisplayMaskMode ( sep, "Base" );
 }
 
-void ViewProviderOriginFeature::updateData ( const App::Property* prop ) {
+void ViewProviderDatum::updateData ( const App::Property* prop ) {
     if (prop == &getObject()->Label) {
         pLabel->string.setValue ( SbString ( getObject()->Label.getValue () ) );
     }
     ViewProviderGeometryObject::updateData(prop);
 }
 
-void ViewProviderOriginFeature::onChanged ( const App::Property* prop ) {
+void ViewProviderDatum::onChanged ( const App::Property* prop ) {
     if (prop == &Size) {
         float sz = Size.getValue () / ViewProviderOrigin::baseSize();
         pScale->scaleFactor = SbVec3f (sz, sz, sz);
@@ -240,7 +240,7 @@ void ViewProviderOriginFeature::onChanged ( const App::Property* prop ) {
     ViewProviderGeometryObject::onChanged(prop);
 }
 
-std::vector<std::string> ViewProviderOriginFeature::getDisplayModes () const
+std::vector<std::string> ViewProviderDatum::getDisplayModes () const
 {
     // add modes
     std::vector<std::string> StrList;
@@ -248,14 +248,14 @@ std::vector<std::string> ViewProviderOriginFeature::getDisplayModes () const
     return StrList;
 }
 
-void ViewProviderOriginFeature::setDisplayMode (const char* ModeName)
+void ViewProviderDatum::setDisplayMode (const char* ModeName)
 {
     if (strcmp(ModeName, "Base") == 0)
         setDisplayMaskMode("Base");
     ViewProviderGeometryObject::setDisplayMode(ModeName);
 }
 
-bool ViewProviderOriginFeature::onDelete(const std::vector<std::string> &) {
+bool ViewProviderDatum::onDelete(const std::vector<std::string> &) {
     auto feat = static_cast <App::DatumElement *> ( getObject() );
     // Forbid deletion if there is a coordinate system this feature belongs to
 
@@ -266,7 +266,7 @@ bool ViewProviderOriginFeature::onDelete(const std::vector<std::string> &) {
     }
 }
 
-QIcon ViewProviderOriginFeature::getIcon() const
+QIcon ViewProviderDatum::getIcon() const
 {
     App::OriginFeature *feat = static_cast <App::OriginFeature *> ( getObject() );
     const char *pixmap;

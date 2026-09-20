@@ -40,7 +40,7 @@
 
 using namespace Gui;
 
-PROPERTY_SOURCE(Gui::ViewProviderPoint, Gui::ViewProviderOriginFeature)
+PROPERTY_SOURCE(Gui::ViewProviderPoint, Gui::ViewProviderDatum)
 
 
 ViewProviderPoint::ViewProviderPoint()
@@ -51,11 +51,11 @@ ViewProviderPoint::ViewProviderPoint()
 ViewProviderPoint::~ViewProviderPoint() = default;
 
 void ViewProviderPoint::attach ( App::DocumentObject *obj ) {
-    ViewProviderOriginFeature::attach ( obj );
+    ViewProviderDatum::attach ( obj );
 
     static const float size = ViewProviderOrigin::baseSize ();
 
-    SoSeparator *sep = getOriginFeatureRoot ();
+    SoSeparator *sep = getDatumRoot ();
 
     auto pCoords = new SoCoordinate3 ();
     pCoords->point.setNum (1);

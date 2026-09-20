@@ -120,12 +120,8 @@ public:
 
     /** returns the type name of the ViewProvider
      *
-     * Upstream names Gui::ViewProviderCoordinateSystem here. That rename,
-     * and the ViewProviderOriginFeature -> ViewProviderDatum one beside
-     * it, are deferred in this fork: the ViewProviderDatum name is taken
-     * by a live class that Gui itself uses to size datums
-     * (ViewProviderOriginGroupExtension), so the pair has to move
-     * together and is its own piece of work.
+     * Upstream names Gui::ViewProviderCoordinateSystem here. That rename is
+     * still to come; the ViewProviderDatum half of the pair has landed.
      */
     const char* getViewProviderName() const override
     {
