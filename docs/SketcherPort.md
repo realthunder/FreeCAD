@@ -2135,16 +2135,61 @@ reading kept two. `561e521817`'s `#ifndef NOMINMAX`, `4b589088f6`'s
 those lines somewhere else entirely. **Absence is evidence; presence is
 a hint.** Every closed row in this sweep was read.
 
-### One family left open on purpose, with its size
+### The two families that were left open, and how they closed
 
-The constraint-tool hints, sized here as eleven rows, were taken in the
-next session and are section 7a below. What is left is:
+The constraint-tool hints, sized here as eleven rows, were taken the
+next session and are section 7a below.
 
-**The icon refresh.** Six rows of SVG: new carbon copy icons, new
-external and intersection icons and cursors, redrawn toggle-construction
-icons, hyperbola and parabola endpoint icons, text converted to paths.
-None of it is a defect and all of it is art the fork has its own version
-of, so it is one decision rather than six picks.
+**The icon refresh, closed 2026-09-22** -- six rows, sized as one art
+decision and settled as one, by rendering the pairs rather than reading
+the diffs: fork against upstream at 96 px and at the 24 and 16 px the
+icons are actually used at.
+
+**One of the six was not an art question at all.** `24fe47830e` redrew
+nothing: it swapped the hyperbola's and parabola's start and end art,
+which had been on the wrong points. Settled against the KERNEL, not
+upstream's opinion -- build each curve with its branch opening up and
+the normal out of the screen, which is what the icons draw, and ask the
+arc for its own points:
+
+    hyperbola  start=(1.18, 3.09)  end=(-1.18, 3.09)
+    parabola   start=(1.00, 0.25)  end=(-1.00, 0.25)
+
+Start is the RIGHT arm for both, and this fork's start icons greened the
+left one; the elliptical arc's icons next door already followed that
+convention. This fork's `..._End_Point.svg` was byte-for-byte upstream's
+`..._Start_Point.svg`, so exchanging the two files' contents lands on
+upstream's pairing without taking any redrawn art (`684e30ada0`).
+**The lesson is cheap to state: "cosmetic" is a guess until someone
+renders the art.**
+
+**The other five: upstream's art adopted** (user, 2026-09-22), for the
+eight files this fork actually has -- the toggle-construction pair, the
+carbon copy pair, the regular-polygon pair, `Sketcher_Intersection.svg`
+and the external-geometry cursor. Checked, not assumed: the cursor still
+carries the `id="crosshair"` group stroked `#ffffff`, which is the key
+this fork's `setSvgCursor` recolours (the fork's old file had a second
+`#ffffff`, but it was Inkscape's `pagecolor` metadata, not paint); and
+every adopted file renders under QtSvg, which is a narrower SVG than the
+rsvg used to preview them.
+
+**Four files of `f0ba161bdf` were NOT taken**, and they are why that row
+is marked taken-in-part: `Sketcher_Projection.svg`, its `_Constr`,
+`Sketcher_Intersection_Constr.svg` and
+`Sketcher_Pointer_External_Intersection.svg` do not exist here, are in
+no `.qrc` and are referenced by nothing. They are art for upstream's
+split of external geometry into projection and intersection, which this
+fork has not made; adopting them would be adopting a feature's shape
+through its icons.
+
+**A consequence to be aware of**: this fork pairs
+`Sketcher_Intersection` with its own `Sketcher_IntersectionDefining`
+(defining versus non-defining external geometry -- not upstream's
+`_Constr`, which is construction mode). The two were the same drawing in
+two colours. Upstream's intersection icon is a different drawing
+entirely -- a solid cut by a plane -- so the pair is no longer a pair.
+Left as it is: inventing a matching "defining" variant is authoring art,
+not adopting it.
 
 ## 7a. The constraint-tool hints (session 85)
 
