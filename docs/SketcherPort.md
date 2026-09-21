@@ -30,6 +30,15 @@ on the user's ruling to take it before continuing.
 Upstream's `f4665aa7b5` ("Core: support multiple active transactions") was
 evaluated and **declined**; `docs/TransactionLog.md` records why, and the
 direction the user wants instead.
+
+**Where the ledger stands (2026-09-21).** 1149 rows, of which 428 are open
+and undecided. That number came down from 503 by reading blobs rather than
+commits: 21 of the 33 files the handler resyncs touched are identical to
+upstream's tip modulo whitespace, which closes 74 rows at once (section 7,
+"The origin marker"). Of what is left, `Gui/ViewProviderSketch.cpp` and
+`Gui/CommandConstraints.cpp` carry the most, and the `EditMode*` family is
+n/a by decision 3. The same sweep is worth running over any other file the
+fork has taken whole.
 Branch `SketcherPort` off `RemoteEdit`
 `b7dbdd191d`. Upstream reference: `upstream/main` `bd6be559e8`
 (2026-09-12).
