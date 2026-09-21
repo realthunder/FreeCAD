@@ -416,6 +416,10 @@ struct EditData {
     SoMarkerSet   *PointSet;
     // the marker every visible vertex uses; a group member's vertices get NONE instead
     int32_t defaultMarkerIndex = 0;
+    // the marker the origin uses while a drawing tool is active: an outline, so that it
+    // reads as somewhere to snap to rather than as another vertex of the sketch
+    int32_t originMarkerIndex = 0;
+    bool originPointMarkerHollow = false;
     SoIndexedMarkerSet   *SelectedPointSet;
     SoIndexedMarkerSet   *PreSelectedPointSet;
 
@@ -3516,13 +3520,16 @@ void ViewProviderSketch::updateColor(void)
             }
         }
 
-        if (groupedGeoIds.empty()) {
+        if (groupedGeoIds.empty() && !edit->originPointMarkerHollow) {
             if (edit->PointSet->markerIndex.getNum() != 1) {
                 edit->PointSet->markerIndex.setValue(edit->defaultMarkerIndex);
             }
         }
         else {
             std::vector<int32_t> markers(PtNum, edit->defaultMarkerIndex);
+            if (edit->originPointMarkerHollow && PtNum > 0) {
+                markers[0] = edit->originMarkerIndex;
+            }
             for (int i = 1; i < PtNum; i++) {
                 int GeoId;
                 PointPos PosId;
@@ -4715,7 +4722,10 @@ void ViewProviderSketch::updateInventorNodeSizes()
     assert(edit);
     edit->PointsDrawStyle->pointSize = 8 * edit->pixelScalingFactor;
     edit->defaultMarkerIndex = Gui::Inventor::MarkerBitmaps::getMarkerIndex("CIRCLE_FILLED", edit->MarkerSize);
+    edit->originMarkerIndex = Gui::Inventor::MarkerBitmaps::getMarkerIndex("CIRCLE_LINE", edit->MarkerSize);
     edit->PointSet->markerIndex = edit->defaultMarkerIndex;
+    // the one value just written covers every point, so put the origin's back
+    applyOriginPointMarker();
     edit->CurvesDrawStyle->lineWidth = 3 * edit->pixelScalingFactor;
     edit->RootCrossDrawStyle->lineWidth = 2 * edit->pixelScalingFactor;
     edit->EditCurvesDrawStyle->lineWidth = 3 * edit->pixelScalingFactor;
@@ -8003,6 +8013,7 @@ void ViewProviderSketch::createEditInventorNodes(void)
     edit->PointSet = new SoMarkerSet;
     edit->PointSet->setName("PointSet");
     edit->defaultMarkerIndex = Gui::Inventor::MarkerBitmaps::getMarkerIndex("CIRCLE_FILLED", edit->MarkerSize);
+    edit->originMarkerIndex = Gui::Inventor::MarkerBitmaps::getMarkerIndex("CIRCLE_LINE", edit->MarkerSize);
     edit->PointSet->markerIndex = edit->defaultMarkerIndex;
     pointsRoot->addChild(edit->PointSet);
 
@@ -8882,6 +8893,50 @@ void ViewProviderSketch::selectElement(const char *element, bool preselect) cons
 const App::SubObjectT &ViewProviderSketch::getEditingContext() const
 {
     return editObjT;
+}
+
+// Upstream keeps a scene node of its own for the origin, so it flips that node's marker.
+// Here the origin is point 0 of the same marker set as every other vertex, so giving it a
+// marker of its own means giving the field one value per point -- which is what a sketch
+// holding a group already does.
+void ViewProviderSketch::setOriginPointMarker(bool hollow)
+{
+    if (!edit || edit->originPointMarkerHollow == hollow) {
+        return;
+    }
+
+    edit->originPointMarkerHollow = hollow;
+    applyOriginPointMarker();
+}
+
+void ViewProviderSketch::applyOriginPointMarker()
+{
+    if (!edit || !edit->PointSet) {
+        return;
+    }
+
+    const int32_t marker =
+        edit->originPointMarkerHollow ? edit->originMarkerIndex : edit->defaultMarkerIndex;
+
+    if (edit->PointSet->markerIndex.getNum() > 1) {
+        // already one value per point, so only the origin's own changes
+        edit->PointSet->markerIndex.set1Value(0, marker);
+        return;
+    }
+
+    if (!edit->originPointMarkerHollow) {
+        // the single value standing for every point is the default the origin wants back
+        return;
+    }
+
+    const int pointCount = edit->PointsMaterials->diffuseColor.getNum();
+    if (pointCount < 1) {
+        return;
+    }
+
+    std::vector<int32_t> markers(pointCount, edit->defaultMarkerIndex);
+    markers[0] = marker;
+    edit->PointSet->markerIndex.setValues(0, pointCount, markers.data());
 }
 
 void ViewProviderSketch::setConstraintSelectability(bool enabled /* = true */)

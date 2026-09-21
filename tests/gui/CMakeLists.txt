@@ -188,3 +188,11 @@ fc_add_gui_test(GuiSketchConstructionMode_tests_run
 fc_add_gui_test(GuiSketchNextToolMode_tests_run
                 sketch-next-tool-mode.py
                 --timeout 240)
+
+# The origin is drawn as an outline while a drawing tool is active
+# (upstream 16908241f0). Upstream flips a scene node of its own; here the
+# origin is point 0 of the marker set every vertex shares, so the marker
+# set has to speak per point for as long as the tool is up.
+fc_add_gui_test(GuiSketchOriginMarker_tests_run
+                sketch-origin-marker.py
+                --timeout 240)
