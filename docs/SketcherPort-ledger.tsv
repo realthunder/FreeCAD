@@ -214,7 +214,7 @@ de61b9dc9f	2024-06-05	Ajinkya Dahale	fix	0	0	have(sync)	46		[Sketcher] Fix some 
 a674729dd3	2024-06-27	bgbsww	refactor	0	0	have(sync)	12		Toponaming: Cleanups	App/SketchObject.cpp
 54920e6611	2024-06-27	pre-commit-ci[bot]	refactor	0	0	have(sync)	7		Review cleanups	App/SketchObject.h
 d65ee84ff2	2024-06-28	bgbsww	refactor	0	0	have(sync)	3		Cleanup	App/SketchObject.cpp
-fe89807f53	2024-07-01	wmayer	?	0	0	open	30		Sketcher: Delete key in non-functional in macOS	Gui/DrawSketchKeyboardManager.cpp Gui/ShortcutListener.cpp
+fe89807f53	2024-07-01	wmayer	?	0	0	open	30	partial 98d6930279: the DrawSketchKeyboardManager half is in; the src/Gui half not evaluated	Sketcher: Delete key in non-functional in macOS	Gui/DrawSketchKeyboardManager.cpp Gui/ShortcutListener.cpp
 e490531510	2024-07-01	Max Wilfinger	feature	0	0	open	6		Activate Part/Part Design check and refine preferences by default (#14406)	SketcherTests/TestSketcherSolver.py
 2abe477651	2024-07-01	FEA-eng	feature	1	0	open	172		Sketcher: New carbon copy icons (#15074)	Gui/Resources/icons/geometry/Sketcher_CarbonCopy.svg Gui/Resources/icons/geometry/Sketcher_CarbonCopy_Constr.svg
 fa0fdf22cf	2024-06-27	PaddleStroke	fix	0	0	have(sync)	96		Sketcher: Dimension: Fix constraint switching. Refactor a little bit by adding finishDimensionCreation to reduce code copies.	Gui/CommandConstraints.cpp
@@ -573,7 +573,7 @@ b0e901bab6	2025-06-02	George Peden	feature	0	0	open	886		Sketcher: Implement hin
 9d48371ab4	2025-06-04	PaddleStroke	fix	1	0	open	11		Sketcher: Fix #21646 (#21739)	Gui/DrawSketchDefaultHandler.h Gui/DrawSketchHandlerRectangle.h
 5c219bea41	2025-06-05	Luz Paz	noise	0	0	open	2	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: fix typo in source comment	Gui/DrawSketchHandlerScale.h
 8a58d225c8	2025-06-07	longrackslabs	feature	0	0	open	33	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	- Refactor Point tool hint implementation with direct return (trival) pattern	Gui/DrawSketchHandlerPoint.h
-6664907bd5	2025-06-07	tetektoza	feature	0	0	open	17		Sketcher: Allow user to reset OVP state using backspace key	Gui/DrawSketchController.h Gui/DrawSketchKeyboardManager.cpp
+6664907bd5	2025-06-07	tetektoza	feature	0	0	open	17	partial 98d6930279: the DrawSketchKeyboardManager half is in; the src/Gui half not evaluated	Sketcher: Allow user to reset OVP state using backspace key	Gui/DrawSketchController.h Gui/DrawSketchKeyboardManager.cpp
 353c4eca55	2025-06-09	theo-vt	?	0	0	open	400	adapted 60befe30bc	Sketcher: Sketch autoscale (#21084)	App/SketchObject.cpp App/SketchObject.h Gui/CMakeLists.txt Gui/CommandSketcherTools.cpp Gui/CommandSketcherTools.h Gui/DrawSketchHandler.cpp Gui/DrawSketchHandler.h Gui/DrawSketchHandlerScale.h Gui/EditDatumDialog.cpp Gui/EditDatumDialog.h Gui/SketcherSettings.cpp Gui/SketcherSettings.h Gui/Sketcher
 456659d763	2025-01-24	wmayer	?	0	0	open	7		Test: Do not write test files into CWD	SketcherTests/TestSketcherSolver.py
 a95d782ab0	2025-06-07	tetektoza	feature	0	0	open	1113		Sketcher: Refactor access to OVPs to not repeat array access everytime	Gui/DrawSketchHandlerArc.h Gui/DrawSketchHandlerArcSlot.h Gui/DrawSketchHandlerBSpline.h Gui/DrawSketchHandlerCircle.h Gui/DrawSketchHandlerEllipse.h Gui/DrawSketchHandlerLine.h Gui/DrawSketchHandlerOffset.h Gui/DrawSketchHandlerPoint.h Gui/DrawSketchHandlerPolygon.h Gui/DrawSketchHandlerRotate.h Gu
@@ -883,7 +883,7 @@ ec18d4e250	2026-02-08	Chris Hennes	?	0	0	open	3		Tests/Sketcher: Eliminate unuse
 bb5afb911a	2026-02-16	PaddleStroke	fix	0	0	open	36	have: newToOldConstraintMap and the expression restore arrived with the trim/split take d8d462426e	Sketcher: Fix loss of expression on trim (#27505)	App/SketchObject.cpp
 bc3c0dc19a	2026-02-17	marbocub	feature	0	0	open	193		Sketcher: Add symmetric constraint option (an element + a symmetry line) (#25525)	Gui/CommandConstraints.cpp
 289411f51c	2026-02-15	Louis Gombert	?	0	0	open	3		Move costly boost includes out of core headers	Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h
-bd07c8a214	2026-02-17	PaddleStroke	fix	0	0	open	1		Sketcher: OVP Fix tab not working when mouse move (#27638)	Gui/DrawSketchKeyboardManager.cpp
+bd07c8a214	2026-02-17	PaddleStroke	fix	0	0	open	1	taken 98d6930279	Sketcher: OVP Fix tab not working when mouse move (#27638)	Gui/DrawSketchKeyboardManager.cpp
 be6af47f29	2026-02-18	PaddleStroke	feature	0	0	open	17	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Offset: add checkbox tooltips (#26114)	Gui/DrawSketchHandlerOffset.h
 ca9e1ecdf3	2026-02-22		noise	0	0	open	704	partial 88c9baa853: App/Analyse.h App/ExternalGeometryExtension.h App/ExternalGeometryFacade.h App/GeoList.h App/GeometryFacade.h App/Measure.h App/PreCompiled.h App/PropertyConstraintList.h App/PythonConverter.h App/SketchAnalysis.h App/SketchGeometryExtension.h App/SketchOb	All: Header Guards -> Pragma Once (#27154)	App/Analyse.h App/Constraint.h App/ExternalGeometryExtension.h App/ExternalGeometryFacade.h App/GeoEnum.h App/GeoList.h App/GeometryFacade.h App/Measure.h App/PreCompiled.h App/PropertyConstraintList.h App/PythonConverter.h App/Sketch.h App/SketchAnalysis.h App/SketchGeometryExtension.h App/SketchOb
 92894ea3a8	2026-02-23	theo-vt	?	0	0	open	249	taken 88c9baa853	Sketcher: Evaluate driven constraints rather than solving them (#26632)	App/planegcs/Constraints.cpp App/planegcs/Constraints.h App/planegcs/GCS.cpp App/planegcs/GCS.h
@@ -973,7 +973,7 @@ ab9188a5dc	2026-04-16	Celeste Wouters	refactor	0	0	open	205		Sketcher: properly 
 94c486184c	2026-04-26	Ladislav Michl	fix	0	0	open	2		Sketcher: fix initialization order	Gui/ViewProviderSketch.cpp
 d9910ce9bc	2026-04-27	PaddleStroke	fix	0	0	open	318	adapted 9ffed788d9	Sketcher: Fix PythonConverter cropping precision (#29211)	App/PythonConverter.cpp
 b2c51665a2	2026-04-29	Rehan Ahmed	refactor	0	0	open	2		Convert Qt Dialog titles to title case	Gui/Command.cpp
-ebd770e025	2026-05-01	Alfredo Monclus	fix	0	0	open	110		Merge pull request #29477 from alfrix/fix_ovp_4	Gui/DrawSketchKeyboardManager.cpp Gui/DrawSketchKeyboardManager.h
+ebd770e025	2026-05-01	Alfredo Monclus	fix	0	0	open	110	partial 98d6930279: the DrawSketchKeyboardManager half is in; the src/Gui half not evaluated	Merge pull request #29477 from alfrix/fix_ovp_4	Gui/DrawSketchKeyboardManager.cpp Gui/DrawSketchKeyboardManager.h
 a2468774d3	2026-05-03	ilya	?	0	0	open	2		Gui: prioritize annotation picks over shape picks at same location (#29253)	Gui/ViewProviderSketch.cpp
 d34081b9fe	2026-04-19	Mitsunori YOSHIDA	fix	0	0	open	320		Sketcher: Fix and extend the Merge Sketches command	Gui/Command.cpp
 08cacbbc27	2026-05-05	luzpaz	noise	0	0	n/a(uncompiled)	2		Fix a variety of typos throughout the codebase (#29759)	Gui/EditModeConstraintCoinManager.cpp
@@ -999,7 +999,7 @@ d77c9647c3	2026-05-18	PaddleStroke	?	0	0	open	1698		Sketcher: Polyline rework. (
 c6fe0aba45	2026-05-21	Max Wilfinger	feature	0	0	open	35		Sketcher: Add hints to new polyline tool	Gui/DrawSketchControllableHandler.h Gui/DrawSketchHandlerLineSet.h
 256459a5c1	2026-05-21	Max Wilfinger	refactor	0	0	have	7	taken b4b8f10a3b	Sketcher: UI Cleanup	Gui/DrawSketchHandlerLineSet.h
 69930bc58d	2026-05-21	Max Wilfinger	?	0	0	n/a	4	command groups in the toolbar, not sketch groups	Sketcher: Group Polyline and Line by default	Gui/SketcherSettings.ui Gui/Workbench.cpp
-5b0ac59255	2026-05-21	PaddleStroke	fix	0	0	open	2		Sketcher: Fix DSH shortcuts not working anymore	Gui/DrawSketchKeyboardManager.cpp
+5b0ac59255	2026-05-21	PaddleStroke	fix	0	0	open	2	taken 98d6930279	Sketcher: Fix DSH shortcuts not working anymore	Gui/DrawSketchKeyboardManager.cpp
 c71c15c009	2026-05-25	Max Wilfinger	feature	0	0	open	3		Sketcher: Use old Polyline shortcut for new tool	Gui/CommandCreateGeo.cpp
 2ba97bf783	2026-05-26	ilya	?	0	0	open	68		Sketcher: Show adjacent faces in clarify selection menu	Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h
 2f3161f312	2026-05-25	Joao Matos	?	0	0	open	668		Sketcher: improve overlapping constraint preselection	Gui/EditModeCoinManager.cpp Gui/EditModeCoinManager.h Gui/EditModeConstraintCoinManager.cpp Gui/EditModeConstraintCoinManager.h Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h Gui/ViewProviderSketchCoinAttorney.h
@@ -1071,7 +1071,7 @@ f4adbed7bd	2026-06-19	Turan Furkan Topak	?	0	0	open	60		Sketcher: Geometry durin
 23ca5dc52f	2026-07-14	Lokestrom	fix	0	0	open	8	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Fixed incorect radius constraint in arc of ellipse	Gui/DrawSketchHandlerArcOfEllipse.h
 7968e0c8f5	2026-05-13	Joao Matos	feature	1	0	open	17	n/a: .pyi bindings model, the fork keeps the .xml bindings	Typing: add utility module stubs	App/Sketcher.module.pyi
 ed4c15642c	2026-07-05	Max Wilfinger	?	0	0	have	2	taken b4b8f10a3b	Sketcher: Check for arc constraint on cycle	Gui/DrawSketchHandlerLineSet.h
-f07195c198	2026-07-08	Matthias Danner	feature	0	0	open	10		Sketcher: Reset OVP on Click in Polyline and Bspline Tool	Gui/DrawSketchHandlerBSpline.h Gui/DrawSketchHandlerLineSet.h Gui/DrawSketchKeyboardManager.cpp Gui/DrawSketchKeyboardManager.h
+f07195c198	2026-07-08	Matthias Danner	feature	0	0	open	10	taken 98d6930279	Sketcher: Reset OVP on Click in Polyline and Bspline Tool	Gui/DrawSketchHandlerBSpline.h Gui/DrawSketchHandlerLineSet.h Gui/DrawSketchKeyboardManager.cpp Gui/DrawSketchKeyboardManager.h
 f73e520728	2026-07-18	PaddleStroke	feature	0	0	open	8		Merge pull request #30479 from PaddleStroke/patch-793529	Gui/DrawSketchHandlerLine.h Gui/DrawSketchHandlerLineSet.h Gui/DrawSketchHandlerSlot.h Gui/DrawSketchHandlerText.h
 a4b8ca1ada	2026-07-15	Joao Matos	?	0	0	open	15	n/a: a FaceMakerBuildFace null result; the fork kept WireJoiner + FaceMakerRing (aa31511fbd)	Sketcher: accept empty internal face results	App/SketchObject.cpp
 b9155035fe	2026-05-14	Bojan	fix	0	0	open	157		Sketcher/Measure: fix precision loss in constraint and measurement values	Gui/CommandConstraints.cpp Gui/EditDatumDialog.cpp

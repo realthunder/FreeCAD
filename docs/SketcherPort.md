@@ -31,7 +31,7 @@ Upstream's `f4665aa7b5` ("Core: support multiple active transactions") was
 evaluated and **declined**; `docs/TransactionLog.md` records why, and the
 direction the user wants instead.
 
-**Where the ledger stands (2026-09-21).** 1149 rows, of which 420 are open
+**Where the ledger stands (2026-09-21).** 1149 rows, of which 414 are open
 and undecided. That number came down from 503 by reading blobs rather than
 commits: 21 of the 33 files the handler resyncs touched are identical to
 upstream's tip modulo whitespace, which closes 74 rows at once (section 7,
@@ -1837,8 +1837,52 @@ gained: `Alt`+key passing a keystroke to the viewer for navigation
 Enter/Return/Tab switching back to camera control. The fork's file is the
 older shape plus its own `vpViewer->sendKeyEvent()` indirection, which is
 what lets a mirror replay a key as the Coin event it arrived as. An
-adaptation has to keep that indirection and can take the rest; the on-view
-parameter harness (`serve-onview-params.py`) is what can test it.
+adaptation has to keep that indirection and can take the rest.
+
+### The keyboard manager, resynced (`98d6930279`)
+
+Six upstream commits touch this file and none of them is drift:
+`fe89807f53` (Delete on macOS), `6664907bd5` (backspace resets an on-view
+parameter), `bd07c8a214` (Tab), `ebd770e025` (the OVP refactor),
+`5b0ac59255` (KeyRelease as well as KeyPress) and `f07195c198` (reset on
+click). Three are already here in part -- the fork has the KeyRelease line,
+Backspace and Delete in its detect list, and `resetMode()` with both of its
+handler-side callers, since the polyline and B-spline handlers are
+upstream's own code after the resync.
+
+What was missing is `ebd770e025`'s substance:
+
+- **Alt+key goes to the viewer without moving the destination.** In
+  `DSHControl` the modifier is stripped and the bare key forwarded, so the
+  view can be turned in the middle of typing a dimension and the box still
+  has the keys afterwards. There was no way to do that before: a digit
+  typed with Alt held was simply typed.
+- **`QKeySequence::Paste`** is recognised, so Ctrl+V reaches the entry box
+  rather than being read as a navigation key.
+- **Enter, Return and Tab** hand the keys back to the camera explicitly.
+- **Backspace and Delete** are matched by key *sequence* as well as by key.
+
+Taken as a blob with the fork's two deltas put back, the same way the tool
+handlers were: `vpViewer` is a `Gui::ViewerContext` rather than a
+`View3DInventorViewer`, and a key goes back to the scene through
+`sendKeyEvent()`.
+
+**The timer goes with it.** It was upstream's, from 2023, and the OVP
+refactor removed it: rather than the mode falling back to the camera two
+seconds after the last keystroke, it is handed back on Enter, Return, Tab
+or an explicit `resetMode()`. Nothing here called `setTimeOut()` or
+`timeOut()`, and the manager is reached from nowhere else -- it is an event
+filter installed on the on-view parameter's spin box, and nothing reads its
+mode from outside.
+
+**What is not tested, and why.** The Alt and Paste paths themselves. They
+need an on-view parameter holding the keyboard focus, and on the desktop no
+box is focused without real pointer movement -- after a tool starts the
+widget with focus is the viewer, which a probe confirmed, with
+`OnViewParameterVisibility` at 2 and no spin box visible at all.
+`serve-onview-params.py` already drives the whole OVP flow over the wire,
+including a key frame carrying a digit, so that is where the test belongs;
+it needs the frame format to carry a modifier.
 
 `DrawSketchHandler.h`'s six are three things: upstream's
 `Gui/Selection/Selection.h` path, which this fork has not moved;
