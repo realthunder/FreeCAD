@@ -715,11 +715,54 @@ class SandboxProgramFixtureCases(unittest.TestCase):
         finally:
             closeAll()
 
-    def assertSameBreps(self, routed, native):
+    @staticmethod
+    def brepNumber(token):
+        """The token as a float, or None if it is not a floating point number.
+
+        A BRep writes counts, indices and flags as plain integers, and a
+        tolerant comparison of a vertex INDEX would hide a real topology
+        change, so a token without a fraction or an exponent is not a
+        number here -- it has to match exactly, like any other word.
+        """
+        if not any(c in token for c in ".eE"):
+            return None
+        try:
+            return float(token)
+        except ValueError:
+            return None
+
+    def assertSameBreps(self, routed, native, ulps=4):
+        """Byte for byte, or else every NUMBER the BRep carries within `ulps`.
+
+        Byte-exactness across libms was always luck, not a guarantee: the
+        guest's sin and cos round differently from the host's for some
+        arguments, and a third libm breaks the tie -- MSVC's sin(pi/4) is
+        one ULP from glibc's, which moves a 45 degree bolt hole's placement
+        by one ULP and nothing else.  So the byte comparison stays the fast
+        path and the fallback bounds EVERY number in the serialization, not
+        just the vertices: the BRep is whitespace separated ASCII, so the
+        token lists must agree in length, every non-numeric token must be
+        identical, and the numbers must agree to `ulps`.
+        """
         self.assertEqual(sorted(routed), sorted(native))
         for name in routed:
             self.assertTrue(routed[name], name)
-            self.assertTrue(routed[name] == native[name], "%s: the BRep differs" % name)
+            if routed[name] == native[name]:
+                continue
+            r, n = routed[name].split(), native[name].split()
+            self.assertEqual(len(r), len(n), "%s: the BRep differs in size" % name)
+            for a, b in zip(r, n):
+                if a == b:
+                    continue
+                x, y = self.brepNumber(a), self.brepNumber(b)
+                self.assertTrue(
+                    x is not None and y is not None,
+                    "%s: the BRep differs at %r against %r" % (name, a, b),
+                )
+                bound = ulps * math.ulp(max(abs(x), abs(y), 1.0))
+                self.assertLessEqual(
+                    abs(x - y), bound, "%s: the BRep differs at %r against %r" % (name, a, b)
+                )
 
     def assertSameGeometry(self, routed, native, ulps=4):
         """Byte for byte, or else every vertex within `ulps` ULPs of native.
@@ -747,6 +790,27 @@ class SandboxProgramFixtureCases(unittest.TestCase):
                     self.assertLessEqual(abs(x - y), bound, "%s: %r against %r" % (name, a, b))
 
     # -- routed = native ---------------------------------------------------------
+
+    def testBrepComparisonBoundsEveryNumber(self):
+        """The fallback is tolerant about floats and about nothing else."""
+        base = "CASCADE 1 0 2 -0.5 1e-3 CARTESIAN"
+
+        def one(text):
+            return {"Shape": text}
+
+        self.assertSameBreps(one(base), one(base))
+        # one ULP in a float token is what a second libm costs
+        drift = base.replace("-0.5", repr(math.nextafter(-0.5, 0.0)))
+        self.assertNotEqual(drift, base)
+        self.assertSameBreps(one(base), one(drift))
+        for changed in (
+            base.replace(" 2 ", " 3 "),  # an index or a count: exact or nothing
+            base.replace("CARTESIAN", "CYLINDER"),  # so is a word
+            base.replace("-0.5", "-0.5000001"),  # a float, but far past 4 ULPs
+            base + " 7",  # a different token count is a different shape
+        ):
+            with self.assertRaises(AssertionError):
+                self.assertSameBreps(one(base), one(changed))
 
     def testProgramsRoutedMatchNative(self):
         for name in self.PROGRAM_FILES:

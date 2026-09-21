@@ -1783,6 +1783,14 @@ entry comparing floating point rather than geometry, in a call that
 cannot succeed on either platform anyway while `crossproduct` is
 missing.  Off the bisector both sides reach that missing attribute
 deterministically, so the entry compares what it was meant to.
+**Both Draft bugs FIXED 2026-09-21**: the two `crossproduct` calls are
+`v.cross(Vector(0, 0, 1))`, the idiom the same file uses four lines
+above, and `mirror()` now tests `findDistance()`'s result before adding
+it, returning the point itself when it lies on the mirror line.  So
+those two entries no longer fail alike: re-measured 2026-09-21, the
+gate reads 116/116 agreeing with 9 failing alike (was 11) and 3689
+guest hops (was 3613), the two calls now doing real work instead of
+short-circuiting on a missing attribute.
 What the gate forced into the guest is listed in 3.2 and above
 (`bool`/`str` ops, type references, `ShapeList` as list,
 `GuiUp`/`Console`/`Base`/unit constants).
@@ -5779,7 +5787,10 @@ beside it.
    rounds differently from the host's for some arguments, one ULP;
    `sin(240deg)` is the one D1's flange never met at a 44 mm bolt circle and
    meets at 40 mm.  The committed fixtures are held to the byte, a parameter
-   change to 4 ULPs (`assertSameGeometry`); sec 12.
+   change to 4 ULPs (`assertSameGeometry`); sec 12.  (Since 2026-09-21 the
+   committed comparison falls back to 4 ULPs on every number in the BRep
+   when the bytes differ -- a third libm, MSVC's, ran the flange out of that
+   luck; sec 12.)
 3. *The two forms are the same solid, not always the same bytes.*  The
    bracket's and the stair's expression and library forms are
    byte-identical -- once the stair's library starts from a plain box, since
@@ -10980,6 +10991,29 @@ sockets, any network for the reference image, a webview escape hatch.
   two vertices.  `SandboxProgram` holds the committed fixtures to the
   byte and a parameter change to 4 ULPs, the bar `SandboxCorpusGui`
   already uses.
+- **And a THIRD libm breaks the tie that byte-exactness rested on**
+  (measured on Windows 2026-09-20, ruled 2026-09-21).  `Flange2` in
+  `ProgramFlangeSheet.FCStd` (Pcd 60, 8 bolts, so a 45 degree step)
+  failed `testProgramsRoutedMatchNative` on MSVC and nowhere else: one
+  token of 9683 differs, `21.213203435596427` native against
+  `...423` routed, exactly 1.0 ULP.  glibc's `sin(pi/4)` is correctly
+  rounded and MSVC's UCRT returns the ULP-up neighbour
+  (`3fe6a09e667f3bcd`, confirmed on the box), whose error happens to
+  cancel the double rounding in `r * sin(a)` -- so the LESS accurate
+  sine yields the nearer product, and glibc and musl agreeing was luck,
+  not a guarantee.  FMA is refuted: `-ffp-contract=fast` and an
+  explicit `fma` still give `...423`, because `fl(sin a)` is already
+  rounded.  **Ruled: bound every number the BRep carries.**
+  `assertSameBreps` keeps the byte comparison as its fast path and
+  falls back to a token-wise numeric comparison at the same 4 ULPs --
+  the serialization is whitespace-separated ASCII, so the token counts
+  must match, every non-numeric token must match exactly, and so must
+  every INTEGER token, since a tolerant comparison of a vertex index
+  would hide a real topology change.  Swapping the assertion to
+  `assertSameGeometry` was rejected: it passes by not looking, checking
+  only face count, vertex count and vertex coordinates, and the
+  vertices here are bit-identical -- what moved is the bolt hole
+  cylinder's placement.
 
 ## 13. Known gaps and open questions
 
