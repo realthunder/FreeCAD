@@ -21,6 +21,13 @@
 // the middle of a Python statement and resumed.  Without a bridge the import
 // answers -1 and the guest raises "host bridge unavailable", as the reference
 // image's page host does (image.ts).
+//
+// The other way to wait, for a browser with no JSPI -- Safari (C6): boot this
+// same guest INSIDE a worker and give it a `syncBridge`, a round trip that
+// answers where it is called.  The import is then a plain function and
+// `fcx_call` is entered directly, because the worker's thread is free to
+// block: workerguest.ts parks it in Atomics.wait while the page's main thread
+// carries the op over the socket.  Nothing else about the guest changes.
 
 import * as cbor from './cbor.js';
 
@@ -49,11 +56,47 @@ export interface HostBridge {
   endStatement?(): void;
 }
 
+/// The same reach-back where the caller may BLOCK: the reply is the return
+/// value (C6, the worker).  Null or empty means nothing served it.
+export interface SyncHostBridge {
+  roundTrip(request: Uint8Array): Uint8Array | null;
+  endStatement?(): void;
+}
+
+/// What a console session needs of a guest, wherever it runs: in this thread
+/// under JSPI (BrowserGuest) or in a worker (WorkerGuest, workerguest.ts).
+export interface SandboxGuest {
+  readonly info: BootInfo;
+  readonly timing: GuestTiming;
+  /// Package load failures, reported and skipped as on the desktop.
+  readonly failed: string[];
+  /// The guest's linear memory, in MB, as of the last call.
+  readonly memoryMB: number;
+  /// One fcx_call round trip; calls queue, one statement at a time.
+  call(request: Record<string, any>): Promise<any>;
+  /// pyodide checks this buffer at bytecode boundaries: 2 is SIGINT.
+  setInterruptBuffer(buffer: Int32Array): void;
+  /// The guest's own sys.stdout and sys.stderr, delivered as written.
+  setRawOutput(write: (text: string, stream: 'out' | 'err') => void): void;
+  /// Drop the guest; a worker's is terminated.
+  close(): void;
+  /// One FreeCAD expression, as SandboxImage.evalExpression does.
+  evalExpression(src: string, bindings?: Record<string, any>,
+                 ctx?: { doc: string; obj: string }): Promise<any>;
+  /// Raw Python in the guest's interpreter -- the debug path.
+  runPython(src: string): Promise<any>;
+  /// Python statements whose names are discarded (FcxWire OpExec).
+  exec(src: string): Promise<any>;
+}
+
 export interface GuestOptions {
   /// The link's ?token=, for boot.json.
   token?: string;
-  /// Reach-back to the host; unattached when absent.
+  /// Reach-back to the host; unattached when absent.  Needs JSPI.
   bridge?: HostBridge;
+  /// Reach-back that answers in place, for a guest booted in a worker (C6):
+  /// no JSPI, and `fcx_call` is entered directly.  Takes precedence.
+  syncBridge?: SyncHostBridge;
   stdout?: (text: string) => void;
   stderr?: (text: string) => void;
   /// Load FreeCAD's bundled wheels (default true, as the desktop does).
@@ -73,7 +116,7 @@ interface SideExports {
   fcx_call(req: number, len: number): number;
 }
 
-export class BrowserGuest {
+export class BrowserGuest implements SandboxGuest {
   /// Package load failures, reported and skipped as on the desktop.
   readonly failed: string[];
   private queue: Promise<unknown> = Promise.resolve();
@@ -86,7 +129,8 @@ export class BrowserGuest {
     private readonly ex: SideExports,
     private readonly enter: (req: number, len: number) => number | Promise<number>,
     failed: string[],
-    private readonly bridge: HostBridge | undefined,
+    /// Whichever bridge the boot was given: both end a statement.
+    private readonly bridge: { endStatement?(): void } | undefined,
   ) {
     this.failed = failed;
   }
@@ -101,7 +145,10 @@ export class BrowserGuest {
   static async boot(base: string, opts: GuestOptions = {}): Promise<BrowserGuest> {
     const root = base.endsWith('/') ? base : base + '/';
     const jspi = BrowserGuest.jspi;
-    if (opts.bridge && !jspi)
+    // A sync bridge blocks its own thread instead (C6, in a worker), so it
+    // asks nothing of the browser; only the suspending import needs JSPI.
+    const suspend = !opts.syncBridge && !!opts.bridge;
+    if (suspend && !jspi)
       throw new Error('this browser has no JSPI (WebAssembly.Suspending), which the host bridge needs');
     const warn = opts.stderr ?? ((s: string) => console.warn(s));
 
@@ -132,7 +179,37 @@ export class BrowserGuest {
     // imports resolve against the main module's table at instantiation.
     let hostCall: unknown = () => -1;
     let hostFetch: (dst: number, cap: number) => number = () => -1;
-    if (opts.bridge) {
+    let parkedSync: Uint8Array | null = null;
+    if (opts.syncBridge) {
+      // The worker's own thread carries the wait, so the import is an
+      // ordinary function: it returns with the reply already in hand.
+      const sync = opts.syncBridge;
+      hostCall = (ptr: number, len: number) => {
+        const request = M.HEAPU8.slice(ptr, ptr + len);
+        try {
+          const reply = sync.roundTrip(request);
+          if (!reply || !reply.length) {
+            parkedSync = null;
+            return -1;
+          }
+          parkedSync = reply;
+          return reply.length;
+        } catch (e) {
+          parkedSync = null;
+          warn('host bridge: ' + e);
+          return -1;
+        }
+      };
+      hostFetch = (dst, cap) => {
+        const reply = parkedSync;
+        parkedSync = null;
+        if (!reply || reply.length !== cap)
+          return -1;
+        M.HEAPU8.set(reply, dst);
+        return cap;
+      };
+    }
+    else if (opts.bridge) {
       const bridge = opts.bridge;
       let parked: Uint8Array | null = null;
       hostCall = new (WebAssembly as any).Suspending(async (ptr: number, len: number) => {
@@ -193,15 +270,41 @@ export class BrowserGuest {
     for (const fn of ['fcx_alloc', 'fcx_free', 'fcx_call'])
       if (typeof (ex as any)[fn] !== 'function')
         throw new Error('fcx_image exports no ' + fn);
-    const enter = jspi ? (WebAssembly as any).promising(ex.fcx_call) : ex.fcx_call;
+    // Only a suspending import needs the promising entry; a worker's guest
+    // runs the call straight through, and a guest with no bridge never waits.
+    const enter = suspend ? (WebAssembly as any).promising(ex.fcx_call) : ex.fcx_call;
     return new BrowserGuest(info, { runtimeMs: t1 - t0, wheelsMs: performance.now() - t1 },
-                            py, ex, enter, failed, opts.bridge);
+                            py, ex, enter, failed, opts.syncBridge ?? opts.bridge);
   }
 
   /// The guest's linear memory, in MB.
   get memoryMB(): number {
     return this.pyodide._module.HEAPU8.length / 1048576;
   }
+
+  /// pyodide checks this buffer at bytecode boundaries: 2 is SIGINT.  On this
+  /// thread the page can only write it while the guest is suspended on a host
+  /// call; in a worker (C6) it is shared memory and lands mid-loop.
+  setInterruptBuffer(buffer: Int32Array): void {
+    this.pyodide.setInterruptBuffer(buffer);
+  }
+
+  /// The guest's sys.stdout and sys.stderr, delivered as written rather than
+  /// per line, so a loop printing at each host call shows its progress.
+  setRawOutput(write: (text: string, stream: 'out' | 'err') => void): void {
+    for (const [stream, name] of [['out', 'setStdout'], ['err', 'setStderr']] as const) {
+      const decoder = new TextDecoder();
+      this.pyodide[name]({
+        write: (buf: Uint8Array) => {
+          write(decoder.decode(buf, { stream: true }), stream);
+          return buf.length;
+        },
+      });
+    }
+  }
+
+  /// Nothing to drop: the guest is this thread's.  A worker's is terminated.
+  close(): void {}
 
   /// One fcx_call round trip, the call sequence of the desktop host's
   /// roundTrip().  Calls queue: the guest has one stack, and a suspended call

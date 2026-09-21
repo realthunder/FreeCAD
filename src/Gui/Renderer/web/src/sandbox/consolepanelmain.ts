@@ -5,6 +5,12 @@
 // a paste, the Interrupt button -- through DOM events, reads what the output
 // shows, and leaves its verdict on window.fcxConsolePanel for
 // scripts/console-drive.js (tests/gui/sandbox-console-panel-browser.py).
+//
+// ?report=<url> POSTs the same verdict there when the drive ends, for a
+// browser no driver can attach to: Safari, which runs the guest in a worker
+// (C6) and is opened by hand or by `open -a Safari`
+// (tests/gui/sandbox-console-safari.py).  ?guest=worker|jspi forces the
+// transport the console would otherwise pick itself.
 
 import { render } from 'solid-js/web';
 import { createSignal } from 'solid-js';
@@ -118,6 +124,29 @@ if (params.has('drive')) (async () => {
             !!button && /KeyboardInterrupt/.test(got) && /True/.test(n), { got, n });
     }
 
+    // What only the worker can do (C6): a loop that never reaches the host
+    // is still interrupted, because the interrupt buffer is shared memory the
+    // page writes while the guest runs.  Under JSPI this would hang the page,
+    // so it runs on the transport that has it.
+    if ((window as any).fcxConsoleTransport === 'worker') {
+      const mark = output().length;
+      await enter('m = 0');
+      type('while True: m += 1');
+      key('Enter');
+      await idle();
+      type('');
+      key('Enter');
+      await until('the loop to run', () => panel().dataset.state === 'busy', 5000);
+      await sleep(600);
+      const button = panel().querySelector('.fc-console-interrupt') as HTMLButtonElement | null;
+      button?.click();
+      await idle(15000);
+      got = output().slice(mark);
+      const m = await enter('m > 0');
+      check('Interrupt stops a pure CPU loop, which never reaches the host',
+            !!button && /KeyboardInterrupt/.test(got) && /True/.test(m), { got, m });
+    }
+
     type('half typed');
     key('c', { ctrlKey: true });
     check('Ctrl+C drops the line being typed',
@@ -145,4 +174,14 @@ if (params.has('drive')) (async () => {
   report.stats = (window as any).fcxConsoleStats?.() ?? null;
   document.title = report.ok ? 'console panel OK' : 'console panel FAILED';
   (window as any).fcxConsolePanel = report;
+  const back = params.get('report');
+  if (back) {
+    report.ua = navigator.userAgent;
+    report.transport = (window as any).fcxConsoleTransport ?? null;
+    try {
+      await fetch(back, { method: 'POST', body: JSON.stringify(report) });
+    } catch (e) {
+      console.log('FAIL report | ' + e);
+    }
+  }
 })();

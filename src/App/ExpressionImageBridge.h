@@ -41,6 +41,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include "ExpressionImage/FcxCbor.h"
+
 #include <FCConfig.h>
 
 typedef struct _object PyObject;

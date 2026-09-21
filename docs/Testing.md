@@ -11,8 +11,8 @@ as "the primary tree"; that was wrong.
 
 | Suite | Result |
 |---|---|
-| Python (`FreeCADCmd -t 0`) | **2778 tests, OK** -- 0 failures, 0 errors, 50 skipped, 6 expected failures (re-measured 2026-09-18 on `932b16a201` and unchanged, which is what clears the Proxy-routing removal: it deletes 15 `__new__` hooks from BIM and Draft product code, and Draft, Arch, Path and Fem are all in this run; 2026-09-14, after the SecurePython merge, unchanged after merging 7.17 D4; SecurePython alone 2778, RemoteEdit alone 2688). Pass `FCX_PYODIDE` here too: in a fresh `FREECAD_USER_HOME` without it the 28 `SandboxProgram` / `FeaturePythonChain` cases skip ("no sandbox guest in this build") and the run still says OK -- 78 skipped is the tell |
-| C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **661 of 661 passing** (2026-09-18 on `932b16a201`, the Proxy-routing removal: it takes 8 sandbox cases out, and `FormWidgets_Tests_run` needed the exposure fix below to pass in company; 667 of 667 on 2026-09-14, after merging SecurePython sandbox 7.17 D4, which adds 10; 657 with GuiServeClaimChildren; 656 after the first SecurePython merge; SecurePython alone 625, RemoteEdit alone 634), 0 failures, 8 ctest entries disabled, 1 skipped -- 60 of them need the sandbox guest runtime: in a FRESH `FREECAD_USER_HOME` pass `FCX_PYODIDE=$HOME/.local/share/FreeCAD/Pyodide/314.0.6` or they fail with "expression sandbox image is not available". **A merge that brings guest image changes (`src/App/ExpressionImage/`) needs `cmake --build build/pyodide-guest` and `--target fcx_image_wheel` first**: the host build keeps the old wheel, and the first run of this merge failed 16 sandbox cases (`module '_fcx' has no attribute 'surface'`) for that reason alone |
+| Python (`FreeCADCmd -t 0`) | **2782 tests, OK** -- 0 failures, 0 errors, 50 skipped, 6 expected failures (re-measured 2026-09-21 on `a59a8cff4b`: +4 for the Draft and SandboxProgram cases added that day, with skips and expected failures unmoved; 2778 on 2026-09-18 on `932b16a201` and unchanged, which is what clears the Proxy-routing removal: it deletes 15 `__new__` hooks from BIM and Draft product code, and Draft, Arch, Path and Fem are all in this run; 2026-09-14, after the SecurePython merge, unchanged after merging 7.17 D4; SecurePython alone 2778, RemoteEdit alone 2688). Pass `FCX_PYODIDE` here too: in a fresh `FREECAD_USER_HOME` without it the 28 `SandboxProgram` / `FeaturePythonChain` cases skip ("no sandbox guest in this build") and the run still says OK -- 78 skipped is the tell |
+| C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **661 of 661 passing** (re-confirmed 2026-09-21 on `a59a8cff4b`, unchanged -- the tests added that day are all Python; 2026-09-18 on `932b16a201`, the Proxy-routing removal: it takes 8 sandbox cases out, and `FormWidgets_Tests_run` needed the exposure fix below to pass in company; 667 of 667 on 2026-09-14, after merging SecurePython sandbox 7.17 D4, which adds 10; 657 with GuiServeClaimChildren; 656 after the first SecurePython merge; SecurePython alone 625, RemoteEdit alone 634), 0 failures, 8 ctest entries disabled, 1 skipped -- 60 of them need the sandbox guest runtime: in a FRESH `FREECAD_USER_HOME` pass `FCX_PYODIDE=$HOME/.local/share/FreeCAD/Pyodide/314.0.6` or they fail with "expression sandbox image is not available". **A merge that brings guest image changes (`src/App/ExpressionImage/`) needs `cmake --build build/pyodide-guest` and `--target fcx_image_wheel` first**: the host build keeps the old wheel, and the first run of this merge failed 16 sandbox cases (`module '_fcx' has no attribute 'surface'`) for that reason alone |
 | C++ on Windows (`build/win-relwithdebinfo-801`) | **648 of 648 passing** (2026-09-21, re-measured after merging the Windows portability fixes and the G1a corpus fix; unchanged because the tests those commits added are all Python. 2026-09-20, fully green: the sandbox is live here now -- `v8-embed` installed, the published `fcx_image` 0.1.0 wheel, and a bootstrapped 314.0.6 runtime -- which brings in the `ExpressionImage*` suites, and `PublishOnly_tests_run` builds on Windows for the first time. 549 on 2026-09-19 after merging RemoteEdit, which added 52; `BUILD_FEM=ON` adds none, FEM's tests are all Python. 497 on 2026-09-12, including the two new `FileWriterTest` cases; 487 on 2026-09-10, 477 on 2026-09-06/08), 1 disabled -- see "C++ on Windows" |
 | C++ on macOS (`build/mac-relwithdebinfo-801`) | **490 of 490 passing** (2026-09-10), 1 disabled -- see "C++ on macOS" |
 | Python on macOS | **2680 tests** (2026-09-10, the first full run there), 2 failures + 1 error, 49 skipped, 6 expected failures -- all three are this box's missing meshers, see "Python on macOS" |
@@ -776,7 +776,9 @@ document switch -- from a gate page with no WASM viewer (C4), and
 client, its view-only mode, its document switch), and
 `sandbox-latency-browser.py` times the statements a console user types with
 `scripts/delay-proxy.js` holding the page's connection at a LAN's or a
-tunnel's round-trip time, and reads the page's processes' memory (C5), so
+tunnel's round-trip time, and reads the page's processes' memory (C5), and
+`sandbox-console-safari.py` runs C4's drive in Safari, where the guest is in
+a worker because there is no JSPI (C6, and see the macOS note below), so
 they need what this repository does not carry -- `build/wasm` (for the console
 page only the web bundle, `npm run build` in `src/Gui/Renderer/web`), a
 `puppeteer-core` install, and a Chrome binary -- and they skip rather than fail
@@ -856,6 +858,41 @@ driver minus xvfb and `timeout`:
     GT_OUT=$OUT GT_RESULT=$OUT/result.txt \
     .conda/run.sh build/mac-relwithdebinfo-801/bin/FreeCAD \
         --user-cfg "$OUT/.iso/user.cfg" tests/gui/serve-selection-echo.py
+
+**The Safari leg of the browser console** is macOS-only and takes no browser
+tooling at all -- no puppeteer, no Chrome, no WebDriver. `open -a Safari`
+opens the same gate page the C4 driver does, the page drives the panel itself
+(`?drive=1`) and POSTs its verdict to a collector the test runs (`?report=`),
+and `?guest=worker` forces the transport. It needs only the web bundle
+(`npm run build` in `src/Gui/Renderer/web`, into `build/wasm/web`) and a
+FreeCAD with the sandbox host:
+
+    OUT=/tmp/gt-safari; mkdir -p "$OUT/.iso/cache" "$OUT/.iso/config"
+    XDG_CACHE_HOME=$OUT/.iso/cache XDG_CONFIG_HOME=$OUT/.iso/config \
+    GT_OUT=$OUT GT_RESULT=$OUT/result.txt \
+    .conda/run.sh build/mac-relwithdebinfo-801/bin/FreeCAD \
+        --user-cfg "$OUT/.iso/user.cfg" tests/gui/sandbox-console-safari.py
+
+It opens a tab and closes it again at the end (`SAFARI_KEEP=1` leaves it);
+`SAFARI_BROWSER` names another browser for `open -a`, which is how the same
+drive gates the worker path in a browser that has JSPI.
+
+`sandbox-console-viewer-browser.py` takes `SAFARI=1` for the same treatment
+of the REAL viewer page: it needs `build/wasm` built, and the page loads its
+own drive from `?drive=console` rather than having one injected.
+
+**Chrome for Testing on macOS 12: pin 137.** The current build (153) does not
+start on Monterey -- `dlopen ... Symbol not found:
+_kVTCompressionPropertyKey_ReferenceBufferCount ... Expected in
+VideoToolbox.framework`, which is a macOS 13 symbol. `npx @puppeteer/browsers
+install chrome@137` is the newest that runs here, and it is new enough for
+every browser leg: JSPI shipped in Chrome 137. The binary is inside an app
+bundle, so `CHROME` is the executable within it:
+
+    CHROME="$HOME/.cache/puppeteer/chrome/mac-137.0.7151.119/chrome-mac-x64/\
+    Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+
+No `CHROME_LIBS` here -- that is the Linux box's libasound workaround.
 
 `GuiServeSelectionEcho_tests_run` passes that way, 2026-09-07: eight PASS
 lines and `DONE`. Its run log used to be unreadable for a reason that had
