@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
  *   Copyright (c) 2023 Abdullah Tahiri <abdullah.tahiri.yo@gmail.com>     *
  *                                                                         *
@@ -21,14 +23,11 @@
  ***************************************************************************/
 
 
-#ifndef SketcherGui_DrawSketchKeyboardManager_H
-#define SketcherGui_DrawSketchKeyboardManager_H
+#pragma once
 
 
 #include <QEvent>
 #include <QKeyEvent>
-
-#include <QTimer>
 
 #include <Gui/Application.h>
 #include <Gui/Document.h>
@@ -75,25 +74,16 @@ public:
     /// returns which entity will currently receive the event.
     KeyboardEventHandlingMode getMode();
 
-    /// Hand the keys back to the view provider.
+    /// resets the mode to ViewProvider
     void resetMode();
 
     bool eventFilter(QObject* object, QEvent* event);
 
-    /// sets the timeout to the amount of milliseconds.
-    void setTimeOut(int milliseconds);
-
-    // returns the current timeout amount
-    int timeOut();
-
 private:
     /// This function decides whether events should be send to the ViewProvider
     /// or to the UI control of DSH.
-    void detectKeyboardEventHandlingMode(QKeyEvent* keyEvent);
+    KeyboardEventHandlingMode detectKeyboardEventHandlingMode(QKeyEvent* keyEvent);
 
-    void onTimeOut();
-
-private:
     /** The view whose keys these are.
      *
      * The view the tool is running in, not whichever window the
@@ -103,12 +93,6 @@ private:
      */
     Gui::ViewerContext* vpViewer = nullptr;
     KeyboardEventHandlingMode keyMode;
-
-    QTimer timer;
-
-    int timeOutValue = 2000;
 };
 
 }  // namespace SketcherGui
-
-#endif  // SketcherGui_DrawSketchKeyboardManager_H
