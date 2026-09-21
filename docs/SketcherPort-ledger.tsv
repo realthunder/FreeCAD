@@ -129,7 +129,7 @@ c42b1f1654	2024-03-22	PaddleStroke	?	0	0	n/a(uncompiled)	119		Sketcher: Make coi
 b64e3e750f	2024-04-03	wmayer	feature	0	0	have(sync)	57		Sketch: add command to context-menu to change value of constraint	Gui/CommandConstraints.cpp Gui/ViewProviderSketch.cpp
 c9d8bdf13d	2024-04-07	bgbsww	feature	0	0	have(sync)	30		Toponaming/Part: Add deprecation comments, clean up code	App/SketchObject.cpp
 a88e7baff5	2024-04-13	bgbsww	fix	0	0	have(sync)	2		TopoShape/Part:  Bug fixes; pass Hasher parms, OCCT 7.8 compatibility, ElementMaps correct item count	App/SketchObject.cpp
-4b968a607d	2024-03-28	PaddleStroke	fix	0	0	open	142		Sketcher: Trim tool, hold click and move. Fixes #6152	Gui/DrawSketchHandlerTrimming.h
+4b968a607d	2024-03-28	PaddleStroke	fix	0	0	open	142	have: file is upstream tip blob but for the Selection header path and the fork's own gate base (SketcherPort.md 7)	Sketcher: Trim tool, hold click and move. Fixes #6152	Gui/DrawSketchHandlerTrimming.h
 280452bcc8	2024-04-17	PaddleStroke	fix	0	0	open	30	adapted 4c310bbc1d	Sketcher: Fix mid-point autoconstraint not working on polyline. Fixes #13277	Gui/DrawSketchHandler.cpp
 64029d3a5b	2024-04-17	wmayer	fix	0	0	open	20		Sketcher: fix crash in CmdRenderingOrder::updateIcon()	Gui/Command.cpp
 7909815002	2024-04-18	Roy-043	?	0	0	open	24		Sketcher: Improve GUI texts in SketcherSettingsAppearance.ui	Gui/SketcherSettingsAppearance.ui
@@ -422,7 +422,7 @@ d18a48ddb1	2025-01-26	Joona	feature	0	0	open	747		Updated tools to use group com
 855bce62cd	2025-01-26	Joona	?	0	0	open	10		Initialize sketcher group command shortcuts	Gui/CommandCreateGeo.cpp
 ae15d98fd3	2025-01-15	Benjamin Nauck	refactor	0	0	partial(sync)	63		Use is<T>() when possible	App/ExternalGeometryFacadePyImp.cpp App/GeometryFacade.h App/PythonConverter.cpp App/SketchObject.cpp Gui/DrawSketchHandlerOffset.h Gui/DrawSketchHandlerSplitting.h
 dd6aa9f3c7	2025-01-16	Benjamin Nauck	refactor	0	0	partial(sync)	42		Prefer to use BaseClass's isDerivedFrom<T> over non template or Base::Type's	App/SketchObject.cpp Gui/CommandAlterGeometry.cpp Gui/CommandConstraints.cpp Gui/CommandSketcherBSpline.cpp Gui/CommandSketcherVirtualSpace.cpp Gui/DrawSketchHandler.cpp Gui/Utils.cpp Gui/ViewProviderSketch.cpp
-45c997f40a	2025-01-16	Benjamin Nauck	?	0	0	open	4		Manual changes to improve isDerivedFrom usage	Gui/DrawSketchHandlerSplitting.h
+45c997f40a	2025-01-16	Benjamin Nauck	?	0	0	open	4	have: file is upstream tip blob but for the Selection header path and the fork's own gate base (SketcherPort.md 7)	Manual changes to improve isDerivedFrom usage	Gui/DrawSketchHandlerSplitting.h
 77bb7ab2d4	2024-12-31	Ajinkya Dahale	?	0	0	open	224	taken d8d462426e	[Sketcher] Move internal functions out of `trim`	App/SketchObject.cpp
 c8c8c2c208	2025-01-01	Ajinkya Dahale	?	0	0	open	435	taken d8d462426e	[Sketcher] Move `trim` sub-steps to different functions	App/SketchObject.cpp App/SketchObject.h
 909e5bfafb	2025-01-02	Ajinkya Dahale	refactor	0	0	open	119	taken d8d462426e	[Sketcher] Use `replaceGeometries()` in `trim`	App/SketchObject.cpp
@@ -497,8 +497,8 @@ b4eb28e50e	2025-03-27	Benjamin Nauck	noise	0	0	open	580	partial 88c9baa853: App/
 35a9673a75	2025-03-28	Kacper Donat	refactor	0	0	open	2	n/a: refactor/cleanup, no behaviour change	Base: Rename Base::freecad_dynamic_cast into freecad_cast	App/SketchObject.cpp
 f0d30cb570	2025-03-09	Ajinkya Dahale	?	0	0	open	79	taken d8d462426e	[Sketcher] Adjust constraint changes when trimming	App/SketchObject.cpp
 358942b771	2025-03-12	Ajinkya Dahale	fix	0	0	open	1	n/a: fork's transferConstraints is an if-chain, no fall-through	[Sketcher] Fix issue in `SketchObject::transferConstraints`	App/SketchObject.cpp
-fbac7d737b	2025-03-13	Ajinkya Dahale	fix	0	0	open	78		[Sketcher] Refactor `DrawSketchHandlerTrimming::mouseMove()`	Gui/DrawSketchHandlerTrimming.h
-b6a069dc63	2025-03-13	Ajinkya Dahale	fix	0	0	open	5		[Sketcher] Attempt to avoid double-trimming in some cases	Gui/DrawSketchHandlerTrimming.h
+fbac7d737b	2025-03-13	Ajinkya Dahale	fix	0	0	open	78	have: file is upstream tip blob but for the Selection header path and the fork's own gate base (SketcherPort.md 7)	[Sketcher] Refactor `DrawSketchHandlerTrimming::mouseMove()`	Gui/DrawSketchHandlerTrimming.h
+b6a069dc63	2025-03-13	Ajinkya Dahale	fix	0	0	open	5	have: file is upstream tip blob but for the Selection header path and the fork's own gate base (SketcherPort.md 7)	[Sketcher] Attempt to avoid double-trimming in some cases	Gui/DrawSketchHandlerTrimming.h
 2779f0b29f	2025-03-14	Ajinkya Dahale	feature	0	0	open	4	taken d8d462426e	[Sketcher] Add missing check in `deriveConstraintsForPieces`	App/SketchObject.cpp
 08a66afbc8	2025-03-14	Ajinkya Dahale	feature	0	0	open	2	taken d8d462426e	[Sketcher] Add missing check when transforming constraints for trim	App/SketchObject.cpp
 23ecf94ab6	2025-03-14	Ajinkya Dahale	?	0	0	open	4	taken d8d462426e	[Sketcher] Make trimmed curve(s) construction based on original	App/SketchObject.cpp
@@ -624,8 +624,8 @@ e86a43c183	2025-06-28	Kacper Donat	fix	0	0	open	65	have: file is upstream tip bl
 5c1d097161	2025-06-28	Kacper Donat	fix	0	0	open	108	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Use generic tool hints table for DrawSketchHandlerBSpline	Gui/DrawSketchHandlerBSpline.h
 edf0d488e4	2025-06-28	Kacper Donat	fix	0	0	open	104	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Use generic tool hints table for DrawSketchHandlerCircle	Gui/DrawSketchHandlerCircle.h
 2ab975cfd5	2025-06-28	Kacper Donat	fix	0	0	open	104	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Use generic tool hints table for DrawSketchHandlerEllipse	Gui/DrawSketchHandlerEllipse.h
-ed617cdf74	2025-06-28	Kacper Donat	fix	0	0	open	54		Sketcher: Use generic tool hints table for DrawSketchHandlerExtend	Gui/DrawSketchHandlerExtend.h
-9a9613d88c	2025-06-28	Kacper Donat	fix	0	0	open	53		Sketcher: Use generic tool hints table for DrawSketchHandlerFillet	Gui/DrawSketchHandlerFillet.h
+ed617cdf74	2025-06-28	Kacper Donat	fix	0	0	open	54	have: file is upstream tip blob but for the Selection header path and the fork's own gate base (SketcherPort.md 7)	Sketcher: Use generic tool hints table for DrawSketchHandlerExtend	Gui/DrawSketchHandlerExtend.h
+9a9613d88c	2025-06-28	Kacper Donat	fix	0	0	open	53	have: file is upstream tip blob but for the Selection header path and the fork's own gate base (SketcherPort.md 7)	Sketcher: Use generic tool hints table for DrawSketchHandlerFillet	Gui/DrawSketchHandlerFillet.h
 23bd9e86fd	2025-06-28	Kacper Donat	fix	0	0	open	125	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Use generic tool hints table for DrawSketchHandlerLine	Gui/DrawSketchHandlerLine.h
 7d7fc0c021	2025-06-28	Kacper Donat	fix	0	0	have	56	taken b4b8f10a3b	Sketcher: Use generic tool hints table for DrawSketchHandlerLineSet	Gui/DrawSketchHandlerLineSet.h
 49fbffa200	2025-06-28	Kacper Donat	fix	0	0	open	59	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Use generic tool hints table for DrawSketchHandlerPolygon	Gui/DrawSketchHandlerPolygon.h
@@ -674,7 +674,7 @@ fc463ee5d7	2025-08-20	PaddleStroke	?	0	0	n/a(uncompiled)	6		Sketcher: Revert DPI
 e2346dabd6	2025-06-13	paddle	fix	0	0	open	412		Sketcher: Port and fix internal faces from RealThunder's branch	Gui/AppSketcherGui.cpp Gui/SketcherSettings.cpp Gui/SketcherSettings.ui Gui/SketcherSettingsAppearance.ui Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h
 9f04f5f371	2025-08-25	tetektoza	feature	0	0	open	11	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Set total angle to make evaluation choose it when typing in OVP (#23193)	Gui/DrawSketchHandlerArc.h Gui/DrawSketchHandlerArcSlot.h Gui/DrawSketchHandlerRotate.h
 8b9ad3b509	2025-08-26	PaddleStroke	fix	0	0	open	9	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Circle DSH: move diameter constraint. Fix #22267 (#22862)	Gui/DrawSketchHandlerCircle.h
-780c49b6f0	2025-08-09	Chris Hennes	refactor	0	0	open	1		Sketcher: Remove unused parameter from *ReferenceSelection	Gui/DrawSketchHandlerSplitting.h
+780c49b6f0	2025-08-09	Chris Hennes	refactor	0	0	open	1	have: file is upstream tip blob but for the Selection header path and the fork's own gate base (SketcherPort.md 7)	Sketcher: Remove unused parameter from *ReferenceSelection	Gui/DrawSketchHandlerSplitting.h
 3b76d77ed8	2025-08-29	tetektoza	feature	0	0	open	91		Sketcher: Introduce Select All (Ctrl + A) (#23289)	Gui/ViewProviderSketch.cpp
 7b85239093	2025-08-31	tetektoza	refactor	0	0	open	59		Sketcher: Use different colors for touch/window selection (#23261)	Gui/CMakeLists.txt Gui/StyleParameters.h Gui/ViewProviderSketch.cpp
 39329e547f	2025-08-09	Bas Ruigrok	?	0	0	open	13		Sketcher: Don't show the context menu after rubber band selection	Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h
@@ -692,7 +692,7 @@ dc22fb4b9b	2025-09-09	PaddleStroke	?	0	0	open	30		Sketcher: Constraint symbol si
 23ea8ce37b	2025-09-10	George Peden	feature	0	0	open	19	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Add U (rounded corners) and J (frame) keyboard shortcuts to rectangle hints	Gui/DrawSketchHandlerRectangle.h
 d524b9ceef	2025-09-10	George Peden	feature	0	0	open	6	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Add M (Mode) keyboard shortcut to arc slot hints	Gui/DrawSketchHandlerArcSlot.h
 80290baaf6	2025-09-10	George Peden	feature	0	0	open	6	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Add mode-aware keyboard shortcuts to B-spline hints	Gui/DrawSketchHandlerBSpline.h
-343bd6c77c	2025-09-10	George Peden	feature	0	0	open	18		Add keyboard shortcuts to fillet/chamfer hints	Gui/DrawSketchHandlerFillet.h
+343bd6c77c	2025-09-10	George Peden	feature	0	0	open	18	have: file is upstream tip blob but for the Selection header path and the fork's own gate base (SketcherPort.md 7)	Add keyboard shortcuts to fillet/chamfer hints	Gui/DrawSketchHandlerFillet.h
 ed444318e4	2025-09-10	George Peden	fix	0	0	open	16	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Fix inconsistent keyboard shortcut hints in Rectangle tool	Gui/DrawSketchHandlerRectangle.h
 749ac36615	2025-08-26	Markus Reitbock	noise	0	0	open	18		do not use precompiled header for setting global compiler definitions and to disable compiler warnings	App/CMakeLists.txt App/PreCompiled.h Gui/PreCompiled.h
 34747719fb	2025-09-12	matthiasdanner	fix	0	0	open	164		Sketcher: Fix use after free Bug when commiting value with enter in OVP (#23853)	Gui/DrawSketchController.h Gui/DrawSketchDefaultHandler.h Gui/DrawSketchDefaultWidgetController.h Gui/DrawSketchHandlerArc.h Gui/DrawSketchHandlerArcSlot.h Gui/DrawSketchHandlerBSpline.h Gui/DrawSketchHandlerCircle.h Gui/DrawSketchHandlerEllipse.h Gui/DrawSketchHandlerLine.h Gui/DrawSketchHandlerOff

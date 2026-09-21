@@ -31,7 +31,7 @@ Upstream's `f4665aa7b5` ("Core: support multiple active transactions") was
 evaluated and **declined**; `docs/TransactionLog.md` records why, and the
 direction the user wants instead.
 
-**Where the ledger stands (2026-09-21).** 1149 rows, of which 428 are open
+**Where the ledger stands (2026-09-21).** 1149 rows, of which 420 are open
 and undecided. That number came down from 503 by reading blobs rather than
 commits: 21 of the 33 files the handler resyncs touched are identical to
 upstream's tip modulo whitespace, which closes 74 rows at once (section 7,
@@ -1794,14 +1794,51 @@ upstream-only lines:
 
 | file | upstream-only | what they are |
 |---|---|---|
-| `DrawSketchKeyboardManager.{h,cpp}` | 48 / 7 | not read yet |
-| `DrawSketchHandler.cpp` | 42 | not read yet |
-| `DrawSketchHandlerCarbonCopy.h` | 21 | not read yet |
+| `DrawSketchKeyboardManager.{h,cpp}` | 48 / 7 | **genuinely open**, below |
+| `DrawSketchHandler.cpp` | 42 | group A's transaction ids, declined; and below |
+| `DrawSketchHandlerCarbonCopy.h` | 21 | the gate base, and the fork's scoped selection |
 | `DrawSketchHandlerLineSet.h` | 10 | read and closed, section above |
-| `DrawSketchHandler{Trimming,Splitting,Fillet,Extend}.h` | 6 each | not read yet |
+| `DrawSketchHandler{Trimming,Splitting,Fillet,Extend}.h` | 6 each | the gate base; closed |
 | `DrawSketchHandler.h` | 6 | read, below |
 | `DrawSketchController.h` | 6 | the thin client's `ViewerContext`, deliberate |
 | `DrawSketchDefaultHandler.h` | 3 | the M key inlined, the inverse of `90f0e23eac` |
+
+Five of those are one reading between them. `Trimming`, `Splitting`,
+`Fillet`, `Extend` and `CarbonCopy` differ from upstream in exactly two
+ways: upstream's `Gui/Selection/SelectionFilter.h`, a path this fork has
+not moved to, and each one's selection gate deriving from the fork's
+`SketcherSelectionFilterGate` instead of carrying its own `object` member.
+Neither is an upstream fix, so their **8 open rows are closed**, four of
+them fixes and one a feature.
+
+`DrawSketchHandler.cpp`'s 42 are group A's `currentTransactionID` threaded
+through `openCommand`/`commitCommand`/`abortCommand` -- waiting on
+`f4665aa7b5`, declined -- plus one thing worth a probe: upstream's
+`deactivate()` aborts any transaction the tool left open and recomputes,
+"else we have acces violation because preselection still referenced the
+removed bspline points". This fork deliberately does not abort, because
+its `abortCommand()` would take a transaction something else opened.
+
+**Probed rather than argued.** `DrawSketchHandlerBSpline::activated()`
+calls `openCommand()` before any click, so the prediction was a transaction
+left open by activating the tool and pressing Escape. It is not:
+`HasPendingTransaction` and `getActiveTransaction()` both read false and
+`None` throughout -- before the tool, while it is running, and after
+Escape, for the B-spline and the line tool alike. The fork opens nothing
+until a change is actually made, so there is nothing to leak. What this
+does *not* cover is escaping a tool that has already placed geometry;
+there the handler's own `abortCommand()` calls are what run.
+
+**`DrawSketchKeyboardManager` is the one genuinely open file of the
+twelve**, and it is a real pick rather than drift. Upstream has since
+gained: `Alt`+key passing a keystroke to the viewer for navigation
+*without* permanently switching the destination away from the tool's input
+(it strips the modifier and forwards), `QKeySequence::Paste` detection, and
+Enter/Return/Tab switching back to camera control. The fork's file is the
+older shape plus its own `vpViewer->sendKeyEvent()` indirection, which is
+what lets a mirror replay a key as the Coin event it arrived as. An
+adaptation has to keep that indirection and can take the rest; the on-view
+parameter harness (`serve-onview-params.py`) is what can test it.
 
 `DrawSketchHandler.h`'s six are three things: upstream's
 `Gui/Selection/Selection.h` path, which this fork has not moved;
