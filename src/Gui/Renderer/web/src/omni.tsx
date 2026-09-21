@@ -230,7 +230,15 @@ export function OmniBox(props: {
   // rows are already there from the last time.
   createEffect(on(props.open, (open) => {
     if (!open) return;
-    setText('/');
+    // '/ ' and NOT '/': the space is the object-mode prefix, so the box
+    // opens ready for a name. A bare '/' parses as the CHOOSER, and then
+    // typing a name straight into it -- the obvious thing to do, and what
+    // a phone user did -- reads as "/Box", which matches no mode row and
+    // lists nothing at all. The chooser is still one backspace away, and
+    // this costs the one `omni.objects` fetch the object mode wants
+    // (measured at 162 bytes, 13 ms) at opening rather than a keystroke
+    // later.
+    setText('/ ');
     setHi(-1);
     setPanel(null);
     setStatus(null);
