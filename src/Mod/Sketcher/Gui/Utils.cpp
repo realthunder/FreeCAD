@@ -344,7 +344,15 @@ bool SketcherGui::isBsplineKnotOrEndPoint(const Sketcher::SketchObject* Obj,
         return true;
     }
 
+    // getIdsFromName leaves GeoId as GeoUndef for a sub-element that is not
+    // geometry -- a constraint, a face -- and getGeometry answers null for
+    // anything out of range. Every caller reaches here straight from a
+    // selection, so the check belongs here rather than at each of them.
     const Part::Geometry* geo = Obj->getGeometry(GeoId);
+    if (!geo) {
+        return false;
+    }
+
     // end points of B-Splines are also knots
     if (geo->is<Part::GeomBSplineCurve>()
         && (PosId == Sketcher::PointPos::start || PosId == Sketcher::PointPos::end)) {
