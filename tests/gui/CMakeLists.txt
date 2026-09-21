@@ -219,3 +219,11 @@ fc_add_gui_test(GuiSketchToolbarCommandNoAction_tests_run
 fc_add_gui_test(GuiSketchKnotCommandNonGeometry_tests_run
                 sketch-knot-command-nongeometry.py
                 --timeout 200)
+
+# The constraint tools tell the hint bar what to pick next, and the
+# dimension tool names the constraint its next mode would make -- in the
+# order makeAppropriateConstraint walks, and silently when the selection
+# leaves it no other mode.
+fc_add_gui_test(GuiSketchConstraintHints_tests_run
+                sketch-constraint-hints.py
+                --timeout 240)

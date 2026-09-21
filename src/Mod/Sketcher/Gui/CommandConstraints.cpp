@@ -1611,6 +1611,42 @@ public:
 class DrawSketchHandlerDimension : public DrawSketchHandler
 {
 public:
+    /** @name Hint texts.
+     *
+     * The mode texts name the constraint the tool-mode key would switch to;
+     * getModeHint() below picks between them, following the same selection
+     * shapes makeAppropriateConstraint uses.
+     */
+    //@{
+    static constexpr const char* PICK_POINT_OR_EDGE = "%1 pick point/edge";
+    static constexpr const char* PICK_NEXT_POINT_OR_EDGE_OR_FINISH =
+        "%1 pick next point/edge, or empty space to finish";
+
+    static constexpr const char* MODE_DISTANCE =
+        QT_TRANSLATE_NOOP("SketcherGui::DrawSketchHandlerDimension", "%1 switch to distance");
+    static constexpr const char* MODE_LENGTH = QT_TRANSLATE_NOOP("SketcherGui::DrawSketchHandlerDimension", "%1 switch to length");
+    static constexpr const char* MODE_LOCK = QT_TRANSLATE_NOOP("SketcherGui::DrawSketchHandlerDimension", "%1 switch to lock");
+    static constexpr const char* MODE_BLOCK = QT_TRANSLATE_NOOP("SketcherGui::DrawSketchHandlerDimension", "%1 switch to block");
+    static constexpr const char* MODE_HORIZONTAL =
+        QT_TRANSLATE_NOOP("SketcherGui::DrawSketchHandlerDimension", "%1 switch to horizontal");
+    static constexpr const char* MODE_VERTICAL = QT_TRANSLATE_NOOP("SketcherGui::DrawSketchHandlerDimension", "%1 switch to vertical");
+    static constexpr const char* MODE_SYMMETRY = QT_TRANSLATE_NOOP("SketcherGui::DrawSketchHandlerDimension", "%1 switch to symmetry");
+    static constexpr const char* MODE_ANGLE = QT_TRANSLATE_NOOP("SketcherGui::DrawSketchHandlerDimension", "%1 switch to angle");
+    static constexpr const char* MODE_EQUAL_LENGTH =
+        QT_TRANSLATE_NOOP("SketcherGui::DrawSketchHandlerDimension", "%1 switch to equal length");
+    static constexpr const char* MODE_EQUAL_RADIUS =
+        QT_TRANSLATE_NOOP("SketcherGui::DrawSketchHandlerDimension", "%1 switch to equal radius");
+    static constexpr const char* MODE_CONCENTRIC_DISTANCE =
+        QT_TRANSLATE_NOOP("SketcherGui::DrawSketchHandlerDimension", "%1 switch to concentric distance");
+    static constexpr const char* MODE_ARC_ANGLE =
+        QT_TRANSLATE_NOOP("SketcherGui::DrawSketchHandlerDimension", "%1 switch to arc angle");
+    static constexpr const char* MODE_ARC_LENGTH =
+        QT_TRANSLATE_NOOP("SketcherGui::DrawSketchHandlerDimension", "%1 switch to arc length");
+    static constexpr const char* MODE_RADIUS = QT_TRANSLATE_NOOP("SketcherGui::DrawSketchHandlerDimension", "%1 switch to radius");
+    static constexpr const char* MODE_DIAMETER = QT_TRANSLATE_NOOP("SketcherGui::DrawSketchHandlerDimension", "%1 switch to diameter");
+    static constexpr const char* MODE_WEIGHT = QT_TRANSLATE_NOOP("SketcherGui::DrawSketchHandlerDimension", "%1 switch to weight");
+    //@}
+
     explicit DrawSketchHandlerDimension(std::vector<std::string> SubNames)
         : specialConstraint(SpecialConstraint::None)
         , availableConstraint(AvailableConstraint::FIRST)
@@ -1622,6 +1658,7 @@ public:
         , selSplineAndCo({})
         , initialSelection(std::move(SubNames))
         , cstrIndexes({})
+        , singleCircleReverseOrder(false)
     {
     }
     ~DrawSketchHandlerDimension() override
@@ -1674,7 +1711,11 @@ public:
         }
         setCursor(cursorPixmap, hotX, hotY, false);
 
+        // After, not before: ToolHandler::activate() shows the hints ahead of
+        // this hook, and a tool started on a selection has none of it yet at
+        // that point -- its first hint would describe an empty selection.
         handleInitialSelection();
+        updateHint();
     }
 
     void deactivated() override
@@ -1692,23 +1733,27 @@ public:
 
     void iterateToolMode() override
     {
-        if (availableConstraint == AvailableConstraint::FIRST) {
-            availableConstraint = AvailableConstraint::SECOND;
-        }
-        else if (availableConstraint == AvailableConstraint::SECOND) {
-            availableConstraint = AvailableConstraint::THIRD;
-        }
-        else if (availableConstraint == AvailableConstraint::THIRD) {
-            availableConstraint = AvailableConstraint::FOURTH;
-        }
-        else if (availableConstraint == AvailableConstraint::FOURTH) {
-            availableConstraint = AvailableConstraint::FIFTH;
-        }
-        else if (availableConstraint == AvailableConstraint::FIFTH
-                 || availableConstraint == AvailableConstraint::RESET) {
-            availableConstraint = AvailableConstraint::FIRST;
-        }
+        availableConstraint = nextConstraint(availableConstraint);
         makeAppropriateConstraint(previousOnSketchPos);
+        updateHint();
+    }
+
+    /// The mode after this one. The hint bar asks the same question, so the
+    /// two cannot disagree about what the next press would do.
+    static AvailableConstraint nextConstraint(AvailableConstraint constraint)
+    {
+        switch (constraint) {
+            case AvailableConstraint::FIRST:
+                return AvailableConstraint::SECOND;
+            case AvailableConstraint::SECOND:
+                return AvailableConstraint::THIRD;
+            case AvailableConstraint::THIRD:
+                return AvailableConstraint::FOURTH;
+            case AvailableConstraint::FOURTH:
+                return AvailableConstraint::FIFTH;
+            default:
+                return AvailableConstraint::FIRST;
+        }
     }
 
     void mouseMove(SnapManager::SnapHandle snapHandle) override
@@ -1850,6 +1895,8 @@ public:
                 ss.str().c_str());
             sketchgui->draw(false, false); // Redraw
         }
+
+        updateHint();
         return true;
     }
 
@@ -1864,6 +1911,30 @@ public:
             DrawSketchHandler::quit();
         }
     }
+
+    /** What the user can do next, shown in the hint bar.
+     *
+     * Two lines at most: what to pick, and -- when the selection allows more
+     * than one constraint -- what the next press of the tool-mode key would
+     * switch to. The mode line names the constraint it would actually make,
+     * which is why it is derived from the same cycle makeAppropriateConstraint
+     * walks rather than written out beside it.
+     */
+    std::list<Gui::InputHint> getToolHints() const override
+    {
+        const Gui::InputHint pickHint {
+            QObject::tr(selectionEmpty() ? PICK_POINT_OR_EDGE
+                                         : PICK_NEXT_POINT_OR_EDGE_OR_FINISH),
+            {Gui::InputHint::UserInput::MouseLeft}};
+
+        const QString modeHint = getNextModeHint();
+        if (modeHint.isEmpty()) {
+            return {pickHint};
+        }
+
+        return {pickHint, {modeHint, {Gui::InputHint::UserInput::KeyM}}};
+    }
+
 protected:
     SpecialConstraint specialConstraint;
     AvailableConstraint availableConstraint;
@@ -1879,6 +1950,7 @@ protected:
     std::vector<std::string> initialSelection;
 
     std::vector<int> cstrIndexes;
+    bool singleCircleReverseOrder;
 
     Sketcher::SketchObject* Obj;
 
@@ -2007,7 +2079,7 @@ protected:
             && !contains(selEllipseAndCo, elem);
     }
 
-    bool selectionEmpty()
+    bool selectionEmpty() const
     {
         return selPoints.empty() && selLine.empty() && selCircleArc.empty() && selEllipseAndCo.empty();
     }
@@ -2314,9 +2386,10 @@ protected:
     void makeCts_1Circle(bool& selAllowed, Base::Vector2d onSketchPos)
     {
         int geoId = selCircleArc[0].GeoId;
-        bool reverseOrder = isRadiusDoF(geoId);
+        // Cached: the hint bar needs the order too, and isRadiusDoF() solves.
+        singleCircleReverseOrder = isRadiusDoF(geoId);
 
-        if (reverseOrder) {
+        if (singleCircleReverseOrder) {
             if (availableConstraint == AvailableConstraint::FIRST) {
                 restartCommand(QT_TRANSLATE_NOOP("Command", "Add arc angle constraint"));
                 createArcAngleConstrain(geoId, onSketchPos);
@@ -2794,7 +2867,7 @@ protected:
         tryAutoRecompute(Obj);
     }
 
-    bool isHorizontalVerticalBlock(int GeoId) {
+    bool isHorizontalVerticalBlock(int GeoId) const {
         const std::vector< Sketcher::Constraint* >& vals = Obj->Constraints.getValues();
 
         // check if the edge already has a Horizontal/Vertical/Block constraint
@@ -2996,6 +3069,238 @@ protected:
         cstrIndexes.clear();
     }
 
+    /** The constraint the next tool-mode press would switch to, or empty
+     * when the selection offers only the one mode it is already showing.
+     */
+    QString getNextModeHint() const
+    {
+        const GeomSelectionSizes selection(selPoints.size(),
+                                           selLine.size(),
+                                           selCircleArc.size(),
+                                           selEllipseAndCo.size(),
+                                           selSplineAndCo.size());
+        const char* mode = getModeHint(selection, nextConstraint(availableConstraint));
+
+        return mode ? QApplication::translate("SketcherGui::DrawSketchHandlerDimension", mode)
+                    : QString();
+    }
+
+    /// Mirrors makeAppropriateConstraint: same selection shapes, same order.
+    const char* getModeHint(const GeomSelectionSizes& selection,
+                            AvailableConstraint constraint) const
+    {
+        using AC = AvailableConstraint;
+
+        if (selection.hasPoints()) {
+            if (selection.has1Point()) {
+                return modeHintFor({{AC::FIRST, MODE_DISTANCE}, {AC::SECOND, MODE_LOCK}},
+                                   constraint);
+            }
+            if (selection.has2Points()) {
+                return modeHintFor({{AC::FIRST, MODE_DISTANCE},
+                                    {AC::SECOND, MODE_HORIZONTAL},
+                                    {AC::THIRD, MODE_VERTICAL}},
+                                   constraint);
+            }
+            if (selection.has1Point1Line()) {
+                return modeHintFor({{AC::FIRST, MODE_DISTANCE}, {AC::SECOND, MODE_SYMMETRY}},
+                                   constraint);
+            }
+            if (selection.has3Points()) {
+                return modeHintFor({{AC::FIRST, MODE_HORIZONTAL},
+                                    {AC::SECOND, MODE_VERTICAL},
+                                    {AC::THIRD, MODE_SYMMETRY}},
+                                   constraint);
+            }
+            if (selection.has4MorePoints()) {
+                return modeHintFor({{AC::FIRST, MODE_HORIZONTAL}, {AC::SECOND, MODE_VERTICAL}},
+                                   constraint);
+            }
+            if (selection.has2Points1Line()) {
+                return modeHintFor({{AC::FIRST, MODE_SYMMETRY}, {AC::SECOND, MODE_DISTANCE}},
+                                   constraint);
+            }
+        }
+        else if (selection.hasLines()) {
+            if (selection.has1Line()) {
+                // A line that is already horizontal, vertical or blocked has
+                // nowhere to switch to: makeCts_1Line restarts the cycle
+                // instead of offering those three.
+                if (hadHorizontalVerticalBlock(selLine[0].GeoId)) {
+                    return nullptr;
+                }
+                return modeHintFor({{AC::FIRST, MODE_LENGTH},
+                                    {AC::SECOND, MODE_HORIZONTAL},
+                                    {AC::THIRD, MODE_VERTICAL},
+                                    {AC::FOURTH, MODE_BLOCK}},
+                                   constraint);
+            }
+            if (selection.has2Lines()) {
+                // An axis cannot be made equal to anything, so the angle is
+                // the only mode on offer.
+                if (isAxis(selLine[0].GeoId) || isAxis(selLine[1].GeoId)) {
+                    return nullptr;
+                }
+                return modeHintFor({{AC::FIRST, getTwoLineFirstModeHint()},
+                                    {AC::SECOND, MODE_EQUAL_LENGTH}},
+                                   constraint);
+            }
+        }
+        else if (selection.hasCirclesOrArcs()) {
+            if (selection.has1Circle()) {
+                return getSingleCircleModeHint(constraint);
+            }
+            if (selection.has2Circles()) {
+                return modeHintFor({{AC::FIRST, MODE_DISTANCE},
+                                    {AC::SECOND, getTwoCircleSecondModeHint()},
+                                    {AC::THIRD, MODE_EQUAL_RADIUS}},
+                                   constraint);
+            }
+        }
+
+        return nullptr;
+    }
+
+    /// Two parallel lines get a distance, not an angle (see createAngleConstrain).
+    const char* getTwoLineFirstModeHint() const
+    {
+        int geoId1 = selLine[0].GeoId;
+        int geoId2 = selLine[1].GeoId;
+        Sketcher::PointPos posId1 = Sketcher::PointPos::none;
+        Sketcher::PointPos posId2 = Sketcher::PointPos::none;
+        double angle = 0.0;
+
+        if (calculateAngle(Obj, geoId1, geoId2, posId1, posId2, angle) && angle == 0.0) {
+            return MODE_DISTANCE;
+        }
+
+        return MODE_ANGLE;
+    }
+
+    /// Already concentric, or unable to become so, means the mode after the
+    /// distance is the equal radius, as makeCts_2Circle skips ahead to it.
+    const char* getTwoCircleSecondModeHint() const
+    {
+        const int geoId1 = selCircleArc[0].GeoId;
+        const int geoId2 = selCircleArc[1].GeoId;
+
+        if (areBothPointsOrSegmentsFixed(Obj, geoId1, geoId2)
+            || Obj->arePointsCoincident(geoId1,
+                                        Sketcher::PointPos::mid,
+                                        geoId2,
+                                        Sketcher::PointPos::mid)
+            || geoId1 == geoId2) {
+            return MODE_EQUAL_RADIUS;
+        }
+
+        return MODE_CONCENTRIC_DISTANCE;
+    }
+
+    const char* getSingleCircleModeHint(AvailableConstraint constraint) const
+    {
+        using AC = AvailableConstraint;
+        const int geoId = selCircleArc[0].GeoId;
+        const Part::Geometry* geom = Obj->getGeometry(geoId);
+        if (!geom) {
+            return nullptr;
+        }
+
+        if (singleCircleReverseOrder) {
+            return modeHintFor({{AC::FIRST, MODE_ARC_ANGLE},
+                                {AC::SECOND, MODE_ARC_LENGTH},
+                                {AC::THIRD, radiusDiameterHint(geoId, true)},
+                                {AC::FOURTH, radiusDiameterHint(geoId, false)}},
+                               constraint);
+        }
+
+        if (isArcOfCircle(*geom)) {
+            return modeHintFor({{AC::FIRST, radiusDiameterHint(geoId, true)},
+                                {AC::SECOND, radiusDiameterHint(geoId, false)},
+                                {AC::THIRD, MODE_ARC_ANGLE},
+                                {AC::FOURTH, MODE_ARC_LENGTH}},
+                               constraint);
+        }
+
+        return modeHintFor({{AC::FIRST, radiusDiameterHint(geoId, true)},
+                            {AC::SECOND, radiusDiameterHint(geoId, false)}},
+                           constraint);
+    }
+
+    /// Which of radius and diameter createRadiusDiameterConstrain would pick.
+    const char* radiusDiameterHint(int geoId, bool firstCstr) const
+    {
+        const Part::Geometry* geom = Obj->getGeometry(geoId);
+        if (!geom) {
+            return nullptr;
+        }
+
+        if (isBsplinePole(geom)) {
+            return MODE_WEIGHT;
+        }
+
+        ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/Mod/Sketcher/dimensioning");
+        const bool dimensioningDiameter = hGrp->GetBool("DimensioningDiameter", true);
+        const bool dimensioningRadius = hGrp->GetBool("DimensioningRadius", true);
+        const bool isCircleGeom = !isArcOfCircle(*geom);
+
+        if ((firstCstr && dimensioningRadius && !dimensioningDiameter)
+            || (!firstCstr && !dimensioningRadius && dimensioningDiameter)
+            || (firstCstr && dimensioningRadius && dimensioningDiameter && !isCircleGeom)
+            || (!firstCstr && dimensioningRadius && dimensioningDiameter && isCircleGeom)) {
+            return MODE_RADIUS;
+        }
+
+        return MODE_DIAMETER;
+    }
+
+    static const char* modeHintFor(
+        const std::initializer_list<std::pair<AvailableConstraint, const char*>>& modes,
+        AvailableConstraint constraint)
+    {
+        for (const auto& [mode, hint] : modes) {
+            if (mode == constraint) {
+                return hint;
+            }
+        }
+
+        return nullptr;
+    }
+
+    static bool isAxis(int geoId)
+    {
+        return geoId == Sketcher::GeoEnum::HAxis || geoId == Sketcher::GeoEnum::VAxis;
+    }
+
+    /** Whether the line was horizontal, vertical or blocked before this tool
+     * touched it.
+     *
+     * isHorizontalVerticalBlock() cannot answer that while the tool is
+     * running: the constraint the current mode is previewing is already in
+     * the document, so a mode that just made the line horizontal would
+     * report the line as having been horizontal all along, and the hint for
+     * the next mode would disappear. cstrIndexes is what this tool made.
+     */
+    bool hadHorizontalVerticalBlock(int geoId) const
+    {
+        const std::vector<Sketcher::Constraint*>& vals = Obj->Constraints.getValues();
+
+        for (size_t i = 0; i < vals.size(); ++i) {
+            const Sketcher::Constraint* constraint = vals[i];
+            const bool ours =
+                std::ranges::find(cstrIndexes, static_cast<int>(i)) != cstrIndexes.end();
+
+            if (!ours
+                && (constraint->Type == Sketcher::Horizontal
+                    || constraint->Type == Sketcher::Vertical
+                    || constraint->Type == Sketcher::Block)
+                && constraint->First == geoId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     void resetTool()
     {
         Gui::Command::abortCommand();
@@ -3004,7 +3309,9 @@ protected:
         cstrIndexes.clear();
         specialConstraint = SpecialConstraint::None;
         previousOnSketchPos = Base::Vector2d(0.f, 0.f);
+        singleCircleReverseOrder = false;
         clearRefVectors();
+        updateHint();
     }
 };
 
