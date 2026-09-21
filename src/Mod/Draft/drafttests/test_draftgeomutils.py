@@ -29,6 +29,7 @@
 import Part
 import DraftGeomUtils
 from FreeCAD import Vector
+from draftgeoutils import circles
 from drafttests import test_base
 from draftutils.messages import _msg
 
@@ -279,6 +280,32 @@ class TestDraftGeomUtils(test_base.DraftTestCaseNoDoc):
             places=2,
             msg="The repaired segment face area is incorrect.",
         )
+
+    def test_circle_from_1_line_2_points(self):
+        """Both circles touch the line and pass through both points."""
+        operation = "draftgeoutils.circles.circlefrom1Line2Points"
+        _msg("  Test '{}'".format(operation))
+
+        line = Part.makeLine(Vector(0, 0, 0), Vector(10, 0, 0))
+        p1, p2 = Vector(2, 2, 0), Vector(4, 4, 0)
+        result = circles.circlefrom1Line2Points(line, p1, p2)
+        self.assertIsNotNone(result, "Two circles are expected.")
+        self.assertEqual(len(result), 2, "Two circles are expected.")
+        for circle in result:
+            self.assertAlmostEqual(
+                abs(circle.Center.y),
+                circle.Radius,
+                places=7,
+                msg="The circle should be tangent to the line.",
+            )
+            for point in (p1, p2):
+                self.assertAlmostEqual(
+                    circle.Center.distanceToPoint(point),
+                    circle.Radius,
+                    places=7,
+                    msg="The circle should pass through both points.",
+                )
+        self.assertEqual(sorted(round(c.Radius, 7) for c in result), [2.0, 10.0])
 
 
 # suite = unittest.defaultTestLoader.loadTestsFromTestCase(TestDraftGeomUtils)
