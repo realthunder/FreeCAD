@@ -429,3 +429,33 @@ export function selectionWrite(ids: number[], current: number, column = 0): {
 } {
   return { selection: ids, currentId: current, currentColumn: column };
 }
+
+/// The two kinds of root the host mints (Gui/Fw/FwPanelMirror.cpp `owns`):
+/// the task panel is `panel:<n>`, a top-level dialog is `dialog:<n>`.
+/// Both are `QDialogModel`s and both carry a button box, so the ID is what
+/// tells them apart -- and they are ANSWERED differently, which is the
+/// whole of W4's write path.
+export function isDialogRoot(id: string): boolean {
+  return id.startsWith('dialog:');
+}
+
+/// A dialog's answer (7.19 M3): the standard button the client chose, sent
+/// to the ROOT rather than to the button that carries it.
+///
+/// The host turns this into the window's `done(button)`, so for a panel
+/// slot blocked in `QMessageBox::exec()` this op IS the exec code coming
+/// back. Ground truth is the host's own test -- Mod/Test/
+/// SandboxPanelMirror.py `test_nested_messagebox` answers Yes exactly this
+/// way and asserts the slot returned 0x4000 -- and `onDialogRequest`
+/// (Gui/Fw/FwPanelMirror.cpp) is where the mirror accepts it.
+export function dialogClickOp(standardButton: number): { event: string; args: number[] } {
+  return { event: 'clicked', args: [standardButton] };
+}
+
+/// Escape on a dialog, which is `QDialog::reject()` on the bound view --
+/// Qt's own answer for a box dismissed rather than answered. A box with an
+/// escape button resolves it to that button; one without returns 0, the
+/// same as pressing Escape at the desktop.
+export function dialogRejectOp(): { event: string } {
+  return { event: 'reject' };
+}

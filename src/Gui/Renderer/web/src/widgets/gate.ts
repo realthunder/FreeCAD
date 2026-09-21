@@ -23,8 +23,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { CHECK_ON, WidgetStore, itemClickOp, itemEditOp, itemExpandOp, layoutRefs, refId,
-         selectionWrite } from './protocol.ts';
+import { CHECK_ON, WidgetStore, dialogClickOp, dialogRejectOp, isDialogRoot, itemClickOp,
+         itemEditOp, itemExpandOp, layoutRefs, refId, selectionWrite } from './protocol.ts';
 import type { Frame } from './protocol.ts';
 import { isKnownLayoutClass, planLayout } from './layout.ts';
 import type { LayoutPlan } from './layout.ts';
@@ -170,11 +170,98 @@ function main(): void {
   check('sketcher_constraints', 'cells carry text', texts.length > 0, String(texts.slice(0, 3)));
 
   checkItems();
+  checkDialogs();
   checkCompletion();
   checkImages();
 
   console.log(failures === 0 ? '\nALL GREEN' : `\n${failures} FAILURE(S)`);
   process.exit(failures === 0 ? 0 : 1);
+}
+
+/// Dialog roots (docs/Sandbox.md 7.22, W4). Until W4 not one check here
+/// looked at a dialog: the six fixtures were replayed for their frames and
+/// their layouts, and `nested_messagebox` -- the whole point of which is
+/// the dialog -- was gated no differently from a form panel.
+///
+/// The corpus case is a panel slot's QMessageBox: it arrives as a
+/// `dialog:<n>` root BESIDE the task panel's own root, is answered, and
+/// goes. Everything asserted below is the host's, not this client's, so a
+/// change on either side that breaks the contract fails here.
+function checkDialogs(): void {
+  const t = 'dialogs';
+  const fixture = JSON.parse(
+    readFileSync(join(fixtureDir, 'nested_messagebox.json'), 'utf-8'),
+  ) as Fixture;
+  const upto = (n: number): WidgetStore => {
+    const store = new WidgetStore();
+    for (const { frame } of fixture.frames.slice(0, n)) store.apply(frame);
+    return store;
+  };
+  /// QMessageBox::StandardButton, the two the corpus was built with.
+  const YES = 0x4000;
+  const NO = 0x10000;
+
+  const closeAt = fixture.frames.findIndex(
+    (f) => f.frame.method === 'close' && isDialogRoot(f.frame.id));
+  check(t, 'the corpus closes a dialog root', closeAt > 0, `frame ${closeAt}`);
+
+  // while the box is on screen and the host's slot is blocked in exec()
+  const up = upto(closeAt);
+  const roots = up.ids().filter(isDialogRoot);
+  check(t, 'a dialog root is in the store', roots.length === 1, String(roots));
+  const box = up.get(roots[0]);
+  check(t, 'the root is a QDialogModel', box?.model === 'QDialogModel', String(box?.model));
+  check(t, 'the root keeps its real class', box?.qtClass === 'QMessageBox',
+        String(box?.qtClass));
+  check(t, 'the root says it is modal', box?.state.modal === true, String(box?.state.modal));
+  check(t, 'the root carries its title', box?.state.windowTitle === 'Really',
+        String(box?.state.windowTitle));
+  check(t, 'the root hangs off the list, not the panel root',
+        box?.parent === 'panel', String(box?.parent));
+
+  // the list container's layout is the show order the layer stacks by
+  const order = planLayout(up.get('panel')?.layout).items
+    .map((it) => it.id).filter((id): id is string => !!id);
+  check(t, 'the list holds both roots in show order',
+        order.length === 2 && order[0].startsWith('panel:') && isDialogRoot(order[1]),
+        String(order));
+
+  // Qt's own message box parts, which M1's `qt_` rule skips as machinery
+  // and M3 un-skips as content -- so their absence here would be silent
+  const models = up.ids().map((id) => up.get(id)).filter((m): m is NonNullable<typeof m> => !!m);
+  const labels = models.filter((m) => m.model === 'QLabelModel');
+  check(t, "the box's text arrived", labels.some((m) => m.state.text === 'Proceed?'),
+        String(labels.map((m) => m.state.text)));
+  check(t, 'the box icon arrived as a picture',
+        labels.filter((m) => String(m.state.pixmap ?? '').startsWith('img:')).length === 1);
+
+  const flags = models
+    .filter((m) => m.model === 'QPushButtonModel')
+    .map((m) => m.state.standardButton)
+    .filter((f): f is number => typeof f === 'number' && f !== 0);
+  check(t, 'the buttons carry their standard flags',
+        flags.includes(YES) && flags.includes(NO), String(flags));
+
+  // the answer: the flag, through the ROOT. The host turns it into
+  // done(button), which is the exec code the blocked slot returns.
+  check(t, 'an answer names the button flag',
+        JSON.stringify(dialogClickOp(YES)) === '{"event":"clicked","args":[16384]}',
+        JSON.stringify(dialogClickOp(YES)));
+  check(t, 'Escape rejects', JSON.stringify(dialogRejectOp()) === '{"event":"reject"}');
+
+  // and what the close leaves behind
+  const after = upto(closeAt + 1);
+  check(t, 'the dialog root goes when the box closes',
+        after.ids().filter(isDialogRoot).length === 0);
+  check(t, 'the panel root outlives the dialog',
+        after.ids().some((id) => id.startsWith('panel:')));
+  // M3 sends ONE close, for the root, and leaves the subtree silent, so the
+  // box's inner widgets stay in the store. Nothing draws them (the card
+  // renders `panel:<n>` and `dialog:<n>` roots only), but they are still
+  // held -- recorded here so that a host that starts pruning, or a client
+  // that starts leaking them onto the screen, shows up as a change.
+  check(t, 'the closed box leaves its subtree in the store (M3, by design)',
+        after.ids().some((id) => id.startsWith('pw:')));
 }
 
 /// The item views (docs/Sandbox.md 7.22, W2). The recorded corpus carries

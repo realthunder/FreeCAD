@@ -52,7 +52,7 @@ runs in the guest.**
     host widget layer: core, Qt view built       H0: src/Gui/Fw/ (Fw:: models, FwQt:: backend, the store, FreeCADGui.FormWidgets), src/Tools/fwuic.py (7.12)
     native panels on the layer       sized       H1-H3: the first ports, the form-only majority, the item views; DOM walker later (7.4, 7.12)
     the task panel mirror            M3 built    7.19: the desktop's task panel walked into models, streamed (Pad, Draft's OrthoArray, a CAM op, no workbench edited); M2: item rows reflected (Sketcher's constraint list), pictures and icons by image id; M3: top-level dialogs as dialog:<n> roots (a panel slot's QMessageBox, its exec code from a client's click), mouse replay into pictures; M4 measured 2026-09-11 (sec 8.4: a repaint burst re-reads 10-20 widgets in 0.3 ms and sends nothing; a panel at rest sends nothing; a keystroke costs the other clients 70-150 B)
-    the panels in the browser (G7)  W3 built   7.22: the DOM view over the widget layer -- the walker, the layout plan, the panel container, the item views; W1-W5, 2.2-3.3k of TypeScript in src/Gui/Renderer/web, and one 20-line host change (a client is never told how the host corrected its own write); the five questions RULED 2026-09-16 (chrome-flavoured, the echo taken, dialogs in scope, a FLOATING card, the pure-plan gate) and W1 started; W1's host half BUILT 2026-09-16 (Store::messageTo, the gate in test_widgetStream, FormWidgets 22/22), the fixture corpus (6 cases) recorded and the walker core, the layout plan and the replay gate BUILT 2026-09-16 (62 checks ALL GREEN) and the client + views + floating card BUILT the same day (typecheck and bundle clean), and W1 PROVEN on screen 2026-09-16 (demo-taskpanel.py through renderer-serve.sh, driven by scripts/panel-drive.js); W2 BUILT 2026-09-19 -- the row/remove/sort ops the corpus never carried, the header, the nesting, the checks and the selection, and one view wake per frame because the host pushes one per op; gate 85 -> 102 checks, 17 of them the item views'; the op-vs-event trap (only an item op reaches the real widget) caught against the host's own test; PROVEN on screen 2026-09-19 with demo-sketcherpanel.py -- 12 checked constraint rows, the Elements header over real tracks, and a check clicked in headless Chrome leaving Constraints[0].InVirtualSpace True on the host -- which also caught a column headed "1" invented over every QListWidget; nesting and cell colours stay unproven; W3 BUILT and PROVEN on screen 2026-09-21 -- pictures, icons, theme and locale over one page-lifetime cache, the pointer replayed into a real QSvgWidget (a click at the card's centre landed at 48,48 of 96x96), and ahead of it the repaint the card had never done since W1; W4 next
+    the panels in the browser (G7)  W4 built   7.22: the DOM view over the widget layer -- the walker, the layout plan, the panel container, the item views; W1-W5, 2.2-3.3k of TypeScript in src/Gui/Renderer/web, and one 20-line host change (a client is never told how the host corrected its own write); the five questions RULED 2026-09-16 (chrome-flavoured, the echo taken, dialogs in scope, a FLOATING card, the pure-plan gate) and W1 started; W1's host half BUILT 2026-09-16 (Store::messageTo, the gate in test_widgetStream, FormWidgets 22/22), the fixture corpus (6 cases) recorded and the walker core, the layout plan and the replay gate BUILT 2026-09-16 (62 checks ALL GREEN) and the client + views + floating card BUILT the same day (typecheck and bundle clean), and W1 PROVEN on screen 2026-09-16 (demo-taskpanel.py through renderer-serve.sh, driven by scripts/panel-drive.js); W2 BUILT 2026-09-19 -- the row/remove/sort ops the corpus never carried, the header, the nesting, the checks and the selection, and one view wake per frame because the host pushes one per op; gate 85 -> 102 checks, 17 of them the item views'; the op-vs-event trap (only an item op reaches the real widget) caught against the host's own test; PROVEN on screen 2026-09-19 with demo-sketcherpanel.py -- 12 checked constraint rows, the Elements header over real tracks, and a check clicked in headless Chrome leaving Constraints[0].InVirtualSpace True on the host -- which also caught a column headed "1" invented over every QListWidget; nesting and cell colours stay unproven; W3 BUILT and PROVEN on screen 2026-09-21 -- pictures, icons, theme and locale over one page-lifetime cache, the pointer replayed into a real QSvgWidget (a click at the card's centre landed at 48,48 of 96x96), and ahead of it the repaint the card had never done since W1; W4 BUILT and PROVEN on screen 2026-09-22 -- the dialog roots as modal layers (portalled at z 22, the show order taken from the list container, Escape as reject on the topmost only), the button box drawing a dialog's REAL buttons because the standard flag each carries IS the answer, and the exec code proven end to end: clicking Yes in headless Chrome left the card reading "exec() returned Yes (0x4000)", the host slot's own return value; gate 134 -> 150, and until W4 not one check had ever looked at a dialog; the card also gained its own search entry (the user's call) and the file chooser is ruled upload-only and deferred to its own session
     the session document (commands) built       S1: a workbench reaches every open document, live ActiveDocument, app.write, save, picker-blessed saveAs; S2: Gui.doCommand / addModule in the guest under gui.doCommand, Draft's commit and Arch_Site end to end; gate SandboxSessionDoc (7.13)
     routing ON by default            built       preference Expression/Sandbox:Evaluate, ON since 2026-09-16: the corpus gate green (94 files, 195 of 195 same); the Proxy-restore half that rode the same preference was REMOVED 2026-09-18 (7.31)
     Proxy import restriction (native) built       item 1 of sec 11: PropertyPythonObject restore
@@ -8783,6 +8783,108 @@ drive that reads the card the moment a field exists reports every icon
 MISSING rather than "not yet" (pictures are a round trip behind the
 widgets that name them), and a console ring fills with swiftshader's
 WebGL warnings and crowds out the one message worth reading.
+
+**W4 BUILT and PROVEN on screen 2026-09-22.**  The wire needed nothing.
+M3 has minted `dialog:<n>`, shipped `q_modal` and `q_windowTitle`, and
+routed `clicked [flag]` into the window's `done(button)` since
+2026-09-11, and the client has carried `dialogIds` since W1.  What was
+missing was a VIEW -- `panel.tsx` said so in its own header, "deliberately
+not drawn here" -- so W4 is browser-side apart from this note.
+
+Built: the dialog layer, portalled to the body at z 22 for the reason
+`.fc-expr-backdrop` already records (a portalled layer is `#fc-ui`'s
+SIBLING and loses to it at any lower value; the tool-bar menus sit at 20);
+the roots taken in the host's show order from the `panel` list container's
+layout, which is re-sent on every open and close; a MODELESS root dimming
+and blocking nothing, because one shared session (8.11) means the desktop
+user is still working behind it; Escape as `reject`, on the topmost root
+only and in the CAPTURE phase, because the omni box and the tool-bar menus
+both close on a stray Escape off the document; and the button box drawing
+a dialog's real buttons, while the task panel's box keeps W1's
+accept/reject -- the path the W1 and W2 screen proofs exercise, which
+nothing here needed to disturb.
+
+Three things the build settled, each worth keeping:
+
+  * **the answer goes to the ROOT, not to the button.**  `widgets.custom
+    {target: 'dialog:<n>', content: {event: 'clicked', args: [flag]}}` is
+    what the host turns into `done(button)`, and the host's own test
+    answers exactly that way.  A CUSTOM button added to a box carries no
+    standard flag, so there is nothing to turn into a `done`: its own
+    `click` is the honest op, which is what the code sends rather than a
+    `clicked [0]`;
+  * **a mirrored widget already knows its parent**, so the owning root is
+    a walk up `WidgetModel.parent`, not a prop threaded through
+    View/Plan/Item.  Only a button box ever asks which root it is in;
+  * **Qt's mnemonic is not DOM text.**  `&Yes` draws as "&Yes" unless it
+    is stripped, and `qtText` handles only rich text.  A button reading
+    "&Yes" is what that cost, and `qtLabel` is the one-line answer.
+
+Gate **134 -> 150 checks, ALL GREEN**, with `npm run typecheck` and `npm
+run build` clean.  The sixteen new ones are the dialog's: the root's
+class, title, modal flag and parent; the list holding both roots in show
+order; Qt's own `qt_msgbox_label` text and the icon as a picture; the
+Yes/No flags; the answer op's shape; and what the close leaves behind.
+**Until W4 not one check in `gate.ts` had looked at a dialog** --
+`nested_messagebox` was replayed for its frames and its layouts like any
+form panel -- so the fixture recorded FOR this stage sat in the corpus
+proving nothing about it.
+
+**The proof, 2026-09-22:** `scripts/demo-messageboxpanel.py` (new -- a
+panel whose slot blocks in `QMessageBox::exec()` and writes the code it
+got back into a mirrored label, so the round trip is readable on screen
+and not only in a log) served through `renderer-serve.sh` and driven by
+`scripts/panel-drive.js`, which grew `readDialog` and
+`FC_PANEL_DIALOG=<label>`.  Clicking "Ask" in headless Chrome raised the
+layer -- one backdrop, title `Really`, the text `Proceed?`, Yes and No,
+the question icon decoded at 48x48, `modal` true, z 22 and NOTHING
+covering it -- and clicking Yes left the card reading **`exec() returned
+Yes (0x4000)`**, which is the host slot's own return value pushed back.
+The root closed and the layer went with it.  The layer has to be read
+separately from the card, by construction: it is portalled, so every
+`.fc-panel` selector in the harness misses it.
+
+A second run in a 390x844 phone viewport drew the layer there too and
+reported `search: true, launcher: false` -- the inherited case and its fix
+in one line, the launcher absent from the DOM exactly as `main.tsx`
+intends and the card's own entry present instead.  **Its exec-code
+evidence is NOT independent, though**, and the report says so: it answered
+the same live process a second time, so its `before` and `after` both
+already read the answered text.  The exec code is proven by the DESKTOP
+run, where the label went from `No answer yet`; the phone run proves the
+layer and the entry, not the code.
+
+**Not screen-proven, named rather than implied:** Escape as `reject` (the
+op's SHAPE is gated, but no drive presses the key), a MODELESS root -- the
+corpus and the demo both raise a modal one, so `fc-dlg-modeless` has never
+drawn -- and two dialogs stacked, which is the only thing the `depth`
+z-offset exists for.
+
+**The card has its own search entry** (the user's call 2026-09-22), which
+closes the first of the inherited items above.  `main.tsx` hides the
+launcher whenever a card is up under `NARROW`, and a phone has no `/`
+key, so from a mirrored panel the omni box could not be reached at all;
+the card's header now carries a `/` button wired from `main.tsx` as
+`onSearch`.  Keeping the launcher visible instead was put to the user and
+declined.
+
+**The file chooser, RULED 2026-09-22 and deferred to its own session:**
+"Never expose host file system to browser.  But implement browser side
+file chooser to upload file to host."  So W4's fourth item is NOT built,
+and the shape it must take is now fixed: no directory-listing op and no
+browse of the serving machine -- the browser picks a LOCAL file and
+uploads it.  That also rules OUT the cheap route of forcing
+`DontUseNativeDialog` so that a `QFileDialog` mirrors as an ordinary
+widget tree through M3, because that is precisely a view of the host's
+filesystem drawn in the page.
+
+One inherited item is unchanged and one has a lead.  The 403 the viewer
+page logs at load showed in this run as a **404**, and the line above it
+is `no /scene.fcsd snapshot, empty scene` -- so the page's probe for a
+snapshot this demo never wrote is a candidate.  A lead and not a finding:
+the recorded symptom was 403, this is 404, and nothing was changed to
+test it.  W2's debts stand untouched -- nesting, cell colours and locale
+are still gate-green and never screen-proven.
 
 **Cost** (new; TypeScript unless noted):
 

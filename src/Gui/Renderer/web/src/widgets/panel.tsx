@@ -12,10 +12,9 @@
 // stays thin: it picks a view per model and places it by the plan, and
 // holds no protocol knowledge of its own.
 //
-// Scope is W1: the task panel root, the form leaves the corpus ranks, the
-// item views as plain rows. Dialog roots (`dialog:<n>`) are W4 and are
-// deliberately not drawn here -- the client sees them, nothing renders them
-// yet.
+// Scope is W1 to W4: the task panel root, the form leaves the corpus ranks,
+// the item views as plain rows, and the dialog roots (`dialog:<n>`) as
+// modal layers over the card.
 
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
 import type { Accessor, JSX } from 'solid-js';
@@ -31,8 +30,8 @@ import { planLayout } from './layout.ts';
 import type { LayoutPlan, PlannedItem } from './layout.ts';
 import { iconKind, localeTag, mouseArgs, parseLocaleNumber, pictureAt, wheelArgs }
   from './images.ts';
-import { CHECK_OFF, CHECK_ON, ITEM_ENABLED, itemEditOp, itemExpandOp, selectionWrite }
-  from './protocol.ts';
+import { CHECK_OFF, CHECK_ON, ITEM_ENABLED, dialogClickOp, dialogRejectOp, isDialogRoot,
+         itemEditOp, itemExpandOp, selectionWrite } from './protocol.ts';
 import type { ItemCell, ItemRow, WidgetModel } from './protocol.ts';
 
 const POS_KEY = 'fcviewer.taskpanel.pos';
@@ -66,6 +65,15 @@ function qtText(raw: string): string {
   }
 }
 
+/// Qt's mnemonic, removed: `&Yes` is a Yes with an underlined Y, and `&&`
+/// is one literal ampersand. Nothing in the browser tier drives an access
+/// key, so the marker is dropped rather than drawn -- a dialog button
+/// reading "&Yes" is the bug this exists to prevent. One pass, so the
+/// escape cannot eat the character after it.
+function qtLabel(raw: string): string {
+  return raw.replace(/&(.)/g, '$1');
+}
+
 /// The bag key a class really declares for its number, which is not one key
 /// for all of them: a quantity field is a line edit underneath and carries
 /// `rawValue` beside its `text` (8.4's typing case writes exactly that),
@@ -97,6 +105,12 @@ export function TaskPanelCard(props: {
   open: Accessor<boolean>;
   onClose: () => void;
   viewOnly: Accessor<boolean>;
+  /// Open the chrome's search box. The card carries its OWN entry to it
+  /// (the user's call 2026-09-22): with a card up on a handset the
+  /// launcher is hidden and a phone has no `/` key, so from a mirrored
+  /// panel search could not be reached at all -- found in the first
+  /// handset session (docs/Sandbox.md 7.22).
+  onSearch?: () => void;
 }): JSX.Element {
   const [version, setVersion] = createSignal(0);
 
@@ -224,6 +238,39 @@ export function TaskPanelCard(props: {
     version();
     return client?.panelId ?? null;
   });
+
+  /// The dialog roots, in the order the desktop shows them (W4).
+  ///
+  /// The `panel` list container's layout IS that order -- the host re-sends
+  /// it on every dialog open and close, which the corpus shows going from
+  /// empty to one root to two and back -- so it is read from there and
+  /// rides the same `update` as every other layout. `dialogIds` covers the
+  /// window between a root's open and the list being re-laid.
+  const dialogIds = createMemo(() => {
+    version();
+    const listed = planLayout(client?.store.get('panel')?.layout).items
+      .map((it) => (it.kind === 'widget' ? it.id : undefined))
+      .filter((id): id is string => !!id && isDialogRoot(id));
+    for (const id of client?.dialogIds ?? []) {
+      if (client?.store.has(id) && !listed.includes(id)) listed.push(id);
+    }
+    return listed;
+  });
+
+  /// The root a widget belongs to. Every mirrored widget carries its parent
+  /// (the host sends one on every open), so this is a walk up rather than
+  /// something every view has to thread down. Only a button box ever asks:
+  /// a dialog root and the panel root are ANSWERED differently.
+  const ownerRoot = (w: WidgetModel): string => {
+    let at: WidgetModel | undefined = w;
+    const seen = new Set<string>();
+    while (at && !seen.has(at.id)) {
+      seen.add(at.id);
+      if (isDialogRoot(at.id) || at.id.startsWith('panel:')) return at.id;
+      at = at.parent ? client?.store.get(at.parent) : undefined;
+    }
+    return rootId() ?? w.id;
+  };
 
   const write = (id: string, values: Record<string, unknown>) => {
     if (props.viewOnly()) return;
@@ -359,19 +406,62 @@ export function TaskPanelCard(props: {
           </section>
         );
       }
-      case 'QDialogButtonBoxModel':
+      case 'QDialogButtonBoxModel': {
+        // A DIALOG's box answers with the standard button flag through the
+        // root: the host turns `clicked [flag]` into the window's
+        // `done(button)`, which is exactly what a panel slot blocked in
+        // `QMessageBox::exec()` gets back (7.19 M3). So the box's REAL
+        // buttons are drawn -- Yes/No, Save/Discard/Cancel, whatever it was
+        // built with -- because the flag each one carries IS the answer.
+        //
+        // The TASK PANEL's box keeps W1's accept/reject on the root: that
+        // is the path the W1 and W2 screen proofs exercise, and nothing in
+        // W4 needs it changed.
+        const owner = () => ownerRoot(w);
+        const buttons = () => planLayout(lay(w)).items
+          .map((it) => (it.kind === 'widget' && it.id ? model(it.id) : undefined))
+          .filter((b): b is WidgetModel => !!b && b.model === 'QPushButtonModel');
         return (
-          <div class="fc-panel-buttons">
-            <button class="fc-panel-btn fc-panel-ok" disabled={props.viewOnly()}
-                    onClick={() => void client?.custom(rootId() ?? w.id, { event: 'accept' })}>
-              OK
-            </button>
-            <button class="fc-panel-btn"
-                    onClick={() => void client?.custom(rootId() ?? w.id, { event: 'reject' })}>
-              Cancel
-            </button>
-          </div>
+          <Show when={isDialogRoot(owner())}
+                fallback={
+                  <div class="fc-panel-buttons">
+                    <button class="fc-panel-btn fc-panel-ok" disabled={props.viewOnly()}
+                            onClick={() => void client?.custom(rootId() ?? w.id,
+                                                               { event: 'accept' })}>
+                      OK
+                    </button>
+                    <button class="fc-panel-btn"
+                            onClick={() => void client?.custom(rootId() ?? w.id,
+                                                               { event: 'reject' })}>
+                      Cancel
+                    </button>
+                  </div>
+                }>
+            <div class="fc-panel-buttons">
+              <For each={buttons()}>
+                {(b: WidgetModel) => (
+                  <button class="fc-panel-btn"
+                          classList={{ 'fc-panel-ok': bool(b, 'default') }}
+                          disabled={props.viewOnly() || st(b).enabled === false}
+                          title={str(b, 'toolTip') || undefined}
+                          onClick={() => {
+                            const flag = num(b, 'standardButton');
+                            // A custom button added to a box carries no
+                            // standard flag, so there is nothing for the
+                            // mirror to turn into `done(button)`: the
+                            // button's own click is the honest op there.
+                            void client?.custom(flag ? owner() : b.id,
+                                                flag ? dialogClickOp(flag)
+                                                     : { event: 'click' });
+                          }}>
+                    {qtLabel(str(b, 'text'))}
+                  </button>
+                )}
+              </For>
+            </div>
+          </Show>
         );
+      }
       case 'QListWidgetModel':
       case 'QTreeWidgetModel':
       case 'QTreeViewModel':
@@ -440,6 +530,54 @@ export function TaskPanelCard(props: {
           <div class="fc-panel-spacer" />
         </Show>
       </div>
+    );
+  };
+
+  /// A dialog root (`dialog:<n>`) as a layer over the card (W4).
+  ///
+  /// M3 mirrors ANY top-level QDialog the desktop raises -- a panel slot's
+  /// QMessageBox, a non-native QFileDialog, a workbench's own -- so this
+  /// draws the window the host walked rather than a message box in
+  /// particular: a title bar from `windowTitle`, and a body that is the
+  /// window's real layout through the same `View` every panel widget goes
+  /// through. A QMessageBox comes out right because what arrives IS Qt's
+  /// own grid, the icon label and text label and button box in it.
+  ///
+  /// There is no close button, deliberately. A dialog goes when the HOST
+  /// says it does: the client asks -- a standard button, or Escape as
+  /// `reject` -- and the root's close is the answer coming back. Dropping
+  /// the layer on our own would leave the desktop user's slot still
+  /// blocked in `exec()` with no window on either screen.
+  const DialogLayer = (p: { id: string; depth: number }): JSX.Element => {
+    const m = () => model(p.id);
+    const topmost = () => {
+      const up = dialogIds();
+      return up.length === 0 || up[up.length - 1] === p.id;
+    };
+    // Escape answers the topmost dialog only, and is taken in the CAPTURE
+    // phase: the omni box and the tool-bar menus both close on a stray
+    // Escape from the document, and a dialog is in front of them.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || !topmost()) return;
+      e.stopPropagation();
+      if (!props.viewOnly()) void client?.custom(p.id, dialogRejectOp());
+    };
+    document.addEventListener('keydown', onKey, true);
+    onCleanup(() => document.removeEventListener('keydown', onKey, true));
+
+    return (
+      <Show when={m()} keyed>
+        {(w: WidgetModel) => (
+          <div class="fc-dlg-backdrop"
+               classList={{ 'fc-dlg-modeless': !bool(w, 'modal') }}
+               style={{ 'z-index': String(22 + p.depth) }}>
+            <div class="fc-dlg" role="dialog" aria-modal={bool(w, 'modal')}>
+              <div class="fc-dlg-head">{str(w, 'windowTitle') || 'Dialog'}</div>
+              <div class="fc-dlg-body"><View id={p.id} /></div>
+            </div>
+          </div>
+        )}
+      </Show>
     );
   };
 
@@ -593,6 +731,10 @@ export function TaskPanelCard(props: {
                if (panelRef) fitOnScreen(panelRef, pos, setPos);
              }}>
           <div class="fc-panel-title">{title()}</div>
+          <Show when={props.onSearch}>
+            <button class="fc-panel-search" title="Search  /"
+                    onClick={() => props.onSearch?.()}>/</button>
+          </Show>
           <button class="fc-panel-close" title="Close" onClick={props.onClose}>x</button>
         </div>
         <div class="fc-panel-body">
@@ -621,6 +763,17 @@ export function TaskPanelCard(props: {
             </Portal>
           )}
         </Show>
+        {/* The dialog roots (W4), each its own layer, portalled for the
+            reason above and stacked in the host's show order. A card that
+            has no panel still draws them: a dialog is the desktop's, and
+            it does not need a task panel to be up. */}
+        <For each={dialogIds()}>
+          {(id: string, i: () => number) => (
+            <Portal>
+              <DialogLayer id={id} depth={i()} />
+            </Portal>
+          )}
+        </For>
       </div>
     </Show>
   );

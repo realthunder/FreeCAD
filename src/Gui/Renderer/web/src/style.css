@@ -1714,3 +1714,90 @@
 @media (max-width: 640px) {
   .fc-complete-btn { min-width: 44px; min-height: 44px; }
 }
+
+/* A mirrored dialog root (docs/Sandbox.md 7.22, W4): `dialog:<n>` drawn as
+ * a modal layer over the card. M3 puts a panel slot's QMessageBox, a
+ * non-native QFileDialog and any workbench's own dialog on the wire the
+ * same way, so this draws whatever the host walked rather than a message
+ * box in particular.
+ *
+ * Portalled to the body and above #fc-ui (z 10) for the reason
+ * .fc-expr-backdrop records: a portalled layer is that host's SIBLING and
+ * loses to it at any lower value. Above the tool-bar menus (20) and the
+ * expression dialog (20) as well -- this one is modal on the DESKTOP, and
+ * a layer the chrome can cover is not modal in any useful sense. */
+.fc-dlg-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 22;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
+
+/* A modeless dialog dims nothing and blocks nothing: the desktop user can
+ * still work behind it (8.11 -- one shared session), so the page must not
+ * pretend otherwise. Only the box itself takes the pointer. */
+.fc-dlg-modeless {
+  background: none;
+  pointer-events: none;
+}
+.fc-dlg-modeless .fc-dlg { pointer-events: auto; }
+
+.fc-dlg {
+  width: min(420px, calc(100vw - 24px));
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  background: rgba(28, 30, 34, 0.98);
+  color: #e8e8ea;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+  font-size: 13px;
+}
+
+.fc-dlg-head {
+  flex: none;
+  padding: 8px 10px;
+  font-weight: 600;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+}
+
+.fc-dlg-body {
+  padding: 10px;
+  overflow: auto;
+}
+
+/* A sheet from the top on a handset, the way the expression dialog goes:
+ * centred is where the keyboard lands. */
+@media (max-width: 640px) {
+  .fc-dlg-backdrop { align-items: flex-start; }
+  .fc-dlg {
+    width: 100%;
+    margin-top: env(safe-area-inset-top);
+    border-radius: 0 0 14px 14px;
+  }
+}
+
+/* The card's own way to reach search (W4, the user's call 2026-09-22).
+ * With a card up on a handset the launcher is hidden (main.tsx) and a
+ * phone has no '/' key, so from a mirrored panel the omni box could not
+ * be reached at all -- found in the first handset session. Same look as
+ * the close button beside it, and labelled the way the launcher menu
+ * already labels search. */
+.fc-panel-search {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #9aa0a6;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.fc-panel-search:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }

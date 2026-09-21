@@ -31,6 +31,12 @@
 //                             the path a user takes to an expression
 //   FC_PANEL_PHONE=1          a phone viewport with touch, so the list is
 //                             pinned above the keyboard instead of in flow
+//   FC_PANEL_DIALOG=<label>   click the card's ask button, wait for the
+//                             mirrored dialog layer (W4), answer it with
+//                             the button carrying this label, and report
+//                             what the host's panel says afterwards
+//   FC_PANEL_ASK=<label>      the card button that raises the dialog
+//                             (default "Ask")
 //
 // One limit, stated rather than pretended: headless Chrome has no
 // on-screen keyboard, so visualViewport never shrinks and the list's
@@ -121,7 +127,50 @@ function readCard() {
     // the corpus's two-wide form rows are visible in the result.
     grids: [...card.querySelectorAll('.fc-panel-grid')].map(
       (el) => getComputedStyle(el).gridTemplateColumns),
+    // W4: the card's own entry to search, and whether the chrome's
+    // launcher is in the DOM at all. The two belong together -- the entry
+    // exists BECAUSE the launcher hides behind a card on a narrow
+    // viewport and a phone has no '/' key, so a run that reports the
+    // entry present and the launcher absent is the case it was added for.
+    search: !!card.querySelector('.fc-panel-search'),
+    launcher: !!document.querySelector('.fc-launcher'),
     height: Math.round(card.getBoundingClientRect().height),
+  };
+}
+
+/// The dialog layer (W4): a `dialog:<n>` root drawn over the card.
+///
+/// Read separately from the card, and it has to be: the layer is PORTALLED
+/// to the body, so it is NOT inside `.fc-panel` and every selector in
+/// readCard misses it by construction.
+function readDialog() {
+  const back = document.querySelector('.fc-dlg-backdrop');
+  if (!back) return null;
+  const box = back.querySelector('.fc-dlg');
+  const text = (el) => (el ? (el.textContent || '').trim() : '');
+  const rect = box ? box.getBoundingClientRect() : null;
+  // What is actually on top at the box's centre. A layer that renders but
+  // sits UNDER the chrome takes no clicks, and in a text report that
+  // failure is indistinguishable from "the dialog never arrived" -- the
+  // trap the HUD-over-the-editor hunt already cost once.
+  const over = (() => {
+    if (!rect) return null;
+    const at = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2);
+    return at ? `${at.tagName}.${at.className || ''}` : 'none';
+  })();
+  return {
+    count: document.querySelectorAll('.fc-dlg-backdrop').length,
+    title: text(back.querySelector('.fc-dlg-head')),
+    labels: [...back.querySelectorAll('.fc-panel-label')].map(text),
+    buttons: [...back.querySelectorAll('.fc-panel-btn')].map(text),
+    // A message box's icon is a real picture leaf, so it proves the image
+    // round trip inside a dialog and not only on the card.
+    pics: [...back.querySelectorAll('.fc-panel-pic')].map(
+      (el) => ({ w: el.naturalWidth, h: el.naturalHeight })),
+    modal: !back.classList.contains('fc-dlg-modeless'),
+    z: getComputedStyle(back).zIndex,
+    coveredBy: over && !/fc-dlg|fc-panel/.test(over) ? over : null,
+    height: rect ? Math.round(rect.height) : 0,
   };
 }
 
@@ -345,6 +394,59 @@ function readCard() {
             error: text(document.querySelector('.fc-panel-error') || document.createElement('i')),
           };
         });
+      }
+    }
+    // W4's round trip: a panel slot that blocks in QMessageBox::exec().
+    // The answer is NOT the page agreeing with itself -- the host's label
+    // is rewritten by the slot with the code exec() returned, and that
+    // comes back over the wire, so `after` is the real verdict.
+    const answerWith = process.env.FC_PANEL_DIALOG;
+    if (answerWith !== undefined && card) {
+      const askLabel = process.env.FC_PANEL_ASK || 'Ask';
+      const labels = () => [...document.querySelectorAll('.fc-panel .fc-panel-label')]
+        .map((el) => (el.textContent || '').trim());
+      const before = await page.evaluate(labels);
+      const clicked = await page.evaluate((want) => {
+        const btn = [...document.querySelectorAll('.fc-panel .fc-panel-btn')]
+          .find((b) => (b.textContent || '').trim() === want);
+        if (!btn) return false;
+        btn.click();
+        return true;
+      }, askLabel);
+      if (!clicked) {
+        card.dialog = { error: `no "${askLabel}" button on the card`, before };
+      }
+      else {
+        // The box is walked on the tick AFTER its Show while the slot sits
+        // in a nested loop, so the layer is a round trip behind the click:
+        // "not yet" rather than "missing", the lesson W3's pictures taught.
+        await page.waitForSelector('.fc-dlg-backdrop', { timeout: 15000 }).catch(() => {});
+        const up = await page.evaluate(readDialog);
+        // A shot WHILE the box is up. The one at the end of the run is
+        // taken after the answer, when the layer is gone by design, so it
+        // cannot show the very thing this stage draws.
+        if (shot && up) {
+          const upShot = shot.endsWith('.png') ? shot.slice(0, -4) + '-up.png'
+                                               : shot + '-up.png';
+          await page.screenshot({ path: upShot });
+          console.log('shot ' + upShot);
+        }
+        let answered = null;
+        if (up) {
+          answered = await page.evaluate((want) => {
+            const btn = [...document.querySelectorAll('.fc-dlg-backdrop .fc-panel-btn')]
+              .find((b) => (b.textContent || '').trim() === want);
+            if (!btn) return false;
+            btn.click();
+            return true;
+          }, answerWith);
+          await new Promise((r) => setTimeout(r, 2500));
+        }
+        card.dialog = {
+          asked: askLabel, answerWith, answered, up, before,
+          after: await page.evaluate(labels),
+          gone: await page.evaluate(() => !document.querySelector('.fc-dlg-backdrop')),
+        };
       }
     }
     if (shot) {
