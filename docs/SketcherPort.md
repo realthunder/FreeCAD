@@ -31,8 +31,8 @@ Upstream's `f4665aa7b5` ("Core: support multiple active transactions") was
 evaluated and **declined**; `docs/TransactionLog.md` records why, and the
 direction the user wants instead.
 
-**Where the ledger stands (2026-09-21).** 1149 rows, of which 335 are open
-and undecided, down from 503 over two sessions of reading blobs rather
+**Where the ledger stands (2026-09-21).** 1149 rows, of which 333 are open
+and undecided, down from 503 over three sessions of reading blobs rather
 than commits. First the 33 files the handler resyncs touched: 21 are
 identical to upstream's tip modulo whitespace, closing 74 rows at once
 (section 7, "The origin marker"). Then the same idea over the whole tree,
@@ -40,9 +40,11 @@ per row instead of per file -- is every line a commit added already in the
 fork's file, and every line it removed already gone -- which closed 55
 more and turned up five picks -- a whole feature the fork was missing
 and two live crashes -- and put a size on the two families left open
-(section 7, "The sweep over every file" onwards). Of what is left,
-`Gui/ViewProviderSketch.cpp` and `Gui/CommandConstraints.cpp` carry the
-most, and the `EditMode*` family is n/a by decision 3.
+(section 7, "The sweep over every file" onwards). One of those two
+families, the constraint-tool hints, has since been taken whole --
+thirteen rows, two of which the per-file sweep could not see (section
+7a). Of what is left, `Gui/ViewProviderSketch.cpp` carries the most, and
+the `EditMode*` family is n/a by decision 3.
 Branch `SketcherPort` off `RemoteEdit`
 `b7dbdd191d`. Upstream reference: `upstream/main` `bd6be559e8`
 (2026-09-12).
@@ -2133,23 +2135,103 @@ reading kept two. `561e521817`'s `#ifndef NOMINMAX`, `4b589088f6`'s
 those lines somewhere else entirely. **Absence is evidence; presence is
 a hint.** Every closed row in this sweep was read.
 
-### Two families left open on purpose, with their size
+### One family left open on purpose, with its size
 
-**Context-aware hints for the constraint commands.** Eleven rows, all of
-them `Gui/CommandConstraints.cpp` alone. The framework itself is no
-longer the blocker -- `Gui/ToolHandler` and `getToolHints()` are in, and
-ten of the fork's drawing handlers already answer hints. What is missing
-is the application of it to the constraint tools: upstream's
-`CommandConstraints.cpp` mentions `getToolHints`/`InputHint` 74 times,
-this fork's zero. That is a medium feature by decision 4 rather than
-something deferred by it, so the rows say so; it is the largest coherent
-piece of Gui work the ledger still has.
+The constraint-tool hints, sized here as eleven rows, were taken in the
+next session and are section 7a below. What is left is:
 
 **The icon refresh.** Six rows of SVG: new carbon copy icons, new
 external and intersection icons and cursors, redrawn toggle-construction
 icons, hyperbola and parabola endpoint icons, text converted to paths.
 None of it is a defect and all of it is art the fork has its own version
 of, so it is one decision rather than six picks.
+
+## 7a. The constraint-tool hints (session 85)
+
+Thirteen rows, not the eleven the sweep sized: `580d538798`, the commit
+that started the family, and `cda0d1201c` were open too and only turn up
+by searching the ledger's subjects for "hint" rather than by reading the
+one file's history.
+
+    580d538798 17533deb50 871ee4ca32 582eae5ba3 8b36da6782 584472f779
+    dbd72f9c60 a940181998   -> Gui: the constraint tools' pick hints
+    b82408c545 cda0d1201c 1ac117f1c8 99f27f1a56 ea6469a7d7
+                            -> Gui: the dimension tool's mode hints
+
+Taken as an end state, not replayed. The file is `fork+2354 up-2547`, so
+the thirteen commits would not have applied in sequence; and since the
+fork had *no* hints here, there was no partial state to reconcile -- the
+only question was what the finished feature should say, which is a
+question about this fork's tools, not about upstream's diffs.
+
+**The phrases were decided against `allowedSelSequences`, not copied.**
+Each command declares the selection sequences it accepts; those
+sequences say exactly which states the tool can be in and what it will
+accept next. Reading them per command, rather than trusting upstream's
+table, is what made the hints true here and found four things:
+
+- **Upstream's table has unreachable rows.** Distance X/Y step 1 offers
+  "pick second point or edge", but a single edge is dimensioned the
+  moment it is picked (`{SelEdge}` is a one-element sequence, and the
+  handler applies a sequence as soon as one completes), so step 1 is
+  only ever reached from a first point. Its "place dimension" branch
+  cannot run in either tree. Same for the "optional tangent point" and
+  "optional perpendicular point" rows: every three-element sequence for
+  those tools has a vertex in position 0 or 1, so the branch that would
+  print them is shadowed. Those rows, and the constants that served only
+  them, are not carried over.
+- **Upstream's hint for tangent is wrong for upstream's own sequences.**
+  After a first point, tangent accepts another point -- tangency through
+  two endpoints, `{SelVertexOrRoot, SelVertex}` -- as well as an edge.
+  "Pick first edge" names only one of them. Here it says "pick edge or
+  second point".
+- **The fork's sequences differ where upstream added tools it has not.**
+  Upstream's angle takes a lone arc (`{SelArc}`) and its symmetric takes
+  two edges; neither is here. Both are separate ledger rows, and neither
+  changes a hint, but a table copied wholesale would have been written
+  against them.
+- **Point on object had no first-pick hint at all** in the first draft,
+  because upstream's special case for it starts at step 1 and the
+  fallback table has no row for the command. The test found it.
+
+**The dimension tool's mode hints had to be rebuilt, not ported.** They
+name the constraint the mode key would make next, and three things here
+are not upstream's:
+
+- the key is `Sketcher_NextToolMode`, a command (`90f0e23eac`), not a
+  raw `SoKeyboardEvent::M` inside `registerPressedKey`, so the refresh
+  hangs off `iterateToolMode()`. Both it and the hint now ask one
+  `nextConstraint()`, so the tool and the bar cannot disagree;
+- **the hint is computed while the tool's own preview is in the
+  document.** `isHorizontalVerticalBlock()` answers "this line is
+  horizontal" about the Horizontal the tool itself just previewed, so
+  the mode hint vanished one press into the cycle. `cstrIndexes` is what
+  this tool created; discounting it restores the question that was meant
+  to be asked, which is what the line was before the tool started;
+- **silence is a hint too.** A line that really is already horizontal,
+  vertical or blocked has those three modes refused by `makeCts_1Line`,
+  which resets the cycle instead; an equality between a line and an axis
+  is refused the same way. Upstream promises the mode anyway. Here the
+  mode line is empty, which is the true statement.
+
+One more defect, independent of the port: `ToolHandler::activate()`
+shows the hints *before* the activation hook, so a tool started on a
+selection -- which the dimension tool usually is -- described an empty
+selection until something else refreshed the bar.
+
+**Guard**: `tests/gui/sketch-constraint-hints.py`, which reads the
+rendered hint bar (`Gui::InputHintWidget` is a QLabel holding HTML) and
+drives the sequences through `Gui.Selection`, since the constraint
+handler advances on selection changes and needs no synthetic mouse.
+Scored against the unpatched build first: 13 of its 16 checks fail
+there, all twenty tools silent.
+
+**Still not answered, and it is not this pick's job**: hints go to
+`Gui::getMainWindow()->showHints()`, the desktop status bar. A browser
+client's mirror has no main window, so a served session's hints are
+drawn on the host and nowhere else. That is true of all ten drawing
+handlers already; putting hints on the wire is a thin-client item, not
+a port one.
 
 ## 8. Phases
 

@@ -600,7 +600,7 @@ bcbf8d88a9	2025-06-16	tetektoza	feature	0	0	open	20	have: every line upstream ad
 f6f75a6a0d	2025-06-16	Florian Foinant-Willig	fix	1	0	open	25	partial 88c9baa853: Gui/CommandConstraints.cpp SketcherTests/TestSketcherSolver.py	Sketcher: Fix circle-line negative distance	App/planegcs/Constraints.cpp Gui/CommandConstraints.cpp SketcherTests/TestSketcherSolver.py
 732501d89d	2025-06-17	Karliss	feature	0	0	open	35		Sketcher: Implement related constraint command for non edges	Gui/CommandSketcherTools.cpp
 c76f068f91	2025-06-23	George Peden	feature	0	0	open	142	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Add contextual input hints to transform tools (InputHints Phase 4) (#21840)	Gui/DrawSketchHandlerOffset.h Gui/DrawSketchHandlerRotate.h Gui/DrawSketchHandlerScale.h Gui/DrawSketchHandlerSymmetry.h Gui/DrawSketchHandlerTranslate.h
-580d538798	2025-06-23	George Peden	feature	0	0	open	224		Sketcher: Add contextual input hints to constraint commands (InputHints Phase 2) (#21751)	Gui/CommandConstraints.cpp Gui/DrawSketchHandler.h
+580d538798	2025-06-23	George Peden	feature	0	0	open	224	taken 669887e4da	Sketcher: Add contextual input hints to constraint commands (InputHints Phase 2) (#21751)	Gui/CommandConstraints.cpp Gui/DrawSketchHandler.h
 df08c0ce8d	2025-06-18	Karliss	fix	0	0	open	2		Sketcher: fix Esc can leave setting synchronization	Gui/ViewProviderSketch.cpp
 cf082f7642	2025-07-01	Max Wilfinger	?	0	0	open	1166	partial 88c9baa853: App/AppSketcher.cpp App/SketchObject.cpp Gui/AppSketcherGui.cpp Gui/Command.cpp Gui/CommandAlterGeometry.cpp Gui/CommandConstraints.cpp Gui/CommandCreateGeo.cpp Gui/CommandSketcherBSpline.cpp Gui/CommandSketcherOverlay.cpp Gui/CommandSketcherTools.cpp Gui/CommandSketcherVirtualSpace.c	Sketcher: Update UI strings for consistency (#22167)	App/AppSketcher.cpp App/Sketch.cpp App/SketchObject.cpp Gui/AppSketcherGui.cpp Gui/Command.cpp Gui/CommandAlterGeometry.cpp Gui/CommandConstraints.cpp Gui/CommandCreateGeo.cpp Gui/CommandSketcherBSpline.cpp Gui/CommandSketcherOverlay.cpp Gui/CommandSketcherTools.cpp Gui/CommandSketcherVirtualSpace.c
 f72397ce19	2025-07-04	Luz Paz	noise	0	0	open	2		Fix various typos Found via codespell	Gui/CommandCreateGeo.cpp
@@ -731,17 +731,17 @@ a41159a043	2025-09-21	theo-vt	feature	0	0	open	7		Sketcher.Scale: Add case for d
 9be5c97fcf	2025-09-28	tetektoza	?	0	0	open	142		Sketcher: Unset labels that are invalid only after user finished editing	Gui/DrawSketchController.h Gui/DrawSketchHandlerArc.h Gui/DrawSketchHandlerArcSlot.h Gui/DrawSketchHandlerBSpline.h Gui/DrawSketchHandlerCircle.h Gui/DrawSketchHandlerEllipse.h Gui/DrawSketchHandlerLine.h Gui/DrawSketchHandlerOffset.h Gui/DrawSketchHandlerPolygon.h Gui/DrawSketchHandlerRectangle.h G
 dc2aec50d4	2025-09-28	Kacper Donat	?	0	0	open	2		Sketcher: Do not force visibility of planes on edit	Gui/ViewProviderSketch.cpp
 f2af5b7e7f	2025-09-29	tetektoza	?	0	0	open	43	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Remove isSet checks that were replaced by hasFinishedEditing	Gui/DrawSketchHandlerArc.h Gui/DrawSketchHandlerBSpline.h Gui/DrawSketchHandlerCircle.h Gui/DrawSketchHandlerEllipse.h Gui/DrawSketchHandlerLine.h Gui/DrawSketchHandlerRectangle.h
-582eae5ba3	2025-09-07	George Peden	feature	0	0	open	4	deferred: context-aware hints for the CONSTRAINT commands, an open family (section 7)	Add missing hints for ConstrainRadiam tool	Gui/CommandConstraints.cpp
-871ee4ca32	2025-09-07	George Peden	feature	0	0	open	32	deferred: context-aware hints for the CONSTRAINT commands, an open family (section 7)	Add context-aware hints for ConstrainAngle tool	Gui/CommandConstraints.cpp
-17533deb50	2025-09-07	George Peden	feature	0	0	open	66	deferred: context-aware hints for the CONSTRAINT commands, an open family (section 7)	Add context-aware hints for remaining constraint tools	Gui/CommandConstraints.cpp
-8b36da6782	2025-09-07	George Peden	feature	0	0	open	84	deferred: context-aware hints for the CONSTRAINT commands, an open family (section 7)	Refactor hint strings to use constants	Gui/CommandConstraints.cpp
-584472f779	2025-09-08	George Peden	feature	0	0	open	69	deferred: context-aware hints for the CONSTRAINT commands, an open family (section 7)	Refactor: Replace all literal hint strings with constants	Gui/CommandConstraints.cpp
-dbd72f9c60	2025-09-08	George Peden	feature	0	0	open	64	deferred: context-aware hints for the CONSTRAINT commands, an open family (section 7)	Improve context-aware hints for Sketcher constraints	Gui/CommandConstraints.cpp
-b82408c545	2025-09-08	George Peden	fix	0	0	open	16	deferred: context-aware hints for the CONSTRAINT commands, an open family (section 7)	Fix Sketcher Dimension hints - add context-aware hints based on selection	Gui/CommandConstraints.cpp
+582eae5ba3	2025-09-07	George Peden	feature	0	0	open	4	taken 669887e4da	Add missing hints for ConstrainRadiam tool	Gui/CommandConstraints.cpp
+871ee4ca32	2025-09-07	George Peden	feature	0	0	open	32	taken 669887e4da	Add context-aware hints for ConstrainAngle tool	Gui/CommandConstraints.cpp
+17533deb50	2025-09-07	George Peden	feature	0	0	open	66	taken 669887e4da	Add context-aware hints for remaining constraint tools	Gui/CommandConstraints.cpp
+8b36da6782	2025-09-07	George Peden	feature	0	0	open	84	taken 669887e4da	Refactor hint strings to use constants	Gui/CommandConstraints.cpp
+584472f779	2025-09-08	George Peden	feature	0	0	open	69	taken 669887e4da	Refactor: Replace all literal hint strings with constants	Gui/CommandConstraints.cpp
+dbd72f9c60	2025-09-08	George Peden	feature	0	0	open	64	taken 669887e4da	Improve context-aware hints for Sketcher constraints	Gui/CommandConstraints.cpp
+b82408c545	2025-09-08	George Peden	fix	0	0	open	16	taken 2c0ca26ebe	Fix Sketcher Dimension hints - add context-aware hints based on selection	Gui/CommandConstraints.cpp
 abf9762abb	2025-09-20	George Peden	fix	0	0	open	38		Fix ConstrainSymmetric two points + symmetry point workflow	Gui/CommandConstraints.cpp
-1ac117f1c8	2025-09-20	George Peden	feature	0	0	open	17	deferred: context-aware hints for the CONSTRAINT commands, an open family (section 7)	Add MODE_HINT to dimension tool	Gui/CommandConstraints.cpp
-a940181998	2025-09-21	longrackslabs	fix	0	0	open	2	deferred: context-aware hints for the CONSTRAINT commands, an open family (section 7)	Fix ConstrainSymmetric hint for point->edge->point workflow	Gui/CommandConstraints.cpp
-99f27f1a56	2025-09-21	longrackslabs	feature	0	0	open	9	deferred: context-aware hints for the CONSTRAINT commands, an open family (section 7)	Add 'or click to finish' to Sketcher_Dimension hints	Gui/CommandConstraints.cpp
+1ac117f1c8	2025-09-20	George Peden	feature	0	0	open	17	taken 2c0ca26ebe	Add MODE_HINT to dimension tool	Gui/CommandConstraints.cpp
+a940181998	2025-09-21	longrackslabs	fix	0	0	open	2	taken 669887e4da	Fix ConstrainSymmetric hint for point->edge->point workflow	Gui/CommandConstraints.cpp
+99f27f1a56	2025-09-21	longrackslabs	feature	0	0	open	9	taken 2c0ca26ebe	Add 'or click to finish' to Sketcher_Dimension hints	Gui/CommandConstraints.cpp
 ef10f20351	2025-09-30	PaddleStroke	fix	1	0	open	3	have: every line upstream added is in the fork's file (2026-09-21 hunk sweep)	Sketcher: Prevent non-edit toolbars from showing up when switching tab (#24202)	Gui/Workbench.cpp
 f90e73f64b	2025-09-25	paddle	feature	1	0	open	8		Sketcher: Force OVP visibility for offset and scale.	Gui/DrawSketchController.h Gui/DrawSketchHandlerOffset.h Gui/DrawSketchHandlerScale.h
 c2592271e8	2025-10-06	PaddleStroke	feature	0	0	open	22		Sketcher: remove edit tools from toolbar (#24229)	Gui/Workbench.cpp Gui/Workbench.h
@@ -1031,7 +1031,7 @@ f7252a11ca	2026-02-01	wwmayer	fix	0	0	n/a(uncompiled)	8		Sketcher: Fix memory le
 e2ba9763d6	2026-02-01	wwmayer	fix	0	0	n/a(uncompiled)	4		Sketcher: Fix memory leaks	Gui/EditModeCoinManagerParameters.cpp
 fe8d2845ea	2026-05-12	Max Wilfinger	feature	0	0	open	34		Address review comments	Gui/CommandSketcherTools.cpp Gui/EditModeCoinManagerParameters.cpp
 b5b34f1a03	2026-06-04	luzpaz	noise	0	0	have	4	taken b4b8f10a3b	Fix various typos Found via codespell	Gui/DrawSketchHandlerLineSet.h
-cda0d1201c	2026-06-06	Max Wilfinger	feature	0	0	open	257		Sketcher: Add hints to dimension tool	Gui/CommandConstraints.cpp
+cda0d1201c	2026-06-06	Max Wilfinger	feature	0	0	open	257	taken 2c0ca26ebe	Sketcher: Add hints to dimension tool	Gui/CommandConstraints.cpp
 6bbb82fdbc	2026-06-08	PaddleStroke	fix	0	0	have	79	taken b4b8f10a3b	Sketcher: Polyline: Fix R to undo when AutoRecompute is ON (#30667)	Gui/DrawSketchHandlerLineSet.h
 387d25c219	2026-06-08	Turan Furkan Topak	?	0	0	open	382		Sketcher: Point-on-Line Constrain is now also possible along the line for AutoConstrain (#30332)	Gui/DrawSketchHandler.cpp Gui/DrawSketchHandler.h Gui/DrawSketchHandlerLine.h Gui/DrawSketchHandlerPoint.h Gui/EditModeCoinManager.cpp Gui/EditModeCoinManager.h Gui/EditModeCoinManagerParameters.h Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h
 9d8bbc680a	2026-06-08	PaddleStroke	fix	0	0	have	7	taken b4b8f10a3b	Sketcher: Fix fillet not working if AutoRecompute is ON (#30666)	Gui/DrawSketchHandlerLineSet.h
@@ -1059,7 +1059,7 @@ f32d5e5fd9	2026-06-30	Joao Matos	feature	0	0	open	27	have: every line upstream a
 fbf590e7d8	2026-07-06	PaddleStroke	fix	0	0	open	6		Sketcher: Polyline: fix angle OVP bad constraint (#30468)	Gui/DrawSketchHandlerLineSet.h Gui/Utils.cpp
 5587b48a0f	2026-07-07	PaddleStroke	?	0	0	open	119		Core Sketcher: Bounding box rework (#26291)	Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h
 aa26d9ff8a	2026-07-08	Tari	feature	0	0	open	43		Created new icon variant for external construction geometry (#28507)	Gui/TaskSketcherElements.cpp
-ea6469a7d7	2026-07-08	Max Wilfinger	feature	0	0	open	19	deferred: context-aware hints for the CONSTRAINT commands, an open family (section 7)	Sketcher: Add custom hint check for dimension tool (#30944)	Gui/CommandConstraints.cpp
+ea6469a7d7	2026-07-08	Max Wilfinger	feature	0	0	open	19	taken 2c0ca26ebe	Sketcher: Add custom hint check for dimension tool (#30944)	Gui/CommandConstraints.cpp
 3d9921e71a	2026-07-08	Max Wilfinger	?	0	0	n/a(uncompiled)	40		Gui: Improve selection colors (#31050)	Gui/EditModeCoinManagerParameters.cpp
 cc802c341d	2026-07-05	wwmayer	fix	0	0	open	8	taken 4e6df1319a	Sketcher: Fix crash in SketchObject::rebuildExternalGeometry	App/SketchObject.cpp App/SketchObjectExternal.cpp
 5f90e988a0	2026-06-15	PaddleStroke	fix	0	0	open	17		Sketcher: Copy: fix crash when external selected	Gui/CommandSketcherTools.cpp
