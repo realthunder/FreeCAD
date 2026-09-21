@@ -31,15 +31,16 @@ Upstream's `f4665aa7b5` ("Core: support multiple active transactions") was
 evaluated and **declined**; `docs/TransactionLog.md` records why, and the
 direction the user wants instead.
 
-**Where the ledger stands (2026-09-21).** 1149 rows, of which 359 are open
+**Where the ledger stands (2026-09-21).** 1149 rows, of which 335 are open
 and undecided, down from 503 over two sessions of reading blobs rather
 than commits. First the 33 files the handler resyncs touched: 21 are
 identical to upstream's tip modulo whitespace, closing 74 rows at once
 (section 7, "The origin marker"). Then the same idea over the whole tree,
 per row instead of per file -- is every line a commit added already in the
 fork's file, and every line it removed already gone -- which closed 55
-more and turned up three picks, one of them a whole feature the fork was
-missing (section 7, "The sweep over every file"). Of what is left,
+more and turned up five picks -- a whole feature the fork was missing
+and two live crashes -- and put a size on the two families left open
+(section 7, "The sweep over every file" onwards). Of what is left,
 `Gui/ViewProviderSketch.cpp` and `Gui/CommandConstraints.cpp` carry the
 most, and the `EditMode*` family is n/a by decision 3.
 Branch `SketcherPort` off `RemoteEdit`
@@ -2063,6 +2064,92 @@ The rest of what the deletions turned up is noise with no behaviour in
 it and is left in the ledger as such: a duplicated `#ifndef` in
 `PreCompiled.h`, an outdated comment in `TaskDlgEditSketch.h`, an unused
 `posId2`, three dead `__GNUC__ <= 4` guards.
+
+### Two crashes the triage walked into
+
+Having a mechanical answer for "is this already applied" made it cheap
+to ask the opposite question, which turned out to be the more useful
+one: **is the code this commit fixes even here?** Index every line of
+the fork's Sketcher tree, then for each open row check whether the lines
+it removed, and the context around them, appear anywhere in that index.
+A row with no anchor at all is a fix with no subject -- upstream code the
+fork never had.
+
+That found 29 such rows, and two of them are the opposite of n/a: the
+fork has the bug, written differently, and upstream's commit is the
+signpost rather than the patch.
+
+**`CmdSketcherSnap::isActive()` dereferenced a null action.**
+`a479197f0b` and `c828c5d1d1` are titled "Remove unused snap icons and
+fix SIGSEGV"; the icon removal is what makes them look inapplicable
+here, because this fork's toolbar buttons still show state. The SIGSEGV
+half applies exactly. Three commands -- Grid, Snap, RenderingOrder --
+swap their icon from `isActive()`, which the command framework calls for
+every registered command on every update. `getAction()` is documented to
+return null when nothing has put the command on a toolbar or in a menu,
+and Grid and RenderingOrder both check it. Snap did not:
+
+    #0  libc
+    #1  Gui::Action::setIcon(QIcon const&)
+    #2  CmdSketcherSnap::isActive()
+
+It hides behind a default: entering sketch edit mode normally activates
+the Sketcher workbench, and building that workbench's toolbars is what
+creates the actions. Clear the sketch's "Editing workbench" preference,
+edit from another workbench, and the first command update takes the
+process down. `2d9e21778b`, with
+`tests/gui/sketch-toolbar-command-no-action.py` covering all three --
+scored against the unfixed build, where Grid passes and Snap never
+reports.
+
+**A knot command crashed on a selection that is not geometry.**
+`2aa8f133f3` guards one call site of an activation predicate this fork
+does not have, which is why the row read as inapplicable.
+
+    #0  libc
+    #1  SketcherGui::isBsplineKnotOrEndPoint(...)
+    #2  CmdSketcherIncreaseKnotMultiplicity::activated(int)
+
+`getIdsFromName()` knows Edge, Vertex, ExternalEdge, RootPoint, H_Axis
+and V_Axis, and leaves `GeoUndef` for anything else a sketch can have --
+a constraint, a face. `getGeometry()` answers null for an id out of
+range, and `isBsplineKnotOrEndPoint()` dereferenced it. Both knot
+commands read their selection straight into that helper with no check of
+the sub-element kind, so selecting a constraint and picking "Increase
+knot multiplicity" from the menu segfaulted. The guard goes in the
+helper rather than at the call sites, because every caller here arrives
+from a raw selection. `ae5238e143`,
+`tests/gui/sketch-knot-command-nongeometry.py`.
+
+**What the method is good for, and what it is not.** Searching the whole
+tree rather than the named file is what made both of these findable --
+`87651cdd4c` reads as unapplied against `DrawSketchDefaultHandler.h` and
+is plainly there in `DrawSketchHandler.cpp`, because upstream moved the
+code and the fork took the move. But the same looseness makes a positive
+answer weak: of eight rows the tree-wide index called applied, hand
+reading kept two. `561e521817`'s `#ifndef NOMINMAX`, `4b589088f6`'s
+`<limits>` includes, `ecbe21ca03`'s `Q_UNUSED` and half of
+`084003e361`'s SPDX headers are all absent here; the index had matched
+those lines somewhere else entirely. **Absence is evidence; presence is
+a hint.** Every closed row in this sweep was read.
+
+### Two families left open on purpose, with their size
+
+**Context-aware hints for the constraint commands.** Eleven rows, all of
+them `Gui/CommandConstraints.cpp` alone. The framework itself is no
+longer the blocker -- `Gui/ToolHandler` and `getToolHints()` are in, and
+ten of the fork's drawing handlers already answer hints. What is missing
+is the application of it to the constraint tools: upstream's
+`CommandConstraints.cpp` mentions `getToolHints`/`InputHint` 74 times,
+this fork's zero. That is a medium feature by decision 4 rather than
+something deferred by it, so the rows say so; it is the largest coherent
+piece of Gui work the ledger still has.
+
+**The icon refresh.** Six rows of SVG: new carbon copy icons, new
+external and intersection icons and cursors, redrawn toggle-construction
+icons, hyperbola and parabola endpoint icons, text converted to paths.
+None of it is a defect and all of it is art the fork has its own version
+of, so it is one decision rather than six picks.
 
 ## 8. Phases
 
