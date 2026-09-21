@@ -1770,6 +1770,76 @@ Deliberately not taken, and separable:
   behavioural gain, and keeping `(bool axis, bool planes)` also keeps
   out-of-tree callers compiling.
 
+### The origin marker, and what a tip-blob sweep is worth (`16908241f0`)
+
+The ledger's 503 open rows were never 503 pieces of work. A resync that
+takes a file whole closes every upstream commit that ever touched it, and
+closes them silently -- the rows stay open because nobody walked them.
+
+So the LineSet reading was applied as a sweep: for each of the 33 files
+the four resync commits touched, diff the fork's blob against upstream's
+tip ignoring whitespace. **21 come out identical, no line either way**,
+which settles their whole history at once. Those 21 carry 74 open rows,
+48 of them fixes, now marked have. The remaining 12 each have a handful of
+upstream-only lines:
+
+| file | upstream-only | what they are |
+|---|---|---|
+| `DrawSketchKeyboardManager.{h,cpp}` | 48 / 7 | not read yet |
+| `DrawSketchHandler.cpp` | 42 | not read yet |
+| `DrawSketchHandlerCarbonCopy.h` | 21 | not read yet |
+| `DrawSketchHandlerLineSet.h` | 10 | read and closed, section above |
+| `DrawSketchHandler{Trimming,Splitting,Fillet,Extend}.h` | 6 each | not read yet |
+| `DrawSketchHandler.h` | 6 | read, below |
+| `DrawSketchController.h` | 6 | the thin client's `ViewerContext`, deliberate |
+| `DrawSketchDefaultHandler.h` | 3 | the M key inlined, the inverse of `90f0e23eac` |
+
+`DrawSketchHandler.h`'s six are three things: upstream's
+`Gui/Selection/Selection.h` path, which this fork has not moved;
+`currentTransactionID` and the `OffsetMode` on `moveConstraint`, which
+belong to group A's command wrappers and wait on `f4665aa7b5` -- declined;
+and `setOriginPointMarker`, which is a real gap.
+
+**The pick.** `16908241f0` is two independent fixes in one commit, and
+only one of them is missing here. The on-view-parameter half -- seeding a
+parameter at the previous cursor position before activating it, so the
+label does not flash at the origin, and not re-activating one already
+active -- is **already in this fork, line for line**. Only the origin
+marker is new: for as long as a drawing tool is running, the sketch origin
+is drawn as an outline (`CIRCLE_LINE`) instead of filled, so that it reads
+as somewhere to snap to rather than as another vertex, and is put back on
+deactivate.
+
+Upstream can do that by naming a node: `EditModeCoinManager` keeps
+`OriginPointSet` and `OriginPointSetOccluded` apart from the rest, and the
+fix flips their single `markerIndex`. **This fork has no such node** --
+decision 3 keeps the monolithic `ViewProviderSketch`, where the origin is
+simply point 0 of the one `SoMarkerSet` every vertex shares. So the fix
+does not apply textually at all.
+
+It applies structurally, though, and cheaply, because the groups feature
+already taught that marker set to speak per point: a sketch holding a
+group gives `markerIndex` one value per vertex so a member's vertices can
+be `NONE`. The origin wanting a marker of its own is the same shape, so
+`setOriginPointMarker()` switches the field to per-point form and writes
+index 0, the draw path keeps it that way, and `updateInventorNodeSizes()`
+-- which collapses the field back to one value -- puts it back after.
+
+What could silently do nothing here is the per-point switch, so the test
+reads the field itself: `[50]` with no tool up, `[40, 50, 50]` with one,
+`[50, 50, 50]` after Escape. Without the pick the middle reading is `[50]`,
+which is what the test scores before it is applied
+([[measure-the-before-state]]). `tests/gui/sketch-origin-marker.py`,
+`GuiSketchOriginMarker_tests_run`.
+
+Two harness notes. There is **no Python call that purges a tool handler**,
+and `resetEdit()` is no substitute because leaving edit mode tears the
+scene down and proves nothing about the restore -- so the test sends a
+synthetic `Escape`, which reaches Coin where a synthetic mouse event would
+preselect nothing. And the viewer widget is matched on `Quarter` **or**
+`View3DInventorViewer`: matching only the first finds nothing here, and a
+helper that returns false silently reads as a failed restore.
+
 ## 8. Phases
 
 0. Groundwork: ledger, the split, the App-level Python tests.

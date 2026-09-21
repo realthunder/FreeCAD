@@ -614,6 +614,9 @@ protected:
 
     void removeNodeFromRoot(SoSeparator * node);
     void setConstraintSelectability(bool enabled = true);
+    /// Draw the origin as an outline while a drawing tool is active.
+    void setOriginPointMarker(bool hollow);
+    void applyOriginPointMarker();
     void setPositionText(const Base::Vector2d &Pos, const SbString &txt);
     void setPositionText(const Base::Vector2d &Pos);
     void resetPositionText();
