@@ -6,6 +6,7 @@
  * main window, no Gui::Application. */
 
 #include <QDebug>
+#include <QElapsedTimer>
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QGridLayout>
@@ -1528,25 +1529,49 @@ private Q_SLOTS:
         QVERIFY(opened.indexOf(buttonsId) < opened.indexOf(rootId));
         QVERIFY(!opened.contains(QString()));
 
+        // These two wait on a widget's REPAINT, which is not a posted event:
+        // it rides the platform window's update timer, so no number of
+        // immediate processEvents() is guaranteed to see it and a fixed wait
+        // is only a guess at how long it takes. Wait for the op itself.
+        auto flushUntil = [&mirror](auto ready) {
+            QElapsedTimer elapsed;
+            elapsed.start();
+            do {
+                QCoreApplication::processEvents();
+                QTest::qWait(10);
+                mirror.flush();
+                if (ready()) {
+                    return true;
+                }
+            } while (elapsed.elapsed() < 2000);
+            return false;
+        };
+
         // a setText from code arrives as one update, on the widget's own
         // evidence (its repaint)
         messages.clear();
         QLabel* realLabel = form->findChild<QLabel*>(QStringLiteral("label_n_X"));
         realLabel->setText(QStringLiteral("Count X"));
-        QCoreApplication::processEvents();
-        QCoreApplication::processEvents();
-        mirror.flush();
         const QString labelId = idOf(QStringLiteral("label_n_X"));
-        int labelUpdates = 0;
+        auto labelUpdateCount = [&]() {
+            int n = 0;
+            for (int i = 0; i < messages.count(); ++i) {
+                if (messages.at(i).at(0).toString() == labelId
+                    && messages.at(i).at(1).toString() == QLatin1String("update")) {
+                    ++n;
+                }
+            }
+            return n;
+        };
+        QVERIFY(flushUntil([&]() { return labelUpdateCount() > 0; }));
         for (int i = 0; i < messages.count(); ++i) {
             if (messages.at(i).at(0).toString() == labelId
                 && messages.at(i).at(1).toString() == QLatin1String("update")) {
-                ++labelUpdates;
                 QCOMPARE(messages.at(i).at(2).toMap().value(QStringLiteral("q_text")).toString(),
                          QStringLiteral("Count X"));
             }
         }
-        QCOMPARE(labelUpdates, 1);
+        QCOMPARE(labelUpdateCount(), 1);
         QCOMPARE(named(QStringLiteral("label_n_X"))->property("text").toString(),
                  QStringLiteral("Count X"));
 
@@ -1574,20 +1599,24 @@ private Q_SLOTS:
         messages.clear();
         QVERIFY(store.applyUpdate(stackId, QVariantMap {{QStringLiteral("q_currentIndex"), 1}}, 7));
         QCOMPARE(stack->currentIndex(), 1);
-        QCoreApplication::processEvents();
-        QCoreApplication::processEvents();
-        mirror.flush();
+        auto page1Shown = [&]() {
+            for (int i = 0; i < messages.count(); ++i) {
+                if (messages.at(i).at(0).toString() == idOf(QStringLiteral("page1"))
+                    && messages.at(i).at(2).toMap().value(QStringLiteral("q_visible")).toBool()) {
+                    return true;
+                }
+            }
+            return false;
+        };
+        QVERIFY(flushUntil(page1Shown));
         QCOMPARE(named(QStringLiteral("page1"))->property("visible").toBool(), true);
         QCOMPARE(named(QStringLiteral("page0"))->property("visible").toBool(), false);
-        bool page1Shown = false;
         for (int i = 0; i < messages.count(); ++i) {
             if (messages.at(i).at(0).toString() == idOf(QStringLiteral("page1"))
                 && messages.at(i).at(2).toMap().value(QStringLiteral("q_visible")).toBool()) {
-                page1Shown = true;
                 QCOMPARE(messages.at(i).at(3).toULongLong(), 0ULL);
             }
         }
-        QVERIFY(page1Shown);
 
         // the dialog's buttons: a client's reject reaches the button box
         QSignalSpy rejected(buttons, &QDialogButtonBox::rejected);
@@ -1695,6 +1724,25 @@ private Q_SLOTS:
             QCoreApplication::processEvents();
             QTest::qWait(50);
             mirror.flush();
+        };
+        // 50 ms is a guess at how long that repaint takes, and on a loaded
+        // box it is sometimes wrong -- which shows up as an op that simply
+        // is not there yet. Where the test is waiting for something to
+        // APPEAR, wait for it instead of for the clock. (Where it asserts
+        // that nothing appeared, plain settle() is still what is wanted:
+        // retrying there would only spend the deadline.)
+        auto settleUntil = [&mirror](auto ready) {
+            QElapsedTimer elapsed;
+            elapsed.start();
+            do {
+                QCoreApplication::processEvents();
+                QTest::qWait(10);
+                mirror.flush();
+                if (ready()) {
+                    return true;
+                }
+            } while (elapsed.elapsed() < 2000);
+            return false;
         };
 
         // the box: a checkable list with an icon and a tool tip, a two-
@@ -1870,7 +1918,8 @@ private Q_SLOTS:
         // a row hidden by the view has no signal: the flush finds it
         messages.clear();
         list->setRowHidden(1, true);
-        settle();
+        QVERIFY(settleUntil(
+            [&]() { return !customs(listId, QStringLiteral("row")).isEmpty(); }));
         QList<QVariantMap> rowOps = customs(listId, QStringLiteral("row"));
         QCOMPARE(rowOps.size(), 1);
         QCOMPARE(rowOps.at(0).value(QStringLiteral("id")).toInt(), id1);
@@ -1912,14 +1961,13 @@ private Q_SLOTS:
         const int grabs = mirror.grabCount();
         painted->update();
         QTest::qWait(mirror.grabIntervalMs() + 50);
-        settle();
-        QVERIFY(mirror.grabCount() > grabs);
+        QVERIFY(settleUntil([&]() { return mirror.grabCount() > grabs; }));
         QCOMPARE(updates(paintedId, "pixmap").size(), 0);
         QCOMPARE(paintedModel->property("pixmap").toString(), pix1);
         painted->color = Qt::blue;
         painted->update();
         QTest::qWait(mirror.grabIntervalMs() + 50);
-        settle();
+        QVERIFY(settleUntil([&]() { return !updates(paintedId, "pixmap").isEmpty(); }));
         QList<QVariantMap> pixUpdates = updates(paintedId, "pixmap");
         QCOMPARE(pixUpdates.size(), 1);
         const QString pix2 = pixUpdates.at(0).value(QStringLiteral("q_pixmap")).toString();
