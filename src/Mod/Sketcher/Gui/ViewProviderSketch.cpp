@@ -137,6 +137,7 @@
 #include "SoZoomTranslation.h"
 #include "EditDatumDialog.h"
 #include "DrawSketchHandler.h"
+#include "DrawSketchHandlerDragAutoConstraint.h"
 #include "SnapManager.h"
 #include "TaskDlgEditSketch.h"
 #include "TaskSketcherValidation.h"
@@ -337,6 +338,9 @@ struct EditData {
 
     // pointer to the active handler for new sketch objects
     DrawSketchHandler *sketchHandler;
+    // suggests auto-constraints for what a drag is about to drop, the way a
+    // drawing tool does for what it is about to place
+    std::unique_ptr<DrawSketchHandlerDragAutoConstraint> dragAutoConstraintHandler;
     bool buttonPress;
     bool handleEscapeButton;
 
@@ -1510,7 +1514,16 @@ bool ViewProviderSketch::mouseMove(const SbVec2s &cursorPos, Gui::ViewerContext 
             return true;
         case STATUS_SKETCH_Drag: {
             const Base::Vector2d dragPos = snapHandle.compute();
-            doDragStep(dragPos.x, dragPos.y);
+            const bool moved = doDragStep(dragPos.x, dragPos.y);
+
+            if (edit->dragAutoConstraintHandler) {
+                if (moved) {
+                    edit->dragAutoConstraintHandler->update(edit->Dragged, dragPos);
+                }
+                else {
+                    edit->dragAutoConstraintHandler->clear();
+                }
+            }
         }
             return true;
         case STATUS_SKETCH_DragConstraint:
@@ -1580,6 +1593,9 @@ void ViewProviderSketch::initDragging(int geoId, Sketcher::PointPos pos)
     }
 
     edit->Dragged.clear();
+    if (edit->dragAutoConstraintHandler) {
+        edit->dragAutoConstraintHandler->clear();
+    }
     setSketchMode(STATUS_SKETCH_Drag);
     edit->Dragged.emplace_back(geoId, pos);
     relative = false;
@@ -1714,6 +1730,7 @@ void ViewProviderSketch::initDragging(int geoId, Sketcher::PointPos pos)
         }
 
         if (geo->getTypeId() == Part::GeomBSplineCurve::getClassTypeId()) {
+            beginDragAutoConstraints();
             getSketchObject()->initTemporaryBSplinePieceMove(
                     geoId, Sketcher::PointPos::none, Base::Vector3d(xInit, yInit, 0.0));
             return;
@@ -1723,7 +1740,22 @@ void ViewProviderSketch::initDragging(int geoId, Sketcher::PointPos pos)
         setRelative();
     }
 
+    beginDragAutoConstraints();
     getSketchObject()->initTemporaryMove(edit->Dragged);
+}
+
+/// Arms the drag auto-constraint suggestion for the elements now in edit->Dragged.
+///
+/// Called only from the paths initDragging actually leaves as a live drag: the
+/// ones that give up set STATUS_NONE, and arming there would leave the tool
+/// cursor on a view that is not dragging anything.
+void ViewProviderSketch::beginDragAutoConstraints()
+{
+    if (!edit->dragAutoConstraintHandler) {
+        edit->dragAutoConstraintHandler = std::make_unique<DrawSketchHandlerDragAutoConstraint>();
+        edit->dragAutoConstraintHandler->setSketchGui(this);
+    }
+    edit->dragAutoConstraintHandler->initDragging(edit->Dragged);
 }
 
 /// The vector a drag step or its commit moves by. B-spline weights need it rescaled.
@@ -1767,10 +1799,10 @@ Base::Vector3d ViewProviderSketch::getDragVector(double x, double y) const
     return vec;
 }
 
-void ViewProviderSketch::doDragStep(double x, double y)
+bool ViewProviderSketch::doDragStep(double x, double y)
 {
     if (edit->Dragged.empty()) {
-        return;
+        return false;
     }
 
     Base::Vector3d vec = getDragVector(x, y);
@@ -1779,7 +1811,10 @@ void ViewProviderSketch::doDragStep(double x, double y)
             == GCS::SolveStatus::Success) {
         setPositionText(Base::Vector2d(x, y));
         draw(true, false);
+        return true;
     }
+
+    return false;
 }
 
 void ViewProviderSketch::commitDragMove(double x, double y)
@@ -1816,6 +1851,9 @@ void ViewProviderSketch::commitDragMove(double x, double y)
 
     try {
         Gui::cmdAppObjectArgs(getObject(), cmd.str().c_str());
+        if (edit->dragAutoConstraintHandler) {
+            edit->dragAutoConstraintHandler->create(edit->Dragged);
+        }
         getDocument()->commitCommand();
 
         tryAutoRecomputeIfNotSolve(getSketchObject());
@@ -1823,6 +1861,10 @@ void ViewProviderSketch::commitDragMove(double x, double y)
     catch (const Base::Exception& e) {
         getDocument()->abortCommand();
         Base::Console().Error("Drag: %s\n", e.what());
+    }
+
+    if (edit->dragAutoConstraintHandler) {
+        edit->dragAutoConstraintHandler->clear();
     }
 
     // keep the element the drag started on highlighted
@@ -8326,6 +8368,10 @@ void ViewProviderSketch::unsetEdit(int ModNum)
     if (edit) {
         if (edit->sketchHandler)
             deactivateHandler();
+
+        if (edit->dragAutoConstraintHandler) {
+            edit->dragAutoConstraintHandler->clear();
+        }
 
         Gui::coinRemoveAllChildren(edit->EditRoot);
         pcRoot->removeChild(edit->EditRoot);

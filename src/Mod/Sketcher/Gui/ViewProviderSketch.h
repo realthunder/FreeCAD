@@ -624,7 +624,8 @@ protected:
     // dragging of geometries, one or several at a time
     void initDragging(int geoId, Sketcher::PointPos pos);
     Base::Vector3d getDragVector(double x, double y) const;
-    void doDragStep(double x, double y);
+    void beginDragAutoConstraints();
+    bool doDragStep(double x, double y);
     void commitDragMove(double x, double y);
     void cancelDragMove();
 

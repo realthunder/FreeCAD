@@ -71,6 +71,8 @@ SET(SketcherGui_SRCS
     DrawSketchHandlerBSpline.h
     DrawSketchHandlerBSplineByInterpolation.h
     DrawSketchHandlerPoint.h
+    DrawSketchHandlerDragAutoConstraint.h
+    DrawSketchHandlerDragAutoConstraint.cpp
     DrawSketchHandlerFillet.h
     DrawSketchHandlerTrimming.h
     DrawSketchHandlerExtend.h

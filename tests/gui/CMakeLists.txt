@@ -196,3 +196,12 @@ fc_add_gui_test(GuiSketchNextToolMode_tests_run
 fc_add_gui_test(GuiSketchOriginMarker_tests_run
                 sketch-origin-marker.py
                 --timeout 240)
+
+# Auto-constraints for a DRAG, not only for a drawing tool (upstream
+# ec298e9e9a and its follow-ups): hold a dragged point still on top of
+# another point and the Coincident that pins it there is written when
+# the button comes up. The dwell timer is the discrimination -- sweeping
+# through on the way somewhere else proposes nothing.
+fc_add_gui_test(GuiSketchDragAutoConstraint_tests_run
+                sketch-drag-autoconstraint.py
+                --timeout 300)
