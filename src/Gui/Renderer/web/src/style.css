@@ -892,6 +892,17 @@
   pointer-events: auto;
   touch-action: pan-y;
   position: absolute;
+  /* ABOVE THE HUD. On a phone the HUD moves to the top left (the
+   * max-width:640px block on .fc-hud) while this box is full width at the
+   * top, so the two share that strip -- and main.tsx renders HudCard AFTER
+   * OmniBox, so with both at `auto` the HUD painted over the input. A tap
+   * on the input then landed on the HUD, which is outside this box's root,
+   * and the outside-press handler closed the box: the keyboard rose and
+   * the keystrokes went nowhere. Measured on a 390px viewport, where
+   * elementFromPoint at the input's own centre answered DIV.fc-title
+   * inside DIV.fc-hud. 6 is the cards' band (.fc-sheet, .fc-console),
+   * below the menus at 20 and the completion sheet at 21. */
+  z-index: 6;
   top: calc(12px + var(--fc-top, 0px));
   left: 50%;
   transform: translateX(-50%);
