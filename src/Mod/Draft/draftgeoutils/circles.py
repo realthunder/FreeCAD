@@ -98,6 +98,11 @@ def circlefrom1Line2Points(edge, p1, p2):
     It calculates up to 2 possible centers.
     """
     p1_p2 = edg(p1, p2)
+    if not p1_p2:
+        # the two points coincide, which happens through
+        # circlefrom2Lines1Point when the point sits on the bisector
+        return None
+
     s = findIntersection(edge, p1_p2, True, True)
     if not s:
         return None
@@ -252,7 +257,9 @@ def circleFromPointLineRadius(point, edge, radius):
     center1 = None
     center2 = None
 
-    if dist.Length == 0:
+    # findDistance returns None exactly when the point lies on the edge,
+    # which is the zero-distance case below
+    if dist is None or dist.Length == 0:
         segment = vec(edge)
         perpVec = segment.cross(App.Vector(0, 0, 1))
         perpVec.normalize()

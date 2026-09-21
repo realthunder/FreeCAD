@@ -1783,6 +1783,14 @@ entry comparing floating point rather than geometry, in a call that
 cannot succeed on either platform anyway while `crossproduct` is
 missing.  Off the bisector both sides reach that missing attribute
 deterministically, so the entry compares what it was meant to.
+**Both Draft bugs FIXED 2026-09-21**: the two `crossproduct` calls are
+`v.cross(Vector(0, 0, 1))`, the idiom the same file uses four lines
+above, and `mirror()` now tests `findDistance()`'s result before adding
+it, returning the point itself when it lies on the mirror line.  So
+those two entries no longer fail alike: re-measured 2026-09-21, the
+gate reads 116/116 agreeing with 9 failing alike (was 11) and 3689
+guest hops (was 3613), the two calls now doing real work instead of
+short-circuiting on a missing attribute.
 What the gate forced into the guest is listed in 3.2 and above
 (`bool`/`str` ops, type references, `ShapeList` as list,
 `GuiUp`/`Console`/`Base`/unit constants).
