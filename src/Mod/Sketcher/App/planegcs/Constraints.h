@@ -139,6 +139,13 @@ public:
         return pvec;
     }
 
+    // The parameters this constraint was built from. Unlike params(), which hands out a
+    // copy of the list, this is the list itself, for callers that only read it.
+    const VEC_pD& paramList() const
+    {
+        return pvec;
+    }
+
     void redirectParams(const MAP_pD_pD& redirectionmap);
     void revertParams();
     void setTag(int tagId)

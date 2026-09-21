@@ -268,6 +268,10 @@ public:
     // redundant and conflicting sets do not. Do not turn it on without settling which
     // answer is the right one.
     bool parameterQRKeepsColumnOrder;
+    // Fill the diagnosis Jacobian from each constraint's own parameter list rather than by
+    // asking every constraint for its derivative with respect to every parameter in the
+    // system. See makeReducedJacobian(). Turning this off restores the full sweep.
+    bool fillJacobianFromConstraintParams;
     // Decompose the transposed Jacobian only when a constraint diagnosis is possible.
     // See diagnose(). Turning this off restores the two unconditional decompositions,
     // run in parallel, which is what the code did before.

@@ -702,6 +702,10 @@ public:
     {
         GCSsys.skipUnneededConstraintQR = val;
     }
+    inline void setFillJacobianFromConstraintParams(bool val)
+    {
+        GCSsys.fillJacobianFromConstraintParams = val;
+    }
     inline void setAutoQRThreshold(int val)
     {
         GCSsys.autoQRThreshold = val;
