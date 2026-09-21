@@ -1788,9 +1788,16 @@ deterministically, so the entry compares what it was meant to.
 above, and `mirror()` now tests `findDistance()`'s result before adding
 it, returning the point itself when it lies on the mirror line.  So
 those two entries no longer fail alike: re-measured 2026-09-21, the
-gate reads 116/116 agreeing with 9 failing alike (was 11) and 3689
+gate reads 116/116 agreeing with 9 failing alike (was 11) and 3693
 guest hops (was 3613), the two calls now doing real work instead of
-short-circuiting on a missing attribute.
+short-circuiting on a missing attribute.  **3689 was wrong**, and
+`9936bff4b3`'s commit message still carries it: that run raced a file
+restore and measured a tree WITHOUT the coincident-points guard.  The
+guard tests an edge HANDLE, and `HostHandle.__bool__` always hops
+(FcxWire `OpBool`; there is no local fast path), so each evaluation
+costs one `bool` op -- 50 -> 54, which is the whole delta.  Windows
+measured 3693 independently with a component-identical breakdown, so
+the counter still agrees across boxes op for op.
 What the gate forced into the guest is listed in 3.2 and above
 (`bool`/`str` ops, type references, `ShapeList` as list,
 `GuiUp`/`Console`/`Base`/unit constants).
