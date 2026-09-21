@@ -8627,6 +8627,50 @@ swallows everything printed after `start()` -- the trap recorded in
 ring with the `get_log` tool, and `run_python` answered what the panel
 was doing (`setEdit -> True`, 12 constraints) without a rebuild.
 
+**Found on the way into W3, and it had made W1 and W2 half-built: the card
+drew one frame and stopped.**  A host change reached the page and went no
+further -- the client applied the frame, the rAF wake bumped the version
+signal, and the screen did not move.  So the origin echo (the one piece of
+C++ this section asked for), a label a slot rewrites, a picture's new
+`img:` id and Sketcher's refill after a solve were all invisible.  What
+the two on-screen proofs had actually shown was the SNAPSHOT a panel opens
+with, plus the page agreeing with itself about a write it had just made.
+
+**Proven rather than argued, because the obvious test cannot see it.**  The
+host suppresses a frame back to the client that caused it, and the origin
+echo fires only for a key whose applied value differs from what that client
+wrote -- so a tab that types into a field is told nothing either way, and
+its own DOM already holds what was typed.  TWO tabs answer it.  Tab A
+wrote; tab B watched and recorded the raw `fc:control` frames it received.
+B got the write in full -- `q_rawValue` 55, then `q_text` "55.00" -- and
+went on showing the value from before it.  The wire and the store were
+right; the rendering was not.  (A first run looked damning and proved
+nothing: it wrote the value the host already held, so nothing was
+announced.  Each run's tab B opens at the host's current value, which is
+what shows the previous run's write really landed.)
+
+**The cause is Solid's graph, not the stream.**  `WidgetStore` mutates its
+models IN PLACE (an `update` patches `state`, an item op patches `items`),
+so a `w.state.x` read in a view creates no dependency, and `<Show when={m()}
+keyed>` re-creates its children only when the model's IDENTITY changes --
+which only an `open` does.  Worse, the values that change were hoisted into
+`const`s in the component body (`const title = str(w, 'toolTip')`, `const
+picture = ...`), which run once whatever the graph does.  Fixed by routing
+every model read through accessors that track the version signal (`st`,
+`str`, `bool`, `num`, `lay`, `rows`, and a `rev` passed into the field) and
+by moving every hoisted read into a JSX expression, which the compiler makes
+a tracked getter.  The picture leaf follows its `name` through an effect for
+the same reason: the id is content-addressed, so a changed picture is a new
+id on a model patched in place.
+
+**Re-measured after the fix**: B opens at 55.00, receives the two frames of
+A's write of 33, and shows 33.00.  Neither panel regressed -- Pad draws its
+4 headings, 13 labels, 8 fields, 5 combos carrying their items, 12 checks
+and OK/Cancel over real grid tracks; Sketcher its 12 checked constraint rows
+and the Elements header over six.  The lesson for the rest of this work: the
+replay gate proves the reduction and the drive harness proves the first
+paint, and NEITHER of them watches a second frame arrive.
+
 **Cost** (new; TypeScript unless noted):
 
     the client: subscribe, frame dispatch, model store, refs,

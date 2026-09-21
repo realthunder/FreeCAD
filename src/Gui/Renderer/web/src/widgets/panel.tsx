@@ -38,11 +38,6 @@ const POS_KEY = 'fcviewer.taskpanel.pos';
 /// Qt's Qt::Checked. The bag carries the tri-state as an int.
 const CHECKED = 2;
 
-function str(model: WidgetModel, key: string): string {
-  const value = model.state[key];
-  return typeof value === 'string' ? value : '';
-}
-
 /// A Qt label may carry RICH TEXT. Sketcher's selection hint is a whole
 /// `<html><head/><body><p>&quot;Ctrl&quot;: multiple selection</p>...`
 /// document, and drawing that as characters is what the first live run
@@ -69,15 +64,6 @@ function qtText(raw: string): string {
   }
 }
 
-function bool(model: WidgetModel, key: string): boolean {
-  return model.state[key] === true;
-}
-
-function num(model: WidgetModel, key: string): number {
-  const value = model.state[key];
-  return typeof value === 'number' ? value : 0;
-}
-
 /// What a field writes back. A quantity and a spin box carry the number in
 /// `rawValue` (8.4's typing case writes exactly that); a plain edit carries
 /// `text`. Anything unparseable goes back as text, so a half-typed
@@ -101,6 +87,46 @@ export function TaskPanelCard(props: {
   viewOnly: Accessor<boolean>;
 }): JSX.Element {
   const [version, setVersion] = createSignal(0);
+
+  /// EVERY read of a model goes through one of these, and every one of them
+  /// tracks `version`.
+  ///
+  /// The store mutates its models IN PLACE -- an `update` patches `state`,
+  /// an item op patches `items` -- so a read of `w.state.x` creates no
+  /// dependency in Solid's graph, and a value computed in a component's
+  /// body runs once and never again. The card therefore drew the snapshot
+  /// it was built from and nothing after it: the client applied every
+  /// frame, the wake fired, and the screen did not move. Measured rather
+  /// than reasoned (docs/Sandbox.md 7.22): a second tab, watching while
+  /// another wrote, RECEIVED both frames of the write -- `q_rawValue` then
+  /// `q_text` -- and went on showing the old value.
+  ///
+  /// So a value that changes must be read inside a JSX expression (which
+  /// the compiler makes a tracked getter), never hoisted into a `const`
+  /// above the return.
+  const st = (m: WidgetModel): Record<string, unknown> => {
+    version();
+    return m.state as Record<string, unknown>;
+  };
+  const str = (m: WidgetModel, key: string): string => {
+    const value = st(m)[key];
+    return typeof value === 'string' ? value : '';
+  };
+  const bool = (m: WidgetModel, key: string): boolean => st(m)[key] === true;
+  const num = (m: WidgetModel, key: string): number => {
+    const value = st(m)[key];
+    return typeof value === 'number' ? value : 0;
+  };
+  /// A rebuilt layout rides an `update`, so the plan is re-read too.
+  const lay = (m: WidgetModel) => {
+    version();
+    return m.layout;
+  };
+  const rows = (m: WidgetModel): ItemRow[] => {
+    version();
+    return m.items ?? [];
+  };
+
   const [pos, setPos] = createSignal<Pos | null>(loadPos(POS_KEY));
   const [failed, setFailed] = createSignal('');
   /// The field whose expression is being edited, if any. Held HERE and
@@ -200,7 +226,7 @@ export function TaskPanelCard(props: {
     return (
       <Show when={m()} keyed>
         {(w: WidgetModel) => (
-          <Show when={w.state.visible !== false}>
+          <Show when={st(w).visible !== false}>
             {renderModel(w)}
           </Show>
         )}
@@ -209,27 +235,35 @@ export function TaskPanelCard(props: {
   };
 
   const renderModel = (w: WidgetModel): JSX.Element => {
-    const disabled = () => props.viewOnly() || w.state.enabled === false;
-    const title = str(w, 'toolTip') || undefined;
+    const disabled = () => props.viewOnly() || st(w).enabled === false;
+    const title = () => str(w, 'toolTip') || undefined;
 
     switch (w.model) {
       case 'QLabelModel': {
-        const picture = str(w, 'pixmap');
-        if (picture.startsWith('img:')) return <Picture client={ensure} name={picture} />;
-        const raw = str(w, 'text');
-        const shown = qtText(raw);
+        // Which of the two a label is can CHANGE while the panel is up (a
+        // slot sets a pixmap on a label that held text), so the choice is
+        // made per render rather than once on the way in.
+        const picture = () => str(w, 'pixmap');
+        const raw = () => str(w, 'text');
+        const shown = () => qtText(raw());
         // A hint that was rich text, or that carries its own newlines, is
         // a paragraph and wraps; a plain form label stays on one line.
         return (
-          <div class="fc-panel-label"
-               classList={{ 'fc-panel-rich': shown !== raw || shown.includes('\n') }}
-               title={title}>{shown}</div>
+          <Show when={picture().startsWith('img:')}
+                fallback={
+                  <div class="fc-panel-label"
+                       classList={{ 'fc-panel-rich':
+                                    shown() !== raw() || shown().includes('\n') }}
+                       title={title()}>{shown()}</div>
+                }>
+            <Picture client={ensure} name={picture()} />
+          </Show>
         );
       }
       case 'QPushButtonModel':
       case 'QToolButtonModel':
         return (
-          <button class="fc-panel-btn" title={title} disabled={disabled()}
+          <button class="fc-panel-btn" title={title()} disabled={disabled()}
                   onClick={() => void client?.custom(w.id, { event: 'click' })}>
             {/* An icon-only button's tooltip is a sentence -- Pad's is
                 "Temporary clear link references for new selection" -- and
@@ -243,7 +277,7 @@ export function TaskPanelCard(props: {
       case 'QCheckBoxModel':
       case 'QRadioButtonModel':
         return (
-          <label class="fc-panel-check" title={title}>
+          <label class="fc-panel-check" title={title()}>
             <input type={w.model === 'QCheckBoxModel' ? 'checkbox' : 'radio'}
                    checked={bool(w, 'checked') || num(w, 'checkState') === CHECKED}
                    disabled={disabled()}
@@ -252,11 +286,14 @@ export function TaskPanelCard(props: {
           </label>
         );
       case 'QComboBoxModel': {
-        const items = Array.isArray(w.state.items) ? (w.state.items as unknown[]) : [];
+        const items = (): unknown[] => {
+          const value = st(w).items;
+          return Array.isArray(value) ? (value as unknown[]) : [];
+        };
         return (
-          <select class="fc-panel-field" title={title} disabled={disabled()}
+          <select class="fc-panel-field" title={title()} disabled={disabled()}
                   onChange={(e) => write(w.id, { currentIndex: e.currentTarget.selectedIndex })}>
-            <For each={items}>
+            <For each={items()}>
               {(item, index) => (
                 <option selected={index() === num(w, 'currentIndex')}>{String(item)}</option>
               )}
@@ -273,8 +310,8 @@ export function TaskPanelCard(props: {
         // A field carries its own completion and, when it is bound, its
         // own expression editor (docs/Sandbox.md 7.23).
         return (
-          <Field w={w} title={title} disabled={disabled} viewOnly={props.viewOnly}
-                 client={() => client}
+          <Field w={w} title={title()} rev={version} disabled={disabled}
+                 viewOnly={props.viewOnly} client={() => client}
                  onValue={(raw: string) => write(w.id, valueWrite(w, raw))}
                  onExpression={(id: string, binding: string, expression: string) =>
                    setExpr({ id, binding, expression })} />
@@ -282,11 +319,11 @@ export function TaskPanelCard(props: {
       case 'QGroupBoxModel': {
         // Gui::TaskView::TaskBox is the panel's own box: same shape, and
         // its title is the header the desktop draws.
-        const heading = str(w, 'title') || str(w, 'windowTitle');
+        const heading = () => str(w, 'title') || str(w, 'windowTitle');
         return (
           <section class="fc-panel-box">
-            <Show when={heading}><div class="fc-panel-box-head">{heading}</div></Show>
-            <Plan plan={planLayout(w.layout)} />
+            <Show when={heading()}><div class="fc-panel-box-head">{heading()}</div></Show>
+            <Plan plan={planLayout(lay(w))} />
           </section>
         );
       }
@@ -314,7 +351,7 @@ export function TaskPanelCard(props: {
         // A container, or a class with no view yet: its layout still
         // renders, so an unfamiliar widget costs its own box and not the
         // panel.
-        return <Plan plan={planLayout(w.layout)} />;
+        return <Plan plan={planLayout(lay(w))} />;
     }
   };
 
@@ -394,7 +431,7 @@ export function TaskPanelCard(props: {
   /// QVariantLists and guessing the packing would paint the wrong thing.
   const ItemsView = (p: { w: WidgetModel }): JSX.Element => {
     const columns = (): string[] => {
-      const value = p.w.state.columns;
+      const value = st(p.w).columns;
       return Array.isArray(value) ? (value as unknown[]).map(String) : [];
     };
     const colCount = () => Math.max(columns().length, num(p.w, 'columnCount'), 1);
@@ -405,11 +442,11 @@ export function TaskPanelCard(props: {
     /// list, which is exactly what the first live run drew.
     const headed = () => p.w.model !== 'QListWidgetModel'
       && p.w.model !== 'QListViewModel'
-      && p.w.state.headerHidden !== true
+      && st(p.w).headerHidden !== true
       && columns().length > 0;
-    const expandable = () => p.w.state.itemsExpandable !== false;
+    const expandable = () => st(p.w).itemsExpandable !== false;
     const selected = (): number[] => {
-      const value = p.w.state.selection;
+      const value = st(p.w).selection;
       return Array.isArray(value) ? (value as unknown[]).map(Number) : [];
     };
 
@@ -498,7 +535,7 @@ export function TaskPanelCard(props: {
             <For each={columns()}>{(label) => <span>{label}</span>}</For>
           </div>
         </Show>
-        <Level rows={p.w.items ?? []} />
+        <Level rows={rows(p.w)} />
       </div>
     );
   };
@@ -551,9 +588,22 @@ export function TaskPanelCard(props: {
 }
 
 /// A custom-painted leaf: the host sent an `img:<sha1>`, fetched once.
+///
+/// The id is content-addressed, so a repaint that changed nothing keeps it
+/// and a repaint that changed something sends a NEW one -- which is why
+/// this follows `name` rather than fetching once at creation: the model is
+/// patched in place, and a picture whose fetch was hoisted out of the
+/// reactive graph would show the first frame for as long as the panel was
+/// up.
 function Picture(props: { client: () => PanelClient; name: string }): JSX.Element {
   const [url, setUrl] = createSignal('');
-  void props.client().image(props.name).then(setUrl).catch(() => {});
+  createEffect(() => {
+    const name = props.name;
+    let current = true;
+    onCleanup(() => { current = false; });
+    void props.client().image(name).then((src) => { if (current) setUrl(src); })
+      .catch(() => {});
+  });
   return (
     <Show when={url()} keyed>
       {(src: string) => <img class="fc-panel-pic" src={src} alt="" />}

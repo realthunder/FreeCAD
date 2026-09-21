@@ -34,14 +34,15 @@ const NUMERIC = new Set([
   'QDoubleSpinBoxModel', 'DoubleSpinBoxModel',
 ]);
 
-function str(model: WidgetModel, key: string): string {
-  const value = model.state[key];
-  return typeof value === 'string' ? value : '';
-}
-
 export function Field(props: {
   w: WidgetModel;
   title: string | undefined;
+  /// The card's frame counter. Read by every state access below, because
+  /// the store patches a model IN PLACE: without it the field shows what
+  /// the host held when the panel was built and never what it holds now --
+  /// the origin echo of a corrected write included, which is the one thing
+  /// the host's own C++ was added for (docs/Sandbox.md 7.22).
+  rev: Accessor<number>;
   disabled: Accessor<boolean>;
   viewOnly: Accessor<boolean>;
   client: () => PanelClient | null;
@@ -55,8 +56,19 @@ export function Field(props: {
 }): JSX.Element {
   const w = props.w;
   const numeric = NUMERIC.has(w.model);
-  const bound = () => str(w, 'binding') !== '';
-  const hasExpression = () => str(w, 'expression') !== '';
+  const get = (key: string): string => {
+    props.rev();
+    const value = w.state[key];
+    return typeof value === 'string' ? value : '';
+  };
+  /// The host's text, or the raw number when it sends none (a plain
+  /// QDoubleSpinBox carries `value` and no `text`).
+  const shown = () => {
+    props.rev();
+    return get('text') || String(w.state.rawValue ?? '');
+  };
+  const bound = () => get('binding') !== '';
+  const hasExpression = () => get('expression') !== '';
 
   return (
     <div class="fc-panel-fieldwrap">
@@ -64,7 +76,7 @@ export function Field(props: {
         class="fc-panel-field"
         title={props.title}
         disabled={props.disabled()}
-        value={str(w, 'text') || String(w.state.rawValue ?? '')}
+        value={shown()}
         inputmode={inputModeFor('', numeric)}
         spellcheck={false}
         autocomplete="off"
@@ -77,9 +89,9 @@ export function Field(props: {
         <button
           class={hasExpression() ? 'fc-panel-fx fc-panel-fx-on' : 'fc-panel-fx'}
           title={hasExpression()
-            ? `Bound to an expression: ${str(w, 'expression')}`
+            ? `Bound to an expression: ${get('expression')}`
             : 'Enter an expression'}
-          onClick={() => props.onExpression(w.id, str(w, 'binding'), str(w, 'expression'))}
+          onClick={() => props.onExpression(w.id, get('binding'), get('expression'))}
         >
           fx
         </button>
