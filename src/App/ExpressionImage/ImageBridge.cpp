@@ -31,6 +31,7 @@
 #include <Base/VectorPy.h>
 
 #include "FcxWire.h"
+#include "FcxCbor.h"
 #include "ImageMarshal.h"
 
 using nlohmann::json;
@@ -136,7 +137,7 @@ static bool hostRoundTrip(const json &req, json &reply)
     if (!hostTransport(json::to_cbor(req), buf))
         return false;
     try {
-        reply = json::from_cbor(buf.begin(), buf.end());
+        reply = FcxWire::fromCbor(buf);
     }
     catch (const json::exception &e) {
         PyErr_Format(PyExc_RuntimeError, "undecodable host reply: %s",
@@ -268,7 +269,7 @@ static PyObject *fcx_op(PyObject *, PyObject *args)
             case FcxWire::FixedKindCbor: {
                 json reply;
                 try {
-                    reply = json::from_cbor(q, q + n);
+                    reply = FcxWire::fromCbor(q, n);
                 }
                 catch (const json::exception &e) {
                     PyErr_Format(PyExc_RuntimeError, "undecodable host reply: %s", e.what());

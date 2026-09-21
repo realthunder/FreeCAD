@@ -12,13 +12,19 @@
 // history (kept per browser), Tab completes, Ctrl+C interrupts a running
 // statement or drops the line being typed, Ctrl+L clears the output.  A
 // paste of several lines is pushed line by line, as if typed.
+//
+// Where the interpreter runs is the session's choice (sandbox/session.ts):
+// this thread under JSPI, a worker where there is none -- which is what gives
+// Safari a console (C6).  `?guest=worker` or `?guest=jspi` forces one, for a
+// gate that wants the path this browser would not have picked.
 
 import { createEffect, createSignal, For, on, onCleanup, Show } from 'solid-js';
 import type { Accessor } from 'solid-js';
 
 import { draggable, fitOnScreen, loadPos, posStyle, type Pos }
   from './panel';
-import { ConsoleSession, type PushStatus, type Stream } from './sandbox/session';
+import { ConsoleSession, chooseTransport, type PushStatus, type Stream, type Transport }
+  from './sandbox/session';
 import { setFromGuest } from './widgets/complete.ts';
 import { CompleteButton, CompletionList, createCompletion } from './widgets/completion.tsx';
 
@@ -103,10 +109,12 @@ export function ConsolePanel(props: {
 
   const boot = async () => {
     if (session || state() === 'booting') return;
-    if (!ConsoleSession.supported) {
+    const want = (new URLSearchParams(location.search).get('guest') ?? 'auto') as Transport;
+    if (!chooseTransport(want)) {
       setState('failed');
-      setStatus('this browser cannot run the console yet: it needs JavaScript Promise '
-                + 'Integration (Chrome 137, Firefox 139 or later)');
+      setStatus('this browser cannot run the console yet: it needs either JavaScript '
+                + 'Promise Integration (Chrome 137, Firefox 139 or later) or a '
+                + 'cross-origin isolated page for shared memory (Safari)');
       return;
     }
     setState('booting');
@@ -121,11 +129,15 @@ export function ConsolePanel(props: {
         output: write,
         viewerSocket: props.viewerSocket,
         progress: (what) => setStatus(what + '...'),
+        transport: want,
       });
       const g = session.guest;
       // The bridge's figures, for a gate page to read (consolepanelmain.ts).
       (window as any).fcxConsoleStats = () => session?.bridge.stats ?? null;
-      write(`Python (pyodide ${g.info.version}) in this page, `
+      (window as any).fcxConsoleTransport = session.transport;
+      write(`Python (pyodide ${g.info.version}) `
+            + (session.transport === 'worker' ? 'in a worker of this page, '
+                                              : 'in this page, ')
             + `${Math.round(performance.now() - t0)} ms to start. `
             + 'FreeCAD reaches the served document as this client, '
             + (session.onViewerSocket ? "on the viewer's connection.\n"

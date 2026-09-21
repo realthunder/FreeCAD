@@ -774,7 +774,9 @@ document switch -- from a gate page with no WASM viewer (C4), and
 client, its view-only mode, its document switch), and
 `sandbox-latency-browser.py` times the statements a console user types with
 `scripts/delay-proxy.js` holding the page's connection at a LAN's or a
-tunnel's round-trip time, and reads the page's processes' memory (C5), so
+tunnel's round-trip time, and reads the page's processes' memory (C5), and
+`sandbox-console-safari.py` runs C4's drive in Safari, where the guest is in
+a worker because there is no JSPI (C6, and see the macOS note below), so
 they need what this repository does not carry -- `build/wasm` (for the console
 page only the web bundle, `npm run build` in `src/Gui/Renderer/web`), a
 `puppeteer-core` install, and a Chrome binary -- and they skip rather than fail
@@ -854,6 +856,41 @@ driver minus xvfb and `timeout`:
     GT_OUT=$OUT GT_RESULT=$OUT/result.txt \
     .conda/run.sh build/mac-relwithdebinfo-801/bin/FreeCAD \
         --user-cfg "$OUT/.iso/user.cfg" tests/gui/serve-selection-echo.py
+
+**The Safari leg of the browser console** is macOS-only and takes no browser
+tooling at all -- no puppeteer, no Chrome, no WebDriver. `open -a Safari`
+opens the same gate page the C4 driver does, the page drives the panel itself
+(`?drive=1`) and POSTs its verdict to a collector the test runs (`?report=`),
+and `?guest=worker` forces the transport. It needs only the web bundle
+(`npm run build` in `src/Gui/Renderer/web`, into `build/wasm/web`) and a
+FreeCAD with the sandbox host:
+
+    OUT=/tmp/gt-safari; mkdir -p "$OUT/.iso/cache" "$OUT/.iso/config"
+    XDG_CACHE_HOME=$OUT/.iso/cache XDG_CONFIG_HOME=$OUT/.iso/config \
+    GT_OUT=$OUT GT_RESULT=$OUT/result.txt \
+    .conda/run.sh build/mac-relwithdebinfo-801/bin/FreeCAD \
+        --user-cfg "$OUT/.iso/user.cfg" tests/gui/sandbox-console-safari.py
+
+It opens a tab and closes it again at the end (`SAFARI_KEEP=1` leaves it);
+`SAFARI_BROWSER` names another browser for `open -a`, which is how the same
+drive gates the worker path in a browser that has JSPI.
+
+`sandbox-console-viewer-browser.py` takes `SAFARI=1` for the same treatment
+of the REAL viewer page: it needs `build/wasm` built, and the page loads its
+own drive from `?drive=console` rather than having one injected.
+
+**Chrome for Testing on macOS 12: pin 137.** The current build (153) does not
+start on Monterey -- `dlopen ... Symbol not found:
+_kVTCompressionPropertyKey_ReferenceBufferCount ... Expected in
+VideoToolbox.framework`, which is a macOS 13 symbol. `npx @puppeteer/browsers
+install chrome@137` is the newest that runs here, and it is new enough for
+every browser leg: JSPI shipped in Chrome 137. The binary is inside an app
+bundle, so `CHROME` is the executable within it:
+
+    CHROME="$HOME/.cache/puppeteer/chrome/mac-137.0.7151.119/chrome-mac-x64/\
+    Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+
+No `CHROME_LIBS` here -- that is the Linux box's libasound workaround.
 
 `GuiServeSelectionEcho_tests_run` passes that way, 2026-09-07: eight PASS
 lines and `DONE`. Its run log used to be unreadable for a reason that had

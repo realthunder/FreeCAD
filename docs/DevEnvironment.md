@@ -3701,6 +3701,7 @@ Linux at all.
 | `imgui-node-editor` `crude_json.cpp` | `<exception>` for `std::terminate` |
 | `src/Gui/Renderer/BGFXRendererP.h` | the `BX_PLATFORM_OSX` branch called `get_nswindow_from_nsview()`, **defined nowhere** -- it had never been compiled. bgfx's Metal backend sorts out NSView/NSWindow/CAMetalLayer itself, and Qt's `winId()` is an NSView*, so it is passed straight through |
 | `src/Gui/Renderer/CMakeLists.txt` | link `vg-renderer` before `example-common`: both vendor fontstash, and Apple's `ld` errors on the 32 duplicate symbols where GNU ld silently takes the first |
+| `src/App/ExpressionImage/FcxCbor.h` (2026-09-16) | the same class, one step further out: **libstdc++ ships `std::char_traits<unsigned char>` as an extension and libc++ does not**, and nlohmann's CBOR reader instantiates `char_traits` for whatever the iterator's value type is -- so every `json::from_cbor` over the sandbox's `std::vector<unsigned char>` buffers (25 sites) failed on macOS only. The header decodes through `const char*`, which is defined everywhere |
 
 The OCCT patch joins the fork-local list at the top of this document.
 
@@ -3732,6 +3733,80 @@ $RUN cmake --build build/mac-relwithdebinfo-801 -j 4 \
 Use `-- -k 0` on a first build after a change of toolchain: ninja then collects
 every error in one pass instead of stopping at the first, which on a
 2500-target dependency is the difference between one cycle and ten.
+
+### The sandbox on macOS (2026-09-16)
+
+Brought up for `docs/Sandbox.md` 7.20 C6, the Python console in Safari. Nothing
+here is macOS-specific except where it says so; it is the Linux recipe of "the
+pyodide sandbox guest toolchain" above, run on this box, with what it actually
+needed. Every package exists for osx-64.
+
+```sh
+# 1. the host: v8-embed is what BUILD_EXPR_PYODIDE_HOST detects, and cogapp is
+#    a configure-time requirement the env did not have
+~/miniforge3/bin/conda install -y -p ~/works/sw/fcad/.conda/freecad \
+    -c realthunder -c conda-forge v8-embed
+.conda/freecad/bin/python3.12 -m pip install cogapp
+# detection does not reach a tree that exists: force both flags
+.conda/run.sh cmake -S . -B build/mac-relwithdebinfo-801 \
+    -DBUILD_EXPR_PYODIDE_HOST=ON -DBUILD_EXPR_IMAGE_HOST=ON
+
+# 2. the guest toolchain, exactly as the Linux section has it
+git clone --depth 1 https://github.com/emscripten-core/emsdk.git ~/works/sw/emsdk-5.0.3
+cd ~/works/sw/emsdk-5.0.3
+EMSDK_PYTHON=~/miniforge3/envs/v8build/bin/python ./emsdk install 5.0.3
+EMSDK_PYTHON=~/miniforge3/envs/v8build/bin/python ./emsdk activate 5.0.3
+~/miniforge3/bin/conda create -y -n v8build python=3.14
+~/miniforge3/envs/v8build/bin/python -m pip install 'pyodide-build==0.39.0'
+~/miniforge3/envs/v8build/bin/pyodide xbuildenv install 314.0.6 \
+    --path ~/works/sw/pyodide/xbuildenv
+```
+
+**node comes with emsdk here too** (`~/works/sw/emsdk-5.0.3/node/24.19.0_64bit/bin`),
+and it is the only node on the box: the web bundle's `npm ci` and `npm run build`
+in `src/Gui/Renderer/web` want it on PATH.
+
+```sh
+# 3. the guest wheel (NOT through .conda/run.sh -- a cross build must not see
+#    the env's host tuning), then ship it and bootstrap the runtime
+source src/App/PyodideHost/guest/emsdk-env.sh
+export PATH="$PATH:$PWD/.conda/freecad/bin"
+unset CFLAGS CXXFLAGS LDFLAGS CPPFLAGS
+emcmake cmake -S src/App/PyodideHost/guest -B build/pyodide-guest -G Ninja \
+  -DFREECAD_GENERATED_DIR=$PWD/build/mac-relwithdebinfo-801/src \
+  -DBOOST_INCLUDE_DIR=$PWD/.conda/freecad/include
+cmake --build build/pyodide-guest          # 38 steps, ~15 min at -j 1 here
+
+# 4. the wheels FreeCAD ships, and the per-user runtime
+python3 scripts/sandbox-fetch-wheels.py build/sandbox-wheels   # ipywidgets, traitlets
+.conda/run.sh cmake -S . -B build/mac-relwithdebinfo-801 \
+  -DFREECAD_FCX_IMAGE_WHEEL=$PWD/build/pyodide-guest/dist/fcx_image-0.1-cp314-cp314-pyodide_2026_0_wasm32.whl \
+  -DFREECAD_BUNDLED_WHEELS="$PWD/build/sandbox-wheels/ipywidgets-8.1.9-py3-none-any.whl;$PWD/build/sandbox-wheels/traitlets-5.14.3-py3-none-any.whl"
+.conda/run.sh cmake --build build/mac-relwithdebinfo-801 -j 4
+.conda/run.sh build/mac-relwithdebinfo-801/bin/FreeCADCmd -c \
+  "import freecad.pyodide as P; print(P.install_runtime(source='github'))"
+```
+
+Two things this box says that the Linux one does not:
+
+- **`libv8.dylib` was built for macOS 13.5** and every link against it warns
+  "built for newer macOS version (13.5) than being linked (11.3)". It loads and
+  runs on 12.7.6 anyway -- the whole sandbox, guest included, works.
+- **Three sandbox tests failed here on the first run and are now fixed**
+  (2026-09-16): they compare a NATIVE result against the same computation ROUTED
+  through the wasm guest, the host half being macOS's libm and the guest half
+  musl's, and this box was the first to run them at all. Two were the
+  comparison -- the corpus gate zipped two SORTED vertex lists, where one last
+  bit in X reorders two vertices and pairs unrelated points, so a Draft array
+  2 ULPs out reported 458 units -- and the third, the flange, demanded a
+  byte-identical BRep where the bolt circle's cos/sin differ in the last bit
+  (0.5 ULPs, the volume identical to the bit). See the commit; **ctest is
+  635/635 here**. **Without the bundled wheels of step 4 there are eight**: five
+  more report `ModuleNotFoundError: No module named 'ipywidgets'`, and under the
+  default 5 s budget they report a TIMEOUT instead, which is the misleading face
+  of the same gap on a 4-core box.
+- The **pivy wheel** (`FREECAD_PIVY_WHEEL`) is not built here; nothing the
+  browser console needs wants it.
 
 ## Regenerating the bundled material icons
 

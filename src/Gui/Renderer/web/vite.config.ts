@@ -7,6 +7,19 @@ import { resolve } from 'path';
 
 export default defineConfig({
   plugins: [solid()],
+  // Relative, because the bundle is not served at the server's root: FreeCAD
+  // mounts it under /web/ (SceneServer.cpp serveViewerFile), and the default
+  // base made the console guest's worker URL /assets/..., which 404s there.
+  base: './',
+  // The worker of the sandbox console (docs/Sandbox.md 7.20 C6) goes beside
+  // the entries under its own name rather than into a hashed assets/ dir: the
+  // whole bundle is served no-store, so a content hash buys nothing.
+  worker: {
+    format: 'es',
+    rollupOptions: {
+      output: { entryFileNames: '[name].js', chunkFileNames: '[name].js' },
+    },
+  },
   build: {
     outDir: resolve(__dirname, '../../../../build/wasm/web'),
     emptyOutDir: true,

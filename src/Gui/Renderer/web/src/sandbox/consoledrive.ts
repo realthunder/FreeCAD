@@ -12,6 +12,10 @@ export function makeReport() {
     stats: null as unknown,
     checks: [] as Check[],
     error: '',
+    /// Filled in when a gate asks for the verdict by ?report= (the browser
+    /// no driver attaches to: Safari).
+    ua: '',
+    transport: null as unknown,
   };
   const check = (name: string, pass: boolean, detail: unknown) => {
     const d = typeof detail === 'string' ? detail : JSON.stringify(detail);

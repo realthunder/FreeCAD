@@ -18,6 +18,7 @@
 #include <nlohmann/json.hpp>
 
 #include <App/ExpressionImageHost.h>
+#include <App/ExpressionImage/FcxCbor.h>
 #include <App/ExpressionPyodide.h>
 #include <App/ExpressionSecurityRuntime.h>
 
@@ -414,7 +415,7 @@ protected:
 
     static json value(const App::ExpressionSandbox::ImageResult& res)
     {
-        return json::from_cbor(res.value.begin(), res.value.end());
+        return FcxWire::fromCbor(res.value);
     }
 
     std::string mirror;      ///< the staged runtime, which also holds the wheels
