@@ -182,10 +182,11 @@ private:
     );
 
 #ifdef EIGEN_SPARSEQR_COMPATIBLE
+    template<typename QRType>
     void makeSparseQRDecomposition(
         const Eigen::MatrixXd& J,
         const std::map<int, int>& jacobianconstraintmap,
-        Eigen::SparseQR<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int>>& SqrJT,
+        QRType& SqrJT,
         int& rank,
         Eigen::MatrixXd& R,
         bool transposeJ = true,
@@ -257,6 +258,16 @@ public:
     QRAlgorithm qrAlgorithm;
     bool autoChooseAlgorithm;
     int autoQRThreshold;
+    // Order the parameter decomposition's columns as they come instead of letting COLAMD
+    // choose. OFF by default, and measured before being left that way: it is four times
+    // faster on the corpus's heaviest Jacobian (fill in R 4.66M -> 2.58M non-zeros, the
+    // decomposition 3.32s -> 0.83s) but a net loss over the whole corpus, 48.0s -> 51.0s
+    // of solving, because COLAMD wins on the many smaller sketches. It also moves the
+    // answer: the pivot columns change, and with them which elements are reported as not
+    // fully constrained -- 15 of 1405 sketches differ, though degrees of freedom and the
+    // redundant and conflicting sets do not. Do not turn it on without settling which
+    // answer is the right one.
+    bool parameterQRKeepsColumnOrder;
     // Decompose the transposed Jacobian only when a constraint diagnosis is possible.
     // See diagnose(). Turning this off restores the two unconditional decompositions,
     // run in parallel, which is what the code did before.
