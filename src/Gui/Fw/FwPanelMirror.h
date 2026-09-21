@@ -157,6 +157,23 @@ public:
     void rebuild();
     /// Re-read the dirty widgets now (what the flush timer does).
     void flush();
+
+    /// Re-read EVERY mirrored widget now, dirty or not (what the poll
+    /// timer does).  The mirror's evidence that a value changed is the
+    /// host's own painting, and a host that is not painting -- minimized,
+    /// occluded, a collapsed TaskBox, a tab it is not showing -- has none
+    /// to give, while the client renders the panel regardless.  Picture
+    /// grabs are left out: a grab forces a repaint and is the expensive
+    /// part, and a picture with nothing painting it has nothing new to
+    /// show (docs/Sandbox.md 8.4).
+    void poll();
+
+    /// How often that poll runs, 0 to leave it off.  Preferences/Fw,
+    /// `PanelPollMs`; read once at `start`.
+    static int defaultPollMs()
+    {
+        return 500;
+    }
     /// How many walks ran since `start` (tests).
     int rebuildCount() const
     {
@@ -249,7 +266,9 @@ private:
     void unwatchWidget(QWidget* real);
     void releaseModel(QWidget* real, bool announce);
     QVariantMap read(QWidget* real, Widget* model) const;
-    void refresh(QWidget* real, Widget* model, bool initial);
+    void refresh(QWidget* real, Widget* model, bool initial, bool allowGrab = true);
+    /// Arm the poll from Preferences/Fw `PanelPollMs` (0 leaves it off).
+    void startPoll();
     void onModelWritten(QWidget* real, Widget* model, const QStringList& names, int source);
     void onModelRequest(QWidget* real, Widget* model, const QString& name,
                         const QVariantList& args);
@@ -268,6 +287,7 @@ private:
     struct Stats
     {
         qint64 flushes = 0;
+        qint64 polls = 0;
         qint64 widgetsRead = 0;
         qint64 keysRead = 0;
         qint64 keysWritten = 0;
@@ -283,6 +303,7 @@ private:
     QTimer _flushTimer;
     QTimer _showTimer;
     QTimer _grabTimer;
+    QTimer _pollTimer;
     QElapsedTimer _clock;
     /// the picture leaves, when each was last grabbed, which wait for
     /// the rate cap

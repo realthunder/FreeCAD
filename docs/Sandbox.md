@@ -7491,14 +7491,25 @@ of all three, which is the point of the mirror, so this is a real hole
 rather than a curiosity -- it is just one that never shows on a bench
 whose host is in front of you.
 
-The fix, if it is wanted, is a low-rate safety poll while a subscriber
-is attached and a panel is up: re-read the keys and the rows, skip the
-picture grabs (a grab forces a repaint and is the expensive part).  The
-cost is known from the table above and from the repaint rows -- about
-25 us per widget, so a full re-read of Pad's 61-model panel is about
-1.5 ms, and at 2 Hz about 0.3% of one core while a client watches a
-panel.  Not built: it is idle cost for a case the desktop never sees,
-so it is a decision, not a defect fix.
+**The answer, BUILT 2026-09-22**: a low-rate safety poll while the
+mirror is running.  `PanelMirror::poll()` re-reads every mirrored widget
+-- not just the dirty ones, since the whole point is the widgets no
+event marked -- and `writeDiff` still sends only what differs, so a
+panel nothing has touched costs the reads and puts nothing on the wire.
+It skips the picture grabs on purpose: a grab forces a repaint and is
+the expensive part of a refresh, and a widget nothing is painting has
+no new picture to give.  The interval is `PanelPollMs` under
+`Preferences/Fw`, read once at `start`, default 500 ms; 0 turns it off.
+
+Measured on a deliberately unfriendly panel -- 43 models, one of them a
+400-row list, nothing painting it: **769 us per poll and 0 keys
+written**, 51 polls in a second at a forced 20 ms.  At the 500 ms
+default that is 0.15% of one core, and the row scan is not the cost the
+400 rows suggested it would be.  Guard:
+`test_panelMirrorPoll` in `tests/src/Gui/FormWidgets.cpp`, which hides
+the host, changes a row and a label, and fails on the pre-fix binary
+with "a row hidden while the host does not paint never reached the
+client".
 
 ## 9. Tests
 
@@ -8388,9 +8399,11 @@ sockets, any network for the reference image, a webview escape hatch.
   `TaskBox` or a panel on a tab the host is not showing freezes the
   client's panel until something paints again.  Measured: 1 ms when the
   host paints, nothing at all when it does not, and a full catch-up on
-  the first repaint after.  Nothing is lost or reordered.  The answer
-  is a low-rate poll while a subscriber is attached, costed in 8.4 and
-  NOT built -- it is idle cost for a case the desktop never sees.
+  the first repaint after.  Nothing is lost or reordered.  **Closed
+  2026-09-22** by the low-rate poll in 8.4 (`PanelPollMs`, default
+  500 ms, 769 us a poll on a 43-model panel with a 400-row list); what
+  remains deliberately paint-driven is the picture grab, which has
+  nothing new to show when nothing is painting it.
 - **`FreeCAD.GuiUp` in the guest: RULED 2026-09-06, the host's
   value** ("flip it"; 7.9).  What it costs until G4, measured by
   `SandboxCorpusGui`: an App-side hook calling its VIEW PROVIDER'S

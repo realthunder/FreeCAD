@@ -2013,6 +2013,123 @@ private Q_SLOTS:
         QCOMPARE(store.count(), 0);
     }
 
+    void test_panelMirrorPoll()
+    {
+        // docs/Sandbox.md 8.4: the mirror's evidence that a value changed
+        // is the host's OWN PAINTING -- the event filter marks a widget
+        // dirty on Paint, and for a key with no signal behind it (a
+        // label's text, a row hidden by the view) Paint is the only event
+        // that fires. A host that is not painting therefore sent nothing,
+        // and the client renders the panel regardless of whether the host
+        // does: a minimized window, a collapsed TaskBox or a tab the host
+        // is not showing froze the client's panel until something painted.
+        // The low-rate poll is the answer; this is that it works, and that
+        // it does not pay for a picture grab to do it.
+        Fw::Store& store = Fw::Store::instance();
+        store.reset();
+        Fw::PanelMirror& mirror = Fw::PanelMirror::instance();
+        QSignalSpy messages(&store, &Fw::Store::message);
+
+        ParameterGrp::handle grp = App::GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/Fw");
+        const long wasPoll = grp->GetInt("PanelPollMs", Fw::PanelMirror::defaultPollMs());
+        grp->SetInt("PanelPollMs", 20);
+
+        auto hand = new QWidget;
+        auto vbox = new QVBoxLayout(hand);
+        auto list = new QListWidget(hand);
+        for (const char* text : {"alpha", "beta", "gamma"}) {
+            new QListWidgetItem(QString::fromUtf8(text), list);
+        }
+        auto label = new QLabel(QStringLiteral("before"), hand);
+        auto painted = new PaintedLeaf(hand);
+        vbox->addWidget(list);
+        vbox->addWidget(label);
+        vbox->addWidget(painted);
+        auto box = new Gui::TaskView::TaskBox(QStringLiteral("Polled"), true, nullptr);
+        box->groupLayout()->addWidget(hand);
+        QWidget host;
+        auto hostLay = new QVBoxLayout(&host);
+        hostLay->addWidget(box);
+        host.show();
+        QCoreApplication::processEvents();
+
+        mirror.show(QStringLiteral("PollDialog"), {box}, nullptr);
+        const QString listId = store.idOf(mirror.modelOf(list));
+        const QString labelId = store.idOf(mirror.modelOf(label));
+        QVERIFY(!listId.isEmpty() && !labelId.isEmpty());
+        QVERIFY(mirror.isPicture(painted));
+
+        auto rowOps = [&messages, &listId]() {
+            int n = 0;
+            for (int i = 0; i < messages.count(); ++i) {
+                if (messages.at(i).at(0).toString() != listId
+                    || messages.at(i).at(1).toString() != QLatin1String("custom"))
+                    continue;
+                if (messages.at(i).at(2).toMap().value(QStringLiteral("item")).toString()
+                    == QLatin1String("row"))
+                    ++n;
+            }
+            return n;
+        };
+        auto textOps = [&messages, &labelId]() {
+            int n = 0;
+            for (int i = 0; i < messages.count(); ++i) {
+                if (messages.at(i).at(0).toString() != labelId
+                    || messages.at(i).at(1).toString() != QLatin1String("update"))
+                    continue;
+                if (messages.at(i).at(2).toMap().contains(QStringLiteral("q_text")))
+                    ++n;
+            }
+            return n;
+        };
+        auto until = [](auto ready) {
+            QElapsedTimer elapsed;
+            elapsed.start();
+            do {
+                QTest::qWait(10);
+                if (ready()) {
+                    return true;
+                }
+            } while (elapsed.elapsed() < 2000);
+            return false;
+        };
+
+        // nothing is painting this panel any more
+        host.hide();
+        QTest::qWait(60);
+        messages.clear();
+        const int grabsBefore = mirror.grabCount();
+        const QVariantMap before = mirror.stats();
+
+        list->setRowHidden(1, true);
+        label->setText(QStringLiteral("changed while nothing painted"));
+
+        QVERIFY2(until([&]() { return rowOps() > 0; }),
+                 "a row hidden while the host does not paint never reached the client");
+        QVERIFY2(until([&]() { return textOps() > 0; }),
+                 "a label's text set while the host does not paint never reached the client");
+        QCOMPARE(store.snapshot(labelId).value(QStringLiteral("state")).toMap()
+                     .value(QStringLiteral("q_text")).toString(),
+                 QStringLiteral("changed while nothing painted"));
+
+        // the poll ran, and bought none of it with a grab
+        const QVariantMap after = mirror.stats();
+        QVERIFY(after.value(QStringLiteral("polls")).toLongLong()
+                > before.value(QStringLiteral("polls")).toLongLong());
+        QCOMPARE(mirror.grabCount(), grabsBefore);
+
+        // a panel nothing is touching puts nothing on the wire, however
+        // many times it is polled
+        messages.clear();
+        QTest::qWait(150);
+        QCOMPARE(messages.count(), 0);
+
+        mirror.stop();
+        delete box;
+        grp->SetInt("PanelPollMs", wasPoll);
+    }
+
     void test_panelMirrorDialogs()
     {
         // docs/Sandbox.md 7.19, M3: a top-level dialog shown while the

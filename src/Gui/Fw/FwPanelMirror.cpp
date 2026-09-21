@@ -267,6 +267,8 @@ PanelMirror::PanelMirror()
                 _dirty.insert(w);
         flush();
     });
+    _pollTimer.setSingleShot(false);
+    connect(&_pollTimer, &QTimer::timeout, this, &PanelMirror::poll);
     _clock.start();
     _dialogTimer.setSingleShot(true);
     _dialogTimer.setInterval(0);
@@ -342,6 +344,7 @@ void PanelMirror::start()
             _pendingDialogs.append(w);
     if (!_pendingDialogs.isEmpty())
         _dialogTimer.start();
+    startPoll();
     if (!getMainWindow())
         return;  // no task view to follow (a test drives `show` itself)
     _connShow = Control().signalShowDialog.connect(
@@ -383,6 +386,7 @@ void PanelMirror::stop()
     _running = false;
     _rebuildTimer.stop();
     _flushTimer.stop();
+    _pollTimer.stop();
     if (_list) {
         Store::instance().release(listId());
         delete _list.data();
@@ -640,6 +644,42 @@ bool PanelMirror::eventFilter(QObject* watched, QEvent* event)
     return QObject::eventFilter(watched, event);
 }
 
+void PanelMirror::startPoll()
+{
+    ParameterGrp::handle grp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Fw");
+    const int ms = grp->GetInt("PanelPollMs", defaultPollMs());
+    if (ms > 0)
+        _pollTimer.start(ms);
+    else
+        _pollTimer.stop();
+}
+
+void PanelMirror::poll()
+{
+    if (!_running || _walking || _models.isEmpty())
+        return;
+    // Everything, not just what is dirty -- the point is the widgets no
+    // event marked.  writeDiff sends only what differs, so a poll over a
+    // panel nothing has touched costs the reads and puts nothing on the
+    // wire (docs/Sandbox.md 8.4).
+    ++_stats.polls;
+    // Over a snapshot, and looked up again inside the loop, for flush()'s
+    // reason: a refresh writes to the store and fans out to subscribers,
+    // and anything that reaches a slot from there can release a widget --
+    // a live iterator into _models would not survive it.
+    const QList<QWidget*> widgets = _models.keys();
+    for (QWidget* w : widgets) {
+        if (_dirty.contains(w))
+            continue;  // a dirty widget is the flush's, and is read there
+        auto it = _models.find(w);
+        if (it == _models.end() || !it.value())
+            continue;
+        ++_stats.widgetsRead;
+        refresh(w, it.value(), false, false);
+    }
+}
+
 void PanelMirror::flush()
 {
     QSet<QWidget*> dirty;
@@ -660,6 +700,7 @@ QVariantMap PanelMirror::stats() const
 {
     QVariantMap m;
     m.insert(QStringLiteral("flushes"), _stats.flushes);
+    m.insert(QStringLiteral("polls"), _stats.polls);
     m.insert(QStringLiteral("widgetsRead"), _stats.widgetsRead);
     m.insert(QStringLiteral("keysRead"), _stats.keysRead);
     m.insert(QStringLiteral("keysWritten"), _stats.keysWritten);
@@ -1245,7 +1286,7 @@ void PanelMirror::forgetPicture(QWidget* real)
     _pendingGrabs.remove(real);
 }
 
-void PanelMirror::refresh(QWidget* real, Widget* model, bool initial)
+void PanelMirror::refresh(QWidget* real, Widget* model, bool initial, bool allowGrab)
 {
     // the re-read's own time: the whole refresh less the grab and the
     // write, which are counted on their own
@@ -1256,9 +1297,13 @@ void PanelMirror::refresh(QWidget* real, Widget* model, bool initial)
     QVariantMap v = read(real, model);
     // what has no name to send and travels by image id (M2)
     if (_pictures.contains(real)) {
-        const QString id = grabPicture(real);
-        if (!id.isNull())
-            v.insert(QStringLiteral("pixmap"), id);
+        // a poll skips this: grabPicture() forces a repaint, and a widget
+        // nothing is painting has no new picture to give anyway
+        if (allowGrab) {
+            const QString id = grabPicture(real);
+            if (!id.isNull())
+                v.insert(QStringLiteral("pixmap"), id);
+        }
     }
     else if (auto button = qobject_cast<::QAbstractButton*>(real)) {
         if (!button->icon().isNull())
