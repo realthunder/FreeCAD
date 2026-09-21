@@ -198,7 +198,12 @@ std::vector<std::string> mappedImages()
     // wants the buffer sized up front and reports what it would have
     // needed, so ask once, grow, ask again.
     const HANDLE process = ::GetCurrentProcess();
-    std::vector<HMODULE> mods(256);
+    // Deliberately smaller than any real process needs -- 180 modules
+    // were measured in this test on Windows, and even a bare console
+    // process maps dozens -- so the grow-and-retry below runs every time
+    // instead of being a branch nothing ever takes. One extra
+    // EnumProcessModules call buys a continuously exercised path.
+    std::vector<HMODULE> mods(32);
     // How many the call actually WROTE, which is not the same as how
     // many it wants: the count it reports back can exceed the buffer,
     // and the entries past the end were never filled in. Walking those
