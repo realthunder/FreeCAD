@@ -153,8 +153,25 @@ void SketchObject::retrieveSolverDiagnostics()
     lastMalformedConstraints = solvedSketch.getMalformedConstraints();
 }
 
+namespace
+{
+// Each diagnosis optimisation is a preference of its own, so a build can be put back on
+// the old path one step at a time when a sketch is diagnosed differently than expected.
+// They live beside the other solver knobs in Preferences/Mod/Sketcher/SolverAdvanced.
+void applyDiagnosePreferences(Sketcher::Sketch& sketch)
+{
+    auto preferences = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Mod/Sketcher/SolverAdvanced"
+    );
+
+    sketch.setSkipUnneededConstraintQR(preferences->GetBool("SkipUnneededConstraintQR", true));
+}
+}  // namespace
+
 SketchSolveStatus SketchObject::solve(bool updateGeoAfterSolving /*=true*/)
 {
+    applyDiagnosePreferences(solvedSketch);
+
     // no need to check input data validity as this is an sketchobject managed operation.
     Base::StateLocker lock(managedoperation, true);
 

@@ -222,7 +222,8 @@ private:
         const Eigen::MatrixXd& J,
         const std::map<int, int>& jacobianconstraintmap,
         const GCS::VEC_pD& pdiagnoselist,
-        bool silent = true
+        bool silent,
+        int& rank
     );
 #endif
 
@@ -256,6 +257,10 @@ public:
     QRAlgorithm qrAlgorithm;
     bool autoChooseAlgorithm;
     int autoQRThreshold;
+    // Decompose the transposed Jacobian only when a constraint diagnosis is possible.
+    // See diagnose(). Turning this off restores the two unconditional decompositions,
+    // run in parallel, which is what the code did before.
+    bool skipUnneededConstraintQR;
     DogLegGaussStep dogLegGaussStep;
     double qrpivotThreshold;
     DebugMode debugMode;

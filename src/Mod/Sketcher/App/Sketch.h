@@ -694,6 +694,10 @@ public:
     {
         return debugMode;
     }
+    inline void setSkipUnneededConstraintQR(bool val)
+    {
+        GCSsys.skipUnneededConstraintQR = val;
+    }
     inline void setAutoQRThreshold(int val)
     {
         GCSsys.autoQRThreshold = val;
