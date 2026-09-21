@@ -1500,6 +1500,12 @@ onto FreeCAD's Qt main thread (the `Web::AppServer` pattern) so document/OCCT/Co
 work is safe. The interpreter session is persistent (a REPL), captures
 stdout/stderr, returns the last expression's value, and reports exceptions as text.
 
+**RULED 2026-09-21: it stays.** The open question was whether an agent-drivable
+port belongs in the dev environment at all, given that it is a live interpreter
+on a socket. The answer is yes, so the console is a standing part of this box's
+setup rather than an experiment on probation. It remains loopback-only and
+off unless `FC_MCP_PORT` or `MCPServerAutoStart` turns it on.
+
 Runtime dependency: the `mcp` Python package in the active interpreter. **It is
 installed in `.conda/freecad` as of 2026-09-19** -- `mcp` 2.1.1 from conda-forge,
 38 packages in all, pulled with the channel held down:

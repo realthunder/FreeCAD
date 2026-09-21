@@ -10362,6 +10362,13 @@ push the user's call).
    WIRE floor (14.1 of its 23 us), which is neither of these items.
    OPEN FOR THE USER: whether to spend anything here at all, and
    whether the 56.8 ms/cell host finding of 8.1 is in scope.
+   **DEFERRED 2026-09-21 by the user** ("defer to later with real
+   file"): nothing is spent here until the question is put to a REAL
+   document rather than the synthetic benches -- the 10k-cell
+   projection and the flange program are both ours, and a measurement
+   that only ever sees our own fixtures is the reason this item
+   answered itself once already.  Re-open it with a real file in hand;
+   the 56.8 ms/cell host finding waits with it.
 5. **The browser's task panel** -- RULED 2026-09-10 ("B is good"):
    the PANEL MIRROR of 7.19 -- the desktop's real task panel walked
    into models and streamed, no edit to any workbench, C++ panels
@@ -10392,7 +10399,16 @@ push the user's call).
    loop was one op per element, too slow through a tunnel), then a
    per-statement prefetch of sibling reads, ruled the same day -- 50
    objects at 100 ms RTT, 5.4 s -> 0.42 s; the guest is +185 MB PSS in
-   the page.  C6 (Safari) only if necessary (ruled 2026-09-15).
+   the page.  C6 (Safari) only if necessary (ruled 2026-09-15) -- and
+   it was: **BUILT 2026-09-16** on a macOS box whose browser is Safari,
+   the guest in a worker parked in `Atomics.wait` with the socket left
+   on the page, and COOP/COEP on the served pages; it also makes a pure
+   CPU loop interruptible, which C4 could not.  **That work is on
+   `origin/SecurePython` and is NOT in this branch** (checked
+   2026-09-21: SecurePython carries 8 commits RemoteEdit lacks, while
+   RemoteEdit is 220 ahead of it; the merge base is `184a2efff2`, C5).
+   So the console HERE still has no Safari leg, and four of those eight
+   commits are it.
 
 DROPPED 2026-09-08: G4 (7.16, sized), F1 (7.14: it closed a hole only
 a SESSION guest has), N1-N5 (network is a session need), G5, G6, rung
@@ -10418,6 +10434,12 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    construction dispatch BUILT the same day (gate
    `draftTestObjectsBuiltRouted`: the whole Draft test document built
    with routing on, 70/70 Proxies in the guest); BIM remains (7.6).
+   **BIM's half SUPERSEDED 2026-09-21 by the user's ruling that add-on
+   code runs HOST-side only, never in the guest** -- the same rule 7.31
+   applied when it took Proxy routing out: what the sandbox boxes is
+   code carried IN THE DOCUMENT, and installed workbench code is not a
+   target.  So G1d has nothing pending; it is closed, not waiting on an
+   `fcx_bim` wheel or an Arch corpus.
 2. **G2** -- U1 + U2 + U7: Draft and BIM register from the guest; the
    subset shim.  SIZED 2026-09-05 (7.9): G2a the registration mechanism
    (the guest's `FreeCADGui`, the `gui.*` op family, stand-in commands,
