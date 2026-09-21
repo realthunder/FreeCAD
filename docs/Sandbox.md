@@ -8757,6 +8757,33 @@ work, not this stage's.  The window icon is not drawn either.  Locale is
 gate-proven and not screen-proven, because the host under both the gate and
 the harness reports `C`.
 
+**What W4 inherits** (2026-09-21, from the first real handset session --
+the picture panel served over a Cloudflare quick tunnel and driven from a
+phone).  Two of these are the browser tier's, one is the harness's:
+
+- **With a card open on a narrow viewport there is no way to reach the
+  omni box.**  `main.tsx` hides the launcher whenever a card is up and the
+  viewport is under `NARROW`, and a phone has no `/` key -- so with the
+  task panel mirrored and open, search is unreachable.  Found by a probe
+  that opened omni through the launcher and got nothing: the hamburger is
+  not in the DOM at all.  A design call rather than a bug (keep the
+  launcher visible, or give the card its own search entry), which is why
+  it is written down rather than fixed.
+- **The viewer page logs a 403 for one resource at load**, with a valid
+  token and on loopback alike; the scene streams anyway, which is why it
+  has gone unnoticed.  Unexplained, and this is the page we now hand to
+  other people.
+- **W2's debts are still owed and W3 added one.**  Nesting and cell
+  colours are gate-green and have never been PROVEN ON SCREEN; locale
+  joins them, the host reporting `C` under both the gate and the drive
+  harness, so seeing it work needs a serve started in another locale.
+
+Two traps for whoever writes W4's drive, both paid for once already: a
+drive that reads the card the moment a field exists reports every icon
+MISSING rather than "not yet" (pictures are a round trip behind the
+widgets that name them), and a console ring fills with swiftshader's
+WebGL warnings and crowds out the one message worth reading.
+
 **Cost** (new; TypeScript unless noted):
 
     the client: subscribe, frame dispatch, model store, refs,
