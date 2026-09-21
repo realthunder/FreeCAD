@@ -220,3 +220,10 @@ fc_add_gui_test(GuiSketchOriginMarker_tests_run
 fc_add_gui_test(GuiSketchDragAutoConstraint_tests_run
                 sketch-drag-autoconstraint.py
                 --timeout 300)
+
+# A sketch edited with the "Editing workbench" preference cleared never
+# builds the Sketcher toolbars, so its commands have no action -- and
+# Sketcher_Snap's icon swap dereferenced that null from isActive().
+fc_add_gui_test(GuiSketchToolbarCommandNoAction_tests_run
+                sketch-toolbar-command-no-action.py
+                --timeout 200)

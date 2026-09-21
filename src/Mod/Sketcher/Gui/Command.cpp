@@ -1563,8 +1563,12 @@ void CmdSketcherSnap::updateIcon(bool value)
     static QIcon active = Gui::BitmapFactory().iconFromTheme("Sketcher_Snap");
     static QIcon inactive = Gui::BitmapFactory().iconFromTheme("Sketcher_Snap_Deactivated");
 
-    auto* pcAction = qobject_cast<Gui::ActionGroup*>(getAction());
-    pcAction->setIcon(value ? active : inactive);
+    // getAction() is null until something adds the command to a widget, and
+    // isActive() reaches here on every command update -- so a sketch opened
+    // while this command sits on no toolbar and no menu would dereference it.
+    if (auto* pcAction = qobject_cast<Gui::ActionGroup*>(getAction())) {
+        pcAction->setIcon(value ? active : inactive);
+    }
 }
 
 void CmdSketcherSnap::activated(int iMsg)
