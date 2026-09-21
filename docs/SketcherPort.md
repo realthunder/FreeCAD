@@ -31,14 +31,17 @@ Upstream's `f4665aa7b5` ("Core: support multiple active transactions") was
 evaluated and **declined**; `docs/TransactionLog.md` records why, and the
 direction the user wants instead.
 
-**Where the ledger stands (2026-09-21).** 1149 rows, of which 414 are open
-and undecided. That number came down from 503 by reading blobs rather than
-commits: 21 of the 33 files the handler resyncs touched are identical to
-upstream's tip modulo whitespace, which closes 74 rows at once (section 7,
-"The origin marker"). Of what is left, `Gui/ViewProviderSketch.cpp` and
-`Gui/CommandConstraints.cpp` carry the most, and the `EditMode*` family is
-n/a by decision 3. The same sweep is worth running over any other file the
-fork has taken whole.
+**Where the ledger stands (2026-09-21).** 1149 rows, of which 359 are open
+and undecided, down from 503 over two sessions of reading blobs rather
+than commits. First the 33 files the handler resyncs touched: 21 are
+identical to upstream's tip modulo whitespace, closing 74 rows at once
+(section 7, "The origin marker"). Then the same idea over the whole tree,
+per row instead of per file -- is every line a commit added already in the
+fork's file, and every line it removed already gone -- which closed 55
+more and turned up three picks, one of them a whole feature the fork was
+missing (section 7, "The sweep over every file"). Of what is left,
+`Gui/ViewProviderSketch.cpp` and `Gui/CommandConstraints.cpp` carry the
+most, and the `EditMode*` family is n/a by decision 3.
 Branch `SketcherPort` off `RemoteEdit`
 `b7dbdd191d`. Upstream reference: `upstream/main` `bd6be559e8`
 (2026-09-12).
@@ -1929,6 +1932,137 @@ synthetic `Escape`, which reaches Coin where a synthetic mouse event would
 preselect nothing. And the viewer widget is matched on `Quarter` **or**
 `View3DInventorViewer`: matching only the first finds nothing here, and a
 helper that returns false silently reads as a failed restore.
+
+### The sweep over every file, and the three picks it found
+
+The previous sweep covered the 33 files the four handler resyncs had
+touched. This one covers **every file of the Sketcher tree**, and it asks
+a sharper question than blob identity.
+
+Blob identity is too strict. The fork's file is allowed to carry things
+upstream's does not -- that is what a fork is -- so "no line either way"
+throws away every file that has fork work in it, which is most of the
+interesting ones. The question that actually settles a row is per row,
+not per file: **is every line this commit added present in the fork's
+file, and is every line it removed absent?** Normalise whitespace away,
+ignore lines too short or too punctuation-heavy to mean anything, and
+the answer is mechanical. Over the 414 open rows: 23 came out HAVE, 21
+touch only files the fork does not have at all, 14 are pure deletions
+the additions-test cannot judge, and 356 are genuinely open.
+
+Then read them, because the mechanical answer has one failure mode worth
+knowing. The test is file-global: for a one-line change it can match the
+added line somewhere else in the file and call it applied. `2deee96cab`
+("fix inverted null check in `purgeHandler`") is exactly that -- it came
+out HAVE, and the real reason the fork is fine is that its `purgeHandler`
+is four lines with no `editDoc` in them. Right answer, wrong evidence.
+All 23 were read; all 23 hold, for one reason or another.
+
+The 14 deletions were read the other way round, by grepping the fork for
+what upstream removed. Six are gone already (`_USE_MATH_DEFINES`, the
+`PreCompiled.h` include in the transformation helper, an unused
+`SketchObject*`, two `printf`s, the `doSetVisible` transaction, the text
+dialog's dangling `openCommand`). One, `7db3f901fd`, upstream **undid**:
+its tip calls `Workbench::leaveEditMode()` from `unsetEdit` again, which
+is what the fork does, so the row is superseded rather than open.
+
+**55 rows closed, 414 -> 359.** And three picks fell out of it:
+
+| pick | upstream | what it was |
+|---|---|---|
+| `205fd5b037` | `833e9cc8ab` | the deactivated-constraint colour default |
+| `8b71884fef` | `7909815002` | twelve settings-page strings that described the wrong thing |
+| `1b50af663b` | `ec298e9e9a` +6 | auto-constraints for a drag |
+
+The colour one is the kind of defect only a sweep finds. The colour page
+offered `127,127,127` for `DeactivatedConstrDimColor` while both C++
+defaults are `0.8f` grey, `#CCCCCC`. A `PrefColorButton`'s `color`
+property is what it falls back to when the parameter is unset, so opening
+the page and pressing OK persisted a colour the sketch had never drawn
+with. Upstream fixed it on `SketcherSettingsAppearance.ui`, a file this
+fork does not have -- its colours live in `SketcherSettingsColors.ui` --
+which is precisely why the row had stayed open and unread.
+
+### Auto-constraints for a drag (`ec298e9e9a` and six more)
+
+Seven rows, one feature, and the fork had none of it. A drawing tool has
+always suggested the constraint that would pin the point it is about to
+place; dragging an existing point offered nothing, so a point dropped on
+top of its neighbour looked coincident and was constrained to nothing.
+
+The seven commits all converge on one pair of files that exists only
+upstream, so the pair was **taken at upstream's tip** -- which is the
+whole family at once, follow-up fixes included -- and only the hooks
+adapted. What made that cheap is that the fork already had the hard
+half: group B's auto-constraint search, and with it
+`generateOneAutoConstraintFromSuggestion`,
+`filterRedundantAutoConstraints` and `addGeneratedAutoConstraints`, plus
+`2c2f1d7db7`'s move of the search out of `DrawSketchDefaultHandler.h`.
+Even `ec298e9e9a`'s own `DrawSketchHandler.cpp` half -- the null-icon
+guard and the empty-pixmap fallback -- was already here.
+
+Three adaptations:
+
+- the dragged elements live in `edit->Dragged`, inside the `EditData`
+  the fork keeps in the `.cpp` rather than upstream's `drag` member in
+  the header, so the handler lives there too and goes away with the
+  edit session;
+- the handler reaches the view through `Gui::ViewerContext`, not
+  upstream's `getCursorWidget()`, so a client's mirror -- which has no
+  widget -- simply keeps its cursor;
+- `initDragging` has several paths that fill `edit->Dragged` and then
+  give up with `STATUS_NONE` (a B-spline pole the solver cannot move, a
+  non-rational B-spline). Upstream arms the handler before those, which
+  leaves the tool cursor on a view that is not dragging anything. Here
+  `beginDragAutoConstraints()` is called from the two exits that really
+  are a live drag.
+
+`doDragStep` now reports whether the temporary move succeeded, so a step
+the solver refused clears the suggestion instead of suggesting against a
+position the geometry never took.
+
+**The dwell timer is the thing to respect when testing it.**
+`DragAutoConstraintDelay` (400 ms, `Mod/Sketcher/General`) is restarted
+by every mouse move, so sweeping a point across the drawing on the way
+somewhere else proposes nothing -- and a test that drags and releases
+immediately sees no constraint and reads as a failure of the feature.
+`tests/gui/sketch-drag-autoconstraint.py` drives a real drag through a
+served mirror, because a drag starts from a PRESELECTED vertex and
+synthetic mouse events preselect nothing: move, press, one move consumed
+by `initDragging`, one move to the target, hold 1.2 s, release. It
+asserts one `Coincident` between exactly the two points, and none at all
+for the same drag into empty space. Scored against the unpatched build
+first: the drag lands identically there and only the `Coincident`
+assertion fails, which is what makes it a test of the pick rather than
+of the harness ([[measure-the-before-state]]).
+`GuiSketchDragAutoConstraint_tests_run`.
+
+### What the sweep deliberately did not close
+
+Two things it found are decisions rather than work, and both are left
+open on purpose.
+
+**Upstream's Sketcher GUI test suite.** `GuiTestCase.py`,
+`TestOnViewParameterGui.py`, `TestConstraintPreselectionGui.py`,
+`TestExternalFacePreselection.py`, `TestPlacementUpdate.py` and
+`TestConstraintCommandsGui.py` do not exist here; the fork's GUI tests
+are `tests/gui`, driven through a served mirror, which is a different
+harness answering a different question (it can preselect; upstream's
+cannot reach a browser). Nine rows are the maintenance of tests we do
+not have, marked deferred rather than n/a because adopting the suite is
+a real option, not an impossibility.
+
+**`c2592271e8`, "remove edit tools from toolbar".** Upstream deleted the
+"Sketcher Edit Tools" toolbar -- Grid, Snap, RenderingOrder -- because
+those controls moved into its edit overlay. In this fork
+`"Sketcher edit tools"` is a live member of `editModeToolbarNames()`, so
+taking the commit would remove three buttons with nothing standing in
+for them. It stays open as a UI decision.
+
+The rest of what the deletions turned up is noise with no behaviour in
+it and is left in the ledger as such: a duplicated `#ifndef` in
+`PreCompiled.h`, an outdated comment in `TaskDlgEditSketch.h`, an unused
+`posId2`, three dead `__GNUC__ <= 4` guards.
 
 ## 8. Phases
 
