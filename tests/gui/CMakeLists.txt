@@ -212,3 +212,10 @@ fc_add_gui_test(GuiSketchDragAutoConstraint_tests_run
 fc_add_gui_test(GuiSketchToolbarCommandNoAction_tests_run
                 sketch-toolbar-command-no-action.py
                 --timeout 200)
+
+# The B-spline knot commands read the selection straight into
+# isBsplineKnotOrEndPoint, which dereferenced the null getGeometry()
+# answers for the GeoUndef a non-geometry sub-element name leaves behind.
+fc_add_gui_test(GuiSketchKnotCommandNonGeometry_tests_run
+                sketch-knot-command-nongeometry.py
+                --timeout 200)
