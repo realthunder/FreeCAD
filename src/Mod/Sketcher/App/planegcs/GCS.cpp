@@ -53,6 +53,7 @@
 #include <iostream>
 #include <limits>
 #include <numbers>
+#include <unordered_map>
 
 #include <Base/Tools.h>
 
@@ -491,6 +492,7 @@ System::System()
     , autoChooseAlgorithm(true)
     , autoQRThreshold(1000)
     , parameterQRKeepsColumnOrder(false)
+    , fillJacobianFromConstraintParams(true)
     , skipUnneededConstraintQR(true)
     , dogLegGaussStep(FullPivLU)
     , qrpivotThreshold(1E-13)
@@ -4743,6 +4745,27 @@ void System::makeReducedJacobian(
 
     J = Eigen::MatrixXd::Zero(clist.size(), pdiagnoselist.size());
 
+    // A constraint's error is a function of the parameters it was built from and of nothing
+    // else, so its derivative with respect to any other parameter is zero -- which is exactly
+    // what Constraint::grad() answers, after failing to find the parameter in its own pvec.
+    // Asking every constraint about every parameter in the system is therefore almost all
+    // wasted work: the heaviest sketch in the benchmark corpus makes about 30 million grad()
+    // calls to place 12933 non-zeros, some 2.7 per column. Give each constraint its own
+    // parameters instead and leave the rest of its row at the zero it was initialised to.
+    //
+    // The column a parameter occupies is needed to do that. If two entries of pdiagnoselist
+    // were ever the same pointer the map could not name both columns, so that case falls back
+    // to the sweep rather than filling one of them in and not the other.
+    std::unordered_map<double*, int> diagnosecolumn;
+    if (fillJacobianFromConstraintParams) {
+        diagnosecolumn.reserve(pdiagnoselist.size());
+        for (int j = 0; j < int(pdiagnoselist.size()); j++) {
+            diagnosecolumn.emplace(pdiagnoselist[j], j);
+        }
+    }
+    const bool fillFromConstraintParams =
+        fillJacobianFromConstraintParams && diagnosecolumn.size() == pdiagnoselist.size();
+
     int jacobianconstraintcount = 0;
     int allcount = 0;
     for (auto& constr : clist) {
@@ -4750,8 +4773,20 @@ void System::makeReducedJacobian(
         ++allcount;
         if (constr->getTag() >= 0 && constr->isDriving()) {
             jacobianconstraintcount++;
-            for (int j = 0; j < int(pdiagnoselist.size()); j++) {
-                J(jacobianconstraintcount - 1, j) = constr->grad(pdiagnoselist[j]);
+            if (fillFromConstraintParams) {
+                for (double* param : constr->paramList()) {
+                    auto column = diagnosecolumn.find(param);
+                    if (column != diagnosecolumn.end()) {
+                        // A parameter held twice by one constraint is asked twice and gets
+                        // the same answer twice, so the assignment stays idempotent.
+                        J(jacobianconstraintcount - 1, column->second) = constr->grad(param);
+                    }
+                }
+            }
+            else {
+                for (int j = 0; j < int(pdiagnoselist.size()); j++) {
+                    J(jacobianconstraintcount - 1, j) = constr->grad(pdiagnoselist[j]);
+                }
             }
 
             // parallel processing: create tag multiplicity map

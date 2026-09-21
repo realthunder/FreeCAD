@@ -168,6 +168,10 @@ void applyDiagnosePreferences(Sketcher::Sketch& sketch)
         preferences->GetBool("ParameterQRKeepsColumnOrder", false)
     );
     sketch.setSkipUnneededConstraintQR(preferences->GetBool("SkipUnneededConstraintQR", true));
+
+    sketch.setFillJacobianFromConstraintParams(
+        preferences->GetBool("FillJacobianFromConstraintParams", true)
+    );
 }
 }  // namespace
 
