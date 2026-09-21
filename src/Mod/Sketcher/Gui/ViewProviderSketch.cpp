@@ -1884,6 +1884,11 @@ void ViewProviderSketch::cancelDragMove()
         // a relative move of zero puts everything back where the drag started
         getSketchObject()->moveGeometries(edit->Dragged, Base::Vector3d(0, 0, 0), true);
     }
+    // nothing is being dropped anywhere, so drop the suggestion with it --
+    // otherwise its cursor tail outlives the drag it was suggested for
+    if (edit->dragAutoConstraintHandler) {
+        edit->dragAutoConstraintHandler->clear();
+    }
     resetPositionText();
 }
 
