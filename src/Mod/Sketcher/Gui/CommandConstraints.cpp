@@ -1007,6 +1007,35 @@ protected:
 class DrawSketchHandlerGenConstraint: public DrawSketchHandler
 {
 public:
+    /** @name What to pick next, as shown in the hint bar.
+     *
+     * One constant per phrase rather than a literal at each site, so two
+     * tools asking for the same thing cannot drift apart in wording, and a
+     * translator sees each phrase once.
+     */
+    //@{
+    static constexpr const char* PICK_POINT = "%1 pick point";
+    static constexpr const char* PICK_EDGE = "%1 pick edge";
+    static constexpr const char* PICK_LINE = "%1 pick line";
+    static constexpr const char* PICK_POINT_OR_EDGE = "%1 pick point or edge";
+    static constexpr const char* PICK_POINT_OR_CURVE = "%1 pick point or curve";
+    static constexpr const char* PICK_CIRCLE_OR_ARC = "%1 pick circle or arc";
+    static constexpr const char* PICK_EDGE_TO_BLOCK = "%1 pick edge to block";
+    static constexpr const char* PICK_POINT_TO_LOCK = "%1 pick point to lock";
+    static constexpr const char* PICK_EDGE_OR_FIRST_POINT = "%1 pick edge or first point";
+    static constexpr const char* PICK_EDGE_OR_SECOND_POINT = "%1 pick edge or second point";
+    static constexpr const char* PICK_FIRST_EDGE = "%1 pick first edge";
+    static constexpr const char* PICK_SECOND_EDGE = "%1 pick second edge";
+    static constexpr const char* PICK_SECOND_LINE = "%1 pick second line";
+    static constexpr const char* PICK_SECOND_POINT = "%1 pick second point";
+    static constexpr const char* PICK_SECOND_EDGE_OR_POINT = "%1 pick second edge or point";
+    static constexpr const char* PICK_SECOND_LINE_OR_POINT = "%1 pick second line or point";
+    static constexpr const char* PICK_SECOND_POINT_OR_EDGE = "%1 pick second point or edge";
+    static constexpr const char* PICK_SECOND_POINT_OR_CURVE = "%1 pick second point or curve";
+    static constexpr const char* PICK_SYMMETRY_POINT = "%1 pick symmetry point";
+    static constexpr const char* PICK_SYMMETRY_LINE_OR_POINT = "%1 pick symmetry line or point";
+    //@}
+
     explicit DrawSketchHandlerGenConstraint(CmdSketcherConstraint* _cmd)
         : cmd(_cmd)
         , seqIndex(0)
@@ -1155,11 +1184,168 @@ public:
             std::swap(_tempOnSequences, ongoingSequences);
             seqIndex++;
             selFilterGate->setAllowedSelTypes(allowedSelTypes);
+            updateHint();
         }
         return false;
     }
 
+    /** What the user can pick next, for the step of the sequence we are on.
+     *
+     * Most tools want one phrase per step and get it from the table below.
+     * The ones here answer for themselves, because what they will accept
+     * next depends on what was picked first: after a point, an angle wants
+     * the first of two edges; after an edge, it wants either the second
+     * edge or the vertex the angle is measured at.
+     *
+     * Every phrase is checked against the command's own allowedSelSequences
+     * -- a hint that names something the selection gate will refuse is
+     * worse than no hint at all.
+     */
+    std::list<Gui::InputHint> getToolHints() const override
+    {
+        using Gui::InputHint;
+        const std::string commandName = cmd->getName();
+        const unsigned int step = seqIndex;
+
+        const auto pick = [](const char* message) -> std::list<InputHint> {
+            return {{QObject::tr(message), {InputHint::UserInput::MouseLeft}}};
+        };
+        const auto firstIsPoint = [this] {
+            return !selSeq.empty() && isVertex(selSeq[0].GeoId, selSeq[0].PosId);
+        };
+        const auto secondIsPoint = [this] {
+            return selSeq.size() > 1 && isVertex(selSeq[1].GeoId, selSeq[1].PosId);
+        };
+
+        // Point on object: a point then an edge, or an edge then a point.
+        if (commandName == "Sketcher_ConstrainPointOnObject") {
+            if (step == 0) {
+                return pick(PICK_POINT_OR_EDGE);
+            }
+            if (step == 1) {
+                return pick(firstIsPoint() ? PICK_EDGE : PICK_POINT);
+            }
+        }
+
+        // Angle: two edges, or the vertex between them and two edges.
+        if (commandName == "Sketcher_ConstrainAngle") {
+            if (step == 0) {
+                return pick(PICK_EDGE_OR_FIRST_POINT);
+            }
+            if (step == 1) {
+                return pick(firstIsPoint() ? PICK_FIRST_EDGE : PICK_SECOND_LINE_OR_POINT);
+            }
+            if (step == 2) {
+                return pick(PICK_SECOND_EDGE);
+            }
+        }
+
+        // Perpendicular and tangent share the angle's shape. Tangent also
+        // accepts a second point (tangency through two endpoints), so after
+        // a point it must not promise that only an edge will do.
+        if (commandName == "Sketcher_ConstrainPerpendicular"
+            || commandName == "Sketcher_ConstrainTangent") {
+            const bool tangent = commandName == "Sketcher_ConstrainTangent";
+            if (step == 0) {
+                return pick(PICK_EDGE_OR_FIRST_POINT);
+            }
+            if (step == 1) {
+                if (firstIsPoint()) {
+                    return pick(tangent ? PICK_EDGE_OR_SECOND_POINT : PICK_FIRST_EDGE);
+                }
+                return pick(PICK_SECOND_EDGE_OR_POINT);
+            }
+            if (step == 2) {
+                return pick(PICK_SECOND_EDGE);
+            }
+        }
+
+        // Symmetric: the two elements first and the symmetry reference last,
+        // or the reference edge first and then the point mirrored on it.
+        if (commandName == "Sketcher_ConstrainSymmetric") {
+            if (step == 0) {
+                return pick(PICK_EDGE_OR_FIRST_POINT);
+            }
+            if (step == 1) {
+                return pick(firstIsPoint() ? PICK_EDGE_OR_SECOND_POINT : PICK_SYMMETRY_POINT);
+            }
+            if (step == 2) {
+                return pick(secondIsPoint() ? PICK_SYMMETRY_LINE_OR_POINT : PICK_POINT);
+            }
+        }
+
+        return lookupConstraintHints(commandName, step);
+    }
+
 private:
+    /** One phrase per (command, step) for the tools whose next selection
+     * does not depend on what was picked before. Steps are 0-based and are
+     * this handler's seqIndex.
+     *
+     * Only states the command can actually reach appear here: a tool whose
+     * sequence completes at step 0 has no step 1, and the tools handled in
+     * getToolHints() above are absent on purpose.
+     */
+    struct ConstraintHintEntry
+    {
+        std::string commandName;
+        unsigned int selectionStep;
+        std::list<Gui::InputHint> hints;
+    };
+
+    static std::list<Gui::InputHint> lookupConstraintHints(const std::string& commandName,
+                                                           unsigned int selectionStep)
+    {
+        const auto pick = [](const char* message) -> std::list<Gui::InputHint> {
+            return {{QObject::tr(message), {Gui::InputHint::UserInput::MouseLeft}}};
+        };
+
+        const std::vector<ConstraintHintEntry> table = {
+            // Coincident, and the unified tool that also does point on object
+            {"Sketcher_ConstrainCoincidentUnified", 0, pick(PICK_POINT_OR_EDGE)},
+            {"Sketcher_ConstrainCoincidentUnified", 1, pick(PICK_SECOND_POINT_OR_EDGE)},
+            {"Sketcher_ConstrainCoincident", 0, pick(PICK_POINT_OR_CURVE)},
+            {"Sketcher_ConstrainCoincident", 1, pick(PICK_SECOND_POINT_OR_CURVE)},
+
+            // Distances. A single edge is dimensioned as soon as it is
+            // picked, so step 1 is only ever reached from a first point.
+            {"Sketcher_ConstrainDistance", 0, pick(PICK_POINT_OR_EDGE)},
+            {"Sketcher_ConstrainDistance", 1, pick(PICK_SECOND_POINT_OR_EDGE)},
+            {"Sketcher_ConstrainDistanceX", 0, pick(PICK_POINT_OR_EDGE)},
+            {"Sketcher_ConstrainDistanceX", 1, pick(PICK_SECOND_POINT)},
+            {"Sketcher_ConstrainDistanceY", 0, pick(PICK_POINT_OR_EDGE)},
+            {"Sketcher_ConstrainDistanceY", 1, pick(PICK_SECOND_POINT)},
+
+            // Horizontal and vertical, on an edge or between two points
+            {"Sketcher_ConstrainHorVer", 0, pick(PICK_EDGE_OR_FIRST_POINT)},
+            {"Sketcher_ConstrainHorVer", 1, pick(PICK_SECOND_POINT)},
+            {"Sketcher_ConstrainHorizontal", 0, pick(PICK_EDGE_OR_FIRST_POINT)},
+            {"Sketcher_ConstrainHorizontal", 1, pick(PICK_SECOND_POINT)},
+            {"Sketcher_ConstrainVertical", 0, pick(PICK_EDGE_OR_FIRST_POINT)},
+            {"Sketcher_ConstrainVertical", 1, pick(PICK_SECOND_POINT)},
+
+            // One element is enough for these
+            {"Sketcher_ConstrainBlock", 0, pick(PICK_EDGE_TO_BLOCK)},
+            {"Sketcher_ConstrainLock", 0, pick(PICK_POINT_TO_LOCK)},
+            {"Sketcher_ConstrainRadius", 0, pick(PICK_CIRCLE_OR_ARC)},
+            {"Sketcher_ConstrainDiameter", 0, pick(PICK_CIRCLE_OR_ARC)},
+            {"Sketcher_ConstrainRadiam", 0, pick(PICK_CIRCLE_OR_ARC)},
+
+            // Two edges
+            {"Sketcher_ConstrainEqual", 0, pick(PICK_EDGE)},
+            {"Sketcher_ConstrainEqual", 1, pick(PICK_SECOND_EDGE)},
+            {"Sketcher_ConstrainParallel", 0, pick(PICK_LINE)},
+            {"Sketcher_ConstrainParallel", 1, pick(PICK_SECOND_LINE)},
+        };
+
+        const auto matches = [&](const ConstraintHintEntry& entry) {
+            return entry.commandName == commandName && entry.selectionStep == selectionStep;
+        };
+
+        auto it = std::ranges::find_if(table, matches);
+        return it != table.end() ? it->hints : std::list<Gui::InputHint> {};
+    }
+
     void activated() override
     {
         selFilterGate = new GenericConstraintSelection(sketchgui->getObject());
@@ -1233,6 +1419,8 @@ protected:
         selFilterGate->setAllowedSelTypes(allowedSelTypes);
 
         Gui::Selection().clearSelection();
+
+        updateHint();
     }
 };
 
