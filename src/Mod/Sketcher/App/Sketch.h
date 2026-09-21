@@ -694,6 +694,10 @@ public:
     {
         return debugMode;
     }
+    inline void setParameterQRKeepsColumnOrder(bool val)
+    {
+        GCSsys.parameterQRKeepsColumnOrder = val;
+    }
     inline void setSkipUnneededConstraintQR(bool val)
     {
         GCSsys.skipUnneededConstraintQR = val;

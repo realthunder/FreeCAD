@@ -490,6 +490,7 @@ System::System()
     , qrAlgorithm(EigenSparseQR)
     , autoChooseAlgorithm(true)
     , autoQRThreshold(1000)
+    , parameterQRKeepsColumnOrder(false)
     , skipUnneededConstraintQR(true)
     , dogLegGaussStep(FullPivLU)
     , qrpivotThreshold(1E-13)
@@ -5194,10 +5195,11 @@ void System::makeDenseQRDecomposition(
 }
 
 #ifdef EIGEN_SPARSEQR_COMPATIBLE
+template<typename QRType>
 void System::makeSparseQRDecomposition(
     const Eigen::MatrixXd& J,
     const std::map<int, int>& jacobianconstraintmap,
-    Eigen::SparseQR<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int>>& SqrJT,
+    QRType& SqrJT,
     int& rank,
     Eigen::MatrixXd& R,
     bool transposeJ,
@@ -5255,10 +5257,10 @@ void System::makeSparseQRDecomposition(
             rank = SqrJT.rank();
 
             if (colsNum >= rowsNum) {
-                R = SqrJT.matrixR().triangularView<Eigen::Upper>();
+                R = SqrJT.matrixR().template triangularView<Eigen::Upper>();
             }
             else {
-                R = SqrJT.matrixR().topRows(colsNum).triangularView<Eigen::Upper>();
+                R = SqrJT.matrixR().topRows(colsNum).template triangularView<Eigen::Upper>();
             }
 
 # ifdef _GCS_DEBUG_SOLVER_JACOBIAN_QR_DECOMPOSITION_TRIANGULAR_MATRIX
@@ -5424,19 +5426,41 @@ void System::identifyDependentParametersSparseQR(
 
         int nontransprank = 0;
 
-        Eigen::SparseQR<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int>> SqrJ;
+        // Same decomposition either way; only the column ordering differs. Keeping the
+        // columns in their own order preserves the near-band structure of a sketch's
+        // Jacobian, and the fill-in that COLAMD's reordering causes is what this
+        // decomposition mostly spends its time on. The parameter never transposes: not
+        // transposing is what allows the parameters to be diagnosed.
+        if (parameterQRKeepsColumnOrder) {
+            Eigen::SparseQR<Eigen::SparseMatrix<double>, Eigen::NaturalOrdering<int>> SqrJ;
 
-        makeSparseQRDecomposition(
-            Jconstrained,
-            jacobianconstraintmap,
-            SqrJ,
-            nontransprank,
-            Rparams,
-            false,
-            true
-        );  // do not transpose allow one to diagnose parameters
+            makeSparseQRDecomposition(
+                Jconstrained,
+                jacobianconstraintmap,
+                SqrJ,
+                nontransprank,
+                Rparams,
+                false,
+                true
+            );
 
-        identifyDependentParameters(SqrJ, Rparams, nontransprank, pconstrainedlist, silent);
+            identifyDependentParameters(SqrJ, Rparams, nontransprank, pconstrainedlist, silent);
+        }
+        else {
+            Eigen::SparseQR<Eigen::SparseMatrix<double>, Eigen::COLAMDOrdering<int>> SqrJ;
+
+            makeSparseQRDecomposition(
+                Jconstrained,
+                jacobianconstraintmap,
+                SqrJ,
+                nontransprank,
+                Rparams,
+                false,
+                true
+            );
+
+            identifyDependentParameters(SqrJ, Rparams, nontransprank, pconstrainedlist, silent);
+        }
 
         // Dropping the unconstrained columns above cannot change the rank, so this is the
         // rank of the whole Jacobian and diagnose() may use it as such.

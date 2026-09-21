@@ -164,6 +164,9 @@ void applyDiagnosePreferences(Sketcher::Sketch& sketch)
         "User parameter:BaseApp/Preferences/Mod/Sketcher/SolverAdvanced"
     );
 
+    sketch.setParameterQRKeepsColumnOrder(
+        preferences->GetBool("ParameterQRKeepsColumnOrder", false)
+    );
     sketch.setSkipUnneededConstraintQR(preferences->GetBool("SkipUnneededConstraintQR", true));
 }
 }  // namespace
