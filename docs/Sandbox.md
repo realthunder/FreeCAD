@@ -52,7 +52,7 @@ runs in the guest.**
     host widget layer: core, Qt view built       H0: src/Gui/Fw/ (Fw:: models, FwQt:: backend, the store, FreeCADGui.FormWidgets), src/Tools/fwuic.py (7.12)
     native panels on the layer       sized       H1-H3: the first ports, the form-only majority, the item views; DOM walker later (7.4, 7.12)
     the task panel mirror            M3 built    7.19: the desktop's task panel walked into models, streamed (Pad, Draft's OrthoArray, a CAM op, no workbench edited); M2: item rows reflected (Sketcher's constraint list), pictures and icons by image id; M3: top-level dialogs as dialog:<n> roots (a panel slot's QMessageBox, its exec code from a client's click), mouse replay into pictures; M4 measured 2026-09-11 (sec 8.4: a repaint burst re-reads 10-20 widgets in 0.3 ms and sends nothing; a panel at rest sends nothing; a keystroke costs the other clients 70-150 B)
-    the panels in the browser (G7)  W2 built   7.22: the DOM view over the widget layer -- the walker, the layout plan, the panel container, the item views; W1-W5, 2.2-3.3k of TypeScript in src/Gui/Renderer/web, and one 20-line host change (a client is never told how the host corrected its own write); the five questions RULED 2026-09-16 (chrome-flavoured, the echo taken, dialogs in scope, a FLOATING card, the pure-plan gate) and W1 started; W1's host half BUILT 2026-09-16 (Store::messageTo, the gate in test_widgetStream, FormWidgets 22/22), the fixture corpus (6 cases) recorded and the walker core, the layout plan and the replay gate BUILT 2026-09-16 (62 checks ALL GREEN) and the client + views + floating card BUILT the same day (typecheck and bundle clean), and W1 PROVEN on screen 2026-09-16 (demo-taskpanel.py through renderer-serve.sh, driven by scripts/panel-drive.js); W2 BUILT 2026-09-19 -- the row/remove/sort ops the corpus never carried, the header, the nesting, the checks and the selection, and one view wake per frame because the host pushes one per op; gate 85 -> 102 checks, 17 of them the item views'; the op-vs-event trap (only an item op reaches the real widget) caught against the host's own test; PROVEN on screen 2026-09-19 with demo-sketcherpanel.py -- 12 checked constraint rows, the Elements header over real tracks, and a check clicked in headless Chrome leaving Constraints[0].InVirtualSpace True on the host -- which also caught a column headed "1" invented over every QListWidget; nesting and cell colours stay unproven; W3 next
+    the panels in the browser (G7)  W3 built   7.22: the DOM view over the widget layer -- the walker, the layout plan, the panel container, the item views; W1-W5, 2.2-3.3k of TypeScript in src/Gui/Renderer/web, and one 20-line host change (a client is never told how the host corrected its own write); the five questions RULED 2026-09-16 (chrome-flavoured, the echo taken, dialogs in scope, a FLOATING card, the pure-plan gate) and W1 started; W1's host half BUILT 2026-09-16 (Store::messageTo, the gate in test_widgetStream, FormWidgets 22/22), the fixture corpus (6 cases) recorded and the walker core, the layout plan and the replay gate BUILT 2026-09-16 (62 checks ALL GREEN) and the client + views + floating card BUILT the same day (typecheck and bundle clean), and W1 PROVEN on screen 2026-09-16 (demo-taskpanel.py through renderer-serve.sh, driven by scripts/panel-drive.js); W2 BUILT 2026-09-19 -- the row/remove/sort ops the corpus never carried, the header, the nesting, the checks and the selection, and one view wake per frame because the host pushes one per op; gate 85 -> 102 checks, 17 of them the item views'; the op-vs-event trap (only an item op reaches the real widget) caught against the host's own test; PROVEN on screen 2026-09-19 with demo-sketcherpanel.py -- 12 checked constraint rows, the Elements header over real tracks, and a check clicked in headless Chrome leaving Constraints[0].InVirtualSpace True on the host -- which also caught a column headed "1" invented over every QListWidget; nesting and cell colours stay unproven; W3 BUILT and PROVEN on screen 2026-09-21 -- pictures, icons, theme and locale over one page-lifetime cache, the pointer replayed into a real QSvgWidget (a click at the card's centre landed at 48,48 of 96x96), and ahead of it the repaint the card had never done since W1; W4 next
     the session document (commands) built       S1: a workbench reaches every open document, live ActiveDocument, app.write, save, picker-blessed saveAs; S2: Gui.doCommand / addModule in the guest under gui.doCommand, Draft's commit and Arch_Site end to end; gate SandboxSessionDoc (7.13)
     routing ON by default            built       preference Expression/Sandbox:Evaluate, ON since 2026-09-16: the corpus gate green (94 files, 195 of 195 same); the Proxy-restore half that rode the same preference was REMOVED 2026-09-18 (7.31)
     Proxy import restriction (native) built       item 1 of sec 11: PropertyPythonObject restore
@@ -8670,6 +8670,92 @@ and OK/Cancel over real grid tracks; Sketcher its 12 checked constraint rows
 and the Elements header over six.  The lesson for the rest of this work: the
 replay gate proves the reduction and the drive harness proves the first
 paint, and NEITHER of them watches a second frame arrive.
+
+**W3 BUILT 2026-09-21, and PROVEN on screen the same day.**  Pictures,
+icons, theme and locale.  The resolution rule is the whole of it: two kinds
+of picture travel in the same bag keys (`icon`, `pixmap`, `windowIcon`, a
+cell's `icon`) and only the `img:` prefix says which is in hand -- a
+content-addressed id the host filed in `ImageStore`, fetched with
+`widgets.image`, or one of FreeCAD's own icon NAMES, fetched with
+`widgets.icon` and rendered by the host's icon theme.  A new pure module
+(`widgets/images.ts`) holds the classification, one page-lifetime cache,
+the locale rules and the pointer mapping, so all of it is gated in node:
+the cache holds PROMISES, not answers, so two widgets naming the same icon
+in one frame make one request, and a socket failure ('Offline', 'Timeout')
+is not cached -- that is "not yet", not "no".  Keys: an `img:` id is its
+own key, a name is keyed by (theme, name, size), and the theme is compared
+on every subscribe reply and clears the cache when it moved, there being no
+theme event on this wire yet (7.19's open list).
+
+The leaves: a button draws its icon instead of W1's `...` placeholder
+(which comes back only when a fetch FAILS and there is no label to show
+instead -- an icon that cannot be drawn must not leave a blank button); an
+item cell draws its decoration before its text, which is where Sketcher's
+element list gets its 19; and the picture leaf follows its id, because a
+repaint that changed something arrives as a different one.
+
+**The pointer, and it is an `event` that really does reach the widget.**  A
+custom-painted leaf is an image in the page, so a click on it does nothing
+locally: the pointer goes back as `widgets.custom {event: "mouse"}`, which
+`commCustom` hands to `Widget::request` -- NOT to `dispatchEvent`, the road
+that made W2's item-view writes vanish -- and the mirror has connected
+`requested` to `onModelRequest`, which replays it into the real widget.
+Qt's numbering is not the DOM's (a DOM `button` is an index, Qt's is a bit
+value; a wheel delta is positive downward in the DOM and upward in Qt), so
+those mappings are pure functions with the gate on them.  Moves are sent
+only while a button is down: a bare hover would put one message on the wire
+per pointer sample.
+
+**Locale.**  A quantity field carries the string Qt already formatted,
+units and all, and that is shown exactly as it came -- the host's decimals
+are not the client's to second-guess.  A plain spin box carries a NUMBER
+and no text (`value`, `decimals`, `suffix`), so the page formats it in the
+host's locale and, on the way back, parses it with the same locale's
+separators; `C` maps to no locale rather than to English, which would put
+thousands separators into numbers the host prints without them.
+
+**A latent bug fell out of doing it**: `valueWrite` sent `rawValue` for
+every numeric class, but only a quantity field and an input field declare
+it -- `Fw::QSpinBox` and `Fw::QDoubleSpinBox` declare `value` and no `text`
+at all.  So a write to a plain spin box set a property that does not exist,
+which the host accepts and the desktop ignores.  The corpus is full of
+quantity fields, which is why W1 never saw it.
+
+**Gate**: 102 -> 134 checks, ALL GREEN.  The ruled one is over the
+`svg_picture` fixture -- the host is asked once per DISTINCT id -- resolved
+TWICE, because that fixture names each of its four ids exactly once and a
+single pass would have proved nothing about a cache.  The rest are the
+rules no fixture holds: the classification, the data URLs, the locale round
+trip (what the field shows must parse back, in three locales), Qt's buttons
+and modifiers, the wheel's flipped sign, the pointer mapped into the
+picture's own pixels, and the theme and size really keying an icon.
+
+**Proven on screen** with a third demo panel, `scripts/demo-picturepanel.py`
+-- neither of the others can show this stage, Pad having no custom-painted
+leaf and Sketcher no button icon.  It serves a QSvgWidget, a button
+carrying a real QIcon, and a label counting clicks.  The result: the
+picture drawn at 96x96, the button icon drawn, and a click at the card's
+centre leaving the HOST's label reading `clicks: 1 at 48,48` -- the exact
+centre of the widget, so the mapping is right rather than merely plausible.
+Pad's icon-only button now draws its icon, and Sketcher's element list its
+19 cell icons.
+
+**Two things the screen found that the gate could not.**  *Pictures are a
+round trip BEHIND the widgets that name them*: the bag carries an id, the
+bytes follow, and `panel-drive.js` read the card the moment a field existed
+and so reported every icon missing -- twice, convincingly, before the
+harness was taught to wait for them to decode.  A drive that reads too
+early does not report "not yet", it reports "none".  *And a panel really
+does send named icons*, not only `img:` ids: Pad's bag carries
+`PartDesign_AdditiveHelix`, which the host answers as 54 KB of SVG.  The
+sizing had left the impression that the name route belonged to the tool
+bars; both routes are live in a panel.
+
+**Limits, stated.**  A combo's item icons are not drawn: a native `<select>`
+cannot hold an image, and faking the control to carry one is W4's kind of
+work, not this stage's.  The window icon is not drawn either.  Locale is
+gate-proven and not screen-proven, because the host under both the gate and
+the harness reports `C`.
 
 **Cost** (new; TypeScript unless noted):
 

@@ -19,6 +19,7 @@ import { Portal } from 'solid-js/web';
 
 import type { PanelClient } from './client.ts';
 import { inputModeFor } from './complete.ts';
+import { formatNumber } from './images.ts';
 import type { ExpressionPreview } from './complete.ts';
 import { CompleteButton, CompletionList, createCompletion } from './completion.tsx';
 import type { WidgetModel } from './protocol.ts';
@@ -43,6 +44,9 @@ export function Field(props: {
   /// the origin echo of a corrected write included, which is the one thing
   /// the host's own C++ was added for (docs/Sandbox.md 7.22).
   rev: Accessor<number>;
+  /// The host's locale as a BCP-47 tag, or null for `C`. Only used where
+  /// the host sends a NUMBER and no text (W3).
+  locale: string | null;
   disabled: Accessor<boolean>;
   viewOnly: Accessor<boolean>;
   client: () => PanelClient | null;
@@ -61,11 +65,21 @@ export function Field(props: {
     const value = w.state[key];
     return typeof value === 'string' ? value : '';
   };
-  /// The host's text, or the raw number when it sends none (a plain
-  /// QDoubleSpinBox carries `value` and no `text`).
+  /// What the field shows.
+  ///
+  /// A quantity field carries the string Qt already formatted, units and
+  /// all, and that is shown exactly as it came -- the host's decimals and
+  /// unit are not the client's to second-guess. A plain spin box carries
+  /// only a NUMBER (`value`, with `decimals` and a `suffix`), so the
+  /// formatting is the page's to do, in the host's locale (W3).
   const shown = () => {
     props.rev();
-    return get('text') || String(w.state.rawValue ?? '');
+    const text = get('text');
+    if (text !== '') return text;
+    const value = w.state.value ?? w.state.rawValue;
+    if (typeof value !== 'number') return String(value ?? '');
+    const decimals = typeof w.state.decimals === 'number' ? w.state.decimals : 2;
+    return formatNumber(value, decimals, props.locale) + get('suffix');
   };
   const bound = () => get('binding') !== '';
   const hasExpression = () => get('expression') !== '';

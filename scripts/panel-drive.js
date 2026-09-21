@@ -107,6 +107,16 @@ function readCard() {
       };
     }),
     pictures: card.querySelectorAll('.fc-panel-pic').length,
+    // W3: what actually resolved. A picture or an icon that never came
+    // back leaves an element with no src, or no element at all, and
+    // naturalWidth is 0 until the bytes decode -- so this reports the
+    // bytes arriving, not merely the tag being written.
+    pics: [...card.querySelectorAll('.fc-panel-pic')].map((el) => ({
+      w: el.naturalWidth, h: el.naturalHeight, kind: (el.src || '').slice(5, 14),
+    })),
+    icons: [...card.querySelectorAll('.fc-panel-icon')].map((el) => ({
+      w: el.naturalWidth, kind: (el.src || '').slice(5, 14),
+    })),
     // A grid that planned a NaN track would collapse; report the tracks so
     // the corpus's two-wide form rows are visible in the result.
     grids: [...card.querySelectorAll('.fc-panel-grid')].map(
@@ -164,6 +174,18 @@ function readCard() {
       () => !!document.querySelector(
         '.fc-panel input, .fc-panel select, .fc-panel .fc-panel-row'),
       { timeout, polling: 250 }).catch(() => {});
+    // Pictures and icons are a round trip BEHIND the widgets that name them
+    // (W3): the bag carries an `img:` id or an icon name, and the bytes are
+    // fetched after the card has already drawn. A read that fires the
+    // moment a field exists therefore reports every icon missing, which is
+    // exactly what it reported first. Wait for the ones on the card to
+    // decode -- and do not insist there are any, because most panels have
+    // none.
+    await page.waitForFunction(() => {
+      const imgs = [...document.querySelectorAll(
+        '.fc-panel .fc-panel-icon, .fc-panel .fc-panel-pic')];
+      return imgs.length > 0 && imgs.every((el) => el.complete && el.naturalWidth > 0);
+    }, { timeout: 15000, polling: 250 }).catch(() => {});
     card = await page.evaluate(readCard);
     // The write half: type into the first enabled field and read the card
     // back. What comes back is the HOST's value -- either the echo of an
@@ -215,6 +237,45 @@ function readCard() {
         return boxes[i] ? boxes[i].checked : null;
       }, nth);
       card.checkWrite = { index: nth, before, after };
+    }
+    // W3's picture: a custom-painted leaf is an IMAGE in the page, so a
+    // click on it does nothing locally -- the pointer is sent back and
+    // replayed into the real widget on the host. The proof is therefore a
+    // change the HOST makes arriving: scripts/demo-picturepanel.py counts
+    // the clicks in a label and names where they landed, so the whole
+    // round trip is one readable string.
+    if (process.env.FC_PANEL_PIC_CLICK !== undefined && card) {
+      const labels = () => [...document.querySelectorAll('.fc-panel .fc-panel-label')]
+        .map((el) => (el.textContent || '').trim());
+      const before = await page.evaluate((read) => {
+        const el = document.querySelector('.fc-panel .fc-panel-pic');
+        if (!el) return null;
+        const box = el.getBoundingClientRect();
+        return {
+          at: [Math.round(box.x + box.width / 2), Math.round(box.y + box.height / 2)],
+          labels: new Function('return (' + read + ')()')(),
+          natural: [el.naturalWidth, el.naturalHeight],
+          src: (el.src || '').slice(5, 14),
+        };
+      }, labels.toString());
+      if (!before) {
+        card.picClick = { error: 'no picture on the card' };
+      }
+      else {
+        await page.mouse.click(before.at[0], before.at[1]);
+        await new Promise((r) => setTimeout(r, 2500));
+        const after = await page.evaluate((read) => ({
+          labels: new Function('return (' + read + ')()')(),
+          natural: (() => {
+            const el = document.querySelector('.fc-panel .fc-panel-pic');
+            return el ? [el.naturalWidth, el.naturalHeight] : null;
+          })(),
+        }), labels.toString());
+        card.picClick = {
+          at: before.at, natural: before.natural, src: before.src,
+          before: before.labels, after: after.labels, naturalAfter: after.natural,
+        };
+      }
     }
     // Completion (docs/Sandbox.md 7.23). Real key events, not a .value
     // write: the whole controller hangs off the input handler, and

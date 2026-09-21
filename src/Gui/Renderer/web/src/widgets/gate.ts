@@ -31,6 +31,9 @@ import type { LayoutPlan } from './layout.ts';
 import { filterSet, inputModeFor, setFromGuest, splice, stillApplies, triggerFor, wordAt }
   from './complete.ts';
 import type { CompletionSet } from './complete.ts';
+import { IconCache, dataUrl, formatNumber, iconKey, iconKind, imageKey, localeTag,
+         mouseArgs, parseLocaleNumber, pictureAt, qtButton, qtModifiers,
+         wheelArgs } from './images.ts';
 
 interface Fixture {
   case: string;
@@ -168,6 +171,7 @@ function main(): void {
 
   checkItems();
   checkCompletion();
+  checkImages();
 
   console.log(failures === 0 ? '\nALL GREEN' : `\n${failures} FAILURE(S)`);
   process.exit(failures === 0 ? 0 : 1);
@@ -354,6 +358,140 @@ function checkCompletion(): void {
   check(c, 'a start past the caret is clamped',
         setFromGuest('ab', 1, [], 9).start === 1,
         String(setFromGuest('ab', 1, [], 9).start));
+}
+
+/// Pictures, icons, theme and locale (docs/Sandbox.md 7.22, W3).
+///
+/// The fixture half is the one the sizing ruled: `svg_picture` carries a
+/// QSvgWidget's grab and two button icons, and the rule is that the host is
+/// asked ONCE per distinct id however many widgets name it. The rest are
+/// decisions about formatting and about the pointer, which no fixture can
+/// hold: the host replays the mouse into a real widget, so the argument
+/// ORDER and Qt's own numbering are what make the difference between a
+/// click landing and nothing happening.
+function checkImages(): void {
+  const t = 'images';
+
+  check(t, 'an img: id is fetched by content', iconKind('img:abc') === 'image');
+  check(t, 'a bare name is fetched by theme', iconKind('Std_ViewFitAll') === 'name');
+  check(t, 'an empty value names no picture', iconKind('') === 'none');
+  check(t, 'a missing value names no picture', iconKind(undefined) === 'none');
+
+  check(t, 'an svg reply is percent-encoded, not base64',
+        (dataUrl({ format: 'svg', data: '<svg fill="#f00"/>' }) ?? '')
+          .startsWith('data:image/svg+xml;charset=utf-8,%3Csvg'),
+        String(dataUrl({ format: 'svg', data: '<svg fill="#f00"/>' })).slice(0, 48));
+  check(t, 'a png reply is a base64 data url',
+        dataUrl({ format: 'png', data: 'AAA' }) === 'data:image/png;base64,AAA');
+  check(t, 'an empty reply resolves to nothing', dataUrl({ format: 'png', data: '' }) === null);
+
+  // The C locale is not English: it means unformatted, and formatting it
+  // as English would put thousands separators into numbers the host
+  // prints without them.
+  check(t, 'the C locale is no locale', localeTag('C') === null);
+  check(t, 'a Qt locale becomes a web tag', localeTag('en_US') === 'en-US');
+  check(t, 'an encoding suffix is dropped', localeTag('de_DE.UTF-8') === 'de-DE',
+        String(localeTag('de_DE.UTF-8')));
+  check(t, 'no locale is no locale', localeTag('') === null);
+
+  check(t, 'no locale formats plainly', formatNumber(10, 2, null) === '10.00',
+        formatNumber(10, 2, null));
+  check(t, 'a locale groups and decimates its own way',
+        formatNumber(1234.567, 2, 'de-DE') === '1.234,57',
+        formatNumber(1234.567, 2, 'de-DE'));
+
+  // The round trip is the point: what the field SHOWS has to parse back,
+  // or a write sends the host a text where it wanted a number.
+  for (const locale of [null, 'en-US', 'de-DE']) {
+    const shown = formatNumber(1234.5, 2, locale);
+    check(t, `what ${locale ?? 'C'} shows parses back`,
+          Math.abs(parseLocaleNumber(shown, locale) - 1234.5) < 1e-9,
+          `${shown} -> ${parseLocaleNumber(shown, locale)}`);
+  }
+  check(t, 'a suffix does not stop it parsing',
+        parseLocaleNumber('10.00 mm', null) === 10, String(parseLocaleNumber('10.00 mm', null)));
+  check(t, 'an empty field is not a zero', Number.isNaN(parseLocaleNumber('', null)));
+
+  // Qt's buttons are bit values and the DOM's are an index; the modifiers
+  // are Qt's own bits. Both are replayed into a real widget, so a wrong
+  // number is a click that lands as the wrong button.
+  check(t, 'the DOM left button is Qt left', qtButton(0) === 1);
+  check(t, 'the DOM middle button is Qt middle', qtButton(1) === 4, String(qtButton(1)));
+  check(t, 'the DOM right button is Qt right', qtButton(2) === 2, String(qtButton(2)));
+  check(t, 'the modifiers are Qt bits',
+        qtModifiers({ shiftKey: true, ctrlKey: true }) === 0x06000000,
+        qtModifiers({ shiftKey: true, ctrlKey: true }).toString(16));
+
+  const mouse = mouseArgs('press', 12.4, 7.6, 2, 2, { altKey: true });
+  check(t, 'a mouse arg list is [type, x, y, button, buttons, mods]',
+        JSON.stringify(mouse) === JSON.stringify(['press', 12, 8, 2, 2, 0x08000000]),
+        JSON.stringify(mouse));
+  // A DOM wheel delta is positive downward and Qt's is positive upward.
+  const wheel = wheelArgs(1, 2, 0, 100, 0, {});
+  check(t, 'a wheel notch is flipped and quantized',
+        JSON.stringify(wheel) === JSON.stringify([1, 2, 0, -120, 0, 0]),
+        JSON.stringify(wheel));
+
+  const at = pictureAt({ left: 10, top: 20, width: 32, height: 32 },
+                       { width: 64, height: 64 }, 26, 36);
+  check(t, 'a pointer maps into the picture own pixels',
+        at.x === 32 && at.y === 32, JSON.stringify(at));
+
+  // The ruled fixture check. Every picture the wire named, in order, then
+  // resolved through one cache: the host must be asked once per DISTINCT
+  // id, however many widgets carry it and however often it is re-sent.
+  const fixture = JSON.parse(
+    readFileSync(join(fixtureDir, 'svg_picture.json'), 'utf-8'),
+  ) as Fixture;
+  const named: string[] = [];
+  for (const { frame } of fixture.frames) {
+    for (const bag of [frame.state, frame.content]) {
+      if (!bag) continue;
+      for (const key of ['q_icon', 'q_pixmap', 'q_windowIcon']) {
+        const value = (bag as Record<string, unknown>)[key];
+        if (iconKind(value) !== 'none') named.push(value as string);
+      }
+    }
+  }
+  const distinct = new Set(named);
+  check(t, 'the fixture carries a picture and its buttons icons',
+        distinct.size >= 3, `${named.length} named, ${distinct.size} distinct`);
+
+  const cache = new IconCache();
+  const reply = () => Promise.resolve({ format: 'png', data: 'AAA' });
+  // TWICE, because that is what the card does: every repaint resolves
+  // every picture on it again, and the fixture happens to name each of its
+  // ids once, so a single pass would prove nothing about the cache.
+  for (const pass of [0, 1]) {
+    void pass;
+    for (const name of named) void cache.resolve(imageKey(name), reply);
+  }
+  check(t, 'the image op is asked once per distinct id',
+        cache.asked === distinct.size, `asked ${cache.asked} for ${distinct.size} ids`);
+  // A repaint that changed something sends a NEW id, and that one is
+  // fetched: the cache must not be a "fetched once, never again" rule.
+  const grown = cache.asked;
+  void cache.resolve(imageKey('img:something-new'), reply);
+  check(t, 'a changed picture is a new id and a new fetch',
+        cache.asked === grown + 1, `asked ${cache.asked}`);
+  // Asking for one already in hand adds nothing, whoever asks.
+  void cache.resolve(imageKey([...distinct][0]), reply);
+  check(t, 'a second widget naming the same id adds no fetch',
+        cache.asked === grown + 1, `asked ${cache.asked}`);
+
+  // A NAMED icon is not content-addressed: the same name is different
+  // bytes under another icon theme, and a PNG is rasterized at the size it
+  // was asked for. Both belong in the key, or a theme change would serve
+  // the old icons for as long as the page stayed up.
+  const themed = new IconCache();
+  void themed.resolve(iconKey('', 'Std_ViewFitAll', 16), reply);
+  void themed.resolve(iconKey('', 'Std_ViewFitAll', 16), reply);
+  check(t, 'a named icon is fetched once per theme and size',
+        themed.asked === 1, `asked ${themed.asked}`);
+  void themed.resolve(iconKey('dark', 'Std_ViewFitAll', 16), reply);
+  check(t, 'another theme is other bytes', themed.asked === 2, `asked ${themed.asked}`);
+  void themed.resolve(iconKey('dark', 'Std_ViewFitAll', 24), reply);
+  check(t, 'another size is another fetch', themed.asked === 3, `asked ${themed.asked}`);
 }
 
 main();

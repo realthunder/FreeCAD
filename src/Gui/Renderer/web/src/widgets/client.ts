@@ -25,6 +25,7 @@
 
 import { onPush, sendOp } from '../control.ts';
 import type { CompletionSet, ExpressionPreview } from './complete.ts';
+import { IconCache, iconKey, iconKind, imageKey } from './images.ts';
 import { WidgetStore } from './protocol.ts';
 import type { Frame } from './protocol.ts';
 
@@ -49,8 +50,10 @@ export class PanelClient {
   /// Raised whenever a frame changed anything, so a view can re-read.
   private notify: () => void;
   private stopPush: (() => void) | null = null;
-  private images = new Map<string, string>();
-  private icons = new Map<string, string>();
+  /// Both kinds of picture, in one page-lifetime cache (W3): an `img:` id
+  /// is content-addressed and a named icon is keyed by the host's theme, so
+  /// neither entry can go stale while the page is up.
+  readonly pictures = new IconCache();
   private pendingWake = 0;
 
   constructor(notify: () => void = () => {}) {
@@ -104,10 +107,17 @@ export class PanelClient {
       });
     }
     const reply = await sendOp('widgets.subscribe', { panels: true });
+    const theme = (reply?.theme as string) ?? '';
+    // A named icon's bytes are the theme's. The theme is part of every
+    // icon key, so a change cannot serve the old bytes -- but the old
+    // entries are dead weight, and a RE-subscribe is exactly where a
+    // desktop theme change is noticed (there is no theme event on this
+    // wire yet; 7.19's open list says so).
+    if (theme !== this.boot.theme) this.pictures.clear();
     this.boot = {
       panel: (reply?.panel as string) ?? null,
       dialogs: (reply?.dialogs as string[]) ?? [],
-      theme: (reply?.theme as string) ?? '',
+      theme,
       locale: (reply?.locale as string) ?? 'C',
     };
     this.notify();
@@ -187,28 +197,27 @@ export class PanelClient {
     };
   }
 
-  /// An `img:<sha1>` the bag carries, as a data URL. Content-addressed, so
-  /// a page-lifetime cache can never go stale and one fetch is enough.
-  async image(name: string): Promise<string> {
-    const had = this.images.get(name);
-    if (had !== undefined) return had;
-    const reply = await sendOp('widgets.image', { name });
-    const url = `data:image/png;base64,${String(reply?.data ?? '')}`;
-    this.images.set(name, url);
-    return url;
+  /// An `img:<sha1>` the bag carries, as a data URL: a picture leaf's grab,
+  /// a button's icon, an item cell's decoration. Content-addressed, so one
+  /// fetch is enough and a changed picture arrives as a different id.
+  async image(name: string): Promise<string | null> {
+    return this.pictures.resolve(imageKey(name),
+                                 () => sendOp('widgets.image', { name }));
   }
 
-  /// A theme icon by name. SVG comes back as text, anything else base64.
-  async icon(name: string, size = 24): Promise<string> {
-    const key = `${name}@${size}`;
-    const had = this.icons.get(key);
-    if (had !== undefined) return had;
-    const reply = await sendOp('widgets.icon', { name, size });
-    const data = String(reply?.data ?? '');
-    const url = reply?.format === 'svg'
-      ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(data)}`
-      : `data:image/png;base64,${data}`;
-    this.icons.set(key, url);
-    return url;
+  /// A theme icon by the desktop's own name. SVG comes back as text,
+  /// anything else as a PNG at the size asked for.
+  async icon(name: string, size = 24): Promise<string | null> {
+    return this.pictures.resolve(iconKey(this.boot.theme, name, size),
+                                 () => sendOp('widgets.icon', { name, size }));
+  }
+
+  /// Either kind, as the bag carries them: nothing but the `img:` prefix
+  /// says which of the two ops answers for a given value, so every view
+  /// asks through here rather than deciding for itself.
+  async picture(value: string, size = 16): Promise<string | null> {
+    const kind = iconKind(value);
+    if (kind === 'none') return null;
+    return kind === 'image' ? this.image(value) : this.icon(value, size);
   }
 }

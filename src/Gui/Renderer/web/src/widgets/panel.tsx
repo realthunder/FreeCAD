@@ -29,6 +29,8 @@ import { PanelClient } from './client.ts';
 import { ExpressionDialog, Field } from './field.tsx';
 import { planLayout } from './layout.ts';
 import type { LayoutPlan, PlannedItem } from './layout.ts';
+import { iconKind, localeTag, mouseArgs, parseLocaleNumber, pictureAt, wheelArgs }
+  from './images.ts';
 import { CHECK_OFF, CHECK_ON, ITEM_ENABLED, itemEditOp, itemExpandOp, selectionWrite }
   from './protocol.ts';
 import type { ItemCell, ItemRow, WidgetModel } from './protocol.ts';
@@ -64,19 +66,29 @@ function qtText(raw: string): string {
   }
 }
 
-/// What a field writes back. A quantity and a spin box carry the number in
-/// `rawValue` (8.4's typing case writes exactly that); a plain edit carries
-/// `text`. Anything unparseable goes back as text, so a half-typed
-/// expression is not silently turned into 0.
-function valueWrite(model: WidgetModel, raw: string): Record<string, unknown> {
-  const numeric = Number(raw);
-  const wantsNumber = model.model === 'QuantitySpinBoxModel'
-    || model.model === 'InputFieldModel'
-    || model.model === 'QSpinBoxModel'
-    || model.model === 'QDoubleSpinBoxModel'
-    || model.model === 'DoubleSpinBoxModel';
-  if (wantsNumber && raw.trim() !== '' && Number.isFinite(numeric)) {
-    return { rawValue: numeric };
+/// The bag key a class really declares for its number, which is not one key
+/// for all of them: a quantity field is a line edit underneath and carries
+/// `rawValue` beside its `text` (8.4's typing case writes exactly that),
+/// while a plain spin box declares `value` and no `text` at all
+/// (`Fw::QSpinBox`, `Fw::QDoubleSpinBox`). Writing `rawValue` to one of
+/// those sets a property it does not have, which the host accepts and the
+/// desktop ignores -- W1 wrote one key for both and only the quantity
+/// fields the corpus happens to be full of ever moved.
+const RAW_VALUE = new Set(['QuantitySpinBoxModel', 'InputFieldModel']);
+const PLAIN_VALUE = new Set(['QSpinBoxModel', 'QDoubleSpinBoxModel', 'DoubleSpinBoxModel']);
+
+/// What a field writes back. Anything unparseable goes back as text, so a
+/// half-typed expression is not silently turned into 0.
+function valueWrite(model: WidgetModel, raw: string,
+                    locale: string | null): Record<string, unknown> {
+  const key = RAW_VALUE.has(model.model) ? 'rawValue'
+    : PLAIN_VALUE.has(model.model) ? 'value' : '';
+  if (key !== '' && raw.trim() !== '') {
+    // Read back the way it is shown (W3): where the host's locale groups
+    // with a point and decimates with a comma, a plain `Number()` of what
+    // the field displays is NaN.
+    const value = parseLocaleNumber(raw, locale);
+    if (Number.isFinite(value)) return { [key]: value };
   }
   return { text: raw };
 }
@@ -218,6 +230,14 @@ export function TaskPanelCard(props: {
     void client?.write(id, values).catch(() => {});
   };
 
+  /// The host's locale, as the web spells it -- null for `C`, which means
+  /// unformatted rather than English (W3). It arrives in the subscribe
+  /// reply, so it is read through the version signal like any other state.
+  const locale = (): string | null => {
+    version();
+    return localeTag(client?.boot.locale ?? 'C');
+  };
+
   /// One model, as the view its class asks for. `model` picks the view and
   /// `qtClass` refines it -- a picture is a QLabelModel whose qtClass is
   /// QSvgWidget, which is the one place the two disagree.
@@ -256,24 +276,36 @@ export function TaskPanelCard(props: {
                                     shown() !== raw() || shown().includes('\n') }}
                        title={title()}>{shown()}</div>
                 }>
-            <Picture client={ensure} name={picture()} />
+            <Picture client={ensure} id={w.id} name={picture()}
+                     viewOnly={props.viewOnly} />
           </Show>
         );
       }
       case 'QPushButtonModel':
-      case 'QToolButtonModel':
+      case 'QToolButtonModel': {
+        const icon = () => str(w, 'icon');
+        const label = () => str(w, 'text');
         return (
           <button class="fc-panel-btn" title={title()} disabled={disabled()}
                   onClick={() => void client?.custom(w.id, { event: 'click' })}>
-            {/* An icon-only button's tooltip is a sentence -- Pad's is
-                "Temporary clear link references for new selection" -- and
-                using it as the label overruns the row it sits in, which is
-                what the first run against a live panel drew. The icon is
-                W3; until then the label is a placeholder and the sentence
-                stays where it belongs, on the title. */}
-            {str(w, 'text') || '...'}
+            <Show when={iconKind(icon()) !== 'none'}>
+              {/* An icon that cannot be drawn must not leave a blank
+                  button: the placeholder comes back if the fetch fails,
+                  but only where there is no label to show instead. */}
+              <Icon client={ensure} name={icon()} size={16}
+                    fallback={label() === '' ? <span>...</span> : undefined} />
+            </Show>
+            {/* W1 drew '...' for an icon-only button, because using the
+                tool tip as a label put Pad's whole sentence -- "Temporary
+                clear link references for new selection" -- into the row
+                and ran it off the card. Now the icon IS the label, and the
+                placeholder is left only for a button that has neither. */}
+            <Show when={label() !== '' || iconKind(icon()) === 'none'}>
+              <span>{label() || '...'}</span>
+            </Show>
           </button>
         );
+      }
       case 'QCheckBoxModel':
       case 'QRadioButtonModel':
         return (
@@ -311,8 +343,8 @@ export function TaskPanelCard(props: {
         // own expression editor (docs/Sandbox.md 7.23).
         return (
           <Field w={w} title={title()} rev={version} disabled={disabled}
-                 viewOnly={props.viewOnly} client={() => client}
-                 onValue={(raw: string) => write(w.id, valueWrite(w, raw))}
+                 viewOnly={props.viewOnly} client={() => client} locale={locale()}
+                 onValue={(raw: string) => write(w.id, valueWrite(w, raw, locale()))}
                  onExpression={(id: string, binding: string, expression: string) =>
                    setExpr({ id, binding, expression })} />
         );
@@ -513,6 +545,13 @@ export function TaskPanelCard(props: {
                                onChange={(e) =>
                                  toggleCheck(row, column(), e.currentTarget.checked)} />
                       </Show>
+                      {/* A cell's decoration: Sketcher sends one per
+                          element row, the same id on every row of a kind,
+                          so the cache turns a list of them into one
+                          fetch. */}
+                      <Show when={iconKind(cell.icon) !== 'none'}>
+                        <Icon client={ensure} name={cell.icon as string} size={14} />
+                      </Show>
                       {cell.text ?? ''}
                     </span>
                   )}
@@ -595,18 +634,104 @@ export function TaskPanelCard(props: {
 /// patched in place, and a picture whose fetch was hoisted out of the
 /// reactive graph would show the first frame for as long as the panel was
 /// up.
-function Picture(props: { client: () => PanelClient; name: string }): JSX.Element {
+function Picture(props: { client: () => PanelClient; id: string; name: string;
+                         viewOnly: () => boolean }): JSX.Element {
   const [url, setUrl] = createSignal('');
   createEffect(() => {
     const name = props.name;
     let current = true;
     onCleanup(() => { current = false; });
-    void props.client().image(name).then((src) => { if (current) setUrl(src); })
+    void props.client().image(name).then((src) => { if (current) setUrl(src ?? ''); })
       .catch(() => {});
   });
+
+  /// A picture is display until here: there is no widget in the page to
+  /// click, so the pointer goes back and the host replays it into the real
+  /// widget as the desktop's own would have arrived (7.19 M3,
+  /// `PanelMirror::replayMouse`). It is an `event`, and unlike an item
+  /// view's that route really does reach the widget -- `commCustom` hands
+  /// an event to `Widget::request`, which the mirror has connected.
+  const send = (event: string, args: unknown[]) => {
+    if (props.viewOnly()) return;
+    void props.client().custom(props.id, { event, args }).catch(() => {});
+  };
+  /// The pointer in the PICTURE's pixels: the element is laid out at
+  /// whatever width the card gives it, and the host knows only the image
+  /// it sent.
+  const at = (e: { clientX: number; clientY: number }, img: HTMLImageElement) =>
+    pictureAt(img.getBoundingClientRect(),
+              { width: img.naturalWidth, height: img.naturalHeight },
+              e.clientX, e.clientY);
+
   return (
     <Show when={url()} keyed>
-      {(src: string) => <img class="fc-panel-pic" src={src} alt="" />}
+      {(src: string) => (
+        <img class="fc-panel-pic" src={src} alt="" draggable={false}
+             onPointerDown={(e) => {
+               e.currentTarget.setPointerCapture(e.pointerId);
+               const p = at(e, e.currentTarget);
+               send('mouse', mouseArgs('press', p.x, p.y, e.button, e.buttons, e));
+             }}
+             onPointerUp={(e) => {
+               const p = at(e, e.currentTarget);
+               send('mouse', mouseArgs('release', p.x, p.y, e.button, e.buttons, e));
+             }}
+             onPointerMove={(e) => {
+               // Only while a button is down. A bare hover would put one
+               // message on the wire per pointer sample for a widget that
+               // is usually only dragged, and the desktop's own hover is
+               // not what a remote pointer is for.
+               if (e.buttons === 0) return;
+               const p = at(e, e.currentTarget);
+               send('mouse', mouseArgs('move', p.x, p.y, e.button, e.buttons, e));
+             }}
+             onDblClick={(e) => {
+               const p = at(e, e.currentTarget);
+               send('mouse', mouseArgs('dblclick', p.x, p.y, e.button, e.buttons, e));
+             }}
+             onWheel={(e) => {
+               const p = at(e, e.currentTarget);
+               send('wheel', wheelArgs(p.x, p.y, e.deltaX, e.deltaY, e.buttons, e));
+             }} />
+      )}
+    </Show>
+  );
+}
+
+/// A picture the bag NAMES rather than carries: an `img:` id filed by the
+/// host, or one of FreeCAD's own icon names. Both go through the client's
+/// one cache, so the same icon on twenty rows is fetched once.
+function Icon(props: { client: () => PanelClient; name: string; size?: number;
+                      /// Drawn when the host cannot answer for this icon
+                      /// (an evicted image, a name no theme has). Nothing
+                      /// is drawn while the fetch is in flight: a
+                      /// placeholder that flashed on every panel open
+                      /// would be worse than a moment's gap.
+                      fallback?: JSX.Element }): JSX.Element {
+  const [url, setUrl] = createSignal<string | null>(null);
+  const [failed, setFailed] = createSignal(false);
+  const px = () => props.size ?? 16;
+  createEffect(() => {
+    const name = props.name;
+    const size = px();
+    let current = true;
+    onCleanup(() => { current = false; });
+    setUrl(null);
+    setFailed(false);
+    void props.client().picture(name, size)
+      .then((src) => {
+        if (!current) return;
+        if (src) setUrl(src);
+        else setFailed(true);
+      })
+      .catch(() => { if (current) setFailed(true); });
+  });
+  return (
+    <Show when={url()} keyed fallback={<Show when={failed()}>{props.fallback}</Show>}>
+      {(src: string) => (
+        <img class="fc-panel-icon" src={src} alt="" draggable={false}
+             width={px()} height={px()} />
+      )}
     </Show>
   );
 }

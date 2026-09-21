@@ -1453,6 +1453,11 @@
   padding: 4px 10px;
   font: inherit;
   cursor: pointer;
+  /* An icon sits beside the label when the host sent one (W3), so the
+     button is a row rather than a text box. */
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   /* A label is the desktop's, not ours: it can be long, and a button that
      grows past its row pushes the rest of the row off the card. */
   max-width: 100%;
@@ -1588,7 +1593,14 @@
 .fc-panel-buttons { display: flex; gap: 8px; justify-content: flex-end; }
 .fc-panel-spacer { flex: 1; min-width: 6px; min-height: 6px; }
 .fc-panel-sep { flex: 1; border: 0; border-top: 1px solid rgba(255, 255, 255, 0.12); }
-.fc-panel-pic { max-width: 100%; }
+/* A custom-painted leaf (W3). `touch-action: none` because the pointer is
+   replayed into the real widget on the host: a drag across it is the
+   desktop user's drag, not the page scrolling under a finger. */
+.fc-panel-pic { max-width: 100%; touch-action: none; }
+/* A button's or a cell's icon: never grows, never shrinks, and takes no
+   pointer events of its own -- the click belongs to the button or the row
+   underneath it. */
+.fc-panel-icon { display: block; flex: none; pointer-events: none; }
 
 /* An item view (widgets/panel.tsx, W2).  The row is a grid so the header
  * and the cells share their columns; the first track is the twisty, which
