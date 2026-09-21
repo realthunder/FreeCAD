@@ -10,9 +10,15 @@ two merely near each other, and the sketch under-constrained.
 The suggestion is deliberately NOT instant. It waits out a dwell timer
 (DragAutoConstraintDelay, 400 ms by default), restarted by every mouse
 move, so sweeping a point across the drawing on the way somewhere else
-proposes nothing. That is the part a test has to respect: the pointer
-must come to rest on the target and stay there longer than the delay
-before the button is released.
+proposes nothing.
+
+That timer is what a test has to be careful with, and wall clock is the
+wrong lever: the delay starts when the GUI thread PROCESSES the move,
+so on a loaded box -- a ctest run with -j8, say -- a hold that is long
+enough by the client's clock can still release first, and the test then
+reads as a broken feature. So the delay is set here rather than
+inherited, small for the cases that must see a suggestion and large for
+the case that must not.
 
 Driven over the wire rather than with synthetic Qt events, for the same
 reason as the sibling auto-constraint tests: the drag only starts from a
@@ -26,7 +32,10 @@ What is asserted:
     those two points;
   - dragging a different line's start point out into empty space, with
     the same dwell, leaves no constraint at all -- so the answer is a
-    discrimination and not a reflex.
+    discrimination and not a reflex;
+  - with the delay turned up to five seconds, a drag that lands on a
+    point and releases at once leaves nothing either, which is the dwell
+    itself under test rather than just respected.
 
 Snapping is switched off so the drag lands where the pointer says and
 the tolerance under test is the auto-constraint's own.
@@ -74,16 +83,26 @@ B_END = (18.0, -18.0)
 C_START = (20.0, 8.0)
 C_END = (30.0, 4.0)
 EMPTY = (24.0, -14.0)
+# Line D (GeoId 3): the dwell control. Its START is dragged onto A's
+# START and released at once, with the delay turned up.
+D_START = (20.0, -4.0)
+D_END = (28.0, -8.0)
 
-# Longer than DragAutoConstraintDelay (400 ms), which every mouse move
-# restarts -- so this is time with the pointer held still.
-DWELL_S = 1.2
+# The delay the suggestion waits out, in ms. Small while the pointer is
+# supposed to come to rest, so a starved GUI thread still gets there;
+# large for the case that must NOT suggest anything.
+SHORT_DELAY_MS = 50
+LONG_DELAY_MS = 5000
+# Time held still, comfortably above SHORT_DELAY_MS even under load.
+DWELL_S = 2.0
+GENERAL = "User parameter:BaseApp/Preferences/Mod/Sketcher/General"
 
 state = {"doc": None, "client": None, "done": False, "t0": clock(),
          "phase": "start", "before": None, "after_drag": None,
-         "after_empty": None}
+         "after_empty": None, "after_quick": None}
 drag_sampled = threading.Event()
 empty_sampled = threading.Event()
+quick_sampled = threading.Event()
 
 
 def note(msg):
@@ -115,7 +134,7 @@ def pixel_of(x, y, z=0.0):
             int(round(VH / 2.0 - 1.0 - (y - EYE[1]) * scale)))
 
 
-def drag(ws, from_world, to_world, t):
+def drag(ws, from_world, to_world, t, hold=DWELL_S):
     """One drag of a vertex, as a browser's drag arrives.
 
     The move before the press is what preselects the vertex; the press
@@ -135,8 +154,9 @@ def drag(ws, from_world, to_world, t):
     ws.drain(0.2)
     # the step that actually moves the point, and arms the dwell
     ws.send(2, wsclient.input_frame(wsclient.MOVE, tx, ty, code=0, time_ms=t + 150))
-    ws.drain(DWELL_S)
-    ws.send(2, wsclient.input_frame(wsclient.RELEASE, tx, ty, code=0, time_ms=t + 1400))
+    ws.drain(hold)
+    ws.send(2, wsclient.input_frame(wsclient.RELEASE, tx, ty, code=0,
+                                    time_ms=t + 200 + int(hold * 1000)))
     ws.drain(0.5)
 
 
@@ -151,6 +171,7 @@ class Client(threading.Thread):
         self.ready = threading.Event()
         self.dragged = threading.Event()
         self.emptied = threading.Event()
+        self.quicked = threading.Event()
         self.edit_reply = None
         self.reset = None
 
@@ -162,6 +183,7 @@ class Client(threading.Thread):
             self.ready.set()
             self.dragged.set()
             self.emptied.set()
+            self.quicked.set()
 
     def talk(self):
         ws = WS(self.port)
@@ -187,6 +209,12 @@ class Client(threading.Thread):
         drag(ws, C_START, EMPTY, 4000)
         self.emptied.set()
         empty_sampled.wait(40.0)
+
+        # C: D's start point onto A's start, released at once, with the
+        # delay turned up -- the dwell itself under test.
+        drag(ws, D_START, A_START, 7000, hold=0.2)
+        self.quicked.set()
+        quick_sampled.wait(40.0)
 
         self.reset = ws.op('{"id":9,"op":"resetEdit"}')
         ws.drain(0.5)
@@ -239,16 +267,18 @@ def build():
         FreeCAD.ParamGet(
             "User parameter:BaseApp/Preferences/Mod/Sketcher/Tools").SetInt(
                 "OnViewParameterVisibility", 0)
+        FreeCAD.ParamGet(GENERAL).SetInt("DragAutoConstraintDelay", SHORT_DELAY_MS)
 
         doc = FreeCAD.newDocument(DOC)
         state["doc"] = doc
         sk = doc.addObject("Sketcher::SketchObject", OBJ)
-        for a, b in ((A_START, A_END), (B_START, B_END), (C_START, C_END)):
+        for a, b in ((A_START, A_END), (B_START, B_END), (C_START, C_END),
+                     (D_START, D_END)):
             sk.addGeometry(Part.LineSegment(FreeCAD.Vector(a[0], a[1], 0),
                                             FreeCAD.Vector(b[0], b[1], 0)), False)
         doc.recompute()
         state["before"] = constraints()
-        check("the sketch has the three lines", len(sk.Geometry) == 3, len(sk.Geometry))
+        check("the sketch has the four lines", len(sk.Geometry) == 4, len(sk.Geometry))
         check("and no constraints to start with", state["before"] == [], state["before"])
         check("auto-constraints are on", sk.ViewObject.Autoconstraints,
               sk.ViewObject.Autoconstraints)
@@ -288,10 +318,21 @@ def poll():
 
             def sample_empty():
                 state["after_empty"] = (constraints(), point_of(2, 1))
+                # Turn the delay up for the last drag, which releases at once.
+                FreeCAD.ParamGet(GENERAL).SetInt("DragAutoConstraintDelay",
+                                               LONG_DELAY_MS)
                 empty_sampled.set()
 
             QtCore.QTimer.singleShot(400, sample_empty)
-        elif phase == "empty-sampled" and not client.is_alive():
+        elif phase == "empty-sampled" and client.quicked.is_set():
+            state["phase"] = "quick-sampled"
+
+            def sample_quick():
+                state["after_quick"] = (constraints(), point_of(3, 1))
+                quick_sampled.set()
+
+            QtCore.QTimer.singleShot(400, sample_quick)
+        elif phase == "quick-sampled" and not client.is_alive():
             state["phase"] = "end"
     except Exception:
         note("ABORT poll:\n" + traceback.format_exc())
@@ -342,6 +383,13 @@ def verify():
         added = empty_cs[len(drag_cs):]
         check("a drag into empty space added no constraint", added == [], added)
 
+        quick_cs, d_start = (state["after_quick"] or ([], None))
+        check("the quick drag reached its target", d_start is not None and
+              near(d_start, A_START), "%s vs %s" % (d_start, A_START))
+        added = quick_cs[len(empty_cs):]
+        check("a drag released before the dwell added no constraint",
+              added == [], added)
+
         reset = reply_of(client.reset)
         check("the client's resetEdit is accepted", reset.get("ok") is True, reset)
     except Exception:
@@ -355,6 +403,7 @@ def finish():
     state["done"] = True
     drag_sampled.set()
     empty_sampled.set()
+    quick_sampled.set()
     try:
         FreeCADGui.getDocument(DOC).resetEdit()
     except Exception:
