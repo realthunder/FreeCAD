@@ -7458,6 +7458,48 @@ solve, three ops a row): the case for coalescing per-row ops into one
 `items` reset.  Everything else is under 1 ms of host time per burst
 and nothing on the wire unless a value changed.
 
+**What the mirror's evidence actually is, measured 2026-09-21.** Chased
+from a flaky test rather than from the bench: three sites in
+`tests/src/Gui/FormWidgets.cpp` waited a fixed 50 ms for a row hidden
+by the view to reach the client, and under `ctest -j8` it sometimes had
+not (`c49dc1e11e` put the wait in, `6d4dee5cb5` made them wait for the
+op instead).  The question the test fix left open was whether the op is
+merely late, or can be lost or reordered.  Measured on a panel mirror
+with a list, a label and a `TaskBox`, xvfb:
+
+    setRowHidden -> op, host painting          20/20 seen, 1 ms median, 2 ms max
+    setRowHidden -> op, host not painting       0 ops in 500 ms of flushes
+    the same, after the host paints again       recovered in 6 ms
+    setText      -> update, host painting       1 update, 1 ms
+    setText      -> update, host not painting   0 updates in 500 ms
+    a full re-read of every widget              8 widgets, 138 keys, 219 us
+
+Reordering cannot happen: `syncReflectedRows` and `writeDiff` send the
+CURRENT value diffed against what the model last held, so a later flush
+can only carry newer truth, and nothing is permanently lost -- the
+first repaint after the fact catches everything up at once.
+
+**But the evidence for a value change is the host's own painting**, and
+that is the finding.  The event filter marks a widget dirty on Paint,
+Show, Hide and the change events; for any key with no signal behind it
+-- a label's text, a row hidden by the view -- Paint is the only one
+that fires.  A host that is not painting therefore sends nothing, and
+the client's panel is frozen for exactly as long as that lasts: a
+minimized or occluded host window, a collapsed `TaskBox`, a panel on a
+tab the host is not showing.  The client's own rendering is independent
+of all three, which is the point of the mirror, so this is a real hole
+rather than a curiosity -- it is just one that never shows on a bench
+whose host is in front of you.
+
+The fix, if it is wanted, is a low-rate safety poll while a subscriber
+is attached and a panel is up: re-read the keys and the rows, skip the
+picture grabs (a grab forces a repaint and is the expensive part).  The
+cost is known from the table above and from the repaint rows -- about
+25 us per widget, so a full re-read of Pad's 61-model panel is about
+1.5 ms, and at 2 Hz about 0.3% of one core while a client watches a
+panel.  Not built: it is idle cost for a case the desktop never sees,
+so it is a decision, not a defect fix.
+
 ## 9. Tests
 
     file                                          cases   covers
@@ -8339,6 +8381,16 @@ sockets, any network for the reference image, a webview escape hatch.
 
 ## 13. Known gaps and open questions
 
+- **The panel mirror only learns what the host paints** (7.19, sec 8.4
+  "What the mirror's evidence actually is"): a key with no signal --
+  a label's text, a row hidden by the view -- reaches the client on the
+  widget's repaint, so a minimized or occluded host, a collapsed
+  `TaskBox` or a panel on a tab the host is not showing freezes the
+  client's panel until something paints again.  Measured: 1 ms when the
+  host paints, nothing at all when it does not, and a full catch-up on
+  the first repaint after.  Nothing is lost or reordered.  The answer
+  is a low-rate poll while a subscriber is attached, costed in 8.4 and
+  NOT built -- it is idle cost for a case the desktop never sees.
 - **`FreeCAD.GuiUp` in the guest: RULED 2026-09-06, the host's
   value** ("flip it"; 7.9).  What it costs until G4, measured by
   `SandboxCorpusGui`: an App-side hook calling its VIEW PROVIDER'S
