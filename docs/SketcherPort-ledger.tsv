@@ -14,7 +14,7 @@ e43a3b17c8	2023-12-24	Max Wilfinger	feature	1	0	have(sync)	18		Change tool descr
 5ee16df6b7	2023-11-24	Paddle	?	1	0	n/a(uncompiled)	61		Draw arc helpers for radius constraints.	Gui/EditModeConstraintCoinManager.cpp
 b0176c2d92	2024-01-17	Paddle	feature	1	0	have(sync)	10		Sketcher: add isPeriodicBsplineCurve helper function	Gui/Utils.cpp Gui/Utils.h
 6db820a580	2024-01-07	Paddle	?	0	0	have(sync)	81		Sketcher: Define double click on edges : Select the whole wire.	Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h
-919d8c9392	2024-01-17	Paddle	fix	1	0	open	3		Sketcher: bspline: fix ESC exit tool	Gui/DrawSketchHandlerBSpline.h
+919d8c9392	2024-01-17	Paddle	fix	1	0	open	3	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: bspline: fix ESC exit tool	Gui/DrawSketchHandlerBSpline.h
 4acff3f66f	2024-01-17	Paddle	fix	0	0	have	10	taken b4b8f10a3b	Sketcher: polyline: fix ESC exit tool	Gui/DrawSketchHandlerLineSet.h
 64c867eb0e	2024-01-16	Paddle	fix	0	0	n/a(uncompiled)	190		Sketcher Fix radius arc helpers.	Gui/EditModeConstraintCoinManager.cpp Gui/EditModeConstraintCoinManager.h
 dca00ec80e	2024-01-16	Paddle	?	1	0	n/a(uncompiled)	10		Sketcher : improve single line angle rendering.	Gui/EditModeConstraintCoinManager.cpp
@@ -69,7 +69,7 @@ a38e73135e	2024-02-25	wmayer	fix	0	0	have(sync)	59		Sketcher: fixes #12343: Undo
 d1c9370614	2024-02-25	Ajinkya Dahale	refactor	0	0	open	7	taken 88c9baa853	[Sketcher] Use angle-via-two-points in e2e with BSplines	App/Sketch.cpp
 f8f159c4d3	2024-02-27	Ajinkya Dahale	?	1	0	have(sync)	14		[Sketcher] Include endpoint-to-endpoint tangency as coincidence	App/SketchObject.cpp
 da7d5391af	2023-04-14	Ajinkya Dahale	?	1	0	partial(sync)	62	partial d8d462426e: rest in App/SketchObjectPyImp.cpp Gui/CommandSketcherBSpline.cpp	[Sketcher] Join curves with C1 continuity	App/SketchObject.cpp App/SketchObject.h App/SketchObjectPyImp.cpp Gui/CommandSketcherBSpline.cpp
-f88f48f64f	2024-02-27	Ed Williams	?	1	0	open	16		Change the calculation of the b parameter of the hyperbolic arc (#12467)	Gui/DrawSketchHandlerArcOfHyperbola.h
+f88f48f64f	2024-02-27	Ed Williams	?	1	0	open	16	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Change the calculation of the b parameter of the hyperbolic arc (#12467)	Gui/DrawSketchHandlerArcOfHyperbola.h
 dfa1b94c83	2024-02-12	PaddleStroke	?	1	0	have(sync)	46		Sketcher: Line DSH: Harmonize width/length behavior with rectangle.	Gui/DrawSketchHandlerLine.h
 86726f21b7	2024-02-28	Roy-043	?	0	0	open	2		Sketcher: Change Sketcher_CreatePointFillet button text to match menu text	Gui/CommandCreateGeo.cpp
 6a3c689d40	2024-02-28	pre-commit-ci[bot]	noise	0	0	open	4		[pre-commit.ci] auto fixes from pre-commit.com hooks	Gui/CommandCreateGeo.cpp
@@ -223,8 +223,8 @@ d92742f9c6	2024-07-02	PaddleStroke	fix	0	0	have(sync)	94		Sketcher: Dimension: P
 858e59fabf	2024-06-30	wmayer	fix	0	0	open	4	n/a: the warnings are commented out	Sketcher: Fix format string in ExternalGeometryFacade::initExtensions()	App/ExternalGeometryFacade.cpp
 561e521817	2024-07-05	wmayer	fix	1	0	open	2		MSVC: Fix warning C4005: 'NOMINMAX': macro redefinition	Gui/PreCompiled.h
 1eaf89b485	2024-06-26	wmayer	fix	1	0	open	28		Sketcher: Handle PyException in createGeneratedAutoConstraints	Gui/DrawSketchDefaultHandler.h
-6a309e889e	2024-06-26	PaddleStroke	fix	0	0	open	12		Sketcher: BSpline: Fix crash when cancelled while only one point with autoconstraint.	Gui/DrawSketchHandlerBSpline.h
-cef87b5642	2024-06-27	PaddleStroke	fix	0	0	open	8		Sketcher: BSpline DSH: Fix crash: If you create new sketch, start bspline tool and change mode, it would crash. It's because it was doing a abortCommand before the command was opened. So it cancelled the create sketch command.	Gui/DrawSketchHandlerBSpline.h
+6a309e889e	2024-06-26	PaddleStroke	fix	0	0	open	12	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: BSpline: Fix crash when cancelled while only one point with autoconstraint.	Gui/DrawSketchHandlerBSpline.h
+cef87b5642	2024-06-27	PaddleStroke	fix	0	0	open	8	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: BSpline DSH: Fix crash: If you create new sketch, start bspline tool and change mode, it would crash. It's because it was doing a abortCommand before the command was opened. So it cancelled the create sketch command.	Gui/DrawSketchHandlerBSpline.h
 24c7d3ef25	2024-06-28	Chris Hennes	?	1	0	open	268		Sketcher: Switch SnapManager from Win-1252 to UTF-8	Gui/SnapManager.h
 51c6dbd3e3	2024-07-08	ppphp	fix	0	0	partial(sync)	222		fix unique ptr usage in sketch (#15008)	Gui/CommandConstraints.cpp Gui/CommandCreateGeo.cpp Gui/CommandSketcherBSpline.cpp Gui/CommandSketcherTools.cpp Gui/CommandSketcherVirtualSpace.cpp Gui/DrawSketchDefaultHandler.h Gui/DrawSketchHandlerCircle.h Gui/Utils.cpp Gui/Utils.h Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h
 4eb57fb50d	2024-06-28	Chris Hennes	?	0	0	open	4		Sketcher: Resolve unsafe combination of bool and int in |	Gui/TaskSketcherConstraints.cpp Gui/TaskSketcherElements.cpp
@@ -261,7 +261,7 @@ e15646d158	2024-07-18	bgbsww	fix	0	0	partial(sync)	471		Toponaming: Tests, clean
 8948505b45	2024-07-26	Chris Hennes	noise	0	0	have(sync)	141		Sketcher/Toponaming: Further linter cleanup	App/SketchObject.cpp
 00990cb1e1	2024-07-28	wmayer	noise	0	0	have(sync)	8		Sketch: Fix compiler warnings	App/SketchObject.cpp
 4aaf72dcc2	2024-07-26	bgbsww	fix	0	0	partial(sync)	283		Toponaming:  Final piece nine of fixing Save/Restore sketch external geometry	App/SketchGeometryExtension.cpp App/SketchObject.cpp SketcherTests/TestSketcherSolver.py
-58241e027e	2024-08-01	hasecilu	noise	0	0	open	2		Fix typos on Assembly & Sketcher WBs	Gui/DrawSketchHandlerBSpline.h
+58241e027e	2024-08-01	hasecilu	noise	0	0	open	2	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Fix typos on Assembly & Sketcher WBs	Gui/DrawSketchHandlerBSpline.h
 e4b2bf7630	2024-07-31	bgbsww	fix	0	0	have(sync)	31		Toponaming: bring in code to fix delExternal breakage.	App/SketchObject.cpp
 c0c7bd647d	2024-08-02	bgbsww	fix	0	0	have(sync)	2		Toponaming: use correct face maker	App/SketchObject.cpp
 ff693a4dc2	2024-07-24	Chris Hennes	noise	1	0	have(sync)	41		Sketcher: Modernize license text	App/SketchObject.cpp
@@ -480,11 +480,11 @@ fde9be13bc	2025-03-13	pre-commit-ci[bot]	noise	0	1	have(rev)	2		[pre-commit.ci] 
 fa61131590	2025-03-13	Karliss	feature	0	0	have(sync)	2		Add missing parent for messagebox and other popups	Gui/ViewProviderSketch.cpp
 34881bc82e	2025-03-12	bofdahof	noise	0	0	partial(sync)	519	partial 88c9baa853: App/GeoList.cpp App/SketchObject.cpp Gui/Command.cpp Gui/CommandSketcherTools.cpp Gui/EditModeCoinManager.cpp Gui/EditModeCoinManagerParameters.h Gui/TaskDlgEditSketch.cpp Gui/TaskSketcherConstraints.cpp Gui/ViewProviderSketch.cpp	Sketcher: apply std::ranges	App/GeoList.cpp App/Sketch.cpp App/SketchObject.cpp App/planegcs/GCS.cpp Gui/Command.cpp Gui/CommandSketcherTools.cpp Gui/EditModeCoinManager.cpp Gui/EditModeCoinManagerParameters.h Gui/TaskDlgEditSketch.cpp Gui/TaskSketcherConstraints.cpp Gui/ViewProviderSketch.cpp
 6c2c6847eb	2025-03-17	tritao	refactor	0	0	open	40		CMake: Cleanup targets with transitive dependencies	App/CMakeLists.txt Gui/CMakeLists.txt tests/CMakeLists.txt
-7076989ead	2025-03-20	PaddleStroke	fix	0	0	open	3		Remove unecessary if in DrawSketchHandlerArc.h	Gui/DrawSketchHandlerArc.h
+7076989ead	2025-03-20	PaddleStroke	fix	0	0	open	3	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Remove unecessary if in DrawSketchHandlerArc.h	Gui/DrawSketchHandlerArc.h
 e12deea20e	2025-03-20	Chris Hennes	fix	1	0	open	8		Sketcher: Ensure loop can exit	Gui/Command.cpp
 28b62eb52b	2025-03-20	Chris Hennes	fix	0	0	open	4	have: the temporary lives through the full expression	Sketcher: Ensure copy of temp string is kept	App/AppSketcherPy.cpp
-1fc61423f3	2025-03-22	PaddleStroke	fix	1	0	open	14		Sketcher: Line tool: Enforce correctly when angle is set (#20267)	Gui/DrawSketchHandlerLine.h
-0f00c6d2d1	2025-03-22	PaddleStroke	fix	1	0	open	15		Sketcher: Slot tool: Enforce correctly when angle is set (#20269)	Gui/DrawSketchHandlerSlot.h
+1fc61423f3	2025-03-22	PaddleStroke	fix	1	0	open	14	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Line tool: Enforce correctly when angle is set (#20267)	Gui/DrawSketchHandlerLine.h
+0f00c6d2d1	2025-03-22	PaddleStroke	fix	1	0	open	15	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Slot tool: Enforce correctly when angle is set (#20269)	Gui/DrawSketchHandlerSlot.h
 96e8a9e83c	2025-03-29	mosfet80	?	1	0	open	18		Remove old GCC<=8 (#20508)	App/ExternalGeometryExtension.cpp App/SketchGeometryExtension.cpp App/SolverGeometryExtension.cpp Gui/ViewProviderSketchGeometryExtension.cpp
 b4eb28e50e	2025-03-27	Benjamin Nauck	noise	0	0	open	580	partial 88c9baa853: App/SketchAnalysis.cpp App/SketchAnalysis.h App/SketchObject.cpp App/SketchObject.h App/SketchObjectPyImp.cpp Gui/CommandConstraints.cpp Gui/CommandSketcherBSpline.cpp Gui/CommandSketcherOverlay.cpp Gui/CommandSketch	Sketcher: Use std::numeric_limits and std::numbers instead of defines	App/Sketch.cpp App/SketchAnalysis.cpp App/SketchAnalysis.h App/SketchObject.cpp App/SketchObject.h App/SketchObjectPyImp.cpp App/planegcs/Constraints.cpp App/planegcs/GCS.cpp App/planegcs/Geo.h Gui/CommandConstraints.cpp Gui/CommandSketcherBSpline.cpp Gui/CommandSketcherOverlay.cpp Gui/CommandSketch
 0317206930	2025-03-29	ashimabu	?	0	0	open	3	n/a: upstream gated the Gui refresh on Geometry changing; the fork redraws in slotSolverUpdate on every signalSolverUpdate (and upstream/main later dropped the isSame gate)	Sketcher: Explicitly check fullyConstrainedChanged on solve (#20236)	App/SketchObject.cpp
@@ -569,16 +569,16 @@ b0e901bab6	2025-06-02	George Peden	feature	0	0	open	886		Sketcher: Implement hin
 46d626f368	2025-06-01	Matthias Danner	fix	0	0	n/a(uncompiled)	4		fix use of viewScalingFactor	Gui/EditModeCoinManager.cpp
 9b40afea7a	2025-06-02	tetektoza	feature	0	0	open	105		Sketcher: Do not allow mouse interruption while entering dimension (#20925)	Gui/DrawSketchController.h Gui/DrawSketchHandlerArc.h Gui/DrawSketchHandlerArcSlot.h Gui/DrawSketchHandlerBSpline.h Gui/DrawSketchHandlerCircle.h Gui/DrawSketchHandlerEllipse.h Gui/DrawSketchHandlerLine.h Gui/DrawSketchHandlerOffset.h Gui/DrawSketchHandlerPoint.h Gui/DrawSketchHandlerPolygon.h Gui/D
 913c30429c	2025-04-10	Ladislav Michl	refactor	1	0	open	4		Base: Quantity: use isDimensionless whenever feasible	Gui/EditDatumDialog.cpp
-9a80921d74	2025-06-03	theo-vt	fix	1	0	open	26		Sketcher: Fix scaling down ellipses and arcs of ellipses (#21718)	Gui/DrawSketchHandlerScale.h
+9a80921d74	2025-06-03	theo-vt	fix	1	0	open	26	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Fix scaling down ellipses and arcs of ellipses (#21718)	Gui/DrawSketchHandlerScale.h
 9d48371ab4	2025-06-04	PaddleStroke	fix	1	0	open	11		Sketcher: Fix #21646 (#21739)	Gui/DrawSketchDefaultHandler.h Gui/DrawSketchHandlerRectangle.h
-5c219bea41	2025-06-05	Luz Paz	noise	0	0	open	2		Sketcher: fix typo in source comment	Gui/DrawSketchHandlerScale.h
-8a58d225c8	2025-06-07	longrackslabs	feature	0	0	open	33		- Refactor Point tool hint implementation with direct return (trival) pattern	Gui/DrawSketchHandlerPoint.h
+5c219bea41	2025-06-05	Luz Paz	noise	0	0	open	2	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: fix typo in source comment	Gui/DrawSketchHandlerScale.h
+8a58d225c8	2025-06-07	longrackslabs	feature	0	0	open	33	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	- Refactor Point tool hint implementation with direct return (trival) pattern	Gui/DrawSketchHandlerPoint.h
 6664907bd5	2025-06-07	tetektoza	feature	0	0	open	17		Sketcher: Allow user to reset OVP state using backspace key	Gui/DrawSketchController.h Gui/DrawSketchKeyboardManager.cpp
 353c4eca55	2025-06-09	theo-vt	?	0	0	open	400	adapted 60befe30bc	Sketcher: Sketch autoscale (#21084)	App/SketchObject.cpp App/SketchObject.h Gui/CMakeLists.txt Gui/CommandSketcherTools.cpp Gui/CommandSketcherTools.h Gui/DrawSketchHandler.cpp Gui/DrawSketchHandler.h Gui/DrawSketchHandlerScale.h Gui/EditDatumDialog.cpp Gui/EditDatumDialog.h Gui/SketcherSettings.cpp Gui/SketcherSettings.h Gui/Sketcher
 456659d763	2025-01-24	wmayer	?	0	0	open	7		Test: Do not write test files into CWD	SketcherTests/TestSketcherSolver.py
 a95d782ab0	2025-06-07	tetektoza	feature	0	0	open	1113		Sketcher: Refactor access to OVPs to not repeat array access everytime	Gui/DrawSketchHandlerArc.h Gui/DrawSketchHandlerArcSlot.h Gui/DrawSketchHandlerBSpline.h Gui/DrawSketchHandlerCircle.h Gui/DrawSketchHandlerEllipse.h Gui/DrawSketchHandlerLine.h Gui/DrawSketchHandlerOffset.h Gui/DrawSketchHandlerPoint.h Gui/DrawSketchHandlerPolygon.h Gui/DrawSketchHandlerRotate.h Gu
-60a86b05c4	2025-06-12	tetektoza	fix	0	0	open	30		Sketcher: Fix OOB access to OVPs	Gui/DrawSketchHandlerArc.h Gui/DrawSketchHandlerCircle.h Gui/DrawSketchHandlerEllipse.h
-2c532ed924	2025-06-12	tetektoza	fix	0	0	open	26		Sketcher: Fix OVP accepting input prematurely in Position and Dimensions	Gui/DrawSketchHandlerArc.h Gui/DrawSketchHandlerArcSlot.h Gui/DrawSketchHandlerBSpline.h Gui/DrawSketchHandlerCircle.h Gui/DrawSketchHandlerEllipse.h Gui/DrawSketchHandlerLine.h Gui/DrawSketchHandlerPolygon.h Gui/DrawSketchHandlerRectangle.h Gui/DrawSketchHandlerRotate.h Gui/DrawSketchHandlerSlot.h 
+60a86b05c4	2025-06-12	tetektoza	fix	0	0	open	30	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Fix OOB access to OVPs	Gui/DrawSketchHandlerArc.h Gui/DrawSketchHandlerCircle.h Gui/DrawSketchHandlerEllipse.h
+2c532ed924	2025-06-12	tetektoza	fix	0	0	open	26	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Fix OVP accepting input prematurely in Position and Dimensions	Gui/DrawSketchHandlerArc.h Gui/DrawSketchHandlerArcSlot.h Gui/DrawSketchHandlerBSpline.h Gui/DrawSketchHandlerCircle.h Gui/DrawSketchHandlerEllipse.h Gui/DrawSketchHandlerLine.h Gui/DrawSketchHandlerPolygon.h Gui/DrawSketchHandlerRectangle.h Gui/DrawSketchHandlerRotate.h Gui/DrawSketchHandlerSlot.h 
 6eecd08f7c	2025-06-11	Syres916	?	0	0	open	41		[Gui] C++ preparation for deprecation of QCheckBox...	Gui/Command.cpp Gui/TaskSketcherConstraints.cpp Gui/TaskSketcherElements.cpp Gui/TaskSketcherSolverAdvanced.cpp
 f03900b58d	2025-06-12	pre-commit-ci[bot]	noise	0	0	open	4		[pre-commit.ci] auto fixes from pre-commit.com hooks	Gui/TaskSketcherSolverAdvanced.cpp
 9ecb62c8f6	2025-06-14	theo-vt	fix	0	0	open	30	have: folded into 60befe30bc (offsetGeoID on ids, robust form)	Sketcher: Fix autoscale issue with the origin (#21952)	Gui/DrawSketchHandlerScale.h Gui/Utils.h
@@ -599,7 +599,7 @@ bcbf8d88a9	2025-06-16	tetektoza	feature	0	0	open	20		Sketcher: Adjust P&D mode t
 8c2eb14efe	2025-06-23	Florian Foinant-Willig	refactor	0	0	open	995	taken 88c9baa853	Sketcher: refactor planecgs/Constraints (#21988)	App/planegcs/Constraints.cpp App/planegcs/Constraints.h
 f6f75a6a0d	2025-06-16	Florian Foinant-Willig	fix	1	0	open	25	partial 88c9baa853: Gui/CommandConstraints.cpp SketcherTests/TestSketcherSolver.py	Sketcher: Fix circle-line negative distance	App/planegcs/Constraints.cpp Gui/CommandConstraints.cpp SketcherTests/TestSketcherSolver.py
 732501d89d	2025-06-17	Karliss	feature	0	0	open	35		Sketcher: Implement related constraint command for non edges	Gui/CommandSketcherTools.cpp
-c76f068f91	2025-06-23	George Peden	feature	0	0	open	142		Sketcher: Add contextual input hints to transform tools (InputHints Phase 4) (#21840)	Gui/DrawSketchHandlerOffset.h Gui/DrawSketchHandlerRotate.h Gui/DrawSketchHandlerScale.h Gui/DrawSketchHandlerSymmetry.h Gui/DrawSketchHandlerTranslate.h
+c76f068f91	2025-06-23	George Peden	feature	0	0	open	142	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Add contextual input hints to transform tools (InputHints Phase 4) (#21840)	Gui/DrawSketchHandlerOffset.h Gui/DrawSketchHandlerRotate.h Gui/DrawSketchHandlerScale.h Gui/DrawSketchHandlerSymmetry.h Gui/DrawSketchHandlerTranslate.h
 580d538798	2025-06-23	George Peden	feature	0	0	open	224		Sketcher: Add contextual input hints to constraint commands (InputHints Phase 2) (#21751)	Gui/CommandConstraints.cpp Gui/DrawSketchHandler.h
 df08c0ce8d	2025-06-18	Karliss	fix	0	0	open	2		Sketcher: fix Esc can leave setting synchronization	Gui/ViewProviderSketch.cpp
 cf082f7642	2025-07-01	Max Wilfinger	?	0	0	open	1166	partial 88c9baa853: App/AppSketcher.cpp App/SketchObject.cpp Gui/AppSketcherGui.cpp Gui/Command.cpp Gui/CommandAlterGeometry.cpp Gui/CommandConstraints.cpp Gui/CommandCreateGeo.cpp Gui/CommandSketcherBSpline.cpp Gui/CommandSketcherOverlay.cpp Gui/CommandSketcherTools.cpp Gui/CommandSketcherVirtualSpace.c	Sketcher: Update UI strings for consistency (#22167)	App/AppSketcher.cpp App/Sketch.cpp App/SketchObject.cpp Gui/AppSketcherGui.cpp Gui/Command.cpp Gui/CommandAlterGeometry.cpp Gui/CommandConstraints.cpp Gui/CommandCreateGeo.cpp Gui/CommandSketcherBSpline.cpp Gui/CommandSketcherOverlay.cpp Gui/CommandSketcherTools.cpp Gui/CommandSketcherVirtualSpace.c
@@ -616,25 +616,25 @@ c968effe26	2025-07-18	Florian Foinant-Willig	?	0	0	open	32	taken 88c9baa853 (tes
 b0dcce6c66	2025-07-18	theo-vt	?	0	0	open	29	adapted 60befe30bc	Sketcher: Only autoscale if the datum being edited is the scale defining datum (#22419)	App/SketchObject.cpp App/SketchObject.h Gui/EditDatumDialog.cpp
 018ac7b9dd	2025-07-19	Ajinkya Dahale	?	0	0	open	10	taken d8d462426e	Sketcher: Skip checks in `deriveConstraintsForPieces` when risky	App/SketchObject.cpp
 114d3dcd87	2025-07-19	Ajinkya Dahale	?	0	0	open	8	taken d8d462426e	Sketcher: Improve constraint transfer in `SketchObject::trim()`	App/SketchObject.cpp
-b2453caaea	2025-06-28	Kacper Donat	fix	0	0	open	119		Sketcher: Use generic tool hints table for DrawSketchHandlerArc	Gui/DrawSketchHandlerArc.h
-20876d7b35	2025-06-28	Kacper Donat	fix	0	0	open	65		Sketcher: Use generic tool hints table for DrawSketchHandlerArcOfEllipse	Gui/DrawSketchHandlerArcOfEllipse.h
-d1a25c98bc	2025-06-28	Kacper Donat	fix	0	0	open	74		Sketcher: Use generic tool hints table for DrawSketchHandlerArcOfHyperbola	Gui/DrawSketchHandlerArcOfHyperbola.h
-f0c6cd7a0f	2025-06-28	Kacper Donat	fix	0	0	open	65		Sketcher: Use generic tool hints table for DrawSketchHandlerArcOfParabola	Gui/DrawSketchHandlerArcOfParabola.h
-e86a43c183	2025-06-28	Kacper Donat	fix	0	0	open	65		Sketcher: Use generic tool hints table for DrawSketchHandlerArcSlot	Gui/DrawSketchHandlerArcSlot.h
-5c1d097161	2025-06-28	Kacper Donat	fix	0	0	open	108		Sketcher: Use generic tool hints table for DrawSketchHandlerBSpline	Gui/DrawSketchHandlerBSpline.h
-edf0d488e4	2025-06-28	Kacper Donat	fix	0	0	open	104		Sketcher: Use generic tool hints table for DrawSketchHandlerCircle	Gui/DrawSketchHandlerCircle.h
-2ab975cfd5	2025-06-28	Kacper Donat	fix	0	0	open	104		Sketcher: Use generic tool hints table for DrawSketchHandlerEllipse	Gui/DrawSketchHandlerEllipse.h
+b2453caaea	2025-06-28	Kacper Donat	fix	0	0	open	119	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Use generic tool hints table for DrawSketchHandlerArc	Gui/DrawSketchHandlerArc.h
+20876d7b35	2025-06-28	Kacper Donat	fix	0	0	open	65	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Use generic tool hints table for DrawSketchHandlerArcOfEllipse	Gui/DrawSketchHandlerArcOfEllipse.h
+d1a25c98bc	2025-06-28	Kacper Donat	fix	0	0	open	74	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Use generic tool hints table for DrawSketchHandlerArcOfHyperbola	Gui/DrawSketchHandlerArcOfHyperbola.h
+f0c6cd7a0f	2025-06-28	Kacper Donat	fix	0	0	open	65	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Use generic tool hints table for DrawSketchHandlerArcOfParabola	Gui/DrawSketchHandlerArcOfParabola.h
+e86a43c183	2025-06-28	Kacper Donat	fix	0	0	open	65	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Use generic tool hints table for DrawSketchHandlerArcSlot	Gui/DrawSketchHandlerArcSlot.h
+5c1d097161	2025-06-28	Kacper Donat	fix	0	0	open	108	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Use generic tool hints table for DrawSketchHandlerBSpline	Gui/DrawSketchHandlerBSpline.h
+edf0d488e4	2025-06-28	Kacper Donat	fix	0	0	open	104	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Use generic tool hints table for DrawSketchHandlerCircle	Gui/DrawSketchHandlerCircle.h
+2ab975cfd5	2025-06-28	Kacper Donat	fix	0	0	open	104	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Use generic tool hints table for DrawSketchHandlerEllipse	Gui/DrawSketchHandlerEllipse.h
 ed617cdf74	2025-06-28	Kacper Donat	fix	0	0	open	54		Sketcher: Use generic tool hints table for DrawSketchHandlerExtend	Gui/DrawSketchHandlerExtend.h
 9a9613d88c	2025-06-28	Kacper Donat	fix	0	0	open	53		Sketcher: Use generic tool hints table for DrawSketchHandlerFillet	Gui/DrawSketchHandlerFillet.h
-23bd9e86fd	2025-06-28	Kacper Donat	fix	0	0	open	125		Sketcher: Use generic tool hints table for DrawSketchHandlerLine	Gui/DrawSketchHandlerLine.h
+23bd9e86fd	2025-06-28	Kacper Donat	fix	0	0	open	125	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Use generic tool hints table for DrawSketchHandlerLine	Gui/DrawSketchHandlerLine.h
 7d7fc0c021	2025-06-28	Kacper Donat	fix	0	0	have	56	taken b4b8f10a3b	Sketcher: Use generic tool hints table for DrawSketchHandlerLineSet	Gui/DrawSketchHandlerLineSet.h
-49fbffa200	2025-06-28	Kacper Donat	fix	0	0	open	59		Sketcher: Use generic tool hints table for DrawSketchHandlerPolygon	Gui/DrawSketchHandlerPolygon.h
-6b22c79be2	2025-06-28	Kacper Donat	fix	0	0	open	225		Sketcher: Use generic tool hints table for DrawSketchHandlerRectangle	Gui/DrawSketchHandlerRectangle.h
-276a44c1e3	2025-06-28	Kacper Donat	fix	0	0	open	68		Sketcher: Use generic tool hints table for DrawSketchHandlerRotate	Gui/DrawSketchHandlerRotate.h
-05eb702f87	2025-06-28	Kacper Donat	fix	0	0	open	53		Sketcher: Use generic tool hints table for DrawSketchHandlerScale	Gui/DrawSketchHandlerScale.h
-6564ad5c6e	2025-06-28	Kacper Donat	fix	0	0	open	56		Sketcher: Use generic tool hints table for DrawSketchHandlerSlot	Gui/DrawSketchHandlerSlot.h
-91de480bc8	2025-06-28	Kacper Donat	noise	0	0	open	52		Sketcher: Use generic tool hints table for DrawSketchHandlerTranslate	Gui/DrawSketchHandlerTranslate.h
-ed14e6b24f	2025-06-28	Kacper Donat	fix	0	0	open	59		Sketcher: Use generic tool hints table for DrawSketchHandlerBSpline	Gui/DrawSketchHandlerBSpline.h
+49fbffa200	2025-06-28	Kacper Donat	fix	0	0	open	59	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Use generic tool hints table for DrawSketchHandlerPolygon	Gui/DrawSketchHandlerPolygon.h
+6b22c79be2	2025-06-28	Kacper Donat	fix	0	0	open	225	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Use generic tool hints table for DrawSketchHandlerRectangle	Gui/DrawSketchHandlerRectangle.h
+276a44c1e3	2025-06-28	Kacper Donat	fix	0	0	open	68	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Use generic tool hints table for DrawSketchHandlerRotate	Gui/DrawSketchHandlerRotate.h
+05eb702f87	2025-06-28	Kacper Donat	fix	0	0	open	53	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Use generic tool hints table for DrawSketchHandlerScale	Gui/DrawSketchHandlerScale.h
+6564ad5c6e	2025-06-28	Kacper Donat	fix	0	0	open	56	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Use generic tool hints table for DrawSketchHandlerSlot	Gui/DrawSketchHandlerSlot.h
+91de480bc8	2025-06-28	Kacper Donat	noise	0	0	open	52	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Use generic tool hints table for DrawSketchHandlerTranslate	Gui/DrawSketchHandlerTranslate.h
+ed14e6b24f	2025-06-28	Kacper Donat	fix	0	0	open	59	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Use generic tool hints table for DrawSketchHandlerBSpline	Gui/DrawSketchHandlerBSpline.h
 4ac445afe7	2025-06-28	Kacper Donat	fix	0	0	open	360		Sketcher: Declare tr function for DrawSketchHandler	Gui/DrawSketchHandler.h Gui/DrawSketchHandlerArc.h Gui/DrawSketchHandlerArcOfEllipse.h Gui/DrawSketchHandlerArcOfHyperbola.h Gui/DrawSketchHandlerArcOfParabola.h Gui/DrawSketchHandlerArcSlot.h Gui/DrawSketchHandlerBSpline.h Gui/DrawSketchHandlerCarbonCopy.h Gui/DrawSketchHandlerCircle.h Gui/DrawSket
 4bdaa0180a	2025-07-20	PaddleStroke	fix	0	0	open	82		Sketcher: Fix random gray icon (#22502)	Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h
 f38485ada2	2025-07-20	matthiasdanner	feature	0	0	n/a(uncompiled)	24		Sketcher: Add second arc helper on diameter constraint (#22579)	Gui/EditModeConstraintCoinManager.cpp Gui/EditModeConstraintCoinManager.h
@@ -672,8 +672,8 @@ fc463ee5d7	2025-08-20	PaddleStroke	?	0	0	n/a(uncompiled)	6		Sketcher: Revert DPI
 9bff63e38d	2025-08-21	tetektoza	fix	0	0	open	4		Sketcher: Fix construction lines becoming solid after box selection	Gui/ViewProviderSketch.cpp
 150e6c9b99	2025-08-25	PaddleStroke	fix	0	0	n/a(uncompiled)	4		Sketcher: fix constraint icon size (#22940)	Gui/EditModeCoinManager.cpp
 e2346dabd6	2025-06-13	paddle	fix	0	0	open	412		Sketcher: Port and fix internal faces from RealThunder's branch	Gui/AppSketcherGui.cpp Gui/SketcherSettings.cpp Gui/SketcherSettings.ui Gui/SketcherSettingsAppearance.ui Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h
-9f04f5f371	2025-08-25	tetektoza	feature	0	0	open	11		Sketcher: Set total angle to make evaluation choose it when typing in OVP (#23193)	Gui/DrawSketchHandlerArc.h Gui/DrawSketchHandlerArcSlot.h Gui/DrawSketchHandlerRotate.h
-8b9ad3b509	2025-08-26	PaddleStroke	fix	0	0	open	9		Sketcher: Circle DSH: move diameter constraint. Fix #22267 (#22862)	Gui/DrawSketchHandlerCircle.h
+9f04f5f371	2025-08-25	tetektoza	feature	0	0	open	11	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Set total angle to make evaluation choose it when typing in OVP (#23193)	Gui/DrawSketchHandlerArc.h Gui/DrawSketchHandlerArcSlot.h Gui/DrawSketchHandlerRotate.h
+8b9ad3b509	2025-08-26	PaddleStroke	fix	0	0	open	9	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Circle DSH: move diameter constraint. Fix #22267 (#22862)	Gui/DrawSketchHandlerCircle.h
 780c49b6f0	2025-08-09	Chris Hennes	refactor	0	0	open	1		Sketcher: Remove unused parameter from *ReferenceSelection	Gui/DrawSketchHandlerSplitting.h
 3b76d77ed8	2025-08-29	tetektoza	feature	0	0	open	91		Sketcher: Introduce Select All (Ctrl + A) (#23289)	Gui/ViewProviderSketch.cpp
 7b85239093	2025-08-31	tetektoza	refactor	0	0	open	59		Sketcher: Use different colors for touch/window selection (#23261)	Gui/CMakeLists.txt Gui/StyleParameters.h Gui/ViewProviderSketch.cpp
@@ -688,32 +688,32 @@ eab485656f	2025-09-07	theo-vt	fix	0	0	open	377	partial d8d462426e: Gui Scale too
 d9da6c8def	2025-09-07	luzpaz	noise	0	0	open	4	n/a: .pyi bindings model, the fork keeps the .xml bindings	Fix various typos Found via codespell	App/SketchObject.h App/SketchObject.pyi
 93db4c7d8a	2025-07-31	wmayer	?	0	0	open	26		CMake: Replace include_directories with target_include_directories	App/CMakeLists.txt Gui/CMakeLists.txt
 dc22fb4b9b	2025-09-09	PaddleStroke	?	0	0	open	30		Sketcher: Constraint symbol size follow-up (#23590)	Gui/EditModeCoinManager.cpp Gui/SketcherSettings.cpp Gui/SketcherSettingsDisplay.ui
-689740d3d3	2025-09-10	FEA-eng	feature	1	0	open	2		Sketcher: Remove redundant title case from task panel option of the Mirror tool (#23822)	Gui/DrawSketchHandlerSymmetry.h
-23ea8ce37b	2025-09-10	George Peden	feature	0	0	open	19		Add U (rounded corners) and J (frame) keyboard shortcuts to rectangle hints	Gui/DrawSketchHandlerRectangle.h
-d524b9ceef	2025-09-10	George Peden	feature	0	0	open	6		Add M (Mode) keyboard shortcut to arc slot hints	Gui/DrawSketchHandlerArcSlot.h
-80290baaf6	2025-09-10	George Peden	feature	0	0	open	6		Add mode-aware keyboard shortcuts to B-spline hints	Gui/DrawSketchHandlerBSpline.h
+689740d3d3	2025-09-10	FEA-eng	feature	1	0	open	2	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Remove redundant title case from task panel option of the Mirror tool (#23822)	Gui/DrawSketchHandlerSymmetry.h
+23ea8ce37b	2025-09-10	George Peden	feature	0	0	open	19	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Add U (rounded corners) and J (frame) keyboard shortcuts to rectangle hints	Gui/DrawSketchHandlerRectangle.h
+d524b9ceef	2025-09-10	George Peden	feature	0	0	open	6	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Add M (Mode) keyboard shortcut to arc slot hints	Gui/DrawSketchHandlerArcSlot.h
+80290baaf6	2025-09-10	George Peden	feature	0	0	open	6	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Add mode-aware keyboard shortcuts to B-spline hints	Gui/DrawSketchHandlerBSpline.h
 343bd6c77c	2025-09-10	George Peden	feature	0	0	open	18		Add keyboard shortcuts to fillet/chamfer hints	Gui/DrawSketchHandlerFillet.h
-ed444318e4	2025-09-10	George Peden	fix	0	0	open	16		Fix inconsistent keyboard shortcut hints in Rectangle tool	Gui/DrawSketchHandlerRectangle.h
+ed444318e4	2025-09-10	George Peden	fix	0	0	open	16	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Fix inconsistent keyboard shortcut hints in Rectangle tool	Gui/DrawSketchHandlerRectangle.h
 749ac36615	2025-08-26	Markus Reitbock	noise	0	0	open	18		do not use precompiled header for setting global compiler definitions and to disable compiler warnings	App/CMakeLists.txt App/PreCompiled.h Gui/PreCompiled.h
 34747719fb	2025-09-12	matthiasdanner	fix	0	0	open	164		Sketcher: Fix use after free Bug when commiting value with enter in OVP (#23853)	Gui/DrawSketchController.h Gui/DrawSketchDefaultHandler.h Gui/DrawSketchDefaultWidgetController.h Gui/DrawSketchHandlerArc.h Gui/DrawSketchHandlerArcSlot.h Gui/DrawSketchHandlerBSpline.h Gui/DrawSketchHandlerCircle.h Gui/DrawSketchHandlerEllipse.h Gui/DrawSketchHandlerLine.h Gui/DrawSketchHandlerOff
-5d76be01e1	2025-09-12	matthiasdanner	fix	0	0	open	17		Sketcher: Fix Freeze in Offset with too large negative value (#23467)	Gui/DrawSketchHandlerOffset.h
-547c97fc79	2025-09-12	PaddleStroke	fix	0	0	open	9		Sketcher: Fix arc double click bug (#23873)	Gui/DrawSketchHandlerArc.h
-ee44d265c8	2025-09-12	PaddleStroke	fix	0	0	open	10		Sketcher: Bspline tool: prevent double click failure (#23872)	Gui/DrawSketchHandlerBSpline.h
+5d76be01e1	2025-09-12	matthiasdanner	fix	0	0	open	17	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Fix Freeze in Offset with too large negative value (#23467)	Gui/DrawSketchHandlerOffset.h
+547c97fc79	2025-09-12	PaddleStroke	fix	0	0	open	9	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Fix arc double click bug (#23873)	Gui/DrawSketchHandlerArc.h
+ee44d265c8	2025-09-12	PaddleStroke	fix	0	0	open	10	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Bspline tool: prevent double click failure (#23872)	Gui/DrawSketchHandlerBSpline.h
 95840a79d3	2025-09-06	Matthias Danner	fix	0	0	open	76		Sketcher: Fix Select all with BSplines and clean up selection logic	Gui/ViewProviderSketch.cpp
-f2803283b8	2025-09-12	George Peden	fix	0	0	open	7		Fix B-spline keyboard focus issue (#23859) (#23860)	Gui/DrawSketchHandlerBSpline.h
+f2803283b8	2025-09-12	George Peden	fix	0	0	open	7	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Fix B-spline keyboard focus issue (#23859) (#23860)	Gui/DrawSketchHandlerBSpline.h
 061e185e7f	2025-09-12	PaddleStroke	fix	0	0	open	131		Sketcher: Fix ctrl A (#23866)	Gui/TaskSketcherConstraints.cpp Gui/TaskSketcherElements.cpp Gui/ViewProviderSketch.cpp
 37b4560893	2025-09-13	PaddleStroke	fix	0	0	open	117		Sketcher: Coin resize when screen change. Fix #23267 (#23865)	Gui/EditModeCoinManager.cpp Gui/EditModeCoinManager.h Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h
 57ee6870b4	2025-09-14	Roy-043	?	0	0	open	6		Sketcher: QInputDialog titles to Title Case (#23920)	Gui/Command.cpp
 5b59d94d55	2025-09-14	Roy-043	?	0	0	open	2		Sketcher: Update text in prefs (Title Case related)	Gui/SketcherSettings.ui
 4dbdd1031d	2025-09-14	Roy-043	?	1	0	open	2		"Sketcher change ""don't attach"" (#23924)"	Gui/Command.cpp
 f7f3c18e52	2025-09-14	Roy-043	?	0	0	open	12		Sketcher: QMessageBox titles to Title Case (#23925)	Gui/Command.cpp Gui/CommandSketcherTools.cpp Gui/TaskSketcherValidation.cpp
-010e7fc45f	2025-09-15	Roy-043	?	0	0	open	5		"Sketcher: Change ""By control points"" and ""By knots"" texts (#23943)"	Gui/DrawSketchHandlerBSpline.h
+010e7fc45f	2025-09-15	Roy-043	?	0	0	open	5	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	"Sketcher: Change ""By control points"" and ""By knots"" texts (#23943)"	Gui/DrawSketchHandlerBSpline.h
 9c4bafc28f	2025-09-15	Roy-043	feature	0	0	open	4		Sketcher: Add 'Toggle' to 'Construction Geometry' menu texts (#23944)	Gui/CommandAlterGeometry.cpp Gui/TaskSketcherElements.cpp
 4bb387dd0b	2025-09-16	Roy-043	?	0	0	open	30		Sketcher: titles of parameter sections to Title Case (#23936)	Gui/DrawSketchHandlerArc.h Gui/DrawSketchHandlerArcSlot.h Gui/DrawSketchHandlerBSpline.h Gui/DrawSketchHandlerCircle.h Gui/DrawSketchHandlerEllipse.h Gui/DrawSketchHandlerFillet.h Gui/DrawSketchHandlerLine.h Gui/DrawSketchHandlerOffset.h Gui/DrawSketchHandlerPolygon.h Gui/DrawSketchHandlerRectangle.
 bac49e4659	2025-09-16	Roy-043	?	0	0	open	52		Sketcher: context menu of Elements section in task panel to Title Case	Gui/TaskSketcherElements.cpp
 1c591cd43a	2025-09-17	Roy-043	fix	0	0	open	14		Sketcher: fix some prefs texts (#23992)	Gui/SketcherSettingsAppearance.ui Gui/SketcherSettingsDisplay.ui
 fa2e5cd5fe	2025-09-17	theo-vt	refactor	0	0	open	4	have: came with the trim take d8d462426e	Sketcher: Use the right delete flag for delConstraints	App/SketchObject.cpp
-750c2a0c4d	2025-09-19	PaddleStroke	fix	1	0	open	55		Sketcher: Offset: fix bad arcs (#24053)	Gui/DrawSketchHandlerOffset.h
+750c2a0c4d	2025-09-19	PaddleStroke	fix	1	0	open	55	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Offset: fix bad arcs (#24053)	Gui/DrawSketchHandlerOffset.h
 7640a03cc8	2025-09-21	Furgo	feature	0	0	open	2	declined: the fork's MakeInternals also splits edges and makes closed-wire faces, its text says so	Sketcher: improve Make Internals property tooltip (#23636)	App/SketchObject.cpp
 3872d0682d	2025-09-22	PaddleStroke	?	0	0	open	7		Sketcher: Improve circle constraint position (#23569)	Gui/DrawSketchController.h Gui/DrawSketchHandlerCircle.h
 46ec53f4da	2025-09-22	matthiasdanner	fix	0	0	open	197	partial 88c9baa853: App/SketchObject.cpp App/SketchObject.h App/SketchObjectPyImp.cpp Gui/EditModeConstraintCoinManager.cpp Gui/TaskSketcherConstraints.cpp Gui/TaskSketcherConstraints.h	"Fix ""Show only Visible Constraints"" option (#23187)"	App/Constraint.cpp App/Constraint.h App/SketchObject.cpp App/SketchObject.h App/SketchObject.pyi App/SketchObjectPyImp.cpp Gui/EditModeConstraintCoinManager.cpp Gui/TaskSketcherConstraints.cpp Gui/TaskSketcherConstraints.h
@@ -730,7 +730,7 @@ a41159a043	2025-09-21	theo-vt	feature	0	0	open	7		Sketcher.Scale: Add case for d
 75c8749189	2025-09-28	Chris Hennes	noise	0	0	open	10		GUI: Fix some translatable text (#24289)	Gui/CommandConstraints.cpp Gui/CommandCreateGeo.cpp Gui/CommandSketcherTools.cpp
 9be5c97fcf	2025-09-28	tetektoza	?	0	0	open	142		Sketcher: Unset labels that are invalid only after user finished editing	Gui/DrawSketchController.h Gui/DrawSketchHandlerArc.h Gui/DrawSketchHandlerArcSlot.h Gui/DrawSketchHandlerBSpline.h Gui/DrawSketchHandlerCircle.h Gui/DrawSketchHandlerEllipse.h Gui/DrawSketchHandlerLine.h Gui/DrawSketchHandlerOffset.h Gui/DrawSketchHandlerPolygon.h Gui/DrawSketchHandlerRectangle.h G
 dc2aec50d4	2025-09-28	Kacper Donat	?	0	0	open	2		Sketcher: Do not force visibility of planes on edit	Gui/ViewProviderSketch.cpp
-f2af5b7e7f	2025-09-29	tetektoza	?	0	0	open	43		Sketcher: Remove isSet checks that were replaced by hasFinishedEditing	Gui/DrawSketchHandlerArc.h Gui/DrawSketchHandlerBSpline.h Gui/DrawSketchHandlerCircle.h Gui/DrawSketchHandlerEllipse.h Gui/DrawSketchHandlerLine.h Gui/DrawSketchHandlerRectangle.h
+f2af5b7e7f	2025-09-29	tetektoza	?	0	0	open	43	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Remove isSet checks that were replaced by hasFinishedEditing	Gui/DrawSketchHandlerArc.h Gui/DrawSketchHandlerBSpline.h Gui/DrawSketchHandlerCircle.h Gui/DrawSketchHandlerEllipse.h Gui/DrawSketchHandlerLine.h Gui/DrawSketchHandlerRectangle.h
 582eae5ba3	2025-09-07	George Peden	feature	0	0	open	4		Add missing hints for ConstrainRadiam tool	Gui/CommandConstraints.cpp
 871ee4ca32	2025-09-07	George Peden	feature	0	0	open	32		Add context-aware hints for ConstrainAngle tool	Gui/CommandConstraints.cpp
 17533deb50	2025-09-07	George Peden	feature	0	0	open	66		Add context-aware hints for remaining constraint tools	Gui/CommandConstraints.cpp
@@ -752,20 +752,20 @@ ca8bfc6180	2025-10-09	PaddleStroke	?	0	0	open	35		Sketcher: Make ctrlA work with
 98d64f9939	2025-10-09	PaddleStroke	?	0	0	open	14		Sketcher: Element Task : clear selection when list selection is cleared	Gui/TaskSketcherElements.cpp Gui/TaskSketcherElements.h
 f4fe303829	2025-09-30	Florian Foinant-Willig	refactor	0	0	open	10	taken 88c9baa853	Sketcher: rename DeriVector2::crossProdNorm to DeriVector2::crossProdZ	App/planegcs/Constraints.cpp App/planegcs/Geo.cpp App/planegcs/Geo.h tests/App/planegcs/Constraints.cpp
 62c222c211	2025-10-13	matthiasdanner	fix	0	0	open	317	partial 42a58c4533+de12a44256+261b3e0b92: Gui half done (mask, SnapHandle, dimension mask); the App PointPos hunk stays with the angle cluster (8b06bca68a, 8ff4736a05)	Sketcher: Fix Angle Constraint jumping to opposite side on movement (#24150)	App/SketchObject.cpp Gui/CommandConstraints.cpp Gui/CommandSketcherBSpline.cpp Gui/CommandSketcherTools.cpp Gui/DrawSketchControllableHandler.h Gui/DrawSketchController.h Gui/DrawSketchDefaultHandler.h Gui/DrawSketchHandler.h Gui/DrawSketchHandlerArcOfEllipse.h Gui/DrawSketchHandlerArcOfHyperbola.h 
-981daca351	2025-10-14	PaddleStroke	fix	0	0	open	3		Sketcher: bspline tool: fix error message (#24566)	Gui/DrawSketchHandlerBSpline.h
+981daca351	2025-10-14	PaddleStroke	fix	0	0	open	3	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: bspline tool: fix error message (#24566)	Gui/DrawSketchHandlerBSpline.h
 8275916601	2025-10-14	PaddleStroke	fix	1	0	open	2	taken 88c9baa853	Sketcher: Fix deactivated Block bug (#24548)	App/Sketch.cpp
 e278d22d42	2025-10-16	PaddleStroke	fix	0	0	open	20		Sketcher: Fix ctrlA with filter vertex index issue (#24665)	Gui/ViewProviderSketch.cpp
 7023e83843	2025-10-20	PaddleStroke	feature	0	0	open	29	taken 88c9baa853	Sketcher: Add support for tangent singularity when concentric circles (#24227)	App/planegcs/Constraints.cpp
 129d64dd87	2025-10-20	Chris	?	0	0	open	4	taken 42a58c4533	Sketcher: Resolve aggressive snapping (#24730)	Gui/SnapManager.cpp
-06c46bd352	2025-10-20	PaddleStroke	fix	0	0	open	130		Sketcher: Fix issue of reversed arcs input for polar pattern (#24351)	Gui/DrawSketchHandlerOffset.h Gui/DrawSketchHandlerRotate.h
+06c46bd352	2025-10-20	PaddleStroke	fix	0	0	open	130	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Fix issue of reversed arcs input for polar pattern (#24351)	Gui/DrawSketchHandlerOffset.h Gui/DrawSketchHandlerRotate.h
 498968b89c	2025-10-22	PaddleStroke	?	0	0	open	16		Sketcher: Do not open command if one is pending in doSetVisible (#24778)	Gui/TaskSketcherConstraints.cpp
 87d21a643d	2025-10-02	theo-vt	?	0	0	open	37		Sketcher: Reassign virtual space flag to constraints after modifying them through a default DHS	Gui/DrawSketchDefaultHandler.h Gui/DrawSketchHandlerScale.h
-e2a141785f	2025-10-28	tetektoza	feature	0	0	open	24		Sketcher: Remember cursor angle for Slot OVPs after OVP is set	Gui/DrawSketchHandlerSlot.h
-1f78dac7b5	2025-10-28	tetektoza	feature	0	0	open	57		Sketcher: Remember cursor angle for Line OVPs after OVP is set	Gui/DrawSketchHandlerLine.h
-ced9c0dd4f	2025-10-28	tetektoza	feature	0	0	open	23		Sketcher: Remember cursor angle for Rectangle OVPs after OVP is set	Gui/DrawSketchHandlerRectangle.h
+e2a141785f	2025-10-28	tetektoza	feature	0	0	open	24	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Remember cursor angle for Slot OVPs after OVP is set	Gui/DrawSketchHandlerSlot.h
+1f78dac7b5	2025-10-28	tetektoza	feature	0	0	open	57	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Remember cursor angle for Line OVPs after OVP is set	Gui/DrawSketchHandlerLine.h
+ced9c0dd4f	2025-10-28	tetektoza	feature	0	0	open	23	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Remember cursor angle for Rectangle OVPs after OVP is set	Gui/DrawSketchHandlerRectangle.h
 0b2268a921	2025-11-02	PaddleStroke	?	0	0	n/a(uncompiled)	88		Sketcher: Constraint rendering (#24534)	Gui/EditModeConstraintCoinManager.cpp Gui/EditModeConstraintCoinManager.h
 af014a1bb4	2025-11-04	PaddleStroke	fix	0	1	have(rev)	6		Sketcher: Restore ExprBasedConstrDimColor (#25055)	Gui/EditModeConstraintCoinManager.cpp
-cb108249f2	2025-11-05	PaddleStroke	fix	0	0	open	5		Sketcher: Fix offset of open profile (#25091)	Gui/DrawSketchHandlerOffset.h
+cb108249f2	2025-11-05	PaddleStroke	fix	0	0	open	5	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Fix offset of open profile (#25091)	Gui/DrawSketchHandlerOffset.h
 857190a20a	2025-11-04	Ajinkya Dahale	?	0	0	open	16	taken d8d462426e	Sketcher: Only transfer equality in specific cases in `trim`	App/SketchObject.cpp
 c828c5d1d1	2025-11-08	Bas Ruigrok	fix	0	0	open	675		Sketcher: Remove unused grid toggle icons and fix SIGSEGV	Gui/Command.cpp Gui/Resources/Sketcher.qrc Gui/Resources/icons/general/Sketcher_GridToggle.svg Gui/Resources/icons/general/Sketcher_GridToggle_Deactivated.svg
 a479197f0b	2025-11-08	Bas Ruigrok	fix	1	0	open	784		Sketcher: Remove unused snap icons and fix SIGSEGV	Gui/Command.cpp Gui/Resources/Sketcher.qrc Gui/Resources/icons/general/Sketcher_Snap.svg Gui/Resources/icons/general/Sketcher_Snap_Deactivated.svg
@@ -791,7 +791,7 @@ a77f96ea86	2025-11-15	Aqeel Labash	fix	0	0	open	4		Fix wording for On-view-param
 6f90c5ea61	2025-11-18	PaddleStroke	fix	0	0	open	141		Sketcher: ConstraintList: prevent N transaction on box selection (#25254)	Gui/TaskSketcherConstraints.cpp Gui/TaskSketcherConstraints.h
 d806b4e5f3	2025-11-19	chris	fix	0	0	open	3		sketcher: fix issue #13852 resolve issue with state not updating constraint text	Gui/ViewProviderSketch.cpp
 72d021108f	2025-11-23	Chris	feature	0	0	open	33	taken 42a58c4533	Sketcher: allow grid snapping while hovering mouse over axis (#25226)	Gui/SnapManager.cpp
-1d30d079b0	2025-11-24	PaddleStroke	fix	0	0	open	15		Sketcher: Rotate: Fix line length ignored (#25434)	Gui/DrawSketchHandlerRotate.h
+1d30d079b0	2025-11-24	PaddleStroke	fix	0	0	open	15	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Rotate: Fix line length ignored (#25434)	Gui/DrawSketchHandlerRotate.h
 16aff10544	2025-11-20	pjcreath	fix	0	0	open	16		Sketcher: prevent crash on undo/redo while dragging.	Gui/ViewProviderSketch.cpp
 efb10e1b28	2025-11-20	pjcreath	fix	0	0	open	5		Sketcher: prevent undo/redo crash when selected geometry goes away.	Gui/CommandSketcherBSpline.cpp Gui/Utils.cpp
 e38154474a	2025-11-24	PaddleStroke	fix	1	0	open	23		Sketcher: Prevent bad coincidences (#25304)	Gui/CommandConstraints.cpp
@@ -802,7 +802,7 @@ bb0cd704fb	2025-11-24	Ajinkya Dahale	?	0	0	open	6		Merge pull request #25536 fro
 6ddb0165ff	2025-12-02	PaddleStroke	fix	0	0	open	8	n/a: no linkIsDefiningMap	Sketcher: fix new external always construction (#25733)	App/SketchObject.cpp
 1784be046f	2025-12-03	PaddleStroke	feature	0	0	open	9		Sketcher: Make VPSketch::addSelection public	Gui/ViewProviderSketch.h
 0c34c93fe4	2025-12-03	PaddleStroke	feature	0	0	open	8		Sketcher: dimension tool, use VPSketch version of addSelection	Gui/CommandConstraints.cpp
-67234e98b7	2025-12-05	PaddleStroke	fix	0	0	open	22		Sketcher: Offset: Fix failure if 2+ closed wires with different orientations (#25941)	Gui/DrawSketchHandlerOffset.h
+67234e98b7	2025-12-05	PaddleStroke	fix	0	0	open	22	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Offset: Fix failure if 2+ closed wires with different orientations (#25941)	Gui/DrawSketchHandlerOffset.h
 945ba15e18	2025-12-05	Sebastian	?	0	0	open	2		Match the string that gets sent to setCommand (#25964)	Gui/Workbench.cpp
 a49d106807	2025-12-05	PaddleStroke	fix	0	0	open	11	adapted 329342b6bc	Sketcher: Fix errors message when selecting circle seam point. (#25953)	App/SketchObject.cpp
 78e5729520	2025-12-03	Ajinkya Dahale	fix	0	0	open	67	taken d8d462426e	Sketcher: Handle angle constraint on sketchobject changes	App/SketchObject.cpp App/SketchObject.h
@@ -810,7 +810,7 @@ a49d106807	2025-12-05	PaddleStroke	fix	0	0	open	11	adapted 329342b6bc	Sketcher: 
 bf697ca710	2025-12-13	Kacper Donat	refactor	0	0	n/a(uncompiled)	9		Gui: Use largest possible marker if needed	Gui/EditModeCoinManager.cpp
 29eeab3624	2025-12-12	theo-vt	?	0	0	open	13	adapted 60befe30bc	Sketcher: Do not autoscale if there are blocked geometries	App/SketchObject.cpp App/SketchObject.h Gui/EditDatumDialog.cpp
 50f029edd4	2025-12-16	Chris Hennes	noise	0	0	open	19		Sketcher: Compiler warning cleanup	Gui/Command.cpp Gui/CommandConstraints.cpp Gui/DrawSketchHandlerOffset.h Gui/EditModeCoinManager.cpp
-22552848fd	2025-12-17	chris	fix	1	0	open	5		sketcher: fixes issue #26167 no polygon distort when repositioning / constraining	Gui/DrawSketchControllableHandler.h
+22552848fd	2025-12-17	chris	fix	1	0	open	5	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	sketcher: fixes issue #26167 no polygon distort when repositioning / constraining	Gui/DrawSketchControllableHandler.h
 4cd81136b6	2025-12-21	Chris	feature	0	0	open	261		Sketcher: Allow live preview of sketch placement (#26033)	CMakeLists.txt Gui/ViewProviderSketch.cpp SketcherTests/TestPlacementUpdate.py TestSketcherApp.py
 176ef6da4e	2025-12-22	marbocub	fix	0	0	open	374	adapted 92e5004b51: mirror about the local origin, not the Placement; fork's copied-expression path corrected too	Sketcher: add reverse mapping correction to Carbon Copy (#25745)	App/SketchObject.cpp App/SketchObject.pyi App/SketchObjectPyImp.cpp CMakeLists.txt SketcherTests/TestSketchCarbonCopyReverseMapping.FCStd SketcherTests/TestSketchCarbonCopyReverseMapping.py TestSketcherApp.py
 eb61ee36a6	2025-12-23	Chris	fix	0	0	open	52		sketcher: fix issue #25992 keep snapped position when releasing mosue for updated sketch points (#26102)	Gui/ViewProviderSketch.cpp
@@ -859,7 +859,7 @@ c14d6f8848	2026-01-16	Syres916	feature	0	0	open	7		[Sketcher] set vertex size fo
 cf93c33359	2026-01-18	Yash Suthar	fix	0	0	open	72	n/a: no App::DatumElement / LCS datum elements in the fork	Sketcher: Fix external geometry creation from LCS (#26946)	App/SketchObject.cpp Gui/DrawSketchHandlerExternal.h
 0a45527b8b	2026-01-18	Syres916	noise	0	0	open	3		[Sketcher] Fix serious integer typo	Gui/ViewProviderSketch.cpp
 af053f19f5	2026-01-19	PaddleStroke	fix	0	0	open	8		Sketcher: Fix box selection regressions. And make addSelections Print to python (#26869)	Gui/ViewProviderSketch.cpp
-9beca4363a	2026-01-20	Yash Suthar	?	0	0	open	2		"Sketcher: Switch to perpendicular based instead of ""de la Hire"" in setting minor axis of ellipse"	Gui/DrawSketchHandlerEllipse.h
+9beca4363a	2026-01-20	Yash Suthar	?	0	0	open	2	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	"Sketcher: Switch to perpendicular based instead of ""de la Hire"" in setting minor axis of ellipse"	Gui/DrawSketchHandlerEllipse.h
 93abfc4fa4	2026-01-21	PaddleStroke	?	0	0	open	76		Sketch: Forward non-default edit mode to base class.  (#27063)	Gui/CommandAlterGeometry.cpp Gui/CommandConstraints.cpp Gui/CommandSketcherVirtualSpace.cpp Gui/Utils.cpp Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h
 54d235f8a5	2026-01-09	PaddleStroke	?	0	0	open	86		Sketcher: Show constraint type in the list	Gui/TaskSketcherConstraints.cpp
 6a0d59b0c1	2026-01-23	Amon Sha	fix	0	0	open	4	have: folded into 60befe30bc (lone angle branch)	Merge pull request #27077 from amon-sha/fix_sketcher_autoscale_segfault	Gui/DrawSketchHandlerScale.h
@@ -870,27 +870,27 @@ a0847c22c7	2026-01-27	PaddleStroke	fix	0	0	open	9		Sketcher: fix logic flaw in C
 00c3422c1f	2026-01-29	PaddleStroke	feature	0	0	open	63		Sketcher: Tooltip when hovering expression driven constraint (#25954)	Gui/ViewProviderSketch.cpp
 8a6872e69d	2026-02-03	PaddleStroke	feature	0	0	open	31		Merge pull request #25848 from PaddleStroke/sk_scale_distances	App/SketchObject.cpp App/SketchObject.h Gui/CommandConstraints.cpp Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h
 41e3cdb9a5	2026-02-04	Tomas Pikalek	feature	0	0	n/a(uncompiled)	13		Sketcher: Reimplement strikethrough of inactive constraint labels	Gui/EditModeConstraintCoinManager.cpp
-5f952812c3	2026-02-08	William Skellenger	fix	0	0	open	15		Fix tooltips on mirror checkboxes in sketcher (#27131)	Gui/DrawSketchHandlerSymmetry.h
+5f952812c3	2026-02-08	William Skellenger	fix	0	0	open	15	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Fix tooltips on mirror checkboxes in sketcher (#27131)	Gui/DrawSketchHandlerSymmetry.h
 c4317f88f8	2026-02-04	chris jones @ipatch	fix	0	0	open	6	adapted 3bfb748012	"sketcher: fixes #27281 fix access out of bounds crash with ""remove axes alignment"""	App/SketchObject.cpp
 2cd45b07f7	2026-01-22	Yash Suthar	fix	0	0	open	13		Sketcher: Fix snap while drag and fix drag for arc	Gui/ViewProviderSketch.cpp
 ecbe21ca03	2026-02-08	Chris Hennes	?	0	0	open	1		Sketcher: Annotate unused parameter	Gui/EditDatumDialog.cpp
 ec18d4e250	2026-02-08	Chris Hennes	?	0	0	open	3		Tests/Sketcher: Eliminate unused variables	tests/App/SketchObjectChanges.cpp
 076c5916b5	2026-02-08	Chris Hennes	?	0	0	n/a(uncompiled)	95		Sketcher: Remove unneeded parameters from seekConstraintPosition	Gui/EditModeConstraintCoinManager.cpp Gui/EditModeConstraintCoinManager.h
-5d81f8ac16	2026-02-13	Loke Strm	fix	0	0	open	221		Sketcher: Fix: Arc of ellipse when first and second X coordinates are the same (#27327)	Gui/DrawSketchHandlerArcOfEllipse.h
+5d81f8ac16	2026-02-13	Loke Strm	fix	0	0	open	221	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Fix: Arc of ellipse when first and second X coordinates are the same (#27327)	Gui/DrawSketchHandlerArcOfEllipse.h
 885b8cf1de	2026-02-13	PaddleStroke	fix	0	0	open	18	have: fork has ObjEditing and the loop	Sketcher : SketchObject::getHigherElements fix (#27560)	App/SketchObject.cpp
-9cbef0c5ce	2026-02-13	theo-vt	?	0	0	open	25		Sketcher.scale: scale constraint with the right index (#27188)	Gui/DrawSketchHandlerScale.h
+9cbef0c5ce	2026-02-13	theo-vt	?	0	0	open	25	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher.scale: scale constraint with the right index (#27188)	Gui/DrawSketchHandlerScale.h
 928b55c6e6	2026-02-15	Louis Gombert	?	0	0	open	4	n/a: refactor/cleanup, no behaviour change	Replace all uses of FC_TIME_X/FC_DURATION_X	App/SketchObject.cpp
 bb5afb911a	2026-02-16	PaddleStroke	fix	0	0	open	36	have: newToOldConstraintMap and the expression restore arrived with the trim/split take d8d462426e	Sketcher: Fix loss of expression on trim (#27505)	App/SketchObject.cpp
 bc3c0dc19a	2026-02-17	marbocub	feature	0	0	open	193		Sketcher: Add symmetric constraint option (an element + a symmetry line) (#25525)	Gui/CommandConstraints.cpp
 289411f51c	2026-02-15	Louis Gombert	?	0	0	open	3		Move costly boost includes out of core headers	Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h
 bd07c8a214	2026-02-17	PaddleStroke	fix	0	0	open	1		Sketcher: OVP Fix tab not working when mouse move (#27638)	Gui/DrawSketchKeyboardManager.cpp
-be6af47f29	2026-02-18	PaddleStroke	feature	0	0	open	17		Sketcher: Offset: add checkbox tooltips (#26114)	Gui/DrawSketchHandlerOffset.h
+be6af47f29	2026-02-18	PaddleStroke	feature	0	0	open	17	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Offset: add checkbox tooltips (#26114)	Gui/DrawSketchHandlerOffset.h
 ca9e1ecdf3	2026-02-22		noise	0	0	open	704	partial 88c9baa853: App/Analyse.h App/ExternalGeometryExtension.h App/ExternalGeometryFacade.h App/GeoList.h App/GeometryFacade.h App/Measure.h App/PreCompiled.h App/PropertyConstraintList.h App/PythonConverter.h App/SketchAnalysis.h App/SketchGeometryExtension.h App/SketchOb	All: Header Guards -> Pragma Once (#27154)	App/Analyse.h App/Constraint.h App/ExternalGeometryExtension.h App/ExternalGeometryFacade.h App/GeoEnum.h App/GeoList.h App/GeometryFacade.h App/Measure.h App/PreCompiled.h App/PropertyConstraintList.h App/PythonConverter.h App/Sketch.h App/SketchAnalysis.h App/SketchGeometryExtension.h App/SketchOb
 92894ea3a8	2026-02-23	theo-vt	?	0	0	open	249	taken 88c9baa853	Sketcher: Evaluate driven constraints rather than solving them (#26632)	App/planegcs/Constraints.cpp App/planegcs/Constraints.h App/planegcs/GCS.cpp App/planegcs/GCS.h
 0b44a3f6c8	2026-01-16	Louis Gombert	?	0	0	open	4	taken 88c9baa853	Sketcher: Optimize eliminateNonZerosOverPivotInUpperTriangularMatrix for sparse matrices	App/planegcs/GCS.cpp
 e89d849bb7	2026-02-23		fix	0	0	open	3	n/a: fork's PreCompiled.h keeps the _PreComp_ switch	[ Sketcher ]: Fix Windows Include (#27829)	App/PreCompiled.h
 34ae16cd01	2026-02-23	theo-vt	fix	0	0	open	29	taken 88c9baa853	Sketcher: fix evaluation of driven diameter constraint	App/Sketch.cpp App/planegcs/Constraints.cpp
-8caa218950	2025-03-10	wmayer	fix	1	0	open	13		Sketcher: Handle exception in DrawSketchHandlerOffset::drawOffsetPreview	Gui/DrawSketchHandlerOffset.h
+8caa218950	2025-03-10	wmayer	fix	1	0	open	13	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Handle exception in DrawSketchHandlerOffset::drawOffsetPreview	Gui/DrawSketchHandlerOffset.h
 be1ec84709	2025-10-06	Florian Foinant-Willig	?	0	0	open	240	partial 88c9baa853: Gui/CommandConstraints.cpp	Sketcher: extend Perpendicular constraint to point point line	App/ConstraintPyImp.cpp App/Sketch.cpp App/Sketch.h App/planegcs/Constraints.cpp App/planegcs/Constraints.h App/planegcs/GCS.cpp App/planegcs/GCS.h Gui/CommandConstraints.cpp
 949c5421cf	2026-03-06	PaddleStroke	refactor	0	0	open	176	n/a: refactor/cleanup, no behaviour change	Sketcher: refactor removeAxesAlignment (#27451)	App/SketchObject.cpp
 83d14b785e	2026-03-06	PaddleStroke	fix	0	0	open	134	have: the fork refs path never had the refs.empty() bug, delExternal refuses the axes (-1/-2) at entry, restoreFinished re-inits them; onDelete already deletes externals in one call (probed: delete all, re-add)	Sketcher: Fix crash on external deletion (#27717)	App/SketchObject.cpp App/SketchObject.h App/SketchObject.pyi App/SketchObjectPyImp.cpp Gui/ViewProviderSketch.cpp
@@ -907,7 +907,7 @@ ca4660167e	2026-03-08	Benjamin Nauck	feature	0	0	open	3		Sketcher: Add .ttc (Tru
 cd5876dc54	2026-03-09	Benjamin Nauck	?	0	0	have	7	folded in through upstream/main blobs (cd3fa731c3)	Sketcher: Escape text and font path in EditTextDialog	Gui/EditTextDialog.cpp
 0ea238f90c	2026-03-09	Benjamin Nauck	fix	0	0	open	1		Sketcher: Fix dangling command context on double-click text edit	Gui/ViewProviderSketch.cpp
 a06be5de68	2026-03-09	Benjamin Nauck	fix	0	0	n/a(uncompiled)	1		Sketcher: Fix void bounding box fall-through in constraint visualization	Gui/EditModeConstraintCoinManager.cpp
-451072f0d7	2026-03-11	PaddleStroke	fix	1	0	open	38		Sketcher : arc with symmetric + 2 coincidence fix (#28120)	Gui/DrawSketchHandlerArc.h
+451072f0d7	2026-03-11	PaddleStroke	fix	1	0	open	38	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher : arc with symmetric + 2 coincidence fix (#28120)	Gui/DrawSketchHandlerArc.h
 76a84f63ab	2026-03-10	PaddleStroke	feature	1	0	open	20		Sketcher: Dimension tool: don't update distance type based on position for horizontal/vert	Gui/CommandConstraints.cpp
 51b37da53e	2025-02-14	wmayer	fix	0	0	open	33	partial 88c9baa853: App/SketchObject.cpp	Sketch: Fix crash when moving sketch with hidden constraints	App/Sketch.cpp App/Sketch.h App/SketchObject.cpp
 baa47bd606	2025-03-19	wmayer	refactor	0	0	open	500	n/a: refactor/cleanup, no behaviour change	Sketch: Refactor SketchObject::getPoint	App/AppSketcher.cpp App/CMakeLists.txt App/SketchGeometry.cpp App/SketchGeometry.h App/SketchObject.cpp App/SketchObject.h
@@ -922,7 +922,7 @@ f4665aa7b5	2026-02-01	theo-vt	feature	0	0	open	1222		Core: support multiple acti
 3c8a254356	2025-12-10	theo-vt	?	0	0	open	514	taken 0f5a36bfc8	Sketcher: Make point-line distance signed	App/Constraint.cpp App/Constraint.h App/Sketch.cpp App/Sketch.h App/SketchObject.cpp App/SketchObject.h App/SketchObjectConstraints.cpp App/planegcs/Constraints.cpp App/planegcs/Constraints.h App/planegcs/GCS.cpp App/planegcs/GCS.h SketcherTests/TestSketcherSolver.py
 7771ecf6f3	2026-02-25	theo-vt	noise	0	0	open	4	n/a: warnings/typos/formatting	Spelling	App/SketchObjectConstraints.cpp
 a8724645b6	2026-03-16	pre-commit-ci[bot]	noise	0	0	open	2	n/a: warnings/typos/formatting	[pre-commit.ci] auto fixes from pre-commit.com hooks	App/SketchObjectConstraints.cpp
-9abe7b4af1	2026-03-16	Loke Strm	fix	0	0	open	338		Sketcher: Fix: Arc of Hyperbola (#27656)	Gui/DrawSketchHandlerArcOfHyperbola.h
+9abe7b4af1	2026-03-16	Loke Strm	fix	0	0	open	338	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Fix: Arc of Hyperbola (#27656)	Gui/DrawSketchHandlerArcOfHyperbola.h
 dcb380e1ca	2026-03-16	PaddleStroke	fix	0	0	have	2	folded in through upstream/main blobs (cd3fa731c3)	Sketcher: Text position OVP fix	Gui/DrawSketchHandlerText.h
 0cb8f7e240	2026-03-16	Chris Hennes	feature	0	0	open	30	n/a: upstream _ExternalGeoVersion compat path, removed again by 652b25811d; the fork gates with _Version	Sketcher: Add backwards-compat path for external geo	App/SketchObject.cpp App/SketchObject.h App/SketchObjectExternal.cpp
 f733ad7be4	2026-03-20	PaddleStroke	fix	0	0	have	22	folded in through upstream/main blobs (cd3fa731c3)	Sketcher: Text fix OVP disappearing on second attempt (#28311)	Gui/DrawSketchHandlerText.h
@@ -943,7 +943,7 @@ bf009d41e4	2026-03-25	xxorza	fix	0	0	open	3		Sketcher: fix multi-selection highl
 be1d53cf5f	2026-03-28	Max Wilfinger	feature	0	0	open	5		Sketcher: Change Make Internals default for new sketches	App/SketchObject.cpp Gui/SketcherSettings.ui
 a357868691	2026-03-28	Max Wilfinger	feature	0	0	open	14		Sketcher: Change Grid defaults for new sketches	Gui/SketcherSettings.cpp Gui/SketcherSettingsGrid.ui Gui/ViewProviderSketch.cpp
 28f5e823d3	2026-03-30	PaddleStroke	feature	0	0	open	322	taken 280d8c993f: addSymmetric replaced by upstream tip; 6 gtests enabled	Sketcher: Symmetric: Improve 'add symmetric constraints' option (#28118)	App/SketchObjectOperations.cpp tests/App/CMakeLists.txt tests/App/SketchObjectSymmetric.cpp
-5d50832734	2026-03-13	Parag Debnath	?	0	0	open	4		Sketcher:Create symmtery constrint is checked by default	Gui/DrawSketchHandlerSymmetry.h
+5d50832734	2026-03-13	Parag Debnath	?	0	0	open	4	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher:Create symmtery constrint is checked by default	Gui/DrawSketchHandlerSymmetry.h
 e4b2aa2d9c	2026-03-30	pre-commit-ci[bot]	noise	0	0	open	425	partial 88c9baa853: App/GeoList.cpp App/PythonConverter.cpp App/SketchObjectConstraints.cpp App/SketchObjectOperations.cpp App/SketchObjectPyImp.cpp Gui/DrawSketchDefaultHandler.h Gui/DrawSketchHandlerArcOfEllipse.h Gui/DrawSketchHandlerArcOfHyperbola.h Gui/Draw	[pre-commit.ci] auto fixes from pre-commit.com hooks	App/ConstraintPyImp.cpp App/GeoList.cpp App/PythonConverter.cpp App/Sketch.cpp App/SketchObjectConstraints.cpp App/SketchObjectOperations.cpp App/SketchObjectPyImp.cpp App/planegcs/Geo.h Gui/DrawSketchDefaultHandler.h Gui/DrawSketchHandlerArcOfEllipse.h Gui/DrawSketchHandlerArcOfHyperbola.h Gui/Draw
 c13ea2fa6d	2026-03-30	Roy-043	noise	0	0	n/a	2	a typo in a menu string this fork words differently (23fdf17d92)	Sketcher: fix Group Constraint menu text typo	Gui/CommandConstraints.cpp
 f432d1c6a7	2026-04-02	theo-vt	refactor	0	0	open	67	partial 88c9baa853: App/SketchObjectConstraints.cpp SketcherTests/TestSketcherSolver.py	Sketcher: Compute and use orientation for line-circle tangent	App/Sketch.cpp App/Sketch.h App/SketchObjectConstraints.cpp App/planegcs/Constraints.cpp App/planegcs/GCS.cpp App/planegcs/GCS.h SketcherTests/TestSketcherSolver.py
@@ -981,11 +981,11 @@ a8296de674	2026-04-11	Lokestrom	feature	0	0	open	1024		Added OVP for arc of hype
 9c62c19255	2026-04-12	Lokestrom	fix	0	0	open	1072		Added OVP for arc of ellipse, and small fix for hyperbola	Gui/DrawSketchDefaultHandler.h Gui/DrawSketchHandlerArcOfEllipse.h Gui/DrawSketchHandlerArcOfHyperbola.h
 5dc9e0e0d5	2026-04-12	Lokestrom	fix	0	0	open	922		Added OVP for arc of parabola. And fixed minor issues in the others.	Gui/DrawSketchDefaultHandler.h Gui/DrawSketchHandlerArcOfEllipse.h Gui/DrawSketchHandlerArcOfHyperbola.h Gui/DrawSketchHandlerArcOfParabola.h
 535074842b	2026-04-12	pre-commit-ci[bot]	noise	0	0	open	9		[pre-commit.ci] auto fixes from pre-commit.com hooks	Gui/DrawSketchDefaultHandler.h Gui/DrawSketchHandlerArcOfEllipse.h Gui/DrawSketchHandlerArcOfHyperbola.h
-870877ab2c	2026-04-13	Lokestrom	fix	0	0	open	13		Fixed toolWidgetManager values.	Gui/DrawSketchHandlerArcOfEllipse.h Gui/DrawSketchHandlerArcOfHyperbola.h
-fa3d63d7d4	2026-04-14	Lokestrom	fix	0	0	open	8		Fixed unused variables.	Gui/DrawSketchHandlerArcOfEllipse.h Gui/DrawSketchHandlerArcOfHyperbola.h Gui/DrawSketchHandlerArcOfParabola.h
+870877ab2c	2026-04-13	Lokestrom	fix	0	0	open	13	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Fixed toolWidgetManager values.	Gui/DrawSketchHandlerArcOfEllipse.h Gui/DrawSketchHandlerArcOfHyperbola.h
+fa3d63d7d4	2026-04-14	Lokestrom	fix	0	0	open	8	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Fixed unused variables.	Gui/DrawSketchHandlerArcOfEllipse.h Gui/DrawSketchHandlerArcOfHyperbola.h Gui/DrawSketchHandlerArcOfParabola.h
 6fa9125919	2026-05-08	PaddleStroke	feature	0	0	open	38		PartDesign: pattern tool: Add OVP to control the overrides. (#23997)	Gui/DrawSketchController.h
 30912c1d4e	2026-05-05	Louis Gombert	?	0	0	open	4		Remove gtest as submodule, always find it externally	tests/CMakeLists.txt
-160db2afd6	2026-05-07	Pieter Hijma	?	1	0	open	1		Sketcher: Make common between OCCT 7 and OCCT 8	Gui/DrawSketchHandlerOffset.h
+160db2afd6	2026-05-07	Pieter Hijma	?	1	0	open	1	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Make common between OCCT 7 and OCCT 8	Gui/DrawSketchHandlerOffset.h
 99c2f19dfc	2026-05-14	David Osterberg	fix	0	0	taken	2	cd3fa731c3: the Text tool takes no shortcut, G,T stays Trim Edge	Sketcher: Fix Trim Edge shortcut hijacked by new Text tool (#29721)	Gui/CommandCreateGeo.cpp
 a9942be046	2026-05-03	andershol	fix	0	0	open	5	declined: removes the fork's own isSame optimisation (db62f72188); no failing case given	Sketcher: Remove incorrect optimization due to isSame not checking solver result	App/SketchObjectConstraints.cpp
 a00fe1e886	2026-05-14	Celeste Wouters	fix	0	0	open	4		Sketcher: fix line style dropdowns being empty	Gui/SketcherSettings.cpp
@@ -1037,7 +1037,7 @@ cda0d1201c	2026-06-06	Max Wilfinger	feature	0	0	open	257		Sketcher: Add hints to
 9d8bbc680a	2026-06-08	PaddleStroke	fix	0	0	have	7	taken b4b8f10a3b	Sketcher: Fix fillet not working if AutoRecompute is ON (#30666)	Gui/DrawSketchHandlerLineSet.h
 400f6b3ac5	2026-06-09	PaddleStroke	fix	0	0	n/a(uncompiled)	34		Sketcher: Fix new GeometryScreenPreselector global placement (#30671)	Gui/EditModeCoinManager.cpp
 474f704e6c	2026-06-09	Nemanja Pejic	?	0	0	open	67	have: isTrimmedGeoConic in createNewConstraintsForTrim and the sibling transfer in deleteUnusedInternalGeometryWhenTwoFoci are both here	Sketcher: preserve ellipse internal geometry after trim (#30138)	App/SketchObjectGeometry.cpp App/SketchObjectOperations.cpp
-873df27118	2026-06-06	Max Wilfinger	feature	0	0	open	41		Sketcher: Add hints to B-Spline tool	Gui/DrawSketchHandlerBSpline.h Gui/DrawSketchHandlerPolygon.h
+873df27118	2026-06-06	Max Wilfinger	feature	0	0	open	41	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Add hints to B-Spline tool	Gui/DrawSketchHandlerBSpline.h Gui/DrawSketchHandlerPolygon.h
 facca5c426	2026-06-12	PaddleStroke	?	0	0	open	1		Sketcher: Esc should not cancel sketch edit	Gui/TaskDlgEditSketch.cpp
 3fa5f1c236	2026-05-27	Liangping Cheung	feature	0	0	open	2		[Sketcher]Replace TopTools_ListIteratorOfListOfShape.hxx with TopTools_ListOfListOfShape.hxx for OCCT 8.0 compatibility.	Gui/ViewProviderSketch.cpp
 91c44d9fee	2026-06-14	Lokestrom	fix	1	0	open	4		Fixed parabola center point icon	Gui/Resources/icons/elements/Sketcher_Element_Parabolic_Arc_Centre_Point.svg
@@ -1054,7 +1054,7 @@ cda241dbd0	2026-06-29	Yash Suthar	feature	0	0	open	445		Sketcher : added transpa
 1050996387	2026-06-29	theo-vt	fix	1	0	open	7		Sketcher: Prevent self-tangency	Gui/CommandConstraints.cpp
 f32d5e5fd9	2026-06-30	Joao Matos	feature	0	0	open	27		Sketcher: reject non-finite controllable tool positions	Gui/DrawSketchControllableHandler.h Gui/DrawSketchController.h
 9ce1cae190	2026-06-30	Joao Matos	?	0	0	open	147		Sketcher: validate sketch view projection results	Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h
-0e174da56d	2026-06-30	Joao Matos	?	0	0	open	47		Sketcher: reject invalid rectangle geometry	Gui/DrawSketchHandlerRectangle.h
+0e174da56d	2026-06-30	Joao Matos	?	0	0	open	47	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: reject invalid rectangle geometry	Gui/DrawSketchHandlerRectangle.h
 41fb15ba19	2026-06-30	Joao Matos	feature	0	0	open	43		Sketcher tests: wait for valid rectangle OVP click point	SketcherTests/TestOnViewParameterGui.py
 fbf590e7d8	2026-07-06	PaddleStroke	fix	0	0	open	6		Sketcher: Polyline: fix angle OVP bad constraint (#30468)	Gui/DrawSketchHandlerLineSet.h Gui/Utils.cpp
 5587b48a0f	2026-07-07	PaddleStroke	?	0	0	open	119		Core Sketcher: Bounding box rework (#26291)	Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h
@@ -1068,7 +1068,7 @@ cc802c341d	2026-07-05	wwmayer	fix	0	0	open	8	taken 4e6df1319a	Sketcher: Fix cras
 f4adbed7bd	2026-06-19	Turan Furkan Topak	?	0	0	open	60		Sketcher: Geometry during dragging is solved geom	Gui/DrawSketchHandlerDragAutoConstraint.cpp Gui/DrawSketchHandlerDragAutoConstraint.h
 2c2f1d7db7	2026-06-28	Turan Furkan Topak	refactor	0	0	open	658		Sketcher: Use the same workflow as Draw for Drag	Gui/DrawSketchDefaultHandler.h Gui/DrawSketchHandler.cpp Gui/DrawSketchHandler.h Gui/DrawSketchHandlerDragAutoConstraint.cpp
 2f2787611c	2026-07-12	theo-vt	?	0	0	open	21		Sketcher.ViewSection: Make sure ActiveSketch is up to date when calling command	Gui/Command.cpp
-23ca5dc52f	2026-07-14	Lokestrom	fix	0	0	open	8		Fixed incorect radius constraint in arc of ellipse	Gui/DrawSketchHandlerArcOfEllipse.h
+23ca5dc52f	2026-07-14	Lokestrom	fix	0	0	open	8	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Fixed incorect radius constraint in arc of ellipse	Gui/DrawSketchHandlerArcOfEllipse.h
 7968e0c8f5	2026-05-13	Joao Matos	feature	1	0	open	17	n/a: .pyi bindings model, the fork keeps the .xml bindings	Typing: add utility module stubs	App/Sketcher.module.pyi
 ed4c15642c	2026-07-05	Max Wilfinger	?	0	0	have	2	taken b4b8f10a3b	Sketcher: Check for arc constraint on cycle	Gui/DrawSketchHandlerLineSet.h
 f07195c198	2026-07-08	Matthias Danner	feature	0	0	open	10		Sketcher: Reset OVP on Click in Polyline and Bspline Tool	Gui/DrawSketchHandlerBSpline.h Gui/DrawSketchHandlerLineSet.h Gui/DrawSketchKeyboardManager.cpp Gui/DrawSketchKeyboardManager.h
@@ -1086,9 +1086,9 @@ bfe1295b6b	2026-07-25	PaddleStroke	feature	0	0	open	1009		Merge pull request #30
 1e3dbc7ff2	2026-07-10	Joao Matos	?	0	0	open	15	n/a: .pyi bindings model, the fork keeps the .xml bindings	Bindings: migrate legacy deprecation metadata	App/SketchObject.pyi
 ddd3beaf84	2026-07-29	PaddleStroke	fix	0	0	open	120		Sketcher : Fix Polyline parallel/perp helper doesn't stay arc segment FreeCAD#31568	Gui/DrawSketchHandler.cpp Gui/DrawSketchHandler.h
 8a6f859a57	2026-07-16	Max Wilfinger	?	0	0	open	10		Sketcher: Increase contrast of default face color	Gui/SketcherSettingsAppearance.ui Gui/ViewProviderSketch.cpp
-ff47e5d523	2026-07-24	Max Wilfinger	feature	0	0	open	55		Sketcher: Add hints for pattern tools	Gui/DrawSketchHandlerBSpline.h Gui/DrawSketchHandlerPolygon.h Gui/DrawSketchHandlerRotate.h Gui/DrawSketchHandlerTranslate.h
+ff47e5d523	2026-07-24	Max Wilfinger	feature	0	0	open	55	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Add hints for pattern tools	Gui/DrawSketchHandlerBSpline.h Gui/DrawSketchHandlerPolygon.h Gui/DrawSketchHandlerRotate.h Gui/DrawSketchHandlerTranslate.h
 fe9b559779	2026-08-02	Jakub Vanek	refactor	0	0	n/a(uncompiled)	9		Sketcher: Simplify constraint icon conversion for Coin3D	Gui/EditModeConstraintCoinManager.cpp
-770015798f	2026-07-29	Lokestrom	fix	0	0	open	3		Fix arc of ellipse arc OVP flip	Gui/DrawSketchHandlerArcOfEllipse.h
+770015798f	2026-07-29	Lokestrom	fix	0	0	open	3	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Fix arc of ellipse arc OVP flip	Gui/DrawSketchHandlerArcOfEllipse.h
 1dde0a83ce	2026-08-02	Max Wilfinger	?	0	0	n/a(uncompiled)	14		Sketcher: Remove transparency from origin point	Gui/EditModeCoinManager.cpp
 955efa639e	2026-07-30	wwmayer	fix	0	0	open	16		Sketch: Handle exception in ViewProviderSketch::setEdit	Gui/ViewProviderSketch.cpp
 2b88396504	2026-07-30	wwmayer	fix	0	0	open	5	taken 88c9baa853	Sketcher: Handle OCC exception in sketcher	App/Sketch.cpp
@@ -1098,7 +1098,7 @@ ba25babdf9	2026-08-03	Max Wilfinger	?	0	0	open	56		Sketcher: Delay auto-constrai
 2a511bdada	2026-08-08	Turan Furkan Topak	?	0	0	open	13		Merge pull request #31295 from Reqrefusion/pointonobjectonarc	Gui/DrawSketchHandlerDragAutoConstraint.cpp
 efec2c6795	2026-08-08	John Lewin	?	0	0	open	12		Collect theme foreground color from available sources for icon brush (#31594)	Gui/SketcherSettings.cpp
 72318afbbf	2026-08-08	Wes Lord	refactor	1	0	open	56		Sketcher: Convert text elements to paths in CreateRegularPolygon SVGs	Gui/Resources/icons/geometry/Sketcher_CreateRegularPolygon.svg Gui/Resources/icons/geometry/Sketcher_CreateRegularPolygon_Constr.svg
-a1bdbb6083	2026-08-03	221174284+kkchemboli@users.noreply.github.com	fix	0	0	open	2		Sketcher: Fix elliptical and hyperbolic arc OVP input being ignored	Gui/DrawSketchHandlerArcOfEllipse.h Gui/DrawSketchHandlerArcOfHyperbola.h
+a1bdbb6083	2026-08-03	221174284+kkchemboli@users.noreply.github.com	fix	0	0	open	2	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Fix elliptical and hyperbolic arc OVP input being ignored	Gui/DrawSketchHandlerArcOfEllipse.h Gui/DrawSketchHandlerArcOfHyperbola.h
 c2d6248bc7	2026-08-10	John Lewin	feature	0	0	open	212		Add dimensional constraint line style preferences	Gui/EditModeCoinManager.cpp Gui/EditModeCoinManagerParameters.h Gui/EditModeConstraintCoinManager.cpp Gui/SketcherSettings.cpp Gui/SketcherSettingsAppearance.ui
 ed848d3251	2026-08-12	John Lewin	feature	0	0	n/a(uncompiled)	56		Add missing pref group observer to EditModeCoinManager (#31892)	Gui/EditModeCoinManager.cpp
 90ca7a30d9	2026-08-13	John Lewin	feature	0	0	open	80		Add axis line width preference (#31679)	Gui/EditModeCoinManager.cpp Gui/EditModeCoinManagerParameters.h Gui/SketcherSettings.cpp Gui/SketcherSettingsAppearance.ui
@@ -1106,7 +1106,7 @@ ed848d3251	2026-08-12	John Lewin	feature	0	0	n/a(uncompiled)	56		Add missing pre
 884192e005	2026-08-16	Flaviu Tamas	fix	0	0	open	7	taken bec74e1472	Sketcher: fix memory leak	App/SketchObjectConstraints.cpp
 f8890114fa	2026-08-16	Flaviu Tamas	?	0	0	open	13	n/a: refactor/cleanup, no behaviour change	suggested unique pointer approach	App/SketchObjectConstraints.cpp
 ed932218ec	2026-08-16	pre-commit-ci[bot]	noise	0	0	open	10	n/a: warnings/typos/formatting	[pre-commit.ci] auto fixes from pre-commit.com hooks	App/SketchObjectConstraints.cpp
-3ec51da2cb	2026-08-19	matthiasdanner	feature	0	0	open	137		Sketcher: Add Angle Constraint to Polygon (#31180)	Gui/DrawSketchHandlerPolygon.h
+3ec51da2cb	2026-08-19	matthiasdanner	feature	0	0	open	137	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Add Angle Constraint to Polygon (#31180)	Gui/DrawSketchHandlerPolygon.h
 490419ecb2	2026-08-23	Max Wilfinger	fix	0	0	open	17		Sketcher: Avoid invalid drag curve projections	Gui/DrawSketchHandlerDragAutoConstraint.cpp
 a540d47665	2026-08-23	Max Wilfinger	?	0	0	open	54		Sketcher: Harden delayed drag auto-constraints	Gui/DrawSketchHandlerDragAutoConstraint.cpp Gui/DrawSketchHandlerDragAutoConstraint.h
 2e390f1543	2026-07-01	John Lewin	fix	0	0	open	1		Ensure checkBoxLineGroup property value is synced with restored state	Gui/SketcherSettings.cpp
@@ -1136,8 +1136,8 @@ b9368b17a8	2026-08-29	Joao Matos	refactor	0	0	n/a(uncompiled)	30		Sketcher: spli
 1dcde4e4cc	2026-09-03	UnKabaraQuiDev	feature	0	0	open	223	have: fillet/trim/split solve on noRecomputes since d8d462426e; its gtest changes came with 9b75379eb1	Sketcher: Trim tool skips recompute (#32355)	App/SketchObjectOperations.cpp tests/App/SketchObjectChanges.cpp
 321a782eff	2026-09-07	paddle	fix	0	0	open	10		"Sketcher: Double-clicking the active sketch now runs ""Align View to Sketch"" without closing and reopening it. Fix 13826"	Gui/ViewProviderSketch.cpp
 084379651a	2026-09-07	paddle	fix	0	0	open	22		Sketcher: Fix Constraint coincident tool gives error when applying two points on the same line  #20771	Gui/CommandConstraints.cpp
-828b85fae1	2026-09-07	paddle	?	1	0	open	4		Sketcher: Offset fully constraint the construction lines 17930	Gui/DrawSketchHandlerOffset.h
-deeb43198d	2026-09-07	paddle	fix	0	0	open	8		Sketcher: Fix Sketcher: OVP 270 degree internal angle for 3 corners rectangle results in over-contrained sketch (since v0.22) #12321	Gui/DrawSketchHandlerRectangle.h
+828b85fae1	2026-09-07	paddle	?	1	0	open	4	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Offset fully constraint the construction lines 17930	Gui/DrawSketchHandlerOffset.h
+deeb43198d	2026-09-07	paddle	fix	0	0	open	8	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Fix Sketcher: OVP 270 degree internal angle for 3 corners rectangle results in over-contrained sketch (since v0.22) #12321	Gui/DrawSketchHandlerRectangle.h
 82ec32f9e9	2026-09-07	paddle	fix	0	0	open	47	taken 798e88bfd5	Sketcher: Fix MissingVerticalHorizontal false positive #21396	App/SketchAnalysis.cpp SketcherTests/TestSketcherSolver.py
 55c36e8c03	2026-09-08	PaddleStroke	fix	0	0	open	7		Sketcher: Fix Cancelling Sketcher B-spline creation tools leaves behind (#32457)	Gui/DrawSketchHandler.cpp
 0c6b877daa	2026-09-07	paddle	fix	1	0	n/a(uncompiled)	10		Sketcher: Fix constraint text cutoff 21269	Gui/EditModeConstraintCoinManager.cpp
