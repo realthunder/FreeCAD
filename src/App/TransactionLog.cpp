@@ -154,6 +154,7 @@ public:
     bool findVersion(const std::string& docxmlHash, LogVersion& version) override
     { return inner().findVersion(docxmlHash, version); }
     std::vector<LogManifestEntry> manifest(int64_t num) override { return inner().manifest(num); }
+    void evictVersion(int64_t num) override { inner().evictVersion(num); }
     std::string getMeta(const std::string& key) override { return inner().getMeta(key); }
     void setMeta(const std::string& key, const std::string& value) override
     { inner().setMeta(key, value); }
@@ -456,6 +457,7 @@ int64_t TransactionLog::snapshot(const char* kind, const std::string& path,
             for (const auto& b : blobs)
                 manifest.push_back({b.first, b.second, "blob"});
             _store->addVersion(v, manifest);
+            evictVersions();
 
             t.script = "{\"version\":" + std::to_string(v.num) + ",\"docxml\":\"" + docHash
                      + "\",\"blobs\":" + std::to_string(nblobs) + ",\"schema\":"
@@ -472,6 +474,32 @@ int64_t TransactionLog::snapshot(const char* kind, const std::string& path,
         FC_ERR("transaction log: " << e.what());
     }
     return 0;
+}
+
+void TransactionLog::evictVersions()
+{
+    // Sec 16.3: unnamed versions over the limit go, oldest first; named
+    // ones never, and never the newest, which is what the cadence and a
+    // cold undo anchor on. Worker thread, after an addVersion.
+    const long keep = DocumentParams::getTransactionLogKeepVersions();
+    if (keep <= 0)
+        return;
+    auto versions = _store->versions();
+    std::vector<int64_t> unnamed;
+    for (const auto& v : versions) {
+        if (v.kind == "unnamed")
+            unnamed.push_back(v.num);
+    }
+    if (!unnamed.empty() && unnamed.back() == versions.back().num)
+        unnamed.pop_back();   // the newest stays whatever the limit
+    // What is left is the older unnamed ones; keep the last (keep - 1) of
+    // them so that, with the newest, `keep` unnamed versions remain.
+    size_t excess = unnamed.size() + 1 > static_cast<size_t>(keep)
+                        ? unnamed.size() + 1 - static_cast<size_t>(keep) : 0;
+    for (size_t i = 0; i < excess; ++i) {
+        FC_LOG("transaction log: evict version " << unnamed[i]);
+        _store->evictVersion(unnamed[i]);
+    }
 }
 
 std::string TransactionLog::putValue(const CapturedValue& value, const std::string& tier)

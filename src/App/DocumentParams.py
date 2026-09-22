@@ -177,6 +177,10 @@ Params = [
             'this many committed transactions since the last version; 0 for\n'
             'none. A snapshot serialises the document like a save, without\n'
             'writing an archive.'),
+    ParamInt('TransactionLogKeepVersions', 0,
+        doc='How many unnamed versions the transaction log keeps (sec 16.3):\n'
+            'when a version is added, the oldest unnamed ones over this count\n'
+            'are evicted -- never a named one, never the newest. 0 keeps all.'),
     ParamInt('TransactionLogSnapshotSeconds', 0,
         doc='The transaction log takes an unnamed version (sec 16.3) at the\n'
             'first commit this many seconds after the last version; 0 for\n'

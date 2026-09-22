@@ -88,6 +88,7 @@ public:
         signalParamChanged("TransactionLogIdentity");
         signalParamChanged("TransactionLogDerived");
         signalParamChanged("TransactionLogSnapshotTransactions");
+        signalParamChanged("TransactionLogKeepVersions");
         signalParamChanged("TransactionLogSnapshotSeconds");
         signalParamChanged("RelativeStringID");
         signalParamChanged("HashIndexedName");
@@ -139,6 +140,7 @@ public:
     bool TransactionLogIdentity;
     long TransactionLogDerived;
     long TransactionLogSnapshotTransactions;
+    long TransactionLogKeepVersions;
     long TransactionLogSnapshotSeconds;
     bool RelativeStringID;
     bool HashIndexedName;
@@ -235,6 +237,8 @@ public:
         funcs["TransactionLogDerived"] = &DocumentParamsP::updateTransactionLogDerived;
         TransactionLogSnapshotTransactions = this->handle->GetInt("TransactionLogSnapshotTransactions", 0);
         funcs["TransactionLogSnapshotTransactions"] = &DocumentParamsP::updateTransactionLogSnapshotTransactions;
+        TransactionLogKeepVersions = this->handle->GetInt("TransactionLogKeepVersions", 0);
+        funcs["TransactionLogKeepVersions"] = &DocumentParamsP::updateTransactionLogKeepVersions;
         TransactionLogSnapshotSeconds = this->handle->GetInt("TransactionLogSnapshotSeconds", 0);
         funcs["TransactionLogSnapshotSeconds"] = &DocumentParamsP::updateTransactionLogSnapshotSeconds;
         RelativeStringID = this->handle->GetBool("RelativeStringID", true);
@@ -431,6 +435,10 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateTransactionLogSnapshotTransactions(DocumentParamsP *self) {
         self->TransactionLogSnapshotTransactions = self->handle->GetInt("TransactionLogSnapshotTransactions", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateTransactionLogKeepVersions(DocumentParamsP *self) {
+        self->TransactionLogKeepVersions = self->handle->GetInt("TransactionLogKeepVersions", 0);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateTransactionLogSnapshotSeconds(DocumentParamsP *self) {
@@ -650,6 +658,11 @@ static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
 "this many committed transactions since the last version; 0 for\n"
 "none. A snapshot serialises the document like a save, without\n"
 "writing an archive."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "TransactionLogKeepVersions", "TransactionLogKeepVersions", App::ParamInfo::Int, 0)
+        .setTitle("Transaction Log Keep Versions")
+        .setDoc("How many unnamed versions the transaction log keeps (sec 16.3):\n"
+"when a version is added, the oldest unnamed ones over this count\n"
+"are evicted -- never a named one, never the newest. 0 keeps all."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "TransactionLogSnapshotSeconds", "TransactionLogSnapshotSeconds", App::ParamInfo::Int, 0)
         .setTitle("Transaction Log Snapshot Seconds")
         .setDoc("The transaction log takes an unnamed version (sec 16.3) at the\n"
@@ -1921,6 +1934,36 @@ void DocumentParams::setTransactionLogSnapshotTransactions(const long &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void DocumentParams::removeTransactionLogSnapshotTransactions() {
     instance()->handle->RemoveInt("TransactionLogSnapshotTransactions");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docTransactionLogKeepVersions() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"How many unnamed versions the transaction log keeps (sec 16.3):\n"
+"when a version is added, the oldest unnamed ones over this count\n"
+"are evicted -- never a named one, never the newest. 0 keeps all.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & DocumentParams::getTransactionLogKeepVersions() {
+    return instance()->TransactionLogKeepVersions;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & DocumentParams::defaultTransactionLogKeepVersions() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setTransactionLogKeepVersions(const long &v) {
+    instance()->handle->SetInt("TransactionLogKeepVersions",v);
+    instance()->TransactionLogKeepVersions = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeTransactionLogKeepVersions() {
+    instance()->handle->RemoveInt("TransactionLogKeepVersions");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

@@ -274,13 +274,43 @@ public:
             s = prepare("DELETE FROM txn WHERE seq<?");
             sqlite3_bind_int64(s, 1, before);
             step(s);
-            // Values nothing refers to: not an op ref, not an attachment of a
-            // value that is.
-            exec("DELETE FROM value WHERE hash NOT IN (SELECT vbefore FROM op)"
-                 " AND hash NOT IN (SELECT vafter FROM op)"
-                 " AND hash NOT IN (SELECT hash FROM manifest WHERE source='value')"
-                 " AND hash NOT IN (SELECT substr(attach, 1, 40) FROM value"
-                 "                  WHERE attach<>'')");
+            collectValues();
+            exec("COMMIT");
+        }
+        catch (...) {
+            exec("ROLLBACK");
+            throw;
+        }
+    }
+
+    /// Delete the values nothing refers to: not an op ref, not a manifest
+    /// entry, not an attachment (any line of `attach`) of a value that stays.
+    /// Inside the caller's transaction.
+    void collectValues()
+    {
+        exec("WITH RECURSIVE lines(rest, line) AS ("
+             "  SELECT attach || char(10), '' FROM value WHERE attach<>''"
+             "  UNION ALL"
+             "  SELECT substr(rest, instr(rest, char(10)) + 1),"
+             "         substr(rest, 1, instr(rest, char(10)) - 1)"
+             "  FROM lines WHERE rest<>'')"
+             " DELETE FROM value WHERE hash NOT IN (SELECT vbefore FROM op)"
+             " AND hash NOT IN (SELECT vafter FROM op)"
+             " AND hash NOT IN (SELECT hash FROM manifest WHERE source='value')"
+             " AND hash NOT IN (SELECT substr(line, 1, 40) FROM lines WHERE line<>'')");
+    }
+
+    void evictVersion(int64_t num) override
+    {
+        exec("BEGIN");
+        try {
+            auto s = prepare("DELETE FROM manifest WHERE version=?");
+            sqlite3_bind_int64(s, 1, num);
+            step(s);
+            s = prepare("DELETE FROM version WHERE num=?");
+            sqlite3_bind_int64(s, 1, num);
+            step(s);
+            collectValues();
             exec("COMMIT");
         }
         catch (...) {

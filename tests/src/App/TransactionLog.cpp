@@ -605,4 +605,46 @@ TEST_F(TransactionLogTest, snapshotAndCadence)
     EXPECT_EQ(store.versions().size(), 4u);
 }
 
+TEST_F(TransactionLogTest, evictsUnnamedVersions)
+{
+    doc()->openTransaction("create");
+    auto obj = make("Obj");
+    doc()->commitTransaction();
+
+    const long keep = App::DocumentParams::getTransactionLogKeepVersions();
+    App::DocumentParams::setTransactionLogKeepVersions(2);
+    std::vector<std::string> docxml;
+    for (int i = 0; i < 4; ++i) {
+        doc()->openTransaction("edit");
+        obj->Integer.setValue(i);
+        doc()->commitTransaction();
+        ASSERT_EQ(doc()->snapshotToLog(), i + 1);
+        App::LogVersion v;
+        ASSERT_TRUE(log().store().getVersion(i + 1, v));
+        docxml.push_back(v.docxml_hash);
+    }
+    App::DocumentParams::setTransactionLogKeepVersions(keep);
+
+    // The two newest unnamed versions remain; the evicted ones took their
+    // Document.xml values with them, the survivors kept theirs.
+    auto& store = log().store();
+    auto versions = store.versions();
+    ASSERT_EQ(versions.size(), 2u);
+    EXPECT_EQ(versions[0].num, 3);
+    EXPECT_EQ(versions[1].num, 4);
+    EXPECT_TRUE(store.manifest(1).empty());
+    EXPECT_FALSE(store.hasValue(docxml[0]));
+    EXPECT_FALSE(store.hasValue(docxml[1]));
+    EXPECT_TRUE(store.hasValue(docxml[2]));
+    EXPECT_TRUE(store.hasValue(docxml[3]));
+    // Ops are never evicted, nor their values: the edits' before refs read.
+    for (auto& t : store.transactions()) {
+        for (auto& o : store.ops(t.seq)) {
+            if (!o.vbefore.empty())
+                EXPECT_TRUE(store.hasValue(o.vbefore)) << t.seq;
+        }
+    }
+    EXPECT_GE(store.transactions().size(), 9u);
+}
+
 }  // namespace

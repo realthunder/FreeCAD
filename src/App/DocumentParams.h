@@ -603,6 +603,20 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter TransactionLogKeepVersions
+    ///
+    /// How many unnamed versions the transaction log keeps (sec 16.3):
+    /// when a version is added, the oldest unnamed ones over this count
+    /// are evicted -- never a named one, never the newest. 0 keeps all.
+    static const long & getTransactionLogKeepVersions();
+    static const long & defaultTransactionLogKeepVersions();
+    static void removeTransactionLogKeepVersions();
+    static void setTransactionLogKeepVersions(const long &v);
+    static const char *docTransactionLogKeepVersions();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter TransactionLogSnapshotSeconds
     ///
     /// The transaction log takes an unnamed version (sec 16.3) at the

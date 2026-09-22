@@ -1521,7 +1521,7 @@ keeps every value a manifest names. `TransactionStore` gained
 `addVersion`, `versions`, `getVersion`, `findVersion(docxml_hash)` and
 `manifest`; Python reads them through `Document.getTransactionVersions()`.
 `GuiDocument.xml` joined the manifest the next day, and the cadence
-between saves with it (below); not yet: eviction, and the checkout that
+between saves with it, and eviction (below); not yet: the checkout that
 reads a manifest back.
 
 **The history initialised from a file, as built** (2026-09-22, section
@@ -1688,8 +1688,23 @@ is the knob. The ninth gtest takes one on demand and checks the value
 holds the document, then sets N=3 and counts the versions seven commits
 make.
 
-**Next.** Eviction of unnamed versions (16.3), and the checkout that
-reads a manifest back (16.1).
+**Eviction, as built** (2026-09-23, 16.3). `TransactionStore::evictVersion`
+removes a version row and its manifest, then the values nothing refers
+to -- the same collection `truncate` runs, now shared as `collectValues`
+and fixed to read every line of a value's attachment list (it read the
+first only, so a value with two attachments would have lost the second
+on truncation). The policy is `TransactionLog::evictVersions`, run by
+the worker after every `addVersion`: with `TransactionLogKeepVersions`
+> 0, the oldest unnamed versions beyond that count go; a named version
+never, and never the newest. 0 (the default) keeps all. Count only for
+now; the byte limit and the regeneration-cost weighting of 16.3 wait
+for the tiers to carry a cost. The blobs a manifest names are not held
+by the log yet (16.2), so eviction frees value rows only. The tenth
+gtest keeps 2 across 4 snapshots and checks the survivors, their
+values, and that no op's value went.
+
+**Next.** The checkout that reads a manifest back (16.1) -- restoring a
+version into a document -- which is where phase 1 meets phase 3.
 
 ## 22. The end state, and the browser as a development tool (user, 2026-09-22)
 
