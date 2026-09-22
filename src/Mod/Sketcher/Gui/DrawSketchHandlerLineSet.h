@@ -24,6 +24,7 @@
 
 #pragma once
 
+#include <numbers>
 #include <QApplication>
 
 #include <Inventor/events/SoKeyboardEvent.h>

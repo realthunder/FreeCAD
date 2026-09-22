@@ -23,6 +23,7 @@
  *                                                                         *
  ***************************************************************************/
 
+#include <numbers>
 #include <string>
 
 #include <App/Document.h>
