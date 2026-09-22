@@ -265,4 +265,64 @@ TEST_F(TransactionLogTest, replaysToIdenticalDocument)
     App::GetApplication().closeDocument(name2.c_str());
 }
 
+TEST_F(TransactionLogTest, implicitTransactionsGroupByInvocation)
+{
+    // Undo off: nothing is kept for undo, but the log still records.
+    doc()->setUndoMode(0);
+    auto obj = make("Obj");
+    ASSERT_TRUE(obj);
+    // The create opened an implicit transaction of its own (no scope is
+    // active here); close it so the scope below is its own transaction.
+    EXPECT_TRUE(doc()->hasPendingTransaction());
+    doc()->commitTransaction();
+    {
+        App::Application::InvocationScope scope("test");
+        obj->Integer.setValue(1);
+        obj->Float.setValue(2.0);
+        // Still open: the invocation has not returned.
+        EXPECT_TRUE(doc()->hasPendingTransaction());
+    }
+    EXPECT_FALSE(doc()->hasPendingTransaction());
+    EXPECT_EQ(doc()->getAvailableUndoNames().size(), 0u);
+
+    auto& store = log().store();
+    auto txns = store.transactions();
+    ASSERT_GE(txns.size(), 2u);   // the create (outside any scope), the scope
+    const auto& last = txns.back();
+    EXPECT_EQ(last.kind, "implicit");
+    EXPECT_EQ(last.origin, "test");
+    EXPECT_NE(last.name.find("test"), std::string::npos);
+    size_t sets = 0;
+    for (auto& o : store.ops(last.seq)) {
+        if (o.op == "set") {
+            ++sets;
+            EXPECT_TRUE(o.prop == "Integer" || o.prop == "Float") << o.prop;
+            EXPECT_EQ(o.vbefore.size(), 40u);
+        }
+    }
+    EXPECT_EQ(sets, 2u);
+
+    // An explicit transaction closes an implicit one first.
+    obj->Integer.setValue(5);
+    EXPECT_TRUE(doc()->hasPendingTransaction());
+    doc()->openTransaction("explicit");
+    obj->Integer.setValue(6);
+    doc()->commitTransaction();
+    txns = store.transactions();
+    ASSERT_GE(txns.size(), 4u);
+    EXPECT_EQ(txns[txns.size() - 2].kind, "implicit");
+    EXPECT_EQ(txns.back().kind, "user");
+    EXPECT_EQ(txns.back().name, "explicit");
+
+    // Undo on: the implicit transaction is an undo step as well.
+    doc()->setUndoMode(1);
+    {
+        App::Application::InvocationScope scope("again");
+        obj->Integer.setValue(9);
+    }
+    EXPECT_EQ(doc()->getAvailableUndoNames().size(), 1u);
+    EXPECT_TRUE(doc()->undo());
+    EXPECT_EQ(obj->Integer.getValue(), 6);
+}
+
 }  // namespace

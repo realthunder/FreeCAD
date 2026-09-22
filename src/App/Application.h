@@ -528,6 +528,29 @@ protected:
     App::Document* openDocumentPrivate(const char * FileName, const char *propFileName,
             const char *label, bool isMainDoc, bool createView, std::vector<std::string> &&objNames);
 
+public:
+    /** One invocation of the application from outside: a Python call
+     * from the console or a macro, a script file, a recompute. The
+     * boundary at which an implicit transaction (Transaction::Implicit)
+     * is committed, docs/TransactionLog.md sec 9.1. Scopes nest; the
+     * outermost one closes. `origin` is recorded on the transactions the
+     * scope closes.
+     */
+    class AppExport InvocationScope {
+    public:
+        explicit InvocationScope(const char* origin);
+        ~InvocationScope();
+        InvocationScope(const InvocationScope&) = delete;
+        InvocationScope& operator=(const InvocationScope&) = delete;
+        /// Origin of the innermost open scope, empty outside any.
+        static const char* current();
+        static int depth();
+    };
+
+    /// Commit the implicit transaction of every document, if any.
+    void commitImplicitTransactions();
+
+protected:
     /// Helper class for App::Document to signal on close/abort transaction
     class AppExport TransactionSignaller {
     public:
@@ -682,6 +705,7 @@ private:
     std::string _activeTransactionName;
     int _activeTransactionID{0};
     int _activeTransactionGuard{0};
+    std::vector<const char*> _invocations;
     bool _activeTransactionTmpName{false};
 
     static Base::ConsoleObserverStd  *_pConsoleObserverStd;

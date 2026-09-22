@@ -556,6 +556,7 @@ Document* Application::newDocument(const char * Name, const char * UserName, boo
 
     // set the UserName after notifying all observers
     _pActiveDoc->Label.setValue(userName);
+    _pActiveDoc->setStatus(Document::Initializing, false);
 
     // set the old document active again if the new is temporary
     if (tempDoc && oldActiveDoc)
@@ -571,6 +572,8 @@ bool Application::closeDocument(const char* name)
         return false;
 
     Base::ConsoleRefreshDisabler disabler;
+
+    pos->second->commitImplicitTransaction();
 
     // Trigger observers before removing the document from the internal map.
     // Some observers might rely on this document still being there.
@@ -3288,10 +3291,12 @@ std::list<std::string> Application::processFiles(const std::list<std::string>& f
                 processed.push_back(it);
             }
             else if (file.hasExtension("fcscript") || file.hasExtension("fcmacro")) {
+                InvocationScope scope("script");
                 Base::Interpreter().runFile(file.filePath().c_str(), true);
                 processed.push_back(it);
             }
             else if (file.hasExtension("py")) {
+                InvocationScope scope("script");
                 try {
                     Base::Interpreter().addPythonPath(file.dirPath().c_str());
                     Base::Interpreter().loadModule(file.fileNamePure().c_str());

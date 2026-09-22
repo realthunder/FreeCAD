@@ -128,6 +128,38 @@ void AutoTransaction::setEnable(bool enable) {
     }
 }
 
+Application::InvocationScope::InvocationScope(const char* origin)
+{
+    GetApplication()._invocations.push_back(origin ? origin : "");
+}
+
+Application::InvocationScope::~InvocationScope()
+{
+    auto& app = GetApplication();
+    if (app._invocations.empty())
+        return;
+    app._invocations.pop_back();
+    if (app._invocations.empty())
+        app.commitImplicitTransactions();
+}
+
+const char* Application::InvocationScope::current()
+{
+    auto& inv = GetApplication()._invocations;
+    return inv.empty() ? "" : inv.back();
+}
+
+int Application::InvocationScope::depth()
+{
+    return static_cast<int>(GetApplication()._invocations.size());
+}
+
+void Application::commitImplicitTransactions()
+{
+    for (auto& v : DocMap)
+        v.second->commitImplicitTransaction();
+}
+
 int Application::setActiveTransaction(const char *name, bool persist) {
     if(!name || !name[0])
         name = "Command";

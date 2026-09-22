@@ -66,6 +66,14 @@ public:
 
     // the utf-8 name of the transaction
     std::string Name;
+    /** Opened by the document itself because a write arrived with no
+     * transaction active and the log is on (docs/TransactionLog.md sec
+     * 9.1). Closed when the invocation that opened it returns
+     * (Application::InvocationScope), by the next explicit transaction,
+     * or by a save or close. `Origin` names the invocation.
+     */
+    bool Implicit {false};
+    std::string Origin;
 
     unsigned int getMemSize () const override;
     void Save (Base::Writer &writer) const override;

@@ -335,12 +335,14 @@ void Document::addOrRemovePropertyOfObject(TransactionalObject* obj, Property *p
 
 void Document::_addOrRemoveProperty(TransactionalObject* obj, Property *prop, bool add)
 {
-    if(d->iUndoMode && !isPerformingTransaction() && !d->activeUndoTransaction) {
+    if(transactionsWanted() && !isPerformingTransaction() && !d->activeUndoTransaction) {
         if(!testStatus(Restoring) || testStatus(Importing)) {
             int tid=0;
             const char *name = GetApplication().getActiveTransaction(&tid);
             if(name && tid>0)
                 _openTransaction(name,tid);
+            else
+                _openImplicitTransaction();
         }
     }
     if (d->activeUndoTransaction && !d->rollback)
@@ -388,7 +390,7 @@ int Document::_openTransaction(const char* name, int id)
         return 0;
     }
 
-    if (d->iUndoMode) {
+    if (transactionsWanted()) {
         // Avoid recursive calls that is possible while
         // clearing the redo transactions and will cause
         // a double deletion of some transaction and thus
@@ -438,25 +440,57 @@ void Document::renameTransaction(const char *name, int id) {
     }
 }
 
+bool Document::transactionsWanted() const
+{
+    return d->iUndoMode || DocumentParams::getTransactionLog() != 0;
+}
+
+void Document::_openImplicitTransaction()
+{
+    // docs/TransactionLog.md sec 9.1: with the log on, a write that arrives
+    // with no transaction active opens one of its own, named after the
+    // invocation it happens in, and closed when that returns.
+    if (DocumentParams::getTransactionLog() == 0 || testStatus(Initializing))
+        return;
+    const char* origin = Application::InvocationScope::current();
+    std::string name = "<implicit";
+    if (origin && origin[0]) {
+        name += ' ';
+        name += origin;
+    }
+    name += '>';
+    if (_openTransaction(name.c_str(), 0) && d->activeUndoTransaction) {
+        d->activeUndoTransaction->Implicit = true;
+        d->activeUndoTransaction->Origin = origin ? origin : "";
+    }
+}
+
+void Document::commitImplicitTransaction()
+{
+    if (d->activeUndoTransaction && d->activeUndoTransaction->Implicit
+            && !isPerformingTransaction() && !d->committing)
+        _commitTransaction(false);
+}
+
 void Document::_checkTransaction(DocumentObject* pcDelObj, const Property *What, int line)
 {
     // if the undo is active but no transaction open, open one!
-    if (d->iUndoMode && !isPerformingTransaction()) {
+    if (transactionsWanted() && !isPerformingTransaction()) {
         if (!d->activeUndoTransaction) {
             if(!testStatus(Restoring) || testStatus(Importing)) {
                 int tid=0;
                 const char *name = GetApplication().getActiveTransaction(&tid);
+                bool ignore = false;
+                if(What) {
+                    if(What->testStatus(Property::NoModify))
+                        ignore = true;
+                    else if(!Base::freecad_dynamic_cast<Document>(What->getContainer())
+                            && !DocumentParams::getViewObjectTransaction()
+                            && !AutoTransaction::recordViewObjectChange()
+                            && !Base::freecad_dynamic_cast<DocumentObject>(What->getContainer()))
+                        ignore = true;
+                }
                 if(name && tid>0) {
-                    bool ignore = false;
-                    if(What) {
-                        if(What->testStatus(Property::NoModify))
-                            ignore = true;
-                        else if(!Base::freecad_dynamic_cast<Document>(What->getContainer())
-                                && !DocumentParams::getViewObjectTransaction()
-                                && !AutoTransaction::recordViewObjectChange()
-                                && !Base::freecad_dynamic_cast<DocumentObject>(What->getContainer()))
-                            ignore = true;
-                    }
                     if(FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG)) {
                         if(What)
                             FC_LOG((ignore?"ignore":"auto") << " transaction ("
@@ -467,6 +501,10 @@ void Document::_checkTransaction(DocumentObject* pcDelObj, const Property *What,
                     }
                     if(!ignore)
                         _openTransaction(name,tid);
+                    return;
+                }
+                if(!ignore && !pcDelObj) {
+                    _openImplicitTransaction();
                     return;
                 }
             }
@@ -506,7 +544,9 @@ void Document::commitTransaction() {
         return;
     }
 
-    if (d->activeUndoTransaction)
+    if (d->activeUndoTransaction && d->activeUndoTransaction->Implicit)
+        _commitTransaction(false);
+    else if (d->activeUndoTransaction)
         GetApplication().closeActiveTransaction(false,d->activeUndoTransaction->getID());
 }
 
@@ -526,9 +566,18 @@ void Document::_commitTransaction(bool notify)
         TransactionMeasure::checkEnvironment();
         if (TransactionMeasure::enabled())
             TransactionMeasure::onCommit(*this, *d->activeUndoTransaction);
+        const bool implicit = d->activeUndoTransaction->Implicit;
         if (auto log = getTransactionLog())
-            log->onCommit(*d->activeUndoTransaction);
-        mUndoTransactions.push_back(d->activeUndoTransaction);
+            log->onCommit(*d->activeUndoTransaction, implicit ? "implicit" : "user",
+                          d->activeUndoTransaction->Origin.c_str());
+        if (d->iUndoMode) {
+            mUndoTransactions.push_back(d->activeUndoTransaction);
+        }
+        else {
+            // Recorded for the log only: no undo step is kept.
+            mUndoMap.erase(id);
+            delete d->activeUndoTransaction;
+        }
         d->activeUndoTransaction = nullptr;
         // check the stack for the limits
         if(mUndoTransactions.size() > d->UndoMaxStackSize){
@@ -538,7 +587,7 @@ void Document::_commitTransaction(bool notify)
         }
         signalCommitTransaction(*this);
 
-        if (notify)
+        if (notify && !implicit)
             GetApplication().closeActiveTransaction(false,id);
     }
 }
@@ -877,6 +926,7 @@ Document::Document(const char* documentName)
     // Remark: We force the document Python object to own the DocumentPy instance, thus we don't
     // have to care about ref counting any more.
     d = new DocumentP;
+    setStatus(Initializing, true);
     d->DocumentPythonObject = Py::Object(new DocumentPy(this), true);
 
 #ifdef FC_LOGUPDATECHAIN
@@ -2861,6 +2911,8 @@ private:
 bool Document::saveToFile(const char* filename) const
 {
     ExpressionBlocker::check();
+    // What the file holds is what the log has committed.
+    const_cast<Document*>(this)->commitImplicitTransaction();
 
     // Nothing may still be parked once this returns: the source archive is
     // renamed to a backup or deleted below, and an entry served afterwards
@@ -4292,6 +4344,10 @@ bool Document::isAnyRecomputing()
 int Document::recompute(const std::vector<App::DocumentObject*> &objs, bool force, bool *hasError, int options)
 {
     RecomputeCounter counter;
+    // A recompute is an invocation of its own: writes made by execute()
+    // with no transaction active group under one implicit transaction
+    // that closes with the recompute (docs/TransactionLog.md sec 9.1).
+    Application::InvocationScope scope("recompute");
 
     if (d->undoing || d->rollback) {
         if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG))

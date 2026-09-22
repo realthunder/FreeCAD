@@ -90,6 +90,8 @@ public:
         RestoreDrain = 15, // View-side catch-up on a finished restore: the work runs in
                            // full, but nothing it does may modify the document.
                            // See RestoreDrainGuard.
+        Initializing = 16, // Being constructed by Application::newDocument: the
+                           // writes that set it up open no implicit transaction
     };
 
     /** @name Properties */
@@ -326,6 +328,11 @@ public:
      * after the mode is set, in the transient directory.
      */
     TransactionLog* getTransactionLog() const;
+    /// Whether writes are recorded into transactions at all: undo is on,
+    /// or the log is (which records without keeping undo steps).
+    bool transactionsWanted() const;
+    /// Commit the active transaction if it is an implicit one.
+    void commitImplicitTransaction();
 
     /** Tell the manager which included files a save has to carry.
      *
@@ -938,6 +945,7 @@ protected:
      * AutoTransaction setting.
      */
     int _openTransaction(const char* name=nullptr, int id=0);
+    void _openImplicitTransaction();
     /// Internally called by App::Application to commit the Command transaction.
     void _commitTransaction(bool notify=false);
     /// Internally called by App::Application to abort the running transaction.
