@@ -1,11 +1,11 @@
-"""A served scene whose task panel carries a Gui::FileChooser (docs/Sandbox.md 7.22, W5).
+"""A served scene whose task panel carries a Gui::FileChooser (docs/Sandbox.md 7.22, W4b).
 
 The fourth of the panel demos, and like the others it exists because none of
 the first three can exercise this stage: Pad's fields, Sketcher's lists, the
 picture panel and the message box all leave the file chooser untouched.
 
 A chooser is the one leaf whose write path does not exist on the wire until
-W5. The mirror sends it as a LEAF -- the walk never goes into it -- so the
+W4b. The mirror sends it as a LEAF -- the walk never goes into it -- so the
 "..." button that raises the host's own QFileDialog is not a model any client
 can click, and a browser therefore has no way to name a file at all except to
 send one. That is deliberate, and it is the ruling this is built to
@@ -96,7 +96,7 @@ def build_panel():
     # A panel connects to `fileNameSelected`, and that is the signal a
     # browser's pick has to reach -- a plain property write fires
     # `fileNameChanged` and leaves the slot unrun, which is the whole
-    # reason W5 sends a request rather than a value.
+    # reason W4b sends a request rather than a value.
     #
     # Whether Python can SEE that signal depends on how the widget is
     # wrapped: the loader hands back the nearest shiboken-known base, and

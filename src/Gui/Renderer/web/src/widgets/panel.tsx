@@ -174,7 +174,7 @@ export function TaskPanelCard(props: {
   ///
   /// It is needed at all because the host does not echo a change back to
   /// the connection that caused it, so the one client that picked the
-  /// file is the only one not told the path (W5).
+  /// file is the only one not told the path (W4b).
   const [picked, setPicked] = createSignal<Record<string, string>>({});
   let client: PanelClient | null = null;
   let panelRef: HTMLDivElement | undefined;
@@ -315,7 +315,7 @@ export function TaskPanelCard(props: {
     );
   };
 
-  /// A mirrored `Gui::FileChooser` (docs/Sandbox.md 7.22, W5): the path
+  /// A mirrored `Gui::FileChooser` (docs/Sandbox.md 7.22, W4b): the path
   /// the host holds, and a picker that is the BROWSER's own.
   ///
   /// The ruling of 2026-09-22 fixes the shape -- "never expose host file

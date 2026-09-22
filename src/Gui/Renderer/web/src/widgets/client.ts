@@ -212,7 +212,7 @@ export class PanelClient {
     };
   }
 
-  /// A file the viewer's OWN picker chose, sent to the host (W5), which
+  /// A file the viewer's OWN picker chose, sent to the host (W4b), which
   /// answers with the path it wrote -- a path in the host's own upload
   /// directory, never one this client named.
   ///

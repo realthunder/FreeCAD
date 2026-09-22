@@ -38,7 +38,7 @@
 //   FC_PANEL_ASK=<label>      the card button that raises the dialog
 //                             (default "Ask")
 //   FC_PANEL_UPLOAD=<path>    choose this LOCAL file in the card's file
-//                             chooser (W5) and report what the host made
+//                             chooser (W4b) and report what the host made
 //                             of it. The bytes go up over the control
 //                             lane and the host answers with the path it
 //                             wrote, which the card then announces as a
@@ -333,7 +333,7 @@ function readDialog() {
         };
       }
     }
-    // W5's round trip: choose a LOCAL file in the card's own picker. The
+    // W4b's round trip: choose a LOCAL file in the card's own picker. The
     // bytes go up over the control lane, the host writes them into a
     // directory of its own choosing and answers with the path, and the
     // card announces that path as a pick. The verdict is therefore the

@@ -1505,7 +1505,7 @@
 .fc-panel-fx-on { background: rgba(88, 132, 255, 0.34); color: #e8e8ea; }
 .fc-panel-error { color: #ff9c8a; font-size: 12px; padding: 2px 0; }
 
-/* A mirrored file chooser (docs/Sandbox.md 7.22, W5): the host's path,
+/* A mirrored file chooser (docs/Sandbox.md 7.22, W4b): the host's path,
  * and a picker that is the BROWSER's own -- the host's `...` button is
  * not mirrored at all, and opening the host's file dialog from here is
  * exactly what the ruling forbids.

@@ -467,7 +467,7 @@ export const CHOOSER_FILE = 0;
 export const CHOOSER_DIRECTORY = 1;
 
 /// A path the CLIENT chose, sent to a mirrored `Gui::FileChooser`
-/// (docs/Sandbox.md 7.22, W5).
+/// (docs/Sandbox.md 7.22, W4b).
 ///
 /// NOT a property write, and the difference is the whole of this stage's
 /// write path. Writing `fileName` moves the host's line edit and emits

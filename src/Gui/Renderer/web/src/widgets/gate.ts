@@ -458,7 +458,7 @@ function checkCompletion(): void {
 /// hold: the host replays the mouse into a real widget, so the argument
 /// ORDER and Qt's own numbering are what make the difference between a
 /// click landing and nothing happening.
-/// The file chooser (docs/Sandbox.md 7.22, W5).
+/// The file chooser (docs/Sandbox.md 7.22, W4b).
 ///
 /// There is NO fixture: not one panel in the corpus carries a
 /// `Gui::FileChooser`, so the model is constructed against the same store

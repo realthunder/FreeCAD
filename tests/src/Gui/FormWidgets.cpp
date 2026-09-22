@@ -970,7 +970,7 @@ private Q_SLOTS:
         qchooser->setFileName(QStringLiteral("/tmp/b.ttf"));
         QCOMPARE(chooser.fileName(), QStringLiteral("/tmp/b.ttf"));
         QCOMPARE(nameChanged.count(), 1);
-        // A path CHOSEN in a browser (docs/Sandbox.md 7.22, W5): the
+        // A path CHOSEN in a browser (docs/Sandbox.md 7.22, W4b): the
         // client's request has to end where the desktop's own pick ends.
         // A property write alone moves the line edit and fires only
         // fileNameChanged, while a panel connects to fileNameSelected --

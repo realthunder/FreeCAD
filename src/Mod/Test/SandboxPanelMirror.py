@@ -553,7 +553,7 @@ class SandboxPanelMirrorTest(unittest.TestCase):
         self.assertIsNone(self.FW.panelId())
 
     def test_file_chooser(self):
-        """A Gui::FileChooser in a panel (W5): a LEAF carrying its path
+        """A Gui::FileChooser in a panel (W4b): a LEAF carrying its path
         and filter as data -- the walk never goes into it, so the browse
         button that raises the host's own QFileDialog is not a model any
         client can click -- an upload landing where the HOST chose, a
