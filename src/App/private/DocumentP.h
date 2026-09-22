@@ -40,6 +40,7 @@
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/bimap.hpp>
 #include <chrono>
+#include <functional>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -118,6 +119,10 @@ struct DocumentP
     bool snapshotting {false};
     /// A restoreVersion() in progress: the restore takes no version 1.
     bool checkingOut {false};
+    /// A saveCopy() without history: the copy embeds nothing, and the
+    /// History property the live document had is put back afterwards.
+    bool savingWithoutHistory {false};
+    std::function<void()> restoreHistory;
 #ifdef USE_OLD_DAG
     DependencyList DepList;
     std::map<DocumentObject*, Vertex> VertexObjectList;

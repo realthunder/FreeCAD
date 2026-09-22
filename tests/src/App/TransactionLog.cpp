@@ -801,6 +801,17 @@ TEST_F(TransactionLogTest, embeddedHistoryRoundTrips)
     EXPECT_EQ(static_cast<App::FeatureTest*>(opened->getObject("Obj"))->Integer.getValue(), 1);
     App::GetApplication().closeDocument(opened->getName());
 
+    // A copy without history carries none, and the live document keeps its.
+    const std::string plain = Base::FileInfo::getTempPath() + "txnlog-embed-plain.FCStd";
+    ASSERT_TRUE(doc()->saveCopy(plain.c_str(), false));
+    EXPECT_FALSE(history->isEmpty());
+    {
+        zipios::ZipFile zip(plain);
+        for (const auto& entry : zip.entries())
+            EXPECT_EQ(entry->getName().find(".db"), std::string::npos) << entry->getName();
+    }
+    Base::FileInfo(plain).deleteFile();
+
     // Saved again without the mode: the property is emptied, nothing
     // embedded, and an open finds no history to continue from.
     App::DocumentParams::setTransactionLog(1);

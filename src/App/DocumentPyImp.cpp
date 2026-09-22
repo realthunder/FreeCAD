@@ -175,11 +175,12 @@ PyObject*  DocumentPy::saveAs(PyObject * args)
 PyObject*  DocumentPy::saveCopy(PyObject * args)
 {
     char* fn;
-    if (!PyArg_ParseTuple(args, "s", &fn))
+    PyObject* withHistory = Py_True;
+    if (!PyArg_ParseTuple(args, "s|O!", &fn, &PyBool_Type, &withHistory))
         return nullptr;
 
     PY_TRY {
-        getDocumentPtr()->saveCopy(fn);
+        getDocumentPtr()->saveCopy(fn, Base::asBoolean(withHistory));
         Py_Return;
     }PY_CATCH
 }

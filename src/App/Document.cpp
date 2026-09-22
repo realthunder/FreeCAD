@@ -2594,12 +2594,19 @@ bool Document::saveAs(const char* _file)
     return save();
 }
 
-bool Document::saveCopy(const char* _file) const
+bool Document::saveCopy(const char* _file, bool withHistory) const
 {
     std::string file = checkFileName(_file);
     // a copy is a host file written by path, exactly as saveAs (7.29)
     ExpressionSecurity::checkHostPath(ExpressionSecurity::Permission::FsWrite, file);
     if (this->FileName.getStrValue() != file) {
+        struct Guard
+        {
+            bool& flag;
+            bool was;
+            Guard(bool& f, bool v) : flag(f), was(f) { flag = v; }
+            ~Guard() { flag = was; }
+        } guard(d->savingWithoutHistory, !withHistory);
         bool result = saveToFile(file.c_str());
         return result;
     }
@@ -3259,6 +3266,11 @@ void Document::save(Base::Writer &writer, bool archive) const {
             const_cast<Document*>(this)->noteVersionTaken();
     }
 
+    if (d->restoreHistory) {
+        d->restoreHistory();
+        d->restoreHistory = nullptr;
+    }
+
     GetApplication().signalSaveDocument(*this);
 }
 
@@ -3723,13 +3735,32 @@ void Document::embedHistory(bool archive)
     // number this save becomes and the save id the guard on open compares.
     auto history = Base::freecad_dynamic_cast<PropertyHistory>(getPropertyByName("History"));
     auto version = Base::freecad_dynamic_cast<PropertyString>(getPropertyByName("Version"));
-    TransactionLog* log = archive && DocumentParams::getTransactionLog() == 2
+    TransactionLog* log = archive && !d->savingWithoutHistory
+            && DocumentParams::getTransactionLog() == 2
         ? getTransactionLog() : nullptr;
     if (!log) {
         // Not embedding: a property left from an earlier embedded save is
-        // emptied rather than carried on with stale content.
-        if (history && !history->isEmpty())
-            history->setValue({}, {}, {});
+        // emptied rather than carried on with stale content. For a copy
+        // without history the emptying is for the copy only: the live
+        // document keeps what it had.
+        if (history && !history->isEmpty()) {
+            if (d->savingWithoutHistory) {
+                FileBlobHandle db = history->getDatabase();
+                std::vector<FileBlobHandle> blobs = history->getBlobs();
+                std::vector<std::string> exts;
+                for (const auto& e : history->getEntries()) {
+                    if (e.ext != ".db")
+                        exts.push_back(e.ext);
+                }
+                history->setValue({}, {}, {});
+                d->restoreHistory = [history, db, blobs, exts]() {
+                    history->setValue(db, blobs, exts);
+                };
+            }
+            else {
+                history->setValue({}, {}, {});
+            }
+        }
         return;
     }
     try {

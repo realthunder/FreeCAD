@@ -1813,8 +1813,13 @@ restored from the file. Two things to settle: the history `.db` blob is
 a document blob like any other, so a version taken after an embedded
 save lists it in its manifest (harmless, but each embedded save adds
 one); and the closed-branch bookkeeping of 16.6 on a mismatch waits for
-branches. Not built: the explicit "save a copy without history" and the
-panel's mode indicator.
+branches. Then, the same day: `Document::saveCopy(path, withHistory)`
+-- `Document.saveCopy(path, False)` from Python -- writes the copy with
+`History` emptied and puts the live document's property back once the
+copy is written, so the file the author keeps still carries the
+history; the gtest checks the copy has no `.db` entry. The panel's
+status line names the mode (`[session]` / `[embedded]`). A menu entry
+for the copy waits for the Gui command set of phase 2.
 
 ## 22. The end state, and the browser as a development tool (user, 2026-09-22)
 

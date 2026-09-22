@@ -244,7 +244,9 @@ public:
     /// Save the document to the file in Property Path
     bool save ();
     bool saveAs(const char* file);
-    bool saveCopy(const char* file) const;
+    /// Save a copy under another name; `withHistory` false leaves the
+    /// embedded history out of the copy (docs/TransactionLog.md sec 13.3).
+    bool saveCopy(const char* file, bool withHistory = true) const;
     void save(Base::Writer &writer, bool archive) const;
     /// Restore the document from the file in Property Path
     void restore (const char *filename=nullptr,

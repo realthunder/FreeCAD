@@ -721,13 +721,16 @@ void TransactionLogView::updateStatus()
     }
     catch (Base::Exception&) {
     }
-    _status->setText(tr("%1: %2 transactions, %3 versions, %4 pending, session %5  --  %6")
+    const long mode = App::DocumentParams::getTransactionLog();
+    const QString modeText = mode == 2 ? tr("embedded") : tr("session");
+    _status->setText(tr("%1 [%7]: %2 transactions, %3 versions, %4 pending, session %5  --  %6")
                          .arg(QString::fromUtf8(_doc->getName()))
                          .arg(_lastSeq)
                          .arg(static_cast<qulonglong>(versions))
                          .arg(static_cast<qulonglong>(l->pendingCount()))
                          .arg(static_cast<qlonglong>(l->session()))
-                         .arg(QString::fromStdString(l->path())));
+                         .arg(QString::fromStdString(l->path()))
+                         .arg(modeText));
 }
 
 #include "moc_TransactionLogView.cpp"

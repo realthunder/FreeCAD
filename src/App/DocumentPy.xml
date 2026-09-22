@@ -36,7 +36,11 @@ segments.</UserDocu>
     </Methode>
     <Methode Name="saveCopy">
       <Documentation>
-        <UserDocu>Save a copy of the document under a new name to disk</UserDocu>
+        <UserDocu>saveCopy(path, withHistory=True)
+
+Save a copy of the document under a new name to disk. withHistory=False
+leaves the embedded transaction log out of the copy
+(docs/TransactionLog.md sec 13.3).</UserDocu>
       </Documentation>
     </Methode>
     <Methode Name="load">
