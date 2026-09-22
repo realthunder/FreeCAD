@@ -1782,6 +1782,40 @@ collect pass); the open path (the guard, then `TransactionLog` adopting
 the copy as its store before the on-open snapshot); "save a copy without
 history"; the panel's mode indicator.
 
+**The embedded mode, as built** (2026-09-23, the first four pieces).
+`PropertyHistory` as planned (`src/App/PropertyHistory.{h,cpp}`; a
+`<History db="..." count="n">` element of `<Blob hash ext/>` children at
+schema 5, `<History/>` below it, where the lack of a store means no
+history travels -- which is "save a copy without history" for a save at
+schema 4, the explicit command still to come). `TransactionStore::copyTo`
+(`VACUUM INTO`) and `dropTier`; `TransactionLog::embed(saveDate)` flushes,
+copies, evicts every unnamed version from the copy, drops the cache
+tier, and stamps `meta` with `save_id`, `save_date` and
+`version_counter` (the number this save becomes; `openStore` takes the
+counter into `_nextVersion` so an adopted copy with every version
+dropped still numbers on). `Document::embedHistory`, called from
+`save(writer)` just before the collect pass when the mode is 2, adopts
+the copy into the blob store and sets the two dynamic properties --
+`NoModify`, so setting them opens no transaction -- or empties `History`
+when the mode is not 2, so a stale copy never rides along. On open,
+`Document::adoptEmbeddedHistory` runs after `readFiles()` and before
+the on-open snapshot: it opens the copy read-only, compares its
+`save_id` with `Version`'s and its `save_date` with `LastModifiedDate`,
+and on agreement `TransactionLog::adoptStore` replaces the live store
+with the copy (a new session row in it); the on-open snapshot then
+becomes the version the counter names. A mismatch warns and leaves the
+fresh history to start from the file as found (16.6). The twelfth gtest
+saves in mode 2 with a named version, opens a copy elsewhere, finds the
+ops and the named version, restores it, then saves in mode 1 and finds
+the history gone. Verified in the GUI: `Version "2 <uuid>"`, the copy
+continuing with 19 transactions in session 2, the named version
+restored from the file. Two things to settle: the history `.db` blob is
+a document blob like any other, so a version taken after an embedded
+save lists it in its manifest (harmless, but each embedded save adds
+one); and the closed-branch bookkeeping of 16.6 on a mismatch waits for
+branches. Not built: the explicit "save a copy without history" and the
+panel's mode indicator.
+
 ## 22. The end state, and the browser as a development tool (user, 2026-09-22)
 
 Two rulings, recorded before phase 1 continues. Where they disagree with

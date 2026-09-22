@@ -192,6 +192,13 @@ public:
     virtual std::string getMeta(const std::string& key) = 0;
     virtual void setMeta(const std::string& key, const std::string& value) = 0;
 
+    /// A consistent, compacted copy of the whole store at `path` (SQLite's
+    /// VACUUM INTO); the file must not exist. What the embedded mode ships.
+    virtual void copyTo(const std::string& path) = 0;
+    /// Drop every value of `tier` nothing but ops refers to (the embedded
+    /// copy carries no cache tier, sec 13.3). Refs stay; the value goes.
+    virtual void dropTier(const std::string& tier) = 0;
+
     /// Open or create the SQLite log at `path` (WAL, synchronous=NORMAL).
     /// Throws Base::RuntimeError on failure.
     static std::unique_ptr<TransactionStore> openSQLite(const std::string& path);

@@ -129,6 +129,7 @@
 #include "PropertyContainer.h"
 #include "PropertyExpressionEngine.h"
 #include "PropertyFile.h"
+#include "PropertyHistory.h"
 #include "PropertyLinks.h"
 #include "PropertyPythonObject.h"
 #include "SavedView.h"
@@ -2372,6 +2373,7 @@ void Application::initTypes()
     App::PropertyPath               ::init();
     App::PropertyFile               ::init();
     App::PropertyFileIncluded       ::init();
+    App::PropertyHistory                  ::init();
     App::PropertyStringIncluded     ::init();
     App::PropertyFileIncludedList   ::init();
     App::PropertyPythonObject       ::init();

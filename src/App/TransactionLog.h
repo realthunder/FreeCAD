@@ -135,6 +135,32 @@ public:
     int64_t onRestore(const std::string& path, const Entries& entries,
                       const std::vector<std::pair<std::string, std::string>>& blobs, int schema);
 
+    /** The embedded copy (sec 16.4, 13.3), for a save in `embedded` mode.
+     *
+     * Waits for the queue, copies the store compacted to a file in the
+     * history directory, applies the retention policy to the copy -- the
+     * unnamed versions and the cache tier go, the ops and the named
+     * versions stay -- and stamps it with the save id, date and version
+     * counter the guard on open compares. Returns the copy's path and,
+     * from the surviving manifests, every blob hash with the extension it
+     * is named by; `version` is the number this save becomes.
+     */
+    struct Embedded
+    {
+        std::string path;
+        std::vector<std::pair<std::string, std::string>> blobs;   ///< (hash, ext)
+        std::string saveId;
+        int64_t version {0};
+    };
+    Embedded embed(const std::string& saveDate);
+
+    /** Continue from an embedded copy (sec 16.4): the live store is
+     * replaced by `path`'s content, the counters follow the copy's, and
+     * the on-open snapshot then becomes the version the copy expects.
+     * Only for a store with no history of its own yet.
+     */
+    bool adoptStore(const std::string& path);
+
     /// The `checkout` record (sec 12): the document was restored to
     /// version `num` by Document::restoreVersion. No ops; the version's
     /// snapshot is the state, and the log continues from here.
@@ -227,6 +253,9 @@ private:
 
     Document& _doc;
     std::string _path;
+    std::string _envJson;
+    std::string _user;
+    std::string _host;
     int64_t _environment {0};
     int64_t _session {0};
     std::unique_ptr<TransactionStore> _store;
@@ -235,6 +264,8 @@ private:
     /// The last seq and version number handed out; main thread only.
     int64_t _nextSeq {0};
     int64_t _nextVersion {0};
+    /// An embedded copy was just adopted: the next onRestore is its version.
+    bool _adopted {false};
     /// Property id -> the op whose after ref that property's next copy
     /// resolves; main thread only.
     std::unordered_map<int64_t, Pending> _pending;

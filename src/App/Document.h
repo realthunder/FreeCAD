@@ -975,6 +975,12 @@ protected:
     void endRestoreTap(Base::XMLReader& reader);
     /// A version was taken: the snapshot cadence starts over.
     void noteVersionTaken();
+    /// Set (or clear) the History and Version properties for a save
+    /// (docs/TransactionLog.md sec 16.4, embedded mode).
+    void embedHistory(bool archive);
+    /// Continue the log from the History property's copy when the guard
+    /// agrees that the file is the save that wrote it.
+    bool adoptEmbeddedHistory();
 
 private:
     // # Data Member of the document +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

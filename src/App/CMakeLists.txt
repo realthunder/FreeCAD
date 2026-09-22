@@ -590,6 +590,7 @@ SET(Properties_CPP_SRCS
     PropertyContainer.cpp
     PropertyContainerPyImp.cpp
     PropertyFile.cpp
+    PropertyHistory.cpp
     PropertyGeo.cpp
     PropertyLinks.cpp
     PropertyPythonObject.cpp
@@ -603,6 +604,7 @@ SET(Properties_HPP_SRCS
     Property.h
     PropertyContainer.h
     PropertyFile.h
+    PropertyHistory.h
     PropertyGeo.h
     PropertyLinks.h
     PropertyPythonObject.h

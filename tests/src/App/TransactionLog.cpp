@@ -15,6 +15,7 @@
 #include "App/DocumentObject.h"
 #include "App/DocumentParams.h"
 #include "App/FeatureTest.h"
+#include "App/PropertyHistory.h"
 #include "App/TransactionLog.h"
 #include "App/TransactionValue.h"
 #include "Base/FileInfo.h"
@@ -727,6 +728,92 @@ TEST_F(TransactionLogTest, restoresAVersion)
     EXPECT_EQ(restored->Integer.getValue(), 2);
     EXPECT_TRUE(doc()->getObject("Later"));
     EXPECT_THROW(doc()->restoreVersion(99), Base::Exception);
+}
+
+TEST_F(TransactionLogTest, embeddedHistoryRoundTrips)
+{
+    App::DocumentParams::setTransactionLog(2);   // embedded
+    doc()->openTransaction("create");
+    auto obj = make("Obj");
+    obj->Integer.setValue(1);
+    doc()->commitTransaction();
+    ASSERT_EQ(doc()->snapshotToLog(), 1);
+    ASSERT_TRUE(log().store().nameVersion(1, "v1"));
+    doc()->openTransaction("edit");
+    obj->Integer.setValue(2);
+    doc()->commitTransaction();
+    const int64_t seqBefore = log().lastSeq();
+
+    const std::string path = Base::FileInfo::getTempPath() + "txnlog-embed.FCStd";
+    ASSERT_TRUE(doc()->saveAs(path.c_str()));
+    // The save embedded the copy and named the version it becomes.
+    auto history = Base::freecad_dynamic_cast<App::PropertyHistory>(doc()->getPropertyByName("History"));
+    ASSERT_TRUE(history);
+    EXPECT_FALSE(history->isEmpty());
+    auto version = Base::freecad_dynamic_cast<App::PropertyString>(doc()->getPropertyByName("Version"));
+    ASSERT_TRUE(version);
+    EXPECT_EQ(std::string(version->getValue()).substr(0, 2), "2 ");
+    {
+        zipios::ZipFile zip(path);
+        bool db = false;
+        for (const auto& entry : zip.entries())
+            db = db || entry->getName().find(".db") != std::string::npos;
+        EXPECT_TRUE(db);
+    }
+
+    // Opened elsewhere: the log continues from the embedded copy -- the
+    // ops are there, v1 is there, and the file as found is version 2.
+    const std::string copy = Base::FileInfo::getTempPath() + "txnlog-embed-copy.FCStd";
+    ASSERT_TRUE(Base::FileInfo(path).copyTo(copy.c_str()));
+    App::Document* opened = App::GetApplication().openDocument(copy.c_str(), false);
+    ASSERT_TRUE(opened);
+    auto olog = opened->getTransactionLog();
+    ASSERT_TRUE(olog);
+    auto& store = olog->store();
+    auto txns = store.transactions();
+    ASSERT_GE(txns.size(), static_cast<size_t>(seqBefore + 1));
+    EXPECT_EQ(txns.back().kind, "restore");
+    // The copy holds the save's implicit transaction (the date stamp) and
+    // is taken before the save's own record; the restore follows.
+    EXPECT_EQ(txns.back().seq, seqBefore + 2);
+    auto versions = store.versions();
+    ASSERT_EQ(versions.size(), 2u);
+    EXPECT_EQ(versions[0].num, 1);
+    EXPECT_EQ(versions[0].kind, "named");
+    EXPECT_EQ(versions[0].name, "v1");
+    EXPECT_EQ(versions[1].num, 2);
+    EXPECT_EQ(versions[1].kind, "unnamed");
+    // The copy carries no cache-tier values, and reads its own ops' values.
+    bool sawValue = false;
+    for (auto& t : txns) {
+        if (t.name != "edit")
+            continue;
+        for (auto& o : store.ops(t.seq)) {
+            if (!o.vbefore.empty()) {
+                EXPECT_TRUE(store.hasValue(o.vbefore));
+                sawValue = true;
+            }
+        }
+    }
+    EXPECT_TRUE(sawValue);
+    // v1 restores from the embedded history.
+    ASSERT_TRUE(opened->restoreVersion(1));
+    EXPECT_EQ(static_cast<App::FeatureTest*>(opened->getObject("Obj"))->Integer.getValue(), 1);
+    App::GetApplication().closeDocument(opened->getName());
+
+    // Saved again without the mode: the property is emptied, nothing
+    // embedded, and an open finds no history to continue from.
+    App::DocumentParams::setTransactionLog(1);
+    ASSERT_TRUE(doc()->save());
+    EXPECT_TRUE(history->isEmpty());
+    ASSERT_TRUE(Base::FileInfo(path).copyTo(copy.c_str()));
+    opened = App::GetApplication().openDocument(copy.c_str(), false);
+    ASSERT_TRUE(opened);
+    EXPECT_EQ(opened->getTransactionLog()->store().versions().size(), 1u);
+    App::GetApplication().closeDocument(opened->getName());
+
+    Base::FileInfo(path).deleteFile();
+    Base::FileInfo(copy).deleteFile();
 }
 
 }  // namespace

@@ -300,6 +300,30 @@ public:
              " AND hash NOT IN (SELECT substr(line, 1, 40) FROM lines WHERE line<>'')");
     }
 
+    void copyTo(const std::string& path) override
+    {
+        auto s = prepare("VACUUM INTO ?");
+        bindText(s, 1, path);
+        step(s);
+    }
+
+    void dropTier(const std::string& tier) override
+    {
+        exec("BEGIN");
+        try {
+            auto s = prepare("DELETE FROM value WHERE tier=?"
+                             " AND hash NOT IN (SELECT hash FROM manifest WHERE source='value')");
+            bindText(s, 1, tier);
+            step(s);
+            collectValues();
+            exec("COMMIT");
+        }
+        catch (...) {
+            exec("ROLLBACK");
+            throw;
+        }
+    }
+
     bool nameVersion(int64_t num, const std::string& name) override
     {
         auto s = prepare("UPDATE version SET kind=?, name=? WHERE num=?");

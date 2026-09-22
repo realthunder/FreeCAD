@@ -23,6 +23,7 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+# include <algorithm>
 # include <chrono>
 # include <map>
 #endif
@@ -155,6 +156,8 @@ public:
     { return inner().findVersion(docxmlHash, version); }
     std::vector<LogManifestEntry> manifest(int64_t num) override { return inner().manifest(num); }
     void evictVersion(int64_t num) override { inner().evictVersion(num); }
+    void copyTo(const std::string& path) override { inner().copyTo(path); }
+    void dropTier(const std::string& tier) override { inner().dropTier(tier); }
     bool nameVersion(int64_t num, const std::string& name) override
     { return inner().nameVersion(num, name); }
     std::string getMeta(const std::string& key) override { return inner().getMeta(key); }
@@ -201,17 +204,17 @@ TransactionLog::TransactionLog(Document& doc)
         env += '"';
     }
     env += '}';
-    _environment = _store->environment(env);
-    std::string user, host;
+    _envJson = env;
     if (DocumentParams::getTransactionLogIdentity()) {
         auto u = config.find("UserName");
         if (u != config.end())
-            user = u->second;
+            _user = u->second;
         auto h = config.find("HostName");
         if (h != config.end())
-            host = h->second;
+            _host = h->second;
     }
-    _session = _store->openSession(_environment, user, host, now());
+    _environment = _store->environment(_envJson);
+    _session = _store->openSession(_environment, _user, _host, now());
     _config = CaptureConfig(doc);
     _worker = std::thread([this]() { run(); });
     FC_LOG("transaction log " << _path << " session " << _session);
@@ -281,6 +284,75 @@ void TransactionLog::openStore()
         _store->setMeta("document", _doc.Uid.getValueStr());
     _nextSeq = _store->lastSeq();
     _nextVersion = _store->lastVersion();
+    // An adopted embedded copy may have had every version dropped by its
+    // retention; the counter it carries keeps the numbering monotonic.
+    const std::string counter = _store->getMeta("version_counter");
+    if (!counter.empty())
+        _nextVersion = std::max<int64_t>(_nextVersion, std::stoll(counter) - 1);
+}
+
+TransactionLog::Embedded TransactionLog::embed(const std::string& saveDate)
+{
+    flush();
+    Embedded out;
+    out.saveId = Base::Uuid::createUuid();
+    out.version = _nextVersion + 1;
+    const std::string dir = _doc.TransientDir.getStrValue() + "/history";
+    Base::FileInfo(dir).createDirectories();
+    out.path = dir + "/embed-" + out.saveId + ".db";
+    Base::FileInfo(out.path).deleteFile();
+    _store->copyTo(out.path);
+    auto copy = TransactionStore::openSQLite(out.path);
+    // Retention (16.4, 13.3): the named versions travel, the unnamed ones
+    // and the cache tier do not; the ops do.
+    for (const auto& v : copy->versions()) {
+        if (v.kind != "named")
+            copy->evictVersion(v.num);
+    }
+    copy->dropTier("cache");
+    for (const auto& v : copy->versions()) {
+        for (const auto& e : copy->manifest(v.num)) {
+            if (e.source != "blob")
+                continue;
+            std::string ext;
+            auto dot = e.entry.rfind('.');
+            if (dot != std::string::npos)
+                ext = e.entry.substr(dot);
+            out.blobs.emplace_back(e.hash, ext);
+        }
+    }
+    copy->setMeta("save_id", out.saveId);
+    copy->setMeta("save_date", saveDate);
+    copy->setMeta("version_counter", std::to_string(out.version));
+    copy.reset();
+    return out;
+}
+
+bool TransactionLog::adoptStore(const std::string& path)
+{
+    flush();
+    if (_nextSeq != 0 || _nextVersion != 0) {
+        FC_WARN("transaction log of " << _doc.getName() << " has history; not adopting the embedded copy");
+        return false;
+    }
+    if (_store && _session)
+        _store->closeSession(_session, now());
+    _store.reset();
+    Base::FileInfo(_path).deleteFile();
+    Base::FileInfo(_path + "-wal").deleteFile();
+    Base::FileInfo(_path + "-shm").deleteFile();
+    if (!Base::FileInfo(path).copyTo(_path.c_str())) {
+        FC_ERR("cannot adopt the embedded history of " << _doc.getName());
+        openStore();
+        return false;
+    }
+    openStore();
+    _environment = _store->environment(_envJson);
+    _session = _store->openSession(_environment, _user, _host, now());
+    _adopted = true;
+    FC_LOG("transaction log of " << _doc.getName() << " continues from the embedded copy: seq "
+           << _nextSeq << ", next version " << (_nextVersion + 1));
+    return true;
 }
 
 void TransactionLog::closeStore()
@@ -412,12 +484,13 @@ int64_t TransactionLog::onRestore(const std::string& path, const Entries& entrie
                                   const std::vector<std::pair<std::string, std::string>>& blobs,
                                   int schema)
 {
-    if (_nextSeq != 0 || _nextVersion != 0) {
-        // Sec 16.6's second case, a history the file no longer matches, is
-        // the embedded mode's to handle; a session store is always fresh.
+    if (!_adopted && (_nextSeq != 0 || _nextVersion != 0)) {
+        // A store with history at restore is either an adopted embedded
+        // copy, whose version the file now becomes, or a mistake.
         FC_WARN("transaction log of " << _doc.getName() << " is not empty at restore");
         return 0;
     }
+    _adopted = false;
     return snapshot("restore", path, entries, blobs, schema);
 }
 

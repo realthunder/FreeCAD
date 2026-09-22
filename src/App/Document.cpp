@@ -59,6 +59,7 @@ recompute path. Also, it enables more complicated dependencies beyond trees.
 
 #ifndef _PreComp_
 # include <bitset>
+# include <sstream>
 # include <stack>
 # include <boost/filesystem.hpp>
 #endif
@@ -120,6 +121,7 @@ recompute path. Also, it enables more complicated dependencies beyond trees.
 #include "StringHasher.h"
 #include "Transactions.h"
 #include "TransactionMeasure.h"
+#include "PropertyHistory.h"
 #include "TransactionLog.h"
 
 #ifdef _MSC_VER
@@ -3175,6 +3177,9 @@ void Document::save(Base::Writer &writer, bool archive) const {
     };
     getFileBlobManager().beginSave(writer);
     const double tBegin = phaseSplit();
+    // The embedded history (sec 16.4) is a blob like the others and has to
+    // be in place before the collect pass notes what the archive carries.
+    const_cast<Document*>(this)->embedHistory(archive);
     collectFileBlobs();
     const double tCollect = phaseSplit();
 
@@ -3657,6 +3662,10 @@ void Document::restore(Base::XMLReader &reader,
     if (d->restoreTapped) {
         d->restoreTapped = false;
         reader.setEntrySink(nullptr);
+        // A history embedded in the file continues here when the guard
+        // agrees; the snapshot below then becomes the version it expects.
+        if (!testStatus(Document::RestoreError))
+            adoptEmbeddedHistory();
         std::vector<std::pair<std::string, std::string>> entries;
         entries.emplace_back("Document.xml", std::move(d->restoreDocXml));
         d->restoreDocXml.clear();
@@ -3704,6 +3713,105 @@ void Document::restore(Base::XMLReader &reader,
             << ", files " << rt.files.count()
             << ", after " << dAfter.count()
             << ", total " << (dXml + rt.files + dAfter).count() << 's');
+}
+
+void Document::embedHistory(bool archive)
+{
+    // Two document-level dynamic properties, NoModify so that setting them
+    // here opens no transaction and touches nothing (sec 16.4): `History`
+    // holds the copy and the retained manifests' blobs, `Version` the
+    // number this save becomes and the save id the guard on open compares.
+    auto history = Base::freecad_dynamic_cast<PropertyHistory>(getPropertyByName("History"));
+    auto version = Base::freecad_dynamic_cast<PropertyString>(getPropertyByName("Version"));
+    TransactionLog* log = archive && DocumentParams::getTransactionLog() == 2
+        ? getTransactionLog() : nullptr;
+    if (!log) {
+        // Not embedding: a property left from an earlier embedded save is
+        // emptied rather than carried on with stale content.
+        if (history && !history->isEmpty())
+            history->setValue({}, {}, {});
+        return;
+    }
+    try {
+        TransactionLog::Embedded copy = log->embed(LastModifiedDate.getValue());
+        auto& manager = getFileBlobManager();
+        FileBlobHandle db = manager.adoptFile(copy.path.c_str(), "db");
+        std::vector<FileBlobHandle> blobs;
+        std::vector<std::string> exts;
+        for (const auto& b : copy.blobs) {
+            auto blob = manager.find(b.first);
+            if (!blob) {
+                FC_WARN("embedded history of " << getName() << ": blob " << b.first
+                        << " of a named version is not in the store");
+                continue;
+            }
+            blobs.push_back(blob);
+            exts.push_back(b.second);
+        }
+        if (!history) {
+            history = Base::freecad_dynamic_cast<PropertyHistory>(addDynamicProperty(
+                "App::PropertyHistory", "History", "Base",
+                "The embedded transaction log (docs/TransactionLog.md sec 16.4)",
+                Prop_Hidden | Prop_ReadOnly));
+            if (history)
+                history->setStatus(Property::NoModify, true);
+        }
+        if (!version) {
+            version = Base::freecad_dynamic_cast<PropertyString>(addDynamicProperty(
+                "App::PropertyString", "Version", "Base",
+                "The version of the transaction log this file is, and its save id",
+                Prop_Hidden | Prop_ReadOnly));
+            if (version)
+                version->setStatus(Property::NoModify, true);
+        }
+        if (!history || !version)
+            THROWM(Base::RuntimeError, "cannot add the history properties");
+        history->setValue(db, blobs, exts);
+        version->setValue(std::to_string(copy.version) + " " + copy.saveId);
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("embedding the history of " << getName() << " failed: " << e.what());
+    }
+}
+
+bool Document::adoptEmbeddedHistory()
+{
+    // The guard of sec 16.4 (as planned in sec 21): the file carries a
+    // history, and continues from it only if the save that wrote both
+    // sides is the one the file is from -- the save id in `Version` and
+    // the copy's meta agree, and so does the date the save stamped. A
+    // FreeCAD that knows nothing of the log restamps the date.
+    auto history = Base::freecad_dynamic_cast<PropertyHistory>(getPropertyByName("History"));
+    auto version = Base::freecad_dynamic_cast<PropertyString>(getPropertyByName("Version"));
+    if (!history || history->isEmpty() || !version)
+        return false;
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        return false;
+    history->setStatus(Property::NoModify, true);
+    version->setStatus(Property::NoModify, true);
+    std::string saveId;
+    {
+        std::istringstream in(version->getValue());
+        int64_t num = 0;
+        in >> num >> saveId;
+    }
+    try {
+        auto copy = TransactionStore::openSQLite(history->getDatabase()->path());
+        const std::string id = copy->getMeta("save_id");
+        const std::string date = copy->getMeta("save_date");
+        copy.reset();
+        if (id.empty() || id != saveId || date != LastModifiedDate.getValue()) {
+            FC_WARN("the embedded history of " << getName()
+                    << " is not the file's (edited elsewhere?): set aside");
+            return false;
+        }
+        return log->adoptStore(history->getDatabase()->path());
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("embedded history of " << getName() << ": " << e.what());
+    }
+    return false;
 }
 
 int64_t Document::snapshotToLog()
