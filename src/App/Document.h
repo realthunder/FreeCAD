@@ -337,6 +337,14 @@ public:
      */
     bool wantsFileEntries() const;
     void noteFileEntry(const std::string& name, std::string bytes);
+    /** An unnamed version of the document as it stands (docs/TransactionLog.md
+     * sec 16.3): the serialisation of a save -- blobs made, Document.xml
+     * and GuiDocument.xml streamed -- into the log and nothing on disk but
+     * the store. Taken on the cadence DocumentParams::TransactionLogSnapshot*
+     * gives, at commit, or on demand. Returns the version number, 0 when
+     * there is no log or the document is not in a state to snapshot.
+     */
+    int64_t snapshotToLog();
     /// Whether writes are recorded into transactions at all: undo is on,
     /// or the log is (which records without keeping undo steps).
     bool transactionsWanted() const;
@@ -964,6 +972,8 @@ protected:
 
     /// Close the Document.xml tap restore(const char*) opened for the log.
     void endRestoreTap(Base::XMLReader& reader);
+    /// A version was taken: the snapshot cadence starts over.
+    void noteVersionTaken();
 
 private:
     // # Data Member of the document +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

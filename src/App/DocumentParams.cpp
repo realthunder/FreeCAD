@@ -87,6 +87,8 @@ public:
         signalParamChanged("TransactionLog");
         signalParamChanged("TransactionLogIdentity");
         signalParamChanged("TransactionLogDerived");
+        signalParamChanged("TransactionLogSnapshotTransactions");
+        signalParamChanged("TransactionLogSnapshotSeconds");
         signalParamChanged("RelativeStringID");
         signalParamChanged("HashIndexedName");
         signalParamChanged("EnableMaterialEdit");
@@ -136,6 +138,8 @@ public:
     long TransactionLog;
     bool TransactionLogIdentity;
     long TransactionLogDerived;
+    long TransactionLogSnapshotTransactions;
+    long TransactionLogSnapshotSeconds;
     bool RelativeStringID;
     bool HashIndexedName;
     bool EnableMaterialEdit;
@@ -229,6 +233,10 @@ public:
         funcs["TransactionLogIdentity"] = &DocumentParamsP::updateTransactionLogIdentity;
         TransactionLogDerived = this->handle->GetInt("TransactionLogDerived", 1);
         funcs["TransactionLogDerived"] = &DocumentParamsP::updateTransactionLogDerived;
+        TransactionLogSnapshotTransactions = this->handle->GetInt("TransactionLogSnapshotTransactions", 0);
+        funcs["TransactionLogSnapshotTransactions"] = &DocumentParamsP::updateTransactionLogSnapshotTransactions;
+        TransactionLogSnapshotSeconds = this->handle->GetInt("TransactionLogSnapshotSeconds", 0);
+        funcs["TransactionLogSnapshotSeconds"] = &DocumentParamsP::updateTransactionLogSnapshotSeconds;
         RelativeStringID = this->handle->GetBool("RelativeStringID", true);
         funcs["RelativeStringID"] = &DocumentParamsP::updateRelativeStringID;
         HashIndexedName = this->handle->GetBool("HashIndexedName", false);
@@ -419,6 +427,14 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateTransactionLogDerived(DocumentParamsP *self) {
         self->TransactionLogDerived = self->handle->GetInt("TransactionLogDerived", 1);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateTransactionLogSnapshotTransactions(DocumentParamsP *self) {
+        self->TransactionLogSnapshotTransactions = self->handle->GetInt("TransactionLogSnapshotTransactions", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateTransactionLogSnapshotSeconds(DocumentParamsP *self) {
+        self->TransactionLogSnapshotSeconds = self->handle->GetInt("TransactionLogSnapshotSeconds", 0);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateRelativeStringID(DocumentParamsP *self) {
@@ -628,6 +644,17 @@ static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
         .setDoc("What the transaction log does with derived values, i.e. values\n"
 "written by their own object recompute (sec 10): 0 none (the op\n"
 "notes the change, no value), 1 cache (evictable tier), 2 full."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "TransactionLogSnapshotTransactions", "TransactionLogSnapshotTransactions", App::ParamInfo::Int, 0)
+        .setTitle("Transaction Log Snapshot Transactions")
+        .setDoc("The transaction log takes an unnamed version (sec 16.3) every\n"
+"this many committed transactions since the last version; 0 for\n"
+"none. A snapshot serialises the document like a save, without\n"
+"writing an archive."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "TransactionLogSnapshotSeconds", "TransactionLogSnapshotSeconds", App::ParamInfo::Int, 0)
+        .setTitle("Transaction Log Snapshot Seconds")
+        .setDoc("The transaction log takes an unnamed version (sec 16.3) at the\n"
+"first commit this many seconds after the last version; 0 for\n"
+"none."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "RelativeStringID", "RelativeStringID", App::ParamInfo::Bool, true)
         .setTitle("Relative String ID"),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "HashIndexedName", "HashIndexedName", App::ParamInfo::Bool, false)
@@ -1863,6 +1890,67 @@ void DocumentParams::setTransactionLogDerived(const long &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void DocumentParams::removeTransactionLogDerived() {
     instance()->handle->RemoveInt("TransactionLogDerived");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docTransactionLogSnapshotTransactions() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"The transaction log takes an unnamed version (sec 16.3) every\n"
+"this many committed transactions since the last version; 0 for\n"
+"none. A snapshot serialises the document like a save, without\n"
+"writing an archive.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & DocumentParams::getTransactionLogSnapshotTransactions() {
+    return instance()->TransactionLogSnapshotTransactions;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & DocumentParams::defaultTransactionLogSnapshotTransactions() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setTransactionLogSnapshotTransactions(const long &v) {
+    instance()->handle->SetInt("TransactionLogSnapshotTransactions",v);
+    instance()->TransactionLogSnapshotTransactions = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeTransactionLogSnapshotTransactions() {
+    instance()->handle->RemoveInt("TransactionLogSnapshotTransactions");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docTransactionLogSnapshotSeconds() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"The transaction log takes an unnamed version (sec 16.3) at the\n"
+"first commit this many seconds after the last version; 0 for\n"
+"none.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & DocumentParams::getTransactionLogSnapshotSeconds() {
+    return instance()->TransactionLogSnapshotSeconds;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & DocumentParams::defaultTransactionLogSnapshotSeconds() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setTransactionLogSnapshotSeconds(const long &v) {
+    instance()->handle->SetInt("TransactionLogSnapshotSeconds",v);
+    instance()->TransactionLogSnapshotSeconds = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeTransactionLogSnapshotSeconds() {
+    instance()->handle->RemoveInt("TransactionLogSnapshotSeconds");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

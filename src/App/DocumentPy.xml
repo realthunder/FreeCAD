@@ -317,6 +317,15 @@ each a dict with num, uuid, branch, kind, name, seq, env, docxml, schema,
 created, and manifest: a list of (entry, hash, source).</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="snapshotTransactionLog">
+      <Documentation>
+        <UserDocu>snapshotTransactionLog() -> int
+
+Take an unnamed version of the document as it stands into its transaction
+log (docs/TransactionLog.md sec 16.3): a save's serialisation with no
+archive written. Returns the version number, 0 if there is no log.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="resolveTransactionLog">
       <Documentation>
         <UserDocu>resolveTransactionLog() -> int

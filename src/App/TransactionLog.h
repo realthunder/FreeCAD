@@ -135,6 +135,11 @@ public:
     int64_t onRestore(const std::string& path, const Entries& entries,
                       const std::vector<std::pair<std::string, std::string>>& blobs, int schema);
 
+    /// The unnamed version between saves (sec 16.3), from
+    /// Document::snapshotToLog: like onSave, with a `snapshot` record.
+    int64_t onSnapshot(const Entries& entries,
+                       const std::vector<std::pair<std::string, std::string>>& blobs, int schema);
+
     int64_t session() const { return _session; }
     int64_t environment() const { return _environment; }
 

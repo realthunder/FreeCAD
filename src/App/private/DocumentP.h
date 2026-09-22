@@ -111,6 +111,11 @@ struct DocumentP
     /// restore in progress (GuiDocument.xml), for the version manifest.
     std::vector<std::pair<std::string, std::string>> fileEntries;
     bool wantsFileEntries {false};
+    /// The cadence of unnamed versions (sec 16.3): commits since the last
+    /// version, and when it was taken (steady clock seconds).
+    long commitsSinceVersion {0};
+    double lastVersionTime {0};
+    bool snapshotting {false};
 #ifdef USE_OLD_DAG
     DependencyList DepList;
     std::map<DocumentObject*, Vertex> VertexObjectList;

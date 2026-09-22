@@ -79,6 +79,7 @@ private Q_SLOTS:
     void onTabChanged(int index);
     void onFilterChanged(const QString& text);
     void onResolvePending();
+    void onSnapshot();
     void onTransactionContextMenu(const QPoint& pos);
 
 protected:
@@ -111,6 +112,7 @@ private:
     QLabel* _status {nullptr};
     QLineEdit* _filter {nullptr};
     QPushButton* _resolve {nullptr};
+    QPushButton* _snapshot {nullptr};
     QTabWidget* _tabs {nullptr};
     QStackedWidget* _detail {nullptr};
     QTreeWidget* _transactions {nullptr};

@@ -555,4 +555,54 @@ TEST_F(TransactionLogTest, historyInitialisedFromFile)
     Base::FileInfo(copy).deleteFile();
 }
 
+TEST_F(TransactionLogTest, snapshotAndCadence)
+{
+    doc()->openTransaction("create");
+    auto obj = make("Obj");
+    obj->Integer.setValue(1);
+    doc()->commitTransaction();
+
+    // On demand: a version like a save's, with no file written, and a
+    // `snapshot` record naming it; the pending after refs resolve first.
+    EXPECT_GT(log().pendingCount(), 0u);
+    int64_t num = doc()->snapshotToLog();
+    EXPECT_EQ(num, 1);
+    EXPECT_EQ(log().pendingCount(), 0u);
+    auto& store = log().store();
+    auto versions = store.versions();
+    ASSERT_EQ(versions.size(), 1u);
+    EXPECT_EQ(versions[0].kind, "unnamed");
+    auto manifest = store.manifest(1);
+    ASSERT_GE(manifest.size(), 1u);
+    EXPECT_EQ(manifest[0].entry, "Document.xml");
+    App::CapturedValue xml;
+    ASSERT_TRUE(log().readValue(manifest[0].hash, xml));
+    EXPECT_NE(xml.fragment.find("Document SchemaVersion="), std::string::npos)
+        << xml.fragment.substr(0, 400);
+    EXPECT_NE(xml.fragment.find("Obj"), std::string::npos);
+    auto txns = store.transactions();
+    EXPECT_EQ(txns.back().kind, "snapshot");
+    EXPECT_TRUE(Base::FileInfo(doc()->FileName.getValue()).fileName().empty());
+
+    // The cadence: every N commits since the last version.
+    const long every = App::DocumentParams::getTransactionLogSnapshotTransactions();
+    App::DocumentParams::setTransactionLogSnapshotTransactions(3);
+    for (int i = 0; i < 7; ++i) {
+        doc()->openTransaction("edit");
+        obj->Integer.setValue(10 + i);
+        doc()->commitTransaction();
+    }
+    App::DocumentParams::setTransactionLogSnapshotTransactions(every);
+    // 7 commits after the on-demand version: versions at the 3rd and 6th.
+    EXPECT_EQ(store.versions().size(), 3u);
+    // A snapshot is never taken inside an open transaction.
+    App::DocumentParams::setTransactionLogSnapshotTransactions(1);
+    doc()->openTransaction("open");
+    obj->Integer.setValue(99);
+    EXPECT_EQ(doc()->snapshotToLog(), 0);
+    doc()->commitTransaction();
+    App::DocumentParams::setTransactionLogSnapshotTransactions(every);
+    EXPECT_EQ(store.versions().size(), 4u);
+}
+
 }  // namespace

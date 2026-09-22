@@ -172,6 +172,15 @@ Params = [
         doc='What the transaction log does with derived values, i.e. values\n'
             'written by their own object recompute (sec 10): 0 none (the op\n'
             'notes the change, no value), 1 cache (evictable tier), 2 full.'),
+    ParamInt('TransactionLogSnapshotTransactions', 0,
+        doc='The transaction log takes an unnamed version (sec 16.3) every\n'
+            'this many committed transactions since the last version; 0 for\n'
+            'none. A snapshot serialises the document like a save, without\n'
+            'writing an archive.'),
+    ParamInt('TransactionLogSnapshotSeconds', 0,
+        doc='The transaction log takes an unnamed version (sec 16.3) at the\n'
+            'first commit this many seconds after the last version; 0 for\n'
+            'none.'),
     ParamBool('RelativeStringID', True),
     ParamBool('HashIndexedName', False,
         doc='Enable special encoding of indexes name in toponaming. Disabled by\n'

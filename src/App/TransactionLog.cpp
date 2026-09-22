@@ -378,6 +378,13 @@ int64_t TransactionLog::onSave(const std::string& path, const Entries& entries,
     return snapshot("save", path, entries, blobs, schema);
 }
 
+int64_t TransactionLog::onSnapshot(const Entries& entries,
+                                   const std::vector<std::pair<std::string, std::string>>& blobs,
+                                   int schema)
+{
+    return snapshot("snapshot", _doc.FileName.getValue(), entries, blobs, schema);
+}
+
 int64_t TransactionLog::onRestore(const std::string& path, const Entries& entries,
                                   const std::vector<std::pair<std::string, std::string>>& blobs,
                                   int schema)

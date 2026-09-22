@@ -1520,9 +1520,9 @@ with no ops whose `script` is `{version, docxml, blobs, path}`. `truncate`
 keeps every value a manifest names. `TransactionStore` gained
 `addVersion`, `versions`, `getVersion`, `findVersion(docxml_hash)` and
 `manifest`; Python reads them through `Document.getTransactionVersions()`.
-`GuiDocument.xml` joined the manifest the next day (below); not yet:
-the cadence between saves, eviction, and the checkout that reads a
-manifest back.
+`GuiDocument.xml` joined the manifest the next day, and the cadence
+between saves with it (below); not yet: eviction, and the checkout that
+reads a manifest back.
 
 **The history initialised from a file, as built** (2026-09-22, section
 16.6). `Document::restore(const char*)` taps `Document.xml` on its way
@@ -1665,8 +1665,31 @@ the count moves. Selecting a manifest row shows the entry's bytes (a
 value pane. Read-only still; naming, restore-to-here and trimming
 arrive with their phases.
 
-**Next.** The phase-1 remainder: the cadence between saves (16.3),
-eviction, and the checkout that reads a manifest back.
+**The snapshot between saves, as built** (2026-09-23, 16.3 and 22.1).
+`Document::snapshotToLog()` is a save's serialisation with the archive
+left out -- what `AutoSaver` did for the recovery file, which it is to
+replace: a `Base::NullWriter` (a writer whose sink discards) configured
+like a save, `beginSave` + `collectFileBlobs()` so the changed shapes
+are written into the store, `Document::Save` tapped into `Document.xml`,
+`signalSaveDocument` + `writeFiles()` so the Gui entry comes through
+its own tap, then `TransactionLog::onSnapshot` -- `snapshot()` again,
+with a `snapshot` record -- and the manifest from `collected()`. Refused
+inside an open transaction, during a restore, on a partial document and
+while one is in progress. Taken on demand
+(`Document.snapshotTransactionLog()`, the panel's Snapshot button) and
+on the cadence: `TransactionLogSnapshotTransactions` (every N commits
+since the last version) and `TransactionLogSnapshotSeconds` (the first
+commit T seconds after it), both 0 -- off -- by default while the mode
+is a staging switch; a save or a restore restarts the count. It runs on
+the main thread at the end of the commit, which is the cost of a save's
+object pass; decision 8's "background job" is not possible for
+`Document.xml`, which only the main thread can produce, so the cadence
+is the knob. The ninth gtest takes one on demand and checks the value
+holds the document, then sets N=3 and counts the versions seven commits
+make.
+
+**Next.** Eviction of unnamed versions (16.3), and the checkout that
+reads a manifest back (16.1).
 
 ## 22. The end state, and the browser as a development tool (user, 2026-09-22)
 

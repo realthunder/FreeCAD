@@ -567,9 +567,24 @@ void Document::_commitTransaction(bool notify)
         if (TransactionMeasure::enabled())
             TransactionMeasure::onCommit(*this, *d->activeUndoTransaction);
         const bool implicit = d->activeUndoTransaction->Implicit;
-        if (auto log = getTransactionLog())
+        bool snapshotDue = false;
+        if (auto log = getTransactionLog()) {
             log->onCommit(*d->activeUndoTransaction, implicit ? "implicit" : "user",
                           d->activeUndoTransaction->Origin.c_str());
+            // The cadence of unnamed versions (docs/TransactionLog.md sec
+            // 16.3): every N commits, or the first commit T seconds after
+            // the last version. Taken once the commit is complete, below.
+            ++d->commitsSinceVersion;
+            const long every = DocumentParams::getTransactionLogSnapshotTransactions();
+            const long secs = DocumentParams::getTransactionLogSnapshotSeconds();
+            if (every > 0 && d->commitsSinceVersion >= every)
+                snapshotDue = true;
+            if (secs > 0 && d->lastVersionTime > 0
+                    && std::chrono::duration<double>(
+                           std::chrono::steady_clock::now().time_since_epoch()).count()
+                       - d->lastVersionTime >= secs)
+                snapshotDue = true;
+        }
         if (d->iUndoMode) {
             mUndoTransactions.push_back(d->activeUndoTransaction);
         }
@@ -589,6 +604,8 @@ void Document::_commitTransaction(bool notify)
 
         if (notify && !implicit)
             GetApplication().closeActiveTransaction(false,id);
+        if (snapshotDue)
+            snapshotToLog();
     }
 }
 
@@ -3229,7 +3246,8 @@ void Document::save(Base::Writer &writer, bool archive) const {
         for (auto& e : d->fileEntries)
             entries.push_back(std::move(e));
         d->fileEntries.clear();
-        log->onSave(FileName.getValue(), entries, blobs, writer.getSchemaVersion());
+        if (log->onSave(FileName.getValue(), entries, blobs, writer.getSchemaVersion()))
+            const_cast<Document*>(this)->noteVersionTaken();
     }
 
     GetApplication().signalSaveDocument(*this);
@@ -3638,7 +3656,8 @@ void Document::restore(Base::XMLReader &reader,
                 std::string ext = Base::FileInfo(blob->path()).extension();
                 blobs.emplace_back(blob->hash() + (ext.empty() ? "" : "." + ext), blob->hash());
             }
-            log->onRestore(FileName.getValue(), entries, blobs, reader.DocumentSchema);
+            if (log->onRestore(FileName.getValue(), entries, blobs, reader.DocumentSchema))
+                noteVersionTaken();
         }
     }
 
@@ -3689,6 +3708,77 @@ void Document::noteFileEntry(const std::string& name, std::string bytes)
         }
     }
     d->fileEntries.emplace_back(name, std::move(bytes));
+}
+
+int64_t Document::snapshotToLog()
+{
+    TransactionLog* log = getTransactionLog();
+    if (!log || d->snapshotting || testStatus(PartialDoc) || testStatus(Restoring)
+            || isPerformingTransaction() || d->activeUndoTransaction)
+        return 0;
+    Base::FlagToggler<> guard(d->snapshotting);
+    // A save's serialisation with the archive left out (what AutoSaver did
+    // for recovery, sec 22.1): the blobs are made in the store, Document.xml
+    // and the Gui entry stream through the taps, and the log gets the
+    // version with the manifest a save would give it.
+    try {
+        Base::NullWriter writer;
+        writer.setFileVersion(2);
+        writer.setForceXML(ForceXML.getValue());
+        writer.setSplitXML(SplitXML.getValue());
+        writer.setSchemaVersion(resolveSchemaVersion(writer));
+        if (PreferBinary.getValue()) {
+            writer.setMode("BinaryBrep");
+            writer.setPreferBinary(true);
+        }
+        else {
+            writer.setPreferBinary(false);
+        }
+        getFileBlobManager().beginSave(writer);
+        collectFileBlobs();
+
+        d->fileEntries.clear();
+        d->wantsFileEntries = true;
+        std::string docXml;
+        writer.putNextEntry("Document.xml");
+        writer.beginTap([&docXml](const char* p, std::size_t n) { docXml.append(p, n); });
+        writer.Stream() << "<?xml version='1.0' encoding='utf-8'?>\n"
+                        << "<!--\n"
+                        << " FreeCAD Document, see http://www.freecadweb.org for more information...\n"
+                        << "-->\n";
+        Document::Save(writer);
+        writer.endTap();
+        signalSaveDocument(writer);
+        writer.writeFiles();
+        d->wantsFileEntries = false;
+
+        std::vector<std::pair<std::string, std::string>> blobs;
+        for (const auto& blob : getFileBlobManager().collected()) {
+            std::string ext = Base::FileInfo(blob->path()).extension();
+            blobs.emplace_back(blob->hash() + (ext.empty() ? "" : "." + ext), blob->hash());
+        }
+        std::vector<std::pair<std::string, std::string>> entries;
+        entries.emplace_back("Document.xml", std::move(docXml));
+        for (auto& e : d->fileEntries)
+            entries.push_back(std::move(e));
+        d->fileEntries.clear();
+        int64_t num = log->onSnapshot(entries, blobs, writer.getSchemaVersion());
+        if (num)
+            noteVersionTaken();
+        return num;
+    }
+    catch (Base::Exception& e) {
+        d->wantsFileEntries = false;
+        FC_ERR("snapshot of " << getName() << " failed: " << e.what());
+    }
+    return 0;
+}
+
+void Document::noteVersionTaken()
+{
+    d->commitsSinceVersion = 0;
+    d->lastVersionTime = std::chrono::duration<double>(
+                             std::chrono::steady_clock::now().time_since_epoch()).count();
 }
 
 void Document::endRestoreTap(Base::XMLReader& reader)

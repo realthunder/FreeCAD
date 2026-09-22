@@ -100,6 +100,9 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     _resolve = new QPushButton(tr("Resolve pending"), this);
     _resolve->setToolTip(tr("Serialise the live value behind every pending 'after' reference"));
     bar->addWidget(_resolve);
+    _snapshot = new QPushButton(tr("Snapshot"), this);
+    _snapshot->setToolTip(tr("Take an unnamed version of the document as it stands (sec 16.3)"));
+    bar->addWidget(_snapshot);
     layout->addLayout(bar);
 
     _status = new QLabel(this);
@@ -189,6 +192,7 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     connect(_tabs, &QTabWidget::currentChanged, this, &TransactionLogView::onTabChanged);
     connect(_filter, &QLineEdit::textChanged, this, &TransactionLogView::onFilterChanged);
     connect(_resolve, &QPushButton::clicked, this, &TransactionLogView::onResolvePending);
+    connect(_snapshot, &QPushButton::clicked, this, &TransactionLogView::onSnapshot);
 
     //NOLINTBEGIN
     _connActiveDoc = Application::Instance->signalActiveDocument.connect(
@@ -601,6 +605,21 @@ void TransactionLogView::onResolvePending()
     updateStatus();
 }
 
+void TransactionLogView::onSnapshot()
+{
+    if (!_doc)
+        return;
+    try {
+        _doc->snapshotToLog();
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("transaction log view: " << e.what());
+    }
+    refresh();
+    if (_tabs->currentIndex() == 1 && _versions->topLevelItemCount() > 0)
+        _versions->setCurrentItem(_versions->topLevelItem(_versions->topLevelItemCount() - 1));
+}
+
 void TransactionLogView::onTransactionContextMenu(const QPoint& pos)
 {
     auto item = _transactions->itemAt(pos);
@@ -627,6 +646,7 @@ void TransactionLogView::updateStatus()
     if (!_doc) {
         _status->setText(tr("No active document"));
         _resolve->setEnabled(false);
+        _snapshot->setEnabled(false);
         return;
     }
     auto l = log();
@@ -638,9 +658,11 @@ void TransactionLogView::updateStatus()
             _status->setText(tr("%1: no log yet (made at the first commit)")
                                  .arg(QString::fromUtf8(_doc->getName())));
         _resolve->setEnabled(false);
+        _snapshot->setEnabled(false);
         return;
     }
     _resolve->setEnabled(true);
+    _snapshot->setEnabled(true);
     size_t versions = 0;
     try {
         versions = l->store().versions().size();

@@ -1002,6 +1002,15 @@ PyObject* DocumentPy::getTransactionVersions(PyObject *args)
     } PY_CATCH;
 }
 
+PyObject* DocumentPy::snapshotTransactionLog(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    PY_TRY {
+        return Py::new_reference_to(Py::Long(static_cast<long>(getDocumentPtr()->snapshotToLog())));
+    } PY_CATCH;
+}
+
 PyObject* DocumentPy::resolveTransactionLog(PyObject *args)
 {
     if (!PyArg_ParseTuple(args, ""))

@@ -387,6 +387,29 @@ private:
     std::ostringstream StrStream;
 };
 
+/** A writer that keeps nothing.
+ *
+ * Every entry streams into a sink that discards it, so a document can be
+ * serialised for the side effects of a save -- the blobs made, the taps
+ * fed, the entries served -- without an archive: the transaction log's
+ * snapshot between saves (docs/TransactionLog.md sec 16.3) is one.
+ */
+class BaseExport NullWriter: public Writer
+{
+public:
+    NullWriter();
+    ~NullWriter() override;
+
+    std::ostream& Stream() override { return _stream; }
+    /// Serves every requested entry into the sink, in registration order.
+    void writeFiles() override;
+
+private:
+    class NullBuf;
+    std::unique_ptr<NullBuf> _buf;
+    std::ostream _stream;
+};
+
 /*! The FileWriter class
   This class writes out the data into files into a given directory name.
   \see Base::Persistence

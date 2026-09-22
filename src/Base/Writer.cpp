@@ -536,6 +536,41 @@ void StringWriter::writeFiles() {
 
 // ----------------------------------------------------------------------------
 
+class NullWriter::NullBuf : public std::streambuf
+{
+protected:
+    int overflow(int c) override { return traits_type::not_eof(c); }
+    std::streamsize xsputn(const char*, std::streamsize n) override { return n; }
+};
+
+NullWriter::NullWriter()
+    : _buf(std::make_unique<NullBuf>())
+    , _stream(nullptr)
+{
+    _stream.rdbuf(_buf.get());
+    _stream.precision(std::numeric_limits<double>::digits10 + 1);
+}
+
+NullWriter::~NullWriter()
+{
+    endTap();
+}
+
+void NullWriter::writeFiles()
+{
+    size_t index = 0;
+    while (index < FileList.size()) {
+        FileEntry entry = FileList[index];
+        putNextEntry(entry.FileName.c_str());
+        indent = 0;
+        indBuf[0] = 0;
+        entry.Object->SaveDocFile(*this);
+        index++;
+    }
+}
+
+// ----------------------------------------------------------------------------
+
 FileWriter::FileWriter(const char* DirName)
     : DirName(DirName)
 {}

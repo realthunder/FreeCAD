@@ -588,6 +588,35 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter TransactionLogSnapshotTransactions
+    ///
+    /// The transaction log takes an unnamed version (sec 16.3) every
+    /// this many committed transactions since the last version; 0 for
+    /// none. A snapshot serialises the document like a save, without
+    /// writing an archive.
+    static const long & getTransactionLogSnapshotTransactions();
+    static const long & defaultTransactionLogSnapshotTransactions();
+    static void removeTransactionLogSnapshotTransactions();
+    static void setTransactionLogSnapshotTransactions(const long &v);
+    static const char *docTransactionLogSnapshotTransactions();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter TransactionLogSnapshotSeconds
+    ///
+    /// The transaction log takes an unnamed version (sec 16.3) at the
+    /// first commit this many seconds after the last version; 0 for
+    /// none.
+    static const long & getTransactionLogSnapshotSeconds();
+    static const long & defaultTransactionLogSnapshotSeconds();
+    static void removeTransactionLogSnapshotSeconds();
+    static void setTransactionLogSnapshotSeconds(const long &v);
+    static const char *docTransactionLogSnapshotSeconds();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter RelativeStringID
     static const bool & getRelativeStringID();
     static const bool & defaultRelativeStringID();
