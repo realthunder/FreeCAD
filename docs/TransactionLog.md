@@ -1746,6 +1746,42 @@ What remains of the versions story is the embedded mode (16.4,
 `PropertyHistory`); phase 3 (undo over the log) starts from the
 checkout.
 
+**The embedded mode, plan** (2026-09-23, before building). Two things
+the survey of the code settled:
+
+- No referrer-interface extension is needed: `FileBlobManager::_pending`
+  is a list of (hash, referrer) pairs and `assignRestoredBlob` is called
+  once per blob, so a referrer restored several blobs tells them apart
+  by `blob->hash()`. 16.4's "one small extension" is withdrawn.
+- **The hash guard cannot be the `Document.xml` hash** for the version
+  a save makes: the embedded database is a blob, and blobs are collected
+  and fixed before `Document.xml` streams, so the copy inside the file
+  cannot know the hash of the `Document.xml` it is inside. The guard is a
+  **save id** instead: a uuid minted by the save, written into the
+  embedded copy's `meta` (`save_id`) and into the document's `Version`
+  property (`"<num> <uuid>"`, `num` the version this save becomes),
+  together with the `LastModifiedDate` the save stamps. On open the two
+  sides agree when the ids match and the date matches; a FreeCAD that
+  knows nothing of the log round-trips both properties unchanged but
+  restamps `LastModifiedDate`, which is what catches an edit made there.
+  A match means the live log continues from the embedded copy and the
+  file as found becomes version `num` (its `Document.xml` hash is taken
+  then, as 16.6 does); a mismatch sets the copy aside and starts a
+  history from the file as found (16.6), the closed-branch bookkeeping
+  waiting for branches.
+
+The pieces, in order: `App::PropertyHistory` (a `BlobReferrerProperty`
+holding the database blob and a handle per blob the retained manifests
+name, with each one's extension; `Save` writes hashes only, at schema 5;
+`collectBlobs` notes them all); `TransactionStore::copyTo` (`VACUUM
+INTO`) and the retention applied on the copy (unnamed versions and
+`cache`-tier values dropped, ops kept under the 13.3 budget); the save
+path (mode 2: flush, copy, retain, adopt the copy as a blob, set the
+document-level dynamic `History` and `Version` properties before the
+collect pass); the open path (the guard, then `TransactionLog` adopting
+the copy as its store before the on-open snapshot); "save a copy without
+history"; the panel's mode indicator.
+
 ## 22. The end state, and the browser as a development tool (user, 2026-09-22)
 
 Two rulings, recorded before phase 1 continues. Where they disagree with
