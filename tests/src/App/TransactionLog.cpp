@@ -363,7 +363,6 @@ TEST_F(TransactionLogTest, recomputeRecordAndSession)
 
 TEST_F(TransactionLogTest, saveRecordAndVersion)
 {
-    auto& store = log().store();
     doc()->openTransaction("create");
     auto obj = make("Obj");
     obj->Integer.setValue(11);
@@ -377,6 +376,9 @@ TEST_F(TransactionLogTest, saveRecordAndVersion)
     // A snapshot resolves what was pending first (sec 21).
     EXPECT_EQ(log().pendingCount(), 0u);
 
+    // saveAs renames the transient directory, and the store moved with it.
+    auto& store = log().store();
+    EXPECT_EQ(log().path().find(doc()->TransientDir.getStrValue()), 0u) << log().path();
     auto versions = store.versions();
     ASSERT_EQ(versions.size(), 1u);
     const auto& v = versions[0];
@@ -427,6 +429,81 @@ TEST_F(TransactionLogTest, saveRecordAndVersion)
     EXPECT_TRUE(store.hasValue(v.docxml_hash));
 
     Base::FileInfo(path).deleteFile();
+}
+
+TEST_F(TransactionLogTest, historyInitialisedFromFile)
+{
+    doc()->openTransaction("create");
+    auto obj = make("Obj");
+    obj->Integer.setValue(11);
+    doc()->commitTransaction();
+    const std::string path = Base::FileInfo::getTempPath() + "txnlog-open.FCStd";
+    ASSERT_TRUE(doc()->saveAs(path.c_str()));
+
+    zipios::ZipFile zip(path);
+    std::unique_ptr<std::istream> entry(zip.getInputStream("Document.xml"));
+    ASSERT_TRUE(entry);
+    std::string fromFile((std::istreambuf_iterator<char>(*entry)), std::istreambuf_iterator<char>());
+    ASSERT_FALSE(fromFile.empty());
+    // openDocument() hands back a document already open at that path, so
+    // the file is opened under another name.
+    const std::string copy = Base::FileInfo::getTempPath() + "txnlog-open-copy.FCStd";
+    ASSERT_TRUE(Base::FileInfo(path).copyTo(copy.c_str()));
+
+    // Both archive readers: the random-access one and the forward-only one
+    // the tap has to be ended in front of (sec 16.6).
+    const bool randomAccess = App::DocumentParams::getArchiveRandomAccess();
+    for (bool mode : {true, false}) {
+        App::DocumentParams::setArchiveRandomAccess(mode);
+        App::Document* opened = App::GetApplication().openDocument(copy.c_str(), false);
+        App::DocumentParams::setArchiveRandomAccess(randomAccess);
+        ASSERT_TRUE(opened) << "random access " << mode;
+        auto olog = opened->getTransactionLog();
+        ASSERT_TRUE(olog);
+        auto& store = olog->store();
+        // The store followed the transient directory the restored Uid renamed.
+        EXPECT_EQ(olog->path().find(opened->TransientDir.getStrValue()), 0u)
+            << olog->path() << " not under " << opened->TransientDir.getValue();
+        EXPECT_TRUE(Base::FileInfo(olog->path()).exists());
+
+        // Version 1 is the file as found, and the restore record names it.
+        auto versions = store.versions();
+        ASSERT_EQ(versions.size(), 1u) << "random access " << mode;
+        const auto& v = versions[0];
+        EXPECT_EQ(v.num, 1);
+        EXPECT_EQ(v.kind, "unnamed");
+        EXPECT_EQ(v.seq, 0);
+        EXPECT_GT(v.schema, 0);
+        EXPECT_EQ(v.docxml_hash, App::hashBytes(fromFile)) << "random access " << mode;
+        App::CapturedValue stored;
+        ASSERT_TRUE(olog->readValue(v.docxml_hash, stored));
+        EXPECT_EQ(stored.fragment, fromFile);
+        auto manifest = store.manifest(v.num);
+        ASSERT_GE(manifest.size(), 1u);
+        EXPECT_EQ(manifest[0].entry, "Document.xml");
+
+        auto txns = store.transactions();
+        ASSERT_EQ(txns.size(), 1u);
+        EXPECT_EQ(txns[0].kind, "restore");
+        EXPECT_EQ(txns[0].parent, 0);
+        EXPECT_NE(txns[0].script.find("\"version\":1"), std::string::npos) << txns[0].script;
+        EXPECT_TRUE(store.ops(txns[0].seq).empty());
+        EXPECT_EQ(olog->pendingCount(), 0u);
+
+        // The ops start at the next transaction, after the restore row.
+        opened->openTransaction("edit");
+        static_cast<App::FeatureTest*>(opened->getObject("Obj"))->Integer.setValue(12);
+        opened->commitTransaction();
+        txns = store.transactions();
+        ASSERT_EQ(txns.size(), 2u);
+        EXPECT_EQ(txns[1].parent, txns[0].seq);
+        EXPECT_FALSE(store.ops(txns[1].seq).empty());
+
+        App::GetApplication().closeDocument(opened->getName());
+    }
+
+    Base::FileInfo(path).deleteFile();
+    Base::FileInfo(copy).deleteFile();
 }
 
 }  // namespace

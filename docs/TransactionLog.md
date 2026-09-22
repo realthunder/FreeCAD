@@ -1499,7 +1499,7 @@ under `TransactionLogIdentity` (off). The `recompute` record is a
 transaction of kind `recompute` with no ops whose `script` column holds
 `{env, seconds, objects:[{id, name, error?}]}`, written after the
 implicit transaction of the recompute's own writes. `restore`,
-`import`, `undo`/`redo` rows are not built.
+`import`, `undo`/`redo` rows are not built (`restore` is, below).
 
 **The save record and the unnamed version, as built** (2026-09-22,
 sections 11 and 16.3). `Document::save` taps the bytes of
@@ -1521,6 +1521,35 @@ Not yet: `GuiDocument.xml` in the manifest (the Gui writes it through
 `signalSaveDocument` under its own `putNextEntry`, which ends a tap; it
 needs its own tap in `Gui::Document::Save`), the cadence between saves,
 eviction, and the checkout that reads a manifest back.
+
+**The history initialised from a file, as built** (2026-09-22, section
+16.6). `Document::restore(const char*)` taps `Document.xml` on its way
+into the parser -- `Base::Reader::beginTap` / `endTap`, the input mirror
+of the writer's tap, installed on the `Base::Reader` before the
+`XMLReader` takes its first chunk, since the XML reader's constructor
+already parses. `endTap` drains what the parser left of the entry into
+the sink before handing the stream back, so the bytes are the whole
+entry whether or not Xerces read the trailing newline; it is called in
+`restore(XMLReader&)` right after `Document::Restore`, ahead of
+`readFiles()`, because the forward-only `ZipReader` moves off the entry
+there. Once `readFiles()` has the blobs in the store the document calls
+`TransactionLog::onRestore(path, docXml, blobs, schema)`, which shares
+`snapshot()` with `onSave`: version 1 at `seq = 0` with the same manifest
+shape, then a `restore` transaction whose script is
+`{version, docxml, blobs, schema, path}`. Only an empty store is
+initialised; a session store always is, and a store with history at
+restore is the embedded mode's hash guard to build (16.4), so it warns
+and leaves it. Not tapped: a partial load (16.1); not snapshotted: a
+`Document.xml` the loader could not read (`RestoreError`). One
+consequence of opening the store before the parse: the restored `Uid`
+renames the transient directory the store sits in, and SQLite finds
+its WAL sidecar by path, so `Document::onChanged(Uid)` calls
+`TransactionLog::closeStore()` across the rename and `reopenStore()`
+after it (the document drops the log if that fails). The seventh gtest
+opens a saved file through both archive readers and checks the
+version's value is byte-identical to the entry, the `restore` row is
+the only transaction, the store's path is under the renamed directory,
+and the next commit's ops follow it.
 
 **Mode.** `TransactionLog` is a preference, 0 (off) by default and 1 for
 `session`. It stays off by default until the writer thread exists: the
@@ -1558,11 +1587,10 @@ the log on, three of its undo cases see the open implicit transaction in
 `UndoNames` -- the log-on semantics, not a bug, and the reason the mode
 is a preference the suite does not set.
 
-**Next.** In the order the phase list gives: history initialised from a
-file (16.6), the writer thread with shared ownership of the undo copies
-(20.2 decision 4), the property-supplied hash (6b), `GuiDocument.xml`
-in the manifest and a versions pane in the panel -- each shown in the
-panel as it lands.
+**Next.** In the order the phase list gives: the writer thread with
+shared ownership of the undo copies (20.2 decision 4), the
+property-supplied hash (6b), `GuiDocument.xml` in the manifest and a
+versions pane in the panel -- each shown in the panel as it lands.
 
 ## 22. The end state, and the browser as a development tool (user, 2026-09-22)
 

@@ -118,12 +118,7 @@ ContainerInfo describe(Document& doc, const TransactionalObject* tobj, const std
 TransactionLog::TransactionLog(Document& doc)
     : _doc(doc)
 {
-    std::string dir = doc.TransientDir.getStrValue() + "/history";
-    Base::FileInfo(dir).createDirectories();
-    _path = dir + "/log.db";
-    _store = TransactionStore::openSQLite(_path);
-    if (_store->getMeta("document").empty())
-        _store->setMeta("document", doc.Uid.getValueStr());
+    openStore();
 
     // The environment row (sec 11): what App::Application::Config() knows
     // of this build, stored once and referred to by the session. Nothing
@@ -163,6 +158,36 @@ TransactionLog::TransactionLog(Document& doc)
     }
     _session = _store->openSession(_environment, user, host, now());
     FC_LOG("transaction log " << _path << " session " << _session);
+}
+
+void TransactionLog::openStore()
+{
+    std::string dir = _doc.TransientDir.getStrValue() + "/history";
+    Base::FileInfo(dir).createDirectories();
+    _path = dir + "/log.db";
+    _store = TransactionStore::openSQLite(_path);
+    if (_store->getMeta("document").empty())
+        _store->setMeta("document", _doc.Uid.getValueStr());
+}
+
+void TransactionLog::closeStore()
+{
+    _store.reset();
+}
+
+bool TransactionLog::reopenStore()
+{
+    if (_store)
+        return true;
+    try {
+        openStore();
+        FC_LOG("transaction log moved to " << _path);
+        return true;
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("cannot reopen the transaction log of " << _doc.getName() << ": " << e.what());
+    }
+    return false;
 }
 
 TransactionLog::~TransactionLog()
@@ -227,6 +252,27 @@ int64_t TransactionLog::onSave(const std::string& path, const std::string& docXm
                                const std::vector<std::pair<std::string, std::string>>& blobs,
                                int schema)
 {
+    return snapshot("save", path, docXml, blobs, schema);
+}
+
+int64_t TransactionLog::onRestore(const std::string& path, const std::string& docXml,
+                                  const std::vector<std::pair<std::string, std::string>>& blobs,
+                                  int schema)
+{
+    if (_store->lastSeq() != 0 || !_store->versions().empty()) {
+        // Sec 16.6's second case, a history the file no longer matches, is
+        // the embedded mode's to handle; a session store is always fresh.
+        FC_WARN("transaction log of " << _doc.getName() << " is not empty at restore");
+        return 0;
+    }
+    return snapshot("restore", path, docXml, blobs, schema);
+}
+
+int64_t TransactionLog::snapshot(const char* kind, const std::string& path,
+                                 const std::string& docXml,
+                                 const std::vector<std::pair<std::string, std::string>>& blobs,
+                                 int schema)
+{
     try {
         resolvePending();
 
@@ -254,8 +300,8 @@ int64_t TransactionLog::onSave(const std::string& path, const std::string& docXm
 
         LogTransaction t;
         t.parent = v.seq;
-        t.kind = "save";
-        t.name = "save";
+        t.kind = kind;
+        t.name = kind;
         t.time = v.created;
         t.session = _session;
         std::string escaped;
@@ -265,8 +311,8 @@ int64_t TransactionLog::onSave(const std::string& path, const std::string& docXm
             escaped += c;
         }
         t.script = "{\"version\":" + std::to_string(v.num) + ",\"docxml\":\"" + docHash
-                 + "\",\"blobs\":" + std::to_string(blobs.size()) + ",\"path\":\"" + escaped
-                 + "\"}";
+                 + "\",\"blobs\":" + std::to_string(blobs.size()) + ",\"schema\":"
+                 + std::to_string(schema) + ",\"path\":\"" + escaped + "\"}";
         std::vector<LogOp> none;
         _store->append(t, none);
         return v.num;

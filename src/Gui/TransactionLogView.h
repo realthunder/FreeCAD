@@ -96,6 +96,7 @@ private:
     fastsignals::scoped_connection _connActiveDoc;
     fastsignals::scoped_connection _connDeleteDoc;
     fastsignals::scoped_connection _connNewDoc;
+    fastsignals::scoped_connection _connRestoreDoc;
 
     QLabel* _status {nullptr};
     QLineEdit* _filter {nullptr};

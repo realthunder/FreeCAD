@@ -164,6 +164,13 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
         [this](const App::Document&, bool) {
             scheduleRefresh();
         });
+    // The restore record and version 1 (sec 16.6) are written at the end of
+    // the restore; a document reloaded in place keeps its identity.
+    _connRestoreDoc = App::GetApplication().signalFinishRestoreDocument.connect(
+        [this](const App::Document& doc) {
+            if (&doc == _doc)
+                reload();
+        });
     //NOLINTEND
 
     if (auto gdoc = Application::Instance->activeDocument())

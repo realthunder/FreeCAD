@@ -953,6 +953,9 @@ protected:
 
     void _addOrRemoveProperty(TransactionalObject*, Property *prop, bool add);
 
+    /// Close the Document.xml tap restore(const char*) opened for the log.
+    void endRestoreTap(Base::XMLReader& reader);
+
 private:
     // # Data Member of the document +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     std::list<Transaction*> mUndoTransactions;

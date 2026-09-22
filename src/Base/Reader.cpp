@@ -977,6 +977,92 @@ Base::Reader::Reader(const std::string& name, Base::XMLReader *parent)
 {
 }
 
+// The input side of Writer::TapBuf: forwards every get to the stream's own
+// buffer and shows the sink what came back. istream::read() arrives as
+// xsgetn; the one-byte get area serves the character-at-a-time calls.
+class Base::Reader::TapBuf : public std::streambuf
+{
+public:
+    TapBuf(std::streambuf* inner, TapSink sink)
+        : inner(inner), sink(std::move(sink))
+    {}
+
+    /// Everything the inner buffer still holds, into the sink.
+    void drain()
+    {
+        char buf[16 * 1024];
+        for (;;) {
+            std::streamsize n = inner->sgetn(buf, sizeof(buf));
+            if (n <= 0)
+                break;
+            sink(buf, static_cast<std::size_t>(n));
+        }
+    }
+
+protected:
+    int underflow() override
+    {
+        if (gptr() < egptr())
+            return traits_type::to_int_type(*gptr());
+        int c = inner->sbumpc();
+        if (c == traits_type::eof())
+            return c;
+        ch = traits_type::to_char_type(c);
+        sink(&ch, 1);
+        setg(&ch, &ch, &ch + 1);
+        return c;
+    }
+    std::streamsize xsgetn(char* s, std::streamsize n) override
+    {
+        std::streamsize got = 0;
+        if (gptr() < egptr() && n > 0) {
+            *s = *gptr();
+            gbump(1);
+            got = 1;
+        }
+        if (n > got) {
+            std::streamsize m = inner->sgetn(s + got, n - got);
+            if (m > 0) {
+                sink(s + got, static_cast<std::size_t>(m));
+                got += m;
+            }
+        }
+        return got;
+    }
+
+private:
+    std::streambuf* inner;
+    TapSink sink;
+    char ch {0};
+};
+
+void Base::Reader::beginTap(TapSink sink)
+{
+    if (_tapBuf)
+        THROWM(Base::RuntimeError, "Reader::beginTap(): a tap is already open")
+    _tappedBuf = rdbuf();
+    if (!_tappedBuf)
+        THROWM(Base::RuntimeError, "Reader::beginTap(): no stream")
+    _tapBuf = std::make_unique<TapBuf>(_tappedBuf, std::move(sink));
+    rdbuf(_tapBuf.get());
+}
+
+void Base::Reader::endTap()
+{
+    if (!_tapBuf)
+        return;
+    _tapBuf->drain();
+    rdbuf(_tappedBuf);
+    _tappedBuf = nullptr;
+    _tapBuf.reset();
+}
+
+// After TapBuf is complete: the unique_ptr's deleter is instantiated here.
+Base::Reader::~Reader()
+{
+    _tapBuf.reset();
+}
+
 const std::string &Base::Reader::getFileName() const
 {
     return this->_name;

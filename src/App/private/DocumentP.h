@@ -102,6 +102,11 @@ struct DocumentP
     std::unique_ptr<App::TransactionLog> transactionLog;
     /// Whether the mode was looked at for this document yet.
     bool transactionLogChecked {false};
+    /// Document.xml as the reader saw it, tapped by restore(const char*)
+    /// for the log's version 1 (docs/TransactionLog.md sec 16.6); empty
+    /// when no tap was installed.
+    std::string restoreDocXml;
+    bool restoreTapped {false};
 #ifdef USE_OLD_DAG
     DependencyList DepList;
     std::map<DocumentObject*, Vertex> VertexObjectList;

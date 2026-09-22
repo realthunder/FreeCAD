@@ -840,10 +840,20 @@ void Document::onChanged(const Property* prop)
                 // served from. It opens again on its next read.
                 if (d->fileBlobs)
                     d->fileBlobs->closeArchives();
-                if (!TransDirOld.renameFile(new_dir.c_str()))
+                // The transaction log's database lives in the directory
+                // and is open there already on the restore path: closed
+                // across the move, reopened at the new path below.
+                if (d->transactionLog)
+                    d->transactionLog->closeStore();
+                if (!TransDirOld.renameFile(new_dir.c_str())) {
                     Base::Console().Warning("Failed to rename '%s' to '%s'\n", old_dir.c_str(), new_dir.c_str());
+                    if (d->transactionLog && !d->transactionLog->reopenStore())
+                        d->transactionLog.reset();
+                }
                 else {
                     this->TransientDir.setValue(new_dir);
+                    if (d->transactionLog && !d->transactionLog->reopenStore())
+                        d->transactionLog.reset();
                     // The stored files moved with the directory, so only their
                     // recorded paths are stale. Restoring an unpacked project
                     // arrives here with content already read: the blobs are
@@ -3244,9 +3254,24 @@ void Document::restore (const char *filename,
     d->archiveReader.reset();
     d->deferServeSeq.reset();
 
+    // The log's version 1 is the file as found (docs/TransactionLog.md sec
+    // 16.6): tap Document.xml on its way through the parser, which has to
+    // be in place before the XML reader takes its first chunk. Ended by
+    // restore(XMLReader&) once the element is parsed, and read there.
+    d->restoreDocXml.clear();
+    d->restoreTapped = false;
+    auto tap = [this, &objNames](Base::Reader& reader) {
+        // A partial document is never snapshotted (sec 16.1).
+        if (!objNames.empty() || !getTransactionLog())
+            return;
+        reader.beginTap([this](const char* p, std::size_t n) { d->restoreDocXml.append(p, n); });
+        d->restoreTapped = true;
+    };
+
     if(fi.fileNamePure() == "Document" && fi.hasExtension("xml")) {
         Base::FileInfo di(fi.dirPath());
         _reader.reset(new Base::FileReader(fi,di.fileName()+"/Document.xml"));
+        tap(*_reader);
         _xmlReader.reset(new Base::XMLReader(*_reader));
     } else {
         if (DocumentParams::getArchiveRandomAccess()) {
@@ -3268,6 +3293,7 @@ void Document::restore (const char *filename,
             _reader.reset(new Base::ZipReader(*zipstream,filename));
             reader = _reader.get();
         }
+        tap(*reader);
         _xmlReader.reset(new Base::XMLReader(*reader));
         if (zfreader && DocumentParams::getDeferShapeLoad()) {
             // Park opted-in entries instead of serving them during the
@@ -3532,11 +3558,14 @@ void Document::restore(Base::XMLReader &reader,
     try {
         Document::Restore(reader);
     } catch (const Base::XMLParseException &) {
+        endRestoreTap(reader);
         throw;
     } catch (const Base::Exception& e) {
         Base::Console().Error("Invalid Document.xml: %s\n", e.what());
         setStatus(Document::RestoreError, true);
     }
+    // Before readFiles() moves a forward-only archive reader off the entry.
+    endRestoreTap(reader);
 
     d->partialLoadObjects.clear();
     d->programVersion = reader.ProgramVersion;
@@ -3575,6 +3604,26 @@ void Document::restore(Base::XMLReader &reader,
         Base::Console().Error("There were errors while loading the file. Some data might have been modified or not recovered at all. Look above for more specific information about the objects involved.\n");
     }
 
+    // The history initialised from the file (docs/TransactionLog.md sec
+    // 16.6): version 1 is Document.xml as tapped plus every blob the file
+    // carried, now that readFiles() has them in the store. Not for a
+    // Document.xml the loader could not read -- that is no version to go
+    // back to -- and never for a partial document, which was not tapped.
+    if (d->restoreTapped) {
+        d->restoreTapped = false;
+        std::string docXml;
+        docXml.swap(d->restoreDocXml);
+        TransactionLog* log = testStatus(Document::RestoreError) ? nullptr : getTransactionLog();
+        if (log) {
+            std::vector<std::pair<std::string, std::string>> blobs;
+            for (const auto& blob : getFileBlobManager().blobs()) {
+                std::string ext = Base::FileInfo(blob->path()).extension();
+                blobs.emplace_back(blob->hash() + (ext.empty() ? "" : "." + ext), blob->hash());
+            }
+            log->onRestore(FileName.getValue(), docXml, blobs, reader.DocumentSchema);
+        }
+    }
+
     FC_DURATION_DECL_INIT(dAfter);
     if(!delaySignal) {
         FC_TIME_INIT(tAfter);
@@ -3604,6 +3653,14 @@ void Document::restore(Base::XMLReader &reader,
             << ", files " << rt.files.count()
             << ", after " << dAfter.count()
             << ", total " << (dXml + rt.files + dAfter).count() << 's');
+}
+
+void Document::endRestoreTap(Base::XMLReader& reader)
+{
+    if (!d->restoreTapped)
+        return;
+    if (auto breader = reader.getReader())
+        breader->endTap();
 }
 
 bool Document::afterRestore(bool checkPartial) {

@@ -100,6 +100,20 @@ public:
     int64_t onSave(const std::string& path, const std::string& docXml,
                    const std::vector<std::pair<std::string, std::string>>& blobs, int schema);
 
+    /** The history initialised from a file (sec 16.6).
+     *
+     * Called from Document::restore with the file as found: `docXml` the
+     * Document.xml bytes as the reader saw them (tapped, sec 16.6), `blobs`
+     * every blob the file carried, `schema` what it was written under.
+     * Version 1 is that snapshot and a `restore` record follows it; the
+     * ops start at the next transaction. Only an empty store is
+     * initialised: a store with history is the embedded mode's concern
+     * (the hash guard of 16.4) and is left alone with a warning.
+     * Returns the version number, 0 when nothing was written.
+     */
+    int64_t onRestore(const std::string& path, const std::string& docXml,
+                      const std::vector<std::pair<std::string, std::string>>& blobs, int schema);
+
     int64_t session() const { return _session; }
     int64_t environment() const { return _environment; }
 
@@ -111,6 +125,20 @@ public:
 
     TransactionStore& store() { return *_store; }
     const std::string& path() const { return _path; }
+
+    /** The store follows the transient directory.
+     *
+     * A restore replaces the document's Uid with the file's, and the
+     * transient directory is renamed after it; the store is already open
+     * there by then (the on-open snapshot needs it before the parse). The
+     * database handle would survive a rename, its WAL sidecar, which SQLite
+     * finds by path, would not: closeStore() before the rename and
+     * reopenStore() after it, which returns false when the store could
+     * not be opened at the new path -- the log is then unusable and the
+     * document drops it.
+     */
+    void closeStore();
+    bool reopenStore();
 
     /// Read a value back, decompressed, with its attachments inlined.
     bool readValue(const std::string& hash, CapturedValue& out);
@@ -125,6 +153,12 @@ private:
         std::string tier;
     };
 
+    /// Open the store under the document's current transient directory.
+    void openStore();
+    /// A version from the file's entries plus the record (`save` or
+    /// `restore`) that names it; what onSave and onRestore share.
+    int64_t snapshot(const char* kind, const std::string& path, const std::string& docXml,
+                     const std::vector<std::pair<std::string, std::string>>& blobs, int schema);
     /// Store a captured value (fragment and attachments) and return its ref.
     std::string putValue(const CapturedValue& value, const std::string& tier);
     void resolve(const Property& prop, const std::string& hash);
