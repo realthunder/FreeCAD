@@ -926,6 +926,7 @@ DockWindowItems* StdWorkbench::setupDockWindows() const
     root->addDockWidget("Std_TaskView", Qt::RightDockWidgetArea, true, true);
     root->addDockWidget("Std_ReportView", Qt::BottomDockWidgetArea, true, true);
     root->addDockWidget("Std_PythonView", Qt::BottomDockWidgetArea, true, true);
+    root->addDockWidget("Std_TransactionLogView", Qt::BottomDockWidgetArea, false, true);
 
     //Dagview through parameter.
     ParameterGrp::handle group = App::GetApplication().GetUserParameter().

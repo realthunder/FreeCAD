@@ -744,6 +744,7 @@ SET(Dock_Windows_CPP_SRCS
     DockWindow.cpp
     PropertyView.cpp
     ReportView.cpp
+    TransactionLogView.cpp
     PieMenu.cpp
     ToolBox.cpp
     Tree.cpp
@@ -760,6 +761,7 @@ SET(Dock_Windows_HPP_SRCS
     DockWindow.h
     PropertyView.h
     ReportView.h
+    TransactionLogView.h
     PieMenu.h
     ToolBox.h
     Tree.h
