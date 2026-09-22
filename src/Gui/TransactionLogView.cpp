@@ -28,6 +28,7 @@
 # include <QFontDatabase>
 # include <QHBoxLayout>
 # include <QHeaderView>
+# include <QInputDialog>
 # include <QLabel>
 # include <QLineEdit>
 # include <QMenu>
@@ -650,21 +651,46 @@ void TransactionLogView::onVersionContextMenu(const QPoint& pos)
     if (!item || !_doc)
         return;
     const int64_t num = item->data(VerNum, Qt::UserRole).toLongLong();
+    const bool named = item->text(VerKind) == QLatin1String("named");
     QMenu menu(this);
     auto restore = menu.addAction(tr("Restore to version %1").arg(num));
     restore->setToolTip(tr("Reload the document from this version's snapshot (sec 16.1)"));
+    auto name = menu.addAction(named ? tr("Rename version %1...").arg(num)
+                                     : tr("Name version %1...").arg(num));
+    name->setToolTip(tr("A named version is never evicted (sec 16.3)"));
+    auto unname = named ? menu.addAction(tr("Make version %1 unnamed").arg(num)) : nullptr;
     auto chosen = menu.exec(_versions->viewport()->mapToGlobal(pos));
-    if (chosen != restore)
+    if (!chosen)
         return;
     App::Document* doc = _doc;
     try {
-        doc->restoreVersion(num);
+        if (chosen == restore) {
+            doc->restoreVersion(num);
+            // The reload replaced every object; the panel is told through
+            // signalFinishRestoreDocument, which reloads it.
+            return;
+        }
+        auto l = log();
+        if (!l)
+            return;
+        if (chosen == name) {
+            bool ok = false;
+            QString text = QInputDialog::getText(this, tr("Name version %1").arg(num),
+                                                 tr("Name:"), QLineEdit::Normal,
+                                                 item->text(VerName), &ok);
+            if (!ok || text.trimmed().isEmpty())
+                return;
+            l->store().nameVersion(num, text.trimmed().toStdString());
+        }
+        else if (chosen == unname) {
+            l->store().nameVersion(num, std::string());
+        }
+        _lastVersion = -1;   // rows rebuilt
+        refresh();
     }
     catch (Base::Exception& e) {
-        FC_ERR("restore to version " << num << ": " << e.what());
+        FC_ERR("version " << num << ": " << e.what());
     }
-    // The reload replaced every object; the panel is told through
-    // signalFinishRestoreDocument, which reloads it.
 }
 
 void TransactionLogView::updateStatus()

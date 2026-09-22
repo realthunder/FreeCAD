@@ -336,6 +336,15 @@ materialised and the document reloaded from them. The undo stack is
 cleared. False if there is no log; raises if the version is missing.</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="nameTransactionVersion">
+      <Documentation>
+        <UserDocu>nameTransactionVersion(num, name) -> bool
+
+Name version `num` of the transaction log (docs/TransactionLog.md sec
+16.3): a named version is never evicted. An empty name makes it unnamed
+again. False if there is no log or no such version.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="resolveTransactionLog">
       <Documentation>
         <UserDocu>resolveTransactionLog() -> int

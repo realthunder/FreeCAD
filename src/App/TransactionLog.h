@@ -209,9 +209,10 @@ private:
     /// `restore`) that names it; what onSave and onRestore share.
     int64_t snapshot(const char* kind, const std::string& path, const Entries& entries,
                      const std::vector<std::pair<std::string, std::string>>& blobs, int schema);
-    /// Unnamed versions over DocumentParams::TransactionLogKeepVersions go,
-    /// oldest first (sec 16.3). Worker thread, after a version is added.
-    void evictVersions();
+    /// Unnamed versions over `keep` (DocumentParams::TransactionLogKeepVersions,
+    /// read when the job was posted) go, oldest first (sec 16.3). Worker
+    /// thread, after a version is added.
+    void evictVersions(long keep);
     /// Store a captured value (fragment and attachments) and return its ref.
     /// Worker thread.
     std::string putValue(const CapturedValue& value, const std::string& tier);

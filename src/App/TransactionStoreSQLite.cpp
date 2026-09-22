@@ -300,6 +300,16 @@ public:
              " AND hash NOT IN (SELECT substr(line, 1, 40) FROM lines WHERE line<>'')");
     }
 
+    bool nameVersion(int64_t num, const std::string& name) override
+    {
+        auto s = prepare("UPDATE version SET kind=?, name=? WHERE num=?");
+        bindText(s, 1, name.empty() ? std::string("unnamed") : std::string("named"));
+        bindText(s, 2, name);
+        sqlite3_bind_int64(s, 3, num);
+        step(s);
+        return sqlite3_changes(db) > 0;
+    }
+
     void evictVersion(int64_t num) override
     {
         exec("BEGIN");

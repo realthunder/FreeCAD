@@ -625,18 +625,41 @@ TEST_F(TransactionLogTest, evictsUnnamedVersions)
     }
     App::DocumentParams::setTransactionLogKeepVersions(keep);
 
+    // A named version is never evicted (sec 16.3).
+    App::DocumentParams::setTransactionLogKeepVersions(1);
+    ASSERT_TRUE(log().store().nameVersion(3, "release"));
+    EXPECT_FALSE(log().store().nameVersion(99, "x"));
+    doc()->openTransaction("edit");
+    obj->Integer.setValue(42);
+    doc()->commitTransaction();
+    ASSERT_EQ(doc()->snapshotToLog(), 5);
+    App::DocumentParams::setTransactionLogKeepVersions(keep);
+    {
+        auto vs = log().store().versions();
+        ASSERT_EQ(vs.size(), 2u);
+        EXPECT_EQ(vs[0].num, 3);
+        EXPECT_EQ(vs[0].kind, "named");
+        EXPECT_EQ(vs[0].name, "release");
+        EXPECT_EQ(vs[1].num, 5);
+        ASSERT_TRUE(log().store().nameVersion(3, ""));
+        EXPECT_EQ(log().store().versions()[0].kind, "unnamed");
+    }
+    // Back to the state the first checks below expect.
+    ASSERT_TRUE(log().store().nameVersion(3, "release"));
+
     // The two newest unnamed versions remain; the evicted ones took their
     // Document.xml values with them, the survivors kept theirs.
     auto& store = log().store();
     auto versions = store.versions();
     ASSERT_EQ(versions.size(), 2u);
     EXPECT_EQ(versions[0].num, 3);
-    EXPECT_EQ(versions[1].num, 4);
+    EXPECT_EQ(versions[1].num, 5);
     EXPECT_TRUE(store.manifest(1).empty());
+    EXPECT_TRUE(store.manifest(4).empty());
     EXPECT_FALSE(store.hasValue(docxml[0]));
     EXPECT_FALSE(store.hasValue(docxml[1]));
     EXPECT_TRUE(store.hasValue(docxml[2]));
-    EXPECT_TRUE(store.hasValue(docxml[3]));
+    EXPECT_FALSE(store.hasValue(docxml[3]));
     // Ops are never evicted, nor their values: the edits' before refs read.
     for (auto& t : store.transactions()) {
         for (auto& o : store.ops(t.seq)) {

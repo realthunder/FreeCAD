@@ -1728,9 +1728,23 @@ than falling back; nothing marks the document modified. The eleventh
 gtest goes back to version 1, forward to 2, and edits between.
 
 Phase 1 is complete with this, and the browser panel shows every record
-it writes. What remains of the versions story is the embedded mode
-(16.4, `PropertyHistory`) and the named versions of 16.3; phase 3 (undo
-over the log) starts from the checkout.
+it writes.
+
+**Named versions, as built** (2026-09-23, 16.3).
+`TransactionStore::nameVersion(num, name)` sets a version's kind to
+`named` with the name, or back to `unnamed` with an empty one; eviction
+skips named versions (the limit is read on the main thread when the
+snapshot job is posted, so a test or a preference change cannot race
+the worker). Python `Document.nameTransactionVersion(num, name)`; the
+panel's versions context menu offers "Name version N...", "Rename" and
+"Make unnamed". No record is written for the naming: the version row
+carries it. Refusing to delete a version an external link pins (16.5)
+waits for the links. The eviction gtest names a version and sees it
+survive a limit of 1.
+
+What remains of the versions story is the embedded mode (16.4,
+`PropertyHistory`); phase 3 (undo over the log) starts from the
+checkout.
 
 ## 22. The end state, and the browser as a development tool (user, 2026-09-22)
 

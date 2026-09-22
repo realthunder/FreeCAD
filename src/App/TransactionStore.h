@@ -185,6 +185,9 @@ public:
     /// Remove a version and its manifest, and the values nothing refers to
     /// any more (sec 16.3, eviction). Ops are never removed by this.
     virtual void evictVersion(int64_t num) = 0;
+    /// Make a version named (kind `named`, never evicted) with `name`; an
+    /// empty name makes it unnamed again. False if there is no such version.
+    virtual bool nameVersion(int64_t num, const std::string& name) = 0;
 
     virtual std::string getMeta(const std::string& key) = 0;
     virtual void setMeta(const std::string& key, const std::string& value) = 0;

@@ -155,6 +155,8 @@ public:
     { return inner().findVersion(docxmlHash, version); }
     std::vector<LogManifestEntry> manifest(int64_t num) override { return inner().manifest(num); }
     void evictVersion(int64_t num) override { inner().evictVersion(num); }
+    bool nameVersion(int64_t num, const std::string& name) override
+    { return inner().nameVersion(num, name); }
     std::string getMeta(const std::string& key) override { return inner().getMeta(key); }
     void setMeta(const std::string& key, const std::string& value) override
     { inner().setMeta(key, value); }
@@ -457,7 +459,8 @@ int64_t TransactionLog::snapshot(const char* kind, const std::string& path,
             escaped += c;
         }
         const size_t nblobs = blobs.size();
-        post([this, v, t, entries, blobs, schema, escaped, nblobs]() mutable {
+        const long keep = DocumentParams::getTransactionLogKeepVersions();
+        post([this, v, t, entries, blobs, schema, escaped, nblobs, keep]() mutable {
             // Each XML entry is a value like any other, durable: the
             // version is the one place a whole file is kept (sec 16.1).
             // With no attachments a ref is the SHA-1 of the bytes, which
@@ -477,7 +480,7 @@ int64_t TransactionLog::snapshot(const char* kind, const std::string& path,
             for (const auto& b : blobs)
                 manifest.push_back({b.first, b.second, "blob"});
             _store->addVersion(v, manifest);
-            evictVersions();
+            evictVersions(keep);
 
             t.script = "{\"version\":" + std::to_string(v.num) + ",\"docxml\":\"" + docHash
                      + "\",\"blobs\":" + std::to_string(nblobs) + ",\"schema\":"
@@ -496,12 +499,12 @@ int64_t TransactionLog::snapshot(const char* kind, const std::string& path,
     return 0;
 }
 
-void TransactionLog::evictVersions()
+void TransactionLog::evictVersions(long keep)
 {
     // Sec 16.3: unnamed versions over the limit go, oldest first; named
     // ones never, and never the newest, which is what the cadence and a
-    // cold undo anchor on. Worker thread, after an addVersion.
-    const long keep = DocumentParams::getTransactionLogKeepVersions();
+    // cold undo anchor on. Worker thread, after an addVersion; the limit
+    // was read on the main thread when the job was posted.
     if (keep <= 0)
         return;
     auto versions = _store->versions();
