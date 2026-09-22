@@ -101,6 +101,36 @@ struct LogValue
     std::vector<std::pair<std::string, std::string>> attachments;  ///< (name, hash)
 };
 
+/** A version row (sec 16.3): a snapshot of the document as a file, held
+ * apart. `num` is the per-document number people and links use; `uuid`
+ * tells two documents' "version 7" apart. `docxml_hash` is the SHA-1 of
+ * the `Document.xml` the snapshot holds, which is also what a file on
+ * disk is matched to a version by (sec 11, `save`).
+ */
+struct LogVersion
+{
+    int64_t num {0};
+    std::string uuid;
+    std::string branch {"main"};
+    std::string kind {"unnamed"};   ///< "unnamed" or "named"
+    std::string name;
+    int64_t seq {0};                ///< the log sequence the snapshot is at
+    int64_t env {0};
+    std::string docxml_hash;
+    int schema {0};                 ///< the document schema it was written under
+    double created {0};
+};
+
+/// One entry of a version's manifest: archive entry name -> content hash.
+/// `Document.xml` and `GuiDocument.xml` name value rows; blob entries
+/// name the document's blob store (sec 16.2).
+struct LogManifestEntry
+{
+    std::string entry;
+    std::string hash;
+    std::string source {"value"};   ///< "value" (the value table) or "blob"
+};
+
 /** The interface the document sees: a log is appended, read and truncated
  * through this and nothing else (sec 13.2). openSQLite() is the one
  * implementation.
@@ -138,6 +168,16 @@ public:
                                 const std::string& host, double opened) = 0;
     virtual void closeSession(int64_t id, double closed) = 0;
     virtual std::vector<LogSession> sessions() = 0;
+
+    /// Append a version with its manifest, atomically; `num` is assigned
+    /// (the next number) and returned.
+    virtual int64_t addVersion(LogVersion& version,
+                               const std::vector<LogManifestEntry>& manifest) = 0;
+    virtual std::vector<LogVersion> versions() = 0;
+    virtual bool getVersion(int64_t num, LogVersion& version) = 0;
+    /// The latest version whose Document.xml hashes to `hash`, or false.
+    virtual bool findVersion(const std::string& docxmlHash, LogVersion& version) = 0;
+    virtual std::vector<LogManifestEntry> manifest(int64_t num) = 0;
 
     virtual std::string getMeta(const std::string& key) = 0;
     virtual void setMeta(const std::string& key, const std::string& value) = 0;

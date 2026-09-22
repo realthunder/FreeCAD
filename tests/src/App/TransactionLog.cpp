@@ -6,7 +6,9 @@
 
 #include "gtest/gtest.h"
 
+#include <iterator>
 #include <map>
+#include <zipios++/zipfile.h>
 
 #include "App/Application.h"
 #include "App/Document.h"
@@ -15,6 +17,7 @@
 #include "App/FeatureTest.h"
 #include "App/TransactionLog.h"
 #include "App/TransactionValue.h"
+#include "Base/FileInfo.h"
 #include <src/App/InitApplication.h>
 
 namespace {
@@ -356,6 +359,74 @@ TEST_F(TransactionLogTest, recomputeRecordAndSession)
     EXPECT_TRUE(store.ops(rec.seq).empty());
     // The implicit transaction holding the write comes before the record.
     EXPECT_EQ(txns[txns.size() - 2].kind, "implicit");
+}
+
+TEST_F(TransactionLogTest, saveRecordAndVersion)
+{
+    auto& store = log().store();
+    doc()->openTransaction("create");
+    auto obj = make("Obj");
+    obj->Integer.setValue(11);
+    doc()->commitTransaction();
+    // The after ref of the set above is pending until the snapshot.
+    EXPECT_GT(log().pendingCount(), 0u);
+
+    const std::string path = Base::FileInfo::getTempPath() + "txnlog-save.FCStd";
+    ASSERT_TRUE(doc()->saveAs(path.c_str()));
+
+    // A snapshot resolves what was pending first (sec 21).
+    EXPECT_EQ(log().pendingCount(), 0u);
+
+    auto versions = store.versions();
+    ASSERT_EQ(versions.size(), 1u);
+    const auto& v = versions[0];
+    EXPECT_EQ(v.num, 1);
+    EXPECT_EQ(v.kind, "unnamed");
+    EXPECT_EQ(v.branch, "main");
+    EXPECT_FALSE(v.uuid.empty());
+    EXPECT_EQ(v.env, log().environment());
+    EXPECT_GT(v.schema, 0);
+    EXPECT_EQ(v.docxml_hash.size(), 40u);
+
+    // The version's Document.xml is the file's Document.xml, byte for byte:
+    // its hash is the hash of the archive entry, and the value holds it.
+    zipios::ZipFile zip(path);
+    std::unique_ptr<std::istream> entry(zip.getInputStream("Document.xml"));
+    ASSERT_TRUE(entry);
+    std::string fromFile((std::istreambuf_iterator<char>(*entry)), std::istreambuf_iterator<char>());
+    EXPECT_FALSE(fromFile.empty());
+    EXPECT_EQ(App::hashBytes(fromFile), v.docxml_hash);
+    App::CapturedValue stored;
+    ASSERT_TRUE(log().readValue(v.docxml_hash, stored));
+    EXPECT_EQ(stored.fragment, fromFile);
+
+    auto manifest = store.manifest(v.num);
+    ASSERT_GE(manifest.size(), 1u);
+    EXPECT_EQ(manifest[0].entry, "Document.xml");
+    EXPECT_EQ(manifest[0].hash, v.docxml_hash);
+    EXPECT_EQ(manifest[0].source, "value");
+
+    // A file on disk is matched to its version by that hash.
+    App::LogVersion found;
+    ASSERT_TRUE(store.findVersion(v.docxml_hash, found));
+    EXPECT_EQ(found.num, v.num);
+    EXPECT_FALSE(store.findVersion(std::string(40, '0'), found));
+
+    // The save row follows the version's sequence and names it.
+    auto txns = store.transactions();
+    ASSERT_GE(txns.size(), 1u);
+    const auto& save = txns.back();
+    EXPECT_EQ(save.kind, "save");
+    EXPECT_EQ(save.parent, v.seq);
+    EXPECT_NE(save.script.find("\"version\":1"), std::string::npos) << save.script;
+    EXPECT_NE(save.script.find(v.docxml_hash), std::string::npos);
+    EXPECT_TRUE(store.ops(save.seq).empty());
+
+    // Truncation keeps the value a manifest names.
+    store.truncate(save.seq);
+    EXPECT_TRUE(store.hasValue(v.docxml_hash));
+
+    Base::FileInfo(path).deleteFile();
 }
 
 }  // namespace

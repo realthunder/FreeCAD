@@ -88,6 +88,18 @@ public:
     /// each object came out. Written at Document::signalRecomputed.
     void onRecompute(const std::vector<RecomputedObject>& objects, double seconds);
 
+    /** The save record and the unnamed version it makes (sec 11, 16.3).
+     *
+     * Called from Document::save once the file's entries are written:
+     * `docXml` is the Document.xml as it streamed out (hashed with the
+     * writer's tap), `blobs` the (name, hash) of every blob the file
+     * carries, `schema` the schema it was written under. Pending after
+     * refs are resolved first so the log is complete at the snapshot.
+     * Returns the version number, 0 on failure (reported, not thrown).
+     */
+    int64_t onSave(const std::string& path, const std::string& docXml,
+                   const std::vector<std::pair<std::string, std::string>>& blobs, int schema);
+
     int64_t session() const { return _session; }
     int64_t environment() const { return _environment; }
 

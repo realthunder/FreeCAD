@@ -70,6 +70,12 @@ public:
         exec("CREATE INDEX IF NOT EXISTS op_container ON op(cid, prop)");
         exec("CREATE TABLE IF NOT EXISTS value(hash TEXT PRIMARY KEY, enc TEXT, tier TEXT,"
              " size INTEGER, data BLOB, attach TEXT)");
+        exec("CREATE TABLE IF NOT EXISTS version(num INTEGER PRIMARY KEY, uuid TEXT, branch TEXT,"
+             " kind TEXT, name TEXT, seq INTEGER, env INTEGER, docxml_hash TEXT, schema INTEGER,"
+             " created REAL)");
+        exec("CREATE INDEX IF NOT EXISTS version_hash ON version(docxml_hash)");
+        exec("CREATE TABLE IF NOT EXISTS manifest(version INTEGER, entry TEXT, hash TEXT,"
+             " source TEXT, PRIMARY KEY(version, entry))");
         if (getMeta("schema").empty())
             setMeta("schema", "1");
     }
@@ -266,6 +272,7 @@ public:
             // value that is.
             exec("DELETE FROM value WHERE hash NOT IN (SELECT vbefore FROM op)"
                  " AND hash NOT IN (SELECT vafter FROM op)"
+                 " AND hash NOT IN (SELECT hash FROM manifest WHERE source='value')"
                  " AND hash NOT IN (SELECT substr(attach, 1, 40) FROM value"
                  "                  WHERE attach<>'')");
             exec("COMMIT");
@@ -336,6 +343,110 @@ public:
             r.opened = sqlite3_column_double(s, 4);
             r.closed = sqlite3_column_double(s, 5);
             out.push_back(std::move(r));
+        }
+        sqlite3_reset(s);
+        return out;
+    }
+
+    int64_t addVersion(LogVersion& v, const std::vector<LogManifestEntry>& manifest) override
+    {
+        exec("BEGIN");
+        try {
+            auto s = prepare("INSERT INTO version(uuid,branch,kind,name,seq,env,docxml_hash,"
+                             "schema,created) VALUES(?,?,?,?,?,?,?,?,?)");
+            bindText(s, 1, v.uuid);
+            bindText(s, 2, v.branch);
+            bindText(s, 3, v.kind);
+            bindText(s, 4, v.name);
+            sqlite3_bind_int64(s, 5, v.seq);
+            sqlite3_bind_int64(s, 6, v.env);
+            bindText(s, 7, v.docxml_hash);
+            sqlite3_bind_int(s, 8, v.schema);
+            sqlite3_bind_double(s, 9, v.created);
+            step(s);
+            v.num = sqlite3_last_insert_rowid(db);
+            auto m = prepare("INSERT OR REPLACE INTO manifest(version,entry,hash,source)"
+                             " VALUES(?,?,?,?)");
+            for (const auto& e : manifest) {
+                sqlite3_reset(m);
+                sqlite3_bind_int64(m, 1, v.num);
+                bindText(m, 2, e.entry);
+                bindText(m, 3, e.hash);
+                bindText(m, 4, e.source);
+                step(m);
+            }
+            exec("COMMIT");
+        }
+        catch (...) {
+            exec("ROLLBACK");
+            throw;
+        }
+        return v.num;
+    }
+
+    static void readVersion(sqlite3_stmt* s, LogVersion& v)
+    {
+        v.num = sqlite3_column_int64(s, 0);
+        v.uuid = text(s, 1);
+        v.branch = text(s, 2);
+        v.kind = text(s, 3);
+        v.name = text(s, 4);
+        v.seq = sqlite3_column_int64(s, 5);
+        v.env = sqlite3_column_int64(s, 6);
+        v.docxml_hash = text(s, 7);
+        v.schema = sqlite3_column_int(s, 8);
+        v.created = sqlite3_column_double(s, 9);
+    }
+
+    std::vector<LogVersion> versions() override
+    {
+        auto s = prepare("SELECT num,uuid,branch,kind,name,seq,env,docxml_hash,schema,created"
+                         " FROM version ORDER BY num");
+        std::vector<LogVersion> out;
+        while (sqlite3_step(s) == SQLITE_ROW) {
+            LogVersion v;
+            readVersion(s, v);
+            out.push_back(std::move(v));
+        }
+        sqlite3_reset(s);
+        return out;
+    }
+
+    bool getVersion(int64_t num, LogVersion& v) override
+    {
+        auto s = prepare("SELECT num,uuid,branch,kind,name,seq,env,docxml_hash,schema,created"
+                         " FROM version WHERE num=?");
+        sqlite3_bind_int64(s, 1, num);
+        bool found = sqlite3_step(s) == SQLITE_ROW;
+        if (found)
+            readVersion(s, v);
+        sqlite3_reset(s);
+        return found;
+    }
+
+    bool findVersion(const std::string& hash, LogVersion& v) override
+    {
+        auto s = prepare("SELECT num,uuid,branch,kind,name,seq,env,docxml_hash,schema,created"
+                         " FROM version WHERE docxml_hash=? ORDER BY num DESC LIMIT 1");
+        bindText(s, 1, hash);
+        bool found = sqlite3_step(s) == SQLITE_ROW;
+        if (found)
+            readVersion(s, v);
+        sqlite3_reset(s);
+        return found;
+    }
+
+    std::vector<LogManifestEntry> manifest(int64_t num) override
+    {
+        auto s = prepare("SELECT entry,hash,source FROM manifest WHERE version=? ORDER BY entry");
+        sqlite3_bind_int64(s, 1, num);
+        std::vector<LogManifestEntry> out;
+        while (sqlite3_step(s) == SQLITE_ROW) {
+            LogManifestEntry e;
+            e.entry = text(s, 0);
+            e.hash = text(s, 1);
+            e.source = text(s, 2);
+            out.push_back(std::move(e));
         }
         sqlite3_reset(s);
         return out;

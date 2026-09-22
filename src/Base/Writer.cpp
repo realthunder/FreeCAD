@@ -99,8 +99,6 @@ Writer::Writer(short indent_size)
 {
 }
 
-Writer::~Writer() = default;
-
 std::ostream& Writer::beginCharStream(CharStreamFormat format, unsigned line_size)
 {
     if (CharStream) {
@@ -388,8 +386,69 @@ void Writer::decInd()
 }
 
 void Writer::putNextEntry(const char *file, const char *obj) {
+    endTap();
     ObjectName = obj?obj:file;
 }
+
+// A streambuf that forwards to the stream's own buffer and shows the sink
+// every byte on the way past. Unbuffered (no put area) so xsputn and
+// overflow see everything and nothing is held back from the sink.
+class Writer::TapBuf : public std::streambuf
+{
+public:
+    TapBuf(std::streambuf* inner, TapSink sink)
+        : inner(inner), sink(std::move(sink))
+    {}
+
+protected:
+    int overflow(int c) override
+    {
+        if (c == traits_type::eof())
+            return traits_type::not_eof(c);
+        char ch = traits_type::to_char_type(c);
+        sink(&ch, 1);
+        return inner->sputc(ch);
+    }
+    std::streamsize xsputn(const char* s, std::streamsize n) override
+    {
+        if (n > 0)
+            sink(s, static_cast<std::size_t>(n));
+        return inner->sputn(s, n);
+    }
+    int sync() override
+    {
+        return inner->pubsync();
+    }
+
+private:
+    std::streambuf* inner;
+    TapSink sink;
+};
+
+void Writer::beginTap(TapSink sink)
+{
+    if (tapBuf)
+        THROWM(Base::RuntimeError, "Writer::beginTap(): a tap is already open")
+    std::ostream& os = Stream();
+    os.flush();
+    tappedBuf = os.rdbuf();
+    tapBuf = std::make_unique<TapBuf>(tappedBuf, std::move(sink));
+    os.rdbuf(tapBuf.get());
+}
+
+void Writer::endTap()
+{
+    if (!tapBuf)
+        return;
+    std::ostream& os = Stream();
+    os.flush();
+    os.rdbuf(tappedBuf);
+    tappedBuf = nullptr;
+    tapBuf.reset();
+}
+
+// After TapBuf is complete: the unique_ptr's deleter is instantiated here.
+Writer::~Writer() = default;
 
 // ----------------------------------------------------------------------------
 

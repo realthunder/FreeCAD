@@ -308,6 +308,15 @@ value not yet resolved (see resolveTransactionLog).</UserDocu>
 The XML fragment of a logged value and its attachments, or None.</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="getTransactionVersions">
+      <Documentation>
+        <UserDocu>getTransactionVersions() -> list of dict
+
+The versions of this document's log (docs/TransactionLog.md sec 16.3),
+each a dict with num, uuid, branch, kind, name, seq, env, docxml, schema,
+created, and manifest: a list of (entry, hash, source).</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="resolveTransactionLog">
       <Documentation>
         <UserDocu>resolveTransactionLog() -> int

@@ -500,6 +500,11 @@ public:
     /// A free path in the store for content that is about to be stored there.
     std::string newBlobPath(const char* extension) const;
 
+    /// The collected save set in hash order, so a document always writes the
+    /// same file for the same content. Read by the save itself and by the
+    /// transaction log's version manifest (docs/TransactionLog.md 16.3).
+    std::vector<FileBlobHandle> collected() const;
+
 private:
     friend class FileBlob;
     /// One file a save is about to write: the name it goes under, the content
@@ -511,9 +516,6 @@ private:
         std::vector<std::string> referrers;
     };
 
-    /// The collected save set in hash order, so a document always writes the
-    /// same file for the same content.
-    std::vector<FileBlobHandle> collected() const;
     /** Decide what every collected blob is called, in name order.
      *
      * \a previous is the index the target directory already holds, which

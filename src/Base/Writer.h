@@ -30,7 +30,9 @@
 #include <sstream>
 #include <vector>
 #include <cassert>
+#include <functional>
 #include <memory>
+#include <streambuf>
 
 #ifdef _MSC_VER
 #include <zipios++/zipios-config.h>
@@ -251,6 +253,21 @@ public:
     /// Return the current character output stream
     std::ostream& charStream();
 
+    /** @name Byte tap
+     *
+     * Every byte written to Stream() between beginTap() and endTap() is
+     * also handed to the sink, in order. The bytes still reach the stream
+     * unchanged; the tap only observes. It is how a save hashes one entry
+     * (Document.xml, docs/TransactionLog.md sec 11) as it streams out
+     * without writing it twice. putNextEntry() ends a tap left open.
+     */
+    //@{
+    using TapSink = std::function<void(const char*, std::size_t)>;
+    void beginTap(TapSink sink);
+    void endTap();
+    bool isTapping() const { return static_cast<bool>(tapBuf); }
+    //@}
+
     // NOLINTBEGIN
 
 protected:
@@ -292,6 +309,9 @@ private:
     std::string ObjectName;
     std::unique_ptr<std::ostream> CharStream;
     CharStreamFormat charStreamFormat {CharStreamFormat::Raw};
+    class TapBuf;
+    std::unique_ptr<TapBuf> tapBuf;
+    std::streambuf* tappedBuf {nullptr};
 };
 
 

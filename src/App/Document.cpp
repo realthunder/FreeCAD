@@ -3159,11 +3159,19 @@ void Document::save(Base::Writer &writer, bool archive) const {
     } else if(writer.getFileVersion() > 1)
         writer.setPreferBinary(false);
 
+    // The log's save record wants Document.xml as written (sec 11): tap
+    // the bytes on their way into the archive rather than serialise twice.
+    TransactionLog* log = getTransactionLog();
+    std::string docXml;
+    if (log)
+        writer.beginTap([&docXml](const char* p, std::size_t n) { docXml.append(p, n); });
+
     writer.Stream() << "<?xml version='1.0' encoding='utf-8'?>\n"
                     << "<!--\n"
                     << " FreeCAD Document, see http://www.freecadweb.org for more information...\n"
                     << "-->\n";
     Document::Save(writer);
+    writer.endTap();
 
     // The included files, one entry per distinct content, straight behind
     // Document.xml and ahead of every entry the file channel will add.
@@ -3191,6 +3199,17 @@ void Document::save(Base::Writer &writer, bool archive) const {
 
     if (writer.hasErrors()) {
         THROWM(Base::FileException, "Failed to write all data to file")
+    }
+
+    if (log) {
+        std::vector<std::pair<std::string, std::string>> blobs;
+        for (const auto& blob : getFileBlobManager().collected()) {
+            // Named by hash, as the manifest keys on it; the extension
+            // says what the bytes are.
+            std::string ext = Base::FileInfo(blob->path()).extension();
+            blobs.emplace_back(blob->hash() + (ext.empty() ? "" : "." + ext), blob->hash());
+        }
+        log->onSave(FileName.getValue(), docXml, blobs, writer.getSchemaVersion());
     }
 
     GetApplication().signalSaveDocument(*this);

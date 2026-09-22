@@ -965,6 +965,43 @@ PyObject* DocumentPy::getTransactionValue(PyObject *args)
     } PY_CATCH;
 }
 
+PyObject* DocumentPy::getTransactionVersions(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    Py::List list;
+    auto log = getDocumentPtr()->getTransactionLog();
+    if (!log)
+        return Py::new_reference_to(list);
+    PY_TRY {
+        auto& store = log->store();
+        for (auto& v : store.versions()) {
+            Py::Dict d;
+            d.setItem("num", Py::Long(static_cast<long long>(v.num)));
+            d.setItem("uuid", Py::String(v.uuid));
+            d.setItem("branch", Py::String(v.branch));
+            d.setItem("kind", Py::String(v.kind));
+            d.setItem("name", Py::String(v.name));
+            d.setItem("seq", Py::Long(static_cast<long long>(v.seq)));
+            d.setItem("env", Py::Long(static_cast<long long>(v.env)));
+            d.setItem("docxml", Py::String(v.docxml_hash));
+            d.setItem("schema", Py::Long(v.schema));
+            d.setItem("created", Py::Float(v.created));
+            Py::List manifest;
+            for (auto& e : store.manifest(v.num)) {
+                Py::Tuple entry(3);
+                entry.setItem(0, Py::String(e.entry));
+                entry.setItem(1, Py::String(e.hash));
+                entry.setItem(2, Py::String(e.source));
+                manifest.append(entry);
+            }
+            d.setItem("manifest", manifest);
+            list.append(d);
+        }
+        return Py::new_reference_to(list);
+    } PY_CATCH;
+}
+
 PyObject* DocumentPy::resolveTransactionLog(PyObject *args)
 {
     if (!PyArg_ParseTuple(args, ""))

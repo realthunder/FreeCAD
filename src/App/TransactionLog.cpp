@@ -34,6 +34,7 @@
 #include <Base/Console.h>
 #include <Base/Exception.h>
 #include <Base/FileInfo.h>
+#include <Base/Uuid.h>
 
 #include "TransactionLog.h"
 #include "Application.h"
@@ -220,6 +221,63 @@ void TransactionLog::onRecompute(const std::vector<RecomputedObject>& objects, d
     catch (std::exception& e) {
         FC_ERR("transaction log: " << e.what());
     }
+}
+
+int64_t TransactionLog::onSave(const std::string& path, const std::string& docXml,
+                               const std::vector<std::pair<std::string, std::string>>& blobs,
+                               int schema)
+{
+    try {
+        resolvePending();
+
+        // Document.xml is a value like any other, durable: the version is
+        // the one place a whole file is kept (sec 16.1). With no
+        // attachments its ref is the SHA-1 of the bytes, which is also the
+        // hash a file on disk is matched by.
+        CapturedValue xml;
+        xml.fragment = docXml;
+        xml.ok = true;
+        const std::string docHash = putValue(xml, "durable");
+
+        LogVersion v;
+        v.uuid = Base::Uuid::createUuid();
+        v.seq = _store->lastSeq();
+        v.env = _environment;
+        v.docxml_hash = docHash;
+        v.schema = schema;
+        v.created = now();
+        std::vector<LogManifestEntry> manifest;
+        manifest.push_back({"Document.xml", docHash, "value"});
+        for (const auto& b : blobs)
+            manifest.push_back({b.first, b.second, "blob"});
+        _store->addVersion(v, manifest);
+
+        LogTransaction t;
+        t.parent = v.seq;
+        t.kind = "save";
+        t.name = "save";
+        t.time = v.created;
+        t.session = _session;
+        std::string escaped;
+        for (char c : path) {
+            if (c == '"' || c == '\\')
+                escaped += '\\';
+            escaped += c;
+        }
+        t.script = "{\"version\":" + std::to_string(v.num) + ",\"docxml\":\"" + docHash
+                 + "\",\"blobs\":" + std::to_string(blobs.size()) + ",\"path\":\"" + escaped
+                 + "\"}";
+        std::vector<LogOp> none;
+        _store->append(t, none);
+        return v.num;
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("transaction log: " << e.what());
+    }
+    catch (std::exception& e) {
+        FC_ERR("transaction log: " << e.what());
+    }
+    return 0;
 }
 
 std::string TransactionLog::putValue(const CapturedValue& value, const std::string& tier)
