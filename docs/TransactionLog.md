@@ -1498,15 +1498,57 @@ log is made and closed with the document, naming user and host only
 under `TransactionLogIdentity` (off). The `recompute` record is a
 transaction of kind `recompute` with no ops whose `script` column holds
 `{env, seconds, objects:[{id, name, error?}]}`, written after the
-implicit transaction of the recompute's own writes. `save`, `restore`,
+implicit transaction of the recompute's own writes. `restore`,
 `import`, `undo`/`redo` rows are not built.
+
+**The save record and the unnamed version, as built** (2026-09-22,
+sections 11 and 16.3). `Document::save` taps the bytes of
+`Document.xml` as they stream into the archive -- `Base::Writer::beginTap`
+/ `endTap`, a forwarding `streambuf` swapped onto the writer's stream, so
+nothing is serialised twice -- and once the entries are written calls
+`TransactionLog::onSave(path, docXml, blobs, schema)`. That resolves
+every pending after ref (the snapshot rule), stores `Document.xml` as a
+durable value (with no attachments its ref *is* the SHA-1 of the bytes),
+appends a `version` row (`num, uuid, branch=main, kind=unnamed, name,
+seq=lastSeq, env, docxml_hash, schema, created`) with a `manifest`
+(`Document.xml` -> that value; each collected blob as
+`<hash>.<ext>` -> the blob store, 16.2), and then a `save` transaction
+with no ops whose `script` is `{version, docxml, blobs, path}`. `truncate`
+keeps every value a manifest names. `TransactionStore` gained
+`addVersion`, `versions`, `getVersion`, `findVersion(docxml_hash)` and
+`manifest`; Python reads them through `Document.getTransactionVersions()`.
+Not yet: `GuiDocument.xml` in the manifest (the Gui writes it through
+`signalSaveDocument` under its own `putNextEntry`, which ends a tap; it
+needs its own tap in `Gui::Document::Save`), the cadence between saves,
+eviction, and the checkout that reads a manifest back.
 
 **Mode.** `TransactionLog` is a preference, 0 (off) by default and 1 for
 `session`. It stays off by default until the writer thread exists: the
 sketch case of section 20 costs 60 ms per commit synchronously today.
 `local` and `embedded` are not built.
 
-**Tests.** Five gtests: ops and refs of create/set/remove and their
+**The browser panel, as built** (2026-09-22, section 22.2).
+`Gui::DockWnd::TransactionLogView` (`src/Gui/TransactionLogView.{h,cpp}`),
+registered as `Std_TransactionLogView`, in the bottom dock area of the
+standard workbench, hidden by default (View -> Panels). It follows the
+active document and refreshes on `signalCommitTransaction`,
+`signalRecomputed`, undo and redo (deferred to the event loop, so the
+recompute record written after `signalRecomputed` is seen). Three panes:
+the transaction rows (seq, kind, origin, name, time, parent; the script
+annotation as tooltip and on the context menu), the ops of the selected
+transaction (container, property, type, before/after refs with
+`pending` shown for an unresolved after, derived), and the value behind
+the selected op (after, then before, fragment and attachment sizes) --
+or, for a row with no ops, its `script` payload, which is how the
+recompute and save records read. A filter box matches any column or the
+script; "Resolve pending" calls `resolvePending()`. The status line
+gives transactions, versions, pending refs, session and the store path.
+Read-only in this cut; the manager operations arrive with their phases.
+
+**Tests.** Six gtests (the sixth: a save makes one unnamed version whose
+`Document.xml` value is byte-identical to the archive entry and hashes
+to `docxml_hash`, `findVersion` matches it, the `save` row follows it,
+pending refs are 0 after it, and `truncate` keeps its value). Five first: ops and refs of create/set/remove and their
 resolution; an unchanged write logs nothing; a log of creates, sets, a
 dynamic property and a remove replays into a fresh document whose
 properties serialise byte-identical; implicit transactions group by
@@ -1516,12 +1558,11 @@ the log on, three of its undo cases see the open implicit transaction in
 `UndoNames` -- the log-on semantics, not a bug, and the reason the mode
 is a preference the suite does not set.
 
-**Next.** The browser panel's first cut (22.2), then in the order the
-phase list gives: the `save` record and the unnamed version with the
-`Document.xml` hash (16.3, 11), history initialised from a file (16.6),
-the writer thread with shared ownership of the undo copies (20.2
-decision 4), the property-supplied hash (6b) -- each shown in the panel
-as it lands.
+**Next.** In the order the phase list gives: history initialised from a
+file (16.6), the writer thread with shared ownership of the undo copies
+(20.2 decision 4), the property-supplied hash (6b), `GuiDocument.xml`
+in the manifest and a versions pane in the panel -- each shown in the
+panel as it lands.
 
 ## 22. The end state, and the browser as a development tool (user, 2026-09-22)
 
