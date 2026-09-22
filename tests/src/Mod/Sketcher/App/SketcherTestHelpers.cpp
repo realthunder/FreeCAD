@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LGPL-2.1-or-later
 
 #include <App/Application.h>
+#include <numbers>
 #include <App/Document.h>
 #include <App/Expression.h>
 #include <App/ObjectIdentifier.h>
