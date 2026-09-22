@@ -1441,12 +1441,15 @@ txn(seq PRIMARY KEY, parent, id, kind, origin, name, time, script, session)
 op(txn, idx, op, ckind, cid, cname, ctype, prop, ptype, meta,
    vbefore, vafter, derived, PRIMARY KEY(txn, idx))
 value(hash PRIMARY KEY, enc, tier, size, data, attach)
+version(num PRIMARY KEY, uuid, branch, kind, name, seq, env, docxml_hash,
+        schema, created)
+manifest(version, entry, hash, source, PRIMARY KEY(version, entry))
 ```
 
 `value.attach` is the attachment list, one `hash name` per line; an
 attachment is a value row of its own (20.2 decision 5). `enc` is `raw`
-or `zstd` (level 3 above 128 bytes). No version, branch or manifest
-tables yet.
+or `zstd` (level 3 above 128 bytes). `version` and `manifest` arrived
+with the save record (below); no branch table yet.
 
 **The writer, as built.**
 
@@ -1551,10 +1554,39 @@ version's value is byte-identical to the entry, the `restore` row is
 the only transaction, the store's path is under the renamed directory,
 and the next commit's ops follow it.
 
+**The writer thread, as built** (2026-09-22, 20.2 decision 4). One
+worker per log, started with it. The commit path on the main thread does
+what needs the live document -- walks the transaction, decides which
+copies are worth serialising (`isSame` against the live property, the
+derived rule), numbers the transaction (`t.seq = ++_nextSeq`; the store's
+`append` and `addVersion` honour a preset `seq`/`num`, so the pending
+map is keyed to real sequence numbers at once) -- and posts one job: the
+`LogTransaction`, its `LogOp`s, and a `ValueTask` per copy, each holding a
+`shared_ptr<const Property>` to the copy, the tier, the op whose before
+ref it fills and the earlier op whose after ref it resolves. The worker
+runs jobs in order: `captureValue` under a `CaptureConfig` taken from the
+document at open (schema, `PreferBinary`) so it never reads the document,
+`putValue` (hash, zstd), `resolveAfter`, then `append`. Shared ownership
+is `TransactionObject::PropData::shared`: the log takes the transaction's
+own copy into it at commit, so the copy outlives the transaction's
+deletion (undo off) or eviction until written, and the transaction stops
+deleting a copy that is shared. Values the transaction does not hold --
+the properties of a removed object, and the live values `resolvePending`
+snapshots -- are `Copy()`d on the main thread, the way the undo system
+copies, and the copy is what the worker gets. Reads never touch the
+store directly: `store()` hands out a `FlushingStore` that waits for the
+queue to drain before every call, so a reference kept across commits
+(the panel, Python, the tests) stays correct; `readValue` flushes too;
+`closeStore` and the destructor flush and join. A commit therefore costs
+the walk, the `Copy()`s the undo system already pays, and a queue push.
+The eighth gtest commits twenty 200 KB edits with undo off -- the
+transactions are deleted at commit -- and reads every before value back
+in order, then resolves the head.
+
 **Mode.** `TransactionLog` is a preference, 0 (off) by default and 1 for
-`session`. It stays off by default until the writer thread exists: the
-sketch case of section 20 costs 60 ms per commit synchronously today.
-`local` and `embedded` are not built.
+`session`. The writer thread now exists; the mode stays a staging switch
+until the log is the undo system (22.1). `local` and `embedded` are not
+built.
 
 **The browser panel, as built** (2026-09-22, section 22.2).
 `Gui::DockWnd::TransactionLogView` (`src/Gui/TransactionLogView.{h,cpp}`),
@@ -1587,10 +1619,9 @@ the log on, three of its undo cases see the open implicit transaction in
 `UndoNames` -- the log-on semantics, not a bug, and the reason the mode
 is a preference the suite does not set.
 
-**Next.** In the order the phase list gives: the writer thread with
-shared ownership of the undo copies (20.2 decision 4), the
-property-supplied hash (6b), `GuiDocument.xml` in the manifest and a
-versions pane in the panel -- each shown in the panel as it lands.
+**Next.** In the order the phase list gives: the property-supplied hash
+(6b), `GuiDocument.xml` in the manifest and a versions pane in the panel
+-- each shown in the panel as it lands.
 
 ## 22. The end state, and the browser as a development tool (user, 2026-09-22)
 

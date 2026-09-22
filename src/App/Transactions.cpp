@@ -455,8 +455,10 @@ TransactionObject::TransactionObject() = default;
  */
 TransactionObject::~TransactionObject()
 {
-    for(auto &v : _PropChangeMap)
-        delete v.second.property;
+    for(auto &v : _PropChangeMap) {
+        if (!v.second.shared)
+            delete v.second.property;
+    }
 }
 
 void TransactionObject::applyDel(Document & /*Doc*/, TransactionalObject * /*pcObj*/)
@@ -572,7 +574,9 @@ void TransactionObject::addOrRemoveProperty(const Property* pcProp, bool add)
         return;
     }
     if(data.property) {
-        delete data.property;
+        if (!data.shared)
+            delete data.property;
+        data.shared.reset();
         data.property = nullptr;
     }
     data.propertyOrig = pcProp;

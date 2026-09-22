@@ -92,16 +92,22 @@ public:
     {
         exec("BEGIN");
         try {
-            auto ins = prepare("INSERT INTO txn(parent,id,kind,origin,name,time,script,session)"
-                               " VALUES(?,?,?,?,?,?,?,?)");
-            sqlite3_bind_int64(ins, 1, txn.parent);
-            sqlite3_bind_int(ins, 2, txn.id);
-            bindText(ins, 3, txn.kind);
-            bindText(ins, 4, txn.origin);
-            bindText(ins, 5, txn.name);
-            sqlite3_bind_double(ins, 6, txn.time);
-            bindText(ins, 7, txn.script);
-            sqlite3_bind_int64(ins, 8, txn.session);
+            // A preset seq is honoured (the writer thread's caller numbers
+            // ahead, TransactionLog); NULL takes the next rowid.
+            auto ins = prepare("INSERT INTO txn(seq,parent,id,kind,origin,name,time,script,session)"
+                               " VALUES(?,?,?,?,?,?,?,?,?)");
+            if (txn.seq > 0)
+                sqlite3_bind_int64(ins, 1, txn.seq);
+            else
+                sqlite3_bind_null(ins, 1);
+            sqlite3_bind_int64(ins, 2, txn.parent);
+            sqlite3_bind_int(ins, 3, txn.id);
+            bindText(ins, 4, txn.kind);
+            bindText(ins, 5, txn.origin);
+            bindText(ins, 6, txn.name);
+            sqlite3_bind_double(ins, 7, txn.time);
+            bindText(ins, 8, txn.script);
+            sqlite3_bind_int64(ins, 9, txn.session);
             step(ins);
             txn.seq = sqlite3_last_insert_rowid(db);
 
@@ -352,17 +358,21 @@ public:
     {
         exec("BEGIN");
         try {
-            auto s = prepare("INSERT INTO version(uuid,branch,kind,name,seq,env,docxml_hash,"
-                             "schema,created) VALUES(?,?,?,?,?,?,?,?,?)");
-            bindText(s, 1, v.uuid);
-            bindText(s, 2, v.branch);
-            bindText(s, 3, v.kind);
-            bindText(s, 4, v.name);
-            sqlite3_bind_int64(s, 5, v.seq);
-            sqlite3_bind_int64(s, 6, v.env);
-            bindText(s, 7, v.docxml_hash);
-            sqlite3_bind_int(s, 8, v.schema);
-            sqlite3_bind_double(s, 9, v.created);
+            auto s = prepare("INSERT INTO version(num,uuid,branch,kind,name,seq,env,docxml_hash,"
+                             "schema,created) VALUES(?,?,?,?,?,?,?,?,?,?)");
+            if (v.num > 0)
+                sqlite3_bind_int64(s, 1, v.num);
+            else
+                sqlite3_bind_null(s, 1);
+            bindText(s, 2, v.uuid);
+            bindText(s, 3, v.branch);
+            bindText(s, 4, v.kind);
+            bindText(s, 5, v.name);
+            sqlite3_bind_int64(s, 6, v.seq);
+            sqlite3_bind_int64(s, 7, v.env);
+            bindText(s, 8, v.docxml_hash);
+            sqlite3_bind_int(s, 9, v.schema);
+            sqlite3_bind_double(s, 10, v.created);
             step(s);
             v.num = sqlite3_last_insert_rowid(db);
             auto m = prepare("INSERT OR REPLACE INTO manifest(version,entry,hash,source)"
@@ -396,6 +406,16 @@ public:
         v.docxml_hash = text(s, 7);
         v.schema = sqlite3_column_int(s, 8);
         v.created = sqlite3_column_double(s, 9);
+    }
+
+    int64_t lastVersion() override
+    {
+        auto s = prepare("SELECT MAX(num) FROM version");
+        int64_t n = 0;
+        if (sqlite3_step(s) == SQLITE_ROW)
+            n = sqlite3_column_int64(s, 0);
+        sqlite3_reset(s);
+        return n;
     }
 
     std::vector<LogVersion> versions() override

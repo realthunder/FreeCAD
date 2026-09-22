@@ -49,14 +49,14 @@ namespace {
 class CaptureWriter : public Base::Writer
 {
 public:
-    explicit CaptureWriter(const Document& doc, CapturedValue& out)
+    explicit CaptureWriter(const CaptureConfig& config, CapturedValue& out)
         : _out(out)
     {
         setFileVersion(2);
         setForceXML(0);
         setSplitXML(false);
-        setSchemaVersion(static_cast<int>(doc.getSaveSchemaVersion()));
-        if (doc.PreferBinary.getValue()) {
+        setSchemaVersion(config.schema);
+        if (config.preferBinary) {
             setMode("BinaryBrep");
             setPreferBinary(true);
         }
@@ -96,10 +96,21 @@ private:
 
 } // namespace
 
+App::CaptureConfig::CaptureConfig(const Document& doc)
+    : schema(static_cast<int>(doc.getSaveSchemaVersion()))
+    , preferBinary(doc.PreferBinary.getValue())
+{
+}
+
 CapturedValue App::captureValue(const Document& doc, const Base::Persistence& what)
 {
+    return captureValue(CaptureConfig(doc), what);
+}
+
+CapturedValue App::captureValue(const CaptureConfig& config, const Base::Persistence& what)
+{
     CapturedValue v;
-    CaptureWriter writer(doc, v);
+    CaptureWriter writer(config, v);
     try {
         what.Save(writer);
         writer.writeFiles();

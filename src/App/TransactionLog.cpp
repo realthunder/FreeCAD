@@ -115,6 +115,57 @@ ContainerInfo describe(Document& doc, const TransactionalObject* tobj, const std
 
 } // namespace
 
+/** What store() hands out: every call waits for the worker's queue to
+ * drain, then forwards. A reference kept across commits stays safe, which
+ * a bare reference to the store would not be.
+ */
+class TransactionLog::FlushingStore : public TransactionStore
+{
+public:
+    explicit FlushingStore(TransactionLog& log) : _log(log) {}
+
+    int64_t append(LogTransaction& txn, std::vector<LogOp>& ops) override
+    { return inner().append(txn, ops); }
+    void resolveAfter(int64_t txn, int idx, const std::string& hash) override
+    { inner().resolveAfter(txn, idx, hash); }
+    bool hasValue(const std::string& hash) override { return inner().hasValue(hash); }
+    void putValue(const LogValue& value) override { inner().putValue(value); }
+    bool getValue(const std::string& hash, LogValue& value) override
+    { return inner().getValue(hash, value); }
+    std::vector<LogTransaction> transactions(int64_t from, int limit) override
+    { return inner().transactions(from, limit); }
+    std::vector<LogOp> ops(int64_t txn) override { return inner().ops(txn); }
+    int64_t lastSeq() override { return inner().lastSeq(); }
+    void truncate(int64_t before) override { inner().truncate(before); }
+    int64_t environment(const std::string& json) override { return inner().environment(json); }
+    std::string environmentJson(int64_t id) override { return inner().environmentJson(id); }
+    int64_t openSession(int64_t env, const std::string& user, const std::string& host,
+                        double opened) override
+    { return inner().openSession(env, user, host, opened); }
+    void closeSession(int64_t id, double closed) override { inner().closeSession(id, closed); }
+    std::vector<LogSession> sessions() override { return inner().sessions(); }
+    int64_t addVersion(LogVersion& version, const std::vector<LogManifestEntry>& manifest) override
+    { return inner().addVersion(version, manifest); }
+    std::vector<LogVersion> versions() override { return inner().versions(); }
+    int64_t lastVersion() override { return inner().lastVersion(); }
+    bool getVersion(int64_t num, LogVersion& version) override
+    { return inner().getVersion(num, version); }
+    bool findVersion(const std::string& docxmlHash, LogVersion& version) override
+    { return inner().findVersion(docxmlHash, version); }
+    std::vector<LogManifestEntry> manifest(int64_t num) override { return inner().manifest(num); }
+    std::string getMeta(const std::string& key) override { return inner().getMeta(key); }
+    void setMeta(const std::string& key, const std::string& value) override
+    { inner().setMeta(key, value); }
+
+private:
+    TransactionStore& inner()
+    {
+        _log.flush();
+        return *_log._store;
+    }
+    TransactionLog& _log;
+};
+
 TransactionLog::TransactionLog(Document& doc)
     : _doc(doc)
 {
@@ -157,7 +208,63 @@ TransactionLog::TransactionLog(Document& doc)
             host = h->second;
     }
     _session = _store->openSession(_environment, user, host, now());
+    _config = CaptureConfig(doc);
+    _worker = std::thread([this]() { run(); });
     FC_LOG("transaction log " << _path << " session " << _session);
+}
+
+void TransactionLog::run()
+{
+    std::unique_lock<std::mutex> lock(_mutex);
+    for (;;) {
+        _wake.wait(lock, [this]() { return _stop || !_queue.empty(); });
+        if (_queue.empty()) {
+            if (_stop)
+                return;
+            continue;
+        }
+        auto job = std::move(_queue.front());
+        _queue.pop_front();
+        _running = true;
+        lock.unlock();
+        try {
+            job();
+        }
+        catch (Base::Exception& e) {
+            FC_ERR("transaction log: " << e.what());
+        }
+        catch (std::exception& e) {
+            FC_ERR("transaction log: " << e.what());
+        }
+        catch (...) {
+            FC_ERR("transaction log: write failed");
+        }
+        lock.lock();
+        _running = false;
+        _done.notify_all();
+    }
+}
+
+void TransactionLog::post(std::function<void()> job)
+{
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+        _queue.push_back(std::move(job));
+    }
+    _wake.notify_one();
+}
+
+void TransactionLog::flush()
+{
+    std::unique_lock<std::mutex> lock(_mutex);
+    _done.wait(lock, [this]() { return _queue.empty() && !_running; });
+}
+
+TransactionStore& TransactionLog::store()
+{
+    if (!_reader)
+        _reader = std::make_unique<FlushingStore>(*this);
+    return *_reader;
 }
 
 void TransactionLog::openStore()
@@ -168,10 +275,13 @@ void TransactionLog::openStore()
     _store = TransactionStore::openSQLite(_path);
     if (_store->getMeta("document").empty())
         _store->setMeta("document", _doc.Uid.getValueStr());
+    _nextSeq = _store->lastSeq();
+    _nextVersion = _store->lastVersion();
 }
 
 void TransactionLog::closeStore()
 {
+    flush();
     _store.reset();
 }
 
@@ -193,6 +303,14 @@ bool TransactionLog::reopenStore()
 TransactionLog::~TransactionLog()
 {
     try {
+        flush();
+        {
+            std::lock_guard<std::mutex> lock(_mutex);
+            _stop = true;
+        }
+        _wake.notify_all();
+        if (_worker.joinable())
+            _worker.join();
         if (_store && _session)
             _store->closeSession(_session, now());
     }
@@ -206,7 +324,8 @@ void TransactionLog::onRecompute(const std::vector<RecomputedObject>& objects, d
         return;
     try {
         LogTransaction t;
-        t.parent = _store->lastSeq();
+        t.parent = _nextSeq;
+        t.seq = ++_nextSeq;
         t.kind = "recompute";
         t.name = "recompute";
         t.time = now();
@@ -237,8 +356,10 @@ void TransactionLog::onRecompute(const std::vector<RecomputedObject>& objects, d
         }
         j += "]}";
         t.script = j;
-        std::vector<LogOp> none;
-        _store->append(t, none);
+        post([this, t]() mutable {
+            std::vector<LogOp> none;
+            _store->append(t, none);
+        });
     }
     catch (Base::Exception& e) {
         FC_ERR("transaction log: " << e.what());
@@ -259,7 +380,7 @@ int64_t TransactionLog::onRestore(const std::string& path, const std::string& do
                                   const std::vector<std::pair<std::string, std::string>>& blobs,
                                   int schema)
 {
-    if (_store->lastSeq() != 0 || !_store->versions().empty()) {
+    if (_nextSeq != 0 || _nextVersion != 0) {
         // Sec 16.6's second case, a history the file no longer matches, is
         // the embedded mode's to handle; a session store is always fresh.
         FC_WARN("transaction log of " << _doc.getName() << " is not empty at restore");
@@ -276,45 +397,54 @@ int64_t TransactionLog::snapshot(const char* kind, const std::string& path,
     try {
         resolvePending();
 
-        // Document.xml is a value like any other, durable: the version is
-        // the one place a whole file is kept (sec 16.1). With no
-        // attachments its ref is the SHA-1 of the bytes, which is also the
-        // hash a file on disk is matched by.
-        CapturedValue xml;
-        xml.fragment = docXml;
-        xml.ok = true;
-        const std::string docHash = putValue(xml, "durable");
-
+        // Numbered here, written by the worker after everything queued
+        // before it -- the resolves above included, so the version's ops
+        // are complete when it lands.
         LogVersion v;
+        v.num = ++_nextVersion;
         v.uuid = Base::Uuid::createUuid();
-        v.seq = _store->lastSeq();
+        v.seq = _nextSeq;
         v.env = _environment;
-        v.docxml_hash = docHash;
         v.schema = schema;
         v.created = now();
-        std::vector<LogManifestEntry> manifest;
-        manifest.push_back({"Document.xml", docHash, "value"});
-        for (const auto& b : blobs)
-            manifest.push_back({b.first, b.second, "blob"});
-        _store->addVersion(v, manifest);
 
         LogTransaction t;
-        t.parent = v.seq;
+        t.parent = _nextSeq;
+        t.seq = ++_nextSeq;
         t.kind = kind;
         t.name = kind;
         t.time = v.created;
         t.session = _session;
+
         std::string escaped;
         for (char c : path) {
             if (c == '"' || c == '\\')
                 escaped += '\\';
             escaped += c;
         }
-        t.script = "{\"version\":" + std::to_string(v.num) + ",\"docxml\":\"" + docHash
-                 + "\",\"blobs\":" + std::to_string(blobs.size()) + ",\"schema\":"
-                 + std::to_string(schema) + ",\"path\":\"" + escaped + "\"}";
-        std::vector<LogOp> none;
-        _store->append(t, none);
+        const size_t nblobs = blobs.size();
+        post([this, v, t, docXml, blobs, schema, escaped, nblobs]() mutable {
+            // Document.xml is a value like any other, durable: the version
+            // is the one place a whole file is kept (sec 16.1). With no
+            // attachments its ref is the SHA-1 of the bytes, which is also
+            // the hash a file on disk is matched by.
+            CapturedValue xml;
+            xml.fragment = docXml;
+            xml.ok = true;
+            const std::string docHash = putValue(xml, "durable");
+            v.docxml_hash = docHash;
+            std::vector<LogManifestEntry> manifest;
+            manifest.push_back({"Document.xml", docHash, "value"});
+            for (const auto& b : blobs)
+                manifest.push_back({b.first, b.second, "blob"});
+            _store->addVersion(v, manifest);
+
+            t.script = "{\"version\":" + std::to_string(v.num) + ",\"docxml\":\"" + docHash
+                     + "\",\"blobs\":" + std::to_string(nblobs) + ",\"schema\":"
+                     + std::to_string(schema) + ",\"path\":\"" + escaped + "\"}";
+            std::vector<LogOp> none;
+            _store->append(t, none);
+        });
         return v.num;
     }
     catch (Base::Exception& e) {
@@ -405,6 +535,7 @@ bool inflate(LogValue& v, std::string& out)
 
 bool TransactionLog::readValue(const std::string& hash, CapturedValue& out)
 {
+    flush();
     LogValue v;
     if (!_store->getValue(hash, v))
         return false;
@@ -425,18 +556,31 @@ bool TransactionLog::readValue(const std::string& hash, CapturedValue& out)
     return true;
 }
 
-void TransactionLog::resolve(int64_t key, const std::string& hash)
+void TransactionLog::takePending(int64_t key, ValueTask& task)
 {
     auto it = _pending.find(key);
     if (it == _pending.end())
         return;
-    _store->resolveAfter(it->second.txn, it->second.idx, hash);
+    task.resolveTxn = it->second.txn;
+    task.resolveIdx = it->second.idx;
     _pending.erase(it);
 }
 
-void TransactionLog::resolve(const Property& prop, const std::string& hash)
+void TransactionLog::writeValues(std::vector<ValueTask>& tasks, std::vector<LogOp>& ops)
 {
-    resolve(prop.getID(), hash);
+    for (auto& task : tasks) {
+        std::string hash;
+        if (task.copy) {
+            CapturedValue cv = captureValue(_config, *task.copy);
+            if (cv.ok)
+                hash = putValue(cv, task.tier);
+        }
+        if (task.opIndex >= 0)
+            ops[task.opIndex].vbefore = hash;
+        if (task.resolveTxn > 0)
+            _store->resolveAfter(task.resolveTxn, task.resolveIdx, hash);
+        task.copy.reset();   // the share is released as soon as it is written
+    }
 }
 
 void TransactionLog::onCommit(const Transaction& txn, const char* kind, const char* origin)
@@ -445,7 +589,8 @@ void TransactionLog::onCommit(const Transaction& txn, const char* kind, const ch
         return;
     try {
         LogTransaction t;
-        t.parent = _store->lastSeq();
+        t.parent = _nextSeq;
+        t.seq = ++_nextSeq;
         t.id = txn.getID();
         t.kind = kind;
         t.origin = origin;
@@ -454,22 +599,40 @@ void TransactionLog::onCommit(const Transaction& txn, const char* kind, const ch
         t.session = _session;
 
         std::vector<LogOp> ops;
-        // Ops whose after ref is pending, by property id, resolved to
-        // (txn, idx) once append() has numbered them.
+        std::vector<ValueTask> tasks;
+        // Ops whose after ref is pending, by property id, keyed to
+        // (t.seq, idx); moved into _pending once the job is queued.
         std::vector<std::pair<int64_t, Pending>> newPending;
         auto pendOp = [&](const Property& prop, const ContainerInfo& c, const char* tier) {
             Pending p;
-            p.txn = 0;
+            p.txn = t.seq;
             p.idx = static_cast<int>(ops.size()) - 1;   // the op just emitted
             p.cid = c.cid;
             p.prop = ops.back().prop;
             p.tier = tier;
             newPending.emplace_back(prop.getID(), p);
         };
+        // A copy for the worker: the transaction's own, co-owned from now
+        // (decision 4), or one made here for a value the transaction does
+        // not hold. `fill` is the op whose before it is, -1 for none.
+        auto task = [&](std::shared_ptr<const Property> copy, const char* tier, int fill,
+                        int64_t pendingKey) {
+            ValueTask v;
+            v.copy = std::move(copy);
+            v.tier = tier;
+            v.opIndex = fill;
+            takePending(pendingKey, v);
+            tasks.push_back(std::move(v));
+        };
+        auto share = [](TransactionObject::PropData& data) {
+            if (!data.shared && data.property)
+                data.shared.reset(data.property);
+            return std::shared_ptr<const Property>(data.shared);
+        };
 
         for (auto& info : txn._Objects.get<0>()) {
             const TransactionalObject* tobj = info.first;
-            const TransactionObject& rec = *info.second;
+            TransactionObject& rec = *info.second;
             ContainerInfo c = describe(_doc, tobj, rec._NameInDocument);
             auto emit = [&](const char* op, const std::string& prop, const std::string& ptype) {
                 LogOp o;
@@ -481,6 +644,7 @@ void TransactionLog::onCommit(const Transaction& txn, const char* kind, const ch
                 ops.push_back(std::move(o));
                 return &ops.back();
             };
+            auto last = [&]() { return static_cast<int>(ops.size()) - 1; };
 
             if (rec.status == TransactionObject::Del) {
                 // Created in this transaction: the op, the dynamic property
@@ -510,8 +674,10 @@ void TransactionLog::onCommit(const Transaction& txn, const char* kind, const ch
 
             if (rec.status == TransactionObject::New) {
                 // Removed in this transaction. The object is detached and
-                // alive (the transaction holds it), so its values can be
-                // serialised now; each resolves whatever was pending on it.
+                // alive (the transaction holds it), but not for as long as
+                // the worker may need it: each value is copied here, the
+                // way the undo system copies a changed one, and the copy is
+                // what is serialised. Each resolves whatever was pending.
                 std::map<std::string, Property*> props;
                 c.container->getPropertyMap(props);
                 for (auto& kv : props) {
@@ -520,11 +686,9 @@ void TransactionLog::onCommit(const Transaction& txn, const char* kind, const ch
                         continue;
                     if (!kv.second->getName())
                         continue;
-                    CapturedValue cv = captureValue(_doc, *kv.second);
-                    std::string hash = cv.ok ? putValue(cv, "durable") : std::string();
-                    resolve(*kv.second, hash);
-                    auto o = emit("set", kv.first, kv.second->getTypeId().getName());
-                    o->vbefore = hash;
+                    emit("set", kv.first, kv.second->getTypeId().getName());
+                    std::shared_ptr<const Property> copy(kv.second->Copy());
+                    task(std::move(copy), "durable", last(), kv.second->getID());
                 }
                 auto o = emit("remove", "", "");
                 o->cname = c.cname;
@@ -553,12 +717,9 @@ void TransactionLog::onCommit(const Transaction& txn, const char* kind, const ch
                     // The original is gone: a dynamic property removed.
                     if (data.name.empty())
                         continue;
-                    CapturedValue cv = captureValue(_doc, *data.property);
-                    std::string hash = cv.ok ? putValue(cv, "durable") : std::string();
-                    resolve(kv.first, hash);
                     auto o = emit("delprop", data.name, typeName);
                     o->meta = dynamicMeta(data);
-                    o->vbefore = hash;
+                    task(share(data), "durable", last(), kv.first);
                     continue;
                 }
                 short ptype = c.container->getPropertyType(prop);
@@ -567,32 +728,42 @@ void TransactionLog::onCommit(const Transaction& txn, const char* kind, const ch
 
                 bool derived = data.derived;
                 bool waiting = _pending.count(kv.first) != 0;
-                if (!waiting && data.property->isSame(*prop))
+                bool same = data.property->isSame(*prop);
+                if (!waiting && same)
                     continue;   // a write that changed nothing, sec 9.1
-                std::string before;
-                if (recordsValue(derived) || waiting) {
-                    CapturedValue cv = captureValue(_doc, *data.property);
-                    if (cv.ok)
-                        before = putValue(cv, tierFor(derived));
-                    resolve(kv.first, before);
+                if (waiting && same) {
+                    // Only the earlier op needed this copy (decision 6a).
+                    task(share(data), tierFor(derived), -1, kv.first);
+                    continue;
                 }
-                if (waiting && data.property->isSame(*prop))
-                    continue;   // only the earlier op needed this copy
                 auto o = emit("set", name, typeName);
                 o->derived = derived;
-                o->vbefore = before;
+                if (recordsValue(derived) || waiting)
+                    task(share(data), tierFor(derived), recordsValue(derived) ? last() : -1,
+                         kv.first);
                 if (recordsValue(derived))
                     pendOp(*prop, c, tierFor(derived));
             }
         }
 
-        if (ops.empty())
+        if (ops.empty()) {
+            // Nothing to record; copies that only resolve earlier ops are
+            // still written.
+            --_nextSeq;
+            if (!tasks.empty()) {
+                post([this, tasks]() mutable {
+                    std::vector<LogOp> none;
+                    writeValues(tasks, none);
+                });
+            }
             return;
-        _store->append(t, ops);
-        for (auto& p : newPending) {
-            p.second.txn = t.seq;
-            _pending[p.first] = p.second;
         }
+        for (auto& p : newPending)
+            _pending[p.first] = p.second;
+        post([this, t, ops, tasks]() mutable {
+            writeValues(tasks, ops);
+            _store->append(t, ops);
+        });
     }
     catch (Base::Exception& e) {
         FC_ERR("transaction log: " << e.what());
@@ -604,9 +775,12 @@ void TransactionLog::onCommit(const Transaction& txn, const char* kind, const ch
 
 void TransactionLog::resolvePending()
 {
-    // Snapshot the live values behind the pending refs. Looked up by
-    // container id and name rather than through the property pointer,
-    // which may be gone without a remove op if undo was off for a while.
+    // Copy the live values behind the pending refs -- the copy the undo
+    // system would take, here for the log -- and let the worker write
+    // them. Looked up by container id and name rather than through the
+    // property pointer, which may be gone without a remove op if undo
+    // was off for a while.
+    std::vector<ValueTask> tasks;
     std::vector<std::pair<int64_t, Pending>> todo(_pending.begin(), _pending.end());
     for (auto& kv : todo) {
         const PropertyContainer* container = nullptr;
@@ -627,8 +801,16 @@ void TransactionLog::resolvePending()
             _pending.erase(kv.first);
             continue;
         }
-        CapturedValue cv = captureValue(_doc, *prop);
-        std::string hash = cv.ok ? putValue(cv, kv.second.tier) : std::string();
-        resolve(kv.first, hash);
+        ValueTask v;
+        v.copy.reset(prop->Copy());
+        v.tier = kv.second.tier;
+        takePending(kv.first, v);
+        tasks.push_back(std::move(v));
     }
+    if (tasks.empty())
+        return;
+    post([this, tasks]() mutable {
+        std::vector<LogOp> none;
+        writeValues(tasks, none);
+    });
 }

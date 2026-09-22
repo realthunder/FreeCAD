@@ -60,9 +60,20 @@ struct CapturedValue
     }
 };
 
+/// What of the document a capture needs to write the bytes a save would:
+/// taken on the main thread so the serialiser can run on another.
+struct CaptureConfig
+{
+    int schema {0};
+    bool preferBinary {false};
+    CaptureConfig() = default;
+    explicit CaptureConfig(const Document& doc);
+};
+
 /// Serialise `what` (a property, or a whole container) the way a save of
 /// `doc` would write it. Never throws; `ok` is false on failure.
 AppExport CapturedValue captureValue(const Document& doc, const Base::Persistence& what);
+AppExport CapturedValue captureValue(const CaptureConfig& config, const Base::Persistence& what);
 
 /// Restore a property from a captured value: the fragment through
 /// Property::Restore, then each attachment through RestoreDocFile.

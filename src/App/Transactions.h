@@ -25,6 +25,7 @@
 #ifndef APP_TRANSACTION_H
 #define APP_TRANSACTION_H
 
+#include <memory>
 #include <unordered_map>
 #include <Base/Factory.h>
 #include <Base/Persistence.h>
@@ -156,6 +157,11 @@ protected:
         /// output (docs/TransactionLog.md sec 10). Recorded here because
         /// only the write site can tell; a commit-time reader cannot.
         bool derived = false;
+        /// Set by the transaction log when it hands `property` to its
+        /// writer thread (docs/TransactionLog.md sec 20.2, decision 4):
+        /// the copy is then co-owned, and outlives this record until it
+        /// is serialised. While set, `property` is not deleted here.
+        std::shared_ptr<Property> shared;
     };
     std::unordered_map<int64_t, PropData> _PropChangeMap;
 

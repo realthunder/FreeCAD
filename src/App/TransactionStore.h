@@ -141,7 +141,9 @@ public:
     virtual ~TransactionStore() = default;
 
     /// Append one transaction with its ops, atomically. Returns its seq;
-    /// the ops' `txn` and `idx` are filled in.
+    /// the ops' `txn` and `idx` are filled in. A `seq` set ahead (> 0) is
+    /// used as given, so a caller that numbers on one thread and writes
+    /// on another can name the row before it exists; 0 takes the next.
     virtual int64_t append(LogTransaction& txn, std::vector<LogOp>& ops) = 0;
     /// Fill the after ref of an op left pending by append().
     virtual void resolveAfter(int64_t txn, int idx, const std::string& hash) = 0;
@@ -170,10 +172,12 @@ public:
     virtual std::vector<LogSession> sessions() = 0;
 
     /// Append a version with its manifest, atomically; `num` is assigned
-    /// (the next number) and returned.
+    /// (the next number, or as preset when > 0, as for append) and returned.
     virtual int64_t addVersion(LogVersion& version,
                                const std::vector<LogManifestEntry>& manifest) = 0;
     virtual std::vector<LogVersion> versions() = 0;
+    /// The highest version number, 0 when there is none.
+    virtual int64_t lastVersion() = 0;
     virtual bool getVersion(int64_t num, LogVersion& version) = 0;
     /// The latest version whose Document.xml hashes to `hash`, or false.
     virtual bool findVersion(const std::string& docxmlHash, LogVersion& version) = 0;

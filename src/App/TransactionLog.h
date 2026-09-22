@@ -23,9 +23,14 @@
 #ifndef APP_TRANSACTION_LOG_H
 #define APP_TRANSACTION_LOG_H
 
+#include <condition_variable>
 #include <cstdint>
+#include <deque>
+#include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <FCGlobal.h>
 
@@ -60,6 +65,17 @@ class Transaction;
  * Mode is DocumentParams::TransactionLog: 0 off, 1 session (the store lives
  * in the transient directory and dies with it). Derived values follow
  * DocumentParams::TransactionLogDerived (sec 10).
+ *
+ * The writer thread (sec 20.2, decision 4). The commit path on the main
+ * thread decides what is written -- the ops, which copies are worth
+ * serialising, what they resolve -- and numbers the transaction; the
+ * serialising, hashing, compressing and the store writes run on one
+ * worker, in commit order. A copy handed over is co-owned
+ * (TransactionObject::PropData::shared) so it outlives its transaction's
+ * eviction until written. The main thread owns the sequence counters and
+ * the pending map; the worker owns the store while jobs are queued, and
+ * every main-thread read goes through store(), which waits for the queue
+ * to drain first.
  */
 class AppExport TransactionLog
 {
@@ -123,8 +139,14 @@ public:
     void resolvePending();
     size_t pendingCount() const { return _pending.size(); }
 
-    TransactionStore& store() { return *_store; }
+    /// The store, for reading: what it returns waits for every queued
+    /// write before each call, so the reference can be kept.
+    TransactionStore& store();
     const std::string& path() const { return _path; }
+    /// Wait until every queued job has been written.
+    void flush();
+    /// Transactions numbered so far (the last seq, queued writes included).
+    int64_t lastSeq() const { return _nextSeq; }
 
     /** The store follows the transient directory.
      *
@@ -153,6 +175,19 @@ private:
         std::string tier;
     };
 
+    /// One value the worker serialises: the copy it owns a share of, the
+    /// tier, the op of the job's transaction whose before ref it fills
+    /// (-1 for none) and the earlier op whose after ref it resolves
+    /// (resolveTxn 0 for none).
+    struct ValueTask
+    {
+        std::shared_ptr<const Property> copy;
+        std::string tier;
+        int opIndex {-1};
+        int64_t resolveTxn {0};
+        int resolveIdx {0};
+    };
+
     /// Open the store under the document's current transient directory.
     void openStore();
     /// A version from the file's entries plus the record (`save` or
@@ -160,18 +195,40 @@ private:
     int64_t snapshot(const char* kind, const std::string& path, const std::string& docXml,
                      const std::vector<std::pair<std::string, std::string>>& blobs, int schema);
     /// Store a captured value (fragment and attachments) and return its ref.
+    /// Worker thread.
     std::string putValue(const CapturedValue& value, const std::string& tier);
-    void resolve(const Property& prop, const std::string& hash);
-    void resolve(int64_t key, const std::string& hash);
+    /// Serialise each task's copy and write what it fills and resolves.
+    /// Worker thread.
+    void writeValues(std::vector<ValueTask>& tasks, std::vector<LogOp>& ops);
+    /// Take the pending entry of `key` into `task`, if there is one.
+    void takePending(int64_t key, ValueTask& task);
+    /// Queue a job for the worker, in order.
+    void post(std::function<void()> job);
+    void run();
 
     Document& _doc;
     std::string _path;
     int64_t _environment {0};
     int64_t _session {0};
     std::unique_ptr<TransactionStore> _store;
+    class FlushingStore;
+    std::unique_ptr<FlushingStore> _reader;
+    /// The last seq and version number handed out; main thread only.
+    int64_t _nextSeq {0};
+    int64_t _nextVersion {0};
     /// Property id -> the op whose after ref that property's next copy
-    /// resolves. Filled after append() assigns the seq.
+    /// resolves; main thread only.
     std::unordered_map<int64_t, Pending> _pending;
+    /// What a capture on the worker needs of the document.
+    CaptureConfig _config;
+
+    std::thread _worker;
+    std::mutex _mutex;
+    std::condition_variable _wake;
+    std::condition_variable _done;
+    std::deque<std::function<void()>> _queue;
+    bool _running {false};
+    bool _stop {false};
 };
 
 } // namespace App

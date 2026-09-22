@@ -361,6 +361,55 @@ TEST_F(TransactionLogTest, recomputeRecordAndSession)
     EXPECT_EQ(txns[txns.size() - 2].kind, "implicit");
 }
 
+TEST_F(TransactionLogTest, writerOutlivesTransaction)
+{
+    // Undo off: the transaction is deleted at commit, and with it the
+    // copies the writer serialises unless it holds a share of them (sec
+    // 20.2, decision 4). Values are read back after the queue drains.
+    doc()->setUndoMode(0);
+    auto obj = make("Obj");
+    doc()->commitTransaction();
+    std::string big(200000, 'x');
+    for (int i = 0; i < 20; ++i) {
+        App::Application::InvocationScope scope("edit");
+        obj->Integer.setValue(100 + i);
+        obj->String.setValue(big + std::to_string(i));
+    }
+    EXPECT_FALSE(doc()->hasPendingTransaction());
+    // Seq numbers are handed out ahead of the writes.
+    EXPECT_EQ(log().lastSeq(), 21);
+
+    auto& store = log().store();
+    auto txns = store.transactions();
+    ASSERT_EQ(txns.size(), 21u);
+    // Every before value is there, and the copy was the value at the time:
+    // the i-th edit's before on String is the (i-1)-th string.
+    int seen = 0;
+    for (size_t k = 2; k < txns.size(); ++k) {
+        for (auto& o : store.ops(txns[k].seq)) {
+            if (o.prop != "String")
+                continue;
+            ASSERT_EQ(o.vbefore.size(), 40u) << txns[k].seq;
+            App::CapturedValue v;
+            ASSERT_TRUE(log().readValue(o.vbefore, v));
+            EXPECT_NE(v.fragment.find(big + std::to_string(k - 2)), std::string::npos) << k;
+            ++seen;
+        }
+    }
+    EXPECT_EQ(seen, 19);
+    // The head after ref is pending until resolved; then it is the last.
+    log().resolvePending();
+    EXPECT_EQ(log().pendingCount(), 0u);
+    auto ops = store.ops(txns.back().seq);
+    for (auto& o : ops) {
+        if (o.prop == "String") {
+            App::CapturedValue v;
+            ASSERT_TRUE(log().readValue(o.vafter, v));
+            EXPECT_NE(v.fragment.find(big + "19"), std::string::npos);
+        }
+    }
+}
+
 TEST_F(TransactionLogTest, saveRecordAndVersion)
 {
     doc()->openTransaction("create");
