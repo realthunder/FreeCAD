@@ -56,6 +56,10 @@ public:
         setForceXML(0);
         setSplitXML(false);
         setSchemaVersion(config.schema);
+        // A property holding the file its value was last written to may
+        // answer with that file's hash instead of its content (decision
+        // 6b); the log holds the file through BlobReferrerProperty.
+        setMode("BlobRef");
         if (config.preferBinary) {
             setMode("BinaryBrep");
             setPreferBinary(true);

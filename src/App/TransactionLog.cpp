@@ -41,6 +41,7 @@
 #include "Document.h"
 #include "DocumentObject.h"
 #include "DocumentParams.h"
+#include "FileBlobManager.h"
 #include "Property.h"
 #include "Transactions.h"
 
@@ -311,6 +312,7 @@ TransactionLog::~TransactionLog()
         _wake.notify_all();
         if (_worker.joinable())
             _worker.join();
+        _blobs.clear();
         if (_store && _session)
             _store->closeSession(_session, now());
     }
@@ -574,6 +576,13 @@ void TransactionLog::writeValues(std::vector<ValueTask>& tasks, std::vector<LogO
             CapturedValue cv = captureValue(_config, *task.copy);
             if (cv.ok)
                 hash = putValue(cv, task.tier);
+            // A value that named its blob (decision 6b, `hash=` in the
+            // fragment) is complete only while the file exists: hold it,
+            // in the document's one store (sec 16.2).
+            if (auto referrer = dynamic_cast<const BlobReferrerProperty*>(task.copy.get())) {
+                if (auto blob = referrer->contentBlob())
+                    _blobs.emplace(blob->hash(), blob);
+            }
         }
         if (task.opIndex >= 0)
             ops[task.opIndex].vbefore = hash;

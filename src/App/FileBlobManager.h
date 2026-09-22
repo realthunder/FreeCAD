@@ -234,6 +234,18 @@ public:
      * leaves the derived name without one.
      */
     virtual std::string blobExtension() const { return {}; }
+
+    /** The blob holding this property's whole content as it stands, or null.
+     *
+     * A property that keeps the file its value was last written to (a
+     * shape after a save, until it changes) answers it here so that a
+     * reader wanting a content hash -- the transaction log
+     * (docs/TransactionLog.md sec 20.2, decision 6b) -- can take the hash
+     * and hold the blob instead of serialising the value again. Null
+     * means "not known": the caller serialises. It must never name a blob
+     * whose content differs from the value.
+     */
+    virtual FileBlobHandle contentBlob() const { return {}; }
 };
 
 /** Per-document store of the files referenced by PropertyFileIncluded.

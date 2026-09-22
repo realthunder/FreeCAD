@@ -34,6 +34,7 @@
 #include <unordered_map>
 #include <FCGlobal.h>
 
+#include "FileBlobManager.h"
 #include "TransactionStore.h"
 #include "TransactionValue.h"
 
@@ -221,6 +222,9 @@ private:
     std::unordered_map<int64_t, Pending> _pending;
     /// What a capture on the worker needs of the document.
     CaptureConfig _config;
+    /// The blobs the log's values name by hash (decision 6b), held so the
+    /// document's store keeps them; worker thread, released after join.
+    std::unordered_map<std::string, FileBlobHandle> _blobs;
 
     std::thread _worker;
     std::mutex _mutex;

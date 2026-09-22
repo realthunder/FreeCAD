@@ -1465,7 +1465,7 @@ with the save record (below); no branch table yet.
 - A copy that `isSame()` as the live property is not serialised unless
   an earlier op is waiting on it, in which case it is serialised only to
   resolve that op (decision 6a). Decision 6b, the property-supplied
-  hash, is not built.
+  hash, is built for the shape (below).
 - A `create` is the op followed by one pending `set` per persisted
   property (and an `addprop` with the metadata for each dynamic one);
   a `remove` is one resolved `set` (before only) per property followed
@@ -1583,6 +1583,27 @@ The eighth gtest commits twenty 200 KB edits with undo off -- the
 transactions are deleted at commit -- and reads every before value back
 in order, then resolves the head.
 
+**The property-supplied hash, as built** (2026-09-23, 20.2 decision
+6b). `BlobReferrerProperty::contentBlob()` -- the blob holding the
+property's whole content as it stands, or null -- and the capture
+writer's `BlobRef` mode. `PropertyPartShape::Copy()` now carries `_blob`
+(and `_blobMotion`) with the value, so the copy the undo system takes at
+the first write after a save knows the file its geometry was written to;
+`Save` under `BlobRef` writes `<Part ... hash="..."/>` and nothing else
+(no export, no note to any manager), and the worker, on seeing a
+`contentBlob()`, holds the handle in the log's `_blobs` so the document's
+one store (16.2) keeps the file for as long as the log lives. A shape
+that changed since its save has no blob (`dropBlob`) and exports as
+before, on the worker. What it buys in practice: in an edit-save cadence
+no shape is exported for the log at all -- the before copy holds the
+blob, and the after ref resolves at the save's `resolvePending`, after
+`makeBlob` has run. Not yet: a blob held by the log surviving log
+truncation or eviction (it is released with the log), and other
+referrers (`PropertyFileIncluded` could answer the same way). The Part
+gtest `TransactionLogShapeTest` checks an unsaved shape's value carries
+the geometry and a saved one's is the hash fragment alone, under 512
+bytes, with the file still in the store after the shape changed.
+
 **Mode.** `TransactionLog` is a preference, 0 (off) by default and 1 for
 `session`. The writer thread now exists; the mode stays a staging switch
 until the log is the undo system (22.1). `local` and `embedded` are not
@@ -1619,9 +1640,9 @@ the log on, three of its undo cases see the open implicit transaction in
 `UndoNames` -- the log-on semantics, not a bug, and the reason the mode
 is a preference the suite does not set.
 
-**Next.** In the order the phase list gives: the property-supplied hash
-(6b), `GuiDocument.xml` in the manifest and a versions pane in the panel
--- each shown in the panel as it lands.
+**Next.** In the order the phase list gives: `GuiDocument.xml` in the
+manifest and a versions pane in the panel -- each shown in the panel as
+it lands.
 
 ## 22. The end state, and the browser as a development tool (user, 2026-09-22)
 

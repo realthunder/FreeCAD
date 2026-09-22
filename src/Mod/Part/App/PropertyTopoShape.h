@@ -146,6 +146,9 @@ public:
     void collectBlobs(App::FileBlobManager &, const App::DocumentObject *) const override {}
     /// The file holding this property's geometry, or null.
     const App::FileBlobHandle &getBlob() const { return _blob; }
+    /// The same, for a reader after the content's hash (the transaction
+    /// log); null whenever the geometry has changed since it was written.
+    App::FileBlobHandle contentBlob() const override { return _blob; }
     //@}
 
     friend class Feature;

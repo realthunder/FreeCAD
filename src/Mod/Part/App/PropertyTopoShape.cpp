@@ -1015,6 +1015,13 @@ App::Property *PropertyPartShape::Copy() const
     } else
         prop->_Shape = this->_Shape;
     prop->_Ver = this->_Ver;
+    // The file the value was last written to goes with it: a copy that
+    // knows its content's hash can answer for it (contentBlob(), and the
+    // BlobRef mode in Save()) instead of exporting the geometry again. It
+    // is dropped with the value like the original's, and holds the file
+    // alive for as long as the copy lives.
+    prop->_blob = this->_blob;
+    prop->_blobMotion = this->_blobMotion;
     return prop;
 }
 
@@ -1118,7 +1125,15 @@ void PropertyPartShape::Save (Base::Writer &writer) const
 
     bool binary = writer.getMode("BinaryBrep");
     bool toXML = writer.getFileVersion()>1 && writer.isForceXML()>=(binary?3:2);
-    if(_blob && usesBlob(writer)) {
+    if (_blob && writer.getMode("BlobRef")) {
+        // A writer that wants the content's hash and not the content: the
+        // transaction log's capture of a copy (docs/TransactionLog.md sec
+        // 20.2, decision 6b). The blob is the value's bytes as last saved,
+        // dropped whenever the value changes (dropBlob), so naming it is
+        // exact; the log holds the file through contentBlob(). No note to
+        // a manager: nothing is being saved.
+        writer.Stream() << " hash=\"" << _blob->hash() << "\"/>\n";
+    } else if(_blob && usesBlob(writer)) {
         // The geometry is a file of its own in the blob store, named after
         // this property and shared by content. Noted again here for the same
         // reason PropertyFileIncluded does: it costs nothing, and a property
