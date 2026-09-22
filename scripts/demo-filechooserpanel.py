@@ -117,7 +117,78 @@ def build_panel():
             note("watching the line edit's textChanged (fileNameSelected is not"
                  " wrapped for Python here)")
 
-    _kept.extend([form, chooser, got])
+    # W4b built two more shapes than its own scene could raise, and so left
+    # both unproven on screen (7.22): a DIRECTORY chooser, which no browser
+    # picker can answer, and a chooser inside a mirrored DIALOG rather than
+    # a task panel.
+    #
+    # The directory one is here to be SEEN refusing: the card draws its
+    # button disabled and says why, because a page can upload a file and
+    # has no way to name a folder on the serving machine -- and the ruling
+    # this is built to forbids showing it one.
+    layout.addWidget(QtWidgets.QLabel("Output folder (a directory chooser):", form))
+    folder = FreeCADGui.UiLoader().createWidget("Gui::FileChooser", form)
+    if folder is not None:
+        folder.setObjectName("outputDir")
+        # Gui::FileChooser::Mode -- File 0, Directory 1 (Gui/FileDialog.h).
+        # Set through the property, which is the only route Python has:
+        # the class has no binding of its own, so the enum is not reachable
+        # by name here.
+        folder.setProperty("mode", 1)
+        # Set, not read back: `property("mode")` raises "Can't find
+        # converter for 'Gui::FileChooser::Mode'" -- shiboken wraps the
+        # setter's int but has no converter for the enum coming out, and
+        # that exception took the whole panel down the first time.
+        note("directory chooser mode set to Directory (1)")
+        layout.addWidget(folder)
+        _kept.append(folder)
+    else:
+        note("the loader would not make the directory chooser")
+
+    # A chooser inside a DIALOG. The panel's own chooser is content in a
+    # task panel; this one is content in a `dialog:<n>` root, which reaches
+    # the card through the modal layer W4 built rather than through the
+    # panel container -- a different path to the same leaf, and the one
+    # nothing had ever drawn.
+    def in_dialog():
+        dlg = QtWidgets.QDialog(FreeCADGui.getMainWindow())
+        dlg.setObjectName("chooserDialog")
+        dlg.setWindowTitle("Pick a file")
+        lay = QtWidgets.QVBoxLayout(dlg)
+        lay.addWidget(QtWidgets.QLabel("A chooser inside a dialog:", dlg))
+        inner = FreeCADGui.UiLoader().createWidget("Gui::FileChooser", dlg)
+        if inner is None:
+            note("the loader would not make the dialog's chooser")
+            return
+        inner.setObjectName("dialogFile")
+        lay.addWidget(inner)
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.StandardButton.Ok
+            | QtWidgets.QDialogButtonBox.StandardButton.Cancel, dlg)
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        lay.addWidget(buttons)
+
+        def picked(path):
+            got.setText("the dialog's chooser got %s" % path)
+            note("dialog chooser got %s" % path)
+
+        try:
+            inner.fileNameSelected.connect(picked)
+        except AttributeError:
+            line = inner.findChild(QtWidgets.QLineEdit)
+            if line is not None:
+                line.textChanged.connect(picked)
+        _kept.extend([dlg, inner])
+        dlg.show()
+        note("chooser dialog shown")
+
+    raise_dialog = QtWidgets.QPushButton("Choose in a dialog", form)
+    raise_dialog.setObjectName("dialogButton")
+    raise_dialog.clicked.connect(in_dialog)
+    layout.addWidget(raise_dialog)
+
+    _kept.extend([form, chooser, got, raise_dialog])
     return form
 
 

@@ -46,6 +46,11 @@ _out = os.environ.get("SMOKE_RESULT")
 # takes the mirror's root with it.
 _panel = None
 
+# The same for a MODELESS dialog: nothing blocks on it, so the only thing
+# keeping it alive is this list -- a shown dialog that goes out of scope
+# takes its mirrored root with it before anyone can look at it.
+_kept = []
+
 
 def note(msg):
     FreeCAD.Console.PrintMessage("messageboxpanel: %s\n" % msg)
@@ -78,9 +83,21 @@ class AskPanel:
         button = QtWidgets.QPushButton("Ask", self.form)
         button.setObjectName("askButton")
         button.clicked.connect(self.ask)
+        # W4 built two more shapes than this scene could raise, and so left
+        # both unproven on screen (7.22): a MODELESS root, which dims
+        # nothing and blocks nothing, and two dialogs up at once, which is
+        # the only thing the card's depth z-offset exists for.
+        modeless = QtWidgets.QPushButton("Modeless", self.form)
+        modeless.setObjectName("modelessButton")
+        modeless.clicked.connect(self.show_modeless)
+        stack = QtWidgets.QPushButton("Stack", self.form)
+        stack.setObjectName("stackButton")
+        stack.clicked.connect(self.stack)
         self.answered = QtWidgets.QLabel("No answer yet", self.form)
         self.answered.setObjectName("answeredLabel")
         layout.addWidget(button)
+        layout.addWidget(modeless)
+        layout.addWidget(stack)
         layout.addWidget(self.answered)
 
     def ask(self):
@@ -103,6 +120,72 @@ class AskPanel:
         names = {0x4000: "Yes", 0x10000: "No", 0: "nothing"}
         self.answered.setText("exec() returned %s (0x%x)" % (names.get(code, "?"), code))
         note("exec() -> 0x%x" % code)
+
+    def show_modeless(self):
+        """A dialog SHOWN rather than exec'd.
+
+        Nothing blocks: the desktop user keeps working behind it, and the
+        page must say so rather than dim itself and eat the clicks -- the
+        `fc-dlg-modeless` layer, built in W4 and never once drawn, because
+        no scene here could raise one. It closes itself from its own
+        button, so the root's close is exercised too.
+        """
+        from PySide import QtWidgets
+
+        dlg = QtWidgets.QDialog(FreeCADGui.getMainWindow())
+        dlg.setObjectName("notesDialog")
+        dlg.setWindowTitle("Notes")
+        dlg.setModal(False)
+        lay = QtWidgets.QVBoxLayout(dlg)
+        lay.addWidget(QtWidgets.QLabel("Modeless: the desktop is live behind this.", dlg))
+        shut = QtWidgets.QPushButton("Close", dlg)
+        shut.setObjectName("notesClose")
+        shut.clicked.connect(dlg.close)
+        lay.addWidget(shut)
+        _kept.append(dlg)
+        dlg.show()
+        self.answered.setText("modeless dialog shown (nothing is blocked)")
+        note("modeless shown; modal=%s" % dlg.isModal())
+
+    def stack(self):
+        """Two dialogs up at once.
+
+        The second is exec'd from inside the FIRST's nested loop, which is
+        how a desktop stacks them -- a dialog whose own slot asks something
+        else. Both are `dialog:<n>` roots at the same time, so the card has
+        to order them, which is what its depth z-offset is for and what no
+        run had ever put on screen.
+        """
+        from PySide import QtCore, QtWidgets
+
+        outer = QtWidgets.QMessageBox(
+            QtWidgets.QMessageBox.Icon.Information,
+            "Outer",
+            "The outer box. The inner one is on top of it.",
+            QtWidgets.QMessageBox.StandardButton.Ok,
+            FreeCADGui.getMainWindow(),
+        )
+        outer.setObjectName("outerBox")
+        got = {}
+
+        def inner():
+            box = QtWidgets.QMessageBox(
+                QtWidgets.QMessageBox.Icon.Warning,
+                "Inner",
+                "Two boxes are up. Answer this one first.",
+                QtWidgets.QMessageBox.StandardButton.Ok
+                | QtWidgets.QMessageBox.StandardButton.Cancel,
+                outer,
+            )
+            box.setObjectName("innerBox")
+            got["inner"] = box.exec()
+            note("inner exec() -> 0x%x" % got["inner"])
+
+        QtCore.QTimer.singleShot(400, inner)
+        got["outer"] = outer.exec()
+        self.answered.setText("stacked: inner 0x%x, outer 0x%x"
+                              % (got.get("inner", 0), got["outer"]))
+        note("stacked: inner 0x%x, outer 0x%x" % (got.get("inner", 0), got["outer"]))
 
 
 def open_panel():
