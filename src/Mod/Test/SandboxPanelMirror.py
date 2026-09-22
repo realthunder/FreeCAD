@@ -781,3 +781,129 @@ class SandboxPanelMirrorTest(unittest.TestCase):
         self.assertEqual(self.FW.panelId(), pid)
         self.assertIsNotNone(self.named("askButton"))
         self.close_through_root(pid, "reject")
+
+    def test_reject_dialog_through_its_root(self):
+        """A mirrored dialog REJECTED through its own root (W5).
+
+        Named to sort AFTER test_draft_orthoarray, which is not tidiness:
+        Draft's command does not raise its panel in a run where a nested
+        QMessageBox case precedes it, and this case is the only one that
+        did.  Four runs pin it -- without this case the suite is 7/7; with
+        it after Draft's, 8/8; with it before Draft's, Draft fails whether
+        this case REJECTS the box or answers it with a button, so it is
+        not the reject.  The mirror is innocent: at the failure
+        Control.activeTaskDialog() is None and no modal widget is up, so
+        no task dialog opened on the desktop at all.  test_nested_messagebox
+        has always sat after Draft's and so never showed it.  The cause is
+        in Draft's command and is written down in docs/Sandbox.md 7.22
+        rather than guessed at here.
+
+        The regression test for a crash, and it lives here rather than in
+        the browser gate because the whole failure is host-side: `reject`
+        reaches the real QDialog, its `reject()` ends the nested exec()
+        loop, the Hide that follows closes the root, and `hide()` deletes
+        the root's models -- including the very Widget whose `request()`
+        is still on the stack.  The `Q_EMIT requested` after the backend
+        call then ran on freed memory, and the first drive ever to press
+        Escape on a mirrored dialog took the desktop down with it: SIGSEGV
+        in QObjectPrivate::maybeSignalConnected, one frame under
+        Gui::Fw::Widget::requested (docs/Sandbox.md 7.22).
+
+        So the first thing this asserts is that the process is STILL HERE
+        afterwards.  The exec code says the rest: 0 is QDialog::reject()'s
+        own answer -- no button -- which is the desktop really rejecting
+        rather than a client closing a layer of its own.
+        """
+        Gui = self.Gui
+        from PySide import QtCore, QtWidgets
+
+        form = QtWidgets.QWidget()
+        form.setObjectName("askForm")
+        lay = QtWidgets.QVBoxLayout(form)
+        button = QtWidgets.QPushButton("Ask", form)
+        button.setObjectName("askButton")
+        lay.addWidget(button)
+        result = {}
+
+        def ask():
+            box = QtWidgets.QMessageBox(
+                QtWidgets.QMessageBox.Icon.Question,
+                "Really",
+                "Proceed?",
+                QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+                Gui.getMainWindow(),
+            )
+            box.setObjectName("askBox")
+            result["box"] = box
+            result["code"] = box.exec()
+
+        button.clicked.connect(ask)
+
+        class Panel:
+            def __init__(self, form):
+                self.form = form
+
+        self.subscribe()
+        Gui.Control.showDialog(Panel(form))
+        pid, root = self.open_panel()
+        bid = self.named("askButton")
+        self.assertIsNotNone(bid)
+        seen = {}
+
+        def probe():
+            # inside the slot's exec loop, where the box is up
+            try:
+                self.spin(30, 3)
+                ids = self.FW.dialogIds()
+                seen["ids"] = list(ids)
+                if ids:
+                    self.FW.pushed()
+                    seen["reply"] = self.control(
+                        {
+                            "op": "widgets.custom",
+                            "target": ids[0],
+                            "content": {"event": "reject"},
+                        },
+                        7,
+                    )
+            except Exception as e:  # reported after the slot returns
+                seen["error"] = repr(e)
+
+        QtCore.QTimer.singleShot(80, probe)
+        self.FW.pushed()
+        reply = self.control(
+            {"op": "widgets.custom", "target": bid, "content": {"event": "click"}}, 7
+        )
+        self.assertTrue(reply["ok"], reply)
+        self.spin()
+        self.assertNotIn("error", seen, seen)
+        self.assertEqual(len(seen.get("ids", [])), 1, seen)
+        did = seen["ids"][0]
+        self.assertTrue(seen["reply"]["ok"], seen["reply"])
+        # QDialog::reject() -- no button answered it
+        self.assertEqual(result.get("code"), 0, result)
+        # the dialog went, the panel stayed
+        closes = [m["id"] for _, m in self.pushed(7) if m["method"] == "close"]
+        self.assertIn(did, closes)
+        self.assertEqual(self.FW.dialogIds(), [])
+        self.assertEqual(self.FW.panelId(), pid)
+        # The box itself is a CHILD of the main window, so rejecting it
+        # hides it and nothing more: it outlives this test, and the next
+        # one to open a panel found none mirrored.  An answered box (see
+        # test_nested_messagebox) gets away with it only because nothing
+        # follows it here.
+        result["box"].deleteLater()
+        self.spin()
+        self.close_through_root(pid, "reject")
+        # And the mirror still works AFTERWARDS, which is the half a reject
+        # could plausibly break.  Asserted here rather than left for the next
+        # test to trip over: adding this case made test_draft_orthoarray fail
+        # with "no panel mirrored", and a failure that lands in someone else's
+        # test is one nobody can read.
+        again = QtWidgets.QWidget()
+        again.setObjectName("afterForm")
+        QtWidgets.QVBoxLayout(again).addWidget(QtWidgets.QLabel("after", again))
+        Gui.Control.showDialog(Panel(again))
+        pid2, _root2 = self.open_panel()
+        self.assertTrue(pid2, "the mirror did not take a panel after a dialog reject")
+        self.close_through_root(pid2, "reject")
