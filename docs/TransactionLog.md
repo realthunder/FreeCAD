@@ -784,7 +784,11 @@ Consolidated 2026-09-22 after sections 16 and 17 were decided.
    document's blob manager (16.2); unnamed versions on save and on the cadence (16.3);
    history initialised from any file (16.6). `session` mode. Undo
    behaviour untouched. Python read API and gtest coverage that a log
-   replays to an identical document and that a checkout equals a load.
+   replays to an identical document and that a checkout equals a load. **In progress, section 21**: store,
+   writer, implicit transactions, derived rule, Python read API, the
+   environment / session / recompute records and the replay test are
+   built (2026-09-22); versions, the save record, history from a file and
+   the writer thread are not.
 2. **Browser.** A history panel: transactions and versions by name,
    time, origin; ops per transaction; filter by object and property;
    the script annotation; "restore to here".
@@ -1402,3 +1406,111 @@ the XML at schema 5) and only the 80-byte XML fragment different.
   are dropped at commit), a cost to the undo copies (300 KB of
   constraints copied per drag), and a candidate for the debug-build
   audit.
+
+## 21. Phase 1 as built (2026-09-22)
+
+What exists on branch `Transaction` after the first day of phase 1, and
+where it departs from or sharpens the design above.
+
+**Files.** `src/App/TransactionStore.h` (the interface and the row
+structs), `TransactionStoreSQLite.cpp` (the one backend),
+`TransactionValue.{h,cpp}` (`captureValue`, `restoreValue`, `hashBytes`:
+the serialiser the measurement of section 20 and the log share),
+`TransactionLog.{h,cpp}` (the writer on the document),
+`tests/src/App/TransactionLog.cpp`. The document reaches its log through
+`Document::getTransactionLog()`, made lazily on the first commit after
+the mode is set; Python reads it through `Document.getTransactionLog()`,
+`getTransactionOps(seq)`, `getTransactionValue(ref)` and
+`resolveTransactionLog()`.
+
+**Schema as built** (13.2 sketched it; this is what the store creates):
+
+```
+meta(key, value)
+environment(id, json UNIQUE)
+session(id, env, user, host, opened, closed)
+txn(seq PRIMARY KEY, parent, id, kind, origin, name, time, script, session)
+op(txn, idx, op, ckind, cid, cname, ctype, prop, ptype, meta,
+   vbefore, vafter, derived, PRIMARY KEY(txn, idx))
+value(hash PRIMARY KEY, enc, tier, size, data, attach)
+```
+
+`value.attach` is the attachment list, one `hash name` per line; an
+attachment is a value row of its own (20.2 decision 5). `enc` is `raw`
+or `zstd` (level 3 above 128 bytes). No version, branch or manifest
+tables yet.
+
+**The writer, as built.**
+
+- Only detached copies are serialised at commit (20.2 decision 4). A
+  set's before ref is the undo copy; its after ref is written empty and
+  resolved by `TransactionStore::resolveAfter` when the property is next
+  copied, when its object is removed, when a dynamic property is
+  deleted, or by `TransactionLog::resolvePending()`, which serialises
+  the live values behind every pending ref (what a snapshot will call
+  first). Pending refs are keyed by `Property::getID()` and looked up
+  again by object id and property name, so a property gone without a
+  remove op is dropped rather than dereferenced.
+- A copy that `isSame()` as the live property is not serialised unless
+  an earlier op is waiting on it, in which case it is serialised only to
+  resolve that op (decision 6a). Decision 6b, the property-supplied
+  hash, is not built.
+- A `create` is the op followed by one pending `set` per persisted
+  property (and an `addprop` with the metadata for each dynamic one);
+  a `remove` is one resolved `set` (before only) per property followed
+  by the op (decision 7). Replay therefore needs one rule: a property's
+  state is the latest non-empty ref in op order, and an object exists
+  between its `create` and its `remove`.
+- Derived values (section 10) follow `TransactionLogDerived`: `none`
+  writes the op with no refs and leaves nothing pending, `cache` stores
+  under tier `cache`, `full` under `durable`. No eviction yet.
+- View-provider containers are logged with `cid = -1` and never
+  resolved by `resolvePending()`.
+
+**Implicit transactions, as built** (9.1). `Transaction::Implicit` and
+`Transaction::Origin`. `Document::transactionsWanted()` is "undo on or
+log on"; with the log on and no application transaction active,
+`_checkTransaction` / `_addOrRemoveProperty` open `<implicit origin>`.
+The invocation boundary is `Application::InvocationScope`, a nesting
+RAII guard whose outermost destructor commits the implicit transaction
+of every document; scopes stand at a console line, a macro, a script
+file and a recompute (origin `recompute`, so `execute()` writes group
+under one transaction). A GUI command is already an `AutoTransaction`
+scope. An explicit open, a save and a close commit an implicit
+transaction too. With undo off the commit logs the transaction and
+deletes it; with undo on it is an undo step, and whether the undo menu
+shows it is left to the UI. The writes that set up a new document
+(`Document::Initializing`, cleared at the end of
+`Application::newDocument`) open none.
+
+**Pseudo transactions, as built** (section 11). `environment` rows hold
+a JSON of `Application::Config()` (version, revision hash and branch,
+`OCC_VERSION`, Python, Qt, system); a `session` row is opened when the
+log is made and closed with the document, naming user and host only
+under `TransactionLogIdentity` (off). The `recompute` record is a
+transaction of kind `recompute` with no ops whose `script` column holds
+`{env, seconds, objects:[{id, name, error?}]}`, written after the
+implicit transaction of the recompute's own writes. `save`, `restore`,
+`import`, `undo`/`redo` rows are not built.
+
+**Mode.** `TransactionLog` is a preference, 0 (off) by default and 1 for
+`session`. It stays off by default until the writer thread exists: the
+sketch case of section 20 costs 60 ms per commit synchronously today.
+`local` and `embedded` are not built.
+
+**Tests.** Five gtests: ops and refs of create/set/remove and their
+resolution; an unchanged write logs nothing; a log of creates, sets, a
+dynamic property and a remove replays into a fresh document whose
+properties serialise byte-identical; implicit transactions group by
+invocation with undo off and undo with it on; the session and recompute
+records. The Python `Document` suite is unchanged with the log off. With
+the log on, three of its undo cases see the open implicit transaction in
+`UndoNames` -- the log-on semantics, not a bug, and the reason the mode
+is a preference the suite does not set.
+
+**Next.** In the order the phase list gives: the `save` record and the
+unnamed version with the `Document.xml` hash (16.3, 11), history
+initialised from a file (16.6), the writer thread with shared ownership
+of the undo copies (20.2 decision 4), the property-supplied hash (6b),
+then phase 2.
+
