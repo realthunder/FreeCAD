@@ -23,7 +23,8 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { CHECK_ON, WidgetStore, dialogClickOp, dialogRejectOp, isDialogRoot, itemClickOp,
+import { CHECK_ON, CHOOSER_DIRECTORY, CHOOSER_FILE, WidgetStore, acceptFromFilter,
+         dialogClickOp, dialogRejectOp, fileSelectedOp, isDialogRoot, itemClickOp,
          itemEditOp, itemExpandOp, layoutRefs, refId, selectionWrite } from './protocol.ts';
 import type { Frame } from './protocol.ts';
 import { isKnownLayoutClass, planLayout } from './layout.ts';
@@ -173,6 +174,7 @@ function main(): void {
   checkDialogs();
   checkCompletion();
   checkImages();
+  checkFileChooser();
 
   console.log(failures === 0 ? '\nALL GREEN' : `\n${failures} FAILURE(S)`);
   process.exit(failures === 0 ? 0 : 1);
@@ -456,6 +458,72 @@ function checkCompletion(): void {
 /// hold: the host replays the mouse into a real widget, so the argument
 /// ORDER and Qt's own numbering are what make the difference between a
 /// click landing and nothing happening.
+/// The file chooser (docs/Sandbox.md 7.22, W5).
+///
+/// There is NO fixture: not one panel in the corpus carries a
+/// `Gui::FileChooser`, so the model is constructed against the same store
+/// the host's own frames drive -- the way `checkItems` constructs the
+/// trees Sketcher never sends. What is asserted is the host's contract:
+/// the bag keys `Fw::FileChooser` declares (Gui/Fw/FwWidgets.cpp), and
+/// the request name `View::onRequest` answers to.
+function checkFileChooser(): void {
+  const t = 'file chooser';
+  const store = new WidgetStore();
+  store.apply({
+    method: 'open', id: 'pw:9', model: 'FileChooserModel', qtClass: 'Gui::FileChooser',
+    parent: 'IPY_MODEL_panel:1',
+    state: {
+      q_objectName: 'fontFile', q_fileName: '/home/u/a.ttf', q_mode: CHOOSER_FILE,
+      q_acceptMode: 0, q_buttonText: '', q_filter: 'Fonts (*.ttf *.otf);;All files (*)',
+    },
+  } as Frame);
+  const chooser = store.get('pw:9');
+  check(t, 'a chooser is a leaf of its own class',
+        chooser?.model === 'FileChooserModel' && chooser?.qtClass === 'Gui::FileChooser',
+        `${chooser?.model} / ${chooser?.qtClass}`);
+  check(t, 'the path crosses as data', chooser?.state.fileName === '/home/u/a.ttf',
+        String(chooser?.state.fileName));
+  check(t, 'the filter crosses', String(chooser?.state.filter ?? '').startsWith('Fonts'),
+        String(chooser?.state.filter));
+
+  // The host's own write reaches the field: a slot that corrects or
+  // completes the path is the origin echo of every other leaf.
+  store.apply({ method: 'update', id: 'pw:9', content: { q_fileName: '/tmp/up/b.ttf' } } as Frame);
+  check(t, "the host's own change reaches the field",
+        store.get('pw:9')?.state.fileName === '/tmp/up/b.ttf',
+        String(store.get('pw:9')?.state.fileName));
+
+  // The write path, and the whole reason it is not a property write: a
+  // panel's slot is connected to fileNameSelected, which a `q_fileName`
+  // update does not fire.
+  check(t, 'a pick is a request, not a value write',
+        JSON.stringify(fileSelectedOp('/tmp/up/b.ttf'))
+          === '{"event":"fileSelected","args":["/tmp/up/b.ttf"]}',
+        JSON.stringify(fileSelectedOp('/tmp/up/b.ttf')));
+
+  // A directory chooser names a folder ON THE HOST, which no browser
+  // picker can answer and which may not be browsed either.
+  store.apply({ method: 'update', id: 'pw:9', content: { q_mode: CHOOSER_DIRECTORY } } as Frame);
+  check(t, 'a directory chooser is recognized',
+        store.get('pw:9')?.state.mode === CHOOSER_DIRECTORY,
+        String(store.get('pw:9')?.state.mode));
+
+  // Qt's name filter as the picker's `accept`.
+  check(t, "a Qt filter becomes the web's extensions",
+        acceptFromFilter('Fonts (*.ttf *.otf);;All files (*)') === '.ttf,.otf',
+        acceptFromFilter('Fonts (*.ttf *.otf);;All files (*)'));
+  check(t, 'an all-files filter accepts everything, not nothing',
+        acceptFromFilter('All files (*)') === '',
+        `"${acceptFromFilter('All files (*)')}"`);
+  check(t, 'no filter accepts everything', acceptFromFilter('') === '');
+  check(t, 'an extension is offered once',
+        acceptFromFilter('A (*.svg);;B (*.SVG)') === '.svg',
+        acceptFromFilter('A (*.svg);;B (*.SVG)'));
+  check(t, 'a compound suffix survives',
+        acceptFromFilter('Meshes (*.stl *.obj *.step)') === '.stl,.obj,.step',
+        acceptFromFilter('Meshes (*.stl *.obj *.step)'));
+}
+
 function checkImages(): void {
   const t = 'images';
 

@@ -44,6 +44,21 @@ export interface BootState {
 
 const EMPTY_BOOT: BootState = { panel: null, dialogs: [], theme: '', locale: 'C' };
 
+/// Bytes as base64, in chunks.
+///
+/// `String.fromCharCode(...bytes)` over a whole file throws: the spread
+/// becomes one argument per byte, and a few hundred kilobytes overflows
+/// the call. 32 KB at a time is well inside every engine's limit.
+function base64Of(bytes: ArrayBuffer): string {
+  const view = new Uint8Array(bytes);
+  const CHUNK = 0x8000;
+  let text = '';
+  for (let at = 0; at < view.length; at += CHUNK) {
+    text += String.fromCharCode(...view.subarray(at, at + CHUNK));
+  }
+  return btoa(text);
+}
+
 export class PanelClient {
   readonly store = new WidgetStore();
   boot: BootState = EMPTY_BOOT;
@@ -195,6 +210,19 @@ export class PanelClient {
       severity: (reply?.severity as ExpressionPreview['severity']) ?? 'ok',
       message: (reply?.message as string) ?? '',
     };
+  }
+
+  /// A file the viewer's OWN picker chose, sent to the host (W5), which
+  /// answers with the path it wrote -- a path in the host's own upload
+  /// directory, never one this client named.
+  ///
+  /// The bytes ride the control lane as base64 rather than a channel of
+  /// their own: `sendOp` already carries this connection's token, its
+  /// access level and the request correlation, and a chooser's file is a
+  /// font or a hatch pattern. The host caps what it will write.
+  async upload(name: string, bytes: ArrayBuffer): Promise<string> {
+    const reply = await sendOp('widgets.upload', { name, data: base64Of(bytes) });
+    return (reply?.path as string) ?? '';
   }
 
   /// An `img:<sha1>` the bag carries, as a data URL: a picture leaf's grab,

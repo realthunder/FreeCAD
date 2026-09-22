@@ -459,3 +459,41 @@ export function dialogClickOp(standardButton: number): { event: string; args: nu
 export function dialogRejectOp(): { event: string } {
   return { event: 'reject' };
 }
+
+/// Gui::FileChooser::Mode. A directory chooser cannot be served by an
+/// upload -- a browser picks files, not folders -- so the view says so
+/// rather than drawing a button that cannot work.
+export const CHOOSER_FILE = 0;
+export const CHOOSER_DIRECTORY = 1;
+
+/// A path the CLIENT chose, sent to a mirrored `Gui::FileChooser`
+/// (docs/Sandbox.md 7.22, W5).
+///
+/// NOT a property write, and the difference is the whole of this stage's
+/// write path. Writing `fileName` moves the host's line edit and emits
+/// `fileNameChanged`, while a panel's slot is connected to
+/// `fileNameSelected` -- TechDraw's hatch and welding panels and every
+/// FEM settings page take that one, and only SymbolChooser takes the
+/// other. So a write alone would leave the panel unfired. The host turns
+/// this request into the same ending its own dialog has (`View::
+/// onRequest`, Gui/Fw/FwQtView.cpp): the name set, then the widget's own
+/// `editingFinished`, which emits `fileNameSelected`.
+export function fileSelectedOp(path: string): { event: string; args: string[] } {
+  return { event: 'fileSelected', args: [path] };
+}
+
+/// A Qt name filter as the `accept` of a file input.
+///
+/// Qt writes `Fonts (*.ttf *.otf);;All files (*)`; the web wants
+/// `.ttf,.otf`. A bare `*` matches nothing here by construction (the
+/// pattern needs a dot and a name), so an all-files filter yields the
+/// empty string -- which is what offers EVERY file. Writing the `*`
+/// through would offer none.
+export function acceptFromFilter(filter: string): string {
+  const out: string[] = [];
+  for (const match of filter.matchAll(/\*(\.[A-Za-z0-9_+-]+)/g)) {
+    const ext = match[1].toLowerCase();
+    if (!out.includes(ext)) out.push(ext);
+  }
+  return out.join(',');
+}

@@ -1505,6 +1505,18 @@
 .fc-panel-fx-on { background: rgba(88, 132, 255, 0.34); color: #e8e8ea; }
 .fc-panel-error { color: #ff9c8a; font-size: 12px; padding: 2px 0; }
 
+/* A mirrored file chooser (docs/Sandbox.md 7.22, W5): the host's path,
+ * and a picker that is the BROWSER's own -- the host's `...` button is
+ * not mirrored at all, and opening the host's file dialog from here is
+ * exactly what the ruling forbids.
+ *
+ * The real <input type=file> is kept out of sight and opened by the
+ * button beside it: a native file input cannot be styled, and it reads
+ * as a foreign control in a card that is otherwise chrome-flavoured.
+ * `display: none` still takes a programmatic .click(). */
+.fc-panel-filepick { display: none; }
+.fc-panel-browse { flex: none; }
+
 /* The expression dialog (docs/Sandbox.md 7.23): the desktop's f(x) dialog,
  * drawn in the page. Centred on a wide viewport, a sheet on a narrow one --
  * where it also has to sit above the keyboard it raises. */

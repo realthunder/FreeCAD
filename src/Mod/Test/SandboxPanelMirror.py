@@ -552,6 +552,123 @@ class SandboxPanelMirrorTest(unittest.TestCase):
         self.spin()
         self.assertIsNone(self.FW.panelId())
 
+    def test_file_chooser(self):
+        """A Gui::FileChooser in a panel (W5): a LEAF carrying its path
+        and filter as data -- the walk never goes into it, so the browse
+        button that raises the host's own QFileDialog is not a model any
+        client can click -- an upload landing where the HOST chose, a
+        name that is a name and not a path, and a pick through
+        `fileSelected`, which is where the desktop's own pick ends."""
+        Gui = self.Gui
+        from PySide import QtWidgets
+
+        form = QtWidgets.QWidget()
+        form.setObjectName("chooserForm")
+        form.setWindowTitle("Pick")
+        lay = QtWidgets.QVBoxLayout(form)
+        try:
+            chooser = Gui.UiLoader().createWidget("Gui::FileChooser", form)
+        except Exception as e:  # no loader, no custom widget: nothing to gate
+            self.skipTest("no Gui::FileChooser from the loader: %r" % e)
+        if chooser is None:
+            self.skipTest("no Gui::FileChooser from the loader")
+        chooser.setObjectName("fontFile")
+        chooser.setProperty("filter", "Fonts (*.ttf)")
+        chooser.setProperty("fileName", "/tmp/before.ttf")
+        lay.addWidget(chooser)
+
+        class Panel:
+            def __init__(self, form):
+                self.form = form
+
+        self.subscribe()
+        Gui.Control.showDialog(Panel(form))
+        pid, root = self.open_panel()
+        cid = self.named("fontFile")
+        self.assertIsNotNone(cid, "the file chooser was not mirrored")
+        snap = self.FW.snapshot(cid)
+        self.assertEqual(snap["model"], "FileChooserModel")
+        self.assertEqual(snap["qtClass"], "Gui::FileChooser")
+        self.assertEqual(snap["state"].get("q_fileName"), "/tmp/before.ttf")
+        self.assertEqual(snap["state"].get("q_filter"), "Fonts (*.ttf)")
+        # A leaf: a container's model gets a layout built from its real
+        # children, and this one has none -- which is what keeps the
+        # chooser's "..." button off the wire entirely.
+        self.assertFalse(snap.get("layout"))
+
+        # The upload. The client names a FILE, never a path, and the host
+        # decides where it lands.
+        payload = b"\x00\x01 a font, near enough"
+        reply = self.control(
+            {
+                "op": "widgets.upload",
+                "name": "my font.ttf",
+                "data": base64.b64encode(payload).decode(),
+            },
+            7,
+        )
+        self.assertTrue(reply["ok"], reply)
+        path = reply["path"]
+        self.assertTrue(os.path.isfile(path), path)
+        with open(path, "rb") as handle:
+            self.assertEqual(handle.read(), payload)
+        # DERIVED from the name, not equal to it. The upload directory is
+        # the host's own and it persists, so a second run of this gate
+        # meets "my font.ttf" already sitting there and is handed
+        # "my font-1.ttf" -- the no-overwrite rule working. Asserting the
+        # basename outright passed once here and failed for ever after.
+        # The sanitized name the host echoes back IS exact, so that is
+        # what pins the sanitizing.
+        base = os.path.basename(path)
+        self.assertTrue(base.startswith("my font") and base.endswith(".ttf"), base)
+        self.assertEqual(reply["name"], "my font.ttf")
+
+        # A path in the name is not a path: it is reduced to a name, and
+        # lands in the same directory as anything else.
+        reply = self.control({"op": "widgets.upload", "name": "../../escape.ttf", "data": ""}, 7)
+        self.assertTrue(reply["ok"], reply)
+        escaped = os.path.basename(reply["path"])
+        self.assertTrue(escaped.startswith("escape") and escaped.endswith(".ttf"), escaped)
+        self.assertEqual(reply["name"], "escape.ttf")
+        self.assertEqual(os.path.dirname(reply["path"]), os.path.dirname(path))
+        # The same name twice does not overwrite what a panel may still
+        # be pointing at.
+        reply = self.control(
+            {
+                "op": "widgets.upload",
+                "name": "my font.ttf",
+                "data": base64.b64encode(b"other").decode(),
+            },
+            7,
+        )
+        self.assertTrue(reply["ok"], reply)
+        self.assertNotEqual(reply["path"], path)
+        with open(path, "rb") as handle:
+            self.assertEqual(handle.read(), payload)
+        # A nameless upload, and one that is not base64, are refused.
+        self.assertFalse(self.control({"op": "widgets.upload", "name": "", "data": ""}, 7)["ok"])
+        self.assertFalse(
+            self.control({"op": "widgets.upload", "name": "x.ttf", "data": "!!!!"}, 7)["ok"]
+        )
+
+        # The pick. A `q_fileName` write would move the line edit and fire
+        # fileNameChanged only; a panel's slot is connected to
+        # fileNameSelected, so the request is what a client sends.
+        reply = self.control(
+            {
+                "op": "widgets.custom",
+                "target": cid,
+                "content": {"event": "fileSelected", "args": [path]},
+            },
+            7,
+        )
+        self.assertTrue(reply["ok"], reply)
+        self.spin()
+        self.assertEqual(chooser.property("fileName"), path)
+        Gui.Control.closeDialog()
+        self.spin()
+        self.assertIsNone(self.FW.panelId())
+
     def test_nested_messagebox(self):
         """A QMessageBox exec'd from a panel slot (M3): while the slot
         blocks in the nested loop the box arrives as a `dialog:<n>` root

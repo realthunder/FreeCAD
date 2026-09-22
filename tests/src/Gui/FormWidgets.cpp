@@ -970,6 +970,17 @@ private Q_SLOTS:
         qchooser->setFileName(QStringLiteral("/tmp/b.ttf"));
         QCOMPARE(chooser.fileName(), QStringLiteral("/tmp/b.ttf"));
         QCOMPARE(nameChanged.count(), 1);
+        // A path CHOSEN in a browser (docs/Sandbox.md 7.22, W5): the
+        // client's request has to end where the desktop's own pick ends.
+        // A property write alone moves the line edit and fires only
+        // fileNameChanged, while a panel connects to fileNameSelected --
+        // TechDraw's hatch panels and the FEM settings pages all do.
+        QSignalSpy selected(qchooser, &Gui::FileChooser::fileNameSelected);
+        chooser.request(QStringLiteral("fileSelected"),
+                        QVariantList {QStringLiteral("/tmp/picked.ttf")});
+        QCOMPARE(qchooser->fileName(), QStringLiteral("/tmp/picked.ttf"));
+        QCOMPARE(selected.count(), 1);
+        QCOMPARE(selected.at(0).at(0).toString(), QStringLiteral("/tmp/picked.ttf"));
         delete qchooser;
 
         // a dialog with a button box, as a window of its own

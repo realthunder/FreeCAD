@@ -52,7 +52,7 @@ runs in the guest.**
     host widget layer: core, Qt view built       H0: src/Gui/Fw/ (Fw:: models, FwQt:: backend, the store, FreeCADGui.FormWidgets), src/Tools/fwuic.py (7.12)
     native panels on the layer       sized       H1-H3: the first ports, the form-only majority, the item views; DOM walker later (7.4, 7.12)
     the task panel mirror            M3 built    7.19: the desktop's task panel walked into models, streamed (Pad, Draft's OrthoArray, a CAM op, no workbench edited); M2: item rows reflected (Sketcher's constraint list), pictures and icons by image id; M3: top-level dialogs as dialog:<n> roots (a panel slot's QMessageBox, its exec code from a client's click), mouse replay into pictures; M4 measured 2026-09-11 (sec 8.4: a repaint burst re-reads 10-20 widgets in 0.3 ms and sends nothing; a panel at rest sends nothing; a keystroke costs the other clients 70-150 B)
-    the panels in the browser (G7)  W4 built   7.22: the DOM view over the widget layer -- the walker, the layout plan, the panel container, the item views; W1-W5, 2.2-3.3k of TypeScript in src/Gui/Renderer/web, and one 20-line host change (a client is never told how the host corrected its own write); the five questions RULED 2026-09-16 (chrome-flavoured, the echo taken, dialogs in scope, a FLOATING card, the pure-plan gate) and W1 started; W1's host half BUILT 2026-09-16 (Store::messageTo, the gate in test_widgetStream, FormWidgets 22/22), the fixture corpus (6 cases) recorded and the walker core, the layout plan and the replay gate BUILT 2026-09-16 (62 checks ALL GREEN) and the client + views + floating card BUILT the same day (typecheck and bundle clean), and W1 PROVEN on screen 2026-09-16 (demo-taskpanel.py through renderer-serve.sh, driven by scripts/panel-drive.js); W2 BUILT 2026-09-19 -- the row/remove/sort ops the corpus never carried, the header, the nesting, the checks and the selection, and one view wake per frame because the host pushes one per op; gate 85 -> 102 checks, 17 of them the item views'; the op-vs-event trap (only an item op reaches the real widget) caught against the host's own test; PROVEN on screen 2026-09-19 with demo-sketcherpanel.py -- 12 checked constraint rows, the Elements header over real tracks, and a check clicked in headless Chrome leaving Constraints[0].InVirtualSpace True on the host -- which also caught a column headed "1" invented over every QListWidget; nesting and cell colours stay unproven; W3 BUILT and PROVEN on screen 2026-09-21 -- pictures, icons, theme and locale over one page-lifetime cache, the pointer replayed into a real QSvgWidget (a click at the card's centre landed at 48,48 of 96x96), and ahead of it the repaint the card had never done since W1; W4 BUILT and PROVEN on screen 2026-09-22 -- the dialog roots as modal layers (portalled at z 22, the show order taken from the list container, Escape as reject on the topmost only), the button box drawing a dialog's REAL buttons because the standard flag each carries IS the answer, and the exec code proven end to end: clicking Yes in headless Chrome left the card reading "exec() returned Yes (0x4000)", the host slot's own return value; gate 134 -> 150, and until W4 not one check had ever looked at a dialog; the card also gained its own search entry (the user's call) and the file chooser is ruled upload-only and deferred to its own session
+    the panels in the browser (G7)  W4 built   7.22: the DOM view over the widget layer -- the walker, the layout plan, the panel container, the item views; W1-W5, 2.2-3.3k of TypeScript in src/Gui/Renderer/web, and one 20-line host change (a client is never told how the host corrected its own write); the five questions RULED 2026-09-16 (chrome-flavoured, the echo taken, dialogs in scope, a FLOATING card, the pure-plan gate) and W1 started; W1's host half BUILT 2026-09-16 (Store::messageTo, the gate in test_widgetStream, FormWidgets 22/22), the fixture corpus (6 cases) recorded and the walker core, the layout plan and the replay gate BUILT 2026-09-16 (62 checks ALL GREEN) and the client + views + floating card BUILT the same day (typecheck and bundle clean), and W1 PROVEN on screen 2026-09-16 (demo-taskpanel.py through renderer-serve.sh, driven by scripts/panel-drive.js); W2 BUILT 2026-09-19 -- the row/remove/sort ops the corpus never carried, the header, the nesting, the checks and the selection, and one view wake per frame because the host pushes one per op; gate 85 -> 102 checks, 17 of them the item views'; the op-vs-event trap (only an item op reaches the real widget) caught against the host's own test; PROVEN on screen 2026-09-19 with demo-sketcherpanel.py -- 12 checked constraint rows, the Elements header over real tracks, and a check clicked in headless Chrome leaving Constraints[0].InVirtualSpace True on the host -- which also caught a column headed "1" invented over every QListWidget; nesting and cell colours stay unproven; W3 BUILT and PROVEN on screen 2026-09-21 -- pictures, icons, theme and locale over one page-lifetime cache, the pointer replayed into a real QSvgWidget (a click at the card's centre landed at 48,48 of 96x96), and ahead of it the repaint the card had never done since W1; W4 BUILT and PROVEN on screen 2026-09-22 -- the dialog roots as modal layers (portalled at z 22, the show order taken from the list container, Escape as reject on the topmost only), the button box drawing a dialog's REAL buttons because the standard flag each carries IS the answer, and the exec code proven end to end: clicking Yes in headless Chrome left the card reading "exec() returned Yes (0x4000)", the host slot's own return value; gate 134 -> 150, and until W4 not one check had ever looked at a dialog; the card also gained its own search entry (the user's call); W5 BUILT and PROVEN on screen 2026-09-22 -- the file chooser upload-only as ruled, the traffic one way (no listing, no host path from the client), a pick sent as the `fileSelected` REQUEST because a panel's slot is connected to fileNameSelected and a property write would leave it unrun, the host naming where the bytes land and never overwriting, and the drive proving it with a 64-byte file whose size the host read back off its own disk; gate 150 -> 161, SandboxPanelMirror 7/7, FormWidgets 23/23
     the session document (commands) built       S1: a workbench reaches every open document, live ActiveDocument, app.write, save, picker-blessed saveAs; S2: Gui.doCommand / addModule in the guest under gui.doCommand, Draft's commit and Arch_Site end to end; gate SandboxSessionDoc (7.13)
     routing ON by default            built       preference Expression/Sandbox:Evaluate, ON since 2026-09-16: the corpus gate green (94 files, 195 of 195 same); the Proxy-restore half that rode the same preference was REMOVED 2026-09-18 (7.31)
     Proxy import restriction (native) built       item 1 of sec 11: PropertyPythonObject restore
@@ -8877,6 +8877,87 @@ uploads it.  That also rules OUT the cheap route of forcing
 `DontUseNativeDialog` so that a `QFileDialog` mirrors as an ordinary
 widget tree through M3, because that is precisely a view of the host's
 filesystem drawn in the page.
+
+**W5 BUILT and PROVEN on screen 2026-09-22.**  The traffic goes ONE way,
+which is the whole design: there is no op that lists a directory, none
+that reads a host file, and none that takes a PATH from the client.  The
+client sends a name and bytes; the host alone decides where they land.
+
+What was already true and had to be checked rather than assumed: the
+mirror sends a `Gui::FileChooser` as a LEAF -- it is in the class table,
+so `tableClassOf` lands on it and `isContainer` says no -- so the walk
+never goes into it and the `...` button that raises the host's own
+`QFileDialog` **is not a model any client can click**.  The ruling was
+therefore not already breached; what was missing was a view and a way in.
+
+Three things the build settled:
+
+  * **a pick is a REQUEST, not a property write.**  Writing `q_fileName`
+    moves the host's line edit and emits `fileNameChanged` -- and leaves
+    the panel's slot unrun, because a panel connects to
+    `fileNameSelected`: TechDraw's hatch and welding panels and every FEM
+    settings page take that one, and only `SymbolChooser` takes the
+    other.  So the client sends `{event: 'fileSelected', args: [path]}`,
+    which `View::onRequest` answers by setting the name and then invoking
+    the widget's own `editingFinished` -- the same ending `chooseFile()`
+    has after its dialog closes.  `chooseFile` itself is never reachable:
+    `onRequest` is a fixed if/else chain, not a call by name;
+  * **the client that picks the file is the only one not told the path.**
+    The host does not echo a change back to the connection that caused
+    it, so the field sat EMPTY beside a host label that had the path in
+    it.  Caught by the drive (`shown: ""`), not by reasoning;
+  * **and the fix belongs in the CARD, not the view.**  The first one
+    kept the picked path in a signal inside `FileChooserView` and the
+    drive still came back empty: a leaf's subtree is re-created whenever
+    a store frame arrives, which is the same trap that sends the
+    expression dialog's state up to the card (7.23).  Measured twice,
+    which is the only reason it is written down here.
+
+The host half is `widgets.upload` (`SceneWidgets.cpp`): mutating, so a
+view-only connection is refused before the handler runs, and EDIT rather
+than host, because this is an ordinary editor filling in a panel's field
+under the shared session (8.11) and the bytes reach a directory of the
+host's choosing.  A client's `name` is reduced to a plain file name
+(`QFileInfo::fileName` first, so `../../.ssh/config` arrives as
+`config`), the same name twice does not overwrite what a panel may still
+be pointing at, and 16 MB is the cap -- a chooser's file is a font or a
+hatch pattern.
+
+**The proof, 2026-09-22:** `scripts/demo-filechooserpanel.py` (new -- a
+panel whose chooser is watched on `fileNameSelected`, reporting the path
+it was handed AND the size of that file on the host's own disk, because a
+path proves a string crossed and a size proves the BYTES did) served
+through `renderer-serve.sh` and driven by `scripts/panel-drive.js`, which
+grew `FC_PANEL_UPLOAD=<path>`.  A 64-byte file chosen in headless Chrome
+left the host's label reading **`got /tmp/BrowserUploads/probe-font-2.ttf
+(64 bytes on this machine)`** with the card's own box showing the same
+path.  Three runs against three fresh serves produced `probe-font.ttf`,
+`probe-font-1.ttf` and `probe-font-2.ttf`, so the no-overwrite rule is
+screen-proven too rather than argued.
+
+Gate **150 -> 161 checks**, all green, typecheck and bundle clean; the
+eleven new ones are the chooser's leaf shape, the request's spelling, the
+directory mode and Qt's name filter as the web's `accept` (an all-files
+filter must come out EMPTY, which accepts everything -- writing the `*`
+through would accept nothing).  `SandboxPanelMirror` grew
+`test_file_chooser` and reads 7/7 `RESULT OK`; `FormWidgets` 23/23, where
+the `fileNameSelected` signal itself is proven with a `QSignalSpy` --
+Python cannot always see that signal, so the C++ test is where it is
+pinned.
+
+**Not proven, named rather than implied:** a DIRECTORY chooser (the
+button is drawn disabled and says why -- no browser picker can answer
+it), a chooser inside a mirrored DIALOG rather than a task panel, and an
+upload refused by the cap (the refusal path is gated in
+`SandboxPanelMirror`, never driven from a page).
+
+**One trap re-paid:** the gate runs the BUILD TREE's copy of
+`Mod/Test/SandboxPanelMirror.py`, so a test written after the build ran
+is invisible to it -- the first run reported 2 failures and a wedge from
+a stale file that did not contain the new case at all.  Re-run `ninja`
+before the gate, and read which tests actually appear in the log rather
+than trusting the tally.  Those 2 failures and the wedge did not recur on
+a clean profile: same code, `Ran 7 tests OK`.
 
 One inherited item is unchanged and one has a lead.  The 403 the viewer
 page logs at load showed in this run as a **404**, and the line above it

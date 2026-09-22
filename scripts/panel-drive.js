@@ -37,6 +37,13 @@
 //                             what the host's panel says afterwards
 //   FC_PANEL_ASK=<label>      the card button that raises the dialog
 //                             (default "Ask")
+//   FC_PANEL_UPLOAD=<path>    choose this LOCAL file in the card's file
+//                             chooser (W5) and report what the host made
+//                             of it. The bytes go up over the control
+//                             lane and the host answers with the path it
+//                             wrote, which the card then announces as a
+//                             pick -- so the verdict is the HOST's label
+//                             changing, not the page agreeing with itself
 //
 // One limit, stated rather than pretended: headless Chrome has no
 // on-screen keyboard, so visualViewport never shrinks and the list's
@@ -323,6 +330,43 @@ function readDialog() {
         card.picClick = {
           at: before.at, natural: before.natural, src: before.src,
           before: before.labels, after: after.labels, naturalAfter: after.natural,
+        };
+      }
+    }
+    // W5's round trip: choose a LOCAL file in the card's own picker. The
+    // bytes go up over the control lane, the host writes them into a
+    // directory of its own choosing and answers with the path, and the
+    // card announces that path as a pick. The verdict is therefore the
+    // HOST's label -- rewritten by the panel's slot with what it was
+    // handed and how big the file is on its own disk -- not the page
+    // agreeing with itself about a value it just typed.
+    const uploadPath = process.env.FC_PANEL_UPLOAD;
+    if (uploadPath !== undefined && card) {
+      const labels = () => [...document.querySelectorAll('.fc-panel .fc-panel-label')]
+        .map((el) => (el.textContent || '').trim());
+      const before = await page.evaluate(labels);
+      // The real <input type=file> is hidden behind the Browse button
+      // (it cannot be styled), and setting its files is how a driver
+      // picks without a native dialog -- there is no dialog to drive.
+      const input = await page.$('.fc-panel input.fc-panel-filepick');
+      if (!input) {
+        card.upload = { error: 'no file chooser on the card', before };
+      }
+      else {
+        await input.uploadFile(uploadPath);
+        await new Promise((r) => setTimeout(r, 3000));
+        card.upload = {
+          sent: uploadPath,
+          before,
+          after: await page.evaluate(labels),
+          shown: await page.evaluate(() => {
+            const el = document.querySelector('.fc-panel input.fc-panel-field');
+            return el ? el.value : null;
+          }),
+          failed: await page.evaluate(() => {
+            const el = document.querySelector('.fc-panel .fc-panel-error');
+            return el ? (el.textContent || '').trim() : '';
+          }),
         };
       }
     }

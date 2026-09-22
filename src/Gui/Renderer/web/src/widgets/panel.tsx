@@ -30,7 +30,8 @@ import { planLayout } from './layout.ts';
 import type { LayoutPlan, PlannedItem } from './layout.ts';
 import { iconKind, localeTag, mouseArgs, parseLocaleNumber, pictureAt, wheelArgs }
   from './images.ts';
-import { CHECK_OFF, CHECK_ON, ITEM_ENABLED, dialogClickOp, dialogRejectOp, isDialogRoot,
+import { CHECK_OFF, CHECK_ON, CHOOSER_DIRECTORY, ITEM_ENABLED, acceptFromFilter,
+         dialogClickOp, dialogRejectOp, fileSelectedOp, isDialogRoot,
          itemEditOp, itemExpandOp, selectionWrite } from './protocol.ts';
 import type { ItemCell, ItemRow, WidgetModel } from './protocol.ts';
 
@@ -162,6 +163,19 @@ export function TaskPanelCard(props: {
   /// run showed: an editor that came back empty.
   const [expr, setExpr] =
     createSignal<{ id: string; binding: string; expression: string } | null>(null);
+  /// The path each file chooser's own client last picked, by model id.
+  ///
+  /// Held HERE for the reason the expression dialog above is: a leaf's
+  /// subtree is re-created whenever a store frame arrives, so state kept
+  /// inside the view is wiped by any unrelated host update. Measured, not
+  /// reasoned -- the first version of this kept the signal in
+  /// `FileChooserView` and the drive still came back with an empty box
+  /// beside a host label that had the path in it.
+  ///
+  /// It is needed at all because the host does not echo a change back to
+  /// the connection that caused it, so the one client that picked the
+  /// file is the only one not told the path (W5).
+  const [picked, setPicked] = createSignal<Record<string, string>>({});
   let client: PanelClient | null = null;
   let panelRef: HTMLDivElement | undefined;
 
@@ -301,6 +315,95 @@ export function TaskPanelCard(props: {
     );
   };
 
+  /// A mirrored `Gui::FileChooser` (docs/Sandbox.md 7.22, W5): the path
+  /// the host holds, and a picker that is the BROWSER's own.
+  ///
+  /// The ruling of 2026-09-22 fixes the shape -- "never expose host file
+  /// system to browser, but implement browser side file chooser to
+  /// upload file to host" -- so nothing here lists, browses or reads the
+  /// serving machine. The chooser's own `...` button is not even a model
+  /// to click: the mirror sends a chooser as a LEAF and never walks into
+  /// it (Gui/Fw/FwPanelMirror.cpp `isContainer`), which is what keeps the
+  /// host's native file dialog off the desktop user's screen.
+  ///
+  /// The file goes up, the host names where it landed, and that path is
+  /// announced as a PICK rather than written as a value -- see
+  /// `fileSelectedOp` for why the difference decides whether the panel's
+  /// slot runs at all.
+  const FileChooserView = (p: { w: WidgetModel }): JSX.Element => {
+    const w = p.w;
+    const [busy, setBusy] = createSignal(false);
+    const [failedUpload, setFailedUpload] = createSignal('');
+    let picker: HTMLInputElement | undefined;
+    const disabled = () => props.viewOnly() || st(w).enabled === false;
+    // Qt's Directory mode asks for a folder ON THE HOST, which no browser
+    // picker can answer -- and which is precisely what may not be
+    // browsed. The button says so instead of pretending.
+    const directory = () => num(w, 'mode') === CHOOSER_DIRECTORY;
+    /// The host's own button text, unless it is Qt's bare `...`.
+    ///
+    /// On the desktop that ellipsis sits beside a line edit the user is
+    /// already typing in, and it is conventional. Here it is the ONLY way
+    /// into the picker -- there is no host dialog to fall back to -- so a
+    /// panel that never set a label of its own gets a readable one. A
+    /// panel that DID set one keeps it: that text is the desktop's.
+    const browseLabel = () => {
+      const text = str(w, 'buttonText');
+      return text && text !== '...' ? text : 'Browse...';
+    };
+    const pick = (path: string) => {
+      if (props.viewOnly() || !path) return;
+      setPicked((all) => ({ ...all, [w.id]: path }));
+      void client?.custom(w.id, fileSelectedOp(path)).catch(() => {});
+    };
+    const send = async (file: File | undefined): Promise<void> => {
+      const c = client;
+      if (!file || !c) return;
+      setBusy(true);
+      setFailedUpload('');
+      try {
+        const path = await c.upload(file.name, await file.arrayBuffer());
+        if (!path) throw new Error('the host wrote nothing');
+        pick(path);
+      }
+      catch (err) {
+        const reason = (err as { message?: string })?.message ?? String(err);
+        setFailedUpload(`Could not send ${file.name}: ${reason}`);
+      }
+      finally {
+        setBusy(false);
+        // Cleared, or choosing the SAME file again fires no change event
+        // and the second attempt looks like a dead button.
+        if (picker) picker.value = '';
+      }
+    };
+    return (
+      <div class="fc-panel-fieldwrap">
+        <input class="fc-panel-field" title={str(w, 'toolTip') || undefined}
+               disabled={disabled()} value={str(w, 'fileName') || picked()[w.id] || ''}
+               spellcheck={false} autocomplete="off" autocapitalize="off"
+               onChange={(e) => pick(e.currentTarget.value)} />
+        <input type="file" class="fc-panel-filepick" ref={picker} tabindex={-1}
+               accept={acceptFromFilter(str(w, 'filter')) || undefined}
+               onChange={(e) => void send(e.currentTarget.files?.[0])} />
+        <Show when={!props.viewOnly()}>
+          <button class="fc-panel-btn fc-panel-browse"
+                  disabled={disabled() || busy() || directory()}
+                  title={directory()
+                    ? 'This panel is asking for a folder on the machine running FreeCAD,'
+                      + ' which a browser cannot choose'
+                    : 'Choose a file on this device and send it to FreeCAD'}
+                  onClick={() => picker?.click()}>
+            {busy() ? 'Sending...' : browseLabel()}
+          </button>
+        </Show>
+        <Show when={failedUpload()}>
+          <div class="fc-panel-error">{failedUpload()}</div>
+        </Show>
+      </div>
+    );
+  };
+
   const renderModel = (w: WidgetModel): JSX.Element => {
     const disabled = () => props.viewOnly() || st(w).enabled === false;
     const title = () => str(w, 'toolTip') || undefined;
@@ -395,6 +498,8 @@ export function TaskPanelCard(props: {
                  onExpression={(id: string, binding: string, expression: string) =>
                    setExpr({ id, binding, expression })} />
         );
+      case 'FileChooserModel':
+        return <FileChooserView w={w} />;
       case 'QGroupBoxModel': {
         // Gui::TaskView::TaskBox is the panel's own box: same shape, and
         // its title is the header the desktop draws.
