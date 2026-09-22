@@ -8951,6 +8951,37 @@ it), a chooser inside a mirrored DIALOG rather than a task panel, and an
 upload refused by the cap (the refusal path is gated in
 `SandboxPanelMirror`, never driven from a page).
 
+**RULED 2026-09-22 by the user: the numbering fix and W5 proper are the
+NEXT SESSION's work.**  In order:
+
+1. **The numbering collision, which is this session's error.**  The stage
+   list above already spends `W5` on "the measurement and the finish",
+   and the file chooser was built and committed under that same name.
+   The ruling of 2026-09-22 called the chooser **W4's fourth item**, so
+   it becomes **W4b** and the staged W5 keeps its number: three places in
+   this file, the section 11 summary line, and the message of
+   `7cf6346a20`, which is LOCAL and therefore still amendable.
+2. **W5 as staged** -- first paint of a panel open against 8.4's
+   host-side numbers, apply time per burst, the keystroke round trip;
+   the narrow layout (bottom sheet), touch targets, dark and light; and
+   what a panel does when the socket drops.
+3. **The debts, in ONE drive pass.**  Every one of them is "built, gated,
+   and never once on screen", and they all want harness work rather than
+   new wire, which is why they belong together and with the finish:
+   W2's nesting (the twisty and the expand op) and cell colours (fg/bg
+   arrive as `QVariantList`s); W3's locale, which is gate-proven only
+   because the host reports `C` under both the gate and the harness, so
+   seeing it needs a serve started in another locale; W4's Escape as
+   `reject` (the op's shape is gated, no drive presses the key), a
+   MODELESS root (`fc-dlg-modeless` has never drawn) and two dialogs
+   stacked (the only thing the `depth` z-offset exists for); and W4b's
+   directory chooser, a chooser inside a mirrored DIALOG rather than a
+   task panel, and an upload refused by the cap.
+4. **The 403 lead**, still unexplained: the viewer page logs one at load,
+   and this session saw a **404** with `no /scene.fcsd snapshot, empty
+   scene` beside it.  A candidate, not a finding -- nothing has been
+   changed to test it.
+
 **One trap re-paid:** the gate runs the BUILD TREE's copy of
 `Mod/Test/SandboxPanelMirror.py`, so a test written after the build ran
 is invisible to it -- the first run reported 2 failures and a wedge from
