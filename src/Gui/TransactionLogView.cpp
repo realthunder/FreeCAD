@@ -34,6 +34,8 @@
 # include <QPlainTextEdit>
 # include <QPushButton>
 # include <QSplitter>
+# include <QStackedWidget>
+# include <QTabWidget>
 # include <QTreeWidget>
 # include <QVBoxLayout>
 #endif
@@ -41,6 +43,7 @@
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentParams.h>
+#include <App/FileBlobManager.h>
 #include <App/TransactionLog.h>
 #include <Base/Console.h>
 
@@ -57,6 +60,9 @@ namespace {
 
 enum TxnColumn { TxnSeq, TxnKind, TxnOrigin, TxnName, TxnTime, TxnParent, TxnColumns };
 enum OpColumn { OpIdx, OpOp, OpContainer, OpProp, OpType, OpBefore, OpAfter, OpDerived, OpColumns };
+enum VerColumn { VerNum, VerKind, VerName, VerBranch, VerSeq, VerSchema, VerCreated, VerDocXml,
+                 VerEntries, VerColumns };
+enum ManColumn { ManEntry, ManSource, ManHash, ManColumns };
 
 QString shortRef(const std::string& ref)
 {
@@ -103,7 +109,13 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     auto splitter = new QSplitter(Qt::Vertical, this);
     layout->addWidget(splitter, 1);
 
-    _transactions = new QTreeWidget(splitter);
+    // Two views over the store on the first pane -- the transactions and
+    // the versions -- each with its own detail on the second: the ops of
+    // a transaction, the manifest of a version. The value pane serves both.
+    _tabs = new QTabWidget(splitter);
+    _tabs->setDocumentMode(true);
+    _transactions = new QTreeWidget(_tabs);
+    _tabs->addTab(_transactions, tr("Transactions"));
     _transactions->setColumnCount(TxnColumns);
     _transactions->setHeaderLabels({tr("Seq"), tr("Kind"), tr("Origin"), tr("Name"),
                                     tr("Time"), tr("Parent")});
@@ -115,7 +127,21 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     _transactions->header()->setStretchLastSection(false);
     _transactions->header()->setSectionResizeMode(TxnName, QHeaderView::Stretch);
 
-    _ops = new QTreeWidget(splitter);
+    _versions = new QTreeWidget(_tabs);
+    _tabs->addTab(_versions, tr("Versions"));
+    _versions->setColumnCount(VerColumns);
+    _versions->setHeaderLabels({tr("Num"), tr("Kind"), tr("Name"), tr("Branch"), tr("Seq"),
+                                tr("Schema"), tr("Created"), tr("Document.xml"), tr("Entries")});
+    _versions->setRootIsDecorated(false);
+    _versions->setAlternatingRowColors(true);
+    _versions->setUniformRowHeights(true);
+    _versions->setSelectionMode(QAbstractItemView::SingleSelection);
+    _versions->header()->setStretchLastSection(false);
+    _versions->header()->setSectionResizeMode(VerName, QHeaderView::Stretch);
+
+    _detail = new QStackedWidget(splitter);
+    _ops = new QTreeWidget(_detail);
+    _detail->addWidget(_ops);
     _ops->setColumnCount(OpColumns);
     _ops->setHeaderLabels({tr("#"), tr("Op"), tr("Container"), tr("Property"), tr("Type"),
                            tr("Before"), tr("After"), tr("Derived")});
@@ -125,6 +151,17 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     _ops->setSelectionMode(QAbstractItemView::SingleSelection);
     _ops->header()->setStretchLastSection(false);
     _ops->header()->setSectionResizeMode(OpContainer, QHeaderView::Stretch);
+
+    _manifest = new QTreeWidget(_detail);
+    _detail->addWidget(_manifest);
+    _manifest->setColumnCount(ManColumns);
+    _manifest->setHeaderLabels({tr("Entry"), tr("Source"), tr("Hash")});
+    _manifest->setRootIsDecorated(false);
+    _manifest->setAlternatingRowColors(true);
+    _manifest->setUniformRowHeights(true);
+    _manifest->setSelectionMode(QAbstractItemView::SingleSelection);
+    _manifest->header()->setStretchLastSection(false);
+    _manifest->header()->setSectionResizeMode(ManEntry, QHeaderView::Stretch);
 
     _value = new QPlainTextEdit(splitter);
     _value->setReadOnly(true);
@@ -145,6 +182,11 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     connect(_transactions, &QTreeWidget::customContextMenuRequested,
             this, &TransactionLogView::onTransactionContextMenu);
     connect(_ops, &QTreeWidget::itemSelectionChanged, this, &TransactionLogView::onOpSelected);
+    connect(_versions, &QTreeWidget::itemSelectionChanged,
+            this, &TransactionLogView::onVersionSelected);
+    connect(_manifest, &QTreeWidget::itemSelectionChanged,
+            this, &TransactionLogView::onManifestSelected);
+    connect(_tabs, &QTabWidget::currentChanged, this, &TransactionLogView::onTabChanged);
     connect(_filter, &QLineEdit::textChanged, this, &TransactionLogView::onFilterChanged);
     connect(_resolve, &QPushButton::clicked, this, &TransactionLogView::onResolvePending);
 
@@ -216,8 +258,11 @@ void TransactionLogView::detach()
     _connections.clear();
     _doc = nullptr;
     _lastSeq = 0;
+    _lastVersion = 0;
     _transactions->clear();
     _ops->clear();
+    _versions->clear();
+    _manifest->clear();
     _value->clear();
     updateStatus();
 }
@@ -251,8 +296,11 @@ void TransactionLogView::reload()
 {
     _transactions->clear();
     _ops->clear();
+    _versions->clear();
+    _manifest->clear();
     _value->clear();
     _lastSeq = 0;
+    _lastVersion = 0;
     refresh();
 }
 
@@ -274,11 +322,121 @@ void TransactionLogView::refresh()
         if (last > _lastSeq)
             appendTransactions(_lastSeq + 1);
         _lastSeq = last;
+        refreshVersions();
     }
     catch (Base::Exception& e) {
         FC_ERR("transaction log view: " << e.what());
     }
     updateStatus();
+}
+
+void TransactionLogView::refreshVersions()
+{
+    auto l = log();
+    if (!l)
+        return;
+    // Few rows, rebuilt whole whenever the count moved either way.
+    auto versions = l->store().versions();
+    int64_t last = versions.empty() ? 0 : versions.back().num;
+    if (last == _lastVersion && static_cast<int>(versions.size()) == _versions->topLevelItemCount())
+        return;
+    _lastVersion = last;
+    _versions->clear();
+    _manifest->clear();
+    for (const auto& v : versions) {
+        auto item = new QTreeWidgetItem(_versions);
+        item->setText(VerNum, QString::number(v.num));
+        item->setData(VerNum, Qt::UserRole, QVariant::fromValue(static_cast<qlonglong>(v.num)));
+        item->setText(VerKind, QString::fromStdString(v.kind));
+        item->setText(VerName, QString::fromStdString(v.name));
+        item->setText(VerBranch, QString::fromStdString(v.branch));
+        item->setText(VerSeq, QString::number(v.seq));
+        item->setText(VerSchema, QString::number(v.schema));
+        item->setText(VerCreated,
+                      QDateTime::fromMSecsSinceEpoch(static_cast<qint64>(v.created * 1000))
+                          .toString(QStringLiteral("HH:mm:ss.zzz")));
+        item->setText(VerDocXml, shortRef(v.docxml_hash));
+        item->setToolTip(VerDocXml, QString::fromStdString(v.docxml_hash));
+        item->setText(VerEntries, QString::number(l->store().manifest(v.num).size()));
+        item->setToolTip(VerNum, QString::fromStdString(v.uuid));
+        for (int c : {VerNum, VerSeq, VerSchema, VerEntries})
+            item->setTextAlignment(c, Qt::AlignRight | Qt::AlignVCenter);
+    }
+    for (int c = 0; c < VerColumns; ++c) {
+        if (c != VerName)
+            _versions->resizeColumnToContents(c);
+    }
+}
+
+void TransactionLogView::onTabChanged(int index)
+{
+    _detail->setCurrentIndex(index == 0 ? 0 : 1);
+    _value->clear();
+    if (index == 0)
+        onTransactionSelected();
+    else
+        onVersionSelected();
+}
+
+void TransactionLogView::onVersionSelected()
+{
+    _manifest->clear();
+    _value->clear();
+    auto items = _versions->selectedItems();
+    if (items.isEmpty())
+        return;
+    showManifest(items.front()->data(VerNum, Qt::UserRole).toLongLong());
+}
+
+void TransactionLogView::showManifest(int64_t num)
+{
+    auto l = log();
+    if (!l)
+        return;
+    try {
+        for (const auto& e : l->store().manifest(num)) {
+            auto item = new QTreeWidgetItem(_manifest);
+            item->setText(ManEntry, QString::fromStdString(e.entry));
+            item->setText(ManSource, QString::fromStdString(e.source));
+            item->setText(ManHash, QString::fromStdString(e.hash));
+        }
+        for (int c = 0; c < ManColumns; ++c) {
+            if (c != ManEntry)
+                _manifest->resizeColumnToContents(c);
+        }
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("transaction log view: " << e.what());
+    }
+}
+
+void TransactionLogView::onManifestSelected()
+{
+    _value->clear();
+    auto items = _manifest->selectedItems();
+    if (items.isEmpty() || !_doc)
+        return;
+    auto item = items.front();
+    const std::string hash = item->text(ManHash).toStdString();
+    QString text = QStringLiteral("== %1 %2\n").arg(item->text(ManEntry), item->text(ManHash));
+    if (item->text(ManSource) == QLatin1String("value")) {
+        // An XML entry, held whole as a value.
+        App::CapturedValue v;
+        auto l = log();
+        if (l && l->readValue(hash, v))
+            text += QString::fromStdString(v.fragment);
+        else
+            text += tr("(value not in store)\n");
+    }
+    else {
+        // A blob: in the document's one store (sec 16.2), named by hash.
+        auto blob = _doc->getFileBlobManager().find(hash);
+        if (blob)
+            text += tr("blob at %1\n").arg(QString::fromStdString(blob->path()));
+        else
+            text += tr("(blob not in the document's store)\n");
+    }
+    _value->setPlainText(text);
 }
 
 void TransactionLogView::appendTransactions(int64_t fromSeq)

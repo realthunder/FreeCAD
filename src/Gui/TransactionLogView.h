@@ -35,6 +35,8 @@ class QLabel;
 class QLineEdit;
 class QPlainTextEdit;
 class QPushButton;
+class QStackedWidget;
+class QTabWidget;
 class QTreeWidget;
 class QTreeWidgetItem;
 
@@ -50,7 +52,9 @@ namespace DockWnd {
  *
  * A dockable, read-only view of the active document's log as the store
  * holds it: the transaction rows, the ops of the selected transaction,
- * and the value behind the selected op. It follows the active document
+ * and the value behind the selected op; on a second tab the versions
+ * (sec 16.3), the manifest of the selected one, and the entry or blob
+ * behind the selected manifest row. It follows the active document
  * and appends rows as commits land, so what a gtest asserts about a row
  * can be looked at in the running application. It grows into the log
  * manager as the later phases add versions, branches and restore.
@@ -70,6 +74,9 @@ private Q_SLOTS:
     void refresh();
     void onTransactionSelected();
     void onOpSelected();
+    void onVersionSelected();
+    void onManifestSelected();
+    void onTabChanged(int index);
     void onFilterChanged(const QString& text);
     void onResolvePending();
     void onTransactionContextMenu(const QPoint& pos);
@@ -84,12 +91,15 @@ private:
     void reload();
     void appendTransactions(int64_t fromSeq);
     void showOps(int64_t seq);
+    void refreshVersions();
+    void showManifest(int64_t num);
     void updateStatus();
     App::TransactionLog* log() const;
     void scheduleRefresh();
 
     App::Document* _doc {nullptr};
     int64_t _lastSeq {0};
+    int64_t _lastVersion {0};
     bool _stale {true};
     QTimer _refreshTimer;
     std::vector<fastsignals::scoped_connection> _connections;
@@ -101,8 +111,12 @@ private:
     QLabel* _status {nullptr};
     QLineEdit* _filter {nullptr};
     QPushButton* _resolve {nullptr};
+    QTabWidget* _tabs {nullptr};
+    QStackedWidget* _detail {nullptr};
     QTreeWidget* _transactions {nullptr};
     QTreeWidget* _ops {nullptr};
+    QTreeWidget* _versions {nullptr};
+    QTreeWidget* _manifest {nullptr};
     QPlainTextEdit* _value {nullptr};
 };
 

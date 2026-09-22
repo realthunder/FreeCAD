@@ -1654,9 +1654,19 @@ main entry: split view files (`SplitXML`) are their own entries and are
 not in the manifest yet. Verified in the GUI on both paths: the manifest
 hashes of both entries match the archive's, saved and opened.
 
-**Next.** A versions pane in the panel; then the phase-1 remainder
-(cadence between saves, eviction, the checkout that reads a manifest
-back).
+**The versions pane, as built** (2026-09-23). The panel's first pane is
+a tab widget -- Transactions, Versions -- and its second a stack that
+follows it: the ops of the selected transaction, or the manifest of the
+selected version (entry, source, hash). The versions rows show num,
+kind, name, branch, seq, schema, created, the `Document.xml` hash and
+the entry count, with the uuid as tooltip; they are rebuilt whole when
+the count moves. Selecting a manifest row shows the entry's bytes (a
+`value`) or the blob's path in the document's store (a `blob`) in the
+value pane. Read-only still; naming, restore-to-here and trimming
+arrive with their phases.
+
+**Next.** The phase-1 remainder: the cadence between saves (16.3),
+eviction, and the checkout that reads a manifest back.
 
 ## 22. The end state, and the browser as a development tool (user, 2026-09-22)
 
