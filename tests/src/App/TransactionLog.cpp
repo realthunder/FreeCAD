@@ -647,4 +647,63 @@ TEST_F(TransactionLogTest, evictsUnnamedVersions)
     EXPECT_GE(store.transactions().size(), 9u);
 }
 
+TEST_F(TransactionLogTest, restoresAVersion)
+{
+    doc()->openTransaction("create");
+    auto obj = make("Obj");
+    obj->Integer.setValue(1);
+    obj->String.setValue("one");
+    doc()->commitTransaction();
+    ASSERT_EQ(doc()->snapshotToLog(), 1);
+
+    doc()->openTransaction("edit");
+    obj->Integer.setValue(2);
+    obj->String.setValue("two");
+    doc()->commitTransaction();
+    doc()->openTransaction("add");
+    make("Later");
+    doc()->commitTransaction();
+    ASSERT_EQ(doc()->snapshotToLog(), 2);
+    ASSERT_TRUE(doc()->getObject("Later"));
+
+    // With SplitXML on, the object's data is its own entry, in the
+    // manifest with the rest.
+    {
+        bool split = false;
+        for (auto& e : log().store().manifest(1))
+            split = split || e.entry == "Obj.xml";
+        EXPECT_EQ(split, doc()->SplitXML.getValue());
+    }
+    // Back to version 1: the object as it was, the later one gone, the
+    // checkout recorded, and the log going on from there.
+    ASSERT_TRUE(doc()->restoreVersion(1));
+    auto restored = static_cast<App::FeatureTest*>(doc()->getObject("Obj"));
+    ASSERT_TRUE(restored);
+    EXPECT_EQ(restored->Integer.getValue(), 1);
+    EXPECT_STREQ(restored->String.getValue(), "one");
+    EXPECT_FALSE(doc()->getObject("Later"));
+    auto& store = log().store();
+    auto txns = store.transactions();
+    ASSERT_GE(txns.size(), 1u);
+    EXPECT_EQ(txns.back().kind, "checkout");
+    EXPECT_NE(txns.back().script.find("\"version\":1"), std::string::npos);
+    EXPECT_EQ(store.versions().size(), 2u);   // a checkout is not a new version
+    EXPECT_EQ(log().pendingCount(), 0u);
+
+    doc()->openTransaction("after");
+    restored->Integer.setValue(3);
+    doc()->commitTransaction();
+    txns = store.transactions();
+    EXPECT_EQ(txns.back().name, "after");
+    EXPECT_EQ(txns[txns.size() - 2].kind, "checkout");
+
+    // Forward again, to version 2.
+    ASSERT_TRUE(doc()->restoreVersion(2));
+    restored = static_cast<App::FeatureTest*>(doc()->getObject("Obj"));
+    ASSERT_TRUE(restored);
+    EXPECT_EQ(restored->Integer.getValue(), 2);
+    EXPECT_TRUE(doc()->getObject("Later"));
+    EXPECT_THROW(doc()->restoreVersion(99), Base::Exception);
+}
+
 }  // namespace

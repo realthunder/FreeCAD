@@ -107,15 +107,17 @@ struct DocumentP
     /// when no tap was installed.
     std::string restoreDocXml;
     bool restoreTapped {false};
-    /// Entries noted through Document::noteFileEntry during the save or
-    /// restore in progress (GuiDocument.xml), for the version manifest.
+    /// The XML entries the writer or reader served during the save,
+    /// snapshot or restore in progress (GuiDocument.xml, split object
+    /// files), through its entry sink, for the version manifest.
     std::vector<std::pair<std::string, std::string>> fileEntries;
-    bool wantsFileEntries {false};
     /// The cadence of unnamed versions (sec 16.3): commits since the last
     /// version, and when it was taken (steady clock seconds).
     long commitsSinceVersion {0};
     double lastVersionTime {0};
     bool snapshotting {false};
+    /// A restoreVersion() in progress: the restore takes no version 1.
+    bool checkingOut {false};
 #ifdef USE_OLD_DAG
     DependencyList DepList;
     std::map<DocumentObject*, Vertex> VertexObjectList;

@@ -379,6 +379,26 @@ int64_t TransactionLog::onSave(const std::string& path, const Entries& entries,
     return snapshot("save", path, entries, blobs, schema);
 }
 
+void TransactionLog::onCheckout(int64_t num)
+{
+    // The head state is the version's; pending after refs of the state
+    // that was left describe values that are gone, so they are dropped
+    // rather than resolved against the restored document.
+    _pending.clear();
+    LogTransaction t;
+    t.parent = _nextSeq;
+    t.seq = ++_nextSeq;
+    t.kind = "checkout";
+    t.name = "checkout";
+    t.time = now();
+    t.session = _session;
+    t.script = "{\"version\":" + std::to_string(num) + "}";
+    post([this, t]() mutable {
+        std::vector<LogOp> none;
+        _store->append(t, none);
+    });
+}
+
 int64_t TransactionLog::onSnapshot(const Entries& entries,
                                    const std::vector<std::pair<std::string, std::string>>& blobs,
                                    int schema)

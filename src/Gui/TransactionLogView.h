@@ -81,6 +81,7 @@ private Q_SLOTS:
     void onResolvePending();
     void onSnapshot();
     void onTransactionContextMenu(const QPoint& pos);
+    void onVersionContextMenu(const QPoint& pos);
 
 protected:
     void showEvent(QShowEvent*) override;

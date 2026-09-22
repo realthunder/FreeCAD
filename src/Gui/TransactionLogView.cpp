@@ -139,6 +139,7 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     _versions->setAlternatingRowColors(true);
     _versions->setUniformRowHeights(true);
     _versions->setSelectionMode(QAbstractItemView::SingleSelection);
+    _versions->setContextMenuPolicy(Qt::CustomContextMenu);
     _versions->header()->setStretchLastSection(false);
     _versions->header()->setSectionResizeMode(VerName, QHeaderView::Stretch);
 
@@ -187,6 +188,8 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     connect(_ops, &QTreeWidget::itemSelectionChanged, this, &TransactionLogView::onOpSelected);
     connect(_versions, &QTreeWidget::itemSelectionChanged,
             this, &TransactionLogView::onVersionSelected);
+    connect(_versions, &QTreeWidget::customContextMenuRequested,
+            this, &TransactionLogView::onVersionContextMenu);
     connect(_manifest, &QTreeWidget::itemSelectionChanged,
             this, &TransactionLogView::onManifestSelected);
     connect(_tabs, &QTabWidget::currentChanged, this, &TransactionLogView::onTabChanged);
@@ -639,6 +642,29 @@ void TransactionLogView::onTransactionContextMenu(const QPoint& pos)
             cells << item->text(c);
         QApplication::clipboard()->setText(cells.join(QLatin1Char('\t')));
     }
+}
+
+void TransactionLogView::onVersionContextMenu(const QPoint& pos)
+{
+    auto item = _versions->itemAt(pos);
+    if (!item || !_doc)
+        return;
+    const int64_t num = item->data(VerNum, Qt::UserRole).toLongLong();
+    QMenu menu(this);
+    auto restore = menu.addAction(tr("Restore to version %1").arg(num));
+    restore->setToolTip(tr("Reload the document from this version's snapshot (sec 16.1)"));
+    auto chosen = menu.exec(_versions->viewport()->mapToGlobal(pos));
+    if (chosen != restore)
+        return;
+    App::Document* doc = _doc;
+    try {
+        doc->restoreVersion(num);
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("restore to version " << num << ": " << e.what());
+    }
+    // The reload replaced every object; the panel is told through
+    // signalFinishRestoreDocument, which reloads it.
 }
 
 void TransactionLogView::updateStatus()

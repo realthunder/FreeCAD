@@ -425,6 +425,28 @@ private:
     TapSink sink;
 };
 
+void Writer::writeEntry(const FileEntry& entry)
+{
+    putNextEntry(entry.FileName.c_str());
+    indent = 0;
+    indBuf[0] = 0;
+    if (!entrySink) {
+        entry.Object->SaveDocFile(*this);
+        return;
+    }
+    std::string bytes;
+    beginTap([&bytes](const char* p, std::size_t n) { bytes.append(p, n); });
+    try {
+        entry.Object->SaveDocFile(*this);
+    }
+    catch (...) {
+        endTap();
+        throw;
+    }
+    endTap();
+    entrySink(entry.FileName, std::move(bytes));
+}
+
 void Writer::beginTap(TapSink sink)
 {
     if (tapBuf)
@@ -505,10 +527,7 @@ void ZipWriter::writeFiles()
     while (index < FileList.size()) {
         stepProgress(base, FileList.size());
         FileEntry entry = FileList[index];
-        putNextEntry(entry.FileName.c_str());
-        indent = 0;
-        indBuf[0] = 0;
-        entry.Object->SaveDocFile(*this);
+        writeEntry(entry);
         index++;
     }
 }
@@ -561,10 +580,7 @@ void NullWriter::writeFiles()
     size_t index = 0;
     while (index < FileList.size()) {
         FileEntry entry = FileList[index];
-        putNextEntry(entry.FileName.c_str());
-        indent = 0;
-        indBuf[0] = 0;
-        entry.Object->SaveDocFile(*this);
+        writeEntry(entry);
         index++;
     }
 }
@@ -620,10 +636,7 @@ void FileWriter::writeFiles()
                 fi.createDirectory();
             }
 
-            putNextEntry(entry.FileName.c_str());
-            indent = 0;
-            indBuf[0] = 0;
-            entry.Object->SaveDocFile(*this);
+            writeEntry(entry);
             this->FileStream.close();
         }
 

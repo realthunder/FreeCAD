@@ -416,6 +416,20 @@ public:
      */
     using FileDeferrer = std::function<bool(const std::string &, Base::Persistence *)>;
     void setFileDeferrer(FileDeferrer deferrer) { _fileDeferrer = std::move(deferrer); }
+
+    /** Hand the bytes of every entry readFiles() serves to `sink`, by name.
+     *
+     * The transaction log's version manifest wants each XML entry of the
+     * file as found (docs/TransactionLog.md sec 16.1, 16.6): the readers
+     * tap the entry's Reader around RestoreDocFile() and pass on what
+     * streamed, drained to the end. Blob entries go through the archive
+     * handler, not through this.
+     */
+    using EntrySink = std::function<void(const std::string&, std::string)>;
+    void setEntrySink(EntrySink sink) { _entrySink = std::move(sink); }
+    bool hasEntrySink() const { return static_cast<bool>(_entrySink); }
+    /// RestoreDocFile() on `object` from `entry`, tapped for the sink if one is set.
+    void serveEntry(Base::Reader& entry, Base::Persistence* object, const std::string& name);
     /// Offer a registered entry for deferral; true when it was taken.
     bool deferFileEntry(const std::string &name, Base::Persistence *obj) const {
         return _fileDeferrer && _fileDeferrer(name, obj);
@@ -567,6 +581,7 @@ protected:
     ArchiveHandler _archiveHandler;
     ArchiveFilter _archiveFilter;
     FileDeferrer _fileDeferrer;
+    EntrySink _entrySink;
     std::vector<std::string> FileNames;
 
     std::vector<int*> Guards;

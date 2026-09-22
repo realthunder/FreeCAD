@@ -135,6 +135,11 @@ public:
     int64_t onRestore(const std::string& path, const Entries& entries,
                       const std::vector<std::pair<std::string, std::string>>& blobs, int schema);
 
+    /// The `checkout` record (sec 12): the document was restored to
+    /// version `num` by Document::restoreVersion. No ops; the version's
+    /// snapshot is the state, and the log continues from here.
+    void onCheckout(int64_t num);
+
     /// The unnamed version between saves (sec 16.3), from
     /// Document::snapshotToLog: like onSave, with a `snapshot` record.
     int64_t onSnapshot(const Entries& entries,

@@ -328,15 +328,6 @@ public:
      * after the mode is set, in the transient directory.
      */
     TransactionLog* getTransactionLog() const;
-    /** An archive entry streamed outside Document.xml, for the log's
-     * version manifest (docs/TransactionLog.md sec 16.1): whoever writes
-     * or reads such an entry during a save or restore -- the Gui document
-     * with GuiDocument.xml -- taps its bytes and hands them over here,
-     * while wantsFileEntries() says the log wants them. Taken by the save
-     * or restore that is in progress.
-     */
-    bool wantsFileEntries() const;
-    void noteFileEntry(const std::string& name, std::string bytes);
     /** An unnamed version of the document as it stands (docs/TransactionLog.md
      * sec 16.3): the serialisation of a save -- blobs made, Document.xml
      * and GuiDocument.xml streamed -- into the log and nothing on disk but
@@ -345,6 +336,16 @@ public:
      * there is no log or the document is not in a state to snapshot.
      */
     int64_t snapshotToLog();
+    /** Restore the document to a version of its log (docs/TransactionLog.md
+     * sec 16.1): the version's manifest is materialised into a directory
+     * under the transient one -- its XML entries from the store's values,
+     * its blobs from the document's blob store -- and the document is
+     * restored from it, the way a file is opened. A `checkout` record
+     * names the version; the undo stack is cleared as by any restore.
+     * Throws if the version or one of its blobs is missing; false when
+     * there is no log.
+     */
+    bool restoreVersion(int64_t num);
     /// Whether writes are recorded into transactions at all: undo is on,
     /// or the log is (which records without keeping undo steps).
     bool transactionsWanted() const;

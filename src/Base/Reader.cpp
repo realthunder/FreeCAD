@@ -288,6 +288,26 @@ const std::string *Base::XMLReader::findAttribute(const char* AttrName) const
     return nullptr;
 }
 
+void Base::XMLReader::serveEntry(Base::Reader& entry, Base::Persistence* object,
+                                 const std::string& name)
+{
+    if (!_entrySink) {
+        object->RestoreDocFile(entry);
+        return;
+    }
+    std::string bytes;
+    entry.beginTap([&bytes](const char* p, std::size_t n) { bytes.append(p, n); });
+    try {
+        object->RestoreDocFile(entry);
+    }
+    catch (...) {
+        entry.endTap();
+        throw;
+    }
+    entry.endTap();
+    _entrySink(name, std::move(bytes));
+}
+
 void Base::XMLReader::read()
 {
     if(ReadType == EndDocument)
@@ -1167,7 +1187,7 @@ void Base::ZipReader::readFiles(XMLReader &xmlReader)
             FC_DURATION_PLUS(dAdvance, tAdvance);
             try {
                 Base::ZipReader zipreader(_stream, FileList[jt].FileName, &xmlReader);
-                FileList[jt].Object->RestoreDocFile(zipreader);
+                xmlReader.serveEntry(zipreader, FileList[jt].Object, FileList[jt].FileName);
             } catch(Base::AbortException &e) {
                 e.ReportException();
                 FC_ERR("User abort when reading embedded file: " << FileList[jt].FileName);
@@ -1320,7 +1340,7 @@ void Base::ZipFileReader::readFiles(XMLReader &xmlReader)
             // which is what the forward-only walk did by construction.
             auto stream = openEntry(entry.FileName);
             Base::ZipReader zipreader(*stream, entry.FileName, &xmlReader);
-            entry.Object->RestoreDocFile(zipreader);
+            xmlReader.serveEntry(zipreader, entry.Object, entry.FileName);
         } catch(Base::AbortException &e) {
             e.ReportException();
             FC_ERR("User abort when reading embedded file: " << entry.FileName);
@@ -1379,7 +1399,7 @@ void Base::FileReader::readFiles(Base::XMLReader &xmlReader) {
                 FC_ERR(msg);
                 entry.Object->SetRestoreError(msg.c_str());
             } else
-                entry.Object->RestoreDocFile(freader);
+                xmlReader.serveEntry(freader, entry.Object, entry.FileName);
         } catch(Base::AbortException &e) {
             e.ReportException();
             FC_ERR("User abort when reading: " << fi.filePath());

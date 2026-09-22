@@ -326,6 +326,16 @@ log (docs/TransactionLog.md sec 16.3): a save's serialisation with no
 archive written. Returns the version number, 0 if there is no log.</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="restoreTransactionVersion">
+      <Documentation>
+        <UserDocu>restoreTransactionVersion(num) -> bool
+
+Restore the document to version `num` of its transaction log
+(docs/TransactionLog.md sec 16.1): the version's entries and blobs are
+materialised and the document reloaded from them. The undo stack is
+cleared. False if there is no log; raises if the version is missing.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="resolveTransactionLog">
       <Documentation>
         <UserDocu>resolveTransactionLog() -> int

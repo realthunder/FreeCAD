@@ -266,6 +266,14 @@ public:
     void beginTap(TapSink sink);
     void endTap();
     bool isTapping() const { return static_cast<bool>(tapBuf); }
+
+    /** Hand the bytes of every entry writeFiles() serves to `sink`, by
+     * name: the version manifest's XML entries (docs/TransactionLog.md sec
+     * 16.1). The writers serve each entry through writeEntry(), which taps
+     * it when a sink is set. Blob entries are the manager's, not these.
+     */
+    using EntrySink = std::function<void(const std::string&, std::string)>;
+    void setEntrySink(EntrySink sink) { entrySink = std::move(sink); }
     //@}
 
     // NOLINTBEGIN
@@ -311,6 +319,12 @@ private:
     CharStreamFormat charStreamFormat {CharStreamFormat::Raw};
     class TapBuf;
     std::unique_ptr<TapBuf> tapBuf;
+    EntrySink entrySink;
+
+protected:
+    /// putNextEntry() + SaveDocFile() for one registered entry, tapped for
+    /// the entry sink when one is set. What every writeFiles() loop calls.
+    void writeEntry(const FileEntry& entry);
     std::streambuf* tappedBuf {nullptr};
 };
 

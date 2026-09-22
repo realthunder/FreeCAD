@@ -1521,8 +1521,7 @@ keeps every value a manifest names. `TransactionStore` gained
 `addVersion`, `versions`, `getVersion`, `findVersion(docxml_hash)` and
 `manifest`; Python reads them through `Document.getTransactionVersions()`.
 `GuiDocument.xml` joined the manifest the next day, and the cadence
-between saves with it, and eviction (below); not yet: the checkout that
-reads a manifest back.
+between saves with it, eviction, and the checkout (below).
 
 **The history initialised from a file, as built** (2026-09-22, section
 16.6). `Document::restore(const char*)` taps `Document.xml` on its way
@@ -1639,20 +1638,25 @@ the log on, three of its undo cases see the open implicit transaction in
 `UndoNames` -- the log-on semantics, not a bug, and the reason the mode
 is a preference the suite does not set.
 
-**`GuiDocument.xml` in the manifest, as built** (2026-09-23). No Base
-change was needed after all: the Gui document writes and reads its entry
-through `SaveDocFile(Base::Writer&)` / `RestoreDocFile(Base::Reader&)`,
-which hold the stream, so a `GuiEntryTap` guard in each begins the tap
-before the first byte (before the `XMLReader` is built, on restore) and
-ends it -- draining, on restore -- when the function returns, then hands
-the bytes to `App::Document::noteFileEntry`. The App document arms
-`wantsFileEntries()` for the span of a save or a tapped restore and
-passes what it was given, `Document.xml` first, as the `Entries` of
-`onSave` / `onRestore`; `snapshot()` stores each as a durable value and
-lists each in the manifest, `docxml_hash` being the first's. Only the
-main entry: split view files (`SplitXML`) are their own entries and are
-not in the manifest yet. Verified in the GUI on both paths: the manifest
-hashes of both entries match the archive's, saved and opened.
+**The XML entries in the manifest, as built** (2026-09-23, revised the
+same day). First cut: the Gui document tapped its own entry in
+`SaveDocFile` / `RestoreDocFile` and handed the bytes to the App
+document. Replaced when the checkout showed the gap: with `SplitXML` on,
+every object's data is an entry of its own (`Obj.xml`), served by the
+same `writeFiles()` / `readFiles()` loops, and a version without them is
+not a file. So the tap is generic: `Base::Writer::setEntrySink` and
+`Base::XMLReader::setEntrySink` hand every entry those loops serve to a
+sink by name -- the writers serve each through `Writer::writeEntry`, the
+readers through `XMLReader::serveEntry`, each tapping the entry's stream
+around `SaveDocFile` / `RestoreDocFile` (draining, on the reader) when a
+sink is set and costing nothing when none is. The document sets the sink
+for the span of a save, a snapshot or a tapped restore and passes what
+it collected, `Document.xml` first, as the `Entries` of `onSave` /
+`onSnapshot` / `onRestore`; `snapshot()` stores each as a durable value
+and lists each in the manifest, `docxml_hash` being the first's. Blob
+entries are the manager's and never come this way. Verified in the GUI
+on both paths: the manifest hashes of `Document.xml` and
+`GuiDocument.xml` match the archive's, saved and opened.
 
 **The versions pane, as built** (2026-09-23). The panel's first pane is
 a tab widget -- Transactions, Versions -- and its second a stack that
@@ -1703,8 +1707,30 @@ by the log yet (16.2), so eviction frees value rows only. The tenth
 gtest keeps 2 across 4 snapshots and checks the survivors, their
 values, and that no op's value went.
 
-**Next.** The checkout that reads a manifest back (16.1) -- restoring a
-version into a document -- which is where phase 1 meets phase 3.
+**The checkout, as built** (2026-09-23, 16.1). `Document::restoreVersion(num)`
+materialises the version as an unpacked project under
+`<transient>/history/checkout/` -- each `value` entry written from the
+store, each blob copied from the document's blob store into `blobs/`,
+which a directory restore reads by content -- and calls `restore(dir)`,
+the path a file takes on open, so "rollback is a load" holds literally.
+A `checkout` record (`{version}`) follows, the pending after refs of
+the state that was left are dropped (they described values that are
+gone), the cadence restarts, and the undo stack is cleared as by any
+restore. The restore's own tap stays off during a checkout (it would
+have taken a "version 1" of a version). Python
+`Document.restoreTransactionVersion(num)`; the panel's versions rows
+offer "Restore to version N" on their context menu and reload through
+`signalFinishRestoreDocument`. Departures from 16.1 to settle later:
+`GuiDocument.xml` is checked out with the rest, so the cameras come
+back with the model (leaving it out would reset the view providers'
+colours and visibility, which is worse); a missing blob throws rather
+than falling back; nothing marks the document modified. The eleventh
+gtest goes back to version 1, forward to 2, and edits between.
+
+Phase 1 is complete with this, and the browser panel shows every record
+it writes. What remains of the versions story is the embedded mode
+(16.4, `PropertyHistory`) and the named versions of 16.3; phase 3 (undo
+over the log) starts from the checkout.
 
 ## 22. The end state, and the browser as a development tool (user, 2026-09-22)
 

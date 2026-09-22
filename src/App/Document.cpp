@@ -3188,14 +3188,18 @@ void Document::save(Base::Writer &writer, bool archive) const {
 
     // The log's save record wants Document.xml as written (sec 11): tap
     // the bytes on their way into the archive rather than serialise twice.
-    // Other entries the manifest holds (GuiDocument.xml) arrive through
-    // noteFileEntry() from whoever writes them, while the save runs.
+    // The other XML entries the manifest holds (GuiDocument.xml, the split
+    // object files) come through the writer's entry sink as writeFiles()
+    // serves them.
     TransactionLog* log = getTransactionLog();
     std::string docXml;
     d->fileEntries.clear();
-    d->wantsFileEntries = log != nullptr;
-    if (log)
+    if (log) {
         writer.beginTap([&docXml](const char* p, std::size_t n) { docXml.append(p, n); });
+        writer.setEntrySink([this](const std::string& name, std::string bytes) {
+            d->fileEntries.emplace_back(name, std::move(bytes));
+        });
+    }
 
     writer.Stream() << "<?xml version='1.0' encoding='utf-8'?>\n"
                     << "<!--\n"
@@ -3232,8 +3236,8 @@ void Document::save(Base::Writer &writer, bool archive) const {
         THROWM(Base::FileException, "Failed to write all data to file")
     }
 
-    d->wantsFileEntries = false;
     if (log) {
+        writer.setEntrySink(nullptr);
         std::vector<std::pair<std::string, std::string>> blobs;
         for (const auto& blob : getFileBlobManager().collected()) {
             // Named by hash, as the manifest keys on it; the extension
@@ -3289,14 +3293,22 @@ void Document::restore (const char *filename,
     d->restoreDocXml.clear();
     d->restoreTapped = false;
     d->fileEntries.clear();
-    d->wantsFileEntries = false;
     auto tap = [this, &objNames](Base::Reader& reader) {
-        // A partial document is never snapshotted (sec 16.1).
-        if (!objNames.empty() || !getTransactionLog())
+        // A partial document is never snapshotted (sec 16.1), and a
+        // checkout is a version already.
+        if (!objNames.empty() || d->checkingOut || !getTransactionLog())
             return;
         reader.beginTap([this](const char* p, std::size_t n) { d->restoreDocXml.append(p, n); });
         d->restoreTapped = true;
-        d->wantsFileEntries = true;
+    };
+    // The other XML entries (GuiDocument.xml, split object files) as the
+    // readers serve them, for the same manifest.
+    auto sink = [this](Base::XMLReader& xmlReader) {
+        if (!d->restoreTapped)
+            return;
+        xmlReader.setEntrySink([this](const std::string& name, std::string bytes) {
+            d->fileEntries.emplace_back(name, std::move(bytes));
+        });
     };
 
     if(fi.fileNamePure() == "Document" && fi.hasExtension("xml")) {
@@ -3304,6 +3316,7 @@ void Document::restore (const char *filename,
         _reader.reset(new Base::FileReader(fi,di.fileName()+"/Document.xml"));
         tap(*_reader);
         _xmlReader.reset(new Base::XMLReader(*_reader));
+        sink(*_xmlReader);
     } else {
         if (DocumentParams::getArchiveRandomAccess()) {
             try {
@@ -3326,6 +3339,7 @@ void Document::restore (const char *filename,
         }
         tap(*reader);
         _xmlReader.reset(new Base::XMLReader(*reader));
+        sink(*_xmlReader);
         if (zfreader && DocumentParams::getDeferShapeLoad()) {
             // Park opted-in entries instead of serving them during the
             // walk; the index stays behind for restoreDeferredFile().
@@ -3642,7 +3656,7 @@ void Document::restore(Base::XMLReader &reader,
     // back to -- and never for a partial document, which was not tapped.
     if (d->restoreTapped) {
         d->restoreTapped = false;
-        d->wantsFileEntries = false;
+        reader.setEntrySink(nullptr);
         std::vector<std::pair<std::string, std::string>> entries;
         entries.emplace_back("Document.xml", std::move(d->restoreDocXml));
         d->restoreDocXml.clear();
@@ -3692,24 +3706,6 @@ void Document::restore(Base::XMLReader &reader,
             << ", total " << (dXml + rt.files + dAfter).count() << 's');
 }
 
-bool Document::wantsFileEntries() const
-{
-    return d->wantsFileEntries;
-}
-
-void Document::noteFileEntry(const std::string& name, std::string bytes)
-{
-    if (!d->wantsFileEntries)
-        return;
-    for (auto& e : d->fileEntries) {
-        if (e.first == name) {
-            e.second = std::move(bytes);
-            return;
-        }
-    }
-    d->fileEntries.emplace_back(name, std::move(bytes));
-}
-
 int64_t Document::snapshotToLog()
 {
     TransactionLog* log = getTransactionLog();
@@ -3738,7 +3734,9 @@ int64_t Document::snapshotToLog()
         collectFileBlobs();
 
         d->fileEntries.clear();
-        d->wantsFileEntries = true;
+        writer.setEntrySink([this](const std::string& name, std::string bytes) {
+            d->fileEntries.emplace_back(name, std::move(bytes));
+        });
         std::string docXml;
         writer.putNextEntry("Document.xml");
         writer.beginTap([&docXml](const char* p, std::size_t n) { docXml.append(p, n); });
@@ -3750,7 +3748,6 @@ int64_t Document::snapshotToLog()
         writer.endTap();
         signalSaveDocument(writer);
         writer.writeFiles();
-        d->wantsFileEntries = false;
 
         std::vector<std::pair<std::string, std::string>> blobs;
         for (const auto& blob : getFileBlobManager().collected()) {
@@ -3768,10 +3765,71 @@ int64_t Document::snapshotToLog()
         return num;
     }
     catch (Base::Exception& e) {
-        d->wantsFileEntries = false;
         FC_ERR("snapshot of " << getName() << " failed: " << e.what());
     }
     return 0;
+}
+
+bool Document::restoreVersion(int64_t num)
+{
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        return false;
+    if (d->checkingOut || testStatus(Restoring) || isPerformingTransaction())
+        THROWM(Base::RuntimeError, "cannot restore a version now");
+    if (d->activeUndoTransaction)
+        commitImplicitTransaction();
+    if (d->activeUndoTransaction)
+        THROWM(Base::RuntimeError, "cannot restore a version inside a transaction");
+
+    LogVersion version;
+    if (!log->store().getVersion(num, version))
+        THROWM(Base::RuntimeError, "no such version");
+    auto manifest = log->store().manifest(num);
+
+    // Materialise the version as an unpacked project: the XML entries
+    // from the store, the blobs from the document's one blob store (sec
+    // 16.2) under blobs/, which a directory restore reads by content.
+    const std::string dir = TransientDir.getStrValue() + "/history/checkout";
+    Base::FileInfo(dir).deleteDirectoryRecursive();
+    if (!Base::FileInfo(dir + "/" + FileBlobManager::archivePrefix()).createDirectories())
+        THROWM(Base::RuntimeError, "cannot create the checkout directory");
+    bool haveDocXml = false;
+    for (const auto& e : manifest) {
+        if (e.source == "value") {
+            CapturedValue v;
+            if (!log->readValue(e.hash, v))
+                THROWM(Base::RuntimeError, "version entry " + e.entry + " is not in the store");
+            Base::FileInfo target(dir + "/" + e.entry);
+            if (e.entry.find('/') != std::string::npos)
+                Base::FileInfo(target.dirPath()).createDirectories();
+            Base::ofstream out(target, std::ios::out | std::ios::binary);
+            out.write(v.fragment.data(), static_cast<std::streamsize>(v.fragment.size()));
+            if (!out)
+                THROWM(Base::RuntimeError, "cannot write " + e.entry);
+            if (e.entry == "Document.xml")
+                haveDocXml = true;
+        }
+        else {
+            auto blob = getFileBlobManager().find(e.hash);
+            if (!blob)
+                THROWM(Base::RuntimeError, "blob " + e.entry + " of version "
+                                               + std::to_string(num) + " is not in the store");
+            if (!Base::FileInfo(blob->path()).copyTo(
+                    (dir + "/" + FileBlobManager::archivePrefix() + e.entry).c_str()))
+                THROWM(Base::RuntimeError, "cannot copy blob " + e.entry);
+        }
+    }
+    if (!haveDocXml)
+        THROWM(Base::RuntimeError, "version has no Document.xml");
+
+    {
+        Base::FlagToggler<> guard(d->checkingOut);
+        restore(dir.c_str(), false);
+    }
+    log->onCheckout(num);
+    noteVersionTaken();
+    return true;
 }
 
 void Document::noteVersionTaken()
