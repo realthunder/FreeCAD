@@ -607,6 +607,10 @@ private:
     static PyObject *sGetActiveTransaction  (PyObject *self,PyObject *args);
     static PyObject *sCloseActiveTransaction(PyObject *self,PyObject *args);
 
+    static PyObject *sStartTransactionMeasure(PyObject *self,PyObject *args);
+    static PyObject *sStopTransactionMeasure (PyObject *self,PyObject *args);
+    static PyObject *sMarkTransactionMeasure (PyObject *self,PyObject *args);
+
     static PyObject *sDumpSWIG(PyObject *self,PyObject *args);
 
     static PyObject *sCheckAbort(PyObject *self,PyObject *args);

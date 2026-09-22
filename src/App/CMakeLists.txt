@@ -83,7 +83,22 @@ include_directories(
 list(APPEND FreeCADApp_LIBS
         ${QtCore_LIBRARIES}
         ${QtXml_LIBRARIES}
+        ${ZLIB_LIBRARIES}
 )
+
+# zstd is optional and only used by the transaction-log measurement
+# (TransactionMeasure.cpp, docs/TransactionLog.md sec 15 phase 0), which
+# compares it against zlib. Nothing is stored with it yet.
+find_path(ZSTD_INCLUDE_DIR zstd.h)
+find_library(ZSTD_LIBRARY NAMES zstd)
+if(ZSTD_INCLUDE_DIR AND ZSTD_LIBRARY)
+    include_directories(${ZSTD_INCLUDE_DIR})
+    add_definitions(-DFC_HAVE_ZSTD)
+    list(APPEND FreeCADApp_LIBS ${ZSTD_LIBRARY})
+    message(STATUS "zstd found for TransactionMeasure: ${ZSTD_LIBRARY}")
+else()
+    message(STATUS "zstd not found; TransactionMeasure measures zlib only")
+endif()
 
 # The Python sandbox host seam (docs/ExpressionSandbox.md): ImageHost,
 # the bridge, and whichever runtimes this build carries.  Host-only,
@@ -470,6 +485,7 @@ SET(Document_CPP_SRCS
     Placement.cpp
     ProjectFile.cpp
     Transactions.cpp
+    TransactionMeasure.cpp
     TransactionalObject.cpp
     VRMLObject.cpp
     MaterialObject.cpp
@@ -538,6 +554,7 @@ SET(Document_HPP_SRCS
     OriginFeature.h
     Range.h
     Transactions.h
+    TransactionMeasure.h
     TransactionDefs.h
     TransactionalObject.h
     VRMLObject.h

@@ -551,6 +551,8 @@ void TransactionObject::setProperty(const Property* pcProp)
         data.property = pcProp->Copy();
         data.propertyType = pcProp->getTypeId();
         data.property->setStatusValue(pcProp->getStatus());
+        if (auto obj = Base::freecad_dynamic_cast<DocumentObject>(pcProp->getContainer()))
+            data.derived = obj->isRecomputing();
     }
 }
 

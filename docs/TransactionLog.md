@@ -683,7 +683,7 @@ manifest(version, entry, blob)
 is one `DELETE`.
 
 Compression: zstd is in the env but only transitively; zlib is already
-linked. Decide by the phase-0 measurement, not by taste.
+linked. Decide by the phase-0 measurement, not by taste. Decided: zstd, section 20.2.
 
 All of this sits behind an `App::TransactionStore` interface (append
 transaction, read transaction, get/put value, truncate, export). The
@@ -774,7 +774,10 @@ Consolidated 2026-09-22 after sections 16 and 17 were decided.
    log; no store. Decides the inline threshold, the compressor, and
    whether the writer thread is needed. Also measure byte-level delta
    and chunking on real BREP and real sketches, and the cost of a
-   snapshot (16.1) on a large document.
+   snapshot (16.1) on a large document. **Done 2026-09-22, section 20**: zstd,
+   64 KB inline, the zstd prefix delta as the generic encoding, a writer
+   thread that serialises detached copies only, attachments hashed on
+   their own.
 1. **Store, writer, versions.** `App::TransactionStore`, the SQLite
    backend, values through `Property::Save`, implicit transactions, the
    derived rule, the pseudo transactions; versions' blobs in the
@@ -1246,3 +1249,156 @@ questions are not re-asked.
 - Not verified in this survey and not relied on: LMDB and RocksDB WASM
   status beyond the absence of an official target; per-commit cost of
   libgit2 (no benchmark found).
+
+## 20. Phase 0 results (2026-09-22)
+
+The measurement harness of section 15 phase 0 is built and run. What it
+is: `App::TransactionMeasure` (`src/App/TransactionMeasure.{h,cpp}`),
+hooked into `Document::_commitTransaction` behind one static bool. On
+every commit it walks the transaction the way the writer of section 9
+will -- one op per object created, removed or changed, one value per
+property before and after -- and serialises each value through
+`Property::Save` into memory (the XML fragment plus every `addFile`
+attachment), hashes it, records whether the hash was seen before in the
+session, compresses it with zlib and zstd, and for a `set` computes the
+zstd prefix delta and a content-defined-chunk diff of after against
+before. Nothing is stored. Driven by `scripts/measure-transactions.py`
+under `FreeCADCmd` (`TXN_MEASURE_CSV=out.csv`), summarised by
+`scripts/summarize-transaction-measure.py`; `App.startTransactionMeasure`
+/ `stopTransactionMeasure` / `markTransactionMeasure` and the
+`FC_TXN_MEASURE` environment variable turn it on anywhere, and
+`FC_TXN_MEASURE_DUMP=<dir>` keeps every distinct value's bytes. The
+derived flag is recorded where the design said it must be, at the first
+write, in `TransactionObject::setProperty`
+(`owner->isRecomputing()`), so it is real, not reconstructed.
+
+Two gtests (`tests/src/App/TransactionMeasure.cpp`) pin the walk: create /
+set / remove produce the right ops with the right hashes, a value set
+back to an earlier one is seen, a write that changes nothing hashes the
+same on both sides.
+
+### 20.1 The numbers
+
+macOS box, RelWithDebInfo, OCCT 8.0.1, text BREP (the document's
+`PreferBinary` default). Bytes are of values not seen before in the
+session, split by the derived rule; `t/txn` is the whole added cost of
+a commit (the baseline run of the same script, measurement off, commits
+in 0.0 ms everywhere except the 2 MB move, 2 ms).
+
+| scenario | txns | ops | noop | input B | derived B | zlib | zstd3 | patch | t/txn ms |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| scalar (Box.Length, 5 edits) | 5 | 13 | 5 | 80 | 15.6K | 0.28 | 0.30 | 0.05 | 0.95 |
+| sketch create, 1000 lines + 1000 constraints | 1 | 1 | 0 | 991K | 0 | 0.05 | 0.03 | - | 36 |
+| sketch move one point, x3 | 3 | 21 | 12 | 1.6M | 1.4M | 0.06 | 0.03 | 0.00 | 61 |
+| sketch drag, 200 intermediate writes | 1 | 7 | 4 | 400K | 491K | 0.06 | 0.03 | 0.00 | 59 |
+| sketch, 10 lines, move one point | 2 | 8 | 4 | 24K | 6K | 0.15 | 0.15 | 0.03 | 0.9 |
+| Pad.Length, 5 edits | 5 | 40 | 15 | 278 | 76K | 0.29 | 0.29 | 0.04 | 1.9 |
+| Pad.Length under a fillet, x3 | 3 | 39 | 15 | 264 | 140K | 0.26 | 0.26 | 0.05 | 5.6 |
+| import Schenkel.stp (590 KB STEP) | 1 | 1 | 0 | 357K | 0 | 0.22 | 0.21 | - | 42 |
+| import a 4 400-face solid (1.9 MB BREP) | 1 | 1 | 0 | 1.9M | 0 | 0.14 | 0.14 | - | 469 |
+| `obj.Shape = s` from Python, same solid | 1 | 1 | 0 | 1.8M | 0 | 0.14 | 0.13 | - | 327 |
+| Placement change on that object | 1 | 3 | 1 | 3.7M | 0 | 0.14 | 0.13 | 0.00 | 601 |
+| snapshot: saveCopy of the 18-object result | | | | 805K zip, 1.05 MB Document.xml | | | | | 2 850 |
+
+`noop` is set ops whose before and after hash the same; the writer drops
+them. `patch` is the zstd prefix delta over the raw after value: 121
+bytes for a one-point move in a 409 KB sketch geometry list, 293 bytes
+for a 1.9 MB shape moved by its placement.
+
+Where the time goes, per commit: a scalar edit is 1 ms, of which 0.7 ms
+is exporting the box's BREP (the derived `Shape`, 2 KB) and 2 us is the
+`Length` op itself. A sketch move is 60 ms: `Shape` (251 KB BREP) 28 ms
+**twice**, `Geometry` (409 KB XML) 7 ms twice, `Constraints` (300 KB
+XML, unchanged) 5.5 ms twice, and hashing plus compression under 5 ms in
+all. The 2 MB import is 470 ms, of which 390 ms is the BREP export. The
+placement change is 600 ms: the same 1.9 MB BREP exported twice, with
+the geometry attachment byte-identical both times (the location lives in
+the XML at schema 5) and only the 80-byte XML fragment different.
+
+### 20.2 Decisions
+
+1. **Compressor: zstd.** On BREP text it matches zlib's ratio (0.13 vs
+   0.14) at 8-10x the speed (7.5 ms vs 62 ms on 1.9 MB); on sketch XML
+   it halves zlib's output (6.4 KB vs 11.9 KB on 409 KB) at a quarter of
+   the time. Level 3; level 1 costs 10-15 percent in ratio on XML and
+   nothing on BREP, and is the fallback if a value over 1 MB ever has to
+   compress on the main thread. zstd is in the env as a transitive
+   dependency; it becomes a direct one. The App CMake finds it and
+   defines `FC_HAVE_ZSTD` already.
+2. **Inline threshold: 64 KB compressed, unchanged.** Everything the
+   scenarios produced compresses under that except the imports (260 KB
+   for the 1.9 MB solid, 75 KB for Schenkel), which are blobs anyway.
+3. **Delta: the zstd prefix delta (`--patch-from`) is the generic
+   encoding, and it is enough.** 409 KB -> 121 bytes on a sketch edit,
+   1.9 MB -> 293 bytes on a move, 2.8 KB -> 117 bytes on a Pad. The
+   sketch codec of section 9.3 stays where it is, wanted for merge (a
+   geometry-id-keyed op), not for size. Content-defined chunking is
+   dropped for these values: 25 of 25 chunks of the sketch geometry were
+   new after a one-point move, because the solver perturbs the last
+   digits of every line and text BREP renumbers, exactly as the survey
+   warned. The 4 ms it costs is the only thing it delivers.
+4. **The writer thread is needed, and the rule for what it may touch is
+   simpler than section 14 assumed.** The sketch case is 60 ms per
+   commit, twenty times the budget; even with the derived `Shape` on the
+   cache tier and the fixes below it stays at 7-9 ms for the `Geometry`
+   value alone. But the *after* value of a set is the *before* value of
+   the next transaction to touch the property, and that before is a
+   detached `Copy()` the undo system already makes. So the writer
+   serialises **only detached copies**: an op's before ref is resolved
+   from the copy the in-memory transaction holds; its after ref is left
+   pending and resolved when the property is next copied (the next
+   transaction's first write) or when a version snapshot is taken --
+   whichever comes first. The live property is never read off the main
+   thread and never copied for the log's sake. A pending after ref on
+   the head transaction is the one case the reader must handle: the head
+   state is the live document, which is what it would read anyway. The
+   copies must outlive their transaction's eviction from the undo stack
+   until serialised (a shared handle, not the raw pointer).
+5. **Values are two-part: the XML fragment and each attachment hashed
+   on its own.** The placement change shows why -- the 1.9 MB geometry
+   was byte-identical before and after and was stored twice, because the
+   hash covered fragment plus attachment together. With the attachment
+   content-addressed separately (which is what `FileBlobManager`
+   already does for it at save time), a move writes an 80-byte fragment
+   and one ref. The op's value ref then names a fragment row whose
+   attachments are blob refs.
+6. **Do not re-serialise what is known unchanged.** Two fixes, both
+   cheap: (a) `Property::isSame(copy)` before serialising a set's two
+   sides -- `Constraints` cost 11 ms per sketch edit and was never
+   different; (b) let a property hand the writer a content hash it
+   already holds, so `PropertyPartShape`, which keeps its `_blob` handle
+   while the shape is unchanged (`makeBlob`), answers a ref instead of a
+   390 ms export. Both fold into decision 4: with only detached copies
+   serialised, and unchanged ones skipped, the sketch edit's synchronous
+   cost is the `Copy()` the undo system already pays.
+7. **A create snapshot is composed of per-property values, not a
+   monolithic blob.** The 1.8 MB before value of the placement change
+   was "unseen" although the object had been created two commits
+   earlier: the create op stored the object as one snapshot, so the
+   property-level value had no row. With the snapshot being a manifest
+   of per-property refs, the first set on any property of a new object
+   finds its before already stored, and `remove` is the same manifest.
+8. **A version snapshot (16.1) is a save**: 2.85 s and 805 KB for an
+   18-object document holding two 2 MB solids and a 1000-line sketch,
+   1.05 MB of it `Document.xml`. On the cadence of 16.3 that is a
+   background job, not a commit-path one, and section 16.1's "a version
+   is a snapshot of the FCStd" is confirmed as affordable only off the
+   main thread -- or, once decision 5 is in, as the manifest of refs the
+   log already holds plus a `Document.xml`, which is the 1 MB part.
+
+### 20.3 Two observations, not decisions
+
+- `Part::Primitive::onChanged` recomputes on the spot, so a `Box.Length`
+  set from Python rewrites `Shape` under `isRecomputing()` before the
+  document is ever told to recompute. The derived rule classified it
+  correctly (`derived=1`); it is noted because the "no recompute in the
+  transaction" variant of the scalar case turned out to measure the same
+  thing as the recompute one.
+- `Sketcher::SketchObject` writes `InvalidShape`, `InternalShape`,
+  `ExternalGeo`, `FullyConstrained` and `Constraints` on every solve,
+  five of the seven ops per edit, four of them no-ops by hash. The
+  `hasSetValue` short-circuit of 9.1 does not catch them because they are
+  written through `setValues`/list assignment. Harmless to the log (they
+  are dropped at commit), a cost to the undo copies (300 KB of
+  constraints copied per drag), and a candidate for the debug-build
+  audit.

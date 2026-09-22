@@ -36,6 +36,7 @@
 #include "DocumentPy.h"
 #include "DocumentObserverPython.h"
 #include "DocumentObjectPy.h"
+#include "TransactionMeasure.h"
 
 
 //using Base::GetConsole;
@@ -176,6 +177,14 @@ PyMethodDef Application::Methods[] = {
      "getActiveTransaction() -> (name,id) return the current active transaction name and ID"},
     {"closeActiveTransaction", (PyCFunction) Application::sCloseActiveTransaction, METH_VARARGS,
      "closeActiveTransaction(abort=False) -- commit or abort current active transaction"},
+    {"startTransactionMeasure", (PyCFunction) Application::sStartTransactionMeasure, METH_VARARGS,
+     "startTransactionMeasure(csvPath) -- measure what each transaction commit would log\n\n"
+     "Phase 0 of docs/TransactionLog.md: every commit serialises the values it would\n"
+     "write and appends bytes, hashes, compressed sizes and timings to the CSV."},
+    {"stopTransactionMeasure", (PyCFunction) Application::sStopTransactionMeasure, METH_VARARGS,
+     "stopTransactionMeasure() -- stop measuring transaction commits"},
+    {"markTransactionMeasure", (PyCFunction) Application::sMarkTransactionMeasure, METH_VARARGS,
+     "markTransactionMeasure(label) -- write a marker row into the measurement CSV"},
     {"isRestoring", (PyCFunction) Application::sIsRestoring, METH_VARARGS,
      "isRestoring() -> Bool -- Test if the application is opening some document"},
     {"dumpSWIG", (PyCFunction) Application::sDumpSWIG, METH_VARARGS,
@@ -261,6 +270,33 @@ PyObject* Application::sLoadFile(PyObject * /*self*/, PyObject *args)
         Base::Interpreter().runString(str.str().c_str());
         Py_Return;
     } PY_CATCH
+}
+
+PyObject* Application::sStartTransactionMeasure(PyObject * /*self*/, PyObject *args)
+{
+    const char *path = nullptr;
+    if (!PyArg_ParseTuple(args, "s", &path))
+        return nullptr;
+    PY_TRY {
+        return Py::new_reference_to(Py::Boolean(TransactionMeasure::start(path)));
+    } PY_CATCH;
+}
+
+PyObject* Application::sStopTransactionMeasure(PyObject * /*self*/, PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    TransactionMeasure::stop();
+    Py_Return;
+}
+
+PyObject* Application::sMarkTransactionMeasure(PyObject * /*self*/, PyObject *args)
+{
+    const char *label = nullptr;
+    if (!PyArg_ParseTuple(args, "s", &label))
+        return nullptr;
+    TransactionMeasure::mark(label);
+    Py_Return;
 }
 
 PyObject* Application::sIsRestoring(PyObject * /*self*/, PyObject *args) {

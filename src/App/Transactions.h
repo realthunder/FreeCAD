@@ -38,6 +38,7 @@ class Property;
 class Transaction;
 class TransactionObject;
 class TransactionalObject;
+class TransactionMeasure;
 
 
 /** Represents a atomic transaction of the document
@@ -104,6 +105,8 @@ private:
             >
         >
     > _Objects;
+
+    friend class TransactionMeasure;
 };
 
 /** Represents an entry for an object in a Transaction
@@ -138,10 +141,17 @@ protected:
     struct PropData : DynamicProperty::PropData {
         Base::Type propertyType;
         const Property *propertyOrig = nullptr;
+        /// The first write of this transaction happened while the owning
+        /// object was recomputing, i.e. the value is the object's own
+        /// output (docs/TransactionLog.md sec 10). Recorded here because
+        /// only the write site can tell; a commit-time reader cannot.
+        bool derived = false;
     };
     std::unordered_map<int64_t, PropData> _PropChangeMap;
 
     std::string _NameInDocument;
+
+    friend class TransactionMeasure;
 };
 
 /** Represents an entry for a document object in a transaction

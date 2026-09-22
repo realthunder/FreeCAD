@@ -119,6 +119,7 @@ recompute path. Also, it enables more complicated dependencies beyond trees.
 #include "MergeDocuments.h"
 #include "StringHasher.h"
 #include "Transactions.h"
+#include "TransactionMeasure.h"
 
 #ifdef _MSC_VER
 #include <zipios++/zipios-config.h>
@@ -519,6 +520,11 @@ void Document::_commitTransaction(bool notify)
         Base::FlagToggler<> flag(d->committing);
         Application::TransactionSignaller signaller(false,true);
         int id = d->activeUndoTransaction->getID();
+        // Phase 0 of the transaction log: measure what this commit would
+        // write (docs/TransactionLog.md sec 15). A static bool test when off.
+        TransactionMeasure::checkEnvironment();
+        if (TransactionMeasure::enabled())
+            TransactionMeasure::onCommit(*this, *d->activeUndoTransaction);
         mUndoTransactions.push_back(d->activeUndoTransaction);
         d->activeUndoTransaction = nullptr;
         // check the stack for the limits
