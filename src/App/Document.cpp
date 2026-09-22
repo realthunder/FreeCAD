@@ -3171,8 +3171,12 @@ void Document::save(Base::Writer &writer, bool archive) const {
 
     // The log's save record wants Document.xml as written (sec 11): tap
     // the bytes on their way into the archive rather than serialise twice.
+    // Other entries the manifest holds (GuiDocument.xml) arrive through
+    // noteFileEntry() from whoever writes them, while the save runs.
     TransactionLog* log = getTransactionLog();
     std::string docXml;
+    d->fileEntries.clear();
+    d->wantsFileEntries = log != nullptr;
     if (log)
         writer.beginTap([&docXml](const char* p, std::size_t n) { docXml.append(p, n); });
 
@@ -3211,6 +3215,7 @@ void Document::save(Base::Writer &writer, bool archive) const {
         THROWM(Base::FileException, "Failed to write all data to file")
     }
 
+    d->wantsFileEntries = false;
     if (log) {
         std::vector<std::pair<std::string, std::string>> blobs;
         for (const auto& blob : getFileBlobManager().collected()) {
@@ -3219,7 +3224,12 @@ void Document::save(Base::Writer &writer, bool archive) const {
             std::string ext = Base::FileInfo(blob->path()).extension();
             blobs.emplace_back(blob->hash() + (ext.empty() ? "" : "." + ext), blob->hash());
         }
-        log->onSave(FileName.getValue(), docXml, blobs, writer.getSchemaVersion());
+        std::vector<std::pair<std::string, std::string>> entries;
+        entries.emplace_back("Document.xml", std::move(docXml));
+        for (auto& e : d->fileEntries)
+            entries.push_back(std::move(e));
+        d->fileEntries.clear();
+        log->onSave(FileName.getValue(), entries, blobs, writer.getSchemaVersion());
     }
 
     GetApplication().signalSaveDocument(*this);
@@ -3260,12 +3270,15 @@ void Document::restore (const char *filename,
     // restore(XMLReader&) once the element is parsed, and read there.
     d->restoreDocXml.clear();
     d->restoreTapped = false;
+    d->fileEntries.clear();
+    d->wantsFileEntries = false;
     auto tap = [this, &objNames](Base::Reader& reader) {
         // A partial document is never snapshotted (sec 16.1).
         if (!objNames.empty() || !getTransactionLog())
             return;
         reader.beginTap([this](const char* p, std::size_t n) { d->restoreDocXml.append(p, n); });
         d->restoreTapped = true;
+        d->wantsFileEntries = true;
     };
 
     if(fi.fileNamePure() == "Document" && fi.hasExtension("xml")) {
@@ -3611,8 +3624,13 @@ void Document::restore(Base::XMLReader &reader,
     // back to -- and never for a partial document, which was not tapped.
     if (d->restoreTapped) {
         d->restoreTapped = false;
-        std::string docXml;
-        docXml.swap(d->restoreDocXml);
+        d->wantsFileEntries = false;
+        std::vector<std::pair<std::string, std::string>> entries;
+        entries.emplace_back("Document.xml", std::move(d->restoreDocXml));
+        d->restoreDocXml.clear();
+        for (auto& e : d->fileEntries)
+            entries.push_back(std::move(e));
+        d->fileEntries.clear();
         TransactionLog* log = testStatus(Document::RestoreError) ? nullptr : getTransactionLog();
         if (log) {
             std::vector<std::pair<std::string, std::string>> blobs;
@@ -3620,7 +3638,7 @@ void Document::restore(Base::XMLReader &reader,
                 std::string ext = Base::FileInfo(blob->path()).extension();
                 blobs.emplace_back(blob->hash() + (ext.empty() ? "" : "." + ext), blob->hash());
             }
-            log->onRestore(FileName.getValue(), docXml, blobs, reader.DocumentSchema);
+            log->onRestore(FileName.getValue(), entries, blobs, reader.DocumentSchema);
         }
     }
 
@@ -3653,6 +3671,24 @@ void Document::restore(Base::XMLReader &reader,
             << ", files " << rt.files.count()
             << ", after " << dAfter.count()
             << ", total " << (dXml + rt.files + dAfter).count() << 's');
+}
+
+bool Document::wantsFileEntries() const
+{
+    return d->wantsFileEntries;
+}
+
+void Document::noteFileEntry(const std::string& name, std::string bytes)
+{
+    if (!d->wantsFileEntries)
+        return;
+    for (auto& e : d->fileEntries) {
+        if (e.first == name) {
+            e.second = std::move(bytes);
+            return;
+        }
+    }
+    d->fileEntries.emplace_back(name, std::move(bytes));
 }
 
 void Document::endRestoreTap(Base::XMLReader& reader)

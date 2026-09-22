@@ -107,6 +107,10 @@ struct DocumentP
     /// when no tap was installed.
     std::string restoreDocXml;
     bool restoreTapped {false};
+    /// Entries noted through Document::noteFileEntry during the save or
+    /// restore in progress (GuiDocument.xml), for the version manifest.
+    std::vector<std::pair<std::string, std::string>> fileEntries;
+    bool wantsFileEntries {false};
 #ifdef USE_OLD_DAG
     DependencyList DepList;
     std::map<DocumentObject*, Vertex> VertexObjectList;

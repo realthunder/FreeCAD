@@ -328,6 +328,15 @@ public:
      * after the mode is set, in the transient directory.
      */
     TransactionLog* getTransactionLog() const;
+    /** An archive entry streamed outside Document.xml, for the log's
+     * version manifest (docs/TransactionLog.md sec 16.1): whoever writes
+     * or reads such an entry during a save or restore -- the Gui document
+     * with GuiDocument.xml -- taps its bytes and hands them over here,
+     * while wantsFileEntries() says the log wants them. Taken by the save
+     * or restore that is in progress.
+     */
+    bool wantsFileEntries() const;
+    void noteFileEntry(const std::string& name, std::string bytes);
     /// Whether writes are recorded into transactions at all: undo is on,
     /// or the log is (which records without keeping undo steps).
     bool transactionsWanted() const;

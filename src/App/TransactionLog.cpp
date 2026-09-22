@@ -371,14 +371,14 @@ void TransactionLog::onRecompute(const std::vector<RecomputedObject>& objects, d
     }
 }
 
-int64_t TransactionLog::onSave(const std::string& path, const std::string& docXml,
+int64_t TransactionLog::onSave(const std::string& path, const Entries& entries,
                                const std::vector<std::pair<std::string, std::string>>& blobs,
                                int schema)
 {
-    return snapshot("save", path, docXml, blobs, schema);
+    return snapshot("save", path, entries, blobs, schema);
 }
 
-int64_t TransactionLog::onRestore(const std::string& path, const std::string& docXml,
+int64_t TransactionLog::onRestore(const std::string& path, const Entries& entries,
                                   const std::vector<std::pair<std::string, std::string>>& blobs,
                                   int schema)
 {
@@ -388,14 +388,18 @@ int64_t TransactionLog::onRestore(const std::string& path, const std::string& do
         FC_WARN("transaction log of " << _doc.getName() << " is not empty at restore");
         return 0;
     }
-    return snapshot("restore", path, docXml, blobs, schema);
+    return snapshot("restore", path, entries, blobs, schema);
 }
 
 int64_t TransactionLog::snapshot(const char* kind, const std::string& path,
-                                 const std::string& docXml,
+                                 const Entries& entries,
                                  const std::vector<std::pair<std::string, std::string>>& blobs,
                                  int schema)
 {
+    if (entries.empty() || entries.front().first != "Document.xml") {
+        FC_ERR("transaction log: a snapshot needs Document.xml first");
+        return 0;
+    }
     try {
         resolvePending();
 
@@ -425,18 +429,23 @@ int64_t TransactionLog::snapshot(const char* kind, const std::string& path,
             escaped += c;
         }
         const size_t nblobs = blobs.size();
-        post([this, v, t, docXml, blobs, schema, escaped, nblobs]() mutable {
-            // Document.xml is a value like any other, durable: the version
-            // is the one place a whole file is kept (sec 16.1). With no
-            // attachments its ref is the SHA-1 of the bytes, which is also
-            // the hash a file on disk is matched by.
-            CapturedValue xml;
-            xml.fragment = docXml;
-            xml.ok = true;
-            const std::string docHash = putValue(xml, "durable");
-            v.docxml_hash = docHash;
+        post([this, v, t, entries, blobs, schema, escaped, nblobs]() mutable {
+            // Each XML entry is a value like any other, durable: the
+            // version is the one place a whole file is kept (sec 16.1).
+            // With no attachments a ref is the SHA-1 of the bytes, which
+            // is also the hash a file on disk is matched by.
             std::vector<LogManifestEntry> manifest;
-            manifest.push_back({"Document.xml", docHash, "value"});
+            std::string docHash;
+            for (const auto& e : entries) {
+                CapturedValue xml;
+                xml.fragment = e.second;
+                xml.ok = true;
+                const std::string hash = putValue(xml, "durable");
+                if (docHash.empty())
+                    docHash = hash;   // Document.xml, first by contract
+                manifest.push_back({e.first, hash, "value"});
+            }
+            v.docxml_hash = docHash;
             for (const auto& b : blobs)
                 manifest.push_back({b.first, b.second, "blob"});
             _store->addVersion(v, manifest);

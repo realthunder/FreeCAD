@@ -2464,8 +2464,51 @@ void Document::applyDefaults(ViewProvider *vp)
 /**
  * Restores the properties of the view providers.
  */
+namespace {
+
+/** Tap of GuiDocument.xml for the transaction log's version manifest
+ * (docs/TransactionLog.md sec 16.1): the bytes of the entry as they go
+ * through the writer or reader, handed to the App document when the entry
+ * is done. Armed only while the document asks for entries, and only for
+ * the main entry -- split view files are their own entries and are not in
+ * the manifest yet.
+ */
+template<class Stream>
+class GuiEntryTap
+{
+public:
+    GuiEntryTap(App::Document* doc, Stream& stream, const std::string& name)
+        : _doc(doc), _stream(stream), _name(name)
+    {
+        if (!_doc || !_doc->wantsFileEntries() || name != "GuiDocument.xml")
+            return;
+        _stream.beginTap([this](const char* p, std::size_t n) { _bytes.append(p, n); });
+        _on = true;
+    }
+    ~GuiEntryTap()
+    {
+        if (!_on)
+            return;
+        // Ends (and, for a reader, drains) the entry; the bytes are then
+        // the whole of it whatever the parser stopped at.
+        _stream.endTap();
+        _doc->noteFileEntry(_name, std::move(_bytes));
+    }
+
+private:
+    App::Document* _doc;
+    Stream& _stream;
+    std::string _name;
+    std::string _bytes;
+    bool _on {false};
+};
+
+} // namespace
+
 void Document::RestoreDocFile(Base::Reader &reader)
 {
+    // Before the XML reader takes its first chunk, ended when this returns.
+    GuiEntryTap<Base::Reader> tap(d->_pcDocument, reader, reader.getFileName());
     Base::XMLReader xmlReader(reader);
     xmlReader.readElement("Document");
     xmlReader.DocumentSchema = xmlReader.getAttributeAsInteger("SchemaVersion","");
@@ -3593,6 +3636,8 @@ void Document::snapshotOnTopObjects()
 
 void Document::SaveDocFile (Base::Writer &writer) const
 {
+    GuiEntryTap<Base::Writer> tap(d->_pcDocument, writer, writer.getCurrentFileName());
+
     writer.Stream() << "<?xml version='1.0' encoding='utf-8'?>\n"
                     << "<!--\n"
                     << " FreeCAD Document, see http://www.freecad.org for more information...\n"

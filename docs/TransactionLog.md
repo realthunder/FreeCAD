@@ -1520,10 +1520,9 @@ with no ops whose `script` is `{version, docxml, blobs, path}`. `truncate`
 keeps every value a manifest names. `TransactionStore` gained
 `addVersion`, `versions`, `getVersion`, `findVersion(docxml_hash)` and
 `manifest`; Python reads them through `Document.getTransactionVersions()`.
-Not yet: `GuiDocument.xml` in the manifest (the Gui writes it through
-`signalSaveDocument` under its own `putNextEntry`, which ends a tap; it
-needs its own tap in `Gui::Document::Save`), the cadence between saves,
-eviction, and the checkout that reads a manifest back.
+`GuiDocument.xml` joined the manifest the next day (below); not yet:
+the cadence between saves, eviction, and the checkout that reads a
+manifest back.
 
 **The history initialised from a file, as built** (2026-09-22, section
 16.6). `Document::restore(const char*)` taps `Document.xml` on its way
@@ -1640,9 +1639,24 @@ the log on, three of its undo cases see the open implicit transaction in
 `UndoNames` -- the log-on semantics, not a bug, and the reason the mode
 is a preference the suite does not set.
 
-**Next.** In the order the phase list gives: `GuiDocument.xml` in the
-manifest and a versions pane in the panel -- each shown in the panel as
-it lands.
+**`GuiDocument.xml` in the manifest, as built** (2026-09-23). No Base
+change was needed after all: the Gui document writes and reads its entry
+through `SaveDocFile(Base::Writer&)` / `RestoreDocFile(Base::Reader&)`,
+which hold the stream, so a `GuiEntryTap` guard in each begins the tap
+before the first byte (before the `XMLReader` is built, on restore) and
+ends it -- draining, on restore -- when the function returns, then hands
+the bytes to `App::Document::noteFileEntry`. The App document arms
+`wantsFileEntries()` for the span of a save or a tapped restore and
+passes what it was given, `Document.xml` first, as the `Entries` of
+`onSave` / `onRestore`; `snapshot()` stores each as a durable value and
+lists each in the manifest, `docxml_hash` being the first's. Only the
+main entry: split view files (`SplitXML`) are their own entries and are
+not in the manifest yet. Verified in the GUI on both paths: the manifest
+hashes of both entries match the archive's, saved and opened.
+
+**Next.** A versions pane in the panel; then the phase-1 remainder
+(cadence between saves, eviction, the checkout that reads a manifest
+back).
 
 ## 22. The end state, and the browser as a development tool (user, 2026-09-22)
 

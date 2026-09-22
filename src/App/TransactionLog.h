@@ -105,22 +105,26 @@ public:
     /// each object came out. Written at Document::signalRecomputed.
     void onRecompute(const std::vector<RecomputedObject>& objects, double seconds);
 
+    /// The archive entries a version holds as values: (name, bytes), the
+    /// first being Document.xml, then GuiDocument.xml when there is one.
+    using Entries = std::vector<std::pair<std::string, std::string>>;
+
     /** The save record and the unnamed version it makes (sec 11, 16.3).
      *
      * Called from Document::save once the file's entries are written:
-     * `docXml` is the Document.xml as it streamed out (hashed with the
-     * writer's tap), `blobs` the (name, hash) of every blob the file
+     * `entries` the XML entries as they streamed out (tapped, never
+     * serialised twice), `blobs` the (name, hash) of every blob the file
      * carries, `schema` the schema it was written under. Pending after
      * refs are resolved first so the log is complete at the snapshot.
      * Returns the version number, 0 on failure (reported, not thrown).
      */
-    int64_t onSave(const std::string& path, const std::string& docXml,
+    int64_t onSave(const std::string& path, const Entries& entries,
                    const std::vector<std::pair<std::string, std::string>>& blobs, int schema);
 
     /** The history initialised from a file (sec 16.6).
      *
-     * Called from Document::restore with the file as found: `docXml` the
-     * Document.xml bytes as the reader saw them (tapped, sec 16.6), `blobs`
+     * Called from Document::restore with the file as found: `entries` the
+     * XML entries as the readers saw them (tapped, sec 16.6), `blobs`
      * every blob the file carried, `schema` what it was written under.
      * Version 1 is that snapshot and a `restore` record follows it; the
      * ops start at the next transaction. Only an empty store is
@@ -128,7 +132,7 @@ public:
      * (the hash guard of 16.4) and is left alone with a warning.
      * Returns the version number, 0 when nothing was written.
      */
-    int64_t onRestore(const std::string& path, const std::string& docXml,
+    int64_t onRestore(const std::string& path, const Entries& entries,
                       const std::vector<std::pair<std::string, std::string>>& blobs, int schema);
 
     int64_t session() const { return _session; }
@@ -193,7 +197,7 @@ private:
     void openStore();
     /// A version from the file's entries plus the record (`save` or
     /// `restore`) that names it; what onSave and onRestore share.
-    int64_t snapshot(const char* kind, const std::string& path, const std::string& docXml,
+    int64_t snapshot(const char* kind, const std::string& path, const Entries& entries,
                      const std::vector<std::pair<std::string, std::string>>& blobs, int schema);
     /// Store a captured value (fragment and attachments) and return its ref.
     /// Worker thread.
