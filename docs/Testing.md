@@ -11,8 +11,8 @@ as "the primary tree"; that was wrong.
 
 | Suite | Result |
 |---|---|
-| Python (`FreeCADCmd -t 0`) | **2782 tests, OK** -- 0 failures, 0 errors, 50 skipped, 6 expected failures (re-measured 2026-09-21 on `a59a8cff4b`: +4 for the Draft and SandboxProgram cases added that day, with skips and expected failures unmoved; 2778 on 2026-09-18 on `932b16a201` and unchanged, which is what clears the Proxy-routing removal: it deletes 15 `__new__` hooks from BIM and Draft product code, and Draft, Arch, Path and Fem are all in this run; 2026-09-14, after the SecurePython merge, unchanged after merging 7.17 D4; SecurePython alone 2778, RemoteEdit alone 2688). Pass `FCX_PYODIDE` here too: in a fresh `FREECAD_USER_HOME` without it the 28 `SandboxProgram` / `FeaturePythonChain` cases skip ("no sandbox guest in this build") and the run still says OK -- 78 skipped is the tell |
-| C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **661 of 661 passing** (re-confirmed 2026-09-21 on `a59a8cff4b`, unchanged -- the tests added that day are all Python; 2026-09-18 on `932b16a201`, the Proxy-routing removal: it takes 8 sandbox cases out, and `FormWidgets_Tests_run` needed the exposure fix below to pass in company; 667 of 667 on 2026-09-14, after merging SecurePython sandbox 7.17 D4, which adds 10; 657 with GuiServeClaimChildren; 656 after the first SecurePython merge; SecurePython alone 625, RemoteEdit alone 634), 0 failures, 8 ctest entries disabled, 1 skipped -- 60 of them need the sandbox guest runtime: in a FRESH `FREECAD_USER_HOME` pass `FCX_PYODIDE=$HOME/.local/share/FreeCAD/Pyodide/314.0.6` or they fail with "expression sandbox image is not available". **A merge that brings guest image changes (`src/App/ExpressionImage/`) needs `cmake --build build/pyodide-guest` and `--target fcx_image_wheel` first**: the host build keeps the old wheel, and the first run of this merge failed 16 sandbox cases (`module '_fcx' has no attribute 'surface'`) for that reason alone |
+| Python (`FreeCADCmd -t 0`) | **2794 tests, OK** -- 0 failures, 0 errors, 50 skipped, 6 expected failures (re-measured 2026-09-23 on `bbb926c9f2`, the RemoteEdit merge into LinkVibe: +12 for the cases the two sides added, with skips and expected failures unmoved; 2782 on 2026-09-21 on `a59a8cff4b`: +4 for the Draft and SandboxProgram cases added that day, with skips and expected failures unmoved; 2778 on 2026-09-18 on `932b16a201` and unchanged, which is what clears the Proxy-routing removal: it deletes 15 `__new__` hooks from BIM and Draft product code, and Draft, Arch, Path and Fem are all in this run; 2026-09-14, after the SecurePython merge, unchanged after merging 7.17 D4; SecurePython alone 2778, RemoteEdit alone 2688). Pass `FCX_PYODIDE` here too: in a fresh `FREECAD_USER_HOME` without it the 28 `SandboxProgram` / `FeaturePythonChain` cases skip ("no sandbox guest in this build") and the run still says OK -- 78 skipped is the tell |
+| C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **661 of 661 passing** (re-confirmed 2026-09-23 on `bbb926c9f2`, the RemoteEdit merge into LinkVibe, unchanged in 95.6 s with `-j6`; re-confirmed 2026-09-21 on `a59a8cff4b`, unchanged -- the tests added that day are all Python; 2026-09-18 on `932b16a201`, the Proxy-routing removal: it takes 8 sandbox cases out, and `FormWidgets_Tests_run` needed the exposure fix below to pass in company; 667 of 667 on 2026-09-14, after merging SecurePython sandbox 7.17 D4, which adds 10; 657 with GuiServeClaimChildren; 656 after the first SecurePython merge; SecurePython alone 625, RemoteEdit alone 634), 0 failures, 8 ctest entries disabled, 1 skipped -- 60 of them need the sandbox guest runtime: in a FRESH `FREECAD_USER_HOME` pass `FCX_PYODIDE=$HOME/.local/share/FreeCAD/Pyodide/314.0.6` or they fail with "expression sandbox image is not available". **A merge that brings guest image changes (`src/App/ExpressionImage/`) needs `cmake --build build/pyodide-guest` and `--target fcx_image_wheel` first**: the host build keeps the old wheel, and the first run of this merge failed 16 sandbox cases (`module '_fcx' has no attribute 'surface'`) for that reason alone |
 | C++ on Windows (`build/win-relwithdebinfo-801`) | **648 of 648 passing** (2026-09-21, re-measured after merging the Windows portability fixes and the G1a corpus fix; unchanged because the tests those commits added are all Python. 2026-09-20, fully green: the sandbox is live here now -- `v8-embed` installed, the published `fcx_image` 0.1.0 wheel, and a bootstrapped 314.0.6 runtime -- which brings in the `ExpressionImage*` suites, and `PublishOnly_tests_run` builds on Windows for the first time. 549 on 2026-09-19 after merging RemoteEdit, which added 52; `BUILD_FEM=ON` adds none, FEM's tests are all Python. 497 on 2026-09-12, including the two new `FileWriterTest` cases; 487 on 2026-09-10, 477 on 2026-09-06/08), 1 disabled -- see "C++ on Windows" |
 | C++ on macOS (`build/mac-relwithdebinfo-801`) | **490 of 490 passing** (2026-09-10), 1 disabled -- see "C++ on macOS" |
 | Python on macOS | **2680 tests** (2026-09-10, the first full run there), 2 failures + 1 error, 49 skipped, 6 expected failures -- all three are this box's missing meshers, see "Python on macOS" |
@@ -79,8 +79,7 @@ in section 6.
 
     cd build/conda-relwithdebinfo-801
     mkdir -p /tmp/fchome
-    QT_QPA_PLATFORM=offscreen PYTHONPATH=$HOME/works/sw/pyifc \
-      FREECAD_USER_HOME=/tmp/fchome \
+    QT_QPA_PLATFORM=offscreen FREECAD_USER_HOME=/tmp/fchome \
       script -qec "~/works/sw/fcad/.conda/run.sh ./bin/FreeCADCmd -t 0" /dev/null > pytest.log
 
 **Every part of that line is load-bearing** (verified 2026-08-30 by leaving
@@ -89,14 +88,20 @@ each out):
 - `script -qec ... /dev/null`: `FreeCADCmd -t 0` needs a pty; without one a
   CAM sanity test dies on `[Errno 9] Bad file descriptor` and takes the rest
   of the run down with it.
-- `PYTHONPATH=$HOME/works/sw/pyifc`: supplies ifcopenshell (the fork's own
-  0.9 source build, staged there and RPATH-linked into
-  `~/works/sw/ifcopenshell-build-801`). `TestArch` imports it at module
-  level, so without it the whole ~280-test module collapses into one loader
-  error and the run shrinks to ~2349 tests. Do NOT fix this by
-  `conda install ifcopenshell` into `.conda/freecad`: the packaged build
-  depends on a conda `occt`, which must never enter the dev prefix (see the
-  smesh discussion in `docs/DevEnvironment.md`).
+- ifcopenshell, which `TestArch` imports at module level: without it the whole
+  ~280-test module collapses into one loader error and the run shrinks to
+  ~2349 tests. **No `PYTHONPATH` is needed any more**, which is why the line
+  above no longer carries one (verified 2026-09-23: a 2794-test run with zero
+  import errors). It is installed into `.conda/freecad` itself --
+  `ifcopenshell 0.9.0alpha0 py312h42c36f5_8`, staged as a local package file
+  in `~/works/sw/dl`, not pulled from conda-forge. The older recipe staged the
+  fork's own 0.9 source build in `~/works/sw/pyifc`, RPATH-linked into
+  `~/works/sw/ifcopenshell-build-801`, and passed
+  `PYTHONPATH=$HOME/works/sw/pyifc`; **that directory is gone.** The warning
+  that came with it still holds for the conda-forge build: installing
+  `ifcopenshell` from conda-forge drags in a conda `occt`, which must never
+  enter the dev prefix (see the smesh discussion in
+  `docs/DevEnvironment.md`).
 - `FREECAD_USER_HOME=/tmp/fchome` (any scratch dir): keeps user-installed
   addons out of the headless run. `~/.FreeCAD/Mod/FreeCAD_SketchArch` calls
   `FreeCADGui.addCommand` at import time, which errors ~117 Arch tests
