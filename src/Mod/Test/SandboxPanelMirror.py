@@ -552,6 +552,123 @@ class SandboxPanelMirrorTest(unittest.TestCase):
         self.spin()
         self.assertIsNone(self.FW.panelId())
 
+    def test_file_chooser(self):
+        """A Gui::FileChooser in a panel (W4b): a LEAF carrying its path
+        and filter as data -- the walk never goes into it, so the browse
+        button that raises the host's own QFileDialog is not a model any
+        client can click -- an upload landing where the HOST chose, a
+        name that is a name and not a path, and a pick through
+        `fileSelected`, which is where the desktop's own pick ends."""
+        Gui = self.Gui
+        from PySide import QtWidgets
+
+        form = QtWidgets.QWidget()
+        form.setObjectName("chooserForm")
+        form.setWindowTitle("Pick")
+        lay = QtWidgets.QVBoxLayout(form)
+        try:
+            chooser = Gui.UiLoader().createWidget("Gui::FileChooser", form)
+        except Exception as e:  # no loader, no custom widget: nothing to gate
+            self.skipTest("no Gui::FileChooser from the loader: %r" % e)
+        if chooser is None:
+            self.skipTest("no Gui::FileChooser from the loader")
+        chooser.setObjectName("fontFile")
+        chooser.setProperty("filter", "Fonts (*.ttf)")
+        chooser.setProperty("fileName", "/tmp/before.ttf")
+        lay.addWidget(chooser)
+
+        class Panel:
+            def __init__(self, form):
+                self.form = form
+
+        self.subscribe()
+        Gui.Control.showDialog(Panel(form))
+        pid, root = self.open_panel()
+        cid = self.named("fontFile")
+        self.assertIsNotNone(cid, "the file chooser was not mirrored")
+        snap = self.FW.snapshot(cid)
+        self.assertEqual(snap["model"], "FileChooserModel")
+        self.assertEqual(snap["qtClass"], "Gui::FileChooser")
+        self.assertEqual(snap["state"].get("q_fileName"), "/tmp/before.ttf")
+        self.assertEqual(snap["state"].get("q_filter"), "Fonts (*.ttf)")
+        # A leaf: a container's model gets a layout built from its real
+        # children, and this one has none -- which is what keeps the
+        # chooser's "..." button off the wire entirely.
+        self.assertFalse(snap.get("layout"))
+
+        # The upload. The client names a FILE, never a path, and the host
+        # decides where it lands.
+        payload = b"\x00\x01 a font, near enough"
+        reply = self.control(
+            {
+                "op": "widgets.upload",
+                "name": "my font.ttf",
+                "data": base64.b64encode(payload).decode(),
+            },
+            7,
+        )
+        self.assertTrue(reply["ok"], reply)
+        path = reply["path"]
+        self.assertTrue(os.path.isfile(path), path)
+        with open(path, "rb") as handle:
+            self.assertEqual(handle.read(), payload)
+        # DERIVED from the name, not equal to it. The upload directory is
+        # the host's own and it persists, so a second run of this gate
+        # meets "my font.ttf" already sitting there and is handed
+        # "my font-1.ttf" -- the no-overwrite rule working. Asserting the
+        # basename outright passed once here and failed for ever after.
+        # The sanitized name the host echoes back IS exact, so that is
+        # what pins the sanitizing.
+        base = os.path.basename(path)
+        self.assertTrue(base.startswith("my font") and base.endswith(".ttf"), base)
+        self.assertEqual(reply["name"], "my font.ttf")
+
+        # A path in the name is not a path: it is reduced to a name, and
+        # lands in the same directory as anything else.
+        reply = self.control({"op": "widgets.upload", "name": "../../escape.ttf", "data": ""}, 7)
+        self.assertTrue(reply["ok"], reply)
+        escaped = os.path.basename(reply["path"])
+        self.assertTrue(escaped.startswith("escape") and escaped.endswith(".ttf"), escaped)
+        self.assertEqual(reply["name"], "escape.ttf")
+        self.assertEqual(os.path.dirname(reply["path"]), os.path.dirname(path))
+        # The same name twice does not overwrite what a panel may still
+        # be pointing at.
+        reply = self.control(
+            {
+                "op": "widgets.upload",
+                "name": "my font.ttf",
+                "data": base64.b64encode(b"other").decode(),
+            },
+            7,
+        )
+        self.assertTrue(reply["ok"], reply)
+        self.assertNotEqual(reply["path"], path)
+        with open(path, "rb") as handle:
+            self.assertEqual(handle.read(), payload)
+        # A nameless upload, and one that is not base64, are refused.
+        self.assertFalse(self.control({"op": "widgets.upload", "name": "", "data": ""}, 7)["ok"])
+        self.assertFalse(
+            self.control({"op": "widgets.upload", "name": "x.ttf", "data": "!!!!"}, 7)["ok"]
+        )
+
+        # The pick. A `q_fileName` write would move the line edit and fire
+        # fileNameChanged only; a panel's slot is connected to
+        # fileNameSelected, so the request is what a client sends.
+        reply = self.control(
+            {
+                "op": "widgets.custom",
+                "target": cid,
+                "content": {"event": "fileSelected", "args": [path]},
+            },
+            7,
+        )
+        self.assertTrue(reply["ok"], reply)
+        self.spin()
+        self.assertEqual(chooser.property("fileName"), path)
+        Gui.Control.closeDialog()
+        self.spin()
+        self.assertIsNone(self.FW.panelId())
+
     def test_nested_messagebox(self):
         """A QMessageBox exec'd from a panel slot (M3): while the slot
         blocks in the nested loop the box arrives as a `dialog:<n>` root
@@ -664,3 +781,129 @@ class SandboxPanelMirrorTest(unittest.TestCase):
         self.assertEqual(self.FW.panelId(), pid)
         self.assertIsNotNone(self.named("askButton"))
         self.close_through_root(pid, "reject")
+
+    def test_reject_dialog_through_its_root(self):
+        """A mirrored dialog REJECTED through its own root (W5).
+
+        Named to sort AFTER test_draft_orthoarray, which is not tidiness:
+        Draft's command does not raise its panel in a run where a nested
+        QMessageBox case precedes it, and this case is the only one that
+        did.  Four runs pin it -- without this case the suite is 7/7; with
+        it after Draft's, 8/8; with it before Draft's, Draft fails whether
+        this case REJECTS the box or answers it with a button, so it is
+        not the reject.  The mirror is innocent: at the failure
+        Control.activeTaskDialog() is None and no modal widget is up, so
+        no task dialog opened on the desktop at all.  test_nested_messagebox
+        has always sat after Draft's and so never showed it.  The cause is
+        in Draft's command and is written down in docs/Sandbox.md 7.22
+        rather than guessed at here.
+
+        The regression test for a crash, and it lives here rather than in
+        the browser gate because the whole failure is host-side: `reject`
+        reaches the real QDialog, its `reject()` ends the nested exec()
+        loop, the Hide that follows closes the root, and `hide()` deletes
+        the root's models -- including the very Widget whose `request()`
+        is still on the stack.  The `Q_EMIT requested` after the backend
+        call then ran on freed memory, and the first drive ever to press
+        Escape on a mirrored dialog took the desktop down with it: SIGSEGV
+        in QObjectPrivate::maybeSignalConnected, one frame under
+        Gui::Fw::Widget::requested (docs/Sandbox.md 7.22).
+
+        So the first thing this asserts is that the process is STILL HERE
+        afterwards.  The exec code says the rest: 0 is QDialog::reject()'s
+        own answer -- no button -- which is the desktop really rejecting
+        rather than a client closing a layer of its own.
+        """
+        Gui = self.Gui
+        from PySide import QtCore, QtWidgets
+
+        form = QtWidgets.QWidget()
+        form.setObjectName("askForm")
+        lay = QtWidgets.QVBoxLayout(form)
+        button = QtWidgets.QPushButton("Ask", form)
+        button.setObjectName("askButton")
+        lay.addWidget(button)
+        result = {}
+
+        def ask():
+            box = QtWidgets.QMessageBox(
+                QtWidgets.QMessageBox.Icon.Question,
+                "Really",
+                "Proceed?",
+                QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+                Gui.getMainWindow(),
+            )
+            box.setObjectName("askBox")
+            result["box"] = box
+            result["code"] = box.exec()
+
+        button.clicked.connect(ask)
+
+        class Panel:
+            def __init__(self, form):
+                self.form = form
+
+        self.subscribe()
+        Gui.Control.showDialog(Panel(form))
+        pid, root = self.open_panel()
+        bid = self.named("askButton")
+        self.assertIsNotNone(bid)
+        seen = {}
+
+        def probe():
+            # inside the slot's exec loop, where the box is up
+            try:
+                self.spin(30, 3)
+                ids = self.FW.dialogIds()
+                seen["ids"] = list(ids)
+                if ids:
+                    self.FW.pushed()
+                    seen["reply"] = self.control(
+                        {
+                            "op": "widgets.custom",
+                            "target": ids[0],
+                            "content": {"event": "reject"},
+                        },
+                        7,
+                    )
+            except Exception as e:  # reported after the slot returns
+                seen["error"] = repr(e)
+
+        QtCore.QTimer.singleShot(80, probe)
+        self.FW.pushed()
+        reply = self.control(
+            {"op": "widgets.custom", "target": bid, "content": {"event": "click"}}, 7
+        )
+        self.assertTrue(reply["ok"], reply)
+        self.spin()
+        self.assertNotIn("error", seen, seen)
+        self.assertEqual(len(seen.get("ids", [])), 1, seen)
+        did = seen["ids"][0]
+        self.assertTrue(seen["reply"]["ok"], seen["reply"])
+        # QDialog::reject() -- no button answered it
+        self.assertEqual(result.get("code"), 0, result)
+        # the dialog went, the panel stayed
+        closes = [m["id"] for _, m in self.pushed(7) if m["method"] == "close"]
+        self.assertIn(did, closes)
+        self.assertEqual(self.FW.dialogIds(), [])
+        self.assertEqual(self.FW.panelId(), pid)
+        # The box itself is a CHILD of the main window, so rejecting it
+        # hides it and nothing more: it outlives this test, and the next
+        # one to open a panel found none mirrored.  An answered box (see
+        # test_nested_messagebox) gets away with it only because nothing
+        # follows it here.
+        result["box"].deleteLater()
+        self.spin()
+        self.close_through_root(pid, "reject")
+        # And the mirror still works AFTERWARDS, which is the half a reject
+        # could plausibly break.  Asserted here rather than left for the next
+        # test to trip over: adding this case made test_draft_orthoarray fail
+        # with "no panel mirrored", and a failure that lands in someone else's
+        # test is one nobody can read.
+        again = QtWidgets.QWidget()
+        again.setObjectName("afterForm")
+        QtWidgets.QVBoxLayout(again).addWidget(QtWidgets.QLabel("after", again))
+        Gui.Control.showDialog(Panel(again))
+        pid2, _root2 = self.open_panel()
+        self.assertTrue(pid2, "the mirror did not take a panel after a dialog reject")
+        self.close_through_root(pid2, "reject")

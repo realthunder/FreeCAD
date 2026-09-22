@@ -1718,6 +1718,29 @@ void View::onRequest(const QString& name, const QVariantList& args)
         if (auto p = qobject_cast<Gui::PrefQuantitySpinBox*>(w))
             p->pushToHistory();
     }
+    // A path CHOSEN rather than typed (docs/Sandbox.md 7.22, W5).
+    //
+    // A client that only wrote `fileName` would move the line edit and
+    // emit `fileNameChanged` -- and leave the panel's slot unfired,
+    // because a panel connects to `fileNameSelected`: TechDraw's hatch
+    // and welding panels and every FEM settings page do, and only
+    // SymbolChooser takes the other. So a browser's pick has to end
+    // where the desktop's own pick ends.
+    //
+    // `editingFinished` is that ending, and it is reused rather than
+    // reimplemented: it converts the separators, remembers the working
+    // directory and emits `fileNameSelected`, which is exactly what
+    // `chooseFile()` does after its dialog closes. `chooseFile` itself
+    // is NEVER reachable from here -- it would raise the host's own
+    // file dialog on the desktop user's screen, which is the thing the
+    // browser chooser exists to avoid (the ruling of 2026-09-22: never
+    // expose the host file system to the browser).
+    else if (name == QLatin1String("fileSelected")) {
+        if (auto fc = qobject_cast<Gui::FileChooser*>(w)) {
+            fc->setFileName(args.value(0).toString());
+            QMetaObject::invokeMethod(fc, "editingFinished");
+        }
+    }
     else if (name == QLatin1String("setParent")) {
         auto parentModel = qobject_cast<Fw::Widget*>(args.value(0).value<QObject*>());
         View* pv = parentModel ? of(parentModel) : nullptr;

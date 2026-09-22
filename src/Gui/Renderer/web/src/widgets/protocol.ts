@@ -82,6 +82,54 @@ export const ITEM_CHECKABLE = 16;
 export const CHECK_OFF = 0;
 export const CHECK_ON = 2;
 
+/// The id of the mirror's list container -- the one root that is not
+/// `<kind>:<n>`.
+export const PANEL_LIST_ID = 'panel';
+
+/// Is this id the PANEL mirror's, rather than some other mirror's?
+///
+/// The host's own predicate, spelled the same way (`PanelMirror::owns`,
+/// FwPanelMirror.cpp): the list container, a panel root, a dialog root,
+/// and the widgets under them. The tool-bar mirror mints `widget:<name>#n`
+/// and `action:<name>#n` instead, and both mirrors push down the ONE
+/// `widgets` lane -- so without this a panel client applies the tool
+/// bar's frames into a store it will never draw, which is exactly what
+/// W5's measurement caught: 198-396 frames on a wide viewport against 9
+/// on a phone, where the tool-bar strip is hidden and never subscribes.
+export function isPanelMirrorId(id: string): boolean {
+  return id === PANEL_LIST_ID
+    || id.startsWith('panel:')
+    || id.startsWith('pw:')
+    || id.startsWith('dialog:');
+}
+
+/// A cell colour as CSS, or undefined for "the host sent none".
+///
+/// The host packs a QColor as FOUR FLOATS 0..1 (`colorList`, FwQtView.cpp)
+/// -- not CSS's 0..255 channels, and not a bare alpha. W2 left `fg`/`bg`
+/// undrawn rather than guess that packing, because a cell painted in the
+/// wrong space is worse than one left in the card's own colour; this is
+/// the packing read off the host instead of guessed, which is what lets
+/// the view draw them at all.
+export function cssColor(c: number[] | undefined): string | undefined {
+  if (!Array.isArray(c) || c.length < 3) return undefined;
+  const byte = (v: number): number => Math.max(0, Math.min(255, Math.round(v * 255)));
+  const alpha = c.length > 3 ? Math.max(0, Math.min(1, c[3])) : 1;
+  return `rgba(${byte(c[0])}, ${byte(c[1])}, ${byte(c[2])}, ${alpha})`;
+}
+
+/// Is this colour dark enough that pale text reads on it?
+///
+/// Rec. 709 luma over the host's own 0..1 floats. A desktop palette is a
+/// LIGHT one and this card is dark, so a background arriving without a
+/// foreground would leave the card's pale text on a pale wash: the text
+/// takes black or white by the background's luma instead, which is the
+/// one choice that cannot come out unreadable.
+export function isDarkColor(c: number[] | undefined): boolean {
+  if (!Array.isArray(c) || c.length < 3) return true;
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2] < 0.5;
+}
+
 export interface ItemRow {
   id: number;
   cells: ItemCell[];
@@ -428,4 +476,72 @@ export function selectionWrite(ids: number[], current: number, column = 0): {
   currentColumn: number;
 } {
   return { selection: ids, currentId: current, currentColumn: column };
+}
+
+/// The two kinds of root the host mints (Gui/Fw/FwPanelMirror.cpp `owns`):
+/// the task panel is `panel:<n>`, a top-level dialog is `dialog:<n>`.
+/// Both are `QDialogModel`s and both carry a button box, so the ID is what
+/// tells them apart -- and they are ANSWERED differently, which is the
+/// whole of W4's write path.
+export function isDialogRoot(id: string): boolean {
+  return id.startsWith('dialog:');
+}
+
+/// A dialog's answer (7.19 M3): the standard button the client chose, sent
+/// to the ROOT rather than to the button that carries it.
+///
+/// The host turns this into the window's `done(button)`, so for a panel
+/// slot blocked in `QMessageBox::exec()` this op IS the exec code coming
+/// back. Ground truth is the host's own test -- Mod/Test/
+/// SandboxPanelMirror.py `test_nested_messagebox` answers Yes exactly this
+/// way and asserts the slot returned 0x4000 -- and `onDialogRequest`
+/// (Gui/Fw/FwPanelMirror.cpp) is where the mirror accepts it.
+export function dialogClickOp(standardButton: number): { event: string; args: number[] } {
+  return { event: 'clicked', args: [standardButton] };
+}
+
+/// Escape on a dialog, which is `QDialog::reject()` on the bound view --
+/// Qt's own answer for a box dismissed rather than answered. A box with an
+/// escape button resolves it to that button; one without returns 0, the
+/// same as pressing Escape at the desktop.
+export function dialogRejectOp(): { event: string } {
+  return { event: 'reject' };
+}
+
+/// Gui::FileChooser::Mode. A directory chooser cannot be served by an
+/// upload -- a browser picks files, not folders -- so the view says so
+/// rather than drawing a button that cannot work.
+export const CHOOSER_FILE = 0;
+export const CHOOSER_DIRECTORY = 1;
+
+/// A path the CLIENT chose, sent to a mirrored `Gui::FileChooser`
+/// (docs/Sandbox.md 7.22, W4b).
+///
+/// NOT a property write, and the difference is the whole of this stage's
+/// write path. Writing `fileName` moves the host's line edit and emits
+/// `fileNameChanged`, while a panel's slot is connected to
+/// `fileNameSelected` -- TechDraw's hatch and welding panels and every
+/// FEM settings page take that one, and only SymbolChooser takes the
+/// other. So a write alone would leave the panel unfired. The host turns
+/// this request into the same ending its own dialog has (`View::
+/// onRequest`, Gui/Fw/FwQtView.cpp): the name set, then the widget's own
+/// `editingFinished`, which emits `fileNameSelected`.
+export function fileSelectedOp(path: string): { event: string; args: string[] } {
+  return { event: 'fileSelected', args: [path] };
+}
+
+/// A Qt name filter as the `accept` of a file input.
+///
+/// Qt writes `Fonts (*.ttf *.otf);;All files (*)`; the web wants
+/// `.ttf,.otf`. A bare `*` matches nothing here by construction (the
+/// pattern needs a dot and a name), so an all-files filter yields the
+/// empty string -- which is what offers EVERY file. Writing the `*`
+/// through would offer none.
+export function acceptFromFilter(filter: string): string {
+  const out: string[] = [];
+  for (const match of filter.matchAll(/\*(\.[A-Za-z0-9_+-]+)/g)) {
+    const ext = match[1].toLowerCase();
+    if (!out.includes(ext)) out.push(ext);
+  }
+  return out.join(',');
 }

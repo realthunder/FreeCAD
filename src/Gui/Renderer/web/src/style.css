@@ -892,6 +892,17 @@
   pointer-events: auto;
   touch-action: pan-y;
   position: absolute;
+  /* ABOVE THE HUD. On a phone the HUD moves to the top left (the
+   * max-width:640px block on .fc-hud) while this box is full width at the
+   * top, so the two share that strip -- and main.tsx renders HudCard AFTER
+   * OmniBox, so with both at `auto` the HUD painted over the input. A tap
+   * on the input then landed on the HUD, which is outside this box's root,
+   * and the outside-press handler closed the box: the keyboard rose and
+   * the keystrokes went nowhere. Measured on a 390px viewport, where
+   * elementFromPoint at the input's own centre answered DIV.fc-title
+   * inside DIV.fc-hud. 6 is the cards' band (.fc-sheet, .fc-console),
+   * below the menus at 20 and the completion sheet at 21. */
+  z-index: 6;
   top: calc(12px + var(--fc-top, 0px));
   left: 50%;
   transform: translateX(-50%);
@@ -1397,6 +1408,19 @@
 
 .fc-panel-empty { color: #9aa0a6; padding: 6px 0 10px; }
 
+/* The scene socket is down (W5).  A STRIP rather than a replacement: the
+ * rows on screen were true a moment ago, so they stay and say so.  Amber
+ * rather than red -- nothing has gone wrong with the model, the page just
+ * cannot see the desktop for the moment. */
+.fc-panel-offline {
+  flex: none;
+  padding: 4px 10px;
+  background: rgba(255, 176, 64, 0.16);
+  color: #ffcf8f;
+  border-bottom: 1px solid rgba(255, 176, 64, 0.30);
+  font-size: 12px;
+}
+
 /* A TaskBox: the desktop draws a titled group, so does this. */
 .fc-panel-box {
   border: 1px solid rgba(255, 255, 255, 0.10);
@@ -1453,6 +1477,11 @@
   padding: 4px 10px;
   font: inherit;
   cursor: pointer;
+  /* An icon sits beside the label when the host sent one (W3), so the
+     button is a row rather than a text box. */
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   /* A label is the desktop's, not ours: it can be long, and a button that
      grows past its row pushes the rest of the row off the card. */
   max-width: 100%;
@@ -1488,6 +1517,18 @@
 
 .fc-panel-fx-on { background: rgba(88, 132, 255, 0.34); color: #e8e8ea; }
 .fc-panel-error { color: #ff9c8a; font-size: 12px; padding: 2px 0; }
+
+/* A mirrored file chooser (docs/Sandbox.md 7.22, W4b): the host's path,
+ * and a picker that is the BROWSER's own -- the host's `...` button is
+ * not mirrored at all, and opening the host's file dialog from here is
+ * exactly what the ruling forbids.
+ *
+ * The real <input type=file> is kept out of sight and opened by the
+ * button beside it: a native file input cannot be styled, and it reads
+ * as a foreign control in a card that is otherwise chrome-flavoured.
+ * `display: none` still takes a programmatic .click(). */
+.fc-panel-filepick { display: none; }
+.fc-panel-browse { flex: none; }
 
 /* The expression dialog (docs/Sandbox.md 7.23): the desktop's f(x) dialog,
  * drawn in the page. Centred on a wide viewport, a sheet on a narrow one --
@@ -1588,7 +1629,14 @@
 .fc-panel-buttons { display: flex; gap: 8px; justify-content: flex-end; }
 .fc-panel-spacer { flex: 1; min-width: 6px; min-height: 6px; }
 .fc-panel-sep { flex: 1; border: 0; border-top: 1px solid rgba(255, 255, 255, 0.12); }
-.fc-panel-pic { max-width: 100%; }
+/* A custom-painted leaf (W3). `touch-action: none` because the pointer is
+   replayed into the real widget on the host: a drag across it is the
+   desktop user's drag, not the page scrolling under a finger. */
+.fc-panel-pic { max-width: 100%; touch-action: none; }
+/* A button's or a cell's icon: never grows, never shrinks, and takes no
+   pointer events of its own -- the click belongs to the button or the row
+   underneath it. */
+.fc-panel-icon { display: block; flex: none; pointer-events: none; }
 
 /* An item view (widgets/panel.tsx, W2).  The row is a grid so the header
  * and the cells share their columns; the first track is the twisty, which
@@ -1634,6 +1682,52 @@
   font: inherit;
   line-height: 1;
   cursor: pointer;
+}
+
+/* Touch targets (W5's finish).  Measured on a 390x844 viewport before
+ * this block existed: buttons 25 px, the close and search 24, a tree's
+ * twisty 13, a row 19 -- every one of them under the 44 px both
+ * platforms' guidance asks for, and the same numbers as on the desktop,
+ * because nothing here had a narrow rule at all.  (The completion list's
+ * buttons already kept 44; this is the rest of the card catching up.)
+ *
+ * The controls that CAN grow, grow.  A tree's twisty and a row's check
+ * box cannot: a 44 px twisty makes a row 44 px tall, and a six-row tree
+ * then fills a phone.  So for those the HIT AREA grows instead of the
+ * box -- a transparent pseudo-element centred on the control, outside the
+ * grid's flow, which is invisible and costs the layout nothing. */
+@media (max-width: 640px) {
+  .fc-panel-btn,
+  .fc-panel-close,
+  .fc-panel-search,
+  .fc-panel-field {
+    min-height: 44px;
+  }
+  .fc-panel-btn,
+  .fc-panel-close,
+  .fc-panel-search {
+    min-width: 44px;
+  }
+  /* A row is roomier, but nowhere near 44: it is a LIST, and the thing
+   * being hit inside it carries its own area below. */
+  .fc-panel-rows .fc-panel-row { padding: 5px 0; }
+  .fc-panel-twisty { position: relative; }
+  .fc-panel-twisty::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
+  /* A check box is a replaced element: ::after does not render on one, so
+   * this is the box itself, grown as far as a row can carry. */
+  .fc-panel-row input[type="checkbox"],
+  .fc-panel-check input[type="checkbox"] {
+    width: 22px;
+    height: 22px;
+  }
 }
 
 /* A completion list (widgets/completion.tsx).  Wide: in the editor's own
@@ -1691,3 +1785,90 @@
 @media (max-width: 640px) {
   .fc-complete-btn { min-width: 44px; min-height: 44px; }
 }
+
+/* A mirrored dialog root (docs/Sandbox.md 7.22, W4): `dialog:<n>` drawn as
+ * a modal layer over the card. M3 puts a panel slot's QMessageBox, a
+ * non-native QFileDialog and any workbench's own dialog on the wire the
+ * same way, so this draws whatever the host walked rather than a message
+ * box in particular.
+ *
+ * Portalled to the body and above #fc-ui (z 10) for the reason
+ * .fc-expr-backdrop records: a portalled layer is that host's SIBLING and
+ * loses to it at any lower value. Above the tool-bar menus (20) and the
+ * expression dialog (20) as well -- this one is modal on the DESKTOP, and
+ * a layer the chrome can cover is not modal in any useful sense. */
+.fc-dlg-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 22;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+}
+
+/* A modeless dialog dims nothing and blocks nothing: the desktop user can
+ * still work behind it (8.11 -- one shared session), so the page must not
+ * pretend otherwise. Only the box itself takes the pointer. */
+.fc-dlg-modeless {
+  background: none;
+  pointer-events: none;
+}
+.fc-dlg-modeless .fc-dlg { pointer-events: auto; }
+
+.fc-dlg {
+  width: min(420px, calc(100vw - 24px));
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  background: rgba(28, 30, 34, 0.98);
+  color: #e8e8ea;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+  font-size: 13px;
+}
+
+.fc-dlg-head {
+  flex: none;
+  padding: 8px 10px;
+  font-weight: 600;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+}
+
+.fc-dlg-body {
+  padding: 10px;
+  overflow: auto;
+}
+
+/* A sheet from the top on a handset, the way the expression dialog goes:
+ * centred is where the keyboard lands. */
+@media (max-width: 640px) {
+  .fc-dlg-backdrop { align-items: flex-start; }
+  .fc-dlg {
+    width: 100%;
+    margin-top: env(safe-area-inset-top);
+    border-radius: 0 0 14px 14px;
+  }
+}
+
+/* The card's own way to reach search (W4, the user's call 2026-09-22).
+ * With a card up on a handset the launcher is hidden (main.tsx) and a
+ * phone has no '/' key, so from a mirrored panel the omni box could not
+ * be reached at all -- found in the first handset session. Same look as
+ * the close button beside it, and labelled the way the launcher menu
+ * already labels search. */
+.fc-panel-search {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #9aa0a6;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.fc-panel-search:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }

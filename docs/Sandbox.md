@@ -52,7 +52,7 @@ runs in the guest.**
     host widget layer: core, Qt view built       H0: src/Gui/Fw/ (Fw:: models, FwQt:: backend, the store, FreeCADGui.FormWidgets), src/Tools/fwuic.py (7.12)
     native panels on the layer       sized       H1-H3: the first ports, the form-only majority, the item views; DOM walker later (7.4, 7.12)
     the task panel mirror            M3 built    7.19: the desktop's task panel walked into models, streamed (Pad, Draft's OrthoArray, a CAM op, no workbench edited); M2: item rows reflected (Sketcher's constraint list), pictures and icons by image id; M3: top-level dialogs as dialog:<n> roots (a panel slot's QMessageBox, its exec code from a client's click), mouse replay into pictures; M4 measured 2026-09-11 (sec 8.4: a repaint burst re-reads 10-20 widgets in 0.3 ms and sends nothing; a panel at rest sends nothing; a keystroke costs the other clients 70-150 B)
-    the panels in the browser (G7)  W2 built   7.22: the DOM view over the widget layer -- the walker, the layout plan, the panel container, the item views; W1-W5, 2.2-3.3k of TypeScript in src/Gui/Renderer/web, and one 20-line host change (a client is never told how the host corrected its own write); the five questions RULED 2026-09-16 (chrome-flavoured, the echo taken, dialogs in scope, a FLOATING card, the pure-plan gate) and W1 started; W1's host half BUILT 2026-09-16 (Store::messageTo, the gate in test_widgetStream, FormWidgets 22/22), the fixture corpus (6 cases) recorded and the walker core, the layout plan and the replay gate BUILT 2026-09-16 (62 checks ALL GREEN) and the client + views + floating card BUILT the same day (typecheck and bundle clean), and W1 PROVEN on screen 2026-09-16 (demo-taskpanel.py through renderer-serve.sh, driven by scripts/panel-drive.js); W2 BUILT 2026-09-19 -- the row/remove/sort ops the corpus never carried, the header, the nesting, the checks and the selection, and one view wake per frame because the host pushes one per op; gate 85 -> 102 checks, 17 of them the item views'; the op-vs-event trap (only an item op reaches the real widget) caught against the host's own test; PROVEN on screen 2026-09-19 with demo-sketcherpanel.py -- 12 checked constraint rows, the Elements header over real tracks, and a check clicked in headless Chrome leaving Constraints[0].InVirtualSpace True on the host -- which also caught a column headed "1" invented over every QListWidget; nesting and cell colours stay unproven; W3 next
+    the panels in the browser (G7)  W5 built   7.22: the DOM view over the widget layer -- the walker, the layout plan, the panel container, the item views; W1-W5, 2.2-3.3k of TypeScript in src/Gui/Renderer/web, and one 20-line host change (a client is never told how the host corrected its own write); the five questions RULED 2026-09-16 (chrome-flavoured, the echo taken, dialogs in scope, a FLOATING card, the pure-plan gate) and W1 started; W1's host half BUILT 2026-09-16 (Store::messageTo, the gate in test_widgetStream, FormWidgets 22/22), the fixture corpus (6 cases) recorded and the walker core, the layout plan and the replay gate BUILT 2026-09-16 (62 checks ALL GREEN) and the client + views + floating card BUILT the same day (typecheck and bundle clean), and W1 PROVEN on screen 2026-09-16 (demo-taskpanel.py through renderer-serve.sh, driven by scripts/panel-drive.js); W2 BUILT 2026-09-19 -- the row/remove/sort ops the corpus never carried, the header, the nesting, the checks and the selection, and one view wake per frame because the host pushes one per op; gate 85 -> 102 checks, 17 of them the item views'; the op-vs-event trap (only an item op reaches the real widget) caught against the host's own test; PROVEN on screen 2026-09-19 with demo-sketcherpanel.py -- 12 checked constraint rows, the Elements header over real tracks, and a check clicked in headless Chrome leaving Constraints[0].InVirtualSpace True on the host -- which also caught a column headed "1" invented over every QListWidget; nesting and cell colours stay unproven; W3 BUILT and PROVEN on screen 2026-09-21 -- pictures, icons, theme and locale over one page-lifetime cache, the pointer replayed into a real QSvgWidget (a click at the card's centre landed at 48,48 of 96x96), and ahead of it the repaint the card had never done since W1; W4 BUILT and PROVEN on screen 2026-09-22 -- the dialog roots as modal layers (portalled at z 22, the show order taken from the list container, Escape as reject on the topmost only), the button box drawing a dialog's REAL buttons because the standard flag each carries IS the answer, and the exec code proven end to end: clicking Yes in headless Chrome left the card reading "exec() returned Yes (0x4000)", the host slot's own return value; gate 134 -> 150, and until W4 not one check had ever looked at a dialog; the card also gained its own search entry (the user's call); W4b BUILT and PROVEN on screen 2026-09-22 -- the file chooser upload-only as ruled, the traffic one way (no listing, no host path from the client), a pick sent as the `fileSelected` REQUEST because a panel's slot is connected to fileNameSelected and a property write would leave it unrun, the host naming where the bytes land and never overwriting, and the drive proving it with a 64-byte file whose size the host read back off its own disk; gate 150 -> 161, SandboxPanelMirror 7/7, FormWidgets 23/23; W5 BUILT and PROVEN on screen 2026-09-22 -- the measurement (the browser half of 8.4: subscribe 2.9 ms, first frame 132 ms, 11 frames applied against 188 dropped, one view wake, 1.9 ms inside apply, a write's round trip 1.7 ms; the paint figure is a headless rAF artifact and says so), the finish (touch targets measured at 25/24/13 px on a handset and fixed to 44, an offline strip proven by killing the serving FreeCAD under an open card and restarting it -- Chrome's offline mode does not close a socket already open and proved nothing), and every inherited debt cleared in ONE drive pass: nesting and cell colours (a yellow wash decoded from four floats with the contrast rule choosing dark text), the locale (a serve started in de_DE), Escape as reject, a modeless root, three dialogs stacked at z 22/23/24, the directory chooser refusing with its reason, a chooser inside a dialog, and a 17 MB upload refused by the cap; the pass found TWO defects -- a mirrored dialog's reject was a use-after-free that took the desktop down with a SIGSEGV the first time any drive pressed Escape (fixed, gated), and the panel client was applying the tool bar's frames from the shared lane (fixed; 188 dropped where 198-396 had been applied) -- and named the 404 the viewer logs at load: /favicon.ico; gate 161 -> 175, SandboxPanelMirror 8/8
     the session document (commands) built       S1: a workbench reaches every open document, live ActiveDocument, app.write, save, picker-blessed saveAs; S2: Gui.doCommand / addModule in the guest under gui.doCommand, Draft's commit and Arch_Site end to end; gate SandboxSessionDoc (7.13)
     routing ON by default            built       preference Expression/Sandbox:Evaluate, ON since 2026-09-16: the corpus gate green (94 files, 195 of 195 same); the Proxy-restore half that rode the same preference was REMOVED 2026-09-18 (7.31)
     Proxy import restriction (native) built       item 1 of sec 11: PropertyPythonObject restore
@@ -8626,6 +8626,525 @@ swallows everything printed after `start()` -- the trap recorded in
 `docs/DevEnvironment.md` that same day.  They were read back out of the
 ring with the `get_log` tool, and `run_python` answered what the panel
 was doing (`setEdit -> True`, 12 constraints) without a rebuild.
+
+**Found on the way into W3, and it had made W1 and W2 half-built: the card
+drew one frame and stopped.**  A host change reached the page and went no
+further -- the client applied the frame, the rAF wake bumped the version
+signal, and the screen did not move.  So the origin echo (the one piece of
+C++ this section asked for), a label a slot rewrites, a picture's new
+`img:` id and Sketcher's refill after a solve were all invisible.  What
+the two on-screen proofs had actually shown was the SNAPSHOT a panel opens
+with, plus the page agreeing with itself about a write it had just made.
+
+**Proven rather than argued, because the obvious test cannot see it.**  The
+host suppresses a frame back to the client that caused it, and the origin
+echo fires only for a key whose applied value differs from what that client
+wrote -- so a tab that types into a field is told nothing either way, and
+its own DOM already holds what was typed.  TWO tabs answer it.  Tab A
+wrote; tab B watched and recorded the raw `fc:control` frames it received.
+B got the write in full -- `q_rawValue` 55, then `q_text` "55.00" -- and
+went on showing the value from before it.  The wire and the store were
+right; the rendering was not.  (A first run looked damning and proved
+nothing: it wrote the value the host already held, so nothing was
+announced.  Each run's tab B opens at the host's current value, which is
+what shows the previous run's write really landed.)
+
+**The cause is Solid's graph, not the stream.**  `WidgetStore` mutates its
+models IN PLACE (an `update` patches `state`, an item op patches `items`),
+so a `w.state.x` read in a view creates no dependency, and `<Show when={m()}
+keyed>` re-creates its children only when the model's IDENTITY changes --
+which only an `open` does.  Worse, the values that change were hoisted into
+`const`s in the component body (`const title = str(w, 'toolTip')`, `const
+picture = ...`), which run once whatever the graph does.  Fixed by routing
+every model read through accessors that track the version signal (`st`,
+`str`, `bool`, `num`, `lay`, `rows`, and a `rev` passed into the field) and
+by moving every hoisted read into a JSX expression, which the compiler makes
+a tracked getter.  The picture leaf follows its `name` through an effect for
+the same reason: the id is content-addressed, so a changed picture is a new
+id on a model patched in place.
+
+**Re-measured after the fix**: B opens at 55.00, receives the two frames of
+A's write of 33, and shows 33.00.  Neither panel regressed -- Pad draws its
+4 headings, 13 labels, 8 fields, 5 combos carrying their items, 12 checks
+and OK/Cancel over real grid tracks; Sketcher its 12 checked constraint rows
+and the Elements header over six.  The lesson for the rest of this work: the
+replay gate proves the reduction and the drive harness proves the first
+paint, and NEITHER of them watches a second frame arrive.
+
+**W3 BUILT 2026-09-21, and PROVEN on screen the same day.**  Pictures,
+icons, theme and locale.  The resolution rule is the whole of it: two kinds
+of picture travel in the same bag keys (`icon`, `pixmap`, `windowIcon`, a
+cell's `icon`) and only the `img:` prefix says which is in hand -- a
+content-addressed id the host filed in `ImageStore`, fetched with
+`widgets.image`, or one of FreeCAD's own icon NAMES, fetched with
+`widgets.icon` and rendered by the host's icon theme.  A new pure module
+(`widgets/images.ts`) holds the classification, one page-lifetime cache,
+the locale rules and the pointer mapping, so all of it is gated in node:
+the cache holds PROMISES, not answers, so two widgets naming the same icon
+in one frame make one request, and a socket failure ('Offline', 'Timeout')
+is not cached -- that is "not yet", not "no".  Keys: an `img:` id is its
+own key, a name is keyed by (theme, name, size), and the theme is compared
+on every subscribe reply and clears the cache when it moved, there being no
+theme event on this wire yet (7.19's open list).
+
+The leaves: a button draws its icon instead of W1's `...` placeholder
+(which comes back only when a fetch FAILS and there is no label to show
+instead -- an icon that cannot be drawn must not leave a blank button); an
+item cell draws its decoration before its text, which is where Sketcher's
+element list gets its 19; and the picture leaf follows its id, because a
+repaint that changed something arrives as a different one.
+
+**The pointer, and it is an `event` that really does reach the widget.**  A
+custom-painted leaf is an image in the page, so a click on it does nothing
+locally: the pointer goes back as `widgets.custom {event: "mouse"}`, which
+`commCustom` hands to `Widget::request` -- NOT to `dispatchEvent`, the road
+that made W2's item-view writes vanish -- and the mirror has connected
+`requested` to `onModelRequest`, which replays it into the real widget.
+Qt's numbering is not the DOM's (a DOM `button` is an index, Qt's is a bit
+value; a wheel delta is positive downward in the DOM and upward in Qt), so
+those mappings are pure functions with the gate on them.  Moves are sent
+only while a button is down: a bare hover would put one message on the wire
+per pointer sample.
+
+**Locale.**  A quantity field carries the string Qt already formatted,
+units and all, and that is shown exactly as it came -- the host's decimals
+are not the client's to second-guess.  A plain spin box carries a NUMBER
+and no text (`value`, `decimals`, `suffix`), so the page formats it in the
+host's locale and, on the way back, parses it with the same locale's
+separators; `C` maps to no locale rather than to English, which would put
+thousands separators into numbers the host prints without them.
+
+**A latent bug fell out of doing it**: `valueWrite` sent `rawValue` for
+every numeric class, but only a quantity field and an input field declare
+it -- `Fw::QSpinBox` and `Fw::QDoubleSpinBox` declare `value` and no `text`
+at all.  So a write to a plain spin box set a property that does not exist,
+which the host accepts and the desktop ignores.  The corpus is full of
+quantity fields, which is why W1 never saw it.
+
+**Gate**: 102 -> 134 checks, ALL GREEN.  The ruled one is over the
+`svg_picture` fixture -- the host is asked once per DISTINCT id -- resolved
+TWICE, because that fixture names each of its four ids exactly once and a
+single pass would have proved nothing about a cache.  The rest are the
+rules no fixture holds: the classification, the data URLs, the locale round
+trip (what the field shows must parse back, in three locales), Qt's buttons
+and modifiers, the wheel's flipped sign, the pointer mapped into the
+picture's own pixels, and the theme and size really keying an icon.
+
+**Proven on screen** with a third demo panel, `scripts/demo-picturepanel.py`
+-- neither of the others can show this stage, Pad having no custom-painted
+leaf and Sketcher no button icon.  It serves a QSvgWidget, a button
+carrying a real QIcon, and a label counting clicks.  The result: the
+picture drawn at 96x96, the button icon drawn, and a click at the card's
+centre leaving the HOST's label reading `clicks: 1 at 48,48` -- the exact
+centre of the widget, so the mapping is right rather than merely plausible.
+Pad's icon-only button now draws its icon, and Sketcher's element list its
+19 cell icons.
+
+**Two things the screen found that the gate could not.**  *Pictures are a
+round trip BEHIND the widgets that name them*: the bag carries an id, the
+bytes follow, and `panel-drive.js` read the card the moment a field existed
+and so reported every icon missing -- twice, convincingly, before the
+harness was taught to wait for them to decode.  A drive that reads too
+early does not report "not yet", it reports "none".  *And a panel really
+does send named icons*, not only `img:` ids: Pad's bag carries
+`PartDesign_AdditiveHelix`, which the host answers as 54 KB of SVG.  The
+sizing had left the impression that the name route belonged to the tool
+bars; both routes are live in a panel.
+
+**Limits, stated.**  A combo's item icons are not drawn: a native `<select>`
+cannot hold an image, and faking the control to carry one is W4's kind of
+work, not this stage's.  The window icon is not drawn either.  Locale is
+gate-proven and not screen-proven, because the host under both the gate and
+the harness reports `C`.
+
+**What W4 inherits** (2026-09-21, from the first real handset session --
+the picture panel served over a Cloudflare quick tunnel and driven from a
+phone).  Two of these are the browser tier's, one is the harness's:
+
+- **With a card open on a narrow viewport there is no way to reach the
+  omni box.**  `main.tsx` hides the launcher whenever a card is up and the
+  viewport is under `NARROW`, and a phone has no `/` key -- so with the
+  task panel mirrored and open, search is unreachable.  Found by a probe
+  that opened omni through the launcher and got nothing: the hamburger is
+  not in the DOM at all.  A design call rather than a bug (keep the
+  launcher visible, or give the card its own search entry), which is why
+  it is written down rather than fixed.
+- **The viewer page logs a 403 for one resource at load**, with a valid
+  token and on loopback alike; the scene streams anyway, which is why it
+  has gone unnoticed.  Unexplained, and this is the page we now hand to
+  other people.
+- **W2's debts are still owed and W3 added one.**  Nesting and cell
+  colours are gate-green and have never been PROVEN ON SCREEN; locale
+  joins them, the host reporting `C` under both the gate and the drive
+  harness, so seeing it work needs a serve started in another locale.
+
+Two traps for whoever writes W4's drive, both paid for once already: a
+drive that reads the card the moment a field exists reports every icon
+MISSING rather than "not yet" (pictures are a round trip behind the
+widgets that name them), and a console ring fills with swiftshader's
+WebGL warnings and crowds out the one message worth reading.
+
+**W4 BUILT and PROVEN on screen 2026-09-22.**  The wire needed nothing.
+M3 has minted `dialog:<n>`, shipped `q_modal` and `q_windowTitle`, and
+routed `clicked [flag]` into the window's `done(button)` since
+2026-09-11, and the client has carried `dialogIds` since W1.  What was
+missing was a VIEW -- `panel.tsx` said so in its own header, "deliberately
+not drawn here" -- so W4 is browser-side apart from this note.
+
+Built: the dialog layer, portalled to the body at z 22 for the reason
+`.fc-expr-backdrop` already records (a portalled layer is `#fc-ui`'s
+SIBLING and loses to it at any lower value; the tool-bar menus sit at 20);
+the roots taken in the host's show order from the `panel` list container's
+layout, which is re-sent on every open and close; a MODELESS root dimming
+and blocking nothing, because one shared session (8.11) means the desktop
+user is still working behind it; Escape as `reject`, on the topmost root
+only and in the CAPTURE phase, because the omni box and the tool-bar menus
+both close on a stray Escape off the document; and the button box drawing
+a dialog's real buttons, while the task panel's box keeps W1's
+accept/reject -- the path the W1 and W2 screen proofs exercise, which
+nothing here needed to disturb.
+
+Three things the build settled, each worth keeping:
+
+  * **the answer goes to the ROOT, not to the button.**  `widgets.custom
+    {target: 'dialog:<n>', content: {event: 'clicked', args: [flag]}}` is
+    what the host turns into `done(button)`, and the host's own test
+    answers exactly that way.  A CUSTOM button added to a box carries no
+    standard flag, so there is nothing to turn into a `done`: its own
+    `click` is the honest op, which is what the code sends rather than a
+    `clicked [0]`;
+  * **a mirrored widget already knows its parent**, so the owning root is
+    a walk up `WidgetModel.parent`, not a prop threaded through
+    View/Plan/Item.  Only a button box ever asks which root it is in;
+  * **Qt's mnemonic is not DOM text.**  `&Yes` draws as "&Yes" unless it
+    is stripped, and `qtText` handles only rich text.  A button reading
+    "&Yes" is what that cost, and `qtLabel` is the one-line answer.
+
+Gate **134 -> 150 checks, ALL GREEN**, with `npm run typecheck` and `npm
+run build` clean.  The sixteen new ones are the dialog's: the root's
+class, title, modal flag and parent; the list holding both roots in show
+order; Qt's own `qt_msgbox_label` text and the icon as a picture; the
+Yes/No flags; the answer op's shape; and what the close leaves behind.
+**Until W4 not one check in `gate.ts` had looked at a dialog** --
+`nested_messagebox` was replayed for its frames and its layouts like any
+form panel -- so the fixture recorded FOR this stage sat in the corpus
+proving nothing about it.
+
+**The proof, 2026-09-22:** `scripts/demo-messageboxpanel.py` (new -- a
+panel whose slot blocks in `QMessageBox::exec()` and writes the code it
+got back into a mirrored label, so the round trip is readable on screen
+and not only in a log) served through `renderer-serve.sh` and driven by
+`scripts/panel-drive.js`, which grew `readDialog` and
+`FC_PANEL_DIALOG=<label>`.  Clicking "Ask" in headless Chrome raised the
+layer -- one backdrop, title `Really`, the text `Proceed?`, Yes and No,
+the question icon decoded at 48x48, `modal` true, z 22 and NOTHING
+covering it -- and clicking Yes left the card reading **`exec() returned
+Yes (0x4000)`**, which is the host slot's own return value pushed back.
+The root closed and the layer went with it.  The layer has to be read
+separately from the card, by construction: it is portalled, so every
+`.fc-panel` selector in the harness misses it.
+
+A second run in a 390x844 phone viewport drew the layer there too and
+reported `search: true, launcher: false` -- the inherited case and its fix
+in one line, the launcher absent from the DOM exactly as `main.tsx`
+intends and the card's own entry present instead.  **Its exec-code
+evidence is NOT independent, though**, and the report says so: it answered
+the same live process a second time, so its `before` and `after` both
+already read the answered text.  The exec code is proven by the DESKTOP
+run, where the label went from `No answer yet`; the phone run proves the
+layer and the entry, not the code.
+
+**Not screen-proven, named rather than implied:** Escape as `reject` (the
+op's SHAPE is gated, but no drive presses the key), a MODELESS root -- the
+corpus and the demo both raise a modal one, so `fc-dlg-modeless` has never
+drawn -- and two dialogs stacked, which is the only thing the `depth`
+z-offset exists for.
+
+**The card has its own search entry** (the user's call 2026-09-22), which
+closes the first of the inherited items above.  `main.tsx` hides the
+launcher whenever a card is up under `NARROW`, and a phone has no `/`
+key, so from a mirrored panel the omni box could not be reached at all;
+the card's header now carries a `/` button wired from `main.tsx` as
+`onSearch`.  Keeping the launcher visible instead was put to the user and
+declined.
+
+**The file chooser, RULED 2026-09-22 and deferred to its own session:**
+"Never expose host file system to browser.  But implement browser side
+file chooser to upload file to host."  So W4's fourth item is NOT built,
+and the shape it must take is now fixed: no directory-listing op and no
+browse of the serving machine -- the browser picks a LOCAL file and
+uploads it.  That also rules OUT the cheap route of forcing
+`DontUseNativeDialog` so that a `QFileDialog` mirrors as an ordinary
+widget tree through M3, because that is precisely a view of the host's
+filesystem drawn in the page.
+
+**W4b BUILT and PROVEN on screen 2026-09-22.**  The traffic goes ONE way,
+which is the whole design: there is no op that lists a directory, none
+that reads a host file, and none that takes a PATH from the client.  The
+client sends a name and bytes; the host alone decides where they land.
+
+What was already true and had to be checked rather than assumed: the
+mirror sends a `Gui::FileChooser` as a LEAF -- it is in the class table,
+so `tableClassOf` lands on it and `isContainer` says no -- so the walk
+never goes into it and the `...` button that raises the host's own
+`QFileDialog` **is not a model any client can click**.  The ruling was
+therefore not already breached; what was missing was a view and a way in.
+
+Three things the build settled:
+
+  * **a pick is a REQUEST, not a property write.**  Writing `q_fileName`
+    moves the host's line edit and emits `fileNameChanged` -- and leaves
+    the panel's slot unrun, because a panel connects to
+    `fileNameSelected`: TechDraw's hatch and welding panels and every FEM
+    settings page take that one, and only `SymbolChooser` takes the
+    other.  So the client sends `{event: 'fileSelected', args: [path]}`,
+    which `View::onRequest` answers by setting the name and then invoking
+    the widget's own `editingFinished` -- the same ending `chooseFile()`
+    has after its dialog closes.  `chooseFile` itself is never reachable:
+    `onRequest` is a fixed if/else chain, not a call by name;
+  * **the client that picks the file is the only one not told the path.**
+    The host does not echo a change back to the connection that caused
+    it, so the field sat EMPTY beside a host label that had the path in
+    it.  Caught by the drive (`shown: ""`), not by reasoning;
+  * **and the fix belongs in the CARD, not the view.**  The first one
+    kept the picked path in a signal inside `FileChooserView` and the
+    drive still came back empty: a leaf's subtree is re-created whenever
+    a store frame arrives, which is the same trap that sends the
+    expression dialog's state up to the card (7.23).  Measured twice,
+    which is the only reason it is written down here.
+
+The host half is `widgets.upload` (`SceneWidgets.cpp`): mutating, so a
+view-only connection is refused before the handler runs, and EDIT rather
+than host, because this is an ordinary editor filling in a panel's field
+under the shared session (8.11) and the bytes reach a directory of the
+host's choosing.  A client's `name` is reduced to a plain file name
+(`QFileInfo::fileName` first, so `../../.ssh/config` arrives as
+`config`), the same name twice does not overwrite what a panel may still
+be pointing at, and 16 MB is the cap -- a chooser's file is a font or a
+hatch pattern.
+
+**The proof, 2026-09-22:** `scripts/demo-filechooserpanel.py` (new -- a
+panel whose chooser is watched on `fileNameSelected`, reporting the path
+it was handed AND the size of that file on the host's own disk, because a
+path proves a string crossed and a size proves the BYTES did) served
+through `renderer-serve.sh` and driven by `scripts/panel-drive.js`, which
+grew `FC_PANEL_UPLOAD=<path>`.  A 64-byte file chosen in headless Chrome
+left the host's label reading **`got /tmp/BrowserUploads/probe-font-2.ttf
+(64 bytes on this machine)`** with the card's own box showing the same
+path.  Three runs against three fresh serves produced `probe-font.ttf`,
+`probe-font-1.ttf` and `probe-font-2.ttf`, so the no-overwrite rule is
+screen-proven too rather than argued.
+
+Gate **150 -> 161 checks**, all green, typecheck and bundle clean; the
+eleven new ones are the chooser's leaf shape, the request's spelling, the
+directory mode and Qt's name filter as the web's `accept` (an all-files
+filter must come out EMPTY, which accepts everything -- writing the `*`
+through would accept nothing).  `SandboxPanelMirror` grew
+`test_file_chooser` and reads 7/7 `RESULT OK`; `FormWidgets` 23/23, where
+the `fileNameSelected` signal itself is proven with a `QSignalSpy` --
+Python cannot always see that signal, so the C++ test is where it is
+pinned.
+
+**Not proven, named rather than implied:** a DIRECTORY chooser (the
+button is drawn disabled and says why -- no browser picker can answer
+it), a chooser inside a mirrored DIALOG rather than a task panel, and an
+upload refused by the cap (the refusal path is gated in
+`SandboxPanelMirror`, never driven from a page).  **All three were
+driven in W5 below on 2026-09-22 and are now proven on screen.**
+
+**RULED 2026-09-22 by the user: the numbering fix and W5 proper are the
+NEXT SESSION's work.**  In order:
+
+1. **The numbering collision, which was the previous session's error --
+   FIXED 2026-09-22.**  The stage list above already spends `W5` on "the
+   measurement and the finish", and the file chooser was built and
+   committed under that same name.  The ruling of 2026-09-22 called the
+   chooser **W4's fourth item**, so it is **W4b** now: here, in the
+   section 11 summary line, in the five source comments and the two
+   drive comments that named it, in the chooser demo's docstring, and in
+   the message of the chooser commit itself, which was LOCAL and so was
+   amended (`7cf6346a20` -> `7ec5a547e4`) rather than corrected in a
+   follow-up.  The staged W5 keeps its number.
+2. **W5 as staged** -- first paint of a panel open against 8.4's
+   host-side numbers, apply time per burst, the keystroke round trip;
+   the narrow layout (bottom sheet), touch targets, dark and light; and
+   what a panel does when the socket drops.
+3. **The debts, in ONE drive pass.**  Every one of them is "built, gated,
+   and never once on screen", and they all want harness work rather than
+   new wire, which is why they belong together and with the finish:
+   W2's nesting (the twisty and the expand op) and cell colours (fg/bg
+   arrive as `QVariantList`s); W3's locale, which is gate-proven only
+   because the host reports `C` under both the gate and the harness, so
+   seeing it needs a serve started in another locale; W4's Escape as
+   `reject` (the op's shape is gated, no drive presses the key), a
+   MODELESS root (`fc-dlg-modeless` has never drawn) and two dialogs
+   stacked (the only thing the `depth` z-offset exists for); and W4b's
+   directory chooser, a chooser inside a mirrored DIALOG rather than a
+   task panel, and an upload refused by the cap.
+4. **The 403 lead**, still unexplained: the viewer page logs one at load,
+   and this session saw a **404** with `no /scene.fcsd snapshot, empty
+   scene` beside it.  A candidate, not a finding -- nothing has been
+   changed to test it.
+
+**W5 BUILT and PROVEN on screen 2026-09-22.**  All four items above are
+done, and the drive pass that cleared the debts found two defects of its
+own, both fixed here.
+
+**The measurement**, which is what the stage is named for.  8.4 measured
+this wire from the HOST's side; these are the same costs from the
+browser's.  `PanelClient.stats` counts them, the card hangs them on
+`window.fcxPanelStats` the way the console hangs its bridge's figures
+(console.tsx), and `panel-drive.js` reads them under `FC_PANEL_STATS`.
+A Pad panel open -- 8.4's own case, 64 messages and 46 KB host-side:
+
+    subscribe round trip        2.9 ms
+    open -> first frame         132 ms
+    open -> content built      1333 ms   (see the caveat)
+    frames applied                 11
+    frames dropped (foreign)      188
+    view wakes                      1
+    total inside store.apply    1.9 ms
+    a value write's round trip  1.7 ms
+
+The caveat, stated rather than buried: **the paint figure is a headless
+artifact.**  A headless browser throttles rAF hard -- a whole run can
+coalesce into one or two animation frames -- so `contentMs`, taken in
+the view's own update, and `paintedMs`, taken a frame later, sit about
+1.2 s apart here where a real screen would show one frame.  What the
+numbers DO say is that the data is there in 132 ms and the work is
+nothing: 1.9 ms of apply for a whole panel, one wake per burst rather
+than one per op, and a write that reaches the desktop and returns in
+under 2 ms.
+
+**The cross-talk the measurement found.**  Both mirrors push down the
+one `widgets` lane and `PanelClient` applied every frame on it: a wide
+viewport counted 198-396 frames where a phone counted 9, the difference
+being the tool-bar strip, which is hidden under `NARROW` and so never
+subscribes.  The panel was building a store of tool-bar models it can
+never draw.  The filter is the host's own predicate spelled the same way
+(`PanelMirror::owns`: the list container, `panel:`, `dialog:`, `pw:`),
+and what it drops is counted rather than discarded silently -- the 188
+above is the size of what used to be applied.
+
+**The crash the debts found.**  Escape had been gated since W4 and never
+once pressed by a drive.  The first press took the desktop down: SIGSEGV
+in `QObjectPrivate::maybeSignalConnected` under `Fw::Widget::requested`.
+`Widget::request` emitted AFTER the backend call, and for a dialog root
+that call runs the real `QDialog::reject()`, whose Hide closes the root
+and deletes the models -- including the object whose `request()` is on
+the stack.  A use-after-free, so it was intermittent: one run took the
+signal, the next left the host wedged with the slot still in `exec()`
+and the page's layer gone, which looked like a client bug and was not.
+Fixed with a QPointer across the backend call and gated host-side;
+Escape now leaves the desktop's own label reading `exec() returned
+nothing (0x0)`, which is `QDialog::reject()`'s answer: no button.
+
+**The debts, each proven on screen** (all through `renderer-serve.sh`
+and `panel-drive.js`):
+
+  * **nesting** -- `demo-treepanel.py`, a real QTreeWidget three levels
+    deep, arriving collapsed.  A twisty clicked in headless Chrome took
+    the rows from 3 to 6 and left the HOST's label reading `host
+    expanded Shell (2 expands, 0 collapses)`: the expand op reaching the
+    real tree, which is the whole of W2's op-vs-event distinction;
+  * **cell colours** -- the same scene colours cells the way a real panel
+    does.  `Face 3 / open wire` drew as `rgb(22, 24, 28) on rgb(255,
+    224, 130)`: the host's `#ffe082` wash decoded from four floats, with
+    the dark text the contrast rule chose.  Read off the COMPUTED style,
+    the only reading that proves the packing was decoded rather than
+    merely carried;
+  * **locale** -- a serve started with `LC_ALL=de_DE.UTF-8`.  Qt answers
+    `de_DE` from its own database even though this box has no such
+    locale generated (glibc warns; Qt does not care), the card reported
+    it, and Pad's fields drew `10,00` and `0,00 mm` under German tool
+    tips.  Gate-proven since W3, seen for the first time here;
+  * **Escape as reject** -- above;
+  * **a modeless root** -- `fc-dlg-modeless` drew for the first time:
+    backdrop `rgba(0, 0, 0, 0)`, `pointer-events: none`, and the card
+    still reachable behind it (`elementFromPoint` lands on the card's
+    head), which is what "the desktop is live behind this" must mean in
+    a page;
+  * **two dialogs stacked** -- three, in the event: a modeless root left
+    over from the run before, an outer box, and the inner one exec'd
+    from inside its nested loop.  z 22, 23, 24 ascending, both modals
+    dimming and taking the pointer, the inner on top.  The depth
+    z-offset doing the one job it exists for;
+  * **the directory chooser** -- drawn disabled with its reason in the
+    title: "This panel is asking for a folder on the machine running
+    FreeCAD, which a browser cannot choose";
+  * **a chooser inside a dialog** -- the `dialog:<n>` root "Pick a file"
+    with its own Browse, reaching the leaf through the modal layer
+    rather than through the panel container;
+  * **an upload refused by the cap** -- a 17 MB file chosen in the page
+    left the card reading `Could not send too-big.bin: 16777216 bytes at
+    most` and the host's label untouched, so nothing landed.
+
+**The finish.**  Touch targets were measured on a 390x844 viewport
+before anything was changed: buttons 25 px, close and search 24, a
+twisty 13, a row 19 -- none near the 44 both platforms ask for, and the
+same numbers as on the desktop, because the card had no narrow rule at
+all.  The controls that can grow now do; a twisty cannot without making
+every row 44 px tall, so its hit AREA grows instead (a transparent
+`::after`, invisible and free to the layout) and the drive measures that
+rather than the box.  Re-measured: 44, 44, 44, rows 25.
+
+**What a panel does when the socket drops**, measured by killing the
+serving FreeCAD under an open card and restarting it.  Chrome's offline
+mode was tried first and does NOT close a socket already open: that run
+reported an unchanged card and proved nothing, which is worth recording
+because it looks exactly like a result.  With a real kill -- Chrome's
+own `Network.webSocketClosed` fired, and the page's `fc:connection`
+fired false and then true -- the card said nothing at all and went on
+showing the dead panel's rows.  It now carries a strip ("The viewer is
+offline -- this panel may be out of date.") and KEEPS its content, which
+was true a moment ago; the strip clears itself when the connection comes
+back.
+
+**Dark and light** is the one staged item answered by reading rather
+than building.  This chrome is dark-only and deliberately so: there is
+not a single `prefers-color-scheme` in `style.css`, and the panel card
+is the same material as the inspector and the sheet beside it.  So for a
+MIRRORED panel the item is not a theme switch at all -- it is the
+desktop's LIGHT palette arriving on a dark card, which is exactly the
+contrast rule above.  A light chrome is a change to the whole viewer and
+belongs to whoever takes that on, not to G7.
+
+**The 404 at load, named at last** (item 4): `/favicon.ico`.  The
+browser asks for it unprompted, the serve does not have one, and a page
+console line reading "404 (Not Found)" names no URL -- which is why it
+stayed a rumour across sessions.  `panel-drive.js` now logs every
+non-2xx response by URL.  The **403** the earlier session saw is not
+this one and stays open.
+
+**One finding left open, deliberately:** `test_draft_orthoarray` does
+not raise its panel in a run where a nested QMessageBox case precedes
+it.  Four runs pin it -- without the new case the suite is 7/7; with it
+after Draft's, 8/8; with it before Draft's, Draft fails whether the case
+REJECTS the box or answers it with a button, so it is not the reject.
+The mirror is innocent: at the failure `Control.activeTaskDialog()` is
+None and no modal widget is up, so no task dialog opened on the desktop
+at all.  The cause is in Draft's command and was not chased here; the
+new case is named to sort after Draft's, as `test_nested_messagebox`
+always has.
+
+Gates: the browser gate 161 -> **175 checks** all green, typecheck and
+bundle clean; `SandboxPanelMirror` **8/8 RESULT OK**.
+
+**One trap re-paid:** the gate runs the BUILD TREE's copy of
+`Mod/Test/SandboxPanelMirror.py`, so a test written after the build ran
+is invisible to it -- the first run reported 2 failures and a wedge from
+a stale file that did not contain the new case at all.  Re-run `ninja`
+before the gate, and read which tests actually appear in the log rather
+than trusting the tally.  Those 2 failures and the wedge did not recur on
+a clean profile: same code, `Ran 7 tests OK`.
+
+One inherited item is unchanged and one has a lead.  The 403 the viewer
+page logs at load showed in this run as a **404**, and the line above it
+is `no /scene.fcsd snapshot, empty scene` -- so the page's probe for a
+snapshot this demo never wrote is a candidate.  A lead and not a finding:
+the recorded symptom was 403, this is 404, and nothing was changed to
+test it.  W2's debts stand untouched -- nesting, cell colours and locale
+are still gate-green and never screen-proven.
 
 **Cost** (new; TypeScript unless noted):
 

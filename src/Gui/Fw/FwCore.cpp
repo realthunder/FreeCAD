@@ -20,6 +20,8 @@
 
 #include "PreCompiled.h"
 
+#include <QPointer>
+
 #include "Fw/FwCore.h"
 
 using namespace Gui::Fw;
@@ -304,8 +306,27 @@ void Widget::setMaximumSize(int w, int h)
 
 void Widget::request(const QString& name, const QVariantList& args)
 {
+    // The backend's handler can DELETE this widget, so the emit below is
+    // not reached on `this` but on freed memory.
+    //
+    // Measured, not feared (docs/Sandbox.md 7.22, W5): the first drive
+    // ever to press Escape on a mirrored dialog took the desktop down with
+    // a SIGSEGV in QObjectPrivate::maybeSignalConnected, one frame under
+    // this one.  The path is synchronous and entirely inside the backend
+    // call: `reject` reaches the real QDialog, its `reject()` ends the
+    // nested exec() loop, the Hide that follows reaches PanelMirror's
+    // event filter, and `closeRoot` -> `hide()` deletes the root's models
+    // -- this object among them -- before the stack unwinds to here.
+    // `accept`, `done` and `close` end a dialog the same way.
+    //
+    // A QPointer rather than a flag: it is the one guard that cannot go
+    // stale, and it costs a pointer on a path that is already a round trip
+    // from a browser.
+    QPointer<Widget> alive(this);
     if (_backend)
         _backend->requested(name, args);
+    if (!alive)
+        return;
     Q_EMIT requested(name, args);
 }
 

@@ -337,7 +337,7 @@ render(() => (
                   server={location.origin} token={linkToken} client={clientName}
                   viewerSocket />
     <TaskPanelCard open={taskPanelOpen} onClose={() => setTaskPanelOpen(false)}
-                   viewOnly={viewOnly} />
+                   viewOnly={viewOnly} onSearch={() => setOmniOpen(true)} />
     <LoupeOverlay mark={loupe} />
     <OnViewParams params={onView} places={onViewPlaces} />
     <HudCard text={hud} onClose={() => window.fcviewerSetHud?.(false)} />
