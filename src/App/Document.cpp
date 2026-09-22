@@ -4348,6 +4348,7 @@ int Document::recompute(const std::vector<App::DocumentObject*> &objs, bool forc
     // with no transaction active group under one implicit transaction
     // that closes with the recompute (docs/TransactionLog.md sec 9.1).
     Application::InvocationScope scope("recompute");
+    const auto recomputeClock = std::chrono::steady_clock::now();
 
     if (d->undoing || d->rollback) {
         if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG))
@@ -4552,6 +4553,29 @@ int Document::recompute(const std::vector<App::DocumentObject*> &objs, bool forc
         throw Base::AbortException();
 
     signalRecomputed(*this,topoSortedObjects);
+
+    if (auto log = getTransactionLog()) {
+        // The recompute record (docs/TransactionLog.md sec 11), after the
+        // implicit transaction of the derived writes so it follows them.
+        commitImplicitTransaction();
+        std::vector<TransactionLog::RecomputedObject> done;
+        done.reserve(topoSortedObjects.size());
+        for (auto obj : topoSortedObjects) {
+            if (!obj->isAttachedToDocument())
+                continue;
+            TransactionLog::RecomputedObject r;
+            r.id = obj->getID();
+            r.name = obj->getNameInDocument();
+            r.error = obj->isError();
+            if (r.error) {
+                const char* msg = getErrorDescription(obj);
+                r.message = msg ? msg : "";
+            }
+            done.push_back(std::move(r));
+        }
+        log->onRecompute(done, std::chrono::duration<double>(
+                                   std::chrono::steady_clock::now() - recomputeClock).count());
+    }
 
     if(!d->skippedObjs.empty())
         signalSkipRecompute(*this,d->skippedObjs);

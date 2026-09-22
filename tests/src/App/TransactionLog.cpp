@@ -325,4 +325,37 @@ TEST_F(TransactionLogTest, implicitTransactionsGroupByInvocation)
     EXPECT_EQ(obj->Integer.getValue(), 6);
 }
 
+TEST_F(TransactionLogTest, recomputeRecordAndSession)
+{
+    auto& store = log().store();
+    auto sessions = store.sessions();
+    ASSERT_EQ(sessions.size(), 1u);
+    EXPECT_EQ(sessions[0].id, log().session());
+    EXPECT_EQ(sessions[0].env, log().environment());
+    EXPECT_EQ(sessions[0].closed, 0.0);
+    // Identity is off by default: nothing personal in the row.
+    EXPECT_TRUE(sessions[0].user.empty());
+    EXPECT_NE(store.environmentJson(log().environment()).find("BuildVersionMajor"),
+              std::string::npos);
+
+    doc()->openTransaction("create");
+    auto obj = make("Obj");
+    doc()->commitTransaction();
+    obj->Integer.setValue(3);
+    doc()->recompute();
+
+    auto txns = store.transactions();
+    ASSERT_GE(txns.size(), 2u);
+    const auto& rec = txns.back();
+    EXPECT_EQ(rec.kind, "recompute");
+    EXPECT_EQ(rec.session, log().session());
+    EXPECT_NE(rec.script.find("\"objects\":[{\"id\":" + std::to_string(obj->getID())),
+              std::string::npos) << rec.script;
+    EXPECT_NE(rec.script.find("\"name\":\"Obj\""), std::string::npos);
+    EXPECT_EQ(rec.script.find("error"), std::string::npos);
+    EXPECT_TRUE(store.ops(rec.seq).empty());
+    // The implicit transaction holding the write comes before the record.
+    EXPECT_EQ(txns[txns.size() - 2].kind, "implicit");
+}
+
 }  // namespace

@@ -60,7 +60,10 @@ public:
         exec("PRAGMA synchronous=NORMAL");
         exec("CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT)");
         exec("CREATE TABLE IF NOT EXISTS txn(seq INTEGER PRIMARY KEY, parent INTEGER, id INTEGER,"
-             " kind TEXT, origin TEXT, name TEXT, time REAL, script TEXT)");
+             " kind TEXT, origin TEXT, name TEXT, time REAL, script TEXT, session INTEGER)");
+        exec("CREATE TABLE IF NOT EXISTS environment(id INTEGER PRIMARY KEY, json TEXT UNIQUE)");
+        exec("CREATE TABLE IF NOT EXISTS session(id INTEGER PRIMARY KEY, env INTEGER, user TEXT,"
+             " host TEXT, opened REAL, closed REAL)");
         exec("CREATE TABLE IF NOT EXISTS op(txn INTEGER, idx INTEGER, op TEXT, ckind TEXT,"
              " cid INTEGER, cname TEXT, ctype TEXT, prop TEXT, ptype TEXT, meta TEXT,"
              " vbefore TEXT, vafter TEXT, derived INTEGER, PRIMARY KEY(txn, idx))");
@@ -83,8 +86,8 @@ public:
     {
         exec("BEGIN");
         try {
-            auto ins = prepare("INSERT INTO txn(parent,id,kind,origin,name,time,script)"
-                               " VALUES(?,?,?,?,?,?,?)");
+            auto ins = prepare("INSERT INTO txn(parent,id,kind,origin,name,time,script,session)"
+                               " VALUES(?,?,?,?,?,?,?,?)");
             sqlite3_bind_int64(ins, 1, txn.parent);
             sqlite3_bind_int(ins, 2, txn.id);
             bindText(ins, 3, txn.kind);
@@ -92,6 +95,7 @@ public:
             bindText(ins, 5, txn.name);
             sqlite3_bind_double(ins, 6, txn.time);
             bindText(ins, 7, txn.script);
+            sqlite3_bind_int64(ins, 8, txn.session);
             step(ins);
             txn.seq = sqlite3_last_insert_rowid(db);
 
@@ -189,7 +193,7 @@ public:
 
     std::vector<LogTransaction> transactions(int64_t from, int limit) override
     {
-        auto s = prepare("SELECT seq,parent,id,kind,origin,name,time,script FROM txn"
+        auto s = prepare("SELECT seq,parent,id,kind,origin,name,time,script,session FROM txn"
                          " WHERE seq>=? ORDER BY seq LIMIT ?");
         sqlite3_bind_int64(s, 1, from);
         sqlite3_bind_int(s, 2, limit > 0 ? limit : -1);
@@ -204,6 +208,7 @@ public:
             t.name = text(s, 5);
             t.time = sqlite3_column_double(s, 6);
             t.script = text(s, 7);
+            t.session = sqlite3_column_int64(s, 8);
             out.push_back(std::move(t));
         }
         sqlite3_reset(s);
@@ -269,6 +274,71 @@ public:
             exec("ROLLBACK");
             throw;
         }
+    }
+
+    int64_t environment(const std::string& json) override
+    {
+        auto s = prepare("SELECT id FROM environment WHERE json=?");
+        bindText(s, 1, json);
+        if (sqlite3_step(s) == SQLITE_ROW) {
+            int64_t id = sqlite3_column_int64(s, 0);
+            sqlite3_reset(s);
+            return id;
+        }
+        sqlite3_reset(s);
+        s = prepare("INSERT INTO environment(json) VALUES(?)");
+        bindText(s, 1, json);
+        step(s);
+        return sqlite3_last_insert_rowid(db);
+    }
+
+    std::string environmentJson(int64_t id) override
+    {
+        auto s = prepare("SELECT json FROM environment WHERE id=?");
+        sqlite3_bind_int64(s, 1, id);
+        std::string v;
+        if (sqlite3_step(s) == SQLITE_ROW)
+            v = text(s, 0);
+        sqlite3_reset(s);
+        return v;
+    }
+
+    int64_t openSession(int64_t env, const std::string& user, const std::string& host,
+                        double opened) override
+    {
+        auto s = prepare("INSERT INTO session(env,user,host,opened,closed) VALUES(?,?,?,?,0)");
+        sqlite3_bind_int64(s, 1, env);
+        bindText(s, 2, user);
+        bindText(s, 3, host);
+        sqlite3_bind_double(s, 4, opened);
+        step(s);
+        return sqlite3_last_insert_rowid(db);
+    }
+
+    void closeSession(int64_t id, double closed) override
+    {
+        auto s = prepare("UPDATE session SET closed=? WHERE id=?");
+        sqlite3_bind_double(s, 1, closed);
+        sqlite3_bind_int64(s, 2, id);
+        step(s);
+    }
+
+    std::vector<LogSession> sessions() override
+    {
+        auto s = prepare("SELECT id,env,user,host,opened,closed FROM session ORDER BY id");
+        std::vector<LogSession> out;
+        while (sqlite3_step(s) == SQLITE_ROW) {
+            LogSession r;
+            r.id = sqlite3_column_int64(s, 0);
+            r.env = sqlite3_column_int64(s, 1);
+            r.user = text(s, 2);
+            r.host = text(s, 3);
+            r.opened = sqlite3_column_double(s, 4);
+            r.closed = sqlite3_column_double(s, 5);
+            out.push_back(std::move(r));
+        }
+        sqlite3_reset(s);
+        return out;
     }
 
     std::string getMeta(const std::string& key) override

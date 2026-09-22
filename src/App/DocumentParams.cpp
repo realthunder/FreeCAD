@@ -85,6 +85,7 @@ public:
         signalParamChanged("DuplicateLabels");
         signalParamChanged("TransactionOnRecompute");
         signalParamChanged("TransactionLog");
+        signalParamChanged("TransactionLogIdentity");
         signalParamChanged("TransactionLogDerived");
         signalParamChanged("RelativeStringID");
         signalParamChanged("HashIndexedName");
@@ -133,6 +134,7 @@ public:
     bool DuplicateLabels;
     bool TransactionOnRecompute;
     long TransactionLog;
+    bool TransactionLogIdentity;
     long TransactionLogDerived;
     bool RelativeStringID;
     bool HashIndexedName;
@@ -223,6 +225,8 @@ public:
         funcs["TransactionOnRecompute"] = &DocumentParamsP::updateTransactionOnRecompute;
         TransactionLog = this->handle->GetInt("TransactionLog", 0);
         funcs["TransactionLog"] = &DocumentParamsP::updateTransactionLog;
+        TransactionLogIdentity = this->handle->GetBool("TransactionLogIdentity", false);
+        funcs["TransactionLogIdentity"] = &DocumentParamsP::updateTransactionLogIdentity;
         TransactionLogDerived = this->handle->GetInt("TransactionLogDerived", 1);
         funcs["TransactionLogDerived"] = &DocumentParamsP::updateTransactionLogDerived;
         RelativeStringID = this->handle->GetBool("RelativeStringID", true);
@@ -407,6 +411,10 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateTransactionLog(DocumentParamsP *self) {
         self->TransactionLog = self->handle->GetInt("TransactionLog", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateTransactionLogIdentity(DocumentParamsP *self) {
+        self->TransactionLogIdentity = self->handle->GetBool("TransactionLogIdentity", false);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateTransactionLogDerived(DocumentParamsP *self) {
@@ -611,6 +619,10 @@ static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
         .setDoc("Transaction log mode (docs/TransactionLog.md sec 13.3): 0 off,\n"
 "1 session -- the log lives in the document transient directory\n"
 "and dies with it. Off by default while the writer is synchronous."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "TransactionLogIdentity", "TransactionLogIdentity", App::ParamInfo::Bool, false)
+        .setTitle("Transaction Log Identity")
+        .setDoc("Record the user and host name in the transaction log session\n"
+"row (sec 13.3, privacy). Off by default."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "TransactionLogDerived", "TransactionLogDerived", App::ParamInfo::Int, 1)
         .setTitle("Transaction Log Derived")
         .setDoc("What the transaction log does with derived values, i.e. values\n"
@@ -1792,6 +1804,35 @@ void DocumentParams::setTransactionLog(const long &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void DocumentParams::removeTransactionLog() {
     instance()->handle->RemoveInt("TransactionLog");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docTransactionLogIdentity() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Record the user and host name in the transaction log session\n"
+"row (sec 13.3, privacy). Off by default.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & DocumentParams::getTransactionLogIdentity() {
+    return instance()->TransactionLogIdentity;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & DocumentParams::defaultTransactionLogIdentity() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setTransactionLogIdentity(const bool &v) {
+    instance()->handle->SetBool("TransactionLogIdentity",v);
+    instance()->TransactionLogIdentity = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeTransactionLogIdentity() {
+    instance()->handle->RemoveBool("TransactionLogIdentity");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

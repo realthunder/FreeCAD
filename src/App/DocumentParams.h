@@ -561,6 +561,19 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter TransactionLogIdentity
+    ///
+    /// Record the user and host name in the transaction log session
+    /// row (sec 13.3, privacy). Off by default.
+    static const bool & getTransactionLogIdentity();
+    static const bool & defaultTransactionLogIdentity();
+    static void removeTransactionLogIdentity();
+    static void setTransactionLogIdentity(const bool &v);
+    static const char *docTransactionLogIdentity();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter TransactionLogDerived
     ///
     /// What the transaction log does with derived values, i.e. values

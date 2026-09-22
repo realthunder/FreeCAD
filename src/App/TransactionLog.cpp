@@ -36,6 +36,7 @@
 #include <Base/FileInfo.h>
 
 #include "TransactionLog.h"
+#include "Application.h"
 #include "Document.h"
 #include "DocumentObject.h"
 #include "DocumentParams.h"
@@ -122,10 +123,104 @@ TransactionLog::TransactionLog(Document& doc)
     _store = TransactionStore::openSQLite(_path);
     if (_store->getMeta("document").empty())
         _store->setMeta("document", doc.Uid.getValueStr());
-    FC_LOG("transaction log " << _path);
+
+    // The environment row (sec 11): what App::Application::Config() knows
+    // of this build, stored once and referred to by the session. Nothing
+    // per-document records the kernel version today; this does.
+    std::string env = "{";
+    auto& config = Application::Config();
+    const char* keys[] = {"ExeName", "ExeVersion", "BuildVersionMajor", "BuildVersionMinor",
+                          "BuildVersionPoint", "BuildRevision", "BuildRevisionHash",
+                          "BuildRevisionBranch", "BuildRevisionDate", "OCC_VERSION",
+                          "PythonVersion", "QtVersion", "SystemName", nullptr};
+    bool first = true;
+    for (const char** k = keys; *k; ++k) {
+        auto it = config.find(*k);
+        if (it == config.end())
+            continue;
+        env += first ? "\"" : ",\"";
+        first = false;
+        env += *k;
+        env += "\":\"";
+        for (char c : it->second) {
+            if (c == '"' || c == '\\')
+                env += '\\';
+            env += c;
+        }
+        env += '"';
+    }
+    env += '}';
+    _environment = _store->environment(env);
+    std::string user, host;
+    if (DocumentParams::getTransactionLogIdentity()) {
+        auto u = config.find("UserName");
+        if (u != config.end())
+            user = u->second;
+        auto h = config.find("HostName");
+        if (h != config.end())
+            host = h->second;
+    }
+    _session = _store->openSession(_environment, user, host, now());
+    FC_LOG("transaction log " << _path << " session " << _session);
 }
 
-TransactionLog::~TransactionLog() = default;
+TransactionLog::~TransactionLog()
+{
+    try {
+        if (_store && _session)
+            _store->closeSession(_session, now());
+    }
+    catch (...) {
+    }
+}
+
+void TransactionLog::onRecompute(const std::vector<RecomputedObject>& objects, double seconds)
+{
+    if (objects.empty())
+        return;
+    try {
+        LogTransaction t;
+        t.parent = _store->lastSeq();
+        t.kind = "recompute";
+        t.name = "recompute";
+        t.time = now();
+        t.session = _session;
+        // The record, as JSON in the script column: environment, duration,
+        // and per object its id, name, and error text if any.
+        std::string j = "{\"env\":" + std::to_string(_environment)
+                      + ",\"seconds\":" + std::to_string(seconds) + ",\"objects\":[";
+        bool first = true;
+        for (auto& o : objects) {
+            j += first ? "{" : ",{";
+            first = false;
+            j += "\"id\":" + std::to_string(o.id) + ",\"name\":\"" + o.name + "\"";
+            if (o.error) {
+                j += ",\"error\":\"";
+                for (char c : o.message) {
+                    if (c == '"' || c == '\\')
+                        j += '\\';
+                    else if (c == '\n') {
+                        j += "\\n";
+                        continue;
+                    }
+                    j += c;
+                }
+                j += '"';
+            }
+            j += '}';
+        }
+        j += "]}";
+        t.script = j;
+        std::vector<LogOp> none;
+        _store->append(t, none);
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("transaction log: " << e.what());
+    }
+    catch (std::exception& e) {
+        FC_ERR("transaction log: " << e.what());
+    }
+}
 
 std::string TransactionLog::putValue(const CapturedValue& value, const std::string& tier)
 {
@@ -252,6 +347,7 @@ void TransactionLog::onCommit(const Transaction& txn, const char* kind, const ch
         t.origin = origin;
         t.name = txn.Name;
         t.time = now();
+        t.session = _session;
 
         std::vector<LogOp> ops;
         // Ops whose after ref is pending, by property id, resolved to

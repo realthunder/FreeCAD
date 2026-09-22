@@ -75,6 +75,22 @@ public:
     void onCommit(const Transaction& txn, const char* kind = "user",
                   const char* origin = "");
 
+    /// One recomputed object, for the recompute record.
+    struct RecomputedObject
+    {
+        long id;
+        std::string name;
+        bool error;
+        std::string message;
+    };
+    /// The recompute pseudo transaction (sec 11): no ops, a record of what
+    /// was recomputed under which environment, how long it took, and how
+    /// each object came out. Written at Document::signalRecomputed.
+    void onRecompute(const std::vector<RecomputedObject>& objects, double seconds);
+
+    int64_t session() const { return _session; }
+    int64_t environment() const { return _environment; }
+
     /// Serialise the live value behind every pending after ref. What a
     /// version snapshot does first; also what makes the log complete for
     /// a reader that wants the head state from the log alone.
@@ -104,6 +120,8 @@ private:
 
     Document& _doc;
     std::string _path;
+    int64_t _environment {0};
+    int64_t _session {0};
     std::unique_ptr<TransactionStore> _store;
     /// Property id -> the op whose after ref that property's next copy
     /// resolves. Filled after append() assigns the seq.

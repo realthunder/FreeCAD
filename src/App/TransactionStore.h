@@ -45,6 +45,18 @@ struct LogTransaction
     std::string name;        ///< the transaction's display name
     double time {0};         ///< seconds since the epoch
     std::string script;      ///< the MacroManager lines, an annotation
+    int64_t session {0};     ///< the session row this was written in
+};
+
+/// A session row (sec 11): one open-close of this log by one process.
+struct LogSession
+{
+    int64_t id {0};
+    int64_t env {0};
+    std::string user;        ///< recorded only if the preference says so
+    std::string host;
+    double opened {0};
+    double closed {0};
 };
 
 /** One op of a transaction (table `op`).
@@ -118,6 +130,14 @@ public:
     /// Drop every transaction with seq < before, and the values nothing
     /// refers to any more.
     virtual void truncate(int64_t before) = 0;
+
+    /// Id of the environment row holding `json`, made if absent (sec 11).
+    virtual int64_t environment(const std::string& json) = 0;
+    virtual std::string environmentJson(int64_t id) = 0;
+    virtual int64_t openSession(int64_t env, const std::string& user,
+                                const std::string& host, double opened) = 0;
+    virtual void closeSession(int64_t id, double closed) = 0;
+    virtual std::vector<LogSession> sessions() = 0;
 
     virtual std::string getMeta(const std::string& key) = 0;
     virtual void setMeta(const std::string& key, const std::string& value) = 0;
