@@ -24,8 +24,9 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { CHECK_ON, CHOOSER_DIRECTORY, CHOOSER_FILE, WidgetStore, acceptFromFilter,
-         dialogClickOp, dialogRejectOp, fileSelectedOp, isDialogRoot, itemClickOp,
-         itemEditOp, itemExpandOp, layoutRefs, refId, selectionWrite } from './protocol.ts';
+         cssColor, dialogClickOp, dialogRejectOp, fileSelectedOp, isDarkColor,
+         isDialogRoot, isPanelMirrorId, itemClickOp, itemEditOp, itemExpandOp,
+         layoutRefs, refId, selectionWrite } from './protocol.ts';
 import type { Frame } from './protocol.ts';
 import { isKnownLayoutClass, planLayout } from './layout.ts';
 import type { LayoutPlan } from './layout.ts';
@@ -304,6 +305,29 @@ function checkItems(): void {
         rows()[0].cells[0].text === 'one' && rows()[0].cells[0].icon === 'img:x',
         JSON.stringify(rows()[0].cells[0]));
 
+  // Cell colours (W5, paying off W2's debt). The host packs a QColor as
+  // four floats 0..1 -- `colorList` in FwQtView.cpp -- and the view left
+  // them undrawn rather than guess that. These pin the packing, so a host
+  // that ever changed it fails here instead of painting a panel's red
+  // warning in some other colour.
+  custom({ item: 'set', id: 3, col: 0, cell: { fg: [1, 0, 0, 1], bg: [1, 0.878, 0.51, 1] } });
+  const painted = rows().find((r) => r.id === 3)?.cells[0];
+  check(t, 'a colour survives the store as the host packed it',
+        JSON.stringify(painted?.fg) === JSON.stringify([1, 0, 0, 1]),
+        JSON.stringify(painted));
+  check(t, 'four floats become a CSS colour',
+        cssColor([1, 0, 0, 1]) === 'rgba(255, 0, 0, 1)', String(cssColor([1, 0, 0, 1])));
+  check(t, 'a half alpha is an alpha, not a channel',
+        cssColor([0, 0, 0, 0.5]) === 'rgba(0, 0, 0, 0.5)', String(cssColor([0, 0, 0, 0.5])));
+  check(t, 'three floats are a colour too (Qt sends alpha, but the type says may)',
+        cssColor([0, 0.5, 1]) === 'rgba(0, 128, 255, 1)', String(cssColor([0, 0.5, 1])));
+  check(t, 'no colour is no colour, not black',
+        cssColor(undefined) === undefined && cssColor([]) === undefined);
+  // The contrast rule: a light wash with no foreground beside it must not
+  // leave the card's pale text on it.
+  check(t, 'a yellow wash asks for dark text', !isDarkColor([1, 0.878, 0.51, 1]));
+  check(t, 'a navy wash asks for pale text', isDarkColor([0.05, 0.08, 0.3, 1]));
+
   check(t, 'a remove takes its children with it',
         custom({ item: 'remove', id: 1 }) && rows().length === 1 && rows()[0].id === 3,
         `${rows().length} left`);
@@ -317,6 +341,19 @@ function checkItems(): void {
         custom({ item: 'sort', id: 0, col: 0, order: 1 })
         && (rows()[0].cells[0].text ?? '') === 'two',
         rows().map((r) => r.cells[0]?.text).join(','));
+
+  // Whose frame is it? Both mirrors push down the one `widgets` lane, and
+  // a panel client that applies the tool bar's frames builds a store it
+  // can never draw. The rule is the host's own (`PanelMirror::owns`), so
+  // these pin the spellings on both sides of it.
+  check(t, 'the list container is the panel mirror\'s', isPanelMirrorId('panel'));
+  check(t, 'a panel root is', isPanelMirrorId('panel:2'));
+  check(t, 'a dialog root is', isPanelMirrorId('dialog:1'));
+  check(t, 'a mirrored widget is', isPanelMirrorId('pw:37'));
+  check(t, 'a tool bar widget is NOT', !isPanelMirrorId('widget:File#0'));
+  check(t, 'a tool bar action is NOT', !isPanelMirrorId('action:Std_New#1'));
+  check(t, 'a name that merely starts like one is not a root',
+        !isPanelMirrorId('panels') && !isPanelMirrorId('dialogue:1'));
 
   check(t, 'an unknown item op is refused', !custom({ item: 'wat' }));
   check(t, 'a set on a row that is gone is refused',

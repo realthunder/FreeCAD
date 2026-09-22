@@ -1408,6 +1408,19 @@
 
 .fc-panel-empty { color: #9aa0a6; padding: 6px 0 10px; }
 
+/* The scene socket is down (W5).  A STRIP rather than a replacement: the
+ * rows on screen were true a moment ago, so they stay and say so.  Amber
+ * rather than red -- nothing has gone wrong with the model, the page just
+ * cannot see the desktop for the moment. */
+.fc-panel-offline {
+  flex: none;
+  padding: 4px 10px;
+  background: rgba(255, 176, 64, 0.16);
+  color: #ffcf8f;
+  border-bottom: 1px solid rgba(255, 176, 64, 0.30);
+  font-size: 12px;
+}
+
 /* A TaskBox: the desktop draws a titled group, so does this. */
 .fc-panel-box {
   border: 1px solid rgba(255, 255, 255, 0.10);
@@ -1669,6 +1682,52 @@
   font: inherit;
   line-height: 1;
   cursor: pointer;
+}
+
+/* Touch targets (W5's finish).  Measured on a 390x844 viewport before
+ * this block existed: buttons 25 px, the close and search 24, a tree's
+ * twisty 13, a row 19 -- every one of them under the 44 px both
+ * platforms' guidance asks for, and the same numbers as on the desktop,
+ * because nothing here had a narrow rule at all.  (The completion list's
+ * buttons already kept 44; this is the rest of the card catching up.)
+ *
+ * The controls that CAN grow, grow.  A tree's twisty and a row's check
+ * box cannot: a 44 px twisty makes a row 44 px tall, and a six-row tree
+ * then fills a phone.  So for those the HIT AREA grows instead of the
+ * box -- a transparent pseudo-element centred on the control, outside the
+ * grid's flow, which is invisible and costs the layout nothing. */
+@media (max-width: 640px) {
+  .fc-panel-btn,
+  .fc-panel-close,
+  .fc-panel-search,
+  .fc-panel-field {
+    min-height: 44px;
+  }
+  .fc-panel-btn,
+  .fc-panel-close,
+  .fc-panel-search {
+    min-width: 44px;
+  }
+  /* A row is roomier, but nowhere near 44: it is a LIST, and the thing
+   * being hit inside it carries its own area below. */
+  .fc-panel-rows .fc-panel-row { padding: 5px 0; }
+  .fc-panel-twisty { position: relative; }
+  .fc-panel-twisty::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 44px;
+    height: 44px;
+    transform: translate(-50%, -50%);
+  }
+  /* A check box is a replaced element: ::after does not render on one, so
+   * this is the box itself, grown as far as a row can carry. */
+  .fc-panel-row input[type="checkbox"],
+  .fc-panel-check input[type="checkbox"] {
+    width: 22px;
+    height: 22px;
+  }
 }
 
 /* A completion list (widgets/completion.tsx).  Wide: in the editor's own

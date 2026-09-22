@@ -82,6 +82,54 @@ export const ITEM_CHECKABLE = 16;
 export const CHECK_OFF = 0;
 export const CHECK_ON = 2;
 
+/// The id of the mirror's list container -- the one root that is not
+/// `<kind>:<n>`.
+export const PANEL_LIST_ID = 'panel';
+
+/// Is this id the PANEL mirror's, rather than some other mirror's?
+///
+/// The host's own predicate, spelled the same way (`PanelMirror::owns`,
+/// FwPanelMirror.cpp): the list container, a panel root, a dialog root,
+/// and the widgets under them. The tool-bar mirror mints `widget:<name>#n`
+/// and `action:<name>#n` instead, and both mirrors push down the ONE
+/// `widgets` lane -- so without this a panel client applies the tool
+/// bar's frames into a store it will never draw, which is exactly what
+/// W5's measurement caught: 198-396 frames on a wide viewport against 9
+/// on a phone, where the tool-bar strip is hidden and never subscribes.
+export function isPanelMirrorId(id: string): boolean {
+  return id === PANEL_LIST_ID
+    || id.startsWith('panel:')
+    || id.startsWith('pw:')
+    || id.startsWith('dialog:');
+}
+
+/// A cell colour as CSS, or undefined for "the host sent none".
+///
+/// The host packs a QColor as FOUR FLOATS 0..1 (`colorList`, FwQtView.cpp)
+/// -- not CSS's 0..255 channels, and not a bare alpha. W2 left `fg`/`bg`
+/// undrawn rather than guess that packing, because a cell painted in the
+/// wrong space is worse than one left in the card's own colour; this is
+/// the packing read off the host instead of guessed, which is what lets
+/// the view draw them at all.
+export function cssColor(c: number[] | undefined): string | undefined {
+  if (!Array.isArray(c) || c.length < 3) return undefined;
+  const byte = (v: number): number => Math.max(0, Math.min(255, Math.round(v * 255)));
+  const alpha = c.length > 3 ? Math.max(0, Math.min(1, c[3])) : 1;
+  return `rgba(${byte(c[0])}, ${byte(c[1])}, ${byte(c[2])}, ${alpha})`;
+}
+
+/// Is this colour dark enough that pale text reads on it?
+///
+/// Rec. 709 luma over the host's own 0..1 floats. A desktop palette is a
+/// LIGHT one and this card is dark, so a background arriving without a
+/// foreground would leave the card's pale text on a pale wash: the text
+/// takes black or white by the background's luma instead, which is the
+/// one choice that cannot come out unreadable.
+export function isDarkColor(c: number[] | undefined): boolean {
+  if (!Array.isArray(c) || c.length < 3) return true;
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2] < 0.5;
+}
+
 export interface ItemRow {
   id: number;
   cells: ItemCell[];

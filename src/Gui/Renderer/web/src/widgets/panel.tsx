@@ -31,8 +31,8 @@ import type { LayoutPlan, PlannedItem } from './layout.ts';
 import { iconKind, localeTag, mouseArgs, parseLocaleNumber, pictureAt, wheelArgs }
   from './images.ts';
 import { CHECK_OFF, CHECK_ON, CHOOSER_DIRECTORY, ITEM_ENABLED, acceptFromFilter,
-         dialogClickOp, dialogRejectOp, fileSelectedOp, isDialogRoot,
-         itemEditOp, itemExpandOp, selectionWrite } from './protocol.ts';
+         cssColor, dialogClickOp, dialogRejectOp, fileSelectedOp, isDarkColor,
+         isDialogRoot, itemEditOp, itemExpandOp, selectionWrite } from './protocol.ts';
 import type { ItemCell, ItemRow, WidgetModel } from './protocol.ts';
 
 const POS_KEY = 'fcviewer.taskpanel.pos';
@@ -156,6 +156,16 @@ export function TaskPanelCard(props: {
 
   const [pos, setPos] = createSignal<Pos | null>(loadPos(POS_KEY));
   const [failed, setFailed] = createSignal('');
+  /// The scene socket is down.
+  ///
+  /// Separate from `failed`, which is about a subscribe that did not go
+  /// through. A panel whose socket drops KEEPS its content -- it was true
+  /// a moment ago, and throwing it away on a blip would be worse -- but
+  /// it must not go on looking live, which is exactly what W5 measured it
+  /// doing: the host was killed and restarted under an open card, the
+  /// page's own `fc:connection` fired false and then true, and the card
+  /// said nothing either time.
+  const [offline, setOffline] = createSignal(false);
   /// The field whose expression is being edited, if any. Held HERE and
   /// not in the field, because a field's subtree is re-created on every
   /// store frame -- a dialog owned by one loses what is being typed the
@@ -185,6 +195,18 @@ export function TaskPanelCard(props: {
   const ensure = () => {
     if (client) return client;
     client = new PanelClient(() => setVersion((n) => n + 1));
+    // The stream's figures where a drive can read them, the way the
+    // console exposes its bridge's (console.tsx). This is the browser half
+    // of 8.4's numbers, which until W5 had only ever been measured on the
+    // host's side of the same wire.
+    // The boot state rides along with the figures: the LOCALE the host
+    // reported is otherwise invisible to a drive -- it is client state,
+    // not DOM -- and W3 could only ever gate it, because the host says `C`
+    // under the gate and under the harness alike.
+    (window as unknown as Record<string, unknown>).fcxPanelStats =
+      () => (client
+        ? { ...client.stats, locale: client.boot.locale, theme: client.boot.theme }
+        : null);
     return client;
   };
 
@@ -234,7 +256,10 @@ export function TaskPanelCard(props: {
         })
         .finally(() => { inflight = false; });
     };
-    onCleanup(onConnection((up) => { if (up) ask(); }));
+    onCleanup(onConnection((up) => {
+      setOffline(!up);
+      if (up) ask();
+    }));
     ask();
   });
 
@@ -251,6 +276,21 @@ export function TaskPanelCard(props: {
   const rootId = createMemo(() => {
     version();
     return client?.panelId ?? null;
+  });
+
+  // First paint (W5): the card has drawn panel content. Taken in a rAF
+  // callback rather than in the effect body, so it lands AFTER the browser
+  // painted this update -- what a person waited for is the pixels, not the
+  // moment the data was ready.
+  createEffect(() => {
+    if (!rootId()) return;
+    const c = client;
+    if (!c || c.stats.paintedMs) return;
+    c.markContent();
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => c.markPainted());
+    }
+    else c.markPainted();
   });
 
   /// The dialog roots, in the order the desktop shows them (W4).
@@ -702,8 +742,12 @@ export function TaskPanelCard(props: {
   ///   - a check and an expand go back as item OPS, never as events. Only
   ///     an op reaches the desktop's real widget -- see `ItemOp`.
   ///
-  /// Colours (`fg`/`bg`) are deliberately not drawn: the host sends them as
-  /// QVariantLists and guessing the packing would paint the wrong thing.
+  /// Colours (`fg`/`bg`) ARE drawn, as of W5: the host packs a QColor as
+  /// four floats 0..1 (`colorList`, FwQtView.cpp), and `cssColor` is that
+  /// packing read off the host rather than the guess W2 refused to make.
+  /// A panel colours a cell to mean something -- PartDesign's pick list
+  /// paints an invalid feature red -- so dropping the colour drops the
+  /// meaning.
   const ItemsView = (p: { w: WidgetModel }): JSX.Element => {
     const columns = (): string[] => {
       const value = st(p.w).columns;
@@ -738,6 +782,21 @@ export function TaskPanelCard(props: {
       // Qt::AlignRight, Qt::AlignHCenter
       if (cell.align && cell.align & 2) style['text-align'] = 'right';
       else if (cell.align && cell.align & 4) style['text-align'] = 'center';
+      const bg = cssColor(cell.bg);
+      const fg = cssColor(cell.fg);
+      if (bg) {
+        style['background'] = bg;
+        // The wash belongs to the CELL, not the row: padded and rounded so
+        // it reads as one rather than as a stripe the text sits on.
+        style['border-radius'] = '3px';
+        style['padding'] = '0 4px';
+      }
+      if (fg) style['color'] = fg;
+      // A desktop palette is a LIGHT one and this card is dark, so a
+      // background arriving on its own would leave the card's pale text on
+      // a pale wash. Black or white by the wash's own luma is the one
+      // choice that cannot come out unreadable.
+      else if (bg) style['color'] = isDarkColor(cell.bg) ? '#f2f3f5' : '#16181c';
       return style;
     };
 
@@ -842,6 +901,16 @@ export function TaskPanelCard(props: {
           </Show>
           <button class="fc-panel-close" title="Close" onClick={props.onClose}>x</button>
         </div>
+        {/* The socket is down: the content stays (it was true a moment
+            ago) and the card says so, rather than going on looking live
+            -- which is what it did through a measured host kill until
+            W5. It clears itself: the connection event sets it both ways,
+            and the re-subscribe behind it puts the panel back. */}
+        <Show when={offline()}>
+          <div class="fc-panel-offline">
+            The viewer is offline -- this panel may be out of date.
+          </div>
+        </Show>
         <div class="fc-panel-body">
           <Show when={failed()}>
             <div class="fc-panel-empty">{failed()}</div>
