@@ -120,6 +120,7 @@ recompute path. Also, it enables more complicated dependencies beyond trees.
 #include "StringHasher.h"
 #include "Transactions.h"
 #include "TransactionMeasure.h"
+#include "TransactionLog.h"
 
 #ifdef _MSC_VER
 #include <zipios++/zipios-config.h>
@@ -525,6 +526,8 @@ void Document::_commitTransaction(bool notify)
         TransactionMeasure::checkEnvironment();
         if (TransactionMeasure::enabled())
             TransactionMeasure::onCommit(*this, *d->activeUndoTransaction);
+        if (auto log = getTransactionLog())
+            log->onCommit(*d->activeUndoTransaction);
         mUndoTransactions.push_back(d->activeUndoTransaction);
         d->activeUndoTransaction = nullptr;
         // check the stack for the limits
@@ -3751,6 +3754,27 @@ long Document::resolveSchemaVersion(const Base::Writer &writer) const
     // the rest of the format is the format, and skipping one half of it is
     // no reason to write the file under a version it is not.
     return getSaveSchemaVersion();
+}
+
+TransactionLog* Document::getTransactionLog() const
+{
+    // Mode 0 costs one bool test per commit. The log is made lazily so a
+    // document opened before the preference was set still gets one on
+    // its next commit -- and so the transient directory exists by then.
+    if (!d->transactionLog) {
+        if (DocumentParams::getTransactionLog() == 0)
+            return nullptr;
+        if (TransientDir.getStrValue().empty())
+            return nullptr;
+        try {
+            d->transactionLog = std::make_unique<TransactionLog>(*const_cast<Document*>(this));
+        }
+        catch (Base::Exception& e) {
+            FC_ERR("cannot open the transaction log of " << getName() << ": " << e.what());
+            return nullptr;
+        }
+    }
+    return d->transactionLog.get();
 }
 
 FileBlobManager& Document::getFileBlobManager() const

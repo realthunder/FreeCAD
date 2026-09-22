@@ -55,6 +55,7 @@ namespace App
     class DocumentPy; // the python document class
     class Application;
     class FileBlobManager;
+    class TransactionLog;
     class Transaction;
     class StringHasher;
     using StringHasherRef = Base::Reference<StringHasher>;
@@ -320,6 +321,11 @@ public:
      * archive entries itself. See App::FileBlobManager.
      */
     FileBlobManager& getFileBlobManager() const;
+    /** The transaction log, or null when the mode is off
+     * (DocumentParams::TransactionLog). Created on the first commit
+     * after the mode is set, in the transient directory.
+     */
+    TransactionLog* getTransactionLog() const;
 
     /** Tell the manager which included files a save has to carry.
      *

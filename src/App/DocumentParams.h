@@ -547,6 +547,34 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter TransactionLog
+    ///
+    /// Transaction log mode (docs/TransactionLog.md sec 13.3): 0 off,
+    /// 1 session -- the log lives in the document transient directory
+    /// and dies with it. Off by default while the writer is synchronous.
+    static const long & getTransactionLog();
+    static const long & defaultTransactionLog();
+    static void removeTransactionLog();
+    static void setTransactionLog(const long &v);
+    static const char *docTransactionLog();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter TransactionLogDerived
+    ///
+    /// What the transaction log does with derived values, i.e. values
+    /// written by their own object recompute (sec 10): 0 none (the op
+    /// notes the change, no value), 1 cache (evictable tier), 2 full.
+    static const long & getTransactionLogDerived();
+    static const long & defaultTransactionLogDerived();
+    static void removeTransactionLogDerived();
+    static void setTransactionLogDerived(const long &v);
+    static const char *docTransactionLogDerived();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter RelativeStringID
     static const bool & getRelativeStringID();
     static const bool & defaultRelativeStringID();

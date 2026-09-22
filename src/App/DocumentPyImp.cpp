@@ -37,6 +37,7 @@
 #include "DocumentSettings.h"
 #include "DocumentSettingsPy.h"
 #include "DocumentPy.cpp"
+#include "TransactionLog.h"
 #include <boost/regex.hpp>
 #include <Base/PyWrapParseTupleAndKeywords.h>
 
@@ -883,6 +884,98 @@ Py::Boolean DocumentPy::getRecomputesFrozen() const
 void DocumentPy::setRecomputesFrozen(Py::Boolean arg)
 {
     getDocumentPtr()->setStatus(Document::Status::SkipRecompute, arg.isTrue());
+}
+
+PyObject* DocumentPy::getTransactionLog(PyObject *args)
+{
+    long long from = 0;
+    int limit = 0;
+    if (!PyArg_ParseTuple(args, "|Li", &from, &limit))
+        return nullptr;
+    Py::List list;
+    auto log = getDocumentPtr()->getTransactionLog();
+    if (!log)
+        return Py::new_reference_to(list);
+    PY_TRY {
+        for (auto& t : log->store().transactions(from, limit)) {
+            Py::Dict d;
+            d.setItem("seq", Py::Long(static_cast<long long>(t.seq)));
+            d.setItem("parent", Py::Long(static_cast<long long>(t.parent)));
+            d.setItem("id", Py::Long(t.id));
+            d.setItem("kind", Py::String(t.kind));
+            d.setItem("origin", Py::String(t.origin));
+            d.setItem("name", Py::String(t.name));
+            d.setItem("time", Py::Float(t.time));
+            d.setItem("script", Py::String(t.script));
+            list.append(d);
+        }
+        return Py::new_reference_to(list);
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::getTransactionOps(PyObject *args)
+{
+    long long seq = 0;
+    if (!PyArg_ParseTuple(args, "L", &seq))
+        return nullptr;
+    Py::List list;
+    auto log = getDocumentPtr()->getTransactionLog();
+    if (!log)
+        return Py::new_reference_to(list);
+    PY_TRY {
+        for (auto& o : log->store().ops(seq)) {
+            Py::Dict d;
+            d.setItem("idx", Py::Long(o.idx));
+            d.setItem("op", Py::String(o.op));
+            d.setItem("ckind", Py::String(o.ckind));
+            d.setItem("cid", Py::Long(o.cid));
+            d.setItem("cname", Py::String(o.cname));
+            d.setItem("ctype", Py::String(o.ctype));
+            d.setItem("prop", Py::String(o.prop));
+            d.setItem("ptype", Py::String(o.ptype));
+            d.setItem("meta", Py::String(o.meta));
+            d.setItem("before", Py::String(o.vbefore));
+            d.setItem("after", Py::String(o.vafter));
+            d.setItem("derived", Py::Boolean(o.derived));
+            list.append(d);
+        }
+        return Py::new_reference_to(list);
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::getTransactionValue(PyObject *args)
+{
+    const char* ref = nullptr;
+    if (!PyArg_ParseTuple(args, "s", &ref))
+        return nullptr;
+    auto log = getDocumentPtr()->getTransactionLog();
+    if (!log)
+        Py_Return;
+    PY_TRY {
+        App::CapturedValue v;
+        if (!log->readValue(ref, v))
+            Py_Return;
+        Py::Dict files;
+        for (auto& a : v.attachments)
+            files.setItem(a.name, Py::Bytes(a.bytes));
+        Py::Tuple res(2);
+        res.setItem(0, Py::String(v.fragment));
+        res.setItem(1, files);
+        return Py::new_reference_to(res);
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::resolveTransactionLog(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    auto log = getDocumentPtr()->getTransactionLog();
+    if (!log)
+        return Py::new_reference_to(Py::Long(0));
+    PY_TRY {
+        log->resolvePending();
+        return Py::new_reference_to(Py::Long(static_cast<long>(log->pendingCount())));
+    } PY_CATCH;
 }
 
 PyObject* DocumentPy::getTempFileName(PyObject *args)

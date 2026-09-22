@@ -36,12 +36,11 @@
 #endif
 
 #include <Base/Console.h>
-#include <Base/Writer.h>
 
 #include "TransactionMeasure.h"
+#include "TransactionValue.h"
 #include "Document.h"
 #include "DocumentObject.h"
-#include "FileBlobManager.h"
 #include "Property.h"
 #include "Transactions.h"
 
@@ -57,83 +56,6 @@ double microsSince(Clock::time_point t0)
 {
     return std::chrono::duration<double, std::micro>(Clock::now() - t0).count();
 }
-
-/** A writer that keeps the XML and every requested file in memory.
- *
- * This is the value serialiser the log will use (docs/TransactionLog.md
- * sec 9.3): the fragment Property::Save writes, plus whatever it hands to
- * addFile(), captured as attachments. Configured the way a document save
- * configures its writer so the bytes are the bytes a save would produce.
- */
-class CaptureWriter : public Base::Writer
-{
-public:
-    explicit CaptureWriter(const Document& doc)
-    {
-        setFileVersion(2);
-        setForceXML(0);
-        setSplitXML(false);
-        setSchemaVersion(static_cast<int>(doc.getSaveSchemaVersion()));
-        if (doc.PreferBinary.getValue()) {
-            setMode("BinaryBrep");
-            setPreferBinary(true);
-        }
-        else {
-            setPreferBinary(false);
-        }
-    }
-
-    std::ostream& Stream() override { return _current ? *_current : _xml; }
-
-    void writeFiles() override
-    {
-        // While loop: an attachment may request another (a hasher table
-        // behind an element map).
-        size_t index = 0;
-        while (index < FileList.size()) {
-            FileEntry entry = FileList[index++];
-            _attachments.emplace_back();
-            _attachments.back().name = entry.FileName;
-            std::ostringstream out;
-            out.precision(std::numeric_limits<double>::digits10 + 1);
-            _current = &out;
-            putNextEntry(entry.FileName.c_str());
-            indent = 0;
-            indBuf[0] = 0;
-            entry.Object->SaveDocFile(*this);
-            _current = nullptr;
-            _attachments.back().bytes = out.str();
-        }
-    }
-
-    struct Attachment
-    {
-        std::string name;
-        std::string bytes;
-    };
-
-    std::string xml() const { return _xml.str(); }
-    const std::vector<Attachment>& attachments() const { return _attachments; }
-
-    /// Every byte in one string, XML first, in a fixed frame so the same
-    /// value always hashes the same.
-    std::string canonical() const
-    {
-        std::string all = _xml.str();
-        for (auto& a : _attachments) {
-            all += '\0';
-            all += a.name;
-            all += '\0';
-            all += a.bytes;
-        }
-        return all;
-    }
-
-private:
-    std::ostringstream _xml;
-    std::ostringstream* _current {nullptr};
-    std::vector<Attachment> _attachments;
-};
 
 size_t zlibSize(const std::string& in)
 {
@@ -267,31 +189,24 @@ struct TransactionMeasure::Impl
     {
         Value v;
         auto t0 = Clock::now();
-        CaptureWriter writer(doc);
-        try {
-            what.Save(writer);
-            writer.writeFiles();
-            v.ok = true;
+        CapturedValue cv = captureValue(doc, what);
+        v.ok = cv.ok;
+        v.xmlBytes = cv.fragment.size();
+        v.attachBytes = cv.attachmentBytes();
+        v.attachCount = cv.attachments.size();
+        // Every byte in one string, XML first, in a fixed frame so the
+        // same value always hashes the same.
+        v.bytes = cv.fragment;
+        for (auto& a : cv.attachments) {
+            v.bytes += '\0';
+            v.bytes += a.name;
+            v.bytes += '\0';
+            v.bytes += a.bytes;
         }
-        catch (Base::Exception& e) {
-            FC_WARN("TransactionMeasure: serialise failed: " << e.what());
-        }
-        catch (std::exception& e) {
-            FC_WARN("TransactionMeasure: serialise failed: " << e.what());
-        }
-        catch (...) {
-            FC_WARN("TransactionMeasure: serialise failed");
-        }
-        v.xmlBytes = writer.xml().size();
-        for (auto& a : writer.attachments()) {
-            v.attachBytes += a.bytes.size();
-            ++v.attachCount;
-        }
-        v.bytes = writer.canonical();
         v.tSerialise = microsSince(t0);
 
         t0 = Clock::now();
-        v.hash = FileBlobManager::hashBytes(v.bytes);
+        v.hash = hashBytes(v.bytes);
         v.tHash = microsSince(t0);
         v.seen = !seen.insert(v.hash).second;
         if (dumpDir && !v.seen) {

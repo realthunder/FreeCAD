@@ -1,0 +1,76 @@
+/***************************************************************************
+ *   Copyright (c) 2026 Zheng Lei (realthunder) <realthunder.dev@gmail.com>*
+ *                                                                         *
+ *   This file is part of the FreeCAD CAx development system.              *
+ *                                                                         *
+ *   This library is free software; you can redistribute it and/or         *
+ *   modify it under the terms of the GNU Library General Public           *
+ *   License as published by the Free Software Foundation; either          *
+ *   version 2 of the License, or (at your option) any later version.      *
+ *                                                                         *
+ *   This library  is distributed in the hope that it will be useful,      *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU Library General Public License for more details.                  *
+ *                                                                         *
+ *   You should have received a copy of the GNU Library General Public     *
+ *   License along with this library; see the file COPYING.LIB. If not,    *
+ *   write to the Free Software Foundation, Inc., 59 Temple Place,         *
+ *   Suite 330, Boston, MA  02111-1307, USA                                *
+ *                                                                         *
+ ***************************************************************************/
+
+#ifndef APP_TRANSACTION_VALUE_H
+#define APP_TRANSACTION_VALUE_H
+
+#include <string>
+#include <vector>
+#include <FCGlobal.h>
+
+namespace Base { class Persistence; }
+
+namespace App
+{
+
+class Document;
+class Property;
+
+/** A value as the transaction log sees it (docs/TransactionLog.md sec 9.3,
+ * sec 20.2 decision 5): the XML fragment Property::Save writes, plus every
+ * file it handed to Writer::addFile(), captured in memory. Nothing is
+ * hashed here; the log hashes the attachments and the fragment separately.
+ */
+struct CapturedValue
+{
+    struct Attachment
+    {
+        std::string name;
+        std::string bytes;
+    };
+    std::string fragment;
+    std::vector<Attachment> attachments;
+    bool ok {false};
+
+    size_t attachmentBytes() const
+    {
+        size_t n = 0;
+        for (auto& a : attachments)
+            n += a.bytes.size();
+        return n;
+    }
+};
+
+/// Serialise `what` (a property, or a whole container) the way a save of
+/// `doc` would write it. Never throws; `ok` is false on failure.
+AppExport CapturedValue captureValue(const Document& doc, const Base::Persistence& what);
+
+/// Restore a property from a captured value: the fragment through
+/// Property::Restore, then each attachment through RestoreDocFile.
+AppExport void restoreValue(Property& prop, const CapturedValue& value);
+
+/// SHA-1 hex of `bytes`, spelled as FileBlobManager spells it.
+AppExport std::string hashBytes(const std::string& bytes);
+
+} // namespace App
+
+#endif // APP_TRANSACTION_VALUE_H

@@ -84,6 +84,8 @@ public:
         signalParamChanged("ThumbnailSize");
         signalParamChanged("DuplicateLabels");
         signalParamChanged("TransactionOnRecompute");
+        signalParamChanged("TransactionLog");
+        signalParamChanged("TransactionLogDerived");
         signalParamChanged("RelativeStringID");
         signalParamChanged("HashIndexedName");
         signalParamChanged("EnableMaterialEdit");
@@ -130,6 +132,8 @@ public:
     long ThumbnailSize;
     bool DuplicateLabels;
     bool TransactionOnRecompute;
+    long TransactionLog;
+    long TransactionLogDerived;
     bool RelativeStringID;
     bool HashIndexedName;
     bool EnableMaterialEdit;
@@ -217,6 +221,10 @@ public:
         funcs["DuplicateLabels"] = &DocumentParamsP::updateDuplicateLabels;
         TransactionOnRecompute = this->handle->GetBool("TransactionOnRecompute", false);
         funcs["TransactionOnRecompute"] = &DocumentParamsP::updateTransactionOnRecompute;
+        TransactionLog = this->handle->GetInt("TransactionLog", 0);
+        funcs["TransactionLog"] = &DocumentParamsP::updateTransactionLog;
+        TransactionLogDerived = this->handle->GetInt("TransactionLogDerived", 1);
+        funcs["TransactionLogDerived"] = &DocumentParamsP::updateTransactionLogDerived;
         RelativeStringID = this->handle->GetBool("RelativeStringID", true);
         funcs["RelativeStringID"] = &DocumentParamsP::updateRelativeStringID;
         HashIndexedName = this->handle->GetBool("HashIndexedName", false);
@@ -395,6 +403,14 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateTransactionOnRecompute(DocumentParamsP *self) {
         self->TransactionOnRecompute = self->handle->GetBool("TransactionOnRecompute", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateTransactionLog(DocumentParamsP *self) {
+        self->TransactionLog = self->handle->GetInt("TransactionLog", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateTransactionLogDerived(DocumentParamsP *self) {
+        self->TransactionLogDerived = self->handle->GetInt("TransactionLogDerived", 1);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateRelativeStringID(DocumentParamsP *self) {
@@ -590,6 +606,16 @@ static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
         .setTitle("Duplicate Labels"),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "TransactionOnRecompute", "TransactionOnRecompute", App::ParamInfo::Bool, false)
         .setTitle("Transaction On Recompute"),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "TransactionLog", "TransactionLog", App::ParamInfo::Int, 0)
+        .setTitle("Transaction Log")
+        .setDoc("Transaction log mode (docs/TransactionLog.md sec 13.3): 0 off,\n"
+"1 session -- the log lives in the document transient directory\n"
+"and dies with it. Off by default while the writer is synchronous."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "TransactionLogDerived", "TransactionLogDerived", App::ParamInfo::Int, 1)
+        .setTitle("Transaction Log Derived")
+        .setDoc("What the transaction log does with derived values, i.e. values\n"
+"written by their own object recompute (sec 10): 0 none (the op\n"
+"notes the change, no value), 1 cache (evictable tier), 2 full."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "RelativeStringID", "RelativeStringID", App::ParamInfo::Bool, true)
         .setTitle("Relative String ID"),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "HashIndexedName", "HashIndexedName", App::ParamInfo::Bool, false)
@@ -1736,6 +1762,66 @@ void DocumentParams::setTransactionOnRecompute(const bool &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void DocumentParams::removeTransactionOnRecompute() {
     instance()->handle->RemoveBool("TransactionOnRecompute");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docTransactionLog() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Transaction log mode (docs/TransactionLog.md sec 13.3): 0 off,\n"
+"1 session -- the log lives in the document transient directory\n"
+"and dies with it. Off by default while the writer is synchronous.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & DocumentParams::getTransactionLog() {
+    return instance()->TransactionLog;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & DocumentParams::defaultTransactionLog() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setTransactionLog(const long &v) {
+    instance()->handle->SetInt("TransactionLog",v);
+    instance()->TransactionLog = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeTransactionLog() {
+    instance()->handle->RemoveInt("TransactionLog");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docTransactionLogDerived() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"What the transaction log does with derived values, i.e. values\n"
+"written by their own object recompute (sec 10): 0 none (the op\n"
+"notes the change, no value), 1 cache (evictable tier), 2 full.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & DocumentParams::getTransactionLogDerived() {
+    return instance()->TransactionLogDerived;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & DocumentParams::defaultTransactionLogDerived() {
+    const static long def = 1;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setTransactionLogDerived(const long &v) {
+    instance()->handle->SetInt("TransactionLogDerived",v);
+    instance()->TransactionLogDerived = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeTransactionLogDerived() {
+    instance()->handle->RemoveInt("TransactionLogDerived");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

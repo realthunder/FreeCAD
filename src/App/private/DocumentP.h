@@ -32,6 +32,7 @@
 #include <App/DocumentObserver.h>
 #include <App/StringHasher.h>
 #include <App/FileBlobManager.h>
+#include <App/TransactionLog.h>
 #include <Base/Reader.h>
 #include <Base/Sequencer.h>
 #include <CXX/Objects.hxx>
@@ -97,6 +98,10 @@ struct DocumentP
     mutable HasherMap hashers;
     /// Lifetime of the files behind this document's PropertyFileIncluded.
     mutable std::unique_ptr<App::FileBlobManager> fileBlobs;
+    /// The transaction log (docs/TransactionLog.md), when the mode is not off.
+    std::unique_ptr<App::TransactionLog> transactionLog;
+    /// Whether the mode was looked at for this document yet.
+    bool transactionLogChecked {false};
 #ifdef USE_OLD_DAG
     DependencyList DepList;
     std::map<DocumentObject*, Vertex> VertexObjectList;

@@ -86,6 +86,11 @@ list(APPEND FreeCADApp_LIBS
         ${ZLIB_LIBRARIES}
 )
 
+# The transaction log's store (docs/TransactionLog.md sec 13).
+find_package(SQLite3 REQUIRED)
+include_directories(${SQLite3_INCLUDE_DIRS})
+list(APPEND FreeCADApp_LIBS ${SQLite3_LIBRARIES})
+
 # zstd is optional and only used by the transaction-log measurement
 # (TransactionMeasure.cpp, docs/TransactionLog.md sec 15 phase 0), which
 # compares it against zlib. Nothing is stored with it yet.
@@ -485,7 +490,10 @@ SET(Document_CPP_SRCS
     Placement.cpp
     ProjectFile.cpp
     Transactions.cpp
+    TransactionLog.cpp
     TransactionMeasure.cpp
+    TransactionStoreSQLite.cpp
+    TransactionValue.cpp
     TransactionalObject.cpp
     VRMLObject.cpp
     MaterialObject.cpp
@@ -554,7 +562,10 @@ SET(Document_HPP_SRCS
     OriginFeature.h
     Range.h
     Transactions.h
+    TransactionLog.h
     TransactionMeasure.h
+    TransactionStore.h
+    TransactionValue.h
     TransactionDefs.h
     TransactionalObject.h
     VRMLObject.h

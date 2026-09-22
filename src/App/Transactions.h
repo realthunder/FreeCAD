@@ -39,6 +39,7 @@ class Transaction;
 class TransactionObject;
 class TransactionalObject;
 class TransactionMeasure;
+class TransactionLog;
 
 
 /** Represents a atomic transaction of the document
@@ -107,6 +108,7 @@ private:
     > _Objects;
 
     friend class TransactionMeasure;
+    friend class TransactionLog;
 };
 
 /** Represents an entry for an object in a Transaction
@@ -152,6 +154,7 @@ protected:
     std::string _NameInDocument;
 
     friend class TransactionMeasure;
+    friend class TransactionLog;
 };
 
 /** Represents an entry for a document object in a transaction

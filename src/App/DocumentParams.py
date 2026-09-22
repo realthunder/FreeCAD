@@ -161,6 +161,14 @@ Params = [
     ParamInt('ThumbnailSize', 128),
     ParamBool('DuplicateLabels', False),
     ParamBool('TransactionOnRecompute', False),
+    ParamInt('TransactionLog', 0,
+        doc='Transaction log mode (docs/TransactionLog.md sec 13.3): 0 off,\n'
+            '1 session -- the log lives in the document transient directory\n'
+            'and dies with it. Off by default while the writer is synchronous.'),
+    ParamInt('TransactionLogDerived', 1,
+        doc='What the transaction log does with derived values, i.e. values\n'
+            'written by their own object recompute (sec 10): 0 none (the op\n'
+            'notes the change, no value), 1 cache (evictable tier), 2 full.'),
     ParamBool('RelativeStringID', True),
     ParamBool('HashIndexedName', False,
         doc='Enable special encoding of indexes name in toponaming. Disabled by\n'

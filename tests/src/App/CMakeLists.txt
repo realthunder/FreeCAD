@@ -24,6 +24,7 @@ target_sources(
             ${CMAKE_CURRENT_SOURCE_DIR}/ParamRegistry.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/Property.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/ProxyImport.cpp
+            ${CMAKE_CURRENT_SOURCE_DIR}/TransactionLog.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/TransactionMeasure.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/TypeImport.cpp
             ${CMAKE_CURRENT_SOURCE_DIR}/TypeRename.cpp

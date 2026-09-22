@@ -283,6 +283,39 @@ maxCount: to limit the number of links returned
         <UserDocu>A list of supported types of objects</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="getTransactionLog">
+      <Documentation>
+        <UserDocu>getTransactionLog(fromSeq=0, limit=0) -> list of dict
+
+Transactions of this document's log (docs/TransactionLog.md), each a
+dict with seq, parent, id, kind, origin, name, time, script. Empty when
+the log is off (preference Document/TransactionLog).</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getTransactionOps">
+      <Documentation>
+        <UserDocu>getTransactionOps(seq) -> list of dict
+
+The ops of one logged transaction: op, ckind, cid, cname, ctype, prop,
+ptype, meta, before, after, derived. An empty 'after' on a set op is a
+value not yet resolved (see resolveTransactionLog).</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getTransactionValue">
+      <Documentation>
+        <UserDocu>getTransactionValue(ref) -> (fragment, {name: bytes})
+
+The XML fragment of a logged value and its attachments, or None.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="resolveTransactionLog">
+      <Documentation>
+        <UserDocu>resolveTransactionLog() -> int
+
+Serialise the live value behind every pending 'after' ref of the log,
+as a snapshot does. Returns the number of refs still pending.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="getTempFileName">
       <Documentation>
         <UserDocu>Returns a file name with path in the temp directory of the document.</UserDocu>
