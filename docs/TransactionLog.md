@@ -701,7 +701,7 @@ document (with a preference for the default):
 | `session` (default) | transient directory only; gone when the document closes | unbounded undo, the browser, versions and branches within the session, and -- new -- crash recovery by replaying the log's tail over the last save |
 | `local` (proposed in the audit, 2026-09-22) | `<user-data>/history/<Uid>/`, the log and its blobs | the same, kept across sessions on this machine without touching the file; the natural home for a user's private branches of a file they do not own |
 | `embedded` | inside the `.FCStd` | durable history that travels with the file; what pinned links (16.5) need |
-| `off` | nowhere | today's behaviour exactly |
+| `off` | nowhere | today's behaviour exactly -- **withdrawn 2026-09-22, section 22.1: the log is not optional** |
 
 `local` is not the user's ruling; it fell out of the audit once
 `session` was seen to die with the transient directory. It is recorded
@@ -765,6 +765,9 @@ slower to the touch.
   counted.
 - `UndoMode == 0` continues to mean no in-memory undo. The log has its
   own switch (`off`), so a batch script can still run with neither.
+  **Withdrawn 2026-09-22 (section 22.1)**: the log is the undo system
+  and is not switchable; the `TransactionLog` preference of section 21
+  is a staging switch for the build only.
 
 ## 15. Phases
 
@@ -791,10 +794,14 @@ Consolidated 2026-09-22 after sections 16 and 17 were decided.
    the writer thread are not.
 2. **Browser.** A history panel: transactions and versions by name,
    time, origin; ops per transaction; filter by object and property;
-   the script annotation; "restore to here".
+   the script annotation; "restore to here". **Re-ordered 2026-09-22
+   (section 22.2)**: built as a dockable panel alongside phase 1 from
+   now, as the verification tool for every record added, and grown into
+   the log manager as later phases land.
 3. **Undo over the log.** Undo as a forward transaction, stacks as
    sequence numbers, cold undo past the hot window as checkout plus
-   replay, selective undo with the refuse rule.
+   replay, selective undo with the refuse rule. This *replaces* the
+   undo system rather than sitting beside it (22.1).
 4. **Named versions, embedding, branches.** Named versions and the
    eviction budget; `PropertyHistory`, `Version`, `Branch`; `embedded`
    (and `local`, if adopted) modes; retention; save-without-history;
@@ -806,7 +813,8 @@ Consolidated 2026-09-22 after sections 16 and 17 were decided.
 6. **Merge.** Three-way property merge, the diff and conflict picker,
    the `merge` transaction (17.3).
 7. **Recovery and streaming.** Crash recovery from the log tail over the
-   last version; the transaction as the unit streamed to thin clients;
+   last version, which *replaces* the autosave / recovery-file
+   machinery (22.1); the transaction as the unit streamed to thin clients;
    per-user undo in a shared session (`docs/ThinClient.md` 8.11).
 8. **Deltas.** `enc = delta`, generic first, then the sketch codec --
    the point at which two clients in one sketch, or two branches, stop
@@ -1508,9 +1516,86 @@ the log on, three of its undo cases see the open implicit transaction in
 `UndoNames` -- the log-on semantics, not a bug, and the reason the mode
 is a preference the suite does not set.
 
-**Next.** In the order the phase list gives: the `save` record and the
-unnamed version with the `Document.xml` hash (16.3, 11), history
-initialised from a file (16.6), the writer thread with shared ownership
-of the undo copies (20.2 decision 4), the property-supplied hash (6b),
-then phase 2.
+**Next.** The browser panel's first cut (22.2), then in the order the
+phase list gives: the `save` record and the unnamed version with the
+`Document.xml` hash (16.3, 11), history initialised from a file (16.6),
+the writer thread with shared ownership of the undo copies (20.2
+decision 4), the property-supplied hash (6b) -- each shown in the panel
+as it lands.
+
+## 22. The end state, and the browser as a development tool (user, 2026-09-22)
+
+Two rulings, recorded before phase 1 continues. Where they disagree with
+sections 12, 13.3, 14 or 15, they win.
+
+### 22.1 The log replaces autosave and undo/redo; it is not a setting
+
+**The final aim is that the transaction log *is* the undo/redo system
+and *is* the autosave / recovery system.** Neither of those is a user
+setting, and so neither is the log: there is no `off` mode, no
+`UndoMode == 0`-style switch that runs a document without it, and no
+preference that decides whether a document is logged. Every open
+document has a log, the way it has a transaction stack today. What
+section 14 said about "the log has its own switch (`off`), so a batch
+script can still run with neither" is withdrawn; what 13.3 listed as an
+`off` mode is gone.
+
+What follows from it:
+
+- **Undo/redo are the log's undo (section 12)** in the end state -- the
+  in-memory `Transaction` copies remain as the hot window that makes the
+  common case fast, but they are an implementation cache of the log,
+  not a parallel system with its own on/off. The phase-3 work is not
+  "undo over the log as an alternative"; it is the replacement.
+- **Autosave is the log.** Today's `AutoSave`/recovery-file machinery
+  (a periodic copy of the whole document into the recovery directory) is
+  replaced by the unnamed-version cadence of 16.3 plus replay of the
+  log's tail on the next open (phase 7). The user-facing setting that
+  survives is at most the cadence; the existence of recovery is not
+  optional.
+- **The log's cost therefore has to be acceptable for everybody**, not
+  just for users who opted in. This is why the writer thread (20.2
+  decision 4) moves from "when the sketch case is over a few
+  milliseconds" to a hard prerequisite of turning the log on by default,
+  and why the `TransactionLog` preference of section 21 is a *staging*
+  switch that exists only while the log is being built: it comes out
+  once the log is the undo system.
+- **The only user choice is where the history lives when the file is
+  saved**: bundle the log with the file (`embedded`, 13.3 / 16.4) or
+  not (`session` -- or `local`, if adopted -- with the "save a copy
+  without history" and the privacy rules of 13.3 unchanged). That is a
+  per-document choice with a preference for the default. It decides
+  what travels, never whether the log runs.
+
+### 22.2 The log browser is built along the way, as a dockable panel
+
+The phase-2 browser is **not deferred until phase 1 is complete**. It
+is developed alongside the store, from now, as a **dockable panel** in
+`Gui` (a `QDockWidget` in the family of the combo view / selection view
+/ report view -- see `Gui/DockWindowManager`), and it serves two
+purposes at once:
+
+- **A final deliverable**: the history panel of section 15 phase 2 --
+  transactions and versions by name, time, origin and kind; ops per
+  transaction with their container, property and value refs; filter by
+  object and property; the script annotation; the environment / session
+  / recompute records; and, as the phases land them, "restore to here",
+  version naming, branch switching and the manager operations (trim,
+  retention, embed or not, save without history).
+- **Verification during development**: the first thing to look at when
+  a record is wrong. Every phase-1 item from here on (the `save` record,
+  unnamed versions, history from a file, the writer thread) ships with
+  the panel able to show what it wrote, so that the log is inspected in
+  the running application and not only through the Python read API and
+  the gtests. Where a gtest asserts a row, the panel shows the same row.
+
+Consequences for the build order: the panel's first cut -- a read-only
+list of transactions with an ops detail view over the section 21 Python
+read API (`getTransactionLog`, `getTransactionOps`,
+`getTransactionValue`) -- is the next Gui work item, before the `save`
+record, and it grows a column or a view with each record added. It is
+a *manager* as well as a browser: the operations that change the log
+(restore, name a version, trim, switch branch, choose embedding) live
+on it once the phases that define them exist, and not in scattered
+menu entries.
 
