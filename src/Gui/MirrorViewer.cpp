@@ -500,6 +500,33 @@ SoPickedPoint* MirrorViewer::pickRay(
     if (!pimpl->scene || !rayToNormPoint(origin, dir, normPoint)) {
         return nullptr;
     }
+    CoinPtr<SoSeparator> root = pimpl->pickRoot();
+    // Warm the culling data: SoSeparator::rayPick skips a subtree only
+    // when the separator holds a valid bounding-box cache, and only a
+    // bounding-box traversal builds one. A desktop view gets that from
+    // the render manager's per-frame auto-clipping pass; a serving
+    // process has no frame loop and so never did, which left every pick
+    // walking every object in the document.
+    //
+    // Per CHILD, not over the scene root: SoFCUnifiedSelection::
+    // getBoundingBox answers from the renderer's own bounds and returns
+    // without traversing anything once the renderer is in use, which is
+    // always here (serving needs render-cache mode 3). That is the cheap
+    // answer for the scene's extent and it is right for that, but it
+    // means a traversal of the root reaches no ViewProvider and leaves
+    // no cache for the pick to cull with.
+    //
+    // It costs one traversal per object after the scene changes and a
+    // cache hit otherwise.
+    if (auto* sceneGroup = pimpl->scene->isOfType(SoGroup::getClassTypeId())
+            ? static_cast<SoGroup*>(pimpl->scene)
+            : nullptr) {
+        SoGetBoundingBoxAction bboxAction(pimpl->viewport);
+        for (int i = 0; i < sceneGroup->getNumChildren(); ++i) {
+            bboxAction.apply(sceneGroup->getChild(i));
+        }
+    }
+
     SoRayPickAction action(pimpl->viewport);
     action.setNormalizedPoint(normPoint);
     action.setRadius(pimpl->state.pickRadius);
@@ -510,7 +537,7 @@ SoPickedPoint* MirrorViewer::pickRay(
         // hit is usually a face standing in front of the edge it wants.
         action.setPickAll(true);
     }
-    action.apply(pimpl->pickRoot());
+    action.apply(root);
     if (!accept) {
         SoPickedPoint* picked = action.getPickedPoint();
         return picked ? new SoPickedPoint(*picked) : nullptr;
