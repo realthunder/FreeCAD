@@ -2209,3 +2209,89 @@ when `PropertyPartShape::setValue` starts setting it: a mesher that
 writes `SameParameter`/`SameRange` when it finds them wrong -- will now
 throw instead. That is 23.6's rule in action (the fix belongs where the
 shape was made), not a reason to widen the carve-out.
+
+### 23.9 Step 3 as built (2026-09-23)
+
+**The capture.** `Base::Writer` captures an entry between `beginCapture()`
+and `endCapture(name)` -- `writeEntry()` does it for every file entry,
+`Document::save` and `snapshotToLog` for `Document.xml` -- as a
+`Base::EntryCapture`: a list of segments, `Text` bytes, a `Count` where a
+container wrote its `<Properties Count=` (the base count of non-part
+elements and the container's name), and a `Part` per property with the
+`<Property ...>` wrapper in `open`, the body in `text`, `</Property>` in
+`close`, the property id as `key`, and the default's hash in `elide` when
+the cheap tests (type, status, memSize) say it may be elided. The entry
+sink now receives the capture, not bytes; `EntryCapture::bytes()` is the
+entry byte for byte. A part's body is written at indentation 0, so its
+bytes are what `captureValue` produces for the same property and the two
+hash the same; the wrapper keeps the file's indentation. A part begun
+inside another part's body (a container a property writes) is not a
+part, and its marks are ignored.
+
+**The sink.** `Base::PropertySink` has `claim(container, name, prop, key)`,
+`verify()`, `composes()`. `PropertyContainer::Save` calls
+`writer.beginPart` before each non-transient property, `beginBody` /
+`endBody` around its `Save`, `endPart` after the close; a claimed
+property's `Save` is skipped unless the sink verifies. Under a composing
+sink the pre-loop elision serialises nothing: an eligible property whose
+type, status and memSize agree with the default stays in with the
+default's hash (`SharedDefaults::Entry::hash`, set by `build()`), and the
+worker leaves it out when its part hashes the same.
+`TransactionLog::beginSnapshot(compose)` resolves the pending refs, then
+hands the writer `TransactionLog::Sink`: record mode claims nothing;
+compose mode claims a key that is in `_recorded` (the main thread's set
+of property ids whose newest value the worker holds -- every copy posted
+with its key, every part a snapshot stored; removed by a `set` whose
+value is not kept, cleared by a checkout, and by `onUndoRedo` for what
+an undo or redo touched, since undo is not an op until sec 12) and not
+in `_pending`.
+
+**One format.** A saved part, a captured op value and a composed miss
+have to be the same bytes or the log holds three copies of one value.
+The archive save (`Document::save` with an archive) writes under the
+writer's defaults -- file version 1, XML not forced, no split -- and the
+`ZipWriter` stream's `fixed` float format; the directory save alone sets
+file version 2 and the `ForceXML`/`SplitXML` properties. The snapshot's
+`NullWriter` and `captureValue`'s writer were configured like the
+directory save and their streams were not `fixed`, so nothing matched.
+Now both take the archive's configuration, and every writer's stream
+(`StringWriter`, `NullWriter`, `FileWriter`, the capture) is `fixed` like
+the `ZipWriter`'s: a float writes as `1.0000000000000000` everywhere,
+the `<Defaults>` block included, where the `StringWriter` used to write
+`1`. A file's bytes change only in that block and in directory saves;
+every reader parses both.
+
+**The composite.** On the worker, `putComposite` resolves each part -- a
+claimed one from `_hashById` (a claim the worker cannot honour throws,
+and the snapshot fails by name; a verified one whose fresh hash differs
+is reported as 23.6's defect and the fresh bytes win), a miss stored as a
+`prop` entity -- drops the parts equal to their `elide`, fixes the counts,
+builds the skeleton (a `skeleton` entity) and the composite: a text of
+`skeleton <hash>`, `c <container>`, `p <offset> <hash> <name>` lines, a
+`composite` entity hashed over that text with a `skeleton` ref and one
+`part` ref per distinct part hash. The manifest names the composite;
+`LogVersion::docxml_hash` is the SHA-1 of the entry's bytes when they
+were all in hand (record mode -- a file on disk still matches its
+version) and the composite's hash otherwise. `readValue` of a composite
+composes it (`composeEntry`), so the checkout, the panel and the Python
+API read a version as before. An entry with no parts (as read at restore)
+stays an `xml` entity. Supersession runs one level down too: the previous
+version's composite, skeleton and parts (matched by container and name)
+toward this version's; `supersede` accepts `skeleton` and `composite`.
+`dropTier` now spares what a manifest reaches through refs, since a
+version's parts are held through its composite.
+
+**Verify switch.** `TransactionLogVerify` (off; always on under
+`FC_DEBUG`). Gtest `composedSnapshotIsTheFile`: a non-split save with a
+defaults block is a composite whose composition is the archive entry and
+whose `Obj.Integer` part is the op's after value, with the untouched
+object's defaults elided; a snapshot with nothing changed composes the
+same bytes under verification; a change replaces one part and keeps the
+skeleton; checkouts of both are right; a snapshot after an undo carries
+the undone value.
+
+Not done here: attachments of a part (`addFile` during a property's
+`Save`) are archive entries of their own and stay manifest entries, so a
+part's hash is its fragment alone; at schema 5 the shapes are blobs and
+the lists over `InlineListSize` are the ones that write one. Not measured: the composite's size on the
+17800-object document, and what compose mode saves on its main thread.

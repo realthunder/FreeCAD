@@ -108,10 +108,13 @@ struct DocumentP
     /// when no tap was installed.
     std::string restoreDocXml;
     bool restoreTapped {false};
-    /// The XML entries the writer or reader served during the save,
-    /// snapshot or restore in progress (GuiDocument.xml, split object
-    /// files), through its entry sink, for the version manifest.
+    /// The XML entries the reader served during the restore in progress
+    /// (GuiDocument.xml, split object files), through its entry sink, for
+    /// the version manifest.
     std::vector<std::pair<std::string, std::string>> fileEntries;
+    /// The same for a save or snapshot: every entry as the writer captured
+    /// it (docs/TransactionLog.md 23.3), Document.xml first.
+    TransactionLog::Captures captures;
     /// The cadence of unnamed versions (sec 16.3): commits since the last
     /// version, and when it was taken (steady clock seconds).
     long commitsSinceVersion {0};

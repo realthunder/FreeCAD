@@ -53,6 +53,69 @@ namespace Base
 class Persistence;
 class SequencerLauncher;
 
+/** One archive entry as the transaction log captures it
+ * (docs/TransactionLog.md sec 23.3): the bytes in order, cut at every
+ * property body a container wrote through the writer's property sink.
+ *
+ * A `Text` segment is literal bytes. A `Count` segment stands where a
+ * container wrote its `<Properties Count="N"` value: `text` is the count
+ * of elements that are not parts (transient rows are elsewhere, so this
+ * is usually "0"), and every `Part` that follows it, up to the next
+ * `Count`, belongs to that container, whose name is in `name`. A `Part`
+ * is one property: `open` the `<Property ...>` wrapper up to the body,
+ * `text` the body the property's Save wrote (empty when the sink claimed
+ * it and did not ask for verification), `close` the `</Property>` line;
+ * `key` is what the sink claimed it by, `elide` the hash of the shared
+ * default it equals when it is to be left out altogether.
+ *
+ * Concatenating every segment's open + text + close, with each Count's
+ * final number in place, is the entry byte for byte.
+ */
+struct BaseExport EntryCapture
+{
+    struct Segment
+    {
+        enum Kind { Text, Count, Part };
+        Kind kind {Text};
+        std::string text;
+        std::string open;
+        std::string close;
+        std::string name;
+        int64_t key {0};
+        bool claimed {false};
+        std::string elide;
+    };
+    std::vector<Segment> segments;
+
+    EntryCapture() = default;
+    /// A capture of plain bytes, one Text segment.
+    explicit EntryCapture(std::string bytes);
+    /// The entry's bytes, every part in place, every count final.
+    std::string bytes() const;
+    bool empty() const { return segments.empty(); }
+};
+
+/** What decides, per property, whether the writer's loop serialises it
+ * (docs/TransactionLog.md sec 23.3). Record mode claims nothing and the
+ * capture carries every body; compose mode claims what its owner already
+ * holds by `key`, and a claimed body is left out of the capture unless
+ * verify() asks for it to be written anyway, for comparison.
+ */
+class BaseExport PropertySink
+{
+public:
+    virtual ~PropertySink() = default;
+    /// True to claim the property named `name` of `container`: its Save is
+    /// not what the capture carries, `key` is.
+    virtual bool claim(const Persistence& container, const char* name, const Persistence& prop,
+                       int64_t key) = 0;
+    /// Serialise claimed properties anyway, so the owner can compare.
+    virtual bool verify() const { return false; }
+    /// Compose mode: elision against shared defaults is decided by hash,
+    /// by the owner, not by serialising here.
+    virtual bool composes() const { return false; }
+};
+
 
 /** The Writer class
  * This is an important helper class for the store and retrieval system
@@ -267,13 +330,42 @@ public:
     void endTap();
     bool isTapping() const { return static_cast<bool>(tapBuf); }
 
-    /** Hand the bytes of every entry writeFiles() serves to `sink`, by
+    /** Hand the capture of every entry writeFiles() serves to `sink`, by
      * name: the version manifest's XML entries (docs/TransactionLog.md sec
-     * 16.1). The writers serve each entry through writeEntry(), which taps
-     * it when a sink is set. Blob entries are the manager's, not these.
+     * 16.1, 23.3). The writers serve each entry through writeEntry(), which
+     * captures it when a sink is set. Blob entries are the manager's, not
+     * these. An entry written outside writeFiles() (Document.xml) is
+     * captured between beginCapture() and endCapture(), which hands it to
+     * the same sink.
      */
-    using EntrySink = std::function<void(const std::string&, std::string)>;
+    using EntrySink = std::function<void(const std::string&, EntryCapture)>;
     void setEntrySink(EntrySink sink) { entrySink = std::move(sink); }
+    bool hasEntrySink() const { return static_cast<bool>(entrySink); }
+    void beginCapture();
+    void endCapture(const std::string& name);
+    bool isCapturing() const { return static_cast<bool>(capture); }
+
+    /** The property sink and the marks a container's Save loop makes for
+     * it (sec 23.3). Outside a capture, or nested inside a part, the marks
+     * do nothing and beginPart() claims nothing: the property is written
+     * as it always was.
+     */
+    void setPropertySink(PropertySink* sink) { propertySink = sink; }
+    PropertySink* getPropertySink() const { return propertySink; }
+    /// The `<Properties Count="` value: `total` itself when the marks are
+    /// inactive, otherwise a Count segment naming `container` whose base is
+    /// `rest`, the elements that are not parts.
+    void writeCount(std::size_t total, std::size_t rest, const std::string& container);
+    /// Start a part: from here the wrapper is captured. Returns whether the
+    /// sink claimed the property (then the caller skips its Save unless the
+    /// sink verifies); always false when the marks are inactive.
+    bool beginPart(const Persistence& container, const char* name, const Persistence& prop,
+                   int64_t key, const std::string& elide);
+    /// The wrapper is complete; what follows is the body.
+    void beginBody();
+    /// The body is complete; what follows is the closing wrapper.
+    void endBody();
+    void endPart();
     //@}
 
     // NOLINTBEGIN
@@ -320,6 +412,20 @@ private:
     class TapBuf;
     std::unique_ptr<TapBuf> tapBuf;
     EntrySink entrySink;
+    PropertySink* propertySink {nullptr};
+    /// The entry being captured, its segments growing as bytes arrive.
+    std::unique_ptr<EntryCapture> capture;
+    /// Where captured bytes go: the last Text segment, or a part's
+    /// open/text/close while one is open.
+    enum class CaptureTarget { Text, PartOpen, PartBody, PartClose };
+    CaptureTarget captureTarget {CaptureTarget::Text};
+    bool partOpen {false};
+    /// Parts begun inside an open part's body (a container a property
+    /// writes): counted so their marks are ignored and the outer part closes
+    /// with its own endPart().
+    int partNesting {0};
+    int bodyIndent {0};
+    void captureBytes(const char* p, std::size_t n);
 
 protected:
     /// putNextEntry() + SaveDocFile() for one registered entry, tapped for

@@ -194,6 +194,11 @@ Params = [
         doc='The largest patch the transaction log keeps, as a percent of the\n'
             'full compressed size (sec 23.2); a patch over it means the codec\n'
             'found nothing to share and the entity stays full.'),
+    ParamBool('TransactionLogVerify', False,
+        doc='A composed snapshot (sec 23.3) serialises the properties it\n'
+            'would have taken from the log anyway and compares: a mismatch\n'
+            'names a value changed without aboutToSetValue (sec 23.6). Always\n'
+            'on in a debug build.'),
     ParamBool('RelativeStringID', True),
     ParamBool('HashIndexedName', False,
         doc='Enable special encoding of indexes name in toponaming. Disabled by\n'

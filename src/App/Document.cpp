@@ -251,6 +251,8 @@ bool Document::undo(int id)
         Base::FlagToggler<bool> flag(d->undoing);
         // applying the undo
         mUndoTransactions.back()->apply(*this,false);
+        if (auto log = getTransactionLog())
+            log->onUndoRedo(*mUndoTransactions.back());
 
         // save the redo
         mRedoMap[d->activeUndoTransaction->getID()] = d->activeUndoTransaction;
@@ -294,6 +296,8 @@ bool Document::redo(int id)
         // do the redo
         Base::FlagToggler<bool> flag(d->undoing);
         mRedoTransactions.back()->apply(*this,true);
+        if (auto log = getTransactionLog())
+            log->onUndoRedo(*mRedoTransactions.back());
 
         mUndoMap[d->activeUndoTransaction->getID()] = d->activeUndoTransaction;
         mUndoTransactions.push_back(d->activeUndoTransaction);
@@ -3198,19 +3202,20 @@ void Document::save(Base::Writer &writer, bool archive) const {
     } else if(writer.getFileVersion() > 1)
         writer.setPreferBinary(false);
 
-    // The log's save record wants Document.xml as written (sec 11): tap
-    // the bytes on their way into the archive rather than serialise twice.
-    // The other XML entries the manifest holds (GuiDocument.xml, the split
-    // object files) come through the writer's entry sink as writeFiles()
-    // serves them.
+    // The log's save record wants every entry as written (sec 11, 23.3):
+    // captured on the way into the archive, cut at each property body,
+    // rather than serialised twice. Document.xml here, the other XML
+    // entries the manifest holds (GuiDocument.xml, the split object files)
+    // through the same sink as writeFiles() serves them. Record mode: the
+    // sink claims nothing, the file is what it is.
     TransactionLog* log = getTransactionLog();
-    std::string docXml;
-    d->fileEntries.clear();
+    d->captures.clear();
     if (log) {
-        writer.beginTap([&docXml](const char* p, std::size_t n) { docXml.append(p, n); });
-        writer.setEntrySink([this](const std::string& name, std::string bytes) {
-            d->fileEntries.emplace_back(name, std::move(bytes));
+        writer.setPropertySink(log->beginSnapshot(false));
+        writer.setEntrySink([this](const std::string& name, Base::EntryCapture capture) {
+            d->captures.emplace_back(name, std::move(capture));
         });
+        writer.beginCapture();
     }
 
     writer.Stream() << "<?xml version='1.0' encoding='utf-8'?>\n"
@@ -3218,7 +3223,7 @@ void Document::save(Base::Writer &writer, bool archive) const {
                     << " FreeCAD Document, see http://www.freecadweb.org for more information...\n"
                     << "-->\n";
     Document::Save(writer);
-    writer.endTap();
+    writer.endCapture("Document.xml");
 
     // The included files, one entry per distinct content, straight behind
     // Document.xml and ahead of every entry the file channel will add.
@@ -3250,6 +3255,7 @@ void Document::save(Base::Writer &writer, bool archive) const {
 
     if (log) {
         writer.setEntrySink(nullptr);
+        writer.setPropertySink(nullptr);
         std::vector<std::pair<std::string, std::string>> blobs;
         for (const auto& blob : getFileBlobManager().collected()) {
             // Named by hash, as the manifest keys on it; the extension
@@ -3257,11 +3263,8 @@ void Document::save(Base::Writer &writer, bool archive) const {
             std::string ext = Base::FileInfo(blob->path()).extension();
             blobs.emplace_back(blob->hash() + (ext.empty() ? "" : "." + ext), blob->hash());
         }
-        std::vector<std::pair<std::string, std::string>> entries;
-        entries.emplace_back("Document.xml", std::move(docXml));
-        for (auto& e : d->fileEntries)
-            entries.push_back(std::move(e));
-        d->fileEntries.clear();
+        TransactionLog::Captures entries = std::move(d->captures);
+        d->captures.clear();
         if (log->onSave(FileName.getValue(), entries, blobs, writer.getSchemaVersion()))
             const_cast<Document*>(this)->noteVersionTaken();
     }
@@ -3857,10 +3860,10 @@ int64_t Document::snapshotToLog()
     // and the Gui entry stream through the taps, and the log gets the
     // version with the manifest a save would give it.
     try {
+        // Configured as save() configures an archive's writer -- the
+        // writer's defaults, not the directory layout's -- so that a part
+        // composed here is the bytes a save writes (sec 23.3).
         Base::NullWriter writer;
-        writer.setFileVersion(2);
-        writer.setForceXML(ForceXML.getValue());
-        writer.setSplitXML(SplitXML.getValue());
         writer.setSchemaVersion(resolveSchemaVersion(writer));
         if (PreferBinary.getValue()) {
             writer.setMode("BinaryBrep");
@@ -3872,32 +3875,35 @@ int64_t Document::snapshotToLog()
         getFileBlobManager().beginSave(writer);
         collectFileBlobs();
 
-        d->fileEntries.clear();
-        writer.setEntrySink([this](const std::string& name, std::string bytes) {
-            d->fileEntries.emplace_back(name, std::move(bytes));
+        // Compose mode (sec 23.3): the sink claims every property whose
+        // value the log holds current and its Save is skipped; what is
+        // captured is the skeleton, the misses, and under verification
+        // the claimed bodies too.
+        d->captures.clear();
+        writer.setPropertySink(log->beginSnapshot(true));
+        writer.setEntrySink([this](const std::string& name, Base::EntryCapture capture) {
+            d->captures.emplace_back(name, std::move(capture));
         });
-        std::string docXml;
         writer.putNextEntry("Document.xml");
-        writer.beginTap([&docXml](const char* p, std::size_t n) { docXml.append(p, n); });
+        writer.beginCapture();
         writer.Stream() << "<?xml version='1.0' encoding='utf-8'?>\n"
                         << "<!--\n"
                         << " FreeCAD Document, see http://www.freecadweb.org for more information...\n"
                         << "-->\n";
         Document::Save(writer);
-        writer.endTap();
+        writer.endCapture("Document.xml");
         signalSaveDocument(writer);
         writer.writeFiles();
+        writer.setEntrySink(nullptr);
+        writer.setPropertySink(nullptr);
 
         std::vector<std::pair<std::string, std::string>> blobs;
         for (const auto& blob : getFileBlobManager().collected()) {
             std::string ext = Base::FileInfo(blob->path()).extension();
             blobs.emplace_back(blob->hash() + (ext.empty() ? "" : "." + ext), blob->hash());
         }
-        std::vector<std::pair<std::string, std::string>> entries;
-        entries.emplace_back("Document.xml", std::move(docXml));
-        for (auto& e : d->fileEntries)
-            entries.push_back(std::move(e));
-        d->fileEntries.clear();
+        TransactionLog::Captures entries = std::move(d->captures);
+        d->captures.clear();
         int64_t num = log->onSnapshot(entries, blobs, writer.getSchemaVersion());
         if (num)
             noteVersionTaken();

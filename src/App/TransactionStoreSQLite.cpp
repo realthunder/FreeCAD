@@ -445,11 +445,15 @@ public:
     {
         exec("BEGIN");
         try {
-            // Not one a manifest reaches, and not one a surviving delta is
-            // based on: the base of a cache-tier chain is what the durable
-            // row above it decodes through.
-            auto s = prepare("DELETE FROM entity WHERE tier=?"
-                             " AND hash NOT IN (SELECT hash FROM manifest WHERE source='entity')"
+            // Not one a manifest reaches -- through a composite's parts and
+            // an attachment's refs as much as directly (23.3) -- and not
+            // one a surviving delta is based on: the base of a cache-tier
+            // chain is what the durable row above it decodes through.
+            auto s = prepare("WITH RECURSIVE held(hash) AS ("
+                             "  SELECT hash FROM manifest WHERE source='entity'"
+                             "  UNION SELECT r.target FROM ref r JOIN held ON r.entity=held.hash)"
+                             " DELETE FROM entity WHERE tier=?"
+                             " AND hash NOT IN (SELECT hash FROM held)"
                              " AND hash NOT IN (SELECT target FROM ref WHERE role='base')");
             bindText(s, 1, tier);
             step(s);

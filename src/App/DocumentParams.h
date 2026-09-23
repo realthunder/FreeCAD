@@ -660,6 +660,21 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter TransactionLogVerify
+    ///
+    /// A composed snapshot (sec 23.3) serialises the properties it
+    /// would have taken from the log anyway and compares: a mismatch
+    /// names a value changed without aboutToSetValue (sec 23.6). Always
+    /// on in a debug build.
+    static const bool & getTransactionLogVerify();
+    static const bool & defaultTransactionLogVerify();
+    static void removeTransactionLogVerify();
+    static void setTransactionLogVerify(const bool &v);
+    static const char *docTransactionLogVerify();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter RelativeStringID
     static const bool & getRelativeStringID();
     static const bool & defaultRelativeStringID();

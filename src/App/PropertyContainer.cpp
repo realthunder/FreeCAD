@@ -30,6 +30,7 @@
 
 #include "Property.h"
 #include "PropertyContainer.h"
+#include "TransactionValue.h"
 
 
 FC_LOG_LEVEL_INIT("App",true,true)
@@ -336,6 +337,14 @@ void PropertyContainer::Save (Base::Writer &writer) const
     // and the decision, so an equivalence that is looser than the bytes can
     // never lose a value. The opt-outs are checked first, so the counters
     // only speak about properties that were actually eligible.
+    // A composing sink (docs/TransactionLog.md 23.3) decides the elision by
+    // hash, off this thread: the cheap tests stay here and the serialisation
+    // that would settle it is exactly what compose mode exists to skip, so
+    // the property stays in with the default's hash for the sink's owner to
+    // compare against the value it holds.
+    Base::PropertySink* sink = writer.isCapturing() ? writer.getPropertySink() : nullptr;
+    const bool composing = sink && sink->composes();
+    std::map<const Property*, const std::string*> elidable;
     if (auto defaults = getSaveDefaults()) {
         const unsigned long touchedMask = 1UL << Property::Touched;
         std::string bytes;
@@ -350,6 +359,12 @@ void PropertyContainer::Save (Base::Writer &writer) const
             auto entry = defaults->find(it->first);
             if (!entry || entry->type != prop.getTypeId()) {
                 ++savedDefaultsUnknown;
+                ++it;
+            }
+            else if (composing) {
+                if ((entry->status & ~touchedMask) == (prop.getStatus() & ~touchedMask)
+                        && entry->memSize == prop.getMemSize() && !entry->hash.empty())
+                    elidable[&prop] = &entry->hash;
                 ++it;
             }
             // ⚠️ Every bit but Touched. A file does not preserve that one:
@@ -385,8 +400,22 @@ void PropertyContainer::Save (Base::Writer &writer) const
     }
 
     writer.incInd(); // indentation for 'Properties Count'
-    writer.Stream() << writer.ind() << "<Properties Count=\"" << Map.size()
-                    << "\" TransientCount=\"" << transients.size() << "\">\n";
+    writer.Stream() << writer.ind() << "<Properties Count=\"";
+    if (writer.isCapturing()) {
+        // The parts that follow are counted by whoever composes the entry
+        // (an elided one is not there); what is counted here is the rest.
+        std::size_t rest = 0;
+        for (const auto& it : Map) {
+            if (it.second->testStatus(Property::Transient)
+                    || it.second->getType() & Prop_Transient)
+                ++rest;
+        }
+        writer.writeCount(Map.size(), rest, getFullName());
+    }
+    else {
+        writer.Stream() << Map.size();
+    }
+    writer.Stream() << "\" TransientCount=\"" << transients.size() << "\">\n";
 
     // First store transient properties to persist their status value. We use
     // a new element named "_Property" so that the save file can be opened by
@@ -400,8 +429,19 @@ void PropertyContainer::Save (Base::Writer &writer) const
     writer.decInd();
 
     // Now store normal properties
+    static const std::string noElide;
     for (const auto& it : Map)
     {
+        const bool transient = it.second->testStatus(Property::Transient)
+                || it.second->getType() & Prop_Transient;
+        // A part for the capture (23.3): the wrapper, then the body, then
+        // the close. A transient element has no body and is no part.
+        bool claimed = false;
+        if (!transient && writer.isCapturing()) {
+            auto e = elidable.find(it.second);
+            claimed = writer.beginPart(*this, it.first.c_str(), *it.second, it.second->getID(),
+                                      e != elidable.end() ? *e->second : noElide);
+        }
         writer.incInd(); // indentation for 'Property name'
         writer.Stream() << writer.ind() << "<Property name=\"" << it.first << "\" type=\""
                         << writer.typeName(it.second->getTypeId());
@@ -413,8 +453,7 @@ void PropertyContainer::Save (Base::Writer &writer) const
             writer.Stream() << "\" status=\"" << status;
         writer.Stream() << "\">";
 
-        if(it.second->testStatus(Property::Transient)
-                || it.second->getType() & Prop_Transient)
+        if (transient)
         {
             writer.Stream() << "</Property>\n";
             writer.decInd();
@@ -424,30 +463,35 @@ void PropertyContainer::Save (Base::Writer &writer) const
         writer.Stream() << '\n';
 
         writer.incInd(); // indentation for the actual property
+        writer.beginBody();
 
-        try {
-            // We must make sure to handle all exceptions accordingly so that
-            // the project file doesn't get invalidated. In the error case this
-            // means to proceed instead of aborting the write operation.
-            it.second->Save(writer);
-        }
-        catch (const Base::Exception &e) {
-            Base::Console().Error("%s\n", e.what());
-        }
-        catch (const std::exception &e) {
-            Base::Console().Error("%s\n", e.what());
-        }
-        catch (const char* e) {
-            Base::Console().Error("%s\n", e);
-        }
+        if (!claimed || sink->verify()) {
+            try {
+                // We must make sure to handle all exceptions accordingly so that
+                // the project file doesn't get invalidated. In the error case this
+                // means to proceed instead of aborting the write operation.
+                it.second->Save(writer);
+            }
+            catch (const Base::Exception &e) {
+                Base::Console().Error("%s\n", e.what());
+            }
+            catch (const std::exception &e) {
+                Base::Console().Error("%s\n", e.what());
+            }
+            catch (const char* e) {
+                Base::Console().Error("%s\n", e);
+            }
 #ifndef FC_DEBUG
-        catch (...) {
-            Base::Console().Error("PropertyContainer::Save: Unknown C++ exception thrown. Try to continue...\n");
-        }
+            catch (...) {
+                Base::Console().Error("PropertyContainer::Save: Unknown C++ exception thrown. Try to continue...\n");
+            }
 #endif
+        }
+        writer.endBody();
         writer.decInd(); // indentation for the actual property
         writer.Stream() << writer.ind() << "</Property>\n";
         writer.decInd(); // indentation for 'Property name'
+        writer.endPart();
     }
     writer.Stream() << writer.ind() << "</Properties>\n";
     writer.decInd(); // indentation for 'Properties Count'
@@ -535,8 +579,13 @@ void SharedDefaults::build(const PropertyContainer &standIn,
         // property's Restore cannot parse emptiness when the block is read
         // back. Not recorded means not elidable, which is the safe direction.
         if (serializeForCompare(fileWriter, *prop, entry.content)
-                && !entry.content.empty())
+                && !entry.content.empty()) {
+            // A value without attachments hashes as its fragment alone
+            // (TransactionLog::putValue), which is what an eligible
+            // property's canonical serialisation is.
+            entry.hash = hashBytes(entry.content);
             entries.emplace(prop->getName(), std::move(entry));
+        }
     }
 }
 

@@ -171,6 +171,10 @@ public:
         /// content written to the file and the reference an elision compares
         /// against, so the two can never drift apart.
         std::string content;
+        /// The transaction log's hash of `content` (docs/TransactionLog.md
+        /// 23.3): what a composed snapshot compares a property's stored
+        /// value against instead of serialising it.
+        std::string hash;
     };
 
     /// Record the stand-in's eligible properties. Canonical settings come

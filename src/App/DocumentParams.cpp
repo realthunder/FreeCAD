@@ -92,6 +92,7 @@ public:
         signalParamChanged("TransactionLogSnapshotSeconds");
         signalParamChanged("TransactionLogDeltaHops");
         signalParamChanged("TransactionLogDeltaRatio");
+        signalParamChanged("TransactionLogVerify");
         signalParamChanged("RelativeStringID");
         signalParamChanged("HashIndexedName");
         signalParamChanged("EnableMaterialEdit");
@@ -146,6 +147,7 @@ public:
     long TransactionLogSnapshotSeconds;
     long TransactionLogDeltaHops;
     long TransactionLogDeltaRatio;
+    bool TransactionLogVerify;
     bool RelativeStringID;
     bool HashIndexedName;
     bool EnableMaterialEdit;
@@ -249,6 +251,8 @@ public:
         funcs["TransactionLogDeltaHops"] = &DocumentParamsP::updateTransactionLogDeltaHops;
         TransactionLogDeltaRatio = this->handle->GetInt("TransactionLogDeltaRatio", 50);
         funcs["TransactionLogDeltaRatio"] = &DocumentParamsP::updateTransactionLogDeltaRatio;
+        TransactionLogVerify = this->handle->GetBool("TransactionLogVerify", false);
+        funcs["TransactionLogVerify"] = &DocumentParamsP::updateTransactionLogVerify;
         RelativeStringID = this->handle->GetBool("RelativeStringID", true);
         funcs["RelativeStringID"] = &DocumentParamsP::updateRelativeStringID;
         HashIndexedName = this->handle->GetBool("HashIndexedName", false);
@@ -459,6 +463,10 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateTransactionLogDeltaRatio(DocumentParamsP *self) {
         self->TransactionLogDeltaRatio = self->handle->GetInt("TransactionLogDeltaRatio", 50);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateTransactionLogVerify(DocumentParamsP *self) {
+        self->TransactionLogVerify = self->handle->GetBool("TransactionLogVerify", false);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateRelativeStringID(DocumentParamsP *self) {
@@ -695,6 +703,12 @@ static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
         .setDoc("The largest patch the transaction log keeps, as a percent of the\n"
 "full compressed size (sec 23.2); a patch over it means the codec\n"
 "found nothing to share and the entity stays full."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "TransactionLogVerify", "TransactionLogVerify", App::ParamInfo::Bool, false)
+        .setTitle("Transaction Log Verify")
+        .setDoc("A composed snapshot (sec 23.3) serialises the properties it\n"
+"would have taken from the log anyway and compares: a mismatch\n"
+"names a value changed without aboutToSetValue (sec 23.6). Always\n"
+"on in a debug build."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "RelativeStringID", "RelativeStringID", App::ParamInfo::Bool, true)
         .setTitle("Relative String ID"),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "HashIndexedName", "HashIndexedName", App::ParamInfo::Bool, false)
@@ -2082,6 +2096,37 @@ void DocumentParams::setTransactionLogDeltaRatio(const long &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void DocumentParams::removeTransactionLogDeltaRatio() {
     instance()->handle->RemoveInt("TransactionLogDeltaRatio");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docTransactionLogVerify() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"A composed snapshot (sec 23.3) serialises the properties it\n"
+"would have taken from the log anyway and compares: a mismatch\n"
+"names a value changed without aboutToSetValue (sec 23.6). Always\n"
+"on in a debug build.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & DocumentParams::getTransactionLogVerify() {
+    return instance()->TransactionLogVerify;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & DocumentParams::defaultTransactionLogVerify() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setTransactionLogVerify(const bool &v) {
+    instance()->handle->SetBool("TransactionLogVerify",v);
+    instance()->TransactionLogVerify = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeTransactionLogVerify() {
+    instance()->handle->RemoveBool("TransactionLogVerify");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

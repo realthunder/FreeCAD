@@ -428,9 +428,20 @@ void TransactionLogView::onManifestSelected()
     const std::string hash = item->text(ManHash).toStdString();
     QString text = QStringLiteral("== %1 %2\n").arg(item->text(ManEntry), item->text(ManHash));
     if (item->text(ManSource) == QLatin1String("entity")) {
-        // An XML entry, held whole as a value.
+        // An XML entry: a composite of skeleton and parts (sec 23.3),
+        // shown composed, with what it is made of first; or the bytes
+        // themselves when it was read rather than written.
         App::CapturedValue v;
         auto l = log();
+        App::LogEntity e;
+        if (l && l->store().getEntity(hash, e) && e.kind == "composite") {
+            std::string data;
+            App::TransactionLog::Composite c;
+            if (l->readBytes(hash, data) && c.decode(data))
+                text += tr("composite: skeleton %1, %2 parts\n")
+                            .arg(QString::fromStdString(c.skeleton))
+                            .arg(c.parts.size());
+        }
         if (l && l->readValue(hash, v))
             text += QString::fromStdString(v.fragment);
         else

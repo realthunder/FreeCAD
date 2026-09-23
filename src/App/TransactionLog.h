@@ -33,7 +33,10 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <FCGlobal.h>
+
+#include <Base/Writer.h>
 
 #include "FileBlobManager.h"
 #include "TransactionStore.h"
@@ -106,20 +109,35 @@ public:
     /// each object came out. Written at Document::signalRecomputed.
     void onRecompute(const std::vector<RecomputedObject>& objects, double seconds);
 
-    /// The archive entries a version holds as values: (name, bytes), the
+    /// The archive entries a version holds, as read: (name, bytes), the
     /// first being Document.xml, then GuiDocument.xml when there is one.
     using Entries = std::vector<std::pair<std::string, std::string>>;
+    /// The same as written (sec 23.3): each entry captured by the writer,
+    /// cut at every property body, Document.xml first.
+    using Captures = std::vector<std::pair<std::string, Base::EntryCapture>>;
+
+    /** The property sink a save or snapshot serialises under (sec 23.3).
+     *
+     * Called before Document::Save: the pending after refs are resolved
+     * so the log is complete, and the sink returned is set on the writer.
+     * In record mode (`compose` false, a real save) it claims nothing and
+     * every property's bytes are captured; in compose mode (a snapshot)
+     * it claims every property whose newest value the log already holds,
+     * and only the rest run Save. TransactionLogVerify makes compose mode
+     * serialise the claimed ones too and compare on the worker.
+     */
+    Base::PropertySink* beginSnapshot(bool compose);
 
     /** The save record and the unnamed version it makes (sec 11, 16.3).
      *
      * Called from Document::save once the file's entries are written:
-     * `entries` the XML entries as they streamed out (tapped, never
+     * `entries` the XML entries as they streamed out (captured, never
      * serialised twice), `blobs` the (name, hash) of every blob the file
-     * carries, `schema` the schema it was written under. Pending after
-     * refs are resolved first so the log is complete at the snapshot.
+     * carries, `schema` the schema it was written under. Each entry
+     * becomes a composite (23.3): its skeleton plus one part per property.
      * Returns the version number, 0 on failure (reported, not thrown).
      */
-    int64_t onSave(const std::string& path, const Entries& entries,
+    int64_t onSave(const std::string& path, const Captures& entries,
                    const std::vector<std::pair<std::string, std::string>>& blobs, int schema);
 
     /** The history initialised from a file (sec 16.6).
@@ -167,9 +185,14 @@ public:
     /// snapshot is the state, and the log continues from here.
     void onCheckout(int64_t num);
 
+    /// A transaction was applied by undo or redo. Until undo runs over the
+    /// log (sec 12), the log sees no op for it; what it changed is no
+    /// longer held current, so a composed snapshot serialises it again.
+    void onUndoRedo(const Transaction& txn);
+
     /// The unnamed version between saves (sec 16.3), from
     /// Document::snapshotToLog: like onSave, with a `snapshot` record.
-    int64_t onSnapshot(const Entries& entries,
+    int64_t onSnapshot(const Captures& entries,
                        const std::vector<std::pair<std::string, std::string>>& blobs, int schema);
 
     int64_t session() const { return _session; }
@@ -204,8 +227,26 @@ public:
     void closeStore();
     bool reopenStore();
 
-    /// Read a value back, decompressed, with its attachments inlined.
+    /// Read a value back, decompressed, with its attachments inlined. A
+    /// composite (23.3) comes back composed: the fragment is the entry's
+    /// bytes, parts in place.
     bool readValue(const std::string& hash, CapturedValue& out);
+    /// A composite's data (23.3): the skeleton hash and, in order, each
+    /// part's offset in the skeleton, hash, container and property name.
+    struct CompositePart
+    {
+        size_t offset {0};
+        std::string hash;
+        std::string container;
+        std::string name;
+    };
+    struct Composite
+    {
+        std::string skeleton;
+        std::vector<CompositePart> parts;
+        std::string encode() const;
+        bool decode(const std::string& data);
+    };
     /// The full bytes of one entity, whatever its encoding (a delta chain
     /// is decoded through its bases, sec 23.2); the row itself, without
     /// `data`, into `entity` when asked. Worker or flushed caller.
@@ -230,24 +271,40 @@ private:
     };
 
     /// One value the worker serialises: the copy it owns a share of, the
+    /// live property's id (what a composed snapshot claims it by), the
     /// tier, the op of the job's transaction whose before ref it fills
     /// (-1 for none) and the earlier op whose after ref it resolves
     /// (resolveTxn 0 for none).
     struct ValueTask
     {
         std::shared_ptr<const Property> copy;
+        int64_t key {0};
         std::string tier;
         int opIndex {-1};
         int64_t resolveTxn {0};
         int resolveIdx {0};
     };
 
+    class Sink;
+    friend class Sink;
+
     /// Open the store under the document's current transient directory.
     void openStore();
     /// A version from the file's entries plus the record (`save` or
     /// `restore`) that names it; what onSave and onRestore share.
-    int64_t snapshot(const char* kind, const std::string& path, const Entries& entries,
+    int64_t snapshot(const char* kind, const std::string& path, const Captures& entries,
                      const std::vector<std::pair<std::string, std::string>>& blobs, int schema);
+    /// Store one captured entry as a composite (23.3): the parts resolved
+    /// or stored, the skeleton, the composite row. `previous` is the last
+    /// version's composite of the same entry, for supersession. Returns
+    /// the composite's hash; `full` gets the SHA-1 of the entry's bytes
+    /// when they are all in hand (record mode), else the composite hash.
+    /// Worker thread.
+    std::string putComposite(const std::string& entry, const Base::EntryCapture& capture,
+                             const std::string& previous, std::string& full);
+    /// Compose an entry's bytes from its composite's `data`. Worker or
+    /// flushed caller.
+    bool composeEntry(const std::string& data, std::string& out);
     /// Unnamed versions over `keep` (DocumentParams::TransactionLogKeepVersions,
     /// read when the job was posted) go, oldest first (sec 16.3). Worker
     /// thread, after a version is added.
@@ -299,6 +356,17 @@ private:
     /// Property id -> the op whose after ref that property's next copy
     /// resolves; main thread only.
     std::unordered_map<int64_t, Pending> _pending;
+    /// Property ids whose newest value the worker holds by hash (23.3):
+    /// every copy posted with a key, every part a snapshot stored; taken
+    /// out by a change whose value is not recorded. Main thread only.
+    std::unordered_set<int64_t> _recorded;
+    /// What the sink of the snapshot in progress did not claim, to join
+    /// _recorded once the snapshot is posted. Main thread only.
+    std::unordered_set<int64_t> _misses;
+    std::unique_ptr<Sink> _sink;
+    bool _verify {false};
+    /// Property id -> the hash of its newest value. Worker thread only.
+    std::unordered_map<int64_t, std::string> _hashById;
     /// What a capture on the worker needs of the document.
     CaptureConfig _config;
     /// The blobs the log's values name by hash (decision 6b), held so the

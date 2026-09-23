@@ -179,6 +179,44 @@ private:
     TransactionLog& _log;
 };
 
+/** The property sink (sec 23.3). Record mode claims nothing; compose
+ * mode claims a property whose newest value the worker holds and no
+ * pending after ref is waiting on. Whatever is not claimed is noted, so
+ * the part the snapshot stores for it counts as held from then on.
+ */
+class TransactionLog::Sink : public Base::PropertySink
+{
+public:
+    Sink(TransactionLog& log, bool compose) : _log(log), _compose(compose) {}
+
+    bool claim(const Base::Persistence&, const char*, const Base::Persistence&,
+               int64_t key) override
+    {
+        if (_compose && _log._recorded.count(key) && !_log._pending.count(key))
+            return true;
+        _log._misses.insert(key);
+        return false;
+    }
+    bool verify() const override { return _compose && _log._verify; }
+    bool composes() const override { return _compose; }
+
+private:
+    TransactionLog& _log;
+    bool _compose;
+};
+
+Base::PropertySink* TransactionLog::beginSnapshot(bool compose)
+{
+    resolvePending();
+    _misses.clear();
+    _verify = DocumentParams::getTransactionLogVerify();
+#ifdef FC_DEBUG
+    _verify = true;
+#endif
+    _sink = std::make_unique<Sink>(*this, compose);
+    return _sink.get();
+}
+
 TransactionLog::TransactionLog(Document& doc)
     : _doc(doc)
 {
@@ -454,11 +492,26 @@ void TransactionLog::onRecompute(const std::vector<RecomputedObject>& objects, d
     }
 }
 
-int64_t TransactionLog::onSave(const std::string& path, const Entries& entries,
+int64_t TransactionLog::onSave(const std::string& path, const Captures& entries,
                                const std::vector<std::pair<std::string, std::string>>& blobs,
                                int schema)
 {
     return snapshot("save", path, entries, blobs, schema);
+}
+
+void TransactionLog::onUndoRedo(const Transaction& txn)
+{
+    for (auto& info : txn._Objects.get<0>()) {
+        TransactionObject& rec = *info.second;
+        for (auto& kv : rec._PropChangeMap)
+            _recorded.erase(kv.first);
+        if (rec.status == TransactionObject::Chn || !info.first)
+            continue;
+        std::map<std::string, Property*> props;
+        static_cast<const PropertyContainer*>(info.first)->getPropertyMap(props);
+        for (auto& kv : props)
+            _recorded.erase(kv.second->getID());
+    }
 }
 
 void TransactionLog::onCheckout(int64_t num)
@@ -467,6 +520,7 @@ void TransactionLog::onCheckout(int64_t num)
     // that was left describe values that are gone, so they are dropped
     // rather than resolved against the restored document.
     _pending.clear();
+    _recorded.clear();
     LogTransaction t;
     t.parent = _nextSeq;
     t.seq = ++_nextSeq;
@@ -481,7 +535,7 @@ void TransactionLog::onCheckout(int64_t num)
     });
 }
 
-int64_t TransactionLog::onSnapshot(const Entries& entries,
+int64_t TransactionLog::onSnapshot(const Captures& entries,
                                    const std::vector<std::pair<std::string, std::string>>& blobs,
                                    int schema)
 {
@@ -499,11 +553,15 @@ int64_t TransactionLog::onRestore(const std::string& path, const Entries& entrie
         return 0;
     }
     _adopted = false;
-    return snapshot("restore", path, entries, blobs, schema);
+    // As read, the entries are bytes: no parts to hold, the file itself.
+    Captures captures;
+    for (const auto& e : entries)
+        captures.emplace_back(e.first, Base::EntryCapture(e.second));
+    return snapshot("restore", path, captures, blobs, schema);
 }
 
 int64_t TransactionLog::snapshot(const char* kind, const std::string& path,
-                                 const Entries& entries,
+                                 const Captures& entries,
                                  const std::vector<std::pair<std::string, std::string>>& blobs,
                                  int schema)
 {
@@ -512,7 +570,17 @@ int64_t TransactionLog::snapshot(const char* kind, const std::string& path,
         return 0;
     }
     try {
-        resolvePending();
+        // Whatever the sink did not claim is stored by this snapshot as a
+        // part, and held from here on; a snapshot taken without a sink
+        // (restore) resolves what is pending itself.
+        if (_sink) {
+            _recorded.insert(_misses.begin(), _misses.end());
+            _misses.clear();
+            _sink.reset();
+        }
+        else {
+            resolvePending();
+        }
 
         // Numbered here, written by the worker after everything queued
         // before it -- the resolves above included, so the version's ops
@@ -542,23 +610,11 @@ int64_t TransactionLog::snapshot(const char* kind, const std::string& path,
         const size_t nblobs = blobs.size();
         const long keep = DocumentParams::getTransactionLogKeepVersions();
         post([this, v, t, entries, blobs, schema, escaped, nblobs, keep]() mutable {
-            // Each XML entry is an entity like any other, durable: the
-            // version is the one place a whole file is kept (sec 16.1,
-            // until the composites of sec 23.3). Its hash is the SHA-1 of
-            // the bytes, which is also what a file on disk is matched by.
-            std::vector<LogManifestEntry> manifest;
-            std::string docHash;
-            for (const auto& e : entries) {
-                const std::string hash = putBytes(e.second, "xml", "durable");
-                if (docHash.empty())
-                    docHash = hash;   // Document.xml, first by contract
-                manifest.push_back({e.first, hash, "entity"});
-            }
-            v.docxml_hash = docHash;
-            for (const auto& b : blobs)
-                manifest.push_back({b.first, b.second, "blob"});
-            // The previous version's entries are superseded by this one's
-            // (sec 23.2): matched by name, re-encoded toward the newer.
+            // Each XML entry is a composite (sec 23.3): its skeleton plus
+            // the parts, or the bytes themselves when it was read rather
+            // than written. The previous version's entries are superseded
+            // by this one's (sec 23.2): matched by name, re-encoded toward
+            // the newer, parts and skeletons included.
             std::map<std::string, std::string> previous;
             if (const int64_t prev = _store->lastVersion()) {
                 for (const auto& e : _store->manifest(prev)) {
@@ -566,6 +622,23 @@ int64_t TransactionLog::snapshot(const char* kind, const std::string& path,
                         previous[e.entry] = e.hash;
                 }
             }
+            std::vector<LogManifestEntry> manifest;
+            std::string docHash;
+            for (const auto& e : entries) {
+                auto it = previous.find(e.first);
+                std::string full;
+                const std::string hash = putComposite(
+                    e.first, e.second, it != previous.end() ? it->second : std::string(), full);
+                // Document.xml, first by contract: matched to a file on
+                // disk by the SHA-1 of the bytes (sec 11) when they were
+                // all in hand, else named by its composite.
+                if (docHash.empty())
+                    docHash = full;
+                manifest.push_back({e.first, hash, "entity"});
+            }
+            v.docxml_hash = docHash;
+            for (const auto& b : blobs)
+                manifest.push_back({b.first, b.second, "blob"});
             _store->addVersion(v, manifest);
             for (const auto& e : manifest) {
                 if (e.source != "entity")
@@ -750,6 +823,247 @@ std::string TransactionLog::putBytes(const std::string& bytes, const std::string
     return e.hash;
 }
 
+std::string TransactionLog::Composite::encode() const
+{
+    // One line per item: the skeleton first, then `c <container>` where
+    // the container changes and `p <offset> <hash> <name>` per part.
+    std::string out = "skeleton " + skeleton + '\n';
+    std::string container;
+    for (const auto& p : parts) {
+        if (p.container != container) {
+            container = p.container;
+            out += "c " + container + '\n';
+        }
+        out += "p " + std::to_string(p.offset) + ' ' + p.hash + ' ' + p.name + '\n';
+    }
+    return out;
+}
+
+bool TransactionLog::Composite::decode(const std::string& data)
+{
+    parts.clear();
+    skeleton.clear();
+    std::string container;
+    size_t pos = 0;
+    while (pos < data.size()) {
+        size_t end = data.find('\n', pos);
+        if (end == std::string::npos)
+            end = data.size();
+        const std::string line = data.substr(pos, end - pos);
+        pos = end + 1;
+        if (line.compare(0, 9, "skeleton ") == 0) {
+            skeleton = line.substr(9);
+        }
+        else if (line.compare(0, 2, "c ") == 0) {
+            container = line.substr(2);
+        }
+        else if (line.compare(0, 2, "p ") == 0) {
+            size_t a = line.find(' ', 2);
+            size_t b = a == std::string::npos ? a : line.find(' ', a + 1);
+            if (b == std::string::npos)
+                return false;
+            CompositePart p;
+            p.offset = std::stoull(line.substr(2, a - 2));
+            p.hash = line.substr(a + 1, b - a - 1);
+            p.name = line.substr(b + 1);
+            p.container = container;
+            parts.push_back(std::move(p));
+        }
+        else if (!line.empty()) {
+            return false;
+        }
+    }
+    return !skeleton.empty();
+}
+
+std::string TransactionLog::putComposite(const std::string& entry,
+                                         const Base::EntryCapture& capture,
+                                         const std::string& previous, std::string& full)
+{
+    using Segment = Base::EntryCapture::Segment;
+    const auto& segs = capture.segments;
+    bool plain = true;
+    for (const auto& s : segs) {
+        if (s.kind != Segment::Text) {
+            plain = false;
+            break;
+        }
+    }
+    if (plain) {
+        // As read, or written by a container that made no parts: the
+        // bytes are the entity, an `xml` like any other.
+        full = putBytes(capture.bytes(), "xml", "durable");
+        return full;
+    }
+
+    // Each part to its hash: what the worker holds for a claimed one,
+    // stored from the bytes otherwise. A verified part carries its bytes
+    // although claimed; a mismatch is the defect of 23.6, reported by
+    // name, and the bytes win so the version is right.
+    std::vector<std::string> hashes(segs.size());
+    std::vector<bool> keep(segs.size(), true);
+    bool allBytes = true;
+    std::string container;
+    for (size_t i = 0; i < segs.size(); ++i) {
+        const Segment& s = segs[i];
+        if (s.kind == Segment::Count) {
+            container = s.name;
+            continue;
+        }
+        if (s.kind != Segment::Part)
+            continue;
+        std::string hash;
+        if (s.claimed) {
+            auto it = _hashById.find(s.key);
+            if (it == _hashById.end())
+                throw Base::RuntimeError("transaction log: " + entry + ": " + container + "."
+                                         + s.name + " claimed but not held");
+            hash = it->second;
+            if (!s.text.empty()) {
+                const std::string fresh = hashBytes(s.text);
+                if (fresh != hash) {
+                    FC_ERR("transaction log: " << entry << ": " << container << "." << s.name
+                           << " changed without aboutToSetValue (held " << hash << ", is "
+                           << fresh << ")");
+                    hash = putBytes(s.text, "prop", "durable");
+                    _hashById[s.key] = hash;
+                }
+            }
+            else {
+                allBytes = false;
+            }
+        }
+        else {
+            hash = putBytes(s.text, "prop", "durable");
+            _hashById[s.key] = hash;
+        }
+        hashes[i] = hash;
+        // Equal to the shared default the file carries: left out, as the
+        // save would have left it out (23.3).
+        if (!s.elide.empty() && s.elide == hash)
+            keep[i] = false;
+    }
+
+    // The counts: each Count's base plus the parts kept after it.
+    std::vector<size_t> counts(segs.size(), 0);
+    size_t current = segs.size();
+    for (size_t i = 0; i < segs.size(); ++i) {
+        if (segs[i].kind == Segment::Count)
+            current = i;
+        else if (segs[i].kind == Segment::Part && keep[i] && current < segs.size())
+            ++counts[current];
+    }
+
+    // The skeleton, the composite, and the entry's bytes when they are
+    // all here (record mode: what a file on disk is matched by, sec 11).
+    Composite c;
+    std::string skeleton;
+    std::string composed;
+    container.clear();
+    for (size_t i = 0; i < segs.size(); ++i) {
+        const Segment& s = segs[i];
+        switch (s.kind) {
+        case Segment::Text:
+            skeleton += s.text;
+            if (allBytes)
+                composed += s.text;
+            break;
+        case Segment::Count: {
+            container = s.name;
+            const std::string n = std::to_string(
+                std::stoull(s.text.empty() ? "0" : s.text) + counts[i]);
+            skeleton += n;
+            if (allBytes)
+                composed += n;
+            break;
+        }
+        case Segment::Part:
+            if (!keep[i])
+                break;
+            skeleton += s.open;
+            CompositePart p;
+            p.offset = skeleton.size();
+            p.hash = hashes[i];
+            p.container = container;
+            p.name = s.name;
+            c.parts.push_back(std::move(p));
+            skeleton += s.close;
+            if (allBytes) {
+                composed += s.open;
+                composed += s.text;
+                composed += s.close;
+            }
+            break;
+        }
+    }
+    c.skeleton = putBytes(skeleton, "skeleton", "durable");
+
+    LogEntity ce;
+    ce.kind = "composite";
+    ce.tier = "durable";
+    const std::string data = c.encode();
+    ce.hash = hashBytes(data);
+    if (!_store->hasEntity(ce.hash)) {
+        ce.refs.push_back(LogRef {c.skeleton, "skeleton", ""});
+        std::unordered_set<std::string> seen;
+        for (const auto& p : c.parts) {
+            if (seen.insert(p.hash).second)
+                ce.refs.push_back(LogRef {p.hash, "part", ""});
+        }
+        compressInto(ce, data);
+        _store->putEntity(ce);
+    }
+    full = allBytes ? hashBytes(composed) : ce.hash;
+
+    // Supersession (23.2) below the entry: the previous composite's
+    // skeleton by this one's, its parts by the parts of the same
+    // container and property. The op path has already done this for
+    // every value it recorded; what is left is the rest.
+    if (!previous.empty() && previous != ce.hash) {
+        LogEntity pe;
+        std::string pdata;
+        Composite pc;
+        if (_store->getEntity(previous, pe) && pe.kind == "composite"
+                && readBytes(previous, pdata) && pc.decode(pdata)) {
+            if (pc.skeleton != c.skeleton)
+                supersede(pc.skeleton, c.skeleton);
+            std::map<std::pair<std::string, std::string>, std::string> byName;
+            for (const auto& p : c.parts)
+                byName[{p.container, p.name}] = p.hash;
+            for (const auto& p : pc.parts) {
+                auto it = byName.find({p.container, p.name});
+                if (it != byName.end() && it->second != p.hash)
+                    supersede(p.hash, it->second);
+            }
+        }
+    }
+    return ce.hash;
+}
+
+bool TransactionLog::composeEntry(const std::string& data, std::string& out)
+{
+    Composite c;
+    if (!c.decode(data))
+        return false;
+    std::string skeleton;
+    if (!readBytes(c.skeleton, skeleton))
+        return false;
+    out.clear();
+    size_t pos = 0;
+    std::string part;
+    for (const auto& p : c.parts) {
+        if (p.offset < pos || p.offset > skeleton.size())
+            return false;
+        out.append(skeleton, pos, p.offset - pos);
+        pos = p.offset;
+        if (!readBytes(p.hash, part))
+            return false;
+        out += part;
+    }
+    out.append(skeleton, pos, std::string::npos);
+    return true;
+}
+
 int TransactionLog::chainBelow(const std::string& hash, int depth)
 {
     if (depth > 64)
@@ -769,7 +1083,8 @@ void TransactionLog::supersede(const std::string& older, const std::string& newe
     LogEntity old;
     if (!_store->getEntity(older, old) || old.enc == "delta" || old.size <= 128)
         return;
-    if (old.kind != "prop" && old.kind != "xml")
+    if (old.kind != "prop" && old.kind != "xml" && old.kind != "skeleton"
+            && old.kind != "composite")
         return;   // attachments and blobs wait for the measurement (23.7 step 6)
     // The newer one must not decode through the older, or the chain is a
     // loop; and the chain already hanging off the older one, plus this
@@ -833,6 +1148,14 @@ bool TransactionLog::readValue(const std::string& hash, CapturedValue& out)
     out = CapturedValue();
     if (!readBytes(hash, out.fragment, &e))
         return false;
+    if (e.kind == "composite") {
+        std::string composed;
+        if (!composeEntry(out.fragment, composed))
+            return false;
+        out.fragment = std::move(composed);
+        out.ok = true;
+        return true;
+    }
     for (auto& r : e.refs) {
         if (r.role != "attach")
             continue;
@@ -872,6 +1195,8 @@ void TransactionLog::writeValues(std::vector<ValueTask>& tasks, std::vector<LogO
                     _blobs.emplace(blob->hash(), blob);
             }
         }
+        if (task.key && !hash.empty())
+            _hashById[task.key] = hash;
         if (task.opIndex >= 0)
             ops[task.opIndex].vbefore = hash;
         if (task.resolveTxn > 0) {
@@ -921,9 +1246,12 @@ void TransactionLog::onCommit(const Transaction& txn, const char* kind, const ch
                         int64_t pendingKey) {
             ValueTask v;
             v.copy = std::move(copy);
+            v.key = pendingKey;
             v.tier = tier;
             v.opIndex = fill;
             takePending(pendingKey, v);
+            if (v.copy)
+                _recorded.insert(pendingKey);
             tasks.push_back(std::move(v));
         };
         auto share = [](TransactionObject::PropData& data) {
@@ -1045,6 +1373,8 @@ void TransactionLog::onCommit(const Transaction& txn, const char* kind, const ch
                          kv.first);
                 if (recordsValue(derived))
                     pendOp(*prop, c, tierFor(derived));
+                else
+                    _recorded.erase(kv.first);   // changed, and the value not kept
             }
         }
 
@@ -1105,8 +1435,10 @@ void TransactionLog::resolvePending()
         }
         ValueTask v;
         v.copy.reset(prop->Copy());
+        v.key = kv.first;
         v.tier = kv.second.tier;
         takePending(kv.first, v);
+        _recorded.insert(kv.first);
         tasks.push_back(std::move(v));
     }
     if (tasks.empty())

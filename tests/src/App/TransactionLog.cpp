@@ -448,15 +448,15 @@ TEST_F(TransactionLogTest, saveRecordAndVersion)
     std::string fromFile((std::istreambuf_iterator<char>(*entry)), std::istreambuf_iterator<char>());
     EXPECT_FALSE(fromFile.empty());
     EXPECT_EQ(App::hashBytes(fromFile), v.docxml_hash);
-    App::CapturedValue stored;
-    ASSERT_TRUE(log().readValue(v.docxml_hash, stored));
-    EXPECT_EQ(stored.fragment, fromFile);
-
+    // The manifest names the entry's composite (sec 23.3), which reads
+    // back as the file's bytes.
     auto manifest = store.manifest(v.num);
     ASSERT_GE(manifest.size(), 1u);
     EXPECT_EQ(manifest[0].entry, "Document.xml");
-    EXPECT_EQ(manifest[0].hash, v.docxml_hash);
     EXPECT_EQ(manifest[0].source, "entity");
+    App::CapturedValue stored;
+    ASSERT_TRUE(log().readValue(manifest[0].hash, stored));
+    EXPECT_EQ(stored.fragment, fromFile);
 
     // A file on disk is matched to its version by that hash.
     App::LogVersion found;
@@ -476,7 +476,7 @@ TEST_F(TransactionLogTest, saveRecordAndVersion)
 
     // Truncation keeps the value a manifest names.
     store.truncate(save.seq);
-    EXPECT_TRUE(store.hasEntity(v.docxml_hash));
+    EXPECT_TRUE(store.hasEntity(manifest[0].hash));
 
     Base::FileInfo(path).deleteFile();
 }
@@ -701,14 +701,10 @@ TEST_F(TransactionLogTest, restoresAVersion)
     ASSERT_EQ(doc()->snapshotToLog(), 2);
     ASSERT_TRUE(doc()->getObject("Later"));
 
-    // With SplitXML on, the object's data is its own entry, in the
-    // manifest with the rest.
-    {
-        bool split = false;
-        for (auto& e : log().store().manifest(1))
-            split = split || e.entry == "Obj.xml";
-        EXPECT_EQ(split, doc()->SplitXML.getValue());
-    }
+    // A snapshot is written the way an archive is (sec 23.9, "one
+    // format"): one Document.xml, never split, whatever the property says.
+    for (auto& e : log().store().manifest(1))
+        EXPECT_NE(e.entry, "Obj.xml");
     // Back to version 1: the object as it was, the later one gone, the
     // checkout recorded, and the log going on from there.
     ASSERT_TRUE(doc()->restoreVersion(1));
@@ -993,10 +989,14 @@ TEST_F(TransactionLogTest, reverseDeltasFollowSupersession)
     EXPECT_EQ(ea.enc, "delta");
     EXPECT_EQ(ea.base, b.docxml_hash);
     EXPECT_NE(eb.enc, "delta");
+    // A composed version's docxml_hash names its composite (23.9); the
+    // older one decodes through the newer and composes to the document.
     std::string bytes;
     ASSERT_TRUE(l.readBytes(a.docxml_hash, bytes));
     EXPECT_EQ(App::hashBytes(bytes), a.docxml_hash);
-    EXPECT_NE(bytes.find("Document"), std::string::npos);
+    App::CapturedValue older;
+    ASSERT_TRUE(l.readValue(a.docxml_hash, older));
+    EXPECT_NE(older.fragment.find("<FCDocument"), std::string::npos);
 
     doc()->restoreVersion(v1);
     obj = static_cast<App::FeatureTest*>(doc()->getObject("Obj"));
@@ -1004,4 +1004,161 @@ TEST_F(TransactionLogTest, reverseDeltasFollowSupersession)
     EXPECT_EQ(obj->Integer.getValue(), 7);
     EXPECT_EQ(obj->IntegerList.getValues()[500], -6);
     App::DocumentParams::setTransactionLogDeltaHops(hops);
+}
+
+/// Sec 23.3: a version is a composite -- a skeleton plus the parts the log
+/// already holds -- whether it was written by a save (record mode: every
+/// body captured) or composed by a snapshot (compose mode: the sink claims
+/// what the log holds and only the rest run Save). Both give the file's
+/// bytes back, byte for byte, and the parts are the op values.
+TEST_F(TransactionLogTest, composedSnapshotIsTheFile)
+{
+    // One entry for everything, with a shared-defaults block, so the
+    // elision is exercised in both modes (23.3, "shared defaults stay").
+    doc()->SplitXML.setValue(false);
+    doc()->openTransaction("create");
+    auto obj = make("Obj");
+    obj->Integer.setValue(11);
+    obj->String.setValue("eleven");
+    make("Plain");
+    make("Other");
+    doc()->commitTransaction();
+
+    const std::string path = Base::FileInfo::getTempPath() + "txnlog-composed.FCStd";
+    ASSERT_TRUE(doc()->saveAs(path.c_str()));
+    zipios::ZipFile zip(path);
+    std::unique_ptr<std::istream> entry(zip.getInputStream("Document.xml"));
+    ASSERT_TRUE(entry);
+    const std::string fromFile((std::istreambuf_iterator<char>(*entry)),
+                               std::istreambuf_iterator<char>());
+    ASSERT_FALSE(fromFile.empty());
+    EXPECT_NE(fromFile.find("<Defaults"), std::string::npos) << "no shared-defaults block";
+
+    auto& store = log().store();
+    ASSERT_EQ(store.versions().size(), 1u);
+    App::LogVersion v1;
+    ASSERT_TRUE(store.getVersion(1, v1));
+    // Record mode: the entry is a composite whose composition is the
+    // archive's bytes, and the version is matched to the file by their
+    // SHA-1 as before.
+    auto manifest = store.manifest(1);
+    ASSERT_FALSE(manifest.empty());
+    EXPECT_EQ(manifest[0].entry, "Document.xml");
+    App::LogEntity composite;
+    ASSERT_TRUE(store.getEntity(manifest[0].hash, composite));
+    EXPECT_EQ(composite.kind, "composite");
+    EXPECT_EQ(v1.docxml_hash, App::hashBytes(fromFile));
+    App::CapturedValue composed;
+    ASSERT_TRUE(log().readValue(manifest[0].hash, composed));
+    EXPECT_EQ(composed.fragment, fromFile);
+    App::LogVersion found;
+    ASSERT_TRUE(store.findVersion(App::hashBytes(fromFile), found));
+    EXPECT_EQ(found.num, 1);
+
+    // The parts: one per property written, by container and name; the
+    // one for Obj.Integer is the op's resolved after value.
+    std::string data;
+    ASSERT_TRUE(log().readBytes(manifest[0].hash, data));
+    App::TransactionLog::Composite c1;
+    ASSERT_TRUE(c1.decode(data));
+    EXPECT_FALSE(c1.skeleton.empty());
+    App::LogEntity skeleton;
+    ASSERT_TRUE(store.getEntity(c1.skeleton, skeleton));
+    EXPECT_EQ(skeleton.kind, "skeleton");
+    std::string integerPart;
+    for (const auto& p : c1.parts) {
+        if (p.container == obj->getFullName() && p.name == "Integer")
+            integerPart = p.hash;
+    }
+    ASSERT_FALSE(integerPart.empty());
+    Head head = replayHead();
+    const std::pair<long, std::string> integerKey {obj->getID(), "Integer"};
+    EXPECT_EQ(head.values[integerKey], integerPart);
+    App::LogEntity part;
+    ASSERT_TRUE(store.getEntity(integerPart, part));
+    EXPECT_EQ(part.kind, "prop");
+    // Elided: the defaults block carries what Plain's untouched
+    // properties say, so they are not parts; Obj has the two it changed
+    // on top of whatever cannot share a default.
+    size_t objParts = 0, plainParts = 0;
+    for (const auto& p : c1.parts) {
+        if (p.container == obj->getFullName())
+            ++objParts;
+        else if (p.container == doc()->getObject("Plain")->getFullName())
+            ++plainParts;
+    }
+    EXPECT_EQ(objParts, plainParts + 2);
+    std::map<std::string, App::Property*> props;
+    obj->getPropertyMap(props);
+    EXPECT_LT(plainParts, props.size());
+
+    // Compose mode, nothing changed: every part is claimed, and the
+    // composition is still the file's bytes -- the elision by hash agrees
+    // with the elision by bytes.
+    const bool verify = App::DocumentParams::getTransactionLogVerify();
+    App::DocumentParams::setTransactionLogVerify(true);
+    ASSERT_EQ(doc()->snapshotToLog(), 2);
+    App::DocumentParams::setTransactionLogVerify(verify);
+    manifest = store.manifest(2);
+    ASSERT_FALSE(manifest.empty());
+    ASSERT_TRUE(log().readValue(manifest[0].hash, composed));
+    EXPECT_EQ(composed.fragment, fromFile);
+    ASSERT_TRUE(log().readBytes(manifest[0].hash, data));
+    App::TransactionLog::Composite c2;
+    ASSERT_TRUE(c2.decode(data));
+    EXPECT_EQ(c2.skeleton, c1.skeleton);
+    EXPECT_EQ(c2.parts.size(), c1.parts.size());
+
+    // A change: the changed part is the new op value, the rest are the
+    // same entities (the skeleton moves with the object's revision in the
+    // <Objects> list, which is meta), and the checkout of the older
+    // version is right.
+    doc()->openTransaction("edit");
+    obj->Integer.setValue(12);
+    doc()->commitTransaction();
+    ASSERT_EQ(doc()->snapshotToLog(), 3);
+    manifest = store.manifest(3);
+    ASSERT_TRUE(log().readBytes(manifest[0].hash, data));
+    App::TransactionLog::Composite c3;
+    ASSERT_TRUE(c3.decode(data));
+    ASSERT_EQ(c3.parts.size(), c1.parts.size());
+    head = replayHead();
+    size_t changed = 0;
+    for (size_t i = 0; i < c3.parts.size(); ++i) {
+        EXPECT_EQ(c3.parts[i].name, c1.parts[i].name);
+        if (c3.parts[i].hash != c1.parts[i].hash) {
+            ++changed;
+            EXPECT_EQ(c3.parts[i].name, "Integer");
+            EXPECT_EQ(c3.parts[i].hash, head.values[integerKey]);
+        }
+    }
+    EXPECT_EQ(changed, 1u);
+    ASSERT_TRUE(log().readValue(manifest[0].hash, composed));
+    EXPECT_NE(composed.fragment, fromFile);
+    EXPECT_NE(composed.fragment.find("<Integer value=\"12\"/>"), std::string::npos);
+
+    ASSERT_TRUE(doc()->restoreVersion(2));
+    auto restored = static_cast<App::FeatureTest*>(doc()->getObject("Obj"));
+    ASSERT_TRUE(restored);
+    EXPECT_EQ(restored->Integer.getValue(), 11);
+    EXPECT_STREQ(restored->String.getValue(), "eleven");
+    ASSERT_TRUE(doc()->restoreVersion(3));
+    restored = static_cast<App::FeatureTest*>(doc()->getObject("Obj"));
+    ASSERT_TRUE(restored);
+    EXPECT_EQ(restored->Integer.getValue(), 12);
+
+    // An undo is not an op yet (sec 12): what it changed is serialised
+    // again by the next snapshot, and the snapshot is right.
+    doc()->openTransaction("edit");
+    restored->Integer.setValue(13);
+    doc()->commitTransaction();
+    ASSERT_TRUE(doc()->undo());
+    EXPECT_EQ(restored->Integer.getValue(), 12);
+    ASSERT_EQ(doc()->snapshotToLog(), 4);
+    manifest = store.manifest(4);
+    ASSERT_TRUE(log().readValue(manifest[0].hash, composed));
+    EXPECT_NE(composed.fragment.find("<Integer value=\"12\"/>"), std::string::npos);
+    EXPECT_EQ(composed.fragment.find("<Integer value=\"13\"/>"), std::string::npos);
+
+    Base::FileInfo(path).deleteFile();
 }

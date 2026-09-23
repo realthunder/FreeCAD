@@ -52,7 +52,10 @@ public:
     explicit CaptureWriter(const CaptureConfig& config, CapturedValue& out)
         : _out(out)
     {
-        setFileVersion(2);
+        // The archive's configuration (Document::save with an archive:
+        // the writer's defaults, file version 1, XML not forced), so that
+        // a saved part and a captured value are the same bytes.
+        setFileVersion(1);
         setForceXML(0);
         setSplitXML(false);
         setSchemaVersion(config.schema);
@@ -68,6 +71,7 @@ public:
             setPreferBinary(false);
         }
         _xml.precision(std::numeric_limits<double>::digits10 + 1);
+        _xml.setf(std::ios::fixed, std::ios::floatfield);
     }
 
     std::ostream& Stream() override { return _current ? *_current : _xml; }
@@ -81,6 +85,7 @@ public:
             FileEntry entry = FileList[index++];
             std::ostringstream out;
             out.precision(std::numeric_limits<double>::digits10 + 1);
+            out.setf(std::ios::fixed, std::ios::floatfield);
             _current = &out;
             putNextEntry(entry.FileName.c_str());
             indent = 0;
@@ -139,7 +144,7 @@ void App::restoreValue(Property& prop, const CapturedValue& value)
     std::istringstream xml("<?xml version='1.0' encoding='utf-8'?>\n<Value>\n"
                            + value.fragment + "</Value>\n");
     Base::XMLReader reader("Value.xml", xml);
-    reader.FileVersion = 2;
+    reader.FileVersion = 1;   // what the capture writes under
     if (auto doc = prop.getContainer() ? prop.getContainer()->getOwnerDocument() : nullptr)
         reader.DocumentSchema = static_cast<int>(doc->getSaveSchemaVersion());
     if (!reader.isValid())
