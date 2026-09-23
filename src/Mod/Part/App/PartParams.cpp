@@ -62,6 +62,7 @@ public:
     bool ShareStoredSubShapes;
     long BorrowBelowFace;
     unsigned long LoftMaxDegree;
+    bool ImmutableShapeValues;
     long WarnUnnamedInput;
     double MinimumDeviation;
     double MeshDeviation;
@@ -115,6 +116,8 @@ public:
         funcs["BorrowBelowFace"] = &PartParamsP::updateBorrowBelowFace;
         LoftMaxDegree = this->handle->GetUnsigned("LoftMaxDegree", 5);
         funcs["LoftMaxDegree"] = &PartParamsP::updateLoftMaxDegree;
+        ImmutableShapeValues = this->handle->GetBool("ImmutableShapeValues", false);
+        funcs["ImmutableShapeValues"] = &PartParamsP::updateImmutableShapeValues;
         WarnUnnamedInput = this->handle->GetInt("WarnUnnamedInput", 0);
         funcs["WarnUnnamedInput"] = &PartParamsP::updateWarnUnnamedInput;
         MinimumDeviation = this->handle->GetFloat("MinimumDeviation", 0.05);
@@ -226,6 +229,10 @@ public:
         self->LoftMaxDegree = self->handle->GetUnsigned("LoftMaxDegree", 5);
     }
     // Auto generated code (Tools/params_utils.py:314)
+    static void updateImmutableShapeValues(PartParamsP *self) {
+        self->ImmutableShapeValues = self->handle->GetBool("ImmutableShapeValues", false);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
     static void updateWarnUnnamedInput(PartParamsP *self) {
         self->WarnUnnamedInput = self->handle->GetInt("WarnUnnamedInput", 0);
     }
@@ -310,6 +317,14 @@ static const App::ParamRegistry::Registrar _PartParamsRegistrar({
 "shared too, and it is off wherever DedupCrossFileGeometry is."),
     App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "LoftMaxDegree", "LoftMaxDegree", App::ParamInfo::UInt, 5)
         .setTitle("Loft Max Degree"),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "ImmutableShapeValues", "ImmutableShapeValues", App::ParamInfo::Bool, false)
+        .setTitle("Immutable Shape Values")
+        .setDoc("Freeze a shape property's value when it is set: every TShape gets the\n"
+"OCCT fork's Immutable flag, so a later edit of its geometry, tolerance\n"
+"or topology throws instead of changing the value behind the property\n"
+"(docs/TransactionLog.md sec 23.6, tier 2). Off until the OCCT\n"
+"algorithms that complete the edges they build on copy an immutable\n"
+"edge instead of writing to it (sec 23.12)."),
     App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "WarnUnnamedInput", "WarnUnnamedInput", App::ParamInfo::Int, 0)
         .setTitle("Warn Unnamed Input")
         .setDoc("Report a shape operation whose input shapes carry no element map, so\n"
@@ -912,6 +927,39 @@ void PartParams::setLoftMaxDegree(const unsigned long &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeLoftMaxDegree() {
     instance()->handle->RemoveUnsigned("LoftMaxDegree");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docImmutableShapeValues() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Freeze a shape property's value when it is set: every TShape gets the\n"
+"OCCT fork's Immutable flag, so a later edit of its geometry, tolerance\n"
+"or topology throws instead of changing the value behind the property\n"
+"(docs/TransactionLog.md sec 23.6, tier 2). Off until the OCCT\n"
+"algorithms that complete the edges they build on copy an immutable\n"
+"edge instead of writing to it (sec 23.12).");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & PartParams::getImmutableShapeValues() {
+    return instance()->ImmutableShapeValues;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & PartParams::defaultImmutableShapeValues() {
+    const static bool def = false;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setImmutableShapeValues(const bool &v) {
+    instance()->handle->SetBool("ImmutableShapeValues",v);
+    instance()->ImmutableShapeValues = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeImmutableShapeValues() {
+    instance()->handle->RemoveBool("ImmutableShapeValues");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

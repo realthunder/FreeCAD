@@ -2415,3 +2415,70 @@ install, which had predated the flag on this box), log and property
 gtests green; ctest at the 13 guest-image failures that are not the
 log's; Python `TestSketcherApp`, `TestPartApp`, `Document`,
 `MeshTestsApp` OK.
+
+### 23.12 Step 5 as built, behind a switch (2026-09-24)
+
+**The freeze.** Both `PropertyPartShape::setValue` overloads mark every
+TShape of the new value `Immutable` (`freeze` in `PropertyTopoShape.cpp`),
+children before their parent so that a marked TShape stands for its
+subtree and a sub-shape shared with an earlier value is not walked again.
+Restore, the blob and store serves and `Paste` all arrive through
+`setValue`. `transformGeometry` was the one write that did not: it
+rewrote `_Shape` in place and never updated `_ShapeNoName`; it now makes
+the transformed shape from the held one and sets it. The freeze runs only
+under `PartParams` `ImmutableShapeValues`, **off by default**, for the
+reason below. Gtests in `tests/src/Mod/Part/App/ImmutableShape.cpp`:
+every TShape frozen after a set (both overloads, a compound sharing a
+frozen solid), the switch off leaving the value alone, `transformGeometry`
+a new frozen value that touches the owner.
+
+**The OCCT side, beyond 23.8.** `BOPAlgo_PaveFiller::SetNonDestructive`
+switches a boolean to non-destructive mode for a `Locked` argument; it
+now does so for an `Immutable` one too, or every boolean on a property's
+shape would tolerance-fix its arguments in place (gtest
+`ImmutableShapeTest.booleanGoesNonDestructive`).
+
+**What turning it on hits.** Measured with a throw-logging preload over
+both suites (`TopoDS_LockedShape`/`FrozenShape`, backtraced at the throw,
+so a caller that swallows the exception is counted too): ctest 795/797
+(`FeaturePartFuseTest.testRefine`, whose refine fails silently, and
+`SketchObjectTest.testAddExternalCurvedFaceFromTheSide`), Python 80
+failures and 50 errors (BIM 53, CAM 38, PartDesign 29, FEM 3, Sketcher 3,
+Draft 2, Part 2), 335 throws in the Python run:
+
+| Throws | Setter | Reached from |
+|---|---|---|
+| 300 | `SameRange` (the reset of a forced `SameParameter`) | `BRepLib_MakeFace(wire)`: `Part.Face`, `FaceMakerBullseye`, `FaceMakerCheese`, `ModelRefine`, `BRepOffsetAPI_MakeOffset` |
+| 12 | (in `BRepLib_MakeWire::Add`) | `Part.Wire` |
+| 6 | `UpdateEdge` with a pcurve | `BRepSweep_Prism`/`Revol`, `ThruSections`, `BRepFill_Generator`, `BRepOffset_MakeOffset`, `ChFi3d`, `HLRTopoBRep_OutLiner` |
+| 5 | `SameParameter` | as above |
+
+None of it is FreeCAD misusing a value: OCCT keeps an edge's pcurve for
+every face the edge bounds inside the edge, so building topology on
+shared edges completes them in place. The same happens without the
+freeze and changes the value's bytes: a wire's BREP is unchanged by a
+planar `Part.Face` (a pcurve on a plane is computed on demand and never
+stored) except for the `Free` bit, but extruding that face adds the
+side cylinder and two pcurves on it to the wire's own BREP (695 -> 1046
+bytes). So a saved shape depends on what was later built from it.
+
+Also found: `BRepLib`'s `UpdShTol` raises a vertex tolerance through
+`BRep_TVertex` directly, not `BRep_Builder`, so tier 2 never sees it;
+only tier 3 would.
+
+**Open (user, 2026-09-24).** Chosen first: copy-on-write in the fork --
+an algorithm that must change an `Immutable` edge or vertex copies it
+into its result and reports the copy in its history. Then reopened by the
+pcurve findings: FreeCAD's STEP export writes no pcurves by default
+(`WriteSurfaceCurveMode` 0, overriding OCCT's On) and the reader rebuilds
+them, so a pcurve is derivable, like the triangulation -- though not bit
+for bit on a non-planar surface, and the edge tolerance is measured
+against it. The alternative on the table: a pcurve for a surface the
+edge has none for is a cache and may be added to an `Immutable` edge;
+the BREP writer drops pcurves whose surface is not a face of the shape
+being written, and normalises the contextual `Free` bit, so the value's
+bytes stop depending on its consumers; a forced `SameParameter` on an
+`Immutable` edge verifies instead of resetting; copy-on-write only where
+a new face needs a real change, such as a larger tolerance. It keeps the
+edges shared, so element names cannot move, where copies would have to
+be carried through every mapper. Not started until decided.

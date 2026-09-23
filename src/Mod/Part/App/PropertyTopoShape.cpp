@@ -47,6 +47,7 @@
 # include <TopTools_IndexedMapOfShape.hxx>
 
 # include <TopoDS.hxx>
+# include <TopoDS_Iterator.hxx>
 #endif // _PreComp_
 
 #include <App/Application.h>
@@ -94,6 +95,31 @@ PropertyPartShape::~PropertyPartShape()
 
 namespace
 {
+
+/** Freeze a value: every TShape refuses a change to its geometry or topology.
+ *
+ * docs/TransactionLog.md sec 23.6, tier 2. The flag is the OCCT fork's
+ * Immutable, not Locked -- the mesher still writes its caches -- and it is
+ * per TShape, not recursive, so the walk visits every sub-shape. Children
+ * are marked before their parent, so a marked TShape stands for its whole
+ * subtree and a sub-shape shared with an earlier value is not walked again.
+ * Never cleared: whoever wants a different shape makes a new one.
+ */
+void freeze(const TopoDS_Shape& shape)
+{
+    if (shape.IsNull() || shape.Immutable())
+        return;
+    for (TopoDS_Iterator it(shape, false, false); it.More(); it.Next())
+        freeze(it.Value());
+    shape.TShape()->Immutable(true);
+}
+
+/// The switch (PartParams ImmutableShapeValues) is read per value set.
+void makeImmutable(const TopoDS_Shape& shape)
+{
+    if (PartParams::getImmutableShapeValues())
+        freeze(shape);
+}
 
 /** The shortest text that reads back as the very same double.
  *
@@ -853,6 +879,7 @@ void PropertyPartShape::setValue(const TopoShape& sh)
     // the transaction takes there is a Copy(), which carries no blob.
     aboutToSetValue();
     dropBlob(sh.getShape());
+    makeImmutable(sh.getShape());
     _Shape = sh;
     _ShapeNoName.setShape(sh.getShape(), true);
     _ShapeNoName.Tag = -1;
@@ -880,6 +907,7 @@ void PropertyPartShape::setValue(const TopoDS_Shape& sh, bool resetElementMap)
     // Announced first, see setValue(const TopoShape&).
     aboutToSetValue();
     dropBlob(sh);
+    makeImmutable(sh);
     auto obj = dynamic_cast<App::DocumentObject*>(getContainer());
     if(obj)
         _Shape.Tag = obj->getID();
@@ -962,12 +990,12 @@ Base::Matrix4D PropertyPartShape::getTransform() const
 void PropertyPartShape::transformGeometry(const Base::Matrix4D &rclTrf)
 {
     ensureRestored();
-    // Unlike a placement this rewrites the geometry itself, so whatever was
-    // stored for it no longer describes the value.
-    _blob.reset();
-    aboutToSetValue();
-    _Shape.transformGeometry(rclTrf);
-    hasSetValue();
+    // Unlike a placement this rewrites the geometry itself: a new value made
+    // from the held one, which stays as it was, and set like any other so the
+    // stored blob, the unnamed copy and the freeze all follow.
+    TopoShape shape(_Shape);
+    shape.transformGeometry(rclTrf);
+    setValue(shape);
 }
 
 PyObject *PropertyPartShape::getPyObject()
