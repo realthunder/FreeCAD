@@ -123,6 +123,21 @@ public:
     /// nothing about another.
     static bool serving(App::Document *doc);
 
+    /*!
+     * Take back \a client's foreign highlight from every other client.
+     *
+     * A selection routed `everyone` (docs/ThinClient.md sec 8.11a) is
+     * painted by the other viewers until it is replaced, and the two
+     * ways it can end -- the client disconnecting, the host moving it
+     * off that route -- both stop it announcing rather than announce
+     * something emptier. Without this its last pick stays lit on every
+     * other screen, owned by nobody.
+     *
+     * Every served document is told, because the caller that changes a
+     * route holds a connection id and not the group it joined.
+     */
+    static void withdrawPeerSelection(uint64_t client);
+
     /// This source's own render-property container.
     App::PropertyContainer *ownRenderProperties() const;
 

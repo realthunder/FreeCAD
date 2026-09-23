@@ -674,8 +674,9 @@ being filled, all live at once.
 The table is the two oldest; `tests/gui/CMakeLists.txt` is the list that is
 current.
 
-**Two of them are not registered, and are meant not to be**:
-`camera-uplink-browser.py` and `serve-edit-browser.py` drive a real Chrome
+**Three of them are not registered, and are meant not to be**:
+`camera-uplink-browser.py`, `serve-edit-browser.py` and
+`serve-peer-selection-browser.py` drive a real Chrome
 through the built WASM viewer, so they need three things this repository does
 not carry -- `build/wasm`, a `puppeteer-core` install, and a Chrome binary --
 and they skip rather than fail when any is missing. Registering them would
@@ -694,6 +695,17 @@ three crashes on its first run that the synthetic socket client next to it
 could not reach, because a browser sends a *stream* of pointer moves and the
 paths that break are the ones a single event never gets to
 (`docs/ThinClient.md` sec 8.9 step 4).
+
+`serve-peer-selection-browser.py` (`PEERSEL_REAL=1`) is the one of the three
+that is judged by PIXELS, so what drew it matters: it runs TWO browsers --
+one per viewer, never two tabs of one, because a background tab composites
+no frames and a canvas that has stopped repainting reads as a scene that
+has stopped changing. One picks, the other must paint it as somebody
+else's (`docs/ThinClient.md` sec 8.11a), and every reading is taken against
+a measured noise floor of two shots of a scene nobody touched. The result
+line records the GL backend, since headless swiftshader answers this test
+too and has masked GPU bugs before. Scored against the viewer WITHOUT the
+paint, five of its sixteen checks fail and the control checks still pass.
 
 **On Windows they do not register**, and cannot: `tests/gui/CMakeLists.txt`
 wants `xvfb-run` and `.conda/run.sh`, and the box has neither. Run one by

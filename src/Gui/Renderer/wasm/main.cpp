@@ -1968,21 +1968,22 @@ static const int kClientSelId = Render::SelIdSelected | 0x1;
 struct SelItem { uint64_t key; PickKind kind; int part; };
 static std::vector<SelItem> s_sel;
 
-/// Rebuild the local selection highlight from s_sel against the CURRENT scene
-/// and feed it as one selection (kClientSelId). Called on select and after
-/// each snapshot (the scene draws may have been replaced). Each item is drawn
-/// against the scene draw matching both its object and its element kind (the
-/// object's face / edge / vertex draw).
-static void rebuildSelection()
+/// Append highlight draws for one set of selected items against the CURRENT
+/// scene, styled by cfg. Each item is drawn against the scene draw matching
+/// both its object and its element kind (the object's face / edge / vertex
+/// draw). Shared by this client's own selection and by the foreign ones,
+/// which differ only in the styling and the feed they land in.
+static void appendSelectionDraws(const std::vector<SelItem> &items,
+                                 const Render::PreselHighlightConfig &cfg,
+                                 Render::DrawCallList &draws)
 {
-    Render::DrawCallList draws;
     for (const auto &dc : s_snap.scene) {
         if (!dc.mesh)
             continue;
         const PickKind dcKind = kindForDraw(dc);
         if (dcKind == PickNone)
             continue;
-        for (const auto &it : s_sel) {
+        for (const auto &it : items) {
             if (it.key != dc.objectKey)
                 continue;
             // A whole-object item matches every pickable draw of the object.
@@ -1998,9 +1999,18 @@ static void rebuildSelection()
                 part = -1;
             }
             draws.push_back(buildHiliteDraw(dc, part, partStart, partCount,
-                                            s_snap.selconf));
+                                            cfg));
         }
     }
+}
+
+/// Rebuild the local selection highlight from s_sel against the CURRENT scene
+/// and feed it as one selection (kClientSelId). Called on select and after
+/// each snapshot (the scene draws may have been replaced).
+static void rebuildSelection()
+{
+    Render::DrawCallList draws;
+    appendSelectionDraws(s_sel, s_snap.selconf, draws);
     if (draws.empty())
         s_renderer->removeSelection(kClientSelId);
     else
@@ -2086,6 +2096,269 @@ static void emitSelectionEvent()
     }
     json += ']';
     fcviewer_selection_event(json.c_str());
+}
+
+// ---- Somebody else's selection (painted, and nothing more) -------------
+// A client the host put on the `everyone` route (docs/ThinClient.md sec
+// 8.11a) has its committed selection pushed here as
+// {"cmd":"peerselection","owner":"<id>","doc":..,"items":[{obj,sub},..]}.
+//
+// It is PAINT ONLY, by ruling. It never enters s_sel and never reaches
+// 'fc:selection', so what this client's next command acts on -- and what
+// the inspector card describes -- is still what this client picked
+// itself. The only thing a foreign selection does here is occupy pixels.
+//
+// A command of its own rather than the `selection` push, so a viewer
+// that predates this ignores an unknown cmd instead of painting somebody
+// else's pick as its own.
+
+/// One peer's selection as this client last heard it.
+struct PeerSelection {
+    uint64_t owner = 0;
+    /// The items as they ARRIVED: object name and sub-element name, not
+    /// resolved keys. A peer's push can name an object this client does
+    /// not have yet -- it joined late, or the scene is still streaming --
+    /// and a later snapshot can replace the draws a key was resolved
+    /// against. Names survive both; a key resolved once survives
+    /// neither, and what is lost is silent.
+    std::vector<std::pair<std::string, std::string>> items;
+};
+static std::vector<PeerSelection> s_peerSel;
+/// The served document those names were resolved in, from the push.
+static std::string s_peerDoc;
+/// The selection feeds currently handed to the renderer for those, so a
+/// rebuild can withdraw exactly what it fed last time.
+static std::vector<int> s_peerSelIds;
+/// Well clear of kClientSelId and of anything the backend's own streamed
+/// feeds use: the ids are only keys, but two feeds sharing one key would
+/// silently replace each other.
+static const int kPeerSelIdBase = Render::SelIdSelected | 0x100;
+
+/// The colour somebody else's selection is drawn in: per owner, so two
+/// peers are told apart. This client's own colour is not in the list --
+/// that one is the backend's (selconf), and a foreign highlight that
+/// matched it would be indistinguishable from one's own pick.
+static uint32_t peerColor(uint64_t owner)
+{
+    static const uint32_t kPalette[] = {
+        0xFF4FA3FF,  // pink
+        0x00C2D6FF,  // cyan
+        0xFF9A1FFF,  // orange
+        0xA166FFFF,  // violet
+        0x3FA9FFFF,  // blue
+        0xFF6B6BFF,  // coral
+    };
+    return kPalette[size_t(owner % (sizeof(kPalette) / sizeof(kPalette[0])))];
+}
+
+/// Turn one {"obj":..,"sub":..} of a foreign selection into a local item,
+/// against \a byName (the object-model index rebuildPeerSelection built).
+///
+/// The inverse of emitSelectionEvent: the entry carrying that object name
+/// gives the object key, and Face3 / Edge1 / Vertex2 give the element
+/// kind and a one-based part index. Returns false for an object this
+/// client's scene does not have -- one it cannot see is one it cannot
+/// paint, which is the whole of the access story here: a peer's
+/// selection is painted against this client's own scene, never added
+/// to it.
+static bool peerItemFromNames(
+        const std::string &obj, const std::string &sub,
+        const std::map<std::string, std::pair<uint64_t, bool>> &byName,
+        SelItem &out)
+{
+    auto found = byName.find(obj);
+    if (found == byName.end())
+        return false;
+    out = SelItem{found->second.first, PickNone, -1};
+    // No sub-element: the whole object, as the local grammar writes it.
+    if (sub.empty())
+        return true;
+    static const struct { const char *name; PickKind kind; } kKinds[] = {
+        {"Face", PickFace}, {"Edge", PickEdge}, {"Vertex", PickVertex},
+    };
+    for (const auto &k : kKinds) {
+        const size_t n = std::strlen(k.name);
+        if (sub.compare(0, n, k.name) != 0)
+            continue;
+        char *end = nullptr;
+        const long index = std::strtol(sub.c_str() + n, &end, 10);
+        if (end && *end == '\0' && index > 0) {
+            out.kind = k.kind;
+            out.part = int(index - 1);
+        }
+        break;
+    }
+    // A sub-name this viewer cannot place -- an element-map name, or a
+    // kind it does not draw -- stays a whole-object item. Saying "this
+    // peer has something of this object" is closer to the truth than
+    // saying nothing, and a paint-only highlight can afford that
+    // approximation where a selection could not.
+    return true;
+}
+
+/// Rebuild every foreign highlight against the CURRENT scene. Called when
+/// one arrives and after each snapshot, for the same reason
+/// rebuildSelection is: the draws an item resolved against may have been
+/// replaced.
+///
+/// One feed per peer, so a peer whose set changes replaces its own and
+/// disturbs nobody else's. They are withdrawn and re-fed rather than
+/// updated in place: a peer that goes away has to take its feed with it,
+/// and the whole set is a handful of entries.
+static void rebuildPeerSelection()
+{
+    if (!s_renderer)
+        return;
+    for (int id : s_peerSelIds)
+        s_renderer->removeSelection(id);
+    s_peerSelIds.clear();
+    if (s_peerSel.empty())
+        return;
+    // One pass over the object model for the whole set rather than a
+    // search per item: a name-to-key index, preferring the served
+    // document where a name appears in more than one. An object name is
+    // unique within a document, but a scene carries objects of another
+    // one through a link, and then the same name can appear twice.
+    std::map<std::string, std::pair<uint64_t, bool>> byName;
+    for (const auto &v : s_objects.objects) {
+        const auto &info = v.second.entry.info;
+        if (info.obj.empty())
+            continue;
+        const bool home = info.doc == s_peerDoc;
+        auto it = byName.find(info.obj);
+        if (it == byName.end())
+            byName.emplace(info.obj, std::make_pair(v.first, home));
+        else if (home && !it->second.second)
+            it->second = std::make_pair(v.first, true);
+    }
+
+    int slot = 0;
+    for (const auto &peer : s_peerSel) {
+        std::vector<SelItem> items;
+        for (const auto &named : peer.items) {
+            SelItem item;
+            if (peerItemFromNames(named.first, named.second, byName, item))
+                items.push_back(item);
+        }
+        // Somebody else's reads as an OUTLINE in a colour of its own,
+        // where this client's own selection is filled. Two selections on
+        // one face would otherwise be the same shape at the same depth,
+        // fighting for it; and a difference that is only a hue is no
+        // difference at all to a viewer who cannot separate the two.
+        Render::PreselHighlightConfig cfg = s_snap.selconf;
+        cfg.color = peerColor(peer.owner);
+        cfg.faceOutline = true;
+        cfg.outlineOnly = true;
+        Render::DrawCallList draws;
+        appendSelectionDraws(items, cfg, draws);
+        const int id = kPeerSelIdBase + slot++;
+        if (!draws.empty()) {
+            s_renderer->addSelection(id, std::move(draws));
+            s_peerSelIds.push_back(id);
+        }
+    }
+}
+
+/// Read a JSON string body starting at its opening quote, honouring the
+/// escapes the server's writer emits (jsonQuoted). Returns the character
+/// after the closing quote, or null if the string never ends.
+static const char *readJsonString(const char *p, std::string &out)
+{
+    out.clear();
+    if (!p || *p != '"')
+        return nullptr;
+    for (++p; *p; ++p) {
+        if (*p == '"')
+            return p + 1;
+        if (*p != '\\') {
+            out += *p;
+            continue;
+        }
+        switch (p[1]) {
+        case '"':  out += '"';  ++p; break;
+        case '\\': out += '\\'; ++p; break;
+        case 'n':  out += '\n'; ++p; break;
+        case 'r':  out += '\r'; ++p; break;
+        case 't':  out += '\t'; ++p; break;
+        case 'u':
+            // A control character, which no object or element name has;
+            // skipped rather than decoded so it cannot end the string.
+            if (std::strlen(p + 2) >= 4) {
+                p += 5;
+                break;
+            }
+            return nullptr;
+        default:
+            return nullptr;
+        }
+    }
+    return nullptr;
+}
+
+EM_JS(void, fcviewer_peerselection_event, (const char *json), {
+    try {
+        var detail = JSON.parse(UTF8ToString(json));
+        window.dispatchEvent(new CustomEvent('fc:peerselection',
+                                             { detail: detail }));
+    } catch (e) {}
+});
+
+/// Take in one peerselection push: resolve it, paint it, and tell the DOM
+/// layer who has what. The event is deliberately NOT 'fc:selection' -- a
+/// page that shows a roster can listen for it, and the inspector, which
+/// describes what this client selected, never sees it.
+static void applyPeerSelection(const char *json)
+{
+    std::string owner;
+    if (!readJsonString(std::strstr(json, "\"owner\":")
+                            ? std::strstr(json, "\"owner\":") + 8 : nullptr,
+                        owner))
+        return;
+    std::string doc;
+    if (const char *d = std::strstr(json, "\"doc\":"))
+        readJsonString(d + 6, doc);
+    const uint64_t id = std::strtoull(owner.c_str(), nullptr, 10);
+    if (!id)
+        return;
+
+    PeerSelection peer;
+    peer.owner = id;
+    const char *p = std::strstr(json, "\"items\":[");
+    while (p && (p = std::strstr(p, "{\"obj\":")) != nullptr) {
+        std::string obj, sub;
+        p = readJsonString(p + 7, obj);
+        if (!p)
+            break;
+        if (const char *sp = std::strstr(p, "\"sub\":")) {
+            // Within this entry: the writer puts sub straight after obj,
+            // so the next entry's cannot be read in place of this one's.
+            const char *close = std::strchr(p, '}');
+            if (!close || sp < close)
+                readJsonString(sp + 6, sub);
+        }
+        if (!obj.empty())
+            peer.items.emplace_back(std::move(obj), std::move(sub));
+    }
+    s_peerDoc = doc;
+
+    auto it = std::find_if(s_peerSel.begin(), s_peerSel.end(),
+                           [id](const PeerSelection &s) {
+                               return s.owner == id;
+                           });
+    if (peer.items.empty()) {
+        // An empty set is how a peer says it has nothing selected, and
+        // how the server says that peer is gone or off the route
+        // (announcePeerGone). Either way there is nothing left to paint
+        // for it, so it stops costing a feed.
+        if (it != s_peerSel.end())
+            s_peerSel.erase(it);
+    }
+    else if (it != s_peerSel.end())
+        *it = std::move(peer);
+    else
+        s_peerSel.push_back(std::move(peer));
+    rebuildPeerSelection();
+    fcviewer_peerselection_event(json);
 }
 
 /// Client-side select at canvas pixel: pick locally, update s_sel, and show
@@ -5093,8 +5366,10 @@ static void applySnapshot(bool fit)
             s_renderer->removeSelection(id);
         s_selIds.clear();
         // Re-apply the local selection against the (possibly replaced)
-        // scene draws.
+        // scene draws -- and the foreign ones, which resolve their names
+        // against this snapshot's object model for the same reason.
         rebuildSelection();
+        rebuildPeerSelection();
     }
     {
         DbgScope dbg(s_dbgOverlayMs);
@@ -8118,6 +8393,13 @@ static bool applyScenePayload(const char *data, size_t size)
                 rebuildSelection();
                 emitSelectionEvent();
             }
+            // And so does everyone else's: the owner ids belonged to the
+            // old session's connections, and the names to the document
+            // it was serving.
+            if (!s_peerSel.empty()) {
+                s_peerSel.clear();
+                rebuildPeerSelection();
+            }
         }
         // The WebSocket push loop re-sends the current scene on connect;
         // skip the echo of a version already applied (the initial HTTP
@@ -8508,6 +8790,13 @@ static void handleControlMessage(const char *json)
         // which is what a filtered pick or an in-edit element comes back
         // as. Nothing here is rerouted by it.
         fcviewer_control_event(json);
+    }
+    else if (std::strstr(json, "\"cmd\":\"peerselection\"")) {
+        // Somebody ELSE's selection, because the host put them on the
+        // `everyone` route (sec 8.11a). Painted as theirs and nothing
+        // more: it never enters this client's own selection, so what
+        // the next command here acts on is still what was picked here.
+        applyPeerSelection(json);
     }
     else if (std::strstr(json, "\"id\":") || std::strstr(json, "\"op\":")) {
         // This viewer's own edit request, answered (sec 8.9 step 4). Read

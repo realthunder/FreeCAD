@@ -2036,11 +2036,49 @@ and any editing client could flip it for everybody -- which is the privilege thi
 removes. `tests/gui/serve-shared-edit.py` asserted that a client could, and now
 asserts that the host decides.
 
-**Built.** The routes themselves, the wire, the roster combo, the Python API and
-the take-back. **Not built:** the browser painting a foreign selection. The
-`everyone` route puts the owner-tagged push on the wire and the viewer ignores it
--- it paints its own local pick and takes the backend's selection feed as advice
-already -- so a second, per-owner highlight is the piece that remains.
+**Built.** The routes themselves, the wire, the roster combo, the Python API,
+the take-back, and the browser painting a foreign selection (below).
+
+#### The foreign highlight, in the viewer
+
+A `peerselection` push is PAINT and nothing else. It never enters `s_sel`, the
+client's own set, and it is emitted to the page as `fc:peerselection`, never as
+`fc:selection` -- so the inspector card, which describes what this client
+selected, cannot follow somebody else's pick, and neither can the next command.
+
+**One feed per owner**, in a colour taken from a fixed palette by owner id, and
+drawn as a face OUTLINE where this client's own selection is filled. A hue alone
+would be no difference at all to a viewer who cannot separate the two, and two
+selections on one face are otherwise the same shape at the same depth, fighting
+for it.
+
+**The names are kept, not the keys.** What arrives names FreeCAD objects and
+sub-elements, because that is what the owner's pick resolved to on the server;
+the viewer turns them into draws at PAINT time -- the inverse of the resolution
+`fc:selection` carries -- and re-resolves after every snapshot. A push can name
+an object this client does not have yet (it joined late, the scene is still
+streaming), and a snapshot can replace the draws a key was resolved against;
+names survive both, and a key resolved once survives neither. An object not in
+this client's scene is simply not painted: a foreign selection is drawn against
+the scene this client already has, never added to it.
+
+**Three ways a foreign highlight ends**, because a paint that is only replaced
+never ends at all:
+
+- the owner selects something else, or clears -- the ordinary push, an empty
+  `items` for the clear;
+- the owner disconnects -- `announcePeerGone` sends that empty set on its way
+  out, while its mirror is still there to be skipped;
+- the host takes the owner off `everyone` -- the same withdrawal, from both the
+  roster combo and `Gui.serveSetClientSelection`. Note this is not the room rule
+  above: a routed client's contribution to the DESKTOP survives its demotion,
+  because it was applied as a real selection in a real instance, while the
+  foreign highlight is labelled as that client's and live. Once the route is
+  gone the label is false, so the paint goes.
+
+**And a client that joins mid-session is told** what the `everyone` clients
+already have selected (`announcePeersTo`), since the pushes are change-driven
+and the peer who already picked has the least reason to pick again.
 
 ### 8.12 What per client would cost -- the multi-user roadmap
 

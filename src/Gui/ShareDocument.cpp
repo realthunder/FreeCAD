@@ -760,6 +760,11 @@ public:
                                 index == 2 ? Render::SelectionRoute::Everyone
                                 : index == 1 ? Render::SelectionRoute::Host
                                              : Render::SelectionRoute::None);
+                        // Taken off `everyone`: what it painted on the
+                        // other viewers is nobody's selection now, and
+                        // nothing else would ever take it down.
+                        if (index != 2)
+                            SceneServeSource::withdrawPeerSelection(id);
                     });
             tree->setItemWidget(item, 5, route);
 

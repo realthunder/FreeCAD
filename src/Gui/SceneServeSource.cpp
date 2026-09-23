@@ -368,6 +368,10 @@ public:
 
     void flushClientSelections();
     void announceSelection(uint64_t client);
+    /// Tell the other clients that \a owner's foreign highlight is over.
+    void announcePeerGone(uint64_t owner);
+    /// Tell \a client what the `everyone` clients already have selected.
+    void announcePeersTo(uint64_t client);
     /// Where this connection's committed selection goes, as the host
     /// last said (docs/ThinClient.md sec 8.11a).
     Render::SelectionRoute routeOf(uint64_t client) const;
@@ -427,6 +431,11 @@ public:
             if (owner)
                 owner->schedulePublish();
         });
+        // What the others already have selected, for the ones whose
+        // route says this client may see it (8.11a). Said now rather
+        // than waiting for them to pick again; the viewer keeps the
+        // names until it has a scene to resolve them against.
+        announcePeersTo(client);
         return mirror.get();
     }
 
@@ -1306,6 +1315,44 @@ void SceneServeSource::Private::announceSelection(uint64_t client)
     }
 }
 
+void SceneServeSource::Private::announcePeersTo(uint64_t client)
+{
+    // A foreign highlight is announced when it CHANGES, which says
+    // nothing to a viewer that was not connected when it did. Without
+    // this, joining a session in progress shows an empty room until
+    // somebody happens to pick again -- and the one who already has
+    // something selected has the least reason to.
+    for (const auto &entry : mirrors) {
+        if (entry.first == client)
+            continue;
+        if (routeOf(entry.first) != Render::SelectionRoute::Everyone)
+            continue;
+        if (SelectionSingleton *instance = entry.second->selectionInstance())
+            announceSelectionTo(client, instance, entry.first);
+    }
+}
+
+void SceneServeSource::Private::announcePeerGone(uint64_t owner)
+{
+    // A foreign highlight is painted until it is replaced, and nothing
+    // replaces one whose owner has stopped announcing: a client that
+    // closed its tab, or one the host has just taken off the Everyone
+    // route. Either way the others are still painting a selection that
+    // no longer exists anywhere, so say it is empty.
+    //
+    // Sent whatever the route was, because by the time a connection
+    // closes the server has already forgotten what it was set to -- and
+    // an empty set for an owner this client never painted costs it a
+    // lookup that finds nothing.
+    const std::string json = "{\"cmd\":\"peerselection\",\"owner\":\""
+        + std::to_string(owner) + "\",\"doc\":\"" + groupName
+        + "\",\"items\":[]}";
+    for (const auto &entry : mirrors) {
+        if (entry.first != owner)
+            Render::SceneStreamServer::instance().sendControl(entry.first, json);
+    }
+}
+
 void SceneServeSource::clearClientSelections()
 {
     for (auto &entry : pimpl->mirrors) {
@@ -1562,6 +1609,10 @@ void SceneServeSource::installHandlers()
                 // client's selection outlives its connection on the
                 // desktop's chrome any more than in its own instance.
                 self->pimpl->takeBackRoomShare(client);
+                // And what it painted on the other clients goes with it
+                // too -- said while its mirror is still here, since the
+                // announce skips the owner by looking it up.
+                self->pimpl->announcePeerGone(client);
                 // The observer before the instance it observes.
                 self->pimpl->clientSelections.erase(client);
                 self->pimpl->selectionDirty.erase(client);
@@ -1933,6 +1984,12 @@ SceneServeSource *SceneServeSource::sourceFor(App::Document *doc)
 bool SceneServeSource::serving(App::Document *doc)
 {
     return sourceFor(doc) != nullptr;
+}
+
+void SceneServeSource::withdrawPeerSelection(uint64_t client)
+{
+    for (auto &entry : servedDocuments())
+        entry.second->pimpl->announcePeerGone(client);
 }
 
 bool SceneServeSource::isValid() const

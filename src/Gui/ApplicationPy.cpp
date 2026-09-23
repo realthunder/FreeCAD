@@ -1277,6 +1277,11 @@ PyObject* Application::sServeSetClientSelection(PyObject * /*self*/, PyObject *a
     }
     bool ok = Render::SceneStreamServer::instance()
                   .setClientSelectionRoute(id, value);
+    // Off the everyone route, the foreign highlight it left on the other
+    // viewers is nobody's: take it back rather than wait for a selection
+    // this client may never make again.
+    if (ok && value != Render::SelectionRoute::Everyone)
+        SceneServeSource::withdrawPeerSelection(id);
     return Py::new_reference_to(Py::Boolean(ok));
 }
 
