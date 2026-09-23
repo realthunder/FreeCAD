@@ -109,14 +109,15 @@ void PropertyNormalList::transformGeometry(const Base::Matrix4D& mat)
     atomic_change guard(*this);
 
     // Rotate the normal vectors
+    auto& values = mutableValues(guard);
 #ifdef _MSC_VER
-    Concurrency::parallel_for_each(_lValueList.begin(),
-                                   _lValueList.end(),
+    Concurrency::parallel_for_each(values.begin(),
+                                   values.end(),
                                    [rot](Base::Vector3f& value) {
                                        value = rot * value;
                                    });
 #else
-    QtConcurrent::blockingMap(_lValueList, [rot](Base::Vector3f& value) {
+    QtConcurrent::blockingMap(values, [rot](Base::Vector3f& value) {
         rot.multVec(value, value);
     });
 #endif
@@ -232,7 +233,7 @@ void PropertyCurvatureList::transformGeometry(const Base::Matrix4D& mat)
     atomic_change guard(*this);
 
     // Rotate the principal directions
-    for(auto &v : _lValueList) {
+    for(auto &v : mutableValues(guard)) {
         CurvatureInfo ci = v;
         ci.cMaxCurvDir = rot * ci.cMaxCurvDir;
         ci.cMinCurvDir = rot * ci.cMinCurvDir;
@@ -249,19 +250,19 @@ void PropertyCurvatureList::removeIndices(const std::vector<unsigned long>& uInd
     std::vector<unsigned long> uSortedInds = uIndices;
     std::sort(uSortedInds.begin(), uSortedInds.end());
 
-    assert(uSortedInds.size() <= _lValueList.size());
-    if (uSortedInds.size() > _lValueList.size()) {
+    assert(uSortedInds.size() <= this->getValues().size());
+    if (uSortedInds.size() > this->getValues().size()) {
         return;
     }
 
     std::vector<CurvatureInfo> remainValue;
-    remainValue.reserve(_lValueList.size() - uSortedInds.size());
+    remainValue.reserve(this->getValues().size() - uSortedInds.size());
 
     std::vector<unsigned long>::iterator pos = uSortedInds.begin();
-    for (std::vector<CurvatureInfo>::const_iterator it = _lValueList.begin();
-         it != _lValueList.end();
+    for (std::vector<CurvatureInfo>::const_iterator it = this->getValues().begin();
+         it != this->getValues().end();
          ++it) {
-        unsigned long index = it - _lValueList.begin();
+        unsigned long index = it - this->getValues().begin();
         if (pos == uSortedInds.end()) {
             remainValue.push_back(*it);
         }
@@ -289,7 +290,7 @@ CurvatureInfo PropertyCurvatureList::getPyValue(PyObject *) const
 bool PropertyCurvatureList::saveXML(Base::Writer &writer) const
 {
     writer.Stream() << ">" << std::endl;
-    for(auto &v : _lValueList)
+    for(auto &v : this->getValues())
         writer.Stream() << v.fMaxCurvature << ' '
                         << v.fMinCurvature << ' '
                         << v.cMaxCurvDir.x << ' '
@@ -323,7 +324,7 @@ void PropertyCurvatureList::restoreXML(Base::XMLReader &reader)
 
 void PropertyCurvatureList::saveStream(Base::OutputStream &str) const
 {
-    for (std::vector<CurvatureInfo>::const_iterator it = _lValueList.begin(); it != _lValueList.end(); ++it) {
+    for (std::vector<CurvatureInfo>::const_iterator it = this->getValues().begin(); it != this->getValues().end(); ++it) {
         str << it->fMaxCurvature << it->fMinCurvature;
         str << it->cMaxCurvDir.x << it->cMaxCurvDir.y << it->cMaxCurvDir.z;
         str << it->cMinCurvDir.x << it->cMinCurvDir.y << it->cMinCurvDir.z;
@@ -344,12 +345,13 @@ void PropertyCurvatureList::restoreStream(Base::InputStream &str, unsigned uCt)
 App::Property* PropertyCurvatureList::Copy() const
 {
     PropertyCurvatureList* prop = new PropertyCurvatureList();
-    prop->_lValueList = this->_lValueList;
+    atomic_change guard(*prop);
+    prop->mutableValues(guard) = this->getValues();
     return prop;
 }
 
 void PropertyCurvatureList::Paste(const App::Property& from)
 {
     const PropertyCurvatureList& prop = dynamic_cast<const PropertyCurvatureList&>(from);
-    setValues(prop._lValueList);
+    setValues(prop.getValues());
 }

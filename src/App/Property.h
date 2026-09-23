@@ -824,6 +824,20 @@ public:
 
 protected:
 
+    /** The list, for writing (docs/TransactionLog.md 23.6).
+     *
+     * The one non-const path to the values, and it needs a live guard,
+     * which it marks: the write is then bracketed by aboutToSetValue()
+     * and hasSetValue() whatever the caller forgets. A write that
+     * reaches the list any other way is invisible to undo, recompute,
+     * the view provider and the transaction log, which is why the
+     * member is private and this is the only door.
+     */
+    ListT& mutableValues(atomic_change& guard) {
+        guard.aboutToChange();
+        return _lValueList;
+    }
+
     void setPyValues(const std::vector<PyObject*>& vals, const std::vector<int>& indices) override
     {
         if (indices.empty()) {
@@ -847,7 +861,7 @@ protected:
 
     virtual T getPyValue(PyObject* item) const = 0;
 
-protected:
+private:
     ListT _lValueList;
 };
 

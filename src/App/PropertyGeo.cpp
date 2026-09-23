@@ -317,7 +317,7 @@ PyObject *PropertyVectorList::getPyObject()
     PyObject* list = PyList_New(getSize());
 
     for (int i = 0;i < getSize(); i++)
-        PyList_SetItem(list, i, new VectorPy(_lValueList[i]));
+        PyList_SetItem(list, i, new VectorPy(this->getValues()[i]));
 
     return list;
 }
@@ -331,7 +331,7 @@ Base::Vector3d PropertyVectorList::getPyValue(PyObject *item) const {
 bool PropertyVectorList::saveXML(Base::Writer &writer) const
 {
     writer.Stream() << ">\n";
-    for(const auto &v : _lValueList)
+    for(const auto &v : this->getValues())
         writer.Stream() << v.x << ' ' << v.y << ' ' << v.z << '\n';
     return false;
 }
@@ -350,12 +350,12 @@ void PropertyVectorList::restoreXML(Base::XMLReader &reader)
 void PropertyVectorList::saveStream(Base::OutputStream &str) const
 {
     if (!isSinglePrecision()) {
-        for (const auto & it : _lValueList) {
+        for (const auto & it : this->getValues()) {
             str << it.x << it.y << it.z;
         }
     }
     else {
-        for (const auto & it : _lValueList) {
+        for (const auto & it : this->getValues()) {
             float x = (float)it.x;
             float y = (float)it.y;
             float z = (float)it.z;
@@ -384,19 +384,20 @@ void PropertyVectorList::restoreStream(Base::InputStream &str, unsigned uCt)
 
 Property *PropertyVectorList::Copy() const
 {
-    PropertyVectorList *p= new PropertyVectorList();
-    p->_lValueList = _lValueList;
+    PropertyVectorList *p = new PropertyVectorList();
+    atomic_change guard(*p);
+    p->mutableValues(guard) = this->getValues();
     return p;
 }
 
 void PropertyVectorList::Paste(const Property &from)
 {
-    setValues(dynamic_cast<const PropertyVectorList&>(from)._lValueList);
+    setValues(dynamic_cast<const PropertyVectorList&>(from).getValues());
 }
 
 unsigned int PropertyVectorList::getMemSize () const
 {
-    return static_cast<unsigned int>(_lValueList.size() * sizeof(Base::Vector3d));
+    return static_cast<unsigned int>(this->getValues().size() * sizeof(Base::Vector3d));
 }
 
 void PropertyVectorList::interpolateValue(int index, const Base::Vector3d &from, const Base::Vector3d &to, float t)
@@ -418,7 +419,7 @@ void _PropertyVectorList::setValue(float x, float y, float z)
 PyObject *_PropertyVectorList::getPyObject(void)
 {
     Py::List res;
-    for(const auto &v : _lValueList)
+    for(const auto &v : this->getValues())
         res.append(Py::Object(new VectorPy(Vector3d(v.x,v.y,v.z))));
     return Py::new_reference_to(res);
 }
@@ -433,7 +434,7 @@ Base::Vector3f _PropertyVectorList::getPyValue(PyObject *item) const {
 bool _PropertyVectorList::saveXML(Base::Writer &writer) const
 {
     writer.Stream() << ">\n";
-    for(const auto &v : _lValueList)
+    for(const auto &v : this->getValues())
         writer.Stream() << v.x << ' ' << v.y << ' ' << v.z << '\n';
     return false;
 }
@@ -451,33 +452,38 @@ void _PropertyVectorList::restoreXML(Base::XMLReader &reader)
 
 void _PropertyVectorList::saveStream(Base::OutputStream &str) const
 {
-    for(const auto &v : _lValueList)
+    for(const auto &v : this->getValues())
         str << v.x << v.y << v.z;
 }
 
 void _PropertyVectorList::restoreStream(Base::InputStream &str, unsigned uCt)
 {
+    // Read into the new list, not the live one: reading into the live
+    // list wrote past aboutToSetValue() and then replaced it with the
+    // zeros `values` was made of (found when the list went private,
+    // docs/TransactionLog.md 23.6).
     std::vector<Base::Vector3f> values(uCt);
-    for(auto &v : _lValueList)
+    for(auto &v : values)
         str >> v.x >> v.y >> v.z;
     setValues(std::move(values));
 }
 
 Property *_PropertyVectorList::Copy(void) const
 {
-    _PropertyVectorList *p= new _PropertyVectorList();
-    p->_lValueList = _lValueList;
+    _PropertyVectorList *p = new _PropertyVectorList();
+    atomic_change guard(*p);
+    p->mutableValues(guard) = this->getValues();
     return p;
 }
 
 void _PropertyVectorList::Paste(const Property &from)
 {
-    setValues(dynamic_cast<const _PropertyVectorList&>(from)._lValueList);
+    setValues(dynamic_cast<const _PropertyVectorList&>(from).getValues());
 }
 
 unsigned int _PropertyVectorList::getMemSize (void) const
 {
-    return static_cast<unsigned int>(_lValueList.size() * sizeof(Base::Vector3f));
+    return static_cast<unsigned int>(this->getValues().size() * sizeof(Base::Vector3f));
 }
 
 void _PropertyVectorList::interpolateValue(int index, const Base::Vector3f &from, const Base::Vector3f &to, float t)
@@ -643,7 +649,7 @@ PyObject *PropertyMatrixList::getPyObject(void)
     PyObject* list = PyList_New( getSize() );
 
     for (int i = 0;i<getSize(); i++)
-        PyList_SetItem( list, i, new Base::MatrixPy(new Base::Matrix4D(_lValueList[i])));
+        PyList_SetItem( list, i, new Base::MatrixPy(new Base::Matrix4D(this->getValues()[i])));
 
     return list;
 }
@@ -657,7 +663,7 @@ Base::Matrix4D PropertyMatrixList::getPyValue(PyObject *item) const {
 bool PropertyMatrixList::saveXML(Base::Writer &writer) const
 {
     writer.Stream() << ">\n";
-    for(const auto &m : _lValueList) {
+    for(const auto &m : this->getValues()) {
         writer.Stream() << m[0][0] << ' ' << m[0][1] << ' ' << m[0][2] << ' ' << m[0][3] << '\n'
                         << m[1][0] << ' ' << m[1][1] << ' ' << m[1][2] << ' ' << m[1][3] << '\n'
                         << m[2][0] << ' ' << m[2][1] << ' ' << m[2][2] << ' ' << m[2][3] << '\n'
@@ -692,7 +698,7 @@ void PropertyMatrixList::restoreXML(Base::XMLReader &reader)
 
 void PropertyMatrixList::saveStream(Base::OutputStream &str) const
 {
-    for (auto & m : _lValueList) {
+    for (auto & m : this->getValues()) {
         str << m[0][0] << m[0][1] << m[0][2] << m[0][3]
             << m[1][0] << m[1][1] << m[1][2] << m[1][3]
             << m[2][0] << m[2][1] << m[2][2] << m[2][3]
@@ -723,19 +729,20 @@ void PropertyMatrixList::restoreStream(Base::InputStream &str, unsigned uCt)
 
 Property *PropertyMatrixList::Copy(void) const
 {
-    PropertyMatrixList *p= new PropertyMatrixList();
-    p->_lValueList = _lValueList;
+    PropertyMatrixList *p = new PropertyMatrixList();
+    atomic_change guard(*p);
+    p->mutableValues(guard) = this->getValues();
     return p;
 }
 
 void PropertyMatrixList::Paste(const Property &from)
 {
-    setValues(dynamic_cast<const PropertyMatrixList&>(from)._lValueList);
+    setValues(dynamic_cast<const PropertyMatrixList&>(from).getValues());
 }
 
 unsigned int PropertyMatrixList::getMemSize (void) const
 {
-    return static_cast<unsigned int>(_lValueList.size() * sizeof(Base::Matrix4D));
+    return static_cast<unsigned int>(this->getValues().size() * sizeof(Base::Matrix4D));
 }
 
 
@@ -1154,7 +1161,7 @@ PyObject *PropertyPlacementList::getPyObject()
     PyObject* list = PyList_New( getSize() );
 
     for (int i = 0;i<getSize(); i++)
-        PyList_SetItem( list, i, new Base::PlacementPy(new Base::Placement(_lValueList[i])));
+        PyList_SetItem( list, i, new Base::PlacementPy(new Base::Placement(this->getValues()[i])));
 
     return list;
 }
@@ -1168,7 +1175,7 @@ Base::Placement PropertyPlacementList::getPyValue(PyObject *item) const {
 bool PropertyPlacementList::saveXML(Base::Writer &writer) const
 {
     writer.Stream() << ">\n";
-    for(const auto &v : _lValueList) {
+    for(const auto &v : this->getValues()) {
         Vector3d axis;
         double fAngle;
         v.getRotation().getValue(axis, fAngle);
@@ -1202,13 +1209,13 @@ void PropertyPlacementList::restoreXML(Base::XMLReader &reader)
 void PropertyPlacementList::saveStream(Base::OutputStream &str) const
 {
     if (!isSinglePrecision()) {
-        for (const auto & it : _lValueList) {
+        for (const auto & it : this->getValues()) {
             str << it.getPosition().x << it.getPosition().y << it.getPosition().z
                 << it.getRotation()[0] << it.getRotation()[1] << it.getRotation()[2] << it.getRotation()[3] ;
         }
     }
     else {
-        for (const auto & it : _lValueList) {
+        for (const auto & it : this->getValues()) {
             float x = (float)it.getPosition().x;
             float y = (float)it.getPosition().y;
             float z = (float)it.getPosition().z;
@@ -1249,19 +1256,20 @@ void PropertyPlacementList::restoreStream(Base::InputStream &str, unsigned uCt)
 
 Property *PropertyPlacementList::Copy() const
 {
-    PropertyPlacementList *p= new PropertyPlacementList();
-    p->_lValueList = _lValueList;
+    PropertyPlacementList *p = new PropertyPlacementList();
+    atomic_change guard(*p);
+    p->mutableValues(guard) = this->getValues();
     return p;
 }
 
 void PropertyPlacementList::Paste(const Property &from)
 {
-    setValues(dynamic_cast<const PropertyPlacementList&>(from)._lValueList);
+    setValues(dynamic_cast<const PropertyPlacementList&>(from).getValues());
 }
 
 unsigned int PropertyPlacementList::getMemSize () const
 {
-    return static_cast<unsigned int>(_lValueList.size() * sizeof(Base::Placement));
+    return static_cast<unsigned int>(this->getValues().size() * sizeof(Base::Placement));
 }
 
 void PropertyPlacementList::interpolateValue(int index, const Base::Placement &from, const Base::Placement &to, float t)

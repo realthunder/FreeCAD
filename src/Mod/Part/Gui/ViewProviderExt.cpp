@@ -1598,12 +1598,13 @@ void PartGui::PropertyDiffuseColor::init()
 void PropertyDiffuseColor::setAppearance(App::PropertyAppearanceList *appearance,
                                          const App::PropertyColor *shapeColor)
 {
+    // The base list is empty from the constructor's ADD_PROPERTY on (its
+    // default is written before the container is attached, so it signals
+    // nothing), and nothing here writes it: a write would be the first
+    // hasSetValue() the view provider sees, in its constructor, before its
+    // nodes exist. From here on the colours are the appearance's.
     _appearance = appearance;
     _shapeColor = shapeColor;
-    // Whatever the constructor's ADD_PROPERTY put in the base list is a copy
-    // of what the appearance already holds. Drop it rather than leave a
-    // second, stale answer behind where a base-pointer read could find it.
-    _lValueList.clear();
 }
 
 const std::vector<Base::Color> &PropertyDiffuseColor::getValues() const
@@ -1996,11 +1997,11 @@ ViewProviderPartExt::ViewProviderPartExt()
     ADD_PROPERTY_TYPE(LineColor, (lmat.diffuseColor), osgroup, App::Prop_None, "Set object line color.");
     ADD_PROPERTY_TYPE(PointColor, (vmat.diffuseColor), osgroup, App::Prop_None, "Set object point color");
     ADD_PROPERTY_TYPE(PointColorArray, (PointColor.getValue()), osgroup, App::Prop_None, "Object point color array.");
-    ADD_PROPERTY_TYPE(DiffuseColor,(ShapeColor.getValue()), osgroup, App::Prop_None, "Object diffuse color.");
-    // From here on the face colours are the appearance's, which already
-    // holds this same colour as its single entry. Wired after the
-    // ADD_PROPERTY above, whose write must not be redirected into a property
-    // the base class is still setting up.
+    // Empty on purpose: the face colours are the appearance's, which holds
+    // the shape colour as its single entry, and the base list is never a
+    // second answer. Wired after the ADD_PROPERTY, whose write must not be
+    // redirected into a property the base class is still setting up.
+    ADD_PROPERTY_TYPE(DiffuseColor,(std::vector<Base::Color>()), osgroup, App::Prop_None, "Object diffuse color.");
     DiffuseColor.setAppearance(&ShapeAppearance, &ShapeColor);
     ADD_PROPERTY_TYPE(LineColorArray,(LineColor.getValue()), osgroup, App::Prop_None, "Object line color array.");
     ADD_PROPERTY_TYPE(LineWidth,(lwidth), osgroup, App::Prop_None, "Set object line width.");

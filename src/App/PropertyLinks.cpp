@@ -915,7 +915,7 @@ PropertyLinkList::~PropertyLinkList()
 #ifndef USE_OLD_DAG
     //maintain the back link in the DocumentObject class
     if (_pcScope!=LinkScope::Hidden &&
-        !_lValueList.empty() &&
+        !this->getValues().empty() &&
         getContainer() &&
         getContainer()->isDerivedFrom(App::DocumentObject::getClassTypeId()))
     {
@@ -923,7 +923,7 @@ PropertyLinkList::~PropertyLinkList()
         // before accessing internals make sure the object is not about to be destroyed
         // otherwise the backlink contains dangling pointers
         if (!parent->testStatus(ObjectStatus::Destroy)) {
-            for(auto *obj : _lValueList) {
+            for(auto *obj : this->getValues()) {
                 if (obj)
                     obj->_removeBackLink(parent);
             }
@@ -959,8 +959,8 @@ void PropertyLinkList::hasSetValue()
 void PropertyLinkList::setSize(int newSize)
 {
     declareUnchangedPrefix(-1);
-    for(int i=newSize;i<(int)_lValueList.size();++i) {
-        auto obj = _lValueList[i];
+    for(int i=newSize;i<(int)this->getValues().size();++i) {
+        auto obj = this->getValues()[i];
         if (!obj || !obj->isAttachedToDocument())
             continue;
         _nameMap.erase(obj->getNameInDocument());
@@ -969,21 +969,24 @@ void PropertyLinkList::setSize(int newSize)
             obj->_removeBackLink(static_cast<DocumentObject*>(getContainer()));
 #endif
     }
-    _lValueList.resize(newSize);
+    atomic_change guard(*this);
+    mutableValues(guard).resize(newSize);
 }
 
 void PropertyLinkList::setSize(int newSize, const_reference def) {
     auto oldSize = getSize();
+    atomic_change guard(*this);
     setSize(newSize);
+    auto &values = mutableValues(guard);
     for(auto i=oldSize;i<newSize;++i)
-        _lValueList[i] = def;
+        values[i] = def;
 }
 
 void PropertyLinkList::set1Value(int idx, DocumentObject* const &value) {
     declareUnchangedPrefix(-1);
     DocumentObject *obj = nullptr;
-    if(idx>=0 && idx<(int)_lValueList.size()) {
-        obj = _lValueList[idx];
+    if(idx>=0 && idx<(int)this->getValues().size()) {
+        obj = this->getValues()[idx];
         if(obj == value)
             return;
     }
@@ -1033,16 +1036,16 @@ void PropertyLinkList::setValues(std::vector<DocumentObject*> &&lValue) {
     // which arrives here as a new list holding the old one as its prefix. Both
     // the name map and the back links can be carried over in that case; redoing
     // them for the whole list would cost O(size) on every single append.
-    const bool append = lValue.size() >= _lValueList.size()
-        && std::equal(_lValueList.begin(), _lValueList.end(), lValue.begin());
+    const bool append = lValue.size() >= this->getValues().size()
+        && std::equal(this->getValues().begin(), this->getValues().end(), lValue.begin());
 
     // Consumers that keep per-element state can skip the prefix too
-    declareUnchangedPrefix(append ? (int)_lValueList.size() : -1);
+    declareUnchangedPrefix(append ? (int)this->getValues().size() : -1);
 
     // Only a map that is complete for the current list can be extended - an
     // incomplete one is indistinguishable from a stale one to find().
-    if (append && !_nameMap.empty() && _nameMap.size() == _lValueList.size()) {
-        for (int i=(int)_lValueList.size(); i<(int)lValue.size(); ++i) {
+    if (append && !_nameMap.empty() && _nameMap.size() == this->getValues().size()) {
+        for (int i=(int)this->getValues().size(); i<(int)lValue.size(); ++i) {
             auto obj = lValue[i];
             if (obj && obj->isAttachedToDocument())
                 _nameMap[obj->getNameInDocument()] = i;
@@ -1061,9 +1064,9 @@ void PropertyLinkList::setValues(std::vector<DocumentObject*> &&lValue) {
             // leaves the child's in-list unchanged, so skip the common prefix.
             std::size_t begin = 0;
             if (append)
-                begin = _lValueList.size();
+                begin = this->getValues().size();
             else {
-                for(auto *obj : _lValueList) {
+                for(auto *obj : this->getValues()) {
                     if (obj)
                         obj->_removeBackLink(parent);
                 }
@@ -1087,9 +1090,9 @@ PyObject *PropertyLinkList::getPyObject()
     Py::List sequence(count);
 #endif
     for (int i = 0; i<count; i++) {
-        auto obj = _lValueList[i];
+        auto obj = this->getValues()[i];
         if(obj && obj->isAttachedToDocument())
-            sequence.setItem(i, Py::asObject(_lValueList[i]->getPyObject()));
+            sequence.setItem(i, Py::asObject(this->getValues()[i]->getPyObject()));
         else
             sequence.setItem(i, Py::None());
     }
@@ -1109,10 +1112,10 @@ bool PropertyLinkList::isTouched() const {
         return true;
     if(_pcScope == LinkScope::Hidden)
         return false;
-    if(_lValueList.size() != _revisions.size())
+    if(this->getValues().size() != _revisions.size())
         return true;
     int i=0;
-    for(auto l : _lValueList) {
+    for(auto l : this->getValues()) {
         if(linkRevision(l) != _revisions[i++])
             return true;
     }
@@ -1123,9 +1126,9 @@ void PropertyLinkList::purgeTouched() {
     PropertyLinkBase::purgeTouched();
     if(_pcScope == LinkScope::Hidden)
         return;
-    _revisions.resize(_lValueList.size());
+    _revisions.resize(this->getValues().size());
     int i=0;
-    for(auto l : _lValueList)
+    for(auto l : this->getValues())
         _revisions[i++] = linkRevision(l);
 }
 
@@ -1134,7 +1137,7 @@ void PropertyLinkList::Save(Base::Writer &writer) const
     writer.Stream() << writer.ind() << "<LinkList count=\"" << getSize() << "\">\n";
     writer.incInd();
     for (int i = 0; i<getSize(); i++) {
-        DocumentObject* obj = _lValueList[i];
+        DocumentObject* obj = this->getValues()[i];
         if (obj)
             writer.Stream() << writer.ind() << "<Link value=\"" << obj->getExportName() << "\"/>" << endl;
         else
@@ -1199,13 +1202,13 @@ Property *PropertyLinkList::CopyOnLinkReplace(const App::DocumentObject *parent,
     std::vector<DocumentObject*> links;
     bool copied = false;
     bool found = false;
-    for(auto it=_lValueList.begin();it!=_lValueList.end();++it) {
+    for(auto it=this->getValues().begin();it!=this->getValues().end();++it) {
         auto res = tryReplaceLink(getContainer(),*it,parent,oldObj,newObj);
         if(res.first) {
             found = true;
             if(!copied) {
                 copied = true;
-                links.insert(links.end(),_lValueList.begin(),it);
+                links.insert(links.end(),this->getValues().begin(),it);
             }
             links.push_back(res.first);
         } else if(*it == newObj) {
@@ -1213,7 +1216,7 @@ Property *PropertyLinkList::CopyOnLinkReplace(const App::DocumentObject *parent,
             // entry, and insert it to take over oldObj's position.
             if(!copied) {
                 copied = true;
-                links.insert(links.end(),_lValueList.begin(),it);
+                links.insert(links.end(),this->getValues().begin(),it);
             }
         }else if(copied)
             links.push_back(*it);
@@ -1221,14 +1224,16 @@ Property *PropertyLinkList::CopyOnLinkReplace(const App::DocumentObject *parent,
     if(!found)
         return nullptr;
     auto p= new PropertyLinkList();
-    p->_lValueList = std::move(links);
+    atomic_change guard(*p);
+    p->mutableValues(guard) = std::move(links);
     return p;
 }
 
 Property *PropertyLinkList::Copy() const
 {
     PropertyLinkList *p = new PropertyLinkList();
-    p->_lValueList = _lValueList;
+    atomic_change guard(*p);
+    p->mutableValues(guard) = this->getValues();
     return p;
 }
 
@@ -1237,20 +1242,20 @@ void PropertyLinkList::Paste(const Property &from)
     if(!from.isDerivedFrom(PropertyLinkList::getClassTypeId()))
         THROWM(Base::TypeError, "Incompatible property to paste to")
 
-    setValues(static_cast<const PropertyLinkList&>(from)._lValueList);
+    setValues(static_cast<const PropertyLinkList&>(from).getValues());
 }
 
 unsigned int PropertyLinkList::getMemSize() const
 {
-    return static_cast<unsigned int>(_lValueList.size() * sizeof(App::DocumentObject *));
+    return static_cast<unsigned int>(this->getValues().size() * sizeof(App::DocumentObject *));
 }
 
 DocumentObject *PropertyLinkList::find(const char *name, int *pindex) const {
     if (!name)
         return nullptr;
-    if(_lValueList.size() <= 10) {
-        for(int i=0;i<(int)_lValueList.size();++i) {
-            auto obj = _lValueList[i];
+    if(this->getValues().size() <= 10) {
+        for(int i=0;i<(int)this->getValues().size();++i) {
+            auto obj = this->getValues()[i];
             if(obj && obj->isAttachedToDocument()
                    && boost::equals(name, obj->getNameInDocument())) {
                 if(pindex)
@@ -1261,10 +1266,10 @@ DocumentObject *PropertyLinkList::find(const char *name, int *pindex) const {
         return nullptr;
     }
 
-    if(_nameMap.empty() || _nameMap.size()>_lValueList.size()) {
+    if(_nameMap.empty() || _nameMap.size()>this->getValues().size()) {
         _nameMap.clear();
-        for(int i=0;i<(int)_lValueList.size();++i) {
-            auto obj = _lValueList[i];
+        for(int i=0;i<(int)this->getValues().size();++i) {
+            auto obj = this->getValues()[i];
             if(obj && obj->isAttachedToDocument())
                 _nameMap[obj->getNameInDocument()] = i;
         }
@@ -1273,16 +1278,16 @@ DocumentObject *PropertyLinkList::find(const char *name, int *pindex) const {
     if(it == _nameMap.end())
         return nullptr;
     if(pindex) *pindex = it->second;
-    return _lValueList[it->second];
+    return this->getValues()[it->second];
 }
 
 DocumentObject *PropertyLinkList::find(const std::string &name, int *pindex) const {
-    if (_nameMap.size() == _lValueList.size()) {
+    if (_nameMap.size() == this->getValues().size()) {
         auto it = _nameMap.find(name);
         if(it == _nameMap.end())
             return nullptr;
         if(pindex) *pindex = it->second;
-        return _lValueList[it->second];
+        return this->getValues()[it->second];
     }
     return find(name.c_str(), pindex);
 }
@@ -1293,8 +1298,8 @@ void PropertyLinkList::getLinks(std::vector<App::DocumentObject *> &objs,
     (void)subs;
     (void)newStyle;
     if(all||_pcScope!=LinkScope::Hidden) {
-        objs.reserve(objs.size()+_lValueList.size());
-        for(auto obj : _lValueList) {
+        objs.reserve(objs.size()+this->getValues().size());
+        for(auto obj : this->getValues()) {
             if(obj && obj->isAttachedToDocument())
                 objs.push_back(obj);
         }
@@ -1310,7 +1315,7 @@ void PropertyLinkList::getLinksTo(std::vector<App::ObjectIdentifier> &identifier
     if (!obj || (!all && _pcScope == LinkScope::Hidden))
         return;
     int i = -1;
-    for(auto o : _lValueList) {
+    for(auto o : this->getValues()) {
         ++i;
         if (o == obj) {
             identifiers.emplace_back(*this, i);
@@ -1325,12 +1330,12 @@ void PropertyLinkList::breakLink(App::DocumentObject *obj, bool clear) {
         return;
     }
     std::vector<App::DocumentObject*> values;
-    values.reserve(_lValueList.size());
-    for(auto o : _lValueList) {
+    values.reserve(this->getValues().size());
+    for(auto o : this->getValues()) {
         if(o != obj)
             values.push_back(o);
     }
-    if(values.size()!=_lValueList.size())
+    if(values.size()!=this->getValues().size())
         setValues(values);
 }
 
@@ -2466,17 +2471,17 @@ void PropertyLinkSubList::setValue(DocumentObject* lValue, const std::vector<std
 
     aboutToSetValue();
     std::size_t size = SubList.size();
-    this->_lValueList.clear();
+    _lValueList.clear();
     this->_lSubList.clear();
     if (size == 0) {
         if (lValue) {
-            this->_lValueList.push_back(lValue);
+            _lValueList.push_back(lValue);
             this->_lSubList.emplace_back();
         }
     }
     else {
         this->_lSubList = SubList;
-        this->_lValueList.insert(this->_lValueList.begin(), size, lValue);
+        _lValueList.insert(_lValueList.begin(), size, lValue);
     }
     updateElementReference(nullptr);
     checkLabelReferences(_lSubList);
@@ -2549,9 +2554,9 @@ void PropertyLinkSubList::addValue(App::DocumentObject *obj, const std::vector<s
 
 const string PropertyLinkSubList::getPyReprString() const
 {
-    assert(this->_lValueList.size() == this->_lSubList.size());
+    assert(_lValueList.size() == this->_lSubList.size());
 
-    if (this->_lValueList.empty())
+    if (_lValueList.empty())
         return std::string("None");
 
     std::stringstream strm;
@@ -2561,7 +2566,7 @@ const string PropertyLinkSubList::getPyReprString() const
             strm << ",(";
         else
             strm << "(";
-        App::DocumentObject* obj = this->_lValueList[i];
+        App::DocumentObject* obj = _lValueList[i];
         if (obj) {
             strm << "App.getDocument('" << obj->getDocument()->getName()
                  << "').getObject('" << obj->getNameInDocument() << "')";
@@ -2580,7 +2585,7 @@ DocumentObject *PropertyLinkSubList::getValue() const
 {
     App::DocumentObject* ret = nullptr;
     //FIXME: cache this to avoid iterating each time, to improve speed
-    for (auto i : this->_lValueList) {
+    for (auto i : _lValueList) {
         if (!ret)
             ret = i;
         if (ret != i)
@@ -2591,20 +2596,20 @@ DocumentObject *PropertyLinkSubList::getValue() const
 
 int PropertyLinkSubList::removeValue(App::DocumentObject *lValue)
 {
-    assert(this->_lValueList.size() == this->_lSubList.size());
+    assert(_lValueList.size() == this->_lSubList.size());
 
-    std::size_t num = std::count(this->_lValueList.begin(), this->_lValueList.end(), lValue);
+    std::size_t num = std::count(_lValueList.begin(), _lValueList.end(), lValue);
     if (num == 0)
         return 0;
 
     std::vector<DocumentObject*> links;
     std::vector<std::string> subs;
-    links.reserve(this->_lValueList.size() - num);
+    links.reserve(_lValueList.size() - num);
     subs.reserve(this->_lSubList.size() - num);
 
-    for (std::size_t i=0; i<this->_lValueList.size(); ++i) {
-        if (this->_lValueList[i] != lValue) {
-            links.push_back(this->_lValueList[i]);
+    for (std::size_t i=0; i<_lValueList.size(); ++i) {
+        if (_lValueList[i] != lValue) {
+            links.push_back(_lValueList[i]);
             subs.push_back(this->_lSubList[i]);
         }
     }
@@ -2772,13 +2777,13 @@ void PropertyLinkSubList::updateElementReference(DocumentObject *feature, bool r
     if(!feature) {
         std::vector<PropertyLinkBase::ShadowSub> tmpShadows;
         auto old = this->getOldValue<const PropertyLinkSubList>();
-        if (old && old->_lValueList.size() == old->_ShadowSubList.size()) {
+        if (old && old->getValues().size() == old->_ShadowSubList.size()) {
             for (const auto &sub : _lSubList) {
                 if (GeoFeature::hasMissingElement(sub.c_str())) {
                     int j=0;
                     for (const auto &shadow : old->_ShadowSubList) {
-                        const auto oldValue = old->_lValueList[j++];
-                        if (oldValue == this->_lValueList[i] && shadow.second == sub) {
+                        const auto oldValue = old->getValues()[j++];
+                        if (oldValue == _lValueList[i] && shadow.second == sub) {
                             tmpShadows.resize(this->_lSubList.size());
                             tmpShadows[i] = shadow;
                         }
@@ -3161,7 +3166,7 @@ void PropertyLinkSubList::Paste(const Property &from)
     if(!from.isDerivedFrom(PropertyLinkSubList::getClassTypeId()))
         THROWM(Base::TypeError, "Incompatible property to paste to")
     auto &link = static_cast<const PropertyLinkSubList&>(from);
-    setValues(link._lValueList, link._lSubList,
+    setValues(link.getValues(), link._lSubList,
               std::vector<ShadowSub>(link._ShadowSubList));
 }
 

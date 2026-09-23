@@ -1712,7 +1712,7 @@ PyObject *PropertyFilletEdges::getPyObject()
     Py::List list(getSize());
     std::vector<FilletElement>::const_iterator it;
     int index = 0;
-    for (it = _lValueList.begin(); it != _lValueList.end(); ++it) {
+    for (it = getValues().begin(); it != getValues().end(); ++it) {
         Py::Tuple ent(3);
         ent.setItem(0, Py::Long(it->edgeid));
         ent.setItem(1, Py::Float(it->radius1));
@@ -1742,7 +1742,7 @@ FilletElement PropertyFilletEdges::getPyValue(PyObject *item) const
 
 bool PropertyFilletEdges::saveXML(Base::Writer &writer) const {
     writer.Stream() << ">\n";
-    for(auto &v : _lValueList)
+    for(auto &v : getValues())
         writer.Stream() << v.edgeid << ' ' << v.radius1 << ' ' << v.radius2 << '\n';
     return false;
 }
@@ -1760,7 +1760,7 @@ void PropertyFilletEdges::restoreXML(Base::XMLReader &reader)
 
 void PropertyFilletEdges::saveStream(Base::OutputStream &str) const
 {
-    for (const auto & it : _lValueList) {
+    for (const auto & it : getValues()) {
         str << it.edgeid << it.radius1 << it.radius2;
     }
 }
@@ -1776,14 +1776,15 @@ void PropertyFilletEdges::restoreStream(Base::InputStream &str, unsigned uCt)
 
 App::Property *PropertyFilletEdges::Copy() const
 {
-    PropertyFilletEdges *p= new PropertyFilletEdges();
-    p->_lValueList = _lValueList;
+    PropertyFilletEdges *p = new PropertyFilletEdges();
+    atomic_change guard(*p);
+    p->mutableValues(guard) = getValues();
     return p;
 }
 
 void PropertyFilletEdges::Paste(const Property &from)
 {
-    setValue(dynamic_cast<const PropertyFilletEdges&>(from)._lValueList);
+    setValue(dynamic_cast<const PropertyFilletEdges&>(from).getValues());
 }
 
 // -------------------------------------------------------------------------

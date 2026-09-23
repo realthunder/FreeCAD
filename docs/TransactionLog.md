@@ -2295,3 +2295,46 @@ Not done here: attachments of a part (`addFile` during a property's
 part's hash is its fragment alone; at schema 5 the shapes are blobs and
 the lists over `InlineListSize` are the ones that write one. Not measured: the composite's size on the
 17800-object document, and what compose mode saves on its main thread.
+
+### 23.10 Step 4, first half, as built (2026-09-23)
+
+**The private list.** `PropertyListsT::_lValueList` is private. Reads go
+through `getValues()` (about 340 sites rewritten, in `src/App` and the
+Mesh, Points, Part, Sketcher Gui modules); the one non-const path is
+`mutableValues(atomic_change& guard)`, protected, which marks the guard
+first, so a write is bracketed by `aboutToSetValue()` and
+`hasSetValue()` whatever the caller forgets, and a write without a guard
+does not compile. The twenty or so write sites were the `Copy()` bodies
+(now guard + `mutableValues` on the fresh copy: a container-less
+`hasSetValue` is a `Touched` bit and nothing else), `PropertyLinkList`'s
+two `setSize` overloads, the rotate loops of the Mesh and Points
+curvature and normal lists (already under a guard, now through it), and
+`PropertyDiffuseColor::setAppearance`, which cleared the base list in the
+view provider's constructor: guarded, that clear was the first
+`hasSetValue` the view provider ever saw, before its Coin nodes existed
+(`ADD_PROPERTY` writes its default before attaching the container, so it
+signals nothing), and `applyShapeAppearance` crashed the golden render
+tests. The write is gone: `DiffuseColor`'s `ADD_PROPERTY` default is the
+empty list now. `PropertyMap` and
+`PropertyLinkSubList` keep their own `_lValueList`: they are not
+`PropertyListsT`, and they were never written from outside.
+
+**The hand-written lists.** `PropertyGeometryList`, `PropertyTopoShapeList`,
+`PropertyShapeHistory`, Sketcher's `PropertyConstraintList` and TechDraw's
+four cosmetic lists own their vectors, already private. Their escapes
+were the seven `setSize` overrides, which resized without
+`aboutToSetValue` (`PropertyListsBase::setSize` is what Python reaches),
+now bracketed and a no-op at the same size; and
+`PropertyGeometryList::swapValues`, which swapped without one and had no
+caller, removed.
+
+**The bug it found.** `_PropertyVectorList::restoreStream` read the
+stream into the *live* list -- empty at restore, so it read nothing --
+and then `setValues` the zero-filled `values` it had sized: every normal
+list restored from a file stream (Mesh and Points `PropertyNormalList`)
+came back as zeros. The compile error on the now-const `getValues()` was
+the finder; the loop reads into `values` now.
+
+Still to do in step 4: `PropertyGeometryList`'s element type,
+`const Geometry*`, as its own commit -- about 150 `std::vector<Geometry*>`
+declarations in 31 files and 91 accessor uses ride on it.

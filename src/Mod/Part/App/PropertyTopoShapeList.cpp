@@ -53,7 +53,11 @@ PropertyTopoShapeList::~PropertyTopoShapeList() = default;
 
 void PropertyTopoShapeList::setSize(int newSize)
 {
+    if (newSize == static_cast<int>(_lValueList.size()))
+        return;
+    aboutToSetValue();
     _lValueList.resize(newSize);
+    hasSetValue();
 }
 
 int PropertyTopoShapeList::getSize() const

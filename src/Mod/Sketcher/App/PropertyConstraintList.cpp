@@ -93,6 +93,9 @@ App::ObjectIdentifier PropertyConstraintList::makePath(int idx, const Constraint
 
 void PropertyConstraintList::setSize(int newSize)
 {
+    if (newSize == static_cast<int>(_lValueList.size()))
+        return;
+    aboutToSetValue();
     std::set<App::ObjectIdentifier> removed;
 
     /* Collect information about erased elements */
@@ -113,6 +116,7 @@ void PropertyConstraintList::setSize(int newSize)
 
     /* Resize array to new size */
     _lValueList.resize(newSize);
+    hasSetValue();
 }
 
 int PropertyConstraintList::getSize() const

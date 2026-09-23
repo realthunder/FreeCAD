@@ -845,7 +845,7 @@ PyObject *PropertyIntegerList::getPyObject()
 {
     PyObject* list = PyList_New(getSize());
     for(int i = 0;i<getSize(); i++)
-        PyList_SetItem( list, i, PyLong_FromLong(_lValueList[i]));
+        PyList_SetItem( list, i, PyLong_FromLong(this->getValues()[i]));
     return list;
 }
 
@@ -861,10 +861,10 @@ bool PropertyIntegerList::saveXML(Base::Writer &writer) const
 {
     writer.Stream() << ">\n";
     if(writer.getFileVersion()>1) {
-        for(auto &v : _lValueList)
+        for(auto &v : this->getValues())
             writer.Stream() << v << '\n';
     } else {
-        for(auto &v : _lValueList)
+        for(auto &v : this->getValues())
             writer.Stream() << "<I v=\"" <<  v <<"\"/>\n";
     }
     return false;
@@ -892,14 +892,15 @@ void PropertyIntegerList::restoreXML(Base::XMLReader &reader)
 
 Property *PropertyIntegerList::Copy() const
 {
-    PropertyIntegerList *p= new PropertyIntegerList();
-    p->_lValueList = _lValueList;
+    PropertyIntegerList *p = new PropertyIntegerList();
+    atomic_change guard(*p);
+    p->mutableValues(guard) = this->getValues();
     return p;
 }
 
 void PropertyIntegerList::Paste(const Property &from)
 {
-    setValues(dynamic_cast<const PropertyIntegerList&>(from)._lValueList);
+    setValues(dynamic_cast<const PropertyIntegerList&>(from).getValues());
 }
 
 void PropertyIntegerList::interpolateValue(int index, const long &from, const long &to, float t)
@@ -1397,7 +1398,7 @@ PyObject *PropertyFloatList::getPyObject()
 {
     PyObject* list = PyList_New(getSize());
     for (int i = 0;i<getSize(); i++)
-         PyList_SetItem( list, i, PyFloat_FromDouble(_lValueList[i]));
+         PyList_SetItem( list, i, PyFloat_FromDouble(this->getValues()[i]));
     return list;
 }
 
@@ -1416,7 +1417,7 @@ double PropertyFloatList::getPyValue(PyObject *item) const {
 bool PropertyFloatList::saveXML(Base::Writer &writer) const
 {
     writer.Stream() << ">\n";
-    for(auto &v : _lValueList)
+    for(auto &v : this->getValues())
         writer.Stream() << v << '\n';
     return false;
 }
@@ -1434,12 +1435,12 @@ void PropertyFloatList::restoreXML(Base::XMLReader &reader)
 void PropertyFloatList::saveStream(Base::OutputStream &str) const
 {
     if (!isSinglePrecision()) {
-        for (double it : _lValueList) {
+        for (double it : this->getValues()) {
             str << it;
         }
     }
     else {
-        for (double it : _lValueList) {
+        for (double it : this->getValues()) {
             float v = static_cast<float>(it);
             str << v;
         }
@@ -1466,14 +1467,15 @@ void PropertyFloatList::restoreStream(Base::InputStream &str, unsigned uCt)
 
 Property *PropertyFloatList::Copy() const
 {
-    PropertyFloatList *p= new PropertyFloatList();
-    p->_lValueList = _lValueList;
+    PropertyFloatList *p = new PropertyFloatList();
+    atomic_change guard(*p);
+    p->mutableValues(guard) = this->getValues();
     return p;
 }
 
 void PropertyFloatList::Paste(const Property &from)
 {
-    setValues(dynamic_cast<const PropertyFloatList&>(from)._lValueList);
+    setValues(dynamic_cast<const PropertyFloatList&>(from).getValues());
 }
 
 void PropertyFloatList::interpolateValue(int index, const double &from, const double &to, float t)
@@ -1492,7 +1494,7 @@ PyObject *_PropertyFloatList::getPyObject(void)
 {
     PyObject* list = PyList_New(getSize());
     for (int i = 0;i<getSize(); i++)
-         PyList_SetItem( list, i, PyFloat_FromDouble(_lValueList[i]));
+         PyList_SetItem( list, i, PyFloat_FromDouble(this->getValues()[i]));
     return list;
 }
 
@@ -1511,7 +1513,7 @@ float _PropertyFloatList::getPyValue(PyObject *item) const {
 bool _PropertyFloatList::saveXML(Base::Writer &writer) const
 {
     writer.Stream() << ">\n";
-    for(auto &v : _lValueList)
+    for(auto &v : this->getValues())
         writer.Stream() << v << '\n';
     return false;
 }
@@ -1527,7 +1529,7 @@ void _PropertyFloatList::restoreXML(Base::XMLReader &reader)
 }
 
 void _PropertyFloatList::saveStream(Base::OutputStream &str) const {
-    for (auto &v : _lValueList)
+    for (auto &v : this->getValues())
         str << v;
 }
 
@@ -1541,14 +1543,15 @@ void _PropertyFloatList::restoreStream(Base::InputStream &str, unsigned uCt)
 
 Property *_PropertyFloatList::Copy(void) const
 {
-    _PropertyFloatList *p= new _PropertyFloatList();
-    p->_lValueList = _lValueList;
+    _PropertyFloatList *p = new _PropertyFloatList();
+    atomic_change guard(*p);
+    p->mutableValues(guard) = this->getValues();
     return p;
 }
 
 void _PropertyFloatList::Paste(const Property &from)
 {
-    setValues(dynamic_cast<const _PropertyFloatList&>(from)._lValueList);
+    setValues(dynamic_cast<const _PropertyFloatList&>(from).getValues());
 }
 
 void _PropertyFloatList::interpolateValue(int index, const float &from, const float &to, float t)
@@ -2025,7 +2028,7 @@ PyObject *PropertyStringList::getPyObject()
     PyObject* list = PyList_New(getSize());
 
     for (int i = 0;i<getSize(); i++) {
-        PyObject* item = PyUnicode_DecodeUTF8(_lValueList[i].c_str(), _lValueList[i].size(), nullptr);
+        PyObject* item = PyUnicode_DecodeUTF8(this->getValues()[i].c_str(), this->getValues()[i].size(), nullptr);
         if (!item) {
             Py_DECREF(list);
             THROWM(Base::UnicodeError, "UTF8 conversion failure at PropertyStringList::getPyObject()")
@@ -2055,7 +2058,7 @@ unsigned int PropertyStringList::getMemSize () const
 {
     size_t size=0;
     for(int i = 0;i<getSize(); i++)
-        size += _lValueList[i].size();
+        size += this->getValues()[i].size();
     return static_cast<unsigned int>(size);
 }
 
@@ -2063,7 +2066,7 @@ bool PropertyStringList::saveXML(Base::Writer &writer) const
 {
     writer.Stream() << ">\n";
     for(int i = 0;i<getSize(); i++) {
-        std::string val = encodeAttribute(_lValueList[i]);
+        std::string val = encodeAttribute(this->getValues()[i]);
         writer.Stream() << "<String value=\"" <<  val <<"\"/>\n";
     }
     return false;
@@ -2084,14 +2087,15 @@ void PropertyStringList::restoreXML(Base::XMLReader &reader)
 
 Property *PropertyStringList::Copy() const
 {
-    PropertyStringList *p= new PropertyStringList();
-    p->_lValueList = _lValueList;
+    PropertyStringList *p = new PropertyStringList();
+    atomic_change guard(*p);
+    p->mutableValues(guard) = this->getValues();
     return p;
 }
 
 void PropertyStringList::Paste(const Property &from)
 {
-    setValues(dynamic_cast<const PropertyStringList&>(from)._lValueList);
+    setValues(dynamic_cast<const PropertyStringList&>(from).getValues());
 }
 
 
@@ -2285,7 +2289,7 @@ Property *PropertyMap::Copy() const
 void PropertyMap::Paste(const Property &from)
 {
     aboutToSetValue();
-    _lValueList = dynamic_cast<const PropertyMap&>(from)._lValueList;
+    _lValueList = dynamic_cast<const PropertyMap&>(from).getValues();
     hasSetValue();
 }
 
@@ -2438,7 +2442,7 @@ PyObject *PropertyBoolList::getPyObject()
 {
     PyObject* tuple = PyTuple_New(getSize());
     for(int i = 0;i<getSize(); i++) {
-        bool v = _lValueList[i];
+        bool v = this->getValues()[i];
         if (v) {
             PyTuple_SetItem(tuple, i, PyBool_FromLong(1));
         }
@@ -2477,7 +2481,7 @@ void PropertyBoolList::Save (Base::Writer &writer) const
 {
     writer.Stream() << writer.ind() << "<BoolList value=\"" ;
     std::string bitset;
-    boost::to_string(_lValueList, bitset);
+    boost::to_string(this->getValues(), bitset);
     writer.Stream() << bitset <<"\"/>" ;
     writer.Stream() << '\n';
 }
@@ -2494,19 +2498,20 @@ void PropertyBoolList::Restore(Base::XMLReader &reader)
 
 Property *PropertyBoolList::Copy() const
 {
-    PropertyBoolList *p= new PropertyBoolList();
-    p->_lValueList = _lValueList;
+    PropertyBoolList *p = new PropertyBoolList();
+    atomic_change guard(*p);
+    p->mutableValues(guard) = this->getValues();
     return p;
 }
 
 void PropertyBoolList::Paste(const Property &from)
 {
-    setValues(dynamic_cast<const PropertyBoolList&>(from)._lValueList);
+    setValues(dynamic_cast<const PropertyBoolList&>(from).getValues());
 }
 
 unsigned int PropertyBoolList::getMemSize () const
 {
-    return static_cast<unsigned int>(_lValueList.size());
+    return static_cast<unsigned int>(this->getValues().size());
 }
 
 //**************************************************************************
@@ -2769,10 +2774,10 @@ PyObject *PropertyColorList::getPyObject()
 
     for(int i = 0;i<getSize(); i++) {
         PyObject* rgba = PyTuple_New(4);
-        PyObject* r = PyFloat_FromDouble(_lValueList[i].r);
-        PyObject* g = PyFloat_FromDouble(_lValueList[i].g);
-        PyObject* b = PyFloat_FromDouble(_lValueList[i].b);
-        PyObject* a = PyFloat_FromDouble(_lValueList[i].a);
+        PyObject* r = PyFloat_FromDouble(this->getValues()[i].r);
+        PyObject* g = PyFloat_FromDouble(this->getValues()[i].g);
+        PyObject* b = PyFloat_FromDouble(this->getValues()[i].b);
+        PyObject* a = PyFloat_FromDouble(this->getValues()[i].a);
 
         PyTuple_SetItem(rgba, 0, r);
         PyTuple_SetItem(rgba, 1, g);
@@ -2795,7 +2800,7 @@ bool PropertyColorList::saveXML(Base::Writer &writer) const
 {
     const bool convert = saveConverts();
     writer.Stream() << ">\n" << std::hex;
-    for(const auto &c : _lValueList) {
+    for(const auto &c : this->getValues()) {
         unsigned long packed = c.getPackedValue();
         if (convert)
             packed = convertPackedAlpha(packed);
@@ -2846,7 +2851,7 @@ void PropertyColorList::RestoreDocFile(Base::Reader &reader)
 void PropertyColorList::saveStream(Base::OutputStream &str) const
 {
     const bool convert = saveConverts();
-    for (auto it : _lValueList) {
+    for (auto it : this->getValues()) {
         unsigned long packed = it.getPackedValue();
         str << static_cast<uint32_t>(convert ? convertPackedAlpha(packed) : packed);
     }
@@ -2865,14 +2870,15 @@ void PropertyColorList::restoreStream(Base::InputStream &str, unsigned uCt)
 
 Property *PropertyColorList::Copy() const
 {
-    PropertyColorList *p= new PropertyColorList();
-    p->_lValueList = _lValueList;
+    PropertyColorList *p = new PropertyColorList();
+    atomic_change guard(*p);
+    p->mutableValues(guard) = this->getValues();
     return p;
 }
 
 void PropertyColorList::Paste(const Property &from)
 {
-    setValues(dynamic_cast<const PropertyColorList&>(from)._lValueList);
+    setValues(dynamic_cast<const PropertyColorList&>(from).getValues());
 }
 
 void PropertyColorList::interpolateValue(int index, const Color &from, const Color &to, float t)
