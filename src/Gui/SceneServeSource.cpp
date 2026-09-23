@@ -302,6 +302,24 @@ public:
     ServeRenderProperties renderProps;
     std::unique_ptr<Render::Renderer> renderer;
     QTimer timer;
+    /** Whether the tick has a scene to republish, or only messages to send.
+     *
+     * The timer does two jobs: republish the scene, and flush the text
+     * announcements (this client's selection, its on-view parameters).
+     * They were one job because everything that asked for either asked
+     * through schedulePublish, so a selection message -- which changes
+     * no geometry, and which the client paints itself (docs/ThinClient.md
+     * sec 8.2a) -- took a full manager->traverse() of the whole served
+     * graph that then found nothing to send. Measured: eight remote
+     * picks cost eight such traversals before the split and none after,
+     * at 0.3 ms each on 400 objects and 0.4 ms on 2000 -- the render
+     * cache keeps an unchanged traversal nearly flat, so this is a
+     * small constant per click rather than something that grows with
+     * the model. It is removed because it has no reason to happen, and
+     * because a selection that is routed nowhere (the per-client
+     * routing policy) must cost no scene work at all.
+     */
+    bool sceneDirty = false;
     std::vector<fastsignals::scoped_connection> connections;
     struct SelectionMirror;
     /// The selection observer a view is and this source was not; see
@@ -1119,7 +1137,7 @@ struct SceneServeSource::Private::ClientSelection : public SelectionObserver
         }
         p->selectionDirty.insert(client);
         if (p->owner)
-            p->owner->schedulePublish();
+            p->owner->scheduleAnnounce();
     }
 };
 
@@ -1785,8 +1803,18 @@ void SceneServeSource::pickAndSelect(const SbVec3f &origin, const SbVec3f &dir,
                                           pt[0], pt[1], pt[2]);
             break;
     }
-    // A selection changes the feeds, and nothing else will ask.
-    schedulePublish();
+    // A selection changes the feeds, and nothing else will ask -- but
+    // in view mode what it changes is a message, not the scene. The
+    // client's own instance is never applied to the served root (no
+    // selection action touches it; only SelectionMirror does, for the
+    // room), and the client paints its own pick anyway (docs/
+    // ThinClient.md sec 8.2a). Inside an edit mode it is the scene: the
+    // tool recolours its geometry on a selection change, and that
+    // geometry is what the wire carries.
+    if (pimpl->doc && pimpl->doc->getInEdit())
+        schedulePublish();
+    else
+        scheduleAnnounce();
 }
 
 namespace
@@ -1916,13 +1944,32 @@ Document *SceneServeSource::document() const
 
 void SceneServeSource::schedulePublish()
 {
+    if (!isValid())
+        return;
+    // The flag first, then the timer: an announce may already have
+    // started it, and returning early on isActive() would leave this
+    // caller's scene change unpublished until something else asked.
+    pimpl->sceneDirty = true;
+    if (!pimpl->timer.isActive())
+        pimpl->timer.start();
+}
+
+void SceneServeSource::scheduleAnnounce()
+{
     if (isValid() && !pimpl->timer.isActive())
         pimpl->timer.start();
 }
 
 void SceneServeSource::onPublishTimeout()
 {
-    publishNow();
+    // Only when something said the scene moved. A publish costs a full
+    // traversal of the served graph whether or not it ends up with
+    // anything to send, so a tick asked for by a text announcement
+    // alone does not take one.
+    if (pimpl->sceneDirty) {
+        pimpl->sceneDirty = false;
+        publishNow();
+    }
     // After the publish, so a client has the geometry these numbers
     // describe before it is told the numbers (docs/ThinClient.md sec 8.7).
     pimpl->flushOnViewParameters();

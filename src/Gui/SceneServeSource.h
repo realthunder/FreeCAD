@@ -142,6 +142,19 @@ public:
      */
     void schedulePublish();
 
+    /*!
+     * Ask for the text announcements to go out, without a publish.
+     *
+     * The same tick, and the same coalescing, for the messages that
+     * describe no geometry: this client's selection, its on-view
+     * parameters. A publish is a full traversal of the served graph, so
+     * a selection the client painted itself (docs/ThinClient.md sec
+     * 8.2a) has no business taking one -- it found nothing to send
+     * every time. Something that really did move the scene calls
+     * schedulePublish, and the tick then does both.
+     */
+    void scheduleAnnounce();
+
     /** The selection sync toggle (docs/ThinClient.md 8.11).
      *
      * In a session a browser started, whether that session's selection
