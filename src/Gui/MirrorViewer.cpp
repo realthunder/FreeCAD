@@ -508,23 +508,18 @@ SoPickedPoint* MirrorViewer::pickRay(
     // process has no frame loop and so never did, which left every pick
     // walking every object in the document.
     //
-    // Per CHILD, not over the scene root: SoFCUnifiedSelection::
-    // getBoundingBox answers from the renderer's own bounds and returns
-    // without traversing anything once the renderer is in use, which is
-    // always here (serving needs render-cache mode 3). That is the cheap
-    // answer for the scene's extent and it is right for that, but it
-    // means a traversal of the root reaches no ViewProvider and leaves
-    // no cache for the pick to cull with.
+    // Over the served scene itself, which warms the whole document in one
+    // traversal: the unified selection root caches its own bounds, so
+    // that single cull answers a ray that misses everything, and the
+    // descent leaves each object with the cache its own cull needs. (It
+    // used to be done per child, because the root answered from the
+    // renderer's bounds without traversing and left no cache anywhere.)
     //
-    // It costs one traversal per object after the scene changes and a
-    // cache hit otherwise.
-    if (auto* sceneGroup = pimpl->scene->isOfType(SoGroup::getClassTypeId())
-            ? static_cast<SoGroup*>(pimpl->scene)
-            : nullptr) {
+    // It costs one traversal after the scene changes and a cache hit
+    // otherwise.
+    {
         SoGetBoundingBoxAction bboxAction(pimpl->viewport);
-        for (int i = 0; i < sceneGroup->getNumChildren(); ++i) {
-            bboxAction.apply(sceneGroup->getChild(i));
-        }
+        bboxAction.apply(pimpl->scene);
     }
 
     SoRayPickAction action(pimpl->viewport);
