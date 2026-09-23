@@ -304,7 +304,7 @@ std::vector<Base::Vector2d> CurveConverter::toVector2D(const Part::Geometry* geo
 }
 
 std::list<std::vector<Base::Vector2d>> CurveConverter::toVector2DList(
-    const std::vector<Part::Geometry*>& geometries
+    const std::vector<const Part::Geometry*>& geometries
 )
 {
     std::list<std::vector<Base::Vector2d>> list;
@@ -1013,7 +1013,7 @@ bool DrawSketchHandler::seekTangentAutoConstraint(
     double tangDeviation = getAutoConstraintSearchDistance();
 
     // Get geometry list
-    const std::vector<Part::Geometry*> geomlist = obj->getCompleteGeometry();
+    const std::vector<const Part::Geometry*> geomlist = obj->getCompleteGeometry();
 
     Base::Vector3d tmpPos(Pos.x, Pos.y, 0.f);                    // Current cursor point
     Base::Vector3d tmpDir(Dir.x, Dir.y, 0.f);                    // Direction of line
@@ -1838,7 +1838,7 @@ void DrawSketchHandler::drawEdit(const std::list<std::vector<Base::Vector2d>>& l
     ViewProviderSketchDrawSketchHandlerAttorney::drawEdit(*sketchgui, list);
 }
 
-void DrawSketchHandler::drawEdit(const std::vector<Part::Geometry*>& geometries) const
+void DrawSketchHandler::drawEdit(const std::vector<const Part::Geometry*>& geometries) const
 {
     static CurveConverter c;
 

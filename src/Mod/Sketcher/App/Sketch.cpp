@@ -203,7 +203,7 @@ void Sketch::clear()
 }
 
 bool Sketch::analyseBlockedGeometry(
-    const std::vector<Part::Geometry*>& internalGeoList,
+    const std::vector<const Part::Geometry*>& internalGeoList,
     const std::vector<Constraint*>& constraintList,
     std::vector<bool>& onlyblockedGeometry,
     std::vector<int>& blockedGeoIds
@@ -253,7 +253,7 @@ bool Sketch::analyseBlockedGeometry(
 }
 
 int Sketch::setUpSketch(
-    const std::vector<Part::Geometry*>& GeoList,
+    const std::vector<const Part::Geometry*>& GeoList,
     const std::vector<Constraint*>& ConstraintList,
     int extGeoCount
 )
@@ -273,7 +273,7 @@ int Sketch::setUpSketch(
         }
     }
 
-    std::vector<Part::Geometry*> intGeoList, extGeoList;
+    std::vector<const Part::Geometry*> intGeoList, extGeoList;
     std::copy(GeoList.begin(), GeoList.end() - extGeoCount, std::back_inserter(intGeoList));
     std::copy(GeoList.end() - extGeoCount, GeoList.end(), std::back_inserter(extGeoList));
 
@@ -834,7 +834,7 @@ int Sketch::addGeometry(const Part::Geometry* geo, bool fixed)
     }
 }
 
-int Sketch::addGeometry(const std::vector<Part::Geometry*>& geos, bool fixed)
+int Sketch::addGeometry(const std::vector<const Part::Geometry*>& geos, bool fixed)
 {
     int ret = -1;
     for (const auto& geo : geos) {
@@ -844,7 +844,7 @@ int Sketch::addGeometry(const std::vector<Part::Geometry*>& geos, bool fixed)
 }
 
 int Sketch::addGeometry(
-    const std::vector<Part::Geometry*>& geos,
+    const std::vector<const Part::Geometry*>& geos,
     const std::vector<bool>& blockedGeometry,
     const std::set<int>& inGroupGeoIds
 )
@@ -853,7 +853,7 @@ int Sketch::addGeometry(
 
     int ret = -1;
     int geoIdCounter = 0;
-    std::vector<Part::Geometry*>::const_iterator it;
+    std::vector<const Part::Geometry*>::const_iterator it;
     std::vector<bool>::const_iterator bit;
 
     for (it = geos.begin(), bit = blockedGeometry.begin();

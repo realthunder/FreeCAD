@@ -624,6 +624,11 @@ protected:
     // dragging of geometries, one or several at a time
     void initDragging(int geoId, Sketcher::PointPos pos);
     Base::Vector3d getDragVector(double x, double y) const;
+    /** The factor a B-spline pole circle is drawn at: what the last draw()
+     * recorded for GeoId, else what a copy of the geometry may still carry
+     * from an older file, else 1.
+     */
+    double poleScaleFactor(int GeoId, const Part::Geometry* geo) const;
     void beginDragAutoConstraints();
     bool doDragStep(double x, double y);
     void commitDragMove(double x, double y);

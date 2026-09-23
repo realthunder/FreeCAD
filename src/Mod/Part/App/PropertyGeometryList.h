@@ -38,11 +38,15 @@ namespace Part
 {
 class Geometry;
 
-class PartExport PropertyGeometryList: public App::PropertyLists
+class PartExport PropertyGeometryList: public App::PropertyLists,
+                                       private App::AtomicPropertyChangeInterface<PropertyGeometryList>
 {
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 
 public:
+    using atomic_change = AtomicPropertyChangeInterface<PropertyGeometryList>::AtomicPropertyChange;
+    friend atomic_change;
+
     /**
      * A constructor.
      * A more elaborate description of the constructor.
@@ -64,8 +68,19 @@ public:
     /** Sets the property
      */
     void setValue(const Geometry*);
-    void setValues(const std::vector<Geometry*>&);
-    void setValues(std::vector<Geometry*>&&);
+    /// Clones every element; the caller keeps ownership of what it passed
+    void setValues(const std::vector<const Geometry*>&);
+    /// Takes ownership of every element; nothing is cloned
+    void setValues(std::vector<const Geometry*>&&);
+    /// Same two, for a caller holding the geometry it made as non-const
+    void setValues(const std::vector<Geometry*>& v) {
+        const std::vector<const Geometry*> tmp(v.begin(), v.end());
+        setValues(tmp);
+    }
+    void setValues(std::vector<Geometry*>&& v) {
+        setValues(std::vector<const Geometry*>(v.begin(), v.end()));
+        v.clear();
+    }
 
     void moveValues(PropertyGeometryList &&other);
 
@@ -75,12 +90,26 @@ public:
     int linearize();
 
     /// index operator
-    Geometry *operator[] (const int idx) const {
+    const Geometry *operator[] (const int idx) const {
         return _lValueList[idx];
     }
 
-    const std::vector<Geometry*> &getValues() const {
+    /** The value: the elements are const, since a write to one that
+     * escapes aboutToSetValue()/hasSetValue() is invisible to undo,
+     * recompute, the view provider and the transaction log. The only
+     * non-const access is through a guard, mutableValue() below.
+     */
+    const std::vector<const Geometry*> &getValues() const {
         return _lValueList;
+    }
+
+    /** Non-const access to one element, under a guard that has already
+     * marked the property as about to change. The property owns the
+     * geometry, so the cast is legitimate here and nowhere else.
+     */
+    Geometry *mutableValue(atomic_change &guard, int idx) {
+        guard.aboutToChange();
+        return const_cast<Geometry*>(_lValueList[idx]);
     }
 
     void set1Value(int idx, std::unique_ptr<Geometry> &&);
@@ -97,11 +126,11 @@ public:
     unsigned int getMemSize() const override;
 
 private:
-    void trySaveGeometry(Geometry * geom, Base::Writer &writer) const;
+    void trySaveGeometry(const Geometry * geom, Base::Writer &writer) const;
     void tryRestoreGeometry(Geometry * geom, Base::XMLReader &reader);
 
 private:
-    std::vector<Geometry*> _lValueList;
+    std::vector<const Geometry*> _lValueList;
 };
 
 } // namespace Part

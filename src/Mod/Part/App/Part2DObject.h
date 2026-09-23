@@ -73,7 +73,7 @@ public:
       *
       * If intersection is found, the associated geometryIndex1 or geometryIndex2 returns -1.
       */
-    static bool seekTrimPoints(const std::vector<Geometry *> &geomlist,
+    static bool seekTrimPoints(const std::vector<const Geometry*> &geomlist,
                                int geometryIndex, const Base::Vector3d &point,
                                int &geometryIndex1, Base::Vector3d &intersect1,
                                int &geometryIndex2, Base::Vector3d &intersect2);

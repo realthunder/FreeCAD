@@ -1027,7 +1027,7 @@ protected:
      * ShapeConstraints vectors to the SketchObject.*/
     void commandAddShapeGeometryAndConstraints()
     {
-        auto shapeGeometry = toPointerVector(ShapeGeometry);
+        auto shapeGeometry = toConstPointerVector(ShapeGeometry);
         std::string sketchObj = Gui::Command::getObjectCmd(sketchgui->getObject());
         Gui::Command::doCommand(Gui::Command::Doc, "ActiveSketch = %s\n", sketchObj.c_str());
         Gui::Command::doCommand(
@@ -1053,14 +1053,14 @@ protected:
     /** @brief Function to draw as an edit curve all the geometry in the ShapeGeometry vector.*/
     void DrawShapeGeometry()
     {
-        drawEdit(toPointerVector(ShapeGeometry));
+        drawEdit(toConstPointerVector(ShapeGeometry));
     }
 
     /** @brief Function to create a shape into ShapeGeometry vector and draw it.*/
     void CreateAndDrawShapeGeometry()
     {
         createShape(true);
-        drawEdit(toPointerVector(ShapeGeometry));
+        drawEdit(toConstPointerVector(ShapeGeometry));
     }
 
     //@}

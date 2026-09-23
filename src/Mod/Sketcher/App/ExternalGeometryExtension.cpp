@@ -33,6 +33,41 @@ using namespace Sketcher;
 
 //---------- Geometry Extension
 
+namespace {
+// One map per writer being exported through; Save runs on the main thread
+// and an export writer lives for one Save, so a plain map keyed by the
+// writer is enough.
+std::unordered_map<const Base::Writer*, std::unordered_map<std::string, int>>& exportIndexMaps()
+{
+    static std::unordered_map<const Base::Writer*, std::unordered_map<std::string, int>> maps;
+    return maps;
+}
+}
+
+ExternalGeometryExtension::ExportRefIndex::ExportRefIndex(
+    const Base::Writer& w, std::unordered_map<std::string, int> indexByRef)
+    : writer(&w)
+{
+    exportIndexMaps()[writer] = std::move(indexByRef);
+}
+
+ExternalGeometryExtension::ExportRefIndex::~ExportRefIndex()
+{
+    exportIndexMaps().erase(writer);
+}
+
+int ExternalGeometryExtension::exportRefIndex(const Base::Writer& writer, const std::string& ref)
+{
+    auto& maps = exportIndexMaps();
+    if (maps.empty() || ref.empty())
+        return -1;
+    auto it = maps.find(&writer);
+    if (it == maps.end())
+        return -1;
+    auto found = it->second.find(ref);
+    return found == it->second.end() ? -1 : found->second;
+}
+
 constexpr std::array<const char*, ExternalGeometryExtension::NumFlags>
     ExternalGeometryExtension::flag2str;
 
@@ -66,8 +101,9 @@ void ExternalGeometryExtension::saveAttributes(Base::Writer& writer) const
         writer.Stream() << "\" Ref=\"" << Base::Persistence::encodeAttribute(Ref);
     // if (Flags.any())
         writer.Stream() << "\" Flags=\"" << Flags.to_ulong();
-    if (RefIndex >= 0)
-        writer.Stream() << "\" RefIndex=\"" << RefIndex;
+    int refIndex = RefIndex >= 0 ? RefIndex : exportRefIndex(writer, Ref);
+    if (refIndex >= 0)
+        writer.Stream() << "\" RefIndex=\"" << refIndex;
     if (!RefElement.empty())
         writer.Stream() << "\" RefElement=\"" << Base::Persistence::encodeAttribute(RefElement);
 }
@@ -76,8 +112,9 @@ void ExternalGeometryExtension::preSave(Base::Writer &writer) const
 {
     if (Ref.size())
         writer.Stream() << " ref=\"" << Base::Persistence::encodeAttribute(Ref)  << "\"";
-    if (RefIndex >= 0)
-        writer.Stream() << " refIndex=\"" << RefIndex << "\"";
+    int refIndex = RefIndex >= 0 ? RefIndex : exportRefIndex(writer, Ref);
+    if (refIndex >= 0)
+        writer.Stream() << " refIndex=\"" << refIndex << "\"";
     if (!RefElement.empty())
         writer.Stream() << " refElement=\"" << Base::Persistence::encodeAttribute(RefElement) << "\"";
     if (Flags.any())

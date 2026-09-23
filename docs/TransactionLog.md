@@ -2335,6 +2335,83 @@ list restored from a file stream (Mesh and Points `PropertyNormalList`)
 came back as zeros. The compile error on the now-const `getValues()` was
 the finder; the loop reads into `values` now.
 
-Still to do in step 4: `PropertyGeometryList`'s element type,
-`const Geometry*`, as its own commit -- about 150 `std::vector<Geometry*>`
-declarations in 31 files and 91 accessor uses ride on it.
+The second half, `PropertyGeometryList`'s element type, is 23.11.
+
+### 23.11 Step 4, second half, as built (2026-09-23)
+
+**The const element.** `PropertyGeometryList` holds
+`std::vector<const Geometry*>`; `getValues()` and `operator[]` hand out
+const pointers, `setValues` takes const-element vectors (a `Geometry*`
+overload converts for a caller holding what it just made), and the one
+non-const door is `mutableValue(atomic_change& guard, idx)`, which marks
+the guard first -- the property owns the geometry, so the cast lives
+there and nowhere else. The `std::vector<Geometry*>` declarations in
+Part, Sketcher and Sandbox (31 files) became const-element, except the ones that
+hold geometry the caller made and still has to write: `Sketch::extractGeometry`,
+`getSymmetric`, `replaceGeometries`' input, the trim and split arcs, and
+the symmetry handler's. Two things had made the element type toothless
+and went with it: `Geometry::mirror/rotate/scale/transform/translate`
+were const (the handle is a pointer, so a const geometry could be moved
+in place) and are not any more; and a transient extension -- the solver
+diagnosis, the migration marker -- is not the value (never saved, not
+compared by `hasSameExtensions`, in no hash), so
+`setTransientExtension`/`deleteTransientExtension` are const doors that
+refuse a persistent extension.
+
+**What the compiler found.** Every site that wrote a property's geometry
+behind `aboutToSetValue`, fixed at the site as 23.6 rules:
+
+- `SketchObject::extend` on an arc called `setRange` on the held
+  geometry: no undo copy, no touch, no recompute. It edits a copy and
+  `set1Value`s it.
+- `addCopy` in move-only mode wrote the held geometry and then set the
+  same pointers back, so the undo copy was taken after the move. It
+  moves copies.
+- The constraint state on geometry -- `InternalType`, `Blocked`, both
+  saved -- was written in place by `addGeometryState`,
+  `removeGeometryState` (both `const`) and `synchroniseGeometryState`.
+  They go through the guard, marking it only when the state differs, so
+  adding a Block constraint is now a Geometry op as well as a Constraints
+  op, and undo restores both.
+- `onChanged(Geometry)` assigned missing ids and applied the migration
+  in place; `onChanged(ExternalGeo)` cleared Detached, fixed duplicate
+  ids, migrated refs; `updateGeometryRefs` corrected refs and reset
+  `RefIndex` in place and then set the same pointers back. All through
+  the guard; a change nested inside `hasSetValue` folds into the change
+  being signalled (`signalCounter`), so nothing recurses.
+- `rebuildExternalGeometry` cleared `Sync` and set `Missing` on every
+  held external geometry before setting the values. The fresh geometry
+  it made is written directly, a held one is copied first, and only
+  when a flag actually changes.
+- Eight clone-then-write sites (`setExternalFlags`, `detachExternal`,
+  `fixExternalGeometry`, construction toggling, `setGeometryId(s)`, the
+  id swap command, ...) cloned into the const slot and then wrote through
+  the const pointer; they write the clone.
+- `SketchObject::Save`, a `const` method, wrote `RefIndex` into every
+  external geometry (-1, or the export index) through a `const_cast` of
+  the property, so an export changed the value it was saving. The index
+  now rides on the writer: `ExternalGeometryExtension::ExportRefIndex`,
+  installed by `Save` for the writer it is given while `isExporting()`,
+  is what `saveAttributes`/`preSave` consult when the extension holds no
+  index of its own. The reset to -1 is gone -- a restored `RefIndex` is
+  reset by `updateGeometryRefs`, through the guard.
+- `ViewProviderSketch::draw` attached a `ViewProviderSketchGeometryExtension`
+  to the sketch's B-spline pole circles to remember the factor it draws
+  them at, arguing it was representation only. The extension is a
+  `GeometryPersistenceExtension`: it was saved with the geometry, and
+  `updateSolverExtension` put it on the solver's copy so that the next
+  solve wrote it into the property. The factor lives in
+  `EditData::PoleScaleFactor` by GeoId now, refilled by every `draw()`
+  and read through `poleScaleFactor()`, which still honours a factor a
+  geometry from an older file carries.
+
+Gtests in `tests/src/Mod/Sketcher/App/SketchObjectChanges.cpp`: an
+extended arc is a new element of a touched property; a Block constraint
+touches Geometry when added and when removed, a Horizontal one does not;
+a save writes no `RefIndex` and touches nothing, an `ExportRefIndex` on
+the writer makes it write the index, and the writer forgets it after.
+Sketcher 121/121, Part `ImmutableShapeTest` (against the refreshed OCCT
+install, which had predated the flag on this box), log and property
+gtests green; ctest at the 13 guest-image failures that are not the
+log's; Python `TestSketcherApp`, `TestPartApp`, `Document`,
+`MeshTestsApp` OK.

@@ -444,12 +444,12 @@ void CmdSketcherIncreaseKnotMultiplicity::activated(int iMsg)
 
     if (applied) {
         // find new geoid for B-spline as GeoId might have changed
-        const std::vector<Part::Geometry*>& gvals = Obj->getInternalGeometry();
+        const std::vector<const Part::Geometry*>& gvals = Obj->getInternalGeometry();
 
         int ngeoid = 0;
         bool ngfound = false;
 
-        for (std::vector<Part::Geometry*>::const_iterator geo = gvals.begin(); geo != gvals.end();
+        for (std::vector<const Part::Geometry*>::const_iterator geo = gvals.begin(); geo != gvals.end();
              geo++, ngeoid++) {
             if ((*geo) && (*geo)->getTag() == bsplinetag) {
                 ngfound = true;
@@ -580,12 +580,12 @@ void CmdSketcherDecreaseKnotMultiplicity::activated(int iMsg)
 
     if (applied) {
         // find new geoid for B-spline as GeoId might have changed
-        const std::vector<Part::Geometry*>& gvals = Obj->getInternalGeometry();
+        const std::vector<const Part::Geometry*>& gvals = Obj->getInternalGeometry();
 
         int ngeoid = 0;
         bool ngfound = false;
 
-        for (std::vector<Part::Geometry*>::const_iterator geo = gvals.begin(); geo != gvals.end();
+        for (std::vector<const Part::Geometry*>::const_iterator geo = gvals.begin(); geo != gvals.end();
              geo++, ngeoid++) {
             if ((*geo) && (*geo)->getTag() == bsplinetag) {
                 ngfound = true;
@@ -734,9 +734,9 @@ public:
 
         if (applied) {
             // find new geoid for B-spline as GeoId might have changed
-            const std::vector<Part::Geometry*>& gvals = Obj->getInternalGeometry();
+            const std::vector<const Part::Geometry*>& gvals = Obj->getInternalGeometry();
 
-            for (std::vector<Part::Geometry*>::const_iterator geo = gvals.begin();
+            for (std::vector<const Part::Geometry*>::const_iterator geo = gvals.begin();
                  geo != gvals.end();
                  geo++, newGeoId++) {
                 if ((*geo) && (*geo)->getTag() == bsplinetag) {

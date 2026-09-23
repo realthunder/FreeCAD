@@ -403,7 +403,7 @@ unsigned int PropertyConstraintList::getMemSize() const
     return size;
 }
 
-void PropertyConstraintList::acceptGeometry(const std::vector<Part::Geometry*>& GeoList)
+void PropertyConstraintList::acceptGeometry(const std::vector<const Part::Geometry*>& GeoList)
 {
     aboutToSetValue();
     validGeometryKeys.clear();
@@ -420,7 +420,7 @@ void PropertyConstraintList::applyValidGeometryKeys(const std::vector<unsigned i
     validGeometryKeys = keys;
 }
 
-bool PropertyConstraintList::checkGeometry(const std::vector<Part::Geometry*>& GeoList)
+bool PropertyConstraintList::checkGeometry(const std::vector<const Part::Geometry*>& GeoList)
 {
     if (!scanGeometry(GeoList)) {
         invalidGeometry = true;
@@ -481,14 +481,14 @@ bool PropertyConstraintList::checkConstraintIndices(int geomax, int geomin)
  * \param GeoList - new geometry list to be checked
  * \return false, if the types have changed.
  */
-bool PropertyConstraintList::scanGeometry(const std::vector<Part::Geometry*>& GeoList) const
+bool PropertyConstraintList::scanGeometry(const std::vector<const Part::Geometry*>& GeoList) const
 {
     if (validGeometryKeys.size() != GeoList.size()) {
         return false;
     }
 
     unsigned int i = 0;
-    for (std::vector<Part::Geometry*>::const_iterator it = GeoList.begin(); it != GeoList.end();
+    for (std::vector<const Part::Geometry*>::const_iterator it = GeoList.begin(); it != GeoList.end();
          ++it, i++) {
         if (validGeometryKeys[i] != (*it)->getTypeId().getKey()) {
             return false;

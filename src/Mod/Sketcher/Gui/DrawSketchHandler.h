@@ -77,7 +77,7 @@ public:
     std::vector<Base::Vector2d> toVector2D(const Part::Geometry* geometry);
 
     std::list<std::vector<Base::Vector2d>> toVector2DList(
-        const std::vector<Part::Geometry*>& geometries
+        const std::vector<const Part::Geometry*>& geometries
     );
 
 private:
@@ -361,7 +361,7 @@ protected:  // NVI requiring base implementation
 protected:
     void drawEdit(const std::vector<Base::Vector2d>& EditCurve) const;
     void drawEdit(const std::list<std::vector<Base::Vector2d>>& list) const;
-    void drawEdit(const std::vector<Part::Geometry*>& geometries) const;
+    void drawEdit(const std::vector<const Part::Geometry*>& geometries) const;
     void drawLineExtensionAutoConstraintHint(const std::vector<Base::Vector2d>& HintCurve) const;
     bool isLineExtensionAutoConstraintHintVisible(const std::vector<Base::Vector2d>& HintCurve) const;
     void drawEditMarkers(

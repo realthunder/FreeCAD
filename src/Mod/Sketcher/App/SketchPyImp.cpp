@@ -78,7 +78,7 @@ PyObject* SketchPy::addGeometry(PyObject* args)
     }
     else if (PyObject_TypeCheck(pcObj, &(PyList_Type))
              || PyObject_TypeCheck(pcObj, &(PyTuple_Type))) {
-        std::vector<Part::Geometry*> geoList;
+        std::vector<const Part::Geometry*> geoList;
         Py::Sequence list(pcObj);
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
             if (PyObject_TypeCheck((*it).ptr(), &(Part::GeometryPy::Type))) {

@@ -176,7 +176,7 @@ bool copySelectionToClipboard(Sketcher::SketchObject* obj) {
     listOfGeoId.erase(std::unique(listOfGeoId.begin(), listOfGeoId.end()), listOfGeoId.end());
 
     //Export selected geometries as a formatted string.
-    std::vector<Part::Geometry*> shapeGeometry;
+    std::vector<const Part::Geometry*> shapeGeometry;
     for (auto geoId : listOfGeoId) {
         Part::Geometry* geoNew = obj->getGeometry(geoId)->copy();
         shapeGeometry.push_back(geoNew);
@@ -2338,12 +2338,12 @@ void CmdSketcherSwapGeometryID::activated(int iMsg) {
     App::AutoTransaction guard(QT_TRANSLATE_NOOP("Command", "Swap geometry ID"));
 
     auto geos = sketch->Geometry.getValues();
-    auto &geo1 = geos[indices[0]];
-    auto &geo2 = geos[indices[1]];
-    long id1 = GeometryFacade::getId(geo1);
-    long id2 = GeometryFacade::getId(geo2);
-    geo1 = geo1->clone();
-    geo2 = geo2->clone();
+    long id1 = GeometryFacade::getId(geos[indices[0]]);
+    long id2 = GeometryFacade::getId(geos[indices[1]]);
+    auto geo1 = geos[indices[0]]->clone();
+    auto geo2 = geos[indices[1]]->clone();
+    geos[indices[0]] = geo1;
+    geos[indices[1]] = geo2;
     GeometryFacade::setId(geo1, id2);
     GeometryFacade::setId(geo2, id1);
     sketch->Geometry.setValues(std::move(geos));

@@ -239,6 +239,19 @@ auto toPointerVector(const std::vector<std::unique_ptr<T>>& vector)
     return vp;
 }
 
+/// The same, as pointers to const
+template<typename T>
+auto toConstPointerVector(const std::vector<std::unique_ptr<T>>& vector)
+{
+    std::vector<const T*> vp(vector.size());
+
+    std::transform(vector.begin(), vector.end(), vp.begin(), [](auto& p) {
+        return p.get();
+    });
+
+    return vp;
+}
+
 /** returns the visual layer id (not the one of the GeometryFacade, but the index to
  * PropertyVisualLayerList) from a geometry or GeometryFacade. NOTE: If the geometry or
  * geometryfacade does not have a corresponding ViewProviderSketchGeometryExtension, the default

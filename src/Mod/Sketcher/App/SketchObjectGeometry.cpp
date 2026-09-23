@@ -207,10 +207,10 @@ Base::Vector3d SketchObject::getPoint(int GeoId, PointPos PosId) const
 
 int SketchObject::getAxisCount() const
 {
-    const std::vector<Part::Geometry*>& vals = getInternalGeometry();
+    const std::vector<const Part::Geometry*>& vals = getInternalGeometry();
 
     int count = 0;
-    for (std::vector<Part::Geometry*>::const_iterator geo = vals.begin(); geo != vals.end(); geo++)
+    for (std::vector<const Part::Geometry*>::const_iterator geo = vals.begin(); geo != vals.end(); geo++)
         if ((*geo) && GeometryFacade::getConstruction(*geo)
             && (*geo)->is<Part::GeomLineSegment>())
             count++;
@@ -223,13 +223,13 @@ Base::Axis SketchObject::getAxis(int axId) const
     if (axId == H_Axis || axId == V_Axis || axId == N_Axis)
         return Part::Part2DObject::getAxis(axId);
 
-    const std::vector<Part::Geometry*>& vals = getInternalGeometry();
+    const std::vector<const Part::Geometry*>& vals = getInternalGeometry();
     int count = 0;
-    for (std::vector<Part::Geometry*>::const_iterator geo = vals.begin(); geo != vals.end(); geo++)
+    for (std::vector<const Part::Geometry*>::const_iterator geo = vals.begin(); geo != vals.end(); geo++)
         if ((*geo) && GeometryFacade::getConstruction(*geo)
             && (*geo)->is<Part::GeomLineSegment>()) {
             if (count == axId) {
-                Part::GeomLineSegment* lineSeg = static_cast<Part::GeomLineSegment*>(*geo);
+                const Part::GeomLineSegment* lineSeg = static_cast<const Part::GeomLineSegment*>(*geo);
                 Base::Vector3d start = lineSeg->getStartPoint();
                 Base::Vector3d end = lineSeg->getEndPoint();
                 return Base::Axis(start, end - start);
@@ -264,13 +264,13 @@ bool SketchObject::isSupportedGeometry(const Part::Geometry* geo) const
     return false;
 }
 
-std::vector<Part::Geometry*>
-SketchObject::supportedGeometry(const std::vector<Part::Geometry*>& geoList) const
+std::vector<const Part::Geometry*>
+SketchObject::supportedGeometry(const std::vector<const Part::Geometry*>& geoList) const
 {
-    std::vector<Part::Geometry*> supportedGeoList;
+    std::vector<const Part::Geometry*> supportedGeoList;
     supportedGeoList.reserve(geoList.size());
     // read-in geometry that the sketcher cannot handle
-    for (std::vector<Part::Geometry*>::const_iterator it = geoList.begin(); it != geoList.end();
+    for (std::vector<const Part::Geometry*>::const_iterator it = geoList.begin(); it != geoList.end();
          ++it) {
         if (isSupportedGeometry(*it)) {
             supportedGeoList.push_back(*it);
@@ -280,15 +280,15 @@ SketchObject::supportedGeometry(const std::vector<Part::Geometry*>& geoList) con
     return supportedGeoList;
 }
 
-int SketchObject::addGeometry(const std::vector<Part::Geometry*>& geoList,
+int SketchObject::addGeometry(const std::vector<const Part::Geometry*>& geoList,
                               bool construction /*=false*/)
 {
     // no need to check input data validity as this is an sketchobject managed operation.
     Base::StateLocker lock(managedoperation, true);
 
-    const std::vector<Part::Geometry*>& vals = getInternalGeometry();
+    const std::vector<const Part::Geometry*>& vals = getInternalGeometry();
 
-    std::vector<Part::Geometry*> newVals(vals);
+    std::vector<const Part::Geometry*> newVals(vals);
     newVals.reserve(newVals.size() + geoList.size());
     for (auto& v : geoList) {
         Part::Geometry* copy = v->copy();
@@ -326,9 +326,9 @@ int SketchObject::addGeometry(std::unique_ptr<Part::Geometry> newgeo, bool const
     // no need to check input data validity as this is an sketchobject managed operation.
     Base::StateLocker lock(managedoperation, true);
 
-    const std::vector<Part::Geometry*>& vals = getInternalGeometry();
+    const std::vector<const Part::Geometry*>& vals = getInternalGeometry();
 
-    std::vector<Part::Geometry*> newVals(vals);
+    std::vector<const Part::Geometry*> newVals(vals);
 
     Part::Geometry *geoNew = newgeo.release();
     generateId(geoNew);
@@ -379,7 +379,7 @@ int SketchObject::delGeometry(int GeoId, DeleteOptions options)
     // no need to check input data validity as this is an sketchobject managed operation.
     Base::StateLocker lock(managedoperation, true);
 
-    const std::vector<Part::Geometry*>& vals = getInternalGeometry();
+    const std::vector<const Part::Geometry*>& vals = getInternalGeometry();
     if (GeoId >= int(vals.size())) {
         return -1;
     }
@@ -390,7 +390,7 @@ int SketchObject::delGeometry(int GeoId, DeleteOptions options)
         return 0;
     }
 
-    std::vector<Part::Geometry*> newVals(vals);
+    std::vector<const Part::Geometry*> newVals(vals);
     newVals.erase(newVals.begin() + GeoId);
 
     // Find coincident points to replace the points of the deleted geometry
@@ -444,12 +444,12 @@ int SketchObject::delGeometriesExclusiveList(const std::vector<int>& GeoIds, Del
     // no need to check input data validity as this is an sketchobject managed operation.
     Base::StateLocker lock(managedoperation, true);
 
-    const std::vector<Part::Geometry*>& vals = getInternalGeometry();
+    const std::vector<const Part::Geometry*>& vals = getInternalGeometry();
     if (sGeoIds.front() < 0 || sGeoIds.back() >= int(vals.size())) {
         return -1;
     }
 
-    std::vector<Part::Geometry*> newVals(vals);
+    std::vector<const Part::Geometry*> newVals(vals);
     for (auto it = sGeoIds.rbegin(); it != sGeoIds.rend(); ++it) {
         int GeoId = *it;
         newVals.erase(newVals.begin() + GeoId);
@@ -508,7 +508,7 @@ int SketchObject::deleteAllGeometry(DeleteOptions options)
     // no need to check input data validity as this is an sketchobject managed operation.
     Base::StateLocker lock(managedoperation, true);
 
-    std::vector<Part::Geometry*> newVals(0);
+    std::vector<const Part::Geometry*> newVals(0);
     std::vector<Constraint*> newConstraints(0);
 
     // Avoid unnecessary updates and checks as this is a transaction
@@ -548,23 +548,23 @@ int SketchObject::toggleConstructions(const std::vector<int> &GeoIds)
     }
 
     bool geometryTouched = false;
-    std::vector<Part::Geometry*> geos;
+    std::vector<const Part::Geometry*> geos;
     bool externalTouched = false;
-    std::vector<Part::Geometry*> extGeos;
+    std::vector<const Part::Geometry*> extGeos;
     for(int GeoId : idSet) {
         if (GeoId >= 0) {
             if(geos.empty())
                 geos = Geometry.getValues();
-            auto &geo = geos[GeoId];
-            geo = geo->clone();
+            auto geo = geos[GeoId]->clone();
+            geos[GeoId] = geo;
             auto gf = GeometryFacade::getFacade(geo);
             gf->setConstruction(!gf->getConstruction());
             geometryTouched = true;
         } else {
             if(extGeos.empty())
                 extGeos = ExternalGeo.getValues();
-            auto &geo = extGeos[-GeoId-1];
-            geo = geo->clone();
+            auto geo = extGeos[-GeoId-1]->clone();
+            extGeos[-GeoId-1] = geo;
             auto egf = ExternalGeometryFacade::getFacade(geo);
             egf->setFlag(ExternalGeometryExtension::Defining,!egf->testFlag(ExternalGeometryExtension::Defining));
             externalTouched = true;
@@ -658,7 +658,7 @@ int SketchObject::exposeInternalGeometryForType<Part::GeomEllipse>(const int Geo
     int currentgeoid = getHighestCurveIndex();
     int incrgeo = 0;
 
-    std::vector<Part::Geometry*> igeo;
+    std::vector<const Part::Geometry*> igeo;
     std::vector<Constraint*> icon;
 
     const auto* ellipse = static_cast<const Part::GeomEllipse*>(geo);
@@ -745,7 +745,7 @@ int SketchObject::exposeInternalGeometryForType<Part::GeomEllipse>(const int Geo
     return incrgeo;
 }
 
-void SketchObject::addAndCleanup(std::vector<Part::Geometry*> igeo, std::vector<Constraint*> icon)
+void SketchObject::addAndCleanup(std::vector<const Part::Geometry*> igeo, std::vector<Constraint*> icon)
 {
     this->addGeometry(igeo, true);
     this->addConstraints(icon);
@@ -798,7 +798,7 @@ int SketchObject::exposeInternalGeometryForType<Part::GeomArcOfEllipse>(const in
     int currentgeoid = getHighestCurveIndex();
     int incrgeo = 0;
 
-    std::vector<Part::Geometry*> igeo;
+    std::vector<const Part::Geometry*> igeo;
     std::vector<Constraint*> icon;
 
     const auto* aoe = static_cast<const Part::GeomArcOfEllipse*>(geo);
@@ -926,7 +926,7 @@ int SketchObject::exposeInternalGeometryForType<Part::GeomArcOfHyperbola>(const 
     double minord {aoh->getMinorRadius()};
     Base::Vector3d majdir {aoh->getMajorAxisDir()};
 
-    std::vector<Part::Geometry*> igeo;
+    std::vector<const Part::Geometry*> igeo;
     std::vector<Constraint*> icon;
 
     Base::Vector3d mindir = Vector3d(-majdir.y, majdir.x);
@@ -1027,7 +1027,7 @@ int SketchObject::exposeInternalGeometryForType<Part::GeomArcOfParabola>(const i
     Base::Vector3d center {aop->getCenter()};
     Base::Vector3d focusp {aop->getFocus()};
 
-    std::vector<Part::Geometry*> igeo;
+    std::vector<const Part::Geometry*> igeo;
     std::vector<Constraint*> icon;
 
     if (!focus) {
@@ -1112,7 +1112,7 @@ int SketchObject::exposeInternalGeometryForType<Part::GeomBSplineCurve>(const in
     int currentgeoid = getHighestCurveIndex();
     int incrgeo = 0;
 
-    std::vector<Part::Geometry*> igeo;
+    std::vector<const Part::Geometry*> igeo;
     std::vector<Constraint*> icon;
 
     std::vector<Base::Vector3d> poles = bsp->getPoles();
@@ -1562,7 +1562,7 @@ int SketchObject::deleteUnusedInternalGeometryAndUpdateGeoId(int& GeoId, bool de
 const Part::Geometry* SketchObject::_getGeometry(int GeoId) const
 {
     if (GeoId >= 0) {
-        const std::vector<Part::Geometry *> &geomlist = getInternalGeometry();
+        const std::vector<const Part::Geometry*> &geomlist = getInternalGeometry();
         if (GeoId < int(geomlist.size()))
             return geomlist[GeoId];
     }
@@ -1620,9 +1620,9 @@ std::unique_ptr<const GeometryFacade> SketchObject::getGeometryFacade(int GeoId)
     return GeometryFacade::getFacade(getGeometry(GeoId));
 }
 
-std::vector<Part::Geometry*> SketchObject::getCompleteGeometry() const
+std::vector<const Part::Geometry*> SketchObject::getCompleteGeometry() const
 {
-    std::vector<Part::Geometry*> vals = getInternalGeometry();
+    std::vector<const Part::Geometry*> vals = getInternalGeometry();
     const auto &geos = getExternalGeometry();
     vals.insert(vals.end(), geos.rbegin(), geos.rend()); // in reverse order
     return vals;
@@ -1650,10 +1650,10 @@ void SketchObject::rebuildVertexIndex()
     VertexId2PosId.resize(0);
     int imax = getHighestCurveIndex();
     int i = 0;
-    const std::vector<Part::Geometry*> geometry = getCompleteGeometry();
+    const std::vector<const Part::Geometry*> geometry = getCompleteGeometry();
     if (geometry.size() <= 2)
         return;
-    for (std::vector<Part::Geometry*>::const_iterator it = geometry.begin();
+    for (std::vector<const Part::Geometry*>::const_iterator it = geometry.begin();
          it != geometry.end() - 2;
          ++it, i++) {
         if (i > imax)
@@ -1902,20 +1902,18 @@ int SketchObject::setGeometryId(int GeoId, long id)
     if (GeoId < 0 || GeoId >= int(Geometry.getValues().size()))
         return -1;
 
-    const std::vector<Part::Geometry*>& vals = getInternalGeometry();
+    const std::vector<const Part::Geometry*>& vals = getInternalGeometry();
 
 
-    std::vector<Part::Geometry*> newVals(vals);
+    std::vector<const Part::Geometry*> newVals(vals);
 
     // deep copy
     for (size_t i = 0; i < newVals.size(); i++) {
-        newVals[i] = newVals[i]->clone();
+        auto copy = newVals[i]->clone();
+        newVals[i] = copy;
 
-        if ((int)i == GeoId) {
-            auto gf = GeometryFacade::getFacade(newVals[i]);
-
-            gf->setId(id);
-        }
+        if ((int)i == GeoId)
+            GeometryFacade::setId(copy, id);
     }
 
     // There is not actual internal transaction going on here, however neither the geometry indices
@@ -1933,7 +1931,7 @@ int SketchObject::setGeometryIds(const std::vector<std::pair<int, long>>& GeoIds
     // no need to check input data validity as this is an sketchobject managed operation.
     Base::StateLocker lock(managedoperation, true);
 
-    const std::vector<Part::Geometry*>& vals = getInternalGeometry();
+    const std::vector<const Part::Geometry*>& vals = getInternalGeometry();
 
     for (const auto& [GeoId, id] : GeoIdsToIds) {
         if (GeoId < 0 || GeoId >= int(vals.size()))
@@ -1941,12 +1939,14 @@ int SketchObject::setGeometryIds(const std::vector<std::pair<int, long>>& GeoIds
     }
 
     // deep copy once, then set every id on the copies
-    std::vector<Part::Geometry*> newVals(vals);
-    for (auto& geo : newVals)
-        geo = geo->clone();
+    std::vector<Part::Geometry*> copies;
+    copies.reserve(vals.size());
+    for (auto geo : vals)
+        copies.push_back(geo->clone());
 
     for (const auto& [GeoId, id] : GeoIdsToIds)
-        GeometryFacade::setId(newVals[GeoId], id);
+        GeometryFacade::setId(copies[GeoId], id);
+    std::vector<const Part::Geometry*> newVals(copies.begin(), copies.end());
 
     // There is not actual internal transaction going on here, however neither the geometry indices
     // nor the vertices need to be updated so this is a convenient way of preventing it.
@@ -1963,7 +1963,7 @@ int SketchObject::getGeometryId(int GeoId, long& id) const
     if (GeoId < 0 || GeoId >= int(Geometry.getValues().size()))
         return -1;
 
-    const std::vector<Part::Geometry*>& vals = getInternalGeometry();
+    const std::vector<const Part::Geometry*>& vals = getInternalGeometry();
 
     auto gf = GeometryFacade::getFacade(vals[GeoId]);
 

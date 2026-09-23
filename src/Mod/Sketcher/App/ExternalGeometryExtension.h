@@ -25,11 +25,17 @@
 
 #include <array>
 #include <bitset>
+#include <string>
+#include <unordered_map>
 
 #include <Mod/Part/App/Geometry.h>
 #include <Mod/Part/App/GeometryMigrationExtension.h>
 #include <Mod/Sketcher/SketcherGlobal.h>
 
+
+namespace Base {
+class Writer;
+}
 
 namespace Sketcher
 {
@@ -87,6 +93,28 @@ public:
 public:
     ExternalGeometryExtension() = default;
     ~ExternalGeometryExtension() override = default;
+
+    /** The RefIndex an export writes for each Ref, carried by the writer
+     * rather than by the geometry.
+     *
+     * A save must not write the value it saves (docs/TransactionLog.md
+     * 23.6), and a RefIndex is only meaningful in an exported file. So
+     * SketchObject::Save installs the map for the writer it is given, for
+     * as long as this object lives, and saveAttributes()/preSave() write the
+     * index it answers when the extension holds none of its own.
+     */
+    class SketcherExport ExportRefIndex
+    {
+    public:
+        ExportRefIndex(const Base::Writer& writer, std::unordered_map<std::string, int> indexByRef);
+        ~ExportRefIndex();
+        ExportRefIndex(const ExportRefIndex&) = delete;
+        ExportRefIndex& operator=(const ExportRefIndex&) = delete;
+    private:
+        const Base::Writer* writer;
+    };
+    /// The index ExportRefIndex holds for a Ref under this writer, or -1
+    static int exportRefIndex(const Base::Writer& writer, const std::string& ref);
 
     std::unique_ptr<Part::GeometryExtension> copy() const override;
 

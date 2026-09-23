@@ -295,7 +295,7 @@ SketchSolveStatus SketchObject::solve(bool updateGeoAfterSolving /*=true*/)
                     );
 
                     if (diagnosis) {
-                        current[i]->setExtension(diagnosis->copy());
+                        current[i]->setTransientExtension(diagnosis->copy());
                     }
                 }
             }
@@ -887,37 +887,55 @@ int SketchObject::deleteAllConstraints(DeleteOptions options)
     return 0;
 }
 
-void SketchObject::addGeometryState(const Constraint* cstr) const
+// The state a constraint puts on its geometry (InternalType, Blocked) is
+// saved with the geometry, so writing it is a change of the Geometry property
+// and goes through its guard (docs/TransactionLog.md 23.6). The guard marks
+// the property only when a value actually differs.
+void SketchObject::addGeometryState(const Constraint* cstr)
 {
-    const std::vector<Part::Geometry*>& vals = getInternalGeometry();
+    const std::vector<const Part::Geometry*>& vals = getInternalGeometry();
+    Part::PropertyGeometryList::atomic_change guard(Geometry, false);
 
     Sketcher::InternalType::InternalType constraintInternalAlignment = InternalType::None;
     bool constraintBlockedState = false;
 
     if (getInternalTypeState(cstr, constraintInternalAlignment)) {
         auto gf = GeometryFacade::getFacade(vals[cstr->First]);
-        gf->setInternalType(constraintInternalAlignment);
+        if (gf->getInternalType() != constraintInternalAlignment) {
+            GeometryFacade::getFacade(Geometry.mutableValue(guard, cstr->First))
+                ->setInternalType(constraintInternalAlignment);
+        }
     }
     else if (getBlockedState(cstr, constraintBlockedState)) {
         auto gf = GeometryFacade::getFacade(vals[cstr->First]);
-        gf->setBlocked(constraintBlockedState);
+        if (gf->getBlocked() != constraintBlockedState) {
+            GeometryFacade::getFacade(Geometry.mutableValue(guard, cstr->First))
+                ->setBlocked(constraintBlockedState);
+        }
     }
 }
 
-void SketchObject::removeGeometryState(const Constraint* cstr) const
+void SketchObject::removeGeometryState(const Constraint* cstr)
 {
-    const std::vector<Part::Geometry*>& vals = getInternalGeometry();
+    const std::vector<const Part::Geometry*>& vals = getInternalGeometry();
+    Part::PropertyGeometryList::atomic_change guard(Geometry, false);
 
     // Assign correct Internal Geometry Type (see SketchGeometryExtension)
     if (cstr->Type == InternalAlignment) {
         auto gf = GeometryFacade::getFacade(vals[cstr->First]);
-        gf->setInternalType(InternalType::None);
+        if (gf->getInternalType() != InternalType::None) {
+            GeometryFacade::getFacade(Geometry.mutableValue(guard, cstr->First))
+                ->setInternalType(InternalType::None);
+        }
     }
 
     // Assign Blocked geometry mode (see SketchGeometryExtension)
     if (cstr->Type == Block) {
         auto gf = GeometryFacade::getFacade(vals[cstr->First]);
-        gf->setBlocked(false);
+        if (gf->getBlocked()) {
+            GeometryFacade::getFacade(Geometry.mutableValue(guard, cstr->First))
+                ->setBlocked(false);
+        }
     }
 }
 
@@ -2358,7 +2376,7 @@ bool SketchObject::evaluateConstraints() const
     int intGeoCount = getHighestCurveIndex() + 1;
     int extGeoCount = getExternalGeometryCount();
 
-    std::vector<Part::Geometry*> geometry = getCompleteGeometry();
+    std::vector<const Part::Geometry*> geometry = getCompleteGeometry();
     const std::vector<Sketcher::Constraint*>& constraints = Constraints.getValuesForce();
     if (static_cast<int>(geometry.size()) != extGeoCount + intGeoCount)
         return false;
@@ -2384,7 +2402,7 @@ void SketchObject::validateConstraints()
     // no need to check input data validity as this is an sketchobject managed operation.
     Base::StateLocker lock(managedoperation, true);
 
-    std::vector<Part::Geometry*> geometry = getCompleteGeometry();
+    std::vector<const Part::Geometry*> geometry = getCompleteGeometry();
     const std::vector<Sketcher::Constraint*>& constraints = Constraints.getValuesForce();
 
     std::vector<Sketcher::Constraint*> newConstraints;
@@ -2683,7 +2701,7 @@ int SketchObject::port_reversedExternalArcs(bool justAnalyze)
             if (geoId <= GeoEnum::RefExt
                 && (posId == Sketcher::PointPos::start || posId == Sketcher::PointPos::end)) {
                 // we are dealing with a link to an endpoint of external geom
-                Part::Geometry* g = this->ExternalGeo[-geoId - 1];
+                const Part::Geometry* g = this->ExternalGeo[-geoId - 1];
                 if (g->is<Part::GeomArcOfCircle>()) {
                     const Part::GeomArcOfCircle* segm =
                         static_cast<const Part::GeomArcOfCircle*>(g);

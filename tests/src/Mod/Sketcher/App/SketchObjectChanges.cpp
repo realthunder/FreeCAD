@@ -14,7 +14,11 @@
 #include <App/ObjectIdentifier.h>
 #include <Mod/Part/App/FeaturePartBox.h>
 #include <Mod/Part/App/Geometry.h>
+#include <Base/Writer.h>
+#include <Mod/Sketcher/App/ExternalGeometryExtension.h>
+#include <Mod/Sketcher/App/ExternalGeometryFacade.h>
 #include <Mod/Sketcher/App/GeoEnum.h>
+#include <Mod/Sketcher/App/GeometryFacade.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 #include "SketcherTestHelpers.h"
 
@@ -1524,4 +1528,101 @@ TEST_F(SketchObjectTest, testJoinCurvesWhenTangent)
     auto mults
         = static_cast<const Part::GeomBSplineCurve*>(getObject()->getGeometry(0))->getMultiplicities();
     EXPECT_TRUE(std::all_of(mults.begin(), mults.end(), [](auto mult) { return mult >= 1; }));
+}
+
+// The geometry a property holds is const (docs/TransactionLog.md 23.6): what
+// changes it goes through the property, so the property is touched and the
+// element is a new one.
+
+TEST_F(SketchObjectTest, testExtendArcGoesThroughTheProperty)
+{
+    // Arrange
+    Part::GeomArcOfCircle arc;
+    setupArcOfCircle(arc);
+    int geoId = getObject()->addGeometry(&arc);
+    const Part::Geometry* held = getObject()->getGeometry(geoId);
+    double startBefore, endBefore;
+    static_cast<const Part::GeomArcOfCircle*>(held)->getRange(startBefore, endBefore, true);
+    getObject()->Geometry.purgeTouched();
+
+    // Act
+    getObject()->extend(geoId, 0.5, Sketcher::PointPos::end);
+
+    // Assert: the property was set, with a new element, and the range grew
+    EXPECT_TRUE(getObject()->Geometry.isTouched());
+    const Part::Geometry* after = getObject()->getGeometry(geoId);
+    EXPECT_NE(after, held);
+    double startAfter, endAfter;
+    static_cast<const Part::GeomArcOfCircle*>(after)->getRange(startAfter, endAfter, true);
+    EXPECT_NEAR(startAfter, startBefore, 1e-9);
+    EXPECT_NEAR(endAfter, endBefore + 0.5, 1e-9);
+}
+
+TEST_F(SketchObjectTest, testConstraintStateGoesThroughTheProperty)
+{
+    // Arrange
+    Part::GeomLineSegment lineSeg;
+    setupLineSegment(lineSeg);
+    int geoId = getObject()->addGeometry(&lineSeg);
+    getObject()->Geometry.purgeTouched();
+
+    // Act: a Block constraint marks its geometry blocked
+    auto constraint = new Sketcher::Constraint();  // owned by the sketch
+    constraint->Type = Sketcher::ConstraintType::Block;
+    constraint->First = geoId;
+    int cId = getObject()->addConstraint(constraint);
+
+    // Assert: written through Geometry, not behind it
+    EXPECT_TRUE(getObject()->Geometry.isTouched());
+    EXPECT_TRUE(GeometryFacade::getFacade(getObject()->getGeometry(geoId))->getBlocked());
+
+    // Act again: removing the constraint clears the mark the same way
+    getObject()->Geometry.purgeTouched();
+    getObject()->delConstraint(cId);
+    EXPECT_TRUE(getObject()->Geometry.isTouched());
+    EXPECT_FALSE(GeometryFacade::getFacade(getObject()->getGeometry(geoId))->getBlocked());
+
+    // And a constraint that changes no state leaves the property alone
+    getObject()->Geometry.purgeTouched();
+    auto horizontal = new Sketcher::Constraint();
+    horizontal->Type = Sketcher::ConstraintType::Horizontal;
+    horizontal->First = geoId;
+    getObject()->addConstraint(horizontal);
+    EXPECT_FALSE(getObject()->Geometry.isTouched());
+}
+
+TEST_F(SketchObjectTest, testSaveWritesTheExportRefIndexFromTheWriter)
+{
+    // Arrange: an external edge with a reference
+    auto* doc = getObject()->getDocument();
+    auto box {doc->addObject("Part::Box")};
+    doc->recompute();
+    getObject()->addExternal(box, "Face6");
+    const auto& geos = getObject()->ExternalGeo.getValues();
+    ASSERT_GE(geos.size(), 3u);
+    std::string ref = ExternalGeometryFacade::getFacade(geos.back())->getRef();
+    ASSERT_FALSE(ref.empty());
+    getObject()->ExternalGeo.purgeTouched();
+
+    // Act: a plain save carries no index and writes nothing to the geometry
+    Base::StringWriter plain;
+    getObject()->ExternalGeo.Save(plain);
+    EXPECT_EQ(plain.getString().find("RefIndex="), std::string::npos);
+    EXPECT_FALSE(getObject()->ExternalGeo.isTouched());
+    EXPECT_EQ(ExternalGeometryFacade::getFacade(geos.back())->getRefIndex(), -1);
+
+    // Act: the index an export needs rides on the writer
+    Base::StringWriter exporting;
+    {
+        Sketcher::ExternalGeometryExtension::ExportRefIndex index(exporting, {{ref, 7}});
+        getObject()->ExternalGeo.Save(exporting);
+    }
+    EXPECT_NE(exporting.getString().find("RefIndex=\"7\""), std::string::npos);
+    EXPECT_FALSE(getObject()->ExternalGeo.isTouched());
+    EXPECT_EQ(ExternalGeometryFacade::getFacade(geos.back())->getRefIndex(), -1);
+
+    // And the writer forgets it once the export is over
+    Base::StringWriter later;
+    getObject()->ExternalGeo.Save(later);
+    EXPECT_EQ(later.getString().find("RefIndex="), std::string::npos);
 }

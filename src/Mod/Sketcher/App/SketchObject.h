@@ -174,7 +174,13 @@ public:
      \param construction - true for construction lines
      \retval int - GeoId of last added element
      */
-    int addGeometry(const std::vector<Part::Geometry*>& geoList, bool construction = false);
+    int addGeometry(const std::vector<const Part::Geometry*>& geoList, bool construction = false);
+    /// The same, for a caller holding the geometry it made as non-const
+    int addGeometry(const std::vector<Part::Geometry*>& geoList, bool construction = false)
+    {
+        return addGeometry(std::vector<const Part::Geometry*>(geoList.begin(), geoList.end()),
+                           construction);
+    }
     /*!
      \brief Deletes indicated geometry (by geoid).
      \param GeoId - the geometry to delete
@@ -273,12 +279,12 @@ public:
     std::unique_ptr<const GeometryFacade> getGeometryFacade(int GeoId) const;
 
     /// returns a list of all internal geometries
-    const std::vector<Part::Geometry*>& getInternalGeometry() const
+    const std::vector<const Part::Geometry*>& getInternalGeometry() const
     {
         return Geometry.getValues();
     }
     /// returns a list of projected external geometries
-    const std::vector<Part::Geometry*>& getExternalGeometry() const
+    const std::vector<const Part::Geometry*>& getExternalGeometry() const
     {
         return ExternalGeo.getValues();
     }
@@ -293,7 +299,7 @@ public:
     void fixExternalGeometry(const std::vector<int> &geoIds = {});
 
     /// retrieves a vector containing both normal and external Geometry (including the sketch axes)
-    std::vector<Part::Geometry*> getCompleteGeometry() const;
+    std::vector<const Part::Geometry*> getCompleteGeometry() const;
 
     GeoListFacade getGeoListFacade() const;
 
@@ -998,8 +1004,8 @@ protected:
      \param geoList - the geometry list
      \retval list - the supported geometry list
      */
-    std::vector<Part::Geometry*>
-    supportedGeometry(const std::vector<Part::Geometry*>& geoList) const;
+    std::vector<const Part::Geometry*>
+    supportedGeometry(const std::vector<const Part::Geometry*>& geoList) const;
 
     void updateGeoHistory();
     void generateId(Part::Geometry *geo);
@@ -1015,7 +1021,7 @@ protected:
     /// Internal helper method for exposeInternalGeometryForType
     /// Add geometry and constraints to `this`, then delete the geometry and constraints in the
     /// vectors Note that the contents of the two vectors are invalid after this call.
-    void addAndCleanup(std::vector<Part::Geometry*> igeo, std::vector<Constraint*> icon);
+    void addAndCleanup(std::vector<const Part::Geometry*> igeo, std::vector<Constraint*> icon);
 
     // refactoring functions
     // check whether constraint may be changed driving status
@@ -1145,8 +1151,8 @@ private:
     // 3. Functionality removing constraints (of the relevant type) calls removeGeometryState to
     // remove the status
     // 4. Save mechanism will ensure persistence.
-    void addGeometryState(const Constraint* cstr) const;
-    void removeGeometryState(const Constraint* cstr) const;
+    void addGeometryState(const Constraint* cstr);
+    void removeGeometryState(const Constraint* cstr);
 
     SketchAnalysis* analyser;
 

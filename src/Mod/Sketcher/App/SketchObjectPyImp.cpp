@@ -135,7 +135,7 @@ PyObject* SketchObjectPy::addGeometry(PyObject* args)
     }
     else if (PyObject_TypeCheck(pcObj, &(PyList_Type))
              || PyObject_TypeCheck(pcObj, &(PyTuple_Type))) {
-        std::vector<Part::Geometry*> geoList;
+        std::vector<const Part::Geometry*> geoList;
         std::vector<std::shared_ptr<Part::Geometry>> tmpList;
         Py::Sequence list(pcObj);
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
@@ -2685,7 +2685,7 @@ Py::List SketchObjectPy::getGeometryFacadeList() const
 
 void SketchObjectPy::setGeometryFacadeList(Py::List value)
 {
-    std::vector<Part::Geometry*> list;
+    std::vector<const Part::Geometry*> list;
     list.reserve(value.size());
 
     for (const auto& ti : value) {

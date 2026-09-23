@@ -514,6 +514,27 @@ void Geometry::setExtension(std::unique_ptr<GeometryExtension>&& geoext)
     }
 }
 
+void Geometry::setTransientExtension(std::unique_ptr<GeometryExtension>&& ext) const
+{
+    if (!ext) {
+        return;
+    }
+    if (ext->isDerivedFrom<GeometryPersistenceExtension>()) {
+        THROWM(Base::RuntimeError,
+               "setTransientExtension: a persistent extension is part of the value");
+    }
+    const_cast<Geometry*>(this)->setExtension(std::move(ext));
+}
+
+void Geometry::deleteTransientExtension(const Base::Type& type) const
+{
+    if (type.isDerivedFrom(GeometryPersistenceExtension::getClassTypeId())) {
+        THROWM(Base::RuntimeError,
+               "deleteTransientExtension: a persistent extension is part of the value");
+    }
+    const_cast<Geometry*>(this)->deleteExtension(type);
+}
+
 void Geometry::deleteExtension(const Base::Type& type)
 {
     extensions.erase(
@@ -589,19 +610,19 @@ Geometry* Geometry::clone() const
     return cpy;
 }
 
-void Geometry::mirror(const Base::Vector3d& point) const
+void Geometry::mirror(const Base::Vector3d& point)
 {
     gp_Pnt pnt(point.x, point.y, point.z);
     handle()->Mirror(pnt);
 }
 
-void Geometry::mirror(const Base::Vector3d& point, const Base::Vector3d& dir) const
+void Geometry::mirror(const Base::Vector3d& point, const Base::Vector3d& dir)
 {
     gp_Ax1 ax1(gp_Pnt(point.x, point.y, point.z), gp_Dir(dir.x, dir.y, dir.z));
     handle()->Mirror(ax1);
 }
 
-void Geometry::rotate(const Base::Placement& plm) const
+void Geometry::rotate(const Base::Placement& plm)
 {
     Base::Rotation rot(plm.getRotation());
     Base::Vector3d pnt, dir;
@@ -615,13 +636,13 @@ void Geometry::rotate(const Base::Placement& plm) const
     handle()->Rotate(ax1, angle);
 }
 
-void Geometry::scale(const Base::Vector3d& vec, double scale) const
+void Geometry::scale(const Base::Vector3d& vec, double scale)
 {
     gp_Pnt pnt(vec.x, vec.y, vec.z);
     handle()->Scale(pnt, scale);
 }
 
-void Geometry::transform(const Base::Matrix4D& mat) const
+void Geometry::transform(const Base::Matrix4D& mat)
 {
     gp_Trsf trf;
     trf.SetValues(
@@ -641,7 +662,7 @@ void Geometry::transform(const Base::Matrix4D& mat) const
     handle()->Transform(trf);
 }
 
-void Geometry::translate(const Base::Vector3d& vec) const
+void Geometry::translate(const Base::Vector3d& vec)
 {
     gp_Vec trl(vec.x, vec.y, vec.z);
     handle()->Translate(trl);

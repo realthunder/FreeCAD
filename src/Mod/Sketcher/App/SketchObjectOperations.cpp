@@ -173,14 +173,9 @@ SketchSolveStatus SketchObject::moveGeometries(const std::vector<GeoElementId>& 
     // or a redundancy that we did not have before, or a change of DoF
 
     if (lastSolverStatus == GCS::SolveStatus::Success) {
-        std::vector<Part::Geometry*> geomlist = solvedSketch.extractGeometry();
-        Geometry.setValues(geomlist);
+        // The property takes the extracted geometry over; nothing to delete
+        Geometry.setValues(solvedSketch.extractGeometry());
         // Constraints.acceptGeometry(getCompleteGeometry());
-        for (std::vector<Part::Geometry*>::iterator it = geomlist.begin(); it != geomlist.end();
-             ++it) {
-            if (*it)
-                delete *it;
-        }
     }
 
     solvedSketch.resetInitMove();// reset solver point moving mechanism
@@ -417,7 +412,7 @@ int SketchObject::fillet(int GeoId1, int GeoId2, const Base::Vector3d& refPnt1,
                         newConstraints.push_back(copy);
                     }
 
-                    std::vector<Part::Geometry*> newVals(getInternalGeometry());
+                    std::vector<const Part::Geometry*> newVals(getInternalGeometry());
                     auto* front = newVals[geoId]->clone();
                     auto* back = newVals[newId]->clone();
                     const int frontId = GeometryFacade::getId(front);
@@ -600,11 +595,11 @@ SketchSolveStatus SketchObject::extend(int GeoId, double increment, PointPos end
     if (GeoId < 0 || GeoId > getHighestCurveIndex())
         return SketchSolveStatus::SolverError;
 
-    const std::vector<Part::Geometry*>& geomList = getInternalGeometry();
-    Part::Geometry* geom = geomList[GeoId];
+    const std::vector<const Part::Geometry*>& geomList = getInternalGeometry();
+    const Part::Geometry* geom = geomList[GeoId];
     auto status = SketchSolveStatus::Success;
     if (geom->is<Part::GeomLineSegment>()) {
-        auto* seg = static_cast<Part::GeomLineSegment*>(geom);
+        const auto* seg = static_cast<const Part::GeomLineSegment*>(geom);
         Base::Vector3d startVec = seg->getStartPoint();
         Base::Vector3d endVec = seg->getEndPoint();
         if (endpoint == PointPos::start) {
@@ -625,17 +620,24 @@ SketchSolveStatus SketchObject::extend(int GeoId, double increment, PointPos end
         }
     }
     else if (geom->is<Part::GeomArcOfCircle>()) {
-        auto* arc = static_cast<Part::GeomArcOfCircle*>(geom);
+        // The arc is extended on a copy that is set back through the
+        // property; the held one is not written.
+        std::unique_ptr<Part::GeomArcOfCircle> arc(
+            static_cast<Part::GeomArcOfCircle*>(geom->clone()));
         double startArc, endArc;
         arc->getRange(startArc, endArc, true);
+        bool changed = false;
         if (endpoint == PointPos::start) {
             arc->setRange(startArc - increment, endArc, true);
-            status = SketchSolveStatus::Success;
+            changed = true;
         }
         else if (endpoint == PointPos::end) {
             arc->setRange(startArc, endArc + increment, true);
-            status = SketchSolveStatus::Success;
+            changed = true;
         }
+        if (changed)
+            Geometry.set1Value(GeoId, std::move(arc));
+        status = SketchSolveStatus::Success;
     }
     if (status == SketchSolveStatus::Success && noRecomputes) {
         solve();
@@ -2334,8 +2336,8 @@ int SketchObject::addCopy(const std::vector<int>& geoIdList, const Base::Vector3
     // no need to check input data validity as this is an sketchobject managed operation.
     Base::StateLocker lock(managedoperation, true);
 
-    const std::vector<Part::Geometry*>& geovals = getInternalGeometry();
-    std::vector<Part::Geometry*> newgeoVals(geovals);
+    const std::vector<const Part::Geometry*>& geovals = getInternalGeometry();
+    std::vector<const Part::Geometry*> newgeoVals(geovals);
 
     const std::vector<Constraint*>& constrvals = this->Constraints.getValues();
     std::vector<Constraint*> newconstrVals(constrvals);
@@ -2487,8 +2489,12 @@ int SketchObject::addCopy(const std::vector<int>& geoIdList, const Base::Vector3
                         geocopy->deleteExtension(ExternalGeometryExtension::getClassTypeId());
                     }
                     generateId(geocopy);
-                } else
-                    geocopy = newgeoVals[*it];
+                } else {
+                    // A move writes the geometry: on a copy, which takes
+                    // the held one's place when the values are set below.
+                    geocopy = newgeoVals[*it]->clone();
+                    newgeoVals[*it] = geocopy;
+                }
 
                 // Handle Geometry
                 if (geocopy->is<Part::GeomLineSegment>()) {
@@ -2925,9 +2931,9 @@ bool SketchObject::convertToNURBS(int GeoId)
         return false;
     }
 
-    const std::vector<Part::Geometry*>& vals = getInternalGeometry();
+    const std::vector<const Part::Geometry*>& vals = getInternalGeometry();
 
-    std::vector<Part::Geometry*> newVals(vals);
+    std::vector<const Part::Geometry*> newVals(vals);
 
     // Block checks and updates in OnChanged to avoid unnecessary checks and updates
     {
@@ -3008,9 +3014,9 @@ bool SketchObject::increaseBSplineDegree(int GeoId, int degreeincrement /*= 1*/)
         return false;
     }
 
-    const std::vector<Part::Geometry*>& vals = getInternalGeometry();
+    const std::vector<const Part::Geometry*>& vals = getInternalGeometry();
 
-    std::vector<Part::Geometry*> newVals(vals);
+    std::vector<const Part::Geometry*> newVals(vals);
 
     GeometryFacade::copyId(geo, bspline.get());
     newVals[GeoId] = bspline.release();
@@ -3063,9 +3069,9 @@ bool SketchObject::decreaseBSplineDegree(int GeoId, int degreedecrement /*= 1*/)
     // FIXME: Avoid to delete the whole geometry but only delete invalid constraints
     // and unused construction geometries
 #if 0
-    const std::vector< Part::Geometry * > &vals = getInternalGeometry();
+    const std::vector<const Part::Geometry*> &vals = getInternalGeometry();
 
-    std::vector< Part::Geometry * > newVals(vals);
+    std::vector<const Part::Geometry*> newVals(vals);
 
     newVals[GeoId] = bspline.release();
 
@@ -3229,9 +3235,9 @@ bool SketchObject::modifyBSplineKnotMultiplicity(int GeoId, int knotIndex, int m
         newcVals.push_back(newConstr);
     }
 
-    const std::vector<Part::Geometry*>& vals = getInternalGeometry();
+    const std::vector<const Part::Geometry*>& vals = getInternalGeometry();
 
-    std::vector<Part::Geometry*> newVals(vals);
+    std::vector<const Part::Geometry*> newVals(vals);
 
     GeometryFacade::copyId(geo, bspline.get());
     newVals[GeoId] = bspline.release();
@@ -3382,9 +3388,9 @@ bool SketchObject::insertBSplineKnot(int GeoId, double param, int multiplicity)
         newcVals.push_back(newConstr);
     }
 
-    const std::vector<Part::Geometry*>& vals = getInternalGeometry();
+    const std::vector<const Part::Geometry*>& vals = getInternalGeometry();
 
-    std::vector<Part::Geometry*> newVals(vals);
+    std::vector<const Part::Geometry*> newVals(vals);
 
     GeometryFacade::copyId(geo, bspline.get());
     newVals[GeoId] = bspline.release();

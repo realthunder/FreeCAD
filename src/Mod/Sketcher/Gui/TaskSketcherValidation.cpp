@@ -276,9 +276,9 @@ void SketcherValidation::onFindReversedClicked()
     }
 
     std::vector<Base::Vector3d> points;
-    const std::vector<Part::Geometry*>& geom = sketch->getExternalGeometry();
+    const std::vector<const Part::Geometry*>& geom = sketch->getExternalGeometry();
     for (std::size_t i = 0; i < geom.size(); i++) {
-        Part::Geometry* g = geom[i];
+        const Part::Geometry* g = geom[i];
         // only arcs of circles need to be repaired. Arcs of ellipse were so broken there should be
         // nothing to repair from.
         if (g->is<Part::GeomArcOfCircle>()) {

@@ -41,7 +41,7 @@ App::DocumentObjectExecReturn *FeatureGeometrySet::execute()
 {
     TopoShape result;
 
-    const std::vector<Geometry*> &Geoms = GeometrySet.getValues();
+    const std::vector<const Geometry*> &Geoms = GeometrySet.getValues();
 
     bool first = true;
     for(auto Geom : Geoms) {
