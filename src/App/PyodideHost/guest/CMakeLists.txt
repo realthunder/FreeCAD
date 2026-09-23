@@ -118,5 +118,7 @@ add_custom_command(
             $<TARGET_FILE:_fcx_image>
     DEPENDS _fcx_image ${CMAKE_CURRENT_SOURCE_DIR}/make_wheel.py
             ${CMAKE_CURRENT_SOURCE_DIR}/README.md
-    COMMENT "Wrapping _fcx_image into a wheel")
+    COMMENT "Wrapping _fcx_image into a wheel"
+    # The classifiers carry parentheses, which a POSIX shell rejects bare.
+    VERBATIM)
 add_custom_target(fcx_image_wheel ALL DEPENDS ${FCX_WHEEL})
