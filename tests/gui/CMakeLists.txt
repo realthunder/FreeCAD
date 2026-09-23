@@ -197,6 +197,17 @@ fc_add_gui_test(GuiSketchOriginMarker_tests_run
                 sketch-origin-marker.py
                 --timeout 240)
 
+# Entering a sketch must not SHOW the datum it is attached to
+# (upstream dc2aec50d4, 4b50d72769). The TempoVis snippet in
+# ViewProviderSketch::setEdit excludes the support by class name, and
+# after the datums port an origin plane is an App::Plane -- so a test
+# naming only PartDesign::Plane stopped catching it and the origin came
+# up with every sketch. A class rename silently disabling a type test
+# leaves nothing behind to notice, which is what this watches.
+fc_add_gui_test(GuiSketchSupportVisibility_tests_run
+                sketch-support-visibility.py
+                --timeout 240)
+
 # Auto-constraints for a DRAG, not only for a drawing tool (upstream
 # ec298e9e9a and its follow-ups): hold a dragged point still on top of
 # another point and the Coincident that pins it there is written when
