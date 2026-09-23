@@ -1,21 +1,30 @@
-"""Entering a sketch must not SHOW the datum it is attached to.
+"""Editing a sketch hides the ORIGIN it is on, and shows the DATUM it is on.
 
 Upstream `dc2aec50d4` and `4b50d72769`, taken together (docs/SketcherPort.md).
 
 `ViewProviderSketch::setEdit` runs a TempoVis snippet that, when
-ShowSupport is on, shows what the sketch is attached to -- except the
-datum it is mapped onto, which is its own support and would only clutter
-the view it is being edited in. The exclusion is BY CLASS NAME, and it
-named `PartDesign::Plane` alone.
+ShowSupport is on, shows what the sketch is attached to -- minus the
+things that would only clutter the view being edited. The exclusion is
+BY CLASS NAME, and it named `PartDesign::Plane` alone.
 
-After the datums port an origin plane is an `App::Plane`, so the test
-stopped matching and the origin came up with every sketch attached to
-one -- which is most of them. A class rename that silently disables a
-type test leaves nothing behind to notice: no error, no warning, just a
-condition that is never true again. That is what this watches, and why
-it is a test rather than a one-line fix left to speak for itself.
+Two separate claims, and the pair is the point:
 
-Scored against the tree before the fix: the plane comes back visible.
+  - an ORIGIN plane (`App::Plane`) and the LCS stay HIDDEN. After the
+    datums port an origin plane is an `App::Plane`, so a test naming
+    only `PartDesign::Plane` stopped matching and the origin came up
+    with every sketch attached to one -- which is most of them;
+  - a datum plane the USER made (`PartDesign::Plane`) is SHOWN. It is
+    the reference being sketched on, and upstream deliberately shows it:
+    the old exclusion was the pre-core-datums spelling of "origin
+    plane", not a second intent. Both trees still create that class from
+    the Datum Plane command, so this is live behaviour, not legacy.
+
+A class rename that silently disables a type test leaves nothing behind
+to notice: no error, no warning, just a condition never true again. That
+is what this watches, and why a one-line fix got a test.
+
+Scored against the tree before the fix: the origin plane comes back
+visible.
 """
 import os
 import traceback
@@ -88,6 +97,41 @@ def run():
         note("after setEdit: %s visible=%s" % (xy.Name, shown))
         check("the attached origin plane is NOT shown on sketch edit",
               not shown, "%s visible=%s" % (xy.TypeId, shown))
+        FreeCADGui.activeDocument().resetEdit()
+        QtCore.QCoreApplication.processEvents()
+
+        # And the other half: a datum the USER made is the reference
+        # being sketched on, so it IS shown. Without this the fix could
+        # be "exclude everything", which hides the origin too and would
+        # pass the check above while being wrong.
+        datum = doc.addObject("PartDesign::Plane", "DatumPlane")
+        body.addObject(datum)
+        for prop in ("AttachmentSupport", "Support"):
+            if hasattr(datum, prop):
+                setattr(datum, prop, [(xy, "")])
+                break
+        datum.MapMode = "FlatFace"
+        doc.recompute()
+
+        sketch2 = doc.addObject("Sketcher::SketchObject", "SketchOnDatum")
+        body.addObject(sketch2)
+        for prop in ("AttachmentSupport", "Support"):
+            if hasattr(sketch2, prop):
+                setattr(sketch2, prop, [(datum, "")])
+                break
+        sketch2.MapMode = "FlatFace"
+        doc.recompute()
+        sketch2.ViewObject.ShowSupport = True
+        datum.ViewObject.Visibility = False
+        note("before edit: %s visible=%s type=%s"
+             % (datum.Name, datum.ViewObject.Visibility, datum.TypeId))
+
+        FreeCADGui.activeDocument().setEdit(sketch2)
+        QtCore.QCoreApplication.processEvents()
+        dshown = datum.ViewObject.Visibility
+        note("after setEdit: %s visible=%s" % (datum.Name, dshown))
+        check("the attached user datum plane IS shown on sketch edit",
+              dshown, "%s visible=%s" % (datum.TypeId, dshown))
         FreeCADGui.activeDocument().resetEdit()
         QtCore.QCoreApplication.processEvents()
     except Exception:
