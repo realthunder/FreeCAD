@@ -319,7 +319,10 @@ class ShapeLocationCases(ShapeTestCase):
         self.assertEqual(xml.count(' loc="'), 1)
         self.assertIn('loc="1 0 0 11 0 1 0 -22.5 0 0 1 3.25"', xml)
         # Round numbers stay round: the shortest text that reads back exactly.
-        self.assertNotIn("-22.500000", xml)
+        # Read in the attribute alone -- property values around it are
+        # written in the fixed float format (docs/TransactionLog.md 23.9).
+        for loc in re.findall(r' loc="([^"]*)"', xml):
+            self.assertNotIn("-22.500000", loc)
         # And with the location gone, the two boxes are the same geometry --
         # which, geometry being stored by content, is one file.
         self.assertEqual(len(self.storedGeometry(project)), 1)
