@@ -142,6 +142,7 @@ public:
     std::vector<LogTransaction> transactions(int64_t from, int limit) override
     { return inner().transactions(from, limit); }
     std::vector<LogOp> ops(int64_t txn) override { return inner().ops(txn); }
+    bool getOp(int64_t txn, int idx, LogOp& op) override { return inner().getOp(txn, idx, op); }
     int64_t lastSeq() override { return inner().lastSeq(); }
     void truncate(int64_t before) override { inner().truncate(before); }
     int64_t environment(const std::string& json) override { return inner().environment(json); }
@@ -259,6 +260,8 @@ void TransactionLog::run()
 
 void TransactionLog::post(std::function<void()> job)
 {
+    _deltaHops = DocumentParams::getTransactionLogDeltaHops();
+    _deltaRatio = DocumentParams::getTransactionLogDeltaRatio();
     {
         std::lock_guard<std::mutex> lock(_mutex);
         _queue.push_back(std::move(job));
@@ -554,7 +557,23 @@ int64_t TransactionLog::snapshot(const char* kind, const std::string& path,
             v.docxml_hash = docHash;
             for (const auto& b : blobs)
                 manifest.push_back({b.first, b.second, "blob"});
+            // The previous version's entries are superseded by this one's
+            // (sec 23.2): matched by name, re-encoded toward the newer.
+            std::map<std::string, std::string> previous;
+            if (const int64_t prev = _store->lastVersion()) {
+                for (const auto& e : _store->manifest(prev)) {
+                    if (e.source == "entity")
+                        previous[e.entry] = e.hash;
+                }
+            }
             _store->addVersion(v, manifest);
+            for (const auto& e : manifest) {
+                if (e.source != "entity")
+                    continue;
+                auto it = previous.find(e.entry);
+                if (it != previous.end() && it->second != e.hash)
+                    supersede(it->second, e.hash);
+            }
             evictVersions(keep);
 
             t.script = "{\"version\":" + std::to_string(v.num) + ",\"docxml\":\"" + docHash
@@ -731,6 +750,48 @@ std::string TransactionLog::putBytes(const std::string& bytes, const std::string
     return e.hash;
 }
 
+int TransactionLog::chainBelow(const std::string& hash, int depth)
+{
+    if (depth > 64)
+        return depth;
+    int longest = 0;
+    for (const auto& below : _store->basedOn(hash))
+        longest = std::max(longest, 1 + chainBelow(below, depth + 1));
+    return longest;
+}
+
+void TransactionLog::supersede(const std::string& older, const std::string& newer)
+{
+    const long hops = _deltaHops;
+    const long ratio = _deltaRatio;
+    if (hops <= 0 || older.empty() || newer.empty() || older == newer)
+        return;
+    LogEntity old;
+    if (!_store->getEntity(older, old) || old.enc == "delta" || old.size <= 128)
+        return;
+    if (old.kind != "prop" && old.kind != "xml")
+        return;   // attachments and blobs wait for the measurement (23.7 step 6)
+    // The newer one must not decode through the older, or the chain is a
+    // loop; and the chain already hanging off the older one, plus this
+    // hop, must fit the bound.
+    LogEntity walk;
+    for (std::string h = newer; !h.empty();) {
+        if (h == older || !_store->getEntity(h, walk))
+            return;
+        h = walk.enc == "delta" ? walk.base : std::string();
+    }
+    if (chainBelow(older) + 1 > hops)
+        return;
+    std::string oldBytes, newBytes, patch;
+    if (!readBytes(older, oldBytes) || !readBytes(newer, newBytes))
+        return;
+    if (!deltaEncode(oldBytes, newBytes, patch))
+        return;
+    if (patch.size() * 100 > old.data.size() * static_cast<size_t>(ratio))
+        return;
+    _store->reencodeEntity(older, "delta", newer, patch);
+}
+
 /// The full bytes of an entity, decoding a delta chain base first (sec
 /// 23.2). `depth` guards a cycle a corrupt store could hold.
 bool TransactionLog::readBytes(const std::string& hash, std::string& out, LogEntity* entity,
@@ -813,8 +874,13 @@ void TransactionLog::writeValues(std::vector<ValueTask>& tasks, std::vector<LogO
         }
         if (task.opIndex >= 0)
             ops[task.opIndex].vbefore = hash;
-        if (task.resolveTxn > 0)
+        if (task.resolveTxn > 0) {
             _store->resolveAfter(task.resolveTxn, task.resolveIdx, hash);
+            // The op's before is now the older of the pair (sec 23.2).
+            LogOp resolved;
+            if (!hash.empty() && _store->getOp(task.resolveTxn, task.resolveIdx, resolved))
+                supersede(resolved.vbefore, hash);
+        }
         task.copy.reset();   // the share is released as soon as it is written
     }
 }

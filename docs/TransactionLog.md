@@ -2139,3 +2139,48 @@ guards go in. That is the bug list, not collateral damage.
 5. The OCCT lock in `PropertyPartShape::setValue`, with the fork's
    carve-out.
 6. Blobs through the entity store, deltas gated on the measurement.
+
+### 23.8 Steps 1 and 2 as built (2026-09-23)
+
+**The entity table.** `entity(hash, kind, enc, base, tier, size, data)`
+and `ref(entity, target, role, name, seq)` replace `value` and its
+`attach` column; a schema-1 store migrates on open (`migrateValues`,
+the attachment lines become `attach` refs, manifest `source='value'`
+becomes `entity`). `putEntity` writes the row and its refs in one SQL
+transaction and adds a `base` ref for a delta; `reencodeEntity` swaps
+`enc`/`base`/`data` under the same hash and replaces the `base` ref;
+`basedOn` lists the deltas on an entity. The collector is one recursive
+CTE from the op refs and the manifest entries over every role of edge,
+so an attachment of an attachment, a delta's base and a composite's
+part are all held the same way; `dropTier` additionally spares a row a
+surviving delta is based on. The codec is zstd's patch-from
+(`ZSTD_CCtx_refPrefix` with the window sized to the base, long-distance
+matching on; `deltaEncode` / `deltaDecode`), and `readBytes` decodes a
+chain through its bases with a depth guard. The gtest
+`deltaChainReadsAndHolds` covers the codec, a two-hop chain and the
+collector keeping both bases while a manifest roots the oldest.
+
+**The policy.** `TransactionLog::supersede(older, newer)`, on the
+worker: no-op when hops are 0, the older is already a delta, under 128
+bytes, or not a `prop`/`xml` (attachments and blobs wait for step 6);
+refuses a loop (the newer must not decode through the older) and a
+chain that would exceed `TransactionLogDeltaHops` (default 8) below the
+older; encodes and keeps the patch only under
+`TransactionLogDeltaRatio` percent (default 50) of the older's stored
+size. Both preferences are read on the main thread in `post()` into
+atomics, so the worker never touches `DocumentParams`. Two call sites:
+`writeValues`, when a task resolves an earlier op's after -- that op's
+before is the older of the pair (`getOp` fetches it); and the snapshot
+job, which matches the previous version's entity entries by name and
+supersedes each whose hash changed, after `addVersion`. The gtest
+`reverseDeltasFollowSupersession` edits a 5000-element list six times
+with hops=3 and finds the run re-anchored, every delta under a quarter
+of its full size, every value reading back at its full length, the
+older of two versions' `Document.xml` a patch on the newer's, and the
+checkout of the older correct.
+
+One consequence the eviction gtest now states: a named version whose
+`Document.xml` is a patch toward the next version's keeps that next
+entity alive as its anchor after the next version is evicted (23.5's
+orphan). Not measured yet: the ratio on real sketch geometry and BREP,
+which is what steps 2's and 6's gates are for.

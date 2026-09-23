@@ -660,7 +660,18 @@ TEST_F(TransactionLogTest, evictsUnnamedVersions)
     EXPECT_FALSE(store.hasEntity(docxml[0]));
     EXPECT_FALSE(store.hasEntity(docxml[1]));
     EXPECT_TRUE(store.hasEntity(docxml[2]));
-    EXPECT_FALSE(store.hasEntity(docxml[3]));
+    // Version 3's Document.xml was superseded by 4's and is a patch toward
+    // it (sec 23.2), so 4's stays as the anchor 3 decodes through -- an
+    // orphan the collector holds for as long as the delta needs it (23.5).
+    App::LogEntity named;
+    ASSERT_TRUE(store.getEntity(docxml[2], named));
+    if (named.enc == "delta") {
+        EXPECT_EQ(named.base, docxml[3]);
+        EXPECT_TRUE(store.hasEntity(docxml[3]));
+    }
+    else {
+        EXPECT_FALSE(store.hasEntity(docxml[3]));
+    }
     // Ops are never evicted, nor their values: the edits' before refs read.
     for (auto& t : store.transactions()) {
         for (auto& o : store.ops(t.seq)) {
@@ -900,4 +911,97 @@ TEST_F(TransactionLogTest, deltaChainReadsAndHolds)
     EXPECT_FALSE(store.hasEntity(hBase));
     EXPECT_FALSE(store.hasEntity(hMid));
     EXPECT_FALSE(store.hasEntity(hTop));
+}
+
+// Sec 23.2, the policy: a property edited in a run leaves the newest value
+// full and every older one a patch toward the value that replaced it; a
+// version's entries are re-encoded toward the next version's; the chain
+// is bounded; and everything reads back byte-identical through it.
+TEST_F(TransactionLogTest, reverseDeltasFollowSupersession)
+{
+    const long hops = App::DocumentParams::getTransactionLogDeltaHops();
+    App::DocumentParams::setTransactionLogDeltaHops(3);
+    doc()->openTransaction("create");
+    auto obj = make("Obj");
+    doc()->commitTransaction();
+
+    // A big list that changes by one element per edit: what a sketch's
+    // Geometry does.
+    std::vector<long> values(5000);
+    for (size_t i = 0; i < values.size(); ++i)
+        values[i] = static_cast<long>(i * 7919);
+    std::vector<std::string> afters;
+    for (int i = 0; i < 6; ++i) {
+        values[100 * i] = -1 - i;
+        doc()->openTransaction("edit");
+        obj->IntegerList.setValues(values);
+        doc()->commitTransaction();
+    }
+    doc()->snapshotToLog();   // resolves the last after
+    auto& l = log();
+    auto& store = l.store();
+
+    // Walk the set ops on IntegerList in order: each before is the
+    // previous after.
+    std::vector<std::string> chain;
+    for (auto& t : store.transactions()) {
+        for (auto& o : store.ops(t.seq)) {
+            if (o.op == "set" && o.prop == "IntegerList" && !o.vbefore.empty())
+                chain.push_back(o.vbefore);
+        }
+    }
+    ASSERT_GE(chain.size(), 5u);
+    App::LogOp last;
+    // The newest after is full; with hops=3 the run re-anchors: at most
+    // three deltas hang below any full entity.
+    int deltas = 0, fulls = 0, run = 0, longest = 0;
+    for (auto& h : chain) {
+        App::LogEntity e;
+        ASSERT_TRUE(store.getEntity(h, e)) << h;
+        if (e.enc == "delta") {
+            ++deltas;
+            longest = std::max(longest, ++run);
+            EXPECT_LT(e.data.size(), e.size / 4) << h;
+        }
+        else {
+            ++fulls;
+            run = 0;
+        }
+        App::CapturedValue v;
+        ASSERT_TRUE(l.readValue(h, v));
+        EXPECT_EQ(v.fragment.size(), e.size);
+    }
+    EXPECT_GE(deltas, 3);
+    EXPECT_LE(longest, 3);
+
+    // Two more versions: Document.xml of the older is a patch toward the
+    // newer's, and the checkout of the older still reads.
+    doc()->openTransaction("edit");
+    obj->Integer.setValue(7);
+    doc()->commitTransaction();
+    const int64_t v1 = doc()->snapshotToLog();
+    doc()->openTransaction("edit");
+    obj->Integer.setValue(8);
+    doc()->commitTransaction();
+    const int64_t v2 = doc()->snapshotToLog();
+    App::LogVersion a, b;
+    ASSERT_TRUE(store.getVersion(v1, a));
+    ASSERT_TRUE(store.getVersion(v2, b));
+    App::LogEntity ea, eb;
+    ASSERT_TRUE(store.getEntity(a.docxml_hash, ea));
+    ASSERT_TRUE(store.getEntity(b.docxml_hash, eb));
+    EXPECT_EQ(ea.enc, "delta");
+    EXPECT_EQ(ea.base, b.docxml_hash);
+    EXPECT_NE(eb.enc, "delta");
+    std::string bytes;
+    ASSERT_TRUE(l.readBytes(a.docxml_hash, bytes));
+    EXPECT_EQ(App::hashBytes(bytes), a.docxml_hash);
+    EXPECT_NE(bytes.find("Document"), std::string::npos);
+
+    doc()->restoreVersion(v1);
+    obj = static_cast<App::FeatureTest*>(doc()->getObject("Obj"));
+    ASSERT_TRUE(obj);
+    EXPECT_EQ(obj->Integer.getValue(), 7);
+    EXPECT_EQ(obj->IntegerList.getValues()[500], -6);
+    App::DocumentParams::setTransactionLogDeltaHops(hops);
 }

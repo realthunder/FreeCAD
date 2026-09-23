@@ -631,6 +631,35 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter TransactionLogDeltaHops
+    ///
+    /// How long a reverse-delta chain the transaction log allows (sec
+    /// 23.2): an entity superseded by a newer one is re-encoded as a
+    /// patch against it unless the chain below it would then be this
+    /// many hops from a full entity. 0 stores everything full.
+    static const long & getTransactionLogDeltaHops();
+    static const long & defaultTransactionLogDeltaHops();
+    static void removeTransactionLogDeltaHops();
+    static void setTransactionLogDeltaHops(const long &v);
+    static const char *docTransactionLogDeltaHops();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter TransactionLogDeltaRatio
+    ///
+    /// The largest patch the transaction log keeps, as a percent of the
+    /// full compressed size (sec 23.2); a patch over it means the codec
+    /// found nothing to share and the entity stays full.
+    static const long & getTransactionLogDeltaRatio();
+    static const long & defaultTransactionLogDeltaRatio();
+    static void removeTransactionLogDeltaRatio();
+    static void setTransactionLogDeltaRatio(const long &v);
+    static const char *docTransactionLogDeltaRatio();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter RelativeStringID
     static const bool & getRelativeStringID();
     static const bool & defaultRelativeStringID();

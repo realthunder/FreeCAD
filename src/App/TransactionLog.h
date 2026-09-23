@@ -23,6 +23,7 @@
 #ifndef APP_TRANSACTION_LOG_H
 #define APP_TRANSACTION_LOG_H
 
+#include <atomic>
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
@@ -258,6 +259,14 @@ private:
     /// Worker thread.
     std::string putBytes(const std::string& bytes, const std::string& kind,
                          const std::string& tier);
+    /// Sec 23.2: `older` has been superseded by `newer` -- the before of an
+    /// op by its resolved after, a version's entry by the next version's.
+    /// Re-encode `older` as a patch against `newer` when the policy allows:
+    /// a chain no longer than TransactionLogDeltaHops, a patch no larger
+    /// than TransactionLogDeltaRatio of the full. Worker thread.
+    void supersede(const std::string& older, const std::string& newer);
+    /// The longest delta chain hanging off `hash`, in hops.
+    int chainBelow(const std::string& hash, int depth = 0);
     /// Serialise each task's copy and write what it fills and resolves.
     /// Worker thread.
     void writeValues(std::vector<ValueTask>& tasks, std::vector<LogOp>& ops);
@@ -265,6 +274,11 @@ private:
     void takePending(int64_t key, ValueTask& task);
     /// Queue a job for the worker, in order.
     void post(std::function<void()> job);
+
+    /// The delta policy, read on the main thread as each job is posted so
+    /// the worker never touches the preferences.
+    std::atomic<long> _deltaHops {0};
+    std::atomic<long> _deltaRatio {0};
     void run();
 
     Document& _doc;

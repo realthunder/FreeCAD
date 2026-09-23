@@ -351,6 +351,33 @@ public:
         return out;
     }
 
+    bool getOp(int64_t txn, int idx, LogOp& o) override
+    {
+        auto s = prepare("SELECT op,ckind,cid,cname,ctype,prop,ptype,meta,vbefore,vafter,derived"
+                         " FROM op WHERE txn=? AND idx=?");
+        sqlite3_bind_int64(s, 1, txn);
+        sqlite3_bind_int(s, 2, idx);
+        if (sqlite3_step(s) != SQLITE_ROW) {
+            sqlite3_reset(s);
+            return false;
+        }
+        o.txn = txn;
+        o.idx = idx;
+        o.op = text(s, 0);
+        o.ckind = text(s, 1);
+        o.cid = static_cast<long>(sqlite3_column_int64(s, 2));
+        o.cname = text(s, 3);
+        o.ctype = text(s, 4);
+        o.prop = text(s, 5);
+        o.ptype = text(s, 6);
+        o.meta = text(s, 7);
+        o.vbefore = text(s, 8);
+        o.vafter = text(s, 9);
+        o.derived = sqlite3_column_int(s, 10) != 0;
+        sqlite3_reset(s);
+        return true;
+    }
+
     int64_t lastSeq() override
     {
         auto s = prepare("SELECT MAX(seq) FROM txn");

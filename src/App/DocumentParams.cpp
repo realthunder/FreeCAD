@@ -90,6 +90,8 @@ public:
         signalParamChanged("TransactionLogSnapshotTransactions");
         signalParamChanged("TransactionLogKeepVersions");
         signalParamChanged("TransactionLogSnapshotSeconds");
+        signalParamChanged("TransactionLogDeltaHops");
+        signalParamChanged("TransactionLogDeltaRatio");
         signalParamChanged("RelativeStringID");
         signalParamChanged("HashIndexedName");
         signalParamChanged("EnableMaterialEdit");
@@ -142,6 +144,8 @@ public:
     long TransactionLogSnapshotTransactions;
     long TransactionLogKeepVersions;
     long TransactionLogSnapshotSeconds;
+    long TransactionLogDeltaHops;
+    long TransactionLogDeltaRatio;
     bool RelativeStringID;
     bool HashIndexedName;
     bool EnableMaterialEdit;
@@ -241,6 +245,10 @@ public:
         funcs["TransactionLogKeepVersions"] = &DocumentParamsP::updateTransactionLogKeepVersions;
         TransactionLogSnapshotSeconds = this->handle->GetInt("TransactionLogSnapshotSeconds", 0);
         funcs["TransactionLogSnapshotSeconds"] = &DocumentParamsP::updateTransactionLogSnapshotSeconds;
+        TransactionLogDeltaHops = this->handle->GetInt("TransactionLogDeltaHops", 8);
+        funcs["TransactionLogDeltaHops"] = &DocumentParamsP::updateTransactionLogDeltaHops;
+        TransactionLogDeltaRatio = this->handle->GetInt("TransactionLogDeltaRatio", 50);
+        funcs["TransactionLogDeltaRatio"] = &DocumentParamsP::updateTransactionLogDeltaRatio;
         RelativeStringID = this->handle->GetBool("RelativeStringID", true);
         funcs["RelativeStringID"] = &DocumentParamsP::updateRelativeStringID;
         HashIndexedName = this->handle->GetBool("HashIndexedName", false);
@@ -443,6 +451,14 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateTransactionLogSnapshotSeconds(DocumentParamsP *self) {
         self->TransactionLogSnapshotSeconds = self->handle->GetInt("TransactionLogSnapshotSeconds", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateTransactionLogDeltaHops(DocumentParamsP *self) {
+        self->TransactionLogDeltaHops = self->handle->GetInt("TransactionLogDeltaHops", 8);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateTransactionLogDeltaRatio(DocumentParamsP *self) {
+        self->TransactionLogDeltaRatio = self->handle->GetInt("TransactionLogDeltaRatio", 50);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateRelativeStringID(DocumentParamsP *self) {
@@ -668,6 +684,17 @@ static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
         .setDoc("The transaction log takes an unnamed version (sec 16.3) at the\n"
 "first commit this many seconds after the last version; 0 for\n"
 "none."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "TransactionLogDeltaHops", "TransactionLogDeltaHops", App::ParamInfo::Int, 8)
+        .setTitle("Transaction Log Delta Hops")
+        .setDoc("How long a reverse-delta chain the transaction log allows (sec\n"
+"23.2): an entity superseded by a newer one is re-encoded as a\n"
+"patch against it unless the chain below it would then be this\n"
+"many hops from a full entity. 0 stores everything full."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "TransactionLogDeltaRatio", "TransactionLogDeltaRatio", App::ParamInfo::Int, 50)
+        .setTitle("Transaction Log Delta Ratio")
+        .setDoc("The largest patch the transaction log keeps, as a percent of the\n"
+"full compressed size (sec 23.2); a patch over it means the codec\n"
+"found nothing to share and the entity stays full."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "RelativeStringID", "RelativeStringID", App::ParamInfo::Bool, true)
         .setTitle("Relative String ID"),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "HashIndexedName", "HashIndexedName", App::ParamInfo::Bool, false)
@@ -1994,6 +2021,67 @@ void DocumentParams::setTransactionLogSnapshotSeconds(const long &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void DocumentParams::removeTransactionLogSnapshotSeconds() {
     instance()->handle->RemoveInt("TransactionLogSnapshotSeconds");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docTransactionLogDeltaHops() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"How long a reverse-delta chain the transaction log allows (sec\n"
+"23.2): an entity superseded by a newer one is re-encoded as a\n"
+"patch against it unless the chain below it would then be this\n"
+"many hops from a full entity. 0 stores everything full.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & DocumentParams::getTransactionLogDeltaHops() {
+    return instance()->TransactionLogDeltaHops;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & DocumentParams::defaultTransactionLogDeltaHops() {
+    const static long def = 8;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setTransactionLogDeltaHops(const long &v) {
+    instance()->handle->SetInt("TransactionLogDeltaHops",v);
+    instance()->TransactionLogDeltaHops = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeTransactionLogDeltaHops() {
+    instance()->handle->RemoveInt("TransactionLogDeltaHops");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docTransactionLogDeltaRatio() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"The largest patch the transaction log keeps, as a percent of the\n"
+"full compressed size (sec 23.2); a patch over it means the codec\n"
+"found nothing to share and the entity stays full.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & DocumentParams::getTransactionLogDeltaRatio() {
+    return instance()->TransactionLogDeltaRatio;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & DocumentParams::defaultTransactionLogDeltaRatio() {
+    const static long def = 50;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setTransactionLogDeltaRatio(const long &v) {
+    instance()->handle->SetInt("TransactionLogDeltaRatio",v);
+    instance()->TransactionLogDeltaRatio = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeTransactionLogDeltaRatio() {
+    instance()->handle->RemoveInt("TransactionLogDeltaRatio");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

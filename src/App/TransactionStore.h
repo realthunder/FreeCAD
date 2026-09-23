@@ -61,7 +61,7 @@ struct LogSession
 
 /** One op of a transaction (table `op`).
  *
- * `vbefore` / `vafter` are value refs (LogValue::hash), empty when there is
+ * `vbefore` / `vafter` are entity refs (LogEntity::hash), empty when there is
  * none: a `create` has no before, a `remove` no after, and an after that is
  * not yet resolved (sec 20.2, decision 4) is empty until resolveAfter().
  */
@@ -188,6 +188,7 @@ public:
     /// Transactions with seq >= from, in order, at most `limit` (0: all).
     virtual std::vector<LogTransaction> transactions(int64_t from = 0, int limit = 0) = 0;
     virtual std::vector<LogOp> ops(int64_t txn) = 0;
+    virtual bool getOp(int64_t txn, int idx, LogOp& op) = 0;
     virtual int64_t lastSeq() = 0;
 
     /// Drop every transaction with seq < before, and the entities nothing

@@ -185,6 +185,15 @@ Params = [
         doc='The transaction log takes an unnamed version (sec 16.3) at the\n'
             'first commit this many seconds after the last version; 0 for\n'
             'none.'),
+    ParamInt('TransactionLogDeltaHops', 8,
+        doc='How long a reverse-delta chain the transaction log allows (sec\n'
+            '23.2): an entity superseded by a newer one is re-encoded as a\n'
+            'patch against it unless the chain below it would then be this\n'
+            'many hops from a full entity. 0 stores everything full.'),
+    ParamInt('TransactionLogDeltaRatio', 50,
+        doc='The largest patch the transaction log keeps, as a percent of the\n'
+            'full compressed size (sec 23.2); a patch over it means the codec\n'
+            'found nothing to share and the entity stays full.'),
     ParamBool('RelativeStringID', True),
     ParamBool('HashIndexedName', False,
         doc='Enable special encoding of indexes name in toponaming. Disabled by\n'
