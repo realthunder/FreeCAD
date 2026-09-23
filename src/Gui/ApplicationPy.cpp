@@ -264,7 +264,8 @@ PyMethodDef Application::Methods[] = {
    "The scene stream server's connected clients, one dict each: id,\n"
    "client (label), identity (verified by the front door, may be\n"
    "empty), doc, address, viewer, viewOnly, access ('view', 'edit' or\n"
-   "'host'), connectedMs, and the\n"
+   "'host'), selection ('none', 'host' or 'everyone' -- where its\n"
+   "committed selection goes), connectedMs, and the\n"
    "uplink counters uplinkMsgs/uplinkBytes/uplinkWire with the camera\n"
    "frames (cameraMsgs/cameraWire), picks (pickMsgs/pickWire) and\n"
    "input events (inputMsgs/inputWire) of that total counted apart."},
@@ -275,6 +276,14 @@ PyMethodDef Application::Methods[] = {
    "view-only (picks dropped, mutating control ops refused), False is\n"
    "edit, or 'view', 'edit' or 'host'. False when it is gone, or when\n"
    "'host' is asked for a client no front door verified an identity for."},
+  {"serveSetClientSelection", (PyCFunction) Application::sServeSetClientSelection, METH_VARARGS,
+   "serveSetClientSelection(id, route) -> bool\n"
+   "\n"
+   "Set where a connected client's committed selection goes, for this\n"
+   "session: 'none' keeps it to that client, 'host' also applies it on\n"
+   "this desktop as the same click here would, 'everyone' also tells\n"
+   "the other clients so they can show it as that client's. The host's\n"
+   "to set and never part of a grant. False when the id is gone."},
   {"serveKickClient",         (PyCFunction) Application::sServeKickClient, METH_VARARGS,
    "serveKickClient(id) -> bool\n"
    "\n"
@@ -1206,6 +1215,8 @@ PyObject* Application::sServeClients(PyObject * /*self*/, PyObject *args)
         entry.setItem("viewer", Py::Boolean(c.viewer));
         entry.setItem("viewOnly", Py::Boolean(c.access == Render::ClientAccess::View));
         entry.setItem("access", Py::String(Render::clientAccessName(c.access)));
+        entry.setItem("selection",
+                      Py::String(Render::selectionRouteName(c.selection)));
         entry.setItem("connectedMs", Py::Long(
             static_cast<unsigned long long>(c.connectedMs)));
         // Uplink accounting (docs/ThinClient.md sec 8.10a): counted on
@@ -1249,6 +1260,23 @@ PyObject* Application::sServeSetClientMode(PyObject * /*self*/, PyObject *args)
         access = viewOnly ? Render::ClientAccess::View : Render::ClientAccess::Edit;
     }
     bool ok = Render::SceneStreamServer::instance().setClientAccess(id, access);
+    return Py::new_reference_to(Py::Boolean(ok));
+}
+
+PyObject* Application::sServeSetClientSelection(PyObject * /*self*/, PyObject *args)
+{
+    unsigned long long id = 0;
+    const char *route = nullptr;
+    if (!PyArg_ParseTuple(args, "Ks", &id, &route))
+        return nullptr;
+    Render::SelectionRoute value = Render::SelectionRoute::None;
+    if (!Render::selectionRouteFromName(route, value)) {
+        PyErr_SetString(PyExc_ValueError,
+                        "route is 'none', 'host' or 'everyone'");
+        return nullptr;
+    }
+    bool ok = Render::SceneStreamServer::instance()
+                  .setClientSelectionRoute(id, value);
     return Py::new_reference_to(Py::Boolean(ok));
 }
 

@@ -614,7 +614,11 @@ TEST_F(SceneServerWire, controlOpReachesTheHandlerAndItsReplyComesBack)
     ASSERT_TRUE(server.setClientAccess(info.id, Render::ClientAccess::View));
     m = c.read();
     ASSERT_TRUE(m.ok) << m.ec.message();
-    EXPECT_EQ(m.data, "{\"cmd\":\"config\",\"viewOnly\":true,\"access\":\"view\"}");
+    // The push carries the selection route beside the access (8.11a): a
+    // view-only connection cannot pick, so its route stays where a
+    // non-host connection starts.
+    EXPECT_EQ(m.data, "{\"cmd\":\"config\",\"viewOnly\":true,\"access\":\"view\""
+                      ",\"selection\":\"none\"}");
     c.sendText("{\"op\":\"probe\",\"id\":8}");
     m = c.read();
     ASSERT_TRUE(m.ok) << m.ec.message();

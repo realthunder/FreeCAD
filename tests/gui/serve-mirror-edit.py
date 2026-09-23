@@ -27,8 +27,11 @@ What is asserted:
     through FreeCADGui.Selection (which with no scope open IS the room),
     does not move. The same pick sent while this client is editing lands
     in the session's instance -- the mirror's, since it started the
-    session -- and with the sync toggle on (the default) is forwarded
-    into the room, so the desktop's chrome follows the browser;
+    session -- and stays out of the room as well, because a connection
+    starts on the selection route that keeps what it picks to itself
+    (8.11a). Where that selection goes is the host's to say, per
+    connection; serve-selection-echo.py and serve-shared-edit.py pin what
+    each route does;
   - the `resetEdit` op ends the session and gives the graph back;
   - and a client that drops mid-edit does not leave the document holding
     a pointer to a mirror that no longer exists. That is the case the
@@ -301,8 +304,15 @@ def verify():
         check("a view-mode pick lands in the client's own instance, not the room",
               all(not s[3] for s in seen if not s[0]),
               [s[3] for s in seen if not s[0]][:20])
-        check("the room follows the client's in-edit pick (sync on)",
-              any(s[0] and s[3] for s in seen),
+        # On the route a client starts on, nothing it picks reaches the
+        # room -- in edit or out of it. This used to read the other way
+        # round, because the sync toggle it replaced was on by default
+        # and forwarded a browser-started session's selection into the
+        # room for everyone (docs/ThinClient.md sec 8.11a). The route is
+        # the host's now, per connection, and what it does once set is
+        # pinned by serve-selection-echo.py and serve-shared-edit.py.
+        check("nor does an in-edit pick, on the route a client starts on",
+              all(not s[3] for s in seen if s[0]),
               [s[3] for s in seen if s[0]][:20])
 
         reset = client.reset or {}

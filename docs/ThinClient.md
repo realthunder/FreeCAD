@@ -1971,6 +1971,77 @@ running and the face following the moved default, and the switch off (strip gone
 back up, remembered, a desktop change pushing nothing) and on again (a fresh snapshot), and
 FreeCAD exiting cleanly with the page still subscribed. Like the other browser tests it needs Chrome and is not in ctest.
 
+### 8.11a The selection route (ruled 2026-09-23, built the same day)
+
+The sync toggle of 8.11 is retired and this replaces it. **Where a client's
+committed selection goes is the HOST's decision, per connection, and it decides
+the routing of resolved text and nothing else.** Three routes, ordered:
+
+| Route | What happens |
+|---|---|
+| `none` | The client's own instance. It alone is told, on the `selection` push; the room is untouched. The default. |
+| `host` | Also applied to the room with plain `Gui::Selection()` calls -- so the desktop's tree, panels and 3D highlight follow it exactly as the same calls typed into the Python console would. |
+| `everyone` | That, and the same text is sent to the other clients of the document as `{"cmd":"peerselection","owner":"<id>",...}`, for them to paint as somebody else's. A command of its own rather than the `selection` push, so a viewer that has not learned about foreign selections ignores it instead of painting it as its own. |
+
+**Why routing text rather than moving instances.** A route into the room is
+`room.addSelection(...)`, which triggers the same traversal any other caller
+would; nothing reaches into `SoFCUnifiedSelection`, and no client's instance is
+ever switched under an observer that remembered it (the trap 8.11 names for the
+sketcher). What arrives has already been resolved against the served geometry,
+so the routing layer moves strings and nothing else.
+
+**Where it lives.** `SceneClientInfo::selection` (`Render::SelectionRoute`),
+beside `access` and set the same way: the roster's second combo in the share
+dialog, `Gui.serveSetClientSelection(id, route)` from Python, and the connection
+is told on the `{"cmd":"config"}` push, which now carries `"selection"` beside
+`"access"`. **It is per session only.** Unlike access it is not part of a grant
+and nothing about it is persisted: a route is a decision about a person who is
+here now.
+
+**What a connection starts on.** `host` for a connection admitted at full
+control -- such a client acts as the desktop user would by definition, so its
+selection lands where the desktop user's does -- and `none` for everything else.
+A grant re-judgement that changes a connection's access moves its route with it,
+until the host sets the route by hand for that connection; after that the host's
+choice stands.
+
+**Four rulings that shape it**, all 2026-09-23:
+
+- **Preselection is never routed, on any route.** A client contributes what it
+  committed. The desktop's highlight does not follow a remote pointer, so the
+  hover-rate question does not arise.
+- **The route governs view-mode selection.** An edit session still funnels every
+  view into the initiator's instance (8.11) -- otherwise a client on `none`
+  could not edit at all. During an edit the selections made in that instance are
+  routed under the INITIATOR's route, which follows from the session having one
+  instance and that instance being the initiator's.
+- **A foreign selection is paint-only.** It never enters the receiving client's
+  own instance, so what that client's next command acts on is still what it
+  picked itself. Prior art both ways: Onshape shows another person's selection
+  only inside Follow Mode; Figma paints them always, and the standing complaint
+  is that nobody can clear someone else's.
+- **A departure takes back its own share.** Every routed client's contribution to
+  the room is remembered per connection, and when it disconnects only its own
+  items are removed -- and only where no other client is still contributing the
+  same one. Several routed clients share the one room selection and overwrite
+  each other; there is one desktop and one tree. Demoting a client to `none`
+  mid-session stops what it contributes from now on and leaves what is already
+  on the desktop where it is, which is what the retired toggle did when it was
+  turned off; the take-back is for the connection ending.
+
+**What the client may no longer do.** The `selectionSync` control op is gone. It
+was one flag per SERVED DOCUMENT rather than per client, it only ever applied to
+a browser-started EDIT session (it gated the forwarder that `signalInEdit` built),
+and any editing client could flip it for everybody -- which is the privilege this
+removes. `tests/gui/serve-shared-edit.py` asserted that a client could, and now
+asserts that the host decides.
+
+**Built.** The routes themselves, the wire, the roster combo, the Python API and
+the take-back. **Not built:** the browser painting a foreign selection. The
+`everyone` route puts the owner-tagged push on the wire and the viewer ignores it
+-- it paints its own local pick and takes the backend's selection feed as advice
+already -- so a second, per-owner highlight is the piece that remains.
+
 ### 8.12 What per client would cost -- the multi-user roadmap
 
 Everything below is what 8.11 shares, listed from the view outward to the data, with what

@@ -410,11 +410,12 @@ public:
 
     /// What a connection is told its access with: `viewOnly` for the
     /// viewers that predate the levels, `access` by name.
-    static std::string configJson(ClientAccess access)
+    static std::string configJson(ClientAccess access, SelectionRoute route)
     {
         return std::string("{\"cmd\":\"config\",\"viewOnly\":")
             + (access == ClientAccess::View ? "true" : "false")
-            + ",\"access\":\"" + clientAccessName(access) + "\"}";
+            + ",\"access\":\"" + clientAccessName(access)
+            + "\",\"selection\":\"" + selectionRouteName(route) + "\"}";
     }
 
     /// Judge a presentation against a grant list (docs/ShareAccess.md
@@ -1194,6 +1195,13 @@ public:
         /// changes it from the GUI thread): View drops picks and refuses
         /// mutating ops, Host may act beyond the document.
         ClientAccess access = ClientAccess::Edit;
+        /// Where this connection's committed selection goes (guarded the
+        /// same way). Derived from \a access while the host has not
+        /// ruled on it by hand, so a connection promoted to full control
+        /// starts contributing to the desktop's selection and one demoted
+        /// stops; once the host sets it in the roster, that stands.
+        SelectionRoute selection = SelectionRoute::None;
+        bool selectionByHost = false;
         /// The host asked this connection closed (guarded by
         /// connMutex): its farewell is on the outbox, and its own loop
         /// sends that and hangs up. Set only through kick().
@@ -1292,7 +1300,19 @@ public:
             nudge();
         }
     };
-    std::mutex connMutex;
+
+    /// Give \a conn the access a grant decided, and with it the
+    /// selection route that access implies -- unless the host has ruled
+    /// on the route by hand for this connection, which outranks the
+    /// default either way.
+    static void applyAccess(Conn &conn, ClientAccess access)
+    {
+        conn.access = access;
+        if (!conn.selectionByHost)
+            conn.selection = defaultSelectionRoute(access);
+    }
+
+    mutable std::mutex connMutex;
     std::vector<Conn *> conns;
     uint64_t connIdCounter = 0;   ///< guarded by connMutex
     /// Pre-auth accept caps (accepted): every accepted socket -- HTTP
@@ -1435,9 +1455,10 @@ public:
                 }
                 else {
                     if (!list.empty() && conn->access != entry.access) {
-                        conn->access = entry.access;
+                        applyAccess(*conn, entry.access);
                         // told, as a mode set by hand is
-                        conn->queueText(configJson(entry.access));
+                        conn->queueText(configJson(conn->access,
+                                                   conn->selection));
                         changed = true;
                     }
                     conn->grant = entry.grant;
@@ -1466,6 +1487,7 @@ public:
             info.grant = conn->grant;
             info.viewer = conn->viewer;
             info.access = conn->access;
+            info.selection = conn->selection;
             info.connectedMs = uint64_t(
                 std::chrono::duration_cast<std::chrono::milliseconds>(
                     now - conn->since).count());
@@ -1493,9 +1515,41 @@ public:
                     // A host is a verified person, never a chosen name
                     if (access == ClientAccess::Host && conn->identity.empty())
                         return false;
-                    conn->access = access;
+                    applyAccess(*conn, access);
                     // Tell the client its mode, so its UI can say so.
-                    conn->queueText(configJson(access));
+                    conn->queueText(configJson(conn->access, conn->selection));
+                    found = true;
+                    break;
+                }
+            }
+        }
+        if (found)
+            notifyClientsChanged();
+        return found;
+    }
+
+    SelectionRoute clientSelectionRoute(uint64_t id) const
+    {
+        std::lock_guard<std::mutex> guard(connMutex);
+        for (const Conn *conn : conns) {
+            if (conn->id == id)
+                return conn->selection;
+        }
+        return SelectionRoute::None;
+    }
+
+    bool setClientSelectionRoute(uint64_t id, SelectionRoute route)
+    {
+        bool found = false;
+        {
+            std::lock_guard<std::mutex> guard(connMutex);
+            for (Conn *conn : conns) {
+                if (conn->id == id) {
+                    conn->selection = route;
+                    // The host has ruled, so a later access change no
+                    // longer moves it.
+                    conn->selectionByHost = true;
+                    conn->queueText(configJson(conn->access, route));
                     found = true;
                     break;
                 }
@@ -2319,7 +2373,7 @@ public:
         conn.sent = boot.held;
         conn.authorized = boot.entry.admitted;
         conn.admitted = boot.entry.admitted;
-        conn.access = boot.entry.access;
+        applyAccess(conn, boot.entry.access);
         conn.grant = boot.entry.grant;
         conn.presentedToken = boot.presentedToken;
         conn.addr = boot.addr;
@@ -3270,11 +3324,12 @@ public:
                     conn.presentedToken = offered;
                     conn.grant = entry.grant;
                     if (grants) {
-                        conn.access = entry.access;
+                        applyAccess(conn, entry.access);
                         // Said at once, so the page offers only what
                         // this connection may do
                         if (entry.access != ClientAccess::Edit)
-                            conn.queueText(configJson(entry.access));
+                            conn.queueText(configJson(conn.access,
+                                                      conn.selection));
                     }
                     // The user is known only now when the grant or the
                     // name decided it (sec 7.4).
@@ -3880,6 +3935,16 @@ int SceneStreamServer::clients(std::vector<SceneClientInfo> &out)
 bool SceneStreamServer::setClientAccess(uint64_t id, ClientAccess access)
 {
     return pimpl ? pimpl->setClientAccess(id, access) : false;
+}
+
+SelectionRoute SceneStreamServer::clientSelectionRoute(uint64_t id) const
+{
+    return pimpl ? pimpl->clientSelectionRoute(id) : SelectionRoute::None;
+}
+
+bool SceneStreamServer::setClientSelectionRoute(uint64_t id, SelectionRoute route)
+{
+    return pimpl ? pimpl->setClientSelectionRoute(id, route) : false;
 }
 
 bool SceneStreamServer::kickClient(uint64_t id)

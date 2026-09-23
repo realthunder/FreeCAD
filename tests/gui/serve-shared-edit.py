@@ -35,14 +35,19 @@ Then the client entering:
     geometry under it, which is what "the desktop draws in it" comes to
     without a mouse: what its events would pick against is there;
   - the desktop's task panel is up for a session it did not start;
-  - the sync toggle (the fifth piece): with it on, the client's in-edit
-    pick on the sketch's line is forwarded into the room, which is what
-    the desktop's tree and panels read; the client is told its own
-    selection either way; with it off (the `selectionSync` op) a change
-    in the client's instance leaves the room where it was;
+  - the selection route (8.11a, which replaced the `selectionSync`
+    toggle): a client starts on the route that keeps its selection to
+    itself, only the HOST can change that -- the client has no op for it
+    any more -- and once routed to `host` its pick reaches the room,
+    which is what the desktop's tree and panels read. The other half,
+    that the default route keeps a pick out of the room, belongs to view
+    mode and is pinned by tests/gui/serve-selection-echo.py: an edit
+    session's selection is the session's by 8.11, and the sketcher puts
+    the element in the room itself whatever the route says; The client is told its own selection either way, and the route
+    is the HOST's to set: the client cannot ask for it;
   - the client's resetEdit takes the desktop window out again: the root
     leaves its graph, the geometry goes back, getInEdit is None, and what
-    was forwarded into the room is taken back with the session.
+    the client routed into the room is taken back when it disconnects.
 
 Run through scripts/gui-test.sh (xvfb, isolated configuration, external
 timeout); registered in ctest by tests/gui/CMakeLists.txt.
@@ -132,7 +137,6 @@ class Client(threading.Thread):
         self.picked_off = threading.Event()
         self.told_click = None
         self.told_on = None
-        self.sync_off = None
         self.told_off = None
         self.reset = None
 
@@ -208,9 +212,11 @@ class Client(threading.Thread):
         self.told_on = ws.next_push("selection", 5.0, since=len(ws.pushes))
         ws.drain(0.3)
         self.picked_on.set()
+        # The host routes this client to `host` while we wait, so the
+        # same pick made again is the one the room must follow.
         room_sampled_on.wait(30.0)
-        self.sync_off = ws.op('{"id":5,"op":"selectionSync","on":false}')
         ws.send(2, wsclient.pick_frame(*ray_to(2.0, 0.0), TOGGLE))
+        ws.send(2, wsclient.pick_frame(*ray_to(2.0, 0.0), REPLACE))
         self.told_off = ws.next_push("selection", 5.0, since=len(ws.pushes))
         ws.drain(0.3)
         self.picked_off.set()
@@ -278,6 +284,29 @@ def room_selection():
                   for s in FreeCADGui.Selection.getSelectionEx(DOC))
 
 
+def room_raw():
+    """The same, unresolved, so a ROUTED entry can be told apart.
+
+    Two different things put a sketch element in the room during an edit
+    session, and only one of them is the selection route. A route replays
+    the text the client's own instance holds, which for an in-edit pick is
+    the element-map name (`;g1.edge1`); the sketcher's own in-edit
+    selection -- shared state by 8.11's definition, and not something a
+    route governs -- puts the resolved index name (`Edge1`) there. The
+    resolved read cannot tell them apart; this one can.
+    """
+    out = []
+    for s in FreeCADGui.Selection.getSelectionEx(DOC, 0):
+        for sub in (s.SubElementNames or ("",)):
+            out.append((s.ObjectName, sub))
+    return sorted(out)
+
+
+def routed_in_room():
+    """Whether anything in the room got there through a route."""
+    return [item for item in room_raw() if item[1].startswith(";")]
+
+
 def panel_up():
     try:
         return FreeCADGui.Control.activeDialog() is not None
@@ -285,9 +314,26 @@ def panel_up():
         return None
 
 
+def route_to_host():
+    """The host routes this connection's selection onto the desktop.
+
+    The client cannot ask for this: the route is per connection and the
+    host's alone (8.11a), which is the privilege the retired
+    `selectionSync` op used to hand to any editing client.
+    """
+    try:
+        clients = FreeCADGui.serveClients()
+        state["routed"] = [
+            FreeCADGui.serveSetClientSelection(c["id"], "host")
+            for c in clients]
+        state["routes_before"] = [c.get("selection") for c in clients]
+    except Exception:
+        note("ABORT route:\n" + traceback.format_exc())
+
+
 def sample():
     s = (state["phase"], in_edit(), root_children(), views_3d(),
-         desktop_edit_root(), panel_up(), room_selection())
+         desktop_edit_root(), panel_up(), room_selection(), routed_in_room())
     state["samples"].append(s)
     return s
 
@@ -352,12 +398,13 @@ def poll():
             state["phase"] = "client-edit"
             QtCore.QTimer.singleShot(400, lambda: (sample(), desktop_sampled.set()))
         elif phase == "client-edit" and client.picked_on.is_set():
-            state["phase"] = "sync-on"
-            QtCore.QTimer.singleShot(300, lambda: (sample(), room_sampled_on.set()))
-        elif phase == "sync-on" and client.picked_off.is_set():
-            state["phase"] = "sync-off"
+            state["phase"] = "route-none"
+            QtCore.QTimer.singleShot(300, lambda: (sample(), route_to_host(),
+                                                   room_sampled_on.set()))
+        elif phase == "route-none" and client.picked_off.is_set():
+            state["phase"] = "route-host"
             QtCore.QTimer.singleShot(300, lambda: (sample(), room_sampled_off.set()))
-        elif phase == "sync-off" and not client.is_alive():
+        elif phase == "route-host" and not client.is_alive():
             state["phase"] = "end"
     except Exception:
         note("ABORT poll:\n" + traceback.format_exc())
@@ -384,7 +431,7 @@ def verify():
         a = [s for s in samples if s[0] == "desktop-edit"]
         b = [s for s in samples if s[0] == "client-edit"]
         idle = [s for s in samples if s[0] in ("start", "end", "desktop-leave")]
-        b = b + [s for s in samples if s[0] in ("sync-on", "sync-off")]
+        b = b + [s for s in samples if s[0] in ("route-none", "route-host")]
 
         # A. The desktop's session, read from the client and the window.
         told = client.told_entered or b""
@@ -420,29 +467,46 @@ def verify():
                   any(panels), panels[:10])
         check("a pointer move from the initiating client is answered",
               client.input_pushed_own is True, "pushed: %s" % client.input_pushed_own)
-        # The sync toggle, read from the room.
-        on = [s for s in samples if s[0] == "sync-on"]
-        off = [s for s in samples if s[0] == "sync-off"]
+        # The selection route, read from the room.
+        on = [s for s in samples if s[0] == "route-none"]
+        off = [s for s in samples if s[0] == "route-host"]
         told = client.told_click or b""
         check("a click replayed into the session selects the line and is told back",
               b'"obj":"Sketch"' in told and b'"sub":""' not in told, told[:160])
         told = client.told_on or b""
         check("the client's in-edit pick is told back to it",
               b'"obj":"Sketch"' in told and b'"sub":""' not in told, told[:160])
-        check("with sync on the room follows the client's in-edit pick",
-              any(s[6] and s[6][0][0] == "Sketch" for s in on), [s[6] for s in on[-3:]])
-        sync_off = reply_of(client.sync_off)
-        check("the selectionSync op turns the toggle off",
-              sync_off.get("ok") is True and sync_off.get("on") is False, sync_off)
+        # NOT asserted here: that the room stays clear of an in-edit pick
+        # on the default route. It does not, and not through the route --
+        # an edit session's selection is the session's by 8.11, one
+        # instance for every view, and the sketcher puts the element in
+        # the room itself under the same element-map name a route would
+        # use. What a route does on its own is pinned in view mode, by
+        # tests/gui/serve-selection-echo.py.
+        routes_before = state.get("routes_before") or []
+        check("a client starts on the route that keeps its selection to itself",
+              bool(routes_before) and all(r == "none" for r in routes_before),
+              routes_before)
+        check("the host routed the connection to the desktop",
+              bool(state.get("routed")) and all(state["routed"]),
+              state.get("routed"))
         told = client.told_off or b""
-        check("the toggled element left the client's instance",
-              b'"items":[]' in told, told[:160])
-        check("with sync off the room keeps what it had",
-              any(s[6] and s[6][0][0] == "Sketch" for s in off), [s[6] for s in off[-3:]])
+        check("the client is still told its own selection",
+              b'"obj":"Sketch"' in told, told[:160])
+        check("the client's pick reaches the room once it is routed there",
+              any(s[7] for s in off), [s[7] for s in off[-3:]])
         reset = reply_of(client.reset)
         check("the client's resetEdit is accepted", reset.get("ok") is True, reset)
-        check("the session's end takes the forwarded selection back",
-              not room_selection(), room_selection())
+        # The take-back is per connection now, so it happens when the
+        # client goes rather than when the edit ends: give the closed
+        # connection its turn on this thread before reading the room.
+        for _ in range(40):
+            if not routed_in_room():
+                break
+            QtCore.QCoreApplication.processEvents()
+            time.sleep(0.05)
+        check("the connection's end takes back what it routed",
+              not routed_in_room(), room_raw())
 
         # Idle again: the root is out of the window's graph, and the
         # geometry is back.

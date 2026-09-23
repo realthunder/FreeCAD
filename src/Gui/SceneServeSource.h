@@ -155,17 +155,6 @@ public:
      */
     void scheduleAnnounce();
 
-    /** The selection sync toggle (docs/ThinClient.md 8.11).
-     *
-     * In a session a browser started, whether that session's selection
-     * is forwarded into the room so the desktop's tree, panels and
-     * highlight follow it. Default on; off leaves the desktop's chrome
-     * where its user left it. Set from a client through the
-     * `selectionSync` control op.
-     */
-    void setSelectionSync(bool on);
-    bool selectionSync() const;
-
     /** Clear every client's own selection instance.
      *
      * What Gui::Document::undo does to the room, done to each mirror's

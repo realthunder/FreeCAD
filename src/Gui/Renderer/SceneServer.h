@@ -230,6 +230,10 @@ struct SceneClientInfo {
     /// View: picks and mutating ops refused; Host: may act beyond the
     /// document (ClientAccess)
     ClientAccess access = ClientAccess::Edit;
+    /// Where this connection's committed selection goes (SelectionRoute,
+    /// docs/ThinClient.md sec 8.11a). The host's to set, this session
+    /// only, and unlike \a access it is never part of a grant.
+    SelectionRoute selection = SelectionRoute::None;
     uint64_t connectedMs = 0; ///< how long this connection has been up
     /// The grant that admitted this connection (SceneGrant::id), 0
     /// under the legacy single-token door or while unauthorized.
@@ -539,6 +543,16 @@ public:
     /// marshal itself.
     void setClientClosedHandler(std::function<void(uint64_t)> handler,
                                 const std::string &doc = {});
+    /// Where one connection's committed selection goes, or None when
+    /// the id is gone. Any thread.
+    SelectionRoute clientSelectionRoute(uint64_t id) const;
+
+    /// Set where one connection's committed selection goes
+    /// (docs/ThinClient.md sec 8.11a); false when the id is gone. The
+    /// client is told its new route on the `config` push, the way it is
+    /// told its access. Any thread.
+    bool setClientSelectionRoute(uint64_t id, SelectionRoute route);
+
     /// Queue a JSON control message to ONE connection, by id; false
     /// when it is gone. Any thread.
     bool sendControl(uint64_t client, const std::string &json);

@@ -547,9 +547,10 @@ public:
         layout->addLayout(urlRow);
 
         tree = new QTreeWidget(this);
-        tree->setColumnCount(6);
+        tree->setColumnCount(7);
         tree->setHeaderLabels({tr("Client"), tr("Address"), tr("Document"),
-                               tr("Connected"), tr("Access"), QString()});
+                               tr("Connected"), tr("Access"), tr("Selection"),
+                               QString()});
         tree->setToolTip(tr(
             "Connected clients, then the grants — the invitations the "
             "door checks. A connection must match a grant to get in; "
@@ -649,7 +650,8 @@ public:
             // the row was first built, and the row must follow it.
             sig.emplace_back(c.id
                 ^ (uint64_t(qHash(QString::fromUtf8(c.client.c_str())))
-                   << 20) + (uint64_t(c.access) << 61),
+                   << 20) + (uint64_t(c.access) << 61)
+                + (uint64_t(c.selection) << 59),
                 c.access == Render::ClientAccess::View);
         }
         for (const auto &g : grants) {
@@ -723,6 +725,44 @@ public:
                     });
             tree->setItemWidget(item, 4, mode);
 
+            // Where what they pick goes (docs/ThinClient.md sec 8.11a).
+            // The host's alone to set: a client deciding for itself
+            // whether this desktop follows it is the thing this replaced.
+            auto *route = new QComboBox(tree);
+            route->addItem(tr("Keeps to itself"));
+            route->addItem(tr("Selects here too"));
+            route->addItem(tr("Shown to everyone"));
+            route->setItemData(0, tr("Their picks stay in their own view. "
+                   "Nothing here moves."), Qt::ToolTipRole);
+            route->setItemData(1, tr("Their picks also select on this "
+                   "desktop, as the same click here would: the tree, the "
+                   "panels and the 3D highlight follow them."),
+                   Qt::ToolTipRole);
+            route->setItemData(2, tr("That, and the other clients are told "
+                   "as well, so they can show it as this client's. It is "
+                   "shown there and nothing more -- what their own next "
+                   "command acts on is still what they picked."),
+                   Qt::ToolTipRole);
+            route->setCurrentIndex(
+                c.selection == Render::SelectionRoute::Everyone ? 2
+                : c.selection == Render::SelectionRoute::Host ? 1 : 0);
+            // A view-only connection cannot pick at all, so there is
+            // nothing to route; the value is kept for when it is let in.
+            route->setEnabled(c.access != Render::ClientAccess::View);
+            route->setToolTip(tr(
+                "Where this client's selection goes. This connection "
+                "alone, for this session -- a selection route is never "
+                "part of a grant."));
+            connect(route, qOverload<int>(&QComboBox::currentIndexChanged),
+                    this, [id](int index) {
+                        Render::SceneStreamServer::instance()
+                            .setClientSelectionRoute(id,
+                                index == 2 ? Render::SelectionRoute::Everyone
+                                : index == 1 ? Render::SelectionRoute::Host
+                                             : Render::SelectionRoute::None);
+                    });
+            tree->setItemWidget(item, 5, route);
+
             // Two ways to end a session, because they mean different
             // things: showing someone out of this one, and not letting
             // them back in.
@@ -772,7 +812,7 @@ public:
             });
             row->addWidget(kick);
             row->addWidget(ban);
-            tree->setItemWidget(item, 5, actions);
+            tree->setItemWidget(item, 6, actions);
         }
 
         // The grants: every invitation written down (greyed while it
@@ -922,7 +962,7 @@ public:
                 row->addWidget(toggle);
                 row->addWidget(forget);
             }
-            tree->setItemWidget(item, 5, actions);
+            tree->setItemWidget(item, 6, actions);
         }
     }
 

@@ -14,7 +14,11 @@ test is the loop the fix closes, over a real socket.
 What is asserted:
   - the hello is answered with a snapshot;
   - a 'P' pick on a box's top face is followed by a binary scene push,
-    and the in-process selection holds that face;
+    and the in-process selection holds that face -- this client is put
+    on the `host` selection route first (8.11a), since what a client
+    picks is otherwise its own instance's and never the room's. Read
+    while the client is still connected: the route's contribution is
+    taken back when the connection ends, which is asserted too;
   - a pick that changes nothing (ctrl-click on empty space) pushes
     nothing;
   - a 'B' batch of two ctrl-picks pushes ONE frame, not two;
@@ -175,6 +179,22 @@ class WS:
                 raise RuntimeError("server closed the socket")
 
 
+    def next_text(self, needle, timeout):
+        """The first text frame containing \a needle, or None."""
+        deadline = clock() + timeout
+        while True:
+            left = deadline - clock()
+            if left <= 0:
+                return None
+            m = self.recv(left)
+            if m is None:
+                return None
+            if m[0] == 1 and needle in m[1]:
+                return m[1]
+            if m[0] == 8:
+                raise RuntimeError("server closed the socket")
+
+
 def pick(origin, direction, modifiers=0):
     return b"P" + bytes([modifiers]) + struct.pack("<6f", *origin, *direction)
 
@@ -203,6 +223,9 @@ class Client(threading.Thread):
         self.no_change_frames = None
         self.batch_frames = None
         self.batch_ms = None
+        self.routed = False
+        self.picked_unrouted = threading.Event()
+        self.may_route = threading.Event()
 
     def run(self):
         try:
@@ -215,6 +238,22 @@ class Client(threading.Thread):
         ws.send(1, b'{"cmd":"hello","client":"serve-selection-echo","snapshot":0}')
         self.snapshot = ws.next_binary(20.0) is not None
         if not self.snapshot:
+            return
+        # What this client picks is its own instance's until the host
+        # says otherwise (docs/ThinClient.md sec 8.11a), and the room --
+        # which is what the in-process assertions below read -- is the
+        # desktop's. So wait to be routed onto it: the host does that as
+        # soon as the connection exists, and says so on the config push.
+        # Waiting for the push rather than sleeping is also what keeps
+        # the first pick below from racing the route.
+        # One pick on the default route first: what it selects is this
+        # client's own, and the room -- the desktop's -- must not move.
+        ws.send(2, pick(*ray(1)))
+        ws.next_binary(2.0)
+        self.picked_unrouted.set()
+        self.may_route.wait(20.0)
+        self.routed = ws.next_text(b'"selection":"host"', 20.0) is not None
+        if not self.routed:
             return
         # Whatever else the join volunteers (a docs listing, a reload
         # hint for the stale snapshot number) is text and skipped; a
@@ -274,8 +313,48 @@ def build():
         finish()
 
 
+def room_now():
+    return sorted((s.ObjectName, tuple(s.SubElementNames))
+                  for s in FreeCADGui.Selection.getSelectionEx(DOC))
+
+
+def route_clients():
+    """Put every connection on the route that reaches this desktop.
+
+    A client's selection is its own instance's by default (8.11a), and
+    what the checks below read is the room. The host decides this, per
+    connection, and the connection is told on the `config` push -- which
+    is what the client waits for before it picks anything.
+    """
+    client = state["client"]
+    if not client.picked_unrouted.is_set():
+        return
+    if "unrouted_room" not in state:
+        # What the default route left on the desktop, before any of this
+        # client's picks were routed anywhere.
+        state["unrouted_room"] = room_now()
+    for c in FreeCADGui.serveClients():
+        if c.get("selection") != "host":
+            FreeCADGui.serveSetClientSelection(c["id"], "host")
+            state["routed"] = True
+    client.may_route.set()
+
+
+
 def poll():
     client = state["client"]
+    route_clients()
+    # Sampled while the connection is UP: a route's contribution is taken
+    # back when the connection ends (8.11a), so the room after the client
+    # has gone says nothing about what its picks did.
+    try:
+        # Only while a connection is listed: the tick after it closes has
+        # already seen the take-back, and that is the state the check
+        # below makes separately.
+        if FreeCADGui.serveClients():
+            state["room"] = room_now()
+    except Exception:
+        pass
     if client.is_alive():
         if clock() - state["t0"] > CLIENT_WAIT_S:
             check("the client finished", False, "still talking after %ds" % CLIENT_WAIT_S)
@@ -304,12 +383,19 @@ def verify():
           "frames: %s, first after %s ms"
           % (client.batch_frames,
              "%.1f" % client.batch_ms if client.batch_ms is not None else None))
-    # Plain pick Box1, plain pick Box2, then ctrl-add Box0 and Box1: the
-    # in-process selection is what the wire said it should be.
-    sel = sorted((s.ObjectName, tuple(s.SubElementNames))
-                 for s in FreeCADGui.Selection.getSelectionEx(DOC))
+    # Plain pick Box1, plain pick Box2, then ctrl-add Box0 and Box1: what
+    # this client routed onto the desktop is what the wire said it should
+    # be, read from the last tick while it was still connected.
+    sel = state.get("room")
     want = [("Box0", ("Face6",)), ("Box1", ("Face6",)), ("Box2", ("Face6",))]
-    check("the in-process selection matches the picks", sel == want, str(sel))
+    check("the routed selection matches the picks", sel == want, str(sel))
+    check("and the room is empty again once the client has gone",
+          not room_now(), str(room_now()))
+    check("on the default route the pick stayed out of the room",
+          state.get("unrouted_room") == [], str(state.get("unrouted_room")))
+    check("the client was told the host had routed it",
+          client.routed is True, "routed: %s" % client.routed)
+
     finish()
 
 
