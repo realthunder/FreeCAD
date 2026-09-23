@@ -237,7 +237,7 @@ SoFCDisplayModeElement::matches(const SoElement * element) const
       || this->captureInterest != other->captureInterest
       || this->captureInterestVersion != other->captureInterestVersion
       || this->hiddenLines != other->hiddenLines
-      || this->faceColor != other->lineColor
+      || this->faceColor != other->faceColor
       || this->lineColor != other->lineColor
       || memcmp(&this->hiddenLineConfig, &other->hiddenLineConfig, sizeof(HiddenLineConfig))!=0)
     return FALSE;
@@ -270,6 +270,16 @@ SoFCDisplayModeElement::init(SoState * state)
   this->hiddenLineConfig.reset();
   this->captureInterest = nullptr;
   this->captureInterestVersion = 0;
+  // matches() compares these, and SbColor derives from SbVec3f, whose
+  // default constructor leaves its components uninitialised. Only
+  // setColors() ever assigned them, so in the ordinary case matches()
+  // compared garbage that differs per element instance and could never
+  // succeed -- which left every cache depending on this element
+  // permanently invalid. That is what stopped SoSeparator from keeping a
+  // bounding-box cache, and so what stopped SoSeparator::rayPick from
+  // ever culling: a ray pick walked every object in the document.
+  this->faceColor = SbColor(0.0F, 0.0F, 0.0F);
+  this->lineColor = SbColor(0.0F, 0.0F, 0.0F);
 }
 
 // vim: noai:ts=2:sw=2
