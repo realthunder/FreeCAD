@@ -2481,4 +2481,91 @@ bytes stop depending on its consumers; a forced `SameParameter` on an
 `Immutable` edge verifies instead of resetting; copy-on-write only where
 a new face needs a real change, such as a larger tolerance. It keeps the
 edges shared, so element names cannot move, where copies would have to
-be carried through every mapper. Not started until decided.
+be carried through every mapper. Decided for the cache (user,
+2026-09-24); as built in 23.13.
+
+### 23.13 Pcurves as a cache, and the freeze on by default (2026-09-24)
+
+The ruling of 23.12: what a consumer adds to an edge it builds on is
+derived data, not the edge's value, and the value's bytes do not carry
+it. Everything below is the OCCT fork (`LinkVibe-801`) unless it says
+FreeCAD.
+
+**What an Immutable TShape takes** (`BRep_Builder`, the note at the top
+of `BRep_Builder.cxx`):
+
+- A call that changes nothing passes without a write: a tolerance at or
+  under the one held, a flag or a range already so, a vertex restated
+  at its own point (within the round trip through its location, 16 ulp
+  of the coordinates). This is what most of the 335 throws were --
+  `BRepLib_MakeFace`'s forced `SameParameter` reset, a wire merge that
+  keeps a vertex where it is.
+- A representation for a surface the edge or vertex has none on yet: a
+  pcurve (`UpdateEdge` with a 2D curve), the regularity between two faces
+  (`Continuity`), a vertex's parameters on a new face or on a pcurve
+  (`UpdateVertex`). It is marked `BRep_CurveRepresentation::IsCache`, and
+  a cache may be replaced, removed or re-ranged afterwards -- a full
+  revolution puts one pcurve on its surface and then replaces it with
+  the seam pair. Never with a tolerance the edge would have to grow to.
+- Anything else throws, as before. The TShape's own tolerance setters
+  (`BRep_TVertex`/`TEdge`/`TFace::Tolerance`, `UpdateTolerance`) now
+  check too: `BRepLib` raised vertex tolerances there directly, past
+  every builder check (23.12). `BRepTools::UpdateFaceUVPoints` is let
+  through: the UV points are the pcurve evaluated at its range.
+
+**Algorithms that would change a frozen input:**
+
+- `BRepLib::SameParameter` forced, on an Immutable edge whose flags are
+  set, checks every stored pcurve against the 3D curve within the edge
+  tolerance (`pcurvesWithinTolerance`, `BRepLib_ValidateEdge`) instead of
+  resetting the flags; an edge that fails goes on and is refused.
+- `BRepLib::UpdateTolerances` leaves a frozen vertex that already covers
+  its edges alone: its `2*Epsilon` padding grew every such vertex by an
+  ulp on the first pass.
+- `BRepOffsetAPI_ThruSections` goes to its own `SetMutableInput(false)`
+  when a section is Immutable, as the pave filler goes non-destructive
+  (23.12).
+- `BRepLib_MakeWire` is the one real copy-on-write: a merge that has to
+  move or widen a frozen vertex (`thawVertex`) gives the wire a copy of
+  it, and copies of the edges built so far that use it; the input keeps
+  its own.
+
+**Stable bytes.** `BRepTools_ShapeSet` and `BinTools_ShapeSet` gain
+`SetStableBytes`: a representation on a surface no face of the written
+shape carries is left out (a pcurve, a regularity, a vertex parameter on
+one), and `Free`, `Modified`, `Checked` are written as 1, 1, 0 --
+`Free` flipped when the shape was added into a face somewhere else. The
+own surfaces are collected by `Add()`, or by `AddOwnSurfaces()` for a
+writer that fills the tables itself: FreeCAD's `ShapeRefSet` does, and
+without it every pcurve read as foreign and `ShapeStorage` lost face
+curves and volumes on reload. FreeCAD sets it for storage writes
+(`TopoShape::applyStorageOptions`) under `DocumentParams`
+`StableShapeBytes`, on by default; `ShapeRefSet` writes its own flag
+bytes and follows it. Under it, borrowing an edge or a vertex from
+another object's file (`BorrowBelowFace` 2, 4) is masked off: the lender
+leaves out the curves the borrower's faces need. Face-level borrowing
+is unaffected. A cache representation on the written shape's own
+surface (a consumer adding a vertex parameter on a frozen face's plane)
+is still written: named here, not measured.
+
+**The default.** `OCCT_EXT_VERSION` in `TopTools.cxx`, reported by
+`SetFuncShowTopoShape`, is 2 with this work. FreeCAD's
+`initOCCTExtension()` looks the symbol up in the process first
+(`dlsym(RTLD_DEFAULT)`; the `libTKBRep.so` dlopen it had is a
+development symlink and never the macOS name), and `PartParams`
+`ImmutableShapeValues` defaults to `initOCCTExtension() >= 2`: on with
+the fork, off without it, and whatever the user set otherwise.
+
+**Measured**, both suites with the freeze on and a throw-logging preload
+(23.12's method): ctest 802/802, Python 2902 OK, no
+`TopoDS_LockedShape`/`FrozenShape` thrown in the Python run; the ctest
+throws are the gtests' own. From 130 failures and 335 throws. Gtests in
+`ImmutableShape.cpp`: a face and a prism built on a frozen wire leave
+its stored bytes as they were; only a cache pcurve is replaced; a
+no-change write passes and a change throws, the vertex's own setter
+included; a wire merge copies a frozen vertex and leaves the input's;
+the default follows the loaded kernel. Python
+`ShapeStorage.ShapeStableBytesCases`: a face stores the same bytes
+whether or not something was extruded from its own edges, and with
+`StableShapeBytes` off it does not -- the control. `Part::Extrusion`
+is no test of this: it extrudes a copy.

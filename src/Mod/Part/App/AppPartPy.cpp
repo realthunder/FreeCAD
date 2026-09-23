@@ -404,9 +404,18 @@ PartExport int initOCCTExtension()
             setFuncShowTopoShape = (FuncSetFuncShowTopoShape)GetProcAddress(hModule, "SetFuncShowTopoShape");
         }
 #else
-        void *hModule = dlopen ("libTKBRep.so", RTLD_LAZY);
-        if (hModule) {
-            setFuncShowTopoShape = (FuncSetFuncShowTopoShape)dlsym(hModule, "SetFuncShowTopoShape");
+        // Looked up among the libraries already loaded first: Part links
+        // TKBRep, so it is there under whatever file name it has, where the
+        // name below is the development symlink -- absent from a runtime-only
+        // install, and never the name on macOS.
+        setFuncShowTopoShape =
+            (FuncSetFuncShowTopoShape)dlsym(RTLD_DEFAULT, "SetFuncShowTopoShape");
+        if (!setFuncShowTopoShape) {
+            void *hModule = dlopen ("libTKBRep.so", RTLD_LAZY);
+            if (hModule) {
+                setFuncShowTopoShape =
+                    (FuncSetFuncShowTopoShape)dlsym(hModule, "SetFuncShowTopoShape");
+            }
         }
 #endif
         if (setFuncShowTopoShape) {

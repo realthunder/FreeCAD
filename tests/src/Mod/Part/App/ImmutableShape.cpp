@@ -7,9 +7,24 @@
 #include <Base/Matrix.h>
 #include <Mod/Part/App/PartFeature.h>
 #include <Mod/Part/App/PartParams.h>
+#include <Mod/Part/App/PartPyCXX.h>
+#include <Mod/Part/App/TopoShape.h>
 #include <src/App/InitApplication.h>
 
 #include <BOPAlgo_PaveFiller.hxx>
+#include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_MakeWire.hxx>
+#include <BRepCheck_Analyzer.hxx>
+#include <TopExp.hxx>
+#include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
+#include <BRepPrimAPI_MakePrism.hxx>
+#include <BRep_TVertex.hxx>
+#include <Geom2d_Line.hxx>
+#include <Geom_Circle.hxx>
+#include <Geom_CylindricalSurface.hxx>
+#include <Geom_Plane.hxx>
+#include <gp_Pln.hxx>
+#include <sstream>
 #include <BRepBuilderAPI_MakeEdge.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
@@ -85,8 +100,8 @@ protected:
 
     void SetUp() override
     {
-        // Off by default until the OCCT side copies instead of writing
-        // (docs/TransactionLog.md sec 23.12).
+        // Stated, not inherited: the default follows the OCCT loaded at run
+        // time (docs/TransactionLog.md sec 23.13).
         Part::PartParams::setImmutableShapeValues(true);
         _docName = App::GetApplication().getUniqueDocumentName("immutable");
         _doc = App::GetApplication().newDocument(_docName.c_str(), "testUser");
@@ -194,4 +209,144 @@ TEST(ImmutableShapeTest, booleanGoesNonDestructive)
     frozen.Perform();
     EXPECT_FALSE(frozen.HasErrors());
     EXPECT_TRUE(frozen.NonDestructive());
+}
+
+// Pcurves as a cache (docs/TransactionLog.md sec 23.12): building on a frozen
+// wire gives its edges pcurves for the new faces, which the fork lets through,
+// and the storage writer leaves out, so the wire's bytes do not move.
+TEST(ImmutableShapeTest, aFaceBuiltOnAFrozenWireLeavesItsBytes)
+{
+    tests::initApplication();  // the storage options read DocumentParams
+    Handle(Geom_Circle) circle = new Geom_Circle(gp_Ax2(gp_Pnt(0, 2.5, 0), gp::DZ()), 2.5);
+    BRepBuilderAPI_MakeWire mkWire;
+    mkWire.Add(BRepBuilderAPI_MakeEdge(gp_Pnt(0, 0, 0), gp_Pnt(10, 0, 0)).Edge());
+    mkWire.Add(BRepBuilderAPI_MakeEdge(gp_Pnt(10, 0, 0), gp_Pnt(10, 5, 0)).Edge());
+    mkWire.Add(BRepBuilderAPI_MakeEdge(gp_Pnt(10, 5, 0), gp_Pnt(0, 5, 0)).Edge());
+    mkWire.Add(BRepBuilderAPI_MakeEdge(circle, gp_Pnt(0, 5, 0), gp_Pnt(0, 0, 0)).Edge());
+    const TopoDS_Wire wire = mkWire.Wire();
+    setImmutable(wire);
+    auto bytes = [&]() {
+        std::ostringstream out;
+        Part::TopoShape(wire).exportBrep(out, true);
+        return out.str();
+    };
+    const std::string before = bytes();
+
+    TopoDS_Shape prism;
+    EXPECT_NO_THROW({
+        const TopoDS_Face face = BRepBuilderAPI_MakeFace(wire, true).Face();
+        prism = BRepPrimAPI_MakePrism(face, gp_Vec(0, 0, 3)).Shape();
+    });
+    EXPECT_FALSE(prism.IsNull());
+    // The arc did gain a pcurve on its cylindrical side face ...
+    int pcurves = 0;
+    for (TopExp_Explorer it(prism, TopAbs_FACE); it.More(); it.Next()) {
+        for (TopExp_Explorer e(wire, TopAbs_EDGE); e.More(); e.Next()) {
+            Standard_Real f, l;
+            if (!BRep_Tool::CurveOnSurface(TopoDS::Edge(e.Current()), TopoDS::Face(it.Current()), f, l)
+                     .IsNull()
+                && BRep_Tool::Surface(TopoDS::Face(it.Current()))->IsKind(
+                    STANDARD_TYPE(Geom_CylindricalSurface))) {
+                ++pcurves;
+            }
+        }
+    }
+    EXPECT_GT(pcurves, 0);
+    // ... which the wire's stored bytes do not carry.
+    EXPECT_EQ(bytes(), before);
+}
+
+TEST(ImmutableShapeTest, onlyACachePCurveIsReplaced)
+{
+    TopoDS_Shape box = BRepPrimAPI_MakeBox(1, 1, 1).Shape();
+    setImmutable(box);
+    const TopoDS_Face face = TopoDS::Face(TopExp_Explorer(box, TopAbs_FACE).Current());
+    const TopoDS_Edge edge = TopoDS::Edge(TopExp_Explorer(face, TopAbs_EDGE).Current());
+    const double tol = BRep_Tool::Tolerance(edge);
+    BRep_Builder builder;
+
+    // A pcurve on a surface the edge has none on: a cache, let through, and
+    // being a cache it may be replaced or removed again.
+    Handle(Geom_Surface) other = new Geom_Plane(gp_Pln(gp_Pnt(0, 0, 5), gp::DZ()));
+    Handle(Geom2d_Curve) line = new Geom2d_Line(gp_Pnt2d(0, 0), gp_Dir2d(1, 0));
+    EXPECT_NO_THROW(builder.UpdateEdge(edge, line, other, TopLoc_Location(), tol));
+    EXPECT_NO_THROW(builder.UpdateEdge(edge, line, other, TopLoc_Location(), tol));
+    Handle(Geom2d_Curve) line2 = new Geom2d_Line(gp_Pnt2d(0, 1), gp_Dir2d(1, 0));
+    EXPECT_NO_THROW(builder.UpdateEdge(edge, line2, other, TopLoc_Location(), tol));
+    EXPECT_NO_THROW(
+        builder.UpdateEdge(edge, Handle(Geom2d_Curve)(), other, TopLoc_Location(), tol));
+    // Not with a tolerance the edge would have to grow to.
+    EXPECT_THROW(builder.UpdateEdge(edge, line, other, TopLoc_Location(), tol * 10),
+                 TopoDS_LockedShape);
+
+    // The value's own pcurve, on its face's surface, is neither replaced nor
+    // removed.
+    TopLoc_Location faceLoc;
+    const Handle(Geom_Surface)& own = BRep_Tool::Surface(face, faceLoc);
+    Standard_Real f, l;
+    ASSERT_FALSE(BRep_Tool::CurveOnSurface(edge, face, f, l).IsNull());
+    EXPECT_THROW(builder.UpdateEdge(edge, line2, own, faceLoc, tol), TopoDS_LockedShape);
+    EXPECT_THROW(builder.UpdateEdge(edge, Handle(Geom2d_Curve)(), own, faceLoc, tol),
+                 TopoDS_LockedShape);
+    EXPECT_FALSE(BRep_Tool::CurveOnSurface(edge, face, f, l).IsNull());
+
+    // A write that changes nothing passes; one that would change throws.
+    EXPECT_NO_THROW(builder.UpdateEdge(edge, tol / 2));
+    EXPECT_NO_THROW(builder.SameParameter(edge, BRep_Tool::SameParameter(edge)));
+    EXPECT_THROW(builder.SameParameter(edge, !BRep_Tool::SameParameter(edge)), TopoDS_LockedShape);
+    EXPECT_DOUBLE_EQ(BRep_Tool::Tolerance(edge), tol);
+
+    // The TShape's own setter, which BRepLib uses for vertices, is guarded too.
+    const TopoDS_Vertex vertex = TopoDS::Vertex(TopExp_Explorer(edge, TopAbs_VERTEX).Current());
+    Handle(BRep_TVertex) tv = Handle(BRep_TVertex)::DownCast(vertex.TShape());
+    EXPECT_NO_THROW(tv->UpdateTolerance(BRep_Tool::Tolerance(vertex) / 2));
+    EXPECT_THROW(tv->UpdateTolerance(BRep_Tool::Tolerance(vertex) * 10), TopoDS_LockedShape);
+}
+
+// The switch defaults to what the loaded OCCT can honour.
+TEST(ImmutableShapeTest, defaultFollowsTheLoadedKernel)
+{
+    EXPECT_GE(Part::initOCCTExtension(), 2);
+    EXPECT_TRUE(Part::PartParams::defaultImmutableShapeValues());
+}
+
+// Copy-on-write where the kernel has to change a frozen part: a wire joining
+// two frozen edges whose ends are close but not the same moves and widens the
+// joining vertex. The wire gets a copy that is; the input keeps its own.
+TEST(ImmutableShapeTest, aWireMergeCopiesAFrozenVertex)
+{
+    BRep_Builder builder;
+    const TopoDS_Edge first = BRepBuilderAPI_MakeEdge(gp_Pnt(0, 0, 0), gp_Pnt(10, 0, 0)).Edge();
+    const TopoDS_Edge second =
+        BRepBuilderAPI_MakeEdge(gp_Pnt(10, 1e-5, 0), gp_Pnt(10, 5, 0)).Edge();
+    TopoDS_Vertex join, secondStart, secondEnd;
+    TopExp::Vertices(first, secondStart, join);
+    TopExp::Vertices(second, secondStart, secondEnd);
+    builder.UpdateVertex(secondStart, 1e-4);  // covers the gap from its side only
+    setImmutable(first);
+    setImmutable(second);
+    const double joinTol = BRep_Tool::Tolerance(join);
+    const gp_Pnt joinPnt = BRep_Tool::Pnt(join);
+
+    BRepBuilderAPI_MakeWire mkWire;
+    EXPECT_NO_THROW(mkWire.Add(first));
+    EXPECT_NO_THROW(mkWire.Add(second));
+    ASSERT_TRUE(mkWire.IsDone());
+    const TopoDS_Wire wire = mkWire.Wire();
+    EXPECT_TRUE(BRepCheck_Analyzer(wire).IsValid());
+
+    // Connected through one vertex that covers both ends ...
+    TopTools_IndexedDataMapOfShapeListOfShape ancestors;
+    TopExp::MapShapesAndAncestors(wire, TopAbs_VERTEX, TopAbs_EDGE, ancestors);
+    int shared = 0;
+    for (int i = 1; i <= ancestors.Extent(); ++i) {
+        if (ancestors(i).Extent() == 2) {
+            ++shared;
+            EXPECT_GE(BRep_Tool::Tolerance(TopoDS::Vertex(ancestors.FindKey(i))), 1e-5);
+        }
+    }
+    EXPECT_EQ(shared, 1);
+    // ... which is not the input's: that one is where and what it was.
+    EXPECT_EQ(BRep_Tool::Tolerance(join), joinTol);
+    EXPECT_TRUE(BRep_Tool::Pnt(join).IsEqual(joinPnt, 0.));
 }

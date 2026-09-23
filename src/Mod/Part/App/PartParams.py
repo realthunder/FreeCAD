@@ -88,13 +88,13 @@ Params = [
         "surface the face carries -- so this is sound only where the geometry is\n"
         "shared too, and it is off wherever DedupCrossFileGeometry is."),
     ParamUInt("LoftMaxDegree", 5),
-    ParamBool("ImmutableShapeValues", False,
+    ParamBool("ImmutableShapeValues", "Part::initOCCTExtension() >= 2",
         "Freeze a shape property's value when it is set: every TShape gets the\n"
         "OCCT fork's Immutable flag, so a later edit of its geometry, tolerance\n"
         "or topology throws instead of changing the value behind the property\n"
-        "(docs/TransactionLog.md sec 23.6, tier 2). Off until the OCCT\n"
-        "algorithms that complete the edges they build on copy an immutable\n"
-        "edge instead of writing to it (sec 23.12)."),
+        "(docs/TransactionLog.md sec 23.6, tier 2; sec 23.12). Unless set, on\n"
+        "exactly when the OCCT loaded at run time is the fork at extension\n"
+        "version 2 or later, which is where the flag is honoured."),
     ParamInt("WarnUnnamedInput", 0,
         "Report a shape operation whose input shapes carry no element map, so\n"
         "the result cannot be named either. This is off by default because an\n"

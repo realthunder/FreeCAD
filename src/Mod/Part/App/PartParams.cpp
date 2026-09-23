@@ -22,6 +22,12 @@
 
 #include "PreCompiled.h"
 
+namespace Part {
+// AppPartPy.cpp: the OCCT fork's extension version, -1 without the fork.
+// ImmutableShapeValues defaults to it.
+PartExport int initOCCTExtension();
+}
+
 /*[[[cog
 import PartParams
 PartParams.define()
@@ -116,7 +122,7 @@ public:
         funcs["BorrowBelowFace"] = &PartParamsP::updateBorrowBelowFace;
         LoftMaxDegree = this->handle->GetUnsigned("LoftMaxDegree", 5);
         funcs["LoftMaxDegree"] = &PartParamsP::updateLoftMaxDegree;
-        ImmutableShapeValues = this->handle->GetBool("ImmutableShapeValues", false);
+        ImmutableShapeValues = this->handle->GetBool("ImmutableShapeValues", Part::initOCCTExtension() >= 2);
         funcs["ImmutableShapeValues"] = &PartParamsP::updateImmutableShapeValues;
         WarnUnnamedInput = this->handle->GetInt("WarnUnnamedInput", 0);
         funcs["WarnUnnamedInput"] = &PartParamsP::updateWarnUnnamedInput;
@@ -230,7 +236,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateImmutableShapeValues(PartParamsP *self) {
-        self->ImmutableShapeValues = self->handle->GetBool("ImmutableShapeValues", false);
+        self->ImmutableShapeValues = self->handle->GetBool("ImmutableShapeValues", Part::initOCCTExtension() >= 2);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateWarnUnnamedInput(PartParamsP *self) {
@@ -317,14 +323,14 @@ static const App::ParamRegistry::Registrar _PartParamsRegistrar({
 "shared too, and it is off wherever DedupCrossFileGeometry is."),
     App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "LoftMaxDegree", "LoftMaxDegree", App::ParamInfo::UInt, 5)
         .setTitle("Loft Max Degree"),
-    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "ImmutableShapeValues", "ImmutableShapeValues", App::ParamInfo::Bool, false)
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "ImmutableShapeValues", "ImmutableShapeValues", App::ParamInfo::Bool, Part::initOCCTExtension() >= 2)
         .setTitle("Immutable Shape Values")
         .setDoc("Freeze a shape property's value when it is set: every TShape gets the\n"
 "OCCT fork's Immutable flag, so a later edit of its geometry, tolerance\n"
 "or topology throws instead of changing the value behind the property\n"
-"(docs/TransactionLog.md sec 23.6, tier 2). Off until the OCCT\n"
-"algorithms that complete the edges they build on copy an immutable\n"
-"edge instead of writing to it (sec 23.12)."),
+"(docs/TransactionLog.md sec 23.6, tier 2; sec 23.12). Unless set, on\n"
+"exactly when the OCCT loaded at run time is the fork at extension\n"
+"version 2 or later, which is where the flag is honoured."),
     App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "WarnUnnamedInput", "WarnUnnamedInput", App::ParamInfo::Int, 0)
         .setTitle("Warn Unnamed Input")
         .setDoc("Report a shape operation whose input shapes carry no element map, so\n"
@@ -935,9 +941,9 @@ const char *PartParams::docImmutableShapeValues() {
 "Freeze a shape property's value when it is set: every TShape gets the\n"
 "OCCT fork's Immutable flag, so a later edit of its geometry, tolerance\n"
 "or topology throws instead of changing the value behind the property\n"
-"(docs/TransactionLog.md sec 23.6, tier 2). Off until the OCCT\n"
-"algorithms that complete the edges they build on copy an immutable\n"
-"edge instead of writing to it (sec 23.12).");
+"(docs/TransactionLog.md sec 23.6, tier 2; sec 23.12). Unless set, on\n"
+"exactly when the OCCT loaded at run time is the fork at extension\n"
+"version 2 or later, which is where the flag is honoured.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -947,7 +953,7 @@ const bool & PartParams::getImmutableShapeValues() {
 
 // Auto generated code (Tools/params_utils.py:413)
 const bool & PartParams::defaultImmutableShapeValues() {
-    const static bool def = false;
+    const static bool def = Part::initOCCTExtension() >= 2;
     return def;
 }
 
