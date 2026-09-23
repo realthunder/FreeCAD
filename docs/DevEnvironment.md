@@ -559,6 +559,83 @@ Sources still carry `OCC_VERSION_HEX` guards (features that need the 8.0.1 fork
 change to a guarded path is not compile-checked here. `Mod/Part` could not build
 on 7.7.2 even before the prefixes were deleted.
 
+### A corrupt ninja deps log makes every build a near-full one
+
+**Symptom** (found 2026-09-23, `build/conda-relwithdebinfo-801`): `ninja
+FreeCADGui` ran **308 of 309 steps with no source change at all**, twice
+in a row, and a no-op build cost minutes. It also made "is my build
+current?" unanswerable from the step count, which is its own tax.
+
+**Cause: `.ninja_deps` was corrupt, and ninja could not repair it.**
+Ninja said so on every load, and the line is easy to read past:
+
+    ninja: warning: premature end of file; recovering
+
+It is not a truncated file. Ninja's deps log carries one record per path
+whose checksum is `~id`, and the id must equal the number of nodes read
+so far. At 44.96 MB of a 47.2 MB log one record declared **id 24920
+while the running count was 24922**, off by two. Everything after that
+point -- 2.26 MB, the deps of about 308 objects -- is unreachable, so
+those objects have no dependency information, so they are dirty, so they
+rebuild, so their deps are appended past the bad record where the next
+load will not reach them either. A stable loop.
+
+"recovering" means ninja intends to truncate to the last good record. It
+did not: the file kept the bad record across many builds (the size was
+unchanged by a load that printed the warning). So this does not heal on
+its own.
+
+**An id that is off by a constant is the signature of two ninja
+processes appending to one build directory**, each numbering nodes from
+its own view of the log. Do not run two builds in the same tree at once
+-- including a `cmake --build` beside a `ninja`, or a build started in
+the background and forgotten.
+
+**Repair** -- surgical, and it keeps the 45 MB of good deps that a plain
+delete would throw away (which would otherwise force one genuine full
+rebuild of everything). Find the first bad record, truncate there, build
+twice:
+
+    python3 - <<'EOF'
+    import struct
+    p = 'build/conda-relwithdebinfo-801/.ninja_deps'
+    d = open(p, 'rb').read()
+    off, nodes = 16, 0
+    while off + 4 <= len(d):
+        h = struct.unpack('<I', d[off:off+4])[0]
+        size = h & 0x7FFFFFFF
+        body = d[off+4:off+4+size]
+        if not (h & 0x80000000):
+            exp = (~struct.unpack('<I', body[size-4:size])[0]) & 0xFFFFFFFF
+            if exp != nodes:
+                print('bad record at', off)
+                break
+            nodes += 1
+        off += 4 + size
+    else:
+        print('clean')
+    EOF
+
+then `truncate -s <offset>` with no ninja running. The first build after
+it still runs the 308 (their deps were discarded with the bad tail) and
+records them properly; the second is the check.
+
+**Result: 308 steps -> 9, and a no-op build is 1.16 s.** The nine that
+remain are the always-run rules and are cheap: the `CONFIGURE_DEPENDS`
+glob check, the CMake re-run check, `version_check` (there is no way to
+know the revision moved without asking git) and the `copy_if_different`
+that keeps `Version.h` from getting a new timestamp when it did not.
+
+**Version.h is innocent**, which is worth writing down because it is the
+obvious suspect and costs an hour to clear: `src/Build/CMakeLists.txt`
+already does this correctly, and `Version.h`'s timestamp moves only when
+a COMMIT moves, since `FCRevisionDate` is the date of the highest
+committed revision. **A commit therefore does legitimately invalidate
+every translation unit that includes it** -- a big rebuild right after
+committing is expected and is not this bug.
+
+Check the other trees too; only the one was affected here.
+
 ### Generated code: cog, and the two ways it runs
 
 `cogapp` is a **configure-time requirement** as of 2026-09-12. `SetupPython`
