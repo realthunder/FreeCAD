@@ -37,10 +37,13 @@
                       documents resolved against (sec 7.13): kept by the
                       referring document, rebuilt at every save, served when
                       the reference comes back missing
+  ShapeStableBytesCases  a shape's stored bytes are the shape's alone, not
+                      what was built on it (docs/TransactionLog.md 23.12)
 
 Run headless with:  FreeCADCmd -t ShapeStorage
 """
 
+import math
 import os
 import re
 import shutil
@@ -1736,3 +1739,66 @@ class ForeignBaseShapeCases(ShapeTestCase):
         self.assertNotIn(self.SHAPES, asm.PropertiesList)
         self.assertNotIn(self.REFS, asm.PropertiesList)
         self.assertNotIn("_ForeignBaseShape", self.documentXml(asmPath))
+
+
+@unittest.skipUnless(HAS_PART, "Part module not available")
+class ShapeStableBytesCases(ShapeTestCase):
+    """A shape's stored bytes are the shape's alone (docs/TransactionLog.md 23.12).
+
+    Extruding a face gives the face's edges a 2D curve on each side face, and
+    an edge is shared, so those curves used to be saved with the face that
+    was extruded: the same face stored different bytes depending on what had
+    been built on it.
+    """
+
+    PARAMS = "User parameter:BaseApp/Preferences/Document"
+
+    def tearDown(self):
+        FreeCAD.ParamGet(self.PARAMS).RemBool("StableShapeBytes")
+        super().tearDown()
+
+    def baseFace(self, doc):
+        v = FreeCAD.Vector
+        arc = Part.ArcOfCircle(Part.Circle(v(0, 2.5, 0), v(0, 0, 1), 2.5), math.pi / 2, 1.5 * math.pi)
+        edges = [
+            Part.makeLine(v(0, 0, 0), v(10, 0, 0)),
+            Part.makeLine(v(10, 0, 0), v(10, 5, 0)),
+            Part.makeLine(v(10, 5, 0), v(0, 5, 0)),
+            arc.toShape(),
+        ]
+        obj = doc.addObject("Part::Feature", "Base")
+        obj.Shape = Part.Face(Part.Wire(edges))
+        return obj
+
+    def baseBytes(self, extrude, tag):
+        """The stored geometry of a document holding the face, and an extrusion
+        of it when asked, keyed by content."""
+        doc = self.newDocument("Stable%s" % tag)
+        base = self.baseFace(doc)
+        if extrude:
+            # Built on the face's own edges, the way a script or a Python
+            # feature does. Part::Extrusion is no test of this: it extrudes a
+            # copy, so nothing it builds is shared with the face.
+            ext = doc.addObject("Part::Feature", "Extruded")
+            ext.Shape = base.Shape.extrude(FreeCAD.Vector(0, 0, 3))
+            shared = [e for e in base.Shape.Edges if any(e.isSame(x) for x in ext.Shape.Edges)]
+            self.assertEqual(len(shared), 4)
+            self.assertTrue(ext.Shape.isValid())
+        doc.recompute()
+        project = self.directoryPath("stable_%s" % tag)
+        doc.saveAs(project)
+        return set(self.storedGeometry(project))
+
+    def testTheFaceStoresTheSameBytesWhateverIsBuiltOnIt(self):
+        alone = self.baseBytes(False, "alone")
+        self.assertEqual(len(alone), 1)
+        built = self.baseBytes(True, "built")
+        self.assertEqual(len(built), 2)
+        self.assertTrue(alone <= built, "the face stored other bytes once extruded")
+
+    def testSwitchedOffTheExtrusionLeaksIntoTheFace(self):
+        """The control: without it, the same face does not store the same bytes."""
+        FreeCAD.ParamGet(self.PARAMS).SetBool("StableShapeBytes", False)
+        alone = self.baseBytes(False, "alone_off")
+        built = self.baseBytes(True, "built_off")
+        self.assertFalse(alone <= built)

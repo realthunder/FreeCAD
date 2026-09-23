@@ -516,7 +516,12 @@ void PropertyPartShape::makeBlob(Base::Writer& writer) const
     // Below a face the association *is* the identity of a geometry object, so
     // this is sound only while that object can be named across files: off
     // wherever the geometry is not shared, whatever the setting says.
-    refs.setSubFaceBorrowing(geometry ? PartParams::getBorrowBelowFace() : 0);
+    // And not an edge or a vertex under a stable write: the lender leaves out
+    // the 2D curves its own faces do not use, and the borrower's faces are
+    // exactly the ones that use them. A face keeps its own (sec 23.12).
+    const int belowFace = refs.IsStableBytes() ? PartParams::getBorrowBelowFace() & 1
+                                               : PartParams::getBorrowBelowFace();
+    refs.setSubFaceBorrowing(geometry ? belowFace : 0);
     refs.build(root);
     const std::string plan = refs.plan();
 

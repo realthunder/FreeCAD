@@ -62,6 +62,7 @@ public:
         signalParamChanged("DeferShapeLoad");
         signalParamChanged("SaveMaterialCards");
         signalParamChanged("DedupShapePCurves");
+        signalParamChanged("StableShapeBytes");
         signalParamChanged("DedupCongruentShapes");
         signalParamChanged("DedupCrossFileGeometry");
         signalParamChanged("AutoRemoveFile");
@@ -117,6 +118,7 @@ public:
     bool DeferShapeLoad;
     bool SaveMaterialCards;
     bool DedupShapePCurves;
+    bool StableShapeBytes;
     bool DedupCongruentShapes;
     bool DedupCrossFileGeometry;
     bool AutoRemoveFile;
@@ -191,6 +193,8 @@ public:
         funcs["SaveMaterialCards"] = &DocumentParamsP::updateSaveMaterialCards;
         DedupShapePCurves = this->handle->GetBool("DedupShapePCurves", true);
         funcs["DedupShapePCurves"] = &DocumentParamsP::updateDedupShapePCurves;
+        StableShapeBytes = this->handle->GetBool("StableShapeBytes", true);
+        funcs["StableShapeBytes"] = &DocumentParamsP::updateStableShapeBytes;
         DedupCongruentShapes = this->handle->GetBool("DedupCongruentShapes", true);
         funcs["DedupCongruentShapes"] = &DocumentParamsP::updateDedupCongruentShapes;
         DedupCrossFileGeometry = this->handle->GetBool("DedupCrossFileGeometry", false);
@@ -343,6 +347,10 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateDedupShapePCurves(DocumentParamsP *self) {
         self->DedupShapePCurves = self->handle->GetBool("DedupShapePCurves", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateStableShapeBytes(DocumentParamsP *self) {
+        self->StableShapeBytes = self->handle->GetBool("StableShapeBytes", true);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateDedupCongruentShapes(DocumentParamsP *self) {
@@ -593,6 +601,20 @@ static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
 "\n"
 "Applies to shapes written as ASCII BRep. Turn off to write what\n"
 "the kernel holds, entry for entry."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "StableShapeBytes", "StableShapeBytes", App::ParamInfo::Bool, true)
+        .setTitle("Stable Shape Bytes")
+        .setDoc("Write a shape's file from the shape alone, not from what was\n"
+"done with it.\n"
+"\n"
+"An edge keeps a 2D curve for every face built on it, including\n"
+"faces of other objects: extruding a sketch's face gives the\n"
+"sketch's own edges a curve on each side face, and those were saved\n"
+"with the sketch. Some flags record what was last done to a shape\n"
+"rather than what it is. With this on, curves on surfaces that no\n"
+"face of the saved shape carries are left out and those flags are\n"
+"written as constants, so an unchanged shape saves to the same bytes\n"
+"(docs/TransactionLog.md sec 23.12). Nothing the shape needs is\n"
+"lost. Needs the realthunder OCCT fork; ignored without it."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "DedupCongruentShapes", "DedupCongruentShapes", App::ParamInfo::Bool, true)
         .setTitle("Dedup Congruent Shapes")
         .setDoc("Store one file for parts that are the same shape in different\n"
@@ -1236,6 +1258,45 @@ void DocumentParams::setDedupShapePCurves(const bool &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void DocumentParams::removeDedupShapePCurves() {
     instance()->handle->RemoveBool("DedupShapePCurves");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docStableShapeBytes() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Write a shape's file from the shape alone, not from what was\n"
+"done with it.\n"
+"\n"
+"An edge keeps a 2D curve for every face built on it, including\n"
+"faces of other objects: extruding a sketch's face gives the\n"
+"sketch's own edges a curve on each side face, and those were saved\n"
+"with the sketch. Some flags record what was last done to a shape\n"
+"rather than what it is. With this on, curves on surfaces that no\n"
+"face of the saved shape carries are left out and those flags are\n"
+"written as constants, so an unchanged shape saves to the same bytes\n"
+"(docs/TransactionLog.md sec 23.12). Nothing the shape needs is\n"
+"lost. Needs the realthunder OCCT fork; ignored without it.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & DocumentParams::getStableShapeBytes() {
+    return instance()->StableShapeBytes;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & DocumentParams::defaultStableShapeBytes() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setStableShapeBytes(const bool &v) {
+    instance()->handle->SetBool("StableShapeBytes",v);
+    instance()->StableShapeBytes = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeStableShapeBytes() {
+    instance()->handle->RemoveBool("StableShapeBytes");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

@@ -300,6 +300,29 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter StableShapeBytes
+    ///
+    /// Write a shape's file from the shape alone, not from what was
+    /// done with it.
+    /// 
+    /// An edge keeps a 2D curve for every face built on it, including
+    /// faces of other objects: extruding a sketch's face gives the
+    /// sketch's own edges a curve on each side face, and those were saved
+    /// with the sketch. Some flags record what was last done to a shape
+    /// rather than what it is. With this on, curves on surfaces that no
+    /// face of the saved shape carries are left out and those flags are
+    /// written as constants, so an unchanged shape saves to the same bytes
+    /// (docs/TransactionLog.md sec 23.12). Nothing the shape needs is
+    /// lost. Needs the realthunder OCCT fork; ignored without it.
+    static const bool & getStableShapeBytes();
+    static const bool & defaultStableShapeBytes();
+    static void removeStableShapeBytes();
+    static void setStableShapeBytes(const bool &v);
+    static const char *docStableShapeBytes();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter DedupCongruentShapes
     ///
     /// Store one file for parts that are the same shape in different

@@ -540,6 +540,9 @@ const ShapeRef* ShapeRefSet::borrowed(const TopoDS_Shape& shape) const
 
 void ShapeRefSet::build(const TopoDS_Shape& root)
 {
+    // The walk below calls AddGeometry itself, so the surfaces a stable
+    // write keeps representations on are named here, and again after Clear().
+    AddOwnSurfaces(root);
     add(root, nullptr, TopLoc_Location());
     // After the walk, because the walk is what fills the tables -- and before
     // anything asks for plan(), because what this settles is half of it.
@@ -558,6 +561,7 @@ void ShapeRefSet::build(const TopoDS_Shape& root)
     const int level = _belowFace;
     Clear();
     _belowFace = 0;
+    AddOwnSurfaces(root);
     add(root, nullptr, TopLoc_Location());
     // Back on for the passes below and for publish(): what the fallback drops
     // is the borrowing, not the sharing of geometry by object.
@@ -1246,9 +1250,13 @@ void ShapeRefSet::write(const TopoDS_Shape& root, std::ostream& out)
         WriteGeometry(shape, out);
 
         out << "\n";
-        out << (shape.Free() ? 1 : 0);
-        out << (shape.Modified() ? 1 : 0);
-        out << (shape.Checked() ? 1 : 0);
+        // Constant under a stable write, as TopTools_ShapeSet writes them
+        // (BRepTools_ShapeSet::SetStableBytes): they record what was done
+        // with the shape, not what it is.
+        const bool stable = IsStableBytes();
+        out << (stable || shape.Free() ? 1 : 0);
+        out << (stable || shape.Modified() ? 1 : 0);
+        out << (!stable && shape.Checked() ? 1 : 0);
         out << (shape.Orientable() ? 1 : 0);
         out << (shape.Closed() ? 1 : 0);
         out << (shape.Infinite() ? 1 : 0);

@@ -114,6 +114,19 @@ Params = [
             '\n'
             'Applies to shapes written as ASCII BRep. Turn off to write what\n'
             'the kernel holds, entry for entry.'),
+    ParamBool('StableShapeBytes', True,
+        doc='Write a shape\'s file from the shape alone, not from what was\n'
+            'done with it.\n'
+            '\n'
+            'An edge keeps a 2D curve for every face built on it, including\n'
+            'faces of other objects: extruding a sketch\'s face gives the\n'
+            'sketch\'s own edges a curve on each side face, and those were saved\n'
+            'with the sketch. Some flags record what was last done to a shape\n'
+            'rather than what it is. With this on, curves on surfaces that no\n'
+            'face of the saved shape carries are left out and those flags are\n'
+            'written as constants, so an unchanged shape saves to the same bytes\n'
+            '(docs/TransactionLog.md sec 23.12). Nothing the shape needs is\n'
+            'lost. Needs the realthunder OCCT fork; ignored without it.'),
     ParamBool('DedupCongruentShapes', True,
         doc='Store one file for parts that are the same shape in different\n'
             'places, and record the motion between them instead of writing the\n'

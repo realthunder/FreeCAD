@@ -911,6 +911,7 @@ void TopoShape::applyStorageOptions(BRepTools_ShapeSet& set, bool forStorage)
 {
     const bool dedup = forStorage && App::DocumentParams::getDedupShapePCurves();
     set.SetOmitPCurvesOnPlane(dedup);
+    set.SetStableBytes(forStorage && App::DocumentParams::getStableShapeBytes());
     // Merging equal 2D curves is what the kernel does by default, so this only
     // ever has to turn it off.
     set.ChangeCurves2d().SetMerging(dedup);
@@ -921,6 +922,7 @@ void TopoShape::applyStorageOptions(BinTools_ShapeSet& set, bool forStorage)
     // The binary 2D curve set has no merging to gate, so only the pcurve drop
     // applies to this format.
     set.SetOmitPCurvesOnPlane(forStorage && App::DocumentParams::getDedupShapePCurves());
+    set.SetStableBytes(forStorage && App::DocumentParams::getStableShapeBytes());
 }
 
 void TopoShape::exportBrep(std::ostream& out, bool forStorage) const
