@@ -31,7 +31,7 @@ Upstream's `f4665aa7b5` ("Core: support multiple active transactions") was
 evaluated and **declined**; `docs/TransactionLog.md` records why, and the
 direction the user wants instead.
 
-**Where the ledger stands (2026-09-21).** 1149 rows, of which 333 are open
+**Where the ledger stands (2026-09-23).** 1149 rows, of which 323 are open
 and undecided, down from 503 over three sessions of reading blobs rather
 than commits. First the 33 files the handler resyncs touched: 21 are
 identical to upstream's tip modulo whitespace, closing 74 rows at once
@@ -2190,6 +2190,65 @@ two colours. Upstream's intersection icon is a different drawing
 entirely -- a solid cut by a plane -- so the pair is no longer a pair.
 Left as it is: inventing a matching "defining" variant is authoring art,
 not adopting it.
+
+## 7b. ViewProviderSketch.cpp: the first pass (session 88)
+
+`Gui/ViewProviderSketch.cpp` is the largest block left -- **71 of the
+332 open rows** when this started. The mechanical test that closed 55
+rows tree-wide closes **one** here, and that one is a false positive:
+the file has diverged too far for line presence to mean anything, and
+these are the rows earlier sweeps could not settle. So they are being
+read.
+
+**Nine settled, 71 -> 62, and one of them was a live defect.**
+
+| row | verdict |
+|---|---|
+| `dc2aec50d4` + `4b50d72769` | **taken** `90f8e7513a` -- the defect below |
+| `22120fa597` | have: `DrawSketchHandler.cpp:2126` already calls `Base::toDegrees`; `ViewProviderSketch::getRotation` does not exist here |
+| `df08c0ce8d` | have: the fork reads `LeaveSketchWithEscape` directly (`ViewProviderSketch.cpp:7799`) and has no ParameterObserver entry to carry the old key |
+| `d806b4e5f3` | have: `Gui/Document.cpp:628` computes `_editingTransform` for EVERY view provider at setEdit, and 1220 keeps it live -- more general than upstream's per-VP call |
+| `94c486184c` | n/a: no `editingCancelled` member here; it belongs to the cancel-tool family (`189d86ee53`) |
+| `3fa5f1c236` | n/a: the fork includes neither TopTools header |
+| `69b04222cc` | n/a: a fix on the bounding-box rework (`5587b48a0f`) the fork does not have |
+| `4b589088f6` | partial: of its nine files only `App/PropertyConstraintList.cpp` uses `numeric_limits` here and still lacks the include |
+
+### The defect: entering a sketch showed the datum it is attached to
+
+`ViewProviderSketch::setEdit` runs a TempoVis snippet that, with
+ShowSupport on, shows what the sketch is attached to -- except the datum
+it is mapped onto, which is its own support and would only clutter the
+view it is being edited in. The exclusion is **by class name**, and it
+named `PartDesign::Plane` alone.
+
+After the datums port an origin plane is an `App::Plane`, so the test
+stopped matching and the origin came up with every sketch attached to
+one -- which is most of them. Measured before the fix: a sketch mapped
+to `XY_Plane` leaves `setEdit` with that plane visible.
+
+**Adapted, not taken.** Upstream REPLACED the `PartDesign::Plane` test;
+here it is kept beside the two new ones, because PartDesign's datum
+command still creates that class (`PartDesign/Gui/Command.cpp:290`) and
+dropping it would start showing those instead -- the same bug with the
+other class.
+
+Guarded by `tests/gui/sketch-support-visibility.py`, **ctest 780 -> 781**.
+A one-line fix would normally speak for itself; this one gets a test
+because **a class rename that silently disables a type test leaves
+nothing behind to notice** -- no error, no warning, just a condition
+that is never true again. That failure mode is the general lesson of
+this row, and it is not specific to the Sketcher.
+
+### What the remaining 62 look like
+
+The pattern to expect, and the reason the mechanical test is useless
+here: most are **fixes on top of upstream refactors the fork never
+took** -- the Ctrl+A/select-all family, the screen-space preselection
+family, the bounding-box rework, the cancel tool, the placement
+preview. Judged one by one they each read as "open"; judged by family
+they are one decision each, about whether to take the parent. **Size
+the family before reading its rows** -- the hints family (section 7a)
+made the same point from the other direction.
 
 ## 7a. The constraint-tool hints (session 85)
 
