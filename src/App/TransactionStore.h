@@ -82,23 +82,46 @@ struct LogOp
     bool derived {false};
 };
 
-/** A stored value (table `value`).
- *
- * The XML fragment Property::Save writes, plus the attachments it handed to
- * addFile(), each an entry of `attachments` naming another value by hash.
- * `hash` covers the fragment and the attachment list, so a value with an
- * unchanged attachment and a changed fragment shares the attachment.
- * `data` is the fragment (or, for an attachment value, the file bytes) as
- * stored: `enc` says how ("raw", "zstd").
+/// One edge out of an entity (table `ref`, sec 23.1): an attachment it
+/// carries (`attach`, `name` the file name), the entity its delta applies
+/// to (`base`), or a part of a composite (`part`, `name` the property).
+struct LogRef
+{
+    std::string target;
+    std::string role {"attach"};
+    std::string name;
+};
+
+/** A stored entity (table `entity`, sec 23.1): anything the log holds
+ * bytes for -- a property's fragment (`prop`), a file it handed to
+ * addFile() (`attach`), a shape blob, an XML entry, a skeleton or a
+ * composite. `hash` is the identity: the SHA-1 of the full content (for a
+ * fragment, the fragment plus its ordered attachment list), never of the
+ * stored form. `enc` says how `data` is stored -- "raw", "zstd", or
+ * "delta", a zstd patch against the entity `base` names -- and a
+ * re-encode changes `enc`/`base`/`data` under the same hash.
  */
-struct LogValue
+struct LogEntity
 {
     std::string hash;
+    std::string kind {"prop"};
     std::string enc {"raw"};
+    std::string base;               ///< the delta's base, when enc is "delta"
     std::string tier {"durable"};   ///< "durable" or "cache" (sec 10)
-    uint64_t size {0};              ///< uncompressed bytes of `data`
+    uint64_t size {0};              ///< full bytes of the content
     std::string data;
-    std::vector<std::pair<std::string, std::string>> attachments;  ///< (name, hash)
+    std::vector<LogRef> refs;
+
+    /// The attachments, in order, as (name, hash).
+    std::vector<std::pair<std::string, std::string>> attachments() const
+    {
+        std::vector<std::pair<std::string, std::string>> out;
+        for (const auto& r : refs) {
+            if (r.role == "attach")
+                out.emplace_back(r.name, r.target);
+        }
+        return out;
+    }
 };
 
 /** A version row (sec 16.3): a snapshot of the document as a file, held
@@ -122,13 +145,13 @@ struct LogVersion
 };
 
 /// One entry of a version's manifest: archive entry name -> content hash.
-/// `Document.xml` and `GuiDocument.xml` name value rows; blob entries
-/// name the document's blob store (sec 16.2).
+/// The XML entries name entity rows; blob entries name the document's
+/// blob store (sec 16.2) until 23.7 step 6 brings them into the store.
 struct LogManifestEntry
 {
     std::string entry;
     std::string hash;
-    std::string source {"value"};   ///< "value" (the value table) or "blob"
+    std::string source {"entity"};   ///< "entity" (the entity table) or "blob"
 };
 
 /** The interface the document sees: a log is appended, read and truncated
@@ -148,19 +171,27 @@ public:
     /// Fill the after ref of an op left pending by append().
     virtual void resolveAfter(int64_t txn, int idx, const std::string& hash) = 0;
 
-    virtual bool hasValue(const std::string& hash) = 0;
-    /// Store a value; a hash already present is left as it is.
-    virtual void putValue(const LogValue& value) = 0;
-    /// Read a value back, `data` as stored. False if absent.
-    virtual bool getValue(const std::string& hash, LogValue& value) = 0;
+    virtual bool hasEntity(const std::string& hash) = 0;
+    /// Store an entity with its refs; a hash already present is left as it is.
+    virtual void putEntity(const LogEntity& entity) = 0;
+    /// Read an entity back, `data` as stored, refs in insertion order.
+    /// False if absent.
+    virtual bool getEntity(const std::string& hash, LogEntity& entity) = 0;
+    /// Change how an entity is stored, under the same hash (sec 23.2): the
+    /// new `enc`, `base` and `data`; the `base` ref is replaced. Refs of
+    /// other roles stay.
+    virtual void reencodeEntity(const std::string& hash, const std::string& enc,
+                                const std::string& base, const std::string& data) = 0;
+    /// The entities whose delta is based on `hash`.
+    virtual std::vector<std::string> basedOn(const std::string& hash) = 0;
 
     /// Transactions with seq >= from, in order, at most `limit` (0: all).
     virtual std::vector<LogTransaction> transactions(int64_t from = 0, int limit = 0) = 0;
     virtual std::vector<LogOp> ops(int64_t txn) = 0;
     virtual int64_t lastSeq() = 0;
 
-    /// Drop every transaction with seq < before, and the values nothing
-    /// refers to any more.
+    /// Drop every transaction with seq < before, and the entities nothing
+    /// reaches any more (sec 23.5).
     virtual void truncate(int64_t before) = 0;
 
     /// Id of the environment row holding `json`, made if absent (sec 11).
@@ -182,7 +213,7 @@ public:
     /// The latest version whose Document.xml hashes to `hash`, or false.
     virtual bool findVersion(const std::string& docxmlHash, LogVersion& version) = 0;
     virtual std::vector<LogManifestEntry> manifest(int64_t num) = 0;
-    /// Remove a version and its manifest, and the values nothing refers to
+    /// Remove a version and its manifest, and the entities nothing reaches
     /// any more (sec 16.3, eviction). Ops are never removed by this.
     virtual void evictVersion(int64_t num) = 0;
     /// Make a version named (kind `named`, never evicted) with `name`; an
@@ -195,8 +226,9 @@ public:
     /// A consistent, compacted copy of the whole store at `path` (SQLite's
     /// VACUUM INTO); the file must not exist. What the embedded mode ships.
     virtual void copyTo(const std::string& path) = 0;
-    /// Drop every value of `tier` nothing but ops refers to (the embedded
-    /// copy carries no cache tier, sec 13.3). Refs stay; the value goes.
+    /// Drop every entity of `tier` that no manifest reaches and no delta
+    /// is based on (the embedded copy carries no cache tier, sec 13.3).
+    /// The ops' refs stay; the entity goes.
     virtual void dropTier(const std::string& tier) = 0;
 
     /// Open or create the SQLite log at `path` (WAL, synchronous=NORMAL).

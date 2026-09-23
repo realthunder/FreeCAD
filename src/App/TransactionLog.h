@@ -205,6 +205,18 @@ public:
 
     /// Read a value back, decompressed, with its attachments inlined.
     bool readValue(const std::string& hash, CapturedValue& out);
+    /// The full bytes of one entity, whatever its encoding (a delta chain
+    /// is decoded through its bases, sec 23.2); the row itself, without
+    /// `data`, into `entity` when asked. Worker or flushed caller.
+    bool readBytes(const std::string& hash, std::string& out, LogEntity* entity = nullptr,
+                   int depth = 0);
+
+    /// zstd patch-from: `bytes` against `base` into `patch`, and back.
+    /// False without zstd or on a codec error.
+    static bool deltaEncode(const std::string& bytes, const std::string& base,
+                            std::string& patch);
+    static bool deltaDecode(const std::string& patch, const std::string& base, size_t size,
+                            std::string& bytes);
 
 private:
     struct Pending
@@ -242,6 +254,10 @@ private:
     /// Store a captured value (fragment and attachments) and return its ref.
     /// Worker thread.
     std::string putValue(const CapturedValue& value, const std::string& tier);
+    /// Store plain bytes as an entity of `kind` and return its hash.
+    /// Worker thread.
+    std::string putBytes(const std::string& bytes, const std::string& kind,
+                         const std::string& tier);
     /// Serialise each task's copy and write what it fills and resolves.
     /// Worker thread.
     void writeValues(std::vector<ValueTask>& tasks, std::vector<LogOp>& ops);

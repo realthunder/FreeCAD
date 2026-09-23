@@ -1897,3 +1897,245 @@ a *manager* as well as a browser: the operations that change the log
 on it once the phases that define them exist, and not in scattered
 menu entries.
 
+
+## 23. Entities (user, 2026-09-23)
+
+Decided after phase 1, before phase 3, and this section overrides 9.3's
+"full is the only encoding", 16.1's "a version is a materialised FCStd
+inside the store" and 16.2's split between value rows and the blob
+manager where they disagree. The goal is all three cost centres of
+phase 1 at once: the whole-array op values, the `Document.xml` and
+`Obj.xml` a version duplicates, and the main-thread object pass a
+snapshot costs.
+
+### 23.1 One kind of thing in the store
+
+Everything the log holds bytes for is an **entity**: a property's
+`Save` fragment, the file a property hands to `addFile`, a shape blob,
+`Document.xml` and `GuiDocument.xml`, and the composites of 23.3.
+
+```
+entity(hash PRIMARY KEY, kind, enc, base, tier, size, data)
+ref(entity, target, role, name, PRIMARY KEY(entity, role, name, target))
+```
+
+- `hash` is the identity: SHA-1 of the *full* content (for a property
+  value, the fragment and its ordered attachment list, as now). It never
+  depends on how the row happens to be stored, so a re-encode is an
+  in-place rewrite of `enc`/`base`/`data` and nothing that names the
+  entity moves.
+- `kind`: `prop`, `attach`, `blob`, `xml`, `skeleton`, `composite`.
+- `enc`: `raw`, `zstd`, or `delta` with `base` naming the entity the
+  patch applies to. `zstd --patch-from` is the codec; nothing per type
+  until a measurement says a type needs one.
+- `ref` is every edge, one kind of edge for the collector: an
+  attachment (`role=attach`, `name` the file name), a delta base
+  (`role=base`), a composite's parts (`role=part`, `name` the property).
+  The old `attach` column and the manifest's `source` distinction fold
+  into it.
+- Where the bytes live is a backend detail chosen by size: small inline
+  in `data`, large as a file in the document's `FileBlobManager`, which
+  becomes the entity store's file backend rather than a separate world
+  the manifest points into. This is what closes 16.2's open item: the
+  log holds the blobs a version names, through `ref`, the same way it
+  holds everything else.
+
+### 23.2 The policy: newest full, older as reverse delta
+
+One rule for every kind: **the newest entity in a chain is stored full;
+an older one is a reverse delta against the newer one that superseded
+it; a chain is re-anchored with a full entity when the hop count to a
+full one reaches K, or when the patch exceeds a fraction of the full.**
+The hop count is counted across kinds -- a `prop` based on a `skeleton`
+based on another is two hops -- or the bound means nothing. Named
+versions are full anchors, always.
+
+Direction was the decision, because it is what makes trimming cheap or
+expensive:
+
+- Forward (new = patch on old), the first draft: evicting version N --
+  and eviction is oldest-unnamed-first, the common case -- leaves N+1's
+  rows with a dangling base, so either N's rows stay alive and the trim
+  frees nothing, or N+1's changed rows are re-encoded full on every
+  eviction. And the newest version, the one crash recovery and embed
+  want, sits at the end of the longest chain.
+- Reverse (old = patch on new), RCS and git-pack style: taking version
+  N+1 re-encodes N's changed entities against N+1's, on the worker, with
+  N still full at that moment so nothing is reconstructed. Evicting the
+  oldest is dropping a leaf; the newest is always full; a middle
+  eviction leaves the survivor's base alive as an orphan anchor, which
+  is not waste (those are the bytes the survivor needs) and which the
+  K-bound keeps rare. A rebase pass is an optimisation, not a
+  correctness need.
+
+The fraction rule is what lets blobs in without a special case: text
+BREP renumbers, and when `patch-from` finds nothing the patch exceeds
+the fraction and the row stays full. Measure before assuming a blob
+delta ever fires.
+
+For op values the same rule reads: a `set`'s after is what the live
+document holds and what the next op's before will be, so it is the full
+one; the before it superseded becomes a patch against it.
+
+### 23.3 Composites: every container's XML is a skeleton plus parts
+
+Under `SplitXML` (the default, `Document.cpp:1051`; the Gui side splits
+per view provider too, `<Name>.Gui.xml`) every XML entry of the archive
+is one `PropertyContainer`'s serialisation: the document, an object, the
+Gui document, a view provider. Each is written by one loop,
+`PropertyContainer::Save` (`PropertyContainer.cpp:322`), plus what the
+container writes around it -- the `<Properties Count>` element, the
+`<_Property>` status rows, the `<Property name type status>` wrapper
+with the dynamic-property metadata, and for `Document.xml` the document
+attributes and the `<Objects>` list. So one mechanism serves all four:
+
+```
+composite = skeleton entity + ordered [ (property name, part entity) ... ]
+```
+
+The **skeleton** is the container's serialisation with each property
+body replaced by a positional placeholder; the **parts** are the
+property entities the log already has. The XML bytes are never stored:
+checkout materialises them by substitution and hands `restore(dir)` an
+ordinary file, so "a version is a saved file" (16.1) still holds -- it
+is just never stored as one. Two things follow from the placeholders
+being positional rather than hashes:
+
+- The skeleton changes only when the *meta* changes -- a property
+  added, a status bit, a doc string, an object added to the document. A
+  snapshot that only moved values hashes the same skeleton, and its
+  reverse-delta chain has almost nothing in it.
+- Status lives in the skeleton, which every snapshot re-captures by
+  running the loop without the bodies (a few hundred bytes per object,
+  no `Save` calls). No status op is needed.
+
+**The hook.** `Base::Writer` gains a `PropertySink`, sibling of the
+entry sink, consulted inside the loop for each property while the loop
+still writes the wrapper:
+
+```
+lookup(container, name, prop) -> hash   // the log has this value: skip Save
+store(container, name, bytes, files) -> hash   // Save ran: keep the bytes
+```
+
+Two modes of one sink. **Record**, a real save: every property is
+serialised as now, the bytes go to the archive *and* through a
+per-property tap into `store`; the version taken at save is a composite
+for free, and this replaces the entry-level tap of section 21.
+**Compose**, a snapshot into the `NullWriter`: `lookup` hits for every
+property the log has current and its `Save` is not called; only the
+misses -- derived properties under `none`, anything untouched since
+version 1 whose hash the previous composite cannot supply -- run `Save`
+and `store`. `addFile` during a stored `Save` becomes the part's
+`attach` refs; under `BlobRef` the shape's `<Part hash>` fragment
+already is one.
+
+**Shared defaults stay.** The `<Defaults>` block (`docs/DocumentLoad.md`
+6 and 7) is not a storage dedup, which the log now does by hash; it is
+the reader's cost -- 540842 properties to 42233, 4.71s to 0.61s, open
+18.9s to 13.0s on the 17800-object document -- and both files the log
+produces, the save and the checkout, are read by that reader. What
+changes: in compose mode the elision test (`serializeForCompare`,
+`PropertyContainer.cpp:375`) is exactly the `Save` compose mode skips,
+so `SharedDefaults::Entry` records the hash of its `content` and the
+test becomes status, `memSize`, hash. `build()` serialises at canonical
+settings (forced XML, no indentation) while the log captures under
+`CaptureConfig`; the capture of an eligible property is made canonical
+so the two hashes are the same bytes. The elision then also applies at
+checkout, so a materialised version loads as fast as a saved file.
+
+### 23.4 What a snapshot costs now
+
+On the main thread: `Copy()` of the pending properties, which
+`resolvePending` already paid; the skeleton loop per container; `Save`
+of the parts the log has not got. Everything else -- hashing, delta,
+re-anchoring, the store writes -- is the worker's. Decision 8's
+"background job" is reached for everything but the copies, which is as
+far as it can go while only the main thread can read the document.
+
+### 23.5 Trimming under entities
+
+One collector, following `ref` edges from the roots (op refs, version
+composites), replaces `collectValues` and the manager's own refcount
+for what the log holds. Then:
+
+- Evicting the oldest version drops its composites; parts nothing else
+  reaches go. Reverse deltas mean nothing points at them as a base.
+- Evicting a middle version: a part it held that a delta elsewhere uses
+  as `base` stays as an orphan anchor. K bounds how many.
+- Op truncation: a `prop` entity survives while any op, composite or
+  delta references it.
+- `embed()`: named versions are full anchors, so dropping the unnamed
+  ones is a pure delete and the embedded copy is the anchors plus the
+  ops under the 13.3 budget.
+
+### 23.6 Escaping `aboutToSetValue` is a defect (user, 2026-09-23)
+
+A write that reaches a property's value without `aboutToSetValue` was
+a bug before the log existed: it is invisible to undo, to `touch()` and
+so to recompute, to `signalChangedObject` and so to the view provider,
+to expression dependents and to the modified flag. A composed version
+only adds one more reader that notices. The ruling: **the value is
+immutable except through the property; every path that violates that
+is fixed at the site, never accommodated by relaxing a guard.** The
+guards exist to find the sites:
+
+1. **Compile time, by construction.** The public accessors are already
+   const-correct (`getValues()` returns `const ListT&` everywhere, no
+   public non-const reference to internals in `src/App`). What is not:
+   `_lValueList` / `_lValue` are `protected`, and 20 files outside
+   `src/App/Property*` write them (Part `PropertyGeometryList` and
+   `PropertyTopoShape[List]`, Sketcher `PropertyConstraintList`,
+   TechDraw's four cosmetic lists, Mesh, Points, `ViewProviderExt`,
+   `PropertyVisualLayerList`). They go `private`, and the one way to a
+   non-const reference is a guard -- `AtomicPropertyChange` already
+   exists and is `friend`ed as `atomic_change` in these classes --
+   whose constructor is `aboutToSetValue` and destructor `hasSetValue`.
+   Forgetting it does not compile. Second, `PropertyGeometryList` hands
+   out `const std::vector<Geometry*>&` and a `Geometry*` is mutable;
+   Sketcher edits through it (16 `const_cast`s and direct writes). The
+   element becomes `const Geometry*`, with non-const geometry only
+   through the same guard; Sketcher is the biggest whole-array property
+   and the one place a leak would corrupt a composed version silently.
+2. **Run time, the OCCT lock.** `TopoDS_TShape::Bit_Locked`
+   (`TopoDS_TShape.hxx:80`), per TShape, enforced: `BRep_Builder` throws
+   `TopoDS_LockedShape` from 31 sites (`MakeFace`/`MakeEdge`, every
+   `Update*`, `Range`, `Continuity`, `SameParameter`, `SameRange`,
+   `Degenerated`, `NaturalRestriction`), and `Bit_Free` guards topology
+   through `TopoDS_Builder::Add`/`Remove`. `PropertyPartShape::setValue`
+   walks the shape and locks every TShape; FreeCAD uses neither flag
+   today. Not recursive, so it is a walk per `setValue`. One carve-out,
+   in the fork on `LinkVibe-801`: `UpdateFace(face, Poly_Triangulation,
+   reset)`, `UpdateEdge(edge, Poly_Polygon3D)` and `UpdateEdge(edge,
+   Poly_PolygonOnTriangulation, ...)` stay open on a locked shape. The
+   triangulation is a cache, not the value: every writer passes
+   `withTriangles = false` (`TopoShape.cpp:934`,
+   `PropertyTopoShape.cpp:1365`), so it never reaches a blob or a hash;
+   and it cannot go stale, being a pure function of the locked geometry,
+   the tolerances and the requested deflection, the last of which
+   `BRepMesh_IncrementalMesh` already checks and remeshes for.
+   `BRepTools::Clean` through the same carve-out is a cache drop.
+3. **Run time, the audit.** `TransactionLogVerify` (on in debug builds)
+   makes compose mode serialise anyway and compare the hash; a mismatch
+   names the container and property. This is the net for what neither
+   tier can reach: a `Py::Object` a script mutates in place, a
+   `TopoDS_Shape` edited through a `const_cast`, and any other cast.
+
+Some existing code will start throwing or failing to compile when the
+guards go in. That is the bug list, not collateral damage.
+
+### 23.7 Build order
+
+1. The `entity` and `ref` tables, `value`/`attach` migrated onto them,
+   the reader resolving delta chains, the one collector.
+2. Reverse delta at `putValue` for `prop` and `xml`, K and the fraction
+   as preferences (`TransactionLogDeltaHops`, `TransactionLogDeltaRatio`);
+   measured on a sketch drag sequence.
+3. The `PropertySink`, skeletons and composites; the composed snapshot;
+   the hash-based defaults elision; the verify switch; the byte-identity
+   gtest (a composed entry equals the archive's).
+4. The private members and the guard (23.6 tier 1), then
+   `PropertyGeometryList`'s element type as its own commit.
+5. The OCCT lock in `PropertyPartShape::setValue`, with the fork's
+   carve-out.
+6. Blobs through the entity store, deltas gated on the measurement.

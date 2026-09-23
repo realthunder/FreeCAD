@@ -3935,7 +3935,7 @@ bool Document::restoreVersion(int64_t num)
         THROWM(Base::RuntimeError, "cannot create the checkout directory");
     bool haveDocXml = false;
     for (const auto& e : manifest) {
-        if (e.source == "value") {
+        if (e.source == "entity") {
             CapturedValue v;
             if (!log->readValue(e.hash, v))
                 THROWM(Base::RuntimeError, "version entry " + e.entry + " is not in the store");

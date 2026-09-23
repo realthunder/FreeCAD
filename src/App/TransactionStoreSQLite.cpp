@@ -68,16 +68,61 @@ public:
              " cid INTEGER, cname TEXT, ctype TEXT, prop TEXT, ptype TEXT, meta TEXT,"
              " vbefore TEXT, vafter TEXT, derived INTEGER, PRIMARY KEY(txn, idx))");
         exec("CREATE INDEX IF NOT EXISTS op_container ON op(cid, prop)");
-        exec("CREATE TABLE IF NOT EXISTS value(hash TEXT PRIMARY KEY, enc TEXT, tier TEXT,"
-             " size INTEGER, data BLOB, attach TEXT)");
         exec("CREATE TABLE IF NOT EXISTS version(num INTEGER PRIMARY KEY, uuid TEXT, branch TEXT,"
              " kind TEXT, name TEXT, seq INTEGER, env INTEGER, docxml_hash TEXT, schema INTEGER,"
              " created REAL)");
         exec("CREATE INDEX IF NOT EXISTS version_hash ON version(docxml_hash)");
         exec("CREATE TABLE IF NOT EXISTS manifest(version INTEGER, entry TEXT, hash TEXT,"
              " source TEXT, PRIMARY KEY(version, entry))");
-        if (getMeta("schema").empty())
-            setMeta("schema", "1");
+        if (getMeta("schema") == "1")
+            migrateValues();
+        exec("CREATE TABLE IF NOT EXISTS entity(hash TEXT PRIMARY KEY, kind TEXT, enc TEXT,"
+             " base TEXT, tier TEXT, size INTEGER, data BLOB)");
+        exec("CREATE TABLE IF NOT EXISTS ref(entity TEXT, target TEXT, role TEXT, name TEXT,"
+             " seq INTEGER, PRIMARY KEY(entity, role, name, target))");
+        exec("CREATE INDEX IF NOT EXISTS ref_target ON ref(target, role)");
+        if (getMeta("schema").empty() || getMeta("schema") == "1")
+            setMeta("schema", "2");
+    }
+
+    /// Schema 1 kept values in `value(hash, enc, tier, size, data, attach)`
+    /// with the attachment list as lines of `attach`, and the manifest named
+    /// them `source='value'`. Schema 2 is the entity table and the ref edges
+    /// of sec 23.1. A store from the days between is rare (the log has
+    /// shipped in no release) but an embedded copy from one opens again.
+    void migrateValues()
+    {
+        exec("BEGIN");
+        try {
+            exec("CREATE TABLE IF NOT EXISTS entity(hash TEXT PRIMARY KEY, kind TEXT, enc TEXT,"
+                 " base TEXT, tier TEXT, size INTEGER, data BLOB)");
+            exec("CREATE TABLE IF NOT EXISTS ref(entity TEXT, target TEXT, role TEXT, name TEXT,"
+                 " seq INTEGER, PRIMARY KEY(entity, role, name, target))");
+            exec("INSERT OR IGNORE INTO entity(hash,kind,enc,base,tier,size,data)"
+                 " SELECT hash,'prop',enc,'',tier,size,data FROM value");
+            // An attachment is a value with no attachments of its own that
+            // some other value's list names; mark those `attach`.
+            exec("WITH RECURSIVE lines(hash, rest, line, seq) AS ("
+                 "  SELECT hash, attach || char(10), '', -1 FROM value WHERE attach<>''"
+                 "  UNION ALL"
+                 "  SELECT hash, substr(rest, instr(rest, char(10)) + 1),"
+                 "         substr(rest, 1, instr(rest, char(10)) - 1), seq + 1"
+                 "  FROM lines WHERE rest<>'')"
+                 " INSERT OR IGNORE INTO ref(entity,target,role,name,seq)"
+                 " SELECT hash, substr(line, 1, 40), 'attach', substr(line, 42), seq"
+                 " FROM lines WHERE line<>''");
+            exec("UPDATE entity SET kind='attach' WHERE hash IN"
+                 " (SELECT target FROM ref WHERE role='attach')");
+            exec("UPDATE entity SET kind='xml' WHERE hash IN"
+                 " (SELECT hash FROM manifest WHERE source='value')");
+            exec("UPDATE manifest SET source='entity' WHERE source='value'");
+            exec("DROP TABLE value");
+            exec("COMMIT");
+        }
+        catch (...) {
+            exec("ROLLBACK");
+            throw;
+        }
     }
 
     ~SQLiteStore() override
@@ -151,56 +196,108 @@ public:
         step(s);
     }
 
-    bool hasValue(const std::string& hash) override
+    bool hasEntity(const std::string& hash) override
     {
-        auto s = prepare("SELECT 1 FROM value WHERE hash=?");
+        auto s = prepare("SELECT 1 FROM entity WHERE hash=?");
         bindText(s, 1, hash);
         bool found = sqlite3_step(s) == SQLITE_ROW;
         sqlite3_reset(s);
         return found;
     }
 
-    void putValue(const LogValue& v) override
+    void putEntity(const LogEntity& e) override
     {
-        auto s = prepare("INSERT OR IGNORE INTO value(hash,enc,tier,size,data,attach)"
-                         " VALUES(?,?,?,?,?,?)");
-        bindText(s, 1, v.hash);
-        bindText(s, 2, v.enc);
-        bindText(s, 3, v.tier);
-        sqlite3_bind_int64(s, 4, static_cast<sqlite3_int64>(v.size));
-        sqlite3_bind_blob(s, 5, v.data.data(), static_cast<int>(v.data.size()), SQLITE_TRANSIENT);
-        std::string attach;
-        for (auto& a : v.attachments)
-            attach += a.second + ' ' + a.first + '\n';
-        bindText(s, 6, attach);
-        step(s);
+        exec("BEGIN");
+        try {
+            auto s = prepare("INSERT OR IGNORE INTO entity(hash,kind,enc,base,tier,size,data)"
+                             " VALUES(?,?,?,?,?,?,?)");
+            bindText(s, 1, e.hash);
+            bindText(s, 2, e.kind);
+            bindText(s, 3, e.enc);
+            bindText(s, 4, e.base);
+            bindText(s, 5, e.tier);
+            sqlite3_bind_int64(s, 6, static_cast<sqlite3_int64>(e.size));
+            sqlite3_bind_blob(s, 7, e.data.data(), static_cast<int>(e.data.size()),
+                              SQLITE_TRANSIENT);
+            step(s);
+            // A hash already there keeps its refs too: same content, same
+            // edges. Only a new row writes them.
+            if (sqlite3_changes(db) > 0) {
+                int seq = 0;
+                for (const auto& r : e.refs)
+                    insertRef(e.hash, r, seq++);
+                if (e.enc == "delta" && !e.base.empty())
+                    insertRef(e.hash, LogRef {e.base, "base", ""}, seq++);
+            }
+            exec("COMMIT");
+        }
+        catch (...) {
+            exec("ROLLBACK");
+            throw;
+        }
     }
 
-    bool getValue(const std::string& hash, LogValue& v) override
+    bool getEntity(const std::string& hash, LogEntity& e) override
     {
-        auto s = prepare("SELECT enc,tier,size,data,attach FROM value WHERE hash=?");
+        auto s = prepare("SELECT kind,enc,base,tier,size,data FROM entity WHERE hash=?");
         bindText(s, 1, hash);
         if (sqlite3_step(s) != SQLITE_ROW) {
             sqlite3_reset(s);
             return false;
         }
-        v.hash = hash;
-        v.enc = text(s, 0);
-        v.tier = text(s, 1);
-        v.size = static_cast<uint64_t>(sqlite3_column_int64(s, 2));
-        const void* blob = sqlite3_column_blob(s, 3);
-        int n = sqlite3_column_bytes(s, 3);
-        v.data.assign(static_cast<const char*>(blob), blob ? n : 0);
-        v.attachments.clear();
-        std::istringstream attach(text(s, 4));
-        std::string line;
-        while (std::getline(attach, line)) {
-            auto sp = line.find(' ');
-            if (sp != std::string::npos)
-                v.attachments.emplace_back(line.substr(sp + 1), line.substr(0, sp));
-        }
+        e.hash = hash;
+        e.kind = text(s, 0);
+        e.enc = text(s, 1);
+        e.base = text(s, 2);
+        e.tier = text(s, 3);
+        e.size = static_cast<uint64_t>(sqlite3_column_int64(s, 4));
+        const void* blob = sqlite3_column_blob(s, 5);
+        int n = sqlite3_column_bytes(s, 5);
+        e.data.assign(static_cast<const char*>(blob), blob ? n : 0);
         sqlite3_reset(s);
+        e.refs.clear();
+        auto r = prepare("SELECT target,role,name FROM ref WHERE entity=? AND role<>'base'"
+                         " ORDER BY seq");
+        bindText(r, 1, hash);
+        while (sqlite3_step(r) == SQLITE_ROW)
+            e.refs.push_back(LogRef {text(r, 0), text(r, 1), text(r, 2)});
+        sqlite3_reset(r);
         return true;
+    }
+
+    void reencodeEntity(const std::string& hash, const std::string& enc,
+                        const std::string& base, const std::string& data) override
+    {
+        exec("BEGIN");
+        try {
+            auto s = prepare("UPDATE entity SET enc=?, base=?, data=? WHERE hash=?");
+            bindText(s, 1, enc);
+            bindText(s, 2, base);
+            sqlite3_bind_blob(s, 3, data.data(), static_cast<int>(data.size()), SQLITE_TRANSIENT);
+            bindText(s, 4, hash);
+            step(s);
+            s = prepare("DELETE FROM ref WHERE entity=? AND role='base'");
+            bindText(s, 1, hash);
+            step(s);
+            if (enc == "delta" && !base.empty())
+                insertRef(hash, LogRef {base, "base", ""}, 1 << 30);
+            exec("COMMIT");
+        }
+        catch (...) {
+            exec("ROLLBACK");
+            throw;
+        }
+    }
+
+    std::vector<std::string> basedOn(const std::string& hash) override
+    {
+        auto s = prepare("SELECT entity FROM ref WHERE target=? AND role='base'");
+        bindText(s, 1, hash);
+        std::vector<std::string> out;
+        while (sqlite3_step(s) == SQLITE_ROW)
+            out.push_back(text(s, 0));
+        sqlite3_reset(s);
+        return out;
     }
 
     std::vector<LogTransaction> transactions(int64_t from, int limit) override
@@ -274,7 +371,7 @@ public:
             s = prepare("DELETE FROM txn WHERE seq<?");
             sqlite3_bind_int64(s, 1, before);
             step(s);
-            collectValues();
+            collectEntities();
             exec("COMMIT");
         }
         catch (...) {
@@ -283,21 +380,31 @@ public:
         }
     }
 
-    /// Delete the values nothing refers to: not an op ref, not a manifest
-    /// entry, not an attachment (any line of `attach`) of a value that stays.
-    /// Inside the caller's transaction.
-    void collectValues()
+    /// The one collector (sec 23.5): delete every entity not reachable from
+    /// a root -- an op's ref or a manifest entry -- over the ref edges, of
+    /// every role. A delta's base and a composite's parts are held the
+    /// same way an attachment is. Inside the caller's transaction.
+    void collectEntities()
     {
-        exec("WITH RECURSIVE lines(rest, line) AS ("
-             "  SELECT attach || char(10), '' FROM value WHERE attach<>''"
-             "  UNION ALL"
-             "  SELECT substr(rest, instr(rest, char(10)) + 1),"
-             "         substr(rest, 1, instr(rest, char(10)) - 1)"
-             "  FROM lines WHERE rest<>'')"
-             " DELETE FROM value WHERE hash NOT IN (SELECT vbefore FROM op)"
-             " AND hash NOT IN (SELECT vafter FROM op)"
-             " AND hash NOT IN (SELECT hash FROM manifest WHERE source='value')"
-             " AND hash NOT IN (SELECT substr(line, 1, 40) FROM lines WHERE line<>'')");
+        exec("WITH RECURSIVE live(hash) AS ("
+             "  SELECT vbefore FROM op WHERE vbefore<>''"
+             "  UNION SELECT vafter FROM op WHERE vafter<>''"
+             "  UNION SELECT hash FROM manifest WHERE source='entity'"
+             "  UNION SELECT r.target FROM ref r JOIN live ON r.entity=live.hash)"
+             " DELETE FROM entity WHERE hash NOT IN (SELECT hash FROM live)");
+        exec("DELETE FROM ref WHERE entity NOT IN (SELECT hash FROM entity)");
+    }
+
+    void insertRef(const std::string& entity, const LogRef& r, int seq)
+    {
+        auto s = prepare("INSERT OR IGNORE INTO ref(entity,target,role,name,seq)"
+                         " VALUES(?,?,?,?,?)");
+        bindText(s, 1, entity);
+        bindText(s, 2, r.target);
+        bindText(s, 3, r.role);
+        bindText(s, 4, r.name);
+        sqlite3_bind_int(s, 5, seq);
+        step(s);
     }
 
     void copyTo(const std::string& path) override
@@ -311,11 +418,16 @@ public:
     {
         exec("BEGIN");
         try {
-            auto s = prepare("DELETE FROM value WHERE tier=?"
-                             " AND hash NOT IN (SELECT hash FROM manifest WHERE source='value')");
+            // Not one a manifest reaches, and not one a surviving delta is
+            // based on: the base of a cache-tier chain is what the durable
+            // row above it decodes through.
+            auto s = prepare("DELETE FROM entity WHERE tier=?"
+                             " AND hash NOT IN (SELECT hash FROM manifest WHERE source='entity')"
+                             " AND hash NOT IN (SELECT target FROM ref WHERE role='base')");
             bindText(s, 1, tier);
             step(s);
-            collectValues();
+            exec("DELETE FROM ref WHERE entity NOT IN (SELECT hash FROM entity)");
+            collectEntities();
             exec("COMMIT");
         }
         catch (...) {
@@ -344,7 +456,7 @@ public:
             s = prepare("DELETE FROM version WHERE num=?");
             sqlite3_bind_int64(s, 1, num);
             step(s);
-            collectValues();
+            collectEntities();
             exec("COMMIT");
         }
         catch (...) {

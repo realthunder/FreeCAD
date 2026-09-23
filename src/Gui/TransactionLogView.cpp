@@ -427,7 +427,7 @@ void TransactionLogView::onManifestSelected()
     auto item = items.front();
     const std::string hash = item->text(ManHash).toStdString();
     QString text = QStringLiteral("== %1 %2\n").arg(item->text(ManEntry), item->text(ManHash));
-    if (item->text(ManSource) == QLatin1String("value")) {
+    if (item->text(ManSource) == QLatin1String("entity")) {
         // An XML entry, held whole as a value.
         App::CapturedValue v;
         auto l = log();

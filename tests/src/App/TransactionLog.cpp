@@ -456,7 +456,7 @@ TEST_F(TransactionLogTest, saveRecordAndVersion)
     ASSERT_GE(manifest.size(), 1u);
     EXPECT_EQ(manifest[0].entry, "Document.xml");
     EXPECT_EQ(manifest[0].hash, v.docxml_hash);
-    EXPECT_EQ(manifest[0].source, "value");
+    EXPECT_EQ(manifest[0].source, "entity");
 
     // A file on disk is matched to its version by that hash.
     App::LogVersion found;
@@ -476,7 +476,7 @@ TEST_F(TransactionLogTest, saveRecordAndVersion)
 
     // Truncation keeps the value a manifest names.
     store.truncate(save.seq);
-    EXPECT_TRUE(store.hasValue(v.docxml_hash));
+    EXPECT_TRUE(store.hasEntity(v.docxml_hash));
 
     Base::FileInfo(path).deleteFile();
 }
@@ -657,15 +657,15 @@ TEST_F(TransactionLogTest, evictsUnnamedVersions)
     EXPECT_EQ(versions[1].num, 5);
     EXPECT_TRUE(store.manifest(1).empty());
     EXPECT_TRUE(store.manifest(4).empty());
-    EXPECT_FALSE(store.hasValue(docxml[0]));
-    EXPECT_FALSE(store.hasValue(docxml[1]));
-    EXPECT_TRUE(store.hasValue(docxml[2]));
-    EXPECT_FALSE(store.hasValue(docxml[3]));
+    EXPECT_FALSE(store.hasEntity(docxml[0]));
+    EXPECT_FALSE(store.hasEntity(docxml[1]));
+    EXPECT_TRUE(store.hasEntity(docxml[2]));
+    EXPECT_FALSE(store.hasEntity(docxml[3]));
     // Ops are never evicted, nor their values: the edits' before refs read.
     for (auto& t : store.transactions()) {
         for (auto& o : store.ops(t.seq)) {
             if (!o.vbefore.empty())
-                EXPECT_TRUE(store.hasValue(o.vbefore)) << t.seq;
+                EXPECT_TRUE(store.hasEntity(o.vbefore)) << t.seq;
         }
     }
     EXPECT_GE(store.transactions().size(), 9u);
@@ -790,7 +790,7 @@ TEST_F(TransactionLogTest, embeddedHistoryRoundTrips)
             continue;
         for (auto& o : store.ops(t.seq)) {
             if (!o.vbefore.empty()) {
-                EXPECT_TRUE(store.hasValue(o.vbefore));
+                EXPECT_TRUE(store.hasEntity(o.vbefore));
                 sawValue = true;
             }
         }
@@ -828,3 +828,76 @@ TEST_F(TransactionLogTest, embeddedHistoryRoundTrips)
 }
 
 }  // namespace
+
+// Sec 23.1 / 23.2: an entity re-encoded as a delta against another reads
+// back the same bytes under the same hash, a chain decodes through its
+// bases, and the collector holds a base for as long as a delta needs it.
+TEST_F(TransactionLogTest, deltaChainReadsAndHolds)
+{
+    std::string base(4000, 'a');
+    for (size_t i = 0; i < base.size(); i += 97)
+        base[i] = 'b' + (i % 20);
+    std::string mid = base;
+    mid.replace(1000, 10, "MIDDLE----");
+    std::string top = mid;
+    top.replace(3000, 10, "TOP-------");
+
+    std::string patch;
+    ASSERT_TRUE(App::TransactionLog::deltaEncode(mid, top, patch));
+    EXPECT_LT(patch.size(), 400u);
+    std::string back;
+    ASSERT_TRUE(App::TransactionLog::deltaDecode(patch, top, mid.size(), back));
+    EXPECT_EQ(back, mid);
+
+    // Three xml entities as three versions would hold them: the newest is
+    // full, the two older ones are reverse deltas toward it.
+    auto& l = log();
+    auto& store = l.store();
+    auto put = [&](const std::string& bytes) {
+        App::CapturedValue v;
+        v.fragment = bytes;
+        v.ok = true;
+        // putValue is the worker's; a flushed store with no worker job
+        // in flight is the same thing for a test.
+        App::LogEntity e;
+        e.kind = "xml";
+        e.hash = App::hashBytes(bytes);
+        e.size = bytes.size();
+        e.data = bytes;
+        store.putEntity(e);
+        return e.hash;
+    };
+    const std::string hBase = put(base), hMid = put(mid), hTop = put(top);
+    std::string p;
+    ASSERT_TRUE(App::TransactionLog::deltaEncode(mid, top, p));
+    store.reencodeEntity(hMid, "delta", hTop, p);
+    ASSERT_TRUE(App::TransactionLog::deltaEncode(base, mid, p));
+    store.reencodeEntity(hBase, "delta", hMid, p);
+
+    App::LogEntity e;
+    ASSERT_TRUE(store.getEntity(hBase, e));
+    EXPECT_EQ(e.enc, "delta");
+    EXPECT_EQ(e.base, hMid);
+    EXPECT_EQ(store.basedOn(hMid), std::vector<std::string> {hBase});
+    std::string bytes;
+    ASSERT_TRUE(l.readBytes(hBase, bytes));
+    EXPECT_EQ(bytes, base);
+    ASSERT_TRUE(l.readBytes(hMid, bytes));
+    EXPECT_EQ(bytes, mid);
+
+    // Only the oldest is rooted (a manifest names it); the collector must
+    // keep both bases it decodes through, and drop them once it goes.
+    App::LogVersion v;
+    v.seq = store.lastSeq();
+    store.addVersion(v, {{"Document.xml", hBase, "entity"}});
+    store.truncate(store.lastSeq() + 1);
+    EXPECT_TRUE(store.hasEntity(hBase));
+    EXPECT_TRUE(store.hasEntity(hMid));
+    EXPECT_TRUE(store.hasEntity(hTop));
+    ASSERT_TRUE(l.readBytes(hBase, bytes));
+    EXPECT_EQ(bytes, base);
+    store.evictVersion(v.num);
+    EXPECT_FALSE(store.hasEntity(hBase));
+    EXPECT_FALSE(store.hasEntity(hMid));
+    EXPECT_FALSE(store.hasEntity(hTop));
+}

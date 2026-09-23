@@ -130,10 +130,15 @@ public:
     { return inner().append(txn, ops); }
     void resolveAfter(int64_t txn, int idx, const std::string& hash) override
     { inner().resolveAfter(txn, idx, hash); }
-    bool hasValue(const std::string& hash) override { return inner().hasValue(hash); }
-    void putValue(const LogValue& value) override { inner().putValue(value); }
-    bool getValue(const std::string& hash, LogValue& value) override
-    { return inner().getValue(hash, value); }
+    bool hasEntity(const std::string& hash) override { return inner().hasEntity(hash); }
+    void putEntity(const LogEntity& entity) override { inner().putEntity(entity); }
+    bool getEntity(const std::string& hash, LogEntity& entity) override
+    { return inner().getEntity(hash, entity); }
+    void reencodeEntity(const std::string& hash, const std::string& enc,
+                        const std::string& base, const std::string& data) override
+    { inner().reencodeEntity(hash, enc, base, data); }
+    std::vector<std::string> basedOn(const std::string& hash) override
+    { return inner().basedOn(hash); }
     std::vector<LogTransaction> transactions(int64_t from, int limit) override
     { return inner().transactions(from, limit); }
     std::vector<LogOp> ops(int64_t txn) override { return inner().ops(txn); }
@@ -534,20 +539,17 @@ int64_t TransactionLog::snapshot(const char* kind, const std::string& path,
         const size_t nblobs = blobs.size();
         const long keep = DocumentParams::getTransactionLogKeepVersions();
         post([this, v, t, entries, blobs, schema, escaped, nblobs, keep]() mutable {
-            // Each XML entry is a value like any other, durable: the
-            // version is the one place a whole file is kept (sec 16.1).
-            // With no attachments a ref is the SHA-1 of the bytes, which
-            // is also the hash a file on disk is matched by.
+            // Each XML entry is an entity like any other, durable: the
+            // version is the one place a whole file is kept (sec 16.1,
+            // until the composites of sec 23.3). Its hash is the SHA-1 of
+            // the bytes, which is also what a file on disk is matched by.
             std::vector<LogManifestEntry> manifest;
             std::string docHash;
             for (const auto& e : entries) {
-                CapturedValue xml;
-                xml.fragment = e.second;
-                xml.ok = true;
-                const std::string hash = putValue(xml, "durable");
+                const std::string hash = putBytes(e.second, "xml", "durable");
                 if (docHash.empty())
                     docHash = hash;   // Document.xml, first by contract
-                manifest.push_back({e.first, hash, "value"});
+                manifest.push_back({e.first, hash, "entity"});
             }
             v.docxml_hash = docHash;
             for (const auto& b : blobs)
@@ -598,99 +600,184 @@ void TransactionLog::evictVersions(long keep)
     }
 }
 
-std::string TransactionLog::putValue(const CapturedValue& value, const std::string& tier)
+namespace {
+
+/// zstd at level 3 for anything over 128 bytes; smaller stays raw.
+void compressInto(LogEntity& e, const std::string& bytes)
 {
-    LogValue v;
-    v.tier = tier;
-    // Attachments first, each its own value: a fragment that changes while
-    // its geometry does not (a move at schema 5) shares the geometry.
-    for (auto& a : value.attachments) {
-        LogValue av;
-        av.tier = tier;
-        av.hash = hashBytes(a.bytes);
-        v.attachments.emplace_back(a.name, av.hash);
-        if (_store->hasValue(av.hash))
-            continue;
-        av.size = a.bytes.size();
-        av.data = a.bytes;
+    e.size = bytes.size();
+    e.data = bytes;
+    e.enc = "raw";
 #ifdef FC_HAVE_ZSTD
-        if (a.bytes.size() > 128) {
-            std::string out(ZSTD_compressBound(a.bytes.size()), '\0');
-            size_t n = ZSTD_compress(out.data(), out.size(), a.bytes.data(), a.bytes.size(), 3);
-            if (!ZSTD_isError(n)) {
-                out.resize(n);
-                av.data = std::move(out);
-                av.enc = "zstd";
-            }
-        }
-#endif
-        _store->putValue(av);
-    }
-    std::string keyed = value.fragment;
-    for (auto& a : v.attachments) {
-        keyed += '\0';
-        keyed += a.first;
-        keyed += '\0';
-        keyed += a.second;
-    }
-    v.hash = hashBytes(keyed);
-    if (_store->hasValue(v.hash))
-        return v.hash;
-    v.size = value.fragment.size();
-    v.data = value.fragment;
-#ifdef FC_HAVE_ZSTD
-    if (value.fragment.size() > 128) {
-        std::string out(ZSTD_compressBound(value.fragment.size()), '\0');
-        size_t n = ZSTD_compress(out.data(), out.size(), value.fragment.data(),
-                                 value.fragment.size(), 3);
+    if (bytes.size() > 128) {
+        std::string out(ZSTD_compressBound(bytes.size()), '\0');
+        size_t n = ZSTD_compress(out.data(), out.size(), bytes.data(), bytes.size(), 3);
         if (!ZSTD_isError(n)) {
             out.resize(n);
-            v.data = std::move(out);
-            v.enc = "zstd";
+            e.data = std::move(out);
+            e.enc = "zstd";
         }
     }
 #endif
-    _store->putValue(v);
-    return v.hash;
 }
 
-namespace {
-bool inflate(LogValue& v, std::string& out)
+#ifdef FC_HAVE_ZSTD
+/// The window has to cover the whole base for a match anywhere in it to
+/// be found (zstd's --patch-from sets it the same way).
+int windowLogFor(size_t baseSize)
 {
-    if (v.enc == "raw") {
-        out = std::move(v.data);
-        return true;
+    const ZSTD_bounds bounds = ZSTD_cParam_getBounds(ZSTD_c_windowLog);
+    int log = bounds.lowerBound;
+    while ((size_t(1) << log) < baseSize && log < bounds.upperBound)
+        ++log;
+    return log;
+}
+#endif
+
+} // namespace
+
+bool TransactionLog::deltaEncode(const std::string& bytes, const std::string& base,
+                                 std::string& patch)
+{
+#ifdef FC_HAVE_ZSTD
+    std::unique_ptr<ZSTD_CCtx, size_t (*)(ZSTD_CCtx*)> cctx(ZSTD_createCCtx(), ZSTD_freeCCtx);
+    if (!cctx)
+        return false;
+    ZSTD_CCtx_setParameter(cctx.get(), ZSTD_c_compressionLevel, 3);
+    ZSTD_CCtx_setParameter(cctx.get(), ZSTD_c_windowLog, windowLogFor(base.size() + bytes.size()));
+    ZSTD_CCtx_setParameter(cctx.get(), ZSTD_c_enableLongDistanceMatching, 1);
+    if (ZSTD_isError(ZSTD_CCtx_refPrefix(cctx.get(), base.data(), base.size())))
+        return false;
+    patch.assign(ZSTD_compressBound(bytes.size()), '\0');
+    size_t n = ZSTD_compress2(cctx.get(), patch.data(), patch.size(), bytes.data(), bytes.size());
+    if (ZSTD_isError(n))
+        return false;
+    patch.resize(n);
+    return true;
+#else
+    (void)bytes; (void)base; (void)patch;
+    return false;
+#endif
+}
+
+bool TransactionLog::deltaDecode(const std::string& patch, const std::string& base,
+                                 size_t size, std::string& bytes)
+{
+#ifdef FC_HAVE_ZSTD
+    std::unique_ptr<ZSTD_DCtx, size_t (*)(ZSTD_DCtx*)> dctx(ZSTD_createDCtx(), ZSTD_freeDCtx);
+    if (!dctx)
+        return false;
+    ZSTD_DCtx_setParameter(dctx.get(), ZSTD_d_windowLogMax,
+                           ZSTD_dParam_getBounds(ZSTD_d_windowLogMax).upperBound);
+    if (ZSTD_isError(ZSTD_DCtx_refPrefix(dctx.get(), base.data(), base.size())))
+        return false;
+    bytes.assign(size, '\0');
+    size_t n = ZSTD_decompressDCtx(dctx.get(), bytes.data(), bytes.size(),
+                                   patch.data(), patch.size());
+    if (ZSTD_isError(n))
+        return false;
+    bytes.resize(n);
+    return true;
+#else
+    (void)patch; (void)base; (void)size; (void)bytes;
+    return false;
+#endif
+}
+
+std::string TransactionLog::putValue(const CapturedValue& value, const std::string& tier)
+{
+    LogEntity e;
+    e.kind = "prop";
+    e.tier = tier;
+    // Attachments first, each its own entity: a fragment that changes while
+    // its geometry does not (a move at schema 5) shares the geometry.
+    for (auto& a : value.attachments) {
+        LogEntity ae;
+        ae.kind = "attach";
+        ae.tier = tier;
+        ae.hash = hashBytes(a.bytes);
+        e.refs.push_back(LogRef {ae.hash, "attach", a.name});
+        if (_store->hasEntity(ae.hash))
+            continue;
+        compressInto(ae, a.bytes);
+        _store->putEntity(ae);
+    }
+    std::string keyed = value.fragment;
+    for (auto& r : e.refs) {
+        keyed += '\0';
+        keyed += r.name;
+        keyed += '\0';
+        keyed += r.target;
+    }
+    e.hash = hashBytes(keyed);
+    if (_store->hasEntity(e.hash))
+        return e.hash;
+    compressInto(e, value.fragment);
+    _store->putEntity(e);
+    return e.hash;
+}
+
+std::string TransactionLog::putBytes(const std::string& bytes, const std::string& kind,
+                                     const std::string& tier)
+{
+    LogEntity e;
+    e.kind = kind;
+    e.tier = tier;
+    e.hash = hashBytes(bytes);
+    if (_store->hasEntity(e.hash))
+        return e.hash;
+    compressInto(e, bytes);
+    _store->putEntity(e);
+    return e.hash;
+}
+
+/// The full bytes of an entity, decoding a delta chain base first (sec
+/// 23.2). `depth` guards a cycle a corrupt store could hold.
+bool TransactionLog::readBytes(const std::string& hash, std::string& out, LogEntity* entity,
+                               int depth)
+{
+    LogEntity e;
+    if (!_store->getEntity(hash, e))
+        return false;
+    bool ok = false;
+    if (e.enc == "raw") {
+        out = std::move(e.data);
+        ok = true;
     }
 #ifdef FC_HAVE_ZSTD
-    if (v.enc == "zstd") {
-        out.assign(v.size, '\0');
-        size_t n = ZSTD_decompress(out.data(), out.size(), v.data.data(), v.data.size());
-        if (ZSTD_isError(n))
-            return false;
-        out.resize(n);
-        return true;
+    else if (e.enc == "zstd") {
+        out.assign(e.size, '\0');
+        size_t n = ZSTD_decompress(out.data(), out.size(), e.data.data(), e.data.size());
+        ok = !ZSTD_isError(n);
+        if (ok)
+            out.resize(n);
     }
 #endif
-    return false;
+    else if (e.enc == "delta" && depth < 1024) {
+        std::string base;
+        ok = readBytes(e.base, base, nullptr, depth + 1)
+            && deltaDecode(e.data, base, e.size, out);
+    }
+    if (ok && entity) {
+        e.data.clear();
+        *entity = std::move(e);
+    }
+    return ok;
 }
-} // namespace
 
 bool TransactionLog::readValue(const std::string& hash, CapturedValue& out)
 {
     flush();
-    LogValue v;
-    if (!_store->getValue(hash, v))
-        return false;
+    LogEntity e;
     out = CapturedValue();
-    if (!inflate(v, out.fragment))
+    if (!readBytes(hash, out.fragment, &e))
         return false;
-    for (auto& a : v.attachments) {
-        LogValue av;
-        if (!_store->getValue(a.second, av))
-            return false;
+    for (auto& r : e.refs) {
+        if (r.role != "attach")
+            continue;
         CapturedValue::Attachment att;
-        att.name = a.first;
-        if (!inflate(av, att.bytes))
+        att.name = r.name;
+        if (!readBytes(r.target, att.bytes))
             return false;
         out.attachments.push_back(std::move(att));
     }
