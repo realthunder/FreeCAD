@@ -2102,19 +2102,29 @@ guards exist to find the sites:
    `TopoDS_LockedShape` from 31 sites (`MakeFace`/`MakeEdge`, every
    `Update*`, `Range`, `Continuity`, `SameParameter`, `SameRange`,
    `Degenerated`, `NaturalRestriction`), and `Bit_Free` guards topology
-   through `TopoDS_Builder::Add`/`Remove`. `PropertyPartShape::setValue`
-   walks the shape and locks every TShape; FreeCAD uses neither flag
-   today. Not recursive, so it is a walk per `setValue`. One carve-out,
-   in the fork on `LinkVibe-801`: `UpdateFace(face, Poly_Triangulation,
-   reset)`, `UpdateEdge(edge, Poly_Polygon3D)` and `UpdateEdge(edge,
-   Poly_PolygonOnTriangulation, ...)` stay open on a locked shape. The
-   triangulation is a cache, not the value: every writer passes
-   `withTriangles = false` (`TopoShape.cpp:934`,
-   `PropertyTopoShape.cpp:1365`), so it never reaches a blob or a hash;
-   and it cannot go stale, being a pure function of the locked geometry,
-   the tolerances and the requested deflection, the last of which
-   `BRepMesh_IncrementalMesh` already checks and remeshes for.
-   `BRepTools::Clean` through the same carve-out is a cache drop.
+   through `TopoDS_Builder::Add`/`Remove`. FreeCAD uses neither flag
+   today. But `Locked` also refuses `UpdateFace(face, Poly_Triangulation)`
+   and the edge-polygon `UpdateEdge` overloads, which is what `BRepMesh`
+   writes through, so a shape locked as a value could not be displayed.
+   Rather than change what `Locked` means (user, 2026-09-23: keep
+   upstream's flag intact), the fork on `LinkVibe-801` adds a bit of its
+   own: **`Bit_Immutable` (0x1000), `TopoDS_TShape::Immutable()` and
+   `TopoDS_Shape::Immutable()`**. Every geometry, tolerance, range, flag
+   and topology setter that checks `Locked()` checks `Immutable()` too
+   (25 sites in `BRep_Builder`, `BRepTools::UpdateFaceUVPoints`, and
+   `TopoDS_Builder::Add`/`Remove` throwing `TopoDS_FrozenShape`); the six
+   cache setters -- face triangulation, `Poly_Polygon3D`,
+   `Poly_PolygonOnTriangulation` (one and two), `Poly_Polygon2D` (one and
+   two) -- do not. No temporary unlock anywhere: the flag is set once by
+   `PropertyPartShape::setValue` (step 5), walking every TShape since the
+   flag is not recursive, and never cleared. The triangulation is a
+   cache, not the value: every writer passes `withTriangles = false`
+   (`TopoShape.cpp:934`, `PropertyTopoShape.cpp:1365`), so it never
+   reaches a blob or a hash; and it cannot go stale, being a pure
+   function of the frozen geometry, the tolerances and the requested
+   deflection, the last of which `BRepMesh_IncrementalMesh` already
+   checks and remeshes for. `BRepTools::Clean` through the same setters
+   is a cache drop.
 3. **Run time, the audit.** `TransactionLogVerify` (on in debug builds)
    makes compose mode serialise anyway and compare the hash; a mismatch
    names the container and property. This is the net for what neither
@@ -2136,8 +2146,8 @@ guards go in. That is the bug list, not collateral damage.
    gtest (a composed entry equals the archive's).
 4. The private members and the guard (23.6 tier 1), then
    `PropertyGeometryList`'s element type as its own commit.
-5. The OCCT lock in `PropertyPartShape::setValue`, with the fork's
-   carve-out.
+5. `PropertyPartShape::setValue` setting `Immutable` on every TShape
+   (the fork side is built, 23.8).
 6. Blobs through the entity store, deltas gated on the measurement.
 
 ### 23.8 Steps 1 and 2 as built (2026-09-23)
@@ -2184,3 +2194,18 @@ One consequence the eviction gtest now states: a named version whose
 entity alive as its anchor after the next version is evicted (23.5's
 orphan). Not measured yet: the ratio on real sketch geometry and BREP,
 which is what steps 2's and 6's gates are for.
+
+**The OCCT side of step 5, as built** (2026-09-23, occt commit
+5d38403287 on `LinkVibe-801`). `Bit_Immutable` as 23.6 describes;
+`TopoDS_TShape.hxx`, `TopoDS_Shape.hxx`, `BRep_Builder.cxx` (25 sites),
+`BRepTools.cxx`, `TopoDS_Builder.cxx`. The Part gtest
+`ImmutableShapeTest.meshesButRefusesEdits` sets the flag on every
+TShape of a box, meshes it with `BRepMesh_IncrementalMesh` and finds
+the triangulation, then sees `UpdateFace(tol)`, `UpdateEdge(tol)`,
+`Range` throw `TopoDS_LockedShape` and `Add`/`Remove` throw
+`TopoDS_FrozenShape`, with `Locked()` still false. One thing to watch
+when `PropertyPartShape::setValue` starts setting it: a mesher that
+"fixes" a shape on the way -- `BRepMesh_ShapeTool::CheckAndUpdateFlags`
+writes `SameParameter`/`SameRange` when it finds them wrong -- will now
+throw instead. That is 23.6's rule in action (the fix belongs where the
+shape was made), not a reason to widen the carve-out.
