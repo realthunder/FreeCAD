@@ -401,8 +401,17 @@ SoFCUnifiedSelection::SoFCUnifiedSelection()
 
     this->renderCaching = ViewParams::isUsingRenderer() ?
         SoSeparator::OFF : SoSeparator::ON;
-    this->boundingBoxCaching = ViewParams::isUsingRenderer() ?
-        SoSeparator::OFF : SoSeparator::ON;
+    // Bounding boxes cache in either mode, unlike the render caches: a
+    // bounding-box cache is the only thing SoSeparator::rayPick culls
+    // with, and with it off every pick in render cache mode 3 -- the mode
+    // the renderer and every served view run in -- walked every object in
+    // the document, a ray a kilometre away costing what a hit costs.
+    //
+    // What the renderer draws and Coin does not is still counted every
+    // traversal: those bounds arrive through the viewer's
+    // onGetBoundingBox above, which runs ahead of the cache and is never
+    // part of it.
+    this->boundingBoxCaching = SoSeparator::ON;
 
     this->useNewSelection = ViewParams::getUseNewSelection();
 
@@ -458,30 +467,22 @@ void SoFCUnifiedSelection::getBoundingBox(SoGetBoundingBoxAction * action)
     if (pimpl->pcViewer)
         pimpl->pcViewer->onGetBoundingBox(action);
 
-    if (pimpl->useRenderer() && pimpl->manager.getSceneNodeId() == getNodeId()) {
-        bool usecache = true;
-        switch (action->getCurPathCode()) {
-        case SoAction::IN_PATH:
-            usecache = false;
-            break;
-        case SoAction::OFF_PATH:
-            return; // no need to do any more work
-        case SoAction::BELOW_PATH:
-        case SoAction::NO_PATH:
-            if (action->isInCameraSpace() || action->isResetPath())
-                usecache = false;
-            break;
-        default:
-            return;
-        }
-        if (usecache) {
-            SbBox3f bbox;
-            pimpl->manager.getBoundingBox(bbox);
-            if (!bbox.isEmpty())
-                action->extendBy(bbox);
-            return;
-        }
-    }
+    // Answered by traversing, even with the renderer in charge of drawing.
+    //
+    // This used to hand back the renderer's own scene bounds without
+    // traversing anything: the right extent, at no cost. But a traversal
+    // that reaches no child leaves no bounding-box cache behind, and a
+    // cache is the only thing SoSeparator::rayPick culls with, so every
+    // pick in render cache mode 3 walked the whole document. Over 400
+    // boxes, a ray that hits nothing cost 222 us here against 13 us in
+    // mode 0, where this node caches and the single whole-scene cull
+    // fires.
+    //
+    // The shortcut only ever won in the case where the traversal was the
+    // thing that was needed. When this node holds a valid cache,
+    // SoSeparator::getBoundingBox already answers from it without
+    // descending; when it does not, the descent is what builds that cache
+    // and every per-object one below it.
     inherited::getBoundingBox(action);
 }
 

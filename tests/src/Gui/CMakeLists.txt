@@ -171,6 +171,26 @@ if(TARGET FreeCADGui)
     add_test(NAME MirrorViewer_tests_run
              COMMAND MirrorViewer_tests_run)
 
+    # The whole-scene pick cull: a ray that misses the document must not
+    # walk it. Coin nodes and a counted ray pick, so this needs no GL
+    # context, no window and no QApplication -- FreeCADGui only for the
+    # unified selection root and the render cache mode the cull went
+    # missing in.
+    add_executable(PickCull_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/PickCull.cpp)
+    target_include_directories(PickCull_tests_run PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_BINARY_DIR}/src
+        ${Python3_INCLUDE_DIRS}
+        ${XercesC_INCLUDE_DIRS}
+        ${COIN3D_INCLUDE_DIRS}
+        ${Boost_INCLUDE_DIRS})
+    target_link_libraries(PickCull_tests_run
+                          gtest_main FreeCADGui FreeCADApp FreeCADBase)
+    add_test(NAME PickCull_tests_run
+             COMMAND PickCull_tests_run)
+
     # The on-view parameters an edit mode opens in a view with no widget
     # (docs/ThinClient.md sec 8.7). Unlike the mirror set above this one
     # DOES need a QApplication, because the claim being tested is that the
