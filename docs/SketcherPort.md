@@ -2226,13 +2226,39 @@ stopped matching and the origin came up with every sketch attached to
 one -- which is most of them. Measured before the fix: a sketch mapped
 to `XY_Plane` leaves `setEdit` with that plane visible.
 
-**Adapted, not taken.** Upstream REPLACED the `PartDesign::Plane` test;
-here it is kept beside the two new ones, because PartDesign's datum
-command still creates that class (`PartDesign/Gui/Command.cpp:290`) and
-dropping it would start showing those instead -- the same bug with the
-other class.
+**Taken, in two steps, and the second one corrects the first.**
+`90f8e7513a` kept the fork's older `PartDesign::Plane` exclusion beside
+the two new ones, reasoning that dropping it "would start showing those
+instead -- the same bug with the other class". **That was wrong**, and
+`198f28df07` drops it.
 
-Guarded by `tests/gui/sketch-support-visibility.py`, **ctest 780 -> 781**.
+Upstream's tip excludes `App::Plane` and `App::LocalCoordinateSystem`
+and nothing else, so a datum plane the USER made IS shown when a sketch
+attached to it is edited. That is a choice, not a leftover of the datums
+move: upstream still defines `PartDesign::Plane` as a `Part::Datum` and
+still creates it from the Datum Plane command (`Command.cpp:227`),
+exactly as this fork does (`:290`), so the class is live in both trees.
+`dc2aec50d4`'s message settles the intent -- the special handling "was
+mishandled after move to core datums", so it was always aimed at the
+ORIGIN planes, and `PartDesign::Plane` was the pre-datums spelling of
+that rather than a second intent.
+
+**The general trap, and it is the one that matters for the PartDesign
+port.** A conservative adaptation that "changes nothing else" can still
+be a silent behavioural divergence, and a cherry-pick port works by
+asking whether what a commit did is already true here -- so an
+undocumented difference makes that question answer itself wrongly later.
+Before preserving fork behaviour on the strength of "it compiles and
+nothing else moved", check whether upstream's replacement was FORCED by
+a type move or CHOSEN: read the commit message, and check whether the
+old type is still created.
+
+Guarded by `tests/gui/sketch-support-visibility.py`, **ctest 780 -> 781**,
+which pins BOTH halves -- origin hidden, user datum shown. The pair is
+the point: without the second, the fix could be "exclude everything",
+which hides the origin too and passes the first. Scored both ways --
+with the `PartDesign::Plane` exclusion restored the datum check fails
+and the origin check still passes, so neither claim is vacuous.
 A one-line fix would normally speak for itself; this one gets a test
 because **a class rename that silently disables a type test leaves
 nothing behind to notice** -- no error, no warning, just a condition
