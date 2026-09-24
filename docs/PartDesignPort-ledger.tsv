@@ -737,7 +737,7 @@ f608705825	2026-07-10	Max Wilfinger	feature		0	0	open	200		PD: Add tests for Boo
 67586e1699	2026-07-20	Grzegorz Kwacz	?		0	0	open	2		TaskView: Remove dead code from TaskView and QSint (#27653)	Gui/TaskExtrudeParameters.h
 265f7ac682	2026-07-20	PaddleStroke	?		0	0	open	161		PartDesign : Substractive features task names and icons	Gui/TaskHelixParameters.cpp Gui/TaskLoftParameters.cpp Gui/TaskPipeParameters.cpp Gui/TaskPrimitiveParameters.cpp
 0edbbf15dd	2026-07-20	Nemanja Pejic	feature		0	0	open	3		App: allow duplicate labels via document preference	Gui/SketchWorkflow.cpp
-fc135718a4	2026-07-20	kkchemboli	fix		0	0	open	10	adapted bc1e3e016f (in finishDressupFeature only)	PartDesign: Fix premature error message on opening Fillet	Gui/Command.cpp
+fc135718a4	2026-07-20	kkchemboli	fix		0	0	open	10	adapted a392595de0 (no recompute until an edge is picked; recomputeFeature logs here too)	PartDesign: Fix premature error message on opening Fillet	Gui/Command.cpp
 5d8162107a	2026-06-17	PaddleStroke	fix		0	0	open	6	n/a (Fork's convention gives correct results (checked))	PartDesign: Fix pattern failing with primitive	App/FeatureTransformed.cpp
 a784b23bea	2025-12-22	Alfredo Monclus	?		0	0	open	121		PartDesign: update metric standard designations #26189	App/FeatureHole.cpp PartDesignTests/TestHole.py
 123a1c80e1	2026-07-10	Max Wilfinger	?		0	0	open	113		PD: Preserve external base feature placement	App/Body.cpp App/FeatureBase.cpp App/FeatureBase.h Gui/Command.cpp Gui/CommandBody.cpp

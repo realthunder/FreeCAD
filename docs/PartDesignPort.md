@@ -319,8 +319,11 @@ dropped a cylinder the body already had (one agent's probe, not reproduced).
 - **Pattern panels record on OK**, `bd3c94f9a8`; the sub-task of a
   MultiTransform records on its own OK, not in `closeSubTask()`, which also
   runs after a Cancel. Driven in the GUI (below).
-- **An empty Fillet/Chamfer**, `bc1e3e016f`: recomputes only itself, so
-  the unavoidable error is not reported before the panel opens.
+- **An empty Fillet/Chamfer**, `a392595de0`: not recomputed until the panel
+  has an edge, and the base is shown meanwhile. The first attempt,
+  `bc1e3e016f`, took upstream's "recompute only the feature" -- and measured
+  before and after, it still logged the failure: the fork's
+  `recomputeFeature()` reports it as a document recompute does.
 
 ### Deferred, each needing a design of the fork's own
 
@@ -362,9 +365,15 @@ was not rerun; the only C++ change outside PartDesign is
 `makeSpiralHelix()`'s defaulted argument.
 
 After the relink and panel commits: TestPartDesignApp 101 OK, TestPartApp
-124 OK. The panels were driven in the GUI through a `-M` startup hook
-(the MCP console is out: the `mcp` package is no longer in
-`.conda/freecad`): PartDesign_Fillet with nothing selected opens its panel
-with no message box; OK on a linear pattern -- the TaskView's own button,
-not the link dialog's inside the panel -- writes Direction, Reversed,
-Mode, Length and Occurrences to the Python console.
+124 OK. The two panel fixes were then measured before and after through the
+MCP console (`scripts/mcp_run.py`), the pre-fix side by building
+PartDesignGui from the files as they were at `2cc1c8b94b`:
+
+| | before | after |
+|---|---|---|
+| PartDesign_Fillet, nothing selected | Report view: "Failed to recompute GP#Fillet: Fillet not possible on selected shapes", "Recompute failed!" | nothing; base shown; picking Edge1 computes the fillet |
+| OK on a linear pattern | console: `resetEdit()`, `recompute()` only | Direction, Reversed, Mode, Length, Occurrences recorded |
+
+The helix, suppress, no-op cut and relink rows were each reproduced on the
+fork before their fix (sec 6 above); the phase-2 picks before them were read
+against the fork, and run only where the verdict rested on behaviour.
