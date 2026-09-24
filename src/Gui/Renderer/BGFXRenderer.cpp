@@ -1120,12 +1120,45 @@ void BGFXRenderer::setLightConfig(const LightConfig &config)
     }
 }
 
+/// \a a and \a b light the scene the same under ANY camera: a
+/// camera-relative light is compared by its eye-space direction and
+/// position, not by the world-space ones the producing camera turned
+/// them into.
+static bool sameForAnyCamera(const ViewLightConfig &a,
+                             const ViewLightConfig &b)
+{
+    if (a.fed != b.fed || a.count != b.count || a.ambient != b.ambient)
+        return false;
+    for (int i = 0; i < a.count; ++i) {
+        const ViewLight &la = a.lights[i];
+        const ViewLight &lb = b.lights[i];
+        if (!la.eyeSpace || !lb.eyeSpace) {
+            if (la != lb)
+                return false;
+            continue;
+        }
+        ViewLight camA = la;
+        std::copy(lb.direction, lb.direction + 3, camA.direction);
+        std::copy(lb.position, lb.position + 3, camA.position);
+        if (camA != lb)
+            return false;
+    }
+    return true;
+}
+
 void BGFXRenderer::setViewLightConfig(const ViewLightConfig &config)
 {
-    if (pimpl->viewlightconf != config) {
-        pimpl->viewlightconf = config;
+    // The headlight's world direction is fed anew on every camera move.
+    // It is taken, since this renderer's own frame lights with it, but
+    // it is not a scene change: the frame caches already key on the
+    // camera, and a streamed viewer re-derives the direction from the
+    // eye-space one under a camera of its own. Dirtying on it
+    // republished the whole snapshot for every frame of an orbit.
+    if (pimpl->viewlightconf == config)
+        return;
+    if (!sameForAnyCamera(pimpl->viewlightconf, config))
         pimpl->sceneDirty = true;
-    }
+    pimpl->viewlightconf = config;
 }
 
 void BGFXRenderer::setVolumetricConfig(const VolumetricConfig &config)

@@ -10,6 +10,7 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
@@ -262,6 +263,93 @@ TEST(PublishOnly, putsARealSceneOnTheWire)
         << "the root must name the object that was fed in";
     EXPECT_EQ(back.width, 1280);
     EXPECT_EQ(back.height, 720);
+}
+
+namespace
+{
+
+/// A fed config holding one headlight: the eye-space direction is
+/// fixed, the world one is what a camera turned \a angle about Y
+/// makes of it, the way the feed restates it on every frame.
+Render::ViewLightConfig headlight(float angle, uint32_t color = 0xffffffffu)
+{
+    Render::ViewLightConfig c;
+    c.fed = true;
+    c.count = 1;
+    Render::ViewLight& l = c.lights[0];
+    l.eyeSpace = true;
+    l.direction[0] = -std::sin(angle);
+    l.direction[1] = 0.f;
+    l.direction[2] = -std::cos(angle);
+    l.color = color;
+    return c;
+}
+
+/// The version the server holds for a viewer that has \a held, or 0
+/// when it answers 204 (nothing newer), or ~0 on no answer at all.
+uint64_t servedAfter(int port, uint64_t held)
+{
+    std::string path = "/scene";
+    if (held) {
+        path += "?v=" + std::to_string(held) + "&s="
+            + std::to_string(Render::SceneStreamServer::instance().sessionId());
+    }
+    std::string resp;
+    for (int i = 0; i < 200 && resp.empty(); ++i) {
+        resp = httpGet(port, path);
+        if (resp.empty()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    }
+    if (resp.find(" 204") != std::string::npos) {
+        return 0;
+    }
+    const auto hdr = resp.find("\r\n\r\n");
+    if (resp.find(" 200") == std::string::npos || hdr == std::string::npos
+        || resp.size() < hdr + 4 + 8) {
+        return ~uint64_t(0);
+    }
+    uint64_t version = 0;
+    std::memcpy(&version, resp.data() + hdr + 4, 8);
+    return version;
+}
+
+}  // namespace
+
+TEST(PublishOnly, aCameraMoveDoesNotRepublish)
+{
+    // The feed restates the headlight's world direction on every frame,
+    // and a camera move changes it. Nothing a viewer receives depends on
+    // it -- a viewer lights from the eye-space direction under its own
+    // camera -- yet it used to dirty the scene, so every frame of a
+    // desktop orbit serialized and republished the whole snapshot.
+    const int port = servePort();
+    ASSERT_GT(port, 0);
+
+    auto r = makePublisher();
+    ASSERT_TRUE(r);
+    r->setScene(makeScene());
+    r->setViewLightConfig(headlight(0.f));
+    ASSERT_TRUE(r->publish(QColor(32, 32, 32), kIdentity, kIdentity, 1280, 720));
+    const uint64_t first = servedAfter(port, 0);
+    ASSERT_NE(first, 0u);
+    ASSERT_NE(first, ~uint64_t(0)) << "no answer from the scene server";
+
+    constexpr int steps = 20;
+    for (int i = 1; i <= steps; ++i) {
+        r->setViewLightConfig(headlight(0.05f * float(i)));
+        r->publish(QColor(32, 32, 32), kIdentity, kIdentity, 1280, 720);
+    }
+    EXPECT_EQ(servedAfter(port, first), 0u)
+        << "an orbit of " << steps << " frames republished the scene";
+
+    // And the check can see a publish: a light that really changed is
+    // one.
+    r->setViewLightConfig(headlight(0.f, 0xff0000ffu));
+    r->publish(QColor(32, 32, 32), kIdentity, kIdentity, 1280, 720);
+    const uint64_t changed = servedAfter(port, first);
+    EXPECT_NE(changed, 0u) << "a changed headlight colour did not republish";
+    EXPECT_NE(changed, ~uint64_t(0));
 }
 
 TEST(PublishOnly, noGraphicsDeviceIsCreated)
