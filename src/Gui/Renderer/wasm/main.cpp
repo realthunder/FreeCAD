@@ -5171,6 +5171,29 @@ static bool fitCamera()
         }
         have = true;
     }
+    // Nothing in the scene at all: frame what the scene camera shows
+    // instead. A sketch being edited is the whole of a document that holds
+    // only it, and all of it rides the editing overlay -- which drew, and
+    // drew at the right size, into a camera that had framed nothing, so it
+    // was off screen and a ?cam= parameter, which waits for a fit, never
+    // applied. Only the scene-camera overlays: the others are anchored to
+    // the screen and have no place in the world to frame.
+    if (!have) {
+        for (const auto &ov : s_snap.overlays) {
+            if (!ov.anchor.sceneCamera)
+                continue;
+            for (const auto &d : ov.draws) {
+                if (d.bboxMin[0] > d.bboxMax[0] || d.bboxMin[1] > d.bboxMax[1]
+                        || d.bboxMin[2] > d.bboxMax[2])
+                    continue;   // no bounds
+                for (int i = 0; i < 3; ++i) {
+                    bmin[i] = have ? std::min(bmin[i], d.bboxMin[i]) : d.bboxMin[i];
+                    bmax[i] = have ? std::max(bmax[i], d.bboxMax[i]) : d.bboxMax[i];
+                }
+                have = true;
+            }
+        }
+    }
     if (have) {
         for (int i = 0; i < 3; ++i)
             s_center[i] = 0.5f * (bmin[i] + bmax[i]);
