@@ -2546,7 +2546,7 @@ another object's file (`BorrowBelowFace` 2, 4) is masked off: the lender
 leaves out the curves the borrower's faces need. Face-level borrowing
 is unaffected. A cache representation on the written shape's own
 surface (a consumer adding a vertex parameter on a frozen face's plane)
-is still written: named here, not measured.
+is still written: named here, not measured (measured in 23.14).
 
 **The default.** `OCCT_EXT_VERSION` in `TopTools.cxx`, reported by
 `SetFuncShowTopoShape`, is 2 with this work. FreeCAD's
@@ -2569,3 +2569,85 @@ the default follows the loaded kernel. Python
 whether or not something was extruded from its own edges, and with
 `StableShapeBytes` off it does not -- the control. `Part::Extrusion`
 is no test of this: it extrudes a copy.
+
+### 23.14 The residual measured, and four throws the suites missed (2026-09-24)
+
+**The measurement.** A probe, not committed, hashed each shape value's
+stored bytes (`exportBrep` with the storage options) when
+`PropertyPartShape::setValue` froze it, and again when the value was
+replaced or its property destroyed; the root location is stripped
+first, since a Placement edit moves `_Shape`'s location in place and
+storage writes the location as an attribute. Python suite: 2904 OK, and
+the three values that moved are all in `ShapeStableBytesCases`' control,
+which switches `StableShapeBytes` off on purpose. ctest: 802/802, none. A
+sweep of 7 shapes by 26 consumers built on each frozen value's own
+sub-shapes (extrude, revolve, fillet, chamfer, thickness, offset, the
+booleans, section, slice, refine, loft, sweep, fix, tessellate, check,
+split, project, a face on the value's wire): none -- and 20 with
+`StableShapeBytes` off, so the probe sees. By hand: a prism cap restating
+an internal vertex's (u,v) on its generating face writes nothing (the
+face already had them, and an unchanged restatement passes), and
+`ShapeFix` in place on a frozen planar face moves nothing with
+`DedupShapePCurves` on or off. That option, on by default, also leaves
+out a later pcurve on a frozen face's own plane that equals the
+projection, the likeliest producer. So the residual as 23.13 named it is
+reached by nothing the suites or the sweep do.
+
+**What the sweep did find: four throws, freeze regressions.** Each case
+works with the freeze off (torus thickness fails there too, `NotDone`,
+but with the freeze it threw first, at the sphere's site):
+
+| Case | Site | Why |
+|---|---|---|
+| `makeThickness` on a sphere, a torus | `BRepOffset_Inter3d::ContextIntByArc` -> `UpdateVertex` | puts the input's vertices, INTERNAL, on the edges it extends |
+| `Part.Face` on a prism face's outer wire | `BRepLib::UpdateTolerances` in `BRepLib_MakeFace` | the face takes the largest edge tolerance; the others would grow to it, by 2e-17 |
+| revolving a torus face | `ShapeFix_Wire::FixShifted` -> `ReplacePCurve`, from `TopoShape::fix` in `makERevolve` | an in-place fix of a result whose cap is the frozen face |
+
+Without the freeze the last two write into the input value: the wire's
+tolerances, the torus face's own pcurve.
+
+**Vertex parameters are caches too** (fork). An Immutable vertex takes a
+parameter on a curve, pcurve or surface it has none on yet, marked
+`BRep_PointRepresentation::IsCache`; a cache may be rewritten, an own
+parameter only restated (`UpdatePoints` decides, for every
+`UpdateVertex`). `checkImmutableVertexOnEdge` keeps the tolerance and the
+frozen edge's ends.
+
+**And that reached the residual for real.** The extended edge shares the
+input edge's curve and pcurves, handle for handle, so a frozen sphere's
+pole vertices gained parameters on the sphere's own seam curve and
+pcurves -- own surface, own handles -- and its bytes moved (the thick
+solid gtest). The writer rule is now structural (`BRepTools_ShapeSet::
+OwnGeometry`, both formats): a vertex parameter on a curve or pcurve is
+written only where an edge of the written shape holds the vertex INTERNAL
+or EXTERNAL and carries that curve. `BRep_Tool::Parameter` reads an end
+vertex's parameter from the edge's range and never a point
+representation, so nothing else is ever read. Exact, and indifferent to
+when the parameter arrived. A parameter on a surface keeps the surface
+rule: `BRep_Tool::Parameters` reads one for any vertex. What is left of
+the residual is a pcurve, a regularity or a vertex (u,v) added after the
+freeze on the written shape's own surface -- still not observed. If it
+ever is, the answer is timing, not flags: the freeze would adopt the
+caches on a face's surface as its own, and the writer drop a cache no
+frozen face adopted.
+
+**The face tolerance** (fork, `BRepLib_MakeFace(wire)`): a face needs to
+cover how far its wire is from the surface, not the largest edge
+tolerance, which is `FindSurface`'s convention. On a wire with frozen
+edges it takes the smallest frozen edge tolerance when that covers
+`1.2 * ToleranceReached()`, and nothing frozen has to grow. When it does
+not, the face keeps the convention and the frozen edge refuses.
+
+**`TopoShape::fix()`** (FreeCAD) fixes a copy, then the shape itself in
+place to keep its sharing. A shape with a frozen part keeps the fixed
+copy instead: the in-place pass would repair the value too.
+
+Gtests in `ImmutableShape.cpp`: a frozen vertex takes a cache parameter
+on a new curve and rewrites it, while its own is only restated, and the
+edge's bytes stay; a parameter on a new edge's pcurve on a frozen face's
+own surface leaves the face's bytes; a face on a frozen wire of unequal
+tolerances grows none of them; a thick solid from a frozen sphere leaves
+its bytes; a revolved frozen torus face is left alone by `fix()`.
+Suites: ctest 807/807, Python 2904 OK; under the probe and the
+throw-logging preload, no `LockedShape` thrown, and in the Python run
+only the control's three values moved.

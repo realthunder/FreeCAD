@@ -18,7 +18,14 @@
 #include <TopExp.hxx>
 #include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
+#include <BRep_PointRepresentation.hxx>
 #include <BRep_TVertex.hxx>
+#include <BRepOffsetAPI_MakeThickSolid.hxx>
+#include <BRepPrimAPI_MakeSphere.hxx>
+#include <BRepPrimAPI_MakeTorus.hxx>
+#include <Geom_Line.hxx>
+#include <GeomAPI_ProjectPointOnSurf.hxx>
+#include <TopTools_ListOfShape.hxx>
 #include <Geom2d_Line.hxx>
 #include <Geom_Circle.hxx>
 #include <Geom_CylindricalSurface.hxx>
@@ -47,6 +54,25 @@ void setImmutable(const TopoDS_Shape& shape)
     shape.TShape()->Immutable(true);
     for (TopoDS_Iterator it(shape); it.More(); it.Next())
         setImmutable(it.Value());
+}
+
+/// What a document save stores for \a shape.
+std::string storedBytes(const TopoDS_Shape& shape)
+{
+    std::ostringstream out;
+    Part::TopoShape(shape).exportBrep(out, true);
+    return out.str();
+}
+
+/// The parameter representation \a vertex holds on \a curve, or none.
+Handle(BRep_PointRepresentation) pointOn(const TopoDS_Vertex& vertex, const Handle(Geom_Curve)& curve)
+{
+    Handle(BRep_TVertex) tv = Handle(BRep_TVertex)::DownCast(vertex.TShape());
+    for (const auto& point : tv->Points()) {
+        if (point->IsPointOnCurve() && point->Curve() == curve)
+            return point;
+    }
+    return {};
 }
 
 } // namespace
@@ -349,4 +375,146 @@ TEST(ImmutableShapeTest, aWireMergeCopiesAFrozenVertex)
     // ... which is not the input's: that one is where and what it was.
     EXPECT_EQ(BRep_Tool::Tolerance(join), joinTol);
     EXPECT_TRUE(BRep_Tool::Pnt(join).IsEqual(joinPnt, 0.));
+}
+
+// A vertex parameter is derived data like a pcurve (docs/TransactionLog.md sec
+// 23.14): a frozen vertex put on a new edge -- as the offset algorithm puts an
+// input edge's ends, INTERNAL, on the edge it extends -- takes a parameter on
+// that edge's curve, marked a cache; its own parameters may only be restated.
+TEST(ImmutableShapeTest, aFrozenVertexTakesAParameterOnANewCurve)
+{
+    tests::initApplication();
+    BRep_Builder builder;
+    TopoDS_Edge edge = BRepBuilderAPI_MakeEdge(gp_Pnt(0, 0, 0), gp_Pnt(10, 0, 0)).Edge();
+    TopoDS_Vertex start, end;
+    TopExp::Vertices(edge, start, end);
+    // An internal vertex whose parameter on the edge is the edge's own.
+    TopoDS_Vertex inner;
+    builder.MakeVertex(inner, gp_Pnt(5, 0, 0), BRep_Tool::Tolerance(edge));
+    builder.UpdateVertex(TopoDS::Vertex(inner.Oriented(TopAbs_INTERNAL)), 5., edge, 0.);
+    builder.Add(edge, inner.Oriented(TopAbs_INTERNAL));
+    setImmutable(edge);
+    const std::string before = storedBytes(edge);
+
+    Handle(Geom_Curve) line = new Geom_Line(gp_Pnt(10, 0, 0), gp::DY());
+    TopoDS_Edge extended = BRepBuilderAPI_MakeEdge(line, -5., 5.).Edge();
+    const double tol = BRep_Tool::Tolerance(end);
+    const TopoDS_Vertex onExtended = TopoDS::Vertex(end.Oriented(TopAbs_INTERNAL));
+    EXPECT_NO_THROW(builder.UpdateVertex(onExtended, 0., extended, tol));
+    ASSERT_FALSE(pointOn(end, line).IsNull());
+    EXPECT_TRUE(pointOn(end, line)->IsCache());
+    // Being a cache it may be rewritten; not with a tolerance to grow to.
+    EXPECT_NO_THROW(builder.UpdateVertex(onExtended, 1e-3, extended, tol));
+    EXPECT_THROW(builder.UpdateVertex(onExtended, 0., extended, tol * 10), TopoDS_LockedShape);
+    // The inner vertex's parameter is the value's: restated, not moved.
+    Standard_Real first, last;
+    Handle(Geom_Curve) own = BRep_Tool::Curve(edge, first, last);
+    ASSERT_FALSE(pointOn(inner, own).IsNull());
+    EXPECT_FALSE(pointOn(inner, own)->IsCache());
+    const TopoDS_Vertex innerOn = TopoDS::Vertex(inner.Oriented(TopAbs_INTERNAL));
+    EXPECT_NO_THROW(builder.UpdateVertex(innerOn, 5., edge, 0.));
+    EXPECT_THROW(builder.UpdateVertex(innerOn, 6., edge, 0.), TopoDS_LockedShape);
+    // And the edge stores what it did: a parameter on a curve none of its
+    // edges carries is left out.
+    EXPECT_EQ(storedBytes(edge), before);
+}
+
+// The same on a frozen face's own surface: a new edge lying on it carries a
+// pcurve there, and the frozen vertex's parameter on that pcurve names the
+// face's surface -- so the surface alone cannot tell it from the face's own.
+TEST(ImmutableShapeTest, aParameterOnANewPCurveLeavesTheFaceBytes)
+{
+    tests::initApplication();
+    TopoDS_Shape box = BRepPrimAPI_MakeBox(10, 10, 10).Shape();
+    const TopoDS_Face face = TopoDS::Face(TopExp_Explorer(box, TopAbs_FACE).Current());
+    setImmutable(box);
+    const std::string before = storedBytes(face);
+
+    TopLoc_Location loc;
+    const Handle(Geom_Surface)& surface = BRep_Tool::Surface(face, loc);
+    const TopoDS_Vertex vertex = TopoDS::Vertex(TopExp_Explorer(face, TopAbs_VERTEX).Current());
+    const gp_Pnt at = BRep_Tool::Pnt(vertex);
+    GeomAPI_ProjectPointOnSurf project(at, surface);
+    ASSERT_TRUE(project.NbPoints() > 0);
+    Standard_Real u, v;
+    project.LowerDistanceParameters(u, v);
+    // A new edge on the face's plane through the vertex, with its pcurve.
+    Handle(Geom2d_Curve) pcurve = new Geom2d_Line(gp_Pnt2d(u, v), gp_Dir2d(1, 1));
+    TopoDS_Edge onFace = BRepBuilderAPI_MakeEdge(pcurve, surface, -1., 1.).Edge();
+    BRep_Builder builder;
+    EXPECT_NO_THROW(builder.UpdateVertex(TopoDS::Vertex(vertex.Oriented(TopAbs_INTERNAL)),
+                                         0.,
+                                         onFace,
+                                         BRep_Tool::Tolerance(vertex)));
+    EXPECT_EQ(storedBytes(face), before);
+}
+
+// A face on a frozen wire whose edges' tolerances differ: FindSurface gives the
+// face the largest, and every other edge would have to grow to it. The face
+// takes the smallest frozen one instead, which covers the plane.
+TEST(ImmutableShapeTest, aFaceOnAFrozenWireGrowsNoTolerance)
+{
+    BRep_Builder builder;
+    BRepBuilderAPI_MakeWire mkWire;
+    mkWire.Add(BRepBuilderAPI_MakeEdge(gp_Pnt(0, 0, 0), gp_Pnt(10, 0, 0)).Edge());
+    mkWire.Add(BRepBuilderAPI_MakeEdge(gp_Pnt(10, 0, 0), gp_Pnt(10, 5, 0)).Edge());
+    mkWire.Add(BRepBuilderAPI_MakeEdge(gp_Pnt(10, 5, 0), gp_Pnt(0, 5, 0)).Edge());
+    mkWire.Add(BRepBuilderAPI_MakeEdge(gp_Pnt(0, 5, 0), gp_Pnt(0, 0, 0)).Edge());
+    const TopoDS_Wire wire = mkWire.Wire();
+    const TopoDS_Edge wide = TopoDS::Edge(TopExp_Explorer(wire, TopAbs_EDGE).Current());
+    builder.UpdateEdge(wide, 2e-7);
+    for (TopExp_Explorer it(wide, TopAbs_VERTEX); it.More(); it.Next())
+        builder.UpdateVertex(TopoDS::Vertex(it.Current()), 2e-7);
+    setImmutable(wire);
+    std::vector<double> tolerances;
+    for (TopExp_Explorer it(wire, TopAbs_EDGE); it.More(); it.Next())
+        tolerances.push_back(BRep_Tool::Tolerance(TopoDS::Edge(it.Current())));
+    for (TopExp_Explorer it(wire, TopAbs_VERTEX); it.More(); it.Next())
+        tolerances.push_back(BRep_Tool::Tolerance(TopoDS::Vertex(it.Current())));
+
+    TopoDS_Face face;
+    EXPECT_NO_THROW(face = BRepBuilderAPI_MakeFace(wire, true).Face());
+    ASSERT_FALSE(face.IsNull());
+    EXPECT_TRUE(BRepCheck_Analyzer(face).IsValid());
+    std::vector<double> after;
+    for (TopExp_Explorer it(wire, TopAbs_EDGE); it.More(); it.Next())
+        after.push_back(BRep_Tool::Tolerance(TopoDS::Edge(it.Current())));
+    for (TopExp_Explorer it(wire, TopAbs_VERTEX); it.More(); it.Next())
+        after.push_back(BRep_Tool::Tolerance(TopoDS::Vertex(it.Current())));
+    EXPECT_EQ(after, tolerances);
+}
+
+// A thick solid from a frozen sphere: the offset puts the removed face's
+// vertices on the edges it extends (the first test above), and leaves the
+// sphere's bytes as they were.
+TEST(ImmutableShapeTest, aThickSolidLeavesAFrozenInput)
+{
+    tests::initApplication();
+    TopoDS_Shape sphere = BRepPrimAPI_MakeSphere(5).Shape();
+    setImmutable(sphere);
+    const std::string before = storedBytes(sphere);
+    TopTools_ListOfShape removed;
+    removed.Append(TopExp_Explorer(sphere, TopAbs_FACE).Current());
+    BRepOffsetAPI_MakeThickSolid thick;
+    EXPECT_NO_THROW(thick.MakeThickSolidByJoin(sphere, removed, 0.5, 1e-3));
+    EXPECT_TRUE(thick.IsDone());
+    EXPECT_EQ(storedBytes(sphere), before);
+}
+
+// TopoShape::fix() repairs a copy, then the shape itself in place to keep its
+// sharing. A revolve's cap is its base face, so a revolved frozen face would be
+// repaired inside the value: the fixed copy stands instead.
+TEST(ImmutableShapeTest, fixLeavesAFrozenPartAlone)
+{
+    tests::initApplication();
+    TopoDS_Shape torus = BRepPrimAPI_MakeTorus(6, 2).Shape();
+    const TopoDS_Face face = TopoDS::Face(TopExp_Explorer(torus, TopAbs_FACE).Current());
+    setImmutable(face);
+    const std::string before = storedBytes(face);
+    Part::TopoShape revolved;
+    EXPECT_NO_THROW(revolved.makERevolve(Part::TopoShape(face),
+                                         gp_Ax1(gp_Pnt(-20, 0, 0), gp::DY()),
+                                         M_PI / 2));
+    EXPECT_FALSE(revolved.isNull());
+    EXPECT_EQ(storedBytes(face), before);
 }
