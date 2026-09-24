@@ -661,6 +661,9 @@ PROPERTY_SOURCE(PartDesign::Hole, PartDesign::ProfileBased)
 const App::PropertyAngle::Constraints Hole::floatAngle = { Base::toDegrees<double>(Precision::Angular()), 180.0 - Base::toDegrees<double>(Precision::Angular()), 1.0 };
 // OCC can only create holes with a min diameter of 10 times the Precision::Confusion()
 const App::PropertyQuantityConstraint::Constraints diameterRange = { 10 * Precision::Confusion(), FLT_MAX, 1.0 };
+// A custom thread clearance may be negative as well as positive, to adjust
+// for manufacturing (upstream c8efc26982; a PropertyLength stops at 0)
+const App::PropertyQuantityConstraint::Constraints clearanceRange = { -FLT_MAX, FLT_MAX, 0.1 };
 
 Hole::Hole()
 {
@@ -739,6 +742,7 @@ Hole::Hole()
     ADD_PROPERTY_TYPE(UseCustomThreadClearance, (false), "Hole", App::Prop_None, "Use custom thread clearance");
 
     ADD_PROPERTY_TYPE(CustomThreadClearance, (0.0), "Hole", App::Prop_None, "Custom thread clearance (overrides ThreadClass)");
+    CustomThreadClearance.setConstraints(&clearanceRange);
 
 }
 
@@ -1708,6 +1712,11 @@ App::DocumentObjectExecReturn* Hole::execute()
     }
 
     try {
+        // A negative custom clearance can take the diameter below its range
+        if (Diameter.getValue() < diameterRange.LowerBound) {
+            return new App::DocumentObjectExecReturn(
+                QT_TRANSLATE_NOOP("Exception", "Hole error: Diameter too small"));
+        }
         std::string method(DepthType.getValueAsString());
         double length = 0.0;
 

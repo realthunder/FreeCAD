@@ -138,6 +138,10 @@ TaskHoleParameters::TaskHoleParameters(ViewProviderHole* HoleView, QWidget* pare
     ui->TaperedAngle->bind(pcHole->TaperedAngle);
     ui->ThreadDepth->bind(pcHole->ThreadDepth);
     ui->CustomThreadClearance->bind(pcHole->CustomThreadClearance);
+    // The property allows a negative clearance; the form's default minimum
+    // is 0
+    ui->CustomThreadClearance->setMinimum(pcHole->CustomThreadClearance.getMinimum());
+    ui->CustomThreadClearance->setMaximum(pcHole->CustomThreadClearance.getMaximum());
 
     connectPropChanged = App::GetApplication().signalChangePropertyEditor.connect(
             std::bind(&TaskHoleParameters::changedObject, this, sp::_1, sp::_2));
