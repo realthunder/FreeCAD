@@ -881,11 +881,22 @@ Where loose blob files still come from:
 - **Included files made in the session**: imports, materials, MaterialX
   manifests, TechDraw templates -- every `insertFile()` / `adoptFile()` /
   `adoptBytes()` call site.
-- **The transaction log, as designed.** `docs/TransactionLog.md` sec 13.2 and
-  23.1 keep values over a threshold (64 KB to start) as files in this store,
-  and version snapshots add more. Every commit that touches a large shape adds
-  a file, and a long session with many versions multiplies them. Reverse
-  deltas (23.2) shrink the bytes, not the number of files.
+- **The transaction log, as built -- fewer than its design implies.**
+  (Corrected 2026-09-24 from the `oplab` session's reply; the first draft of
+  this bullet read sec 23.1's "large as a file" literally.) That branch was
+  never built: every entity is inline in `log.db` (`entity.data`, zstd or a
+  reverse-delta patch), unsaved shape geometry included, and `enc=file`
+  entities (TransactionLog.md sec 23.16) only reference blobs that already
+  exist here, holding a `FileBlobHandle` on each. The files the log does cause:
+  (a) the snapshot cadence runs the save's `collectFileBlobs` ->
+  `storeBlob`, one file per changed shape, like a save (off by default while
+  the log is staging); (b) a cold undo whose shape blob the log keeps only as
+  a delta decodes it and calls `adoptBytes()`, one file per re-adopted blob
+  (TransactionLog.md sec 24.3); (c) the embedded copy of `log.db`
+  (`Document::embedHistory` -> `adoptFile(copy, "db")`); (d) the checkout
+  writes every entry under `history/checkout/`, copying held blobs by
+  `blob->path()`. A pack store removes (a) and (b) outright; (d) should stream
+  by `read()` instead of `path()`.
 
 What the loose files then cost, besides the creates:
 
@@ -919,8 +930,8 @@ large files.
   rewritten in place.
 - **The index in SQLite.** The `Transaction` branch already puts a SQLite
   database in the transient directory (`history/log.db`, WAL,
-  `synchronous=NORMAL`). The blob index is a table in it -- or in a
-  `blobs/index.db` of the same form if the log is not built yet -- keyed by
+  `synchronous=NORMAL`). The blob index is a SQLite database of the same form
+  -- `blobs/index.db`, not a table in `log.db`, is the lean (15.5) -- keyed by
   hash, with segment, offset, length, encoding (`raw`, `zstd`) and extension.
   Small blobs, under a threshold to be measured (sec 15.4), are stored inline
   in the row and never touch a segment.
@@ -957,20 +968,14 @@ large files.
 
 ### 15.3 What it changes for the transaction log
 
-`docs/TransactionLog.md` sec 23.1 says where an entity's bytes live is "a
-backend detail chosen by size: small inline in `data`, large as a file in the
-document's `FileBlobManager`". With this store the large case is a range in a
-segment, not a file. Two consequences:
-
-- **The file-versus-inline threshold goes away.** Section 13.1 cites SQLite's
-  guidance that blobs up to about 100 KB are faster inside the database than as
-  files. On this laptop the crossover would be far higher, since a file costs
-  milliseconds. With a pack store no value is ever a loose file, so the only
-  choice left is inline row versus segment range, which is about SQLite page
-  churn, not the filesystem.
-- **One store, one collector.** Entities and blobs share the index and the
-  segment space; trimming (23.5) and blob refcounting both end in the same
-  compaction pass.
+Less than the first draft of this section said (see 15.1): the log keeps its
+own entities inline in `log.db` and only references blobs this store already
+holds. What it uses of the store is `FileBlobHandle` and its refcount,
+`FileBlob::read()` (through `readBytes`), `adoptBytes()`, and -- for the
+checkout -- `path()`. **If those keep their meaning over segments, the log needs
+no change.** That is the API contract (15.6). The store then removes the log's
+two per-blob file costs, the snapshot's `storeBlob` and cold undo's
+`adoptBytes()`, without the log noticing.
 
 ### 15.4 To measure before building (phase 0)
 
@@ -990,13 +995,42 @@ slower.
 
 ### 15.5 Open questions
 
-- Whether the blob index lives in the log's database or in its own. Shared
-  means one transaction covers a log commit and the blobs it names; separate
-  means the store works without the log. Decide with the `Transaction` branch.
-- Encoding: shapes are text BREP by default and compress about 4:1 with zstd
-  (`docs/TransactionLog.md` sec 20.1). Compress in the segment, or keep them raw
-  so a range can be handed to a reader without inflating?
-- Whether a save could make a copy of the **saved archive** the new read-only
-  segment, as restore does, instead of appending the shapes it just wrote.
-  Save and restore would then be fully symmetric, at the cost of one file copy
-  per save.
+Input from the `oplab` session (the `Transaction` branch), 2026-09-24. The
+rulings are the user's.
+
+- **Where the blob index lives.** First draft: possibly a table in the log's
+  `log.db`. `oplab` argues against, concretely: the log *replaces* its
+  database at runtime (`TransactionLog::adoptStore` swaps in an embedded copy
+  on open, TransactionLog.md sec 16.4; `embed()` copies with `VACUUM INTO` and
+  then drops unnamed versions and the cache tier), so an index inside it would
+  travel into every embedded copy and be lost on adopt unless both paths learn
+  to strip and merge it. The log's connection is owned by its writer thread,
+  while save and restore make blobs on the main thread, and `ATTACH` gives no
+  atomic commit across two databases in WAL mode. Their lean: **its own
+  `blobs/index.db`** with the same schema conventions, the log referring to
+  blobs by hash as it does now. Atomicity across the two is not needed: the log
+  only records blobs that already exist, and the collector and refcounts
+  tolerate either order.
+- **Encoding in the segment.** Independent of the log, which already zstds and
+  delta-encodes its own entities inside SQLite. Measured deltas for shape blobs
+  are 5-9% of full on parameter edits and 41-47% on topology changes
+  (TransactionLog.md sec 23.16). With raw ranges in the segments the log keeps
+  its blob deltas in `log.db` as now; a per-row encoding column (`raw`, `zstd`)
+  in the index covers both choices.
+- **A copy of the saved archive as the new read-only segment**, making save and
+  restore symmetric at one file copy per save. No objection from the log:
+  version manifests name blobs by hash plus archive entry name, so where the
+  bytes live does not matter to it.
+
+### 15.6 The API contract to keep
+
+What code outside the store relies on, and must mean the same over segments:
+
+- `FileBlobHandle` as the reference and its count as the lifetime.
+- `FileBlob::read()` returns the bytes wherever they live -- the log's cold
+  undo and restore-to-version (TransactionLog.md sec 24, being built now)
+  read through it.
+- `adoptBytes()` stores bytes and deduplicates by hash -- cold undo re-adopts
+  decoded blobs through it.
+- `path()` materializes a real file on demand. Callers that only want the bytes
+  should move to `read()`; the log's checkout (`history/checkout/`) is one.
