@@ -230,11 +230,12 @@ void SoTextImage::syncAutoZoom(SoAction* action)
     if (vph <= 0.f)
         return;
     // Calibrates the screen-constant glyph size (backend applies
-    // scaleFactor * autozoomScale). SoDatumLabel uses k=7.5 but rasters its
-    // text pre-scaled larger; SoTextImage rasters at the native font pixel
-    // size, so it needs a bigger k to land at a comparable on-screen size.
-    // k=12 renders the label close to its font pixel size. Set only on change
-    // so it does not thrash the render cache each frame.
+    // scaleFactor * autozoomScale). k=12 renders the label close to its font
+    // pixel size. The quad is a billboard, and the backend sizes a billboard
+    // from its pixelScale alone, so this factor is not what sets its size
+    // there (SoDatumLabel, which does not billboard, derives k=50 for one
+    // screen pixel per glyph pixel). Set only on change so it does not
+    // thrash the render cache each frame.
     float sf = 12.0f / vph;
     if (this->imageZoom->scaleFactor.getValue() != sf)
         this->imageZoom->scaleFactor.setValue(sf);

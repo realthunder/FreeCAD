@@ -975,18 +975,20 @@ bool SoDatumLabel::updateImageSize(SoState * state, int & srcw, int & srch)
     }
 
     // Calibrate the companion autozoom so the glyph quad (emitted in native
-    // pixels) renders at the same screen size the GL path draws. The backend
-    // applies scaleFactor*worldToScreenScale/(5*aspect); matching that to the
-    // datum scale (worldToScreenScale/vpWidth) gives scaleFactor = k/vpHeight.
-    // Analytically k==5, but measured against the GL path the glyph then comes
-    // out ~2/3 too small (an empirical factor in SoAutoZoomTranslation's own
-    // /5 tuning), so k=7.5 matches the GL size. Set only on change so it does
-    // not thrash the render cache each frame.
+    // pixels) renders one screen pixel per glyph pixel, as the GL path draws
+    // it. The backend applies scaleFactor * getWorldToScreenScale(0, 0.1) /
+    // (5 * aspect) (RendererBridge::translateAutoZoomScale), and the 0.1 there
+    // is a tenth of the view WIDTH, so one screen pixel -- width / vpWidth --
+    // takes scaleFactor = 50 / vpHeight. This used to read 7.5 / vpHeight,
+    // fitted by eye while the capture traversal still saw Coin's 100 px default
+    // viewport: 7.5 / 100 is 50 / 667, right for the window it was tuned in and
+    // nearly seven times too small once the capture got the real viewport. Set
+    // only on change so it does not thrash the render cache each frame.
     if (this->imageZoom) {
         const SbViewportRegion& vp = SoViewportRegionElement::get(state);
         float vph = (float)vp.getViewportSizePixels()[1];
         if (vph > 0.f) {
-            float sf = 7.5f / vph;
+            float sf = 50.0f / vph;
             if (this->imageZoom->scaleFactor.getValue() != sf)
                 this->imageZoom->scaleFactor.setValue(sf);
         }

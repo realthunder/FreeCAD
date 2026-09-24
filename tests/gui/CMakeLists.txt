@@ -227,6 +227,15 @@ fc_add_gui_test(GuiSketchHiDpiSizes_tests_run
 set_property(TEST GuiSketchHiDpiSizes_tests_run APPEND PROPERTY
              ENVIRONMENT "QT_SCALE_FACTOR=2")
 
+# A Sketcher dimension's number is drawn at its own size under the bgfx
+# renderer (mode 3, the default). The backend scales the glyph quad through
+# an autozoom factor the label computes as k / viewport height; k = 7.5 was
+# fitted while the capture saw Coin's 100 px default viewport, and once it
+# got the real one the number came out nearly seven times too small.
+fc_add_gui_test(GuiSketchDatumTextMode3_tests_run
+                sketch-datum-text-mode3.py
+                --timeout 180)
+
 # Auto-constraints for a DRAG, not only for a drawing tool (upstream
 # ec298e9e9a and its follow-ups): hold a dragged point still on top of
 # another point and the Coincident that pins it there is written when
