@@ -233,6 +233,7 @@ struct EditData {
     PreselectCross(-1),
     MarkerSize(7),
     coinFontSize(17), // this value is in pixels, 17 pixels
+    labelFontSize(13), // this value is in points
     constraintIconSize(15),
     pixelScalingFactor(1.0),
     blockedPreselection(false),
@@ -359,6 +360,7 @@ struct EditData {
     int PreselectCross;
     int MarkerSize;
     int coinFontSize;
+    int labelFontSize;
     int constraintIconSize;
     double pixelScalingFactor;
     std::set<int> PreselectConstraintSet;
@@ -4842,9 +4844,15 @@ void ViewProviderSketch::initParams()
         edit->pixelScalingFactor = viewScalingFactor * dpr;
 
         // Coin text takes pixels. Datum labels take points (SoDatumLabel
-        // renders through QFont into a plain QImage) and are sized with the
-        // same value here, as they always were in this fork.
+        // renders through QFont into a plain QImage), so they get the same
+        // size converted to points, as upstream sizes them. The fork used to
+        // hand them the pixel value, which drew them a third larger.
         edit->coinFontSize = std::lround(sketcherfontSize * dpr);
+        double dpi = editViewer() ? editViewer()->logicalDotsPerInchX()
+                                  : Gui::getMainWindow()->screen()->logicalDotsPerInchX();
+        if (dpi <= 0.0)
+            dpi = 96.0;
+        edit->labelFontSize = std::lround(sketcherfontSize * dpr * 72.0 / dpi);
         edit->constraintIconSize = std::lround(0.8 * sketcherfontSize * dpr);
 
         // Markers are bitmaps in a fixed set of sizes: scale, then take the
@@ -7235,7 +7243,7 @@ void ViewProviderSketch::rebuildConstraintsVisual(void)
                                             ConstrDimColor
                                             :NonDrivingConstrDimColor)
                                         :DeactivatedConstrDimColor;
-                text->size.setValue(edit->coinFontSize);
+                text->size.setValue(edit->labelFontSize);
                 text->lineWidth = 2 * edit->pixelScalingFactor;
                 text->useAntialiasing = false;
                 SoAnnotation *anno = new SoAnnotation();

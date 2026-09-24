@@ -16,6 +16,7 @@ precondition: without it every other check is vacuous.
 Scored against the tree before the fix: the ratio is 2 and the three
 size checks fail, each at exactly half its expected value.
 """
+import math
 import os
 import traceback
 
@@ -94,14 +95,19 @@ def run():
         check("point size is 8 device pixels per logical pixel",
               size == 16.0, size)
 
-        # The fork sizes datum labels with the Coin font size, from the
-        # application font's height in logical pixels.
+        # Datum labels take POINTS (SoDatumLabel draws through QFont): the
+        # application font's height in logical pixels, times the ratio, in
+        # points at the screen's logical DPI -- upstream's sizing, taken at
+        # the user's ruling. The fork used to hand them the pixel value.
         logical = QtGui.QFontMetrics(QtWidgets.QApplication.font()).height()
+        dpi = QtWidgets.QApplication.primaryScreen().logicalDotsPerInchX()
+        want = math.floor(logical * dpr * 72.0 / dpi + 0.5)
         label = find(view, type_name="SoDatumLabel")
         lsize = float(label.getField("size").get().getString()) if label else None
-        check("datum label font scales with the device pixel ratio",
-              lsize is not None and abs(lsize - round(logical * dpr)) < 0.5,
-              "size=%s logical font height=%s" % (lsize, logical))
+        check("datum label font is the Coin font size in points, scaled",
+              lsize is not None and abs(lsize - want) < 0.5,
+              "size=%s want=%s logical font height=%s dpi=%s"
+              % (lsize, want, logical, dpi))
 
         FreeCADGui.activeDocument().resetEdit()
         QtCore.QCoreApplication.processEvents()
