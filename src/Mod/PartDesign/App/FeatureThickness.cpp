@@ -76,6 +76,11 @@ App::DocumentObjectExecReturn *Thickness::execute()
     } catch (Base::Exception &e) {
         return new App::DocumentObjectExecReturn(e.what());
     }
+    // In the base's local frame, as Fillet does: making a thick solid of a
+    // rotated filleted body fails in global coordinates (upstream d8d85f05ff,
+    // issue 5829)
+    baseShape.setTransform(Base::Matrix4D());
+    this->positionByBaseFeature();
 
     std::map<int,std::vector<TopoShape> > closeFaces;
     const std::vector<std::string>& subStrings = Base.getSubValues(true);
