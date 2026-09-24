@@ -1242,6 +1242,16 @@ fitted 0.0857 the browser used for `H/50` -- 2.6 times the desktop's
 either. A view with a camera of its own (an `OverlayAnchor` corner
 overlay) keeps the `scaleFactor` path for non-billboard entries.
 
+A billboard with `pixelscale` is an SoImage (`SoFCImageQuad`), which GL
+draws with glDrawPixels, so it is drawn to the same rule: the anchor
+snapped to a whole window pixel (`setDrawTransform`, the scene-camera
+branch), the quad's corners whole pixels from it (size>>1 when centred,
+as `SoImage::GLRender`), and the texture sampled point through a
+per-draw override in `bindTextureStage`. Each half alone leaves a 2 px
+constraint-icon stroke smeared over three pale rows -- the snap alone
+still loses to the anisotropic sampler's taps across the neighbouring
+transparent texels. Guard: `GuiImagePixelsMode3`.
+
 **Through glass.** A glass body refracts by resampling the scene-color
 copy through a per-pixel UV displacement, and wherever that field
 converges -- which is what a curved body IS -- it magnifies whatever it
