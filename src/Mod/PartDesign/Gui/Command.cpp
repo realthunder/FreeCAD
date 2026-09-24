@@ -1854,10 +1854,10 @@ void finishDressupFeature(const Gui::Command* cmd, const std::string& which,
         Gui::cmdAppObject(Feat, std::ostringstream() << "UseAllEdges = True");
     }
     cmd->doCommand(cmd->Gui,"Gui.Selection.clearSelection()");
-    // With nothing picked yet the feature can only fail; a document
-    // recompute would report that before the panel even opens.
-    if (!updateDocument)
-        Feat->recomputeFeature();
+    // With nothing picked yet the feature can only fail, and any recompute --
+    // of the document or of the feature alone -- reports that as an error
+    // before the panel even opens. So it is left unrecomputed until the panel
+    // has something to work with, and the base is shown instead.
     finishFeature(cmd, Feat, base, /*hidePrevSolid*/true, updateDocument);
 
     App::DocumentObject* baseFeature = static_cast<PartDesign::DressUp*>(Feat)->Base.getValue();
@@ -1865,7 +1865,7 @@ void finishDressupFeature(const Gui::Command* cmd, const std::string& which,
         PartDesignGui::ViewProvider* view = dynamic_cast<PartDesignGui::ViewProvider*>(Gui::Application::Instance->getViewProvider(baseFeature));
         // in case there is an error, for example when a fillet is larger than the available space
         // display the base feature to avoid that the user sees nothing
-        if (view && Feat->isError())
+        if (view && (Feat->isError() || !updateDocument))
             view->Visibility.setValue(true);
     }
 }
