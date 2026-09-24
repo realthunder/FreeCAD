@@ -165,6 +165,10 @@ namespace ModelRefine
         bool process();
         const TopoDS_Shell& getShell() const {return workShell;}
         bool isModified(){return modifiedSignal;}
+        /// Give the rebuilt shell the orientation of \a shell, the one it
+        /// was made from: process() orients it by the sign of its volume,
+        /// which is wrong for a solid's inner shell
+        void fixOrientation(const TopoDS_Shell& shell);
         const std::vector<ShapePairType>& getModifiedShapes() const
         {return modifiedShapes;}
         const ShapeVectorType& getDeletedShapes() const
