@@ -4078,6 +4078,27 @@ inline void setDrawTransform(const Render::DrawCall &draw,
             std::memcpy(m, entry.matrix, sizeof(m));
         float sf = entry.scaleFactor == 0.0f
             ? 1.0f : entry.scaleFactor * autozoomScale;
+        // An entry sized in screen pixels (pixelscale set) that keeps its
+        // own orientation -- a datum's number, which lies in its dimension
+        // plane. Sized like a billboard, against the view it is drawn with
+        // and at its own depth: its scaleFactor was calibrated against the
+        // viewport of the traversal that captured it, and a different view
+        // -- a browser window, a served capture's fixed 1280x720 -- drew it
+        // at the ratio of the two heights (docs/RenderEngine.md "Autozoom
+        // in pixels"). Views with a camera of their own (overlayAnchor)
+        // keep the scaleFactor path.
+        if (!entry.billboard && entry.pixelscale > 0.f && !overlayAnchor
+                && viewMatrix && projMatrix && viewportHeight > 0.f) {
+            const float *V = viewMatrix;
+            const float *P = projMatrix;
+            const bool persp = std::abs(P[15]) < 1e-6f;
+            const float zview = m[12]*V[2] + m[13]*V[6] + m[14]*V[10] + V[14];
+            const float depth = -zview;
+            const float p5 = std::abs(P[5]) > 1e-8f ? std::abs(P[5]) : 1.0f;
+            sf = entry.pixelscale * 2.0f / (p5 * viewportHeight);
+            if (persp)
+                sf *= (depth > 1e-4f ? depth : 1e-4f);
+        }
         if (entry.billboard && viewMatrix && projMatrix && viewportHeight > 0.f) {
             // Screen-align: substitute the upper 3x3 with the camera basis so
             // the geometry always faces the viewer (SoText2-style text). The

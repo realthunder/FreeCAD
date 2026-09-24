@@ -2594,10 +2594,13 @@ struct Material {
         /// viewer, like SoText2) instead of keeping the model rotation. Used
         /// by SoTextImage glyph quads.
         bool billboard = false;
-        /// Billboard draws only: on-screen pixels per emitted geometry unit.
-        /// 0 keeps the backend's glyph-legibility text factor; image quads
-        /// emitted in native pixels (SoImage capture companions) use 1 for
-        /// raw-GL pixel parity.
+        /// On-screen pixels per emitted geometry unit, resolved by the
+        /// backend against the view it draws with. On a billboard, 0 keeps
+        /// the backend's glyph-legibility text factor; image quads emitted
+        /// in native pixels (SoImage capture companions) use 1 for raw-GL
+        /// pixel parity. On an entry that is not a billboard, 0 keeps
+        /// scaleFactor * the autozoom scale, and a value sizes it in pixels
+        /// instead (a datum's number, SoDatumLabel).
         float pixelscale = 0.0f;
         /// Datum-label auto-flip: keep the glyph in its dimension plane, but
         /// mirror its local X/Y per frame so the number always reads

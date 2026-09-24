@@ -1223,6 +1223,25 @@ bitmap over 32 px, or past the 256th cell, keeps the square; a
 simplified ladder rung (`MeshSimplify`) carries no markers and draws
 squares, which does not arise for the small sets markers are used on.
 
+**Autozoom in pixels.** An autozoom entry (`Material::AutoZoomEntry`,
+from `SoAutoZoomTranslation`) is replayed per frame with its scale
+substituted. Plain entries take `scaleFactor * autozoomScale`, Coin's
+fraction of the view: `autozoomScale` is `H/50`, H the view height in
+world units (`translateAutoZoomScale` on the desktop; the browser
+computes the same from its orbit camera, `0.04 * d * tan(fovY/2)`).
+An entry that sets `pixelscale` is sized in screen pixels instead,
+against the view that draws it and at its own depth: a billboard
+(constraint icons, SoTextImage) and, since v79, a datum's number, which
+lies in its dimension plane. The number used to take the plain path
+with `scaleFactor = 50 / capture viewport height`, which is one pixel
+only in a view as tall as the one that captured it: a served capture is
+1280x720, so a 900 px browser drew it at 900/720 of that, times the
+fitted 0.0857 the browser used for `H/50` -- 2.6 times the desktop's
+10 px glyph, measured. Now both measure 10 px. SceneDump carries
+`pixelscale` from v79; before that no billboard's reached a viewer
+either. A view with a camera of its own (an `OverlayAnchor` corner
+overlay) keeps the `scaleFactor` path for non-billboard entries.
+
 **Through glass.** A glass body refracts by resampling the scene-color
 copy through a per-pixel UV displacement, and wherever that field
 converges -- which is what a curved body IS -- it magnifies whatever it

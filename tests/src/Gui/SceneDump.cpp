@@ -388,6 +388,44 @@ TEST(SceneDump, monolithicRoundTrip)
     expectScene(loaded);
 }
 
+/// An autozoom entry's pixel scale crosses the wire (v79). A viewer
+/// without it sized every billboard image with the text factor -- a
+/// constraint icon at 1.35 of its pixels -- and a datum's number, which is
+/// not a billboard, from the scaleFactor its capture calibrated against
+/// its own viewport: 2.6 times too large in a 900 px browser window
+/// showing a served 720 px capture.
+TEST(SceneDump, anAutozoomPixelScaleCrossesTheWire)
+{
+    Render::SceneSnapshot snap;
+    snap.scene.push_back(makeDraw(0x1111, makeMesh(1, 8), 0xff0000ff));
+    Render::Material::AutoZoomEntry icon;
+    icon.billboard = true;
+    icon.pixelscale = 1.0f;
+    Render::Material::AutoZoomEntry number;
+    number.scaleFactor = 50.0f / 720.0f;
+    number.pixelscale = 1.0f;
+    number.datumFlip = true;
+    Render::Material::AutoZoomEntry plain;
+    plain.scaleFactor = 2.0f;
+    snap.scene.back().material.autozoom = {icon, number, plain};
+
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(Render::loadSceneSnapshot(payload.data(), payload.size(), loaded));
+    ASSERT_EQ(loaded.scene.size(), 1u);
+    const auto& az = loaded.scene[0].material.autozoom;
+    ASSERT_EQ(az.size(), 3u);
+    EXPECT_TRUE(az[0].billboard);
+    EXPECT_EQ(az[0].pixelscale, 1.0f);
+    EXPECT_FALSE(az[1].billboard);
+    EXPECT_EQ(az[1].pixelscale, 1.0f);
+    EXPECT_TRUE(az[1].datumFlip);
+    EXPECT_EQ(az[1].scaleFactor, 50.0f / 720.0f);
+    EXPECT_EQ(az[2].pixelscale, 0.0f) << "unset stays unset";
+    EXPECT_EQ(az[2].scaleFactor, 2.0f);
+}
+
 /// The output colour transform crosses the wire (v60).
 ///
 /// It has to: the desktop, the headless-serve backend and the browser

@@ -926,6 +926,15 @@ static void screenRay(float px, float py, bx::Vec3 &orig, bx::Vec3 &rdir)
                 bx::mul(f.up, ny * th))));
 }
 
+/// The autozoom (screen-constant) scale for the orbit camera, as the
+/// desktop's RendererBridge::translateAutoZoomScale gives it for a Coin
+/// camera: getWorldToScreenScale(0, 0.1) / (5 * aspect), which for a
+/// perspective camera at distance d is 2 * 0.1 / 5 * d * tan(fovY / 2).
+static float autoZoomScaleForOrbit()
+{
+    return 0.04f * s_dist * std::tan(0.5f * kFovY * bx::kPi / 180.0f);
+}
+
 static void buildCamera(float *viewMtx, float *projMtx,
                         int vw = 0, int vh = 0)
 {
@@ -3477,8 +3486,7 @@ static void renderLayoutFrame()
         const float *am = static_cast<const float *>(
             frames[activeFrame >= 0 ? activeFrame : 0].viewMatrix);
         relightForCamera(am);
-        s_renderer->setAutoZoomScale(
-            s_dist * std::tan(0.5f * kFovY * bx::kPi / 180.0f) * 0.0857f);
+        s_renderer->setAutoZoomScale(autoZoomScaleForOrbit());
         const double renderT0 = emscripten_get_now();
         s_renderer->renderSubViews(bg, frames.data(),
                                    int(frames.size()));
@@ -4341,12 +4349,16 @@ static void mainLoop()
     // Recompute the autozoom (screen-constant) scale from THIS viewer's camera
     // each frame, replacing the value baked into the snapshot from the desktop
     // camera; otherwise screen-constant content (datum labels) keeps the desktop
-    // size and grows/shrinks as the browser user zooms. Mirrors Coin's
-    // translateAutoZoomScale (worldToScreenScale/(5*aspect)), which for this
-    // perspective camera is proportional to the focal distance; the constant is
-    // calibrated so the glyph keeps the size the captured desktop scale gave.
-    s_renderer->setAutoZoomScale(
-        s_dist * std::tan(0.5f * kFovY * bx::kPi / 180.0f) * 0.0857f);
+    // size and grows/shrinks as the browser user zooms. The desktop's
+    // translateAutoZoomScale, getWorldToScreenScale(0, 0.1) / (5 * aspect):
+    // a tenth of the view's width at the orbit distance over five aspects,
+    // 2 * 0.1 / 5 * d * tan(fovY / 2) for this perspective camera. It read
+    // 0.0857 while it was fitted by eye against a datum glyph whose own
+    // factor was itself fitted (SoDatumLabel, 7.5 / vpHeight then). The
+    // glyph no longer rides on it: it is sized in pixels against this
+    // view (AutoZoomEntry::pixelscale), so this is what the plain,
+    // fraction-of-the-view entries get, as they do on the desktop.
+    s_renderer->setAutoZoomScale(autoZoomScaleForOrbit());
     QColor bg((s_snap.clearColor >> 24) & 0xff,
               (s_snap.clearColor >> 16) & 0xff,
               (s_snap.clearColor >> 8) & 0xff);

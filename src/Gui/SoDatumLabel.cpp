@@ -331,6 +331,11 @@ SoNode* SoDatumLabel::getImageNode()
         // tracks the datum's (world-space) plane normal.
         this->imageZoom->datumFlip = TRUE;
         this->imageZoom->flipNormal.connectFrom(&this->norm);
+        // One screen pixel per glyph pixel, resolved by the backend against
+        // the view that draws it -- which is not always the one this was
+        // captured in (a browser, a served capture). The scaleFactor below
+        // stays for a view with a camera of its own.
+        this->imageZoom->pixelScale = 1.0f;
 
         this->imageShape = new SoDatumLabelImage;
         this->imageShape->owner = this;

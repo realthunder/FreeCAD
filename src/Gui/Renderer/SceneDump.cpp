@@ -330,7 +330,11 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     flag 64, after the point parts): the bitmap each vertex of a
 //     sketch is drawn as. Without them a reader draws every point as a
 //     square of the point size.
-const uint32_t kVersion = 78;
+// 79: an autozoom entry carries its pixel scale (AutoZoomEntry::pixelscale,
+//     after the plane normal). Without it a viewer sized every billboard
+//     image with the text factor -- a constraint icon at 1.35 of its
+//     pixels -- and a datum's number from the capture's viewport height.
+const uint32_t kVersion = 79;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -382,7 +386,8 @@ const uint32_t kVersion = 78;
 ///     without its arrowheads.)
 /// 19: a mesh chunk may carry point markers after the point parts
 ///     (v78), said by flag 64.
-const uint32_t kChunkVersion = 19;
+/// 20: a material chunk's autozoom entries carry their pixel scale (v79).
+const uint32_t kChunkVersion = 20;
 
 /// Bytes per vertex of MeshData::materials, whose layout Renderer.h
 /// documents. Named here because the stride is what a reader of an
@@ -1803,6 +1808,7 @@ void writeMaterial(Writer &w, const Material &m, const RefWriter &refs)
         w.b(az.billboard);  // v7
         w.b(az.datumFlip);  // v8
         w.floats(az.normal, 3);  // v8
+        w.f(az.pixelscale);  // v79
     }
     w.u8(m.numclipplanes);
     w.b(m.clipconcave);
@@ -2021,6 +2027,7 @@ void readMaterial(Reader &r, Material &m, const RefReader &refs,
             az.datumFlip = r.b();
             r.floats(az.normal, 3);
         }
+        az.pixelscale = version >= 79 ? r.f() : 0.0f;
     }
     m.numclipplanes = r.u8();
     m.clipconcave = r.b();
