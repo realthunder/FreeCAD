@@ -238,7 +238,7 @@ see [the guest toolchain](#the-pyodide-sandbox-guest-toolchain)) and
   python=3.12 "libboost-devel=1.90" eigen xerces-c zlib yaml-cpp rapidjson freeimage freetype \
   expat libgl-devel libglx-devel libopengl-devel libegl-devel xorg-libxmu xorg-libxi \
   fmt pybind11 numpy matplotlib-base \
-  pcl lark ply pyyaml
+  pcl lark ply pyyaml mcp
 printf 'qt6-main ==6.11.2\npyside6 ==6.11.2\nvtk-base ==9.6.2\nvtk-io-ffmpeg ==9.6.2\n' \
   > ~/works/sw/fcad/.conda/freecad/conda-meta/pinned
 printf 'libboost 1.90.*\nlibboost-devel 1.90.*\n' \
@@ -1599,9 +1599,13 @@ on a socket. The answer is yes, so the console is a standing part of this box's
 setup rather than an experiment on probation. It remains loopback-only and
 off unless `FC_MCP_PORT` or `MCPServerAutoStart` turns it on.
 
-Runtime dependency: the `mcp` Python package in the active interpreter. **It is
-installed in `.conda/freecad` as of 2026-09-19** -- `mcp` 2.1.1 from conda-forge,
-38 packages in all, pulled with the channel held down:
+Runtime dependency: the `mcp` Python package in the active interpreter. It is in
+every env create line in this document, and the configure summary prints an
+`mcp:` line -- the version, or `NOT FOUND` -- because an env rebuilt without it
+builds and runs fine and fails only when an agent connects. That is how it went
+missing on the Windows box for weeks (the env was recreated on 2026-09-07). Into
+an existing env, pulled with the channel held down (on Linux it was `mcp` 2.1.1,
+38 packages; on Windows 2026-09-25, 2.2.0 and 43, all new, none moved):
 
 ```sh
 conda install -p ~/works/sw/fcad/.conda/freecad -c conda-forge \
@@ -1638,14 +1642,44 @@ headless serve: `initialize` 200, `tools/list` returning all three tools
 the shorter `from mcp.server import MCPServer` that `_make_server()` uses still
 resolves.
 
-Start it from FreeCAD's Python console (main thread):
+### Starting it and connecting
 
-```python
-from freecad import mcp_console
-mcp_console.start()          # -> http://127.0.0.1:8765/mcp
+Three ways to start it, the same server each time:
+
+- **`FC_MCP_PORT=<port>`** in FreeCAD's environment starts it at launch, for that
+  session only; `FC_MCP_PORT=0` keeps it off even when the Tools menu state says
+  on. The GUI reads it itself (`MainWindow::delayedStartup()`, through
+  `Std_MCPServer`); before 2026-09-25 only `scripts/renderer-serve.sh` honoured
+  it, by passing `scripts/mcp-console.py`, and a plain launch ignored it.
+- **Tools > MCP server**, remembered in `MCPServerAutoStart` for the next start.
+- `from freecad import mcp_console; mcp_console.start()` in the Python console.
+
+The port is where the server starts looking: if it is taken, the next free one
+is used. So **do not guess the URL** -- every running server writes
+`~/.freecad-mcp/<pid>.json` (`url`, `pid`, `home`, `gui`; `FC_MCP_ENDPOINT_DIR`
+overrides), removes it on stop or exit, and `scripts/mcp_run.py` reads them.
+That script needs only the standard library, so it runs under any Python:
+
+```sh
+python scripts/mcp_run.py --launch -- <FreeCAD executable> [args]   # start, wait, print pid + URL
+python scripts/mcp_run.py probe.py             # run a file in the newest live FreeCAD
+python scripts/mcp_run.py -c "App.Version()"   # or a snippet
+python scripts/mcp_run.py --pid 1234 probe.py  # a particular one, when several run
+python scripts/mcp_run.py --list               # the live servers; dead ones' files are dropped
+python scripts/mcp_run.py --log 50             # the console capture's last lines
 ```
 
-Point an MCP client (Claude Code, etc.) at that URL. The single tool is
+On Windows run it under `.conda\run.cmd python ...` so `--launch` hands FreeCAD
+the env (and so `python` is not the Microsoft Store stub). It prints the pid,
+URL and home path of the server it picked on stderr, returns 1 when the code
+raised inside FreeCAD and 2 when there is nothing to talk to. Stop a launched
+FreeCAD by its pid, or with
+`-c "from PySide6 import QtCore, QtWidgets; QtCore.QTimer.singleShot(500, QtWidgets.QApplication.quit)"`,
+which also removes its endpoint file; never `os._exit`, which leaves recovery
+state behind.
+
+An MCP client (Claude Code, etc.) can equally be pointed at the URL `--list`
+prints. The single tool is
 intentional: the whole FreeCAD API is already Python-reachable, so the tool's
 description teaches the agent the entry points (`App`, `Gui`, `App.ActiveDocument`,
 `dir()`/`help()`) rather than wrapping operations as extra tools.
@@ -1676,9 +1710,10 @@ address the Windows side sees, so a Windows client connects to the *Linux* proce
 everything looks normal — same tool, same API, plausible answers — until a path gives it
 away (`os.getcwd()` returning `/home/...`, or a screenshot that "saved" successfully and
 does not exist on disk). `Get-NetTCPConnection -LocalPort 8765` lists no owning Windows
-process in that case, which is the tell. Start the Windows console on its own port
-(`mcp_console.start(port=8766)`) whenever both stacks may be live, and verify with
-`App.getHomePath()` before trusting a session.
+process in that case, which is the tell. The endpoint files are the way round it:
+they live under each OS's own home, so `scripts/mcp_run.py` on Windows only ever
+finds Windows servers, at the port each one actually bound, and never tries a
+port on the chance that it is the right process.
 
 **Screenshots need an unlocked desktop.** `Gui.getMainWindow().grab()` renders the widget
 tree, so menus, toolbars, panels and the report view come out fine with the session
@@ -1847,8 +1882,14 @@ conda create -y -p .conda\freecad ^
   libboost-devel=1.90 eigen xerces-c zlib yaml-cpp rapidjson freeimage freetype expat ^
   fmt pybind11 numpy matplotlib-base ^
   tbb-devel "vtk-base==9.6.2" "vtk-io-ffmpeg==9.6.2" libmed hdf5 libxml2-devel lazy_loader ^
-  lark pyyaml
+  lark pyyaml mcp
 ```
+
+**`mcp` is there for the MCP debug console, and nothing fails without it until an
+agent tries to connect.** The env on this box was recreated on 2026-09-07 from a
+create line that did not have it, and every note written afterwards still said
+the console worked. The configure summary now prints an `mcp:` line -- a version,
+or `NOT FOUND` -- so look there after rebuilding an env.
 
 **`pyyaml` is there for the tests, and leaving it out costs 1343 of them
 silently.** `Mod/CAM`'s tool-bit serializers `import yaml` at module scope, so
@@ -2486,7 +2527,6 @@ covered in the next section.
 |---|---|
 | `build-fcad.cmd [jobs]` | configure from the user preset, then build. **Jobs default to 6.** |
 | `run_cdb.ps1` | launch FreeCAD under `cdb` in one reused console |
-| `mcp_run.py <script.py>` | run Python inside the *running* FreeCAD over MCP |
 | `run-cycles.cmd` | `run.cmd` plus the two variables Cycles' GPU devices need |
 | `build-occt.cmd` / `build-coin.cmd` | the dependency recipes above, with the suffixes and prefixes filled in |
 | `build-libarea.cmd` / `build-pivy.cmd` | the two from-source packages. pivy builds on the env's own SWIG -- do not pin it |
@@ -2519,34 +2559,25 @@ line. `-Stop` first. And a process created by a debugger gets the NT debug heap
 unless `_NO_DEBUG_HEAP=1` is set, which makes OCCT crawl in `free()`; the script sets
 it, which is half of why it exists.
 
-**`mcp_run.py`** talks to the MCP console that the running FreeCAD brings up itself,
-from `DocumentParams MCPServerAutoStart`. Two things about the port: this build
-listens on **8791**, not the 8765 default, because on this mirrored-networking box
-the WSL2 FreeCAD answers 8765 *and* 8766 on the Windows `127.0.0.1` -- and
-`mcp_run.py`'s own default is 8766, so **`FCAD_MCP_URL` has to be set**. A probe
-against the wrong port hangs in retries rather than erroring, which reads exactly
-like the app having failed to start. If the port was already taken FreeCAD takes the
-next free one and says so, as a console warning and in the Tools -> MCP server
-tooltip, so read the port there rather than assuming it.
+**Driving the running FreeCAD** is `scripts/mcp_run.py`, in the repo since
+2026-09-25 -- see [the MCP debug console](#starting-it-and-connecting). The copy
+that used to live here in `..\tools`, with its port 8791 and `FCAD_MCP_URL`
+dance, went with the 2026-09-06 rebuild of this box, and nothing said so:
 
 ```bat
-set FCAD_MCP_URL=http://127.0.0.1:8791/mcp
-.conda\run.cmd python ..\tools\mcp_run.py probe.py
+.conda\run.cmd python scripts\mcp_run.py --launch -- build\win-relwithdebinfo-801\bin\FreeCAD.exe
+.conda\run.cmd python scripts\mcp_run.py probe.py
 ```
 
-**As of 2026-09-24 neither half is on this box**: `import mcp` fails in
-`.conda\freecad` and `..\tools\mcp_run.py` does not exist, so the console
-cannot start. The fallback that works is the `-M <dir>` startup hook (an
-`InitGui.py` that `runpy`s a driver on a QTimer). To press a task panel's
-OK from it, click the `QDialogButtonBox` under
-`Gui::TaskView::TaskEditControl`; the first OK found is usually a
-`DlgPropertyLink`'s inside the panel, and `Gui.Control.activeTaskDialog()
-.accept()` does not reach the C++ dialog.
+Pass a **script file** rather than `-c "code"` when going through
+`cmd /c ".conda\run.cmd ..."`, which strips the quoting. `mcp_run.py` prints the
+home path of the server it picked; it can only pick one of this OS's, but read it.
 
-Pass a **script file**, not `-c "code"`: nested through `cmd /c ".conda\run.cmd ..."`
-the quoting is stripped and the console gets a `SyntaxError` on an unterminated
-string. Confirm identity before believing any session -- `App.getHomePath()` must
-start with `D:/` for the Windows build, or you are driving the WSL one.
+To press a task panel's OK from a script, click the `QDialogButtonBox` under
+`Gui::TaskView::TaskEditControl`: the first OK a widget search finds is usually a
+`DlgPropertyLink`'s inside the panel, and `Gui.Control.activeTaskDialog().accept()`
+does not reach the C++ dialog. The `-M <dir>` startup hook (an `InitGui.py` that
+`runpy`s a driver on a QTimer) is the fallback when the console cannot start.
 
 ### Cycles on Windows -- where OptiX and HIP can actually be tested
 
@@ -3514,7 +3545,7 @@ bgfx uses Metal). On Apple silicon use `clang_osx-arm64 clangxx_osx-arm64`.
   clang_osx-64 clangxx_osx-64 cmake ninja make swig pkg-config \
   qt6-main=6.11.1 pyside6=6.11.1 \
   python=3.12 libboost-devel eigen xerces-c zlib yaml-cpp rapidjson freeimage freetype \
-  expat fmt pybind11 numpy matplotlib-base lark
+  expat fmt pybind11 numpy matplotlib-base lark mcp
 printf 'qt6-main ==6.11.1\npyside6 ==6.11.1\npython ==3.12.*\n' \
   > ~/works/sw/fcad/.conda/freecad/conda-meta/pinned
 cd ~/works/sw/fcad/.conda/freecad

@@ -13,7 +13,8 @@ stacks.
 | `renderer-desktop.sh [scene.py] [port]` | Launch the desktop GUI on the **WSLg real GPU** (Mesa d3d12 over `/dev/dxg`) with the bgfx backend; optionally stream the scene on `FC_BGFX_SERVE_SCENE=<port>`. |
 | `renderer-serve.sh [scene.py] [port]` | Headless (Xvfb, **software GL**) FreeCAD streaming a scene for the WASM viewer — for agents/CI or no-display hosts. Also starts the MCP debug console (`mcp-console.py`). |
 | `wasm-viewer.sh [http] [scene]` | Serve the built WASM viewer over HTTP (`Cache-Control: no-store` — never a stale bundle) and print the URL to open it against a scene backend. |
-| `mcp-console.py` | In-FreeCAD script starting the **MCP debug console** (`freecad.mcp_console`: `run_python` / `search_api` over streamable-HTTP, default port 8765, `FC_MCP_PORT` overrides, `FC_MCP_PORT=0` disables) so an AI agent can drive the live process. |
+| `mcp-console.py` | In-FreeCAD script starting the **MCP debug console** (`freecad.mcp_console`: `run_python` / `search_api` over streamable-HTTP, default port 8765, `FC_MCP_PORT` overrides, `FC_MCP_PORT=0` disables) so an AI agent can drive the live process. The GUI honours `FC_MCP_PORT` by itself; this script is for other launches. |
+| `mcp_run.py` | The client, standard library only: `--launch -- <FreeCAD>` starts one serving and waits, then `mcp_run.py probe.py` / `-c CODE` / `--log N` / `--list` talk to the newest live server, found through the endpoint files servers write to `~/.freecad-mcp/`. See docs/DevEnvironment.md, "Starting it and connecting". |
 
 ## Browser-side tools (Chromium)
 
