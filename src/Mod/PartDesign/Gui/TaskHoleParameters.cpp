@@ -283,8 +283,11 @@ void TaskHoleParameters::refresh()
     // Class is only enabled (sensible) if threaded
     ui->ThreadClass->setEnabled(pcHole->Threaded.getValue());
     ui->ThreadFit->setCurrentIndex(pcHole->ThreadFit.getValue());
-    // Fit is only enabled (sensible) if not threaded
-    ui->ThreadFit->setEnabled(!pcHole->Threaded.getValue());
+    // Fit is only enabled (sensible) if not threaded, and like the size, only
+    // with a thread type (upstream ca3cb78ad5)
+    bool hasThreadType = pcHole->ThreadType.getValue() != 0L;
+    ui->ThreadFit->setEnabled(!pcHole->Threaded.getValue() && hasThreadType);
+    ui->ThreadSize->setEnabled(hasThreadType);
     ui->Diameter->setMinimum(pcHole->Diameter.getMinimum());
     ui->Diameter->setValue(pcHole->Diameter.getValue());
     // Diameter is only enabled if ThreadType is None
@@ -370,6 +373,9 @@ void TaskHoleParameters::threadedChanged()
 
     ui->ModelThread->setEnabled(isChecked);
     ui->ThreadDepthType->setEnabled(isChecked);
+    // as refresh() and modelThreadChanged() have it (upstream 44e8f91085)
+    ui->ThreadDepth->setEnabled(isChecked && ui->ModelThread->isChecked()
+        && std::string(pcHole->ThreadDepthType.getValueAsString()) == "Dimension");
 
     // conditional enabling of thread modeling options
     ui->UseCustomThreadClearance->setEnabled(ui->Threaded->isChecked() && ui->ModelThread->isChecked());
