@@ -443,6 +443,11 @@ public:
     this->lineindexer = new SoFCVertexArrayIndexer(*indexer, lineindices, master->getNumVertices());
   }
 
+  // A subset's positions, whichever container the caller keeps them in
+  // (a map keys them, as SoFCVertexArrayIndexer's constructors do).
+  static int subsetPosition(int i) { return i; }
+  static int subsetPosition(const std::pair<const int, int> & p) { return p.first; }
+
   template<class IndicesT> void
   addPoints(const IndicesT & pointindices)
   {
@@ -455,6 +460,22 @@ public:
 
     auto indexer = PRIVATE(prevcache)->pointindexer;
     this->pointindexer = new SoFCVertexArrayIndexer(*indexer, pointindices, master->getNumVertices());
+
+    // The subset picks point indices by their position in the parent's
+    // list (SoFCVertexArrayIndexer::init, the partless branch), so the
+    // markers, one per position, are picked the same way.
+    const auto & prevmarkers = PRIVATE(prevcache)->markers;
+    if (prevmarkers.size()
+        && this->pointindexer->getNumIndices() != (int)prevmarkers.size())
+    {
+      COWVector<int> picked;
+      for (auto it = pointindices.begin(); it != pointindices.end(); ++it) {
+        int i = subsetPosition(*it);
+        if (i >= 0 && i < (int)prevmarkers.size())
+          picked.append(prevmarkers[i]);
+      }
+      this->markers = picked;
+    }
   }
 
   SbBool depthSortTriangles(SoState * state, bool fullsort, const SbPlane *sortplane);
@@ -2343,7 +2364,10 @@ SoFCVertexCache::addPoint(const SoPrimitiveVertex * v0)
     }
   }
   PRIVATE(this)->pointindexer->addPoint(res.first->second);
-  if (v.marker >= 0)
+  // One entry per point index whenever the node has markers at all,
+  // NONE included: skipping one shifted every later point onto its
+  // neighbour's marker.
+  if (PRIVATE(this)->markerindices)
     PRIVATE(this)->markers.append(v.marker);
   ++PRIVATE(this)->tmp->pointindexcount;
 }
@@ -2635,6 +2659,16 @@ SoFCVertexCache::getPointIndices(void) const
 {
   assert(PRIVATE(this)->pointindexer);
   return PRIVATE(this)->pointindexer->getIndices();
+}
+
+const int *
+SoFCVertexCache::getPointMarkers(void) const
+{
+  if (!PRIVATE(this)->markerindices
+      || !PRIVATE(this)->markers.size()
+      || (int)PRIVATE(this)->markers.size() != getNumPointIndices())
+    return nullptr;
+  return &PRIVATE(this)->markers[0];
 }
 
 SbBool

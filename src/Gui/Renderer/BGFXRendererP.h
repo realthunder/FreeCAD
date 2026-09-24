@@ -3468,6 +3468,9 @@ struct GpuMesh
     /// Per-point instance data (position + color) feeding the point
     /// sprite path; invalid without instancing support.
     bgfx::VertexBufferHandle pointInst = BGFX_INVALID_HANDLE;
+    /// pointInst carries marker codes (MeshData::pointMarkers): its
+    /// points draw as their bitmaps through the marker programs.
+    bool markers = false;
     /// Seam-filtered variant of lineInst (hidden-line hideSeam).
     bgfx::VertexBufferHandle lineNoSeamInst = BGFX_INVALID_HANDLE;
     uint64_t lastUsed = 0;
@@ -3497,7 +3500,11 @@ struct GpuMesh
         bytes = 0;
     }
 
-    void upload(const Render::MeshData &mesh)
+    /// \a markerCodes: per MeshData::markers entry, the code the marker
+    /// vertex program reads from the instance's w (fc_point_vs.sh);
+    /// empty for a mesh without markers.
+    void upload(const Render::MeshData &mesh,
+                const std::vector<float> &markerCodes = {})
     {
         if (mesh.colors) {
             ColorVertex::init();
@@ -3535,6 +3542,10 @@ struct GpuMesh
                 d[1] = mesh.positions[ip*3 + 1];
                 d[2] = mesh.positions[ip*3 + 2];
                 d[3] = 0.0f;
+                if (!markerCodes.empty()) {
+                    const uint8_t m = mesh.pointMarkers[i];
+                    d[3] = m < markerCodes.size() ? markerCodes[m] : -1.0f;
+                }
                 if (mesh.colors) {
                     for (int c = 0; c < 4; ++c)
                         d[4 + c] = mesh.colors[ip*4 + c] / 255.0f;
@@ -3545,6 +3556,7 @@ struct GpuMesh
             }
             pointInst = bgfx::createVertexBuffer(
                 imem, LineQuadVertex::ms_pointInstLayout);
+            markers = !markerCodes.empty();
             track(imem->size);
         }
     }
@@ -5302,6 +5314,10 @@ public:
         fn(m_progLinePatClip, LifeProgram);
         fn(m_progPoint, LifeProgram);
         fn(m_progPointClip, LifeProgram);
+        fn(m_progMarker, LifeProgram);
+        fn(m_progMarkerClip, LifeProgram);
+        fn(s_markerAtlas, LifeProgram);
+        fn(m_markerAtlas, LifeProgram);
         fn(m_progMeshTex, LifeProgram);
         fn(m_progMeshTexClip, LifeProgram);
         fn(m_progMeshOitTex, LifeProgram);
@@ -5524,6 +5540,13 @@ public:
         }
     }
 
+    /// The marker codes of \a data's palette (GpuMesh::upload), giving
+    /// each bitmap an atlas cell; empty when the mesh has no markers.
+    std::vector<float> markerCodes(const Render::MeshData &data);
+    /// Bind the marker atlas for a draw through the marker programs,
+    /// creating (or refilling) it first when it is not there.
+    void bindMarkerAtlas();
+
     GpuMesh *getMesh(const Render::MeshData &data)
     {
         GpuMesh &mesh = meshes[data.cacheId];
@@ -5549,7 +5572,7 @@ public:
             GpuGeometry &geom = res.first->second;
             tryUploadGeometry(geom, data);
             mesh.geom = &geom;
-            mesh.upload(data);
+            mesh.upload(data, markerCodes(data));
             static const bool dbgfeed =
                 (getenv("FC_BGFX_DEBUG_FEED") != nullptr);
             if (dbgfeed)
@@ -6572,7 +6595,7 @@ public:
                                     : mesh->lineInst);
         patterned = patterned && thickline;
         bool thickpoint = mat.type == Render::Material::Point
-            && mat.pointsize > 1.001f
+            && (mat.pointsize > 1.001f || mesh->markers)
             && m_instancing && bgfx::isValid(mesh->pointInst);
 
         bool transparent = mat.transparent
@@ -6668,7 +6691,9 @@ public:
                 ? (patterned ? (clipped ? m_progLinePatClip : m_progLinePat)
                              : (clipped ? m_progLineClip : m_progLine))
                 : thickpoint
-                    ? (clipped ? m_progPointClip : m_progPoint)
+                    ? (mesh->markers
+                        ? (clipped ? m_progMarkerClip : m_progMarker)
+                        : (clipped ? m_progPointClip : m_progPoint))
                     : (clipped ? m_progFlatClip : m_progFlat);
         }
         if (!bgfx::isValid(prog))
@@ -6699,6 +6724,8 @@ public:
             bgfx::setVertexBuffer(0, m_lineQuadVb);
             bgfx::setIndexBuffer(m_lineQuadIb);
             bgfx::setInstanceDataBuffer(mesh->pointInst, startPt, numPt);
+            if (mesh->markers)
+                bindMarkerAtlas();
         }
         else {
             setMeshVertexBuffers(mesh, *draw.mesh);
@@ -7219,6 +7246,20 @@ public:
     bgfx::ProgramHandle m_progLinePatClip = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progPoint = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progPointClip = BGFX_INVALID_HANDLE;
+    /// Points drawn as SoMarkerSet bitmaps (fs_fc_marker), and the atlas
+    /// the bitmaps are drawn from: cells of kMarkerCell pixels,
+    /// kMarkerColumns to a row, one byte a pixel. A cell, once given to
+    /// a bitmap, is that bitmap's for the life of the view -- the codes
+    /// in the instance buffers name cells -- so the atlas keeps the
+    /// bitmaps on the CPU too and refills itself if it is recreated.
+    bgfx::ProgramHandle m_progMarker = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progMarkerClip = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_markerAtlas = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle m_markerAtlas = BGFX_INVALID_HANDLE;
+    static constexpr int kMarkerCell = 32;
+    static constexpr int kMarkerColumns = 16;
+    std::vector<Render::MeshData::PointMarker> m_markerCells;
+    std::map<std::string, int> m_markerCellIndex;
     bgfx::ProgramHandle m_progMeshTex = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progMeshTexClip = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progMeshOitTex = BGFX_INVALID_HANDLE;

@@ -2560,6 +2560,55 @@ TEST(SceneDump, aMeshChunkRoundTripsThroughThePublicParse)
     EXPECT_EQ(chunk, again);
 }
 
+/// Point markers cross the wire by content: the palette of bitmaps and
+/// the palette entry of every point index, NoMarker included. A reader
+/// that lost them draws a sketch's vertices as squares of the point
+/// size where GL draws the marker's bitmap.
+TEST(SceneDump, pointMarkersCrossTheWire)
+{
+    Render::ParsedMeshChunk mesh;
+    mesh.posStore = {0, 0, 0, 1, 0, 0, 2, 0, 0};
+    mesh.positions = mesh.posStore.data();
+    mesh.numVertices = 3;
+    mesh.pointStore = {0, 1, 2};
+    mesh.pointIndices = mesh.pointStore.data();
+    mesh.numPointIndices = 3;
+    Render::MeshData::PointMarker disk;
+    disk.width = 3;
+    disk.height = 2;
+    disk.mask = {0, 255, 0, 255, 255, 255};
+    Render::MeshData::PointMarker dot;
+    dot.width = 1;
+    dot.height = 1;
+    dot.mask = {255};
+    mesh.markers = {disk, dot};
+    mesh.markerStore = {1, Render::MeshData::NoMarker, 0};
+    mesh.pointMarkers = mesh.markerStore.data();
+
+    std::vector<uint8_t> chunk;
+    ASSERT_TRUE(Render::encodeMeshChunk(mesh, chunk));
+    Render::ParsedMeshChunk parsed;
+    ASSERT_TRUE(Render::parseMeshChunk(chunk.data(), chunk.size(), parsed));
+    ASSERT_EQ(parsed.markers.size(), 2u);
+    EXPECT_EQ(parsed.markers[0].width, 3);
+    EXPECT_EQ(parsed.markers[0].height, 2);
+    EXPECT_EQ(parsed.markers[0].mask, disk.mask);
+    EXPECT_EQ(parsed.markers[1].mask, dot.mask);
+    ASSERT_TRUE(parsed.pointMarkers);
+    EXPECT_EQ(std::vector<uint8_t>(parsed.pointMarkers, parsed.pointMarkers + 3),
+              mesh.markerStore);
+
+    // A plain point set says nothing about markers.
+    mesh.markers.clear();
+    mesh.pointMarkers = nullptr;
+    std::vector<uint8_t> plainChunk;
+    ASSERT_TRUE(Render::encodeMeshChunk(mesh, plainChunk));
+    Render::ParsedMeshChunk plain;
+    ASSERT_TRUE(Render::parseMeshChunk(plainChunk.data(), plainChunk.size(), plain));
+    EXPECT_TRUE(plain.markers.empty());
+    EXPECT_FALSE(plain.pointMarkers);
+}
+
 /// A line mesh declares its ladder at a fraction of the triangle
 /// threshold: when an object's faces step onto a coarse rung, its
 /// edges must have a rung to step onto too, or the exact polylines

@@ -61,6 +61,7 @@
 #include <Inventor/fields/SoSFBool.h>
 #include <Inventor/nodes/SoClipPlane.h>
 #include <Inventor/nodes/SoBumpMap.h>
+#include <Inventor/nodes/SoMarkerSet.h>
 #include "SoFCRenderMaterial.h"
 #include "../Renderer/MeshSource.h"
 #include "../Renderer/ProxyHierarchy.h"
@@ -151,7 +152,84 @@ struct CacheMeshData : Render::MeshData {
     // struct's index pointers alias these when filled.
     std::vector<int32_t> partialTriangles;
     std::vector<int32_t> partialLines;
+    /// Palette entry per point index (MeshData::pointMarkers aliases it),
+    /// and the cache array it was built from, for the reuse check.
+    std::vector<uint8_t> markerStore;
+    const int *markerSource = nullptr;
 };
+
+/// A Coin marker bitmap unpacked into the renderer's form. The bitmaps
+/// are rows of bits, most significant bit leftmost unless the marker
+/// says otherwise, each row padded to the unpack alignment GL renders
+/// it with: 4 for Coin's built-in markers, 1 for added ones
+/// (SoFCVertexCache::renderPoints). Null when \a marker names none.
+const Render::MeshData::PointMarker *
+unpackMarker(int marker)
+{
+    SbVec2s size;
+    const unsigned char * bytes = nullptr;
+    SbBool lsbFirst = FALSE;
+    if (marker < 0 || marker >= SoMarkerSet::getNumDefinedMarkers()
+            || !SoMarkerSet::getMarker(marker, size, bytes, lsbFirst)
+            || !bytes || size[0] <= 0 || size[1] <= 0)
+        return nullptr;
+    // Keyed on the bitmap as well: SoMarkerSet::addMarker may redefine
+    // an index, and the unpacked copy must not outlive what it copied.
+    struct Entry {
+        const unsigned char * bytes = nullptr;
+        std::unique_ptr<Render::MeshData::PointMarker> marker;
+    };
+    static std::map<int, Entry> unpacked;
+    auto & entry = unpacked[marker];
+    if (entry.marker && entry.bytes == bytes)
+        return entry.marker.get();
+    entry.bytes = bytes;
+    auto & res = entry.marker;
+    res.reset(new Render::MeshData::PointMarker);
+    res->width = uint16_t(size[0]);
+    res->height = uint16_t(size[1]);
+    res->mask.resize(size_t(size[0]) * size[1]);
+    const int align = marker >= SoMarkerSet::NUM_MARKERS ? 1 : 4;
+    const int stride = ((size[0] + 7) / 8 + align - 1) / align * align;
+    for (int y = 0; y < size[1]; ++y) {
+        for (int x = 0; x < size[0]; ++x) {
+            const unsigned char byte = bytes[y * stride + x / 8];
+            const int bit = lsbFirst ? (x % 8) : (7 - x % 8);
+            res->mask[size_t(y) * size[0] + x] = (byte >> bit) & 1 ? 255 : 0;
+        }
+    }
+    return res.get();
+}
+
+/// Fill the mesh's marker palette from the cache's per-point marker
+/// indices (MeshData::markers). Markers GL cannot draw -- NONE, or an
+/// index no bitmap stands behind -- become NoMarker, which GL's loop
+/// skips as well.
+void translateMarkers(CacheMeshData & mesh, SoFCVertexCache * cache)
+{
+    const int * markers = cache->getPointMarkers();
+    mesh.markerSource = markers;
+    if (!markers || mesh.numPointIndices <= 0)
+        return;
+    std::map<int, uint8_t> slots;
+    mesh.markerStore.resize(size_t(mesh.numPointIndices));
+    for (int i = 0; i < mesh.numPointIndices; ++i) {
+        uint8_t slot = Render::MeshData::NoMarker;
+        auto it = slots.find(markers[i]);
+        if (it != slots.end())
+            slot = it->second;
+        else {
+            const auto * bitmap = unpackMarker(markers[i]);
+            if (bitmap && mesh.markers.size() < Render::MeshData::NoMarker) {
+                slot = uint8_t(mesh.markers.size());
+                mesh.markers.push_back(*bitmap);
+            }
+            slots.emplace(markers[i], slot);
+        }
+        mesh.markerStore[size_t(i)] = slot;
+    }
+    mesh.pointMarkers = mesh.markerStore.data();
+}
 
 /// Drawn meshes whose source tag no registration claims, split by
 /// where the tag came from (see translateCache). Counted only while
@@ -301,6 +379,7 @@ translateCache(SoFCVertexCache * cache)
     if (mesh->numPointIndices > 0)
         mesh->pointIndices =
             reinterpret_cast<const int32_t *>(cache->getPointIndices());
+    translateMarkers(*mesh, cache);
 
     mesh->hasTransparency = cache->hasTransparency();
     mesh->hasOpaqueParts = cache->hasOpaqueParts();
@@ -470,6 +549,8 @@ bool meshMatchesCache(CacheMeshData & mesh, SoFCVertexCache * cache)
             && mesh.pointIndices
                    != reinterpret_cast<const int32_t *>(cache->getPointIndices()))
         return false;
+    if (mesh.markerSource != cache->getPointMarkers())
+        return false;
 
     // The one thing a mesh holds that is not a property of its cache:
     // which rung of its level ladder the source registry has published
@@ -532,6 +613,9 @@ void verifyMeshReuse(const CacheMeshData & kept, SoFCVertexCache * cache)
     else if (kept.numPointIndices != fresh->numPointIndices
              || kept.pointIndices != fresh->pointIndices)
         bad = "point indices";
+    else if (kept.markerStore != fresh->markerStore
+             || kept.markers.size() != fresh->markers.size())
+        bad = "point markers";
     else if (kept.hasTransparency != fresh->hasTransparency)  bad = "transparency";
     else if (kept.hasOpaqueParts != fresh->hasOpaqueParts)    bad = "opaque parts";
     if (bad) {

@@ -1070,6 +1070,11 @@ void BGFXView::init(bool keepShared)
                       "fs_fc_point_sdf_clip");
         ensureProgram(m_progPoint, "vs_fc_point", "fs_fc_flat");
         ensureProgram(m_progPointClip, "vs_fc_point_clip", "fs_fc_flat_clip");
+        ensureProgram(m_progMarker, "vs_fc_marker", "fs_fc_marker");
+        ensureProgram(m_progMarkerClip, "vs_fc_marker_clip",
+                      "fs_fc_marker_clip");
+        ensureUniform(s_markerAtlas, "s_markerAtlas",
+                      bgfx::UniformType::Sampler);
         LineQuadVertex::init();
         static const LineQuadVertex quad[4] = {
             {0.0f, -1.0f, 0.0f}, {0.0f, 1.0f, 0.0f},

@@ -179,6 +179,25 @@ struct MeshData {
     /// included. Resolved by the backend against the view it draws
     /// with (scene-camera feeds only). Null for ordinary meshes.
     const float *screenOffsets = nullptr;
+
+    /// Point markers (SoMarkerSet): the bitmap each point is drawn as
+    /// in place of a square of the point size, as GL's glBitmap draws
+    /// it -- a fixed pixel pattern centred on the projected point.
+    /// \ref markers is the palette of distinct bitmaps the mesh uses,
+    /// carried by content so that a consumer with no Coin (the browser)
+    /// draws the same thing; \ref pointMarkers gives, per point index,
+    /// the palette entry, or NoMarker for a point GL draws nothing for
+    /// (SoMarkerSet::NONE). Null for ordinary point sets.
+    struct PointMarker {
+        uint16_t width = 0;
+        uint16_t height = 0;
+        /// One byte per pixel, nonzero = drawn; rows bottom-up, as GL
+        /// bitmaps are.
+        std::vector<uint8_t> mask;
+    };
+    static constexpr uint8_t NoMarker = 0xff;
+    std::vector<PointMarker> markers;
+    const uint8_t *pointMarkers = nullptr;
 };
 
 /// CPU-side snapshot of a texture image applied to triangle draws

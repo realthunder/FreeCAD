@@ -253,6 +253,14 @@ fc_add_gui_test(GuiSketchEditSingleDrawMode3_tests_run
                 sketch-edit-single-draw-mode3.py
                 --timeout 180)
 
+# A sketch's vertices are drawn as their markers in mode 3 -- the 7x7 disk
+# GL's glBitmap draws -- not as squares of the draw style's point size.
+# The backend was handed SoMarkerSet points as plain points; the markers
+# now reach it as bitmaps (Render::MeshData::markers).
+fc_add_gui_test(GuiSketchPointMarkersMode3_tests_run
+                sketch-point-markers-mode3.py
+                --timeout 180)
+
 # Auto-constraints for a DRAG, not only for a drawing tool (upstream
 # ec298e9e9a and its follow-ups): hold a dragged point still on top of
 # another point and the Coincident that pins it there is written when

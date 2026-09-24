@@ -27,6 +27,18 @@
  * pixels, unset bits discard.
  *
  * u_linePattern : x = 16-bit pattern, y = pixel repeat factor
+ *
+ * The MARKER variant (paired with the vs_fc_marker vertex shaders)
+ * draws a point as its SoMarkerSet bitmap, the way glBitmap does: a
+ * fixed pixel pattern, unset bits discard. v_texcoord0 is the pixel
+ * centre's offset from the point, v_vpos the atlas cell + 1 (0 for a
+ * plain point, which keeps its whole square) and the bitmap's size.
+ * The bitmap's lower-left pixel is the one GL puts it at,
+ * floor(point - (size - 1) / 2), which is where the ceil below comes
+ * from; the small bias keeps an exact tie on GL's side of it.
+ *
+ * s_markerAtlas : cells of MARKER_CELL pixels, MARKER_COLUMNS to a row,
+ *                 one byte per pixel, rows bottom-up like the bitmaps
  */
 
 uniform vec4 u_matColor;
@@ -34,6 +46,11 @@ uniform vec4 u_matEmissive;
 uniform vec4 u_params;
 #ifdef LINE_PATTERN
 uniform vec4 u_linePattern;
+#endif
+#ifdef MARKER
+#define MARKER_CELL 32.0
+#define MARKER_COLUMNS 16.0
+SAMPLER2D(s_markerAtlas, 0);
 #endif
 
 void main()
@@ -49,6 +66,23 @@ void main()
 	float bit = mod(floor(dist / max(u_linePattern.y, 1.0)), 16.0);
 	if (mod(floor(u_linePattern.x / exp2(bit)), 2.0) < 0.5)
 		discard;
+#endif
+
+#ifdef MARKER
+	float cell = floor(v_vpos.x + 0.5);
+	if (cell > 0.5)
+	{
+		vec2 size = floor(v_vpos.yz + 0.5);
+		vec2 px = ceil(v_texcoord0 + size * 0.5 - 1.001);
+		if (px.x < 0.0 || px.y < 0.0 || px.x >= size.x || px.y >= size.y)
+			discard;
+		float c = cell - 1.0;
+		vec2 origin = vec2(mod(c, MARKER_COLUMNS), floor(c / MARKER_COLUMNS))
+			* MARKER_CELL;
+		vec2 extent = vec2_splat(MARKER_CELL * MARKER_COLUMNS);
+		if (texture2D(s_markerAtlas, (origin + px + 0.5) / extent).x < 0.5)
+			discard;
+	}
 #endif
 
 	float cov = 1.0;

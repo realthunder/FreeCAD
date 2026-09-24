@@ -910,6 +910,70 @@ bool BGFXView::submitPrepassInstanced(const Render::DrawCall &draw,
     return true;
 }
 
+std::vector<float> BGFXView::markerCodes(const Render::MeshData &data)
+{
+    std::vector<float> codes;
+    if (!data.pointMarkers || data.markers.empty() || !m_instancing
+            || !bgfx::isValid(m_progMarker))
+        return codes;
+    const int maxCells = kMarkerColumns * kMarkerColumns;
+    for (const auto &marker : data.markers) {
+        // A bitmap wider than a cell, or one past the atlas, keeps the
+        // plain square (code 0) rather than drawing nothing.
+        float code = 0.0f;
+        if (marker.width > 0 && marker.height > 0
+                && marker.width <= kMarkerCell && marker.height <= kMarkerCell
+                && marker.mask.size() == size_t(marker.width) * marker.height) {
+            std::string key(reinterpret_cast<const char *>(&marker.width),
+                            sizeof(marker.width));
+            key.append(reinterpret_cast<const char *>(&marker.height),
+                       sizeof(marker.height));
+            key.append(marker.mask.begin(), marker.mask.end());
+            auto it = m_markerCellIndex.find(key);
+            if (it == m_markerCellIndex.end()
+                    && int(m_markerCells.size()) < maxCells) {
+                it = m_markerCellIndex.emplace(
+                    key, int(m_markerCells.size())).first;
+                m_markerCells.push_back(marker);
+                // Filled on the next bind; a new cell and a recreated
+                // atlas are the same job.
+                if (bgfx::isValid(m_markerAtlas)) {
+                    bgfx::destroy(m_markerAtlas);
+                    m_markerAtlas = BGFX_INVALID_HANDLE;
+                }
+            }
+            if (it != m_markerCellIndex.end())
+                code = float(it->second + 1)
+                    + 4096.0f * float(marker.width + 64 * marker.height);
+        }
+        codes.push_back(code);
+    }
+    return codes;
+}
+
+void BGFXView::bindMarkerAtlas()
+{
+    if (!bgfx::isValid(m_markerAtlas)) {
+        const int side = kMarkerCell * kMarkerColumns;
+        const bgfx::Memory *mem = bgfx::alloc(uint32_t(side * side));
+        std::memset(mem->data, 0, mem->size);
+        for (size_t c = 0; c < m_markerCells.size(); ++c) {
+            const auto &marker = m_markerCells[c];
+            const int x0 = int(c % kMarkerColumns) * kMarkerCell;
+            const int y0 = int(c / kMarkerColumns) * kMarkerCell;
+            for (int y = 0; y < marker.height; ++y)
+                std::memcpy(mem->data + size_t(y0 + y) * side + x0,
+                            marker.mask.data() + size_t(y) * marker.width,
+                            marker.width);
+        }
+        m_markerAtlas = bgfx::createTexture2D(
+            uint16_t(side), uint16_t(side), false, 1,
+            bgfx::TextureFormat::R8,
+            BGFX_SAMPLER_POINT | BGFX_SAMPLER_UVW_CLAMP, mem);
+    }
+    bgfx::setTexture(0, s_markerAtlas, m_markerAtlas);
+}
+
 void BGFXView::submit(const Render::DrawCall &input, const float *viewMatrix,
             int pass, bool noseam)
 {
@@ -1056,7 +1120,7 @@ void BGFXView::submit(const Render::DrawCall &input, const float *viewMatrix,
     // as well: BGFX_STATE_POINT_SIZE only exists on the OpenGL
     // backend, the quad path is the portable one.
     bool thickpoint = mat.type == Render::Material::Point
-        && mat.pointsize > 1.001f
+        && (mat.pointsize > 1.001f || mesh->markers)
         && m_instancing && bgfx::isValid(mesh->pointInst);
 
     bool transparent = mat.transparent
@@ -1395,6 +1459,8 @@ void BGFXView::submit(const Render::DrawCall &input, const float *viewMatrix,
         bgfx::setVertexBuffer(0, m_lineQuadVb);
         bgfx::setIndexBuffer(m_lineQuadIb);
         bgfx::setInstanceDataBuffer(mesh->pointInst, startPt, numPt);
+        if (mesh->markers)
+            bindMarkerAtlas();
     }
     else {
         setMeshVertexBuffers(mesh, *draw.mesh);
@@ -1454,7 +1520,9 @@ void BGFXView::submit(const Render::DrawCall &input, const float *viewMatrix,
                                : m_progLinePat)
                     : (clipped ? m_progLineClip : m_progLine))
                 : thickpoint
-                    ? (clipped ? m_progPointClip : m_progPoint)
+                    ? (mesh->markers
+                        ? (clipped ? m_progMarkerClip : m_progMarker)
+                        : (clipped ? m_progPointClip : m_progPoint))
                     : (clipped ? m_progFlatClip : m_progFlat);
 
     // User "material"-stage shader (docs/RenderDebug.md §6): replace

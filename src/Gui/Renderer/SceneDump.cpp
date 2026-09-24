@@ -326,7 +326,11 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     Sketcher datum -- arrowheads, the gap left for the number --
 //     resolved against the viewer's own camera. An older reader would
 //     fail the chunk on its version; refused here instead.
-const uint32_t kVersion = 77;
+// 78: a mesh may carry point markers (MeshData::markers/pointMarkers,
+//     flag 64, after the point parts): the bitmap each vertex of a
+//     sketch is drawn as. Without them a reader draws every point as a
+//     square of the point size.
+const uint32_t kVersion = 78;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -376,7 +380,9 @@ const uint32_t kVersion = 77;
 ///     stream (v77), said by flag 32. Nothing older moved, but an older
 ///     cached chunk would answer "no offsets" forever and draw a datum
 ///     without its arrowheads.)
-const uint32_t kChunkVersion = 18;
+/// 19: a mesh chunk may carry point markers after the point parts
+///     (v78), said by flag 64.
+const uint32_t kChunkVersion = 19;
 
 /// Bytes per vertex of MeshData::materials, whose layout Renderer.h
 /// documents. Named here because the stride is what a reader of an
@@ -586,6 +592,10 @@ void writeMeshChunk(Writer &w, const MeshData &m)
     uint8_t flags = (m.normals ? 1 : 0) | (m.colors ? 2 : 0)
         | (m.texCoords ? 4 : 0) | (m.materials ? 8 : 0)
         | (m.attachedOnly ? 16 : 0) | (m.screenOffsets ? 32 : 0);
+    const bool markers = m.pointMarkers && m.pointIndices
+        && m.numPointIndices > 0 && !m.markers.empty();
+    if (markers)
+        flags |= 64;
     w.u8(flags);
     w.raw(m.positions, size_t(m.numVertices) * 3 * sizeof(float));
     if (m.normals)
@@ -617,6 +627,15 @@ void writeMeshChunk(Writer &w, const MeshData &m)
     w.b(m.hasOpaqueParts);
     w.parts(m.lineParts);   // v11
     w.parts(m.pointParts);  // v11
+    if (markers) {           // v78
+        w.u32(uint32_t(m.markers.size()));
+        for (const auto &marker : m.markers) {
+            w.u32(marker.width);
+            w.u32(marker.height);
+            w.raw(marker.mask.data(), marker.mask.size());
+        }
+        w.raw(m.pointMarkers, size_t(m.numPointIndices));
+    }
 }
 
 /// Meshes whose payload reaches this size declare coarser levels
@@ -852,6 +871,30 @@ void readMeshChunk(Reader &r, OwnedMeshData *mesh, uint32_t version)
         r.parts(mesh->lineParts);
         r.parts(mesh->pointParts);
     }
+    if (flags & 64) {
+        const uint32_t n = r.u32();
+        if (!r.ok || n >= Render::MeshData::NoMarker
+                || mesh->numPointIndices <= 0) {
+            r.ok = false;
+            return;
+        }
+        mesh->markers.resize(n);
+        for (auto &marker : mesh->markers) {
+            const uint32_t mw = r.u32();
+            const uint32_t mh = r.u32();
+            if (!r.ok || mw == 0 || mh == 0 || mw > 256 || mh > 256) {
+                r.ok = false;
+                return;
+            }
+            marker.width = uint16_t(mw);
+            marker.height = uint16_t(mh);
+            marker.mask.resize(size_t(mw) * mh);
+            r.raw(marker.mask.data(), marker.mask.size());
+        }
+        mesh->markerStore.resize(size_t(mesh->numPointIndices));
+        r.raw(mesh->markerStore.data(), mesh->markerStore.size());
+        mesh->pointMarkers = mesh->markerStore.data();
+    }
 }
 
 } // anonymous namespace — resumed below; the level generator has
@@ -1062,6 +1105,8 @@ private:
         dst.texCoords = src.texCoords ? dst.uvStore.data() : nullptr;
         dst.screenOffsets =
             src.screenOffsets ? dst.offsetStore.data() : nullptr;
+        dst.pointMarkers =
+            src.pointMarkers ? dst.markerStore.data() : nullptr;
         dst.triangleIndices =
             src.triangleIndices ? dst.triStore.data() : nullptr;
         dst.lineIndices = src.lineIndices ? dst.lineStore.data() : nullptr;

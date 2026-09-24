@@ -1205,6 +1205,24 @@ fragment.
 Points keep `fs_fc_flat` and integer sizes. A sprite is a square whose
 apparent weight does not turn with the model, so it has nothing to gain.
 
+**Point markers.** A `SoMarkerSet` point is not a square of the point
+size: GL draws it with `glBitmap`, a fixed pixel pattern (a sketch
+vertex is the 7x7 `CIRCLE_FILLED`). The bridge unpacks the bitmaps a
+point set uses into a per-mesh palette carried by content
+(`MeshData::markers`, plus a palette entry per point index in
+`pointMarkers`), so the browser draws them without knowing Coin's
+marker indices; SceneDump v78 carries both. The view keeps one R8
+atlas of 32 px cells, a cell per distinct bitmap for the life of the
+view, and the point instance's spare `w` names the cell and the
+bitmap's size. `vs_fc_marker`/`fs_fc_marker` (the `MARKER` variants of
+the point and flat bodies) draw a bitmap-sized quad and discard the
+unset bits, anchored where GL anchors the bitmap,
+`floor(point - (size - 1) / 2)`. Measured pixel-identical to Coin's GL
+draw for Coin's built-in markers and for `MarkerBitmaps`' own. A
+bitmap over 32 px, or past the 256th cell, keeps the square; a
+simplified ladder rung (`MeshSimplify`) carries no markers and draws
+squares, which does not arise for the small sets markers are used on.
+
 **Through glass.** A glass body refracts by resampling the scene-color
 copy through a per-pixel UV displacement, and wherever that field
 converges -- which is what a curved body IS -- it magnifies whatever it
