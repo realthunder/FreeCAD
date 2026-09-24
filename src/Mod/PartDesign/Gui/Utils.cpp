@@ -117,6 +117,8 @@ bool setEdit(App::DocumentObject *obj, App::DocumentObject *container, const cha
     auto active = activeView->getActiveObject<App::DocumentObject*>(key,&parent,&subname);
     if(container && active!=container) {
         parent = obj;
+        // the path is the active object's, not obj's (upstream 4a80af74f4)
+        subname.clear();
     }
     else {
         subname += obj->getNameInDocument();
