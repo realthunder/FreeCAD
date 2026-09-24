@@ -119,11 +119,11 @@ class Sprocket:
 
     def __init__(self,obj):
         self.Type = "Sprocket"
-        obj.addProperty("App::PropertyInteger","NumberOfTeeth","Sprocket","Number of gear teeth")
-        obj.addProperty("App::PropertyLength","Pitch","Sprocket","Chain Pitch")
-        obj.addProperty("App::PropertyLength","RollerDiameter","Sprocket","Roller Diameter")
-        obj.addProperty("App::PropertyEnumeration","SprocketReference","Sprocket","Sprocket Reference")
-        obj.addProperty("App::PropertyLength","Thickness","Sprocket","Thickness as stated in the reference specification")
+        obj.addProperty("App::PropertyInteger","NumberOfTeeth","Sprocket","Number of gear teeth", locked=True)
+        obj.addProperty("App::PropertyLength","Pitch","Sprocket","Chain Pitch", locked=True)
+        obj.addProperty("App::PropertyLength","RollerDiameter","Sprocket","Roller Diameter", locked=True)
+        obj.addProperty("App::PropertyEnumeration","SprocketReference","Sprocket","Sprocket Reference", locked=True)
+        obj.addProperty("App::PropertyLength","Thickness","Sprocket","Thickness as stated in the reference specification", locked=True)
 
         obj.SprocketReference = list(self.SprocketReferenceRollerTable)
 
