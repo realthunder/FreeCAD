@@ -261,7 +261,24 @@ App::DocumentObjectExecReturn *Loft::execute(void)
                 std::vector<TopoShape> backwires;
                 for(auto& wires : wiresections)
                     backwires.push_back(wires.back());
-                back = TopoShape(0,hasher).makEFace(backwires);
+                // Bullseye wants coplanar wires, which the last section of a
+                // loft between curved faces does not have: fall back to the
+                // other face makers in turn (upstream 9a5d934eab)
+                const char *faceMakers[] = {
+                    "Part::FaceMakerBullseye",
+                    "Part::FaceMakerCheese",
+                    "Part::FaceMakerSimple",
+                };
+                for (std::size_t i = 0; i < std::size(faceMakers); ++i) {
+                    try {
+                        back = TopoShape(0,hasher).makEFace(backwires, nullptr, faceMakers[i]);
+                        break;
+                    }
+                    catch (...) {
+                        if (i + 1 == std::size(faceMakers))
+                            throw;
+                    }
+                }
             }
             
             if (!front.isNull() || !back.isNull()) {
