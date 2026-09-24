@@ -1829,7 +1829,8 @@ bool dressupGetSelected(Gui::Command* cmd, const std::string& which,
 }
 
 void finishDressupFeature(const Gui::Command* cmd, const std::string& which,
-        Part::Feature *base, const std::vector<std::string> & SubNames, const bool useAllEdges)
+        Part::Feature *base, const std::vector<std::string> & SubNames, const bool useAllEdges,
+        const bool updateDocument = true)
 {
     std::ostringstream str;
     str << '(' << Gui::Command::getObjectCmd(base) << ",[";
@@ -1853,7 +1854,11 @@ void finishDressupFeature(const Gui::Command* cmd, const std::string& which,
         Gui::cmdAppObject(Feat, std::ostringstream() << "UseAllEdges = True");
     }
     cmd->doCommand(cmd->Gui,"Gui.Selection.clearSelection()");
-    finishFeature(cmd, Feat, base);
+    // With nothing picked yet the feature can only fail; a document
+    // recompute would report that before the panel even opens.
+    if (!updateDocument)
+        Feat->recomputeFeature();
+    finishFeature(cmd, Feat, base, /*hidePrevSolid*/true, updateDocument);
 
     App::DocumentObject* baseFeature = static_cast<PartDesign::DressUp*>(Feat)->Base.getValue();
     if (baseFeature) {
@@ -1883,7 +1888,7 @@ void makeChamferOrFillet(Gui::Command* cmd, const std::string& which)
         SubNames = std::vector<std::string>(selected.getSubNames());
     }
 
-    finishDressupFeature (cmd, which, base, SubNames, useAllEdges);
+    finishDressupFeature (cmd, which, base, SubNames, useAllEdges, !noSelection);
 }
 
 //===========================================================================
