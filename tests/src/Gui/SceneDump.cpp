@@ -302,6 +302,17 @@ void expectScene(const Render::SceneSnapshot& snap)
     EXPECT_EQ(perObject[0x2222], 1u);
     EXPECT_EQ(perObject[0], 1u);
 
+    // The draw no object owns wears its own material, not the default.
+    // Keyless draws are how an edit mode's graph travels (it hangs under
+    // no object), and one left on the default material is a Triangle
+    // draw of a line mesh: nothing on screen.
+    for (const auto& d : snap.scene) {
+        if (d.objectKey == 0) {
+            EXPECT_EQ(d.material.diffuse, 0x0000ffffu)
+                << "the keyless draw kept the default appearance";
+        }
+    }
+
     size_t textured = 0;
     for (const auto& d : snap.scene) {
         ASSERT_TRUE(d.mesh) << "every draw keeps its geometry";

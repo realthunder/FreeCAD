@@ -3131,6 +3131,14 @@ void setManifestFinalize(SceneSnapshot &snap, const LoaderPtr &st)
         };
         apply(s.scene);
         apply(s.highlight);
+        // The keyless draws too. They were taken above without waiting
+        // for their appearance, and applySceneObjects rebuilds the scene
+        // from s.keyless on every assembly -- so a material landing after
+        // them reached only the scene copy it was about to replace, and
+        // they drew on the default one for good. An edit mode's graph is
+        // keyless (it hangs under no object), and the default material is
+        // a Triangle draw: its lines and points drew nothing at all.
+        apply(s.keyless);
         // The object groups are patched in place, where they wait for
         // the model to take them.
         for (auto &group : s.groups)
