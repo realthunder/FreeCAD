@@ -240,8 +240,9 @@ public:
 
     void createSketchOnSupport(const std::string& supportString)
     {
-        // create Sketch on Face or Plane
-        App::Document* appdocument = guidocument->getDocument();
+        // create Sketch on Face or Plane, in the body's document: it need not
+        // be the one the view shows (upstream 374c5713b2)
+        App::Document* appdocument = activeBody->getDocument();
         std::string FeatName = appdocument->getUniqueObjectName("Sketch");
 
         guidocument->openCommand(QT_TRANSLATE_NOOP("Command", "Create a Sketch on Face"));
@@ -406,8 +407,11 @@ public:
                         status.push_back ( PartDesignGui::TaskFeaturePick::otherPart );
                     }
                 } else {
+                    // A free-standing plane is not in a body, not in another
+                    // part: taking it as otherPart copied it into an active
+                    // part that may not exist (upstream 5ba7f207ab)
                     if ( ( geoGroup && geoGroup->hasObject ( plane, true ) ) ||
-                           !App::GeoFeatureGroupExtension::getGroupOfObject ( plane ) ) {
+                           App::GeoFeatureGroupExtension::getGroupOfObject ( plane ) ) {
                         status.push_back ( PartDesignGui::TaskFeaturePick::otherPart );
                     } else {
                         status.push_back ( PartDesignGui::TaskFeaturePick::notInBody );
