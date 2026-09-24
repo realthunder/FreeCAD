@@ -326,7 +326,21 @@ void BGFXView::bindTextureStage(const Render::Material &mat, bool bumped,
     if (mapped && mat.occlusionmap)
         texParams[3] = 1.0f;
     bool mrmapped = mapped && mat.metallicroughnessmap;
-    bgfx::setTexture(0, s_texColor, color);
+    // An image quad (an SoImage, a billboard in native pixels) is
+    // glDrawPixels in GL: one texel to one pixel, never filtered.
+    // setDrawTransform puts it on the pixel grid; the texture's own
+    // anisotropic sampler still took taps across neighbouring texels
+    // there (llvmpipe), which drew a 2-pixel icon stroke dull and ringed
+    // it with a darker row either side.
+    bool pixelExact = false;
+    for (const auto &entry : mat.autozoom)
+        if (entry.billboard && entry.pixelscale > 0.f)
+            pixelExact = true;
+    if (pixelExact)
+        bgfx::setTexture(0, s_texColor, color,
+                         BGFX_SAMPLER_POINT | BGFX_SAMPLER_UVW_CLAMP);
+    else
+        bgfx::setTexture(0, s_texColor, color);
     bgfx::setUniform(u_texParams, texParams);
     bgfx::setUniform(u_texBlendColor, blend);
     float texmat[16];

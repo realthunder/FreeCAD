@@ -22,6 +22,7 @@
 
 #include "PreCompiled.h"
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 
@@ -232,20 +233,24 @@ SoFCImageQuad::generatePrimitives(SoAction * action)
   const float w = float(size[0]);
   const float h = float(size[1]);
 
-  // GL parity (SoImage::getQuad): quad centred on the projected anchor
-  // point, then shifted half a size per alignment.
+  // GL parity (SoImage::GLRender): the image's lower-left corner is the
+  // truncated window position of the anchor less a WHOLE number of pixels
+  // per alignment -- size>>1 when centred, not half the size. Corners on
+  // whole-pixel offsets are what let the backend, which puts the anchor
+  // itself on a whole pixel, draw every texel onto exactly one pixel; half a
+  // pixel off, the filter spreads a 2-pixel icon stroke over three pale rows.
   const SbVec3f & off = this->pixelOffset.getValue();
-  float x0 = off[0] - 0.5f * w;
+  float x0 = std::round(off[0]);
   switch (this->owner->horAlignment.getValue()) {
-  case SoImage::LEFT:  x0 += 0.5f * w; break;
-  case SoImage::RIGHT: x0 -= 0.5f * w; break;
-  default: break; // CENTER
+  case SoImage::LEFT:  break;
+  case SoImage::RIGHT: x0 -= w; break;
+  default: x0 -= float(size[0] >> 1); break; // CENTER
   }
-  float y0 = off[1] - 0.5f * h;
+  float y0 = std::round(off[1]);
   switch (this->owner->vertAlignment.getValue()) {
-  case SoImage::TOP:    y0 -= 0.5f * h; break;
-  case SoImage::BOTTOM: y0 += 0.5f * h; break;
-  default: break; // HALF
+  case SoImage::TOP:    y0 -= h; break;
+  case SoImage::BOTTOM: break;
+  default: y0 -= float(size[1] >> 1); break; // HALF
   }
   const float x1 = x0 + w;
   const float y1 = y0 + h;

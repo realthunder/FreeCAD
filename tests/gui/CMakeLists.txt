@@ -261,6 +261,14 @@ fc_add_gui_test(GuiSketchPointMarkersMode3_tests_run
                 sketch-point-markers-mode3.py
                 --timeout 180)
 
+# An SoImage is drawn pixel for pixel in mode 3, as glDrawPixels does. The
+# backend's textured quad sat wherever the anchor projected, and half a
+# pixel off the filter spread each texel over two pixels: a Sketcher
+# constraint icon's 2-pixel stroke came out as three pale rows.
+fc_add_gui_test(GuiImagePixelsMode3_tests_run
+                image-pixels-mode3.py
+                --timeout 180)
+
 # Auto-constraints for a DRAG, not only for a drawing tool (upstream
 # ec298e9e9a and its follow-ups): hold a dragged point still on top of
 # another point and the Coincident that pins it there is written when

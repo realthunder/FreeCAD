@@ -4202,6 +4202,41 @@ inline void setDrawTransform(const Render::DrawCall &draw,
                 sfb = kBillboard * 2.0f / (p5 * viewportHeight);
                 if (persp)
                     sfb *= (depth > 1e-4f ? depth : 1e-4f);
+
+                // An image quad (pixelscale set: native pixels, 1:1) is
+                // glDrawPixels in GL, whose raster position is the anchor's
+                // window position TRUNCATED to a whole pixel. Put the anchor
+                // there too: with the quad's corners on whole-pixel offsets
+                // (SoFCImageQuad), every texel then covers exactly one pixel
+                // and the filter hands it back unchanged. Left at the
+                // fractional position, a Sketcher constraint icon's 2-pixel
+                // stroke came out as three rows at a third of its colour.
+                if (entry.pixelscale > 0.f && std::abs(P[0]) > 1e-8f) {
+                    const float vx = ax*V[0] + ay*V[4] + az*V[8] + V[12];
+                    const float vy = ax*V[1] + ay*V[5] + az*V[9] + V[13];
+                    const float cx = vx*P[0] + vy*P[4] + zview*P[8] + P[12];
+                    const float cy = vx*P[1] + vy*P[5] + zview*P[9] + P[13];
+                    const float cw = vx*P[3] + vy*P[7] + zview*P[11] + P[15];
+                    // The width is not passed in; the projection carries
+                    // the aspect (P[0] = P[5] * H / W).
+                    const float W = std::round(
+                        viewportHeight * std::abs(P[5] / P[0]));
+                    if (std::abs(cw) > 1e-8f && W > 0.f) {
+                        const float wx = (cx / cw * 0.5f + 0.5f) * W;
+                        const float wy = (cy / cw * 0.5f + 0.5f)
+                            * viewportHeight;
+                        // The epsilon keeps an anchor that is on a pixel
+                        // edge but for rounding from hopping a whole pixel.
+                        const float dx = std::floor(wx + 1e-3f) - wx;
+                        const float dy = std::floor(wy + 1e-3f) - wy;
+                        // Window pixels back to view units at the
+                        // anchor's depth; w is constant across the move.
+                        const float ux = dx * 2.0f / W * cw / P[0];
+                        const float uy = dy * 2.0f / viewportHeight * cw / P[5];
+                        for (int k = 0; k < 3; ++k)
+                            m[12 + k] += right[k] * ux + up[k] * uy;
+                    }
+                }
             }
 
             for (int k = 0; k < 3; ++k) {
