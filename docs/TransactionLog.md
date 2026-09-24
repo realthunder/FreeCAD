@@ -1940,6 +1940,17 @@ ref(entity, target, role, name, PRIMARY KEY(entity, role, name, target))
   log holds the blobs a version names, through `ref`, the same way it
   holds everything else.
 
+  *As built (note of 2026-09-24):* the "large as a file" branch was never
+  built. Every entity the log makes is inline in `entity.data` (raw, zstd
+  or a patch), whatever its size; `enc = file` only ever names a blob a
+  save or a snapshot already made (23.16). The files the log causes are
+  the snapshot's `storeBlob`s, the ones a cold undo re-adopts (24.3), the
+  embedded copy and the checkout directory. `docs/FileBlobsManager.md`
+  sec 15 (branch PartDesignPort, `debe8e263f`, design only) proposes a
+  pack store under `FileBlobManager` -- blobs as ranges in segment files
+  behind a SQLite index -- which takes the per-file cost out of those
+  too; the log relies only on the handle, `read()` and `adoptBytes()`.
+
 ### 23.2 The policy: newest full, older as reverse delta
 
 One rule for every kind: **the newest entity in a chain is stored full;
@@ -3006,3 +3017,80 @@ property's group and value, the link, at every step) and Part
 `coldUndoReadoptsADeltaBlob` (a saved box's file superseded into a delta
 and released; the cold undo decodes it back into the store, the shape is
 the saved one with no recompute, and the redo returns the newest).
+
+### 24.7 24.c, selective undo, as built (2026-09-24)
+
+`Document::undoLogged(seq)`, Python `Document.undoTransactionFromLog(seq)`,
+and "Undo row N" on the panel's transaction rows. It commits an open
+transaction, resolves the pending afters, and reads the row as a cold undo
+does (24.6); the checks are the cold undo's plus the refuse rule, and the
+apply is the cold undo's passes -- but into a new transaction, not an undo
+record: the redo stack is cleared as by any edit, the transaction is named
+`Undo <name>`, logged as kind `undo` inverting the row
+(`Transaction::LogKind`, `Inverts`), and is an undo step itself.
+
+**The refuse rule, as checked.** For every property the row left in a
+state -- its last `set`'s after, or gone for a `delprop` -- the newest op
+on that property in any later row (`TransactionStore::lastOpOn`, on the
+`op(cid, prop)` index) must have left it in the same state. No later op
+passes; a later op that changed it and a later one that changed it back
+(an undo and a redo) passes, since the refs are content hashes. What that
+covers without a rule of its own: the row already undone (the undo's op
+left the before), a created object edited since (its pending sets were
+resolved to what it had then), a removed object recreated since (the id
+check). Derived properties are neither checked nor restored -- the next
+recompute rewrites them, and a selective undo has no business with a
+feature's output -- and their owners are touched.
+
+Gtest `selectiveUndoRefusesWhatChangedSince`: an older edit undone while
+a later one to another property stays; the same row refused once undone;
+a row whose property changed since refused with nothing moved and no row
+written; the selective undo undone like any step; a created object edited
+since not uncreated; a derived value left alone and its owner touched.
+
+### 24.8 24.d, restore to a version as a transaction, as built (2026-09-24)
+
+`Document::restoreVersion(num)` -- Python `restoreTransactionVersion`, the
+panel's "Restore to version N" -- no longer reloads the document. It
+materialises the version as before (`_materialiseVersion`, every entry
+now read as bytes: a blob through `read()`, never copied by `path()`, as
+`docs/FileBlobsManager.md` sec 15.6 asks of byte-only callers), reads it
+into a hidden scratch document (`newDocument(..., tempDoc)`, no log of its
+own -- `DocumentP::noLog` -- no undo, `FileName` set to the checkout
+directory so its transient directory, named from Uid and FileName, stays
+apart from this one's), and `_applyVersion` makes this document what the
+scratch one is, into a new transaction of kind `restore` named `Restore
+version N [name]`. The scratch document is closed and the active document
+handed back. A version the document already is records nothing.
+
+The passes are 24.3's, matched by object id: an object the version lacks
+-- or has under another type or name -- is removed; one it has is
+recreated under its id and name; per container, the dynamic properties
+the version lacks are removed and those it has added with their metadata;
+then every persisted property whose captured value differs from the
+version's is restored from the version's capture. The blobs such a value
+names (and the ones they borrow from) are copied into this document's
+store by bytes first, and held for the pass: a handle nobody holds is
+deleted at once, before the referrer restored next can find it. The
+document's own properties are restored except where it lives and who it
+is (`FileName`, `TransientDir`, `Uid`, `Id`, the `History`/`Version` the
+log keeps, and the created/modified stamps). Last, an object the version
+had untouched is purged of the touches the restore made.
+
+Two consequences of "the document is not reloaded": the objects that stay
+are the same C++ objects, so pointers, selection and the view survive;
+and view providers are not restored -- GuiDocument.xml's colours and
+visibility are the Gui's, which a forward restore through App does not
+reach (a restored object that is new gets defaults). That is left open;
+the old reload restored them. The `checkout` record and
+`TransactionLog::onCheckout` are gone: the `restore` transaction is the
+record.
+
+**`restoreValue` records the change.** Found by the blob gtest:
+`PropertyFileIncluded::Restore` of a `hash=` fragment only asks the
+manager for the blob -- it calls neither `aboutToSetValue` nor
+`hasSetValue`, rightly for a load -- so restored into a live property the
+change was in no transaction and told nobody. `restoreValue` now brackets
+every restore with the pair (`PropertyValueRestorer`, a friend of
+`Property`); nested calls from a `Restore` that does call `setValue` are
+harmless. This covers cold and selective undo too.

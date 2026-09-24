@@ -164,6 +164,9 @@ public:
     { return inner().transactions(from, limit); }
     std::vector<LogOp> ops(int64_t txn) override { return inner().ops(txn); }
     bool getOp(int64_t txn, int idx, LogOp& op) override { return inner().getOp(txn, idx, op); }
+    bool lastOpOn(const std::string& ckind, long cid, const std::string& prop, int64_t after,
+                  LogOp& op) override
+    { return inner().lastOpOn(ckind, cid, prop, after, op); }
     int64_t lastSeq() override { return inner().lastSeq(); }
     void truncate(int64_t before) override
     {
@@ -601,27 +604,6 @@ bool TransactionLog::restoreBlob(const std::string& hash, const std::string& ext
             restoreBlob(r.target, r.name, depth + 1);
     }
     return true;
-}
-
-void TransactionLog::onCheckout(int64_t num)
-{
-    // The head state is the version's; pending after refs of the state
-    // that was left describe values that are gone, so they are dropped
-    // rather than resolved against the restored document.
-    _pending.clear();
-    _recorded.clear();
-    LogTransaction t;
-    t.parent = _nextSeq;
-    t.seq = ++_nextSeq;
-    t.kind = "checkout";
-    t.name = "checkout";
-    t.time = now();
-    t.session = _session;
-    t.script = "{\"version\":" + std::to_string(num) + "}";
-    post([this, t]() mutable {
-        std::vector<LogOp> none;
-        _store->append(t, none);
-    });
 }
 
 int64_t TransactionLog::onSnapshot(const Captures& entries, const Blobs& blobs, int schema)

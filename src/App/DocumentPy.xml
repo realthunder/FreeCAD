@@ -336,9 +336,22 @@ archive written. Returns the version number, 0 if there is no log.</UserDocu>
         <UserDocu>restoreTransactionVersion(num) -> bool
 
 Restore the document to version `num` of its transaction log
-(docs/TransactionLog.md sec 16.1): the version's entries and blobs are
-materialised and the document reloaded from them. The undo stack is
-cleared. False if there is no log; raises if the version is missing.</UserDocu>
+(docs/TransactionLog.md sec 24.5): one transaction, kind `restore`, makes
+the document what the version was, and is an undo step like any. The
+document is not reloaded; view providers are not restored. False if there
+is no log; raises if the version is missing.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="undoTransactionFromLog">
+      <Documentation>
+        <UserDocu>undoTransactionFromLog(seq) -> bool
+
+Undo row `seq` of the transaction log though it is not the last step
+(docs/TransactionLog.md sec 24.4): a new transaction, itself an undo step,
+applies the row reversed. Refused -- False, with the conflicts reported --
+when anything done since changed a property the row set, a created object
+is gone, or a removed object's name or id is taken. Derived values are not
+restored; their objects are touched for recompute. False if there is no log.</UserDocu>
       </Documentation>
     </Methode>
     <Methode Name="nameTransactionVersion">

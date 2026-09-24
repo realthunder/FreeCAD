@@ -141,8 +141,40 @@ CapturedValue App::captureValue(const CaptureConfig& config, const Base::Persist
     return v;
 }
 
+namespace App
+{
+/** A restore from a log value is a change to a live property, not the load
+ * of a new one: it must be recorded in the open transaction and notify its
+ * container like any setValue(). Most Restore()s call setValue() and do it
+ * themselves; one that only names a blob by hash (PropertyFileIncluded,
+ * served through assignRestoredBlob()) does neither, so the whole restore is
+ * bracketed. Nested calls are harmless: the first aboutToSetValue() takes
+ * the before copy, and a second touch changes nothing.
+ */
+class PropertyValueRestorer
+{
+public:
+    explicit PropertyValueRestorer(Property& prop) : _prop(prop) { _prop.aboutToSetValue(); }
+    ~PropertyValueRestorer()
+    {
+        try {
+            _prop.hasSetValue();
+        }
+        catch (Base::Exception& e) {
+            e.ReportException();
+        }
+        catch (...) {
+        }
+    }
+
+private:
+    Property& _prop;
+};
+} // namespace App
+
 void App::restoreValue(Property& prop, const CapturedValue& value)
 {
+    PropertyValueRestorer bracket(prop);
     // The fragment is one element; Property::Restore expects to read it
     // from inside an open parent, so wrap it the way Document.xml does.
     std::istringstream xml("<?xml version='1.0' encoding='utf-8'?>\n<Value>\n"

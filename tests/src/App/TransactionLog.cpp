@@ -707,35 +707,51 @@ TEST_F(TransactionLogTest, restoresAVersion)
     // format"): one Document.xml, never split, whatever the property says.
     for (auto& e : log().store().manifest(1))
         EXPECT_NE(e.entry, "Obj.xml");
-    // Back to version 1: the object as it was, the later one gone, the
-    // checkout recorded, and the log going on from there.
+    // Back to version 1 (sec 24.5): one transaction -- the same object,
+    // as it was, the later one gone -- and the log going on from there.
+    const long laterId = doc()->getObject("Later")->getID();
     ASSERT_TRUE(doc()->restoreVersion(1));
     auto restored = static_cast<App::FeatureTest*>(doc()->getObject("Obj"));
-    ASSERT_TRUE(restored);
+    ASSERT_EQ(restored, obj);
     EXPECT_EQ(restored->Integer.getValue(), 1);
     EXPECT_STREQ(restored->String.getValue(), "one");
     EXPECT_FALSE(doc()->getObject("Later"));
     auto& store = log().store();
     auto txns = store.transactions();
     ASSERT_GE(txns.size(), 1u);
-    EXPECT_EQ(txns.back().kind, "checkout");
-    EXPECT_NE(txns.back().script.find("\"version\":1"), std::string::npos);
-    EXPECT_EQ(store.versions().size(), 2u);   // a checkout is not a new version
-    EXPECT_EQ(log().pendingCount(), 0u);
+    EXPECT_EQ(txns.back().kind, "restore");
+    EXPECT_EQ(txns.back().name, "Restore version 1");
+    EXPECT_EQ(store.versions().size(), 2u);   // a restore is not a new version
+    EXPECT_EQ(doc()->getAvailableUndoNames().front(), "Restore version 1");
+    EXPECT_FALSE(App::GetApplication().getDocument("VersionRestore"));
+    EXPECT_EQ(App::GetApplication().getActiveDocument(), doc());
+
+    // Undoable like any step: back to where it was, Later under its id.
+    ASSERT_TRUE(doc()->undo());
+    EXPECT_EQ(obj->Integer.getValue(), 2);
+    ASSERT_TRUE(doc()->getObject("Later"));
+    EXPECT_EQ(doc()->getObject("Later")->getID(), laterId);
+    ASSERT_TRUE(doc()->redo());
+    EXPECT_EQ(obj->Integer.getValue(), 1);
+    EXPECT_FALSE(doc()->getObject("Later"));
 
     doc()->openTransaction("after");
     restored->Integer.setValue(3);
     doc()->commitTransaction();
     txns = store.transactions();
     EXPECT_EQ(txns.back().name, "after");
-    EXPECT_EQ(txns[txns.size() - 2].kind, "checkout");
 
-    // Forward again, to version 2.
+    // Forward again, to version 2: Later comes back under its id.
     ASSERT_TRUE(doc()->restoreVersion(2));
     restored = static_cast<App::FeatureTest*>(doc()->getObject("Obj"));
     ASSERT_TRUE(restored);
     EXPECT_EQ(restored->Integer.getValue(), 2);
-    EXPECT_TRUE(doc()->getObject("Later"));
+    ASSERT_TRUE(doc()->getObject("Later"));
+    EXPECT_EQ(doc()->getObject("Later")->getID(), laterId);
+    // Already version 2: nothing to do, no step.
+    const int steps = doc()->getAvailableUndos();
+    ASSERT_TRUE(doc()->restoreVersion(2));
+    EXPECT_EQ(doc()->getAvailableUndos(), steps);
     EXPECT_THROW(doc()->restoreVersion(99), Base::Exception);
 }
 
@@ -1276,9 +1292,18 @@ TEST_F(TransactionLogTest, blobsAreEntitiesTheLogHolds)
     }
     EXPECT_GE(named, 2u);
 
-    // Both versions check out, the older one decoded from its patch.
+    // Both versions check out, the older one decoded from its patch; the
+    // restore is a transaction the file's change is recorded in (sec 24.8).
     ASSERT_TRUE(doc()->restoreVersion(1));
     EXPECT_EQ(content(), blobText(-1));
+    {
+        auto last = store.transactions().back();
+        EXPECT_EQ(last.kind, "restore");
+        bool file = false;
+        for (auto& o : store.ops(last.seq))
+            file = file || (o.op == "set" && o.prop == "File");
+        EXPECT_TRUE(file);
+    }
     ASSERT_TRUE(doc()->restoreVersion(2));
     EXPECT_EQ(content(), blobText(400));
 
@@ -1483,4 +1508,76 @@ TEST_F(TransactionLogTest, coldUndoRevertsFromTheLog)
     }
     EXPECT_EQ(undos, 16);
     EXPECT_EQ(redos, 16);
+}
+
+TEST_F(TransactionLogTest, selectiveUndoRefusesWhatChangedSince)
+{
+    // docs/TransactionLog.md sec 24.4: a row that is not the tip is undone
+    // by a new transaction when nothing since touched what it set, and
+    // refused when something did.
+    doc()->openTransaction("create");
+    auto a = make("A");
+    doc()->commitTransaction();
+    auto lastSeq = [&]() { return log().store().transactions().back().seq; };
+
+    doc()->openTransaction("int");
+    a->Integer.setValue(1);
+    doc()->commitTransaction();
+    const int64_t intSeq = lastSeq();
+    doc()->openTransaction("float");
+    a->Float.setValue(2.5);
+    doc()->commitTransaction();
+    const int64_t floatSeq = lastSeq();
+
+    // Integer untouched since: undone, Float kept.
+    ASSERT_TRUE(doc()->undoLogged(intSeq));
+    EXPECT_EQ(a->Integer.getValue(), 4711);
+    EXPECT_DOUBLE_EQ(a->Float.getValue(), 2.5);
+    auto row = log().store().transactions().back();
+    EXPECT_EQ(row.kind, "undo");
+    EXPECT_EQ(row.inverts, intSeq);
+    EXPECT_EQ(row.name, "Undo int");
+    EXPECT_EQ(doc()->getAvailableUndoNames().front(), "Undo int");
+
+    // Undone already: the row's Integer is not what it left any more.
+    EXPECT_FALSE(doc()->undoLogged(intSeq));
+
+    // Float changed since: refused, nothing moves.
+    doc()->openTransaction("float again");
+    a->Float.setValue(3.5);
+    doc()->commitTransaction();
+    const size_t rows = log().store().transactions().size();
+    EXPECT_FALSE(doc()->undoLogged(floatSeq));
+    EXPECT_DOUBLE_EQ(a->Float.getValue(), 3.5);
+    EXPECT_EQ(log().store().transactions().size(), rows);
+
+    // The selective undo is an undo step like any: undo the float edit,
+    // then the selective undo itself.
+    ASSERT_TRUE(doc()->undo());
+    ASSERT_TRUE(doc()->undo());
+    EXPECT_EQ(a->Integer.getValue(), 1);
+
+    // A created object edited since cannot be uncreated.
+    doc()->openTransaction("make B");
+    auto b = make("B");
+    doc()->commitTransaction();
+    const int64_t makeSeq = lastSeq();
+    doc()->openTransaction("edit B");
+    b->Integer.setValue(9);
+    doc()->commitTransaction();
+    EXPECT_FALSE(doc()->undoLogged(makeSeq));
+    EXPECT_TRUE(doc()->getObject("B"));
+
+    // A derived value is left to recompute: the owner is touched.
+    doc()->recompute();
+    doc()->openTransaction("string");
+    a->String.setValue("x");
+    doc()->recompute();
+    doc()->commitTransaction();
+    const int64_t stringSeq = lastSeq();
+    const int execs = a->ExecCount.getValue();
+    ASSERT_TRUE(doc()->undoLogged(stringSeq));
+    EXPECT_STRNE(a->String.getValue(), "x");
+    EXPECT_EQ(a->ExecCount.getValue(), execs);
+    EXPECT_TRUE(a->isTouched());
 }

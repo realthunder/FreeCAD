@@ -414,6 +414,25 @@ public:
         return out;
     }
 
+    bool lastOpOn(const std::string& ckind, long cid, const std::string& prop, int64_t after,
+                  LogOp& o) override
+    {
+        auto s = prepare("SELECT txn,idx FROM op WHERE cid=? AND prop=? AND ckind=? AND txn>?"
+                         " ORDER BY txn DESC, idx DESC LIMIT 1");
+        sqlite3_bind_int64(s, 1, cid);
+        bindText(s, 2, prop);
+        bindText(s, 3, ckind);
+        sqlite3_bind_int64(s, 4, after);
+        if (sqlite3_step(s) != SQLITE_ROW) {
+            sqlite3_reset(s);
+            return false;
+        }
+        int64_t txn = sqlite3_column_int64(s, 0);
+        int idx = sqlite3_column_int(s, 1);
+        sqlite3_reset(s);
+        return getOp(txn, idx, o);
+    }
+
     bool getOp(int64_t txn, int idx, LogOp& o) override
     {
         auto s = prepare("SELECT op,ckind,cid,cname,ctype,prop,ptype,meta,vbefore,vafter,derived"

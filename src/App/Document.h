@@ -339,15 +339,24 @@ public:
      */
     int64_t snapshotToLog();
     /** Restore the document to a version of its log (docs/TransactionLog.md
-     * sec 16.1): the version's manifest is materialised into a directory
-     * under the transient one -- its XML entries from the store's values,
-     * its blobs from the document's blob store -- and the document is
-     * restored from it, the way a file is opened. A `checkout` record
-     * names the version; the undo stack is cleared as by any restore.
-     * Throws if the version or one of its blobs is missing; false when
-     * there is no log.
+     * sec 24.5): one forward transaction, kind `restore`, that makes the
+     * document what the version was -- objects the version lacks removed,
+     * those it has recreated under their ids and names, dynamic properties
+     * and every differing value set -- and an undo step like any. The
+     * version is materialised and read into a scratch document to compare
+     * against; this document is never reloaded. View providers are not
+     * restored. Throws if the version is missing or cannot be read; false
+     * when there is no log.
      */
     bool restoreVersion(int64_t num);
+    /** Undo log row `seq` though it is not the last step (docs/TransactionLog.md
+     * sec 24.4): a new transaction, an undo step itself, applying the row
+     * reversed. Refused, with the conflicts reported, when an op since
+     * changed a property the row left in a state, a created object is
+     * gone, or a removed object's name or id is taken. Derived values are
+     * not restored; their owners are touched. Returns whether it ran.
+     */
+    bool undoLogged(int64_t seq);
     /// Whether writes are recorded into transactions at all: undo is on,
     /// or the log is (which records without keeping undo steps).
     bool transactionsWanted() const;
@@ -952,7 +961,7 @@ protected:
     struct ColdRevert;
     /// Read and check the revert of cold `step`; false, with the reason
     /// reported, when it cannot be applied -- the undo is then refused.
-    bool _prepareRevert(const Transaction& step, ColdRevert& revert);
+    bool _prepareRevert(int64_t seq, const std::string& name, ColdRevert& revert);
     /// Apply a checked revert, recorded into the open undo record.
     void _applyRevert(ColdRevert& revert);
     /// Log the inverse an undo or redo just recorded (docs/TransactionLog.md
@@ -960,6 +969,11 @@ protected:
     /// it was a cold one.
     void logInverse(const Transaction& applied, const char* kind,
                     const ColdRevert* cold = nullptr);
+    /// Write version `num` out as an unpacked project; returns its directory.
+    std::string _materialiseVersion(int64_t num);
+    /// Make this document what `version` (a scratch document holding a
+    /// version) is, recorded into the open transaction (sec 24.5).
+    void _applyVersion(Document& version);
     /// Keep at most UndoMaxStackSize steps of `stack` hot (sec 24.3): with
     /// the log, the oldest beyond it become cold stubs; without it, they go.
     /// The undo stack only: its steps are deleted oldest first, the order

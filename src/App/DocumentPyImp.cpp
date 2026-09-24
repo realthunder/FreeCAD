@@ -1023,6 +1023,16 @@ PyObject* DocumentPy::restoreTransactionVersion(PyObject *args)
     } PY_CATCH;
 }
 
+PyObject* DocumentPy::undoTransactionFromLog(PyObject *args)
+{
+    long long seq;
+    if (!PyArg_ParseTuple(args, "L", &seq))
+        return nullptr;
+    PY_TRY {
+        return Py::new_reference_to(Py::Boolean(getDocumentPtr()->undoLogged(seq)));
+    } PY_CATCH;
+}
+
 PyObject* DocumentPy::nameTransactionVersion(PyObject *args)
 {
     long num;

@@ -664,7 +664,28 @@ void TransactionLogView::onTransactionContextMenu(const QPoint& pos)
     auto copyScript = menu.addAction(tr("Copy script"));
     copyScript->setEnabled(!item->data(TxnName, Qt::UserRole).toString().isEmpty());
     auto copyRow = menu.addAction(tr("Copy row"));
+    // Sec 24.4: undo this row though it is not the last step. Only a row
+    // with ops has anything to undo.
+    const int64_t seq = item->data(TxnSeq, Qt::UserRole).toLongLong();
+    const QString kind = item->text(TxnKind);
+    menu.addSeparator();
+    auto undoRow = menu.addAction(tr("Undo row %1").arg(seq));
+    undoRow->setToolTip(tr("A new transaction applying this row reversed; refused when "
+                           "anything since changed what it touched (sec 24.4)"));
+    undoRow->setEnabled(_doc
+                        && (kind == QLatin1String("user") || kind == QLatin1String("implicit")
+                            || kind == QLatin1String("undo") || kind == QLatin1String("redo")));
     auto chosen = menu.exec(_transactions->viewport()->mapToGlobal(pos));
+    if (chosen == undoRow) {
+        try {
+            if (!_doc->undoLogged(seq))
+                _status->setText(tr("Undo of row %1 refused -- the report view says why").arg(seq));
+        }
+        catch (Base::Exception& e) {
+            FC_ERR("undo of row " << seq << ": " << e.what());
+        }
+        return;
+    }
     if (chosen == copyScript) {
         QApplication::clipboard()->setText(item->data(TxnName, Qt::UserRole).toString());
     }
@@ -685,7 +706,8 @@ void TransactionLogView::onVersionContextMenu(const QPoint& pos)
     const bool named = item->text(VerKind) == QLatin1String("named");
     QMenu menu(this);
     auto restore = menu.addAction(tr("Restore to version %1").arg(num));
-    restore->setToolTip(tr("Reload the document from this version's snapshot (sec 16.1)"));
+    restore->setToolTip(tr("One undoable transaction making the document what this "
+                           "version was (sec 24.5)"));
     auto name = menu.addAction(named ? tr("Rename version %1...").arg(num)
                                      : tr("Name version %1...").arg(num));
     name->setToolTip(tr("A named version is never evicted (sec 16.3)"));
@@ -696,9 +718,8 @@ void TransactionLogView::onVersionContextMenu(const QPoint& pos)
     App::Document* doc = _doc;
     try {
         if (chosen == restore) {
+            // A transaction: the panel refreshes on its commit.
             doc->restoreVersion(num);
-            // The reload replaced every object; the panel is told through
-            // signalFinishRestoreDocument, which reloads it.
             return;
         }
         auto l = log();

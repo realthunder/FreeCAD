@@ -396,6 +396,9 @@ public:
     friend class PropertyContainer;
     friend struct PropertyData;
     friend class DynamicProperty;
+    /// Brackets a restore from a transaction-log value with aboutToSetValue()
+    /// and hasSetValue() (docs/TransactionLog.md sec 24.5).
+    friend class PropertyValueRestorer;
 
 private:
     /** Status bits of the property

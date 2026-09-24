@@ -192,10 +192,6 @@ public:
      */
     bool adoptStore(const std::string& path);
 
-    /// The `checkout` record (sec 12): the document was restored to
-    /// version `num` by Document::restoreVersion. No ops; the version's
-    /// snapshot is the state, and the log continues from here.
-    void onCheckout(int64_t num);
 
     /** What a cold undo needs of row `seq` (sec 24.3): its ops in log
      * order, and each value they restore read back by hash -- a value the

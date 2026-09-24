@@ -230,6 +230,9 @@ struct Document::ColdRevert
     std::vector<const LogOp*> ops;
     /// (container id, property) of every derived op, for the inverse.
     std::set<std::pair<long, std::string>> derived;
+    /// Undo of a row that is not the tip (sec 24.4): checked against the
+    /// ops after it, and derived values left to recompute.
+    bool selective {false};
 };
 
 namespace {
@@ -279,16 +282,52 @@ DynamicMeta parseMeta(const std::string& meta)
     return m;
 }
 
+/** Section 24.4's refuse rule for undoing row `seq` when it is not the tip:
+ * every property it left in a state must still be in that state -- the
+ * newest op on it after `seq`, if any, left it the same -- so the undo
+ * overwrites nothing done since. Derived properties are not checked: the
+ * selective undo leaves them to recompute. The log's pending afters must
+ * be resolved. Returns the conflicts, empty when there are none.
+ */
+std::string checkSelective(TransactionLog& log, int64_t seq, const std::vector<LogOp>& ops)
+{
+    // The state each property is left in by the row: its last op's after,
+    // or "gone" for a dynamic property it removed.
+    std::map<std::tuple<std::string, long, std::string>, std::string> left;
+    for (const auto& o : ops) {
+        if (o.ckind == "view" || o.derived || o.prop.empty())
+            continue;
+        if (o.op == "set")
+            left[{o.ckind, o.cid, o.prop}] = o.vafter;
+        else if (o.op == "delprop")
+            left[{o.ckind, o.cid, o.prop}] = "-";
+    }
+    std::ostringstream why;
+    for (const auto& kv : left) {
+        LogOp later;
+        if (!log.store().lastOpOn(std::get<0>(kv.first), std::get<1>(kv.first),
+                                  std::get<2>(kv.first), seq, later))
+            continue;
+        std::string now = later.op == "delprop" ? std::string("-")
+                        : later.op == "set"     ? later.vafter
+                                                : std::string("+");
+        if (now != kv.second)
+            why << " " << std::get<2>(kv.first) << " of id " << std::get<1>(kv.first)
+                << " was changed since, by row " << later.txn << ";";
+    }
+    return why.str();
+}
+
 } // namespace
 
-bool Document::_prepareRevert(const Transaction& step, ColdRevert& revert)
+bool Document::_prepareRevert(int64_t seq, const std::string& name, ColdRevert& revert)
 {
     auto log = getTransactionLog();
     std::ostringstream why;
-    if (!log || step.LogSeq <= 0)
+    if (!log || seq <= 0)
         why << "no log row";
-    else if (!log->readRevert(step.LogSeq, revert.log))
-        why << "row " << step.LogSeq << " is not in the log";
+    else if (!log->readRevert(seq, revert.log))
+        why << "row " << seq << " is not in the log";
     if (why.str().empty()) {
         for (auto it = revert.log.ops.rbegin(); it != revert.log.ops.rend(); ++it)
             revert.ops.push_back(&*it);
@@ -326,11 +365,13 @@ bool Document::_prepareRevert(const Transaction& step, ColdRevert& revert)
                         << ") is not in the log;";
             }
         }
+        if (revert.selective)
+            why << checkSelective(*log, seq, revert.log.ops);
         if (views)
-            FC_LOG("cold " << step.Name << ": " << views << " view op(s) not reverted");
+            FC_LOG("cold " << name << ": " << views << " view op(s) not reverted");
     }
     if (!why.str().empty()) {
-        FC_ERR("Cannot undo '" << step.Name << "' of " << getName() << " from the log:"
+        FC_ERR("Cannot undo '" << name << "' of " << getName() << " from the log:"
                << why.str());
         return false;
     }
@@ -408,7 +449,8 @@ void Document::_applyRevert(ColdRevert& revert)
             if (!container)
                 return;
             Property* prop = container->getPropertyByName(o->prop.c_str());
-            auto it = o->vbefore.empty() ? values.end() : values.find(o->vbefore);
+            auto it = o->vbefore.empty() || (revert.selective && o->derived)
+                ? values.end() : values.find(o->vbefore);
             if (it == values.end()) {
                 // A derived value gone from the cache (sec 24.1), or a set
                 // that holds none (a create's, or the `none` policy): the
@@ -491,6 +533,39 @@ void Document::_trimHotWindow(std::list<Transaction*>& stack, std::map<int, Tran
     }
 }
 
+bool Document::undoLogged(int64_t seq)
+{
+    // docs/TransactionLog.md sec 24.4: a new transaction applying row
+    // `seq` reversed, refused when anything since changed what it touched.
+    if (isPerformingTransaction() || d->committing)
+        return false;
+    auto log = getTransactionLog();
+    if (!log)
+        return false;
+    if (d->activeUndoTransaction)
+        _commitTransaction(true);
+    log->resolvePending();
+    std::string name;
+    for (const auto& t : log->store().transactions(seq, 1)) {
+        if (t.seq == seq)
+            name = t.name;
+    }
+    ColdRevert revert;
+    revert.selective = true;
+    if (!_prepareRevert(seq, name, revert))
+        return false;
+
+    _clearRedos();
+    d->activeUndoTransaction = new Transaction(0);
+    d->activeUndoTransaction->Name = "Undo " + name;
+    d->activeUndoTransaction->LogKind = "undo";
+    d->activeUndoTransaction->Inverts = seq;
+    mUndoMap[d->activeUndoTransaction->getID()] = d->activeUndoTransaction;
+    _applyRevert(revert);
+    _commitTransaction(false);
+    return true;
+}
+
 bool Document::undo(int id)
 {
     if (d->iUndoMode) {
@@ -514,7 +589,7 @@ bool Document::undo(int id)
 
         Transaction* step = mUndoTransactions.back();
         ColdRevert cold;
-        if (step->Cold && !_prepareRevert(*step, cold))
+        if (step->Cold && !_prepareRevert(step->LogSeq, step->Name, cold))
             return false;
 
         TransactionGuard guard(TransactionGuard::Undo);
@@ -569,7 +644,7 @@ bool Document::redo(int id)
 
         Transaction* step = mRedoTransactions.back();
         ColdRevert cold;
-        if (step->Cold && !_prepareRevert(*step, cold))
+        if (step->Cold && !_prepareRevert(step->LogSeq, step->Name, cold))
             return false;
 
         TransactionGuard guard(TransactionGuard::Redo);
@@ -897,9 +972,12 @@ void Document::_commitTransaction(bool notify)
         const bool implicit = d->activeUndoTransaction->Implicit;
         bool snapshotDue = false;
         if (auto log = getTransactionLog()) {
+            const std::string& kind = d->activeUndoTransaction->LogKind;
             d->activeUndoTransaction->LogSeq =
-                log->onCommit(*d->activeUndoTransaction, implicit ? "implicit" : "user",
-                              d->activeUndoTransaction->Origin.c_str());
+                log->onCommit(*d->activeUndoTransaction,
+                              !kind.empty() ? kind.c_str() : implicit ? "implicit" : "user",
+                              d->activeUndoTransaction->Origin.c_str(),
+                              d->activeUndoTransaction->Inverts);
             // The cadence of unnamed versions (docs/TransactionLog.md sec
             // 16.3): every N commits, or the first commit T seconds after
             // the last version. Taken once the commit is complete, below.
@@ -4224,27 +4302,17 @@ int64_t Document::snapshotToLog()
     return 0;
 }
 
-bool Document::restoreVersion(int64_t num)
+std::string Document::_materialiseVersion(int64_t num)
 {
+    // An unpacked project: every entry from the log, the blobs under
+    // blobs/, which a directory restore reads by content. Every entry is
+    // read as bytes -- a blob the log holds as a file through read(), one
+    // it keeps as a delta (sec 23.16) decoded -- never copied by path.
     TransactionLog* log = getTransactionLog();
-    if (!log)
-        return false;
-    if (d->checkingOut || testStatus(Restoring) || isPerformingTransaction())
-        THROWM(Base::RuntimeError, "cannot restore a version now");
-    if (d->activeUndoTransaction)
-        commitImplicitTransaction();
-    if (d->activeUndoTransaction)
-        THROWM(Base::RuntimeError, "cannot restore a version inside a transaction");
-
     LogVersion version;
-    if (!log->store().getVersion(num, version))
+    if (!log || !log->store().getVersion(num, version))
         THROWM(Base::RuntimeError, "no such version");
     auto manifest = log->store().manifest(num);
-
-    // Materialise the version as an unpacked project: every entry from
-    // the log, the blobs under blobs/, which a directory restore reads by
-    // content. A blob the log holds as a file is copied; one it keeps as a
-    // delta (sec 23.16) is decoded like any other entity.
     const std::string dir = TransientDir.getStrValue() + "/history/checkout";
     Base::FileInfo(dir).deleteDirectoryRecursive();
     if (!Base::FileInfo(dir + "/" + FileBlobManager::archivePrefix()).createDirectories())
@@ -4258,10 +4326,6 @@ bool Document::restoreVersion(int64_t num)
         const bool isBlob = entity.kind == "blob";
         Base::FileInfo target(dir + "/" + (isBlob ? FileBlobManager::archivePrefix() : "")
                               + e.entry);
-        if (auto blob = isBlob ? log->heldBlob(e.hash) : FileBlobHandle()) {
-            if (!blob->inArchive() && Base::FileInfo(blob->path()).copyTo(target.filePath().c_str()))
-                continue;
-        }
         CapturedValue v;
         if (!log->readValue(e.hash, v))
             THROWM(Base::RuntimeError, "version entry " + e.entry + " cannot be read");
@@ -4276,13 +4340,222 @@ bool Document::restoreVersion(int64_t num)
     }
     if (!haveDocXml)
         THROWM(Base::RuntimeError, "version has no Document.xml");
+    return dir;
+}
 
-    {
-        Base::FlagToggler<> guard(d->checkingOut);
-        restore(dir.c_str(), false);
+namespace {
+
+/// Document properties a restore to a version leaves alone (sec 24.5):
+/// where the document lives and who it is, which a version of it does
+/// not change, and what the log itself keeps there.
+bool keptOnRestore(const char* name)
+{
+    static const std::set<std::string> kept {"FileName", "TransientDir", "Uid", "Id",
+        "History", "Version", "LastModifiedBy", "LastModifiedDate", "CreatedBy",
+        "CreationDate"};
+    return kept.count(name) != 0;
+}
+
+/// Make `blob`, a file of another document's store, a file of `manager`
+/// too, with every file it borrows from; by bytes, so wherever it lives.
+/// The handles go into `held`: a blob nobody holds is gone at once, and the
+/// referrer restored next finds it by hash.
+void copyBlob(FileBlobManager& manager, const FileBlobManager& from, const FileBlobHandle& blob,
+              std::vector<FileBlobHandle>& held, int depth = 0)
+{
+    if (!blob || depth > 1024)
+        return;
+    FileBlobHandle mine = manager.find(blob->hash());
+    if (!mine) {
+        std::string bytes;
+        if (!blob->read(bytes))
+            throw Base::RuntimeError("cannot read blob " + blob->hash());
+        std::string ext = blob->extension();
+        mine = manager.adoptBytes(bytes, ext.empty() ? nullptr : ext.c_str());
     }
-    log->onCheckout(num);
-    noteVersionTaken();
+    held.push_back(mine);
+    for (const auto& hash : blob->sources())
+        copyBlob(manager, from, from.find(hash), held, depth + 1);
+}
+
+} // namespace
+
+void Document::_applyVersion(Document& version)
+{
+    // docs/TransactionLog.md sec 24.5, in the passes of 24.3: what the
+    // version lacks goes, what it has comes (under its id and name), the
+    // dynamic properties follow, then every value that differs.
+    auto guarded = [&](const std::string& what, const std::function<void()>& fn) {
+        try {
+            fn();
+        }
+        catch (Base::Exception& e) {
+            FC_ERR("restore to a version, " << what << ": " << e.what());
+        }
+        catch (std::exception& e) {
+            FC_ERR("restore to a version, " << what << ": " << e.what());
+        }
+    };
+    std::map<long, DocumentObject*> target;
+    for (auto obj : version.getObjects())
+        target[obj->getID()] = obj;
+
+    // 1. Objects the version does not have, or has as another type.
+    std::vector<std::string> gone;
+    for (auto obj : getObjects()) {
+        auto it = target.find(obj->getID());
+        if (it == target.end() || it->second->getTypeId() != obj->getTypeId()
+                || strcmp(it->second->getNameInDocument(), obj->getNameInDocument()) != 0)
+            gone.emplace_back(obj->getNameInDocument());
+    }
+    for (const auto& name : gone)
+        guarded(name, [&]() {
+            if (getObject(name.c_str()))
+                removeObject(name.c_str());
+        });
+
+    // 2. Objects the version has, under its id and name.
+    for (auto& kv : target) {
+        if (getObjectByID(kv.first))
+            continue;
+        const char* name = kv.second->getNameInDocument();
+        guarded(name, [&]() {
+            if (getObject(name))
+                throw Base::RuntimeError("name taken by another object");
+            auto obj = static_cast<DocumentObject*>(kv.second->getTypeId().createInstance());
+            if (!obj)
+                throw Base::RuntimeError("cannot create the object");
+            obj->_Id = kv.first;
+            addObject(obj, name, false);
+        });
+    }
+
+    // 3 and 4, per container: the dynamic properties, then the values.
+    CaptureConfig config(*this);
+    auto& manager = getFileBlobManager();
+    std::vector<FileBlobHandle> held;
+    const auto& fromManager = version.getFileBlobManager();
+    auto restoreContainer = [&](PropertyContainer& live, const PropertyContainer& from,
+                                bool isDocument) {
+        std::map<std::string, Property*> want, have;
+        from.getPropertyMap(want);
+        live.getPropertyMap(have);
+        for (auto& kv : have) {
+            if (want.count(kv.first) || live.getDynamicPropertyData(kv.second).name.empty())
+                continue;
+            guarded(kv.first, [&]() { live.removeDynamicProperty(kv.first.c_str()); });
+        }
+        for (auto& kv : want) {
+            short type = from.getPropertyType(kv.second);
+            if ((type & Prop_Transient) || (type & Prop_NoPersist))
+                continue;
+            if (isDocument && keptOnRestore(kv.first.c_str()))
+                continue;
+            guarded(kv.first, [&]() {
+                Property* prop = live.getPropertyByName(kv.first.c_str());
+                if (!prop) {
+                    auto dyn = from.getDynamicPropertyData(kv.second);
+                    if (dyn.name.empty())
+                        return;
+                    prop = live.addDynamicProperty(kv.second->getTypeId().getName(),
+                                                   kv.first.c_str(), dyn.group.c_str(),
+                                                   dyn.getDoc(), dyn.attr, dyn.readonly,
+                                                   dyn.hidden);
+                    if (!prop)
+                        return;
+                }
+                CapturedValue want = captureValue(config, *kv.second);
+                if (!want.ok)
+                    throw Base::RuntimeError("cannot read the version's value");
+                CapturedValue now = captureValue(config, *prop);
+                if (now.ok && now.fragment == want.fragment
+                        && now.attachments.size() == want.attachments.size()
+                        && std::equal(now.attachments.begin(), now.attachments.end(),
+                                      want.attachments.begin(),
+                                      [](const auto& a, const auto& b) {
+                                          return a.name == b.name && a.bytes == b.bytes;
+                                      }))
+                    return;
+                for (const auto& blob : want.blobs)
+                    copyBlob(manager, fromManager, blob, held);
+                if (auto referrer = dynamic_cast<const BlobReferrerProperty*>(kv.second))
+                    copyBlob(manager, fromManager, referrer->contentBlob(), held);
+                restoreValue(*prop, want);
+            });
+        }
+    };
+    restoreContainer(*this, version, true);
+    for (auto& kv : target) {
+        auto obj = getObjectByID(kv.first);
+        if (obj)
+            restoreContainer(*obj, *kv.second, false);
+    }
+    // 5. What the version had touched is touched; the rest is as it was.
+    for (auto& kv : target) {
+        auto obj = getObjectByID(kv.first);
+        if (obj && !kv.second->isTouched())
+            obj->purgeTouched();
+    }
+}
+
+bool Document::restoreVersion(int64_t num)
+{
+    // docs/TransactionLog.md sec 24.5: a restore to version N is one
+    // forward transaction that makes the document what N was -- undoable,
+    // logged, and the document never reloaded.
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        return false;
+    if (d->checkingOut || testStatus(Restoring) || isPerformingTransaction() || d->committing)
+        THROWM(Base::RuntimeError, "cannot restore a version now");
+    if (d->activeUndoTransaction)
+        commitImplicitTransaction();
+    if (d->activeUndoTransaction)
+        THROWM(Base::RuntimeError, "cannot restore a version inside a transaction");
+    LogVersion version;
+    if (!log->store().getVersion(num, version))
+        THROWM(Base::RuntimeError, "no such version");
+
+    const std::string dir = _materialiseVersion(num);
+    // The version, read into a scratch document of its own. The name of
+    // its transient directory hashes FileName, which keeps it apart from
+    // this one's though the Uid the restore reads is the same.
+    // A new document becomes the active one; the active one is handed back.
+    auto& app = GetApplication();
+    Document* active = app.getActiveDocument();
+    const std::string scratchName = app.getUniqueDocumentName("VersionRestore", true);
+    Document* scratch = app.newDocument(scratchName.c_str(), scratchName.c_str(), false, true);
+    if (!scratch)
+        THROWM(Base::RuntimeError, "cannot make the scratch document");
+    std::unique_ptr<void, std::function<void(void*)>> closer(
+        scratch, [&app, scratchName, active](void*) {
+            app.closeDocument(scratchName.c_str());
+            if (active && app.getActiveDocument() != active)
+                app.setActiveDocument(active);
+        });
+    scratch->d->noLog = true;
+    scratch->setUndoMode(0);
+    scratch->FileName.setValue(dir);
+    {
+        Base::FlagToggler<> guard(scratch->d->checkingOut);
+        scratch->restore(dir.c_str(), false);
+    }
+
+    _clearRedos();
+    d->activeUndoTransaction = new Transaction(0);
+    d->activeUndoTransaction->Name =
+        "Restore version " + std::to_string(num) + (version.name.empty() ? "" : " " + version.name);
+    d->activeUndoTransaction->LogKind = "restore";
+    mUndoMap[d->activeUndoTransaction->getID()] = d->activeUndoTransaction;
+    _applyVersion(*scratch);
+    if (d->activeUndoTransaction->isEmpty()) {
+        // Already what the version was: nothing to record.
+        mUndoMap.erase(d->activeUndoTransaction->getID());
+        delete d->activeUndoTransaction;
+        d->activeUndoTransaction = nullptr;
+        return true;
+    }
+    _commitTransaction(false);
     return true;
 }
 
@@ -4528,7 +4801,7 @@ TransactionLog* Document::getTransactionLog() const
     // document opened before the preference was set still gets one on
     // its next commit -- and so the transient directory exists by then.
     if (!d->transactionLog) {
-        if (DocumentParams::getTransactionLog() == 0)
+        if (DocumentParams::getTransactionLog() == 0 || d->noLog)
             return nullptr;
         if (TransientDir.getStrValue().empty())
             return nullptr;

@@ -200,6 +200,10 @@ public:
     virtual std::vector<LogTransaction> transactions(int64_t from = 0, int limit = 0) = 0;
     virtual std::vector<LogOp> ops(int64_t txn) = 0;
     virtual bool getOp(int64_t txn, int idx, LogOp& op) = 0;
+    /// The newest op on property `prop` of container (`ckind`, `cid`) in a
+    /// transaction after `after`; false when there is none (sec 24.4).
+    virtual bool lastOpOn(const std::string& ckind, long cid, const std::string& prop,
+                          int64_t after, LogOp& op) = 0;
     virtual int64_t lastSeq() = 0;
 
     /// Drop every transaction with seq < before, and the entities nothing

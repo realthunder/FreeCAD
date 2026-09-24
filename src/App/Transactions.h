@@ -79,6 +79,10 @@ public:
     /// The row the transaction log wrote for this transaction (its seq),
     /// 0 when none was written (docs/TransactionLog.md sec 24.2).
     int64_t LogSeq {0};
+    /// For a transaction the document makes to undo a log row (sec 24.4):
+    /// the kind the log records ("undo") and the row it inverts.
+    std::string LogKind;
+    int64_t Inverts {0};
     /** Take each changed property's derived flag from `from`, the
      * transaction this one is the inverse of (sec 24.2). The flag is set
      * where the write happens -- the owner is recomputing -- and an undo's

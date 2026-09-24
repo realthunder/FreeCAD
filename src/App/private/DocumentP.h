@@ -122,6 +122,9 @@ struct DocumentP
     bool snapshotting {false};
     /// A restoreVersion() in progress: the restore takes no version 1.
     bool checkingOut {false};
+    /// The scratch document a restore to a version reads the version into
+    /// (docs/TransactionLog.md sec 24.5): it keeps no log of its own.
+    bool noLog {false};
     /// A saveCopy() without history: the copy embeds nothing, and the
     /// History property the live document had is put back afterwards.
     bool savingWithoutHistory {false};
