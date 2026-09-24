@@ -60,7 +60,8 @@ public:
         exec("PRAGMA synchronous=NORMAL");
         exec("CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT)");
         exec("CREATE TABLE IF NOT EXISTS txn(seq INTEGER PRIMARY KEY, parent INTEGER, id INTEGER,"
-             " kind TEXT, origin TEXT, name TEXT, time REAL, script TEXT, session INTEGER)");
+             " kind TEXT, origin TEXT, name TEXT, time REAL, script TEXT, session INTEGER,"
+             " inverts INTEGER DEFAULT 0)");
         exec("CREATE TABLE IF NOT EXISTS environment(id INTEGER PRIMARY KEY, json TEXT UNIQUE)");
         exec("CREATE TABLE IF NOT EXISTS session(id INTEGER PRIMARY KEY, env INTEGER, user TEXT,"
              " host TEXT, opened REAL, closed REAL)");
@@ -84,8 +85,20 @@ public:
         const std::string schema = getMeta("schema");
         if (schema == "1" || schema == "2")
             migrateBlobs();
-        if (schema != "3")
-            setMeta("schema", "3");
+        if (!schema.empty() && schema < "4" && !hasColumn("txn", "inverts"))
+            exec("ALTER TABLE txn ADD COLUMN inverts INTEGER DEFAULT 0");
+        if (schema != "4")
+            setMeta("schema", "4");
+    }
+
+    bool hasColumn(const char* table, const char* column)
+    {
+        auto s = prepare("SELECT 1 FROM pragma_table_info(?) WHERE name=?");
+        bindText(s, 1, table);
+        bindText(s, 2, column);
+        bool found = sqlite3_step(s) == SQLITE_ROW;
+        sqlite3_reset(s);
+        return found;
     }
 
     /// Schema 2 listed a version's blobs in the manifest as
@@ -165,8 +178,8 @@ public:
         try {
             // A preset seq is honoured (the writer thread's caller numbers
             // ahead, TransactionLog); NULL takes the next rowid.
-            auto ins = prepare("INSERT INTO txn(seq,parent,id,kind,origin,name,time,script,session)"
-                               " VALUES(?,?,?,?,?,?,?,?,?)");
+            auto ins = prepare("INSERT INTO txn(seq,parent,id,kind,origin,name,time,script,session,"
+                               "inverts) VALUES(?,?,?,?,?,?,?,?,?,?)");
             if (txn.seq > 0)
                 sqlite3_bind_int64(ins, 1, txn.seq);
             else
@@ -179,6 +192,7 @@ public:
             sqlite3_bind_double(ins, 7, txn.time);
             bindText(ins, 8, txn.script);
             sqlite3_bind_int64(ins, 9, txn.session);
+            sqlite3_bind_int64(ins, 10, txn.inverts);
             step(ins);
             txn.seq = sqlite3_last_insert_rowid(db);
 
@@ -350,7 +364,7 @@ public:
 
     std::vector<LogTransaction> transactions(int64_t from, int limit) override
     {
-        auto s = prepare("SELECT seq,parent,id,kind,origin,name,time,script,session FROM txn"
+        auto s = prepare("SELECT seq,parent,id,kind,origin,name,time,script,session,inverts FROM txn"
                          " WHERE seq>=? ORDER BY seq LIMIT ?");
         sqlite3_bind_int64(s, 1, from);
         sqlite3_bind_int(s, 2, limit > 0 ? limit : -1);
@@ -366,6 +380,7 @@ public:
             t.time = sqlite3_column_double(s, 6);
             t.script = text(s, 7);
             t.session = sqlite3_column_int64(s, 8);
+            t.inverts = sqlite3_column_int64(s, 9);
             out.push_back(std::move(t));
         }
         sqlite3_reset(s);

@@ -28,6 +28,7 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -92,9 +93,12 @@ public:
     TransactionLog& operator=(const TransactionLog&) = delete;
 
     /// The commit hook, called with the transaction about to move to the
-    /// undo stack. Never throws; a store failure is reported and skipped.
-    void onCommit(const Transaction& txn, const char* kind = "user",
-                  const char* origin = "");
+    /// undo stack, or with the inverse an undo or redo just recorded (kind
+    /// `undo`/`redo`, `inverts` the seq of the row it inverts, sec 24.2).
+    /// Returns the seq of the row written, 0 when nothing was. Never
+    /// throws; a store failure is reported and skipped.
+    int64_t onCommit(const Transaction& txn, const char* kind = "user",
+                     const char* origin = "", int64_t inverts = 0);
 
     /// One recomputed object, for the recompute record.
     struct RecomputedObject
@@ -193,10 +197,20 @@ public:
     /// snapshot is the state, and the log continues from here.
     void onCheckout(int64_t num);
 
-    /// A transaction was applied by undo or redo. Until undo runs over the
-    /// log (sec 12), the log sees no op for it; what it changed is no
-    /// longer held current, so a composed snapshot serialises it again.
-    void onUndoRedo(const Transaction& txn);
+    /** What a cold undo needs of row `seq` (sec 24.3): its ops in log
+     * order, and each value they restore read back by hash -- a value the
+     * log no longer has (a derived one evicted from the cache tier) is
+     * simply absent. Every blob such a value names, and every blob those
+     * read, is in the document's blob store again when this returns: a
+     * blob the log kept as a delta is decoded and adopted, and held as a
+     * file once more. False when the row does not exist.
+     */
+    struct Revert
+    {
+        std::vector<LogOp> ops;
+        std::map<std::string, CapturedValue> values;
+    };
+    bool readRevert(int64_t seq, Revert& out);
 
     /// The unnamed version between saves (sec 16.3), from
     /// Document::snapshotToLog: like onSave, with a `snapshot` record.
@@ -296,6 +310,14 @@ private:
         int opIndex {-1};
         int64_t resolveTxn {0};
         int resolveIdx {0};
+        /// A link's value is the name of its target, which the worker
+        /// cannot read once the target has left the document -- a link to
+        /// an object removed in the same transaction would be logged empty
+        /// -- nor safely while the main thread edits it. Links are captured
+        /// on the main thread as the task is made (sec 24.3), here.
+        CapturedValue captured;
+        bool isCaptured {false};
+        void captureNow(const CaptureConfig& config);
     };
 
     class Sink;
@@ -336,6 +358,10 @@ private:
     /// names outlive the version that wrote it. Once per blob per log.
     /// Worker thread.
     void putSources(const FileBlobHandle& blob, int depth = 0);
+    /// Make the blob `hash` a file of the document's store again, and the
+    /// blobs it reads (sec 24.3); `ext` is its extension, which a blob kept
+    /// as a delta no longer carries in `data`. Main thread, queue drained.
+    bool restoreBlob(const std::string& hash, const std::string& ext, int depth = 0);
     /// Let go of the file of every blob no longer stored as `file`: gone
     /// to the collector, or kept as a delta. After anything that removes
     /// or re-encodes entities.

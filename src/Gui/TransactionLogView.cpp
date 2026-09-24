@@ -59,7 +59,7 @@ using namespace Gui::DockWnd;
 
 namespace {
 
-enum TxnColumn { TxnSeq, TxnKind, TxnOrigin, TxnName, TxnTime, TxnParent, TxnColumns };
+enum TxnColumn { TxnSeq, TxnKind, TxnOrigin, TxnName, TxnTime, TxnParent, TxnInverts, TxnColumns };
 enum OpColumn { OpIdx, OpOp, OpContainer, OpProp, OpType, OpBefore, OpAfter, OpDerived, OpColumns };
 enum VerColumn { VerNum, VerKind, VerName, VerBranch, VerSeq, VerSchema, VerCreated, VerDocXml,
                  VerEntries, VerColumns };
@@ -122,7 +122,7 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     _tabs->addTab(_transactions, tr("Transactions"));
     _transactions->setColumnCount(TxnColumns);
     _transactions->setHeaderLabels({tr("Seq"), tr("Kind"), tr("Origin"), tr("Name"),
-                                    tr("Time"), tr("Parent")});
+                                    tr("Time"), tr("Parent"), tr("Inverts")});
     _transactions->setRootIsDecorated(false);
     _transactions->setAlternatingRowColors(true);
     _transactions->setUniformRowHeights(true);
@@ -494,6 +494,10 @@ void TransactionLogView::appendTransactions(int64_t fromSeq)
         item->setData(TxnName, Qt::UserRole, QString::fromStdString(t.script));
         item->setTextAlignment(TxnSeq, Qt::AlignRight | Qt::AlignVCenter);
         item->setTextAlignment(TxnParent, Qt::AlignRight | Qt::AlignVCenter);
+        if (t.inverts > 0) {
+            item->setText(TxnInverts, QString::number(t.inverts));
+            item->setTextAlignment(TxnInverts, Qt::AlignRight | Qt::AlignVCenter);
+        }
         if (!t.script.empty())
             item->setToolTip(TxnName, QString::fromStdString(t.script));
         if (!filter.isEmpty()) {

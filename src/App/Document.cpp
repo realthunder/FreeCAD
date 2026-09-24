@@ -223,6 +223,274 @@ bool Document::checkOnCycle()
     return false;
 }
 
+struct Document::ColdRevert
+{
+    TransactionLog::Revert log;
+    /// The ops in the order they are applied: the log's, reversed.
+    std::vector<const LogOp*> ops;
+    /// (container id, property) of every derived op, for the inverse.
+    std::set<std::pair<long, std::string>> derived;
+};
+
+namespace {
+
+/// The container an op names, in `doc` as it stands; null when gone.
+PropertyContainer* opContainer(Document& doc, const LogOp& op)
+{
+    if (op.ckind == "doc")
+        return &doc;
+    if (op.ckind == "obj")
+        return doc.getObjectByID(op.cid);
+    return nullptr;   // a view provider: not reachable from App (sec 24.3)
+}
+
+/// The dynamic-property metadata of an addprop/delprop op, as
+/// TransactionLog writes it: group, doc, then "attr[ ro][ hidden]".
+struct DynamicMeta
+{
+    std::string group;
+    std::string doc;
+    short attr {0};
+    bool readonly {false};
+    bool hidden {false};
+};
+
+DynamicMeta parseMeta(const std::string& meta)
+{
+    DynamicMeta m;
+    auto first = meta.find('\n');
+    auto last = meta.rfind('\n');
+    if (first == std::string::npos)
+        return m;
+    m.group = meta.substr(0, first);
+    if (last > first)
+        m.doc = meta.substr(first + 1, last - first - 1);
+    std::istringstream flags(meta.substr(last + 1));
+    int attr = 0;
+    flags >> attr;
+    m.attr = static_cast<short>(attr);
+    std::string word;
+    while (flags >> word) {
+        if (word == "ro")
+            m.readonly = true;
+        else if (word == "hidden")
+            m.hidden = true;
+    }
+    return m;
+}
+
+} // namespace
+
+bool Document::_prepareRevert(const Transaction& step, ColdRevert& revert)
+{
+    auto log = getTransactionLog();
+    std::ostringstream why;
+    if (!log || step.LogSeq <= 0)
+        why << "no log row";
+    else if (!log->readRevert(step.LogSeq, revert.log))
+        why << "row " << step.LogSeq << " is not in the log";
+    if (why.str().empty()) {
+        for (auto it = revert.log.ops.rbegin(); it != revert.log.ops.rend(); ++it)
+            revert.ops.push_back(&*it);
+        // Objects the revert recreates: their sets need no live container.
+        std::set<long> recreated;
+        size_t views = 0;
+        for (const LogOp* o : revert.ops) {
+            if (o->derived)
+                revert.derived.emplace(o->cid, o->prop);
+            if (o->ckind == "view") {
+                ++views;
+                continue;
+            }
+            if (o->op == "remove") {
+                if (getObjectByID(o->cid))
+                    why << " object id " << o->cid << " (" << o->cname << ") is in use;";
+                else if (getObject(o->cname.c_str()))
+                    why << " name " << o->cname << " is in use;";
+                else if (Base::Type::getTypeIfDerivedFrom(o->ctype.c_str(),
+                                                          DocumentObject::getClassTypeId(), true)
+                             .isBad())
+                    why << " type " << o->ctype << " is unknown;";
+                recreated.insert(o->cid);
+            }
+            else if (o->op == "create") {
+                if (!getObjectByID(o->cid))
+                    why << " object " << o->cname << " (id " << o->cid << ") is gone;";
+            }
+            else if (o->op == "set" || o->op == "delprop") {
+                if (o->ckind == "obj" && !recreated.count(o->cid) && !getObjectByID(o->cid))
+                    why << " the owner of " << o->prop << " (id " << o->cid << ") is gone;";
+                else if (!o->derived && !o->vbefore.empty()
+                         && !revert.log.values.count(o->vbefore))
+                    why << " the value of " << o->prop << " (" << o->vbefore
+                        << ") is not in the log;";
+            }
+        }
+        if (views)
+            FC_LOG("cold " << step.Name << ": " << views << " view op(s) not reverted");
+    }
+    if (!why.str().empty()) {
+        FC_ERR("Cannot undo '" << step.Name << "' of " << getName() << " from the log:"
+               << why.str());
+        return false;
+    }
+    return true;
+}
+
+void Document::_applyRevert(ColdRevert& revert)
+{
+    // docs/TransactionLog.md sec 24.3. In passes, so a value naming an
+    // object -- a link -- never restores before the object exists: first
+    // the objects the row removed come back, then the dynamic properties it
+    // removed, then every value, then what the row added goes.
+    auto guarded = [&](const LogOp& o, const std::function<void()>& fn) {
+        try {
+            fn();
+        }
+        catch (Base::Exception& e) {
+            FC_ERR("cold undo, " << o.op << " " << o.cname << " " << o.prop << ": "
+                   << e.what());
+        }
+        catch (std::exception& e) {
+            FC_ERR("cold undo, " << o.op << " " << o.cname << " " << o.prop << ": "
+                   << e.what());
+        }
+    };
+    const auto& values = revert.log.values;
+    // What a removed object's set needs to add a dynamic property back.
+    std::map<std::pair<long, std::string>, const LogOp*> dynamicSets;
+    for (const LogOp* o : revert.ops) {
+        if (o->op == "set" && !o->meta.empty())
+            dynamicSets.emplace(std::make_pair(o->cid, o->prop), o);
+    }
+
+    // 1. Recreate what the row removed, under its id and name.
+    for (const LogOp* o : revert.ops) {
+        if (o->op != "remove" || o->ckind != "obj")
+            continue;
+        guarded(*o, [&]() {
+            Base::Type type = Base::Type::getTypeIfDerivedFrom(
+                o->ctype.c_str(), DocumentObject::getClassTypeId(), true);
+            auto obj = static_cast<DocumentObject*>(type.createInstance());
+            if (!obj)
+                throw Base::RuntimeError("cannot create " + o->ctype);
+            obj->_Id = o->cid;
+            addObject(obj, o->cname.c_str(), false);
+            for (auto& kv : dynamicSets) {
+                if (kv.first.first != o->cid || obj->getPropertyByName(kv.first.second.c_str()))
+                    continue;
+                DynamicMeta m = parseMeta(kv.second->meta);
+                obj->addDynamicProperty(kv.second->ptype.c_str(), kv.first.second.c_str(),
+                                        m.group.c_str(), m.doc.c_str(), m.attr, m.readonly,
+                                        m.hidden);
+            }
+        });
+    }
+    // 2. The dynamic properties the row removed.
+    for (const LogOp* o : revert.ops) {
+        if (o->op != "delprop")
+            continue;
+        guarded(*o, [&]() {
+            auto container = opContainer(*this, *o);
+            if (!container || container->getPropertyByName(o->prop.c_str()))
+                return;
+            DynamicMeta m = parseMeta(o->meta);
+            container->addDynamicProperty(o->ptype.c_str(), o->prop.c_str(), m.group.c_str(),
+                                          m.doc.c_str(), m.attr, m.readonly, m.hidden);
+        });
+    }
+    // 3. Every value the row replaced.
+    for (const LogOp* o : revert.ops) {
+        if (o->op != "set" && o->op != "delprop")
+            continue;
+        guarded(*o, [&]() {
+            auto container = opContainer(*this, *o);
+            if (!container)
+                return;
+            Property* prop = container->getPropertyByName(o->prop.c_str());
+            auto it = o->vbefore.empty() ? values.end() : values.find(o->vbefore);
+            if (it == values.end()) {
+                // A derived value gone from the cache (sec 24.1), or a set
+                // that holds none (a create's, or the `none` policy): the
+                // owner recomputes it.
+                if (o->derived) {
+                    if (auto obj = Base::freecad_dynamic_cast<DocumentObject>(container))
+                        obj->touch();
+                }
+                return;
+            }
+            if (!prop)
+                throw Base::RuntimeError("no property " + o->prop);
+            restoreValue(*prop, it->second);
+        });
+    }
+    // 4. The dynamic properties the row added, where the object stays.
+    std::set<long> created;
+    for (const LogOp* o : revert.ops) {
+        if (o->op == "create")
+            created.insert(o->cid);
+    }
+    for (const LogOp* o : revert.ops) {
+        if (o->op != "addprop" || created.count(o->cid))
+            continue;
+        guarded(*o, [&]() {
+            if (auto container = opContainer(*this, *o))
+                container->removeDynamicProperty(o->prop.c_str());
+        });
+    }
+    // 5. The objects the row created.
+    for (const LogOp* o : revert.ops) {
+        if (o->op != "create" || o->ckind != "obj")
+            continue;
+        guarded(*o, [&]() {
+            if (auto obj = getObjectByID(o->cid))
+                removeObject(obj->getNameInDocument());
+        });
+    }
+}
+
+void Document::_deleteTransaction(Transaction* t)
+{
+    if (!t)
+        return;
+    // The log's worker serialises copies after the commit that made them;
+    // a copy of a link to an object this deletion destroys must be written
+    // first. Only a step that removed objects owns any, so this rarely waits.
+    if (d->transactionLog && t->destroysObjects())
+        d->transactionLog->flush();
+    delete t;
+}
+
+void Document::_trimHotWindow(std::list<Transaction*>& stack, std::map<int, Transaction*>& map)
+{
+    auto log = getTransactionLog();
+    size_t hot = 0;
+    for (auto t : stack)
+        hot += t->Cold ? 0 : 1;
+    // Oldest first, as clearUndos() deletes: an object a later step
+    // references can be owned by an earlier one.
+    for (auto it = stack.begin(); it != stack.end() && hot > d->UndoMaxStackSize;) {
+        Transaction* t = *it;
+        if (t->Cold) {
+            ++it;
+            continue;
+        }
+        --hot;
+        if (log && t->LogSeq > 0) {
+            Transaction* stub = Transaction::coldCopy(*t);
+            map[t->getID()] = stub;
+            *it = stub;
+            _deleteTransaction(t);
+            ++it;
+        }
+        else {
+            map.erase(t->getID());
+            _deleteTransaction(t);
+            it = stack.erase(it);
+        }
+    }
+}
+
 bool Document::undo(int id)
 {
     if (d->iUndoMode) {
@@ -232,8 +500,10 @@ bool Document::undo(int id)
                 return false;
             if(it->second != d->activeUndoTransaction) {
                 TransactionGuard guard(TransactionGuard::Undo);
-                while(!mUndoTransactions.empty() && mUndoTransactions.back()!=it->second)
-                    undo(0);
+                while(!mUndoTransactions.empty() && mUndoTransactions.back()!=it->second) {
+                    if (!undo(0))
+                        return false;   // a cold step refused (sec 24.3)
+                }
             }
         }
 
@@ -242,25 +512,32 @@ bool Document::undo(int id)
         if (mUndoTransactions.empty())
             return false;
 
+        Transaction* step = mUndoTransactions.back();
+        ColdRevert cold;
+        if (step->Cold && !_prepareRevert(*step, cold))
+            return false;
+
         TransactionGuard guard(TransactionGuard::Undo);
 
         // redo
-        d->activeUndoTransaction = new Transaction(mUndoTransactions.back()->getID());
-        d->activeUndoTransaction->Name = mUndoTransactions.back()->Name;
+        d->activeUndoTransaction = new Transaction(step->getID());
+        d->activeUndoTransaction->Name = step->Name;
 
         Base::FlagToggler<bool> flag(d->undoing);
         // applying the undo
-        mUndoTransactions.back()->apply(*this,false);
-        if (auto log = getTransactionLog())
-            log->onUndoRedo(*mUndoTransactions.back());
+        if (step->Cold)
+            _applyRevert(cold);
+        else
+            step->apply(*this,false);
+        logInverse(*step, "undo", step->Cold ? &cold : nullptr);
 
         // save the redo
         mRedoMap[d->activeUndoTransaction->getID()] = d->activeUndoTransaction;
         mRedoTransactions.push_back(d->activeUndoTransaction);
         d->activeUndoTransaction = nullptr;
 
-        mUndoMap.erase(mUndoTransactions.back()->getID());
-        delete mUndoTransactions.back();
+        mUndoMap.erase(step->getID());
+        delete step;
         mUndoTransactions.pop_back();
         return true;
     }
@@ -277,39 +554,84 @@ bool Document::redo(int id)
                 return false;
             {
                 TransactionGuard guard(TransactionGuard::Redo);
-                while(mRedoTransactions.size() && mRedoTransactions.back()!=it->second)
-                    redo(0);
+                while(mRedoTransactions.size() && mRedoTransactions.back()!=it->second) {
+                    if (!redo(0))
+                        return false;   // a cold step refused (sec 24.3)
+                }
             }
         }
 
         if (d->activeUndoTransaction)
             _commitTransaction(true);
 
-        assert(mRedoTransactions.size()!=0);
+        if (mRedoTransactions.empty())
+            return false;
+
+        Transaction* step = mRedoTransactions.back();
+        ColdRevert cold;
+        if (step->Cold && !_prepareRevert(*step, cold))
+            return false;
 
         TransactionGuard guard(TransactionGuard::Redo);
 
         // undo
-        d->activeUndoTransaction = new Transaction(mRedoTransactions.back()->getID());
-        d->activeUndoTransaction->Name = mRedoTransactions.back()->Name;
+        d->activeUndoTransaction = new Transaction(step->getID());
+        d->activeUndoTransaction->Name = step->Name;
 
         // do the redo
         Base::FlagToggler<bool> flag(d->undoing);
-        mRedoTransactions.back()->apply(*this,true);
-        if (auto log = getTransactionLog())
-            log->onUndoRedo(*mRedoTransactions.back());
+        if (step->Cold)
+            _applyRevert(cold);
+        else
+            step->apply(*this,true);
+        logInverse(*step, "redo", step->Cold ? &cold : nullptr);
 
         mUndoMap[d->activeUndoTransaction->getID()] = d->activeUndoTransaction;
         mUndoTransactions.push_back(d->activeUndoTransaction);
         d->activeUndoTransaction = nullptr;
 
-        mRedoMap.erase(mRedoTransactions.back()->getID());
-        delete mRedoTransactions.back();
+        mRedoMap.erase(step->getID());
+        delete step;
         mRedoTransactions.pop_back();
+        if (getTransactionLog())
+            _trimHotWindow(mUndoTransactions, mUndoMap);
         return true;
     }
 
     return false;
+}
+
+void Document::logInverse(const Transaction& applied, const char* kind, const ColdRevert* cold)
+{
+    // docs/TransactionLog.md sec 24.2: the record the undo (or redo) opened
+    // before applying collected the writes it made, which are the inverse
+    // of what it applied. It is logged as a transaction of its own, naming
+    // the row it inverts, before it becomes the redo (or undo) step.
+    auto log = getTransactionLog();
+    if (!log || !d->activeUndoTransaction)
+        return;
+    if (cold) {
+        d->activeUndoTransaction->inheritDerived(
+            [this, cold](const TransactionalObject* tobj, const Property* prop) {
+                long cid = 0;
+                const PropertyContainer* container = this;
+                if (auto obj = Base::freecad_dynamic_cast<const DocumentObject>(tobj)) {
+                    cid = obj->getID();
+                    container = obj;
+                }
+                else if (tobj) {
+                    return false;   // a view provider: its ops are not reverted
+                }
+                // Safe on a property already destroyed (a dynamic one removed).
+                const char* name = container->getPropertyName(prop);
+                return name && cold->derived.count({cid, name}) != 0;
+            });
+    }
+    else
+        d->activeUndoTransaction->inheritDerived(applied);
+    d->activeUndoTransaction->LogSeq =
+        log->onCommit(*d->activeUndoTransaction, kind, Application::InvocationScope::current(),
+                      applied.LogSeq);
 }
 
 App::Property* Document::addDynamicProperty(
@@ -538,7 +860,7 @@ void Document::_clearRedos()
 
     mRedoMap.clear();
     while (!mRedoTransactions.empty()) {
-        delete mRedoTransactions.back();
+        _deleteTransaction(mRedoTransactions.back());
         mRedoTransactions.pop_back();
     }
 }
@@ -575,8 +897,9 @@ void Document::_commitTransaction(bool notify)
         const bool implicit = d->activeUndoTransaction->Implicit;
         bool snapshotDue = false;
         if (auto log = getTransactionLog()) {
-            log->onCommit(*d->activeUndoTransaction, implicit ? "implicit" : "user",
-                          d->activeUndoTransaction->Origin.c_str());
+            d->activeUndoTransaction->LogSeq =
+                log->onCommit(*d->activeUndoTransaction, implicit ? "implicit" : "user",
+                              d->activeUndoTransaction->Origin.c_str());
             // The cadence of unnamed versions (docs/TransactionLog.md sec
             // 16.3): every N commits, or the first commit T seconds after
             // the last version. Taken once the commit is complete, below.
@@ -597,15 +920,11 @@ void Document::_commitTransaction(bool notify)
         else {
             // Recorded for the log only: no undo step is kept.
             mUndoMap.erase(id);
-            delete d->activeUndoTransaction;
+            _deleteTransaction(d->activeUndoTransaction);
         }
         d->activeUndoTransaction = nullptr;
-        // check the stack for the limits
-        if(mUndoTransactions.size() > d->UndoMaxStackSize){
-            mUndoMap.erase(mUndoTransactions.front()->getID());
-            delete mUndoTransactions.front();
-            mUndoTransactions.pop_front();
-        }
+        // check the stack for the limits: the hot window (sec 24.3)
+        _trimHotWindow(mUndoTransactions, mUndoMap);
         signalCommitTransaction(*this);
 
         if (notify && !implicit)
@@ -642,7 +961,7 @@ void Document::_abortTransaction()
 
         // destroy the undo
         mUndoMap.erase(d->activeUndoTransaction->getID());
-        delete d->activeUndoTransaction;
+        _deleteTransaction(d->activeUndoTransaction);
         d->activeUndoTransaction = nullptr;
         // signalAbortTransaction is emitted by the caller, once the enclosing
         // TransactionGuard has flushed the property changes this rollback deferred
@@ -744,7 +1063,7 @@ void Document::clearUndos()
     // is deleted we must make sure not access an object once it's destroyed. Thus, we
     // go from front to back and not the other way round.
     while (!mUndoTransactions.empty()) {
-        delete mUndoTransactions.front();
+        _deleteTransaction(mUndoTransactions.front());
         mUndoTransactions.pop_front();
     }
     //while (!mUndoTransactions.empty()) {

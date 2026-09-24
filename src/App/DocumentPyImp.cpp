@@ -908,6 +908,7 @@ PyObject* DocumentPy::getTransactionLog(PyObject *args)
             d.setItem("name", Py::String(t.name));
             d.setItem("time", Py::Float(t.time));
             d.setItem("script", Py::String(t.script));
+            d.setItem("inverts", Py::Long(static_cast<long long>(t.inverts)));
             list.append(d);
         }
         return Py::new_reference_to(list);

@@ -292,7 +292,8 @@ maxCount: to limit the number of links returned
         <UserDocu>getTransactionLog(fromSeq=0, limit=0) -> list of dict
 
 Transactions of this document's log (docs/TransactionLog.md), each a
-dict with seq, parent, id, kind, origin, name, time, script. Empty when
+dict with seq, parent, id, kind, origin, name, time, script, inverts
+(the seq an undo or redo inverts, else 0). Empty when
 the log is off (preference Document/TransactionLog).</UserDocu>
       </Documentation>
     </Methode>

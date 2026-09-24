@@ -1313,3 +1313,174 @@ TEST_F(TransactionLogTest, blobsAreEntitiesTheLogHolds)
 
     Base::FileInfo(path).deleteFile();
 }
+
+namespace {
+
+std::map<std::string, App::LogOp> setsByProp(App::TransactionStore& store, int64_t seq)
+{
+    std::map<std::string, App::LogOp> out;
+    for (auto& o : store.ops(seq)) {
+        if (o.op == "set")
+            out[o.prop] = o;
+    }
+    return out;
+}
+
+}  // namespace
+
+TEST_F(TransactionLogTest, undoAndRedoAreLoggedAsInverses)
+{
+    // docs/TransactionLog.md sec 24.2: an undo is a transaction of its own
+    // whose ops are the undone one's with before and after swapped, naming
+    // the row it inverts; a redo inverts the undo. Derived stays derived.
+    doc()->openTransaction("create");
+    auto obj = make("Obj");
+    doc()->commitTransaction();
+    doc()->recompute();
+
+    doc()->openTransaction("edit");
+    obj->Integer.setValue(7);
+    doc()->recompute();   // inside the transaction: its outputs are part of the step
+    doc()->commitTransaction();
+    const int execs = obj->ExecCount.getValue();
+
+    auto& store = log().store();
+    const int64_t edit = store.transactions().back().seq;
+    ASSERT_EQ(store.transactions().back().name, "edit");
+
+    ASSERT_TRUE(doc()->undo());
+    EXPECT_EQ(obj->Integer.getValue(), 4711);
+    ASSERT_TRUE(doc()->redo());
+    EXPECT_EQ(obj->Integer.getValue(), 7);
+    EXPECT_EQ(obj->ExecCount.getValue(), execs);
+    log().resolvePending();
+
+    auto txns = store.transactions(edit);
+    ASSERT_EQ(txns.size(), 3u);
+    EXPECT_EQ(txns[0].inverts, 0);
+    EXPECT_EQ(txns[1].kind, "undo");
+    EXPECT_EQ(txns[1].inverts, edit);
+    EXPECT_EQ(txns[1].name, "edit");
+    EXPECT_EQ(txns[2].kind, "redo");
+    EXPECT_EQ(txns[2].inverts, txns[1].seq);
+
+    auto forward = setsByProp(store, edit);
+    auto undo = setsByProp(store, txns[1].seq);
+    auto redo = setsByProp(store, txns[2].seq);
+    for (const char* name : {"Integer", "ExecCount"}) {
+        ASSERT_TRUE(forward.count(name)) << name;
+        ASSERT_TRUE(undo.count(name)) << name;
+        ASSERT_TRUE(redo.count(name)) << name;
+        const auto& f = forward[name];
+        EXPECT_EQ(f.vbefore.size(), 40u) << name;
+        EXPECT_EQ(f.vafter.size(), 40u) << name;
+        EXPECT_NE(f.vbefore, f.vafter) << name;
+        // The inverse: no new value, the refs swapped.
+        EXPECT_EQ(undo[name].vbefore, f.vafter) << name;
+        EXPECT_EQ(undo[name].vafter, f.vbefore) << name;
+        EXPECT_EQ(redo[name].vbefore, f.vbefore) << name;
+        EXPECT_EQ(redo[name].vafter, f.vafter) << name;
+    }
+    EXPECT_FALSE(forward["Integer"].derived);
+    EXPECT_TRUE(forward["ExecCount"].derived);
+    EXPECT_FALSE(undo["Integer"].derived);
+    EXPECT_TRUE(undo["ExecCount"].derived);
+    EXPECT_TRUE(redo["ExecCount"].derived);
+
+    // A recompute with no transaction open is an undo step of its own
+    // (sec 24.1, TransactionOnRecompute ignored under the log).
+    obj->touch();
+    doc()->recompute();
+    auto names = doc()->getAvailableUndoNames();
+    ASSERT_FALSE(names.empty());
+    EXPECT_NE(names.front().find("recompute"), std::string::npos) << names.front();
+    EXPECT_EQ(doc()->getAvailableRedos(), 0);
+}
+
+TEST_F(TransactionLogTest, coldUndoRevertsFromTheLog)
+{
+    // docs/TransactionLog.md sec 24.3: past the hot window a step keeps its
+    // name and log row only, and undoing it applies the row reversed from
+    // the log -- objects recreated under their id and name, dynamic
+    // properties added back, links restored.
+    doc()->setMaxUndoStackSize(2);
+    doc()->openTransaction("create");
+    auto a = make("A");
+    auto b = make("B");
+    doc()->commitTransaction();
+    const long idB = b->getID();
+
+    doc()->openTransaction("link");
+    a->Link.setValue(b);
+    doc()->commitTransaction();
+
+    doc()->openTransaction("dyn");
+    auto note = b->addDynamicProperty("App::PropertyString", "Note", "Extra", "a note");
+    ASSERT_TRUE(note);
+    static_cast<App::PropertyString*>(note)->setValue("hi");
+    doc()->commitTransaction();
+
+    doc()->openTransaction("remove");
+    a->Link.setValue(nullptr);
+    doc()->removeObject("B");
+    doc()->commitTransaction();
+
+    for (int i = 1; i <= 4; ++i) {
+        doc()->openTransaction("edit");
+        a->Integer.setValue(i);
+        doc()->commitTransaction();
+    }
+    ASSERT_EQ(doc()->getAvailableUndos(), 8);
+    EXPECT_EQ(doc()->getAvailableUndoNames()[7], "create");
+
+    auto check = [&](int undone) {
+        SCOPED_TRACE(undone);
+        a = static_cast<App::FeatureTest*>(doc()->getObject("A"));
+        auto bb = static_cast<App::FeatureTest*>(doc()->getObject("B"));
+        if (undone == 8) {
+            EXPECT_FALSE(a);
+            EXPECT_FALSE(bb);
+            return;
+        }
+        ASSERT_TRUE(a);
+        EXPECT_EQ(a->Integer.getValue(), undone >= 4 ? 4711 : 4 - undone);
+        // Undone in order: four edits, the remove, the dynamic property,
+        // the link, the create.
+        EXPECT_EQ(bool(bb), undone >= 5);
+        EXPECT_EQ(a->Link.getValue(), undone == 5 || undone == 6 ? bb : nullptr);
+        if (bb) {
+            EXPECT_EQ(bb->getID(), idB);
+            auto p = bb->getPropertyByName("Note");
+            EXPECT_EQ(bool(p), undone == 5);
+            if (p) {
+                EXPECT_STREQ(static_cast<App::PropertyString*>(p)->getValue(), "hi");
+                EXPECT_STREQ(bb->getPropertyGroup(p), "Extra");
+            }
+        }
+    };
+
+    for (int round = 0; round < 2; ++round) {
+        for (int i = 1; i <= 8; ++i) {
+            ASSERT_TRUE(doc()->undo()) << "round " << round << " undo " << i;
+            check(i);
+        }
+        EXPECT_FALSE(doc()->undo());
+        for (int i = 7; i >= 0; --i) {
+            ASSERT_TRUE(doc()->redo()) << "round " << round << " redo " << 8 - i;
+            check(i);
+        }
+    }
+
+    auto& store = log().store();
+    int undos = 0, redos = 0;
+    for (auto& t : store.transactions()) {
+        if (t.kind == "undo")
+            ++undos;
+        else if (t.kind == "redo")
+            ++redos;
+        if (t.kind == "undo" || t.kind == "redo")
+            EXPECT_GT(t.inverts, 0) << t.seq;
+    }
+    EXPECT_EQ(undos, 16);
+    EXPECT_EQ(redos, 16);
+}

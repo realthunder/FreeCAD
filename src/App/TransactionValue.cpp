@@ -175,6 +175,32 @@ void App::restoreValue(Property& prop, const CapturedValue& value)
     }
 }
 
+namespace {
+thread_local App::CaptureNames* captureNames = nullptr;
+}
+
+App::CaptureNames::CaptureNames(std::unordered_map<const DocumentObject*, std::string> names)
+    : _names(std::move(names))
+    , _outer(captureNames)
+{
+    captureNames = this;
+}
+
+App::CaptureNames::~CaptureNames()
+{
+    captureNames = _outer;
+}
+
+const std::string* App::CaptureNames::find(const DocumentObject* obj)
+{
+    for (auto scope = captureNames; scope; scope = scope->_outer) {
+        auto it = scope->_names.find(obj);
+        if (it != scope->_names.end())
+            return &it->second;
+    }
+    return nullptr;
+}
+
 std::string App::hashBytes(const std::string& bytes)
 {
     return FileBlobManager::hashBytes(bytes);

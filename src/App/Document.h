@@ -947,6 +947,28 @@ protected:
     /// @return 0 if succeeded, 1 if failed, -1 if aborted by user.
     int _recomputeFeature(DocumentObject* Feat);
     void _clearRedos();
+    /// What a cold step reverts (docs/TransactionLog.md sec 24.3), read
+    /// from the log and checked against the document before anything moves.
+    struct ColdRevert;
+    /// Read and check the revert of cold `step`; false, with the reason
+    /// reported, when it cannot be applied -- the undo is then refused.
+    bool _prepareRevert(const Transaction& step, ColdRevert& revert);
+    /// Apply a checked revert, recorded into the open undo record.
+    void _applyRevert(ColdRevert& revert);
+    /// Log the inverse an undo or redo just recorded (docs/TransactionLog.md
+    /// sec 24.2); `applied` is the step it applied, `cold` its revert when
+    /// it was a cold one.
+    void logInverse(const Transaction& applied, const char* kind,
+                    const ColdRevert* cold = nullptr);
+    /// Keep at most UndoMaxStackSize steps of `stack` hot (sec 24.3): with
+    /// the log, the oldest beyond it become cold stubs; without it, they go.
+    /// The undo stack only: its steps are deleted oldest first, the order
+    /// that never touches an object an older step already destroyed, and
+    /// the redo stack cannot be trimmed from its far end in that order.
+    /// Delete a transaction, draining the log's queue first when that
+    /// destroys an object a queued copy may link to.
+    void _deleteTransaction(Transaction* t);
+    void _trimHotWindow(std::list<Transaction*>& stack, std::map<int, Transaction*>& map);
 
     /// refresh the internal dependency graph
     void _rebuildDependencyList(

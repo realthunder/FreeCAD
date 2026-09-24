@@ -25,6 +25,7 @@
 #ifndef APP_TRANSACTION_H
 #define APP_TRANSACTION_H
 
+#include <functional>
 #include <memory>
 #include <unordered_map>
 #include <Base/Factory.h>
@@ -75,6 +76,33 @@ public:
      */
     bool Implicit {false};
     std::string Origin;
+    /// The row the transaction log wrote for this transaction (its seq),
+    /// 0 when none was written (docs/TransactionLog.md sec 24.2).
+    int64_t LogSeq {0};
+    /** Take each changed property's derived flag from `from`, the
+     * transaction this one is the inverse of (sec 24.2). The flag is set
+     * where the write happens -- the owner is recomputing -- and an undo's
+     * writes are never made while recomputing, so without this undoing a
+     * feature would log its own output as an input.
+     */
+    void inheritDerived(const Transaction& from);
+    /// The same for a cold step, whose copies are gone: `derived` says, per
+    /// container and property, what the log row it reverted recorded.
+    void inheritDerived(
+        const std::function<bool(const TransactionalObject*, const Property*)>& derived);
+    /** Past the hot window (docs/TransactionLog.md sec 24.3): the step's
+     * copies are gone and only its id, name and LogSeq are left. Applying
+     * it reverts that log row from the log (Document::revertFromLog).
+     */
+    bool Cold {false};
+    /** Whether deleting this transaction destroys a document object: one
+     * it removed and that is still out of the document. The transaction
+     * log's worker may still hold a copy of a link to such an object, so
+     * the document drains the log's queue first (sec 24.3).
+     */
+    bool destroysObjects() const;
+    /// A cold stub of `t`, which the caller deletes.
+    static Transaction* coldCopy(const Transaction& t);
 
     unsigned int getMemSize () const override;
     void Save (Base::Writer &writer) const override;

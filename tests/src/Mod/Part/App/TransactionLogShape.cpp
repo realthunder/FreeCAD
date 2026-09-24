@@ -12,6 +12,7 @@
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentParams.h>
+#include <App/FileBlobManager.h>
 #include <App/TransactionLog.h>
 #include <App/TransactionValue.h>
 #include <Base/FileInfo.h>
@@ -246,3 +247,62 @@ TEST_F(TransactionLogShapeTest, borrowedFilesAreHeld)
 }
 
 }  // namespace
+
+namespace {
+
+double volumeOf(const Part::Box* box)
+{
+    GProp_GProps props;
+    BRepGProp::VolumeProperties(box->Shape.getShape().getShape(), props);
+    return props.Mass();
+}
+
+}  // namespace
+
+// Sec 24.3: a cold undo restores a shape whose file the log keeps only as a
+// delta -- the file is decoded back into the document's store, and the
+// shape comes back without a recompute.
+TEST_F(TransactionLogShapeTest, coldUndoReadoptsADeltaBlob)
+{
+    _doc->openTransaction("box");
+    auto box = static_cast<Part::Box*>(_doc->addObject("Part::Box", "Box"));
+    _doc->recompute();
+    _doc->commitTransaction();
+    const std::string path = Base::FileInfo::getTempPath() + "txnshape-cold.FCStd";
+    ASSERT_TRUE(_doc->saveAs(path.c_str()));
+    ASSERT_TRUE(box->Shape.getBlob());
+    const std::string saved = box->Shape.getBlob()->hash();
+
+    _doc->setMaxUndoStackSize(1);
+    for (double length : {20.0, 30.0}) {
+        _doc->openTransaction("length");
+        box->Length.setValue(length);
+        _doc->recompute();   // the outputs are part of the step
+        _doc->commitTransaction();
+        ASSERT_GT(_doc->snapshotToLog(), 0);
+    }
+    auto log = _doc->getTransactionLog();
+    ASSERT_TRUE(log);
+    auto& store = log->store();
+    App::LogEntity e;
+    ASSERT_TRUE(store.getEntity(saved, e));
+    EXPECT_EQ(e.enc, "delta");
+    EXPECT_FALSE(_doc->getFileBlobManager().find(saved)) << "nothing holds the file any more";
+
+    ASSERT_TRUE(_doc->undo());   // hot
+    EXPECT_NEAR(volumeOf(box), 2000.0, 1e-6);
+    const bool touchedHot = box->isTouched();
+    ASSERT_TRUE(_doc->undo());   // cold: from the log
+    EXPECT_DOUBLE_EQ(box->Length.getValue(), 10.0);
+    EXPECT_EQ(box->isTouched(), touchedHot);
+    EXPECT_NEAR(volumeOf(box), 1000.0, 1e-6);
+    ASSERT_TRUE(_doc->getFileBlobManager().find(saved));
+    EXPECT_TRUE(log->heldBlob(saved));
+    ASSERT_TRUE(store.getEntity(saved, e));
+    EXPECT_EQ(e.enc, "file");
+
+    ASSERT_TRUE(_doc->redo());
+    ASSERT_TRUE(_doc->redo());
+    EXPECT_NEAR(volumeOf(box), 3000.0, 1e-6);
+    Base::FileInfo(path).deleteFile();
+}

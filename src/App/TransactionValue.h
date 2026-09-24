@@ -25,6 +25,7 @@
 
 #include <memory>
 #include <string>
+#include <unordered_map>
 #include <vector>
 #include <FCGlobal.h>
 
@@ -34,6 +35,7 @@ namespace App
 {
 
 class Document;
+class DocumentObject;
 class FileBlob;
 class Property;
 
@@ -84,6 +86,28 @@ AppExport CapturedValue captureValue(const CaptureConfig& config, const Base::Pe
 /// Restore a property from a captured value: the fragment through
 /// Property::Restore, then each attachment through RestoreDocFile.
 AppExport void restoreValue(Property& prop, const CapturedValue& value);
+
+/** The names a capture writes for objects that have left the document
+ * (docs/TransactionLog.md sec 24.3). A link's value is its target's name,
+ * and DocumentObject::getExportName() has none for a detached object -- but
+ * a transaction that removed an object still holds the name it had, and a
+ * before value linking to it must say so. While one of these lives on a
+ * thread, getExportName() of a detached object answers from it.
+ */
+class AppExport CaptureNames
+{
+public:
+    explicit CaptureNames(std::unordered_map<const DocumentObject*, std::string> names);
+    ~CaptureNames();
+    CaptureNames(const CaptureNames&) = delete;
+    CaptureNames& operator=(const CaptureNames&) = delete;
+    /// The name of detached `obj` in the innermost scope, or null.
+    static const std::string* find(const DocumentObject* obj);
+
+private:
+    std::unordered_map<const DocumentObject*, std::string> _names;
+    CaptureNames* _outer;
+};
 
 /// SHA-1 hex of `bytes`, spelled as FileBlobManager spells it.
 AppExport std::string hashBytes(const std::string& bytes);

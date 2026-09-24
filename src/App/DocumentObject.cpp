@@ -44,6 +44,7 @@
 #include "Document.h"
 #include "DocumentParams.h"
 #include "DocumentObject.h"
+#include "TransactionValue.h"
 #include "DocumentObjectExtension.h"
 #include "DocumentObjectGroup.h"
 #include "Expression.h"
@@ -523,8 +524,13 @@ int DocumentObject::isExporting() const {
 }
 
 std::string DocumentObject::getExportName(bool forced) const {
-    if(!isAttachedToDocument())
+    if(!isAttachedToDocument()) {
+        // Removed, and a transaction-log capture is asking for the name it
+        // had (docs/TransactionLog.md sec 24.3).
+        if (auto name = CaptureNames::find(this))
+            return *name;
         return {};
+    }
 
     if(!forced && !isExporting())
         return *pcNameInDocument;

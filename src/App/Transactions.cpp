@@ -138,6 +138,54 @@ bool Transaction::isEmpty() const
     return _Objects.empty();
 }
 
+bool Transaction::destroysObjects() const
+{
+    for (auto& info : _Objects.get<0>()) {
+        if (info.second->status == TransactionObject::New && info.first
+                && !info.first->isAttachedToDocument())
+            return true;
+    }
+    return false;
+}
+
+Transaction* Transaction::coldCopy(const Transaction& t)
+{
+    auto stub = new Transaction(t.getID());
+    stub->Name = t.Name;
+    stub->Implicit = t.Implicit;
+    stub->Origin = t.Origin;
+    stub->LogSeq = t.LogSeq;
+    stub->Cold = true;
+    return stub;
+}
+
+void Transaction::inheritDerived(const Transaction& from)
+{
+    auto& byObject = from._Objects.get<1>();
+    for (auto& info : _Objects.get<0>()) {
+        auto it = byObject.find(info.first);
+        if (it == byObject.end())
+            continue;
+        const auto& theirs = it->second->_PropChangeMap;
+        for (auto& kv : info.second->_PropChangeMap) {
+            auto found = theirs.find(kv.first);
+            if (found != theirs.end())
+                kv.second.derived = found->second.derived;
+        }
+    }
+}
+
+void Transaction::inheritDerived(
+    const std::function<bool(const TransactionalObject*, const Property*)>& derived)
+{
+    for (auto& info : _Objects.get<0>()) {
+        for (auto& kv : info.second->_PropChangeMap) {
+            if (kv.second.propertyOrig && derived(info.first, kv.second.propertyOrig))
+                kv.second.derived = true;
+        }
+    }
+}
+
 bool Transaction::hasObject(const TransactionalObject *Obj) const
 {
     return !!_Objects.get<1>().count(Obj);

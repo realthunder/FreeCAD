@@ -2834,3 +2834,175 @@ and the log lets go of the file). `TransactionLogShapeTest.composedSnapshotCheck
 the next, all three check out with the right volume) and
 `borrowedFilesAreHeld` (a compound's file names its two parts' files; the
 op value holding it gives the blob entity a `blob` ref to each).
+
+## 24. Phase 3: undo over the log (user, 2026-09-24)
+
+Designed after step 6, from a survey of `Document::undo`/`redo` and the
+log as it stands. Section 12 is the intent; this is how it is built, and
+where the two disagree this section wins. Everything here runs behind the
+`TransactionLog` staging switch (22.1): with it off, undo is exactly what
+it was.
+
+### 24.1 Rulings
+
+| Question | Ruling |
+| --- | --- |
+| Which transactions are undo steps | A recompute a command runs inside its own transaction is part of that step -- no special case, it already is today. A recompute with no transaction open is an implicit `recompute` transaction (closed when the recompute returns, as built in section 21) and is an undo step of its own. With the log on, `TransactionOnRecompute` -- the setting that decides whether `Std_Refresh` opens a transaction, off by default because a recompute after an undo cleared the redo stack -- is ignored: under the log the redo run a recompute clears is still in the log, browsable and restorable (section 12). Other implicit transactions (console, macro) are steps too. |
+| Cold undo (past the in-memory window) | The inverse ops applied onto the live document, property by property. Other objects, the view and the selection are untouched. Checkout plus replay is not the mechanism. |
+| A derived value the cold undo needs is gone from the cache | Restore the inputs, touch the object, leave it to recompute -- the state of a document with an out-of-date feature. Never refused for this. |
+| Checkout | Becomes a forward transaction in this phase (section 12's "restore to N"): the properties that differ are set, the objects that differ created or removed, in one undoable transaction. It no longer reloads the document or clears the undo stack. |
+
+### 24.2 The hot path writes its inverse (24.a)
+
+`Document::undo` already builds the inverse while it applies T: the
+record it opens before `apply` collects the writes the undo makes, and
+becomes the redo step. Its *before* copies are T's *after* values, its
+*afters* are T's *befores* -- section 12's inverse, made by the undo
+system as it stands. So the undo is logged by committing that record
+through `onCommit`, as kind `undo` with `inverts = T.seq`; redo likewise
+as kind `redo` inverting the undo's row. Content addressing makes every
+value a hit: nothing new is stored, the worker only hashes.
+
+- `txn` gains `inverts` (store schema 4; 0 for an ordinary transaction).
+- `Transaction` learns its row: `LogSeq`, set by `onCommit` (0 when the
+  commit wrote no row).
+- Derived is inherited. The write-site rule (the owner is recomputing)
+  says an undo's writes are inputs, which would log a Pad's `Shape`
+  durably the moment it is undone. The inverse's op is derived when the
+  op it inverts was: the record takes each property's flag from T's
+  record, both keyed by property id.
+- `onUndoRedo` goes: an undo is now an ordinary commit and the
+  held-current bookkeeping (23.3) follows it the way it follows any.
+
+### 24.3 The stacks become sequence numbers (24.b)
+
+The undo and redo stacks hold log rows; each entry keeps its in-memory
+`Transaction` while it is inside the hot window (`UndoMaxStackSize`, now
+the size of that window and not the depth of undo). An entry past the
+window drops its `Transaction` and keeps its seq, its id and its name.
+Undo depth is the log's since the document was opened or started its
+history.
+
+A **cold undo** reads T's ops and applies them reversed, in reverse
+order, through the same record the hot path opens, so it is logged the
+same way:
+
+- `set`: the property restored from `vbefore` (`restoreValue`). A derived
+  op whose value is gone from the cache tier: skipped, the object
+  touched (24.1).
+- `create`: the object removed. `remove`: the object recreated under its
+  recorded type, name and id -- the one new primitive, since `_addObject`
+  hands out a fresh id and the id is the shape's `Tag` -- then its
+  properties restored from the `set`s that precede the op.
+- `addprop` / `delprop`: the reverse, the metadata from `meta`.
+- View-provider ops are logged with `cid = -1` today and cannot be
+  reached cold; they gain the owner's id and a cold undo applies them
+  through the Gui document.
+- `restoreValue` of a value naming a blob the log keeps as a delta
+  re-adopts the decoded bytes into the document's blob store (the item
+  left open by 23.16).
+
+### 24.4 Selective undo (24.c)
+
+Undo of T that is not the tip: allowed when every op passes the section
+12 check -- a `set`'s *after* is the property's current hash, a created
+object still exists, a removed object's name and id are free -- and
+refused otherwise with the conflicting ops named. The current hash is
+what the worker already keeps per property (`_hashById`), after the
+pending refs are resolved. Python first; the panel's context menu once
+it works.
+
+### 24.5 Restore to N as a transaction (24.d)
+
+Version N's composites (23.3) list every container's parts by property;
+the head's are what a composed snapshot of now would list. The
+difference is the transaction: properties whose part hashes differ are
+set from the log's entity, objects in N and not now are recreated
+(24.3's primitive, type and name from N's skeleton), objects now and
+not in N removed. One transaction of kind `restore` naming N, undoable
+like any. A version with no parts (the one taken from the file on open,
+stored as bytes) is cut into parts first.
+
+### 24.6 24.a and 24.b as built (2026-09-24)
+
+**24.a, the hot path.** As 24.2 planned. `txn.inverts` is store schema 4
+(an older store gains the column on open). `onCommit` returns the row's
+seq, which the document keeps on the transaction (`Transaction::LogSeq`);
+`Document::logInverse` commits the record an undo or redo opened, after
+`Transaction::inheritDerived` copied the applied step's derived flags onto
+it; `onUndoRedo` is gone. The panel shows an `Inverts` column and
+`getTransactionLog()` an `inverts` key. `TransactionOnRecompute` needs no
+code: with the log on, a recompute outside any transaction opens an
+implicit `recompute` transaction that the recompute itself commits
+(section 21), an undo step whether the setting is on (then it is named
+`Recompute`) or off. Gtest `undoAndRedoAreLoggedAsInverses`: the undo's
+refs are the edit's swapped, the redo's the edit's again, derived stays
+derived through both, and a bare recompute is a step. Suites with 24.a
+alone: ctest 812/812, Python 2904 OK.
+
+**24.b, cold undo.** `_trimHotWindow` replaces the stack limit: with the
+log, a step past `UndoMaxStackSize` becomes a stub (`Transaction::Cold`,
+`coldCopy`: id, name, origin, `LogSeq`); a step with no row is deleted as
+before. The undo stack only. Its steps are deleted oldest first, the order
+`clearUndos` relies on -- a removed object is owned by the last step that
+names it -- and the far end of the redo stack is its newest, so the redo
+stack stays hot and unbounded (it is no longer than the undos made).
+
+Undoing or redoing a stub reverts its row. `_prepareRevert` reads the row
+(`TransactionLog::readRevert`: ops, and every before value by hash) and
+checks it against the document before anything moves: a removed object's
+id and name free and its type loadable, a created object still there, a
+set's owner there or about to be recreated, a non-derived value present.
+Any failure refuses the undo with the reasons named, and a multi-step
+`undo(id)` stops there. `_applyRevert` then runs in passes over the ops
+reversed, so no value naming an object restores before the object exists:
+the removed objects recreated (`_Id` preset, which `DocumentP::addObject`
+keeps when free; their dynamic properties added back from the metadata
+the remove's sets now carry), the dynamic properties the row removed, every
+value (`restoreValue`; a derived value the log lacks touches the owner),
+the dynamic properties it added, the objects it created. The writes land
+in the record the undo opened, which becomes the hot redo step and is
+logged as in 24.a, derived flags taken from the row's ops. A hot undo
+leaves the undone object touched; a cold one matches it.
+
+`readRevert` makes every blob a value names a file of the document's store
+again (`restoreBlob`): one kept as a delta is decoded and adopted, held as
+a file once more, recursively for the files it borrows. That needs the
+blob's extension, which a delta row no longer carries, so a value's `blob`
+edge (and a borrower's) now names it. This closes step 6's open item.
+
+View-provider ops are skipped cold (logged at `FC_LOG`): their container
+has no id in the log yet. A cold-recreated object's view provider starts
+from defaults.
+
+**Three defects the cold path found**, all of the log as it stood, and
+all fixed:
+
+- *A use-after-free on the worker.* The worker serialises copies after the
+  commit that queued them. A copy of a link to an object that a removal
+  step owns outlives that object when the step is deleted -- evicted from
+  the stack, or at once with undo off -- and `getExportName` then reads
+  freed memory. The 20-step eviction could always do it; a window of 2
+  made it certain. `Document::_deleteTransaction` drains the queue first
+  when the step destroys objects (`Transaction::destroysObjects`), which
+  only a removal step does.
+- *A link to a removed object logged empty.* Serialised on the worker
+  after the commit, a link's target has left the document and
+  `getExportName` has no name for it. Links are now captured on the main
+  thread as their task is made (`ValueTask::captureNow`), under
+  `CaptureNames` -- a thread-local scope giving each object the transaction
+  removed the name the transaction recorded, which `getExportName` of a
+  detached object consults.
+- *The op that cleared such a link dropped.* `PropertyLinkBase::isSame`
+  compares through `getLinks()`, which leaves out a detached target, so
+  "links to the removed B" equals "links to nothing" and the commit took
+  the write for a no-change. The log compares links by what it would
+  write for them (`sameForLog`).
+
+Gtests: `coldUndoRevertsFromTheLog` (a window of 2 under eight steps -- a
+link, a dynamic property, a removal, four edits: undo all, redo all, undo
+all again, which reverts `redo` rows cold; ids, names, the dynamic
+property's group and value, the link, at every step) and Part
+`coldUndoReadoptsADeltaBlob` (a saved box's file superseded into a delta
+and released; the cold undo decodes it back into the store, the shape is
+the saved one with no recompute, and the redo returns the newest).

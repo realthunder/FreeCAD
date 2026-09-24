@@ -44,6 +44,7 @@
 #include "DocumentParams.h"
 #include "FileBlobManager.h"
 #include "Property.h"
+#include "PropertyLinks.h"
 #include "Transactions.h"
 
 FC_LOG_LEVEL_INIT("App", true, true)
@@ -73,6 +74,22 @@ std::string dynamicMeta(const DynamicProperty::PropData& d)
     m += d.readonly ? " ro" : "";
     m += d.hidden ? " hidden" : "";
     return m;
+}
+
+/// Whether a copy and the live property hold the same value, as the log
+/// sees it. isSame() compares links through getLinks(), which leaves out a
+/// target that has left the document -- "links to the removed B" and "links
+/// to nothing" compare equal, and the change that cleared the link would be
+/// dropped. A link is compared by what the log would write for it, under
+/// the removed objects' names (CaptureNames, sec 24.3).
+bool sameForLog(const CaptureConfig& config, const Property& copy, const Property& live)
+{
+    if (dynamic_cast<const PropertyLinkBase*>(&copy)) {
+        CapturedValue a = captureValue(config, copy);
+        CapturedValue b = captureValue(config, live);
+        return a.ok && b.ok && a.fragment == b.fragment;
+    }
+    return copy.isSame(live);
 }
 
 double now()
@@ -528,19 +545,62 @@ int64_t TransactionLog::onSave(const std::string& path, const Captures& entries,
     return snapshot("save", path, entries, blobs, schema);
 }
 
-void TransactionLog::onUndoRedo(const Transaction& txn)
+bool TransactionLog::readRevert(int64_t seq, Revert& out)
 {
-    for (auto& info : txn._Objects.get<0>()) {
-        TransactionObject& rec = *info.second;
-        for (auto& kv : rec._PropChangeMap)
-            _recorded.erase(kv.first);
-        if (rec.status == TransactionObject::Chn || !info.first)
+    flush();
+    bool found = false;
+    for (const auto& t : _store->transactions(seq, 1))
+        found = t.seq == seq;
+    if (!found)
+        return false;
+    out.ops = _store->ops(seq);
+    for (const auto& o : out.ops) {
+        if (o.vbefore.empty() || out.values.count(o.vbefore))
             continue;
-        std::map<std::string, Property*> props;
-        static_cast<const PropertyContainer*>(info.first)->getPropertyMap(props);
-        for (auto& kv : props)
-            _recorded.erase(kv.second->getID());
+        LogEntity e;
+        if (!_store->getEntity(o.vbefore, e))
+            continue;
+        for (const auto& r : e.refs) {
+            if (r.role == "blob")
+                restoreBlob(r.target, r.name);
+        }
+        CapturedValue v;
+        if (readValue(o.vbefore, v))
+            out.values.emplace(o.vbefore, std::move(v));
     }
+    return true;
+}
+
+bool TransactionLog::restoreBlob(const std::string& hash, const std::string& ext, int depth)
+{
+    if (depth > 1024)
+        return false;
+    LogEntity e;
+    if (!_store->getEntity(hash, e) || e.kind != "blob")
+        return false;
+    auto& manager = _doc.getFileBlobManager();
+    FileBlobHandle blob = manager.find(hash);
+    if (!blob) {
+        std::string bytes;
+        if (!readBytes(hash, bytes)) {
+            FC_ERR("transaction log: blob " << hash << " cannot be read back");
+            return false;
+        }
+        std::string extension = e.enc == "file" ? e.data : ext;
+        blob = manager.adoptBytes(bytes, extension.empty() ? nullptr : extension.c_str());
+        if (!blob || blob->hash() != hash) {
+            FC_ERR("transaction log: blob " << hash << " read back as "
+                   << (blob ? blob->hash() : std::string("nothing")));
+            return false;
+        }
+    }
+    // Held as a file again: current once more, the newest of its chain.
+    putBlob(blob);
+    for (const auto& r : e.refs) {
+        if (r.role == "blob")
+            restoreBlob(r.target, r.name, depth + 1);
+    }
+    return true;
 }
 
 void TransactionLog::onCheckout(int64_t num)
@@ -835,7 +895,9 @@ std::string TransactionLog::putValue(const CapturedValue& value, const std::stri
     for (const auto& blob : value.blobs) {
         if (!blob)
             continue;
-        blobRefs.push_back(LogRef {putBlob(blob), "blob", ""});
+        // The edge carries the extension: once the blob is kept as a delta
+        // its row no longer does, and a cold undo re-adopts it (sec 24.3).
+        blobRefs.push_back(LogRef {putBlob(blob), "blob", blob->extension()});
         putSources(blob);
     }
     if (_store->hasEntity(e.hash)) {
@@ -882,16 +944,18 @@ void TransactionLog::putSources(const FileBlobHandle& blob, int depth)
     if (!blob || depth > 1024 || !_sourced.insert(blob->hash()).second)
         return;
     for (const auto& hash : blob->sources()) {
+        std::string ext;
         if (auto source = _doc.getFileBlobManager().find(hash)) {
             putBlob(source);
             putSources(source, depth + 1);
+            ext = source->extension();
         }
         else if (!_store->hasEntity(hash)) {
             FC_WARN("transaction log: blob " << blob->hash() << " reads " << hash
                     << ", which is in no store");
             continue;
         }
-        _store->addRef(blob->hash(), LogRef {hash, "blob", ""});
+        _store->addRef(blob->hash(), LogRef {hash, "blob", ext});
     }
 }
 
@@ -1341,6 +1405,14 @@ void TransactionLog::takePending(int64_t key, ValueTask& task)
     _pending.erase(it);
 }
 
+void TransactionLog::ValueTask::captureNow(const CaptureConfig& config)
+{
+    if (copy && dynamic_cast<const PropertyLinkBase*>(copy.get())) {
+        captured = captureValue(config, *copy);
+        isCaptured = true;
+    }
+}
+
 void TransactionLog::writeValues(std::vector<ValueTask>& tasks, std::vector<LogOp>& ops)
 {
     for (auto& task : tasks) {
@@ -1350,7 +1422,8 @@ void TransactionLog::writeValues(std::vector<ValueTask>& tasks, std::vector<LogO
             // fragment) is complete only while the file exists: the blob
             // is an entity of its own, held as long as the value is
             // (sec 23.16).
-            CapturedValue cv = captureValue(_config, *task.copy);
+            CapturedValue cv = task.isCaptured ? std::move(task.captured)
+                                               : captureValue(_config, *task.copy);
             // A shape names its file without noting it (it notes in
             // beforeSave, which a capture does not run): its contentBlob().
             if (auto referrer = dynamic_cast<const BlobReferrerProperty*>(task.copy.get())) {
@@ -1376,10 +1449,11 @@ void TransactionLog::writeValues(std::vector<ValueTask>& tasks, std::vector<LogO
     }
 }
 
-void TransactionLog::onCommit(const Transaction& txn, const char* kind, const char* origin)
+int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const char* origin,
+                                 int64_t inverts)
 {
     if (txn.isEmpty())
-        return;
+        return 0;
     try {
         LogTransaction t;
         t.parent = _nextSeq;
@@ -1390,6 +1464,7 @@ void TransactionLog::onCommit(const Transaction& txn, const char* kind, const ch
         t.name = txn.Name;
         t.time = now();
         t.session = _session;
+        t.inverts = inverts;
 
         std::vector<LogOp> ops;
         std::vector<ValueTask> tasks;
@@ -1418,8 +1493,18 @@ void TransactionLog::onCommit(const Transaction& txn, const char* kind, const ch
             takePending(pendingKey, v);
             if (v.copy)
                 _recorded.insert(pendingKey);
+            v.captureNow(_config);
             tasks.push_back(std::move(v));
         };
+        // Links to what this transaction removed are captured under the
+        // names the objects had (ValueTask::captureNow).
+        std::unordered_map<const DocumentObject*, std::string> removedNames;
+        for (auto& info : txn._Objects.get<0>()) {
+            if (info.second->status == TransactionObject::New && !info.second->_NameInDocument.empty())
+                if (auto obj = Base::freecad_dynamic_cast<const DocumentObject>(info.first))
+                    removedNames.emplace(obj, info.second->_NameInDocument);
+        }
+        CaptureNames names(std::move(removedNames));
         auto share = [](TransactionObject::PropData& data) {
             if (!data.shared && data.property)
                 data.shared.reset(data.property);
@@ -1482,7 +1567,12 @@ void TransactionLog::onCommit(const Transaction& txn, const char* kind, const ch
                         continue;
                     if (!kv.second->getName())
                         continue;
-                    emit("set", kv.first, kv.second->getTypeId().getName());
+                    auto o = emit("set", kv.first, kv.second->getTypeId().getName());
+                    // A dynamic property's metadata rides on its set, so a
+                    // cold undo can add it back to the recreated object.
+                    auto dyn = c.container->getDynamicPropertyData(kv.second);
+                    if (!dyn.name.empty())
+                        o->meta = dynamicMeta(dyn);
                     std::shared_ptr<const Property> copy(kv.second->Copy());
                     task(std::move(copy), "durable", last(), kv.second->getID());
                 }
@@ -1524,7 +1614,7 @@ void TransactionLog::onCommit(const Transaction& txn, const char* kind, const ch
 
                 bool derived = data.derived;
                 bool waiting = _pending.count(kv.first) != 0;
-                bool same = data.property->isSame(*prop);
+                bool same = sameForLog(_config, *data.property, *prop);
                 if (!waiting && same)
                     continue;   // a write that changed nothing, sec 9.1
                 if (waiting && same) {
@@ -1554,7 +1644,7 @@ void TransactionLog::onCommit(const Transaction& txn, const char* kind, const ch
                     writeValues(tasks, none);
                 });
             }
-            return;
+            return 0;
         }
         for (auto& p : newPending)
             _pending[p.first] = p.second;
@@ -1562,6 +1652,7 @@ void TransactionLog::onCommit(const Transaction& txn, const char* kind, const ch
             writeValues(tasks, ops);
             _store->append(t, ops);
         });
+        return t.seq;
     }
     catch (Base::Exception& e) {
         FC_ERR("transaction log: " << e.what());
@@ -1569,6 +1660,7 @@ void TransactionLog::onCommit(const Transaction& txn, const char* kind, const ch
     catch (std::exception& e) {
         FC_ERR("transaction log: " << e.what());
     }
+    return 0;
 }
 
 void TransactionLog::resolvePending()
@@ -1605,6 +1697,7 @@ void TransactionLog::resolvePending()
         v.tier = kv.second.tier;
         takePending(kv.first, v);
         _recorded.insert(kv.first);
+        v.captureNow(_config);
         tasks.push_back(std::move(v));
     }
     if (tasks.empty())

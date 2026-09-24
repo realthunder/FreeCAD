@@ -46,6 +46,9 @@ struct LogTransaction
     double time {0};         ///< seconds since the epoch
     std::string script;      ///< the MacroManager lines, an annotation
     int64_t session {0};     ///< the session row this was written in
+    /// The seq of the transaction this one is the inverse of (sec 24.2):
+    /// an `undo` names what it undid, a `redo` the undo it redid. 0 else.
+    int64_t inverts {0};
 };
 
 /// A session row (sec 11): one open-close of this log by one process.
