@@ -116,6 +116,47 @@ class TestHole(unittest.TestCase):
         self.Doc.recompute()
         self.assertAlmostEqual(self.Hole.Shape.Volume, 10**3 - pi * 3**2 * 10 - 24.7400421)
 
+    def _holeOnSecondBox(self, refine):
+        """A plain hole through a second, unrefined box that overlaps the
+        first, so that refining merges faces the hole leaves split
+        (upstream fe7bff5a9a)"""
+        self.Box2 = self.Doc.addObject("PartDesign::AdditiveBox", "Box")
+        self.Box2.Length = 10
+        self.Box2.Width = 10
+        self.Box2.Height = 10
+        self.Box2.AttachmentOffset = App.Placement(App.Vector(1, 0, 0), App.Rotation())
+        self.Box2.MapReversed = False
+        self.Box2.AttachmentSupport = self.Doc.getObject("XY_Plane")
+        self.Box2.MapPathParameter = 0.0
+        self.Box2.MapMode = "FlatFace"
+        # Unrefined, or the second box would merge into the first
+        self.Box2.Refine = False
+        self.Body.addObject(self.Box2)
+        self.Doc.recompute()
+
+        # Move the hole on top of the body
+        self.Body.removeObject(self.Hole)
+        self.Body.insertObject(self.Hole, self.Box2, True)
+        self.Body.Tip = self.Hole
+        self.Hole.Diameter = 6
+        self.Hole.Depth = 10
+        self.Hole.ThreadType = 0
+        self.Hole.HoleCutType = 0
+        self.Hole.DepthType = 0
+        self.Hole.DrillPoint = 0
+        self.Hole.Tapered = 0
+        self.Hole.Visibility = True
+        self.Hole.Refine = refine
+        self.Doc.recompute()
+
+    def testNoRefineHole(self):
+        self._holeOnSecondBox(False)
+        self.assertEqual(len(self.Hole.Shape.Faces), 15)
+
+    def testRefineHole(self):
+        self._holeOnSecondBox(True)
+        self.assertEqual(len(self.Hole.Shape.Faces), 7)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestHole")
