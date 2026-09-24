@@ -6,9 +6,9 @@ Status (2026-09-24): phase 0 (ledger, this doc) done; **the gizmos are in**
 gizmo family's 36 ledger rows are decided; three are deferred behind App
 features. **The fixes are triaged** (sec 6): 205 of the 213 `fix` rows
 decided, 37 upstream commits taken or adapted in 33 fork commits, 8 rows
-open. The helix family and two of the deferred placement rows followed
-(sec 6, "Deferred, then taken"). Next: the rest of the deferred rows and
-the open fix rows (sec 6), then the smaller features (decision 2).
+open. Then six of the deferred rows (sec 6, "Deferred, then taken"); two
+stay deferred. Next: the open fix rows (sec 6), then the smaller features
+(decision 2).
 
 Branch `PartDesignPort` off `SketcherPort` `4fa781fc58`, with `LinkVibe`
 `312b62c995` merged in (section 5). Upstream reference: `upstream/main`
@@ -308,15 +308,30 @@ dropped a cylinder the body already had (one agent's probe, not reproduced).
   Placement, and both paths set a shape carrying a location of its own.
   `wrapLocated()` puts such a shape in a compound. Tests in TestPrimitive.
 
+- **Relinking after a feature is removed**, `12f05938b7`. Worse here than
+  upstream's report: the dress-up's Base follows BaseFeature carrying the
+  removed feature's mapped names, so even an edge with the right index
+  failed ("Invalid edge link: Edge3"). `onBaseFeatureRerouted()` runs
+  before the reroute, resolves each name in the removed feature's shape and
+  searches the new base by geometry; all-or-nothing, as upstream. Dress-up
+  Base, and Profile and UpToFace of a profile-based feature. Two tests in
+  TestFillet.
+- **Pattern panels record on OK**, `bd3c94f9a8`; the sub-task of a
+  MultiTransform records on its own OK, not in `closeSubTask()`, which also
+  runs after a Cancel. Driven in the GUI (below).
+- **An empty Fillet/Chamfer**, `bc1e3e016f`: recomputes only itself, so
+  the unavoidable error is not reported before the panel opens.
+
 ### Deferred, each needing a design of the fork's own
 
-- **Relinking after a feature is removed** (`26c895c30d`): a dress-up's
-  edge links go stale when the feature before it is removed; needs a hook at
-  Body.cpp's reroute using TopoShape::searchSubShape.
-- Panels: patterns never apply() on OK (`fd4bea24b7`), an empty
-  Fillet/Chamfer command recomputes and errors (`fc135718a4`), PD's active
-  part ignores an active Assembly (`62cbaf7336`), accept() re-executes an
-  already previewed feature (`c1c9cb63e0` and its two follow-ups).
+- PD's active part ignores an active Assembly (`62cbaf7336`): it is an
+  Assembly activation change across Gui core, and belongs with Assembly
+  work.
+- accept() re-executes an already previewed feature (`c1c9cb63e0` and its
+  two follow-ups): upstream's `purgeTouched()` clears every object in the
+  document, downstream features the preview never recomputed included.
+  First measure whether the fork's `apply()` touches unchanged values at
+  all.
 
 ### Open rows
 
@@ -345,3 +360,11 @@ After the helix and placement commits: TestPartDesignApp 99 OK (TestHelix's
 9 and the two new primitive tests among them), TestPartApp 124 OK. ctest
 was not rerun; the only C++ change outside PartDesign is
 `makeSpiralHelix()`'s defaulted argument.
+
+After the relink and panel commits: TestPartDesignApp 101 OK, TestPartApp
+124 OK. The panels were driven in the GUI through a `-M` startup hook
+(the MCP console is out: the `mcp` package is no longer in
+`.conda/freecad`): PartDesign_Fillet with nothing selected opens its panel
+with no message box; OK on a linear pattern -- the TaskView's own button,
+not the link dialog's inside the panel -- writes Direction, Reversed,
+Mode, Length and Occurrences to the Python console.

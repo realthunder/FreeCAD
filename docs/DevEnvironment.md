@@ -2534,6 +2534,15 @@ set FCAD_MCP_URL=http://127.0.0.1:8791/mcp
 .conda\run.cmd python ..\tools\mcp_run.py probe.py
 ```
 
+**As of 2026-09-24 neither half is on this box**: `import mcp` fails in
+`.conda\freecad` and `..\tools\mcp_run.py` does not exist, so the console
+cannot start. The fallback that works is the `-M <dir>` startup hook (an
+`InitGui.py` that `runpy`s a driver on a QTimer). To press a task panel's
+OK from it, click the `QDialogButtonBox` under
+`Gui::TaskView::TaskEditControl`; the first OK found is usually a
+`DlgPropertyLink`'s inside the panel, and `Gui.Control.activeTaskDialog()
+.accept()` does not reach the C++ dialog.
+
 Pass a **script file**, not `-c "code"`: nested through `cmd /c ".conda\run.cmd ..."`
 the quoting is stripped and the console gets a `SyntaxError` on an unterminated
 string. Confirm identity before believing any session -- `App.getHomePath()` must
