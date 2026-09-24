@@ -126,9 +126,8 @@ App::DocumentObjectExecReturn* ShapeBinder::execute() {
             this->Placement.setValue(shape.getTransform());
             this->Shape.setValue(shape);
         }
-        else {
-            this->Shape.setValue(shape);
-        }
+        // With no Support there is nothing to update from: keep the shape,
+        // which a script may have assigned
     }
 
     return Part::Feature::execute();
