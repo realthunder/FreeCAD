@@ -2905,7 +2905,10 @@ void ViewProviderSketch::doBoxSelection(const SbVec2s &startPos, const SbVec2s &
         batch.push_back(editSubName + sketchObject->convertSubName(element));
     };
 
-    auto selectEdge = [&select](int GeoId) {
+    // Geometry on a hidden layer is not drawn, so a box does not take it.
+    auto selectEdge = [this, &select](int GeoId) {
+        if (isGeometryHidden(GeoId))
+            return;
         std::ostringstream ss;
         if (GeoId >= 0)
             ss << "Edge" << GeoId + 1;
@@ -2914,7 +2917,12 @@ void ViewProviderSketch::doBoxSelection(const SbVec2s &startPos, const SbVec2s &
         select(ss.str());
     };
 
-    auto selectVertex = [&select](int VertexId) {
+    auto selectVertex = [this, sketchObject, &select](int VertexId) {
+        int GeoId;
+        Sketcher::PointPos PosId;
+        sketchObject->getGeoVertexIndex(VertexId - 1, GeoId, PosId);
+        if (isGeometryHidden(GeoId))
+            return;
         std::stringstream ss;
         ss << "Vertex" << VertexId;
         select(ss.str());
@@ -3453,7 +3461,7 @@ bool ViewProviderSketch::selectAll()
         // does (e278d22d42 fixed a miscount there): any geometry type,
         // including ones that list does not know, gets its points.
         auto selectGeo = [&](int GeoId) {
-            if (elementsOnly && !shown.count(GeoId))
+            if (elementsOnly ? !shown.count(GeoId) : isGeometryHidden(GeoId))
                 return;
             for (auto pos : {Sketcher::PointPos::start, Sketcher::PointPos::end,
                              Sketcher::PointPos::mid}) {
@@ -3880,7 +3888,7 @@ void ViewProviderSketch::updateColor(void)
         int PtId = SelId;
         if (PtId && PtId <= (int)edit->VertexIdToPointId.size())
             PtId = edit->VertexIdToPointId[PtId-1];
-        if (PtId < PtNum) {
+        if (PtId >= 0 && PtId < PtNum) {
             pcolor[PtId] = SelectColor;
             pverts[PtId].getValue(x,y,z);
             pverts[PtId].setValue(x,y,zdir*zHighlight);
@@ -3926,7 +3934,7 @@ void ViewProviderSketch::updateColor(void)
                         int index = getSolvedSketch().getPointId(geoid, pos);
                         if (index >= 0 && index < (int)edit->VertexIdToPointId.size()) {
                             int PtId = edit->VertexIdToPointId[index];
-                            if (PtId < PtNum) { 
+                            if (PtId >= 0 && PtId < PtNum) { 
                                 edit->ImplicitSelPoints.push_back(index+1);
                                 pcolor[PtId] = *highlightColor;
                                 if (++edit->SelPointMap[index+1] == 1) {
@@ -3976,7 +3984,7 @@ void ViewProviderSketch::updateColor(void)
                         int index = getSolvedSketch().getPointId(constraint->First, constraint->FirstPos);
                         if (index >= 0 && index < (int)edit->VertexIdToPointId.size()) {
                             int PtId = edit->VertexIdToPointId[index];
-                            if (PtId < PtNum) {
+                            if (PtId >= 0 && PtId < PtNum) {
                                 edit->ImplicitSelPoints.push_back(index+1);
                                 pcolor[PtId] = *highlightColor;
                                 if (++edit->SelPointMap[index+1] == 1) {
@@ -4033,7 +4041,7 @@ void ViewProviderSketch::updateColor(void)
         int PtId = (edit->DragPreselectPoint >= 0 ? edit->DragPreselectPoint : edit->PreselectPoint) + 1;
         if (PtId && PtId <= (int)edit->VertexIdToPointId.size())
             PtId = edit->VertexIdToPointId[PtId-1];
-        if (PtId < PtNum) {
+        if (PtId >= 0 && PtId < PtNum) {
             pcolor[PtId] = pcolor[PtId] == SelectColor ? PreselectSelectedColor : PreselectColor;
             edit->PreSelectedPointSet->coordIndex.setValue(PtId);
         }
@@ -4049,7 +4057,7 @@ void ViewProviderSketch::updateColor(void)
             int PtId = v.first;
             if (PtId && PtId <= (int)edit->VertexIdToPointId.size()) {
                 PtId = edit->VertexIdToPointId[PtId-1];
-                if (PtId < PtNum) {
+                if (PtId >= 0 && PtId < PtNum) {
                     indices[i] = PtId;
                     mindices[i++] = edit->defaultMarkerIndex;
                 }
@@ -5103,6 +5111,19 @@ void ViewProviderSketch::initParams()
     PreselectSelectedColor = PreselectColor*0.6f + SelectColor*0.4f;
 }
 
+bool ViewProviderSketch::isGeometryHidden(int GeoId) const
+{
+    // Only internal geometry has a layer; external geometry is always shown.
+    if (GeoId < 0)
+        return false;
+    const std::vector<Part::Geometry *> &geos = getSketchObject()->Geometry.getValues();
+    if (GeoId >= (int)geos.size())
+        return false;
+    const std::vector<VisualLayer> &layers = VisualLayerList.getValues();
+    int layer = getSafeGeomLayerId(geos[GeoId]);
+    return layer >= 0 && layer < (int)layers.size() && !layers[layer].isVisible();
+}
+
 void ViewProviderSketch::draw(bool temp /*=false*/, bool rebuildinformationlayer /*=true*/)
 {
     assert(edit);
@@ -5141,9 +5162,16 @@ void ViewProviderSketch::draw(bool temp /*=false*/, bool rebuildinformationlayer
     assert(int(geomlist->size()) == extGeoCount + intGeoCount);
     assert(int(geomlist->size()) >= 2);
 
-    std::vector<int> geoIndices(tempGeo.size()-2);
-    for (int i=0; i<(int)geoIndices.size(); ++i)
-        geoIndices[i] = i;
+    // A geometry on a hidden visual layer is neither drawn nor picked. The
+    // layer is read off the sketch's own geometry: the solver's copies a
+    // temporary draw works from need not carry the view extension.
+    std::vector<int> geoIndices;
+    geoIndices.reserve(tempGeo.size()-2);
+    for (int i=0; i<(int)tempGeo.size()-2; ++i) {
+        if (i < intGeoCount && isGeometryHidden(i))
+            continue;
+        geoIndices.push_back(i);
+    }
 
     ParameterGrp::handle hGrpsk = edit->hSketchGeneral;
 
@@ -5172,7 +5200,8 @@ void ViewProviderSketch::draw(bool temp /*=false*/, bool rebuildinformationlayer
     edit->PointIdToVertexId.clear();
 
     edit->PointIdToVertexId.push_back(Sketcher::GeoEnum::RtPnt); // root point
-    edit->VertexIdToPointId.resize(sketch->getHighestVertexIndex()+1);
+    // -1: a vertex that is not drawn (its geometry is on a hidden layer)
+    edit->VertexIdToPointId.assign(sketch->getHighestVertexIndex()+1, -1);
 
     // information layer
     if(rebuildinformationlayer) {
@@ -8842,6 +8871,8 @@ void ViewProviderSketch::clearSelectPoints(void)
             int PtId = v.first;
             if (PtId && PtId <= (int)edit->VertexIdToPointId.size())
                 PtId = edit->VertexIdToPointId[PtId-1];
+            if (PtId < 0 || PtId >= edit->PointsCoordinate->point.getNum())
+                continue;
             pverts[PtId].getValue(x,y,z);
             pverts[PtId].setValue(x,y,zLowPoints);
         }

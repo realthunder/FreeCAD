@@ -215,6 +215,12 @@ fc_add_gui_test(GuiSpreadsheetSelectAll_tests_run
                 spreadsheet-select-all.py
                 --timeout 180)
 
+# A sketch element on the hidden visual layer is not drawn, picked, boxed or
+# taken by Select All from the view. The fork's draw() ignored layers.
+fc_add_gui_test(GuiSketchVisualLayers_tests_run
+                sketch-visual-layers.py
+                --timeout 180)
+
 # Select All (Ctrl+A) in a sketch edit selects the sketch's elements, or
 # what a focused task panel list shows (upstream 3b76d77ed8 and follow-ups);
 # it selected the document's objects.

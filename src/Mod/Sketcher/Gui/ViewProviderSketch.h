@@ -334,6 +334,8 @@ public:
     /// Std_SelectAll in edit: every element and constraint, or only what a
     /// focused task panel list shows
     bool selectAll() override;
+    /// Whether a geometry is on a hidden visual layer: not drawn, not picked
+    bool isGeometryHidden(int GeoId) const;
 
     /// helper change the color of the sketch according to selection and solver status
     void updateColor();
