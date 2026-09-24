@@ -2308,9 +2308,16 @@ Guarded by `tests/gui/sketch-grid-preferences.py`
 (`GuiSketchGridPreferences_tests_run`, ctest 781 -> 782), which reads the
 grid's Coin nodes. Scored before each commit: 7 of 9 checks fail before
 the wiring, and the pick's 5 new ones fail before the pick. Checked in
-pixels too: 60% draws distinct from both opaque and invisible, and with
-the bgfx renderer active the edit grid composites exactly as in mode 0,
-since Coin draws it over the renderer in both. **Trap met on the way**:
+pixels too: 60% draws distinct from both opaque and invisible, in render
+cache mode 0 and in mode 3 alike. **Correction**: `d7bf1c3754`'s message
+says the grid composites "exactly as in mode 0" with the renderer on.
+That was measured wrongly -- **the fork's default `RenderCache` is 3**, so
+the "mode 0" leg was mode 3 too. Re-measured with `RenderCache` forced to
+0: transparency works there as well (the 60% grid is visibly fainter),
+but the two modes do NOT draw the grid identically (4816 vs 8082 changed
+pixels per step). A probe that means mode 0 must SET it, and should
+confirm it: `saveRenderDump` raises when no renderer is active.
+**Trap met on the way**:
 a GUI test's configuration directory outlives a run, so a preference the
 last run stored reads as a default in the next; the test clears its
 entries at both ends.
@@ -2327,10 +2334,11 @@ widths, points, markers, Coin text, icons, datum labels -- was half.
 Scaled by `ViewScalingFactor * ratio` now; at ratio 1 and 96 dpi nothing
 moves.
 
-Two fork-specific points. **Datum labels keep the fork's sizing** (they
-share the Coin font size; upstream sizes them separately in points,
-which would be a visible change at ratio 1 and is a decision of its own,
-not part of this fix). And **the ratio comes from the edit viewer**, so a
+Two fork-specific points. **Datum labels were then switched to
+upstream's sizing** by user ruling, after an on-screen comparison
+(`50af4ee463`): `SoDatumLabel` takes points, and the fork had handed it
+the pixel value, drawing labels a third larger (14 pt vs 11 at the
+default font and 96 dpi). And **the ratio comes from the edit viewer**, so a
 served client's mirror answers with that client's -- the browser's
 drawing buffer is in device pixels, so a 2x phone was drawing sketch
 lines at half width as well.
