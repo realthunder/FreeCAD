@@ -79,6 +79,14 @@ void ViewProviderBoolean::attach(App::DocumentObject* obj) {
     setDisplayMode("Flat Lines");
 }
 
+// The DisplayMode property's own default, not just the mode shown: the
+// property starts at its first enum, "Group", and onChanged() would take
+// that for Display = Tools (upstream a548ca698a)
+const char* ViewProviderBoolean::getDefaultDisplayMode() const
+{
+    return "Flat Lines";
+}
+
 void ViewProviderBoolean::onChanged(const App::Property* prop) {
 
     PartDesignGui::ViewProvider::onChanged(prop);

@@ -48,6 +48,7 @@ public:
     void setupContextMenu(QMenu*, QObject*, const char*) override;
 
     void attach(App::DocumentObject*) override;
+    const char* getDefaultDisplayMode() const override;
     void onChanged(const App::Property* prop) override;
 
     void extensionModeSwitchChange() override;
