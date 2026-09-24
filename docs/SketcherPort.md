@@ -2342,6 +2342,31 @@ uses; untested, since xvfb fixes the ratio for the process. Guarded by
 (`GuiSketchHiDpiSizes_tests_run`, ctest 783), which checks the ratio
 first -- without it every other check is vacuous.
 
+### The placement preview (session 89): 57 -> 55, nothing to take
+
+`4cd81136b6` added a live preview of the sketch's placement during an
+edit; `26723cf209` withdrew it a week later, together with `d806b4e5f3`
+(#25478), in PR #26554. Net upstream: nothing. **Superseded / n/a**, and
+the feature is already true here anyway -- `Gui/Document.cpp` re-derives
+the editing transform whenever any placement property of an edited
+object changes, for every view provider, not just the sketch's.
+`26723cf209`'s one surviving change moves a `ShapeMaterial` exclusion in
+`updateData`; no Part view provider in this fork reads `ShapeMaterial`.
+Upstream's `TestPlacementUpdate.py` survives the revert but is no longer
+imported by `TestSketcherApp.py`; not taken.
+
+**The PR's third commit, `450789e77b`, has no ledger row** -- it touches
+only `src/Gui/Document.cpp`, outside the ledger's scope -- but it is the
+replacement fix for #13852, so it was checked here. Upstream moves
+`resetIfEditing()` after the edit reference is deduced from the
+selection, because the outgoing sketch's `unsetEdit` re-selects itself
+and clobbered the selection the incoming one was picked through. The
+fork has the same order and the same re-select, and is **not** affected,
+measured: sketch A in edit, then sketch B picked through an `App::Link`
+rotated 180 deg about X -- the switched edit gets exactly the transform B
+gets on its own. The fork's `setEdit` asks the selection *context*
+first, and that still names the Link path after the re-select.
+
 ## 7a. The constraint-tool hints (session 85)
 
 Thirteen rows, not the eleven the sweep sized: `580d538798`, the commit
