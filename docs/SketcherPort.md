@@ -2276,6 +2276,45 @@ they are one decision each, about whether to take the parent. **Size
 the family before reading its rows** -- the hints family (section 7a)
 made the same point from the other direction.
 
+### The grid family (session 89): 62 -> 59, and a dead preference page
+
+| row | verdict |
+|---|---|
+| `1ec1f1506e` | have: the fork's button path snaps eagerly (`snapPoint()` in `mouseButtonPressed`) before `pressButton`/`releaseButton`. Upstream's #25076 came from deferring that path to a handle, which the fork deliberately did not do (section 7, the snap-handle pick) |
+| `03bc80c060` + `a357868691` | **taken** `d7bf1c3754`, as one design: grid on and solid for a new sketch, 60% transparent so solid lines stay quiet |
+
+**The family's real finding was not in any row.** Sizing the transparency
+pick meant finding where the Sketcher hands its grid preferences to
+`PartGui::ViewProviderGridExtension` -- and nothing did. The extension
+reads no preference itself; upstream calls its setters from
+`ViewProviderSketch`'s ParameterObserver, this fork's view provider has
+none, and the 2023 merge that brought the extension in (`68326945dd`)
+kept the extension and dropped the calls. So the whole **Grid display**
+preference page -- pattern, width and colour for minor and major lines,
+subdivisions, the auto-spacing threshold -- wrote values no code read.
+`"GridLinePattern"` even sat in `OnChange`'s redraw list, restarting a
+timer that never touches the grid. Fixed first, on its own, in
+`6603c453f6` (`updateGridParameters()`, at `setEdit` and live from
+`OnChange`); the same merge had also left `GridAuto` defaulting off
+while the page showed it ticked, restored with the pick.
+
+The general point is the one section 7b keeps making: a merge that
+resolves a file by keeping the fork's side can drop the *callers* of a
+new mechanism while keeping the mechanism, and a setter nobody calls
+fails as silently as a type test nobody matches. Grep the setters'
+callers, not just their definitions.
+
+Guarded by `tests/gui/sketch-grid-preferences.py`
+(`GuiSketchGridPreferences_tests_run`, ctest 781 -> 782), which reads the
+grid's Coin nodes. Scored before each commit: 7 of 9 checks fail before
+the wiring, and the pick's 5 new ones fail before the pick. Checked in
+pixels too: 60% draws distinct from both opaque and invisible, and with
+the bgfx renderer active the edit grid composites exactly as in mode 0,
+since Coin draws it over the renderer in both. **Trap met on the way**:
+a GUI test's configuration directory outlives a run, so a preference the
+last run stored reads as a default in the next; the test clears its
+entries at both ends.
+
 ## 7a. The constraint-tool hints (session 85)
 
 Thirteen rows, not the eleven the sweep sized: `580d538798`, the commit
