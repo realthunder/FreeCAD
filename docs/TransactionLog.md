@@ -1193,6 +1193,11 @@ Then:
   operation by appending the inverse to its branch and merging that, and
   the 9.3 check says whether the inverse still applies.
 
+A writer that is a client's view carries more than ops: its view state
+and its edit session ride its branch, which makes a session resumable
+and browsable (user, 2026-09-25; `docs/MultiViewEdit.md` sec 10, which
+also amends the auto-trim above for such a branch).
+
 This is where the section 4 argument lands. The log gives merge for
 everything but the same array property edited at once; that case
 surfaces as a conflict rather than as last-writer-wins, which is the

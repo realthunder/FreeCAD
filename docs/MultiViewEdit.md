@@ -17,6 +17,8 @@ Companion documents:
   already live on the view (`ObjectDisplayModes`, `OnTopObjects`).
 - `docs/SplitViews.md` -- views with persistent names, which is what makes
   per-view state addressable across a save.
+- `docs/TransactionLog.md` sec 17 -- branches, merge and concurrent writers,
+  which section 10 here builds on.
 
 ## 1. The idea (user, 2026-09-25)
 
@@ -257,3 +259,62 @@ What that touches, from `docs/ThinClient.md` 8.12:
    changes with it.
 4. The remaining classifications of section 8.
 5. The edit session per view (section 6), on top of the shared session.
+6. A client's view and session saved on its branch (section 10), on top of
+   the concurrent-writer branches of `docs/TransactionLog.md` 17.5.
+
+## 10. A client's view and session as a branch of the log (user, 2026-09-25)
+
+The pieces meet. `docs/TransactionLog.md` 17.5 already rules that **every
+writer works on its own branch** -- two clients in a shared session each
+get one, created from the head they started at, merged into the shared
+head after each operation (17.3), trimmed when the merge is clean. Section
+6 here gives each view its own edit session. Put together: **a client's
+view, with its editing session, is saved in the transaction log as that
+client's branch.**
+
+What the branch carries, beyond the ops it already holds:
+
+- **The view's state.** The view properties of section 4 -- the camera,
+  the view's settings, its per-object maps (display modes, on top,
+  visibility) -- stored as one entity on the branch (the same bytes a
+  desktop view writes into its `<View3D>` entry, so one serialiser, as
+  sec 23.3 has it for everything else), rewritten at the branch's commits
+  and at the view's settle points. The per-view change stack of section 5
+  stays session only; what the branch keeps is the view as it stands, not
+  its undo.
+- **The edit session.** Which object is in edit and in what mode, and its
+  view-state side (the `TempoVis` hides of section 6). The ops the session
+  commits are the branch's ordinary transactions.
+
+What that buys:
+
+- **A session is resumable.** A client that disconnects, crashes or comes
+  back tomorrow reopens its branch and gets its view back -- camera,
+  visibility, display modes -- and re-enters the edit it was in, over the
+  ops it had made. A desktop user gets the same from a named workspace.
+- **Sessions are browsable.** The history panel (`docs/TransactionLog.md`
+  22.2) can list each client's branch with its view: what that person was
+  looking at, what they had in edit, what they changed -- attribution and
+  presence from the same records.
+- **Conflicts keep their context.** When a client's merge conflicts
+  (17.5), its branch stays; with the view on it, the conflict picker can
+  show the other side as that client saw it.
+- **Workspaces, Onshape's word, fall out.** A branch with a view and a
+  session is a workspace in the full sense: a line of history plus the
+  place someone is standing in it.
+
+Where it rubs against 17.5, to settle when built:
+
+- **Auto-trim.** 17.5 trims a writer branch once it merges cleanly; a
+  branch that carries a client's view and session must outlive its
+  merges for as long as the session does (or longer, if named). The rule
+  becomes: the ops are trimmed (they are on the shared head as merge
+  transactions), the branch row with its view and session stays.
+- **Which view is the desktop's.** The host's primary view (section 4.3)
+  is on `main` and writes the App visibility; every other view, desktop
+  windows included, could be a branch of its own or share `main`'s --
+  open, with the cost of a branch per window against the gain of
+  resumable windows.
+- **Size.** A view entity is small, but it is rewritten often; it goes
+  through the reverse-delta policy of `docs/TransactionLog.md` 23.2 like
+  any other entity, and a camera settle point is not a commit.
