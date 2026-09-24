@@ -34,6 +34,7 @@
 #include <Gui/WaitCursor.h>
 #include <Gui/ViewProviderCoordinateSystem.h>
 #include <Mod/PartDesign/App/Body.h>
+#include <Mod/Part/App/GizmoHelper.h>
 #include <Mod/PartDesign/App/FeatureHelix.h>
 
 #include "ReferenceSelection.h"
@@ -72,6 +73,60 @@ TaskHelixParameters::TaskHelixParameters(PartDesignGui::ViewProviderHelix* Helix
     ui->pitch->selectAll();
     QMetaObject::invokeMethod(ui->pitch, "setFocus", Qt::QueuedConnection);
     showCoordinateAxes();
+
+    setupGizmos(HelixView);
+}
+
+void TaskHelixParameters::setupGizmos(ViewProviderHelix* vp)
+{
+    if (!GizmoContainer::isEnabled()) {
+        return;
+    }
+
+    heightGizmo = new Gui::LinearGizmo(ui->height);
+
+    connect(ui->inputMode, qOverload<int>(&QComboBox::currentIndexChanged), [this](int index) {
+        bool isPitchTurnsAngle = index == static_cast<int>(HelixMode::pitch_turns_angle);
+        heightGizmo->setVisibility(!isPitchTurnsAngle);
+    });
+
+    gizmoContainer = GizmoContainer::create({heightGizmo}, vp);
+
+    setGizmoPositions();
+
+    ui->inputMode->currentIndexChanged(ui->inputMode->currentIndex());
+    showDraggerHints();
+}
+
+void TaskHelixParameters::setGizmoPositions()
+{
+    if (!gizmoContainer) {
+        return;
+    }
+
+    auto helix = vp ? dynamic_cast<PartDesign::Helix*>(vp->getObject()) : nullptr;
+    if (!helix || helix->isError()) {
+        gizmoContainer->visible = false;
+        return;
+    }
+    gizmoContainer->visible = true;
+    Part::TopoShape profileShape = helix->getProfileShape();
+    double reversed = propReversed->getValue() ? -1.0 : 1.0;
+    auto profileCentre = getMidPointFromProfile(profileShape);
+    Base::Vector3d axisDir = helix->Axis.getValue() * reversed;
+    Base::Vector3d basePos = helix->Base.getValue();
+
+    // Project the centre point of the helix to a plane passing through the com of the profile
+    // and along the helix axis
+    Base::Vector3d pos = basePos + axisDir.Dot(profileCentre - basePos) * axisDir;
+
+    heightGizmo->Gizmo::setDraggerPlacement(pos, axisDir);
+}
+
+void TaskHelixParameters::finishedRecomputeFeature()
+{
+    TaskSketchBasedParameters::finishedRecomputeFeature();
+    setGizmoPositions();
 }
 
 void TaskHelixParameters::initializeHelix()

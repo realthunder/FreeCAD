@@ -34,6 +34,8 @@
 #include <Gui/Selection.h>
 #include <Gui/ViewProvider.h>
 #include <Gui/ViewProviderCoordinateSystem.h>
+#include <Gui/Inventor/Draggers/SoRotationDragger.h>
+#include <Gui/Utilities.h>
 #include <Mod/PartDesign/App/FeatureRevolution.h>
 #include <Mod/PartDesign/App/FeatureGroove.h>
 #include <Mod/PartDesign/App/Body.h>
@@ -92,6 +94,100 @@ TaskRevolutionParameters::TaskRevolutionParameters(PartDesignGui::ViewProvider* 
 
     addBlinkWidget(ui->lineFaceName);
     connectSignals();
+
+    setupGizmos(RevolutionView);
+}
+
+void TaskRevolutionParameters::setupGizmos(ViewProvider* vp)
+{
+    if (!GizmoContainer::isEnabled()) {
+        return;
+    }
+
+    rotationGizmo = new Gui::RadialGizmo(ui->revolveAngle);
+    rotationGizmo2 = new Gui::RadialGizmo(ui->revolveAngle2);
+
+    gizmoContainer = GizmoContainer::create({rotationGizmo, rotationGizmo2}, vp);
+    rotationGizmo->flipArrow();
+    rotationGizmo2->flipArrow();
+
+    defaultGizmoMultFactor = rotationGizmo->getMultFactor();
+
+    setGizmoPositions();
+    showDraggerHints();
+}
+
+void TaskRevolutionParameters::setGizmoPositions()
+{
+    if (!gizmoContainer) {
+        return;
+    }
+
+    Base::Vector3d profileCog;
+    Base::Vector3d basePos;
+    Base::Vector3d axisDir;
+    bool reversed = false;
+    bool symmetric = false;
+    std::string sideType;
+
+    auto getFeatureProps = [&](auto* feature) {
+        if (!feature || feature->isError()) {
+            return false;
+        }
+        Part::TopoShape profile = feature->getProfileShape();
+
+        profile.getCenterOfGravity(profileCog);
+        basePos = feature->Base.getValue();
+        axisDir = feature->Axis.getValue();
+        reversed = feature->Reversed.getValue();
+        symmetric = feature->Midplane.getValue();
+        sideType = std::string(feature->Type.getValueAsString());
+        return true;
+    };
+
+    auto obj = vp ? vp->getObject() : nullptr;
+    bool ret;
+    if (isGroove) {
+        ret = getFeatureProps(dynamic_cast<PartDesign::Groove*>(obj));
+    }
+    else {
+        ret = getFeatureProps(dynamic_cast<PartDesign::Revolution*>(obj));
+    }
+
+    gizmoContainer->visible = ret;
+    if (!ret) {
+        return;
+    }
+
+    auto diff = profileCog - basePos;
+    axisDir.Normalize();
+    auto axisComp = axisDir * diff.Dot(axisDir);
+    auto normalComp = diff - axisComp;
+
+    if (reversed) {
+        axisDir = -axisDir;
+    }
+
+    rotationGizmo->Gizmo::setDraggerPlacement(basePos + axisComp, normalComp);
+    rotationGizmo->getDraggerContainer()->setArcNormalDirection(Base::convertTo<SbVec3f>(axisDir));
+    rotationGizmo->setVisibility(sideType == "Angle" || sideType == "TwoAngles");
+
+    rotationGizmo2->Gizmo::setDraggerPlacement(basePos + axisComp, normalComp);
+    rotationGizmo2->getDraggerContainer()->setArcNormalDirection(Base::convertTo<SbVec3f>(-axisDir));
+    rotationGizmo2->setVisibility(sideType == "TwoAngles");
+
+    if (sideType == "TwoAngles" || !symmetric) {
+        rotationGizmo->setMultFactor(defaultGizmoMultFactor);
+    }
+    else {
+        rotationGizmo->setMultFactor(defaultGizmoMultFactor / 2.0);
+    }
+}
+
+void TaskRevolutionParameters::finishedRecomputeFeature()
+{
+    TaskSketchBasedParameters::finishedRecomputeFeature();
+    setGizmoPositions();
 }
 
 void TaskRevolutionParameters::onAxisButton(bool checked)

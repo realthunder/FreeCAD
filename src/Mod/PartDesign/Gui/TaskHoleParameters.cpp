@@ -30,6 +30,10 @@
 #include <Gui/Document.h>
 #include <Gui/Selection.h>
 #include <Gui/ViewProvider.h>
+#include <BRepAdaptor_Curve.hxx>
+#include <TopoDS.hxx>
+#include <Base/Converter.h>
+#include <Mod/Part/App/Tools.h>
 #include <Mod/PartDesign/App/FeatureHole.h>
 
 #include "ui_TaskHoleParameters.h"
@@ -140,9 +144,89 @@ TaskHoleParameters::TaskHoleParameters(ViewProviderHole* HoleView, QWidget* pare
 
     this->initUI(proxy);
     this->groupLayout()->addWidget(proxy);
+
+    setupGizmos(HoleView);
 }
 
 TaskHoleParameters::~TaskHoleParameters() = default;
+
+void TaskHoleParameters::setupGizmos(ViewProviderHole* vp)
+{
+    if (!GizmoContainer::isEnabled()) {
+        return;
+    }
+
+    holeDepthGizmo = new LinearGizmo(ui->Depth);
+    holeDepthGizmo->setClickCallback([this] {
+        if (ui->Reversed->isEnabled()) {
+            ui->Reversed->setChecked(!ui->Reversed->isChecked());
+        }
+    });
+
+    gizmoContainer = GizmoContainer::create({holeDepthGizmo}, vp);
+
+    setGizmoPositions();
+    showDraggerHints();
+}
+
+namespace
+{
+// Where Hole::findHoles() puts a hole: the centre of every circle or arc
+// edge of the profile. Upstream's helper also takes points and filters by
+// BaseProfileType, which this fork's Hole does not have yet.
+std::vector<Base::Vector3d> getHolePositionFromShape(const Part::TopoShape& profileshape)
+{
+    std::vector<Base::Vector3d> positions;
+    for (const auto& profileEdge : profileshape.getSubTopoShapes(TopAbs_EDGE)) {
+        BRepAdaptor_Curve adaptor(TopoDS::Edge(profileEdge.getShape()));
+        if (adaptor.GetType() != GeomAbs_Circle) {
+            continue;
+        }
+        positions.push_back(Base::convertTo<Base::Vector3d>(adaptor.Circle().Axis().Location()));
+    }
+    return positions;
+}
+}  // namespace
+
+void TaskHoleParameters::setGizmoPositions()
+{
+    if (!gizmoContainer) {
+        return;
+    }
+
+    auto hole = vp ? dynamic_cast<PartDesign::Hole*>(vp->getObject()) : nullptr;
+    if (!hole || hole->isError()) {
+        gizmoContainer->visible = false;
+        return;
+    }
+    Part::TopoShape profileShape = hole->getProfileShape();
+    // The direction Hole::execute() drills against: the profile normal,
+    // flipped by Reversed. Upstream guesses it (guessNormalDirection) for
+    // profiles that are not sketches.
+    Base::Vector3d dir = hole->getProfileNormal();
+    dir *= hole->Reversed.getValue() ? -1 : 1;
+    std::vector<Base::Vector3d> holePositions = getHolePositionFromShape(profileShape);
+
+    if (holePositions.size() == 0) {
+        gizmoContainer->visible = false;
+        return;
+    }
+    gizmoContainer->visible = true;
+
+    holeDepthGizmo->Gizmo::setDraggerPlacement(
+        holePositions[0] - ui->HoleCutDepth->value().getValue() * dir,
+        -dir
+    );
+    holeDepthGizmo->setVisibility(std::string(hole->DepthType.getValueAsString()) == "Dimension");
+
+    holeDepthGizmo->setDragLength(ui->Depth->rawValue());
+}
+
+void TaskHoleParameters::finishedRecomputeFeature()
+{
+    TaskSketchBasedParameters::finishedRecomputeFeature();
+    setGizmoPositions();
+}
 
 const char *TaskHoleParameters::updateViewParameter() const
 {

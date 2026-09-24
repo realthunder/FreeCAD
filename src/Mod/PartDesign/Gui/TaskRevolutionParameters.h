@@ -25,6 +25,8 @@
 
 #include <Mod/PartDesign/App/FeatureRevolution.h>
 #include <Mod/PartDesign/App/FeatureGroove.h>
+#include <Gui/Inventor/Draggers/Gizmo.h>
+
 #include "TaskSketchBasedParameters.h"
 #include "ViewProviderRevolution.h"
 
@@ -87,6 +89,7 @@ protected:
     bool eventFilter(QObject *o, QEvent *ev) override;
 
     void refresh() override;
+    void finishedRecomputeFeature() override;
 
     //mirrors of revolution's or groove's properties
     //should have been done by inheriting revolution and groove from common class...
@@ -109,6 +112,13 @@ private:
     std::unique_ptr<Ui_TaskRevolutionParameters> ui;
     QWidget *proxy;
     bool isGroove;
+
+    double defaultGizmoMultFactor = 1.0;
+    std::unique_ptr<Gui::GizmoContainer> gizmoContainer;
+    Gui::RadialGizmo* rotationGizmo = nullptr;
+    Gui::RadialGizmo* rotationGizmo2 = nullptr;
+    void setupGizmos(ViewProvider* vp);
+    void setGizmoPositions();
 
     /**
      * @brief axesInList is the list of links corresponding to axis combo; must

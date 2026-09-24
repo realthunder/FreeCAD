@@ -32,7 +32,9 @@
 #include <Gui/Command.h>
 #include <Gui/Fw/FwQtView.h>
 #include <Gui/Fw/FwWidgets.h>
+#include <Gui/QuantitySpinBox.h>
 #include <Gui/Widgets.h>
+#include <Mod/Part/App/GizmoHelper.h>
 #include <Mod/PartDesign/App/FeatureExtrude.h>
 #include <Mod/PartDesign/App/FeatureExtrusion.h>
 
@@ -155,6 +157,112 @@ void TaskExtrudeParameters::setupDialog(bool newObj, const char *historyPath)
 
     connectSlots();
     ui->lengthEdit->selectAll();
+
+    setupGizmos();
+}
+
+void TaskExtrudeParameters::setupGizmos()
+{
+    if (GizmoContainer::isEnabled() == false) {
+        return;
+    }
+
+    // A gizmo drives a Qt spin box, and this form's fields are Fw models: hand
+    // it the widget the model is realized as, the route the panel already
+    // takes for its other Qt-only calls. The widget's own sync carries a drag
+    // to the model and the property. No widget, no gizmos.
+    auto spinBoxOf = [](Gui::Fw::QuantitySpinBox* model) {
+        return qobject_cast<Gui::QuantitySpinBox*>(Gui::FwQt::widgetOf(model));
+    };
+    auto length1 = spinBoxOf(ui->lengthEdit);
+    auto length2 = spinBoxOf(ui->lengthEdit2);
+    auto taper1 = spinBoxOf(ui->taperAngleEdit);
+    auto taper2 = spinBoxOf(ui->taperAngleEdit2);
+    if (!length1 || !length2 || !taper1 || !taper2) {
+        return;
+    }
+
+    const auto toggleReversed = [this] {
+        if (ui->checkBoxReversed->isEnabled()) {
+            ui->checkBoxReversed->setChecked(!ui->checkBoxReversed->isChecked());
+        }
+    };
+
+    lengthGizmo1 = new Gui::LinearGizmo(length1);
+    lengthGizmo1->setClickCallback(toggleReversed);
+    lengthGizmo2 = new Gui::LinearGizmo(length2);
+    lengthGizmo2->setClickCallback(toggleReversed);
+    taperAngleGizmo1 = new Gui::RotationGizmo(taper1);
+    taperAngleGizmo2 = new Gui::RotationGizmo(taper2);
+
+    gizmoContainer = GizmoContainer::create(
+        {lengthGizmo1, lengthGizmo2, taperAngleGizmo1, taperAngleGizmo2},
+        vp
+    );
+
+    setGizmoPositions();
+    showDraggerHints();
+}
+
+void TaskExtrudeParameters::setGizmoPositions()
+{
+    if (!gizmoContainer) {
+        return;
+    }
+
+    auto extrude = vp ? dynamic_cast<PartDesign::FeatureExtrude*>(vp->getObject()) : nullptr;
+    if (!extrude || extrude->isError()) {
+        gizmoContainer->visible = false;
+        return;
+    }
+    gizmoContainer->visible = true;
+
+    PartDesign::TopoShape shape = extrude->getProfileShape();
+    Base::Vector3d center = getMidPointFromProfile(shape);
+    // This fork has no SideType/Type2: "TwoLengths" is upstream's two sides
+    // with both lengths, and Midplane is its symmetric side type.
+    std::string extrudeType = std::string(extrude->Type.getValueAsString());
+    const bool oneLength = extrudeType == "Length";
+    const bool twoLengths = extrudeType == "TwoLengths";
+    const bool symmetric = oneLength && extrude->Midplane.getValue();
+    double dir = extrude->Reversed.getValue() ? -1 : 1;
+
+    Base::Vector3d direction = extrude->Direction.getValue() * dir;
+
+    lengthGizmo1->Gizmo::setDraggerPlacement(center, direction);
+    lengthGizmo1->setVisibility(oneLength || twoLengths);
+    taperAngleGizmo1->placeOverLinearGizmo(lengthGizmo1);
+    taperAngleGizmo1->setVisibility(oneLength || twoLengths);
+    lengthGizmo2->Gizmo::setDraggerPlacement(center, -direction);
+    lengthGizmo2->setVisibility(twoLengths);
+    taperAngleGizmo2->placeOverLinearGizmo(lengthGizmo2);
+    taperAngleGizmo2->setVisibility(twoLengths);
+
+    Base::Vector3d padDir = extrude->Direction.getValue().Normalized();
+    Base::Vector3d sketchDir = extrude->getProfileNormal().Normalized();
+
+    double lengthFactor = padDir.Dot(sketchDir);
+    double multFactor = symmetric ? 0.5 : 1.0;
+
+    // Important note: This code assumes that nothing other than alongSketchNormal
+    // and symmetric option influence the multFactor. If some custom gizmos changes
+    // it then that also should be handled properly here
+    if (extrude->AlongSketchNormal.getValue()) {
+        lengthGizmo1->setMultFactor(multFactor / lengthFactor);
+        lengthGizmo2->setMultFactor(multFactor / lengthFactor);
+    }
+    else {
+        lengthGizmo1->setMultFactor(multFactor);
+        lengthGizmo2->setMultFactor(multFactor);
+    }
+
+    gizmoContainer->calculateScaleAndOrientation();
+}
+
+void TaskExtrudeParameters::finishedRecomputeFeature()
+{
+    TaskSketchBasedParameters::finishedRecomputeFeature();
+    setGizmoPositions();
 }
 
 void TaskExtrudeParameters::refresh()

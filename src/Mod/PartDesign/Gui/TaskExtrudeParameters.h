@@ -23,6 +23,8 @@
 #ifndef GUI_TASKVIEW_TaskExtrudeParameters_H
 #define GUI_TASKVIEW_TaskExtrudeParameters_H
 
+#include <Gui/Inventor/Draggers/Gizmo.h>
+
 #include "TaskSketchBasedParameters.h"
 #include "ViewProviderSketchBased.h"
 
@@ -148,7 +150,17 @@ private:
     void selectedReferenceAxis(const Gui::SelectionChanges& msg);
     void clearFaceName();
 
+    std::unique_ptr<Gui::GizmoContainer> gizmoContainer;
+    Gui::LinearGizmo* lengthGizmo1 = nullptr;
+    Gui::LinearGizmo* lengthGizmo2 = nullptr;
+    Gui::RotationGizmo* taperAngleGizmo1 = nullptr;
+    Gui::RotationGizmo* taperAngleGizmo2 = nullptr;
+    void setupGizmos();
+    void setGizmoPositions();
+
 protected:
+    void finishedRecomputeFeature() override;
+
     QWidget* proxy;
     std::unique_ptr<Gui::Fw::UiForm> form;
     std::unique_ptr<Ui_TaskPadPocketParameters> ui;

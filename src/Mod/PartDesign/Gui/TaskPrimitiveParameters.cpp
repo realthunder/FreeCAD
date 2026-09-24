@@ -31,12 +31,14 @@
 #include <App/Document.h>
 #include <App/Origin.h>
 #include <Base/Console.h>
+#include <Base/Converter.h>
 #include <Base/UnitsApi.h>
 #include <Gui/Application.h>
 #include <Gui/Command.h>
 #include <Gui/Document.h>
 #include <Gui/MainWindow.h>
 #include <Gui/ViewProviderCoordinateSystem.h>
+#include <Gui/Utilities.h>
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/FeaturePrimitive.h>
 
@@ -183,6 +185,89 @@ TaskBoxPrimitives::TaskBoxPrimitives(ViewProviderPrimitive* vp, QWidget* parent)
             this, &TaskBoxPrimitives::onWedgeZ2maxChanged);
     connect(ui->wedgeZ2min, qOverload<double>(&Gui::QuantitySpinBox::valueChanged),
             this, &TaskBoxPrimitives::onWedgeZ2minChanged);
+
+    setupGizmos();
+}
+
+void TaskBoxPrimitives::setupGizmos()
+{
+    if (!Gui::GizmoContainer::isEnabled()) {
+        return;
+    }
+    auto feat = vp ? dynamic_cast<PartDesign::FeaturePrimitive*>(vp->getObject()) : nullptr;
+    if (!feat) {
+        return;
+    }
+
+    switch (feat->getPrimitiveType()) {
+        case PartDesign::FeaturePrimitive::Box:
+            lengthGizmo = new Gui::LinearGizmo(ui->boxLength);
+            widthGizmo = new Gui::LinearGizmo(ui->boxWidth);
+            heightGizmo = new Gui::LinearGizmo(ui->boxHeight);
+
+            gizmoContainer = Gui::GizmoContainer::create({widthGizmo, heightGizmo, lengthGizmo}, vp);
+            break;
+        case PartDesign::FeaturePrimitive::Cylinder:
+            heightGizmo = new Gui::LinearGizmo(ui->cylinderHeight);
+            radiusGizmo = new Gui::LinearGizmo(ui->cylinderRadius);
+
+            gizmoContainer = Gui::GizmoContainer::create({heightGizmo, radiusGizmo}, vp);
+            break;
+        case PartDesign::FeaturePrimitive::Sphere:
+            radiusGizmo = new Gui::LinearGizmo(ui->sphereRadius);
+
+            gizmoContainer = Gui::GizmoContainer::create({radiusGizmo}, vp);
+            break;
+        default:
+            return;
+    }
+
+    setGizmoPositions();
+}
+
+void TaskBoxPrimitives::setGizmoPositions()
+{
+    if (!gizmoContainer) {
+        return;
+    }
+    auto feat = vp ? dynamic_cast<PartDesign::FeaturePrimitive*>(vp->getObject()) : nullptr;
+    if (!feat) {
+        return;
+    }
+
+    const Base::Placement& placement = feat->Placement.getValue();
+    SbVec3f pos = Base::convertTo<SbVec3f>(placement.getPosition());
+    SbRotation rot = Base::convertTo<SbRotation>(placement.getRotation());
+    auto getVec = [rot](SbVec3f vec) {
+        rot.multVec(vec, vec);
+
+        return vec;
+    };
+    switch (feat->getPrimitiveType()) {
+        case PartDesign::FeaturePrimitive::Box:
+            lengthGizmo->setDraggerPlacement(pos, getVec({1, 0, 0}));
+            widthGizmo->setDraggerPlacement(pos, getVec({0, 1, 0}));
+            heightGizmo->setDraggerPlacement(pos, getVec({0, 0, 1}));
+            break;
+        case PartDesign::FeaturePrimitive::Cylinder:
+            heightGizmo->setDraggerPlacement(pos, getVec({0, 0, 1}));
+            radiusGizmo->setDraggerPlacement(pos, getVec({1, 1, 0}));
+            break;
+        case PartDesign::FeaturePrimitive::Sphere:
+            radiusGizmo->setDraggerPlacement(pos, getVec({1, 1, 0}));
+            break;
+        default:
+            return;
+    }
+}
+
+void TaskBoxPrimitives::slotChangedObject(const Gui::ViewProviderDocumentObject& Obj,
+                                          const App::Property& Prop)
+{
+    if (vp && &Obj == vp && vp->getObject()
+        && &Prop == &static_cast<App::GeoFeature*>(vp->getObject())->Placement) {
+        setGizmoPositions();
+    }
 }
 
 /*

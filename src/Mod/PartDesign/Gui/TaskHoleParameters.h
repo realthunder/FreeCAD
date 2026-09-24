@@ -23,6 +23,8 @@
 #ifndef GUI_TASKVIEW_TaskHoleParameters_H
 #define GUI_TASKVIEW_TaskHoleParameters_H
 
+#include <Gui/Inventor/Draggers/Gizmo.h>
+
 #include "TaskSketchBasedParameters.h"
 #include "ViewProviderHole.h"
 
@@ -124,6 +126,7 @@ private:
 protected:
     void changeEvent(QEvent *e) override;
     void changedObject(const App::Document&, const App::Property& Prop);
+    void finishedRecomputeFeature() override;
 
 private:
 
@@ -134,6 +137,11 @@ private:
     bool isApplying;
     QWidget* proxy;
     std::unique_ptr<Ui_TaskHoleParameters> ui;
+
+    std::unique_ptr<Gui::GizmoContainer> gizmoContainer;
+    Gui::LinearGizmo* holeDepthGizmo = nullptr;
+    void setupGizmos(ViewProviderHole* vp);
+    void setGizmoPositions();
 };
 
 /// simulation dialog for the TaskView
