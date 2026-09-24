@@ -373,6 +373,50 @@ App::DocumentObjectExecReturn *Feature::recompute(void)
     return  App::DocumentObject::StdReturn;
 }
 
+void Feature::onBaseFeatureRerouted(App::DocumentObject*, App::DocumentObject*)
+{
+}
+
+bool Feature::relinkToMatchingSubElements(App::PropertyLinkSub& link,
+                                          App::DocumentObject* oldBase,
+                                          App::DocumentObject* newBase)
+{
+    if (!oldBase || !newBase || link.getValue() != oldBase)
+        return false;
+    auto oldFeature = Base::freecad_dynamic_cast<Part::Feature>(oldBase);
+    auto newFeature = Base::freecad_dynamic_cast<Part::Feature>(newBase);
+    if (!oldFeature || !newFeature)
+        return false;
+    const TopoShape& oldShape = oldFeature->Shape.getShape();
+    const TopoShape& newShape = newFeature->Shape.getShape();
+    if (oldShape.isNull() || newShape.isNull())
+        return false;
+
+    // The mapped names belong to the old base's element map, so look each
+    // element up there and find its geometry in the new base.
+    const auto& shadows = link.getShadowSubs();
+    if (shadows.size() != link.getSubValues().size())
+        return false;
+    std::vector<std::string> subs;
+    for (const auto& shadow : shadows) {
+        const auto& ref = shadow.first.empty() ? shadow.second : shadow.first;
+        if (ref.empty()) {
+            subs.emplace_back();
+            continue;
+        }
+        TopoShape sub = oldShape.getSubTopoShape(ref.c_str(), /*silent*/true);
+        if (sub.isNull())
+            return false;
+        std::vector<std::string> names;
+        auto found = newShape.searchSubShape(sub, &names);
+        if (found.size() != 1 || names.size() != 1)
+            return false;
+        subs.push_back(std::move(names.front()));
+    }
+    link.setValue(newBase, std::move(subs));
+    return true;
+}
+
 TopoShape Feature::wrapLocated(const TopoShape& shape) const
 {
     if (shape.isNull() || shape.getShape().Location().IsIdentity())

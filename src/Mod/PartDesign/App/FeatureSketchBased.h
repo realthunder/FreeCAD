@@ -147,6 +147,9 @@ public:
     // calculate the through all length
     double getThroughAllLength() const;
 
+    void onBaseFeatureRerouted(App::DocumentObject* oldBase,
+                               App::DocumentObject* newBase) override;
+
 protected:
     void remapSupportShape(const TopoDS_Shape&);
 

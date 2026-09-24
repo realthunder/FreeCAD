@@ -490,6 +490,9 @@ std::vector<App::DocumentObject*> Body::removeObject(App::DocumentObject* featur
             next->NewSolid.setValue(true);
         }
         else {
+            // Before the reroute, while the removed feature's shape still
+            // answers for the element names that pointed into it.
+            next->onBaseFeatureRerouted(feature, siblingBase);
             next->BaseFeature.setValue(siblingBase);
         }
     }

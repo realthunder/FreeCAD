@@ -95,9 +95,25 @@ public:
     App::DocumentObject *getSubObject(const char *subname, 
         PyObject **pyObj, Base::Matrix4D *pmat, bool transform, int depth) const override;
 
-    TopoShape getSolid(const TopoShape &, bool force = true);    
+    TopoShape getSolid(const TopoShape &, bool force = true);
+
+    /** Called by Body::removeObject() just before this feature's BaseFeature
+     *  is rerouted from \a oldBase, which is being removed, to \a newBase.
+     *  \a oldBase still has its shape. Overrides relink the element
+     *  references that follow the base feature.
+     */
+    virtual void onBaseFeatureRerouted(App::DocumentObject* oldBase,
+                                       App::DocumentObject* newBase);
 
 protected:
+    /** Relinks \a link from \a oldBase to \a newBase when every element it
+     *  names is found by geometry in \a newBase exactly once. Otherwise
+     *  leaves it alone and returns false.
+     */
+    static bool relinkToMatchingSubElements(App::PropertyLinkSub& link,
+                                            App::DocumentObject* oldBase,
+                                            App::DocumentObject* newBase);
+
 
     App::DocumentObjectExecReturn *recompute() override;
 

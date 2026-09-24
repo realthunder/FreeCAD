@@ -218,6 +218,14 @@ void DressUp::onChanged(const App::Property* prop)
 
 }
 
+void DressUp::onBaseFeatureRerouted(App::DocumentObject* oldBase, App::DocumentObject* newBase)
+{
+    // Relinked before BaseFeature moves; onChanged() then finds Base already
+    // on the new base. Left alone, it would carry the removed feature's
+    // element names over, and they resolve to nothing there.
+    relinkToMatchingSubElements(Base, oldBase, newBase);
+}
+
 void DressUp::getAddSubShape(std::vector<std::pair<Part::TopoShape, Type> > &addsubshapes)
 {
     Part::TopoShape res = AddSubShape.getShape();

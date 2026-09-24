@@ -571,6 +571,14 @@ Part::Feature* ProfileBased::getBaseObject(bool silent) const
     return rv;
 }
 
+void ProfileBased::onBaseFeatureRerouted(App::DocumentObject* oldBase, App::DocumentObject* newBase)
+{
+    // A sketch has an attachment of its own and is left alone; only a face
+    // of the removed feature used directly is relinked.
+    relinkToMatchingSubElements(Profile, oldBase, newBase);
+    relinkToMatchingSubElements(UpToFace, oldBase, newBase);
+}
+
 void ProfileBased::onChanged(const App::Property* prop)
 {
     if (prop == &Profile) {
