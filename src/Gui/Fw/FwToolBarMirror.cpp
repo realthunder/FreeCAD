@@ -135,8 +135,11 @@ bool ToolBarMirror::owns(const QString& id)
 
 void ToolBarMirror::start()
 {
-    if (_running)
+    if (_running) {
+        // a subscriber arriving while a stop waits out a rebuild keeps it
+        _stopPending = false;
         return;
+    }
     if (!getMainWindow() || !ToolBarManager::getInstance()) {
         Base::Console().Warning("ToolBarMirror: no main window to mirror\n");
         return;
@@ -156,6 +159,15 @@ void ToolBarMirror::stop()
 {
     if (!_running)
         return;
+    // Every push rebuild() makes can end here: a push that fails drops its
+    // subscriber, and the last one out stops the mirror. Tearing down then
+    // deleted the bar rebuild() was writing into and the models its items
+    // point at, and cleared the tables it walks -- a served desktop whose
+    // browser left mid-rebuild crashed, on a freed bar or later in malloc.
+    if (_rebuilding) {
+        _stopPending = true;
+        return;
+    }
     _running = false;
     _rebuildTimer.stop();
     _flushTimer.stop();
@@ -692,6 +704,11 @@ void ToolBarMirror::rebuild()
     }
     _rebuilding = false;
     _dirty.clear();
+    if (_stopPending) {
+        _stopPending = false;
+        stop();
+        return;
+    }
     Q_EMIT rebuilt();
 }
 

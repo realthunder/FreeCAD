@@ -136,6 +136,9 @@ private:
 
     bool _running = false;
     bool _rebuilding = false;
+    /// stop() asked for while rebuild() was on the stack; rebuild() does it
+    /// on its way out (see stop())
+    bool _stopPending = false;
     int _rebuilds = 0;
     QTimer _rebuildTimer;
     QTimer _flushTimer;
