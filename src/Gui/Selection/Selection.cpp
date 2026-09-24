@@ -147,6 +147,11 @@ void SelectionObserver::attachSelectionToCurrent()
     attachTo(Selection());
 }
 
+SelectionSingleton& SelectionObserver::observedSelection() const
+{
+    return observed ? *observed : SelectionRoom();
+}
+
 void SelectionObserver::attachTo(SelectionSingleton& sel)
 {
     if (!connectSelection.connected()) {

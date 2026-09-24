@@ -291,6 +291,12 @@ public:
      * goes on hearing the one it attached to, and detaches from that one.
      */
     void attachSelectionToCurrent();
+    /** The instance this observer hears: the room, unless
+     * attachSelectionToCurrent() bound it to a client's. What a handler must
+     * read when a message says "re-read the selection" (SetSelection), since
+     * Gui::Selection() is whichever scope happens to be open at the time.
+     */
+    SelectionSingleton& observedSelection() const;
     /** Detaches from the selection. */
     void detachSelection();
 

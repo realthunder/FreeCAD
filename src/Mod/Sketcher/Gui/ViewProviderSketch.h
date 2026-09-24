@@ -205,6 +205,9 @@ public:
     bool isSelectable() const override;
     /// Observer message from the Selection
     virtual void onSelectionChanged(const Gui::SelectionChanges& msg) override;
+    /// Record one selected element ("Edge3", "Vertex1", "Constraint2", ...) in
+    /// the edit data, without redrawing. True for a constraint.
+    bool addSelectedElement(const char *shapetype);
 
     /// Toggle angle snapping and set the reference point
     void setAngleSnapping(bool enable, Base::Vector2d referencePoint = Base::Vector2d(0., 0.));

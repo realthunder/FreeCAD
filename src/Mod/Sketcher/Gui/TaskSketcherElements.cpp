@@ -575,6 +575,42 @@ void TaskSketcherElements::sketchClosed()
     QSignalBlocker blocker(ui->elementsWidget);
     ui->elementsWidget->clear();
 }
+static void setPosSelected(ElementItem *ite, Sketcher::PointPos PosId, bool select)
+{
+    switch(PosId) {
+    case Sketcher::PointPos::start:
+        ite->isStartingPointSelected=select;
+        break;
+    case Sketcher::PointPos::end:
+        ite->isEndPointSelected=select;
+        break;
+    case Sketcher::PointPos::mid:
+        ite->isMidPointSelected=select;
+        break;
+    default:
+        ite->isLineSelected=select;
+        break;
+    }
+}
+
+static void showSelected(ElementItem *ite, int element)
+{
+    switch(element){
+    case 0:
+        ite->setSelected(ite->isLineSelected);
+        break;
+    case 1:
+        ite->setSelected(ite->isStartingPointSelected);
+        break;
+    case 2:
+        ite->setSelected(ite->isEndPointSelected);
+        break;
+    case 3:
+        ite->setSelected(ite->isMidPointSelected);
+        break;
+    }
+}
+
 void TaskSketcherElements::onSelectionChanged(const Gui::SelectionChanges& msg)
 {
     std::string temp;
@@ -599,47 +635,50 @@ void TaskSketcherElements::onSelectionChanged(const Gui::SelectionChanges& msg)
                 return;
 
             ElementItem* ite = static_cast<ElementItem*>(it->second);
-
-            switch(PosId) {
-            case Sketcher::PointPos::start:
-                ite->isStartingPointSelected=select;
-                break;
-            case Sketcher::PointPos::end:
-                ite->isEndPointSelected=select;
-                break;
-            case Sketcher::PointPos::mid:
-                ite->isMidPointSelected=select;
-                break;
-            default:
-                ite->isLineSelected=select;
-                break;
-            }
+            setPosSelected(ite, PosId, select);
 
             // update the listwidget
             ui->elementsWidget->blockSignals(true);
-
-            int element=ui->comboBoxElementFilter->currentIndex();
-            switch(element){
-            case 0:
-                ite->setSelected(ite->isLineSelected);
-                break;
-            case 1:
-                ite->setSelected(ite->isStartingPointSelected);
-                break;
-            case 2:
-                ite->setSelected(ite->isEndPointSelected);
-                break;
-            case 3:
-                ite->setSelected(ite->isMidPointSelected);
-                break;
-            }
+            showSelected(ite, ui->comboBoxElementFilter->currentIndex());
             if(select)
                 ui->elementsWidget->scrollToItem(ite);
             ui->elementsWidget->blockSignals(false);
         }
     }
     else if (msg.Type == Gui::SelectionChanges::SetSelection) {
-        // do nothing here
+        // What a paused batch (Selection().addSelections()) turns into once it
+        // holds more than MaxSelectionNotification changes: the item by item
+        // messages are dropped and this says "re-read the selection".
+        if (itemMap.empty())
+            return;
+        for (auto &v : itemMap) {
+            auto ite = static_cast<ElementItem*>(v.second);
+            ite->isLineSelected = false;
+            ite->isStartingPointSelected = false;
+            ite->isEndPointSelected = false;
+            ite->isMidPointSelected = false;
+        }
+        auto sketch = sketchView->getSketchObject();
+        for (const auto &sel : observedSelection().getSelectionEx(
+                 "*", App::DocumentObject::getClassTypeId(),
+                 Gui::ResolveMode::OldStyleElement)) {
+            const App::DocumentObject *obj = sel.getObject();
+            if (!obj || obj->getLinkedObject() != sketchView->getObject())
+                continue;
+            for (const auto &sub : sel.getSubNames()) {
+                int GeoId;
+                Sketcher::PointPos PosId;
+                if (!sketch->geoIdFromShapeType(sub.c_str(), GeoId, PosId))
+                    continue;
+                auto it = itemMap.find(GeoId);
+                if (it != itemMap.end())
+                    setPosSelected(static_cast<ElementItem*>(it->second), PosId, true);
+            }
+        }
+        QSignalBlocker blocker(ui->elementsWidget);
+        int element = ui->comboBoxElementFilter->currentIndex();
+        for (auto &v : itemMap)
+            showSelected(static_cast<ElementItem*>(v.second), element);
     }
 }
 

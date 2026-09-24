@@ -1454,7 +1454,41 @@ void TaskSketcherConstraints::onSelectionChanged(const Gui::SelectionChanges& ms
         }
     }
     else if (msg.Type == Gui::SelectionChanges::SetSelection) {
-        // do nothing here
+        // What a paused batch (Selection().addSelections()) turns into once it
+        // holds more than MaxSelectionNotification changes: the item by item
+        // messages are dropped and this says "re-read the selection".
+        std::set<int> selected;
+        QRegularExpression rx(QStringLiteral("^Constraint(\\d+)$"));
+        for (const auto &sel : observedSelection().getSelectionEx(
+                 "*", App::DocumentObject::getClassTypeId(),
+                 Gui::ResolveMode::OldStyleElement)) {
+            const App::DocumentObject *obj = sel.getObject();
+            if (!obj || obj->getLinkedObject() != sketchView->getObject())
+                continue;
+            for (const auto &sub : sel.getSubNames()) {
+                QRegularExpressionMatch match = rx.match(QString::fromUtf8(sub.c_str()));
+                if (match.hasMatch())
+                    selected.insert(match.captured(1).toInt() - 1);
+            }
+        }
+        {
+            QSignalBlocker blocker(ui->listWidgetConstraints);
+            int countItems = ui->listWidgetConstraints->count();
+            for (int i = 0; i < countItems; i++) {
+                auto item = static_cast<ConstraintItem*>(ui->listWidgetConstraints->item(i));
+                item->setSelected(selected.count(item->ConstraintNbr) > 0);
+            }
+        }
+        if (specialFilterMode == SpecialFilterType::Selected) {
+            updateSelectionFilter();
+            bool block = this->blockSelection(true);// avoid to be notified by itself
+            updateList();
+            this->blockSelection(block);
+        }
+        else if (specialFilterMode == SpecialFilterType::Associated) {
+            updateAssociatedConstraintsFilter();
+            updateList();
+        }
     }
 }
 

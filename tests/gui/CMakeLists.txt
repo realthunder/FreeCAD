@@ -208,6 +208,14 @@ fc_add_gui_test(GuiSketchSupportVisibility_tests_run
                 sketch-support-visibility.py
                 --timeout 240)
 
+# A bulk selection reaches the sketch being edited. Past
+# MaxSelectionNotification a paused batch (addSelections) arrives as one
+# SetSelection, which the sketch's view provider and both task panels
+# ignored: more than a hundred elements selected and none shown as such.
+fc_add_gui_test(GuiSketchBulkSelection_tests_run
+                sketch-bulk-selection.py
+                --timeout 180)
+
 # The Sketcher's grid display preferences reach the grid. The grid
 # extension reads no preference itself and takes its look from setters,
 # which upstream calls from ViewProviderSketch's ParameterObserver; this

@@ -2216,6 +2216,38 @@ bool ViewProviderSketch::isSelectable(void) const
         return inherited::isSelectable();
 }
 
+bool ViewProviderSketch::addSelectedElement(const char *shapetype)
+{
+    if (boost::starts_with(shapetype, "Edge")) {
+        int GeoId = std::atoi(&shapetype[4]) - 1;
+        ++edit->SelCurveMap[GeoId];
+    }
+    else if (boost::starts_with(shapetype, "ExternalEdge")) {
+        int GeoId = std::atoi(&shapetype[12]) - 1;
+        GeoId = -GeoId - 3;
+        ++edit->SelCurveMap[GeoId];
+    }
+    else if (boost::starts_with(shapetype, "Vertex")) {
+        int VtId = std::atoi(&shapetype[6]) - 1;
+        addSelectPoint(VtId);
+    }
+    else if (boost::equals(shapetype, "RootPoint")) {
+        addSelectPoint(Sketcher::GeoEnum::RtPnt);
+    }
+    else if (boost::equals(shapetype, "H_Axis")) {
+        ++edit->SelCurveMap[Sketcher::GeoEnum::HAxis];
+    }
+    else if (boost::equals(shapetype, "V_Axis")) {
+        ++edit->SelCurveMap[Sketcher::GeoEnum::VAxis];
+    }
+    else if (boost::starts_with(shapetype, "Constraint")) {
+        int ConstrId = std::atoi(&shapetype[10]) - 1;
+        edit->SelConstraintSet.insert(ConstrId);
+        return true;
+    }
+    return false;
+}
+
 void ViewProviderSketch::onSelectionChanged(const Gui::SelectionChanges& msg)
 {
     // are we in edit?
@@ -2252,44 +2284,10 @@ void ViewProviderSketch::onSelectionChanged(const Gui::SelectionChanges& msg)
         }
         else if (msg.Type == Gui::SelectionChanges::AddSelection) {
             // is it this object??
-            if (selObj == getObject()) {
-                if (msg.pSubName) {
-                    const char *shapetype = msg.pSubName;
-                    if (boost::starts_with(shapetype, "Edge")) {
-                        int GeoId = std::atoi(&shapetype[4]) - 1;
-                        ++edit->SelCurveMap[GeoId];
-                        this->updateColor();
-                    }
-                    else if (boost::starts_with(shapetype, "ExternalEdge")) {
-                        int GeoId = std::atoi(&shapetype[12]) - 1;
-                        GeoId = -GeoId - 3;
-                        ++edit->SelCurveMap[GeoId];
-                        this->updateColor();
-                    }
-                    else if (boost::starts_with(shapetype, "Vertex")) {
-                        int VtId = std::atoi(&shapetype[6]) - 1;
-                        addSelectPoint(VtId);
-                        this->updateColor();
-                    }
-                    else if (boost::equals(shapetype, "RootPoint")) {
-                        addSelectPoint(Sketcher::GeoEnum::RtPnt);
-                        this->updateColor();
-                    }
-                    else if (boost::equals(shapetype, "H_Axis")) {
-                        ++edit->SelCurveMap[Sketcher::GeoEnum::HAxis];
-                        this->updateColor();
-                    }
-                    else if (boost::equals(shapetype, "V_Axis")) {
-                        ++edit->SelCurveMap[Sketcher::GeoEnum::VAxis];
-                        this->updateColor();
-                    }
-                    else if (boost::starts_with(shapetype, "Constraint")) {
-                        int ConstrId = std::atoi(&shapetype[10]) - 1;
-                        edit->SelConstraintSet.insert(ConstrId);
-                        this->drawConstraintIcons();
-                        this->updateColor();
-                    }
-                }
+            if (selObj == getObject() && msg.pSubName) {
+                if (addSelectedElement(msg.pSubName))
+                    this->drawConstraintIcons();
+                this->updateColor();
             }
         }
         else if (msg.Type == Gui::SelectionChanges::RmvSelection) {
@@ -2338,20 +2336,24 @@ void ViewProviderSketch::onSelectionChanged(const Gui::SelectionChanges& msg)
             }
         }
         else if (msg.Type == Gui::SelectionChanges::SetSelection) {
-            // remove all items
-            //selectionView->clear();
-            //std::vector<SelectionSingleton::SelObj> objs = Gui::Selection().getSelection(Reason.pDocName);
-            //for (std::vector<SelectionSingleton::SelObj>::iterator it = objs.begin(); it != objs.end(); ++it) {
-            //    // build name
-            //    temp = it->DocName;
-            //    temp += ".";
-            //    temp += it->FeatName;
-            //    if (it->SubName && it->SubName[0] != '\0') {
-            //        temp += ".";
-            //        temp += it->SubName;
-            //    }
-            //    new QListWidgetItem(QString::fromUtf8(temp.c_str()), selectionView);
-            //}
+            // What a paused batch (Selection().addSelections()) turns into once
+            // it holds more than MaxSelectionNotification changes: the item by
+            // item messages are dropped and this says "re-read the selection".
+            // Ignoring it left a bulk selection selected everywhere but here.
+            clearSelectPoints();
+            edit->SelCurveMap.clear();
+            edit->SelConstraintSet.clear();
+            for (const auto &sel : observedSelection().getSelectionEx(
+                     "*", App::DocumentObject::getClassTypeId(),
+                     Gui::ResolveMode::OldStyleElement)) {
+                const App::DocumentObject *obj = sel.getObject();
+                if (!obj || obj->getLinkedObject() != getObject())
+                    continue;
+                for (const auto &sub : sel.getSubNames())
+                    addSelectedElement(sub.c_str());
+            }
+            this->drawConstraintIcons();
+            this->updateColor();
         }
         else if (msg.Type == Gui::SelectionChanges::SetPreselect) {
             if (selObj == getObject()) {
