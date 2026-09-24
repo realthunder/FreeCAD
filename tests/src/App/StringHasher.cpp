@@ -7,8 +7,12 @@
 #include <App/StringHasherPy.h>
 #include <App/StringIDPy.h>
 
+#include <Base/Reader.h>
+#include <Base/Writer.h>
+
 #include <QCryptographicHash>
 #include <array>
+#include <sstream>
 
 class StringIDTest: public ::testing::Test
 {
@@ -1106,7 +1110,9 @@ protected:
         const std::string postfix {";:M;FUS;:Hb:7,F"};
         auto mappedName = givenMappedName(prefix.c_str(), postfix.c_str());
         QVector<App::StringIDRef> sids;
-        return Hasher()->getID(mappedName, sids);
+        auto ID = Hasher()->getID(mappedName, sids);
+        ID.mark();  // count(), and so getMemSize(), include only marked entries
+        return ID;
     }
 
 private:
@@ -1156,15 +1162,36 @@ TEST_F(StringHasherTest, Restore)  // NOLINT
 TEST_F(StringHasherTest, SaveDocFile)  // NOLINT
 {
     // Arrange
+    givenSomeHashedValues();
+    Base::StringWriter writer;
+
     // Act
-    // Assert
+    Hasher()->SaveDocFile(writer);
+
+    // Assert: the stream is the new format, and says so, or RestoreDocFile()
+    // hands it to the legacy parser
+    EXPECT_EQ(0, writer.getString().rfind("StringTableStart v1 ", 0));
 }
 
 TEST_F(StringHasherTest, RestoreDocFile)  // NOLINT
 {
     // Arrange
+    auto id = givenSomeHashedValues();
+    Base::StringWriter writer;
+    Hasher()->SaveDocFile(writer);
+    std::istringstream stream(writer.getString());
+    Base::Reader reader(stream, "StringHasher.Table");
+    Base::Reference<App::StringHasher> restored(new App::StringHasher);
+
     // Act
-    // Assert
+    restored->RestoreDocFile(reader);
+
+    // Assert: what was saved comes back, with its data
+    EXPECT_GT(Hasher()->count(), 0);
+    EXPECT_EQ(Hasher()->count(), restored->size());
+    auto back = restored->getID(id.value());
+    ASSERT_TRUE(back);
+    EXPECT_EQ(id.dataToText(), back.dataToText());
 }
 
 TEST_F(StringHasherTest, setPersistenceFileName)  // NOLINT

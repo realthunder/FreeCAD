@@ -502,7 +502,9 @@ void StringHasher::Save(Base::Writer& writer) const
 
 void StringHasher::SaveDocFile (Base::Writer &writer) const {
     std::size_t count = _hashes->SaveAll ? this->size() : this->count();
-    writer.Stream() << count << '\n';
+    // saveStream() writes the new format, which RestoreDocFile() recognizes
+    // by this marker; without it the entries went to the legacy parser
+    writer.Stream() << "StringTableStart v1 " << count << '\n';
     saveStream(writer.Stream());
 }
 
@@ -791,8 +793,9 @@ size_t StringHasher::size() const
 size_t StringHasher::count() const
 {
     size_t count = 0;
+    // What saveStream() writes when not saving all (upstream a1ce983035)
     for(auto &v : _hashes->right)  {
-        if(v.second->getRefCount()>1) {
+        if(v.second->isMarked() || v.second->isPersistent()) {
             ++count;
         }
     }
