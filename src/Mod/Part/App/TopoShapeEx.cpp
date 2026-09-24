@@ -5108,6 +5108,28 @@ TopoShape &TopoShape::makEFillet(const TopoShape &shape,
     return makEShape(mkFillet,shape,op);
 }
 
+namespace {
+// The face a chamfer on edge of shape is measured from; the last of its faces
+// when flip. Throws for what BRepFilletAPI_MakeChamfer would take down the
+// process with: a degenerated edge, or an edge no face bounds.
+TopoDS_Face chamferFace(const TopoShape &shape, const TopoDS_Shape &edge, bool flip)
+{
+    if (BRep_Tool::Degenerated(TopoDS::Edge(edge)))
+        FC_THROWM(Base::CADKernelError, "chamfer edge is degenerated");
+    TopoDS_Shape face;
+    if (flip) {
+        auto faces = shape.findAncestorsShapes(edge, TopAbs_FACE);
+        if (!faces.empty())
+            face = faces.back();
+    }
+    else
+        face = shape.findAncestorShape(edge, TopAbs_FACE);
+    if (face.IsNull())
+        FC_THROWM(Base::CADKernelError, "chamfer edge has no adjacent face");
+    return TopoDS::Face(face);
+}
+} // anonymous namespace
+
 TopoShape &TopoShape::makEChamfer(const TopoShape &shape, const std::vector<TopoShape> &edges,
         double size, double size2, const char *op, bool flipDirection, bool asAngle)
 {
@@ -5126,15 +5148,11 @@ TopoShape &TopoShape::makEChamfer(const TopoShape &shape, const std::vector<Topo
         if(!shape.findShape(edge))
             FC_THROWM(Base::CADKernelError,"edge does not belong to the shape");
         //Add edge to fillet algorithm
-        TopoDS_Shape face;
-        if(flipDirection)
-            face = shape.findAncestorsShapes(edge,TopAbs_FACE).back();
-        else
-            face = shape.findAncestorShape(edge,TopAbs_FACE);
+        TopoDS_Face face = chamferFace(shape, edge, flipDirection);
         if(asAngle)
-            mkChamfer.AddDA(size, size2, TopoDS::Edge(edge), TopoDS::Face(face));
+            mkChamfer.AddDA(size, size2, TopoDS::Edge(edge), face);
         else
-            mkChamfer.Add(size, size2, TopoDS::Edge(edge), TopoDS::Face(face));
+            mkChamfer.Add(size, size2, TopoDS::Edge(edge), face);
     }
     return makEShape(mkChamfer,shape,op);
 }
@@ -5164,17 +5182,13 @@ TopoShape &TopoShape::makEChamfer(const TopoShape &shape,
         if(!shape.findShape(edge))
             FC_THROWM(Base::CADKernelError,"edge does not belong to the shape");
         //Add edge to fillet algorithm
-        TopoDS_Shape face;
-        if(info.flip)
-            face = shape.findAncestorsShapes(edge,TopAbs_FACE).back();
-        else
-            face = shape.findAncestorShape(edge,TopAbs_FACE);
+        TopoDS_Face face = chamferFace(shape, edge, info.flip);
         if(info.angle > 0.0)
-            mkChamfer.AddDA(info.size, Base::toRadians(info.angle), TopoDS::Edge(edge), TopoDS::Face(face));
+            mkChamfer.AddDA(info.size, Base::toRadians(info.angle), TopoDS::Edge(edge), face);
         else if (info.size2 > 0.0)
-            mkChamfer.Add(info.size, info.size2, TopoDS::Edge(edge), TopoDS::Face(face));
+            mkChamfer.Add(info.size, info.size2, TopoDS::Edge(edge), face);
         else
-            mkChamfer.Add(info.size, info.size, TopoDS::Edge(edge), TopoDS::Face(face));
+            mkChamfer.Add(info.size, info.size, TopoDS::Edge(edge), face);
     }
     return makEShape(mkChamfer,shape,op);
 }
