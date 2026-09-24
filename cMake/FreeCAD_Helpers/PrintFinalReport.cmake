@@ -175,6 +175,17 @@ macro(PrintFinalReport)
         conditional(SPNAV SPNAV_FOUND "not found" "[${SPNAV_LIBRARY}] [${SPNAV_INCLUDE_DIR}]")
     endif()
     conditional(Matplotlib MATPLOTLIB_FOUND "not found" "${MATPLOTLIB_VERSION} PathDirs: ${MATPLOTLIB_PATH_DIRS}")
+    # Runtime only, for the MCP debug console (src/Ext/freecad/mcp_console):
+    # checked here because an environment rebuilt without it builds fine and
+    # fails only when an agent tries to connect.
+    execute_process(COMMAND ${Python3_EXECUTABLE} -c
+                    "import importlib.metadata as m; import mcp.server; print(m.version('mcp'), end='')"
+                    OUTPUT_VARIABLE MCP_VERSION ERROR_QUIET)
+    if(MCP_VERSION)
+        simple(mcp "${MCP_VERSION} (MCP debug console)")
+    else()
+        simple(mcp "NOT FOUND -- the MCP debug console cannot start; conda install -c conda-forge mcp")
+    endif()
     if(BUILD_VR)
         conditional(Rift RIFT_FOUND "not found" ${Rift_VERSION})
     else()
