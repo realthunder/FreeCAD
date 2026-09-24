@@ -113,12 +113,14 @@ void Extrusion::handleChangedPropertyName(Base::XMLReader &reader, const char * 
     if (strcmp(TypeName, App::PropertyAngle::getClassTypeId().getName()) == 0) {
         // Deliberately change 'InnerTaperAngle' to TaperAngleInner to identify
         // document from Link branch
-        if (strcmp(Name, "InnerTaperAngle")) {
+        if (strcmp(Name, "InnerTaperAngle") == 0) {
             AutoTaperInnerAngle.setValue(false);
             TaperInnerAngle.Restore(reader);
-        } else if (strcmp(Name, "InnerTaperAngleRev")) {
+            return;
+        } else if (strcmp(Name, "InnerTaperAngleRev") == 0) {
             AutoTaperInnerAngle.setValue(false);
             TaperInnerAngleRev.Restore(reader);
+            return;
         }
     }
     Feature::handleChangedPropertyName(reader, TypeName, Name);
