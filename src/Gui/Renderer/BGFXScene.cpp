@@ -103,6 +103,18 @@ void BGFXRenderer::Private::makeSnapshot(Render::SceneSnapshot &snap,
         sov.id = ov.first;
         sov.anchor = ov.second.anchor;
         sov.draws = copyFeed(ov.second.draws);
+        // A draw with no vertices draws nothing here (submit returns on
+        // it), and on the other side of the wire it is indistinguishable
+        // from a mesh whose chunk has not landed yet. The viewer holds an
+        // overlay until every mesh in it is in -- so one empty draw held
+        // a feed forever: a Sketcher edit graph carries one, and a sketch
+        // in edit showed nothing in a streamed viewer.
+        sov.draws.erase(
+            std::remove_if(sov.draws.begin(), sov.draws.end(),
+                           [](const Render::DrawCall &d) {
+                               return d.mesh && d.mesh->numVertices == 0;
+                           }),
+            sov.draws.end());
         snap.overlays.push_back(std::move(sov));
     }
     snap.background = background;
