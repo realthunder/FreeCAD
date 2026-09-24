@@ -521,6 +521,19 @@ Application::Application(bool GUIenabled)
             auto self = Application::Instance;
             return self ? self->getViewProvider(obj) : nullptr;
         });
+        // An implicit transaction a GUI event opened outside any command
+        // closes once control is back in the event loop (sec 24.10): one
+        // event, one step.
+        App::Document::setImplicitCloser([]() {
+            static bool posted = false;
+            if (posted)
+                return;
+            posted = true;
+            QTimer::singleShot(0, []() {
+                posted = false;
+                App::GetApplication().commitImplicitTransactions();
+            });
+        });
 
         App::GetApplication().signalFinishOpenDocument.connect([]() {
             std::vector<App::Document*> docs;
@@ -730,6 +743,7 @@ Application::~Application()
 {
     Base::Console().Log("Destruct Gui::Application\n");
     App::Document::setViewResolver({});
+    App::Document::setImplicitCloser({});
     // A path tracer session released by a closing view is destroyed by
     // a worker, not where it was released (docs/CyclesIntegration.md
     // sec 5.12). Wait for those here: past this point the process

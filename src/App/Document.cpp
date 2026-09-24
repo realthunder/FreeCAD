@@ -255,6 +255,12 @@ Document::ViewResolver& viewResolver()
     return resolver;
 }
 
+std::function<void()>& implicitCloser()
+{
+    static std::function<void()> closer;
+    return closer;
+}
+
 /// The dynamic-property metadata of an addprop/delprop op, as
 /// TransactionLog writes it: group, doc, then "attr[ ro][ hidden]".
 struct DynamicMeta
@@ -905,7 +911,20 @@ void Document::_openImplicitTransaction()
     if (_openTransaction(name.c_str(), 0) && d->activeUndoTransaction) {
         d->activeUndoTransaction->Implicit = true;
         d->activeUndoTransaction->Origin = origin ? origin : "";
+        // Opened outside any invocation -- a GUI event that is not a
+        // command: nothing returns to close it, so the Gui closes it when
+        // control is back in its event loop (sec 24.10).
+        if (Application::InvocationScope::depth() == 0) {
+            auto& closer = implicitCloser();
+            if (closer)
+                closer();
+        }
     }
+}
+
+void Document::setImplicitCloser(std::function<void()> closer)
+{
+    implicitCloser() = std::move(closer);
 }
 
 void Document::commitImplicitTransaction()
@@ -928,10 +947,21 @@ void Document::_checkTransaction(DocumentObject* pcDelObj, const Property *What,
                     if(What->testStatus(Property::NoModify))
                         ignore = true;
                     else if(!Base::freecad_dynamic_cast<Document>(What->getContainer())
-                            && !DocumentParams::getViewObjectTransaction()
-                            && !AutoTransaction::recordViewObjectChange()
-                            && !Base::freecad_dynamic_cast<DocumentObject>(What->getContainer()))
-                        ignore = true;
+                            && !Base::freecad_dynamic_cast<DocumentObject>(What->getContainer())) {
+                        // A view provider's property. With the log on, a
+                        // saved one is document data like any other and is
+                        // recorded whatever ViewObjectTransaction says
+                        // (docs/TransactionLog.md sec 24.10); one that is
+                        // never saved is not.
+                        short type = What->getContainer()->getPropertyType(What);
+                        if (DocumentParams::getTransactionLog() != 0)
+                            ignore = (type & Prop_Transient) || (type & Prop_NoPersist)
+                                || What->testStatus(Property::Transient)
+                                || DerivedViewWrites::active();
+                        else if (!DocumentParams::getViewObjectTransaction()
+                                 && !AutoTransaction::recordViewObjectChange())
+                            ignore = true;
+                    }
                 }
                 if(name && tid>0) {
                     if(FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG)) {

@@ -367,6 +367,14 @@ public:
     static void setViewResolver(ViewResolver resolver);
     /// The view provider of `obj`, or null.
     static PropertyContainer* viewOf(const DocumentObject* obj);
+    /** Called when an implicit transaction opens outside any invocation
+     * (docs/TransactionLog.md sec 24.10): a GUI event that is not a command
+     * has nothing that returns to close it. The Gui registers one that
+     * commits the implicit transactions once control is back in its event
+     * loop; without one (FreeCADCmd) the next invocation, explicit open,
+     * save or close commits it, as before.
+     */
+    static void setImplicitCloser(std::function<void()> closer);
     /// Whether writes are recorded into transactions at all: undo is on,
     /// or the log is (which records without keeping undo steps).
     bool transactionsWanted() const;

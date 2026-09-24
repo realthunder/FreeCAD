@@ -11,6 +11,9 @@
 #include <zipios++/zipfile.h>
 
 #include "App/Application.h"
+#include "Base/Interpreter.h"
+#include "App/PropertyPythonObject.h"
+#include "App/AutoTransaction.h"
 #include "App/Document.h"
 #include "App/DocumentObject.h"
 #include "App/DocumentParams.h"
@@ -1684,4 +1687,95 @@ TEST_F(TransactionLogTest, coldUndoReachesViewProviders)
     ASSERT_TRUE(doc()->undoLogged(shadeRow.seq));
     EXPECT_EQ(view.Shade.getValue(), 0);
     EXPECT_EQ(a->Integer.getValue(), 7);
+}
+
+TEST_F(TransactionLogTest, viewChangesAreLoggedWhateverTheSetting)
+{
+    // Sec 24.10: with the log on, a view provider's saved property is
+    // document data -- recorded with ViewObjectTransaction off, in an
+    // implicit transaction of its own when none is open -- except while
+    // DerivedViewWrites says the Gui is only fitting view state to the model.
+    std::map<const App::DocumentObject*, TxnLogFakeView*> views;
+    App::Document::setViewResolver([&views](const App::DocumentObject* obj) {
+        auto it = views.find(obj);
+        return it == views.end() ? nullptr : static_cast<App::PropertyContainer*>(it->second);
+    });
+    const bool viewTxn = App::DocumentParams::getViewObjectTransaction();
+    App::DocumentParams::setViewObjectTransaction(false);
+    struct Reset
+    {
+        bool viewTxn;
+        ~Reset()
+        {
+            App::Document::setViewResolver({});
+            App::DocumentParams::setViewObjectTransaction(viewTxn);
+        }
+    } reset {viewTxn};
+
+    doc()->openTransaction("create");
+    auto a = make("A");
+    doc()->commitTransaction();
+    TxnLogFakeView view;
+    view.owner = a;
+    views[a] = &view;
+    auto& store = log().store();
+    const size_t rows = store.transactions().size();
+
+    view.Shade.setValue(3);   // no transaction open, the setting off
+    EXPECT_TRUE(doc()->hasPendingTransaction());
+    doc()->commitTransaction();
+    auto txns = store.transactions();
+    ASSERT_EQ(txns.size(), rows + 1);
+    EXPECT_EQ(txns.back().kind, "implicit");
+    auto ops = store.ops(txns.back().seq);
+    ASSERT_EQ(ops.size(), 1u);
+    EXPECT_EQ(ops[0].ckind, "view");
+    EXPECT_EQ(ops[0].prop, "Shade");
+    ASSERT_TRUE(doc()->undo());
+    EXPECT_EQ(view.Shade.getValue(), 0);
+    ASSERT_TRUE(doc()->redo());
+
+    {
+        App::DerivedViewWrites derived;
+        view.Shade.setValue(4);
+    }
+    EXPECT_FALSE(doc()->hasPendingTransaction());
+    EXPECT_EQ(store.transactions().size(), rows + 3);   // the undo and the redo rows
+}
+
+TEST_F(TransactionLogTest, pythonObjectValuesAreCapturedOnTheMainThread)
+{
+    // Sec 24.10: a Proxy's value is pickled through the interpreter; the
+    // copy the undo system took has no container, and its Save must not
+    // need one, nor run on the worker.
+    doc()->openTransaction("create");
+    auto obj = doc()->addObject("App::FeaturePython", "FP");
+    doc()->commitTransaction();
+    ASSERT_TRUE(obj);
+    auto proxy = dynamic_cast<App::PropertyPythonObject*>(obj->getPropertyByName("Proxy"));
+    ASSERT_TRUE(proxy);
+    for (const char* cls : {"First", "Second"}) {
+        doc()->openTransaction(cls);
+        {
+            Base::PyGILStateLocker lock;
+            Base::Interpreter().runString(
+                (std::string("class ") + cls + ":\n    pass\n").c_str());
+            proxy->setValue(Base::Interpreter().runStringObject((std::string(cls) + "()").c_str()));
+        }
+        doc()->commitTransaction();
+    }
+    log().resolvePending();
+    auto& store = log().store();
+    auto txns = store.transactions();
+    ASSERT_GE(txns.size(), 2u);
+    bool found = false;
+    for (auto& o : store.ops(txns.back().seq)) {
+        if (o.prop != "Proxy")
+            continue;
+        found = true;
+        App::CapturedValue before;
+        ASSERT_TRUE(log().readValue(o.vbefore, before));
+        EXPECT_NE(before.fragment.find("First"), std::string::npos) << before.fragment;
+    }
+    EXPECT_TRUE(found);
 }

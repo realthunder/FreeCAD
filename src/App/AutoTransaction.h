@@ -90,6 +90,22 @@ private:
 };
 
 
+/** View state the Gui derives from the model (docs/TransactionLog.md sec
+ * 24.10) -- an origin fitted to the model's extent, say -- is not an edit.
+ * While one of these lives, a view provider's property written with no
+ * transaction open opens none, whatever the log would otherwise do; inside
+ * an open transaction it is recorded as before, so undo stays exact.
+ */
+class AppExport DerivedViewWrites {
+public:
+    DerivedViewWrites();
+    ~DerivedViewWrites();
+    DerivedViewWrites(const DerivedViewWrites&) = delete;
+    DerivedViewWrites& operator=(const DerivedViewWrites&) = delete;
+    static bool active();
+};
+
+
 /** Helper class to lock a transaction from being closed or aborted.
  *
  * The helper class is used to protect some critical transaction from being

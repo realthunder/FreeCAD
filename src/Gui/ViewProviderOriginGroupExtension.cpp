@@ -30,6 +30,7 @@
 #include <QTimer>
 #endif
 
+#include <App/AutoTransaction.h>
 #include <App/Document.h>
 #include <App/DocumentObserver.h>
 #include <App/GeoFeature.h>
@@ -160,6 +161,8 @@ void ViewProviderOriginGroupExtension::updateOriginSize () {
               || owner->testStatus(App::ObjectStatus::Remove)
               || owner->getDocument()->isPerformingTransaction())
         return;
+    // Fitted to the model, not edited (docs/TransactionLog.md sec 24.10).
+    App::DerivedViewWrites derived;
 
     auto* group = owner->getExtensionByType<App::OriginGroupExtension>();
     if(!group)

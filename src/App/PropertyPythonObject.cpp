@@ -261,13 +261,16 @@ void PropertyPythonObject::saveObject(Base::Writer &writer) const
 {
     Base::PyGILStateLocker lock;
     try {
+        // A detached copy (the transaction log serialises the copy the undo
+        // system took, docs/TransactionLog.md sec 24.10) has no container;
+        // the attribute alone then says which it was.
         PropertyContainer* parent = this->getContainer();
-        if (parent->isDerivedFrom(Base::Type::fromName("App::DocumentObject"))) {
+        if (!parent || parent->isDerivedFrom(Base::Type::fromName("App::DocumentObject"))) {
             if (this->object.hasAttr("__object__")) {
                 writer.Stream() << " object=\"yes\"";
             }
         }
-        if (parent->isDerivedFrom(Base::Type::fromName("Gui::ViewProvider"))) {
+        if (!parent || parent->isDerivedFrom(Base::Type::fromName("Gui::ViewProvider"))) {
             if (this->object.hasAttr("__vobject__")) {
                 writer.Stream() << " vobject=\"yes\"";
             }

@@ -45,6 +45,7 @@
 #include "FileBlobManager.h"
 #include "Property.h"
 #include "PropertyLinks.h"
+#include "PropertyPythonObject.h"
 #include "Transactions.h"
 
 FC_LOG_LEVEL_INIT("App", true, true)
@@ -1392,9 +1393,21 @@ void TransactionLog::takePending(int64_t key, ValueTask& task)
 
 void TransactionLog::ValueTask::captureNow(const CaptureConfig& config)
 {
-    if (copy && dynamic_cast<const PropertyLinkBase*>(copy.get())) {
+    if (!copy)
+        return;
+    if (dynamic_cast<const PropertyLinkBase*>(copy.get())) {
         captured = captureValue(config, *copy);
         isCaptured = true;
+    }
+    else if (dynamic_cast<const PropertyPythonObject*>(copy.get())) {
+        // A Python object (a Proxy) is Python's to touch, on the thread that
+        // runs it: its Save pickles through the interpreter, and releasing
+        // the copy drops a reference. Both happen here, never on the worker
+        // (sec 24.10: a view provider's Proxy, once view changes were
+        // recorded, crashed the worker).
+        captured = captureValue(config, *copy);
+        isCaptured = true;
+        copy.reset();
     }
 }
 
@@ -1402,7 +1415,7 @@ void TransactionLog::writeValues(std::vector<ValueTask>& tasks, std::vector<LogO
 {
     for (auto& task : tasks) {
         std::string hash;
-        if (task.copy) {
+        if (task.copy || task.isCaptured) {
             // A value that names its blob (decision 6b, `hash=` in the
             // fragment) is complete only while the file exists: the blob
             // is an entity of its own, held as long as the value is
@@ -1411,7 +1424,8 @@ void TransactionLog::writeValues(std::vector<ValueTask>& tasks, std::vector<LogO
                                                : captureValue(_config, *task.copy);
             // A shape names its file without noting it (it notes in
             // beforeSave, which a capture does not run): its contentBlob().
-            if (auto referrer = dynamic_cast<const BlobReferrerProperty*>(task.copy.get())) {
+            if (auto referrer = task.copy ? dynamic_cast<const BlobReferrerProperty*>(task.copy.get())
+                                          : nullptr) {
                 auto blob = referrer->contentBlob();
                 if (blob && std::find(cv.blobs.begin(), cv.blobs.end(), blob) == cv.blobs.end())
                     cv.blobs.push_back(blob);

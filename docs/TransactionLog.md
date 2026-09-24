@@ -3138,3 +3138,113 @@ home --
 -- a box's colour changed, pushed past a window of 2 and undone cold,
 redone; restored to the version before the colour, the restore undone.
 14 checks, all PASS on 2026-09-24.
+
+### 24.10 Every saved view-provider property, with the log on (user, 2026-09-24)
+
+24.9 made view-provider state undo state when `ViewObjectTransaction` says
+so. The user then asked for the log to capture view-object changes
+regardless of the settings -- "colours are important in CAD". A web survey
+of how other tools draw the line (Fusion, Onshape, NX, Inventor, Creo,
+CATIA 3DEXPERIENCE, SolidWorks, Rhino, KiCad, Figma, Photoshop; forum and
+snippet evidence mostly, vendor forums refusing to load) found:
+
+- No tool classifies by *who* made the change (user or application). They
+  classify by *kind of state*: persisted design data (appearance, and in
+  Fusion and Onshape visibility) is a transaction and undoable; transient
+  or per-user view state (camera, isolate, temporary transparency) is not
+  recorded at all. Fusion's forum answer: "any change that needs to be
+  persisted is a transaction".
+- The camera is in no tool's model undo; SolidWorks and Rhino give it a
+  separate "undo view" stack.
+- No CAD tool has a switch like `ViewObjectTransaction`; Photoshop's "Make
+  Layer Visibility Changes Undoable" is the one analogue found.
+- Changes the application makes itself are governed by behaviour
+  preferences (Fusion's "Auto hide sketch on feature creation"), not by
+  undo rules; NX's invisible undo marks are the only mechanism found for
+  keeping internal steps out of the user's list.
+
+**Ruling.** With the log on, a view provider's saved property is document
+data like an object's: a change to it is recorded whatever
+`ViewObjectTransaction` says -- inside an open transaction as before, and
+otherwise in an implicit one of its own. A property that is never saved
+(`Prop_Transient`, `Prop_NoPersist`, `Property::Transient`) is not. With
+the log off nothing changes. Where application code writes view state
+outside any command and does not put it back, the fix is at that site --
+grouped into its command, or kept out of the record -- as 23.6 rules for
+escaping writes, not a setting. What a task dialog hides and shows again
+inside its transaction costs nothing: a set whose before and after are
+the same is not logged (sec 9.1).
+
+**The camera is not this.** Considered as a view property logged in
+log-only rows, then withdrawn by the user the same day: bundled with
+property ops it would cause trouble. It gets its own mechanism later -- a
+session-only undo/redo stack for view configuration, in the spirit of
+SolidWorks' and Rhino's "undo view". The ad hoc `<Camera>` XML of
+GuiDocument.xml stays as it is until then.
+
+**GUI events outside any command.** A tree checkbox, a property-editor
+path that sets no application transaction, a signal handler: an implicit
+transaction opened there has no invocation to return from (sec 21). The
+Gui now registers `Document::setImplicitCloser`, called when an implicit
+transaction opens at invocation depth 0; it posts one zero-delay timer
+that commits the implicit transactions once control is back in the event
+loop -- one event, one step. Without a Gui the old rule stands (the next
+invocation, explicit open, save or close commits it).
+
+**As built (2026-09-24).** `Document::_checkTransaction`: with the log on, a
+view provider's property opens a transaction unless it is never saved or
+`DerivedViewWrites` is active; with the log off, `ViewObjectTransaction`
+and `AutoTransaction::recordViewObjectChange()` decide as before.
+`Document::setImplicitCloser`, registered by `Gui::Application`, commits a
+depth-0 implicit transaction on the next event-loop turn.
+
+**The audit.** `scripts/transaction-log-view-audit.py`, run like the view
+check of 24.9 (`AUDIT_OUT` for its report), drives the GUI through
+Part_Box, visibility toggles, colour by property and by Std_RandomColor,
+the fit and isometric views, a PartDesign body, sketch and pad, edits
+entered the way the tree's double click enters them (an application
+transaction kept open while the edit lasts) and bare `setEdit` from a
+script, undo, redo, hide/show selection, selectability and a save, and
+lists every row with its view and data ops. What it found:
+
+- Commands and deliberate writes come out as one step each, named after
+  the command, or `<implicit>` for a script's or console's bare write.
+- An edit entered as the tree enters it costs nothing: what it hides it
+  shows again inside the same transaction, and a set whose before and
+  after are the same is not logged. A script's bare `setEdit`/`resetEdit`
+  writes `TempoVis` and visibility in steps of its own -- the script's
+  writes, logged as such.
+- **The one site that needed a fix:** `ViewProviderOriginGroupExtension::
+  updateOriginSize` refits a body's origin (`Size` of the origin, its
+  planes and axes -- seven view providers) after the model changes, from
+  a deferred call outside any transaction: a view-only step the user never
+  made. It now runs under `App::DerivedViewWrites`.
+- The tree's visibility (eye) and unselectable icons write `Visibility`
+  and `Selectable` with no command. With the log on each click now opens a
+  named transaction ("Toggle visibility", "Toggle selectability"); off,
+  exactly as before -- an `AutoTransaction` even without a name commits
+  the active transaction when it goes, which could close an edit session,
+  so it is not constructed then. Alt+click (show on top) changes a 3D
+  view's property, not a view provider's, and is not touched.
+- Rows of App data the audit also shows (`TreeRank` on a bare `setEdit`, a
+  shape cache on fit, the document's stamps at save) are App writes the
+  log has recorded since section 21; not this section's.
+
+**Two defects the audit found**, both latent since section 21 and reached
+only once view providers were recorded, where their Python proxies live:
+
+- `PropertyPythonObject::saveObject` dereferenced its container, which the
+  copy the undo system takes does not have: any change to a
+  `FeaturePython` object's `Proxy` would have crashed the log's worker. It
+  now writes `object`/`vobject` from the attributes alone on a copy.
+- A Python value was serialised on the worker thread, and its copy
+  released there: Python is the main thread's. `ValueTask::captureNow`
+  captures a `PropertyPythonObject` on the main thread, as it does links,
+  and drops the copy there.
+
+Gtests: `viewChangesAreLoggedWhateverTheSetting` (the stand-in view
+provider of 24.9 with `ViewObjectTransaction` off: a bare change opens an
+implicit transaction, logged, undone and redone; under `DerivedViewWrites`
+none opens) and `pythonObjectValuesAreCapturedOnTheMainThread` (a
+`FeaturePython` Proxy replaced twice; the before value names the first
+class).

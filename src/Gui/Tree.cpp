@@ -57,6 +57,7 @@
 #include <App/DocumentObjectGroup.h>
 #include <App/DocumentParams.h>
 #include <App/AutoTransaction.h>
+#include <optional>
 #include <App/GeoFeatureGroupExtension.h>
 #include <App/Link.h>
 
@@ -2971,8 +2972,14 @@ void TreeWidget::mousePressEvent(QMouseEvent *event) {
             if (event->button() == Qt::LeftButton) {
                 if (event->modifiers() & Qt::AltModifier)
                     pimpl->toggleItemShowOnTop(oitem);
-                else
+                else {
+                    // With the log on a click is a step of its own, named
+                    // (docs/TransactionLog.md sec 24.10); off, as it was.
+                    std::optional<App::AutoTransaction> committer;
+                    if (App::DocumentParams::getTransactionLog() != 0)
+                        committer.emplace("Toggle visibility");
                     pimpl->toggleItemVisibility(oitem);
+                }
                 pimpl->skipMouseRelease = true;
                 event->setAccepted(true);
                 return;
@@ -2980,6 +2987,9 @@ void TreeWidget::mousePressEvent(QMouseEvent *event) {
         }
         else if (tag == Gui::treeUnselectableIconTag()) {
             if (event->button() == Qt::LeftButton) {
+                std::optional<App::AutoTransaction> committer;
+                if (App::DocumentParams::getTransactionLog() != 0)
+                    committer.emplace("Toggle selectability");
                 oitem->object()->Selectable.setValue(true);
                 pimpl->skipMouseRelease = true;
                 event->setAccepted(true);
