@@ -214,6 +214,10 @@ public:
     /// fewer asks the manager itself.
     void snapPoint(double& x, double& y) const;
 
+    /// Hand the grid its look from the Sketcher preferences. The grid
+    /// extension reads no preference itself; this is its only source.
+    void updateGridParameters();
+
     /// Show/Hide nodes from information layer
     void showRestoreInformationLayer();
 

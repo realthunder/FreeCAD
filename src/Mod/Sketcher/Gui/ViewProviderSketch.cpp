@@ -938,6 +938,22 @@ void ViewProviderSketch::snapPoint(double& x, double& y) const
     y = pos.y;
 }
 
+void ViewProviderSketch::updateGridParameters()
+{
+    ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Mod/Sketcher/General");
+    // The defaults are the extension's own, so a missing entry changes nothing.
+    const unsigned long grey = SbColor(0.7f, 0.7f, 0.7f).getPackedValue();
+    setGridSizePixelThreshold(hGrp->GetInt("GridSizePixelThreshold", 15));
+    setGridNumberSubdivision(hGrp->GetInt("GridNumberSubdivision", 10));
+    setGridLinePattern(hGrp->GetInt("GridLinePattern", 0x0f0f));
+    setGridDivLinePattern(hGrp->GetInt("GridDivLinePattern", 0xffff));
+    setGridLineWidth(hGrp->GetInt("GridLineWidth", 1));
+    setGridDivLineWidth(hGrp->GetInt("GridDivLineWidth", 2));
+    setGridLineColor(App::Color(static_cast<uint32_t>(hGrp->GetUnsigned("GridLineColor", grey))));
+    setGridDivLineColor(App::Color(static_cast<uint32_t>(hGrp->GetUnsigned("GridDivLineColor", grey))));
+}
+
 void ViewProviderSketch::getProjectingLine(const SbVec2s& pnt, const Gui::ViewerContext *viewer, SbLine& line) const
 {
     SoCamera* pCam = viewer->getSoRenderManager()->getCamera();
@@ -4685,7 +4701,6 @@ void ViewProviderSketch::OnChange(Base::Subject<const char*> &rCaller, const cha
         "EditSketcherFontSize",
         "EditedVertexColor",
         "EditedEdgeColor",
-        "GridLinePattern",
         "CreateLineColor",
         "ConstructionColor",
         "InternalAlignedGeoColor",
@@ -4708,9 +4723,21 @@ void ViewProviderSketch::OnChange(Base::Subject<const char*> &rCaller, const cha
         "HighlightColor",
         "SelectionColor",
     };
+    static std::unordered_set<const char *, App::CStringHasher, App::CStringHasher> gridDict = {
+        "GridSizePixelThreshold",
+        "GridNumberSubdivision",
+        "GridLinePattern",
+        "GridDivLinePattern",
+        "GridLineWidth",
+        "GridDivLineWidth",
+        "GridLineColor",
+        "GridDivLineColor",
+    };
     if(!edit) return;
     if (dict.count(sReason))
         edit->timer.start(100);
+    else if (gridDict.count(sReason))
+        updateGridParameters();
     else if (boost::equals(sReason, _ParamAllowFaceExternal))
         _AllowFaceExternal = edit->hSketchGeneral->GetBool(_ParamAllowFaceExternal, true);
     else if (boost::equals(sReason, _ParamSnapTolerance))
@@ -7785,6 +7812,7 @@ bool ViewProviderSketch::setEdit(int ModNum)
     auto gridnode = getGridNode();
     Base::Placement plm = getEditingPlacement();
     setGridOrientation(plm.getPosition(), plm.getRotation());
+    updateGridParameters();
     addNodeToRoot(gridnode);
     setGridEnabled(true);
     // create the container for the additional edit data

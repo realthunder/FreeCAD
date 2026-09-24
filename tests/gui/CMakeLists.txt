@@ -208,6 +208,15 @@ fc_add_gui_test(GuiSketchSupportVisibility_tests_run
                 sketch-support-visibility.py
                 --timeout 240)
 
+# The Sketcher's grid display preferences reach the grid. The grid
+# extension reads no preference itself and takes its look from setters,
+# which upstream calls from ViewProviderSketch's ParameterObserver; this
+# fork has none, and the 2023 merge that brought the extension in dropped
+# the calls, so the Grid display page wrote values nothing read.
+fc_add_gui_test(GuiSketchGridPreferences_tests_run
+                sketch-grid-preferences.py
+                --timeout 180)
+
 # Auto-constraints for a DRAG, not only for a drawing tool (upstream
 # ec298e9e9a and its follow-ups): hold a dragged point still on top of
 # another point and the Coincident that pins it there is written when
