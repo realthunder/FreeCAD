@@ -31,7 +31,7 @@ Upstream's `f4665aa7b5` ("Core: support multiple active transactions") was
 evaluated and **declined**; `docs/TransactionLog.md` records why, and the
 direction the user wants instead.
 
-**Where the ledger stands (2026-09-23).** 1149 rows, of which 323 are open
+**Where the ledger stands (2026-09-25).** 1149 rows, of which 308 are open
 and undecided, down from 503 over three sessions of reading blobs rather
 than commits. First the 33 files the handler resyncs touched: 21 are
 identical to upstream's tip modulo whitespace, closing 74 rows at once
@@ -2374,6 +2374,71 @@ measured: sketch A in edit, then sketch B picked through an `App::Link`
 rotated 180 deg about X -- the switched edit gets exactly the transform B
 gets on its own. The fork's `setEdit` asks the selection *context*
 first, and that still names the Link path after the re-select.
+
+### Select All and bulk selection (session 93): 55 -> 48, and a crash
+
+Seven named rows -- select-all (`3b76d77ed8`, `95840a79d3`, `061e185e7f`,
+`ca8bfc6180`, `e278d22d42`), the bulk-selection speed-up `0fa707c523` and
+its box-selection follow-up `af053f19f5` -- plus `887c8d3bdf` from the
+subject search, and the core half of `b9db90ea20`, which the ledger had
+marked have(sync) on its Sketcher files alone. Five fork commits:
+
+- `26ce6d0b25` **A bulk selection reached no observer of a sketch edit.**
+  `Selection().addSelections()` pauses notification, and past
+  `MaxSelectionNotification` (100) the core replaces the queued adds with
+  one `SetSelection`, "re-read the selection". `ViewProviderSketch` and
+  both task panels ignored it: 200 of 200 selected, 0 coloured, 0 rows.
+  All three now re-read -- the instance they *observe*
+  (`SelectionObserver::observedSelection()`, new), since a served edit's
+  view provider listens to its client's instance, not `Gui::Selection()`.
+- `4d7427e0ff` **A pre-existing SIGSEGV**: `sketchClosed()` cleared the
+  elements tree but not `itemMap`, and the panel keeps observing until it
+  is deleted. Re-edit the same sketch in one event-loop turn, select an
+  edge, crash. Found because the re-read walks every `itemMap` entry.
+- `e5ea2e9118` Box selection as one `addSelections()` batch. Measured,
+  release to selection: 600 elements 0.314 s -> 0.032 s, 3000 elements
+  3.738 s -> 0.120 s; the old cost grew with the square of the count
+  (gdb stack samples: the elements tree's per-item `setSelected`, the
+  selection stack copying the whole selection per add, the sketch's
+  per-item recolour).
+- `7a31d66c3b` The spreadsheet keeps Ctrl+A (upstream `4f4e9244e6`), taken
+  first because of the next one.
+- `745518e1e8` Select All: Ctrl+A bound to `Std_SelectAll` (upstream bound
+  it in `3b76d77ed8`, outside the ledger's paths), the command asks the
+  edited view provider first and is `AlterSelection` only (with the
+  default `AlterDoc` the sketch's task dialog disables it), and
+  `ViewProviderSketch::selectAll()` at upstream's end state.
+
+**The fork route, not upstream's.** Upstream buffers in every observer
+(`selectionBuffering`, a selection buffer flushed on a timer in each panel
+-- and `887c8d3bdf` is that buffer's dangling-pointer crash). The fork's
+core already coalesces a paused batch; the observers only had to honour
+it. So no timers were imported, and `887c8d3bdf` is n/a.
+
+Adapted: `selectAll()` asks the sketch for each element's start/end/mid
+vertex index instead of counting vertices per geometry type (what
+`e278d22d42` had to fix, and the fork's text geometry is not in that
+list). Not taken: `061e185e7f`'s timer handing focus back to a list after
+a click -- a QTest click keeps focus in both lists here, measured.
+
+Guards: `GuiSketchBulkSelection_tests_run` (batches and a synthetic desktop
+box drag, counted by a Python selection observer: 600 single adds before,
+one SetSelection after), `GuiSketchReEditSelect_tests_run`,
+`GuiSketchSelectAll_tests_run`, `GuiSpreadsheetSelectAll_tests_run`.
+
+Two lessons. **A row's decision is only as wide as the ledger's path
+filter**: `b9db90ea20` read have(sync), and `3b76d77ed8` read as touching
+one file, while both carried a core half the fork lacked -- the second
+one a global shortcut. List a family's commits with `--stat` over the
+whole tree. And **a synthetic desktop box drag works** (QMouseEvents sent
+to the `View3DInventorViewer`, pixels from `view.getPointOnViewport`, y
+flipped), unlike synthetic preselection; keep the geometry off the axes
+and hide other sketches, or the press lands on something.
+
+Left open: clicking a row of the elements list with synthetic QTest
+input selected nothing (the constraints list did). The panel acts on the
+row it saw through hover (`itemEntered`), so this may be the known limit
+of synthetic hover, not a defect -- not established either way.
 
 ## 7a. The constraint-tool hints (session 85)
 
