@@ -208,6 +208,13 @@ fc_add_gui_test(GuiSketchSupportVisibility_tests_run
                 sketch-support-visibility.py
                 --timeout 240)
 
+# Ctrl+A in a focused spreadsheet selects its cells (upstream 4f4e9244e6):
+# Ctrl+A is Std_SelectAll's window shortcut, and the table keeps it only by
+# claiming it in ShortcutOverride.
+fc_add_gui_test(GuiSpreadsheetSelectAll_tests_run
+                spreadsheet-select-all.py
+                --timeout 180)
+
 # Selecting in a sketch re-edited within one event-loop turn: the first
 # edit's elements panel still observes the selection until it is deleted,
 # and kept itemMap pointing at the tree items sketchClosed() deleted.
