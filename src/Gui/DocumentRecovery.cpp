@@ -40,10 +40,12 @@
 # include <QHash>
 # include <QHeaderView>
 # include <QList>
+# include <QLocale>
 # include <QMap>
 # include <QMenu>
 # include <QMessageBox>
 # include <QProgressDialog>
+# include <QStyle>
 # include <QSet>
 # include <QTextStream>
 # include <QTimer>
@@ -167,12 +169,22 @@ public:
         Success = 3, /*!< The file could be recovered */
         Failure = 4, /*!< The file could not be recovered */
     };
+    /// Why an entry is not checked by default: a short reason for the status
+    /// column and the confirmation, and the full text for the tooltip
+    struct Warning {
+        QString reason;
+        QString text;
+    };
     struct Info {
+        QString directory;
         QString projectFile;
         QString xmlFile;
         QString label;
         QString fileName;
         QString tooltip;
+        QDateTime modified;
+        bool noLock = false;
+        QList<Warning> warnings;
         Status status = Unknown;
     };
     Ui_DocumentRecovery ui;
@@ -182,38 +194,168 @@ public:
     Info getRecoveryInfo(const QFileInfo&) const;
     void writeRecoveryInfo(const Info&) const;
     XmlConfig readXmlFile(const QString& fn) const;
+    static QList<Warning> warnings(const Info&);
+
+    /// The recovery info an item of the tree stands for
+    Info& info(const QTreeWidgetItem* item)
+    {
+        return recoveryInfo[item->data(0, Qt::UserRole).toInt()];
+    }
 };
 
 }
 }
 
-DocumentRecovery::DocumentRecovery(const QList<QFileInfo>& dirs, QWidget* parent)
+namespace {
+
+constexpr int ModifiedColumn = 2;
+
+/// Sorts the time column by time rather than by its text
+class RecoveryItem : public QTreeWidgetItem
+{
+public:
+    using QTreeWidgetItem::QTreeWidgetItem;
+
+    bool operator<(const QTreeWidgetItem& other) const override
+    {
+        int column = treeWidget() ? treeWidget()->sortColumn() : 0;
+        if (column == ModifiedColumn) {
+            return data(ModifiedColumn, Qt::UserRole).toDateTime()
+                < other.data(ModifiedColumn, Qt::UserRole).toDateTime();
+        }
+        return QTreeWidgetItem::operator<(other);
+    }
+};
+
+}
+
+DocumentRecovery::DocumentRecovery(const QList<QFileInfo>& dirs,
+                                   const QList<QFileInfo>& lockless,
+                                   QWidget* parent)
   : QDialog(parent), d_ptr(new DocumentRecoveryPrivate())
 {
     d_ptr->ui.setupUi(this);
     connect(d_ptr->ui.buttonCleanup, &QPushButton::clicked,
             this, &DocumentRecovery::onButtonCleanupClicked);
     d_ptr->ui.buttonBox->button(QDialogButtonBox::Ok)->setText(tr("Start Recovery"));
-    d_ptr->ui.treeWidget->header()->setSectionResizeMode(QHeaderView::Stretch);
+    QTreeWidget* tree = d_ptr->ui.treeWidget;
+    // The name takes what the status and the time leave
+    tree->header()->setStretchLastSection(false);
+    tree->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    tree->header()->setSectionResizeMode(0, QHeaderView::Stretch);
 
     d_ptr->recovered = false;
 
-    for (QList<QFileInfo>::const_iterator it = dirs.begin(); it != dirs.end(); ++it) {
-        DocumentRecoveryPrivate::Info info = d_ptr->getRecoveryInfo(*it);
-
-        if (info.status == DocumentRecoveryPrivate::Created) {
-            d_ptr->recoveryInfo << info;
-
-            auto item = new QTreeWidgetItem(d_ptr->ui.treeWidget);
-            item->setText(0, info.label);
-            item->setToolTip(0, info.tooltip);
-            item->setText(1, tr("Not yet recovered"));
-            item->setToolTip(1, info.projectFile);
-            d_ptr->ui.treeWidget->addTopLevelItem(item);
+    // Recovery data older than the saved file, and data no lock file claims,
+    // are listed too, unchecked and marked, so that they can be looked at and
+    // cleaned up rather than kept on disk forever
+    QList<DocumentRecoveryPrivate::Info> infos;
+    auto collect = [&](const QList<QFileInfo>& list, bool noLock) {
+        for (const QFileInfo& dir : list) {
+            DocumentRecoveryPrivate::Info info = d_ptr->getRecoveryInfo(dir);
+            if (info.status == DocumentRecoveryPrivate::Created
+                || info.status == DocumentRecoveryPrivate::Overage) {
+                info.noLock = noLock;
+                info.warnings = DocumentRecoveryPrivate::warnings(info);
+                infos << info;
+            }
         }
+    };
+    collect(dirs, false);
+    collect(lockless, true);
+
+    // The entries checked by default first, the marked ones after; newest
+    // first within each
+    std::stable_sort(infos.begin(), infos.end(), [](const auto& a, const auto& b) {
+        if (a.warnings.isEmpty() != b.warnings.isEmpty())
+            return a.warnings.isEmpty();
+        return a.modified > b.modified;
+    });
+    d_ptr->recoveryInfo = infos;
+
+    QLocale locale;
+    QIcon warningIcon = style()->standardIcon(QStyle::SP_MessageBoxWarning);
+    for (int i = 0; i < infos.size(); ++i) {
+        const auto& info = infos[i];
+        auto item = new RecoveryItem(tree);
+        item->setData(0, Qt::UserRole, i);
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+        item->setText(0, info.label);
+        item->setToolTip(0, info.tooltip);
+        item->setText(1, tr("Not yet recovered"));
+        item->setToolTip(1, info.projectFile);
+        item->setText(ModifiedColumn, locale.toString(info.modified, QLocale::ShortFormat));
+        item->setData(ModifiedColumn, Qt::UserRole, info.modified);
+        if (!info.warnings.isEmpty()) {
+            QStringList texts;
+            for (const auto& warning : info.warnings)
+                texts << warning.text;
+            QString tooltip = texts.join(QStringLiteral("\n\n"));
+            item->setIcon(0, warningIcon);
+            item->setText(1, info.warnings.front().reason);
+            for (int column = 0; column < tree->columnCount(); ++column)
+                item->setToolTip(column, tooltip);
+        }
+        item->setCheckState(0, info.warnings.isEmpty() ? Qt::Checked : Qt::Unchecked);
     }
 
+    // Sortable by a click on a header; until then the order above stands
+    tree->header()->setSortIndicator(-1, Qt::AscendingOrder);
+    tree->setSortingEnabled(true);
+
+    connect(tree, &QTreeWidget::itemChanged, this, &DocumentRecovery::updateButtons);
+    updateButtons();
+
     this->adjustSize();
+    // Room for a document name beside the status and the time
+    resize(std::max(width(), fontMetrics().averageCharWidth() * 90), height());
+}
+
+QList<DocumentRecoveryPrivate::Warning> DocumentRecoveryPrivate::warnings(const Info& info)
+{
+    QList<Warning> list;
+    if (info.status == Overage) {
+        QString text = DocumentRecovery::tr("The recovery data is older than the saved file\n%1\n\n"
+                                            "Recovering it brings back an older state of the "
+                                            "document than the one saved.").arg(info.fileName);
+        QFileInfo saved(info.fileName);
+        if (!info.fileName.isEmpty() && saved.exists()) {
+            QLocale locale;
+            text += QStringLiteral("\n\n")
+                + DocumentRecovery::tr("Recovery data: %1\nSaved file: %2")
+                      .arg(locale.toString(info.modified, QLocale::ShortFormat),
+                           locale.toString(saved.lastModified(), QLocale::ShortFormat));
+        }
+        list.append({DocumentRecovery::tr("Older than the saved file"), text});
+    }
+    if (info.noLock) {
+        list.append({DocumentRecovery::tr("No lock file"),
+                     DocumentRecovery::tr("No FreeCAD session claims this recovery data: its "
+                                          "directory has no lock file. It may be left from a "
+                                          "session whose lock file an earlier cleanup removed, "
+                                          "or could not be created.\n\n"
+                                          "Check that it holds the state you expect before "
+                                          "recovering it.")});
+    }
+    return list;
+}
+
+QList<QTreeWidgetItem*> DocumentRecovery::checkedItems() const
+{
+    QList<QTreeWidgetItem*> items;
+    for (int i = 0; i < d_ptr->ui.treeWidget->topLevelItemCount(); ++i) {
+        QTreeWidgetItem* item = d_ptr->ui.treeWidget->topLevelItem(i);
+        if ((item->flags() & Qt::ItemIsUserCheckable) && item->checkState(0) == Qt::Checked)
+            items << item;
+    }
+    return items;
+}
+
+void DocumentRecovery::updateButtons()
+{
+    bool checked = !checkedItems().isEmpty();
+    d_ptr->ui.buttonCleanup->setEnabled(checked);
+    d_ptr->ui.buttonBox->button(QDialogButtonBox::Ok)->setEnabled(d_ptr->recovered || checked);
 }
 
 DocumentRecovery::~DocumentRecovery() = default;
@@ -251,14 +393,39 @@ void DocumentRecovery::accept()
     Q_D(DocumentRecovery);
 
     if (!d->recovered) {
+        const QList<QTreeWidgetItem*> checked = checkedItems();
+        if (checked.isEmpty())
+            return;
+
+        QStringList marked;
+        for (QTreeWidgetItem* item : checked) {
+            const auto& info = d->info(item);
+            QStringList reasons;
+            for (const auto& warning : info.warnings)
+                reasons << warning.reason;
+            if (!reasons.isEmpty())
+                marked << QStringLiteral("%1: %2").arg(info.label, reasons.join(QStringLiteral(", ")));
+        }
+        if (!marked.isEmpty()) {
+            QMessageBox msgBox(this);
+            msgBox.setIcon(QMessageBox::Warning);
+            msgBox.setWindowTitle(tr("Recover marked documents"));
+            msgBox.setText(tr("Selected documents marked with a warning:")
+                           + QStringLiteral("\n\n") + marked.join(QStringLiteral("\n")));
+            msgBox.setInformativeText(tr("Recovering them may bring back a state other than the "
+                                         "one you expect. Recover them anyway?"));
+            msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
+            msgBox.setDefaultButton(QMessageBox::No);
+            if (msgBox.exec() != QMessageBox::Yes)
+                return;
+        }
 
         WaitCursor wc;
-        int index = 0;
-        std::vector<int> indices;
+        std::vector<QTreeWidgetItem*> pending;
         std::vector<std::string> filenames, paths, labels, errs;
-        for (auto &info : d->recoveryInfo) {
+        for (QTreeWidgetItem* item : checked) {
+            auto& info = d->info(item);
             QString errorInfo;
-            QTreeWidgetItem* item = d_ptr->ui.treeWidget->topLevelItem(index);
 
             try {
                 QString file = info.projectFile;
@@ -269,8 +436,7 @@ void DocumentRecovery::accept()
                 paths.emplace_back(file.toUtf8().constData());
                 filenames.emplace_back(info.fileName.toUtf8().constData());
                 labels.emplace_back(info.label.toUtf8().constData());
-                indices.push_back(index);
-                ++index;
+                pending.push_back(item);
             }
             catch (const std::exception& e) {
                 errorInfo = QString::fromUtf8(e.what());
@@ -284,11 +450,9 @@ void DocumentRecovery::accept()
 
             if (!errorInfo.isEmpty()) {
                 info.status = DocumentRecoveryPrivate::Failure;
-                if (item) {
-                    item->setText(1, tr("Failed to recover"));
-                    item->setToolTip(1, errorInfo);
-                    item->setForeground(1, QColor(170,0,0));
-                }
+                item->setText(1, tr("Failed to recover"));
+                item->setToolTip(1, errorInfo);
+                item->setForeground(1, QColor(170,0,0));
                 // Do not mark failure so that user can retry on next run
                 // d->writeRecoveryInfo(info);
             }
@@ -299,8 +463,8 @@ void DocumentRecovery::accept()
         // The directories recovered from, removed after the loop in one go
         QFileInfoList recoveredDirs;
         for (size_t i = 0; i < docs.size(); ++i) {
-            auto &info = d->recoveryInfo[indices[i]];
-            QTreeWidgetItem* item = d_ptr->ui.treeWidget->topLevelItem(indices[i]);
+            QTreeWidgetItem* item = pending[i];
+            auto& info = d->info(item);
             if (!docs[i] || !errs[i].empty()) {
                 if (docs[i])
                     App::GetApplication().closeDocument(docs[i]->getName());
@@ -319,10 +483,15 @@ void DocumentRecovery::accept()
                     gdoc->setModified(true);
 
                 info.status = DocumentRecoveryPrivate::Success;
-                if (item) {
-                    item->setText(1, tr("Successfully recovered"));
-                    item->setForeground(1, QColor(0,170,0));
-                }
+                item->setText(1, tr("Successfully recovered"));
+                item->setForeground(1, QColor(0,170,0));
+                // Nothing is left to recover or clean up for it
+                item->setFlags(item->flags() & ~Qt::ItemIsUserCheckable);
+                item->setData(0, Qt::CheckStateRole, QVariant());
+
+                // Entries still parked for a deferred load keep the recovery
+                // file open, and Windows will not move an open file
+                docs[i]->flushDeferredFiles();
 
                 QDir transDir(QString::fromUtf8(docs[i]->TransientDir.getValue()));
 
@@ -363,6 +532,7 @@ void DocumentRecovery::accept()
         d->ui.buttonBox->button(QDialogButtonBox::Ok)->setText(tr("Finish"));
         d->ui.buttonBox->button(QDialogButtonBox::Cancel)->setEnabled(false);
         d->recovered = true;
+        updateButtons();
     }
     else {
         QDialog::accept();
@@ -410,6 +580,7 @@ DocumentRecoveryPrivate::Info DocumentRecoveryPrivate::getRecoveryInfo(const QFi
     info.status = DocumentRecoveryPrivate::Unknown;
     info.label = qApp->translate("StdCmdNew","Unnamed");
 
+    info.directory = fi.absoluteFilePath();
     QString file;
     QDir doc_dir(fi.absoluteFilePath());
     QDir rec_dir(doc_dir.absoluteFilePath(QStringLiteral("fc_recovery_files")));
@@ -429,6 +600,7 @@ DocumentRecoveryPrivate::Info DocumentRecoveryPrivate::getRecoveryInfo(const QFi
 
     info.status = DocumentRecoveryPrivate::Created;
     info.projectFile = file;
+    info.modified = QFileInfo(file).lastModified();
     info.tooltip = fi.fileName();
 
     // when the Xml meta exists get some relevant information
@@ -529,6 +701,19 @@ void DocumentRecovery::contextMenuEvent(QContextMenuEvent* ev)
 
 void DocumentRecovery::onDeleteSection()
 {
+    removeItems(d_ptr->ui.treeWidget->selectedItems());
+}
+
+void DocumentRecovery::onButtonCleanupClicked()
+{
+    removeItems(checkedItems());
+}
+
+void DocumentRecovery::removeItems(const QList<QTreeWidgetItem*>& items)
+{
+    if (items.isEmpty())
+        return;
+
     QMessageBox msgBox(this);
     msgBox.setIcon(QMessageBox::Warning);
     msgBox.setWindowTitle(tr("Cleanup"));
@@ -540,73 +725,40 @@ void DocumentRecovery::onDeleteSection()
     if (ret == QMessageBox::No)
         return;
 
-    QList<QTreeWidgetItem*> items = d_ptr->ui.treeWidget->selectedItems();
-    QDir tmp = QString::fromUtf8(App::Application::getUserCachePath().c_str());
     QFileInfoList dirs;
-    for (QList<QTreeWidgetItem*>::iterator it = items.begin(); it != items.end(); ++it) {
-        int index = d_ptr->ui.treeWidget->indexOfTopLevelItem(*it);
-        QTreeWidgetItem* item = d_ptr->ui.treeWidget->takeTopLevelItem(index);
+    for (QTreeWidgetItem* item : items)
+        dirs << QFileInfo(d_ptr->info(item).directory);
+    QFileInfoList survivors = DocumentRecoveryCleaner().removeWithProgress(dirs, false, this);
 
-        QString projectFile = item->toolTip(0);
-        dirs << QFileInfo(tmp.filePath(projectFile));
-        delete item;
+    for (QTreeWidgetItem* item : items) {
+        if (!survivors.contains(QFileInfo(d_ptr->info(item).directory)))
+            delete item;
     }
-    // The lock file stays: the next start finds these directories gone and
-    // drops it then.
-    DocumentRecoveryCleaner().removeWithProgress(dirs, false, this);
 
-    int numItems = d_ptr->ui.treeWidget->topLevelItemCount();
-    if (numItems == 0) {
-        d_ptr->ui.buttonBox->button(QDialogButtonBox::Ok)->setEnabled(false);
-        d_ptr->ui.buttonBox->button(QDialogButtonBox::Cancel)->setEnabled(true);
-    }
-}
-
-void DocumentRecovery::onButtonCleanupClicked()
-{
-    QMessageBox msgBox(this);
-    msgBox.setIcon(QMessageBox::Warning);
-    msgBox.setWindowTitle(tr("Cleanup"));
-    msgBox.setText(tr("Are you sure you want to delete all transient directories?"));
-    msgBox.setInformativeText(tr("When deleting all transient directories you won't be able to recover any files afterwards."));
-    msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
-    msgBox.setDefaultButton(QMessageBox::No);
-    int ret = msgBox.exec();
-    if (ret == QMessageBox::No)
-        return;
-
-    d_ptr->ui.treeWidget->clear();
-    d_ptr->ui.buttonCleanup->setEnabled(false);
-    d_ptr->ui.buttonBox->button(QDialogButtonBox::Ok)->setEnabled(false);
-    d_ptr->ui.buttonBox->button(QDialogButtonBox::Cancel)->setEnabled(true);
-
-    // Collect first, delete afterwards on a worker. A lock file goes only
-    // once every directory it stands for is gone, or the survivors could
-    // never be found again.
+    // Drop the lock files of dead instances whose directories are all gone
+    // now. Collect first: the scan holds each lock while it reports it.
     QList<StaleDirGroup> groups;
-    QFileInfoList dirs;
     DocumentRecoveryHandler handler;
     handler.checkForPreviousCrashes(
         [&](QDir& tmp, const QList<QFileInfo>& lockDirs, const QString& lockFile) {
             groups.append(StaleDirGroup(tmp.absoluteFilePath(lockFile), lockDirs));
-            dirs << lockDirs;
         });
-    dirs << handler.findOrphansWithoutLock();
-
-    QFileInfoList survivors = DocumentRecoveryCleaner().removeWithProgress(dirs, false, this);
     for (const auto& group : std::as_const(groups))
         DocumentRecoveryHandler::removeStaleLock(group.first, group.second);
 
-    if (survivors.isEmpty()) {
-        DlgCheckableMessageBox::showMessage(tr("Delete"), tr("Transient directories deleted."));
-    }
-    else {
+    if (!survivors.isEmpty()) {
         QMessageBox::warning(this, tr("Delete"),
                              tr("Not all transient directories could be deleted (%1 left). "
                                 "They are kept, and looked at again at the next start.")
                                  .arg(survivors.size()));
     }
-    reject();
+
+    if (d_ptr->ui.treeWidget->topLevelItemCount() == 0) {
+        DlgCheckableMessageBox::showMessage(tr("Delete"), tr("Transient directories deleted."));
+        reject();
+        return;
+    }
+    updateButtons();
 }
 
 // ----------------------------------------------------------------------------
@@ -618,12 +770,12 @@ bool DocumentRecoveryFinder::checkForPreviousCrashes()
     handler.checkForPreviousCrashes(std::bind(&DocumentRecoveryFinder::checkDocumentDirs, this, sp::_1, sp::_2, sp::_3));
     //NOLINTEND
 
-    // Directories no lock file leads to: offer what can be recovered, delete
-    // the rest
+    // Directories no lock file leads to: offer what can be recovered, marked
+    // as unclaimed, and delete the rest
     QFileInfoList orphans;
     for (const QFileInfo& dir : handler.findOrphansWithoutLock()) {
         if (isRecoverable(dir))
-            restoreDocFiles << dir;
+            locklessDocFiles << dir;
         else
             orphans << dir;
     }
@@ -673,8 +825,8 @@ void DocumentRecoveryFinder::checkDocumentDirs(QDir& tmp, const QList<QFileInfo>
 bool DocumentRecoveryFinder::showRecoveryDialogIfNeeded()
 {
     bool foundRecoveryFiles = false;
-    if (!restoreDocFiles.isEmpty()) {
-        Gui::Dialog::DocumentRecovery dlg(restoreDocFiles, Gui::getMainWindow());
+    if (!restoreDocFiles.isEmpty() || !locklessDocFiles.isEmpty()) {
+        Gui::Dialog::DocumentRecovery dlg(restoreDocFiles, locklessDocFiles, Gui::getMainWindow());
         if (dlg.foundDocuments()) {
             foundRecoveryFiles = true;
             dlg.exec();

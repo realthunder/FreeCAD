@@ -33,6 +33,8 @@
 #include <QPair>
 #include <QScopedPointer>
 
+class QTreeWidgetItem;
+
 
 namespace Gui { namespace Dialog {
 
@@ -46,7 +48,11 @@ class DocumentRecovery : public QDialog
     Q_OBJECT
 
 public:
-    explicit DocumentRecovery(const QList<QFileInfo>&, QWidget* parent = nullptr);
+    /// \a dirs are the directories of crashed sessions, found through their
+    /// lock files; \a lockless the recoverable ones no lock file leads to,
+    /// listed marked and unchecked
+    DocumentRecovery(const QList<QFileInfo>& dirs, const QList<QFileInfo>& lockless,
+                     QWidget* parent = nullptr);
     ~DocumentRecovery() override;
 
     void accept() override;
@@ -60,6 +66,13 @@ protected:
 protected:
     void onButtonCleanupClicked();
     void onDeleteSection();
+
+private:
+    /// The items whose check box is ticked; recovery and cleanup act on these
+    QList<QTreeWidgetItem*> checkedItems() const;
+    void updateButtons();
+    /// Delete the transient directories of \a items, after asking
+    void removeItems(const QList<QTreeWidgetItem*>& items);
 
 private:
     static std::string doctools;
@@ -87,6 +100,8 @@ private:
 
 private:
     QList<QFileInfo> restoreDocFiles;
+    /// Recoverable directories no lock file leads to
+    QList<QFileInfo> locklessDocFiles;
     QList<StaleDirGroup> staleDirs;
 };
 
