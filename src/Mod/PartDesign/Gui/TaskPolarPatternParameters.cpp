@@ -200,7 +200,9 @@ void TaskPolarPatternParameters::adaptVisibilityToMode()
 
 void TaskPolarPatternParameters::onSelectionChanged(const Gui::SelectionChanges& msg)
 {
-    if (selectionMode!=none && msg.Type == Gui::SelectionChanges::AddSelection) {
+    // Only when picking the axis: in placement mode the selection belongs to
+    // the placement dialog (upstream 1b799ad355)
+    if (selectionMode == reference && msg.Type == Gui::SelectionChanges::AddSelection) {
         std::vector<std::string> axes;
         App::DocumentObject* selObj;
         PartDesign::PolarPattern* pcPolarPattern = static_cast<PartDesign::PolarPattern*>(getObject());
@@ -208,7 +210,7 @@ void TaskPolarPatternParameters::onSelectionChanged(const Gui::SelectionChanges&
         if(!selObj)
             return;
         
-        if (selectionMode == reference || selObj->isDerivedFrom ( App::Line::getClassTypeId () ) ) {
+        {
             setupTransaction();
             pcPolarPattern->Axis.setValue(selObj, axes);
             recomputeFeature();

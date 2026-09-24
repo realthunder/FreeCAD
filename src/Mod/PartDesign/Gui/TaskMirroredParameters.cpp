@@ -140,7 +140,9 @@ void TaskMirroredParameters::updateUI()
 
 void TaskMirroredParameters::onSelectionChanged(const Gui::SelectionChanges& msg)
 {
-    if (selectionMode!=none && msg.Type == Gui::SelectionChanges::AddSelection) {
+    // Only when picking the mirror plane: in placement mode the selection
+    // belongs to the placement dialog (upstream 1b799ad355)
+    if (selectionMode == reference && msg.Type == Gui::SelectionChanges::AddSelection) {
 
         std::vector<std::string> mirrorPlanes;
         App::DocumentObject* selObj;
@@ -149,7 +151,7 @@ void TaskMirroredParameters::onSelectionChanged(const Gui::SelectionChanges& msg
         if (!selObj)
                 return;
         
-        if ( selectionMode == reference || selObj->isDerivedFrom ( App::Plane::getClassTypeId () ) ) {
+        {
             setupTransaction();
             pcMirrored->MirrorPlane.setValue(selObj, mirrorPlanes);
             recomputeFeature();
