@@ -65,7 +65,10 @@ App::DocumentObjectExecReturn* FeatureBase::execute() {
         return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "BaseFeature must be a Part::Feature"));
     
     auto shape = Part::Feature::getTopoShape(BaseFeature.getValue());
-    if (!shape.countSubShapes(TopAbs_SOLID))
+    // Shells are made solid. Anything else, a face say, is kept as it is: a
+    // body need not start from a solid (upstream e55e7f75d2), and makESolid
+    // throws when there is no shell
+    if (!shape.countSubShapes(TopAbs_SOLID) && shape.hasSubShape(TopAbs_SHELL))
         shape = shape.makESolid();
     if(shape.isNull())
         return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "BaseFeature has an empty shape"));
