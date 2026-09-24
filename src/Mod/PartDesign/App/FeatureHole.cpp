@@ -1108,12 +1108,12 @@ std::optional<double> Hole::determineDiameter() const
     if (threadSize < 0) {
         THROWM(Base::IndexError, "Thread size out of range")
     }
+    if (threadType == 0)
+        return std::nullopt;
+
     double diameter = threadDescription[threadType][threadSize].diameter;
     double pitch = threadDescription[threadType][threadSize].pitch;
     double clearance = 0.0;
-
-    if (threadType == 0)
-        return std::nullopt;
 
     if (Threaded.getValue()) {
 
@@ -1526,10 +1526,10 @@ void Hole::onChanged(const App::Property* prop)
         DrillForDepth.setReadOnly(DepthMode != "Dimension");
         if (!isRestoring()) {
             if (DepthMode != "Dimension") {
-                // if through all, set the depth accordingly
+                // if through all, set the depth accordingly; the thread depth
+                // follows in updateThreadDepthParam() unless its own type
+                // keeps a dimension
                 Depth.setValue(getThroughAllLength());
-                // the thread depth is not dimension, it is the same as the hole depth
-                ThreadDepth.setValue(getThroughAllLength());
             }
             updateThreadDepthParam();
         }
@@ -2076,8 +2076,8 @@ TopoShape Hole::findHoles(std::vector<TopoShape> &holes,
         TopoDS_Edge edge = TopoDS::Edge(profileEdge.getShape());
         Handle(Geom_Curve) c = BRep_Tool::Curve(edge, c_start, c_end);
 
-        // Circle?
-        if (c->DynamicType() != STANDARD_TYPE(Geom_Circle))
+        // Circle? An edge may have no 3D curve
+        if (c.IsNull() || c->DynamicType() != STANDARD_TYPE(Geom_Circle))
             continue;
 
         Handle(Geom_Circle) circle = Handle(Geom_Circle)::DownCast(c);
