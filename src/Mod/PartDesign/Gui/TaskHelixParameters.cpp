@@ -360,6 +360,11 @@ void TaskHelixParameters::updateStatus()
     else if (status.compare("NCollection_IndexedDataMap::FindFromKey") == 0) {
         translatedStatus = tr("Error: helix touches itself");
     }
+    // Any other error, as the feature reports it: the multiple solids
+    // message says how to allow them
+    else {
+        translatedStatus = QString::fromStdString(status);
+    }
     ui->labelMessage->setText(translatedStatus);
 }
 
