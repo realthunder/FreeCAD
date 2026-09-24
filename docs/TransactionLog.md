@@ -2631,7 +2631,9 @@ ever is, the answer is timing, not flags: the freeze would adopt the
 caches on a face's surface as its own, and the writer drop a cache no
 frozen face adopted.
 
-**The face tolerance** (fork, `BRepLib_MakeFace(wire)`): a face needs to
+**The face tolerance** (superseded by 23.15: it made the same input give
+a different face with the freeze on and off, and fixed one caller of a
+refusal that is in `UpdateTolerances`) (fork, `BRepLib_MakeFace(wire)`): a face needs to
 cover how far its wire is from the surface, not the largest edge
 tolerance, which is `FindSurface`'s convention. On a wire with frozen
 edges it takes the smallest frozen edge tolerance when that covers
@@ -2651,3 +2653,60 @@ its bytes; a revolved frozen torus face is left alone by `fix()`.
 Suites: ctest 807/807, Python 2904 OK; under the probe and the
 throw-logging preload, no `LockedShape` thrown, and in the Python run
 only the control's three values moved.
+
+### 23.15 Copy-on-write, and a thawed copy keeps its name (2026-09-24)
+
+23.14's face tolerance is reverted (fork `fc92bc3592`). The ruling of
+23.12 stands: where a new shape needs a real change to a frozen part,
+such as a larger tolerance, the algorithm copies it. The question the
+copy raises is naming. An element included as it is gets the name of
+direct inclusion; a copy would get a Modified name at best, and none at
+all where the maker has no history: `BRepBuilderAPI_MakeWire` and
+`MakeFace` report none (their `Modified()` is `BRepBuilderAPI_MakeShape`'s
+empty list), `FaceMaker::postBuild` maps by direct inclusion only, and
+`wiresFromSortedRuns` follows `mkWire.Edge()`, the one edge just added.
+Giving those makers a history would add members to classes FreeCAD
+builds on the stack.
+
+**The thawed copy** (fork). `TopoDS_TShape::Thawed()`, bit 13 of the
+state word (reserved until now, inline accessors: no layout change),
+marks a copy an algorithm made of an Immutable TShape it would otherwise
+have changed in place, or of a container of such a copy. It stands for
+that TShape. `TopoDS_TShape::Thaw(copy, original)` sets it and records
+the original in a side table, mutex-guarded, which
+`TopoDS_TShape::ThawedFrom(copy)` reads; the copy holds its original
+until the copy's destructor, now out of line, drops the entry. Copies are
+rare, so the table stays small, and the flag is all a TShape carries.
+
+**Where copies are made.**
+
+- `BRepLib::UpdateTolerances` and the forced `SameParameter`, in place
+  (`IsMutableInput`): a frozen edge, vertex or face whose tolerance has
+  to grow is copied and the copy grown (`UpdShTol`). `putThawed` then
+  puts the copies into the shape being updated, in place: a container
+  that is not frozen takes them among its children in the same order
+  (the element indices depend on it); a frozen container on the way is
+  copied and thawed in turn. The root must not be frozen: that stays a
+  refusal. A vertex copy takes its point representations too, as new
+  objects -- `EmptyCopy` drops them, and sharing them would let the
+  copy's edits reach the frozen original.
+- `BRepLib_MakeWire::thawVertex` (23.13) marks its vertex copy and the
+  copies of the edges already in the wire that use it.
+
+**Naming** (FreeCAD). `TopoShape::mapSubElement` gives an element of the
+result that is a thawed copy the name of the first original along its
+`ThawedFrom` chain that the input has -- the name direct inclusion
+gives, which is what the element keeps with the freeze off. It is a flag
+test per result element per input; the chain is followed only for a
+flagged one. This covers the earlier edges `thawVertex` copies, which
+`wiresFromSortedRuns` does not see.
+
+Gtests in `ImmutableShape.cpp`: a face on a frozen wire of unequal
+tolerances holds a thawed copy of the wire and of the three edges that
+grew, the wire as it was; its element names, vertices, edges and face,
+are those of the same construction unfrozen; the wire merge's vertex
+and edge copies are thawed copies of what they replace.
+With the new pass disabled, the naming case fails on every edge and
+vertex, so it tests what it says. Suites: ctest 808/808, Python 2904 OK,
+no `LockedShape` thrown in the Python run; the four cases of 23.14 behave
+as with the freeze off, through copies now.

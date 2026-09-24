@@ -4,6 +4,7 @@
 
 #include <App/Application.h>
 #include <App/Document.h>
+#include <Base/Interpreter.h>
 #include <Base/Matrix.h>
 #include <Mod/Part/App/PartFeature.h>
 #include <Mod/Part/App/PartParams.h>
@@ -375,6 +376,21 @@ TEST(ImmutableShapeTest, aWireMergeCopiesAFrozenVertex)
     // ... which is not the input's: that one is where and what it was.
     EXPECT_EQ(BRep_Tool::Tolerance(join), joinTol);
     EXPECT_TRUE(BRep_Tool::Pnt(join).IsEqual(joinPnt, 0.));
+    // The copies are thawed copies of what they stand for, the joining vertex
+    // and the first edge, which uses it (docs/TransactionLog.md sec 23.15).
+    for (int i = 1; i <= ancestors.Extent(); ++i) {
+        if (ancestors(i).Extent() == 2) {
+            const TopoDS_Shape& vertex = ancestors.FindKey(i);
+            EXPECT_TRUE(vertex.TShape()->Thawed());
+            EXPECT_EQ(TopoDS_TShape::ThawedFrom(vertex.TShape().get()), join.TShape());
+        }
+    }
+    int firstCopies = 0;
+    for (TopExp_Explorer it(wire, TopAbs_EDGE); it.More(); it.Next()) {
+        if (TopoDS_TShape::ThawedFrom(it.Current().TShape().get()) == first.TShape())
+            ++firstCopies;
+    }
+    EXPECT_EQ(firstCopies, 1);
 }
 
 // A vertex parameter is derived data like a pcurve (docs/TransactionLog.md sec
@@ -450,9 +466,13 @@ TEST(ImmutableShapeTest, aParameterOnANewPCurveLeavesTheFaceBytes)
 }
 
 // A face on a frozen wire whose edges' tolerances differ: FindSurface gives the
-// face the largest, and every other edge would have to grow to it. The face
-// takes the smallest frozen one instead, which covers the plane.
-TEST(ImmutableShapeTest, aFaceOnAFrozenWireGrowsNoTolerance)
+// face the largest, and UpdateTolerances raises every other edge to it. Those
+// are frozen, so the face holds copies that are raised -- thawed copies, which
+// name their originals -- and the wire keeps its own (docs/TransactionLog.md
+// sec 23.15).
+namespace {
+
+TopoDS_Wire wireOfUnequalTolerances()
 {
     BRep_Builder builder;
     BRepBuilderAPI_MakeWire mkWire;
@@ -465,23 +485,96 @@ TEST(ImmutableShapeTest, aFaceOnAFrozenWireGrowsNoTolerance)
     builder.UpdateEdge(wide, 2e-7);
     for (TopExp_Explorer it(wide, TopAbs_VERTEX); it.More(); it.Next())
         builder.UpdateVertex(TopoDS::Vertex(it.Current()), 2e-7);
-    setImmutable(wire);
+    return wire;
+}
+
+std::vector<double> tolerancesOf(const TopoDS_Shape& shape)
+{
     std::vector<double> tolerances;
-    for (TopExp_Explorer it(wire, TopAbs_EDGE); it.More(); it.Next())
+    for (TopExp_Explorer it(shape, TopAbs_EDGE); it.More(); it.Next())
         tolerances.push_back(BRep_Tool::Tolerance(TopoDS::Edge(it.Current())));
-    for (TopExp_Explorer it(wire, TopAbs_VERTEX); it.More(); it.Next())
+    for (TopExp_Explorer it(shape, TopAbs_VERTEX); it.More(); it.Next())
         tolerances.push_back(BRep_Tool::Tolerance(TopoDS::Vertex(it.Current())));
+    return tolerances;
+}
+
+} // namespace
+
+TEST(ImmutableShapeTest, aFaceOnAFrozenWireThawsWhatMustGrow)
+{
+    const TopoDS_Wire wire = wireOfUnequalTolerances();
+    setImmutable(wire);
+    const std::vector<double> tolerances = tolerancesOf(wire);
 
     TopoDS_Face face;
     EXPECT_NO_THROW(face = BRepBuilderAPI_MakeFace(wire, true).Face());
     ASSERT_FALSE(face.IsNull());
     EXPECT_TRUE(BRepCheck_Analyzer(face).IsValid());
-    std::vector<double> after;
-    for (TopExp_Explorer it(wire, TopAbs_EDGE); it.More(); it.Next())
-        after.push_back(BRep_Tool::Tolerance(TopoDS::Edge(it.Current())));
-    for (TopExp_Explorer it(wire, TopAbs_VERTEX); it.More(); it.Next())
-        after.push_back(BRep_Tool::Tolerance(TopoDS::Vertex(it.Current())));
-    EXPECT_EQ(after, tolerances);
+    EXPECT_EQ(tolerancesOf(wire), tolerances);
+    // The face is what it is without the freeze: the largest tolerance ...
+    EXPECT_DOUBLE_EQ(BRep_Tool::Tolerance(face), 2e-7);
+    // ... on a thawed copy of the wire, holding thawed copies of the three
+    // edges that grew, and the wide one itself.
+    const TopoDS_Shape faceWire = TopExp_Explorer(face, TopAbs_WIRE).Current();
+    EXPECT_TRUE(faceWire.TShape()->Thawed());
+    EXPECT_EQ(TopoDS_TShape::ThawedFrom(faceWire.TShape().get()), wire.TShape());
+    int thawed = 0;
+    int same = 0;
+    for (TopExp_Explorer it(faceWire, TopAbs_EDGE); it.More(); it.Next()) {
+        const TopoDS_Shape& edge = it.Current();
+        if (edge.TShape()->Thawed()) {
+            ++thawed;
+            EXPECT_DOUBLE_EQ(BRep_Tool::Tolerance(TopoDS::Edge(edge)), 2e-7);
+            const Handle(TopoDS_TShape) from = TopoDS_TShape::ThawedFrom(edge.TShape().get());
+            bool inWire = false;
+            for (TopExp_Explorer w(wire, TopAbs_EDGE); w.More(); w.Next())
+                inWire = inWire || w.Current().TShape() == from;
+            EXPECT_TRUE(inWire);
+        }
+        else {
+            ++same;
+            EXPECT_TRUE(edge.Immutable());
+        }
+    }
+    EXPECT_EQ(thawed, 3);
+    EXPECT_EQ(same, 1);
+}
+
+// The names a face gives the edges of a frozen wire are the ones it gives them
+// on the same wire unfrozen: a thawed copy is named as its original.
+TEST(ImmutableShapeTest, aThawedCopyKeepsItsName)
+{
+    tests::initApplication();
+    Base::Interpreter().runString("import sys; sys.path[:0] = ['" FC_BUILD_LIB_DIR
+                                  "', '" FC_BUILD_MOD_PART_DIR "']");
+    Base::Interpreter().runString("import Part");
+    // FaceMakerSimple is BRepBuilderAPI_MakeFace(wire), which raises the
+    // narrow edges to the wide one.
+    auto faceOn = [](bool frozen) {
+        const Part::TopoShape wire(wireOfUnequalTolerances(), 10L);
+        if (frozen)
+            setImmutable(wire.getShape());
+        Part::TopoShape face(20L);
+        face.makEFace(wire, nullptr, "Part::FaceMakerSimple");
+        return face;
+    };
+    const Part::TopoShape plain = faceOn(false);
+    const Part::TopoShape frozen = faceOn(true);
+    ASSERT_EQ(frozen.countSubShapes(TopAbs_EDGE), 4);
+    int thawed = 0;
+    for (TopExp_Explorer it(frozen.getShape(), TopAbs_EDGE); it.More(); it.Next())
+        thawed += it.Current().TShape()->Thawed() ? 1 : 0;
+    EXPECT_GT(thawed, 0);  // the path under test was taken
+    for (const char* type : {"Edge", "Vertex", "Face"}) {
+        const int count = frozen.countSubShapes(type);
+        ASSERT_EQ(plain.countSubShapes(type), count);
+        for (int i = 1; i <= count; ++i) {
+            const auto element = Data::IndexedName::fromConst(type, i);
+            const Data::MappedName name = frozen.getMappedName(element);
+            EXPECT_TRUE(name) << type << i;
+            EXPECT_EQ(name.toString(), plain.getMappedName(element).toString()) << type << i;
+        }
+    }
 }
 
 // A thick solid from a frozen sphere: the offset puts the removed face's

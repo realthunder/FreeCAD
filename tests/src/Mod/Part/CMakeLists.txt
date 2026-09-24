@@ -20,6 +20,12 @@ target_link_libraries(Part_tests_run
     ${Google_Tests_LIBS}
     Part
 )
+# ImmutableShape.cpp builds faces through the face makers, whose types
+# "import Part" registers; see TopoShapeEx_tests_run below.
+target_compile_definitions(Part_tests_run PRIVATE
+    FC_BUILD_LIB_DIR="${CMAKE_BINARY_DIR}/lib"
+    FC_BUILD_MOD_PART_DIR="${CMAKE_BINARY_DIR}/Mod/Part"
+)
 
 # The external reference format gets its own executable: Part_tests_run does
 # not link on this tree (tests/src/Mod/Part/App/TopoShapeCache.cpp reaches for

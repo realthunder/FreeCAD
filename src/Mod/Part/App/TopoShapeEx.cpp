@@ -1290,17 +1290,8 @@ void TopoShape::mapSubElement(const TopoShape &other, const char *op, bool force
             forward = false;
             count = shapeMap.count();
         }
-        for(int k=1;k<=count;++k) {
-            int i,idx;
-            if(forward) {
-                i = k;
-                idx = shapeMap.find(_Shape,otherMap.find(other._Shape,k));
-                if(!idx) continue;
-            } else {
-                idx = k;
-                i = otherMap.find(other._Shape,shapeMap.find(_Shape,k));
-                if(!i) continue;
-            }
+        // Element idx of this shape is element i of other.
+        auto mapElement = [&](int idx, int i) {
             Data::IndexedName element = Data::IndexedName::fromConst(shapetype, idx);
             for(auto &v : other.getElementMappedNames(
                         Data::IndexedName::fromConst(shapetype,i),true))
@@ -1322,6 +1313,40 @@ void TopoShape::mapSubElement(const TopoShape &other, const char *op, bool force
                 encodeElementName(shapetype[0],name,ss,&sids,op,other.Tag);
                 setElementName(element,name,&sids);
             }
+        };
+        for(int k=1;k<=count;++k) {
+            int i,idx;
+            if(forward) {
+                i = k;
+                idx = shapeMap.find(_Shape,otherMap.find(other._Shape,k));
+                if(!idx) continue;
+            } else {
+                idx = k;
+                i = otherMap.find(other._Shape,shapeMap.find(_Shape,k));
+                if(!i) continue;
+            }
+            mapElement(idx, i);
+        }
+        // A thawed copy (the OCCT fork's TopoDS_TShape::Thawed): an algorithm
+        // copied a frozen sub-shape of other's where it would have changed it
+        // in place (docs/TransactionLog.md sec 23.15), and the copy is named
+        // as the original would have been. The original may be a thawed copy
+        // itself, of something other has.
+        for (int idx = 1; idx <= shapeMap.count(); ++idx) {
+            const TopoDS_Shape &element = shapeMap.find(_Shape, idx);
+            if (!element.TShape()->Thawed())
+                continue;
+            TopoDS_Shape original = element;
+            int i = 0;
+            for (auto from = TopoDS_TShape::ThawedFrom(element.TShape().get());
+                    !from.IsNull() && !i;
+                    from = TopoDS_TShape::ThawedFrom(from.get()))
+            {
+                original.TShape(from);
+                i = otherMap.find(other._Shape, original);
+            }
+            if (i)
+                mapElement(idx, i);
         }
     }
 }
