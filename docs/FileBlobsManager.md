@@ -914,7 +914,10 @@ What the loose files then cost, besides the creates:
   orphans found on 2026-09-24 were empty directories of that kind.
 
 The recovery bugs are fixed separately; they are bugs whatever the store
-does. This section is about the store.
+does. (Fixed 2026-09-24, `80070f4b21`: the cleaner clears read-only first,
+a lock stays until its directories are gone, deletes run off the GUI
+thread, and lockless orphans are found by PID liveness and start time.)
+This section is about the store.
 
 ### 15.2 The design
 
