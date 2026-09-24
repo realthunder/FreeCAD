@@ -370,7 +370,7 @@ void TaskPolarPatternParameters::changeEvent(QEvent *e)
 
 void TaskPolarPatternParameters::apply()
 {
-    auto tobj = TransformedView->getObject();
+    auto tobj = getObject();
     std::vector<std::string> axes;
     App::DocumentObject* obj;
     getAxis(obj, axes);
@@ -379,6 +379,7 @@ void TaskPolarPatternParameters::apply()
     FCMD_OBJ_CMD(tobj,"Axis = " << axis.c_str());
     FCMD_OBJ_CMD(tobj,"Reversed = " << getReverse());
     ui->polarAngle->apply();
+    ui->angleOffset->apply();
     ui->spinOccurrences->apply();
 }
 

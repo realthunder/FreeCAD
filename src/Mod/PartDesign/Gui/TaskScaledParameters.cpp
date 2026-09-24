@@ -179,7 +179,7 @@ void TaskScaledParameters::changeEvent(QEvent *e)
 
 void TaskScaledParameters::apply()
 {
-    FCMD_OBJ_CMD(TransformedView->getObject(),"Factor = " << getFactor());
+    FCMD_OBJ_CMD(getObject(),"Factor = " << getFactor());
     ui->spinOccurrences->apply();
 }
 
@@ -191,15 +191,6 @@ void TaskScaledParameters::apply()
 TaskDlgScaledParameters::TaskDlgScaledParameters(ViewProviderScaled *ScaledView)
     : TaskDlgTransformedParameters(ScaledView, new TaskScaledParameters(ScaledView))
 {
-}
-//==== calls from the TaskView ===============================================================
-
-bool TaskDlgScaledParameters::accept()
-{
-
-        parameter->apply();
-
-    return TaskDlgTransformedParameters::accept();
 }
 
 #include "moc_TaskScaledParameters.cpp"

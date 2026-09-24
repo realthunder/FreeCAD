@@ -432,6 +432,10 @@ void TaskMultiTransformParameters::onMoveDown()
 
 void TaskMultiTransformParameters::onSubTaskButtonOK()
 {
+    // Only on OK: closeSubTask() also runs from the destructor, after a
+    // Cancel has undone what the sub-task would record.
+    if (subTask)
+        subTask->apply();
     closeSubTask();
 }
 
@@ -451,6 +455,15 @@ const std::vector<App::DocumentObject*> TaskMultiTransformParameters::getTransfo
 
 void TaskMultiTransformParameters::apply()
 {
+    std::stringstream str;
+    str << Gui::Command::getObjectCmd(getObject()) << ".Transformations = [";
+    for (auto it : getTransformFeatures()) {
+        if (it) {
+            str << Gui::Command::getObjectCmd(it) << ",";
+        }
+    }
+    str << "]";
+    Gui::Command::runCommand(Gui::Command::Doc,str.str().c_str());
 }
 
 TaskMultiTransformParameters::~TaskMultiTransformParameters()
@@ -483,25 +496,6 @@ TaskDlgMultiTransformParameters::TaskDlgMultiTransformParameters(ViewProviderMul
     : TaskDlgTransformedParameters(MultiTransformView, new TaskMultiTransformParameters(MultiTransformView))
 {
     parameter->setEnabledTransaction(false);
-}
-//==== calls from the TaskView ===============================================================
-
-bool TaskDlgMultiTransformParameters::accept()
-{
-    // Set up transformations
-    TaskMultiTransformParameters* mtParameter = static_cast<TaskMultiTransformParameters*>(parameter);
-    std::vector<App::DocumentObject*> transformFeatures = mtParameter->getTransformFeatures();
-    std::stringstream str;
-    str << Gui::Command::getObjectCmd(vp->getObject()) << ".Transformations = [";
-    for (auto it : transformFeatures) {
-        if (it) {
-            str << Gui::Command::getObjectCmd(it) << ",";
-        }
-    }
-    str << "]";
-    Gui::Command::runCommand(Gui::Command::Doc,str.str().c_str());
-
-    return TaskDlgFeatureParameters::accept ();
 }
 
 // FIXME: It seems all roll back is finely handled by abortCommand() in parent classes. On the other

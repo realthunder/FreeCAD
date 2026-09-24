@@ -698,6 +698,8 @@ TaskDlgTransformedParameters::TaskDlgTransformedParameters(
 bool TaskDlgTransformedParameters::accept()
 {
     parameter->exitSelectionMode();
+    // the values are set already; this records them in the Python console
+    parameter->apply();
 
     // Continue (usually in virtual method accept())
     return TaskDlgFeatureParameters::accept ();
