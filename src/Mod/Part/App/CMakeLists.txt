@@ -540,6 +540,8 @@ SET(Part_SRCS
     GeometryMigrationExtension.cpp
     Geometry.cpp
     Geometry.h
+    GizmoHelper.cpp
+    GizmoHelper.h
     Geometry2d.cpp
     Geometry2d.h
     ImportIges.cpp

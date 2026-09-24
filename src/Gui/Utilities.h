@@ -25,6 +25,7 @@
 
 #include <vector>
 #include <App/MaterialAppearance.h>
+#include <Base/Color.h>
 #include <Base/Converter.h>
 #include <Base/ViewProj.h>
 #include <Inventor/SbColor.h>
@@ -38,6 +39,94 @@ class SbViewVolume;
 class QAbstractItemView;
 
 namespace Base {
+// Specialization for SbColor (upstream's, for Base::Color::asValue<SbColor>()
+// and friends; an SbColor has no alpha, which reads as opaque)
+template<>
+struct color_traits<SbColor>
+{
+    using color_type = SbColor;
+    color_traits() = default;
+    explicit color_traits(const color_type& ct)
+        : ct(ct)
+    {}
+    float redF() const
+    {
+        return ct[0];
+    }
+    float greenF() const
+    {
+        return ct[1];
+    }
+    float blueF() const
+    {
+        return ct[2];
+    }
+    float alphaF() const
+    {
+        return 1.0F;
+    }
+    void setRedF(float red)
+    {
+        ct[0] = red;
+    }
+    void setGreenF(float green)
+    {
+        ct[1] = green;
+    }
+    void setBlueF(float blue)
+    {
+        ct[2] = blue;
+    }
+    void setAlphaF(float alpha)
+    {
+        (void)alpha;
+    }
+    int red() const
+    {
+        return int(std::lround(ct[0] * 255.0F));
+    }
+    int green() const
+    {
+        return int(std::lround(ct[1] * 255.0F));
+    }
+    int blue() const
+    {
+        return int(std::lround(ct[2] * 255.0F));
+    }
+    int alpha() const
+    {
+        return 255;
+    }
+    void setRed(int red)
+    {
+        ct[0] = static_cast<float>(red) / 255.0F;
+    }
+    void setGreen(int green)
+    {
+        ct[1] = static_cast<float>(green) / 255.0F;
+    }
+    void setBlue(int blue)
+    {
+        ct[2] = static_cast<float>(blue) / 255.0F;
+    }
+    void setAlpha(int alpha)
+    {
+        (void)alpha;
+    }
+    static color_type makeColor(int red, int green, int blue, int alpha = 255)
+    {
+        (void)alpha;
+        return color_type {
+            static_cast<float>(red) / 255.0F,
+            static_cast<float>(green) / 255.0F,
+            static_cast<float>(blue) / 255.0F
+        };
+    }
+
+private:
+    color_type ct;
+};
+
 // Specialization for SbVec3f
 template <>
 struct vec_traits<SbVec3f> {

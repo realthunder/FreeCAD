@@ -190,6 +190,8 @@ public:
     float_type Sqr() const;
     /// Set length to 1.
     Vector3& Normalize();
+    /// Returns a normalized copy
+    Vector3 Normalized() const;
     /// Checks whether this is the null vector
     bool IsNull() const;
     /// Get angle between both vectors. The returned value lies in the interval [0,pi].

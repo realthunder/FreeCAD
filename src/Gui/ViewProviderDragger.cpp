@@ -44,6 +44,7 @@
 #include "BitmapFactory.h"
 #include "Control.h"
 #include "Document.h"
+#include "Inventor/Draggers/Gizmo.h"
 #include "ViewProviderLink.h"
 #include "Window.h"
 
@@ -363,6 +364,25 @@ void ViewProviderDragger::setEditViewer(Gui::ViewerContext* viewer, int ModNum)
       }
       viewer->setupEditingRoot(csysDragger,&mat);
     }
+
+    if (gizmoContainer && viewer) {
+        // Placed like csysDragger above: the editing transform less the
+        // object's own placement, since a task panel positions its gizmos in
+        // the coordinates of the object's shape.
+        auto mat = viewer->getDocument()->getEditingTransform();
+        if (auto feat = dynamic_cast<App::GeoFeature *>(getObject())) {
+            auto matInverse = feat->Placement.getValue().toMatrix();
+            matInverse.inverse();
+            mat *= matInverse;
+        }
+        Base::Placement origin(mat);
+        gizmoContainer->attachViewer(viewer, origin);
+    }
+}
+
+void ViewProviderDragger::setGizmoContainer(Gui::GizmoContainer* gizmoContainer)
+{
+    this->gizmoContainer = gizmoContainer;
 }
 
 void ViewProviderDragger::unsetEditViewer(Gui::ViewerContext* viewer)

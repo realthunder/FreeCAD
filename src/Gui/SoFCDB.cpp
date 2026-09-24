@@ -82,6 +82,7 @@
 #include "Inventor/Draggers/SoTransformDragger.h"
 #include "Inventor/Draggers/SoLinearDraggerGeometry.h"
 #include "Inventor/Draggers/SoRotationDraggerGeometry.h"
+#include "Inventor/Draggers/Gizmo.h"
 #include "Inventor/SoFCVertexCache.h"
 #include "Inventor/SoFCRenderCache.h"
 #include "Inventor/SoFCDisplayMode.h"
@@ -198,6 +199,7 @@ void Gui::SoFCDB::init()
     SoTransformDragger              ::initClass();
     SoLinearGeometryKit             ::initClass();
     SoArrowGeometry                 ::initClass();
+    SoSphereGeometry                ::initClass();
     SoLinearGeometryBaseKit         ::initClass();
     SoArrowBase                     ::initClass();
     SoRotatorGeometryKit            ::initClass();
@@ -208,6 +210,7 @@ void Gui::SoFCDB::init()
     SoRotatorBase                   ::initClass();
     SoToggleSwitch                  ::initClass();
     So3DAnnotation                  ::initClass();
+    GizmoContainer                  ::initClass();
     SoDelayedAnnotationsElement     ::initClass();
     SmSwitchboard                   ::initClass();
     SoFCSwitch                      ::initClass();

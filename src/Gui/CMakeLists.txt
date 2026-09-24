@@ -1155,6 +1155,7 @@ SET(Inventor_CPP_SRCS
     Inventor/SoFCShapeInfo.cpp
     Inventor/So3DAnnotation.cpp
     Inventor/SoToggleSwitch.cpp
+    Inventor/Draggers/Gizmo.cpp
     Inventor/Draggers/SoLinearDragger.cpp
     Inventor/Draggers/SoLinearDraggerGeometry.cpp
     Inventor/Draggers/SoPlanarDragger.cpp
@@ -1222,6 +1223,8 @@ SET(Inventor_SRCS
     Inventor/SoFCShapeInfo.h
     Inventor/So3DAnnotation.h
     Inventor/SoToggleSwitch.h
+    Inventor/Draggers/Gizmo.h
+    Inventor/Draggers/GizmoStyleParameters.h
     Inventor/Draggers/SoLinearDragger.h
     Inventor/Draggers/SoLinearDraggerGeometry.h
     Inventor/Draggers/SoPlanarDragger.h
