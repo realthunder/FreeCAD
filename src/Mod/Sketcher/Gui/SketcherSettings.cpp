@@ -284,6 +284,7 @@ void SketcherSettingsGrid::saveSettings()
     ui->gridSize->onSave();
     ui->checkBoxGridAuto->onSave();
     ui->gridSizePixelThreshold->onSave();
+    ui->gridTransparency->onSave();
     ui->gridLineColor->onSave();
     ui->gridDivLineColor->onSave();
     ui->gridLineWidth->onSave();
@@ -307,6 +308,7 @@ void SketcherSettingsGrid::loadSettings()
     ui->gridSize->onRestore();
     ui->checkBoxGridAuto->onRestore();
     ui->gridSizePixelThreshold->onRestore();
+    ui->gridTransparency->onRestore();
     ui->gridLineColor->onRestore();
     ui->gridDivLineColor->onRestore();
     ui->gridLineWidth->onRestore();
@@ -315,7 +317,7 @@ void SketcherSettingsGrid::loadSettings()
 
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher/General");
-    int pattern = hGrp->GetInt("GridLinePattern", 0x0f0f);
+    int pattern = hGrp->GetInt("GridLinePattern", 0xffff);
     int index = ui->gridLinePattern->findData(QVariant(pattern));
     if (index < 0) {
         index = 1;

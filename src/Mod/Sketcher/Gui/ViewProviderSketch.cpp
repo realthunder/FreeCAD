@@ -615,9 +615,9 @@ ViewProviderSketch::ViewProviderSketch()
         this->SectionView.setValue(hGrp->GetBool("SectionView", false));
 
         // well it is not visibility automation but a good place nevertheless
-        this->ShowGrid.setValue(hGrp->GetBool("ShowGrid", false));
+        this->ShowGrid.setValue(hGrp->GetBool("ShowGrid", true));
         this->GridSize.setValue(Base::Quantity::parse(hGrp->GetGroup("GridSize")->GetASCII("Hist0", "10.0")).getValue());
-        this->GridAuto.setValue(hGrp->GetBool("GridAuto", false));
+        this->GridAuto.setValue(hGrp->GetBool("GridAuto", true));
         this->Autoconstraints.setValue(hGrp->GetBool("AutoConstraints", true));
         this->AvoidRedundant.setValue(hGrp->GetBool("AvoidRedundantAutoconstraints", true));
 
@@ -946,12 +946,14 @@ void ViewProviderSketch::updateGridParameters()
     const unsigned long grey = SbColor(0.7f, 0.7f, 0.7f).getPackedValue();
     setGridSizePixelThreshold(hGrp->GetInt("GridSizePixelThreshold", 15));
     setGridNumberSubdivision(hGrp->GetInt("GridNumberSubdivision", 10));
-    setGridLinePattern(hGrp->GetInt("GridLinePattern", 0x0f0f));
+    setGridLinePattern(hGrp->GetInt("GridLinePattern", 0xffff));
     setGridDivLinePattern(hGrp->GetInt("GridDivLinePattern", 0xffff));
     setGridLineWidth(hGrp->GetInt("GridLineWidth", 1));
     setGridDivLineWidth(hGrp->GetInt("GridDivLineWidth", 2));
     setGridLineColor(App::Color(static_cast<uint32_t>(hGrp->GetUnsigned("GridLineColor", grey))));
     setGridDivLineColor(App::Color(static_cast<uint32_t>(hGrp->GetUnsigned("GridDivLineColor", grey))));
+    // A percentage, 0 opaque; solid lines by default, so they are drawn light.
+    setGridTransparency(static_cast<float>(hGrp->GetInt("GridTransparency", 60)) / 100.0f);
 }
 
 void ViewProviderSketch::getProjectingLine(const SbVec2s& pnt, const Gui::ViewerContext *viewer, SbLine& line) const
@@ -4732,6 +4734,7 @@ void ViewProviderSketch::OnChange(Base::Subject<const char*> &rCaller, const cha
         "GridDivLineWidth",
         "GridLineColor",
         "GridDivLineColor",
+        "GridTransparency",
     };
     if(!edit) return;
     if (dict.count(sReason))

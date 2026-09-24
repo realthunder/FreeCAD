@@ -32,9 +32,9 @@
 # include <Inventor/nodes/SoLineSet.h>
 # include <Inventor/nodes/SoMaterial.h>
 # include <Inventor/nodes/SoPickStyle.h>
+# include <Inventor/nodes/SoTransparencyType.h>
 # include <Inventor/nodes/SoVertexProperty.h>
 # include <Inventor/nodes/SoSeparator.h>
-# include <Inventor/nodes/SoBaseColor.h>
 # include <Inventor/SbVec3f.h>
 # include <Inventor/sensors/SoNodeSensor.h>
 
@@ -97,11 +97,12 @@ public:
     int GridDivLineWidth = 2;
     unsigned int GridLineColor;
     unsigned int GridDivLineColor;
+    float GridTransparency = 0.6f;
 
 private:
     void computeGridSize(const Gui::View3DInventorViewer* viewer);
     void createGrid(bool cameraUpdate = false);
-    void createGridPart(int numberSubdiv, bool divLines, bool subDivLines, int pattern, SoBaseColor* color, int lineWidth = 1);
+    void createGridPart(int numberSubdiv, bool divLines, bool subDivLines, int pattern, SoMaterial* material, int lineWidth = 1);
 
     bool checkCameraZoomChange(const Gui::View3DInventorViewer* viewer);
     bool checkCameraTranslationChange(const Gui::View3DInventorViewer* viewer);
@@ -291,34 +292,38 @@ void GridExtensionP::createGrid(bool cameraUpdate)
 
     computeGridSize(viewer);
 
-    auto getColor = [](auto unpackedcolor) {
-        SoBaseColor* lineColor = new SoBaseColor;
-        float transparency;
+    auto getMaterial = [this](auto unpackedcolor) {
+        SoMaterial* mat = new SoMaterial;
+        float unused;
         SbColor lineCol(0.7f, 0.7f, 0.7f);
-        lineCol.setPackedValue(unpackedcolor, transparency);
-        lineColor->rgb.setValue(lineCol);
-        return lineColor;
+        lineCol.setPackedValue(unpackedcolor, unused);
+        mat->diffuseColor.setValue(lineCol);
+        mat->transparency.setValue(GridTransparency);
+        return mat;
     };
 
     //First we create the subdivision lines
     createGridPart(GridNumberSubdivision, true,
                    (GridNumberSubdivision == 1), GridLinePattern,
-                   getColor(GridLineColor), GridLineWidth);
+                   getMaterial(GridLineColor), GridLineWidth);
 
     //Second we create the wider lines marking every nth lines
     if (GridNumberSubdivision > 1) {
         createGridPart(GridNumberSubdivision, false, true,
-            GridDivLinePattern, getColor(GridDivLineColor), GridDivLineWidth);
+            GridDivLinePattern, getMaterial(GridDivLineColor), GridDivLineWidth);
     }
 }
 
-void GridExtensionP::createGridPart(int numberSubdiv, bool subDivLines, bool divLines, int pattern, SoBaseColor* color, int lineWidth)
+void GridExtensionP::createGridPart(int numberSubdiv, bool subDivLines, bool divLines, int pattern, SoMaterial* material, int lineWidth)
 {
     SoGroup* parent = new Gui::SoSkipBoundingGroup();
     GridRoot->addChild(parent);
     SoVertexProperty* vts;
 
-    parent->addChild(color);
+    SoTransparencyType* transparencyType = new SoTransparencyType;
+    transparencyType->value = SoTransparencyType::DELAYED_BLEND;
+    parent->addChild(transparencyType);
+    parent->addChild(material);
 
     SoDrawStyle* DefaultStyle = new SoDrawStyle;
     DefaultStyle->lineWidth = lineWidth;
@@ -573,6 +578,12 @@ void ViewProviderGridExtension::setGridLineColor(const App::Color & color)
 void ViewProviderGridExtension::setGridDivLineColor(const App::Color & color)
 {
     pImpl->GridDivLineColor = color.getPackedValue();
+    drawGrid(false);
+}
+
+void ViewProviderGridExtension::setGridTransparency(float transparency)
+{
+    pImpl->GridTransparency = transparency;
     drawGrid(false);
 }
 
