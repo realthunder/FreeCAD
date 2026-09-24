@@ -287,7 +287,7 @@ void ApplicationCache::clearDirectory(const QString& path)
     DocumentRecoveryCleaner cleaner;
     cleaner.setIgnoreFiles(tmp.entryList());
     cleaner.setIgnoreDirectories(dirs);
-    cleaner.clearDirectory(QFileInfo(path));
+    cleaner.removeWithProgress(QFileInfoList() << QFileInfo(path), true, Gui::getMainWindow());
 }
 
 /*!
