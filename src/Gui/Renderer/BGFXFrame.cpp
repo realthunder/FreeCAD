@@ -6312,8 +6312,24 @@ bool BGFXRenderer::Private::render(const QColor &col,
                 view->overlayAnchor = nullptr;
                 view->overlayRectHeight = 0.f;
             }
-            for (const auto &draw : ov.second->draws)
-                view->submit(draw, viewMat);
+            // A scene-camera feed is a graph Coin draws in one traversal,
+            // where an SoAnnotation's content is held back and drawn after
+            // everything else in it. The view draws in submission order, so
+            // the on-top draws go second: in feed order the Sketcher's grid,
+            // translucent and later in the edit graph than the constraints,
+            // was blended over every dimension line that lies on a grid line.
+            if (anchor.sceneCamera) {
+                for (bool ontop : {false, true}) {
+                    for (const auto &draw : ov.second->draws) {
+                        if (bool(draw.material.ontop) == ontop)
+                            view->submit(draw, viewMat);
+                    }
+                }
+            }
+            else {
+                for (const auto &draw : ov.second->draws)
+                    view->submit(draw, viewMat);
+            }
             ++slot;
         }
         view->sweepScreenOffsets();
