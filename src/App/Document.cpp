@@ -244,7 +244,15 @@ PropertyContainer* opContainer(Document& doc, const LogOp& op)
         return &doc;
     if (op.ckind == "obj")
         return doc.getObjectByID(op.cid);
-    return nullptr;   // a view provider: not reachable from App (sec 24.3)
+    if (op.ckind == "view" && op.cid > 0)
+        return Document::viewOf(doc.getObjectByID(op.cid));   // sec 24.9
+    return nullptr;
+}
+
+Document::ViewResolver& viewResolver()
+{
+    static Document::ViewResolver resolver;
+    return resolver;
 }
 
 /// The dynamic-property metadata of an addprop/delprop op, as
@@ -295,7 +303,9 @@ std::string checkSelective(TransactionLog& log, int64_t seq, const std::vector<L
     // or "gone" for a dynamic property it removed.
     std::map<std::tuple<std::string, long, std::string>, std::string> left;
     for (const auto& o : ops) {
-        if (o.ckind == "view" || o.derived || o.prop.empty())
+        // A view op the undo cannot apply (sec 24.9) is not checked either.
+        if ((o.ckind == "view" && (o.cid <= 0 || !viewResolver())) || o.derived
+                || o.prop.empty())
             continue;
         if (o.op == "set")
             left[{o.ckind, o.cid, o.prop}] = o.vafter;
@@ -320,6 +330,17 @@ std::string checkSelective(TransactionLog& log, int64_t seq, const std::vector<L
 
 } // namespace
 
+void Document::setViewResolver(ViewResolver resolver)
+{
+    viewResolver() = std::move(resolver);
+}
+
+PropertyContainer* Document::viewOf(const DocumentObject* obj)
+{
+    auto& resolver = viewResolver();
+    return obj && resolver ? resolver(obj) : nullptr;
+}
+
 bool Document::_prepareRevert(int64_t seq, const std::string& name, ColdRevert& revert)
 {
     auto log = getTransactionLog();
@@ -333,12 +354,32 @@ bool Document::_prepareRevert(int64_t seq, const std::string& name, ColdRevert& 
             revert.ops.push_back(&*it);
         // Objects the revert recreates: their sets need no live container.
         std::set<long> recreated;
+        for (const LogOp* o : revert.ops) {
+            if (o->op == "remove" && o->ckind == "obj")
+                recreated.insert(o->cid);
+        }
+        // A view provider's ops (sec 24.9) are applied through the Gui's
+        // resolver; with none, or for an op logged before its owner was
+        // (cid -1), they are left alone. Its create and remove follow its
+        // object's.
+        const bool haveViews = bool(viewResolver());
         size_t views = 0;
         for (const LogOp* o : revert.ops) {
-            if (o->derived)
+            if (o->derived && o->ckind != "view")
                 revert.derived.emplace(o->cid, o->prop);
             if (o->ckind == "view") {
-                ++views;
+                if (!haveViews || o->cid <= 0) {
+                    ++views;
+                    continue;
+                }
+                if (o->op == "create" || o->op == "remove")
+                    continue;
+                if (!recreated.count(o->cid) && !getObjectByID(o->cid))
+                    why << " the object of view property " << o->prop << " (id " << o->cid
+                        << ") is gone;";
+                else if (!o->vbefore.empty() && !revert.log.values.count(o->vbefore))
+                    why << " the value of view property " << o->prop << " (" << o->vbefore
+                        << ") is not in the log;";
                 continue;
             }
             if (o->op == "remove") {
@@ -350,7 +391,6 @@ bool Document::_prepareRevert(int64_t seq, const std::string& name, ColdRevert& 
                                                           DocumentObject::getClassTypeId(), true)
                              .isBad())
                     why << " type " << o->ctype << " is unknown;";
-                recreated.insert(o->cid);
             }
             else if (o->op == "create") {
                 if (!getObjectByID(o->cid))
@@ -4489,6 +4529,18 @@ void Document::_applyVersion(Document& version)
         auto obj = getObjectByID(kv.first);
         if (obj)
             restoreContainer(*obj, *kv.second, false);
+    }
+    // View providers (sec 24.9), where view state is undo state: under
+    // ViewObjectTransaction, the setting that has a view provider's change
+    // open a transaction of its own. The scratch document's are the
+    // version's, restored by the Gui from its GuiDocument.xml.
+    if (DocumentParams::getViewObjectTransaction()) {
+        for (auto& kv : target) {
+            auto live = viewOf(getObjectByID(kv.first));
+            auto from = viewOf(kv.second);
+            if (live && from)
+                restoreContainer(*live, *from, false);
+        }
     }
     // 5. What the version had touched is touched; the rest is as it was.
     for (auto& kv : target) {

@@ -289,6 +289,7 @@ private:
         int64_t txn;
         int idx;
         long cid;            ///< 0 for the document's own property
+        bool view {false};   ///< the view provider of object `cid` (sec 24.9)
         std::string prop;
         std::string tier;
     };

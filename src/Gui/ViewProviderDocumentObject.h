@@ -286,6 +286,9 @@ protected:
     //@{
     bool isAttachedToDocument() const override;
     const char* detachFromDocument() override;
+    /// Its object: how the transaction log names this view provider
+    /// (docs/TransactionLog.md sec 24.9).
+    const App::DocumentObject* getTransactionOwner() const override { return pcObject; }
 
     /// get called when a property status has changed
     void onPropertyStatusChanged(const App::Property &prop, unsigned long oldStatus) override;

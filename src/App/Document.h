@@ -34,6 +34,7 @@
 #include "PropertyStandard.h"
 #include "PropertyFile.h"
 
+#include <functional>
 #include <memory>
 #include <map>
 #include <type_traits>
@@ -357,6 +358,15 @@ public:
      * not restored; their owners are touched. Returns whether it ran.
      */
     bool undoLogged(int64_t seq);
+
+    /** How App reaches an object's view provider (docs/TransactionLog.md
+     * sec 24.9): the Gui registers a resolver; without one (FreeCADCmd)
+     * view state is out of reach and left alone.
+     */
+    using ViewResolver = std::function<PropertyContainer*(const DocumentObject*)>;
+    static void setViewResolver(ViewResolver resolver);
+    /// The view provider of `obj`, or null.
+    static PropertyContainer* viewOf(const DocumentObject* obj);
     /// Whether writes are recorded into transactions at all: undo is on,
     /// or the log is (which records without keeping undo steps).
     bool transactionsWanted() const;

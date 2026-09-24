@@ -19,9 +19,42 @@
 #include "App/PropertyHistory.h"
 #include "App/TransactionLog.h"
 #include "App/TransactionValue.h"
+#include "App/Transactions.h"
 #include "Base/FileInfo.h"
 #include "Base/Stream.h"
 #include <src/App/InitApplication.h>
+
+// A stand-in for a view provider (docs/TransactionLog.md sec 24.9): a
+// transactional container that is not a document object, belongs to one,
+// and reports its changes to that object's document.
+class TxnLogFakeView: public App::TransactionalObject
+{
+    PROPERTY_HEADER_WITH_OVERRIDE(TxnLogFakeView);
+
+public:
+    TxnLogFakeView()
+    {
+        ADD_PROPERTY(Shade, (0));
+    }
+    App::PropertyInteger Shade;
+    App::DocumentObject* owner {nullptr};
+    const App::DocumentObject* getTransactionOwner() const override
+    {
+        return owner;
+    }
+    bool isAttachedToDocument() const override
+    {
+        return owner && owner->isAttachedToDocument();
+    }
+    void onBeforeChange(const App::Property* prop) override
+    {
+        if (owner && owner->getDocument())
+            onBeforeChangeProperty(owner->getDocument(), prop);
+        App::TransactionalObject::onBeforeChange(prop);
+    }
+};
+
+PROPERTY_SOURCE(TxnLogFakeView, App::TransactionalObject)
 
 namespace {
 
@@ -31,6 +64,12 @@ protected:
     static void SetUpTestSuite()
     {
         tests::initApplication();
+        if (TxnLogFakeView::getClassTypeId().isBad()) {
+            TxnLogFakeView::init();
+            // What the Gui does for its view providers: a record type.
+            static App::TransactionProducer<App::TransactionObject> producer(
+                TxnLogFakeView::getClassTypeId());
+        }
     }
 
     void SetUp() override
@@ -1580,4 +1619,69 @@ TEST_F(TransactionLogTest, selectiveUndoRefusesWhatChangedSince)
     EXPECT_STRNE(a->String.getValue(), "x");
     EXPECT_EQ(a->ExecCount.getValue(), execs);
     EXPECT_TRUE(a->isTouched());
+}
+
+TEST_F(TransactionLogTest, coldUndoReachesViewProviders)
+{
+    // Sec 24.9: a view provider's change is logged under its object's id,
+    // and a cold undo applies it through the resolver the Gui registers.
+    std::map<const App::DocumentObject*, TxnLogFakeView*> views;
+    App::Document::setViewResolver([&views](const App::DocumentObject* obj) {
+        auto it = views.find(obj);
+        return it == views.end() ? nullptr : static_cast<App::PropertyContainer*>(it->second);
+    });
+    // View state is undo state only under ViewObjectTransaction: without
+    // it a view provider's change opens no transaction of its own.
+    const bool viewTxn = App::DocumentParams::getViewObjectTransaction();
+    App::DocumentParams::setViewObjectTransaction(true);
+    struct Reset
+    {
+        bool viewTxn;
+        ~Reset()
+        {
+            App::Document::setViewResolver({});
+            App::DocumentParams::setViewObjectTransaction(viewTxn);
+        }
+    } reset {viewTxn};
+
+    doc()->setMaxUndoStackSize(1);
+    doc()->openTransaction("create");
+    auto a = make("A");
+    doc()->commitTransaction();
+    TxnLogFakeView view;
+    view.owner = a;
+    views[a] = &view;
+
+    doc()->openTransaction("shade");
+    view.Shade.setValue(5);
+    doc()->commitTransaction();
+    auto& store = log().store();
+    const auto shadeRow = store.transactions().back();
+    ASSERT_EQ(shadeRow.name, "shade");
+    auto ops = store.ops(shadeRow.seq);
+    ASSERT_EQ(ops.size(), 1u);
+    EXPECT_EQ(ops[0].ckind, "view");
+    EXPECT_EQ(ops[0].cid, a->getID());
+    EXPECT_EQ(ops[0].prop, "Shade");
+
+    for (int i = 1; i <= 2; ++i) {
+        doc()->openTransaction("edit");
+        a->Integer.setValue(i);
+        doc()->commitTransaction();
+    }
+    ASSERT_TRUE(doc()->undo());
+    ASSERT_TRUE(doc()->undo());   // cold
+    EXPECT_EQ(view.Shade.getValue(), 5);
+    ASSERT_TRUE(doc()->undo());   // cold: the view provider's change
+    EXPECT_EQ(view.Shade.getValue(), 0);
+    ASSERT_TRUE(doc()->redo());
+    EXPECT_EQ(view.Shade.getValue(), 5);
+
+    // Selective undo of the view change once it is not the tip.
+    doc()->openTransaction("edit");
+    a->Integer.setValue(7);
+    doc()->commitTransaction();
+    ASSERT_TRUE(doc()->undoLogged(shadeRow.seq));
+    EXPECT_EQ(view.Shade.getValue(), 0);
+    EXPECT_EQ(a->Integer.getValue(), 7);
 }

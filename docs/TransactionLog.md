@@ -3094,3 +3094,47 @@ change was in no transaction and told nobody. `restoreValue` now brackets
 every restore with the pair (`PropertyValueRestorer`, a friend of
 `Property`); nested calls from a `Restore` that does call `setValue` are
 harmless. This covers cold and selective undo too.
+
+### 24.9 View providers (user, 2026-09-24)
+
+Left open by 24.6 and 24.8, and settled by the user's pointer to the
+setting that already decides it: **view-provider state is undo state
+exactly when `ViewObjectTransaction` says so.** That setting (or a command
+flagged `ViewTransaction`) is what lets a view provider's change open a
+transaction; inside an open transaction the change is recorded either
+way. So the log follows what the undo system records, and the restore
+follows the setting:
+
+- **Logged under the owner.** `TransactionalObject::getTransactionOwner()`,
+  which `ViewProviderDocumentObject` answers with its object: a view op's
+  `cid` is the object's id (it was `-1`), and `resolvePending()` resolves a
+  view op's pending after too (`Pending::view`).
+- **Reached from App.** `Document::setViewResolver`, which the Gui registers
+  at start (and clears at exit) with `Application::getViewProvider`;
+  `Document::viewOf(obj)`. Without a Gui (FreeCADCmd) there is none, and
+  view ops are left alone, as are ops logged before this change (`cid` -1).
+- **Cold and selective undo** apply a row's view ops like any other --
+  checked (the object there or recreated by the same revert, the value in
+  the log), applied in the value pass through the resolver, and checked by
+  the refuse rule. A view provider's create and remove follow its object's.
+- **Restore to a version** restores the view providers' properties,
+  compared against the scratch document's (which the Gui restored from the
+  version's GuiDocument.xml), when `ViewObjectTransaction` is on. Off, view
+  state is not undo state and the restore leaves it as it is.
+
+Gtest `coldUndoReachesViewProviders`, with a stand-in view provider (a
+`TransactionalObject` with an owner, its record type registered as the Gui
+registers `TransactionViewProvider`) and `ViewObjectTransaction` on: the op
+is `view` under the owner's id; a cold undo, a redo and a selective undo
+of the view change. Real view providers need the GUI:
+`scripts/transaction-log-view-check.py`, run at GUI start in a fresh user
+home --
+
+    cd build/conda-relwithdebinfo-801
+    QT_QPA_PLATFORM=offscreen FREECAD_USER_HOME=/tmp/fchome-view \
+      VIEWCHECK_OUT=/tmp/viewcheck.txt ~/works/sw/fcad/.conda/run.sh \
+      ./bin/FreeCAD ~/works/sw/fcad/scripts/transaction-log-view-check.py
+
+-- a box's colour changed, pushed past a window of 2 and undone cold,
+redone; restored to the version before the colour, the restore undone.
+14 checks, all PASS on 2026-09-24.

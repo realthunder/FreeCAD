@@ -515,6 +515,13 @@ Application::Application(bool GUIenabled)
             std::bind(&Gui::Application::slotShowHidden, this, sp::_1));
         //NOLINTEND
 
+        // How the transaction log reaches a view provider from App, for a
+        // cold undo or a restore to a version (docs/TransactionLog.md 24.9).
+        App::Document::setViewResolver([](const App::DocumentObject* obj) -> App::PropertyContainer* {
+            auto self = Application::Instance;
+            return self ? self->getViewProvider(obj) : nullptr;
+        });
+
         App::GetApplication().signalFinishOpenDocument.connect([]() {
             std::vector<App::Document*> docs;
             for(auto doc : App::GetApplication().getDocuments()) {
@@ -722,6 +729,7 @@ Application::Application(bool GUIenabled)
 Application::~Application()
 {
     Base::Console().Log("Destruct Gui::Application\n");
+    App::Document::setViewResolver({});
     // A path tracer session released by a closing view is destroyed by
     // a worker, not where it was released (docs/CyclesIntegration.md
     // sec 5.12). Wait for those here: past this point the process

@@ -120,11 +120,14 @@ ContainerInfo describe(Document& doc, const TransactionalObject* tobj, const std
         c.cname = obj->getNameInDocument() ? obj->getNameInDocument() : nameInTxn;
     }
     else if (tobj) {
-        // No id to find it by again: its pending refs resolve only through
-        // the next copy, never through resolvePending().
+        // A view provider (sec 24.9): named by its object's id, which is
+        // how a cold undo and resolvePending() find it again. One with no
+        // owner keeps -1 and resolves only through the next copy.
         c.ckind = "view";
-        c.cid = -1;
-        c.cname = c.container->getFullName();
+        auto owner = tobj->getTransactionOwner();
+        c.cid = owner ? owner->getID() : -1;
+        c.cname = owner && owner->getNameInDocument() ? owner->getNameInDocument()
+                                                      : c.container->getFullName();
     }
     else {
         c.ckind = "doc";
@@ -1458,6 +1461,7 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
             p.txn = t.seq;
             p.idx = static_cast<int>(ops.size()) - 1;   // the op just emitted
             p.cid = c.cid;
+            p.view = c.ckind == "view";
             p.prop = ops.back().prop;
             p.tier = tier;
             newPending.emplace_back(prop.getID(), p);
@@ -1660,7 +1664,9 @@ void TransactionLog::resolvePending()
             _pending.erase(kv.first);
             continue;
         }
-        if (kv.second.cid == 0)
+        if (kv.second.view)
+            container = Document::viewOf(_doc.getObjectByID(kv.second.cid));
+        else if (kv.second.cid == 0)
             container = &_doc;
         else
             container = _doc.getObjectByID(kv.second.cid);
