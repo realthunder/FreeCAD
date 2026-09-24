@@ -540,26 +540,26 @@ bool isFeatureMovable(App::DocumentObject* const feat)
         if (sk && !isFeatureMovable(sk))
             return false;
 
-        if (auto prop = static_cast<App::PropertyLinkList*>(prim->getPropertyByName("Sections"))) {
+        if (auto prop = dynamic_cast<App::PropertyLinkSubList*>(prim->getPropertyByName("Sections"))) {
             if (std::any_of(prop->getValues().begin(), prop->getValues().end(), [](App::DocumentObject* obj){
                 return !isFeatureMovable(obj);
             }))
                 return false;
         }
 
-        if (auto prop = static_cast<App::PropertyLinkSub*>(prim->getPropertyByName("ReferenceAxis"))) {
+        if (auto prop = dynamic_cast<App::PropertyLinkSub*>(prim->getPropertyByName("ReferenceAxis"))) {
             App::DocumentObject* axis = prop->getValue();
             if (axis && !isFeatureMovable(axis))
                 return false;
         }
 
-        if (auto prop = static_cast<App::PropertyLinkSub*>(prim->getPropertyByName("Spine"))) {
+        if (auto prop = dynamic_cast<App::PropertyLinkSub*>(prim->getPropertyByName("Spine"))) {
             App::DocumentObject* spine = prop->getValue();
             if (spine && !isFeatureMovable(spine))
                 return false;
         }
 
-        if (auto prop = static_cast<App::PropertyLinkSub*>(prim->getPropertyByName("AuxillerySpine"))) {
+        if (auto prop = dynamic_cast<App::PropertyLinkSub*>(prim->getPropertyByName("AuxillerySpine"))) {
             App::DocumentObject* auxSpine = prop->getValue();
             if (auxSpine && !isFeatureMovable(auxSpine))
                 return false;
@@ -591,24 +591,24 @@ std::vector<App::DocumentObject*> collectMovableDependencies(std::vector<App::Do
             if (sk) {
                 unique_objs.insert(static_cast<App::DocumentObject*>(sk));
             }
-            if (auto prop = static_cast<App::PropertyLinkList*>(prim->getPropertyByName("Sections"))) {
+            if (auto prop = dynamic_cast<App::PropertyLinkSubList*>(prim->getPropertyByName("Sections"))) {
                 for (App::DocumentObject* obj : prop->getValues()) {
                     unique_objs.insert(obj);
                 }
             }
-            if (auto prop = static_cast<App::PropertyLinkSub*>(prim->getPropertyByName("ReferenceAxis"))) {
+            if (auto prop = dynamic_cast<App::PropertyLinkSub*>(prim->getPropertyByName("ReferenceAxis"))) {
                 App::DocumentObject* axis = prop->getValue();
                 if (axis && !axis->isDerivedFrom<App::OriginFeature>()){
                     unique_objs.insert(axis);
                 }
             }
-            if (auto prop = static_cast<App::PropertyLinkSub*>(prim->getPropertyByName("Spine"))) {
+            if (auto prop = dynamic_cast<App::PropertyLinkSub*>(prim->getPropertyByName("Spine"))) {
                 App::DocumentObject* axis = prop->getValue();
                 if (axis && !axis->isDerivedFrom<App::OriginFeature>()){
                     unique_objs.insert(axis);
                 }
             }
-            if (auto prop = static_cast<App::PropertyLinkSub*>(prim->getPropertyByName("AuxillerySpine"))) {
+            if (auto prop = dynamic_cast<App::PropertyLinkSub*>(prim->getPropertyByName("AuxillerySpine"))) {
                 App::DocumentObject* axis = prop->getValue();
                 if (axis && !axis->isDerivedFrom<App::OriginFeature>()){
                     unique_objs.insert(axis);
@@ -639,7 +639,7 @@ void relinkToOrigin(App::DocumentObject* feat, PartDesign::Body* targetbody)
     }
     else if (feat->isDerivedFrom<PartDesign::ProfileBased>()) {
         auto prim = static_cast<PartDesign::ProfileBased*>(feat);
-        if (auto prop = static_cast<App::PropertyLinkSub*>(prim->getPropertyByName("ReferenceAxis"))) {
+        if (auto prop = dynamic_cast<App::PropertyLinkSub*>(prim->getPropertyByName("ReferenceAxis"))) {
             App::DocumentObject* axis = prop->getValue();
             if (axis && axis->isDerivedFrom<App::OriginFeature>()){
                 auto originfeat = static_cast<App::OriginFeature*>(axis);
