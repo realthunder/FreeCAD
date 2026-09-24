@@ -2315,6 +2315,33 @@ a GUI test's configuration directory outlives a run, so a preference the
 last run stored reads as a default in the next; the test clears its
 entries at both ends.
 
+### HiDPI (session 89): 59 -> 57
+
+`418c09899b` + `37b4560893`, **adapted** `cfad3e76c4`. Upstream's fix
+lives in `EditModeCoinManager`, which the fork does not build, so it is
+taken as its end state at upstream's tip inside the fork's own
+`initParams()`. The defect was live: sizes were scaled by logical DPI /
+96, and Qt 6 keeps that near 96 on a scaled screen and puts the scale in
+the device pixel ratio, so on a 200% screen every edit-mode size -- line
+widths, points, markers, Coin text, icons, datum labels -- was half.
+Scaled by `ViewScalingFactor * ratio` now; at ratio 1 and 96 dpi nothing
+moves.
+
+Two fork-specific points. **Datum labels keep the fork's sizing** (they
+share the Coin font size; upstream sizes them separately in points,
+which would be a visible change at ratio 1 and is a decision of its own,
+not part of this fix). And **the ratio comes from the edit viewer**, so a
+served client's mirror answers with that client's -- the browser's
+drawing buffer is in device pixels, so a 2x phone was drawing sketch
+lines at half width as well.
+
+`37b4560893`'s re-size on a screen move hangs off the viewer's
+`devicePixelRatioChanged`, through the same timer a preference change
+uses; untested, since xvfb fixes the ratio for the process. Guarded by
+`tests/gui/sketch-hidpi-sizes.py` at `QT_SCALE_FACTOR=2`
+(`GuiSketchHiDpiSizes_tests_run`, ctest 783), which checks the ratio
+first -- without it every other check is vacuous.
+
 ## 7a. The constraint-tool hints (session 85)
 
 Thirteen rows, not the eleven the sweep sized: `580d538798`, the commit
