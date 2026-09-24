@@ -208,6 +208,13 @@ fc_add_gui_test(GuiSketchSupportVisibility_tests_run
                 sketch-support-visibility.py
                 --timeout 240)
 
+# Selecting in a sketch re-edited within one event-loop turn: the first
+# edit's elements panel still observes the selection until it is deleted,
+# and kept itemMap pointing at the tree items sketchClosed() deleted.
+fc_add_gui_test(GuiSketchReEditSelect_tests_run
+                sketch-reedit-select.py
+                --timeout 120)
+
 # A bulk selection reaches the sketch being edited. Past
 # MaxSelectionNotification a paused batch (addSelections) arrives as one
 # SetSelection, which the sketch's view provider and both task panels

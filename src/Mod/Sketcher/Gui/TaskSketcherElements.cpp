@@ -574,6 +574,9 @@ void TaskSketcherElements::sketchClosed()
     connectionConstraintsChanged.disconnect();
     QSignalBlocker blocker(ui->elementsWidget);
     ui->elementsWidget->clear();
+    // clear() deleted the items this maps to, and the panel goes on
+    // observing the selection until it is destroyed.
+    itemMap.clear();
 }
 static void setPosSelected(ElementItem *ite, Sketcher::PointPos PosId, bool select)
 {
