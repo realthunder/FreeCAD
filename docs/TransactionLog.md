@@ -3182,6 +3182,16 @@ session-only undo/redo stack for view configuration, in the spirit of
 SolidWorks' and Rhino's "undo view". The ad hoc `<Camera>` XML of
 GuiDocument.xml stays as it is until then.
 
+*Later (user, 2026-09-25):* the 3D view's own properties (`DrawStyle`,
+`ShadingType`, render and light overrides, `ObjectDisplayModes`,
+`OnTopObjects`) are not logged either -- a view is a property container
+but not a transactional one -- and are to be handled the same way: the
+camera becomes a view property after all, and all view state gets a
+per-view, session-only change stack. Object visibility is to become view
+state too, with the App visibility as the seed. Recorded as design in
+`docs/MultiViewEdit.md`, with the edit session moving from per document to
+per view.
+
 **GUI events outside any command.** A tree checkbox, a property-editor
 path that sets no application transaction, a signal handler: an implicit
 transaction opened there has no invocation to return from (sec 21). The
