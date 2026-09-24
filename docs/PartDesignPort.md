@@ -4,7 +4,10 @@ Status (2026-09-24): phase 0 (ledger, this doc) done; **the gizmos are in**
 -- the layer (`984e714b32`) and every panel upstream enables (`a56e0777da`,
 `4394ef2827`), built and run on the Windows box (sec 4, "Verified"). The
 gizmo family's 36 ledger rows are decided; three are deferred behind App
-features. Next: the smaller features and fixes (decision 2).
+features. **The fixes are triaged** (sec 6): 205 of the 213 `fix` rows
+decided, 37 upstream commits taken or adapted in 33 fork commits, 8 rows
+open. Next: the open fix rows and the deferred fix families (sec 6), then
+the smaller features (decision 2).
 
 Branch `PartDesignPort` off `SketcherPort` `4fa781fc58`, with `LinkVibe`
 `312b62c995` merged in (section 5). Upstream reference: `upstream/main`
@@ -195,3 +198,126 @@ Then MSVC wants `<numbers>` where GCC found it transitively
 `DrawSketchHandler*.h` and three Sketcher test files, `c2427bee37`), and a
 free function a test calls across the DLL boundary needs its export
 (`getGeoListFacade`, same commit). With those the whole tree builds.
+
+## 6. Phase 2: the fixes (2026-09-24)
+
+### Method
+
+The 213 open rows of kind `fix` were split App-only (96) and the rest (117),
+and each half into four batches read by agents, one verdict per commit with
+fork `file:line` evidence: `have`, `n/a`, `superseded`, `pick`, `adapt`,
+`declined`, `depends`, `unsure`. Where a verdict rested on behaviour, the
+agents ran upstream's own tests or a small script against the fork build
+(the helix, loft, thickness, pocket and binder cases below were settled that
+way). Every `pick` and `adapt` was then read again against the fork before it
+was applied. The ledger's `decision` column carries the result: `have (...)`
+and `n/a (...)` with the reason in brief, `deferred (...)` for what needs an
+upstream feature the fork lacks or a fork design of its own.
+
+Before the picks the branch had never had a complete test run; it has now:
+**ctest 749/749, Python 2902 OK** (50 skipped, 6 expected failures).
+
+### What was taken
+
+| upstream | fork | what |
+|---|---|---|
+| `8c08549f5a` (Part) | `2605cb0fa1` | Part::Reverse worked again (see below); Reverse and Scale keep the element map |
+| `e5b2d8c874` | `e20dcdaf5d` | a TwoLengths pad ignores a leftover Midplane -- changes such files' geometry |
+| `490d6c5abc` | `16f80f19fd` | Up to face checked against the direction, not the sketch normal; + `0b4e01047f`'s test |
+| `76bd68e672` | `bb780f7d4d` | silent getVerifiedFace() stays silent with AllowMultiFace |
+| `a539e5e460` | `75897b2114` | an origin/LCS axis as a draft's pull direction |
+| `077745d737` | `84a01677df` | patterns along an App::Line use its base point and its LCS's rotation |
+| `48785dfd0e` | `f94d1195bc` | a loft or pipe without a profile: an error, not a crash |
+| `fceab772d2` | `a30641340a` | loft sections pair wires by nesting (issue 6130), 6 tests |
+| `9a5d934eab` | `6ebca6951f` | loft end face between curved faces: Bullseye, then Cheese, then Simple |
+| `d214306d1b` | `26a41e2c02` | chamfer on a degenerated or faceless edge throws |
+| `5fbd150b18` | `41b02fd269` | refine keeps inner shells' orientation, both branches |
+| `7d738f161a` | `b9d82d07da` | ShapeBinder without Support keeps a scripted shape |
+| `e55e7f75d2` | `03565a4e89` | a body can start from a face (makESolid only for shells) |
+| `d8d85f05ff` | `0296c0a25c` | Thickness in the base's local frame (issue 5829), test |
+| `db1b0c56bf`, `fc5e6dcf8b` | `fff8ad80b4` | clearance table to M150, M68 standard fit 77 -> 74; ISO 10642 fine M5 |
+| `c8efc26982` | `0cba4f982a` | custom thread clearance may be negative |
+| `7faf899b8d`, `72c37f9b75`, `e05e17c954` | `e762e7afb5` | thread depth kept through all; two guards |
+| `44e8f91085`, `ca3cb78ad5` | `23d0ad5e07` | Hole panel enabling |
+| `fe7bff5a9a` (tests) | `1bede1b2a4` | Hole Refine tests; the fix itself was here |
+| `357babf9f0` (Gui) | `49e25a65b2` | Helix panel shows unknown errors |
+| `374c5713b2`, `5ba7f207ab` | `c872a2d457` | sketch in the body's document; free-standing datum planes |
+| `41de357e8f` | `4d981cd8b4` | Sections read as PropertyLinkSubList (a static_cast UB) |
+| `9759da82e4` (PD) | `e129e9e0d6` | button enums for PySide6 in gear, sprocket, shaft |
+| `59b607c5bd` | `26237cf461` | a clone's body goes into the active part |
+| `839fd1fec0` | `ec56d111f7` | primitive panel after its feature is deleted |
+| `a1ce983035` | `156e84ea7d` | StringHasher count(); and SaveDocFile's missing marker (below) |
+| `d0ed2258dc` | `a40d03872d` | ISO 606 roller diameters |
+| `d6dd100266` | `1cd4c7d140` | locked properties on gear, sprocket, scripts |
+| `fa61131590` | `f5d3a1fb8b` | message boxes get a parent (Gui and PD) |
+| `a548ca698a` | `0e418b64e9` | a new Boolean's DisplayMode property |
+| `4a80af74f4` | `8458863395` | setEdit() subname, the line the merge lost |
+| `1b799ad355` | `9c24f322a6` | pattern panels pick references only in reference mode |
+| `8249b81d93` | `9a45edc726` | Gui test closes its dialog by accept() (not run here) |
+
+### Fork bugs the triage turned up
+
+Not from any upstream commit; fixed on the way:
+
+- **Part::Reverse always failed** ("Shape is null."): the merge `81e275090a`
+  dropped its `if`. `2605cb0fa1`.
+- **Inverted `strcmp` in handleChangedPropertyName** of Part::Extrusion and
+  PD FeatureExtrude, since `d2f04183ed` (2022): every unknown PropertyAngle
+  went into TaperInnerAngle and switched AutoTaperInnerAngle off -- an
+  upstream Pad with TaperAngle2 loaded with its inner taper overwritten.
+  `5384f59f7c`.
+- **StringHasher::SaveDocFile() wrote no `StringTableStart` marker**, so a
+  hasher saved to its own file went to the legacy parser and could not be
+  read back. `156e84ea7d`, with the first real SaveDocFile/RestoreDocFile
+  tests.
+- **LinearPattern's reference test was dead** (exitSelectionMode() before
+  it), dropping an origin plane picked as direction. `9c24f322a6`.
+
+Seen, not yet fixed: the Pad enum offers `UpToShape` with no code behind it
+-- an upstream file saved with it loads here and pads by Length; the chamfer
+panel's setupGizmos() emits currentIndexChanged and so writes ChamferType
+and recomputes when the panel opens; a LinearPattern with SubTransform off
+dropped a cylinder the body already had (one agent's probe, not reproduced).
+
+### Deferred, each needing a design of the fork's own
+
+- **The helix family** (`c7d85ff9d9`, `ffb2ebe4c6`, `7680872e41`,
+  `c4528eb3a5`, `39c902c616`): the fork's helix sweeps with MakePipeShell and
+  an auxiliary spine, and upstream's TestHelix shows two defects on it -- a
+  cone ~3% low in volume and giant helices invalid. The fix is one fork
+  change, version-gated so old helixes keep their names, not five picks.
+  `7680872e41`'s Part hunk alone tightens the approximation tolerance of
+  every normal-size helix to ~1e-12, so it waits for the family.
+- **Relinking after a feature is removed** (`26c895c30d`): a dress-up's
+  edge links go stale when the feature before it is removed; needs a hook at
+  Body.cpp's reroute using TopoShape::searchSubShape.
+- **Suppress stamps a stale Placement** (`57b9a41335`) and **a subtractive
+  primitive that removes nothing misplaces the shape** (`22131b3c93`): read
+  from the code, each needs a confirming test first.
+- Panels: patterns never apply() on OK (`fd4bea24b7`), an empty
+  Fillet/Chamfer command recomputes and errors (`fc135718a4`), PD's active
+  part ignores an active Assembly (`62cbaf7336`), accept() re-executes an
+  already previewed feature (`c1c9cb63e0` and its two follow-ups).
+
+### Open rows
+
+`594010d9f0` (pocket up to a face through a hollow: the fork's pocket removes
+~0 or ~25 where nothing or everything is expected; the upstream change is
+untested here), `fc56730648` (an upstream >= 1.1 file stores origin axes in
+its new convention, which the fork would read turned; needs a restore
+migration), `8b9f5bdc4f` (port testPadToConcaveCase and see), `2657bbee4d`
+(a non-uniform transformGeometry on a located shape under OCCT 8.0.1),
+`b4c5a6d5ba` and `3a34fe080a` (ShapeAppearance round trips, settle in the
+GUI), `5568b40a07` (a leading-dot subname nothing here produces),
+`601637320d` (a Gui test).
+
+### Verified
+
+After the picks: PartDesign tests 88 OK (the new Pad, Loft, Hole and
+Thickness tests among them), Part 124 OK, ctest 749/749 with
+Toponaming_tests_run's 256 cases passing, and a probe script for what no
+suite covers (Reverse, refine with a split void, Draft on an origin axis,
+Polar on the origin Z, a loft with nothing set, a scripted ShapeBinder, a
+body on a face, thread depth through all, negative clearance, TwoLengths with
+Midplane). TestPartDesignGui did not return under `FreeCAD -t` within four
+minutes and was not judged.
