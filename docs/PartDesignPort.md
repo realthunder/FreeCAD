@@ -6,8 +6,9 @@ Status (2026-09-24): phase 0 (ledger, this doc) done; **the gizmos are in**
 gizmo family's 36 ledger rows are decided; three are deferred behind App
 features. **The fixes are triaged** (sec 6): 205 of the 213 `fix` rows
 decided, 37 upstream commits taken or adapted in 33 fork commits, 8 rows
-open. Next: the open fix rows and the deferred fix families (sec 6), then
-the smaller features (decision 2).
+open. The helix family and two of the deferred placement rows followed
+(sec 6, "Deferred, then taken"). Next: the rest of the deferred rows and
+the open fix rows (sec 6), then the smaller features (decision 2).
 
 Branch `PartDesignPort` off `SketcherPort` `4fa781fc58`, with `LinkVibe`
 `312b62c995` merged in (section 5). Upstream reference: `upstream/main`
@@ -279,21 +280,39 @@ panel's setupGizmos() emits currentIndexChanged and so writes ChamferType
 and recomputes when the panel opens; a LinearPattern with SubTransform off
 dropped a cylinder the body already had (one agent's probe, not reproduced).
 
+### Deferred, then taken
+
+- **The helix family**, `161a2cb92f`. The fork swept a helix with
+  MakePipeShell, a conical one with an auxiliary spine that turns the
+  profile out of the meridian plane. Upstream's testCone has a profile that
+  touches itself turn to turn, so its exact volume is
+  A * 2 pi turns * r_mid = 500 * 13.823 * 56.18 = 3.8829e5; the fork gave
+  3.7757e5, and giant helices came out invalid. Upstream's sweep (MakePipe,
+  Frenet, the path broken per turn only for a cylindrical helix, its start
+  offset rule, `Tolerance`) is a second path gated on
+  `_ProfileBasedVersion`: 3 for a new helix, and 0 -- an upstream file --
+  takes it too; 1 and 2, the fork's own, keep the old sweep and their
+  element names. Names come from `makEShape()` over the MakePipe; a fillet
+  on a cap edge survives a pitch change. `makeSpiralHelix()` takes the
+  approximation tolerance as an argument, so `7680872e41`'s scaled
+  tolerance reaches the PD helix only. `39c902c616`'s unconditional
+  ShapeFix_Solid is declined: it drops the element map. TestHelix.py, which
+  the fork never had, is taken whole (9 tests, 12 s where the old sweep
+  took 106 s); one tolerance in it is raised for OCCT 8.0.1, see the
+  commit. New behaviour: a subtractive helix with no base is an error.
+- **Suppress and a cut that removes nothing**, `9262292976`. Both were
+  real: a free-placed box, suppressed and unsuppressed, came back at the
+  base's origin (the body lost it, 1056 -> 1000 mm^3); a subtractive box
+  missing the base put the body at the cutter. One cause:
+  `Part::Feature::onChanged(Shape)` equates a shape's own location with
+  Placement, and both paths set a shape carrying a location of its own.
+  `wrapLocated()` puts such a shape in a compound. Tests in TestPrimitive.
+
 ### Deferred, each needing a design of the fork's own
 
-- **The helix family** (`c7d85ff9d9`, `ffb2ebe4c6`, `7680872e41`,
-  `c4528eb3a5`, `39c902c616`): the fork's helix sweeps with MakePipeShell and
-  an auxiliary spine, and upstream's TestHelix shows two defects on it -- a
-  cone ~3% low in volume and giant helices invalid. The fix is one fork
-  change, version-gated so old helixes keep their names, not five picks.
-  `7680872e41`'s Part hunk alone tightens the approximation tolerance of
-  every normal-size helix to ~1e-12, so it waits for the family.
 - **Relinking after a feature is removed** (`26c895c30d`): a dress-up's
   edge links go stale when the feature before it is removed; needs a hook at
   Body.cpp's reroute using TopoShape::searchSubShape.
-- **Suppress stamps a stale Placement** (`57b9a41335`) and **a subtractive
-  primitive that removes nothing misplaces the shape** (`22131b3c93`): read
-  from the code, each needs a confirming test first.
 - Panels: patterns never apply() on OK (`fd4bea24b7`), an empty
   Fillet/Chamfer command recomputes and errors (`fc135718a4`), PD's active
   part ignores an active Assembly (`62cbaf7336`), accept() re-executes an
@@ -321,3 +340,8 @@ Polar on the origin Z, a loft with nothing set, a scripted ShapeBinder, a
 body on a face, thread depth through all, negative clearance, TwoLengths with
 Midplane). TestPartDesignGui did not return under `FreeCAD -t` within four
 minutes and was not judged.
+
+After the helix and placement commits: TestPartDesignApp 99 OK (TestHelix's
+9 and the two new primitive tests among them), TestPartApp 124 OK. ctest
+was not rerun; the only C++ change outside PartDesign is
+`makeSpiralHelix()`'s defaulted argument.
