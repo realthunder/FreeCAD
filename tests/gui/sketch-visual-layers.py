@@ -23,9 +23,20 @@ Checks:
     the root point's slot -- so a vertex left out of the drawing would
     have coloured the root point; it is -1 now, and its readers check.
 
+The elements panel shows the layer as a checkbox per row, ticked when
+shown; toggling it moves the geometry between layer 0 and the hidden layer
+in one transaction:
+
+  - the hidden line's row is unticked, the others ticked;
+  - unticking the first line's row hides it (one curve drawn), and it is
+    one undo step;
+  - ticking the hidden line's row shows it again.
+
 Scored against the tree before the change: every check fails -- three
 curves and seven points are drawn, Select All takes Edge2, Vertex3 and
-Vertex4, and Vertex3, drawn, is coloured when selected.
+Vertex4, and Vertex3, drawn, is coloured when selected. With the drawing
+fixed and the panel not, the four checkbox checks fail: no row has a
+checkbox, and ticking one changes nothing.
 """
 import os
 import time
@@ -117,6 +128,33 @@ def run():
         got = selected_points()
         check("selecting a hidden vertex colours no drawn point", got == 0, got)
         FreeCADGui.Selection.clearSelection()
+        settle()
+
+        # The elements panel's checkbox.
+        from PySide import QtWidgets
+        tree = [w for w in FreeCADGui.getMainWindow().findChildren(QtWidgets.QTreeWidget)
+                if w.objectName() == "elementsWidget"][0]
+
+        def rows():
+            return [tree.topLevelItem(i).checkState(0) == QtCore.Qt.Checked
+                    for i in range(tree.topLevelItemCount())]
+
+        check("the hidden line's row is unticked, the others ticked",
+              rows() == [True, False, True], rows())
+        undo = doc.UndoCount
+        tree.topLevelItem(0).setCheckState(0, QtCore.Qt.Unchecked)
+        settle(15)
+        curves = coin.SoNode.getByName("CurvesLineSet").numVertices.getNum()
+        check("unticking a row hides its line", curves == 1 and rows() == [False, False, True],
+              "%d curves, rows %s" % (curves, rows()))
+        check("as one undo step", doc.UndoCount == undo + 1, doc.UndoCount - undo)
+        tree.topLevelItem(1).setCheckState(0, QtCore.Qt.Checked)
+        settle(15)
+        curves = coin.SoNode.getByName("CurvesLineSet").numVertices.getNum()
+        check("ticking the hidden line's row shows it again",
+              curves == 2 and rows() == [False, True, True],
+              "%d curves, rows %s" % (curves, rows()))
+
         FreeCADGui.getDocument(doc.Name).resetEdit()
         settle()
     except Exception:

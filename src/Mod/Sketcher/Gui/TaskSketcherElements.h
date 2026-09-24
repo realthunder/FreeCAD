@@ -100,6 +100,12 @@ public Q_SLOTS:
     void on_elementsWidget_currentFilterChanged ( int index );
     void on_elementsWidget_currentModeFilterChanged ( int index );
     void on_autoSwitchBox_stateChanged(int state);
+    void on_elementsWidget_itemChanged(QTreeWidgetItem *item, int column);
+
+public:
+    /// Move an internal geometry to a visual layer (0 shown, 2 hidden), in
+    /// its own transaction; hiding it also deselects it.
+    void setGeometryLayer(int geoId, int layer);
 
 protected:
     void changeEvent(QEvent *e) override;

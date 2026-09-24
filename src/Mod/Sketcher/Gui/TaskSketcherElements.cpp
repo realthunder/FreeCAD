@@ -30,6 +30,8 @@
 # include <QString>
 # include <QImage>
 # include <QPixmap>
+# include <QPointer>
+# include <QTimer>
 # include <boost/core/ignore_unused.hpp>
 #endif
 
@@ -514,6 +516,10 @@ TaskSketcherElements::TaskSketcherElements(ViewProviderSketch* sketchView)
         this                     , SLOT  (on_elementsWidget_itemSelectionChanged())
        );
     QObject::connect(
+        ui->elementsWidget, SIGNAL(itemChanged(QTreeWidgetItem *, int)),
+        this                     , SLOT  (on_elementsWidget_itemChanged(QTreeWidgetItem *, int))
+       );
+    QObject::connect(
         ui->elementsWidget, SIGNAL(itemEntered(QTreeWidgetItem *, int)),
         this                     , SLOT  (on_elementsWidget_itemEntered(QTreeWidgetItem *))
        );
@@ -963,6 +969,9 @@ void TaskSketcherElements::slotElementsChanged()
     for(int i=0;i<(int)vals.size();++i) {
         auto item = new ElementItem(ui->elementsWidget,sketch, i, vals[i]);
         item->setElement(sketch,element, filterindex);
+        // The visual layer: ticked is shown, unticked is the hidden layer.
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+        item->setCheckState(0, sketchView->isGeometryHidden(i) ? Qt::Unchecked : Qt::Checked);
         itemMap[item->ElementNbr] = item;
     }
 
@@ -970,6 +979,9 @@ void TaskSketcherElements::slotElementsChanged()
     for(int i=2;i<(int)ext_vals.size();++i) {
         auto item = new ElementItem(ui->elementsWidget,sketch, -i-1, ext_vals[i]);
         item->setElement(sketch,element, filterindex);
+        // external geometry has no layer: always shown, not toggleable
+        item->setFlags(item->flags() & ~Qt::ItemIsUserCheckable);
+        item->setCheckState(0, Qt::Checked);
         itemMap[item->ElementNbr] = item;
     }
 
@@ -1073,6 +1085,59 @@ void TaskSketcherElements::updatePreselection()
     inhibitSelectionUpdate=true;
     on_elementsWidget_itemSelectionChanged();
     inhibitSelectionUpdate=false;
+}
+
+void TaskSketcherElements::on_elementsWidget_itemChanged(QTreeWidgetItem *item, int column)
+{
+    auto ite = dynamic_cast<ElementItem*>(item);
+    if (column != 0 || !ite || ite->ElementNbr < 0
+            || !(item->flags() & Qt::ItemIsUserCheckable))
+        return;
+    bool shown = item->checkState(0) == Qt::Checked;
+    if (shown != sketchView->isGeometryHidden(ite->ElementNbr))
+        return;  // already on that layer
+    // Changing the geometry rebuilds this list, deleting the item whose
+    // signal this is; do it once the signal has returned.
+    int geoId = ite->ElementNbr;
+    QPointer<TaskSketcherElements> self(this);
+    QTimer::singleShot(0, this, [self, geoId, shown]() {
+        if (self)
+            self->setGeometryLayer(geoId, shown ? 0 : 2);
+    });
+}
+
+void TaskSketcherElements::setGeometryLayer(int geoId, int layer)
+{
+    auto sketch = sketchView->getSketchObject();
+    const std::vector<Part::Geometry*> &geometry = sketch->Geometry.getValues();
+    if (geoId < 0 || geoId >= (int)geometry.size()
+            || int(getSafeGeomLayerId(geometry[geoId])) == layer)
+        return;
+
+    App::Document *doc = sketch->getDocument();
+    doc->openTransaction("Geometry layer change");
+    std::unique_ptr<Part::Geometry> geo(geometry[geoId]->clone());
+    setSafeGeomLayerId(geo.get(), layer);
+    sketch->Geometry.set1Value(geoId, std::move(geo));
+    sketch->solve();
+    doc->commitTransaction();
+
+    if (layer == 2) {
+        // what is hidden cannot stay selected: it is not drawn
+        const std::string docName = doc->getName();
+        const std::string objName = sketch->getNameInDocument();
+        auto deselect = [&](const std::string &name) {
+            Gui::Selection().rmvSelection(docName.c_str(), objName.c_str(),
+                                          sketch->convertSubName(name).c_str());
+        };
+        deselect("Edge" + std::to_string(geoId + 1));
+        for (auto pos : {Sketcher::PointPos::start, Sketcher::PointPos::end,
+                         Sketcher::PointPos::mid}) {
+            int vertex = sketch->getVertexIndexGeoPos(geoId, pos);
+            if (vertex >= 0)
+                deselect("Vertex" + std::to_string(vertex + 1));
+        }
+    }
 }
 
 void TaskSketcherElements::clearWidget()
