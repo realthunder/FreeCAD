@@ -410,7 +410,7 @@ App::DocumentObjectExecReturn *FeatureExtrude::buildExtrusion(ExtrudeOptions opt
                 getUpToFaceFromLinkSub(upToFace, UpToFace);
                 upToFace.move(invObjLoc);
             }
-            getUpToFace(upToFace, base, supportface, sketchshape, method, dir);
+            getUpToFace(upToFace, base, sketchshape, method, dir);
             addOffsetToFace(upToFace, dir, Offset.getValue());
 
             if (!supportface.hasSubShape(TopAbs_WIRE))

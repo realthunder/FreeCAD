@@ -166,6 +166,43 @@ class TestPad(unittest.TestCase):
         self.Doc.recompute()
         self.assertAlmostEqual(self.Pad1.Shape.Volume, 4.0)
 
+    def testSketchOnDatumPlane(self):
+        # upstream 0b4e01047f
+        self.Body = self.Doc.addObject('PartDesign::Body','Body')
+        self.DatumPlane = self.Doc.addObject('PartDesign::Plane','DatumPlane')
+        self.DatumPlane.AttachmentSupport = (self.Doc.XY_Plane, [''])
+        self.DatumPlane.MapMode = 'FlatFace'
+        self.Body.addObject(self.DatumPlane)
+        self.PadSketch = self.Doc.addObject('Sketcher::SketchObject','SketchPad')
+        self.PadSketch.AttachmentSupport = (self.DatumPlane, [''])
+        self.PadSketch.MapMode = 'FlatFace'
+        self.Body.addObject(self.PadSketch)
+        TestSketcherApp.CreateSlotPlateSet(self.PadSketch)
+        self.Doc.recompute()
+        self.Pad = self.Doc.addObject("PartDesign::Pad","Pad")
+        self.Pad.Profile = self.PadSketch
+        self.Body.addObject(self.Pad)
+        self.Doc.recompute()
+        self.assertEqual(len(self.Pad.Shape.Faces), 6)
+
+    def testPadToPlaneCustomDir(self):
+        # upstream 490d6c5abc: the parallel check is against the direction,
+        # not the sketch normal
+        self.Body = self.Doc.addObject('PartDesign::Body','Body')
+        self.PadSketch = self.Doc.addObject('Sketcher::SketchObject', 'SketchPad')
+        self.Body.addObject(self.PadSketch)
+        TestSketcherApp.CreateRectangleSketch(self.PadSketch, (0, 1), (1, 1))
+        self.Doc.recompute()
+        self.Pad = self.Doc.addObject("PartDesign::Pad", "Pad")
+        self.Body.addObject(self.Pad)
+        self.Pad.Profile = self.PadSketch
+        self.Pad.Type = 3 # UpToFace
+        self.Pad.UseCustomVector = True
+        self.Pad.Direction = FreeCAD.Vector(0,1,1)
+        self.Pad.UpToFace = (self.Doc.XZ_Plane, [''])
+        self.Doc.recompute()
+        self.assertAlmostEqual(self.Pad.Shape.Volume, 1.5)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestPad")

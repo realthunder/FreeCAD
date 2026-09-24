@@ -149,7 +149,7 @@ App::DocumentObjectExecReturn *Revolution::execute()
                 THROWM(Base::RuntimeError, "ProfileBased: Revolution up to first/last is not yet supported")
 
             // TODO: This method is designed for extrusions. needs to be adapted for revolutions.
-            // getUpToFace(upToFace, base, supportface, sketchshape, method, dir);
+            // getUpToFace(upToFace, base, sketchshape, method, dir);
 
             TopoShape supportface = getSupportFace();
             if (supportface.countSubShapes(TopAbs_FACE) == 0)

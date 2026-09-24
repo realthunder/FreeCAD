@@ -600,7 +600,6 @@ void ProfileBased::getUpToFaceFromLinkSub(TopoShape& upToFace,
 
 void ProfileBased::getUpToFace(TopoShape& upToFace,
                               const TopoShape& support,
-                              const TopoShape& supportface,
                               const TopoShape& sketchshape,
                               const std::string& method,
                               gp_Dir& dir)
@@ -631,13 +630,13 @@ void ProfileBased::getUpToFace(TopoShape& upToFace,
 
     TopoDS_Face face = TopoDS::Face(upToFace.getShape());
 
-    // Check that the upToFace does not intersect the sketch face and
-    // is not parallel to the extrusion direction (for simplicity, supportface is used instead of sketchshape)
-    BRepAdaptor_Surface adapt1(TopoDS::Face(supportface.getShape()));
-    BRepAdaptor_Surface adapt2(face);
+    // Check that the upToFace does not intersect the sketch face and is not
+    // parallel to the extrusion direction -- the direction, not the sketch
+    // normal: a custom direction may reach a face the sketch is normal to
+    BRepAdaptor_Surface adapt(face);
 
-    if (adapt2.GetType() == GeomAbs_Plane) {
-        if (adapt1.Plane().Axis().IsNormal(adapt2.Plane().Axis(), Precision::Confusion()))
+    if (adapt.GetType() == GeomAbs_Plane) {
+        if (dir.IsNormal(adapt.Plane().Axis().Direction(), Precision::Confusion()))
             THROWM(Base::ValueError, "SketchBased: Up to face: Must not be parallel to extrusion direction!")
     }
 
