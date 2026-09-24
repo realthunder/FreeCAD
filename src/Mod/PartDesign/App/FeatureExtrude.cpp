@@ -179,12 +179,11 @@ void FeatureExtrude::generatePrism(TopoShape& prism,
 
 
         if (method == "TwoLengths") {
-            // midplane makes no sense here
+            // Midplane makes no sense here. The property is read-only in this
+            // mode, but keeps whatever value it had when the mode changed.
             Ltotal += L2;
             if (reversed)
                 Loffset = -L;
-            else if (midplane)
-                Loffset = -0.5 * (L2 + L);
             else
                 Loffset = -L2;
         } else if (midplane)
