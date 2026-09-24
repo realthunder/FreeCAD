@@ -120,6 +120,8 @@ public:
         , isMidPointSelected(false)
         , sketchObject(sketch)
     {
+        // read by ViewProviderSketch::selectAll()
+        setData(0, Qt::UserRole, elementnr);
         StartingVertex = sketch->getVertexIndexGeoPos(elementnr,Sketcher::PointPos::start),
         MidVertex = sketch->getVertexIndexGeoPos(elementnr,Sketcher::PointPos::mid),
         EndVertex = sketch->getVertexIndexGeoPos(elementnr,Sketcher::PointPos::end),

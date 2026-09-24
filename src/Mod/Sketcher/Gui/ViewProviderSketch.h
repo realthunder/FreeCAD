@@ -331,6 +331,9 @@ public:
     /// box selection method
     void doBoxSelection(const SbVec2s &startPos, const SbVec2s &endPos,
                         const Gui::ViewerContext *viewer);
+    /// Std_SelectAll in edit: every element and constraint, or only what a
+    /// focused task panel list shows
+    bool selectAll() override;
 
     /// helper change the color of the sketch according to selection and solver status
     void updateColor();

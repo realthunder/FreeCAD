@@ -1392,12 +1392,24 @@ StdCmdSelectAll::StdCmdSelectAll()
     sWhatsThis    = "Std_SelectAll";
     sStatusTip    = QT_TR_NOOP("Select all");
     sPixmap       = "edit-select-all";
-    //sAccel        = "Ctrl+A"; // supersedes shortcuts for text edits
+    // A window shortcut: text edits, line edits and the spreadsheet claim
+    // Ctrl+A for themselves through ShortcutOverride.
+    sAccel        = "Ctrl+A";
+    // this cmd only alters selection, not doc or 3d view
+    eType         = AlterSelection;
 }
 
 void StdCmdSelectAll::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
+    // An edit mode selects its own elements (a sketch's geometry and
+    // constraints) rather than the document's objects.
+    if (auto activeDoc = Application::Instance->activeDocument()) {
+        if (auto editingVP = activeDoc->getInEdit()) {
+            if (editingVP->selectAll())
+                return;
+        }
+    }
     SelectionSingleton& rSel = Selection();
     App::Document* doc = App::GetApplication().getActiveDocument();
     std::vector<App::DocumentObject*> objs = doc->getObjectsOfType(App::DocumentObject::getClassTypeId());

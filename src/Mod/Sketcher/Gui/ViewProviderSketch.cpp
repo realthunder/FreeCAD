@@ -73,6 +73,7 @@
 # include <QDialog>
 # include <QFont>
 # include <QImage>
+# include <QListWidget>
 # include <QMenu>
 # include <QMessageBox>
 # include <QPainter>
@@ -84,6 +85,7 @@
 #   include <QDesktopWidget>
 # endif
 # include <QTimer>
+# include <QTreeWidget>
 
 # include <boost/scoped_ptr.hpp>
 #endif
@@ -3402,6 +3404,95 @@ void ViewProviderSketch::doBoxSelection(const SbVec2s &startPos, const SbVec2s &
     if (!batch.empty())
         Gui::Selection().addSelections(editDocName.c_str(), editObjName.c_str(), batch,
                                        /*clearPreselect*/false);
+}
+
+bool ViewProviderSketch::selectAll()
+{
+    if (!edit)
+        return false;
+    Sketcher::SketchObject *sketchObject = getSketchObject();
+    if (!sketchObject)
+        return false;
+
+    // With one of the task panel's lists focused, Select All means that
+    // list: its elements or its constraints, and only the rows its filter
+    // shows. Each row carries its index as Qt::UserRole.
+    auto focused = qobject_cast<QAbstractItemView*>(QApplication::focusWidget());
+    bool elementsOnly = false;
+    bool constraintsOnly = false;
+    std::set<int> shown;
+    if (auto tree = qobject_cast<QTreeWidget*>(focused);
+            tree && tree->objectName() == QLatin1String("elementsWidget")) {
+        elementsOnly = true;
+        for (int i = 0; i < tree->topLevelItemCount(); ++i) {
+            QTreeWidgetItem *item = tree->topLevelItem(i);
+            if (!item->isHidden())
+                shown.insert(item->data(0, Qt::UserRole).toInt());
+        }
+    }
+    else if (auto list = qobject_cast<QListWidget*>(focused);
+            list && list->objectName() == QLatin1String("listWidgetConstraints")) {
+        constraintsOnly = true;
+        for (int i = 0; i < list->count(); ++i) {
+            QListWidgetItem *item = list->item(i);
+            if (!item->isHidden())
+                shown.insert(item->data(Qt::UserRole).toInt());
+        }
+    }
+
+    // One batch: past a hundred elements every observer re-reads the
+    // selection once rather than redrawing per element.
+    std::vector<std::string> batch;
+    auto select = [this, sketchObject, &batch](const std::string &element) {
+        batch.push_back(editSubName + sketchObject->convertSubName(element));
+    };
+
+    if (!constraintsOnly) {
+        // Vertices are asked of the sketch, which is what defines their
+        // indices, rather than counted off each geometry type as upstream
+        // does (e278d22d42 fixed a miscount there): any geometry type,
+        // including ones that list does not know, gets its points.
+        auto selectGeo = [&](int GeoId) {
+            if (elementsOnly && !shown.count(GeoId))
+                return;
+            for (auto pos : {Sketcher::PointPos::start, Sketcher::PointPos::end,
+                             Sketcher::PointPos::mid}) {
+                int vertex = sketchObject->getVertexIndexGeoPos(GeoId, pos);
+                if (vertex >= 0)
+                    select("Vertex" + std::to_string(vertex + 1));
+            }
+            // a point is only its vertex
+            const Part::Geometry *geo = sketchObject->getGeometry(GeoId);
+            if (!geo || geo->getTypeId() == Part::GeomPoint::getClassTypeId())
+                return;
+            if (GeoId >= 0)
+                select("Edge" + std::to_string(GeoId + 1));
+            else
+                select("ExternalEdge" + std::to_string(Sketcher::GeoEnum::RefExt - GeoId + 1));
+        };
+        int intGeoCount = sketchObject->getHighestCurveIndex() + 1;
+        for (int GeoId = 0; GeoId < intGeoCount; ++GeoId)
+            selectGeo(GeoId);
+        // External geometry is -3 downwards; -1 and -2 are the axes.
+        int extGeoCount = sketchObject->getExternalGeometryCount();
+        for (int GeoId = Sketcher::GeoEnum::RefExt; GeoId >= -extGeoCount; --GeoId)
+            selectGeo(GeoId);
+        if (!elementsOnly)
+            select("RootPoint");
+    }
+
+    if (!elementsOnly) {
+        int count = sketchObject->Constraints.getSize();
+        for (int i = 0; i < count; ++i) {
+            if (!constraintsOnly || shown.count(i))
+                select("Constraint" + std::to_string(i + 1));
+        }
+    }
+
+    Gui::Selection().clearSelection();
+    if (!batch.empty())
+        Gui::Selection().addSelections(editDocName.c_str(), editObjName.c_str(), batch);
+    return true;
 }
 
 bool ViewProviderSketch::isConstructionMode() const

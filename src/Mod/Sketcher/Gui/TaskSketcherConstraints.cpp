@@ -100,6 +100,8 @@ public:
         , ConstraintNbr(ConstNbr)
     {
         this->setFlags(this->flags() | Qt::ItemIsEditable | Qt::ItemIsUserCheckable);
+        // read by ViewProviderSketch::selectAll()
+        setData(Qt::UserRole, ConstNbr);
 
         updateVirtualSpaceStatus();
     }

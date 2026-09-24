@@ -215,6 +215,13 @@ fc_add_gui_test(GuiSpreadsheetSelectAll_tests_run
                 spreadsheet-select-all.py
                 --timeout 180)
 
+# Select All (Ctrl+A) in a sketch edit selects the sketch's elements, or
+# what a focused task panel list shows (upstream 3b76d77ed8 and follow-ups);
+# it selected the document's objects.
+fc_add_gui_test(GuiSketchSelectAll_tests_run
+                sketch-select-all.py
+                --timeout 180)
+
 # Selecting in a sketch re-edited within one event-loop turn: the first
 # edit's elements panel still observes the selection until it is deleted,
 # and kept itemMap pointing at the tree items sketchClosed() deleted.

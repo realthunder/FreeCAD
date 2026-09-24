@@ -313,7 +313,10 @@ public:
         else if (event->type() == QEvent::KeyPress) {
             auto ke = static_cast<QKeyEvent*>(event);  // NOLINT
             if (ke->matches(QKeySequence::SelectAll)) {
-                static_cast<View3DInventorViewer*>(obj)->selectAll();
+                auto viewer = static_cast<View3DInventorViewer*>(obj);
+                auto editingVP = viewer->getEditingViewProvider();
+                if (!editingVP || !editingVP->selectAll())
+                    viewer->selectAll();
                 return true;
             }
         }
