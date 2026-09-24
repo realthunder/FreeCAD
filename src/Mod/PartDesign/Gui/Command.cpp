@@ -525,6 +525,14 @@ void CmdPartDesignClone::activated(int iMsg)
         Gui::cmdAppDocument(obj, std::stringstream()
                             << "addObject('PartDesign::FeatureBase','" << cloneName << "')");
 
+        // Into the active part, as a new body goes (upstream 59b607c5bd)
+        App::Part* actPart = PartDesignGui::getActivePart();
+        if (actPart && actPart->getDocument() == obj->getDocument()) {
+            Gui::cmdAppDocument(obj, std::stringstream()
+                                << actPart->getNameInDocument() << ".addObject(App.getDocument('"
+                                << obj->getDocument()->getName() << "')." << bodyName << ")");
+        }
+
         auto bodyObj = obj->getDocument()->getObject(bodyName.c_str());
         auto cloneObj = obj->getDocument()->getObject(cloneName.c_str());
 
