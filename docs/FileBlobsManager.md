@@ -853,3 +853,150 @@ of the copy too: one open handle, where the files cost an open each.
 a save over the original, save-as moving the copy with the directory, close
 removing the directory, the last referrer taking the copy with it, a copy
 across documents, the switch off, and a shape parsed out of the copy.
+
+## 15. A pack store: no file per blob (design, 2026-09-24)
+
+Status: **design, not built.** Asked for by the user on 2026-09-24 after a
+recovery cleanup froze the GUI for about two minutes. To be coordinated with
+the `Transaction` branch (`docs/TransactionLog.md`, developed by the `oplab`
+session), which adds far more referrers to this store than everything else
+put together.
+
+### 15.1 What is wrong
+
+Section 14 took the file-per-blob cost out of **opening** a document. It is
+still paid everywhere else a blob is made, and on the company-managed Windows
+laptop every file is a round trip to the filesystem monitor. Measured there
+in `getUserCachePath()`: create+write+close+chmod about 11.8 ms, open about
+1.4 ms (sec 14.2), and delete about 9 ms -- 25460 files in 939 leftover
+transient directories took 233 s to remove on 2026-09-24.
+
+Where loose blob files still come from:
+
+- **Save.** `PropertyPartShape::storeBlob()` writes every shape whose blob is
+  not current to a file of its own (`uniquePath("shape.brp")`, then
+  `adoptFile()`). The first save of an imported model is therefore one file
+  per shape, and the files stay for the rest of the session. One leftover
+  directory held 16474 `.brp` files (122 MB): a saved MiSTer import.
+- **Included files made in the session**: imports, materials, MaterialX
+  manifests, TechDraw templates -- every `insertFile()` / `adoptFile()` /
+  `adoptBytes()` call site.
+- **The transaction log, as designed.** `docs/TransactionLog.md` sec 13.2 and
+  23.1 keep values over a threshold (64 KB to start) as files in this store,
+  and version snapshots add more. Every commit that touches a large shape adds
+  a file, and a long session with many versions multiplies them. Reverse
+  deltas (23.2) shrink the bytes, not the number of files.
+
+What the loose files then cost, besides the creates:
+
+- **Deleting them.** Blob files are read-only (`writeNewFile()` and
+  `adoptFile()` set `ReadOnly`). `Base::FileInfo::deleteDirectoryRecursive()`
+  clears the flag first, but the recovery dialog's "Cleanup..."
+  (`DocumentRecoveryCleaner::clearDirectory()`) does not, so on Windows every
+  delete fails. It ran 16474 failing deletes on the GUI thread -- the freeze --
+  and then removed the lock file anyway, turning the directory into a
+  permanent orphan: the startup scan only finds directories through a lock
+  file.
+- **Orphans nobody lists.** Only the GUI creates the instance lock
+  (`Gui::Application::runApplication`), so a `FreeCADCmd` or test process that
+  dies leaves transient directories no scan will ever find. 868 of the 938
+  orphans found on 2026-09-24 were empty directories of that kind.
+
+The recovery bugs are fixed separately; they are bugs whatever the store
+does. This section is about the store.
+
+### 15.2 The design
+
+A blob stops being a file. It becomes an entry in an index -- **hash to
+(segment, offset, length, encoding)** -- and its bytes live in one of a few
+large files.
+
+- **Segments.** Append-only files in the store directory,
+  `blobs/seg-NNNN.pack`, rolled over at a size limit (start at 256 MB). One
+  handle is open for appending; the others are opened for reading on demand
+  and closed around directory moves, exactly as the archive copy is (sec
+  14.3). A blob is written once, at the end of the current segment, and never
+  rewritten in place.
+- **The index in SQLite.** The `Transaction` branch already puts a SQLite
+  database in the transient directory (`history/log.db`, WAL,
+  `synchronous=NORMAL`). The blob index is a table in it -- or in a
+  `blobs/index.db` of the same form if the log is not built yet -- keyed by
+  hash, with segment, offset, length, encoding (`raw`, `zstd`) and extension.
+  Small blobs, under a threshold to be measured (sec 15.4), are stored inline
+  in the row and never touch a segment.
+- **The archive copy is a segment.** Section 14's `blobs/<uuid>.FCStd` already
+  is one: a single file whose entries are found through its own index. It
+  becomes a read-only segment whose entries happen to be deflated zip members,
+  so restore, save and the log all use one mechanism.
+- **Save.** `storeBlob()` serialises the shape into memory, hashes it and
+  appends it (deduplicated by hash, as now). `writeBlobs()` streams each entry
+  from its segment into the zip, the way it already streams an archived blob.
+  No file per shape.
+- **Real files only on demand.** `FileBlob::path()` keeps `materialize()`: a
+  consumer that needs a path -- Python, MaterialX, a material card, an
+  external editor -- gets a file written under `blobs/materialized/`. They are
+  few, and they go with the document through `deleteDirectoryRecursive()`,
+  which handles read-only.
+- **Lifetime.** `FileBlobHandle` refcounting stays as it is. When a blob's
+  last referrer goes, its index row is dropped and its range becomes dead space
+  in its segment.
+- **Compaction.** A segment whose dead fraction passes a threshold (start at
+  50%) is rewritten: live ranges copied to the current segment, their index
+  rows updated in one SQLite transaction, then the old segment deleted. It runs
+  on a worker thread, never the GUI's. The log's collector
+  (`docs/TransactionLog.md` sec 23.5) marks dead entities and feeds the same
+  pass.
+- **Crashes and orphans.** A transient directory becomes a few segments, an
+  index and a handful of materialized files, so a leftover costs a few deletes
+  instead of tens of thousands. The index database is also where session-mode
+  crash recovery (`docs/TransactionLog.md` sec 13.3) finds the blobs of the
+  log's tail.
+- **Browser and mobile.** Segment files and SQLite both work on OPFS (SQLite
+  has an official WASM build with OPFS persistence), so nothing here closes off
+  the WASM tier.
+
+### 15.3 What it changes for the transaction log
+
+`docs/TransactionLog.md` sec 23.1 says where an entity's bytes live is "a
+backend detail chosen by size: small inline in `data`, large as a file in the
+document's `FileBlobManager`". With this store the large case is a range in a
+segment, not a file. Two consequences:
+
+- **The file-versus-inline threshold goes away.** Section 13.1 cites SQLite's
+  guidance that blobs up to about 100 KB are faster inside the database than as
+  files. On this laptop the crossover would be far higher, since a file costs
+  milliseconds. With a pack store no value is ever a loose file, so the only
+  choice left is inline row versus segment range, which is about SQLite page
+  churn, not the filesystem.
+- **One store, one collector.** Entities and blobs share the index and the
+  segment space; trimming (23.5) and blob refcounting both end in the same
+  compaction pass.
+
+### 15.4 To measure before building (phase 0)
+
+On the laptop, in `getUserCachePath()`, with MiSTer's 5401 blobs and the
+16474-shape import, as sec 14.2 measured with `archbench.py`:
+
+| backing | create | read all, random order | delete the store |
+| --- | --- | --- | --- |
+| a file per blob (today) | | | |
+| everything inline in SQLite | | | |
+| SQLite index plus segment files | | | |
+
+Also: the inline threshold for SQLite rows (page churn under WAL), the
+segment roll size, and the cost of a compaction pass over a 1 GB segment.
+Linux and macOS rows too: the design must not make the case that is free there
+slower.
+
+### 15.5 Open questions
+
+- Whether the blob index lives in the log's database or in its own. Shared
+  means one transaction covers a log commit and the blobs it names; separate
+  means the store works without the log. Decide with the `Transaction` branch.
+- Encoding: shapes are text BREP by default and compress about 4:1 with zstd
+  (`docs/TransactionLog.md` sec 20.1). Compress in the segment, or keep them raw
+  so a range can be handed to a reader without inflating?
+- Whether a save could make a copy of the **saved archive** the new read-only
+  segment, as restore does, instead of appending the shapes it just wrote.
+  Save and restore would then be fully symmetric, at the cost of one file copy
+  per save.
