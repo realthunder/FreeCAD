@@ -597,3 +597,35 @@ class SandboxPanelMirrorTest(unittest.TestCase):
         self.assertEqual(self.FW.panelId(), pid)
         self.assertIsNotNone(self.named("askButton"))
         self.close_through_root(pid, "reject")
+
+    def test_gone_subscriber_stops_mid_start(self):
+        """A subscriber whose connection is gone, as the only one, while a
+        panel is up: its subscribe starts the mirror, the start's first
+        push goes to it and fails, and the last one out stops the mirror
+        -- from INSIDE that start, which then went on as if it were
+        running. The mirror must end stopped, holding nothing, and start
+        clean for the next subscriber."""
+        Gui = self.Gui
+        from PySide import QtWidgets
+
+        form = QtWidgets.QWidget()
+        form.setObjectName("goneForm")
+        form.setWindowTitle("Gone")
+        QtWidgets.QVBoxLayout(form).addWidget(QtWidgets.QLineEdit(objectName="goneEdit"))
+
+        class Panel:
+            def __init__(self, form):
+                self.form = form
+
+        self.FW.mirrorPanels(False)
+        Gui.Control.showDialog(Panel(form))
+        self.spin(60, 6)
+        self.control({"op": "widgets.subscribe", "panels": True}, 1001)
+        self.spin(60, 6)
+        self.assertIsNone(self.FW.panelId(), "the mirror went on without subscribers")
+        left = [i for i in self.FW.ids() if i.startswith(("pw:", "panel", "dialog:"))]
+        self.assertEqual(left, [])
+        # and the next subscriber gets the panel
+        self.control({"op": "widgets.subscribe", "panels": True}, 7)
+        pid, _ = self.open_panel()
+        self.assertIsNotNone(self.named("goneEdit"))
