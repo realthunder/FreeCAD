@@ -3983,6 +3983,13 @@ void PropertyAppearanceList::Save(Base::Writer &writer) const
                         << "\" version=\"3\"/>\n";
         return;
     }
+    if (writer.getSchemaVersion() >= 5) {
+        // Noted again here, as the other referrers do: it costs nothing,
+        // and it is how a capture of this value -- the transaction log's,
+        // under a BlobRecorder -- learns which textures the value names
+        // (docs/TransactionLog.md sec 23.16).
+        _list.noteTextureBlobs(blobManager(), FileBlobManager::referrerOf(this));
+    }
     PropertyLists::Save(writer);
 }
 

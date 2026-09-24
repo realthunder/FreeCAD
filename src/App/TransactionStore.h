@@ -84,7 +84,8 @@ struct LogOp
 
 /// One edge out of an entity (table `ref`, sec 23.1): an attachment it
 /// carries (`attach`, `name` the file name), the entity its delta applies
-/// to (`base`), or a part of a composite (`part`, `name` the property).
+/// to (`base`), a part of a composite (`part`, `name` the property), or a
+/// blob a value names or a blob reads (`blob`, sec 23.16).
 struct LogRef
 {
     std::string target;
@@ -94,11 +95,13 @@ struct LogRef
 
 /** A stored entity (table `entity`, sec 23.1): anything the log holds
  * bytes for -- a property's fragment (`prop`), a file it handed to
- * addFile() (`attach`), a shape blob, an XML entry, a skeleton or a
- * composite. `hash` is the identity: the SHA-1 of the full content (for a
- * fragment, the fragment plus its ordered attachment list), never of the
- * stored form. `enc` says how `data` is stored -- "raw", "zstd", or
- * "delta", a zstd patch against the entity `base` names -- and a
+ * addFile() (`attach`), a file of the document's blob store (`blob`), an
+ * XML entry, a skeleton or a composite. `hash` is the identity: the SHA-1
+ * of the full content (for a fragment, the fragment plus its ordered
+ * attachment list), never of the stored form. `enc` says how `data` is
+ * stored -- "raw", "zstd", "delta", a zstd patch against the entity `base`
+ * names, or "file" (sec 23.16): the bytes are the blob store's file of
+ * that hash, which the log holds, and `data` is its extension -- and a
  * re-encode changes `enc`/`base`/`data` under the same hash.
  */
 struct LogEntity
@@ -144,14 +147,14 @@ struct LogVersion
     double created {0};
 };
 
-/// One entry of a version's manifest: archive entry name -> content hash.
-/// The XML entries name entity rows; blob entries name the document's
-/// blob store (sec 16.2) until 23.7 step 6 brings them into the store.
+/// One entry of a version's manifest: archive entry name -> entity hash.
+/// The XML entries by their archive names, the blobs by the names a save
+/// gives them under `blobs/` (sec 23.16).
 struct LogManifestEntry
 {
     std::string entry;
     std::string hash;
-    std::string source {"entity"};   ///< "entity" (the entity table) or "blob"
+    std::string source {"entity"};   ///< always "entity" since schema 3
 };
 
 /** The interface the document sees: a log is appended, read and truncated
@@ -184,6 +187,11 @@ public:
                                 const std::string& base, const std::string& data) = 0;
     /// The entities whose delta is based on `hash`.
     virtual std::vector<std::string> basedOn(const std::string& hash) = 0;
+    /// Add an edge to an entity already stored, after its others; one
+    /// already there is left as it is.
+    virtual void addRef(const std::string& entity, const LogRef& ref) = 0;
+    /// Every entity stored as `enc`, by hash.
+    virtual std::vector<std::string> entitiesStoredAs(const std::string& enc) = 0;
 
     /// Transactions with seq >= from, in order, at most `limit` (0: all).
     virtual std::vector<LogTransaction> transactions(int64_t from = 0, int limit = 0) = 0;

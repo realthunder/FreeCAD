@@ -393,6 +393,52 @@ bool FileBlob::hasExtension(const char* ext) const
     return Base::FileInfo(_path).hasExtension(ext);
 }
 
+std::string FileBlob::extension() const
+{
+    if (inArchive()) {
+        return _ext;
+    }
+    return Base::FileInfo(_path).extension();
+}
+
+namespace
+{
+std::mutex& sourceReaderMutex()
+{
+    static std::mutex mutex;
+    return mutex;
+}
+
+std::map<std::string, FileBlobManager::SourceReader>& sourceReaders()
+{
+    static std::map<std::string, FileBlobManager::SourceReader> readers;
+    return readers;
+}
+}  // namespace
+
+void FileBlobManager::registerSourceReader(const char* ext, SourceReader reader)
+{
+    std::lock_guard<std::mutex> guard(sourceReaderMutex());
+    sourceReaders()[ext ? ext : ""] = reader;
+}
+
+std::vector<std::string> FileBlob::sources() const
+{
+    FileBlobManager::SourceReader reader = nullptr;
+    {
+        std::lock_guard<std::mutex> guard(sourceReaderMutex());
+        auto it = sourceReaders().find(extension());
+        if (it != sourceReaders().end()) {
+            reader = it->second;
+        }
+    }
+    std::string bytes;
+    if (!reader || !read(bytes)) {
+        return {};
+    }
+    return reader(bytes);
+}
+
 bool FileBlob::read(std::string& bytes) const
 {
     bytes.clear();
@@ -739,9 +785,44 @@ bool FileBlobManager::hasInlineBlobs() const
     return _format == BlobFormat::InlineXml && !_saveSet.empty();
 }
 
+namespace
+{
+thread_local BlobRecorder* currentRecorder = nullptr;
+}
+
+BlobRecorder::BlobRecorder()
+    : _previous(currentRecorder)
+{
+    currentRecorder = this;
+}
+
+BlobRecorder::~BlobRecorder()
+{
+    currentRecorder = _previous;
+}
+
+BlobRecorder* BlobRecorder::current()
+{
+    return currentRecorder;
+}
+
+void BlobRecorder::add(const FileBlobHandle& blob)
+{
+    if (std::none_of(_blobs.begin(), _blobs.end(),
+                     [&blob](const FileBlobHandle& held) { return held == blob; })) {
+        _blobs.push_back(blob);
+    }
+}
+
 void FileBlobManager::noteReferenced(const FileBlobHandle& blob, const BlobReferrer& referrer)
 {
     if (!blob) {
+        return;
+    }
+    // A capture, not a save: record what the value names and leave the
+    // save set to the save it belongs to.
+    if (auto recorder = BlobRecorder::current()) {
+        recorder->add(blob);
         return;
     }
     // Replaced entry released after the lock, see beginSave().
@@ -814,6 +895,57 @@ std::vector<FileBlobHandle> FileBlobManager::collected() const
                   return a->hash() < b->hash();
               });
     return pending;
+}
+
+std::vector<std::pair<std::string, FileBlobHandle>> FileBlobManager::collectedEntries() const
+{
+    std::vector<std::pair<std::string, FileBlobHandle>> out;
+    for (auto& entry : planSave({})) {
+        out.emplace_back(std::move(entry.name), std::move(entry.blob));
+    }
+    return out;
+}
+
+std::vector<std::pair<std::string, FileBlobHandle>> FileBlobManager::restoredEntries() const
+{
+    std::vector<FileBlobHandle> live = blobs();
+    std::sort(live.begin(), live.end(), [](const FileBlobHandle& a, const FileBlobHandle& b) {
+        return a->hash() < b->hash();
+    });
+    std::unordered_map<std::string, std::string> names;
+    {
+        std::lock_guard<std::mutex> guard(_mutex);
+        names = _restoreNames;
+    }
+    std::vector<std::pair<std::string, FileBlobHandle>> out;
+    std::set<std::string> taken;
+    for (auto& blob : live) {
+        auto it = names.find(blob->hash());
+        std::string name;
+        if (it != names.end() && taken.insert(it->second).second) {
+            name = it->second;
+        }
+        else {
+            // Content no entry named, or one sharing a name with other
+            // content (two copies of an archive disagreeing): the hash.
+            const std::string ext = blob->extension();
+            name = blob->hash() + (ext.empty() ? "" : "." + ext);
+            taken.insert(name);
+        }
+        out.emplace_back(std::move(name), std::move(blob));
+    }
+    return out;
+}
+
+void FileBlobManager::nameRestored(const FileBlobHandle& blob, const std::string& name)
+{
+    if (!blob) {
+        return;
+    }
+    const std::string prefix = archivePrefix();
+    std::lock_guard<std::mutex> guard(_mutex);
+    _restoreNames[blob->hash()] =
+        name.compare(0, prefix.size(), prefix) == 0 ? name.substr(prefix.size()) : name;
 }
 
 std::vector<FileBlobManager::SaveEntry>
@@ -1205,6 +1337,7 @@ void FileBlobManager::beginRestore(Base::XMLReader& reader)
     {
         std::lock_guard<std::mutex> guard(_mutex);
         _pending.clear();
+        _restoreNames.clear();
         _restoreClosed = false;
     }
 
@@ -1309,6 +1442,7 @@ void FileBlobManager::readBlobEntry(const std::string& name, Base::Reader& entry
     if (bytes.size() <= inMemoryCap) {
         auto blob = adoptBytes(bytes, ext.c_str());
         FC_TRACE("blob entry " << name << " -> " << (blob ? blob->hash() : std::string("(none)")));
+        nameRestored(blob, name);
         hold(std::move(blob));
         return;
     }
@@ -1332,6 +1466,7 @@ void FileBlobManager::readBlobEntry(const std::string& name, Base::Reader& entry
     }
     auto blob = adoptFile(staging.c_str(), ext.c_str());
     FC_TRACE("blob entry " << name << " -> " << (blob ? blob->hash() : std::string("(none)")));
+    nameRestored(blob, name);
     hold(std::move(blob));
 }
 
@@ -1401,6 +1536,7 @@ bool FileBlobManager::restoreFromArchive(const std::string& source)
                 blob->_materialized.store(false, std::memory_order_release);
             }
         }
+        nameRestored(blob, entry.name);
         hold(std::move(blob));
         ++served;
     }
@@ -1436,7 +1572,9 @@ void FileBlobManager::restoreFromDirectory(const std::string& dir)
         try {
             // insertFile() copies: the files belong to the project directory
             // and must stay in it.
-            hold(insertFile(info.absoluteFilePath().toUtf8().constData()));
+            FileBlobHandle blob = insertFile(info.absoluteFilePath().toUtf8().constData());
+            nameRestored(blob, info.fileName().toUtf8().constData());
+            hold(std::move(blob));
         }
         catch (const Base::Exception& e) {
             FC_ERR("Failed to read included file " << info.fileName().toStdString() << ": "
@@ -1548,6 +1686,7 @@ void FileBlobManager::endRestore()
         std::lock_guard<std::mutex> guard(_mutex);
         _pending.clear();
         hold.swap(_restoreHold);
+        _restoreNames.clear();
         // From here a referrer arriving is a bug in whatever produced it, not
         // something to wait for; addPendingReferrer() says so out loud.
         _restoreClosed = true;

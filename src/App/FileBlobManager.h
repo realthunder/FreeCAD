@@ -133,10 +133,25 @@ public:
 
     /// Whether the content is stored under this extension. Never writes a file.
     bool hasExtension(const char* ext) const;
+    /// The extension the content is stored under, without the dot, empty
+    /// for none. Never writes a file.
+    std::string extension() const;
 
     /// The whole content, from the file or from the archive copy. False, and
     /// \a bytes empty, when it cannot be read.
     bool read(std::string& bytes) const;
+
+    /** The other stored files this content reads, by hash.
+     *
+     * A shape file that borrows geometry names the files it borrows from
+     * (docs/SharedShapeStorage.md sec 11.5); it cannot be read without them,
+     * so whoever keeps it for later -- the transaction log
+     * (docs/TransactionLog.md sec 23.16) -- has to keep them too. The module
+     * that owns a format says how to find them, see
+     * FileBlobManager::registerSourceReader(); content with no reader for
+     * its extension reads nothing else. Reads the content.
+     */
+    std::vector<std::string> sources() const;
 
 private:
     friend class FileBlobManager;
@@ -246,6 +261,39 @@ public:
      * whose content differs from the value.
      */
     virtual FileBlobHandle contentBlob() const { return {}; }
+};
+
+/** What noteReferenced() is told on this thread while it lives, instead
+ * of the save set.
+ *
+ * Every referrer's Save notes the blobs it writes the hashes of (the
+ * "noted again here" convention), so a capture of a value under one learns
+ * exactly which files the value names -- and the manager's save set, which
+ * belongs to whatever save the document runs next, is left alone. The
+ * transaction log captures values on its worker thread this way
+ * (docs/TransactionLog.md sec 23.16). Nests; the innermost records.
+ */
+class AppExport BlobRecorder
+{
+public:
+    BlobRecorder();
+    ~BlobRecorder();
+
+    BlobRecorder(const BlobRecorder&) = delete;
+    BlobRecorder& operator=(const BlobRecorder&) = delete;
+
+    /// What was noted, each once, in the order first noted.
+    const std::vector<FileBlobHandle>& blobs() const { return _blobs; }
+
+    /// The recorder in effect on this thread, or null.
+    static BlobRecorder* current();
+
+private:
+    friend class FileBlobManager;
+    void add(const FileBlobHandle& blob);
+
+    std::vector<FileBlobHandle> _blobs;
+    BlobRecorder* _previous {nullptr};
 };
 
 /** Per-document store of the files referenced by PropertyFileIncluded.
@@ -517,6 +565,32 @@ public:
     /// transaction log's version manifest (docs/TransactionLog.md 16.3).
     std::vector<FileBlobHandle> collected() const;
 
+    /** The collected save set with the names a save gives it, in name order.
+     *
+     * The names planSave() derives from the referrers -- `Box.Shape.brp` --
+     * as an archive would carry them. The transaction log keys a version's
+     * blobs by these (docs/TransactionLog.md sec 23.16): the same property's
+     * file has the same name in the next version, which is what pairs the
+     * old content with the new for a delta.
+     */
+    std::vector<std::pair<std::string, FileBlobHandle>> collectedEntries() const;
+
+    /** Every live blob with the name the restore read it under, in hash order.
+     *
+     * The entry name inside `blobs/` for content an archive or a directory
+     * carried; content that arrived without one (the inline table) is named
+     * by its hash and extension. What a history started from a file keys its
+     * first version's blobs by, the same names collectedEntries() gives a
+     * save of it.
+     */
+    std::vector<std::pair<std::string, FileBlobHandle>> restoredEntries() const;
+
+    /// Finds the files a stored file reads, from its bytes; see FileBlob::sources().
+    using SourceReader = std::vector<std::string> (*)(const std::string& bytes);
+    /// Register the reader for content stored under `ext` (no dot). The
+    /// module owning the format does this once, at load.
+    static void registerSourceReader(const char* ext, SourceReader reader);
+
 private:
     friend class FileBlob;
     /// One file a save is about to write: the name it goes under, the content
@@ -552,6 +626,9 @@ private:
     void restoreFromDirectory(const std::string& dir);
     /// Keep restored content alive until its referrers have been served.
     void hold(FileBlobHandle blob);
+    /// Remember the entry name restored content arrived under, see
+    /// restoredEntries(). `name` may carry the `blobs/` prefix.
+    void nameRestored(const FileBlobHandle& blob, const std::string& name);
     FileBlobHandle make(const std::string& hash, const std::string& path, uint64_t size);
     /** Serve a zip document's blob entries out of a copy of the archive.
      *
@@ -588,6 +665,8 @@ private:
     bool _restoreClosed {false};
     /// Keeps restored content alive until every referrer has been served.
     std::unordered_map<std::string, FileBlobHandle> _restoreHold;
+    /// The entry name each piece of content was last restored under, by hash.
+    std::unordered_map<std::string, std::string> _restoreNames;
     std::unordered_map<std::string, std::weak_ptr<FileBlob>> _blobs;
     /// Archive copies restores served from, for closeArchives() and relocate().
     std::vector<std::weak_ptr<BlobArchive>> _archives;

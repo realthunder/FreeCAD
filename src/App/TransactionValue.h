@@ -23,6 +23,7 @@
 #ifndef APP_TRANSACTION_VALUE_H
 #define APP_TRANSACTION_VALUE_H
 
+#include <memory>
 #include <string>
 #include <vector>
 #include <FCGlobal.h>
@@ -33,6 +34,7 @@ namespace App
 {
 
 class Document;
+class FileBlob;
 class Property;
 
 /** A value as the transaction log sees it (docs/TransactionLog.md sec 9.3,
@@ -49,6 +51,10 @@ struct CapturedValue
     };
     std::string fragment;
     std::vector<Attachment> attachments;
+    /// The files of the document's blob store the fragment names by hash,
+    /// as the Save noted them (BlobRecorder, sec 23.16). Not content: the
+    /// log holds them as entities of their own.
+    std::vector<std::shared_ptr<FileBlob>> blobs;
     bool ok {false};
 
     size_t attachmentBytes() const

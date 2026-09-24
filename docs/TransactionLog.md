@@ -1595,7 +1595,7 @@ that changed since its save has no blob (`dropBlob`) and exports as
 before, on the worker. What it buys in practice: in an edit-save cadence
 no shape is exported for the log at all -- the before copy holds the
 blob, and the after ref resolves at the save's `resolvePending`, after
-`makeBlob` has run. Not yet: a blob held by the log surviving log
+`makeBlob` has run. Not yet (done in 23.16): a blob held by the log surviving log
 truncation or eviction (it is released with the log), and other
 referrers (`PropertyFileIncluded` could answer the same way). The Part
 gtest `TransactionLogShapeTest` checks an unsaved shape's value carries
@@ -2148,7 +2148,8 @@ guards go in. That is the bug list, not collateral damage.
    `PropertyGeometryList`'s element type as its own commit.
 5. `PropertyPartShape::setValue` setting `Immutable` on every TShape
    (the fork side is built, 23.8).
-6. Blobs through the entity store, deltas gated on the measurement.
+6. Blobs through the entity store, deltas gated on the measurement
+   (as built, 23.16).
 
 ### 23.8 Steps 1 and 2 as built (2026-09-23)
 
@@ -2172,7 +2173,7 @@ collector keeping both bases while a manifest roots the oldest.
 
 **The policy.** `TransactionLog::supersede(older, newer)`, on the
 worker: no-op when hops are 0, the older is already a delta, under 128
-bytes, or not a `prop`/`xml` (attachments and blobs wait for step 6);
+bytes, or not a `prop`/`xml` (attachments and blobs wait for step 6, 23.16);
 refuses a loop (the newer must not decode through the older) and a
 chain that would exceed `TransactionLogDeltaHops` (default 8) below the
 older; encodes and keeps the patch only under
@@ -2710,3 +2711,126 @@ With the new pass disabled, the naming case fails on every edge and
 vertex, so it tests what it says. Suites: ctest 808/808, Python 2904 OK,
 no `LockedShape` thrown in the Python run; the four cases of 23.14 behave
 as with the freeze off, through copies now.
+
+### 23.16 Step 6 as built: blobs through the entity store (2026-09-24)
+
+**Three bugs first.** Measured before building, each with a script
+against the build as it stood:
+
+- A version's blobs were listed in its manifest but held by nothing the
+  log owned. With undo off and derived values unlogged, a box saved, its
+  length changed and saved again: checking out version 1 threw
+  "blob ... of version 1 is not in the store". The log held a blob only
+  when an op's copy happened to name it (decision 6b), and released it
+  only with the log.
+- A composed snapshot (23.9) claimed a shape property whose newest value
+  the log held -- a detached copy's capture, `<Part file="Property.brp"/>`
+  with the geometry as an attachment, because the copy had no file yet.
+  The part it put into `Document.xml` named an attachment no version
+  carries: after one length edit, checking out either snapshot failed with
+  "shape is invalid". A shape's file is made in `beforeSave` (`makeBlob`),
+  which runs after the sink has claimed, and its Save writes the hasher
+  index only the live property in its document knows, so no copy can
+  produce its part.
+- `PropertyFileIncluded` (and every other referrer but the shape) wrote
+  `<FileIncluded hash=.../>` into a capture at schema 5, held by nothing
+  the log owned; and its Save noted the blob into the document's save set
+  from the log's worker thread, so a save running at the time could carry
+  an extra entry.
+
+**Blob entities.** A file of the document's `FileBlobManager` is an entity
+of kind `blob`, `enc` `file`, its extension as `data`: the bytes are the
+file, which the log holds (`_blobs`, a handle per entity stored as
+`file`). `putBlob` makes the row, or makes a delta row full again when
+the content comes back (a shape changed and changed back: the newest is
+full). `readBytes` reads a `file` entity through the handle. Schema 3 of
+the store; a schema-2 store migrates its `source='blob'` manifest rows
+onto entities (size unknown, 0, which keeps them out of the delta policy).
+The manifest names entities only.
+
+**Names.** A version's blobs are listed under the names a save gives them
+inside `blobs/` -- `Box.Shape.brp` -- from `FileBlobManager::collectedEntries()`
+(`planSave` with no previous index) for a save or a snapshot, and from
+`restoredEntries()` (the entry name each blob arrived under) for the
+history started from a file. The name is what pairs a property's file in
+version N with its file in N+1, exactly as `Document.xml` is paired, so
+the snapshot job supersedes every entry whose hash changed under the same
+name.
+
+**What a value names.** `BlobRecorder`, thread-local in the blob manager:
+while one lives, `noteReferenced` records into it instead of the save
+set. `captureValue` runs every Save under one, so the referrers' "noted
+again here" convention tells the capture exactly which files its fragment
+names (`CapturedValue::blobs`) and the save set is never touched from the
+worker. The appearance list did not note its textures in Save and does
+now. A shape notes in `beforeSave`, which a capture does not run: its
+`contentBlob()` is added. `putValue` stores each as a blob entity and a
+`blob` ref of the value (an edge, not part of the value's hash, which
+stays the fragment and its attachments).
+
+A shape file that borrows geometry names the files it borrows from in its
+`Files` table (`docs/SharedShapeStorage.md` 11.5), and cannot be read
+without them. `FileBlob::sources()` reads that table through a reader
+the owning module registers per extension (`ShapeRefSet::fileTable` for
+`brp`, registered at Part's load); `putSources` stores each source as a
+blob entity with a `blob` ref from the borrower, once per blob per log.
+Only for a blob a value names: a version's manifest is closed by
+construction (a save writes every file its files read), so the thousands
+of blobs a restore lists are not read for it.
+
+**The claim.** The sink never claims a blob referrer; its part is the
+snapshot's own serialisation, which costs the Save a real save pays (the
+file itself was written by `beforeSave` either way).
+
+**Collection.** The collector already follows every role of edge, so a
+blob lives while a manifest or an op value reaches it, directly or
+through a borrower. After anything that removes or re-encodes entities --
+eviction, truncation, `dropTier`, a delta -- `releaseBlobs` lets go of the
+handle of every blob no longer stored as `file`, and the blob manager
+deletes the file when nothing else holds it. The embedded copy (16.4)
+carries every blob it still stores as a file, an op value's as well as a
+kept version's; the ones kept as deltas travel inside the database.
+`adoptStore` takes a handle on each from the document's store, where
+`PropertyHistory` restored them.
+
+**Deltas, and the measurement that gated them.** Zstd `--patch-from` at
+level 3, a shape file against its successor, as a percent of the older
+file compressed on its own (the `TransactionLogDeltaRatio` test), on the
+blob a save writes after each edit:
+
+| Sequence | Raw bytes | Compressed | Patch | Percent |
+|---|---|---|---|---|
+| PartDesign pad, length +1 (5 steps) | 2570 | 605 | 53 | 8.7 |
+| plate with 30 holes, drag one hole (4) | 20709 | 2457 | 178 | 7.2 |
+| same plate, pad thickness +1 (3) | 20709 | 2456 | 168 | 6.8 |
+| box minus cylinder, move the cylinder (5) | 3485 | 791 | 41 | 5.2 |
+| filleted box, radius +0.5 (4) | 14367 | 2507 | 1136 | 45 |
+| plate gains a hole per step (4) | 2578-4402 | 606-926 | 286-439 | 41-47 |
+
+A parameter edit patches to under a tenth; a change of topology or a
+fillet to just under the default 50 %. So blobs and attachments join the
+policy: `supersede` accepts `attach` and `blob`, compares a `file`
+entity's patch against its compressed size (computed there, since the
+file is not compressed where it lies), and on success releases the file.
+A value's files follow the value: superseding one `prop` by another
+supersedes their attachments by name and their blobs when each names one,
+so an edit sequence of an unsaved shape -- whose op values carry the
+geometry as an attachment -- chains too.
+
+**Checkout** writes every entry from the log: a blob held as a file is
+copied, one kept as a delta is decoded.
+
+**The panel** shows, per manifest entry, the entity's kind and encoding,
+and for a blob its size and the held file or the patch it is kept as.
+
+Gtests: `TransactionLogTest.blobsAreEntitiesTheLogHolds` (a
+`PropertyFileIncluded` with undo off: the version's blob is a `file`
+entity under `Obj.File.txt`; one changed line makes it a patch under a
+tenth of its size toward the next version's, its file gone from the
+document's store; the op values' `blob` refs; both versions check out;
+unrelated content stays a file; eviction and truncation drop the entities
+and the log lets go of the file). `TransactionLogShapeTest.composedSnapshotChecksOutAChangedShape`
+(two length edits, three versions, each older `Box.Shape.brp` a patch on
+the next, all three check out with the right volume) and
+`borrowedFilesAreHeld` (a compound's file names its two parts' files; the
+op value holding it gives the blob entity a `blob` ref to each).

@@ -115,6 +115,10 @@ public:
     /// The same as written (sec 23.3): each entry captured by the writer,
     /// cut at every property body, Document.xml first.
     using Captures = std::vector<std::pair<std::string, Base::EntryCapture>>;
+    /// The blobs a version holds (sec 23.16): each under the name a save
+    /// gives it inside `blobs/` (FileBlobManager::collectedEntries(), or
+    /// restoredEntries() as read), with the handle the log takes over.
+    using Blobs = std::vector<std::pair<std::string, FileBlobHandle>>;
 
     /** The property sink a save or snapshot serialises under (sec 23.3).
      *
@@ -132,13 +136,14 @@ public:
      *
      * Called from Document::save once the file's entries are written:
      * `entries` the XML entries as they streamed out (captured, never
-     * serialised twice), `blobs` the (name, hash) of every blob the file
-     * carries, `schema` the schema it was written under. Each entry
-     * becomes a composite (23.3): its skeleton plus one part per property.
-     * Returns the version number, 0 on failure (reported, not thrown).
+     * serialised twice), `blobs` every blob the file carries, `schema` the
+     * schema it was written under. Each entry becomes a composite (23.3):
+     * its skeleton plus one part per property; each blob an entity the log
+     * holds (23.16). Returns the version number, 0 on failure (reported,
+     * not thrown).
      */
-    int64_t onSave(const std::string& path, const Captures& entries,
-                   const std::vector<std::pair<std::string, std::string>>& blobs, int schema);
+    int64_t onSave(const std::string& path, const Captures& entries, const Blobs& blobs,
+                   int schema);
 
     /** The history initialised from a file (sec 16.6).
      *
@@ -151,8 +156,8 @@ public:
      * (the hash guard of 16.4) and is left alone with a warning.
      * Returns the version number, 0 when nothing was written.
      */
-    int64_t onRestore(const std::string& path, const Entries& entries,
-                      const std::vector<std::pair<std::string, std::string>>& blobs, int schema);
+    int64_t onRestore(const std::string& path, const Entries& entries, const Blobs& blobs,
+                      int schema);
 
     /** The embedded copy (sec 16.4, 13.3), for a save in `embedded` mode.
      *
@@ -160,9 +165,10 @@ public:
      * history directory, applies the retention policy to the copy -- the
      * unnamed versions and the cache tier go, the ops and the named
      * versions stay -- and stamps it with the save id, date and version
-     * counter the guard on open compares. Returns the copy's path and,
-     * from the surviving manifests, every blob hash with the extension it
-     * is named by; `version` is the number this save becomes.
+     * counter the guard on open compares. Returns the copy's path and
+     * every blob the copy still holds as a file (23.16) -- a surviving
+     * version's or an op value's -- with its extension; `version` is the
+     * number this save becomes.
      */
     struct Embedded
     {
@@ -176,7 +182,9 @@ public:
     /** Continue from an embedded copy (sec 16.4): the live store is
      * replaced by `path`'s content, the counters follow the copy's, and
      * the on-open snapshot then becomes the version the copy expects.
-     * Only for a store with no history of its own yet.
+     * Only for a store with no history of its own yet. The copy's blobs
+     * are in the document's blob store by then (PropertyHistory restored
+     * them); the log takes a handle on each.
      */
     bool adoptStore(const std::string& path);
 
@@ -192,8 +200,7 @@ public:
 
     /// The unnamed version between saves (sec 16.3), from
     /// Document::snapshotToLog: like onSave, with a `snapshot` record.
-    int64_t onSnapshot(const Captures& entries,
-                       const std::vector<std::pair<std::string, std::string>>& blobs, int schema);
+    int64_t onSnapshot(const Captures& entries, const Blobs& blobs, int schema);
 
     int64_t session() const { return _session; }
     int64_t environment() const { return _environment; }
@@ -252,6 +259,12 @@ public:
     /// `data`, into `entity` when asked. Worker or flushed caller.
     bool readBytes(const std::string& hash, std::string& out, LogEntity* entity = nullptr,
                    int depth = 0);
+    /// The file of a blob the log holds full (sec 23.16), null when the
+    /// log has none -- no such entity, or one kept as a delta, which
+    /// readValue() decodes. Flushes first.
+    FileBlobHandle heldBlob(const std::string& hash);
+    /// How many blob files the log holds (sec 23.16). Flushes first.
+    size_t heldBlobCount();
 
     /// zstd patch-from: `bytes` against `base` into `patch`, and back.
     /// False without zstd or on a codec error.
@@ -293,7 +306,7 @@ private:
     /// A version from the file's entries plus the record (`save` or
     /// `restore`) that names it; what onSave and onRestore share.
     int64_t snapshot(const char* kind, const std::string& path, const Captures& entries,
-                     const std::vector<std::pair<std::string, std::string>>& blobs, int schema);
+                     const Blobs& blobs, int schema);
     /// Store one captured entry as a composite (23.3): the parts resolved
     /// or stored, the skeleton, the composite row. `previous` is the last
     /// version's composite of the same entry, for supersession. Returns
@@ -310,8 +323,23 @@ private:
     /// thread, after a version is added.
     void evictVersions(long keep);
     /// Store a captured value (fragment and attachments) and return its ref.
-    /// Worker thread.
+    /// Each blob the value names (its `blobs`, decision 6b) is held and
+    /// becomes a `blob` ref of the value. Worker thread.
     std::string putValue(const CapturedValue& value, const std::string& tier);
+    /// Sec 23.16: a blob of the document's store as an entity, stored as
+    /// `file` and held -- made, or made full again if the content had been
+    /// kept as a delta -- and its hash returned. Worker thread, or the main
+    /// thread with the queue drained.
+    std::string putBlob(const FileBlobHandle& blob);
+    /// The `blob` refs from a blob to the files it reads (FileBlob::sources),
+    /// each of those stored and held in turn: what lets a blob a value
+    /// names outlive the version that wrote it. Once per blob per log.
+    /// Worker thread.
+    void putSources(const FileBlobHandle& blob, int depth = 0);
+    /// Let go of the file of every blob no longer stored as `file`: gone
+    /// to the collector, or kept as a delta. After anything that removes
+    /// or re-encodes entities.
+    void releaseBlobs();
     /// Store plain bytes as an entity of `kind` and return its hash.
     /// Worker thread.
     std::string putBytes(const std::string& bytes, const std::string& kind,
@@ -369,9 +397,13 @@ private:
     std::unordered_map<int64_t, std::string> _hashById;
     /// What a capture on the worker needs of the document.
     CaptureConfig _config;
-    /// The blobs the log's values name by hash (decision 6b), held so the
-    /// document's store keeps them; worker thread, released after join.
+    /// The blobs stored as `file` (sec 23.16), held so the document's
+    /// blob store keeps their files: every one a version or a value
+    /// names, until the collector drops it or a delta replaces it
+    /// (releaseBlobs). Worker thread, or a flushed caller.
     std::unordered_map<std::string, FileBlobHandle> _blobs;
+    /// The blobs putSources() has read. Worker thread.
+    std::unordered_set<std::string> _sourced;
 
     std::thread _worker;
     std::mutex _mutex;

@@ -3256,13 +3256,9 @@ void Document::save(Base::Writer &writer, bool archive) const {
     if (log) {
         writer.setEntrySink(nullptr);
         writer.setPropertySink(nullptr);
-        std::vector<std::pair<std::string, std::string>> blobs;
-        for (const auto& blob : getFileBlobManager().collected()) {
-            // Named by hash, as the manifest keys on it; the extension
-            // says what the bytes are.
-            std::string ext = Base::FileInfo(blob->path()).extension();
-            blobs.emplace_back(blob->hash() + (ext.empty() ? "" : "." + ext), blob->hash());
-        }
+        // Named as the archive names them (docs/TransactionLog.md sec
+        // 23.16), which is what pairs a property's file with its next one.
+        TransactionLog::Blobs blobs = getFileBlobManager().collectedEntries();
         TransactionLog::Captures entries = std::move(d->captures);
         d->captures.clear();
         if (log->onSave(FileName.getValue(), entries, blobs, writer.getSchemaVersion()))
@@ -3689,11 +3685,9 @@ void Document::restore(Base::XMLReader &reader,
         d->fileEntries.clear();
         TransactionLog* log = testStatus(Document::RestoreError) ? nullptr : getTransactionLog();
         if (log) {
-            std::vector<std::pair<std::string, std::string>> blobs;
-            for (const auto& blob : getFileBlobManager().blobs()) {
-                std::string ext = Base::FileInfo(blob->path()).extension();
-                blobs.emplace_back(blob->hash() + (ext.empty() ? "" : "." + ext), blob->hash());
-            }
+            // Under the names the file gave them, which are the names the
+            // next save gives them (sec 23.16).
+            TransactionLog::Blobs blobs = getFileBlobManager().restoredEntries();
             if (log->onRestore(FileName.getValue(), entries, blobs, reader.DocumentSchema))
                 noteVersionTaken();
         }
@@ -3897,11 +3891,7 @@ int64_t Document::snapshotToLog()
         writer.setEntrySink(nullptr);
         writer.setPropertySink(nullptr);
 
-        std::vector<std::pair<std::string, std::string>> blobs;
-        for (const auto& blob : getFileBlobManager().collected()) {
-            std::string ext = Base::FileInfo(blob->path()).extension();
-            blobs.emplace_back(blob->hash() + (ext.empty() ? "" : "." + ext), blob->hash());
-        }
+        TransactionLog::Blobs blobs = getFileBlobManager().collectedEntries();
         TransactionLog::Captures entries = std::move(d->captures);
         d->captures.clear();
         int64_t num = log->onSnapshot(entries, blobs, writer.getSchemaVersion());
@@ -3932,38 +3922,38 @@ bool Document::restoreVersion(int64_t num)
         THROWM(Base::RuntimeError, "no such version");
     auto manifest = log->store().manifest(num);
 
-    // Materialise the version as an unpacked project: the XML entries
-    // from the store, the blobs from the document's one blob store (sec
-    // 16.2) under blobs/, which a directory restore reads by content.
+    // Materialise the version as an unpacked project: every entry from
+    // the log, the blobs under blobs/, which a directory restore reads by
+    // content. A blob the log holds as a file is copied; one it keeps as a
+    // delta (sec 23.16) is decoded like any other entity.
     const std::string dir = TransientDir.getStrValue() + "/history/checkout";
     Base::FileInfo(dir).deleteDirectoryRecursive();
     if (!Base::FileInfo(dir + "/" + FileBlobManager::archivePrefix()).createDirectories())
         THROWM(Base::RuntimeError, "cannot create the checkout directory");
     bool haveDocXml = false;
     for (const auto& e : manifest) {
-        if (e.source == "entity") {
-            CapturedValue v;
-            if (!log->readValue(e.hash, v))
-                THROWM(Base::RuntimeError, "version entry " + e.entry + " is not in the store");
-            Base::FileInfo target(dir + "/" + e.entry);
-            if (e.entry.find('/') != std::string::npos)
-                Base::FileInfo(target.dirPath()).createDirectories();
-            Base::ofstream out(target, std::ios::out | std::ios::binary);
-            out.write(v.fragment.data(), static_cast<std::streamsize>(v.fragment.size()));
-            if (!out)
-                THROWM(Base::RuntimeError, "cannot write " + e.entry);
-            if (e.entry == "Document.xml")
-                haveDocXml = true;
+        LogEntity entity;
+        if (!log->store().getEntity(e.hash, entity))
+            THROWM(Base::RuntimeError, "version entry " + e.entry + " of version "
+                                           + std::to_string(num) + " is not in the store");
+        const bool isBlob = entity.kind == "blob";
+        Base::FileInfo target(dir + "/" + (isBlob ? FileBlobManager::archivePrefix() : "")
+                              + e.entry);
+        if (auto blob = isBlob ? log->heldBlob(e.hash) : FileBlobHandle()) {
+            if (!blob->inArchive() && Base::FileInfo(blob->path()).copyTo(target.filePath().c_str()))
+                continue;
         }
-        else {
-            auto blob = getFileBlobManager().find(e.hash);
-            if (!blob)
-                THROWM(Base::RuntimeError, "blob " + e.entry + " of version "
-                                               + std::to_string(num) + " is not in the store");
-            if (!Base::FileInfo(blob->path()).copyTo(
-                    (dir + "/" + FileBlobManager::archivePrefix() + e.entry).c_str()))
-                THROWM(Base::RuntimeError, "cannot copy blob " + e.entry);
-        }
+        CapturedValue v;
+        if (!log->readValue(e.hash, v))
+            THROWM(Base::RuntimeError, "version entry " + e.entry + " cannot be read");
+        if (e.entry.find('/') != std::string::npos)
+            Base::FileInfo(target.dirPath()).createDirectories();
+        Base::ofstream out(target, std::ios::out | std::ios::binary);
+        out.write(v.fragment.data(), static_cast<std::streamsize>(v.fragment.size()));
+        if (!out)
+            THROWM(Base::RuntimeError, "cannot write " + e.entry);
+        if (e.entry == "Document.xml")
+            haveDocXml = true;
     }
     if (!haveDocXml)
         THROWM(Base::RuntimeError, "version has no Document.xml");

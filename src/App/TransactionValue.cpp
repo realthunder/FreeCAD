@@ -120,9 +120,13 @@ CapturedValue App::captureValue(const CaptureConfig& config, const Base::Persist
 {
     CapturedValue v;
     CaptureWriter writer(config, v);
+    // What the Save notes goes to the value, not to the save set of the
+    // document's next save (sec 23.16).
+    BlobRecorder recorder;
     try {
         what.Save(writer);
         writer.writeFiles();
+        v.blobs = recorder.blobs();
         v.ok = true;
     }
     catch (Base::Exception& e) {

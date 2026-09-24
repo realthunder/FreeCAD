@@ -15,10 +15,12 @@
 #include "App/DocumentObject.h"
 #include "App/DocumentParams.h"
 #include "App/FeatureTest.h"
+#include "App/PropertyFile.h"
 #include "App/PropertyHistory.h"
 #include "App/TransactionLog.h"
 #include "App/TransactionValue.h"
 #include "Base/FileInfo.h"
+#include "Base/Stream.h"
 #include <src/App/InitApplication.h>
 
 namespace {
@@ -1159,6 +1161,155 @@ TEST_F(TransactionLogTest, composedSnapshotIsTheFile)
     ASSERT_TRUE(log().readValue(manifest[0].hash, composed));
     EXPECT_NE(composed.fragment.find("<Integer value=\"12\"/>"), std::string::npos);
     EXPECT_EQ(composed.fragment.find("<Integer value=\"13\"/>"), std::string::npos);
+
+    Base::FileInfo(path).deleteFile();
+}
+
+namespace {
+
+/// 800 lines of text, one of them changed when `changed` names it.
+std::string blobText(int changed)
+{
+    std::string s;
+    for (int i = 0; i < 800; ++i) {
+        s += "line " + std::to_string(i) + " holds " + std::to_string(i == changed ? -1 : i * 7)
+            + "\n";
+    }
+    return s;
+}
+
+std::string readFile(const std::string& path)
+{
+    Base::ifstream in(Base::FileInfo(path), std::ios::in | std::ios::binary);
+    return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+}
+
+}  // namespace
+
+TEST_F(TransactionLogTest, blobsAreEntitiesTheLogHolds)
+{
+    // Sec 23.16. Undo off: nothing but the property and the log holds a file.
+    doc()->setUndoMode(0);
+    const std::string tmp = Base::FileInfo::getTempPath();
+    auto setContent = [&](App::DocumentObject* obj, const std::string& bytes) {
+        const std::string src = tmp + "txnlog-blob.txt";
+        {
+            Base::ofstream out(Base::FileInfo(src), std::ios::out | std::ios::binary);
+            out << bytes;
+        }
+        doc()->openTransaction("content");
+        static_cast<App::PropertyFileIncluded*>(obj->getPropertyByName("File"))
+            ->setValue(src.c_str(), "data.txt");
+        doc()->commitTransaction();
+        Base::FileInfo(src).deleteFile();
+    };
+    auto content = [&]() {
+        auto obj = doc()->getObject("Obj");
+        EXPECT_TRUE(obj);
+        auto prop = obj ? dynamic_cast<App::PropertyFileIncluded*>(obj->getPropertyByName("File"))
+                        : nullptr;
+        EXPECT_TRUE(prop);
+        return prop ? readFile(prop->getValue()) : std::string();
+    };
+
+    doc()->openTransaction("create");
+    auto obj = make("Obj");
+    ASSERT_TRUE(obj->addDynamicProperty("App::PropertyFileIncluded", "File"));
+    doc()->commitTransaction();
+    setContent(obj, blobText(-1));
+
+    const std::string path = tmp + "txnlog-blob.FCStd";
+    ASSERT_TRUE(doc()->saveAs(path.c_str()));
+    auto& store = log().store();
+    // A version's blob is an entity under the name the archive gives it,
+    // stored as the file the log holds.
+    auto blobOf = [&](int64_t num) {
+        for (const auto& e : store.manifest(num)) {
+            App::LogEntity x;
+            if (store.getEntity(e.hash, x) && x.kind == "blob" && e.entry.find("Obj.File") == 0)
+                return e;
+        }
+        return App::LogManifestEntry();
+    };
+    const auto b1 = blobOf(1);
+    ASSERT_FALSE(b1.hash.empty());
+    EXPECT_EQ(b1.entry, "Obj.File.txt");
+    App::LogEntity e1;
+    ASSERT_TRUE(store.getEntity(b1.hash, e1));
+    EXPECT_EQ(e1.enc, "file");
+    EXPECT_EQ(e1.size, blobText(-1).size());
+    EXPECT_TRUE(log().heldBlob(b1.hash));
+
+    // One line changes: the next version's file supersedes it, and the
+    // older content is a patch toward the newer (sec 23.2), its file let go.
+    setContent(obj, blobText(400));
+    ASSERT_TRUE(doc()->save());
+    const auto b2 = blobOf(2);
+    ASSERT_FALSE(b2.hash.empty());
+    EXPECT_NE(b2.hash, b1.hash);
+    EXPECT_EQ(b2.entry, b1.entry);
+    ASSERT_TRUE(store.getEntity(b1.hash, e1));
+    EXPECT_EQ(e1.enc, "delta");
+    EXPECT_EQ(e1.base, b2.hash);
+    EXPECT_LT(e1.data.size() * 10, e1.size);
+    EXPECT_FALSE(log().heldBlob(b1.hash));
+    EXPECT_FALSE(doc()->getFileBlobManager().find(b1.hash));
+    EXPECT_TRUE(log().heldBlob(b2.hash));
+    // The op values name the same files, with an edge to them.
+    size_t named = 0;
+    for (auto& t : store.transactions()) {
+        for (auto& o : store.ops(t.seq)) {
+            if (o.prop != "File")
+                continue;
+            for (const auto& ref : {o.vbefore, o.vafter}) {
+                App::LogEntity v;
+                if (ref.empty() || !store.getEntity(ref, v))
+                    continue;
+                for (const auto& r : v.refs) {
+                    if (r.role == "blob") {
+                        EXPECT_TRUE(r.target == b1.hash || r.target == b2.hash) << r.target;
+                        ++named;
+                    }
+                }
+            }
+        }
+    }
+    EXPECT_GE(named, 2u);
+
+    // Both versions check out, the older one decoded from its patch.
+    ASSERT_TRUE(doc()->restoreVersion(1));
+    EXPECT_EQ(content(), blobText(-1));
+    ASSERT_TRUE(doc()->restoreVersion(2));
+    EXPECT_EQ(content(), blobText(400));
+
+    // Something unrelated: no patch to be had, so the older stays a file.
+    // With one unnamed version kept, the two before it go, and so do their
+    // blobs -- but the ops still name them, so the entities stay.
+    std::string noise;
+    for (int i = 0; i < 20000; ++i)
+        noise += static_cast<char>((i * 7919 + (i >> 3) * 104729) & 0xff);
+    setContent(doc()->getObject("Obj"), noise);
+    const long keep = App::DocumentParams::getTransactionLogKeepVersions();
+    App::DocumentParams::setTransactionLogKeepVersions(1);
+    ASSERT_EQ(doc()->snapshotToLog(), 3);
+    App::DocumentParams::setTransactionLogKeepVersions(keep);
+    EXPECT_EQ(store.versions().size(), 1u);
+    App::LogEntity e2;
+    ASSERT_TRUE(store.getEntity(b2.hash, e2));
+    EXPECT_EQ(e2.enc, "file");
+    EXPECT_TRUE(log().heldBlob(b2.hash));
+    EXPECT_TRUE(store.hasEntity(b1.hash));
+
+    // Dropping the ops drops the last thing naming them: the entities go,
+    // and the log lets go of the file.
+    store.truncate(log().lastSeq() + 1);
+    EXPECT_FALSE(store.hasEntity(b1.hash));
+    EXPECT_FALSE(store.hasEntity(b2.hash));
+    EXPECT_FALSE(log().heldBlob(b2.hash));
+    EXPECT_FALSE(doc()->getFileBlobManager().find(b2.hash));
+    const auto b3 = blobOf(3);
+    ASSERT_FALSE(b3.hash.empty());
+    EXPECT_TRUE(log().heldBlob(b3.hash));
 
     Base::FileInfo(path).deleteFile();
 }

@@ -81,8 +81,34 @@ public:
         exec("CREATE TABLE IF NOT EXISTS ref(entity TEXT, target TEXT, role TEXT, name TEXT,"
              " seq INTEGER, PRIMARY KEY(entity, role, name, target))");
         exec("CREATE INDEX IF NOT EXISTS ref_target ON ref(target, role)");
-        if (getMeta("schema").empty() || getMeta("schema") == "1")
-            setMeta("schema", "2");
+        const std::string schema = getMeta("schema");
+        if (schema == "1" || schema == "2")
+            migrateBlobs();
+        if (schema != "3")
+            setMeta("schema", "3");
+    }
+
+    /// Schema 2 listed a version's blobs in the manifest as
+    /// `source='blob'`, pointing into the document's blob store. Schema 3
+    /// makes each an entity of kind `blob` stored as `file` (sec 23.16),
+    /// its extension as data, so the collector holds them like the rest.
+    /// The size is not known here and stays 0, which keeps such a row out
+    /// of the delta policy; it is still read and held.
+    void migrateBlobs()
+    {
+        exec("BEGIN");
+        try {
+            exec("INSERT OR IGNORE INTO entity(hash,kind,enc,base,tier,size,data)"
+                 " SELECT hash,'blob','file','','durable',0,"
+                 " CAST(CASE WHEN length(entry)>41 THEN substr(entry,42) ELSE '' END AS BLOB)"
+                 " FROM manifest WHERE source='blob'");
+            exec("UPDATE manifest SET source='entity' WHERE source='blob'");
+            exec("COMMIT");
+        }
+        catch (...) {
+            exec("ROLLBACK");
+            throw;
+        }
     }
 
     /// Schema 1 kept values in `value(hash, enc, tier, size, data, attach)`
@@ -287,6 +313,28 @@ public:
             exec("ROLLBACK");
             throw;
         }
+    }
+
+    void addRef(const std::string& entity, const LogRef& r) override
+    {
+        auto s = prepare("SELECT COALESCE(MAX(seq),-1)+1 FROM ref WHERE entity=? AND role<>'base'");
+        bindText(s, 1, entity);
+        int seq = 0;
+        if (sqlite3_step(s) == SQLITE_ROW)
+            seq = sqlite3_column_int(s, 0);
+        sqlite3_reset(s);
+        insertRef(entity, r, seq);
+    }
+
+    std::vector<std::string> entitiesStoredAs(const std::string& enc) override
+    {
+        auto s = prepare("SELECT hash FROM entity WHERE enc=? ORDER BY hash");
+        bindText(s, 1, enc);
+        std::vector<std::string> out;
+        while (sqlite3_step(s) == SQLITE_ROW)
+            out.push_back(text(s, 0));
+        sqlite3_reset(s);
+        return out;
     }
 
     std::vector<std::string> basedOn(const std::string& hash) override

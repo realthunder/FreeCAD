@@ -51,6 +51,7 @@
 #include <TopTools_LocationSet.hxx>
 #endif
 
+#include <App/FileBlobManager.h>
 #include <Base/Console.h>
 
 #include "ShapeRefSet.h"
@@ -1349,6 +1350,62 @@ TopoDS_Shape ShapeRefSet::read(std::istream& in)
 }
 
 
+
+std::vector<std::string> ShapeRefSet::fileTable(const std::string& bytes)
+{
+    // The banner first, as readShape() finds it, then the `Files` block
+    // that write() puts straight after it.
+    std::istringstream in(bytes);
+    in.imbue(std::locale::classic());
+    bool known = false;
+    std::string line;
+    while (!known && std::getline(in, line)) {
+        while (!line.empty() && (line.back() == '\r' || line.back() == '\n')) {
+            line.pop_back();
+        }
+        for (int version = lowestVersion; version <= highestVersion; ++version) {
+            if (line == asciiVersions[version]) {
+                known = true;
+                break;
+            }
+        }
+    }
+    std::vector<std::string> files;
+    if (!known) {
+        return files;
+    }
+    in >> std::ws;
+    if (in.peek() != 'F') {
+        return files;
+    }
+    std::string keyword;
+    int count = 0;
+    in >> keyword >> count;
+    if (keyword != "Files" || count < 0) {
+        return files;
+    }
+    for (int i = 0; i < count; ++i) {
+        std::string name;
+        if (!(in >> name)) {
+            break;
+        }
+        files.push_back(std::move(name));
+    }
+    return files;
+}
+
+namespace
+{
+/// What a holder of a stored shape file has to hold with it (sec 23.16 of
+/// docs/TransactionLog.md), registered with the blob manager at load.
+struct RegisterSourceReader
+{
+    RegisterSourceReader()
+    {
+        App::FileBlobManager::registerSourceReader("brp", &ShapeRefSet::fileTable);
+    }
+} registerSourceReader;
+}  // namespace
 
 TopoDS_Shape ShapeRefSet::readShape(std::istream& in)
 {

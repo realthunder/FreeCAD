@@ -160,7 +160,7 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     _manifest = new QTreeWidget(_detail);
     _detail->addWidget(_manifest);
     _manifest->setColumnCount(ManColumns);
-    _manifest->setHeaderLabels({tr("Entry"), tr("Source"), tr("Hash")});
+    _manifest->setHeaderLabels({tr("Entry"), tr("Stored as"), tr("Hash")});
     _manifest->setRootIsDecorated(false);
     _manifest->setAlternatingRowColors(true);
     _manifest->setUniformRowHeights(true);
@@ -405,7 +405,13 @@ void TransactionLogView::showManifest(int64_t num)
         for (const auto& e : l->store().manifest(num)) {
             auto item = new QTreeWidgetItem(_manifest);
             item->setText(ManEntry, QString::fromStdString(e.entry));
-            item->setText(ManSource, QString::fromStdString(e.source));
+            // What the entity is and how it is kept: a blob as a file of
+            // the document's store or as a delta (sec 23.16).
+            App::LogEntity entity;
+            std::string what = "(missing)";
+            if (l->store().getEntity(e.hash, entity))
+                what = entity.kind + " " + entity.enc;
+            item->setText(ManSource, QString::fromStdString(what));
             item->setText(ManHash, QString::fromStdString(e.hash));
         }
         for (int c = 0; c < ManColumns; ++c) {
@@ -427,14 +433,32 @@ void TransactionLogView::onManifestSelected()
     auto item = items.front();
     const std::string hash = item->text(ManHash).toStdString();
     QString text = QStringLiteral("== %1 %2\n").arg(item->text(ManEntry), item->text(ManHash));
-    if (item->text(ManSource) == QLatin1String("entity")) {
+    auto l = log();
+    App::LogEntity e;
+    if (!l || !l->store().getEntity(hash, e)) {
+        text += tr("(not in the store)\n");
+    }
+    else if (e.kind == "blob") {
+        // A blob (sec 23.16): the document's store holds the newest as a
+        // file, the log an older one as a patch toward its successor.
+        if (auto blob = l->heldBlob(hash))
+            text += tr("blob, %1 bytes, at %2\n")
+                        .arg(e.size)
+                        .arg(QString::fromStdString(blob->path()));
+        else if (e.enc == "delta")
+            text += tr("blob, %1 bytes, kept as a %2 byte patch toward %3\n")
+                        .arg(e.size)
+                        .arg(e.data.size())
+                        .arg(QString::fromStdString(e.base));
+        else
+            text += tr("blob, %1 bytes, %2\n").arg(e.size).arg(QString::fromStdString(e.enc));
+    }
+    else {
         // An XML entry: a composite of skeleton and parts (sec 23.3),
         // shown composed, with what it is made of first; or the bytes
         // themselves when it was read rather than written.
         App::CapturedValue v;
-        auto l = log();
-        App::LogEntity e;
-        if (l && l->store().getEntity(hash, e) && e.kind == "composite") {
+        if (e.kind == "composite") {
             std::string data;
             App::TransactionLog::Composite c;
             if (l->readBytes(hash, data) && c.decode(data))
@@ -442,18 +466,10 @@ void TransactionLogView::onManifestSelected()
                             .arg(QString::fromStdString(c.skeleton))
                             .arg(c.parts.size());
         }
-        if (l && l->readValue(hash, v))
+        if (l->readValue(hash, v))
             text += QString::fromStdString(v.fragment);
         else
             text += tr("(value not in store)\n");
-    }
-    else {
-        // A blob: in the document's one store (sec 16.2), named by hash.
-        auto blob = _doc->getFileBlobManager().find(hash);
-        if (blob)
-            text += tr("blob at %1\n").arg(QString::fromStdString(blob->path()));
-        else
-            text += tr("(blob not in the document's store)\n");
     }
     _value->setPlainText(text);
 }
