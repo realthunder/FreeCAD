@@ -219,9 +219,12 @@ TopoShape ProfileBased::getVerifiedFace(bool silent,
                 for (auto &sub : subs) {
                     auto subshape = Part::Feature::getTopoShape(
                             obj, sub.c_str(), /*needSubElement*/true);
-                    if (subshape.isNull())
+                    if (subshape.isNull()) {
+                        if (silent)
+                            return TopoShape();
                         FC_THROWM(Base::CADKernelError, "Sub shape not found: " <<
                                 obj->getFullName() << "." << sub);
+                    }
                     shapes.push_back(subshape);
                 }
                 shape.makECompound(shapes);
