@@ -92,6 +92,10 @@ Loft::getSectionShape(const char *name,
                       const std::vector<std::string> &subs,
                       size_t expected_size)
 {
+    // An unset Profile or section; the messages below name the object
+    if (!obj)
+        FC_THROWM(Base::ValueError, "No " << name << " specified");
+
     std::vector<TopoShape> shapes;
     if (subs.empty() || std::find(subs.begin(), subs.end(), std::string()) != subs.end()) {
         shapes.push_back(Part::Feature::getTopoShape(obj));
