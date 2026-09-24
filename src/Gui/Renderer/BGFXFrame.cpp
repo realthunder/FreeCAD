@@ -6316,6 +6316,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
                 view->submit(draw, viewMat);
             ++slot;
         }
+        view->sweepScreenOffsets();
         view->overlayView = -1;
         view->overlayAnchor = nullptr;
         view->overlayRectHeight = 0.f;

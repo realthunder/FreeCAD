@@ -51,6 +51,9 @@
 # include <Inventor/elements/SoViewVolumeElement.h>
 # include <Inventor/fields/SoSFBool.h>
 # include <Inventor/misc/SoState.h>
+# include <Inventor/nodes/SoDrawStyle.h>
+# include <Inventor/nodes/SoLightModel.h>
+# include <Inventor/nodes/SoMaterial.h>
 # include <Inventor/nodes/SoSeparator.h>
 # include <Inventor/nodes/SoTexture2.h>
 # include <Inventor/nodes/SoTransformation.h>
@@ -133,6 +136,44 @@ protected:
     void computeBBox(SoAction*, SbBox3f& box, SbVec3f& center) override;
     void generatePrimitives(SoAction* action) override;
 };
+
+// Companion node that carries the datum's leader lines, arrows and arcs into
+// the render-cache capture. They cannot come from SoDatumLabel itself: the
+// capture snapshots a shape's material before the shape runs, and the style
+// GLRender draws them in -- unlit, textColor, lineWidth -- has to be in the
+// traversal state by then. Placing a style node in front of the label is not
+// an option either; the Sketcher finds each label as child 0 of its
+// constraint node. So the leaders move here, behind their own style nodes in
+// the companion sub-graph, and the label emits nothing to the capture.
+class SoDatumLabelLeader : public SoShape {
+    using inherited = SoShape;
+    SO_NODE_HEADER(SoDatumLabelLeader);
+
+public:
+    static void initClass();
+    SoDatumLabelLeader();
+
+    /// Read by SoFCVertexCache: the leader vertices carry screen-space
+    /// offsets in their texture coordinates (Render::MeshData::
+    /// screenOffsets), since GL sizes arrowheads and gaps in pixels.
+    SoSFBool screenOffsets;
+    SoDatumLabel* owner = nullptr;
+
+protected:
+    ~SoDatumLabelLeader() override = default;
+    // GLRender of the owner draws the leaders on the classic GL path.
+    void GLRender(SoGLRenderAction*) override {}
+    void computeBBox(SoAction* action, SbBox3f& box, SbVec3f& center) override
+    {
+        if (this->owner)
+            this->owner->computeBBox(action, box, center);
+    }
+    void generatePrimitives(SoAction* action) override
+    {
+        if (this->owner && action->isOfType(SoCallbackAction::getClassTypeId()))
+            this->owner->generateLeaderPrimitives(action);
+    }
+};
 }  // namespace Gui
 
 SO_NODE_SOURCE(SoDatumLabelAnchor)
@@ -158,6 +199,19 @@ void SoDatumLabelAnchor::getMatrix(SoGetMatrixAction* action)
     m.multRight(t);
     action->getMatrix().multLeft(m);
     action->getInverse().multRight(m.inverse());
+}
+
+SO_NODE_SOURCE(SoDatumLabelLeader)
+
+void SoDatumLabelLeader::initClass()
+{
+    SO_NODE_INIT_CLASS(SoDatumLabelLeader, SoShape, "Shape");
+}
+
+SoDatumLabelLeader::SoDatumLabelLeader()
+{
+    SO_NODE_CONSTRUCTOR(SoDatumLabelLeader);
+    SO_NODE_ADD_FIELD(screenOffsets, (TRUE));
 }
 
 SO_NODE_SOURCE(SoDatumLabelImage)
@@ -204,6 +258,7 @@ void SoDatumLabel::initClass()
     SO_NODE_INIT_CLASS(SoDatumLabel, SoShape, "Shape");
     SoDatumLabelAnchor::initClass();
     SoDatumLabelImage::initClass();
+    SoDatumLabelLeader::initClass();
 }
 
 
@@ -248,6 +303,7 @@ SoDatumLabel::SoDatumLabel()
     this->imageAnchor = nullptr;
     this->imageZoom = nullptr;
     this->imageShape = nullptr;
+    this->leaderShape = nullptr;
 }
 
 SoDatumLabel::~SoDatumLabel()
@@ -279,12 +335,31 @@ SoNode* SoDatumLabel::getImageNode()
         this->imageShape = new SoDatumLabelImage;
         this->imageShape->owner = this;
 
+        // The leaders' style, as GLRender sets it by hand: no lighting, the
+        // label's colour, its line width. Connected rather than copied, so a
+        // selection or preselection recolour -- which writes textColor only
+        // -- reaches the capture too.
+        auto lightModel = new SoLightModel;
+        lightModel->model = SoLightModel::BASE_COLOR;
+        auto material = new SoMaterial;
+        material->diffuseColor.connectFrom(&this->textColor);
+        auto drawStyle = new SoDrawStyle;
+        drawStyle->lineWidth.connectFrom(&this->lineWidth);
+        this->leaderShape = new SoDatumLabelLeader;
+        this->leaderShape->owner = this;
+
         this->imageRoot = new SoSeparator;
         // Hold our own reference so the sub-graph outlives its scene parent
         // (the companion reads back into this label during capture).
         this->imageRoot->ref();
         this->imageRoot->renderCaching = SoSeparator::OFF;
         this->imageRoot->boundingBoxCaching = SoSeparator::OFF;
+        // Leaders first: they compute textOffset/textAngle, which the glyph
+        // reads, and are captured before the texture is in the state.
+        this->imageRoot->addChild(lightModel);
+        this->imageRoot->addChild(material);
+        this->imageRoot->addChild(drawStyle);
+        this->imageRoot->addChild(this->leaderShape);
         this->imageRoot->addChild(this->imageTexture);
         this->imageRoot->addChild(this->imageAnchor);
         this->imageRoot->addChild(this->imageZoom);
@@ -1002,36 +1077,72 @@ void SoDatumLabel::generateLeaderPrimitives(SoAction * action)
     // Mirror of GLRender()'s line/arrow/arc drawing, emitted as cache-visible
     // primitives (via beginShape/shapeVertex) instead of immediate-mode GL, so
     // the render-cache bridge captures the datum for the bgfx / WASM backend.
-    // Kept geometry-identical to GLRender(); the text glyph quad is handled
-    // separately (it needs its own textured material scope).
+    // The text glyph quad is handled separately (it needs its own textured
+    // material scope).
+    //
+    // GL sizes the arrowheads, the gap left for the number and the
+    // extension-line overshoot in screen pixels, recomputing them from the
+    // view every frame. A capture is taken once and drawn under any camera --
+    // the capture traversal does not even have the viewer's -- so each vertex
+    // here is a WORLD point plus an offset in PIXELS along a direction in this
+    // node's coordinates, carried in the texture coordinate (the screenOffsets
+    // field tells the capture so). The backend resolves the offsets against
+    // the view it draws with (Render::MeshData::screenOffsets). The pixel
+    // sizes are the glyph's own, which is what GLRender multiplies by its
+    // world-per-pixel scale.
+    //
+    // What that representation cannot say is a choice that depends on the
+    // zoom. Two are made here from world quantities instead: the arrows turn
+    // outward when the number's CENTRE lies past an extension line (GL: when
+    // any of it does), and an angle's end lines are the pixel minimum only
+    // when no length was set. The arc trimmed around an angle's number is
+    // linearised along each vertex's tangent.
     SoState* state = action->getState();
 
     int srcw = 1, srch = 1;
     updateImageSize(state, srcw, srch);
-    float scale = getScaleFactor(state);
 
     const SbVec3f* points = this->pnts.getValues(0);
     int npts = this->pnts.getNum();
+    int dt = this->datumtype.getValue();
+
+    const float textW = float(srcw);
+    const float margin = (dt == SYMMETRIC ? 25.0f : float(srch)) / 4.0f;
+    const SbVec3f none(0.f, 0.f, 0.f);
+
+    struct Pt {
+        SbVec3f p;   // world, in this node's coordinates
+        SbVec3f px;  // screen-space offset, pixels
+    };
+    auto at = [&](const SbVec3f& p) { return Pt{p, none}; };
 
     SoPrimitiveVertex pv;
     pv.setNormal(SbVec3f(0.f, 0.f, 1.f));
     pv.setMaterialIndex(0);
 
-    auto emitLine = [&](const SbVec3f& a, const SbVec3f& b) {
+    auto put = [&](const Pt& v) {
+        pv.setPoint(v.p);
+        pv.setTextureCoords(SbVec4f(v.px[0], v.px[1], v.px[2], 1.f));
+        shapeVertex(&pv);
+    };
+    auto emitLine = [&](const Pt& a, const Pt& b) {
         this->beginShape(action, LINES);
-        pv.setPoint(a); shapeVertex(&pv);
-        pv.setPoint(b); shapeVertex(&pv);
+        put(a);
+        put(b);
         this->endShape();
     };
-    auto emitTri = [&](const SbVec3f& a, const SbVec3f& b, const SbVec3f& c) {
+    auto emitTri = [&](const Pt& a, const Pt& b, const Pt& c) {
         this->beginShape(action, TRIANGLES);
-        pv.setPoint(a); shapeVertex(&pv);
-        pv.setPoint(b); shapeVertex(&pv);
-        pv.setPoint(c); shapeVertex(&pv);
+        put(a);
+        put(b);
+        put(c);
         this->endShape();
     };
-
-    int dt = this->datumtype.getValue();
+    // An arrowhead with its tip at `tip`, pointing along -`back`.
+    auto emitArrow = [&](const SbVec3f& tip, const SbVec3f& back, const SbVec3f& side) {
+        SbVec3f base = back * (0.866f * 2 * margin);
+        emitTri(at(tip), Pt{tip, base - side * margin}, Pt{tip, base + side * margin});
+    };
 
     // Text label rotation matching GLRender's normalisation (keep upright).
     auto textAngleFromDir = [](const SbVec3f& d) -> float {
@@ -1067,59 +1178,48 @@ void SoDatumLabel::generateLeaderPrimitives(SoAction * action)
         SbVec3f p1_ = p1 + normproj12 * normal;
         SbVec3f midpos = (p1_ + p2) / 2;
 
-        float offset1 = ((length + normproj12 < 0) ? -1. : 1.) * srch;
-        float offset2 = ((length < 0) ? -1 : 1) * srch;
+        float offset1 = ((length + normproj12 < 0) ? -1.f : 1.f) * srch;
+        float offset2 = ((length < 0) ? -1.f : 1.f) * srch;
 
         this->textOffset = midpos + normal * length + dir * length2;
         this->textAngle = textAngleFromDir(dir);
 
-        float margin = this->imgHeight / 4.0;
-
-        SbVec3f perp1 = p1_ + normal * (length + offset1 * scale);
-        SbVec3f perp2 = p2  + normal * (length + offset2 * scale);
+        Pt perp1{p1_ + normal * length, normal * offset1};
+        Pt perp2{p2 + normal * length, normal * offset2};
 
         SbVec3f par1 = p1_ + normal * length;
-        SbVec3f par2 = midpos + normal * length + dir * (length2 - this->imgWidth / 2 - margin);
-        SbVec3f par3 = midpos + normal * length + dir * (length2 + this->imgWidth / 2 + margin);
-        SbVec3f par4 = p2  + normal * length;
+        SbVec3f par4 = p2 + normal * length;
+        const float halfGap = textW / 2 + margin;
+        Pt P2{this->textOffset, dir * -halfGap};
+        Pt P3{this->textOffset, dir * halfGap};
+        Pt P1 = at(par1);
+        Pt P4 = at(par4);
 
         bool flipTriang = false;
-        if ((par3 - par1).dot(dir) > (par4 - par1).length()) {
-            float tmpMargin = this->imgHeight / 0.75;
-            par3 = par4;
-            if ((par2 - par1).dot(dir) > (par4 - par1).length()) {
-                par3 = par2;
-                par2 = par1 - dir * tmpMargin;
-                flipTriang = true;
-            }
+        float t = (this->textOffset - par1).dot(dir);
+        float span = (par4 - par1).length();
+        float tmpMargin = srch / 0.75f;
+        if (t > span) {
+            P3 = P2;
+            P2 = Pt{par1, dir * -tmpMargin};
+            flipTriang = true;
         }
-        else if ((par2 - par1).dot(dir) < 0.f) {
-            float tmpMargin = this->imgHeight / 0.75;
-            par2 = par1;
-            if ((par3 - par1).dot(dir) < 0.f) {
-                par2 = par3;
-                par3 = par4 + dir * tmpMargin;
-                flipTriang = true;
-            }
+        else if (t < 0.f) {
+            P2 = P3;
+            P3 = Pt{par4, dir * tmpMargin};
+            flipTriang = true;
         }
 
         if (length != 0.) {
-            emitLine(p1, perp1);
-            emitLine(p2, perp2);
+            emitLine(at(p1), perp1);
+            emitLine(at(p2), perp2);
         }
-        emitLine(par1, par2);
-        emitLine(par3, par4);
+        emitLine(P1, P2);
+        emitLine(P3, P4);
 
-        SbVec3f ar1 = par1 + ((flipTriang) ? -1 : 1) * dir * 0.866f * 2 * margin;
-        SbVec3f ar2 = ar1 + normal * margin;
-        ar1 -= normal * margin;
-
-        SbVec3f ar3 = par4 - ((flipTriang) ? -1 : 1) * dir * 0.866f * 2 * margin;
-        SbVec3f ar4 = ar3 + normal * margin;
-        ar3 -= normal * margin;
-
-        emitTri(par1, ar1, ar2);
-        emitTri(par4, ar3, ar4);
+        float s = flipTriang ? -1.f : 1.f;
+        emitArrow(par1, dir * s, normal);
+        emitArrow(par4, dir * -s, normal);
     }
     else if (dt == RADIUS || dt == DIAMETER) {
         if (npts < 2)
@@ -1139,34 +1239,19 @@ void SoDatumLabel::generateLeaderPrimitives(SoAction * action)
 
         float length = this->param1.getValue();
         SbVec3f pos = p2 + length * dir;
-        float margin = this->imgHeight / 4.0;
 
         this->textOffset = pos;
         this->textAngle = textAngleFromDir(dir);
 
-        SbVec3f ar0 = p2;
-        SbVec3f ar1 = p2 - dir * 0.866f * 2 * margin;
-        SbVec3f ar2 = ar1 + normal * margin;
-        ar1 -= normal * margin;
+        const float halfGap = textW / 2 + margin;
+        // The line runs on past the number when the number sits outside.
+        Pt end = length >= 0.f ? Pt{pos, dir * halfGap} : at(p2);
 
-        SbVec3f p3 = pos + dir * (this->imgWidth / 2 + margin);
-        if ((p3 - p1).length() > (p2 - p1).length())
-            p2 = p3;
-
-        SbVec3f pnt1 = pos - dir * (margin + this->imgWidth / 2);
-        SbVec3f pnt2 = pos + dir * (margin + this->imgWidth / 2);
-
-        emitLine(p1, pnt1);
-        emitLine(pnt2, p2);
-        emitTri(ar0, ar1, ar2);
-
-        if (dt == DIAMETER) {
-            SbVec3f ar0_1 = p1;
-            SbVec3f ar1_1 = p1 + dir * 0.866f * 2 * margin;
-            SbVec3f ar2_1 = ar1_1 + normal * margin;
-            ar1_1 -= normal * margin;
-            emitTri(ar0_1, ar1_1, ar2_1);
-        }
+        emitLine(at(p1), Pt{pos, dir * -halfGap});
+        emitLine(Pt{pos, dir * halfGap}, end);
+        emitArrow(p2, dir * -1.f, normal);
+        if (dt == DIAMETER)
+            emitArrow(p1, dir, normal);
 
         float startangle = this->param3.getValue();
         float range = this->param4.getValue();
@@ -1176,9 +1261,7 @@ void SoDatumLabel::generateLeaderPrimitives(SoAction * action)
             this->beginShape(action, LINE_STRIP);
             for (int i = 0; i < countSegments; i++) {
                 double theta = startangle + segment * i;
-                SbVec3f v1 = center + SbVec3f(radius * cos(theta), radius * sin(theta), 0);
-                pv.setPoint(v1);
-                shapeVertex(&pv);
+                put(at(center + SbVec3f(radius * cos(theta), radius * sin(theta), 0)));
             }
             this->endShape();
         }
@@ -1187,61 +1270,58 @@ void SoDatumLabel::generateLeaderPrimitives(SoAction * action)
         if (npts < 1)
             return;
         SbVec3f p0 = points[0];
-        float margin = this->imgHeight / 4.0;
 
         float length     = this->param1.getValue();
         float startangle = this->param2.getValue();
         float range      = this->param3.getValue();
         float endangle   = startangle + range;
-        float endLineLength1  = std::max(this->param4.getValue(), margin);
-        float endLineLength2  = std::max(this->param5.getValue(), margin);
-        float endLineLength12 = std::max(-this->param4.getValue(), margin);
-        float endLineLength22 = std::max(-this->param5.getValue(), margin);
+        float param4     = this->param4.getValue();
+        float param5     = this->param5.getValue();
 
         float r = 2 * length;
 
-        // Text sits on the mid-angle ray, upright (matches GLRender). Use the
-        // original range before it is trimmed below to leave room for the text.
+        // Text sits on the mid-angle ray, upright (matches GLRender).
         this->textOffset =
             p0 + SbVec3f(cos(startangle + range / 2), sin(startangle + range / 2), 0) * r;
         this->textAngle = 0.f;
 
-        if (range >= 0)
-            range = std::max(0.2f * range, range - this->imgWidth / (2 * r));
-        else
-            range = std::min(0.2f * range, range + this->imgWidth / (2 * r));
-
+        // Each arc runs from its end toward the middle and stops short of
+        // the number: GL trims the range by textW / (2r) in world terms, a
+        // quarter of the number's width on each side. Vertex i of 2c-2
+        // moves back along its tangent by i / (2c - 2) of half that width.
         int countSegments = std::max(6, abs(int(50.0 * range / (2 * M_PI))));
         double segment = range / (2 * countSegments - 2);
+        float sgn = range >= 0 ? 1.f : -1.f;
+        float step = textW / (2.f * float(2 * countSegments - 2));
 
         this->beginShape(action, LINE_STRIP);
         for (int i = 0; i < countSegments; i++) {
             double theta = startangle + segment * i;
-            SbVec3f v1 = p0 + SbVec3f(r * cos(theta), r * sin(theta), 0);
-            pv.setPoint(v1);
-            shapeVertex(&pv);
+            SbVec3f tangent(-sin(theta), cos(theta), 0);
+            put(Pt{p0 + SbVec3f(r * cos(theta), r * sin(theta), 0),
+                   tangent * (-sgn * step * i)});
         }
         this->endShape();
 
         this->beginShape(action, LINE_STRIP);
         for (int i = 0; i < countSegments; i++) {
             double theta = endangle - segment * i;
-            SbVec3f v1 = p0 + SbVec3f(r * cos(theta), r * sin(theta), 0);
-            pv.setPoint(v1);
-            shapeVertex(&pv);
+            SbVec3f tangent(-sin(theta), cos(theta), 0);
+            put(Pt{p0 + SbVec3f(r * cos(theta), r * sin(theta), 0),
+                   tangent * (sgn * step * i)});
         }
         this->endShape();
 
-        SbVec3f v1(cos(startangle), sin(startangle), 0);
-        SbVec3f v2(cos(endangle), sin(endangle), 0);
-
-        SbVec3f pnt1 = p0 + (r - endLineLength1) * v1;
-        SbVec3f pnt2 = p0 + (r + endLineLength12) * v1;
-        SbVec3f pnt3 = p0 + (r - endLineLength2) * v2;
-        SbVec3f pnt4 = p0 + (r + endLineLength22) * v2;
-
-        emitLine(pnt1, pnt2);
-        emitLine(pnt3, pnt4);
+        // End lines: the set length (world) where there is one, else the
+        // pixel minimum GL clamps them to.
+        auto endLine = [&](const SbVec3f& v, float param) {
+            SbVec3f onArc = p0 + v * r;
+            Pt inner = param > 0.f ? at(onArc - v * param) : Pt{onArc, v * -margin};
+            Pt outer = param < 0.f ? at(onArc - v * param) : Pt{onArc, v * margin};
+            emitLine(inner, outer);
+        };
+        endLine(SbVec3f(cos(startangle), sin(startangle), 0), param4);
+        endLine(SbVec3f(cos(endangle), sin(endangle), 0), param5);
     }
     else if (dt == SYMMETRIC) {
         if (npts < 2)
@@ -1252,26 +1332,19 @@ void SoDatumLabel::generateLeaderPrimitives(SoAction * action)
         SbVec3f dir = (p2 - p1);
         dir.normalize();
         SbVec3f normal(-dir[1], dir[0], 0);
-        float margin = this->imgHeight / 4.0;
-
-        SbVec3f ar0 = p1 + dir * 4 * margin;
-        SbVec3f ar1 = ar0 - dir * 0.866f * 2 * margin;
-        SbVec3f ar2 = ar1 + normal * margin;
-        ar1 -= normal * margin;
 
         SbVec3f zc(0, 0, ZCONSTR);
-        emitLine(p1 + zc, ar0 + zc);
-        emitLine(ar0 + zc, ar1 + zc);
-        emitLine(ar0 + zc, ar2 + zc);
+        SbVec3f head = dir * (4 * margin);
+        SbVec3f base = dir * (4 * margin - 0.866f * 2 * margin);
+        SbVec3f side = normal * margin;
 
-        SbVec3f ar3 = p2 - dir * 4 * margin;
-        SbVec3f ar4 = ar3 + dir * 0.866f * 2 * margin;
-        SbVec3f ar5 = ar4 + normal * margin;
-        ar4 -= normal * margin;
+        emitLine(at(p1 + zc), Pt{p1 + zc, head});
+        emitLine(Pt{p1 + zc, head}, Pt{p1 + zc, base - side});
+        emitLine(Pt{p1 + zc, head}, Pt{p1 + zc, base + side});
 
-        emitLine(p2 + zc, ar3 + zc);
-        emitLine(ar3 + zc, ar4 + zc);
-        emitLine(ar3 + zc, ar5 + zc);
+        emitLine(at(p2 + zc), Pt{p2 + zc, head * -1.f});
+        emitLine(Pt{p2 + zc, head * -1.f}, Pt{p2 + zc, base * -1.f - side});
+        emitLine(Pt{p2 + zc, head * -1.f}, Pt{p2 + zc, base * -1.f + side});
     }
 }
 
@@ -1321,15 +1394,12 @@ void SoDatumLabel::generateTextQuad(SoAction * action)
 
 void SoDatumLabel::generatePrimitives(SoAction * action)
 {
-    // Render-cache capture (SoCallbackAction): emit the leader/arrow/arc
-    // geometry so the datum is drawn by the render-cache bridge (and thus the
-    // bgfx/WASM backend), where the raw-GL GLRender pass never runs. The text
-    // glyph quad is emitted separately by the companion SoDatumLabelImage
-    // (getImageNode()), which owns its own textured render-cache scope.
-    if (action->isOfType(SoCallbackAction::getClassTypeId())) {
-        generateLeaderPrimitives(action);
+    // Render-cache capture (SoCallbackAction): nothing from here. The
+    // companion sub-graph (getImageNode()) carries the whole datum into the
+    // capture -- the leaders from SoDatumLabelLeader under their own style,
+    // the glyph from SoDatumLabelImage under its texture.
+    if (action->isOfType(SoCallbackAction::getClassTypeId()))
         return;
-    }
 
     // Ray-pick path: keep only the text label box selectable (unchanged).
     // Initialisation check (needs something more sensible) prevents an infinite loop bug

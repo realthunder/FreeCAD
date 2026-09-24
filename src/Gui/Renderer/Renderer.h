@@ -168,6 +168,17 @@ struct MeshData {
     /// default texgen and 2D texcoord nodes produce (s, t, 0, 1)). Null
     /// when the cache was built without an active texture.
     const float *texCoords = nullptr;
+
+    /// Screen-space offsets, xyzw per vertex (w unused): the vertex is
+    /// drawn at its position PLUS xyz times the world length of one
+    /// screen pixel at that vertex, xyz being in the mesh's own
+    /// coordinates with a length in pixels. What lets geometry that
+    /// GL sizes in pixels every frame -- a datum's arrowheads, the gap
+    /// its line leaves for the number -- be captured once and still be
+    /// right at every zoom and under any camera, the browser's
+    /// included. Resolved by the backend against the view it draws
+    /// with (scene-camera feeds only). Null for ordinary meshes.
+    const float *screenOffsets = nullptr;
 };
 
 /// CPU-side snapshot of a texture image applied to triangle draws

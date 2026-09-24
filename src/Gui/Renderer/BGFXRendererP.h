@@ -8051,6 +8051,27 @@ public:
     // falls back to plain scaling.
     const float *viewMatrix = nullptr;
     const float *projMatrix = nullptr;
+    /// Meshes with screen-space offsets (Render::MeshData::screenOffsets)
+    /// resolved against this view's camera: a copy of the source whose
+    /// positions have every offset turned into world units, made again
+    /// only when the view's scale moves -- on a zoom or a resize, and on
+    /// any camera move under perspective, where the scale varies with
+    /// depth. Keyed by the source, which the copy holds alive (so the
+    /// key cannot be reused under it); an entry no draw asked for in the
+    /// last few frames is dropped by sweepScreenOffsets().
+    struct ResolvedOffsets {
+        std::shared_ptr<const Render::MeshData> mesh;
+        uint64_t viewKey = 0;
+        uint64_t lastUsed = 0;
+    };
+    std::unordered_map<const Render::MeshData *, ResolvedOffsets> resolvedOffsets;
+    /// \a draw with its mesh's screen offsets resolved for this frame's
+    /// camera, written into \a out and returned; \a draw itself when it
+    /// carries none. Only for draws submitted with the scene camera --
+    /// the resolve reads viewMatrix/projMatrix and the view height.
+    const Render::DrawCall &resolveScreenOffsets(const Render::DrawCall &draw,
+                                                 Render::DrawCall &out);
+    void sweepScreenOffsets();
     /// The present pass' program (fs_fc_present): the output colour
     /// transform on every tier, and standalone also the copy that puts
     /// the frame on the default backbuffer.

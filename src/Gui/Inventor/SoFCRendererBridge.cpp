@@ -316,8 +316,15 @@ translateCache(SoFCVertexCache * cache)
                 (const void *)mesh->triangleIndices,
                 (const void *)mesh->positions);
 
-    mesh->texCoords =
-        reinterpret_cast<const float *>(cache->getTexCoordArray());
+    // A shape emitting screen-space offsets (SoDatumLabel) carries them
+    // in the texcoord array; they are not UVs and must not reach a
+    // textured program as such.
+    if (cache->hasScreenOffsets())
+        mesh->screenOffsets =
+            reinterpret_cast<const float *>(cache->getTexCoordArray());
+    else
+        mesh->texCoords =
+            reinterpret_cast<const float *>(cache->getTexCoordArray());
 
     // Partial subset caches (e.g. the single-edge copy of a partial
     // selection) keep the parent's FULL index array and record the
@@ -442,8 +449,9 @@ bool meshMatchesCache(CacheMeshData & mesh, SoFCVertexCache * cache)
             || mesh.normals != reinterpret_cast<const float *>(cache->getNormalArray())
             || mesh.colors != cache->getColorArray()
             || mesh.materials != cache->getMaterialArray()
-            || mesh.texCoords
-                   != reinterpret_cast<const float *>(cache->getTexCoordArray()))
+            || (mesh.texCoords ? mesh.texCoords : mesh.screenOffsets)
+                   != reinterpret_cast<const float *>(cache->getTexCoordArray())
+            || (mesh.screenOffsets != nullptr) != cache->hasScreenOffsets())
         return false;
 
     if (mesh.numTriangleIndices != cache->getNumTriangleIndices()
@@ -514,6 +522,7 @@ void verifyMeshReuse(const CacheMeshData & kept, SoFCVertexCache * cache)
     else if (kept.colors != fresh->colors)                  bad = "colors";
     else if (kept.materials != fresh->materials)            bad = "materials";
     else if (kept.texCoords != fresh->texCoords)            bad = "texture coordinates";
+    else if (kept.screenOffsets != fresh->screenOffsets)    bad = "screen offsets";
     else if (kept.numTriangleIndices != fresh->numTriangleIndices
              || kept.triangleIndices != fresh->triangleIndices)
         bad = "triangle indices";

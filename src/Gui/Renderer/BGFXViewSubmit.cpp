@@ -20,6 +20,8 @@
  *                                                                          *
  ****************************************************************************/
 
+#include <optional>
+
 #include "BGFXRendererP.h"
 
 namespace {
@@ -908,12 +910,25 @@ bool BGFXView::submitPrepassInstanced(const Render::DrawCall &draw,
     return true;
 }
 
-void BGFXView::submit(const Render::DrawCall &draw, const float *viewMatrix,
+void BGFXView::submit(const Render::DrawCall &input, const float *viewMatrix,
             int pass, bool noseam)
 {
-    const Render::Material &mat = draw.material;
-    if (!draw.mesh || draw.mesh->numVertices == 0)
+    if (!input.mesh || input.mesh->numVertices == 0)
         return;
+    // Screen-space offsets (Render::MeshData::screenOffsets) resolve
+    // against the camera this view draws with -- the scene's, which is
+    // also a scene-camera overlay's. An overlay with a camera of its own
+    // (overlayAnchor set) has no pixel scale to give them. Here rather
+    // than at a feed, because a served edit graph reaches a viewer as
+    // part of its scene and a desktop one as an overlay; the copy is made
+    // only for a mesh that has offsets.
+    std::optional<Render::DrawCall> resolved;
+    if (input.mesh->screenOffsets && !overlayAnchor) {
+        resolved.emplace();
+        resolveScreenOffsets(input, *resolved);
+    }
+    const Render::DrawCall &draw = resolved ? *resolved : input;
+    const Render::Material &mat = draw.material;
     // The per-object per-view display style resolution
     // (docs/CoinRetirement.md 5.8, 5.9) -- see styleAdmits, which the
     // instanced group partition shares.
@@ -1566,5 +1581,107 @@ uint64_t BGFXView::depthFuncState(uint8_t func)
     case Render::Material::Greater:  return BGFX_STATE_DEPTH_TEST_GREATER;
     case Render::Material::NotEqual: return BGFX_STATE_DEPTH_TEST_NOTEQUAL;
     default:                         return BGFX_STATE_DEPTH_TEST_LEQUAL;
+    }
+}
+
+namespace {
+/// What a resolved screen-offset mesh points into: its own positions,
+/// and the source it was made from, whose other arrays it shares.
+struct ResolvedOffsetsHolder {
+    std::shared_ptr<const Render::MeshData> source;
+    std::vector<float> positions;
+};
+/// Ids for the resolved copies, tagged high so they never meet a
+/// vertex cache's (a counter from one) in the GPU mesh table.
+std::atomic<uint64_t> s_resolvedOffsetsId {0};
+constexpr uint64_t kResolvedOffsetsTag = uint64_t(0x5c0ff5e7) << 32;
+}  // namespace
+
+const Render::DrawCall &
+BGFXView::resolveScreenOffsets(const Render::DrawCall &draw, Render::DrawCall &out)
+{
+    const Render::MeshData *src = draw.mesh.get();
+    if (!src || !src->screenOffsets || !viewMatrix || !projMatrix || height == 0)
+        return draw;
+
+    // World length of one screen pixel: 2 / (P[5] * H) under an
+    // orthographic projection, times the view depth under a perspective
+    // one -- setDrawTransform's billboard sizing, element for element.
+    const float *V = viewMatrix;
+    const float *P = projMatrix;
+    const bool persp = std::abs(P[15]) < 1e-6f;
+    const float p5 = std::abs(P[5]) > 1e-8f ? P[5] : 1.0f;
+    const float H = float(height);
+    uint64_t key = 0xcbf29ce484222325ull;
+    key = fnv1a64(key, &p5, sizeof(p5));
+    key = fnv1a64(key, &H, sizeof(H));
+    if (persp) {
+        key = fnv1a64(key, V, 16 * sizeof(float));
+        if (!draw.identity)
+            key = fnv1a64(key, draw.model, 16 * sizeof(float));
+    }
+
+    ResolvedOffsets &entry = resolvedOffsets[src];
+    entry.lastUsed = frame;
+    if (!entry.mesh || entry.viewKey != key) {
+        auto holder = std::make_shared<ResolvedOffsetsHolder>();
+        holder->source = draw.mesh;
+        const size_t nv = size_t(std::max(src->numVertices, 0));
+        holder->positions.assign(src->positions, src->positions + nv * 3);
+
+        // The offsets are in the mesh's own coordinates; the model
+        // matrix (a placement, uniform scale at most) stretches them on
+        // the way to the world, so take that scale back out.
+        const float *m = draw.model;
+        float s = 1.0f;
+        if (!draw.identity) {
+            s = std::sqrt(m[0] * m[0] + m[1] * m[1] + m[2] * m[2]);
+            if (s < 1e-20f)
+                s = 1.0f;
+        }
+        const float base = 2.0f / (p5 * H);
+        for (size_t i = 0; i < nv; ++i) {
+            const float *off = src->screenOffsets + i * 4;
+            if (off[0] == 0.0f && off[1] == 0.0f && off[2] == 0.0f)
+                continue;
+            float *p = &holder->positions[i * 3];
+            float wpp = base;
+            if (persp) {
+                float wx = p[0], wy = p[1], wz = p[2];
+                if (!draw.identity) {
+                    wx = p[0] * m[0] + p[1] * m[4] + p[2] * m[8] + m[12];
+                    wy = p[0] * m[1] + p[1] * m[5] + p[2] * m[9] + m[13];
+                    wz = p[0] * m[2] + p[1] * m[6] + p[2] * m[10] + m[14];
+                }
+                float depth = -(wx * V[2] + wy * V[6] + wz * V[10] + V[14]);
+                wpp *= depth > 1e-4f ? depth : 1e-4f;
+            }
+            const float k = wpp / s;
+            p[0] += off[0] * k;
+            p[1] += off[1] * k;
+            p[2] += off[2] * k;
+        }
+
+        auto mesh = std::make_shared<Render::MeshData>(*src);
+        mesh->positions = holder->positions.data();
+        mesh->screenOffsets = nullptr;
+        mesh->owner = holder;
+        mesh->cacheId = kResolvedOffsetsTag | ++s_resolvedOffsetsId;
+        mesh->generation = 0;
+        entry.mesh = std::move(mesh);
+        entry.viewKey = key;
+    }
+    out = draw;
+    out.mesh = entry.mesh;
+    return out;
+}
+
+void BGFXView::sweepScreenOffsets()
+{
+    for (auto it = resolvedOffsets.begin(); it != resolvedOffsets.end();) {
+        if (it->second.lastUsed + 2 < frame)
+            it = resolvedOffsets.erase(it);
+        else
+            ++it;
     }
 }

@@ -39,10 +39,14 @@
 
 class SoTexture2;
 class SoSeparator;
+class SoLightModel;
+class SoMaterial;
+class SoDrawStyle;
 
 namespace Gui {
 
 class SoDatumLabelImage;
+class SoDatumLabelLeader;
 class SoDatumLabelAnchor;
 class SoAutoZoomTranslation;
 
@@ -52,6 +56,7 @@ class GuiExport SoDatumLabel : public SoShape {
     SO_NODE_HEADER(SoDatumLabel);
 
     friend class SoDatumLabelImage;
+    friend class SoDatumLabelLeader;
     friend class SoDatumLabelAnchor;
 
 public:
@@ -83,11 +88,14 @@ public:
      * unchanged. */
     static bool SuppressGLRender;
 
-    /* Returns the companion sub-graph that renders the datum text glyph as a
-     * textured quad for the render-cache bridge (bgfx/WASM backend), where the
-     * raw-GL GLRender text pass is bypassed. Add it as a sibling right after
-     * this label in the scene graph; it is inert on the classic GL path (this
-     * node's GLRender still draws the text there). Built lazily, owned here. */
+    /* Returns the companion sub-graph that renders this datum for the
+     * render-cache bridge (bgfx/WASM backend), where the raw-GL GLRender pass
+     * is bypassed: the leader lines, arrows and arcs, drawn unlit in textColor
+     * at lineWidth as GLRender draws them, then the text glyph as a textured
+     * quad. Add it as a sibling right after this label in the scene graph; it
+     * is inert on the classic GL path (this node's GLRender draws everything
+     * there). Without it the capture sees no datum at all. Built lazily,
+     * owned here. */
     SoNode* getImageNode();
 
     SoMFString string;
@@ -153,13 +161,16 @@ private:
     SbVec3f textOffset;
     float textAngle;
 
-    // Lazily built companion sub-graph rendering the text glyph quad, screen
-    // constant via the autozoom node (SoSeparator[texture, anchor, zoom, quad]).
+    // Lazily built companion sub-graph: the leaders under their own style
+    // (SoSeparator[light model, material, draw style, leader, ...]), then the
+    // text glyph quad, screen constant via the autozoom node ([..., texture,
+    // anchor, zoom, quad]).
     SoSeparator* imageRoot;
     SoTexture2* imageTexture;
     Gui::SoDatumLabelAnchor* imageAnchor;
     Gui::SoAutoZoomTranslation* imageZoom;
     Gui::SoDatumLabelImage* imageShape;
+    Gui::SoDatumLabelLeader* leaderShape;
 };
 
 }

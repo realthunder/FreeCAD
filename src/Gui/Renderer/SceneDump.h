@@ -785,6 +785,7 @@ struct ParsedMeshChunk : MeshData {
     std::vector<uint8_t> colorStore;
     std::vector<uint8_t> matStore;
     std::vector<float> uvStore;
+    std::vector<float> offsetStore;
     std::vector<int32_t> triStore;
     std::vector<int32_t> lineStore;
     std::vector<int32_t> pointStore;

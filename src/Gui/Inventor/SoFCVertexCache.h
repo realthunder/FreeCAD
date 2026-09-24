@@ -230,6 +230,10 @@ public:
   const SbVec3f * getVertexArray(void) const;
   const SbVec3f * getNormalArray(void) const;
   const SbVec4f * getTexCoordArray(void) const;
+  /// Whether getTexCoordArray() holds screen-space offsets rather than
+  /// texture coordinates (the node's screenOffsets field; see
+  /// Render::MeshData::screenOffsets).
+  bool hasScreenOffsets(void) const;
   const SbVec2f * getBumpCoordArray(void) const;
   const uint8_t * getColorArray(void) const;
 

@@ -129,6 +129,7 @@ static SbName * ElementSelectableField;
 static SbName * OnTopPatternField;
 static SbName * ShapeInfoField;
 static SbName * ForceTexCoordsField;
+static SbName * ScreenOffsetsField;
 static SbName * ProtoNodeField;
 
 class SoFCVertexCacheP {
@@ -152,6 +153,7 @@ public:
     OnTopPatternField = new SbName("onTopPattern");
     ShapeInfoField = new SbName("shapeInfo");
     ForceTexCoordsField = new SbName("forceTexCoords");
+    ScreenOffsetsField = new SbName("screenOffsets");
     ProtoNodeField = new SbName("protoNode");
   }
 
@@ -171,6 +173,8 @@ public:
     ShapeInfoField = nullptr;
     delete ForceTexCoordsField;
     ForceTexCoordsField = nullptr;
+    delete ScreenOffsetsField;
+    ScreenOffsetsField = nullptr;
     delete ProtoNodeField;
     ProtoNodeField = nullptr;
   }
@@ -595,6 +599,10 @@ public:
   /// when no texture unit is enabled (shared tessellations whose cache
   /// must carry UVs for textured sharers).
   bool forcetexcoord = false;
+  /// screenOffsets field of the node: the unit-0 texcoords it emits are
+  /// not UVs but per-vertex screen-space offsets (Render::MeshData::
+  /// screenOffsets). Implies forcetexcoord, which is what captures them.
+  bool screenoffsets = false;
   int prevsorted = 0;
   SbPlane prevsortplane;
 
@@ -719,6 +727,13 @@ SoFCVertexCache::SoFCVertexCache(SoState * state, SoNode * node, SoFCVertexCache
   field = node->getField(*ForceTexCoordsField);
   if (field && field->isOfType(SoSFBool::getClassTypeId()))
     PRIVATE(this)->forcetexcoord = static_cast<const SoSFBool*>(field)->getValue();
+
+  field = node->getField(*ScreenOffsetsField);
+  if (field && field->isOfType(SoSFBool::getClassTypeId())
+      && static_cast<const SoSFBool*>(field)->getValue()) {
+    PRIVATE(this)->screenoffsets = true;
+    PRIVATE(this)->forcetexcoord = true;
+  }
 }
 
 SoFCVertexCache::SoFCVertexCache(SoFCVertexCache & prev)
@@ -776,6 +791,7 @@ SoFCVertexCache::SoFCVertexCache(SoFCVertexCache & prev)
   PRIVATE(this)->elementselectable = PRIVATE(pprev)->elementselectable;
   PRIVATE(this)->ontoppattern = PRIVATE(pprev)->ontoppattern;
   PRIVATE(this)->forcetexcoord = PRIVATE(pprev)->forcetexcoord;
+  PRIVATE(this)->screenoffsets = PRIVATE(pprev)->screenoffsets;
   PRIVATE(this)->lastenabled = PRIVATE(pprev)->lastenabled;
 }
 
@@ -2398,6 +2414,12 @@ SoFCVertexCache::getNormalArray(void) const
   return PRIVATE(this)->normalarray ? PRIVATE(this)->normalarray.getArrayPtr() : NULL;
 }
 
+bool
+SoFCVertexCache::hasScreenOffsets(void) const
+{
+  return PRIVATE(this)->screenoffsets;
+}
+
 const SbVec4f *
 SoFCVertexCache::getTexCoordArray(void) const
 {
@@ -3447,6 +3469,11 @@ SoFCVertexCacheP::canMergeWith(const VertexCacheEntry & other_entry)
 
   if ((!this->texcoord0array && other->texcoord0array)
       || (this->texcoord0array && !other->texcoord0array))
+    return false;
+
+  // Offsets and UVs share the array; merged, one would be read as the
+  // other.
+  if (this->screenoffsets != other->screenoffsets)
     return false;
 
   if ((!this->bumpcoordarray && other->bumpcoordarray)

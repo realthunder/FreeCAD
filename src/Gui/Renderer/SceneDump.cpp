@@ -321,7 +321,12 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     decoder, and handed one it would fail the texture and draw the
 //     scene under the stand-in preset with one line in the log. Refused
 //     outright is the better answer.
-const uint32_t kVersion = 76;
+// 77: a mesh may carry screen-space offsets (MeshData::screenOffsets,
+//     flag 32, after the material stream): the pixel-sized parts of a
+//     Sketcher datum -- arrowheads, the gap left for the number --
+//     resolved against the viewer's own camera. An older reader would
+//     fail the chunk on its version; refused here instead.
+const uint32_t kVersion = 77;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -366,8 +371,12 @@ const uint32_t kVersion = 76;
 ///     moved -- but an older cached chunk would answer no images and
 ///     no glass splice forever, and the bump retires it.
 /// 17: a texture header, inlined by material and shader chunks alike,
-///     carries the encoded-payload flag (v75). The bytes moved.)
-const uint32_t kChunkVersion = 17;
+///     carries the encoded-payload flag (v75). The bytes moved.
+/// 18: a mesh chunk may carry screen-space offsets after the material
+///     stream (v77), said by flag 32. Nothing older moved, but an older
+///     cached chunk would answer "no offsets" forever and draw a datum
+///     without its arrowheads.)
+const uint32_t kChunkVersion = 18;
 
 /// Bytes per vertex of MeshData::materials, whose layout Renderer.h
 /// documents. Named here because the stride is what a reader of an
@@ -576,7 +585,7 @@ void writeMeshChunk(Writer &w, const MeshData &m)
     // those set with no bytes behind it desynchronises the reader.
     uint8_t flags = (m.normals ? 1 : 0) | (m.colors ? 2 : 0)
         | (m.texCoords ? 4 : 0) | (m.materials ? 8 : 0)
-        | (m.attachedOnly ? 16 : 0);
+        | (m.attachedOnly ? 16 : 0) | (m.screenOffsets ? 32 : 0);
     w.u8(flags);
     w.raw(m.positions, size_t(m.numVertices) * 3 * sizeof(float));
     if (m.normals)
@@ -587,6 +596,8 @@ void writeMeshChunk(Writer &w, const MeshData &m)
         w.raw(m.texCoords, size_t(m.numVertices) * 4 * sizeof(float));
     if (m.materials)
         w.raw(m.materials, size_t(m.numVertices) * kMaterialStride);
+    if (m.screenOffsets)
+        w.raw(m.screenOffsets, size_t(m.numVertices) * 4 * sizeof(float));
 
     auto indices = [&](const int32_t *v, int n) {
         w.i32(v ? n : 0);
@@ -798,6 +809,11 @@ void readMeshChunk(Reader &r, OwnedMeshData *mesh, uint32_t version)
         mesh->matStore.resize(nv * kMaterialStride);
         r.raw(mesh->matStore.data(), nv * kMaterialStride);
         mesh->materials = mesh->matStore.data();
+    }
+    if (flags & 32) {
+        mesh->offsetStore.resize(nv * 4);
+        r.floats(mesh->offsetStore.data(), nv * 4);
+        mesh->screenOffsets = mesh->offsetStore.data();
     }
     // Absent bit = unclassified = always draws, which is the safe
     // direction and exactly what a chunk written by an older build
@@ -1044,6 +1060,8 @@ private:
         dst.normals = src.normals ? dst.normStore.data() : nullptr;
         dst.colors = src.colors ? dst.colorStore.data() : nullptr;
         dst.texCoords = src.texCoords ? dst.uvStore.data() : nullptr;
+        dst.screenOffsets =
+            src.screenOffsets ? dst.offsetStore.data() : nullptr;
         dst.triangleIndices =
             src.triangleIndices ? dst.triStore.data() : nullptr;
         dst.lineIndices = src.lineIndices ? dst.lineStore.data() : nullptr;

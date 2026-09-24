@@ -236,6 +236,15 @@ fc_add_gui_test(GuiSketchDatumTextMode3_tests_run
                 sketch-datum-text-mode3.py
                 --timeout 180)
 
+# ...and its arrowheads are drawn, at a pixel size that holds when the view
+# zooms. GL sizes them (and the gap for the number) in pixels every frame;
+# the capture baked them at Coin's default view volume, about a hundred
+# times too small. The leader vertices now carry screen-space offsets the
+# backend resolves against its own camera.
+fc_add_gui_test(GuiSketchDatumLeadersMode3_tests_run
+                sketch-datum-leaders-mode3.py
+                --timeout 180)
+
 # Auto-constraints for a DRAG, not only for a drawing tool (upstream
 # ec298e9e9a and its follow-ups): hold a dragged point still on top of
 # another point and the Coincident that pins it there is written when
