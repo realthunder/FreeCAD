@@ -160,6 +160,7 @@
 #include "Inventor/SoFCOwnDisplayModeElement.h"
 #include "SoFCSelectionAction.h"
 #include "SoDatumLabel.h"
+#include "ViewerContext.h"
 #include "SoFCUnifiedSelection.h"
 #include "SoFCVectorizeSVGAction.h"
 #include "SoFCVectorizeU3DAction.h"
@@ -4656,9 +4657,11 @@ void View3DInventorViewer::renderToFramebuffer(QtGLFramebufferObject* fbo)
         externalRendered && _pimpl->editingBackendFed;
     SoFCRenderCacheManager::SuppressImageGLRender =
         SoDatumLabel::SuppressGLRender;
+    SoFCEditingRoot::SuppressGLRender = SoDatumLabel::SuppressGLRender;
     gl.apply(this->getSoRenderManager()->getSceneGraph());
     SoDatumLabel::SuppressGLRender = false;
     SoFCRenderCacheManager::SuppressImageGLRender = false;
+    SoFCEditingRoot::SuppressGLRender = false;
 
     // Foreground superimposition and the corner axis cross come from the
     // backend's overlay feeds on a backend frame, like on screen.
@@ -6555,6 +6558,7 @@ void View3DInventorViewer::renderScene()
         externalRendered && _pimpl->editingBackendFed && !parallelgl;
     SoFCRenderCacheManager::SuppressImageGLRender =
         SoDatumLabel::SuppressGLRender;
+    SoFCEditingRoot::SuppressGLRender = SoDatumLabel::SuppressGLRender;
     // * The sharp one. At render-cache mode 3 the geometry has already
     // gone to the backend above, so this traversal should be compositing
     // overlays and nothing else. If it is a large share of the frame it
@@ -6579,6 +6583,7 @@ void View3DInventorViewer::renderScene()
     outCoin.stop();
     SoDatumLabel::SuppressGLRender = false;
     SoFCRenderCacheManager::SuppressImageGLRender = false;
+    SoFCEditingRoot::SuppressGLRender = false;
     if (glbra) {
         glbra->checkRootNode(nullptr);
     }

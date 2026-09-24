@@ -1101,6 +1101,19 @@ zero in every case on both paths. Three findings are worth keeping:
   | Sketcher edit geometry | present | present | the backend |
   | shadow light manipulator | 0.0015 | **0.0000** | Coin, on top |
 
+  **Correction (2026-09-24): "drawn by" here means "drawn at least by".**
+  The readback rule -- in the window and not in the pre-composite frame
+  is Coin's -- cannot see a DOUBLE draw, because a double draw is in
+  both. The Sketcher edit scene was one: the backend drew it from the
+  editing overlay feed, and Coin's GL pass traversed the edit root again
+  over the backend's frame (only SoDatumLabel and SoImage stood down).
+  Diffing the window against that readback, rather than looking for what
+  is missing from it, found 1% of the viewport redrawn: the grid, the
+  edges and the point markers, on top of the datums. The edit root is now
+  an SoFCEditingRoot that sits out the GL pass while the backend is fed;
+  guard `tests/gui/sketch-edit-single-draw-mode3.py`. Anything else that
+  hangs under the aux root beside it deserves the same diff.
+
   The Transform dragger's arrows, rings and handles are backend
   geometry, and so is the whole Sketcher edit scene -- edit lines, point
   markers and the plane cross-hairs are all in the pre-composite

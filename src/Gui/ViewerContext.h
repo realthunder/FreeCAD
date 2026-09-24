@@ -24,6 +24,7 @@
 #define GUI_VIEWERCONTEXT_H
 
 #include <FCGlobal.h>
+#include <Inventor/nodes/SoSeparator.h>
 
 #include <memory>
 #include <vector>
@@ -52,7 +53,6 @@ class SoEventCallback;  // NOLINT
 class SoEvent;
 class SoFCRenderCacheManager;
 class SoGroup;
-class SoSeparator;
 class SoTransform;
 
 class QWidget;
@@ -78,6 +78,37 @@ class GLGraphicsItem;
 class SelectionScope;
 class SelectionSingleton;
 class EditableDatumLabel;
+
+/** The node an edit session's geometry hangs under (EditingRoot::node()).
+ *
+ * A separator that can stand out of a GL render. In render cache mode 3 the
+ * external backend draws the edit graph from its own capture of it (the
+ * viewer's editing overlay feed), and Coin's GL pass, which composites what
+ * the backend does not draw, traversed it again on top: every sketch line,
+ * point marker and grid line was drawn twice, the GL copy last, over the
+ * datums the backend had drawn on top of them. The viewer sets
+ * SuppressGLRender around its GL pass while the backend is fed; picking,
+ * bounding boxes and the capture itself (a callback action) are untouched.
+ */
+class GuiExport SoFCEditingRoot : public SoSeparator
+{
+    using inherited = SoSeparator;
+    SO_NODE_HEADER(SoFCEditingRoot);
+
+public:
+    static void initClass();
+    SoFCEditingRoot();
+
+    static bool SuppressGLRender;
+
+    void GLRender(SoGLRenderAction* action) override;
+    void GLRenderBelowPath(SoGLRenderAction* action) override;
+    void GLRenderInPath(SoGLRenderAction* action) override;
+    void GLRenderOffPath(SoGLRenderAction* action) override;
+
+protected:
+    ~SoFCEditingRoot() override = default;
+};
 
 /** The one editing root of an edit session (docs/ThinClient.md 8.11).
  *

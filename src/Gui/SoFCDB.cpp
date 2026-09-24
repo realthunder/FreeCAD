@@ -102,6 +102,7 @@
 #include "Flag.h"
 #include "SelectionObject.h"
 #include "View3DInventor.h"
+#include "ViewerContext.h"
 
 
 using namespace Gui;
@@ -142,6 +143,7 @@ void Gui::SoFCDB::init()
     SoFCInteractiveElement          ::initClass();
     SoGLWidgetElement               ::initClass();
     SoFCColorBarBase                ::initClass();
+    SoFCEditingRoot                 ::initClass();
     SoFCColorBar                    ::initClass();
     SoFCColorLegend                 ::initClass();
     SoFCColorGradient               ::initClass();

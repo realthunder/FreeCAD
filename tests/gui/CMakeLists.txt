@@ -245,6 +245,14 @@ fc_add_gui_test(GuiSketchDatumLeadersMode3_tests_run
                 sketch-datum-leaders-mode3.py
                 --timeout 180)
 
+# The edit graph is drawn once in mode 3. The backend draws it from the
+# editing overlay feed, and Coin's GL pass drew it again over the backend's
+# frame -- grid, edges and markers on top of the datums. Measured as the
+# viewport against the backend's own pre-composite framebuffer.
+fc_add_gui_test(GuiSketchEditSingleDrawMode3_tests_run
+                sketch-edit-single-draw-mode3.py
+                --timeout 180)
+
 # Auto-constraints for a DRAG, not only for a drawing tool (upstream
 # ec298e9e9a and its follow-ups): hold a dragged point still on top of
 # another point and the Coincident that pins it there is written when

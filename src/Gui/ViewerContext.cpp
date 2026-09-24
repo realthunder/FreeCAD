@@ -31,6 +31,7 @@
 #include <Inventor/SbViewportRegion.h>
 #include <Inventor/SoEventManager.h>
 #include <Inventor/SoRenderManager.h>
+#include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/actions/SoHandleEventAction.h>
 #include <Inventor/events/SoEvent.h>
 #include <Inventor/events/SoMouseButtonEvent.h>
@@ -59,10 +60,54 @@ FC_LOG_LEVEL_INIT("3DViewer", true, true)
 
 // ---- EditingRoot ------------------------------------------------------------
 
+SO_NODE_SOURCE(SoFCEditingRoot)
+
+bool SoFCEditingRoot::SuppressGLRender = false;
+
+void SoFCEditingRoot::initClass()
+{
+    SO_NODE_INIT_CLASS(SoFCEditingRoot, SoSeparator, "Separator");
+}
+
+SoFCEditingRoot::SoFCEditingRoot()
+{
+    SO_NODE_CONSTRUCTOR(SoFCEditingRoot);
+}
+
+// All four: an SoAnnotation's content is drawn late through the path Coin
+// stored for it, which enters here in-path rather than through GLRender.
+void SoFCEditingRoot::GLRender(SoGLRenderAction* action)
+{
+    if (!SuppressGLRender)
+        inherited::GLRender(action);
+}
+
+void SoFCEditingRoot::GLRenderBelowPath(SoGLRenderAction* action)
+{
+    if (!SuppressGLRender)
+        inherited::GLRenderBelowPath(action);
+}
+
+void SoFCEditingRoot::GLRenderInPath(SoGLRenderAction* action)
+{
+    if (!SuppressGLRender)
+        inherited::GLRenderInPath(action);
+}
+
+void SoFCEditingRoot::GLRenderOffPath(SoGLRenderAction* action)
+{
+    if (!SuppressGLRender)
+        inherited::GLRenderOffPath(action);
+}
+
 EditingRoot::EditingRoot(Gui::Document* document)
     : doc(document)
 {
-    root = new SoSeparator;
+    // SoFCDB::init registers the class; a context built without it (the
+    // unit harness's mirror) would otherwise make a node of a bad type.
+    if (SoFCEditingRoot::getClassTypeId().isBad())
+        SoFCEditingRoot::initClass();
+    root = new SoFCEditingRoot;
     root->ref();
     root->setName("EditingRoot");
     transform = new SoTransform;
