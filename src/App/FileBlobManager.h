@@ -23,6 +23,7 @@
 #ifndef APP_FILEBLOBMANAGER_H
 #define APP_FILEBLOBMANAGER_H
 
+#include <atomic>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -39,6 +40,7 @@
 namespace App
 {
 
+class BlobArchive;
 class Document;
 class DocumentObject;
 class FileBlobManager;
@@ -110,9 +112,31 @@ public:
     FileBlobManager* owner() const { return _owner; }
     /// Content hash, the blob's identity and its key in the manager.
     const std::string& hash() const { return _hash; }
-    /// Absolute path in the owning document's transient directory.
-    const std::string& path() const { return _path; }
+    /** Absolute path in the owning document's transient directory.
+     *
+     * Content restored from a document archive is served out of a copy of
+     * that archive and has no file of its own until something asks for one:
+     * the first call here writes it. A caller that only needs the bytes should
+     * use read() instead, and one that only needs to know what the content is
+     * should use hasExtension() -- either of those asked of thousands of blobs
+     * through this is thousands of file creates.
+     */
+    const std::string& path() const;
     uint64_t size() const { return _size; }
+
+    /** Whether the content is still inside the archive copy, with no file.
+     *
+     * Such a blob has no path whose existence means anything: asking for one
+     * creates it. Code that repairs stale paths skips these.
+     */
+    bool inArchive() const;
+
+    /// Whether the content is stored under this extension. Never writes a file.
+    bool hasExtension(const char* ext) const;
+
+    /// The whole content, from the file or from the archive copy. False, and
+    /// \a bytes empty, when it cannot be read.
+    bool read(std::string& bytes) const;
 
 private:
     friend class FileBlobManager;
@@ -120,8 +144,18 @@ private:
 
     FileBlobManager* _owner {nullptr};
     std::string _hash;
-    std::string _path;
+    /// Written once by the manager when an archived blob gets its file.
+    mutable std::string _path;
     uint64_t _size {0};
+    /// The archive copy holding the content. Kept after the file is written,
+    /// because a reader that saw the blob still archived may be using it.
+    std::shared_ptr<BlobArchive> _archive;
+    std::size_t _entry {0};
+    /// Extension of an archived blob, without the dot. A file's is its path's.
+    std::string _ext;
+    /// False while the content is only in the archive copy. Set after _path,
+    /// so a reader that sees it set may read _path without the lock.
+    mutable std::atomic<bool> _materialized {true};
 };
 
 using FileBlobHandle = std::shared_ptr<FileBlob>;
@@ -249,6 +283,20 @@ public:
      */
     FileBlobHandle adoptFile(const char* path, const char* extension = nullptr);
 
+    /** Store bytes already held in memory, writing them only if the content
+     * is new.
+     *
+     * The hash is of the bytes, so whether anything has to be written is known
+     * before any file exists: content the store already holds costs no file
+     * operation at all, and new content costs one write. This is the restore
+     * path's route -- it reads an archive entry rather than staging it -- which
+     * leaves adoptFile() to the callers that really do have a file to move.
+     *
+     * The extension is the one the content should be stored under; null or
+     * empty stores it without one.
+     */
+    FileBlobHandle adoptBytes(const std::string& bytes, const char* extension = nullptr);
+
     /// Existing blob for a content hash, or null. Never creates.
     FileBlobHandle find(const std::string& hash) const;
 
@@ -294,6 +342,14 @@ public:
      * Document.xml restores the Uid, which is what names the directory.
      */
     void relocate();
+
+    /** Close the file handles of the archive copies restores serve from.
+     *
+     * Must precede anything that renames or deletes the transient directory:
+     * Windows refuses either while a file inside it is open. A copy opens again
+     * on its next read.
+     */
+    void closeArchives();
 
     /// Staging path in the transient dir, for content whose hash is not known
     /// yet because it has still to be streamed in.
@@ -483,6 +539,17 @@ private:
     /// Keep restored content alive until its referrers have been served.
     void hold(FileBlobHandle blob);
     FileBlobHandle make(const std::string& hash, const std::string& path, uint64_t size);
+    /** Serve a zip document's blob entries out of a copy of the archive.
+     *
+     * False leaves the entries to the archive handler, one file each.
+     */
+    bool restoreFromArchive(const std::string& archive);
+    /// Write content to a new read-only file in the store and return its path.
+    std::string writeNewFile(const std::string& bytes, const char* extension) const;
+    /// Give an archived blob its own file, see FileBlob::path().
+    void materialize(const FileBlob& blob);
+    /// The archive copies something still refers to.
+    std::vector<std::shared_ptr<BlobArchive>> liveArchives() const;
 
     Document* _doc {nullptr};
     mutable std::mutex _mutex;
@@ -508,6 +575,8 @@ private:
     /// Keeps restored content alive until every referrer has been served.
     std::unordered_map<std::string, FileBlobHandle> _restoreHold;
     std::unordered_map<std::string, std::weak_ptr<FileBlob>> _blobs;
+    /// Archive copies restores served from, for closeArchives() and relocate().
+    std::vector<std::weak_ptr<BlobArchive>> _archives;
 };
 
 }  // namespace App

@@ -17,15 +17,26 @@
 #include <thread>
 #include <vector>
 
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <unistd.h>
+// _WIN32_WINNT before Asio, on Windows: Asio warns when the target
+// version is unset and then assumes 0x0601 (Windows 7), which compiles
+// this one translation unit against a Windows 7 API surface while every
+// other unit in the same binary gets the SDK default. 0x0A00 is that
+// default. Same reasoning as SceneServerWire.cpp.
+#if defined(_WIN32) && !defined(_WIN32_WINNT)
+#define _WIN32_WINNT 0x0A00
+#endif
+#include <boost/asio.hpp>
+#include <boost/beast/core.hpp>
+#include <boost/beast/http.hpp>
 
 #include <fstream>
 
 #if defined(__APPLE__)
 #include <mach-o/dyld.h>
+#elif defined(_WIN32)
+#include <windows.h>
+// psapi.h after windows.h: it needs the handle types.
+#include <psapi.h>
 #endif
 
 #include <QColor>
@@ -34,8 +45,24 @@
 #include <Gui/Renderer/SceneDump.h>
 #include <Gui/Renderer/SceneServer.h>
 
+namespace beast = boost::beast;
+namespace http = beast::http;
+namespace net = boost::asio;
+using tcp = net::ip::tcp;
+
 namespace
 {
+
+/// `setenv` is POSIX and absent from the MSVC CRT, so the one call site
+/// below goes through this instead (the shape committed in f7939faad8).
+void setEnv(const char* name, const char* value)
+{
+#ifdef _WIN32
+    _putenv_s(name, value);
+#else
+    setenv(name, value, 1);
+#endif
+}
 
 /// A minimal but complete draw: one triangle with its own arrays, of
 /// the shape RendererBridge::translate() would have produced.
@@ -83,58 +110,52 @@ const float kIdentity[16] = {1, 0, 0, 0, 0, 1, 0, 0,
 /// than a hard-coded number colliding with the user's serving rig.
 int freePort()
 {
-    int fd = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) {
-        return 0;
-    }
-    sockaddr_in addr {};
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    addr.sin_port = 0;
-    socklen_t len = sizeof(addr);
-    int port = 0;
-    if (::bind(fd, reinterpret_cast<sockaddr*>(&addr), len) == 0
-        && ::getsockname(fd, reinterpret_cast<sockaddr*>(&addr), &len) == 0) {
-        port = ntohs(addr.sin_port);
-    }
-    ::close(fd);
-    return port;
+    net::io_context ioc;
+    tcp::acceptor a(ioc, tcp::endpoint(net::ip::make_address("127.0.0.1"), 0));
+    return a.local_endpoint().port();
 }
+
+struct HttpReply
+{
+    bool ok = false;
+    unsigned status = 0;
+    std::string body;
+};
 
 /// One HTTP GET against the running scene server, answered with the
 /// version-prefixed payload (SceneServer.h, the polling fallback).
-/// Returns the body, or empty on any failure.
-std::string httpGet(int port, const std::string& path)
+/// Not ok on any failure -- including "nothing is listening yet", which
+/// is why the caller retries rather than this.  Beast parses the reply,
+/// so the status is the status and the body is the body; the hand-rolled
+/// version this replaced searched the raw response text for "200" and
+/// split it on the header terminator itself.
+HttpReply httpGet(int port, const std::string& path)
 {
-    int fd = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (fd < 0) {
-        return {};
+    HttpReply out;
+    net::io_context ioc;
+    tcp::socket sock(ioc);
+    beast::error_code ec;
+    sock.connect(tcp::endpoint(net::ip::make_address("127.0.0.1"), uint16_t(port)), ec);
+    if (ec) {
+        return out;
     }
-    sockaddr_in addr {};
-    addr.sin_family = AF_INET;
-    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    addr.sin_port = htons(uint16_t(port));
-    if (::connect(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
-        ::close(fd);
-        return {};
+    http::request<http::string_body> req {http::verb::get, path, 11};
+    req.set(http::field::host, "localhost");
+    req.set(http::field::connection, "close");
+    http::write(sock, req, ec);
+    if (ec) {
+        return out;
     }
-    const std::string req = "GET " + path
-        + " HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n";
-    if (::write(fd, req.data(), req.size()) != ssize_t(req.size())) {
-        ::close(fd);
-        return {};
+    beast::flat_buffer buf;
+    http::response<http::string_body> res;
+    http::read(sock, buf, res, ec);
+    if (ec) {
+        return out;
     }
-    std::string resp;
-    char buf[4096];
-    for (;;) {
-        ssize_t n = ::read(fd, buf, sizeof(buf));
-        if (n <= 0) {
-            break;
-        }
-        resp.append(buf, size_t(n));
-    }
-    ::close(fd);
-    return resp;
+    out.ok = true;
+    out.status = res.result_int();
+    out.body = res.body();
+    return out;
 }
 
 /// Shared across the cases in this file: the server is a singleton and
@@ -144,7 +165,7 @@ int servePort()
 {
     static const int port = [] {
         const int p = freePort();
-        ::setenv("FC_BGFX_SERVE_SCENE", std::to_string(p).c_str(), 1);
+        setEnv("FC_BGFX_SERVE_SCENE", std::to_string(p).c_str());
         return p;
     }();
     return port;
@@ -169,6 +190,46 @@ std::vector<std::string> mappedImages()
     for (uint32_t i = 0; i < count; ++i) {
         if (const char* name = _dyld_get_image_name(i)) {
             images.emplace_back(name);
+        }
+    }
+#elif defined(_WIN32)
+    // The Win32 answer to /proc/self/maps: every module the loader has
+    // mapped, link-time import and LoadLibrary alike. EnumProcessModules
+    // wants the buffer sized up front and reports what it would have
+    // needed, so ask once, grow, ask again.
+    const HANDLE process = ::GetCurrentProcess();
+    // Deliberately smaller than any real process needs -- 180 modules
+    // were measured in this test on Windows, and even a bare console
+    // process maps dozens -- so the grow-and-retry below runs every time
+    // instead of being a branch nothing ever takes. One extra
+    // EnumProcessModules call buys a continuously exercised path.
+    std::vector<HMODULE> mods(32);
+    // How many the call actually WROTE, which is not the same as how
+    // many it wants: the count it reports back can exceed the buffer,
+    // and the entries past the end were never filled in. Walking those
+    // would hand GetModuleFileNameEx a null module, and a null module
+    // is not an error there -- it names the executable, so the list
+    // would gain a phantom copy of ourselves for every unfilled slot.
+    size_t written = 0;
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        DWORD needed = 0;
+        if (!::EnumProcessModules(process,
+                                  mods.data(),
+                                  DWORD(mods.size() * sizeof(HMODULE)),
+                                  &needed)) {
+            return images;
+        }
+        const size_t count = needed / sizeof(HMODULE);
+        written = count < mods.size() ? count : mods.size();
+        if (count <= mods.size()) {
+            break;
+        }
+        mods.resize(count);  // one retry, at the size it asked for
+    }
+    for (size_t i = 0; i < written; ++i) {
+        char path[MAX_PATH] = {};
+        if (::GetModuleFileNameExA(process, mods[i], path, DWORD(sizeof(path)))) {
+            images.emplace_back(path);
         }
     }
 #else
@@ -230,20 +291,17 @@ TEST(PublishOnly, putsARealSceneOnTheWire)
         << "the publish is what starts the server";
 
     // Give the accept loop its thread.
-    std::string resp;
-    for (int i = 0; i < 200 && resp.empty(); ++i) {
-        resp = httpGet(port, "/scene?v=0");
-        if (resp.empty()) {
+    HttpReply reply;
+    for (int i = 0; i < 200 && !reply.ok; ++i) {
+        reply = httpGet(port, "/scene?v=0");
+        if (!reply.ok) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
     }
-    ASSERT_FALSE(resp.empty()) << "no answer from the scene server";
-    EXPECT_NE(resp.find("200"), std::string::npos)
-        << "a viewer that has seen nothing must get a payload, not 204";
+    ASSERT_TRUE(reply.ok) << "no answer from the scene server";
+    EXPECT_EQ(reply.status, 200u) << "a viewer that has seen nothing must get a payload, not 204";
 
-    const auto hdr = resp.find("\r\n\r\n");
-    ASSERT_NE(hdr, std::string::npos);
-    const std::string body = resp.substr(hdr + 4);
+    const std::string& body = reply.body;
     // 8-byte version prefix, then the payload the serializer wrote.
     ASSERT_GT(body.size(), 8u) << "a payload of nothing is not a scene";
 
@@ -300,6 +358,28 @@ TEST(PublishOnly, noGraphicsDeviceIsCreated)
 #if defined(__APPLE__)
         "GLEngine", "GLDriver", "MTLDriver", "AppleGVA",
         "/System/Library/Extensions/",
+#elif defined(_WIN32)
+        // Windows draws the same line in the same place. opengl32.dll,
+        // gdi32.dll and dxgi.dll are the client side -- they map into
+        // processes that never draw, so naming them here would fail the
+        // test on a machine that did nothing wrong. What only a real
+        // device brings in is what sits BEHIND them: the OpenGL ICD the
+        // loader picks per vendor, the Direct3D user-mode driver, and
+        // WARP when there is no hardware to pick.
+        //
+        // the OpenGL ICDs, one name per vendor:
+        "nvoglv",
+        "atioglxx",
+        "atig",
+        "icd",
+        // the Direct3D user-mode drivers:
+        "nvwgf2um",
+        "amdxc",
+        "igd10iumd",
+        "igd12umd",
+        // and WARP, the software device, plus the Vulkan loader:
+        "d3d10warp",
+        "vulkan-1",
 #else
         "_dri.so", "swrast", "llvmpipe", "libvulkan", "libnvidia-gl",
         "libGLX_", "libEGL_",

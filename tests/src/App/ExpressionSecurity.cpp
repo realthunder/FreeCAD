@@ -38,7 +38,8 @@ TEST(ExpressionSecurity, permissionNames)
     for (Permission perm : {Permission::DocReadSelf, Permission::DocWriteSelf,
             Permission::DocForeign, Permission::GeomCall, Permission::AppQuery,
             Permission::PrefsRead, Permission::PrefsWrite, Permission::AppWrite, Permission::Gui,
-            Permission::GuiDoCommand, Permission::HostImport, Permission::UnsafeGetattr}) {
+            Permission::GuiDoCommand, Permission::HostImport, Permission::UnsafeGetattr,
+            Permission::FsRead, Permission::FsWrite, Permission::HostExec}) {
         auto parsed = permissionFromName(permissionName(perm));
         ASSERT_TRUE(parsed.has_value()) << permissionName(perm);
         EXPECT_EQ(*parsed, perm);
@@ -68,6 +69,34 @@ TEST(ExpressionSecurity, principalClasses)
     EXPECT_FALSE(principalClass("addon:").has_value());
     EXPECT_FALSE(principalClass("").has_value());
     EXPECT_FALSE(principalClass("somebody").has_value());
+    // catalog v2: a remote client (docs/Sandbox.md 7.20, C3)
+    EXPECT_EQ(principalClass("client:id:alice@example.com"), PrincipalClass::Client);
+    EXPECT_EQ(principalClass("client:grant:3"), PrincipalClass::Client);
+    EXPECT_EQ(principalClass("client:conn:17"), PrincipalClass::Client);
+    EXPECT_FALSE(principalClass("client:id:").has_value());
+    EXPECT_FALSE(principalClass("client:grant:").has_value());
+    EXPECT_FALSE(principalClass("client:grant:3x").has_value());
+    EXPECT_FALSE(principalClass("client:alice").has_value());
+    EXPECT_FALSE(principalClass("client:").has_value());
+}
+
+TEST(ExpressionSecurity, clientPrincipals)
+{
+    EXPECT_EQ(clientPrincipalId("alice@example.com", 3, 17), "client:id:alice@example.com");
+    // no verified identity: the admitting grant, then the connection
+    EXPECT_EQ(clientPrincipalId("", 3, 17), "client:grant:3");
+    EXPECT_EQ(clientPrincipalId("", 0, 17), "client:conn:17");
+    // a control character is not rewritten into someone else's name
+    EXPECT_EQ(clientPrincipalId(std::string("al\x1fice"), 3, 17), "client:grant:3");
+    EXPECT_EQ(clientPrincipalId("bob\n", 0, 17), "client:conn:17");
+    // only a verified identity outlives the run
+    EXPECT_TRUE(isPersistablePrincipal("client:id:alice@example.com"));
+    EXPECT_FALSE(isPersistablePrincipal("client:grant:3"));
+    EXPECT_FALSE(isPersistablePrincipal("client:conn:17"));
+    EXPECT_TRUE(isPersistablePrincipal("session"));
+    EXPECT_TRUE(isPersistablePrincipal("addon:Draft"));
+    EXPECT_TRUE(isPersistablePrincipal("document:sha256:" + std::string(64, 'a')));
+    EXPECT_FALSE(isPersistablePrincipal("somebody"));
 }
 
 TEST(ExpressionSecurity, catalogDefaults)
@@ -91,6 +120,10 @@ TEST(ExpressionSecurity, catalogDefaults)
         {Permission::GuiDoCommand,  Decision::Deny,   Decision::Allow},
         {Permission::HostImport,    Decision::Prompt, Decision::Prompt},
         {Permission::UnsafeGetattr, Decision::Deny,   Decision::Prompt},
+        // the host file and code chokepoints (F1, docs/Sandbox.md 7.29)
+        {Permission::FsRead,        Decision::Deny,   Decision::Prompt},
+        {Permission::FsWrite,       Decision::Deny,   Decision::Prompt},
+        {Permission::HostExec,      Decision::Deny,   Decision::Prompt},
     };
     for (const auto &row : rows) {
         EXPECT_EQ(catalogDefault(PrincipalClass::Document, row.perm), row.doc)
@@ -98,9 +131,15 @@ TEST(ExpressionSecurity, catalogDefaults)
         EXPECT_EQ(catalogDefault(PrincipalClass::Session, row.perm), row.session)
             << permissionName(row.perm);
         // an addon holds everything at install time but gui.doCommand,
-        // which is PROMPT persisted per addon (S2, docs/Sandbox.md 7.13)
+        // which is PROMPT persisted per addon (S2, docs/Sandbox.md 7.13),
+        // and the three host file / code rows: an addon is trusted to
+        // drive the GUI, not to read, overwrite or run an arbitrary host
+        // file without the user seeing which one (F1, 7.29)
+        const bool addonPrompts = row.perm == Permission::GuiDoCommand
+            || row.perm == Permission::FsRead || row.perm == Permission::FsWrite
+            || row.perm == Permission::HostExec;
         EXPECT_EQ(catalogDefault(PrincipalClass::Addon, row.perm),
-                  row.perm == Permission::GuiDoCommand ? Decision::Prompt : Decision::Allow)
+                  addonPrompts ? Decision::Prompt : Decision::Allow)
             << permissionName(row.perm);
     }
 
@@ -114,6 +153,53 @@ TEST(ExpressionSecurity, catalogDefaults)
     EXPECT_TRUE(isPromptable(PrincipalClass::Session, Permission::AppWrite));
     EXPECT_TRUE(isPromptable(PrincipalClass::Session, Permission::Gui));
     EXPECT_TRUE(isPromptable(PrincipalClass::Document, Permission::UnsafeGetattr));
+    // a document never reaches a host file, and no prompt offers to let
+    // it; the session and an addon are asked, naming the path (F1, 7.29)
+    for (Permission perm : {Permission::FsRead, Permission::FsWrite, Permission::HostExec}) {
+        EXPECT_FALSE(isPromptable(PrincipalClass::Document, perm)) << permissionName(perm);
+        EXPECT_TRUE(isPromptable(PrincipalClass::Session, perm)) << permissionName(perm);
+        EXPECT_TRUE(isPromptable(PrincipalClass::Addon, perm)) << permissionName(perm);
+        // a remote client is not offered the row at all (catalog v2)
+        EXPECT_FALSE(isPromptable(PrincipalClass::Client, perm)) << permissionName(perm);
+        EXPECT_EQ(catalogDefault(PrincipalClass::Client, perm), Decision::Deny)
+            << permissionName(perm);
+    }
+
+    // Catalog v2's client column (docs/Sandbox.md 7.20, C3).
+    struct ClientRow {
+        Permission perm;
+        Decision decision;
+        bool promptable;
+        bool grantable;
+    };
+    const ClientRow clientRows[] = {
+        {Permission::DocReadSelf,   Decision::Allow,  false, true},
+        {Permission::DocWriteSelf,  Decision::Allow,  false, true},
+        {Permission::DocForeign,    Decision::Deny,   false, true},
+        {Permission::GeomCall,      Decision::Allow,  false, true},
+        {Permission::AppQuery,      Decision::Allow,  false, true},
+        {Permission::PrefsRead,     Decision::Allow,  false, true},
+        {Permission::PrefsWrite,    Decision::Deny,   false, true},
+        {Permission::AppWrite,      Decision::Deny,   false, true},
+        {Permission::Gui,           Decision::Deny,   false, false},
+        {Permission::GuiDoCommand,  Decision::Deny,   false, true},
+        {Permission::HostImport,    Decision::Prompt, true,  true},
+        {Permission::UnsafeGetattr, Decision::Deny,   false, false},
+        {Permission::PkgInstall,    Decision::Prompt, true,  true},
+    };
+    for (const auto &row : clientRows) {
+        EXPECT_EQ(catalogDefault(PrincipalClass::Client, row.perm), row.decision)
+            << permissionName(row.perm);
+        EXPECT_EQ(isPromptable(PrincipalClass::Client, row.perm), row.promptable)
+            << permissionName(row.perm);
+        EXPECT_EQ(isGrantable(PrincipalClass::Client, row.perm), row.grantable)
+            << permissionName(row.perm);
+    }
+    // every other class can be granted everything
+    for (auto pclass : {PrincipalClass::Document, PrincipalClass::Session, PrincipalClass::Addon}) {
+        EXPECT_TRUE(isGrantable(pclass, Permission::Gui));
+        EXPECT_TRUE(isGrantable(pclass, Permission::UnsafeGetattr));
+    }
 }
 
 TEST(ExpressionSecurity, pseudoPropertyMapping)

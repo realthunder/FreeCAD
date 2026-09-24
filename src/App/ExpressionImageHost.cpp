@@ -99,15 +99,22 @@ std::unique_ptr<ImageRuntime> makeRuntime(const std::string& name)
     if (name == "wasi")
         return makeWasmtimeRuntime();
 #endif
-    FC_ERR("unknown expression sandbox runtime '" << name
-           << "' (this build has:"
+    // The list is assembled BEFORE the macro call, not spliced into its
+    // argument list. A preprocessor directive between the parentheses of a
+    // macro invocation is undefined behaviour; gcc and clang accept it as an
+    // extension, MSVC rejects it outright (C2121 "'#': invalid character",
+    // then a cascade as `ifdef`, `endif` and the macro names fall through as
+    // identifiers). Found building this file on Windows for the first time,
+    // 2026-09-19. Do not fold this back into the FC_ERR.
+    std::string have;
 #ifdef FC_EXPR_PYODIDE_HOST
-           << " pyodide"
+    have += " pyodide";
 #endif
 #ifdef FC_EXPR_WASI_RUNTIME
-           << " wasi"
+    have += " wasi";
 #endif
-           << ")");
+    FC_ERR("unknown expression sandbox runtime '" << name
+           << "' (this build has:" << have << ")");
     return nullptr;
 }
 
@@ -292,31 +299,16 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
     /// One guest->host bridge op, CBOR both ways (ExpressionImageBridge).
     std::vector<uint8_t> bridge(const uint8_t* data, std::size_t len)
     {
-        // the fixed layout of a bare read_prop / get_attr (FcxWire.h):
-        // no CBOR on either side for the most frequent hop
-        if (len > 0 && data[0] == FcxWire::FixedRequestMagic) {
-            std::string opName;
-            auto out = dispatchHostOpFixed(handles, data, len, opName);
-            ++ops[opName];
-            return out;
-        }
-        json reply;
-        try {
-            json req = json::from_cbor(data, data + len);
-            const std::string opName =
-                req.is_object() ? req.value("op", std::string("?")) : std::string("?");
-            ++ops[opName];
-            // A failed guest import is counted by NAME as well: which
-            // module asked is what a corpus gate needs to read (a name
-            // in the package lock becomes an install prompt).
-            if (opName == FcxWire::OpPkgMissing && req.is_object())
-                ++ops[opName + ":" + req.value("a", std::string("?"))];
-            reply = dispatchHostOp(handles, req);
-        }
-        catch (const std::exception& e) {
-            reply = {{"ok", false}, {"exc", "ProtocolError"}, {"msg", e.what()}};
-        }
-        return json::to_cbor(reply);
+        std::string opName;
+        std::string missing;
+        auto out = dispatchHostBytes(handles, data, len, opName, missing);
+        ++ops[opName];
+        // A failed guest import is counted by NAME as well: which
+        // module asked is what a corpus gate needs to read (a name
+        // in the package lock becomes an install prompt).
+        if (!missing.empty())
+            ++ops[opName + ":" + missing];
+        return out;
     }
 
     bool initialize()
@@ -471,7 +463,7 @@ struct ImageHost::Private: public ParameterGrp::ObserverType
                 dropTerminated();
         }
         try {
-            reply = json::from_cbor(bytes.begin(), bytes.end());
+            reply = FcxWire::fromCbor(bytes);
         }
         catch (const json::exception& e) {
             FC_ERR("undecodable reply: " << e.what());
@@ -625,6 +617,12 @@ uint64_t ImageHost::exportObject(PyObject* obj)
     return d->handles.add(obj);
 }
 
+void ImageHost::setPrefetch(bool on)
+{
+    std::lock_guard<std::recursive_mutex> guard(d->mutex);
+    d->handles.setPrefetch(on);
+}
+
 void ImageHost::clearHandles()
 {
     std::lock_guard<std::recursive_mutex> guard(d->mutex);
@@ -715,7 +713,7 @@ PyObject* ImageHost::decodeResult(const ImageResult& result)
     if (!result.ok)
         return nullptr;
     try {
-        json v = json::from_cbor(result.value.begin(), result.value.end());
+        json v = FcxWire::fromCbor(result.value);
         if (result.owner && v.is_object()) {
             // a function the evaluation left: the stand-in that calls it
             auto t = v.find(FcxWire::TagKey);
@@ -791,7 +789,7 @@ ImageResult ImageHost::eval(const std::string& source,
     if (!bindingsCbor.empty()) {
         try {
             req["bindings"] =
-                json::from_cbor(bindingsCbor.begin(), bindingsCbor.end());
+                FcxWire::fromCbor(bindingsCbor);
         }
         catch (const json::exception& e) {
             res.excType = "ProtocolError";
@@ -1192,36 +1190,6 @@ bool carriesHandle(const json& v)
 }
 
 }  // namespace
-
-ImageResult ImageHost::proxyNew(const std::string& module,
-                                const std::string& cls,
-                                PyObject* args,
-                                bool alloc,
-                                const App::DocumentObject* owner)
-{
-    return proxyNew(module, cls, args, nullptr, alloc, owner);
-}
-
-ImageResult ImageHost::proxyNew(const std::string& module,
-                                const std::string& cls,
-                                PyObject* args,
-                                PyObject* kwargs,
-                                bool alloc,
-                                const App::DocumentObject* owner)
-{
-    std::lock_guard<std::recursive_mutex> guard(d->mutex);
-    return d->proxyRoundTrip(owner, [&](json& req, ImageResult&) {
-        req["op"] = FcxWire::OpProxyNew;
-        req["mod"] = module;
-        req["cls"] = cls;
-        req["a"] = encodeArgs(d->handles, args);
-        if (kwargs && PyDict_Check(kwargs) && PyDict_Size(kwargs) > 0)
-            req["k"] = encodeHostValue(d->handles, kwargs);
-        if (alloc)
-            req["alloc"] = true;
-        return true;
-    });
-}
 
 ImageResult ImageHost::proxyCall(uint64_t id,
                                  const std::string& hook,

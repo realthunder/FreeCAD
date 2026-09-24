@@ -209,6 +209,23 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter ArchiveBlobStore
+    ///
+    /// Serve the included files of a document archive out of one copy
+    /// of the archive in the transient directory, and give each its own
+    /// file only when something asks for a path. Requires
+    /// ArchiveRandomAccess. Turn off to write every included file out
+    /// during the restore, which on a monitored filesystem costs a file
+    /// create per entry.
+    static const bool & getArchiveBlobStore();
+    static const bool & defaultArchiveBlobStore();
+    static void removeArchiveBlobStore();
+    static void setArchiveBlobStore(const bool &v);
+    static const char *docArchiveBlobStore();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter DeferShapeLoad
     ///
     /// Park shape archive entries during restore and read each one on

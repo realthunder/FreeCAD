@@ -48,6 +48,7 @@
 #include <src/App/InitApplication.h>
 
 #include "Gui/Camera.h"
+#include "Gui/ExprParams.h"
 #include "Gui/FileDialog.h"
 #include "Gui/Fw/FwImage.h"
 #include "Gui/Fw/FwPanelMirror.h"
@@ -55,6 +56,7 @@
 #include "Gui/Fw/FwStore.h"
 #include "Gui/SceneControl.h"
 #include "Gui/SceneWidgets.h"
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include "Gui/Fw/FwWidgets.h"
@@ -1292,6 +1294,45 @@ private Q_SLOTS:
         QCOMPARE(label->text(), QStringLiteral("from six"));
         QCOMPARE(pushed.size(), 1);
         QCOMPARE(pushed.at(0).first, 5ULL);
+        // what the host made of a client's own write comes back to
+        // that client (docs/Sandbox.md 7.22): the fan-out skips the
+        // writer, so a correction -- here a slot writing the field
+        // back, as a clamp or a re-parse would -- is targeted
+        pushed.clear();
+        bool correcting = false;
+        auto fix = QObject::connect(label, &Fw::Widget::propertiesChanged, label,
+                                    [&](const QStringList& names, int) {
+            if (correcting || !names.contains(QStringLiteral("text")))
+                return;
+            correcting = true;
+            label->setText(QStringLiteral("corrected"));
+            correcting = false;
+        });
+        reply = control(R"({"id":11,"op":"widgets.update","target":"cmd:Std_Label",)"
+                        R"("state":{"q_text":"from six again"}})", 6);
+        QCOMPARE(reply.value(QLatin1String("ok")).toBool(), true);
+        QCOMPARE(label->text(), QStringLiteral("corrected"));
+        int toSix = 0;
+        QJsonObject echo;
+        for (const auto& p : pushed) {
+            if (p.first != 6ULL)
+                continue;
+            ++toSix;
+            echo = p.second;
+        }
+        QCOMPARE(toSix, 1);
+        QCOMPARE(echo.value(QLatin1String("method")).toString(), QStringLiteral("update"));
+        QCOMPARE(echo.value(QLatin1String("content")).toObject()
+                     .value(QLatin1String("q_text")).toString(),
+                 QStringLiteral("corrected"));
+        QObject::disconnect(fix);
+        // a write the host leaves alone: the writer hears nothing
+        pushed.clear();
+        control(R"({"id":12,"op":"widgets.update","target":"cmd:Std_Label",)"
+                R"("state":{"q_text":"plain"}})", 6);
+        QCOMPARE(label->text(), QStringLiteral("plain"));
+        for (const auto& p : pushed)
+            QVERIFY(p.first != 6ULL);
         // an unknown target
         reply = control(R"({"id":5,"op":"widgets.update","target":"nope","state":{}})", 6);
         QCOMPARE(reply.value(QLatin1String("code")).toString(), QStringLiteral("UnknownObject"));
@@ -1318,11 +1359,233 @@ private Q_SLOTS:
         control(R"({"id":10,"op":"widgets.subscribe","toolbars":false})", 5);
         QCOMPARE(stream.subscriberCount(), 0);
 
+        // two cards on one connection (docs/Sandbox.md 7.26): a subscribe
+        // that names one stream leaves the other as it was, and an
+        // unsubscribe that names one leaves the other subscribed
+        pushed.clear();
+        control(R"({"id":11,"op":"widgets.subscribe","toolbars":true})", 8);
+        QCoreApplication::processEvents();
+        auto opensFor8 = [&pushed](const char* id) {
+            int n = 0;
+            for (const auto& p : pushed)
+                if (p.first == 8 && p.second.value(QLatin1String("id")).toString() == QLatin1String(id))
+                    ++n;
+            return n;
+        };
+        QCOMPARE(opensFor8("cmd:Std_Label"), 1);   // the tool bar snapshot
+        pushed.clear();
+        // adding the panel stream sends the panel's snapshot only: the
+        // tool bar models are not opened a second time
+        control(R"({"id":12,"op":"widgets.subscribe","panels":true})", 8);
+        QCoreApplication::processEvents();
+        QCOMPARE(opensFor8("cmd:Std_Label"), 0);
+        QVERIFY(stream.hasToolbars(8));
+        QVERIFY(stream.hasPanels(8));
+        // and `all`, added third, opens what the other two did not
+        pushed.clear();
+        control(R"({"id":15,"op":"widgets.subscribe","all":true})", 8);
+        QCoreApplication::processEvents();
+        QCOMPARE(opensFor8("g:other"), 1);
+        control(R"({"id":16,"op":"widgets.unsubscribe","all":true})", 8);
+        control(R"({"id":13,"op":"widgets.unsubscribe","panels":true})", 8);
+        QVERIFY(stream.hasToolbars(8));
+        QVERIFY(!stream.hasPanels(8));
+        control(R"({"id":14,"op":"widgets.subscribe","toolbars":false})", 8);
+        QCOMPARE(stream.subscriberCount(), 0);
+
         store.release(QStringLiteral("cmd:Std_Label"));
         store.release(QStringLiteral("g:other"));
         delete label;
         delete other;
         stream.setSender(nullptr);
+    }
+
+    void test_completion()
+    {
+        // docs/Sandbox.md 7.23: completion served over the control lane
+        // for a bound field, from a completer built for the request --
+        // no popup raised, and never the completer a desktop widget is
+        // using.  The expression a client picks goes back through its
+        // own op, because a parse error has nowhere to live in a
+        // property write.
+        Fw::Store& store = Fw::Store::instance();
+        store.reset();
+        Gui::installSceneWidgetOps();
+        auto control = [](const char* json, uint64_t client, bool viewOnly = false) {
+            return QJsonDocument::fromJson(QByteArray(
+                                               Gui::handleSceneControlRequest(json, std::string(),
+                                                                              viewOnly ? Render::ClientAccess::View
+                                                                                       : Render::ClientAccess::Edit,
+                                                                              client)
+                                                   .c_str()))
+                .object();
+        };
+        auto strings = [](const QJsonObject& reply, const char* key) {
+            QStringList out;
+            for (const QJsonValue& v : reply.value(QLatin1String(key)).toArray())
+                out << v.toString();
+            return out;
+        };
+
+        App::Document* doc = App::GetApplication().newDocument("FwComplete");
+        App::DocumentObject* holder = doc->addObject("App::Placement", "Holder");
+        App::DocumentObject* other = doc->addObject("App::Placement", "Other");
+        QVERIFY(holder);
+        QVERIFY(other);
+        auto length = static_cast<App::PropertyLength*>(
+            holder->addDynamicProperty("App::PropertyLength", "Length"));
+        auto width = static_cast<App::PropertyLength*>(
+            other->addDynamicProperty("App::PropertyLength", "Width"));
+        QVERIFY(length);
+        QVERIFY(width);
+        length->setValue(4.0);
+        width->setValue(3.0);
+
+        auto spin = new Fw::QuantitySpinBox;
+        spin->bind(*length);
+        QVERIFY(spin->isBound());
+        store.adopt(QStringLiteral("g:spin"), spin);
+        auto plain = new Fw::QLineEdit;
+        store.adopt(QStringLiteral("g:plain"), plain);
+
+        // the other object's members, by the path the user has typed
+        QJsonObject reply = control(R"({"id":1,"op":"widgets.complete","target":"g:spin",)"
+                                    R"("text":"Other.","pos":6})", 7);
+        QVERIFY2(reply.value(QLatin1String("ok")).toBool(),
+                 qPrintable(QJsonDocument(reply).toJson()));
+        const QStringList items = strings(reply, "items");
+        QVERIFY2(!items.isEmpty(), qPrintable(QJsonDocument(reply).toJson()));
+        const QStringList hits = items.filter(QStringLiteral("Width"));
+        QVERIFY2(!hits.isEmpty(), qPrintable(items.join(QLatin1Char(','))));
+
+        // one matching rule for every remote client, whatever the desktop
+        // user chose for the popup (docs/Sandbox.md 7.25): a keyword
+        // anywhere in the name, ignoring case -- so "other.idt" finds
+        // Width, and does so with the exact-match preference set
+        {
+            const bool exact = Gui::ExprParams::getCompleterMatchExact();
+            const bool cased = Gui::ExprParams::getCompleterCaseSensitive();
+            Gui::ExprParams::setCompleterMatchExact(true);
+            Gui::ExprParams::setCompleterCaseSensitive(true);
+            QJsonObject loose = control(R"({"id":10,"op":"widgets.complete","target":"g:spin",)"
+                                        R"("text":"Other.idt","pos":9})", 7);
+            Gui::ExprParams::setCompleterMatchExact(exact);
+            Gui::ExprParams::setCompleterCaseSensitive(cased);
+            const QStringList found = strings(loose, "items");
+            QVERIFY2(!found.filter(QStringLiteral("Width")).isEmpty(),
+                     qPrintable(found.join(QLatin1Char(','))));
+        }
+
+        // the range is usable: splicing the chosen item over it is what
+        // the client does, and what comes out has to be an expression
+        const int start = reply.value(QLatin1String("start")).toInt();
+        const int end = reply.value(QLatin1String("end")).toInt();
+        const QString typed = QStringLiteral("Other.");
+        QVERIFY(start >= 0 && start <= end && end <= typed.size());
+        const QString spliced = typed.left(start) + hits.first() + typed.mid(end);
+
+        // a field with nothing to complete against is an empty answer,
+        // not an error: a client asks before it can know
+        reply = control(R"({"id":2,"op":"widgets.complete","target":"g:plain",)"
+                        R"("text":"Other.","pos":6})", 7);
+        QCOMPARE(reply.value(QLatin1String("ok")).toBool(), true);
+        QCOMPARE(strings(reply, "items").size(), 0);
+
+        // a view-only connection may complete (it reads names it can
+        // already see) ...
+        reply = control(R"({"id":3,"op":"widgets.complete","target":"g:spin",)"
+                        R"("text":"Other.","pos":6})", 8, true);
+        QCOMPARE(reply.value(QLatin1String("ok")).toBool(), true);
+        // ... and may not set what it completed
+        reply = control(R"({"id":4,"op":"widgets.expression","target":"g:spin",)"
+                        R"("text":"Other.Width"})", 8, true);
+        QCOMPARE(reply.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(!spin->hasExpression());
+
+        // a writer sets it, and the document is what answers
+        const QByteArray set = QStringLiteral(
+            "{\"id\":5,\"op\":\"widgets.expression\",\"target\":\"g:spin\",\"text\":\"%1\"}")
+            .arg(spliced).toUtf8();
+        reply = control(set.constData(), 7);
+        QVERIFY2(reply.value(QLatin1String("ok")).toBool(),
+                 qPrintable(QJsonDocument(reply).toJson()));
+        QVERIFY(spin->hasExpression());
+        QCOMPARE(spin->rawValue(), 3.0);
+
+        // one that does not parse comes back with the reason, and
+        // changes nothing
+        // NOT a raw string, and it cannot be one: moc's lexer ends a
+        // raw literal at the first `)"` it thinks it sees, so an
+        // unbalanced `(` inside one -- which is the whole point of this
+        // case, an expression that does not parse -- makes moc drop the
+        // REST OF THE CLASS.  It reports nothing; the build fails much
+        // later with "undefined reference to vtable for testFormWidgets".
+        reply = control("{\"id\":6,\"op\":\"widgets.expression\",\"target\":\"g:spin\","
+                        "\"text\":\"2 * (\"}", 7);
+        QCOMPARE(reply.value(QLatin1String("ok")).toBool(), false);
+        QVERIFY(!reply.value(QLatin1String("message")).toString().isEmpty());
+        QCOMPARE(spin->rawValue(), 3.0);
+
+        // and clearing it hands the field back
+        reply = control(R"({"id":7,"op":"widgets.expression","target":"g:spin",)"
+                        R"("text":""})", 7);
+        QVERIFY2(reply.value(QLatin1String("ok")).toBool(),
+                 qPrintable(QJsonDocument(reply).toJson()));
+        QVERIFY(!spin->hasExpression());
+
+        // the live result line the dialog shows while someone types:
+        // evaluated, and nothing set by it
+        reply = control(R"({"id":9,"op":"widgets.expression","target":"g:spin",)"
+                        R"("text":"Other.Width * 2","preview":true})", 7);
+        QVERIFY2(reply.value(QLatin1String("ok")).toBool(),
+                 qPrintable(QJsonDocument(reply).toJson()));
+        QCOMPARE(reply.value(QLatin1String("severity")).toString(), QStringLiteral("ok"));
+        QVERIFY2(reply.value(QLatin1String("result")).toString().contains(QLatin1Char('6')),
+                 qPrintable(reply.value(QLatin1String("result")).toString()));
+        QVERIFY(!spin->hasExpression());
+
+        // one that does not parse is still an ok REPLY carrying the
+        // reason: an expression is invalid for most of the time it is
+        // being typed, so this is something to show, not to refuse.
+        //
+        // The text is deliberately NOT "2 * (": that is an unexpected
+        // END of input, which is the half-typed case the next assertion
+        // covers and which is suppressed on purpose. This one is wrong
+        // in a way no further typing fixes.
+        // (Escaped, not a raw string -- see the moc trap above.)
+        reply = control("{\"id\":10,\"op\":\"widgets.expression\",\"target\":\"g:spin\","
+                        "\"text\":\"2 * ) 3\",\"preview\":true}", 7);
+        QCOMPARE(reply.value(QLatin1String("ok")).toBool(), true);
+        QCOMPARE(reply.value(QLatin1String("severity")).toString(), QStringLiteral("error"));
+        QVERIFY(!reply.value(QLatin1String("message")).toString().isEmpty());
+        QVERIFY(!spin->hasExpression());
+
+        // mid-typing: a trailing dot is the moment completion is most
+        // wanted, and it parses as "unexpected end of input". That is
+        // not something to put a red line under -- the desktop's dialog
+        // blanks it, and the live browser run showed why.
+        reply = control(R"({"id":11,"op":"widgets.expression","target":"g:spin",)"
+                        R"("text":"Other.","preview":true})", 7);
+        QCOMPARE(reply.value(QLatin1String("ok")).toBool(), true);
+        QCOMPARE(reply.value(QLatin1String("severity")).toString(), QStringLiteral("ok"));
+        QVERIFY2(reply.value(QLatin1String("message")).toString().isEmpty(),
+                 qPrintable(reply.value(QLatin1String("message")).toString()));
+
+        // an unbound target is refused rather than silently ignored
+        reply = control(R"({"id":8,"op":"widgets.expression","target":"g:plain",)"
+                        R"("text":"Other.Width"})", 7);
+        QCOMPARE(reply.value(QLatin1String("ok")).toBool(), false);
+
+        // reset() keeps adopted objects on purpose -- they are the
+        // desktop's, not the guest's -- so an adopting case releases
+        // and deletes its own, as test_widgetStream does. Leaving them
+        // made test_panelMirror fail on store.count(), three cases
+        // later, which read as a mirror bug rather than as this.
+        store.release(QStringLiteral("g:spin"));
+        store.release(QStringLiteral("g:plain"));
+        delete spin;
+        delete plain;
+        App::GetApplication().closeDocument("FwComplete");
     }
 
     void test_panelMirror()
@@ -1396,6 +1659,12 @@ private Q_SLOTS:
         hostLay->addWidget(box2);
         hostLay->addWidget(buttons);
         host.show();
+        // the mirror's watch is PAINT-driven (QEvent::Paint -> markDirty),
+        // and an unexposed window is never painted: shown is not enough.
+        // Without this the case passes alone and fails after any case that
+        // put a window up, because the new window is mapped late and the
+        // widget change is never seen -- no wait can fix what is not mapped.
+        QVERIFY(QTest::qWaitForWindowExposed(&host));
         QCoreApplication::processEvents();
 
         mirror.show(QStringLiteral("TestDialog"), {box, box2}, buttons);
@@ -1786,6 +2055,12 @@ private Q_SLOTS:
         auto hostLay = new QVBoxLayout(&host);
         hostLay->addWidget(box);
         host.show();
+        // the mirror's watch is PAINT-driven (QEvent::Paint -> markDirty),
+        // and an unexposed window is never painted: shown is not enough.
+        // Without this the case passes alone and fails after any case that
+        // put a window up, because the new window is mapped late and the
+        // widget change is never seen -- no wait can fix what is not mapped.
+        QVERIFY(QTest::qWaitForWindowExposed(&host));
         QCoreApplication::processEvents();
 
         mirror.show(QStringLiteral("ItemsDialog"), {box}, nullptr);
@@ -2185,6 +2460,12 @@ private Q_SLOTS:
         auto hostLay = new QVBoxLayout(&host);
         hostLay->addWidget(box);
         host.show();
+        // the mirror's watch is PAINT-driven (QEvent::Paint -> markDirty),
+        // and an unexposed window is never painted: shown is not enough.
+        // Without this the case passes alone and fails after any case that
+        // put a window up, because the new window is mapped late and the
+        // widget change is never seen -- no wait can fix what is not mapped.
+        QVERIFY(QTest::qWaitForWindowExposed(&host));
         tick();
         mirror.show(QStringLiteral("MouseDialog"), {box}, nullptr);
         const QString panelId = mirror.panelId();

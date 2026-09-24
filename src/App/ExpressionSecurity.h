@@ -33,6 +33,7 @@
 // evaluation chokepoints (and the prompt UX that requires) is a separate
 // step -- nothing here changes evaluation behavior yet.
 
+#include <cstdint>
 #include <map>
 #include <optional>
 #include <set>
@@ -78,6 +79,20 @@ enum class Permission {
                     // sandbox guest asked for a package the user has not
                     // installed (docs/SandboxNetwork.md sec 9); only ever
                     // a pending request, never resolved by check()
+    // The host file and code chokepoints (F1, docs/Sandbox.md 7.14 and
+    // 7.29), the path as the target.  Checked INSIDE the core's file
+    // primitives rather than at any command's name: a guest that runs a
+    // host command by name (Gui.runCommand("Std_RecentMacros")) reaches
+    // the same primitive and is stopped there, whatever the command is
+    // called.  All three are DENY for a document (not promptable) and
+    // PROMPT for the session and an addon -- the one row an addon does
+    // not hold by default besides gui.doCommand.  A path the host's own
+    // file dialog returned while a guest scope was active is blessed
+    // (pathBlessed) and passes without a grant: consent is a capability
+    // (S1), so the picker commands still work from a guest.
+    FsRead,         // fs.read:<path> -- a host file read by path
+    FsWrite,        // fs.write:<path> -- saveAs / saveCopy / exportTo
+    HostExec,       // host.exec:<path> -- host Python run from a file
 };
 
 enum class Decision {
@@ -87,11 +102,15 @@ enum class Decision {
 };
 
 /// Who is asking: the class of principal, derived from the principal id
-/// string ("document:sha256:<hex>", "session", "addon:<name>").
+/// string ("document:sha256:<hex>", "session", "addon:<name>",
+/// "client:..." -- clientPrincipalId).
 enum class PrincipalClass {
     Document,
     Session,
     Addon,
+    /// A remote user reaching a served document from a sandbox guest in
+    /// their own page (catalog v2, docs/Sandbox.md 7.20 C3).
+    Client,
 };
 
 AppExport const char *permissionName(Permission perm);
@@ -107,13 +126,71 @@ AppExport std::optional<Permission> permissionFromName(
 /// Classify a principal id string; nullopt if it matches no known form.
 AppExport std::optional<PrincipalClass> principalClass(const std::string &principal);
 
+/** The principal id of a remote client (docs/Sandbox.md 7.20, C3), from
+ * what the scene server's door knows of its connection:
+ *
+ *     client:id:<identity>    the front door's verified identity
+ *     client:grant:<n>        none: the grant that admitted it
+ *     client:conn:<n>         neither (the legacy single-token door)
+ *
+ * Only the first names a person across runs; a grant id is assigned per
+ * run and a connection id per connection, so those two are never
+ * persisted (isPersistablePrincipal).  An identity carrying a control
+ * character falls back to the next form rather than being rewritten --
+ * a rewrite could make two identities one principal.
+ */
+AppExport std::string clientPrincipalId(const std::string &identity, uint64_t grant,
+        uint64_t connection);
+
+/// Whether a grant for this principal may be stored with scope "always":
+/// false for a run-local client id and for an unknown form.
+AppExport bool isPersistablePrincipal(const std::string &principal);
+
 /// The frozen catalog default for (principal class, permission).
 AppExport Decision catalogDefault(PrincipalClass pclass, Permission perm);
 
-/** Whether a default DENY/PROMPT may be lifted interactively. Only
- * (document, gui) is marked not-promptable in the v1 catalog.
+/** Whether a default DENY/PROMPT may be lifted interactively. v1 marks
+ * four document cells not-promptable; v2's client column is promptable
+ * only where it prompts (host.import, pkg.install).
  */
 AppExport bool isPromptable(PrincipalClass pclass, Permission perm);
+
+/** Whether any grant -- a panel answer, grants.json, a process --grant --
+ * may lift the decision at all.  False only for a client's gui and
+ * unsafe.getattr: both reach host code (a command by name runs a recent
+ * macro file; an undeclared getattr runs host Python), so nothing
+ * narrower than the whole row can be granted to a remote user.  The
+ * chokepoints of 7.29 now stop the file and code half of that reach at
+ * the primitive, but a remote user is still not offered the row.
+ */
+AppExport bool isGrantable(PrincipalClass pclass, Permission perm);
+
+// ---- the host file and code chokepoints (F1, docs/Sandbox.md 7.14, 7.29) ----
+
+/** A host path in the one spelling the gate compares by: absolute, with
+ * symlinks and "." / ".." resolved as far as the file system allows and
+ * '/' as the separator.  An empty path stays empty.  The blessed set and
+ * every fs.read / fs.write / host.exec target go through this, so an
+ * answer is keyed to the FILE rather than to whichever spelling of it
+ * reached the primitive.
+ */
+AppExport std::string normalizeHostPath(const std::string &path);
+
+/** The picker-blessed paths (S1, docs/Sandbox.md 7.13): a path the
+ * host's own file dialog returned while a guest scope was active is a
+ * capability -- the user chose that file in the guest's nested modal --
+ * and the chokepoints accept it without a grant.  This is what keeps
+ * consent a capability rather than a list: Std_Open from a guest opens
+ * the file the user just picked, while a command with no picker
+ * (Std_RecentFiles) has no blessed path and is refused.  The set lives
+ * for the life of one guest and is cleared when a fresh guest boots.
+ *
+ * It lives in this always-built layer, not with the image bridge: the
+ * chokepoints hold in a build with no sandbox image host at all.
+ */
+AppExport void blessPath(const std::string &path);
+AppExport bool pathBlessed(const std::string &path);
+AppExport void clearBlessedPaths();
 
 /** The frozen pseudo-property -> permission mapping. Returns nullopt for
  * names needing no permission (_math/_re/_coll/_py are Ring-0 in-image
@@ -152,6 +229,7 @@ private:
 /// One persisted grant (grants.json schema v1, frozen).
 struct AppExport Grant {
     std::string principal;   // "document:sha256:<hex>" | "session" | "addon:<name>"
+                             // | "client:id:<identity>" (v2; a v1 reader skips it)
     std::string permission;  // catalog name; HostImport stored as "host.import"
     std::string target;      // "*" or a specific target (doc name, module)
     bool allow = false;      // decision: allow / deny

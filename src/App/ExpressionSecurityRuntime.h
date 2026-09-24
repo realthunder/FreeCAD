@@ -55,6 +55,7 @@ typedef struct _object PyObject;
 
 namespace App {
 
+class Document;
 class DocumentObject;
 
 namespace ExpressionSecurity {
@@ -79,6 +80,12 @@ private:
     bool promptable;
 };
 
+struct RemoteClient {
+    std::string principal;
+    std::string context;
+    bool readOnly = false;
+};
+
 class Runtime {
 public:
     class Scope {
@@ -86,6 +93,8 @@ public:
         explicit Scope(const App::DocumentObject *) {}
         Scope(const App::DocumentObject *, const App::DocumentObject *) {}
         explicit Scope(const char *) {}
+        explicit Scope(const App::Document *) {}
+        Scope(const App::Document *, const RemoteClient &) {}
         Scope(const Scope &) = delete;
         Scope &operator=(const Scope &) = delete;
     };
@@ -157,6 +166,22 @@ struct AppExport PendingRequest {
     int count = 1;             // repeat checks collapse into one entry
 };
 
+/** A remote client's op on a served document (docs/Sandbox.md 7.20,
+ * C3): who it is and what its connection may do, as the scene server's
+ * door decided.
+ */
+struct AppExport RemoteClient {
+    /// clientPrincipalId(identity, grant, connection)
+    std::string principal;
+    /// The audit line's context after the document name: the connection
+    /// as the roster shows it (id, label, address).
+    std::string context;
+    /// A view-only connection: doc.write.self is DENY, not promptable,
+    /// whatever was granted -- the door's access is the owner's decision,
+    /// changed on the sharing roster, never by a permission grant.
+    bool readOnly = false;
+};
+
 class AppExport Runtime {
 public:
     static Runtime &instance();
@@ -184,6 +209,19 @@ public:
         Scope(const App::DocumentObject *runAs, const App::DocumentObject *via);
         /// Explicit principal id: "session" or "addon:<name>".
         explicit Scope(const char *principalId);
+        /** The document principal of `doc` with no owner object, pushed
+         * WHATEVER scope is active: a remote guest's bridge op on a served
+         * document (docs/Sandbox.md 7.20, C2), which answers for the
+         * document as a whole rather than for one object's code.  A null
+         * `doc` pushes nothing -- never the session.
+         */
+        explicit Scope(const App::Document *doc);
+        /** A remote client's bridge op on the served document `doc`
+         * (docs/Sandbox.md 7.20, C3): the CLIENT's principal, pushed
+         * whatever scope is active.  Always pushes -- a null `doc`
+         * reaches nothing, and an empty stack would be host code.
+         */
+        Scope(const App::Document *doc, const RemoteClient &client);
         ~Scope();
 
         Scope(const Scope &) = delete;
@@ -339,6 +377,19 @@ AppExport void checkPermission(Permission perm, const std::string &target = "*")
 /// action (no check, no throw).
 AppExport void auditAllowed(Permission perm, const std::string &target,
         const std::string &context = std::string());
+
+/** The host file and code chokepoint (F1, docs/Sandbox.md 7.14, 7.29):
+ * `perm` is FsRead, FsWrite or HostExec and `path` is the host file the
+ * primitive is about to read, write or run.
+ *
+ * Silent outside any scope -- host code running under no principal is
+ * host code, already trusted (2.4), which is what keeps the user's own
+ * click and every startup script unchanged.  Silent for a path the
+ * host's file dialog blessed for this guest.  Otherwise it is
+ * checkPermission with the NORMALIZED path as the target, and throws
+ * PermissionNeededException unless the principal holds it.
+ */
+AppExport void checkHostPath(Permission perm, const std::string &path);
 
 /** The C7 gate (docs/ExpressionSandbox.md sec 7.1). Classifies a simple
  * attribute read during identifier drill-down: reads on FreeCAD-bound

@@ -475,9 +475,18 @@ SET(Fw_SRCS
 )
 SOURCE_GROUP("Fw" FILES ${Fw_SRCS})
 # the sandbox host seam (docs/Sandbox.md 7.9): the gui.* bridge ops live in
-# SandboxGui.cpp alone, so the host macro is scoped to it
+# SandboxGui.cpp alone, so the host macro is scoped to it.  The permissions
+# panel joins them for 7.28: the padlock's tally of what runs in this
+# process, and the modal that asks for it, are both behind this macro --
+# without it here they compile to nothing and the padlock under-reports.
 if(BUILD_EXPR_IMAGE_HOST)
-    set_source_files_properties(SandboxGui.cpp PROPERTIES COMPILE_DEFINITIONS FC_EXPR_IMAGE_HOST)
+    set_source_files_properties(SandboxGui.cpp SandboxRemote.cpp DlgDocumentPermissions.cpp
+                                PROPERTIES COMPILE_DEFINITIONS FC_EXPR_IMAGE_HOST)
+endif()
+# the browser console's file mount (docs/Sandbox.md 7.20): only a pyodide
+# host has the runtime a page's guest boots from
+if(BUILD_EXPR_IMAGE_HOST AND BUILD_EXPR_PYODIDE_HOST)
+    set_source_files_properties(SandboxServe.cpp PROPERTIES COMPILE_DEFINITIONS FC_EXPR_PYODIDE_HOST)
 endif()
 
 # The style parameter evaluator (upstream's theme parameter model)
@@ -1164,6 +1173,8 @@ SET(Inventor_CPP_SRCS
     SoFCSelection.cpp
     ObjectMetaFeed.cpp
     SceneServeSource.cpp
+    SandboxRemote.cpp
+    SandboxServe.cpp
     ShareDocument.cpp
     SoFCUnifiedSelection.cpp
     SoFCSelectionContext.cpp
@@ -1229,6 +1240,8 @@ SET(Inventor_SRCS
     SoFCSelection.h
     ObjectMetaFeed.h
     SceneServeSource.h
+    SandboxRemote.h
+    SandboxServe.h
     ShareDocument.h
     SoFCUnifiedSelection.h
     SoFCSelectionContext.h

@@ -26,6 +26,7 @@
 
 # include <QApplication>
 # include <QDialogButtonBox>
+# include <QEvent>
 # include <QHBoxLayout>
 # include <QHeaderView>
 # include <QIcon>
@@ -44,6 +45,7 @@
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/ExpressionEvaluator.h>
+#include <App/ExpressionGuestProxy.h>
 #include <App/ExpressionSecurityRuntime.h>
 #include <Base/Interpreter.h>
 
@@ -307,7 +309,16 @@ void DlgDocumentPermissions::applyDecision(bool allow, const char *scope)
             installed = installed || allow;
             continue;
         }
-        rt.grant(principal, *perm, target, allow, scope, label, path);
+        try {
+            rt.grant(principal, *perm, target, allow, scope, label, path);
+        }
+        catch (const Base::Exception &e) {
+            // a remote client's run-local id cannot be granted "always",
+            // and gui / unsafe.getattr cannot be granted to a client at
+            // all (docs/Sandbox.md 7.20, C3)
+            QMessageBox::warning(this, tr("Expression sandbox"), QString::fromUtf8(e.what()));
+            continue;
+        }
         if (!allow)
             rt.clearPending(principal, *perm, target);
     }
@@ -447,6 +458,13 @@ SandboxIndicator::SandboxIndicator(QWidget *parent)
 }
 
 SandboxIndicator::~SandboxIndicator() = default;
+
+bool SandboxIndicator::event(QEvent *e)
+{
+    if (e->type() == QEvent::ToolTip)
+        updateState();
+    return QToolButton::event(e);
+}
 
 void SandboxIndicator::updateState()
 {

@@ -34,7 +34,6 @@
 from PySide.QtCore import QT_TRANSLATE_NOOP
 
 import FreeCAD as App
-from draftobjects.base import new_proxy
 from draftutils import gui_utils
 from draftutils import utils
 from draftutils.messages import _log
@@ -46,8 +45,6 @@ class Layer:
     This class is normally used to extend a base `App::FeaturePython` object.
     """
 
-    def __new__(cls, *args, **kwargs):
-        return new_proxy(cls, *args, **kwargs)
 
     def __init__(self, obj):
         self.Type = "Layer"
@@ -190,8 +187,6 @@ class LayerContainer:
     a base `App::DocumentObjectGroupPython` object.
     """
 
-    def __new__(cls, *args, **kwargs):
-        return new_proxy(cls, *args, **kwargs)
 
     def __init__(self, obj):
         self.Type = "LayerContainer"

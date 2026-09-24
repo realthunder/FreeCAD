@@ -23,6 +23,8 @@
 #ifndef GUI_RENDERTIMING_H
 #define GUI_RENDERTIMING_H
 
+#include <cstddef>
+
 #include <FCGlobal.h>
 
 namespace Gui
@@ -118,6 +120,24 @@ public:
     static void totals(double ms[StageCount], int counts[StageCount]);
     static void reset();
     static const char* stageName(Stage stage);
+
+    /// What a document load pays for staying live: the event pumps its
+    /// progress reporting runs (ProgressBar), and the frames drawn while a
+    /// document is restoring (View3DInventorViewer::actualRedraw). Always
+    /// accumulated -- two clock reads per pump or frame -- and reset and
+    /// reported by Gui::Document around each restore.
+    struct LoadPumpStats
+    {
+        double pumpSec = 0.0;
+        std::size_t pumps = 0;
+        double frameSec = 0.0;
+        std::size_t frames = 0;
+    };
+    static LoadPumpStats& loadPumps()
+    {
+        static LoadPumpStats stats;
+        return stats;
+    }
 };
 
 }  // namespace Gui

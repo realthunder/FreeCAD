@@ -20,17 +20,28 @@
 
 #include "PreCompiled.h"
 
+#include <algorithm>
+#include <cctype>
 #include <cstddef>
 #include <cstring>
+#include <map>
 #include <string>
 #include <unordered_map>
+#include <utility>
+#include <vector>
+
+#include <Base/Console.h>
 
 #include <Base/Interpreter.h>
 
+#include "Document.h"
+#include "DocumentObject.h"
 #include "DocumentObjectPy.h"
 #include "ExpressionEvaluator.h"
 #include "ExpressionGuestProxy.h"
 #include "ExpressionImageHost.h"
+#include "ExpressionSecurityRuntime.h"
+#include "PropertyPythonObject.h"
 
 using json = nlohmann::json;
 
@@ -63,9 +74,9 @@ uint64_t liveKey(int boot, uint64_t id)
 }
 
 /// The live stand-ins by guest and proxy id (borrowed): one guest proxy
-/// has ONE stand-in, so a descriptor decoded twice (write_prop Proxy,
-/// then the proxy_new reply) names the same object and a dying
-/// duplicate can never drop a proxy that is still in use.
+/// has ONE stand-in, so a descriptor decoded twice (the same handler
+/// registered twice) names the same object and a dying duplicate can
+/// never drop a proxy that is still in use.
 std::unordered_map<uint64_t, PyObject*>& liveStandIns()
 {
     static std::unordered_map<uint64_t, PyObject*> table;
@@ -404,55 +415,6 @@ PyObject* makeGuestMethod(uint64_t id, const std::string& name)
     return makeForwarder(id, name.c_str());
 }
 
-PyObject* constructGuestProxy(PyObject* cls, PyObject* args, PyObject* kwargs)
-{
-    if (!proxyRestoreRouted())
-        Py_RETURN_NONE;
-    if (!cls || !PyType_Check(cls)) {
-        PyErr_SetString(PyExc_TypeError, "constructGuestProxy: a class is required");
-        return nullptr;
-    }
-    // `cls.__new__(cls)` alone -- copy, pickle, a native alloc -- is
-    // no construction: native.  A first argument that is a document
-    // object is the owner __init__ may write; None (Draft's
-    // `Array(None)`, installed later by addObject(attach=True)) or
-    // anything else constructs with no owner.
-    if (!args || !PyTuple_Check(args) || PyTuple_GET_SIZE(args) == 0)
-        Py_RETURN_NONE;
-    PyObject* first = PyTuple_GET_ITEM(args, 0);
-    const App::DocumentObject* owner = PyObject_TypeCheck(first, &DocumentObjectPy::Type)
-        ? static_cast<DocumentObjectPy*>(first)->getDocumentObjectPtr()
-        : nullptr;
-    PyObject* mod = PyObject_GetAttrString(cls, "__module__");
-    PyObject* qual = PyObject_GetAttrString(cls, "__qualname__");
-    std::string module = mod && PyUnicode_Check(mod) ? PyUnicode_AsUTF8(mod) : "";
-    std::string name = qual && PyUnicode_Check(qual) ? PyUnicode_AsUTF8(qual) : "";
-    Py_XDECREF(mod);
-    Py_XDECREF(qual);
-    if (module.empty() || name.empty()) {
-        if (!PyErr_Occurred())
-            PyErr_SetString(PyExc_TypeError, "constructGuestProxy: the class has no module or name");
-        return nullptr;
-    }
-    ImageResult r = ImageHost::instance().proxyNew(module, name, args, kwargs, false, owner);
-    if (!r.ok) {
-        raiseGuestError(r);
-        return nullptr;
-    }
-    PyObject* standIn = ImageHost::instance().decodeResult(r);
-    if (!standIn)
-        return nullptr;
-    if (!isGuestProxy(standIn)) {
-        // never a native fallback: the guest ran __init__, and running
-        // it again on the host would repeat its side effects
-        Py_DECREF(standIn);
-        PyErr_Format(PyExc_RuntimeError, "guest construction of %s.%s returned no proxy",
-                     module.c_str(), name.c_str());
-        return nullptr;
-    }
-    return standIn;
-}
-
 bool isGuestProxy(PyObject* obj)
 {
     PyObject* base = baseType;  // never built: no stand-in exists
@@ -464,30 +426,6 @@ uint64_t guestProxyId(PyObject* obj)
     if (!isGuestProxy(obj))
         return 0;
     return reinterpret_cast<GuestProxyObject*>(obj)->id;
-}
-
-PyObject* restoreGuestProxy(const std::string& module,
-                            const std::string& cls,
-                            const App::DocumentObject* owner)
-{
-    PyObject* args = PyTuple_New(0);
-    if (!args)
-        return nullptr;
-    ImageResult r = ImageHost::instance().proxyNew(module, cls, args, true, owner);
-    Py_DECREF(args);
-    if (!r.ok) {
-        raiseGuestError(r);
-        return nullptr;
-    }
-    PyObject* standIn = ImageHost::instance().decodeResult(r);
-    if (!standIn || !isGuestProxy(standIn)) {
-        Py_XDECREF(standIn);
-        if (!PyErr_Occurred())
-            PyErr_Format(PyExc_RuntimeError, "guest allocated no proxy for %s.%s",
-                         module.c_str(), cls.c_str());
-        return nullptr;
-    }
-    return standIn;
 }
 
 // ---- a function a routed evaluation left (docs/Sandbox.md 7.17 P3) ----

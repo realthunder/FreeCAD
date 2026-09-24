@@ -339,6 +339,22 @@
           "BUILD_WEB": {
             "type": "BOOL",
             "value": "OFF"
+          },
+          "BUILD_EXPR_PYODIDE_HOST": {
+            "type": "BOOL",
+            "value": "ON"
+          },
+          "FREECAD_FCX_IMAGE_WHEEL": {
+            "type": "FILEPATH",
+            "value": "${sourceDir}/build/pyodide-guest/dist/fcx_image-0.1.0-cp314-cp314-pyodide_2026_0_wasm32.whl"
+          },
+          "FREECAD_PIVY_WHEEL": {
+            "type": "FILEPATH",
+            "value": "${sourceDir}/build/pyodide-pivy/dist/pivy-0.6.10-cp314-cp314-pyodide_2026_0_wasm32.whl"
+          },
+          "FREECAD_BUNDLED_WHEELS": {
+            "type": "STRING",
+            "value": "${sourceDir}/build/sandbox-wheels/ipywidgets-8.1.9-py3-none-any.whl;${sourceDir}/build/sandbox-wheels/traitlets-5.14.3-py3-none-any.whl"
           }
         }
       }

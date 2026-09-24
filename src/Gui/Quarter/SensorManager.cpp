@@ -116,17 +116,28 @@ SensorManager::sensorQueueChanged()
     if (interval.getValue() < this->timerEpsilon) {
       interval.setValue(this->timerEpsilon);
     }
+    const int msec = static_cast<int>(interval.getMsecValue());
+    // Restart a running timer only for an EARLIER deadline. Every
+    // scheduled sensor lands here, and restarting unconditionally
+    // re-registers the timer each time (killTimer scans the thread's
+    // posted events), which a mass scene rebuild -- one sensor per
+    // touched node, no event loop in between -- pays per node. A later
+    // deadline is harmless: the early timeout processes nothing due and
+    // comes back here to start the timer again.
     if (!this->timerqueuetimer->isActive()) {
-      this->timerqueuetimer->start(interval.getMsecValue());
-    } else {
-      this->timerqueuetimer->setInterval(interval.getMsecValue());
+      this->timerqueuetimer->start(msec);
+    } else if (this->timerqueuetimer->remainingTime() > msec + 1) {
+      this->timerqueuetimer->setInterval(msec);
     }
   } else if (this->timerqueuetimer->isActive()) {
     this->timerqueuetimer->stop();
   }
 
   if (sensormanager->isDelaySensorPending()) {
-    this->idletimer->start(0);
+    // Same reason as above: a zero timer already running fires at the
+    // next event loop pass, and restarting it would be the same timer.
+    if (!this->idletimer->isActive())
+      this->idletimer->start(0);
 
     if (!this->delaytimer->isActive()) {
       SbTime time = SoDB::getDelaySensorTimeout();

@@ -46,6 +46,8 @@
 
 #include <Base/Parameter.h>
 #include <App/Application.h>
+#include <App/ExpressionSecurity.h>
+#include <App/ExpressionSecurityRuntime.h>
 
 #include "FileDialog.h"
 #include "BitmapFactory.h"
@@ -97,6 +99,15 @@ static inline QString &checkDocumentXML(QString &file) {
     QFileInfo fi(file);
     if(fi.fileName() == QStringLiteral("Document.xml"))
         file = fi.dir().path();
+    // The one post-accept funnel of getSaveFileName, getOpenFileName and
+    // getOpenFileNames, so the blessing sits here: a path the user chose
+    // in a picker that ran INSIDE a guest's scope is a capability that
+    // guest may hand back, and the file chokepoints let it through
+    // without a grant (S1, docs/Sandbox.md 7.29).  blessPath is a no-op
+    // when no principal is active -- the user's own Std_Open blesses
+    // nothing, because it needs nothing.
+    if (App::ExpressionSecurity::Runtime::scopeActive())
+        App::ExpressionSecurity::blessPath(file.toUtf8().constData());
     return file;
 }
 
@@ -394,6 +405,10 @@ QString FileDialog::getExistingDirectory( QWidget * parent, const QString & capt
         if ( !path.isEmpty() ) {
             QDir d(path);
             path = d.path(); // get path in Qt manner
+            // a directory the user picked inside a guest's scope is
+            // blessed the same way a file is (docs/Sandbox.md 7.29)
+            if (App::ExpressionSecurity::Runtime::scopeActive())
+                App::ExpressionSecurity::blessPath(path.toUtf8().constData());
         }
     }
     return path;

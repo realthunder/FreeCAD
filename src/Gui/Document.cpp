@@ -82,6 +82,7 @@
 #include "View3DInventorViewer.h"
 #include "ViewerContext.h"
 #include "RenderParams.h"
+#include "RenderTiming.h"
 #include "ViewParams.h"
 #include "ViewProviderDocumentObject.h"
 #include "ViewProviderDocumentObjectGroup.h"
@@ -2704,6 +2705,7 @@ void Document::slotStartRestoreDocument(const App::Document& doc)
     d->_deferSweepTime = d->_deferModeTime = FC_DURATION(0);
     ViewProvider::VisualBuildTime = ViewProvider::VisualMeshTime = FC_DURATION(0);
     ViewProvider::VisualBuildCount = 0;
+    RenderTiming::loadPumps() = RenderTiming::LoadPumpStats();
 
     // The open is about to claim the application's input filter, and it
     // pumps events while it holds it -- so the regime that lets the pointer
@@ -2762,6 +2764,13 @@ void Document::slotFinishRestoreDocument(const App::Document& doc)
             << d->_newObjUpdateTime.count() << "s, views "
             << d->_newObjViewTime.count() << "s, announce "
             << d->_newObjAnnounceTime.count() << 's');
+    // What staying live cost this restore: the progress pumps (App's
+    // [sequencer Ns] is the create pass's share of them), and of that the
+    // frames the pumps let the views draw.
+    const auto &pumps = RenderTiming::loadPumps();
+    FC_LOG("restore " << doc.getName() << " gui live: " << pumps.pumps
+            << " event pumps " << pumps.pumpSec << "s, " << pumps.frames
+            << " frames drawn " << pumps.frameSec << 's');
 
     d->connectActObjectBlocker.unblock();
     App::DocumentObject* act = doc.getActiveObject();

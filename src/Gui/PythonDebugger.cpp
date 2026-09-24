@@ -26,6 +26,7 @@
 # include <QEventLoop>
 #endif
 
+#include <App/ExpressionSecurityRuntime.h>
 #include <Base/Console.h>
 #include <Base/Interpreter.h>
 
@@ -400,6 +401,12 @@ bool PythonDebugger::toggleBreakpoint(int line, const QString& fn)
 
 void PythonDebugger::runFile(const QString& fn)
 {
+    // The debugger runs a host file through its own PyRun_File, so the
+    // guard under Interpreter::runFile never sees it: host.exec here
+    // (F1, docs/Sandbox.md 7.29).
+    App::ExpressionSecurity::checkHostPath(App::ExpressionSecurity::Permission::HostExec,
+                                           fn.toUtf8().constData());
+
     try {
         RunningState state(d->running);
         QByteArray pxFileName = fn.toUtf8();

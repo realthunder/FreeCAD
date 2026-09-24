@@ -13,6 +13,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include "FcxCbor.h"
+
 #include <Base/BoundBoxPy.h>
 #include <Base/Exception.h>
 #include <Base/Interpreter.h>
@@ -313,9 +315,8 @@ int initEvalGlobals()
             "Qt = _Qt()\n"
             "del _Qt\n"
             // FreeCAD.getResourceDir: a bundled wheel's data rides under
-            // fcx_resources/ in site-packages (the fcx_bim wheel puts
-            // BIM's Presets at fcx_resources/Mod/BIM/Presets), so the
-            // resource paths workbench code builds resolve unchanged.
+            // fcx_resources/ in site-packages, so the resource paths the
+            // code in it builds resolve unchanged.
             // The user data directory is a path that does not exist:
             // code that looks for user files there finds none.
             // (no sysconfig: the WASI stdlib slice does not carry it;
@@ -1022,8 +1023,9 @@ static json dispatchExec(const json &req)
     return reply;
 }
 
-// ---- rung 2: guest-resident Proxies (FcxWire OpProxyNew / OpProxyCall,
-// ---- docs/Sandbox.md 7.6 G1c), through the prelude's registry ----
+// ---- guest-resident objects (FcxWire OpProxyCall / OpProxyGet /
+// ---- OpProxySet, docs/Sandbox.md 7.6 G1c), through the prelude's
+// ---- registry ----
 
 /// The wire array under `key` as a tuple of decoded values (handles
 /// become proxies, exactly as eval bindings do); an empty tuple when
@@ -1073,34 +1075,6 @@ static PyObject *decodeKwargs(const json &req)
     if (k != req.end() && k->is_object())
         return FcxImage::decodeValue(*k);
     return PyDict_New();
-}
-
-static json dispatchProxyNew(const json &req)
-{
-    const std::string mod = req.value("mod", "");
-    const std::string cls = req.value("cls", "");
-    if (mod.empty() || cls.empty())
-        return protocolError("proxy_new without mod/cls");
-    PyObject *fn = FcxImage::preludeFunction("_proxy_new");
-    if (!fn)
-        return errorReply();
-    PyObject *args = decodeArgs(req, "a");
-    if (!args)
-        return errorReply();
-    PyObject *kwargs = decodeKwargs(req);
-    if (!kwargs) {
-        Py_DECREF(args);
-        return errorReply();
-    }
-    PyObject *result = PyObject_CallFunction(fn, "ssOOO", mod.c_str(), cls.c_str(), args, kwargs,
-                                             req.value("alloc", false) ? Py_True : Py_False);
-    Py_DECREF(args);
-    Py_DECREF(kwargs);
-    if (!result)
-        return errorReply();
-    json reply = valueReply(result);
-    Py_DECREF(result);
-    return reply;
 }
 
 /// proxy_get / proxy_set: a host read or write of a proxy attribute.
@@ -1185,6 +1159,8 @@ static void applyProxyDrops(const json &req)
 json dispatch(const json &req)
 {
     json reply;
+    // a statement reads what the host holds now, not a previous one's
+    FcxImage::clearPrefetched();
     applyProxyDrops(req);
     applyLibraryDrops(req);
     sweepLibraries();
@@ -1195,8 +1171,6 @@ json dispatch(const json &req)
         reply = dispatchEval(req);
     else if (op->get_ref<const std::string &>() == FcxWire::OpExec)
         reply = dispatchExec(req);
-    else if (op->get_ref<const std::string &>() == FcxWire::OpProxyNew)
-        reply = dispatchProxyNew(req);
     else if (op->get_ref<const std::string &>() == FcxWire::OpProxyCall)
         reply = dispatchProxyCall(req);
     else if (op->get_ref<const std::string &>() == FcxWire::OpProxyGet)
@@ -1220,6 +1194,7 @@ json dispatch(const json &req)
     json released = FcxImage::takePendingReleases();
     if (!released.empty())
         reply["r"] = std::move(released);
+    FcxImage::clearPrefetched();
     return reply;
 }
 
@@ -1227,7 +1202,7 @@ std::vector<uint8_t> dispatchCbor(const uint8_t *req_bytes, size_t len)
 {
     json reply;
     try {
-        json req = json::from_cbor(req_bytes, req_bytes + len);
+        json req = FcxWire::fromCbor(req_bytes, len);
         reply = dispatch(req);
     }
     catch (const json::exception &e) {

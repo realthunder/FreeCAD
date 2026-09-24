@@ -997,6 +997,15 @@ Document* Application::openDocumentPrivate(const char * FileName,
         bool isMainDoc, bool createView,
         std::vector<std::string> &&objNames)
 {
+    // The document loader's chokepoint (F1, docs/Sandbox.md 7.29):
+    // openDocument, openDocuments, loadFile and a link's
+    // addPendingDocument all funnel here, so a guest that reached any of
+    // them -- by name through Gui.runCommand("Std_RecentFiles"), or
+    // directly -- is answered once, for the path.  Before the existence
+    // check below, which is itself an answer about the host's disk.
+    ExpressionSecurity::checkHostPath(ExpressionSecurity::Permission::FsRead,
+                                      FileName ? FileName : "");
+
     FileInfo File(FileName);
 
     if (!File.exists()) {
@@ -3197,6 +3206,17 @@ void Application::initApplication()
             start = end + 1;
         }
     }
+
+    // The host CODE chokepoint (F1, docs/Sandbox.md 7.29): every host
+    // Python file the interpreter is asked to run is host.exec under
+    // whatever sandbox principal is on the scope stack.  Base cannot see
+    // this runtime, so it takes the check as a callback; with no
+    // principal active -- the user's own click, every startup script --
+    // it decides nothing and runFile behaves as it always did.
+    Base::Interpreter().setFileGuard([](const char* fileName) {
+        ExpressionSecurity::checkHostPath(ExpressionSecurity::Permission::HostExec,
+                                          fileName ? fileName : "");
+    });
 
     // set up Unit system default
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath

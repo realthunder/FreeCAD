@@ -1285,7 +1285,18 @@ bool BGFXRenderer::needsRedraw() const
 
 bool BGFXRenderer::canSkipInternal() const
 {
-    return pimpl->renderOk && pimpl->hasScene && !pimpl->_deinit;
+    // `hasScene` describes the frame render() already drew, but the scene
+    // is fed DURING the Coin traversal that follows it
+    // (SoFCRenderCacheManager::render -> setScene, then SoFCRenderer::render
+    // asks this). So a scene that has just arrived still reads as absent,
+    // and the internal GL pass used to rasterize the whole of it once --
+    // on a coloured 17800-object assembly (49352 draws, 8779 transparent)
+    // that one frame hung the NVIDIA GL driver in SoFCVBO::bindBuffer, or
+    // corrupted the heap. The viewer already schedules the frame that lets
+    // this backend catch up (View3DInventorViewer::renderScene,
+    // needsRedraw), so a pending scene is this backend's to draw.
+    return pimpl->renderOk && !pimpl->_deinit
+        && (pimpl->hasScene || !pimpl->scene.empty());
 }
 
 const std::string &BGFXRenderer::type() const

@@ -724,3 +724,132 @@ Two further notes on what the built form does *not* exercise:
   referrer's name with it rather than reimplementing the spelling, which is
   what guarantees step 3's shape files keep the names `PropertyPartShape`
   already gives them instead of being renamed wholesale on the first save.
+
+## 14. Restored content is served from a copy of the archive (2026-09-14)
+
+### 14.1 What was wrong
+
+A restore gave every blob entry a file of its own in the transient directory.
+On Linux that walk is free (2.37 s for MiSTer, `docs/SharedShapeStorage.md`
+sec 12.3). On a company-managed Windows laptop whose filesystem is monitored
+it was the whole open: `MiSTer.FCStd` (17800 objects, 5401 `blobs/` entries,
+87.3 MB inflated) took **409 s** headless, of which 407 s was `readFiles()`.
+Each entry cost a staging-file create, a read back to hash it, a rename and two
+permission changes -- about 61 ms of filesystem round trips.
+
+`be256877c1` hashed the entry in memory and wrote it once, straight to its
+place, which took the open to 54 s. It could not take it further: all 5401
+entries are distinct content, so every one still needed a file create, and a
+file create is exactly what this filesystem charges for.
+
+### 14.2 Measured before building
+
+The same 5401 entries, in FreeCAD's real transient root on the laptop
+(`getUserCachePath()`), one pass each (`archbench.py`):
+
+| backing | create | read all, random order |
+| --- | --- | --- |
+| copy the `.FCStd` as it is, inflate on read | 0.05 s | 0.26 s |
+| repack as a stored (uncompressed) zip | 0.97 s | 0.07 s |
+| raw pack file, own index | 0.33 s | 0.06 s |
+| one file per entry (what the store did) | 23.23 s | 11.98 s |
+
+Copying the archive unchanged wins outright: nothing to write but one
+sequential file, and inflating costs about 0.05 ms an entry, which a BRep parse
+dwarfs. The stored and raw variants read faster but pay for it on every open,
+and add a second format for nothing.
+
+### 14.3 The design
+
+- **`restoreFromArchive()`** copies the document archive into the store
+  directory (`blobs/<uuid>.FCStd`), indexes its central directory itself --
+  zip64 included, which zipios cannot read -- and inflates and hashes every
+  `blobs/` entry through one handle. Identity is still what the archive holds,
+  never what an entry name claims. Each blob is created **archived**: an
+  archive and an entry index, no path.
+- **A copy, not the original**, because the next save replaces the file the
+  document was opened from while its content is still referred to.
+- **`FileBlob::read()`** returns the bytes from the file or from the copy.
+  `parseBlob()` parses from them, and `writeBlobs()` writes an archived blob's
+  entry from them, so neither opening nor saving a document gives any blob a
+  file.
+- **`FileBlob::path()` writes the file on first call** (`materialize()`), for
+  the consumers that really need one: a `PropertyFileIncluded` value handed to
+  Python, a MaterialX document, a material card. `hasExtension()` answers
+  without writing one. Code that repairs stale paths (`relocate()`,
+  `relocatedPath()`, the included-file `Save()` and `ensureBlob()`) skips
+  archived blobs, which have no path to go stale.
+- **The copy lives as long as a blob refers to it** (`shared_ptr` from each
+  blob) and deletes itself after the last one goes.
+- **One handle, closed around directory moves.** Windows refuses to rename or
+  remove a directory with a file open in it, so the handle is closed after the
+  ingest, and `closeArchives()` runs before the Uid rename in
+  `Document::onChanged()` and before `~Document` removes the transient
+  directory. The next read opens it again.
+- **Switch:** `ArchiveBlobStore` (Preferences/Document, on). It needs a
+  random-access reader (`ArchiveRandomAccess`) and a `blobs/Content.xml` in the
+  archive; without either, or when the copy fails, the entries are read one
+  file each as before.
+
+### 14.4 The ingest must happen when the entries used to arrive
+
+The first build did the copy in `beginRestore()`, before `Document.xml` is
+parsed. Every blob was then already in the store when its referrer restored,
+and `PropertyPartShape::Restore()` ends by asking for its shape (the element
+map version check) -- which a blob that is present answers with a parse. That
+undid the lazy load `ensureRestored()` exists for: MiSTer's XML data phase went
+from 0.6 s to 3.9 s, with 92 "slow property restore" lines instead of 3.
+
+So `beginRestore()` only notes the archive, and the copy is made when the
+archive handler is offered `blobs/Content.xml`. `ZipFileReader::readFiles()`
+drains unregistered entries before registered ones, and the index is written
+ahead of the content, so that is the moment the content always arrived. Once
+the copy serves, the name predicate refuses the remaining blob entries, and a
+random-access reader does not even open them.
+
+### 14.5 Measured
+
+MiSTer, headless (`FreeCADCmd`), `build/win-relwithdebinfo-801`, the laptop
+above. "Parse" is touching every `Shape` after the open, which is the lazy
+parse paid in full.
+
+| store | open | of which files | parse all shapes | files in store |
+| --- | --- | --- | --- | --- |
+| a file per entry, staged (before `be256877c1`) | 409 s | 407 s | -- | 5399 |
+| a file per entry, in-memory hash (`ArchiveBlobStore` off) | 40.4 s | 36.5 s | 36.2 s | 5399 |
+| archive copy, ingest in `beginRestore()` (sec 14.4) | 6.1 s | 0.3 s | 21.4 s | 1 |
+| **archive copy, ingest at the index entry (as built)** | **2.4 s** | **0.29 s** | **22.9 s** | **1** |
+
+As built, the open is 2.4 s: 1.9 s of XML, of which create is 1.33 s and
+property data 0.56 s -- back to what it was before the store was touched,
+with the same 3 slow-restore lines -- and 0.29 s for the file phase, which is
+the copy (0.05 s) and inflating and hashing all 5400 entries (0.24 s). The
+3.7 s the premature ingest added to the open is gone from it, and reappears
+in the parse, where it belongs.
+
+In the GUI, with the settings the 2026-09-13/14 runs used (`scripts/render-bench.py`,
+`bgfx - OpenGL`, 1280x720, no vsync, settle 900 s / quiet 5 s):
+
+| store | load | settle | frame | scene |
+| --- | --- | --- | --- | --- |
+| a file per entry, staged (2026-09-14) | 504.7 s | 9.1 s | 252.8 ms | 45867 draws, 18.16 M prims |
+| archive copy (as built) | **97.3 s** | 8.7 s | 220.3 ms | 45867 draws, 18.16 M prims |
+
+The same scene, drawn as fast, and 407 s -- the file phase -- off the load.
+What is left of the 97 s is not the store: the headless open plus a parse of
+every shape is 25 s, so the other ~70 s is the GUI side building 17058
+visuals, and that is the next thing to chase for this document.
+
+Chased in DocumentLoad.md sec 16: every restored visual was built twice, and
+the main window re-tested every command about once a second while the objects
+were created. With both fixed the same bench loads in 75.4 s.
+
+(The 54 s of sec 14.1 and the 40.4 s here are the same code on different
+runs; this box's file-create cost varies run to run.) The parse is faster out
+of the copy too: one open handle, where the files cost an open each.
+
+`FileBlobs` covers it in `BlobArchiveStoreCases`: no file per blob on reopen,
+`path()` writing only the one asked for, binary and leading-whitespace content,
+a save over the original, save-as moving the copy with the directory, close
+removing the directory, the last referrer taking the copy with it, a copy
+across documents, the switch off, and a shape parsed out of the copy.

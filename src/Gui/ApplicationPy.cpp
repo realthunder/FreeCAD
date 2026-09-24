@@ -963,10 +963,18 @@ PyObject* Application::sSendActiveView(PyObject * /*self*/, PyObject *args)
         return nullptr;
 
     const char* ppReturn = nullptr;
-    if (!Instance->sendMsgToActiveView(psCommandStr,&ppReturn)) {
-        if (!Base::asBoolean(suppress))
-            Base::Console().Warning("Unknown view command: %s\n",psCommandStr);
-    }
+    // The view's onMsg runs host code that can THROW -- MacroManager::run
+    // behind the editor's "Run" is a host.exec chokepoint (F1,
+    // docs/Sandbox.md 7.29).  A C++ exception must not unwind through the
+    // CPython eval loop that called this: its frame cleanup is skipped and
+    // the next import dereferences the wreckage (a SIGSEGV inside
+    // shiboken's feature_import).  Convert it at the boundary instead.
+    PY_TRY {
+        if (!Instance->sendMsgToActiveView(psCommandStr,&ppReturn)) {
+            if (!Base::asBoolean(suppress))
+                Base::Console().Warning("Unknown view command: %s\n",psCommandStr);
+        }
+    } PY_CATCH;
 
     // Print the return value to the output
     if (ppReturn) {
@@ -984,10 +992,13 @@ PyObject* Application::sSendFocusView(PyObject * /*self*/, PyObject *args)
         return nullptr;
 
     const char* ppReturn = nullptr;
-    if (!Instance->sendMsgToFocusView(psCommandStr,&ppReturn)) {
-        if (!Base::asBoolean(suppress))
-            Base::Console().Warning("Unknown view command: %s\n",psCommandStr);
-    }
+    // as in sSendActiveView: convert a throw at the boundary
+    PY_TRY {
+        if (!Instance->sendMsgToFocusView(psCommandStr,&ppReturn)) {
+            if (!Base::asBoolean(suppress))
+                Base::Console().Warning("Unknown view command: %s\n",psCommandStr);
+        }
+    } PY_CATCH;
 
     // Print the return value to the output
     if (ppReturn) {
@@ -2038,7 +2049,13 @@ PyObject* Application::sRunCommand(PyObject * /*self*/, PyObject *args)
 
     Command* cmd = Application::Instance->commandManager().getCommandByName(pName);
     if (cmd) {
-        cmd->invoke(item);
+        // A command that throws must not unwind through the CPython eval
+        // loop: with a sandbox principal active, Command::_invoke now hands
+        // the refusal back rather than asking in a modal nobody can answer
+        // (docs/Sandbox.md 7.29), and this is where it would cross.
+        PY_TRY {
+            cmd->invoke(item);
+        } PY_CATCH;
         Py_Return;
     }
     else {

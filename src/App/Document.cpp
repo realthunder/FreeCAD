@@ -108,6 +108,10 @@ recompute path. Also, it enables more complicated dependencies beyond trees.
 #include "DocumentObject.h"
 #include "DocumentParams.h"
 #include "ExpressionParser.h"
+#include "ExpressionSecurityRuntime.h"
+#ifdef FC_EXPR_IMAGE_HOST
+#include "ExpressionGuestProxy.h"
+#endif
 #include "GeoFeature.h"
 #include "InputStratum.h"
 #include "License.h"
@@ -773,6 +777,11 @@ void Document::onChanged(const Property* prop)
         // this directory should not exist
         if (!TransDirNew.exists()) {
             if (TransDirOld.exists()) {
+                // Windows refuses to rename a directory with a file open in
+                // it, and a restore holds one: the archive copy the blobs are
+                // served from. It opens again on its next read.
+                if (d->fileBlobs)
+                    d->fileBlobs->closeArchives();
                 if (!TransDirOld.renameFile(new_dir.c_str()))
                     Base::Console().Warning("Failed to rename '%s' to '%s'\n", old_dir.c_str(), new_dir.c_str());
                 else {
@@ -1022,6 +1031,10 @@ Document::~Document()
 
     // remove Transient directory
     try {
+        // Nothing deletes a file held open on Windows, and the archive copy
+        // the blobs are served from may be.
+        if (d->fileBlobs)
+            d->fileBlobs->closeArchives();
         Base::FileInfo TransDir(TransientDir.getValue());
         TransDir.deleteDirectoryRecursive();
     }
@@ -2220,7 +2233,11 @@ Document::readObjects(Base::XMLReader& reader)
     Base::SequencerLauncher seqRestore("Restoring document...",
                                        size_t(Cnt) * 2);
     for (int i=0 ;i<Cnt ;i++) {
-        seqRestore.next();
+        {
+            FC_TIME_INIT(tSeq);
+            seqRestore.next();
+            FC_DURATION_PLUS(d->restoreTiming.createSeq, tSeq);
+        }
         reader.readElement("Object");
         std::string type = reader.getAttribute("type");
         std::string name = reader.getAttribute("name");
@@ -2473,6 +2490,12 @@ static std::string checkFileName(const char *file) {
 bool Document::saveAs(const char* _file)
 {
     std::string file = checkFileName(_file);
+    // Naming a host file to write is fs.write (F1, docs/Sandbox.md 7.29).
+    // save() writes the document's OWN file and stays the guest's to call
+    // (S1); saveAs chooses a path, so it is gated -- and a path the user
+    // picked in a dialog under this guest is blessed and passes.
+    // checkFileName may have appended .FCStd: gate what will be written.
+    ExpressionSecurity::checkHostPath(ExpressionSecurity::Permission::FsWrite, file);
     Base::FileInfo fi(file.c_str());
     if (this->FileName.getStrValue() != file) {
         this->FileName.setValue(file);
@@ -2486,6 +2509,8 @@ bool Document::saveAs(const char* _file)
 bool Document::saveCopy(const char* _file) const
 {
     std::string file = checkFileName(_file);
+    // a copy is a host file written by path, exactly as saveAs (7.29)
+    ExpressionSecurity::checkHostPath(ExpressionSecurity::Permission::FsWrite, file);
     if (this->FileName.getStrValue() != file) {
         bool result = saveToFile(file.c_str());
         return result;
@@ -3490,7 +3515,8 @@ void Document::restore(Base::XMLReader &reader,
             << d->files.size() << " files"
             << ", xml " << dXml.count()
             << " (create " << rt.create.count()
-            << " [addObject " << rt.createAdd.count() << "s]"
+            << " [addObject " << rt.createAdd.count() << "s, sequencer "
+            << rt.createSeq.count() << "s]"
             << ", data " << rt.data.count()
             << " [" << rt.props.count << " properties, "
             << rt.props.total.count() << "s of which value "

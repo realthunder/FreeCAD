@@ -1046,3 +1046,371 @@ object's `Visibility` and the view provider's together; a view-provider
 property change allowed. The pointer half was confirmed by hand on the
 real GPU -- mouse buttons responsive during a load, which was the symptom
 this section started from.
+
+## 16. Measured: what a GUI load of MiSTer spends after the blob store (Windows, 2026-09-15)
+
+After the archive-backed blob store (FileBlobsManager.md sec 14) the headless
+open of `MiSTer.FCStd` (17800 objects, 17058 shapes) is 2.4 s, and the GUI
+load through `scripts/render-bench.py` was still 97 s (bgfx OpenGL, 1280x720,
+`ProgressiveLoad` off, which is what the bench forces). A wrapper around the
+bench turned on the App, Gui and Part logs and captured the restore lines; with
+that logging on the same load reads 112-118 s.
+
+| stage (logging on) | s |
+|---|---|
+| App restore | 24.7 |
+| -- of which the `<Objects>` create pass | 19.3 |
+| -- -- of which `addObject` | 4.9 |
+| -- -- of which the progress sequencer's event pumps (new `[sequencer]` term) | 14.3 |
+| Gui view providers (`finishRestoring`, inline) | 79.0 |
+| -- of which visual build | 73.8, **34116 builds for 17058 shapes** |
+| -- -- of which BRepMesh | 38.2 |
+| refresh | 1.7 |
+
+Two defects, both fixed.
+
+### 16.1 Every restored visual was built twice
+
+A call stack taken on the second build of each object (a dbghelp walk behind
+an environment variable, in a scratch build) gave the same chain every time:
+`Gui::Document::slotFinishRestoreObject` -> `ViewProviderDocumentObject::
+finishRestoring` sets `Visibility` -> `ViewProviderPartExt::onChanged` ->
+`updateVisual` -> `shapeStillMissing()` -> `PropertyPartShape::getValue` ->
+`ensureRestored` -> `serveFromBlob` -> `setValue` -> the change notification ->
+`updateData(Shape)` -> **`updateVisual`, nested, builds** -> back in the outer
+call, which then **builds the same shape again**.
+
+The serve announcing its value is by design (serveFromBlob and serveFromStore
+both `setValue` under the object's Restore status), so the fix is on the Gui
+side: while a view provider faults its own shape in, a nested `updateVisual`
+for that same view provider stays touched and returns. The outer call, whose
+serve has finished by then, makes the only build.
+
+WARNING -- the first version of the fix skipped the *outer* build instead, and
+it changed the scene: 45903 draws / 17.88 M triangles against 45867 / 18.16 M
+in every earlier run (2026-09-14 twice, 2026-09-15). The guard version gives
+the same 45903 / 17.88 M. So it is not that one of the two builds was the wrong
+one: **the second build is not idempotent.** It meshes over what the first left
+on TShapes that other objects share, and any single build of the document draws
+the 45903 / 17.88 M scene. Settled coverage is identical in all of them (90468
+px).
+
+Compared as pixels: one frame each from a fixed camera after the timed frames,
+old behaviour against the fix, same settings -- **157 of 921600 pixels differ
+(0.017%)**, 74 of them by more than 8 levels and 4 by more than 96, all inside
+one 295x193 region; average colour equal to three decimals. A tessellation
+difference at a few edges, not geometry gained or lost.
+
+### 16.2 The command refresh ran inside the create pass
+
+The create loop's `seqRestore.next()` pumps the event loop at most every
+200 ms, and those pumps cost 14 s -- but the new `restore <doc> gui live:`
+line said only 1.6 s of it was frames. `GUIApplication`'s `SlowDispatchTrace`
+(armed by `Render/LevelDebug` + `LevelSlowBuildMS`) named the rest: the main
+window's `activityTimer`, 760 ms per firing, about once a second. It runs
+`MainWindow::_updateActions()` -> `CommandManager::testActive()`, which asks
+every command whether it is active, and each new object re-arms it.
+
+Nothing a command could do is allowed while a document restores (sec 15.2), so
+`_updateActions()` now does nothing while `App::Application::isRestoring()`,
+leaving its timer running so the pass happens on the first tick after.
+
+NOTE -- `testActive()` is ~830 ms per pass on this document **after** the load
+too. That is an interactivity problem, not a load-time one, and is not
+addressed here.
+
+### 16.3 Result
+
+Same settings, logging on; the old build behaviour restored for the A/B by a
+temporary switch, so each fix is measured with the other held fixed:
+
+| | neither | command refresh gated | both |
+|---|---|---|---|
+| App restore | 24.7 s | 10.0 s | **7.7 s** (create 5.3, sequencer 1.1) |
+| event pumps during the restore | 17.1 s | 1.4 s | **1.4 s** |
+| visual builds | 34116 | 34116 | **17058** |
+| visual build / of which mesh | 73.8 s / 38.2 s | 78.4 s / 38.9 s | **47.4 s / 22.8 s** |
+| load | 112.6 s | 101.6 s | **66.6 s** |
+| draws / triangles | 45867 / 18.16 M | 45867 / 18.16 M | 45903 / 17.88 M |
+
+The gate is 11 s of the load, the single build 35 s.
+
+Without the logging, in the configuration of the 97.3 s bench run
+(FileBlobsManager.md sec 14): **load 75.4 s**, settle 9.6 s, frame 238 ms,
+settled coverage 90468 px as before. One run each; loads on this box move by
+5-10 s between runs of the same binary (the logged "neither" column above read
+112.6 s and 117.7 s on two runs), so the like-for-like figure is the table's.
+
+## 17. Measured: scheduling a sensor per node was quadratic (Windows, 2026-09-15)
+
+`FC_LEVEL_DEBUG` turns on the per-build split of `ViewProviderPartExt::
+updateVisual`. Over the 17058 builds of the sec 16.3 load it read: mesh 23.1 s,
+**prologue 13.1 s**, traversal 8.8 s, highlight 0.4 s, unattributed 1.8 s. The
+prologue is the three Coin actions each build applies before refilling
+(`SoUpdateVBOAction`, then selection and highlight clears), about 0.8 ms each.
+
+### 17.1 Skipping the prologue moved the cost, it did not remove it
+
+On a node never filled the actions have nothing to discard, so a trial skipped
+all three when the sets were pristine. The skip fired on every build (prologue
+0.02 s, scene identical), and the visual build stayed at 48 s: **traversal rose
+from 8.8 s to 22.7 s.** Something about 0.8 ms per node was paid by whichever
+code touched the node first.
+
+### 17.2 What that something is
+
+160 stacks of the main thread, taken by `cdb` attached to the running load and
+broken in every 300 ms with `DebugBreakProcess` (a `sxe -c "~0 kc; g" bpe`
+handler dumps and resumes). Of the 143 inside `updateVisual`, 49 were in
+`SoDelayQueueSensor::schedule`, reached from a field write's notification:
+
+| samples | where |
+|---|---|
+| 26 | Coin `SoSensorManager::insertDelaySensor`: a linear scan for the sorted insertion point |
+| 23 | Quarter `SensorManager::sensorQueueChanged`: `QTimer::start`/`setInterval` on a running timer -> `killTimer` -> `QCoreApplicationPrivate::removePostedTimerEvent` |
+| 6 | Coin `processDelayQueue`: `SbList::remove(0)` while a progress pump drained the queue |
+
+Every shape node carries a delay-queue sensor (the render cache's
+`VCacheSensor`, the faceset's `partIndexSensor`). The first notification of the
+node schedules it; later ones find it scheduled and return at once -- which is
+why the cost follows the first touch, and why `SoUpdateVBOAction`'s `touch()`
+used to pay it. During a restore nothing drains the queue between the sequencer's
+pumps, so it holds thousands of entries, and each insert scanned from the front
+(all data sensors share one priority, so the new entry always belongs at the
+end) and restarted two Qt timers. (An earlier env-gated split had charged ~10 s
+of the prologue to the actions' destructors; the samples do not support that.)
+
+### 17.3 Fix
+
+- Coin fork, `SoSensorManager::insertDelaySensor`: append when the new priority
+  is no smaller than the last entry's, otherwise bisect for the same position.
+  The queue is kept sorted (`setPriority` reschedules a queued sensor), so the
+  order is exactly the scan's.
+- `src/Gui/Quarter/SensorManager.cpp`: the idle timer is started only if it is
+  not running, and the timer-queue timer is restarted only for an earlier
+  deadline. A later deadline fires early, finds nothing due and re-arms.
+
+The prologue skip was dropped: with the fix it is worth 0.4 s.
+
+Follow-up: the render cache's node sensor (`NodeSensor` in
+`SoFCRenderCacheManager.cpp`) exists only for `dyingReference()` and has no
+callback, so every schedule of it was a queue entry whose trigger did nothing.
+It now swallows `notify()` (`SoBase::destroy()` calls `dyingReference()`
+directly). With the two fixes above already in, this measured **no further
+change** -- visual build 27.1 s, traversal 3.3 s, clean load 43.0 s against
+44.3 s (within run noise), frame pixel-identical. It removes waste, not time.
+
+### 17.4 Result
+
+Same bench configuration as sec 16.3; the split runs are logged:
+
+| | before (skip trial) | fix + skip | fix, no skip |
+|---|---|---|---|
+| visual build | 48.2 s | **27.2 s** | 27.4 s |
+| -- traversal / prologue / mesh | 22.7 / 0.0 / 23.2 s | 3.4 / 0.0 / 22.0 s | 3.4 / 0.4 / 22.0 s |
+| load | 67.5 s | **45.0 s** | 45.0 s |
+| draws / triangles, settled px | 45903 / 17.88 M, 90468 | same | same |
+
+Unlogged: **load 42.4 s** (fix + skip) and 44.3 s (the committed tree, no
+skip) against sec 16.3's 75.4 s. The committed tree's fixed-camera frame is
+pixel-identical to the frame before any of this (max channel difference 0). The document close after the
+bench also rebuilds every visual once; that pass fell from ~12 s to 0.4 s.
+Meshing is now four fifths of the visual build.
+
+## 18. Design: the load tessellates in parallel, ahead of the drain (2026-09-16)
+
+Sec 17 left meshing as four fifths of the visual build. It is the last big
+serial phase of a load: the drain builds one shape at a time on the GUI
+thread, because that is where the display nodes are.
+
+### 18.1 OCCT's own parallelism is already on, and cannot scale here
+
+`ViewProviderPartExt::updateVisual` has always asked for
+`IMeshTools_Parameters::InParallel`, and BRepMesh does use it -- it splits
+ONE shape over its faces (`BRepMesh_FaceDiscret`, `BRepMesh_EdgeDiscret`,
+each an `OSD_Parallel::For` over the model's faces or edges). On a model
+made of thousands of small parts there is nothing there to split. Measured
+over the 38.6s visual-build window of the MiSTer load, by sampling every
+thread's CPU time: **2.04 cores of 28**, the main thread 30.1s and all 28
+pool threads together 48.6s of CPU to buy that. It is still worth keeping
+-- turning it off costs 4.8s of a 22.0s mesh term -- but the scaling has to
+come from somewhere else.
+
+Meshing DIFFERENT shapes at once is what scales, and that is this section:
+`src/Mod/Part/Gui/PreMesh.cpp`, behind `Render_PreMeshOnLoad`.
+
+### 18.2 Where it hooks, and what it meshes
+
+At the first slice of the progressive visual drain that may work -- every
+shape served, nothing built yet -- the document's parked shapes are handed
+to workers, each shape meshed WHOLE and single-threaded (`InParallel` off:
+the split is across shapes now, and nesting the two only oversubscribes).
+The drain's own BRepMesh call then finds the mesh resident and skips it
+(`Render_MeshSkipRedundant`).
+
+NOT inside the restore: serving a later object's shape early makes
+`Feature::onDocumentRestored` run `restoreShapeContents()` on top of the
+serve's own work (sec 14).
+
+### 18.3 Two rules, and both are load-bearing
+
+**The ask has to match, so the claim carries the GEOMETRY box.** The
+display deflection derives from the shape's bounding box, and
+`BRepBndLib::Add` defaults to preferring a resident triangulation over the
+geometry, enlarging the box by `T->Deflection() + tolerance`. So a
+pre-meshed shape measures BIGGER than it did: the build would ask for
+something coarser than what is resident, and the redundancy check refuses
+a finer resident mesh by default -- `Render_MeshSkipFinerResident` is off,
+and for a measured reason. The call would then re-tessellate exactly what
+the pre-mesh had just built, and the load would pay twice. Every claim
+therefore carries the box measured BEFORE any triangulation existed, and
+`updateVisual` derives its ask from that box instead of measuring again.
+
+**A shape being meshed must not be touched.** BRepMesh writes the
+triangulation into the TShape. A claim is IN FLIGHT until its worker has
+published it, and a build that lands on such a shape parks itself the way
+the load parks one; the drain then moves on to the next slice rather than
+walking a queue whose every item is in flight.
+
+Excluded, on the principle that a doubt excludes: roots sharing a face or
+an edge TShape with another root (two workers would write one
+triangulation, and their asks may differ -- both go, which is why nothing
+is submitted until the whole batch is known), instancing candidates (an
+instanced build shares one tessellation and asks per member), and shapes
+big enough to take a stand-in, whose coarse mesh the refine pool delivers
+at a deflection decided there.
+
+Claims are dropped once every queue the drain serves is empty. A claim
+outliving its load is a bounding box keyed on a TShape address that a
+closed document may free and a later allocation reuse; until then each
+claim also pins its own shape.
+
+### 18.4 Result
+
+MiSTer, 17058 solids, the DEFAULT path (`ProgressiveLoad` on, coarse rung
+2), one build, A/B by the parameter alone:
+
+| | off | on |
+|---|---|---|
+| drain's visual build | 22.4s / 159 slices | **15.8s / 91 slices** |
+| pre-mesh batch | -- | 7171 shapes in 3.7s wall |
+| frame at convergence | reference | **pixel-identical** |
+
+And with the split reporter, against the same load before this: the GUI
+thread's REAL tessellations fall from **7578 (16.0s) to 403 (5.0s)** --
+validated-only calls unchanged at ~8766, so 7175 asks were answered by
+geometry the workers had already meshed -- the mesh term from 17.2s to
+6.2s, the whole visual build from 26.3s to 13.6s, and the settled frame
+from 69-73s to 56-58s. A per-shape audit over 17054 objects found zero
+triangle-count differences, and the same 5342 objects ending at the exact
+rung.
+
+### 18.5 The measurement trap this walked into twice
+
+The first comparison showed 1843 pixels differing in one small region and
+1% fewer primitives, and two baseline runs were pixel-identical to each
+other -- which looked like proof that the difference was the change rather
+than run variance. It was neither. A per-shape audit named seven objects
+built at `lvl 2` with the pre-mesh and `lvl -1` without it, and the build
+timeline explained why: without it those seven are built TWICE, coarse at
+t=72.8 and again at t=76.5 at the exact deviation, the second build being
+the fidelity ladder's refine landing. With the pre-mesh the load finishes
+~12s sooner, so the bench captured BEFORE that refine landed. The two
+baselines agreed with each other only because both were equally slow.
+
+Captured after the ladder converges in both arms (a 30s quiet window
+instead of 5s), the frames are pixel-identical and every triangle count
+agrees. **A faster load moves the capture, not the mesh** -- any A/B of
+load speed against a picture has to let the ladder settle in both arms,
+and primitive totals still carry a few thousand of refine variance where
+the frame does not.
+
+### 18.6 The load with no drain to hook
+
+Sec 18.2 hooks the batch to the first slice of the progressive visual
+drain. With `ProgressiveLoad` off there is no drain at all: every visual
+is built inside the restore, one per object, as App signals them from
+`afterRestore`'s dependency-sorted walk. That load got nothing from the
+above, and it is the configuration every measurement in this document is
+taken in (`scripts/render-bench.py` forces the preference off).
+
+**Where it hooks.** The latest moment still ahead of the meshing is the
+FIRST of those signals, so the batch is submitted from
+`ViewProviderPartExt::finishRestoring()` -- once per load, and a no-op
+on the progressive path. By then every object exists and the archive's
+file phase has run, which is what makes the shapes readable without
+forcing a serve of anything.
+
+**Why reading every shape there is safe, and the one case it is not.**
+The read serves each parked shape ahead of that object's own
+`onDocumentRestored`. Two things carry it. The serve announces its value
+(`serveFromStore` calls `setValue`), and that notification reaches the
+object's own view provider -- whose `updateVisual` returns at once while
+the view provider is still flagged `Gui::isRestoring`, which every one
+of them is except the single object currently being finish-restored. So
+the read costs a serve and refuses a build, which is the same serve that
+object's own build would have paid for later.
+
+The case it is not safe is shape contents. `Feature::onDocumentRestored`
+skips `restoreShapeContents()` only while the shape is still pending,
+and `ensureRestored()` runs it when the shape arrives -- so serving
+early makes it run TWICE, once on the serve and again from that object's
+own restore (sec 14). The collector therefore refuses any object
+carrying a shape-contents or shape-content-owner property, which is the
+only thing a second expansion could damage. A doubt excludes, as
+everywhere else in this batch.
+
+**Parking is not available here, so the build waits.** The in-flight
+rule of sec 18.3 parks a build whose shape a worker still owns. On this
+path there is nowhere to park it TO: the build is running inside the
+restore, and the drain's slice machinery checks only document
+eligibility, not the preference -- so a parked build would land after
+the restore and quietly turn a synchronous load into a partly
+progressive one. An open that returns with the document still arriving
+is the one thing `ProgressiveLoad` off rules out. So the gate waits for
+the worker instead (`waitPreMesh`) and then builds exactly as it would
+have; the GUI thread has nothing else to do inside such a load. Parking
+remains the fallback if the wait's backstop ever trips.
+
+**Claims are dropped at the end of the restore.** With no drain, nothing
+would have called `clearPreMeshClaims()` and the claims would outlive
+their load -- a bounding box keyed on a TShape address a closed document
+may free. They are cleared from `signalFinishRestoreDocument`, which App
+emits after the per-object walk, and from `signalDeleteDocument` for the
+load that never finished; in both cases only when no drain owes anything,
+since claims are global and the drain owns them where there is one.
+
+Measured on the MiSTer reference, 17058 solids, A/B by the parameter
+alone (7172 of 17057 shapes submitted):
+
+| | off | on |
+|---|---|---|
+| load, unlogged | 46.8s | **31.5s** |
+| load, with the split reporter | 52.0s | 33.4s |
+| visual build of the restore | 30.9s | **17.3s** |
+| of which mesh | 24.8s | **12.0s** |
+| traversal / prologue | 3.8s / 0.4s | 3.5s / 0.3s |
+| frame | reference | **pixel-identical** |
+
+The frame is identical at every threshold (45903 draws in both arms,
+primitive totals 10 apart out of 17.88M -- refine variance, sec 18.5).
+Neither arm logged a `progressive load` line, which is the check that
+the load stayed synchronous and nothing parked.
+
+The batch itself, from the line this path now reports for it: **7172 of
+7172 claimed shapes meshed in 6.5s of wall time, none failed.** That is
+longer than the 3.7s the same batch takes on the progressive path (sec
+18.4), and the ask is why -- `CoarseTessellation` is -1 here, so every
+shape is meshed at the full display deviation rather than at a coarse
+rung.
+
+Read the table as a range, not as constants. A third pre-mesh run put the
+load at 35.3s with a 14.5s mesh term against leg b's 33.4s and 12.0s, so
+what this buys on the bench path is 11-15s of a 47s load depending on the
+run -- the arms differ by more than the reporter's own overhead does.
+
+Mesh is still 12-14s of it, and still the bulk of the visual build. The
+batch covers 7172 of the 17057 shapes -- the rest are refused for sharing
+a face or an edge TShape with another root -- so the GUI thread goes on
+tessellating everything the collector would not claim. That remainder is
+the next thing to attack here, not the hook.

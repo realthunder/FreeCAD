@@ -1,0 +1,2142 @@
+{
+ "case": "sketcher_constraints",
+ "frames": [
+  {
+   "client": 7,
+   "frame": {
+    "id": "panel",
+    "layout": {
+     "class": "QVBoxLayout",
+     "items": [],
+     "name": ""
+    },
+    "method": "open",
+    "model": "QWidgetModel",
+    "op": "widgets",
+    "qtClass": "QWidget",
+    "state": {
+     "q_actions": [],
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "panel",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "panel",
+    "layout": {
+     "class": "QVBoxLayout",
+     "items": [],
+     "name": ""
+    },
+    "method": "open",
+    "model": "QWidgetModel",
+    "op": "widgets",
+    "qtClass": "QWidget",
+    "state": {
+     "q_actions": [],
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "panel",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:208",
+    "layout": {
+     "class": "QVBoxLayout",
+     "items": [],
+     "margins": [
+      4,
+      4,
+      4,
+      4
+     ],
+     "name": "",
+     "spacing": 0
+    },
+    "method": "open",
+    "model": "QGroupBoxModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_panel:5",
+    "qtClass": "Gui::TaskView::TaskBox",
+    "state": {
+     "q_actions": [],
+     "q_checkable": true,
+     "q_checked": false,
+     "q_enabled": true,
+     "q_flat": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_title": "Tool parameters",
+     "q_toolTip": "",
+     "q_visible": false,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:211",
+    "method": "open",
+    "model": "QLabelModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:210",
+    "qtClass": "Gui::StatefulLabel",
+    "state": {
+     "q_actions": [],
+     "q_alignment": 129,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "labelConstrainStatus",
+     "q_openExternalLinks": false,
+     "q_pixmap": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "Fully constrained",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": "",
+     "q_wordWrap": false
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:212",
+    "method": "open",
+    "model": "QLabelModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:210",
+    "qtClass": "Gui::UrlLabel",
+    "state": {
+     "q_actions": [],
+     "q_alignment": 129,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "labelConstrainStatusLink",
+     "q_openExternalLinks": false,
+     "q_pixmap": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": "",
+     "q_wordWrap": false
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:213",
+    "method": "open",
+    "model": "QToolButtonModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:210",
+    "qtClass": "QToolButton",
+    "state": {
+     "q_actions": [],
+     "q_autoExclusive": false,
+     "q_autoRaise": false,
+     "q_checkable": false,
+     "q_checked": false,
+     "q_defaultAction": null,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_forAction": null,
+     "q_icon": "img:af87d3178d7445badae8394a26ef0c9ee2a194e5",
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_menu": null,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "manualUpdate",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "",
+     "q_toolTip": "Forces recomputation of active document",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:210",
+    "layout": {
+     "class": "QHBoxLayout",
+     "items": [
+      {
+       "widget": "IPY_MODEL_pw:211"
+      },
+      {
+       "widget": "IPY_MODEL_pw:212"
+      },
+      {
+       "widget": "IPY_MODEL_pw:213"
+      }
+     ],
+     "margins": [
+      9,
+      9,
+      9,
+      9
+     ],
+     "name": "horizontalLayout",
+     "spacing": 6
+    },
+    "method": "open",
+    "model": "QWidgetModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:209",
+    "qtClass": "QWidget",
+    "state": {
+     "q_actions": [],
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "TaskSketcherMessages",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": "Form"
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:209",
+    "layout": {
+     "class": "QVBoxLayout",
+     "items": [
+      {
+       "widget": "IPY_MODEL_pw:210"
+      }
+     ],
+     "margins": [
+      4,
+      4,
+      4,
+      4
+     ],
+     "name": "",
+     "spacing": 0
+    },
+    "method": "open",
+    "model": "QGroupBoxModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_panel:5",
+    "qtClass": "Gui::TaskView::TaskBox",
+    "state": {
+     "q_actions": [],
+     "q_checkable": true,
+     "q_checked": true,
+     "q_enabled": true,
+     "q_flat": false,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_title": "Solver messages",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:216",
+    "method": "open",
+    "model": "QCheckBoxModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:215",
+    "qtClass": "Gui::PrefCheckBox",
+    "state": {
+     "q_actions": [],
+     "q_autoExclusive": false,
+     "q_checkable": true,
+     "q_checked": false,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_icon": "",
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_menu": null,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "showOriginalColor",
+     "q_prefEntry": "ShowOriginalColor",
+     "q_prefPath": "Mod/Sketcher/General",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "Show original color",
+     "q_toolTip": "Do not change color for invalid or fully constrained sketch.",
+     "q_tristate": false,
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:217",
+    "method": "open",
+    "model": "QCheckBoxModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:215",
+    "qtClass": "Gui::PrefCheckBox",
+    "state": {
+     "q_actions": [],
+     "q_autoExclusive": false,
+     "q_checkable": true,
+     "q_checked": true,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_icon": "",
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_menu": null,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "checkBoxAllowFace",
+     "q_prefEntry": "AllowFaceExternalPick",
+     "q_prefPath": "Mod/Sketcher/General",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "Enable face external geometry picking",
+     "q_toolTip": "",
+     "q_tristate": false,
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:218",
+    "method": "open",
+    "model": "QCheckBoxModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:215",
+    "qtClass": "Gui::PrefCheckBox",
+    "state": {
+     "q_actions": [],
+     "q_autoExclusive": false,
+     "q_checkable": true,
+     "q_checked": false,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_icon": "",
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_menu": null,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "autoTransparentPick",
+     "q_prefEntry": "SketchAutoTransparentPick",
+     "q_prefPath": "Mod/Sketcher/General",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "Auto transparent on picking",
+     "q_toolTip": "Auto make pre-selected shape transparent for picking\nhidden edges and points on picking external objects.",
+     "q_tristate": false,
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:215",
+    "layout": {
+     "class": "QVBoxLayout",
+     "items": [
+      {
+       "widget": "IPY_MODEL_pw:216"
+      },
+      {
+       "widget": "IPY_MODEL_pw:217"
+      },
+      {
+       "widget": "IPY_MODEL_pw:218"
+      }
+     ],
+     "margins": [
+      9,
+      9,
+      9,
+      9
+     ],
+     "name": "verticalLayout",
+     "spacing": 6
+    },
+    "method": "open",
+    "model": "QWidgetModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:214",
+    "qtClass": "SketcherGui::SketcherGeneralWidget",
+    "state": {
+     "q_actions": [],
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "SketcherGui__TaskSketcherGeneral",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": "Form"
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:214",
+    "layout": {
+     "class": "QVBoxLayout",
+     "items": [
+      {
+       "widget": "IPY_MODEL_pw:215"
+      }
+     ],
+     "margins": [
+      4,
+      4,
+      4,
+      4
+     ],
+     "name": "",
+     "spacing": 0
+    },
+    "method": "open",
+    "model": "QGroupBoxModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_panel:5",
+    "qtClass": "Gui::TaskView::TaskBox",
+    "state": {
+     "q_actions": [],
+     "q_checkable": true,
+     "q_checked": false,
+     "q_enabled": true,
+     "q_flat": false,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 28,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 28,
+     "q_minimumWidth": 0,
+     "q_objectName": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_title": "Edit controls",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:221",
+    "method": "open",
+    "model": "QCheckBoxModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:220",
+    "qtClass": "QCheckBox",
+    "state": {
+     "q_actions": [],
+     "q_autoExclusive": false,
+     "q_checkable": true,
+     "q_checked": true,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_icon": "",
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_menu": null,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "filterBox",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "padding-right: 0px; margin-right: 0px",
+     "q_text": "",
+     "q_toolTip": "Check to toggle filters",
+     "q_tristate": false,
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:222",
+    "method": "open",
+    "model": "QToolButtonModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:220",
+    "qtClass": "QToolButton",
+    "state": {
+     "q_actions": [],
+     "q_autoExclusive": false,
+     "q_autoRaise": false,
+     "q_checkable": false,
+     "q_checked": false,
+     "q_defaultAction": null,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_forAction": null,
+     "q_icon": "",
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_menu": null,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "filterButton",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "padding-left: 0px; margin-left: 0px",
+     "q_text": "Filters",
+     "q_toolTip": "Click to show filters",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:223",
+    "method": "open",
+    "model": "QToolButtonModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:220",
+    "qtClass": "QToolButton",
+    "state": {
+     "q_actions": [],
+     "q_autoExclusive": false,
+     "q_autoRaise": false,
+     "q_checkable": false,
+     "q_checked": false,
+     "q_defaultAction": null,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_forAction": null,
+     "q_icon": "img:27edb1f97a493f96ae2cfac95440532b4e42b847",
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_menu": null,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "showHideButton",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "",
+     "q_toolTip": "Show/hide all listed constraints from 3D view. (same as ticking/unticking all listed constraints in list below)",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:224",
+    "method": "open",
+    "model": "QToolButtonModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:220",
+    "qtClass": "QToolButton",
+    "state": {
+     "q_actions": [],
+     "q_autoExclusive": false,
+     "q_autoRaise": false,
+     "q_checkable": false,
+     "q_checked": false,
+     "q_defaultAction": null,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_forAction": null,
+     "q_icon": "img:016b2fc3e6db7a5841165535ec96065994eff886",
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_menu": null,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "settingsButton",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "",
+     "q_toolTip": "Settings",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:225",
+    "items": [
+     {
+      "cells": [
+       {
+        "check": 2,
+        "icon": "img:1bea30c8ed630d2fe0c179e49ee383bc87a49a10",
+        "text": "Constraint1"
+       }
+      ],
+      "flags": 55,
+      "id": 1
+     },
+     {
+      "cells": [
+       {
+        "check": 2,
+        "icon": "img:1bea30c8ed630d2fe0c179e49ee383bc87a49a10",
+        "text": "Constraint2"
+       }
+      ],
+      "flags": 55,
+      "id": 2
+     },
+     {
+      "cells": [
+       {
+        "check": 2,
+        "icon": "img:1bea30c8ed630d2fe0c179e49ee383bc87a49a10",
+        "text": "Constraint3"
+       }
+      ],
+      "flags": 55,
+      "id": 3
+     },
+     {
+      "cells": [
+       {
+        "check": 2,
+        "icon": "img:1bea30c8ed630d2fe0c179e49ee383bc87a49a10",
+        "text": "Constraint4"
+       }
+      ],
+      "flags": 55,
+      "id": 4
+     },
+     {
+      "cells": [
+       {
+        "check": 2,
+        "icon": "img:88dc2ebe4f3554317f6147bf7f8edeeaac225c67",
+        "text": "Constraint5"
+       }
+      ],
+      "flags": 55,
+      "id": 5
+     },
+     {
+      "cells": [
+       {
+        "check": 2,
+        "icon": "img:88dc2ebe4f3554317f6147bf7f8edeeaac225c67",
+        "text": "Constraint6"
+       }
+      ],
+      "flags": 55,
+      "id": 6
+     },
+     {
+      "cells": [
+       {
+        "check": 2,
+        "icon": "img:78d9a0122cfea6d9cfaf7f5b074856122cf8938c",
+        "text": "Constraint7"
+       }
+      ],
+      "flags": 55,
+      "id": 7
+     },
+     {
+      "cells": [
+       {
+        "check": 2,
+        "icon": "img:78d9a0122cfea6d9cfaf7f5b074856122cf8938c",
+        "text": "Constraint8"
+       }
+      ],
+      "flags": 55,
+      "id": 8
+     },
+     {
+      "cells": [
+       {
+        "check": 2,
+        "icon": "img:a07ea55ad2db05da03eb87b2b7420778db28416b",
+        "text": "Constraint9 (0 mm)"
+       }
+      ],
+      "flags": 55,
+      "id": 9
+     },
+     {
+      "cells": [
+       {
+        "check": 2,
+        "icon": "img:1e2c6fb9ac4906d4da3db95df127fcd117d20d30",
+        "text": "Constraint10 (0 mm)"
+       }
+      ],
+      "flags": 55,
+      "id": 10
+     },
+     {
+      "cells": [
+       {
+        "check": 2,
+        "icon": "img:60b6959b66e460f2399f0711144d59f499454a8a",
+        "text": "Constraint11 (10 mm)"
+       }
+      ],
+      "flags": 55,
+      "id": 11
+     },
+     {
+      "cells": [
+       {
+        "check": 2,
+        "icon": "img:60b6959b66e460f2399f0711144d59f499454a8a",
+        "text": "Constraint12 (20 mm)"
+       }
+      ],
+      "flags": 55,
+      "id": 12
+     }
+    ],
+    "method": "open",
+    "model": "QListWidgetModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:220",
+    "qtClass": "SketcherGui::ConstraintView",
+    "state": {
+     "q_actions": [],
+     "q_alternatingRowColors": false,
+     "q_cellTypes": [],
+     "q_columnCount": 1,
+     "q_columnWidths": [],
+     "q_columns": [
+      "1"
+     ],
+     "q_currentColumn": 0,
+     "q_currentId": 0,
+     "q_dragDropMode": 0,
+     "q_editTriggers": 8,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_headerHidden": false,
+     "q_indentation": 20,
+     "q_itemsExpandable": true,
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "listWidgetConstraints",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_rootIsDecorated": false,
+     "q_rowLabels": [],
+     "q_selection": [],
+     "q_selectionBehavior": 0,
+     "q_selectionMode": 3,
+     "q_showGrid": true,
+     "q_sortingEnabled": false,
+     "q_statusTip": "",
+     "q_styleSheet": "margin-top: 0px",
+     "q_toolTip": "",
+     "q_uniformRowHeights": false,
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": "",
+     "q_wordWrap": false
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:220",
+    "layout": {
+     "class": "QVBoxLayout",
+     "items": [
+      {
+       "layout": {
+        "class": "QHBoxLayout",
+        "items": [
+         {
+          "widget": "IPY_MODEL_pw:221"
+         },
+         {
+          "widget": "IPY_MODEL_pw:222"
+         },
+         {
+          "widget": "IPY_MODEL_pw:223"
+         },
+         {
+          "widget": "IPY_MODEL_pw:224"
+         }
+        ],
+        "margins": [
+         0,
+         0,
+         0,
+         0
+        ],
+        "name": "horizontalLayout1",
+        "spacing": 6
+       }
+      },
+      {
+       "widget": "IPY_MODEL_pw:225"
+      }
+     ],
+     "margins": [
+      9,
+      9,
+      9,
+      9
+     ],
+     "name": "verticalLayout",
+     "spacing": 6
+    },
+    "method": "open",
+    "model": "QWidgetModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:219",
+    "qtClass": "QWidget",
+    "state": {
+     "q_actions": [],
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 350,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "SketcherGui__TaskSketcherConstraints",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": "Form"
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:219",
+    "layout": {
+     "class": "QVBoxLayout",
+     "items": [
+      {
+       "widget": "IPY_MODEL_pw:220"
+      }
+     ],
+     "margins": [
+      4,
+      4,
+      4,
+      4
+     ],
+     "name": "",
+     "spacing": 0
+    },
+    "method": "open",
+    "model": "QGroupBoxModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_panel:5",
+    "qtClass": "Gui::TaskView::TaskBox",
+    "state": {
+     "q_actions": [],
+     "q_checkable": true,
+     "q_checked": true,
+     "q_enabled": true,
+     "q_flat": false,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_title": "Constraints",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:228",
+    "method": "open",
+    "model": "QLabelModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:227",
+    "qtClass": "QLabel",
+    "state": {
+     "q_actions": [],
+     "q_alignment": 129,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "label",
+     "q_openExternalLinks": false,
+     "q_pixmap": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "Type:",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": "",
+     "q_wordWrap": false
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:229",
+    "method": "open",
+    "model": "QComboBoxModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:227",
+    "qtClass": "QComboBox",
+    "state": {
+     "q_actions": [],
+     "q_currentIndex": 0,
+     "q_editText": "",
+     "q_editable": false,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_itemIcons": [],
+     "q_items": [
+      "Edge",
+      "Starting Point",
+      "End Point",
+      "Center Point"
+     ],
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "comboBoxElementFilter",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:230",
+    "method": "open",
+    "model": "QLabelModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:227",
+    "qtClass": "QLabel",
+    "state": {
+     "q_actions": [],
+     "q_alignment": 129,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "label1",
+     "q_openExternalLinks": false,
+     "q_pixmap": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "Mode:",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": "",
+     "q_wordWrap": false
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:231",
+    "method": "open",
+    "model": "QComboBoxModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:227",
+    "qtClass": "QComboBox",
+    "state": {
+     "q_actions": [],
+     "q_currentIndex": 0,
+     "q_editText": "",
+     "q_editable": false,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_itemIcons": [],
+     "q_items": [
+      "All",
+      "Normal",
+      "Construction",
+      "External"
+     ],
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "comboBoxModeFilter",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:232",
+    "items": [
+     {
+      "cells": [
+       {
+        "icon": "img:f00d6c327c08a87c90ac9e964bf7baba7a54059e",
+        "text": "Line"
+       },
+       {
+        "text": "Edge1"
+       },
+       {},
+       {},
+       {
+        "text": "g1"
+       }
+      ],
+      "flags": 61,
+      "id": 1
+     },
+     {
+      "cells": [
+       {
+        "icon": "img:f00d6c327c08a87c90ac9e964bf7baba7a54059e",
+        "text": "Line"
+       },
+       {
+        "text": "Edge2"
+       },
+       {},
+       {},
+       {
+        "text": "g2"
+       }
+      ],
+      "flags": 61,
+      "id": 2
+     },
+     {
+      "cells": [
+       {
+        "icon": "img:f00d6c327c08a87c90ac9e964bf7baba7a54059e",
+        "text": "Line"
+       },
+       {
+        "text": "Edge3"
+       },
+       {},
+       {},
+       {
+        "text": "g3"
+       }
+      ],
+      "flags": 61,
+      "id": 3
+     },
+     {
+      "cells": [
+       {
+        "icon": "img:f00d6c327c08a87c90ac9e964bf7baba7a54059e",
+        "text": "Line"
+       },
+       {
+        "text": "Edge4"
+       },
+       {},
+       {},
+       {
+        "text": "g4"
+       }
+      ],
+      "flags": 61,
+      "id": 4
+     }
+    ],
+    "method": "open",
+    "model": "QTreeWidgetModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:227",
+    "qtClass": "SketcherGui::ElementView",
+    "state": {
+     "q_actions": [],
+     "q_alternatingRowColors": false,
+     "q_cellTypes": [],
+     "q_columnCount": 5,
+     "q_columnWidths": [
+      56,
+      63,
+      93,
+      61,
+      78
+     ],
+     "q_columns": [
+      "Type",
+      "Name",
+      "Reference",
+      "Flags",
+      "Mapped"
+     ],
+     "q_currentColumn": 0,
+     "q_currentId": 0,
+     "q_dragDropMode": 0,
+     "q_editTriggers": 0,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_headerHidden": false,
+     "q_indentation": 20,
+     "q_itemsExpandable": true,
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "elementsWidget",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_rootIsDecorated": false,
+     "q_rowLabels": [],
+     "q_selection": [],
+     "q_selectionBehavior": 1,
+     "q_selectionMode": 3,
+     "q_showGrid": true,
+     "q_sortingEnabled": false,
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_toolTip": "",
+     "q_uniformRowHeights": false,
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": "",
+     "q_wordWrap": false
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:233",
+    "method": "open",
+    "model": "QCheckBoxModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:227",
+    "qtClass": "QCheckBox",
+    "state": {
+     "q_actions": [],
+     "q_autoExclusive": false,
+     "q_checkable": true,
+     "q_checked": true,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_icon": "",
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_menu": null,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "autoSwitchBox",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "Auto-switch to Edge",
+     "q_toolTip": "Only the type 'Edge' will be available for the list",
+     "q_tristate": false,
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:234",
+    "method": "open",
+    "model": "QLabelModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:227",
+    "qtClass": "QLabel",
+    "state": {
+     "q_actions": [],
+     "q_alignment": 129,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "Explanation",
+     "q_openExternalLinks": false,
+     "q_pixmap": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "<html><head/><body><p>&quot;Ctrl&quot;: multiple selection</p><p>&quot;Z&quot;: switch to next valid type</p></body></html>",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": "",
+     "q_wordWrap": false
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:227",
+    "layout": {
+     "class": "QVBoxLayout",
+     "items": [
+      {
+       "layout": {
+        "class": "QHBoxLayout",
+        "items": [
+         {
+          "widget": "IPY_MODEL_pw:228"
+         },
+         {
+          "widget": "IPY_MODEL_pw:229"
+         }
+        ],
+        "margins": [
+         0,
+         0,
+         0,
+         0
+        ],
+        "name": "horizontalLayout",
+        "spacing": 6
+       }
+      },
+      {
+       "layout": {
+        "class": "QHBoxLayout",
+        "items": [
+         {
+          "widget": "IPY_MODEL_pw:230"
+         },
+         {
+          "widget": "IPY_MODEL_pw:231"
+         }
+        ],
+        "margins": [
+         0,
+         0,
+         0,
+         0
+        ],
+        "name": "horizontalLayout1",
+        "spacing": 6
+       }
+      },
+      {
+       "widget": "IPY_MODEL_pw:232"
+      },
+      {
+       "widget": "IPY_MODEL_pw:233"
+      },
+      {
+       "widget": "IPY_MODEL_pw:234"
+      }
+     ],
+     "margins": [
+      9,
+      9,
+      9,
+      9
+     ],
+     "name": "verticalLayout",
+     "spacing": 6
+    },
+    "method": "open",
+    "model": "QWidgetModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:226",
+    "qtClass": "QWidget",
+    "state": {
+     "q_actions": [],
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 400,
+     "q_minimumWidth": 0,
+     "q_objectName": "SketcherGui__TaskSketcherElements",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": "Form"
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:226",
+    "layout": {
+     "class": "QVBoxLayout",
+     "items": [
+      {
+       "widget": "IPY_MODEL_pw:227"
+      }
+     ],
+     "margins": [
+      4,
+      4,
+      4,
+      4
+     ],
+     "name": "",
+     "spacing": 0
+    },
+    "method": "open",
+    "model": "QGroupBoxModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_panel:5",
+    "qtClass": "Gui::TaskView::TaskBox",
+    "state": {
+     "q_actions": [],
+     "q_checkable": true,
+     "q_checked": true,
+     "q_enabled": true,
+     "q_flat": false,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_title": "Elements",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:236",
+    "method": "open",
+    "model": "QPushButtonModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_pw:235",
+    "qtClass": "QPushButton",
+    "state": {
+     "q_actions": [],
+     "q_autoExclusive": false,
+     "q_checkable": false,
+     "q_checked": false,
+     "q_default": false,
+     "q_enabled": true,
+     "q_flat": false,
+     "q_focus": false,
+     "q_font": {},
+     "q_icon": "img:e3cdfd75e75435a62c4aedb053af97deb3693a6b",
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_menu": null,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_standardButton": 2097152,
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_text": "Close",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "pw:235",
+    "layout": {
+     "class": "QHBoxLayout",
+     "items": [
+      {
+       "widget": "IPY_MODEL_pw:236"
+      }
+     ],
+     "name": ""
+    },
+    "method": "open",
+    "model": "QDialogButtonBoxModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_panel:5",
+    "qtClass": "QDialogButtonBox",
+    "state": {
+     "q_actions": [],
+     "q_centerButtons": true,
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_objectName": "",
+     "q_orientation": 1,
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_standardButtons": 2097152,
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_windowIcon": "",
+     "q_windowTitle": ""
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "id": "panel:5",
+    "layout": {
+     "class": "QVBoxLayout",
+     "items": [
+      {
+       "widget": "IPY_MODEL_pw:208"
+      },
+      {
+       "widget": "IPY_MODEL_pw:209"
+      },
+      {
+       "widget": "IPY_MODEL_pw:214"
+      },
+      {
+       "widget": "IPY_MODEL_pw:219"
+      },
+      {
+       "widget": "IPY_MODEL_pw:226"
+      },
+      {
+       "widget": "IPY_MODEL_pw:235"
+      }
+     ],
+     "name": ""
+    },
+    "method": "open",
+    "model": "QDialogModel",
+    "op": "widgets",
+    "parent": "IPY_MODEL_panel",
+    "qtClass": "SketcherGui::TaskDlgEditSketch",
+    "state": {
+     "q_actions": [],
+     "q_enabled": true,
+     "q_focus": false,
+     "q_font": {},
+     "q_height": 0,
+     "q_maximumHeight": 16777215,
+     "q_maximumWidth": 16777215,
+     "q_minimumHeight": 0,
+     "q_minimumWidth": 0,
+     "q_modal": false,
+     "q_objectName": "",
+     "q_prefEntry": "",
+     "q_prefPath": "",
+     "q_result": 0,
+     "q_statusTip": "",
+     "q_styleSheet": "",
+     "q_toolTip": "",
+     "q_visible": true,
+     "q_watchEvents": [],
+     "q_whatsThis": "",
+     "q_width": 0,
+     "q_windowIcon": "",
+     "q_windowTitle": "Tool parameters"
+    }
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {
+     "layoutSpec": {
+      "class": "QVBoxLayout",
+      "items": [
+       {
+        "widget": "IPY_MODEL_panel:5"
+       }
+      ],
+      "name": ""
+     }
+    },
+    "id": "panel",
+    "method": "update",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {
+     "item": "clear"
+    },
+    "id": "pw:232",
+    "method": "custom",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {
+     "index": 0,
+     "item": "insert",
+     "parent": 0,
+     "rows": [
+      {
+       "cells": [
+        {},
+        {},
+        {},
+        {},
+        {}
+       ],
+       "flags": 61,
+       "id": 5
+      }
+     ]
+    },
+    "id": "pw:232",
+    "method": "custom",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {
+     "cell": {
+      "text": "Line"
+     },
+     "col": 0,
+     "id": 5,
+     "item": "set"
+    },
+    "id": "pw:232",
+    "method": "custom",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {
+     "cell": {
+      "icon": "img:f00d6c327c08a87c90ac9e964bf7baba7a54059e",
+      "text": "Line"
+     },
+     "col": 0,
+     "id": 5,
+     "item": "set"
+    },
+    "id": "pw:232",
+    "method": "custom",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {
+     "cell": {
+      "text": "Edge1"
+     },
+     "col": 1,
+     "id": 5,
+     "item": "set"
+    },
+    "id": "pw:232",
+    "method": "custom",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {
+     "cell": {
+      "text": "g1"
+     },
+     "col": 4,
+     "id": 5,
+     "item": "set"
+    },
+    "id": "pw:232",
+    "method": "custom",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {
+     "index": 1,
+     "item": "insert",
+     "parent": 0,
+     "rows": [
+      {
+       "cells": [
+        {},
+        {},
+        {},
+        {},
+        {}
+       ],
+       "flags": 61,
+       "id": 6
+      }
+     ]
+    },
+    "id": "pw:232",
+    "method": "custom",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {
+     "cell": {
+      "text": "Line"
+     },
+     "col": 0,
+     "id": 6,
+     "item": "set"
+    },
+    "id": "pw:232",
+    "method": "custom",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {
+     "cell": {
+      "icon": "img:f00d6c327c08a87c90ac9e964bf7baba7a54059e",
+      "text": "Line"
+     },
+     "col": 0,
+     "id": 6,
+     "item": "set"
+    },
+    "id": "pw:232",
+    "method": "custom",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {
+     "cell": {
+      "text": "Edge2"
+     },
+     "col": 1,
+     "id": 6,
+     "item": "set"
+    },
+    "id": "pw:232",
+    "method": "custom",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {
+     "cell": {
+      "text": "g2"
+     },
+     "col": 4,
+     "id": 6,
+     "item": "set"
+    },
+    "id": "pw:232",
+    "method": "custom",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {
+     "index": 2,
+     "item": "insert",
+     "parent": 0,
+     "rows": [
+      {
+       "cells": [
+        {},
+        {},
+        {},
+        {},
+        {}
+       ],
+       "flags": 61,
+       "id": 7
+      }
+     ]
+    },
+    "id": "pw:232",
+    "method": "custom",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {
+     "cell": {
+      "text": "Line"
+     },
+     "col": 0,
+     "id": 7,
+     "item": "set"
+    },
+    "id": "pw:232",
+    "method": "custom",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {
+     "cell": {
+      "icon": "img:f00d6c327c08a87c90ac9e964bf7baba7a54059e",
+      "text": "Line"
+     },
+     "col": 0,
+     "id": 7,
+     "item": "set"
+    },
+    "id": "pw:232",
+    "method": "custom",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {
+     "cell": {
+      "text": "Edge3"
+     },
+     "col": 1,
+     "id": 7,
+     "item": "set"
+    },
+    "id": "pw:232",
+    "method": "custom",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {
+     "cell": {
+      "text": "g3"
+     },
+     "col": 4,
+     "id": 7,
+     "item": "set"
+    },
+    "id": "pw:232",
+    "method": "custom",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {
+     "index": 3,
+     "item": "insert",
+     "parent": 0,
+     "rows": [
+      {
+       "cells": [
+        {},
+        {},
+        {},
+        {},
+        {}
+       ],
+       "flags": 61,
+       "id": 8
+      }
+     ]
+    },
+    "id": "pw:232",
+    "method": "custom",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {
+     "cell": {
+      "text": "Line"
+     },
+     "col": 0,
+     "id": 8,
+     "item": "set"
+    },
+    "id": "pw:232",
+    "method": "custom",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {
+     "cell": {
+      "icon": "img:f00d6c327c08a87c90ac9e964bf7baba7a54059e",
+      "text": "Line"
+     },
+     "col": 0,
+     "id": 8,
+     "item": "set"
+    },
+    "id": "pw:232",
+    "method": "custom",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {
+     "cell": {
+      "text": "Edge4"
+     },
+     "col": 1,
+     "id": 8,
+     "item": "set"
+    },
+    "id": "pw:232",
+    "method": "custom",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {
+     "cell": {
+      "text": "g4"
+     },
+     "col": 4,
+     "id": 8,
+     "item": "set"
+    },
+    "id": "pw:232",
+    "method": "custom",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {},
+    "id": "panel:5",
+    "method": "close",
+    "op": "widgets"
+   }
+  },
+  {
+   "client": 7,
+   "frame": {
+    "content": {
+     "layoutSpec": {
+      "class": "QVBoxLayout",
+      "items": [],
+      "name": ""
+     }
+    },
+    "id": "panel",
+    "method": "update",
+    "op": "widgets"
+   }
+  }
+ ],
+ "subscribeReplies": [
+  {
+   "dialogs": [],
+   "id": 1,
+   "locale": "C",
+   "ok": true,
+   "panel": null,
+   "subscribed": true,
+   "theme": ""
+  }
+ ]
+}

@@ -5,6 +5,8 @@ import { render } from 'solid-js/web';
 import { createSignal } from 'solid-js';
 import { Inspector } from './inspector';
 import { SheetPanel } from './sheet';
+import { ConsolePanel } from './console';
+import { TaskPanelCard } from './widgets/panel';
 import { HudCard } from './hud';
 import { LauncherMenu } from './menu';
 import { LoupeOverlay } from './loupe';
@@ -189,6 +191,14 @@ const [cardOpen, setCardOpen] = createSignal(false);
 const [sheetOpen, setSheetOpen] = createSignal(
   new URLSearchParams(location.search).has('sheet'));
 
+// The Python console (docs/Sandbox.md 7.20 C4): a guest in this page, booted
+// the first time the panel opens, reaching the served document as this
+// client over the viewer's own socket. `?console` opens it on load. The
+// token is the link's own, which boot.json is admitted by.
+const [consoleOpen, setConsoleOpen] = createSignal(
+  new URLSearchParams(location.search).has('console'));
+const linkToken = new URLSearchParams(location.search).get('token') ?? undefined;
+
 // The selection menu: mode (single/multi) and pick filter, pushed to
 // the viewer as it changes (docs/ThinClientUI.md). Session-local on
 // purpose — a filter someone forgot yesterday reads as broken picking
@@ -296,6 +306,14 @@ const toggleToolbars = () => {
   try { localStorage.setItem(TOOLBARS_KEY, on ? '1' : '0'); }
   catch { /* this session only */ }
 };
+// The desktop's task panel, mirrored (docs/Sandbox.md 7.22): a card like
+// the console's, opened from the launcher. Subscribing is what starts
+// the host's mirror, so a closed card costs the desktop nothing. `?panel`
+// opens it on load, for the same reason `?sheet` does: a headless run has
+// no way to reach the launcher, and this card is the one W1 must be seen
+// rendering.
+const [taskPanelOpen, setTaskPanelOpen] = createSignal(
+  new URLSearchParams(location.search).has('panel'));
 
 const host = document.createElement('div');
 host.id = 'fc-ui';
@@ -314,11 +332,18 @@ render(() => (
                 viewOnly={viewOnly} doc={() => docs().current} />
     <OmniBox open={omniOpen} onClose={() => setOmniOpen(false)}
              selection={selection} viewOnly={viewOnly} host={isHost} />
+    <ConsolePanel open={consoleOpen} onClose={() => setConsoleOpen(false)}
+                  doc={() => docs().current} viewOnly={viewOnly}
+                  server={location.origin} token={linkToken} client={clientName}
+                  viewerSocket />
+    <TaskPanelCard open={taskPanelOpen} onClose={() => setTaskPanelOpen(false)}
+                   viewOnly={viewOnly} />
     <LoupeOverlay mark={loupe} />
     <OnViewParams params={onView} places={onViewPlaces} />
     <HudCard text={hud} onClose={() => window.fcviewerSetHud?.(false)} />
     <LauncherMenu
-      hidden={() => cardOpen() && window.innerWidth <= NARROW}
+      hidden={() => (cardOpen() || taskPanelOpen() || sheetOpen()
+                     || consoleOpen()) && window.innerWidth <= NARROW}
       items={[
         ...docItems(),
         { label: 'View & document properties',
@@ -332,6 +357,12 @@ render(() => (
         { label: 'Toolbars',
           checked: () => toolbarsOn(),
           onSelect: toggleToolbars },
+        { label: 'Python console',
+          checked: () => consoleOpen(),
+          onSelect: () => setConsoleOpen(!consoleOpen()) },
+        { label: 'Task panel',
+          checked: () => taskPanelOpen(),
+          onSelect: () => setTaskPanelOpen(!taskPanelOpen()) },
         { label: 'HUD',
           checked: () => hud() !== null,
           onSelect: () => window.fcviewerSetHud?.(hud() === null) },
@@ -339,7 +370,8 @@ render(() => (
       ]}
     />
     <LauncherMenu
-      hidden={() => cardOpen() && window.innerWidth <= NARROW}
+      hidden={() => (cardOpen() || taskPanelOpen() || sheetOpen()
+                     || consoleOpen()) && window.innerWidth <= NARROW}
       glyph={
         /* Cursor-arrow "select" icon, inline so every device draws the
            same thing (a text glyph already came out as tofu once). */
@@ -369,6 +401,13 @@ render(() => (
     />
   </>
 ), host);
+
+// The gate drive, for a browser no driver can inject one into -- Safari
+// (docs/Sandbox.md 7.20 C6).  One fixed module of this bundle, never a URL
+// from the query: ?drive=console loads the console's own drive, which a
+// Chrome gate injects instead (scripts/console-drive.js).
+if (new URLSearchParams(location.search).get('drive') === 'console')
+  import('./sandbox/viewerconsolemain');
 
 // Breadcrumbs for devices with no devtools: the viewer's ?log overlay
 // mirrors the console, so these two lines are how a phone tells us the

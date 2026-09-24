@@ -13,18 +13,49 @@ as "the primary tree"; that was wrong.
 |---|---|
 | Python (`FreeCADCmd -t 0`) | **2886 tests, OK** -- 0 failures, 0 errors, 50 skipped, 6 expected failures (2026-09-19, SketcherPort after datum external geometry: +3 in `SketcherTests/TestSketchExternalGeometry.py`; 2883 on 2026-09-17, SketcherPort after the groups and Text family: +6 in the new `SketcherTests/TestSketcherText.py`, +22 from the sessions before it; 2855 on 2026-09-16, +1 for the WireJoiner tight bound regression test in `parttests/regression_tests.py`; 2854 on 2026-09-15, SketcherPort after the fillet pick: 3 markers off, +2 fork tests; 2852 and 9 after the internal faces fix in WireJoiner: 3 markers off, +1 fork test; 12 expected failures after phase 2's standalone App fixes: +72 from upstream's App-level Sketcher tests, 6 of them still marked expected failures until their upstream picks land, +1 document-label test; 22 expected failures after the signed-orientation pick; before that 2778, 6 expected failures, 2026-09-14, after the SecurePython merge, unchanged after merging 7.17 D4; SecurePython alone 2778, RemoteEdit alone 2688). Pass `FCX_PYODIDE` here too: in a fresh `FREECAD_USER_HOME` without it the 28 `SandboxProgram` / `FeaturePythonChain` cases skip ("no sandbox guest in this build") and the run still says OK -- 78 skipped is the tell |
 | C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **781 of 781 passing** (2026-09-23, SketcherPort after the sketch support-visibility fix: +1, `GuiSketchSupportVisibility_tests_run`, which watches that entering a sketch does not show the datum it is attached to; 780 on 2026-09-23 after the pick cull fix: +1, `PickCull_tests_run`, which counts the ray picks that reach the geometry; 779 on 2026-09-21 after the constraint-tool hints: +1, `GuiSketchConstraintHints_tests_run`, which reads the rendered hint bar; 778 on 2026-09-21 after session 84's drag auto-constraint and two crash guards; 773 on 2026-09-20, SketcherPort after the GeoList facade ownership fix: +4 `GeoListTest` cases, two of them `static_assert`s pinning which form owns the facade; 769 on 2026-09-19, SketcherPort after group C: +1, `GuiSketchLineExtensionAutoConstraint_tests_run`; 768 on 2026-09-18 after the handler resync, +6 for construction mode and the tool-mode command; 762 on 2026-09-17, SketcherPort after the groups and Text family: +3 `SketchObjectTest` cases for the group queries, the multi-element move and the group-aware active test; 748 on 2026-09-15, SketcherPort after porting upstream's Sketcher C++ tests: +81, and 8 more of upstream's are disabled until their picks land; 667 on 2026-09-14, after merging SecurePython sandbox 7.17 D4, which adds 10; 657 with GuiServeClaimChildren; 656 after the first SecurePython merge; SecurePython alone 625, RemoteEdit alone 634), 0 failures, 16 ctest entries disabled, 1 skipped -- 60 of them need the sandbox guest runtime: in a FRESH `FREECAD_USER_HOME` pass `FCX_PYODIDE=$HOME/.local/share/FreeCAD/Pyodide/314.0.6` or they fail with "expression sandbox image is not available". **A merge that brings guest image changes (`src/App/ExpressionImage/`) needs `cmake --build build/pyodide-guest` and `--target fcx_image_wheel` first**: the host build keeps the old wheel, and the first run of this merge failed 16 sandbox cases (`module '_fcx' has no attribute 'surface'`) for that reason alone |
-| C++ on Windows (`build/win-relwithdebinfo-801`) | **497 of 497 passing** (2026-09-12, including the two new `FileWriterTest` cases; 487 on 2026-09-10, 477 on 2026-09-06/08), 1 disabled -- see "C++ on Windows" |
+| C++ on Windows (`build/win-relwithdebinfo-801`) | **648 of 648 passing** (2026-09-21, re-measured after merging the Windows portability fixes and the G1a corpus fix; unchanged because the tests those commits added are all Python. 2026-09-20, fully green: the sandbox is live here now -- `v8-embed` installed, the published `fcx_image` 0.1.0 wheel, and a bootstrapped 314.0.6 runtime -- which brings in the `ExpressionImage*` suites, and `PublishOnly_tests_run` builds on Windows for the first time. 549 on 2026-09-19 after merging RemoteEdit, which added 52; `BUILD_FEM=ON` adds none, FEM's tests are all Python. 497 on 2026-09-12, including the two new `FileWriterTest` cases; 487 on 2026-09-10, 477 on 2026-09-06/08), 1 disabled -- see "C++ on Windows" |
 | C++ on macOS (`build/mac-relwithdebinfo-801`) | **490 of 490 passing** (2026-09-10), 1 disabled -- see "C++ on macOS" |
 | Python on macOS | **2680 tests** (2026-09-10, the first full run there), 2 failures + 1 error, 49 skipped, 6 expected failures -- all three are this box's missing meshers, see "Python on macOS" |
-| Python on Windows | **2590 tests, OK** (2026-09-12) -- 0 failures, 0 errors, 49 skipped, 6 expected failures. The nine Windows-only failures it carried from 2026-09-07 are fixed; see "Python on Windows" |
+| Python on Windows | **2794 tests, OK** (2026-09-21) -- 0 failures, 0 errors, 50 skipped, 6 expected failures. Green again after the token-wise BRep comparison landed; the four new tests are that fallback's own guard plus the Draft fixes. The history is worth keeping because it is why the tolerance exists: the skips fell 80 -> 50 when the sandbox became functional here, so ~30 `SandboxProgram` / `FeaturePythonChain` cases stopped idling and started running, and that surfaced a failure which had been invisible rather than new -- `SandboxProgramFixtureCases.testProgramsRoutedMatchNative [ProgramFlangeSheet.FCStd]`, "Flange2: the BRep differs". Measured: the BReps differed in exactly one token, `30*sin(45deg)`, by exactly **1.0000 ULP** -- MSVC's CRT gives `21.213203435596427`, the wasm guest `...423`. **The direction is the opposite of `docs/Sandbox.md` 7.17 D3's pentagon, so do not read that section as covering this one.** The divergence is in the HOST libm, not the guest: MSVC's `sin` at that argument returns `3fe6a09e667f3bcd`, one ULP above the correctly rounded `3fe6a09e667f3bcc` that glibc returns, and glibc agrees with the guest to the bit -- which is why Linux still passes byte-exact and this box does not. Note MSVC's *product* is nonetheless the one nearer the ideal `21.2132034355964257...` (7.8e-16 against 2.8e-15), but that is not accuracy: a one-ULP-high sine happens to cancel the double rounding of the multiply, so the less correct libm wins on the product by luck. Byte-exactness on this fixture was never "guest matches host"; it was glibc and musl happening to agree, and a third libm that rounds *better* breaks the tie. Note also the vertices are bit-identical, so `assertSameGeometry` passes here without ever inspecting the differing value -- a pass from that assertion is not evidence of ULP-bounded drift. 2790 OK on 2026-09-19 before the sandbox ran; 2600 on 2026-09-15; 2590 on 2026-09-12, the ten new are `FileBlobs.BlobArchiveStoreCases`. **FEM needs `ply` in the env** (`femtools/tokrules.py` imports `ply.lex`) or `test_pyimport_all_FEM_modules` errors. The nine Windows-only failures it carried from 2026-09-07 are fixed; see "Python on Windows" |
 
 Two traps when running the suites (2026-09-09): give the Python suite and
 `Tests_run` **separate `FREECAD_USER_HOME`s** if they run at the same time
 -- the expression routing suites in `Tests_run` flip
 `Expression/Sandbox:Evaluate` in the shared `user.cfg` while they run, and
 the Python suite then restores every Proxy through the sandbox guest (46
-failures that vanish alone); and the home directory must **exist** before
-the run, or FreeCAD falls back to the real one.  `Tests_run` gained
+failures that vanish alone, on 2026-09-09; **since 2026-09-18 this half
+is history**: docs/Sandbox.md 7.31 removed Proxy routing, so a saved
+Proxy always restores natively and no suite needs an import grant.
+What follows is the record of what routed runs used to need.  A Proxy
+whose module the guest could not serve was HELD until the document's
+`host.import:<module>` was answered, docs/Sandbox.md 7.28, so a ROUTED
+module run needed its grants -- `TestFemApp` routed with none held 81
+Proxies and fails 2, and with `--grant host.import:femobjects --grant
+host.import:femsolver` (the TOP-LEVEL packages, the COARSE form: the
+dotted-ancestor chain covers every submodule under them, which is what
+suits a suite run; the GUI modal instead grants the EXACT submodule a
+file named, 14 distinct ones in a routed CAM run) is 90 OK, 0 held, 0
+refusals, and
+`TestCAMApp` holds 411 and fails 10 with 17 errors on none but is 1343 OK
+with `--grant host.import:Path` alone -- and
+what remains under routing beyond that is `TestArch`'s 11 guest-behaviour
+cases); and the home directory must **exist** before
+the run, or FreeCAD falls back to the real one.
+
+A third trap, found 2026-09-18 by running the full `ctest` for the
+first time in a while: `FormWidgets_Tests_run`'s three panel-mirror
+cases passed alone and failed in company (21 passed, 2 failed), which
+reads as a mirror bug and is not one.  The mirror's watch is
+PAINT-driven (`QEvent::Paint` -> `markDirty` -> `_dirty`, and
+`flush()` returns early when that set is empty), and `QWidget::show()`
+makes a window visible but not necessarily EXPOSED: after any earlier
+case has put a window up, the next one is mapped late, no paint
+arrives, and the store emits nothing.  Every other state variable is
+identical between a passing and a failing run -- same ids, same store
+count, same running mirror -- so only the emitted-message count tells
+them apart.  The fix is `QVERIFY(QTest::qWaitForWindowExposed(&host))`
+after the `show()`; no amount of `processEvents()` or `qWait()` helps,
+because waiting cannot map a window that was never mapped.  `Tests_run` gained
 `ProxyImport.*` (7) and four `TypeImport.*` cases on 2026-09-09 (the
 Proxy import rule, docs/Sandbox.md sec 11 item 1); the per-binary counts
 below predate that.
@@ -379,9 +410,64 @@ existed only inside that file. Every `git push` over SSH fails with
 and re-enters the passphrase. Exclude `ssh-agent-*.sock`, or sweep only
 `*.tmp`, which is where all the growth actually is.
 
+**2026-09-20: `PublishOnly_tests_run` compiles and passes here, the first
+time that target has been built on any Windows box.** It had been wrapped
+in `if(UNIX)` since it was written; the gate blamed two things, BSD
+sockets and image enumeration, and only the second was ever real
+(`1bbb558119` -- `SceneServerWire_tests_run` ten lines below had been
+testing the same server over Boost.Beast on every platform all along).
+5 of 5 pass in 1.17 s, `putsARealSceneOnTheWire` among them: a real Beast
+HTTP exchange against the live scene server, in 6 ms.
+
+The case worth the words is `noGraphicsDeviceIsCreated`, which reports
+**OK rather than SKIPPED**. That matters because `mappedImages()` returning
+an empty list is a skip, not a pass -- so an OK here is evidence the
+`EnumProcessModules`/`GetModuleFileNameExA` port actually ran and the
+forbidden-name scan really happened. **And the scan discriminates on this
+box rather than matching nothing.** Baselined first against an innocent
+process: Explorer maps 381 modules and hits two of the forbidden names --
+`nvwgf2umx.dll` under `DriverStore\FileRepository\nvbl.inf_amd64_...` and
+`C:\Windows\SYSTEM32\D3D10Warp.dll` -- while the publish-only process
+mapped neither. The names are present and reachable on this machine, and
+the test told a publishing process apart from a drawing one. `nvwgf2um`
+matched the longer real `nvwgf2umx.dll`, so the substring is doing work.
+
+Two limits, recorded rather than smoothed over. `icd` and `atig` matched
+nothing here: no false positive, but one machine's evidence, and it says
+nothing about an AMD or Intel box. And the buffer-resize path in
+`mappedImages()` -- the retry when a process maps more than 256 modules --
+is UNRUN, and that is now measured rather than assumed: instrumented on
+that box, the process maps **180** modules against the 256 the buffer
+starts at, so the resize never happened. The code is correct by
+inspection -- `written` bounds the walk to the slots
+`EnumProcessModules` actually filled, so `GetModuleFileNameEx` is never
+handed a null module -- but inspection is all it has, and a green result
+says nothing about a branch that did not execute. The same run reported
+a self-path count of 1, which is healthy but only on the path that was
+never at risk. That failure mode would be benign for the verdict in any
+case: the phantom entries would be copies of the test executable's own
+path, which matches no forbidden name. Forcing 180 past 256 would take
+something contrived; the cheaper cure is to shrink the initial buffer so
+the resize runs everywhere on every run.
+
+**The binary cannot be run standalone on Windows.** Invoking
+`PublishOnly_tests_run.exe` directly dies with `0xC0000135`
+(`STATUS_DLL_NOT_FOUND`); it has to go through `ctest`, which is what
+supplies the per-test `PATH`. Same root cause as the rpath story above,
+and the same answer -- run it under `ctest`, not by hand.
+
+Same box, same run: `draftgeoutilsOnHandles` passes, 116 of 116 agreeing
+by the per-call text comparison, and `ctest -R ExpressionImage` is 63 of
+63. That case was this box's only failure before `4accc24224` -- see
+`Sandbox.md` 7.6 for why a corpus point sitting exactly on the l/l3
+bisector made the two runtimes disagree about floating point rather than
+about geometry.
+
 ### Python on Windows
 
-Green: **2590 tests, OK** on 2026-09-12, on `build/win-relwithdebinfo-801`
+Green: **2600 tests, OK** on 2026-09-15 (342 s), ten more than before because
+`FileBlobs` gained `BlobArchiveStoreCases` (`docs/FileBlobsManager.md` sec 14).
+Before that: **2590 tests, OK** on 2026-09-12, on `build/win-relwithdebinfo-801`
 with `BUILD_FEM=OFF`; 49 skipped, 6 expected failures, 402 s. That is the
 same 2590 the first run counted on 2026-09-07 and the re-run on 2026-09-08,
 so the count still works as the checksum the top of this page describes --
@@ -674,12 +760,30 @@ being filled, all live at once.
 The table is the two oldest; `tests/gui/CMakeLists.txt` is the list that is
 current.
 
-**Three of them are not registered, and are meant not to be**:
+**Eight of them are not registered, and are meant not to be**:
 `camera-uplink-browser.py`, `serve-edit-browser.py` and
 `serve-peer-selection-browser.py` drive a real Chrome
-through the built WASM viewer, so they need three things this repository does
-not carry -- `build/wasm`, a `puppeteer-core` install, and a Chrome binary --
-and they skip rather than fail when any is missing. Registering them would
+through the built WASM viewer, `sandbox-console-browser.py` boots the
+sandbox guest in a page served by FreeCAD (docs/Sandbox.md 7.20, C1; its
+endpoints without a browser are the registered `GuiSandboxConsoleServe`), and
+`sandbox-bridge-browser.py` has that guest read and write the served document
+over the socket (C2; the same wire without a browser is the registered
+`GuiSandboxBridgeServe`, which also carries C3's client principal), and
+`sandbox-console-panel-browser.py` uses the console panel on top of it the way
+a person does -- lines, a block, Tab, the history, a paste, Interrupt, a
+document switch -- from a gate page with no WASM viewer (C4), and
+`sandbox-console-viewer-browser.py` opens the real viewer page with
+`?console` to show the console rides the viewer's own connection (one
+client, its view-only mode, its document switch), and
+`sandbox-latency-browser.py` times the statements a console user types with
+`scripts/delay-proxy.js` holding the page's connection at a LAN's or a
+tunnel's round-trip time, and reads the page's processes' memory (C5), and
+`sandbox-console-safari.py` runs C4's drive in Safari, where the guest is in
+a worker because there is no JSPI (C6, and see the macOS note below), so
+they need what this repository does not carry -- `build/wasm` (for the console
+page only the web bundle, `npm run build` in `src/Gui/Renderer/web`), a
+`puppeteer-core` install, and a Chrome binary -- and they skip rather than fail
+when any is missing. Registering them would
 put a test in the ctest count that says SKIP on every box but this one, which
 is a worse lie than an unregistered test. Run them by hand:
 
@@ -687,6 +791,42 @@ is a worse lie than an unregistered test. Run them by hand:
     CHROME=~/.cache/puppeteer/chrome/*/chrome-linux64/chrome \
     scripts/gui-test.sh tests/gui/serve-edit-browser.py /tmp/edit-web \
         --timeout 600
+
+Setting the browser tooling up again (done 2026-09-14, when none of it was
+left on the box): node comes with emsdk
+(`~/works/sw/emsdk-5.0.3/node/24.19.0_64bit/bin`, pass it as `NODE` or put it
+on PATH); `npm i puppeteer-core @puppeteer/browsers` in
+`~/works/sw/fcad-probes`, then `npx @puppeteer/browsers install chrome@stable
+--path ~/.cache/puppeteer`. Chrome for Testing links `libasound.so.2`, which
+the system does not have and there is no sudo to install: symlink the conda
+env's copy into `~/.cache/puppeteer/lib` and pass that directory as
+`CHROME_LIBS` (`scripts/console-drive.js` prepends it to the browser's
+`LD_LIBRARY_PATH`; the older drivers need it in `LD_LIBRARY_PATH` itself).
+
+    PUPPETEER_PATH=~/works/sw/fcad-probes/node_modules/puppeteer-core \
+    CHROME=$(ls ~/.cache/puppeteer/chrome/linux-*/chrome-linux64/chrome) \
+    CHROME_LIBS=~/.cache/puppeteer/lib \
+    NODE=~/works/sw/emsdk-5.0.3/node/24.19.0_64bit/bin/node \
+    scripts/gui-test.sh tests/gui/sandbox-console-browser.py /tmp/console-web \
+        --timeout 600
+
+`sandbox-bridge-browser.py`, `sandbox-console-panel-browser.py`,
+`sandbox-console-viewer-browser.py` and `sandbox-latency-browser.py` take the
+same four variables (the latency one also `SANDBOX_LATENCY_RTTS` and
+`SANDBOX_LATENCY_MODES`, and about seven minutes for the prefetch on and off).
+
+`build/wasm` on this box (configured 2026-09-15; the CMakeLists' own
+instructions name `~/works/sw/emsdk`, which is not here): the emsdk of the
+guest wheel, the cmake and ninja of the conda env, node from emsdk, and the
+host shaderc the relwithdebinfo tree builds --
+
+    source src/App/PyodideHost/guest/emsdk-env.sh
+    export PATH=$PATH:$PWD/.conda/freecad/bin:~/works/sw/emsdk-5.0.3/node/24.19.0_64bit/bin
+    emcmake cmake -S src/Gui/Renderer/wasm -B build/wasm -G Ninja -DCMAKE_BUILD_TYPE=Release \
+        -DFCVIEWER_SHADERC=$PWD/build/conda-relwithdebinfo-801/src/3rdParty/bgfx/cmake/bgfx/shaderc
+    cmake --build build/wasm
+
+It builds the web bundle into `build/wasm/web` as well, emptying it first.
 
 `EDIT_REAL=1` (`CAMUP_REAL=1` for the other) moves it off headless
 swiftshader onto the WSLg desktop's real GPU; neither is judged by pixels, so
@@ -753,6 +893,41 @@ driver minus xvfb and `timeout`:
     GT_OUT=$OUT GT_RESULT=$OUT/result.txt \
     .conda/run.sh build/mac-relwithdebinfo-801/bin/FreeCAD \
         --user-cfg "$OUT/.iso/user.cfg" tests/gui/serve-selection-echo.py
+
+**The Safari leg of the browser console** is macOS-only and takes no browser
+tooling at all -- no puppeteer, no Chrome, no WebDriver. `open -a Safari`
+opens the same gate page the C4 driver does, the page drives the panel itself
+(`?drive=1`) and POSTs its verdict to a collector the test runs (`?report=`),
+and `?guest=worker` forces the transport. It needs only the web bundle
+(`npm run build` in `src/Gui/Renderer/web`, into `build/wasm/web`) and a
+FreeCAD with the sandbox host:
+
+    OUT=/tmp/gt-safari; mkdir -p "$OUT/.iso/cache" "$OUT/.iso/config"
+    XDG_CACHE_HOME=$OUT/.iso/cache XDG_CONFIG_HOME=$OUT/.iso/config \
+    GT_OUT=$OUT GT_RESULT=$OUT/result.txt \
+    .conda/run.sh build/mac-relwithdebinfo-801/bin/FreeCAD \
+        --user-cfg "$OUT/.iso/user.cfg" tests/gui/sandbox-console-safari.py
+
+It opens a tab and closes it again at the end (`SAFARI_KEEP=1` leaves it);
+`SAFARI_BROWSER` names another browser for `open -a`, which is how the same
+drive gates the worker path in a browser that has JSPI.
+
+`sandbox-console-viewer-browser.py` takes `SAFARI=1` for the same treatment
+of the REAL viewer page: it needs `build/wasm` built, and the page loads its
+own drive from `?drive=console` rather than having one injected.
+
+**Chrome for Testing on macOS 12: pin 137.** The current build (153) does not
+start on Monterey -- `dlopen ... Symbol not found:
+_kVTCompressionPropertyKey_ReferenceBufferCount ... Expected in
+VideoToolbox.framework`, which is a macOS 13 symbol. `npx @puppeteer/browsers
+install chrome@137` is the newest that runs here, and it is new enough for
+every browser leg: JSPI shipped in Chrome 137. The binary is inside an app
+bundle, so `CHROME` is the executable within it:
+
+    CHROME="$HOME/.cache/puppeteer/chrome/mac-137.0.7151.119/chrome-mac-x64/\
+    Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+
+No `CHROME_LIBS` here -- that is the Linux box's libasound workaround.
 
 `GuiServeSelectionEcho_tests_run` passes that way, 2026-09-07: eight PASS
 lines and `DONE`. Its run log used to be unreadable for a reason that had

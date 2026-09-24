@@ -24,6 +24,10 @@ workbench code is not a target; the GUI stays native; the widget
 layer built under sec 7 is the browser's toolkit.  The guest-only GUI
 pieces are frozen, not extended.**
 
+**As of 2026-09-18 the CODE matches that aim (7.31): Proxy routing and
+the two workbench wheels are removed, so no installed workbench code
+runs in the guest.**
+
     area                            status      where
     ------------------------------  ----------  ------------------------------------------
     principals, permissions, grants  built       src/App/ExpressionSecurity*.{h,cpp}
@@ -48,8 +52,9 @@ pieces are frozen, not extended.**
     host widget layer: core, Qt view built       H0: src/Gui/Fw/ (Fw:: models, FwQt:: backend, the store, FreeCADGui.FormWidgets), src/Tools/fwuic.py (7.12)
     native panels on the layer       sized       H1-H3: the first ports, the form-only majority, the item views; DOM walker later (7.4, 7.12)
     the task panel mirror            M3 built    7.19: the desktop's task panel walked into models, streamed (Pad, Draft's OrthoArray, a CAM op, no workbench edited); M2: item rows reflected (Sketcher's constraint list), pictures and icons by image id; M3: top-level dialogs as dialog:<n> roots (a panel slot's QMessageBox, its exec code from a client's click), mouse replay into pictures; M4 measured 2026-09-11 (sec 8.4: a repaint burst re-reads 10-20 widgets in 0.3 ms and sends nothing; a panel at rest sends nothing; a keystroke costs the other clients 70-150 B)
+    the panels in the browser (G7)  W2 built   7.22: the DOM view over the widget layer -- the walker, the layout plan, the panel container, the item views; W1-W5, 2.2-3.3k of TypeScript in src/Gui/Renderer/web, and one 20-line host change (a client is never told how the host corrected its own write); the five questions RULED 2026-09-16 (chrome-flavoured, the echo taken, dialogs in scope, a FLOATING card, the pure-plan gate) and W1 started; W1's host half BUILT 2026-09-16 (Store::messageTo, the gate in test_widgetStream, FormWidgets 22/22), the fixture corpus (6 cases) recorded and the walker core, the layout plan and the replay gate BUILT 2026-09-16 (62 checks ALL GREEN) and the client + views + floating card BUILT the same day (typecheck and bundle clean), and W1 PROVEN on screen 2026-09-16 (demo-taskpanel.py through renderer-serve.sh, driven by scripts/panel-drive.js); W2 BUILT 2026-09-19 -- the row/remove/sort ops the corpus never carried, the header, the nesting, the checks and the selection, and one view wake per frame because the host pushes one per op; gate 85 -> 102 checks, 17 of them the item views'; the op-vs-event trap (only an item op reaches the real widget) caught against the host's own test; PROVEN on screen 2026-09-19 with demo-sketcherpanel.py -- 12 checked constraint rows, the Elements header over real tracks, and a check clicked in headless Chrome leaving Constraints[0].InVirtualSpace True on the host -- which also caught a column headed "1" invented over every QListWidget; nesting and cell colours stay unproven; W3 next
     the session document (commands) built       S1: a workbench reaches every open document, live ActiveDocument, app.write, save, picker-blessed saveAs; S2: Gui.doCommand / addModule in the guest under gui.doCommand, Draft's commit and Arch_Site end to end; gate SandboxSessionDoc (7.13)
-    routing ON by default            not yet     preference Expression/Sandbox:Evaluate
+    routing ON by default            built       preference Expression/Sandbox:Evaluate, ON since 2026-09-16: the corpus gate green (94 files, 195 of 195 same); the Proxy-restore half that rode the same preference was REMOVED 2026-09-18 (7.31)
     Proxy import restriction (native) built       item 1 of sec 11: PropertyPythonObject restore
                                                  confined to the Mod roots, both containers
     the document program             D1 built    7.17: a Part::Feature's Shape expression is the
@@ -92,11 +97,27 @@ pieces are frozen, not extended.**
                                                  BUILT 2026-09-13 (ProxyChain.md 4.5, 4.6),
                                                  fine-grained per-cell, 8 gate cases; P3, the
                                                  sandbox, BUILT 2026-09-13 inside 7.17's D2
-    the browser console              sized       7.20: pyodide in the client's page, the wire
+    the browser console              building    7.20: pyodide in the client's page, the wire
                                                  over the socket (JSPI), a client:<identity>
                                                  principal, catalog v2; C1-C6, one to two weeks;
-                                                 RULED 2026-09-11 after the document program
-    host file / code chokepoints     designed    7.14: fs.read / fs.write / host.exec at the core's file and runFile primitives, keyed on the scope stack; closes Gui.runCommand("Std_RecentMacros") from a guest
+                                                 RULED 2026-09-11 after the document program;
+                                                 C1 BUILT 2026-09-14: the guest boots in a page
+                                                 from the serving FreeCAD (/pyodide/, boot.json
+                                                 behind the door), and JSPI is proven -- the
+                                                 host import suspends mid-statement; C2 BUILT
+                                                 2026-09-15: the page's statements read and
+                                                 write the served document over the socket
+                                                 (per-connection endpoint); C3 BUILT
+                                                 2026-09-15: a client:<identity> principal,
+                                                 catalog v2's column, view-only = read-only
+                                                 bridge, gui a hard DENY for clients; C4
+                                                 BUILT 2026-09-15: the console panel in the
+                                                 viewer chrome, booted on first open; C5
+                                                 BUILT 2026-09-15: a statement costs its ops x
+                                                 RTT, and a prefetch of sibling reads makes a
+                                                 loop a few ops (50 objects at 100 ms: 5.4 s ->
+                                                 0.42 s); the guest is +185 MB PSS in the page
+    host file / code chokepoints     BUILT       7.14: fs.read / fs.write / host.exec at the core's file and runFile primitives, keyed on the scope stack; closes Gui.runCommand("Std_RecentMacros") from a guest
     network capability               designed    sec 6
     GUI protocol, mirror, widgets    designed    sec 7 (U1, U3's wire and Qt manager, the guest's Coin are built)
     rungs 1-4 of the ladder          designed    sec 1.3
@@ -188,7 +209,7 @@ Each rung ships alone; each is strictly more Python in the sandbox.
 
 - **Rung 0, expressions** **[built]**: both spreadsheet modes route,
   the corpus gate passes, the budget works.  Routing is preference-gated
-  OFF by default (sec 3.5).
+  and ON by default since 2026-09-16 (sec 3.5); OFF by default before.
 - **Rung 1, native dispatch for `call` members** **[designed; DROPPED
   2026-09-08]**: the annotated method set retargeted from Python C API
   calls to generated C++ dispatch.  Dropped because it has no
@@ -201,12 +222,17 @@ Each rung ships alone; each is strictly more Python in the sandbox.
   builds a `TopoShapePy` first): the two performance items of sec 11
   are the pack cache and typed reads, not dispatch.
 - **Rung 2, document-embedded Python** **[built as G1 for Draft and
-  BIM; hardened mode, not the target, 2026-09-08]**: scripted-object
+  BIM; hardened mode, not the target, 2026-09-08; REMOVED 2026-09-18,
+  7.31]**: scripted-object
   `Proxy` code in the document's guest, `execute()` a bridge call --
   70/70 Draft Proxies and the BIM corpus recompute byte-identical
   (7.6).  With the import restriction (sec 11 item 1) it buys defense
   in depth and crash isolation for INSTALLED code against hostile
   data; kept and maintained, since expressions ride the same bridge.
+  REMOVED 2026-09-18 (7.31), on the ruling that installed workbench code
+  is not a target: one preference was switching this on together with
+  expression routing, and a wheel's existence was deciding which
+  workbench got sandboxed.  What follows is the record of what it was.
   Per-document guests return to the list on a different ground: one
   file's runaway program must not stall another's recompute.
 - **Rung 3, session scripting** **[RETIRED 2026-09-08]**: console and
@@ -235,9 +261,19 @@ around App.  `ExpressionCore` stays an OBJECT library folded into
   out a carrier (2026-09-03).  An expression, a Proxy, an embedded
   script all run as `document:<hash>`.
 - Pre-resolve host-side, then FAIL CLOSED: no silent native fallback
-  when the image cannot evaluate (2026-08-31).
+  when the image cannot evaluate (2026-08-31).  Amended 2026-09-17
+  (7.28): a saved Proxy whose module NO guest wheel carries is HELD --
+  not imported, not allocated, its state not applied -- and runs in this
+  process only on the USER's answer to `host.import:<module>` under the
+  document principal, bounded by the native import rule of sec 11 item 1
+  and named in the console, on the property and on the padlock.  Consent,
+  not a fallback; and not for any other failure.
 - Routing stays OFF by default until the corpus regression, not
-  judgement, says otherwise (2026-08-31).
+  judgement, says otherwise (2026-08-31).  It said otherwise on
+  2026-09-16: 94 files, 195 expressions, 195 same, 0 differ.  The same
+  preference also routes a saved Proxy's restore, which that gate does
+  not measure, so the restore half was guarded by `available()` first
+  (3.5) and the default flipped only after.
 - wasmtime stays a SHARED library and a conda package
   (`wasmtime-capi`), decided on the multi-process OCCT direction and on
   more Python moving into the image, not on size (2026-09-01).
@@ -397,7 +433,10 @@ guest, the 3D view.  Measured:
                                                                    the InitGui runner, MDI ~600
     guest models and shims (8.9k)  all                             none
     ipywidgets bundling (Probe B)  keep, the comm base             none
-    gates                          SandboxWidgets, SandboxForms,   SandboxGui, SandboxInitGui,
+    gates (the DROP column's           SandboxWidgets, SandboxForms,   SandboxGui, SandboxInitGui,
+      SandboxInitGui, SandboxDraftGui
+      and SandboxCorpusGui were
+      RETIRED 2026-09-18, 7.31)
                                    SandboxPanels, SandboxSelection, SandboxDraftGui,
                                    SandboxNative: 1.9k             SandboxSessionDoc,
                                                                    SandboxCorpusGui: 2.3k
@@ -477,8 +516,8 @@ in dependency order; sizes are the sizings' where one exists.
                                                                        closes the GuiUp cost list of sec 13
     G4c the residue                       7.16    measured after a, b  Draft_Edit's pick, host-node field
                                                                        writes, whatever the corpus hits next
-    F1 the file and code chokepoints      7.14    an afternoon to a    a SESSION or ADDON guest stops
-                                                  day                  reaching host files and host Python
+    F1 the file and code chokepoints      7.29    BUILT 2026-09-17     a SESSION or ADDON guest stops
+                                                  (proven in C++)      reaching host files and host Python
                                                                        through Gui.runCommand (Std_Recent*,
                                                                        Std_DlgMacroExecuteDirect);
                                                                        mergeProject, importIFC.insert(path)
@@ -606,7 +645,7 @@ across the board.
     fs.write:<path>   DENY (np)  PROMPT    PROMPT  (Gui::Application::open/importFrom/exportTo,
     host.exec:<path>  DENY (np)  PROMPT    PROMPT  openDocument, saveAs, MacroManager::run,
                                                    Interpreter::runFile), a picker-blessed path
-                                                   passing; designed (7.14), not in the enum yet
+                                                   passing; BUILT 2026-09-17 (7.29)
     net.*             --         --        --      designed (sec 6), not in the enum yet
 
 The one deliberate compatibility break: `unsafe.getattr` (the
@@ -986,7 +1025,8 @@ read_prop/get_attr/call counts say where a snapshot op would pay
 
 ### 3.5 The router: what is routed
 
-Preference `Expression/Sandbox:Evaluate`, **OFF by default**.  Routed:
+Preference `Expression/Sandbox:Evaluate`, **ON by default since
+2026-09-16** (OFF by default before).  Routed:
 expression evaluation, the spreadsheet through the single seam
 `PropertySheet::eval` (and its `evalPy` twin) -- python mode CROSSES
 rather than being refused, since python mode is a lexer state plus
@@ -998,20 +1038,39 @@ editors (`DlgExpressionInput`, `SpinBox`, `InputField`, `PropertyItem`)
 -- policy-gated as session, not confined; a named future slice.
 Writes were never the router's problem: `PropertyExpressionEngine::
 execute` sets the path on the host after the value returns.
-The same preference routes a document object's saved Proxy at document
-OPEN (`ExpressionSandbox::proxyRestoreRouted()`, the preference alone,
-no image boot to answer it): `PropertyPythonObject::Restore` builds the
-`<Python module=".." class="..">` instance in the guest and holds the
-stand-in (7.6 G1c step (f)); a module the guest cannot serve FAILS
-CLOSED.  A view provider's Proxy is not routed -- the Gui side is not
-in the guest (G2).
+**The same preference used to route a document object's saved Proxy at
+document open** (`proxyRestoreRouted()`, 7.6 G1c step (f), with the
+`host.import` consent gate of 7.28 for a module no guest wheel carried).
+That half was REMOVED 2026-09-18 (7.31): installed workbench code is not
+a sandbox target, and one preference was switching it on together with
+expression routing.  `PropertyPythonObject::Restore` now imports
+natively for both containers, under the Mod-root rule of sec 11 item 1 --
+which is what bounded a document-chosen module name all along.
+
+**The restore half asks `available()` too (2026-09-16).**  It used to
+read the preference alone, deliberately, so that answering it booted no
+image.  The cost of that was a build with the preference on and no
+runtime INSTALLED: every saved Proxy took the routed path, no guest
+could answer, the restore failed closed, and the document came back
+de-Proxied -- 70 of 70 objects of `data/examples/draft_test_objects.FCStd`,
+measured.  Evaluation never had the problem (`evaluationRouted()` has
+always ended in `available()` and falls back to native).  `available()`
+is memoized and, where there is no runtime, answers no without booting
+anything; off the routed path the native restore still runs under the
+Mod-root import restriction of sec 11 item 1, so refusing widens
+nothing.  Its gate `ExpressionImageEvalTest.proxyRestoreNeedsRuntime`
+went with the routing in 7.31; this paragraph is the record of what the
+restore half did, not live design.
 
 Python: `FreeCAD.ExpressionSandbox` -- `routed`, `setRouting`,
 `available`, `imageInfo`, `evaluate`, `evaluateNative`, `exec` (statements
 in the guest as the session principal, optionally as a named module),
-`evalCount`, `stats`, `resetStats`, `reset`, `proxyNew`, `proxyInfo` (rung 2, 3.2),
-`pyodideReleases`, `pyodideLayout`, `pyodideVerify`,
+`evalCount`, `stats`, `memoryInfo`, `resetStats`, `reset`, `bootCount`,
+`proxyInfo` (a guest proxy's identity, 3.2), `libraries`,
+`surfaceVersion`, `pyodideReleases`, `pyodideLayout`, `pyodideVerify`,
 `pyodideAbi`; constants `OptionCallFrame`, `OptionPythonMode`.
+(`proxyNew`, `hostProxies`, `deferredProxies` and `resumeProxies` were
+removed with Proxy routing, 7.31.)
 
 ## 4. Runtimes **[built]**
 
@@ -1263,7 +1322,14 @@ install into a running guest (P2), PyPI sources (PEP 783
 `pyemscripten_<abi>` wheels), the pre-run import scan (dropped: an
 `import` fails at the guest's import with the same offer).
 
-### 5.6 Bundled wheels **[built 2026-09-04]**
+### 5.6 Bundled wheels **[built 2026-09-04; the WORKBENCH wheels removed 2026-09-18, 7.31]**
+
+**Standing note 2026-09-18 (7.31):** the two workbench wheels
+(`fcx_draft`, `fcx_bim`) and the guest shims they packed are removed --
+installed workbench code is not a sandbox target and no longer runs in
+the guest.  What ships is `fcx_image` (the engine) and `fcx_widgets`
+(the widget layer the browser tier uses).  The rest of this section is
+the record of what the workbench wheels were.
 
 FreeCAD's own workbench code reaches the guest as pure-Python wheels
 beside the fcx_image wheel: `<datadir>/Pyodide/wheels/<dist>-<ver>-py3-
@@ -1478,10 +1544,17 @@ per op (`gui`: DENY document / ALLOW session and addons):
   callbacks, coalesced per frame) and the snapper.  The snapper's move
   to C++ stands on cost (its per-move work is geometry queries against
   host shapes) but is deferred: no longer a correctness blocker.
-- **U7 Compatibility**: a `PySide`-named module in the guest covering
-  the data-level subset (translate, icon references, `Qt` enums, the
-  static dialog calls, `QTimer.singleShot`, value types), and the
-  porting linter.
+- **U7 Compatibility** **[RETIRED 2026-09-18, 7.31]**: a `PySide`-named
+  module in the guest covering the data-level subset (translate, icon
+  references, `Qt` enums, the static dialog calls,
+  `QTimer.singleShot`, value types), and the porting linter.  U7
+  existed so INSTALLED workbench code would run in the guest
+  unedited (G2); with Proxy routing removed it has no subject, and
+  the workbench half of the subset (translate, `QLocale`, `Slot`,
+  `QUrl`, `QDesktopServices`) is gone.  The `PySide` NAME survives
+  for the widget layer itself, in the fcx_widgets wheel: the guest's
+  forms are Qt-shaped by design (7.3), and `PySide.QtCore` is where
+  the host-timer protocol's guest half lives (7.15).
 
 ### 7.2 The scene: pivy in the guest, mirrored **[decided: "can we just port pivy over to wasm in full? I don't see any security problem with that"]**
 
@@ -1692,10 +1765,42 @@ shapes bound as handles, each answer normalised (shapes to kind,
 measures and counts; values rounded) and equal as text on both
 runtimes; 11 of the 116 fail identically on both sides (curve-only
 functions fed an edge, the deprecated `sortEdges`, a `NameError` in
-Draft's own `get_spline_normal`, `removeSplitter` on a clean box) --
-parity, not a sandbox gap.  What the gate forced into the guest is
-listed in 3.2 and above (`bool`/`str` ops, type references,
-`ShapeList` as list, `GuiUp`/`Console`/`Base`/unit constants).
+Draft's own `get_spline_normal`, `removeSplitter` on a clean box, and
+`circlefrom2Lines1Point`/`circleFrom2tan1pt` reaching
+`DraftVecUtils.crossproduct`, which Draft calls at
+`draftgeoutils/circles.py:119` and `:257` and which has never existed)
+-- parity, not a sandbox gap.  **Those last two take their point OFF
+the l/l3 bisector deliberately (2026-09-20, `V(1, 0.5, 0)`).**  At
+`V(1, 1, 0)` the point lies exactly on the bisector of the two lines,
+so `mirror()` maps it onto itself and which exception comes back is
+decided by rounding noise: `findDistance()` projects to
+`(7.9e-17, -7.9e-17, 0)` here and slips past its `if not dist` and
+`if dist.Length == 0` guards, where the Windows box gets `None` and
+`point.add(None)` raises `TypeError` instead of the `AttributeError`
+a degenerate `edg()` gives here.  That was the entire
+`draftgeoutilsOnHandles` failure seen on Windows 2026-09-19 -- a corpus
+entry comparing floating point rather than geometry, in a call that
+cannot succeed on either platform anyway while `crossproduct` is
+missing.  Off the bisector both sides reach that missing attribute
+deterministically, so the entry compares what it was meant to.
+**Both Draft bugs FIXED 2026-09-21**: the two `crossproduct` calls are
+`v.cross(Vector(0, 0, 1))`, the idiom the same file uses four lines
+above, and `mirror()` now tests `findDistance()`'s result before adding
+it, returning the point itself when it lies on the mirror line.  So
+those two entries no longer fail alike: re-measured 2026-09-21, the
+gate reads 116/116 agreeing with 9 failing alike (was 11) and 3693
+guest hops (was 3613), the two calls now doing real work instead of
+short-circuiting on a missing attribute.  **3689 was wrong**, and
+`9936bff4b3`'s commit message still carries it: that run raced a file
+restore and measured a tree WITHOUT the coincident-points guard.  The
+guard tests an edge HANDLE, and `HostHandle.__bool__` always hops
+(FcxWire `OpBool`; there is no local fast path), so each evaluation
+costs one `bool` op -- 50 -> 54, which is the whole delta.  Windows
+measured 3693 independently with a component-identical breakdown, so
+the counter still agrees across boxes op for op.
+What the gate forced into the guest is listed in 3.2 and above
+(`bool`/`str` ops, type references, `ShapeList` as list,
+`GuiUp`/`Console`/`Base`/unit constants).
 The traffic it measured, 116 calls: `release` 4977, `get_attr` 2738,
 `call` 587, `mod_call` 153, `bool` 50, `read_prop` 29, `str` 18 --
 about 74 hops per call, and 58 percent of them were releases of
@@ -1704,9 +1809,30 @@ made releases ride the next request or the reply (3.2): the same 116
 calls now make 3575 hops -- `get_attr` 2738, `call` 587, `mod_call`
 153, `bool` 50, `read_prop` 29, `str` 18, `release` 0 -- 31 per call,
 ~0.2 ms of crossing per call at sec 8.1's hop cost, and the per-eval
-pack cost lost its release hop (8.1).  What remains is dominated by
-`get_attr` on shapes and curves; a snapshot op would target exactly
-those reads, and this is the count to size it from.
+pack cost lost its release hop (8.1).  Re-measured 2026-09-20, after
+the bisector fix above took two calls off the degenerate path they
+used to short-circuit on: 3613 hops -- `get_attr` 2764, `call` 593,
+`mod_call` 155, `bool` 50, `read_prop` 29, `str` 16, `write_prop` 6,
+`release` 0 -- still 31 per call.  Compare that against **3581**, not
+the 3575 above: the 2026-09-04 list omits `write_prop` 6, so the
+like-for-like pre-fix total is 3581 and the fix added 32 hops, those
+two calls running further into `circlefrom1Line2Points` before they
+stop.  The figure moved because the corpus did, not because the bridge
+did.
+
+**The hop count does not detect the host divergence, and that is worth
+knowing before anyone uses it as a cross-box check.**  Both boxes
+measured exactly 3581 before the fix, despite one of them raising
+`TypeError` where the other raised `AttributeError`.  That is expected
+rather than surprising: the ops counted are the GUEST's hops to the
+host, and the guest took the identical path on both machines -- it was
+the host halves that diverged, and the host does not hop.  So a
+matching op count is evidence the guest agrees, never evidence the two
+sides agree; only the per-call text comparison shows that.
+
+What remains is dominated by `get_attr` on shapes and curves; a
+snapshot op would target exactly those reads, and this is the count to
+size it from.
 **G1b BUILT 2026-09-04** (`draftWheelInGuest`): Draft's App side boots
 with the pyodide guest as the bundled `fcx_draft` wheel (5.6) -- no
 `exec`, no stubs; every module of the wheel imports in the guest (the
@@ -1898,8 +2024,9 @@ the hooks the host fired for the writes, `execute`, its nested
 against the ~45 hops + 7 nested calls sized above: the `call` count is
 the `addProperty` calls of `Wire.__init__` (12) that the sizing left
 out, the rest lands where estimated.
-**(f) the Restore route BUILT 2026-09-04.**  With routing on
-(`proxyRestoreRouted()`, the preference alone), `PropertyPythonObject::
+**(f) the Restore route BUILT 2026-09-04; REMOVED 2026-09-18 (7.31), gates and all.**  With routing on
+(`proxyRestoreRouted()`, the preference alone then; the preference AND
+`available()` since 2026-09-16, 3.5), `PropertyPythonObject::
 Restore` on a document object sends `proxy_new alloc` -- the guest
 imports the saved module name and allocates `cls.__new__(cls)`, no
 `__init__`, what `PyType_GenericAlloc` is natively -- and holds the
@@ -3985,7 +4112,7 @@ where it departs from the sizing above:
   loader that hooks `addCommand` around the import records nothing
   unless it `importlib.reload`s the module.
 
-### 7.14 Host commands from the guest sized: the file and code chokepoints **[sized 2026-09-07]**
+### 7.14 Host commands from the guest sized: the file and code chokepoints **[sized 2026-09-07; BUILT 2026-09-17, see 7.29]**
 
 The question, asked after S2 ("shall we fine grain control doCommand?
 there are commands allow file access" -- then "that's the same trap as
@@ -5237,7 +5364,9 @@ not the guest's.  The reset retention is a new trap (sec 12) and a
 D4 measurement.
 
 **(e) The gate.**  `SandboxProgram` (a Python gate module in the
-default list beside `SandboxCorpusGui`): the three fixture files
+default list; `SandboxCorpusGui`, named beside it at the time, was
+RETIRED 2026-09-18 with the workbench wheels, 7.31): the three fixture
+files
 open with routing ON, recompute, and each `Shape` is BRep
 byte-identical to the same file recomputed native with enforcement
 off; a parameter change recomputes to the native answer; save,
@@ -5665,7 +5794,10 @@ beside it.
    rounds differently from the host's for some arguments, one ULP;
    `sin(240deg)` is the one D1's flange never met at a 44 mm bolt circle and
    meets at 40 mm.  The committed fixtures are held to the byte, a parameter
-   change to 4 ULPs (`assertSameGeometry`); sec 12.
+   change to 4 ULPs (`assertSameGeometry`); sec 12.  (Since 2026-09-21 the
+   committed comparison falls back to 4 ULPs on every number in the BRep
+   when the bytes differ -- a third libm, MSVC's, ran the flange out of that
+   luck; sec 12.)
 3. *The two forms are the same solid, not always the same bytes.*  The
    bracket's and the stair's expression and library forms are
    byte-identical -- once the stair's library starts from a plain box, since
@@ -7091,7 +7223,7 @@ the writer).  What the numbers decide:
   (`grabUs` is counted, the bench has no picture); a non-native file
   dialog's rows; the DOM client's own cost of applying an open.
 
-### 7.20 The browser console sized: pyodide in the page, the wire over the socket **[sized 2026-09-11; RULED: after the document program]**
+### 7.20 The browser console sized: pyodide in the page, the wire over the socket **[sized 2026-09-11; RULED: after the document program; C1 BUILT 2026-09-14, JSPI proven; C2 BUILT 2026-09-15, the bridge over the socket; C3 BUILT 2026-09-15, the client principal; C4 BUILT 2026-09-15, the console panel; C5 BUILT 2026-09-15, the latency and the page's memory measured, and a prefetch of sibling reads; C6 BUILT 2026-09-16, the guest in a worker -- Safari]**
 
 The question, asked before the document program (7.17) was started:
 how far is a Python console in the browser tier -- pyodide running in
@@ -7272,6 +7404,753 @@ Sources: Firefox's JSPI release bug (bugzilla 2044809), the V8 JSPI
 introduction (v8.dev/blog/jspi), Chromium's intent to ship, pyodide's
 JSPI post (blog.pyodide.org/posts/jspi) and changelog.
 
+**C1, BUILT 2026-09-14.**  The guest boots in a page from the FreeCAD
+that serves the document, bridge unattached.  Two probes came first,
+both in headless Chrome 153 against a plain static server: pyodide
+314.0.6 and the fcx_image wheel boot in the page unchanged (1273 ms for
+the runtime, 118 ms for the wheel and the `_fcx_image` import) and
+`fcx_call` round trips answer (`1 + 2 * 3`, a quantity); and **the one
+unproven piece of this section is proven**.  `fcx_host_call` merged as a
+`WebAssembly.Suspending` through `mergeLibSymbols` -- which stores what
+it is given as is, and pyodide imports a Suspending of its own already
+-- with `fcx_call` entered through `WebAssembly.promising`: a CBOR op and
+a fixed-layout op, both called from a Python statement deep inside
+CPython, suspended on a 30 ms promise and resumed with the reply.  So C2
+is not a JSPI fight, and the host-side alternative above is not needed
+for Chrome.
+
+*The server* (`SceneStreamServer::setHttpMount`, a generic mount: a
+prefix, a provider, gated or not; the path gets the viewer bundle's
+checks first).  `Gui::SandboxServe` (src/Gui/SandboxServe.cpp) mounts,
+from every `SceneServeSource::serve` -- `Gui.serveDocument` and the
+share panel alike:
+
+    GET /pyodide/boot.json                  behind the door, no-store
+    GET /pyodide/runtime/<version>/<file>   the pinned runtime files, max-age
+    GET /pyodide/wheels/<file>              fcx_image (no-store), bundled wheels
+    GET /pyodide/packages/<file>            the package set, closed over the lock
+
+boot.json names what the DESKTOP runtime would boot with, resolved the
+way it does (`ImageHost::location`, `Pyodide::layout`, the pinned table
+and its `PyodideUnpinned` override, the ABI match), relative to
+/pyodide/; a box with nothing to serve answers 503 with the reason.  It
+is resolved on the GUI thread per serve and answered from that snapshot:
+no request ever takes the evaluation lock.  The files are served AHEAD
+of the door, like the viewer bundle, and nothing but the files boot.json
+names: they are published code, and they cannot be gated anyway --
+pyodide fetches the runtime by URL arithmetic that drops a `?token=`,
+and `loadPackage` takes a URL for a wheel only when it ENDS in `.whl`
+(`uriToPackageData`).  boot.json is gated because it names the owner's
+package set; the package files themselves are pyodide's own public
+wheels.  The version sits in the runtime URL so those 13 MB can be
+cached; fcx_image keeps its name across rebuilds and is never cached.
+A path the ungated mount declines goes to the door: 403 without the
+token, 404 past it.  Compiled only with the pyodide host
+(`FC_EXPR_PYODIDE_HOST`, scoped to the one source file).
+
+*The page* (`web/src/sandbox/guest.ts`, `BrowserGuest`): the glue's boot
+step for step -- runtime, the two imports merged, the wheel, the bundled
+wheels and the package set by lock name, `_fcx_image`, the side module's
+exports -- and `call()` in the desktop host's `roundTrip` sequence,
+queued (one guest stack, and a suspended call still holds it).  A
+`bridge` option already takes an async round trip and wires the JSPI
+pair; C2 supplies it.  `console-test.html` is the gate page.
+
+*Measured* (the browser leg, headless Chrome 153, swiftshader, served
+by FreeCAD on loopback): runtime 1433 ms, fcx_image plus the six bundled
+wheels (pivy included) 409 ms, guest linear memory 50 MB after boot.
+The 50 MB is the wasm heap alone and is not comparable to the desktop's
+335 MB, which is the whole V8 process; the page's process figure and a
+phone's are still C5's.
+
+*Gates*: `GuiSandboxConsoleServe` (registered, 33 PASS:
+the door on boot.json, every runtime file and the wheel byte for byte
+with the types a module loader insists on, the refusals);
+`tests/gui/sandbox-console-browser.py` (not registered, docs/Testing.md:
+node, puppeteer-core, a Chrome; 10 PASS -- served headless, the page
+boots, JSPI present, an expression and a quantity, CPython 3.14, the
+in-image FreeCAD module, the bridge unattached, every bundled wheel
+loaded).  The browser tooling was gone from the box and was set up again
+(Testing.md): node from emsdk, Chrome for Testing, and a `libasound`
+symlink it needs.
+
+*Not in C1*: the viewer page has no console (C4); the static-page source
+(jsDelivr, docs/SandboxNetwork.md 9.6 source 2) and the Cache API
+persistence are not
+built; a remote client's `ActiveView` facade is C4's.
+
+**C2, BUILT 2026-09-15.**  A guest in the page reads and writes the
+served document over the socket, and the desktop sees it.
+
+*The wire* (`SceneBridgeRequest`, src/Gui/Renderer/SceneServer.h):
+
+    up    'S', kind u8, seq u32 LE, the request bytes as the guest wrote them
+            kind 0  one bridge op, answered with the same seq
+            kind 1  the end of a statement: no payload, no answer
+    down  'FCSB', seq u32 LE, the reply bytes
+
+The bridge protocol itself is unchanged -- CBOR or the fixed layout,
+carried rather than translated.  An EMPTY reply means nothing serves the
+bridge (no handler on the connection's group, or no sandbox host in the
+build) and the guest raises "host bridge unavailable" at once instead of
+waiting.  The server forwards in the connection's order and never
+coalesces an answer: a new outbox kind, since a streamed frame replaces
+the one still queued and an answer must not.  A connection with 64 ops
+unanswered is kicked -- a guest waits on every answer, so one that far
+ahead is not a guest.
+
+*The endpoint* (src/Gui/SandboxRemote.cpp): one per connection, a
+`HandleTable` of its own.  SceneServeSource installs the handler on the
+document's group next to the control channel; every frame hops to the
+GUI thread in arrival order and is dispatched by `dispatchHostBytes`,
+the bytes-level entry ImageHost's own bridge now calls too, so the
+desktop's guest and a page's run one dispatcher.  Each op runs under
+`Runtime::Scope(const App::Document*)`, a new form: the served
+document's principal with no owner object, pushed per op.  The document
+itself is the table's owner, and nothing else needed to learn about
+remote guests -- reach, the write gate and `resolve` already key on the
+owner's document (`documentOf` takes a Document), and `active_doc`
+answers an owner that is a document with itself.  An End clears the
+table; what the guest keeps across statements re-resolves by its
+durable key (3.2), which the page exercises.  A connection that
+switches documents starts from an empty table, and one that closes
+drops its endpoint (the group's closed handler).
+
+*The principal, until C3.*  The document's own, not a client's.  A
+connection admitted with edit access can already change the document
+through the control channel, so this is no wider than what the door
+gave it, and the catalog holds the rest: `app.write` and `gui` DENY and
+not promptable, `app.query` and `doc.foreign` PROMPT, which the client
+sees as a PermissionError.  What it conflates, both C3's: grants the
+owner gave the document's own code apply to the client too, and the
+audit line names the document, not the client.  A view-only connection
+gets NO bridge -- every op a PermissionError -- until C3 maps its flag
+onto `doc.write.self`.
+
+*The page* (`web/src/sandbox/remote.ts`, `RemoteBridge`):
+`connect(server, {token, doc})` opens a /scene socket of its own and
+ignores the scene payload it is pushed; `attach(socket)` takes one
+already open, the viewer's.  It implements `HostBridge` --
+`roundTrip(bytes)` to a promise of bytes, and `endStatement()` -- which
+is what guest.ts's `bridge` option now takes: transport-shaped, so C6
+changes only the waiting side.  `BrowserGuest` ends a statement after
+every call, and gains `exec()` for statements.
+
+*Measured* (headless Chrome 153 on loopback, the browser leg): 80
+bridge ops over 9 statements, 0.61 ms mean round trip, 3.8 ms worst;
+2976 bytes up, 6276 down.  Twenty host calls inside one generator
+expression each suspended and resumed.  The LAN and tunnel figures are
+C5's.
+
+*Gates*: `GuiSandboxBridgeServe` (registered, 17 PASS: the wire
+from a plain socket client on a worker thread, no guest --
+`active_doc` as the owner, a fixed-layout answer in the fixed layout,
+call / write_prop / read_prop, three ops back to back answered in
+order, the End releasing the handles and `resolve` after it,
+`app.new_doc` and another open document refused, an undecodable request
+a ProtocolError, a view-only connection refused in both layouts, a
+connection joined to no served document answered empty, the desktop
+carrying the write); `tests/gui/sandbox-bridge-browser.py` (not
+registered, docs/Testing.md; 15 PASS -- the page's guest reads
+`ActiveDocument` and its objects, writes `Box.Length`, adds an object,
+keeps one across statements, runs twenty host calls in one expression,
+is refused `newDocument`; the desktop sees the write and the object).
+C1's browser leg, re-run over the changed guest.ts, still passes.
+
+*Not in C2*: the client principal, catalog v2, a read-only bridge for a
+view-only client and an audit line naming the client (C3); the viewer
+page's own socket carrying the bridge -- that socket belongs to the wasm
+viewer, and `attach` is the hook -- and the panel (C4); the cost of the
+scene payload a console-only socket is pushed, unmeasured.
+
+**C3, BUILT 2026-09-15.**  A page's guest acts as the remote USER, not
+as the document it is served.
+
+*The principal* (`clientPrincipalId`, ExpressionSecurity.h), made from
+what the door knows of the connection at the frame -- SceneServer copies
+it onto every `SceneBridgeRequest`:
+
+    client:id:<identity>    a trusted front door's verified identity
+    client:grant:<n>        none: the grant that admitted the connection
+    client:conn:<n>         neither: the legacy single-token door
+
+Three prefixes, not the `client:<identity>` of the sizing: an identity
+is a front door's text, and one reading `grant:3` must not become the
+grant's principal.  An identity carrying a control character falls to
+the next form rather than being rewritten, which could make two people
+one principal.  Only the first form names a person across runs: a grant
+id is assigned per run and a connection id per connection, so a grant
+for either is refused scope "always" (`isPersistablePrincipal`) -- else
+tomorrow's grant 3 inherits today's answers.
+
+*Catalog v2, the client column* (`catalogDefault`, `isPromptable`, and
+a new `isGrantable`):
+
+    permission        client    promptable  grantable
+    ----------------  --------  ----------  ---------
+    doc.read.self     ALLOW
+    doc.write.self    ALLOW                 yes       DENY (np) on a view-only connection
+    doc.foreign       DENY      no          yes
+    geom.call         ALLOW
+    app.query         ALLOW
+    prefs.read        ALLOW
+    prefs.write       DENY      no          yes
+    app.write         DENY      no          yes
+    gui               DENY      no          NO
+    gui.doCommand     DENY      no          yes
+    host.import       PROMPT    yes         yes       the OWNER is asked, on the desktop
+    unsafe.getattr    DENY      no          NO
+    pkg.install       PROMPT    yes         yes
+
+The sizing left three choices open, decided here.  `gui` is a hard DENY,
+not a prompt: the 7.14 chokepoints are not built, so `Gui.runCommand`
+reaches `Std_RecentMacros` and a macro file runs as host Python.  "Not
+grantable" is new and means no grant of any kind lifts it -- not a panel
+answer, not grants.json, not a process `--grant` (`Runtime::resolve`
+answers DENY before any of them, and `grant()` raises); it holds for
+`gui` and `unsafe.getattr`, the two cells that run host code, until 7.14
+lands.  `doc.foreign` is DENY because the multi-document serve grant IS
+the switch (docs/MultiDocServe.md sec 4): a connection that wants another
+document joins it, the door judges that, and the switch starts a fresh
+table.  `app.write` and `prefs.write` are DENY rather than prompts: a
+remote user has no business creating or closing the owner's documents
+or rewriting the owner's preferences, and an owner who decides otherwise
+grants it explicitly.
+
+*View-only* is the scope's flag (`RemoteClient::readOnly`), not a
+catalog cell: a view-only connection's `doc.write.self` is DENY, not
+promptable, before any grant is consulted -- the door's access is the
+owner's decision on the sharing roster, and a permission grant must not
+be a second way around it.  The flag is read per frame, so a roster flip
+takes effect at the client's next op.  The bridge is otherwise whole: a
+view-only guest reads the document.
+
+*Reach.*  A client is confined to its owner's document exactly as a
+document principal is (`principalIsConfined`, the renamed
+`principalIsDocument`) -- without it, a client would have fallen through
+to the session's reach of every open document.  Three client-only edges:
+a `gproxy` tag is refused both ways -- its id names an instance in the
+DESKTOP guest's registry, which the sizing's item 2 flagged; reading one
+is `unsafe.getattr` and a client passing one (or a `gmethod`) is a
+PermissionError, since binding it would hand another object's Proxy to
+this one -- and `saveAs` is refused outright, because the blessed-path
+set is global and belongs to the desktop guest's pickers.  An `fcall` on
+a routed function is left as it is: the call runs as its feature's file
+(docs/ProxyChain.md 2.5), which is what that document's own code does on
+a recompute.
+
+*The store.*  grants.json stays schema version 1 on disk.  A v1 reader
+already skips a grant whose principal form it does not know, which is
+exactly the forward compatibility a client grant needs; writing version
+2 would make every older build refuse the WHOLE store.
+
+*The audit line* names the client twice over: the principal, and the
+context `<Doc>: client #<conn> '<label>' @<address>`, with ` view-only`
+appended on such a connection.  The label and the address are what the
+client or a proxy declared, so the log's JSON dump now replaces bytes
+that are not UTF-8 instead of throwing on the way to a refusal.
+
+*The panel.*  A client's pending request (only `host.import` prompts)
+lists under the served document with the raw principal.  Granting it
+"always" on a run-local id, or granting a client `gui`, now raises; the
+panel's grant action catches that and says why instead of letting it out
+of a Qt slot.
+
+*Gates*: `ExpressionSecurity.clientPrincipals` and the client rows of
+`catalogDefaults` and `principalClasses`;
+`ExpressionSecurityRuntimeTest.clientScope` (the client form pushes over
+an active scope, "this client" in the message, a view-only write refused
+through a session grant, the ungrantable cells refused and resolved DENY,
+"always" refused for `client:conn:`, a null document still pushing);
+`GuiSandboxBridgeServe` rewritten to 33 PASS (from 17): refusals now
+the client's and not promptable (`app.new_doc`, `gui.cmd.run
+Std_RecentMacros`, `saveAs`), `Part.makeBox` bound to a new
+`Part::Feature` that the desktop's tree carries (volume 1000), a
+view-only connection that reads and is refused its write, two clients
+under different grants interleaved on the wire and refused under their
+own principals, a client vouched for by `X-Forwarded-Email` with
+`FC_SERVE_TRUST_PROXY=1` audited as `client:id:carol@example.com`, the
+audit lines' principals and contexts, and a host call after the run
+under no scope.  `wsclient.WS` takes extra upgrade headers for that.
+The page leg, `tests/gui/sandbox-bridge-browser.py`, re-run over the
+client principal: 15 PASS unchanged (80 ops, 3.3 ms worst).  Suites:
+ExpressionSecurity* 22 OK, ExpressionImage*/ExpressionRouting* 98 OK,
+ctest 641/641, SandboxProgram 46 OK, FeaturePythonChain 44 OK.
+
+*Not in C3*: the panel (C4); the sizing's gate `SandboxBrowserConsole`
+is covered item by item on the plain-socket gate, and the page leg
+re-run over the new principal, but there is no page-side console yet;
+the permissions panel shows a client's request but has no roster-aware
+UI for identities; the 7.14 chokepoints, which would let `gui` become a
+grantable row for clients; the latency and memory of C5.
+
+**C4, BUILT 2026-09-15.**  The viewer chrome has a Python console, and
+it runs in the page.
+
+*The interpreter* (`web/src/sandbox/console.py`, pushed into the guest as
+the module `fcx_console` by the exec op's `module`, once per boot): stdlib
+`codeop` for incomplete input, `rlcompleter` for completion, `traceback`
+for the report, a namespace of its own with `FreeCAD`/`App` and
+`FreeCADGui`/`Gui`.  Each line is one eval op, `fcx_console.push(line)`
+with the line as a binding, answering `ok`, `more`, `syntax` or `error`;
+the traceback drops the console's own frame, so an error reads as it does
+on the desktop.  The sizing named `pyodide.console.Console`, and it is NOT
+used: it runs a statement as an asyncio task on pyodide's web loop, which
+enters wasm through pyodide's own promising export rather than `fcx_call`,
+so the statement would also bypass `BrowserGuest`'s queue and never end as
+a bridge statement -- the host's handle table would only grow.  Through
+the eval op every line is one guest call and one statement, the path C2
+and C3 already gate.  No top-level `await` (nothing in the image wants
+it).
+
+*The session* (`web/src/sandbox/session.ts`, no DOM): the bridge socket,
+the boot, the module, and the guest's `sys.stdout`/`sys.stderr` taken
+over with pyodide's raw `write` handlers -- delivered as written, not per
+line, so a loop printing at each host call shows its progress while it
+runs.
+
+*The socket is the viewer's.*  The first build opened a second connection
+(`RemoteBridge.connect`), on the belief that the wasm viewer could not be
+built on this box to take a hook.  It could -- nobody had configured
+`build/wasm` here (emsdk-5.0.3 and the relwithdebinfo tree's shaderc, docs/
+Testing.md) -- and a second connection was worse than a cost: it is a
+second entry on the owner's roster, so the owner's view-only switch for
+the viewer did NOT hold for its console; a token-only door made it a
+different principal (`client:conn:<n>`), so a grant to one was not the
+other's; and it was pushed the scene it ignored (3.6 KB for the gate's two
+small documents, growing with the document).  Now wasm/main.cpp hands an
+`FCSB` frame to the page as an `fc:bridge` event before the scene parser
+sees it, sends a page's `'S'` frame through `window.fcviewerBridgeSend`
+(nothing but an `'S'` frame), and reports the socket as `fc:socket` events
+(mirrored on `window.fcviewerSocketOpen`).  RemoteBridge sits on a port:
+`viewer()` for those hooks, `attach()`/`connect()` for a socket of its own.
+A loss fails the pending ops -- a reconnect is a new connection whose
+endpoint never saw them -- and on the viewer's port the bridge works again
+once the viewer is back.  The viewer chrome asks for the viewer's socket
+and waits up to 20 s for the hook; a viewer that never installs one gets a
+connection of its own, and the console says so in red.  A document switch
+is the viewer's own, the host drops the connection's endpoint, and the
+panel says that names bound to the old document no longer resolve; the gate
+page, which has no viewer, sends `{"cmd":"switch"}` on its own socket.
+
+*Interrupt.*  pyodide checks an interrupt buffer at bytecode boundaries,
+and the page can only write it while the guest is not running on the page's
+thread -- which is exactly while a statement is suspended on a host call.
+So the Interrupt button (and Ctrl+C) stops a loop that reaches the host,
+raising `KeyboardInterrupt` at its next boundary, and the console is usable
+at once; a pure CPU loop freezes the page, which only the guest in a
+Worker (C6) can fix.
+
+*Completion* found one gap: a proxy's `dir()` lists the members its facade
+declares, and a property is not one -- it is read through `__getattr__`,
+answered by the host -- so `b.Leng` completed to nothing.  The console's
+completer adds the object's `PropertiesList` (annotated, value tier) to
+rlcompleter's matches.  Nothing else is learned about proxies; a `dir()`
+in user code still shows only the facade.
+
+*The panel* (`web/src/console.tsx`): a draggable card at the bottom left
+(the sheet panel holds the bottom right), a bottom sheet on a phone.  Booted
+the first time it opens, not at load -- 1.7 s and the runtime's download
+are not a viewer's cost unless the console is used -- and kept when closed.
+Enter runs, Up/Down walk a per-browser history (localStorage, 500 lines),
+Tab completes (the common prefix goes in, several candidates are listed),
+Ctrl+C interrupts or drops the line, Ctrl+L clears, a paste of several
+lines runs line by line as if typed.  The header shows the document and the
+view-only badge; a view-only connection's console reads and is refused its
+writes (C3).  A browser without JSPI gets the reason instead of a boot.
+The launcher menu gains "Python console"; `?console` opens it on load.
+
+*Measured* (headless Chrome 153 on loopback, the gate's drive): boot 1709
+ms; 1349 bridge ops over the whole drive, 0.42 ms mean round trip, 5.6 ms
+worst -- most of them the interrupted loop's.  In the real viewer page, on
+the viewer's socket: boot 3.9 s from page load (the viewer's own start
+included), 24 ops at 2.3 ms mean, 19 ms worst while the viewer streams its
+first frames, and nothing but bridge answers handed to the bridge.
+
+*Gates*: `tests/gui/sandbox-console-panel-browser.py` (not registered,
+docs/Testing.md; 24 PASS) serves two documents and drives
+`web/console-panel-test.html` -- the panel with no WASM viewer -- through
+DOM events: the boot, an expression's repr, a name kept across lines that
+writes `Box.Length`, a block on `...` run by its blank line, output with no
+newline, a traceback without the console's frames, a syntax error followed
+by a working line, `newDocument` refused as the client, Tab on a module and
+on a document object's property, the history both ways, a paste, Interrupt
+on a loop over `b.Width`, Ctrl+C on a typed line, a switch to the second
+document and an object made there; the desktop sees both writes.
+`tests/gui/sandbox-console-viewer-browser.py` (not registered; 17 PASS)
+opens the served viewer page itself with `?console`, and
+`scripts/console-drive.js` injects `web/viewerconsole.js` to drive the panel
+the chrome mounted: the console says it is on the viewer's connection, reads
+and writes the document, is refused a write while the owner has that one
+client view-only and writes again when editing is given back, and follows
+`fcviewerSwitchDoc` to the second document; the desktop side answers the
+page's asks through the connection's roster label (which a view-only client
+can still set), sees one client the whole run, and has exactly the writes
+that were allowed.  C1's and C2's browser legs, re-run over the changed
+bundle and driver (swiftshader now, for the viewer's WebGL): 11 and 15 PASS.
+
+*Not in C4*: a local `ActiveView` facade -- the viewer exposes no camera
+hooks to the DOM layer yet;
+the macro echo; wrapping a statement's writes in an undo transaction (not
+done, as the desktop console does not; open for the owner's view of a
+client's edits); `input()`, which falls to pyodide's default stdin and is
+untried; the latency and memory of C5.
+
+**C5, BUILT 2026-09-15.**  What a console statement costs when the host
+is a LAN or a tunnel away, and what the guest costs the page.  A statement
+costs its bridge ops times the round trip, and a loop made one op per
+element it touches: on a LAN the console was usable as built, through a
+tunnel anything with a loop was too slow.  By C5's own criterion that
+called for the snapshot op; what was built is a narrower one, the prefetch
+of sibling reads (below), and a loop is now a few ops.
+
+*The rig.*  This box has no second machine, no sudo for `tc netem` and no
+`cloudflared`, so the round trip is injected: `scripts/delay-proxy.js`
+relays TCP holding every chunk rtt/2 each way, in order.  Bridge ops are
+strictly one at a time -- a guest waits on every answer -- so a fixed delay
+is an honest model of what a LAN or a tunnel adds to them.  It models no
+bandwidth, loss, jitter or TCP slow start, so its BOOT figures are not a
+tunnel's.  `web/latency-test.html` boots the guest through it and runs
+eleven statements a console user types against a document of 50 boxes and
+Poly, a 100-edge polygon, three reps each (one at 30 ms and above);
+`scripts/console-drive.js` answers the page's `window.fcxMark(label)` with
+every browser process's PSS and RSS from /proc, and runs Chrome with
+`--expose-gc` so the page collects before it marks.
+`tests/gui/sandbox-latency-browser.py` (not registered) runs the page at 0
+(no proxy), 2, 10, 30 and 100 ms: 74 PASS, every statement making the same
+op count at every RTT.
+
+*Measured* (headless Chrome 153, the host on loopback, best wall time in ms):
+
+    statement                                    ops    0 ms    2 ms   10 ms   30 ms  100 ms
+    -------------------------------------------  ---  ------  ------  ------  ------  ------
+    doc.Name                                       2     1.1     6.5    22.9      69     214
+    Box.Length                                     3     1.9     9.6    36.9      99     313
+    Box.Length = 12                                3     1.7    10.2    37.4     101     312
+    len(doc.Objects)                               2     2.1     7.5    24.1      71     208
+    [o.Name for o in doc.Objects]                 52    24.3     158     608    1712    5391
+    [o.Placement.Base.x for o in doc.Objects]     52    26.2     155     617    1709    5367
+    Box.Shape.Volume                               4     2.2    13.2    46.3     131     416
+    len(Box.Shape.Edges)                           4     2.1    13.1    48.0     137     414
+    sum(e.Length for e in Box.Shape.Edges)        16     7.3    51.2     191     531    1659
+    sum(e.Length for e in Poly.Shape.Edges)      104    45.5     312    1217    3358   10739
+    [v.Point.y for v in Poly.Shape.Vertexes]     105    46.2     316    1223    3451   10914
+
+Per op: 0.46 ms direct (0.41 of it waiting on the bridge, the guest's own
+CPU about 0.05), then 3.0, 11.7, 32.8 and 103.6 ms -- the RTT, plus the
+direct cost, plus the proxy's own timer lateness (0.6 to 3 ms).  An op is
+about 25 bytes up and 100 down, so bandwidth does not matter to the bridge;
+round trips are all of it.  What that means for a console:
+
+- A property, a write, `len(doc.Objects)`, a shape's volume: 2 to 4 ops,
+  under 50 ms on a LAN, 0.2 to 0.4 s at 100 ms.  Fine everywhere.
+- A loop over the objects or over a shape's sub-elements: one op per
+  element (`o.Name` a read per object, `e.Length` a get per edge,
+  `v.Point.y` one per vertex -- the Vector comes by value).  Fifty objects:
+  0.16 s at 2 ms, 1.7 s at 30 ms, 5.4 s at 100 ms.  A hundred edges: 0.3 s,
+  3.4 s, 10.7 s.  A LAN is fine; a tunnel is not.
+- Direct on loopback, the same loops take 25 to 46 ms.  The fixed cost is
+  not 8.1's 5 us hop but 0.4 ms: the socket both ways, the hop to the GUI
+  thread and back, the JSPI suspend and resume.  Not decomposed.  On a LAN
+  it is a sixth of the per-op cost; through a tunnel it is noise.
+
+*Memory* (PSS, the same at every RTT within 10 MB).  The page's renderer
+process is 94 MB bare, 280 MB with the guest booted, 281 to 291 MB after
+the bench: **the guest costs the page about +185 MB PSS** (+190 MB RSS).
+Of that, 49.6 MB is the wasm heap and about 50 MB pyodide's JavaScript
+heap after a collection (44 MB after the bench); the rest is compiled wasm
+code and the runtime's buffers.  Chrome's other processes barely move:
+browser 100 MB, GPU 100 to 115 MB, utility 55 to 68 MB (the network
+service, +10 MB for the downloads), zygote 34 MB.  The desktop's 335 MB is
+the whole V8 process, so +185 MB is the page's comparable figure.  A
+phone's is NOT measured: there is none on this box, and Chrome's device
+emulation changes the viewport, not the memory.
+
+*Boot through the proxy*: runtime 1.25 to 1.46 s, wheels 0.38 to 0.62 s
+from 0 to 100 ms -- but the proxy's local TCP has no slow start and no
+bandwidth cap, so these understate a real tunnel's first boot of a 13 MB
+runtime (cached after that).  Connect is one RTT plus 3 ms.
+
+*The prefetch, BUILT 2026-09-15.*  Asked of the owner with four shapes --
+a per-statement prefetch, an explicit batch call, a second guest on the
+host for far clients, or nothing -- and **ruled: the prefetch per
+statement**, whose trade is that a loop's values are as of the read that
+brought them rather than live.  Built narrower than the sizing's snapshot:
+
+- *What crosses* (FcxWire.h, `"pf"`).  A read_prop or get_attr off one
+  element of a list the table handed out is answered, next to its `val`,
+  with the same read of the elements after it: `"pf": [[id, value], ...]`.
+  Only the member the guest actually read, only the siblings in that list,
+  only values that cross by value -- a read answered by a handle
+  prefetches nothing, and a sibling whose answer is one is dropped with its
+  use given back, so the table mints nothing the guest did not ask for.
+  32 at the first miss of that member in that list, twice as many at each
+  miss after, at most 1024, cut at 20 ms of host time per reply: what a
+  loop that stops early leaves unread is bounded by what it read.  The
+  checks are the op's own, per sibling (`readAttribute`/`readProperty`,
+  the two op bodies lifted out of the dispatcher); `checkGetattr` returns
+  at once for a FreeCAD-bound object, so a speculative read queues no
+  prompt.  A fixed-layout reply carrying `pf` goes as CBOR (kind 0).
+- *The guest* (ImageBridge.cpp) keeps them keyed by handle id, op and
+  member, and decodes each hit afresh -- a new value object every time,
+  as natively, which the write-back tracking relies on.  It forgets them
+  before any op that is not a pure read (a closed list: the reads, `len`,
+  `get_item`, `bool`, `str`, `ext`, `resolve`, the app queries, `mod_get`,
+  `lib.source`, `pkg.missing`, `release`), so a write, a call, a
+  `mod_call` -- even a pure one -- makes the next read a hop; and at the
+  start and end of every host request, so nothing outlives a statement.
+- *Where.*  On for a remote guest's endpoint (SandboxRemote.cpp;
+  `FC_SANDBOX_PREFETCH=0` turns it off, read when a connection's endpoint
+  is made).  Off for the desktop's own guest, MEASURED 2026-09-15 on the
+  user's question whether it should be on there too
+  (`DISABLED_BenchPrefetchInProcess`, 1000 objects, mean us per
+  evaluation, off / on):
+
+      statement                                     off      on
+      --------------------------------------------  -----  -----
+      42 (the pack alone)                              29     28
+      len(d.Objects) (the list alone)                6090   6243
+      [o.Name for o in d.Objects]                    8719   8459
+      sum(o.Width for o in d.Objects[1:])            8639   7915
+      sum(e.Length for e in s.Edges), 1000 edges     9702   9314
+      d.Objects[5].Name (32 siblings unread)         6849   6391
+      two reads far apart (64 unread)               12188  12469
+      stop at the 40th of 1000                       6294   6596
+      s.Edges[0].Length                              7070   7530
+
+  A loop of 1000 hops is about 2.6 ms, the prefetch saves 0.3 to 0.7 ms
+  of it, and a statement that reads one element or stops early pays 0.15
+  to 0.46 ms for siblings it never reads -- both inside the run-to-run
+  noise (the one-read case moved 450 us between two runs).  The prefetch
+  can save at most the hops, and on the desktop the hops are not the
+  cost: MINTING the list is, 6 us a handle against 3 us a hop.  So it stays
+  off there; `ImageHost::setPrefetch` exists so a test can run the guest's
+  half in process.
+
+*Where a handle's 6 us goes* (PROFILED 2026-09-15, on the user's ask; a
+throwaway probe -- per-segment steady_clock timers on both sides, not
+committed -- over `len(d.Objects)` on 1000 objects, 50 evaluations; the
+guest's clock steps 285 ns, fine enough to sum):
+
+    segment                                                 us per handle
+    ------------------------------------------------------  -------------
+    host: Document.Objects read                                 0.03
+    host: encode -- the json map 0.46, facadeKeyFor 0.13,
+          handleKey 0.13, table add 0.08, type checks 0.06,
+          extension keys 0.03                                   0.92
+    guest: the crossing (host dispatch + reply CBOR + copy)     1.48
+    guest: reply CBOR -> nlohmann json                          1.25
+    guest: json -> proxy, of which                              3.43
+             setting _id/_ty/_fc/_k                             2.04
+             the facade class lookup                            0.44
+             instantiating                                      0.23
+             the rest (field finds, strings, the key tuple)     0.72
+    guest: dropping the list (1000 __del__, releases queued)    0.30
+    total, host-timed                                           7.00
+
+The one outlier is the slots: `HostHandle` defines `__setattr__` in Python
+(the write_prop hook), and `decodeValue` sets each of the four slots with
+`PyObject_SetAttrString`, so every handle runs four Python-level calls that
+only end in `object.__setattr__`.  Setting the slot descriptors directly
+(`PyObject_GenericSetAttr` with interned names) skips them; the class
+lookup makes a key string and two dict lookups per handle and can be
+cached per facade key.  The two JSON stages (host map 0.46, guest decode
+1.25) are the next tier -- nlohmann allocates a map and its keys per handle
+on both sides.
+
+*The first tier, FIXED 2026-09-15* (ImageMarshal.cpp, guest only): the four
+slots are set with `PyObject_GenericSetAttr` on interned names, straight
+into `HostHandle`'s slot descriptors (every facade class declares
+`__slots__ = ()`, so nothing else answers them); the facade class of the
+last key is kept with a reference of its own; and the type name, facade key
+and document name reuse the last str made for the same text.  Re-benched
+(`DISABLED_BenchPrefetchInProcess`, prefetch off, mean per evaluation):
+
+    statement                                  before   after
+    -----------------------------------------  ------  ------
+    len(d.Objects), 1000 objects               6.09 ms 4.42 ms
+    [o.Name for o in d.Objects]                8.72 ms 7.38 ms
+    sum(o.Width for o in d.Objects[1:])        8.64 ms 6.66 ms
+    sum(e.Length for e in s.Edges), 1000 edges 9.70 ms 8.37 ms
+    d.Objects[5].Name                          6.85 ms 4.40 ms
+
+A handle is 4.4 us from 6.1.  The JSON stages are what is left of it.
+Suites over the change: ExpressionImage*/ExpressionRouting*/
+ExpressionSecurity* 121 OK, ctest 642/642, SandboxProgram 46 OK,
+FeaturePythonChain 44 OK, C2's browser leg 15 PASS.
+
+*Measured* with the prefetch (the same rig; with it off the figures are
+the table above's within noise):
+
+    statement                                    ops    0 ms    2 ms   10 ms   30 ms  100 ms
+    -------------------------------------------  ---  ------  ------  ------  ------  ------
+    doc.Name                                       2     1.2     6.2    23.1      68     213
+    Box.Length = 12                                3     1.8    10.3    35.8      97     309
+    [o.Name for o in doc.Objects]                  4     3.0    13.9    47.8     133     416
+    [o.Placement.Base.x for o in doc.Objects]      4     3.4    15.5    48.6     135     417
+    len(Box.Shape.Edges)                           4     2.3    12.8    46.2     132     417
+    sum(e.Length for e in Box.Shape.Edges)         5     3.0    16.4    57.4     161     520
+    sum(e.Length for e in Poly.Shape.Edges)        7     4.8    23.4    82.1     232     734
+    [v.Point.y for v in Poly.Shape.Vertexes]       7     5.4    24.2    85.6     236     721
+
+Fifty objects through a 100 ms tunnel: 5.4 s -> 0.42 s; a hundred edges:
+10.8 s -> 0.73 s; and direct, 24 ms -> 3 ms.  What is left is a CHAIN:
+`doc.getObject('Box').Shape.Edges` is three reads on three different
+objects, one op each, which no sibling prefetch reaches -- a statement is
+3 to 7 round trips, 0.2 to 0.7 s at 100 ms.  Not addressed: batching a
+chain needs the guest to say what it will read next.
+
+*Gates*: `ExpressionImageEvalTest.prefetchAnswersSiblingReads` (registered,
+in process: 41 names are 42 get_attr hops off and 3 on, 40 properties 40
+and 2, a write inside the statement seen by the read after it, a hit a
+fresh object, `o.Document` -- a handle -- prefetching nothing);
+`GuiSandboxBridgeServe` 38 PASS (+5: the first 32 siblings with their
+values, the doubling, a fixed-layout read answered as CBOR, a handle member
+bringing none); `tests/gui/sandbox-latency-browser.py` now runs every RTT
+with the prefetch on and off, 147 PASS, the op counts the same at every RTT
+of a mode.  Re-run over the changed guest: C2's and C4's browser legs 15
+and 24 PASS; ExpressionImage*/ExpressionRouting* 99 OK, ctest 642/642,
+SandboxProgram 46 OK, FeaturePythonChain 44 OK.
+
+*Not in C5*: a real LAN or tunnel -- the proxy stands in for both, and a
+Cloudflare quick tunnel would publish the served document on the internet,
+which is not done without the owner's say; a phone; the decomposition of
+the 0.4 ms loopback cost; batching a chain of reads.
+
+**C6, BUILT 2026-09-16.**  The console in Safari: the guest in a worker,
+parked in Atomics.wait while the page carries the op.  Asked for by the
+user on a macOS box, where Safari 17.6 is the browser and has no JSPI --
+so this is the "only if necessary" of the roadmap's item 7, and it was.
+
+*Why there is no third option.*  The guest's host call is a synchronous
+wasm import made from deep inside CPython, so something must WAIT for the
+socket: either the wasm stack suspends (JSPI, C2) or a thread blocks
+(Atomics.wait).  Safari has no JSPI and no plan on the table for one, and
+a thread may only block if it is not the page's -- Atomics.wait throws on
+the main thread -- so the guest moves into a worker and the page keeps the
+socket.  Which also answers the shape: the SOCKET does not move.  The
+viewer's connection is the page's (C4), one roster entry and one
+principal, and the worker never sees it.
+
+*What was measured first, before any of it was written* (Safari 17.6 on
+macOS 12.7.6, the probe page of scratch): cross-origin isolation with
+COOP/COEP is granted, `SharedArrayBuffer` and a worker's `Atomics.wait`
+work, JSPI is absent, and -- the one that decides whether this section is
+possible at all -- **pyodide 314.0.6 boots and runs CPython 3.14 in
+Safari**, unchanged, 9.2 s cold on this box.  A browser that could not run
+the runtime would have ended C6 before it started.
+
+*The handshake* (`web/src/sandbox/sabwire.ts`): one SharedArrayBuffer,
+three int32 slots and a 1 MB data region.  The worker copies the request
+out of wasm memory, posts it to the page (it is not parked yet, so a
+message is free), stores WAITING and waits; the page round trips over the
+bridge, writes the reply into the region, sets TOTAL, CHUNK and
+CHUNK_READY and notifies; the worker copies the chunk out and, if the
+reply is longer than the region, stores WAITING again and asks for the
+next chunk by message.  A refused, lost or timed-out op is FAILED, which
+the import answers -1 to and the guest raises "host bridge unavailable"
+on -- the same end the JSPI path's rejected promise has.  The request
+goes by message and the reply by shared memory for the same reason: by
+the time the reply comes the worker can no longer receive a message.
+
+*The guest is the same guest.*  `BrowserGuest.boot` gained a `syncBridge`
+(guest.ts): where a `bridge` is wrapped in `WebAssembly.Suspending` and
+entered through `WebAssembly.promising`, a `syncBridge` is an ordinary
+function and `fcx_call` is entered directly -- because the thread it runs
+on may block.  Nothing else about the boot, the wheel, the packages or
+the wire changes, and `guestworker.ts` is that boot in a worker.  On the
+page `WorkerGuest` (workerguest.ts) holds the bridge and answers the
+parked worker; both it and `BrowserGuest` implement one `SandboxGuest`
+interface, which is all `ConsoleSession` now knows about.  The transport
+is chosen once, per browser: JSPI where there is JSPI (the path C1-C5
+measured and the one Chrome and Firefox keep), the worker otherwise, and
+`?guest=worker` or `?guest=jspi` forces one so a gate can run either.
+
+*Cross-origin isolation.*  A SharedArrayBuffer exists only on a page the
+browser has isolated, so a served document now carries
+`Cross-Origin-Opener-Policy: same-origin` and
+`Cross-Origin-Embedder-Policy: require-corp` (`HttpReply::isolate`,
+SceneServer.cpp).  No CORP headers were needed: every file a served page
+fetches -- the bundle, the worker, the runtime, the wheels, the packages
+-- is this same origin, which passes the embedder check on its own.
+`FC_SERVE_NO_COI=1` turns the whole thing off for a page that must embed
+something cross-origin instead.
+
+**The trap, and it cost an hour**: on an isolated page a dedicated
+worker's OWN SCRIPT must also answer with the embedder policy, or the
+worker does not load -- and what a page sees of that is an error with an
+EMPTY message and a stack pointing at the `new Worker` line.  It reads
+exactly like a bad URL, which it also was the first time (vite's default
+base made the worker `/assets/...`, and the bundle is served under
+`/web/`: `base: './'` in vite.config.ts).  So `Cross-Origin-Embedder-
+Policy` goes on every file of the bundle and the opener policy on the
+document alone; `SceneServerWire.servedPageIsCrossOriginIsolated` holds
+both halves.
+
+*Measured, the page side* (the runtime, the wheel and the guest, with no
+host: C1's gate page, which `?guest=worker` now boots in a worker, served
+by a static stand-in so the FreeCAD build was not on the critical path).
+Six checks pass on every one of them -- an expression, a quantity,
+CPython 3.14, the in-image FreeCAD module, the unattached bridge's
+refusal, every wheel loaded:
+
+    browser                       transport   runtime   wheel   guest mem
+    ----------------------------  ----------  -------  ------  ----------
+    Safari 17.6 (macOS 12.7.6)    worker       10.1 s   417 ms      30 MB
+    Chrome 137 headless           jspi          4.1 s   463 ms      30 MB
+    Chrome 137 headless           worker        4.4 s   228 ms      30 MB
+
+The runtime figures are a COLD load of 13 MB with `no-store` on the
+stand-in; the real serve gives the runtime a `max-age` and only the first
+visit pays it.  Safari's 10 s against Chrome's 4 s is that download plus a
+slower first compile of pyodide's 9.6 MB wasm, not the transport: the
+worker costs Chrome 0.3 s over its own JSPI path, and nothing at all on
+the ops.
+
+*What the thread buys, beyond Safari.*  C4 recorded that a pure CPU loop
+freezes the page and only the worker could fix it: the interrupt buffer
+is now shared memory the page writes WHILE the guest runs, so Ctrl+C
+stops `while True: m += 1`, not just a loop that reaches the host --
+gated below, and the one check the JSPI path does not run, because there
+it would hang the page.  The page also paints while a statement runs.
+Both are the worker's, on any browser that takes it.
+
+*Gates.*  `tests/gui/sandbox-console-safari.py` (not registered,
+docs/Testing.md; macOS only, no WebDriver and no puppeteer): it serves
+two documents with a token door, `open -a Safari` opens C4's own gate
+page with `&guest=worker&report=<url>`, the page drives the panel and
+POSTs its verdict to a collector the test runs, and the desktop is
+checked for what the console wrote.  **24 PASS in Safari 17.6 on macOS
+12.7.6**, every one of C4's checks plus the CPU loop: the console boots
+in a worker (5.3 s), reads `App.ActiveDocument`, keeps a name across
+lines and writes `Box.Length`, runs a block, shows a traceback without
+its own frames, is refused `newDocument` as the client
+(`app.write -- not available to this client`), completes a module name
+and a document object's property over the bridge, walks the history,
+runs a paste, is interrupted on a host loop AND on `while True: m += 1`,
+follows a document switch and makes an object there -- and the desktop
+carries both writes.  973 ops over the run, 0.49 ms mean, 35 ms worst.
+`SceneServerWire.servedPageIsCrossOriginIsolated` is the header gate.
+
+And the real page: C4's viewer gate
+(`tests/gui/sandbox-console-viewer-browser.py`) gained a Safari mode,
+`SAFARI=1` -- no injection either, so the viewer page loads the drive
+itself from `?drive=console` (one fixed module of its own bundle, never a
+URL from the query) and posts the verdict the same way.  **17 PASS in
+Safari**: the console boots in a worker inside the WASM viewer page (7.9
+s from load, the viewer's own start included) and **rides the viewer's
+socket** -- the server sees ONE client the whole run, the owner's
+view-only switch for that client refuses the console's write and giving
+editing back restores it, the viewer's document switch moves the console
+with it, the desktop carries every allowed write, and nothing but bridge
+answers reaches the bridge.  24 ops, 6.2 ms worst.  The same gate in
+Chrome 137: 17 PASS.
+
+*No regression on the JSPI path*, which every other browser still takes:
+C4's own Chrome gate re-run on this box (Chrome 137 headless, the newest
+that starts on macOS 12), 24 PASS, 1220 ops at 0.44 ms; and C1's gate
+page passes on both transports in Chrome (the table above).
+
 ### 7.21 The proxy chain: document programs extend native objects **[planned and RULED 2026-09-12, see docs/ProxyChain.md; P0 and P1 BUILT 2026-09-12 -- the hook refactor, then `ProxyExp` and the App-side chain; P2 BUILT 2026-09-13 -- `ViewProxyExp` and the view-side chain; 7.17 RE-SIZED against it 2026-09-13, and ProxyChain.md 4.5 records what P1 does not deliver, RULED and BUILT 2026-09-13 (4.6); P3, the sandbox, BUILT 2026-09-13 inside 7.17's D2]**
 
 The user's answer to 7.17's gap against the spreadsheet-as-object
@@ -7296,6 +8175,1739 @@ several; the typed-sheet discussion is subsumed: `ProxyExp` is the
 type link, the chain is the delegation) are in docs/ProxyChain.md.  The variant Link idea recorded the same day is
 docs/VariantLink.md, a parallel thread for later.
 
+### 7.22 G7 sized: the desktop's panels in the browser, a DOM view over the widget layer **[sized 2026-09-16; the five questions RULED 2026-09-16; W1's host half -- the origin echo -- BUILT 2026-09-16; W1 BUILT and PROVEN on screen 2026-09-16]**
+
+The question, asked with 7.19's mirror complete as sized (M1-M3 built,
+M4 measured 2026-09-11): the desktop's real task panels are already
+walked into models and streamed to any subscriber, and nothing in the
+browser consumes them.  What does that consumer cost.  Sized here;
+**NOT built, and no TypeScript written -- the user ruled 2026-09-16
+that the sizing comes first and stops for review**, because 7.12's
+1.5-2k of TypeScript is a multi-session build rather than a bounded
+item.
+
+**The short answer.**  Everything the browser needs is on the wire and
+gated on the host already; the missing piece is one consumer of about
+2.2-3.3k of TypeScript and CSS in `src/Gui/Renderer/web`, in five
+stages, of which the first -- a Pad-class form panel, editable, in the
+page -- is one to two sessions.  The host needs exactly one change, and
+it is 20 lines: today a client is never told how the host CORRECTED its
+own write ("The one gap on the host side" below).  One design choice
+needs the user before W1 starts (question 1).
+
+**What is already built and reused as is.**
+
+- *The panels are on the wire.*  7.19's `PanelMirror` walks the real
+  `TaskBox` tree into store models and streams them; M2 reflects item
+  views and sends pictures and icons as image ids; M3 mirrors top-level
+  dialogs as `dialog:<n>` roots.  No workbench was edited for any of it,
+  and none has to be edited for this.
+- *The ops exist and are gated.*  `src/Gui/SceneWidgets.cpp` registers
+  `widgets.subscribe` / `unsubscribe` / `icon` / `image` / `update` /
+  `custom` on the scene socket's control lane, behind the same door as
+  every other control op (`registerSceneControlOp`, the write ops with
+  the write flag, so a view-only connection is refused).
+- *The class set is a build artifact.*  `widget-models.json`
+  (`build/.../share/Pyodide/`, from `src/Tools/bindings/
+  dumpWidgetModels.py`, gate `SandboxModelDump.py`) carries 39 model
+  classes and 54 Qt class names: `base`, `properties` with type,
+  default and `allowNone`, `signals`, and `qtClasses` mapping
+  `Gui::PrefQuantitySpinBox` -> `QuantitySpinBoxModel`.  The DOM side
+  reads one file and needs no Python.
+- *The browser chrome is a working DOM layer.*  `control.ts` already
+  correlates ops by id and delivers uncorrelated frames to `onPush(op)`
+  subscribers -- a `widgets` push needs no new transport, no second
+  socket and no change to `main.cpp`, which re-dispatches every control
+  frame as an `fc:control` event.  `panel.ts` has the floating-card
+  behaviour (drag with pointer capture, remembered position, the
+  `NARROW` 640 px bottom-sheet switch); `console.tsx` (7.20 C4) is the
+  precedent for a panel that talks to the host over this socket; the
+  bundle is wired into CMake as `FCVIEWER_UI` (vite, `npm ci`, the
+  rollup-wasm fallback) and `shell.html` loads it as `web/inspector.js`.
+- *The cost is measured* (8.4).  A Pad panel opens as 64 messages /
+  45.9 KB / 61 models, OrthoArray as 48 / 35.1 KB / 46, Sketcher's as
+  31 / 29.7 KB / 29; a panel at rest sends nothing, a repaint burst
+  sends nothing, ten keystrokes cost 20 messages / 1.5 KB.  The one hot
+  spot is Sketcher's refill on a solve: 162 messages / 21 KB, three ops
+  a row.
+
+**What the walker consumes.**  Exact, from the code; this does not need
+re-deriving.
+
+- *Subscribing.*  `widgets.subscribe {panels|toolbars|all}` replies
+  `{ok, subscribed, panel, dialogs, theme, locale}` -- `panel` is the
+  id of the task panel up right now or null, so a client tells "no
+  panel" from "not yet", `dialogs` the top-level dialogs in show order,
+  `theme` the host's icon override and `locale` its `QLocale::name()`.
+  The snapshot does NOT ride the reply: it follows on a zero timer, so
+  the client must accept `open`s arriving after it.  The mirror starts
+  with the first `panels` subscriber and stops with the last.
+- *Frame shapes.*  Every pushed frame is `{op:"widgets", method, id,
+  ...}`.  `open` SPLICES the snapshot at top level (`model`, `qtClass`,
+  `state`, `layout?`, `items?`, `parent?`); **every other method nests
+  its payload under `content`**.  The vocabulary is exactly five:
+  `open`, `close`, `state`, `update`, `custom`.  So the client needs a
+  method dispatcher beside the snapshot applier, not one shared path.
+- *The snapshot.*  `model` keys `classes` in the dump, `qtClass` keys
+  `qtClasses`; every state key carries the `q_` prefix; an object-valued
+  property crosses as the string `IPY_MODEL_<id>`, and the ref walk
+  RECURSES through lists and maps, so a ref sits at any depth.
+- *Arrival order.*  `snapshotOrder()` visits what an object refers to
+  first and deliberately EXCLUDES `parent` ("a container names its
+  children through its layout").  **Children arrive before their
+  container**: the walker builds bottom-up and needs no buffering.  Do
+  not assume parents-first.
+- *Layouts.*  `Layout::spec()` -> `{class, name, items[], margins?,
+  spacing?, +extras}`.  Each item is exactly one of `widget` (a ref) |
+  `layout` (nested, recursive) | `action` | `separator` | `stretch` |
+  `spacing` | `spacer [w, h, hPolicy, vPolicy]`, plus optional `pos`
+  (grid coordinates, with a row span in the third slot), `stretch` and
+  `align` on a widget or nested layout.  The recursion and the
+  spacer/stretch/policy handling are where 7.12's 1.5-2k goes.
+- *Item views.*  `ItemView::snapshot()` is a list of rows; a row is
+  `{id, cells[], children[] (recursive), expanded?, hidden?, flags?}`
+  and a cell is `{text?, icon?, toolTip?, statusTip?, whatsThis?,
+  check?, flags?, fg?, bg?, bold?, align?}`.  Live changes arrive as
+  `custom` with an `item` op, in the same shape a client writes.
+- *Pictures and icons.*  Both travel as `img:<sha1>` ids in the bag --
+  a custom-painted leaf's pixmap, a button's icon, a cell's icon -- and
+  are fetched once with `widgets.image {name}` (PNG, base64, with width
+  and height).  A named theme icon is `widgets.icon {name, size}`,
+  answered as SVG text or a base64 PNG.  Both are content-addressed, so
+  a page-lifetime cache never goes stale.
+- *Writing back.*  `widgets.update {target, state}` with `q_` keys ->
+  `Store::applyUpdate`; `widgets.custom {target, content}` ->
+  `applyCustom`.  Both mutate a real widget through the panel's own
+  slots, so both are refused on a view-only connection.
+- *Roots.*  `PanelMirror::owns` answers for the list id, `panel:<n>`
+  (the task panel root), `pw:<n>` (a mirrored picture widget) and
+  `dialog:<n>` (a top-level dialog).  Tool bar ids are
+  `ToolBarMirror`'s and belong to the `toolbars` subscription, which
+  this section does not touch.
+
+**The one gap on the host side.**  `SceneWidgetStream::onMessage` fans
+a frame out to every subscriber EXCEPT its origin (`client == origin`),
+and `Store::applyUpdate` runs the client's write inside an
+`OriginScope` holding that client's id.  The property change the write
+provokes is announced on the same stack, still stamped with that
+origin -- so **the writer never hears what the host made of its write**.
+That is right for the echo of an unchanged value and wrong for every
+correction: a spin box clamping to its maximum, a quantity re-parsed
+into its display unit, a slot that writes the field back.  The client
+then shows a value the document does not have, and nothing corrects it
+until another client touches the same widget.
+
+Two answers.  (a) The client stays optimistic and accepts the drift;
+(b) the host sends the announced state to the origin as well WHEN the
+applied value differs from what that client wrote -- `applyUpdate`
+already holds both halves, so it is a comparison and a targeted send,
+about 20 lines, and the wire shape does not change.  **Recommended:
+(b), in W1**, because (a) is undetectable from the browser and the
+first field anyone tests is a quantity.  It is the only C++ this
+sizing asks for.
+
+**BUILT 2026-09-16**, as ruled.  `Store::messageTo(client, ...)` beside
+`message`, emitted by `applyUpdate` AFTER the `OriginScope` closes -- so
+nothing it sends is stamped with the writer -- carrying only the keys
+that diverged; `SceneWidgetStream::onMessageTo` sends them to that one
+client, if it is still subscribed and still wants that id.  The
+comparison is two-sided on purpose: the WIRE forms first, which settles
+a property whose value is an object (a ref either way), and then
+`Widget::valueDiffers`, which coerces by the DECLARED type -- without
+that second half an int that arrived as a JSON double would be reported
+as a correction of itself.  The helper is new because `coerce` is
+protected and the knowledge of a bag key's type belongs on the widget.
+Gate: `test_widgetStream` gains the case -- a slot writes the field
+back, the writer gets exactly one targeted `update` carrying the
+corrected value, and a write the host leaves alone sends it nothing;
+`FormWidgets_Tests_run` 22 passed, 0 failed, the three panel-mirror
+cases among them.  One limit kept deliberately: `applyCustom` is not
+echoed, so a correction a client's EVENT provokes stays invisible to
+it -- no client sends events yet, and W2 is where that would change.
+
+**Stages and gates.**
+
+    W1  the spine and the form panel.  The widgets client (subscribe
+        over the existing lane, the model store, ref resolution at
+        depth, the five methods, the `q_` strip), the layout walker
+        (VBox/HBox as flex, Grid as CSS grid with `pos` and spans,
+        Form as a two-column grid, margins/spacing/stretch/align/
+        spacer/separator), the panel container (the `panel:<n>` root,
+        TaskBox headers, the dialog button box, close), and the form
+        leaves: label, line edit, quantity/double/int spin boxes,
+        check box, radio, combo, push and tool buttons, group box,
+        frame, stacked and tab widgets, scroll area, splitter.  Write
+        -back on the edit signals, and the origin echo above.
+        Gate: the replay gate below over Pad and OrthoArray fixtures
+        (every model realized, the layout plan matching the .ui's
+        structure, a `setText` from the host applied, a client edit
+        producing the right `widgets.update`), plus the hand-opened
+        page against a live serving FreeCAD.
+    W2  item views.  Rows, cells, nested children, expanded/hidden/
+        flags, the column headers, check writes, selection, and the
+        `custom` item ops applied as a batch per frame rather than per
+        op -- 8.4's Sketcher refill is 162 ops in one solve and must
+        not be 162 reflows.  Gate: the Sketcher fixture replays to the
+        right row tree; a check write produces the op the host expects.
+    W3  pictures, icons, theme, locale.  `img:` and `widgets.icon`
+        with a page-lifetime cache, the picture leaf as an image with
+        M3's mouse replay, the theme from the subscribe reply, numbers
+        and dates through the reported locale.
+        Gate: a fixture carrying a QSvgWidget and a button icon; the
+        image op is asked once per distinct id.
+    W4  dialogs and modality.  `dialog:<n>` as a modal layer over the
+        panel, the button box's exec code returned, the QMessageBox
+        shape, and the file chooser model routed to the client's own
+        picker rather than the host's.  Gate: M3's QMessageBox fixture;
+        a button click returns the exec code.
+    W5  the measurement and the finish.  First paint of a panel open
+        against 8.4's host-side numbers, apply time per burst, the
+        keystroke round trip; the narrow layout (bottom sheet), touch
+        targets, dark and light, and what a panel does when the socket
+        drops.
+
+**The gate, and why it is a replay.**  There is no browser CI on this
+box: the host-side gates run under Xvfb through
+`scripts/sandbox-gui-gate.py`, and the browser-side artifacts so far
+(`sandbox-test.html`, `bridge-test.html`, ...) are pages a person
+opens.  A DOM view of a panel deserves better than that, and the wire
+makes it cheap: extend the existing `SandboxPanelMirror.py` gate with a
+dump mode that writes the exact JSON frames of a Pad, OrthoArray,
+Sketcher and QMessageBox session into fixture files, then gate the
+walker in node by replaying each fixture and asserting the result.
+Keeping the walker's model store and layout plan PURE (frames in, a
+view plan out; the DOM built from the plan) makes that assertion a data
+comparison and adds no dependency -- the alternative, rendering Solid
+into jsdom or happy-dom, buys a truer test for a new devDependency and
+a slower gate.  **Recommended: the pure plan plus one DOM smoke check
+in the hand-opened page** (question 5).
+
+**The fixture corpus BUILT 2026-09-16.**  `SandboxPanelMirror.py` grows
+a recorder (`_Recorder`, armed only by `SANDBOX_PANEL_FIXTURES`): a
+proxy over `FormWidgets` keeping every frame `pushed()` drains and every
+`widgets.subscribe` reply, written per case in `tearDown`.  A proxy
+rather than a patch, so not one assertion in the gate changed.  Six
+fixtures, one per stage, in `src/Gui/Renderer/web/src/widgets/fixtures/`:
+
+    pad_panel             69 frames   64 open, 4 update, 1 close    W1
+    draft_orthoarray      52          49 open, 2 update, 1 close    W1
+    cam_op_panel          95          92 open, 2 update, 1 close    W1
+    sketcher_constraints  56          32 open, 21 custom, 2, 1      W2
+    svg_picture           12           8 open, 3 update, 1 close    W3
+    nested_messagebox     21          15 open, 4 update, 2 close    W4
+
+Pad's 64 opens are 8.4's measured 64 messages -- the corpus checking
+itself against the measurement.  They carry no absolute path, no home
+and no temp directory; `locale` is `C` and `theme` empty under the gate.
+Regenerate with `SANDBOX_PANEL_FIXTURES=<dir>` and
+`SANDBOX_GUI_GATE_MODULES=SandboxPanelMirror` -- that module alone: a
+root's id is a process-wide serial (`panel:1` to `panel:6`, the cases in
+alphabetical order), so a different module set renumbers them, which a
+replay does not care about (it is self-consistent) but a diff does.
+
+**The corpus earned itself at once: an `open` arrives TWICE for the same
+id.**  Every one of the six starts with two adjacent, byte-equal opens
+of `panel`, the mirror's list container.  `widgets.subscribe` calls
+`checkMirror()`, which runs `PanelMirror::start()` synchronously; that
+adopts the list with the announce on, and the client is already in
+`_panels`, so it hears that open live -- then the deferred
+`pushSnapshot()` sends an open for every object in the store, the list
+among them.  Only an object adopted inside that window doubles, which is
+why it is exactly one.  So **the walker's `open` must be an idempotent
+replace**, which is what `Store::insert` does on the host.  Nothing to
+fix on the wire: a rule to build to, and one no hand-written sample
+would ever have shown.
+
+**The harness runs on node 24** (`emsdk-5.0.3/node/24.19.0_64bit`, the
+only node on this box and what `FCVIEWER_NODE` already points at), whose
+`process.features.typescript` is `strip` -- it imports the walker's
+`.ts` core directly, so the ruled pure-plan gate needs no compile step
+and no new dependency.
+
+**W1's core and its gate BUILT 2026-09-16.**
+`src/Gui/Renderer/web/src/widgets/protocol.ts` is the reduction: ref
+resolution at any depth, the `q_` strip, `open`/`close`/`state`/
+`update`/`custom`, the item ops (`clear`, `insert`, `set`) and `roots()`
+for the models no layout names.  Pure -- no DOM, no Solid, no fetch --
+which is what lets `gate.ts` replay the six fixtures in node and assert
+the walker's promises: every frame applied, no patch to an unknown
+model, the subscribe reply usable as boot state, children before their
+container, and an `open` for a live id tolerated as a replace.
+Sketcher's 21 item ops leave 4 rows reading `Line`, `Edge1`, `g1`.
+`npm run gate` -- ALL GREEN, the exit code the verdict; `npm run
+typecheck` covers the core and is clean.  `tsconfig` excludes the gate
+script alone (node builtins, and the `.ts` specifier the stripper wants,
+neither of which the bundle's config describes); adding `@types/node`
+for one script would have spent the dependency question 5 withheld, and
+running it is the check.
+
+**Three things the recorded frames corrected in this sizing**, each
+found by reading the corpus rather than the C++: a grid `pos` comes
+BOTH four wide and two wide -- `Layout::addWidget` writes
+`[row, column, rowSpan, columnSpan]` and `Layout::addRow`, a form's
+row, writes `[row, column]` alone; 145 of the corpus's 153 are four
+wide, 8 are two, and 6 of those are in Pad's own panel -- so the spans
+must default to 1 or a form row plans as `NaN` and the panel collapses
+silently (this section claimed FOUR wide when the corpus first landed,
+which was half right; the layout pass counted them and corrected it);
+an `update` can carry a rebuilt `layoutSpec` beside the state keys, so
+the update path needs a layout branch; and a picture arrives as a
+`QLabelModel` whose `qtClass` is `QSvgWidget`, so the view keys off
+`model` but must consult `qtClass`.
+
+**The layout plan BUILT 2026-09-16.**  `layout.ts` turns a spec into what
+a view places: the four classes the corpus carries (`QVBoxLayout` 53,
+`QHBoxLayout` 24, `QGridLayout` 25, `QFormLayout` 2) onto stacks, a grid
+and a form; the seven item shapes; the spans defaulted; the grid extent
+computed once, so a view sizes its track lists without a second pass.  An
+unknown class falls back to a vertical stack rather than throwing, and
+the gate reports the class -- one unfamiliar container should render, not
+blank the panel.  The gate grew four assertions a fixture (the class
+known, the spans usable, the item shapes complete, a plan produced) and
+stands at **62 checks, ALL GREEN**, with `npm run typecheck` clean.  The
+core's `.ts` specifiers, which node's stripper needs literally, are
+covered by `allowImportingTsExtensions`; only the gate script stays out
+of the typecheck, for node builtins alone.
+
+**A limit, stated rather than counted as covered:** `separator`,
+`stretch` and `spacing` ITEMS never appear in this corpus -- they are
+tool-bar shapes, and the tool bars are the other subscription -- so they
+are planned but ungated.  What the corpus does carry is widget 250,
+nested layout 24, spacer 9, and no layout extras at all.
+
+**W1's client and views BUILT 2026-09-16 -- W1 is code-complete.**
+`client.ts` is the socket half: it registers the push handler BEFORE
+subscribing (the snapshot follows the reply rather than riding it, so
+registering after drops the first opens), carries the write back, and
+caches the content-addressed images and icons.  `panel.tsx` is the
+views: the floating card on the chrome's own drag and bottom-sheet
+behaviour, a plan rendered as flex or CSS grid, and the leaves the
+corpus ranks (`QLabel` 66, `QPushButton` 27, `QuantitySpinBox` 27,
+`QWidget` 26, `QCheckBox` 25, `QGroupBox` 22 -- 10 of them `TaskBox`
+headers -- `QComboBox` 14, `InputField` 9, `QToolButton` 8,
+`QDialogButtonBox` 7, `QDialog` 7).  A class with no view yet still
+renders its layout, so an unfamiliar widget costs its own box and not
+the panel.  `main.tsx` mounts the card beside the console and the sheet
+with a launcher entry; `style.css` gains the `.fc-panel` block in the
+material those cards already use.  The origin echo needed no client code
+at all, which was the point of building it host-side.
+
+**What is verified, and what is not.**  `npm run typecheck` is clean,
+the replay gate is 62 checks ALL GREEN, and `npm run build` emits the
+card into the chrome (`panel.js`, 14.2 kB, 5.8 kB gzipped).  That is
+compilation and reduction, **not rendering**: the DOM check question 5
+ruled -- the hand-opened page against a serving FreeCAD -- has NOT been
+run.  W1 is code-complete and unproven on screen, which is the honest
+state of it.
+
+**W1 PROVEN on screen 2026-09-16.**  `scripts/demo-taskpanel.py` through
+`renderer-serve.sh` (Pad's own C++ dialog up on a headless serve), the
+page opened with `?panel` -- a flag added for the reason `?sheet` has
+one, that a headless run cannot reach the launcher -- and driven by
+`scripts/panel-drive.js`: it reports the card's shape as JSON (title,
+TaskBox headings, labels, fields, combos, checks, buttons, rows, and the
+computed grid tracks), optionally types into the first field and reports
+what the host sent back, and writes a screenshot.  The result: Pad's
+panel drawn -- 4 headings, 13 labels, 8 fields, 5 combos carrying their
+items, 12 check boxes, the Profile list holding `SketchPad`, OK/Cancel,
+and grid tracks that are real px rather than the `NaN` the span default
+was guarding against.  Typing 25 into Length leaves the host holding
+`lengthEdit` `rawValue` 25 / `"25.00"` and the pad visibly taller in the
+same screenshot: the write path, end to end, in a picture.
+
+**Two things the screen found that no fixture could.**  *The card
+subscribed once, at open* -- and `control.ts` refuses an op on a socket
+not yet up with `Offline` rather than queueing it, while the WASM module
+installs the uplink seconds into the load.  So the card `?panel` opens
+during page load asked too early, took the refusal as final, and said
+the stream was unavailable until a reload.  An `Offline` is "not yet",
+not "no", which is the rule `sheet.tsx` already keeps; the subscribe is
+retried while the card is open.  *An icon-only tool button drew its
+whole tooltip as its label* -- Pad's is "Temporary clear link references
+for new selection" -- which ran the Profile row off the card and over
+its neighbours.  The icon is W3; until then the label is a placeholder,
+the sentence stays on the title, and a button clamps to its cell so no
+desktop label can do that again.  Both are the fixtures' blind spot by
+construction: one is about the socket's timing and the other about
+pixels, and the replay gate has neither.
+
+Then W2 to W5 as staged: the item views properly (the checks, the
+nesting, the refill coalesced), the pictures and icons, the dialogs and
+modality, and the measurement against 8.4.
+
+**W2 BUILT 2026-09-19, and PROVEN on screen the same day.**  Four pieces.  *The
+store's missing ops*: it applied `clear`/`insert`/`set` and dropped
+`row`, `remove` and `sort` on the floor -- the recorded corpus carries
+none of them, because a Sketcher list never nests, never deletes a row
+and never sorts, so the gate's "every frame applied" would have gone red
+against the first real tree rather than here.  *The view*: the header
+from `columns` (header and cells share one CSS grid, or nothing lines
+up), the nesting gated on `expanded` as a QTreeWidget does, a check box
+only where the host sent `check` -- an invalid QVariant there means no
+box, not an empty one -- a row dead when its flags clear
+`Qt::ItemIsEnabled`, and the selection.  *One wake per frame*: there is
+no batching on the host side (`Fw::Store` calls its sink per item op), so
+8.4's 162-op solve arrives as 162 pushes in 162 tasks; the client
+coalesces on `requestAnimationFrame`, which is where it fixes every
+consumer of the stream at once rather than one card.  A microtask would
+coalesce nothing -- the pushes land in separate tasks.  *The gate*: 17
+new checks, the gate going 85 -> 102 ALL GREEN, typecheck and build
+clean.
+
+**The trap, and it would have passed the gate.**  A check write sent as
+an `itemEdited` event does nothing on the desktop.
+`Fw::Store::commCustom` routes a content carrying `item` to
+`ItemView::applyItemOp`, which changes the rows AND calls `emitItemOp` ->
+`Backend::itemsChanged` -> the real Qt widget -> the panel's own slot; a
+content carrying `event` reaches `Widget::dispatchEvent`, which for an
+item view updates the model's private copy and calls no backend at all.
+So the event form passes every pure check and moves nothing on screen --
+and `itemEdited` is not even a client's to send: the backend emits it
+(FwQtView) when the DESKTOP user edits a cell.  Written wrong first,
+caught by reading what the host's own test does: `test_sketcher_
+constraints` in `src/Mod/Test/SandboxPanelMirror.py` writes a
+constraint's check as `{"item": "set", "id": ..., "col": 0, "cell":
+{"check": 0}}` and asserts the sketch really moves it to virtual space.
+So a check is a `set` op, an expand is a `row` op (the branch the backend
+turns into `setExpanded` on the real tree), a click stays an event
+because it only notifies, and the SELECTION is state -- the backend
+drives the desktop's real `selectionModel` from `selection`/`currentId`
+and sends them back when the desktop user selects, so a click in the
+page writes those properties.  The gate now asserts the distinction
+instead of the mistake.
+
+**W2 PROVEN on screen 2026-09-19, and the write reached the sketch.**
+Pad's panel cannot show W2 -- its Profile list is flat, unchecked and
+single-column -- so `scripts/demo-sketcherpanel.py` serves Sketcher's
+edit panel instead, which carries both shapes at once: Elements, a
+`SketcherGui::ElementView` tree with five columns, and Constraints, a
+`SketcherGui::ConstraintView` list with a check on every row.
+`scripts/panel-drive.js` grew what W2 needs -- rows read STRUCTURALLY
+(header, nesting depth, the item check boxes, selection, the grid
+tracks) rather than as flat text, and `FC_PANEL_CHECK=<n>` to click the
+nth box.  The result: 12 constraint rows each with a check box, all
+checked; the Elements header drawn as `Type/Name/Reference/Flags/Mapped`
+over six real px tracks, no NaN.  **And the write went the whole way**:
+clicking the first check box in headless Chrome left the host holding
+`Constraints[0].InVirtualSpace` True, having been False before -- the
+page's `set` op through `commCustom` -> `applyItemOp` -> `emitItemOp` ->
+the real QListWidget -> Sketcher's own `itemChanged` slot -> the sketch.
+That is the op-vs-event ruling above confirmed by the machine rather
+than by argument: the event form would have gone green here and moved
+nothing.
+
+**What the screen found that the gate could not.**  *A column headed
+"1" over the constraint list.*  Qt draws no header on a QListWidget, but
+the model still carries `columns` -- those are QStandardItemModel's
+default labels -- so trusting `columns` alone invents a header for every
+list.  The view now asks the model's CLASS, not its state.  Fixed and
+re-proven in the same run.  Two blind spots remain, both named rather
+than papered over: nothing in this scene NESTS (`maxDepth` 0), so the
+twisty and the expand op are still unproven on screen, and the cell
+colours are deliberately undrawn because the host sends `fg`/`bg` as
+QVariantLists and guessing the packing would paint the wrong thing.
+
+**Two corrections to the record.**  This tree emits no `panel.js`; the
+card ships inside `inspector.js` (the `inspector` entry is
+`src/main.tsx`, 85.5 kB).  And the earlier claim here that the box had
+no chrome or puppeteer was simply wrong -- both are installed, and what
+looked like absence was a `~` and a `*` that the shell never expanded.
+The fourth knob is the one to remember: `CHROME_LIBS`, a directory
+holding a `libasound.so.2` symlink, prepended to the browser's
+`LD_LIBRARY_PATH`, because Chrome for Testing links a library this
+system does not have and there is no sudo to install it
+(`docs/Testing.md`; `docs/DevEnvironment.md` now points at it).
+
+**A note on how the scene was debugged**, since it is the first use of
+the console installed the same morning: the demo script's own
+`Console.PrintMessage` lines never reached `/tmp/fc-serve-8078.log`,
+because passing `FC_MCP_PORT` starts the MCP console and its capture
+swallows everything printed after `start()` -- the trap recorded in
+`docs/DevEnvironment.md` that same day.  They were read back out of the
+ring with the `get_log` tool, and `run_python` answered what the panel
+was doing (`setEdit -> True`, 12 constraints) without a rebuild.
+
+**Cost** (new; TypeScript unless noted):
+
+    the client: subscribe, frame dispatch, model store, refs,
+      the write path                                            250-350
+    the class set: the leaf views that matter (about 25 of 39)  500-700
+    the layout walker: four kinds, pos/span/stretch/align,
+      spacers, separators, margins                              250-350
+    the panel container: roots, TaskBox headers, button box,
+      open/close, the socket's comings and goings               200-300
+    item views (W2)                                             300-400
+    images, icons, theme, locale (W3)                           150-250
+    dialogs, modality, the file chooser (W4)                    150-250
+    CSS                                                         200-300
+    the gate: the fixture dump (Python, in the existing gate)
+      and the node replay harness                               250-350
+    the host's origin echo (C++)                                 ~20
+    total                                                       2.2-3.3k
+
+7.12's 1.5-2k stands for the walker proper (the client, the class set
+and the layout walker are 1.0-1.4k of it); the rest is the container,
+the gate and the CSS, which that number never covered.  Rough scale at
+sec 7's pace: W1 one to two sessions, W2 one, W3 and W4 one together,
+W5 one.
+
+**Decided here: borrow the shape of ipywidgets, not the code.**  The
+wire is ipywidgets-SHAPED -- `IPY_MODEL_` refs, a state prefix, open/
+close/state/update/custom -- which is worth asking about before writing
+2k of TypeScript, and the answer is no.  There is no kernel and no
+Jupyter message envelope here (frames ride the scene socket's control
+lane); `@jupyter-widgets/base` brings a Backbone-era model layer and a
+manager that expects comm objects from a kernel connection; and the
+class set it renders is ipywidgets', while ours is Qt's -- line edits,
+group boxes, stacked widgets, grid layouts with spans, item views.  The
+overlap is the ref resolution and the state diff, a couple of hundred
+lines we write anyway; the 1.5-2k has no counterpart to borrow.  A
+Backbone dependency against a 7.5 KB Solid bundle is also the wrong
+trade for the mobile tier.  What we keep from the resemblance is the
+vocabulary, which is already on the wire.
+
+**Limits, stated.**  A Qt desktop host only -- a headless serving
+FreeCAD has no panels to mirror, and a Qt-free panel backend is 7.12's
+H2/H3, still optional.  One shared session (8.11): a client's write is
+the desktop user's write, and a modal blocks every client.  No
+per-client grant; `Preferences/Fw/PanelMirror` is the only gate, and a
+per-client one is 8.12's multi-user work.  Custom-painted widgets
+arrive as pictures, not as widgets.  `styleSheet` and `font` travel in
+the bag but are Qt spellings, not CSS, and W1 ignores both.  No drag
+and drop in item views.  The DOM panel will not look like the Qt panel
+(question 1).
+
+**Questions for the review -- ALL FIVE RULED 2026-09-16.**
+
+1. *The look.*  Chrome-flavoured (the inspector's language, ThinClient
+   4.3) or as close to the desktop's Qt panel as DOM can get.
+   **RULED: chrome-flavoured** -- the viewer already speaks it, a
+   near-miss of a Qt panel reads as broken rather than familiar, and
+   the desktop's QSS does not travel anyway.
+2. *The origin echo.*  Take the 20-line host change in W1, or leave the
+   client optimistic.  **RULED: taken, in W1.**  It is the only C++
+   this section asks for.
+3. *W4's scope.*  Dialogs and modality inside G7, or deferred until the
+   form panel has been used.  **RULED: inside G7, as staged** (stage 4
+   of 5).  A client that ignored the `dialog:<n>` roots would silently
+   swallow a `QMessageBox` a panel slot raised -- the user clicks and
+   nothing happens -- which is worse than not mirroring panels at all.
+4. *The panel's placement.*  A floating card like the console, or a
+   docked side rail on a wide viewport and a bottom sheet on a narrow
+   one.  **RULED: floating** (the user's call, against the
+   recommendation).  It is also the cheaper half: `panel.ts` already
+   carries the drag with pointer capture, the remembered position and
+   the `NARROW` fallback, and `console.tsx` is the working precedent
+   for a floating panel that talks to the host over this socket, so
+   the container reuses behaviour rather than writing a rail.
+5. *The gate shape.*  The pure view plan with no new dependency, or
+   jsdom/happy-dom for a truer DOM assertion.  **RULED: the pure
+   plan** -- the model store and the layout plan stay pure functions,
+   and the DOM is checked by the hand-opened page.
+
+### 7.23 Completion in the browser sized: a service, not a mirrored popup **[sized 2026-09-17; the phone and the dot trigger RULED 2026-09-17]**
+
+The question, asked once W1 drew a real panel: a mirrored field is a
+DOM input, and the desktop's completion is a `QCompleter` popup --
+a `Qt::Popup` `QListView`, not a `QDialog`, not a child of the panel.
+`PanelMirror::owns` answers for `panel:<n>`, `pw:<n>` and `dialog:<n>`
+only, so **completion is structurally invisible to the browser today**,
+and stays invisible after W4.
+
+**What the code says, and it changes the shape of the answer.**  A
+`Gui::QuantitySpinBox` -- Pad's `lengthEdit`, the field anyone would
+actually type in -- has NO completer: `ExpressionSpinBox` takes
+`spinbox->findChild<QLineEdit*>()` and only hangs the f(x)
+`ExpressionLabel` on it (`SpinBox.cpp:51`).  Completion there lives in
+`DlgExpressionInput`, a modal `QDialog` whose `ExpressionTextEdit` owns
+the `ExpressionCompleter`.  The fields that own one directly --
+`Gui::InputField`, `ExpressionLineEdit` -- appear in almost no task
+panel (`Spreadsheet`'s dialogs, `DlgPropertyLink`).  So "serve the
+widget's own completer" would light up nothing in the panels a phone
+user opens.  Two consequences, both ruled here:
+
+- The service must be able to build a completer **for a bound field
+  that has none**, from `Fw::ExpressionBound::boundPath()`'s document
+  object -- which is exactly what the f(x) dialog would have done.
+- The card gets **a dialog of its own**, in the page, with the parts
+  `DlgExpressionInput` has: a multi-line editor, a live result pane,
+  and OK / Discard.  **CORRECTED 2026-09-17** -- this first read
+  "an inline editor in the field's row", which was built and shown to
+  the user, who ruled against it from the screenshot: expression entry
+  is supposed to be a dialog for entering an expression, and editing
+  in the spin box also throws away the result preview, which is half
+  of what makes the desktop's dialog usable.
+  What stands from the original reasoning is only which dialog: OURS,
+  drawn in the browser, not the host's raised over the desktop user's
+  screen.  `DlgExpressionInput` is modal on the host, and a single
+  shared session (8.11) means raising it would freeze whoever is
+  sitting at the desktop.  W4 still mirrors dialogs; this does not go
+  through them.
+
+**The op.**  One request/reply on the control lane, registered beside
+`widgets.icon` with the write flag `false` (it reads names; a view-only
+client may complete, and still may not write):
+
+    widgets.complete {target, text, pos}
+      -> {items: [...], details: [...], start, end}
+
+`start`/`end` are the tokenizer's prefix range in the ORIGINAL text, so
+the client splices `text.slice(0, start) + item + text.slice(end)` --
+the same replacement `ExpressionLineEdit::slotCompleteText` performs.
+
+**Never the desktop's own completer.**  `setCompletionPrefix` and the
+tokenizer are mutable state, and the desktop's caret is not ours: a
+browser query against the widget's live completer would corrupt what
+the desktop user sees mid-keystroke.  The op builds its OWN
+`ExpressionCompleter` on the bound object, per request, and asks that.
+Per request rather than cached on purpose: the model a completer holds
+is the document's object and property tree, and a cached one goes stale
+the moment an object is added, renamed or deleted -- which is what a
+completion is FOR.  The model is lazy, so the cost is the query; cache
+it if a measurement says to, not before.  That also settles the popup: `ExpressionCompleter::slotUpdate` ends in
+`showPopup`, which is why the entry point is a new
+`ExpressionCompleter::complete(text, pos, start, end, details)` that
+tokenizes, sets the prefix, harvests the rows through `setCurrentRow` +
+`currentCompletion` (so `pathFromIndex` applies, exactly as activation
+would) and **never pops anything**.  `slotUpdate` is untouched.
+
+**The trigger: the dot, ruled.**  Completion fires when the user types
+`.`, and then filters locally as more characters arrive -- one round
+trip per dotted segment rather than one per keystroke, which is what
+makes this usable over a phone's network.  Three qualifications the
+code forces:
+
+- **A dot after a digit is a decimal point, not a trigger.**  `10.` in
+  a quantity field is a number; firing there would pop a menu over the
+  keyboard every time someone types a length.  The rule is local and
+  cheap (look at the character before the dot), and the host is the
+  authority anyway: a query that matches nothing shows nothing.
+- **A first segment has no dot**, so `>= 2` word characters also arm
+  it, debounced -- `CommandCompleter` already refuses to fire under 3
+  characters, so this is the house rule, not a new one.
+- **An explicit ask** always works: a chevron in the field's row (a
+  tap target, which a phone needs and a keyboard shortcut is not) and
+  Ctrl+Space on the desktop.
+
+Between dots the client filters the answered set itself, and re-asks
+when local filtering empties out -- so a stale set can never strand the
+user on a wrong answer.
+
+**The phone, ruled.**  The card is already a bottom sheet under 640px
+(`NARROW`), which is where the on-screen keyboard is.  A dropdown under
+the field would be behind it.  So:
+
+- The suggestions are a **horizontal chip strip** pinned to the bottom
+  of the VISUAL viewport (`window.visualViewport`, which nothing in
+  this chrome uses yet) -- the QuickType position, above the keyboard,
+  reachable with a thumb.  On a wide viewport the same list renders as
+  an ordinary dropdown under the field.
+- **The tap must not blur the field.**  `preventDefault` on
+  `pointerdown` over a chip, or the keyboard collapses, the viewport
+  resizes, and the chip moves out from under the finger -- the classic
+  version of this bug.
+- **The keyboard must be able to type an identifier.**  A quantity
+  field wants `inputmode="decimal"`, on which a phone offers no
+  letters; the field switches to `inputmode="text"` as soon as its
+  value starts with `=` (the expression lead char) so `Pad.Length` can
+  be typed at all.  With `autocapitalize`, `autocorrect` and
+  `spellcheck` off, or the phone helpfully capitalises identifiers.
+- Chips are >= 44px of touch target, Enter accepts the highlighted one
+  while the strip is open and commits the field when it is not, and a
+  tap outside dismisses.
+
+**Writing an expression back.**  Nothing today routes a written
+`q_expression` to `Fw::ExpressionBound::setExpressionText` (only the
+gate calls it), and wiring it into the property path would re-enter
+`syncExpression`, which writes that same key.  So the inline editor
+gets its own op, write-gated, whose reply can carry the parse error the
+property path has nowhere to put:
+
+    widgets.expression {target, text} -> {ok} | {ok:false, error}
+
+**Stages.**
+
+    A1  the host: ExpressionCompleter::complete(), the per-object
+        completer cache, widgets.complete, widgets.expression.
+        Gate: FormWidgets' widgetStream case -- a bound spin box
+        answers "Pad." with Length among the items and a usable
+        [start, end), an unbound plain edit answers nothing, and a
+        view-only client may complete but may not set an expression.
+    A2  the client: the completion controller (dot rule, local
+        filtering, explicit ask), the chip strip and the dropdown,
+        the inline expression editor on a bound field.
+        Gate: the node replay gate over a recorded fixture for the
+        pure half (trigger decisions and splicing are pure functions),
+        then panel-drive.js typing into Pad's Length on a live serve.
+    A3  the phone: visualViewport anchoring, the inputmode switch, the
+        touch targets, and what the strip does when the keyboard
+        closes under it.  Gate: panel-drive.js in a phone viewport
+        with touch emulation.
+
+**A1, A2 and A3 BUILT 2026-09-17, and proven on a live serve.**
+
+The host: `ExpressionCompleter::completionsFor()` (tokenize, set the
+prefix, harvest through `setCurrentRow` / `currentCompletion` so
+`pathFromIndex` applies, and raise nothing), `widgets.complete` (not
+mutating), and `widgets.expression` with a `preview` mode that parses,
+validates and evaluates under a "session" scope with function calls
+DISABLED -- whatever the desktop's own `EvalFuncOnEdit` says, because
+that switch is the desktop user's choice for their own keyboard, not
+for everyone holding a link.  Both ops find the binding through one
+`boundPathOf()`.
+
+The client: `complete.ts` -- the dot rule, local filtering, splicing,
+the keyboard rule -- is pure and gated in node; `field.tsx` is the fx
+button and the dialog (editor, completion list, live result, OK /
+Discard), rendered by the CARD and portalled to the body.
+
+Gates: `FormWidgets` 23 passed / 0 failed, `test_completion` covering
+completion, set, clear, both preview severities, the suppressed
+mid-typing case and the view-only refusal; the node gate 79 checks ALL
+GREEN (62 of W1's, plus 17 for the completion rules); and
+`panel-drive.js` against a serving FreeCAD in a desktop and a phone
+viewport.
+
+**What the live runs showed.**  `SketchPad.` answers 57 items (`Pad.`
+answers 93), and typing on to `SketchPad.Con` narrows to `Constraints`
+and `FullyConstrained` **without asking again** -- one round trip per
+dotted segment, which is the whole point of the dot trigger.  The
+result line reads `Property 'Con' not found in 'SketchPad.Con'` with OK
+disabled, and is blank for a bare trailing dot.  On the phone the chips
+are 44px, anchored to the visual viewport, and the keyboard is the text
+one.
+
+**Six defects, each found by running it rather than by reading it**:
+the live host answered an EMPTY list for Pad's Length, because a
+mirrored panel binds the widget and not the model (the gate's synthetic
+field bound the model, so it passed); a field in expression mode still
+asked for a decimal keyboard, which has no letters, so `SketchPad.`
+could not have been typed on a handset at all; the result line put a
+red parse error under every keystroke, where the desktop's own dialog
+blanks exactly the "unexpected end of input" case; the dialog rendered
+in place was trapped inside the card, because `.fc-panel` carries a
+`backdrop-filter` and a filtered ancestor is the containing block for
+`position: fixed`; portalling it to the body then put it BELOW the
+chrome host (`#fc-ui`, z-index 10), so the HUD card covered the editor
+-- it still took focus, still looked right, and every keystroke went to
+whatever was on top; and the new gate case adopted store objects
+without releasing them, which `Store::reset()` keeps on purpose, so
+three panel-mirror cases failed three tests later.  `panel-drive.js`
+now reports what covers the field it types into, so the invisible one
+cannot recur silently.
+
+**Cost** (TypeScript unless noted): the host A1 ~180 C++; the client
+A2 400-550; A3 and CSS 150-250; the gates 150-200.  Total about 1k,
+against 7.22's 2.2-3.3k for the panel itself.
+
+### 7.24 What a handset found **[found and fixed 2026-09-17]**
+
+7.22 and 7.23 were proven headless, in an emulated phone viewport, and
+against a live desktop.  Then the page was opened on an actual handset,
+over a Cloudflare quick tunnel, and four things were wrong at once --
+three of them defects that no gate here could have caught, and the
+fourth a ruling 7.23 had already made and the console had never had
+applied to it.
+
+**The chrome host takes the pointer, and two panels never took it
+back.**  `#fc-ui` is `pointer-events: none` so the canvas keeps every
+gesture the chrome does not claim, and each panel opts back in for
+itself: `.fc-inspector`, `.fc-panel`, `.fc-hud`, `.fc-menu` and
+`.fc-launch` all carry `pointer-events: auto`.  **`.fc-console` and
+`.fc-sheet` never did.**  So the Python console and the spreadsheet were
+click-through in their ENTIRETY -- every tap landed on the model behind
+them, the close button did nothing, and both panels looked perfect while
+it happened.  Two lines fixed it.
+
+**Why no gate saw it, and why one still cannot.**  The panel harnesses
+(`sheetharness.ts` and the console's) mount into a plain
+`document.body` host with no `pointer-events: none` ancestor, so the
+defect *cannot exist* in a harness: the thing that breaks it is the
+production host, which the harness deliberately does not have.  The
+check that does catch it is a real tap -- `elementFromPoint` over the
+panel returns the canvas (an element with no class at all, which is how
+it reads in a report), and a touch listener on the canvas counts the
+event that should never have arrived.
+
+**The launcher drew over the bottom sheet.**  Both launchers hid only
+for `cardOpen()` -- the inspector card -- and not for the task panel,
+the sheet or the console, and they render after the card with no
+z-index, so DOM order won the hit test.  The predicate now covers all
+four bottom sheets, which is the behaviour the inspector card already
+had.
+
+**A press on a narrow header never stopped.**  `draggable()` returned
+early on narrow BEFORE the `stopPropagation()` whose whole job that is,
+and the viewer binds `mousemove`/`mouseup` to the DOCUMENT
+(`Renderer/wasm/main.cpp`), not to the canvas -- so an event that
+bubbles is one it may read as an orbit.  Stated honestly: **this one was
+never reproduced here.**  In an emulated phone viewport the header
+absorbs both taps and drags (`canvasMove: 0` against a bare-canvas
+control of 3), and Chrome's synthetic touch emits no compatibility mouse
+events at all, which is precisely the mechanism a real handset would
+exercise.  The change is defensible from the code rather than from a
+reproduction, and the handset reported the symptom gone.
+
+**The console completed like readline.**  It spliced in the longest
+common prefix and printed the candidates into the output, which on a
+phone meant: no list unless the line already ended in a dot (the one
+case where more than one candidate survives the "more than one" test),
+no list at all on a partial word, nothing narrowing as typing went on,
+and nothing coming up on its own.  It now runs the 7.23 controller
+unchanged -- `triggerFor`, `stillApplies`, `filterSet`, `splice` -- over
+a guest adapter, `setFromGuest()`, which fills in the `end` the guest
+does not answer (its rlcompleter works on the source up to the caret,
+so the caret IS the end).  The candidates are the chip strip above the
+keyboard on a narrow viewport and a list in the panel's own flow on a
+wide one: `.fc-console` is `overflow: hidden`, so a dropdown over the
+input row would be clipped by the panel that owns it.
+
+**A shortcut is not an affordance.**  The console's only trigger was
+Tab, and a handset keyboard has no Tab key -- so completion was
+unreachable on the device that needs it most, while working perfectly
+on a desktop, which is why every check here passed.  7.23 had already
+ruled this for the expression field ("an explicit ask always works: a
+chevron in the field's row, a tap target, which a phone needs and a
+keyboard shortcut is not"); the ruling simply had never been carried to
+the console.  **The general form, worth keeping: a feature reachable
+only by a key that a phone's keyboard does not have is not a feature on
+a phone, and no desktop gate will ever say so.**
+
+**What proved it** (live, through the tunnel, both viewports): the
+console and sheet absorb their taps and all three close buttons close;
+the launcher is absent while a sheet is up; `str.` raises 20 chips with
+nothing pressed, typing `jo` narrows to one WITHOUT asking again, and
+the chip splices `str.join(`; a partial word with no dot (`st`) lists
+two, both on its own and from the button.  The node gate carries six
+new cases for the adapter, and is ALL GREEN.
+
+**Cost**: about 120 lines of TypeScript and CSS, plus the six gate
+cases.
+
+### 7.25 Completion, paused **[handoff 2026-09-17]**
+
+**Taken up the same day: 7.26 is where this went.**  What stands below is
+the diagnosis; the ruling and the sheet op are built there.
+
+7.24 rebuilt the console's completion as a list and proved it against a
+live serve.  The handset then found it still wrong, for a reason now
+diagnosed but NOT yet written, and the work was paused here.  This
+section is the handoff: what is known, what is designed, what is open.
+
+**The console's real defect: rlcompleter matches a case-sensitive
+PREFIX.**  `global_matches` tests `word[:n] == text`, `attr_matches`
+tests `word[:n] == attr`, and our own PropertiesList loop adds
+`name.startswith(attr)`.  So `app.`, `fre` and `doc.` answer NOTHING
+while `App.` works -- and an empty answer renders as no list, which
+from a phone is indistinguishable from "the trigger never fired".  That
+one cause can produce the whole report, including it seeming to work
+only from the button: on an already-dotted line the prefix is empty and
+therefore always matches.
+
+**RULED by the user 2026-09-17: completion searches for any keyword and
+ignores case.**  Designed, not written:
+
+- Enumerate the candidates and match case-insensitively ANYWHERE in the
+  name, ordered prefixes first then alphabetical -- the ranking
+  `filterSet` already uses, so the guest and the panel agree.
+- The decoration has to be reproduced by hand, because `splice` inserts
+  the item verbatim and that is why `im` becomes `import ` and not
+  `import`: `_callable_postfix` appends `(`, and `)` as well when
+  `inspect.signature(val).parameters` is empty; a keyword gets a
+  trailing space except `{False, None, True, break, continue, pass,
+  else, _}`; `try` and `finally` get `:`.  `get_class_members` walks
+  `__bases__`.
+- Keep rlcompleter's shelf rule: hide names starting with `_` unless the
+  typed word starts with one.  With contains-matching, `init` would
+  otherwise surface `__init__`.
+- `console.py` already imports `builtins`; it needs `keyword`.
+
+**The spreadsheet has no completion at all** -- and needs no new
+matching rule.  `ExpressionCompleter` already defaults to
+`Qt::MatchContains` + `Qt::CaseInsensitive` (`ExpressionCompleter.cpp`
+2140-2145), flipped only by the `CompleterMatchExact` /
+`CompleterCaseSensitive` preferences.  What is missing is the op:
+
+- `sheet.complete`, registered NON-mutating beside `sheet.list/get/set`
+  in `installSheetControlOps` -- a view-only client may complete and
+  still may not write, which is 7.23's rule for `widgets.complete`.
+- `resolveSheet(req, boundDoc, error)` already turns `{doc, obj}` into a
+  `Sheet*`, and `ExpressionCompleter` is `GuiExport` taking a
+  `const App::DocumentObject*`, so the body is
+  `ExpressionCompleter completer(sheet);` then
+  `completer.completionsFor(text, pos, start, end, &tips)` -- the same
+  shape `widgets.complete` has at `SceneWidgets.cpp:427`.
+- Client: a `sheetComplete` wrapper beside `sheetGet`/`sheetSet` in
+  `control.ts`, over `sendOp`.
+- The panel has TWO editors sharing `editText`/`commit`: the formula bar
+  (`.fc-sheet-input`) and the in-cell editor (`.fc-sheet-cellinput`).
+  Wiring one only would repeat the "works here, not there" trap this
+  round hit twice.  **OPEN, asked and unanswered**: both, or the formula
+  bar first.  The in-cell editor commits on BLUR, so a completion tap
+  there must not blur it -- taking the pointer on `pointerdown` with
+  `preventDefault`, as the chips already do, is what prevents that.
+- Unlike all of 7.24 this half is C++: it needs a Gui rebuild and a
+  serve restart, not `npm run build` and a reload.
+
+**The one open question, and the cheapest way to settle it.**  Whether
+the console has a SECOND defect behind the case sensitivity -- whether
+an auto dot trigger fires on a real handset at all.  The test that
+separates them: type `FreeCAD.` in the correct case and see whether the
+list appears with NOTHING pressed.  If it does, case sensitivity was the
+whole story.  If it does not, the trigger is not firing on a soft
+keyboard, and the next suspect is composition: a phone keyboard fires
+`input` with `isComposing` true while a word is being composed, which
+this controller does not consider.
+
+**The tools, and where they went.**  The probes that found and proved
+7.24 are not committed (offered, not taken up), and a scratchpad is
+session-scoped, so they were copied to `~/works/sw/fcad-probes/handset/`:
+
+    chrome-probe.js     taps every chrome surface and reports whether
+                        the tap reached the <canvas> and whether each
+                        close button closes -- the one that caught the
+                        pointer-events defect
+    console-complete.js the dot trigger, local narrowing, the picked
+                        line, and a partial word with and without the
+                        button, in a phone and a desktop viewport
+    console-tap.js      the completion tap target and its 44px size
+    drag-probe.js       the header-drag leak, with the bare-canvas
+    leak-probe2.js      positive control that proved the FIRST version
+                        of that experiment inert
+
+The puppeteer knobs they need are in `docs/Testing.md`: `PUPPETEER_PATH`,
+`CHROME`, `CHROME_LIBS`, and emsdk's node.
+
+**Getting a phone onto it again** (this session's recipe):
+`FC_SERVE_TOKEN=<secret> FC_SERVE_TRUST_PROXY=1
+scripts/renderer-serve.sh scripts/demo-taskpanel.py 8077`, then
+`cloudflared tunnel --protocol http2 --url http://127.0.0.1:8077`.
+**QUIC is blocked outbound on this box**, so without `--protocol http2`
+the tunnel comes up degraded and says so.  The page is
+`/fcviewer.html?doc=<name>&token=<secret>`, with `&panel`, `&console` or
+`&sheet` to open a card on load.  The bundle is `npm run build` in
+`src/Gui/Renderer/web` into `build/wasm/web`, `npm run gate` is the pure
+gate and `npm run typecheck` the types.  The viewer bundle answers
+before the door, so the PAGE loads without a token while every route
+carrying scene data is gated -- do not read a 200 on `fcviewer.html` as
+an open server.
+
+**Where the code stands**: three commits, none pushed -- `ef831bc5d3`
+(the chrome's pointer), `cac3af4313` (the console's list), `8f9af09904`
+(7.24).  Nothing of the ruling above is written yet.
+
+### 7.26 One list: the completer unified with omni search **[audited, merged, BUILT and PROVEN 2026-09-17]**
+
+The audit asked of 7.23-7.25, and what it found.  The console and the
+expression dialog each carried their own copy of the completion
+controller -- `ask`, `onInput`, `pick`, `hold`, the list-open key
+block, the wide-list JSX, the chip-strip JSX, the resize and
+keyboard-inset wiring, about 130 lines mirrored in `console.tsx` and
+`widgets/field.tsx` with two debounces (140 and 160 ms) for one
+behaviour.  Only the pure helpers in `complete.ts` were shared.  The
+spreadsheet had nothing.  And the list itself was wrong in the way the
+user saw from the phone: `items().slice(0, 12)` on a wide viewport,
+`slice(0, 20)` in the horizontal chip strip on a phone, while the
+keyboard highlight cycled over the FULL set -- ArrowDown past the
+twelfth row highlighted nothing and Enter picked an item the user could
+not see; the `overflow-y: auto` was dead because nothing lay below the
+fold to scroll to.  The expression dialog had no tap target at all,
+though 7.23 ruled one mandatory and 7.24 built it for the console only.
+No `isComposing` handling anywhere.  The stale-answer guard compared
+text, not caret.  `inputModeFor` was called with a literal `''`.
+
+**RULED by the user 2026-09-17: the console's style, everywhere** -- a
+button at the right of the editor that raises a vertical list, every
+item in it, scrolling; the auto triggers (the dot, two word characters,
+Tab, Ctrl+Space) stay and raise the SAME list.  No chip strip.
+
+**RULED the same day: merge `RemoteEdit` first.**  That branch carries
+omni search (docs/OmniSearch.md), whose browser card is exactly the
+list ruled for -- `.fc-omni-list`, vertical, scrolling, title and
+description per row, Up/Down/Tab/Enter/Escape, sixty rows then "N more;
+keep typing" -- and building a second such list beside it and merging
+later would have meant extracting it twice.
+
+**The merge** (`b65cd5008c`, SecurePython 7.18-7.25 into RemoteEdit).
+Four files conflicted, all both-sides-added: `wasm/main.cpp`,
+`SceneWidgets.h`, `main.tsx`, `style.css`.  `style.css` needed more
+than markers stripped: diff3 matched `.fc-omni`'s closing seven lines
+against the identical lines in SecurePython's `.fc-console` block, and
+the plain resolution dropped them and the brace with them -- the
+bundle still BUILT, with one esbuild warning.  The committed file is
+RemoteEdit's plus SecurePython's two insertions, reconstructed rather
+than resolved, and checked by parsing every top-level rule of both
+parents against it.  One seam past the conflicts: 7.20 C3's bridge
+request copied `Conn::viewOnly`, which RemoteEdit had replaced with the
+three-level `ClientAccess`; the request carries the access now.  The
+guest wheel needed rebuilding (`src/App/ExpressionImage` moved on both
+sides).  ctest 667 of 667 under `QT_QPA_PLATFORM=offscreen`; Python
+2778 OK -- with `Expression/Sandbox:Evaluate` FALSE.  With it true,
+which `1623ac797d` made the default on 2026-09-16 without re-running
+the Python suite, 43 cases fail exactly as Testing.md's 2026-09-09 trap
+predicts: every saved Proxy of Path, Fem and Arch restores into a guest
+that has no such module.  Not the merge's, not fixed here, and the
+number one item for whoever touches routing next.  **CLOSED 2026-09-18
+by 7.31:** Proxy routing is removed, so those saved Proxies restore
+natively and the 43 failures cannot arise.  The diagnosis stands as
+written -- one preference drove two unrelated halves, and the gate that
+justified the default measured only the expression half.
+
+**What the merge exposed, because two cards were on one page for the
+first time.**  `widgets.subscribe` REPLACED a client's three stream
+flags, so the tool bar card's `{toolbars: true}`, arriving after the
+task panel card's `{panels: true}`, silently unseated the panel
+subscription; the panel mirror stopped with its last subscriber, and
+every `pw:<n>` the dialog held went stale -- `widgets.complete` and
+`widgets.expression` answering `UnknownObject` mid-keystroke was the
+whole symptom.  Ruled and built: a key names a stream to take or leave,
+a key ABSENT leaves that stream as it was; `widgets.unsubscribe` takes
+the same keys and leaves every stream only when none is named; the
+snapshot is pushed per stream turned on, so a client adding panels to
+its tool bars gets the panel's opens and not the tool bars twice --
+which is the second half of the same defect, and the one that made a
+second visitor see "No task panel is open on the desktop" while the
+host's dialog stood.  The panel client sends `{panels: true}` on
+dispose and the tool bar card `{toolbars: true}`.  `FormWidgets`
+`test_widgetStream` pins both halves.
+
+**What was built.**
+
+- `widgets/picker.tsx` -- `PickList<T extends PickRow>`: rows in, a
+  highlight, `moveInList` for the keys (clamped, not wrapped; Home,
+  End, PageUp, PageDown), `scrollIntoView({block: 'nearest'})` on the
+  highlight, a pick on CLICK with `pointerdown` refused -- which keeps
+  the editor's focus and the phone's keyboard up AND still lets a
+  finger scroll the list, which the chips' pick-on-pointerdown never
+  could -- `PICK_LIMIT` 60 and "N more; keep typing".  A moving mouse
+  takes the highlight; a list that appears under a resting one does
+  not (Chrome delivers `pointerenter` on layout alone, and the row
+  under the cursor was what Enter then picked).  `omni.tsx` is its
+  first consumer, with no behaviour change; its row CSS became
+  `.fc-pick-*`.
+- `widgets/completion.tsx` -- `createCompletion({source, editor})`:
+  the stateful half written once.  A `Source` answers a
+  `CompletionSet`; the `Editor` is three closures (text, caret, apply)
+  so the editor's own signal stays the truth.  A serial guards the
+  answer (only the latest ask may land); the landing checks
+  `stillApplies` against the CURRENT text and caret, not the text alone;
+  `isComposing` input is ignored and keyCode 229 keys are not handled;
+  one `DEBOUNCE_MS` (150).  `CompletionList` places the list -- in the
+  editor's flow on a wide viewport, pinned above the keyboard on a
+  phone with `bottom` and `max-height` from the visual viewport.
+  `CompleteButton` is the tap target: `pointerdown` refused, the ask on
+  CLICK -- asking on the pointerdown itself raised the list under the
+  finger before the tap ended, and the tap's click then picked whatever
+  row had appeared there (`SystemExit(` landed in the console line from
+  a tap on the button, on the phone viewport).
+- The three editors: `console.tsx` over the guest, `widgets/field.tsx`
+  (the expression dialog, which now has the button) over
+  `widgets.complete`, and `sheet.tsx` over the new `sheet.complete` --
+  ONE controller for its two editors, the formula bar and the in-cell
+  editor, the caret being whichever has the focus, which is how the
+  "works here, not there" trap 7.25 named is closed.
+- `sheet.complete` (`SheetControl.cpp`), non-mutating, `resolveSheet`
+  then `ExpressionCompleter completer(sheet)` with the `=` lead char,
+  the shape of `widgets.complete`.  `sheetComplete` in `control.ts`.
+- One matching rule, three places.  `completionsFor` forces
+  `MatchContains` + `CaseInsensitive` + `PopupCompletion` on the
+  completer it is asked of, whatever the desktop user chose in the
+  popup's menu -- a remote client's completion must not depend on a
+  desktop preference, and with `Unfiltered` set the op answered the
+  whole model.  `console.py`'s `_Completer` enumerates and ranks --
+  contains, case-insensitive, prefixes first then alphabetical, the
+  `_` shelf rule, rlcompleter's decoration by hand (`(`, `()` for a
+  callable with no parameters, the keyword space, `try:`) -- so `app.`
+  and `fre` answer, and `str.JO` answers `str.join(`.  The client's
+  `filterSet` already ranked that way.  `FormWidgets` asks `Other.idt`
+  with the exact-match and case-sensitive preferences SET and gets
+  Width.
+- Gone: the chip strip and its CSS, `.fc-panel-suggest`, the dead
+  `client` prop, both copies of the controller; `scripts/panel-drive.js`
+  and the handset probes read `.fc-pick-row` now.
+
+**Proven on a live serve** (`scripts/renderer-serve.sh` on a scene with
+Pad's dialog open and a sheet, headless Chrome, both viewports):
+
+- Dialog, desktop and phone: `SketchPad.` answers 58 rows, all drawn
+  (in flow on the desktop, pinned on the phone), `con` narrows to 2,
+  ArrowDown clamps, Escape closes the list and not the dialog, the
+  preview line answers on every keystroke.
+- Sheet, from an empty cell: `=Pa` answers 9 (`Pad`, `.Pad`, `Pa`,
+  `TaskPanel#`, `SketchPad`, ...) with the highlight on the first row
+  under a resting mouse, Tab makes `=Pad`, `.Len` answers `Pad.Length`
+  and `Pad.Length2`, the button re-asks the same.
+- Console, both viewports (`~/works/sw/fcad-probes/handset/
+  console-complete.js`): `str.` 47 rows, `jo` narrows to `str.join(`,
+  `st` alone answers 9 prefixes-first, and the button on that partial
+  word answers the same 9 on the phone, where before the fix the tap
+  picked.
+- Three visitors in a row on one serve each see the 13 fields of the
+  panel (the per-stream snapshot); before, the second saw "No task
+  panel is open".
+
+**Open, found on the way and not taken.**  A page's very first op --
+the panel card's `widgets.subscribe` sent as the socket opens -- gets no
+reply on this serve (the tool bar's, sent 200 ms later, does), and the
+card recovers only by asking again; the trace shows the send accepted
+and nothing back.  And `scripts/mcp-console.py` fails on this box
+("needs the 'mcp' package"), which is why the panel-liveness question
+was settled by instrumented rebuilds (backtraces in `setEdit`,
+`_resetEdit`, `closeDialog`, all reverted) rather than by asking the
+live process.
+
+**The mcp half is CLOSED 2026-09-19.**  `mcp` 2.1.1 is installed in
+`.conda/freecad` from conda-forge, and the console answers: `initialize`
+200, `tools/list` giving `run_python`, `search_api` and `get_log`, and
+`run_python` running `App.getHomePath()` on the live headless serve's Qt
+main thread.  So the next question of this shape is asked of the running
+process, not of a rebuild.  Two traps came with it -- everything printed
+after `start()` goes to the capture ring rather than the terminal (which
+is why the script looked broken and the serve log never says the console
+is up), and every process shares and rotates one `mcp_console.log`.
+Both are in `docs/DevEnvironment.md`, "MCP debug console".
+
+### 7.27 The first op, chased: never sent **[found and fixed 2026-09-17]**
+
+7.26 left one open: a page's very first control op -- the task panel
+card's `widgets.subscribe {panels:true}`, sent as the scene socket
+opens -- got no reply, the tool bar's 200 ms later did, and the card
+recovered only by asking again.  The trace that said "send accepted and
+nothing back" had logged the send BEFORE it knew the return value.
+Logged after, the same probe shows `ok=false`: the viewer refused the op
+as Offline, because the card asks at mount and the socket was not open
+yet -- `fcviewer_control_send` checks `s_wsOpen`, which `onWsOpen` sets
+before the hello and before `fc:connection`, so nothing can be sent
+ahead of the hello and nothing was.  The "recovery by re-asking" was the
+card's own 500 ms Offline timer, which on a page busy booting the viewer
+fired 2.2 s after the refusal (t=1143 refused, t=3371 sent and
+answered).  Nothing was dropped; the server's silent drop of a non-hello
+text from an unauthorized connection (the door, docs/MultiDocServe.md
+sec 8) was never reached.
+
+**Fixed by asking at the right moment.**  The panel card and the sheet
+card now re-ask on `fc:connection` (the `onConnection` listener the tool
+bar card already used), in the effect that owns the card, with an
+in-flight guard so a reconnect landing on top of a pending ask does not
+double-subscribe; the timer stays as the fallback only -- 3 s after an
+Offline (a viewer too old to send the event), 500 ms after a Timeout (a
+reply lost on the way).  The same listener closes a gap 7.26 did not
+see: a reconnect is a new connection holding no subscription, and the
+panel card never re-subscribed after one.  Proven on the serve
+(`demo-taskpanel.py`, headless Chrome): the panel's subscribe now goes
+out in the same millisecond as the tool bar's, at `fc:connection`, and
+is answered; 13 fields.  The sheet card's `sheet.list` likewise -- it
+answers UnknownOp on that scene because nothing there loads the
+Spreadsheet GUI module that registers the sheet ops, which is that
+scene's, not the card's.
+
+The probe that settles this kind of question logs the RETURN of
+`fcviewerControlSend`, not only the call; the 7.26 probe did not, and
+read a refusal as a loss.
+
+### 7.28 Consent for a Proxy the guest cannot serve **[SUPERSEDED 2026-09-18 by 7.31 -- with Proxy routing removed, a Proxy the guest cannot serve can no longer arise; designed, BUILT and PROVEN 2026-09-17; the automatic fallback of the morning replaced by a host.import prompt the same day]**
+
+**The hole the automatic fallback opened, ruled 2026-09-17 hours after
+it was built.**  The first form of this section fell back on its own: a
+module no guest wheel carried was imported in this process under the
+Mod-root rule, with a console warning as the only telling.  That is a
+hole relative to what routing promises.  The Mod-root rule bounds WHICH
+CODE is imported; it says nothing about WHOSE DATA drives it -- an
+untrusted file names any installed workbench class and its `loads` and
+`execute` run on the host, before anyone reads the warning.  The user's
+words: "if a user requested the route, ... we should at least popup a
+modal dialog or something more obvious to request explicit action".
+
+**RULED: the fallback becomes consent.**  A module the guest cannot
+serve is HELD, not imported: `host.import:<module>` under the DOCUMENT
+principal (the catalog row of 2.2, PROMPT for a document, with the
+dotted-ancestor target fallback) decides it, and until it is answered
+nothing of the file's choosing has run.  ALLOW -- a grant already held,
+or one the user gives -- restores natively and flags the property, as
+the fallback did.  PROMPT holds.  DENY lets it go.  Enforcement off
+(`Expression/Security:Enforce`, the parity rig's switch) restores them
+all, the way every other `check()` no-ops there.
+
+
+**The defect.**  `1623ac797d` (2026-09-16) made `Expression/Sandbox:
+Evaluate` default true without re-running the Python suite.  The same
+preference routes a saved Proxy's restore (3.5), and the guest serves
+Draft and BIM -- not Path, not Fem, not any addon.  So a document
+naming `Path.Op.Profile.ObjectProfile` or
+`femobjects.material_common.MaterialCommon` opened routed, the guest
+answered ModuleNotFoundError, and the restore failed CLOSED: "the
+object is left without a Proxy", the object broken -- 553 such refusals
+in `TestCAMApp` alone (27 cases), 89 in `TestFemApp` (2 cases).  The
+user's ruling (2026-09-17): not a flag flip; "some mechanism to fall
+back gracefully".
+
+**What fails closed was protecting.**  The rule of 1.4 -- pre-resolve,
+then fail closed, no SILENT native fallback -- and its Restore form in
+7.6 item 2, "no native import of a document-chosen module name", were
+written before sec 11 item 1 put the native import itself under
+`Base::Type::moduleAllowed` (a module already loaded, or one resolving
+into a registered Mod root), for both containers, routing on or off.
+Since then a native restore of a document-chosen name has been bounded
+by that rule regardless; with routing OFF that is exactly what every
+document gets, and the routed path's refusal of an unserved module
+widened nothing ("refusing widens nothing", 3.5) -- but it also
+protected nothing the native rule did not: a Path job's Proxy on a box
+with Path installed is what the user asked for when they installed
+Path.  What was lost was the object.
+
+**And what the automatic fallback gave away.**  That argument is right
+about WHICH MODULE may be imported and wrong about WHAT RUNS.  A Proxy's
+`loads` and `execute` are the FILE's code, driven by the file's saved
+state, and restoring them unasked runs that code on a decision nobody
+made.  Installing Path says a Path job may be imported; it does not say
+this file's Path job may run.  Hence the consent ruling above: the
+native rule still bounds the import, and the user's answer decides
+whether the file's code runs behind it.
+
+**The mechanism, as built.**
+
+- **When.**  Only when the guest CANNOT SERVE the module: its import
+  there raises `ModuleNotFoundError`, no wheel carries it.  A module
+  that is there and fails (a SyntaxError in a Draft file, a guest bug)
+  is served, and the routed restore reports the failure whole and still
+  fails closed -- a fallback there would hide the guest's defect behind
+  a host that happens to work.  A guest that is not available never
+  reaches this: `proxyRestoreRouted()` asks `available()` first (3.5).
+- **Where it is held.**  `PropertyPythonObject::Restore`, the one place
+  the routed restore is decided: an `unserved` answer no longer falls
+  through to the native branch but records a `DeferredRestore` -- the
+  module, the class, the `__object__`/`__vobject__` back-references the
+  file recorded, and the state -- and leaves the property None.  The
+  state arrives either inline or, for a `file=` payload, later at
+  `RestoreDocFile`, which stashes it rather than applying it: with no
+  instance to take it, `fromString` would make the saved dict the
+  property's own value.
+- **Where it is answered.**  `ExpressionSandbox::resolveDeferredProxies()`,
+  called at the TOP of `Document::afterRestore`.  Not in `Restore`
+  itself: the document principal is a hash over every expression in the
+  file, and mid-restore half of them are not loaded yet, so a decision
+  taken there would be keyed to a principal that is not the document's
+  and a grant would not match on the next open.  By `afterRestore` the
+  code is all in and the principal is final -- and `onDocumentRestored()`,
+  which a restored Proxy answers, has not run yet.  A grant given later
+  re-runs the same sweep, so the restore happens without reopening the
+  file: that is the deferred restore's whole point.
+- **What a grant does NOT buy.**  The native import rule still bounds
+  the restore (`proxyModuleAllowed`, sec 11 item 1): a module the guest
+  lacks AND the native rule refuses -- not loaded, not under a Mod root:
+  a pip-installed addon, a name a file made up -- stays refused whatever
+  is granted, the object without a Proxy, logged as sec 11 item 1 logs
+  it.  The grant answers for the sandbox, never for that rule.
+- **Construction too.**  `constructGuestProxy` (7.6 G1d, Draft's
+  `new_proxy`) asks the same question BEFORE constructing: with the
+  module unserved it answers None and Python constructs natively -- the
+  first `__init__` anywhere, so the ruling of 7.6 ("never a native
+  retry, running `__init__` twice repeats its side effects") is kept by
+  asking before, not after.
+- **Asked once.**  `guestServesModule(module)` makes the import alone
+  (`ImageHost::exec("import <module>")`) and memoizes the answer per
+  module per guest BOOT: a guest that lacks a module lacks it until it
+  boots again with another package set, and a document of seventy such
+  objects asks once.  A name that is not a dotted identifier is refused
+  without asking.
+- **Asked, once, in a modal.**  `DlgDocumentPermissions::askHostImport`,
+  raised from `signalFinishOpenDocument` -- once the open is complete,
+  so the modal never lands mid-restore -- names the modules with the
+  count of objects waiting on each ("23 objects of Path, 4 of
+  femobjects"), one checkable row per module, and answers with the
+  permission panel's own scope verbs: run once, run this session, always
+  run, never run, or Not now.  One decision per module, not per object.
+  A grant re-runs the sweep and recomputes what came back; Not now
+  leaves them held, and the padlock keeps the tally.  Headless there is
+  no modal: `--grant host.import:<module>` or a `--policy` file decides,
+  and with neither the objects stay without a Proxy and are logged.
+- **Said, three ways.**  A console Warning per module when the guest
+  first says no ("the sandbox guest cannot serve module 'Path.Base.
+  PropertyBag' (No module named 'Path')"), and one per module at the
+  sweep saying which way it went and over how many objects -- granted
+  and running here, held for an unanswered `host.import`, or denied --
+  beside the `audit.log` line every PROMPT records anyway.  The
+  property remembers: `PropertyPythonObject::isHostFallback()`, false
+  for a stand-in, a natively set value, a refused restore, and with
+  routing off; cleared by `setValue`, carried by Copy/Paste.
+  `ExpressionSandbox::hostProxies(doc)` -- Python
+  `FreeCAD.ExpressionSandbox.hostProxies(doc)` -- lists the objects.
+  And the padlock: the status bar's `SandboxIndicator` tooltip, shut,
+  adds "N objects of the active document run their Python Proxy in this
+  process, because the sandbox has no module for them: Job, Stock, ..."
+  -- recomputed when the tooltip is about to show (`event(ToolTip)`),
+  since which document is active changes without the preference
+  changing.  A shut padlock never claims more than it holds.
+- **The code-free principal, and what a remembered answer there means.**
+  Found building this, 2026-09-17, and it bounds what the gate is worth.
+  A document's principal is a hash over its CODE alone (2.1), and
+  `documentPrincipal()` does not special-case an EMPTY one: a file with
+  no expressions, no cells and no library -- which is most Path and Fem
+  jobs, the very files this gate is about -- hashes to
+  `document:sha256:2155474a...`, the same id as every other code-free
+  file on earth (probed: two fresh empty documents collide, one with a
+  single expression does not).  Before 7.28 that collision was nearly
+  inert, because a `host.import` check arose from an expression and a
+  document with an expression has a hash of its own; this section is the
+  first to ask the question of documents that carry no code at all, so
+  it is the first to make the collision reachable.  A persisted "always"
+  answered on one such file would silently answer for every code-free
+  document afterwards, unprompted -- the gate quietly disabling itself.
+  RULED 2026-09-17, on the user's steer, and it corrects a first cut
+  that simply WITHHELD the persistent scopes there: for a code-free
+  document "per document" is a fiction, so the honest unit of the answer
+  is the MODULE.  The grant is keyed to the EXACT submodule the file
+  named -- `Path.Op.Profile`, never `Path`, never `*`; a routed
+  `TestCAMApp` run holds 14 such names, so that is 14 separate decisions
+  and not one package-wide one -- and the modal says a remembered answer
+  covers that module in any document carrying no expressions, with the
+  grant's display metadata saying the same rather than naming the one
+  file that happened to ask.  That is far narrower than the automatic
+  fallback, which admitted every module under a Mod root with no answer
+  at all, and unlike the first cut it does not re-ask every session for
+  the files this gate is mostly about.  The hash itself is frozen v1 and
+  is not changed here.  What remains, stated plainly: such an answer is
+  module-scoped, not file-scoped, and `--grant` is process-wide by
+  design.
+- **Not a file change.**  Nothing is written; the same file opens
+  routed on a box whose guest has the wheel, and is held for an answer
+  on one whose guest does not.  The grant that frees it is the USER's,
+  keyed to the document principal -- never anything the file carries.
+
+**Proven 2026-09-17 (the consent form).**
+`ExpressionImageEvalTest.guestProxyRestoreRoute` was rewritten for it:
+three objects are saved and the file reopened routed.  `fcxprobe`
+(served) comes back a stand-in.  `fcxhostonly` (host-loaded, not
+served) and `fcxnowhere` (dropped from the host before the reopen) both
+come back HELD -- no Proxy, nothing imported, `hostProxies(doc)` empty,
+and the `host.import:fcxhostonly` ask on the pending list; both are
+named by `deferredProxyModules(doc)`, one object each.  Then the answer:
+granted for both, `resolveDeferredProxies(doc)` restores exactly ONE --
+`fcxhostonly`, natively, `isHostFallback()` true, the single entry of
+`hostProxies(doc)`, and its native `execute()` runs -- while
+`fcxnowhere` stays refused, since a grant answers for the sandbox and
+never for the native import rule.  `guestServesModule` still answers
+from the cache on the second ask.  The sandbox and import suites: 92 of
+92 green.  The code-free principal was probed directly: two fresh empty
+documents hash to the same `document:sha256:2155474a...` and one
+carrying a single expression does not -- the collision is real, and is
+why the modal withholds the persistent scopes there.
+
+**What it costs a routed suite, measured 2026-09-17.**  Routed in a
+fresh home, a document naming an unserved module now HOLDS instead of
+running, so a routed suite needs its grants -- and only the TOP-LEVEL
+ones, the dotted-ancestor chain covering the rest.  `TestFemApp`: 81
+held and 2 failures with no grant; 90 OK with `--grant
+host.import:femobjects --grant host.import:femsolver`.  `TestCAMApp`:
+411 held, 10 failures and 17 errors with no grant; 1343 OK with
+`--grant host.import:Path` ALONE -- one package for `Path.Op.*`,
+`Path.Base.*` and the rest, 454 granted-module lines.  NOT ONE REFUSAL
+in any of the four runs: nothing was lost, only held pending an answer,
+which is the whole difference between this and the fail-closed form.
+`TestArch`'s 11 guest-behaviour cases are unchanged, and are not this.
+
+**What this does not cover, found on the same run.**  `TestArch`'s 11
+failures under routing are not this: BIM IS served, its Proxies restore
+routed, and the tests then reach into the guest -- `report.Proxy.
+live_statements[0]` is a `ReportStatement` that "does not marshal by
+value" (3 errors in `TestArchReport`), and `HorizontalArea` of a
+Bspline slab or tilted cylinders comes back 0.0 where 157.08 is
+expected (8 failures in `TestArchComponent`).  Those are guest-behaviour
+regressions of BIM in the guest -- as is Draft's `test_hatch` in the
+full run -- and belong to the corpus gate (8.2), not to a fallback.
+
+### 7.29 F1 built: the host file and code chokepoints **[BUILT and PROVEN 2026-09-17; the guest-driven gate cases were blocked on a bridge defect found doing it -- named and fixed in 7.30 the same day]**
+
+Sized in 7.14, built here.  The rows are in the enum, the checks are in
+the primitives, and the blessed-path set moved down a layer so they hold
+in a build with no sandbox image host at all.
+
+**The catalog** (`ExpressionSecurity.h`/`.cpp`), the path as the target:
+
+    fs.read:<path>    DENY (np)  PROMPT  PROMPT  a host file read by path
+    fs.write:<path>   DENY (np)  PROMPT  PROMPT  saveAs / saveCopy / exportTo
+    host.exec:<path>  DENY (np)  PROMPT  PROMPT  host Python run from a file
+
+DENY and not promptable for a document -- a file's own code never reads,
+overwrites or runs another host file, and no prompt offers to let it.
+PROMPT for the session and ALSO for an addon: the second exception to
+the addon's blanket ALLOW (`gui.doCommand` was the first), because an
+addon is trusted to drive the GUI, not to read, overwrite or run an
+arbitrary host file without the user seeing which one.  DENY for a
+remote client, which is not offered the row at all.
+
+**The chokepoints, each inside the primitive, never at a command name:**
+
+    primitive                                      row
+    ---------------------------------------------  ---------
+    App::Application::openDocumentPrivate          fs.read
+      (openDocument, openDocuments, loadFile and
+       a link's addPendingDocument all funnel
+       here; the check comes BEFORE the existence
+       test, which is itself an answer about the
+       host's disk)
+    Gui::Application::open / importFrom            fs.read
+    Gui::Application::exportTo                     fs.write
+    App::Document::saveAs / saveCopy               fs.write
+    Gui::MacroManager::run                         host.exec
+    Gui::PythonDebugger::runFile                   host.exec
+      (its own PyRun_File: the guard below never
+       sees it)
+    Base::Interpreter::runFile                     host.exec
+
+`runString` is deliberately NOT gated, as 7.14 ruled: host C++ composes
+Python and runs it there (every `doCommand`), so gating it would refuse
+everything.  Caller-chosen content arrives as a FILE, and that is the
+seam.  `save()` stays the guest's to call -- it writes the document's
+own file (S1); `saveAs` names a new one, so it is gated.
+
+**Base takes the check as a callback.**  Base cannot see App's
+permission runtime, so `InterpreterSingleton::setFileGuard` holds a
+guard that `Application::initApplication` installs.  With no principal
+active -- the user's own click, every startup script -- it decides
+nothing and `runFile` behaves exactly as it always did.
+
+**Two things had to move.**  The picker-blessed set (S1) lived in
+`ExpressionImageBridge.cpp`, which is compiled only with
+`BUILD_EXPR_IMAGE_HOST`; the chokepoints are in the core and must hold
+without it, so the set now lives in `ExpressionSecurity.cpp` and the
+guest-facing `ExpressionSandbox::blessPath` / `pathBlessed` /
+`clearBlessedPaths` forward to it.  And every target is normalized
+(`normalizeHostPath`: absolute, `.` and `..` and symlinks resolved, no
+trailing separator, `weakly_canonical` so a file being SAVED to
+normalizes before it exists), so an answer is keyed to the FILE rather
+than to whichever spelling reached the primitive.
+
+**Consent stays a capability, as S1 ruled.**  `Gui::FileDialog` blesses
+what it returns while a scope is active: `checkDocumentXML` is the one
+post-accept funnel of `getSaveFileName`, `getOpenFileName` and
+`getOpenFileNames`, and `getExistingDirectory` blesses separately.  So
+`Std_Open` driven from a guest opens the file the user just chose in
+that nested modal, while `Std_RecentFiles`, which has no picker, blessed
+nothing and is refused.
+
+**Proven.**  `ExpressionSecurityRuntimeTest` 16/16 (six new cases): the
+normalization, the blessed set keyed to the file rather than the
+spelling, all three rows DENY and not promptable under a document scope
+with the normalized path as the refusal's target, a blessed path passing
+with no grant while a made-up one does not, `saveAs` refused at the
+primitive with nothing written, and the `runFile` guard seam.  45/45
+across the security and import suites (`ExpressionSecurity`,
+`ExpressionSecurityRuntime`, `ProxyImport`, `TypeImport`), and
+`ExpressionImage*` 75/75 -- the guest suites are undisturbed.  The audit
+lines name the principal and the path:
+
+    {"decision":"prompt","permission":"fs.read","principal":"session",
+     "target":"/tmp/fcx-hostfiles-.../target.FCStd"}
+    {"decision":"prompt","permission":"host.exec","principal":"session",
+     "target":"/tmp/fcx-hostfiles-.../fcx_hostfiles.FCMacro"}
+
+**The defect found doing it, NAMED AND FIXED in 7.30.**  A host command
+that THROWS while it runs through the guest's `gui.cmd.run` wedged the
+guest: the call never came back.  It was not the reentrancy, as this
+section first guessed -- the throw was not unwinding at all.  See 7.30.
+
+Gate `SandboxHostFiles` (6 cases) reads `RESULT OK` with all 6 running
+as of 7.30 (it read 2 run and 4 skipped while the wedge stood).  Two
+test-side traps are recorded in the file: a modal watchdog that
+truth-tested whatever widget was modal segfaulted the process inside
+shiboken's import hook, and `FreeCADGui.sendHasMsgToActiveView` has no
+Python binding at all (sending "Run" instead would run the macro as HOST
+code and quietly invert the case).
+
+### 7.30 The `gui.cmd.run` wedge named and fixed **[BUILT and PROVEN 2026-09-17; the gate's four guest-driven cases now run]**
+
+7.29 left one defect open and guessed at its cause: a host command that
+THROWS under the guest's `gui.cmd.run` never came back, and the guess
+was the reentrancy (host -> the guest's `Activated` -> a host op -> a
+host command).  The guess was wrong, and the way to settle it was to
+name the frame.
+
+**Naming it.**  `gdb` cannot ATTACH on this box (`yama/ptrace_scope` is
+1), so FreeCAD ran UNDER gdb -- gdb as PARENT is permitted -- with the
+gate driving one case:
+
+    SANDBOX_GUI_GATE_MODULES=SandboxHostFiles.SandboxHostFilesTest.test_a_macro_from_guest_refused
+
+A watchdog sent SIGINT once the run sat past the "running the guest
+command" mark, and a `define hook-stop` in the gdb command file printed
+every thread's backtrace without needing anything typed at the prompt
+(the first attempt fed commands through a FIFO and lost them when the
+harness was killed; `-batch -x` plus `hook-stop` needs no stdin).
+
+**What it was.**  Thread 1, top down:
+
+    QEventLoop::exec / QDialog::exec / showNewMessageBox
+    Gui::Command::_invoke                Command.cpp:666
+    Gui::CommandManager::runCommandByName Command.cpp:2415
+    (anonymous)::runCommandByName / guiOp SandboxGui.cpp:2011
+    App::ExpressionSandbox::dispatchHostOp ExpressionImageBridge.cpp:1735
+    PyodideRuntime::hostCall              ExpressionPyodideRuntime.cpp:1047
+    Builtins_WasmToJsWrapperCSA
+
+Not a lock and not the reentrancy: `Command::_invoke`'s
+`catch (Base::Exception &e)` ends in a modal `QMessageBox::critical`.
+F1's refusal is a `Base::Exception`, so the command popped a dialog
+INSIDE the guest's host op -- with the guest parked in wasm waiting for
+the reply that could only be written once `_invoke` returned, and nobody
+at the keyboard to click OK.  That also explains both earlier
+experiments: converting at the op cannot help, because the exception
+never reaches the op; and pre-answering DENY cannot help, because a deny
+still throws.  Nothing made a Std command throw there until F1 did.
+
+**The fix, in three parts.**
+
+- `Command::_invoke` does not ask when a principal scope is active
+  (`ExpressionSecurity::Runtime::scopeActive()`, the same predicate
+  `Gui::FileDialog` uses to bless a picked path): it reports the
+  exception and RETHROWS, for the `Base::PyException` catch as well as
+  the `Base::Exception` one, so `gui.cmd.run`'s own catch answers the
+  guest with a `PermissionError`.  With no scope active -- the user's
+  own click -- the dialog is exactly as it was.
+- `Application::sSendActiveView` and `sSendFocusView` gained
+  `PY_TRY`/`PY_CATCH`.  `Std_DlgMacroExecuteDirect` reaches
+  `MacroManager::run` through `Gui.SendMsgToActiveView("Run")`, and
+  without the wrapper the C++ refusal unwound THROUGH the CPython eval
+  loop, skipping its frame cleanup.  That is the second fault 7.29
+  recorded as a separate shiboken SIGSEGV: with the wedge gone, the run
+  reached the next import and died in `shibokensupport/feature.py:95
+  feature_import`, dereferencing the wreckage.  One root cause, two
+  symptoms.
+- `Application::sRunCommand` and `CommandPy::run` gained the same
+  wrapper, because `_invoke` can now throw where those bindings call it.
+  54 of the 72 `Application::s*` bindings still lack `PY_TRY`; the four
+  on this path are wrapped, the rest are a known trap.
+
+**A modal is not itself the fault.**  A command that opens one as its
+normal work is untouched by this, and must be: `Std_Open`'s picker runs
+in a nested loop under this very op, and answering it is how a picked
+path is blessed (S1); `gui.menu.exec` is a nested loop by design too.
+Nor is a dialog an unconditional hang -- with a user at the keyboard it
+is answerable and the run goes on.  What was always wrong is the
+SWALLOW: `gui.cmd.run` ends in `replyOk(true)`, so a refusal that does
+not propagate tells the guest the command ran.  The block is the second
+symptom, and it bites exactly where nobody can answer -- the gate under
+Xvfb, and the headless and served tiers this project is heading for.  A
+cancelled dialog stays swallowed on purpose: `Base::AbortException` is
+caught above both rethrows, and cancel is not an error.
+
+**What this does NOT cover.**  A command that shows a modal and throws
+nothing is unchanged: `MacroCommand::activated` on a missing macro file,
+the "Cannot load workbench" and "Wrong selection" dialogs in
+`CommandStd.cpp`.  Run by name from a guest, those still block an
+unattended session and still answer `ok(true)`.  They are host UI a user
+answers rather than a refusal being lost, so sizing them belongs with
+the headless and served tiers, not here.
+
+**Proven.**  Gate `SandboxHostFiles` 6/6, `RESULT OK`: the macro refused
+then granted and running, the recent file refused, and `Std_Open` driven
+from the guest opening the path the test chose in the host picker with
+no grant -- the case that keeps consent a capability rather than a list.
+Two assertions in the never-run cases were wrong and are corrected: a
+pre-answered DENY records no pending row (`Runtime::check` calls
+`addPending` only on a promptable decision), and a document saved as
+`target.FCStd` reopens under the name `target`, not the name it was
+built with (probed).  A case that closes its own document no longer
+reads results back through the guest: the read-back evaluates under the
+owner, and a dead owner falls back to the session and asks
+`host.import`.
+
+**One observation left open, not this thread's.**  While the guest-driven
+`Std_Open` runs, the document arriving is claimed by progressive loading
+(`App::Document::LiveImport`) and `Command::_invoke` installs
+`App::Document::UserEditGuard`, so `Document::checkUserEdit` refuses the
+restore's own `Cannot create object 'Owner'`.  The guard exempts
+transactions, `Visibility`, `TreeRank` and `ViewObject`, but not "this
+command is the thing filling the document".  The gate passes either way
+(it judges the open by effect), and the interaction is pre-existing and
+unrelated to the sandbox.
+
+### 7.31 Proxy routing removed: installed workbench code is not a sandbox target **[RULED and BUILT 2026-09-18]**
+
+**The user's ruling, 2026-09-18:** "No routing for proxy, i.e. adding
+code at all.  Cleanup the built BIM/Draft wheel, so the confusion do not
+happen again."  Asked first, and the question that produced it: "Since
+when we start doing routing on addon code again.  I thought we've
+decided to not sandbox addon code."
+
+**The ruling restates what sec 0 already said** and what nothing in the
+code enforced: the sandbox boxes CODE CARRIED IN THE DOCUMENT --
+expressions and expression-language programs.  Installed workbench code
+is not a target (the 1.2 re-aim of 2026-09-08; Rung 2 is labelled
+"hardened mode, not the target" in the same breath).  The threat is
+document-derived code (1.4).  BIM's `_Report` is not document-derived
+code: it is installed workbench code that a document's DATA drives.
+
+**How it happened, since nothing decided it.**  Two independent things
+met.  `PropertyPythonObject::Restore` routed a Proxy whenever
+`proxyRestoreRouted()` was on and `guestServesModule(module)` said the
+guest could import it -- and that function asks only "does `import X`
+succeed in the guest?".  So whether a workbench was sandboxed was
+decided by whether a wheel had been built for it: PACKAGING DECIDED
+TRUST.  And `proxyRestoreRouted()` read the SAME preference as
+`evaluationRouted()`, so `1623ac797d` ("route expression evaluation by
+default", 2026-09-16) switched both halves on at once.  Its own message
+records the gap: "The same preference also routes a saved Proxy's
+restore, WHICH THAT GATE DOES NOT MEASURE."  The corpus gate that
+justified the default compares expression bindings only.  TestArch's 11
+failures under routing, and 7.26's 43 before them, were the bill.
+
+**What came out** (67 files of code, 185 insertions, 4899 deletions;
+18 deleted outright, and one -- the PySide shim's `QtCore.py` --
+MOVED into fcx_widgets rather than deleted, git calling it a rename
+at 59 percent: the host-timer half of it survives, see below):
+
+    the switch          ExpressionSandbox::proxyRestoreRouted()
+    the restore path    PropertyPythonObject::Restore's routed block,
+                        DeferredRestore, the held-payload stashes,
+                        hostFallback, Document::afterRestore's sweep
+    the guest side      restoreGuestProxy, guestServesModule,
+                        constructGuestProxy, hostProxies, heldProxies,
+                        deferredProxyModules, resolveDeferredProxies
+    the transport       ImageHost::proxyNew (both overloads), and in the
+                        image the `proxy_new` wire op whole:
+                        FcxWire::OpProxyNew, dispatchProxyNew, and the
+                        prelude's `_proxy_new` constructor
+    the Python API      proxyNew, proxyConstruct, hostProxies,
+                        deferredProxies, resumeProxies
+    7.28's consent gate DlgDocumentPermissions::askHostImport and its
+                        signalFinishOpenDocument hook
+    the dispatch hooks  15 `__new__` overrides in BIM and Draft plus
+                        draftobjects.base.new_proxy -- product code that
+                        existed only to construct a Proxy in the guest
+    the wheels          BimSandboxWheel, DraftSandboxWheel, and the
+                        guest shims they packed (src/App/ExpressionImage/
+                        shims: the PySide shim, Draft_rc/Arch_rc,
+                        importers, nativeifc, PartGui)
+    the gates           SandboxDraftGui, SandboxCorpusGui, SandboxInitGui
+                        (retired per the sec 7 rule), and 8 C++ cases
+                        with their corpus rig
+
+**What stays, and why it loses nothing.**  Expression routing is
+untouched -- it has the corpus gate behind it and it is the target.  The
+curated surface expressions use is compiled INTO the image
+(`FcxFacades.inc`), never shipped in a workbench wheel, so deleting
+fcx_draft and fcx_bim costs the target nothing; `fcx_image` and
+`fcx_widgets` remain.  The guest stand-in TYPE stays, and so do
+`proxy_call`, `proxy_get` and `proxy_set`: the frozen guest-GUI layer
+still registers handlers that live in the guest -- a command, a
+workbench, a selection observer -- and the host still holds a stand-in
+for each; a routed FUNCTION still crosses as one (P3).  What went is
+only the direction where the HOST asked the guest to CONSTRUCT an
+object.  Above all, **the protection is not weakened**: a document
+naming an arbitrary module is stopped by the NATIVE import restriction
+(sec 11 item 1, `Type::moduleAllowed`, both containers), which never
+depended on routing.  The code said so before it was removed: "Off this
+path the native restore still runs under the Mod-root import
+restriction, so refusing here widens nothing."
+
+**Proven.**  TestArch, the suite whose 11 failures started this, with
+routing ON and Proxy routing removed: 280 tests, OK (expected
+failures=1), zero failures and zero MarshalErrors -- identical to the
+unrouted baseline measured the same day, which is the ruling's proof.
+That run boots no guest at all, which is the point: BIM's Proxies now
+restore natively.  The C++ sandbox suites are 131 of 132 passed, zero
+failed, with `programsSurfaceStampMatchesHost` green on the rebuilt
+wheel; the one skip is environmental (`ExpressionPyodideOfferTest`
+wants a local numpy wheel beside the staged runtime).  The GUI gate is
+RESULT OK: 66 tests, zero failures and zero skips, in 45.9 s.  It
+carries the proof for the PySide relocation above, since a gate whose
+guest cannot boot still reports OK by skipping: every toolkit module
+ran real cases -- SandboxWidgets' guest QTimer, SandboxForms' loadUi
+(40 objects, 100 gui.comm ops), SandboxPanels' 41 .ui panels, all four
+SandboxSelection cases -- and `No module named 'PySide'` appears zero
+times, against 11 occurrences before the relocation.
+
+**Superseded by this section:** 7.28 whole (its premise -- a module no
+guest wheel carries -- cannot arise once no workbench wheel exists);
+7.6 G1c step (f), the Restore route; 5.6's workbench-wheel half.
+
+**Removed on the same ruling** ("Remove for 1 and 2", 2026-09-18), both
+dead by construction once no workbench wheel exists: the InitGui-in-guest
+runner (`FreeCADGuiInit.py`, its four `FreeCADGui._*` exports, its call
+site in `RunInitGuiPy`, and the `_onGuestBoot` hook in SandboxGui.cpp --
+it needed a wheel named `fcx_<module>`, so `GuestInitGuiWanted()` could
+never return True again), its guest half in the fcx_widgets wheel
+(`_run_initgui` and the `_GROUPS` / `_install_group_rule` machinery that
+derived a command's group from the wheel its class came from, with the
+prelude's `_fcx_group` read that nothing sets any more), the
+`Sandbox:InitGuiInGuest` preference with it, and the two
+`draftutils.params` facades in generateSandboxFacades.py, which existed
+so the fcx_draft wheel could read the host's parameter store.
+
+**The `PySide` name moved into fcx_widgets, and U7 retired.**  The
+guest's Qt-shaped spelling was delivered by the WORKBENCH wheels: the
+shims under `src/App/ExpressionImage/shims/PySide/` were packed by
+fcx_draft (`--add shims=.`), so removing those wheels took the name
+`PySide` out of the guest -- and with it four gate modules of the
+widget layer that is KEPT (SandboxWidgets, SandboxForms,
+SandboxPanels, SandboxSelection), which exec Qt-shaped probes into
+the guest.  The classes themselves were never in those shims: they
+are `freecad.widgets.models` and `.qtdata` in the fcx_widgets wheel,
+and 7.3 says so -- "the guest classes `PySide.QtWidgets.QLabel` and
+the rest ARE those models".  So `PySide/` is now a package of
+fcx_widgets (ruling 2026-09-18, "Yes (I) it is"): `QtGui` and
+`QtWidgets` re-export qtdata and resolve widget classes through
+models, and `QtCore` additionally carries the guest half of the
+host-timer protocol (7.15) -- `_drain`, the deferred queue, the
+`gui.timer` dispatcher and `QTimer` -- which had no other home and
+which the image's prelude calls by name
+(`sys.modules['PySide.QtCore']._drain`).  What did NOT come back is
+U7's workbench compatibility: translate/`QT_TRANSLATE_NOOP`,
+`QCoreApplication`/`QApplication`, `QLocale`, `Slot`, `QUrl`,
+`QRegularExpression`, `QDesktopServices`, `QFileSystemModel`,
+`QMdiArea` and the `qRed`/`qGreen`/`qBlue` helpers.  Three gate cases
+retire with G2, being tests of workbench code in the guest:
+SandboxForms' `test_draft_orthoarray_panel` (Draft's
+task_orthoarray.py execed in the guest) and SandboxSessionDoc's
+`test_g_corpus` and `test_i_corpus_docommand` with their loaders.
+
+**The guest wheel was rebuilt**, not just re-stamped.  Removing the two
+facades changes the generated facade set and so the surface hash the
+stamp carries (7.17 (b)); the guest compiles its own `FcxFacades.inc`
+from the same generator, so the rebuild regenerates the stamp from the
+new set and host and guest agree again.  The hash is compared in one
+place only -- `programsSurfaceStampMatchesHost` -- and gates nothing at
+runtime; it was still worth the cross-build, because the same rebuild is
+what carries the in-image removals above into the shipped wheel.
+
+**Getting it back.**  A commit cannot cite its own hash, so the anchor is
+its PARENT, `e38cc266c1` ("App: the host file and code chokepoints (F1),
+keyed on the scope stack"), which still holds every file this removed:
+
+    git show e38cc266c1:src/App/ExpressionGuestProxy.cpp     # the guest side
+    git show e38cc266c1:src/App/PropertyPythonObject.cpp     # the routed Restore
+    git show e38cc266c1:src/Mod/BIM/CMakeLists.txt           # the fcx_bim wheel
+    git show e38cc266c1:src/Mod/Draft/CMakeLists.txt         # the fcx_draft wheel
+    git show e38cc266c1:src/Gui/FreeCADGuiInit.py            # the InitGui runner
+    git show e38cc266c1:src/App/ExpressionImage/ImageDispatch.cpp   # proxy_new
+    git checkout e38cc266c1 -- src/App/ExpressionImage/shims
+    git checkout e38cc266c1 -- src/Mod/Test/SandboxDraftGui.py \
+                               src/Mod/Test/SandboxCorpusGui.py \
+                               src/Mod/Test/SandboxInitGui.py
+
+Eighteen files were deleted outright: those three gates and fifteen of
+the sixteen under `src/App/ExpressionImage/shims` (`Draft_rc`/
+`Arch_rc`, `PartGui`, the `importers` and `nativeifc` shims, the
+`freecad` namespace package, and three of the four PySide modules).
+The sixteenth, `shims/PySide/QtCore.py`, MOVED to
+`src/App/ExpressionImage/widgets/PySide/QtCore.py`: its host-timer
+half is live code in fcx_widgets, so `git log --follow` on the new
+path reaches the shim's history, and the checkout above still
+restores the whole `shims` tree as it was.  Everything else was an edit
+inside a surviving file, so `git diff <this commit> e38cc266c1` shows
+the removal whole, and `git log --diff-filter=D --name-only` finds the
+deletions by path.
+
+Two scopes, both real.  That diff is 73 files, 667 insertions and 5035
+deletions, because this commit also carries the FOLDED modal fix (6
+files, 226 insertions, 83 deletions -- the second part of its message,
+7.30's `gui.cmd.run` wedge).  The figure this section quotes is the
+REMOVAL alone: 67 files of code, 185 insertions, 4899 deletions, which
+was `git diff 78947bd9f7 HEAD -- src/ tests/ scripts/` before the fold.
+The commit's subject for searching: "Sandbox: remove Proxy routing --
+installed workbench code is not a target".
+
 ## 8. Measurements
 
 All on this box (6 cores, `conda-relwithdebinfo-801`); the bench gtests
@@ -7307,11 +9919,11 @@ these numbers are not CI-checked and can drift.
     what                                  native   WASI (Release)   pyodide (final)
     ------------------------------------  -------  ---------------  ---------------
     transport floor                       --       2.68 us          5.4 us
-    wire floor (eval "1")                 --       12.8-15.7 us     22.2 us (was 30.6-37.6)
-    parse + eval arithmetic               2.03 us  13.36 us (6.6x)  18.6 us (was 23.6)
-    one property read                     ~3.0 us  20.92 us (7.1x)  29.7 us (was 37.1)
-    one bridge hop (marginal, read_prop)  --       5.4 us (was 7.1-7.6)  4.4 us (was 5.9-7.4)
-    pack per eval (export+proxy+release)  --       +19 us (was +23) +23 us (was +44, +27)
+    wire floor (eval "1")                 --       12.8-15.7 us     14.1 us (was 22.2, 30.6-37.6)
+    parse + eval arithmetic               1.8 us   13.36 us (6.6x)  15.9 us (was 18.6, 23.6)
+    one property read                     3.7 us   20.92 us (7.1x)  17.4 us (was 29.7, 37.1)
+    one bridge hop (marginal, read_prop)  --       5.4 us (was 7.1-7.6)  4.5 us (was 4.4, 5.9-7.4)
+    pack per eval (export+proxy+release)  --       +19 us (was +23) +7.4 us (was +23, +44, +27)
     instantiate + first eval              --       14 ms (.cwasm)   ~1.5-1.7 s
 
 The pyodide "was" figures are the bytearray/getBuffer transport; the
@@ -7359,6 +9971,72 @@ parse and evaluation, the pack and the handle traffic of fifteen
 item 4's "bench of one shape program routed against native", and the
 program side asks nothing more of it.
 
+**Re-measured 2026-09-16** (sec 11 item 4's decision run, pyodide, the
+same `ExpressionImageBenchTest` benches): the pyodide column above.  The
+pack is **+7.4 us**, not the +23 this table carried -- `image.eval.pack.
+noHop` 20.5 us less `image.eval.noPack` 13.1 us -- and the wire floor is
+14.1 us.  The C5 marshal work of 2026-09-15 (7.20: interned slot names,
+the facade-class cache, the last-string reuse) is where that went.  The
+marginal hop is unchanged at 4.5 us.
+
+`scripts/expr-phase0/native_bench.py`, run twice with `Evaluate` written
+EXPLICITLY both ways: a 10k-cell arithmetic sheet recomputes at 15.2
+us/cell native and 38.4 us/cell routed, so a routed cell carries about
+23 us of fixed cost -- wire floor 14.1 plus pack 7.4, the two terms of
+this table, of which the WIRE is now the larger.  Its first ten rows are
+NOT a routing measurement: `DocumentObjectPy::evalExpression` calls
+`Expression::getPyValue()` and never crosses the seam
+(`PropertySheet::evalPy` is the seam), so they read the same in both
+modes -- which is how the first run of this pair was misread, the sec 12
+trap biting its own author.  `DISABLED_BenchFlangeProgram`, the decider
+sec 11 item 4 names: a shape program is **1.084x** native when routed
+(21.4 ms against 19.8 ms, +1.7 ms, 15 bridge ops per evaluation).
+
+**A finding that is NOT the sandbox's, DIAGNOSED AND FIXED 2026-09-16**
+(`f21f46b9f1`).  A sheet of unit-valued cells that reference anything
+recomputed in **O(n^2)**.  Measured on `=Box.Height * i`, one document
+per case, routing off:
+
+    n=250     692.2 us/cell  ->  11.3        n=1000   2818.0  ->  11.6
+    n=500    1394.3          ->  10.9        n=2000   5681.3  ->  11.9
+
+Flat in n afterwards; 477x at 2000 cells.  The mechanism: a
+QUANTITY-valued cell's write goes through `Cell::setComputedUnit`,
+whose `AtomicPropertyChange` invokes `PropertySheet::hasSetValue()`,
+and that walks EVERY cell of the sheet (`getDepObjects` on each
+expression, plus the element-reference visitor) before calling
+`updateDeps`.  Per cell that is O(n).  The fix is the class's own
+batching: one `AtomicPropertyChange` held across `Sheet::execute`'s
+recompute loop makes the inner ones no-ops (`tryInvoke` fires only at
+`signalCounter == 1`), leaving one rebuild at the end -- which is what
+`hasSetValue` does anyway, rebuilding wholesale from `data`.
+`markChange` is false, so a pass that writes nothing still costs
+nothing.  Correctness: an external change still reaches the cells
+(`Box.Height` 10 -> 20 propagates) and the sheet still lists `Box` in
+its `OutList`; `TestSpreadsheet` 52 OK, ctest 643/643.  This is host
+code that looks upstream, not fork-specific.
+
+**Three things this section got wrong on the way, kept because they
+cost hours.**  (1) The SHAPE read was blamed and is innocent:
+`=Box.Shape.Volume / i` is flat at ~158 us/cell at every size, which is
+just OCCT's mass properties.  The original cell was pathological
+because it ends `+ Box.Height`, making the RESULT a quantity -- a plain
+number result never calls `setComputedUnit` and was never affected,
+which is why a 10k-cell arithmetic sheet was always 15 us/cell.  (2)
+The **56.8 ms/cell** figure carried a confound: that bench's sheet
+shares a document with a 10k-cell sheet and a third sheet, and
+`doc.recompute()` covers all of them; in a fresh document the same cell
+is 6.5 ms/cell.  Bench sheets belong in their own documents.  (3)
+Routing was never involved -- 56.9 ms/cell routed against 56.8 native.
+The `getDep(true)` -> `access(..., &deps)` observation below stands as
+true (collecting a dependency DOES evaluate the path, so a dependency
+walk over shape cells runs OCCT), and it is why this sheet was the
+worst case, but it was not the cause: `getDep` ignores its own
+`needProps` (`(void)needProps;`, 2022-05-09) with the cheap early
+return commented out beneath it, and the non-evaluating twin
+`getDepStructural` OVER-APPROXIMATES on purpose, so neither is a
+drop-in.  Both are still open, and both are the user's call.
+
 ### 8.2 The corpus gate
 
 `scripts/expr-switchover/{corpus_regression.py, run_gate.sh,
@@ -7388,6 +10066,17 @@ OCCT regression model, at 180 s).  The D3 fixtures are in the list --
 `src/Mod/Test/TestData/SandboxProgram` lies under the root, while the build
 and install copies are skipped -- and their seven expressions (five `Shape`
 programs, the linked consumer's, the sheet's method cell) are all the same.
+
+**Re-run 2026-09-16** (sec 11 item 3's decision run, pyodide): 95 files
+listed, 94 compared, **195 expressions, 195 same**, 0 differ, no error on
+either side, the same single timeout -- the 2026-09-14 result to the
+number.  What this gate does NOT answer, and item 3 turns on: the rig
+sets `Evaluate` BEFORE it opens its files, so all 94 do open routed, but
+a Proxy the guest cannot serve fails closed silently and the rig counts
+expression bindings only.  Probed separately, with no runtime installed:
+routing on de-Proxied 70 of 70 objects of
+`data/examples/draft_test_objects.FCStd`, routing off none.  That is the
+gap the `available()` guard of 3.5 closes.
 
 ### 8.3 The corpus
 
@@ -7515,16 +10204,23 @@ client".
 
     file                                          cases   covers
     --------------------------------------------  -----   ----------------------------------
-    tests/src/App/ExpressionSecurity.cpp            11    catalog, hash, grant store
-    tests/src/App/ExpressionSecurityRuntime.cpp      9    resolve, scopes, pending, audit
-    tests/src/App/ExpressionImageHost.cpp           81    programs 5 (7.17 D1: function
+    tests/src/App/ExpressionSecurity.cpp            12    catalog, hash, grant store
+    tests/src/App/ExpressionSecurityRuntime.cpp     16    resolve, scopes, pending, audit;
+                                                          the F1 chokepoints (7.29): path
+                                                          normalization, the blessed set,
+                                                          the three rows under a document
+                                                          scope, saveAs, the runFile guard
+    tests/src/App/ExpressionImageHost.cpp           73    programs 5 (7.17 D1: function
                                                           objects routed = native, the
                                                           flange, the surface stamp and
                                                           record), acceptance 6, bench 6 (disabled),
-                                                          bridge 8, budget 4, eval 25 (the
-                                                          G1a-G1d gates among them, the
-                                                          Draft and BIM corpus gates, the
-                                                          durable-handle gate),
+                                                          bridge 8, budget 4, eval 17 (the
+                                                          G1a-G1d gates among them; the
+                                                          eight Rung-2 cases -- the routed
+                                                          restores, the Draft and BIM corpus
+                                                          gates, the durable-handle gate,
+                                                          the wheel gate -- were REMOVED
+                                                          2026-09-18, 7.31),
                                                           host 9, routing 9
     tests/src/App/ExpressionPyodide.cpp             10    layout, verify, scoping, offer
     tests/src/App/TypeImport.cpp                    10    the type-string import rule
@@ -7579,12 +10275,16 @@ client".
                                                           a document refused), Draft_Upgrade's
                                                           commit and Arch_Site through
                                                           doCommand; the same gate script
-    src/Mod/Test/SandboxDraftGui.py                  3    G3c: Draft's DraftGui.py in the
-                                                          guest -- the tray tool bar, the
-                                                          panel built in code, a point
-                                                          typed on the host, the key
-                                                          stream, a menu, the main window
-                                                          shim (7.11); the same gate script
+    src/Mod/Test/SandboxHostFiles.py                 6    F1 (7.29): a document principal
+                                                          denied all three rows, host code
+                                                          ungated, and -- since 7.30 fixed
+                                                          the modal wedge -- the four
+                                                          guest-driven cases too
+                                                          (Std_DlgMacroExecuteDirect
+                                                          refused then granted,
+                                                          Std_RecentFiles refused, Std_Open
+                                                          blessed through the picker); all
+                                                          6 run; the same gate script
     tests/src/Gui/FormWidgets.cpp                   20    H0-H1, G3b, G3c: the host widget
                                                           layer's property core, class set,
                                                           layout ops, code-built layouts,
@@ -7638,13 +10338,14 @@ Every gtest and the corpus gate select a runtime per process through
 Preferences under `User parameter:BaseApp/Preferences/Expression/`:
 
     Sandbox:Runtime          "pyodide" | "wasi" (default: pyodide when built)
-    Sandbox:Evaluate         route evaluation through the image (default OFF);
-                             also routes a document object's saved Proxy
-                             to the guest at open, failing closed (3.5)
-    Sandbox:InitGuiInGuest   run the InitGui.py of a module whose GUI side
-                             is a bundled wheel (fcx_draft, fcx_bim) in the
-                             guest (default OFF; 7.9 G2b); the rig's
-                             FCX_INITGUI_IN_GUEST=1|0 overrides it
+    Sandbox:Evaluate         route EVALUATION through the image, and
+                             nothing else (default ON since 2026-09-16,
+                             OFF before).  It also requires a runtime
+                             that boots: the preference alone routes
+                             nothing.  It used to switch a saved
+                             Proxy's restore on as well, which is how
+                             one flag moved two unrelated halves --
+                             REMOVED 2026-09-18 (7.31)
     Sandbox:BudgetMs         5000        Sandbox:GraceMs   1000
     Sandbox:MemoryMB         1024: the ceiling on a guest's linear memory
                              (the Python heap) and on its array buffers,
@@ -7676,10 +10377,10 @@ CMake (`cMake/FreeCAD_Helpers/InitializeFreeCADBuildOptions.cmake`
 configure error), `FREECAD_PYODIDE_DIR` (bundle a distribution in a dev
 tree), `FREECAD_FCX_IMAGE_WHEEL` (ship the wheel under
 `<datadir>/Pyodide/wheels/`), `FREECAD_PIVY_WHEEL` (the pivy wheel of
-7.10, shipped and mirrored the same way), `FREECAD_BUNDLE_WASMTIME`.  With
-`BUILD_EXPR_PYODIDE_HOST` and `BUILD_DRAFT`, target `DraftSandboxWheel`
-packs `fcx_draft-<ver>-py3-none-any.whl` into the same wheels
-directory (5.6); `WidgetsSandboxWheel` packs `fcx_widgets` (the comm
+7.10, shipped and mirrored the same way), `FREECAD_BUNDLE_WASMTIME`.  The workbench
+wheel targets (`DraftSandboxWheel`, `BimSandboxWheel`) were REMOVED
+2026-09-18 (7.31) -- installed workbench code no longer runs in the
+guest.  `WidgetsSandboxWheel` packs `fcx_widgets` (the comm
 shim, 7.3) unconditionally, and `FREECAD_BUNDLED_WHEELS` (a `;`-list of
 pure wheels, `scripts/sandbox-fetch-wheels.py` fetches ipywidgets and
 traitlets) is mirrored one target per wheel (`<dist>_wheel`).
@@ -7733,6 +10434,9 @@ push the user's call).
    place under the sec 7 header's retire-on-break rule, and 1.7
    records what the workbench path would still need.
 1. **The Proxy import restriction, native.**  **BUILT 2026-09-09.**
+   **Load-bearing since 2026-09-18 (7.31): with Proxy routing removed
+   this is the WHOLE of the defence against a document-chosen module
+   name, and it never depended on routing.**
    `PropertyPythonObject::Restore` imports only a module already in
    `sys.modules` or one `importlib.util.find_spec` resolves inside a
    registered module root (`Type::addModuleRoot`, the rule
@@ -7798,6 +10502,32 @@ push the user's call).
    byte-identical to native, and the corpus gate stays green.
 3. **Routing ON by default** (`Expression/Sandbox:Evaluate`) when the
    corpus gate says so, as ruled 2026-08-31 -- not judgement.
+   **BUILT 2026-09-16.**  The gate said so: 95 files listed, 94
+   compared, 195 expressions, 195 same, 0 differ, no error on either
+   side, one timeout (8.2) -- the 2026-09-14 result to the number.
+   Found on the way and fixed BEFORE the flip: the same preference also
+   routed a saved Proxy's restore, which the gate does not measure, and
+   on a build with no runtime installed that de-Proxied 70 of 70
+   objects of a real Draft document, so `proxyRestoreRouted()` was made
+   to ask `available()` too (3.5), gated by
+   `ExpressionImageEvalTest.proxyRestoreNeedsRuntime`.  BOTH went in
+   7.31 (2026-09-18): the restore half is removed, and this preference
+   routes evaluation only -- that one flag moved two unrelated halves
+   is the whole reason the removal happened.  The flip
+   itself is the three defaults in `ExpressionEvaluator.cpp` and the
+   save/restore in `SandboxProxyImport.py`, which would otherwise read
+   False from an unset key and write it back.  Measured on the flipped
+   build over `data/examples/draft_test_objects.FCStd`: the key unset
+   routes (70 stand-ins, 0 native), a stored `false` still wins (70
+   native, so nobody who opted out is overridden), and with no runtime
+   the guard keeps all 70.  Live construction is NOT affected --
+   `MyClass(obj)` in a macro still builds a host Proxy, since
+   `constructGuestProxy` answers only for a construction the guest
+   serves.  `scripts/sandbox-reopen-routed.py` reproduces the 7.6
+   reference to the number: 70 stand-ins, 0 host, 0 unserved, 0
+   invalid, one shape not byte-identical (Polygon, the documented 1 ULP
+   of the guest's libm `cos`).  The rest of the work was the tests,
+   where an absent key used to mean off -- sec 12.
 4. **Expression performance, two bounded items** (1.3, rung 1's
    replacement): the bindings pack cached per cell across evaluations
    and invalidated on document change (the 23 us per eval of 8.1);
@@ -7806,11 +10536,35 @@ push the user's call).
    cells, 8.3).  Measured by the existing bench and the 10k-cell sheet
    projection.  A bench of one shape program routed against native
    decides whether anything more is needed.
+   **MEASURED 2026-09-16, and the measurement argues against building
+   either (8.1).**  The pack is 7.4 us, not 23 -- the C5 marshal work
+   took the rest -- so caching it per cell buys at most that, against a
+   TWO-SIDED protocol change (the host keeping handles past
+   `clearHandles()`, the guest suppressing the releases it queues as it
+   unwinds) and a staleness hazard.  Typed reads buy about 1 us of a
+   205 us `Shape.BoundBox`: 8.1's own note is that the 179/183 us is
+   OCCT computing mass properties, NOT materialization.  And the
+   decider this item names answers itself -- the flange program is
+   1.084x native routed.  What a routed sheet cell actually pays is the
+   WIRE floor (14.1 of its 23 us), which is neither of these items.
+   OPEN FOR THE USER: whether to spend anything here at all, and
+   whether the 56.8 ms/cell host finding of 8.1 is in scope.
+   **DEFERRED 2026-09-21 by the user** ("defer to later with real
+   file"): nothing is spent here until the question is put to a REAL
+   document rather than the synthetic benches -- the 10k-cell
+   projection and the flange program are both ours, and a measurement
+   that only ever sees our own fixtures is the reason this item
+   answered itself once already.  Re-open it with a real file in hand;
+   the 56.8 ms/cell host finding waits with it.
 5. **The browser's task panel** -- RULED 2026-09-10 ("B is good"):
    the PANEL MIRROR of 7.19 -- the desktop's real task panel walked
    into models and streamed, no edit to any workbench, C++ panels
    included -- with G7, the DOM view over the widget layer (7.12,
-   the ThinClient session's).  The `freecad.widgets` shim's op call
+   the ThinClient session's) -- **G7 SIZED 2026-09-16 as 7.22**:
+   W1-W5, 2.2-3.3k of TypeScript, one 20-line host change, the
+   gate a replay of frames dumped by the panel gate; the five
+   questions RULED 2026-09-16 and W1 started.  The `freecad.widgets`
+   shim's op call
    bound natively (route A: Draft's panels on the host without
    pyodide, the toolkit gates' native-mode twin) drops behind it and
    stays the answer for the tier with no Qt.  H2 and H3 (7.12) are
@@ -7826,7 +10580,18 @@ push the user's call).
    own catalog column (v2), the panel on `pyodide.console`; stages
    C1-C6, one to two weeks.  Un-drops the 7.14 chokepoints (F1): a
    remote client is the second guest that needs them, unless `gui`
-   is a hard DENY for clients.
+   is a hard DENY for clients -- which C3 chose.  C1 BUILT 2026-09-14,
+   C2, C3 and C4 BUILT 2026-09-15 (C4: the panel, on the guest's own
+   entry rather than `pyodide.console`); C5 BUILT 2026-09-15: measured (a
+   loop was one op per element, too slow through a tunnel), then a
+   per-statement prefetch of sibling reads, ruled the same day -- 50
+   objects at 100 ms RTT, 5.4 s -> 0.42 s; the guest is +185 MB PSS in
+   the page.  C6 (Safari) only if necessary (ruled 2026-09-15) -- and it
+   was: BUILT 2026-09-16 on a macOS box whose browser is Safari, the
+   guest in a worker parked in Atomics.wait with the socket left on the
+   page, and COOP/COEP on the served pages.  It also makes a pure CPU
+   loop interruptible, which C4 could not.  **Merged into `RemoteEdit`
+   2026-09-21**, with the other seven commits SecurePython was holding.
 
 DROPPED 2026-09-08: G4 (7.16, sized), F1 (7.14: it closed a hole only
 a SESSION guest has), N1-N5 (network is a session need), G5, G6, rung
@@ -7852,6 +10617,12 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    construction dispatch BUILT the same day (gate
    `draftTestObjectsBuiltRouted`: the whole Draft test document built
    with routing on, 70/70 Proxies in the guest); BIM remains (7.6).
+   **BIM's half SUPERSEDED 2026-09-21 by the user's ruling that add-on
+   code runs HOST-side only, never in the guest** -- the same rule 7.31
+   applied when it took Proxy routing out: what the sandbox boxes is
+   code carried IN THE DOCUMENT, and installed workbench code is not a
+   target.  So G1d has nothing pending; it is closed, not waiting on an
+   `fcx_bim` wheel or an Arch corpus.
 2. **G2** -- U1 + U2 + U7: Draft and BIM register from the guest; the
    subset shim.  SIZED 2026-09-05 (7.9): G2a the registration mechanism
    (the guest's `FreeCADGui`, the `gui.*` op family, stand-in commands,
@@ -7941,8 +10712,8 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    manipulator; both `Activated()`s run to their end; gate
    `SandboxInitGui` 7/7).  NEXT (ruled 2026-09-07): G4 -- SIZED
    2026-09-07 (7.16), its scope put to the user -- then F1.
-   **F1 -- the file and code chokepoints** (7.14, SIZED 2026-09-07, not
-   built): `fs.read` / `fs.write` / `host.exec` checked inside the
+   **F1 -- the file and code chokepoints** (7.14, BUILT 2026-09-17 as
+   7.29): `fs.read` / `fs.write` / `host.exec` checked inside the
    core's file and `runFile` primitives under the guest's scope, the
    host's own file dialog blessing the paths it returns; closes the one
    host-execution path a guest has (`Gui.runCommand("Std_RecentMacros")`
@@ -7970,10 +10741,10 @@ Phase 1 image and router (2026-08-31), the pyodide runtime and budget
    **N4** -- WebSocket (`net.ws:<origin>`), and `SOCKFS` under its own
    `net.socket` permission.
 10. **G5** -- the snapper in C++, when measured to matter.  **G7** --
-    the DOM walker over the widget layer in the browser tier (7.12;
-    no Draft/BIM gate of its own): every panel, guest or native, in
-    the browser from the same models.  The Qt-free manager over bgfx
-    (RmlUi or imgui) is DROPPED, 7.4.
+    the DOM walker over the widget layer in the browser tier (7.12,
+    SIZED 2026-09-16 as 7.22; no Draft/BIM gate of its own): every
+    panel, guest or native, in the browser from the same models.
+    The Qt-free manager over bgfx (RmlUi or imgui) is DROPPED, 7.4.
 11. **Rung 1** -- generated C++ dispatch for `call` members; the
     App-core severance.  **Rung 2** -- per-document guests.
 12. **N5 / G6 / the switch** -- `Python/Runtime = pyodide`, Draft and BIM
@@ -7985,6 +10756,32 @@ sockets, any network for the reference image, a webview escape hatch.
 
 ## 12. Traps
 
+- **A panel inside `#fc-ui` that never sets `pointer-events: auto` is
+  invisible to the finger** (found on a handset 2026-09-17, 7.24).  The
+  chrome host is `pointer-events: none` so the canvas keeps everything
+  the chrome does not claim, and each panel opts back in for itself --
+  miss it and every tap goes through to the model, the close button
+  does nothing, and the panel still looks exactly right.  Nothing
+  warns.  No gate here can catch it either: the panel harnesses mount
+  into a plain `document.body` host with no such ancestor, so the
+  defect cannot exist in a harness.  What catches it is a real tap --
+  `document.elementFromPoint` over the panel answers the canvas (an
+  element with no class), and a touch listener on the canvas counts an
+  event that should never have reached it.
+- **moc drops the rest of the class after a raw string holding an
+  unbalanced `(`** (found 2026-09-17, 7.23's gate).  A case that feeds
+  the host an expression which deliberately does not parse wants
+  `R"("text":"2 * ("})"` -- and moc's lexer ends the literal at the
+  first `)"` it believes it has found, loses the class, and emits a
+  meta object with NO slots at all.  Nothing warns.  The build fails
+  much later, at link, with `undefined reference to vtable for
+  testFormWidgets`, which points at the class rather than at the
+  string, and the stale test binary keeps passing in the meantime.
+  Proving it takes one command -- run `.conda/freecad/lib/qt6/moc`
+  over the file and count the `test_` names in its output: 0 with that
+  literal, 21 without.  Write such a case as an escaped ordinary
+  string.  The file is full of legitimate `R"({...})"` JSON, which is
+  fine: it is the unbalanced parenthesis, not the raw string.
 - **The tool bar manager owns every `QToolBar` under the status bar**
   (7.15).  A bar a workbench puts in the status bar itself is adopted
   into the manager's `StatusBarArea`, hidden on the next workbench
@@ -8022,6 +10819,23 @@ sockets, any network for the reference image, a webview escape hatch.
 - A `FREECAD_USER_HOME` pointing at a nonexistent directory is silently
   ignored and writes the REAL `user.cfg`; an ad-hoc gate run once left
   `Enforce=0` there.
+- **An absent `Evaluate` key stopped meaning "off" on 2026-09-16**, when
+  routing became the default (sec 11 item 3).  Twelve cases in three
+  modules broke on it.  `SandboxProgram.route(False)` removed the key
+  and then asserted `routed()` was False.  The tampered-library case
+  used the same idiom for its "natively and enforced" step, so that
+  step ran ROUTED, where `import Part` is served by the guest instead
+  of being `host.import` -- the withheld grant blocked nothing and the
+  consumer stayed Up-to-date instead of going Invalid.
+  `FeaturePythonChainCases` and `ViewProviderChainCases` set routing
+  nowhere at all, while their hooks are recorded on the HOST and a
+  Proxy restored into the guest calls nothing there (a view provider's
+  own Proxy is never routed, but the EXTENSION of a view chain is a
+  document object whose Proxy is).  The distinction to keep: removing
+  the key INSIDE a save-and-restore is right -- it restores "unset",
+  which is what was there, and every `PrefGuard` in the Test modules
+  does exactly that; removing it to MEAN off is a bug.  A case that
+  wants native writes `SetBool("Evaluate", False)`.
 - The image directory is read-only after an install: the compiled
   module cache must live under `<user cache>`; its file name hashes the
   full image path (collision if two images share a base name).
@@ -8389,6 +11203,29 @@ sockets, any network for the reference image, a webview escape hatch.
   two vertices.  `SandboxProgram` holds the committed fixtures to the
   byte and a parameter change to 4 ULPs, the bar `SandboxCorpusGui`
   already uses.
+- **And a THIRD libm breaks the tie that byte-exactness rested on**
+  (measured on Windows 2026-09-20, ruled 2026-09-21).  `Flange2` in
+  `ProgramFlangeSheet.FCStd` (Pcd 60, 8 bolts, so a 45 degree step)
+  failed `testProgramsRoutedMatchNative` on MSVC and nowhere else: one
+  token of 9683 differs, `21.213203435596427` native against
+  `...423` routed, exactly 1.0 ULP.  glibc's `sin(pi/4)` is correctly
+  rounded and MSVC's UCRT returns the ULP-up neighbour
+  (`3fe6a09e667f3bcd`, confirmed on the box), whose error happens to
+  cancel the double rounding in `r * sin(a)` -- so the LESS accurate
+  sine yields the nearer product, and glibc and musl agreeing was luck,
+  not a guarantee.  FMA is refuted: `-ffp-contract=fast` and an
+  explicit `fma` still give `...423`, because `fl(sin a)` is already
+  rounded.  **Ruled: bound every number the BRep carries.**
+  `assertSameBreps` keeps the byte comparison as its fast path and
+  falls back to a token-wise numeric comparison at the same 4 ULPs --
+  the serialization is whitespace-separated ASCII, so the token counts
+  must match, every non-numeric token must match exactly, and so must
+  every INTEGER token, since a tolerant comparison of a vertex index
+  would hide a real topology change.  Swapping the assertion to
+  `assertSameGeometry` was rejected: it passes by not looking, checking
+  only face count, vertex count and vertex coordinates, and the
+  vertices here are bit-identical -- what moved is the bolt hole
+  cylinder's placement.
 
 ## 13. Known gaps and open questions
 
@@ -8427,11 +11264,23 @@ sockets, any network for the reference image, a webview escape hatch.
   (BimSelect's observer stands down), `FreeCAD.isRestoring()` always
   False in the guest.
 - **`Gui.runCommand` from a guest runs any host command under `gui`**
-  (7.14, sized): `Std_RecentMacros`, `Std_RecentFiles` and
-  `Std_DlgMacroExecuteDirect` run a file or open one with no picker,
-  so a session or an addon reaches host Python and host files by name.
-  A document principal cannot (`gui` DENY, not promptable).  The answer
-  is F1, the chokepoints at the primitives, not a list of names.
+  (7.14; CLOSED 2026-09-17 by F1, 7.29): `Std_RecentMacros`,
+  `Std_RecentFiles` and `Std_DlgMacroExecuteDirect` run a file or open
+  one with no picker, so a session or an addon reached host Python and
+  host files by name.  A document principal never could (`gui` DENY,
+  not promptable).  The answer was F1, the chokepoints at the
+  primitives, not a list of names.
+- **A host command that THROWS under `gui.cmd.run` answered the guest
+  `ok(true)`** (found building F1, 7.29; CLOSED 2026-09-17 by 7.30):
+  not the reentrancy -- `Command::_invoke` caught the refusal and
+  popped a modal `QMessageBox` inside the op.  The swallowed refusal
+  came back to the guest as a SUCCESS, dialog or no dialog; and where
+  nobody is at the keyboard (the gate under Xvfb, a headless or served
+  session) the guest also sat in wasm until the run was killed.  Named
+  under gdb (gdb as PARENT: `yama/ptrace_scope` is 1, so it cannot
+  attach).  `_invoke` now rethrows while a principal scope is active,
+  and the view-message bindings convert at the boundary so no C++
+  exception crosses the CPython eval loop.
 - **A guest view provider's scene is G4's** (7.13, S2 built note;
   G4 sized 2026-09-07 in 7.16):
   `Arch.makeSite()` from the guest builds `_ViewProviderSite` in the
@@ -8446,13 +11295,14 @@ sockets, any network for the reference image, a webview escape hatch.
 
 - Document OPEN imports, before any expression runs.
   `PropertyPythonObject::Restore`'s `PyImport_ImportModule` on a
-  document-chosen module name is CLOSED for document objects with
-  routing on (G1c step (f), 2026-09-04): the module is imported in the
-  guest, the instance allocated there, the property holds the stand-in,
-  and a module the guest cannot serve fails closed (3.5, 7.6).  CLOSED
-  2026-09-09, natively, for BOTH containers (sec 11 item 1): the native
+  document-chosen module name is CLOSED 2026-09-09, natively, for BOTH
+  containers (sec 11 item 1).  The ROUTED half of this entry -- the
+  module imported in the guest, a module the guest cannot serve HELD on
+  `host.import` (G1c step (f) 2026-09-04, 7.28) -- was REMOVED
+  2026-09-18 (7.31); the native rule is what closes this, and always
+  was.  The native
   import in `PropertyPythonObject::Restore` -- a document object's Proxy
-  with routing off, a VIEW PROVIDER's Proxy always -- and the legacy
+  and a VIEW PROVIDER's Proxy alike -- and the legacy
   pickle header's module name go through `Base::Type::moduleAllowed`
   first; a refused name is logged with the container's full name and
   the object is left without a Proxy.  A consequence worth knowing: a

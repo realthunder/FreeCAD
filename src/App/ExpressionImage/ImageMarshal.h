@@ -35,6 +35,11 @@ bool hostOp(const nlohmann::json& req, nlohmann::json& reply);
 /// bridge request or on the evaluation's reply; never as an op.
 nlohmann::json takePendingReleases();
 
+/// Forget the reads the host prefetched (FcxWire "pf", docs/Sandbox.md
+/// 7.20 C5): at the start and the end of every host request.  The bridge
+/// also forgets them before any op that may write.
+void clearPrefetched();
+
 /** Build the module facades (generated MODULES: Part today) into
  * sys.modules -- callables over mod_call, constants over mod_get,
  * exception classes local to the guest.  Called from initEvalGlobals;
@@ -47,9 +52,9 @@ bool installModuleFacades();
 /// reply names it (Part.OCCError).
 PyObject* guestExceptionType(const char* name);
 
-/// A function of the proxy prelude by name (borrowed; the rung 2 proxy
-/// registry: _proxy_new, _proxy_call, _proxy_drop, _proxy_get), or
-/// nullptr with a Python error set.
+/// A function of the proxy prelude by name (borrowed; the proxy
+/// registry: _proxy_call, _proxy_drop, _proxy_get), or nullptr with a
+/// Python error set.
 PyObject* preludeFunction(const char* name);
 
 /// (version, sha256) of the surface this guest was generated from --

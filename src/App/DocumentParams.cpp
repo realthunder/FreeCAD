@@ -58,6 +58,7 @@ public:
         signalParamChanged("PreferBinary");
         signalParamChanged("InlineListSize");
         signalParamChanged("ArchiveRandomAccess");
+        signalParamChanged("ArchiveBlobStore");
         signalParamChanged("DeferShapeLoad");
         signalParamChanged("SaveMaterialCards");
         signalParamChanged("DedupShapePCurves");
@@ -103,6 +104,7 @@ public:
     bool PreferBinary;
     long InlineListSize;
     bool ArchiveRandomAccess;
+    bool ArchiveBlobStore;
     bool DeferShapeLoad;
     bool SaveMaterialCards;
     bool DedupShapePCurves;
@@ -163,6 +165,8 @@ public:
         funcs["InlineListSize"] = &DocumentParamsP::updateInlineListSize;
         ArchiveRandomAccess = this->handle->GetBool("ArchiveRandomAccess", true);
         funcs["ArchiveRandomAccess"] = &DocumentParamsP::updateArchiveRandomAccess;
+        ArchiveBlobStore = this->handle->GetBool("ArchiveBlobStore", true);
+        funcs["ArchiveBlobStore"] = &DocumentParamsP::updateArchiveBlobStore;
         DeferShapeLoad = this->handle->GetBool("DeferShapeLoad", true);
         funcs["DeferShapeLoad"] = &DocumentParamsP::updateDeferShapeLoad;
         SaveMaterialCards = this->handle->GetBool("SaveMaterialCards", true);
@@ -287,6 +291,10 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateArchiveRandomAccess(DocumentParamsP *self) {
         self->ArchiveRandomAccess = self->handle->GetBool("ArchiveRandomAccess", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateArchiveBlobStore(DocumentParamsP *self) {
+        self->ArchiveBlobStore = self->handle->GetBool("ArchiveBlobStore", true);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateDeferShapeLoad(DocumentParamsP *self) {
@@ -458,6 +466,14 @@ static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
 "archive order, nothing pays for inflating entries nobody reads,\n"
 "and an entry can be reopened after the restore. Turn off to\n"
 "fall back to the forward-only walk."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "ArchiveBlobStore", "ArchiveBlobStore", App::ParamInfo::Bool, true)
+        .setTitle("Archive Blob Store")
+        .setDoc("Serve the included files of a document archive out of one copy\n"
+"of the archive in the transient directory, and give each its own\n"
+"file only when something asks for a path. Requires\n"
+"ArchiveRandomAccess. Turn off to write every included file out\n"
+"during the restore, which on a monitored filesystem costs a file\n"
+"create per entry."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "DeferShapeLoad", "DeferShapeLoad", App::ParamInfo::Bool, true)
         .setTitle("Defer Shape Load")
         .setDoc("Park shape archive entries during restore and read each one on\n"
@@ -946,6 +962,39 @@ void DocumentParams::setArchiveRandomAccess(const bool &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void DocumentParams::removeArchiveRandomAccess() {
     instance()->handle->RemoveBool("ArchiveRandomAccess");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docArchiveBlobStore() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Serve the included files of a document archive out of one copy\n"
+"of the archive in the transient directory, and give each its own\n"
+"file only when something asks for a path. Requires\n"
+"ArchiveRandomAccess. Turn off to write every included file out\n"
+"during the restore, which on a monitored filesystem costs a file\n"
+"create per entry.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & DocumentParams::getArchiveBlobStore() {
+    return instance()->ArchiveBlobStore;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & DocumentParams::defaultArchiveBlobStore() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setArchiveBlobStore(const bool &v) {
+    instance()->handle->SetBool("ArchiveBlobStore",v);
+    instance()->ArchiveBlobStore = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeArchiveBlobStore() {
+    instance()->handle->RemoveBool("ArchiveBlobStore");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

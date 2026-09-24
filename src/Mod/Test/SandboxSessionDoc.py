@@ -235,70 +235,6 @@ def t_saveas_madeup(cmd):
     return "saved"
 
 
-def load_corpus():
-    """Import Draft's and BIM's command modules in the guest and
-    register their commands under Fcx_ names: the host may hold the
-    native ones, and a guest registration must not shadow those."""
-    recorded = {}
-    original = FreeCADGui.addCommand
-
-    def record(name, obj, activation=None):
-        recorded[name] = obj
-
-    FreeCADGui.addCommand = record
-    try:
-        import draftguitools.gui_heal
-        import bimcommands.BimTrash
-    finally:
-        FreeCADGui.addCommand = original
-    for name in ("Draft_Heal", "BIM_Trash", "BIM_EmptyTrash"):
-        cmd = recorded[name]
-        if name.startswith("BIM_"):
-            # Command::_invoke consults IsActive; BIM's asks the active
-            # window for a scene graph, which is G4 -- the gate stands
-            # in for the view (Draft's asks for the active document,
-            # which S1 answers)
-            type(cmd).IsActive = lambda self: True
-        FreeCADGui.addCommand("Fcx_" + name, cmd)
-    return sorted(recorded)
-
-
-def load_corpus_docommand():
-    """S2's two: Draft_Upgrade (a Modifier: DraftGui's tool bar, the
-    working plane, the commit through todo.doTasks and Gui.doCommand)
-    and Arch_Site (addModule, doCommand, a transaction).  Both IsActive
-    ask for the 3D view (G4): stubbed, as above."""
-    import DraftGui  # noqa: F401  (Gui.draftToolBar, which a Modifier's Activated takes)
-
-    import importlib
-    import sys
-
-    if not hasattr(FreeCAD, "activeDraftCommand"):
-        FreeCAD.activeDraftCommand = None  # DraftTools.py's, at the workbench's import
-    recorded = {}
-    original = FreeCADGui.addCommand
-
-    def record(name, obj, activation=None):
-        recorded[name] = obj
-
-    FreeCADGui.addCommand = record
-    try:
-        # (a package's first command module imports them all: the one
-        # load_corpus did leaves these imported and unrecorded -- reload)
-        for mod in ("draftguitools.gui_upgrade", "bimcommands.BimSite"):
-            if mod in sys.modules:
-                importlib.reload(sys.modules[mod])
-            else:
-                importlib.import_module(mod)
-    finally:
-        FreeCADGui.addCommand = original
-    for name in ("Draft_Upgrade", "Arch_Site"):
-        cmd = recorded[name]
-        type(cmd).IsActive = lambda self: True
-        FreeCADGui.addCommand("Fcx_" + name, cmd)
-    return sorted(recorded)
-
-
 def _main():
     import sys
 
@@ -333,22 +269,11 @@ def t_docommand(cmd):
     return out
 
 
-def t_makesite(cmd):
-    try:
-        FreeCADGui.addModule("Arch")
-        FreeCADGui.doCommand("obj = Arch.makeSite()")
-        return ["ok", "obj" in _main()]
-    except Exception:
-        import traceback
-
-        return traceback.format_exc()
-
-
 TASKS = {
     "active": t_active, "switch": t_switch, "writes": t_writes, "keep": t_keep,
     "reuse": t_reuse, "reuse_closed": t_reuse_closed, "two": t_two, "save": t_save,
     "saveas_picked": t_saveas_picked, "saveas_madeup": t_saveas_madeup,
-    "docommand": t_docommand, "makesite": t_makesite,
+    "docommand": t_docommand,
 }
 '''
 
@@ -699,65 +624,6 @@ class SandboxSessionDocTest(unittest.TestCase):
         self.assertFalse(os.path.exists(madeup))
         self.assertEqual(self.doc.FileName, picked)
 
-    # ---- 7. the corpus: direct bodies, no doCommand, no view -------------
-
-    def test_g_corpus(self):
-        import FreeCADGui
-
-        try:
-            import Draft
-        except Exception as e:
-            self.skipTest("Draft: %s" % e)
-        # (importing one command module imports the whole package's
-        # commands: every one is recorded, three are registered)
-        registered = self.read("fcx_sessdoc.load_corpus()")
-        self.assertLessEqual({"BIM_EmptyTrash", "BIM_Trash", "Draft_Heal"}, set(registered))
-        for name in ("Fcx_Draft_Heal", "Fcx_BIM_Trash", "Fcx_BIM_EmptyTrash"):
-            self.assertIn(name, FreeCADGui.listCommands())
-
-        # Draft_Heal on a selected wire: healed = copied (copyObject)
-        # and the original removed, inside the command's own "Heal"
-        # transaction
-        points = [FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(10, 0, 0), FreeCAD.Vector(10, 10, 0)]
-        wire = Draft.make_wire(points)
-        self.doc.recompute()
-        self.settle()
-        wire_name = wire.Name
-        wires_before = [o.Name for o in self.doc.Objects if Draft.get_type(o) == "Wire"]
-        FreeCADGui.Selection.addSelection(wire)
-        undo_before = self.doc.UndoCount
-        FreeCADGui.runCommand("Fcx_Draft_Heal")
-        self.settle()
-        self.doc.recompute()
-        self.settle()
-        self.assertIsNone(self.doc.getObject(wire_name))
-        healed = [o for o in self.doc.Objects if Draft.get_type(o) == "Wire"]
-        self.assertEqual(len(healed), len(wires_before))
-        self.assertEqual([tuple(p) for p in healed[0].Points], [tuple(p) for p in points])
-        self.assertGreater(self.doc.UndoCount, undo_before)
-        self.assertIn("Heal", self.doc.UndoNames)
-
-        # BIM_Trash on the selected box: in the Trash group and hidden;
-        # BIM_EmptyTrash: gone
-        FreeCADGui.Selection.clearSelection()
-        FreeCADGui.Selection.addSelection(self.box)
-        undo_before = self.doc.UndoCount
-        FreeCADGui.runCommand("Fcx_BIM_Trash")
-        self.settle()
-        trash = self.doc.getObject("Trash")
-        self.assertIsNotNone(trash)
-        self.assertTrue(trash.isDerivedFrom("App::DocumentObjectGroup"))
-        self.assertIn(self.box, trash.Group)
-        self.assertFalse(self.box.ViewObject.Visibility)
-        self.assertGreater(self.doc.UndoCount, undo_before)
-        FreeCADGui.Selection.clearSelection()
-        undo_before = self.doc.UndoCount
-        FreeCADGui.runCommand("Fcx_BIM_EmptyTrash")
-        self.settle()
-        self.assertIsNone(self.doc.getObject("Box"))
-        self.assertEqual(list(trash.Group), [])
-        self.assertIn("Empty Trash", self.doc.UndoNames)
-        self.assertGreater(self.doc.UndoCount, undo_before)
 
     # ---- 8. Gui.doCommand in the guest (S2) -----------------------------
 
@@ -841,89 +707,3 @@ class SandboxSessionDocTest(unittest.TestCase):
         self.assertTrue(denied, "no audit line for the refused document call")
         self.assertTrue(denied[-1]["principal"].startswith("document:sha256:"))
 
-    # ---- 9. the corpus through doCommand: Draft_Upgrade, Arch_Site --------
-
-    def test_i_corpus_docommand(self):
-        import FreeCADGui
-
-        try:
-            import Draft
-            import Draft_rc  # noqa: F401  (the icons DraftGui names)
-        except Exception as e:
-            self.skipTest("Draft: %s" % e)
-        registered = self.read("fcx_sessdoc.load_corpus_docommand()")
-        self.assertLessEqual({"Draft_Upgrade", "Arch_Site"}, set(registered))
-        for name in ("Fcx_Draft_Upgrade", "Fcx_Arch_Site"):
-            self.assertIn(name, FreeCADGui.listCommands())
-
-        # Draft_Upgrade on two preselected lines sharing a point: proceed()
-        # runs inline, finish() queues the commit, the shim's timer queue
-        # drains when Activated returns -- Draft.upgrade wires them into
-        # one Part::Feature inside the "Upgrade" transaction, and the
-        # recompute line runs after the commit (delayAfter)
-        a = Draft.make_line(FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(10, 0, 0))
-        b = Draft.make_line(FreeCAD.Vector(10, 0, 0), FreeCAD.Vector(10, 10, 0))
-        self.doc.recompute()
-        self.settle()
-        names = {a.Name, b.Name}
-        before = {o.Name for o in self.doc.Objects}
-        FreeCADGui.Selection.clearSelection()
-        FreeCADGui.Selection.addSelection(a)
-        FreeCADGui.Selection.addSelection(b)
-        undo_before = self.doc.UndoCount
-        text_before = self.python_console_text()
-        FreeCADGui.runCommand("Fcx_Draft_Upgrade")
-        self.settle()
-        self.doc.recompute()
-        self.settle()
-        after = {o.Name for o in self.doc.Objects}
-        self.assertEqual(names & after, set(), "the upgraded lines were not deleted")
-        new = after - before
-        self.assertEqual(len(new), 1, new)
-        wire = self.doc.getObject(new.pop())
-        self.assertEqual(wire.TypeId, "Part::Feature")
-        self.assertEqual(len(wire.Shape.Edges), 2)
-        self.assertEqual(len(wire.Shape.Vertexes), 3)
-        self.assertGreater(self.doc.UndoCount, undo_before)
-        self.assertIn("Upgrade", self.doc.UndoNames)
-        text = self.python_console_text()
-        if text is not None:
-            text = text[len(text_before):]
-            self.assertIn("Draft.upgrade(FreeCADGui.Selection.getSelection(), delete=True)", text)
-            self.assertIn("FreeCAD.ActiveDocument.recompute()\n", text)
-
-        # Arch_Site: addModule Arch and Draft, obj = Arch.makeSite() and
-        # Draft.autogroup(obj) through doCommand, inside "Create Site"
-        FreeCADGui.Selection.clearSelection()
-        text_before = self.python_console_text()
-        probe = self.activate("makesite")
-        self.assertEqual(probe, ["ok", True], probe)
-        before = {o.Name for o in self.doc.Objects}
-        undo_before = self.doc.UndoCount
-        FreeCADGui.runCommand("Fcx_Arch_Site")
-        self.settle()
-        self.doc.recompute()
-        self.settle()
-        new = {o.Name for o in self.doc.Objects} - before
-        sites = [o for o in (self.doc.getObject(n) for n in new) if Draft.get_type(o) == "Site"]
-        self.assertEqual(len(sites), 1, new)
-        self.assertEqual(sites[0].IfcType, "Site")
-        self.assertGreater(self.doc.UndoCount, undo_before)
-        self.assertIn("Create Site", self.doc.UndoNames)
-        # the guest's __main__ holds the command's obj; the host's does not
-        keys = self.read("[sorted(k for k in fcx_sessdoc._main() if not k.startswith('__')),"
-                         " fcx_sessdoc._main() is __import__('freecad.widgets.gui',"
-                         " fromlist=['x'])._main_dict()]")
-        self.assertIn("obj", keys[0], keys)
-        self.assertEqual(self.read("fcx_sessdoc._main()['obj'].Name"), sites[0].Name)
-        import __main__
-
-        self.assertFalse(hasattr(__main__, "obj") and getattr(__main__.obj, "Name", None)
-                         == sites[0].Name)
-        if text is not None:
-            # (the probe's addModule recorded `import Arch`; the command's
-            # is the guest's second, deduped as Command::addModule dedupes)
-            text = self.python_console_text()[len(text_before):]
-            self.assertEqual(text.count("import Arch\n"), 1, text)
-            self.assertEqual(text.count("obj = Arch.makeSite()\n"), 2, text)
-            self.assertIn("Draft.autogroup(obj)\n", text)
