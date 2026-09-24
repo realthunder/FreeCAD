@@ -92,7 +92,9 @@ App::DocumentObjectExecReturn* FeaturePrimitive::execute(const TopoDS_Shape& pri
         if (isRecomputePaused())
             return App::DocumentObject::StdReturn;
          
-        Shape.setValue(makeBoolean(base, primitiveShape));
+        // A cut that removes nothing hands back the base, still moved into
+        // this frame above.
+        Shape.setValue(wrapLocated(makeBoolean(base, primitiveShape)));
     }
     catch (Standard_Failure& e) {
 

@@ -369,13 +369,35 @@ App::DocumentObjectExecReturn *Feature::recompute(void)
     if(!failed)
         updateSuppressedShape();
     else
-        Shape.setValue(getBaseShape(true));
+        Shape.setValue(getPlacedBaseShape());
     return  App::DocumentObject::StdReturn;
+}
+
+TopoShape Feature::wrapLocated(const TopoShape& shape) const
+{
+    if (shape.isNull() || shape.getShape().Location().IsIdentity())
+        return shape;
+    TopoShape res(0, getDocument()->getStringHasher());
+    res.makECompound({shape});
+    return res;
+}
+
+TopoShape Feature::getPlacedBaseShape() const
+{
+    // Setting the base shape as it is would hand this feature the base's
+    // Placement, and a suppressed primitive would come back misplaced.
+    TopoShape shape = getBaseShape(true);
+    if (shape.isNull())
+        return shape;
+    shape.move(getLocation().Inverted());
+    shape = wrapLocated(shape);
+    shape.setPlacement(Placement.getValue());
+    return shape;
 }
 
 void Feature::updateSuppressedShape()
 {
-    auto baseShape = getBaseShape(true);
+    auto baseShape = getPlacedBaseShape();
     TopoShape res(getID());
     TopoShape shape = Shape.getShape();
     shape.setPlacement(Base::Placement());

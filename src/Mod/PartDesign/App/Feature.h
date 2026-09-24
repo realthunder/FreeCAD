@@ -110,6 +110,17 @@ protected:
 
     void updateSuppressedShape();
 
+    /** Returns \a shape, given in this feature's local frame, ready for
+     *  Shape.setValue(). That call makes the shape's own location and
+     *  Placement one and the same, so a shape that still carries a location
+     *  -- a base shape a boolean handed back untouched -- is wrapped in a
+     *  compound, which takes Placement while the shape keeps its offset.
+     */
+    TopoShape wrapLocated(const TopoShape& shape) const;
+
+    /// The base shape, placed by this feature's Placement, for a suppressed feature
+    TopoShape getPlacedBaseShape() const;
+
     /// Grab any point from the given face
     static const gp_Pnt getPointFromFace(const TopoDS_Face& f);
     /// Make a shape from a base plane (convenience method)

@@ -168,6 +168,43 @@ class TestPrimitive(unittest.TestCase):
         self.Doc.recompute()
         self.assertAlmostEqual(self.Wedge001.Shape.Volume, 1/2.0 * (10*10 - 9*8) * 10)
 
+    def _placedBoxes(self, typeName, placement):
+        self.Body = self.Doc.addObject('PartDesign::Body','Body')
+        self.Box = self.Body.newObject('PartDesign::AdditiveBox','Box')
+        self.Box.MapMode = 'Deactivated'
+        self.Box.Placement = FreeCAD.Placement(FreeCAD.Vector(1, 2, 3),
+                                               FreeCAD.Rotation(FreeCAD.Vector(0, 0, 1), 20))
+        self.Box001 = self.Body.newObject('PartDesign::' + typeName,'Box001')
+        self.Box001.Length = self.Box001.Width = self.Box001.Height = 4
+        self.Box001.MapMode = 'Deactivated'
+        self.Box001.Placement = placement
+        self.Doc.recompute()
+
+    def testSubtractiveMissingBase(self):
+        # a cut that removes nothing leaves the base where it was
+        self._placedBoxes('SubtractiveBox', FreeCAD.Placement(FreeCAD.Vector(100, 100, 100),
+                                                              FreeCAD.Rotation()))
+        self.assertAlmostEqual(self.Box001.Shape.Volume, 1000)
+        self.assertTrue(self.Box001.Shape.BoundBox.isInside(self.Box.Shape.BoundBox.Center))
+        self.assertTrue(self.Box001.Placement.isSame(FreeCAD.Placement(
+            FreeCAD.Vector(100, 100, 100), FreeCAD.Rotation()), 1e-12))
+
+    def testSuppressKeepsPlacement(self):
+        placement = FreeCAD.Placement(FreeCAD.Vector(8, 8, 8),
+                                      FreeCAD.Rotation(FreeCAD.Vector(0, 0, 1), 30))
+        self._placedBoxes('AdditiveBox', placement)
+        volume = self.Box001.Shape.Volume
+        self.assertGreater(volume, 1000 + 1e-6)
+        self.Box001.Suppress = True
+        self.Doc.recompute()
+        self.assertTrue(self.Box001.Placement.isSame(placement, 1e-12))
+        self.assertAlmostEqual(self.Box001.Shape.Volume, 1000)
+        self.assertTrue(self.Box001.Shape.BoundBox.isInside(self.Box.Shape.BoundBox.Center))
+        self.Box001.Suppress = False
+        self.Doc.recompute()
+        self.assertTrue(self.Box001.Placement.isSame(placement, 1e-12))
+        self.assertAlmostEqual(self.Box001.Shape.Volume, volume)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestPrimitive")
