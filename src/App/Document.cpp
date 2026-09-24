@@ -3212,6 +3212,13 @@ void Document::restore (const char *filename,
     }
 
     restore(*_xmlReader, delaySignal, objNames);
+
+    // The index holds the file open, and on Windows an open file cannot be
+    // renamed or deleted -- not by the user, and not by the recovery dialog
+    // moving a recovered file into place. Keep it only while there is
+    // something parked to serve from it.
+    if (d->deferredFiles.empty())
+        d->archiveReader.reset();
 }
 
 bool Document::hasDeferredFile(const Base::Persistence *obj) const
