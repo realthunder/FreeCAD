@@ -56,6 +56,7 @@ public:
     App::PropertyEnumeration Mode;
     App::PropertyBool        Outside;
     App::PropertyBool        HasBeenEdited;
+    App::PropertyFloatConstraint   Tolerance;
 
     /** if this property is set to a valid link, both Axis and Base properties
      *  are calculated according to the linked line
@@ -66,6 +67,7 @@ public:
     //@{
     App::DocumentObjectExecReturn* execute() override;
     short mustExecute() const override;
+    void setupObject() override;
     /// returns the type name of the view provider
     const char* getViewProviderName() const override {
         return "PartDesignGui::ViewProviderHelix";
@@ -78,6 +80,17 @@ public:
 protected:
     /// updates Axis from ReferenceAxis
     void updateAxis();
+
+    /** Whether this helix sweeps the way the fork did before version 3:
+     *  MakePipeShell, with an auxiliary spine for a conical helix. The newer
+     *  sweep is upstream's, MakePipe in Frenet mode. An object keeps the
+     *  sweep it was made with, since the two name their elements differently.
+     */
+    bool isLegacySweep() const;
+
+    /// sweep the profile along the path with MakePipe, then fuse or cut the base
+    App::DocumentObjectExecReturn* sweep(const TopoDS_Shape& path,
+                                         const TopLoc_Location& invObjLoc);
 
     /// generate helix and move it to the right location.
     TopoDS_Shape generateHelixPath(double startOffset0 = 0.0);
@@ -95,6 +108,7 @@ protected:
 
     static const App::PropertyFloatConstraint::Constraints floatTurns;
     static const App::PropertyAngle::Constraints floatAngle;
+    static const App::PropertyFloatConstraint::Constraints floatTolerance;
 
 private:
     static const char* ModeEnums[];

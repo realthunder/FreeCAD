@@ -42,6 +42,7 @@ set(PartDesign_TestScripts
     PartDesignTests/TestRevolve.py
     PartDesignTests/TestLoft.py
     PartDesignTests/TestPipe.py
+    PartDesignTests/TestHelix.py
     PartDesignTests/TestPrimitive.py
     PartDesignTests/TestMirrored.py
     PartDesignTests/TestLinearPattern.py

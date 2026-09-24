@@ -31,9 +31,13 @@
 # include <BRepBuilderAPI_MakeSolid.hxx>
 # include <BRepBuilderAPI_Sewing.hxx>
 # include <BRepClass3d_SolidClassifier.hxx>
+# include <BRepOffsetAPI_MakePipe.hxx>
 # include <BRepOffsetAPI_MakePipeShell.hxx>
 # include <BRepPrimAPI_MakeRevol.hxx>
+# include <Bnd_Box.hxx>
+# include <GeomFill_Trihedron.hxx>
 # include <Precision.hxx>
+# include <ShapeFix_ShapeTolerance.hxx>
 # include <TopoDS.hxx>
 # include <TopoDS_Face.hxx>
 # include <TopoDS_Wire.hxx>
@@ -42,6 +46,7 @@
 #endif
 
 # include <Standard_Version.hxx>
+# include <App/Document.h>
 # include <Base/Axis.h>
 # include <Base/Exception.h>
 # include <Base/Placement.h>
@@ -62,6 +67,7 @@ PROPERTY_SOURCE(PartDesign::Helix, PartDesign::ProfileBased)
 // we purposely use not FLT_MAX because this would not be computable
 const App::PropertyFloatConstraint::Constraints Helix::floatTurns = { Precision::Confusion(), INT_MAX, 1.0 };
 const App::PropertyAngle::Constraints Helix::floatAngle = { -89.0, 89.0, 1.0 };
+const App::PropertyFloatConstraint::Constraints Helix::floatTolerance = { 0.1, INT_MAX, 1.0 };
 
 Helix::Helix()
 {
@@ -103,8 +109,27 @@ Helix::Helix()
     ADD_PROPERTY_TYPE(HasBeenEdited, (false), group, App::Prop_Hidden,
         QT_TRANSLATE_NOOP("App::Property", "If false, the tool will propose an initial value for the pitch based on the profile bounding box,\n"
             "so that self intersection is avoided."));
+    ADD_PROPERTY_TYPE(Tolerance, (0.1), group, App::Prop_None,
+        QT_TRANSLATE_NOOP("App::Property", "Fusion tolerance for the helix, relative to its size.\n"
+            "Increase it if the helical shape does not merge nicely with the part."));
+    Tolerance.setConstraints(&floatTolerance);
 
     setReadWriteStatusForMode(initialMode);
+}
+
+void Helix::setupObject()
+{
+    ProfileBased::setupObject();
+    // Version 3 sweeps with MakePipe in Frenet mode, see isLegacySweep().
+    _ProfileBasedVersion.setValue(3);
+}
+
+bool Helix::isLegacySweep() const
+{
+    // 0 is an object from upstream, which has swept with MakePipe since 2024.
+    // 1 and 2 are the fork's own, before version 3.
+    int version = _ProfileBasedVersion.getValue();
+    return version == 1 || version == 2;
 }
 
 short Helix::mustExecute() const
@@ -177,6 +202,9 @@ App::DocumentObjectExecReturn* Helix::execute()
         updateAxis();
         // generate the helix path
         TopoDS_Shape path = generateHelixPath();
+        if (!isLegacySweep())
+            return sweep(path, invObjLoc);
+
         TopoDS_Shape auxpath;
         int mode = 2;
         if (fabs(Angle.getValue()) > Precision::Confusion()) {
@@ -194,6 +222,54 @@ App::DocumentObjectExecReturn* Helix::execute()
     catch (Base::Exception& e) {
         return new App::DocumentObjectExecReturn(e.what());
     }
+}
+
+App::DocumentObjectExecReturn* Helix::sweep(const TopoDS_Shape& path,
+                                            const TopLoc_Location& invObjLoc)
+{
+    TopoShape face = getVerifiedFace();
+    if (face.isNull())
+        return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Error: No valid sketch or face"));
+    face.move(invObjLoc);
+
+    TopoShape base = getBaseShape(/*silent*/true, /*force*/false, /*checkSolid*/false);
+    if (base.isNull() && getAddSubType() == FeatureAddSub::Subtractive)
+        return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Error: There is nothing to subtract"));
+    base.move(invObjLoc);
+
+    Bnd_Box bounds;
+    BRepBndLib::Add(path, bounds);
+    double size = sqrt(bounds.SquareExtent());
+    // OCCT drops the side walls of a very large (km range) pipe unless the
+    // path carries a little tolerance, still below the final one set below.
+    ShapeFix_ShapeTolerance fix;
+    fix.LimitTolerance(path, Precision::Confusion() * 1e-6 * size);
+
+    BRepOffsetAPI_MakePipe mkPipe(TopoDS::Wire(path), face.getShape(),
+                                  GeomFill_IsFrenet, Standard_False);
+    TopoShape result(0, getDocument()->getStringHasher());
+    result.makEShape(mkPipe, {face});
+    if (result.isNull())
+        return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Error: Could not build"));
+
+    BRepClass3d_SolidClassifier SC(result.getShape());
+    SC.PerformInfinitePoint(Precision::Confusion());
+    if (SC.State() == TopAbs_IN)
+        result.setShape(result.getShape().Reversed(), false);
+
+    // The helical approximation needs a looser tolerance for the boolean to
+    // succeed.
+    fix.LimitTolerance(result.getShape(), Precision::Confusion() * size * Tolerance.getValue());
+    fixShape(result);
+    if (Linearize.getValue())
+        result.linearize(true, false);
+
+    AddSubShape.setValue(result);
+    if (isRecomputePaused())
+        return App::DocumentObject::StdReturn;
+
+    Shape.setValue(makeBoolean(base, result));
+    return App::DocumentObject::StdReturn;
 }
 
 void Helix::updateAxis()
@@ -254,7 +330,13 @@ TopoDS_Shape Helix::generateHelixPath(double startOffset0)
     bool turned = axisOffset < 0;
     // since the factor does not only change the radius but also the path position, we must shift its offset back
     // using the square of the factor
-    double startOffset = 10000.0 * std::fabs(startOffset0 + profileCenter * axisVector - baseVector * axisVector);
+    bool legacy = isLegacySweep();
+    double startOffset;
+    if (legacy)
+        startOffset = 10000.0 * std::fabs(startOffset0 + profileCenter * axisVector - baseVector * axisVector);
+    else
+        startOffset = 10000.0 * std::fabs((angle <= 0.0 ? 1.0 : 0.0) * (profileCenter * axisVector)
+                                          - baseVector * axisVector);
 
     if (radius < Precision::Confusion()) {
         // in this case ensure that axis is not in the sketch plane
@@ -276,10 +358,19 @@ TopoDS_Shape Helix::generateHelixPath(double startOffset0)
     // object is created from older Link branch FreeCAD. Assuming object
     // created in upstream does not have _ProfileBasedVersion (i.e. ==0)
     int breakperiod = _ProfileBasedVersion.getValue()==1 ? 1 : 0;
+    double tolerance = 0.0;
+    if (!legacy) {
+        // MakePipe needs the path broken at each turn for a cylindrical
+        // helix, and unbroken for a conical one, or the solid is invalid.
+        breakperiod = angle == 0.0 ? 1 : 1000;
+        // Scaled so that a very large helix still approximates.
+        tolerance = Precision::Confusion() * 1e-6 * (radius + radiusTop);
+    }
 
     //build the helix path
     //TopoShape helix = TopoShape().makeLongHelix(pitch, height, radius, angle, leftHanded);
-    TopoDS_Shape path = TopoShape().makeSpiralHelix(radius, radiusTop, height, turns, breakperiod, leftHanded);
+    TopoDS_Shape path = TopoShape().makeSpiralHelix(radius, radiusTop, height, turns, breakperiod,
+                                                    leftHanded, tolerance);
 
     /*
      * The helix wire is created with the axis coinciding with z-axis and the start point at (radius, 0, 0)
@@ -457,6 +548,10 @@ void Helix::onChanged(const App::Property* prop)
         // Depending on the mode, the derived properties are set read-only
         auto inputMode = static_cast<HelixMode>(Mode.getValue());
         setReadWriteStatusForMode(inputMode);
+    }
+    else if (prop == &_ProfileBasedVersion) {
+        // only the MakePipe sweep uses it
+        Tolerance.setStatus(App::Property::Hidden, isLegacySweep());
     }
 
     ProfileBased::onChanged(prop);
