@@ -217,6 +217,16 @@ fc_add_gui_test(GuiSketchGridPreferences_tests_run
                 sketch-grid-preferences.py
                 --timeout 180)
 
+# Sketch edit mode is sized in device pixels on a scaled screen (upstream
+# 418c09899b, 37b4560893): it scaled by logical DPI / 96, which Qt 6 keeps
+# near 96 on a 200% screen, so lines, points, markers and labels came out
+# half size. QT_SCALE_FACTOR=2 gives the xvfb viewer a ratio of 2.
+fc_add_gui_test(GuiSketchHiDpiSizes_tests_run
+                sketch-hidpi-sizes.py
+                --timeout 180)
+set_property(TEST GuiSketchHiDpiSizes_tests_run APPEND PROPERTY
+             ENVIRONMENT "QT_SCALE_FACTOR=2")
+
 # Auto-constraints for a DRAG, not only for a drawing tool (upstream
 # ec298e9e9a and its follow-ups): hold a dragged point still on top of
 # another point and the Coincident that pins it there is written when

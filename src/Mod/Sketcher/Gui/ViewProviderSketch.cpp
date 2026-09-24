@@ -454,6 +454,8 @@ struct EditData {
     SoDrawStyle * InformationDrawStyle;
 
     QTimer timer;
+    // the edit viewer's device pixel ratio changing -> timer
+    QMetaObject::Connection dprConnection;
 };
 
 
@@ -4824,45 +4826,37 @@ void ViewProviderSketch::initParams()
     int sketcherfontSize = hGrp->GetInt("EditSketcherFontSize", defaultFontSizePixels);
 
     if(edit) {
-        int dpi;
-#if QT_VERSION < QT_VERSION_CHECK(5,14,0)
-        dpi = QApplication::desktop()->logicalDpiX();
-#else
+        // Coin draws into the framebuffer, whose pixels are DEVICE pixels.
+        // Qt 6 keeps the logical DPI of a scaled screen near 96 and puts the
+        // scale into the device pixel ratio, so that ratio is what turns the
+        // hardcoded logical-pixel values here into what Coin needs; logical
+        // DPI / 96 left everything half size on a 200% screen (upstream
+        // 418c09899b). A served client's mirror answers for that client.
+        double dpr;
         if (editViewer())
-            dpi = editViewer()->logicalDotsPerInchX();
+            dpr = editViewer()->devicePixelRatio();
         else
-            dpi = Gui::getMainWindow()->screen()->logicalDotsPerInchX();
-#endif
+            dpr = Gui::getMainWindow()->devicePixelRatioF();
+
         // simple scaling factor for hardcoded pixel values in the Sketcher
-        edit->pixelScalingFactor = viewScalingFactor * dpi / 96; // 96 ppi is the standard pixel density for which pixel quantities were calculated
+        edit->pixelScalingFactor = viewScalingFactor * dpr;
 
-        // Coin documentation indicates the size of a font is:
-        // SoSFFloat SoFont::size        Size of font. Defaults to 10.0.
-        //
-        // For 2D rendered bitmap fonts (like for SoText2), this value is the height of a character in screen pixels. For 3D text, this value is the world-space coordinates height of a character in the current units setting (see documentation for SoUnits node).
-        //
-        // However, with hdpi monitors, the coin font labels do not respect the size passed in pixels:
-        // https://forum.freecad.org/viewtopic.php?f=3&t=54347&p=467610#p467610
-        // https://forum.freecad.org/viewtopic.php?f=10&t=49972&start=40#p467471
-        //
-        // Because I (abdullah) have  96 dpi logical, 82 dpi physical, and I see a 35px font setting for a "1" in a datum label as 34px,
-        // and I see kilsore and Elyas screenshots showing 41px and 61px in higher resolution monitors for the same configuration, I think
-        // that coin pixel size has to be corrected by the logical dpi of the monitor. The rationale is that: a) it obviously needs dpi
-        // correction, b) with physical dpi, the ratio of representation between kilsore and me is too far away.
-        //
-        // This means that the following correction does not have a documented basis, but appears necessary so that the Sketcher is usable in
-        // HDPI monitors.
+        // Coin text takes pixels. Datum labels take points (SoDatumLabel
+        // renders through QFont into a plain QImage) and are sized with the
+        // same value here, as they always were in this fork.
+        edit->coinFontSize = std::lround(sketcherfontSize * dpr);
+        edit->constraintIconSize = std::lround(0.8 * sketcherfontSize * dpr);
 
-        edit->coinFontSize = std::lround(sketcherfontSize * 96.0f / dpi);
-        edit->constraintIconSize = std::lround(0.8 * sketcherfontSize);
-
-        // For marker size the global default is used.
-        //
-        // Rationale:
-        // -> Other WBs use the default value as is
-        // -> If a user has a HDPI, he will eventually change the value for the other WBs
-        // -> If we correct the value here in addition, we would get two times a resize
-        edit->MarkerSize = markersize;
+        // Markers are bitmaps in a fixed set of sizes: scale, then take the
+        // nearest one up, or the largest there is.
+        auto supportedsizes = Gui::Inventor::MarkerBitmaps::getSupportedSizes("CIRCLE_LINE");
+        int scaledMarkerSize = static_cast<int>(std::lround(markersize * dpr));
+        auto it = std::lower_bound(supportedsizes.begin(), supportedsizes.end(), scaledMarkerSize);
+        if (it != supportedsizes.end())
+            scaledMarkerSize = *it;
+        else if (!supportedsizes.empty())
+            scaledMarkerSize = supportedsizes.back();
+        edit->MarkerSize = scaledMarkerSize;
 
         zCross = edit->hSketchGeneral->GetFloat("ZHeight", 1e-6f);
         if (zCross == 0.0f)
@@ -8578,6 +8572,17 @@ void ViewProviderSketch::setEditViewer(Gui::ViewerContext* viewer, int ModNum)
     viewer->setupEditingRoot();
     edit->viewer = viewer;
 
+    // The window moved to a screen with another scale (upstream
+    // 37b4560893): every size initParams() derives is stale, so take the
+    // same path a preference change does. The timer as context drops the
+    // connection with the edit data.
+    if (auto v = dynamic_cast<Gui::View3DInventorViewer*>(viewer)) {
+        QTimer *timer = &edit->timer;
+        edit->dprConnection = QObject::connect(
+            v, &Gui::View3DInventorViewer::devicePixelRatioChanged,
+            timer, [timer]() { timer->start(100); });
+    }
+
     // Init icon, font and marker sizes
     initParams();
 
@@ -8604,6 +8609,7 @@ void ViewProviderSketch::unsetEditViewer(Gui::ViewerContext* viewer)
         viewer->removeGraphicsItem(rubberband.get());
         viewer->setEditing(false);
         viewer->setSelectionEnabled(true);
+        QObject::disconnect(edit->dprConnection);
         edit->viewer = nullptr;
     }
 
