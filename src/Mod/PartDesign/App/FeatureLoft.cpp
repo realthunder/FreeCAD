@@ -36,12 +36,14 @@
 # include <Precision.hxx>
 #endif
 
+#include <algorithm>
 #include <boost/core/ignore_unused.hpp>
 
 #include <App/Document.h>
 #include <App/DocumentObserver.h>
 #include <Base/Exception.h>
 #include <Base/Reader.h>
+#include <Mod/Part/App/FaceMakerCheese.h>
 #include <Mod/Part/App/PartParams.h>
 #include <Mod/Part/App/TopoShapeOpCode.h>
 
@@ -49,6 +51,58 @@
 
 
 using namespace PartDesign;
+
+namespace
+{
+
+// Order a section's closed wires outermost first, so that every section
+// offers its wires in the same order and the loft does not join an outer
+// wire of one section to an inner one of the next (upstream fceab772d2,
+// issue 6130). Wires at the same depth keep their order: that does not
+// decide which wires correspond.
+void sortWiresByNesting(std::vector<Part::TopoShape>& wires)
+{
+    if (wires.size() < 2)
+        return;
+
+    struct WireInfo
+    {
+        Part::TopoShape wire;
+        std::size_t depth {0};
+    };
+
+    std::vector<WireInfo> infos;
+    infos.reserve(wires.size());
+    for (const auto& wire : wires) {
+        if (!wire.isClosed())
+            return;
+        infos.push_back({wire, 0});
+    }
+
+    try {
+        for (std::size_t outer = 0; outer < infos.size(); ++outer) {
+            const auto outerWire = TopoDS::Wire(infos[outer].wire.getShape());
+            for (std::size_t inner = 0; inner < infos.size(); ++inner) {
+                if (outer != inner
+                        && Part::FaceMakerCheese::isInside(
+                            outerWire, TopoDS::Wire(infos[inner].wire.getShape())))
+                    ++infos[inner].depth;
+            }
+        }
+    }
+    catch (const Standard_Failure&) {
+        // Non-planar wires are still valid loft input: keep their order and
+        // let the loft report any real failure
+        return;
+    }
+
+    std::stable_sort(infos.begin(), infos.end(),
+                     [](const WireInfo& a, const WireInfo& b) { return a.depth < b.depth; });
+    for (std::size_t i = 0; i < infos.size(); ++i)
+        wires[i] = std::move(infos[i].wire);
+}
+
+} // anonymous namespace
 
 PROPERTY_SOURCE(PartDesign::Loft, PartDesign::ProfileBased)
 
@@ -121,6 +175,7 @@ Loft::getSectionShape(const char *name,
     if (!wires.empty()) {
         if (expected_size && expected_size != wires.size())
             FC_THROWM(Base::CADKernelError, msg);
+        sortWiresByNesting(wires);
         return wires;
     }
     auto vertices = compound.getSubTopoShapes(TopAbs_VERTEX);
