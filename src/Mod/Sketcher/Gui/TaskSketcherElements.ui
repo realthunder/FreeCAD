@@ -77,39 +77,22 @@
       </widget>
      </item>
      <item>
-      <widget class="QComboBox" name="comboBoxModeFilter">
-       <property name="enabled">
-        <bool>false</bool>
+      <widget class="QToolButton" name="filterButton">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+         <horstretch>0</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
        </property>
-       <property name="locale">
-        <locale language="English" country="UnitedStates"/>
+       <property name="toolTip">
+        <string>Which elements the list shows: an element is listed when its kind and its geometry type are both ticked</string>
        </property>
-       <property name="editable">
-        <bool>false</bool>
+       <property name="text">
+        <string>All</string>
        </property>
-       <property name="currentIndex">
-        <number>0</number>
+       <property name="popupMode">
+        <enum>QToolButton::InstantPopup</enum>
        </property>
-       <item>
-        <property name="text">
-         <string>All</string>
-        </property>
-       </item>
-       <item>
-        <property name="text">
-         <string>Normal</string>
-        </property>
-       </item>
-       <item>
-        <property name="text">
-         <string>Construction</string>
-        </property>
-       </item>
-       <item>
-        <property name="text">
-         <string>External</string>
-        </property>
-       </item>
       </widget>
      </item>
     </layout>

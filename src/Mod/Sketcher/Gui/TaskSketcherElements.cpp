@@ -30,7 +30,9 @@
 # include <QString>
 # include <QImage>
 # include <QPixmap>
+# include <QListWidget>
 # include <QPointer>
+# include <QWidgetAction>
 # include <QTimer>
 # include <boost/core/ignore_unused.hpp>
 #endif
@@ -89,6 +91,27 @@ QT_TRANSLATE_NOOP("SketcherGui::ElementView", "Select Origin");
 QT_TRANSLATE_NOOP("SketcherGui::ElementView", "Select Horizontal Axis");
 QT_TRANSLATE_NOOP("SketcherGui::ElementView", "Select Vertical Axis");
 #endif
+
+// The Mode filter's entries, in bit order: the element's kind, then "All
+// types" and the geometry types (upstream's list and parameter).
+static const char *filterLabels[] = {
+    QT_TRANSLATE_NOOP("SketcherGui::TaskSketcherElements", "Normal"),
+    QT_TRANSLATE_NOOP("SketcherGui::TaskSketcherElements", "Construction"),
+    QT_TRANSLATE_NOOP("SketcherGui::TaskSketcherElements", "Internal"),
+    QT_TRANSLATE_NOOP("SketcherGui::TaskSketcherElements", "External"),
+    QT_TRANSLATE_NOOP("SketcherGui::TaskSketcherElements", "All types"),
+    QT_TRANSLATE_NOOP("SketcherGui::TaskSketcherElements", "Point"),
+    QT_TRANSLATE_NOOP("SketcherGui::TaskSketcherElements", "Line"),
+    QT_TRANSLATE_NOOP("SketcherGui::TaskSketcherElements", "Circle"),
+    QT_TRANSLATE_NOOP("SketcherGui::TaskSketcherElements", "Ellipse"),
+    QT_TRANSLATE_NOOP("SketcherGui::TaskSketcherElements", "Arc of circle"),
+    QT_TRANSLATE_NOOP("SketcherGui::TaskSketcherElements", "Arc of ellipse"),
+    QT_TRANSLATE_NOOP("SketcherGui::TaskSketcherElements", "Arc of hyperbola"),
+    QT_TRANSLATE_NOOP("SketcherGui::TaskSketcherElements", "Arc of parabola"),
+    QT_TRANSLATE_NOOP("SketcherGui::TaskSketcherElements", "B-spline"),
+};
+static constexpr int filterCount = int(sizeof(filterLabels) / sizeof(filterLabels[0]));
+static constexpr int filterAllTypes = 4;
 
 enum ColumnIndex {
     ColType,
@@ -189,25 +212,33 @@ public:
     {
     }
 
-    void setVisibility(int filterindex)
+    /// \a filterState is the Mode filter, one bit per entry of its list
+    /// (filterLabels below): listed when both the element's kind and its
+    /// geometry type are ticked. A type the list does not name is not
+    /// filtered by type.
+    void setVisibility(int filterState)
     {
         if (isGroupMember) {
             // the group's handle stands for its members
             this->setHidden(true);
             return;
         }
-        if (filterindex == 0)
-            this->setHidden(false);
-        else {
-            if( (!this->isConstruction && !this->isExternal && filterindex == 1)  ||
-                (this->isConstruction  && filterindex == 2)  ||
-                (this->isExternal && filterindex == 3) ) {
-                this->setHidden(false);
-            }
-            else {
-                this->setHidden(true);
-            }
-        }
+        int kindBit = ElementNbr < 0 ? 3 : isInternalAligned ? 2 : isConstruction ? 1 : 0;
+        static const std::map<Base::Type, int> typeBits = {
+            {Part::GeomPoint::getClassTypeId(), 5},
+            {Part::GeomLineSegment::getClassTypeId(), 6},
+            {Part::GeomCircle::getClassTypeId(), 7},
+            {Part::GeomEllipse::getClassTypeId(), 8},
+            {Part::GeomArcOfCircle::getClassTypeId(), 9},
+            {Part::GeomArcOfEllipse::getClassTypeId(), 10},
+            {Part::GeomArcOfHyperbola::getClassTypeId(), 11},
+            {Part::GeomArcOfParabola::getClassTypeId(), 12},
+            {Part::GeomBSplineCurve::getClassTypeId(), 13},
+        };
+        auto it = typeBits.find(GeometryType);
+        bool shown = ((filterState >> kindBit) & 1)
+            && (it == typeBits.end() || ((filterState >> it->second) & 1));
+        this->setHidden(!shown);
     }
 
     void setElement(Sketcher::SketchObject *sketch, int element, int filterIndex) {
@@ -532,10 +563,6 @@ TaskSketcherElements::TaskSketcherElements(ViewProviderSketch* sketchView)
         this                     , SLOT  (on_elementsWidget_currentFilterChanged(int))
        );
     QObject::connect(
-        ui->comboBoxModeFilter, SIGNAL(currentIndexChanged(int)),
-        this                  , SLOT  (on_elementsWidget_currentModeFilterChanged(int))
-        );
-    QObject::connect(
         ui->autoSwitchBox, SIGNAL(stateChanged(int)),
         this                     , SLOT  (on_autoSwitchBox_stateChanged(int))
        );
@@ -551,14 +578,39 @@ TaskSketcherElements::TaskSketcherElements(ViewProviderSketch* sketchView)
     this->groupLayout()->addWidget(proxy);
 
     ui->comboBoxElementFilter->setCurrentIndex(0);
-    ui->comboBoxModeFilter->setCurrentIndex(0);
 
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Sketcher/Elements");
 
     ui->autoSwitchBox->setChecked(hGrp->GetBool("Auto-switch to edge", true));
 
     ui->comboBoxElementFilter->setEnabled(true);
-    ui->comboBoxModeFilter->setEnabled(true);
+    // The Mode filter: a checkable list in the button's pop-up, which stays
+    // open while entries are ticked. Its state is upstream's parameter.
+    {
+        ParameterGrp::handle hGeneral = App::GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/Mod/Sketcher/General");
+        int state = hGeneral->GetInt("ElementFilterState", std::numeric_limits<int>::max());
+        filterList = new QListWidget();
+        for (int i = 0; i < filterCount; ++i) {
+            auto item = new QListWidgetItem(
+                QCoreApplication::translate("SketcherGui::TaskSketcherElements",
+                                            filterLabels[i]),
+                filterList);
+            item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+            item->setCheckState(((state >> i) & 1) ? Qt::Checked : Qt::Unchecked);
+        }
+        filterList->setFixedHeight(filterList->sizeHintForRow(0) * filterCount
+                                   + 2 * filterList->frameWidth());
+        auto action = new QWidgetAction(this);
+        action->setDefaultWidget(filterList);
+        auto menu = new QMenu(ui->filterButton);
+        menu->addAction(action);
+        ui->filterButton->setMenu(menu);
+        QObject::connect(filterList, &QListWidget::itemChanged,
+                         this, &TaskSketcherElements::onFilterItemChanged);
+        // "All types" follows the types under it
+        onFilterItemChanged(filterList->item(filterAllTypes + 1));
+    }
 
     slotElementsChanged();
 }
@@ -964,7 +1016,7 @@ void TaskSketcherElements::slotElementsChanged()
     itemMap.clear();
 
     int element = ui->comboBoxElementFilter->currentIndex();
-    int filterindex = ui->comboBoxModeFilter->currentIndex();
+    int filterindex = filterState();
 
     for(int i=0;i<(int)vals.size();++i) {
         auto item = new ElementItem(ui->elementsWidget,sketch, i, vals[i]);
@@ -1075,9 +1127,51 @@ void TaskSketcherElements::on_elementsWidget_currentFilterChanged ( int index )
 
 }
 
-void TaskSketcherElements::on_elementsWidget_currentModeFilterChanged ( int index )
+void TaskSketcherElements::onFilterItemChanged(QListWidgetItem *item)
 {
-    updateVisibility(index);
+    {
+        QSignalBlocker blocker(filterList);
+        int row = filterList->row(item);
+        if (row == filterAllTypes) {
+            Qt::CheckState state = item->checkState() == Qt::Unchecked
+                ? Qt::Unchecked : Qt::Checked;
+            item->setCheckState(state);
+            for (int i = filterAllTypes + 1; i < filterCount; ++i)
+                filterList->item(i)->setCheckState(state);
+        }
+        else if (row > filterAllTypes) {
+            int checked = 0;
+            for (int i = filterAllTypes + 1; i < filterCount; ++i)
+                checked += filterList->item(i)->checkState() == Qt::Checked;
+            filterList->item(filterAllTypes)->setCheckState(
+                checked == 0 ? Qt::Unchecked
+                : checked == filterCount - filterAllTypes - 1 ? Qt::Checked
+                : Qt::PartiallyChecked);
+        }
+    }
+    App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Mod/Sketcher/General")
+        ->SetInt("ElementFilterState", filterState());
+    updateVisibility(filterState());
+    updateFilterButton();
+}
+
+int TaskSketcherElements::filterState() const
+{
+    int state = 0;
+    for (int i = 0; i < filterCount; ++i) {
+        if (filterList->item(i)->checkState() == Qt::Checked)
+            state |= 1 << i;
+    }
+    return state;
+}
+
+void TaskSketcherElements::updateFilterButton()
+{
+    bool all = true;
+    for (int i = 0; i < filterCount; ++i)
+        all = all && filterList->item(i)->checkState() == Qt::Checked;
+    ui->filterButton->setText(all ? tr("All") : tr("Filtered"));
 }
 
 void TaskSketcherElements::updatePreselection()
@@ -1156,28 +1250,22 @@ void TaskSketcherElements::clearWidget()
     }
 }
 
-void TaskSketcherElements::setItemVisibility(int elementindex,int filterindex)
+void TaskSketcherElements::setItemVisibility(int elementindex,int filterState)
 {
-    // index
-    // 0 => all
-    // 1 => Normal
-    // 2 => Construction
-    // 3 => External
-
     ElementItem* item = static_cast<ElementItem*> (ui->elementsWidget->topLevelItem(elementindex));
-    item->setVisibility(filterindex);
+    item->setVisibility(filterState);
 }
 
-void TaskSketcherElements::updateVisibility(int filterindex)
+void TaskSketcherElements::updateVisibility(int filterState)
 {
     for (int i=0;i<ui->elementsWidget->topLevelItemCount(); i++) {
-        setItemVisibility(i,filterindex);
+        setItemVisibility(i,filterState);
     }
 }
 
 void TaskSketcherElements::updateIcons(int element)
 {
-    int filterindex = ui->comboBoxModeFilter->currentIndex();
+    int filterindex = filterState();
     auto sketch = sketchView->getSketchObject();
     for (int i=0;i<ui->elementsWidget->topLevelItemCount(); i++)
       static_cast<ElementItem *>(ui->elementsWidget->topLevelItem(i))->setElement(sketch,element,filterindex);

@@ -89,8 +89,12 @@ private:
     std::map<int, int> collectGroupRoles() const;
     void updateIcons(int element);
     void updatePreselection();
-    void updateVisibility(int filterindex);
-    void setItemVisibility(int elementindex,int filterindex);
+    /// filterState: the Mode filter as a bitmask, see filterState()
+    void updateVisibility(int filterState);
+    void setItemVisibility(int elementindex,int filterState);
+    /// The Mode filter's ticks, one bit per entry of its list
+    int filterState() const;
+    void updateFilterButton();
     void clearWidget();
 
 public Q_SLOTS:
@@ -98,7 +102,7 @@ public Q_SLOTS:
     void on_elementsWidget_itemEntered(QTreeWidgetItem *item);
     void on_elementsWidget_filterShortcutPressed();
     void on_elementsWidget_currentFilterChanged ( int index );
-    void on_elementsWidget_currentModeFilterChanged ( int index );
+    void onFilterItemChanged(QListWidgetItem *item);
     void on_autoSwitchBox_stateChanged(int state);
     void on_elementsWidget_itemChanged(QTreeWidgetItem *item, int column);
 
@@ -117,6 +121,7 @@ protected:
 
 private:
     QWidget* proxy;
+    QListWidget* filterList = nullptr;
     std::unique_ptr<Ui_TaskSketcherElements> ui;
     int focusItemIndex;
     int previouslySelectedItemIndex;

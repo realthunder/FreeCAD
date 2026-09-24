@@ -215,6 +215,12 @@ fc_add_gui_test(GuiSpreadsheetSelectAll_tests_run
                 spreadsheet-select-all.py
                 --timeout 180)
 
+# The elements list's Mode filter: element kinds and geometry types, ticked
+# in combination (upstream's list and ElementFilterState parameter).
+fc_add_gui_test(GuiSketchElementsFilter_tests_run
+                sketch-elements-filter.py
+                --timeout 180)
+
 # A sketch element on the hidden visual layer is not drawn, picked, boxed or
 # taken by Select All from the view. The fork's draw() ignored layers.
 fc_add_gui_test(GuiSketchVisualLayers_tests_run
