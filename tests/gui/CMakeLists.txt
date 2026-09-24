@@ -269,6 +269,14 @@ fc_add_gui_test(GuiImagePixelsMode3_tests_run
                 image-pixels-mode3.py
                 --timeout 180)
 
+# A sketch tool's on-view parameters are drawn in mode 3. Their labels are
+# SoDatumLabels, whose GLRender stands down while the backend draws the
+# edit graph; they reach the backend only through the getImageNode()
+# companion, which Gui::EditableDatumLabel never added -- nobody drew them.
+fc_add_gui_test(GuiSketchOnViewLabelsMode3_tests_run
+                sketch-onview-labels-mode3.py
+                --timeout 180)
+
 # Auto-constraints for a DRAG, not only for a drawing tool (upstream
 # ec298e9e9a and its follow-ups): hold a dragged point still on top of
 # another point and the Coincident that pins it there is written when

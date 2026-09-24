@@ -118,6 +118,12 @@ EditableDatumLabel::EditableDatumLabel(ViewerContext* view,
         setLabelRecommendedDistance();
     }
     root->addChild(label);
+    // The label's own GLRender stands down while the backend draws the edit
+    // graph (render cache mode 3), and it gives the capture nothing: its
+    // leaders and number reach the backend only through this companion, as
+    // a Sketcher constraint's do. Without it the on-view parameters were
+    // drawn by nobody -- not on the desktop, not in a browser.
+    root->addChild(label->getImageNode());
 
     setPlacement(plc);
     // NOLINTEND
