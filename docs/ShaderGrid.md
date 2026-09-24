@@ -2,7 +2,9 @@
 
 Status: design, nothing built. Written 2026-09-24 (session 93), after the
 wasted-republish chase (`3a2973ae9b`); the open questions were answered the
-same day and are recorded in section 10. Supersedes nothing.
+same day and are recorded in section 10. **Scheduled after the Sketcher
+port** (user, 2026-09-24): no grid work starts until that port is done.
+Supersedes nothing.
 
 One grid primitive, drawn by whichever camera is looking at it, shared by
 every workbench that shows a construction grid today: the Sketcher (through
