@@ -270,6 +270,8 @@ App::DocumentObjectExecReturn *Draft::execute()
     if (reversed)
         angle *= -1.0;
 
+    computeProps = {pullDirection, neutralPlane};
+
     this->positionByBaseFeature();
     try {
         // Note:

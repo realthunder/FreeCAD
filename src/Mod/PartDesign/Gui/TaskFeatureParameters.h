@@ -55,7 +55,7 @@ public:
 
     TaskFeatureParameters(PartDesignGui::ViewProvider* vp, QWidget *parent, const QString& parname);
 
-    ~TaskFeatureParameters() override = default;
+    ~TaskFeatureParameters() override;
 
     /// save field history
     virtual void saveHistory();
@@ -92,6 +92,11 @@ protected:
 
     virtual void finishedRecomputeFeature() {}
 
+    /// Tell the user which modifier switches a gizmo drag between coarse and
+    /// fine steps (upstream 6df51cefd7).
+    void showDraggerHints();
+    void hideDraggerHints();
+
 private:
     /** Notifies when the object is about to be removed. */
     void slotDeletedObject(const Gui::ViewProviderDocumentObject& Obj) override;
@@ -113,6 +118,7 @@ protected:
     int transactionID = 0;
     int blinkTimerId = 0;
     bool blink = false;
+    bool draggerHintsShown = false;
 
     struct BlinkInfo {
         QPointer<QWidget> widget;

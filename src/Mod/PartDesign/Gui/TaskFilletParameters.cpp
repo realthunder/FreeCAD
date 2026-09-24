@@ -43,6 +43,7 @@
 #include <Base/Tools.h>
 #include <Gui/Selection.h>
 #include <Gui/ViewProvider.h>
+#include <Mod/Part/App/GizmoHelper.h>
 #include <Mod/PartDesign/App/FeatureFillet.h>
 
 #include "ui_TaskFilletParameters.h"
@@ -166,6 +167,71 @@ TaskFilletParameters::TaskFilletParameters(ViewProviderDressUp *DressUpView,QWid
 
     refresh();
     ui->filletRadius->selectAll();
+
+    setupGizmos(DressUpView);
+}
+
+void TaskFilletParameters::setupGizmos(ViewProviderDressUp* vp)
+{
+    if (!GizmoContainer::isEnabled()) {
+        return;
+    }
+
+    radiusGizmo = new Gui::LinearGizmo(ui->filletRadius);
+    radiusGizmo2 = new Gui::LinearGizmo(ui->filletRadius);
+
+    gizmoContainer = GizmoContainer::create({radiusGizmo, radiusGizmo2}, vp);
+
+    setGizmoPositions();
+    showDraggerHints();
+}
+
+void TaskFilletParameters::setGizmoPositions()
+{
+    if (!gizmoContainer) {
+        return;
+    }
+
+    auto DressUpView = getDressUpView();
+    auto fillet = DressUpView ? dynamic_cast<PartDesign::Fillet*>(DressUpView->getObject()) : nullptr;
+    if (!fillet || fillet->isError()) {
+        gizmoContainer->visible = false;
+        return;
+    }
+    Part::TopoShape baseShape = fillet->getBaseShape(true);
+    std::vector<Part::TopoShape> shapes = fillet->getContinuousEdges(baseShape);
+
+    if (shapes.size() == 0) {
+        gizmoContainer->visible = false;
+        return;
+    }
+    gizmoContainer->visible = true;
+
+    // Attach the arrow to the first edge
+    Part::TopoShape edge = shapes[0];
+    auto [face1, face2] = getAdjacentFacesFromEdge(edge, baseShape);
+
+    DraggerPlacementProps props1 = getDraggerPlacementFromEdgeAndFace(edge, face1);
+    radiusGizmo->Gizmo::setDraggerPlacement(props1.position, props1.dir);
+
+    DraggerPlacementProps props2 = getDraggerPlacementFromEdgeAndFace(edge, face2);
+    radiusGizmo2->Gizmo::setDraggerPlacement(props2.position, props2.dir);
+
+    // The dragger length won't be equal to the radius if the two faces
+    // are not orthogonal so this correction is needed
+    double angle = props1.dir.GetAngle(props2.dir);
+    double correction = 1 / std::tan(angle / 2);
+
+    radiusGizmo->setMultFactor(correction);
+    radiusGizmo2->setMultFactor(correction);
+}
+
+void TaskFilletParameters::finishedRecomputeFeature()
+{
+    TaskDressUpParameters::finishedRecomputeFeature();
+    // The edge list or the base may have changed; the radius alone does not
+    // move the gizmos, but reading the placement again is cheap.
+    setGizmoPositions();
 }
 
 void TaskFilletParameters::onRefDeleted() {

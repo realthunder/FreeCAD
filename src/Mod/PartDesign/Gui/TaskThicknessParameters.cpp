@@ -33,6 +33,8 @@
 #include <Base/Tools.h>
 #include <Gui/Selection.h>
 #include <Gui/Command.h>
+#include <BRepOffset_Mode.hxx>
+#include <Mod/Part/App/GizmoHelper.h>
 #include <Mod/PartDesign/App/FeatureThickness.h>
 
 #include "ui_TaskThicknessParameters.h"
@@ -94,6 +96,63 @@ TaskThicknessParameters::TaskThicknessParameters(ViewProviderDressUp *DressUpVie
     connect(ui->checkIntersection, &QCheckBox::toggled,
         this, &TaskThicknessParameters::onIntersectionChanged);
 
+    setupGizmos(DressUpView);
+}
+
+void TaskThicknessParameters::setupGizmos(ViewProviderDressUp* vp)
+{
+    if (!GizmoContainer::isEnabled()) {
+        return;
+    }
+
+    linearGizmo = new Gui::LinearGizmo(ui->Value);
+
+    gizmoContainer = GizmoContainer::create({linearGizmo}, vp);
+
+    setGizmoPositions();
+    showDraggerHints();
+}
+
+void TaskThicknessParameters::setGizmoPositions()
+{
+    if (!gizmoContainer) {
+        return;
+    }
+
+    auto DressUpView = getDressUpView();
+    auto thickness =
+        DressUpView ? dynamic_cast<PartDesign::Thickness*>(DressUpView->getObject()) : nullptr;
+    // Upstream reads the base without this check; a failed recompute can
+    // leave a reference the edge lookup throws on.
+    if (!thickness || thickness->isError()) {
+        gizmoContainer->visible = false;
+        return;
+    }
+    if (thickness->Mode.getValue() == BRepOffset_RectoVerso) {
+        gizmoContainer->visible = false;
+        return;
+    }
+    auto baseShape = thickness->getBaseShape(true);
+    auto shapes = thickness->getContinuousEdges(baseShape);
+    auto faces = thickness->getFaces(baseShape);
+
+    if (shapes.size() == 0 || faces.size() == 0) {
+        gizmoContainer->visible = false;
+        return;
+    }
+    gizmoContainer->visible = true;
+
+    Part::TopoShape edge = shapes[0];
+    DraggerPlacementProps props = getDraggerPlacementFromEdgeAndFace(edge, faces[0]);
+    props.dir *= thickness->Reversed.getValue() ? 1 : -1;
+
+    linearGizmo->Gizmo::setDraggerPlacement(props.position, props.dir);
+}
+
+void TaskThicknessParameters::finishedRecomputeFeature()
+{
+    TaskDressUpParameters::finishedRecomputeFeature();
+    setGizmoPositions();
 }
 
 void TaskThicknessParameters::refresh()

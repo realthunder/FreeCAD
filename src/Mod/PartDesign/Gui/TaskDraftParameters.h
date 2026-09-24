@@ -25,6 +25,8 @@
 #ifndef GUI_TASKVIEW_TaskDraftParameters_H
 #define GUI_TASKVIEW_TaskDraftParameters_H
 
+#include <Gui/Inventor/Draggers/Gizmo.h>
+
 #include "TaskDressUpParameters.h"
 #include "ViewProviderDraft.h"
 
@@ -63,9 +65,15 @@ protected:
     bool eventFilter(QObject *o, QEvent *e) override;
     void onButton(selectionModes mode, bool checked);
     void onClear(selectionModes mode);
+    void finishedRecomputeFeature() override;
 
 private:
     std::unique_ptr<Ui_TaskDraftParameters> ui;
+
+    std::unique_ptr<Gui::GizmoContainer> gizmoContainer;
+    Gui::RotationGizmo* angleGizmo = nullptr;
+    void setupGizmos(ViewProvider* vp);
+    void setGizmoPositions();
 };
 
 /// simulation dialog for the TaskView

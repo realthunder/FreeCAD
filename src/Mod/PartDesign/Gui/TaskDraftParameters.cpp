@@ -36,6 +36,10 @@
 #include <Gui/Command.h>
 #include <Gui/Selection.h>
 #include <Gui/ViewProvider.h>
+#include <Gui/Inventor/Draggers/SoRotationDragger.h>
+#include <Gui/Utilities.h>
+#include <Mod/Part/App/GizmoHelper.h>
+#include <Mod/Part/App/Tools.h>
 #include <Mod/PartDesign/App/FeatureDraft.h>
 #include <Mod/PartDesign/Gui/ReferenceSelection.h>
 
@@ -96,6 +100,83 @@ TaskDraftParameters::TaskDraftParameters(ViewProviderDressUp *DressUpView,QWidge
     ui->lineLine->installEventFilter(this);
 
     setup(ui->message, ui->treeWidgetReferences, ui->buttonRefAdd, touched);
+
+    setupGizmos(DressUpView);
+}
+
+void TaskDraftParameters::setupGizmos(ViewProvider* vp)
+{
+    if (!GizmoContainer::isEnabled()) {
+        return;
+    }
+
+    angleGizmo = new Gui::RotationGizmo(ui->draftAngle);
+
+    gizmoContainer = GizmoContainer::create({angleGizmo}, vp);
+
+    setGizmoPositions();
+    showDraggerHints();
+}
+
+void TaskDraftParameters::setGizmoPositions()
+{
+    if (!gizmoContainer) {
+        return;
+    }
+    gizmoContainer->visible = false;
+
+    auto DressUpView = getDressUpView();
+    auto draft = DressUpView ? dynamic_cast<PartDesign::Draft*>(DressUpView->getObject()) : nullptr;
+    if (!draft || draft->isError()) {
+        return;
+    }
+    Part::TopoShape baseShape = draft->getBaseShape(true);
+    auto faces = draft->getFaces(baseShape);
+    if (faces.empty()) {
+        return;
+    }
+
+    auto [pullDirection, neutralPlane] = draft->getLastComputedProps();
+
+    std::optional<DraggerPlacementPropsWithNormals> props
+        = getDraggerPlacementFromPlaneAndFace(faces[0], neutralPlane);
+    if (!props) {
+        return;
+    }
+
+    if (auto normalProps = props->normalProps) {
+        auto pos = Base::convertTo<SbVec3f>(props->placementProps.position);
+        auto dir = Base::convertTo<SbVec3f>(props->placementProps.dir);
+        auto lineDir = Base::convertTo<SbVec3f>(normalProps->normal);
+        auto pp = Base::convertTo<SbVec3f>(pullDirection);
+
+        angleGizmo->setDraggerPlacement(pos, (dir.dot(pp) < 0) ? -pp : pp);
+
+        auto rotDir = Base::convertTo<SbVec3f>(normalProps->faceNormal).cross(pp);
+        if (lineDir.dot(rotDir) < 0) {
+            lineDir *= -1;
+        }
+        if (draft->Reversed.getValue()) {
+            lineDir = -lineDir;
+        }
+        angleGizmo->getDraggerContainer()->setArcNormalDirection(lineDir);
+        angleGizmo->automaticOrientation = false;
+    }
+    else {
+        // The face is cone or cylinder
+        angleGizmo->setDraggerPlacement(
+            Base::convertTo<SbVec3f>(props->placementProps.position),
+            Base::convertTo<SbVec3f>(props->placementProps.dir)
+        );
+        angleGizmo->automaticOrientation = true;
+    }
+    gizmoContainer->visible = true;
+}
+
+void TaskDraftParameters::finishedRecomputeFeature()
+{
+    TaskDressUpParameters::finishedRecomputeFeature();
+    setGizmoPositions();
 }
 
 void TaskDraftParameters::refresh() {

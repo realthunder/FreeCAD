@@ -30,6 +30,7 @@
 #include <Base/Tools.h>
 #include <Gui/Application.h>
 #include <Gui/CommandT.h>
+#include <Gui/Inventor/Draggers/Gizmo.h>
 #include <Gui/MainWindow.h>
 #include <Gui/BitmapFactory.h>
 #include <Gui/PrefWidgets.h>
@@ -66,6 +67,46 @@ TaskFeatureParameters::TaskFeatureParameters(PartDesignGui::ViewProvider *vp, QW
     Gui::Document* doc = vp->getDocument();
     this->attachDocument(doc);
     App::GetApplication().getActiveTransaction(&transactionID);
+}
+
+TaskFeatureParameters::~TaskFeatureParameters()
+{
+    hideDraggerHints();
+}
+
+void TaskFeatureParameters::showDraggerHints()
+{
+    if (!Gui::GizmoContainer::isEnabled() || !Gui::GizmoContainer::isCoarseSnapEnabled()) {
+        return;
+    }
+
+    const Gui::InputHint::UserInput key = Gui::GizmoContainer::getFineSnapKey();
+    const bool coarseByDefault = Gui::GizmoContainer::isCoarseByDefault();
+
+    QString message;
+    if (coarseByDefault) {
+        message = tr("%1 fine dragging");
+    }
+    else {
+        message = tr("%1 coarse dragging");
+    }
+
+    Gui::getMainWindow()->showHints({{
+        .message = message,
+        .sequences = {{key}},
+    }});
+    draggerHintsShown = true;
+}
+
+void TaskFeatureParameters::hideDraggerHints()
+{
+    // Only the hints this panel put up: another tool may own the bar.
+    if (draggerHintsShown) {
+        draggerHintsShown = false;
+        if (auto mw = Gui::getMainWindow()) {
+            mw->hideHints();
+        }
+    }
 }
 
 void TaskFeatureParameters::slotDeletedObject(const Gui::ViewProviderDocumentObject& Obj)
