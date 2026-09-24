@@ -25,6 +25,7 @@
 
 #pragma once
 
+#include <numbers>
 #include <Base/Tools.h>
 #include <Gui/BitmapFactory.h>
 #include <Gui/Notifications.h>

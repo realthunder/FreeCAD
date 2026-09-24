@@ -279,7 +279,7 @@ using GeometryFacadeUniquePtr = std::unique_ptr<const Sketcher::GeometryFacade>;
 using GeoList = GeoListModel<GeometryPtr>;
 using GeoListFacade = GeoListModel<GeometryFacadeUniquePtr>;
 
-GeoListFacade getGeoListFacade(const GeoList& geolist);
+SketcherExport GeoListFacade getGeoListFacade(const GeoList& geolist);
 
 }  // namespace Sketcher
 
