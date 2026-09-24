@@ -1475,7 +1475,7 @@ SelectionSingleton::selStackGetT(const char* pDocName, ResolveMode resolve, int 
     return res;
 }
 
-int SelectionSingleton::addSelections(const std::vector<App::SubObjectT> &objs)
+int SelectionSingleton::addSelections(const std::vector<App::SubObjectT> &objs, bool clearPreselect)
 {
     if(!logDisabled) {
         std::ostringstream ss;
@@ -1495,13 +1495,14 @@ int SelectionSingleton::addSelections(const std::vector<App::SubObjectT> &objs)
     SelectionPauseNotification guard;
     SelectionLogDisabler disabler(true);
     for (const auto &objT : objs) {
-        if (addSelection(objT))
+        if (addSelection(objT, clearPreselect))
             ++count;
     }
     return count;
 }
 
-int SelectionSingleton::addSelections(const char* pDocName, const char* pObjectName, const std::vector<std::string>& pSubNames)
+int SelectionSingleton::addSelections(const char* pDocName, const char* pObjectName,
+                                      const std::vector<std::string>& pSubNames, bool clearPreselect)
 {
     std::vector<App::SubObjectT> objs;
     App::SubObjectT objT(pDocName, pObjectName, "");
@@ -1509,7 +1510,7 @@ int SelectionSingleton::addSelections(const char* pDocName, const char* pObjectN
         objT.setSubName(sub);
         objs.push_back(objT);
     }
-    return addSelections(objs);
+    return addSelections(objs, clearPreselect);
 }
 
 bool SelectionSingleton::updateSelection(bool show, const char* pDocName,

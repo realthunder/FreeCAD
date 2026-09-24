@@ -397,9 +397,10 @@ public:
     /// Add to selection
     bool addSelection(const SelectionObject&, bool clearPreSelect=true);
     /// Add to selection with several sub-elements
-    int addSelections(const char* pDocName, const char* pObjectName, const std::vector<std::string>& pSubNames);
+    int addSelections(const char* pDocName, const char* pObjectName, const std::vector<std::string>& pSubNames,
+                      bool clearPreselect=true);
     /// Add multiple selections
-    int addSelections(const std::vector<App::SubObjectT> &objs);
+    int addSelections(const std::vector<App::SubObjectT> &objs, bool clearPreselect=true);
     /// Update a selection
     bool updateSelection(bool show, const char* pDocName, const char* pObjectName=nullptr, const char* pSubName=nullptr);
     /// Remove from selection
