@@ -1356,6 +1356,38 @@ zstd and still finishes sooner. The second file after a save is a material
 card, which comes in through `adoptFile()` and keeps its file. The laptop's
 rows, on MiSTer in the real application, are the next measurement.
 
+**Measured on the Windows laptop (the dwin session, 2026-09-25)**,
+headless, `MiSTer.FCStd` (17800 objects, 17058 shapes), `Transaction` at
+`6c97f88c83` against OCCT `84c8abc4da`, a fresh `FREECAD_USER_HOME` per
+run, `ArchiveBlobStore` set before the open, seconds, two runs each:
+
+| step | pack store | a file per blob |
+| --- | --- | --- |
+| open | 65.4 / 58.6, 1 file | 90.8 / 83.2, 5399 files |
+| parse every shape | 2.8 / 2.9 | 18.3 / 16.4 |
+| save-as | 8.5 / 9.7, 2 files | 71.4 / 61.4, 5400 files |
+| save it again | 8.3 / 9.2 | 29.6 / 26.4 |
+| close | 0.19 / 0.18 | 35.8 / 29.6 |
+
+The saved file is about 20.9 MB either way, and the transient directory is
+gone after every close. A same-day baseline of the main build (sec 14's
+single archive copy, OCCT `d58f0d2fa5`) gave open 59.4, parse 2.6,
+save-as 9.0, save 8.8, close 0.18 with its store on, and 93.7 / 28.7 /
+88.1 / 43.2 / 41.2 with it off. **The pack store matches sec 14's archive
+store at every step and beats a file per blob everywhere** -- save-as
+about 7x, close about 170x. The one-minute open is not the store's: the
+main build opens as slowly. It differs from sec 14.5 (open 2.4 s, parse
+22.9 s) because the shape work now happens inside the open, on both
+branches; not chased.
+
+The GUI leg, `render-bench.py` at sec 14.5's settings (bgfx on OpenGL,
+1280x720, no vsync), store on, one run each: the pack store loads in
+31.9 s, settles in 9.4 s (10 frames) and draws a frame in 217 ms; the
+archive store 34.3 s, 8.8 s (9 frames), 221 ms -- the same scene (45903
+draws, 17.9 M primitives), the difference inside one run's noise. The
+headless open taking about 60 s on both builds, twice the whole GUI load,
+is serial work in the `FreeCADCmd` path that sec 14.5 did not see; open.
+
 Not built yet: the recovery pass of 15.8 (reading several segments'
 directories, the newest number winning, finishing an interrupted merge) --
 that is phase 7 with the log's session recovery; a store opens fresh
