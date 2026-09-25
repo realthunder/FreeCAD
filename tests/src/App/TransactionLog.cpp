@@ -1852,3 +1852,38 @@ TEST_F(TransactionLogTest, recomputeRecordSurvivesAnObserverRemovingWithUndoOff)
     }
     EXPECT_TRUE(record);
 }
+
+TEST_F(TransactionLogTest, implicitTransactionClosesWhenUndoModeChanges)
+{
+    // Writes made with undo off open an implicit transaction for the log.
+    // Turning undo on before it closed made them an undo step the user never
+    // had: one create and one rename became two steps in
+    // OmniControl.test_documentReachOfEditOps (docs/TransactionLog.md sec
+    // 24.13). The mode change closes it under the mode it was opened in.
+    doc()->setUndoMode(0);
+    auto obj = make("Obj");
+    ASSERT_TRUE(obj);
+    EXPECT_TRUE(doc()->hasPendingTransaction());
+    doc()->setUndoMode(1);
+    EXPECT_FALSE(doc()->hasPendingTransaction());
+    EXPECT_EQ(doc()->getAvailableUndos(), 0);
+    auto txns = log().store().transactions();
+    ASSERT_FALSE(txns.empty());
+    EXPECT_EQ(txns.back().kind, "implicit");
+
+    doc()->openTransaction("Rename");
+    obj->Integer.setValue(3);
+    doc()->commitTransaction();
+    EXPECT_EQ(doc()->getAvailableUndos(), 1);
+    EXPECT_TRUE(doc()->undo());
+    EXPECT_EQ(doc()->getAvailableUndos(), 0);
+    EXPECT_TRUE(doc()->getObject("Obj"));
+
+    // And the other way: an implicit step opened with undo on is one, and
+    // turning undo off clears it with the rest.
+    obj->Integer.setValue(4);
+    EXPECT_TRUE(doc()->hasPendingTransaction());
+    doc()->setUndoMode(0);
+    EXPECT_FALSE(doc()->hasPendingTransaction());
+    EXPECT_EQ(doc()->getAvailableUndos(), 0);
+}

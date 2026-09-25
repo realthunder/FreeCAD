@@ -1263,6 +1263,12 @@ int Document::getAvailableRedos(int id) const
 
 void Document::setUndoMode(int iMode)
 {
+    // An implicit transaction belongs to the mode it was opened in
+    // (docs/TransactionLog.md sec 24.13): writes made with undo off must not
+    // become an undo step because undo came on before the transaction closed.
+    if (!d->iUndoMode != !iMode)
+        commitImplicitTransaction();
+
     if (d->iUndoMode && !iMode)
         clearUndos();
 
