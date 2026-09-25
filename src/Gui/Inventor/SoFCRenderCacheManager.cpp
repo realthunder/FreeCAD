@@ -540,7 +540,10 @@ public:
           self->master->highlightcache.reset();
           self->master->renderer->clearHighlight();
         }
-        self->master->pathcachetable.erase(self->path);
+        // Not erased here: that destroys this sensor inside its own
+        // callback, and SoDataSensor::trigger() goes on writing to it
+        // afterwards -- heap corruption. purgeDeadSensors() erases it.
+        self->master->deadpathcaches.push_back(self->path);
         return;
       });
     }
@@ -573,7 +576,8 @@ public:
         auto self = static_cast<LatePickPathSensor*>(sensor);
         self->detach();
         self->master->latepickpaths.truncate(0);
-        self->master->latepicktable.erase(self->tmpPath);
+        // Erased later, as PathCacheSensor's
+        self->master->deadlatepicks.push_back(self->tmpPath);
       });
     }
 
@@ -600,6 +604,23 @@ public:
                      PathHasher<PathPtr>,
                      PathHasher<PathPtr>> latepicktable;
   mutable SoPathList latepickpaths;
+  // Entries whose sensor fired: erased by purgeDeadSensors(), outside the
+  // sensor's own callback
+  std::vector<PathPtr> deadpathcaches;
+  mutable std::vector<PathPtr> deadlatepicks;
+
+  void purgeDeadSensors() const {
+    auto self = const_cast<SoFCRenderCacheManagerP*>(this);
+    for (auto &path : self->deadpathcaches)
+      self->pathcachetable.erase(path);
+    self->deadpathcaches.clear();
+    if (!deadlatepicks.empty()) {
+      for (auto &path : deadlatepicks)
+        self->latepicktable.erase(path);
+      deadlatepicks.clear();
+      latepickpaths.truncate(0);
+    }
+  }
   bool obeysrules;
   RenderCachePtr highlightcache;
   CoinPtr<SoPath> highlightpath;
@@ -958,6 +979,8 @@ SoFCRenderCacheManager::clear()
   PRIVATE(this)->publishdelta.clear();
   PRIVATE(this)->latepicktable.clear();
   PRIVATE(this)->latepickpaths.truncate(0);
+  PRIVATE(this)->deadlatepicks.clear();
+  PRIVATE(this)->deadpathcaches.clear();
 }
 
 bool
@@ -1019,7 +1042,9 @@ SoFCRenderCacheManager::setHighlight(SoPath * path,
   if (PRIVATE(this)->nosectionontop != PRIVATE(this)->sectionNoOnTop()) {
     PRIVATE(this)->nosectionontop = PRIVATE(this)->sectionNoOnTop();
     PRIVATE(this)->pathcachetable.clear();
+    PRIVATE(this)->deadpathcaches.clear();
   }
+  PRIVATE(this)->purgeDeadSensors();
   auto it = PRIVATE(this)->pathcachetable.find(path);
   if (it != PRIVATE(this)->pathcachetable.end())
     cache = it->second.cache;
@@ -1996,6 +2021,7 @@ SoFCRenderCacheManagerP::preLatePickGroup(void *userdata,
     return SoCallbackAction::CONTINUE;
 
   const SoPath *path = action->getCurPath();
+  self->purgeDeadSensors();
   auto it = self->latepicktable.find(const_cast<SoPath*>(path));
   if (it != self->latepicktable.end())
     return SoCallbackAction::CONTINUE;
@@ -2021,6 +2047,7 @@ void SoFCRenderCacheManager::doLatePick(SoRayPickAction *action) const
 
 void SoFCRenderCacheManagerP::doLatePick(SoRayPickAction *action) const
 {
+  purgeDeadSensors();
   if (latepicktable.empty())
     return;
   if (latepickpaths.getLength() == 0) {
