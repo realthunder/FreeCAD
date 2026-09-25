@@ -301,6 +301,10 @@ struct MainWindowP
     QLabel* actionLabel;
     InputHintWidget* hintLabel;
     QTimer* actionTimer;
+    // True while showMessage() or the action timer announce the action
+    // label's text through QStatusBar::messageChanged, so that
+    // statusMessageChanged() does not take it for Qt's own use of the bar.
+    bool announcingAction = false;
     QTimer* statusTimer;
     QTimer* activityTimer;
     QTimer* visibleTimer;
@@ -652,7 +656,10 @@ MainWindow::MainWindow(QWidget * parent, Qt::WindowFlags f)
     // clears the action label
     d->actionTimer = new QTimer( this );
     d->actionTimer->setObjectName(QStringLiteral("actionTimer"));
-    connect(d->actionTimer, &QTimer::timeout, d->actionLabel, &QLabel::clear);
+    connect(d->actionTimer, &QTimer::timeout, this, [this]() {
+        d->actionLabel->clear();
+        announceActionMessage(QString());
+    });
 
     // clear status type
     d->statusTimer = new QTimer( this );
@@ -3343,7 +3350,20 @@ void MainWindow::clearStatus() {
     statusBar()->setStyleSheet(QStringLiteral("#statusBar{}"));
 }
 
+void MainWindow::announceActionMessage(const QString &msg)
+{
+    // The action label is ours, not QStatusBar's, so nothing announced its
+    // text: a listener on statusBar().messageChanged -- a macro, a test --
+    // heard the console messages and never the action ones ("Selection not
+    // allowed by filter", preselection, command hints). Qt signals are
+    // public, so the bar's own signal carries these too.
+    Base::StateLocker guard(d->announcingAction, true);
+    Q_EMIT statusBar()->messageChanged(msg);
+}
+
 void MainWindow::statusMessageChanged(const QString &msg) {
+    if (d->announcingAction)
+        return;
     if (d->currentStatusMessage != msg) {
         // here probably means the status bar message is changed by QMainWindow
         // internals, e.g. for displaying tooltip and stuff. Set reset what
@@ -3359,7 +3379,9 @@ void MainWindow::showMessage(const QString& message, int timeout) {
         QApplication::postEvent(this, new CustomMessageEvent(MainWindow::Tmp,message,timeout));
         return;
     }
-    d->actionLabel->setText(message.simplified());
+    const QString text = message.simplified();
+    d->actionLabel->setText(text);
+    announceActionMessage(text);
     if(timeout == 0)
         timeout = ViewParams::getStatusMessageTimeout();
     if(timeout > 0) {

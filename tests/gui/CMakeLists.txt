@@ -356,6 +356,12 @@ fc_add_gui_test(GuiBoxSelectionGate_tests_run
                 box-selection-gate.py
                 --timeout 300)
 
+# The status bar's messageChanged announces the main window's action
+# messages too, and announcing one leaves the console pane's colour alone.
+fc_add_gui_test(GuiStatusMessageSignal_tests_run
+                status-message-signal.py
+                --timeout 300)
+
 # A sketch edited with the "Editing workbench" preference cleared never
 # builds the Sketcher toolbars, so its commands have no action -- and
 # Sketcher_Snap's icon swap dereferenced that null from isActive().

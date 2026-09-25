@@ -164,7 +164,11 @@ def run():
         FreeCADGui.Selection.clearSelection()
         gate = VertexGate()
         FreeCADGui.Selection.addSelectionGate(gate)
+        announced = []
+        bar = FreeCADGui.getMainWindow().statusBar()
+        bar.messageChanged.connect(announced.append)
         dt = element_box(w)
+        bar.messageChanged.disconnect(announced.append)
         got = kinds(selected())
         note("gated box took %.3f s; the gate was asked %d times, refused %d" % (
             dt, gate.asked, gate.refused))
@@ -173,6 +177,9 @@ def run():
         said = status_texts()
         check("and the user is not told any element was refused",
               not any("not allowed" in t.lower() for t in said), said)
+        refusals = [m for m in announced if "not allowed" in m.lower()]
+        check("not once: no refusal is announced on the status bar's messageChanged",
+              not refusals, "%d announced" % len(refusals))
         shape = w.cursor().shape()
         check("and the view's cursor is not left forbidden",
               shape != QtCore.Qt.ForbiddenCursor, shape)
