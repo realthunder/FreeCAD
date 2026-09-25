@@ -427,6 +427,13 @@ fc_add_gui_test(GuiSketchCancelEdit_tests_run
                 sketch-cancel-edit.py
                 --timeout 240)
 
+# An edit entered from the tree takes the keyboard, so Escape right away
+# leaves it (upstream 22a98d81f0); a click with a tool active keeps the
+# tool's cursor (a1487106ab).
+fc_add_gui_test(GuiSketchFocusCursor_tests_run
+                sketch-focus-cursor.py
+                --timeout 200)
+
 # A selected arc grabbed by its centre drags by its centre, not its rim, and
 # a conic grabbed by its edge moves by the cursor's move instead of jumping
 # its centre to the cursor (upstream 2cd45b07f7).

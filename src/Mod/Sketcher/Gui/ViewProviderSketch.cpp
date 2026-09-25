@@ -1347,6 +1347,10 @@ bool ViewProviderSketch::mouseButtonPressed(int Button, bool pressed, const SbVe
                     setSketchMode(STATUS_NONE);
                     return true;
                 case STATUS_SKETCH_UseHandler: {
+                    // The click's navigation mode change put the viewer's
+                    // edit cursor back in place of the tool's (upstream
+                    // a1487106ab)
+                    edit->sketchHandler->applyCursor();
                     return edit->sketchHandler->releaseButton(Base::Vector2d(x,y));
                 }
                 case STATUS_NONE:
@@ -9214,6 +9218,11 @@ void ViewProviderSketch::setEditViewer(Gui::ViewerContext* viewer, int ModNum)
     attachViewer(viewer);
 
     inherited::setEditViewer(viewer, ModNum);
+
+    // An edit entered from the tree left the keyboard there, and an Escape
+    // pressed right away did not reach keyPressed() (upstream 22a98d81f0).
+    // A mirror has no widget to focus.
+    viewer->setFocusToView();
 }
 
 void ViewProviderSketch::unsetEditViewer(Gui::ViewerContext* viewer)
