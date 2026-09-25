@@ -62,6 +62,31 @@ class TestRevolve(unittest.TestCase):
         self.Doc.recompute()
         self.assertEqual(len(self.Groove.Shape.Faces), 5)
 
+    def testRevolveAboutMovedLCSAxis(self):
+        # upstream b3a1fd9676: the axis of a coordinate system is taken where
+        # that system is, not through the origin along its local X
+        import math
+        import TestSketcherApp
+        self.Body = self.Doc.addObject('PartDesign::Body','Body')
+        lcs = self.Doc.addObject('App::LocalCoordinateSystem', 'LCS')
+        lcs.Placement = FreeCAD.Placement(FreeCAD.Vector(0, 20, 0),
+                                          FreeCAD.Rotation(FreeCAD.Vector(0, 0, 1), 90))
+        self.Doc.recompute()
+        xAxis = [f for f in lcs.OriginFeatures if f.Role == "X_Axis"][0]
+        sketch = self.Body.newObject('Sketcher::SketchObject', 'Sketch')
+        # 2 x 2 square beside the LCS X axis, which runs along global Y at x = 0
+        TestSketcherApp.CreateRectangleSketch(sketch, (1, 21), (2, 2))
+        self.Doc.recompute()
+        self.Revolution = self.Body.newObject("PartDesign::Revolution", "Revolution")
+        self.Revolution.Profile = sketch
+        self.Revolution.ReferenceAxis = (xAxis, [""])
+        self.Revolution.Angle = 360.0
+        self.Doc.recompute()
+        self.assertAlmostEqual(self.Revolution.Shape.Volume, math.pi * (9 - 1) * 2, places=6)
+        bb = self.Revolution.Shape.BoundBox
+        self.assertAlmostEqual(bb.YMin, 21)
+        self.assertAlmostEqual(bb.YMax, 23)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestRevolve")

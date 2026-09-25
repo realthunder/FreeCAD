@@ -1148,9 +1148,11 @@ void ProfileBased::getAxis(const App::DocumentObject * pcReferenceAxis, const st
     }
 
     if (pcReferenceAxis->isDerivedFrom<App::Line>()) {
+        // Through the line's own base point, and turned with the coordinate
+        // system holding it (upstream b3a1fd9676): a line of a moved LCS
         const App::Line* line = static_cast<const App::Line*>(pcReferenceAxis);
-        base = Base::Vector3d(0, 0, 0);
-        line->Placement.getValue().multVec(Base::Vector3d(1, 0, 0), dir);
+        base = line->getBasePoint();
+        dir = line->getDirection();
 
         verifyAxisFunc(checkAxis, sketchplane, gp_Dir(dir.x, dir.y, dir.z));
         return;
