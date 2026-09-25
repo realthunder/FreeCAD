@@ -31,7 +31,7 @@ Upstream's `f4665aa7b5` ("Core: support multiple active transactions") was
 evaluated and **declined**; `docs/TransactionLog.md` records why, and the
 direction the user wants instead.
 
-**Where the ledger stands (2026-09-25).** 1149 rows, of which 288 are open
+**Where the ledger stands (2026-09-25).** 1149 rows, of which 283 are open
 and undecided, down from 503 over three sessions of reading blobs rather
 than commits. First the 33 files the handler resyncs touched: 21 are
 identical to upstream's tip modulo whitespace, closing 74 rows at once
@@ -2641,6 +2641,51 @@ Guarded by `tests/gui/sketch-line-angle-labels.py` (5 end-line checks, all
 sketch's X axis: the axis is drawn in a red the label check cannot tell
 from a label's, and a first version on y = 0 passed its horizontal
 probes before the fix.
+
+### Screen-space preselection (session 96): 36 -> 31
+
+Upstream reworked the edit-mode hover pick over ten commits: a constraint
+anywhere on the ray first (`2f3161f312`), then a screen-space scan that
+projects every point and every curve polyline vertex to the viewport on
+each mouse move and takes the nearest (`b8b8a3e2a0`, `96ab8a5be3`, and the
+n/a `57650b8067`, `400f6b3ac5`), a click that re-detects and so needed the
+hover's result cached to agree with it (`9efe08b33b`), and finally typed
+candidates resolved by a priority table (`b178a7aede`, `93feb3ce51`,
+`b9368b17a8`). It lives in `EditModeCoinManager`, which is not built here.
+
+What it is for is written down in upstream's
+`SketcherTests/TestConstraintPreselectionGui.py`: a vertex beats a label
+over it, a curve beats a dimension line over it, a dimension's number
+beats the curve or the axis under it, and the PointOnObject icon of issue
+25840 keeps its hit area on a slightly tilted view. That file is taken
+unchanged and run on the fork's own pick, through upstream's probe
+`SketcherGui.getActiveSketchPreselection()` (`882d030012`; it needed
+`setLabelDistance`/`setLabelPosition` from Python, `b9b3ddbf57`):
+
+| mode | before | after `b8c15f572f` |
+|---|---|---|
+| 0 (GL) | 5/5 | 5/5 |
+| 3 (bgfx, default) | 3/5 | 5/5 |
+
+**The failure was not the priority rules.** In mode 3 a dimension's
+number could not be picked at all -- a lone distance label with nothing
+under it was not found within 48 px. `SoDatumLabel`'s ray pick is the box
+of the number, sized by `imgWidth`/`imgHeight`, and only `GLRender` sized
+them for the view; in the render cache modes it never runs. The pick now
+sizes the box for the view it picks in (`b8c15f572f`). Also measured:
+the fork's pick already takes the element nearest on screen -- two
+vertices, and two parallel lines, 8 px apart switch at the midpoint to
+the pixel.
+
+| row | verdict |
+|---|---|
+| `2f3161f312`, `b8b8a3e2a0`, `9efe08b33b`, `96ab8a5be3` | **declined**, user ruling: the fork keeps its own pick. It meets upstream's own tests, and the scan costs a projection of every point and curve vertex per mouse move on the sketches this fork is tuned for |
+| `57650b8067`, `400f6b3ac5`, `b178a7aede`, `93feb3ce51`, `b9368b17a8` | **declined** with them (n/a anyway: `EditModeCoinManager` only) |
+| `2ba97bf783` | **n/a**, user ruling: it extends upstream's `Std_ClarifySelection`; the fork has `Std_PickGeometry` instead |
+
+Guarded by `tests/gui/sketch-preselection-upstream.py`
+(`GuiSketchPreselectionUpstream_tests_run`), upstream's file in mode 3.
+
 
 **Harness notes.** `Constraint.LabelDistance` is read-only from Python,
 so the test places labels by dragging them. A label drag that lands
