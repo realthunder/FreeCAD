@@ -198,13 +198,11 @@ TopoShape Feature::getBaseShape(bool silent, bool force, bool checkSolid) const 
         return result;
 
     if(BaseObject != BaseFeature.getValue()) {
+        // A feature with no body is legal: files from 0.15 and before made
+        // them, and a dress-up of a plain Part object is one (upstream
+        // a76adf48a9). Only the shape binder rule needs a body to ask.
         auto body = getFeatureBody();
-        if (!body) {
-            if(silent)
-                return result;
-            THROWM(Base::RuntimeError, "Missing container body")
-        }
-        if (body->BaseFeature.getValue() != BaseObject
+        if ((!body || body->BaseFeature.getValue() != BaseObject)
                 && (BaseObject->isDerivedFrom<PartDesign::ShapeBinder>()
                     || BaseObject->isDerivedFrom<Part::SubShapeBinder>()))
         {

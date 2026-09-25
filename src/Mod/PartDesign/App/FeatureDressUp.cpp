@@ -74,8 +74,11 @@ short DressUp::mustExecute() const
 
 void DressUp::positionByBaseFeature()
 {
-    Part::Feature *base = static_cast<Part::Feature*>(BaseFeature.getValue());
-    if (base && base->isDerivedFrom<Part::Feature>())
+    // The object the shape comes from: BaseFeature in a body, Base's object
+    // for a dress-up outside one, whose BaseFeature is null -- its result was
+    // left at the origin (upstream 5a47138994, for Thickness).
+    Part::Feature *base = getBaseObject(/* silent = */ true);
+    if (base)
         this->Placement.setValue(base->Placement.getValue());
 }
 

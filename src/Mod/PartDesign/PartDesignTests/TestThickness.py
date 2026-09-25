@@ -129,6 +129,25 @@ class TestThickness(unittest.TestCase):
         self.assertEqual(len(thickness.Shape.Solids), 1)
         self.assertEqual(thickness.Placement, fillet.Placement)
 
+    def testStandaloneDressUpsStayWithTheirBase(self):
+        """A dress-up of a plain Part object has no body (upstream
+        a76adf48a9) and its result goes where the object is (5a47138994);
+        it failed with "Missing container body"."""
+        box = self.Doc.addObject("Part::Box", "PartBox")
+        box.Placement.Base = FreeCAD.Vector(100, 0, 0)
+        for kind, subs in (("Fillet", ["Edge1"]), ("Chamfer", ["Edge1"]),
+                           ("Thickness", ["Face6"]), ("Draft", ["Face1"])):
+            feature = self.Doc.addObject("PartDesign::" + kind, kind)
+            feature.Base = (box, subs)
+            if kind == "Thickness":
+                feature.Value = 1
+            if kind == "Draft":
+                feature.Angle = 5
+            self.Doc.recompute()
+            self.assertIn("Up-to-date", feature.State, kind)
+            self.assertAlmostEqual(feature.Shape.BoundBox.XMin, 100, 3, kind)
+            self.assertAlmostEqual(feature.Shape.BoundBox.XMax, 110, 3, kind)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestThickness")
