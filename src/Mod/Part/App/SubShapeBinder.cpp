@@ -211,12 +211,15 @@ void SubShapeBinder::setupCopyOnChange() {
 void SubShapeBinder::clearCopiedObjects() {
     std::vector<App::DocumentObjectT> objs;
     objs.swap(_CopiedObjs);
+    // The link first: the copies live in another document, so removing
+    // them does not reset it, and setting it afterwards copied a link to a
+    // deleted object -- closing a document with such a binder crashed
+    _CopiedLink.setValue(0);
     for(auto &o : objs) {
         auto obj = o.getObject();
         if(obj)
             obj->getDocument()->removeObject(obj->getNameInDocument());
     }
-    _CopiedLink.setValue(0);
 }
 
 App::DocumentObject *SubShapeBinder::getSubObject(const char *subname, PyObject **pyObj,

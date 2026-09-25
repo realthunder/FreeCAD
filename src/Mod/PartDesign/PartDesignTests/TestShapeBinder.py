@@ -59,6 +59,30 @@ class TestSubShapeBinder(unittest.TestCase):
     def tearDown(self):
         FreeCAD.closeDocument("PartDesignTestSubShapeBinder")
 
+    def testCopyOnChangeCloses(self):
+        """A binder that made a copy on change is closed with its document;
+        it crashed, clearing its link to the copy after deleting the copy."""
+        body = self.Doc.addObject("PartDesign::Body", "Body")
+        box = body.newObject("PartDesign::AdditiveBox", "Box")
+        box.addProperty("App::PropertyLength", "A")
+        box.A = 20
+        box.setExpression("Length", "A")
+        box.setPropertyStatus("A", "CopyOnChange")
+        self.Doc.recompute()
+        binder = self.Doc.addObject("PartDesign::SubShapeBinder", "Binder")
+        binder.Support = [(box, "")]
+        binder.BindCopyOnChange = "Enabled"
+        self.Doc.recompute()
+        binder.A = 30
+        self.Doc.recompute()
+        self.assertAlmostEqual(binder.Shape.BoundBox.XLength, 30)
+        self.assertAlmostEqual(box.Shape.BoundBox.XLength, 20)
+        # and the copy is let go when the binder follows its support again
+        box.A = 25
+        self.Doc.recompute()
+        self.assertAlmostEqual(box.Shape.BoundBox.XLength, 25)
+        # tearDown closes the document
+
     def testOffsetBinder(self):
         # See PR 7445
         body = self.Doc.addObject('PartDesign::Body','Body')
