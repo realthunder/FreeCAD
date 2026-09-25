@@ -175,6 +175,45 @@ class TestHole(unittest.TestCase):
         self.assertIn("Invalid", hole.State)
         self.assertAlmostEqual(box.Shape.Volume, 4000)
 
+    def testProfileCylindricalFace(self):
+        """A hole on the face of an existing hole is drilled along its axis
+        (upstream 7481a5d8dd, af83b6883e); it went radially, the normal at
+        the middle of the face, and Reversed changed nothing."""
+        self.Body = self.Doc.addObject("PartDesign::Body", "Body")
+        box = self.Body.newObject("PartDesign::AdditiveBox", "Box")
+        box.Length = box.Width = box.Height = 40
+        for placement in (App.Placement(App.Vector(20, 20, 0), App.Rotation()),
+                          App.Placement(App.Vector(0, 10, 20),
+                                        App.Rotation(App.Vector(0, 1, 0), 90))):
+            cyl = self.Body.newObject("PartDesign::SubtractiveCylinder", "Cylinder")
+            cyl.Radius = 3
+            cyl.Height = 40
+            cyl.Placement = placement
+            self.Doc.recompute()
+            face = [i for i, f in enumerate(cyl.Shape.Faces, 1)
+                    if f.Surface.TypeId == "Part::GeomCylinder"][0]
+            hole = self.Body.newObject("PartDesign::Hole", "Hole")
+            hole.Profile = (cyl, ["Face%d" % face])
+            hole.Diameter = 8
+            hole.DepthType = "Dimension"
+            hole.Depth = 10
+            hole.DrillPoint = "Flat"
+            axis = cyl.Shape.Faces[face - 1].Surface.Axis
+            for reversed in (False, True):
+                hole.Reversed = reversed
+                self.Doc.recompute()
+                self.assertNotIn("Invalid", hole.State)
+                removed = cyl.Shape.cut(hole.Shape)
+                # a ring D8 over D6, 10 deep along the axis, at one end
+                self.assertAlmostEqual(removed.Volume, pi * (16 - 9) * 10, places=4,
+                                       msg="%s reversed %s" % (placement, reversed))
+                bb = removed.BoundBox
+                extent = abs(axis.x) * bb.XLength + abs(axis.y) * bb.YLength \
+                    + abs(axis.z) * bb.ZLength
+                self.assertAlmostEqual(extent, 10, places=4)
+            self.Body.removeObject(hole)
+            self.Doc.removeObject(hole.Name)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestHole")

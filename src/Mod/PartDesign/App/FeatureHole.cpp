@@ -36,6 +36,8 @@
 # include <BRepClass3d_SolidClassifier.hxx>
 # include <BRepOffsetAPI_MakePipeShell.hxx>
 # include <BRepPrimAPI_MakeRevol.hxx>
+# include <BRepAdaptor_Surface.hxx>
+# include <gp_Cylinder.hxx>
 # include <Geom_Circle.hxx>
 # include <Standard_Version.hxx>
 # include <TopoDS.hxx>
@@ -1727,12 +1729,12 @@ App::DocumentObjectExecReturn* Hole::execute()
         if (profileshape.isNull())
             return new App::DocumentObjectExecReturn(
                 QT_TRANSLATE_NOOP("Exception", "Hole error: Creating a face from sketch failed"));
-        profileshape.move(invObjLoc);
 
         /* Build the prototype hole */
 
-        // Get vector normal to profile
-        Base::Vector3d  SketchVector = getProfileNormal();
+        // Get vector normal to profile, in global coordinates
+        Base::Vector3d SketchVector = guessNormalDirection(profileshape);
+        profileshape.move(invObjLoc);
         if (Reversed.getValue())
             SketchVector *= -1.0;
 
@@ -2065,6 +2067,21 @@ gp_Vec Hole::computePerpendicular(const gp_Vec& zDir) const
     // a unit-length vector.
     xDir.Normalize();
     return xDir;
+}
+
+Base::Vector3d Hole::guessNormalDirection(const TopoShape& profileshape) const
+{
+    // A hole made on a cylindrical face (an existing hole, say) is drilled
+    // along the cylinder's axis. getProfileNormal() would take the normal at
+    // the middle of the face, which is radial.
+    if (profileshape.hasSubShape(TopAbs_FACE)) {
+        BRepAdaptor_Surface sf(TopoDS::Face(profileshape.getSubShape(TopAbs_FACE, 1)));
+        if (sf.GetType() == GeomAbs_Cylinder) {
+            const gp_Dir& dir = sf.Cylinder().Axis().Direction();
+            return Base::Vector3d(dir.X(), dir.Y(), dir.Z());
+        }
+    }
+    return getProfileNormal();
 }
 
 TopoShape Hole::findHoles(std::vector<TopoShape> &holes,
