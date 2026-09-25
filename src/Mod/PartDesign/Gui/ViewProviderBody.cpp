@@ -533,6 +533,17 @@ void ViewProviderBody::updateData(const App::Property* prop)
     PartGui::ViewProviderPart::updateData(prop);
 }
 
+void ViewProviderBody::checkColorUpdate()
+{
+    // The body maps its colours from the Tip's shape, so what a remap
+    // writes into them came from the Tip: an echo, never a setting of the
+    // body's to give back. Given back it overwrote the Tip with its own
+    // old colours -- and, while a Transparency was on its way down, with
+    // the old transparency, so the body's Transparency did not stick.
+    Base::StateLocker guard(followingChange);
+    inherited::checkColorUpdate();
+}
+
 void ViewProviderBody::copyColorsfromTip(App::DocumentObject* tip)
 {
     // Taking the new Tip's colours changes the body's ShapeColor with them,
@@ -549,6 +560,13 @@ void ViewProviderBody::copyColorsfromTip(App::DocumentObject* tip)
 }
 
 void ViewProviderBody::onChanged(const App::Property* prop) {
+
+    // Hold the colour updates until the whole change is through. Forwarding
+    // a Transparency first switches the Tip's MapTransparency off, and on its
+    // own that ended the update at once: the body remapped from the Tip's
+    // old colours -- its MapTransparency is on -- and its Transparency went
+    // back to the old value before it was handed to the Tip.
+    Gui::ColorUpdater colorUpdater;
 
     if (prop == &DisplayModeBody) {
         auto body = Base::freecad_dynamic_cast<PartDesign::Body>(getObject());

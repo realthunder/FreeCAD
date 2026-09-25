@@ -78,6 +78,8 @@ public:
 
     /// Update the children's highlighting when triggered
     void updateData(const App::Property* prop) override;
+    /// Remap the colours from the Tip without handing them back to it
+    void checkColorUpdate() override;
     ///unify children visuals
     void onChanged(const App::Property* prop) override;
 
