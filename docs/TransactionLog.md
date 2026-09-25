@@ -3310,3 +3310,20 @@ expects one undo step, and gets two. Not investigated; presumably the
 creation becomes an implicit transaction of its own with the log on
 (24.10), in which case the test states the log-off rule. It is main-thread
 undo bookkeeping, which nothing in this change touches.
+
+**The Python suite with the log on does not reproduce 24.11's "2904 OK".**
+Past the crash it gives 8 failures on the tip. Two are FileBlobs cases
+that expect content to die, which the log keeps as history; they now skip
+with the log on. Six are not from this work:
+`Document.DocumentObserverCases` `testDocument`, `testObject` and
+`testUndoDisabledDocument` (a `DocOpenTransaction` signal before
+`DocBeforeChange`, left-over signals), `Document.UndoRedoCases`
+`testUndo` and `testUndoClear` (`UndoNames` holding `<implicit>`), and
+`materialtests.TestMaterialSync.testUpdateFromLibraryUndoes`. `FreeCADCmd`
+rebuilt at `e1959312dc`, before any of this, fails the three observer
+cases the same way; that run then crashes in a later case of a
+half-rebuilt tree, so the other three were not seen there. All six look
+like the implicit transactions of 24.10 in a process with no GUI to close
+them at the event loop. Open, not chased here: whether the tests state the
+log-off rule or the log should keep the implicit ones out of what the
+tests read.

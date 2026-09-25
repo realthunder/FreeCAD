@@ -1334,6 +1334,27 @@ and how it was settled:
 - **Tests read zstd members through `Mod/Test/ArchiveMembers.py`**: Python
   3.12's zipfile cannot (3.14's can, and the helper defers to it).
 
+**Measured on this box (Linux, ext4)**, headless, the synthetic 5402-solid
+document of 15.9, two runs each, the pack store against `ArchiveBlobStore`
+off (a file per blob -- sec 14's single archive copy is gone):
+
+| step | pack store | a file per blob |
+| --- | --- | --- |
+| open | 1.27-1.29 s, 1 file in the store | 1.37-1.40 s, 5400 files |
+| parse every shape | 4.28-4.43 s | 4.05-4.08 s |
+| save-as | 0.66-0.73 s | 1.07-1.09 s |
+| first save of an import (5402 new shapes) | 2.68-2.70 s, 2 files | 2.79-2.83 s, 5401 files |
+| save it again | 1.08-1.12 s | 1.43-1.49 s |
+| close both documents | 0.23 s | 0.39-0.40 s |
+
+The parse pays about 0.3 s for inflating out of the segment where Linux
+reads a plain file for nothing; the monitored laptop is the other way
+round by two orders (15.9). Everything a file per blob costs in creates and
+deletes is gone, and the import's first save compresses every shape with
+zstd and still finishes sooner. The second file after a save is a material
+card, which comes in through `adoptFile()` and keeps its file. The laptop's
+rows, on MiSTer in the real application, are the next measurement.
+
 Not built yet: the recovery pass of 15.8 (reading several segments'
 directories, the newest number winning, finishing an interrupted merge) --
 that is phase 7 with the log's session recovery; a store opens fresh
