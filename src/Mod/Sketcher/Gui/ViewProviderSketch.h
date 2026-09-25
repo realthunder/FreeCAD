@@ -325,6 +325,16 @@ public:
                                            const SbVec2s &cursorPos,
                                            bool preselect=true);
 
+    /** What a hover at a viewport position of the edit view would
+     * preselect, without preselecting it: the element names (several for
+     * a combined constraint icon) and the picked point. False for nothing.
+     * The position is in the coordinates of View3DInventor's
+     * getPointOnViewport(). Upstream's name, for its preselection tests.
+     */
+    bool getPreselectionAtViewportPos(const SbVec2s &pos,
+                                      std::vector<std::string> &subElementNames,
+                                      Base::Vector3d &pickedPoint);
+
     /*! Look at the center of the bounding of all selected items */
     void centerSelection();
 

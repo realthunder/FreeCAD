@@ -1411,6 +1411,34 @@ const char* ViewProviderSketch::getDefaultDisplayMode() const
     return "Flat Lines";
 }
 
+bool ViewProviderSketch::getPreselectionAtViewportPos(const SbVec2s &pos,
+                                                      std::vector<std::string> &subElementNames,
+                                                      Base::Vector3d &pickedPoint)
+{
+    subElementNames.clear();
+    Gui::ViewerContext *viewer = edit ? editViewer() : nullptr;
+    if (!viewer)
+        return false;
+
+    // The hover's own pick, asked not to preselect
+    std::unique_ptr<SoPickedPoint> pp(getPointOnRay(pos, viewer));
+    if (!pp)
+        return false;
+    detectPreselection(pp.get(), viewer, pos, false);
+    if (edit->lastPreselection.empty())
+        return false;
+
+    if (edit->lastCstrPreselections.empty())
+        subElementNames.push_back(edit->lastPreselection);
+    else {
+        for (int id : edit->lastCstrPreselections)
+            subElementNames.push_back(Sketcher::PropertyConstraintList::getConstraintName(id));
+    }
+    const SbVec3f &p = pp->getPoint();
+    pickedPoint = Base::Vector3d(p[0], p[1], p[2]);
+    return true;
+}
+
 bool ViewProviderSketch::getElementPicked(const SoPickedPoint *pp, std::string &subname) const
 {
     if (edit && editViewer()) {
