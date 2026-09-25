@@ -165,6 +165,42 @@ class TestPolarPattern(unittest.TestCase):
         self.assertAlmostEqual(box.XMax, 40)
         self.assertAlmostEqual(box.ZMin, -10)
 
+    def testNegativeAngle(self):
+        """A negative angle or offset turns the other way, as Reversed does
+        (upstream 5ae67ee2f9); it was clamped to nothing and the occurrences
+        fell on each other."""
+        self.Body = self.Doc.addObject("PartDesign::Body", "Body")
+        box = self.Body.newObject("PartDesign::AdditiveBox", "Box")
+        box.Placement.Base = FreeCAD.Vector(20, 0, 0)
+        pattern = self.Body.newObject("PartDesign::PolarPattern", "PolarPattern")
+        pattern.Originals = [box]
+        pattern.Axis = (self.Doc.Z_Axis, [""])
+        pattern.Occurrences = 2
+
+        def bounds():
+            self.Doc.recompute()
+            self.assertIn("Up-to-date", pattern.State)
+            self.assertAlmostEqual(pattern.Shape.Volume, 2000)
+            b = pattern.Shape.BoundBox
+            return (round(b.XMin, 6), round(b.YMin, 6), round(b.XMax, 6), round(b.YMax, 6))
+
+        pattern.Angle = 90
+        pattern.Reversed = True
+        reversed_ = bounds()
+        pattern.Reversed = False
+        pattern.Angle = -90
+        self.assertAlmostEqual(pattern.Angle.Value, -90)
+        self.assertEqual(bounds(), reversed_)
+        pattern.Mode = "offset"
+        pattern.Offset = -90
+        self.assertEqual(bounds(), reversed_)
+        # a negative full turn is a full turn
+        pattern.Mode = "angle"
+        pattern.Angle = -360
+        pattern.Occurrences = 4
+        self.Doc.recompute()
+        self.assertAlmostEqual(pattern.Shape.Volume, 4000)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestPolarPattern")

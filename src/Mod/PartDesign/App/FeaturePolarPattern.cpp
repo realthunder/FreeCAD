@@ -49,7 +49,9 @@ namespace PartDesign {
 PROPERTY_SOURCE(PartDesign::PolarPattern, PartDesign::Transformed)
 
 const App::PropertyIntegerConstraint::Constraints PolarPattern::intOccurrences = { 1, INT_MAX, 1 };
-const App::PropertyAngle::Constraints PolarPattern::floatAngle = { Base::toDegrees<double>(Precision::Angular()), 360.0, 1.0 };
+// A negative angle turns the other way (upstream 5ae67ee2f9); it was
+// clamped to nothing, and the occurrences fell on each other
+const App::PropertyAngle::Constraints PolarPattern::floatAngle = { -360.0, 360.0, 1.0 };
 
 const char* PolarPattern::ModeEnums[] = {"angle", "offset", nullptr};
 
@@ -196,7 +198,7 @@ std::list<gp_Trsf> PolarPattern::getTransformations(const std::vector<Part::Topo
         case PolarPatternMode::angle:
             angle = Angle.getValue();
 
-            if (std::fabs(angle - 360.0) < Precision::Confusion())
+            if (std::fabs(std::fabs(angle) - 360.0) < Precision::Confusion())
                 angle /= occurrences; // Because e.g. two occurrences in 360 degrees need to be 180 degrees apart
             else
                 angle /= occurrences - 1;
@@ -213,7 +215,7 @@ std::list<gp_Trsf> PolarPattern::getTransformations(const std::vector<Part::Topo
 
     double offset = Base::toRadians<double>(angle);
 
-    if (offset < Precision::Angular())
+    if (std::fabs(offset) < Precision::Angular())
         THROWM(Base::ValueError, "Pattern angle too small")
 
     std::list<gp_Trsf> transformations;

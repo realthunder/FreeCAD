@@ -97,7 +97,7 @@
          <string notr="true">deg</string>
         </property>
         <property name="minimum" stdset="0">
-         <double>0.000000000000000</double>
+         <double>-360.000000000000000</double>
         </property>
         <property name="maximum" stdset="0">
          <double>360.000000000000000</double>
@@ -141,7 +141,7 @@
          <string notr="true">deg</string>
         </property>
         <property name="minimum" stdset="0">
-         <double>0.000000000000000</double>
+         <double>-360.000000000000000</double>
         </property>
         <property name="maximum" stdset="0">
          <double>360.000000000000000</double>
