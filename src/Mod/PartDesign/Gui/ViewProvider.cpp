@@ -90,7 +90,10 @@ bool ViewProvider::doubleClicked()
     App::AutoTransaction committer(Msg.c_str());
     try {
 	    PartDesign::Body* body = PartDesign::Body::findBodyOf(getObject());
-        PartDesignGui::setEdit(pcObject,body);
+        // the edit mode the user picked, as a Part feature's double click
+        // does (upstream f34f15dc60)
+        PartDesignGui::setEdit(pcObject, body, PDBODYKEY,
+                               Gui::Application::Instance->getUserEditMode());
     }
     catch (const Base::Exception &) {
         committer.close(true);

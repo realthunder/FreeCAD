@@ -92,7 +92,7 @@ using namespace Attacher;
 
 namespace PartDesignGui {
 
-bool setEdit(App::DocumentObject *obj, App::DocumentObject *container, const char *key) {
+bool setEdit(App::DocumentObject *obj, App::DocumentObject *container, const char *key, int mode) {
     if(!obj || !obj->getNameInDocument()) {
         FC_ERR("invalid object");
         return false;
@@ -127,7 +127,7 @@ bool setEdit(App::DocumentObject *obj, App::DocumentObject *container, const cha
 
     Gui::cmdGuiDocument(parent, std::ostringstream() << "setEdit("
                                                      << Gui::Command::getObjectCmd(parent)
-                                                     << ", 0, '" << subname << "')");
+                                                     << ", " << mode << ", '" << subname << "')");
     return true;
 }
 

@@ -53,8 +53,10 @@ namespace Sketcher {
 
 namespace PartDesignGui {
 
-/// Activate edit mode of the given object
-bool setEdit(App::DocumentObject *obj, App::DocumentObject *container=0, const char *key=PDBODYKEY);
+/// Activate edit mode of the given object;  mode is the view provider's
+/// edit mode, 0 for its task panel
+bool setEdit(App::DocumentObject *obj, App::DocumentObject *container=0,
+             const char *key=PDBODYKEY, int mode=0);
 
 /// Call before editing object to setup visibilities
 void beforeEdit(App::DocumentObject *editingObj);
