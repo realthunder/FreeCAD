@@ -62,29 +62,35 @@ std::list<gp_Trsf> Mirrored::getTransformations(const std::vector<Part::TopoShap
     App::DocumentObject* refObject = MirrorPlane.getValue();
     if (!refObject)
         THROWM(Base::ValueError, "No mirror plane reference specified")
+    // A plane picked in the property editor comes with no subname at all, not
+    // with one empty subname; a whole sketch, datum plane or origin plane
+    // needs none (upstream 7d10f5ed73).
     std::vector<std::string> subStrings = MirrorPlane.getSubValues();
-    if (subStrings.empty())
-        THROWM(Base::ValueError, "No mirror plane reference specified")
+    const std::string sub = subStrings.empty() ? std::string() : subStrings[0];
 
     gp_Pnt axbase;
     gp_Dir axdir;
     if (refObject->isDerivedFrom<Part::Part2DObject>()) {
         Part::Part2DObject* refSketch = static_cast<Part::Part2DObject*>(refObject);
         Base::Axis axis;
-        if (subStrings[0] == "H_Axis")
+        if (sub == "H_Axis")
             axis = refSketch->getAxis(Part::Part2DObject::V_Axis);
-        else if (subStrings[0] == "V_Axis")
+        else if (sub == "V_Axis")
             axis = refSketch->getAxis(Part::Part2DObject::H_Axis);
-        else if (subStrings[0].empty())
+        else if (sub.empty())
             axis = refSketch->getAxis(Part::Part2DObject::N_Axis);
-        else if (subStrings[0].compare(0, 4, "Axis") == 0) {
-            int AxId = std::atoi(subStrings[0].substr(4,4000).c_str());
+        else if (sub.compare(0, 4, "Axis") == 0) {
+            int AxId = std::atoi(sub.substr(4,4000).c_str());
             if (AxId >= 0 && AxId < refSketch->getAxisCount()) {
                 axis = refSketch->getAxis(AxId);
                 axis.setBase(axis.getBase() + 0.5 * axis.getDirection());
                 axis.setDirection(Base::Vector3d(-axis.getDirection().y, axis.getDirection().x, axis.getDirection().z));
             }
+            else
+                THROWM(Base::ValueError, "No valid axis specified")
         }
+        else
+            THROWM(Base::ValueError, "No valid axis specified")
         axis *= refSketch->Placement.getValue();
         axbase = gp_Pnt(axis.getBase().x, axis.getBase().y, axis.getBase().z);
         axdir = gp_Dir(axis.getDirection().x, axis.getDirection().y, axis.getDirection().z);
@@ -95,19 +101,16 @@ std::list<gp_Trsf> Mirrored::getTransformations(const std::vector<Part::TopoShap
         Base::Vector3d dir = plane->getNormal();
         axdir = gp_Dir(dir.x, dir.y, dir.z);
     } else if (refObject->isDerivedFrom<App::Plane>()) {
-        App::Plane* plane = static_cast<App::Plane*>(refObject);
-        Base::Vector3d base = plane->Placement.getValue().getPosition();
-        axbase = gp_Pnt(base.x, base.y, base.z);
-        Base::Rotation rot = plane->Placement.getValue().getRotation();
-        Base::Vector3d dir(0,0,1);
-        rot.multVec(dir, dir);
-        axdir = gp_Dir(dir.x, dir.y, dir.z);
+        // with the coordinate system holding it, as makePlnFromPlane() does
+        gp_Pln pln = Feature::makePlnFromPlane(refObject);
+        axbase = pln.Location();
+        axdir = pln.Axis().Direction();
     } else if (refObject->isDerivedFrom<Part::Feature>()) {
-        if (subStrings[0].empty())
-            THROWM(Base::ValueError, "No direction reference specified")
+        if (sub.empty())
+            THROWM(Base::ValueError, "No mirror plane reference specified")
         Part::TopoShape baseShape = static_cast<Part::Feature*>(refObject)->Shape.getShape();
         // TODO: Check for multiple mirror planes?
-        TopoDS_Shape shape = baseShape.getSubShape(subStrings[0].c_str());
+        TopoDS_Shape shape = baseShape.getSubShape(sub.c_str());
         TopoDS_Face face = TopoDS::Face(shape);
         if (face.IsNull())
             THROWM(Base::ValueError, "Failed to extract mirror plane")

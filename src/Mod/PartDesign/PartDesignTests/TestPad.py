@@ -230,6 +230,29 @@ class TestPad(unittest.TestCase):
         self.Doc.recompute()
         self.assertAlmostEqual(self.Pad.Shape.Volume, 2208.0963, places=4)
 
+    def testUpToMovedLCSPlane(self):
+        """Up to a plane of a moved coordinate system (upstream 194ec0820c):
+        the plane was taken at its own local placement, in the sketch."""
+        self.Body = self.Doc.addObject("PartDesign::Body", "Body")
+        lcs = self.Doc.addObject("App::LocalCoordinateSystem", "LCS")
+        lcs.Placement = FreeCAD.Placement(FreeCAD.Vector(0, 0, 20), FreeCAD.Rotation())
+        self.Doc.recompute()
+        xy = [f for f in lcs.OriginFeatures if f.Role == "XY_Plane"][0]
+        sketch = self.Body.newObject("Sketcher::SketchObject", "Square")
+        sketch.Support = ([f for f in self.Body.Origin.OriginFeatures
+                           if f.Role == "XY_Plane"][0], [""])
+        sketch.MapMode = "FlatFace"
+        TestSketcherApp.CreateRectangleSketch(sketch, (0, 0), (10, 10))
+        self.Doc.recompute()
+        pad = self.Body.newObject("PartDesign::Pad", "Pad")
+        pad.Profile = sketch
+        pad.Type = "UpToFace"
+        pad.UpToFace = (xy, [""])
+        self.Doc.recompute()
+        self.assertIn("Up-to-date", pad.State)
+        self.assertAlmostEqual(pad.Shape.BoundBox.ZMax, 20)
+        self.assertAlmostEqual(pad.Shape.Volume, 2000)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestPad")

@@ -448,6 +448,9 @@ App::DocumentObjectExecReturn *Transformed::execute()
         }
     } catch (Base::Exception& e) {
         return new App::DocumentObjectExecReturn(e.what());
+    } catch (const Standard_Failure& e) {
+        // e.g. a gp_Dir of a zero vector from a degenerate reference
+        return new App::DocumentObjectExecReturn(e.GetMessageString());
     }
 
     if (transformations.empty() || originalShapes.empty()) {

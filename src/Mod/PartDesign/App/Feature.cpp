@@ -271,6 +271,15 @@ gp_Pln Feature::makePlnFromPlane(const App::DocumentObject* obj)
 {
     if (!obj || !obj->getNameInDocument())
         THROWM(Base::ValueError, "Feature: Null object")
+    // A plane of a coordinate system: its own Placement is relative to the
+    // LCS, so a plane of a moved or turned LCS read as the global one --
+    // an up-to-face or a neutral plane landed at the origin (upstream
+    // 194ec0820c). getBasePoint()/getDirection() carry the LCS.
+    if (auto datum = dynamic_cast<const App::DatumElement*>(obj)) {
+        Base::Vector3d pos = datum->getBasePoint();
+        Base::Vector3d normal = datum->getDirection();
+        return gp_Pln(gp_Pnt(pos.x, pos.y, pos.z), gp_Dir(normal.x, normal.y, normal.z));
+    }
     auto propPlacement = Base::freecad_dynamic_cast<App::PropertyPlacement>(obj->getPropertyByName("Placement"));
     if (!propPlacement)
         THROWM(Base::ValueError, "Feature: no placement found")
