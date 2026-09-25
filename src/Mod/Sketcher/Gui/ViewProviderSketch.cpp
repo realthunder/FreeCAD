@@ -255,6 +255,7 @@ struct EditData {
     EditCurvesCoordinate(0),
     EditMarkersCoordinate(0),
     CurveSet(0),
+    DashedCurveSet(0),
     SelectedCurveSet(0),
     PreSelectedCurveSet(0),
     RootCrossSet(0),
@@ -277,6 +278,7 @@ struct EditData {
     pickStyleAxes(0),
     PointsDrawStyle(0),
     CurvesDrawStyle(0),
+    DashedCurvesDrawStyle(0),
     RootCrossDrawStyle(0),
     EditCurvesDrawStyle(0),
     EditMarkersDrawStyle(0),
@@ -376,7 +378,13 @@ struct EditData {
     std::vector<int> ImplicitSelPoints;
     std::vector<int> ImplicitSelCurves;
     std::set<int> SelConstraintSet;
-    std::vector<int> CurvIdToGeoId; // conversion of SoLineSet index to GeoId
+    std::vector<int> CurvIdToGeoId; // conversion of curve index to GeoId
+    /// vertices of each curve, in curve order: CurvesCoordinate is every
+    /// curve's vertices one after the other
+    std::vector<int> CurveVertexCount;
+    /// the curve index of each polyline of CurveSet and of DashedCurveSet
+    std::vector<int> SolidCurveIds;
+    std::vector<int> DashedCurveIds;
     std::vector<int> PointIdToVertexId; // conversion of SoCoordinate3 index to vertex Id
     std::vector<unsigned> VertexIdToPointId; // conversion of vertex Id to SoCoordinate3 index
 
@@ -408,7 +416,10 @@ struct EditData {
     SoCoordinate3 *RootCrossCoordinate;
     SoCoordinate3 *EditCurvesCoordinate;
     SoCoordinate3 *EditMarkersCoordinate;
-    SoLineSet     *CurveSet;
+    // Two sets over the one coordinate and material list: curves on a
+    // visual layer with a line pattern (layer 1) are drawn dashed.
+    SoIndexedLineSet *CurveSet;
+    SoIndexedLineSet *DashedCurveSet;
     SoIndexedLineSet     *SelectedCurveSet;
     SoIndexedLineSet     *PreSelectedCurveSet;
     SoLineSet     *RootCrossSet;
@@ -451,6 +462,7 @@ struct EditData {
 
     SoDrawStyle * PointsDrawStyle;
     SoDrawStyle * CurvesDrawStyle;
+    SoDrawStyle * DashedCurvesDrawStyle;
     SoDrawStyle * RootCrossDrawStyle;
     SoDrawStyle * EditCurvesDrawStyle;
     SoDrawStyle * EditMarkersDrawStyle;
@@ -2630,12 +2642,15 @@ bool ViewProviderSketch::detectPreselection(const SoPickedPoint *Point,
             }
         } else {
             // checking for a hit in the curves
-            if (tail == edit->CurveSet) {
-                const SoDetail *curve_detail = Point->getDetail(edit->CurveSet);
+            if (tail == edit->CurveSet || tail == edit->DashedCurveSet) {
+                const SoDetail *curve_detail = Point->getDetail(tail);
                 if (curve_detail && curve_detail->getTypeId() == SoLineDetail::getClassTypeId()) {
-                    // get the index
-                    int curveIndex = static_cast<const SoLineDetail *>(curve_detail)->getLineIndex();
-                    GeoIndex = edit->CurvIdToGeoId[curveIndex];
+                    // the polyline of this set, then the curve it is
+                    int line = static_cast<const SoLineDetail *>(curve_detail)->getLineIndex();
+                    const std::vector<int> &ids =
+                        tail == edit->CurveSet ? edit->SolidCurveIds : edit->DashedCurveIds;
+                    if (line >= 0 && line < (int)ids.size())
+                        GeoIndex = edit->CurvIdToGeoId[ids[line]];
                 }
             // checking for a hit in the cross
             } else if (tail == edit->RootCrossSet) {
@@ -3548,7 +3563,6 @@ void ViewProviderSketch::updateColor(void)
     SbColor *crosscolor = edit->RootCrossMaterials->diffuseColor.startEditing();
 
     SbVec3f *verts = edit->CurvesCoordinate->point.startEditing();
-  //int32_t *index = edit->CurveSet->numVertices.startEditing();
     SbVec3f *pverts = edit->PointsCoordinate->point.startEditing();
 
     ParameterGrp::handle hGrpp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Sketcher/General");
@@ -3743,8 +3757,7 @@ void ViewProviderSketch::updateColor(void)
     for (int  i=0; i < CurvNum; i++, j+=vcount) {
         int GeoId = edit->CurvIdToGeoId[i];
         // CurvId has several vertices associated to 1 material
-        //edit->CurveSet->numVertices => [i] indicates number of vertex for line i.
-        vcount = (edit->CurveSet->numVertices[i]);
+        vcount = edit->CurveVertexCount[i];
 
         bool preselected = (!edit->hasDraggedCurve() && edit->PreselectCurve == GeoId)
                            || edit->isDraggedCurve(GeoId);
@@ -3958,7 +3971,7 @@ void ViewProviderSketch::updateColor(void)
                         int count = 0;
                         for (int  i=0; i < CurvNum; i++,j+=count) {
                             int cGeoId = edit->CurvIdToGeoId[i];
-                            count = edit->CurveSet->numVertices[i];
+                            count = edit->CurveVertexCount[i];
                             if(cGeoId == constraint->First) {
                                 color[i] = *highlightColor;
                                 edit->ImplicitSelCurves.push_back(cGeoId);
@@ -4081,7 +4094,6 @@ void ViewProviderSketch::updateColor(void)
     edit->PointsMaterials->diffuseColor.finishEditing();
     edit->RootCrossMaterials->diffuseColor.finishEditing();
     edit->CurvesCoordinate->point.finishEditing();
-    edit->CurveSet->numVertices.finishEditing();
 }
 
 bool ViewProviderSketch::isPointOnSketch(const SoPickedPoint *pp) const
@@ -4918,6 +4930,7 @@ void ViewProviderSketch::updateInventorNodeSizes()
     // the one value just written covers every point, so put the origin's back
     applyOriginPointMarker();
     edit->CurvesDrawStyle->lineWidth = 3 * edit->pixelScalingFactor;
+    edit->DashedCurvesDrawStyle->lineWidth = 3 * edit->pixelScalingFactor;
     edit->RootCrossDrawStyle->lineWidth = 2 * edit->pixelScalingFactor;
     edit->EditCurvesDrawStyle->lineWidth = 3 * edit->pixelScalingFactor;
     edit->EditMarkersDrawStyle->pointSize = 8 * edit->pixelScalingFactor;
@@ -6147,13 +6160,11 @@ void ViewProviderSketch::draw(bool temp /*=false*/, bool rebuildinformationlayer
     visibleInformationChanged=false; // whatever that changed in Information layer is already updated
 
     edit->CurvesCoordinate->point.setNum(Coords.size());
-    edit->CurveSet->numVertices.setNum(Index.size());
     edit->CurvesMaterials->diffuseColor.setNum(Index.size());
     edit->PointsCoordinate->point.setNum(Points.size());
     edit->PointsMaterials->diffuseColor.setNum(Points.size());
 
     SbVec3f *verts = edit->CurvesCoordinate->point.startEditing();
-    int32_t *index = edit->CurveSet->numVertices.startEditing();
     SbVec3f *pverts = edit->PointsCoordinate->point.startEditing();
 
     float dMg = 100;
@@ -6165,9 +6176,53 @@ void ViewProviderSketch::draw(bool temp /*=false*/, bool rebuildinformationlayer
         verts[i].setValue(it->x,it->y,zLowLines);
     }
 
-    i=0; // setting up the indexes of the line set
-    for (std::vector<unsigned int>::const_iterator it = Index.begin(); it != Index.end(); ++it,i++)
-        index[i] = *it;
+    // Each curve goes to the solid or the dashed set by its visual layer's
+    // line pattern; both index the one coordinate and material list, so a
+    // curve keeps its index for colouring and highlighting. One pattern is
+    // drawn: the first patterned layer's (the default list has one, layer 1).
+    edit->CurveVertexCount.assign(Index.begin(), Index.end());
+    edit->SolidCurveIds.clear();
+    edit->DashedCurveIds.clear();
+    {
+        std::vector<int32_t> solid, dashed, solidMat, dashedMat;
+        unsigned int dashPattern = 0xFFFF;
+        const std::vector<VisualLayer> &layers = VisualLayerList.getValues();
+        const std::vector<Part::Geometry *> &geos = sketch->Geometry.getValues();
+        int vertex = 0;
+        for (int c = 0; c < (int)Index.size(); ++c) {
+            int count = int(Index[c]);
+            int geoId = edit->CurvIdToGeoId[c];
+            unsigned int pattern = 0xFFFF;
+            if (geoId >= 0 && geoId < (int)geos.size()) {
+                int layer = getSafeGeomLayerId(geos[geoId]);
+                if (layer >= 0 && layer < (int)layers.size())
+                    pattern = layers[layer].getLinePattern() & 0xFFFF;
+            }
+            bool isDashed = pattern != 0xFFFF;
+            if (isDashed && dashPattern == 0xFFFF)
+                dashPattern = pattern;
+            auto &target = isDashed ? dashed : solid;
+            (isDashed ? dashedMat : solidMat).push_back(c);
+            (isDashed ? edit->DashedCurveIds : edit->SolidCurveIds).push_back(c);
+            for (int k = 0; k < count; ++k)
+                target.push_back(vertex + k);
+            target.push_back(-1);
+            vertex += count;
+        }
+        if (!solid.empty())
+            solid.pop_back();
+        if (!dashed.empty())
+            dashed.pop_back();
+        edit->CurveSet->coordIndex.setValues(0, solid.size(), solid.data());
+        edit->CurveSet->coordIndex.setNum(solid.size());
+        edit->CurveSet->materialIndex.setValues(0, solidMat.size(), solidMat.data());
+        edit->CurveSet->materialIndex.setNum(solidMat.size());
+        edit->DashedCurveSet->coordIndex.setValues(0, dashed.size(), dashed.data());
+        edit->DashedCurveSet->coordIndex.setNum(dashed.size());
+        edit->DashedCurveSet->materialIndex.setValues(0, dashedMat.size(), dashedMat.data());
+        edit->DashedCurveSet->materialIndex.setNum(dashedMat.size());
+        edit->DashedCurvesDrawStyle->linePattern = dashPattern;
+    }
 
     i=0; // setting up the point set
     for (std::vector<Base::Vector3d>::const_iterator it = Points.begin(); it != Points.end(); ++it,i++){
@@ -6177,7 +6232,6 @@ void ViewProviderSketch::draw(bool temp /*=false*/, bool rebuildinformationlayer
     }
 
     edit->CurvesCoordinate->point.finishEditing();
-    edit->CurveSet->numVertices.finishEditing();
     edit->PointsCoordinate->point.finishEditing();
 
     // set cross coordinates
@@ -8264,7 +8318,7 @@ void ViewProviderSketch::createEditInventorNodes(void)
 
     MtlBind = new SoMaterialBinding;
     MtlBind->setName("CurvesMaterialsBinding");
-    MtlBind->value = SoMaterialBinding::PER_FACE;
+    MtlBind->value = SoMaterialBinding::PER_FACE_INDEXED;
     curvesRoot->addChild(MtlBind);
 
     edit->CurvesCoordinate = new SoCoordinate3;
@@ -8276,9 +8330,20 @@ void ViewProviderSketch::createEditInventorNodes(void)
     edit->CurvesDrawStyle->lineWidth = 3 * edit->pixelScalingFactor;
     curvesRoot->addChild(edit->CurvesDrawStyle);
 
-    edit->CurveSet = new SoLineSet;
+    edit->CurveSet = new SoIndexedLineSet;
     edit->CurveSet->setName("CurvesLineSet");
     curvesRoot->addChild(edit->CurveSet);
+
+    // curves on a patterned visual layer (layer 1): same coordinates and
+    // materials, their own line pattern
+    edit->DashedCurvesDrawStyle = new SoDrawStyle;
+    edit->DashedCurvesDrawStyle->setName("DashedCurvesDrawStyle");
+    edit->DashedCurvesDrawStyle->lineWidth = 3 * edit->pixelScalingFactor;
+    curvesRoot->addChild(edit->DashedCurvesDrawStyle);
+
+    edit->DashedCurveSet = new SoIndexedLineSet;
+    edit->DashedCurveSet->setName("DashedCurvesLineSet");
+    curvesRoot->addChild(edit->DashedCurveSet);
 
     // stuff for the selected Curves +++++++++++++++++++++++++++++++++++++++
     auto selCurvesRoot = new SoSeparator;

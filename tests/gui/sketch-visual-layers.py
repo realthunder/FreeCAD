@@ -11,7 +11,8 @@ Now an element on a layer that is not visible is neither drawn nor
 picked, and nothing that selects by what is on screen takes it: a box,
 or Select All from the 3D view.
 
-Read from the edit graph (`CurvesLineSet`, `PointsCoordinate`) and the
+Read from the edit graph (`CurvesLineSet` and `DashedCurvesLineSet`,
+indexed sets over one coordinate list; `PointsCoordinate`) and the
 selection. Sketch: three lines, the middle one on layer 2.
 
 Checks:
@@ -32,11 +33,22 @@ in one transaction:
     one undo step;
   - ticking the hidden line's row shows it again.
 
+Layer 1 carries a line pattern (0x7E7E); its curves are drawn in their own
+indexed set with that pattern, over the same coordinates and materials:
+
+  - a line on layer 1 is drawn in the dashed set, the others solid;
+  - with the layer's pattern;
+  - hovering it preselects that very curve (picking maps the dashed set's
+    polyline back to its curve).
+
 Scored against the tree before the change: every check fails -- three
 curves and seven points are drawn, Select All takes Edge2, Vertex3 and
 Vertex4, and Vertex3, drawn, is coloured when selected. With the drawing
 fixed and the panel not, the four checkbox checks fail: no row has a
-checkbox, and ticking one changes nothing.
+checkbox, and ticking one changes nothing. Before the dashed set, the three
+layer-1 checks fail: the line is drawn solid with the others (2 solid, 0
+dashed) -- upstream draws layer 1 solid too; its layers' patterns are
+never read.
 """
 import os
 import time
@@ -67,6 +79,23 @@ def settle(n=10):
     for _ in range(n):
         QtCore.QCoreApplication.processEvents()
         time.sleep(0.02)
+
+
+def polylines(name):
+    """polylines of a line set: an indexed one's coordIndex runs split at -1
+    (a plain SoLineSet, as before the dashed set, counts numVertices; a set
+    that does not exist counts 0)"""
+    node = coin.SoNode.getByName(name)
+    if node is None:
+        return 0
+    if not hasattr(node, "coordIndex"):
+        return node.numVertices.getNum()
+    idx = list(node.coordIndex.getValues()) if node.coordIndex.getNum() else []
+    return 0 if not idx else idx.count(-1) + 1
+
+
+def curves_drawn():
+    return polylines("CurvesLineSet") + polylines("DashedCurvesLineSet")
 
 
 def selected_names():
@@ -106,7 +135,7 @@ def run():
         FreeCADGui.getDocument(doc.Name).setEdit(sk)
         settle(20)
 
-        curves = coin.SoNode.getByName("CurvesLineSet").numVertices.getNum()
+        curves = curves_drawn()
         points = coin.SoNode.getByName("PointsCoordinate").point.getNum()
         note("drawn: %d curves, %d points" % (curves, points))
         check("a line on the hidden layer is not drawn", curves == 2, curves)
@@ -144,16 +173,57 @@ def run():
         undo = doc.UndoCount
         tree.topLevelItem(0).setCheckState(0, QtCore.Qt.Unchecked)
         settle(15)
-        curves = coin.SoNode.getByName("CurvesLineSet").numVertices.getNum()
+        curves = curves_drawn()
         check("unticking a row hides its line", curves == 1 and rows() == [False, False, True],
               "%d curves, rows %s" % (curves, rows()))
         check("as one undo step", doc.UndoCount == undo + 1, doc.UndoCount - undo)
         tree.topLevelItem(1).setCheckState(0, QtCore.Qt.Checked)
         settle(15)
-        curves = coin.SoNode.getByName("CurvesLineSet").numVertices.getNum()
+        curves = curves_drawn()
         check("ticking the hidden line's row shows it again",
               curves == 2 and rows() == [False, True, True],
               "%d curves, rows %s" % (curves, rows()))
+
+        # Layer 1 carries a line pattern (0x7E7E): its curves are drawn in
+        # a set of their own, with that pattern.
+        FreeCADGui.getDocument(doc.Name).resetEdit()
+        settle(10)
+        geos = sk.Geometry
+        ext1 = SketcherGui.ViewProviderSketchGeometryExtension()
+        ext1.VisualLayerId = 1
+        geos[2].setExtension(ext1)
+        sk.Geometry = geos
+        doc.recompute()
+        FreeCADGui.getDocument(doc.Name).setEdit(sk)
+        view = FreeCADGui.activeDocument().activeView()
+        view.viewTop()
+        view.fitAll()
+        settle(40)
+        solid, dashed = polylines("CurvesLineSet"), polylines("DashedCurvesLineSet")
+        style = coin.SoNode.getByName("DashedCurvesDrawStyle")
+        pattern = style.linePattern.getValue() if style else 0xFFFF
+        note("solid %d, dashed %d, pattern 0x%x" % (solid, dashed, pattern))
+        check("a line on layer 1 is drawn in the dashed set",
+              dashed == 1 and solid == curves_drawn() - 1, "%d solid, %d dashed" % (solid, dashed))
+        check("with layer 1's pattern", pattern == 0x7E7E, hex(pattern))
+
+        # picking maps a dashed polyline back to its curve: hover it
+        dashedSet = coin.SoNode.getByName("DashedCurvesLineSet")
+        dashedCurve = dashedSet.materialIndex.getValues()[0] if dashedSet else -1
+        vp = [w for w in FreeCADGui.getMainWindow().findChildren(QtWidgets.QWidget)
+              if "View3DInventorViewer" in w.metaObject().className() and w.isVisible()][0]
+        p = view.getPointOnViewport(FreeCAD.Vector(20, 30, 0))
+        pos = QtCore.QPointF(p[0], vp.height() - 1 - p[1])
+        from PySide import QtGui
+        QtWidgets.QApplication.sendEvent(vp, QtGui.QMouseEvent(
+            QtCore.QEvent.MouseMove, pos, vp.mapToGlobal(pos), QtCore.Qt.NoButton,
+            QtCore.Qt.NoButton, QtCore.Qt.NoModifier))
+        settle(10)
+        colours = coin.SoNode.getByName("CurvesMaterials").diffuseColor.getValues()
+        hovered = [i for i, c in enumerate(colours)
+                   if abs(c[0] - 0.88) < 0.1 and abs(c[1] - 0.88) < 0.1 and c[2] < 0.3]
+        check("hovering the dashed line preselects that curve", hovered == [dashedCurve],
+              "%s vs %s" % (hovered, dashedCurve))
 
         FreeCADGui.getDocument(doc.Name).resetEdit()
         settle()
