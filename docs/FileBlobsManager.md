@@ -1196,3 +1196,37 @@ make Linux slower where it matters -- save drops by 0.44 s, deleting the
 store to nothing -- and costs it compression once per new blob. The rows
 that decide are the laptop's, on MiSTer, with the same script (legs
 `files,segments,save`).
+
+### 15.10 Names, and the opened archive split on open (user, 2026-09-25) -- design finished
+
+**Names.** A segment is `blobs/seg-<N>.<g>` in the store directory: `N` the
+segment number, growing per store and never reused (what makes "the
+newest wins" of 15.8 hold), `g` its generation, growing from 1. A write in
+progress is `seg-<N>.<g+1>.tmp` and is renamed when complete, so a file
+whose extension is a bare number is always a complete segment and a
+`.tmp` is debris. Opening a store takes the highest `g` of each `N` and
+deletes the lower generations and the `.tmp` files it can.
+
+**The opened archive is split on open.** Sec 14 copies the opened
+document into the store as one file, which would make it one giant
+segment -- far over the cap for a large document, and a rewrite of all of
+it whenever its dead fraction made it worth shrinking. Instead the open
+splits the archive's blob members into capped segments, `seg-1.1` to
+`seg-K.1`, copying each member raw, never inflating it. It writes the same
+bytes the copy does (fewer: the XML entries stay out) plus K file creates,
+about 8 for 500 MB; every segment is then capped, so every rewrite,
+shrink and merge is bounded, and the store has one kind of segment. The
+members that arrive this way keep their deflate method beside the zstd
+members written later. The reason sec 14 copies at all -- the next save
+replaces the file whose content is still referred to -- is met the same
+way.
+
+**Phase 0 adds a row:** splitting MiSTer into capped segments on open,
+against the single copy (0.05 s on the laptop, 14.2).
+
+**The design is finished.** Implementation starts in the next session, in
+the order of the plan: the laptop's phase 0 rows (with the split row
+added), then the store -- the raw-member zip writer, the zstd method in
+the reader, segments by generation with the in-memory map and
+redirection, the split on open, the schema 5 save copying members raw,
+repack and merge, and the ordering rule against the log.
