@@ -413,6 +413,13 @@ fc_add_gui_test(GuiSketchPreselectionUpstream_tests_run
                 sketch-preselection-upstream.py
                 --timeout 400)
 
+# A double click on an edge selects its wire, external edges included
+# (upstream 6db820a580, a9bff78974, 0b1187b2cd); one on the sketch in edit
+# aligns the view instead of leaving and re-entering (321a782eff).
+fc_add_gui_test(GuiSketchDoubleClick_tests_run
+                sketch-double-click.py
+                --timeout 200)
+
 # A selected arc grabbed by its centre drags by its centre, not its rim, and
 # a conic grabbed by its edge moves by the cursor's move instead of jumping
 # its centre to the cursor (upstream 2cd45b07f7).

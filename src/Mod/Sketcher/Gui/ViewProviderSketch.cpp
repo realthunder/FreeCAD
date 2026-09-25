@@ -4356,7 +4356,15 @@ bool ViewProviderSketch::isPointOnSketch(const SoPickedPoint *pp) const
 
 bool ViewProviderSketch::doubleClicked(void)
 {
-    Gui::Application::Instance->activeDocument()->setEdit(this);
+    // The sketch already in edit is not left and re-entered: its view is
+    // aligned to it (upstream 321a782eff, issue 13826)
+    Gui::Document* document = Gui::Application::Instance->activeDocument();
+    if (!document)
+        return true;
+    if (document->getInEdit() == this && isEditing())
+        Gui::Application::Instance->commandManager().runCommandByName("Sketcher_ViewSketch");
+    else
+        document->setEdit(this);
     return true;
 }
 
