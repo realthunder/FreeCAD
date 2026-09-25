@@ -42,6 +42,10 @@ TaskDlgEditSketch::TaskDlgEditSketch(ViewProviderSketch* sketchView)
     , sketchView(sketchView)
 {
     assert(sketchView);
+    // Esc leaves the sketch keeping what was done; only Cancel reverts it
+    // (upstream facca5c426)
+    roleOnEscape = QDialogButtonBox::AcceptRole;
+
     ToolSettings = new TaskSketcherTool(sketchView);
     Constraints = new TaskSketcherConstraints(sketchView);
     Elements = new TaskSketcherElements(sketchView);
@@ -122,10 +126,17 @@ void TaskDlgEditSketch::clicked(int)
 
 bool TaskDlgEditSketch::accept()
 {
+    leave(false);
     return true;
 }
 
 bool TaskDlgEditSketch::reject()
+{
+    leave(true);
+    return true;
+}
+
+void TaskDlgEditSketch::leave(bool cancel)
 {
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher");
@@ -135,11 +146,15 @@ bool TaskDlgEditSketch::reject()
     hGrp->SetBool("ExpandedConstraintsWidget", Constraints->isGroupVisible());
     hGrp->SetBool("ExpandedElementsWidget", Elements->isGroupVisible());
 
+    if (cancel) {
+        // Leaves the edit, which deletes this dialog
+        sketchView->cancelEditing();
+        return;
+    }
     if (sketchView && sketchView->getSketchMode() != ViewProviderSketch::STATUS_NONE) {
         sketchView->purgeHandler();
     }
     Gui::Command::doCommand(Gui::Command::Gui,"Gui.resetEdit()");
-    return true;
 }
 
 

@@ -230,6 +230,12 @@ public:
     void activateHandler(DrawSketchHandler *newHandler);
     /// removes the active handler
     void purgeHandler();
+    /** Leaves the edit and reverts what it did (upstream 189d86ee53).
+     * By undo, back to where the undo history stood when the edit began,
+     * so the edit can be redone; when the history no longer reaches back
+     * that far, by the copy of the sketch taken then, in one transaction.
+     */
+    void cancelEditing();
     /** Turn the views' own selection on or off for the whole session.
      *
      * Entering the edit turns it off in every view (the initiator through
@@ -501,6 +507,10 @@ protected:
     void createEditInventorNodes();
     /// pointer to the edit data structure if the ViewProvider is in edit.
     std::unique_ptr<EditData> edit;
+    /// the sketch when its edit began, and the undo transaction on top then
+    /// (0: none), for cancelEditing()
+    std::string editBackup;
+    int editUndoMark = 0;
     /** The view an event of this edit is being handled in.
      *
      * A session has one initiator (edit->viewer) and N views that joined

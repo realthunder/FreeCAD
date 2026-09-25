@@ -420,6 +420,13 @@ fc_add_gui_test(GuiSketchDoubleClick_tests_run
                 sketch-double-click.py
                 --timeout 200)
 
+# Cancelling a sketch edit reverts it, by undo while the history reaches
+# back, else from a copy taken on entry; Esc keeps the edit (upstream
+# 189d86ee53, facca5c426).
+fc_add_gui_test(GuiSketchCancelEdit_tests_run
+                sketch-cancel-edit.py
+                --timeout 240)
+
 # A selected arc grabbed by its centre drags by its centre, not its rim, and
 # a conic grabbed by its edge moves by the cursor's move instead of jumping
 # its centre to the cursor (upstream 2cd45b07f7).

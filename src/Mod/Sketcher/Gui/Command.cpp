@@ -343,7 +343,7 @@ CmdSketcherLeaveSketch::CmdSketcherLeaveSketch()
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
     sMenuText = QT_TR_NOOP("Leave sketch");
-    sToolTipText = QT_TR_NOOP("Finish editing the active sketch.");
+    sToolTipText = QT_TR_NOOP("Finish editing the active sketch. You can also press Escape to exit.");
     sWhatsThis = "Sketcher_LeaveSketch";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_LeaveSketch";
@@ -372,6 +372,65 @@ bool CmdSketcherLeaveSketch::isActive()
 {
     return isSketchInEdit(getActiveGuiDocument());
 }
+
+// Cancel sketch edition (upstream 189d86ee53)
+
+DEF_STD_CMD_A(CmdSketcherCancelSketch)
+
+CmdSketcherCancelSketch::CmdSketcherCancelSketch()
+    : Command("Sketcher_CancelSketch")
+{
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Cancel editing");
+    sToolTipText = QT_TR_NOOP("Leave 'edit' mode and revert any changes");
+    sWhatsThis = "Sketcher_CancelSketch";
+    sStatusTip = sToolTipText;
+    sPixmap = "Sketcher_CancelSketch";
+    // Never left as the Leave group's default
+    eType = NoDefaultAction;
+}
+
+void CmdSketcherCancelSketch::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    Gui::Document* doc = getActiveGuiDocument();
+    if (!doc)
+        return;
+    if (auto vp = dynamic_cast<SketcherGui::ViewProviderSketch*>(doc->getInEdit()))
+        vp->cancelEditing();
+}
+
+bool CmdSketcherCancelSketch::isActive()
+{
+    return isSketchInEdit(getActiveGuiDocument());
+}
+
+class CmdSketcherLeaveGroup: public Gui::GroupCommand
+{
+public:
+    CmdSketcherLeaveGroup()
+        : GroupCommand("Sketcher_LeaveGroup", 0)
+    {
+        sAppModule = "Sketcher";
+        sGroup = "Sketcher";
+        sMenuText = QT_TR_NOOP("Leave");
+        sToolTipText = QT_TR_NOOP("Leave the sketch editing mode.");
+        sWhatsThis = "Sketcher_LeaveGroup";
+        sStatusTip = sToolTipText;
+        eType = 0;
+        bCanLog = false;
+        setCheckable(false);
+
+        addCommand("Sketcher_LeaveSketch");
+        addCommand("Sketcher_CancelSketch");
+    }
+
+    const char* className() const override
+    {
+        return "CmdSketcherLeaveGroup";
+    }
+};
 
 DEF_STD_CMD_A(CmdSketcherStopOperation)
 
@@ -1901,6 +1960,8 @@ void CreateSketcherCommands()
     rcCmdMgr.addCommand(new CmdSketcherNewSketch());
     rcCmdMgr.addCommand(new CmdSketcherEditSketch());
     rcCmdMgr.addCommand(new CmdSketcherLeaveSketch());
+    rcCmdMgr.addCommand(new CmdSketcherCancelSketch());
+    rcCmdMgr.addCommand(new CmdSketcherLeaveGroup());
     rcCmdMgr.addCommand(new CmdSketcherStopOperation());
     rcCmdMgr.addCommand(new CmdSketcherReorientSketch());
     rcCmdMgr.addCommand(new CmdSketcherMapSketch());

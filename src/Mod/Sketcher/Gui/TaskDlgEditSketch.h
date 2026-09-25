@@ -64,6 +64,8 @@ public:
     bool accept() override;
     /// is called by the framework if the dialog is rejected (Cancel)
     bool reject() override;
+    /// leaves the sketch; cancel reverts what the edit did
+    void leave(bool cancel);
     /// is called by the framework when the dialog is removed; it is deleted later
     void closed() override;
     bool isAllowedAlterDocument() const override
@@ -71,10 +73,10 @@ public:
         return false;
     }
 
-    /// returns for Close and Help button
+    /// Ok leaves the sketch, Cancel reverts it (upstream 189d86ee53)
     QDialogButtonBox::StandardButtons getStandardButtons() const override
     {
-        return QDialogButtonBox::Close;
+        return QDialogButtonBox::Ok | QDialogButtonBox::Cancel;
     }
 
     /** @brief Function used to register a slot to be triggered when the tool widget is changed. */

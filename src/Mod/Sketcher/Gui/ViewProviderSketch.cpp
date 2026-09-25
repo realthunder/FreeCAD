@@ -8315,6 +8315,15 @@ bool ViewProviderSketch::setEdit(int ModNum)
         return false;
     }
 
+    // What a cancel goes back to (cancelEditing()); not when the same
+    // sketch sets its edit again under its task panel, which goes on
+    if (!sketchDlg) {
+        std::ostringstream backup;
+        sketch->dumpToStream(backup, 0);
+        editBackup = backup.str();
+        editUndoMark = sketch->getDocument()->getTransactionID(true, 0);
+    }
+
     // clear the selection (convenience)
     Gui::Selection().clearSelection();
     Gui::Selection().rmvPreselect();
@@ -8999,6 +9008,58 @@ Gui::ViewerContext* ViewProviderSketch::editViewer() const
             return current;
     }
     return edit ? edit->viewer : nullptr;
+}
+
+void ViewProviderSketch::cancelEditing()
+{
+    Gui::Document* gdoc = getDocument();
+    if (!edit || !gdoc)
+        return;
+    App::Document* doc = gdoc->getDocument();
+
+    if (getSketchMode() != STATUS_NONE)
+        purgeHandler();
+    // Left as any edit is, then reverted: nothing of the edit is torn down
+    // while an undo runs through it.
+    Gui::Command::doCommand(Gui::Command::Gui, "Gui.getDocument('%s').resetEdit()",
+                            doc->getName());
+    App::GetApplication().closeActiveTransaction();
+
+    // How many undos back to where the edit began; -1 when the history no
+    // longer reaches there (it keeps MaxUndoSize steps) or keeps none.
+    int steps = -1;
+    int count = doc->getUndoMode() ? doc->getAvailableUndos() : -1;
+    if (count >= 0) {
+        if (editUndoMark == 0) {
+            // It was empty: complete unless it has since been trimmed
+            if (count < static_cast<int>(doc->getMaxUndoStackSize()))
+                steps = count;
+        }
+        else {
+            for (int i = 0; i < count; ++i) {
+                if (doc->getTransactionID(true, i) == editUndoMark) {
+                    steps = i;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (steps > 0) {
+        gdoc->undo(steps);
+    }
+    else if (steps < 0 && !editBackup.empty()) {
+        App::AutoTransaction trans("Cancel sketch editing");
+        std::istringstream in(editBackup);
+        getSketchObject()->restoreFromStream(in);
+        // What depends on the sketch was recomputed from the edit on leaving
+        try {
+            Gui::Command::updateActive();
+        }
+        catch (...) {
+        }
+    }
+    editBackup.clear();
 }
 
 void ViewProviderSketch::setEditViewer(Gui::ViewerContext* viewer, int ModNum)
