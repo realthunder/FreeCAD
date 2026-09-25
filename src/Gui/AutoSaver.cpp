@@ -35,6 +35,7 @@
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
+#include <App/DocumentParams.h>
 #include <App/FileBlobManager.h>
 #include <Base/Console.h>
 #include <Base/FileInfo.h>
@@ -135,6 +136,11 @@ void AutoSaver::slotDeleteDocument(const App::Document& Doc)
 
 void AutoSaver::saveDocument(const std::string& name, AutoSaveProperty& saver)
 {
+    // With the transaction log on, the log is the autosave: every commit is
+    // written as it happens, and a crashed session is recovered from it
+    // (docs/TransactionLog.md sec 22.1, 25.3). No recovery file is written.
+    if (App::DocumentParams::getTransactionLog() != 0)
+        return;
     Gui::WaitCursor wc;
     App::Document* doc = App::GetApplication().getDocument(name.c_str());
 

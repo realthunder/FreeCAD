@@ -49,6 +49,8 @@
 
 #include <App/Application.h>
 #include <App/Document.h>
+#include <App/DocumentParams.h>
+#include <App/TransactionLog.h>
 #include <Base/Exception.h>
 #include <Gui/Application.h>
 #include <Gui/Command.h>
@@ -157,6 +159,9 @@ public:
         QString label;
         QString fileName;
         QString tooltip;
+        /// The transient directory, when the document is recovered from the
+        /// transaction log it holds (docs/TransactionLog.md sec 25).
+        QString logDir;
         Status status = Unknown;
     };
     Ui_DocumentRecovery ui;
@@ -243,6 +248,35 @@ void DocumentRecovery::accept()
         for (auto &info : d->recoveryInfo) {
             QString errorInfo;
             QTreeWidgetItem* item = d_ptr->ui.treeWidget->topLevelItem(index);
+
+            if (!info.logDir.isEmpty()) {
+                // From the transaction log (sec 25): the document is rebuilt
+                // and takes the log over; the directory goes with it.
+                ++index;
+                try {
+                    auto doc = App::GetApplication().recoverDocument(
+                        info.logDir.toUtf8().constData());
+                    if (auto gdoc = Application::Instance->getDocument(doc))
+                        gdoc->setModified(true);
+                    info.status = DocumentRecoveryPrivate::Success;
+                    if (item) {
+                        item->setText(1, tr("Successfully recovered"));
+                        item->setForeground(1, QColor(0,170,0));
+                    }
+                }
+                catch (const Base::Exception& e) {
+                    errorInfo = QString::fromUtf8(e.what());
+                }
+                catch (const std::exception& e) {
+                    errorInfo = QString::fromUtf8(e.what());
+                }
+                if (!errorInfo.isEmpty() && item) {
+                    item->setText(1, tr("Failed to recover"));
+                    item->setToolTip(1, errorInfo);
+                    item->setForeground(1, QColor(170,0,0));
+                }
+                continue;
+            }
 
             try {
                 QString file = info.projectFile;
@@ -393,6 +427,32 @@ DocumentRecoveryPrivate::Info DocumentRecoveryPrivate::getRecoveryInfo(const QFi
     QString file;
     QDir doc_dir(fi.absoluteFilePath());
     QDir rec_dir(doc_dir.absoluteFilePath(QStringLiteral("fc_recovery_files")));
+
+    // The transaction log is the recovery file when it is on (sec 25.2):
+    // the label and file name are in its meta, and it is out of date only
+    // when the project file was saved after its last write.
+    const QString logFile = doc_dir.absoluteFilePath(QStringLiteral("history/log.db"));
+    if (App::DocumentParams::getTransactionLog() != 0 && QFileInfo::exists(logFile)) {
+        App::TransactionLog::RecoverInfo meta;
+        if (App::TransactionLog::readRecoveryMeta(fi.absoluteFilePath().toUtf8().constData(),
+                                                  meta)) {
+            info.status = DocumentRecoveryPrivate::Created;
+            info.logDir = fi.absoluteFilePath();
+            info.projectFile = logFile;
+            info.tooltip = fi.fileName();
+            if (!meta.label.empty())
+                info.label = QString::fromUtf8(meta.label.c_str());
+            info.fileName = QString::fromUtf8(meta.fileName.c_str());
+            QDateTime written = QFileInfo(logFile).lastModified();
+            QFileInfo wal(logFile + QStringLiteral("-wal"));
+            if (wal.exists() && wal.lastModified() > written)
+                written = wal.lastModified();
+            QFileInfo project(info.fileName);
+            if (!info.fileName.isEmpty() && project.exists() && written < project.lastModified())
+                info.status = DocumentRecoveryPrivate::Overage;
+            return info;
+        }
+    }
 
     // compressed recovery file
     if (doc_dir.exists(QStringLiteral("fc_recovery_file.fcstd"))) {
@@ -604,6 +664,11 @@ void DocumentRecoveryFinder::checkDocumentDirs(QDir& tmp, const QList<QFileInfo>
                 // we cannot do anything
                 if (tmp.rmdir(it->filePath()))
                     countDeletedDocs++;
+            }
+            // a transaction log to recover from (docs/TransactionLog.md sec 25)
+            else if (App::DocumentParams::getTransactionLog() != 0
+                     && doc_dir.exists(QStringLiteral("history/log.db"))) {
+                restoreDocFiles << *it;
             }
             // search for the existence of a recovery file
             else if (doc_dir.exists(QStringLiteral("fc_recovery_file.xml"))) {
