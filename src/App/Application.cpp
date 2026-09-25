@@ -2074,8 +2074,9 @@ private:
 
 // This function produces a stack backtrace with demangled function & method names.
 // It goes to <UserAppData>/crash.log first and to stderr second, on every platform.
-void printBacktrace(size_t skip=0, const char* reason=nullptr)
+void printBacktrace(size_t skip=0, const char* reason=nullptr, bool fault=false)
 {
+    (void)fault;
     Base::CrashLog::Entry entry(Base::CrashLog::Severity::Fatal,
                                 reason ? reason : "");
 #if defined HAVE_BACKTRACE_SYMBOLS
@@ -2110,8 +2111,22 @@ void printBacktrace(size_t skip=0, const char* reason=nullptr)
 
     free(symbols);
 #elif defined(_MSC_VER)
-    CrashStackWalker sw(entry, skip);
-    sw.ShowCallstack();
+    // Inside a SIGSEGV or SIGFPE handler the CRT keeps the exception that
+    // raised it in _pxcptinfoptrs, and that carries the faulting CONTEXT.
+    // Walking it gives the frames of the fault; walking our own stack gives
+    // only the handler and the CRT's exception filter, which is all an
+    // access violation's crash log used to say.
+    const CONTEXT* context = nullptr;
+    if (fault) {
+        if (auto info = static_cast<EXCEPTION_POINTERS*>(_pxcptinfoptrs)) {
+            context = info->ContextRecord;
+            std::ostringstream why;
+            why << "  fault at " << info->ExceptionRecord->ExceptionAddress << std::endl;
+            entry.line(why.str());
+        }
+    }
+    CrashStackWalker sw(entry, context ? 0 : skip);
+    sw.ShowCallstack(GetCurrentThread(), context);
 #else //HAVE_BACKTRACE_SYMBOLS
     (void)skip;
     entry.line("Cannot print the stacktrace because the C runtime library doesn't provide backtrace or backtrace_symbols\n");
@@ -2161,7 +2176,7 @@ void segmentation_fault_handler(int sig)
             // GUIApplication::notify(), which only shows a message box -- and by
             // then every frame that would say where the fault came from is gone.
             // This is the only chance to keep them.
-            printBacktrace(2, "Illegal storage access...");
+            printBacktrace(2, "Illegal storage access...", true);
 #if !defined(_DEBUG)
             THROWM(Base::AccessViolation, "Illegal storage access! Please save your work under a new file name and restart the application!")
 #endif
