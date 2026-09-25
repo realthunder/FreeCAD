@@ -35,6 +35,7 @@
 # include <Geom_Circle.hxx>
 # include <Geom_Ellipse.hxx>
 # include <Geom_TrimmedCurve.hxx>
+# include <Standard_Failure.hxx>
 # include <TopoDS.hxx>
 # include <Inventor/actions/SoGetBoundingBoxAction.h>
 # include <Inventor/SoPath.h>
@@ -8845,7 +8846,19 @@ void ViewProviderSketch::setEditViewer(Gui::ViewerContext* viewer, int ModNum)
     //
     // In order to have updated solver information, solve must take "true", this cause the Geometry property to be updated
     // with the solver information, including solver extensions, and triggers a draw(true) via ViewProvider::UpdateData.
-    getSketchObject()->solve(true);
+    //
+    // Setting up the solver builds OCC geometry, which can throw. Let it out
+    // and the edit is half entered: no attachViewer() below, no base call,
+    // and the caller never installs its event callback (upstream 955efa639e).
+    try {
+        getSketchObject()->solve(true);
+    }
+    catch (const Base::Exception& e) {
+        e.ReportException();
+    }
+    catch (const Standard_Failure& e) {
+        Base::Console().Error("ViewProviderSketch::setEditViewer: %s\n", e.GetMessageString());
+    }
 
     attachViewer(viewer);
 
