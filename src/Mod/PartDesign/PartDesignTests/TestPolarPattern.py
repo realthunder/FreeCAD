@@ -22,6 +22,7 @@
 import unittest
 
 import FreeCAD
+import Part
 import TestSketcherApp
 
 class TestPolarPattern(unittest.TestCase):
@@ -138,6 +139,31 @@ class TestPolarPattern(unittest.TestCase):
         self.Body.addObject(self.PolarPattern)
         self.Doc.recompute()
         self.assertAlmostEqual(self.PolarPattern.Shape.Volume, 4000)
+
+    def testSketchEdgeAxis(self):
+        """A sketch edge as the axis (upstream b0331ed979): the axis stayed a
+        default one and the pattern failed on its zero direction."""
+        self.Body = self.Doc.addObject("PartDesign::Body", "Body")
+        self.Box = self.Body.newObject("PartDesign::AdditiveBox", "Box")
+        self.Box.Length = self.Box.Width = self.Box.Height = 10
+        xy = [f for f in self.Body.Origin.OriginFeatures if f.Role == "XY_Plane"][0]
+        axis = self.Body.newObject("Sketcher::SketchObject", "Axis")
+        axis.Support = (xy, [""])
+        axis.MapMode = "FlatFace"
+        axis.addGeometry(Part.LineSegment(FreeCAD.Vector(20, 0, 0), FreeCAD.Vector(20, 10, 0)))
+        self.Doc.recompute()
+        pattern = self.Body.newObject("PartDesign::PolarPattern", "PolarPattern")
+        pattern.Originals = [self.Box]
+        pattern.Axis = (axis, ["Edge1"])
+        pattern.Angle = 360
+        pattern.Occurrences = 2
+        self.Doc.recompute()
+        self.assertIn("Up-to-date", pattern.State)
+        self.assertAlmostEqual(pattern.Shape.Volume, 2000)
+        # half a turn about the line x = 20 along Y
+        box = pattern.Shape.BoundBox
+        self.assertAlmostEqual(box.XMax, 40)
+        self.assertAlmostEqual(box.ZMin, -10)
 
     def tearDown(self):
         #closing doc

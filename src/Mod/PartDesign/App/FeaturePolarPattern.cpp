@@ -106,21 +106,40 @@ std::list<gp_Trsf> PolarPattern::getTransformations(const std::vector<Part::Topo
     gp_Dir axdir;
     if (refObject->isDerivedFrom<Part::Part2DObject>()) {
         Part::Part2DObject* refSketch = static_cast<Part::Part2DObject*>(refObject);
-        Base::Axis axis;
-        if (subStrings[0] == "H_Axis")
-            axis = refSketch->getAxis(Part::Part2DObject::H_Axis);
-        else if (subStrings[0] == "V_Axis")
-            axis = refSketch->getAxis(Part::Part2DObject::V_Axis);
-        else if (subStrings[0] == "N_Axis")
-            axis = refSketch->getAxis(Part::Part2DObject::N_Axis);
-        else if (subStrings[0].compare(0, 4, "Axis") == 0) {
-            int AxId = std::atoi(subStrings[0].substr(4,4000).c_str());
-            if (AxId >= 0 && AxId < refSketch->getAxisCount())
-                axis = refSketch->getAxis(AxId);
+        if (subStrings[0].compare(0, 4, "Edge") == 0) {
+            // A sketch edge: the sketch's Shape is already placed. Without
+            // this case the axis stayed a default Base::Axis, and the
+            // pattern failed on its zero direction (upstream b0331ed979).
+            TopoDS_Shape ref = refSketch->Shape.getShape().getSubShape(subStrings[0].c_str());
+            if (ref.IsNull() || ref.ShapeType() != TopAbs_EDGE)
+                THROWM(Base::ValueError, "Failed to extract axis edge")
+            BRepAdaptor_Curve adapt(TopoDS::Edge(ref));
+            if (adapt.GetType() == GeomAbs_Line) {
+                axbase = adapt.Line().Location();
+                axdir = adapt.Line().Direction();
+            } else if (adapt.GetType() == GeomAbs_Circle) {
+                axbase = adapt.Circle().Location();
+                axdir = adapt.Circle().Axis().Direction();
+            } else {
+                THROWM(Base::TypeError, "Rotation edge must be a straight line, circle or arc of circle")
+            }
+        } else {
+            Base::Axis axis;
+            if (subStrings[0] == "H_Axis")
+                axis = refSketch->getAxis(Part::Part2DObject::H_Axis);
+            else if (subStrings[0] == "V_Axis")
+                axis = refSketch->getAxis(Part::Part2DObject::V_Axis);
+            else if (subStrings[0] == "N_Axis")
+                axis = refSketch->getAxis(Part::Part2DObject::N_Axis);
+            else if (subStrings[0].compare(0, 4, "Axis") == 0) {
+                int AxId = std::atoi(subStrings[0].substr(4,4000).c_str());
+                if (AxId >= 0 && AxId < refSketch->getAxisCount())
+                    axis = refSketch->getAxis(AxId);
+            }
+            axis *= refSketch->Placement.getValue();
+            axbase = gp_Pnt(axis.getBase().x, axis.getBase().y, axis.getBase().z);
+            axdir = gp_Dir(axis.getDirection().x, axis.getDirection().y, axis.getDirection().z);
         }
-        axis *= refSketch->Placement.getValue();
-        axbase = gp_Pnt(axis.getBase().x, axis.getBase().y, axis.getBase().z);
-        axdir = gp_Dir(axis.getDirection().x, axis.getDirection().y, axis.getDirection().z);
     } else if (refObject->isDerivedFrom<PartDesign::Line>()) {
         PartDesign::Line* line = static_cast<PartDesign::Line*>(refObject);
         Base::Vector3d base = line->getBasePoint();
