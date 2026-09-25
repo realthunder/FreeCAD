@@ -31,7 +31,7 @@ Upstream's `f4665aa7b5` ("Core: support multiple active transactions") was
 evaluated and **declined**; `docs/TransactionLog.md` records why, and the
 direction the user wants instead.
 
-**Where the ledger stands (2026-09-25).** 1149 rows, of which 300 are open
+**Where the ledger stands (2026-09-25).** 1149 rows, of which 297 are open
 and undecided, down from 503 over three sessions of reading blobs rather
 than commits. First the 33 files the handler resyncs touched: 21 are
 identical to upstream's tip modulo whitespace, closing 74 rows at once
@@ -2485,6 +2485,59 @@ checkbox fixes are adapted (`2fac012226`, `34b6b36547`, `6bed2e663e`);
 `00f547d67c` is n/a. The 17 elements-panel rows still open are general --
 Qt warnings, texts, auto-scroll, selection speed -- and go with their own
 families.
+
+### The crash fixes (session 94): 48 -> 45, and one crash of the fork's own
+
+Three upstream rows fix crashes in `ViewProviderSketch.cpp`. One was live
+here, one latent, one not reproduced; the test written for the first
+found a fourth crash that was the fork's own.
+
+| row | verdict |
+|---|---|
+| `16aff10544` | **adapted** `79e570b5b4` -- undo with the button held, below |
+| `d3d6459484` | **taken** `ecf0c288e7`. The listener was a raw pointer, never initialised and dangling after `unsetEdit()`. Latent here: `unsetEdit()` only follows a `setEdit()` that created it |
+| `955efa639e` | **adapted** `2407af8624`: the catch sits in `setEditViewer()`, where the fork runs the first solve. Escaping from there skipped `attachViewer()`, the base call and the caller's event callback. No failing sketch reproduced |
+
+**Undo with the button held.** A press or drag holds what it acts on by
+index (the preselected point, edge or constraint, then `Dragged` and
+`DragConstraintSet`), and an undo can remove that element. Measured
+before the fix: a label drag whose constraint was undone away hit a
+SIGSEGV in `moveConstraint()` on the next move, because the id is read
+from the list unchecked. A point drag whose line was undone away threw
+on every move. Its release then opened a command that aborted, and
+opening it had already cleared the redo stack, so the line could not be
+redone. Upstream resets the drag in the undo/redo slots. The fork's
+version also drops an unmoved press (the SELECT modes act on the
+preselected index at the next move or release). It also closes a label
+drag's active transaction, whose id would otherwise stay set and stop
+the next label drag from opening its own.
+
+**The fork's own crash** (`06cc7a7a87`). After a label drag lands, its
+constraint stays preselected. Undoing that constraint away runs a solve
+inside the undo, and that solve redraws before any slot can prune the
+id sets. The result was a SIGSEGV in `updateVirtualSpace()` and, with
+that guarded, a second one in `updateColor()`. Both were measured, and
+both now skip ids outside the list. Upstream's `updateVirtualSpace()`
+has no (pre)selection override at all, so this is fork code.
+
+Guarded by `tests/gui/sketch-undo-during-drag.py`
+(`GuiSketchUndoDuringDrag_tests_run`). It was scored per fix: with the
+reset disabled it fails the redo check and then crashes in
+`moveConstraint()`; with the guards reverted it crashes in
+`updateVirtualSpace()`.
+
+**Harness notes, reusable.** It is a desktop test, not a served one.
+Setting the preselection through `Gui.Selection.setPreselection()` fills
+the view provider's preselect state, as a list hover does, and a press
+then starts the drag with no pick. That sidesteps two problems:
+synthetic moves preselect nothing, and datum labels are hard to hit over
+the mirror. A label's pick box is sized in world units by whichever view
+last drew it, so the desktop's zoom decides how big it is on a client.
+It is also lost to an axis running under it. After a drag lands, wait
+about 0.5 s: its recompute redraws off a timer and drops a preselection
+set before it, and the next drag then silently never starts. A drag in
+progress shows only in the edit scene's `SoCoordinate3` nodes, because
+`Geometry` is written on release.
 
 ## 7a. The constraint-tool hints (session 85)
 

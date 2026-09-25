@@ -792,7 +792,7 @@ a77f96ea86	2025-11-15	Aqeel Labash	fix	0	0	open	4		Fix wording for On-view-param
 d806b4e5f3	2025-11-19	chris	fix	0	0	open	3	have: Gui/Document.cpp:628 computes _editingTransform for every view provider at setEdit, and 1220 keeps it live -- more general than the per-VP call	sketcher: fix issue #13852 resolve issue with state not updating constraint text	Gui/ViewProviderSketch.cpp
 72d021108f	2025-11-23	Chris	feature	0	0	open	33	taken 42a58c4533	Sketcher: allow grid snapping while hovering mouse over axis (#25226)	Gui/SnapManager.cpp
 1d30d079b0	2025-11-24	PaddleStroke	fix	0	0	open	15	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Rotate: Fix line length ignored (#25434)	Gui/DrawSketchHandlerRotate.h
-16aff10544	2025-11-20	pjcreath	fix	0	0	open	16		Sketcher: prevent crash on undo/redo while dragging.	Gui/ViewProviderSketch.cpp
+16aff10544	2025-11-20	pjcreath	fix	0	0	open	16	adapted 79e570b5b4: also drops an unmoved press (SELECT modes) and the label drag's active transaction; found 06cc7a7a87 on the way	Sketcher: prevent crash on undo/redo while dragging.	Gui/ViewProviderSketch.cpp
 efb10e1b28	2025-11-20	pjcreath	fix	0	0	open	5		Sketcher: prevent undo/redo crash when selected geometry goes away.	Gui/CommandSketcherBSpline.cpp Gui/Utils.cpp
 e38154474a	2025-11-24	PaddleStroke	fix	1	0	open	23		Sketcher: Prevent bad coincidences (#25304)	Gui/CommandConstraints.cpp
 74aafcee75	2025-11-24	PaddleStroke	?	0	0	open	26	adapted e3a8d113d7	Sketcher: External Face: decide between defining and construction (#25390)	App/SketchObject.cpp
@@ -865,7 +865,7 @@ af053f19f5	2026-01-19	PaddleStroke	fix	0	0	open	8	have: box selection already us
 6a0d59b0c1	2026-01-23	Amon Sha	fix	0	0	open	4	have: folded into 60befe30bc (lone angle branch)	Merge pull request #27077 from amon-sha/fix_sketcher_autoscale_segfault	Gui/DrawSketchHandlerScale.h
 c9041132f9	2026-01-23	PaddleStroke	feature	0	0	open	60		Sketcher: add switch between radius and diameter (#26794)	Gui/EditDatumDialog.cpp Gui/EditDatumDialog.h Gui/InsertDatum.ui
 7bcaa766de	2026-01-26	PaddleStroke	fix	0	0	open	2		Sketcher: Fix arc angle dragging distance	Gui/ViewProviderSketch.cpp
-d3d6459484	2026-01-24	Vassily Checkin	fix	0	0	open	10		Sketcher: fix intermittent crash on sketch exit	Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h
+d3d6459484	2026-01-24	Vassily Checkin	fix	0	0	open	10	taken ecf0c288e7 (latent here)	Sketcher: fix intermittent crash on sketch exit	Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h
 a0847c22c7	2026-01-27	PaddleStroke	fix	0	0	open	9		Sketcher: fix logic flaw in ConstraintLineByAngle	Gui/Utils.cpp
 00c3422c1f	2026-01-29	PaddleStroke	feature	0	0	open	63		Sketcher: Tooltip when hovering expression driven constraint (#25954)	Gui/ViewProviderSketch.cpp
 8a6872e69d	2026-02-03	PaddleStroke	feature	0	0	open	31		Merge pull request #25848 from PaddleStroke/sk_scale_distances	App/SketchObject.cpp App/SketchObject.h Gui/CommandConstraints.cpp Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h
@@ -1090,7 +1090,7 @@ ff47e5d523	2026-07-24	Max Wilfinger	feature	0	0	open	55	have: file is upstream t
 fe9b559779	2026-08-02	Jakub Vanek	refactor	0	0	n/a(uncompiled)	9		Sketcher: Simplify constraint icon conversion for Coin3D	Gui/EditModeConstraintCoinManager.cpp
 770015798f	2026-07-29	Lokestrom	fix	0	0	open	3	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Fix arc of ellipse arc OVP flip	Gui/DrawSketchHandlerArcOfEllipse.h
 1dde0a83ce	2026-08-02	Max Wilfinger	?	0	0	n/a(uncompiled)	14		Sketcher: Remove transparency from origin point	Gui/EditModeCoinManager.cpp
-955efa639e	2026-07-30	wwmayer	fix	0	0	open	16		Sketch: Handle exception in ViewProviderSketch::setEdit	Gui/ViewProviderSketch.cpp
+955efa639e	2026-07-30	wwmayer	fix	0	0	open	16	adapted 2407af8624: the catch is in setEditViewer(), where the fork solves	Sketch: Handle exception in ViewProviderSketch::setEdit	Gui/ViewProviderSketch.cpp
 2b88396504	2026-07-30	wwmayer	fix	0	0	open	5	taken 88c9baa853	Sketcher: Handle OCC exception in sketcher	App/Sketch.cpp
 e1e72c9195	2026-08-03	Chris Hennes	refactor	0	0	open	433	taken 0f5a36bfc8	Sketcher: Use existing geometry to migrate to signed constraints	App/Sketch.cpp App/SketchObject.cpp App/SketchObject.h App/SketchObjectConstraints.cpp App/SketchObjectExternal.cpp App/SketchObjectOperations.cpp SketcherTests/TestSketcherSolver.py
 196da068a0	2026-08-05	matthiasdanner	feature	0	0	open	249	partial: App half (trim includeSketchAxes) is here since d8d462426e; the Gui trimming handler half is phase 3	Sketcher: Add Option to include axes in Trimming Operation	App/SketchObject.h App/SketchObjectOperations.cpp App/SketchObjectPyImp.cpp Gui/DrawSketchHandlerTrimming.h
