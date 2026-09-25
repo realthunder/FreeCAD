@@ -35,12 +35,14 @@
 #include <App/Document.h>
 #include <App/Origin.h>
 #include <App/Part.h>
+#include <App/PropertyStandard.h>
 #include <Base/Console.h>
 #include <Gui/CommandT.h>
 #include <Gui/Control.h>
 #include <Gui/Document.h>
 #include <Gui/Application.h>
 #include <Gui/MainWindow.h>
+#include <Gui/ViewProvider.h>
 #include <Gui/View3DInventor.h>
 #include <Gui/View3DInventorViewer.h>
 #include <Mod/Sketcher/App/SketchObject.h>
@@ -298,6 +300,22 @@ void CmdPartDesignBody::activated(int iMsg)
                 if (it->isDerivedFrom<PartDesign::FeatureBase>()) {
                     PartDesign::FeatureBase* base = static_cast<PartDesign::FeatureBase*>(it);
                     if (base && base->BaseFeature.getValue() == baseFeature) {
+                        // The base stands in for the object it hides, so it
+                        // looks the same (upstream aea8919598)
+                        copyVisual(base, "ShapeColor", baseFeature);
+                        copyVisual(base, "LineColor", baseFeature);
+                        copyVisual(base, "PointColor", baseFeature);
+                        copyVisual(base, "Transparency", baseFeature);
+                        copyVisual(base, "DisplayMode", baseFeature);
+                        // Per-face colours too: the base's faces are the
+                        // object's, in its order. Only when there are
+                        // some, as setting them re-derives the rest.
+                        auto vp = Gui::Application::Instance->getViewProvider(baseFeature);
+                        auto colors = vp ? Base::freecad_dynamic_cast<App::PropertyColorList>(
+                                               vp->getPropertyByName("DiffuseColor"))
+                                         : nullptr;
+                        if (colors && colors->getSize() > 1)
+                            copyVisual(base, "DiffuseColor", baseFeature);
                         Gui::Application::Instance->hideViewProvider(baseFeature);
                         break;
                     }
