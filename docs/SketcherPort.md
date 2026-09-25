@@ -31,7 +31,7 @@ Upstream's `f4665aa7b5` ("Core: support multiple active transactions") was
 evaluated and **declined**; `docs/TransactionLog.md` records why, and the
 direction the user wants instead.
 
-**Where the ledger stands (2026-09-25).** 1149 rows, of which 297 are open
+**Where the ledger stands (2026-09-25).** 1149 rows, of which 292 are open
 and undecided, down from 503 over three sessions of reading blobs rather
 than commits. First the 33 files the handler resyncs touched: 21 are
 identical to upstream's tip modulo whitespace, closing 74 rows at once
@@ -2538,6 +2538,32 @@ about 0.5 s: its recompute redraws off a timer and drops a preselection
 set before it, and the next drag then silently never starts. A drag in
 progress shows only in the edit scene's `SoCoordinate3` nodes, because
 `Geometry` is written on release.
+
+### Box selection (session 94): 45 -> 40
+
+| row | verdict |
+|---|---|
+| `9bff63e38d` | **taken** `08c58fabce`, for parity. The box's redraw now draws the object's geometry, not the solver's copy. Upstream's symptom (construction lines turning solid) cannot happen here, measured: the fork's toggle command solves on the way out, construction is a colour read off the object, and `draw()` does not recolour while the mode is still the rubber band's. All the flag decides here is draw order |
+| `39329e547f` + `e469eb5ccb` | **adapted** `dbf819f658`. A right press during a box already cancelled it here (the both-buttons branch), but the right release then found the edit idle and opened the context menu, measured. The block flag is set where the fork cancels and cleared by the next right press |
+| `7b85239093` | **adapted** `8b24f4785f`: blue and solid left to right (window), green and dashed right to left (touch). Uses upstream's `StyleParameters.h`, resolved through `Gui::Application`'s manager. The fork's `Rubberband` carries both colour and stipple into its Coin overlay, so mode 3 draws them too |
+| `a5bf17b144` | **have**, the Sketcher half. It restores a gate's forbidden cursor when the pointer leaves geometry, and the fork already does that: `blockedPreselection` plus `rmvPreselect()`. The core half, box selection honouring a selection gate, is a core feature outside this port and was not taken |
+
+Guarded by `tests/gui/sketch-box-selection.py`
+(`GuiSketchBoxSelection_tests_run`). The menu and colour checks fail
+without their fixes. The construction check passes either way and
+guards what the user sees.
+
+**Harness traps.**
+- A box pressed within the double-click interval of the last click is
+  not a box. The test waits 0.8 s before each one.
+- The both-buttons cancel reads `QApplication::mouseButtons()`, which
+  `sendEvent()` never updates. `QTest` mouse events go through the
+  window system and do update it.
+- A context menu's `exec()` is modal, so a timer closes and records any
+  popup.
+- Check that the test's coordinates are on screen: the first empty box
+  sat below the fitted view. Events there still work, but a picture of
+  it shows nothing.
 
 ## 7a. The constraint-tool hints (session 85)
 
