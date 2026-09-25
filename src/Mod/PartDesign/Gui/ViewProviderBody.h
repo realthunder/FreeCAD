@@ -133,6 +133,7 @@ private:
 private:
     static const char* BodyModeEnum[];
     bool checkingSiblings = false;
+    bool followingChange = false;
 };
 
 

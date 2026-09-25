@@ -535,6 +535,11 @@ void ViewProviderBody::updateData(const App::Property* prop)
 
 void ViewProviderBody::copyColorsfromTip(App::DocumentObject* tip)
 {
+    // Taking the new Tip's colours changes the body's ShapeColor with them,
+    // which is not to be handed back to the Tip as a colour of the body's:
+    // that switched the Tip's MapFaceColor off whenever the two differed in
+    // transparency, and the new feature showed the default colour.
+    Base::StateLocker guard(followingChange);
     // update DiffuseColor
     Gui::ViewProvider* vptip = Gui::Application::Instance->getViewProvider(tip);
     if (vptip && vptip->isDerivedFrom(PartGui::ViewProviderPartExt::getClassTypeId())) {
@@ -582,6 +587,13 @@ void ViewProviderBody::onChanged(const App::Property* prop) {
     else
         unifyVisualProperty(prop);
 
+    // The body's own Transparency handling writes its ShapeAppearance, and
+    // from there its ShapeColor, whose alpha is the transparency. Those are
+    // echoes, not settings: forwarded to the Tip, that ShapeColor looked
+    // like a colour set on the body and switched the Tip's MapFaceColor off,
+    // so every later feature showed the default colour. The Tip has the
+    // Transparency already (above), and applies it to its own faces.
+    Base::StateLocker guard(followingChange, prop == &Transparency || followingChange);
     PartGui::ViewProviderPartExt::onChanged(prop);
 }
 
@@ -589,6 +601,12 @@ void ViewProviderBody::onChanged(const App::Property* prop) {
 void ViewProviderBody::unifyVisualProperty(const App::Property* prop) {
 
     if (!pcObject || isRestoring()) {
+        return;
+    }
+
+    // Following a change of its own (see onChanged) or of the Tip's
+    // (copyColorsfromTip): nothing the user set on the body.
+    if (followingChange) {
         return;
     }
 
