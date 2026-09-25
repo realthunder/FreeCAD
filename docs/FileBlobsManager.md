@@ -1000,3 +1000,88 @@ slower.
   segment, as restore does, instead of appending the shapes it just wrote.
   Save and restore would then be fully symmetric, at the cost of one file copy
   per save.
+
+### 15.7 As ruled (user, 2026-09-25) -- built on branch Transaction
+
+Settled with the user in the `Transaction` session, which builds it (the
+log is the store's largest client). Where this disagrees with 15.2-15.5,
+this wins. The other session's refinements of 15.1-15.6 (`804c13dfb8`, not
+in this repository yet) merge in when the branches meet.
+
+**The answers to 15.5.**
+
+- The index is its own database, `blobs/index.db`: the log replaces its own
+  database at run time (an embedded copy is adopted, `docs/TransactionLog.md`
+  16.4) and would take a blob index with it.
+- New content is **zstd**. What a segment holds is a zip member, so each
+  member carries its own method: zstd (zip method 93) for content this
+  store writes, deflate for members that arrived in an opened archive.
+- The third question -- adopt the saved archive as a segment -- is withdrawn:
+  it would move blobs, and under the scheme below nothing ever moves.
+
+**Segments are zip files, and a blob never leaves its segment.** Members
+are named by content hash. The index maps a hash to its segment id (with
+extension and size) and nothing else: where a member sits is the
+segment's own central directory's business. Since a blob stays where it
+was first written, an index row never changes after it is made. The
+archive copy of an opened document (sec 14) is simply the first segment.
+
+**A segment is rewritten, never modified: generations.** Appending new
+members and dropping dead ones is one pass:
+
+1. Stream segment N's live members, raw -- a member record is copied as
+   bytes, never inflated or re-compressed -- into a temporary file, append
+   the new members, write the central directory, flush.
+2. Rename the temporary file to `seg-N.<g+1>`.
+3. Try to delete `seg-N.<g>`. If it cannot be deleted -- on Windows, a file
+   another handle has open -- leave it.
+
+A reader never sees a file change under it: whoever holds `seg-N.<g>` keeps
+reading it, its offsets valid, because generations are immutable once
+named. New opens take the highest generation on disk; inside the process
+the writer bumps a generation counter, and a reader that needs a member
+newer than its generation reopens. Old generations and leftover temporary
+files are deleted when they can be -- at the next rewrite, at close, on
+open. A crash leaves at worst an incomplete temporary file, which is never
+a generation and is deleted on open. Local headers carry the member sizes
+(no data descriptors), so a segment can still be rebuilt by a scan if a
+central directory is ever found missing.
+
+**Repack rides the rewrite.** Every rewrite drops the dead members it
+passes over, so a segment that is written to shrinks as it goes, and new
+content can go into a shrunken segment. A segment nothing is written to
+is rewritten once its dead fraction passes a threshold; a segment with
+nothing live is deleted. Segments are never merged, so their number falls
+only as they empty -- measured before any merge is considered.
+
+**Appends are batched.** A rewrite copies the segment, so new content is
+written per batch -- a commit group, a save, a snapshot -- one rewrite per
+segment per batch, not per blob; segments are capped (64 MB to start,
+measured) and a new one opened when the current is full.
+
+**Order of writes.** The segment first, the index second; on open the two
+are reconciled: an index row naming a member that is gone was a dead
+blob's and is dropped; a member no row names is dead space for the next
+rewrite.
+
+**Save.** At schema 5 the document's blob entries are copied raw from the
+segments into the FCStd -- zstd members stay zstd, so a blob is compressed
+once in its life and a save re-compresses nothing. That needs a writer
+that can add a member as raw bytes, which `zipios::ZipOutputStream` cannot;
+ours sits beside the random-access reader of sec 14, which gains the
+zstd method. Schema 4 is upstream's format and has no blob manager: each
+property writes its own entry, reading through `FileBlob::read()` (which
+decodes), and zipios deflates it, as today. The price of zstd members:
+schema 5 is readable only by this fork already, and a stock zip tool may
+not open a schema 5 file's blob entries.
+
+**Unchanged.** `FileBlobHandle` as reference and refcount as lifetime,
+`read()` returning bytes wherever they live, `adoptBytes()` storing by
+hash, `path()` materialising on demand (15.6 on the other side). The
+transaction log relies on nothing else (`docs/TransactionLog.md` 23.1,
+note of 2026-09-24).
+
+**Next: phase 0 (15.4) on this box** -- file per blob, everything in SQLite,
+and this layout, for create, random read and deleting the store, plus the
+rewrite cost at the cap -- then the laptop's rows, which motivated all of
+it.
