@@ -8,7 +8,9 @@ being measured is the monitored filesystem, not the code.
 
 Legs: copy, stored, pack, files (sec 14.2); segments, save (sec 15.7-15.8,
 the pack store: zstd members in zip segments written by generation, and a
-save that copies members raw instead of deflating every blob again). zstd
+save that copies members raw instead of deflating every blob again); split
+(sec 15.10: the opened archive's blob members copied raw into capped
+segments on open, against the single copy of leg A). zstd
 comes from the libzstd FreeCAD links (ARCHBENCH_ZSTD, else found next to
 the Python library or on the loader path).
 
@@ -368,6 +370,83 @@ if "segments" in legs and ZSTD:
     t = clock()
     shutil.rmtree(sd)
     deletes["E segments zstd"] = clock() - t
+
+# G. the opened archive split on open (sec 15.10): each blob member copied
+# raw -- its deflate bytes, never re-compressed -- into capped segments
+# seg-<N>.1, named by content hash. The hash needs the inflated bytes, which
+# the restore computes today anyway (sec 14.3), so the split is timed with
+# and without it; the single copy is the baseline it replaces.
+if "split" in legs:
+    sd = os.path.join(work, "split")
+    os.makedirs(sd, exist_ok=True)
+    cap = int(os.environ.get("ARCHBENCH_SEGMENT_MB", "64")) * 1000000
+    dst = os.path.join(work, "split-copy.FCStd")
+    t = clock()
+    shutil.copyfile(src, dst)
+    tcopy = clock() - t
+    os.remove(dst)
+
+    def split(named):
+        segs, cur, used = [], [], 0
+        with open(src, "rb") as fh:
+            for i in infos:
+                off = local_data_offset(fh, i)
+                fh.seek(off)
+                raw = fh.read(i.compress_size)
+                if named:
+                    b = zlib.decompress(raw, -15) if i.compress_type == 8 else raw
+                    name = hashlib.sha1(b).hexdigest() + ".brp"
+                else:
+                    name = i.filename[len("blobs/") :]
+                if used + len(raw) > cap and cur:
+                    segs.append(write_segment(os.path.join(sd, "seg-%d.1" % (len(segs) + 1)), cur))
+                    cur, used = [], 0
+                cur.append((name, i.compress_type, i.CRC, len(raw), i.file_size, raw))
+                used += len(raw)
+        if cur:
+            segs.append(write_segment(os.path.join(sd, "seg-%d.1" % (len(segs) + 1)), cur))
+        return segs
+
+    t = clock()
+    segs = split(False)
+    traw = clock() - t
+    shutil.rmtree(sd)
+    os.makedirs(sd)
+    t = clock()
+    segs = split(True)
+    tc = clock() - t
+    t = clock()
+    index = {}
+    for p in segs:
+        index.update(read_directory(p))
+    ti = clock() - t
+    entries = list(index.values())
+
+    def read_split():
+        t = clock()
+        handles = {}
+        for k in random.Random(1).sample(range(len(entries)), len(entries)):
+            p, off, csize, usize, method = entries[k]
+            fh = handles.get(p) or handles.setdefault(p, open(p, "rb", buffering=0))
+            fh.seek(off)
+            b = fh.read(csize)
+            if method == 8:
+                b = zlib.decompress(b, -15)
+        for fh in handles.values():
+            fh.close()
+        return clock() - t
+
+    tr = read_split()
+    tr2 = read_split()
+    results["G split on open"] = (tc, ti, tr, tr2)
+    extra.append(
+        "G: split into %d segments (cap %d MB, %.1f MB): raw copy %.2f s, "
+        "with inflate+hash %.2f s; single archive copy %.2f s"
+        % (len(segs), cap // 1000000, sum(os.path.getsize(p) for p in segs) / 1e6, traw, tc, tcopy)
+    )
+    t = clock()
+    shutil.rmtree(sd)
+    deletes["G split on open"] = clock() - t
 
 # F. the blob half of a save: deflate every blob into the zip (today), against
 # copying each zstd member raw (sec 15.7), both with a central directory.
