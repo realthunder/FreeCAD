@@ -31,7 +31,7 @@ Upstream's `f4665aa7b5` ("Core: support multiple active transactions") was
 evaluated and **declined**; `docs/TransactionLog.md` records why, and the
 direction the user wants instead.
 
-**Where the ledger stands (2026-09-25).** 1149 rows, of which 308 are open
+**Where the ledger stands (2026-09-25).** 1149 rows, of which 300 are open
 and undecided, down from 503 over three sessions of reading blobs rather
 than commits. First the 33 files the handler resyncs touched: 21 are
 identical to upstream's tip modulo whitespace, closing 74 rows at once
@@ -2439,6 +2439,52 @@ Left open: clicking a row of the elements list with synthetic QTest
 input selected nothing (the constraints list did). The panel acts on the
 row it saw through hover (`itemEntered`), so this may be the known limit
 of synthetic hover, not a defect -- not established either way.
+
+### The elements list: the fork's own, extended (session 93): 308 -> 300
+
+**User ruling (2026-09-25): keep the fork's elements list, with one icon per
+row; do not port upstream's list, whose rows carry an icon per part.** What
+upstream's list can do that the fork's could not was added to the fork's
+list instead. Seven commits:
+
+- `1434da42d1` **A geometry on a hidden visual layer is not drawn.** The
+  fork stored a layer per geometry and `VisualLayerList` per sketch, and
+  its `draw()` read neither: a layer changed nothing on screen. Hidden
+  geometry is now not drawn, not picked, not boxed and not taken by Select
+  All from the view. The vertex-to-point map defaulted to 0 -- the root
+  point's slot -- for a vertex not drawn; it is -1 now and six readers
+  check.
+- `739c19f67f` The row checkbox: ticked shown, unticked the hidden layer,
+  one transaction, applied a turn later (the change rebuilds the list that
+  is delivering the checkbox's signal).
+- `e390940d01` **Mode** becomes upstream's checkable filter -- kinds
+  (Normal, Construction, Internal, External) and nine geometry types,
+  combined -- in the Mode button's pop-up, stored in upstream's
+  `ElementFilterState` parameter bit for bit.
+- `fc0df4590b` **The single icon is a drop-down button**: it lists the
+  parts of that element with upstream's per-part icons and picks one (Ctrl
+  adds); the icon and the Name column follow the part selected last. The
+  global Type combo, its Z key and "Auto-switch to Edge" are retired.
+  Rebuilding the scene selection from the rows now pushes every selected
+  part, not the first. Both panels stop observing the selection when the
+  edit dialog closes.
+- `2ebaa7626d` Icon size is a preference, `ElementIconSize` (32 px), and
+  the arrow has a strip of its own left of the icon.
+- `78f0b1ef1e` **Layer 1 is drawn dashed.** Upstream does not: its
+  `EditModeGeometryCoinManager` only switches coin layers on and off, and
+  `VisualLayer::getLinePattern()` has no caller, so upstream's
+  "discontinuous line layer" draws solid. The fork's curves are now two
+  `SoIndexedLineSet`s over one coordinate and material list, the second
+  under the layer's pattern.
+- `a0dab1d6f6` The list's context menu: Layer > Layer 0 (solid), Layer 1
+  (dashed), Hidden.
+
+Ledger: the rows that are upstream's list itself are declined citing the
+ruling (`122f163d0c`, `da6a4fe57b`, `b46ba096b2`, `8fd9c19013`); the
+checkbox fixes are adapted (`2fac012226`, `34b6b36547`, `6bed2e663e`);
+`00f547d67c` is n/a. The 17 elements-panel rows still open are general --
+Qt warnings, texts, auto-scroll, selection speed -- and go with their own
+families.
 
 ## 7a. The constraint-tool hints (session 85)
 
