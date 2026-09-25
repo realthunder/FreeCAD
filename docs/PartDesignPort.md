@@ -9,10 +9,10 @@ decided, 37 upstream commits taken or adapted in 33 fork commits, 8 rows
 open. Then six of the deferred rows (sec 6, "Deferred, then taken"); two
 stay deferred. The open fix rows are closed (sec 6), and the 231
 unclassified rows are sorted (sec 7, 2026-09-25): 180 decided, 51 open,
-and the App defects among them fixed (sec 7, last table). Next: the Gui
-defects of sec 7 (tree move, loft/pipe delete, edit mode, body
-transparency, the planar tolerance), then the smaller features (decision
-2).
+and the App defects among them fixed (sec 7). The Gui defects of sec 7
+are fixed too, and the rest of its small rows and its 4 unsure ones are
+settled (sec 7, the last subsection, 2026-09-25 late). Next: the sec 7
+candidates, small before large, then the deferred families (decision 2).
 
 Branch `PartDesignPort` off `SketcherPort` `4fa781fc58`, with `LinkVibe`
 `312b62c995` merged in (section 5). Upstream reference: `upstream/main`
@@ -630,3 +630,71 @@ ctest 750/750; the whole Python suite 2940 OK (50 skipped, 6 expected
 failures), the one new being the planar test. The first suite run hung in
 `CAMTests.TestUpdateDocumentTools`, the known flake of docs/Testing.md
 (52 threads waiting, CPU flat), and passed on the re-run.
+
+### The small rows left, and the unsure ones (2026-09-25, late)
+
+The rest of the 23 small fork defects, and the 4 unsure rows, each run on
+the fork first (a FreeCADCmd probe, or the GUI through the MCP console):
+
+| upstream | fork | before | after |
+|---|---|---|---|
+| `7481a5d8dd`, `af83b6883e` | `89167341b2` | a D8 hole on a D6 hole's face: two sideways holes across the box (the face's middle normal), Reversed the same | drilled along the axis, 219.91 mm^3 (pi*7*10); Reversed from the other end |
+| `123a1c80e1` (+ tests `1db757e546`, `8bacbf47c1`) | `8d34b6401e` | PartDesign_Body on a box at x=5: the box at x=0; a body at x=10 carried it to x=10 | stays at x=5, in a placed body and across App::Parts too |
+| `aea8919598` | `705a708dc8` | that body's base came out default grey; the box was red with blue edges | the box's colours, lines, transparency; per-face colours too |
+| `51f546f1f6` | `1355b1538d` | an LCS on a box vertex: every pick at the vertex hit the LCS | the vertex's pixel reaches the box |
+| `017f2c8842` | `462e37d991` | the panels bound QKeySequence::Delete, not macOS's Backspace | QtTools::deleteKeySequence(); Windows unchanged (Del, driven) |
+| `4d712f44c2` | `ae49585686` | an upstream 0.21 two-distance chamfer on a cube's Face5 or Face6: sizes swapped | as 0.21 made it, all twelve cases |
+| `51f4ad7432` | `2ba87d350c` | a sketch as a Draft's neutral plane: "No neutral plane reference specified" | its plane; the panel takes a sketch picked in the tree |
+
+Not reproduced, so declined: `df62e41ee5` (Up/Down at either end of the
+dress-up list keep focus and row -- the fork's list is a QTreeWidget), and
+`75109b821b` (a body empty after BaseFeature is set: the property editor
+recomputes after an edit, and the new FeatureBase is touched).
+
+How the rows came out differently from upstream:
+
+- **The base feature's placement** needs no legacy property here. The
+  FeatureBase's recompute keeps the object's geometry and gives it its own
+  Placement, which was left at identity; the body now sets that Placement
+  from both global placements when it hands the FeatureBase a new object,
+  so a file whose FeatureBase sits at identity loads as it did.
+  PartDesign_Body puts the body into the active Part before setting the
+  base, as upstream does.
+- **The 0.21 chamfer** is the row the "4 unsure" note expected a file for;
+  upstream's issue (#19238) settled it instead: the user had selected a
+  face. Upstream 0.21 measured Size on the selected face (on the edge's
+  other face when flipped); the fork, as upstream since 1.0, measures on
+  the edge's first face (its last when flipped), whatever was selected. So
+  the sizes swap only where the selected face is the last face of its
+  edges -- a cube's top or bottom, not its Face1. Upstream's migration
+  flips every such chamfer and so breaks the other half; the fork states
+  0.21's rule per edge in ChamferInfo, on restore. An upstream pre-1.0
+  chamfer is one without ChamferInfo in a document without a string
+  hasher (`XMLReader::HasStringHasher`, new): the fork writes
+  ProgramVersion 0.22, so the version alone does not tell. Driven with
+  fork files rewritten to what 0.21 writes (`TestChamfer`).
+- **A whole sketch** is allowed by the reference gate only where a planar
+  face is asked for, not wherever a face is (upstream), which would let a
+  sketch into the dress-up edge list. LinearPattern had to follow: a whole
+  sketch as its direction was an error, and is its normal now.
+
+Found on the way, and fixed:
+
+- **Closing a document with a copy-on-change SubShapeBinder crashed**
+  (`c1a680b4a0`). `clearCopiedObjects()` removed the copies, then cleared
+  the link to them, whose aboutToSetValue copied a link to the deleted
+  object; it runs from the destructor. Found reproducing `2501296c95`.
+
+Deferred: the binder back-copy (`2501296c95`, `66e1c0154d`). Upstream's
+final rule copies back only a ReadOnly+Output copy-on-change property, and
+an expression cannot drive a ReadOnly property here (it reads 0), so it
+waits for a use with a computed property (a Python feature).
+
+Seen, not fixed: `DressUp::getFaces()` takes a face's shadow name by its
+place among the faces, not among all references, so a Base holding an edge
+before a face would look the face up by the edge's name. Not reproduced --
+with a plain name the shadow is empty and the name itself is used -- so
+left alone.
+
+TestPartDesignApp 127 OK, TestPartApp 125 OK; the Gui defects test 29
+checks, green.
