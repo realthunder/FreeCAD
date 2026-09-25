@@ -298,3 +298,13 @@ fc_add_gui_test(GuiSketchKnotCommandNonGeometry_tests_run
 fc_add_gui_test(GuiSketchConstraintHints_tests_run
                 sketch-constraint-hints.py
                 --timeout 240)
+
+# The PartDesign Gui defects of docs/PartDesignPort.md sec 7, as the user
+# meets them: a tree move that reversed the features, the crash closing
+# the document after it, a deleted Loft or Pipe leaving its sketches
+# hidden, a double click ignoring the user edit mode, a body Transparency
+# switching its Tip's colour mapping off, a nearly planar face refused for
+# a sketch.
+fc_add_gui_test(GuiPartDesignDefects_tests_run
+                pd-gui-defects.py
+                --timeout 300)
