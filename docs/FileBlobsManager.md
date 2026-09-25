@@ -1136,3 +1136,26 @@ wins.
 
 **Phase 0 changes accordingly:** file per blob against this layout; the
 SQLite leg goes with the index database.
+
+**When the directories are read, and duplicates** (user, 2026-09-25).
+Only a recovery reads more than one: a normal open starts a fresh store
+whose single segment is the archive copy (sec 14), whose directory is read
+already, and within a session the map is kept in memory as segments are
+written, never rescanned. Recovery reopens a leftover transient directory
+and reads each segment's directory -- one seek to the end and one read,
+about 80 bytes a member (some 400 KB for MiSTer's 5400 blobs), a few
+segments at the cap. Segment numbers only grow, and a merge's output gets
+a higher number than its inputs; building the map, a hash already seen
+keeps the higher-numbered segment, one comparison per duplicate. (Not the
+segment with more members: a later rewrite may leave the merged segment
+with fewer.) The same pass finishes a merge the crash interrupted: a
+segment whose every member is held by a higher-numbered one, or referenced
+by nothing the recovery restores, is deleted there and then.
+
+**The one ordering rule between two files.** The log and the store are two
+files, and the hazard between them is a log row naming a blob whose bytes
+never reached the disk. So a blob's segment generation is renamed and
+flushed (the directory entry with it) before any log row that names the
+blob commits. The log's writer already stores a value's blob entities
+before it appends the row; the rule adds one flush there, and only when a
+commit brings a new blob.
