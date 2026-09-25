@@ -724,7 +724,7 @@ protected:
 
     std::unique_ptr<PartGui::ViewProviderPart> pInternalView;
 
-    ShortcutListener* listener;
+    std::unique_ptr<ShortcutListener> listener;
 
     std::unique_ptr<SnapManager> snapManager;
 
