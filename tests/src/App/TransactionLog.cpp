@@ -1887,3 +1887,29 @@ TEST_F(TransactionLogTest, implicitTransactionClosesWhenUndoModeChanges)
     EXPECT_FALSE(doc()->hasPendingTransaction());
     EXPECT_EQ(doc()->getAvailableUndos(), 0);
 }
+
+TEST_F(TransactionLogTest, implicitTransactionIsNotMirroredIntoTheActiveDocument)
+{
+    // A bare write on a document that is not the active one mirrored its
+    // implicit transaction into the active document as "-> <implicit>",
+    // which was not implicit and so never closed with it: an empty step in
+    // someone else's undo list (DocumentObserverCases.testDocument,
+    // docs/TransactionLog.md sec 24.13).
+    auto obj = make("Obj");
+    ASSERT_TRUE(obj);
+    doc()->commitTransaction();
+    std::string otherName = App::GetApplication().getUniqueDocumentName("txnother");
+    auto other = App::GetApplication().newDocument(otherName.c_str(), "testUser");
+    other->setUndoMode(1);
+    App::GetApplication().setActiveDocument(other);
+    ASSERT_EQ(App::GetApplication().getActiveDocument(), other);
+
+    obj->Integer.setValue(7);
+    EXPECT_TRUE(doc()->hasPendingTransaction());
+    EXPECT_FALSE(other->hasPendingTransaction());
+    App::GetApplication().commitImplicitTransactions();
+    EXPECT_FALSE(doc()->hasPendingTransaction());
+    EXPECT_FALSE(other->hasPendingTransaction());
+    EXPECT_EQ(other->getAvailableUndos(), 0);
+    App::GetApplication().closeDocument(otherName.c_str());
+}

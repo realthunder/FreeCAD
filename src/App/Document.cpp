@@ -831,7 +831,7 @@ void Document::openTransaction(const char* name) {
     GetApplication().setActiveTransaction(name?name:"<empty>");
 }
 
-int Document::_openTransaction(const char* name, int id)
+int Document::_openTransaction(const char* name, int id, bool implicit)
 {
     if(isPerformingTransaction() || d->committing) {
         if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG))
@@ -858,14 +858,20 @@ int Document::_openTransaction(const char* name, int id)
         if (!name)
             name = "<empty>";
         d->activeUndoTransaction->Name = name;
+        d->activeUndoTransaction->Implicit = implicit;
         mUndoMap[d->activeUndoTransaction->getID()] = d->activeUndoTransaction;
         id = d->activeUndoTransaction->getID();
 
         signalOpenTransaction(*this, name);
 
+        // An implicit transaction is not mirrored into the active document:
+        // it stays out of the application's transaction as it does at commit,
+        // and a mirror, not implicit itself, was never closed with it
+        // (docs/TransactionLog.md sec 24.13).
         auto &app = GetApplication();
         auto activeDoc = app.getActiveDocument();
-        if(activeDoc &&
+        if(!implicit &&
+           activeDoc &&
            activeDoc!=this &&
            !activeDoc->hasPendingTransaction())
         {
@@ -908,8 +914,7 @@ void Document::_openImplicitTransaction()
         name += origin;
     }
     name += '>';
-    if (_openTransaction(name.c_str(), 0) && d->activeUndoTransaction) {
-        d->activeUndoTransaction->Implicit = true;
+    if (_openTransaction(name.c_str(), 0, true) && d->activeUndoTransaction) {
         d->activeUndoTransaction->Origin = origin ? origin : "";
         // Opened outside any invocation -- a GUI event that is not a
         // command: nothing returns to close it, so the Gui closes it when

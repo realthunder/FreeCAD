@@ -1018,7 +1018,7 @@ protected:
      * This function creates an actual transaction regardless of Application
      * AutoTransaction setting.
      */
-    int _openTransaction(const char* name=nullptr, int id=0);
+    int _openTransaction(const char* name=nullptr, int id=0, bool implicit=false);
     void _openImplicitTransaction();
     /// Internally called by App::Application to commit the Command transaction.
     void _commitTransaction(bool notify=false);
