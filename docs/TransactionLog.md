@@ -3327,3 +3327,81 @@ like the implicit transactions of 24.10 in a process with no GUI to close
 them at the event loop. Open, not chased here: whether the tests state the
 log-off rule or the log should keep the implicit ones out of what the
 tests read.
+
+### 24.13 The six log-on failures chased (2026-09-25)
+
+The six Python cases of 24.12 and `OmniControl_Tests_run` come down to
+three defects and one ruling.
+
+**An implicit transaction outlived the undo mode it was opened in.** A
+write with undo off and the log on opens an implicit transaction for the
+log. In a process with no GUI and no invocation scope around the caller --
+`FreeCADCmd -c`, `-t`, FreeCAD imported as a Python module -- nothing
+closes it until an explicit open, a save, a close or the end of a
+recompute. Turning undo on before then left it open, and the next commit
+made it an undo step: writes made with undo off became undoable.
+`UndoRedoCases.testUndo`/`testUndoClear` saw it in `UndoNames` straight
+after `UndoMode = 1`; `OmniControl.test_documentReachOfEditOps` got a
+create and a rename as two steps where it asked for one. Fixed in
+`Document::setUndoMode`: a change of mode commits an implicit transaction
+first, under the mode it was opened in. Gtest
+`implicitTransactionClosesWhenUndoModeChanges`.
+
+**Reading a material wrote it.** `obj.ShapeMaterial.getPhysicalValue(...)`
+marked `ShapeMaterial` changed: the returned `MaterialPy` is bound to the
+property, and the generated wrapper of any method not declared const calls
+`startNotify()`, which writes the value back through the property. With
+the log off it only touched the object on every read; with it on, the
+write opened an implicit transaction and `doc.undo()` undid that instead
+of "Update material" (`TestMaterialSync.testUpdateFromLibraryUndoes`). The
+read methods of `Material.pyi` -- `has*`, `is*Complete`, `get*Value`,
+`keys`, `values` -- are now `@constmethod`.
+
+**An implicit transaction was mirrored into the active document.**
+`_openTransaction` opens a `-> name` transaction in the active document
+when it opens one elsewhere, so that an undo there reaches both. For an
+implicit transaction the mirror was not implicit itself, so neither the
+invocation's end nor the GUI's closer committed it: a bare write on a
+document that is not the active one left an empty `-> <implicit>` open in
+the active one, and later an empty step in its undo list
+(`DocumentObserverCases.testDocument` saw its `DocOpenTransaction`).
+Implicit transactions already stay out of the application's transaction
+at commit (`closeActiveTransaction` is not called for them), so they are
+now not mirrored at all. Gtest
+`implicitTransactionIsNotMirroredIntoTheActiveDocument`.
+
+**What an observer sees of an implicit transaction (user ruling,
+2026-09-25).** Two cases still differed from the log-off rule, both from
+implicit transactions at invocation depth 0 with no GUI to close them:
+
+- `DocumentObserverCases.testDocument`: a bare `Doc1.Comment = ...` opens
+  an implicit transaction, so `DocOpenTransaction` arrives before
+  `DocBeforeChange`.
+- `DocumentObserverCases.testObject`: the implicit transaction a bare
+  `addObject` opened is still open at `Doc1.recompute()`, whose scope
+  commits it on return -- `DocCommitTransaction` after `DocRecomputed`.
+  The recompute's own writes join that transaction rather than making a
+  step of their own.
+
+Offered: commit such a left-open transaction at the START of a recompute,
+so the recompute is a step of its own as 24.1 has it; or hide implicit
+transactions from observers. **Ruled: neither.** Implicit transactions
+signal open and commit like any other transaction, the grouping stays as
+it is -- edits left open at depth 0 and the recompute that follows them are
+one step -- and the two tests expect those signals when the log is on
+(`transactionLogIsOn()` in `Document.py`). `testUndoDisabledDocument`
+failed only because `testDocument` stopped before closing its documents.
+
+**Suites.** Log off: Python 2911 OK, ctest 822/822 (+2 gtests). Log on:
+Python **2911 OK** (52 skipped: the 50 plus the two FileBlobs cases that
+skip with the log on) and ctest **822/822** -- the gate of 22.1 is met.
+
+**A trap in the log-on ctest run.** `ctest -j6` in a `FREECAD_USER_HOME`
+whose `user.cfg` sets `TransactionLog=1` does not keep it: several test
+processes load and save the same `user.cfg` at once, one of them saves a
+stripped copy, and the tests after it run with the log off. Run alone,
+none of the 832 entries loses the setting; `-j6` lost it every time. So a
+log-on ctest run is `-j1` (about 20 minutes), with a check afterwards that
+`user.cfg` still sets it. The log-on ctest figures of 24.11 and 24.12 came
+from `-j6` runs and were at most partly log-on; the `OmniControl`
+failure 24.12 saw was real all the same.
