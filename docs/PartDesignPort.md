@@ -554,5 +554,67 @@ subtractive, give the right volumes, so it is declined until it fails.
 
 TestPartDesignApp 113 OK (nine new), TestPartApp 125 OK, the whole Python
 suite 2939 OK (50 skipped, 6 expected failures). The panel half of
-`8b6d45184b` (the pocket's ThroughAll fields) is built but not yet driven in
-the GUI.
+`8b6d45184b` is driven since (2026-09-25): a 5 deg pocket switched to
+Through all in its panel hides Offset and keeps the taper shown and
+editable; set to 8 deg there and accepted, the pocket stays ThroughAll at
+8 deg and removes 6240.8 mm^3, the frustum to the digit.
+
+### The Gui defects, reproduced and fixed (2026-09-25)
+
+Each was driven in the GUI through the MCP console on the fork build first,
+fixed, and driven again; `tests/gui/pd-gui-defects.py` (registered as
+`GuiPartDesignDefects_tests_run`, run by hand on Windows) states all of them,
+19 checks, green. The planar half has a headless test as well,
+`TestDatumPlane.testNearlyPlanarBSplineFace`.
+
+| upstream | fork | before | after |
+|---|---|---|---|
+| `1c8ca27f28` | `bc23637173` | Box002, Box003 moved after Box: Box, Box003, Box002, Box001 | Box, Box002, Box003, Box001, in either selection order |
+| `cf951bae6b` | `65e6347211` | deleting a Loft left all three sketches hidden (its Profile too), a Pipe both; a Pad showed its sketch | every claimed non-feature child shown, one `onDelete` in `ViewProviderAddSub` |
+| `f34f15dc60` | `c813dbd26a` | user edit mode Transform: a Part box edits in mode 1, a PD Cylinder in 0 | 1 |
+| `1844fdd443` | `900c0523b3` | body Transparency 50: Tip MapFaceColor off; the Fillet after it grey, 0 red faces of 6 | stays on; the Fillet maps the Box's colours, 2 red of 7 |
+| `eebb7f7829` | `c7ff85be07` | a B-spline face 1e-7..2e-7 off plane: FlatFace sketch Invalid, NewSketch "You need a planar face" | attached; a face 1e-3 off still refused |
+
+Found on the way, and fixed:
+
+- **An access violation after moving features and closing the document**
+  (`ac4be141dd`). Closing the document changed children on the way out, which
+  started a closed view's `ActiveObjectList` timer; the view is deleted from
+  the event loop, after the document's objects, so the timer read the freed
+  body. The list now forgets everything when its App document goes, and
+  disconnects. The first draft of that fix crashed in turn: a view outlives
+  its `Gui::Document` as well, so the App document is taken at construction.
+- **A Windows crash log said nothing about an access violation** (`e2751abc9f`):
+  it walked the handler's own stack. It walks the faulting context now,
+  which the CRT keeps in `_pxcptinfoptrs` during a SIGSEGV handler; the
+  crash above was found with it in one run.
+- **The body's Transparency was half the defect.** Adding a feature makes it
+  the Tip, and `copyColorsfromTip()` takes the new Tip's colours into the
+  body; the body's ShapeColor followed, and went back to the new Tip as a
+  colour set on the body, switching its MapFaceColor off whenever the two
+  differed in transparency. Both paths are echoes of a change, not settings,
+  and one guard stops them.
+- **The tree move sorts the moved features by their place in the body**, not
+  by selection order as upstream's fix does, so a selection made bottom-up
+  keeps the order too.
+- **The planar tolerance is the plane attach engines'**, not the sketch's
+  alone as upstream has it: `AttachEnginePlane` sets it in its constructor,
+  so a datum plane gets it, and so does an engine restored by type name from
+  a file. `TopoShape::findPlane()` passes its tolerance to the per-face test
+  it used to leave at OCCT's default.
+
+Seen, not fixed:
+
+- A second edit of the same PD primitive, started from a script while a
+  Python QTimer runs, does not enter edit: its panel shows, and the console
+  has "name '_tv_Cylinder' is not defined" from TaskAttacher's visibility
+  snippet. Not seen by hand; the GUI test edits one feature per document.
+- An edit started within about 10 ms of leaving a Transform edit is lost,
+  a Part box's as well; after 200 ms it is not. No hand is that quick.
+- `ReferenceSelection`'s planar filter keeps OCCT's 1e-7, so a picked face
+  for a Mirrored plane or a Pad direction is judged as before.
+
+ctest 750/750; the whole Python suite 2940 OK (50 skipped, 6 expected
+failures), the one new being the planar test. The first suite run hung in
+`CAMTests.TestUpdateDocumentTools`, the known flake of docs/Testing.md
+(52 threads waiting, CPU flat), and passed on the re-run.
