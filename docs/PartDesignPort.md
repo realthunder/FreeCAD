@@ -711,6 +711,7 @@ checks, green.
 | `3f58f83f2d` | `5a1e4fdcd0` | hand-written size lists beside the tables | the lists built from the tables |
 | `dc53d3dba2`, `8f2e330a53`, `601c0f9b09`, `0dc6cbd16f` | `f2b5692a3c`, `fc68395bd6` | a thread type change reset the size: M6 to UNC gave #1 | the nearest size by diameter and the old size's pitch: M6 to UNC 1/4, M10 to fine M10x1.25 |
 | `309dd6e30d`, `8b9f5bdc4f` (shape half) | `ba5df83a6e` | the Pad offered Type UpToShape and failed on it ("Unknown method"); the Pocket had none; OK in the panel on such a feature wrote Type = -1 | Pad and Pocket up to faces or shapes; the panels list the mode (the faces are picked in the property editor for now) |
+| `0804d80ebf` (App half) | `236c2453c1` | a body's material stayed on the body; a Part fillet, mirror, boolean or compound of a steel box was "Default" | body and features share one material; a Part operation takes its base's unless it has its own |
 
 The five thread commits merged three-way without a conflict. One upstream
 bug came with them: the BSP size list had "1 3/8", which the BSP table does
@@ -731,6 +732,13 @@ or a whole object, go without the face furthest along the extrusion, so the
 open shell stops the prism at the nearest (as upstream). Of the five fix rows
 that waited for it, two are covered (`00f6fbeaa3`, `7e33da0fa0`) and three
 wait for the panel's face picking.
+
+Left of sec 7's candidates: the Boolean tool-body display (`84ab5d5547`,
+`5aac4c1036`, `9bbbd59291`, a rewrite of the fork's own Tools display mode),
+the UpToShape face picking in the panel, and the large features, which
+decision 2 has decided one by one: two-sided extrude (`a346c266e7`), the
+pattern rework (`5d2037c820`), thread texture (`180c39709a`). The full
+suites were green at `5f10f6b3db` (ctest 750/750, Python 2962 OK).
 
 The spacebar pair is done without upstream's Tree.cpp interception: a
 selection picked in the view names an element and one from the tree does
@@ -767,5 +775,5 @@ Found on the way, and fixed:
   anywhere replaced the reference; the gate also outlived the panel and
   crashed the next selection after its document closed.
 
-TestPartDesignApp 136 OK, TestPartApp 125 OK; the Gui defects test 34
+TestPartDesignApp 138 OK, TestPartApp 125 OK; the Gui defects test 34
 checks, six runs in a row green (it was about one in three failing).
