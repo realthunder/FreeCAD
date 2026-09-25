@@ -163,6 +163,47 @@ class TestPocket(unittest.TestCase):
             self.Doc.recompute()
         self.assertAlmostEqual(self.Pocket001.Shape.Volume, 50.0)
 
+    def testPocketToCurvedFaceFromHollow(self):
+        # upstream issue 16690: a pocket sketched inside a pipe, up to one of
+        # its cylinders, cut beyond the face instead of up to it
+        import Part
+        self.Body = self.Doc.addObject('PartDesign::Body','Body')
+        self.PadSketch = self.Doc.addObject('Sketcher::SketchObject', 'SketchPad')
+        self.Body.addObject(self.PadSketch)
+        self.PadSketch.addGeometry(Part.Circle(FreeCAD.Vector(), FreeCAD.Vector(0, 0, 1), 10))
+        self.PadSketch.addGeometry(Part.Circle(FreeCAD.Vector(), FreeCAD.Vector(0, 0, 1), 8))
+        self.Doc.recompute()
+        self.Pad = self.Doc.addObject("PartDesign::Pad", "Pad")
+        self.Body.addObject(self.Pad)
+        self.Pad.Profile = self.PadSketch
+        self.Pad.Length = 30
+        self.Doc.recompute()
+        self.PocketSketch = self.Doc.addObject('Sketcher::SketchObject', 'PocketSketch')
+        self.Body.addObject(self.PocketSketch)
+        self.PocketSketch.MapMode = 'FlatFace'
+        self.PocketSketch.Support = (self.Doc.XZ_Plane, [''])
+        self.PocketSketch.addGeometry(Part.Circle(FreeCAD.Vector(0, 15, 0), FreeCAD.Vector(0, 0, 1), 3))
+        self.Doc.recompute()
+        self.Pocket = self.Doc.addObject("PartDesign::Pocket", "Pocket")
+        self.Body.addObject(self.Pocket)
+        self.Pocket.Profile = self.PocketSketch
+        self.Pocket.Type = 3 # UpToFace
+        faces = {}
+        for i, face in enumerate(self.Pad.Shape.Faces):
+            if isinstance(face.Surface, Part.Cylinder):
+                faces[round(face.Surface.Radius)] = "Face%d" % (i + 1)
+        padVolume = self.Pad.Shape.Volume
+        for reversed_ in (False, True):
+            self.Pocket.Reversed = reversed_
+            # through the wall: a hole of radius 3 in a 2 mm wall
+            self.Pocket.UpToFace = (self.Pad, [faces[10]])
+            self.Doc.recompute()
+            self.assertAlmostEqual(padVolume - self.Pocket.Shape.Volume, 57.38, places=1)
+            # up to the inside of the wall: nothing to remove
+            self.Pocket.UpToFace = (self.Pad, [faces[8]])
+            self.Doc.recompute()
+            self.assertAlmostEqual(self.Pocket.Shape.Volume, padVolume, places=1)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestPocket")

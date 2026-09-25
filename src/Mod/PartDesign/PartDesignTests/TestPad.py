@@ -203,6 +203,33 @@ class TestPad(unittest.TestCase):
         self.Doc.recompute()
         self.assertAlmostEqual(self.Pad.Shape.Volume, 1.5)
 
+    def testPadToConcaveCase(self):
+        # upstream 8b9f5bdc4f: up to the first face, which is the inside of
+        # a half ring and so concave seen from the sketch
+        self.Body = self.Doc.addObject('PartDesign::Body','Body')
+        self.RevolutionSketch = self.Doc.addObject('Sketcher::SketchObject', 'SketchPad')
+        self.Body.addObject(self.RevolutionSketch)
+        TestSketcherApp.CreateRectangleSketch(self.RevolutionSketch, (9, 0), (10, 5))
+        self.Doc.recompute()
+        self.Revolution = self.Doc.addObject("PartDesign::Revolution", "Revolution")
+        self.Body.addObject(self.Revolution)
+        self.Revolution.Profile = self.RevolutionSketch
+        self.Revolution.ReferenceAxis = (self.RevolutionSketch, ['V_Axis'])
+        self.Revolution.Angle = 180
+        self.Doc.recompute()
+        self.PadSketch = self.Doc.addObject('Sketcher::SketchObject', 'SketchPad')
+        self.Body.addObject(self.PadSketch)
+        self.Doc.recompute()
+        TestSketcherApp.CreateRectangleSketch(self.PadSketch, (0, 0), (1, 1))
+        self.Doc.recompute()
+        self.Pad = self.Doc.addObject("PartDesign::Pad", "Pad")
+        self.Body.addObject(self.Pad)
+        self.Pad.Profile = self.PadSketch
+        self.Pad.Type = 2 # UpToFirst
+        self.Pad.Reversed = True
+        self.Doc.recompute()
+        self.assertAlmostEqual(self.Pad.Shape.Volume, 2208.0963, places=4)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestPad")

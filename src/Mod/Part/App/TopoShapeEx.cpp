@@ -2351,12 +2351,32 @@ TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
         op = Part::OpCodes::Prism;
     }
 
+    // An up to face that is concave seen from the profile, as the inside of a
+    // pipe or a ring, is taken as it is and reached from the profile alone.
+    // Without its limits it is the whole surface, which the extrusion also
+    // meets behind the profile; and with the base given to BRepFeat_MakePrism
+    // the prism ran a fixed length whatever the face. Either way a pocket from
+    // inside a pipe up to its outer wall cut nothing, and a pad up to the
+    // inside of a ring went through it (upstream issue 16690, 8b9f5bdc4f and
+    // 594010d9f0). The base is still used below for Mode.
+    Base::Vector3d cog;
+    bool concave = profile.getCenterOfGravity(cog)
+        && Part::Tools::isConcave(TopoDS::Face(uptoface.getShape()),
+                                  gp_Pnt(cog.x, cog.y, cog.z), direction);
+    if (concave) {
+        checkLimits = Standard_False;
+    }
+
     TopoShape base(_base);
 
     if (base.isNull()) {
         Mode = PrismMode::None;
         base = profile;
     }
+    else if (concave) {
+        base = profile;
+    }
+    const TopoShape initialBase(base);
 
     BRepFeat_MakePrism PrismMaker;
 
@@ -2469,8 +2489,7 @@ TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
             uptoface = _uptoface;
             return true;
         }
-        if ((!_base.isNull() && base.isSame(_base))
-                || (_base.isNull() && base.isSame(profile))) {
+        if (base.isSame(initialBase)) {
             // It is unclear under exactly what condition extrude up to face
             // can fail. Either the support face or the up to face must be part
             // of the base, or maybe some thing else.

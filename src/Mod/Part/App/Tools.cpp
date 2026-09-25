@@ -30,6 +30,7 @@
 # include <BRepAdaptor_Surface.hxx>
 # include <BRepBuilderAPI_MakeEdge.hxx>
 # include <BRepBuilderAPI_MakeFace.hxx>
+# include <BRepIntCurveSurface_Inter.hxx>
 # include <BRepLProp_SLProps.hxx>
 # include <BRepMesh_IncrementalMesh.hxx>
 # include <CSLib.hxx>
@@ -814,4 +815,44 @@ TopLoc_Location Part::Tools::fromPlacement(const Base::Placement& plm)
     trf.SetTranslation(gp_Vec(t.x, t.y, t.z));
     trf.SetRotation(gp_Quaternion(q1, q2, q3, q4));
     return {trf};
+}
+
+bool Part::Tools::isConcave(const TopoDS_Face& face, const gp_Pnt& pointOfView, const gp_Dir& direction)
+{
+    BRepAdaptor_Surface adapt(face);
+    if (adapt.GetType() == GeomAbs_Plane)
+        return false;
+
+    // the first point ahead of the viewer where the line meets the face
+    BRepIntCurveSurface_Inter inter;
+    inter.Init(face, gp_Lin(pointOfView, direction), Precision::Confusion());
+    bool found = false;
+    double w = 0.0, u = 0.0, v = 0.0;
+    for (; inter.More(); inter.Next()) {
+        if (inter.W() > Precision::Confusion() && (!found || inter.W() < w)) {
+            found = true;
+            w = inter.W();
+            u = inter.U();
+            v = inter.V();
+        }
+    }
+    if (!found)
+        return false;
+
+    // Concave there if the surface bends towards the viewer along either iso
+    // line: the normal curvature, taken on the viewer's side, is positive.
+    gp_Pnt pnt;
+    gp_Vec d1u, d1v, d2u, d2v, d2uv;
+    adapt.D2(u, v, pnt, d1u, d1v, d2u, d2v, d2uv);
+    gp_Vec normal = d1u.Crossed(d1v);
+    if (normal.SquareMagnitude() < gp::Resolution())
+        return false;
+    if (normal.Dot(gp_Vec(direction)) > 0.0)
+        normal.Reverse();
+    normal.Normalize();
+    auto bendsToViewer = [&normal](const gp_Vec& d1, const gp_Vec& d2) {
+        double len2 = d1.SquareMagnitude();
+        return len2 > gp::Resolution() && d2.Dot(normal) / len2 > Precision::Confusion();
+    };
+    return bendsToViewer(d1u, d2u) || bendsToViewer(d1v, d2v);
 }
