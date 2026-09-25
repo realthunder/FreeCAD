@@ -276,7 +276,7 @@ PyObject* MaterialPy::removePhysicalModel(PyObject* args)
     return Py_None;
 }
 
-PyObject* MaterialPy::hasPhysicalModel(PyObject* args)
+PyObject* MaterialPy::hasPhysicalModel(PyObject* args) const
 {
     char* uuid;
     if (!PyArg_ParseTuple(args, "s", &uuid)) {
@@ -311,7 +311,7 @@ PyObject* MaterialPy::removeAppearanceModel(PyObject* args)
     return Py_None;
 }
 
-PyObject* MaterialPy::hasAppearanceModel(PyObject* args)
+PyObject* MaterialPy::hasAppearanceModel(PyObject* args) const
 {
     char* uuid;
     if (!PyArg_ParseTuple(args, "s", &uuid)) {
@@ -322,7 +322,7 @@ PyObject* MaterialPy::hasAppearanceModel(PyObject* args)
     return PyBool_FromLong(hasProperty ? 1 : 0);
 }
 
-PyObject* MaterialPy::isPhysicalModelComplete(PyObject* args)
+PyObject* MaterialPy::isPhysicalModelComplete(PyObject* args) const
 {
     char* name;
     if (!PyArg_ParseTuple(args, "s", &name)) {
@@ -333,7 +333,7 @@ PyObject* MaterialPy::isPhysicalModelComplete(PyObject* args)
     return PyBool_FromLong(isComplete ? 1 : 0);
 }
 
-PyObject* MaterialPy::isAppearanceModelComplete(PyObject* args)
+PyObject* MaterialPy::isAppearanceModelComplete(PyObject* args) const
 {
     char* name;
     if (!PyArg_ParseTuple(args, "s", &name)) {
@@ -344,7 +344,7 @@ PyObject* MaterialPy::isAppearanceModelComplete(PyObject* args)
     return PyBool_FromLong(isComplete ? 1 : 0);
 }
 
-PyObject* MaterialPy::hasPhysicalProperty(PyObject* args)
+PyObject* MaterialPy::hasPhysicalProperty(PyObject* args) const
 {
     char* name;
     if (!PyArg_ParseTuple(args, "s", &name)) {
@@ -355,7 +355,7 @@ PyObject* MaterialPy::hasPhysicalProperty(PyObject* args)
     return PyBool_FromLong(hasProperty ? 1 : 0);
 }
 
-PyObject* MaterialPy::hasAppearanceProperty(PyObject* args)
+PyObject* MaterialPy::hasAppearanceProperty(PyObject* args) const
 {
     char* name;
     if (!PyArg_ParseTuple(args, "s", &name)) {
@@ -366,7 +366,7 @@ PyObject* MaterialPy::hasAppearanceProperty(PyObject* args)
     return PyBool_FromLong(hasProperty ? 1 : 0);
 }
 
-PyObject* MaterialPy::hasLegacyProperties(PyObject* args)
+PyObject* MaterialPy::hasLegacyProperties(PyObject* args) const
 {
     if (!PyArg_ParseTuple(args, "")) {
         return nullptr;
@@ -481,7 +481,7 @@ Py::Dict MaterialPy::getLegacyProperties() const
     return dict;
 }
 
-PyObject* MaterialPy::getPhysicalValue(PyObject* args)
+PyObject* MaterialPy::getPhysicalValue(PyObject* args) const
 {
     char* name;
     if (!PyArg_ParseTuple(args, "s", &name)) {
@@ -525,7 +525,7 @@ PyObject* MaterialPy::setPhysicalValue(PyObject* args)
     return Py_None;
 }
 
-PyObject* MaterialPy::getAppearanceValue(PyObject* args)
+PyObject* MaterialPy::getAppearanceValue(PyObject* args) const
 {
     char* name;
     if (!PyArg_ParseTuple(args, "s", &name)) {
@@ -675,12 +675,12 @@ Py::Dict MaterialPy::getPropertyObjects() const
     return dict;
 }
 
-PyObject* MaterialPy::keys()
+PyObject* MaterialPy::keys() const
 {
     return Py::new_reference_to(this->getProperties().keys());
 }
 
-PyObject* MaterialPy::values()
+PyObject* MaterialPy::values() const
 {
     return Py::new_reference_to(this->getProperties().values());
 }

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from Base.Metadata import export, no_args, sequence_protocol, deprecated_attributes
+from Base.Metadata import export, constmethod, no_args, sequence_protocol, deprecated_attributes
 from Base.BaseClass import BaseClass
 from typing import Final
 
@@ -130,6 +130,7 @@ class Material(BaseClass):
         """Remove the physical model with the given UUID"""
         ...
 
+    @constmethod
     def hasPhysicalModel(self) -> bool:
         """Check if the material implements the physical model with the given UUID"""
         ...
@@ -142,30 +143,37 @@ class Material(BaseClass):
         """Remove the appearance model with the given UUID"""
         ...
 
+    @constmethod
     def hasAppearanceModel(self) -> bool:
         """Check if the material implements the appearance model with the given UUID"""
         ...
 
+    @constmethod
     def isPhysicalModelComplete(self) -> bool:
         """Check if the material implements the physical model with the given UUID, and has values defined for each property"""
         ...
 
+    @constmethod
     def isAppearanceModelComplete(self) -> bool:
         """Check if the material implements the appearance model with the given UUID, and has values defined for each property"""
         ...
 
+    @constmethod
     def hasPhysicalProperty(self) -> bool:
         """Check if the material implements the physical property with the given name"""
         ...
 
+    @constmethod
     def hasAppearanceProperty(self) -> bool:
         """Check if the material implements the appearance property with the given name"""
         ...
 
+    @constmethod
     def hasLegacyProperties(self) -> bool:
         """Returns true of there are legacy properties"""
         ...
 
+    @constmethod
     def getPhysicalValue(self) -> str:
         """Get the value associated with the property"""
         ...
@@ -174,6 +182,7 @@ class Material(BaseClass):
         """Set the value associated with the property"""
         ...
 
+    @constmethod
     def getAppearanceValue(self) -> str:
         """Get the value associated with the property"""
         ...
@@ -186,11 +195,13 @@ class Material(BaseClass):
         """Set the value associated with the property"""
         ...
 
+    @constmethod
     @no_args
     def keys(self) -> list:
         """Property keys"""
         ...
 
+    @constmethod
     @no_args
     def values(self) -> list:
         """Property values"""
