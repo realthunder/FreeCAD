@@ -698,3 +698,42 @@ left alone.
 
 TestPartDesignApp 127 OK, TestPartApp 125 OK; the Gui defects test 29
 checks, green.
+
+### The first candidates, and two fork defects under them (2026-09-26)
+
+| upstream | fork | before | after |
+|---|---|---|---|
+| `5ae67ee2f9` | `0ed2170050` | a polar pattern at -90 deg: clamped to ~0, the occurrences on each other, no error | turns the other way, as Reversed; -360 a full turn; the panel takes -360..360 |
+| `774ec2cc93` | `bdb6096034` | holes on circles and arcs only | on a sketch's points too, as BaseProfileType (upstream's property) chooses; the Hole panel and a preference for new holes |
+
+Deferred: `51be8e7b4e` (the Materials inspectors in the menu: the
+appearance one reads ShapeAppearance, which no fork view provider has; the
+Material port decides the menus, Part's included).
+
+Holes on points needed `ProfileBased::getProfileShape()` fixed first: with
+Profile as the commands set it, `(sketch, [''])`, it asked for the empty
+subname as a sub-element and got the object's first edge back, so only the
+first circle's hole was made. `getThroughAllLength()` made a face of the
+profile, which a sketch with a point is not.
+
+Found on the way, and fixed:
+
+- **A heap corruption in the render cache** (`04fbec3d6e`), since 2023:
+  `SoFCRenderCacheManager`'s late-pick and highlight path sensors erased
+  their own table entries, destroying themselves inside their callbacks,
+  and `SoDataSensor::trigger()` then wrote to the freed sensor. Silent on
+  the normal heap until a later allocation came from the corrupted block:
+  the Gui defects test died now and then with `Base::MemoryException` ("Not
+  enough memory available") from the global new handler. Under cdb's
+  debug heap it is an access violation in `SoBase::unref` every time a
+  PartDesign primitive is double clicked into edit. Found by logging every
+  `SoDelayQueueSensor::schedule` with its callback, which named the freed
+  sensor. The recipe (cdb from `tools\dbg`, a command file, `OutputDebugString`
+  markers from the driver) is in the session's scratchpad `s7/gt/`.
+- **The Draft panel stayed in pick mode after a neutral plane or pull
+  direction pick** (`92fbc563e8`): the button unchecked, but the next click
+  anywhere replaced the reference; the gate also outlived the panel and
+  crashed the next selection after its document closed.
+
+TestPartDesignApp 130 OK, TestPartApp 125 OK; the Gui defects test 32
+checks, five runs in a row green (it was about one in three failing).
