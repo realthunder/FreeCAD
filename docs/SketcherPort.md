@@ -31,7 +31,7 @@ Upstream's `f4665aa7b5` ("Core: support multiple active transactions") was
 evaluated and **declined**; `docs/TransactionLog.md` records why, and the
 direction the user wants instead.
 
-**Where the ledger stands (2026-09-25).** 1149 rows, of which 292 are open
+**Where the ledger stands (2026-09-25).** 1149 rows, of which 288 are open
 and undecided, down from 503 over three sessions of reading blobs rather
 than commits. First the 33 files the handler resyncs touched: 21 are
 identical to upstream's tip modulo whitespace, closing 74 rows at once
@@ -2582,6 +2582,53 @@ could save a fraction of 0.08 s. Guarded by
 - Check that the test's coordinates are on screen: the first empty box
   sat below the fitted view. Events there still work, but a picture of
   it shows nothing.
+
+### Arc labels and drags (session 95): 40 -> 36
+
+| row | verdict |
+|---|---|
+| `646b4381f9` | **adapted** `01fd3490ea`. Ledgered `partial(sync)`, but the `ARCLENGTH` datum type was not here at all: an arc length constraint drew an EMPTY label, measured, and dragging it went down the radius code, which rewrote its `LabelPosition` (0 -> 30.09). Taken at upstream's end state (`calculateArcLengthGeometry`, large-arc case included), fed from the fork's own `drawConstraints` |
+| `f3e1e6cec0` | **adapted** `01fd3490ea`. An arc's length and angle labels drag by the cursor's distance along the arc's middle direction, negative past the centre. The fork's angle drawing opened its number gap from `r` with its sign, which closes the gap once `r` is negative; both paths use `abs(r)` now |
+| `7bcaa766de` | **taken** `01fd3490ea`, the factor with it |
+| `df867a25b2` | **adapted** `01fd3490ea`, the arc case: an arc angle's end lines run back to the arc, through the centre when the label is past it. Ledgered `n/a(uncompiled)` -- see below |
+| `2cd45b07f7` | **adapted** `e8f9e4ac1d`. A selected arc grabbed by its centre dragged its rim, and a conic grabbed by its edge jumped its centre to the cursor, both measured. Not "rigid", whatever the upstream comment says: the solver holds only the centre (the same `initMove` upstream), so the radius grows on a centre drag, selected or not; what is restored is the unselected behaviour |
+| `eb61ee36a6` | **have**. The fork's press handler snaps `x, y` for the release too, and `setRelative()` snaps the start |
+
+**The number sits outside the arc, in pixels.** Upstream puts the arc
+length's number one text height beyond the dimension arc, in world
+units. The capture for the backend has no camera, so a screen distance
+cannot become a world one there. The glyph quad is emitted in native
+pixels behind the anchor, so it is shifted in its own y by the glyph's
+height (`textShift`); GL, the pick and the bounding box have a view and
+use `imgHeight`.
+
+**`n/a(uncompiled)` hid a missing feature.** `EditModeConstraintCoinManager.cpp`
+is not compiled here (decision 3): the fork draws constraints in
+`ViewProviderSketch::drawConstraints`. But a commit that changes what
+upstream's manager DRAWS is a change the fork's drawing may lack too.
+`df867a25b2` was one. So are the line cases of the same work: the fork's
+`SoDatumLabel` reads an angle's end-line lengths (`param4`, `param5`, the
+`74dd736e3c` half that is here), but `drawConstraints` sets them only for
+an arc, so a line or line-line angle label still gets the pixel-minimum
+ticks (`827781ab3f`, `dca00ec80e`). Not taken; the n/a rows under that
+file deserve the same reading.
+
+**Found on the way: a label never followed its constraint under bgfx.**
+`4711c5578f`. The capture reads a datum label through companion shapes
+that are not below it, and no field change reached them: set a DistanceX
+from 60 to 30 and "60 mm" stayed drawn across the old 60 units. Every
+drawing check above failed for that reason first. Guarded by
+`tests/gui/sketch-datum-follows-mode3.py`.
+
+Guarded by `tests/gui/sketch-arc-labels.py` (12 checks, 11 fail before,
+also run in mode 0) and `tests/gui/sketch-drag-arc-conic.py` (3 of 4 fail
+before).
+
+**Harness notes.** `Constraint.LabelDistance` is read-only from Python,
+so the test places labels by dragging them. A label drag that lands
+leaves the label preselected and drawn in the preselection colour, which
+a red-pixel check reads as nothing: clear it with
+`Gui.Selection.clearPreselection()` (there is no `removePreselection`).
 
 ## 7a. The constraint-tool hints (session 85)
 

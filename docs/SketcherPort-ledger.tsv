@@ -18,7 +18,7 @@ b0176c2d92	2024-01-17	Paddle	feature	1	0	have(sync)	10		Sketcher: add isPeriodic
 4acff3f66f	2024-01-17	Paddle	fix	0	0	have	10	taken b4b8f10a3b	Sketcher: polyline: fix ESC exit tool	Gui/DrawSketchHandlerLineSet.h
 64c867eb0e	2024-01-16	Paddle	fix	0	0	n/a(uncompiled)	190		Sketcher Fix radius arc helpers.	Gui/EditModeConstraintCoinManager.cpp Gui/EditModeConstraintCoinManager.h
 dca00ec80e	2024-01-16	Paddle	?	1	0	n/a(uncompiled)	10		Sketcher : improve single line angle rendering.	Gui/EditModeConstraintCoinManager.cpp
-df867a25b2	2024-01-16	Paddle	?	0	0	n/a(uncompiled)	3		Sketcher : arc angle render improvement.	Gui/EditModeConstraintCoinManager.cpp
+df867a25b2	2024-01-16	Paddle	?	0	0	n/a(uncompiled)	3	adapted 01fd3490ea: the arc case in the fork's own drawConstraints (EditModeConstraintCoinManager is not compiled); the line cases of the same end-line work (74dd736e3c feed half, dca00ec80e) are still missing there, SketcherPort.md 7b	Sketcher : arc angle render improvement.	Gui/EditModeConstraintCoinManager.cpp
 fd2e35b7eb	2023-11-26	Paddle	feature	0	0	partial(sync)	288		Sketcher: Add copy/cut/paste sketcher commands	Gui/CommandSketcherTools.cpp Gui/ShortcutListener.cpp Gui/ShortcutListener.h Gui/ViewProviderSketch.h Gui/Workbench.cpp
 a8b6e1e9c3	2024-01-11	Paddle	feature	0	0	have(sync)	332		Sketcher: python converter : add possibility to add lastGeoId to the constraint process.	App/PythonConverter.cpp App/PythonConverter.h
 8ed22b0fd8	2024-01-11	Paddle	?	0	0	have(sync)	124		Sketcher: copy paste : move from XML to python.	Gui/CommandSketcherTools.cpp
@@ -100,7 +100,7 @@ b3fe5bba28	2024-03-12	PaddleStroke	feature	0	0	partial(sync)	1738		Sketcher: Cha
 4f429e3288	2024-03-19	wmayer	fix	0	0	open	21		"Fixes #12186: Two new Sketcher preferences should show ""Restart required"" popup"	Gui/SketcherSettings.cpp Gui/SketcherSettings.h
 e4213fc10f	2024-02-16	PaddleStroke	feature	0	0	partial(sync)	1214		Sketcher: Symmetry tool rework.	App/SketchObject.cpp App/SketchObject.h Gui/CMakeLists.txt Gui/CommandSketcherTools.cpp Gui/DrawSketchHandlerSymmetry.h Gui/Resources/Sketcher.qrc Gui/Resources/icons/pointers/Sketcher_Pointer_Create_Symmetry.svg
 a8254a4e0c	2024-02-24	Florian Foinant-Willig	?	0	0	partial(sync)	171	partial 88c9baa853: Gui/CommandConstraints.cpp	Sketcher : ArcLength Constraint	App/Sketch.cpp App/planegcs/Constraints.cpp App/planegcs/Constraints.h App/planegcs/GCS.cpp App/planegcs/GCS.h App/planegcs/Geo.h Gui/CommandConstraints.cpp
-646b4381f9	2024-02-25	Florian Foinant-Willig	?	0	0	partial(sync)	85		Sketcher: ArcLength GUI	Gui/EditModeConstraintCoinManager.cpp Gui/ViewProviderSketch.cpp
+646b4381f9	2024-02-25	Florian Foinant-Willig	?	0	0	partial(sync)	85	adapted 01fd3490ea: ARCLENGTH end state (upstream calculateArcLengthGeometry); number shifted outward in glyph pixels (textShift), the capture has no camera; fed from the fork's own drawConstraints	Sketcher: ArcLength GUI	Gui/EditModeConstraintCoinManager.cpp Gui/ViewProviderSketch.cpp
 ab7c1423fb	2024-03-11	Florian Foinant-Willig	fix	0	0	open	4	taken 88c9baa853	fix undeclared M_PI	App/planegcs/Constraints.cpp
 f19df465ea	2024-03-21	Zheng, Lei	?	0	0	have(sync)	47		Toponaming/Part: Move sketcher override of getElementName over	App/SketchObject.cpp App/SketchObject.h
 55acedb83d	2024-03-24	bgbsww	feature	0	0	partial(sync)	94		Clean, enable disabled element map code in sketcher, add tests	App/SketchObject.cpp tests/App/SketchObject.cpp
@@ -646,7 +646,7 @@ ac07a56b75	2025-06-20	Benjamin Nauck	feature	0	0	open	319	partial 88c9baa853: Ap
 f1c200b204	2025-07-21	Chris Hennes	fix	0	0	n/a(uncompiled)	4		Sketcher: Fix multiplication result converted to larger type	Gui/EditModeGeometryCoinConverter.cpp
 25f1d28468	2025-07-23	Chris Hennes	fix	0	0	open	51		Tests: Ensure tests use a fixture that inits app	tests/App/Constraint.cpp
 e828c5da4d	2025-07-24	Syres916	fix	1	0	open	1		[Sketcher] Ensure All Reference Constraints are Read Only in the Property Editor	Gui/PropertyConstraintListItem.cpp
-f3e1e6cec0	2025-07-25	matthiasdanner	?	0	0	open	34		Sketcher: Display arc angle and length constraints beyond center point (#22651)	Gui/CommandConstraints.cpp Gui/ViewProviderSketch.cpp
+f3e1e6cec0	2025-07-25	matthiasdanner	?	0	0	open	34	adapted 01fd3490ea: signed LabelDistance for arc length and arc angle; the fork's angle gap measured from |r| in GL and capture	Sketcher: Display arc angle and length constraints beyond center point (#22651)	Gui/CommandConstraints.cpp Gui/ViewProviderSketch.cpp
 ab91372e28	2025-07-25	Chris Hennes	?	0	0	open	36	n/a: refactor/cleanup, no behaviour change	"Sketcher: Resolve ""Type confusion"" CodeQL critical warning"	App/SketchObject.cpp
 403056fa20	2025-07-25	Chris Hennes	?	0	0	open	98	n/a: refactor/cleanup, no behaviour change	"Sketcher: Resolve ""Declaration hides variable"""	App/SketchObject.cpp App/SketchObject.h
 3679a2adca	2025-07-25	Chris Hennes	?	0	0	open	197	n/a: extracts processFace from upstream rebuildExternalGeometry; the fork has its own importFace lambda	"Sketcher: Extract ""processFace"" function"	App/SketchObject.cpp
@@ -813,7 +813,7 @@ bf697ca710	2025-12-13	Kacper Donat	refactor	0	0	n/a(uncompiled)	9		Gui: Use larg
 22552848fd	2025-12-17	chris	fix	1	0	open	5	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	sketcher: fixes issue #26167 no polygon distort when repositioning / constraining	Gui/DrawSketchControllableHandler.h
 4cd81136b6	2025-12-21	Chris	feature	0	0	open	261	superseded: upstream withdrew it in 26723cf209; its live placement preview is already true here, Gui/Document.cpp:1210 re-derives the editing transform on any placement change of an edited object	Sketcher: Allow live preview of sketch placement (#26033)	CMakeLists.txt Gui/ViewProviderSketch.cpp SketcherTests/TestPlacementUpdate.py TestSketcherApp.py
 176ef6da4e	2025-12-22	marbocub	fix	0	0	open	374	adapted 92e5004b51: mirror about the local origin, not the Placement; fork's copied-expression path corrected too	Sketcher: add reverse mapping correction to Carbon Copy (#25745)	App/SketchObject.cpp App/SketchObject.pyi App/SketchObjectPyImp.cpp CMakeLists.txt SketcherTests/TestSketchCarbonCopyReverseMapping.FCStd SketcherTests/TestSketchCarbonCopyReverseMapping.py TestSketcherApp.py
-eb61ee36a6	2025-12-23	Chris	fix	0	0	open	52		sketcher: fix issue #25992 keep snapped position when releasing mosue for updated sketch points (#26102)	Gui/ViewProviderSketch.cpp
+eb61ee36a6	2025-12-23	Chris	fix	0	0	open	52	have: the fork's press handler snaps x, y for the release, and setRelative() snaps the start	sketcher: fix issue #25992 keep snapped position when releasing mosue for updated sketch points (#26102)	Gui/ViewProviderSketch.cpp
 670da3d796	2025-12-25		noise	0	0	open	377	partial 88c9baa853: App/Analyse.h App/AppSketcher.cpp App/AppSketcherPy.cpp App/ExternalGeometryExtension.cpp App/ExternalGeometryExtension.h App/ExternalGeometryExtensionPyImp.cpp App/ExternalGeometryFacade.cpp App/ExternalGeometryFacade.h	SPDX [ 41 ][ Src / Mod / Sketcher ] (#25135)	App/Analyse.h App/AppSketcher.cpp App/AppSketcherPy.cpp App/CMakeLists.txt App/Constraint.cpp App/Constraint.h App/ConstraintPyImp.cpp App/ExternalGeometryExtension.cpp App/ExternalGeometryExtension.h App/ExternalGeometryExtensionPyImp.cpp App/ExternalGeometryFacade.cpp App/ExternalGeometryFacade.h 
 4892154faf	2025-12-26	horseDeveloper	fix	1	0	open	10		Fixing Leftover references from migration from freecadweb.org (#26163)	Gui/DrawSketchHandlerOffset.h Gui/Resources/icons/constraints/Constraint_Dimension.svg Gui/Resources/icons/constraints/Constraint_Dimension_Driven.svg Gui/Resources/icons/tools/Sketcher_Rotate.svg Gui/Resources/icons/tools/Sketcher_Scale.svg
 cc60502708	2025-12-29	theo-vt	?	0	0	open	56		Sketcher.scale: Scale label of modified constraints (#26442)	Gui/DrawSketchHandlerScale.h Gui/EditDatumDialog.cpp
@@ -864,7 +864,7 @@ af053f19f5	2026-01-19	PaddleStroke	fix	0	0	open	8	have: box selection already us
 54d235f8a5	2026-01-09	PaddleStroke	?	0	0	open	86		Sketcher: Show constraint type in the list	Gui/TaskSketcherConstraints.cpp
 6a0d59b0c1	2026-01-23	Amon Sha	fix	0	0	open	4	have: folded into 60befe30bc (lone angle branch)	Merge pull request #27077 from amon-sha/fix_sketcher_autoscale_segfault	Gui/DrawSketchHandlerScale.h
 c9041132f9	2026-01-23	PaddleStroke	feature	0	0	open	60		Sketcher: add switch between radius and diameter (#26794)	Gui/EditDatumDialog.cpp Gui/EditDatumDialog.h Gui/InsertDatum.ui
-7bcaa766de	2026-01-26	PaddleStroke	fix	0	0	open	2		Sketcher: Fix arc angle dragging distance	Gui/ViewProviderSketch.cpp
+7bcaa766de	2026-01-26	PaddleStroke	fix	0	0	open	2	taken 01fd3490ea (with f3e1e6cec0)	Sketcher: Fix arc angle dragging distance	Gui/ViewProviderSketch.cpp
 d3d6459484	2026-01-24	Vassily Checkin	fix	0	0	open	10	taken ecf0c288e7 (latent here)	Sketcher: fix intermittent crash on sketch exit	Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h
 a0847c22c7	2026-01-27	PaddleStroke	fix	0	0	open	9		Sketcher: fix logic flaw in ConstraintLineByAngle	Gui/Utils.cpp
 00c3422c1f	2026-01-29	PaddleStroke	feature	0	0	open	63		Sketcher: Tooltip when hovering expression driven constraint (#25954)	Gui/ViewProviderSketch.cpp
@@ -872,7 +872,7 @@ a0847c22c7	2026-01-27	PaddleStroke	fix	0	0	open	9		Sketcher: fix logic flaw in C
 41e3cdb9a5	2026-02-04	Tomas Pikalek	feature	0	0	n/a(uncompiled)	13		Sketcher: Reimplement strikethrough of inactive constraint labels	Gui/EditModeConstraintCoinManager.cpp
 5f952812c3	2026-02-08	William Skellenger	fix	0	0	open	15	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Fix tooltips on mirror checkboxes in sketcher (#27131)	Gui/DrawSketchHandlerSymmetry.h
 c4317f88f8	2026-02-04	chris jones @ipatch	fix	0	0	open	6	adapted 3bfb748012	"sketcher: fixes #27281 fix access out of bounds crash with ""remove axes alignment"""	App/SketchObject.cpp
-2cd45b07f7	2026-01-22	Yash Suthar	fix	0	0	open	13		Sketcher: Fix snap while drag and fix drag for arc	Gui/ViewProviderSketch.cpp
+2cd45b07f7	2026-01-22	Yash Suthar	fix	0	0	open	13	adapted e8f9e4ac1d: arc centre kept; conics relative. A centre drag is not rigid here or upstream (same initMove)	Sketcher: Fix snap while drag and fix drag for arc	Gui/ViewProviderSketch.cpp
 ecbe21ca03	2026-02-08	Chris Hennes	?	0	0	open	1		Sketcher: Annotate unused parameter	Gui/EditDatumDialog.cpp
 ec18d4e250	2026-02-08	Chris Hennes	?	0	0	open	3		Tests/Sketcher: Eliminate unused variables	tests/App/SketchObjectChanges.cpp
 076c5916b5	2026-02-08	Chris Hennes	?	0	0	n/a(uncompiled)	95		Sketcher: Remove unneeded parameters from seekConstraintPosition	Gui/EditModeConstraintCoinManager.cpp Gui/EditModeConstraintCoinManager.h
