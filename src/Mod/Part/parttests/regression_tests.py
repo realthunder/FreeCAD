@@ -477,3 +477,35 @@ class RegressionTests(unittest.TestCase):
     def test_OptimalBox(self):
         box = Part.makeBox(1, 1, 1)
         self.assertTrue(box.optimalBoundingBox(True, False).isValid())
+
+    def test_shape_material_saves_under_its_type(self):
+        """
+        A Part::Feature's ShapeMaterial is a Materials::PropertyMaterial, a type
+        the Materials module registers. Part's init imports Materials, as
+        upstream's does; before it did, a headless session saved every
+        ShapeMaterial as type "BadType" -- the material was lost on restore, and
+        each such property cost a sys.path walk while the file was read
+        (docs/FileBlobsManager.md sec 14.6).
+        """
+        import os
+        import shutil
+        import tempfile
+        import zipfile
+        import FreeCAD
+
+        doc = FreeCAD.newDocument("ShapeMaterialType")
+        path = os.path.join(tempfile.mkdtemp(), "shape_material_type.FCStd")
+        try:
+            obj = doc.addObject("Part::Feature", "Box")
+            obj.Shape = Part.makeBox(1, 1, 1)
+            self.assertEqual(obj.getTypeIdOfProperty("ShapeMaterial"),
+                             "Materials::PropertyMaterial")
+            doc.saveAs(path)
+            with zipfile.ZipFile(path) as archive:
+                xml = archive.read("Document.xml").decode("utf-8")
+            self.assertIn('<Property name="ShapeMaterial" type="Materials::PropertyMaterial"',
+                          xml)
+            self.assertNotIn('type="BadType"', xml)
+        finally:
+            FreeCAD.closeDocument(doc.Name)
+            shutil.rmtree(os.path.dirname(path), ignore_errors=True)

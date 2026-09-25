@@ -640,7 +640,8 @@ void PropertyContainer::Restore(Base::XMLReader &reader)
             // module that owns it, so a property whose class lives in another
             // module answers badType until something imports that module --
             // Part::Feature's ShapeMaterial is a Materials::PropertyMaterial,
-            // and no headless session imports Materials. Every other restore
+            // and until Part's init imported Materials, no headless session
+            // did. Every other restore
             // path resolves a saved type name through Base::Type with
             // bLoadModule set (Document::addObject for objects,
             // DynamicProperty for dynamic ones), which loads the module named

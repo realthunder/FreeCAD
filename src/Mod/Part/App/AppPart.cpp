@@ -206,6 +206,18 @@ PyObject* Part::PartExceptionOCCDimensionError;
 
 PyMOD_INIT_FUNC(Part)
 {
+    // Part::Feature carries a Materials::PropertyMaterial (ShapeMaterial),
+    // whose type is registered by the Materials module's init. Without it
+    // the property's type is bad: a headless session saved every shape's
+    // ShapeMaterial as type "BadType", and restore dropped it. Upstream
+    // imports it here too.
+    try {
+        Base::Interpreter().runString("import Materials");
+    }
+    catch (const Base::Exception& e) {
+        PyErr_SetString(PyExc_ImportError, e.what());
+        PyMOD_Return(nullptr);
+    }
     Base::Console().Log("Module: Part\n");
 
     // This is highly experimental and we should keep an eye on it

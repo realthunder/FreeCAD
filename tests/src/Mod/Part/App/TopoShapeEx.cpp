@@ -53,10 +53,12 @@ protected:
     {
         // FreeCAD derives the module search path from the running executable's
         // location. For a test binary that is not the build root, so "import Part"
-        // would fail; point the interpreter at the built modules first. The two
-        // directories come from the build system, see this suite's CMakeLists.
+        // would fail; point the interpreter at the built modules first -- Material's
+        // too, which Part's init imports. The directories come from the build
+        // system, see this suite's CMakeLists.
         Base::Interpreter().runString("import sys; sys.path[:0] = ['" FC_BUILD_LIB_DIR
-                                     "', '" FC_BUILD_MOD_PART_DIR "']");
+                                     "', '" FC_BUILD_MOD_PART_DIR
+                                     "', '" FC_BUILD_MOD_MATERIAL_DIR "']");
         Base::Interpreter().runString("import Part");
         _docName = App::GetApplication().getUniqueDocumentName("test");
         App::GetApplication().newDocument(_docName.c_str(), "testUser");
