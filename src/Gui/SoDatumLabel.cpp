@@ -1206,43 +1206,15 @@ bool SoDatumLabel::updateImageSize(SoState * state, int & srcw, int & srch)
     // is needed during render-cache capture because GLRender never runs then
     // (in render-cache modes SoFCSelectionRoot draws through the render cache,
     // not the per-shape GL traversal), so the members would otherwise be stale.
-    float scale = getScaleFactor(state);
+    bool hasText = computeImageSize(state, srcw, srch);
 
-    const SbString* s = string.getValues(0);
-    bool hasText = (s->getLength() > 0);
-    srcw = 1;
-    srch = 1;
-
-    if (hasText) {
-        if (!this->glimagevalid) {
-            drawImage();
-            this->glimagevalid = true;
-        }
-        // Keep the companion quad's texture in step with the current bitmap.
-        // Gated on imagesynced (not glimagevalid) because GLRender may have
-        // already validated the bitmap without ever feeding the companion.
-        if (this->imageTexture && !this->imagesynced) {
-            syncImageTexture();
-            this->imagesynced = true;
-        }
-        SbVec2s imgsize;
-        int nc;
-        const unsigned char* dataptr = this->image.getValue(imgsize, nc);
-        if (!dataptr) {
-            hasText = false;
-        }
-        else {
-            srcw = imgsize[0];
-            srch = imgsize[1];
-            float aspectRatio = (float)srcw / (float)srch;
-            this->imgHeight = scale * (float)srch;
-            this->imgWidth  = aspectRatio * (float)this->imgHeight;
-        }
-    }
-
-    if (this->datumtype.getValue() == SYMMETRIC) {
-        this->imgHeight = scale * 25.0f;
-        this->imgWidth  = scale * 25.0f;
+    // Keep the companion quad's texture in step with the current bitmap.
+    // Gated on imagesynced (not glimagevalid) because GLRender may have
+    // already validated the bitmap without ever feeding the companion.
+    if (this->string.getValues(0)->getLength() > 0 && this->imageTexture
+        && !this->imagesynced) {
+        syncImageTexture();
+        this->imagesynced = true;
     }
 
     // Calibrate the companion autozoom so the glyph quad (emitted in native
@@ -1263,6 +1235,43 @@ bool SoDatumLabel::updateImageSize(SoState * state, int & srcw, int & srch)
             if (this->imageZoom->scaleFactor.getValue() != sf)
                 this->imageZoom->scaleFactor.setValue(sf);
         }
+    }
+
+    return hasText;
+}
+
+bool SoDatumLabel::computeImageSize(SoState * state, int & srcw, int & srch)
+{
+    float scale = getScaleFactor(state);
+
+    const SbString* s = string.getValues(0);
+    bool hasText = (s->getLength() > 0);
+    srcw = 1;
+    srch = 1;
+
+    if (hasText) {
+        if (!this->glimagevalid) {
+            drawImage();
+            this->glimagevalid = true;
+        }
+        SbVec2s imgsize;
+        int nc;
+        const unsigned char* dataptr = this->image.getValue(imgsize, nc);
+        if (!dataptr) {
+            hasText = false;
+        }
+        else {
+            srcw = imgsize[0];
+            srch = imgsize[1];
+            float aspectRatio = (float)srcw / (float)srch;
+            this->imgHeight = scale * (float)srch;
+            this->imgWidth  = aspectRatio * (float)this->imgHeight;
+        }
+    }
+
+    if (this->datumtype.getValue() == SYMMETRIC) {
+        this->imgHeight = scale * 25.0f;
+        this->imgWidth  = scale * 25.0f;
     }
 
     return hasText;
@@ -1633,6 +1642,12 @@ void SoDatumLabel::generatePrimitives(SoAction * action)
         return;
 
     // Ray-pick path: keep only the text label box selectable (unchanged).
+    // The box is sized for the view picked in. The members were last set by
+    // whatever traversed before -- GLRender for this view in mode 0, but in
+    // the render-cache modes GLRender never runs, and the number of a
+    // dimension could not be picked at all.
+    int srcw = 1, srch = 1;
+    computeImageSize(action->getState(), srcw, srch);
     // Initialisation check (needs something more sensible) prevents an infinite loop bug
     if (this->imgHeight <= FLT_EPSILON || this->imgWidth <= FLT_EPSILON)
         return;

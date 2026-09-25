@@ -30,6 +30,9 @@ if(BUILD_GUI)
           InitGui.py
           TestSketcherGui.py
     )
+    list (APPEND Sketcher_TestScripts
+          SketcherTests/TestConstraintPreselectionGui.py
+    )
 endif(BUILD_GUI)
 
 set(Sketcher_Profiles

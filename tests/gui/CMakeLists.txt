@@ -406,6 +406,13 @@ fc_add_gui_test(GuiSketchLineAngleLabels_tests_run
                 sketch-line-angle-labels.py
                 --timeout 200)
 
+# Upstream's Sketcher preselection tests (SketcherTests/TestConstraintPreselectionGui.py)
+# on the fork's own hover pick. Under the default renderer the number of a
+# dimension could not be picked: its pick box was never sized for the view.
+fc_add_gui_test(GuiSketchPreselectionUpstream_tests_run
+                sketch-preselection-upstream.py
+                --timeout 400)
+
 # A selected arc grabbed by its centre drags by its centre, not its rim, and
 # a conic grabbed by its edge moves by the cursor's move instead of jumping
 # its centre to the cursor (upstream 2cd45b07f7).

@@ -156,6 +156,8 @@ private:
     // traversal (render-cache capture), never during ray picking.
     void generateLeaderPrimitives(SoAction * action);
     bool updateImageSize(SoState * state, int & srcw, int & srch);
+    // imgWidth/imgHeight for the view of this traversal, nothing else
+    bool computeImageSize(SoState * state, int & srcw, int & srch);
     SbVec3f getLabelTextCenterDistance(const SbVec3f&, const SbVec3f&);
     SbVec3f getLabelTextCenterDiameter(const SbVec3f&, const SbVec3f&);
     SbVec3f getLabelTextCenterAngle(const SbVec3f&);
