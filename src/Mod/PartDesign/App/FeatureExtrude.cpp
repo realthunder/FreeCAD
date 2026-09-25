@@ -242,6 +242,7 @@ void FeatureExtrude::updateProperties(const std::string &method)
     else if (method == "ThroughAll") {
         isMidplaneEnabled = true;
         isReversedEnabled = !Midplane.getValue();
+        isTaperVisible = true;
     }
     else if (method == "UpToFirst") {
         isOffsetEnabled = true;
@@ -464,6 +465,12 @@ App::DocumentObjectExecReturn *FeatureExtrude::buildExtrusion(ExtrudeOptions opt
             params.innerTaperAngleFwd = this->TaperInnerAngle.getValue() * M_PI / 180.0;
             params.innerTaperAngleRev = this->TaperInnerAngleRev.getValue() * M_PI / 180.0;
             params.linearize = this->Linearize.getValue();
+            // Through all tapers over the through-all length, as the untapered
+            // prism in generatePrism() runs. It took Length, so a tapered
+            // pocket switched to ThroughAll cut only Length deep (upstream
+            // d52260b2f4 lets the taper be set there, too).
+            if (method == "ThroughAll")
+                L = getThroughAllLength();
             if (L2 == 0.0 && Midplane.getValue()) {
                 params.lengthFwd = L/2;
                 params.lengthRev = L/2;

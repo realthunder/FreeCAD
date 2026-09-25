@@ -701,8 +701,9 @@ void TaskExtrudeParameters::setCheckboxes()
         isReversedEnabled = !ui->checkBoxMidplane->isChecked();
     }
     else if (mode == Modes::ThroughAll && isPocket()) {
-        isOffsetEditVisible = true;
-        isOffsetEditEnabled = false; // offset may have some meaning for through all but it doesn't work
+        // No offset: it has no meaning through all, and a disabled field only
+        // said so (upstream 6d238a93e1). A taper does (d52260b2f4).
+        isTaperEditVisible = true;
         isMidplaneEnabled = true;
         isMidplaneVisible = true;
         isReversedEnabled = !ui->checkBoxMidplane->isChecked();

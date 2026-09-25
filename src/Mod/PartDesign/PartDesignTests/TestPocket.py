@@ -22,6 +22,7 @@
 import unittest
 
 import FreeCAD
+import math
 import TestSketcherApp
 
 class TestPocket(unittest.TestCase):
@@ -203,6 +204,32 @@ class TestPocket(unittest.TestCase):
             self.Pocket.UpToFace = (self.Pad, [faces[8]])
             self.Doc.recompute()
             self.assertAlmostEqual(self.Pocket.Shape.Volume, padVolume, places=1)
+
+    def testThroughAllWithTaper(self):
+        """A taper through all goes through all (upstream d52260b2f4); the
+        taper path took Length, so it cut only Length deep."""
+        self.Body = self.Doc.addObject("PartDesign::Body", "Body")
+        box = self.Body.newObject("PartDesign::AdditiveBox", "Box")
+        box.Length = box.Width = 40
+        box.Height = 30
+        self.Doc.recompute()
+        sketch = self.Body.newObject("Sketcher::SketchObject", "Square")
+        sketch.Support = (box, ["Face6"])
+        sketch.MapMode = "FlatFace"
+        TestSketcherApp.CreateRectangleSketch(sketch, (15, 15), (10, 10))
+        self.Doc.recompute()
+        pocket = self.Body.newObject("PartDesign::Pocket", "Pocket")
+        pocket.Profile = sketch
+        pocket.Length = 5
+        pocket.TaperAngle = 5
+        pocket.Type = "ThroughAll"
+        self.Doc.recompute()
+        self.assertIn("Up-to-date", pocket.State)
+        self.assertFalse(pocket.getPropertyStatus("TaperAngle"))
+        # a frustum from 10 x 10 at the top, widening 30 * tan(5 deg) a side
+        bottom = 10 + 2 * 30 * math.tan(math.radians(5))
+        removed = 30 / 3 * (100 + bottom ** 2 + 10 * bottom)
+        self.assertAlmostEqual(40 * 40 * 30 - pocket.Shape.Volume, removed, delta=0.5)
 
     def tearDown(self):
         #closing doc
