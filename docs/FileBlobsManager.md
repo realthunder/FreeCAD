@@ -1159,3 +1159,40 @@ flushed (the directory entry with it) before any log row that names the
 blob commits. The log's writer already stores a value's blob entities
 before it appends the row; the rule adds one flush there, and only when a
 commit brings a new blob.
+
+### 15.9 Phase 0 on Linux (2026-09-25)
+
+`scripts/archbench.py` with the pack store's legs: `segments` (zstd members
+at level 3 in zip segments, each written as a temporary file, flushed and
+renamed; open = read the central directories; a generation rewrite with
+half the members dead and 5 % new; a merge) and `save` (the blob half of
+a save: deflating every blob at the save's level 3, against copying the
+zstd members raw). Run on this box's ext4 home, in `~/.cache/FreeCAD`,
+twice, identical to the millisecond. MiSTer is not on this box, so the
+document is synthetic at its scale: 5402 Part solids (boxes, holes,
+fillets), one blob each, 53.1 MB raw, 12.1 MB deflated in the archive.
+
+| leg | create s | index s | read all, random s | delete the store s |
+| --- | --- | --- | --- | --- |
+| A archive copy, inflate on read | 0.00 | 0.015 | 0.12 | -- |
+| D file per blob (today) | 0.09 | -- | 0.03 | 0.036 |
+| E segments, zstd | 0.27 | 0.002 | 0.10 | 0.000 |
+
+- zstd level 3 holds the blobs in **10.8 MB**, against 12.1 MB deflated in
+  the archive and 12.7 MB at the save's deflate level 3.
+- **Save: 0.46 s deflating every blob, 0.02 s copying the zstd members
+  raw.** The compression E pays at create (most of its 0.27 s) is the
+  compression a save pays today every time, paid once per blob instead.
+- A generation rewrite of a 10.8 MB segment, half dead and 5 % new: 0.015 s;
+  of a 2 MB segment (a 2 MB cap, 6 segments): 0.005 s; a merge of two
+  quartered 2 MB segments: 0.003 s.
+- Reads cost zstd decoding, 0.10 s for all 5402, less than inflating the
+  archive copy (0.12 s); a BRep parse dwarfs either.
+
+Linux does not have the problem: a file per blob costs 0.09 s to write and
+0.036 s to delete here, against 23 s and ~9 ms a file on the monitored
+laptop (14.2, 15.1). What this run shows is that the pack store does not
+make Linux slower where it matters -- save drops by 0.44 s, deleting the
+store to nothing -- and costs it compression once per new blob. The rows
+that decide are the laptop's, on MiSTer, with the same script (legs
+`files,segments,save`).
