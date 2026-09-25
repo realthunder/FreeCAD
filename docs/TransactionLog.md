@@ -3786,7 +3786,7 @@ concurrent writers (17.5) stay phase 6 and later.
 
 ### 26.2 Proposed shape
 
-1. **Schema 6.** `branch(id, name UNIQUE, from_version, from_seq,
+1. **Store schema 5.** `branch(id, name UNIQUE, from_version, from_seq,
    head_seq, id_base, created, closed)`; `txn.branch` (the branch id, `main`
    = 1 for every existing row). An older store gains both on open.
    `parent` becomes the current branch's head, not the previous seq; seq
@@ -3841,7 +3841,7 @@ concurrent writers (17.5) stay phase 6 and later.
 
 ### 26.3 Build order (proposed)
 
-1. **4.a** Schema 6, `parent` as the branch head, chain walks; both suites
+1. **4.a** Store schema 5, `parent` as the branch head, chain walks; both suites
    unchanged (a log that never branches must not notice).
 2. **4.b** Create and switch, App and Python; gtests that branch, edit
    both sides, switch back and forth and compare every property with the
@@ -3858,3 +3858,158 @@ concurrent writers (17.5) stay phase 6 and later.
 | Is a switch an undo step | **No.** Each branch keeps its own undo stack; a switch is a record with no ops on the arriving branch, and Ctrl+Z after it undoes that branch's last edit. |
 | How far back undo reaches after a switch | **Back to this open**, today's limit: the arriving branch's rows written since the document was opened, as cold stubs. Older rows stay reachable through the browser (selective undo, restore). |
 | Version numbers on 16.6's restart | **Numbering continues**: versions stay one per-document sequence and the new `main`'s first version takes the next number. 16.6's "restarts at a fresh version 1" is withdrawn. |
+
+### 26.5 4.a and 4.b as built (2026-09-25)
+
+**4.a, the store.** Store schema 5: `branch(id, name UNIQUE, from_version,
+from_seq, head_seq, id_base, last_id, created, closed)`, `txn.branch`, and
+`version.branch` now the branch's id where it was the text `main`. An older
+store gains all of it on open, every row and version on `main` (id 1) with
+its head the newest row. `append` moves the branch's head inside the same
+SQL transaction as the row. `TransactionStore::chain(head, from)` is a
+recursive CTE over `parent`, the rows of one branch oldest first;
+`lastOpOn` takes a head and looks only at that chain. The log numbers every
+row through `TransactionLog::number`: `parent` is the current branch's
+head, not the previous seq, and the branch is kept in `meta` (`branch`) so a
+recovery continues on it. The walks that were linear go through the chain:
+`_replayLog`, `_rebuildUndoFromLog`, recovery's anchor (the newest version
+on the chain), and the selective-undo refuse rule, which now also refuses a
+row that is not on the current branch.
+
+One defect the migration found on the way: **a read-only open wrote.**
+The embedded guard (16.4) opens the copy inside the file read-only, as a
+blob file, and the store's open ran its schema steps regardless -- harmless
+while every step was a no-op at the current schema, fatal the moment a
+step wrote (the new `main` row did: "attempt to write a readonly
+database"). Worse, an embedded file saved at schema 4 would have hit the
+`ALTER TABLE` and had its history set aside. A read-only store is now read
+as it is: no journal mode set, no table made, no schema moved; the guard
+reads only `meta`, which every schema has, and the store the log adopts is
+a writable copy, migrated when it opens. Gtest `schema4StoreMovesOntoMain`
+covers both opens.
+
+**4.b, create and switch.** `Document::createBranch(name, version, seq)`
+and `Document::switchBranch(name)`, over four helpers:
+
+- `_leaveBranch` resolves the pending afters, snapshots the tip unless it
+  already is a version -- only records (save, snapshot, switch, branch)
+  after the chain's newest version -- and keeps the branch's `last_id`.
+- `_checkoutHead` makes the document the state at the log's head, in place
+  and unrecorded (`replaying`): the newest version on the chain read into a
+  scratch document (`_readVersion`, factored out of `restoreVersion`) and
+  applied by `_applyVersion` with the view providers (its new `views`
+  argument), then `_replayLog` over the rows after it. A chain with no
+  version starts from no objects.
+- `TransactionLog::forgetLiveValues` after it: the pending map, the held
+  set (`_recorded`), `_hashById` and the commit copies kept for the next
+  edit all described the state left, and the next snapshot serialises
+  afresh.
+- `_arriveOnBranch` sets the id counter to the largest of the branch's
+  `last_id`, its `id_base` and any id the checkout brought, and rebuilds
+  the stacks from the chain's rows after `undoFloor` -- the log's last seq
+  when the document was opened (26.4) -- as cold stubs.
+
+A switch clears both stacks first (their steps are the other branch's),
+then `setBranch`, checkout, forget, arrive, and a `switch` record on the
+branch arrived on. A create from the current head changes nothing in the
+document and keeps the stacks hot -- the chain behind the new head is the
+one they were made on -- and only moves the log to the new branch; from a
+version or a row behind the head it checks that point out like a switch.
+The fork version is named (`branch <name>`) if it was not; a row with no
+version gets one, snapshotted once the document is there. `id_base` is the
+largest id or base any branch has, plus a random 2^16..2^20. A `branch`
+record opens the new branch. Eviction keeps each branch's newest version,
+so a switch only replays its own tail.
+
+Python: `getTransactionBranches()`, `createTransactionBranch(name,
+version=0, seq=0)`, `switchTransactionBranch(name)`,
+`renameTransactionBranch(name, newName)`; `getTransactionLog()` and
+`getTransactionVersions()` rows name their branch.
+
+Gtests: `branchesAreChainsInTheStore`, `schema4StoreMovesOntoMain`,
+`branchesSwitchInPlace` (create at the head keeps the steps; main and side
+edited apart, switched back and forth -- the same C++ objects, values, ids,
+each branch's own undo names, cold undo and redo on a branch, the side's
+id counter going on), `branchFromAnOlderVersion`,
+`evictionKeepsEachBranchsNewest`, `recoveryContinuesOnTheBranch`. All 35
+log gtests pass, with `FC_TXNLOG_CHECK_COPIES` too. With
+`TransactionLogVerify` on, `evictsUnnamedVersions` and
+`reverseDeltasFollowSupersession` fail: under verification a composed
+snapshot hashes its full bytes, so `docxml_hash` names no stored entity,
+which those two assume. That is the tests, not branches, and not chased.
+A Part box through the Python API: its shape comes back from the version on
+each switch, 1000 and 3000 mm^3, without a recompute.
+
+### 26.6 4.c as built (2026-09-25)
+
+**`Branch`.** An embedded save sets a third document-level dynamic
+property beside `History` and `Version`: `Branch` (`PropertyString`,
+hidden, read-only, `NoModify`), the name of the branch the file is. The log
+itself does not need it -- the copy's `meta` names the current branch, and
+`openStore` continues on it -- so it is for whoever reads the file, a
+FreeCAD that knows no log included. A restore to a version leaves it alone,
+with `History` and `Version`.
+
+**The embedded copy keeps each branch's newest version.** The retention of
+16.4 dropped every unnamed version from the copy, which would have dropped
+every branch's tip snapshot and left a switch in the file opened elsewhere
+replaying from the fork. The copy now keeps the newest version of each
+branch as well as the named ones -- the eviction rule of 26.2 item 5.
+
+**The closed branch of 16.6.** A guard mismatch no longer discards the
+copy. `TransactionLog::adoptClosed` adopts it as `adoptStore` does, closes
+every branch in it, renames its `main` to `main@<save date>` (`#2`, `#3`
+if taken), opens a new, empty `main` from the copy's last version, and
+puts the log on it; the on-open snapshot then makes the file as found the
+new `main`'s first version, its `restore` row a root (`parent` 0). The
+number it takes is past the copy's `version_counter` -- the number the save
+that wrote the file took in the store it came from, which the file edited
+since is not. A closed branch cannot be switched to (`switchBranch`
+throws, pointing at branching from one of its versions); branching from
+its versions works.
+
+Python cases `Document.TransactionBranchCases`: the branch travels in the
+file (saved on `side`, opened on `side`, switched to `main` there), and a
+file whose `LastModifiedDate` was restamped elsewhere opens with three
+branches -- two closed, `main@...` among them -- its first `main` version
+numbered past the save's, rooted at 0, the closed branch refused, and a
+branch revived from the fork version.
+
+### 26.7 4.d, the panel, as built (2026-09-25)
+
+A second bar on the log panel: **Branch:** a switcher listing every branch,
+the closed ones marked and disabled, whose choice calls `switchBranch`; a
+**Branch...** button making a branch from the current head; and **All
+branches**, off by default, so the transaction list shows the current
+branch's chain only. The list gains a Branch column; the filter text and
+the chain decide together which rows show, recomputed on every refresh, so
+a switch re-filters rows already listed. "Branch from here..." on a
+transaction row and "Branch from version N..." on a version ask a name and
+call `createBranch` with the row or the version. The status line names the
+branch beside the mode (`[session, branch side]`).
+
+A switch commits nothing, so none of the panel's refresh triggers fired.
+`App::Document::signalSwitchBranch` is emitted after a switch and after a
+create; the panel refreshes on it, and it is there for the rest of the Gui
+(undo actions, the tree) to follow a switch too.
+
+**The Gui check.** `scripts/transaction-log-branch-check.py`, one GUI run
+in a fresh user home:
+
+    cd build/conda-relwithdebinfo-801
+    QT_QPA_PLATFORM=offscreen FREECAD_USER_HOME=/tmp/fchome-bc \
+      BRANCHCHECK_OUT=/tmp/bc/out.txt ~/works/sw/fcad/.conda/run.sh ./bin/FreeCAD \
+      ~/works/sw/fcad/scripts/transaction-log-branch-check.py
+
+A red box on `main`; on `side` it is made longer and blue, and a green
+cylinder is added (its colour set outside any transaction, an implicit
+step). Switching to `main` and back checks the length, the volume from the
+version's shape, both colours -- the view providers following the switch,
+including one on an object the switch recreated -- the cylinder's absence
+and return, and each branch's own undo steps. Then the panel: both
+branches listed, `side` current, `main`-only rows hidden, and a switch made
+through the switcher, after which the box is red and short again and the
+rows re-filtered. 19 checks, all PASS on 2026-09-25; the script puts the
+log setting back before it exits.
+
+Not yet: trimming (4.e).
