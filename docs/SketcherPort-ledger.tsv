@@ -966,7 +966,7 @@ e228ab8616	2026-04-14	Joao Matos	feature	0	0	open	15		Gui: split OVP accept from
 9d5e68b184	2026-04-21	Roy-043	?	0	0	open	2		Sketcher: change 'Change Value' to 'Edit Value' in task panel	Gui/TaskSketcherConstraints.cpp
 67b3f4e143	2026-04-22	PaddleStroke	feature	0	0	open	10		Merge pull request #29568 from PaddleStroke/patch-263157	Gui/Command.cpp Gui/Workbench.cpp
 3d87975faf	2026-04-23	Turan Furkan Topak	?	0	0	open	125		Sketcher: Better Distance/X/Y Placement (#29538)	Gui/CommandConstraints.cpp Gui/ViewProviderSketch.h
-a5bf17b144	2026-04-24	Olaf ogin	?	0	0	open	15	have (Sketcher half): blockedPreselection + rmvPreselect() already restore the gate cursor. Core half (box selection honours a selection gate) is outside this port -- not taken	Core: Box selection filter and cursor improvement (#28982)	Gui/ViewProviderSketch.cpp
+a5bf17b144	2026-04-24	Olaf ogin	?	0	0	open	15	adapted d15b8e026a: a batch leaves out what the gate refuses, quietly; box adds as one batch. Sketcher half have. getGatedTypes/getFirstVertexFromSubElement not taken: the fork box visits every type (measured: vertex gate finds all 8), and a gated box over 2400 faces takes 0.08 s	Core: Box selection filter and cursor improvement (#28982)	Gui/ViewProviderSketch.cpp
 00228821d0	2026-04-12	Celeste Wouters	fix	0	0	open	58		Sketcher: make line type settings visible on dark theme, fix #29305	Gui/SketcherSettings.cpp
 b4de78d3d7	2026-04-16	Celeste Wouters	?	0	0	open	12		Sketcher: make line type settings DPI-aware	Gui/SketcherSettings.cpp
 ab9188a5dc	2026-04-16	Celeste Wouters	refactor	0	0	open	205		Sketcher: properly use theme colors in line type settings	Gui/SketcherSettings.cpp Gui/SketcherSettings.h

@@ -2546,12 +2546,30 @@ progress shows only in the edit scene's `SoCoordinate3` nodes, because
 | `9bff63e38d` | **taken** `08c58fabce`, for parity. The box's redraw now draws the object's geometry, not the solver's copy. Upstream's symptom (construction lines turning solid) cannot happen here, measured: the fork's toggle command solves on the way out, construction is a colour read off the object, and `draw()` does not recolour while the mode is still the rubber band's. All the flag decides here is draw order |
 | `39329e547f` + `e469eb5ccb` | **adapted** `dbf819f658`. A right press during a box already cancelled it here (the both-buttons branch), but the right release then found the edit idle and opened the context menu, measured. The block flag is set where the fork cancels and cleared by the next right press |
 | `7b85239093` | **adapted** `8b24f4785f`: blue and solid left to right (window), green and dashed right to left (touch). Uses upstream's `StyleParameters.h`, resolved through `Gui::Application`'s manager. The fork's `Rubberband` carries both colour and stipple into its Coin overlay, so mode 3 draws them too |
-| `a5bf17b144` | **have**, the Sketcher half. It restores a gate's forbidden cursor when the pointer leaves geometry, and the fork already does that: `blockedPreselection` plus `rmvPreselect()`. The core half, box selection honouring a selection gate, is a core feature outside this port and was not taken |
+| `a5bf17b144` | **adapted** `d15b8e026a` (core half, taken on request), **have** (Sketcher half). The Sketcher half restores a gate's forbidden cursor when the pointer leaves geometry, which the fork already does: `blockedPreselection` plus `rmvPreselect()`. The core half is below |
 
 Guarded by `tests/gui/sketch-box-selection.py`
 (`GuiSketchBoxSelection_tests_run`). The menu and colour checks fail
 without their fixes. The construction check passes either way and
 guards what the user sees.
+
+**Box selection under a selection gate** (`d15b8e026a`, core). The
+fork's box already selected only what an active gate allows: it adds
+each pick through `addSelection()`, which asks the gate. But every
+element turned away counted as a refused click, with a status bar
+message, the forbidden cursor and a beep. That was 15 refusals for one
+box over a Part box under a vertex-only gate, counted with a Python gate
+that counts what it refuses. Now `addSelections()` sets `gateQuiet` for
+its batch, a refusal under it returns without a word (as upstream's
+batch does), and the box command adds its picks as one batch.
+
+Upstream's `getGatedTypes()` and `getFirstVertexFromSubElement()` were
+not taken. Upstream's box stopped at the first element type with a hit,
+so a vertex filter needed them to reach vertices at all. The fork's box
+visits every type and finds all 8. Measured on 400 boxes (2400 faces):
+the gated box takes 0.08 s against 0.9 s ungated, so skipping types
+could save a fraction of 0.08 s. Guarded by
+`tests/gui/box-selection-gate.py` (`GuiBoxSelectionGate_tests_run`).
 
 **Harness traps.**
 - A box pressed within the double-click interval of the last click is
