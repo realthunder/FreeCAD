@@ -708,6 +708,8 @@ checks, green.
 | `bd03414893`, `20c01000a1` | `cccbe6cc5c` | Space on a face picked in the view toggled the feature it came from: nothing to see, or that feature shown in place of the Tip | the body; from the tree, still the feature |
 | `acf04c7f1e`, `588f4c3b00`, `003e239daf`, `edb565046d`, `ce91285e4d` (+ test `0fdb02c6eb`) | `b197747496` | holes had ISO and UTS threads only | NPT and BSP pipe threads, BSW and BSF Whitworth; each builds a modelled thread |
 | `07e7918baf` | `108285e65f` | a counterbore or countersink beyond its standard's sizes: the hole + 0.1, 0.1 deep | estimated from the diameter (an M68 counterbore 112 x 74) |
+| `3f58f83f2d` | `5a1e4fdcd0` | hand-written size lists beside the tables | the lists built from the tables |
+| `dc53d3dba2`, `8f2e330a53`, `601c0f9b09`, `0dc6cbd16f` | `f2b5692a3c`, `fc68395bd6` | a thread type change reset the size: M6 to UNC gave #1 | the nearest size by diameter and the old size's pitch: M6 to UNC 1/4, M10 to fine M10x1.25 |
 
 The five thread commits merged three-way without a conflict. One upstream
 bug came with them: the BSP size list had "1 3/8", which the BSP table does
@@ -717,8 +719,10 @@ in passing (`3f58f83f2d`, the lists built from the tables). Removed here,
 and every other type's list checked against its table row by row. The
 rest of the family is deferred: the ISO tyre valves (`551c15b48f`) rest on
 the Hole panel redesign and the clearance enum renames, and the
-closest-designation set (`dc53d3dba2`, `601c0f9b09`, `0dc6cbd16f`,
-`8f2e330a53`) on `3f58f83f2d`.
+closest-designation set followed once `3f58f83f2d` was in. Upstream's
+pitch-aware version (`601c0f9b09`) took the "old" pitch from the new type's
+table at the old size's index, some other size's pitch; here it is the old
+size's own, remembered with ThreadDiameter.
 
 The spacebar pair is done without upstream's Tree.cpp interception: a
 selection picked in the view names an element and one from the tree does
@@ -755,5 +759,5 @@ Found on the way, and fixed:
   anywhere replaced the reference; the gate also outlived the panel and
   crashed the next selection after its document closed.
 
-TestPartDesignApp 133 OK, TestPartApp 125 OK; the Gui defects test 34
+TestPartDesignApp 134 OK, TestPartApp 125 OK; the Gui defects test 34
 checks, six runs in a row green (it was about one in three failing).
