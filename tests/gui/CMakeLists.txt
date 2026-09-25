@@ -399,6 +399,13 @@ fc_add_gui_test(GuiSketchArcLabels_tests_run
                 sketch-arc-labels.py
                 --timeout 240)
 
+# A line angle's end lines reach the lines it measures: a single line's
+# horizontal reference through its middle, and a line pair continued out
+# to, or joined to, the label's arc (upstream 827781ab3f, dca00ec80e).
+fc_add_gui_test(GuiSketchLineAngleLabels_tests_run
+                sketch-line-angle-labels.py
+                --timeout 200)
+
 # A selected arc grabbed by its centre drags by its centre, not its rim, and
 # a conic grabbed by its edge moves by the cursor's move instead of jumping
 # its centre to the cursor (upstream 2cd45b07f7).

@@ -7222,9 +7222,12 @@ Restart:
 
                         SbVec3f p0;
                         double startangle,range,endangle;
-                        // how far the end lines run in from the label's arc,
-                        // world units; 0 leaves them at their pixel minimum
-                        double endLineLength = 0.;
+                        // how far the end lines at the start and end of the
+                        // label's arc run in toward the vertex (negative: out
+                        // away from it), world units; 0 leaves them at their
+                        // pixel minimum
+                        double endLineLength1 = 0.;
+                        double endLineLength2 = 0.;
                         if (Constr->Second != GeoEnum::GeoUndef) {
                             Base::Vector3d dir1, dir2;
                             if(Constr->Third == GeoEnum::GeoUndef) { //angle between two lines
@@ -7238,10 +7241,12 @@ Restart:
 
                                 bool flip1 = (Constr->FirstPos == PointPos::end);
                                 bool flip2 = (Constr->SecondPos == PointPos::end);
-                                dir1 = (flip1 ? -1. : 1.) * (lineSeg1->getEndPoint()-lineSeg1->getStartPoint());
-                                dir2 = (flip2 ? -1. : 1.) * (lineSeg2->getEndPoint()-lineSeg2->getStartPoint());
+                                dir1 = (flip1 ? -1. : 1.) * (lineSeg1->getEndPoint()-lineSeg1->getStartPoint()).Normalize();
+                                dir2 = (flip2 ? -1. : 1.) * (lineSeg2->getEndPoint()-lineSeg2->getStartPoint()).Normalize();
                                 Base::Vector3d pnt1 = flip1 ? lineSeg1->getEndPoint() : lineSeg1->getStartPoint();
                                 Base::Vector3d pnt2 = flip2 ? lineSeg2->getEndPoint() : lineSeg2->getStartPoint();
+                                Base::Vector3d pnt12 = flip1 ? lineSeg1->getStartPoint() : lineSeg1->getEndPoint();
+                                Base::Vector3d pnt22 = flip2 ? lineSeg2->getStartPoint() : lineSeg2->getEndPoint();
 
                                 // line-line intersection
                                 {
@@ -7276,6 +7281,24 @@ Restart:
 
                                 range = Constr->getValue(); // WYSIWYG
                                 startangle = atan2(dir1.y,dir1.x);
+
+                                // Each end line joins the label's arc to its
+                                // line: in to the far end when the whole line
+                                // lies inside the arc, out to the near end when
+                                // it lies beyond, none when the arc crosses it
+                                // (upstream 827781ab3f)
+                                Base::Vector3d vertex(p0[0], p0[1], 0.);
+                                auto endLine = [&](const Base::Vector3d &dir,
+                                                   const Base::Vector3d &nearEnd,
+                                                   const Base::Vector3d &farEnd) {
+                                    Base::Vector3d toNear = dir * 2 * Constr->LabelDistance - (nearEnd - vertex);
+                                    Base::Vector3d toFar = dir * 2 * Constr->LabelDistance - (farEnd - vertex);
+                                    return toFar.Dot(dir) > 0 ? toFar.Length()
+                                        : toNear.Dot(dir) < 0 ? -toNear.Length()
+                                        : 0.;
+                                };
+                                endLineLength1 = endLine(dir1, pnt1, pnt12);
+                                endLineLength2 = endLine(dir2, pnt2, pnt22);
                             }
                             else {//angle-via-point
                                 Base::Vector3d p = getSolvedSketch().getPoint(Constr->Third, Constr->ThirdPos);
@@ -7299,6 +7322,13 @@ Restart:
                                 p0 = Base::convertTo<SbVec3f>((lineSeg->getEndPoint()+lineSeg->getStartPoint())/2);
 
                                 Base::Vector3d dir = lineSeg->getEndPoint()-lineSeg->getStartPoint();
+                                // The angle is from the horizontal through the
+                                // line's middle: that reference runs all the way
+                                // in, the line's own end line in to the line's
+                                // end if the arc is past it (upstream dca00ec80e)
+                                double toEnd = 2 * Constr->LabelDistance - dir.Length() / 2;
+                                endLineLength1 = 2 * Constr->LabelDistance;
+                                endLineLength2 = toEnd > 0. ? toEnd : 0.;
                                 startangle = 0.;
                                 range = atan2(dir.y,dir.x);
                                 endangle = startangle + range;
@@ -7310,7 +7340,8 @@ Restart:
                                 // back to the arc from the label's arc, which is
                                 // 2 * LabelDistance out -- through the centre when
                                 // that is negative (upstream df867a25b2, f3e1e6cec0)
-                                endLineLength = 2 * Constr->LabelDistance - arc->getRadius();
+                                endLineLength1 = 2 * Constr->LabelDistance - arc->getRadius();
+                                endLineLength2 = endLineLength1;
 
                                 arc->getRange(startangle, endangle,/*emulateCCWXY=*/true);
                                 range = endangle - startangle;
@@ -7327,8 +7358,8 @@ Restart:
                         asciiText->param1    = Constr->LabelDistance;
                         asciiText->param2    = startangle;
                         asciiText->param3    = range;
-                        asciiText->param4    = endLineLength;
-                        asciiText->param5    = endLineLength;
+                        asciiText->param4    = endLineLength1;
+                        asciiText->param5    = endLineLength2;
 
                         asciiText->pnts.setNum(2);
                         SbVec3f *verts = asciiText->pnts.startEditing();
