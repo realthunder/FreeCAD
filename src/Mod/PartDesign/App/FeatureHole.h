@@ -73,6 +73,21 @@ public:
     App::PropertyAngle          TaperedAngle;
     App::PropertyBool           UseCustomThreadClearance;
     App::PropertyLength         CustomThreadClearance;
+    App::PropertyInteger        BaseProfileType;
+
+    /// What of the profile a hole is centred on: bits of BaseProfileType
+    enum BaseProfileTypeOptions {
+        OnPoints    = 1 << 0,
+        OnCircles   = 1 << 1,
+        OnArcs      = 1 << 2,
+
+        OnPointsCirclesArcs = OnPoints | OnCircles | OnArcs,
+        OnCirclesArcs = OnCircles | OnArcs
+    };
+    /// The panel's and the preference's choice (0 circles and arcs, 1 all,
+    /// 2 points) as BaseProfileType bits, and back; -1 for anything else
+    static int baseProfileOption_idxToBitmask(int index);
+    static int baseProfileOption_bitmaskToIdx(int bitmask);
 
     /** @name methods override feature */
     //@{
@@ -110,6 +125,7 @@ public:
 
 protected:
     void onChanged(const App::Property* prop) override;
+    void setupObject() override;
     static const App::PropertyAngle::Constraints floatAngle;
 
 private:

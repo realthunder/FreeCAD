@@ -410,7 +410,9 @@ TopoShape ProfileBased::getProfileShape() const {
     TopoShape shape;
     const auto &subs = Profile.getSubValues();
     auto profile = Profile.getValue();
-    if (subs.empty())
+    // An empty subname is the whole object, as the commands write it:
+    // asked for as a sub-element it came back as the object's first edge
+    if (subs.empty() || (subs.size() == 1 && subs.front().empty()))
         shape = Part::Feature::getTopoShape(profile);
     else {
         std::vector<TopoShape> shapes;
@@ -671,7 +673,11 @@ void ProfileBased::addOffsetToFace(TopoShape& upToFace, const gp_Dir& dir, doubl
 
 double ProfileBased::getThroughAllLength() const
 {
-    auto profileshape = getVerifiedFace();
+    // A hole's profile need not make a face -- a sketch's points, say --
+    // and only its extent matters here, so the profile as it is will do
+    auto profileshape = getVerifiedFace(/*silent*/ true);
+    if (profileshape.isNull())
+        profileshape = getProfileShape();
     auto base = getBaseShape();
     Bnd_Box box;
     BRepBndLib::Add(base.getShape(), box);

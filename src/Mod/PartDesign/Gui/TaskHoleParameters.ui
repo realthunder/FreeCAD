@@ -759,6 +759,39 @@ over 90: larger hole radius at the bottom</string>
      </layout>
     </widget>
    </item>
+   <item>
+    <layout class="QHBoxLayout" name="BaseProfileLayout" stretch="2,5">
+     <item>
+      <widget class="QLabel" name="labelBaseProfileType">
+       <property name="text">
+        <string>Center holes on</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QComboBox" name="BaseProfileType">
+       <property name="toolTip">
+        <string>Which of the profile's elements a hole is centered on</string>
+       </property>
+       <item>
+        <property name="text">
+         <string>Circles and arcs</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Points, circles and arcs</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Points</string>
+        </property>
+       </item>
+      </widget>
+     </item>
+    </layout>
+   </item>
   </layout>
  </widget>
  <customwidgets>

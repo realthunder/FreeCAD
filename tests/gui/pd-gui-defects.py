@@ -22,7 +22,9 @@ user meets it.
   - an LCS attached to a vertex leaves a gap at its origin, so the vertex
     can still be picked (upstream 51f546f1f6);
   - a sketch picked as a Draft's neutral plane is taken (upstream
-    51f4ad7432).
+    51f4ad7432);
+  - the Hole panel chooses what a hole is centred on, a sketch's points
+    among them (upstream 774ec2cc93).
 
 Each was reproduced on the tree before its fix by the same steps, driven
 through the MCP console. The Pad delete is the control, which showed its
@@ -423,7 +425,52 @@ def test_draft_sketch_plane():
         check("a sketch picked as the Draft's neutral plane is taken",
               draft.NeutralPlane and draft.NeutralPlane[0] == sk and "Invalid" not in draft.State,
               "%s %s" % (draft.NeutralPlane, draft.State))
+        # The pick ends the pick mode: a click after it replaced the plane,
+        # and the gate outlived the panel
+        top = [i for i, f in enumerate(box.Shape.Faces, 1) if abs(f.normalAt(0, 0).z - 1) < 1e-9][0]
+        FreeCADGui.Selection.clearSelection()
+        FreeCADGui.Selection.addSelection(doc.Name, body.Name, "%s.Face%d" % (box.Name, top))
+        events()
+        settle(300)
+        check("a click after the pick leaves the neutral plane alone",
+              draft.NeutralPlane and draft.NeutralPlane[0] == sk, draft.NeutralPlane)
     FreeCADGui.ActiveDocument.resetEdit()
+    events()
+    FreeCAD.closeDocument(doc.Name)
+    events()
+
+
+def test_hole_on_points():
+    doc, body = new_body("PDHolePoints")
+    box = doc.addObject("PartDesign::AdditiveBox", "Box")
+    body.addObject(box)
+    box.Length = box.Width = 40
+    sk = doc.addObject("Sketcher::SketchObject", "Sketch")
+    body.addObject(sk)
+    sk.MapMode = "Deactivated"
+    sk.Placement = FreeCAD.Placement(V(0, 0, 10), FreeCAD.Rotation())
+    sk.addGeometry(Part.Circle(V(10, 10, 0), V(0, 0, 1), 1))
+    sk.setConstruction(sk.addGeometry(Part.Point(V(30, 30, 0))), False)
+    doc.recompute()
+    FreeCADGui.Selection.clearSelection()
+    FreeCADGui.Selection.addSelection(doc.Name, body.Name, sk.Name + ".")
+    FreeCADGui.runCommand("PartDesign_Hole")
+    settle(800)
+    hole = [o for o in doc.Objects if o.isDerivedFrom("PartDesign::Hole")][0]
+    combo = [w for w in QtWidgets.QApplication.allWidgets()
+             if isinstance(w, QtWidgets.QComboBox) and w.isVisible()
+             and w.objectName() == "BaseProfileType"]
+    if check("the Hole panel has its base profile choice", len(combo) == 1, len(combo)):
+        # the panel previews the tool; the cut waits for OK
+        got = []
+        for index in (1, 0, 2):
+            combo[0].setCurrentIndex(index)
+            events()
+            doc.recompute()
+            got.append((hole.BaseProfileType, len(hole.AddSubShape.Solids)))
+        check("a new hole drills on points, circles and arcs as the panel chooses",
+              got == [(7, 2), (6, 1), (1, 1)], got)
+    FreeCADGui.Control.closeDialog()
     events()
     FreeCAD.closeDocument(doc.Name)
     events()
@@ -436,7 +483,8 @@ def run():
     try:
         for test in (test_move, test_delete, test_edit_mode, test_transparency,
                      test_transparency_mapped, test_planar_sketch, test_body_from_base,
-                     test_lcs_vertex_pick, test_draft_sketch_plane):
+                     test_lcs_vertex_pick, test_draft_sketch_plane,
+                     test_hole_on_points):
             try:
                 test()
             except Exception:

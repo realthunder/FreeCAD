@@ -132,6 +132,7 @@ void DlgSettingsGeneral::saveSettings()
     ui->checkObjectNaming->onSave();
     ui->comboBoxCommandOverride->onSave();
     ui->comboBoxWrapFeature->onSave();
+    ui->comboDefaultProfileTypeForHole->onSave();
     ui->checkAutoGroupSolids->onSave();
     ui->checkBoxAuxGroup->onSave();
     ui->checkSplitEllipsoid->onSave();
@@ -156,6 +157,7 @@ void DlgSettingsGeneral::loadSettings()
     ui->checkObjectNaming->onRestore();
     ui->comboBoxCommandOverride->onRestore();
     ui->comboBoxWrapFeature->onRestore();
+    ui->comboDefaultProfileTypeForHole->onRestore();
     ui->checkAutoGroupSolids->onRestore();
     ui->checkBoxAuxGroup->onRestore();
     ui->checkSplitEllipsoid->onRestore();

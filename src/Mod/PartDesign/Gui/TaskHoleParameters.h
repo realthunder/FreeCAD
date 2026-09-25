@@ -84,6 +84,7 @@ public:
     bool getModelThread() const;
     long getThreadDepthType() const;
     double getThreadDepth() const;
+    int getBaseProfileType() const;
 
 private Q_SLOTS:
     void threadedChanged();
@@ -112,6 +113,7 @@ private Q_SLOTS:
     void customThreadClearanceChanged(double value);
     void threadDepthTypeChanged(int index);
     void threadDepthChanged(double value);
+    void baseProfileTypeChanged(int index);
 
 private:
     class Observer : public App::DocumentObserver {

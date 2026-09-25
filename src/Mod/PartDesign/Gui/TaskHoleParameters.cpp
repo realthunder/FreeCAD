@@ -126,6 +126,8 @@ TaskHoleParameters::TaskHoleParameters(ViewProviderHole* HoleView, QWidget* pare
             this, &TaskHoleParameters::threadDepthTypeChanged);
     connect(ui->ThreadDepth, qOverload<double>(&Gui::QuantitySpinBox::valueChanged),
             this, &TaskHoleParameters::threadDepthChanged);
+    connect(ui->BaseProfileType, qOverload<int>(&QComboBox::currentIndexChanged),
+            this, &TaskHoleParameters::baseProfileTypeChanged);
 
     PartDesign::Hole* pcHole = static_cast<PartDesign::Hole*>(vp->getObject());
 
@@ -254,6 +256,11 @@ void TaskHoleParameters::refresh()
     ui->CustomThreadClearance->setValue(pcHole->CustomThreadClearance.getValue());
     ui->ThreadDepthType->setCurrentIndex(pcHole->ThreadDepthType.getValue());
     ui->ThreadDepth->setValue(pcHole->ThreadDepth.getValue());
+    {
+        QSignalBlocker block(ui->BaseProfileType);
+        ui->BaseProfileType->setCurrentIndex(
+            PartDesign::Hole::baseProfileOption_bitmaskToIdx(pcHole->BaseProfileType.getValue()));
+    }
 
     ui->Threaded->setChecked(pcHole->Threaded.getValue());
     ui->Threaded->setDisabled(std::string(pcHole->ThreadType.getValueAsString()) == "None");
@@ -414,6 +421,16 @@ void TaskHoleParameters::modelThreadChanged()
     ui->ThreadDepth->setEnabled(ui->Threaded->isChecked() && ui->ModelThread->isChecked() && std::string(pcHole->ThreadDepthType.getValueAsString()) == "Dimension");
 
     recomputeFeature();
+}
+
+void TaskHoleParameters::baseProfileTypeChanged(int index)
+{
+    PartDesign::Hole* pcHole = static_cast<PartDesign::Hole*>(vp->getObject());
+    int bits = PartDesign::Hole::baseProfileOption_idxToBitmask(index);
+    if (bits > 0) {
+        pcHole->BaseProfileType.setValue(bits);
+        recomputeFeature();
+    }
 }
 
 void TaskHoleParameters::threadDepthTypeChanged(int index)
@@ -1078,6 +1095,15 @@ void TaskHoleParameters::changedObject(const App::Document&, const App::Property
         }
         ui->ThreadDepthType->setDisabled(ro);
     }
+    else if (&Prop == &pcHole->BaseProfileType) {
+        // -1, an unlisted combination set from Python, shows no choice
+        int index = PartDesign::Hole::baseProfileOption_bitmaskToIdx(pcHole->BaseProfileType.getValue());
+        if (ui->BaseProfileType->currentIndex() != index) {
+            QSignalBlocker block(ui->BaseProfileType);
+            ui->BaseProfileType->setCurrentIndex(index);
+        }
+        ui->BaseProfileType->setDisabled(ro);
+    }
     else if (&Prop == &pcHole->ThreadDepth) {
         ui->ThreadDepth->setEnabled(true);
         if (ui->ThreadDepth->value().getValue() != pcHole->ThreadDepth.getValue()) {
@@ -1218,6 +1244,11 @@ bool TaskHoleParameters::getModelThread() const
     return ui->ModelThread->isChecked();
 }
 
+int TaskHoleParameters::getBaseProfileType() const
+{
+    return PartDesign::Hole::baseProfileOption_idxToBitmask(ui->BaseProfileType->currentIndex());
+}
+
 long TaskHoleParameters::getThreadDepthType() const
 {
     return ui->ThreadDepthType->currentIndex();
@@ -1249,6 +1280,8 @@ void TaskHoleParameters::apply()
         FCMD_OBJ_CMD(obj, "ModelThread = " << (getModelThread() ? 1 : 0));
     if (!pcHole->ThreadDepthType.isReadOnly())
         FCMD_OBJ_CMD(obj, "ThreadDepthType = " << getThreadDepthType());
+    if (!pcHole->BaseProfileType.isReadOnly() && getBaseProfileType() > 0)
+        FCMD_OBJ_CMD(obj, "BaseProfileType = " << getBaseProfileType());
     if (!pcHole->ThreadDepth.isReadOnly())
         FCMD_OBJ_CMD(obj, "ThreadDepth = " << getThreadDepth());
     if (!pcHole->UseCustomThreadClearance.isReadOnly())

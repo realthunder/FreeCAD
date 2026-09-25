@@ -175,6 +175,44 @@ class TestHole(unittest.TestCase):
         self.assertIn("Invalid", hole.State)
         self.assertAlmostEqual(box.Shape.Volume, 4000)
 
+    def testBaseProfileType(self):
+        """Holes on a sketch's points as well as its circles and arcs
+        (upstream 774ec2cc93): BaseProfileType's bits choose, a new hole
+        takes the preference (all three by default), and one restored
+        without the property keeps circles and arcs."""
+        import Part
+        self.Body = self.Doc.addObject("PartDesign::Body", "Body")
+        box = self.Body.newObject("PartDesign::AdditiveBox", "Box")
+        box.Length = box.Width = 40
+        box.Height = 10
+        self.Doc.recompute()
+        sketch = self.Body.newObject("Sketcher::SketchObject", "Points")
+        sketch.MapMode = "Deactivated"
+        sketch.Placement = App.Placement(App.Vector(0, 0, 10), App.Rotation())
+        sketch.addGeometry(Part.Circle(App.Vector(10, 10, 0), App.Vector(0, 0, 1), 1))
+        point = sketch.addGeometry(Part.Point(App.Vector(30, 30, 0)))
+        # a point is added as construction; a real one is toggled
+        sketch.setConstruction(point, False)
+        self.Doc.recompute()
+        hole = self.Body.newObject("PartDesign::Hole", "Hole")
+        # as PartDesign_Hole writes it
+        hole.Profile = (sketch, [""])
+        hole.Diameter = 6
+        hole.DepthType = "Dimension"
+        hole.Depth = 5
+        hole.DrillPoint = "Flat"
+        self.assertEqual(hole.BaseProfileType, 7)
+        one = pi * 9 * 5
+        for bits, holes, at_point in ((7, 2, True), (6, 1, False), (1, 1, True)):
+            hole.BaseProfileType = bits
+            self.Doc.recompute()
+            self.assertNotIn("Invalid", hole.State, bits)
+            removed = box.Shape.cut(hole.Shape)
+            self.assertAlmostEqual(removed.Volume, holes * one, places=4, msg=bits)
+            near_point = [s for s in removed.Solids
+                          if (s.CenterOfMass - App.Vector(30, 30, 7.5)).Length < 1e-6]
+            self.assertEqual(bool(near_point), at_point, bits)
+
     def testProfileCylindricalFace(self):
         """A hole on the face of an existing hole is drilled along its axis
         (upstream 7481a5d8dd, af83b6883e); it went radially, the normal at
