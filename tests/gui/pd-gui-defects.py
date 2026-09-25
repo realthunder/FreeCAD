@@ -12,7 +12,8 @@ user meets it.
   - a PartDesign feature's double click opens the user's edit mode, as a
     Part feature's does (upstream f34f15dc60);
   - a Body's Transparency leaves its Tip's MapFaceColor on, so the next
-    feature still maps the colours (upstream 1844fdd443);
+    feature still maps the colours (upstream 1844fdd443), and sticks when
+    the Tip maps transparency too;
   - PartDesign_NewSketch takes a B-spline face that is planar within 2e-7
     (upstream eebb7f7829).
 
@@ -249,6 +250,43 @@ def test_transparency():
     events()
 
 
+def test_transparency_mapped():
+    """The body maps its colours from the Tip (its MapTransparency is on).
+    With the Tip's on as well -- a preference -- a body Transparency did not
+    stick: switching the Tip's mapping off remapped the body from the Tip's
+    old colours before the value was handed down, and both ended at 0."""
+    for tip_maps in (True, False):
+        doc, body = new_body("PDTransparencyMapped")
+        box = doc.addObject("PartDesign::AdditiveBox", "Box")
+        body.addObject(box)
+        doc.recompute()
+        box.ViewObject.MapTransparency = tip_maps
+        events()
+        body.ViewObject.Transparency = 50
+        events()
+        got = (body.ViewObject.Transparency, box.ViewObject.Transparency,
+               box.ViewObject.MapTransparency)
+        check("Tip MapTransparency %s: the body's Transparency sticks, and the Tip "
+              "stops mapping transparency" % tip_maps, got == (50, 50, False), got)
+        FreeCAD.closeDocument(doc.Name)
+        events()
+    # and a colour set on the body is still one: the Tip takes it and stops
+    # mapping colours
+    doc, body = new_body("PDBodyColour")
+    box = doc.addObject("PartDesign::AdditiveBox", "Box")
+    body.addObject(box)
+    doc.recompute()
+    events()
+    body.ViewObject.ShapeColor = (0.0, 1.0, 0.0)
+    events()
+    colours = set(tuple(round(x, 2) for x in c[:3]) for c in box.ViewObject.DiffuseColor)
+    check("a ShapeColor set on the body paints the Tip and ends its mapping",
+          not box.ViewObject.MapFaceColor and colours == {(0.0, 1.0, 0.0)},
+          "MapFaceColor=%s %s" % (box.ViewObject.MapFaceColor, colours))
+    FreeCAD.closeDocument(doc.Name)
+    events()
+
+
 def test_planar_sketch():
     surf = Part.BSplineSurface()
     poles = [[V(10 * i, 10 * j, 0) for j in range(4)] for i in range(4)]
@@ -282,7 +320,7 @@ def run():
     timer.start(50)
     try:
         for test in (test_move, test_delete, test_edit_mode, test_transparency,
-                     test_planar_sketch):
+                     test_transparency_mapped, test_planar_sketch):
             try:
                 test()
             except Exception:
