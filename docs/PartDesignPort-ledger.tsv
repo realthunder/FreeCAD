@@ -66,7 +66,7 @@ a7470332f7	2024-04-02	wmayer	refactor		0	0	open	10		PD: replace static_cast with
 252707a803	2024-04-03	bgbsww	feature		0	0	open	154		Add an initial test to show TNP (#13233)	CMakeLists.txt PartDesignTests/TestTopologicalNamingProblem.py PartDesignTests/__init__.py TestPartDesignApp.py
 495a96a0f5	2024-03-17	David Carter	?		0	0	open	19		Material: Material appearance	Gui/Command.cpp Gui/CommandPrimitive.cpp Gui/ViewProviderDatum.cpp Gui/ViewProviderDressUp.cpp Gui/ViewProviderShapeBinder.cpp Gui/Workbench.cpp
 14ed89f903	2024-04-05	wmayer	feature		0	0	open	2		Material: add workbench manipulator	Gui/Workbench.cpp
-3a34fe080a	2024-04-09	wmayer	fix		1	0	open	84		Mod: Show regressions in shape colouring	TestPartDesignGui.py
+3a34fe080a	2024-04-09	wmayer	fix		1	0	open	84	have (settled in the GUI, sec 6 Open rows; alpha is opacity here, MapFaceColor remaps booleans)	Mod: Show regressions in shape colouring	TestPartDesignGui.py
 780481f6ed	2024-04-06	wmayer	fix		0	0	open	16	n/a (Fork's appearance applies the material card only while following it)	PD: fix shape appearance of datum features, shape binder and sub-shape binder	Gui/ViewProviderDatum.cpp Gui/ViewProviderShapeBinder.cpp Gui/ViewProviderShapeBinder.h
 83ea7e4355	2024-04-08	bgbsww	?		0	0	open	519		Upgrade Toponaming tests	PartDesignTests/TestTopologicalNamingProblem.py
 82c3e107d7	2024-04-07	Zheng, Lei	?		0	0	open	681		TopoShape/Part: Bring in PartDesign dependencies	App/Feature.cpp App/Feature.h App/FeatureAddSub.cpp App/FeatureAddSub.h App/FeatureExtrude.cpp App/FeatureExtrude.h App/FeatureSketchBased.cpp App/FeatureSketchBased.h
@@ -106,7 +106,7 @@ f304b0123c	2024-05-11	bgbsww	fix		0	0	open	40	superseded (Fork's Feature::onChan
 e7993e053f	2024-05-15	marcuspollio	feature		0	0	open	16		Address feedback	Gui/TaskTransformedMessages.cpp Gui/Workbench.cpp
 b72a8c4222	2024-05-15	bgbsww	feature		0	0	open	307		Toponaming: Bring in Chamfer, Fillet code and add tests (#14035)	App/FeatureExtrude.cpp App/FeatureExtrude.h App/FeatureFillet.cpp App/FeatureLoft.cpp App/FeaturePad.cpp App/FeaturePocket.cpp App/FeaturePocket.h App/FeatureRevolution.cpp App/FeatureSketchBased.cpp App/FeatureSketchBased.h PartDesignTests/TestTopologicalNamingProblem.py
 f662357537	2024-05-17	Andre Althaus	?		0	0	open	274		Change PartDesign Pad and Revolution tree icons	Gui/Resources/PartDesign.qrc Gui/Resources/icons/Tree_PartDesign_Pad.svg Gui/Resources/icons/Tree_PartDesign_Revolution.svg Gui/ViewProviderPad.cpp Gui/ViewProviderRevolution.cpp
-2657bbee4d	2024-05-17	bgbsww	fix		0	0	open	2		Minor test tweaks, and small fixes to pass tests	PartDesignTests/TestTopologicalNamingProblem.py
+2657bbee4d	2024-05-17	bgbsww	fix		0	0	open	2	n/a (no GTrsf error on OCCT 8.0.1, 74 cases; getTransform have; setValue fix() declined)	Minor test tweaks, and small fixes to pass tests	PartDesignTests/TestTopologicalNamingProblem.py
 9decb98c71	2024-05-18	bgbsww	?		0	0	open	3		Toponaming: adjust tests	PartDesignTests/TestTopologicalNamingProblem.py
 86a865e7e0	2024-05-18	Andre Althaus	?		1	0	open	379		Make "Sketch" in Pad icon red	Gui/Resources/icons/PartDesign_Pad.svg
 9b4c4ce60c	2024-05-18	Andre Althaus	refactor		0	0	open	24		Replace the yellow Part primitive toolbar icons with the blue tree icons	Gui/Workbench.cpp
@@ -155,7 +155,7 @@ b68da9d844	2024-05-31	Kacper Donat	feature		0	0	open	804		GUI: Add UI for Up To 
 0b4e01047f	2024-06-10	Florian Foinant-Willig	fix		0	0	open	22	have (its test taken in 16f80f19fd)	Fix can't pad a sketch on datum plane (#14397)	App/FeatureExtrude.cpp PartDesignTests/TestPad.py
 1f35398d5a	2024-06-10	Kacper Donat	fix		0	0	open	12	deferred (UpToShape (ViewProviderExtrude))	Gui: Fix use of no longer existing DiffuseColor property	Gui/ViewProviderExtrude.cpp
 dd816a635c	2024-06-11	wmayer	noise		0	0	open	2		Fix several compiler warnings	Gui/TaskExtrudeParameters.cpp
-b4c5a6d5ba	2024-06-05	wmayer	fix		0	0	open	1		Fix several regressions:	Gui/ViewProviderBody.cpp
+b4c5a6d5ba	2024-06-05	wmayer	fix		0	0	open	1	n/a (Body copies to its Tip only, same face count; ShapeAppearance carries per-face colours)	Fix several regressions:	Gui/ViewProviderBody.cpp
 9b198c7704	2024-06-12	wmayer	noise		0	0	open	4		MSVC: Fix warnings and build failure	App/FeatureLoft.cpp App/FeaturePrimitive.cpp
 8f6798fcc1	2024-06-11	wmayer	noise		0	0	open	2		PD: Fix Qt warning at runtime	Gui/TaskExtrudeParameters.cpp
 41b1fdcb84	2024-06-14	wmayer	fix		0	0	open	6	have (unifyVisualProperty null-checks the VP (ViewProviderBody.cpp:634-635))	PD: Fixes issue #14598: FreeCAD crashes on Undo	Gui/ViewProviderBody.cpp
@@ -188,7 +188,7 @@ dd71f4d5db	2024-07-05	wmayer	?		0	0	open	161		PD: Remove dead code from workbenc
 f823f3fd8a	2024-07-01	bgbsww	feature		0	0	open	13		Toponaming: Tweak test framework to allow leaving documents for examination	PartDesignTests/TestTopologicalNamingProblem.py
 fadb607054	2024-07-01	wmayer	?		0	0	open	4		Tests: Make PD and Sketcher tests independent of user settings	PartDesignTests/TestTopologicalNamingProblem.py
 7d21d9edb8	2024-07-09	Max Wilfinger	noise		0	0	open	18		Fix source string typos mentioned on Crowdin (#15261)	App/FeatureHelix.cpp Gui/CommandBody.cpp Gui/ViewProviderTransformed.cpp InvoluteGearFeature.py SprocketFeature.ui
-5568b40a07	2024-07-08	bgbsww	fix		0	0	open	315		Toponaming: Add missing TNP element name code; rough in more TNP tests (#14561)	PartDesignTests/TestTopologicalNamingProblem.py
+5568b40a07	2024-07-08	bgbsww	fix		0	0	open	315	have (fork already skips a leading dot; gtest taken d1707dccec; TNP py tests with their family)	Toponaming: Add missing TNP element name code; rough in more TNP tests (#14561)	PartDesignTests/TestTopologicalNamingProblem.py
 e6fbc6b447	2024-07-09	bgbsww	fix		0	0	open	61	have (SuppressedShape, Suppress-aware recompute and updateSuppressedShape are the f...)	Toponaming: Missing suppress property and code	App/Feature.cpp App/Feature.h
 bcea524177	2024-07-04	Zheng, Lei	fix		0	0	open	29	have (Body.cpp:669-694 has the same skip in getSubObject)	Toponaming: Missing getSubObject code in PartDesign::Body and SketchObject::getSubObject	App/Body.cpp
 cf6d8da448	2024-07-17	wmayer	?		0	0	open	64		PD: Make blockUpdate private class member	Gui/TaskDraftParameters.cpp Gui/TaskExtrudeParameters.cpp Gui/TaskFeatureParameters.h Gui/TaskHelixParameters.cpp Gui/TaskHoleParameters.cpp Gui/TaskRevolutionParameters.cpp
@@ -234,14 +234,14 @@ e98ffc3060	2024-09-02	wwmayer	?		0	0	open	2191		PartDesign: Prepare for clang-fo
 ae46ea5e7b	2024-07-30	bgbsww	refactor		0	0	open	295		Toponaming:  Refactor refine to its own FeatureRefine class	App/AppPartDesign.cpp App/CMakeLists.txt App/FeatureAddSub.cpp App/FeatureAddSub.h App/FeatureBoolean.cpp App/FeatureBoolean.h App/FeatureRefine.cpp App/FeatureRefine.h App/FeatureTransformed.cpp App/FeatureTransformed.h App/ShapeBinder.cpp App/ShapeBinder.h PartDesignTests/TestInvoluteGear.py PartDesignTests/TestMultiTransform.py PartDesignTests/TestTopologicalNamingProblem.py
 0f53f2195d	2024-09-14	bgbsww	feature		1	0	open	4		Add override flag for recomputes; set it in relevant tests with old files.	PartDesignTests/TestInvoluteGear.py PartDesignTests/TestMultiTransform.py
 e4ad21e48f	2024-09-17	bgbsww	?		1	0	open	9		If we are creating a Sketch inside a Body that is in a link, use link position	Gui/SketchWorkflow.cpp
-8b9f5bdc4f	2024-09-19	Florian Foinant-Willig	fix		0	0	open	120		[PD] fix pad uptoface and uptoshape (#16030)	App/FeatureExtrude.cpp App/FeatureExtrude.h App/FeatureSketchBased.cpp App/FeatureSketchBased.h PartDesignTests/TestPad.py
+8b9f5bdc4f	2024-09-19	Florian Foinant-Willig	fix		0	0	open	120	adapted 94f359e322 (isConcave rewritten; UpToShape parts n/a, no UpToShape here)	[PD] fix pad uptoface and uptoshape (#16030)	App/FeatureExtrude.cpp App/FeatureExtrude.h App/FeatureSketchBased.cpp App/FeatureSketchBased.h PartDesignTests/TestPad.py
 b2d6787571	2024-09-21	Zheng, Lei	?		0	0	open	142		Transfer FeatureHole code	App/FeatureHole.cpp App/FeatureHole.h
 c5ad54d5a8	2024-09-21	bgbsww	refactor		0	0	open	37		Update method names and clean	App/FeatureHole.cpp
 22fbfeddc2	2024-09-22	Florian Foinant-Willig	fix		0	0	open	30	n/a (Fork's makEPrismUntil has no isConcave call)	[PD] Fix Pad uptoshape and add unit test	PartDesignTests/TestPad.py
 fdfb9fd2c6	2024-09-23	Benjamin Nauck	refactor		0	0	open	54		Reuse Std_Delete shortcut instead of hardcoding Delete (#16682)	Gui/TaskBooleanParameters.cpp Gui/TaskDressUpParameters.cpp Gui/TaskExtrudeParameters.cpp Gui/TaskLoftParameters.cpp Gui/TaskPipeParameters.cpp Gui/TaskShapeBinder.cpp Gui/TaskTransformedParameters.cpp
 490d6c5abc	2024-09-24	Florian Foinant-Willig	fix		0	0	open	90	taken 16f80f19fd	[PD] Fix Pad uptoface with custom direction (#16539)	App/FeatureExtrude.cpp App/FeatureSketchBased.cpp App/FeatureSketchBased.h PartDesignTests/TestPad.py
 256ad7a01a	2024-09-24	Eric Price	?		1	0	open	6		PartDesign: Loft Intelligence - Select the whole sketch if the selected shape is ... (#16791)	App/FeatureLoft.cpp
-594010d9f0	2024-09-27	Eric Price	fix		0	0	open	6		PadDesign: Work around issue 16690	App/FeatureExtrude.cpp
+594010d9f0	2024-09-27	Eric Price	fix		0	0	open	6	adapted 94f359e322 (no base for a concave face only, pad or pocket)	PadDesign: Work around issue 16690	App/FeatureExtrude.cpp
 2276ffbf0a	2024-10-02	Florian Foinant-Willig	fix		1	0	open	4	n/a (Upstream's AttachExtension::extensionOnChanged called positionBySupport() on...)	[PD] fix change primitive AttachmentOffset move the body	App/FeaturePrimitive.cpp
 22131b3c93	2024-10-02	Florian Foinant-Willig	fix		0	0	open	15	adapted 9262292976 (wrapLocated(); confirmed by test)	[PD] Fix subtractive primitive placement	App/FeaturePrimitive.cpp
 142f2aff39	2024-09-30	Florian Foinant-Willig	feature		0	0	open	25		[PD Helix] allow refinement to fail	App/FeatureAddSub.cpp App/FeatureAddSub.h App/FeatureHelix.cpp
@@ -283,7 +283,7 @@ aa2e4ca1cb	2024-09-20	PaddleStroke	refactor		0	0	open	4		Rename ViewProviderOrig
 fb7ce6405b	2024-11-24	Jacob Oursland	fix		0	0	open	1	n/a (No tests/src/Mod/PartDesign)	CMake: Add missing target_link_directories() for OCCT.	tests/src/Mod/PartDesign/CMakeLists.txt
 b7f1a0c150	2024-11-26	PaddleStroke	refactor		0	0	open	66		ViewProviderOrigin: Renamed to ViewProviderCoordinateSystem	Gui/TaskFeaturePick.cpp Gui/TaskFeaturePick.h Gui/TaskHelixParameters.cpp Gui/TaskLinearPatternParameters.cpp Gui/TaskMirroredParameters.cpp Gui/TaskPolarPatternParameters.cpp Gui/TaskPrimitiveParameters.cpp Gui/TaskRevolutionParameters.cpp Gui/TaskRevolutionParameters.h Gui/ViewProviderBody.cpp Gui/ViewProviderDatum.cpp
 92e96839c9	2024-10-19	wmayer	fix		0	0	open	28	n/a (Fork's dress-up panels never write Visibility)	PD: Avoid touching the document when opening pad or pocket dialog	Gui/TaskDressUpParameters.cpp Gui/TaskDressUpParameters.h Gui/TaskExtrudeParameters.cpp
-601637320d	2024-11-03	wmayer	fix		0	0	open	63		PD: Add test case to show the fix for the crash with active objects	CMakeLists.txt PartDesignTests/TestActiveObject.py TestPartDesignGui.py
+601637320d	2024-11-03	wmayer	fix		0	0	open	63	have (driven in the GUI: undo clears both active objects, no crash; test not taken)	PD: Add test case to show the fix for the crash with active objects	CMakeLists.txt PartDesignTests/TestActiveObject.py TestPartDesignGui.py
 374c5713b2	2024-11-21	PaddleStroke	fix		0	0	open	2	taken c872a2d457	PartDesign: Fix newSketch not working when editing a body from an external file.	Gui/SketchWorkflow.cpp
 70184ba59d	2024-12-02	Florian Foinant-Willig	?		0	0	open	146		PartDesign: decouple refine and other geometric computation (#17008)	App/Feature.cpp App/Feature.h App/FeatureAddSub.cpp App/FeatureAddSub.h App/FeatureChamfer.cpp App/FeatureExtrude.cpp App/FeatureFillet.cpp App/FeatureGroove.cpp App/FeatureHelix.cpp App/FeatureLoft.cpp App/FeaturePipe.cpp App/FeaturePrimitive.cpp App/FeatureRevolution.cpp App/FeatureThickness.cpp
 ca989f73a2	2024-07-01	Ajinkya Dahale	fix		0	0	open	9	n/a (TNP test file only)	[PartDesign] Fix `TestTopologicalNamingProblem`	PartDesignTests/TestTopologicalNamingProblem.py
@@ -304,7 +304,7 @@ e89fb4a92c	2024-12-04	Jonas Bahr	fix		0	0	open	29	have (Duplicate registration g
 8bc062b6e8	2024-12-13	Snow Faerie	fix		1	0	open	2	declined (Menu accelerator churn)	Fix and add menu accelerators (#15532)	Gui/CommandBody.cpp
 d1f706050d	2024-11-09	Kacper Donat	?		0	0	open	2		TopoNaming: Refine - mark joined faces as modified not generated	PartDesignTests/TestTopologicalNamingProblem.py
 c4528eb3a5	2024-12-03	Florian Foinant-Willig	fix		0	0	open	47	adapted 161a2cb92f (start offset rule)	PartDesign: fix helix with negative angle	App/FeatureHelix.cpp PartDesignTests/TestHelix.py
-fc56730648	2024-11-26	PaddleStroke	fix		1	0	open	7		Core: Datums: Fix axis placement and add migration script.	App/FeatureSketchBased.cpp
+fc56730648	2024-11-26	PaddleStroke	fix		1	0	open	7	superseded (upstream reverted it, ad314fea7e; the fork keeps X-axis lines)	Core: Datums: Fix axis placement and add migration script.	App/FeatureSketchBased.cpp
 48dbdacdbd	2024-09-20	PaddleStroke	feature		0	0	open	78		Part: add datum objects and commands to create them.	App/Body.cpp Gui/ViewProviderBody.cpp Gui/ViewProviderDatum.cpp Gui/ViewProviderDatum.h
 9504b7e569	2024-10-10	PaddleStroke	feature		1	0	open	4		PartDesign: Enable the use of the core datums as references.	Gui/ReferenceSelection.cpp
 c5fbbb3830	2024-12-06	PaddleStroke	feature		0	0	open	12		SubShapeBinder: Add support for point.	App/ShapeBinder.cpp
@@ -327,7 +327,7 @@ ca3cb78ad5	2024-12-18	Alfredo Monclus	fix		0	0	open	2	adapted 23d0ad5e07 (in ref
 2ea8a633ac	2024-07-13	Ladislav Michl	refactor		0	0	open	190		Base: Quantity: return std::string	Gui/TaskPrimitiveParameters.cpp
 e977eb49e3	2024-12-13	PaddleStroke	feature		0	0	open	4		Core datums: Rework to improve new sketch	Gui/TaskFeaturePick.cpp
 cbd116b451	2024-12-31	wmayer	refactor		0	0	open	27		Gui: Use bitmask instead of three booleans in setTemporaryVisibility to improve readability	Gui/TaskFeaturePick.cpp Gui/TaskHelixParameters.cpp Gui/TaskLinearPatternParameters.cpp Gui/TaskMirroredParameters.cpp Gui/TaskPolarPatternParameters.cpp Gui/TaskPrimitiveParameters.cpp Gui/TaskRevolutionParameters.cpp
-b3a1fd9676	2024-12-23	wmayer	feature		0	0	open	19		App: Add methods to get base and direction of datum element	App/FeatureLinearPattern.cpp App/FeatureMirrored.cpp App/FeaturePolarPattern.cpp App/FeatureSketchBased.cpp
+b3a1fd9676	2024-12-23	wmayer	feature		0	0	open	19	adapted ab0da1cf16 (fork had the methods; getAxis now uses them)	App: Add methods to get base and direction of datum element	App/FeatureLinearPattern.cpp App/FeatureMirrored.cpp App/FeaturePolarPattern.cpp App/FeatureSketchBased.cpp
 e5b1d05813	2024-12-21	Vincenzo Calligaro	feature		0	0	open	138		Toponaming: import code related to ElementMapVersion from LS3  *Added test	tests/src/Mod/PartDesign/App/BackwardCompatibility.cpp tests/src/Mod/PartDesign/App/CMakeLists.txt tests/src/Mod/PartDesign/App/TestModels/ModelFromV021.FCStd
 a3bf63bae2	2024-12-11	Kacper Donat	?		0	0	open	29		PD: Forward transform requests to Body	Gui/ViewProvider.cpp Gui/ViewProvider.h
 dc73208f08	2025-01-13	Alfredo Monclus	refactor		0	0	open	68		refactor(PD): hole taskpanel ui open and save with QT designer 5.15	Gui/TaskHoleParameters.ui

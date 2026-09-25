@@ -336,17 +336,81 @@ dropped a cylinder the body already had (one agent's probe, not reproduced).
   First measure whether the fork's `apply()` touches unchanged values at
   all.
 
-### Open rows
+### The open rows, closed (2026-09-25)
 
-`594010d9f0` (pocket up to a face through a hollow: the fork's pocket removes
-~0 or ~25 where nothing or everything is expected; the upstream change is
-untested here), `fc56730648` (an upstream >= 1.1 file stores origin axes in
-its new convention, which the fork would read turned; needs a restore
-migration), `8b9f5bdc4f` (port testPadToConcaveCase and see), `2657bbee4d`
-(a non-uniform transformGeometry on a located shape under OCCT 8.0.1),
-`b4c5a6d5ba` and `3a34fe080a` (ShapeAppearance round trips, settle in the
-GUI), `5568b40a07` (a leading-dot subname nothing here produces),
-`601637320d` (a Gui test).
+All eight were run on the fork before deciding, scripts in FreeCADCmd and
+the GUI ones through the MCP console.
+
+- **`8b9f5bdc4f` and `594010d9f0`, adapted as `94f359e322`.** Both
+  reproduced. A pocket sketched inside a pipe (r 8..10) up to its outer
+  cylinder removed nothing (-0.001 mm^3 against 57.4), up to the inner one
+  it cut the outer wall, and upstream's testPadToConcaveCase gave 5622.4
+  against 2208.0963: the prism ran from the face outward. Two causes in
+  `makEPrismUntil()`, one per commit. Removing a curved face's limits makes
+  it the whole surface, met behind the profile too (`8b9f5bdc4f` keeps a
+  concave face's limits). And with the base given to BRepFeat_MakePrism
+  and the profile off the base's faces, the prism ran a fixed 152 or 160
+  mm whatever the face (`594010d9f0` drops the base for pockets). Neither
+  alone was enough; together every case is right.
+  Upstream's `isConcave()` is loose (it overwrites its first result, reads
+  U/V without a hit, and calls any cylinder across the direction concave),
+  so `Part::Tools::isConcave()` here takes the first hit ahead of the
+  profile and checks, from the second derivatives, whether the surface
+  bends towards it. Upstream drops the base for every pocket and keeps it
+  for pads; here a concave face drops it, pad or pocket, and nothing else
+  changes -- an empty base for all pads was measured wrong (a steep
+  custom-direction pad up to a plane: prism 483 mm^3 for 225). Five plane
+  cases keep identical element names and volumes, six custom-direction
+  ones identical volumes and bounds. The `UpToShape` half of `8b9f5bdc4f`
+  is n/a: the fork has no UpToShape code (the enum entry noted above).
+- **`fc56730648`, superseded.** Upstream moved datum lines to local Z and
+  reverted it a month later (`ad314fea7e`, "breaks forward and backward
+  compatibility"); only 1.1-dev builds of that month wrote the new
+  placements, and upstream's tip has the fork's convention. On the way:
+  **Revolution and Groove ignored an LCS axis's position and rotation** --
+  an LCS at y = 20 revolved about the global X axis, 552.9 mm^3 for 50.3.
+  `getAxis()` now uses `getBasePoint()`/`getDirection()` as upstream's
+  `b3a1fd9676` does, `ab0da1cf16`, with a test.
+- **`2657bbee4d`, n/a.** Its copy before `BRepBuilderAPI_GTransform` fixed
+  a "non-orthogonal GTrsf" error that OCCT 8.0.1 does not raise here: 74
+  cases (box, cylinder, a fused shape; four placements; non-uniform,
+  uniform and shear matrices; located compounds) and upstream's own Scaled
+  MultiTransform test all run clean. `getTransform()`'s scale reset is
+  already in. The `fix()` of every invalid shape in
+  `PropertyPartShape::setValue()` is declined: a BRepCheck on every
+  assignment, and a silent repair.
+- **`5568b40a07`, have.** The fork's `findElementName()` already returns
+  "Edge4" for ".Edge4"; upstream's gtest is taken (`d1707dccec`). Its
+  TestTopologicalNamingProblem.py half goes with that file's family --
+  the fork has no copy of it.
+- **`601637320d`, have.** Driven in the GUI: undoing an active Part and
+  Body clears both active objects, and a new body becomes active; no crash.
+- **`b4c5a6d5ba` and `3a34fe080a`, have / n/a.** Upstream's regression
+  tests fail here as written, and on conventions, not colours: alpha is
+  opacity in the fork (the datum yellow reads 0xFFD70066 for 0xFFD70099),
+  and they assume upstream's Coin node layout. Checked for what they mean,
+  in the GUI: per-face colours survive a Transparency change (PER_PART, 6
+  colours before and after); a fuse of two red inputs is red; a fuse's
+  per-face colours restore as 11 under PER_PART -- never one colour under
+  a per-part binding, upstream's regression. With `MapFaceColor` on (the
+  default) a boolean remaps its inputs' colours on every recompute, so
+  per-face colours set on it last until then; with it off they survive
+  save and restore. ShapeBinder and datum planes get the datum colour. The
+  Body filter of `b4c5a6d5ba` is n/a: the fork copies a body's appearance
+  to its Tip only, whose face count is the body's, and ShapeAppearance is
+  what carries the per-face colours there.
+
+Seen on the way, not fixed:
+
+- **Setting a Body's Transparency switches its Tip's `MapFaceColor`
+  off.** The next feature then maps nothing: after a Fillet it shows
+  default grey with 6 colours for 7 faces and Transparency 0, and the body
+  with it. Without the Transparency step the Fillet inherits the Box's
+  colours. The body's copy to the Tip treats the change as a ShapeColor
+  write.
+- A SubShapeBinder takes the part colour; upstream gives one whose name
+  starts with "Binder" the datum style (`UseBinderStyle`), a feature the
+  fork lacks.
 
 ### Verified
 
@@ -377,3 +441,11 @@ PartDesignGui from the files as they were at `2cc1c8b94b`:
 The helix, suppress, no-op cut and relink rows were each reproduced on the
 fork before their fix (sec 6 above); the phase-2 picks before them were read
 against the fork, and run only where the verdict rested on behaviour.
+
+After closing the open rows: TestPartDesignApp 104 OK (the concave pad,
+the pocket from a hollow and the LCS revolution among them), TestPartApp
+124 OK, ctest 749/749 -- `DeferredLoad_tests_run` timed out in the full run
+on a `%TEMP%` of 37,872 entries (docs/Testing.md) and passed in 14.8 s
+under `ctest-fcad-cleantmp.cmd`; Toponaming_tests_run 257 with the taken
+gtest. The full run predates the `getAxis()` commit, which touches only
+PartDesign and is covered by the Python run.
