@@ -1201,6 +1201,7 @@ void Document::Restore(Base::XMLReader &reader)
     // still there.
     const bool hasInlineBlobs = reader.hasAttribute("Blobs");
     const bool hasStringHasher = reader.hasAttribute("StringHasher");
+    reader.HasStringHasher = hasStringHasher;
 
     // Content carried inside the XML comes first, so everything parsed from
     // here on finds what it refers to already in the store. The Uid is set

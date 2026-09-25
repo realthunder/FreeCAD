@@ -35,7 +35,9 @@
 # include <Standard_Version.hxx>
 #endif
 
+#include <Base/Console.h>
 #include <Base/Exception.h>
+#include <Base/ProgramVersion.h>
 #include <Base/Reader.h>
 #include <App/Document.h>
 #include <Base/Tools.h>
@@ -141,6 +143,12 @@ App::DocumentObjectExecReturn *Chamfer::execute()
     defaultChamfer.angle = chamferType == 2 ? angle : 0.0;
     defaultChamfer.flip = flipDirection;
 
+    if (migrateFaceRule) {
+        migrateFaceRule = false;
+        if (chamferType != 0)
+            migrateSelectedFaceRule(baseShape, edges);
+    }
+
     std::string name;
     std::vector<Part::TopoShape::ChamferInfo> chamferInfo;
     for (const auto &edge : edges) {
@@ -203,8 +211,100 @@ void Chamfer::onChanged(const App::Property* prop)
     if (prop == &ChamferType) {
         updateProperties();
     }
+    else if (prop == &ChamferInfo && isRestoring()) {
+        chamferInfoRestored = true;
+    }
 
     DressUp::onChanged(prop);
+}
+
+void Chamfer::Restore(Base::XMLReader &reader)
+{
+    chamferInfoRestored = false;
+    DressUp::Restore(reader);
+    // Upstream before 1.0 read a selected face its own way (upstream
+    // 4d712f44c2). Its files have neither a string hasher nor ChamferInfo,
+    // which every chamfer this fork writes has -- and the fork writes a 0.22
+    // ProgramVersion, so the version alone does not tell.
+    migrateFaceRule = !chamferInfoRestored && !reader.HasStringHasher
+        && Base::getVersion(reader.ProgramVersion) < Base::Version::v1_0;
+}
+
+void Chamfer::onDocumentRestored()
+{
+    DressUp::onDocumentRestored();
+    if (!migrateFaceRule)
+        return;
+    // Now, while the shapes are those of the file, so that saving the file
+    // unrecomputed keeps it; the recompute tries again if this cannot
+    try {
+        auto baseShape = getBaseShape();
+        baseShape.setTransform(Base::Matrix4D());
+        if (ChamferType.getValue() != 0 && !UseAllEdges.getValue())
+            migrateSelectedFaceRule(baseShape, getContinuousEdges(baseShape));
+        migrateFaceRule = false;
+    }
+    catch (const Base::Exception &) {
+    }
+    catch (const Standard_Failure &) {
+    }
+}
+
+void Chamfer::migrateSelectedFaceRule(const Part::TopoShape &baseShape,
+                                      const std::vector<Part::TopoShape> &edges)
+{
+    // For an edge of a selected face, upstream before 1.0 measured Size on
+    // the selected face, or on the edge's other face when flipped; for any
+    // other edge, on its first face, or its last when flipped. The fork,
+    // as upstream since, always does the latter, so an upstream 0.21
+    // chamfer made on a face came out with its sizes swapped wherever the
+    // selected face is the last. The rule is stated as the flip of each
+    // edge it decides differently.
+    std::vector<TopoDS_Shape> faces;
+    for (const auto &v : Base.getShadowSubs()) {
+        const auto &ref = v.first.size() ? v.first : v.second;
+        auto subshape = baseShape.getSubShape(ref.c_str(), true);
+        if (!subshape.IsNull() && subshape.ShapeType() == TopAbs_FACE)
+            faces.push_back(subshape);
+    }
+    if (faces.empty())
+        return;
+
+    const bool flip = FlipDirection.getValue();
+    Part::TopoShape::ChamferInfo info;
+    info.size = Size.getValue();
+    info.size2 = ChamferType.getValue() == 1 ? Size2.getValue() : info.size;
+    info.angle = ChamferType.getValue() == 2 ? Angle.getValue() : 0.0;
+
+    auto values = ChamferInfo.getValue();
+    int count = 0;
+    for (const auto &edge : edges) {
+        auto ancestors = baseShape.findAncestorsShapes(edge.getShape(), TopAbs_FACE);
+        if (ancestors.size() < 2)
+            continue;
+        const TopoDS_Shape &first = ancestors.front();
+        const TopoDS_Shape &last = ancestors.back();
+        const TopoDS_Shape *face = flip ? &last : &first;
+        for (const auto &selected : faces) {
+            if (last.IsSame(selected))
+                face = flip ? &first : &last;
+            else if (first.IsSame(selected))
+                face = flip ? &last : &first;
+        }
+        info.flip = !face->IsSame(first);
+        if (info.flip == flip)
+            continue;
+        std::string name("Edge");
+        name += std::to_string(baseShape.findShape(edge.getShape()));
+        values[name] = info;
+        ++count;
+    }
+    if (!count)
+        return;
+    ChamferInfo.setValue(std::move(values));
+    Base::Console().Warning("%s: %d edge(s) of a chamfer made on a face by FreeCAD before 1.0 "
+                            "flipped to keep its sizes where they were.\n",
+                            getFullName().c_str(), count);
 }
 
 void Chamfer::updateProperties()
