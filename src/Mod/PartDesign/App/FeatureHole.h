@@ -251,6 +251,10 @@ private:
     double getThreadPitch() const;
     double getThreadProfileAngle();
     void findClosestDesignation();
+    /// The pitch of the size ThreadDiameter was taken from, 0 if none:
+    /// with it, a type change keeps the pitch among sizes of a diameter
+    double threadPitch = 0.0;
+    bool changingThreadType = false;
     void rotateToNormal(const gp_Dir& helixAxis, const gp_Dir& normalAxis, TopoDS_Shape& helixShape) const;
     gp_Vec computePerpendicular(const gp_Vec&) const;
     Base::Vector3d guessNormalDirection(const TopoShape& profileshape) const;

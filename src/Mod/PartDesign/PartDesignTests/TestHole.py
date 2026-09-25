@@ -334,6 +334,13 @@ class TestHole(unittest.TestCase):
             self.Hole.ThreadType = thread_type
             self.Doc.recompute()
             self.assertEqual(self.Hole.ThreadSize, size, thread_type)
+        # Among the fine M10s, the pitch nearest the coarse one's 1.5
+        # (upstream 601c0f9b09, 0dc6cbd16f)
+        self.Hole.ThreadSize = "M10"
+        self.Doc.recompute()
+        self.Hole.ThreadType = "ISOMetricFineProfile"
+        self.Doc.recompute()
+        self.assertEqual(self.Hole.ThreadSize, "M10x1.25")
 
     def testThreadEnums(self):
         """Test thread enums for correct order (upstream 0fdb02c6eb; the BSP

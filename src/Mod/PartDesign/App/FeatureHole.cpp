@@ -1410,10 +1410,13 @@ void Hole::updateDiameterParam()
 {
     int threadType = ThreadType.getValue();
     int threadSize = ThreadSize.getValue();
-    if (threadType > 0 && threadSize > 0)
+    // the first size (index 0) is a size too
+    if (threadType > 0 && threadSize >= 0 && !changingThreadType) {
         ThreadDiameter.setValue(
             threadDescription[threadType][threadSize].diameter
         );
+        threadPitch = threadDescription[threadType][threadSize].pitch;
+    }
     if (auto opt = determineDiameter())
         Diameter.setValue(opt.value());
 }
@@ -1426,28 +1429,30 @@ double Hole::getThreadProfileAngle()
 
 void Hole::findClosestDesignation()
 {
-    // Intended for thread type changes
-    // finds the closest diameter of the new thread type
+    // Intended for thread type changes: the size of the new type nearest to
+    // the old one's diameter and, among sizes of a diameter, its pitch
+    // (upstream dc53d3dba2, 601c0f9b09, 0dc6cbd16f -- which took the pitch
+    // from the new type's table at the old size's index)
     int threadType = ThreadType.getValue();
-    int closestSize = 0;
+    if (threadType < 0 || threadType >= static_cast<int>(std::size(threadDescription))) {
+        throw Base::IndexError(QT_TRANSLATE_NOOP("Exception", "Thread type is invalid"));
+    }
     double diameter = ThreadDiameter.getValue();
-    if (diameter == 0)
+    if (diameter == 0.0)
         diameter = Diameter.getValue();
-    double closestDifference = std::numeric_limits<double>::infinity();
-    double difference;
 
     // The table rows are fixed width here, not upstream's vectors: they end
     // at the first entry without a designation
     const auto &sizes = threadDescription[threadType];
+    int closestSize = 0;
+    double closest = std::numeric_limits<double>::infinity();
     for (size_t i = 0; i < std::size(sizes) && sizes[i].designation; i++) {
-        difference = sizes[i].diameter - diameter;
-        if (difference == 0) {
-            closestSize = i;
-            break;
-        }
-        if (std::abs(difference) < closestDifference) {
-            closestSize = i;
-            closestDifference = std::abs(difference);
+        double distance = threadPitch > 0.0
+            ? std::hypot(sizes[i].diameter - diameter, sizes[i].pitch - threadPitch)
+            : std::abs(sizes[i].diameter - diameter);
+        if (distance < closest) {
+            closest = distance;
+            closestSize = static_cast<int>(i);
         }
     }
     ThreadSize.setValue(closestSize);
@@ -1459,7 +1464,12 @@ void Hole::onChanged(const App::Property* prop)
         std::string type, holeCutTypeStr;
         if (ThreadType.isValid()) {
             type = ThreadType.getValueAsString();
-            ThreadSize.setEnums(getThreadDesignations(ThreadType.getValue()));
+            {
+                // The new list resets the size, which must not replace the
+                // diameter and pitch the new size is chosen by
+                Base::StateLocker guard(changingThreadType);
+                ThreadSize.setEnums(getThreadDesignations(ThreadType.getValue()));
+            }
             if (type != "None")
                 findClosestDesignation();
         }
@@ -1743,6 +1753,7 @@ void Hole::onChanged(const App::Property* prop)
             // Profile is None but this is needed to find the closest
             // designation if the user switch to threaded
             ThreadDiameter.setValue(Diameter.getValue());
+            threadPitch = 0.0;
         }
     }
     else if (prop == &HoleCutType) {
