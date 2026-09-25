@@ -503,6 +503,7 @@ protected:
     //@{
     void slotUndoDocument(const Gui::Document&);
     void slotRedoDocument(const Gui::Document&);
+    void cancelInteractionOnUndoRedo();
     void slotSolverUpdate();
 
     /** @name base class implementer */

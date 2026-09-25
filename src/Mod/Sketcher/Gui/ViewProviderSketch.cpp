@@ -700,8 +700,45 @@ void ViewProviderSketch::setSketchMode(SketchMode mode)
     }
 }
 
+void ViewProviderSketch::cancelInteractionOnUndoRedo()
+{
+    // A press or drag holds what it acts on by index -- the preselected
+    // point, edge or constraint, then Dragged and DragConstraintSet -- and
+    // an undo or redo with the button still down can take that element
+    // away. The next move or the release would carry on with an index that
+    // names nothing, or something else; a constraint id past the end of
+    // the list crashed moveConstraint() (upstream 16aff10544). The
+    // interaction is dropped, not reverted: the undo has already put the
+    // document where it wants it.
+    if (!edit)
+        return;
+    switch (_Mode) {
+        case STATUS_SELECT_Point:
+        case STATUS_SELECT_Edge:
+        case STATUS_SELECT_Constraint:
+        case STATUS_SELECT_Cross:
+        case STATUS_SKETCH_Drag:
+        case STATUS_SKETCH_DragConstraint:
+            break;
+        default:
+            return;
+    }
+    if (edit->dragAutoConstraintHandler)
+        edit->dragAutoConstraintHandler->clear();
+    if (edit->DragConstraintTransactionId) {
+        // Otherwise the stale id also keeps the next label drag from
+        // opening a transaction of its own.
+        App::GetApplication().closeActiveTransaction(false, edit->DragConstraintTransactionId);
+        edit->DragConstraintTransactionId = 0;
+    }
+    setSketchMode(STATUS_NONE);
+    resetPositionText();
+}
+
 void ViewProviderSketch::slotUndoDocument(const Gui::Document& /*doc*/)
 {
+    cancelInteractionOnUndoRedo();
+
     // Note 1: this slot is only operative during edit mode (see signal connection/disconnection)
     // Note 2: ViewProviderSketch::UpdateData does not generate updates during undo/redo
     //         transactions as mid-transaction data may not be in a valid state (e.g. constraints
@@ -713,6 +750,8 @@ void ViewProviderSketch::slotUndoDocument(const Gui::Document& /*doc*/)
 
 void ViewProviderSketch::slotRedoDocument(const Gui::Document& /*doc*/)
 {
+    cancelInteractionOnUndoRedo();
+
     // Note 1: this slot is only operative during edit mode (see signal connection/disconnection)
     // Note 2: ViewProviderSketch::UpdateData does not generate updates during undo/redo
     //         transactions as mid-transaction data may not be in a valid state (e.g. constraints

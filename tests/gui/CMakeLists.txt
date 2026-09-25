@@ -334,6 +334,13 @@ fc_add_gui_test(GuiSketchDragAutoConstraint_tests_run
                 sketch-drag-autoconstraint.py
                 --timeout 300)
 
+# An undo with the mouse button still held takes away what the drag holds
+# by index; the drag has to be dropped, not carried on (upstream
+# 16aff10544). A label drag carried on crashed in moveConstraint().
+fc_add_gui_test(GuiSketchUndoDuringDrag_tests_run
+                sketch-undo-during-drag.py
+                --timeout 300)
+
 # A sketch edited with the "Editing workbench" preference cleared never
 # builds the Sketcher toolbars, so its commands have no action -- and
 # Sketcher_Snap's icon swap dereferenced that null from isActive().
