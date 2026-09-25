@@ -371,6 +371,10 @@ public:
      * goes on the branch arrived on. Throws if there is no such branch.
      */
     bool switchBranch(const std::string& name);
+    /** Rename branch `name` to `newName` (docs/TransactionLog.md sec 26).
+     * Throws if there is no such branch or the new name is empty or taken.
+     */
+    bool renameBranch(const std::string& name, const std::string& newName);
     /** Trim branch `name` (docs/TransactionLog.md sec 16.7): its rows up to
      * version `version` -- else up to the version at its head -- and its
      * unnamed versions before it go, but never a row another branch's

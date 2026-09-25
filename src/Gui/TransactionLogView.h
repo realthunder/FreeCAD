@@ -87,6 +87,7 @@ private Q_SLOTS:
     void onBranchChosen(int index);
     void onNewBranch();
     void onDeleteBranch();
+    void onRenameBranch();
     void applyVisibility();
 
 protected:
@@ -129,6 +130,7 @@ private:
     QComboBox* _branch {nullptr};
     QPushButton* _newBranch {nullptr};
     QPushButton* _deleteBranch {nullptr};
+    QPushButton* _renameBranch {nullptr};
     QCheckBox* _allBranches {nullptr};
     QTabWidget* _tabs {nullptr};
     QStackedWidget* _detail {nullptr};

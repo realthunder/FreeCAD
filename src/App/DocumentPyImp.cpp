@@ -1111,14 +1111,8 @@ PyObject* DocumentPy::renameTransactionBranch(PyObject *args)
     const char* newName;
     if (!PyArg_ParseTuple(args, "ss", &name, &newName))
         return nullptr;
-    auto log = getDocumentPtr()->getTransactionLog();
-    if (!log)
-        return Py::new_reference_to(Py::False());
     PY_TRY {
-        App::LogBranch branch;
-        if (!log->store().findBranch(name, branch))
-            return Py::new_reference_to(Py::False());
-        return Py::new_reference_to(Py::Boolean(log->store().renameBranch(branch.id, newName)));
+        return Py::new_reference_to(Py::Boolean(getDocumentPtr()->renameBranch(name, newName)));
     } PY_CATCH;
 }
 

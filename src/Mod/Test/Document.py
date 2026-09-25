@@ -2844,6 +2844,14 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertEqual(sorted(branches), ["main", "side"])
         self.assertTrue(branches["side"]["current"])
         self.assertEqual(opened.getObject("Obj").Integer, 2)
+        # Renamed: the branch the document is on keeps the file's Branch in step.
+        self.assertTrue(opened.renameTransactionBranch("side", "wide"))
+        self.assertEqual(sorted(self.branches(opened)), ["main", "wide"])
+        self.assertEqual(opened.Branch, "wide")
+        with self.assertRaises(Exception):
+            opened.renameTransactionBranch("wide", "main")  # taken
+        with self.assertRaises(Exception):
+            opened.renameTransactionBranch("nowhere", "x")
         self.assertTrue(opened.switchTransactionBranch("main"))
         self.assertEqual(opened.getObject("Obj").Integer, 1)
 

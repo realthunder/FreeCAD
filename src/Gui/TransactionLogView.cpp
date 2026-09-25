@@ -126,6 +126,9 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     _newBranch = new QPushButton(tr("Branch..."), this);
     _newBranch->setToolTip(tr("A new branch from the current head, switched to"));
     branchBar->addWidget(_newBranch);
+    _renameBranch = new QPushButton(tr("Rename..."), this);
+    _renameBranch->setToolTip(tr("Rename the branch shown in the switcher"));
+    branchBar->addWidget(_renameBranch);
     _deleteBranch = new QPushButton(tr("Delete..."), this);
     _deleteBranch->setToolTip(tr("Delete another branch: the rows only it holds and its "
                                  "versions, but those a branch forked from (sec 16.7)"));
@@ -231,6 +234,7 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
             &TransactionLogView::onBranchChosen);
     connect(_newBranch, &QPushButton::clicked, this, &TransactionLogView::onNewBranch);
     connect(_deleteBranch, &QPushButton::clicked, this, &TransactionLogView::onDeleteBranch);
+    connect(_renameBranch, &QPushButton::clicked, this, &TransactionLogView::onRenameBranch);
     connect(_allBranches, &QCheckBox::toggled, this, &TransactionLogView::applyVisibility);
 
     //NOLINTBEGIN
@@ -691,6 +695,7 @@ void TransactionLogView::refreshBranches()
         _branch->setEnabled(false);
         _newBranch->setEnabled(false);
         _deleteBranch->setEnabled(false);
+        _renameBranch->setEnabled(false);
         return;
     }
     int current = -1;
@@ -712,6 +717,26 @@ void TransactionLogView::refreshBranches()
     _branch->setEnabled(true);
     _newBranch->setEnabled(_doc != nullptr);
     _deleteBranch->setEnabled(_doc != nullptr && _branch->count() > 1);
+    _renameBranch->setEnabled(_doc != nullptr && _branch->currentIndex() >= 0);
+}
+
+void TransactionLogView::onRenameBranch()
+{
+    if (!_doc || _branch->currentIndex() < 0)
+        return;
+    const QString name = _branch->itemData(_branch->currentIndex()).toString();
+    bool ok = false;
+    QString text = QInputDialog::getText(this, tr("Rename branch"), tr("New name of %1:").arg(name),
+                                         QLineEdit::Normal, name, &ok);
+    if (!ok || text.trimmed().isEmpty() || text.trimmed() == name)
+        return;
+    try {
+        _doc->renameBranch(name.toStdString(), text.trimmed().toStdString());
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("rename branch " << name.toStdString() << ": " << e.what());
+        _status->setText(tr("Branch not renamed -- the report view says why"));
+    }
 }
 
 void TransactionLogView::onDeleteBranch()

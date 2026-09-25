@@ -394,8 +394,8 @@ opened. False without a log.</UserDocu>
       <Documentation>
         <UserDocu>renameTransactionBranch(name, newName) -> bool
 
-Rename a branch. False without a log or with no such branch; a name
-already taken raises.</UserDocu>
+Rename a branch. False without a log; no such branch, or a new name that
+is empty or taken, raises.</UserDocu>
       </Documentation>
     </Methode>
     <Methode Name="trimTransactionBranch" Keyword="true">

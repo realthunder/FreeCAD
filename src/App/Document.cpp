@@ -5341,6 +5341,31 @@ Shared sharedWith(TransactionStore& store, int64_t except)
 
 } // namespace
 
+bool Document::renameBranch(const std::string& name, const std::string& newName)
+{
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        return false;
+    auto& store = log->store();
+    LogBranch branch;
+    if (!store.findBranch(name, branch))
+        THROWM(Base::ValueError, "no branch '" + name + "'");
+    if (newName == name)
+        return true;
+    LogBranch taken;
+    if (newName.empty() || store.findBranch(newName, taken))
+        THROWM(Base::ValueError, "branch name '" + newName + "' is empty or taken");
+    store.renameBranch(branch.id, newName);
+    // The file says which branch it is (26.6): kept in step for the one the
+    // document is on, as the next save would write it.
+    if (branch.id == log->branch()) {
+        if (auto prop = Base::freecad_dynamic_cast<PropertyString>(getPropertyByName("Branch")))
+            prop->setValue(newName);
+    }
+    signalBranchesChanged(*this);
+    return true;
+}
+
 size_t Document::trimBranch(const std::string& name, int64_t version)
 {
     // docs/TransactionLog.md sec 16.7, "trim a branch".

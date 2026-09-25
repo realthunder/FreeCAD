@@ -3986,7 +3986,12 @@ the chain decide together which rows show, recomputed on every refresh, so
 a switch re-filters rows already listed. "Branch from here..." on a
 transaction row and "Branch from version N..." on a version ask a name and
 call `createBranch` with the row or the version. The status line names the
-branch beside the mode (`[session, branch side]`).
+branch beside the mode (`[session, branch side]`). **Rename...** (added
+with 4.e) renames the branch shown in the switcher through
+`Document::renameBranch` -- Python `renameTransactionBranch` goes the same
+way -- which refuses an empty or taken name, keeps the file's `Branch`
+property in step when it is the current branch, and emits the signal so
+the panel reloads.
 
 A switch commits nothing, so none of the panel's refresh triggers fired.
 `App::Document::signalSwitchBranch` is emitted after a switch and after a
