@@ -615,8 +615,18 @@ void Body::onChanged (const App::Property* prop) {
                 }
             }
 
-            if (bf && (bf->BaseFeature.getValue() != BaseFeature.getValue()))
-                bf->BaseFeature.setValue(BaseFeature.getValue());
+            if (bf && (bf->BaseFeature.getValue() != BaseFeature.getValue())) {
+                auto base = BaseFeature.getValue();
+                bf->BaseFeature.setValue(base);
+                // The recompute keeps the base's geometry but gives it the
+                // FeatureBase's placement, so place that where the base is:
+                // left at identity, a base away from the origin jumped to the
+                // body's origin, and moved with the body's placement.
+                if (base) {
+                    bf->Placement.setValue(globalPlacement().inverse()
+                                           * App::GeoFeature::getGlobalPlacement(base));
+                }
+            }
         }
         else if( prop == &Group ) {
             //if the FeatureBase was deleted we set the BaseFeature link to nullptr

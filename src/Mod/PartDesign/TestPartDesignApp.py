@@ -28,6 +28,7 @@
 from PartDesignTests.TestDatum import TestDatumPoint, TestDatumLine, TestDatumPlane
 from PartDesignTests.TestShapeBinder import TestShapeBinder
 from PartDesignTests.TestShapeBinder import TestSubShapeBinder
+from PartDesignTests.TestBaseFeature import TestBaseFeature
 
 # additive/subtractive features & primitives
 from PartDesignTests.TestPad import TestPad

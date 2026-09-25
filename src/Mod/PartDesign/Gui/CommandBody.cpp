@@ -262,6 +262,11 @@ void CmdPartDesignBody::activated(int iMsg)
     auto body = Base::freecad_dynamic_cast<PartDesign::Body>(doc->getObject(bodyName.c_str()));
     if (Part::PartParams::getUseBaseObjectName() && labelSource.getObjectName().size())
         Gui::cmdAppObjectArgs(body, "Label = %s.Label", labelSource.getObjectPython());
+    // The base feature is placed in the body's coordinates, so the body goes
+    // into its Part first
+    if (actPart) {
+        Gui::cmdAppObjectArgs(actPart, "addObject(%s)", getObjectCmd(body));
+    }
     if (baseFeature) {
         if (baseFeature->isDerivedFrom(Part::Part2DObject::getClassTypeId())) {
             Gui::cmdAppObjectArgs(body, "Group = [%s]", getObjectCmd(baseFeature));
@@ -269,10 +274,6 @@ void CmdPartDesignBody::activated(int iMsg)
         else {
             Gui::cmdAppObjectArgs(body, "BaseFeature = %s", getObjectCmd(baseFeature));
         }
-    }
-
-    if (actPart) {
-        Gui::cmdAppObjectArgs(actPart, "addObject(%s)", getObjectCmd(body));
     }
 
     addModule(Gui,"PartDesignGui"); // import the Gui module only once a session
