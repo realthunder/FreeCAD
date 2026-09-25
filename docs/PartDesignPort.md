@@ -705,6 +705,13 @@ checks, green.
 |---|---|---|---|
 | `5ae67ee2f9` | `0ed2170050` | a polar pattern at -90 deg: clamped to ~0, the occurrences on each other, no error | turns the other way, as Reversed; -360 a full turn; the panel takes -360..360 |
 | `774ec2cc93` | `bdb6096034` | holes on circles and arcs only | on a sketch's points too, as BaseProfileType (upstream's property) chooses; the Hole panel and a preference for new holes |
+| `bd03414893`, `20c01000a1` | `cccbe6cc5c` | Space on a face picked in the view toggled the feature it came from: nothing to see, or that feature shown in place of the Tip | the body; from the tree, still the feature |
+
+The spacebar pair is done without upstream's Tree.cpp interception: a
+selection picked in the view names an element and one from the tree does
+not, so `ViewProvider::getPickedVisibilityTarget()` (a PartDesign solid
+feature names its body) redirects only picked elements, in
+`SelectionSingleton::setVisible()`.
 
 Deferred: `51be8e7b4e` (the Materials inspectors in the menu: the
 appearance one reads ShapeAppearance, which no fork view provider has; the
@@ -735,5 +742,5 @@ Found on the way, and fixed:
   anywhere replaced the reference; the gate also outlived the panel and
   crashed the next selection after its document closed.
 
-TestPartDesignApp 130 OK, TestPartApp 125 OK; the Gui defects test 32
-checks, five runs in a row green (it was about one in three failing).
+TestPartDesignApp 130 OK, TestPartApp 125 OK; the Gui defects test 34
+checks, six runs in a row green (it was about one in three failing).
