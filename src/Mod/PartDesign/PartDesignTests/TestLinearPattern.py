@@ -139,6 +139,34 @@ class TestLinearPattern(unittest.TestCase):
         self.Doc.recompute()
         self.assertAlmostEqual(self.LinearPattern.Shape.Volume, 1e4)
 
+    def testOccurrencesKeepLengthAndOffset(self):
+        """Occurrences changes the gap count, so the derived one of Length and
+        Offset follows it (upstream fa0702956c); one occurrence divided by
+        zero."""
+        self.Body = self.Doc.addObject("PartDesign::Body", "Body")
+        self.Box = self.Body.newObject("PartDesign::AdditiveBox", "Box")
+        pattern = self.Body.newObject("PartDesign::LinearPattern", "LinearPattern")
+        pattern.Originals = [self.Box]
+        pattern.Direction = ([f for f in self.Body.Origin.OriginFeatures
+                              if f.Role == "X_Axis"][0], [""])
+        pattern.Mode = "length"
+        pattern.Length = 40
+        pattern.Occurrences = 3
+        self.assertAlmostEqual(pattern.Offset.Value, 20)
+        pattern.Occurrences = 5
+        self.assertAlmostEqual(pattern.Offset.Value, 10)
+        pattern.Mode = "offset"
+        pattern.Offset = 20
+        self.assertAlmostEqual(pattern.Length.Value, 80)
+        pattern.Occurrences = 2
+        self.assertAlmostEqual(pattern.Length.Value, 20)
+        pattern.Mode = "length"
+        pattern.Occurrences = 1
+        pattern.Length = 30
+        self.assertAlmostEqual(pattern.Offset.Value, 30)
+        self.Doc.recompute()
+        self.assertIn("Up-to-date", pattern.State)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestLinearPattern")

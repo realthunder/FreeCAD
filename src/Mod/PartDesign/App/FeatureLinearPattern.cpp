@@ -253,13 +253,19 @@ void LinearPattern::onChanged(const App::Property* prop)
         setReadWriteStatusForMode(mode);
     }
 
-    // Keep Length in sync with Offset
-    if (mode == LinearPatternMode::offset && prop == &Offset && !Length.testStatus(App::Property::Status::Immutable)) {
-        Length.setValue(Offset.getValue() * (Occurrences.getValue() - 1));
+    // Keep Length in sync with Offset, and with the number of gaps between
+    // them, which a change of Occurrences changes too (upstream fa0702956c).
+    // One occurrence has no gap: count it as one, as upstream's
+    // syncLengthAndOffset() does, instead of dividing by zero.
+    long gaps = Occurrences.getValue() > 1 ? Occurrences.getValue() - 1 : 1;
+    if (mode == LinearPatternMode::offset && (prop == &Offset || prop == &Occurrences)
+            && !Length.testStatus(App::Property::Status::Immutable)) {
+        Length.setValue(Offset.getValue() * gaps);
     }
 
-    if (mode == LinearPatternMode::length && prop == &Length && !Offset.testStatus(App::Property::Status::Immutable)) {
-        Offset.setValue(Length.getValue() / (Occurrences.getValue() - 1));
+    if (mode == LinearPatternMode::length && (prop == &Length || prop == &Occurrences)
+            && !Offset.testStatus(App::Property::Status::Immutable)) {
+        Offset.setValue(Length.getValue() / gaps);
     }
 
     Transformed::onChanged(prop);
