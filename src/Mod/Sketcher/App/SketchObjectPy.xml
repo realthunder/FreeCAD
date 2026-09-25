@@ -350,6 +350,42 @@ setDatum(constraint, value)
         </UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="getLabelPosition" Const="true">
+      <Documentation>
+        <UserDocu>
+Get label position of the constraint.
+
+getLabelPosition(constraintIndex:int) -> float
+        </UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="setLabelPosition">
+      <Documentation>
+        <UserDocu>
+Set label position of the constraint.
+
+setLabelPosition(constraintIndex:int, value:float)
+        </UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getLabelDistance" Const="true">
+      <Documentation>
+        <UserDocu>
+Get label distance of the constraint.
+
+getLabelDistance(constraintIndex:int) -> float
+        </UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="setLabelDistance">
+      <Documentation>
+        <UserDocu>
+Set label distance of the constraint.
+
+setLabelDistance(constraintIndex:int, value:float)
+        </UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="getDatum" Const="true">
       <Documentation>
         <UserDocu>

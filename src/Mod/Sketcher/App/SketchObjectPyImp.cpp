@@ -1083,6 +1083,74 @@ PyObject* SketchObjectPy::setDatum(PyObject* args)
     Py_Return;
 }
 
+PyObject* SketchObjectPy::getLabelPosition(PyObject* args) const
+{
+    int constrid {};
+    float value {};
+
+    if (!PyArg_ParseTuple(args, "i", &constrid)) {
+        return nullptr;
+    }
+
+    if (this->getSketchObjectPtr()->getLabelPosition(constrid, value)) {
+        PyErr_SetString(PyExc_ValueError, "Invalid constraint id");
+        return nullptr;
+    }
+
+    return Py::new_reference_to(Py::Float(value));
+}
+
+PyObject* SketchObjectPy::setLabelPosition(PyObject* args)
+{
+    int constrid {};
+    float value {};
+
+    if (!PyArg_ParseTuple(args, "if", &constrid, &value)) {
+        return nullptr;
+    }
+
+    if (this->getSketchObjectPtr()->setLabelPosition(constrid, value)) {
+        PyErr_SetString(PyExc_ValueError, "Invalid constraint id");
+        return nullptr;
+    }
+
+    Py_Return;
+}
+
+PyObject* SketchObjectPy::getLabelDistance(PyObject* args) const
+{
+    int constrid {};
+    float value {};
+
+    if (!PyArg_ParseTuple(args, "i", &constrid)) {
+        return nullptr;
+    }
+
+    if (this->getSketchObjectPtr()->getLabelDistance(constrid, value)) {
+        PyErr_SetString(PyExc_ValueError, "Invalid constraint id");
+        return nullptr;
+    }
+
+    return Py::new_reference_to(Py::Float(value));
+}
+
+PyObject* SketchObjectPy::setLabelDistance(PyObject* args)
+{
+    int constrid {};
+    float value {};
+
+    if (!PyArg_ParseTuple(args, "if", &constrid, &value)) {
+        return nullptr;
+    }
+
+    if (this->getSketchObjectPtr()->setLabelDistance(constrid, value)) {
+        PyErr_SetString(PyExc_ValueError, "Invalid constraint id");
+        return nullptr;
+    }
+
+    Py_Return;
+}
+
 PyObject* SketchObjectPy::getDatum(PyObject* args) const
 {
     const std::vector<Constraint*>& vals = this->getSketchObjectPtr()->Constraints.getValues();
