@@ -434,6 +434,13 @@ fc_add_gui_test(GuiSketchFocusCursor_tests_run
                 sketch-focus-cursor.py
                 --timeout 200)
 
+# A sketch's edge and vertex colours follow the preferences and stay out
+# of the file; a file from before keeps colours set by hand (upstream
+# 8def94e6f8, e260cf5c8a, 97e7b9d1f2).
+fc_add_gui_test(GuiSketchAutoColor_tests_run
+                sketch-auto-color.py
+                --timeout 200)
+
 # A selected arc grabbed by its centre drags by its centre, not its rim, and
 # a conic grabbed by its edge moves by the cursor's move instead of jumping
 # its centre to the cursor (upstream 2cd45b07f7).

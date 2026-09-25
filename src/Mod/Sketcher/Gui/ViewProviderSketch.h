@@ -158,6 +158,7 @@ public:
     App::PropertyBool ForceOrtho;
     App::PropertyBool SectionView;
     App::PropertyString EditingWorkbench;
+    App::PropertyBool AutoColor;
     SketcherGui::PropertyVisualLayerList VisualLayerList;
     //@}
 
@@ -456,6 +457,7 @@ public:
 
     virtual void reattach(App::DocumentObject *);
     virtual void beforeDelete();
+    void startRestoring() override;
     virtual void finishRestoring();
 
     virtual bool isEditingPickExclusive() const;
@@ -535,6 +537,15 @@ protected:
     /// get called by the container whenever a property has been changed
     void onChanged(const App::Property* prop) override;
     //@}
+
+    /// AutoColor: every property that carries the edge or vertex colour
+    std::vector<App::Property*> automaticColorProperties();
+    /// AutoColor: marks the colours it owns as not saved and not editable
+    void updateColorPropertiesVisibility();
+    /// AutoColor: takes the edge and vertex colours from the preferences
+    void updateAutomaticColorProperties();
+    /// AutoColor: follows a change of those preferences in every sketch
+    static void attachColorObserver();
 
 protected:
     fastsignals::connection connectAbortTransaction;
@@ -731,6 +742,8 @@ protected:
     // reference coordinates for relative operations
     double xInit,yInit;
     bool relative;
+    /// the file being restored turned AutoColor off
+    bool autoColorRestored = false;
 
     std::unique_ptr<Gui::Rubberband> rubberband;
 

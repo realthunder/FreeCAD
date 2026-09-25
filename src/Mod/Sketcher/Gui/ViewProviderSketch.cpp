@@ -115,6 +115,7 @@
 #include <Gui/ActionFunction.h>
 #include <Gui/MainWindow.h>
 #include <Gui/MenuManager.h>
+#include <Gui/ParamHandler.h>
 #include <Gui/View3DInventor.h>
 #include <Gui/View3DInventorViewer.h>
 #include <Gui/ViewParams.h>
@@ -610,6 +611,12 @@ ViewProviderSketch::ViewProviderSketch()
                       "Visibility automation",
                       (App::PropertyType)(App::Prop_ReadOnly),
                       "Name of the workbench to activate when editing this sketch.");
+    ADD_PROPERTY_TYPE(AutoColor,
+                      (true),
+                      "Object Style",
+                      (App::PropertyType)(App::Prop_None),
+                      "If true, this sketch will be colored based on user preferences. Turn it "
+                      "off to set color explicitly.");
     ADD_PROPERTY_TYPE(VisualLayerList,
                       (VisualLayer()),
                       "Layers",
@@ -662,22 +669,10 @@ ViewProviderSketch::ViewProviderSketch()
     yInit=0;
     relative=false;
 
-    unsigned long color;
-    ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/View");
-
-    // edge color
-    App::Color edgeColor = LineColor.getValue();
-    color = (unsigned long)(edgeColor.getPackedValue());
-    color = hGrp->GetUnsigned("SketchEdgeColor", color);
-    edgeColor.setPackedValue((uint32_t)color);
-    LineColor.setValue(edgeColor);
-
-    // vertex color
-    App::Color vertexColor = PointColor.getValue();
-    color = (unsigned long)(vertexColor.getPackedValue());
-    color = hGrp->GetUnsigned("SketchVertexColor", color);
-    vertexColor.setPackedValue((uint32_t)color);
-    PointColor.setValue(vertexColor);
+    // edge and vertex colours from the preferences (upstream 8def94e6f8)
+    updateAutomaticColorProperties();
+    updateColorPropertiesVisibility();
+    attachColorObserver();
 
     //rubberband selection
     rubberband.reset(new Gui::Rubberband());
@@ -8185,12 +8180,113 @@ void ViewProviderSketch::updateData(const App::Property *prop)
     }
 }
 
+void ViewProviderSketch::startRestoring()
+{
+    inherited::startRestoring();
+    // Noted by onChanged() if the file turns AutoColor off.
+    autoColorRestored = false;
+}
+
 void ViewProviderSketch::finishRestoring()
 {
     inherited::finishRestoring();
+
+    // Which file this was. Upstream asks whether restoring touched AutoColor,
+    // but here a write of the value a property already holds is silent
+    // (Property::hasSetValue), and a file's "on" is the constructor's: only
+    // an "off" is heard. An "on" shows in the colours instead. The restore
+    // gives each recorded property the status its file saved, the colours
+    // are always recorded (a Transient property is never left to the shared
+    // defaults), and they were saved Transient exactly when automatic.
+    // Neither means a file from before AutoColor: follow the preferences
+    // only where the colours were never changed from the white the sketch
+    // always had (upstream 8def94e6f8).
+    if (!autoColorRestored && !LineColor.testStatus(App::Property::Transient)) {
+        App::Color white(1.f, 1.f, 1.f);
+        AutoColor.setValue(LineColor.getValue() == white && PointColor.getValue() == white);
+    }
+    updateAutomaticColorProperties();
+    updateColorPropertiesVisibility();
+
     auto sketch = getSketchObject();
     if (pInternalView && sketch->MakeInternals.getValue())
         pInternalView->updateVisual();
+}
+
+std::vector<App::Property*> ViewProviderSketch::automaticColorProperties()
+{
+    // A colour is kept three times over here: the colour, the per-element
+    // array and the material, each written when the colour is (upstream
+    // marks only the colour, and the file still carries the other two).
+    return {&LineColor, &LineColorArray, &LineMaterial,
+            &PointColor, &PointColorArray, &PointMaterial};
+}
+
+void ViewProviderSketch::updateColorPropertiesVisibility()
+{
+    bool automatic = AutoColor.getValue();
+    for (App::Property *prop : automaticColorProperties()) {
+        // not saved, so users on different themes do not keep rewriting
+        // each other's files; and not a modification of the document when a
+        // preference changes it
+        prop->setStatus(App::Property::Transient, automatic);
+        prop->setStatus(App::Property::NoModify, automatic);
+    }
+    // and not editable while it is automatic
+    for (App::Property *prop : {&LineColor, &PointColor}) {
+        prop->setStatus(App::Property::ReadOnly, automatic);
+        prop->setStatus(App::Property::Hidden, automatic);
+    }
+}
+
+void ViewProviderSketch::updateAutomaticColorProperties()
+{
+    // Mid restore AutoColor is still its default, and the file's colours may
+    // be on their way in: finishRestoring() decides. A deferred restore
+    // spans event loop turns, so a preference handler can land in between.
+    if (!AutoColor.getValue() || testStatus(Gui::isRestoring))
+        return;
+
+    ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/View");
+    auto follow = [&hGrp](App::PropertyColor &prop, const char *key) {
+        App::Color color(1.f, 1.f, 1.f);
+        color.setPackedValue((uint32_t)hGrp->GetUnsigned(key, color.getPackedValue()));
+        if (prop.getValue() != color)
+            prop.setValue(color);
+    };
+    // Not a modification of the document. NoModify on the colours is not
+    // enough: every view provider change also touches the object's
+    // ViewObject, and the document takes that as one. Nothing but these
+    // colours changes here, so the flag can be put back as it was.
+    // (none yet in the constructor)
+    Gui::Document *gdoc = getObject() ? getDocument() : nullptr;
+    bool modified = gdoc && gdoc->isModified();
+    follow(LineColor, "SketchEdgeColor");
+    follow(PointColor, "SketchVertexColor");
+    if (gdoc && !modified && gdoc->isModified())
+        gdoc->setModified(false);
+}
+
+void ViewProviderSketch::attachColorObserver()
+{
+    static Gui::ParamHandlers handlers;
+    static bool attached;
+    if (attached)
+        return;
+    attached = true;
+    handlers.addDelayedHandler("BaseApp/Preferences/View",
+                               {"SketchEdgeColor", "SketchVertexColor"},
+                               [](ParameterGrp *) {
+        for (App::Document *doc : App::GetApplication().getDocuments()) {
+            Gui::Document *gdoc = Gui::Application::Instance->getDocument(doc);
+            if (!gdoc)
+                continue;
+            for (Gui::ViewProvider *vp :
+                    gdoc->getViewProvidersOfType(ViewProviderSketch::getClassTypeId()))
+                static_cast<ViewProviderSketch*>(vp)->updateAutomaticColorProperties();
+        }
+    });
 }
 
 void ViewProviderSketch::slotSolverUpdate()
@@ -8232,6 +8328,13 @@ void ViewProviderSketch::onChanged(const App::Property *prop)
     }
     if (prop == &SectionView)
         toggleViewSection(SectionView.getValue() ? 1 : 0);
+    else if (prop == &AutoColor) {
+        if (testStatus(Gui::isRestoring))
+            autoColorRestored = true;
+        // turned on, the colours follow at once (upstream 97e7b9d1f2)
+        updateColorPropertiesVisibility();
+        updateAutomaticColorProperties();
+    }
 }
 
 void ViewProviderSketch::attach(App::DocumentObject *pcFeat)
