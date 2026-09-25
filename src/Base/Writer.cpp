@@ -685,6 +685,22 @@ void ZipWriter::putNextEntry(const char *file, const char *obj) {
     ZipStream.putNextEntry(file);
 }
 
+bool ZipWriter::putRawEntry(const char* file, const RawEntry& entry)
+{
+    // zipios writes no zip64: a member it cannot describe goes the long way.
+    constexpr uint64_t limit = 0xFFFFFFFFu;
+    if (entry.size >= limit || entry.compressedSize >= limit) {
+        return false;
+    }
+    Writer::putNextEntry(file);
+    zipios::ZipCDirEntry header(file);
+    header.setMethod(static_cast<zipios::StorageMethod>(entry.method));
+    header.setCrc(entry.crc);
+    header.setSize(static_cast<zipios::uint32>(entry.size));
+    ZipStream.putRawEntry(header, entry.data, entry.compressedSize);
+    return true;
+}
+
 void ZipWriter::writeFiles()
 {
     // use a while loop because it is possible that while

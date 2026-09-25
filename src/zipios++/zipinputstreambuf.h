@@ -47,8 +47,16 @@ private:
   bool _open_entry ;
   ZipLocalEntry _curr_entry ;
   int _data_start ; // Don't forget entry header has a length too.
-  int _remain ; // For STORED entry only. the number of bytes that
+  int _remain ; // For STORED and ZSTANDARD entries only. the number of bytes that
   // hasn't been put in the _outvec yet.
+
+  // A ZSTANDARD entry: the decompression stream and its input buffer.
+  // _remain counts the compressed bytes not yet read from _inbuf.
+  int zstdUnderflow() ;
+  void *_zstd ;
+  vector< char > _zin ;
+  size_t _zin_pos ;
+  size_t _zin_len ;
 
   /** Copy-constructor is private to prevent copying. */
   ZipInputStreambuf( const ZipInputStreambuf &src ) ;

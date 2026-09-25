@@ -64,6 +64,11 @@ void ZipOutputStream::putNextEntry(const std::string& entryName) {
 }
 
 
+void ZipOutputStream::putRawEntry( const ZipCDirEntry &entry, const char *data, size_t size ) {
+  ozf->putRawEntry( entry, data, size ) ;
+}
+
+
 void ZipOutputStream::setComment( const std::string &comment ) {
   ozf->setComment( comment ) ;
 }

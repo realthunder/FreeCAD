@@ -54,6 +54,10 @@ public:
   */
   void putNextEntry(const std::string& entryName);
 
+  /** Writes a whole entry whose data is already compressed, as it is; see
+      ZipOutputStreambuf::putRawEntry(). */
+  void putRawEntry( const ZipCDirEntry &entry, const char *data, size_t size ) ;
+
   /** Sets the global comment for the Zip archive. */
   void setComment( const std::string& comment ) ;
 

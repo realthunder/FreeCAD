@@ -24,7 +24,9 @@ using std::string ;
     method field in a zip file and so on. */
 enum StorageMethod { STORED = 0, SHRUNK, REDUCED1, REDUCED2,
 		     REDUCED3, REDUCED4, IMPLODED, RESERVED,
-		     DEFLATED } ;
+		     DEFLATED,
+		     // Zstandard (APPNOTE 6.3.7); read when zstd is built in.
+		     ZSTANDARD = 93 } ;
 
 class FileEntry ;
 

@@ -81,6 +81,24 @@ void ZipOutputStreambuf::putNextEntry( const ZipCDirEntry &entry ) {
 }
 
 
+void ZipOutputStreambuf::putRawEntry( const ZipCDirEntry &entry, const char *data, size_t size ) {
+  if ( _open_entry )
+    closeEntry() ;
+
+  _entries.push_back( entry ) ;
+  ZipCDirEntry &ent = _entries.back() ;
+
+  ostream os( _outbuf ) ;
+  ent.setLocalHeaderOffset( os.tellp() ) ;
+  ent.setCompressedSize( static_cast< uint32 >( size ) ) ;
+  ent.setTime( dosTimeNow() ) ;
+  if ( ent.getMethod() == ZSTANDARD )
+    ent.setExtractVersion( 63 ) ;
+  os << static_cast< ZipLocalEntry >( ent ) ;
+  os.write( data, static_cast< std::streamsize >( size ) ) ;
+}
+
+
 void ZipOutputStreambuf::setComment( const string &comment ) {
   _zip_comment = comment ;
 }
@@ -146,19 +164,23 @@ void ZipOutputStreambuf::updateEntryHeaderInfo() {
   entry.setCompressedSize( curr_pos - entry.getLocalHeaderOffset() 
 			   - entry.getLocalHeaderSize() ) ;
 
-  // Mark Donszelmann: added current date and time
-  time_t ltime;
-  time( &ltime );
-  struct tm *now;
-  now = localtime( &ltime );
-  int dosTime = (now->tm_year - 80) << 25 | (now->tm_mon + 1) << 21 | now->tm_mday << 16 |
-              now->tm_hour << 11 | now->tm_min << 5 | now->tm_sec >> 1;
-  entry.setTime(dosTime);
+  entry.setTime( dosTimeNow() );
 
   // write ZipLocalEntry header to header position
   os.seekp( entry.getLocalHeaderOffset() ) ;
   os << static_cast< ZipLocalEntry >( entry ) ;
   os.seekp( curr_pos ) ;
+}
+
+
+int ZipOutputStreambuf::dosTimeNow() {
+  // Mark Donszelmann: added current date and time
+  time_t ltime;
+  time( &ltime );
+  struct tm *now;
+  now = localtime( &ltime );
+  return (now->tm_year - 80) << 25 | (now->tm_mon + 1) << 21 | now->tm_mday << 16 |
+         now->tm_hour << 11 | now->tm_min << 5 | now->tm_sec >> 1;
 }
 
 

@@ -5,6 +5,9 @@
 #include "meta-iostreams.h"
 
 #include <zlib.h>
+#ifdef FC_HAVE_ZSTD
+#include <zstd.h>
+#endif
 
 #include "zipinputstreambuf.h"
 #include "zipios_common.h"
@@ -17,7 +20,12 @@ using std::endl ;
 
 ZipInputStreambuf::ZipInputStreambuf( streambuf *inbuf, int s_pos, bool del_inbuf ) 
   : InflateInputStreambuf( inbuf, s_pos, del_inbuf ),
-    _open_entry( false                   ) 
+    _open_entry( false                   ),
+    _data_start( 0 ),
+    _remain( 0 ),
+    _zstd( nullptr ),
+    _zin_pos( 0 ),
+    _zin_len( 0 )
 {
   ConstEntryPointer entry = getNextEntry() ;
 
@@ -65,6 +73,23 @@ ConstEntryPointer ZipInputStreambuf::getNextEntry() {
 	    &( _outvec[ 0 ] ) + _outvecsize,
 	    &( _outvec[ 0 ] ) + _outvecsize ) ;
 //        cerr << "stored" << endl ;
+    } else if ( _curr_entry.getMethod() == ZSTANDARD ) {
+#ifdef FC_HAVE_ZSTD
+      // The blob pack store's members (docs/FileBlobsManager.md sec 15.7).
+      if ( ! _zstd )
+        _zstd = ZSTD_createDStream() ;
+      ZSTD_DCtx_reset( static_cast< ZSTD_DStream * >( _zstd ), ZSTD_reset_session_only ) ;
+      _zin.resize( _outvecsize ) ;
+      _zin_pos = _zin_len = 0 ;
+      _remain = _curr_entry.getCompressedSize() ;
+      _open_entry = true ;
+      setg( &( _outvec[ 0 ] ),
+	    &( _outvec[ 0 ] ) + _outvecsize,
+	    &( _outvec[ 0 ] ) + _outvecsize ) ;
+#else
+      _open_entry = false ;
+      throw FCollException( "Zstandard entry, and this build has no zstd" ) ;
+#endif
     } else {
       _open_entry = false ; // Unsupported compression format.
       throw FCollException( "Unsupported compression format" ) ;
@@ -80,6 +105,10 @@ ConstEntryPointer ZipInputStreambuf::getNextEntry() {
 
 
 ZipInputStreambuf::~ZipInputStreambuf() {
+#ifdef FC_HAVE_ZSTD
+  if ( _zstd )
+    ZSTD_freeDStream( static_cast< ZSTD_DStream * >( _zstd ) ) ;
+#endif
 }
 
 
@@ -88,6 +117,8 @@ int ZipInputStreambuf::underflow() {
     return EOF ; // traits_type::eof() 
   if ( _curr_entry.getMethod() == DEFLATED )
     return InflateInputStreambuf::underflow() ;
+  if ( _curr_entry.getMethod() == ZSTANDARD )
+    return zstdUnderflow() ;
 
   // Ok, we're are stored, so we handle it ourselves.
   int num_b = min( _remain, _outvecsize ) ;
@@ -102,6 +133,40 @@ int ZipInputStreambuf::underflow() {
     return EOF ; // traits_type::eof() 
 }
 
+
+int ZipInputStreambuf::zstdUnderflow() {
+#ifdef FC_HAVE_ZSTD
+  if ( gptr() < egptr() )
+    return static_cast< unsigned char >( *gptr() ) ;
+  ZSTD_DStream *stream = static_cast< ZSTD_DStream * >( _zstd ) ;
+  for ( ;; ) {
+    if ( _zin_pos == _zin_len && _remain > 0 ) {
+      int want = min( _remain, static_cast< int >( _zin.size() ) ) ;
+      int got = _inbuf->sgetn( &( _zin[ 0 ] ), want ) ;
+      if ( got <= 0 )
+        return EOF ;
+      _remain -= got ;
+      _zin_pos = 0 ;
+      _zin_len = got ;
+    }
+    ZSTD_inBuffer in = { _zin.data(), _zin_len, _zin_pos } ;
+    ZSTD_outBuffer out = { &( _outvec[ 0 ] ), static_cast< size_t >( _outvecsize ), 0 } ;
+    size_t result = ZSTD_decompressStream( stream, &out, &in ) ;
+    _zin_pos = in.pos ;
+    if ( ZSTD_isError( result ) )
+      throw FCollException( "Corrupt Zstandard entry" ) ;
+    if ( out.pos > 0 ) {
+      setg( &( _outvec[ 0 ] ), &( _outvec[ 0 ] ), &( _outvec[ 0 ] ) + out.pos ) ;
+      return static_cast< unsigned char >( *gptr() ) ;
+    }
+    // Nothing came out of input that is all used: the entry is done.
+    if ( _zin_pos == _zin_len && _remain == 0 )
+      return EOF ;
+  }
+#else
+  return EOF ;
+#endif
+}
 
 // FIXME: We need to check somew
 //  

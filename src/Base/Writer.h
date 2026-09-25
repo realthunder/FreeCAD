@@ -30,6 +30,7 @@
 #include <sstream>
 #include <vector>
 #include <cassert>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <streambuf>
@@ -174,6 +175,33 @@ public:
 
     /// put the next entry with a give name
     virtual void putNextEntry(const char *filename, const char *objName=nullptr);
+
+    /// An entry's bytes as a zip archive stores them, see putRawEntry().
+    struct RawEntry
+    {
+        /// Zip method: 0 stored, 8 deflate, 93 zstd.
+        int method {0};
+        uint32_t crc {0};
+        /// Uncompressed size.
+        uint64_t size {0};
+        const char* data {nullptr};
+        std::size_t compressedSize {0};
+    };
+
+    /** Write a whole entry whose bytes are already in zip form, as they are.
+     *
+     * Nothing is inflated or compressed again: the blob pack store keeps its
+     * members compressed, and a save copies them (docs/FileBlobsManager.md
+     * sec 15.7). Only an archive can take that; any other writer answers
+     * false, and the caller decodes the content and writes it through
+     * putNextEntry() instead.
+     */
+    virtual bool putRawEntry(const char* filename, const RawEntry& entry)
+    {
+        (void)filename;
+        (void)entry;
+        return false;
+    }
 
     /// insert a file as CDATA section in the XML file
     void insertAsciiFile(const char* FileName);
@@ -467,6 +495,7 @@ public:
         ZipStream.setLevel(level);
     }
     void putNextEntry(const char *filename, const char *objName=nullptr) override;
+    bool putRawEntry(const char* filename, const RawEntry& entry) override;
 
     ZipWriter(const ZipWriter&) = delete;
     ZipWriter(ZipWriter&&) = delete;

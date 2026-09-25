@@ -66,6 +66,18 @@ list(APPEND FreeCADBase_LIBS ${ICU_LIBRARIES})
 
 list(APPEND FreeCADBase_LIBS fmt::fmt)
 
+# zstd: the zip method (93) the blob pack store writes its members in
+# (docs/FileBlobsManager.md sec 15.7), read by zipios wherever an archive is.
+# Optional: without it new members are deflated, and an archive holding zstd
+# members cannot be read.
+find_path(ZSTD_INCLUDE_DIR zstd.h)
+find_library(ZSTD_LIBRARY NAMES zstd)
+if(ZSTD_INCLUDE_DIR AND ZSTD_LIBRARY)
+    include_directories(${ZSTD_INCLUDE_DIR})
+    add_definitions(-DFC_HAVE_ZSTD)
+    list(APPEND FreeCADBase_LIBS ${ZSTD_LIBRARY})
+endif()
+
 # The signals library. Static and PIC, so this both links it and hands its
 # include directory on to everything that links FreeCADBase -- which is
 # everything, since App/Property.h names a signal.
