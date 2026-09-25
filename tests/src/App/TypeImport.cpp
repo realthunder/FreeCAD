@@ -149,6 +149,15 @@ TEST_F(TypeImport, coreModulesSkipTheImport)
     EXPECT_NO_THROW(Base::Type::importModule("Base::Persistence"));
 }
 
+TEST_F(TypeImport, unprefixedNameImportsNothing)
+{
+    // "BadType" is what a property of an unregistered class saves. It names
+    // no module, so nothing is asked of Python: before, find_spec("") walked
+    // sys.path and the import then failed, on every such property restored.
+    EXPECT_NO_THROW(Base::Type::importModule("BadType"));
+    EXPECT_NO_THROW(Base::Type::importModule(""));
+}
+
 TEST_F(TypeImport, dottedUnderAModRootImports)
 {
     // a dotted name is walked one level at a time; every level resolves
