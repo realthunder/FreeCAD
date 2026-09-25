@@ -286,6 +286,8 @@ SoDatumLabel::SoDatumLabel()
 
     SO_NODE_ADD_FIELD(param1, (0.f));
     SO_NODE_ADD_FIELD(param2, (0.f));
+    // An angle's range; unregistered it notified nobody when it changed.
+    SO_NODE_ADD_FIELD(param3, (0.f));
     SO_NODE_ADD_FIELD(param4, (0.f));
     SO_NODE_ADD_FIELD(param5, (0.f));
 
@@ -1446,6 +1448,17 @@ void SoDatumLabel::notify(SoNotList * l)
         this->glimagevalid = false;
         // The glyph bitmap changed; the companion texture must be re-fed.
         this->imagesynced = false;
+    }
+    // The companion shapes draw this label for the render-cache capture, from
+    // these fields, but are not below this node: nothing tells the capture
+    // they changed, and it kept drawing the label as it first found it -- the
+    // old number, at the old place. textColor and lineWidth reach it through
+    // their connected style nodes; image is written by the capture itself, as
+    // is what the anchor reads.
+    if (this->leaderShape && f && f != &this->textColor && f != &this->lineWidth
+        && f != &this->image) {
+        this->leaderShape->touch();
+        this->imageShape->touch();
     }
     inherited::notify(l);
 }

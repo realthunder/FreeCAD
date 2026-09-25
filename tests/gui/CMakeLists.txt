@@ -383,3 +383,10 @@ fc_add_gui_test(GuiSketchKnotCommandNonGeometry_tests_run
 fc_add_gui_test(GuiSketchConstraintHints_tests_run
                 sketch-constraint-hints.py
                 --timeout 240)
+
+# A dimension's drawing follows its constraint under the bgfx renderer: the
+# label's companion shapes feed the capture, and nothing told it they had
+# changed, so a changed value kept its old number at the old place.
+fc_add_gui_test(GuiSketchDatumFollowsMode3_tests_run
+                sketch-datum-follows-mode3.py
+                --timeout 200)
