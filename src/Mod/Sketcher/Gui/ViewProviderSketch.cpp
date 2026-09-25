@@ -9067,8 +9067,18 @@ void ViewProviderSketch::setEditViewer(Gui::ViewerContext* viewer, int ModNum)
     if (ModNum == Transform || ModNum == TransformAt)
         return inherited::setEditViewer(viewer, ModNum);
 
+    // Copying the Py::Object is a reference count change, which needs the
+    // interpreter lock: an edit entered while a caller has let it go (an
+    // import pumping events) would otherwise touch it unlocked (upstream
+    // 5f74b4b299 locks the whole function; runCommand below locks itself).
+    bool hasTempoVis;
+    {
+        Base::PyGILStateLocker lock;
+        hasTempoVis = !this->TempoVis.getValue().isNone();
+    }
+
     //visibility automation: save camera
-    if (! this->TempoVis.getValue().isNone()){
+    if (hasTempoVis){
         try{
             QString cmdstr = QStringLiteral(
                         "ActiveSketch = App.getDocument('%1').getObject('%2')\n"
