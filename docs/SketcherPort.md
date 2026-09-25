@@ -31,7 +31,7 @@ Upstream's `f4665aa7b5` ("Core: support multiple active transactions") was
 evaluated and **declined**; `docs/TransactionLog.md` records why, and the
 direction the user wants instead.
 
-**Where the ledger stands (2026-09-25).** 1149 rows, of which 299 are open
+**Where the ledger stands (2026-09-25).** 1149 rows, of which 278 are open
 and undecided, down from 503 over three sessions of reading blobs rather
 than commits. First the 33 files the handler resyncs touched: 21 are
 identical to upstream's tip modulo whitespace, closing 74 rows at once
@@ -2720,6 +2720,83 @@ so the test places labels by dragging them. A label drag that lands
 leaves the label preselected and drawn in the preselection colour, which
 a red-pixel check reads as nothing: clear it with
 `Gui.Selection.clearPreselection()` (there is no `removePreselection`).
+
+### The twenty reopened rows (session 97): 48 -> 27, with `97e7b9d1f2`
+
+Each row's lines were looked for in the fork's own terms, not as text:
+the fork's view provider is its own design, so a missing line is only a
+lead.
+
+| row | verdict |
+|---|---|
+| `4164919e58` | **have**, the fork's own way: `generateContextMenu` folds the preselection into the selection (Shift keeps the rest), counts `ExternalEdge` as an edge, and offers Copy/Cut/Paste, and Paste on the empty menu |
+| `a38e73135e` | **have**, the fork's own way: `moveConstraint` clones and `set1Value()`s inside a "Drag Constraint" transaction opened on the first move, so undo restores the label; `sketch-undo-during-drag.py` |
+| `3da4b59b37`, `51a01b9e2b`, `d92267c6a7` | **have**: `convertSubName` in `SEL_PARAMS`; the warning fixes are here or need `_DEBUG` with `NDEBUG` |
+| `738a044f3c` | **have** (Sketcher part): `attach`/`onChanged` already call `ViewProvider2DObject`. ShowPlane itself is a Part/Gui feature, outside this ledger |
+| `9961f2949a`, `7075e3c1d5`, `1eb8496aae`, `fa61131590` | **n/a**: no camera sensor; the fork tests `FirstPos` before the swap upstream fixed; no object freeze; no parentless box in `setEdit` |
+| `e7c11a01be`, `5c7d287f6b`, `fd28d94f6a`, `7f984811e8` | **superseded**: the headlight and draw-style switch upstream removed again in `b07caa732e` (Revert #14386 and #16378); the fork never had it |
+| `5f74b4b299` | **adapted** `b386a561f5`: the lock around the `TempoVis` read only, not over the whole function and its solve |
+| `22a98d81f0` | **adapted** `3b5af6dfe9`: an edit entered from the tree left the keyboard there and Escape did nothing (measured); `setEditViewer` focuses its view through `ViewerContext`, which a mirror ignores. Upstream's second half, focus after a purged tool, was never lost here (measured) and is not taken |
+| `a1487106ab` | **taken** `3b5af6dfe9`: measured, a click with the line tool put the edit cursor back until the next move |
+| `8def94e6f8`, `e260cf5c8a`, `97e7b9d1f2` | **adapted** `51d863d806`, see below |
+| `fbd7f7090c` | **deferred** to the in-edit highlight move, see below |
+
+Guarded by `tests/gui/sketch-focus-cursor.py` (2 of 6 fail before) and
+`tests/gui/sketch-auto-color.py` (23 checks).
+
+**AutoColor.** A sketch's edge and vertex colours follow
+`SketchEdgeColor`/`SketchVertexColor` and stay out of the file, so a
+sketch drawn on a dark theme is not stuck with its colours on a light one.
+Four things differ from upstream:
+
+- **Six properties, not two.** A colour is kept three times here, the
+  colour, the per-element array and the material, and each is written
+  when the colour is. Upstream marks only the colour Transient, and its
+  file still carries the other two.
+- **Which file it was is read off the colours, not the Touched bit.**
+  Upstream asks whether restoring touched `AutoColor`. Here writing the
+  value a property already holds is silent (`Property::hasSetValue`, the
+  recompute optimisation), and a file's "on" equals the constructor's, so
+  only an "off" is heard -- and the shared defaults block, which pastes an
+  elided "on", is silent the same way. What does show is the colours'
+  status: the restore gives each recorded property the status its file
+  saved, a Transient property is never left to the defaults block, and
+  the colours were saved Transient exactly when automatic.
+- **A preference change is not a modification.** `NoModify` on the
+  colours is not enough: every view provider change also touches the
+  object's `ViewObject`, which the Gui document counts as one. The update
+  puts the flag back as it found it; nothing else changes there.
+- **The face colour is not included.** Upstream's end state also drives
+  `ShapeAppearance` from `SketchFaceColor`. The fork's faces are its own
+  (`MakeInternals`, preference `FaceColor`), carried by `ShapeColor`,
+  `Transparency` and `ShapeAppearance` together, and fork files from
+  before AutoColor can hold a face colour set by hand. Open question.
+
+A preference change reaches every sketch through one `ParamHandlers`
+delayed handler; the edit-time observer is attached only while editing.
+
+**The hover cost, and why `fbd7f7090c` waits.** Measured on the largest
+corpus sketch (Sketch028 of shirma_s_vitrazhom_N7, 1428 geometries, 2168
+constraints): one hover change's `SetPreselect` echo costs 13.2 ms, 0.03
+ms on a 3-geometry control, and `perf` puts 98% of it in `updateColor()`
+-- which runs twice per hover change here, once from the echo and once
+from `mouseMove`. Half of `updateColor()` was a quadratic this port
+introduced (`3e275d5e8d`): `isConstraintActiveInSketch()` scanned every
+constraint for each element of each constraint, looking for groups the
+sketch does not have; fixed in `a7ddac3021` (13.2 ms to 4.7 ms per hover change, `SketchObjectTest.groupQueriesFollowConstraintChanges`). The rest is
+`updateColor()` itself rewriting every colour on a hover. That is what
+the in-edit highlight move (evaluated 2026-09-10: draw the
+(pre)selection at render time, as the rest of the shapes do) removes
+outright, so `fbd7f7090c`'s echo is left to it rather than patched.
+
+**Harness notes.** To make a file from before a property existed, taking
+its `<Property>` out of `GuiDocument.xml` is not enough: the reader loops
+over a record's `<Properties Count="N">`, so each record that loses one
+must say one fewer, or it reads on into the next record and that view
+provider silently restores nothing. An App-level `doc.saveAs()` leaves
+the Gui document's `Modified` flag set; `Std_Save` clears both.
+`sketch-hidpi-sizes.py` needs `QT_SCALE_FACTOR=2`, which its ctest
+entry sets and a hand-run loop does not.
 
 ## 7a. The constraint-tool hints (session 85)
 
