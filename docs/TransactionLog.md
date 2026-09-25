@@ -3748,3 +3748,113 @@ version are the one thing a recovery loses, bounded by the cadence (7.b).
 
 Phase 7's recovery half is built. A crashed session's lock file is left
 for the next start's scan to remove, as before.
+
+## 26. Phase 4, the rest: branches (design, 2026-09-25)
+
+Section 15's phase 4 is named versions, embedding, branches and trimming.
+Named versions and the embedded mode are built (section 21); this section
+is what is left -- branch create and switch (17.1, 17.2), the `Branch`
+property, the closed branch of 16.6, and trimming (16.7). Merge (17.3) and
+concurrent writers (17.5) stay phase 6 and later.
+
+### 26.1 What exists (survey, 2026-09-25)
+
+- **The log is a line.** Every row's `parent` is the previous seq
+  (`t.parent = _nextSeq` at all four append sites in `TransactionLog.cpp`);
+  `txn` has no branch column and there is no `branch` table. The
+  `version` table has had a `branch` column since phase 1, always `main`.
+- **Every walk is linear.** `_replayLog(after)` (recovery's forward
+  replay) and `_rebuildUndoFromLog()` read `store.transactions()` in seq
+  order; the panel lists rows by seq; `lastOpOn` (the refuse rule) looks
+  at every later row. On a tree each of these must walk the current
+  branch's `parent` chain instead.
+- **The switch's parts are built.** `_materialiseVersion(num)` rebuilds a
+  version's files from the log; `restoreVersion` reads them into a hidden
+  scratch document and `_applyVersion` makes the live document equal it in
+  place -- objects matched by id, pointers, selection and view kept (24.8);
+  `_replayLog` brings a version forward to any later row (25.7);
+  `_rebuildUndoFromLog` makes cold stubs of a row sequence (25.7).
+- **Object ids.** `lastObjectId` starts at a random 10..5000 and a restore
+  sets it to the highest id read. Ids are `long`, 32 bits on Windows, and
+  are the shape `Tag`.
+- **The embedded guard's mismatch** (16.4 as built) warns and discards the
+  copy: the fresh history starts from the file as found, and the old one
+  is gone -- 16.6's closed branch was left for this phase. `Version` is
+  `"<num> <save id>"`, set only in embedded mode.
+- **Version numbers are a primary key**, and links (16.5) will pin them;
+  16.6's "`main` restarts at a fresh version 1" cannot happen in one table.
+
+### 26.2 Proposed shape
+
+1. **Schema 6.** `branch(id, name UNIQUE, from_version, from_seq,
+   head_seq, id_base, created, closed)`; `txn.branch` (the branch id, `main`
+   = 1 for every existing row). An older store gains both on open.
+   `parent` becomes the current branch's head, not the previous seq; seq
+   stays one counter for the whole log. The branch's `head_seq` moves with
+   every row appended to it.
+2. **Chain walks.** A store call `chain(head, stopAt)` returning the seqs
+   from a head back to a row; `_replayLog`, `_rebuildUndoFromLog`, the
+   refuse rule's `lastOpOn` and the panel go through it. A log that never
+   branches walks exactly what it walks today.
+3. **Create.** `createBranch(name, version)`: the fork version is named if
+   it was not (17.1); from a row with no version, one is materialised by
+   replay from the nearest older version on that row's chain. The new
+   branch's ids start at `id_base` = the fork's highest id plus a random
+   stride of 2^16..2^20 (17.2; ~2000 branches fit in 31 bits). Creating
+   switches to the new branch; from the current head that is only a
+   pointer move -- the document does not change.
+4. **Switch.** In place, as restore to a version is (24.8), not a reload:
+   the tip left is snapshotted (an unnamed version on it, 17.1), the
+   arriving branch's newest version at or before its head is materialised
+   into a scratch document, brought to the head by `_replayLog` along its
+   chain, and `_applyVersion` makes the live document equal it -- view
+   providers included, since with the log on every saved view property is
+   recorded (24.10), which `_applyVersion`'s ViewObjectTransaction test
+   predates. The apply writes no ops (the arriving branch's content did
+   not change); a `switch` record with no ops goes on the arriving branch
+   naming the one left. The log's per-property state (`_pending`,
+   `_recorded`, the copy cache, `_hashById`) is reset, the next snapshot
+   composes nothing it has not read. `lastObjectId` becomes the larger of
+   the head's highest id and the branch's `id_base`.
+5. **Eviction keeps each branch's newest version**, so a switch never
+   replays more than its own tail.
+6. **The file.** `Branch` (a document-level dynamic `PropertyString`,
+   `NoModify`, beside `Version`) names the branch the file is; on open with
+   an adopted history the log continues on it. The embedded copy carries
+   every branch (VACUUM INTO copies them; 17.4).
+7. **The closed branch of 16.6.** On a guard mismatch the copy is adopted
+   anyway: its branches are closed, its `main` renamed `main@<save date>`,
+   a new `main` starts with the file as found as its first version --
+   numbered on from the copy's counter, `from_version` the copy's last one
+   -- and a `restore` root row (parent 0: the gap has no ancestry).
+8. **Python and the panel.** `getTransactionBranches()`,
+   `createTransactionBranch(name, version=0, seq=0)`,
+   `switchTransactionBranch(name)`, `renameTransactionBranch(old, new)`;
+   `getTransactionLog()` rows gain `branch`. The panel: the branch in the
+   status line with a switcher, rows of the current chain by default and
+   all branches on a toggle, "Branch from version N..." and "Branch from
+   here..." in the context menus.
+9. **Trimming** (16.7) last: trim a branch, delete a branch, squash -- each
+   a `trim` record naming what went -- over the existing `truncate` /
+   collector machinery, generalised from "every row below seq" to "the rows
+   only this branch reaches".
+
+### 26.3 Build order (proposed)
+
+1. **4.a** Schema 6, `parent` as the branch head, chain walks; both suites
+   unchanged (a log that never branches must not notice).
+2. **4.b** Create and switch, App and Python; gtests that branch, edit
+   both sides, switch back and forth and compare every property with the
+   branch's head, ids never colliding, undo per branch.
+3. **4.c** `Branch` property, the embedded round trip on a branch, the
+   closed branch of 16.6.
+4. **4.d** The panel.
+5. **4.e** Trimming.
+
+### 26.4 Rulings (user, 2026-09-25)
+
+| Question | Ruling |
+| --- | --- |
+| Is a switch an undo step | **No.** Each branch keeps its own undo stack; a switch is a record with no ops on the arriving branch, and Ctrl+Z after it undoes that branch's last edit. |
+| How far back undo reaches after a switch | **Back to this open**, today's limit: the arriving branch's rows written since the document was opened, as cold stubs. Older rows stay reachable through the browser (selective undo, restore). |
+| Version numbers on 16.6's restart | **Numbering continues**: versions stay one per-document sequence and the new `main`'s first version takes the next number. 16.6's "restarts at a fresh version 1" is withdrawn. |
