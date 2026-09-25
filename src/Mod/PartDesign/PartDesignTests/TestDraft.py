@@ -71,6 +71,34 @@ class TestDraft(unittest.TestCase):
             self.Doc.recompute()
         self.assertAlmostEqual(self.Draft.Shape.Volume, 1500)
 
+    def testSketchNeutralPlane(self):
+        """A whole sketch is a neutral plane, as a datum plane where it is
+        (upstream 51f4ad7432); it was "No neutral plane reference
+        specified"."""
+        body = self.Doc.addObject("PartDesign::Body", "Body")
+        box = body.newObject("PartDesign::AdditiveBox", "Box")
+        box.Length = box.Width = box.Height = 10
+        sketch = body.newObject("Sketcher::SketchObject", "Sketch")
+        sketch.MapMode = "Deactivated"
+        sketch.Placement = App.Placement(App.Vector(0, 0, 3), App.Rotation())
+        plane = body.newObject("PartDesign::Plane", "DatumPlane")
+        plane.MapMode = "Deactivated"
+        plane.Placement = sketch.Placement
+        self.Doc.recompute()
+        side = [i for i, f in enumerate(box.Shape.Faces, 1)
+                if abs(f.normalAt(0, 0).x + 1) < 1e-9][0]
+        draft = body.newObject("PartDesign::Draft", "Draft")
+        draft.Base = (box, ["Face%d" % side])
+        draft.Angle = 10
+        volumes = []
+        for reference in (plane, sketch):
+            draft.NeutralPlane = (reference, [""])
+            self.Doc.recompute()
+            self.assertNotIn("Invalid", draft.State)
+            volumes.append(draft.Shape.Volume)
+        self.assertNotAlmostEqual(volumes[0], 1000)
+        self.assertAlmostEqual(volumes[1], volumes[0])
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestDraft")

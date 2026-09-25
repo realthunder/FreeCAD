@@ -20,7 +20,9 @@ user meets it.
     123a1c80e1 -- it jumped to the origin), and its base looks like the
     box, per-face colours too (upstream aea8919598 -- it came out grey);
   - an LCS attached to a vertex leaves a gap at its origin, so the vertex
-    can still be picked (upstream 51f546f1f6).
+    can still be picked (upstream 51f546f1f6);
+  - a sketch picked as a Draft's neutral plane is taken (upstream
+    51f4ad7432).
 
 Each was reproduced on the tree before its fix by the same steps, driven
 through the MCP console. The Pad delete is the control, which showed its
@@ -390,6 +392,43 @@ def test_lcs_vertex_pick():
     events()
 
 
+def test_draft_sketch_plane():
+    doc, body = new_body("PDDraftSketch")
+    box = doc.addObject("PartDesign::AdditiveBox", "Box")
+    body.addObject(box)
+    sk = doc.addObject("Sketcher::SketchObject", "Sketch")
+    body.addObject(sk)
+    sk.MapMode = "Deactivated"
+    sk.Placement = FreeCAD.Placement(V(0, 0, 3), FreeCAD.Rotation())
+    doc.recompute()
+    side = [i for i, f in enumerate(box.Shape.Faces, 1) if abs(f.normalAt(0, 0).x + 1) < 1e-9][0]
+    draft = doc.addObject("PartDesign::Draft", "Draft")
+    body.addObject(draft)
+    draft.Base = (box, ["Face%d" % side])
+    draft.Angle = 10
+    doc.recompute()
+    FreeCADGui.ActiveDocument.setEdit(draft.Name)
+    settle(800)
+    button = [b for b in QtWidgets.QApplication.allWidgets()
+              if isinstance(b, QtWidgets.QAbstractButton) and b.isVisible()
+              and b.objectName() == "buttonPlane"]
+    if check("the Draft panel has its neutral plane button", len(button) == 1, len(button)):
+        button[0].click()
+        events()
+        FreeCADGui.Selection.clearSelection()
+        FreeCADGui.Selection.addSelection(doc.Name, body.Name, sk.Name + ".")
+        events()
+        settle(300)
+        doc.recompute()
+        check("a sketch picked as the Draft's neutral plane is taken",
+              draft.NeutralPlane and draft.NeutralPlane[0] == sk and "Invalid" not in draft.State,
+              "%s %s" % (draft.NeutralPlane, draft.State))
+    FreeCADGui.ActiveDocument.resetEdit()
+    events()
+    FreeCAD.closeDocument(doc.Name)
+    events()
+
+
 def run():
     timer = QtCore.QTimer()
     timer.timeout.connect(sweep)
@@ -397,7 +436,7 @@ def run():
     try:
         for test in (test_move, test_delete, test_edit_mode, test_transparency,
                      test_transparency_mapped, test_planar_sketch, test_body_from_base,
-                     test_lcs_vertex_pick):
+                     test_lcs_vertex_pick, test_draft_sketch_plane):
             try:
                 test()
             except Exception:

@@ -43,6 +43,7 @@
 #include <Gui/Command.h>
 #include <Gui/Document.h>
 #include <Gui/MainWindow.h>
+#include <Mod/Part/App/Part2DObject.h>
 #include <Mod/Part/App/PartFeature.h>
 #include <Mod/Part/App/TopoShape.h>
 #include <Mod/PartDesign/App/Feature.h>
@@ -92,8 +93,15 @@ bool ReferenceSelection::allow(App::Document* pDoc, App::DocumentObject* pObj, c
     }
 #endif
     // Handle selection of geometry elements
-    if (!sSubName || sSubName[0] == '\0')
+    if (!sSubName || sSubName[0] == '\0') {
+        // A whole sketch is a plane where a planar face is asked for
+        // (upstream 51f4ad7432, which takes it wherever a face is)
+        if (pObj->isDerivedFrom<Part::Part2DObject>()
+                && type.testFlag(AllowSelection::FACE)
+                && type.testFlag(AllowSelection::PLANAR))
+            return true;
         return type.testFlag(AllowSelection::WHOLE);
+    }
 
     return allowFeature(pObj, sSubName);
 }

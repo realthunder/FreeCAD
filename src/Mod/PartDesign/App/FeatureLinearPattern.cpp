@@ -121,7 +121,9 @@ std::list<gp_Trsf> LinearPattern::getTransformations(const std::vector<Part::Top
             axis = refSketch->getAxis(Part::Part2DObject::V_Axis);
             axis *= refSketch->Placement.getValue();
         }
-        else if (subStrings[0] == "N_Axis") {
+        else if (subStrings[0] == "N_Axis" || subStrings[0].empty()) {
+            // the whole sketch, as a planar face, gives its normal; it fell
+            // through to an axis never set
             axis = refSketch->getAxis(Part::Part2DObject::N_Axis);
             axis *= refSketch->Placement.getValue();
         }

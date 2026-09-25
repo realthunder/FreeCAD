@@ -98,6 +98,12 @@ class TestLinearPattern(unittest.TestCase):
         self.Body.addObject(self.LinearPattern)
         self.Doc.recompute()
         self.assertAlmostEqual(self.LinearPattern.Shape.Volume, 1e4)
+        # the whole sketch, as a plane, is its normal too; it was an error
+        self.LinearPattern.Direction = (self.PadSketch, [""])
+        self.Doc.recompute()
+        self.assertNotIn("Invalid", self.LinearPattern.State)
+        self.assertAlmostEqual(self.LinearPattern.Shape.Volume, 1e4)
+        self.assertAlmostEqual(self.LinearPattern.Shape.BoundBox.ZMax, 100)
 
     def testVerticalSketchAxisLinearPattern(self):
         self.Body = self.Doc.addObject('PartDesign::Body','Body')
