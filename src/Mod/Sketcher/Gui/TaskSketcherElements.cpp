@@ -430,12 +430,32 @@ public:
     Sketcher::SketchObject* sketchObject = nullptr;
 };
 
-// Column 0's icon is a button that drops down the element's parts. It is
-// drawn with the small arrow a grouped tool button carries at its corner.
+// Column 0's icon is a button that drops down the element's parts. The
+// decoration is a rectangle: a strip on the left carries the drop-down
+// arrow, the square icon sits to its right (the tree's icon size is set
+// that wide, see arrowStrip()).
 class ElementIconDelegate : public QStyledItemDelegate
 {
 public:
     using QStyledItemDelegate::QStyledItemDelegate;
+
+    /// the width of the arrow strip for an icon of \a size pixels
+    static int arrowStrip(int size)
+    {
+        return std::max(8, size / 3);
+    }
+
+    void initStyleOption(QStyleOptionViewItem *option, const QModelIndex &index) const override
+    {
+        QStyledItemDelegate::initStyleOption(option, index);
+        // The base shrinks the decoration to the icon's own, square size;
+        // keep the view's wider one, which holds the arrow strip.
+        if (auto view = qobject_cast<const QAbstractItemView*>(option->widget)) {
+            if (!option->icon.isNull())
+                option->decorationSize = view->iconSize();
+        }
+        option->decorationAlignment = Qt::AlignRight | Qt::AlignVCenter;
+    }
 
     QRect iconRect(const QStyleOptionViewItem &option, const QModelIndex &index) const
     {
@@ -457,9 +477,11 @@ public:
             return;
         const QWidget *w = option.widget;
         QStyle *style = w ? w->style() : QApplication::style();
-        int size = std::max(5, icon.width() / 3);
+        int strip = icon.width() - icon.height();
+        if (strip <= 0)
+            return;
         QStyleOption arrow;
-        arrow.rect = QRect(icon.right() - size + 2, icon.bottom() - size + 2, size, size);
+        arrow.rect = QRect(icon.left(), icon.top() + (icon.height() - strip) / 2, strip, strip);
         arrow.palette = option.palette;
         arrow.state = QStyle::State_Enabled;
         style->drawPrimitive(QStyle::PE_IndicatorArrowDown, &arrow, painter, w);
@@ -652,6 +674,16 @@ TaskSketcherElements::TaskSketcherElements(ViewProviderSketch* sketchView)
     ui->elementsWidget->setSelectionMode(QAbstractItemView::ExtendedSelection);
     ui->elementsWidget->setEditTriggers(QAbstractItemView::NoEditTriggers);
     ui->elementsWidget->setMouseTracking(true);
+    {
+        // the icon is a button: its size is a preference (Display page)
+        int size = App::GetApplication()
+                       .GetParameterGroupByPath(
+                           "User parameter:BaseApp/Preferences/Mod/Sketcher/Elements")
+                       ->GetInt("ElementIconSize", 32);
+        size = std::clamp(size, 16, 128);
+        ui->elementsWidget->setIconSize(
+            QSize(size + ElementIconDelegate::arrowStrip(size), size));
+    }
     ui->elementsWidget->setColumnCount(5);
     ui->elementsWidget->header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     ui->elementsWidget->header()->setStretchLastSection(false);

@@ -18,8 +18,13 @@ pressing Return. The active part is read from the Name column.
 Sketch: a line (Vertex1, Vertex2), a circle (Vertex3), an arc (Vertex4 start,
 Vertex5 end, Vertex6 centre) and a point (Vertex7).
 
+The icon's size is a preference, ElementIconSize (Mod/Sketcher/Elements,
+on the Display page), 32 px by default; the drop-down arrow has a strip of
+its own on the icon's left, so the button is a rectangle.
+
 Checks:
 
+  - the icons are 32 px by default, with the arrow strip beside them;
   - the Type combo and the auto-switch box are gone;
   - hovering the icon explains it;
   - the line's menu offers Edge, Start point and End point; the circle's
@@ -32,10 +37,12 @@ Checks:
     makes its row name Vertex6;
   - clearing the selection puts every row back on its default part.
 
-Scored against the tree before the change: 11 of the 14 checks fail --
+Scored against the tree before the change: 11 of the 14 part checks fail --
 the Type combo is there, there is no tooltip and no part menu, and a part
 selected in the 3D view leaves the row on Edge3. The three that pass hold
-either way: nothing is selected, and the rows sit on their defaults.
+either way: nothing is selected, and the rows sit on their defaults. The
+two size checks fail before the icon-size preference: the list had no icon
+size of its own (the style default, reported as -1x-1) and no strip.
 """
 import os
 import time
@@ -151,6 +158,9 @@ def run():
         tree = [w for w in mw.findChildren(QtWidgets.QTreeWidget)
                 if w.objectName() == "elementsWidget"][0]
         line, circle, arc, point = (tree.topLevelItem(i) for i in range(4))
+        size = tree.iconSize()
+        check("the icons are 32 px, with the arrow strip beside them",
+              size.height() == 32 and size.width() > 32, "%dx%d" % (size.width(), size.height()))
 
         # the tooltip
         pos = icon_center(tree, line)
@@ -202,6 +212,20 @@ def run():
         check("clearing the selection puts every row on its default part",
               rows == ["Edge1", "Edge2", "Edge3", "Vertex7"], rows)
 
+        # the size is a preference, applied from the next edit
+        FreeCADGui.getDocument(doc.Name).resetEdit()
+        settle(10)
+        prefs = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Sketcher/Elements")
+        prefs.SetInt("ElementIconSize", 24)
+        FreeCADGui.getDocument(doc.Name).setEdit(sk)
+        settle(20)
+        trees = [w for w in mw.findChildren(QtWidgets.QTreeWidget)
+                 if w.objectName() == "elementsWidget"]
+        # the ended edit's panel is only deleted later: take the newest
+        tree = [t for t in trees if t.isVisible()][-1]
+        check("ElementIconSize sets the icon size", tree.iconSize().height() == 24,
+              tree.iconSize().height())
+        prefs.RemInt("ElementIconSize")
         FreeCADGui.getDocument(doc.Name).resetEdit()
         settle()
     except Exception:

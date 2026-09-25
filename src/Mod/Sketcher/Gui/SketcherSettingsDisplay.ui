@@ -138,6 +138,41 @@ Defaults to: %N = %V
         </property>
        </widget>
       </item>
+      <item row="12" column="0">
+       <widget class="QLabel" name="labelElementIconSize">
+        <property name="text">
+         <string>Elements list icon size</string>
+        </property>
+        <property name="buddy">
+         <cstring>ElementIconSize</cstring>
+        </property>
+       </widget>
+      </item>
+      <item row="12" column="1">
+       <widget class="Gui::PrefSpinBox" name="ElementIconSize">
+        <property name="toolTip">
+         <string>Size of the element icons in the task panel's elements list. Each icon is a button that picks which part of the element to select. Applies from the next sketch edit.</string>
+        </property>
+        <property name="suffix">
+         <string>px</string>
+        </property>
+        <property name="minimum">
+         <number>16</number>
+        </property>
+        <property name="maximum">
+         <number>128</number>
+        </property>
+        <property name="value">
+         <number>32</number>
+        </property>
+        <property name="prefEntry" stdset="0">
+         <cstring>ElementIconSize</cstring>
+        </property>
+        <property name="prefPath" stdset="0">
+         <cstring>Mod/Sketcher/Elements</cstring>
+        </property>
+       </widget>
+      </item>
       <item row="4" column="1">
        <widget class="Gui::PrefSpinBox" name="SegmentsPerGeometry">
         <property name="toolTip">

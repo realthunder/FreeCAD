@@ -370,6 +370,7 @@ void SketcherSettingsDisplay::saveSettings()
 {
     ui->ZHeight->onSave();
     ui->EditSketcherFontSize->onSave();
+    ui->ElementIconSize->onSave();
     ui->viewScalingFactor->onSave();
     ui->SegmentsPerGeometry->onSave();
     ui->dialogOnDistanceConstraint->onSave();
@@ -394,6 +395,7 @@ void SketcherSettingsDisplay::loadSettings()
 {
     ui->ZHeight->onRestore();
     ui->EditSketcherFontSize->onRestore();
+    ui->ElementIconSize->onRestore();
     ui->viewScalingFactor->onRestore();
     ui->SegmentsPerGeometry->onRestore();
     ui->dialogOnDistanceConstraint->onRestore();
