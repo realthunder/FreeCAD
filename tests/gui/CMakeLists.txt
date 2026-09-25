@@ -398,3 +398,10 @@ fc_add_gui_test(GuiSketchDatumFollowsMode3_tests_run
 fc_add_gui_test(GuiSketchArcLabels_tests_run
                 sketch-arc-labels.py
                 --timeout 240)
+
+# A selected arc grabbed by its centre drags by its centre, not its rim, and
+# a conic grabbed by its edge moves by the cursor's move instead of jumping
+# its centre to the cursor (upstream 2cd45b07f7).
+fc_add_gui_test(GuiSketchDragArcConic_tests_run
+                sketch-drag-arc-conic.py
+                --timeout 240)

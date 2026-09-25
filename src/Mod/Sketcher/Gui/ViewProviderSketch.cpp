@@ -1711,8 +1711,15 @@ void ViewProviderSketch::initDragging(int geoId, Sketcher::PointPos pos)
 
         if (geoIdi == geoId) {
             // already there as the preselected element: either its edge or one of its
-            // points. A point is replaced by the edge, an edge by itself.
-            edit->Dragged[0].Pos = Sketcher::PointPos::none;
+            // points. A point is replaced by the edge, an edge by itself -- except an
+            // arc's centre, which moves the arc whole; as its edge the solver would drag
+            // a point on the rim and change the radius (upstream 2cd45b07f7).
+            const Part::Geometry* geo = getSketchObject()->getGeometry(geoIdi);
+            bool arcCentre = pos == Sketcher::PointPos::mid && geo
+                && geo->getTypeId() == Part::GeomArcOfCircle::getClassTypeId();
+            if (!arcCentre) {
+                edit->Dragged[0].Pos = Sketcher::PointPos::none;
+            }
         }
         else if (!edit->isDraggedCurve(geoIdi)) {
             // two selected members of one group both resolve to the same handle
@@ -1822,8 +1829,14 @@ void ViewProviderSketch::initDragging(int geoId, Sketcher::PointPos pos)
             }
         }
 
+        // The solver drags a conic's edge by its centre, which would jump to the
+        // cursor unless the move is measured from the press (upstream 2cd45b07f7).
         if (geo->getTypeId() == Part::GeomLineSegment::getClassTypeId() ||
-            geo->getTypeId() == Part::GeomBSplineCurve::getClassTypeId()) {
+            geo->getTypeId() == Part::GeomBSplineCurve::getClassTypeId() ||
+            geo->getTypeId() == Part::GeomEllipse::getClassTypeId() ||
+            geo->getTypeId() == Part::GeomArcOfEllipse::getClassTypeId() ||
+            geo->getTypeId() == Part::GeomArcOfHyperbola::getClassTypeId() ||
+            geo->getTypeId() == Part::GeomArcOfParabola::getClassTypeId()) {
             setRelative();
         }
 
