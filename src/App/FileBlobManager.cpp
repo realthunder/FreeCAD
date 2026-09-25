@@ -38,6 +38,18 @@
 #include <QFileInfo>
 
 #include <zlib.h>
+#ifdef FC_HAVE_ZSTD
+# include <zstd.h>
+#endif
+
+#include <cstdio>
+#ifdef _WIN32
+# include <io.h>
+# include <windows.h>
+#else
+# include <fcntl.h>
+# include <unistd.h>
+#endif
 
 #include <Base/Console.h>
 #include <Base/Reader.h>
@@ -65,18 +77,26 @@ using namespace App;
 namespace App
 {
 
-/** A private copy of a document archive, serving the blob entries in it.
+/// A zip member as an archive stores it: the compressed bytes, and what the
+/// headers say about them.
+struct BlobRawMember
+{
+    std::string name;
+    int method {0};
+    uint32_t crc {0};
+    uint64_t size {0};
+    std::string data;
+};
+
+/** A zip file read through its own central directory: a segment of the pack
+ * store (docs/FileBlobsManager.md sec 15.7), or a document archive being split
+ * into segments on open (sec 15.10).
  *
  * Restoring a blob as a file of its own costs a file create, and on a
  * filesystem watched by endpoint protection that is where a large document's
  * open goes: MiSTer.FCStd's 5401 entries took 51 s to write out on a managed
- * Windows laptop once every other round trip was gone, against 0.05 s to copy
- * the archive whole and 0.26 s to inflate every entry back out of the copy
- * (docs/FileBlobsManager.md sec 14). So the archive is copied once, and the
- * content stays in it until something needs a real file.
- *
- * A copy and not the original, because the next save of the document replaces
- * that file while the content inside it is still referred to.
+ * Windows laptop once every other round trip was gone (sec 14). So content
+ * stays inside a few zip files until something needs a real file.
  *
  * One handle serves every read, since opening a file is itself a round trip
  * the monitor charges for. It is closed around anything that moves or deletes
@@ -93,12 +113,14 @@ public:
         uint64_t compressedSize {0};
         uint64_t size {0};
         uint16_t method {0};
+        uint32_t crc {0};
     };
 
     /// Index the central directory. Throws Base::FileException when the file
-    /// is not a zip archive this can read.
-    explicit BlobArchive(const std::string& path);
-    /// Deletes the copy: nothing refers to its content any more.
+    /// is not a zip archive this can read. An \a owned file is the store's
+    /// and is deleted with this object; a document being opened is not.
+    BlobArchive(const std::string& path, bool owned);
+    /// Deletes an owned file: nothing refers to its content any more.
     ~BlobArchive();
 
     BlobArchive(const BlobArchive&) = delete;
@@ -108,8 +130,10 @@ public:
     std::string path() const;
     /// Follow the copy after the transient directory has moved.
     void setPath(const std::string& path);
-    /// Content of one entry, inflated. False, and \a bytes empty, on failure.
+    /// Content of one entry, decoded. False, and \a bytes empty, on failure.
     bool read(std::size_t index, std::string& bytes);
+    /// One entry as stored, not decoded: what a raw copy writes.
+    bool readRaw(std::size_t index, BlobRawMember& member);
     /// Let go of the file handle; the next read opens it again.
     void close();
 
@@ -122,6 +146,7 @@ private:
     std::string _path;
     std::vector<Entry> _entries;
     Base::ifstream _file;
+    bool _owned {true};
 };
 
 }  // namespace App
@@ -145,8 +170,280 @@ uint64_t le64(const unsigned char* p)
 }
 }  // namespace
 
-BlobArchive::BlobArchive(const std::string& path)
+namespace
+{
+constexpr int zipStored = 0;
+constexpr int zipDeflate = 8;
+constexpr int zipZstd = 93;
+/// The most members a segment holds: past it a zip needs zip64 records,
+/// which a segment never writes.
+constexpr std::size_t segmentMaxMembers = 65535;
+
+void put16(std::string& out, uint32_t value)
+{
+    out.push_back(static_cast<char>(value & 0xFF));
+    out.push_back(static_cast<char>((value >> 8) & 0xFF));
+}
+
+void put32(std::string& out, uint32_t value)
+{
+    put16(out, value & 0xFFFF);
+    put16(out, value >> 16);
+}
+
+/// The content hash a segment member is named by: its name up to the
+/// extension.
+std::string memberHash(const std::string& name)
+{
+    return name.substr(0, name.find('.'));
+}
+
+/// A file the store writes, flushed to the disk before it is closed.
+class SegmentWriter
+{
+public:
+    explicit SegmentWriter(const std::string& path)
+        : _path(path)
+    {
+#ifdef _WIN32
+        _file = _wfopen(Base::FileInfo(path).toStdWString().c_str(), L"wb");
+#else
+        _file = std::fopen(path.c_str(), "wb");
+#endif
+    }
+
+    ~SegmentWriter()
+    {
+        if (_file) {
+            std::fclose(_file);
+            Base::FileInfo(_path).deleteFile();
+        }
+    }
+
+    SegmentWriter(const SegmentWriter&) = delete;
+    SegmentWriter& operator=(const SegmentWriter&) = delete;
+
+    bool ok() const { return _file && _ok; }
+    std::size_t count() const { return _count; }
+
+    void add(const BlobRawMember& member)
+    {
+        if (!ok()) {
+            return;
+        }
+        // No data descriptors, sizes in the local header: a segment whose
+        // central directory is lost can still be rebuilt by a scan (15.7).
+        // One fixed timestamp, 1980-01-01, so the same members make the same
+        // bytes.
+        const uint32_t version = member.method == zipZstd ? 63 : 20;
+        std::string header;
+        put32(header, 0x04034b50u);
+        put16(header, version);
+        put16(header, 0);
+        put16(header, static_cast<uint32_t>(member.method));
+        put16(header, 0);
+        put16(header, 0x21);
+        put32(header, member.crc);
+        put32(header, static_cast<uint32_t>(member.data.size()));
+        put32(header, static_cast<uint32_t>(member.size));
+        put16(header, static_cast<uint32_t>(member.name.size()));
+        put16(header, 0);
+        header += member.name;
+
+        put32(_directory, 0x02014b50u);
+        put16(_directory, version);
+        put16(_directory, version);
+        put16(_directory, 0);
+        put16(_directory, static_cast<uint32_t>(member.method));
+        put16(_directory, 0);
+        put16(_directory, 0x21);
+        put32(_directory, member.crc);
+        put32(_directory, static_cast<uint32_t>(member.data.size()));
+        put32(_directory, static_cast<uint32_t>(member.size));
+        put16(_directory, static_cast<uint32_t>(member.name.size()));
+        put16(_directory, 0);
+        put16(_directory, 0);
+        put16(_directory, 0);
+        put16(_directory, 0);
+        put32(_directory, 0);
+        put32(_directory, static_cast<uint32_t>(_offset));
+        _directory += member.name;
+
+        write(header);
+        write(member.data);
+        ++_count;
+    }
+
+    /// Central directory, then flush to the disk and close. False leaves
+    /// nothing behind.
+    bool finish()
+    {
+        if (!ok()) {
+            return false;
+        }
+        const uint64_t start = _offset;
+        write(_directory);
+        std::string end;
+        put32(end, 0x06054b50u);
+        put16(end, 0);
+        put16(end, 0);
+        put16(end, static_cast<uint32_t>(_count));
+        put16(end, static_cast<uint32_t>(_count));
+        put32(end, static_cast<uint32_t>(_directory.size()));
+        put32(end, static_cast<uint32_t>(start));
+        put16(end, 0);
+        write(end);
+        if (_ok && std::fflush(_file) != 0) {
+            _ok = false;
+        }
+#ifdef _WIN32
+        if (_ok && _commit(_fileno(_file)) != 0) {
+            _ok = false;
+        }
+#else
+        if (_ok && ::fsync(fileno(_file)) != 0) {
+            _ok = false;
+        }
+#endif
+        const bool closed = std::fclose(_file) == 0;
+        _file = nullptr;
+        if (!_ok || !closed) {
+            Base::FileInfo(_path).deleteFile();
+            return false;
+        }
+        return true;
+    }
+
+private:
+    void write(const std::string& bytes)
+    {
+        if (_ok && !bytes.empty()
+            && std::fwrite(bytes.data(), 1, bytes.size(), _file) != bytes.size()) {
+            _ok = false;
+        }
+        _offset += bytes.size();
+    }
+
+    std::string _path;
+    std::FILE* _file {nullptr};
+    std::string _directory;
+    uint64_t _offset {0};
+    std::size_t _count {0};
+    bool _ok {true};
+};
+
+/** Make a new file's directory entry durable, where that is a separate step.
+ *
+ * On Windows the flush of the file itself covers it.
+ */
+void syncDirectoryOf(const std::string& path)
+{
+#ifndef _WIN32
+    const std::string dir = Base::FileInfo(path).dirPath();
+    const int fd = ::open(dir.c_str(), O_RDONLY);
+    if (fd >= 0) {
+        ::fsync(fd);
+        ::close(fd);
+    }
+#else
+    (void)path;
+#endif
+}
+}  // namespace
+
+namespace App
+{
+/// Decode a member's bytes, whatever its method. False, \a bytes empty, when
+/// the method is not one this build reads or the bytes are corrupt.
+bool decodeMember(const BlobRawMember& member, std::string& bytes)
+{
+    bytes.clear();
+    if (member.size > std::numeric_limits<std::size_t>::max() / 2) {
+        return false;
+    }
+    if (member.method == zipStored) {
+        if (member.data.size() != member.size) {
+            return false;
+        }
+        bytes = member.data;
+        return true;
+    }
+    if (member.method == zipDeflate) {
+        if (member.size > std::numeric_limits<uInt>::max()
+            || member.data.size() > std::numeric_limits<uInt>::max()) {
+            return false;
+        }
+        bytes.resize(static_cast<std::size_t>(member.size));
+        z_stream stream {};
+        if (inflateInit2(&stream, -MAX_WBITS) != Z_OK) {
+            bytes.clear();
+            return false;
+        }
+        stream.next_in = reinterpret_cast<Bytef*>(const_cast<char*>(member.data.data()));
+        stream.avail_in = static_cast<uInt>(member.data.size());
+        stream.next_out = reinterpret_cast<Bytef*>(bytes.data());
+        stream.avail_out = static_cast<uInt>(bytes.size());
+        const int result = inflate(&stream, Z_FINISH);
+        const bool done = result == Z_STREAM_END && stream.total_out == member.size;
+        inflateEnd(&stream);
+        if (!done) {
+            bytes.clear();
+        }
+        return done;
+    }
+#ifdef FC_HAVE_ZSTD
+    if (member.method == zipZstd) {
+        bytes.resize(static_cast<std::size_t>(member.size));
+        const size_t got =
+            ZSTD_decompress(bytes.data(), bytes.size(), member.data.data(), member.data.size());
+        if (ZSTD_isError(got) || got != member.size) {
+            bytes.clear();
+            return false;
+        }
+        return true;
+    }
+#endif
+    return false;
+}
+
+/// Compress content into a member named \a name: zstd at level 3 where the
+/// build has it (sec 15.7), else deflate.
+std::shared_ptr<BlobRawMember> encodeMember(const std::string& bytes, const std::string& name)
+{
+    auto member = std::make_shared<BlobRawMember>();
+    member->name = name;
+    member->size = bytes.size();
+    member->crc = static_cast<uint32_t>(
+        crc32(0L, reinterpret_cast<const Bytef*>(bytes.data()), static_cast<uInt>(bytes.size())));
+#ifdef FC_HAVE_ZSTD
+    member->data.resize(ZSTD_compressBound(bytes.size()));
+    const size_t n = ZSTD_compress(member->data.data(), member->data.size(), bytes.data(),
+                                   bytes.size(), 3);
+    if (!ZSTD_isError(n)) {
+        member->data.resize(n);
+        member->method = zipZstd;
+        return member;
+    }
+#endif
+    uLongf bound = compressBound(static_cast<uLong>(bytes.size()));
+    member->data.resize(bound);
+    z_stream stream {};
+    deflateInit2(&stream, Z_DEFAULT_COMPRESSION, Z_DEFLATED, -MAX_WBITS, 8, Z_DEFAULT_STRATEGY);
+    stream.next_in = reinterpret_cast<Bytef*>(const_cast<char*>(bytes.data()));
+    stream.avail_in = static_cast<uInt>(bytes.size());
+    stream.next_out = reinterpret_cast<Bytef*>(member->data.data());
+    stream.avail_out = static_cast<uInt>(member->data.size());
+    deflate(&stream, Z_FINISH);
+    member->data.resize(stream.total_out);
+    deflateEnd(&stream);
+    member->method = zipDeflate;
+    return member;
+}
+}  // namespace App
+
+BlobArchive::BlobArchive(const std::string& path, bool owned)
     : _path(path)
+    , _owned(owned)
 {
     if (!open()) {
         throw Base::FileException("Cannot open archive copy", path.c_str());
@@ -157,6 +454,11 @@ BlobArchive::BlobArchive(const std::string& path)
 BlobArchive::~BlobArchive()
 {
     close();
+    if (!_owned) {
+        return;
+    }
+    // Where it cannot be deleted -- on Windows, a file someone else has open
+    // -- it is left, and the next open of the store deletes it (sec 15.7).
     Base::FileInfo fi(_path);
     if (fi.exists()) {
         fi.setPermissions(Base::FileInfo::ReadWrite);
@@ -232,6 +534,7 @@ void BlobArchive::index()
         }
         Entry entry;
         entry.method = le16(header + 10);
+        entry.crc = le32(header + 16);
         entry.compressedSize = le32(header + 20);
         entry.size = le32(header + 24);
         entry.headerOffset = le32(header + 42);
@@ -302,9 +605,9 @@ bool BlobArchive::readAt(uint64_t offset, char* data, std::size_t size)
     return !_file.fail() && static_cast<std::size_t>(_file.gcount()) == size;
 }
 
-bool BlobArchive::read(std::size_t index, std::string& bytes)
+bool BlobArchive::readRaw(std::size_t index, BlobRawMember& member)
 {
-    bytes.clear();
+    member.data.clear();
     std::lock_guard<std::mutex> guard(_mutex);
     if (index >= _entries.size() || !open()) {
         return false;
@@ -318,47 +621,26 @@ bool BlobArchive::read(std::size_t index, std::string& bytes)
     // The local header's own name and extra lengths, which the format lets
     // differ from the central directory's.
     const uint64_t data = entry.headerOffset + sizeof(local) + le16(local + 26) + le16(local + 28);
-    if (entry.size > std::numeric_limits<uInt>::max()
-        || entry.compressedSize > std::numeric_limits<uInt>::max()) {
+    if (entry.compressedSize > std::numeric_limits<std::size_t>::max() / 2) {
         return false;
     }
+    member.name = entry.name;
+    member.method = entry.method;
+    member.crc = entry.crc;
+    member.size = entry.size;
+    member.data.resize(static_cast<std::size_t>(entry.compressedSize));
+    if (!member.data.empty() && !readAt(data, member.data.data(), member.data.size())) {
+        member.data.clear();
+        return false;
+    }
+    return true;
+}
 
-    if (entry.method == 0) {
-        if (entry.compressedSize != entry.size) {
-            return false;
-        }
-        bytes.resize(static_cast<std::size_t>(entry.size));
-        if (!bytes.empty() && !readAt(data, bytes.data(), bytes.size())) {
-            bytes.clear();
-            return false;
-        }
-        return true;
-    }
-    if (entry.method != 8) {
-        return false;
-    }
-
-    std::vector<char> packed(static_cast<std::size_t>(entry.compressedSize));
-    if (!packed.empty() && !readAt(data, packed.data(), packed.size())) {
-        return false;
-    }
-    bytes.resize(static_cast<std::size_t>(entry.size));
-    z_stream stream {};
-    if (inflateInit2(&stream, -MAX_WBITS) != Z_OK) {
-        bytes.clear();
-        return false;
-    }
-    stream.next_in = reinterpret_cast<Bytef*>(packed.data());
-    stream.avail_in = static_cast<uInt>(packed.size());
-    stream.next_out = reinterpret_cast<Bytef*>(bytes.data());
-    stream.avail_out = static_cast<uInt>(bytes.size());
-    const int result = inflate(&stream, Z_FINISH);
-    const bool done = result == Z_STREAM_END && stream.total_out == entry.size;
-    inflateEnd(&stream);
-    if (!done) {
-        bytes.clear();
-    }
-    return done;
+bool BlobArchive::read(std::size_t index, std::string& bytes)
+{
+    bytes.clear();
+    BlobRawMember member;
+    return readRaw(index, member) && decodeMember(member, bytes);
 }
 
 // ---------------------------------------------------------------------------
@@ -383,6 +665,11 @@ const std::string& FileBlob::path() const
 bool FileBlob::inArchive() const
 {
     return !_materialized.load(std::memory_order_acquire);
+}
+
+bool FileBlob::inPack() const
+{
+    return _packed;
 }
 
 bool FileBlob::hasExtension(const char* ext) const
@@ -443,7 +730,7 @@ bool FileBlob::read(std::string& bytes) const
 {
     bytes.clear();
     if (inArchive()) {
-        return _archive && _archive->read(_entry, bytes);
+        return _owner && _owner->readPacked(*this, bytes);
     }
     Base::ifstream from(Base::FileInfo(_path), std::ios::in | std::ios::binary);
     if (!from) {
@@ -468,6 +755,7 @@ FileBlobManager::FileBlobManager(Document* doc)
 
 FileBlobManager::~FileBlobManager()
 {
+    stopWorker();
     // Blobs can outlive the manager -- an undo snapshot or the clipboard may
     // still hold one -- and the save set holds strong references of its own.
     // Detach them all first so ~FileBlob does not call release() on a manager
@@ -492,6 +780,10 @@ FileBlobManager::~FileBlobManager()
     _restoreHold.clear();
     _saveSet.clear();
     _blobs.clear();
+    _unflushed.clear();
+    // The segment files go with their last reader; the transient directory
+    // they are in goes with the document.
+    _segments.clear();
 }
 
 FileBlobManager& FileBlobManager::defaultManager()
@@ -1188,6 +1480,21 @@ void FileBlobManager::writeBlobs(Base::Writer& writer)
     // point and would be repaired too late.
     relocate();
 
+    // No repack or merge while a save reads the segments (sec 15.8).
+    struct Saving
+    {
+        std::atomic<int>& count;
+        explicit Saving(std::atomic<int>& count)
+            : count(count)
+        {
+            ++count;
+        }
+        ~Saving()
+        {
+            --count;
+        }
+    } saving(_saving);
+
     auto* fileWriter = dynamic_cast<Base::FileWriter*>(&writer);
     std::string dir;
     std::map<std::string, BlobIndexEntry> previous;
@@ -1240,14 +1547,31 @@ void FileBlobManager::writeBlobs(Base::Writer& writer)
             }
         }
         const std::string entryName = std::string(archivePrefix()) + entry.name;
-        if (entry.blob->inArchive()) {
-            // Straight out of the archive copy: writing the file first only to
-            // stream it back in is the round trip the copy exists to avoid.
-            std::string bytes;
-            if (!entry.blob->read(bytes)) {
+        if (entry.blob->inPack()) {
+            // The member as the pack store holds it, compressed once in its
+            // life: an archive takes it raw (sec 15.7), and only a writer
+            // that cannot -- a project directory -- is handed it decoded.
+            auto member = readMember(*entry.blob);
+            if (!member) {
                 std::stringstream str;
                 str << "FileBlobManager::writeBlobs(): content " << entry.blob->hash()
-                    << " cannot be read back out of the document's archive copy.";
+                    << " cannot be read back out of the document's blob store.";
+                THROWM(Base::FileSystemError, str.str())
+            }
+            Base::Writer::RawEntry raw;
+            raw.method = member->method;
+            raw.crc = member->crc;
+            raw.size = member->size;
+            raw.data = member->data.data();
+            raw.compressedSize = member->data.size();
+            if (writer.putRawEntry(entryName.c_str(), raw)) {
+                continue;
+            }
+            std::string bytes;
+            if (!decodeMember(*member, bytes)) {
+                std::stringstream str;
+                str << "FileBlobManager::writeBlobs(): content " << entry.blob->hash()
+                    << " cannot be decoded.";
                 THROWM(Base::FileSystemError, str.str())
             }
             writer.putNextEntry(entryName.c_str());
@@ -1267,6 +1591,14 @@ void FileBlobManager::writeBlobs(Base::Writer& writer)
 
     if (fileWriter) {
         prune(dir, previous, kept);
+    }
+
+    // A save is one of the batches new content is written in (sec 15.7).
+    try {
+        flush();
+    }
+    catch (const Base::Exception& e) {
+        FC_ERR("Blob store: " << e.what());
     }
 }
 
@@ -1472,31 +1804,21 @@ void FileBlobManager::readBlobEntry(const std::string& name, Base::Reader& entry
 
 bool FileBlobManager::restoreFromArchive(const std::string& source)
 {
-    FC_DURATION_DECL_INIT(dCopy);
-    FC_DURATION_DECL_INIT(dRead);
-    FC_TIME_INIT(tCopy);
+    FC_TIME_INIT(tSplit);
 
-    // Copied, not read in place: the next save of the document replaces the
-    // file it was opened from while this content is still referred to.
-    const std::string copy = newBlobPath("FCStd");
-    if (!Base::FileInfo(source).copyTo(copy.c_str())) {
-        FC_WARN("Cannot copy " << source << " to " << copy
-                               << ", writing its included files out instead");
-        return false;
-    }
+    // Read in place and split into segments (sec 15.10), never served from
+    // the file itself: the next save of the document replaces it while its
+    // content is still referred to.
     std::shared_ptr<BlobArchive> archive;
     try {
-        archive = std::make_shared<BlobArchive>(copy);
+        archive = std::make_shared<BlobArchive>(source, false);
     }
     catch (const Base::Exception& e) {
-        FC_WARN("Cannot serve included files from " << copy << " (" << e.what()
-                                                     << "), writing them out instead");
-        Base::FileInfo(copy).deleteFile();
+        FC_WARN("Cannot read included files out of " << source << " (" << e.what()
+                                                     << "), reading them one at a time");
         return false;
     }
-    FC_DURATION_PLUS(dCopy, tCopy);
 
-    FC_TIME_INIT(tRead);
     const std::string prefix = archivePrefix();
     const std::string index = prefix + indexName();
     std::size_t served = 0;
@@ -1509,52 +1831,39 @@ bool FileBlobManager::restoreFromArchive(const std::string& source)
         if (entry.name.compare(0, prefix.size(), prefix) != 0 || entry.name == index) {
             continue;
         }
-        // Every entry is inflated and hashed now: identity is what the archive
+        // Every member is decoded and hashed now: identity is what the archive
         // holds, never what an entry's name claims, and MiSTer's 87 MB of it
-        // costs a fraction of a second.
-        if (!archive->read(i, bytes)) {
+        // costs a fraction of a second. The member itself is copied raw.
+        auto member = std::make_shared<BlobRawMember>();
+        if (!archive->readRaw(i, *member) || !decodeMember(*member, bytes)) {
             FC_ERR("Failed to read included file " << entry.name << " from " << source);
             continue;
         }
         const std::string hash = hashBytes(bytes);
-        FileBlobHandle blob;
-        {
-            std::lock_guard<std::mutex> guard(_mutex);
-            auto it = _blobs.find(hash);
-            if (it != _blobs.end()) {
-                blob = it->second.lock();
-            }
-            if (!blob) {
-                // Complete before the lock is let go: find() is how anything
-                // else gets at it, and it must never see a blob with neither a
-                // file nor an archive behind it.
-                blob = make(hash, std::string(), bytes.size());
-                blob->_archive = archive;
-                blob->_entry = i;
-                const std::string ext = Base::FileInfo(entry.name).extension();
-                blob->_ext = isPlainExtension(ext) ? ext : std::string();
-                blob->_materialized.store(false, std::memory_order_release);
-            }
+        std::string ext = Base::FileInfo(entry.name).extension();
+        if (!isPlainExtension(ext)) {
+            ext.clear();
         }
+        member->name = hash + (ext.empty() ? "" : "." + ext);
+        FileBlobHandle blob = adoptMember(hash, bytes, std::move(member), ext.c_str());
         nameRestored(blob, entry.name);
         hold(std::move(blob));
         ++served;
     }
-    FC_DURATION_PLUS(dRead, tRead);
-
-    {
-        std::lock_guard<std::mutex> guard(_mutex);
-        _archives.erase(std::remove_if(_archives.begin(), _archives.end(),
-                                       [](const auto& held) { return held.expired(); }),
-                        _archives.end());
-        _archives.push_back(archive);
-    }
-    // Closed until the first read asks for it. Nothing needs it before then,
-    // and an open handle is what stops the transient directory being renamed
-    // or removed on Windows.
     archive->close();
-    FC_LOG("blob store " << source << ": " << served << " entries served from the archive copy, copy "
-                         << dCopy.count() << "s, read " << dRead.count() << "s");
+    archive.reset();
+
+    // The last batch; earlier ones were written as they filled a segment.
+    try {
+        flush();
+    }
+    catch (const Base::Exception& e) {
+        FC_ERR("Blob store: " << e.what());
+    }
+    FC_DURATION_DECL_INIT(dSplit);
+    FC_DURATION_PLUS(dSplit, tSplit);
+    FC_LOG("blob store " << source << ": " << served << " entries split into the pack store, "
+                         << dSplit.count() << "s");
     return true;
 }
 
@@ -1681,18 +1990,28 @@ void FileBlobManager::dispatchPending()
 
 void FileBlobManager::endRestore()
 {
-    std::unordered_map<std::string, FileBlobHandle> hold;
     {
-        std::lock_guard<std::mutex> guard(_mutex);
-        _pending.clear();
-        hold.swap(_restoreHold);
-        _restoreNames.clear();
-        // From here a referrer arriving is a bug in whatever produced it, not
-        // something to wait for; addPendingReferrer() says so out loud.
-        _restoreClosed = true;
+        std::unordered_map<std::string, FileBlobHandle> hold;
+        {
+            std::lock_guard<std::mutex> guard(_mutex);
+            _pending.clear();
+            hold.swap(_restoreHold);
+            _restoreNames.clear();
+            // From here a referrer arriving is a bug in whatever produced it,
+            // not something to wait for; addPendingReferrer() says so out loud.
+            _restoreClosed = true;
+        }
+        // Released outside the lock: the last reference to unclaimed content
+        // dies here, and ~FileBlob calls back into release().
     }
-    // Released outside the lock: the last reference to unclaimed content dies
-    // here, and ~FileBlob calls back into release().
+    // Content a forward-only read handed over entry by entry is still in
+    // memory; the restore is its batch.
+    try {
+        flush();
+    }
+    catch (const Base::Exception& e) {
+        FC_ERR("Blob store: " << e.what());
+    }
 }
 
 std::string FileBlobManager::blobDir() const
@@ -1762,6 +2081,31 @@ FileBlobHandle FileBlobManager::find(const std::string& hash) const
     return it->second.lock();
 }
 
+namespace
+{
+/// An extension as a blob keeps it: no dot, and only a plain one.
+std::string plainExtension(const char* extension)
+{
+    std::string ext = extension ? extension : "";
+    if (!ext.empty() && ext[0] == '.') {
+        ext.erase(ext.begin());
+    }
+    return isPlainExtension(ext) ? ext : std::string();
+}
+
+bool readWholeFile(const Base::FileInfo& fi, std::string& bytes)
+{
+    Base::ifstream from(fi, std::ios::in | std::ios::binary);
+    if (!from) {
+        return false;
+    }
+    std::ostringstream buffer;
+    buffer << from.rdbuf();
+    bytes = buffer.str();
+    return true;
+}
+}  // namespace
+
 FileBlobHandle FileBlobManager::insertFile(const char* srcPath, const char* extension)
 {
     Base::FileInfo src(srcPath);
@@ -1769,6 +2113,26 @@ FileBlobHandle FileBlobManager::insertFile(const char* srcPath, const char* exte
         std::stringstream str;
         str << "FileBlobManager: file " << srcPath << " does not exist.";
         THROWM(Base::FileSystemError, str.str())
+    }
+
+    // The name the referrer will store this under decides the extension when
+    // there is one: the source is often a scratch file whose name says less
+    // about the content than the name the property gives it.
+    std::string ext = extension ? extension : src.extension();
+    if (!ext.empty() && ext[0] != '.') {
+        ext.insert(ext.begin(), '.');
+    }
+
+    // Into the pack store without a file: a consumer that wants one asks
+    // for its path.
+    if (packStore() && src.size() <= memberCap()) {
+        std::string bytes;
+        if (!readWholeFile(src, bytes)) {
+            std::stringstream str;
+            str << "FileBlobManager: cannot read " << srcPath;
+            THROWM(Base::FileSystemError, str.str())
+        }
+        return adoptBytes(bytes, ext.c_str());
     }
 
     const std::string hash = hashFile(srcPath);
@@ -1787,13 +2151,6 @@ FileBlobHandle FileBlobManager::insertFile(const char* srcPath, const char* exte
         }
     }
 
-    // The name the referrer will store this under decides the extension when
-    // there is one: the source is often a scratch file whose name says less
-    // about the content than the name the property gives it.
-    std::string ext = extension ? extension : src.extension();
-    if (!ext.empty() && ext[0] != '.') {
-        ext.insert(ext.begin(), '.');
-    }
     const std::string dst = newBlobPath(ext.empty() ? nullptr : ext.c_str());
     if (!src.copyTo(dst.c_str())) {
         std::stringstream str;
@@ -1818,6 +2175,51 @@ FileBlobHandle FileBlobManager::adoptFile(const char* path, const char* extensio
         THROWM(Base::FileSystemError, str.str())
     }
 
+    // A scratch file is named after what it holds, so its own extension is
+    // the right one to keep; a staging path is not, and its caller passes
+    // what it knows instead -- which may be nothing, and an empty extension
+    // says exactly that.
+    std::string ext = extension ? extension : fi.extension();
+    if (!ext.empty() && ext[0] != '.') {
+        ext.insert(ext.begin(), '.');
+    }
+
+    if (packStore() && fi.size() <= memberCap()) {
+        // Into the pack store, so a save copies it compressed; and the file,
+        // which exists already, becomes the blob's own -- a caller adopting
+        // one usually wants a path next, and writing it again would cost the
+        // create the store saves everywhere else.
+        std::string bytes;
+        if (!readWholeFile(fi, bytes)) {
+            std::stringstream str;
+            str << "FileBlobManager: cannot read " << path;
+            THROWM(Base::FileSystemError, str.str())
+        }
+        FileBlobHandle blob = adoptBytes(bytes, ext.c_str());
+        std::lock_guard<std::mutex> once(_materializeMutex);
+        if (!blob->inArchive()) {
+            if (blob->_path != fi.filePath()) {
+                fi.setPermissions(Base::FileInfo::ReadWrite);
+                fi.deleteFile();
+            }
+            return blob;
+        }
+        const std::string dst = newBlobPath(ext.empty() ? nullptr : ext.c_str());
+        fi.setPermissions(Base::FileInfo::ReadWrite);
+        if (fi.renameFile(dst.c_str())) {
+            Base::FileInfo(dst).setPermissions(Base::FileInfo::ReadOnly);
+            {
+                std::lock_guard<std::mutex> guard(_mutex);
+                blob->_path = dst;
+            }
+            blob->_materialized.store(true, std::memory_order_release);
+        }
+        else {
+            fi.deleteFile();
+        }
+        return blob;
+    }
+
     const std::string hash = hashFile(path);
     if (hash.empty()) {
         std::stringstream str;
@@ -1830,7 +2232,7 @@ FileBlobHandle FileBlobManager::adoptFile(const char* path, const char* extensio
     if (it != _blobs.end()) {
         if (auto existing = it->second.lock()) {
             // Content already stored: drop the incoming duplicate. _path and
-            // not path(), which for an archived blob writes its file and takes
+            // not path(), which for a packed blob writes its file and takes
             // this same lock to do it.
             if (existing->_path != fi.filePath()) {
                 fi.setPermissions(Base::FileInfo::ReadWrite);
@@ -1840,15 +2242,7 @@ FileBlobHandle FileBlobManager::adoptFile(const char* path, const char* extensio
         }
     }
 
-    // An adopted file is a scratch file, or freshly restored content sitting
-    // at a staging path. Move it into the store. A scratch file is named
-    // after what it holds, so its own extension is the right one to keep; a
-    // staging path is not, and its caller passes what it knows instead --
-    // which may be nothing, and an empty extension says exactly that.
-    std::string ext = extension ? extension : fi.extension();
-    if (!ext.empty() && ext[0] != '.') {
-        ext.insert(ext.begin(), '.');
-    }
+    // Move it into the store.
     const std::string dst = newBlobPath(ext.empty() ? nullptr : ext.c_str());
     if (fi.filePath() != dst) {
         fi.setPermissions(Base::FileInfo::ReadWrite);
@@ -1866,22 +2260,80 @@ FileBlobHandle FileBlobManager::adoptFile(const char* path, const char* extensio
 
 FileBlobHandle FileBlobManager::adoptBytes(const std::string& bytes, const char* extension)
 {
-    const std::string hash = hashBytes(bytes);
+    return adoptMember(hashBytes(bytes), bytes, nullptr, extension);
+}
 
-    std::lock_guard<std::mutex> guard(_mutex);
-    auto it = _blobs.find(hash);
-    if (it != _blobs.end()) {
-        if (auto existing = it->second.lock()) {
-            // Content already stored: the bytes were the whole price, and the
-            // filesystem is not touched at all.
-            return existing;
+FileBlobHandle FileBlobManager::adoptMember(const std::string& hash,
+                                            const std::string& bytes,
+                                            std::shared_ptr<BlobRawMember> member,
+                                            const char* extension)
+{
+    const std::string ext = plainExtension(extension);
+    const bool pack = packStore() && bytes.size() <= memberCap();
+
+    // What the store has already costs nothing: a live blob is shared, and
+    // content still on disk or in memory from an earlier life is taken back
+    // without writing it again -- a shape changed and changed back, or an
+    // undo reaching past the content's release.
+    auto known = [&]() -> FileBlobHandle {
+        auto it = _blobs.find(hash);
+        if (it != _blobs.end()) {
+            if (auto existing = it->second.lock()) {
+                return existing;
+            }
         }
+        auto on = _where.find(hash);
+        if (on != _where.end()) {
+            return makePacked(hash, bytes.size(), ext, nullptr, on->second);
+        }
+        auto held = _unflushed.find(hash);
+        if (held != _unflushed.end()) {
+            return makePacked(hash, bytes.size(), ext, held->second, 0);
+        }
+        return {};
+    };
+
+    if (!pack) {
+        std::lock_guard<std::mutex> guard(_mutex);
+        if (auto blob = known()) {
+            return blob;
+        }
+        // Written straight to its place in the store: there is nothing to
+        // adopt from, so there is no staging path to move and no reason to
+        // hash a file that was just written from bytes already hashed here.
+        return make(hash, writeNewFile(bytes, ext.c_str()), bytes.size());
     }
 
-    // Written straight to its place in the store: there is nothing to adopt
-    // from, so there is no staging path to move and no reason to hash a file
-    // that was just written from bytes already hashed here.
-    return make(hash, writeNewFile(bytes, extension), bytes.size());
+    {
+        std::lock_guard<std::mutex> guard(_mutex);
+        if (auto blob = known()) {
+            return blob;
+        }
+    }
+    // Compressed outside the lock, once in the content's life (sec 15.7).
+    if (!member) {
+        member = encodeMember(bytes, hash + (ext.empty() ? "" : "." + ext));
+    }
+    FileBlobHandle blob;
+    bool full = false;
+    {
+        std::lock_guard<std::mutex> guard(_mutex);
+        blob = known();
+        if (!blob) {
+            blob = makePacked(hash, bytes.size(), ext, std::move(member), 0);
+        }
+        full = _unflushedBytes >= segmentCap();
+    }
+    if (full) {
+        // A segment's worth gathered: that is a batch too.
+        try {
+            flush();
+        }
+        catch (const Base::Exception& e) {
+            FC_ERR("Blob store: " << e.what());
+        }
+    }
+    return blob;
 }
 
 std::string FileBlobManager::writeNewFile(const std::string& bytes, const char* extension) const
@@ -1911,24 +2363,28 @@ std::string FileBlobManager::writeNewFile(const std::string& bytes, const char* 
 
 void FileBlobManager::materialize(const FileBlob& blob)
 {
-    // Under the lock, so two threads asking for the same path write one file.
-    std::lock_guard<std::mutex> guard(_mutex);
+    // Its own lock, so two threads asking for the same path write one file;
+    // not the store's, which reading the content takes.
+    std::lock_guard<std::mutex> once(_materializeMutex);
     if (!blob.inArchive()) {
         return;
     }
     std::string bytes;
-    if (!blob._archive || !blob._archive->read(blob._entry, bytes)) {
-        FC_ERR("Included file " << blob._hash << " cannot be read back out of "
-                                << (blob._archive ? blob._archive->path()
-                                                  : std::string("its archive copy")));
+    if (!readPacked(blob, bytes)) {
+        FC_ERR("Included file " << blob._hash << " cannot be read back out of the blob store");
         return;
     }
+    std::string path;
     try {
-        blob._path = writeNewFile(bytes, blob._ext.c_str());
+        path = writeNewFile(bytes, blob._ext.c_str());
     }
     catch (const Base::Exception& e) {
         FC_ERR("Included file " << blob._hash << ": " << e.what());
         return;
+    }
+    {
+        std::lock_guard<std::mutex> guard(_mutex);
+        blob._path = path;
     }
     blob._materialized.store(true, std::memory_order_release);
 }
@@ -1966,6 +2422,19 @@ void FileBlobManager::release(FileBlob* blob)
         }
     }
 
+    // Content that died before a batch wrote it never reaches the disk;
+    // content in a segment is dead space the worker may reclaim.
+    if (blob->_packed && blob->_segment == 0) {
+        auto held = _unflushed.find(blob->_hash);
+        if (held != _unflushed.end()) {
+            _unflushedBytes -= held->second->data.size();
+            _unflushed.erase(held);
+        }
+    }
+    else if (blob->_packed) {
+        scheduleMaintenance();
+    }
+
     if (blob->_path.empty()) {
         return;
     }
@@ -1974,4 +2443,546 @@ void FileBlobManager::release(FileBlob* blob)
         fi.setPermissions(Base::FileInfo::ReadWrite);
         fi.deleteFile();
     }
+}
+
+// ---------------------------------------------------------------------------
+// The pack store (docs/FileBlobsManager.md sec 15.7-15.10)
+// ---------------------------------------------------------------------------
+
+/** One segment: a zip file `seg-<N>.<g>` in the blob directory.
+ *
+ * Its members are named by content hash, so its central directory is the
+ * index (sec 15.8), read into byHash when a generation is installed. A
+ * generation is immutable once named; the next one replaces it whole.
+ */
+struct FileBlobManager::Segment
+{
+    int number {0};
+    int generation {0};
+    std::shared_ptr<BlobArchive> file;
+    /// hash -> entry index in file
+    std::unordered_map<std::string, std::size_t> byHash;
+};
+
+bool FileBlobManager::packStore() const
+{
+    return _doc && DocumentParams::getArchiveBlobStore();
+}
+
+uint64_t FileBlobManager::segmentCap() const
+{
+    return static_cast<uint64_t>(std::max<long>(DocumentParams::getBlobSegmentSize(), 4)) * 1024u;
+}
+
+uint64_t FileBlobManager::memberCap() const
+{
+    return segmentCap() / 4;
+}
+
+FileBlobHandle FileBlobManager::makePacked(const std::string& hash,
+                                           uint64_t size,
+                                           const std::string& ext,
+                                           std::shared_ptr<const BlobRawMember> member,
+                                           int segment)
+{
+    FileBlobHandle blob = make(hash, std::string(), size);
+    blob->_ext = ext;
+    blob->_packed = true;
+    blob->_segment = segment;
+    blob->_materialized.store(false, std::memory_order_release);
+    if (segment == 0 && member && !_unflushed.count(hash)) {
+        _unflushedBytes += member->data.size();
+        _unflushed.emplace(hash, std::move(member));
+    }
+    return blob;
+}
+
+int FileBlobManager::resolveSegment(int number) const
+{
+    for (auto it = _redirect.find(number); it != _redirect.end(); it = _redirect.find(number)) {
+        number = it->second;
+    }
+    return number;
+}
+
+bool FileBlobManager::isLive(const std::string& hash) const
+{
+    auto it = _blobs.find(hash);
+    return it != _blobs.end() && !it->second.expired();
+}
+
+int FileBlobManager::newSegmentNumber()
+{
+    if (_nextSegment == 0) {
+        // Numbers are never reused in a store (sec 15.10), and a directory
+        // may hold segments this manager did not write.
+        int highest = 0;
+        QDir dir(QString::fromUtf8(blobDir().c_str()));
+        for (const QString& name : dir.entryList({QStringLiteral("seg-*")}, QDir::Files)) {
+            const QString number = name.mid(4).section(QLatin1Char('.'), 0, 0);
+            highest = std::max(highest, number.toInt());
+        }
+        _nextSegment = highest + 1;
+    }
+    return _nextSegment++;
+}
+
+std::shared_ptr<const BlobRawMember> FileBlobManager::readMember(const FileBlob& blob) const
+{
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        std::shared_ptr<BlobArchive> file;
+        std::size_t index = 0;
+        {
+            std::lock_guard<std::mutex> guard(_mutex);
+            if (!blob._packed) {
+                return {};
+            }
+            if (blob._segment == 0) {
+                auto held = _unflushed.find(blob._hash);
+                return held != _unflushed.end() ? held->second : nullptr;
+            }
+            auto seg = _segments.find(resolveSegment(blob._segment));
+            if (seg == _segments.end()) {
+                return {};
+            }
+            auto hit = seg->second->byHash.find(blob._hash);
+            if (hit == seg->second->byHash.end()) {
+                return {};
+            }
+            file = seg->second->file;
+            index = hit->second;
+        }
+        // Read with no lock held: the generation is immutable, and a rewrite
+        // that retires it meanwhile leaves this reader its file (sec 15.7).
+        auto member = std::make_shared<BlobRawMember>();
+        if (file->readRaw(index, *member)) {
+            return member;
+        }
+        // The transient directory may have moved under the segment.
+        if (attempt == 0 && !Base::FileInfo(file->path()).exists()) {
+            const_cast<FileBlobManager*>(this)->relocate();
+            continue;
+        }
+        break;
+    }
+    return {};
+}
+
+bool FileBlobManager::readPacked(const FileBlob& blob, std::string& bytes) const
+{
+    auto member = readMember(blob);
+    return member && decodeMember(*member, bytes);
+}
+
+void FileBlobManager::writeGeneration(int number,
+                                      const std::vector<std::pair<int, std::string>>& copies,
+                                      const std::vector<std::shared_ptr<const BlobRawMember>>& added)
+{
+    // The sources as they are now. Only a writer changes them, and the
+    // caller holds _writeMutex.
+    std::map<int, std::shared_ptr<Segment>> sources;
+    int generation = 1;
+    {
+        std::lock_guard<std::mutex> guard(_mutex);
+        for (const auto& copy : copies) {
+            auto it = _segments.find(copy.first);
+            if (it != _segments.end()) {
+                sources.emplace(copy.first, it->second);
+            }
+        }
+        auto own = _segments.find(number);
+        if (own != _segments.end()) {
+            sources.emplace(number, own->second);
+            generation = own->second->generation + 1;
+        }
+    }
+
+    // Written straight to its name, never renamed into place (sec 15.11):
+    // on the monitored laptop renaming a zip under about 10 MB costs 3-11 s,
+    // and writing the same bytes to their final name costs nothing. The
+    // name is new -- a generation is never reused -- so a rename bought no
+    // atomicity: no reader opens a generation before it is installed below,
+    // which is after the file is complete and flushed. A crash mid-write
+    // leaves a file whose central directory does not check out, which is
+    // debris as a `.tmp` was.
+    const std::string path =
+        blobDir() + "/seg-" + std::to_string(number) + "." + std::to_string(generation);
+    {
+        SegmentWriter out(path);
+        BlobRawMember member;
+        for (const auto& copy : copies) {
+            auto seg = sources.find(copy.first);
+            if (seg == sources.end()) {
+                continue;
+            }
+            auto hit = seg->second->byHash.find(copy.second);
+            // Copied raw, never decoded or compressed again.
+            if (hit == seg->second->byHash.end()
+                || !seg->second->file->readRaw(hit->second, member)) {
+                FC_ERR("Blob store: member " << copy.second << " cannot be read out of "
+                                             << seg->second->file->path());
+                continue;
+            }
+            out.add(member);
+        }
+        for (const auto& add : added) {
+            out.add(*add);
+        }
+        if (!out.finish()) {
+            THROWM(Base::FileSystemError, "Blob store: cannot write " + path)
+        }
+    }
+    syncDirectoryOf(path);
+    auto file = std::make_shared<BlobArchive>(path, true);
+    auto segment = std::make_shared<Segment>();
+    segment->number = number;
+    segment->generation = generation;
+    segment->file = file;
+    for (std::size_t i = 0; i < file->entries().size(); ++i) {
+        segment->byHash.emplace(memberHash(file->entries()[i].name), i);
+    }
+    file->close();
+
+    // Strong references taken below die after the lock is let go: ~FileBlob
+    // takes it.
+    std::vector<FileBlobHandle> holding;
+    // Content taken back to memory: live again after the rewrite was planned
+    // without it.
+    std::vector<std::pair<std::string, std::shared_ptr<BlobRawMember>>> rescued;
+    {
+        std::lock_guard<std::mutex> guard(_mutex);
+        for (const auto& add : added) {
+            const std::string hash = memberHash(add->name);
+            _where[hash] = number;
+            auto held = _unflushed.find(hash);
+            if (held != _unflushed.end() && held->second == add) {
+                _unflushedBytes -= add->data.size();
+                _unflushed.erase(held);
+            }
+            auto it = _blobs.find(hash);
+            if (it != _blobs.end()) {
+                if (auto blob = it->second.lock()) {
+                    if (blob->_packed && blob->_segment == 0) {
+                        blob->_segment = number;
+                    }
+                    holding.push_back(std::move(blob));
+                }
+            }
+        }
+        for (const auto& source : sources) {
+            for (const auto& member : source.second->byHash) {
+                const std::string& hash = member.first;
+                if (segment->byHash.count(hash)) {
+                    _where[hash] = number;
+                    continue;
+                }
+                auto on = _where.find(hash);
+                if (on == _where.end() || on->second != source.first) {
+                    continue;
+                }
+                _where.erase(on);
+                auto it = _blobs.find(hash);
+                FileBlobHandle blob = it != _blobs.end() ? it->second.lock() : nullptr;
+                if (!blob || !blob->_packed || resolveSegment(blob->_segment) != source.first) {
+                    continue;
+                }
+                // Taken back after the plan was made: back to memory, for
+                // the next batch.
+                auto copy = std::make_shared<BlobRawMember>();
+                if (source.second->file->readRaw(member.second, *copy)) {
+                    blob->_segment = 0;
+                    _unflushedBytes += copy->data.size();
+                    _unflushed[hash] = copy;
+                }
+                holding.push_back(std::move(blob));
+            }
+        }
+        for (const auto& source : sources) {
+            if (source.first != number) {
+                // Merged: the handles naming it now read the new segment.
+                _segments.erase(source.first);
+                _redirect[source.first] = number;
+                if (_appendSegment == source.first) {
+                    _appendSegment = 0;
+                }
+            }
+        }
+        _segments[number] = segment;
+        _archives.erase(std::remove_if(_archives.begin(), _archives.end(),
+                                       [](const auto& held) { return held.expired(); }),
+                        _archives.end());
+        _archives.push_back(file);
+    }
+    // The retired generations go with `sources`, each file deleted when its
+    // last reader lets go.
+}
+
+void FileBlobManager::flush()
+{
+    // The batch only: the dead dropped from the segment written to is all
+    // the repack a caller's thread pays; the rest is the worker's.
+    std::lock_guard<std::mutex> writing(_writeMutex);
+    flushLocked();
+}
+
+void FileBlobManager::flushLocked()
+{
+    const uint64_t cap = segmentCap();
+    for (;;) {
+        std::vector<std::shared_ptr<const BlobRawMember>> batch;
+        std::vector<std::pair<int, std::string>> keep;
+        int number = 0;
+        {
+            std::lock_guard<std::mutex> guard(_mutex);
+            // Dead before it was written: gone, and never on disk.
+            std::vector<std::shared_ptr<const BlobRawMember>> live;
+            for (auto it = _unflushed.begin(); it != _unflushed.end();) {
+                if (!isLive(it->first)) {
+                    _unflushedBytes -= it->second->data.size();
+                    it = _unflushed.erase(it);
+                    continue;
+                }
+                live.push_back(it->second);
+                ++it;
+            }
+            if (live.empty()) {
+                return;
+            }
+            // Name order, so the same content makes the same segment.
+            std::sort(live.begin(), live.end(), [](const auto& a, const auto& b) {
+                return a->name < b->name;
+            });
+
+            // The segment being written to, while it has room: its live
+            // members carried into the next generation, its dead ones
+            // dropped on the way (repack rides the rewrite, sec 15.7).
+            uint64_t used = 0;
+            auto seg = _segments.find(_appendSegment);
+            if (seg != _segments.end()) {
+                const auto& entries = seg->second->file->entries();
+                for (const auto& member : seg->second->byHash) {
+                    auto on = _where.find(member.first);
+                    if (isLive(member.first) && on != _where.end() && on->second == _appendSegment) {
+                        keep.emplace_back(_appendSegment, member.first);
+                        used += entries[member.second].compressedSize;
+                    }
+                }
+                if (used + live.front()->data.size() > cap
+                    || keep.size() >= segmentMaxMembers) {
+                    keep.clear();
+                    used = 0;
+                    _appendSegment = 0;
+                }
+            }
+            else {
+                _appendSegment = 0;
+            }
+            number = _appendSegment ? _appendSegment : newSegmentNumber();
+            for (const auto& member : live) {
+                if ((!batch.empty() && used + member->data.size() > cap)
+                    || keep.size() + batch.size() >= segmentMaxMembers) {
+                    break;
+                }
+                batch.push_back(member);
+                used += member->data.size();
+            }
+            std::sort(keep.begin(), keep.end());
+        }
+        writeGeneration(number, keep, batch);
+        std::lock_guard<std::mutex> guard(_mutex);
+        _appendSegment = number;
+    }
+}
+
+void FileBlobManager::maintain()
+{
+    const uint64_t cap = segmentCap();
+    struct Plan
+    {
+        int number {0};
+        std::vector<std::pair<int, std::string>> keep;
+        uint64_t live {0};
+        uint64_t total {0};
+    };
+    std::vector<Plan> plans;
+    int append = 0;
+    {
+        std::lock_guard<std::mutex> guard(_mutex);
+        append = _appendSegment;
+        for (const auto& seg : _segments) {
+            Plan plan;
+            plan.number = seg.first;
+            const auto& entries = seg.second->file->entries();
+            for (const auto& member : seg.second->byHash) {
+                const uint64_t size = entries[member.second].compressedSize;
+                plan.total += size;
+                auto on = _where.find(member.first);
+                if (isLive(member.first) && on != _where.end() && on->second == seg.first) {
+                    plan.keep.emplace_back(seg.first, member.first);
+                    plan.live += size;
+                }
+            }
+            std::sort(plan.keep.begin(), plan.keep.end());
+            plans.push_back(std::move(plan));
+        }
+    }
+
+    std::vector<Plan*> small;
+    for (auto& plan : plans) {
+        if (plan.keep.empty()) {
+            // Nothing live: deleted, not rewritten.
+            std::shared_ptr<Segment> gone;
+            std::lock_guard<std::mutex> guard(_mutex);
+            auto it = _segments.find(plan.number);
+            if (it == _segments.end()) {
+                continue;
+            }
+            // Something taken back since the plan was made keeps it.
+            bool taken = false;
+            for (const auto& member : it->second->byHash) {
+                auto on = _where.find(member.first);
+                if (on != _where.end() && on->second == plan.number && isLive(member.first)) {
+                    taken = true;
+                    break;
+                }
+            }
+            if (taken) {
+                continue;
+            }
+            for (const auto& member : it->second->byHash) {
+                auto on = _where.find(member.first);
+                if (on != _where.end() && on->second == plan.number) {
+                    _where.erase(on);
+                }
+            }
+            gone = std::move(it->second);
+            _segments.erase(it);
+            if (_appendSegment == plan.number) {
+                _appendSegment = 0;
+            }
+            continue;
+        }
+        if (plan.number == append) {
+            continue;
+        }
+        // A segment nothing is written to shrinks once half of it is dead.
+        if (plan.live * 2 < plan.total) {
+            writeGeneration(plan.number, plan.keep, {});
+        }
+        if (plan.live < cap / 4) {
+            small.push_back(&plan);
+        }
+    }
+
+    // Several small segments are merged into one (sec 15.8): a new number,
+    // higher than theirs, and the handles naming them redirected.
+    std::size_t start = 0;
+    while (start + 1 < small.size()) {
+        std::vector<std::pair<int, std::string>> keep;
+        uint64_t live = 0;
+        std::size_t end = start;
+        while (end < small.size() && live + small[end]->live <= cap
+               && keep.size() + small[end]->keep.size() < segmentMaxMembers) {
+            live += small[end]->live;
+            keep.insert(keep.end(), small[end]->keep.begin(), small[end]->keep.end());
+            ++end;
+        }
+        if (end - start >= 2) {
+            int number = 0;
+            {
+                std::lock_guard<std::mutex> guard(_mutex);
+                number = newSegmentNumber();
+            }
+            writeGeneration(number, keep, {});
+            start = end;
+        }
+        else {
+            start = std::max(end, start + 1);
+        }
+    }
+}
+
+std::unique_lock<std::mutex> FileBlobManager::holdWrites()
+{
+    return std::unique_lock<std::mutex>(_writeMutex);
+}
+
+void FileBlobManager::shutdown()
+{
+    stopWorker();
+    closeArchives();
+}
+
+void FileBlobManager::scheduleMaintenance()
+{
+    std::lock_guard<std::mutex> guard(_workerMutex);
+    if (_workerStop) {
+        return;
+    }
+    _maintenanceDue = true;
+    if (!_worker.joinable()) {
+        _worker = std::thread([this]() { workerLoop(); });
+    }
+    _wake.notify_one();
+}
+
+void FileBlobManager::workerLoop()
+{
+    std::unique_lock<std::mutex> lock(_workerMutex);
+    for (;;) {
+        _wake.wait(lock, [this]() { return _workerStop || _maintenanceDue; });
+        // Settle first: deleting a thousand objects is a thousand releases,
+        // and one pass after them. A save reading the segments is waited
+        // out the same way.
+        while (!_workerStop && (_maintenanceDue || _saving.load() > 0)) {
+            _maintenanceDue = false;
+            _wake.wait_for(lock, std::chrono::milliseconds(200), [this]() { return _workerStop; });
+        }
+        if (_workerStop) {
+            return;
+        }
+        lock.unlock();
+        try {
+            std::lock_guard<std::mutex> writing(_writeMutex);
+            maintain();
+        }
+        catch (const Base::Exception& e) {
+            FC_ERR("Blob store: " << e.what());
+        }
+        catch (const std::exception& e) {
+            FC_ERR("Blob store: " << e.what());
+        }
+        lock.lock();
+    }
+}
+
+void FileBlobManager::stopWorker()
+{
+    {
+        std::lock_guard<std::mutex> guard(_workerMutex);
+        _workerStop = true;
+    }
+    _wake.notify_all();
+    if (_worker.joinable() && _worker.get_id() != std::this_thread::get_id()) {
+        _worker.join();
+    }
+}
+
+void FileBlobManager::makeDurable(const std::vector<FileBlobHandle>& blobs)
+{
+    bool pending = false;
+    {
+        std::lock_guard<std::mutex> guard(_mutex);
+        for (const auto& blob : blobs) {
+            if (blob && blob->_owner == this && blob->_packed && blob->_segment == 0) {
+                pending = true;
+                break;
+            }
+        }
+    }
+    if (!pending) {
+        return;
+    }
+    std::lock_guard<std::mutex> writing(_writeMutex);
+    flushLocked();
 }

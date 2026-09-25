@@ -24,12 +24,14 @@
 #define APP_FILEBLOBMANAGER_H
 
 #include <atomic>
+#include <condition_variable>
 #include <cstdint>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <set>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -41,6 +43,7 @@ namespace App
 {
 
 class BlobArchive;
+struct BlobRawMember;
 class Document;
 class DocumentObject;
 class FileBlobManager;
@@ -98,6 +101,12 @@ struct BlobIndexEntry
  *
  * Blobs are immutable. Changing a property's file always produces a new blob;
  * the file on disk is kept read-only to enforce that.
+ *
+ * In a document's store the content is normally not a file at all but a
+ * member of the pack store (docs/FileBlobsManager.md sec 15.7-15.10): held
+ * compressed in memory until the next batch is written, then a member of a
+ * zip segment file. A file is written only for a consumer that asks for a
+ * path.
  */
 class AppExport FileBlob
 {
@@ -114,9 +123,8 @@ public:
     const std::string& hash() const { return _hash; }
     /** Absolute path in the owning document's transient directory.
      *
-     * Content restored from a document archive is served out of a copy of
-     * that archive and has no file of its own until something asks for one:
-     * the first call here writes it. A caller that only needs the bytes should
+     * Content in the pack store has no file of its own until something asks
+     * for one: the first call here writes it. A caller that only needs the bytes should
      * use read() instead, and one that only needs to know what the content is
      * should use hasExtension() -- either of those asked of thousands of blobs
      * through this is thousands of file creates.
@@ -124,12 +132,16 @@ public:
     const std::string& path() const;
     uint64_t size() const { return _size; }
 
-    /** Whether the content is still inside the archive copy, with no file.
+    /** Whether the content has no file of its own, only a pack store member.
      *
      * Such a blob has no path whose existence means anything: asking for one
      * creates it. Code that repairs stale paths skips these.
      */
     bool inArchive() const;
+
+    /// Whether the content is a pack store member, in memory or in a segment,
+    /// whether or not it also has a file.
+    bool inPack() const;
 
     /// Whether the content is stored under this extension. Never writes a file.
     bool hasExtension(const char* ext) const;
@@ -137,7 +149,7 @@ public:
     /// for none. Never writes a file.
     std::string extension() const;
 
-    /// The whole content, from the file or from the archive copy. False, and
+    /// The whole content, from the file or from the pack store. False, and
     /// \a bytes empty, when it cannot be read.
     bool read(std::string& bytes) const;
 
@@ -159,17 +171,23 @@ private:
 
     FileBlobManager* _owner {nullptr};
     std::string _hash;
-    /// Written once by the manager when an archived blob gets its file.
+    /// Written once by the manager when a packed blob gets its file.
     mutable std::string _path;
     uint64_t _size {0};
-    /// The archive copy holding the content. Kept after the file is written,
-    /// because a reader that saw the blob still archived may be using it.
-    std::shared_ptr<BlobArchive> _archive;
-    std::size_t _entry {0};
-    /// Extension of an archived blob, without the dot. A file's is its path's.
+    /// Extension of a packed blob, without the dot. A file's is its path's.
     std::string _ext;
-    /// False while the content is only in the archive copy. Set after _path,
-    /// so a reader that sees it set may read _path without the lock.
+    /// Whether the content is a pack store member. Set before the blob is
+    /// published and never cleared.
+    bool _packed {false};
+    /** The logical segment holding the member, 0 while it is only in memory.
+     *
+     * Logical: a merge sends the segments it empties to the one it wrote
+     * through the manager's redirection, so no blob is touched (sec 15.8).
+     * Read and written under the manager's lock.
+     */
+    int _segment {0};
+    /// False while the content has no file. Set after _path, so a reader
+    /// that sees it set may read _path without the lock.
     mutable std::atomic<bool> _materialized {true};
 };
 
@@ -403,13 +421,47 @@ public:
      */
     void relocate();
 
-    /** Close the file handles of the archive copies restores serve from.
+    /** Close the file handles of the pack store's segments.
      *
      * Must precede anything that renames or deletes the transient directory:
-     * Windows refuses either while a file inside it is open. A copy opens again
-     * on its next read.
+     * Windows refuses either while a file inside it is open. A segment opens
+     * again on its next read.
      */
     void closeArchives();
+
+    /** Write the content held in memory into segments.
+     *
+     * New content is batched (sec 15.7): compressed as it arrives, kept in
+     * memory, and written one segment rewrite per batch -- here, at the end
+     * of a save and of a restore, or when a segment's worth has gathered.
+     * Every segment write is flushed to the disk, directory entry included,
+     * before this returns. The segment written to drops its dead members on
+     * the way; shrinking, deleting and merging the others is the
+     * maintenance worker's.
+     */
+    void flush();
+
+    /** Make the content of these blobs durable: in a segment on disk.
+     *
+     * The one ordering rule between the transaction log and this store
+     * (sec 15.8): a blob's segment reaches the disk before any log row
+     * naming the blob commits. One flush for however many blobs, and none
+     * when all of them are there already.
+     */
+    void makeDurable(const std::vector<FileBlobHandle>& blobs);
+
+    /** Hold off every segment write while this lives.
+     *
+     * For renaming the transient directory: Windows refuses while a file in
+     * it is open, and a segment being written is. Take it after anything
+     * that waits on a thread which may write here -- the transaction log's
+     * worker makes blobs durable.
+     */
+    std::unique_lock<std::mutex> holdWrites();
+
+    /// Stop the maintenance worker and close every segment: the transient
+    /// directory is about to go.
+    void shutdown();
 
     /// Staging path in the transient dir, for content whose hash is not known
     /// yet because it has still to be streamed in.
@@ -630,17 +682,63 @@ private:
     /// restoredEntries(). `name` may carry the `blobs/` prefix.
     void nameRestored(const FileBlobHandle& blob, const std::string& name);
     FileBlobHandle make(const std::string& hash, const std::string& path, uint64_t size);
-    /** Serve a zip document's blob entries out of a copy of the archive.
+    /** Split a zip document's blob entries into the pack store (sec 15.10).
      *
-     * False leaves the entries to the archive handler, one file each.
+     * False leaves the entries to the archive handler, one at a time.
      */
     bool restoreFromArchive(const std::string& archive);
     /// Write content to a new read-only file in the store and return its path.
     std::string writeNewFile(const std::string& bytes, const char* extension) const;
-    /// Give an archived blob its own file, see FileBlob::path().
+    /// Give a packed blob its own file, see FileBlob::path().
     void materialize(const FileBlob& blob);
-    /// The archive copies something still refers to.
+    /// The segment files something still refers to.
     std::vector<std::shared_ptr<BlobArchive>> liveArchives() const;
+
+    /// @name The pack store (docs/FileBlobsManager.md sec 15.7-15.10)
+    //@{
+    struct Segment;
+    /// Whether this store packs its content: a document's, with the switch on.
+    bool packStore() const;
+    /// Segment cap, and the member size above which content stays a file.
+    uint64_t segmentCap() const;
+    uint64_t memberCap() const;
+    /// Take a compressed member in memory for the next batch, and the blob.
+    /// Called with the lock held.
+    FileBlobHandle makePacked(const std::string& hash, uint64_t size, const std::string& ext,
+                              std::shared_ptr<const BlobRawMember> member, int segment);
+    /// The member holding a packed blob's content, compressed: from memory,
+    /// or read out of its segment. Null when it cannot be had.
+    std::shared_ptr<const BlobRawMember> readMember(const FileBlob& blob) const;
+    /// A packed blob's content, decoded.
+    bool readPacked(const FileBlob& blob, std::string& bytes) const;
+    /// The live segment a logical one ended up in. Lock held.
+    int resolveSegment(int number) const;
+    /// Whether a live blob holds this content. Lock held.
+    bool isLive(const std::string& hash) const;
+    /// A segment number never used in this store. Lock held.
+    int newSegmentNumber();
+    /** Write segment \a number's next generation: \a copies, each a member
+     * of a live segment by (segment, hash), copied raw, then \a added.
+     * Installs it; retires its old generation and any other segment copied
+     * from, which is then a merge. _writeMutex held, the lock not.
+     */
+    void writeGeneration(int number, const std::vector<std::pair<int, std::string>>& copies,
+                         const std::vector<std::shared_ptr<const BlobRawMember>>& added);
+    /// Write what is in memory into segments. _writeMutex held.
+    void flushLocked();
+    /// adoptBytes() with the hash known, and the member when the caller has
+    /// it compressed already -- the split on open copies it raw.
+    FileBlobHandle adoptMember(const std::string& hash, const std::string& bytes,
+                               std::shared_ptr<BlobRawMember> member, const char* extension);
+    /// Repack, delete and merge segments by what is live (sec 15.7-15.8).
+    /// _writeMutex held.
+    void maintain();
+    /// Wake the maintenance worker: a segment member died. Any lock but
+    /// _workerMutex may be held.
+    void scheduleMaintenance();
+    void workerLoop();
+    void stopWorker();
+    //@}
 
     Document* _doc {nullptr};
     mutable std::mutex _mutex;
@@ -668,8 +766,36 @@ private:
     /// The entry name each piece of content was last restored under, by hash.
     std::unordered_map<std::string, std::string> _restoreNames;
     std::unordered_map<std::string, std::weak_ptr<FileBlob>> _blobs;
-    /// Archive copies restores served from, for closeArchives() and relocate().
+    /// Every segment file opened, for closeArchives() and relocate().
     std::vector<std::weak_ptr<BlobArchive>> _archives;
+
+    /// Live segments by number, see Segment.
+    std::map<int, std::shared_ptr<Segment>> _segments;
+    /// Segments a merge emptied -> the segment it wrote them to (sec 15.8).
+    std::unordered_map<int, int> _redirect;
+    /// Which segment holds a member for this content, live or dead: a hash
+    /// the store has on disk costs no write when it is wanted again.
+    std::unordered_map<std::string, int> _where;
+    /// Members not yet in a segment, by hash: the batch being gathered.
+    std::unordered_map<std::string, std::shared_ptr<const BlobRawMember>> _unflushed;
+    uint64_t _unflushedBytes {0};
+    /// The next segment number, 0 until the directory has been looked at.
+    int _nextSegment {0};
+    /// The segment new content goes into while it has room.
+    int _appendSegment {0};
+    /// Serialises segment writes; taken before _mutex, never inside it.
+    std::mutex _writeMutex;
+    /// Serialises materialize(), which reads under neither lock.
+    mutable std::mutex _materializeMutex;
+    /// The maintenance worker (sec 15.2: never the GUI's thread), started
+    /// the first time a segment member dies.
+    std::thread _worker;
+    std::mutex _workerMutex;
+    std::condition_variable _wake;
+    bool _maintenanceDue {false};
+    bool _workerStop {false};
+    /// Saves writing blobs now: the worker waits for them (sec 15.8).
+    std::atomic<int> _saving {0};
 };
 
 }  // namespace App

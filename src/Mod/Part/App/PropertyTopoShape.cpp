@@ -598,33 +598,30 @@ void PropertyPartShape::storeBlob(Base::Writer& writer, ShapeRefSet* refs) const
 {
     auto& manager = blobManager();
     const char* ext = shapeBlobExtension(writer);
-    const std::string path = manager.uniquePath(std::string("shape.") + ext);
     try {
-        {
-            Base::ofstream out(Base::FileInfo(path),
-                               std::ios::out | std::ios::binary | std::ios::trunc);
-            if (!out) {
-                FC_ERR("Cannot write the geometry of " << getFullName() << " to " << path);
-                return;
-            }
-            // Even a null shape is written, for the same reason SaveDocFile
-            // writes one: an empty member is an error to whatever reads it.
-            const TopoDS_Shape shape = shapeForSave(writer);
-            if (!refs)
-                TopoShape(shape).exportBinary(out, true);
-            else
-                refs->write(shape, out);
+        // Serialised in memory and handed over as bytes: the store packs it
+        // (docs/FileBlobsManager.md sec 15.7), so a save of an imported
+        // model is no longer a file per shape.
+        std::ostringstream out(std::ios::out | std::ios::binary);
+        // Even a null shape is written, for the same reason SaveDocFile
+        // writes one: an empty member is an error to whatever reads it.
+        const TopoDS_Shape shape = shapeForSave(writer);
+        if (!refs)
+            TopoShape(shape).exportBinary(out, true);
+        else
+            refs->write(shape, out);
+        if (!out) {
+            FC_ERR("Cannot serialize the geometry of " << getFullName());
+            return;
         }
-        _blob = manager.adoptFile(path.c_str(), ext);
+        _blob = manager.adoptBytes(out.str(), ext);
     }
     catch (const Base::Exception& e) {
         FC_ERR("Failed to store the geometry of " << getFullName() << ": " << e.what());
-        Base::FileInfo(path).deleteFile();
     }
     catch (const Standard_Failure& e) {
         FC_ERR("Failed to serialize the geometry of " << getFullName() << ": "
                                                       << e.GetMessageString());
-        Base::FileInfo(path).deleteFile();
     }
 }
 

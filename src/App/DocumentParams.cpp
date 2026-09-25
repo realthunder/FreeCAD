@@ -59,6 +59,7 @@ public:
         signalParamChanged("InlineListSize");
         signalParamChanged("ArchiveRandomAccess");
         signalParamChanged("ArchiveBlobStore");
+        signalParamChanged("BlobSegmentSize");
         signalParamChanged("DeferShapeLoad");
         signalParamChanged("SaveMaterialCards");
         signalParamChanged("DedupShapePCurves");
@@ -115,6 +116,7 @@ public:
     long InlineListSize;
     bool ArchiveRandomAccess;
     bool ArchiveBlobStore;
+    long BlobSegmentSize;
     bool DeferShapeLoad;
     bool SaveMaterialCards;
     bool DedupShapePCurves;
@@ -187,6 +189,8 @@ public:
         funcs["ArchiveRandomAccess"] = &DocumentParamsP::updateArchiveRandomAccess;
         ArchiveBlobStore = this->handle->GetBool("ArchiveBlobStore", true);
         funcs["ArchiveBlobStore"] = &DocumentParamsP::updateArchiveBlobStore;
+        BlobSegmentSize = this->handle->GetInt("BlobSegmentSize", 65536);
+        funcs["BlobSegmentSize"] = &DocumentParamsP::updateBlobSegmentSize;
         DeferShapeLoad = this->handle->GetBool("DeferShapeLoad", true);
         funcs["DeferShapeLoad"] = &DocumentParamsP::updateDeferShapeLoad;
         SaveMaterialCards = this->handle->GetBool("SaveMaterialCards", true);
@@ -335,6 +339,10 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateArchiveBlobStore(DocumentParamsP *self) {
         self->ArchiveBlobStore = self->handle->GetBool("ArchiveBlobStore", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateBlobSegmentSize(DocumentParamsP *self) {
+        self->BlobSegmentSize = self->handle->GetInt("BlobSegmentSize", 65536);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateDeferShapeLoad(DocumentParamsP *self) {
@@ -548,12 +556,20 @@ static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
 "fall back to the forward-only walk."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "ArchiveBlobStore", "ArchiveBlobStore", App::ParamInfo::Bool, true)
         .setTitle("Archive Blob Store")
-        .setDoc("Serve the included files of a document archive out of one copy\n"
-"of the archive in the transient directory, and give each its own\n"
-"file only when something asks for a path. Requires\n"
-"ArchiveRandomAccess. Turn off to write every included file out\n"
-"during the restore, which on a monitored filesystem costs a file\n"
-"create per entry."),
+        .setDoc("Keep a document's included files in a pack store: a few zip\n"
+"segment files in the transient directory instead of a file per\n"
+"blob (docs/FileBlobsManager.md sec 15.7-15.10). An opened archive\n"
+"is split into segments, new content is compressed once and\n"
+"batched into them, and a save copies the members as they are. A\n"
+"blob gets a file of its own only when something asks for a path.\n"
+"Turn off for a file per blob, which on a monitored filesystem\n"
+"costs a file create per blob."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "BlobSegmentSize", "BlobSegmentSize", App::ParamInfo::Int, 65536)
+        .setTitle("Blob Segment Size")
+        .setDoc("Cap of one pack store segment, in KB. A segment is rewritten\n"
+"whole when content is added to it or dropped from it, so this\n"
+"bounds the cost of every such rewrite. Content over a quarter of\n"
+"it is kept as a file of its own."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "DeferShapeLoad", "DeferShapeLoad", App::ParamInfo::Bool, true)
         .setTitle("Defer Shape Load")
         .setDoc("Park shape archive entries during restore and read each one on\n"
@@ -1108,12 +1124,14 @@ void DocumentParams::removeArchiveRandomAccess() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docArchiveBlobStore() {
     return QT_TRANSLATE_NOOP("DocumentParams",
-"Serve the included files of a document archive out of one copy\n"
-"of the archive in the transient directory, and give each its own\n"
-"file only when something asks for a path. Requires\n"
-"ArchiveRandomAccess. Turn off to write every included file out\n"
-"during the restore, which on a monitored filesystem costs a file\n"
-"create per entry.");
+"Keep a document's included files in a pack store: a few zip\n"
+"segment files in the transient directory instead of a file per\n"
+"blob (docs/FileBlobsManager.md sec 15.7-15.10). An opened archive\n"
+"is split into segments, new content is compressed once and\n"
+"batched into them, and a save copies the members as they are. A\n"
+"blob gets a file of its own only when something asks for a path.\n"
+"Turn off for a file per blob, which on a monitored filesystem\n"
+"costs a file create per blob.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1136,6 +1154,37 @@ void DocumentParams::setArchiveBlobStore(const bool &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void DocumentParams::removeArchiveBlobStore() {
     instance()->handle->RemoveBool("ArchiveBlobStore");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docBlobSegmentSize() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"Cap of one pack store segment, in KB. A segment is rewritten\n"
+"whole when content is added to it or dropped from it, so this\n"
+"bounds the cost of every such rewrite. Content over a quarter of\n"
+"it is kept as a file of its own.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & DocumentParams::getBlobSegmentSize() {
+    return instance()->BlobSegmentSize;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & DocumentParams::defaultBlobSegmentSize() {
+    const static long def = 65536;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setBlobSegmentSize(const long &v) {
+    instance()->handle->SetInt("BlobSegmentSize",v);
+    instance()->BlobSegmentSize = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeBlobSegmentSize() {
+    instance()->handle->RemoveInt("BlobSegmentSize");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

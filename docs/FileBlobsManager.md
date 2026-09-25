@@ -1197,6 +1197,39 @@ store to nothing -- and costs it compression once per new blob. The rows
 that decide are the laptop's, on MiSTer, with the same script (legs
 `files,segments,save`).
 
+**The laptop's rows** (2026-09-25, the `PartDesignPort` session on the
+monitored Windows laptop, `archbench.py` at `205c1dd511` with the split
+leg G of 15.10, in `getUserCachePath()`, conda Python 3.12). MiSTer: 5401
+entries, 87.3 MB raw, 19.0 MB deflated. Two runs at the 64 MB cap agreed:
+
+| leg | create s | index s | read all, random s | delete the store s |
+| --- | --- | --- | --- | --- |
+| D file per blob (today) | 16.24 | -- | 13.1-15.9 | 14.1 |
+| E segments, zstd | 1.00 | 0.012 | 0.30 | 0.005 |
+| G split on open (64 MB cap: 1 segment) | 0.82-0.86 | 0.032 | 0.28 | 0.010 |
+
+- zstd holds MiSTer in 16.1 MB against 19.0 MB deflated.
+- **Save's blob half: 1.75-2.25 s deflating, 0.48-0.51 s copying zstd
+  members raw.**
+- The split on open: 0.56-0.61 s for the raw copy, 0.82-0.86 s with the
+  decode and hash the restore pays anyway, against 0.04 s for the single
+  copy of sec 14. Against the 2.4 s open of 14.5 that is about a third more.
+- **A stall in the second segment write.** The rewrite of seg-0 took
+  10.3 s, the merge 10.7 s, and at a 16 MB cap the split's second segment
+  11 s. Timed inside the writer: the write and the fsync take milliseconds,
+  and about 10 s goes to close plus rename, not scaling with size (a
+  5-member segment took 2.2 s). The first segment in a run is always fast.
+  **Pinned down by bisection on the laptop:** renaming a file that is a zip
+  of under about 10 MB (between 9.9 and 10.7 MB) blocks the rename for
+  3-11 s, growing with the member count (5 members 3 s, 270 5 s, 2700 or
+  more about 10 s) -- presumably the endpoint scanner unpacking archives
+  under a size cap. Over the cap a rename costs 0.02 s, a non-zip of the
+  same size 0.05 s, and a junk prefix before the zip does not hide it.
+  **The same bytes written straight to their final name are never
+  charged**, and reading them afterwards is no slower (0.15 s for every
+  member). Close is always free. So the store writes a generation to its
+  final name, not through a `.tmp` and a rename (15.11).
+
 ### 15.10 Names, and the opened archive split on open (user, 2026-09-25) -- design finished
 
 **Names.** A segment is `blobs/seg-<N>.<g>` in the store directory: `N` the
@@ -1230,3 +1263,78 @@ added), then the store -- the raw-member zip writer, the zstd method in
 the reader, segments by generation with the in-memory map and
 redirection, the split on open, the schema 5 save copying members raw,
 repack and merge, and the ordering rule against the log.
+
+### 15.11 As built (2026-09-25)
+
+Built on branch `Transaction` in the 15.10 order. What the design left open,
+and how it was settled:
+
+- **zstd in zipios, not only in the store.** zipios' forward reader throws
+  on a method it does not know, and it throws in `getNextEntry()`, so one
+  zstd member would have lost every entry after it. `ZipInputStreambuf`
+  decodes method 93 by streaming (`ZSTANDARD` in `StorageMethod`), so the
+  forward-only walk, the random-access reader and anything else reading an
+  archive through zipios reads a schema 5 file. zstd is optional in the
+  build (`FC_HAVE_ZSTD`, now found by Base as well as App): without it new
+  members are deflated, and a zstd member cannot be read.
+- **The raw-member writer is zipios' own.**
+  `ZipOutputStream::putRawEntry()` writes a whole member whose bytes are
+  already compressed, headers from the caller's method, CRC and size, and
+  `Base::Writer::putRawEntry()` exposes it: `ZipWriter` takes it (below
+  4 GB), every other writer answers false and is handed the content
+  decoded -- a project directory gets plain files as before.
+- **Segments are written by the store's own zip writer**
+  (`SegmentWriter`): no data descriptors, one fixed timestamp so the same
+  members make the same bytes, at most 65535 members (no zip64 records),
+  `fflush` + `fsync` (`_commit` on Windows), and on POSIX the directory
+  fsynced for the new entry. Every segment write is durable, so the
+  ordering rule of 15.8 reduces to "flush the batch before the row".
+- **No `.tmp` and no rename -- a departure from 15.7 and 15.10, forced by
+  the laptop** (15.9: renaming a zip under about 10 MB costs it 3-11 s).
+  A generation is written straight to `seg-<N>.<g>`. The rename bought no
+  atomicity: the name has never existed, and no reader opens a generation
+  before the store installs it, which is after the file is complete and
+  flushed. What changes is the crash rule: a file whose name ends in a
+  bare number may now be incomplete, so recovery takes a segment only if
+  its end-of-central-directory record is there and the directory it points
+  at checks out, and deletes the rest as it deleted a `.tmp`.
+- **What a blob knows.** `FileBlob` keeps `_packed` and a logical segment
+  number, 0 while its member is only in memory. The manager keeps the
+  hash-to-segment map of 15.8 (`_where`, live and dead members alike), the
+  live segments by number, the merge redirection, and the batch
+  (`_unflushed`, members compressed at adopt time). Content the store
+  still has -- on disk or in memory -- is taken back by hash without a
+  write, so a shape changed and changed back, or an undo past the
+  content's release, costs nothing.
+- **Batches.** A save (after its blob entries), the end of a restore, a
+  segment's worth gathered in memory, and the transaction log's commit
+  (`makeDurable()`, one flush for all the blobs a commit names). The batch
+  goes into the segment last written while it has room, whose next
+  generation drops its dead members on the way; the rest into new
+  segments.
+- **Maintenance on a worker thread** (`FileBlobManager::workerLoop`),
+  started the first time a segment member dies, settling 200 ms so a burst
+  of deletes is one pass, and standing aside while a save writes blobs.
+  It deletes segments with nothing live, rewrites those more than half
+  dead, and merges those under a quarter of the cap into a new, higher
+  number. `Document` holds segment writes across the transient directory
+  rename (after closing the log's store, whose worker writes here) and
+  stops the worker before deleting the directory.
+- **Loose files remain** for content over a quarter of the cap
+  (`BlobSegmentSize`, 64 MB, so 16 MB), for the store with no document
+  (`defaultManager()`), and with `ArchiveBlobStore` off. `adoptFile()`
+  packs the content and keeps the file it was handed as the blob's own:
+  its callers usually want a path next, and the file exists already.
+  `insertFile()` packs and writes nothing. Shapes are serialised in memory
+  (`PropertyPartShape::storeBlob()` -> `adoptBytes()`), so the first save
+  of an import is no longer a file per shape.
+- **The split on open** reads the opened archive in place, decodes and
+  hashes each blob member as the restore always did, and hands the member
+  raw to the batch, which writes capped segments as they fill.
+- **Tests read zstd members through `Mod/Test/ArchiveMembers.py`**: Python
+  3.12's zipfile cannot (3.14's can, and the helper defers to it).
+
+Not built yet: the recovery pass of 15.8 (reading several segments'
+directories, the newest number winning, finishing an interrupted merge) --
+that is phase 7 with the log's session recovery; a store opens fresh
+today and numbers its segments past any it finds.

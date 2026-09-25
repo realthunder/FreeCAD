@@ -31,7 +31,8 @@ grouped by the concern they pin down:
   BlobSaveOptionCases   ForceXML / SplitXML / PreferBinary over both writers
   BlobNamingCases       stable saved names, the content index, pruning (docs sec 13)
   BlobExportImportCases the export/import path (copyObject, clipboard)
-  BlobArchiveStoreCases a reopened archive served from one copy of it (docs sec 14)
+  BlobArchiveStoreCases a reopened archive served from the pack store (docs sec 14, 15)
+  BlobPackStoreCases    segments, batches, raw members, repack (docs sec 15.7-15.10)
 
 Run headless with:  FreeCADCmd -t FileBlobs
 """
@@ -41,11 +42,14 @@ import hashlib
 import os
 import shutil
 import tempfile
+import time
 import unittest
 import zipfile
 from xml.etree import ElementTree
 
 import FreeCAD
+
+import ArchiveMembers
 
 try:
     import Part
@@ -56,6 +60,13 @@ except ImportError:
 
 BLOB_DIR = "blobs"
 BLOB_INDEX = "Content.xml"
+
+
+def logIsOn():
+    """The transaction log keeps what a document drops, as its history
+    (docs/TransactionLog.md sec 23.16), so nothing dies with it on."""
+    params = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Document")
+    return params.GetInt("TransactionLog", 0) != 0
 
 
 # ---------------------------------------------------------------------------
@@ -140,19 +151,19 @@ class BlobTestCase(unittest.TestCase):
 
     def storedBlobs(self, doc):
         """Files actually present in the document's blob store: content with a
-        file of its own, not the archive copies a reopened document serves
-        content from until something asks for a path (docs sec 14)."""
+        file of its own, not the pack store's segments, which hold content
+        until something asks for a path (docs sec 15.7)."""
         blobdir = os.path.join(doc.TransientDir, BLOB_DIR)
         if not os.path.isdir(blobdir):
             return []
-        return sorted(n for n in os.listdir(blobdir) if not n.endswith(".FCStd"))
+        return sorted(n for n in os.listdir(blobdir) if not n.startswith("seg-"))
 
     def archiveCopies(self, doc):
-        """The archive copies in the document's blob store."""
+        """The pack store's segments in the document's blob store."""
         blobdir = os.path.join(doc.TransientDir, BLOB_DIR)
         if not os.path.isdir(blobdir):
             return []
-        return sorted(n for n in os.listdir(blobdir) if n.endswith(".FCStd"))
+        return sorted(n for n in os.listdir(blobdir) if n.startswith("seg-"))
 
     def documentXml(self, project):
         return zipfile.ZipFile(project).read("Document.xml").decode("utf-8")
@@ -345,6 +356,8 @@ class BlobRefCountCases(BlobTestCase):
         doc.openTransaction("touch")
         obj.Label = "renamed"
         doc.commitTransaction()
+        # Content in the pack store has a file only once asked for a path.
+        self.assertContent(obj, b"payload")
         self.assertEqual(len(self.storedBlobs(doc)), 1)
 
     def testCopyObjectSharesContent(self):
@@ -1214,17 +1227,14 @@ class BlobStringPropertyCases(BlobTestCase):
         FreeCAD.closeDocument(doc.Name)
 
         rewritten = self.projectPath("legacy.FCStd")
-        source = zipfile.ZipFile(project)
         target = zipfile.ZipFile(rewritten, "w", zipfile.ZIP_DEFLATED)
-        for item in source.infolist():
-            data = source.read(item.filename)
+        for item, data in ArchiveMembers.members(project):
             if item.filename == "Document.xml":
                 data = data.replace(
                     b'type="App::PropertyStringIncluded"', b'type="App::PropertyString"'
                 )
             target.writestr(item, data)
         target.close()
-        source.close()
 
         reopened = self.openDocument(rewritten)
         self.assertEqual(reopened.Objects[0].FragmentProgram, self.LONG)
@@ -1290,7 +1300,9 @@ class BlobArchiveStoreCases(BlobTestCase):
         reopened.save()
         self.assertEqual(self.storedBlobs(reopened), [])
         archive = zipfile.ZipFile(project)
-        saved = sorted(self.sha1(archive.read(n)) for n in self.blobEntries(project))
+        saved = sorted(
+            self.sha1(ArchiveMembers.read(archive, n)) for n in self.blobEntries(project)
+        )
         archive.close()
         self.assertEqual(saved, sorted([self.sha1(b"kept"), self.sha1(b"also kept")]))
         FreeCAD.closeDocument(reopened.Name)
@@ -1323,12 +1335,17 @@ class BlobArchiveStoreCases(BlobTestCase):
         FreeCAD.closeDocument(reopened.Name)
         self.assertFalse(os.path.exists(transient))
 
+    @unittest.skipIf(logIsOn(), "the transaction log keeps the content")
     def testLastReferrerTakesTheCopyWithIt(self):
         project = self.savedProject([b"only"])
         reopened = self.openDocument(project)
         reopened.UndoMode = 0
         self.assertEqual(len(self.archiveCopies(reopened)), 1)
         reopened.removeObject("File0")
+        # The store's worker deletes a segment with nothing live in it.
+        deadline = time.time() + 10
+        while self.archiveCopies(reopened) and time.time() < deadline:
+            time.sleep(0.05)
         self.assertEqual(self.archiveCopies(reopened), [])
 
     def testCopyAcrossDocumentsTakesTheContent(self):
@@ -1358,3 +1375,151 @@ class BlobArchiveStoreCases(BlobTestCase):
         reopened = self.openDocument(project)
         self.assertAlmostEqual(reopened.getObject("Box").Shape.Volume, 6.0)
         self.assertEqual(self.storedBlobs(reopened), [])
+
+
+# ---------------------------------------------------------------------------
+# the pack store: segments, batches, raw members (docs sec 15.7-15.10)
+# ---------------------------------------------------------------------------
+
+
+class BlobPackStoreCases(BlobTestCase):
+    """Content lives in a few zip segments, compressed once, and a save copies
+    the members as they are."""
+
+    PARAMS = "User parameter:BaseApp/Preferences/Document"
+
+    def setUp(self):
+        super().setUp()
+        self.params = FreeCAD.ParamGet(self.PARAMS)
+        self.params.SetBool("ArchiveBlobStore", True)
+
+    def tearDown(self):
+        self.params.RemBool("ArchiveBlobStore")
+        self.params.RemInt("BlobSegmentSize")
+        self.params.RemBool("ArchiveRandomAccess")
+        super().tearDown()
+
+    def segments(self, doc):
+        blobdir = os.path.join(doc.TransientDir, BLOB_DIR)
+        if not os.path.isdir(blobdir):
+            return []
+        return sorted(n for n in os.listdir(blobdir) if n.startswith("seg-"))
+
+    def waitFor(self, predicate, timeout=10.0):
+        deadline = time.time() + timeout
+        while not predicate() and time.time() < deadline:
+            time.sleep(0.05)
+        return predicate()
+
+    @staticmethod
+    def payloads(count, size):
+        # Incompressible, so a segment fills at the size asked for.
+        return [os.urandom(size) for _ in range(count)]
+
+    def savedProject(self, contents):
+        doc = self.newDocument()
+        for index, content in enumerate(contents):
+            self.fileObject(doc, "File%d" % index, content)
+        project = self.projectPath()
+        doc.saveAs(project)
+        return doc, project
+
+    def testNewContentHasNoFileUntilAskedFor(self):
+        doc = self.newDocument()
+        obj = doc.addObject("App::DocumentObjectFileIncluded", "File")
+        obj.File = self.sourceFile("source.src", b"kept in memory")
+        self.assertEqual(self.storedBlobs(doc), [])
+        self.assertContent(obj, b"kept in memory")
+        self.assertEqual(len(self.storedBlobs(doc)), 1)
+
+    def testSaveCopiesMembersCompressed(self):
+        doc, project = self.savedProject([b"alpha " * 200, b"beta " * 300])
+        with zipfile.ZipFile(project) as archive:
+            methods = {
+                archive.getinfo(n).compress_type for n in self.blobEntries(project)
+            }
+            contents = sorted(ArchiveMembers.read(archive, n) for n in self.blobEntries(project))
+        # zstd where the build has it, else deflate: compressed either way,
+        # and by the store, not again by the save.
+        self.assertTrue(methods <= {ArchiveMembers.ZSTD_METHOD, zipfile.ZIP_DEFLATED}, methods)
+        self.assertEqual(contents, sorted([b"alpha " * 200, b"beta " * 300]))
+        # The save was a batch: the content is in a segment now.
+        self.assertTrue(self.segments(doc))
+        FreeCAD.closeDocument(doc.Name)
+        reopened = self.openDocument(project)
+        self.assertContent(reopened.getObject("File0"), b"alpha " * 200)
+        self.assertContent(reopened.getObject("File1"), b"beta " * 300)
+
+    def testSegmentsRollOverAtTheCap(self):
+        self.params.SetInt("BlobSegmentSize", 16)
+        contents = self.payloads(20, 3000)
+        doc, project = self.savedProject(contents)
+        self.assertGreaterEqual(len(self.segments(doc)), 3)
+        self.assertEqual(self.storedBlobs(doc), [])
+        FreeCAD.closeDocument(doc.Name)
+        # Split on open into capped segments, and no file for any content.
+        reopened = self.openDocument(project)
+        self.assertGreaterEqual(len(self.segments(reopened)), 3)
+        self.assertEqual(self.storedBlobs(reopened), [])
+        for index, content in enumerate(contents):
+            self.assertContent(reopened.getObject("File%d" % index), content)
+
+    def testOneGenerationPerSegment(self):
+        self.params.SetInt("BlobSegmentSize", 16)
+        doc = self.newDocument()
+        project = self.projectPath()
+        for step in range(4):
+            self.fileObject(doc, "File%d" % step, os.urandom(1000))
+            if step == 0:
+                doc.saveAs(project)
+            else:
+                doc.save()
+        numbers = [n.split(".")[0] for n in self.segments(doc)]
+        self.assertEqual(len(numbers), len(set(numbers)), self.segments(doc))
+        self.assertFalse([n for n in self.segments(doc) if n.endswith(".tmp")])
+
+    @unittest.skipIf(logIsOn(), "the transaction log keeps the content")
+    def testDeadContentIsDroppedFromTheSegments(self):
+        self.params.SetInt("BlobSegmentSize", 16)
+        contents = self.payloads(12, 3000)
+        doc, project = self.savedProject(contents)
+        doc.UndoMode = 0
+        blobdir = os.path.join(doc.TransientDir, BLOB_DIR)
+
+        def stored():
+            return sum(os.path.getsize(os.path.join(blobdir, n)) for n in self.segments(doc))
+
+        before = stored()
+        for index in range(10):
+            doc.removeObject("File%d" % index)
+        # The last save holds what it wrote until the next one.
+        doc.save()
+        self.assertTrue(self.waitFor(lambda: stored() < before / 2), (before, stored()))
+        self.assertContent(doc.getObject("File10"), contents[10])
+        self.assertContent(doc.getObject("File11"), contents[11])
+
+    def testForwardOnlyReadPacksToo(self):
+        doc, project = self.savedProject([b"one", b"two", b"three"])
+        FreeCAD.closeDocument(doc.Name)
+        self.params.SetBool("ArchiveRandomAccess", False)
+        reopened = self.openDocument(project)
+        self.assertEqual(self.storedBlobs(reopened), [])
+        self.assertTrue(self.segments(reopened))
+        self.assertContent(reopened.getObject("File2"), b"three")
+
+    @unittest.skipUnless(HAS_PART, "Part module not available")
+    def testShapesArePackedAtSave(self):
+        doc = self.newDocument()
+        for index in range(20):
+            box = doc.addObject("Part::Feature", "Box%d" % index)
+            box.Shape = Part.makeBox(1 + index, 2, 3)
+        project = self.projectPath()
+        doc.saveAs(project)
+        shapes = [n for n in self.blobEntries(project) if n.endswith(".brp")]
+        self.assertEqual(len(shapes), 20)
+        # A save of an imported model used to be a file per shape.
+        self.assertEqual([n for n in self.storedBlobs(doc) if n.endswith(".brp")], [])
+        self.assertTrue(self.segments(doc))
+        FreeCAD.closeDocument(doc.Name)
+        reopened = self.openDocument(project)
+        self.assertAlmostEqual(reopened.getObject("Box19").Shape.Volume, 20 * 6.0)

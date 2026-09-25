@@ -211,17 +211,34 @@ public:
     //@{
     /// Accessor for parameter ArchiveBlobStore
     ///
-    /// Serve the included files of a document archive out of one copy
-    /// of the archive in the transient directory, and give each its own
-    /// file only when something asks for a path. Requires
-    /// ArchiveRandomAccess. Turn off to write every included file out
-    /// during the restore, which on a monitored filesystem costs a file
-    /// create per entry.
+    /// Keep a document's included files in a pack store: a few zip
+    /// segment files in the transient directory instead of a file per
+    /// blob (docs/FileBlobsManager.md sec 15.7-15.10). An opened archive
+    /// is split into segments, new content is compressed once and
+    /// batched into them, and a save copies the members as they are. A
+    /// blob gets a file of its own only when something asks for a path.
+    /// Turn off for a file per blob, which on a monitored filesystem
+    /// costs a file create per blob.
     static const bool & getArchiveBlobStore();
     static const bool & defaultArchiveBlobStore();
     static void removeArchiveBlobStore();
     static void setArchiveBlobStore(const bool &v);
     static const char *docArchiveBlobStore();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter BlobSegmentSize
+    ///
+    /// Cap of one pack store segment, in KB. A segment is rewritten
+    /// whole when content is added to it or dropped from it, so this
+    /// bounds the cost of every such rewrite. Content over a quarter of
+    /// it is kept as a file of its own.
+    static const long & getBlobSegmentSize();
+    static const long & defaultBlobSegmentSize();
+    static void removeBlobSegmentSize();
+    static void setBlobSegmentSize(const long &v);
+    static const char *docBlobSegmentSize();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)

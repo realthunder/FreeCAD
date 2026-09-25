@@ -39,6 +39,8 @@ import tempfile
 import unittest
 import zipfile
 
+import ArchiveMembers
+
 import FreeCAD
 import Materials
 
@@ -124,9 +126,7 @@ class MaterialSyncTestCases(unittest.TestCase):
 
     def rewriteDocumentXml(self, path, transform):
         """Rewrite Document.xml inside a saved project, keeping everything else."""
-        source = zipfile.ZipFile(path)
-        items = [(info, source.read(info.filename)) for info in source.infolist()]
-        source.close()
+        items = ArchiveMembers.members(path)
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as target:
             for info, data in items:
                 if info.filename == "Document.xml":

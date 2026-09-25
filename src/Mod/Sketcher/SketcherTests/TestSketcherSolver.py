@@ -25,6 +25,8 @@
 
 import unittest
 import os, re, tempfile, unittest, zipfile
+
+import ArchiveMembers
 import FreeCAD, Part, Sketcher
 from Part import Precision
 
@@ -51,11 +53,9 @@ def makeDocumentLookLegacy(path):
     Strips every constraint Orientation attribute and the whole ExternalGeo property, which is
     exactly what a document saved by FreeCAD 0.21 and earlier looks like.
     """
-    archive = zipfile.ZipFile(path)
-    members = {name: archive.read(name) for name in archive.namelist()}
-    archive.close()
+    members = {info.filename: (info, data) for info, data in ArchiveMembers.members(path)}
 
-    document = members["Document.xml"].decode("utf-8")
+    document = members["Document.xml"][1].decode("utf-8")
     document = re.sub(
         r"<Constrain [^>]*/>",
         lambda m: re.sub(r'\s*Orientation="\d+"', "", m.group(0)),
@@ -79,10 +79,11 @@ def makeDocumentLookLegacy(path):
         flags=re.DOTALL,
     )
 
-    members["Document.xml"] = document.encode("utf-8")
+    info = members["Document.xml"][0]
+    members["Document.xml"] = (info, document.encode("utf-8"))
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as rewritten:
-        for name, data in members.items():
-            rewritten.writestr(name, data)
+        for name, (info, data) in members.items():
+            rewritten.writestr(info, data)
 
 
 def CreateRectangleSketch(SketchFeature, corner, lengths):

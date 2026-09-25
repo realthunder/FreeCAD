@@ -707,6 +707,11 @@ int64_t TransactionLog::snapshot(const char* kind, const std::string& path,
                 manifest.push_back({e.first, hash, "entity"});
             }
             v.docxml_hash = docHash;
+            std::vector<FileBlobHandle> named;
+            for (const auto& b : blobs)
+                named.push_back(b.second);
+            // On disk before the manifest naming them commits (sec 15.8).
+            _doc.getFileBlobManager().makeDurable(named);
             for (const auto& b : blobs) {
                 if (b.second)
                     manifest.push_back({b.first, putBlob(b.second), "entity"});
@@ -902,6 +907,10 @@ std::string TransactionLog::putValue(const CapturedValue& value, const std::stri
 std::string TransactionLog::putBlob(const FileBlobHandle& blob)
 {
     const std::string& hash = blob->hash();
+    // The row below names the blob, so its bytes go to the disk first
+    // (docs/FileBlobsManager.md sec 15.8). A commit made its blobs durable
+    // in one go already; this catches whatever path did not.
+    _doc.getFileBlobManager().makeDurable({blob});
     LogEntity e;
     if (!_store->getEntity(hash, e)) {
         e = LogEntity();
@@ -1413,23 +1422,39 @@ void TransactionLog::ValueTask::captureNow(const CaptureConfig& config)
 
 void TransactionLog::writeValues(std::vector<ValueTask>& tasks, std::vector<LogOp>& ops)
 {
-    for (auto& task : tasks) {
+    // Captured first, all of them: the rows written below name the blobs
+    // the values hold, and a blob's bytes reach the disk before any row
+    // naming it commits (docs/FileBlobsManager.md sec 15.8) -- one flush of
+    // the blob store for the whole commit, not one per blob.
+    std::vector<CapturedValue> captured(tasks.size());
+    std::vector<FileBlobHandle> named;
+    for (std::size_t i = 0; i < tasks.size(); ++i) {
+        auto& task = tasks[i];
+        if (!task.copy && !task.isCaptured)
+            continue;
+        // A value that names its blob (decision 6b, `hash=` in the
+        // fragment) is complete only while the file exists: the blob is an
+        // entity of its own, held as long as the value is (sec 23.16).
+        CapturedValue& cv = captured[i];
+        cv = task.isCaptured ? std::move(task.captured) : captureValue(_config, *task.copy);
+        // A shape names its file without noting it (it notes in
+        // beforeSave, which a capture does not run): its contentBlob().
+        if (auto referrer = task.copy ? dynamic_cast<const BlobReferrerProperty*>(task.copy.get())
+                                      : nullptr) {
+            auto blob = referrer->contentBlob();
+            if (blob && std::find(cv.blobs.begin(), cv.blobs.end(), blob) == cv.blobs.end())
+                cv.blobs.push_back(blob);
+        }
+        if (cv.ok)
+            named.insert(named.end(), cv.blobs.begin(), cv.blobs.end());
+    }
+    _doc.getFileBlobManager().makeDurable(named);
+
+    for (std::size_t i = 0; i < tasks.size(); ++i) {
+        auto& task = tasks[i];
         std::string hash;
         if (task.copy || task.isCaptured) {
-            // A value that names its blob (decision 6b, `hash=` in the
-            // fragment) is complete only while the file exists: the blob
-            // is an entity of its own, held as long as the value is
-            // (sec 23.16).
-            CapturedValue cv = task.isCaptured ? std::move(task.captured)
-                                               : captureValue(_config, *task.copy);
-            // A shape names its file without noting it (it notes in
-            // beforeSave, which a capture does not run): its contentBlob().
-            if (auto referrer = task.copy ? dynamic_cast<const BlobReferrerProperty*>(task.copy.get())
-                                          : nullptr) {
-                auto blob = referrer->contentBlob();
-                if (blob && std::find(cv.blobs.begin(), cv.blobs.end(), blob) == cv.blobs.end())
-                    cv.blobs.push_back(blob);
-            }
+            CapturedValue& cv = captured[i];
             if (cv.ok)
                 hash = putValue(cv, task.tier);
         }

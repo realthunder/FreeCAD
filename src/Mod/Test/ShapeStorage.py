@@ -50,6 +50,8 @@ import shutil
 import tempfile
 import unittest
 import zipfile
+
+import ArchiveMembers
 from xml.etree import ElementTree
 
 import FreeCAD
@@ -190,7 +192,7 @@ class ShapeTestCase(unittest.TestCase):
         if os.path.isdir(project):
             with open(os.path.join(project, BLOB_DIR, name), "rb") as handle:
                 return handle.read()
-        return zipfile.ZipFile(project).read("%s/%s" % (BLOB_DIR, name))
+        return ArchiveMembers.readFile(project, "%s/%s" % (BLOB_DIR, name))
 
     def blobIndex(self, project):
         """The content index: name -> (hash, referrer tokens)."""
@@ -1715,9 +1717,8 @@ class ForeignBaseShapeCases(ShapeTestCase):
         self.assertIn('ElementMap="%s"' % version, xml)
         xml = xml.replace(version, older)
         tmp = path + ".tmp"
-        with zipfile.ZipFile(path) as zin, zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zout:
-            for info in zin.infolist():
-                data = zin.read(info.filename)
+        with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zout:
+            for info, data in ArchiveMembers.members(path):
                 if info.filename == "Document.xml":
                     data = xml.encode("utf-8")
                 zout.writestr(info, data)

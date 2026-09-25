@@ -64,12 +64,19 @@ Params = [
             'and an entry can be reopened after the restore. Turn off to\n'
             'fall back to the forward-only walk.'),
     ParamBool('ArchiveBlobStore', True,
-        doc='Serve the included files of a document archive out of one copy\n'
-            'of the archive in the transient directory, and give each its own\n'
-            'file only when something asks for a path. Requires\n'
-            'ArchiveRandomAccess. Turn off to write every included file out\n'
-            'during the restore, which on a monitored filesystem costs a file\n'
-            'create per entry.'),
+        doc='Keep a document\'s included files in a pack store: a few zip\n'
+            'segment files in the transient directory instead of a file per\n'
+            'blob (docs/FileBlobsManager.md sec 15.7-15.10). An opened archive\n'
+            'is split into segments, new content is compressed once and\n'
+            'batched into them, and a save copies the members as they are. A\n'
+            'blob gets a file of its own only when something asks for a path.\n'
+            'Turn off for a file per blob, which on a monitored filesystem\n'
+            'costs a file create per blob.'),
+    ParamInt('BlobSegmentSize', 64 * 1024,
+        doc='Cap of one pack store segment, in KB. A segment is rewritten\n'
+            'whole when content is added to it or dropped from it, so this\n'
+            'bounds the cost of every such rewrite. Content over a quarter of\n'
+            'it is kept as a file of its own.'),
     ParamBool('DeferShapeLoad', True,
         doc='Park shape archive entries during restore and read each one on\n'
             'first real use instead of before the document opens, so the\n'

@@ -1325,23 +1325,33 @@ void Document::onChanged(const Property* prop)
         // this directory should not exist
         if (!TransDirNew.exists()) {
             if (TransDirOld.exists()) {
-                // Windows refuses to rename a directory with a file open in
-                // it, and a restore holds one: the archive copy the blobs are
-                // served from. It opens again on its next read.
-                if (d->fileBlobs)
-                    d->fileBlobs->closeArchives();
                 // The transaction log's database lives in the directory
                 // and is open there already on the restore path: closed
                 // across the move, reopened at the new path below.
                 if (d->transactionLog)
                     d->transactionLog->closeStore();
-                if (!TransDirOld.renameFile(new_dir.c_str())) {
+                // Windows refuses to rename a directory with a file open in
+                // it: a segment of the blob store being read or written.
+                // Writes are held across the move -- after the log is
+                // closed, whose worker writes here -- and a segment opens
+                // again on its next read.
+                std::unique_lock<std::mutex> blobWrites;
+                if (d->fileBlobs) {
+                    blobWrites = d->fileBlobs->holdWrites();
+                    d->fileBlobs->closeArchives();
+                }
+                const bool renamed = TransDirOld.renameFile(new_dir.c_str());
+                if (renamed)
+                    this->TransientDir.setValue(new_dir);
+                // Before the log reopens, which may wait on its worker.
+                if (blobWrites)
+                    blobWrites.unlock();
+                if (!renamed) {
                     Base::Console().Warning("Failed to rename '%s' to '%s'\n", old_dir.c_str(), new_dir.c_str());
                     if (d->transactionLog && !d->transactionLog->reopenStore())
                         d->transactionLog.reset();
                 }
                 else {
-                    this->TransientDir.setValue(new_dir);
                     if (d->transactionLog && !d->transactionLog->reopenStore())
                         d->transactionLog.reset();
                     // The stored files moved with the directory, so only their
@@ -1590,10 +1600,10 @@ Document::~Document()
 
     // remove Transient directory
     try {
-        // Nothing deletes a file held open on Windows, and the archive copy
-        // the blobs are served from may be.
+        // Nothing deletes a file held open on Windows, and a segment of the
+        // blob store may be; nor may its worker write one meanwhile.
         if (d->fileBlobs)
-            d->fileBlobs->closeArchives();
+            d->fileBlobs->shutdown();
         Base::FileInfo TransDir(TransientDir.getValue());
         TransDir.deleteDirectoryRecursive();
     }
