@@ -15,7 +15,12 @@ user meets it.
     feature still maps the colours (upstream 1844fdd443), and sticks when
     the Tip maps transparency too;
   - PartDesign_NewSketch takes a B-spline face that is planar within 2e-7
-    (upstream eebb7f7829).
+    (upstream eebb7f7829);
+  - a body made on a box away from the origin keeps it there (upstream
+    123a1c80e1 -- it jumped to the origin), and its base looks like the
+    box, per-face colours too (upstream aea8919598 -- it came out grey);
+  - an LCS attached to a vertex leaves a gap at its origin, so the vertex
+    can still be picked (upstream 51f546f1f6).
 
 Each was reproduced on the tree before its fix by the same steps, driven
 through the MCP console. The Pad delete is the control, which showed its
@@ -314,13 +319,85 @@ def test_planar_sketch():
     events()
 
 
+def rgb(colors):
+    return sorted(set(tuple(round(c, 2) for c in col[:3]) for col in colors))
+
+
+def test_body_from_base():
+    FreeCADGui.activateWorkbench("PartDesignWorkbench")
+    for perface in (False, True):
+        doc = FreeCAD.newDocument("PDBase")
+        box = doc.addObject("Part::Box", "Box")
+        box.Placement.Base = V(25, 0, 0)
+        doc.recompute()
+        vo = box.ViewObject
+        vo.ShapeColor = (1.0, 0.0, 0.0)
+        vo.LineColor = (0.0, 0.0, 1.0)
+        vo.Transparency = 30
+        if perface:
+            vo.DiffuseColor = [(1.0, 0.0, 0.0)] * 5 + [(0.0, 1.0, 0.0)]
+        FreeCADGui.Selection.clearSelection()
+        FreeCADGui.Selection.addSelection(doc.Name, box.Name)
+        FreeCADGui.runCommand("PartDesign_Body")
+        events()
+        doc.recompute()
+        events()
+        body = [o for o in doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        base = body.Group[0]
+        bb = body.Shape.BoundBox
+        what = "per-face coloured" if perface else "coloured"
+        check("a body on a %s box at x=25 keeps it there" % what,
+              base.isDerivedFrom("PartDesign::FeatureBase")
+              and abs(bb.XMin - 25) < 1e-6 and abs(bb.XMax - 35) < 1e-6,
+              "%s x[%g,%g]" % (base.TypeId, bb.XMin, bb.XMax))
+        bvo = base.ViewObject
+        if perface:
+            ok = rgb(bvo.DiffuseColor) == rgb(vo.DiffuseColor)
+            detail = "%s vs %s" % (rgb(bvo.DiffuseColor), rgb(vo.DiffuseColor))
+        else:
+            ok = (rgb([bvo.ShapeColor]) == rgb([vo.ShapeColor])
+                  and rgb([bvo.LineColor]) == rgb([vo.LineColor])
+                  and bvo.Transparency == vo.Transparency)
+            detail = "%s %s %s" % (rgb([bvo.ShapeColor]), rgb([bvo.LineColor]), bvo.Transparency)
+        check("the base of a body on a %s box looks like the box" % what, ok, detail)
+        FreeCAD.closeDocument(doc.Name)
+        events()
+
+
+def test_lcs_vertex_pick():
+    doc, body = new_body("PDLcsPick")
+    box = doc.addObject("PartDesign::AdditiveBox", "Box")
+    body.addObject(box)
+    doc.recompute()
+    corner = V(10, 10, 10)
+    vertex = [i for i, v in enumerate(box.Shape.Vertexes, 1)
+              if (v.Point - corner).Length < 1e-6][0]
+    lcs = doc.addObject("PartDesign::CoordinateSystem", "LCS")
+    body.addObject(lcs)
+    lcs.Support = [(box, "Vertex%d" % vertex)]
+    lcs.MapMode = "Translate"
+    doc.recompute()
+    view = FreeCADGui.ActiveDocument.ActiveView
+    view.viewIsometric()
+    view.fitAll()
+    events()
+    settle(300)
+    x, y = view.getPointOnScreen(corner)
+    hits = [view.getObjectInfo((x + dx, y + dy)) for dx, dy in ((0, 0), (1, 0), (0, 1), (2, 2))]
+    hits = [h and h.get("Object") for h in hits]
+    check("an LCS on a vertex leaves the vertex to pick", "LCS" not in hits, hits)
+    FreeCAD.closeDocument(doc.Name)
+    events()
+
+
 def run():
     timer = QtCore.QTimer()
     timer.timeout.connect(sweep)
     timer.start(50)
     try:
         for test in (test_move, test_delete, test_edit_mode, test_transparency,
-                     test_transparency_mapped, test_planar_sketch):
+                     test_transparency_mapped, test_planar_sketch, test_body_from_base,
+                     test_lcs_vertex_pick):
             try:
                 test()
             except Exception:
