@@ -854,6 +854,55 @@ a save over the original, save-as moving the copy with the directory, close
 removing the directory, the last referrer taking the copy with it, a copy
 across documents, the switch off, and a shape parsed out of the copy.
 
+### 14.6 The open regressed to 60-80 s, and it was not the store (2026-09-25)
+
+By 2026-09-25 the same headless open took 59-81 s, on PartDesignPort and on
+Transaction alike, while the parse after it had fallen to 2.6-2.9 s -- which
+read as every shape being parsed inside the open. It was not. With the `App`
+log tag at `Log`, the restore line put it all in one place:
+
+    xml 80.17 (create 1.81, data 78.35 [76759 properties, 78.27s of which value 0.95s]),
+    files 0.29
+
+78 s of the data phase was outside every property's own `Restore()`, and the
+log carried 17058 lines of `no module for BadType: Empty module name`.
+
+- Every `ShapeMaterial` in `MiSTer.FCStd` is saved as `type="BadType"`.
+  `Part::Feature` carries a `Materials::PropertyMaterial`, whose type is
+  registered by the Materials module's init; upstream's Part init imports
+  Materials, the port of the property (`edfc973134`) did not, so a headless
+  session had the property with no type and saved it under the bad type's
+  name. (That also loses the material -- restore reads it as a type change.)
+- `PropertyContainer::Restore()` asks `Base::Type::importModule()` for the
+  saved type's module whenever the property's own type is bad (`1cca3f0bbd`).
+  "BadType" has no `Module::` prefix, so the module asked for is `""`.
+- `Type::moduleAllowed()` (`96d9b285bf`) asks `importlib.util.find_spec("")`,
+  which walks all 48 `sys.path` entries before answering `None` -- **4.4 ms
+  each** on this filesystem -- and the import that follows fails. A failure
+  is not remembered, so all 17058 properties paid it: 78 s.
+
+`96d9b285bf` was written on the sandbox branch on 2026-09-05 and reached
+LinkVibe with the RemoteEdit merge `d044120df8` on 2026-09-19, after sec 14.5
+was measured. Before it the empty import failed at once, which is why 14.5
+never saw it.
+
+Fixed on both sides: Part's init imports Materials, as upstream's does, so the
+property has its type and saves under it; and `importModule()` returns at
+once for a name with no module prefix, so files already saved with
+`BadType` do not pay for it either (`TypeImport.unprefixedNameImportsNothing`).
+
+| MiSTer headless, `win-relwithdebinfo-801` | open | of which data | parse all shapes |
+| --- | --- | --- | --- |
+| before (PartDesignPort `4452b27176`) | 80.7 s | 78.35 s | 2.7 s |
+| fixed, the file as it is (`BadType`) | 2.76 s | 0.41 s | 2.85 s |
+| fixed, re-saved (`Materials::PropertyMaterial`) | 2.83 s | 0.44 s | 2.82 s |
+
+Restoring 17058 real `PropertyMaterial` values through `MaterialManager`
+costs 0.03 s over dropping them. Still open, and not measured here: a type
+with a real prefix whose module is missing -- a document from an addon that
+is not installed -- still pays two `sys.path` walks per object (8.6 ms per
+`importModule("Nope::X")`), since a failed import is not remembered.
+
 ## 15. A pack store: no file per blob (design, 2026-09-24)
 
 Status: **design, not built.** Asked for by the user on 2026-09-24 after a
