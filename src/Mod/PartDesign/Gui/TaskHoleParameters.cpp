@@ -730,33 +730,13 @@ void TaskHoleParameters::threadTypeChanged(int index)
     // Threaded checkbox is meaningless if no thread profile is selected.
     ui->Threaded->setDisabled(std::string(pcHole->ThreadType.getValueAsString()) == "None");
 
-    // size and clearance
     if (TypeClass == QByteArray("ISO")) {
-        // the size for ISO type has either the form "M3x0.35" or just "M3"
-        // so we need to check if the size contains a 'x'. If yes, check if the string
-        // up to the 'x' is exists in the new list
-        if (ThreadSizeString.indexOf(QStringLiteral("x")) > -1) {
-            // we have an ISO fine size
-            // cut of the part behind the 'x'
-            ThreadSizeString = ThreadSizeString.left(ThreadSizeString.indexOf(QStringLiteral("x")));
-        }
-        // search if the string exists in the combobox
-        int threadSizeIndex = ui->ThreadSize->findText(ThreadSizeString, Qt::MatchContains);
-        if (threadSizeIndex > -1) {
-            // we can set it
-            ui->ThreadSize->setCurrentIndex(threadSizeIndex);
-        }
         // the names of the clearance types are different in ISO and UTS
         ui->ThreadFit->setItemText(0, QCoreApplication::translate("TaskHoleParameters", "Standard", nullptr));
         ui->ThreadFit->setItemText(1, QCoreApplication::translate("TaskHoleParameters", "Close", nullptr));
         ui->ThreadFit->setItemText(2, QCoreApplication::translate("TaskHoleParameters", "Wide", nullptr));
     }
     else if (TypeClass == QByteArray("UTS")) {
-        // for all UTS types the size entries are the same
-        int threadSizeIndex = ui->ThreadSize->findText(ThreadSizeString, Qt::MatchContains);
-        if (threadSizeIndex > -1) {
-            ui->ThreadSize->setCurrentIndex(threadSizeIndex);
-        }
         // the names of the clearance types are different in ISO and UTS
         ui->ThreadFit->setItemText(0, QCoreApplication::translate("TaskHoleParameters", "Normal", nullptr));
         ui->ThreadFit->setItemText(1, QCoreApplication::translate("TaskHoleParameters", "Close", nullptr));

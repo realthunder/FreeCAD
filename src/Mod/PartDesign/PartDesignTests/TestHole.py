@@ -322,6 +322,19 @@ class TestHole(unittest.TestCase):
             self.Body.removeObject(hole)
             self.Doc.removeObject(hole.Name)
 
+    def testClosestDesignation(self):
+        """Changing the thread type keeps the size nearest the diameter
+        (upstream dc53d3dba2); it went back to the smallest one."""
+        self.Hole.ThreadType = "ISOMetricProfile"
+        self.Hole.ThreadSize = "M6"
+        self.Hole.Threaded = True
+        self.Doc.recompute()
+        for thread_type, size in (("UNC", "1/4"), ("ISOMetricFineProfile", "M6x0.75"),
+                                  ("BSW", "1/4"), ("ISOMetricProfile", "M6")):
+            self.Hole.ThreadType = thread_type
+            self.Doc.recompute()
+            self.assertEqual(self.Hole.ThreadSize, size, thread_type)
+
     def testThreadEnums(self):
         """Test thread enums for correct order (upstream 0fdb02c6eb; the BSP
         list is the table's, which the list the BSP pick brought did not
