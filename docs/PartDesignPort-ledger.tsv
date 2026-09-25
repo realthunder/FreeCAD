@@ -147,7 +147,7 @@ ffad1e0c34	2024-05-29	wmayer	noise		0	0	open	2		Mod: Fix several compiler warnin
 669f2da362	2024-05-31	bgbsww	fix		0	0	open	114	have (Fork's own importExternalElements (Utils.cpp:1687))	Toponaming: fix bug with points in sketches	Gui/Command.cpp
 6474a44c87	2024-06-03	Zheng, Lei	feature		0	0	open	31		Toponaming: update TaskDressUp addAllEdges	Gui/TaskDressUpParameters.cpp
 11fa271eb5	2024-06-03	Chris Hennes	noise		0	0	open	4		Test: Support system GTest, and give warning if no submodule (#13662)	tests/src/Mod/PartDesign/App/DatumPlane.cpp tests/src/Mod/PartDesign/App/ShapeBinder.cpp
-309dd6e30d	2024-05-26	Florian Foinant-Willig	feature		0	0	open	105		PD Extrude up to multiple faces or shape	App/FeatureExtrude.cpp App/FeaturePad.cpp App/FeaturePocket.cpp App/FeatureSketchBased.cpp App/FeatureSketchBased.h
+309dd6e30d	2024-05-26	Florian Foinant-Willig	feature		0	0	open	105	adapted ba5df83a6e (panel lists the mode; faces in the property editor)	PD Extrude up to multiple faces or shape	App/FeatureExtrude.cpp App/FeaturePad.cpp App/FeaturePocket.cpp App/FeatureSketchBased.cpp App/FeatureSketchBased.h
 96aa878b7e	2024-06-03	bgbsww	noise		0	0	open	24		Toponaming: reformat code	App/FeatureDressUp.cpp Gui/TaskDressUpParameters.cpp
 9456df5a4b	2024-06-04	wmayer	noise		0	0	open	3		Fix compiler warnings	Gui/TaskDressUpParameters.cpp
 3f6f8c0172	2024-05-31	Kacper Donat	refactor		0	0	open	34		Gui: Refactor DressUp VP to use setHighlighted*	Gui/ViewProviderDressUp.cpp Gui/ViewProviderDressUp.h
@@ -234,7 +234,7 @@ e98ffc3060	2024-09-02	wwmayer	noise		0	0	open	2191	declined (clang-format prepar
 ae46ea5e7b	2024-07-30	bgbsww	refactor		0	0	open	295		Toponaming:  Refactor refine to its own FeatureRefine class	App/AppPartDesign.cpp App/CMakeLists.txt App/FeatureAddSub.cpp App/FeatureAddSub.h App/FeatureBoolean.cpp App/FeatureBoolean.h App/FeatureRefine.cpp App/FeatureRefine.h App/FeatureTransformed.cpp App/FeatureTransformed.h App/ShapeBinder.cpp App/ShapeBinder.h PartDesignTests/TestInvoluteGear.py PartDesignTests/TestMultiTransform.py PartDesignTests/TestTopologicalNamingProblem.py
 0f53f2195d	2024-09-14	bgbsww	feature		1	0	open	4		Add override flag for recomputes; set it in relevant tests with old files.	PartDesignTests/TestInvoluteGear.py PartDesignTests/TestMultiTransform.py
 e4ad21e48f	2024-09-17	bgbsww	fix		1	0	open	9	n/a (fork resolves body by SubObjectT; SketchWorkflow unused)	If we are creating a Sketch inside a Body that is in a link, use link position	Gui/SketchWorkflow.cpp
-8b9f5bdc4f	2024-09-19	Florian Foinant-Willig	fix		0	0	open	120	adapted 94f359e322 (isConcave rewritten; UpToShape parts n/a, no UpToShape here)	[PD] fix pad uptoface and uptoshape (#16030)	App/FeatureExtrude.cpp App/FeatureExtrude.h App/FeatureSketchBased.cpp App/FeatureSketchBased.h PartDesignTests/TestPad.py
+8b9f5bdc4f	2024-09-19	Florian Foinant-Willig	fix		0	0	open	120	adapted 94f359e322 ba5df83a6e (isConcave rewritten; the UpToShape shell half with the feature)	[PD] fix pad uptoface and uptoshape (#16030)	App/FeatureExtrude.cpp App/FeatureExtrude.h App/FeatureSketchBased.cpp App/FeatureSketchBased.h PartDesignTests/TestPad.py
 b2d6787571	2024-09-21	Zheng, Lei	refactor		0	0	open	142	have (the fork's own findHoles (FeatureHole.cpp:1928-2102))	Transfer FeatureHole code	App/FeatureHole.cpp App/FeatureHole.h
 c5ad54d5a8	2024-09-21	bgbsww	refactor		0	0	open	37		Update method names and clean	App/FeatureHole.cpp
 22fbfeddc2	2024-09-22	Florian Foinant-Willig	fix		0	0	open	30	n/a (Fork's makEPrismUntil has no isConcave call)	[PD] Fix Pad uptoshape and add unit test	PartDesignTests/TestPad.py
@@ -251,7 +251,7 @@ f9547e8231	2024-10-13	wmayer	fix		0	0	open	20	have (Fork never selects a missing
 0c59bfc718	2024-10-07	Florian Foinant-Willig	fix		0	0	open	8	taken 66b466eae9	Disable closed Loft for less than 3 profiles	App/FeatureLoft.cpp
 7e473beed0	2024-10-13	wmayer	fix		0	0	open	4	n/a (no CompDatums/CompSketches commands here)	PD: Disable PartDesign_CompDatums & PartDesign_CompSketches if dialog is open	Gui/Command.cpp
 aa78eb351e	2024-10-14	Florian Foinant-Willig	fix		0	0	open	9	have (Fork's accept always recomputes)	PartDesign: Fix body shape not updated	Gui/TaskFeatureParameters.cpp
-ef2156d0f6	2024-10-15	Florian Foinant-Willig	fix		0	0	open	6	deferred (UpToShape)	Fix uptoshape crash when selecting a face without assigned shape	Gui/TaskExtrudeParameters.cpp
+ef2156d0f6	2024-10-15	Florian Foinant-Willig	fix		0	0	open	6	deferred (the UpToShape face picking in the panel, not here yet)	Fix uptoshape crash when selecting a face without assigned shape	Gui/TaskExtrudeParameters.cpp
 5b6e886a3c	2024-10-15	mwganson	fix		0	0	open	9	n/a (Fork's duplicate falls back to Std_DuplicateSelection for other bodies)	[PartDesign DuplicateSelected] do not put duplicated feature into active body if it is already in another body -- addresses issue #6278	Gui/CommandBody.cpp
 990b9b27fe	2024-10-16	wmayer	fix		0	0	open	2	deferred (Needs upstream 1eb0444bd5 (Cone equal radii))	Part/PD: Fix cone creation if both radii are equal	App/FeaturePrimitive.cpp
 e3246e13a0	2024-10-20	wmayer	feature		0	0	open	2		PD: Explicitly switch off AllowCompound for some tests to make them succeed	PartDesignTests/TestInvoluteGear.py PartDesignTests/TestMultiTransform.py
@@ -309,7 +309,7 @@ fc56730648	2024-11-26	PaddleStroke	fix		1	0	open	7	superseded (upstream reverted
 9504b7e569	2024-10-10	PaddleStroke	feature		1	0	open	4		PartDesign: Enable the use of the core datums as references.	Gui/ReferenceSelection.cpp
 c5fbbb3830	2024-12-06	PaddleStroke	feature		0	0	open	12		SubShapeBinder: Add support for point.	App/ShapeBinder.cpp
 5d02008227	2024-10-18	PaddleStroke	feature		0	0	open	13	declined (removes PD datums in favour of core datums; fork keeps them)	Remove PartDesign Datums commands from the UI.	Gui/Workbench.cpp
-00f6fbeaa3	2024-12-11	wmayer	fix		0	0	open	9	deferred (Only FeatureExtrude::makeShellFromUpToShape (UpToShape), which the fork does...)	PD: Fix possible crash in up to shape	App/FeatureExtrude.cpp
+00f6fbeaa3	2024-12-11	wmayer	fix		0	0	open	9	have (ba5df83a6e opens the shell only when faces are cut)	PD: Fix possible crash in up to shape	App/FeatureExtrude.cpp
 e607b5757e	2024-12-08	Florian Foinant-Willig	feature		0	0	open	15		PartDesign: Add Std_ToggleFreeze to context menu	Gui/Workbench.cpp
 db1b0c56bf	2024-07-26	Alfredo Monclus	fix		1	0	open	21	taken fff8ad80b4	fix(PD): complete ISO-273	App/FeatureHole.cpp App/FeatureHole.h
 acf04c7f1e	2024-07-26	Alfredo Monclus	feature		0	0	open	145	adapted b197747496 (BSP size list fixed to match its table)	feat(PD): BSP - British standard pipe threads	App/FeatureHole.cpp App/FeatureHole.h Gui/TaskHoleParameters.cpp
@@ -689,7 +689,7 @@ be68980775	2026-04-10	Max Wilfinger	feature		0	0	open	10		PD: Change test for ne
 638f86a10f	2026-02-06	Ladislav Michl	refactor		0	0	open	12	deferred (Transformed cancel support (eadd0bc191))	PartDesign: Use Base::Sequencer to abort operations	App/FeatureTransformed.cpp
 ea6d66bfa0	2026-04-28	Parag Debnath	fix		0	0	open	32	declined (skipping recompute of suppressed would stale SuppressedShape)	PartDesign: suppressing a feature now doesn't recmpute the whole object (#29219)	App/Feature.cpp
 b2c51665a2	2026-04-29	Rehan Ahmed	refactor		0	0	open	10		Convert Qt Dialog titles to title case	Gui/Command.cpp Gui/TaskBooleanParameters.cpp Gui/TaskPipeParameters.cpp Gui/TaskShapeBinder.cpp
-7e33da0fa0	2026-04-28	Florian Foinant-Willig	fix		0	0	open	18	deferred (Needs upstream's UpToShape extrude)	PartDesign: fix UpToShape extrude	App/FeatureSketchBased.cpp App/FeatureSketchBased.h
+7e33da0fa0	2026-04-28	Florian Foinant-Willig	fix		0	0	open	18	have (ba5df83a6e: a whole object's faces, the shell opened, as upstream ends up)	PartDesign: fix UpToShape extrude	App/FeatureSketchBased.cpp App/FeatureSketchBased.h
 357babf9f0	2026-05-04	Nemanja Pejic	fix		0	0	open	44	adapted 49e25a65b2 (Gui part; App part have)	Fix/helix multiple solids error message (#29339)	App/FeatureHelix.cpp Gui/TaskHelixParameters.cpp
 08cacbbc27	2026-05-05	luzpaz	noise		0	0	open	4		Fix a variety of typos throughout the codebase (#29759)	Gui/TaskDressUpParameters.cpp Gui/TaskTransformedParameters.cpp
 6fa9125919	2026-05-08	PaddleStroke	feature		0	0	open	327		PartDesign: pattern tool: Add OVP to control the overrides. (#23997)	App/FeatureLinearPattern.h App/FeaturePolarPattern.cpp App/FeaturePolarPattern.h Gui/TaskPatternParameters.cpp Gui/TaskPatternParameters.h Gui/TaskTransformedParameters.h Gui/ViewProviderTransformed.cpp Gui/ViewProviderTransformed.h
