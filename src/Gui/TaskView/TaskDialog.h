@@ -84,6 +84,8 @@ public:
     bool isEscapeButtonEnabled() const {
         return escapeButton;
     }
+    /// The role of the button Esc presses: rejecting by default
+    QDialogButtonBox::ButtonRole roleOnEscape {QDialogButtonBox::RejectRole};
 
     /// Defines whether a task dialog must be closed if the document changed the
     /// active transaction.
