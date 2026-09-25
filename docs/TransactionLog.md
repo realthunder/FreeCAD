@@ -3700,3 +3700,44 @@ from the pack store, the cylinder clean and the box touched).
 `FC_TXNLOG_CHECK_COPIES` set: no stale copy, no crash) and off; run
 before the touched-state rule above, which only recovery reaches, and
 which the 46 log gtests cover.
+
+### 25.8 7.e, the Gui, as built (2026-09-25)
+
+**The recovery dialog.** With the log on, `DocumentRecoveryFinder` keeps a
+dead process's transient directory that holds `history/log.db` as a
+candidate, and `getRecoveryInfo` describes it from the log's `meta`
+(`TransactionLog::readRecoveryMeta`: label, file name), preferring the log
+to any AutoSaver file beside it; it is out of date ("Overage", not listed)
+when the project file was saved after the log's last write (`log.db` or its
+WAL). "Start Recovery" calls `App::Application::recoverDocument` for such
+an entry -- the old directory goes with it -- and marks the document
+modified; entries of recovery files take the old path. With the log off,
+nothing changes.
+
+**AutoSaver stands aside.** With the log on it writes nothing (22.1: the
+log is the autosave); its timer and settings stay for the log-off case,
+and `AutoSaveTimeout`/`AutoSaveEnabled` are the log's time cadence (7.b).
+
+**The check.** `scripts/transaction-log-recovery-check.py`, two GUI runs in
+one fresh user home:
+
+    cd build/conda-relwithdebinfo-801
+    for ph in crash recover; do
+      QT_QPA_PLATFORM=offscreen FREECAD_USER_HOME=/tmp/fchome-rc \
+        RECOVERCHECK_OUT=/tmp/rc/out.txt RECOVERCHECK_PHASE=$ph \
+        ~/works/sw/fcad/.conda/run.sh ./bin/FreeCAD \
+        ~/works/sw/fcad/scripts/transaction-log-recovery-check.py
+    done
+
+The first saves a box, changes its length and colour, adds a cylinder, and
+kills itself with SIGKILL; the second finds the start-up recovery dialog,
+starts the recovery and checks the length, both shapes' volumes, the
+colour (a view op, replayed through the Gui's resolver), the cylinder's
+view provider, the modified flag, the undo names exactly as the killed
+session had them, the old directory gone, and undo and redo across the
+crash. 14 checks, all PASS on 2026-09-25.
+
+Phase 7's recovery half is built. Open, not ruled: the session-only view
+state (camera, `docs/MultiViewEdit.md`) is not recovered -- it is not in
+the log by design -- and a crashed session's lock file is left for the
+next start's scan to remove, as before.
