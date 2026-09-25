@@ -390,3 +390,11 @@ fc_add_gui_test(GuiSketchConstraintHints_tests_run
 fc_add_gui_test(GuiSketchDatumFollowsMode3_tests_run
                 sketch-datum-follows-mode3.py
                 --timeout 200)
+
+# A sketch arc's length has a label (upstream 646b4381f9), and an arc's
+# length and angle labels drag to the cursor, past the arc's centre too
+# (f3e1e6cec0, 7bcaa766de), the angle's end lines reaching back to the arc
+# (df867a25b2).
+fc_add_gui_test(GuiSketchArcLabels_tests_run
+                sketch-arc-labels.py
+                --timeout 240)

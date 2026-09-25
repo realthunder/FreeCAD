@@ -70,6 +70,18 @@
 
 using namespace Gui;
 
+namespace {
+// Which way the glyph's own y axis points relative to the outward normal at
+// the middle of an ARCLENGTH dimension arc: +1 when textShift moves the
+// number away from the centre.
+float arcLengthShiftSign(float textAngle, float midAngle)
+{
+    const SbVec3f up(-sin(textAngle), cos(textAngle), 0.f);
+    const SbVec3f out(cos(midAngle), sin(midAngle), 0.f);
+    return up.dot(out) >= 0.f ? 1.f : -1.f;
+}
+}
+
 // ------------------------------------------------------
 
 // ------------------------------------------------------
@@ -282,6 +294,7 @@ SoDatumLabel::SoDatumLabel()
     SO_NODE_DEFINE_ENUM_VALUE(Type, ANGLE);
     SO_NODE_DEFINE_ENUM_VALUE(Type, RADIUS);
     SO_NODE_DEFINE_ENUM_VALUE(Type, DIAMETER);
+    SO_NODE_DEFINE_ENUM_VALUE(Type, ARCLENGTH);
     SO_NODE_SET_SF_ENUM_TYPE(datumtype, Type);
 
     SO_NODE_ADD_FIELD(param1, (0.f));
@@ -459,6 +472,9 @@ public:
         }
         else if (label->datumtype.getValue() == SoDatumLabel::SYMMETRIC) {
             corners = computeSymmetricBBox();
+        }
+        else if (label->datumtype.getValue() == SoDatumLabel::ARCLENGTH) {
+            corners = computeArcLengthBBox();
         }
 
         getBBox(corners, box, center);
@@ -716,6 +732,47 @@ private:
         return corners;
     }
 
+    std::vector<SbVec3f> computeArcLengthBBox() const
+    {
+        SoDatumLabel::ArcLengthGeometry geom;
+        if (!label->arcLengthGeometry(geom)) {
+            return {};
+        }
+
+        SbVec2s imgsize;
+        int nc;
+        int srcw = 1;
+        int srch = 1;
+        const unsigned char * dataptr = label->image.getValue(imgsize, nc);
+        if (dataptr) {
+            srcw = imgsize[0];
+            srch = imgsize[1];
+        }
+        float imgHeight = scale * (float) (srch);
+        float imgWidth  = imgHeight * (float) srcw / (float) srch;
+
+        std::vector<SbVec3f> corners {geom.pnt1, geom.pnt2, geom.pnt3, geom.pnt4};
+        // the dimension arc, closely enough for a box
+        const int steps = 8;
+        for (int i = 0; i <= steps; ++i) {
+            float a = geom.startangle + (geom.endangle - geom.startangle) * float(i) / steps;
+            corners.push_back(geom.arcCenter + geom.arcRadius * SbVec3f(cos(a), sin(a), 0.f));
+        }
+
+        // the number, turned along the chord and shifted outward
+        const float mid = (geom.startangle + geom.endangle) / 2;
+        const float shift = arcLengthShiftSign(geom.textAngle, mid) * imgHeight;
+        const float s = sin(geom.textAngle);
+        const float c = cos(geom.textAngle);
+        for (float x : {-imgWidth / 2, imgWidth / 2}) {
+            for (float y : {-imgHeight / 2, imgHeight / 2}) {
+                float yy = y + shift;
+                corners.push_back(geom.textOffset + SbVec3f(x * c - yy * s, x * s + yy * c, 0.f));
+            }
+        }
+        return corners;
+    }
+
 private:
     float scale;
     SoDatumLabel* label;
@@ -750,6 +807,15 @@ SbVec3f SoDatumLabel::getLabelTextCenter()
     }
     else if (datumtype.getValue() == SoDatumLabel::ANGLE) {
         return getLabelTextCenterAngle(p1);
+    }
+    else if (datumtype.getValue() == SoDatumLabel::ARCLENGTH) {
+        ArcLengthGeometry geom;
+        if (arcLengthGeometry(geom)) {
+            const float mid = (geom.startangle + geom.endangle) / 2;
+            const float shift = arcLengthShiftSign(geom.textAngle, mid) * this->imgHeight;
+            return geom.textOffset
+                + SbVec3f(-sin(geom.textAngle), cos(geom.textAngle), 0.f) * shift;
+        }
     }
 
     return p1;
@@ -809,6 +875,129 @@ SbVec3f SoDatumLabel::getLabelTextCenterAngle(const SbVec3f& p0)
 
     SbVec3f textCenter = p0 + v0 * len2;
     return textCenter;
+}
+
+// Taken from upstream's calculateArcLengthGeometry (646b4381f9, reworked
+// since), with one change: the number is placed ON the dimension arc and
+// textShift carries it outward, where upstream puts it one text height out in
+// world units -- see textShift.
+bool SoDatumLabel::arcLengthGeometry(ArcLengthGeometry& geom) const
+{
+    if (this->pnts.getNum() < 3) {
+        return false;
+    }
+    const SbVec3f* points = this->pnts.getValues(0);
+    const SbVec3f ctr = points[0];
+    const SbVec3f p1 = points[1];
+    const SbVec3f p2 = points[2];
+    const float length = this->param1.getValue();
+
+    SbVec3f vc1 = p1 - ctr;
+    SbVec3f vc2 = p2 - ctr;
+    const float radius = vc1.length();
+    if (radius <= FLT_EPSILON) {
+        return false;
+    }
+
+    // The sweep from the start point to the end point, counter-clockwise.
+    auto sweepEnd = [](float start, float end) {
+        constexpr float tau = 2.0f * float(M_PI);
+        const float delta = end - start;
+        return delta >= 0.f ? end : end + tau * std::ceil(-delta / tau);
+    };
+    float startangle = atan2f(vc1[1], vc1[0]);
+    float endangle = sweepEnd(startangle, atan2f(vc2[1], vc2[0]));
+    const float range = endangle - startangle;
+
+    // The extension lines run along the chord's normal, away from the centre.
+    // A half circle has its chord through the centre; its middle direction
+    // is the same line.
+    SbVec3f vm = (p1 + p2) / 2 - ctr;
+    if (vm.length() <= radius * 1e-4f) {
+        const float mid = startangle + range / 2;
+        vm = SbVec3f(cos(mid), sin(mid), 0.f);
+    }
+    vm.normalize();
+
+    geom.pnt1 = p1;
+    geom.pnt3 = p2;
+    if (range > float(M_PI)) {
+        // More than half a circle: the chord's side is the short side, so
+        // the lines go that way, out to a circle about the same centre.
+        const float desiredRadius = std::max(length, radius);
+        const float proj = std::clamp(
+            0.5f * (vc1.dot(vm) + vc2.dot(vm)) / radius, -1.0f, 1.0f);
+        const float offset = -radius * proj
+            + std::sqrt(std::max(0.0f,
+                                 desiredRadius * desiredRadius
+                                     - radius * radius * (1.0f - proj * proj)));
+        SbVec3f o1 = p1 + offset * vm - ctr;
+        SbVec3f o2 = p2 + offset * vm - ctr;
+        o1.normalize();
+        o2.normalize();
+
+        geom.arcCenter = ctr;
+        geom.arcRadius = desiredRadius;
+        geom.pnt2 = ctr + desiredRadius * o1;
+        geom.pnt4 = ctr + desiredRadius * o2;
+        startangle = atan2f(o1[1], o1[0]);
+        endangle = sweepEnd(startangle, atan2f(o2[1], o2[0]));
+    }
+    else {
+        // The arc itself, moved along its middle direction: out, in, or past
+        // the centre when length is negative.
+        const float offset = length - radius;
+        geom.pnt2 = p1 + offset * vm;
+        geom.pnt4 = p2 + offset * vm;
+        geom.arcCenter = ctr + offset * vm;
+        geom.arcRadius = radius;
+    }
+    geom.startangle = startangle;
+    geom.endangle = endangle;
+
+    const float mid = (startangle + endangle) / 2;
+    geom.textOffset = geom.arcCenter + geom.arcRadius * SbVec3f(cos(mid), sin(mid), 0.f);
+
+    // Along the chord, kept upright as the distance labels are.
+    SbVec3f dir = p2 - p1;
+    dir.normalize();
+    float angle = atan2f(dir[1], dir[0]);
+    if (angle > float(M_PI_2 + M_PI / 12)) {
+        angle -= float(M_PI);
+    }
+    else if (angle <= float(-M_PI_2 + M_PI / 12)) {
+        angle += float(M_PI);
+    }
+    geom.textAngle = angle;
+    return true;
+}
+
+void SoDatumLabel::generateArcLengthPrimitives(SoAction * action)
+{
+    ArcLengthGeometry geom;
+    if (!arcLengthGeometry(geom)) {
+        return;
+    }
+    // The number only, as for the other types: that is what picks the label.
+    const float mid = (geom.startangle + geom.endangle) / 2;
+    const float s = sin(geom.textAngle);
+    const float c = cos(geom.textAngle);
+    const float shift = arcLengthShiftSign(geom.textAngle, mid) * this->imgHeight;
+    auto corner = [&](float x, float y) {
+        y += shift;
+        return geom.textOffset + SbVec3f(x * c - y * s, x * s + y * c, 0.f);
+    };
+    const float hw = this->imgWidth / 2;
+    const float hh = this->imgHeight / 2;
+
+    SoPrimitiveVertex pv;
+    this->beginShape(action, QUADS);
+    pv.setNormal(SbVec3f(0.f, 0.f, 1.f));
+    for (const SbVec3f& p : {corner(-hw, -hh), corner(-hw, hh), corner(hw, hh), corner(hw, -hh)}) {
+        pv.setPoint(p);
+        shapeVertex(&pv);
+    }
+    this->endShape();
 }
 
 void SoDatumLabel::generateDistancePrimitives(SoAction * action, const SbVec3f& p1, const SbVec3f& p2)
@@ -1116,6 +1305,7 @@ void SoDatumLabel::generateLeaderPrimitives(SoAction * action)
     const float textW = float(srcw);
     const float margin = (dt == SYMMETRIC ? 25.0f : float(srch)) / 4.0f;
     const SbVec3f none(0.f, 0.f, 0.f);
+    this->textShift = 0.f;
 
     struct Pt {
         SbVec3f p;   // world, in this node's coordinates
@@ -1298,7 +1488,10 @@ void SoDatumLabel::generateLeaderPrimitives(SoAction * action)
         // moves back along its tangent by i / (2c - 2) of half that width.
         int countSegments = std::max(6, abs(int(50.0 * range / (2 * M_PI))));
         double segment = range / (2 * countSegments - 2);
-        float sgn = range >= 0 ? 1.f : -1.f;
+        // Toward the start along the arc is -tangent for a positive radius;
+        // a negative one (the number past the centre) draws the arc turned
+        // half way round, and the tangent with it.
+        float sgn = (range >= 0 ? 1.f : -1.f) * (r >= 0 ? 1.f : -1.f);
         float step = textW / (2.f * float(2 * countSegments - 2));
 
         this->beginShape(action, LINE_STRIP);
@@ -1353,6 +1546,36 @@ void SoDatumLabel::generateLeaderPrimitives(SoAction * action)
         emitLine(Pt{p2 + zc, head * -1.f}, Pt{p2 + zc, base * -1.f - side});
         emitLine(Pt{p2 + zc, head * -1.f}, Pt{p2 + zc, base * -1.f + side});
     }
+    else if (dt == ARCLENGTH) {
+        ArcLengthGeometry geom;
+        if (!arcLengthGeometry(geom))
+            return;
+
+        const float mid = (geom.startangle + geom.endangle) / 2;
+        this->textOffset = geom.textOffset;
+        this->textAngle = geom.textAngle;
+        this->textShift = arcLengthShiftSign(geom.textAngle, mid) * float(srch);
+
+        const float range = geom.endangle - geom.startangle;
+        int countSegments = std::max(6, abs(int(50.0 * range / (2 * M_PI))));
+        double segment = range / (countSegments - 1);
+        this->beginShape(action, LINE_STRIP);
+        for (int i = 0; i < countSegments; i++) {
+            double theta = geom.startangle + segment * i;
+            put(at(geom.arcCenter
+                   + SbVec3f(geom.arcRadius * cos(theta), geom.arcRadius * sin(theta), 0)));
+        }
+        this->endShape();
+
+        emitLine(at(geom.pnt1), at(geom.pnt2));
+        emitLine(at(geom.pnt3), at(geom.pnt4));
+
+        // Tips on the extension lines, bodies along the arc.
+        auto radial = [](float a) { return SbVec3f(cos(a), sin(a), 0.f); };
+        auto tangent = [](float a) { return SbVec3f(-sin(a), cos(a), 0.f); };
+        emitArrow(geom.pnt2, tangent(geom.startangle), radial(geom.startangle));
+        emitArrow(geom.pnt4, tangent(geom.endangle) * -1.f, radial(geom.endangle));
+    }
 }
 
 void SoDatumLabel::generateTextQuad(SoAction * action)
@@ -1376,11 +1599,12 @@ void SoDatumLabel::generateTextQuad(SoAction * action)
     // Local corners at the origin with matching UVs. The glyph bitmap is stored
     // bottom-up (GL convention), so v=0 is the bottom row.
     struct Corner { float x, y, u, v; };
+    const float dy = this->textShift;
     const Corner corners[4] = {
-        {-hw, -hh, 0.f, 0.f},
-        { hw, -hh, 1.f, 0.f},
-        { hw,  hh, 1.f, 1.f},
-        {-hw,  hh, 0.f, 1.f},
+        {-hw, dy - hh, 0.f, 0.f},
+        { hw, dy - hh, 1.f, 0.f},
+        { hw, dy + hh, 1.f, 1.f},
+        {-hw, dy + hh, 0.f, 1.f},
     };
 
     SoPrimitiveVertex pv;
@@ -1437,6 +1661,10 @@ void SoDatumLabel::generatePrimitives(SoAction * action)
     else if (this->datumtype.getValue() == SYMMETRIC) {
 
         generateSymmetricPrimitives(action, p1, p2);
+    }
+    else if (this->datumtype.getValue() == ARCLENGTH) {
+
+        generateArcLengthPrimitives(action);
     }
 }
 
@@ -1813,11 +2041,12 @@ void SoDatumLabel::GLRender(SoGLRenderAction * action)
         // p0 - vector for angle intersect
         SbVec3f v0(cos(startangle+range/2),sin(startangle+range/2),0);
 
-        // leave some space for the text
+        // leave some space for the text; r is negative when the number is
+        // past the centre, and the gap is the same size then
         if (range >= 0)
-            range = std::max(0.2f*range, range - this->imgWidth/(2*r));
+            range = std::max(0.2f*range, range - this->imgWidth/(2*std::fabs(r)));
         else
-            range = std::min(0.2f*range, range + this->imgWidth/(2*r));
+            range = std::min(0.2f*range, range + this->imgWidth/(2*std::fabs(r)));
 
         int countSegments = std::max(6, abs(int(50.0 * range / (2 * M_PI))));
         double segment = range / (2*countSegments-2);
@@ -1903,6 +2132,54 @@ void SoDatumLabel::GLRender(SoGLRenderAction * action)
             glVertex3f(ar3[0], ar3[1], ZCONSTR);
             glVertex3f(ar5[0], ar5[1], ZCONSTR);
         glEnd();
+    }
+    else if (this->datumtype.getValue() == ARCLENGTH) {
+        ArcLengthGeometry geom;
+        if (arcLengthGeometry(geom)) {
+            const float mid = (geom.startangle + geom.endangle) / 2;
+            angle = geom.textAngle;
+            const float shift = arcLengthShiftSign(angle, mid) * this->imgHeight;
+            textOffset = geom.textOffset + SbVec3f(-sin(angle), cos(angle), 0.f) * shift;
+
+            const float range = geom.endangle - geom.startangle;
+            int countSegments = std::max(6, abs(int(50.0 * range / (2 * M_PI))));
+            double segment = range / (countSegments - 1);
+            glBegin(GL_LINE_STRIP);
+            for (int i = 0; i < countSegments; i++) {
+                double theta = geom.startangle + segment * i;
+                SbVec3f v = geom.arcCenter
+                    + SbVec3f(geom.arcRadius * cos(theta), geom.arcRadius * sin(theta), 0);
+                glVertex2f(v[0], v[1]);
+            }
+            glEnd();
+
+            glBegin(GL_LINES);
+                glVertex2f(geom.pnt1[0], geom.pnt1[1]);
+                glVertex2f(geom.pnt2[0], geom.pnt2[1]);
+                glVertex2f(geom.pnt3[0], geom.pnt3[1]);
+                glVertex2f(geom.pnt4[0], geom.pnt4[1]);
+            glEnd();
+
+            // Tips on the extension lines, bodies along the arc, sized as
+            // the distance labels' are.
+            float margin = this->imgHeight / 4.0f;
+            auto arrow = [&](const SbVec3f& tip, const SbVec3f& back, const SbVec3f& side) {
+                SbVec3f base = tip + back * (0.866f * 2 * margin);
+                SbVec3f a = base + side * margin;
+                SbVec3f b = base - side * margin;
+                glVertex2f(tip[0], tip[1]);
+                glVertex2f(a[0], a[1]);
+                glVertex2f(b[0], b[1]);
+            };
+            glBegin(GL_TRIANGLES);
+                arrow(geom.pnt2,
+                      SbVec3f(-sin(geom.startangle), cos(geom.startangle), 0.f),
+                      SbVec3f(cos(geom.startangle), sin(geom.startangle), 0.f));
+                arrow(geom.pnt4,
+                      SbVec3f(sin(geom.endangle), -cos(geom.endangle), 0.f),
+                      SbVec3f(cos(geom.endangle), sin(geom.endangle), 0.f));
+            glEnd();
+        }
     }
 
     if (hasText) {

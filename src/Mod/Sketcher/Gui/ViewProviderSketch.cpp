@@ -2013,6 +2013,26 @@ void ViewProviderSketch::moveConstraint(int constNum, const Base::Vector2d &toPo
            || Constr->First != GeoEnum::GeoUndef);
 #endif
 
+    auto commit = [&]() {
+        // delete the cloned objects
+        for (Part::Geometry* geo : geomlist) {
+            delete geo;
+        }
+        getSketchObject()->Constraints.set1Value(constNum, std::move(Constr));
+        draw(true, false);
+    };
+
+    // How far the cursor is from an arc's centre along the arc's middle
+    // direction: negative past the centre, so an arc's label can be put on
+    // the other side of it (upstream f3e1e6cec0).
+    auto alongArcMiddle = [&toPos](const Part::GeomArcOfCircle* arc) {
+        double startangle, endangle;
+        arc->getRange(startangle, endangle, /*emulateCCW=*/true);
+        double middle = (startangle + endangle) / 2;
+        Base::Vector3d center = arc->getCenter();
+        return (toPos.x - center.x) * cos(middle) + (toPos.y - center.y) * sin(middle);
+    };
+
     if (Constr->Type == Distance || Constr->Type == DistanceX || Constr->Type == DistanceY ||
         Constr->Type == Radius || Constr->Type == Diameter || Constr-> Type == Weight) {
 
@@ -2064,6 +2084,14 @@ void ViewProviderSketch::moveConstraint(int constNum, const Base::Vector2d &toPo
                 p2 = lineSeg->getEndPoint();
             } else if (geo->getTypeId() == Part::GeomArcOfCircle::getClassTypeId()) {
                 const Part::GeomArcOfCircle *arc = static_cast<const Part::GeomArcOfCircle *>(geo);
+                if (Constr->Type == Distance) {
+                    // arc length: the distance of the label's arc from the centre
+                    // (upstream 646b4381f9); the radius code below would also
+                    // turn its LabelPosition into an angle
+                    Constr->LabelDistance = alongArcMiddle(arc);
+                    commit();
+                    return;
+                }
                 double radius = arc->getRadius();
                 Base::Vector3d center = arc->getCenter();
                 p1 = center;
@@ -2199,8 +2227,12 @@ void ViewProviderSketch::moveConstraint(int constNum, const Base::Vector2d &toPo
                 p0 = (lineSeg->getEndPoint()+lineSeg->getStartPoint())/2;
             }
             else if (geo->getTypeId() == Part::GeomArcOfCircle::getClassTypeId()) {
+                // the label's arc is drawn at 2 * LabelDistance, through the
+                // cursor (upstream f3e1e6cec0, 7bcaa766de)
                 const Part::GeomArcOfCircle *arc = static_cast<const Part::GeomArcOfCircle *>(geo);
-                p0 = arc->getCenter();
+                Constr->LabelDistance = factor * alongArcMiddle(arc);
+                commit();
+                return;
             }
             else {
                 return;
@@ -2212,14 +2244,7 @@ void ViewProviderSketch::moveConstraint(int constNum, const Base::Vector2d &toPo
         Constr->LabelDistance = factor * vec.Length();
     }
 
-    // delete the cloned objects
-    for (std::vector<Part::Geometry *>::const_iterator it=geomlist.begin(); it != geomlist.end(); ++it)
-        if (*it) delete *it;
-
-
-    getSketchObject()->Constraints.set1Value(constNum, std::move(Constr));
-
-    draw(true,false);
+    commit();
 }
 
 Base::Vector3d ViewProviderSketch::seekConstraintPosition(const Base::Vector3d &origPos,
@@ -6888,6 +6913,30 @@ Restart:
                                 const Part::GeomLineSegment *lineSeg = static_cast<const Part::GeomLineSegment *>(geo);
                                 pnt1 = lineSeg->getStartPoint();
                                 pnt2 = lineSeg->getEndPoint();
+                            } else if (Constr->Type == Distance
+                                       && geo->getTypeId() == Part::GeomArcOfCircle::getClassTypeId()) {
+                                // arc length (upstream 646b4381f9): drawn along the arc,
+                                // from its centre and ends
+                                auto arc = static_cast<const Part::GeomArcOfCircle*>(geo);
+                                Base::Vector3d center = arc->getCenter();
+                                Base::Vector3d start = arc->getStartPoint();
+                                Base::Vector3d end = arc->getEndPoint();
+
+                                Gui::SoDatumLabel *asciiText = static_cast<Gui::SoDatumLabel *>(sep->getChild(CONSTRAINT_SEPARATOR_INDEX_MATERIAL_OR_DATUMLABEL));
+                                // U+25E0, the arc sign upstream prefixes the value with
+                                asciiText->string = SbString(
+                                    (std::string("\xE2\x97\xA0 ")
+                                     + getPresentationString(Constr).toUtf8().constData()).c_str());
+                                asciiText->datumtype = Gui::SoDatumLabel::ARCLENGTH;
+                                asciiText->param1 = Constr->LabelDistance;
+
+                                asciiText->pnts.setNum(3);
+                                SbVec3f *verts = asciiText->pnts.startEditing();
+                                verts[0] = SbVec3f(center.x, center.y, zDatum);
+                                verts[1] = SbVec3f(start.x, start.y, zDatum);
+                                verts[2] = SbVec3f(end.x, end.y, zDatum);
+                                asciiText->pnts.finishEditing();
+                                break;
                             } else
                                 break;
                         } else
@@ -7160,6 +7209,9 @@ Restart:
 
                         SbVec3f p0;
                         double startangle,range,endangle;
+                        // how far the end lines run in from the label's arc,
+                        // world units; 0 leaves them at their pixel minimum
+                        double endLineLength = 0.;
                         if (Constr->Second != GeoEnum::GeoUndef) {
                             Base::Vector3d dir1, dir2;
                             if(Constr->Third == GeoEnum::GeoUndef) { //angle between two lines
@@ -7242,6 +7294,11 @@ Restart:
                                 const Part::GeomArcOfCircle *arc = static_cast<const Part::GeomArcOfCircle *>(geo);
                                 p0 = Base::convertTo<SbVec3f>(arc->getCenter());
 
+                                // back to the arc from the label's arc, which is
+                                // 2 * LabelDistance out -- through the centre when
+                                // that is negative (upstream df867a25b2, f3e1e6cec0)
+                                endLineLength = 2 * Constr->LabelDistance - arc->getRadius();
+
                                 arc->getRange(startangle, endangle,/*emulateCCWXY=*/true);
                                 range = endangle - startangle;
                             }
@@ -7257,6 +7314,8 @@ Restart:
                         asciiText->param1    = Constr->LabelDistance;
                         asciiText->param2    = startangle;
                         asciiText->param3    = range;
+                        asciiText->param4    = endLineLength;
+                        asciiText->param5    = endLineLength;
 
                         asciiText->pnts.setNum(2);
                         SbVec3f *verts = asciiText->pnts.startEditing();

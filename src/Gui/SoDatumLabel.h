@@ -68,7 +68,12 @@ public:
         DISTANCEY,
         RADIUS,
         DIAMETER,
-        SYMMETRIC
+        SYMMETRIC,
+        // The length along an arc: pnts are the centre, the start point and
+        // the end point; param1 is the distance of the dimension arc from the
+        // centre, measured along the arc's middle direction (negative puts it
+        // past the centre).
+        ARCLENGTH
     };
 
     static void initClass();
@@ -80,6 +85,24 @@ public:
 
     /* returns the center point of the text of the label */
     SbVec3f getLabelTextCenter();
+
+    // Where an ARCLENGTH label's lines go, all in world terms: the dimension
+    // arc (arcCenter, arcRadius, startangle..endangle, counter-clockwise), the
+    // extension lines pnt1-pnt2 and pnt3-pnt4 from the arc's ends to it, and
+    // the number, centred on the dimension arc's middle and turned along the
+    // chord. Nothing here depends on the view, so the GL pass, the capture
+    // for the backend, the pick and the bounding box all agree.
+    struct ArcLengthGeometry
+    {
+        SbVec3f arcCenter;
+        float arcRadius = 0.f;
+        float startangle = 0.f;
+        float endangle = 0.f;
+        SbVec3f pnt1, pnt2, pnt3, pnt4;
+        SbVec3f textOffset;
+        float textAngle = 0.f;
+    };
+    bool arcLengthGeometry(ArcLengthGeometry& geom) const;
 
     /* When true, GLRender() draws nothing. Set by the viewer around the Coin GL
      * pass when an external backend (render-cache mode 3) is already rendering
@@ -136,6 +159,7 @@ private:
     SbVec3f getLabelTextCenterDistance(const SbVec3f&, const SbVec3f&);
     SbVec3f getLabelTextCenterDiameter(const SbVec3f&, const SbVec3f&);
     SbVec3f getLabelTextCenterAngle(const SbVec3f&);
+    void generateArcLengthPrimitives(SoAction * action);
 
     // Emit the text glyph as a textured quad (2 triangles + UVs) so the
     // render-cache bridge captures the datum number; called by the companion
@@ -160,6 +184,11 @@ private:
     // leader pass (generateLeaderPrimitives) for the text-quad companion.
     SbVec3f textOffset;
     float textAngle;
+    // How far the glyph sits from textOffset, in PIXELS along its own y axis
+    // (the one textAngle turns). Zero except for ARCLENGTH, whose number sits
+    // one text height outside the dimension arc -- a distance on screen, which
+    // the capture has no camera to turn into a world length.
+    float textShift = 0.f;
 
     // Lazily built companion sub-graph: the leaders under their own style
     // (SoSeparator[light model, material, draw style, leader, ...]), then the
