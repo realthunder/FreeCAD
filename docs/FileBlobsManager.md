@@ -1085,3 +1085,54 @@ note of 2026-09-24).
 and this layout, for create, random read and deleting the store, plus the
 rewrite cost at the cap -- then the laptop's rows, which motivated all of
 it.
+
+### 15.8 No index database; merges through an in-memory redirection (user, 2026-09-25)
+
+Refines 15.7, and where they disagree this wins.
+
+**The central directories are the index.** A segment is a zip whose
+central directory lists its members by name, and a member's name is
+`<hash>.<ext>`: that is the hash-to-segment mapping, the extension, and
+(from the directory) the size and the method. On open the store reads the
+directories of its few segments -- sec 14 already reads the opened
+archive's this way -- and builds the hash-to-segment map in memory; every
+write updates it in memory. Liveness was never persisted: it is the
+handles' refcount, in memory. After a crash every member counts as live
+until the restored document has claimed what it references; the next
+rewrite drops the rest. `blobs/index.db` of 15.7 is therefore withdrawn:
+nothing it would hold is not already in the segments or in memory.
+
+**Nothing persisted names a segment.** The segments' directories name
+members by hash; the saved FCStd names blob entries without segments; the
+transaction log names a blob by its hash (`enc = file` is "the store's copy
+of this hash", `docs/TransactionLog.md` 23.16). Where a blob lives is always
+answered by looking, never by a stored pointer.
+
+**Merges are allowed, occasionally.** Several segments each under a small
+live size (a quarter of the cap to start) are merged on the worker thread,
+never during a save: their live members are streamed raw into a new
+segment through the usual temporary file and rename (15.7), then the old
+segments are deleted if they can be.
+
+**The redirection is in memory only.** A live `FileBlob` remembers its
+segment so that a read needs no lookup -- which is what a merge would have
+to rewrite blob by blob. Instead a handle names a *logical* segment, and a
+small table maps logical segments to the file that holds them now; a merge
+of A and B into C sets `A -> C` and `B -> C`, two entries whatever the
+number of blobs, under the lock the log's worker respects. The table is
+for handles alive in this process and dies with them: on the next open
+there are no handles to redirect, and the directories say where every
+blob is. So it is never saved, and it needs no crash safety of its own:
+
+| Crash | On disk | Next open |
+| --- | --- | --- |
+| while C is the temporary file | A, B, an incomplete temporary | the temporary is deleted; blobs found in A and B |
+| after C is renamed, before A and B go | A, B, C, all complete | each merged blob found twice, identical bytes (content-addressed); C, the newest, is chosen; A's and B's copies are dead space for their next rewrite |
+| after A and B are deleted | C | blobs found in C |
+
+The same rule covers a generation that could not be deleted (15.7): a
+duplicate is harmless because it is the same bytes, and the newest copy
+wins.
+
+**Phase 0 changes accordingly:** file per blob against this layout; the
+SQLite leg goes with the index database.
