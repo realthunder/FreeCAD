@@ -3733,11 +3733,18 @@ The first saves a box, changes its length and colour, adds a cylinder, and
 kills itself with SIGKILL; the second finds the start-up recovery dialog,
 starts the recovery and checks the length, both shapes' volumes, the
 colour (a view op, replayed through the Gui's resolver), the cylinder's
-view provider, the modified flag, the undo names exactly as the killed
-session had them, the old directory gone, and undo and redo across the
-crash. 14 checks, all PASS on 2026-09-25.
+view provider, the modified flag, the camera, the undo names exactly as
+the killed session had them, the old directory gone, and undo and redo
+across the crash. 15 checks, all PASS on 2026-09-25.
 
-Phase 7's recovery half is built. Open, not ruled: the session-only view
-state (camera, `docs/MultiViewEdit.md`) is not recovered -- it is not in
-the log by design -- and a crashed session's lock file is left for the
-next start's scan to remove, as before.
+**What the view state comes back as.** Every saved view-provider property
+is in both halves: in the anchor's `GuiDocument.xml` and, since 24.10, as
+logged ops, so it comes back as the session left it. The camera is in
+`GuiDocument.xml` too, so in every version, but it is not a logged
+property (24.10: its own session-only stack, `docs/MultiViewEdit.md`): it
+comes back as the anchor had it -- the check sets a camera, saves, moves
+the camera, and gets the saved one back. The camera moves since the last
+version are the one thing a recovery loses, bounded by the cadence (7.b).
+
+Phase 7's recovery half is built. A crashed session's lock file is left
+for the next start's scan to remove, as before.

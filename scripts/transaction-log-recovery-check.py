@@ -30,6 +30,13 @@ def write(path):
         f.write("\n".join(lines) + "\n")
 
 
+def cameraPosition(view):
+    for line in view.getCamera().splitlines():
+        if line.strip().startswith("position"):
+            return " ".join("%.3f" % float(v) for v in line.split()[1:4])
+    return None
+
+
 def crash():
     try:
         p = App.ParamGet("User parameter:BaseApp/Preferences/Document")
@@ -40,8 +47,19 @@ def crash():
         box = doc.addObject("Part::Box", "Box")
         doc.commitTransaction()
         doc.recompute()
+        # The camera is in GuiDocument.xml, so in every version, and not in
+        # the log: recovered as the anchor had it.
+        view = Gui.getDocument(doc.Name).ActiveView
+        view.setCamera(
+            "#Inventor V2.1 ascii\nOrthographicCamera {\n viewportMapping ADJUST_CAMERA\n"
+            " position 11 -22 33\n orientation 0.267 0.535 0.802 0.646\n"
+            " nearDistance 1\n farDistance 100\n aspectRatio 1\n focalDistance 40\n"
+            " height 50\n}\n"
+        )
+        lines.append("camera " + cameraPosition(view))
         path = os.path.join(os.path.dirname(OUT), "recovercheck.FCStd")
         doc.saveAs(path)
+        view.viewIsometric()
         doc.openTransaction("length")
         box.Length = 25
         doc.commitTransaction()
@@ -104,6 +122,12 @@ def recover():
         )
         check("the cylinder has its view", cyl is not None and cyl.ViewObject is not None)
         check("marked modified", Gui.getDocument(doc.Name).Modified)
+        views = Gui.getDocument(doc.Name).mdiViewsOfType("Gui::View3DInventor")
+        camera = cameraPosition(views[0]) if views else None
+        check(
+            "the camera of the anchor (%s; saved %s)" % (camera, notes.get("camera")),
+            camera == notes.get("camera"),
+        )
         check(
             "the undo steps carry on: %s" % doc.UndoNames,
             repr(doc.UndoNames) == notes.get("undo"),
