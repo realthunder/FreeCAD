@@ -354,6 +354,32 @@ class TestLoft(unittest.TestCase):
 
         self.assertGreater(loft.Shape.Volume, 80000.0) # 85105.5788704151
 
+    def testClosedWithOneSection(self):
+        """Closing needs three profiles (upstream 0c59bfc718): with one
+        section it closed back to the profile, a solid of no volume."""
+        body = self.Doc.addObject("PartDesign::Body", "Body")
+        xy = [f for f in body.Origin.OriginFeatures if f.Role == "XY_Plane"][0]
+        profile = body.newObject("Sketcher::SketchObject", "Profile")
+        profile.Support = (xy, [""])
+        profile.MapMode = "FlatFace"
+        TestSketcherApp.CreateRectangleSketch(profile, (0, 0), (10, 10))
+        section = body.newObject("Sketcher::SketchObject", "Section")
+        section.Support = (xy, [""])
+        section.MapMode = "FlatFace"
+        section.AttachmentOffset = FreeCAD.Placement(FreeCAD.Vector(0, 0, 10), FreeCAD.Rotation())
+        TestSketcherApp.CreateRectangleSketch(section, (2, 2), (6, 6))
+        self.Doc.recompute()
+        loft = body.newObject("PartDesign::AdditiveLoft", "Loft")
+        loft.Profile = profile
+        loft.Sections = [section]
+        self.Doc.recompute()
+        volume = loft.Shape.Volume
+        self.assertGreater(volume, 0)
+        loft.Closed = True
+        self.Doc.recompute()
+        self.assertIn("Up-to-date", loft.State)
+        self.assertAlmostEqual(loft.Shape.Volume, volume)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestLoft")

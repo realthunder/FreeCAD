@@ -214,7 +214,12 @@ App::DocumentObjectExecReturn *Loft::execute(void)
         auto multisections = Sections.getSubListValues();
         if(multisections.empty())
             return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Loft: At least one section is needed"));
-        
+
+        // Closing needs three profiles. With the profile and one section,
+        // makELoft() closed it back to the first -- A-B-A, a solid of no
+        // volume reported as fine (upstream 0c59bfc718).
+        bool closed = Closed.getValue() && multisections.size() >= 2;
+
         std::vector<std::vector<TopoShape>> wiresections;
         wiresections.reserve(wires.size());
         for(auto& wire : wires)
@@ -234,7 +239,7 @@ App::DocumentObjectExecReturn *Loft::execute(void)
                 for(auto& wire : wires)
                     wire.move(invObjLoc);
                 shapes.push_back(TopoShape(0, hasher).makELoft(
-                            wires, true, Ruled.getValue(), Closed.getValue(), MaxDegree.getValue()));
+                            wires, true, Ruled.getValue(), closed, MaxDegree.getValue()));
             }
         } else {
             //build all shells
@@ -243,7 +248,7 @@ App::DocumentObjectExecReturn *Loft::execute(void)
                 for(auto& wire : wires)
                     wire.move(invObjLoc);
                 shells.push_back(TopoShape(0, hasher).makELoft(
-                            wires, false, Ruled.getValue(), Closed.getValue(), MaxDegree.getValue()));
+                            wires, false, Ruled.getValue(), closed, MaxDegree.getValue()));
             }
 
             //build the top and bottom face, sew the shell and build the final solid
