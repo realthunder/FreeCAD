@@ -60,6 +60,9 @@ public:
 Q_SIGNALS:
     /// \a item's icon was clicked; \a globalPos is where its menu goes
     void partButtonClicked(QTreeWidgetItem *item, const QPoint &globalPos);
+    /// the context menu's Layer entry: move the selected elements, or the
+    /// clicked row's when nothing is selected, to visual layer \a layer
+    void layerRequested(int layer, int clickedGeoId);
 
 protected:
     void contextMenuEvent (QContextMenuEvent* event);
@@ -111,12 +114,15 @@ public Q_SLOTS:
     void on_elementsWidget_itemEntered(QTreeWidgetItem *item);
     void onFilterItemChanged(QListWidgetItem *item);
     void onPartButtonClicked(QTreeWidgetItem *item, const QPoint &globalPos);
+    void onLayerRequested(int layer, int clickedGeoId);
     void on_elementsWidget_itemChanged(QTreeWidgetItem *item, int column);
 
 public:
     /// Move an internal geometry to a visual layer (0 shown, 2 hidden), in
     /// its own transaction; hiding it also deselects it.
     void setGeometryLayer(int geoId, int layer);
+    /// the same for several, in one transaction
+    void setGeometryLayers(const std::set<int> &geoIds, int layer);
 
 protected:
     void changeEvent(QEvent *e) override;

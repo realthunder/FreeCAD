@@ -41,6 +41,13 @@ indexed set with that pattern, over the same coordinates and materials:
   - hovering it preselects that very curve (picking maps the dashed set's
     polyline back to its curve).
 
+The list's context menu has a Layer entry (Layer 0, Layer 1, Hidden):
+
+  - with elements selected it moves them -- an edge or any vertex names
+    its element -- in one undo step;
+  - it ticks the clicked row's current layer;
+  - with nothing selected it acts on the clicked row.
+
 Scored against the tree before the change: every check fails -- three
 curves and seven points are drawn, Select All takes Edge2, Vertex3 and
 Vertex4, and Vertex3, drawn, is coloured when selected. With the drawing
@@ -48,7 +55,8 @@ fixed and the panel not, the four checkbox checks fail: no row has a
 checkbox, and ticking one changes nothing. Before the dashed set, the three
 layer-1 checks fail: the line is drawn solid with the others (2 solid, 0
 dashed) -- upstream draws layer 1 solid too; its layers' patterns are
-never read.
+never read. Before the Layer menu its four checks fail: the menu has no
+Layer entry, and nothing moves.
 """
 import os
 import time
@@ -56,7 +64,7 @@ import traceback
 
 import FreeCAD
 import FreeCADGui
-from PySide import QtCore
+from PySide import QtCore, QtGui, QtWidgets
 from pivy import coin
 
 OUT = os.environ["GT_OUT"]
@@ -160,7 +168,6 @@ def run():
         settle()
 
         # The elements panel's checkbox.
-        from PySide import QtWidgets
         tree = [w for w in FreeCADGui.getMainWindow().findChildren(QtWidgets.QTreeWidget)
                 if w.objectName() == "elementsWidget"][0]
 
@@ -214,7 +221,6 @@ def run():
               if "View3DInventorViewer" in w.metaObject().className() and w.isVisible()][0]
         p = view.getPointOnViewport(FreeCAD.Vector(20, 30, 0))
         pos = QtCore.QPointF(p[0], vp.height() - 1 - p[1])
-        from PySide import QtGui
         QtWidgets.QApplication.sendEvent(vp, QtGui.QMouseEvent(
             QtCore.QEvent.MouseMove, pos, vp.mapToGlobal(pos), QtCore.Qt.NoButton,
             QtCore.Qt.NoButton, QtCore.Qt.NoModifier))
@@ -224,6 +230,54 @@ def run():
                    if abs(c[0] - 0.88) < 0.1 and abs(c[1] - 0.88) < 0.1 and c[2] < 0.3]
         check("hovering the dashed line preselects that curve", hovered == [dashedCurve],
               "%s vs %s" % (hovered, dashedCurve))
+
+        # The elements list's context menu: Layer.
+        FreeCADGui.Selection.clearSelection()
+        settle()
+        tree = [w for w in FreeCADGui.getMainWindow().findChildren(QtWidgets.QTreeWidget)
+                if w.objectName() == "elementsWidget" and w.isVisible()][-1]
+
+        def layer_menu(row, entry):
+            """right-click row `row`, pick Layer > `entry`; return the ticked entry"""
+            seen = {}
+
+            def answer():
+                menu = QtWidgets.QApplication.activePopupWidget()
+                if menu is None:
+                    return
+                subs = [a.menu() for a in menu.actions() if a.text() == "Layer"]
+                if subs:
+                    seen["ticked"] = [a.text() for a in subs[0].actions() if a.isChecked()]
+                    for a in subs[0].actions():
+                        if a.text() == entry:
+                            a.trigger()
+                menu.close()
+
+            QtCore.QTimer.singleShot(300, answer)
+            rect = tree.visualItemRect(tree.topLevelItem(row))
+            pos = rect.center()
+            QtWidgets.QApplication.sendEvent(tree.viewport(), QtGui.QContextMenuEvent(
+                QtGui.QContextMenuEvent.Mouse, pos, tree.viewport().mapToGlobal(pos)))
+            settle(15)
+            return seen.get("ticked")
+
+        FreeCADGui.Selection.addSelection(sk, "Edge1")
+        FreeCADGui.Selection.addSelection(sk, "Vertex5")    # line 3's start
+        settle()
+        undo = doc.UndoCount
+        layer_menu(0, "Layer 1 (dashed)")
+        dashed = polylines("DashedCurvesLineSet")
+        check("Layer > Layer 1 moves the selected elements to the dashed layer",
+              dashed == 2 and polylines("CurvesLineSet") == 1, "%d dashed" % dashed)
+        check("as one undo step", doc.UndoCount == undo + 1, doc.UndoCount - undo)
+
+        FreeCADGui.Selection.clearSelection()
+        settle()
+        ticked = layer_menu(1, "Hidden")
+        check("the clicked row's layer is ticked", ticked == ["Layer 0 (solid)"], ticked)
+        check("with nothing selected, Layer acts on the clicked row",
+              curves_drawn() == 2 and polylines("DashedCurvesLineSet") == 2,
+              "%d drawn, %d dashed" % (curves_drawn(), polylines("DashedCurvesLineSet")))
 
         FreeCADGui.getDocument(doc.Name).resetEdit()
         settle()

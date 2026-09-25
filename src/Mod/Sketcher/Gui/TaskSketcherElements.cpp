@@ -588,6 +588,30 @@ void ElementView::contextMenuEvent (QContextMenuEvent* event)
         menu.addSeparator();
     }
 
+    // The visual layer of the selected elements -- or, with none selected,
+    // of the clicked row's. Internal geometry only: external has no layer.
+    {
+        auto clicked = dynamic_cast<ElementItem*>(itemAt(viewport()->mapFromGlobal(event->globalPos())));
+        int clickedGeoId = clicked ? clicked->ElementNbr : -1;
+        int current = -1;
+        if (clicked && clickedGeoId >= 0) {
+            if (auto geo = clicked->sketchObject->getGeometry(clickedGeoId))
+                current = getSafeGeomLayerId(geo);
+        }
+        QMenu *layers = menu.addMenu(tr("Layer"));
+        auto addLayer = [&](const QString &text, int layer) {
+            QAction *action = layers->addAction(text, this, [this, layer, clickedGeoId]() {
+                Q_EMIT layerRequested(layer, clickedGeoId);
+            });
+            action->setCheckable(true);
+            action->setChecked(layer == current);
+        };
+        addLayer(tr("Layer 0 (solid)"), 0);
+        addLayer(tr("Layer 1 (dashed)"), 1);
+        addLayer(tr("Hidden"), 2);
+        menu.addSeparator();
+    }
+
     QAction* remove = menu.addAction(tr("Delete"), this, &ElementView::deleteSelectedItems);
     remove->setShortcut(QKeySequence(QKeySequence::Delete));
     remove->setEnabled(!items.isEmpty());
@@ -709,6 +733,9 @@ TaskSketcherElements::TaskSketcherElements(ViewProviderSketch* sketchView)
     QObject::connect(
         ui->elementsWidget, &ElementView::partButtonClicked,
         this, &TaskSketcherElements::onPartButtonClicked);
+    QObject::connect(
+        ui->elementsWidget, &ElementView::layerRequested,
+        this, &TaskSketcherElements::onLayerRequested);
 
     connectionElementsChanged = sketchView->getSketchObject()->signalElementsChanged.connect(
         std::bind(&SketcherGui::TaskSketcherElements::slotElementsChanged, this));
@@ -1200,17 +1227,29 @@ void TaskSketcherElements::on_elementsWidget_itemChanged(QTreeWidgetItem *item, 
 
 void TaskSketcherElements::setGeometryLayer(int geoId, int layer)
 {
+    setGeometryLayers({geoId}, layer);
+}
+
+void TaskSketcherElements::setGeometryLayers(const std::set<int> &geoIds, int layer)
+{
     auto sketch = sketchView->getSketchObject();
-    const std::vector<Part::Geometry*> &geometry = sketch->Geometry.getValues();
-    if (geoId < 0 || geoId >= (int)geometry.size()
-            || int(getSafeGeomLayerId(geometry[geoId])) == layer)
+    std::vector<int> changing;
+    for (int geoId : geoIds) {
+        const std::vector<Part::Geometry*> &geometry = sketch->Geometry.getValues();
+        if (geoId >= 0 && geoId < (int)geometry.size()
+                && int(getSafeGeomLayerId(geometry[geoId])) != layer)
+            changing.push_back(geoId);
+    }
+    if (changing.empty())
         return;
 
     App::Document *doc = sketch->getDocument();
     doc->openTransaction("Geometry layer change");
-    std::unique_ptr<Part::Geometry> geo(geometry[geoId]->clone());
-    setSafeGeomLayerId(geo.get(), layer);
-    sketch->Geometry.set1Value(geoId, std::move(geo));
+    for (int geoId : changing) {
+        std::unique_ptr<Part::Geometry> geo(sketch->Geometry.getValues()[geoId]->clone());
+        setSafeGeomLayerId(geo.get(), layer);
+        sketch->Geometry.set1Value(geoId, std::move(geo));
+    }
     sketch->solve();
     doc->commitTransaction();
 
@@ -1222,14 +1261,46 @@ void TaskSketcherElements::setGeometryLayer(int geoId, int layer)
             Gui::Selection().rmvSelection(docName.c_str(), objName.c_str(),
                                           sketch->convertSubName(name).c_str());
         };
-        deselect("Edge" + std::to_string(geoId + 1));
-        for (auto pos : {Sketcher::PointPos::start, Sketcher::PointPos::end,
-                         Sketcher::PointPos::mid}) {
-            int vertex = sketch->getVertexIndexGeoPos(geoId, pos);
-            if (vertex >= 0)
-                deselect("Vertex" + std::to_string(vertex + 1));
+        for (int geoId : changing) {
+            deselect("Edge" + std::to_string(geoId + 1));
+            for (auto pos : {Sketcher::PointPos::start, Sketcher::PointPos::end,
+                             Sketcher::PointPos::mid}) {
+                int vertex = sketch->getVertexIndexGeoPos(geoId, pos);
+                if (vertex >= 0)
+                    deselect("Vertex" + std::to_string(vertex + 1));
+            }
         }
     }
+}
+
+void TaskSketcherElements::onLayerRequested(int layer, int clickedGeoId)
+{
+    // The sketch's selected elements -- an edge or any of its vertices
+    // names the element -- or, with none, the clicked row's.
+    auto sketch = sketchView->getSketchObject();
+    std::set<int> geoIds;
+    for (const auto &sel : observedSelection().getSelectionEx(
+             "*", App::DocumentObject::getClassTypeId(), Gui::ResolveMode::OldStyleElement)) {
+        const App::DocumentObject *obj = sel.getObject();
+        if (!obj || obj->getLinkedObject() != sketchView->getObject())
+            continue;
+        for (const auto &sub : sel.getSubNames()) {
+            int geoId;
+            Sketcher::PointPos pos;
+            if (sketch->geoIdFromShapeType(sub.c_str(), geoId, pos) && geoId >= 0)
+                geoIds.insert(geoId);
+        }
+    }
+    if (geoIds.empty() && clickedGeoId >= 0)
+        geoIds.insert(clickedGeoId);
+    if (geoIds.empty())
+        return;
+    // the change rebuilds this list; make it once the menu has returned
+    QPointer<TaskSketcherElements> self(this);
+    QTimer::singleShot(0, this, [self, geoIds, layer]() {
+        if (self)
+            self->setGeometryLayers(geoIds, layer);
+    });
 }
 
 void TaskSketcherElements::clearWidget()
