@@ -635,7 +635,7 @@ void CmdPartDesignNewSketch::activated(int iMsg)
                                                      reference.getSubName().c_str(),
                                                      true);
             gp_Pln pln;
-            if (!shape.findPlane(pln)) {
+            if (!shape.findPlane(pln, Attacher::AttachEnginePlane::planarPrecision())) {
                 if (shape.isNull() || obj == pcActiveBody) {
                     obj = nullptr;
                     reference = App::SubObjectT();
