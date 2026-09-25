@@ -4077,11 +4077,15 @@ void ViewProviderSketch::updateColor(void)
     for (int i=0; i < count; i++)
         setConstraintColors(i, nullptr);
 
+    // Both sets can name a constraint that is gone: an undo redraws from
+    // inside its solve, before anything has had the chance to prune them.
     for (int i : edit->SelConstraintSet)
-        setConstraintColors(i, &SelectColor);
+        if (i >= 0 && i < count)
+            setConstraintColors(i, &SelectColor);
 
     for (int i : edit->PreselectConstraintSet)
-        setConstraintColors(i, &PreselectColor);
+        if (i >= 0 && i < count)
+            setConstraintColors(i, &PreselectColor);
 
     if (edit->PreselectCross == 0) {
         pcolor[0] = pcolor[0] == SelectColor ? PreselectSelectedColor : PreselectColor;
@@ -7648,13 +7652,15 @@ void ViewProviderSketch::updateVirtualSpace(void)
             sws[i] = !(constrlist[i]->isInVirtualSpace != isShownVirtualSpace);
         }
 
-        auto showSelectedConstraint = [this, sws](const std::set<int> &idset) {
+        // The sets can name a constraint an undo has just taken away: the
+        // undo's solve redraws before anything prunes them.
+        const int size = static_cast<int>(constrlist.size());
+        auto showSelectedConstraint = [this, sws, size](const std::set<int> &idset) {
             for (int id : idset) {
                 auto it = edit->combinedConstrMap.find(id);
-                if (it == edit->combinedConstrMap.end())
-                    sws[id] = TRUE;
-                else
-                    sws[it->second] = TRUE;
+                int index = it == edit->combinedConstrMap.end() ? id : it->second;
+                if (index >= 0 && index < size)
+                    sws[index] = TRUE;
             }
         };
         showSelectedConstraint(edit->SelConstraintSet);

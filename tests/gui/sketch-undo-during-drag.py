@@ -31,6 +31,11 @@ SIGSEGV in moveConstraint(). Between the two, the line is redone and
 dragged whole, so the cancelled drag is shown to leave the edit able to
 drag again.
 
+Last, not a held drag at all: a label drag that lands leaves its
+constraint preselected, and undoing that constraint away afterwards
+redrew from inside the undo's solve with the stale id -- a SIGSEGV in
+updateVirtualSpace(), then in updateColor(). Found writing this test.
+
 Run through scripts/gui-test.sh (xvfb, isolated configuration, external
 timeout); registered in ctest by tests/gui/CMakeLists.txt.
 """
@@ -257,6 +262,28 @@ def run():
         after = snapshot(sk)
         check("the move and release after that undo changed nothing",
               after == undone, "%s -> %s" % (undone, after))
+
+        # A label drag that lands leaves its constraint preselected, and an
+        # undo that then takes the constraint away redraws from inside its
+        # own solve, before anything prunes that set.
+        steps = 0
+        while len(sk.Constraints) == 0 and doc.RedoCount > 0 and steps < 5:
+            doc.redo()
+            settle()
+            steps += 1
+        check("redo brought the constraint back", len(sk.Constraints) == 1,
+              "%d steps, %s" % (steps, snapshot(sk)))
+        FreeCADGui.Selection.setPreselection(sk, "Constraint1")
+        press(w, LABEL_FROM)
+        drag_to(w, ((LABEL_FROM[0] + LABEL_TO[0]) / 2, (LABEL_FROM[1] + LABEL_TO[1]) / 2))
+        drag_to(w, LABEL_TO)
+        release(w, LABEL_TO)
+        landed = round(sk.Constraints[0].LabelDistance, 3) if sk.Constraints else None
+        check("a whole label drag lands", landed is not None and abs(landed - want) < 1.0,
+              "%s vs %s" % (landed, want))
+        steps = undo_until(doc, lambda: len(sk.Constraints) == 0)
+        check("and undoing its constraint away after it survives",
+              len(sk.Constraints) == 0, "%d steps, %s" % (steps, snapshot(sk)))
 
     except Exception:
         note("ABORT run:\n" + traceback.format_exc())
