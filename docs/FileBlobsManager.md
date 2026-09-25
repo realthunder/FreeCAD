@@ -1290,7 +1290,8 @@ and how it was settled:
   fsynced for the new entry. Every segment write is durable, so the
   ordering rule of 15.8 reduces to "flush the batch before the row".
 - **No `.tmp` and no rename -- a departure from 15.7 and 15.10, forced by
-  the laptop** (15.9: renaming a zip under about 10 MB costs it 3-11 s).
+  the laptop** (15.9: renaming a zip under about 10 MB costs it 3-11 s),
+  and accepted by the user (2026-09-25).
   A generation is written straight to `seg-<N>.<g>`. The rename bought no
   atomicity: the name has never existed, and no reader opens a generation
   before the store installs it, which is after the file is complete and
