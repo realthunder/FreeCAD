@@ -45,7 +45,6 @@ public:
     /// grouping handling 
     std::vector<App::DocumentObject*> _claimChildren() const override;
     void setupContextMenu(QMenu *menu, QObject *receiver, const char *member) override;
-    bool onDelete(const std::vector<std::string> &s) override;
     TaskDlgFeatureParameters* getEditDialog() override;
 };
 

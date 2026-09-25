@@ -69,18 +69,3 @@ std::vector<App::DocumentObject*> ViewProviderHelix::_claimChildren(void) const 
     return temp;
 }
 
-bool ViewProviderHelix::onDelete(const std::vector<std::string> &s) {
-    PartDesign::ProfileBased* feature = static_cast<PartDesign::ProfileBased*>(getObject());
-
-    // get the Sketch
-    Sketcher::SketchObject *pcSketch = nullptr;
-    if (feature->Profile.getValue())
-        pcSketch = static_cast<Sketcher::SketchObject*>(feature->Profile.getValue());
-
-    // if abort command deleted the object the sketch is visible again
-    if (pcSketch && Gui::Application::Instance->getViewProvider(pcSketch))
-        Gui::Application::Instance->getViewProvider(pcSketch)->show();
-
-    return ViewProvider::onDelete(s);
-}
-

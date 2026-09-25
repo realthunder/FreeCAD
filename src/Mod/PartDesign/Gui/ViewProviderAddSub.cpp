@@ -76,6 +76,22 @@ ViewProviderAddSub::~ViewProviderAddSub()
 {
 }
 
+bool ViewProviderAddSub::onDelete(const std::vector<std::string> &subs)
+{
+    // A feature hides what it is made from -- a pad its sketch, a loft its
+    // sections, a pipe its spine -- so show those again when it goes. Each
+    // type used to do it for its Profile alone, and Loft and Pipe not at all.
+    // Features among the children are left to ViewProvider::onDelete(),
+    // which shows the previous one.
+    for (auto child : _claimChildren()) {
+        if (!child || child->isDerivedFrom<PartDesign::Feature>())
+            continue;
+        if (auto vp = Gui::Application::Instance->getViewProvider(child))
+            vp->show();
+    }
+    return ViewProvider::onDelete(subs);
+}
+
 void ViewProviderAddSub::attach(App::DocumentObject* obj) {
 
     ViewProvider::attach(obj);

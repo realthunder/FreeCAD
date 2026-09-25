@@ -44,8 +44,6 @@ public:
     /// grouping handling
     std::vector<App::DocumentObject*> _claimChildren()const override;
 
-    bool onDelete(const std::vector<std::string> &) override;
-
 protected:
     /// Returns a newly created TaskDlgHelixParameters
     TaskDlgFeatureParameters *getEditDialog() override;

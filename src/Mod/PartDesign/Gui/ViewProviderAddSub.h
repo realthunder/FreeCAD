@@ -46,6 +46,7 @@ public:
     void attach(App::DocumentObject*) override;
     void reattach(App::DocumentObject *) override;
     void beforeDelete() override;
+    bool onDelete(const std::vector<std::string> &) override;
     void updateData(const App::Property*) override;
     bool setEdit(int ModNum) override;
     void unsetEdit(int ModNum) override;
