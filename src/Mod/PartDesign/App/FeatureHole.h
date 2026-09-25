@@ -247,6 +247,8 @@ private:
     bool isDynamicCounterbore(const std::string &thread, const std::string &holeCutType);
     bool isDynamicCountersink(const std::string &thread, const std::string &holeCutType);
     void updateHoleCutParams();
+    void calculateAndSetCounterbore();
+    void calculateAndSetCountersink();
     std::optional<double> determineDiameter() const;
     void updateDiameterParam();
     void updateThreadDepthParam();

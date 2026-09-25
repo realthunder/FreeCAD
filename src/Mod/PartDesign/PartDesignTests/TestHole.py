@@ -294,6 +294,34 @@ class TestHole(unittest.TestCase):
             self.Body.removeObject(hole)
             self.Doc.removeObject(hole.Name)
 
+    def testCutBeyondStandard(self):
+        """A counterbore or countersink for a size its standard has no entry
+        for is estimated from the diameter (upstream 07e7918baf); it was the
+        hole's diameter + 0.1, 0.1 deep -- nothing to see."""
+        self.Body = self.Doc.addObject("PartDesign::Body", "Body")
+        box = self.Body.newObject("PartDesign::AdditiveBox", "Box")
+        box.Length = box.Width = 200
+        box.Height = 100
+        sketch = self.Body.newObject("Sketcher::SketchObject", "Center")
+        sketch.MapMode = "Deactivated"
+        sketch.Placement = App.Placement(App.Vector(0, 0, 100), App.Rotation())
+        TestSketcherApp.CreateCircleSketch(sketch, (100, 100), 5)
+        self.Doc.recompute()
+        for cut, diameter, depth in (("Counterbore", 1.5 * 74 + 1, 74),
+                                     ("Countersink", 2.24 * 74, 0.62 * 74)):
+            hole = self.Body.newObject("PartDesign::Hole", "Hole")
+            hole.Profile = sketch
+            hole.ThreadType = "ISOMetricProfile"
+            hole.ThreadSize = "M68"  # ISO 4762 and ISO 10642 stop short of it
+            hole.HoleCutType = cut
+            hole.DepthType = "ThroughAll"
+            self.Doc.recompute()
+            self.assertNotIn("Invalid", hole.State, cut)
+            self.assertAlmostEqual(hole.HoleCutDiameter.Value, diameter, msg=cut)
+            self.assertAlmostEqual(hole.HoleCutDepth.Value, depth, msg=cut)
+            self.Body.removeObject(hole)
+            self.Doc.removeObject(hole.Name)
+
     def testThreadEnums(self):
         """Test thread enums for correct order (upstream 0fdb02c6eb; the BSP
         list is the table's, which the list the BSP pick brought did not
