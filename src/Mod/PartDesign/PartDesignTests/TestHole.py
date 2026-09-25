@@ -157,6 +157,24 @@ class TestHole(unittest.TestCase):
         self._holeOnSecondBox(True)
         self.assertEqual(len(self.Hole.Shape.Faces), 7)
 
+    def testProfileWithoutCircle(self):
+        """Nothing to drill is an error on the hole (upstream 7a672a3207); it
+        emptied the body without a word."""
+        self.Body = self.Doc.addObject("PartDesign::Body", "Body")
+        box = self.Body.newObject("PartDesign::AdditiveBox", "Box")
+        box.Length = box.Width = 20
+        self.Doc.recompute()
+        sketch = self.Body.newObject("Sketcher::SketchObject", "Square")
+        sketch.Support = (box, ["Face6"])
+        sketch.MapMode = "FlatFace"
+        TestSketcherApp.CreateRectangleSketch(sketch, (5, 5), (4, 4))
+        self.Doc.recompute()
+        hole = self.Body.newObject("PartDesign::Hole", "Hole")
+        hole.Profile = sketch
+        self.Doc.recompute()
+        self.assertIn("Invalid", hole.State)
+        self.assertAlmostEqual(box.Shape.Volume, 4000)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestHole")

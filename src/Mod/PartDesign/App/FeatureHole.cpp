@@ -1927,6 +1927,11 @@ App::DocumentObjectExecReturn* Hole::execute()
 
         std::vector<TopoShape> holes;
         auto compound = findHoles(holes, profileshape, protoHole);
+        // Nothing to drill: the empty tool used to reach makeBoolean(), which
+        // hands back the tool when it is not a solid, and the body's shape
+        // went empty without a word (upstream 7a672a3207).
+        if (holes.empty())
+            return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Hole error: the profile has no circle or arc to center a hole on"));
 
         TopoShape result(0,getDocument()->getStringHasher());
 
