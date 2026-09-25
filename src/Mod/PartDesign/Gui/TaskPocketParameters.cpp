@@ -53,6 +53,7 @@ void TaskPocketParameters::translateModeList(int index)
     ui->changeMode->addItem(tr("To first"));
     ui->changeMode->addItem(tr("Up to face"));
     ui->changeMode->addItem(tr("Two dimensions"));
+    ui->changeMode->addItem(tr("Up to shape"));
     ui->changeMode->setCurrentIndex(index);
 }
 
@@ -102,6 +103,10 @@ void TaskPocketParameters::onModeChanged(int index)
         case Modes::TwoDimensions:
             oldLength = pcPocket->Length.getValue();
             pcPocket->Type.setValue("TwoLengths");
+            break;
+        case Modes::ToShape:
+            oldLength = pcPocket->Length.getValue();
+            pcPocket->Type.setValue("UpToShape");
             break;
     }
 

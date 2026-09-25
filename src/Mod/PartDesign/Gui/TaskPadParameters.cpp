@@ -63,6 +63,7 @@ void TaskPadParameters::translateModeList(int index)
     else
         ui->changeMode->addItem(tr("Up to face"));
     ui->changeMode->addItem(tr("Two dimensions"));
+    ui->changeMode->addItem(tr("Up to shape"));
     ui->changeMode->setCurrentIndex(index);
 }
 
@@ -109,6 +110,9 @@ void TaskPadParameters::onModeChanged(int index)
         break;
     case Modes::TwoDimensions:
         pcPad->Type.setValue("TwoLengths");
+        break;
+    case Modes::ToShape:
+        pcPad->Type.setValue("UpToShape");
         break;
     }
 

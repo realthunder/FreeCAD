@@ -64,6 +64,7 @@ void FeatureExtrude::initProperties(const char *group)
     ADD_PROPERTY_TYPE(ReferenceAxis, (nullptr), group, App::Prop_None, "Reference axis of direction");
     ADD_PROPERTY_TYPE(AlongSketchNormal, (true), group, App::Prop_None, "Measure pad length along the sketch normal direction");
     ADD_PROPERTY_TYPE(UpToFace, (nullptr), group, App::Prop_None, "Face where pad will end");
+    ADD_PROPERTY_TYPE(UpToShape, (nullptr), group, App::Prop_None, "Faces or shapes where pad will end");
     ADD_PROPERTY_TYPE(Offset, (0.0), group, App::Prop_None, "Offset from face in which pad will end");
     Offset.setConstraints(&signedLengthConstraint);
     ADD_PROPERTY_TYPE(TaperAngle,(0.0), group, App::Prop_None, "Sets the angle of slope (draft) to apply to the sides. The angle is for outward taper; negative value yields inward tapering.");
@@ -106,7 +107,8 @@ short FeatureExtrude::mustExecute() const
         ReferenceAxis.isTouched() ||
         AlongSketchNormal.isTouched() ||
         Offset.isTouched() ||
-        UpToFace.isTouched())
+        UpToFace.isTouched() ||
+        UpToShape.isTouched())
         return 1;
     return ProfileBased::mustExecute();
 }
@@ -227,6 +229,7 @@ void FeatureExtrude::updateProperties(const std::string &method)
     bool isMidplaneEnabled = false;
     bool isReversedEnabled = false;
     bool isUpToFaceEnabled = false;
+    bool isUpToShapeEnabled = false;
     bool isTaperVisible = false;
     bool isTaper2Visible = false;
     if (method == "Length") {
@@ -262,6 +265,9 @@ void FeatureExtrude::updateProperties(const std::string &method)
     }
     else if (method == "UpToShape") {
         isReversedEnabled = true;
+        isUpToShapeEnabled = true;
+        // one face can be offset, as an up to face
+        isOffsetEnabled = true;
     }
 
     Length.setReadOnly(!isLengthEnabled);
@@ -274,6 +280,7 @@ void FeatureExtrude::updateProperties(const std::string &method)
     Midplane.setReadOnly(!isMidplaneEnabled);
     Reversed.setReadOnly(!isReversedEnabled);
     UpToFace.setReadOnly(!isUpToFaceEnabled);
+    UpToShape.setReadOnly(!isUpToShapeEnabled);
 }
 
 void FeatureExtrude::setupObject()
@@ -397,7 +404,8 @@ App::DocumentObjectExecReturn *FeatureExtrude::buildExtrusion(ExtrudeOptions opt
 
         TopoShape prism(0,getDocument()->getStringHasher());
 
-        if (method == "UpToFirst" || method == "UpToLast" || method == "UpToFace") {
+        if (method == "UpToFirst" || method == "UpToLast" || method == "UpToFace"
+                || method == "UpToShape") {
             // Note: This will return an unlimited planar face if support is a datum plane
             TopoShape supportface = getSupportFace();
             supportface.move(invObjLoc);
@@ -405,14 +413,56 @@ App::DocumentObjectExecReturn *FeatureExtrude::buildExtrusion(ExtrudeOptions opt
             if (Reversed.getValue())
                 dir.Reverse();
 
-            // Find a valid face or datum plane to extrude up to
+            // Find a valid face or datum plane to extrude up to -- or, up to
+            // shape (upstream 309dd6e30d), several faces, or the base when
+            // nothing is chosen
             TopoShape upToFace;
+            int faceCount = 1;
             if (method == "UpToFace") {
                 getUpToFaceFromLinkSub(upToFace, UpToFace);
                 upToFace.move(invObjLoc);
             }
-            getUpToFace(upToFace, base, sketchshape, method, dir);
-            addOffsetToFace(upToFace, dir, Offset.getValue());
+            else if (method == "UpToShape") {
+                if (UpToShape.getSubListValues().empty()) {
+                    if (base.isNull())
+                        return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception",
+                            "Extrude: Up to shape: no shape selected, and no base to extrude up to"));
+                    upToFace = base;
+                    faceCount = 0;
+                }
+                else {
+                    faceCount = getUpToShapeFromLinkSubList(upToFace, UpToShape);
+                    upToFace.move(invObjLoc);
+                }
+            }
+            if (faceCount == 1) {
+                getUpToFace(upToFace, base, sketchshape, method, dir);
+                addOffsetToFace(upToFace, dir, Offset.getValue());
+            }
+            else {
+                if (std::fabs(Offset.getValue()) > Precision::Confusion())
+                    return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception",
+                        "Extrude: Can only offset one face"));
+                // Several faces, a whole shape: without the face furthest along
+                // the extrusion the shell is open, and the prism stops at the
+                // nearest (upstream 8b9f5bdc4f). Given all of them it ran on.
+                std::vector<Part::cutFaces> cfaces = Part::findAllFacesCutBy(upToFace, sketchshape, dir);
+                if (cfaces.empty())
+                    cfaces = Part::findAllFacesCutBy(upToFace, sketchshape, -dir);
+                if (cfaces.size() > 1) {
+                    auto farFace = &cfaces.front();
+                    for (auto &cface : cfaces) {
+                        if (cface.distsq > farFace->distsq)
+                            farFace = &cface;
+                    }
+                    std::vector<TopoShape> faces;
+                    for (auto &face : upToFace.getSubTopoShapes(TopAbs_FACE)) {
+                        if (!face.getShape().IsSame(farFace->face.getShape()))
+                            faces.push_back(face);
+                    }
+                    upToFace = TopoShape().makECompound(faces);
+                }
+            }
 
             if (!supportface.hasSubShape(TopAbs_WIRE))
                 supportface = TopoShape();
@@ -454,8 +504,16 @@ App::DocumentObjectExecReturn *FeatureExtrude::buildExtrusion(ExtrudeOptions opt
                 this->Shape.setValue(getSolid(prism));
                 return App::DocumentObject::StdReturn;
             }
-            prism.makEPrismUntil(base, sketchshape, supportface, upToFace,
-                    dir, TopoShape::PrismMode::None, CheckUpToFaceLimits.getValue());
+            try {
+                prism.makEPrismUntil(base, sketchshape, supportface, upToFace,
+                        dir, TopoShape::PrismMode::None, CheckUpToFaceLimits.getValue());
+            }
+            catch (const Base::Exception &) {
+                if (method == "UpToShape" && faceCount > 1)
+                    return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception",
+                        "Unable to reach the selected shape, please select faces"));
+                throw;
+            }
         } else {
             Part::ExtrusionHelper::Parameters params;
             params.dir = dir;

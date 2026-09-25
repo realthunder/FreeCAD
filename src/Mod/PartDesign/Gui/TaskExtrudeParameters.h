@@ -86,7 +86,9 @@ public:
         ToLast = ThroughAll,
         ToFirst,
         ToFace,
-        TwoDimensions
+        TwoDimensions,
+        // the faces or shapes are chosen in the property editor for now
+        ToShape
     };
 
 protected:

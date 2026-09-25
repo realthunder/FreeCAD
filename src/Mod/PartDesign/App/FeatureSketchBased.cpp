@@ -80,6 +80,7 @@ ProfileBased::ProfileBased()
     ADD_PROPERTY_TYPE(Midplane,(0),"SketchBased", App::Prop_None, "Extrude symmetric to sketch face");
     ADD_PROPERTY_TYPE(Reversed, (0),"SketchBased", App::Prop_None, "Reverse extrusion direction");
     ADD_PROPERTY_TYPE(UpToFace,(0),"SketchBased",(App::PropertyType)(App::Prop_None),"Face where feature will end");
+    ADD_PROPERTY_TYPE(UpToShape,(nullptr),"SketchBased",(App::PropertyType)(App::Prop_None),"Faces or shapes where feature will end");
     ADD_PROPERTY_TYPE(AllowMultiFace,(false),"SketchBased", App::Prop_None, "Allow multiple faces in profile");
 
     ADD_PROPERTY_TYPE(Fit, (0.0), "SketchBased", App::Prop_None, "Shrink or expand the profile for fitting");
@@ -609,6 +610,38 @@ void ProfileBased::getUpToFaceFromLinkSub(TopoShape& upToFace,
     upToFace = Part::Feature::getTopoShape(ref, subs.size()?subs[0].c_str():nullptr,true);
     if (!upToFace.hasSubShape(TopAbs_FACE))
         THROWM(Base::ValueError, "SketchBased: Up to face: Failed to extract face")
+}
+
+int ProfileBased::getUpToShapeFromLinkSubList(TopoShape& upToShape,
+                                              const App::PropertyLinkSubList& refShape)
+{
+    std::vector<TopoShape> faces;
+    for (const auto &subSet : refShape.getSubListValues()) {
+        auto ref = subSet.first;
+        if (ref->isDerivedFrom<App::Plane>()) {
+            faces.push_back(makeShapeFromPlane(ref));
+            continue;
+        }
+        if (!ref->isDerivedFrom<Part::Feature>())
+            THROWM(Base::TypeError, "SketchBased: Must be face of a feature")
+        const auto &subs = subSet.second;
+        if (subs.empty() || subs[0].empty()) {
+            for (auto &face : Part::Feature::getTopoShape(ref, nullptr, true).getSubTopoShapes(TopAbs_FACE))
+                faces.push_back(face);
+            continue;
+        }
+        for (const auto &sub : subs) {
+            auto face = Part::Feature::getTopoShape(ref, sub.c_str(), true);
+            if (!face.hasSubShape(TopAbs_FACE))
+                THROWM(Base::ValueError, "SketchBased: Up to shape: Failed to extract face")
+            for (auto &f : face.getSubTopoShapes(TopAbs_FACE))
+                faces.push_back(f);
+        }
+    }
+    if (faces.empty())
+        THROWM(Base::ValueError, "SketchBased: No face selected")
+    upToShape = faces.size() == 1 ? faces.front() : TopoShape().makECompound(faces);
+    return static_cast<int>(faces.size());
 }
 
 void ProfileBased::getUpToFace(TopoShape& upToFace,

@@ -59,6 +59,8 @@ public:
     App::PropertyBool    Midplane;
     /// Face to extrude up to
     App::PropertyLinkSub UpToFace;
+    /// Faces or shapes to extrude up to (upstream 309dd6e30d)
+    App::PropertyLinkSubList UpToShape;
     /// Force claim linked profile as children
     App::PropertyBool    ClaimChildren;
 
@@ -158,6 +160,12 @@ protected:
     /// Extract a face from a given LinkSub
     static void getUpToFaceFromLinkSub(TopoShape& upToFace,
                                        const App::PropertyLinkSub& refFace);
+
+    /** The faces of a LinkSubList to extrude up to, one or a compound of
+     * them; a whole object gives all its faces. Returns the face count.
+     */
+    static int getUpToShapeFromLinkSubList(TopoShape& upToShape,
+                                           const App::PropertyLinkSubList& refShape);
 
     /// Find a valid face to extrude up to
     static void getUpToFace(TopoShape& upToFace,

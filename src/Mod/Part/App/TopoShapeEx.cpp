@@ -2343,9 +2343,12 @@ TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
         
     TopoShape _uptoface(__uptoface);
     TopoShape uptoface(_uptoface);
-    if (uptoface.shapeType(true) != TopAbs_FACE) {
-        FC_THROWM(Base::CADKernelError,"Invalid face");
+    // Up to a face, or up to several faces or a shape (PartDesign's
+    // UpToShape, upstream 309dd6e30d): only a face has limits to check
+    if (uptoface.isNull()) {
+        FC_THROWM(Base::CADKernelError,"Invalid up to shape");
     }
+    const bool isFace = uptoface.shapeType(true) == TopAbs_FACE;
 
     if(!op) {
         op = Part::OpCodes::Prism;
@@ -2360,7 +2363,7 @@ TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
     // inside of a ring went through it (upstream issue 16690, 8b9f5bdc4f and
     // 594010d9f0). The base is still used below for Mode.
     Base::Vector3d cog;
-    bool concave = profile.getCenterOfGravity(cog)
+    bool concave = isFace && profile.getCenterOfGravity(cog)
         && Part::Tools::isConcave(TopoDS::Face(uptoface.getShape()),
                                   gp_Pnt(cog.x, cog.y, cog.z), direction);
     if (concave) {
@@ -2380,7 +2383,7 @@ TopoShape &TopoShape::makEPrismUntil(const TopoShape &_base,
 
     BRepFeat_MakePrism PrismMaker;
 
-    if (checkLimits
+    if (checkLimits && isFace
             && !BRep_Tool::NaturalRestriction(TopoDS::Face(uptoface.getShape()))
             && uptoface.hasSubShape(TopAbs_WIRE))
     {

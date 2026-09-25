@@ -732,6 +732,11 @@ void TaskExtrudeParameters::setCheckboxes()
         isTaperEdit2Visible = true;
         isReversedEnabled = true;
     }
+    else if (mode == Modes::ToShape) {
+        // an offset for one face, as up to face
+        isOffsetEditVisible = true;
+        isReversedEnabled = true;
+    }
 
     ui->lengthEdit->setVisible(isLengthEditVisible);
     ui->lengthEdit->setEnabled(isLengthEditVisible);

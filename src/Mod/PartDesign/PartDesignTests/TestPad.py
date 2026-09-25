@@ -253,6 +253,40 @@ class TestPad(unittest.TestCase):
         self.assertAlmostEqual(pad.Shape.BoundBox.ZMax, 20)
         self.assertAlmostEqual(pad.Shape.Volume, 2000)
 
+    def testPadUpToShape(self):
+        """Up to one face, several, or a whole shape (upstream 309dd6e30d,
+        8b9f5bdc4f): the pad stops at the nearest; the Type was offered and
+        failed with "Unknown method 'UpToShape'"."""
+        plate = self.Doc.addObject("Part::Box", "Plate")
+        plate.Length = plate.Width = 10
+        plate.Height = 1
+        plate.Placement.Base = FreeCAD.Vector(20, 0, 30)
+        self.Body = self.Doc.addObject("PartDesign::Body", "Body")
+        sketch = self.Body.newObject("Sketcher::SketchObject", "SketchPad")
+        TestSketcherApp.CreateRectangleSketch(sketch, (20, 0), (10, 10))
+        self.Doc.recompute()
+        pad = self.Body.newObject("PartDesign::Pad", "Pad")
+        pad.Profile = sketch
+        pad.Type = "UpToShape"
+        bottom = [i for i, f in enumerate(plate.Shape.Faces, 1)
+                  if abs(f.CenterOfMass.z - 30) < 1e-6][0]
+        top = [i for i, f in enumerate(plate.Shape.Faces, 1)
+               if abs(f.CenterOfMass.z - 31) < 1e-6][0]
+        for faces in (["Face%d" % bottom], ["Face%d" % bottom, "Face%d" % top], [""]):
+            pad.UpToShape = [(plate, faces)]
+            self.Doc.recompute()
+            self.assertNotIn("Invalid", pad.State, faces)
+            self.assertAlmostEqual(pad.Shape.Volume, 3000, msg=faces)
+            self.assertAlmostEqual(pad.Shape.BoundBox.ZMax, 30, msg=faces)
+        # one face can be offset, as an up to face; several cannot
+        pad.Offset = 1
+        self.Doc.recompute()
+        self.assertIn("Invalid", pad.State)
+        pad.UpToShape = [(plate, ["Face%d" % bottom])]
+        self.Doc.recompute()
+        self.assertNotIn("Invalid", pad.State)
+        self.assertAlmostEqual(pad.Shape.BoundBox.ZMax, 31)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestPad")

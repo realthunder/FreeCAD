@@ -231,6 +231,31 @@ class TestPocket(unittest.TestCase):
         removed = 30 / 3 * (100 + bottom ** 2 + 10 * bottom)
         self.assertAlmostEqual(40 * 40 * 30 - pocket.Shape.Volume, removed, delta=0.5)
 
+    def testPocketUpToShape(self):
+        """A pocket up to a shape (upstream 309dd6e30d): the Pocket had no
+        such Type."""
+        self.Body = self.Doc.addObject("PartDesign::Body", "Body")
+        box = self.Body.newObject("PartDesign::AdditiveBox", "Box")
+        box.Length = box.Width = box.Height = 40
+        plate = self.Doc.addObject("Part::Box", "Plate")
+        plate.Length = plate.Width = 60
+        plate.Height = 1
+        plate.Placement.Base = FreeCAD.Vector(-10, -10, 14)
+        self.Doc.recompute()
+        sketch = self.Body.newObject("Sketcher::SketchObject", "SketchPocket")
+        sketch.MapMode = "Deactivated"
+        sketch.Placement = FreeCAD.Placement(FreeCAD.Vector(0, 0, 40), FreeCAD.Rotation())
+        TestSketcherApp.CreateRectangleSketch(sketch, (10, 10), (10, 10))
+        self.Doc.recompute()
+        pocket = self.Body.newObject("PartDesign::Pocket", "Pocket")
+        pocket.Profile = sketch
+        pocket.Type = "UpToShape"
+        pocket.UpToShape = [(plate, [""])]
+        self.Doc.recompute()
+        self.assertNotIn("Invalid", pocket.State)
+        # down to the plate's top at z = 15
+        self.assertAlmostEqual(box.Shape.Volume - pocket.Shape.Volume, 10 * 10 * 25)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestPocket")
