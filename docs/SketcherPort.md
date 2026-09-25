@@ -2608,10 +2608,11 @@ is not compiled here (decision 3): the fork draws constraints in
 upstream's manager DRAWS is a change the fork's drawing may lack too.
 `df867a25b2` was one. So are the line cases of the same work: the fork's
 `SoDatumLabel` reads an angle's end-line lengths (`param4`, `param5`, the
-`74dd736e3c` half that is here), but `drawConstraints` sets them only for
-an arc, so a line or line-line angle label still gets the pixel-minimum
-ticks (`827781ab3f`, `dca00ec80e`). Not taken; the n/a rows under that
-file deserve the same reading.
+`74dd736e3c` half that is here), but `drawConstraints` set them only for
+an arc, so a line or line-line angle label kept the pixel-minimum ticks
+(`827781ab3f`, `dca00ec80e`). Taken after the family in `4b4e56c5d6`, see
+"Line angle end lines" below. The other n/a rows under that file deserve
+the same reading.
 
 **Found on the way: a label never followed its constraint under bgfx.**
 `4711c5578f`. The capture reads a datum label through companion shapes
@@ -2623,6 +2624,23 @@ drawing check above failed for that reason first. Guarded by
 Guarded by `tests/gui/sketch-arc-labels.py` (12 checks, 11 fail before,
 also run in mode 0) and `tests/gui/sketch-drag-arc-conic.py` (3 of 4 fail
 before).
+
+### Line angle end lines (session 96)
+
+| row | verdict |
+|---|---|
+| `827781ab3f` | **adapted** `4b4e56c5d6`. Each line of a line-line angle gets an end line from the label's arc to its far end (the line inside the arc) or its near end (beyond it); none where the arc crosses the line. Directions normalised as upstream |
+| `dca00ec80e` | **adapted** `4b4e56c5d6`. A single line's angle is from the horizontal through its middle: that reference is drawn from the middle to the arc, and the line's own end line back to its end when the arc is past it |
+
+Both rows stay `n/a(uncompiled)` in the ledger (the file is not built
+here), so the open count does not move: 288. The feed is all that was
+missing -- both leader paths already read `param4`/`param5`.
+
+Guarded by `tests/gui/sketch-line-angle-labels.py` (5 end-line checks, all
+5 fail before in mode 3 and in mode 0). Its geometry sits 15 above the
+sketch's X axis: the axis is drawn in a red the label check cannot tell
+from a label's, and a first version on y = 0 passed its horizontal
+probes before the fix.
 
 **Harness notes.** `Constraint.LabelDistance` is read-only from Python,
 so the test places labels by dragging them. A label drag that lands

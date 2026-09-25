@@ -10,15 +10,15 @@ e43a3b17c8	2023-12-24	Max Wilfinger	feature	1	0	have(sync)	18		Change tool descr
 9bb9eb8b21	2024-01-07	Paddle	fix	1	0	have(sync)	4		Sketcher_dimension : Fixes https://github.com/FreeCAD/FreeCAD/issues/11904	Gui/CommandConstraints.cpp
 476089a2ad	2024-01-02	Max Wilfinger	?	0	0	partial(sync)	315		sketcher: create contextual right click menu	Gui/CommandConstraints.cpp Gui/CommandCreateGeo.cpp Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h Gui/Workbench.cpp
 8abd09398a	2024-01-09	bgbsww	feature	0	1	have(rev)	1		Add support for OCCT 7.8.0 (#11909)	Gui/EditDatumDialog.cpp
-827781ab3f	2023-11-24	Paddle	?	1	0	n/a(uncompiled)	57		Improve angle constraint rendering.	Gui/EditModeConstraintCoinManager.cpp
+827781ab3f	2023-11-24	Paddle	?	1	0	n/a(uncompiled)	57	adapted 4b4e56c5d6: the line-line end lines, fed from the fork's own drawConstraints (EditModeConstraintCoinManager is not compiled); the SoDatumLabel half (74dd736e3c) was here. SketcherPort.md 7b	Improve angle constraint rendering.	Gui/EditModeConstraintCoinManager.cpp
 5ee16df6b7	2023-11-24	Paddle	?	1	0	n/a(uncompiled)	61		Draw arc helpers for radius constraints.	Gui/EditModeConstraintCoinManager.cpp
 b0176c2d92	2024-01-17	Paddle	feature	1	0	have(sync)	10		Sketcher: add isPeriodicBsplineCurve helper function	Gui/Utils.cpp Gui/Utils.h
 6db820a580	2024-01-07	Paddle	?	0	0	have(sync)	81		Sketcher: Define double click on edges : Select the whole wire.	Gui/ViewProviderSketch.cpp Gui/ViewProviderSketch.h
 919d8c9392	2024-01-17	Paddle	fix	1	0	open	3	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: bspline: fix ESC exit tool	Gui/DrawSketchHandlerBSpline.h
 4acff3f66f	2024-01-17	Paddle	fix	0	0	have	10	taken b4b8f10a3b	Sketcher: polyline: fix ESC exit tool	Gui/DrawSketchHandlerLineSet.h
 64c867eb0e	2024-01-16	Paddle	fix	0	0	n/a(uncompiled)	190		Sketcher Fix radius arc helpers.	Gui/EditModeConstraintCoinManager.cpp Gui/EditModeConstraintCoinManager.h
-dca00ec80e	2024-01-16	Paddle	?	1	0	n/a(uncompiled)	10		Sketcher : improve single line angle rendering.	Gui/EditModeConstraintCoinManager.cpp
-df867a25b2	2024-01-16	Paddle	?	0	0	n/a(uncompiled)	3	adapted 01fd3490ea: the arc case in the fork's own drawConstraints (EditModeConstraintCoinManager is not compiled); the line cases of the same end-line work (74dd736e3c feed half, dca00ec80e) are still missing there, SketcherPort.md 7b	Sketcher : arc angle render improvement.	Gui/EditModeConstraintCoinManager.cpp
+dca00ec80e	2024-01-16	Paddle	?	1	0	n/a(uncompiled)	10	adapted 4b4e56c5d6: a single line's horizontal reference and end line, in the fork's own drawConstraints. SketcherPort.md 7b	Sketcher : improve single line angle rendering.	Gui/EditModeConstraintCoinManager.cpp
+df867a25b2	2024-01-16	Paddle	?	0	0	n/a(uncompiled)	3	adapted 01fd3490ea: the arc case in the fork's own drawConstraints (EditModeConstraintCoinManager is not compiled); the line cases of the same work (827781ab3f, dca00ec80e) followed in 4b4e56c5d6, SketcherPort.md 7b	Sketcher : arc angle render improvement.	Gui/EditModeConstraintCoinManager.cpp
 fd2e35b7eb	2023-11-26	Paddle	feature	0	0	partial(sync)	288		Sketcher: Add copy/cut/paste sketcher commands	Gui/CommandSketcherTools.cpp Gui/ShortcutListener.cpp Gui/ShortcutListener.h Gui/ViewProviderSketch.h Gui/Workbench.cpp
 a8b6e1e9c3	2024-01-11	Paddle	feature	0	0	have(sync)	332		Sketcher: python converter : add possibility to add lastGeoId to the constraint process.	App/PythonConverter.cpp App/PythonConverter.h
 8ed22b0fd8	2024-01-11	Paddle	?	0	0	have(sync)	124		Sketcher: copy paste : move from XML to python.	Gui/CommandSketcherTools.cpp
