@@ -288,7 +288,8 @@ public:
         STATUS_SKETCH_DragConstraint,  /**< enum value while dragging a compatible constraint. */
         STATUS_SKETCH_UseHandler,      /**< enum value a DrawSketchHandler is in control. */
         STATUS_SKETCH_StartRubberBand, /**< enum value for initiating a rubber band selection */
-        STATUS_SKETCH_UseRubberBand    /**< enum value when making a rubber band selection */
+        STATUS_SKETCH_UseRubberBand,   /**< enum value when making a rubber band selection */
+        STATUS_SELECT_Wire             /**< enum value an edge was double clicked, its wire is selected on release. */
     };
     /// is called by GuiCommands to set the drawing mode
     void setSketchMode(SketchMode mode);
@@ -490,6 +491,9 @@ protected:
     void deactivateHandler();
     /// get called if a subelement is double clicked while editing
     void editDoubleClicked();
+    /// selects, or deselects, the edges connected end to end with an edge,
+    /// external ones included, following the edge's own selection state
+    void toggleWireSelection(int clickedGeoId);
     //@}
 
 

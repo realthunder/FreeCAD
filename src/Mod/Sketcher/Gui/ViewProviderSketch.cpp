@@ -719,6 +719,7 @@ void ViewProviderSketch::cancelInteractionOnUndoRedo()
         case STATUS_SELECT_Edge:
         case STATUS_SELECT_Constraint:
         case STATUS_SELECT_Cross:
+        case STATUS_SELECT_Wire:
         case STATUS_SKETCH_Drag:
         case STATUS_SKETCH_DragConstraint:
             break;
@@ -911,6 +912,7 @@ void ViewProviderSketch::preselectAtPoint(Base::Vector2d point)
     if (_Mode != STATUS_SELECT_Point &&
         _Mode != STATUS_SELECT_Edge &&
         _Mode != STATUS_SELECT_Constraint &&
+        _Mode != STATUS_SELECT_Wire &&
         _Mode != STATUS_SKETCH_Drag &&
         _Mode != STATUS_SKETCH_DragConstraint &&
         _Mode != STATUS_SKETCH_UseRubberBand) {
@@ -1188,7 +1190,11 @@ bool ViewProviderSketch::mouseButtonPressed(int Button, bool pressed, const SbVe
                         prvClickTime = SbTime();
                         prvClickPos = SbVec2s(-16000,-16000); //certainly far away from any clickable place, to avoid re-trigger of double-click if next click happens fast.
 
-                        setSketchMode(STATUS_NONE);
+                        // An edge's double click selects its wire on the
+                        // release: the release in STATUS_NONE would
+                        // otherwise clear the selection.
+                        if (_Mode != STATUS_SELECT_Wire)
+                            setSketchMode(STATUS_NONE);
                     } else {
                         prvClickTime = SbTime::getTimeOfDay();
                         prvClickPos = cursorPos;
@@ -1302,6 +1308,10 @@ bool ViewProviderSketch::mouseButtonPressed(int Button, bool pressed, const SbVe
                     }
                     setSketchMode(STATUS_NONE);
                     return true;
+                case STATUS_SELECT_Wire:
+                    toggleWireSelection(edit->PreselectCurve);
+                    setSketchMode(STATUS_NONE);
+                    return true;
                 case STATUS_SKETCH_Drag:
                     commitDragMove(x, y);
                     setSketchMode(STATUS_NONE);
@@ -1368,6 +1378,7 @@ bool ViewProviderSketch::mouseButtonPressed(int Button, bool pressed, const SbVe
                 case STATUS_SKETCH_DragConstraint:
                 case STATUS_SKETCH_StartRubberBand:
                 case STATUS_SKETCH_UseRubberBand:
+                case STATUS_SELECT_Wire:
                     break;
             }
         }
@@ -1382,7 +1393,8 @@ void ViewProviderSketch::editDoubleClicked(void)
         Base::Console().Log("double click point:%d\n",edit->PreselectPoint);
     }
     else if (edit->PreselectCurve != -1) {
-        Base::Console().Log("double click edge:%d\n",edit->PreselectCurve);
+        // Selected on the release (upstream 6db820a580)
+        setSketchMode(STATUS_SELECT_Wire);
     }
     else if (edit->PreselectCross != -1) {
         Base::Console().Log("double click cross:%d\n",edit->PreselectCross);
@@ -1404,6 +1416,112 @@ void ViewProviderSketch::editDoubleClicked(void)
             }
         }
     }
+}
+
+void ViewProviderSketch::toggleWireSelection(int clickedGeoId)
+{
+    // Upstream 6db820a580, a9bff78974 and 0b1187b2cd (external edges too).
+    // Upstream rescans every remaining edge after each one it joins, cubic
+    // in a long wire; here endpoints are bucketed by position and the wire
+    // is walked once.
+    Sketcher::SketchObject* obj = getSketchObject();
+    auto isWireEdge = [](const Part::Geometry* geo) {
+        if (!geo || isPoint(*geo) || isCircle(*geo) || isEllipse(*geo))
+            return false;
+        if (isBSplineCurve(*geo)
+            && static_cast<const Part::GeomBSplineCurve*>(geo)->isPeriodic())
+            return false;
+        return true;
+    };
+    if (clickedGeoId == Sketcher::GeoEnum::HAxis || clickedGeoId == Sketcher::GeoEnum::VAxis
+        || !isWireEdge(obj->getGeometry(clickedGeoId)))
+        return;
+
+    auto selName = [&](int geoId) {
+        std::string name = geoId >= 0
+            ? "Edge" + std::to_string(geoId + 1)
+            : "ExternalEdge" + std::to_string(Sketcher::GeoEnum::RefExt - geoId + 1);
+        return editSubName + obj->convertSubName(name);
+    };
+    auto isSel = [&](int geoId) {
+        return Gui::Selection().isSelected(editDocName.c_str(), editObjName.c_str(),
+                                           selName(geoId).c_str());
+    };
+    // The first click of the double click has already toggled the edge
+    bool selecting = isSel(clickedGeoId);
+
+    struct Edge {
+        int geoId;
+        Base::Vector3d ends[2];
+    };
+    std::vector<Edge> edges;
+    auto add = [&](int geoId) {
+        if (isWireEdge(obj->getGeometry(geoId)))
+            edges.push_back({geoId, {obj->getPoint(geoId, PointPos::start),
+                                     obj->getPoint(geoId, PointPos::end)}});
+    };
+    for (int geoId = 0; geoId <= obj->getHighestCurveIndex(); ++geoId)
+        add(geoId);
+    for (int geoId = Sketcher::GeoEnum::RefExt; geoId >= -obj->getExternalGeometryCount(); --geoId)
+        add(geoId);
+
+    // Ends closer than Confusion join; a bucket is that size, so a match is
+    // in the end's own bucket or a neighbouring one.
+    const double tol = Precision::Confusion();
+    auto key = [tol](const Base::Vector3d& p) {
+        return std::make_pair(static_cast<long long>(std::floor(p.x / tol)),
+                              static_cast<long long>(std::floor(p.y / tol)));
+    };
+    std::map<std::pair<long long, long long>, std::vector<int>> buckets;
+    int start = -1;
+    for (int i = 0; i < (int)edges.size(); ++i) {
+        if (edges[i].geoId == clickedGeoId)
+            start = i;
+        for (const auto& end : edges[i].ends)
+            buckets[key(end)].push_back(i);
+    }
+    if (start < 0)
+        return;
+
+    std::vector<bool> visited(edges.size(), false);
+    std::vector<int> wire {start}, todo {start};
+    visited[start] = true;
+    while (!todo.empty()) {
+        int i = todo.back();
+        todo.pop_back();
+        for (const auto& end : edges[i].ends) {
+            auto k = key(end);
+            for (long long dx = -1; dx <= 1; ++dx) {
+                for (long long dy = -1; dy <= 1; ++dy) {
+                    auto it = buckets.find({k.first + dx, k.second + dy});
+                    if (it == buckets.end())
+                        continue;
+                    for (int j : it->second) {
+                        if (visited[j])
+                            continue;
+                        const auto& other = edges[j].ends;
+                        if ((other[0] - end).Length() < tol || (other[1] - end).Length() < tol) {
+                            visited[j] = true;
+                            wire.push_back(j);
+                            todo.push_back(j);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    std::vector<std::string> batch;
+    for (int i : wire) {
+        int geoId = edges[i].geoId;
+        if (!selecting && isSel(geoId))
+            Gui::Selection().rmvSelection(editDocName.c_str(), editObjName.c_str(),
+                                          selName(geoId).c_str());
+        else if (selecting && !isSel(geoId))
+            batch.push_back(selName(geoId));
+    }
+    if (!batch.empty())
+        Gui::Selection().addSelections(editDocName.c_str(), editObjName.c_str(), batch);
 }
 
 const char* ViewProviderSketch::getDefaultDisplayMode() const
@@ -1574,6 +1692,7 @@ bool ViewProviderSketch::mouseMove(const SbVec2s &cursorPos, Gui::ViewerContext 
     if (_Mode != STATUS_SELECT_Point &&
         _Mode != STATUS_SELECT_Edge &&
         _Mode != STATUS_SELECT_Constraint &&
+        _Mode != STATUS_SELECT_Wire &&
         _Mode != STATUS_SKETCH_Drag &&
         _Mode != STATUS_SKETCH_DragConstraint &&
         _Mode != STATUS_SKETCH_UseRubberBand) {
