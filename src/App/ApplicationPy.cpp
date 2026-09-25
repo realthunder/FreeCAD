@@ -108,6 +108,12 @@ PyMethodDef Application::Methods[] = {
      "* If no module exists to load the file an exception will be raised."},
     {"open",   reinterpret_cast<PyCFunction>(reinterpret_cast<void (*) ()>( Application::sOpenDocument )), METH_VARARGS|METH_KEYWORDS,
      "See openDocument(string)"},
+    {"recoverDocument", (PyCFunction) Application::sRecoverDocument, METH_VARARGS,
+     "recoverDocument(transientDir) -> object\n"
+     "Recover the document of a crashed session from the transaction log left\n"
+     "in its transient directory (docs/TransactionLog.md sec 25): a new\n"
+     "document, its newest version with the log's tail replayed over it, that\n"
+     "takes the log over. The directory is removed once it is done."},
     {"openDocument",   reinterpret_cast<PyCFunction>(reinterpret_cast<void (*) ()>( Application::sOpenDocument )), METH_VARARGS|METH_KEYWORDS,
      "openDocument(filepath,hidden=False) -> object\n"
      "Create a document and load the project file into the document.\n\n"
@@ -319,6 +325,18 @@ PyObject* Application::sOpenDocument(PyObject * /*self*/, PyObject *args, PyObje
     try {
         // return new document
         return (GetApplication().openDocument(EncodedName.c_str(),!PyObject_IsTrue(hidden))->getPyObject());
+    } PY_CATCH
+}
+
+PyObject* Application::sRecoverDocument(PyObject * /*self*/, PyObject *args)
+{
+    char* dir;
+    if (!PyArg_ParseTuple(args, "et", "utf-8", &dir))
+        return nullptr;
+    std::string path(dir);
+    PyMem_Free(dir);
+    PY_TRY {
+        return GetApplication().recoverDocument(path.c_str())->getPyObject();
     } PY_CATCH
 }
 

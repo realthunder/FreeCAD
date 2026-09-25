@@ -257,6 +257,79 @@ double volumeOf(const Part::Box* box)
     return props.Mass();
 }
 
+// docs/TransactionLog.md sec 25: a crashed session with shapes -- values the
+// log keeps as blobs in the pack store -- comes back with its shapes, and
+// the version it replays over is a saved file's.
+TEST_F(TransactionLogShapeTest, recoversShapesFromTheLeftoverStore)
+{
+    _doc->openTransaction("box");
+    auto box = static_cast<Part::Box*>(_doc->addObject("Part::Box", "Box"));
+    _doc->commitTransaction();
+    _doc->recompute();
+    const std::string path = Base::FileInfo::getTempPath() + "txnshape-recover.FCStd";
+    ASSERT_TRUE(_doc->saveAs(path.c_str()));   // the anchor
+
+    _doc->openTransaction("length");
+    box->Length.setValue(25);
+    _doc->commitTransaction();
+    _doc->recompute();
+    auto cyl = static_cast<Part::Cylinder*>(_doc->addObject("Part::Cylinder", "Cylinder"));
+    cyl->Radius.setValue(3);
+    _doc->recompute();
+    // Edited and never recomputed: touched at the crash, and after.
+    _doc->openTransaction("height");
+    box->Height.setValue(7);
+    _doc->commitTransaction();
+    ASSERT_TRUE(box->isTouched());
+    auto log = _doc->getTransactionLog();
+    ASSERT_TRUE(log);
+    log->flush();
+    _doc->getFileBlobManager().flush();
+
+    const std::string crashed = Base::FileInfo::getTempPath() + "txnshape-crashed";
+    Base::FileInfo(crashed).deleteDirectoryRecursive();
+    for (const char* sub : {"history", "blobs"}) {
+        const std::string from = _doc->TransientDir.getStrValue() + "/" + sub;
+        const std::string to = crashed + "/" + sub;
+        Base::FileInfo(to).createDirectories();
+        if (!Base::FileInfo(from).isDir())
+            continue;
+        for (const auto& file : Base::FileInfo(from).getDirectoryContent()) {
+            if (file.isFile())
+                file.copyTo((to + "/" + file.fileName()).c_str());
+        }
+    }
+
+    auto recovered = App::GetApplication().recoverDocument(crashed.c_str(), false);
+    ASSERT_TRUE(recovered);
+    const std::string name = recovered->getName();
+    EXPECT_STREQ(recovered->FileName.getValue(), _doc->FileName.getValue());
+    auto rbox = dynamic_cast<Part::Box*>(recovered->getObject("Box"));
+    auto rcyl = dynamic_cast<Part::Cylinder*>(recovered->getObject("Cylinder"));
+    ASSERT_TRUE(rbox);
+    ASSERT_TRUE(rcyl);
+    EXPECT_DOUBLE_EQ(rbox->Length.getValue(), 25.0);
+    EXPECT_DOUBLE_EQ(rbox->Height.getValue(), 7.0);
+    EXPECT_DOUBLE_EQ(rcyl->Radius.getValue(), 3.0);
+    auto volume = [](const TopoDS_Shape& shape) {
+        GProp_GProps props;
+        BRepGProp::VolumeProperties(shape, props);
+        return props.Mass();
+    };
+    ASSERT_FALSE(rbox->Shape.getShape().isNull());
+    ASSERT_FALSE(rcyl->Shape.getShape().isNull());
+    EXPECT_NEAR(volume(rbox->Shape.getShape().getShape()),
+                volume(box->Shape.getShape().getShape()), 1e-6);
+    EXPECT_NEAR(volume(rcyl->Shape.getShape().getShape()),
+                volume(cyl->Shape.getShape().getShape()), 1e-6);
+    // The shapes are the log's, not recomputed, and the touched state is
+    // the session's: the cylinder was recomputed, the box edited since.
+    EXPECT_FALSE(rcyl->isTouched());
+    EXPECT_TRUE(rbox->isTouched());
+    App::GetApplication().closeDocument(name.c_str());
+    Base::FileInfo(path).deleteFile();
+}
+
 }  // namespace
 
 // Sec 24.3: a cold undo restores a shape whose file the log keeps only as a

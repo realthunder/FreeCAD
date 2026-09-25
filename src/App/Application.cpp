@@ -97,6 +97,7 @@
 #include "DocumentObserver.h"
 #include "DocumentObserver.h"
 #include "DocumentParams.h"
+#include "TransactionLog.h"
 #include "DocumentPy.h"
 #include "ExpressionParser.h"
 #include "ExpressionEvaluator.h"
@@ -1104,6 +1105,33 @@ Document* Application::openDocumentPrivate(const char * FileName,
     catch (...) {
         throw;
     }
+}
+
+Document* Application::recoverDocument(const char* transientDir, bool createView)
+{
+    if (DocumentParams::getTransactionLog() == 0)
+        THROWM(Base::RuntimeError, "recovery from the transaction log needs the log on")
+    const std::string dir(transientDir);
+    TransactionLog::RecoverInfo info;
+    if (!TransactionLog::readRecoveryMeta(dir, info))
+        THROWM(Base::FileSystemError, std::string("no transaction log in ") + dir)
+    std::string name = info.fileName.empty() ? std::string("Recovered")
+                                             : FileInfo(info.fileName).fileNamePure();
+    const std::string label = info.label.empty() ? name : info.label;
+    Document* doc = newDocument(name.c_str(), label.c_str(), createView);
+    // The history carries on across the crash (sec 25.3): undo is on for the
+    // recovered document whatever a new one gets, so its stacks are rebuilt.
+    doc->setUndoMode(1);
+    try {
+        if (!doc->recoverFromLog(dir))
+            THROWM(Base::RuntimeError, std::string("nothing to recover in ") + dir)
+    }
+    catch (...) {
+        closeDocument(doc->getName());
+        throw;
+    }
+    FileInfo(dir).deleteDirectoryRecursive();
+    return doc;
 }
 
 Document* Application::getActiveDocument() const

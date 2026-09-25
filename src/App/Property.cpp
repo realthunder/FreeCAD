@@ -75,6 +75,7 @@ Property::~Property()
 {
     Transaction::removePendingProperty(this);
     Document::removePendingProperty(this);
+    TransactionCopyCache::drop(_id);
 }
 
 const char* Property::getName() const
@@ -349,6 +350,10 @@ void Property::aboutToSetValue()
         }
         father->onBeforeChange(this);
     }
+    // Whatever the log kept of this property's last committed value is
+    // stale now: taken by the transaction recording this write, if one
+    // was, and dropped otherwise (docs/TransactionLog.md sec 25.4).
+    TransactionCopyCache::drop(_id);
 }
 
 void Property::verifyPath(const ObjectIdentifier &p) const

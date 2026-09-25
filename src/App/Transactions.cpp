@@ -29,6 +29,7 @@
 #endif
 
 #include <atomic>
+#include <cstdlib>
 #include <Base/Console.h>
 #include <Base/ExceptionSafeCall.h>
 #include <Base/Tools.h>
@@ -36,6 +37,7 @@
 #include <Base/Writer.h>
 
 #include "Transactions.h"
+#include "PropertyLinks.h"
 
 #include "Application.h"
 #include "Document.h"
@@ -379,6 +381,72 @@ void Transaction::removePendingProperty(Property *prop)
     _PendingProps.erase(prop);
 }
 
+namespace {
+std::unordered_map<int64_t, TransactionCopyCache::Entry>& copyCache()
+{
+    static std::unordered_map<int64_t, TransactionCopyCache::Entry> cache;
+    return cache;
+}
+}
+
+void TransactionCopyCache::put(int64_t id, Entry entry)
+{
+    // The entry replaced dies after the map is consistent again: a copy's
+    // destructor calls drop() for its own id.
+    Entry old;
+    auto& slot = copyCache()[id];
+    std::swap(old, slot);
+    slot = std::move(entry);
+}
+
+TransactionCopyCache::Entry TransactionCopyCache::take(int64_t id)
+{
+    Entry entry;
+    auto& cache = copyCache();
+    if (cache.empty())
+        return entry;
+    auto it = cache.find(id);
+    if (it == cache.end())
+        return entry;
+    entry = std::move(it->second);
+    cache.erase(it);
+    return entry;
+}
+
+void TransactionCopyCache::dropSlow(int64_t id)
+{
+    Entry gone = take(id);
+}
+
+void TransactionCopyCache::dropOwner(const void* owner)
+{
+    std::vector<Entry> gone;
+    auto& cache = copyCache();
+    for (auto it = cache.begin(); it != cache.end();) {
+        if (it->second.owner == owner) {
+            gone.push_back(std::move(it->second));
+            it = cache.erase(it);
+        }
+        else
+            ++it;
+    }
+}
+
+unsigned long TransactionCopyCache::statusOf(const Property& live)
+{
+    return live.getStatus() & ~(1ul << Property::Touched);
+}
+
+bool TransactionCopyCache::empty()
+{
+    return copyCache().empty();
+}
+
+std::size_t TransactionCopyCache::size()
+{
+    return copyCache().size();
+}
+
 void Transaction::apply(Document &Doc, bool forward)
 {
     std::string errMsg;
@@ -598,9 +666,33 @@ void TransactionObject::setProperty(const Property* pcProp)
         static_cast<DynamicProperty::PropData&>(data) = 
             pcProp->getContainer()->getDynamicPropertyData(pcProp);
         data.propertyOrig = pcProp;
-        data.property = pcProp->Copy();
+        // The log's copy of the value at its last commit, when this is the
+        // first write since (docs/TransactionLog.md sec 25.4). A status
+        // changed since, `Touched` aside, means a fresh copy: the cached one
+        // is shared with the log's worker and is not written to.
+        auto cached = TransactionCopyCache::take(pcProp->getID());
+        if (cached.copy && cached.copy->getTypeId() == pcProp->getTypeId()
+                && cached.status == TransactionCopyCache::statusOf(*pcProp)) {
+            // FC_TXNLOG_CHECK_COPIES: the copy must still be the live value,
+            // or a write escaped aboutToSetValue (sec 23.6).
+            static const bool check = std::getenv("FC_TXNLOG_CHECK_COPIES") != nullptr;
+            // Not for a link: isSame reads the targets a detached copy names.
+            // isSame alone is not enough: some types answer "different" for
+            // any copy (PropertyPath always, PropertyTopoShapeList deep-copies
+            // its shapes), so the serialised values decide.
+            if (check && !dynamic_cast<const PropertyLinkBase*>(pcProp)
+                    && !cached.copy->isSame(*pcProp) && !cached.copy->isSameContent(*pcProp))
+                FC_ERR("stale log copy of " << pcProp->getFullName()
+                       << ": a write escaped aboutToSetValue");
+            data.shared = std::move(cached.copy);
+            data.property = data.shared.get();
+            data.logHash = std::move(cached.hash);
+        }
+        else {
+            data.property = pcProp->Copy();
+            data.property->setStatusValue(pcProp->getStatus());
+        }
         data.propertyType = pcProp->getTypeId();
-        data.property->setStatusValue(pcProp->getStatus());
         if (auto obj = Base::freecad_dynamic_cast<DocumentObject>(pcProp->getContainer()))
             data.derived = obj->isRecomputing();
     }

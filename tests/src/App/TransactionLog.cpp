@@ -171,34 +171,30 @@ TEST_F(TransactionLogTest, createSetRemoveAreLogged)
     EXPECT_EQ(ops[0].op, "create");
     EXPECT_EQ(ops[0].cname, "Obj");
     EXPECT_EQ(ops[0].ctype, "App::FeatureTest");
-    // One pending set per persisted property follows the create; by now
-    // the one on Integer has been resolved by the next transaction's copy.
+    // One set per persisted property follows the create, its value written
+    // with the commit (sec 25.4: nothing is left pending).
     size_t sets = 0;
     for (auto& o : ops) {
         if (o.op == "set") {
             ++sets;
             EXPECT_TRUE(o.vbefore.empty());
-            if (o.prop == "Integer")
-                EXPECT_EQ(o.vafter.size(), 40u);
-            else
-                EXPECT_TRUE(o.vafter.empty()) << o.prop;
+            EXPECT_EQ(o.vafter.size(), 40u) << o.prop;
         }
     }
     EXPECT_GT(sets, 5u);
 
-    // The set: before is the copy the undo system took, after pending.
+    // The set: before is the copy the undo system took, after written.
     ops = store.ops(txns[1].seq);
     ASSERT_EQ(ops.size(), 1u);
     EXPECT_EQ(ops[0].op, "set");
     EXPECT_EQ(ops[0].prop, "Integer");
     EXPECT_EQ(ops[0].vbefore.size(), 40u);
-    EXPECT_TRUE(ops[0].vafter.empty());
+    EXPECT_EQ(ops[0].vafter.size(), 40u);
     EXPECT_FALSE(ops[0].derived);
-    // ... and that before resolved the create's pending set on Integer.
-    ops = store.ops(txns[0].seq);
-    for (auto& o : ops) {
+    // ... and that before is the create's after on Integer.
+    for (auto& o : store.ops(txns[0].seq)) {
         if (o.op == "set" && o.prop == "Integer")
-            EXPECT_EQ(o.vafter.size(), 40u);
+            EXPECT_EQ(o.vafter, ops[0].vbefore);
     }
 
     App::CapturedValue v;
@@ -461,8 +457,8 @@ TEST_F(TransactionLogTest, saveRecordAndVersion)
     auto obj = make("Obj");
     obj->Integer.setValue(11);
     doc()->commitTransaction();
-    // The after ref of the set above is pending until the snapshot.
-    EXPECT_GT(log().pendingCount(), 0u);
+    // The after values are written with the commit (sec 25.4).
+    EXPECT_EQ(log().pendingCount(), 0u);
 
     const std::string path = Base::FileInfo::getTempPath() + "txnlog-save.FCStd";
     ASSERT_TRUE(doc()->saveAs(path.c_str()));
@@ -608,8 +604,8 @@ TEST_F(TransactionLogTest, snapshotAndCadence)
     doc()->commitTransaction();
 
     // On demand: a version like a save's, with no file written, and a
-    // `snapshot` record naming it; the pending after refs resolve first.
-    EXPECT_GT(log().pendingCount(), 0u);
+    // `snapshot` record naming it. Nothing is pending (sec 25.4).
+    EXPECT_EQ(log().pendingCount(), 0u);
     int64_t num = doc()->snapshotToLog();
     EXPECT_EQ(num, 1);
     EXPECT_EQ(log().pendingCount(), 0u);
@@ -1912,4 +1908,199 @@ TEST_F(TransactionLogTest, implicitTransactionIsNotMirroredIntoTheActiveDocument
     EXPECT_FALSE(other->hasPendingTransaction());
     EXPECT_EQ(other->getAvailableUndos(), 0);
     App::GetApplication().closeDocument(otherName.c_str());
+}
+
+TEST_F(TransactionLogTest, commitWritesItsAfterValuesAndKeepsTheCopy)
+{
+    // sec 25.4: every commit's after values are copied and written with it,
+    // and the copy of a set property is what the next write's undo record
+    // takes instead of copying again.
+    doc()->openTransaction("create");
+    auto obj = make("Obj");
+    doc()->commitTransaction();
+    EXPECT_EQ(log().pendingCount(), 0u);
+
+    doc()->openTransaction("first");
+    obj->Integer.setValue(1);
+    doc()->commitTransaction();
+    EXPECT_EQ(log().pendingCount(), 0u);
+    // The set's after copy is kept for the next write.
+    EXPECT_EQ(App::TransactionCopyCache::size(), 1u);
+
+    doc()->openTransaction("second");
+    obj->Integer.setValue(2);
+    EXPECT_EQ(App::TransactionCopyCache::size(), 0u);   // taken by the undo record
+    doc()->commitTransaction();
+
+    auto& store = log().store();
+    auto txns = store.transactions();
+    ASSERT_EQ(txns.size(), 3u);
+    auto first = store.ops(txns[1].seq);
+    auto second = store.ops(txns[2].seq);
+    ASSERT_EQ(first.size(), 1u);
+    ASSERT_EQ(second.size(), 1u);
+    EXPECT_EQ(first[0].vafter.size(), 40u);
+    EXPECT_EQ(second[0].vafter.size(), 40u);
+    // The adopted copy is the first commit's after: the same value.
+    EXPECT_EQ(second[0].vbefore, first[0].vafter);
+    App::CapturedValue v;
+    ASSERT_TRUE(log().readValue(second[0].vafter, v));
+    EXPECT_NE(v.fragment.find("value=\"2\""), std::string::npos) << v.fragment;
+
+    // Undo restores from the adopted copy.
+    EXPECT_TRUE(doc()->undo());
+    EXPECT_EQ(obj->Integer.getValue(), 1);
+    EXPECT_TRUE(doc()->redo());
+    EXPECT_EQ(obj->Integer.getValue(), 2);
+
+    // A write nothing records drops the kept copy (NoModify: no
+    // transaction opens for it).
+    doc()->openTransaction("third");
+    obj->Integer.setValue(3);
+    doc()->commitTransaction();
+    EXPECT_EQ(App::TransactionCopyCache::size(), 1u);
+    obj->Integer.setStatus(App::Property::NoModify, true);
+    obj->Integer.setValue(4);
+    obj->Integer.setStatus(App::Property::NoModify, false);
+    EXPECT_FALSE(doc()->hasPendingTransaction());
+    EXPECT_EQ(App::TransactionCopyCache::size(), 0u);
+}
+
+TEST_F(TransactionLogTest, blobStoreRecoversALeftoverDirectory)
+{
+    // docs/TransactionLog.md sec 25.2 item 5: what a crashed session left in
+    // its blob directory is taken over -- the newest complete generation of
+    // each segment, never one the crash cut short -- and handed back by hash.
+    auto& source = doc()->getFileBlobManager();
+    const std::string a(6000, 'a'), b(7000, 'b'), c(8000, 'c'), d(9000, 'd');
+    auto ha = source.adoptBytes(a, "bin");
+    auto hb = source.adoptBytes(b, "bin");
+    source.flush();
+    const std::string from = doc()->TransientDir.getStrValue() + "/blobs";
+    auto readFile = [](const std::string& path) {
+        Base::ifstream in(Base::FileInfo(path), std::ios::binary);
+        return std::string(std::istreambuf_iterator<char>(in), {});
+    };
+    auto writeFile = [](const std::string& path, const std::string& bytes) {
+        Base::ofstream out(Base::FileInfo(path), std::ios::binary);
+        out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    };
+    ASSERT_TRUE(Base::FileInfo(from + "/seg-1.1").exists());
+    const std::string first = readFile(from + "/seg-1.1");
+    auto hc = source.adoptBytes(c, "bin");
+    source.flush();   // seg-1.2: a, b and c
+    ASSERT_TRUE(Base::FileInfo(from + "/seg-1.2").exists());
+    const std::string second = readFile(from + "/seg-1.2");
+
+    std::string otherName = App::GetApplication().getUniqueDocumentName("txnrecover");
+    auto other = App::GetApplication().newDocument(otherName.c_str(), "testUser");
+    const std::string to = other->TransientDir.getStrValue() + "/blobs";
+    Base::FileInfo(to).createDirectory();
+    // The crash left both generations, a segment cut short, and a loose file.
+    writeFile(to + "/seg-1.1", first);
+    writeFile(to + "/seg-1.2", second);
+    writeFile(to + "/seg-2.1", second.substr(0, second.size() / 2));
+    writeFile(to + "/loose.dat", d);
+
+    auto& target = other->getFileBlobManager();
+    EXPECT_EQ(target.recoverStore(), 4u);
+    EXPECT_FALSE(Base::FileInfo(to + "/seg-1.1").exists());   // superseded
+    EXPECT_FALSE(Base::FileInfo(to + "/seg-2.1").exists());   // incomplete
+    EXPECT_TRUE(Base::FileInfo(to + "/seg-1.2").exists());
+    for (const std::string* bytes : {&a, &b, &c, &d}) {
+        auto blob = target.recovered(App::FileBlobManager::hashBytes(*bytes));
+        ASSERT_TRUE(blob);
+        std::string back;
+        ASSERT_TRUE(blob->read(back));
+        EXPECT_EQ(back, *bytes);
+    }
+    EXPECT_FALSE(target.recovered(App::FileBlobManager::hashBytes("nothing")));
+    target.endRecovery();
+    App::GetApplication().closeDocument(otherName.c_str());
+}
+
+TEST_F(TransactionLogTest, recoversACrashedSessionFromItsLog)
+{
+    // docs/TransactionLog.md sec 25: the transient directory a crashed
+    // session leaves is enough to rebuild its document -- the newest version
+    // with the log's tail replayed over it -- and the history carries on.
+    doc()->openTransaction("create");
+    auto obj = make("Obj");
+    obj->Integer.setValue(1);
+    obj->String.setValue("anchored");
+    doc()->commitTransaction();
+    ASSERT_GT(doc()->snapshotToLog(), 0);   // the anchor
+
+    doc()->openTransaction("set");
+    obj->Integer.setValue(2);
+    doc()->commitTransaction();
+    doc()->openTransaction("second");
+    auto second = make("Second");
+    second->addDynamicProperty("App::PropertyString", "Note", "Recovery");
+    static_cast<App::PropertyString*>(second->getPropertyByName("Note"))->setValue("tail");
+    second->Float.setValue(2.5);
+    doc()->commitTransaction();
+    doc()->openTransaction("gone");
+    make("Gone");
+    doc()->commitTransaction();
+    doc()->openTransaction("remove");
+    doc()->removeObject("Gone");
+    doc()->commitTransaction();
+    doc()->openTransaction("undone");
+    obj->Integer.setValue(99);
+    doc()->commitTransaction();
+    ASSERT_TRUE(doc()->undo());
+    ASSERT_EQ(obj->Integer.getValue(), 2);
+    log().flush();
+    const auto undoNames = doc()->getAvailableUndoNames();
+    const auto redoNames = doc()->getAvailableRedoNames();
+
+    // The crash: the directory as it stands, with nothing closed.
+    const std::string crashed = Base::FileInfo::getTempPath() + "txnlog-crashed";
+    Base::FileInfo(crashed).deleteDirectoryRecursive();
+    for (const char* sub : {"history", "blobs"}) {
+        const std::string from = doc()->TransientDir.getStrValue() + "/" + sub;
+        const std::string to = crashed + "/" + sub;
+        Base::FileInfo(to).createDirectories();
+        if (!Base::FileInfo(from).isDir())
+            continue;
+        for (const auto& file : Base::FileInfo(from).getDirectoryContent()) {
+            if (file.isFile())
+                file.copyTo((to + "/" + file.fileName()).c_str());
+        }
+    }
+
+    auto recovered = App::GetApplication().recoverDocument(crashed.c_str(), false);
+    ASSERT_TRUE(recovered);
+    const std::string name = recovered->getName();
+    EXPECT_FALSE(Base::FileInfo(crashed).exists());
+    auto robj = dynamic_cast<App::FeatureTest*>(recovered->getObject("Obj"));
+    auto rsecond = dynamic_cast<App::FeatureTest*>(recovered->getObject("Second"));
+    ASSERT_TRUE(robj);
+    ASSERT_TRUE(rsecond);
+    EXPECT_FALSE(recovered->getObject("Gone"));
+    EXPECT_EQ(robj->getID(), obj->getID());
+    EXPECT_EQ(rsecond->getID(), second->getID());
+    EXPECT_EQ(robj->Integer.getValue(), 2);
+    EXPECT_STREQ(robj->String.getValue(), "anchored");
+    EXPECT_DOUBLE_EQ(rsecond->Float.getValue(), 2.5);
+    auto note = dynamic_cast<App::PropertyString*>(rsecond->getPropertyByName("Note"));
+    ASSERT_TRUE(note);
+    EXPECT_STREQ(note->getValue(), "tail");
+
+    // The history carries on: the stacks the session had, as cold steps.
+    EXPECT_EQ(recovered->getAvailableUndoNames(), undoNames);
+    EXPECT_EQ(recovered->getAvailableRedoNames(), redoNames);
+    EXPECT_TRUE(recovered->redo());
+    EXPECT_EQ(robj->Integer.getValue(), 99);
+    EXPECT_TRUE(recovered->undo());
+    EXPECT_TRUE(recovered->undo());   // "remove": Gone comes back
+    EXPECT_TRUE(recovered->getObject("Gone"));
+    bool record = false;
+    for (auto& t : recovered->getTransactionLog()->store().transactions()) {
+        if (t.kind == "recover")
+            record = true;
+    }
+    EXPECT_TRUE(record);
+    App::GetApplication().closeDocument(name.c_str());
 }

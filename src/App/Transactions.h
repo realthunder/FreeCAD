@@ -194,6 +194,11 @@ protected:
         /// the copy is then co-owned, and outlives this record until it
         /// is serialised. While set, `property` is not deleted here.
         std::shared_ptr<Property> shared;
+        /// The log's hash of `property` when it was adopted from
+        /// TransactionCopyCache: filled by the log's worker when it wrote
+        /// the copy as an after value, so the before value it now is need
+        /// not be serialised again (docs/TransactionLog.md sec 25.4).
+        std::shared_ptr<std::string> logHash;
     };
     std::unordered_map<int64_t, PropData> _PropChangeMap;
 
@@ -254,6 +259,49 @@ public:
     {
         return (new CLASS);
     }
+};
+
+/** The after values a transaction log copied at commit, kept for the next
+ * write (docs/TransactionLog.md sec 25.4).
+ *
+ * The log copies every property a commit set so its worker can write the
+ * value at once. The next transaction to write that property would copy it
+ * again for its undo before value -- the same value, because any change in
+ * between passes through Property::aboutToSetValue. So the copy is kept
+ * here by property id: the transaction recording the first write after the
+ * commit takes it (TransactionObject::setProperty), and aboutToSetValue
+ * drops whatever is left once the write's recording is done. Main thread
+ * only.
+ */
+class AppExport TransactionCopyCache
+{
+public:
+    struct Entry
+    {
+        std::shared_ptr<Property> copy;
+        std::shared_ptr<std::string> hash;
+        const void* owner = nullptr;
+        /// The live property's status when copied, `Touched` cleared: never
+        /// asked of the copy, whose getStatus() may read the objects a link
+        /// names, which a detached copy does not keep alive.
+        unsigned long status = 0;
+    };
+    static unsigned long statusOf(const Property& live);
+    static void put(int64_t id, Entry entry);
+    /// The entry for property `id`, removed; empty if none.
+    static Entry take(int64_t id);
+    static void drop(int64_t id)
+    {
+        if (!empty())
+            dropSlow(id);
+    }
+    /// Every entry `owner` put, when it goes.
+    static void dropOwner(const void* owner);
+    static bool empty();
+    static std::size_t size();
+
+private:
+    static void dropSlow(int64_t id);
 };
 
 class AppExport TransactionGuard

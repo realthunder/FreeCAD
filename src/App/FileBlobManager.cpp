@@ -2968,6 +2968,165 @@ void FileBlobManager::stopWorker()
     }
 }
 
+std::size_t FileBlobManager::recoverStore()
+{
+    std::lock_guard<std::mutex> writing(_writeMutex);
+    const std::string dir = blobDir();
+    QDir qdir(QString::fromUtf8(dir.c_str()));
+    if (!qdir.exists()) {
+        return 0;
+    }
+    // Segments by number, generations newest first.
+    std::map<int, std::vector<int>> generations;
+    std::vector<std::string> loose;
+    for (const QString& name : qdir.entryList(QDir::Files)) {
+        if (name.startsWith(QStringLiteral("seg-"))) {
+            bool okNumber = false;
+            bool okGeneration = false;
+            const int number = name.mid(4).section(QLatin1Char('.'), 0, 0).toInt(&okNumber);
+            const int generation = name.section(QLatin1Char('.'), 1, 1).toInt(&okGeneration);
+            if (okNumber && okGeneration && number > 0 && generation > 0) {
+                generations[number].push_back(generation);
+                continue;
+            }
+            // A name no writer of this store makes: a `.tmp` of an older
+            // build, or debris.
+            Base::FileInfo(dir + "/" + name.toStdString()).deleteFile();
+            continue;
+        }
+        if (name == QString::fromUtf8(indexName())) {
+            continue;
+        }
+        loose.push_back(dir + "/" + name.toStdString());
+    }
+
+    std::size_t found = 0;
+    std::vector<std::shared_ptr<Segment>> kept;
+    for (auto& entry : generations) {
+        auto& gens = entry.second;
+        std::sort(gens.rbegin(), gens.rend());
+        std::shared_ptr<Segment> segment;
+        for (int generation : gens) {
+            const std::string path = dir + "/seg-" + std::to_string(entry.first) + "."
+                + std::to_string(generation);
+            if (segment) {
+                // Superseded: a newer generation is complete, and holds every
+                // member of this one that was live when it was written.
+                Base::FileInfo(path).deleteFile();
+                continue;
+            }
+            try {
+                auto file = std::make_shared<BlobArchive>(path, true);
+                segment = std::make_shared<Segment>();
+                segment->number = entry.first;
+                segment->generation = generation;
+                segment->file = file;
+                for (std::size_t i = 0; i < file->entries().size(); ++i) {
+                    segment->byHash.emplace(memberHash(file->entries()[i].name), i);
+                }
+                file->close();
+            }
+            catch (const Base::Exception& e) {
+                // Cut short by the crash: its directory is not there, or does
+                // not check out (sec 15.11). Debris, as a `.tmp` was.
+                FC_WARN("Blob store: " << path << " is incomplete, deleted: " << e.what());
+                Base::FileInfo(path).deleteFile();
+            }
+        }
+        if (segment) {
+            kept.push_back(segment);
+        }
+    }
+
+    // Hashed outside the lock: loose files are the large ones.
+    std::vector<std::pair<std::string, std::pair<std::string, uint64_t>>> hashed;
+    for (const auto& path : loose) {
+        Base::FileInfo fi(path);
+        const std::string hash = hashFile(path.c_str());
+        if (hash.empty()) {
+            continue;
+        }
+        hashed.emplace_back(hash, std::make_pair(path, static_cast<uint64_t>(fi.size())));
+    }
+
+    std::lock_guard<std::mutex> guard(_mutex);
+    int highest = 0;
+    for (const auto& segment : kept) {
+        highest = std::max(highest, segment->number);
+        for (const auto& member : segment->byHash) {
+            auto on = _where.find(member.first);
+            if (on == _where.end()) {
+                ++found;
+                _where.emplace(member.first, segment->number);
+            }
+            else if (on->second < segment->number) {
+                on->second = segment->number;   // the newest segment wins
+            }
+        }
+        _segments[segment->number] = segment;
+        _archives.push_back(segment->file);
+    }
+    _nextSegment = std::max(_nextSegment, highest + 1);
+    for (auto& entry : hashed) {
+        if (_where.count(entry.first) || _recoveredLoose.count(entry.first)) {
+            Base::FileInfo(entry.second.first).deleteFile();   // a copy
+            continue;
+        }
+        ++found;
+        _recoveredLoose.emplace(entry.first, entry.second);
+    }
+    return found;
+}
+
+FileBlobHandle FileBlobManager::recovered(const std::string& hash)
+{
+    std::lock_guard<std::mutex> guard(_mutex);
+    auto it = _blobs.find(hash);
+    if (it != _blobs.end()) {
+        if (auto live = it->second.lock()) {
+            return live;
+        }
+    }
+    auto on = _where.find(hash);
+    if (on != _where.end()) {
+        auto seg = _segments.find(resolveSegment(on->second));
+        if (seg != _segments.end()) {
+            auto member = seg->second->byHash.find(hash);
+            if (member != seg->second->byHash.end()) {
+                const auto& entry = seg->second->file->entries()[member->second];
+                const auto dot = entry.name.find('.');
+                const std::string ext =
+                    dot == std::string::npos ? std::string() : entry.name.substr(dot + 1);
+                return makePacked(hash, entry.size, ext, nullptr, seg->first);
+            }
+        }
+    }
+    auto file = _recoveredLoose.find(hash);
+    if (file != _recoveredLoose.end()) {
+        FileBlobHandle blob = make(hash, file->second.first, file->second.second);
+        _recoveredLoose.erase(file);
+        return blob;
+    }
+    return {};
+}
+
+void FileBlobManager::endRecovery()
+{
+    std::unordered_map<std::string, std::pair<std::string, uint64_t>> left;
+    {
+        std::lock_guard<std::mutex> guard(_mutex);
+        left.swap(_recoveredLoose);
+    }
+    for (const auto& entry : left) {
+        Base::FileInfo(entry.second.first).deleteFile();
+    }
+    // A segment whose members nothing took is dead space: the worker's
+    // first pass deletes it, or rewrites it when some of it is live.
+    if (!_segments.empty()) {
+        scheduleMaintenance();
+    }
+}
+
 void FileBlobManager::makeDurable(const std::vector<FileBlobHandle>& blobs)
 {
     bool pending = false;

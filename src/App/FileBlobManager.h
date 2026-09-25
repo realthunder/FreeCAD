@@ -441,6 +441,24 @@ public:
      */
     void flush();
 
+    /** Crash recovery: take over what a crashed session left in blobDir()
+     * (docs/FileBlobsManager.md sec 15.8 and 15.11, docs/TransactionLog.md
+     * sec 25.2).
+     *
+     * Each segment number keeps its newest generation whose central
+     * directory checks out; older generations, and a file cut short by the
+     * crash, are deleted. A hash found in two segments belongs to the
+     * higher number. Loose files are hashed. Nothing is live yet: what the
+     * recovery restores asks recovered() for its content, and endRecovery()
+     * lets the rest go. Returns the number of pieces of content found.
+     */
+    std::size_t recoverStore();
+    /// A handle on content recoverStore() found; null when it has none.
+    FileBlobHandle recovered(const std::string& hash);
+    /// Done taking content back: loose files nobody took are deleted, and
+    /// segments with nothing live are left to the maintenance worker.
+    void endRecovery();
+
     /** Make the content of these blobs durable: in a segment on disk.
      *
      * The one ordering rule between the transaction log and this store
@@ -781,6 +799,9 @@ private:
     uint64_t _unflushedBytes {0};
     /// The next segment number, 0 until the directory has been looked at.
     int _nextSegment {0};
+    /// Loose files recoverStore() found and nothing has taken yet:
+    /// hash -> (path, size).
+    std::unordered_map<std::string, std::pair<std::string, uint64_t>> _recoveredLoose;
     /// The segment new content goes into while it has room.
     int _appendSegment {0};
     /// Serialises segment writes; taken before _mutex, never inside it.

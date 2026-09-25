@@ -633,7 +633,8 @@ public:
     /// The transaction log takes an unnamed version (sec 16.3) every
     /// this many committed transactions since the last version; 0 for
     /// none. A snapshot serialises the document like a save, without
-    /// writing an archive.
+    /// writing an archive. With the time rule of AutoSaveTimeout, it
+    /// bounds how much a crash recovery replays (sec 25.3).
     static const long & getTransactionLogSnapshotTransactions();
     static const long & defaultTransactionLogSnapshotTransactions();
     static void removeTransactionLogSnapshotTransactions();
@@ -657,16 +658,29 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
-    /// Accessor for parameter TransactionLogSnapshotSeconds
+    /// Accessor for parameter AutoSaveEnabled
     ///
-    /// The transaction log takes an unnamed version (sec 16.3) at the
-    /// first commit this many seconds after the last version; 0 for
-    /// none.
-    static const long & getTransactionLogSnapshotSeconds();
-    static const long & defaultTransactionLogSnapshotSeconds();
-    static void removeTransactionLogSnapshotSeconds();
-    static void setTransactionLogSnapshotSeconds(const long &v);
-    static const char *docTransactionLogSnapshotSeconds();
+    /// Autosave. Without the transaction log, the Gui writes a recovery
+    /// file every AutoSaveTimeout minutes; with it, the log takes an
+    /// unnamed version at the first commit that many minutes after the
+    /// last one (docs/TransactionLog.md sec 25.3).
+    static const bool & getAutoSaveEnabled();
+    static const bool & defaultAutoSaveEnabled();
+    static void removeAutoSaveEnabled();
+    static void setAutoSaveEnabled(const bool &v);
+    static const char *docAutoSaveEnabled();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter AutoSaveTimeout
+    ///
+    /// The autosave interval in minutes, see AutoSaveEnabled.
+    static const long & getAutoSaveTimeout();
+    static const long & defaultAutoSaveTimeout();
+    static void removeAutoSaveTimeout();
+    static void setAutoSaveTimeout(const long &v);
+    static const char *docAutoSaveTimeout();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)

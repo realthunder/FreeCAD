@@ -102,6 +102,13 @@ public:
     std::string getUniqueDocumentName(const char *Name, bool tempDoc=false) const;
     /// Open an existing document from a file
     App::Document* openDocument(const char * FileName=nullptr, bool createView=true);
+    /** Recover the document of a crashed session from the transaction log it
+     * left in its transient directory `transientDir` (docs/TransactionLog.md
+     * sec 25): a new document, rebuilt, that takes the log and the blobs
+     * over. The directory is removed once it is done. Throws when there is
+     * no log there, or the log is off in this session.
+     */
+    App::Document* recoverDocument(const char* transientDir, bool createView=true);
     /** Open multiple documents
      *
      * @param filenames: input file names
@@ -606,6 +613,7 @@ private:
 
     static PyObject* sLoadFile          (PyObject *self,PyObject *args);
     static PyObject* sOpenDocument      (PyObject *self,PyObject *args, PyObject *kwd);
+    static PyObject* sRecoverDocument   (PyObject *self,PyObject *args);
     static PyObject* sSaveDocument      (PyObject *self,PyObject *args);
     static PyObject* sSaveDocumentAs    (PyObject *self,PyObject *args);
     static PyObject* sNewDocument       (PyObject *self,PyObject *args, PyObject *kwd);

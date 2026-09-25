@@ -59,8 +59,10 @@ recompute path. Also, it enables more complicated dependencies beyond trees.
 
 #ifndef _PreComp_
 # include <bitset>
+# include <set>
 # include <sstream>
 # include <stack>
+# include <tuple>
 # include <boost/filesystem.hpp>
 #endif
 
@@ -897,6 +899,8 @@ void Document::renameTransaction(const char *name, int id) {
 
 bool Document::transactionsWanted() const
 {
+    if (d->replaying)
+        return false;
     return d->iUndoMode || DocumentParams::getTransactionLog() != 0;
 }
 
@@ -1054,11 +1058,13 @@ void Document::_commitTransaction(bool notify)
                               d->activeUndoTransaction->Origin.c_str(),
                               d->activeUndoTransaction->Inverts);
             // The cadence of unnamed versions (docs/TransactionLog.md sec
-            // 16.3): every N commits, or the first commit T seconds after
-            // the last version. Taken once the commit is complete, below.
+            // 16.3): every N commits, or the first commit the autosave
+            // interval after the last version (sec 25.3). Taken once the
+            // commit is complete, below.
             ++d->commitsSinceVersion;
             const long every = DocumentParams::getTransactionLogSnapshotTransactions();
-            const long secs = DocumentParams::getTransactionLogSnapshotSeconds();
+            const long secs = DocumentParams::getAutoSaveEnabled()
+                ? 60L * DocumentParams::getAutoSaveTimeout() : 0L;
             if (every > 0 && d->commitsSinceVersion >= every)
                 snapshotDue = true;
             if (secs > 0 && d->lastVersionTime > 0
@@ -1322,6 +1328,10 @@ void Document::onBeforeChange(const Property* prop)
 void Document::onChanged(const Property* prop)
 {
     signalChanged(*this, *prop);
+
+    // What a crash recovery shows before it reads anything (sec 25.2).
+    if ((prop == &Label || prop == &FileName) && d->transactionLog)
+        d->transactionLog->noteIdentity();
 
     // the Name property is a label for display purposes
     if (prop == &Label) {
@@ -1611,6 +1621,12 @@ Document::~Document()
 
     // remove Transient directory
     try {
+        // The log first: its worker writes into the store and the blob
+        // segments until its queue is empty, which since every commit
+        // writes its values (docs/TransactionLog.md sec 25.4) is often not
+        // yet the case here. Nothing makes another one afterwards.
+        d->noLog = true;
+        d->transactionLog.reset();
         // Nothing deletes a file held open on Windows, and a segment of the
         // blob store may be; nor may its worker write one meanwhile.
         if (d->fileBlobs)
@@ -4393,7 +4409,7 @@ int64_t Document::snapshotToLog()
     return 0;
 }
 
-std::string Document::_materialiseVersion(int64_t num)
+std::string Document::_materialiseVersion(int64_t num, const std::string& where)
 {
     // An unpacked project: every entry from the log, the blobs under
     // blobs/, which a directory restore reads by content. Every entry is
@@ -4404,7 +4420,8 @@ std::string Document::_materialiseVersion(int64_t num)
     if (!log || !log->store().getVersion(num, version))
         THROWM(Base::RuntimeError, "no such version");
     auto manifest = log->store().manifest(num);
-    const std::string dir = TransientDir.getStrValue() + "/history/checkout";
+    const std::string dir =
+        where.empty() ? TransientDir.getStrValue() + "/history/checkout" : where;
     Base::FileInfo(dir).deleteDirectoryRecursive();
     if (!Base::FileInfo(dir + "/" + FileBlobManager::archivePrefix()).createDirectories())
         THROWM(Base::RuntimeError, "cannot create the checkout directory");
@@ -4598,6 +4615,337 @@ void Document::_applyVersion(Document& version)
         auto obj = getObjectByID(kv.first);
         if (obj && !kv.second->isTouched())
             obj->purgeTouched();
+    }
+}
+
+bool Document::recoverFromLog(const std::string& oldDir)
+{
+    // docs/TransactionLog.md sec 25.2.
+    if (!d->objectArray.empty())
+        THROWM(Base::RuntimeError, "recovery needs an empty document");
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        THROWM(Base::RuntimeError, "recovery needs the transaction log");
+    TransactionLog::RecoverInfo info;
+    if (!log->recover(oldDir, info))
+        return false;
+    auto& manager = getFileBlobManager();
+    std::unique_ptr<void, std::function<void(void*)>> ending(
+        &manager, [](void* m) { static_cast<FileBlobManager*>(m)->endRecovery(); });
+
+    // The anchor: the newest version (16.3), or nothing -- a document never
+    // saved or opened has every object's create in the log.
+    LogVersion anchor;
+    bool haveAnchor = false;
+    for (const auto& v : log->store().versions()) {
+        if (!haveAnchor || v.num > anchor.num) {
+            anchor = v;
+            haveAnchor = true;
+        }
+    }
+
+    size_t rows = 0;
+    int64_t last = haveAnchor ? anchor.seq : 0;
+    {
+        Base::FlagToggler<> replaying(d->replaying);
+        if (haveAnchor) {
+            // Materialised outside this document's transient directory: the
+            // restore takes the version's Uid and renames it.
+            const std::string dir = _materialiseVersion(anchor.num, oldDir + "/checkout");
+            Base::FlagToggler<> guard(d->checkingOut);
+            restore(dir.c_str(), false);
+            Base::FileInfo(dir).deleteDirectoryRecursive();
+        }
+        FileName.setValue(info.fileName);
+        if (!info.label.empty())
+            Label.setValue(info.label);
+        rows = _replayLog(haveAnchor ? anchor.seq : 0, last);
+    }
+    _rebuildUndoFromLog();
+
+    std::string from;
+    for (char c : oldDir) {
+        if (c == '"' || c == '\\')
+            from += '\\';
+        from += c;
+    }
+    std::ostringstream script;
+    script << "{\"from\":\"" << from << "\",\"version\":"
+           << (haveAnchor ? anchor.num : 0) << ",\"after\":" << (haveAnchor ? anchor.seq : 0)
+           << ",\"rows\":" << rows << ",\"last\":" << last << ",\"sessions\":[";
+    for (size_t i = 0; i < info.crashedSessions.size(); ++i)
+        script << (i ? "," : "") << info.crashedSessions[i];
+    script << "]}";
+    log->recordRecovery(script.str());
+    return true;
+}
+
+size_t Document::_replayLog(int64_t after, int64_t& last)
+{
+    // Folded, not applied row by row: the end state of every object,
+    // dynamic property and value the tail touched, then applied in the
+    // passes of a cold undo (sec 24.3), forward.
+    TransactionLog* log = getTransactionLog();
+    auto& store = log->store();
+    using Key = std::tuple<std::string, long, std::string>;   // ckind, cid, prop
+    struct Obj
+    {
+        bool exists {false};
+        std::string name;
+        std::string type;
+    };
+    std::map<long, Obj> objects;
+    std::map<Key, std::string> values;
+    std::map<Key, LogOp> added;
+    std::set<Key> removed;
+    std::set<long> touch;
+    // Whether an object was recomputed after its inputs last changed -- a
+    // recompute record naming it -- which is its touched state at the
+    // crash, and which restoring the inputs would lose.
+    std::map<long, int64_t> lastInput;
+    std::map<long, int64_t> lastDone;
+    auto forget = [&](long cid) {
+        for (auto it = values.begin(); it != values.end();)
+            it = std::get<1>(it->first) == cid ? values.erase(it) : std::next(it);
+        for (auto it = added.begin(); it != added.end();)
+            it = std::get<1>(it->first) == cid ? added.erase(it) : std::next(it);
+        for (auto it = removed.begin(); it != removed.end();)
+            it = std::get<1>(*it) == cid ? removed.erase(it) : std::next(it);
+    };
+
+    size_t rows = 0;
+    last = after;
+    for (const auto& t : store.transactions(after + 1, 0)) {
+        auto ops = store.ops(t.seq);
+        if (t.kind == "recompute" && ops.empty()) {
+            // The record (sec 21): {"id":N,"name":...[,"error":...]} per object;
+            // one that failed stays touched.
+            const std::string& j = t.script;
+            const std::string tag = "{\"id\":";
+            for (auto pos = j.find(tag); pos != std::string::npos;) {
+                auto next = j.find(tag, pos + tag.size());
+                const std::string entry = j.substr(pos, next == std::string::npos ? next : next - pos);
+                long cid = std::atol(entry.c_str() + tag.size());
+                if (entry.find("\"error\":") == std::string::npos)
+                    lastDone[cid] = t.seq;
+                pos = next;
+            }
+            ++rows;
+            last = t.seq;
+            continue;
+        }
+        // A clean prefix: a row whose value never reached the log -- a set
+        // with no after that is not a removal's -- ends the replay, so the
+        // document is a state the user had (sec 25.2 item 3).
+        std::set<long> removes;
+        for (const auto& o : ops) {
+            if (o.op == "remove")
+                removes.insert(o.cid);
+        }
+        bool complete = true;
+        for (const auto& o : ops) {
+            if (o.op == "set" && o.vafter.empty() && !o.derived && !removes.count(o.cid)) {
+                complete = false;
+                break;
+            }
+        }
+        if (!complete) {
+            FC_WARN("recovery of " << getName() << ": row " << t.seq << " (" << t.name
+                    << ") is incomplete; the replay ends before it");
+            break;
+        }
+        for (const auto& o : ops) {
+            Key key(o.ckind, o.cid, o.prop);
+            if (o.op == "create" && o.ckind == "obj") {
+                forget(o.cid);
+                lastInput[o.cid] = t.seq;
+                auto& obj = objects[o.cid];
+                obj.exists = true;
+                obj.name = o.cname;
+                obj.type = o.ctype;
+            }
+            else if (o.op == "remove" && o.ckind == "obj") {
+                forget(o.cid);
+                auto& obj = objects[o.cid];
+                obj.exists = false;
+                obj.name = o.cname;
+                obj.type = o.ctype;
+            }
+            else if (o.op == "addprop") {
+                added[key] = o;
+                removed.erase(key);
+            }
+            else if (o.op == "delprop") {
+                added.erase(key);
+                values.erase(key);
+                removed.insert(key);
+            }
+            else if (o.op == "set") {
+                if (!o.vafter.empty())
+                    values[key] = o.vafter;
+                else if (o.derived && o.ckind == "obj")
+                    touch.insert(o.cid);
+                // Only a recompute record says an object was recomputed: a
+                // primitive rewrites its shape as its input changes, and is
+                // touched all the same (sec 20.3).
+                if (o.ckind == "obj" && !o.derived && !removes.count(o.cid))
+                    lastInput[o.cid] = t.seq;
+            }
+        }
+        ++rows;
+        last = t.seq;
+    }
+
+    auto guarded = [&](const char* what, const std::string& name, const std::function<void()>& fn) {
+        try {
+            fn();
+        }
+        catch (Base::Exception& e) {
+            FC_ERR("recovery, " << what << " " << name << ": " << e.what());
+        }
+        catch (std::exception& e) {
+            FC_ERR("recovery, " << what << " " << name << ": " << e.what());
+        }
+    };
+    auto container = [&](const Key& key) -> PropertyContainer* {
+        LogOp o;
+        o.ckind = std::get<0>(key);
+        o.cid = std::get<1>(key);
+        return opContainer(*this, o);
+    };
+    // 1. The objects the tail made that are still there, under id and name.
+    for (const auto& kv : objects) {
+        if (!kv.second.exists || getObjectByID(kv.first))
+            continue;
+        guarded("create", kv.second.name, [&]() {
+            Base::Type type = Base::Type::getTypeIfDerivedFrom(
+                kv.second.type.c_str(), DocumentObject::getClassTypeId(), true);
+            auto obj = type.isBad() ? nullptr : static_cast<DocumentObject*>(type.createInstance());
+            if (!obj)
+                throw Base::RuntimeError("cannot create " + kv.second.type);
+            obj->_Id = kv.first;
+            addObject(obj, kv.second.name.c_str(), false);
+        });
+    }
+    // 2. Dynamic properties, as the tail left them.
+    for (const auto& kv : added) {
+        guarded("add property", std::get<2>(kv.first), [&]() {
+            auto c = container(kv.first);
+            if (!c || c->getPropertyByName(std::get<2>(kv.first).c_str()))
+                return;
+            DynamicMeta m = parseMeta(kv.second.meta);
+            c->addDynamicProperty(kv.second.ptype.c_str(), std::get<2>(kv.first).c_str(),
+                                  m.group.c_str(), m.doc.c_str(), m.attr, m.readonly, m.hidden);
+        });
+    }
+    for (const auto& key : removed) {
+        guarded("remove property", std::get<2>(key), [&]() {
+            if (auto c = container(key))
+                c->removeDynamicProperty(std::get<2>(key).c_str());
+        });
+    }
+    // 3. Every value, the newest the tail wrote.
+    for (const auto& kv : values) {
+        guarded("value of", std::get<2>(kv.first), [&]() {
+            auto c = container(kv.first);
+            if (!c)
+                return;   // a view with no Gui, or an object gone
+            Property* prop = c->getPropertyByName(std::get<2>(kv.first).c_str());
+            if (!prop)
+                throw Base::RuntimeError("no such property");
+            CapturedValue v;
+            if (!log->readValue(kv.second, v))
+                throw Base::RuntimeError("value " + kv.second + " is not in the log");
+            restoreValue(*prop, v);
+        });
+    }
+    // 4. The touched state the session had: an object whose inputs changed
+    // after its last recompute, or whose derived values the log did not
+    // keep (sec 24.1), is touched; one recomputed since is not -- restoring
+    // its inputs touched it, and its outputs are restored too.
+    for (const auto& kv : lastInput) {
+        auto obj = getObjectByID(kv.first);
+        if (!obj)
+            continue;
+        auto done = lastDone.find(kv.first);
+        if (done != lastDone.end() && done->second >= kv.second && !touch.count(kv.first))
+            obj->purgeTouched();
+        else
+            obj->touch();
+    }
+    for (long cid : touch) {
+        if (auto obj = getObjectByID(cid))
+            obj->touch();
+    }
+    // 5. What the tail removed.
+    for (const auto& kv : objects) {
+        if (kv.second.exists)
+            continue;
+        if (auto obj = getObjectByID(kv.first)) {
+            guarded("remove", kv.second.name,
+                    [&]() { removeObject(obj->getNameInDocument()); });
+        }
+    }
+    return rows;
+}
+
+void Document::_rebuildUndoFromLog()
+{
+    // The stacks the crashed session had, from its rows (sec 25.2): a step
+    // pushes and clears redo; an `undo` row naming the top moves it to redo,
+    // a `redo` row naming the redo top moves it back -- each under the row
+    // that did it, which is what a cold undo or redo reverts. A selective
+    // undo (an `undo` naming a row further down) is a step of its own.
+    if (!d->iUndoMode)
+        return;
+    TransactionLog* log = getTransactionLog();
+    auto& store = log->store();
+    struct Step
+    {
+        int64_t seq;
+        std::string name;
+        bool implicit;
+    };
+    std::vector<Step> undo;
+    std::vector<Step> redo;
+    for (const auto& t : store.transactions()) {
+        if (t.kind == "undo" && !undo.empty() && undo.back().seq == t.inverts) {
+            Step s = undo.back();
+            undo.pop_back();
+            s.seq = t.seq;
+            redo.push_back(s);
+            continue;
+        }
+        if (t.kind == "redo" && !redo.empty() && redo.back().seq == t.inverts) {
+            Step s = redo.back();
+            redo.pop_back();
+            s.seq = t.seq;
+            undo.push_back(s);
+            continue;
+        }
+        if (store.ops(t.seq).empty())
+            continue;   // a record: save, snapshot, recompute, session
+        undo.push_back({t.seq, t.name, t.kind == "implicit"});
+        redo.clear();
+    }
+    auto stub = [](const Step& s) {
+        auto t = new Transaction(0);
+        t->Name = s.name;
+        t->Implicit = s.implicit;
+        t->LogSeq = s.seq;
+        t->Cold = true;
+        return t;
+    };
+    for (const auto& s : undo) {
+        auto t = stub(s);
+        mUndoMap[t->getID()] = t;
+        mUndoTransactions.push_back(t);
+    }
+    // The redo stack's top is its back, as the undo stack's.
+    for (const auto& s : redo) {
+        auto t = stub(s);
+        mRedoMap[t->getID()] = t;
+        mRedoTransactions.push_back(t);
     }
 }
 
@@ -4910,6 +5258,11 @@ TransactionLog* Document::getTransactionLog() const
             return nullptr;
         try {
             d->transactionLog = std::make_unique<TransactionLog>(*const_cast<Document*>(this));
+            // The time rule of the cadence counts from the log's start, so a
+            // document never saved or opened gets versions too (sec 25.3).
+            if (d->lastVersionTime <= 0)
+                const_cast<Document*>(this)->noteVersionTaken();
+            d->transactionLog->noteIdentity();
         }
         catch (Base::Exception& e) {
             FC_ERR("cannot open the transaction log of " << getName() << ": " << e.what());

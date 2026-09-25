@@ -192,6 +192,35 @@ public:
      */
     bool adoptStore(const std::string& path);
 
+    /// What recover() found.
+    struct RecoverInfo
+    {
+        /// Sessions the crashed process never closed, closed now.
+        std::vector<int64_t> crashedSessions;
+        /// The label and file name the crashed session last recorded.
+        std::string label;
+        std::string fileName;
+    };
+    /** Crash recovery (docs/TransactionLog.md sec 25.2 item 4): take over
+     * the log and the blob store a crashed session left in `oldDir`, its
+     * transient directory. `history/log.db` moves in with its WAL -- the
+     * rows committed and not yet checkpointed -- the blob segments and
+     * loose files move into this document's store and are swept
+     * (FileBlobManager::recoverStore()), and the log holds its blobs again.
+     * The sessions the crashed process left open are closed and a new one
+     * opened. Only for a log with no history of its own; the caller ends
+     * the blob store's recovery (FileBlobManager::endRecovery()) once the
+     * document is rebuilt.
+     */
+    bool recover(const std::string& oldDir, RecoverInfo& info);
+    /// The label and file name a recovery shows before anything is read
+    /// (meta `label`, `file`), from a leftover store; false if none.
+    static bool readRecoveryMeta(const std::string& oldDir, RecoverInfo& info);
+    /// Keep the document's label and file name in `meta` for a recovery.
+    void noteIdentity();
+    /// Append the `recover` record (sec 25.2), `script` its JSON.
+    int64_t recordRecovery(const std::string& script);
+
 
     /** What a cold undo needs of row `seq` (sec 24.3): its ops in log
      * order, and each value they restore read back by hash -- a value the
@@ -316,6 +345,16 @@ private:
         /// on the main thread as the task is made (sec 24.3), here.
         CapturedValue captured;
         bool isCaptured {false};
+        /// The op of the job's transaction whose after ref this value is,
+        /// -1 for none: every commit's after values are copied and written
+        /// with it (sec 25.4).
+        int afterIndex {-1};
+        /// Filled with the value's hash once written, for the copy kept in
+        /// TransactionCopyCache.
+        std::shared_ptr<std::string> hashOut;
+        /// The hash the worker already wrote this copy under, when the
+        /// copy is one it wrote as an after value: not serialised again.
+        std::shared_ptr<std::string> hashIn;
         void captureNow(const CaptureConfig& config);
     };
 
@@ -436,6 +475,20 @@ private:
     std::condition_variable _done;
     std::deque<std::function<void()>> _queue;
     bool _running {false};
+    /// Copies the worker has written, released on the main thread: a copy
+    /// may unregister itself from a list the main thread walks (an
+    /// expression engine's copy leaves PropertyExpressionContainer's), so
+    /// its last reference is never dropped on the worker (sec 25.4).
+    std::vector<std::shared_ptr<const Property>> _retired;
+    std::mutex _retiredMutex;
+    std::thread::id _mainThread {std::this_thread::get_id()};
+    void retire(std::shared_ptr<const Property>&& copy);
+    void releaseRetired();
+    /// Write what is queued, then stop and join the worker.
+    void stopWorker();
+    /// The logs alive in the process; `log` null stops every one's worker,
+    /// which an atexit handler does.
+    static void liveLogs(TransactionLog* log, bool add);
     bool _stop {false};
 };
 

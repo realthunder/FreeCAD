@@ -125,6 +125,9 @@ struct DocumentP
     /// The scratch document a restore to a version reads the version into
     /// (docs/TransactionLog.md sec 24.5): it keeps no log of its own.
     bool noLog {false};
+    /// A crash recovery rebuilding the document from its log (sec 25.2):
+    /// what it writes is in the log already, and is no transaction.
+    bool replaying {false};
     /// A saveCopy() without history: the copy embeds nothing, and the
     /// History property the live document had is put back afterwards.
     bool savingWithoutHistory {false};

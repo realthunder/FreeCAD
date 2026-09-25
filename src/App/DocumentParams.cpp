@@ -91,7 +91,8 @@ public:
         signalParamChanged("TransactionLogDerived");
         signalParamChanged("TransactionLogSnapshotTransactions");
         signalParamChanged("TransactionLogKeepVersions");
-        signalParamChanged("TransactionLogSnapshotSeconds");
+        signalParamChanged("AutoSaveEnabled");
+        signalParamChanged("AutoSaveTimeout");
         signalParamChanged("TransactionLogDeltaHops");
         signalParamChanged("TransactionLogDeltaRatio");
         signalParamChanged("TransactionLogVerify");
@@ -148,7 +149,8 @@ public:
     long TransactionLogDerived;
     long TransactionLogSnapshotTransactions;
     long TransactionLogKeepVersions;
-    long TransactionLogSnapshotSeconds;
+    bool AutoSaveEnabled;
+    long AutoSaveTimeout;
     long TransactionLogDeltaHops;
     long TransactionLogDeltaRatio;
     bool TransactionLogVerify;
@@ -249,12 +251,14 @@ public:
         funcs["TransactionLogIdentity"] = &DocumentParamsP::updateTransactionLogIdentity;
         TransactionLogDerived = this->handle->GetInt("TransactionLogDerived", 1);
         funcs["TransactionLogDerived"] = &DocumentParamsP::updateTransactionLogDerived;
-        TransactionLogSnapshotTransactions = this->handle->GetInt("TransactionLogSnapshotTransactions", 0);
+        TransactionLogSnapshotTransactions = this->handle->GetInt("TransactionLogSnapshotTransactions", 200);
         funcs["TransactionLogSnapshotTransactions"] = &DocumentParamsP::updateTransactionLogSnapshotTransactions;
         TransactionLogKeepVersions = this->handle->GetInt("TransactionLogKeepVersions", 0);
         funcs["TransactionLogKeepVersions"] = &DocumentParamsP::updateTransactionLogKeepVersions;
-        TransactionLogSnapshotSeconds = this->handle->GetInt("TransactionLogSnapshotSeconds", 0);
-        funcs["TransactionLogSnapshotSeconds"] = &DocumentParamsP::updateTransactionLogSnapshotSeconds;
+        AutoSaveEnabled = this->handle->GetBool("AutoSaveEnabled", true);
+        funcs["AutoSaveEnabled"] = &DocumentParamsP::updateAutoSaveEnabled;
+        AutoSaveTimeout = this->handle->GetInt("AutoSaveTimeout", 15);
+        funcs["AutoSaveTimeout"] = &DocumentParamsP::updateAutoSaveTimeout;
         TransactionLogDeltaHops = this->handle->GetInt("TransactionLogDeltaHops", 8);
         funcs["TransactionLogDeltaHops"] = &DocumentParamsP::updateTransactionLogDeltaHops;
         TransactionLogDeltaRatio = this->handle->GetInt("TransactionLogDeltaRatio", 50);
@@ -462,15 +466,19 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateTransactionLogSnapshotTransactions(DocumentParamsP *self) {
-        self->TransactionLogSnapshotTransactions = self->handle->GetInt("TransactionLogSnapshotTransactions", 0);
+        self->TransactionLogSnapshotTransactions = self->handle->GetInt("TransactionLogSnapshotTransactions", 200);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateTransactionLogKeepVersions(DocumentParamsP *self) {
         self->TransactionLogKeepVersions = self->handle->GetInt("TransactionLogKeepVersions", 0);
     }
     // Auto generated code (Tools/params_utils.py:314)
-    static void updateTransactionLogSnapshotSeconds(DocumentParamsP *self) {
-        self->TransactionLogSnapshotSeconds = self->handle->GetInt("TransactionLogSnapshotSeconds", 0);
+    static void updateAutoSaveEnabled(DocumentParamsP *self) {
+        self->AutoSaveEnabled = self->handle->GetBool("AutoSaveEnabled", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateAutoSaveTimeout(DocumentParamsP *self) {
+        self->AutoSaveTimeout = self->handle->GetInt("AutoSaveTimeout", 15);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateTransactionLogDeltaHops(DocumentParamsP *self) {
@@ -714,22 +722,27 @@ static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
         .setDoc("What the transaction log does with derived values, i.e. values\n"
 "written by their own object recompute (sec 10): 0 none (the op\n"
 "notes the change, no value), 1 cache (evictable tier), 2 full."),
-    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "TransactionLogSnapshotTransactions", "TransactionLogSnapshotTransactions", App::ParamInfo::Int, 0)
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "TransactionLogSnapshotTransactions", "TransactionLogSnapshotTransactions", App::ParamInfo::Int, 200)
         .setTitle("Transaction Log Snapshot Transactions")
         .setDoc("The transaction log takes an unnamed version (sec 16.3) every\n"
 "this many committed transactions since the last version; 0 for\n"
 "none. A snapshot serialises the document like a save, without\n"
-"writing an archive."),
+"writing an archive. With the time rule of AutoSaveTimeout, it\n"
+"bounds how much a crash recovery replays (sec 25.3)."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "TransactionLogKeepVersions", "TransactionLogKeepVersions", App::ParamInfo::Int, 0)
         .setTitle("Transaction Log Keep Versions")
         .setDoc("How many unnamed versions the transaction log keeps (sec 16.3):\n"
 "when a version is added, the oldest unnamed ones over this count\n"
 "are evicted -- never a named one, never the newest. 0 keeps all."),
-    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "TransactionLogSnapshotSeconds", "TransactionLogSnapshotSeconds", App::ParamInfo::Int, 0)
-        .setTitle("Transaction Log Snapshot Seconds")
-        .setDoc("The transaction log takes an unnamed version (sec 16.3) at the\n"
-"first commit this many seconds after the last version; 0 for\n"
-"none."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "AutoSaveEnabled", "AutoSaveEnabled", App::ParamInfo::Bool, true)
+        .setTitle("Auto Save Enabled")
+        .setDoc("Autosave. Without the transaction log, the Gui writes a recovery\n"
+"file every AutoSaveTimeout minutes; with it, the log takes an\n"
+"unnamed version at the first commit that many minutes after the\n"
+"last one (docs/TransactionLog.md sec 25.3)."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "AutoSaveTimeout", "AutoSaveTimeout", App::ParamInfo::Int, 15)
+        .setTitle("The autosave interval in minutes, see AutoSaveEnabled.")
+        .setDoc("The autosave interval in minutes, see AutoSaveEnabled."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "TransactionLogDeltaHops", "TransactionLogDeltaHops", App::ParamInfo::Int, 8)
         .setTitle("Transaction Log Delta Hops")
         .setDoc("How long a reverse-delta chain the transaction log allows (sec\n"
@@ -2062,7 +2075,8 @@ const char *DocumentParams::docTransactionLogSnapshotTransactions() {
 "The transaction log takes an unnamed version (sec 16.3) every\n"
 "this many committed transactions since the last version; 0 for\n"
 "none. A snapshot serialises the document like a save, without\n"
-"writing an archive.");
+"writing an archive. With the time rule of AutoSaveTimeout, it\n"
+"bounds how much a crash recovery replays (sec 25.3).");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -2072,7 +2086,7 @@ const long & DocumentParams::getTransactionLogSnapshotTransactions() {
 
 // Auto generated code (Tools/params_utils.py:413)
 const long & DocumentParams::defaultTransactionLogSnapshotTransactions() {
-    const static long def = 0;
+    const static long def = 200;
     return def;
 }
 
@@ -2118,33 +2132,62 @@ void DocumentParams::removeTransactionLogKeepVersions() {
 }
 
 // Auto generated code (Tools/params_utils.py:397)
-const char *DocumentParams::docTransactionLogSnapshotSeconds() {
+const char *DocumentParams::docAutoSaveEnabled() {
     return QT_TRANSLATE_NOOP("DocumentParams",
-"The transaction log takes an unnamed version (sec 16.3) at the\n"
-"first commit this many seconds after the last version; 0 for\n"
-"none.");
+"Autosave. Without the transaction log, the Gui writes a recovery\n"
+"file every AutoSaveTimeout minutes; with it, the log takes an\n"
+"unnamed version at the first commit that many minutes after the\n"
+"last one (docs/TransactionLog.md sec 25.3).");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
-const long & DocumentParams::getTransactionLogSnapshotSeconds() {
-    return instance()->TransactionLogSnapshotSeconds;
+const bool & DocumentParams::getAutoSaveEnabled() {
+    return instance()->AutoSaveEnabled;
 }
 
 // Auto generated code (Tools/params_utils.py:413)
-const long & DocumentParams::defaultTransactionLogSnapshotSeconds() {
-    const static long def = 0;
+const bool & DocumentParams::defaultAutoSaveEnabled() {
+    const static bool def = true;
     return def;
 }
 
 // Auto generated code (Tools/params_utils.py:422)
-void DocumentParams::setTransactionLogSnapshotSeconds(const long &v) {
-    instance()->handle->SetInt("TransactionLogSnapshotSeconds",v);
-    instance()->TransactionLogSnapshotSeconds = v;
+void DocumentParams::setAutoSaveEnabled(const bool &v) {
+    instance()->handle->SetBool("AutoSaveEnabled",v);
+    instance()->AutoSaveEnabled = v;
 }
 
 // Auto generated code (Tools/params_utils.py:431)
-void DocumentParams::removeTransactionLogSnapshotSeconds() {
-    instance()->handle->RemoveInt("TransactionLogSnapshotSeconds");
+void DocumentParams::removeAutoSaveEnabled() {
+    instance()->handle->RemoveBool("AutoSaveEnabled");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docAutoSaveTimeout() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"The autosave interval in minutes, see AutoSaveEnabled.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & DocumentParams::getAutoSaveTimeout() {
+    return instance()->AutoSaveTimeout;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & DocumentParams::defaultAutoSaveTimeout() {
+    const static long def = 15;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setAutoSaveTimeout(const long &v) {
+    instance()->handle->SetInt("AutoSaveTimeout",v);
+    instance()->AutoSaveTimeout = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeAutoSaveTimeout() {
+    instance()->handle->RemoveInt("AutoSaveTimeout");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

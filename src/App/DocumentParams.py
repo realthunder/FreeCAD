@@ -192,19 +192,23 @@ Params = [
         doc='What the transaction log does with derived values, i.e. values\n'
             'written by their own object recompute (sec 10): 0 none (the op\n'
             'notes the change, no value), 1 cache (evictable tier), 2 full.'),
-    ParamInt('TransactionLogSnapshotTransactions', 0,
+    ParamInt('TransactionLogSnapshotTransactions', 200,
         doc='The transaction log takes an unnamed version (sec 16.3) every\n'
             'this many committed transactions since the last version; 0 for\n'
             'none. A snapshot serialises the document like a save, without\n'
-            'writing an archive.'),
+            'writing an archive. With the time rule of AutoSaveTimeout, it\n'
+            'bounds how much a crash recovery replays (sec 25.3).'),
     ParamInt('TransactionLogKeepVersions', 0,
         doc='How many unnamed versions the transaction log keeps (sec 16.3):\n'
             'when a version is added, the oldest unnamed ones over this count\n'
             'are evicted -- never a named one, never the newest. 0 keeps all.'),
-    ParamInt('TransactionLogSnapshotSeconds', 0,
-        doc='The transaction log takes an unnamed version (sec 16.3) at the\n'
-            'first commit this many seconds after the last version; 0 for\n'
-            'none.'),
+    ParamBool('AutoSaveEnabled', True,
+        doc='Autosave. Without the transaction log, the Gui writes a recovery\n'
+            'file every AutoSaveTimeout minutes; with it, the log takes an\n'
+            'unnamed version at the first commit that many minutes after the\n'
+            'last one (docs/TransactionLog.md sec 25.3).'),
+    ParamInt('AutoSaveTimeout', 15,
+        doc='The autosave interval in minutes, see AutoSaveEnabled.'),
     ParamInt('TransactionLogDeltaHops', 8,
         doc='How long a reverse-delta chain the transaction log allows (sec\n'
             '23.2): an entity superseded by a newer one is re-encoded as a\n'

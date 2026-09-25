@@ -350,6 +350,15 @@ public:
      * when there is no log.
      */
     bool restoreVersion(int64_t num);
+
+    /** Crash recovery (docs/TransactionLog.md sec 25): make this new, empty
+     * document what the session that crashed with transient directory
+     * `oldDir` had -- its newest version, the log's tail replayed over it --
+     * taking over that session's log and blobs, so undo and the log reach
+     * across the crash. Nothing it writes is a transaction; one `recover`
+     * row records it. False when `oldDir` holds no log.
+     */
+    bool recoverFromLog(const std::string& oldDir);
     /** Undo log row `seq` though it is not the last step (docs/TransactionLog.md
      * sec 24.4): a new transaction, an undo step itself, applying the row
      * reversed. Refused, with the conflicts reported, when an op since
@@ -988,7 +997,12 @@ protected:
     void logInverse(const Transaction& applied, const char* kind,
                     const ColdRevert* cold = nullptr);
     /// Write version `num` out as an unpacked project; returns its directory.
-    std::string _materialiseVersion(int64_t num);
+    std::string _materialiseVersion(int64_t num, const std::string& where = std::string());
+    /// Apply the log's rows after `after` forward, folded (sec 25.2 item
+    /// 3); returns the rows applied and sets `last` to the last one.
+    size_t _replayLog(int64_t after, int64_t& last);
+    /// The undo and redo stacks the log's rows leave, as cold stubs.
+    void _rebuildUndoFromLog();
     /// Make this document what `version` (a scratch document holding a
     /// version) is, recorded into the open transaction (sec 24.5).
     void _applyVersion(Document& version);

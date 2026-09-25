@@ -25,7 +25,9 @@
 #ifndef _PreComp_
 # include <algorithm>
 # include <chrono>
+# include <cstdlib>
 # include <map>
+# include <set>
 #endif
 
 #ifdef FC_HAVE_ZSTD
@@ -35,6 +37,7 @@
 #include <Base/Console.h>
 #include <Base/Exception.h>
 #include <Base/FileInfo.h>
+#include <Base/Interpreter.h>
 #include <Base/Uuid.h>
 
 #include "TransactionLog.h"
@@ -306,7 +309,54 @@ TransactionLog::TransactionLog(Document& doc)
     _session = _store->openSession(_environment, _user, _host, now());
     _config = CaptureConfig(doc);
     _worker = std::thread([this]() { run(); });
+    liveLogs(this, true);
     FC_LOG("transaction log " << _path << " session " << _session);
+}
+
+void TransactionLog::liveLogs(TransactionLog* log, bool add)
+{
+    // A process may end with documents open -- a script, a test, a crash
+    // handler's exit -- and then no ~TransactionLog runs, while a worker
+    // exporting a shape meets OCCT's statics being destroyed (sec 25.6).
+    // atexit handlers run before the destructors of statics constructed
+    // earlier, which the libraries loaded before the first log's are.
+    static std::mutex mutex;
+    static std::set<TransactionLog*> logs;
+    static bool registered = false;
+    std::vector<TransactionLog*> all;
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        if (log) {
+            if (add)
+                logs.insert(log);
+            else
+                logs.erase(log);
+            if (add && !registered) {
+                registered = true;
+                std::atexit([]() { liveLogs(nullptr, false); });
+            }
+            return;
+        }
+        all.assign(logs.begin(), logs.end());
+    }
+    for (auto l : all)
+        l->stopWorker();
+}
+
+void TransactionLog::stopWorker()
+{
+    try {
+        flush();
+    }
+    catch (...) {
+    }
+    {
+        std::lock_guard<std::mutex> lock(_mutex);
+        _stop = true;
+    }
+    _wake.notify_all();
+    if (_worker.joinable())
+        _worker.join();
 }
 
 void TransactionLog::run()
@@ -341,12 +391,32 @@ void TransactionLog::run()
     }
 }
 
+void TransactionLog::retire(std::shared_ptr<const Property>&& copy)
+{
+    std::lock_guard<std::mutex> lock(_retiredMutex);
+    _retired.push_back(std::move(copy));
+}
+
+void TransactionLog::releaseRetired()
+{
+    if (std::this_thread::get_id() != _mainThread)
+        return;
+    std::vector<std::shared_ptr<const Property>> gone;
+    {
+        std::lock_guard<std::mutex> lock(_retiredMutex);
+        gone.swap(_retired);
+    }
+}
+
 void TransactionLog::post(std::function<void()> job)
 {
+    releaseRetired();   // every post is the main thread's
     _deltaHops = DocumentParams::getTransactionLogDeltaHops();
     _deltaRatio = DocumentParams::getTransactionLogDeltaRatio();
     {
         std::lock_guard<std::mutex> lock(_mutex);
+        if (_stop)
+            return;   // the process is ending (liveLogs): nothing runs it
         _queue.push_back(std::move(job));
     }
     _wake.notify_one();
@@ -354,8 +424,16 @@ void TransactionLog::post(std::function<void()> job)
 
 void TransactionLog::flush()
 {
-    std::unique_lock<std::mutex> lock(_mutex);
-    _done.wait(lock, [this]() { return _queue.empty() && !_running; });
+    {
+        // Never wait for the worker holding the GIL: a value's Save may
+        // take it (sec 25.6), and ~Document holds it around the log's end.
+        std::unique_ptr<Base::PyGILStateRelease> unlocked;
+        if (Py_IsInitialized() && PyGILState_Check())
+            unlocked = std::make_unique<Base::PyGILStateRelease>();
+        std::unique_lock<std::mutex> lock(_mutex);
+        _done.wait(lock, [this]() { return (_queue.empty() || _stop) && !_running; });
+    }
+    releaseRetired();
 }
 
 TransactionStore& TransactionLog::store()
@@ -414,6 +492,131 @@ TransactionLog::Embedded TransactionLog::embed(const std::string& saveDate)
     copy->setMeta("version_counter", std::to_string(out.version));
     copy.reset();
     return out;
+}
+
+bool TransactionLog::readRecoveryMeta(const std::string& oldDir, RecoverInfo& info)
+{
+    const std::string path = oldDir + "/history/log.db";
+    if (!Base::FileInfo(path).exists())
+        return false;
+    try {
+        auto store = TransactionStore::openSQLite(path);
+        info.label = store->getMeta("label");
+        info.fileName = store->getMeta("file");
+        return true;
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("transaction log: cannot read " << path << ": " << e.what());
+    }
+    return false;
+}
+
+void TransactionLog::noteIdentity()
+{
+    std::string label = _doc.Label.getValue();
+    std::string file = _doc.FileName.getValue();
+    post([this, label, file]() {
+        _store->setMeta("label", label);
+        _store->setMeta("file", file);
+    });
+}
+
+bool TransactionLog::recover(const std::string& oldDir, RecoverInfo& info)
+{
+    flush();
+    const std::string oldLog = oldDir + "/history/log.db";
+    if (!Base::FileInfo(oldLog).exists())
+        return false;
+    if (_nextSeq != 0 || _nextVersion != 0) {
+        FC_ERR("transaction log of " << _doc.getName() << " has history; not recovering "
+               << oldDir);
+        return false;
+    }
+    if (_store && _session)
+        _store->closeSession(_session, now());
+    _store.reset();
+    for (const char* suffix : {"", "-wal", "-shm"}) {
+        Base::FileInfo(_path + suffix).deleteFile();
+    }
+    // The WAL moves with the database: the rows the crashed process
+    // committed and SQLite had not yet written back are in it. The shared
+    // memory index is rebuilt from it on open.
+    bool moved = true;
+    for (const char* suffix : {"", "-wal"}) {
+        Base::FileInfo from(oldLog + suffix);
+        if (!from.exists())
+            continue;
+        if (!from.renameFile((_path + suffix).c_str()) && !from.copyTo((_path + suffix).c_str()))
+            moved = false;
+    }
+    Base::FileInfo(oldLog + "-shm").deleteFile();
+    if (!moved) {
+        FC_ERR("cannot take over the log of " << oldDir);
+        openStore();
+        _session = _store->openSession(_environment, _user, _host, now());
+        return false;
+    }
+
+    // The blobs: every file of the old store into this one's, then swept.
+    auto& manager = _doc.getFileBlobManager();
+    const std::string oldBlobs = oldDir + "/blobs";
+    const std::string newBlobs = _doc.TransientDir.getStrValue() + "/blobs";
+    if (Base::FileInfo(oldBlobs).isDir()) {
+        Base::FileInfo(newBlobs).createDirectories();
+        for (const auto& file : Base::FileInfo(oldBlobs).getDirectoryContent()) {
+            if (!file.isFile())
+                continue;
+            const std::string target = newBlobs + "/" + file.fileName();
+            if (!Base::FileInfo(file).renameFile(target.c_str()))
+                Base::FileInfo(file).copyTo(target.c_str());
+        }
+    }
+    manager.recoverStore();
+
+    openStore();
+    _blobs.clear();
+    _sourced.clear();
+    size_t missing = 0;
+    for (const auto& hash : _store->entitiesStoredAs("file")) {
+        if (auto blob = manager.recovered(hash))
+            _blobs[hash] = blob;
+        else
+            ++missing;
+    }
+    if (missing)
+        FC_WARN("recovery of " << _doc.getName() << ": " << missing
+                << " blob(s) the log names are not in the store left behind");
+    const double closed = now();
+    for (const auto& session : _store->sessions()) {
+        if (session.closed == 0) {
+            _store->closeSession(session.id, closed);
+            info.crashedSessions.push_back(session.id);
+        }
+    }
+    info.label = _store->getMeta("label");
+    info.fileName = _store->getMeta("file");
+    _environment = _store->environment(_envJson);
+    _session = _store->openSession(_environment, _user, _host, now());
+    FC_LOG("transaction log of " << _doc.getName() << " recovered from " << oldDir << ": seq "
+           << _nextSeq << ", versions " << _nextVersion);
+    return true;
+}
+
+int64_t TransactionLog::recordRecovery(const std::string& script)
+{
+    LogTransaction t;
+    t.parent = _nextSeq;
+    t.seq = ++_nextSeq;
+    t.kind = "recover";
+    t.name = "Recovered";
+    t.time = now();
+    t.session = _session;
+    t.script = script;
+    post([this, t]() mutable {
+        std::vector<LogOp> none;
+        _store->append(t, none);
+    });
+    return t.seq;
 }
 
 bool TransactionLog::adoptStore(const std::string& path)
@@ -478,15 +681,10 @@ bool TransactionLog::reopenStore()
 
 TransactionLog::~TransactionLog()
 {
+    liveLogs(this, false);
+    TransactionCopyCache::dropOwner(this);
     try {
-        flush();
-        {
-            std::lock_guard<std::mutex> lock(_mutex);
-            _stop = true;
-        }
-        _wake.notify_all();
-        if (_worker.joinable())
-            _worker.join();
+        stopWorker();
         _blobs.clear();
         if (_store && _session)
             _store->closeSession(_session, now());
@@ -639,6 +837,10 @@ int64_t TransactionLog::snapshot(const char* kind, const std::string& path,
         FC_ERR("transaction log: a snapshot needs Document.xml first");
         return 0;
     }
+    // A version writes the shapes' blobs, after which a fresh copy names
+    // its blob where a kept one carries the exported bytes: the next edit
+    // of each property copies again (sec 25.4).
+    TransactionCopyCache::dropOwner(this);
     try {
         // Whatever the sink did not claim is stored by this snapshot as a
         // part, and held from here on; a snapshot taken without a sink
@@ -1432,6 +1634,8 @@ void TransactionLog::writeValues(std::vector<ValueTask>& tasks, std::vector<LogO
         auto& task = tasks[i];
         if (!task.copy && !task.isCaptured)
             continue;
+        if (task.hashIn && !task.hashIn->empty())
+            continue;   // written already, as the last commit's after value
         // A value that names its blob (decision 6b, `hash=` in the
         // fragment) is complete only while the file exists: the blob is an
         // entity of its own, held as long as the value is (sec 23.16).
@@ -1453,15 +1657,27 @@ void TransactionLog::writeValues(std::vector<ValueTask>& tasks, std::vector<LogO
     for (std::size_t i = 0; i < tasks.size(); ++i) {
         auto& task = tasks[i];
         std::string hash;
-        if (task.copy || task.isCaptured) {
+        if (task.hashIn && !task.hashIn->empty())
+            hash = *task.hashIn;
+        else if (task.copy || task.isCaptured) {
             CapturedValue& cv = captured[i];
             if (cv.ok)
                 hash = putValue(cv, task.tier);
         }
+        if (task.hashOut)
+            *task.hashOut = hash;
         if (task.key && !hash.empty())
             _hashById[task.key] = hash;
         if (task.opIndex >= 0)
             ops[task.opIndex].vbefore = hash;
+        if (task.afterIndex >= 0) {
+            LogOp& op = ops[task.afterIndex];
+            op.vafter = hash;
+            // The op's before is now the older of the pair (sec 23.2); the
+            // before tasks of this job come first, so it is filled.
+            if (!hash.empty() && !op.vbefore.empty())
+                supersede(op.vbefore, hash);
+        }
         if (task.resolveTxn > 0) {
             _store->resolveAfter(task.resolveTxn, task.resolveIdx, hash);
             // The op's before is now the older of the pair (sec 23.2).
@@ -1469,7 +1685,10 @@ void TransactionLog::writeValues(std::vector<ValueTask>& tasks, std::vector<LogO
             if (!hash.empty() && _store->getOp(task.resolveTxn, task.resolveIdx, resolved))
                 supersede(resolved.vbefore, hash);
         }
-        task.copy.reset();   // the share is released as soon as it is written
+        // The share goes as soon as it is written, dropped on the main
+        // thread.
+        if (task.copy)
+            retire(std::move(task.copy));
     }
 }
 
@@ -1495,7 +1714,12 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
         // Ops whose after ref is pending, by property id, keyed to
         // (t.seq, idx); moved into _pending once the job is queued.
         std::vector<std::pair<int64_t, Pending>> newPending;
-        auto pendOp = [&](const Property& prop, const ContainerInfo& c, const char* tier) {
+        // The live properties behind them, and whether the copy is kept for
+        // the next write (sec 25.4): only for a set, not for the sets a
+        // create or an added dynamic property implies.
+        std::vector<std::pair<const Property*, bool>> newPendingProps;
+        auto pendOp = [&](const Property& prop, const ContainerInfo& c, const char* tier,
+                          bool keep) {
             Pending p;
             p.txn = t.seq;
             p.idx = static_cast<int>(ops.size()) - 1;   // the op just emitted
@@ -1504,17 +1728,19 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
             p.prop = ops.back().prop;
             p.tier = tier;
             newPending.emplace_back(prop.getID(), p);
+            newPendingProps.emplace_back(&prop, keep);
         };
         // A copy for the worker: the transaction's own, co-owned from now
         // (decision 4), or one made here for a value the transaction does
         // not hold. `fill` is the op whose before it is, -1 for none.
         auto task = [&](std::shared_ptr<const Property> copy, const char* tier, int fill,
-                        int64_t pendingKey) {
+                        int64_t pendingKey, std::shared_ptr<std::string> known = {}) {
             ValueTask v;
             v.copy = std::move(copy);
             v.key = pendingKey;
             v.tier = tier;
             v.opIndex = fill;
+            v.hashIn = std::move(known);
             takePending(pendingKey, v);
             if (v.copy)
                 _recorded.insert(pendingKey);
@@ -1573,7 +1799,7 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
                         a->meta = dynamicMeta(dyn);
                     }
                     emit("set", kv.first, typeName);
-                    pendOp(*kv.second, c, "durable");
+                    pendOp(*kv.second, c, "durable", false);
                 }
                 continue;
             }
@@ -1618,7 +1844,7 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
                     const char* name = c.container->getPropertyName(prop);
                     if (name && data.name == name) {
                         emit("set", data.name, typeName);
-                        pendOp(*prop, c, "durable");
+                        pendOp(*prop, c, "durable", false);
                     }
                     continue;
                 }
@@ -1651,9 +1877,9 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
                 o->derived = derived;
                 if (recordsValue(derived) || waiting)
                     task(share(data), tierFor(derived), recordsValue(derived) ? last() : -1,
-                         kv.first);
+                         kv.first, data.logHash);
                 if (recordsValue(derived))
-                    pendOp(*prop, c, tierFor(derived));
+                    pendOp(*prop, c, tierFor(derived), true);
                 else
                     _recorded.erase(kv.first);   // changed, and the value not kept
             }
@@ -1671,8 +1897,35 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
             }
             return 0;
         }
-        for (auto& p : newPending)
-            _pending[p.first] = p.second;
+        // Every after value this commit leaves pending is copied now and
+        // written with it (sec 25.4): nothing the commit set lives only in
+        // memory once the worker has run the job. FC_TXNLOG_NO_STREAM leaves
+        // them pending as before, for measuring what this costs.
+        static const bool noStream = std::getenv("FC_TXNLOG_NO_STREAM") != nullptr;
+        if (noStream) {
+            for (auto& p : newPending)
+                _pending[p.first] = p.second;
+            newPending.clear();
+        }
+        for (std::size_t i = 0; i < newPending.size(); ++i) {
+            const Property* live = newPendingProps[i].first;
+            const Pending& p = newPending[i].second;
+            std::shared_ptr<Property> copy(live->Copy());
+            copy->setStatusValue(live->getStatus());
+            ValueTask v;
+            v.copy = copy;
+            v.key = newPending[i].first;
+            v.tier = p.tier;
+            v.afterIndex = p.idx;
+            _recorded.insert(v.key);
+            v.captureNow(_config);
+            if (newPendingProps[i].second && v.copy) {
+                v.hashOut = std::make_shared<std::string>();
+                TransactionCopyCache::put(
+                    v.key, {copy, v.hashOut, this, TransactionCopyCache::statusOf(*live)});
+            }
+            tasks.push_back(std::move(v));
+        }
         post([this, t, ops, tasks]() mutable {
             writeValues(tasks, ops);
             _store->append(t, ops);
