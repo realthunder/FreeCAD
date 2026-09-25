@@ -3263,3 +3263,25 @@ implicit transaction, logged, undone and redone; under `DerivedViewWrites`
 none opens) and `pythonObjectValuesAreCapturedOnTheMainThread` (a
 `FeaturePython` Proxy replaced twice; the before value names the first
 class).
+
+### 24.11 Both suites with the log on (2026-09-25)
+
+The gate section 22.1 sets for making the log the default: both suites
+run with `TransactionLog=1` (a fresh `FREECAD_USER_HOME` whose `user.cfg`
+sets it, so no real configuration keeps it). First run: ctest 818/818;
+the Python suite crashed in `CAMTests.TestPathHelix` -- a SIGSEGV in
+`Document::recompute`.
+
+**The defect.** The recompute record (sec 21) was read from
+`topoSortedObjects` *after* the recompute committed its implicit
+transaction. With undo off that commit deletes the transaction, and with
+it any object the transaction owned as removed -- which `topoSortedObjects`
+still pointed at. The record is now read first and the commit follows;
+the rows keep their order. A removal made inside an `execute()` is
+deferred past the recompute's end and lands in an implicit transaction
+logged after the record. Gtest `recomputeRecordSurvivesARemovalWithUndoOff`
+(a Python feature that removes another object when it executes, undo off).
+
+Second run, with the fix: **Python 2904 OK** (50 skipped, 6 expected
+failures -- the log-off numbers) **and ctest 818/818 before the new case**.
+Nothing else broke: the log on is the suites' behaviour too.

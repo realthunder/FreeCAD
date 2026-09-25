@@ -1779,3 +1779,48 @@ TEST_F(TransactionLogTest, pythonObjectValuesAreCapturedOnTheMainThread)
     }
     EXPECT_TRUE(found);
 }
+
+TEST_F(TransactionLogTest, recomputeRecordSurvivesARemovalWithUndoOff)
+{
+    // With undo off the commit at the end of a recompute deletes its
+    // implicit transaction, and with it an object the recompute removed;
+    // the recompute record was read from the recomputed objects after that
+    // commit, a use-after-free the CAM suite crashed on with the log on.
+    doc()->setUndoMode(0);
+    {
+        Base::PyGILStateLocker lock;
+        Base::Interpreter().runString("class TxnLogRemover:\n"
+                                      "    def execute(self, obj):\n"
+                                      "        d = obj.Document\n"
+                                      "        if d.getObject('Temp'):\n"
+                                      "            d.removeObject('Temp')\n");
+    }
+    auto temp = make("Temp");
+    auto remover = doc()->addObject("App::FeaturePython", "Remover");
+    ASSERT_TRUE(temp && remover);
+    {
+        Base::PyGILStateLocker lock;
+        auto proxy = dynamic_cast<App::PropertyPythonObject*>(remover->getPropertyByName("Proxy"));
+        ASSERT_TRUE(proxy);
+        proxy->setValue(Base::Interpreter().runStringObject("TxnLogRemover()"));
+    }
+    doc()->commitTransaction();
+    remover->touch();
+    temp->touch();
+    doc()->recompute();
+    EXPECT_FALSE(doc()->getObject("Temp"));
+    // The record is written and names what was recomputed; the removal,
+    // which a recompute defers past its end, is logged after it.
+    auto& store = log().store();
+    bool record = false, removal = false;
+    for (auto& t : store.transactions()) {
+        if (t.kind == "recompute" && t.script.find("Remover") != std::string::npos)
+            record = true;
+        for (auto& o : store.ops(t.seq)) {
+            if (o.op == "remove" && o.cname == "Temp")
+                removal = record;
+        }
+    }
+    EXPECT_TRUE(record);
+    EXPECT_TRUE(removal);
+}

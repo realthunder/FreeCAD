@@ -5626,7 +5626,9 @@ int Document::recompute(const std::vector<App::DocumentObject*> &objs, bool forc
     if (auto log = getTransactionLog()) {
         // The recompute record (docs/TransactionLog.md sec 11), after the
         // implicit transaction of the derived writes so it follows them.
-        commitImplicitTransaction();
+        // Read before that commit: with undo off the commit deletes the
+        // transaction, and with it any object the recompute removed, which
+        // topoSortedObjects still points at.
         std::vector<TransactionLog::RecomputedObject> done;
         done.reserve(topoSortedObjects.size());
         for (auto obj : topoSortedObjects) {
@@ -5642,6 +5644,7 @@ int Document::recompute(const std::vector<App::DocumentObject*> &objs, bool forc
             }
             done.push_back(std::move(r));
         }
+        commitImplicitTransaction();
         log->onRecompute(done, std::chrono::duration<double>(
                                    std::chrono::steady_clock::now() - recomputeClock).count());
     }
