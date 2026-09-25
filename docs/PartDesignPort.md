@@ -564,7 +564,7 @@ editable; set to 8 deg there and accepted, the pocket stays ThroughAll at
 Each was driven in the GUI through the MCP console on the fork build first,
 fixed, and driven again; `tests/gui/pd-gui-defects.py` (registered as
 `GuiPartDesignDefects_tests_run`, run by hand on Windows) states all of them,
-19 checks, green. The planar half has a headless test as well,
+22 checks, green. The planar half has a headless test as well,
 `TestDatumPlane.testNearlyPlanarBSplineFace`.
 
 | upstream | fork | before | after |
@@ -594,6 +594,18 @@ Found on the way, and fixed:
   colour set on the body, switching its MapFaceColor off whenever the two
   differed in transparency. Both paths are echoes of a change, not settings,
   and one guard stops them.
+- **A body's Transparency did not stick when the Tip maps transparency**
+  (`2942466fae`; the Tip's MapTransparency is a preference, the body's is
+  always on): body and Tip both ended at 0. The forwarding switches the
+  Tip's mapping off first (as it should -- the value set on the body
+  replaces the mapped one), and that change, being the outermost colour
+  update, remapped the body from the Tip's old opaque colours at once; the
+  body's Transparency went back to 0 before it was handed down. Older than
+  the fix above -- the tree before it does the same. The body now holds its
+  colour updates until its change is through, and a remap from the Tip is
+  an echo under the same guard. Checked: all four combinations of the two
+  MapTransparency settings end at 50 on both, and a ShapeColor set on the
+  body still paints the Tip and turns its MapFaceColor off.
 - **The tree move sorts the moved features by their place in the body**, not
   by selection order as upstream's fix does, so a selection made bottom-up
   keeps the order too.
