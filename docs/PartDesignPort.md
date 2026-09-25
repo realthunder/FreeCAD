@@ -706,6 +706,19 @@ checks, green.
 | `5ae67ee2f9` | `0ed2170050` | a polar pattern at -90 deg: clamped to ~0, the occurrences on each other, no error | turns the other way, as Reversed; -360 a full turn; the panel takes -360..360 |
 | `774ec2cc93` | `bdb6096034` | holes on circles and arcs only | on a sketch's points too, as BaseProfileType (upstream's property) chooses; the Hole panel and a preference for new holes |
 | `bd03414893`, `20c01000a1` | `cccbe6cc5c` | Space on a face picked in the view toggled the feature it came from: nothing to see, or that feature shown in place of the Tip | the body; from the tree, still the feature |
+| `acf04c7f1e`, `588f4c3b00`, `003e239daf`, `edb565046d`, `ce91285e4d` (+ test `0fdb02c6eb`) | `b197747496` | holes had ISO and UTS threads only | NPT and BSP pipe threads, BSW and BSF Whitworth; each builds a modelled thread |
+| `07e7918baf` | `108285e65f` | a counterbore or countersink beyond its standard's sizes: the hole + 0.1, 0.1 deep | estimated from the diameter (an M68 counterbore 112 x 74) |
+
+The five thread commits merged three-way without a conflict. One upstream
+bug came with them: the BSP size list had "1 3/8", which the BSP table does
+not, so every BSP size from it on took the next table row ("1 1/2" drilled
+the "1 3/4" core hole) and "6" read past the table; upstream fixed it only
+in passing (`3f58f83f2d`, the lists built from the tables). Removed here,
+and every other type's list checked against its table row by row. The
+rest of the family is deferred: the ISO tyre valves (`551c15b48f`) rest on
+the Hole panel redesign and the clearance enum renames, and the
+closest-designation set (`dc53d3dba2`, `601c0f9b09`, `0dc6cbd16f`,
+`8f2e330a53`) on `3f58f83f2d`.
 
 The spacebar pair is done without upstream's Tree.cpp interception: a
 selection picked in the view names an element and one from the tree does
@@ -742,5 +755,5 @@ Found on the way, and fixed:
   anywhere replaced the reference; the gate also outlived the panel and
   crashed the next selection after its document closed.
 
-TestPartDesignApp 130 OK, TestPartApp 125 OK; the Gui defects test 34
+TestPartDesignApp 133 OK, TestPartApp 125 OK; the Gui defects test 34
 checks, six runs in a row green (it was about one in three failing).
