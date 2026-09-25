@@ -8,9 +8,11 @@ features. **The fixes are triaged** (sec 6): 205 of the 213 `fix` rows
 decided, 37 upstream commits taken or adapted in 33 fork commits, 8 rows
 open. Then six of the deferred rows (sec 6, "Deferred, then taken"); two
 stay deferred. The open fix rows are closed (sec 6), and the 231
-unclassified rows are sorted (sec 7, 2026-09-25): 180 decided, 51 open.
-Next: the small fork defects of sec 7, reproduced first, then the smaller
-features (decision 2).
+unclassified rows are sorted (sec 7, 2026-09-25): 180 decided, 51 open,
+and the App defects among them fixed (sec 7, last table). Next: the Gui
+defects of sec 7 (tree move, loft/pipe delete, edit mode, body
+transparency, the planar tolerance), then the smaller features (decision
+2).
 
 Branch `PartDesignPort` off `SketcherPort` `4fa781fc58`, with `LinkVibe`
 `312b62c995` merged in (section 5). Upstream reference: `upstream/main`
@@ -525,3 +527,32 @@ Fork gaps the agents saw that no upstream commit names:
   has its own flow, so an upstream SketchWorkflow fix is judged against that.
 - There is no `tests/src/Mod/PartDesign`; upstream's C++ PD tests would be
   rewritten in Python or given a directory.
+
+### The App defects, reproduced and fixed (2026-09-25)
+
+Each was run on the fork build first (FreeCADCmd probe scripts), fixed, and
+run again on the fixed build; each commit carries a test that states it.
+
+| upstream | fork | before | after |
+|---|---|---|---|
+| `b0331ed979` | `d82ab6486c` | polar pattern about a sketch edge: "gp_Dir() - input vector has zero norm" | turns about the edge (line or circle) |
+| `7d10f5ed73` | `d343e32098` | a plane with no subname: "No mirror plane reference specified" | mirrors; an OCCT failure in any pattern is its error now |
+| `194ec0820c` | `d343e32098` | pad up to an LCS plane at z = 20: "Must not intersect sketch"; Mirrored across it mirrored across the global XY | z[0,20]; mirrors where the plane is, turned LCS too |
+| `fa0702956c` | `9ff96e7a4a` | Occurrences 3 -> 5 left Offset 20 (for 10); at 1, Offset inf | follows; one occurrence counts one gap |
+| `7a672a3207` | `0e78b5e2ce` | hole with no circle: body volume 0, hole up to date | the hole fails, the body keeps 4000 |
+| `a76adf48a9`, `5a47138994` | `92f4f5a247` | Fillet/Chamfer/Thickness/Draft of a Part box: "Missing container body" | all four, at the box (x = 100) |
+| `d52260b2f4`, `6d238a93e1` | `8b6d45184b` | tapered pocket switched to ThroughAll cut 5 mm of 30 (545 mm^3) | through all (4850, the frustum); taper editable, offset hidden |
+| `0c59bfc718` | `66b466eae9` | closed loft of one section: volume 0, up to date | as open (653.3) |
+
+`makePlnFromPlane()` is the shared cause of the LCS rows: an up-to face and
+a Draft neutral plane both go through it, and Mirrored had a copy of it. The
+dress-up placement is fixed once in `positionByBaseFeature()`, which all four
+dress-ups call; upstream fixed Thickness alone. `a2c5788a98` was not
+reproduced: a subtractive pipe of two loops does make one invalid solid of two
+shells as its tool, but the pipe and a linear pattern of it, additive or
+subtractive, give the right volumes, so it is declined until it fails.
+
+TestPartDesignApp 113 OK (nine new), TestPartApp 125 OK, the whole Python
+suite 2939 OK (50 skipped, 6 expected failures). The panel half of
+`8b6d45184b` (the pocket's ThroughAll fields) is built but not yet driven in
+the GUI.
