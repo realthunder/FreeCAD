@@ -309,6 +309,15 @@ fc_add_gui_test(GuiSketchPointMarkersMode3_tests_run
                 sketch-point-markers-mode3.py
                 --timeout 180)
 
+# A sketch's highlight edits reach the nodes' notification: the point
+# coordinates' startEditing() was never finished, and the SelectedCurveSet
+# was silenced for good by an enableNotify(false) meant for its sibling.
+# Mode 3 reuses a vertex cache while the node id stands; both were hidden
+# only by the shared material's own notification in the same pass.
+fc_add_gui_test(GuiSketchHighlightNotify_tests_run
+                sketch-highlight-notify.py
+                --timeout 180)
+
 # An SoImage is drawn pixel for pixel in mode 3, as glDrawPixels does. The
 # backend's textured quad sat wherever the anchor projected, and half a
 # pixel off the filter spread each texel over two pixels: a Sketcher

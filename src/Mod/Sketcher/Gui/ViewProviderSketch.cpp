@@ -3993,8 +3993,10 @@ void ViewProviderSketch::updateColor(void)
     int vcount = 0;
 
 
+    // Rebuilt index by index below: silent until done, then one notification
+    // each at the end.
     edit->SelectedCurveSet->enableNotify(false);
-    edit->SelectedCurveSet->enableNotify(false);
+    edit->PreSelectedCurveSet->enableNotify(false);
     edit->SelectedCurveSet->coordIndex.setNum(0);
     edit->SelectedCurveSet->materialIndex.setNum(0);
     edit->PreSelectedCurveSet->coordIndex.setNum(0);
@@ -4338,12 +4340,17 @@ void ViewProviderSketch::updateColor(void)
         edit->SelectedCurveSet->coordIndex.setNum(count - 1); // trim the last -1 index
     if (int count = edit->PreSelectedCurveSet->coordIndex.getNum())
         edit->PreSelectedCurveSet->coordIndex.setNum(count - 1); // trim the last -1 index
+    edit->SelectedCurveSet->enableNotify(true);
+    edit->PreSelectedCurveSet->enableNotify(true);
+    edit->SelectedCurveSet->touch();
+    edit->PreSelectedCurveSet->touch();
 
     // end editing
     edit->CurvesMaterials->diffuseColor.finishEditing();
     edit->PointsMaterials->diffuseColor.finishEditing();
     edit->RootCrossMaterials->diffuseColor.finishEditing();
     edit->CurvesCoordinate->point.finishEditing();
+    edit->PointsCoordinate->point.finishEditing();
 }
 
 bool ViewProviderSketch::isPointOnSketch(const SoPickedPoint *pp) const
