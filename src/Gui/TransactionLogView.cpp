@@ -47,6 +47,8 @@
 # include <QStackedWidget>
 # include <QStandardItemModel>
 # include <QTabWidget>
+# include <QScrollBar>
+# include <QTreeView>
 # include <QTreeWidget>
 # include <QVBoxLayout>
 #endif
@@ -170,7 +172,9 @@ public:
 
     QSize sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const override
     {
-        QSize size = QStyledItemDelegate::sizeHint(option, index);
+        // As tall as the list's rows, which carry text: the two views are
+        // scrolled together and a row must sit level in both.
+        QSize size = QStyledItemDelegate::sizeHint(option, index.sibling(index.row(), TxnSeq));
         int width = LaneMargin * 2 + _layout.lanes * LaneWidth;
         if (auto row = rowOf(index)) {
             for (const auto& h : row->heads)
@@ -320,12 +324,50 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     // a transaction, the manifest of a version. The value pane serves both.
     _tabs = new QTabWidget(splitter);
     _tabs->setDocumentMode(true);
-    _transactions = new QTreeWidget(_tabs);
-    _tabs->addTab(_transactions, tr("Transactions"));
+    // The graph and the list side by side: the graph a pane of its own, so
+    // lanes and labels scroll sideways without moving the list, and the
+    // splitter sizes it or folds it away.
+    auto txnSplitter = new QSplitter(Qt::Horizontal, _tabs);
+    _tabs->addTab(txnSplitter, tr("Transactions"));
+    _graphView = new QTreeView(txnSplitter);
+    _transactions = new QTreeWidget(txnSplitter);
     _transactions->setColumnCount(TxnColumns);
     _transactions->setHeaderLabels({tr("Graph"), tr("Seq"), tr("Kind"), tr("Origin"), tr("Name"),
                                     tr("Time"), tr("Parent"), tr("Inverts"), tr("Branch")});
-    _transactions->setItemDelegateForColumn(TxnGraph, new GraphDelegate(*_graph, _transactions));
+    _transactions->hideColumn(TxnGraph);
+    _graphView->setModel(_transactions->model());
+    _graphView->setSelectionModel(_transactions->selectionModel());
+    _graphView->setItemDelegateForColumn(TxnGraph, new GraphDelegate(*_graph, _graphView));
+    for (int c = 0; c < TxnColumns; ++c)
+        _graphView->setColumnHidden(c, c != TxnGraph);
+    _graphView->setRootIsDecorated(false);
+    _graphView->setAlternatingRowColors(true);
+    _graphView->setUniformRowHeights(true);
+    _graphView->setSelectionMode(QAbstractItemView::SingleSelection);
+    _graphView->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    _graphView->setContextMenuPolicy(Qt::CustomContextMenu);
+    _graphView->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
+    _graphView->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    _graphView->header()->setStretchLastSection(false);
+    _graphView->header()->setSectionResizeMode(TxnGraph, QHeaderView::ResizeToContents);
+    // The list's horizontal bar is kept, so the two viewports are the same
+    // height and a row sits level in both.
+    _transactions->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
+    _graphView->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
+    connect(_transactions->verticalScrollBar(), &QScrollBar::valueChanged,
+            _graphView->verticalScrollBar(), &QScrollBar::setValue);
+    connect(_graphView->verticalScrollBar(), &QScrollBar::valueChanged,
+            _transactions->verticalScrollBar(), &QScrollBar::setValue);
+    connect(_graphView, &QWidget::customContextMenuRequested, this, [this](const QPoint& pos) {
+        const QModelIndex index = _graphView->indexAt(pos);
+        if (index.isValid())
+            transactionMenu(_transactions->topLevelItem(index.row()),
+                            _graphView->viewport()->mapToGlobal(pos));
+    });
+    txnSplitter->setChildrenCollapsible(true);
+    txnSplitter->setStretchFactor(0, 0);
+    txnSplitter->setStretchFactor(1, 1);
+    txnSplitter->setSizes({180, 900});
     _transactions->setRootIsDecorated(false);
     _transactions->setAlternatingRowColors(true);
     _transactions->setUniformRowHeights(true);
@@ -868,6 +910,7 @@ void TransactionLogView::applyVisibility()
         if (match && _hideRecords->isChecked())
             match = !item->data(TxnKind, RoleRecord).toBool();
         item->setHidden(!match);
+        _graphView->setRowHidden(i, QModelIndex(), !match);
     }
     layoutGraph();
 }
@@ -1001,8 +1044,9 @@ void TransactionLogView::layoutGraph()
         layout.lanes = std::max<int>(layout.lanes, static_cast<int>(waiting.size()));
         layout.rows.emplace(seq, std::move(row));
     }
-    _transactions->resizeColumnToContents(TxnGraph);
-    _transactions->viewport()->update();
+    _graphView->resizeColumnToContents(TxnGraph);
+    _graphView->viewport()->update();
+    _graphView->verticalScrollBar()->setValue(_transactions->verticalScrollBar()->value());
 }
 
 void TransactionLogView::refreshBranches()
@@ -1164,7 +1208,11 @@ void TransactionLogView::onSnapshot()
 
 void TransactionLogView::onTransactionContextMenu(const QPoint& pos)
 {
-    auto item = _transactions->itemAt(pos);
+    transactionMenu(_transactions->itemAt(pos), _transactions->viewport()->mapToGlobal(pos));
+}
+
+void TransactionLogView::transactionMenu(QTreeWidgetItem* item, const QPoint& global)
+{
     if (!item)
         return;
     QMenu menu(this);
@@ -1185,7 +1233,7 @@ void TransactionLogView::onTransactionContextMenu(const QPoint& pos)
     auto branchHere = menu.addAction(tr("Branch from here..."));
     branchHere->setToolTip(tr("A new branch whose history ends at this row, switched to (sec 26)"));
     branchHere->setEnabled(_doc != nullptr);
-    auto chosen = menu.exec(_transactions->viewport()->mapToGlobal(pos));
+    auto chosen = menu.exec(global);
     if (chosen == branchHere) {
         createBranch(0, seq);
         return;

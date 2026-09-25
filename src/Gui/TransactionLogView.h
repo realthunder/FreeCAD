@@ -40,6 +40,7 @@ class QPlainTextEdit;
 class QPushButton;
 class QStackedWidget;
 class QTabWidget;
+class QTreeView;
 class QTreeWidget;
 class QTreeWidgetItem;
 
@@ -92,6 +93,8 @@ private Q_SLOTS:
     void applyVisibility();
     /// Lay the graph out over the rows shown (docs/TransactionLog.md sec 26).
     void layoutGraph();
+    /// The transaction row's context menu, at `global`.
+    void transactionMenu(QTreeWidgetItem* item, const QPoint& global);
 
 protected:
     void showEvent(QShowEvent*) override;
@@ -144,6 +147,9 @@ private:
     QTabWidget* _tabs {nullptr};
     QStackedWidget* _detail {nullptr};
     QTreeWidget* _transactions {nullptr};
+    /// The graph, a pane of its own beside the list (sec 26.7): a second
+    /// view on the list's model and selection, scrolled with it.
+    QTreeView* _graphView {nullptr};
     QTreeWidget* _ops {nullptr};
     QTreeWidget* _versions {nullptr};
     QTreeWidget* _manifest {nullptr};

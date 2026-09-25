@@ -4008,8 +4008,16 @@ leaves only the changes. Labels right of the lanes, as git shows refs:
 each branch's head on its nearest shown row (the current one bold; in the
 single-branch view only its own, since another's would slide down to the
 fork and read as ending there), and each version as `vN name` on the row
-it was taken at. The Gui check verifies the order; the layout is looked at
-in screenshots.
+it was taken at. The graph is a pane of its own left of the list, in a
+splitter (user, 2026-09-25): a second view on the list's model and
+selection, showing only the graph column, with its own horizontal scroll
+so lanes and labels can outgrow it without moving the list, and folded
+away by dragging the splitter shut. The two scroll together vertically,
+rows are the list's height (the delegate sizes a row from a text cell),
+both keep a horizontal bar so their viewports are the same height, hidden
+rows are mirrored, and the graph's right-click is the list's menu. The Gui
+check verifies the order, the pane, and that each scrolls the other; the
+drawing itself is looked at in screenshots.
 
 A switch commits nothing, so none of the panel's refresh triggers fired.
 `App::Document::signalSwitchBranch` is emitted after a switch and after a

@@ -125,6 +125,26 @@ def run():
             seqs = [int(tree.topLevelItem(i).text(column(tree, "Seq")))
                     for i in range(tree.topLevelItemCount())]
             check("panel: newest first", seqs == sorted(seqs, reverse=True))
+            # The graph is a pane of its own, scrolled with the list.
+            graph = [v for v in dock.findChildren(QtWidgets.QTreeView)
+                     if not isinstance(v, QtWidgets.QTreeWidget)]
+            check("panel: graph pane", len(graph) == 1)
+            if graph:
+                g = graph[0]
+                g.parentWidget().setSizes([150, 400])
+                # Short enough that the list has to scroll.
+                if isinstance(dock.parentWidget(), QtWidgets.QDockWidget):
+                    dock.parentWidget().resize(700, 250)
+                settle()
+                bar = tree.verticalScrollBar()
+                bar.setValue(bar.maximum())
+                settle()
+                check("graph pane follows the list (%d/%d)"
+                      % (g.verticalScrollBar().value(), bar.value()),
+                      bar.maximum() > 0 and g.verticalScrollBar().value() == bar.value())
+                g.verticalScrollBar().setValue(0)
+                settle()
+                check("list follows the graph pane", bar.value() == 0)
             shown = [tree.topLevelItem(i) for i in range(tree.topLevelItemCount())]
             scol = column(tree, "Seq")
             visible = [i.text(scol) for i in shown if not i.isHidden()]
