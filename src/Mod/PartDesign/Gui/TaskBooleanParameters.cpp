@@ -42,6 +42,7 @@
 #include <Gui/BitmapFactory.h>
 #include <Gui/Command.h>
 #include <Gui/MainWindow.h>
+#include <Gui/Tools.h>
 #include <Gui/WaitCursor.h>
 #include <Mod/PartDesign/App/FeatureBoolean.h>
 #include <Mod/PartDesign/App/ShapeBinder.h>
@@ -101,7 +102,7 @@ TaskBooleanParameters::TaskBooleanParameters(ViewProviderBoolean *BooleanView,QW
 
     // Create context menu
     QAction* action = new QAction(tr("Remove"), this);
-    action->setShortcut(QKeySequence::Delete);
+    action->setShortcut(Gui::QtTools::deleteKeySequence());
 #if QT_VERSION >= QT_VERSION_CHECK(5, 10, 0)
     // display shortcut behind the context menu entry
     action->setShortcutVisibleInContextMenu(true);
@@ -153,7 +154,7 @@ bool TaskBooleanParameters::eventFilter(QObject *watched, QEvent *event) {
         case QEvent::KeyPress: {
             QKeyEvent * kevent = static_cast<QKeyEvent*>(event);
             if (kevent->modifiers() == Qt::NoModifier) {
-                if (kevent->key() == Qt::Key_Delete) {
+                if (kevent->matches(Gui::QtTools::deleteKeySequence())) {
                     kevent->accept();
                     if (event->type() == QEvent::KeyPress)
                         onButtonRemove();

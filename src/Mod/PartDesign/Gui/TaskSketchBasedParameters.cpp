@@ -53,6 +53,7 @@
 #include <Gui/MainWindow.h>
 #include <Gui/MetaTypes.h>
 #include <Gui/PrefWidgets.h>
+#include <Gui/Tools.h>
 
 #include <Mod/Part/App/DatumFeature.h>
 #include <Mod/Part/App/FeatureOffset.h>
@@ -255,7 +256,7 @@ LinkSubWidget::LinkSubWidget(TaskSketchBasedParameters *parent,
     setListWidgetHeight(listWidget->horizontalScrollBar()->isVisible());
 
     QAction* remove = new QAction(tr("Remove"), this);
-    remove->setShortcut(QKeySequence::Delete);
+    remove->setShortcut(Gui::QtTools::deleteKeySequence());
     listWidget->addAction(remove);
     listWidget->setContextMenuPolicy(Qt::ActionsContextMenu);
     QObject::connect(remove, &QAction::triggered, [this](){onDelete();});
@@ -392,7 +393,7 @@ bool LinkSubWidget::eventFilter(QObject *o, QEvent *ev)
     case QEvent::KeyPress: {
         QKeyEvent * kevent = static_cast<QKeyEvent*>(ev);
         if (o == listWidget && kevent->modifiers() == Qt::NoModifier) {
-            if (kevent->key() == Qt::Key_Delete) {
+            if (kevent->matches(Gui::QtTools::deleteKeySequence())) {
                 kevent->accept();
                 if (ev->type() == QEvent::KeyPress)
                     onDelete();
@@ -585,7 +586,7 @@ LinkSubListWidget::LinkSubListWidget(TaskSketchBasedParameters *parent,
     QObject::connect(listWidget->model(), &QAbstractItemModel::rowsMoved, [this](){onItemMoved();});
 
     QAction* remove = new QAction(tr("Remove"), this);
-    remove->setShortcut(QKeySequence::Delete);
+    remove->setShortcut(Gui::QtTools::deleteKeySequence());
     listWidget->addAction(remove);
     listWidget->setContextMenuPolicy(Qt::ActionsContextMenu);
     QObject::connect(remove, &QAction::triggered, [this](){onDelete();});
@@ -839,7 +840,7 @@ bool LinkSubListWidget::eventFilter(QObject *o, QEvent *ev)
     case QEvent::KeyPress: {
         QKeyEvent * kevent = static_cast<QKeyEvent*>(ev);
         if (o == listWidget && kevent->modifiers() == Qt::NoModifier) {
-            if (kevent->key() == Qt::Key_Delete) {
+            if (kevent->matches(Gui::QtTools::deleteKeySequence())) {
                 kevent->accept();
                 if (ev->type() == QEvent::KeyPress)
                     onDelete();

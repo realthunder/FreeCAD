@@ -35,6 +35,7 @@
 #include <Gui/CommandT.h>
 #include <Gui/Document.h>
 #include <Gui/Selection.h>
+#include <Gui/Tools.h>
 #include <Gui/Widgets.h>
 
 #include <Mod/Part/App/PartFeature.h>
@@ -128,7 +129,7 @@ void TaskShapeBinder::setupContextMenu()
 {
     // Create context menu
     QAction* remove = new QAction(tr("Remove"), this);
-    remove->setShortcut(QKeySequence::Delete);
+    remove->setShortcut(Gui::QtTools::deleteKeySequence());
     remove->setShortcutContext(Qt::WidgetShortcut);
 #if QT_VERSION >= QT_VERSION_CHECK(5, 10, 0)
     // display shortcut behind the context menu entry
