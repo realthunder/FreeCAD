@@ -31,7 +31,7 @@ Upstream's `f4665aa7b5` ("Core: support multiple active transactions") was
 evaluated and **declined**; `docs/TransactionLog.md` records why, and the
 direction the user wants instead.
 
-**Where the ledger stands (2026-09-25).** 1149 rows, of which 283 are open
+**Where the ledger stands (2026-09-25).** 1149 rows, of which 299 are open
 and undecided, down from 503 over three sessions of reading blobs rather
 than commits. First the 33 files the handler resyncs touched: 21 are
 identical to upstream's tip modulo whitespace, closing 74 rows at once
@@ -2685,6 +2685,34 @@ the pixel.
 
 Guarded by `tests/gui/sketch-preselection-upstream.py`
 (`GuiSketchPreselectionUpstream_tests_run`), upstream's file in mode 3.
+
+### Double click and cancel (session 96): 31 -> 48, after reopening 20
+
+| row | verdict |
+|---|---|
+| `6db820a580`, `a9bff78974` | **adapted** `2239784e9b`. Ledgered `have(sync)`, but ABSENT: a double click on an edge only logged. Now it selects the wire the edge is part of, on the release (a new `STATUS_SELECT_Wire`, as upstream), and a second one deselects it. Upstream rescans every remaining edge after each one it joins; here endpoints are bucketed by position and the wire walked once |
+| `0b1187b2cd` | **adapted** `2239784e9b`: external edges join the wire |
+| `321a782eff` | **adapted** `5cf7e29e3b`. Double clicking the sketch in edit set its edit again, which dropped the selection; it now aligns the view |
+| `189d86ee53` | **adapted** `494cb6f23f`, `7630034293`. Ok/Cancel in place of Close, `Sketcher_CancelSketch`, a Leave drop-down on the edit tool bar. Cancel reverts by **undo** to where the history stood when the edit began (user ruling), so it can be redone; upstream restores a copy taken on entry. The history keeps `MaxUndoSize` (20) steps, so for a longer edit, or with undo off, the copy is restored instead, in one "Cancel sketch editing" step (user ruling). The copy costs 11 ms on the largest corpus sketch. Not taken: the panel's widget reorder, and the `Base/Reader.cpp` change only upstream's restore needs |
+| `facca5c426` | **adapted** `494cb6f23f`: Esc presses Ok, through the new `TaskDialog::roleOnEscape` |
+| `8d3c8076b2` | **superseded**: upstream reverted it in `facca5c426` |
+
+Guarded by `tests/gui/sketch-double-click.py` (3 of 6 fail before) and
+`tests/gui/sketch-cancel-edit.py` (11 checks).
+
+**`have(sync)` is wrong for `Gui/ViewProviderSketch.cpp`.** The status
+means "every file it touches was synced and it predates that file's
+baseline", but the fork kept its own view provider. Of the 28 rows so
+marked, the lines each one added were looked for in the fork's file
+(whitespace aside): 6 are there (88-100%: `0bef2e927b`, `e135f68e8a`,
+`4ca8e3b283`, `33abd923b3`, `b64e3e750f`, `b9db90ea20`) and stay; 2 are
+taken above; the other 20 are reopened as `open`, undecided -- 18 with
+0-30% of their lines here (`4164919e58`, `a38e73135e`, `9961f2949a`,
+`7075e3c1d5`, `e7c11a01be`, `5c7d287f6b`, `8def94e6f8`, `22a98d81f0`,
+`a1487106ab`, `5f74b4b299`, `e260cf5c8a`, `3da4b59b37`, `fd28d94f6a`,
+`fbd7f7090c`, `1eb8496aae`, `738a044f3c`, `7f984811e8`, `fa61131590`),
+and the compiler-warning pair `51a01b9e2b`, `d92267c6a7`. Absent lines may
+still be a change the fork made its own way; that is the triage.
 
 
 **Harness notes.** `Constraint.LabelDistance` is read-only from Python,
