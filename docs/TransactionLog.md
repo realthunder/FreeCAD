@@ -3549,3 +3549,154 @@ commit or two) and, on a power loss, the last SQL transactions WAL with
 5. **7.e** The Gui: the recovery dialog finds log-on directories;
    AutoSaver stands aside for log-on documents; a GUI check that kills a
    process mid-session and recovers it.
+
+### 25.6 7.a and 7.b as built (2026-09-25)
+
+**7.a, streaming.** `TransactionLog::onCommit` copies, on the main thread,
+the live value behind every after ref the commit would have left pending
+-- the sets of a `create`, of an added dynamic property, and of a changed
+property -- and hands the copies to the same job as the transaction's
+before values; `ValueTask::afterIndex` fills the op's `vafter` before the
+rows are appended, so the transaction's rows and all its values are one
+SQL transaction and one flush of the blob store, and the op's before is
+superseded by its after there and then (23.2). `_pending` stays empty
+after a commit; `resolvePending()` remains for what a commit does not
+cover. `FC_TXNLOG_NO_STREAM` restores the old behaviour, for measuring.
+
+The copy of a changed property is kept in `App::TransactionCopyCache`
+(`Transactions.h`), keyed by property id, with the hash the worker wrote
+it under and the live status at commit (`Touched` cleared).
+`TransactionObject::setProperty` takes it for the first write after the
+commit when the type and status still match, as its undo before value,
+and the worker then reuses the hash instead of serialising the value
+again; `Property::aboutToSetValue` drops what is left once the write's
+recording is done, and `~Property` drops a gone property's. A version
+(save, snapshot, restore) drops the log's entries: after it a fresh copy
+of a shape names its blob, where a kept one carries the exported bytes,
+and the first edit after a save should log the small reference.
+
+Five defects the first runs found, all fixed:
+
+- **The copy's status was read.** `Property::getStatus()` is virtual in
+  effect -- a link's reads `isTouched()`, which reads the linked objects
+  -- and a detached copy does not keep those alive: a SIGSEGV in
+  `SketcherTests` (`delExternal`). The status compared is now the live
+  property's, recorded at commit; nothing asks the copy.
+- **Copies died on the worker.** A copy of an expression engine is a
+  `PropertyExpressionContainer`, which registers itself in a list the
+  main thread walks (`slotRelabelDocument`); releasing the last share on
+  the worker raced it ("pure virtual method called", SIGABRT). The
+  worker now retires every copy it has written to `_retired`, and the
+  main thread releases them at its next post or flush. The race existed
+  before for a transaction trimmed while its copies were queued; streaming
+  made it common, because a create's after copies are the job's alone.
+- **The directory went before the log.** `~Document` shut the blob store
+  down and deleted the transient directory, and only then destroyed the
+  log, whose queue a commit's values now often still fill: segments were
+  written into a deleted directory ("Blob store: cannot write
+  .../seg-1.1"). The log is now ended first (`noLog` set, so nothing
+  makes another).
+- **A flush held the GIL.** That failure hung the Python suite: `~Document`
+  holds the GIL around the log's end, the worker's `FC_ERR` went to the
+  console, which `FreeCADCmd` redirects to Python, and the main thread
+  waited for the worker while holding what the worker waited for.
+  `TransactionLog::flush()` now releases the GIL while it waits, since any
+  message from the worker could meet a flush called from Python.
+- **The process ended under the worker.** A process may end with documents
+  open (the Part gtests never close theirs); no `~TransactionLog` runs
+  then, and a worker still exporting a shape met OCCT's statics being
+  destroyed -- a SIGSEGV in `GeomTools_CurveSet::PrintCurve` after the
+  tests passed. Every log registers itself (`liveLogs`), and an `atexit`
+  handler, registered with the first log and so run before the
+  destructors of the libraries loaded earlier, drains and joins every
+  worker; a stopped log drops what is posted after.
+
+**The check.** `FC_TXNLOG_CHECK_COPIES` compares every adopted copy with
+the live property and reports `stale log copy of ...` when both `isSame`
+and `isSameContent` say they differ -- a write that escaped
+`aboutToSetValue` (23.6), which an adopted copy would otherwise turn into
+an undo that restores the value before the escape. Links are not
+compared (`isSame` reads their targets). `isSame` alone gave four false
+reports: `PropertyPath::isSame` answers false always, and
+`PropertyTopoShapeList::Copy` deep-copies its shapes (it also leaked a
+`TopoDS_Shape` per shape per copy; fixed).
+
+**Measured** (this box, `FreeCADCmd`, log on, median of 10 edits after 2,
+two runs each): moving one vertex of a 1000-line sketch, the write that
+takes the undo copy went from 10.0-10.3 ms to 8.9 ms and the commit from
+3.3 ms to 4.1-4.4 ms -- the copy moved from the next edit to the commit,
+and the edit cycle is unchanged at about 13 ms. A `Box.Length` edit: 0.8
+ms either way.
+
+**7.b, the cadence.** `TransactionLogSnapshotTransactions` defaults to 200.
+`TransactionLogSnapshotSeconds` is gone; the time rule is the autosave
+interval, `AutoSaveEnabled` and `AutoSaveTimeout` (minutes, 15), now in
+`DocumentParams` beside the Gui's reading of the same keys. The clock
+starts when the document's log is made, so a document never saved or
+opened gets versions too.
+
+### 25.7 7.c and 7.d as built (2026-09-25)
+
+**7.d, the blob store's sweep.** `FileBlobManager::recoverStore()` reads
+what a crashed session left in the blob directory: per segment number the
+newest generation whose central directory opens (`BlobArchive` throws on
+one that does not) is kept, older generations and files cut short are
+deleted, and names no writer of this store makes (`.tmp` of older builds)
+too; `_segments` and `_where` are rebuilt with the highest number winning
+a hash seen twice; loose files are hashed. Nothing is live then:
+`recovered(hash)` hands back a handle -- packed, on the segment that holds
+it, or the loose file -- and `endRecovery()` deletes the loose files
+nobody took and schedules maintenance, whose first pass deletes a segment
+with nothing live and rewrites one mostly dead. Gtest
+`blobStoreRecoversALeftoverDirectory` (two generations of one segment, a
+segment cut in half, a loose file).
+
+**7.c, the document.** `Application::recoverDocument(transientDir)`
+(Python `FreeCAD.recoverDocument`) reads the label and file name the log
+keeps in `meta` (`TransactionLog::noteIdentity`, written when the log is
+made and whenever `Label` or `FileName` changes), makes a new document
+under them with undo on -- the history carries on whatever a new document
+gets -- and calls `Document::recoverFromLog`:
+
+1. `TransactionLog::recover` moves `history/log.db` in with its WAL (the
+   rows committed and not checkpointed), moves the blob files in and runs
+   the sweep, takes a handle on every blob the log names, closes the
+   sessions the crashed process left open and opens its own.
+2. The anchor is the newest version: materialised into the old directory
+   -- the restore renames this document's -- and restored as an open reads
+   a file, with the log's own snapshot of it suppressed (`checkingOut`).
+   With no version the document starts empty; every object's create is in
+   the log.
+3. `_replayLog` folds the rows after the anchor's seq into the end state --
+   objects by id with name and type, dynamic properties with their
+   metadata, the newest after value of each property -- and applies it in
+   the passes of a cold undo, forward: create, add and remove dynamic
+   properties, restore the values, set the touched state, remove. The
+   touched state is the session's: an object a recompute record names
+   after its last input change is purged of the touches the restored
+   inputs made, and one edited since, or whose derived values the log did
+   not keep, is touched. A derived write alone proves nothing -- a
+   primitive rewrites its shape as its input changes and stays touched
+   (20.3) -- so only the record counts. A row with a non-derived set whose after
+   never reached the log (not a removal's) ends the replay before it.
+   Nothing written is a transaction (`DocumentP::replaying` makes
+   `transactionsWanted()` false).
+4. `_rebuildUndoFromLog` gives the undo and redo stacks the session had,
+   as cold stubs: a row with ops is a step and clears redo; an `undo` row
+   naming the undo top moves it to redo under the undo row's seq, a `redo`
+   row naming the redo top moves it back; a selective undo is a step.
+5. A `recover` row records the source, the anchor, the rows replayed and
+   the crashed sessions; `endRecovery()` runs; the old directory goes.
+
+Gtests `recoversACrashedSessionFromItsLog` (an anchor snapshot, then a
+set, a create with a dynamic property, a create and a remove, an undo:
+values, ids, the dynamic property, the removed object, both stacks, redo
+and two undos across the crash) and `recoversShapesFromTheLeftoverStore`
+(Part: a saved box as the anchor, a length change and a new cylinder in
+the tail, the box's height edited and not recomputed; shapes read back
+from the pack store, the cylinder clean and the box touched).
+
+**Suites.** Python 2911 OK and ctest 825/825, with the log on (`-j1`,
+`FC_TXNLOG_CHECK_COPIES` set: no stale copy, no crash) and off; run
+before the touched-state rule above, which only recovery reaches, and
+which the 46 log gtests cover.
