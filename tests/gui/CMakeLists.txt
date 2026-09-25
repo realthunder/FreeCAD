@@ -349,6 +349,13 @@ fc_add_gui_test(GuiSketchBoxSelection_tests_run
                 sketch-box-selection.py
                 --timeout 300)
 
+# A box selection under a selection gate takes what the gate allows and
+# leaves the rest out quietly, not one refusal message and beep per face or
+# edge it turned away (upstream a5bf17b144).
+fc_add_gui_test(GuiBoxSelectionGate_tests_run
+                box-selection-gate.py
+                --timeout 300)
+
 # A sketch edited with the "Editing workbench" preference cleared never
 # builds the Sketcher toolbars, so its commands have no action -- and
 # Sketcher_Snap's icon swap dereferenced that null from isActive().

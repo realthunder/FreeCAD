@@ -1265,6 +1265,10 @@ bool SelectionSingleton::addSelection(const char* pDocName, const char* pObjectN
         const char *subelement = nullptr;
         auto pObject = getObjectOfType(temp,App::DocumentObject::getClassTypeId(),gateResolve,&subelement);
         if (!ActiveGate->allow(pObject?pObject->getDocument():temp.pDoc,pObject,subelement)) {
+            if (gateQuiet) {
+                ActiveGate->notAllowedReason.clear();
+                return false;
+            }
             if (getMainWindow()) {
                 QString msg;
                 if (ActiveGate->notAllowedReason.length() > 0) {
@@ -1494,6 +1498,9 @@ int SelectionSingleton::addSelections(const std::vector<App::SubObjectT> &objs, 
     int count = 0;
     SelectionPauseNotification guard;
     SelectionLogDisabler disabler(true);
+    // A batch is a box or a select-all, not a click: what the gate turns
+    // away is simply left out (upstream a5bf17b144).
+    Base::StateLocker quiet(gateQuiet, true);
     for (const auto &objT : objs) {
         if (addSelection(objT, clearPreselect))
             ++count;

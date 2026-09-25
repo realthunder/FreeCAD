@@ -1007,6 +1007,10 @@ protected:
 
     Gui::SelectionGate *ActiveGate;
     ResolveMode gateResolve;
+    // Set while addSelections() adds a batch: an element the gate refuses
+    // is skipped quietly -- a box over a part would otherwise beep, post
+    // and set the forbidden cursor once per face or edge it turns away.
+    bool gateQuiet = false;
 
     int logDisabled = 0;
     bool logHasSelection = false;

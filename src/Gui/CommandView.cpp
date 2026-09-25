@@ -3716,11 +3716,15 @@ static void selectionCallback(void * ud, SoEventCallback * cb)
 
         auto picked = view->getPickedList(points, center, selectElement, backFaceCull,
                                         currentSelection, unselect, false);
-        for (auto &objT : picked) {
-            if (unselect)
+        if (unselect) {
+            for (auto &objT : picked)
                 Selection().rmvSelection(objT);
-            else
-                Selection().addSelection(objT);
+        }
+        else {
+            // One batch: observers hear it once, and what a selection
+            // gate turns away is left out quietly instead of being
+            // reported element by element (upstream a5bf17b144).
+            Selection().addSelections(picked);
         }
     }
 
