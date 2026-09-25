@@ -343,7 +343,8 @@ fc_add_gui_test(GuiSketchUndoDuringDrag_tests_run
 
 # What a box selection in a sketch edit leaves behind: construction lines
 # still drawn as such (upstream 9bff63e38d), and no context menu from the
-# right press that cancels one (39329e547f, e469eb5ccb).
+# right press that cancels one (39329e547f, e469eb5ccb), and the box drawn
+# in the colour of the kind of selection it makes (7b85239093).
 fc_add_gui_test(GuiSketchBoxSelection_tests_run
                 sketch-box-selection.py
                 --timeout 300)

@@ -18,6 +18,11 @@ Upstream's box-selection family, as it applies to the fork:
     plain right click on nothing, before and after, still opens it --
     the control that the popup is detected at all. A context menu's
     exec() is modal, so a timer closes any popup and records it.
+  - 7b85239093: the box is drawn blue and solid left to right (a window
+    selection: what it contains) and green and dashed right to left (a
+    touch selection: what it crosses), from the theme's style
+    parameters. Counted in the viewport's pixels mid-drag; the fork's
+    box was white both ways.
 
 The desktop is driven with synthetic mouse events on the viewer, which
 reach the sketch's rubber band (tests/gui/sketch-bulk-selection.py does
@@ -44,8 +49,8 @@ DOC = "SketchBoxSelection"
 # both axes.
 L_START = (-20.0, 10.0)
 L_END = (-5.0, 18.0)
-EMPTY_A = (5.0, -5.0)
-EMPTY_B = (15.0, -15.0)
+EMPTY_A = (-25.0, 1.5)
+EMPTY_B = (-12.0, 6.0)
 # ViewProviderSketch::CurveDraftColor, the construction colour
 DRAFT = (0.0, 0.0, 0.86)
 
@@ -96,8 +101,9 @@ def mouse(w, typ, pos, button, buttons):
     settle()
 
 
-def box(w, corner_a, corner_b):
-    """A left-button box between two sketch points; released."""
+def box(w, corner_a, corner_b, while_held=None):
+    """A left-button box between two sketch points; released. while_held,
+    if given, runs with the box drawn and the button still down."""
     # Past the double-click interval since the last click, or the press
     # can be taken as the second click of a double click.
     settle(0.8)
@@ -108,8 +114,29 @@ def box(w, corner_a, corner_b):
     mouse(w, QtCore.QEvent.MouseButtonPress, a, left, left)
     mouse(w, QtCore.QEvent.MouseMove, mid, none, left)
     mouse(w, QtCore.QEvent.MouseMove, b, none, left)
+    if while_held:
+        while_held()
     mouse(w, QtCore.QEvent.MouseButtonRelease, b, left, none)
     settle(0.3)
+
+
+def band_pixels():
+    """Pixels of the viewport in the window colour (blue) and the touch
+    colour (green) -- nothing else in the scene is either."""
+    view = FreeCADGui.getDocument(DOC).ActiveView
+    view.redraw()
+    view.waitFrameComplete()
+    img = view.graphicsView().viewport().grab().toImage()
+    blue = green = 0
+    for y in range(0, img.height(), 2):
+        for x in range(0, img.width(), 2):
+            c = img.pixelColor(x, y)
+            r, g, b = c.red(), c.green(), c.blue()
+            if r < 60 and 70 < g < 140 and b > 200:
+                blue += 1
+            elif r < 60 and g > 200 and b < 60:
+                green += 1
+    return blue, green
 
 
 class PopupCatcher:
@@ -246,6 +273,17 @@ def run():
             QTest.mouseRelease(w, right, none, qtest_at(w, EMPTY_A))
             settle()
         check("the next right click opens the context menu again", after.seen, after.seen)
+
+        # C: the box's colour says which kind of selection it is.
+        seen = {}
+        box(w, EMPTY_A, EMPTY_B, lambda: seen.__setitem__("window", band_pixels()))
+        box(w, EMPTY_B, EMPTY_A, lambda: seen.__setitem__("touch", band_pixels()))
+        blue, green = seen.get("window", (0, 0))
+        check("a left-to-right box is drawn in the window colour",
+              blue > 20 and green == 0, "blue %d green %d" % (blue, green))
+        blue, green = seen.get("touch", (0, 0))
+        check("a right-to-left box is drawn in the touch colour",
+              green > 20 and blue == 0, "blue %d green %d" % (blue, green))
     except Exception:
         note("ABORT run:\n" + traceback.format_exc())
     finish()

@@ -142,6 +142,7 @@
 #include "DrawSketchHandler.h"
 #include "DrawSketchHandlerDragAutoConstraint.h"
 #include "SnapManager.h"
+#include "StyleParameters.h"
 #include "TaskDlgEditSketch.h"
 #include "TaskSketcherValidation.h"
 #include "TaskSketcherConstraints.h"
@@ -1645,6 +1646,19 @@ bool ViewProviderSketch::mouseMove(const SbVec2s &cursorPos, Gui::ViewerContext 
             // like any other client.
             const int height = viewer->getViewportRegion().getViewportSizePixels()[1];
             newCursorPos = cursorPos;
+
+            // Right to left is a touch selection (whatever the box crosses),
+            // left to right a window selection (whatever it contains):
+            // dashed in one theme colour, solid in another (upstream
+            // 7b85239093), the same test doBoxSelection() makes.
+            const bool touch = prvCursorPos.getValue()[0] > newCursorPos.getValue()[0];
+            const auto* styles = Gui::Application::Instance->styleParameterManager();
+            const Base::Color color = styles->resolve(touch
+                    ? StyleParameters::SketcherRubberbandTouchSelectionColor
+                    : StyleParameters::SketcherRubberbandWindowSelectionColor);
+            rubberband->setColor(color.r, color.g, color.b, color.a);
+            rubberband->setLineStipple(touch);
+
             rubberband->setCoords(prvCursorPos.getValue()[0],
                        height - prvCursorPos.getValue()[1],
                        newCursorPos.getValue()[0],
