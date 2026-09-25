@@ -48,6 +48,14 @@ def optimizeRecompute():
             'User parameter:BaseApp/Preferences/Document').GetBool(
                     'OptimizeRecompute',True)
 
+def transactionLogIsOn():
+    # With the log on, a bare write outside any invocation opens an implicit
+    # transaction, and observers see it open and commit like any other
+    # (docs/TransactionLog.md sec 24.13).
+    return FreeCAD.ParamGet(
+            'User parameter:BaseApp/Preferences/Document').GetInt(
+                    'TransactionLog',0) != 0
+
 class DocumentBasicCases(unittest.TestCase):
     def setUp(self):
         self.Doc = FreeCAD.newDocument("CreateTest")
@@ -2251,6 +2259,10 @@ class DocumentObserverCases(unittest.TestCase):
         self.Obs.clear()
 
         self.Doc1.Comment = "test comment"
+        if transactionLogIsOn():
+            self.assertEqual(self.Obs.signal.pop(0), "DocOpenTransaction")
+            self.assertTrue(self.Obs.parameter.pop(0) is self.Doc1)
+            self.assertEqual(self.Obs.parameter2.pop(0), "<implicit>")
         self.assertEqual(self.Obs.signal.pop(0), "DocBeforeChange")
         self.assertTrue(self.Obs.parameter.pop(0) is self.Doc1)
         self.assertEqual(self.Obs.parameter2.pop(0), "Comment")
@@ -2270,6 +2282,10 @@ class DocumentObserverCases(unittest.TestCase):
         FreeCAD.closeDocument(self.Doc1.Name)
         self.assertEqual(self.Obs.signal.pop(), "DocDeleted")
         self.assertEqual(self.Obs.parameter.pop(), self.Doc1)
+        if transactionLogIsOn():
+            # the close commits the implicit transaction of the Comment write
+            self.assertEqual(self.Obs.signal.pop(), "DocCommitTransaction")
+            self.assertEqual(self.Obs.parameter.pop(), self.Doc1)
         self.assertTrue(not self.Obs.signal and not self.Obs.parameter and not self.Obs.parameter2)
 
     def testObject(self):
@@ -2305,6 +2321,11 @@ class DocumentObserverCases(unittest.TestCase):
         self.assertTrue(self.Obs.parameter.pop(0) is obj)
         self.assertTrue(self.Obs.signal.pop(0) == "DocRecomputed")
         self.assertTrue(self.Obs.parameter.pop(0) is self.Doc1)
+        if transactionLogIsOn():
+            # the implicit transaction addObject opened, closed with the
+            # recompute's invocation
+            self.assertTrue(self.Obs.signal.pop(0) == "DocCommitTransaction")
+            self.assertTrue(self.Obs.parameter.pop(0) is self.Doc1)
         self.assertTrue(not self.Obs.signal and not self.Obs.parameter and not self.Obs.parameter2)
 
         FreeCAD.ActiveDocument.removeObject(obj.Name)
