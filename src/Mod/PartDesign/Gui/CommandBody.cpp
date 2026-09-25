@@ -995,7 +995,20 @@ void CmdPartDesignMoveFeatureInTree::activated(int iMsg)
 
     openCommand(QT_TRANSLATE_NOOP("Command", "Move an object inside tree"));
 
-    App::DocumentObject* lastObject = nullptr;
+    // Keep the moved features in the order the body has them, whatever the
+    // order they were selected in, and insert each after the one before it.
+    // Inserting every one after the target reversed them (upstream
+    // 1c8ca27f28 fixed that for selection order only).
+    std::map<App::DocumentObject*, std::size_t> position;
+    for (std::size_t i = 0; i < model.size(); ++i) {
+        position.emplace(model[i], i);
+    }
+    std::stable_sort(features.begin(), features.end(),
+                     [&position](App::DocumentObject* a, App::DocumentObject* b) {
+                         return position[a] < position[b];
+                     });
+
+    App::DocumentObject* lastObject = target;
     for ( auto feat: features ) {
         if ( feat == target ) continue;
 
@@ -1003,10 +1016,9 @@ void CmdPartDesignMoveFeatureInTree::activated(int iMsg)
         // TODO: if tip was moved the new position of tip is quite undetermined (2015-08-07, Fat-Zer)
         // TODO: warn the user if we are moving an object to some place before the object's link (2015-08-07, Fat-Zer)
         FCMD_OBJ_CMD(body,"removeObject(" << getObjectCmd(feat) << ")");
-        FCMD_OBJ_CMD(body,"insertObject(" << getObjectCmd(feat) << ","<< getObjectCmd(target) << ", True)");
+        FCMD_OBJ_CMD(body,"insertObject(" << getObjectCmd(feat) << ","<< getObjectCmd(lastObject) << ", True)");
 
-        if (!lastObject)
-            lastObject = feat;
+        lastObject = feat;
     }
 
     // Dependency order check.
@@ -1052,7 +1064,7 @@ void CmdPartDesignMoveFeatureInTree::activated(int iMsg)
     // If the selected objects have been moved after the current tip then ask the
     // user if they want the last object to be the new tip.
     // Only do this for features that can hold a tip (not for e.g. datums)
-    if ( lastObject && body->Tip.getValue() == target
+    if ( lastObject && lastObject != target && body->Tip.getValue() == target
         && lastObject->isDerivedFrom(PartDesign::Feature::getClassTypeId()) ) {
         QMessageBox msgBox(Gui::getMainWindow());
         msgBox.setIcon(QMessageBox::Question);
