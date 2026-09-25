@@ -7,8 +7,10 @@ gizmo family's 36 ledger rows are decided; three are deferred behind App
 features. **The fixes are triaged** (sec 6): 205 of the 213 `fix` rows
 decided, 37 upstream commits taken or adapted in 33 fork commits, 8 rows
 open. Then six of the deferred rows (sec 6, "Deferred, then taken"); two
-stay deferred. Next: the open fix rows (sec 6), then the smaller features
-(decision 2).
+stay deferred. The open fix rows are closed (sec 6), and the 231
+unclassified rows are sorted (sec 7, 2026-09-25): 180 decided, 51 open.
+Next: the small fork defects of sec 7, reproduced first, then the smaller
+features (decision 2).
 
 Branch `PartDesignPort` off `SketcherPort` `4fa781fc58`, with `LinkVibe`
 `312b62c995` merged in (section 5). Upstream reference: `upstream/main`
@@ -449,3 +451,77 @@ on a `%TEMP%` of 37,872 entries (docs/Testing.md) and passed in 14.8 s
 under `ctest-fcad-cleantmp.cmd`; Toponaming_tests_run 257 with the taken
 gtest. The full run predates the `getAxis()` commit, which touches only
 PartDesign and is covered by the Python run.
+
+## 7. The unclassified rows, sorted (2026-09-25)
+
+The 231 rows whose subject did not say what they were (kind `?`) were read in
+six batches by agents, by the method of sec 6, with two additions: each row
+gets a kind (`fix`, `feature`, `refactor`, `noise`, and `test` for test-only
+commits), and a feature the fork could take is a `candidate` with a size (S,
+M, L). Nothing was run; every verdict is from reading code, so each `pick`
+and `adapt` below is reproduced on the fork before it is taken.
+
+The ledger now carries the kind of every one of them, and a decision for the
+180 that settle: 34 `have`, 39 `n/a`, 7 `superseded`, 62 `declined` (style
+sweeps, icons, wording, `.pyi` churn, upstream-only plumbing), 38 `deferred`
+(each names the feature it waits for). 51 stay open:
+
+- **8 pick, 15 adapt: small fork defects.** In rough order of value: a
+  PolarPattern whose axis is a sketch edge uses a wrong axis silently
+  (`b0331ed979`); Mirrored refuses a plane set without a subname
+  (`7d10f5ed73`); LinearPattern's Length/Offset go stale when Occurrences
+  changes, and divide by zero at 1 (`fa0702956c`); a Hole whose profile has no
+  circle empties the body without an error (`7a672a3207`); an orphan feature
+  throws "Missing container body" and a standalone dress-up is placed from a
+  null BaseFeature (`a76adf48a9`, then `5a47138994`); UpToFace to an LCS's
+  plane ignores the LCS (`194ec0820c`, the `getAxis()` defect of sec 6 again);
+  a leftover taper makes a ThroughAll pocket cut Length deep (`d52260b2f4`);
+  a subtractive pipe of several loops (`a2c5788a98`); a closed loft of one
+  section (`0c59bfc718`); moving several features in the tree reverses them
+  (`1c8ca27f28`); a nearly planar B-spline face refused for a sketch
+  (`eebb7f7829`); deleting a Loft or Pipe leaves its sketches hidden
+  (`cf951bae6b`); a PD feature's double click ignores the user edit mode
+  (`f34f15dc60`); the body Transparency / MapFaceColor finding of sec 6
+  (`1844fdd443`); and smaller panel items.
+- **24 candidates, to go with the features.** Families that decide together:
+  the BS/ANSI thread standards (`acf04c7f1e` first, then BSW, BSF, NPT, tyre
+  valve, countersink angles), and the closest-designation set with it
+  (`dc53d3dba2`, `601c0f9b09`, `0dc6cbd16f`, `8f2e330a53`); UpToShape
+  (`309dd6e30d`) with its deferred fix rows; two-sided extrude (`a346c266e7`,
+  L); the pattern rework (`5d2037c820`, L); thread texture (`180c39709a`, L);
+  the Boolean tool-body display (`84ab5d5547`, `5aac4c1036`, `9bbbd59291`);
+  the spacebar pair (`bd03414893`, `20c01000a1`); the binder back-copy
+  (`2501296c95`, `66e1c0154d`); holes on sketch points (`774ec2cc93`); a
+  sketch as a Draft neutral plane (`51f4ad7432`); body material inheritance
+  (`0804d80ebf`, its App half).
+- **4 unsure**, each settled by a try in the GUI: a BaseFeature set by hand on
+  a placed body (`123a1c80e1`), a body left empty after setting BaseFeature
+  (`75109b821b`), the chamfer FlipDirection migration for files before 1.0
+  (`4d712f44c2`, needs that issue's file), a body made from a coloured base
+  (`aea8919598`).
+
+Deferred behind one decision each, and worth making early because many rows
+wait on them:
+
+- **`TestTopologicalNamingProblem.py`** -- the fork has no copy; 63 ledger
+  rows touch it. Porting it is L: its asserts pin upstream's element-map
+  sizes, which differ under the fork's design.
+- **Upstream's PreviewExtension** (the in-panel feature preview, `802af4c464`)
+  -- about a dozen fix rows are its own fixes.
+- **Upstream's Hole panel redesign** (`114166a0e3` and the January 2025
+  series) -- four rows here, more among the features.
+
+Fork gaps the agents saw that no upstream commit names:
+
+- Upstream files store suppression as `Suppressed` (SuppressibleExtension);
+  the fork's property is `Suppress`, and nothing maps the name, so a
+  suppressed feature in an upstream file loads unsuppressed. The same for a
+  Body's `AllowCompound` against the fork's `SingleSolid` (negated).
+- `Boolean::UsePlacement` is declared and set by the command but never
+  registered or read.
+- The SubtractiveHelix command moves the camera without the
+  `AdjustCameraForNewFeature` check its siblings make.
+- `SketchWorkflow.cpp` is compiled but never called: `PartDesign_NewSketch`
+  has its own flow, so an upstream SketchWorkflow fix is judged against that.
+- There is no `tests/src/Mod/PartDesign`; upstream's C++ PD tests would be
+  rewritten in Python or given a directory.
