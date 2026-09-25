@@ -225,7 +225,10 @@ void TaskDraftParameters::onSelectionChanged(const Gui::SelectionChanges& msg)
                 ui->lineLine->setText(getRefStr(selObj, elements));
             }
             recompute();
+            // Out of pick mode too, not just the button: the gate stayed,
+            // and the next click anywhere replaced the reference silently
             clearButtons(none);
+            exitSelectionMode();
             return;
         }
     }
@@ -286,6 +289,7 @@ void TaskDraftParameters::onButton(selectionModes mode, bool checked)
 
     if(!checked) {
         clearButtons(none);
+        exitSelectionMode();
         return;
     }
 
