@@ -31,6 +31,8 @@
 
 #include <Gui/DockWindow.h>
 
+class QCheckBox;
+class QComboBox;
 class QLabel;
 class QLineEdit;
 class QPlainTextEdit;
@@ -82,6 +84,9 @@ private Q_SLOTS:
     void onSnapshot();
     void onTransactionContextMenu(const QPoint& pos);
     void onVersionContextMenu(const QPoint& pos);
+    void onBranchChosen(int index);
+    void onNewBranch();
+    void applyVisibility();
 
 protected:
     void showEvent(QShowEvent*) override;
@@ -94,6 +99,11 @@ private:
     void appendTransactions(int64_t fromSeq);
     void showOps(int64_t seq);
     void refreshVersions();
+    /// The branch switcher's items (docs/TransactionLog.md sec 26).
+    void refreshBranches();
+    /// Ask for a new branch's name and make it from `version`, else `seq`,
+    /// else the current head.
+    void createBranch(int64_t version, int64_t seq);
     void showManifest(int64_t num);
     void updateStatus();
     App::TransactionLog* log() const;
@@ -109,11 +119,15 @@ private:
     fastsignals::scoped_connection _connDeleteDoc;
     fastsignals::scoped_connection _connNewDoc;
     fastsignals::scoped_connection _connRestoreDoc;
+    bool _fillingBranches {false};
 
     QLabel* _status {nullptr};
     QLineEdit* _filter {nullptr};
     QPushButton* _resolve {nullptr};
     QPushButton* _snapshot {nullptr};
+    QComboBox* _branch {nullptr};
+    QPushButton* _newBranch {nullptr};
+    QCheckBox* _allBranches {nullptr};
     QTabWidget* _tabs {nullptr};
     QStackedWidget* _detail {nullptr};
     QTreeWidget* _transactions {nullptr};

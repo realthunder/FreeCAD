@@ -363,6 +363,41 @@ Name version `num` of the transaction log (docs/TransactionLog.md sec
 again. False if there is no log or no such version.</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="getTransactionBranches">
+      <Documentation>
+        <UserDocu>getTransactionBranches() -> list of dict
+
+The branches of the transaction log (docs/TransactionLog.md sec 17, 26):
+id, name, from_version, from_seq, head, id_base, last_id, created, closed,
+and current -- whether the document is on it. Empty without a log.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="createTransactionBranch" Keyword="true">
+      <Documentation>
+        <UserDocu>createTransactionBranch(name, version=0, seq=0) -> int
+
+Make branch `name` from version `version`, or else from log row `seq`, or
+else from the current head, and switch the document to it; the version it
+forks from is named if it was not. Returns the branch id, 0 without a log.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="switchTransactionBranch">
+      <Documentation>
+        <UserDocu>switchTransactionBranch(name) -> bool
+
+Make the document the head of branch `name`, in place. Not an undo step:
+undo and redo become that branch's own steps since the document was
+opened. False without a log.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="renameTransactionBranch">
+      <Documentation>
+        <UserDocu>renameTransactionBranch(name, newName) -> bool
+
+Rename a branch. False without a log or with no such branch; a name
+already taken raises.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="resolveTransactionLog">
       <Documentation>
         <UserDocu>resolveTransactionLog() -> int

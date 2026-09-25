@@ -22,8 +22,12 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
+# include <map>
+# include <set>
 # include <QApplication>
+# include <QCheckBox>
 # include <QClipboard>
+# include <QComboBox>
 # include <QDateTime>
 # include <QFontDatabase>
 # include <QHBoxLayout>
@@ -36,6 +40,7 @@
 # include <QPushButton>
 # include <QSplitter>
 # include <QStackedWidget>
+# include <QStandardItemModel>
 # include <QTabWidget>
 # include <QTreeWidget>
 # include <QVBoxLayout>
@@ -47,6 +52,7 @@
 #include <App/FileBlobManager.h>
 #include <App/TransactionLog.h>
 #include <Base/Console.h>
+#include <Base/Tools.h>
 
 #include "TransactionLogView.h"
 #include "Application.h"
@@ -59,7 +65,8 @@ using namespace Gui::DockWnd;
 
 namespace {
 
-enum TxnColumn { TxnSeq, TxnKind, TxnOrigin, TxnName, TxnTime, TxnParent, TxnInverts, TxnColumns };
+enum TxnColumn { TxnSeq, TxnKind, TxnOrigin, TxnName, TxnTime, TxnParent, TxnInverts, TxnBranch,
+                 TxnColumns };
 enum OpColumn { OpIdx, OpOp, OpContainer, OpProp, OpType, OpBefore, OpAfter, OpDerived, OpColumns };
 enum VerColumn { VerNum, VerKind, VerName, VerBranch, VerSeq, VerSchema, VerCreated, VerDocXml,
                  VerEntries, VerColumns };
@@ -106,6 +113,24 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     bar->addWidget(_snapshot);
     layout->addLayout(bar);
 
+    // Branches (sec 26): the one the document is on, switched here; a new
+    // one from the head; and whether rows of other branches show.
+    auto branchBar = new QHBoxLayout();
+    branchBar->addWidget(new QLabel(tr("Branch:"), this));
+    _branch = new QComboBox(this);
+    _branch->setToolTip(tr("The branch the document is on; choosing another switches to its "
+                           "head in place (not an undo step)"));
+    _branch->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+    branchBar->addWidget(_branch);
+    _newBranch = new QPushButton(tr("Branch..."), this);
+    _newBranch->setToolTip(tr("A new branch from the current head, switched to"));
+    branchBar->addWidget(_newBranch);
+    _allBranches = new QCheckBox(tr("All branches"), this);
+    _allBranches->setToolTip(tr("Show the rows of every branch, not only this branch's history"));
+    branchBar->addWidget(_allBranches);
+    branchBar->addStretch(1);
+    layout->addLayout(branchBar);
+
     _status = new QLabel(this);
     _status->setTextInteractionFlags(Qt::TextSelectableByMouse);
     layout->addWidget(_status);
@@ -122,7 +147,7 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     _tabs->addTab(_transactions, tr("Transactions"));
     _transactions->setColumnCount(TxnColumns);
     _transactions->setHeaderLabels({tr("Seq"), tr("Kind"), tr("Origin"), tr("Name"),
-                                    tr("Time"), tr("Parent"), tr("Inverts")});
+                                    tr("Time"), tr("Parent"), tr("Inverts"), tr("Branch")});
     _transactions->setRootIsDecorated(false);
     _transactions->setAlternatingRowColors(true);
     _transactions->setUniformRowHeights(true);
@@ -197,6 +222,10 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     connect(_filter, &QLineEdit::textChanged, this, &TransactionLogView::onFilterChanged);
     connect(_resolve, &QPushButton::clicked, this, &TransactionLogView::onResolvePending);
     connect(_snapshot, &QPushButton::clicked, this, &TransactionLogView::onSnapshot);
+    connect(_branch, qOverload<int>(&QComboBox::activated), this,
+            &TransactionLogView::onBranchChosen);
+    connect(_newBranch, &QPushButton::clicked, this, &TransactionLogView::onNewBranch);
+    connect(_allBranches, &QCheckBox::toggled, this, &TransactionLogView::applyVisibility);
 
     //NOLINTBEGIN
     _connActiveDoc = Application::Instance->signalActiveDocument.connect(
@@ -256,6 +285,8 @@ void TransactionLogView::attach(App::Document* doc)
     _connections.emplace_back(_doc->signalUndo.connect(
         [this](const App::Document&) { scheduleRefresh(); }));
     _connections.emplace_back(_doc->signalRedo.connect(
+        [this](const App::Document&) { scheduleRefresh(); }));
+    _connections.emplace_back(_doc->signalSwitchBranch.connect(
         [this](const App::Document&) { scheduleRefresh(); }));
     //NOLINTEND
     reload();
@@ -331,6 +362,8 @@ void TransactionLogView::refresh()
             appendTransactions(_lastSeq + 1);
         _lastSeq = last;
         refreshVersions();
+        refreshBranches();
+        applyVisibility();
     }
     catch (Base::Exception& e) {
         FC_ERR("transaction log view: " << e.what());
@@ -351,13 +384,16 @@ void TransactionLogView::refreshVersions()
     _lastVersion = last;
     _versions->clear();
     _manifest->clear();
+    std::map<int64_t, std::string> branches;
+    for (const auto& b : l->store().branches())
+        branches[b.id] = b.name;
     for (const auto& v : versions) {
         auto item = new QTreeWidgetItem(_versions);
         item->setText(VerNum, QString::number(v.num));
         item->setData(VerNum, Qt::UserRole, QVariant::fromValue(static_cast<qlonglong>(v.num)));
         item->setText(VerKind, QString::fromStdString(v.kind));
         item->setText(VerName, QString::fromStdString(v.name));
-        item->setText(VerBranch, QString::fromStdString(v.branch));
+        item->setText(VerBranch, QString::fromStdString(branches[v.branch]));
         item->setText(VerSeq, QString::number(v.seq));
         item->setText(VerSchema, QString::number(v.schema));
         item->setText(VerCreated,
@@ -479,8 +515,10 @@ void TransactionLogView::appendTransactions(int64_t fromSeq)
     auto l = log();
     if (!l)
         return;
-    const QString filter = _filter->text().trimmed();
     QTreeWidgetItem* lastItem = nullptr;
+    std::map<int64_t, QString> branches;
+    for (const auto& b : l->store().branches())
+        branches[b.id] = QString::fromStdString(b.name);
     for (const auto& t : l->store().transactions(fromSeq, 0)) {
         auto item = new QTreeWidgetItem(_transactions);
         item->setText(TxnSeq, QString::number(t.seq));
@@ -500,15 +538,7 @@ void TransactionLogView::appendTransactions(int64_t fromSeq)
         }
         if (!t.script.empty())
             item->setToolTip(TxnName, QString::fromStdString(t.script));
-        if (!filter.isEmpty()) {
-            bool match = false;
-            for (int c = 0; c < TxnColumns && !match; ++c)
-                match = item->text(c).contains(filter, Qt::CaseInsensitive);
-            if (!match)
-                match = item->data(TxnName, Qt::UserRole).toString()
-                            .contains(filter, Qt::CaseInsensitive);
-            item->setHidden(!match);
-        }
+        item->setText(TxnBranch, branches[t.branch]);
         lastItem = item;
     }
     if (lastItem)
@@ -610,9 +640,28 @@ void TransactionLogView::onOpSelected()
     _value->setPlainText(text);
 }
 
-void TransactionLogView::onFilterChanged(const QString& text)
+void TransactionLogView::onFilterChanged(const QString&)
 {
-    const QString filter = text.trimmed();
+    applyVisibility();
+}
+
+void TransactionLogView::applyVisibility()
+{
+    // A row shows when it matches the filter and, unless every branch is
+    // asked for, lies on the current branch's chain (sec 26).
+    const QString filter = _filter->text().trimmed();
+    std::set<int64_t> chain;
+    const bool all = _allBranches->isChecked();
+    auto l = log();
+    if (!all && l) {
+        try {
+            for (const auto& t : l->store().chain(l->head()))
+                chain.insert(t.seq);
+        }
+        catch (Base::Exception& e) {
+            FC_ERR("transaction log view: " << e.what());
+        }
+    }
     for (int i = 0; i < _transactions->topLevelItemCount(); ++i) {
         auto item = _transactions->topLevelItem(i);
         bool match = filter.isEmpty();
@@ -620,8 +669,83 @@ void TransactionLogView::onFilterChanged(const QString& text)
             match = item->text(c).contains(filter, Qt::CaseInsensitive);
         if (!match)
             match = item->data(TxnName, Qt::UserRole).toString().contains(filter, Qt::CaseInsensitive);
+        if (match && !all && l)
+            match = chain.count(item->data(TxnSeq, Qt::UserRole).toLongLong()) != 0;
         item->setHidden(!match);
     }
+}
+
+void TransactionLogView::refreshBranches()
+{
+    auto l = log();
+    Base::FlagToggler<> filling(_fillingBranches);
+    _branch->clear();
+    if (!l) {
+        _branch->setEnabled(false);
+        _newBranch->setEnabled(false);
+        return;
+    }
+    int current = -1;
+    for (const auto& b : l->store().branches()) {
+        QString text = QString::fromStdString(b.name);
+        if (b.closed != 0)
+            text += tr(" (closed)");
+        _branch->addItem(text, QString::fromStdString(b.name));
+        if (b.closed != 0) {
+            // A closed branch is not switched to (sec 26.6); branch from
+            // one of its versions instead.
+            if (auto model = qobject_cast<QStandardItemModel*>(_branch->model()))
+                model->item(_branch->count() - 1)->setEnabled(false);
+        }
+        if (b.id == l->branch())
+            current = _branch->count() - 1;
+    }
+    _branch->setCurrentIndex(current);
+    _branch->setEnabled(true);
+    _newBranch->setEnabled(_doc != nullptr);
+}
+
+void TransactionLogView::onBranchChosen(int index)
+{
+    if (_fillingBranches || !_doc || index < 0)
+        return;
+    const std::string name = _branch->itemData(index).toString().toStdString();
+    try {
+        _doc->switchBranch(name);
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("switch to branch " << name << ": " << e.what());
+    }
+    refresh();
+}
+
+void TransactionLogView::onNewBranch()
+{
+    createBranch(0, 0);
+}
+
+void TransactionLogView::createBranch(int64_t version, int64_t seq)
+{
+    if (!_doc)
+        return;
+    const QString from = version ? tr("version %1").arg(version)
+                         : seq  ? tr("row %1").arg(seq)
+                                : tr("the current head");
+    bool ok = false;
+    QString text = QInputDialog::getText(this, tr("New branch"),
+                                         tr("Name of the branch from %1:").arg(from),
+                                         QLineEdit::Normal, QString(), &ok);
+    if (!ok || text.trimmed().isEmpty())
+        return;
+    try {
+        _doc->createBranch(text.trimmed().toStdString(), version, seq);
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("new branch " << text.toStdString() << ": " << e.what());
+        _status->setText(tr("No branch made -- the report view says why"));
+        return;
+    }
+    refresh();
 }
 
 void TransactionLogView::onResolvePending()
@@ -675,7 +799,14 @@ void TransactionLogView::onTransactionContextMenu(const QPoint& pos)
     undoRow->setEnabled(_doc
                         && (kind == QLatin1String("user") || kind == QLatin1String("implicit")
                             || kind == QLatin1String("undo") || kind == QLatin1String("redo")));
+    auto branchHere = menu.addAction(tr("Branch from here..."));
+    branchHere->setToolTip(tr("A new branch whose history ends at this row, switched to (sec 26)"));
+    branchHere->setEnabled(_doc != nullptr);
     auto chosen = menu.exec(_transactions->viewport()->mapToGlobal(pos));
+    if (chosen == branchHere) {
+        createBranch(0, seq);
+        return;
+    }
     if (chosen == undoRow) {
         try {
             if (!_doc->undoLogged(seq))
@@ -712,9 +843,17 @@ void TransactionLogView::onVersionContextMenu(const QPoint& pos)
                                      : tr("Name version %1...").arg(num));
     name->setToolTip(tr("A named version is never evicted (sec 16.3)"));
     auto unname = named ? menu.addAction(tr("Make version %1 unnamed").arg(num)) : nullptr;
+    menu.addSeparator();
+    auto branchFrom = menu.addAction(tr("Branch from version %1...").arg(num));
+    branchFrom->setToolTip(tr("A new branch from this version, switched to; the version is "
+                              "named if it was not (sec 17.1)"));
     auto chosen = menu.exec(_versions->viewport()->mapToGlobal(pos));
     if (!chosen)
         return;
+    if (chosen == branchFrom) {
+        createBranch(num, 0);
+        return;
+    }
     App::Document* doc = _doc;
     try {
         if (chosen == restore) {
@@ -774,7 +913,14 @@ void TransactionLogView::updateStatus()
     catch (Base::Exception&) {
     }
     const long mode = App::DocumentParams::getTransactionLog();
-    const QString modeText = mode == 2 ? tr("embedded") : tr("session");
+    QString modeText = mode == 2 ? tr("embedded") : tr("session");
+    try {
+        App::LogBranch branch;
+        if (l->store().getBranch(l->branch(), branch))
+            modeText += QStringLiteral(", ") + tr("branch %1").arg(QString::fromStdString(branch.name));
+    }
+    catch (Base::Exception&) {
+    }
     _status->setText(tr("%1 [%7]: %2 transactions, %3 versions, %4 pending, session %5  --  %6")
                          .arg(QString::fromUtf8(_doc->getName()))
                          .arg(_lastSeq)

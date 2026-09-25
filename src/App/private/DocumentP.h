@@ -128,6 +128,9 @@ struct DocumentP
     /// A crash recovery rebuilding the document from its log (sec 25.2):
     /// what it writes is in the log already, and is no transaction.
     bool replaying {false};
+    /// The log's last seq when the document was opened: undo reaches no
+    /// further back on any branch (docs/TransactionLog.md sec 26.4).
+    int64_t undoFloor {0};
     /// A saveCopy() without history: the copy embeds nothing, and the
     /// History property the live document had is put back afterwards.
     bool savingWithoutHistory {false};

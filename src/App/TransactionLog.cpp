@@ -171,9 +171,11 @@ public:
     { return inner().transactions(from, limit); }
     std::vector<LogOp> ops(int64_t txn) override { return inner().ops(txn); }
     bool getOp(int64_t txn, int idx, LogOp& op) override { return inner().getOp(txn, idx, op); }
+    std::vector<LogTransaction> chain(int64_t head, int64_t from) override
+    { return inner().chain(head, from); }
     bool lastOpOn(const std::string& ckind, long cid, const std::string& prop, int64_t after,
-                  LogOp& op) override
-    { return inner().lastOpOn(ckind, cid, prop, after, op); }
+                  int64_t head, LogOp& op) override
+    { return inner().lastOpOn(ckind, cid, prop, after, head, op); }
     int64_t lastSeq() override { return inner().lastSeq(); }
     void truncate(int64_t before) override
     {
@@ -209,6 +211,15 @@ public:
     }
     bool nameVersion(int64_t num, const std::string& name) override
     { return inner().nameVersion(num, name); }
+    std::vector<LogBranch> branches() override { return inner().branches(); }
+    bool getBranch(int64_t id, LogBranch& branch) override
+    { return inner().getBranch(id, branch); }
+    bool findBranch(const std::string& name, LogBranch& branch) override
+    { return inner().findBranch(name, branch); }
+    int64_t addBranch(LogBranch& branch) override { return inner().addBranch(branch); }
+    bool renameBranch(int64_t id, const std::string& name) override
+    { return inner().renameBranch(id, name); }
+    bool updateBranch(const LogBranch& branch) override { return inner().updateBranch(branch); }
     std::string getMeta(const std::string& key) override { return inner().getMeta(key); }
     void setMeta(const std::string& key, const std::string& value) override
     { inner().setMeta(key, value); }
@@ -453,6 +464,18 @@ void TransactionLog::openStore()
         _store->setMeta("document", _doc.Uid.getValueStr());
     _nextSeq = _store->lastSeq();
     _nextVersion = _store->lastVersion();
+    // The branch the document is on (sec 26), `main` unless the store says
+    // otherwise, and its head: what the next row follows.
+    _branch = 1;
+    const std::string current = _store->getMeta("branch");
+    if (!current.empty())
+        _branch = std::stoll(current);
+    LogBranch branch;
+    if (!_store->getBranch(_branch, branch)) {
+        _branch = 1;
+        _store->getBranch(_branch, branch);
+    }
+    _head = branch.head;
     // An adopted embedded copy may have had every version dropped by its
     // retention; the counter it carries keeps the numbering monotonic.
     const std::string counter = _store->getMeta("version_counter");
@@ -473,9 +496,15 @@ TransactionLog::Embedded TransactionLog::embed(const std::string& saveDate)
     _store->copyTo(out.path);
     auto copy = TransactionStore::openSQLite(out.path);
     // Retention (16.4, 13.3): the named versions travel, the unnamed ones
-    // and the cache tier do not; the ops do.
-    for (const auto& v : copy->versions()) {
-        if (v.kind != "named")
+    // and the cache tier do not; the ops do. Each branch's newest travels
+    // too (sec 26.2 item 5), so a switch in the file opened elsewhere
+    // checks out its own tip.
+    std::map<int64_t, int64_t> newest;
+    const auto versions = copy->versions();
+    for (const auto& v : versions)
+        newest[v.branch] = v.num;
+    for (const auto& v : versions) {
+        if (v.kind != "named" && newest[v.branch] != v.num)
             copy->evictVersion(v.num);
     }
     copy->dropTier("cache");
@@ -604,11 +633,16 @@ bool TransactionLog::recover(const std::string& oldDir, RecoverInfo& info)
 
 int64_t TransactionLog::recordRecovery(const std::string& script)
 {
+    return record("recover", "Recovered", script);
+}
+
+int64_t TransactionLog::record(const char* kind, const std::string& name,
+                               const std::string& script)
+{
     LogTransaction t;
-    t.parent = _nextSeq;
-    t.seq = ++_nextSeq;
-    t.kind = "recover";
-    t.name = "Recovered";
+    number(t);
+    t.kind = kind;
+    t.name = name;
     t.time = now();
     t.session = _session;
     t.script = script;
@@ -617,6 +651,32 @@ int64_t TransactionLog::recordRecovery(const std::string& script)
         _store->append(t, none);
     });
     return t.seq;
+}
+
+bool TransactionLog::setBranch(int64_t id)
+{
+    flush();
+    LogBranch branch;
+    if (!_store->getBranch(id, branch))
+        return false;
+    _branch = id;
+    _head = branch.head;
+    _store->setMeta("branch", std::to_string(id));
+    return true;
+}
+
+void TransactionLog::forgetLiveValues()
+{
+    // Sec 26: the document was made another branch's state without a
+    // transaction, so nothing the log knew of its live values holds -- what
+    // an after ref waits on, which properties it holds current, the copies
+    // kept for the next edit. The next snapshot serialises afresh.
+    flush();
+    _pending.clear();
+    _recorded.clear();
+    _misses.clear();
+    _hashById.clear();
+    TransactionCopyCache::dropOwner(this);
 }
 
 bool TransactionLog::adoptStore(const std::string& path)
@@ -656,6 +716,45 @@ bool TransactionLog::adoptStore(const std::string& path)
     FC_LOG("transaction log of " << _doc.getName() << " continues from the embedded copy: seq "
            << _nextSeq << ", next version " << (_nextVersion + 1));
     return true;
+}
+
+bool TransactionLog::adoptClosed(const std::string& path)
+{
+    // Sec 16.6, 26.2 item 7: the copy's history kept, every branch of it
+    // closed and its `main` renamed after the save it came from; a new
+    // `main` with no rows yet, whose first version -- the file as found,
+    // the on-open snapshot -- numbers on and roots a chain of its own: the
+    // gap has no ancestry.
+    if (!adoptStore(path))
+        return false;
+    const double closed = now();
+    std::string date = _store->getMeta("save_date");
+    if (date.empty())
+        date = std::to_string(static_cast<int64_t>(closed));
+    for (auto b : _store->branches()) {
+        if (b.name == "main") {
+            std::string name = "main@" + date;
+            LogBranch taken;
+            for (int i = 2; _store->findBranch(name, taken); ++i)
+                name = "main@" + date + "#" + std::to_string(i);
+            b.name = name;
+        }
+        if (b.closed == 0)
+            b.closed = closed;
+        _store->updateBranch(b);
+    }
+    // The copy's counter is the number the save that wrote the file took in
+    // the store it came from; the file edited since is not that version, so
+    // it numbers past it.
+    const std::string counter = _store->getMeta("version_counter");
+    if (!counter.empty())
+        _nextVersion = std::max<int64_t>(_nextVersion, std::stoll(counter));
+    LogBranch fresh;
+    fresh.name = "main";
+    fresh.fromVersion = _store->lastVersion();
+    fresh.created = closed;
+    _store->addBranch(fresh);
+    return setBranch(fresh.id);
 }
 
 void TransactionLog::closeStore()
@@ -699,8 +798,7 @@ void TransactionLog::onRecompute(const std::vector<RecomputedObject>& objects, d
         return;
     try {
         LogTransaction t;
-        t.parent = _nextSeq;
-        t.seq = ++_nextSeq;
+        number(t);
         t.kind = "recompute";
         t.name = "recompute";
         t.time = now();
@@ -860,14 +958,14 @@ int64_t TransactionLog::snapshot(const char* kind, const std::string& path,
         LogVersion v;
         v.num = ++_nextVersion;
         v.uuid = Base::Uuid::createUuid();
-        v.seq = _nextSeq;
+        v.seq = _head;
+        v.branch = _branch;
         v.env = _environment;
         v.schema = schema;
         v.created = now();
 
         LogTransaction t;
-        t.parent = _nextSeq;
-        t.seq = ++_nextSeq;
+        number(t);
         t.kind = kind;
         t.name = kind;
         t.time = v.created;
@@ -953,13 +1051,20 @@ void TransactionLog::evictVersions(long keep)
     if (keep <= 0)
         return;
     auto versions = _store->versions();
+    // The newest of each branch stays whatever the limit (sec 26): what a
+    // switch to it checks out, so a switch never replays more than the
+    // branch's own tail. On a log that never branched, the newest.
+    std::map<int64_t, int64_t> newest;
+    for (const auto& v : versions)
+        newest[v.branch] = v.num;
+    std::set<int64_t> kept;
+    for (const auto& kv : newest)
+        kept.insert(kv.second);
     std::vector<int64_t> unnamed;
     for (const auto& v : versions) {
-        if (v.kind == "unnamed")
+        if (v.kind == "unnamed" && !kept.count(v.num))
             unnamed.push_back(v.num);
     }
-    if (!unnamed.empty() && unnamed.back() == versions.back().num)
-        unnamed.pop_back();   // the newest stays whatever the limit
     // What is left is the older unnamed ones; keep the last (keep - 1) of
     // them so that, with the newest, `keep` unnamed versions remain.
     size_t excess = unnamed.size() + 1 > static_cast<size_t>(keep)
@@ -1692,6 +1797,14 @@ void TransactionLog::writeValues(std::vector<ValueTask>& tasks, std::vector<LogO
     }
 }
 
+void TransactionLog::number(LogTransaction& t)
+{
+    t.parent = _head;
+    t.branch = _branch;
+    t.seq = ++_nextSeq;
+    _head = t.seq;
+}
+
 int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const char* origin,
                                  int64_t inverts)
 {
@@ -1699,8 +1812,7 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
         return 0;
     try {
         LogTransaction t;
-        t.parent = _nextSeq;
-        t.seq = ++_nextSeq;
+        number(t);
         t.id = txn.getID();
         t.kind = kind;
         t.origin = origin;
@@ -1889,6 +2001,7 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
             // Nothing to record; copies that only resolve earlier ops are
             // still written.
             --_nextSeq;
+            _head = t.parent;
             if (!tasks.empty()) {
                 post([this, tasks]() mutable {
                     std::vector<LogOp> none;

@@ -49,6 +49,28 @@ struct LogTransaction
     /// The seq of the transaction this one is the inverse of (sec 24.2):
     /// an `undo` names what it undid, a `redo` the undo it redid. 0 else.
     int64_t inverts {0};
+    /// The branch it was made on (sec 26), `main` being 1.
+    int64_t branch {1};
+};
+
+/** A branch row (sec 17.1, 26): a named tip into the `parent` tree.
+ * `head` is the seq of its newest transaction, moved by every append on
+ * it; the branch's history is the parent chain from there. `idBase` is
+ * where its object ids start (sec 17.2), 0 for `main`; `lastId` the last
+ * id it handed out, kept when the document leaves it. `closed` is the
+ * time it was closed, 0 while open.
+ */
+struct LogBranch
+{
+    int64_t id {0};
+    std::string name;
+    int64_t fromVersion {0};
+    int64_t fromSeq {0};
+    int64_t head {0};
+    long idBase {0};
+    long lastId {0};
+    double created {0};
+    double closed {0};
 };
 
 /// A session row (sec 11): one open-close of this log by one process.
@@ -140,7 +162,7 @@ struct LogVersion
 {
     int64_t num {0};
     std::string uuid;
-    std::string branch {"main"};
+    int64_t branch {1};             ///< the branch row it was taken on
     std::string kind {"unnamed"};   ///< "unnamed" or "named"
     std::string name;
     int64_t seq {0};                ///< the log sequence the snapshot is at
@@ -173,6 +195,7 @@ public:
     /// the ops' `txn` and `idx` are filled in. A `seq` set ahead (> 0) is
     /// used as given, so a caller that numbers on one thread and writes
     /// on another can name the row before it exists; 0 takes the next.
+    /// The head of `txn.branch` moves to it.
     virtual int64_t append(LogTransaction& txn, std::vector<LogOp>& ops) = 0;
     /// Fill the after ref of an op left pending by append().
     virtual void resolveAfter(int64_t txn, int idx, const std::string& hash) = 0;
@@ -200,10 +223,15 @@ public:
     virtual std::vector<LogTransaction> transactions(int64_t from = 0, int limit = 0) = 0;
     virtual std::vector<LogOp> ops(int64_t txn) = 0;
     virtual bool getOp(int64_t txn, int idx, LogOp& op) = 0;
+    /// The transactions on the parent chain ending at `head`, oldest
+    /// first, those with seq >= from (sec 26): one branch's history. A
+    /// chain ends where a row's parent is 0 or no longer stored.
+    virtual std::vector<LogTransaction> chain(int64_t head, int64_t from = 0) = 0;
     /// The newest op on property `prop` of container (`ckind`, `cid`) in a
-    /// transaction after `after`; false when there is none (sec 24.4).
+    /// transaction after `after` on the chain ending at `head` (0: in any
+    /// transaction); false when there is none (sec 24.4).
     virtual bool lastOpOn(const std::string& ckind, long cid, const std::string& prop,
-                          int64_t after, LogOp& op) = 0;
+                          int64_t after, int64_t head, LogOp& op) = 0;
     virtual int64_t lastSeq() = 0;
 
     /// Drop every transaction with seq < before, and the entities nothing
@@ -235,6 +263,19 @@ public:
     /// Make a version named (kind `named`, never evicted) with `name`; an
     /// empty name makes it unnamed again. False if there is no such version.
     virtual bool nameVersion(int64_t num, const std::string& name) = 0;
+
+    /// The branches, by id (sec 26). Every store has `main`, id 1.
+    virtual std::vector<LogBranch> branches() = 0;
+    virtual bool getBranch(int64_t id, LogBranch& branch) = 0;
+    virtual bool findBranch(const std::string& name, LogBranch& branch) = 0;
+    /// Add a branch; `id` is assigned and returned. A name already taken
+    /// throws.
+    virtual int64_t addBranch(LogBranch& branch) = 0;
+    /// False if there is no such branch; a name already taken throws.
+    virtual bool renameBranch(int64_t id, const std::string& name) = 0;
+    /// Write a branch row's fields back, all but `head`, which only an
+    /// append moves. False if there is no such branch.
+    virtual bool updateBranch(const LogBranch& branch) = 0;
 
     virtual std::string getMeta(const std::string& key) = 0;
     virtual void setMeta(const std::string& key, const std::string& value) = 0;

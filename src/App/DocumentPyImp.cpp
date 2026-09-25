@@ -898,6 +898,9 @@ PyObject* DocumentPy::getTransactionLog(PyObject *args)
     if (!log)
         return Py::new_reference_to(list);
     PY_TRY {
+        std::map<int64_t, std::string> branches;
+        for (const auto& b : log->store().branches())
+            branches[b.id] = b.name;
         for (auto& t : log->store().transactions(from, limit)) {
             Py::Dict d;
             d.setItem("seq", Py::Long(static_cast<long long>(t.seq)));
@@ -909,6 +912,7 @@ PyObject* DocumentPy::getTransactionLog(PyObject *args)
             d.setItem("time", Py::Float(t.time));
             d.setItem("script", Py::String(t.script));
             d.setItem("inverts", Py::Long(static_cast<long long>(t.inverts)));
+            d.setItem("branch", Py::String(branches[t.branch]));
             list.append(d);
         }
         return Py::new_reference_to(list);
@@ -977,11 +981,14 @@ PyObject* DocumentPy::getTransactionVersions(PyObject *args)
         return Py::new_reference_to(list);
     PY_TRY {
         auto& store = log->store();
+        std::map<int64_t, std::string> branches;
+        for (const auto& b : store.branches())
+            branches[b.id] = b.name;
         for (auto& v : store.versions()) {
             Py::Dict d;
             d.setItem("num", Py::Long(static_cast<long long>(v.num)));
             d.setItem("uuid", Py::String(v.uuid));
-            d.setItem("branch", Py::String(v.branch));
+            d.setItem("branch", Py::String(branches[v.branch]));
             d.setItem("kind", Py::String(v.kind));
             d.setItem("name", Py::String(v.name));
             d.setItem("seq", Py::Long(static_cast<long long>(v.seq)));
@@ -1044,6 +1051,74 @@ PyObject* DocumentPy::nameTransactionVersion(PyObject *args)
         return Py::new_reference_to(Py::False());
     PY_TRY {
         return Py::new_reference_to(Py::Boolean(log->store().nameVersion(num, name)));
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::getTransactionBranches(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    Py::List list;
+    auto log = getDocumentPtr()->getTransactionLog();
+    if (!log)
+        return Py::new_reference_to(list);
+    PY_TRY {
+        for (const auto& b : log->store().branches()) {
+            Py::Dict d;
+            d.setItem("id", Py::Long(static_cast<long long>(b.id)));
+            d.setItem("name", Py::String(b.name));
+            d.setItem("from_version", Py::Long(static_cast<long long>(b.fromVersion)));
+            d.setItem("from_seq", Py::Long(static_cast<long long>(b.fromSeq)));
+            d.setItem("head", Py::Long(static_cast<long long>(b.head)));
+            d.setItem("id_base", Py::Long(b.idBase));
+            d.setItem("last_id", Py::Long(b.lastId));
+            d.setItem("created", Py::Float(b.created));
+            d.setItem("closed", Py::Float(b.closed));
+            d.setItem("current", Py::Boolean(b.id == log->branch()));
+            list.append(d);
+        }
+        return Py::new_reference_to(list);
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::createTransactionBranch(PyObject *args, PyObject *kwds)
+{
+    const char* name;
+    long long version = 0;
+    long long seq = 0;
+    static const std::array<const char*, 4> kwlist {"name", "version", "seq", nullptr};
+    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwds, "s|LL", kwlist, &name, &version, &seq))
+        return nullptr;
+    PY_TRY {
+        return Py::new_reference_to(
+            Py::Long(static_cast<long long>(getDocumentPtr()->createBranch(name, version, seq))));
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::switchTransactionBranch(PyObject *args)
+{
+    const char* name;
+    if (!PyArg_ParseTuple(args, "s", &name))
+        return nullptr;
+    PY_TRY {
+        return Py::new_reference_to(Py::Boolean(getDocumentPtr()->switchBranch(name)));
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::renameTransactionBranch(PyObject *args)
+{
+    const char* name;
+    const char* newName;
+    if (!PyArg_ParseTuple(args, "ss", &name, &newName))
+        return nullptr;
+    auto log = getDocumentPtr()->getTransactionLog();
+    if (!log)
+        return Py::new_reference_to(Py::False());
+    PY_TRY {
+        App::LogBranch branch;
+        if (!log->store().findBranch(name, branch))
+            return Py::new_reference_to(Py::False());
+        return Py::new_reference_to(Py::Boolean(log->store().renameBranch(branch.id, newName)));
     } PY_CATCH;
 }
 

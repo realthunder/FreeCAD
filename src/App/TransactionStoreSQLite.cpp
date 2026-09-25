@@ -56,12 +56,19 @@ public:
             db = nullptr;
             throw Base::RuntimeError("Cannot open transaction log " + path + ": " + msg);
         }
+        // Read-only -- the embedded copy as the guard reads it (sec 16.4),
+        // a blob file -- is read as it is: no journal mode set, no table
+        // made, no schema moved. What the guard reads, `meta`, is in every
+        // schema; the store the log adopts is a writable copy, migrated
+        // when opened.
+        if (sqlite3_db_readonly(db, "main") == 1)
+            return;
         exec("PRAGMA journal_mode=WAL");
         exec("PRAGMA synchronous=NORMAL");
         exec("CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT)");
         exec("CREATE TABLE IF NOT EXISTS txn(seq INTEGER PRIMARY KEY, parent INTEGER, id INTEGER,"
              " kind TEXT, origin TEXT, name TEXT, time REAL, script TEXT, session INTEGER,"
-             " inverts INTEGER DEFAULT 0)");
+             " inverts INTEGER DEFAULT 0, branch INTEGER DEFAULT 1)");
         exec("CREATE TABLE IF NOT EXISTS environment(id INTEGER PRIMARY KEY, json TEXT UNIQUE)");
         exec("CREATE TABLE IF NOT EXISTS session(id INTEGER PRIMARY KEY, env INTEGER, user TEXT,"
              " host TEXT, opened REAL, closed REAL)");
@@ -69,7 +76,7 @@ public:
              " cid INTEGER, cname TEXT, ctype TEXT, prop TEXT, ptype TEXT, meta TEXT,"
              " vbefore TEXT, vafter TEXT, derived INTEGER, PRIMARY KEY(txn, idx))");
         exec("CREATE INDEX IF NOT EXISTS op_container ON op(cid, prop)");
-        exec("CREATE TABLE IF NOT EXISTS version(num INTEGER PRIMARY KEY, uuid TEXT, branch TEXT,"
+        exec("CREATE TABLE IF NOT EXISTS version(num INTEGER PRIMARY KEY, uuid TEXT, branch INTEGER,"
              " kind TEXT, name TEXT, seq INTEGER, env INTEGER, docxml_hash TEXT, schema INTEGER,"
              " created REAL)");
         exec("CREATE INDEX IF NOT EXISTS version_hash ON version(docxml_hash)");
@@ -87,8 +94,32 @@ public:
             migrateBlobs();
         if (!schema.empty() && schema < "4" && !hasColumn("txn", "inverts"))
             exec("ALTER TABLE txn ADD COLUMN inverts INTEGER DEFAULT 0");
-        if (schema != "4")
-            setMeta("schema", "4");
+        // Schema 5 (sec 26): branches. Every row before it is on `main`,
+        // whose head is the newest row; a version's branch was the text
+        // "main" and is the branch's id.
+        exec("CREATE TABLE IF NOT EXISTS branch(id INTEGER PRIMARY KEY, name TEXT UNIQUE,"
+             " from_version INTEGER, from_seq INTEGER, head_seq INTEGER, id_base INTEGER,"
+             " last_id INTEGER DEFAULT 0, created REAL, closed REAL)");
+        if (!hasColumn("txn", "branch"))
+            exec("ALTER TABLE txn ADD COLUMN branch INTEGER DEFAULT 1");
+        if (!schema.empty() && schema < "5")
+            exec("UPDATE version SET branch=1 WHERE branch='main' OR branch IS NULL OR branch=''");
+        // Written only when missing: a store opened read-only (the embedded
+        // copy the guard reads, sec 16.4) at this schema must not write.
+        if (!hasRow("SELECT 1 FROM branch WHERE id=1"))
+            exec("INSERT INTO branch(id,name,from_version,from_seq,head_seq,id_base,created,"
+                 "closed) VALUES(1,'main',0,0,(SELECT COALESCE(MAX(seq),0) FROM txn),0,"
+                 "(SELECT COALESCE(MIN(time),0) FROM txn),0)");
+        if (schema != "5")
+            setMeta("schema", "5");
+    }
+
+    bool hasRow(const char* sql)
+    {
+        auto s = prepare(sql);
+        bool found = sqlite3_step(s) == SQLITE_ROW;
+        sqlite3_reset(s);
+        return found;
     }
 
     bool hasColumn(const char* table, const char* column)
@@ -179,7 +210,7 @@ public:
             // A preset seq is honoured (the writer thread's caller numbers
             // ahead, TransactionLog); NULL takes the next rowid.
             auto ins = prepare("INSERT INTO txn(seq,parent,id,kind,origin,name,time,script,session,"
-                               "inverts) VALUES(?,?,?,?,?,?,?,?,?,?)");
+                               "inverts,branch) VALUES(?,?,?,?,?,?,?,?,?,?,?)");
             if (txn.seq > 0)
                 sqlite3_bind_int64(ins, 1, txn.seq);
             else
@@ -193,8 +224,13 @@ public:
             bindText(ins, 8, txn.script);
             sqlite3_bind_int64(ins, 9, txn.session);
             sqlite3_bind_int64(ins, 10, txn.inverts);
+            sqlite3_bind_int64(ins, 11, txn.branch);
             step(ins);
             txn.seq = sqlite3_last_insert_rowid(db);
+            auto head = prepare("UPDATE branch SET head_seq=? WHERE id=?");
+            sqlite3_bind_int64(head, 1, txn.seq);
+            sqlite3_bind_int64(head, 2, txn.branch);
+            step(head);
 
             auto op = prepare("INSERT INTO op(txn,idx,op,ckind,cid,cname,ctype,prop,ptype,meta,"
                               "vbefore,vafter,derived) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)");
@@ -362,27 +398,53 @@ public:
         return out;
     }
 
+    static LogTransaction readTransaction(sqlite3_stmt* s)
+    {
+        LogTransaction t;
+        t.seq = sqlite3_column_int64(s, 0);
+        t.parent = sqlite3_column_int64(s, 1);
+        t.id = sqlite3_column_int(s, 2);
+        t.kind = text(s, 3);
+        t.origin = text(s, 4);
+        t.name = text(s, 5);
+        t.time = sqlite3_column_double(s, 6);
+        t.script = text(s, 7);
+        t.session = sqlite3_column_int64(s, 8);
+        t.inverts = sqlite3_column_int64(s, 9);
+        t.branch = sqlite3_column_int64(s, 10);
+        return t;
+    }
+
     std::vector<LogTransaction> transactions(int64_t from, int limit) override
     {
-        auto s = prepare("SELECT seq,parent,id,kind,origin,name,time,script,session,inverts FROM txn"
-                         " WHERE seq>=? ORDER BY seq LIMIT ?");
+        auto s = prepare("SELECT seq,parent,id,kind,origin,name,time,script,session,inverts,branch"
+                         " FROM txn WHERE seq>=? ORDER BY seq LIMIT ?");
         sqlite3_bind_int64(s, 1, from);
         sqlite3_bind_int(s, 2, limit > 0 ? limit : -1);
         std::vector<LogTransaction> out;
-        while (sqlite3_step(s) == SQLITE_ROW) {
-            LogTransaction t;
-            t.seq = sqlite3_column_int64(s, 0);
-            t.parent = sqlite3_column_int64(s, 1);
-            t.id = sqlite3_column_int(s, 2);
-            t.kind = text(s, 3);
-            t.origin = text(s, 4);
-            t.name = text(s, 5);
-            t.time = sqlite3_column_double(s, 6);
-            t.script = text(s, 7);
-            t.session = sqlite3_column_int64(s, 8);
-            t.inverts = sqlite3_column_int64(s, 9);
-            out.push_back(std::move(t));
-        }
+        while (sqlite3_step(s) == SQLITE_ROW)
+            out.push_back(readTransaction(s));
+        sqlite3_reset(s);
+        return out;
+    }
+
+    // The parent chain from a head, as a CTE the queries below share: the
+    // head, then each row's parent, down to `from`.
+#define FC_TXN_CHAIN                                                                   \
+    "WITH RECURSIVE chain(seq) AS (SELECT ?1 UNION ALL SELECT t.parent FROM txn t"     \
+    " JOIN chain c ON t.seq=c.seq WHERE t.parent>0 AND t.parent>=?2) "
+
+    std::vector<LogTransaction> chain(int64_t head, int64_t from) override
+    {
+        auto s = prepare(FC_TXN_CHAIN
+                         "SELECT seq,parent,id,kind,origin,name,time,script,session,inverts,"
+                         "branch FROM txn WHERE seq IN (SELECT seq FROM chain) AND seq>=?2"
+                         " ORDER BY seq");
+        sqlite3_bind_int64(s, 1, head);
+        sqlite3_bind_int64(s, 2, from);
+        std::vector<LogTransaction> out;
+        while (sqlite3_step(s) == SQLITE_ROW)
+            out.push_back(readTransaction(s));
         sqlite3_reset(s);
         return out;
     }
@@ -415,14 +477,24 @@ public:
     }
 
     bool lastOpOn(const std::string& ckind, long cid, const std::string& prop, int64_t after,
-                  LogOp& o) override
+                  int64_t head, LogOp& o) override
     {
-        auto s = prepare("SELECT txn,idx FROM op WHERE cid=? AND prop=? AND ckind=? AND txn>?"
-                         " ORDER BY txn DESC, idx DESC LIMIT 1");
-        sqlite3_bind_int64(s, 1, cid);
-        bindText(s, 2, prop);
-        bindText(s, 3, ckind);
-        sqlite3_bind_int64(s, 4, after);
+        sqlite3_stmt* s = nullptr;
+        if (head > 0) {
+            s = prepare(FC_TXN_CHAIN
+                        "SELECT txn,idx FROM op WHERE cid=?3 AND prop=?4 AND ckind=?5 AND txn>=?2"
+                        " AND txn IN (SELECT seq FROM chain) ORDER BY txn DESC, idx DESC LIMIT 1");
+            sqlite3_bind_int64(s, 1, head);
+            sqlite3_bind_int64(s, 2, after + 1);
+        }
+        else {
+            s = prepare("SELECT txn,idx FROM op WHERE cid=?3 AND prop=?4 AND ckind=?5 AND txn>=?2"
+                        " ORDER BY txn DESC, idx DESC LIMIT 1");
+            sqlite3_bind_int64(s, 2, after + 1);
+        }
+        sqlite3_bind_int64(s, 3, cid);
+        bindText(s, 4, prop);
+        bindText(s, 5, ckind);
         if (sqlite3_step(s) != SQLITE_ROW) {
             sqlite3_reset(s);
             return false;
@@ -654,7 +726,7 @@ public:
             else
                 sqlite3_bind_null(s, 1);
             bindText(s, 2, v.uuid);
-            bindText(s, 3, v.branch);
+            sqlite3_bind_int64(s, 3, v.branch);
             bindText(s, 4, v.kind);
             bindText(s, 5, v.name);
             sqlite3_bind_int64(s, 6, v.seq);
@@ -687,7 +759,7 @@ public:
     {
         v.num = sqlite3_column_int64(s, 0);
         v.uuid = text(s, 1);
-        v.branch = text(s, 2);
+        v.branch = sqlite3_column_int64(s, 2);
         v.kind = text(s, 3);
         v.name = text(s, 4);
         v.seq = sqlite3_column_int64(s, 5);
@@ -759,6 +831,103 @@ public:
         }
         sqlite3_reset(s);
         return out;
+    }
+
+    static void readBranch(sqlite3_stmt* s, LogBranch& b)
+    {
+        b.id = sqlite3_column_int64(s, 0);
+        b.name = text(s, 1);
+        b.fromVersion = sqlite3_column_int64(s, 2);
+        b.fromSeq = sqlite3_column_int64(s, 3);
+        b.head = sqlite3_column_int64(s, 4);
+        b.idBase = static_cast<long>(sqlite3_column_int64(s, 5));
+        b.lastId = static_cast<long>(sqlite3_column_int64(s, 6));
+        b.created = sqlite3_column_double(s, 7);
+        b.closed = sqlite3_column_double(s, 8);
+    }
+
+    std::vector<LogBranch> branches() override
+    {
+        auto s = prepare("SELECT id,name,from_version,from_seq,head_seq,id_base,last_id,created,closed"
+                         " FROM branch ORDER BY id");
+        std::vector<LogBranch> out;
+        while (sqlite3_step(s) == SQLITE_ROW) {
+            LogBranch b;
+            readBranch(s, b);
+            out.push_back(std::move(b));
+        }
+        sqlite3_reset(s);
+        return out;
+    }
+
+    bool getBranch(int64_t id, LogBranch& b) override
+    {
+        auto s = prepare("SELECT id,name,from_version,from_seq,head_seq,id_base,last_id,created,closed"
+                         " FROM branch WHERE id=?");
+        sqlite3_bind_int64(s, 1, id);
+        bool found = sqlite3_step(s) == SQLITE_ROW;
+        if (found)
+            readBranch(s, b);
+        sqlite3_reset(s);
+        return found;
+    }
+
+    bool findBranch(const std::string& name, LogBranch& b) override
+    {
+        auto s = prepare("SELECT id,name,from_version,from_seq,head_seq,id_base,last_id,created,closed"
+                         " FROM branch WHERE name=?");
+        bindText(s, 1, name);
+        bool found = sqlite3_step(s) == SQLITE_ROW;
+        if (found)
+            readBranch(s, b);
+        sqlite3_reset(s);
+        return found;
+    }
+
+    int64_t addBranch(LogBranch& b) override
+    {
+        auto s = prepare("INSERT INTO branch(id,name,from_version,from_seq,head_seq,id_base,"
+                         "last_id,created,closed) VALUES(?,?,?,?,?,?,?,?,?)");
+        if (b.id > 0)
+            sqlite3_bind_int64(s, 1, b.id);
+        else
+            sqlite3_bind_null(s, 1);
+        bindText(s, 2, b.name);
+        sqlite3_bind_int64(s, 3, b.fromVersion);
+        sqlite3_bind_int64(s, 4, b.fromSeq);
+        sqlite3_bind_int64(s, 5, b.head);
+        sqlite3_bind_int64(s, 6, b.idBase);
+        sqlite3_bind_int64(s, 7, b.lastId);
+        sqlite3_bind_double(s, 8, b.created);
+        sqlite3_bind_double(s, 9, b.closed);
+        step(s);
+        b.id = sqlite3_last_insert_rowid(db);
+        return b.id;
+    }
+
+    bool updateBranch(const LogBranch& b) override
+    {
+        auto s = prepare("UPDATE branch SET name=?, from_version=?, from_seq=?, id_base=?,"
+                         " last_id=?, created=?, closed=? WHERE id=?");
+        bindText(s, 1, b.name);
+        sqlite3_bind_int64(s, 2, b.fromVersion);
+        sqlite3_bind_int64(s, 3, b.fromSeq);
+        sqlite3_bind_int64(s, 4, b.idBase);
+        sqlite3_bind_int64(s, 5, b.lastId);
+        sqlite3_bind_double(s, 6, b.created);
+        sqlite3_bind_double(s, 7, b.closed);
+        sqlite3_bind_int64(s, 8, b.id);
+        step(s);
+        return sqlite3_changes(db) > 0;
+    }
+
+    bool renameBranch(int64_t id, const std::string& name) override
+    {
+        auto s = prepare("UPDATE branch SET name=? WHERE id=?");
+        bindText(s, 1, name);
+        sqlite3_bind_int64(s, 2, id);
+        step(s);
+        return sqlite3_changes(db) > 0;
     }
 
     std::string getMeta(const std::string& key) override

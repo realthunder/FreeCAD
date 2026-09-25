@@ -57,6 +57,7 @@ namespace App
     class Application;
     class FileBlobManager;
     class TransactionLog;
+    struct LogBranch;
     class Transaction;
     class StringHasher;
     using StringHasherRef = Base::Reference<StringHasher>;
@@ -190,6 +191,9 @@ public:
     fastsignals::signal<void (const App::Document&)> signalUndo;
     /// signal on redo
     fastsignals::signal<void (const App::Document&)> signalRedo;
+    /// signal after the document became the head of another branch of its
+    /// transaction log, or a new branch was made (docs/TransactionLog.md sec 26)
+    fastsignals::signal<void (const App::Document&)> signalSwitchBranch;
     /** signal on load/save document
      * this signal is given when the document gets streamed.
      * you can use this hook to write additional information in
@@ -350,6 +354,22 @@ public:
      * when there is no log.
      */
     bool restoreVersion(int64_t num);
+
+    /** Branches (docs/TransactionLog.md sec 17, 26). createBranch() makes
+     * branch `name` from version `version`, or else from log row `seq`, or
+     * else from the current head, and switches to it; the fork version is
+     * named if it was not (a row with no version gets one). Its object ids
+     * start a random stride above every other branch's. Returns its id, 0
+     * when there is no log; throws on a name taken or a fork not found.
+     */
+    int64_t createBranch(const std::string& name, int64_t version = 0, int64_t seq = 0);
+    /** Make the document the head of branch `name`, in place: the tip left
+     * is snapshotted, the head's newest version checked out and its tail
+     * replayed, the undo and redo stacks become the branch's own steps
+     * since the document was opened. Not an undo step; a `switch` record
+     * goes on the branch arrived on. Throws if there is no such branch.
+     */
+    bool switchBranch(const std::string& name);
 
     /** Crash recovery (docs/TransactionLog.md sec 25): make this new, empty
      * document what the session that crashed with transient directory
@@ -1001,11 +1021,25 @@ protected:
     /// Apply the log's rows after `after` forward, folded (sec 25.2 item
     /// 3); returns the rows applied and sets `last` to the last one.
     size_t _replayLog(int64_t after, int64_t& last);
-    /// The undo and redo stacks the log's rows leave, as cold stubs.
-    void _rebuildUndoFromLog();
+    /// The undo and redo stacks the rows after `after` on the current
+    /// branch's chain leave, as cold stubs.
+    void _rebuildUndoFromLog(int64_t after = 0);
     /// Make this document what `version` (a scratch document holding a
-    /// version) is, recorded into the open transaction (sec 24.5).
-    void _applyVersion(Document& version);
+    /// version) is, recorded into the open transaction (sec 24.5); the view
+    /// providers too when `views`, or under ViewObjectTransaction.
+    void _applyVersion(Document& version, bool views = false);
+    /// Version `num` read into a hidden scratch document, handed to `fn`,
+    /// and closed.
+    void _readVersion(int64_t num, const std::function<void(Document&)>& fn);
+    /// Sec 26: refuse a branch operation in the middle of something else;
+    /// an implicit transaction is committed first.
+    void _checkBranchable(const char* what);
+    /// Sec 26: the tip snapshotted and the last id kept, before leaving.
+    void _leaveBranch();
+    /// Sec 26: the state at the log's head, checked out in place, unrecorded.
+    void _checkoutHead();
+    /// Sec 26: the id counter and the undo stacks of `branch`, arrived on.
+    void _arriveOnBranch(const LogBranch& branch);
     /// Keep at most UndoMaxStackSize steps of `stack` hot (sec 24.3): with
     /// the log, the oldest beyond it become cold stubs; without it, they go.
     /// The undo stack only: its steps are deleted oldest first, the order

@@ -191,6 +191,12 @@ public:
      * them); the log takes a handle on each.
      */
     bool adoptStore(const std::string& path);
+    /** The embedded copy of a file edited elsewhere (sec 16.6, 26.2 item
+     * 7): adopted as adoptStore() does, every branch of it closed and its
+     * `main` renamed `main@<save date>`, and a new, empty `main` opened, so
+     * the file as found becomes its first version, numbered on.
+     */
+    bool adoptClosed(const std::string& path);
 
     /// What recover() found.
     struct RecoverInfo
@@ -220,6 +226,16 @@ public:
     void noteIdentity();
     /// Append the `recover` record (sec 25.2), `script` its JSON.
     int64_t recordRecovery(const std::string& script);
+    /// Append a record with no ops on the current branch: `kind`, `name`,
+    /// `script` its JSON. Returns its seq.
+    int64_t record(const char* kind, const std::string& name, const std::string& script);
+
+    /// Put the log on branch `id` (sec 26): the next row follows its head.
+    /// Kept in `meta` so a recovery continues on it. False if no such branch.
+    bool setBranch(int64_t id);
+    /// Forget what the log knew of the live values (sec 26): after the
+    /// document was made another state without a transaction.
+    void forgetLiveValues();
 
 
     /** What a cold undo needs of row `seq` (sec 24.3): its ops in log
@@ -258,6 +274,10 @@ public:
     void flush();
     /// Transactions numbered so far (the last seq, queued writes included).
     int64_t lastSeq() const { return _nextSeq; }
+    /// The branch the document is on (sec 26) and its head: the seq of its
+    /// newest row, queued writes included, which the next row follows.
+    int64_t branch() const { return _branch; }
+    int64_t head() const { return _head; }
 
     /** The store follows the transient directory.
      *
@@ -423,6 +443,9 @@ private:
     void takePending(int64_t key, ValueTask& task);
     /// Queue a job for the worker, in order.
     void post(std::function<void()> job);
+    /// Number a row: the next seq, on the current branch, following its
+    /// head, which moves to it. Main thread.
+    void number(LogTransaction& t);
 
     /// The delta policy, read on the main thread as each job is posted so
     /// the worker never touches the preferences.
@@ -443,6 +466,9 @@ private:
     /// The last seq and version number handed out; main thread only.
     int64_t _nextSeq {0};
     int64_t _nextVersion {0};
+    /// The current branch and its head (sec 26); main thread only.
+    int64_t _branch {1};
+    int64_t _head {0};
     /// An embedded copy was just adopted: the next onRestore is its version.
     bool _adopted {false};
     /// Property id -> the op whose after ref that property's next copy

@@ -321,10 +321,18 @@ std::string checkSelective(TransactionLog& log, int64_t seq, const std::vector<L
             left[{o.ckind, o.cid, o.prop}] = "-";
     }
     std::ostringstream why;
+    // Only this branch's history counts (sec 26): a row on another branch
+    // is not in this document's past, and what came after it here is
+    // what its chain says.
+    const auto rows = log.store().chain(log.head(), seq);
+    if (rows.empty() || rows.front().seq != seq) {
+        why << " row " << seq << " is not on this branch;";
+        return why.str();
+    }
     for (const auto& kv : left) {
         LogOp later;
         if (!log.store().lastOpOn(std::get<0>(kv.first), std::get<1>(kv.first),
-                                  std::get<2>(kv.first), seq, later))
+                                  std::get<2>(kv.first), seq, log.head(), later))
             continue;
         std::string now = later.op == "delprop" ? std::string("-")
                         : later.op == "set"     ? later.vafter
@@ -4196,6 +4204,10 @@ void Document::restore(Base::XMLReader &reader,
                 noteVersionTaken();
         }
     }
+    // Undo reaches back to here and no further, whatever branch the
+    // document is later switched to (docs/TransactionLog.md sec 26.4).
+    if (auto log = getTransactionLog())
+        d->undoFloor = log->lastSeq();
 
     FC_DURATION_DECL_INIT(dAfter);
     if(!delaySignal) {
@@ -4296,10 +4308,25 @@ void Document::embedHistory(bool archive)
             if (version)
                 version->setStatus(Property::NoModify, true);
         }
-        if (!history || !version)
+        // `Branch` (sec 17.1, 26): the branch this file is. The copy's
+        // `meta` already names it for the log; this is for anyone reading
+        // the file, a FreeCAD that knows no log included.
+        auto branch = Base::freecad_dynamic_cast<PropertyString>(getPropertyByName("Branch"));
+        if (!branch) {
+            branch = Base::freecad_dynamic_cast<PropertyString>(addDynamicProperty(
+                "App::PropertyString", "Branch", "Base",
+                "The branch of the transaction log this file is",
+                Prop_Hidden | Prop_ReadOnly));
+            if (branch)
+                branch->setStatus(Property::NoModify, true);
+        }
+        if (!history || !version || !branch)
             THROWM(Base::RuntimeError, "cannot add the history properties");
         history->setValue(db, blobs, exts);
         version->setValue(std::to_string(copy.version) + " " + copy.saveId);
+        LogBranch current;
+        if (log->store().getBranch(log->branch(), current))
+            branch->setValue(current.name);
     }
     catch (Base::Exception& e) {
         FC_ERR("embedding the history of " << getName() << " failed: " << e.what());
@@ -4322,6 +4349,8 @@ bool Document::adoptEmbeddedHistory()
         return false;
     history->setStatus(Property::NoModify, true);
     version->setStatus(Property::NoModify, true);
+    if (auto branch = getPropertyByName("Branch"))
+        branch->setStatus(Property::NoModify, true);
     std::string saveId;
     {
         std::istringstream in(version->getValue());
@@ -4334,9 +4363,12 @@ bool Document::adoptEmbeddedHistory()
         const std::string date = copy->getMeta("save_date");
         copy.reset();
         if (id.empty() || id != saveId || date != LastModifiedDate.getValue()) {
+            // Sec 16.6, 26.2 item 7: the file was edited elsewhere. The
+            // history is kept, closed, and a new `main` starts from the
+            // file as found, numbered on.
             FC_WARN("the embedded history of " << getName()
-                    << " is not the file's (edited elsewhere?): set aside");
-            return false;
+                    << " is not the file's (edited elsewhere?): kept as closed branches");
+            return log->adoptClosed(history->getDatabase()->path());
         }
         return log->adoptStore(history->getDatabase()->path());
     }
@@ -4459,7 +4491,7 @@ namespace {
 bool keptOnRestore(const char* name)
 {
     static const std::set<std::string> kept {"FileName", "TransientDir", "Uid", "Id",
-        "History", "Version", "LastModifiedBy", "LastModifiedDate", "CreatedBy",
+        "History", "Version", "Branch", "LastModifiedBy", "LastModifiedDate", "CreatedBy",
         "CreationDate"};
     return kept.count(name) != 0;
 }
@@ -4488,7 +4520,7 @@ void copyBlob(FileBlobManager& manager, const FileBlobManager& from, const FileB
 
 } // namespace
 
-void Document::_applyVersion(Document& version)
+void Document::_applyVersion(Document& version, bool views)
 {
     // docs/TransactionLog.md sec 24.5, in the passes of 24.3: what the
     // version lacks goes, what it has comes (under its id and name), the
@@ -4602,7 +4634,7 @@ void Document::_applyVersion(Document& version)
     // ViewObjectTransaction, the setting that has a view provider's change
     // open a transaction of its own. The scratch document's are the
     // version's, restored by the Gui from its GuiDocument.xml.
-    if (DocumentParams::getViewObjectTransaction()) {
+    if (views || DocumentParams::getViewObjectTransaction()) {
         for (auto& kv : target) {
             auto live = viewOf(getObjectByID(kv.first));
             auto from = viewOf(kv.second);
@@ -4633,11 +4665,17 @@ bool Document::recoverFromLog(const std::string& oldDir)
     std::unique_ptr<void, std::function<void(void*)>> ending(
         &manager, [](void* m) { static_cast<FileBlobManager*>(m)->endRecovery(); });
 
-    // The anchor: the newest version (16.3), or nothing -- a document never
-    // saved or opened has every object's create in the log.
+    // The anchor: the newest version (16.3) on the branch the session was
+    // on (sec 26), or nothing -- a document never saved or opened has every
+    // object's create in the log.
+    std::set<int64_t> onChain {0};
+    for (const auto& t : log->store().chain(log->head()))
+        onChain.insert(t.seq);
     LogVersion anchor;
     bool haveAnchor = false;
     for (const auto& v : log->store().versions()) {
+        if (!onChain.count(v.seq))
+            continue;
         if (!haveAnchor || v.num > anchor.num) {
             anchor = v;
             haveAnchor = true;
@@ -4715,7 +4753,7 @@ size_t Document::_replayLog(int64_t after, int64_t& last)
 
     size_t rows = 0;
     last = after;
-    for (const auto& t : store.transactions(after + 1, 0)) {
+    for (const auto& t : store.chain(log->head(), after + 1)) {
         auto ops = store.ops(t.seq);
         if (t.kind == "recompute" && ops.empty()) {
             // The record (sec 21): {"id":N,"name":...[,"error":...]} per object;
@@ -4889,7 +4927,7 @@ size_t Document::_replayLog(int64_t after, int64_t& last)
     return rows;
 }
 
-void Document::_rebuildUndoFromLog()
+void Document::_rebuildUndoFromLog(int64_t after)
 {
     // The stacks the crashed session had, from its rows (sec 25.2): a step
     // pushes and clears redo; an `undo` row naming the top moves it to redo,
@@ -4908,7 +4946,7 @@ void Document::_rebuildUndoFromLog()
     };
     std::vector<Step> undo;
     std::vector<Step> redo;
-    for (const auto& t : store.transactions()) {
+    for (const auto& t : store.chain(log->head(), after + 1)) {
         if (t.kind == "undo" && !undo.empty() && undo.back().seq == t.inverts) {
             Step s = undo.back();
             undo.pop_back();
@@ -4967,6 +5005,28 @@ bool Document::restoreVersion(int64_t num)
     if (!log->store().getVersion(num, version))
         THROWM(Base::RuntimeError, "no such version");
 
+    _readVersion(num, [&](Document& scratch) {
+        _clearRedos();
+        d->activeUndoTransaction = new Transaction(0);
+        d->activeUndoTransaction->Name = "Restore version " + std::to_string(num)
+            + (version.name.empty() ? "" : " " + version.name);
+        d->activeUndoTransaction->LogKind = "restore";
+        mUndoMap[d->activeUndoTransaction->getID()] = d->activeUndoTransaction;
+        _applyVersion(scratch);
+    });
+    if (d->activeUndoTransaction->isEmpty()) {
+        // Already what the version was: nothing to record.
+        mUndoMap.erase(d->activeUndoTransaction->getID());
+        delete d->activeUndoTransaction;
+        d->activeUndoTransaction = nullptr;
+        return true;
+    }
+    _commitTransaction(false);
+    return true;
+}
+
+void Document::_readVersion(int64_t num, const std::function<void(Document&)>& fn)
+{
     const std::string dir = _materialiseVersion(num);
     // The version, read into a scratch document of its own. The name of
     // its transient directory hashes FileName, which keeps it apart from
@@ -4992,21 +5052,252 @@ bool Document::restoreVersion(int64_t num)
         scratch->restore(dir.c_str(), false);
     }
 
-    _clearRedos();
-    d->activeUndoTransaction = new Transaction(0);
-    d->activeUndoTransaction->Name =
-        "Restore version " + std::to_string(num) + (version.name.empty() ? "" : " " + version.name);
-    d->activeUndoTransaction->LogKind = "restore";
-    mUndoMap[d->activeUndoTransaction->getID()] = d->activeUndoTransaction;
-    _applyVersion(*scratch);
-    if (d->activeUndoTransaction->isEmpty()) {
-        // Already what the version was: nothing to record.
-        mUndoMap.erase(d->activeUndoTransaction->getID());
-        delete d->activeUndoTransaction;
-        d->activeUndoTransaction = nullptr;
-        return true;
+    fn(*scratch);
+}
+
+namespace {
+
+/// The id stride of a new branch (docs/TransactionLog.md sec 17.2): a
+/// random 2^16..2^20, so that some two thousand branches fit in the 31
+/// bits an id has where `long` is 32.
+long branchStride()
+{
+    static std::mt19937 gen {std::random_device {}()};
+    std::uniform_int_distribution<long> dist(1L << 16, 1L << 20);
+    return dist(gen);
+}
+
+std::string jsonString(const std::string& s)
+{
+    std::string out = "\"";
+    for (char c : s) {
+        if (c == '"' || c == '\\')
+            out += '\\';
+        out += c;
     }
-    _commitTransaction(false);
+    return out + "\"";
+}
+
+} // namespace
+
+void Document::_checkBranchable(const char* what)
+{
+    if (d->checkingOut || testStatus(Restoring) || isPerformingTransaction() || d->committing
+            || d->snapshotting || testStatus(PartialDoc))
+        THROWM(Base::RuntimeError, std::string("cannot ") + what + " now");
+    if (d->activeUndoTransaction)
+        commitImplicitTransaction();
+    if (d->activeUndoTransaction)
+        THROWM(Base::RuntimeError, std::string("cannot ") + what + " inside a transaction");
+}
+
+void Document::_leaveBranch()
+{
+    // Sec 17.1: the tip left behind is snapshotted, unless it is a version
+    // already, so that switching back checks it out with no replay; and the
+    // branch keeps the last id it handed out.
+    TransactionLog* log = getTransactionLog();
+    log->resolvePending();
+    // A version is the tip when nothing after it on the chain changed the
+    // document: only records (save, snapshot, switch, branch) follow it.
+    auto& store = log->store();
+    const auto rows = store.chain(log->head());
+    std::set<int64_t> onChain {0};
+    for (const auto& t : rows)
+        onChain.insert(t.seq);
+    int64_t newest = -1;
+    for (const auto& v : store.versions()) {
+        if (onChain.count(v.seq))
+            newest = std::max(newest, v.seq);
+    }
+    bool atVersion = newest >= 0;
+    for (auto it = rows.rbegin(); atVersion && it != rows.rend() && it->seq > newest; ++it)
+        atVersion = store.ops(it->seq).empty();
+    if (!atVersion)
+        snapshotToLog();
+    LogBranch branch;
+    if (log->store().getBranch(log->branch(), branch)) {
+        branch.lastId = d->lastObjectId;
+        log->store().updateBranch(branch);
+    }
+}
+
+void Document::_checkoutHead()
+{
+    // Sec 26.2 item 4: this document made the state at the log's current
+    // head -- the newest version on its chain, checked out in place, and
+    // the rows after it replayed -- with nothing recorded: the branch's
+    // content did not change, the document moved to it.
+    TransactionLog* log = getTransactionLog();
+    auto& store = log->store();
+    std::set<int64_t> onChain {0};
+    for (const auto& t : store.chain(log->head()))
+        onChain.insert(t.seq);
+    LogVersion anchor;
+    bool haveAnchor = false;
+    for (const auto& v : store.versions()) {
+        if (onChain.count(v.seq) && (!haveAnchor || v.num > anchor.num)) {
+            anchor = v;
+            haveAnchor = true;
+        }
+    }
+    Base::FlagToggler<> replaying(d->replaying);
+    if (haveAnchor) {
+        _readVersion(anchor.num, [this](Document& version) { _applyVersion(version, true); });
+    }
+    else {
+        // No version on the chain: every object's create is in its rows.
+        std::vector<std::string> names;
+        for (auto obj : getObjects())
+            names.emplace_back(obj->getNameInDocument());
+        for (const auto& name : names) {
+            if (getObject(name.c_str()))
+                removeObject(name.c_str());
+        }
+    }
+    int64_t last = 0;
+    _replayLog(haveAnchor ? anchor.seq : 0, last);
+}
+
+void Document::_arriveOnBranch(const LogBranch& branch)
+{
+    // The ids go on from where this branch left them, never below its base
+    // nor below an object the checkout brought (sec 17.2).
+    long id = std::max(branch.lastId, branch.idBase);
+    for (auto obj : getObjects())
+        id = std::max(id, obj->getID());
+    d->lastObjectId = id;
+    _rebuildUndoFromLog(d->undoFloor);
+}
+
+int64_t Document::createBranch(const std::string& name, int64_t version, int64_t seq)
+{
+    // docs/TransactionLog.md sec 17.1, 26: a new branch from a version, a
+    // row, or the current head, and the document switched to it.
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        return 0;
+    _checkBranchable("create a branch");
+    auto& store = log->store();
+    LogBranch taken;
+    if (name.empty() || store.findBranch(name, taken))
+        THROWM(Base::ValueError, "branch name '" + name + "' is empty or taken");
+
+    LogVersion fork;
+    int64_t forkSeq = log->head();
+    if (version > 0) {
+        if (!store.getVersion(version, fork))
+            THROWM(Base::ValueError, "no such version");
+        forkSeq = fork.seq;
+    }
+    else if (seq > 0) {
+        bool found = false;
+        for (const auto& t : store.transactions(seq, 1))
+            found = t.seq == seq;
+        if (!found)
+            THROWM(Base::ValueError, "no such row");
+        forkSeq = seq;
+    }
+    LogBranch left;
+    store.getBranch(log->branch(), left);
+    const int64_t leftHead = log->head();
+
+    _leaveBranch();
+    // The fork is a version (sec 17.1), which the tip snapshot just made
+    // when the fork is the head; otherwise one at that row, if there is.
+    if (!fork.num) {
+        for (const auto& v : store.versions()) {
+            if (v.seq == forkSeq)
+                fork = v;
+        }
+    }
+
+    long base = d->lastObjectId;
+    for (const auto& b : store.branches())
+        base = std::max({base, b.idBase, b.lastId});
+    LogBranch branch;
+    branch.name = name;
+    branch.fromVersion = fork.num;
+    branch.fromSeq = forkSeq;
+    branch.head = forkSeq;
+    branch.idBase = base + branchStride();
+    branch.created = std::chrono::duration<double>(
+                         std::chrono::system_clock::now().time_since_epoch()).count();
+    store.addBranch(branch);
+
+    if (forkSeq != leftHead) {
+        // The steps on the stacks are the other branch's.
+        clearUndos();
+        _clearRedos();
+        log->setBranch(branch.id);
+        _checkoutHead();
+        log->forgetLiveValues();
+    }
+    else {
+        // The document does not change, and neither do its steps: the
+        // chain behind the new branch's head is the one they were made on.
+        log->setBranch(branch.id);
+    }
+    if (!fork.num) {
+        // A row with no version: the one the document now is, named below.
+        snapshotToLog();
+        for (const auto& v : store.versions()) {
+            if (v.seq == forkSeq)
+                fork = v;
+        }
+    }
+    if (fork.num) {
+        if (fork.kind != "named")
+            store.nameVersion(fork.num, "branch " + name);
+        branch.fromVersion = fork.num;
+        store.updateBranch(branch);
+    }
+    long id = std::max(d->lastObjectId, branch.idBase);
+    d->lastObjectId = id;
+    if (forkSeq != leftHead)
+        _arriveOnBranch(branch);
+
+    std::ostringstream script;
+    script << "{\"from_branch\":" << jsonString(left.name) << ",\"from_version\":" << fork.num
+           << ",\"from_seq\":" << forkSeq << ",\"id_base\":" << branch.idBase << "}";
+    log->record("branch", "Branch " + name, script.str());
+    signalSwitchBranch(*this);
+    return branch.id;
+}
+
+bool Document::switchBranch(const std::string& name)
+{
+    // docs/TransactionLog.md sec 17.1, 26: the document becomes the head of
+    // another branch, in place; not an undo step (26.4) -- each branch has
+    // its own steps, since this document was opened.
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        return false;
+    _checkBranchable("switch branch");
+    auto& store = log->store();
+    LogBranch branch;
+    if (!store.findBranch(name, branch))
+        THROWM(Base::ValueError, "no branch '" + name + "'");
+    if (branch.id == log->branch())
+        return true;
+    if (branch.closed != 0)
+        THROWM(Base::ValueError, "branch '" + name + "' is closed; branch from one of its versions");
+    LogBranch left;
+    store.getBranch(log->branch(), left);
+
+    _leaveBranch();
+    clearUndos();
+    _clearRedos();
+    log->setBranch(branch.id);
+    _checkoutHead();
+    log->forgetLiveValues();
+    _arriveOnBranch(branch);
+
+    std::ostringstream script;
+    script << "{\"from_branch\":" << jsonString(left.name) << ",\"from_head\":" << left.head
+           << "}";
+    log->record("switch", "Switch from " + left.name, script.str());
+    signalSwitchBranch(*this);
     return true;
 }
 

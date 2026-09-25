@@ -8,6 +8,7 @@
 
 #include <iterator>
 #include <map>
+#include <sqlite3.h>
 #include <zipios++/zipfile.h>
 
 #include "App/Application.h"
@@ -474,7 +475,7 @@ TEST_F(TransactionLogTest, saveRecordAndVersion)
     const auto& v = versions[0];
     EXPECT_EQ(v.num, 1);
     EXPECT_EQ(v.kind, "unnamed");
-    EXPECT_EQ(v.branch, "main");
+    EXPECT_EQ(v.branch, 1);
     EXPECT_FALSE(v.uuid.empty());
     EXPECT_EQ(v.env, log().environment());
     EXPECT_GT(v.schema, 0);
@@ -2102,5 +2103,339 @@ TEST_F(TransactionLogTest, recoversACrashedSessionFromItsLog)
             record = true;
     }
     EXPECT_TRUE(record);
+    App::GetApplication().closeDocument(name.c_str());
+}
+
+TEST_F(TransactionLogTest, branchesAreChainsInTheStore)
+{
+    // docs/TransactionLog.md sec 26 (4.a): a branch is a named tip into the
+    // parent tree; appending on it moves its head, and its history is the
+    // chain from there, whatever else the store holds.
+    const std::string path = Base::FileInfo::getTempFileName("txnlog-branches") + ".db";
+    {
+        auto store = App::TransactionStore::openSQLite(path);
+        App::LogBranch main;
+        ASSERT_TRUE(store->findBranch("main", main));
+        EXPECT_EQ(main.id, 1);
+        EXPECT_EQ(main.head, 0);
+
+        auto row = [&](int64_t parent, int64_t branch, const char* prop, const char* value) {
+            App::LogTransaction t;
+            t.parent = parent;
+            t.branch = branch;
+            t.kind = "user";
+            t.name = prop;
+            std::vector<App::LogOp> ops(1);
+            ops[0].op = "set";
+            ops[0].ckind = "obj";
+            ops[0].cid = 7;
+            ops[0].prop = prop;
+            ops[0].vafter = value;
+            return store->append(t, ops);
+        };
+        const int64_t a1 = row(0, 1, "A", "a1");
+        const int64_t a2 = row(a1, 1, "B", "b1");
+        App::LogBranch side;
+        side.name = "side";
+        side.fromSeq = a2;
+        side.head = a2;
+        side.idBase = 100000;
+        const int64_t sideId = store->addBranch(side);
+        EXPECT_EQ(sideId, 2);
+        const int64_t m3 = row(a2, 1, "A", "a2");        // main goes on
+        const int64_t s3 = row(a2, sideId, "B", "b2");   // side forks off a2
+        const int64_t s4 = row(s3, sideId, "A", "a3");
+        const int64_t m4 = row(m3, 1, "B", "b3");
+
+        ASSERT_TRUE(store->getBranch(1, main));
+        EXPECT_EQ(main.head, m4);
+        ASSERT_TRUE(store->getBranch(sideId, side));
+        EXPECT_EQ(side.head, s4);
+        EXPECT_EQ(side.idBase, 100000);
+        App::LogBranch dup;
+        dup.name = "side";
+        EXPECT_THROW(store->addBranch(dup), Base::Exception);
+
+        auto seqs = [](const std::vector<App::LogTransaction>& rows) {
+            std::vector<int64_t> out;
+            for (const auto& t : rows)
+                out.push_back(t.seq);
+            return out;
+        };
+        EXPECT_EQ(seqs(store->chain(m4)), (std::vector<int64_t> {a1, a2, m3, m4}));
+        EXPECT_EQ(seqs(store->chain(s4)), (std::vector<int64_t> {a1, a2, s3, s4}));
+        EXPECT_EQ(seqs(store->chain(s4, a2 + 1)), (std::vector<int64_t> {s3, s4}));
+        for (const auto& t : store->chain(s4, s3))
+            EXPECT_EQ(t.branch, sideId);
+
+        // The newest op on a property, on one branch's chain or on any.
+        App::LogOp op;
+        ASSERT_TRUE(store->lastOpOn("obj", 7, "A", a1, m4, op));
+        EXPECT_EQ(op.vafter, "a2");
+        ASSERT_TRUE(store->lastOpOn("obj", 7, "A", a1, s4, op));
+        EXPECT_EQ(op.vafter, "a3");
+        ASSERT_TRUE(store->lastOpOn("obj", 7, "B", a2, m4, op));
+        EXPECT_EQ(op.vafter, "b3");
+        EXPECT_FALSE(store->lastOpOn("obj", 7, "B", s3, s4, op));
+        ASSERT_TRUE(store->lastOpOn("obj", 7, "A", a1, 0, op));
+        EXPECT_EQ(op.txn, s4);
+
+        EXPECT_TRUE(store->renameBranch(sideId, "renamed"));
+        EXPECT_TRUE(store->findBranch("renamed", side));
+        EXPECT_FALSE(store->renameBranch(99, "x"));
+    }
+    Base::FileInfo(path).deleteFile();
+}
+
+TEST_F(TransactionLogTest, schema4StoreMovesOntoMain)
+{
+    // A store written before branches (schema 4) opens with every row and
+    // version on `main`, whose head is the newest row.
+    const std::string path = Base::FileInfo::getTempFileName("txnlog-schema4") + ".db";
+    {
+        sqlite3* db = nullptr;
+        ASSERT_EQ(sqlite3_open(path.c_str(), &db), SQLITE_OK);
+        const char* sql =
+            "CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);"
+            "INSERT INTO meta VALUES('schema','4');"
+            "CREATE TABLE txn(seq INTEGER PRIMARY KEY, parent INTEGER, id INTEGER, kind TEXT,"
+            " origin TEXT, name TEXT, time REAL, script TEXT, session INTEGER,"
+            " inverts INTEGER DEFAULT 0);"
+            "INSERT INTO txn VALUES(1,0,0,'user','','one',10.0,'',1,0);"
+            "INSERT INTO txn VALUES(2,1,0,'user','','two',11.0,'',1,0);"
+            "INSERT INTO txn VALUES(3,2,0,'save','','save',12.0,'',1,0);"
+            "CREATE TABLE version(num INTEGER PRIMARY KEY, uuid TEXT, branch TEXT, kind TEXT,"
+            " name TEXT, seq INTEGER, env INTEGER, docxml_hash TEXT, schema INTEGER,"
+            " created REAL);"
+            "INSERT INTO version VALUES(1,'u','main','unnamed','',2,0,'h',5,12.0);";
+        char* err = nullptr;
+        EXPECT_EQ(sqlite3_exec(db, sql, nullptr, nullptr, &err), SQLITE_OK) << (err ? err : "");
+        sqlite3_free(err);
+        sqlite3_close(db);
+    }
+    {
+        // Read-only, as the embedded guard opens a copy (sec 16.4): read
+        // as it is, nothing migrated, and no throw.
+        Base::FileInfo(path).setPermissions(Base::FileInfo::ReadOnly);
+        auto store = App::TransactionStore::openSQLite(path);
+        EXPECT_EQ(store->getMeta("schema"), "4");
+    }
+    Base::FileInfo(path).setPermissions(Base::FileInfo::ReadWrite);
+    {
+        auto store = App::TransactionStore::openSQLite(path);
+        EXPECT_EQ(store->getMeta("schema"), "5");
+        auto branches = store->branches();
+        ASSERT_EQ(branches.size(), 1u);
+        EXPECT_EQ(branches[0].name, "main");
+        EXPECT_EQ(branches[0].head, 3);
+        EXPECT_DOUBLE_EQ(branches[0].created, 10.0);
+        for (const auto& t : store->transactions())
+            EXPECT_EQ(t.branch, 1);
+        EXPECT_EQ(store->chain(3).size(), 3u);
+        App::LogVersion v;
+        ASSERT_TRUE(store->getVersion(1, v));
+        EXPECT_EQ(v.branch, 1);
+    }
+    Base::FileInfo(path).deleteFile();
+}
+
+TEST_F(TransactionLogTest, branchesSwitchInPlace)
+{
+    // docs/TransactionLog.md sec 26 (4.b): a branch from the head leaves the
+    // document and its steps as they are; a switch makes the document the
+    // other branch's head in place, with that branch's own steps; object
+    // ids never collide across branches.
+    doc()->openTransaction("create");
+    auto obj = make("Obj");
+    obj->Integer.setValue(1);
+    doc()->commitTransaction();
+    doc()->openTransaction("edit");
+    obj->Integer.setValue(2);
+    doc()->commitTransaction();
+    const auto mainUndos = doc()->getAvailableUndoNames();
+    ASSERT_EQ(mainUndos.size(), 2u);
+
+    const int64_t side = doc()->createBranch("side");
+    ASSERT_EQ(side, 2);
+    EXPECT_EQ(log().branch(), side);
+    EXPECT_EQ(obj->Integer.getValue(), 2);
+    EXPECT_EQ(doc()->getAvailableUndoNames(), mainUndos);   // still hot, still valid
+    App::LogBranch sideRow;
+    ASSERT_TRUE(log().store().getBranch(side, sideRow));
+    ASSERT_GT(sideRow.fromVersion, 0);
+    App::LogVersion forkVersion;
+    ASSERT_TRUE(log().store().getVersion(sideRow.fromVersion, forkVersion));
+    EXPECT_EQ(forkVersion.kind, "named");
+    EXPECT_GT(sideRow.idBase, obj->getID() + 65535);
+    EXPECT_THROW(doc()->createBranch("side"), Base::Exception);
+
+    doc()->openTransaction("side edit");
+    obj->Integer.setValue(3);
+    auto sideOnly = make("SideOnly");
+    sideOnly->String.setValue("side");
+    doc()->commitTransaction();
+    const long sideOnlyId = sideOnly->getID();
+    EXPECT_GT(sideOnlyId, sideRow.idBase);
+    const auto sideUndos = doc()->getAvailableUndoNames();
+
+    ASSERT_TRUE(doc()->switchBranch("main"));
+    EXPECT_EQ(log().branch(), 1);
+    EXPECT_EQ(obj->Integer.getValue(), 2);   // the same object, in place
+    EXPECT_FALSE(doc()->getObject("SideOnly"));
+    EXPECT_EQ(doc()->getAvailableUndoNames(), mainUndos);
+    EXPECT_EQ(doc()->getAvailableRedos(), 0);
+
+    doc()->openTransaction("main edit");
+    obj->Integer.setValue(4);
+    auto mainOnly = make("MainOnly");
+    doc()->commitTransaction();
+    EXPECT_LT(mainOnly->getID(), sideRow.idBase);
+
+    ASSERT_TRUE(doc()->switchBranch("side"));
+    EXPECT_EQ(obj->Integer.getValue(), 3);
+    EXPECT_FALSE(doc()->getObject("MainOnly"));
+    auto back = dynamic_cast<App::FeatureTest*>(doc()->getObject("SideOnly"));
+    ASSERT_TRUE(back);
+    EXPECT_EQ(back->getID(), sideOnlyId);
+    EXPECT_STREQ(back->String.getValue(), "side");
+    EXPECT_EQ(doc()->getAvailableUndoNames(), sideUndos);
+
+    // Undo and redo are the branch's own, cold, and logged on it.
+    ASSERT_TRUE(doc()->undo());
+    EXPECT_EQ(obj->Integer.getValue(), 2);
+    EXPECT_FALSE(doc()->getObject("SideOnly"));
+    ASSERT_TRUE(doc()->redo());
+    EXPECT_EQ(obj->Integer.getValue(), 3);
+    ASSERT_TRUE(doc()->getObject("SideOnly"));
+    doc()->openTransaction("side again");
+    auto sideTwo = make("SideTwo");
+    doc()->commitTransaction();
+    EXPECT_GT(sideTwo->getID(), sideOnlyId);   // the side's counter went on
+
+    ASSERT_TRUE(doc()->switchBranch("main"));
+    EXPECT_EQ(obj->Integer.getValue(), 4);
+    EXPECT_TRUE(doc()->getObject("MainOnly"));
+    EXPECT_FALSE(doc()->getObject("SideTwo"));
+
+    // Each branch's rows are its chain; the switches are records on them.
+    auto& store = log().store();
+    for (const auto& t : store.chain(log().head())) {
+        if (t.kind == "switch")
+            EXPECT_EQ(t.branch, 1);
+        EXPECT_NE(t.name, "side edit");
+    }
+    App::LogBranch sideNow;
+    ASSERT_TRUE(store.getBranch(side, sideNow));
+    bool sawSideEdit = false;
+    for (const auto& t : store.chain(sideNow.head))
+        sawSideEdit = sawSideEdit || t.name == "side edit";
+    EXPECT_TRUE(sawSideEdit);
+    EXPECT_THROW(doc()->switchBranch("nowhere"), Base::Exception);
+}
+
+TEST_F(TransactionLogTest, branchFromAnOlderVersion)
+{
+    // A branch from a version behind the head checks that version out; the
+    // one it came from stays as it was.
+    doc()->openTransaction("create");
+    auto obj = make("Obj");
+    obj->Integer.setValue(1);
+    doc()->commitTransaction();
+    const int64_t v1 = doc()->snapshotToLog();
+    ASSERT_GT(v1, 0);
+    doc()->openTransaction("later");
+    obj->Integer.setValue(7);
+    make("Later");
+    doc()->commitTransaction();
+
+    const int64_t old = doc()->createBranch("old", v1);
+    ASSERT_GT(old, 0);
+    EXPECT_EQ(obj->Integer.getValue(), 1);
+    EXPECT_FALSE(doc()->getObject("Later"));
+    App::LogVersion v;
+    ASSERT_TRUE(log().store().getVersion(v1, v));
+    EXPECT_EQ(v.kind, "named");
+    // Undo reaches the rows since the document opened that this branch has:
+    // the create, not "later".
+    const auto undos = doc()->getAvailableUndoNames();
+    ASSERT_EQ(undos.size(), 1u);
+    EXPECT_EQ(undos.front(), "create");
+
+    doc()->openTransaction("old edit");
+    obj->Integer.setValue(8);
+    doc()->commitTransaction();
+    ASSERT_TRUE(doc()->switchBranch("main"));
+    EXPECT_EQ(obj->Integer.getValue(), 7);
+    EXPECT_TRUE(doc()->getObject("Later"));
+    ASSERT_TRUE(doc()->switchBranch("old"));
+    EXPECT_EQ(obj->Integer.getValue(), 8);
+    EXPECT_FALSE(doc()->getObject("Later"));
+}
+
+TEST_F(TransactionLogTest, evictionKeepsEachBranchsNewest)
+{
+    // Sec 26.2 item 5: the newest version of every branch outlives the
+    // limit, so a switch checks out a version of its own branch.
+    doc()->openTransaction("create");
+    auto obj = make("Obj");
+    doc()->commitTransaction();
+    const long keep = App::DocumentParams::getTransactionLogKeepVersions();
+    App::DocumentParams::setTransactionLogKeepVersions(1);
+    doc()->createBranch("side");   // snapshots main's tip, named as the fork
+    doc()->openTransaction("side");
+    obj->Integer.setValue(5);
+    doc()->commitTransaction();
+    ASSERT_TRUE(doc()->switchBranch("main"));   // snapshots side's tip
+    for (int i = 0; i < 3; ++i) {
+        doc()->openTransaction("edit");
+        obj->Integer.setValue(10 + i);
+        doc()->commitTransaction();
+        ASSERT_GT(doc()->snapshotToLog(), 0);
+    }
+    App::DocumentParams::setTransactionLogKeepVersions(keep);
+    std::map<int64_t, int> perBranch;
+    for (const auto& v : log().store().versions())
+        ++perBranch[v.branch];
+    EXPECT_TRUE(perBranch.count(2));   // side's tip survived main's snapshots
+    ASSERT_TRUE(doc()->switchBranch("side"));
+    EXPECT_EQ(obj->Integer.getValue(), 5);
+}
+
+TEST_F(TransactionLogTest, recoveryContinuesOnTheBranch)
+{
+    // A crash on a branch recovers that branch's head, and the log goes on
+    // on it.
+    doc()->openTransaction("create");
+    auto obj = make("Obj");
+    obj->Integer.setValue(1);
+    doc()->commitTransaction();
+    doc()->createBranch("side");
+    doc()->openTransaction("side");
+    obj->Integer.setValue(6);
+    doc()->commitTransaction();
+    log().flush();
+
+    const std::string crashed = Base::FileInfo::getTempPath() + "txnlog-crashed-branch";
+    Base::FileInfo(crashed).deleteDirectoryRecursive();
+    for (const char* sub : {"history", "blobs"}) {
+        const std::string from = doc()->TransientDir.getStrValue() + "/" + sub;
+        const std::string to = crashed + "/" + sub;
+        Base::FileInfo(to).createDirectories();
+        if (!Base::FileInfo(from).isDir())
+            continue;
+        for (const auto& file : Base::FileInfo(from).getDirectoryContent()) {
+            if (file.isFile())
+                file.copyTo((to + "/" + file.fileName()).c_str());
+        }
+    }
+    auto recovered = App::GetApplication().recoverDocument(crashed.c_str(), false);
+    ASSERT_TRUE(recovered);
+    const std::string name = recovered->getName();
+    auto robj = dynamic_cast<App::FeatureTest*>(recovered->getObject("Obj"));
+    ASSERT_TRUE(robj);
+    EXPECT_EQ(robj->Integer.getValue(), 6);
+    EXPECT_EQ(recovered->getTransactionLog()->branch(), 2);
+    ASSERT_TRUE(recovered->switchBranch("main"));
+    EXPECT_EQ(robj->Integer.getValue(), 1);
     App::GetApplication().closeDocument(name.c_str());
 }

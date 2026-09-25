@@ -2793,3 +2793,105 @@ class FeatureTestAttribute(unittest.TestCase):
 
     def tearDown(self):
         FreeCAD.closeDocument("TestAttribute")
+
+
+class TransactionBranchCases(unittest.TestCase):
+    # Branches of the transaction log in a file (docs/TransactionLog.md
+    # sec 17, 26): the branch travels with the embedded history, and a file
+    # edited elsewhere keeps its history as closed branches.
+
+    def setUp(self):
+        self.param = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Document")
+        self.mode = self.param.GetInt("TransactionLog", 0)
+        self.param.SetInt("TransactionLog", 2)  # embedded
+        self.dir = tempfile.mkdtemp(prefix="fc-branches-")
+        self.docs = []
+
+    def tearDown(self):
+        for name in self.docs:
+            if name in FreeCAD.listDocuments():
+                FreeCAD.closeDocument(name)
+        self.param.SetInt("TransactionLog", self.mode)
+
+    def track(self, doc):
+        self.docs.append(doc.Name)
+        return doc
+
+    def saved(self):
+        doc = self.track(FreeCAD.newDocument("Branches"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        obj = doc.addObject("App::FeatureTest", "Obj")
+        obj.Integer = 1
+        doc.commitTransaction()
+        doc.createTransactionBranch("side")
+        doc.openTransaction("side edit")
+        obj.Integer = 2
+        doc.commitTransaction()
+        path = os.path.join(self.dir, "branches.FCStd")
+        doc.saveAs(path)
+        return doc, path
+
+    def branches(self, doc):
+        return {b["name"]: b for b in doc.getTransactionBranches()}
+
+    def testBranchTravelsInTheFile(self):
+        doc, path = self.saved()
+        self.assertEqual(doc.Branch, "side")
+        FreeCAD.closeDocument(doc.Name)
+        opened = self.track(FreeCAD.openDocument(path))
+        branches = self.branches(opened)
+        self.assertEqual(sorted(branches), ["main", "side"])
+        self.assertTrue(branches["side"]["current"])
+        self.assertEqual(opened.getObject("Obj").Integer, 2)
+        self.assertTrue(opened.switchTransactionBranch("main"))
+        self.assertEqual(opened.getObject("Obj").Integer, 1)
+
+    def testEditedElsewhereKeepsClosedBranches(self):
+        doc, path = self.saved()
+        before = max(v["num"] for v in doc.getTransactionVersions())
+        FreeCAD.closeDocument(doc.Name)
+        # Edited elsewhere: a FreeCAD that knows no log restamps the date.
+        import re
+        import zipfile
+        import ArchiveMembers
+
+        edited = os.path.join(self.dir, "edited.FCStd")
+        with zipfile.ZipFile(edited, "w", zipfile.ZIP_DEFLATED) as target:
+            for item, data in ArchiveMembers.members(path):
+                if item.filename == "Document.xml":
+                    data, n = re.subn(
+                        rb'(name="LastModifiedDate".*?<String value=")[^"]*',
+                        rb"\g<1>1999-01-01T00:00:00Z",
+                        data,
+                        count=1,
+                        flags=re.S,
+                    )
+                    self.assertEqual(n, 1)
+                target.writestr(item, data)
+
+        opened = self.track(FreeCAD.openDocument(edited))
+        branches = self.branches(opened)
+        self.assertEqual(len(branches), 3)
+        closed = [b for b in branches.values() if b["closed"]]
+        self.assertEqual(len(closed), 2)
+        self.assertTrue(any(n.startswith("main@") for n in branches))
+        main = branches["main"]
+        self.assertTrue(main["current"])
+        self.assertFalse(main["closed"])
+        self.assertGreaterEqual(main["from_version"], 1)
+        # The file as found is the new main's first version, numbered on,
+        # and its row roots a chain of its own.
+        versions = [v for v in opened.getTransactionVersions() if v["branch"] == "main"]
+        self.assertEqual(len(versions), 1)
+        self.assertGreater(versions[0]["num"], before)
+        rows = [r for r in opened.getTransactionLog() if r["branch"] == "main"]
+        self.assertEqual(rows[0]["parent"], 0)
+        self.assertEqual(opened.getObject("Obj").Integer, 2)
+        # A closed branch is not switched to; one of its versions is branched from.
+        with self.assertRaises(Exception):
+            opened.switchTransactionBranch("side")
+        fork = [v for v in opened.getTransactionVersions() if v["name"] == "branch side"]
+        self.assertEqual(len(fork), 1)
+        opened.createTransactionBranch("revived", version=fork[0]["num"])
+        self.assertEqual(opened.getObject("Obj").Integer, 1)
