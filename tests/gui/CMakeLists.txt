@@ -341,6 +341,12 @@ fc_add_gui_test(GuiSketchUndoDuringDrag_tests_run
                 sketch-undo-during-drag.py
                 --timeout 300)
 
+# What a box selection in a sketch edit leaves behind: construction lines
+# still drawn as such (upstream 9bff63e38d).
+fc_add_gui_test(GuiSketchBoxSelection_tests_run
+                sketch-box-selection.py
+                --timeout 300)
+
 # A sketch edited with the "Editing workbench" preference cleared never
 # builds the Sketcher toolbars, so its commands have no action -- and
 # Sketcher_Snap's icon swap dereferenced that null from isActive().

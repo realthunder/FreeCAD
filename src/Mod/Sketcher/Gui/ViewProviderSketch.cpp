@@ -1324,8 +1324,11 @@ bool ViewProviderSketch::mouseButtonPressed(int Button, bool pressed, const SbVe
                     doBoxSelection(prvCursorPos, cursorPos, viewer);
                     rubberband->setWorking(false);
 
-                    // a redraw is required in order to clear the rubberband
-                    draw(true,false);
+                    // a redraw is required in order to clear the rubberband;
+                    // from the object's geometry, since the solver's copy is
+                    // brought up to date lazily and can carry an outdated
+                    // construction flag (upstream 9bff63e38d)
+                    draw(false,false);
                     const_cast<Gui::ViewerContext*>(viewer)->redraw();
                     setSketchMode(STATUS_NONE);
                     return true;
