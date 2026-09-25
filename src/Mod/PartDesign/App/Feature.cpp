@@ -127,6 +127,14 @@ void Feature::onChanged(const App::Property *prop)
                 body->signalSiblingVisibilityChanged(siblings);
             }
         }
+        else if (prop == &ShapeMaterial) {
+            // A body is one solid of one material: its features share it
+            // (upstream 0804d80ebf)
+            if (auto body = Body::findBodyOf(this)) {
+                if (body->ShapeMaterial.getValue().getUUID() != ShapeMaterial.getValue().getUUID())
+                    body->ShapeMaterial.setValue(ShapeMaterial.getValue());
+            }
+        }
     }
     Part::Feature::onChanged(prop);
 }
@@ -355,6 +363,11 @@ bool Feature::isElementGenerated(const TopoShape &shape, const Data::MappedName 
 
 App::DocumentObjectExecReturn *Feature::recompute(void)
 {
+    // a feature added to a body of a material takes it, unless it has its
+    // own (upstream 0804d80ebf)
+    if (auto body = getFeatureBody())
+        copyMaterial(body);
+
     SuppressedShape.setValue(TopoShape());
 
     if(!Suppress.getValue())

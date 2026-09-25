@@ -53,6 +53,8 @@ short Compound::mustExecute() const
 
 App::DocumentObjectExecReturn *Compound::execute()
 {
+    if (Links.getSize() > 0)
+        copyMaterial(Links.getValues().front());
     try {
         // avoid duplicates without changing the order
         // See also ViewProviderCompound::updateData

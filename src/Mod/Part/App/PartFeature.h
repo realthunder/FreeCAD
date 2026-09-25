@@ -249,6 +249,12 @@ public:
     void fixShape(TopoShape &s) const;
 
 protected:
+    /** Take the material of the object this one is made from, unless this
+     * one has a material of its own (upstream 0804d80ebf)
+     */
+    void copyMaterial(Feature* feature);
+    void copyMaterial(App::DocumentObject* link);
+
     /// recompute only this object
     App::DocumentObjectExecReturn *recompute() override;
     /// recalculate the feature

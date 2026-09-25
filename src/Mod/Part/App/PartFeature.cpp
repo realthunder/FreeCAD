@@ -2400,6 +2400,21 @@ FilletBase::FilletBase()
     Edges.setSize(0);
 }
 
+void Feature::copyMaterial(Feature* feature)
+{
+    if (!feature)
+        return;
+    auto uuid = ShapeMaterial.getValue().getUUID();
+    if (uuid != feature->ShapeMaterial.getValue().getUUID()
+            && uuid == Materials::MaterialManager::defaultMaterialUUID())
+        ShapeMaterial.setValue(feature->ShapeMaterial.getValue());
+}
+
+void Feature::copyMaterial(App::DocumentObject* link)
+{
+    copyMaterial(dynamic_cast<Feature*>(link));
+}
+
 short FilletBase::mustExecute() const
 {
     if (Base.isTouched() || Edges.isTouched() || EdgeLinks.isTouched())

@@ -136,6 +136,7 @@ App::DocumentObjectExecReturn *Mirroring::execute()
     App::DocumentObject* link = Source.getValue();
     if (!link)
         return new App::DocumentObjectExecReturn("No object linked");
+    copyMaterial(link);
 
     App::DocumentObject* refObject = MirrorPlane.getValue();
 

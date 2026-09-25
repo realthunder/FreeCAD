@@ -638,6 +638,17 @@ void Body::onChanged (const App::Property* prop) {
                 BaseFeature.setValue(nullptr);
             }
         }
+        else if (prop == &ShapeMaterial) {
+            // A body is one solid of one material (upstream 0804d80ebf). Its
+            // features only: a sketch or a datum has no use for it, and
+            // setting it touches them (upstream takes every Part::Feature)
+            for (auto obj : Group.getValues()) {
+                auto feature = dynamic_cast<PartDesign::Feature*>(obj);
+                if (feature && feature->ShapeMaterial.getValue().getUUID()
+                        != ShapeMaterial.getValue().getUUID())
+                    feature->ShapeMaterial.setValue(ShapeMaterial.getValue());
+            }
+        }
         else if( prop == &SingleSolid ) {
             for(auto obj : Group.getValues()) {
                 if(obj->isDerivedFrom<PartDesign::Feature>())

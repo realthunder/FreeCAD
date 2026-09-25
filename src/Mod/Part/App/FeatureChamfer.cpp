@@ -47,6 +47,7 @@ App::DocumentObjectExecReturn *Chamfer::execute()
     App::DocumentObject* link = Base.getValue();
     if (!link)
         return new App::DocumentObjectExecReturn("No object linked");
+    copyMaterial(link);
 
     try {
         TopoShape baseTopoShape = Feature::getTopoShape(link);

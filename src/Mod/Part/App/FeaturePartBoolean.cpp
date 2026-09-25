@@ -76,6 +76,7 @@ const char *Boolean::opCode() const {
 
 App::DocumentObjectExecReturn *Boolean::execute()
 {
+    copyMaterial(Base.getValue());
     try {
 #if defined(__GNUC__) && defined (FC_OS_LINUX)
         Base::SignalException se;
