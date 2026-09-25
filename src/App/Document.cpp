@@ -5631,15 +5631,15 @@ int Document::recompute(const std::vector<App::DocumentObject*> &objs, bool forc
     if (aborted)
         throw Base::AbortException();
 
-    signalRecomputed(*this,topoSortedObjects);
-
-    if (auto log = getTransactionLog()) {
-        // The recompute record (docs/TransactionLog.md sec 11), after the
-        // implicit transaction of the derived writes so it follows them.
-        // Read before that commit: with undo off the commit deletes the
-        // transaction, and with it any object the recompute removed, which
-        // topoSortedObjects still points at.
-        std::vector<TransactionLog::RecomputedObject> done;
+    // The recompute record (docs/TransactionLog.md sec 11), read here, before
+    // anything else runs: with undo off both the commit below and an observer
+    // of signalRecomputed -- a Python one that clears the document, in
+    // CAMTests.TestPathHelix -- delete objects topoSortedObjects still points
+    // at. It is logged after the implicit transaction of the derived writes,
+    // so it follows them.
+    auto log = getTransactionLog();
+    std::vector<TransactionLog::RecomputedObject> done;
+    if (log) {
         done.reserve(topoSortedObjects.size());
         for (auto obj : topoSortedObjects) {
             if (!obj->isAttachedToDocument())
@@ -5654,6 +5654,11 @@ int Document::recompute(const std::vector<App::DocumentObject*> &objs, bool forc
             }
             done.push_back(std::move(r));
         }
+    }
+
+    signalRecomputed(*this,topoSortedObjects);
+
+    if (log) {
         commitImplicitTransaction();
         log->onRecompute(done, std::chrono::duration<double>(
                                    std::chrono::steady_clock::now() - recomputeClock).count());

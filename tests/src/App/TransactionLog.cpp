@@ -1824,3 +1824,31 @@ TEST_F(TransactionLogTest, recomputeRecordSurvivesARemovalWithUndoOff)
     EXPECT_TRUE(record);
     EXPECT_TRUE(removal);
 }
+
+TEST_F(TransactionLogTest, recomputeRecordSurvivesAnObserverRemovingWithUndoOff)
+{
+    // An observer of signalRecomputed may delete what was recomputed -- with
+    // undo off, at once -- and the record was read after it ran: the use
+    // after free CAMTests.TestPathHelix crashed on with the log on, where a
+    // Python observer clears the document (docs/TransactionLog.md sec 24.12).
+    doc()->setUndoMode(0);
+    auto temp = make("Temp");
+    ASSERT_TRUE(temp);
+    doc()->commitTransaction();
+    auto connection = doc()->signalRecomputed.connect(
+        [](const App::Document& d, const std::vector<App::DocumentObject*>&) {
+            auto& owner = const_cast<App::Document&>(d);
+            if (owner.getObject("Temp"))
+                owner.removeObject("Temp");
+        });
+    temp->touch();
+    doc()->recompute();
+    connection.disconnect();
+    EXPECT_FALSE(doc()->getObject("Temp"));
+    bool record = false;
+    for (auto& t : log().store().transactions()) {
+        if (t.kind == "recompute" && t.script.find("Temp") != std::string::npos)
+            record = true;
+    }
+    EXPECT_TRUE(record);
+}

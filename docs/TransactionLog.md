@@ -3285,3 +3285,28 @@ logged after the record. Gtest `recomputeRecordSurvivesARemovalWithUndoOff`
 Second run, with the fix: **Python 2904 OK** (50 skipped, 6 expected
 failures -- the log-off numbers) **and ctest 818/818 before the new case**.
 Nothing else broke: the log on is the suites' behaviour too.
+
+### 24.12 The recompute record, read before any observer (2026-09-25)
+
+Both suites with the log on again, after the blob pack store
+(`docs/FileBlobsManager.md` sec 15.11): the Python suite crashed in
+`CAMTests.TestPathHelix` once more, a SIGSEGV in `Document::recompute` --
+with the pack store on and with it off.
+
+**The defect** is the one of 24.11, one step earlier. The record was read
+after `signalRecomputed`, and an observer of that signal may delete what
+was recomputed: the CAM test's Python observer clears the document from
+`slotRecomputedDocument` (`removeObjectsFromDocument`), and with undo off
+the objects go at once while `topoSortedObjects` still points at them. The
+24.11 run passed only because the freed memory still read as an object.
+The record is now read before the signal, as the last thing the recompute
+does; it is still logged after the implicit transaction of the derived
+writes. Gtest `recomputeRecordSurvivesAnObserverRemovingWithUndoOff`.
+
+**Not from this change, and not chased:** `OmniControl_Tests_run`
+(`test_documentReachOfEditOps`) fails with the log on, pack store on or
+off: it creates an object, turns undo on, commits one transaction and
+expects one undo step, and gets two. Not investigated; presumably the
+creation becomes an implicit transaction of its own with the log on
+(24.10), in which case the test states the log-off rule. It is main-thread
+undo bookkeeping, which nothing in this change touches.
