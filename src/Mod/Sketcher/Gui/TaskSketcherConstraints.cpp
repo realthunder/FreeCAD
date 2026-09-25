@@ -1022,6 +1022,9 @@ TaskSketcherConstraints::~TaskSketcherConstraints()
 void TaskSketcherConstraints::sketchClosed()
 {
     connectionConstraintsChanged.disconnect();
+    // Nor does it follow the selection any more: its filters rebuild the list
+    // from the sketch, whose view provider may be gone by the next message.
+    detachSelection();
     QSignalBlocker blocker(ui->listWidgetConstraints);
     ui->listWidgetConstraints->clear();
 }

@@ -28,7 +28,13 @@
 # include <QMenu>
 # include <QShortcut>
 # include <QString>
+# include <QApplication>
+# include <QHelpEvent>
 # include <QImage>
+# include <QMouseEvent>
+# include <QPainter>
+# include <QStyledItemDelegate>
+# include <QToolTip>
 # include <QPixmap>
 # include <QListWidget>
 # include <QPointer>
@@ -153,6 +159,7 @@ public:
         GeometryType = geo->getTypeId();
         isConstruction = GeometryFacade::getConstruction(geo);
         isInternalAligned = GeometryFacade::isInternalAligned(geo);
+        activePart = defaultPart();
 
         static std::map<Base::Type,QString> typeMap;
         if(typeMap.empty()) {
@@ -241,7 +248,8 @@ public:
         this->setHidden(!shown);
     }
 
-    void setElement(Sketcher::SketchObject *sketch, int element, int filterIndex) {
+    /// the icon of one part of this element: 0 edge, 1 start, 2 end, 3 centre
+    QIcon partIcon(int element) const {
         static std::map<std::pair<Base::Type,int>, MultIcon> iconMap;
         static QIcon none;
         if(iconMap.empty()) {
@@ -346,6 +354,11 @@ public:
             else
                 icon = it->second.Normal;
         }
+        return icon;
+    }
+
+    void setElement(Sketcher::SketchObject *sketch, int element, int filterIndex) {
+        QIcon icon = partIcon(element);
         setIcon(0,icon);
         setVisibility(filterIndex);
 
@@ -369,6 +382,46 @@ public:
     bool isConstruction;
     bool isExternal;
     bool isInternalAligned;
+
+    /// The part the row's icon shows: 0 edge, 1 start, 2 end, 3 centre
+    /// point (PointPos). The one selected last, or the default with none.
+    int activePart = 0;
+
+    /// a point is its start vertex; everything else its edge
+    int defaultPart() const
+    {
+        return GeometryType == Part::GeomPoint::getClassTypeId() ? 1 : 0;
+    }
+
+    bool partSelected(int part) const
+    {
+        switch (part) {
+        case 1: return isStartingPointSelected;
+        case 2: return isEndPointSelected;
+        case 3: return isMidPointSelected;
+        default: return isLineSelected;
+        }
+    }
+
+    /// what the icon shows when the part it showed is deselected
+    int firstSelectedPart() const
+    {
+        if (GeometryType == Part::GeomPoint::getClassTypeId())
+            return 1;
+        for (int part : {0, 1, 2, 3}) {
+            if (partSelected(part))
+                return part;
+        }
+        return defaultPart();
+    }
+
+    void followSelection(int part, bool select)
+    {
+        if (select)
+            activePart = GeometryType == Part::GeomPoint::getClassTypeId() ? 1 : part;
+        else if (part == activePart || !partSelected(activePart))
+            activePart = firstSelectedPart();
+    }
     // a member of a group: the list shows the group's handle in its place
     bool isGroupMember = false;
     // the construction line a Text constraint hangs its geometry on
@@ -377,9 +430,90 @@ public:
     Sketcher::SketchObject* sketchObject = nullptr;
 };
 
+// Column 0's icon is a button that drops down the element's parts. It is
+// drawn with the small arrow a grouped tool button carries at its corner.
+class ElementIconDelegate : public QStyledItemDelegate
+{
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    QRect iconRect(const QStyleOptionViewItem &option, const QModelIndex &index) const
+    {
+        QStyleOptionViewItem opt = option;
+        initStyleOption(&opt, index);
+        if (opt.icon.isNull())
+            return {};
+        const QWidget *w = option.widget;
+        QStyle *style = w ? w->style() : QApplication::style();
+        return style->subElementRect(QStyle::SE_ItemViewItemDecoration, &opt, w);
+    }
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &option,
+               const QModelIndex &index) const override
+    {
+        QStyledItemDelegate::paint(painter, option, index);
+        QRect icon = iconRect(option, index);
+        if (icon.isEmpty())
+            return;
+        const QWidget *w = option.widget;
+        QStyle *style = w ? w->style() : QApplication::style();
+        int size = std::max(5, icon.width() / 3);
+        QStyleOption arrow;
+        arrow.rect = QRect(icon.right() - size + 2, icon.bottom() - size + 2, size, size);
+        arrow.palette = option.palette;
+        arrow.state = QStyle::State_Enabled;
+        style->drawPrimitive(QStyle::PE_IndicatorArrowDown, &arrow, painter, w);
+    }
+};
+
 ElementView::ElementView(QWidget *parent)
     : QTreeWidget(parent)
 {
+    setItemDelegateForColumn(0, new ElementIconDelegate(this));
+}
+
+QRect ElementView::iconRect(QTreeWidgetItem *item) const
+{
+    auto delegate = static_cast<ElementIconDelegate*>(itemDelegateForColumn(0));
+    QModelIndex index = indexFromItem(item, 0);
+    if (!delegate || !index.isValid())
+        return {};
+    QStyleOptionViewItem opt;
+    initViewItemOption(&opt);
+    opt.rect = visualRect(index);
+    return delegate->iconRect(opt, index);
+}
+
+void ElementView::mousePressEvent(QMouseEvent *event)
+{
+    if (event->button() == Qt::LeftButton) {
+        QPoint pos = event->position().toPoint();
+        QTreeWidgetItem *item = itemAt(pos);
+        QRect icon = item ? iconRect(item) : QRect();
+        if (icon.contains(pos)) {
+            // the icon is a button: it does not select the row
+            Q_EMIT partButtonClicked(item, viewport()->mapToGlobal(icon.bottomLeft()));
+            event->accept();
+            return;
+        }
+    }
+    inherited::mousePressEvent(event);
+}
+
+bool ElementView::viewportEvent(QEvent *event)
+{
+    if (event->type() == QEvent::ToolTip) {
+        auto help = static_cast<QHelpEvent*>(event);
+        QTreeWidgetItem *item = itemAt(help->pos());
+        if (item && iconRect(item).contains(help->pos())) {
+            QToolTip::showText(help->globalPos(),
+                tr("Click to choose which part of this element to select: its edge, "
+                   "or its start, end or centre point. Ctrl adds to the selection.\n"
+                   "The icon shows the part selected last."), viewport());
+            return true;
+        }
+    }
+    return inherited::viewportEvent(event);
 }
 
 ElementView::~ElementView()
@@ -487,19 +621,6 @@ void ElementView::deleteSelectedItems()
     doc->commitTransaction();
 }
 
-void ElementView::keyPressEvent(QKeyEvent * event)
-{
-    switch (event->key())
-    {
-      case Qt::Key_Z:
-        // signal
-        onFilterShortcutPressed();
-        break;
-      default:
-        inherited::keyPressEvent( event );
-        break;
-    }
-}
 
 // ----------------------------------------------------------------------------
 
@@ -511,7 +632,6 @@ TaskSketcherElements::TaskSketcherElements(ViewProviderSketch* sketchView)
     , ui(new Ui_TaskSketcherElements())
     , focusItemIndex(-1)
     , previouslySelectedItemIndex(-1)
-    , isautoSwitchBoxChecked(false)
     , inhibitSelectionUpdate(false)
 {
     // we need a separate container widget to add all controls to
@@ -525,10 +645,10 @@ TaskSketcherElements::TaskSketcherElements(ViewProviderSketch* sketchView)
     const char* ctrlKey = "Ctrl";
     QString cmdKey = QShortcut::tr(ctrlKey);
 #endif
-    QString zKey = QStringLiteral("Z");
     ui->Explanation->setText(tr("<html><head/><body><p>&quot;%1&quot;: multiple selection</p>"
-                                "<p>&quot;%2&quot;: switch to next valid type</p></body></html>")
-                             .arg(cmdKey).arg(zKey));
+                                "<p>Click an element's icon to select one of its points</p>"
+                                "</body></html>")
+                             .arg(cmdKey));
     ui->elementsWidget->setSelectionMode(QAbstractItemView::ExtendedSelection);
     ui->elementsWidget->setEditTriggers(QAbstractItemView::NoEditTriggers);
     ui->elementsWidget->setMouseTracking(true);
@@ -555,17 +675,8 @@ TaskSketcherElements::TaskSketcherElements(ViewProviderSketch* sketchView)
         this                     , SLOT  (on_elementsWidget_itemEntered(QTreeWidgetItem *))
        );
     QObject::connect(
-        ui->elementsWidget, SIGNAL(onFilterShortcutPressed()),
-        this                     , SLOT  (on_elementsWidget_filterShortcutPressed())
-       );
-    QObject::connect(
-        ui->comboBoxElementFilter, SIGNAL(currentIndexChanged(int)),
-        this                     , SLOT  (on_elementsWidget_currentFilterChanged(int))
-       );
-    QObject::connect(
-        ui->autoSwitchBox, SIGNAL(stateChanged(int)),
-        this                     , SLOT  (on_autoSwitchBox_stateChanged(int))
-       );
+        ui->elementsWidget, &ElementView::partButtonClicked,
+        this, &TaskSketcherElements::onPartButtonClicked);
 
     connectionElementsChanged = sketchView->getSketchObject()->signalElementsChanged.connect(
         std::bind(&SketcherGui::TaskSketcherElements::slotElementsChanged, this));
@@ -577,13 +688,7 @@ TaskSketcherElements::TaskSketcherElements(ViewProviderSketch* sketchView)
 
     this->groupLayout()->addWidget(proxy);
 
-    ui->comboBoxElementFilter->setCurrentIndex(0);
 
-    ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Sketcher/Elements");
-
-    ui->autoSwitchBox->setChecked(hGrp->GetBool("Auto-switch to edge", true));
-
-    ui->comboBoxElementFilter->setEnabled(true);
     // The Mode filter: a checkable list in the button's pop-up, which stays
     // open while entries are ticked. Its state is upstream's parameter.
     {
@@ -617,13 +722,6 @@ TaskSketcherElements::TaskSketcherElements(ViewProviderSketch* sketchView)
 
 TaskSketcherElements::~TaskSketcherElements()
 {
-    try {
-        ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Sketcher/Elements");
-        hGrp->SetBool("Auto-switch to edge", ui->autoSwitchBox->isChecked());
-    }
-    catch (const Base::Exception&) {
-    }
-
     connectionElementsChanged.disconnect();
     connectionConstraintsChanged.disconnect();
 }
@@ -632,6 +730,10 @@ void TaskSketcherElements::sketchClosed()
 {
     connectionElementsChanged.disconnect();
     connectionConstraintsChanged.disconnect();
+    // Nor does it follow the selection any more: its view provider may be
+    // gone by the next message (a document closed before this panel is
+    // deleted clears the selection).
+    detachSelection();
     QSignalBlocker blocker(ui->elementsWidget);
     ui->elementsWidget->clear();
     // clear() deleted the items this maps to, and the panel goes on
@@ -654,6 +756,8 @@ static void setPosSelected(ElementItem *ite, Sketcher::PointPos PosId, bool sele
         ite->isLineSelected=select;
         break;
     }
+    int part = PosId == Sketcher::PointPos::none ? 0 : int(PosId);
+    ite->followSelection(part, select);
 }
 
 static void showSelected(ElementItem *ite, int element)
@@ -699,10 +803,11 @@ void TaskSketcherElements::onSelectionChanged(const Gui::SelectionChanges& msg)
 
             ElementItem* ite = static_cast<ElementItem*>(it->second);
             setPosSelected(ite, PosId, select);
+            ite->setElement(sketchView->getSketchObject(), ite->activePart, filterState());
 
             // update the listwidget
             ui->elementsWidget->blockSignals(true);
-            showSelected(ite, ui->comboBoxElementFilter->currentIndex());
+            showSelected(ite, 0);
             if(select)
                 ui->elementsWidget->scrollToItem(ite);
             ui->elementsWidget->blockSignals(false);
@@ -738,10 +843,14 @@ void TaskSketcherElements::onSelectionChanged(const Gui::SelectionChanges& msg)
                     setPosSelected(static_cast<ElementItem*>(it->second), PosId, true);
             }
         }
+        for (auto &v : itemMap) {
+            auto ite = static_cast<ElementItem*>(v.second);
+            ite->activePart = ite->firstSelectedPart();
+        }
         QSignalBlocker blocker(ui->elementsWidget);
-        int element = ui->comboBoxElementFilter->currentIndex();
         for (auto &v : itemMap)
-            showSelected(static_cast<ElementItem*>(v.second), element);
+            showSelected(static_cast<ElementItem*>(v.second), 0);
+        updateIcons();
     }
 }
 
@@ -752,8 +861,10 @@ void TaskSketcherElements::on_elementsWidget_itemSelectionChanged(void)
 
 
     // selection changed because we acted on the current entered item
-    // we can not do this with ItemPressed because that signal is triggered after this one
-    int element=ui->comboBoxElementFilter->currentIndex();
+    // we can not do this with ItemPressed because that signal is triggered after this one.
+    // A row stands for its element's edge; a point's row for its vertex. The
+    // other parts are picked from the row's icon (onPartButtonClicked).
+    const int element = 0;
 
     ElementItem * itf;
 
@@ -770,6 +881,7 @@ void TaskSketcherElements::on_elementsWidget_itemSelectionChanged(void)
             switch(element){
             case 0:
                 itf->isLineSelected=!itf->isLineSelected;
+                itf->followSelection(0, itf->isLineSelected);
                 break;
             case 1:
                 itf->isStartingPointSelected=!itf->isStartingPointSelected;
@@ -798,13 +910,6 @@ void TaskSketcherElements::on_elementsWidget_itemSelectionChanged(void)
             multipleconsecutiveselection=false;
         }
     }
-
-    std::string doc_name = sketchView->getSketchObject()->getDocument()->getName();
-    std::string obj_name = sketchView->getSketchObject()->getNameInDocument();
-
-    bool block = this->blockSelection(true); // avoid to be notified by itself
-    Gui::Selection().clearSelection();
-
 
     for (int i=0;i<ui->elementsWidget->topLevelItemCount(); i++) {
         ElementItem * ite=static_cast<ElementItem*>(ui->elementsWidget->topLevelItem(i));
@@ -838,72 +943,9 @@ void TaskSketcherElements::on_elementsWidget_itemSelectionChanged(void)
             }
         }
 
-        // first update the listwidget
-        switch(element){
-          case 0:
-              ite->setSelected(ite->isLineSelected);
-              break;
-          case 1:
-              ite->setSelected(ite->isStartingPointSelected);
-              break;
-          case 2:
-              ite->setSelected(ite->isEndPointSelected);
-              break;
-          case 3:
-              ite->setSelected(ite->isMidPointSelected);
-              break;
-        }
-
-        // now the scene
-        std::stringstream ss;
-        int vertex;
-
-        if (ite->isLineSelected
-                || (isautoSwitchBoxChecked 
-                    && (ite->isStartingPointSelected
-                        || ite->isMidPointSelected
-                        || ite->isEndPointSelected)))
-        {
-            if (ite->GeometryType == Part::GeomPoint::getClassTypeId()) {
-                vertex= ite->StartingVertex;
-                if (vertex!=-1) {
-                    ss << "Vertex" << vertex + 1;
-                    sketchView->selectElement(ss.str().c_str());
-                }
-            } 
-            else if(ite->ElementNbr>=0)
-                ss << "Edge" << ite->ElementNbr + 1;
-            else
-                ss << "ExternalEdge" << -ite->ElementNbr - 2;
-            sketchView->selectElement(ss.str().c_str());
-        }
-        else if (ite->isStartingPointSelected) {
-            ss.str(std::string());
-            vertex= ite->StartingVertex;
-            if (vertex!=-1) {
-                ss << "Vertex" << vertex + 1;
-                sketchView->selectElement(ss.str().c_str());
-            }
-        }
-        else if (ite->isEndPointSelected) {
-            ss.str(std::string());
-            vertex= ite->EndVertex;
-            if (vertex!=-1) {
-                ss << "Vertex" << vertex + 1;
-                sketchView->selectElement(ss.str().c_str());
-            }
-        }
-        else if (ite->isMidPointSelected) {
-            ss.str(std::string());
-            vertex= ite->MidVertex;
-            if (vertex!=-1) {
-                ss << "Vertex" << vertex + 1;
-                sketchView->selectElement(ss.str().c_str());
-            }
-        }
     }
 
-    this->blockSelection(block);
+    syncSceneSelection();
     ui->elementsWidget->blockSignals(false);
 
     if (focusItemIndex>-1 && focusItemIndex<ui->elementsWidget->topLevelItemCount())
@@ -932,7 +974,7 @@ void TaskSketcherElements::on_elementsWidget_itemEntered(QTreeWidgetItem *item)
     std::stringstream ss;
 
 
-    int element=ui->comboBoxElementFilter->currentIndex();
+    const int element = 0;
 
     focusItemIndex=tempitemindex;
 
@@ -1015,12 +1057,11 @@ void TaskSketcherElements::slotElementsChanged()
     ui->elementsWidget->clear();
     itemMap.clear();
 
-    int element = ui->comboBoxElementFilter->currentIndex();
     int filterindex = filterState();
 
     for(int i=0;i<(int)vals.size();++i) {
         auto item = new ElementItem(ui->elementsWidget,sketch, i, vals[i]);
-        item->setElement(sketch,element, filterindex);
+        item->setElement(sketch,item->activePart, filterindex);
         // The visual layer: ticked is shown, unticked is the hidden layer.
         item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
         item->setCheckState(0, sketchView->isGeometryHidden(i) ? Qt::Unchecked : Qt::Checked);
@@ -1030,7 +1071,7 @@ void TaskSketcherElements::slotElementsChanged()
     const std::vector< Part::Geometry * > &ext_vals = sketchView->getSketchObject()->getExternalGeometry();
     for(int i=2;i<(int)ext_vals.size();++i) {
         auto item = new ElementItem(ui->elementsWidget,sketch, -i-1, ext_vals[i]);
-        item->setElement(sketch,element, filterindex);
+        item->setElement(sketch,item->activePart, filterindex);
         // external geometry has no layer: always shown, not toggleable
         item->setFlags(item->flags() & ~Qt::ItemIsUserCheckable);
         item->setCheckState(0, Qt::Checked);
@@ -1051,81 +1092,6 @@ void TaskSketcherElements::slotElementsChanged()
     }
 }
 
-
-void TaskSketcherElements::on_elementsWidget_filterShortcutPressed()
-{
-    int element;
-
-    previouslySelectedItemIndex=-1; // Shift selection on list widget implementation
-
-    // calculate next element type on shift press according to entered/preselected element
-    // This is the aka fast-forward functionality
-    if(focusItemIndex>-1 && focusItemIndex<ui->elementsWidget->topLevelItemCount()){
-
-      ElementItem * itf=static_cast<ElementItem*>(ui->elementsWidget->topLevelItem(focusItemIndex));
-
-      Base::Type type = itf->GeometryType;
-
-      element = ui->comboBoxElementFilter->currentIndex(); // currently selected type index
-
-      switch(element)
-      {
-
-        case 0: // Edge
-          element =        ( type == Part::GeomCircle::getClassTypeId() || type == Part::GeomEllipse::getClassTypeId() ) ? 3 : 1;
-          break;
-        case 1: // StartingPoint
-          element =        ( type == Part::GeomCircle::getClassTypeId() || type == Part::GeomEllipse::getClassTypeId() ) ? 3 :
-                            ( type == Part::GeomPoint::getClassTypeId()  ) ? 1 : 2;
-          break;
-        case 2: // EndPoint
-          element =        ( type == Part::GeomLineSegment::getClassTypeId() ) ? 0 :
-                            ( type == Part::GeomPoint::getClassTypeId()  ) ? 1 : 3;
-          break;
-        case 3: // MidPoint
-          element =        ( type == Part::GeomPoint::getClassTypeId()  ) ? 1 : 0;
-          break;
-        default:
-          element = 0;
-      }
-
-      ui->comboBoxElementFilter->setCurrentIndex(element);
-
-      Gui::Selection().rmvPreselect();
-
-      on_elementsWidget_itemEntered(itf);
-    }
-    else{
-      element = (ui->comboBoxElementFilter->currentIndex()+1) %
-                ui->comboBoxElementFilter->count();
-
-      ui->comboBoxElementFilter->setCurrentIndex(element);
-
-      Gui::Selection().rmvPreselect();
-    }
-
-    //update the icon
-    updateIcons(element);
-
-    updatePreselection();
-}
-
-void TaskSketcherElements::on_autoSwitchBox_stateChanged(int state)
-{
-      isautoSwitchBoxChecked=(state==Qt::Checked);
-}
-
-void TaskSketcherElements::on_elementsWidget_currentFilterChanged ( int index )
-{
-    previouslySelectedItemIndex=-1; // Shift selection on list widget implementation
-
-    Gui::Selection().rmvPreselect();
-
-    updateIcons(index);
-
-    updatePreselection();
-
-}
 
 void TaskSketcherElements::onFilterItemChanged(QListWidgetItem *item)
 {
@@ -1247,7 +1213,9 @@ void TaskSketcherElements::clearWidget()
       item->isStartingPointSelected=false;
       item->isEndPointSelected=false;
       item->isMidPointSelected=false;
+      item->activePart = item->defaultPart();
     }
+    updateIcons();
 }
 
 void TaskSketcherElements::setItemVisibility(int elementindex,int filterState)
@@ -1263,12 +1231,114 @@ void TaskSketcherElements::updateVisibility(int filterState)
     }
 }
 
-void TaskSketcherElements::updateIcons(int element)
+void TaskSketcherElements::updateIcons()
 {
     int filterindex = filterState();
     auto sketch = sketchView->getSketchObject();
-    for (int i=0;i<ui->elementsWidget->topLevelItemCount(); i++)
-      static_cast<ElementItem *>(ui->elementsWidget->topLevelItem(i))->setElement(sketch,element,filterindex);
+    for (int i=0;i<ui->elementsWidget->topLevelItemCount(); i++) {
+        auto ite = static_cast<ElementItem *>(ui->elementsWidget->topLevelItem(i));
+        ite->setElement(sketch, ite->activePart, filterindex);
+    }
+}
+
+void TaskSketcherElements::syncSceneSelection()
+{
+    bool block = this->blockSelection(true); // avoid to be notified by itself
+    Gui::Selection().clearSelection();
+    auto sketch = sketchView->getSketchObject();
+    for (int i=0;i<ui->elementsWidget->topLevelItemCount(); i++) {
+        ElementItem * ite=static_cast<ElementItem*>(ui->elementsWidget->topLevelItem(i));
+        // a row is highlighted for its element's edge (a point: its vertex)
+        showSelected(ite, 0);
+        if (!ite->partSelected(ite->activePart))
+            ite->activePart = ite->firstSelectedPart();
+        ite->setElement(sketch, ite->activePart, filterState());
+
+        // Every selected part goes to the scene, not only the first: the
+        // icon's menu can select several parts of one element.
+        auto selectVertex = [this](int vertex) {
+            if (vertex != -1)
+                sketchView->selectElement(("Vertex" + std::to_string(vertex + 1)).c_str());
+        };
+        if (ite->isLineSelected) {
+            if (ite->GeometryType == Part::GeomPoint::getClassTypeId())
+                selectVertex(ite->StartingVertex);
+            else if (ite->ElementNbr >= 0)
+                sketchView->selectElement(("Edge" + std::to_string(ite->ElementNbr + 1)).c_str());
+            else
+                sketchView->selectElement(
+                    ("ExternalEdge" + std::to_string(-ite->ElementNbr - 2)).c_str());
+        }
+        if (ite->isStartingPointSelected
+                && !(ite->isLineSelected && ite->GeometryType == Part::GeomPoint::getClassTypeId()))
+            selectVertex(ite->StartingVertex);
+        if (ite->isEndPointSelected)
+            selectVertex(ite->EndVertex);
+        if (ite->isMidPointSelected)
+            selectVertex(ite->MidVertex);
+    }
+    this->blockSelection(block);
+}
+
+void TaskSketcherElements::onPartButtonClicked(QTreeWidgetItem *item, const QPoint &globalPos)
+{
+    auto ite = dynamic_cast<ElementItem*>(item);
+    if (!ite)
+        return;
+    auto sketch = sketchView->getSketchObject();
+    bool isPoint = ite->GeometryType == Part::GeomPoint::getClassTypeId();
+
+    // The parts this element has, each with its own icon; ticked if selected.
+    QMenu menu;
+    struct PartEntry { int part; const char *text; };
+    static const PartEntry parts[] = {
+        {0, QT_TR_NOOP("Edge")},
+        {1, QT_TR_NOOP("Start point")},
+        {2, QT_TR_NOOP("End point")},
+        {3, QT_TR_NOOP("Centre point")},
+    };
+    for (const auto &p : parts) {
+        if (isPoint ? p.part != 1
+                    : (p.part != 0
+                       && sketch->getVertexIndexGeoPos(ite->ElementNbr,
+                                                       static_cast<Sketcher::PointPos>(p.part)) < 0))
+            continue;
+        QAction *action = menu.addAction(ite->partIcon(p.part),
+                                         isPoint ? tr("Point") : tr(p.text));
+        action->setCheckable(true);
+        action->setChecked(isPoint ? (ite->isLineSelected || ite->isStartingPointSelected)
+                                   : ite->partSelected(p.part));
+        action->setData(p.part);
+    }
+    QAction *chosen = menu.exec(globalPos);
+    if (!chosen)
+        return;
+
+    int part = chosen->data().toInt();
+    bool add = QApplication::keyboardModifiers() & Qt::ControlModifier;
+    // With Ctrl the pick toggles that part (the menu has already toggled
+    // the tick); without, it becomes the whole selection.
+    bool select = add ? chosen->isChecked() : true;
+    if (!add) {
+        for (int i=0;i<ui->elementsWidget->topLevelItemCount(); i++) {
+            auto other = static_cast<ElementItem*>(ui->elementsWidget->topLevelItem(i));
+            other->isLineSelected = false;
+            other->isStartingPointSelected = false;
+            other->isEndPointSelected = false;
+            other->isMidPointSelected = false;
+            other->activePart = other->defaultPart();
+        }
+    }
+    if (isPoint) {
+        ite->isLineSelected = false;
+        setPosSelected(ite, Sketcher::PointPos::start, select);
+    }
+    else
+        setPosSelected(ite, part == 0 ? Sketcher::PointPos::none
+                                      : static_cast<Sketcher::PointPos>(part), select);
+
+    QSignalBlocker blocker(ui->elementsWidget);
+    syncSceneSelection();
 }
 
 void TaskSketcherElements::changeEvent(QEvent *e)

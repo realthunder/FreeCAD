@@ -53,12 +53,18 @@ public:
     ~ElementView() override;
 
 
+    /// The rectangle of \a item's icon in column 0, in viewport coordinates.
+    /// The icon is a button: it drops down the element's parts.
+    QRect iconRect(QTreeWidgetItem *item) const;
+
 Q_SIGNALS:
-    void onFilterShortcutPressed();
-    
+    /// \a item's icon was clicked; \a globalPos is where its menu goes
+    void partButtonClicked(QTreeWidgetItem *item, const QPoint &globalPos);
+
 protected:
     void contextMenuEvent (QContextMenuEvent* event);
-    void keyPressEvent(QKeyEvent * event);
+    void mousePressEvent(QMouseEvent *event) override;
+    bool viewportEvent(QEvent *event) override;
 
 protected Q_SLOTS:
     void deleteSelectedItems();
@@ -87,7 +93,10 @@ private:
     void slotConstraintsChanged(void);
     /// geoId -> the constraint type it is a handle of, or None for a group member
     std::map<int, int> collectGroupRoles() const;
-    void updateIcons(int element);
+    /// every row's icon, from the part of its element selected last
+    void updateIcons();
+    /// Rebuild the scene selection from the rows' part flags
+    void syncSceneSelection();
     void updatePreselection();
     /// filterState: the Mode filter as a bitmask, see filterState()
     void updateVisibility(int filterState);
@@ -100,10 +109,8 @@ private:
 public Q_SLOTS:
     void on_elementsWidget_itemSelectionChanged(void); 
     void on_elementsWidget_itemEntered(QTreeWidgetItem *item);
-    void on_elementsWidget_filterShortcutPressed();
-    void on_elementsWidget_currentFilterChanged ( int index );
     void onFilterItemChanged(QListWidgetItem *item);
-    void on_autoSwitchBox_stateChanged(int state);
+    void onPartButtonClicked(QTreeWidgetItem *item, const QPoint &globalPos);
     void on_elementsWidget_itemChanged(QTreeWidgetItem *item, int column);
 
 public:
@@ -131,7 +138,6 @@ private:
     /// group does not rebuild it
     std::map<int, int> groupRoles;
     
-    bool isautoSwitchBoxChecked;
 
     bool inhibitSelectionUpdate;
 };

@@ -215,6 +215,13 @@ fc_add_gui_test(GuiSpreadsheetSelectAll_tests_run
                 spreadsheet-select-all.py
                 --timeout 180)
 
+# An element row's single icon is a button: it drops down the element's
+# parts and picks one; the icon follows the part selected last. Replaces the
+# retired Type combo.
+fc_add_gui_test(GuiSketchElementsIcon_tests_run
+                sketch-elements-icon.py
+                --timeout 180)
+
 # The elements list's Mode filter: element kinds and geometry types, ticked
 # in combination (upstream's list and ElementFilterState parameter).
 fc_add_gui_test(GuiSketchElementsFilter_tests_run

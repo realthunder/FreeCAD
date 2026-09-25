@@ -21,53 +21,6 @@
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
-    <layout class="QHBoxLayout" name="horizontalLayout">
-     <item>
-      <widget class="QLabel" name="label">
-       <property name="text">
-        <string>Type:</string>
-       </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QComboBox" name="comboBoxElementFilter">
-       <property name="enabled">
-        <bool>false</bool>
-       </property>
-       <property name="locale">
-        <locale language="English" country="UnitedStates"/>
-       </property>
-       <property name="editable">
-        <bool>false</bool>
-       </property>
-       <property name="currentIndex">
-        <number>0</number>
-       </property>
-       <item>
-        <property name="text">
-         <string>Edge</string>
-        </property>
-       </item>
-       <item>
-        <property name="text">
-         <string>Starting Point</string>
-        </property>
-       </item>
-       <item>
-        <property name="text">
-         <string>End Point</string>
-        </property>
-       </item>
-       <item>
-        <property name="text">
-         <string>Center Point</string>
-        </property>
-       </item>
-      </widget>
-     </item>
-    </layout>
-   </item>
-   <item>
     <layout class="QHBoxLayout" name="horizontalLayout1">
      <item>
       <widget class="QLabel" name="label1">
@@ -110,19 +63,6 @@
        <string notr="true">1</string>
       </property>
      </column>
-    </widget>
-   </item>
-   <item>
-    <widget class="QCheckBox" name="autoSwitchBox">
-     <property name="toolTip">
-      <string>Only the type 'Edge' will be available for the list</string>
-     </property>
-     <property name="text">
-      <string>Auto-switch to Edge</string>
-     </property>
-     <property name="checked">
-      <bool>false</bool>
-     </property>
     </widget>
    </item>
    <item>
