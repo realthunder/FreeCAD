@@ -3405,3 +3405,147 @@ log-on ctest run is `-j1` (about 20 minutes), with a check afterwards that
 `user.cfg` still sets it. The log-on ctest figures of 24.11 and 24.12 came
 from `-j6` runs and were at most partly log-on; the `OmniControl`
 failure 24.12 saw was real all the same.
+
+## 25. Phase 7: crash recovery (design, 2026-09-25)
+
+Phase 7 as section 15 lists it is recovery *and* streaming; this section
+is the recovery half only -- the log's tail replayed over the last version,
+replacing the autosave / recovery-file machinery (22.1). Streaming and
+per-user undo in a shared session are later.
+
+### 25.1 What exists (survey, 2026-09-25)
+
+- **What a crash leaves.** `~Document` deletes the transient directory
+  (`<cache>/<Exe>_Doc_<Uid>_<hash6>_<pid>`); a crash does not, so
+  `history/log.db` and `blobs/` are left behind, next to the Gui's lock
+  file `<cache>/<Exe>_<pid>.lock`. The session row stays `closed = 0`.
+- **The Gui's recovery** (`DocumentRecovery.cpp`) finds dead processes by
+  the lock file it can lock, globs their `_Doc_*_<pid>` directories and
+  keeps only those with `fc_recovery_file.xml` -- a log-on directory with
+  no AutoSaver file is not seen, and one with both is recovered from the
+  AutoSaver copy alone. Restore is `openDocuments` of the recovery file
+  under the original `FileName`, then the recovery files are moved into
+  the new document's transient directory and the old one is removed.
+- **What the log holds at a crash.** Every committed SQL transaction
+  (WAL, `synchronous=NORMAL`: safe against a process crash; the last few
+  can roll back on a power loss, consistently). Not held: jobs still in
+  the worker's queue, and -- the large one -- **every pending after ref**
+  (20.2 decision 4): the newest value of each property changed since it
+  was last copied or snapshotted exists only in memory. The op is there
+  with `vafter` empty.
+- **Anchors.** A version is taken at save, at open (version 1 of the
+  file as read) and on the cadence of 16.3, which defaults to off, and
+  whose seconds rule never fires before a first save or open. A new
+  document never saved has no version at all.
+- **Machinery.** `_materialiseVersion` rebuilds a version's files from
+  the log alone; `restore(dir)` reads them; `_applyVersion` makes a live
+  document equal a scratch one. Rows apply only *reversed*
+  (`_prepareRevert`/`_applyRevert`); forward replay exists only in a
+  gtest (`replaysToIdenticalDocument`). Nothing opens a `log.db` by path;
+  `adoptStore` (embedded mode) takes one over for a live document.
+- **Blobs.** The rule "a blob's segment is durable before a row naming it
+  commits" is built (`makeDurable` in `writeValues`, `snapshot`,
+  `putBlob`), so no committed row names a lost blob; batches not yet
+  flushed are lost with the rows that would have named them. Opening a
+  store directory that has segments only numbers new ones past them; the
+  15.8/15.11 recovery pass (EOCD check, newest number wins, finish a
+  merge, delete the incomplete) is not built.
+
+### 25.2 Proposed shape
+
+1. **Bound the loss: resolve pending afters when the document goes
+   quiet.** After a commit, a debounced idle job (Gui: the event loop
+   idle for about 1 s; headless: the invocation's end) calls
+   `resolvePending()`, whose main-thread cost is the `Copy()` of each
+   pending property and whose serialisation is the worker's. A crash
+   then loses at most the transactions since the last quiet moment. The
+   cost is a second copy of a heavy property that is edited, left, and
+   edited again (the sketch geometry of 20.2), paid in idle time.
+2. **Anchor: the newest version, or an empty document.** A document
+   with no version replays from nothing -- every object's `create` op
+   and its sets are in the log.
+3. **Replay forward, a clean prefix.** Walk the `txn.parent` chain from
+   the head back to the anchor's seq and apply each row forward by
+   after values -- `_applyRevert`'s passes mirrored (create objects, add
+   dynamic properties, restore after values, remove dynamic properties,
+   remove objects). Undo, redo and restore rows are rows like any other.
+   The replay stops before the first row with a non-derived after still
+   pending, so the recovered document is a state the user actually had.
+   Derived values not recorded follow 24.1's ruling for cold undo:
+   missing derived -> the object is touched.
+4. **The recovered document keeps its history.** Recovery creates the
+   document from the anchor (materialised, `restore(dir)` under the
+   original `FileName` and label), applies the tail, and takes over the
+   old `history/` and `blobs/` -- moved into the new transient directory
+   as the dialog moves recovery files today, the store reopened as
+   `adoptStore` does, the crashed session closed with a mark, a new one
+   opened. Undo and the log browser reach across the crash. The document
+   is left modified, as today.
+5. **The blob store sweep runs here** (15.8/15.11): read each segment's
+   directory, keep a segment only if its EOCD and central directory
+   check out, the highest segment number wins a hash seen twice, a
+   segment wholly superseded or unreferenced is deleted. Loose blob
+   files are taken as they are.
+6. **The Gui finds log-on directories.** `checkDocumentDirs` keeps a
+   directory with `history/log.db` as a candidate; label, file name and
+   last-change time come from the log (new `meta` keys written at open
+   and on rename), so no `fc_recovery_file.xml` is needed; "Overage" is
+   the project file newer than the last row. With the log on, AutoSaver
+   writes nothing for that document (22.1: autosave is the log); with
+   the staging switch off, nothing changes.
+7. **A replay length bound.** A long session with no save replays
+   everything since open. The unnamed-version cadence of 16.3 is what
+   bounds it; its defaults (both 0 today) and the seconds rule's start
+   (a new document counts from its creation) need setting.
+
+### 25.3 Rulings (user, 2026-09-25)
+
+| Question | Ruling |
+| --- | --- |
+| Bounding the loss of pending afters | **Stream every commit to the background thread** (user: "can we stream every commit to a background thread for persistence") rather than resolving when idle. Built as 25.4 below: every committed transaction is durable once the worker's queue drains. |
+| What the recovered document is | **It keeps its history**: anchor plus tail, under the original file name and label, with the old log and blob store taken over, so undo and the browser reach across the crash (25.2 item 4). |
+| AutoSaver with the log on | **Replaced for log-on documents**: AutoSaver writes nothing for a document with a log; the Gui recovery finds `history/log.db`. Unchanged with the staging switch off. |
+| The snapshot cadence | **A setting for the transaction threshold** (`TransactionLogSnapshotTransactions`, now with a default) **and the existing autosave interval** (`AutoSaveTimeout`, `AutoSaveEnabled`) for time, replacing `TransactionLogSnapshotSeconds`; the clock of a new document starts at its creation. |
+
+### 25.4 Streaming the after values
+
+The obstacle 20.2 decision 4 set: the worker serialises only detached
+copies and never reads a live property. So at commit, on the main thread,
+the log takes a `Copy()` of every property whose after ref the commit
+leaves pending -- the same copy `resolvePending()` takes -- and posts it
+with the transaction's job; the after ref resolves when the job runs, and
+nothing is left pending past a commit.
+
+Paid for by moving the copy, not adding one: the next transaction to
+write that property would `Copy()` it for its undo before value, and that
+copy is the same value, because any change in between passes through
+`aboutToSetValue` first. The log therefore keeps the commit's after copy
+(shared, as decision 4's copies already are) in a cache keyed by property
+id, and the first `aboutToSetValue` on the property takes it: a
+transaction recording the write adopts it as its before copy instead of
+copying, and any other write drops it. Steady state: one copy per edit
+cycle, as before, taken at commit instead of at the next edit. Only the
+properties a commit *set* are cached; the sets a `create` implies (every
+property of a new object) are copied and serialised but not kept, so the
+cache is the working set of edited properties, not the document.
+
+What a crash can still lose: the jobs in the worker's queue (the last
+commit or two) and, on a power loss, the last SQL transactions WAL with
+`synchronous=NORMAL` has not synced -- both a consistent prefix.
+
+### 25.5 Build order
+
+1. **7.a** Streaming (25.4), with the cache; both suites, the log on, and
+   a gtest that no ref is pending after a commit drains.
+2. **7.b** The cadence: `TransactionLogSnapshotTransactions` default 200;
+   time from `AutoSaveTimeout`/`AutoSaveEnabled`; a new document's clock
+   from creation; `TransactionLogSnapshotSeconds` gone.
+3. **7.c** Forward replay and the App recovery entry point: a document
+   from a leftover transient directory's anchor plus tail, the old store
+   taken over, the crashed session closed; label and file name kept in
+   `meta`. Python binding; gtests that recover a copied directory and
+   compare every property with the original.
+4. **7.d** The blob store's recovery sweep (25.2 item 5).
+5. **7.e** The Gui: the recovery dialog finds log-on directories;
+   AutoSaver stands aside for log-on documents; a GUI check that kills a
+   process mid-session and recovers it.
