@@ -24,6 +24,7 @@
 #ifndef _PreComp_
 # include <map>
 # include <set>
+# include <unordered_map>
 # include <QApplication>
 # include <QCheckBox>
 # include <QClipboard>
@@ -37,7 +38,10 @@
 # include <QLineEdit>
 # include <QMenu>
 # include <QMessageBox>
+# include <QPainter>
+# include <QPainterPath>
 # include <QPlainTextEdit>
+# include <QStyledItemDelegate>
 # include <QPushButton>
 # include <QSplitter>
 # include <QStackedWidget>
@@ -66,8 +70,13 @@ using namespace Gui::DockWnd;
 
 namespace {
 
-enum TxnColumn { TxnSeq, TxnKind, TxnOrigin, TxnName, TxnTime, TxnParent, TxnInverts, TxnBranch,
-                 TxnColumns };
+enum TxnColumn { TxnGraph, TxnSeq, TxnKind, TxnOrigin, TxnName, TxnTime, TxnParent, TxnInverts,
+                 TxnBranch, TxnColumns };
+
+// Item data roles of a transaction row, besides the seq on TxnSeq.
+constexpr int RoleParent = Qt::UserRole + 1;   // on TxnParent: the parent seq
+constexpr int RoleBranch = Qt::UserRole + 2;   // on TxnBranch: the branch id
+constexpr int RoleRecord = Qt::UserRole + 3;   // on TxnKind: true for a row with no ops
 enum OpColumn { OpIdx, OpOp, OpContainer, OpProp, OpType, OpBefore, OpAfter, OpDerived, OpColumns };
 enum VerColumn { VerNum, VerKind, VerName, VerBranch, VerSeq, VerSchema, VerCreated, VerDocXml,
                  VerEntries, VerColumns };
@@ -92,8 +101,164 @@ QString containerText(const App::LogOp& op)
 
 } // namespace
 
+/** The graph column (sec 26), laid out by layoutGraph() over the rows
+ * shown, newest first as git draws it: every row a node on a lane, each
+ * lane waiting for the parent of the row above it, lanes waiting for the
+ * same row converging on it -- a fork, seen from its branches. Lanes are
+ * reused, never shifted. Labels follow the lanes: the branch heads, the
+ * current one bold, and the versions taken at a row.
+ */
+struct TransactionLogView::GraphLayout
+{
+    struct Lane
+    {
+        int lane;
+        int to;          // where its top half ends: itself, or the node it joins
+        int64_t branch;  // the colour
+    };
+    struct Row
+    {
+        int lane {0};
+        int64_t branch {0};
+        bool record {false};
+        std::vector<Lane> top;      // lanes coming in from above
+        std::vector<Lane> bottom;   // lanes going on below
+        QStringList heads;
+        bool current {false};
+        QStringList versions;
+    };
+    std::unordered_map<qlonglong, Row> rows;
+    int lanes {0};
+};
+
+namespace {
+
+constexpr int LaneWidth = 14;
+constexpr int LaneMargin = 8;
+
+QColor branchColour(int64_t branch)
+{
+    static const QColor palette[] = {
+        QColor(0x1f, 0x77, 0xb4), QColor(0xd6, 0x5f, 0x0e), QColor(0x2c, 0xa0, 0x2c),
+        QColor(0x94, 0x67, 0xbd), QColor(0xc2, 0x3b, 0x5a), QColor(0x17, 0x9e, 0xa8),
+        QColor(0x8c, 0x6d, 0x2c), QColor(0x60, 0x70, 0x80),
+    };
+    return palette[static_cast<size_t>(branch > 0 ? branch - 1 : 0) % 8];
+}
+
+class GraphDelegate: public QStyledItemDelegate
+{
+public:
+    GraphDelegate(const TransactionLogView::GraphLayout& layout, QObject* parent)
+        : QStyledItemDelegate(parent), _layout(layout)
+    {}
+
+    const TransactionLogView::GraphLayout::Row* rowOf(const QModelIndex& index) const
+    {
+        const qlonglong seq = index.sibling(index.row(), TxnSeq).data(Qt::UserRole).toLongLong();
+        auto it = _layout.rows.find(seq);
+        return it == _layout.rows.end() ? nullptr : &it->second;
+    }
+
+    static QFont labelFont(const QFont& base, bool bold)
+    {
+        QFont f(base);
+        f.setPointSizeF(base.pointSizeF() * 0.9);
+        f.setBold(bold);
+        return f;
+    }
+
+    QSize sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const override
+    {
+        QSize size = QStyledItemDelegate::sizeHint(option, index);
+        int width = LaneMargin * 2 + _layout.lanes * LaneWidth;
+        if (auto row = rowOf(index)) {
+            for (const auto& h : row->heads)
+                width += QFontMetrics(labelFont(option.font, true)).horizontalAdvance(h) + 12;
+            for (const auto& v : row->versions)
+                width += QFontMetrics(labelFont(option.font, false)).horizontalAdvance(v) + 12;
+        }
+        size.setWidth(width);
+        return size;
+    }
+
+    void paint(QPainter* painter, const QStyleOptionViewItem& option,
+               const QModelIndex& index) const override
+    {
+        QStyledItemDelegate::paint(painter, option, index);   // background, selection
+        auto row = rowOf(index);
+        if (!row)
+            return;
+        const QRect r = option.rect;
+        const qreal top = r.top();
+        const qreal bottom = r.bottom() + 1;
+        const qreal mid = r.center().y() + 0.5;
+        auto x = [&](int lane) { return r.left() + LaneMargin + lane * LaneWidth + 0.5; };
+
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing, true);
+        auto pen = [](int64_t branch) {
+            QPen p(branchColour(branch));
+            p.setWidthF(2.0);
+            return p;
+        };
+        for (const auto& l : row->top) {
+            painter->setPen(pen(l.branch));
+            if (l.to == l.lane) {
+                painter->drawLine(QPointF(x(l.lane), top), QPointF(x(l.lane), mid));
+            }
+            else {
+                QPainterPath path(QPointF(x(l.lane), top));
+                path.cubicTo(QPointF(x(l.lane), mid), QPointF(x(l.to), top),
+                             QPointF(x(l.to), mid));
+                painter->drawPath(path);
+            }
+        }
+        for (const auto& l : row->bottom) {
+            painter->setPen(pen(l.branch));
+            painter->drawLine(QPointF(x(l.lane), mid), QPointF(x(l.lane), bottom));
+        }
+        // The node: filled for a change, hollow for a record.
+        const QColor colour = branchColour(row->branch);
+        painter->setPen(QPen(colour, 2.0));
+        painter->setBrush(row->record ? option.palette.base() : QBrush(colour));
+        const qreal radius = row->record ? 3.0 : 4.0;
+        painter->drawEllipse(QPointF(x(row->lane), mid), radius, radius);
+
+        // Labels, right of the lanes.
+        qreal lx = r.left() + LaneMargin * 2 + _layout.lanes * LaneWidth;
+        auto label = [&](const QString& text, const QColor& fill, const QColor& fg, bool bold) {
+            const QFont font = labelFont(option.font, bold);
+            const QFontMetrics fm(font);
+            const qreal w = fm.horizontalAdvance(text) + 8;
+            const qreal h = std::min<qreal>(fm.height() + 2, r.height() - 2);
+            QRectF box(lx, mid - h / 2, w, h);
+            painter->setPen(QPen(fill.darker(130), 1.0));
+            painter->setBrush(fill);
+            painter->drawRoundedRect(box, 3, 3);
+            painter->setFont(font);
+            painter->setPen(fg);
+            painter->drawText(box, Qt::AlignCenter, text);
+            lx += w + 4;
+        };
+        for (int i = 0; i < row->heads.size(); ++i) {
+            const QColor fill = branchColour(row->branch);
+            label(row->heads[i], fill, Qt::white, row->current && i == 0);
+        }
+        for (const auto& v : row->versions)
+            label(v, option.palette.alternateBase().color(), option.palette.text().color(), false);
+        painter->restore();
+    }
+
+private:
+    const TransactionLogView::GraphLayout& _layout;
+};
+
+} // namespace
+
 TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* parent)
     : DockWindow(pcDocument, parent)
+    , _graph(std::make_unique<GraphLayout>())
 {
     setWindowTitle(tr("Transaction log"));
 
@@ -136,6 +301,10 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     _allBranches = new QCheckBox(tr("All branches"), this);
     _allBranches->setToolTip(tr("Show the rows of every branch, not only this branch's history"));
     branchBar->addWidget(_allBranches);
+    _hideRecords = new QCheckBox(tr("Hide records"), this);
+    _hideRecords->setToolTip(tr("Hide the rows that changed nothing: recompute records, "
+                                "snapshots, saves, switches"));
+    branchBar->addWidget(_hideRecords);
     branchBar->addStretch(1);
     layout->addLayout(branchBar);
 
@@ -154,8 +323,9 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     _transactions = new QTreeWidget(_tabs);
     _tabs->addTab(_transactions, tr("Transactions"));
     _transactions->setColumnCount(TxnColumns);
-    _transactions->setHeaderLabels({tr("Seq"), tr("Kind"), tr("Origin"), tr("Name"),
+    _transactions->setHeaderLabels({tr("Graph"), tr("Seq"), tr("Kind"), tr("Origin"), tr("Name"),
                                     tr("Time"), tr("Parent"), tr("Inverts"), tr("Branch")});
+    _transactions->setItemDelegateForColumn(TxnGraph, new GraphDelegate(*_graph, _transactions));
     _transactions->setRootIsDecorated(false);
     _transactions->setAlternatingRowColors(true);
     _transactions->setUniformRowHeights(true);
@@ -236,6 +406,7 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     connect(_deleteBranch, &QPushButton::clicked, this, &TransactionLogView::onDeleteBranch);
     connect(_renameBranch, &QPushButton::clicked, this, &TransactionLogView::onRenameBranch);
     connect(_allBranches, &QCheckBox::toggled, this, &TransactionLogView::applyVisibility);
+    connect(_hideRecords, &QCheckBox::toggled, this, &TransactionLogView::applyVisibility);
 
     //NOLINTBEGIN
     _connActiveDoc = Application::Instance->signalActiveDocument.connect(
@@ -530,8 +701,11 @@ void TransactionLogView::appendTransactions(int64_t fromSeq)
     std::map<int64_t, QString> branches;
     for (const auto& b : l->store().branches())
         branches[b.id] = QString::fromStdString(b.name);
+    const QColor recordColour = _transactions->palette().color(QPalette::Disabled, QPalette::Text);
     for (const auto& t : l->store().transactions(fromSeq, 0)) {
-        auto item = new QTreeWidgetItem(_transactions);
+        // Newest first, as git lists history: each new row goes on top.
+        auto item = new QTreeWidgetItem();
+        _transactions->insertTopLevelItem(0, item);
         item->setText(TxnSeq, QString::number(t.seq));
         item->setData(TxnSeq, Qt::UserRole, QVariant::fromValue(static_cast<qlonglong>(t.seq)));
         item->setText(TxnKind, QString::fromStdString(t.kind));
@@ -540,6 +714,15 @@ void TransactionLogView::appendTransactions(int64_t fromSeq)
         item->setText(TxnTime, QDateTime::fromMSecsSinceEpoch(static_cast<qint64>(t.time * 1000))
                                    .toString(QStringLiteral("HH:mm:ss.zzz")));
         item->setText(TxnParent, QString::number(t.parent));
+        item->setData(TxnParent, RoleParent, QVariant::fromValue(static_cast<qlonglong>(t.parent)));
+        item->setData(TxnBranch, RoleBranch, QVariant::fromValue(static_cast<qlonglong>(t.branch)));
+        // A record changed nothing (sec 11): greyed, and hidden on request.
+        const bool record = l->store().ops(t.seq).empty();
+        item->setData(TxnKind, RoleRecord, record);
+        if (record) {
+            for (int c = 0; c < TxnColumns; ++c)
+                item->setForeground(c, recordColour);
+        }
         item->setData(TxnName, Qt::UserRole, QString::fromStdString(t.script));
         item->setTextAlignment(TxnSeq, Qt::AlignRight | Qt::AlignVCenter);
         item->setTextAlignment(TxnParent, Qt::AlignRight | Qt::AlignVCenter);
@@ -555,7 +738,7 @@ void TransactionLogView::appendTransactions(int64_t fromSeq)
     if (lastItem)
         _transactions->scrollToItem(lastItem);
     for (int c = 0; c < TxnColumns; ++c) {
-        if (c != TxnName)
+        if (c != TxnName && c != TxnGraph)
             _transactions->resizeColumnToContents(c);
     }
 }
@@ -682,8 +865,144 @@ void TransactionLogView::applyVisibility()
             match = item->data(TxnName, Qt::UserRole).toString().contains(filter, Qt::CaseInsensitive);
         if (match && !all && l)
             match = chain.count(item->data(TxnSeq, Qt::UserRole).toLongLong()) != 0;
+        if (match && _hideRecords->isChecked())
+            match = !item->data(TxnKind, RoleRecord).toBool();
         item->setHidden(!match);
     }
+    layoutGraph();
+}
+
+void TransactionLogView::layoutGraph()
+{
+    auto& layout = *_graph;
+    layout.rows.clear();
+    layout.lanes = 0;
+    auto l = log();
+    if (!l)
+        return;
+
+    // Every row's parent, and which rows show; a row's graph parent is its
+    // nearest ancestor that shows, so a filter keeps the graph whole.
+    std::unordered_map<qlonglong, qlonglong> parentOf;
+    std::unordered_map<qlonglong, QTreeWidgetItem*> shown;
+    std::vector<QTreeWidgetItem*> order;   // top to bottom: newest first
+    for (int i = 0; i < _transactions->topLevelItemCount(); ++i) {
+        auto item = _transactions->topLevelItem(i);
+        const qlonglong seq = item->data(TxnSeq, Qt::UserRole).toLongLong();
+        parentOf[seq] = item->data(TxnParent, RoleParent).toLongLong();
+        if (!item->isHidden()) {
+            shown[seq] = item;
+            order.push_back(item);
+        }
+    }
+    auto visibleParent = [&](qlonglong seq) -> qlonglong {
+        for (int guard = 0; guard < 1000000; ++guard) {
+            auto it = parentOf.find(seq);
+            if (it == parentOf.end() || it->second <= 0)
+                return 0;
+            seq = it->second;
+            if (shown.count(seq))
+                return seq;
+        }
+        return 0;
+    };
+    // The labels: each branch's head, on its nearest row that shows; the
+    // versions, on the row each was taken at.
+    auto nearestShown = [&](qlonglong seq) -> qlonglong {
+        if (shown.count(seq))
+            return seq;
+        return visibleParent(seq);
+    };
+    std::unordered_map<qlonglong, QStringList> heads;
+    std::unordered_map<qlonglong, bool> current;
+    std::unordered_map<qlonglong, QStringList> versions;
+    const bool all = _allBranches->isChecked();
+    try {
+        for (const auto& b : l->store().branches()) {
+            // Another branch's head is not this history's: in the view of
+            // one branch it would slide down to the fork and mislead.
+            if (!all && b.id != l->branch())
+                continue;
+            const qlonglong at = nearestShown(b.head);
+            if (!at)
+                continue;
+            QString name = QString::fromStdString(b.name);
+            if (b.closed != 0)
+                name += tr(" (closed)");
+            if (b.id == l->branch()) {
+                heads[at].prepend(name);
+                current[at] = true;
+            }
+            else {
+                heads[at].append(name);
+            }
+        }
+        for (const auto& v : l->store().versions()) {
+            if (!shown.count(v.seq))
+                continue;
+            QString text = QStringLiteral("v%1").arg(v.num);
+            if (!v.name.empty())
+                text += QLatin1Char(' ') + QString::fromStdString(v.name);
+            versions[v.seq].append(text);
+        }
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("transaction log view: " << e.what());
+    }
+
+    // The lanes, top to bottom.
+    std::vector<qlonglong> waiting;    // the row each lane waits for, 0: free
+    std::vector<int64_t> colour;       // the branch that set it going
+    for (auto item : order) {
+        const qlonglong seq = item->data(TxnSeq, Qt::UserRole).toLongLong();
+        GraphLayout::Row row;
+        row.branch = item->data(TxnBranch, RoleBranch).toLongLong();
+        row.record = item->data(TxnKind, RoleRecord).toBool();
+        int node = -1;
+        for (size_t i = 0; i < waiting.size(); ++i) {
+            if (waiting[i] == seq) {
+                node = static_cast<int>(i);
+                break;
+            }
+        }
+        if (node < 0) {
+            // A head: the first free lane.
+            for (size_t i = 0; i < waiting.size() && node < 0; ++i) {
+                if (!waiting[i])
+                    node = static_cast<int>(i);
+            }
+            if (node < 0) {
+                node = static_cast<int>(waiting.size());
+                waiting.push_back(0);
+                colour.push_back(0);
+            }
+        }
+        row.lane = node;
+        for (size_t i = 0; i < waiting.size(); ++i) {
+            if (!waiting[i])
+                continue;
+            const int to = waiting[i] == seq ? node : static_cast<int>(i);
+            row.top.push_back({static_cast<int>(i), to, colour[i]});
+            if (waiting[i] == seq)
+                waiting[i] = 0;   // joined here
+        }
+        const qlonglong parent = visibleParent(seq);
+        if (parent) {
+            waiting[node] = parent;
+            colour[node] = row.branch;
+        }
+        for (size_t i = 0; i < waiting.size(); ++i) {
+            if (waiting[i])
+                row.bottom.push_back({static_cast<int>(i), static_cast<int>(i), colour[i]});
+        }
+        row.heads = heads[seq];
+        row.current = current[seq];
+        row.versions = versions[seq];
+        layout.lanes = std::max<int>(layout.lanes, static_cast<int>(waiting.size()));
+        layout.rows.emplace(seq, std::move(row));
+    }
+    _transactions->resizeColumnToContents(TxnGraph);
+    _transactions->viewport()->update();
 }
 
 void TransactionLogView::refreshBranches()

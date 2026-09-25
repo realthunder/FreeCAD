@@ -50,9 +50,17 @@ def panel():
             combo = c
     tree = None
     for t in dock.findChildren(QtWidgets.QTreeWidget):
-        if t.headerItem().text(0) == "Seq":
+        if t.headerItem().text(1) == "Seq":
             tree = t
     return dock, combo, tree
+
+
+def column(tree, title):
+    header = tree.headerItem()
+    for c in range(header.columnCount()):
+        if header.text(c) == title:
+            return c
+    return -1
 
 
 def run():
@@ -114,9 +122,14 @@ def run():
             items = [combo.itemData(i) for i in range(combo.count())]
             check("panel: branches %r" % (items,), items == ["main", "side"])
             check("panel: on side", combo.currentText() == "side")
+            seqs = [int(tree.topLevelItem(i).text(column(tree, "Seq")))
+                    for i in range(tree.topLevelItemCount())]
+            check("panel: newest first", seqs == sorted(seqs, reverse=True))
             shown = [tree.topLevelItem(i) for i in range(tree.topLevelItemCount())]
-            visible = [i.text(0) for i in shown if not i.isHidden()]
-            others = [i for i in shown if i.isHidden() and i.text(7) == "main"]
+            scol = column(tree, "Seq")
+            visible = [i.text(scol) for i in shown if not i.isHidden()]
+            bcol = column(tree, "Branch")
+            others = [i for i in shown if i.isHidden() and i.text(bcol) == "main"]
             check("panel: main-only rows hidden (%d)" % len(others), len(others) > 0)
             # Switching through the panel.
             combo.activated.emit(items.index("main"))
@@ -126,7 +139,7 @@ def run():
             check("panel switch: box red", colour(box) == (1.0, 0.0, 0.0))
             check("panel switch: length 10", abs(box.Length.Value - 10) < 1e-9)
             nowVisible = [
-                tree.topLevelItem(i).text(0)
+                tree.topLevelItem(i).text(scol)
                 for i in range(tree.topLevelItemCount())
                 if not tree.topLevelItem(i).isHidden()
             ]
@@ -140,7 +153,7 @@ def run():
             sideRows = [
                 tree.topLevelItem(i)
                 for i in range(tree.topLevelItemCount())
-                if tree.topLevelItem(i).text(7) == "side"
+                if tree.topLevelItem(i).text(bcol) == "side"
             ]
             check("delete: no side rows left (%d)" % len(sideRows), not sideRows)
             check("delete: box still red, short", colour(box) == (1.0, 0.0, 0.0)

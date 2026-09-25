@@ -27,6 +27,7 @@
 #include <string>
 #include <vector>
 #include <fastsignals/signal.h>
+#include <memory>
 #include <QTimer>
 
 #include <Gui/DockWindow.h>
@@ -89,6 +90,8 @@ private Q_SLOTS:
     void onDeleteBranch();
     void onRenameBranch();
     void applyVisibility();
+    /// Lay the graph out over the rows shown (docs/TransactionLog.md sec 26).
+    void layoutGraph();
 
 protected:
     void showEvent(QShowEvent*) override;
@@ -132,6 +135,12 @@ private:
     QPushButton* _deleteBranch {nullptr};
     QPushButton* _renameBranch {nullptr};
     QCheckBox* _allBranches {nullptr};
+    QCheckBox* _hideRecords {nullptr};
+public:
+    /// The graph column's lanes, nodes and labels per row, for its delegate.
+    struct GraphLayout;
+private:
+    std::unique_ptr<GraphLayout> _graph;
     QTabWidget* _tabs {nullptr};
     QStackedWidget* _detail {nullptr};
     QTreeWidget* _transactions {nullptr};

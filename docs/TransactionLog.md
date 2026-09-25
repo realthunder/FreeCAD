@@ -3993,6 +3993,24 @@ way -- which refuses an empty or taken name, keeps the file's `Branch`
 property in step when it is the current branch, and emits the signal so
 the panel reloads.
 
+**The graph** (user, 2026-09-25: "display branching like git UI", newest
+first by default). The transaction list is newest first, and its first
+column draws the history as `git log --graph` does: a node per row on a
+lane, each lane waiting for the parent of the row above it, lanes that wait
+for the same row converging on it -- a fork, seen from its branches, and
+what a merge's second parent (phase 6) will draw the same way. It is laid
+out over the rows shown (`layoutGraph`, after every visibility change):
+a row's graph parent is its nearest shown ancestor, so the filter text,
+the single-branch view and **Hide records** keep it connected. Lanes are
+coloured by branch; a record (a row with no ops: recompute, snapshot,
+switch, branch, trim) is greyed with a hollow node, and **Hide records**
+leaves only the changes. Labels right of the lanes, as git shows refs:
+each branch's head on its nearest shown row (the current one bold; in the
+single-branch view only its own, since another's would slide down to the
+fork and read as ending there), and each version as `vN name` on the row
+it was taken at. The Gui check verifies the order; the layout is looked at
+in screenshots.
+
 A switch commits nothing, so none of the panel's refresh triggers fired.
 `App::Document::signalSwitchBranch` is emitted after a switch and after a
 create; the panel refreshes on it, and it is there for the rest of the Gui
