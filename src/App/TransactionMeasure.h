@@ -78,7 +78,9 @@ public:
     ~TransactionMeasure();
 
 private:
-    TransactionMeasure() = default;
+    // Out of line, next to the destructor: an inline default makes MSVC
+    // instantiate ~unique_ptr<Impl> with Impl incomplete.
+    TransactionMeasure();
     struct Impl;
     std::unique_ptr<Impl> _impl;
     static TransactionMeasure* _instance;

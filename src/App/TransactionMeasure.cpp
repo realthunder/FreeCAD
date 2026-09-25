@@ -304,6 +304,7 @@ struct TransactionMeasure::Impl
 
 TransactionMeasure* TransactionMeasure::_instance = nullptr;
 
+TransactionMeasure::TransactionMeasure() = default;
 TransactionMeasure::~TransactionMeasure() = default;
 
 bool TransactionMeasure::start(const char* csvPath)

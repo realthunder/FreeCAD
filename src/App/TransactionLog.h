@@ -257,7 +257,9 @@ public:
         std::string container;
         std::string name;
     };
-    struct Composite
+    // Exported on its own: MSVC does not export a nested class of a
+    // dllexport class, and the Gui's log view decodes composites.
+    struct AppExport Composite
     {
         std::string skeleton;
         std::vector<CompositePart> parts;
