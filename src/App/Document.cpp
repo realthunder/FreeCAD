@@ -4650,6 +4650,26 @@ void Document::_applyVersion(Document& version, bool views)
     }
 }
 
+namespace {
+
+/// The states a branch's history passes through (docs/TransactionLog.md
+/// sec 26): 0, every row on the chain ending at `head`, and the parent of
+/// its oldest -- where a trim (16.7) cut it, the version that anchors what
+/// is left is at that row, which is gone.
+std::set<int64_t> chainPoints(TransactionStore& store, int64_t head)
+{
+    std::set<int64_t> points {0};
+    for (const auto& t : store.chain(head)) {
+        points.insert(t.seq);
+        points.insert(t.parent);
+    }
+    if (head > 0)
+        points.insert(head);
+    return points;
+}
+
+} // namespace
+
 bool Document::recoverFromLog(const std::string& oldDir)
 {
     // docs/TransactionLog.md sec 25.2.
@@ -4668,9 +4688,7 @@ bool Document::recoverFromLog(const std::string& oldDir)
     // The anchor: the newest version (16.3) on the branch the session was
     // on (sec 26), or nothing -- a document never saved or opened has every
     // object's create in the log.
-    std::set<int64_t> onChain {0};
-    for (const auto& t : log->store().chain(log->head()))
-        onChain.insert(t.seq);
+    const std::set<int64_t> onChain = chainPoints(log->store(), log->head());
     LogVersion anchor;
     bool haveAnchor = false;
     for (const auto& v : log->store().versions()) {
@@ -5102,9 +5120,7 @@ void Document::_leaveBranch()
     // document: only records (save, snapshot, switch, branch) follow it.
     auto& store = log->store();
     const auto rows = store.chain(log->head());
-    std::set<int64_t> onChain {0};
-    for (const auto& t : rows)
-        onChain.insert(t.seq);
+    const std::set<int64_t> onChain = chainPoints(store, log->head());
     int64_t newest = -1;
     for (const auto& v : store.versions()) {
         if (onChain.count(v.seq))
@@ -5130,9 +5146,7 @@ void Document::_checkoutHead()
     // content did not change, the document moved to it.
     TransactionLog* log = getTransactionLog();
     auto& store = log->store();
-    std::set<int64_t> onChain {0};
-    for (const auto& t : store.chain(log->head()))
-        onChain.insert(t.seq);
+    const std::set<int64_t> onChain = chainPoints(store, log->head());
     LogVersion anchor;
     bool haveAnchor = false;
     for (const auto& v : store.versions()) {
@@ -5261,7 +5275,7 @@ int64_t Document::createBranch(const std::string& name, int64_t version, int64_t
     script << "{\"from_branch\":" << jsonString(left.name) << ",\"from_version\":" << fork.num
            << ",\"from_seq\":" << forkSeq << ",\"id_base\":" << branch.idBase << "}";
     log->record("branch", "Branch " + name, script.str());
-    signalSwitchBranch(*this);
+    signalBranchesChanged(*this);
     return branch.id;
 }
 
@@ -5297,8 +5311,386 @@ bool Document::switchBranch(const std::string& name)
     script << "{\"from_branch\":" << jsonString(left.name) << ",\"from_head\":" << left.head
            << "}";
     log->record("switch", "Switch from " + left.name, script.str());
-    signalSwitchBranch(*this);
+    signalBranchesChanged(*this);
     return true;
+}
+
+namespace {
+
+/// Every row another branch's history holds, and every version a branch
+/// forked from: what trimming or deleting `except` must leave (sec 16.7).
+struct Shared
+{
+    std::set<int64_t> rows;
+    std::set<int64_t> forks;
+};
+
+Shared sharedWith(TransactionStore& store, int64_t except)
+{
+    Shared shared;
+    for (const auto& b : store.branches()) {
+        if (b.fromVersion)
+            shared.forks.insert(b.fromVersion);
+        if (b.id == except)
+            continue;
+        for (const auto& t : store.chain(b.head))
+            shared.rows.insert(t.seq);
+    }
+    return shared;
+}
+
+} // namespace
+
+size_t Document::trimBranch(const std::string& name, int64_t version)
+{
+    // docs/TransactionLog.md sec 16.7, "trim a branch".
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        return 0;
+    _checkBranchable("trim a branch");
+    auto& store = log->store();
+    LogBranch branch;
+    if (!store.findBranch(name, branch))
+        THROWM(Base::ValueError, "no branch '" + name + "'");
+    const bool current = branch.id == log->branch();
+
+    LogVersion keep;
+    const std::set<int64_t> points = chainPoints(store, branch.head);
+    if (version > 0) {
+        if (!store.getVersion(version, keep) || !points.count(keep.seq))
+            THROWM(Base::ValueError, "version " + std::to_string(version) + " is not on branch '"
+                                         + name + "'");
+    }
+    else {
+        // Up to the head: the version the head is, made now for the branch
+        // the document is on; another branch's tip was taken when it was
+        // left.
+        if (current)
+            _leaveBranch();
+        for (const auto& v : store.versions()) {
+            if (points.count(v.seq) && v.num > keep.num)
+                keep = v;
+        }
+        bool atHead = keep.num > 0;
+        for (const auto& t : store.chain(branch.head, keep.seq + 1))
+            atHead = atHead && store.ops(t.seq).empty();
+        if (!atHead)
+            THROWM(Base::RuntimeError, "branch '" + name + "' has no version at its head");
+    }
+    if (keep.kind != "named")
+        store.nameVersion(keep.num, "trim " + name);
+
+    const Shared shared = sharedWith(store, branch.id);
+    std::vector<int64_t> rows;
+    std::set<int64_t> gone;
+    for (const auto& t : store.chain(branch.head)) {
+        if (t.seq <= keep.seq && !shared.rows.count(t.seq)) {
+            rows.push_back(t.seq);
+            gone.insert(t.seq);
+        }
+    }
+    std::vector<int64_t> versions;
+    for (const auto& v : store.versions()) {
+        if (v.num != keep.num && v.kind != "named" && !shared.forks.count(v.num)
+                && gone.count(v.seq))
+            versions.push_back(v.num);
+    }
+    store.removeTransactions(rows);
+    for (int64_t num : versions)
+        store.evictVersion(num);
+    if (current) {
+        // The steps that named the rows gone are gone with them.
+        clearUndos();
+        _clearRedos();
+        _rebuildUndoFromLog(d->undoFloor);
+    }
+
+    std::ostringstream script;
+    script << "{\"branch\":" << jsonString(name) << ",\"version\":" << keep.num
+           << ",\"rows\":" << rows.size() << ",\"versions\":" << versions.size() << "}";
+    log->record("trim", "Trim " + name + " to version " + std::to_string(keep.num), script.str());
+    signalBranchesChanged(*this);
+    return rows.size();
+}
+
+size_t Document::deleteBranch(const std::string& name)
+{
+    // docs/TransactionLog.md sec 16.7, "delete a branch".
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        return 0;
+    _checkBranchable("delete a branch");
+    auto& store = log->store();
+    LogBranch branch;
+    if (!store.findBranch(name, branch))
+        THROWM(Base::ValueError, "no branch '" + name + "'");
+    if (branch.id == log->branch())
+        THROWM(Base::ValueError, "branch '" + name + "' is the one the document is on");
+
+    const Shared shared = sharedWith(store, branch.id);
+    std::vector<int64_t> rows;
+    std::set<int64_t> gone;
+    for (const auto& t : store.chain(branch.head)) {
+        if (!shared.rows.count(t.seq)) {
+            rows.push_back(t.seq);
+            gone.insert(t.seq);
+        }
+    }
+    // Its versions, and any other taken at one of its own rows; a version
+    // another branch forked from stays, named (sec 16.7).
+    std::vector<int64_t> versions;
+    size_t kept = 0;
+    for (const auto& v : store.versions()) {
+        if (v.branch != branch.id && !gone.count(v.seq))
+            continue;
+        if (shared.forks.count(v.num)) {
+            ++kept;
+            continue;
+        }
+        versions.push_back(v.num);
+    }
+    store.removeTransactions(rows);
+    for (int64_t num : versions)
+        store.evictVersion(num);
+    store.removeBranch(branch.id);
+
+    std::ostringstream script;
+    script << "{\"deleted\":" << jsonString(name) << ",\"rows\":" << rows.size()
+           << ",\"versions\":" << versions.size() << ",\"kept\":" << kept << "}";
+    log->record("trim", "Delete branch " + name, script.str());
+    signalBranchesChanged(*this);
+    return rows.size();
+}
+
+size_t Document::squashVersions(int64_t from, int64_t to)
+{
+    // docs/TransactionLog.md sec 16.7, "squash": the row `to` names is
+    // rewritten as the net change since `from`, the rows between go, so
+    // no seq changes -- the rows after it, and a branch forked at it,
+    // still follow it.
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        return 0;
+    _checkBranchable("squash");
+    log->resolvePending();
+    auto& store = log->store();
+    LogVersion first, last;
+    if (!store.getVersion(from, first) || !store.getVersion(to, last))
+        THROWM(Base::ValueError, "no such version");
+    if (first.seq >= last.seq || !chainPoints(store, last.seq).count(first.seq))
+        THROWM(Base::ValueError, "version " + std::to_string(from) + " is not behind version "
+                                     + std::to_string(to) + " on one history");
+    const auto path = store.chain(last.seq, first.seq + 1);
+    if (path.empty() || path.back().seq != last.seq)
+        THROWM(Base::ValueError, "the history between the versions is not in the log");
+    std::set<int64_t> inside;
+    for (const auto& t : path) {
+        if (t.seq != last.seq)
+            inside.insert(t.seq);
+    }
+    for (const auto& b : store.branches()) {
+        bool through = false;
+        bool into = false;
+        for (const auto& t : store.chain(b.head)) {
+            through = through || t.seq == last.seq;
+            into = into || inside.count(t.seq);
+        }
+        if (into && !through)
+            THROWM(Base::ValueError, "branch '" + b.name + "' forks between the versions");
+    }
+    std::vector<int64_t> evict;
+    for (const auto& v : store.versions()) {
+        if (!inside.count(v.seq))
+            continue;
+        if (v.kind == "named")
+            THROWM(Base::ValueError, "named version " + std::to_string(v.num)
+                                         + " sits between the versions");
+        evict.push_back(v.num);
+    }
+
+    // The fold.
+    using Key = std::tuple<std::string, long, std::string>;   // ckind, cid, prop
+    struct Obj
+    {
+        bool born {false};
+        bool alive {true};
+        std::string cname;
+        std::string ctype;
+    };
+    struct Val
+    {
+        bool atStart {false};
+        bool atEnd {false};
+        std::string before;
+        std::string after;
+        std::string ptype;
+        std::string meta;
+        bool derived {false};
+    };
+    std::map<long, Obj> objects;
+    std::vector<long> objectOrder;
+    std::map<Key, Val> values;
+    std::vector<Key> valueOrder;
+    auto object = [&](long cid, bool born) -> Obj& {
+        auto it = objects.find(cid);
+        if (it == objects.end()) {
+            objectOrder.push_back(cid);
+            it = objects.emplace(cid, Obj()).first;
+            it->second.born = born;
+        }
+        return it->second;
+    };
+    for (const auto& t : path) {
+        for (const auto& o : store.ops(t.seq)) {
+            if (o.op == "create" || o.op == "remove") {
+                Obj& obj = object(o.cid, o.op == "create");
+                obj.alive = o.op == "create";
+                obj.cname = o.cname;
+                obj.ctype = o.ctype;
+                continue;
+            }
+            if (o.ckind == "obj")
+                object(o.cid, false);   // a set on it first: it was there
+            Key key {o.ckind, o.cid, o.prop};
+            auto it = values.find(key);
+            if (it == values.end()) {
+                valueOrder.push_back(key);
+                Val v;
+                v.atStart = o.op == "delprop" || (o.op == "set" && !o.vbefore.empty());
+                v.before = v.atStart ? o.vbefore : std::string();
+                it = values.emplace(key, v).first;
+            }
+            Val& v = it->second;
+            v.ptype = o.ptype;
+            if (!o.meta.empty())
+                v.meta = o.meta;
+            if (o.op == "addprop") {
+                v.atEnd = true;
+            }
+            else if (o.op == "delprop" || o.vafter.empty()) {
+                // Removed, or a remove's set: gone with its object.
+                v.atEnd = false;
+                v.after.clear();
+            }
+            else {
+                v.atEnd = true;
+                v.after = o.vafter;
+                v.derived = o.derived;
+            }
+        }
+    }
+    auto opOf = [](const std::string& op, const Key& key, const Val& v) {
+        LogOp o;
+        o.op = op;
+        o.ckind = std::get<0>(key);
+        o.cid = std::get<1>(key);
+        o.prop = std::get<2>(key);
+        o.ptype = v.ptype;
+        return o;
+    };
+    std::vector<LogOp> ops;
+    // Objects born in the span and there at its end: the create, then a
+    // set per property, a dynamic one's metadata before it.
+    for (long cid : objectOrder) {
+        const Obj& obj = objects[cid];
+        if (!obj.born || !obj.alive)
+            continue;
+        LogOp c;
+        c.op = "create";
+        c.ckind = "obj";
+        c.cid = cid;
+        c.cname = obj.cname;
+        c.ctype = obj.ctype;
+        ops.push_back(c);
+        for (const auto& key : valueOrder) {
+            const Val& v = values[key];
+            if (std::get<0>(key) != "obj" || std::get<1>(key) != cid || !v.atEnd)
+                continue;
+            if (!v.meta.empty()) {
+                auto a = opOf("addprop", key, v);
+                a.meta = v.meta;
+                ops.push_back(a);
+            }
+            auto s = opOf("set", key, v);
+            s.vafter = v.after;
+            s.derived = v.derived;
+            ops.push_back(s);
+        }
+    }
+    // Everything else: the net change of each property.
+    for (const auto& key : valueOrder) {
+        const Val& v = values[key];
+        const std::string& ckind = std::get<0>(key);
+        const long cid = std::get<1>(key);
+        const bool owned = ckind == "obj" || ckind == "view";
+        const Obj* owner = owned && objects.count(cid) ? &objects[cid] : nullptr;
+        if (owner && owner->born && (!owner->alive || ckind == "obj"))
+            continue;   // never there at either end, or written with its create
+        const bool ownerGone = owner && !owner->born && !owner->alive && ckind == "obj";
+        if (v.atStart && v.atEnd) {
+            if (v.before == v.after)
+                continue;
+            auto s = opOf("set", key, v);
+            s.vbefore = v.before;
+            s.vafter = v.after;
+            s.derived = v.derived;
+            ops.push_back(s);
+        }
+        else if (!v.atStart && v.atEnd) {
+            auto a = opOf("addprop", key, v);
+            a.meta = v.meta;
+            ops.push_back(a);
+            auto s = opOf("set", key, v);
+            s.vafter = v.after;
+            s.derived = v.derived;
+            ops.push_back(s);
+        }
+        else if (v.atStart && !v.atEnd) {
+            // A removed object's value rides on a set, before the remove; a
+            // dynamic property removed from a living one is a delprop.
+            auto o = opOf(ownerGone ? "set" : "delprop", key, v);
+            o.vbefore = v.before;
+            o.meta = v.meta;
+            ops.push_back(o);
+        }
+    }
+    // Objects there at the start and gone at the end, after their sets.
+    for (long cid : objectOrder) {
+        const Obj& obj = objects[cid];
+        if (obj.born || obj.alive)
+            continue;
+        LogOp r;
+        r.op = "remove";
+        r.ckind = "obj";
+        r.cid = cid;
+        r.cname = obj.cname;
+        r.ctype = obj.ctype;
+        ops.push_back(r);
+    }
+
+    LogTransaction t = path.back();
+    t.parent = first.seq;
+    t.id = 0;
+    t.kind = "squash";
+    t.origin.clear();
+    t.inverts = 0;
+    t.name = "Squash of versions " + std::to_string(from) + " to " + std::to_string(to);
+    std::ostringstream script;
+    script << "{\"from\":" << from << ",\"to\":" << to << ",\"rows\":" << path.size()
+           << ",\"ops\":" << ops.size() << "}";
+    t.script = script.str();
+    std::vector<int64_t> drop(inside.begin(), inside.end());
+    store.replaceTransactions(t, ops, drop);
+    for (int64_t num : evict)
+        store.evictVersion(num);
+    // Steps of this branch's that named the rows gone, gone with them.
+    if (chainPoints(store, log->head()).count(last.seq)) {
+        clearUndos();
+        _clearRedos();
+        _rebuildUndoFromLog(d->undoFloor);
+    }
+    signalBranchesChanged(*this);
+    return path.size();
 }
 
 void Document::noteVersionTaken()

@@ -4012,4 +4012,84 @@ through the switcher, after which the box is red and short again and the
 rows re-filtered. 19 checks, all PASS on 2026-09-25; the script puts the
 log setting back before it exits.
 
-Not yet: trimming (4.e).
+### 26.8 4.e, trimming, as built (2026-09-25)
+
+The three operations of 16.7, each refused in the middle of something else
+(`_checkBranchable`), each followed by `signalBranchesChanged` (the Gui
+signal of 26.7, renamed from `signalSwitchBranch` now that a trim or a
+delete also changes the history the panel shows; the panel reloads on it,
+since rows can go as well as come).
+
+- **Trim** -- `Document::trimBranch(name, version)`, Python
+  `trimTransactionBranch`, the panel's "Trim <branch> to version N...".
+  The rows of the branch's chain up to and including the version's row go,
+  except those any other branch's chain holds; so do the unnamed versions
+  taken at the rows that go, except one a branch forked from. The version
+  kept is named (`trim <branch>`) if it was not. Without a version, the one
+  at the head -- made now for the current branch; another branch's tip
+  snapshot is already there (26.2 item 5), and a head with no version is
+  refused. A `trim` record names what went.
+- **Delete** -- `Document::deleteBranch(name)`, `deleteTransactionBranch`,
+  the panel's "Delete..." (with a confirmation). Not the branch the
+  document is on. The branch row, the rows of its chain no other chain
+  holds, and its versions and any taken at those rows, except a version a
+  branch forked from, which stays (named, since forking named it) with the
+  deleted branch's id on it. A `trim` record.
+- **Squash** -- `Document::squashVersions(from, to)`,
+  `squashTransactionVersions`, Python only for now. The row `to` names is
+  rewritten in place (`TransactionStore::replaceTransactions`) as one
+  `squash` transaction whose parent is `from`'s row, and the rows between
+  go, so no seq changes and whatever follows `to` -- rows, a branch forked
+  at it -- still follows it. Refused when `from` is not behind `to` on one
+  history, when a branch forks strictly between them, or when a named
+  version sits between them; the unnamed ones between go. Its ops are the
+  net change, in the shapes a commit writes (so a cold undo reverts it and a
+  replay applies it like any row): an object born and gone inside leaves
+  nothing; one born inside is a `create` then a set per property, a dynamic
+  one's `addprop` first; one there before and gone after is a set per
+  property carrying its before (and a dynamic one's metadata) then the
+  `remove`; every other property is its before at the start and after at
+  the end -- a `set` when both ends have it and they differ, `addprop` and a
+  set when only the end does, `delprop` when only the start does.
+
+Three things the operations needed of what was there:
+
+- **A trimmed chain's base.** After a trim a branch's chain ends at a row
+  whose parent is gone, and the version that anchors what is left is at
+  that missing row. The lookups of the newest version on a chain -- the
+  checkout, the tip test of `_leaveBranch`, recovery's anchor -- take
+  `chainPoints`: 0, every row of the chain, and each row's parent.
+- **Branch ids are not reused.** SQLite hands out the highest integer key
+  again once its row is deleted, and a version kept from a deleted branch
+  still carries that id. `addBranch` numbers past every id the branch,
+  txn and version tables name.
+- **The stacks follow.** A trim or squash that touches the current
+  branch's history rebuilds the undo and redo stacks from what is left
+  (cold stubs, back to the open, 26.4); the hot steps go with the rows they
+  named.
+
+Gtests `trimAndDeleteBranches` (ancestry another branch holds survives a
+trim; a delete takes the branch's own rows and tip version but not the
+fork; a trim to v1 then to the head; the document still branches from v1
+and switches back; the `trim` records) and `squashFoldsTheNetChange` (an
+edit, an object born and removed, a dynamic property added, an object
+created, one removed; the refusals for a reversed pair, a named version
+between, and a fork between; the squash row's ops by kind, nothing for the
+object born and gone; the squash undone cold and redone, ids and values
+back). 37 log gtests pass. The Gui check of 26.7 now ends by deleting
+`side`: the panel reloads to `main` alone with no `side` rows, and the box
+is as it was -- 23 checks, all PASS.
+
+**Open: an intermittent hang.** Twice, a run of the log gtests hung at the
+start of `blobsAreEntitiesTheLogHolds` -- before its first save printed
+anything, so in `setUndoMode(0)`, the first commits, or
+`PropertyFileIncluded::setValue` adopting a file into the blob store while
+the log's worker makes segments durable. It did not recur in some 360 runs
+since -- 150 sequential, 150 six at a time, the rest in the foreground --
+and was never caught with a stack. It is not known whether it predates
+section 26; the test uses nothing of branches but the row numbering. The
+suites' ctest now runs with `--timeout 300`, so a recurrence fails by name
+instead of stalling.
+
+Phase 4 is built: named versions and the embedded mode (21), branches,
+the file's branch, the panel, trimming (26).

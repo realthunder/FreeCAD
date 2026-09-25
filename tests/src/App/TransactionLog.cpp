@@ -6,6 +6,7 @@
 
 #include "gtest/gtest.h"
 
+#include <algorithm>
 #include <iterator>
 #include <map>
 #include <sqlite3.h>
@@ -2438,4 +2439,188 @@ TEST_F(TransactionLogTest, recoveryContinuesOnTheBranch)
     ASSERT_TRUE(recovered->switchBranch("main"));
     EXPECT_EQ(robj->Integer.getValue(), 1);
     App::GetApplication().closeDocument(name.c_str());
+}
+
+TEST_F(TransactionLogTest, trimAndDeleteBranches)
+{
+    // docs/TransactionLog.md sec 16.7, 26 (4.e): a trim never takes what
+    // another branch's history holds; a delete takes what only the branch
+    // holds; what stays still checks out.
+    doc()->openTransaction("create");
+    auto obj = make("Obj");
+    obj->Integer.setValue(1);
+    doc()->commitTransaction();
+    const int64_t v1 = doc()->snapshotToLog();
+    ASSERT_GT(v1, 0);
+    for (int i = 2; i <= 3; ++i) {
+        doc()->openTransaction("edit");
+        obj->Integer.setValue(i);
+        doc()->commitTransaction();
+    }
+    doc()->createBranch("side");
+    doc()->openTransaction("side edit");
+    obj->Integer.setValue(10);
+    doc()->commitTransaction();
+    ASSERT_TRUE(doc()->switchBranch("main"));
+    doc()->openTransaction("main edit");
+    obj->Integer.setValue(4);
+    doc()->commitTransaction();
+    auto& store = log().store();
+    const size_t before = store.transactions().size();
+
+    // main's rows up to v1 are side's history too: nothing goes, v1 is named.
+    EXPECT_EQ(doc()->trimBranch("main", v1), 0u);
+    App::LogVersion v;
+    ASSERT_TRUE(store.getVersion(v1, v));
+    EXPECT_EQ(v.kind, "named");
+    EXPECT_THROW(doc()->deleteBranch("main"), Base::Exception);   // the one we are on
+    EXPECT_THROW(doc()->deleteBranch("nowhere"), Base::Exception);
+
+    // Deleting side takes its own rows and its tip version, not the fork.
+    App::LogBranch side;
+    ASSERT_TRUE(store.findBranch("side", side));
+    const int64_t fork = side.fromVersion;
+    EXPECT_GT(doc()->deleteBranch("side"), 0u);
+    EXPECT_FALSE(store.findBranch("side", side));
+    EXPECT_EQ(store.branches().size(), 1u);
+    for (const auto& t : store.transactions())
+        EXPECT_NE(t.name, "side edit");
+    ASSERT_TRUE(store.getVersion(fork, v));
+    for (const auto& ver : store.versions())
+        EXPECT_EQ(ver.branch, 1);
+
+    // Now main's first rows are its alone: trimmed to v1, and the document
+    // still branches from v1 and switches back.
+    EXPECT_GT(doc()->trimBranch("main", v1), 0u);
+    for (const auto& t : store.transactions())
+        EXPECT_NE(t.name, "create");
+    EXPECT_LT(store.transactions().size(), before);
+    const auto undos = doc()->getAvailableUndoNames();
+    EXPECT_EQ(std::count(undos.begin(), undos.end(), std::string("create")), 0);
+    EXPECT_EQ(obj->Integer.getValue(), 4);
+    doc()->createBranch("again", v1);
+    EXPECT_EQ(obj->Integer.getValue(), 1);
+    ASSERT_TRUE(doc()->switchBranch("main"));
+    EXPECT_EQ(obj->Integer.getValue(), 4);
+
+    // Trimmed to its head: every row only main holds goes, the document
+    // stays as it is, and there is nothing left to undo.
+    EXPECT_GT(doc()->trimBranch("main"), 0u);
+    EXPECT_EQ(obj->Integer.getValue(), 4);
+    EXPECT_EQ(doc()->getAvailableUndos(), 0);
+    ASSERT_TRUE(doc()->switchBranch("again"));
+    EXPECT_EQ(obj->Integer.getValue(), 1);
+    ASSERT_TRUE(doc()->switchBranch("main"));
+    EXPECT_EQ(obj->Integer.getValue(), 4);
+    bool record = false;
+    for (const auto& t : store.transactions())
+        record = record || t.kind == "trim";
+    EXPECT_TRUE(record);
+}
+
+TEST_F(TransactionLogTest, squashFoldsTheNetChange)
+{
+    // docs/TransactionLog.md sec 16.7 (4.e): the rows between two versions
+    // become one transaction of their net change, which undoes -- cold, from
+    // the log -- and redoes like any.
+    doc()->openTransaction("create");
+    auto obj = make("Obj");
+    obj->Integer.setValue(1);
+    make("Old")->String.setValue("old");
+    doc()->commitTransaction();
+    const int64_t v1 = doc()->snapshotToLog();
+    ASSERT_GT(v1, 0);
+
+    doc()->openTransaction("edit");
+    obj->Integer.setValue(2);
+    doc()->commitTransaction();
+    doc()->openTransaction("temp");
+    make("Temp");
+    doc()->commitTransaction();
+    doc()->openTransaction("untemp");
+    doc()->removeObject("Temp");
+    doc()->commitTransaction();
+    doc()->openTransaction("note");
+    obj->addDynamicProperty("App::PropertyString", "Note", "Squash");
+    static_cast<App::PropertyString*>(obj->getPropertyByName("Note"))->setValue("n");
+    doc()->commitTransaction();
+    doc()->openTransaction("kept");
+    make("Kept")->String.setValue("k");
+    doc()->commitTransaction();
+    doc()->openTransaction("drop old");
+    doc()->removeObject("Old");
+    doc()->commitTransaction();
+    const int64_t mid = doc()->snapshotToLog();
+    doc()->openTransaction("edit again");
+    obj->Integer.setValue(3);
+    doc()->commitTransaction();
+    const int64_t v2 = doc()->snapshotToLog();
+    ASSERT_GT(v2, mid);
+    const long keptId = doc()->getObject("Kept")->getID();
+
+    auto& store = log().store();
+    EXPECT_THROW(doc()->squashVersions(v2, v1), Base::Exception);
+    ASSERT_TRUE(store.nameVersion(mid, "mid"));
+    EXPECT_THROW(doc()->squashVersions(v1, v2), Base::Exception);   // a named one between
+    ASSERT_TRUE(store.nameVersion(mid, ""));
+
+    EXPECT_GT(doc()->squashVersions(v1, v2), 5u);
+    App::LogVersion first, last, gone;
+    ASSERT_TRUE(store.getVersion(v1, first));
+    ASSERT_TRUE(store.getVersion(v2, last));
+    EXPECT_FALSE(store.getVersion(mid, gone));
+    const auto rows = store.chain(last.seq, first.seq + 1);
+    ASSERT_EQ(rows.size(), 1u);
+    EXPECT_EQ(rows[0].kind, "squash");
+    EXPECT_EQ(rows[0].parent, first.seq);
+    std::map<std::string, int> counts;
+    bool tempMentioned = false;
+    for (const auto& o : store.ops(rows[0].seq)) {
+        ++counts[o.op];
+        tempMentioned = tempMentioned || o.cname == "Temp";
+    }
+    EXPECT_FALSE(tempMentioned);   // born and gone inside: nothing
+    EXPECT_EQ(counts["create"], 1);
+    EXPECT_EQ(counts["remove"], 1);
+    EXPECT_EQ(counts["addprop"], 1);
+
+    // The document is what it was; the squash is one step, undone cold.
+    EXPECT_EQ(obj->Integer.getValue(), 3);
+    const auto undos = doc()->getAvailableUndoNames();
+    ASSERT_FALSE(undos.empty());
+    EXPECT_EQ(undos.front().rfind("Squash", 0), 0u);
+    ASSERT_TRUE(doc()->undo());
+    EXPECT_EQ(obj->Integer.getValue(), 1);
+    EXPECT_FALSE(obj->getPropertyByName("Note"));
+    EXPECT_FALSE(doc()->getObject("Kept"));
+    auto old = dynamic_cast<App::FeatureTest*>(doc()->getObject("Old"));
+    ASSERT_TRUE(old);
+    EXPECT_STREQ(old->String.getValue(), "old");
+    EXPECT_FALSE(doc()->getObject("Temp"));
+    ASSERT_TRUE(doc()->redo());
+    EXPECT_EQ(obj->Integer.getValue(), 3);
+    auto note = dynamic_cast<App::PropertyString*>(obj->getPropertyByName("Note"));
+    ASSERT_TRUE(note);
+    EXPECT_STREQ(note->getValue(), "n");
+    auto kept = dynamic_cast<App::FeatureTest*>(doc()->getObject("Kept"));
+    ASSERT_TRUE(kept);
+    EXPECT_EQ(kept->getID(), keptId);
+    EXPECT_STREQ(kept->String.getValue(), "k");
+    EXPECT_FALSE(doc()->getObject("Old"));
+
+    // A branch forked between two versions keeps them from being squashed.
+    const int64_t v3 = doc()->snapshotToLog();
+    doc()->openTransaction("more");
+    obj->Integer.setValue(5);
+    doc()->commitTransaction();
+    doc()->createBranch("fork");
+    doc()->openTransaction("fork edit");
+    obj->Integer.setValue(6);
+    doc()->commitTransaction();
+    ASSERT_TRUE(doc()->switchBranch("main"));
+    doc()->openTransaction("main more");
+    obj->Integer.setValue(7);
+    doc()->commitTransaction();
+    const int64_t v4 = doc()->snapshotToLog();
+    EXPECT_THROW(doc()->squashVersions(v3, v4), Base::Exception);
 }

@@ -86,6 +86,7 @@ private Q_SLOTS:
     void onVersionContextMenu(const QPoint& pos);
     void onBranchChosen(int index);
     void onNewBranch();
+    void onDeleteBranch();
     void applyVisibility();
 
 protected:
@@ -127,6 +128,7 @@ private:
     QPushButton* _snapshot {nullptr};
     QComboBox* _branch {nullptr};
     QPushButton* _newBranch {nullptr};
+    QPushButton* _deleteBranch {nullptr};
     QCheckBox* _allBranches {nullptr};
     QTabWidget* _tabs {nullptr};
     QStackedWidget* _detail {nullptr};

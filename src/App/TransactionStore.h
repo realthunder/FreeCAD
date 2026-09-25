@@ -237,6 +237,14 @@ public:
     /// Drop every transaction with seq < before, and the entities nothing
     /// reaches any more (sec 23.5).
     virtual void truncate(int64_t before) = 0;
+    /// Drop these transactions with their ops, and the entities nothing
+    /// reaches any more, atomically (sec 16.7, trimming).
+    virtual void removeTransactions(const std::vector<int64_t>& seqs) = 0;
+    /// Rewrite row `txn.seq` -- its fields and its ops -- and drop the rows
+    /// `seqs`, then the entities nothing reaches, atomically (sec 16.7,
+    /// squash). The ops' `txn` and `idx` are filled in.
+    virtual void replaceTransactions(const LogTransaction& txn, std::vector<LogOp>& ops,
+                                     const std::vector<int64_t>& seqs) = 0;
 
     /// Id of the environment row holding `json`, made if absent (sec 11).
     virtual int64_t environment(const std::string& json) = 0;
@@ -276,6 +284,9 @@ public:
     /// Write a branch row's fields back, all but `head`, which only an
     /// append moves. False if there is no such branch.
     virtual bool updateBranch(const LogBranch& branch) = 0;
+    /// Drop a branch row; its transactions and versions are the caller's
+    /// (sec 16.7). False if there is no such branch.
+    virtual bool removeBranch(int64_t id) = 0;
 
     virtual std::string getMeta(const std::string& key) = 0;
     virtual void setMeta(const std::string& key, const std::string& value) = 0;

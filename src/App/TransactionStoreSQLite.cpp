@@ -561,6 +561,88 @@ public:
         }
     }
 
+    void removeTransactions(const std::vector<int64_t>& seqs) override
+    {
+        exec("BEGIN");
+        try {
+            for (int64_t seq : seqs) {
+                auto s = prepare("DELETE FROM op WHERE txn=?");
+                sqlite3_bind_int64(s, 1, seq);
+                step(s);
+                s = prepare("DELETE FROM txn WHERE seq=?");
+                sqlite3_bind_int64(s, 1, seq);
+                step(s);
+            }
+            collectEntities();
+            exec("COMMIT");
+        }
+        catch (...) {
+            exec("ROLLBACK");
+            throw;
+        }
+    }
+
+    void replaceTransactions(const LogTransaction& txn, std::vector<LogOp>& ops,
+                             const std::vector<int64_t>& seqs) override
+    {
+        exec("BEGIN");
+        try {
+            for (int64_t seq : seqs) {
+                auto s = prepare("DELETE FROM op WHERE txn=?");
+                sqlite3_bind_int64(s, 1, seq);
+                step(s);
+                s = prepare("DELETE FROM txn WHERE seq=?");
+                sqlite3_bind_int64(s, 1, seq);
+                step(s);
+            }
+            auto s = prepare("DELETE FROM op WHERE txn=?");
+            sqlite3_bind_int64(s, 1, txn.seq);
+            step(s);
+            s = prepare("UPDATE txn SET parent=?, id=?, kind=?, origin=?, name=?, time=?,"
+                        " script=?, session=?, inverts=?, branch=? WHERE seq=?");
+            sqlite3_bind_int64(s, 1, txn.parent);
+            sqlite3_bind_int(s, 2, txn.id);
+            bindText(s, 3, txn.kind);
+            bindText(s, 4, txn.origin);
+            bindText(s, 5, txn.name);
+            sqlite3_bind_double(s, 6, txn.time);
+            bindText(s, 7, txn.script);
+            sqlite3_bind_int64(s, 8, txn.session);
+            sqlite3_bind_int64(s, 9, txn.inverts);
+            sqlite3_bind_int64(s, 10, txn.branch);
+            sqlite3_bind_int64(s, 11, txn.seq);
+            step(s);
+            auto op = prepare("INSERT INTO op(txn,idx,op,ckind,cid,cname,ctype,prop,ptype,meta,"
+                              "vbefore,vafter,derived) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)");
+            int idx = 0;
+            for (auto& o : ops) {
+                o.txn = txn.seq;
+                o.idx = idx++;
+                sqlite3_reset(op);
+                sqlite3_bind_int64(op, 1, o.txn);
+                sqlite3_bind_int(op, 2, o.idx);
+                bindText(op, 3, o.op);
+                bindText(op, 4, o.ckind);
+                sqlite3_bind_int64(op, 5, o.cid);
+                bindText(op, 6, o.cname);
+                bindText(op, 7, o.ctype);
+                bindText(op, 8, o.prop);
+                bindText(op, 9, o.ptype);
+                bindText(op, 10, o.meta);
+                bindText(op, 11, o.vbefore);
+                bindText(op, 12, o.vafter);
+                sqlite3_bind_int(op, 13, o.derived ? 1 : 0);
+                step(op);
+            }
+            collectEntities();
+            exec("COMMIT");
+        }
+        catch (...) {
+            exec("ROLLBACK");
+            throw;
+        }
+    }
+
     /// The one collector (sec 23.5): delete every entity not reachable from
     /// a root -- an op's ref or a manifest entry -- over the ref edges, of
     /// every role. A delta's base and a composite's parts are held the
@@ -886,12 +968,20 @@ public:
 
     int64_t addBranch(LogBranch& b) override
     {
+        if (b.id <= 0) {
+            // Past every id any row has named, not only the live branches':
+            // a deleted branch's id stays on the versions kept from it.
+            auto m = prepare("SELECT MAX(x) FROM (SELECT MAX(id) AS x FROM branch"
+                             " UNION ALL SELECT MAX(branch) FROM txn"
+                             " UNION ALL SELECT MAX(CAST(branch AS INTEGER)) FROM version)");
+            b.id = 1;
+            if (sqlite3_step(m) == SQLITE_ROW)
+                b.id = sqlite3_column_int64(m, 0) + 1;
+            sqlite3_reset(m);
+        }
         auto s = prepare("INSERT INTO branch(id,name,from_version,from_seq,head_seq,id_base,"
                          "last_id,created,closed) VALUES(?,?,?,?,?,?,?,?,?)");
-        if (b.id > 0)
-            sqlite3_bind_int64(s, 1, b.id);
-        else
-            sqlite3_bind_null(s, 1);
+        sqlite3_bind_int64(s, 1, b.id);
         bindText(s, 2, b.name);
         sqlite3_bind_int64(s, 3, b.fromVersion);
         sqlite3_bind_int64(s, 4, b.fromSeq);
@@ -917,6 +1007,14 @@ public:
         sqlite3_bind_double(s, 6, b.created);
         sqlite3_bind_double(s, 7, b.closed);
         sqlite3_bind_int64(s, 8, b.id);
+        step(s);
+        return sqlite3_changes(db) > 0;
+    }
+
+    bool removeBranch(int64_t id) override
+    {
+        auto s = prepare("DELETE FROM branch WHERE id=?");
+        sqlite3_bind_int64(s, 1, id);
         step(s);
         return sqlite3_changes(db) > 0;
     }

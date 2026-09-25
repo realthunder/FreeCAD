@@ -1122,6 +1122,42 @@ PyObject* DocumentPy::renameTransactionBranch(PyObject *args)
     } PY_CATCH;
 }
 
+PyObject* DocumentPy::trimTransactionBranch(PyObject *args, PyObject *kwds)
+{
+    const char* name;
+    long long version = 0;
+    static const std::array<const char*, 3> kwlist {"name", "version", nullptr};
+    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwds, "s|L", kwlist, &name, &version))
+        return nullptr;
+    PY_TRY {
+        return Py::new_reference_to(Py::Long(
+            static_cast<unsigned long long>(getDocumentPtr()->trimBranch(name, version))));
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::deleteTransactionBranch(PyObject *args)
+{
+    const char* name;
+    if (!PyArg_ParseTuple(args, "s", &name))
+        return nullptr;
+    PY_TRY {
+        return Py::new_reference_to(
+            Py::Long(static_cast<unsigned long long>(getDocumentPtr()->deleteBranch(name))));
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::squashTransactionVersions(PyObject *args)
+{
+    long long from;
+    long long to;
+    if (!PyArg_ParseTuple(args, "LL", &from, &to))
+        return nullptr;
+    PY_TRY {
+        return Py::new_reference_to(Py::Long(
+            static_cast<unsigned long long>(getDocumentPtr()->squashVersions(from, to))));
+    } PY_CATCH;
+}
+
 PyObject* DocumentPy::resolveTransactionLog(PyObject *args)
 {
     if (!PyArg_ParseTuple(args, ""))

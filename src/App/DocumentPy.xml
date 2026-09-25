@@ -398,6 +398,36 @@ Rename a branch. False without a log or with no such branch; a name
 already taken raises.</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="trimTransactionBranch" Keyword="true">
+      <Documentation>
+        <UserDocu>trimTransactionBranch(name, version=0) -> int
+
+Trim a branch (docs/TransactionLog.md sec 16.7): its rows up to `version`,
+else up to the version at its head, and its unnamed versions before it go,
+never a row another branch holds, a named version or one a branch forked
+from. The version kept is named. Returns the rows removed.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="deleteTransactionBranch">
+      <Documentation>
+        <UserDocu>deleteTransactionBranch(name) -> int
+
+Delete a branch that the document is not on (sec 16.7): the branch, the
+rows only it holds, its versions but those another branch forked from.
+Returns the rows removed.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="squashTransactionVersions">
+      <Documentation>
+        <UserDocu>squashTransactionVersions(from, to) -> int
+
+Squash the rows between versions `from` and `to` (docs/TransactionLog.md
+sec 16.7) into one transaction of their net change, undone and replayed
+like any; unnamed versions between go. Raises when `from` is not behind
+`to`, or a branch forks, or a named version sits, between them. Returns
+the rows folded.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="resolveTransactionLog">
       <Documentation>
         <UserDocu>resolveTransactionLog() -> int

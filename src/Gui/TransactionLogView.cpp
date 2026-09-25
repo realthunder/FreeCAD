@@ -36,6 +36,7 @@
 # include <QLabel>
 # include <QLineEdit>
 # include <QMenu>
+# include <QMessageBox>
 # include <QPlainTextEdit>
 # include <QPushButton>
 # include <QSplitter>
@@ -125,6 +126,10 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     _newBranch = new QPushButton(tr("Branch..."), this);
     _newBranch->setToolTip(tr("A new branch from the current head, switched to"));
     branchBar->addWidget(_newBranch);
+    _deleteBranch = new QPushButton(tr("Delete..."), this);
+    _deleteBranch->setToolTip(tr("Delete another branch: the rows only it holds and its "
+                                 "versions, but those a branch forked from (sec 16.7)"));
+    branchBar->addWidget(_deleteBranch);
     _allBranches = new QCheckBox(tr("All branches"), this);
     _allBranches->setToolTip(tr("Show the rows of every branch, not only this branch's history"));
     branchBar->addWidget(_allBranches);
@@ -225,6 +230,7 @@ TransactionLogView::TransactionLogView(Gui::Document* pcDocument, QWidget* paren
     connect(_branch, qOverload<int>(&QComboBox::activated), this,
             &TransactionLogView::onBranchChosen);
     connect(_newBranch, &QPushButton::clicked, this, &TransactionLogView::onNewBranch);
+    connect(_deleteBranch, &QPushButton::clicked, this, &TransactionLogView::onDeleteBranch);
     connect(_allBranches, &QCheckBox::toggled, this, &TransactionLogView::applyVisibility);
 
     //NOLINTBEGIN
@@ -286,8 +292,9 @@ void TransactionLogView::attach(App::Document* doc)
         [this](const App::Document&) { scheduleRefresh(); }));
     _connections.emplace_back(_doc->signalRedo.connect(
         [this](const App::Document&) { scheduleRefresh(); }));
-    _connections.emplace_back(_doc->signalSwitchBranch.connect(
-        [this](const App::Document&) { scheduleRefresh(); }));
+    // Rows can go as well as come (a trim, a deleted branch): rebuilt whole.
+    _connections.emplace_back(_doc->signalBranchesChanged.connect(
+        [this](const App::Document&) { reload(); }));
     //NOLINTEND
     reload();
 }
@@ -683,6 +690,7 @@ void TransactionLogView::refreshBranches()
     if (!l) {
         _branch->setEnabled(false);
         _newBranch->setEnabled(false);
+        _deleteBranch->setEnabled(false);
         return;
     }
     int current = -1;
@@ -703,6 +711,37 @@ void TransactionLogView::refreshBranches()
     _branch->setCurrentIndex(current);
     _branch->setEnabled(true);
     _newBranch->setEnabled(_doc != nullptr);
+    _deleteBranch->setEnabled(_doc != nullptr && _branch->count() > 1);
+}
+
+void TransactionLogView::onDeleteBranch()
+{
+    auto l = log();
+    if (!l || !_doc)
+        return;
+    QStringList names;
+    for (const auto& b : l->store().branches()) {
+        if (b.id != l->branch())
+            names << QString::fromStdString(b.name);
+    }
+    if (names.isEmpty())
+        return;
+    bool ok = false;
+    QString name = QInputDialog::getItem(this, tr("Delete branch"), tr("Branch:"), names, 0,
+                                         false, &ok);
+    if (!ok || name.isEmpty())
+        return;
+    if (QMessageBox::question(this, tr("Delete branch"),
+                              tr("Delete branch %1 and the history only it holds? "
+                                 "This cannot be undone.").arg(name))
+            != QMessageBox::Yes)
+        return;
+    try {
+        _doc->deleteBranch(name.toStdString());
+    }
+    catch (Base::Exception& e) {
+        FC_ERR("delete branch " << name.toStdString() << ": " << e.what());
+    }
 }
 
 void TransactionLogView::onBranchChosen(int index)
@@ -847,11 +886,30 @@ void TransactionLogView::onVersionContextMenu(const QPoint& pos)
     auto branchFrom = menu.addAction(tr("Branch from version %1...").arg(num));
     branchFrom->setToolTip(tr("A new branch from this version, switched to; the version is "
                               "named if it was not (sec 17.1)"));
+    const QString branchName = item->text(VerBranch);
+    auto trimTo = menu.addAction(tr("Trim %1 to version %2...").arg(branchName).arg(num));
+    trimTo->setToolTip(tr("Remove the history of the branch before this version, but what "
+                          "another branch holds and the named versions (sec 16.7)"));
+    trimTo->setEnabled(!branchName.isEmpty());
     auto chosen = menu.exec(_versions->viewport()->mapToGlobal(pos));
     if (!chosen)
         return;
     if (chosen == branchFrom) {
         createBranch(num, 0);
+        return;
+    }
+    if (chosen == trimTo) {
+        if (QMessageBox::question(this, tr("Trim branch"),
+                                  tr("Remove the history of %1 before version %2? "
+                                     "This cannot be undone.").arg(branchName).arg(num))
+                != QMessageBox::Yes)
+            return;
+        try {
+            _doc->trimBranch(branchName.toStdString(), num);
+        }
+        catch (Base::Exception& e) {
+            FC_ERR("trim " << branchName.toStdString() << ": " << e.what());
+        }
         return;
     }
     App::Document* doc = _doc;

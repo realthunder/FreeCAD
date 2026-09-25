@@ -191,9 +191,10 @@ public:
     fastsignals::signal<void (const App::Document&)> signalUndo;
     /// signal on redo
     fastsignals::signal<void (const App::Document&)> signalRedo;
-    /// signal after the document became the head of another branch of its
-    /// transaction log, or a new branch was made (docs/TransactionLog.md sec 26)
-    fastsignals::signal<void (const App::Document&)> signalSwitchBranch;
+    /// signal after the branches of the document's transaction log changed
+    /// (docs/TransactionLog.md sec 26): a switch, a new branch, a trim or a
+    /// deleted branch
+    fastsignals::signal<void (const App::Document&)> signalBranchesChanged;
     /** signal on load/save document
      * this signal is given when the document gets streamed.
      * you can use this hook to write additional information in
@@ -370,6 +371,26 @@ public:
      * goes on the branch arrived on. Throws if there is no such branch.
      */
     bool switchBranch(const std::string& name);
+    /** Trim branch `name` (docs/TransactionLog.md sec 16.7): its rows up to
+     * version `version` -- else up to the version at its head -- and its
+     * unnamed versions before it go, but never a row another branch's
+     * history holds, a named version, or one a branch forked from. The
+     * version kept is named if it was not. Returns the rows removed.
+     */
+    size_t trimBranch(const std::string& name, int64_t version = 0);
+    /** Delete branch `name` (sec 16.7): the branch, the rows only it holds,
+     * and its versions but those another branch forked from. Not the
+     * branch the document is on. Returns the rows removed.
+     */
+    size_t deleteBranch(const std::string& name);
+    /** Squash the rows between versions `from` and `to` (sec 16.7) into one
+     * `squash` transaction whose ops are the net change -- undone, replayed
+     * and browsed like any. Both versions stay; unnamed ones between go.
+     * Refused (throws) when `from` is not behind `to` on one history, or a
+     * branch forks, or a named version sits, between them. Returns the rows
+     * folded.
+     */
+    size_t squashVersions(int64_t from, int64_t to);
 
     /** Crash recovery (docs/TransactionLog.md sec 25): make this new, empty
      * document what the session that crashed with transient directory

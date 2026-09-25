@@ -131,6 +131,20 @@ def run():
                 if not tree.topLevelItem(i).isHidden()
             ]
             check("panel switch: rows refiltered", nowVisible != visible)
+            # Deleting the other branch (sec 16.7): the panel reloads.
+            removed = doc.deleteTransactionBranch("side")
+            settle()
+            items = [combo.itemData(i) for i in range(combo.count())]
+            check("delete: %d rows removed" % removed, removed > 0)
+            check("delete: panel lists %r" % (items,), items == ["main"])
+            sideRows = [
+                tree.topLevelItem(i)
+                for i in range(tree.topLevelItemCount())
+                if tree.topLevelItem(i).text(7) == "side"
+            ]
+            check("delete: no side rows left (%d)" % len(sideRows), not sideRows)
+            check("delete: box still red, short", colour(box) == (1.0, 0.0, 0.0)
+                  and abs(box.Length.Value - 10) < 1e-9)
     except Exception:
         lines.append("FAIL exception\n" + traceback.format_exc())
     finally:

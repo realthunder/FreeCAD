@@ -182,6 +182,17 @@ public:
         inner().truncate(before);
         _log.releaseBlobs();
     }
+    void removeTransactions(const std::vector<int64_t>& seqs) override
+    {
+        inner().removeTransactions(seqs);
+        _log.releaseBlobs();
+    }
+    void replaceTransactions(const LogTransaction& txn, std::vector<LogOp>& ops,
+                             const std::vector<int64_t>& seqs) override
+    {
+        inner().replaceTransactions(txn, ops, seqs);
+        _log.releaseBlobs();
+    }
     int64_t environment(const std::string& json) override { return inner().environment(json); }
     std::string environmentJson(int64_t id) override { return inner().environmentJson(id); }
     int64_t openSession(int64_t env, const std::string& user, const std::string& host,
@@ -220,6 +231,7 @@ public:
     bool renameBranch(int64_t id, const std::string& name) override
     { return inner().renameBranch(id, name); }
     bool updateBranch(const LogBranch& branch) override { return inner().updateBranch(branch); }
+    bool removeBranch(int64_t id) override { return inner().removeBranch(id); }
     std::string getMeta(const std::string& key) override { return inner().getMeta(key); }
     void setMeta(const std::string& key, const std::string& value) override
     { inner().setMeta(key, value); }
