@@ -12,6 +12,12 @@ Upstream's box-selection family, as it applies to the fork:
     way out, construction is a colour read off the object, and the box's
     redraw does not recolour (the mode is still the rubber band's). The
     check guards what the user sees.
+  - 39329e547f, e469eb5ccb: a right press during a box cancels it (the
+    fork already did, through its both-buttons branch), and that right
+    button's release opens no context menu. It did here, measured. A
+    plain right click on nothing, before and after, still opens it --
+    the control that the popup is detected at all. A context menu's
+    exec() is modal, so a timer closes any popup and records it.
 
 The desktop is driven with synthetic mouse events on the viewer, which
 reach the sketch's rubber band (tests/gui/sketch-bulk-selection.py does
@@ -106,6 +112,41 @@ def box(w, corner_a, corner_b):
     settle(0.3)
 
 
+class PopupCatcher:
+    """Records and closes any popup (a context menu's exec() is modal)
+    while armed, so a right release that opens one does not hang the
+    test."""
+
+    def __init__(self):
+        self.seen = []
+        self.timer = QtCore.QTimer()
+        self.timer.setInterval(30)
+        self.timer.timeout.connect(self.poll)
+
+    def poll(self):
+        from PySide import QtWidgets
+        popup = QtWidgets.QApplication.activePopupWidget()
+        if popup is not None:
+            self.seen.append(popup.metaObject().className())
+            popup.close()
+
+    def __enter__(self):
+        self.seen = []
+        self.timer.start()
+        return self
+
+    def __exit__(self, *exc):
+        settle(0.3)
+        self.poll()
+        self.timer.stop()
+        return False
+
+
+def qtest_at(w, world):
+    p = pixel(w, world)
+    return QtCore.QPoint(int(p[0]), int(p[1]))
+
+
 def curve_colours():
     mat = coin.SoNode.getByName("CurvesMaterials")
     if not mat:
@@ -159,6 +200,52 @@ def run():
               is_draft(cols[0] if cols else None), cols)
         check("and selects nothing", len(FreeCADGui.Selection.getSelectionEx("*")) == 0,
               [(s.ObjectName, s.SubElementNames) for s in FreeCADGui.Selection.getSelectionEx("*")])
+
+        # B: the right button during a box. QTest here, not sendEvent: the
+        # cancel asks QApplication::mouseButtons() whether both buttons are
+        # down, and only events through the window system update it.
+        from PySide6.QtTest import QTest
+        left, right = QtCore.Qt.LeftButton, QtCore.Qt.RightButton
+        none = QtCore.Qt.NoModifier
+        settle(0.8)
+        with PopupCatcher() as control:
+            QTest.mouseMove(w, qtest_at(w, EMPTY_B))
+            settle()
+            QTest.mousePress(w, right, none, qtest_at(w, EMPTY_B))
+            settle()
+            QTest.mouseRelease(w, right, none, qtest_at(w, EMPTY_B))
+            settle()
+        check("a right click on nothing opens the sketch's context menu",
+              control.seen, control.seen)
+
+        settle(0.8)
+        with PopupCatcher() as cancelled:
+            QTest.mouseMove(w, qtest_at(w, EMPTY_A))
+            settle()
+            QTest.mousePress(w, left, none, qtest_at(w, EMPTY_A))
+            settle()
+            mid = ((EMPTY_A[0] + EMPTY_B[0]) / 2, (EMPTY_A[1] + EMPTY_B[1]) / 2)
+            QTest.mouseMove(w, qtest_at(w, mid))
+            settle()
+            QTest.mouseMove(w, qtest_at(w, EMPTY_B))
+            settle()
+            QTest.mousePress(w, right, none, qtest_at(w, EMPTY_B))
+            settle()
+            QTest.mouseRelease(w, right, none, qtest_at(w, EMPTY_B))
+            settle()
+            QTest.mouseRelease(w, left, none, qtest_at(w, EMPTY_B))
+            settle()
+        check("a right press that cancels a box opens no context menu on release",
+              not cancelled.seen, cancelled.seen)
+
+        # And the next plain right click still has its menu.
+        settle(0.8)
+        with PopupCatcher() as after:
+            QTest.mousePress(w, right, none, qtest_at(w, EMPTY_A))
+            settle()
+            QTest.mouseRelease(w, right, none, qtest_at(w, EMPTY_A))
+            settle()
+        check("the next right click opens the context menu again", after.seen, after.seen)
     except Exception:
         note("ABORT run:\n" + traceback.format_exc())
     finish()

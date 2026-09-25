@@ -721,6 +721,9 @@ protected:
 
     // Virtual space variables
     bool isShownVirtualSpace; // indicates whether the present virtual space view is the Real Space or the Virtual Space (virtual space 1 or 2)
+    // set when a right press cancels a box selection, so that button's
+    // release opens no context menu; cleared by the next right press
+    bool blockContextMenu = false;
 
     std::unique_ptr<PartGui::ViewProviderPart> pInternalView;
 

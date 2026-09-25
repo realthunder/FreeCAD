@@ -1136,6 +1136,9 @@ bool ViewProviderSketch::mouseButtonPressed(int Button, bool pressed, const SbVe
             break;
         case STATUS_SKETCH_UseRubberBand:
             rubberband->setWorking(false);
+            // the right button that cancelled the box is not asking for
+            // the context menu (upstream 39329e547f, e469eb5ccb)
+            blockContextMenu = true;
 
             const_cast<Gui::ViewerContext *>(viewer)->setRenderType(Gui::ViewerContext::Native);
             draw(true,false);
@@ -1343,6 +1346,8 @@ bool ViewProviderSketch::mouseButtonPressed(int Button, bool pressed, const SbVe
     }
     // Right mouse button ****************************************************
     else if (Button == 2) {
+        if (pressed)
+            blockContextMenu = false;
         if (dragging == 1)
             return true;
         if (!pressed) {
@@ -9311,6 +9316,9 @@ void ViewProviderSketch::setConstraintSelectability(bool enabled /* = true */)
 
 void ViewProviderSketch::generateContextMenu()
 {
+    if (blockContextMenu)
+        return;
+
     int selectedExternalEdges = 0;
     int selectedEdges = 0;
     int selectedLines = 0;
