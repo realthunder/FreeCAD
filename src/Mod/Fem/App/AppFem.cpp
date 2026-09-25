@@ -63,6 +63,10 @@
 #include "WorkerExtension.h"
 
 #ifdef FC_USE_VTK
+# include <string>
+# include <vtkObjectFactory.h>
+# include <vtkOutputWindow.h>
+# include <vtkSmartPointer.h>
 # include "FemPostFilter.h"
 # include "FemPostFunction.h"
 # include "FemPostPipeline.h"
@@ -76,9 +80,70 @@ namespace Fem
 extern PyObject* initModule();
 }
 
+#ifdef FC_USE_VTK
+namespace
+{
+/// VTK's messages, into FreeCAD's console.
+///
+/// VTK's default output on Windows is a native window of its own
+/// (vtkWin32OutputWindow), created on the first warning and owned by the
+/// thread that raised it. That thread is FreeCAD's main thread, which does
+/// not pump that window's messages while it works -- so under FreeCADCmd,
+/// or while a GUI command runs, the window sat there "Not Responding",
+/// holding text nobody could read, and closing it offered to end FreeCAD.
+/// Here the text goes where FreeCAD's own messages go: the report view, the
+/// console, the log. The process has one VTK, so this also catches what
+/// SMESH's VTK says.
+class ConsoleOutputWindow: public vtkOutputWindow
+{
+public:
+    static ConsoleOutputWindow* New();
+    vtkTypeMacro(ConsoleOutputWindow, vtkOutputWindow);
+
+    void DisplayText(const char* text) override
+    {
+        Base::Console().log("VTK: %s", terminated(text).c_str());
+    }
+    void DisplayErrorText(const char* text) override
+    {
+        Base::Console().error("VTK: %s", terminated(text).c_str());
+    }
+    void DisplayWarningText(const char* text) override
+    {
+        Base::Console().warning("VTK: %s", terminated(text).c_str());
+    }
+    void DisplayGenericWarningText(const char* text) override
+    {
+        Base::Console().warning("VTK: %s", terminated(text).c_str());
+    }
+    void DisplayDebugText(const char* text) override
+    {
+        Base::Console().log("VTK: %s", terminated(text).c_str());
+    }
+
+private:
+    static std::string terminated(const char* text)
+    {
+        std::string s(text ? text : "");
+        if (s.empty() || s.back() != '\n') {
+            s += '\n';
+        }
+        return s;
+    }
+};
+
+vtkStandardNewMacro(ConsoleOutputWindow);
+}  // namespace
+#endif
+
 /* Python entry */
 PyMOD_INIT_FUNC(Fem)
 {
+#ifdef FC_USE_VTK
+    // Before anything here can make VTK speak (see ConsoleOutputWindow).
+    vtkOutputWindow::SetInstance(vtkSmartPointer<ConsoleOutputWindow>::New());
+#endif
+
     // load dependent module
     try {
         Base::Interpreter().loadModule("Part");
