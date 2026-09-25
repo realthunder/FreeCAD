@@ -482,6 +482,12 @@ public:
     virtual void show();
     /// checks whether the view provider is visible or not
     virtual bool isShow() const;
+    /** The object a visibility toggle acts on when this one is picked in
+     * the 3D view, or null for this object itself. A PartDesign feature
+     * names its body: from the view, Space toggles what is seen there.
+     * A selection from the tree (no element picked) is not redirected.
+     */
+    virtual App::DocumentObject *getPickedVisibilityTarget() const { return nullptr; }
     void setVisible(bool);
     bool isVisible() const;
     void setLinkVisible(bool);

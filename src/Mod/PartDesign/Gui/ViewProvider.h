@@ -54,6 +54,7 @@ public:
     ~ViewProvider() override;
 
     bool doubleClicked() override;
+    App::DocumentObject *getPickedVisibilityTarget() const override;
     void updateData(const App::Property*) override;
     void onChanged(const App::Property* prop) override;
 

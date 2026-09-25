@@ -24,7 +24,9 @@ user meets it.
   - a sketch picked as a Draft's neutral plane is taken (upstream
     51f4ad7432);
   - the Hole panel chooses what a hole is centred on, a sketch's points
-    among them (upstream 774ec2cc93).
+    among them (upstream 774ec2cc93);
+  - Space on a face picked in the view toggles the body, on a feature
+    selected in the tree the feature (upstream bd03414893, 20c01000a1).
 
 Each was reproduced on the tree before its fix by the same steps, driven
 through the MCP console. The Pad delete is the control, which showed its
@@ -342,11 +344,21 @@ def test_body_from_base():
             vo.DiffuseColor = [(1.0, 0.0, 0.0)] * 5 + [(0.0, 1.0, 0.0)]
         FreeCADGui.Selection.clearSelection()
         FreeCADGui.Selection.addSelection(doc.Name, box.Name)
+        seen = len(state["boxes"])
+        picked = [(o.ObjectName, o.SubElementNames) for o in FreeCADGui.Selection.getSelectionEx("", 0)]
+        active = FreeCAD.ActiveDocument.Name if FreeCAD.ActiveDocument else None
         FreeCADGui.runCommand("PartDesign_Body")
         events()
         doc.recompute()
         events()
         body = [o for o in doc.Objects if o.isDerivedFrom("PartDesign::Body")][0]
+        if not body.Group:
+            check("PartDesign_Body takes the selected box as its base", False,
+                  "doc %s active %s selection %s boxes %s objects %s"
+                  % (doc.Name, active, picked, state["boxes"][seen:], [o.Name for o in doc.Objects]))
+            FreeCAD.closeDocument(doc.Name)
+            events()
+            continue
         base = body.Group[0]
         bb = body.Shape.BoundBox
         what = "per-face coloured" if perface else "coloured"
@@ -476,6 +488,33 @@ def test_hole_on_points():
     events()
 
 
+def test_space_toggle():
+    doc, body = new_body("PDSpace")
+    box = doc.addObject("PartDesign::AdditiveBox", "Box")
+    body.addObject(box)
+    doc.recompute()
+    cyl = doc.addObject("PartDesign::SubtractiveCylinder", "Cyl")
+    body.addObject(cyl)
+    doc.recompute()
+
+    def space(sub):
+        FreeCADGui.Selection.clearSelection()
+        FreeCADGui.Selection.addSelection(doc.Name, body.Name, sub)
+        FreeCADGui.runCommand("Std_ToggleVisibility")
+        events()
+        return (body.Visibility, box.Visibility, cyl.Visibility)
+
+    got = space("Box.")
+    check("Space on a feature selected in the tree toggles the feature",
+          got == (True, False, True), got)
+    before = space("Box.")
+    got = space("Cyl.Face1")
+    check("Space on a face picked in the view toggles the body",
+          got == (not before[0],) + before[1:], "%s -> %s" % (before, got))
+    FreeCAD.closeDocument(doc.Name)
+    events()
+
+
 def run():
     timer = QtCore.QTimer()
     timer.timeout.connect(sweep)
@@ -484,7 +523,7 @@ def run():
         for test in (test_move, test_delete, test_edit_mode, test_transparency,
                      test_transparency_mapped, test_planar_sketch, test_body_from_base,
                      test_lcs_vertex_pick, test_draft_sketch_plane,
-                     test_hole_on_points):
+                     test_hole_on_points, test_space_toggle):
             try:
                 test()
             except Exception:
