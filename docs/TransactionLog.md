@@ -4124,3 +4124,141 @@ instead of stalling.
 
 Phase 4 is built: named versions and the embedded mode (21), branches,
 the file's branch, the panel, trimming (26).
+
+## 27. Phase 5: pinned links (design, 2026-09-25)
+
+Section 15's phase 5 is the `version` attribute on `PropertyXLink`, the
+checkout of a linked version, and the fallback with its status (16.5);
+17.4 adds that links pin versions, never branches. This section is the
+survey, the proposed shape and the questions to rule on before building.
+
+### 27.1 What exists (survey, 2026-09-25)
+
+- **The link.** `PropertyXLink::Save` writes `file`, `stamp` (the linked
+  document's `LastModifiedDate`), `name`, `resolve`, `partial` and the
+  subs (`src/App/PropertyLinks.cpp` ~4420). `Restore` reads them and
+  `setValue(file, name, subs, shadows)` defers the object lookup to a
+  `DocInfo`.
+- **One document per file.** `DocInfo` is keyed by the absolute path
+  (`_DocInfoMap`); `init` attaches the open document whose `FileName`
+  matches, else `addPendingDocument` opens it, and `attach` looks the
+  objects up by name. `Application::getDocumentByPath` and
+  `openDocumentPrivate` refuse a second document for one path. A document
+  can already be opened from one place under another `FileName`:
+  `openDocumentPrivate(FileName, propFileName, ...)` is what crash
+  recovery uses.
+- **Versions.** A version row has a per-document `num` and a `uuid`
+  (`LogVersion`); `nameVersion` makes it `named`, which eviction
+  (`TransactionLogKeepVersions`) never takes. Since 26.4 numbers are one
+  sequence per document even across 16.6's closed branches, so a number
+  a link recorded keeps meaning the same snapshot after the file is
+  edited elsewhere and its history adopted as closed.
+- **What travels.** Only `TransactionLog=2` (embedded) puts a history in
+  the file: `History` holds the database and the blobs of the named
+  versions and the current one (16.4). In `session` mode nothing outlives
+  the transient directory, so nothing can be pinned across files. A save
+  with the log off or in `session` mode **empties** a `History` it
+  finds (`Document::embedHistory`), so one such save of the linked file
+  drops every version a link pins.
+- **Reading a version** needs the document's own log:
+  `_materialiseVersion` goes through `TransactionLog::readValue` /
+  `readBytes`, which read the entity from the store and a `file` entity
+  from the document's `FileBlobManager`, decode `zstd` and `delta`
+  chains and compose `composite` entries. None of that needs a live log,
+  only a store, a blob lookup and the composer -- but it is on
+  `TransactionLog`, which exists only with the log on
+  (`getTransactionLog()`), and an embedded history is adopted only then.
+  `PropertyHistory` restores its blobs into the document's blob manager
+  in every mode.
+- **A version as a document.** `_readVersion` materialises into a
+  directory and restores a hidden scratch document from it (`noLog`,
+  undo off, `FileName` the directory). There is no read-only document:
+  the nearest things are `TempDoc` (no save prompt), `SkipRecompute`, and
+  the `LiveImport` status the Gui checks to gate mutating commands.
+- **Relative paths.** A link's `file` is resolved against its owner
+  document's `FileName` directory (`DocInfo::getDocPath`). A version
+  restored with `FileName` = its checkout directory would resolve its own
+  relative links against the wrong place.
+
+### 27.2 Proposed shape
+
+1. **The attribute.** `<XLink ... version="17" vuuid="..."/>`, both
+   absent on an unpinned link, which saves and behaves exactly as today
+   (16.5 item 4). The pin is part of the property's value: `isSame`,
+   `Copy`/`Paste` and the log's capture carry it, so changing or clearing
+   it is an ordinary `set` op, undoable (16.5, last paragraph). A
+   FreeCAD without phase 5 ignores the attributes and resolves live.
+2. **Identity.** A pinned link's `DocInfo` is keyed by
+   `<absolute path>@v<num>`, and the document it attaches to has exactly
+   that as its `FileName`. Its directory is the file's directory, so the
+   version's own relative links resolve as the file's do;
+   `getDocumentByPath` of the plain path never finds it, nor the reverse.
+   Two links pinned to v17 of one file share one document; v17 and v18
+   are two documents (16.5 item 2). Its name and label are
+   `Part@v17` (label `Part (v17)`).
+3. **A reader, not a log.** The decode half of `TransactionLog` --
+   `readBytes`, `readValue`, `composeEntry`, `_materialiseVersion` --
+   moves into an `App::VersionReader` over a `TransactionStore` and a blob
+   lookup. `TransactionLog` uses it for its own store; a pinned link uses
+   it over the linked file's embedded copy, opened read-only, with the
+   blobs its `History` restored. Resolving a pin then does not need the
+   log switched on in the session that opens the linking file.
+4. **Resolution.** `Application::openVersion(path, num, uuid)`, reached
+   from `DocInfo` for a pinned link:
+   - the file is open with a live log holding version `num` whose uuid
+     matches: read from that log (it may hold versions named since the
+     file was last saved);
+   - otherwise the file's embedded `History`, from the file as loaded
+     (27.3 Q1);
+   - the version is materialised into the new document's own transient
+     directory and restored from there, so it dies with the document.
+5. **The version document.** `noLog`, undo off, `TempDoc`,
+   `SkipRecompute` (the snapshot carries its shapes, 16.1; a recompute
+   could only change them), and a new status `ReadOnly`: opening a
+   transaction on it throws, the Gui gates mutating commands on it as it
+   does for `LiveImport`, Save refuses. It takes part in no transaction,
+   so the cross-document fan-out of section 12 never reaches it (16.5).
+6. **The fallback.** Anything that fails -- no history in the file, no
+   such version, a uuid mismatch, a missing blob, a load error -- resolves
+   the link to the physical file exactly as an unpinned one, keeps the pin
+   in the property, and records why: a new link flag `LinkPinFallback`
+   plus the reason, which the tree shows as an overlay and a tooltip
+   (16.5 item 3). A later open retries.
+7. **Pinning.** `pinLink(version)` names that version in the linked
+   document's live log if it was not (16.3, name `pin`), and the linked
+   document becomes modified: the pin reaches the file only when the
+   linked file is saved in embedded mode (27.3 Q3). Clearing a pin is the
+   same property write with no version.
+8. **Python and the Gui.** `DocumentObject.pinLink(prop, version=0)` (0:
+   the version the linked file is, i.e. its `Version` property) and
+   `unpinLink(prop)`; `getLinkPin(prop)` -> `(num, uuid, fallbackReason)`.
+   The Gui: "Pin to version..." / "Unpin" on a link's context menu, a
+   picker listing the linked file's named versions and the one it is; the
+   fallback overlay.
+
+### 27.3 Questions
+
+| # | Question | Proposal |
+| --- | --- | --- |
+| Q1 | Where a closed linked file's versions are read from | **The file loaded, as today**, its `History` read by `VersionReader`: a pinned link still loads the physical file once. A headless reader straight from the zip (the `History` entry and the blobs, no document) is a later step, for an assembly of pinned parts that should not load the live parts at all. |
+| Q2 | Must a pin resolve with the log off | **Yes** -- reading a file should not require logging it. That is what 27.2 item 3 buys. |
+| Q3 | What a pin names by default, and when it reaches the file | **The version the linked file is on disk** (its `Version`), named in the live log, the linked document marked modified so closing it prompts a save. Pinning the unsaved live state means saving the linked file first ("Save and pin"). A pin to a version that is never saved as named breaks at the linked file's next save by someone else and falls back, which 16.5 calls best effort. |
+| Q4 | A log-off or `session` save of the linked file empties `History` | **Keep it instead**, stale: the next embedded open finds the guard mismatch and adopts it as closed branches (16.6, 26.2 item 7), whose version numbers pins still name. Emptying it silently breaks every pin on the file. |
+| Q5 | How read-only the version document is | **Gated, not locked**: transactions refused, Gui commands gated, save refused. A Python script writing a property directly is not stopped; a property-level lock would touch every setter. |
+| Q6 | Live links inside a version document | **Resolved live**, as they were when the version was taken, and shown as live -- a version of an assembly with live links is then not reproducible. Onshape avoids this by making every reference in a version a pin; the equivalent here is "pin all" at pin time, a later convenience. |
+| Q7 | Save As of a version document | **Allowed**: it writes a standalone file of that version, which is then an ordinary document, unpinned from anything. |
+
+### 27.4 Build order (proposed)
+
+1. **5.a** `VersionReader`, the decode moved out of `TransactionLog`; both
+   suites unchanged, and a gtest that a version materialised by the reader
+   over an embedded copy equals one materialised by the log.
+2. **5.b** The attribute: save/restore round trip, `isSame`, copy, the
+   `set` op and its undo; Python `pinLink`/`unpinLink`/`getLinkPin`.
+3. **5.c** Resolution: `<path>@v<num>` identity, `openVersion`, the
+   `ReadOnly` version document, the fallback with its reason; gtests that
+   pin v1, edit and save the linked file, reopen, and see v1; two pins two
+   documents; each fallback cause; with the log off.
+4. **5.d** Pinning names the version; Q4's kept `History`.
+5. **5.e** The Gui: context menu, picker, label, fallback overlay; a GUI
+   check script.
