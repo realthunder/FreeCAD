@@ -839,36 +839,33 @@ SketchSolveStatus SketchObject::setTextAndFont(int ConstrId,
     return solve();
 }
 
-bool SketchObject::isInGroup(int geoId, bool includeHandle) const
+const SketchObject::GroupIndex& SketchObject::getGroupIndex() const
 {
-    const std::vector<Sketcher::Constraint*>& vals = Constraints.getValues();
-
-    for (const auto& constr : vals) {
-        if (constr->Type == Group || constr->Type == Text) {
-            // First is the group construction line. We include it or not in our search.
-            int iStart = includeHandle ? 0 : 1;
-            for (int i = iStart; constr->hasElement(i); ++i) {
-                if (constr->getGeoId(i) == geoId) {
-                    return true;
+    if (!groupIndex) {
+        auto index = std::make_unique<GroupIndex>();
+        for (const auto& constr : Constraints.getValues()) {
+            if (constr->Type == Group || constr->Type == Text) {
+                // First is the group construction line.
+                for (int i = 0; constr->hasElement(i); ++i) {
+                    (i == 0 ? index->handles : index->members).insert(constr->getGeoId(i));
                 }
             }
         }
+        groupIndex = std::move(index);
     }
-    return false;
+    return *groupIndex;
+}
+
+bool SketchObject::isInGroup(int geoId, bool includeHandle) const
+{
+    const GroupIndex& index = getGroupIndex();
+    // The group construction line is included or not in our search.
+    return index.members.count(geoId) || (includeHandle && index.handles.count(geoId));
 }
 
 bool SketchObject::isGroupHandle(int geoId) const
 {
-    const std::vector<Sketcher::Constraint*>& vals = Constraints.getValues();
-
-    for (const auto& constr : vals) {
-        if (constr->Type == Group || constr->Type == Text) {
-            if (constr->getGeoId(0) == geoId) {
-                return true;
-            }
-        }
-    }
-    return false;
+    return getGroupIndex().handles.count(geoId) > 0;
 }
 
 int SketchObject::getGroupHandleIfInGroup(int geoId) const
@@ -987,6 +984,9 @@ static inline bool checkMigration(Part::PropertyGeometryList &prop)
 
 void SketchObject::onChanged(const App::Property* prop)
 {
+    if (prop == &Constraints) {
+        groupIndex.reset();
+    }
     if (prop == &Geometry) {
         if (isRestoring() && checkMigration(Geometry)) {
             // Construction migration to extension

@@ -1104,6 +1104,18 @@ private:
     std::vector<PointPos> VertexId2PosId;
     std::map<std::pair<int,PointPos>,size_t> GeoPos2VertexId;
 
+    /// Who is in a Group or Text: built on the first question, dropped when
+    /// Constraints change. Without it isConstraintActiveInSketch() scanned
+    /// every constraint for each element of each constraint it was asked
+    /// about, and the view asks about all of them on every redraw.
+    struct GroupIndex
+    {
+        std::set<int> members;  // the elements after the handle
+        std::set<int> handles;  // the construction line first in each
+    };
+    mutable std::unique_ptr<GroupIndex> groupIndex;
+    const GroupIndex& getGroupIndex() const;
+
     Sketch solvedSketch;
 
     /** this internal flag indicate that an operation modifying the geometry, but not the DoF of the

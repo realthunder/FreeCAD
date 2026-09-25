@@ -1044,3 +1044,53 @@ TEST_F(SketchObjectTest, testSolverDiagnosisSurvivesAnUnchangedSolve)
 
     EXPECT_TRUE(dependent.empty());
 }
+
+TEST_F(SketchObjectTest, groupQueriesFollowConstraintChanges)  // NOLINT
+{
+    // Arrange: a handle line and two members in a group, a third line outside
+    // it, and a Horizontal on a member and on the outsider.
+    std::vector<int> ids;
+    for (int i = 0; i < 4; ++i) {
+        Part::GeomLineSegment line;
+        line.setPoints(Base::Vector3d(0, i, 0), Base::Vector3d(10, i, 0));
+        ids.push_back(getObject()->addGeometry(&line));
+    }
+    auto* group = new Sketcher::Constraint();
+    group->Type = Sketcher::ConstraintType::Group;
+    for (int i = 0; i < 3; ++i) {
+        // as Sketcher.Constraint('Group', ...) does: a fresh constraint
+        // already holds element slots, which addElement() would append after
+        group->setElement(i, Sketcher::GeoElementId(ids[i]));
+    }
+    int groupId = getObject()->addConstraint(group);
+    auto* onMember = new Sketcher::Constraint();
+    onMember->Type = Sketcher::ConstraintType::Horizontal;
+    onMember->First = ids[1];
+    getObject()->addConstraint(onMember);
+    auto* onOutsider = new Sketcher::Constraint();
+    onOutsider->Type = Sketcher::ConstraintType::Horizontal;
+    onOutsider->First = ids[3];
+    getObject()->addConstraint(onOutsider);
+
+    // Assert: the handle is in the group only when asked to count it.
+    EXPECT_TRUE(getObject()->isGroupHandle(ids[0]));
+    EXPECT_TRUE(getObject()->isInGroup(ids[0], true));
+    EXPECT_FALSE(getObject()->isInGroup(ids[0], false));
+    EXPECT_TRUE(getObject()->isInGroup(ids[1], false));
+    EXPECT_FALSE(getObject()->isGroupHandle(ids[1]));
+    EXPECT_FALSE(getObject()->isInGroup(ids[3], true));
+    const auto& constraints = getObject()->Constraints.getValues();
+    EXPECT_FALSE(getObject()->isConstraintActiveInSketch(constraints[1]));
+    EXPECT_TRUE(getObject()->isConstraintActiveInSketch(constraints[2]));
+
+    // Act: the group goes. The answers were cached on the first question and
+    // must follow the change of Constraints.
+    getObject()->delConstraint(groupId);
+
+    // Assert
+    EXPECT_FALSE(getObject()->isGroupHandle(ids[0]));
+    EXPECT_FALSE(getObject()->isInGroup(ids[1], true));
+    for (const auto* constr : getObject()->Constraints.getValues()) {
+        EXPECT_TRUE(getObject()->isConstraintActiveInSketch(constr));
+    }
+}
