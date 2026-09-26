@@ -488,10 +488,83 @@ void TransactionLogCore::flush()
     releaseRetired();
 }
 
-namespace {
+bool TransactionLogCore::adoptEmbedded(const std::string& path)
+{
+    flush();
+    if (_nextSeq != 0 || _nextVersion != 0) {
+        FC_WARN("transaction log of " << _history.path() << " has history; not adopting the embedded copy");
+        return false;
+    }
+    if (_store && _session)
+        _store->closeSession(_session, now());
+    _store.reset();
+    Base::FileInfo(_path).deleteFile();
+    Base::FileInfo(_path + "-wal").deleteFile();
+    Base::FileInfo(_path + "-shm").deleteFile();
+    if (!Base::FileInfo(path).copyTo(_path.c_str())) {
+        FC_ERR("cannot adopt the embedded history of " << _history.path());
+        openStore();
+        return false;
+    }
+    openStore();
+    // The copy's blobs came with the file, restored into the file's blob
+    // store for the History property; the log holds them from here.
+    _blobs.clear();
+    _sourced.clear();
+    auto& manager = _history.blobs();
+    for (const auto& hash : _store->entitiesStoredAs("file")) {
+        if (auto blob = manager.find(hash))
+            _blobs[hash] = blob;
+        else
+            FC_WARN("embedded history of " << _history.path() << ": blob " << hash
+                    << " is not in the file's store");
+    }
+    _environment = _store->environment(_envJson);
+    _session = _store->openSession(_environment, _user, _host, now());
+    FC_LOG("transaction log of " << _history.path() << " continues from the embedded copy: seq "
+           << _nextSeq << ", next version " << (_nextVersion + 1));
+    return true;
+}
 
-/// The core of `history`'s log, made on the first document's log.
-TransactionLogCore& coreOf(FileHistory& history)
+int64_t TransactionLogCore::closeAdopted()
+{
+    // Sec 16.6, 26.2 item 7: the copy's history kept, every branch of it
+    // closed and its `main` renamed after the save it came from; a new
+    // `main` with no rows yet, whose first version -- the file as found,
+    // the on-open snapshot -- numbers on and roots a chain of its own: the
+    // gap has no ancestry.
+    const double closed = now();
+    std::string date = _store->getMeta("save_date");
+    if (date.empty())
+        date = std::to_string(static_cast<int64_t>(closed));
+    for (auto b : _store->branches()) {
+        if (b.name == "main") {
+            std::string name = "main@" + date;
+            LogBranch taken;
+            for (int i = 2; _store->findBranch(name, taken); ++i)
+                name = "main@" + date + "#" + std::to_string(i);
+            b.name = name;
+        }
+        if (b.closed == 0)
+            b.closed = closed;
+        _store->updateBranch(b);
+    }
+    // The copy's counter is the number the save that wrote the file took in
+    // the store it came from; the file edited since is not that version, so
+    // it numbers past it.
+    const std::string counter = _store->getMeta("version_counter");
+    if (!counter.empty())
+        _nextVersion = std::max<int64_t>(_nextVersion, std::stoll(counter));
+    LogBranch fresh;
+    fresh.name = "main";
+    fresh.fromVersion = _store->lastVersion();
+    fresh.created = closed;
+    _store->addBranch(fresh);
+    _store->setMeta("branch", std::to_string(fresh.id));
+    return fresh.id;
+}
+
+TransactionLogCore& TransactionLogCore::of(FileHistory& history)
 {
     auto& core = history.logCore();
     if (!core)
@@ -499,11 +572,125 @@ TransactionLogCore& coreOf(FileHistory& history)
     return *core;
 }
 
-} // namespace
+void TransactionLogCore::postVersion(LogVersion v, LogTransaction t,
+                                     const TransactionLog::Captures& entries,
+                                     const TransactionLog::Blobs& blobs, int schema,
+                                     const std::string& path)
+{
+        std::string escaped;
+        for (char c : path) {
+            if (c == '"' || c == '\\')
+                escaped += '\\';
+            escaped += c;
+        }
+        const size_t nblobs = blobs.size();
+        const long keep = DocumentParams::getTransactionLogKeepVersions();
+        post([this, v, t, entries, blobs = TransactionLog::Blobs(blobs), schema, escaped, nblobs, keep]() mutable {
+            // Each XML entry is a composite (sec 23.3): its skeleton plus
+            // the parts, or the bytes themselves when it was read rather
+            // than written; each blob an entity the log holds (23.16). The
+            // previous version's entries are superseded by this one's (sec
+            // 23.2): matched by name, re-encoded toward the newer, parts and
+            // skeletons included. A blob's name is its referrer's
+            // (`Box.Shape.brp`), so one property's files pair up too.
+            std::map<std::string, std::string> previous;
+            if (const int64_t prev = _store->lastVersion()) {
+                for (const auto& e : _store->manifest(prev))
+                    previous[e.entry] = e.hash;
+            }
+            std::vector<LogManifestEntry> manifest;
+            std::string docHash;
+            for (const auto& e : entries) {
+                auto it = previous.find(e.first);
+                std::string full;
+                const std::string hash = putComposite(
+                    e.first, e.second, it != previous.end() ? it->second : std::string(), full);
+                // Document.xml, first by contract: matched to a file on
+                // disk by the SHA-1 of the bytes (sec 11) when they were
+                // all in hand, else named by its composite.
+                if (docHash.empty())
+                    docHash = full;
+                manifest.push_back({e.first, hash, "entity"});
+            }
+            v.docxml_hash = docHash;
+            std::vector<FileBlobHandle> named;
+            for (const auto& b : blobs)
+                named.push_back(b.second);
+            // On disk before the manifest naming them commits (sec 15.8).
+            _history.blobs().makeDurable(named);
+            for (const auto& b : blobs) {
+                if (b.second)
+                    manifest.push_back({b.first, putBlob(b.second), "entity"});
+            }
+            blobs.clear();   // the log holds what it keeps; the job lets go
+            _store->addVersion(v, manifest);
+            for (const auto& e : manifest) {
+                auto it = previous.find(e.entry);
+                if (it != previous.end() && it->second != e.hash)
+                    supersede(it->second, e.hash);
+            }
+            evictVersions(keep);
+
+            t.script = "{\"version\":" + std::to_string(v.num) + ",\"docxml\":\"" + docHash
+                     + "\",\"blobs\":" + std::to_string(nblobs) + ",\"schema\":"
+                     + std::to_string(schema) + ",\"path\":\"" + escaped + "\"}";
+            std::vector<LogOp> none;
+            _store->append(t, none);
+        });
+}
+
+int64_t TransactionLogCore::metaBranch(int64_t& head)
+{
+    flush();
+    int64_t id = 1;
+    const std::string current = _store->getMeta("branch");
+    if (!current.empty())
+        id = std::stoll(current);
+    LogBranch branch;
+    if (!_store->getBranch(id, branch)) {
+        id = 1;
+        _store->getBranch(id, branch);
+    }
+    head = branch.head;
+    return id;
+}
+
+int64_t TransactionLogCore::recordFile(const std::string& path, const TransactionLog::Entries& entries,
+                                    const TransactionLog::Blobs& blobs, int schema)
+{
+    // What TransactionLog::onRestore records for a document opened from the
+    // file, with no document (sec 27.13): the file as found is the version
+    // its embedded copy numbers next, on the branch the copy names.
+    if (entries.empty() || entries.front().first != "Document.xml")
+        return 0;
+    int64_t head = 0;
+    const int64_t branch = metaBranch(head);
+    LogVersion v;
+    v.num = ++_nextVersion;
+    v.uuid = Base::Uuid::createUuid();
+    v.seq = head;
+    v.branch = branch;
+    v.env = _environment;
+    v.schema = schema;
+    v.created = now();
+    LogTransaction t;
+    t.parent = head;
+    t.branch = branch;
+    t.seq = ++_nextSeq;
+    t.kind = "restore";
+    t.name = "restore";
+    t.time = v.created;
+    t.session = _session;
+    TransactionLog::Captures captures;
+    for (const auto& e : entries)
+        captures.emplace_back(e.first, Base::EntryCapture(e.second));
+    postVersion(v, t, captures, blobs, schema, path);
+    return v.num;
+}
 
 TransactionLog::TransactionLog(Document& doc, const LogVersion* at)
     : _history(doc.getFileHistory())
-    , _c(coreOf(_history))
+    , _c(TransactionLogCore::of(_history))
     , _doc(doc)
 {
     _c._cursors.insert(this);
@@ -973,80 +1160,18 @@ void TransactionLog::forgetValue(const Property& prop)
 
 bool TransactionLog::adoptStore(const std::string& path)
 {
-    flush();
-    if (_c._nextSeq != 0 || _c._nextVersion != 0) {
-        FC_WARN("transaction log of " << _doc.getName() << " has history; not adopting the embedded copy");
+    if (!_c.adoptEmbedded(path))
         return false;
-    }
-    if (_c._store && _c._session)
-        _c._store->closeSession(_c._session, now());
-    _c._store.reset();
-    Base::FileInfo(_c._path).deleteFile();
-    Base::FileInfo(_c._path + "-wal").deleteFile();
-    Base::FileInfo(_c._path + "-shm").deleteFile();
-    if (!Base::FileInfo(path).copyTo(_c._path.c_str())) {
-        FC_ERR("cannot adopt the embedded history of " << _doc.getName());
-        openStore();
-        return false;
-    }
-    openStore();
-    // The copy's blobs came with the file, restored into the document's
-    // store for the History property; the log holds them from here.
-    _c._blobs.clear();
-    _c._sourced.clear();
-    auto& manager = _doc.getFileBlobManager();
-    for (const auto& hash : _c._store->entitiesStoredAs("file")) {
-        if (auto blob = manager.find(hash))
-            _c._blobs[hash] = blob;
-        else
-            FC_WARN("embedded history of " << _doc.getName() << ": blob " << hash
-                    << " is not in the document's store");
-    }
-    _c._environment = _c._store->environment(_c._envJson);
-    _c._session = _c._store->openSession(_c._environment, _c._user, _c._host, now());
+    pickBranch();
     _adopted = true;
-    FC_LOG("transaction log of " << _doc.getName() << " continues from the embedded copy: seq "
-           << _c._nextSeq << ", next version " << (_c._nextVersion + 1));
     return true;
 }
 
 bool TransactionLog::adoptClosed(const std::string& path)
 {
-    // Sec 16.6, 26.2 item 7: the copy's history kept, every branch of it
-    // closed and its `main` renamed after the save it came from; a new
-    // `main` with no rows yet, whose first version -- the file as found,
-    // the on-open snapshot -- numbers on and roots a chain of its own: the
-    // gap has no ancestry.
     if (!adoptStore(path))
         return false;
-    const double closed = now();
-    std::string date = _c._store->getMeta("save_date");
-    if (date.empty())
-        date = std::to_string(static_cast<int64_t>(closed));
-    for (auto b : _c._store->branches()) {
-        if (b.name == "main") {
-            std::string name = "main@" + date;
-            LogBranch taken;
-            for (int i = 2; _c._store->findBranch(name, taken); ++i)
-                name = "main@" + date + "#" + std::to_string(i);
-            b.name = name;
-        }
-        if (b.closed == 0)
-            b.closed = closed;
-        _c._store->updateBranch(b);
-    }
-    // The copy's counter is the number the save that wrote the file took in
-    // the store it came from; the file edited since is not that version, so
-    // it numbers past it.
-    const std::string counter = _c._store->getMeta("version_counter");
-    if (!counter.empty())
-        _c._nextVersion = std::max<int64_t>(_c._nextVersion, std::stoll(counter));
-    LogBranch fresh;
-    fresh.name = "main";
-    fresh.fromVersion = _c._store->lastVersion();
-    fresh.created = closed;
-    _c._store->addBranch(fresh);
-    return setBranch(fresh.id);
+    return setBranch(_c.closeAdopted());
 }
 
 void TransactionLog::closeStore()
@@ -1267,66 +1392,7 @@ int64_t TransactionLog::snapshot(const char* kind, const std::string& path,
         t.time = v.created;
         t.session = _c._session;
 
-        std::string escaped;
-        for (char c : path) {
-            if (c == '"' || c == '\\')
-                escaped += '\\';
-            escaped += c;
-        }
-        const size_t nblobs = blobs.size();
-        const long keep = DocumentParams::getTransactionLogKeepVersions();
-        post([this, v, t, entries, blobs = Blobs(blobs), schema, escaped, nblobs, keep]() mutable {
-            // Each XML entry is a composite (sec 23.3): its skeleton plus
-            // the parts, or the bytes themselves when it was read rather
-            // than written; each blob an entity the log holds (23.16). The
-            // previous version's entries are superseded by this one's (sec
-            // 23.2): matched by name, re-encoded toward the newer, parts and
-            // skeletons included. A blob's name is its referrer's
-            // (`Box.Shape.brp`), so one property's files pair up too.
-            std::map<std::string, std::string> previous;
-            if (const int64_t prev = _c._store->lastVersion()) {
-                for (const auto& e : _c._store->manifest(prev))
-                    previous[e.entry] = e.hash;
-            }
-            std::vector<LogManifestEntry> manifest;
-            std::string docHash;
-            for (const auto& e : entries) {
-                auto it = previous.find(e.first);
-                std::string full;
-                const std::string hash = _c.putComposite(
-                    e.first, e.second, it != previous.end() ? it->second : std::string(), full);
-                // Document.xml, first by contract: matched to a file on
-                // disk by the SHA-1 of the bytes (sec 11) when they were
-                // all in hand, else named by its composite.
-                if (docHash.empty())
-                    docHash = full;
-                manifest.push_back({e.first, hash, "entity"});
-            }
-            v.docxml_hash = docHash;
-            std::vector<FileBlobHandle> named;
-            for (const auto& b : blobs)
-                named.push_back(b.second);
-            // On disk before the manifest naming them commits (sec 15.8).
-            _doc.getFileBlobManager().makeDurable(named);
-            for (const auto& b : blobs) {
-                if (b.second)
-                    manifest.push_back({b.first, _c.putBlob(b.second), "entity"});
-            }
-            blobs.clear();   // the log holds what it keeps; the job lets go
-            _c._store->addVersion(v, manifest);
-            for (const auto& e : manifest) {
-                auto it = previous.find(e.entry);
-                if (it != previous.end() && it->second != e.hash)
-                    _c.supersede(it->second, e.hash);
-            }
-            _c.evictVersions(keep);
-
-            t.script = "{\"version\":" + std::to_string(v.num) + ",\"docxml\":\"" + docHash
-                     + "\",\"blobs\":" + std::to_string(nblobs) + ",\"schema\":"
-                     + std::to_string(schema) + ",\"path\":\"" + escaped + "\"}";
-            std::vector<LogOp> none;
-            _c._store->append(t, none);
-        });
+        _c.postVersion(v, t, entries, blobs, schema, path);
         return v.num;
     }
     catch (Base::Exception& e) {

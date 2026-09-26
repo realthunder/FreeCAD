@@ -4603,3 +4603,84 @@ Gates:
 - version check 17 PASS.
 
 Each GUI check runs with its own `XDG_CACHE_HOME`.
+
+### 27.13 5.d as built: a file's log from its archive (2026-09-26)
+
+**The core, all of it.** 27.11 moved the log's shared data into
+`TransactionLogCore`; this step moves the functions over that data too,
+and publishes the class in `TransactionLog.h`:
+
+- the entity functions -- `putValue`, `putBlob`, `putSources`, `putBytes`,
+  `putComposite`, `composeEntry`, `supersede`, `chainBelow`, `readBytes`,
+  `readValue`, `restoreBlob`, `readRevert`, `evictVersions`;
+- the flushing store, `embed`, and the held blobs;
+- the queries over the file's documents;
+- adopting an embedded copy (`adoptEmbedded`, `closeAdopted`);
+- the worker's half of a snapshot (`postVersion`).
+
+The document's `TransactionLog` forwards its public reads.
+`Document::_materialiseVersion` became a static
+`materialiseVersion(core, num, dir)`, and `Document::openVersion` a
+static `openFileVersion(history, num, createView, from)`: neither needs a
+document of the file any more.
+
+**`FileHistory::openFile(path)`** gives the registered history if a
+document of the file has one. Otherwise it reads the history out of the
+archive:
+
+1. The document's own properties are read out of `Document.xml`, before
+   `<Objects`: the root's `SchemaVersion`, `Label`, `Version`,
+   `LastModifiedDate`, and the `History` element's `db` hash. The root is
+   `FCDocument` in this fork and `Document` upstream. A file whose
+   `History` is empty has none to open.
+2. A history of its own, in a directory named as a document's transient
+   directory is (`<exe>_Doc_<uuid>_<hash>_<pid>`), so a crash with only
+   this history open is found by recovery. It is registered under the
+   path, and has no home.
+3. The archive's blobs are split into its store (`splitArchive`, the
+   pack store's split-on-open, 15.10); the database is found by hash.
+4. The guard of 16.4 on the save id and date: when they match, the copy is
+   adopted; when not, it is adopted with its branches closed and a new
+   `main`, as 16.6 does (`closeAdopted`).
+5. **The file as found is recorded as a version** (`recordFile`), on the
+   branch the copy names -- what `onRestore` does for a document opened
+   from the file.
+
+Step 5 has to happen because the embedded copy cannot hold the file's own
+version: the copy is part of the file, so a version of the file inside it
+would have to name its own hash. A save embeds the log as it was before
+the save's version, stamps the counter the save's version takes, and every
+open re-derives that version from the file's bytes. `openFile` does the
+same from the archive's entries -- `Document.xml`, and every other entry
+that is neither a blob nor a thumbnail -- and the blobs under their archive
+names. `fileVersion()` is its number, which is the number in the file's
+`Version` property when the guard matched.
+
+**The file opened later** joins the registered history (27.12), so its
+restore neither adopts nor records, and its cursor is on the branch the
+copy names, at the recorded version.
+
+**Python.** `FreeCAD.openFileVersion(path, num, createView=True)` opens
+version `num` of any file, open or not. The path is checked as a host read
+(`checkHostPath`), as opening the file is.
+
+**Open ends:**
+
+- A version document opened from the archive at the file's own version,
+  and the file itself opened afterwards, are two documents at one version.
+  The live document is a branch document, the other is detached. 27.5's
+  "one version once" holds for version documents, not between a version
+  document and the branch document of the same state.
+- The closed-branches path of step 4 is not exercised by a test. It is
+  `adoptClosed`'s own logic, moved.
+
+Tests: gtest `aClosedFilesHistoryIsReadFromTheArchive`; Python
+`TransactionBranchCases.testOpenAClosedFilesVersion`.
+
+Gates:
+
+- Python 2917 OK;
+- ctest 840/840;
+- recovery check 15 PASS;
+- branch check 27 PASS;
+- version check 17 PASS.

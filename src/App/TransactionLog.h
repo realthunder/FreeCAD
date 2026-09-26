@@ -479,6 +479,30 @@ public:
 
     /// Open the store in the history's directory; the counters follow it.
     void openStore();
+    /// The core of `history`'s log, made on first use (sec 27.7).
+    static TransactionLogCore& of(FileHistory& history);
+    /** Continue from an embedded copy (sec 16.4): the store replaced by
+     * `path`'s content, the counters following it, a session opened. Only
+     * for a store with no history of its own yet. The copy's blobs are in
+     * the file's blob store by then; the log takes a handle on each.
+     */
+    bool adoptEmbedded(const std::string& path);
+    /// Sec 16.6, 26.2 item 7: every branch of the copy just adopted closed,
+    /// its `main` renamed, a new `main` made current; returns its id.
+    int64_t closeAdopted();
+    /// The branch the store names as the file's, and its head.
+    int64_t metaBranch(int64_t& head);
+    /** Record the file as found as a version, with no document (sec
+     * 27.13): what TransactionLog::onRestore does for a document opened
+     * from it -- `entries` the XML entries as read, Document.xml first,
+     * `blobs` its blobs under their archive names. Returns the number.
+     */
+    int64_t recordFile(const std::string& path, const TransactionLog::Entries& entries,
+                       const TransactionLog::Blobs& blobs, int schema);
+    /// Write version `v` and its record `t`, numbered already, from the
+    /// captured entries and blobs: the worker's half of a snapshot.
+    void postVersion(LogVersion v, LogTransaction t, const TransactionLog::Captures& entries,
+                     const TransactionLog::Blobs& blobs, int schema, const std::string& path);
 
     /// The store, for reading: every call waits for the queue first, so the
     /// reference can be kept.

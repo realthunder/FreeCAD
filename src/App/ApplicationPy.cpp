@@ -37,6 +37,8 @@
 #include "DocumentObserverPython.h"
 #include "DocumentObjectPy.h"
 #include "TransactionMeasure.h"
+#include "ExpressionSecurityRuntime.h"
+#include "FileHistory.h"
 
 
 //using Base::GetConsole;
@@ -114,6 +116,13 @@ PyMethodDef Application::Methods[] = {
      "in its transient directory (docs/TransactionLog.md sec 25): a new\n"
      "document, its newest version with the log's tail replayed over it, that\n"
      "takes the log over. The directory is removed once it is done."},
+    {"openFileVersion", (PyCFunction) Application::sOpenFileVersion, METH_VARARGS,
+     "openFileVersion(path, num, createView=True) -> Document\n"
+     "Open version `num` of the file at `path` as a document of its own\n"
+     "(docs/TransactionLog.md sec 27.7, 27.13), whether or not the file is\n"
+     "open: its history is read straight out of the archive when it is not.\n"
+     "A version open already is returned. Raises when the file has no such\n"
+     "version, or no history."},
     {"openDocument",   reinterpret_cast<PyCFunction>(reinterpret_cast<void (*) ()>( Application::sOpenDocument )), METH_VARARGS|METH_KEYWORDS,
      "openDocument(filepath,hidden=False) -> object\n"
      "Create a document and load the project file into the document.\n\n"
@@ -337,6 +346,26 @@ PyObject* Application::sRecoverDocument(PyObject * /*self*/, PyObject *args)
     PyMem_Free(dir);
     PY_TRY {
         return GetApplication().recoverDocument(path.c_str())->getPyObject();
+    } PY_CATCH
+}
+
+PyObject* Application::sOpenFileVersion(PyObject * /*self*/, PyObject *args)
+{
+    char* file;
+    long long num;
+    PyObject* createView = Py_True;
+    if (!PyArg_ParseTuple(args, "etL|O!", "utf-8", &file, &num, &PyBool_Type, &createView))
+        return nullptr;
+    std::string path(file);
+    PyMem_Free(file);
+    PY_TRY {
+        // Reading a host file, as opening it is (docs/Sandbox.md 7.29).
+        ExpressionSecurity::checkHostPath(ExpressionSecurity::Permission::FsRead, path);
+        std::string reason;
+        auto history = FileHistory::openFile(path, &reason);
+        if (!history)
+            throw Base::FileException(("no history in " + path + ": " + reason).c_str());
+        return Document::openFileVersion(history, num, Base::asBoolean(createView))->getPyObject();
     } PY_CATCH
 }
 

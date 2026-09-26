@@ -2897,3 +2897,91 @@ TEST_F(TransactionLogTest, theFilesLogOutlivesItsFirstDocument)
     App::GetApplication().closeDocument(name.c_str());
     EXPECT_FALSE(Base::FileInfo(dir).exists());
 }
+
+TEST_F(TransactionLogTest, aClosedFilesHistoryIsReadFromTheArchive)
+{
+    // Sec 27.13: a file's versions open with no document of the file open;
+    // the history comes out of the archive, the file as found becomes the
+    // version its copy numbers next, and the file opened later joins it.
+    App::DocumentParams::setTransactionLog(2);   // embedded
+    doc()->openTransaction("create");
+    auto obj = make("Obj");
+    obj->Integer.setValue(1);
+    doc()->commitTransaction();
+    const int64_t v1 = doc()->snapshotToLog();
+    ASSERT_TRUE(log().store().nameVersion(v1, "one"));
+    doc()->openTransaction("two");
+    obj->Integer.setValue(2);
+    doc()->commitTransaction();
+    const std::string path = Base::FileInfo::getTempPath() + "txnlog-archive.FCStd";
+    Base::FileInfo(path).deleteFile();
+    ASSERT_TRUE(doc()->saveAs(path.c_str()));
+    auto version = Base::freecad_dynamic_cast<App::PropertyString>(doc()->getPropertyByName("Version"));
+    ASSERT_TRUE(version);
+    const int64_t fileVersion = std::stoll(version->getValue());
+    closeAndRenew();
+    ASSERT_FALSE(App::FileHistory::find(path));
+
+    std::string reason;
+    auto history = App::FileHistory::openFile(path, &reason);
+    ASSERT_TRUE(history) << reason;
+    EXPECT_EQ(history->path(), App::FileHistory::canonicalPath(path));
+    EXPECT_EQ(App::FileHistory::find(path), history);
+    EXPECT_EQ(history->fileVersion(), fileVersion);
+    EXPECT_FALSE(history->home());
+    EXPECT_TRUE(Base::FileInfo(history->directory() + "/history/log.db").exists());
+
+    App::Document* d1 = App::Document::openFileVersion(history, v1, false);
+    ASSERT_TRUE(d1);
+    EXPECT_TRUE(d1->testStatus(App::Document::VersionDoc));
+    EXPECT_EQ(d1->FileName.getStrValue(), history->path() + "@v" + std::to_string(v1));
+    auto o1 = dynamic_cast<App::FeatureTest*>(d1->getObject("Obj"));
+    ASSERT_TRUE(o1);
+    EXPECT_EQ(o1->Integer.getValue(), 1);
+    EXPECT_EQ(&d1->getFileHistory(), history.get());
+    App::Document* df = App::Document::openFileVersion(history, fileVersion, false);
+    ASSERT_TRUE(df);
+    auto of = dynamic_cast<App::FeatureTest*>(df->getObject("Obj"));
+    ASSERT_TRUE(of);
+    EXPECT_EQ(of->Integer.getValue(), 2);
+    const std::string d1Name = d1->getName();
+    const std::string dfName = df->getName();
+
+    // The file itself, opened now, joins the history the versions are on.
+    App::Document* opened = App::GetApplication().openDocument(path.c_str(), false);
+    ASSERT_TRUE(opened);
+    EXPECT_EQ(&opened->getFileHistory(), history.get());
+    auto live = dynamic_cast<App::FeatureTest*>(opened->getObject("Obj"));
+    ASSERT_TRUE(live);
+    EXPECT_EQ(live->Integer.getValue(), 2);
+    ASSERT_TRUE(opened->getTransactionLog());
+    EXPECT_EQ(opened->getTransactionLog()->branch(), 1);
+    opened->openTransaction("live edit");
+    live->Integer.setValue(3);
+    opened->commitTransaction();
+    EXPECT_EQ(o1->Integer.getValue(), 1);
+    EXPECT_EQ(of->Integer.getValue(), 2);
+
+    const std::string openedName = opened->getName();
+    App::GetApplication().closeDocument(openedName.c_str());
+    App::GetApplication().closeDocument(dfName.c_str());
+    App::GetApplication().closeDocument(d1Name.c_str());
+    const std::string dir = history->directory();
+    history.reset();
+    EXPECT_FALSE(App::FileHistory::find(path));
+    EXPECT_FALSE(Base::FileInfo(dir).exists());
+
+    // A file with no history in it has none to open.
+    const std::string plain = Base::FileInfo::getTempPath() + "txnlog-archive-plain.FCStd";
+    Base::FileInfo(plain).deleteFile();
+    App::DocumentParams::setTransactionLog(1);
+    doc()->openTransaction("plain");
+    make("Plain");
+    doc()->commitTransaction();
+    ASSERT_TRUE(doc()->saveAs(plain.c_str()));
+    closeAndRenew();
+    EXPECT_FALSE(App::FileHistory::openFile(plain, &reason));
+    EXPECT_EQ(reason, "the file carries no history");
+    Base::FileInfo(plain).deleteFile();
+    Base::FileInfo(path).deleteFile();
+}

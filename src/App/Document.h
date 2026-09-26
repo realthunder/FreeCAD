@@ -57,6 +57,7 @@ namespace App
     class Application;
     class FileBlobManager;
     class FileHistory;
+    class TransactionLogCore;
     class TransactionLog;
     struct LogBranch;
     class Transaction;
@@ -375,6 +376,12 @@ public:
      * there is no log or no such version.
      */
     Document* openVersion(int64_t num, bool createView = true);
+    /** The same for a file's history, whether or not a document of the file
+     * is open (docs/TransactionLog.md sec 27.13; FileHistory::openFile()).
+     * `from`, when given, is the document of the file it is named after.
+     */
+    static Document* openFileVersion(const std::shared_ptr<FileHistory>& history, int64_t num,
+                                     bool createView = true, const Document* from = nullptr);
 
     /** Branches (docs/TransactionLog.md sec 17, 26). createBranch() makes
      * branch `name` from version `version`, or else from log row `seq`, or
@@ -1063,6 +1070,8 @@ protected:
                     const ColdRevert* cold = nullptr);
     /// Write version `num` out as an unpacked project; returns its directory.
     std::string _materialiseVersion(int64_t num, const std::string& where = std::string());
+    static std::string materialiseVersion(TransactionLogCore& log, int64_t num,
+                                          const std::string& dir);
     /// Apply the log's rows after `after` forward, folded (sec 25.2 item
     /// 3); returns the rows applied and sets `last` to the last one.
     size_t _replayLog(int64_t after, int64_t& last);

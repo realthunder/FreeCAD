@@ -2870,6 +2870,19 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertEqual(names[cursor["branch"]], "main")
         self.assertEqual(doc.getObject("Obj").Integer, 2)
 
+    def testOpenAClosedFilesVersion(self):
+        # Sec 27.13: a version of a file no document has open, read out of
+        # the archive.
+        doc, path = self.saved()
+        first = doc.getTransactionVersions()[0]["num"]
+        FreeCAD.closeDocument(doc.Name)
+        opened = self.track(FreeCAD.openFileVersion(path, first, False))
+        self.assertTrue(opened.FileName.endswith("@v%d" % first))
+        self.assertEqual(opened.getObject("Obj").Integer, 1)
+        self.assertTrue(opened.getTransactionCursor()["detached"])
+        with self.assertRaises(Exception):
+            FreeCAD.openFileVersion(path, 999, False)
+
     def testSwitchAndRestoreKeepTheLabel(self):
         # The version a switch or a restore applies is read into a scratch
         # document with a name of its own; the document keeps its label

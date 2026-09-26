@@ -595,6 +595,11 @@ public:
 
     /// Claim this document's blob entries out of the archive being read.
     void beginRestore(Base::XMLReader& reader);
+    /** Every blob of the document archive at `archive` into this store,
+     * with no document restored (docs/TransactionLog.md sec 27.13): held,
+     * and named as the archive named them, until endRestore().
+     */
+    bool splitArchive(const std::string& archive) { return restoreFromArchive(archive); }
     /** Note that a property refers to this content.
      *
      * The property is handed its blob as soon as the content is available:

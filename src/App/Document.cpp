@@ -4484,31 +4484,37 @@ int64_t Document::snapshotToLog()
 
 std::string Document::_materialiseVersion(int64_t num, const std::string& where)
 {
+    if (!getTransactionLog())
+        THROWM(Base::RuntimeError, "no such version");
+    const std::string dir =
+        where.empty() ? TransientDir.getStrValue() + "/history/checkout" : where;
+    return materialiseVersion(TransactionLogCore::of(getFileHistory()), num, dir);
+}
+
+std::string Document::materialiseVersion(TransactionLogCore& log, int64_t num, const std::string& dir)
+{
     // An unpacked project: every entry from the log, the blobs under
     // blobs/, which a directory restore reads by content. Every entry is
     // read as bytes -- a blob the log holds as a file through read(), one
     // it keeps as a delta (sec 23.16) decoded -- never copied by path.
-    TransactionLog* log = getTransactionLog();
     LogVersion version;
-    if (!log || !log->store().getVersion(num, version))
+    if (!log.store().getVersion(num, version))
         THROWM(Base::RuntimeError, "no such version");
-    auto manifest = log->store().manifest(num);
-    const std::string dir =
-        where.empty() ? TransientDir.getStrValue() + "/history/checkout" : where;
+    auto manifest = log.store().manifest(num);
     Base::FileInfo(dir).deleteDirectoryRecursive();
     if (!Base::FileInfo(dir + "/" + FileBlobManager::archivePrefix()).createDirectories())
         THROWM(Base::RuntimeError, "cannot create the checkout directory");
     bool haveDocXml = false;
     for (const auto& e : manifest) {
         LogEntity entity;
-        if (!log->store().getEntity(e.hash, entity))
+        if (!log.store().getEntity(e.hash, entity))
             THROWM(Base::RuntimeError, "version entry " + e.entry + " of version "
                                            + std::to_string(num) + " is not in the store");
         const bool isBlob = entity.kind == "blob";
         Base::FileInfo target(dir + "/" + (isBlob ? FileBlobManager::archivePrefix() : "")
                               + e.entry);
         CapturedValue v;
-        if (!log->readValue(e.hash, v))
+        if (!log.readValue(e.hash, v))
             THROWM(Base::RuntimeError, "version entry " + e.entry + " cannot be read");
         if (e.entry.find('/') != std::string::npos)
             Base::FileInfo(target.dirPath()).createDirectories();
@@ -5145,49 +5151,64 @@ long branchStride();
 Document* Document::openVersion(int64_t num, bool createView)
 {
     // docs/TransactionLog.md sec 27.5 ruling 3, 27.7.
-    TransactionLog* log = getTransactionLog();
-    if (!log)
+    if (!getTransactionLog())
         THROWM(Base::RuntimeError, "no transaction log");
+    getFileHistory();
+    return openFileVersion(d->history, num, createView, this);
+}
+
+Document* Document::openFileVersion(const std::shared_ptr<FileHistory>& history, int64_t num,
+                                    bool createView, const Document* from)
+{
+    // Sec 27.7, 27.13: with or without a document of the file open.
+    if (!history)
+        THROWM(Base::RuntimeError, "no file history");
+    TransactionLogCore& log = TransactionLogCore::of(*history);
     LogVersion version;
-    if (!log->store().getVersion(num, version))
+    if (!log.store().getVersion(num, version))
         THROWM(Base::ValueError, "no version " + std::to_string(num));
-    if (Document* open = log->documentAt(version))
+    if (Document* open = log.documentAt(version))
         return open;
 
     // The ids its branch will hand out start a stride above every other
     // branch's and every open document's (sec 17.2): its first change may
     // create an object before the branch exists.
     long idBase = 0;
-    for (const auto& b : log->store().branches())
+    for (const auto& b : log.store().branches())
         idBase = std::max({idBase, b.idBase, b.lastId});
-    for (auto doc : log->documents())
+    for (auto doc : log.documents())
         idBase = std::max(idBase, doc->d->lastObjectId);
     idBase += branchStride();
 
-    const std::string dir = _materialiseVersion(
-        num, getFileHistory().directory() + "/history/open-v" + std::to_string(num));
+    const std::string dir = materialiseVersion(
+        log, num, history->directory() + "/history/open-v" + std::to_string(num));
     struct Cleanup
     {
         std::string dir;
         ~Cleanup() { Base::FileInfo(dir).deleteDirectoryRecursive(); }
     } cleanup {dir};
 
+    // Named after the document it came from, or else the file.
+    const std::string fileName = from ? from->FileName.getStrValue() : history->path();
+    std::string baseName = from ? std::string(from->getName())
+                                : Base::FileInfo(fileName).fileNamePure();
+    std::string label = from ? std::string(from->Label.getValue()) : history->fileLabel();
     auto& app = GetApplication();
     Document* active = app.getActiveDocument();
     const std::string suffix = "@v" + std::to_string(num);
     const std::string name =
-        app.getUniqueDocumentName((std::string(getName()) + "_v" + std::to_string(num)).c_str());
+        app.getUniqueDocumentName((baseName + "_v" + std::to_string(num)).c_str());
     Document* doc = app.newDocument(name.c_str(), name.c_str(), createView);
     if (!doc)
         THROWM(Base::RuntimeError, "cannot make the version's document");
     try {
         doc->setStatus(VersionDoc, true);
         doc->d->noLog = true;
-        doc->_joinHistory(d->history);
+        doc->_joinHistory(history);
         // Who the document is, not a change to it (27.9): no transaction.
-        if (!FileName.getStrValue().empty()) {
+        if (!fileName.empty()) {
             Base::FlagToggler<> quiet(doc->d->bookkeeping, false);
-            doc->FileName.setValue(FileName.getStrValue() + suffix);
+            doc->FileName.setValue(fileName + suffix);
         }
         {
             Base::FlagToggler<> guard(doc->d->checkingOut);
@@ -5195,15 +5216,17 @@ Document* Document::openVersion(int64_t num, bool createView)
         }
         {
             Base::FlagToggler<> quiet(doc->d->bookkeeping, false);
-            doc->Label.setValue(std::string(Label.getValue()) + " (v" + std::to_string(num) + ")");
+            doc->Label.setValue(label + " (v" + std::to_string(num) + ")");
         }
-        doc->setUndoMode(getUndoMode());
+        if (from)
+            doc->setUndoMode(from->getUndoMode());
         doc->d->noLog = false;
         doc->d->transactionLog = std::make_unique<TransactionLog>(*doc, &version);
         doc->d->transactionLog->setIdBase(idBase);
         doc->d->lastObjectId = std::max(doc->d->lastObjectId, idBase);
         doc->d->undoFloor = doc->d->transactionLog->lastSeq();
-        doc->d->lastVersionTime = d->lastVersionTime;
+        if (from)
+            doc->d->lastVersionTime = from->d->lastVersionTime;
     }
     catch (...) {
         app.closeDocument(name.c_str());

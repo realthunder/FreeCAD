@@ -23,6 +23,7 @@
 #ifndef APP_FILE_HISTORY_H
 #define APP_FILE_HISTORY_H
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -57,6 +58,16 @@ class AppExport FileHistory: public std::enable_shared_from_this<FileHistory>
 public:
     /// A history in `home`'s transient directory, not yet registered.
     static std::shared_ptr<FileHistory> create(Document& home);
+    /** The history of the file at `path` with no document of it open
+     * (docs/TransactionLog.md sec 27.13): the one registered, or else the
+     * one embedded in the file, read straight out of the archive -- its
+     * blobs split into a store of its own, the copy adopted under the guard
+     * of 16.4 (closed branches when the file was edited elsewhere), and the
+     * file as found recorded as the version its copy numbers next. Null,
+     * with `reason` set, when the file has no history or cannot be read.
+     */
+    static std::shared_ptr<FileHistory> openFile(const std::string& path,
+                                                 std::string* reason = nullptr);
     ~FileHistory();
 
     FileHistory(const FileHistory&) = delete;
@@ -83,6 +94,10 @@ public:
 
     /// The canonical path the history is registered under, empty if none.
     const std::string& path() const { return _path; }
+    /// What a history opened from a file (openFile) read of it: its label,
+    /// and the version number the file as found was recorded as.
+    const std::string& fileLabel() const { return _fileLabel; }
+    int64_t fileVersion() const { return _fileVersion; }
     /** Register under the file at `path` (an empty path unregisters). A
      * path another live history holds is left to it: false, with a
      * warning -- one file, one history (sec 27.5).
@@ -95,8 +110,11 @@ public:
 
 private:
     explicit FileHistory(Document& home);
+    explicit FileHistory(const std::string& dir);
 
     Document* _home {nullptr};
+    std::string _fileLabel;
+    int64_t _fileVersion {0};
     std::string _dir;
     std::string _path;
     std::unique_ptr<FileBlobManager> _blobs;

@@ -614,6 +614,7 @@ private:
     static PyObject* sLoadFile          (PyObject *self,PyObject *args);
     static PyObject* sOpenDocument      (PyObject *self,PyObject *args, PyObject *kwd);
     static PyObject* sRecoverDocument   (PyObject *self,PyObject *args);
+    static PyObject* sOpenFileVersion   (PyObject *self,PyObject *args);
     static PyObject* sSaveDocument      (PyObject *self,PyObject *args);
     static PyObject* sSaveDocumentAs    (PyObject *self,PyObject *args);
     static PyObject* sNewDocument       (PyObject *self,PyObject *args, PyObject *kwd);
