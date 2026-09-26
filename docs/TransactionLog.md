@@ -5958,3 +5958,40 @@ target's.
 
 Gates: Python 2928 OK; ctest 842/842; recovery 15, branch 27, version 18,
 pin 28, frozen 16 PASS.
+
+### 27.35 27.25 items 3 and 5 as built (2026-09-26)
+
+**Item 3, the shallow move.** `locatedForRestore` moves a shape restored
+with a motion by `shallowMove()` (`PropertyTopoShape.cpp`): a new top node
+(`EmptyCopied`, with the top's Closed, Orientable, Infinite and Convex
+flags) whose children are the shared children, each `Moved(motion)`. The
+top location stays the object's Placement; every face and edge below is
+the original's TShape, triangulation included. A compound, compsolid,
+solid, shell or wire top takes it; a face, edge or vertex top, and a motion
+that scales (OCCT refuses a scaled location), are copied as before -- the
+edge case could share too (27.25), not done.
+
+Test: `ShapeStorage.ShapeCongruenceCases.testMovedInstancesShareTheirFaces`
+-- two instances of one part, stored once and restored with two motions:
+their tops are their own, every face is one TShape, the volume is right.
+The congruence cases that were there (positions, placements, distinct parts
+kept apart) pass unchanged.
+
+**Item 5, released parses kept.** `ShapeParseCache` entries carry their
+content hash and a use tick. With shape values frozen:
+
+- `get()` finds a parse by hash even when its blob has been released
+  (expired) -- a file closed and opened again, a branch switched away from
+  and back -- and takes it over under the new blob;
+- the sweep keeps the 32 most recently used released entries and drops the
+  rest (with shape values not frozen, it drops them all, as before).
+
+Every lookup by hash now checks the entry's own hash: a released blob's
+address can be a new blob's, and item 4's index could then have handed out
+another file's parse. That was a real hole in 27.31, closed here.
+
+Test: `ShapeStorage.ShapeBlobCases.testAReleasedParseIsKeptForAWhile` -- a
+file opened, closed and opened again gives the same TShape.
+
+Gates: Python 2930 OK; ctest 842/842; recovery 15, branch 27, version 18,
+pin 28, frozen 16 PASS.

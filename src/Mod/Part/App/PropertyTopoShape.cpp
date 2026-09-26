@@ -254,23 +254,34 @@ public:
     const ParsedShape* get(const App::FileBlobHandle& blob)
     {
         std::lock_guard<std::mutex> guard(_mutex);
+        const std::string& hash = blob->hash();
         auto found = _entries.find(blob.get());
-        if (found != _entries.end() && !found->second.blob.expired())
+        if (found != _entries.end() && !found->second.blob.expired()
+                && found->second.hash == hash) {
+            found->second.used = ++_tick;
             return &found->second.parsed;
+        }
         if (!PartParams::getImmutableShapeValues())
             return nullptr;
-        // Another file's parse of the same bytes: taken under this blob too,
-        // so it lives as long as either holds it.
-        auto byHash = _byHash.find(blob->hash());
+        // The same bytes parsed before: another file's blob (sec 27.25 item
+        // 4), or one released since, kept for a while (item 5) -- a branch
+        // switched away from and back, a version closed and opened again.
+        auto byHash = _byHash.find(hash);
         if (byHash == _byHash.end())
             return nullptr;
         auto other = _entries.find(byHash->second);
-        if (other == _entries.end() || other->second.blob.expired())
+        if (other == _entries.end() || other->second.hash != hash)
             return nullptr;
         ParsedShape shared = other->second.parsed;
+        // A released one is taken over, not shared: nothing else holds it.
+        if (other->second.blob.expired() && other->first != blob.get())
+            _entries.erase(other);
         Entry& entry = _entries[blob.get()];
         entry.blob = blob;
+        entry.hash = hash;
         entry.parsed = std::move(shared);
+        entry.used = ++_tick;
+        _byHash[hash] = blob.get();
         return &entry.parsed;
     }
 
@@ -279,22 +290,31 @@ public:
         std::lock_guard<std::mutex> guard(_mutex);
         // Swept here rather than on every read: an entry costs a handle and a
         // shape, and the sweep is what keeps a document's whole geometry from
-        // being held alive by files nothing refers to any more.
+        // being held alive by files nothing refers to any more -- but for the
+        // few released last, kept with shape values frozen (item 5).
         if (_entries.size() >= _sweepAt) {
-            for (auto it = _entries.begin(); it != _entries.end();) {
-                it = it->second.blob.expired() ? _entries.erase(it) : std::next(it);
-            }
-            _byHash.clear();
+            const std::size_t keep =
+                PartParams::getImmutableShapeValues() ? _keepReleased : 0;
+            std::vector<std::pair<uint64_t, const App::FileBlob*>> released;
             for (auto& kv : _entries) {
-                if (auto live = kv.second.blob.lock())
-                    _byHash[live->hash()] = kv.first;
+                if (kv.second.blob.expired())
+                    released.emplace_back(kv.second.used, kv.first);
             }
+            std::sort(released.begin(), released.end(),
+                      [](const auto& a, const auto& b) { return a.first > b.first; });
+            for (std::size_t i = keep; i < released.size(); ++i)
+                _entries.erase(released[i].second);
+            _byHash.clear();
+            for (auto& kv : _entries)
+                _byHash[kv.second.hash] = kv.first;
             _sweepAt = std::max<std::size_t>(64, _entries.size() * 2);
         }
         Entry& entry = _entries[blob.get()];
         entry.blob = blob;
+        entry.hash = blob->hash();
         entry.parsed = std::move(parsed);
-        _byHash[blob->hash()] = blob.get();
+        entry.used = ++_tick;
+        _byHash[entry.hash] = blob.get();
         return &entry.parsed;
     }
 
@@ -302,13 +322,20 @@ private:
     struct Entry
     {
         std::weak_ptr<App::FileBlob> blob;
+        /// The content, which a lookup by hash checks: a released blob's
+        /// address can be a new blob's.
+        std::string hash;
         ParsedShape parsed;
+        uint64_t used {0};
     };
     mutable std::mutex _mutex;
     std::unordered_map<const App::FileBlob*, Entry> _entries;
     /// Content hash -> a blob whose parse is in _entries (sec 27.25 item 4).
     std::unordered_map<std::string, const App::FileBlob*> _byHash;
     std::size_t _sweepAt {64};
+    /// Released parses a sweep keeps, the most recently used first (item 5).
+    static constexpr std::size_t _keepReleased = 32;
+    uint64_t _tick {0};
 };
 
 /** Parse a stored geometry file, resolving whatever it borrows.
@@ -440,6 +467,46 @@ TopoDS_Shape PropertyPartShape::shapeForSave(Base::Writer& writer) const
     return shape.Located(TopLoc_Location());
 }
 
+namespace {
+
+/** `shape` moved by `motion` with its top location unchanged, sharing all it
+ * can (docs/TransactionLog.md sec 27.25 item 3, 27.35).
+ *
+ * The motion cannot go on the top: the top location is the object's
+ * Placement. It goes one level down instead -- a new top node whose children
+ * are the shared ones, each moved. Every face and edge below is the same
+ * TShape as the original's, triangulation included, so two instances of a
+ * part share their meshes. A shape whose top holds its own geometry -- a
+ * face, an edge, a vertex -- and a motion that scales, which OCCT refuses as
+ * a location, are copied as before. Null when it cannot be done this way.
+ */
+TopoDS_Shape shallowMove(const TopoDS_Shape& shape, const TopLoc_Location& motion)
+{
+    switch (shape.ShapeType()) {
+        case TopAbs_COMPOUND:
+        case TopAbs_COMPSOLID:
+        case TopAbs_SOLID:
+        case TopAbs_SHELL:
+        case TopAbs_WIRE:
+            break;
+        default:
+            return {};
+    }
+    if (std::abs(motion.Transformation().ScaleFactor() - 1.0) > 1e-12)
+        return {};
+    TopoDS_Shape top = shape.EmptyCopied();
+    BRep_Builder builder;
+    for (TopoDS_Iterator it(shape, Standard_False, Standard_False); it.More(); it.Next())
+        builder.Add(top, it.Value().Moved(motion));
+    top.Closed(shape.Closed());
+    top.Orientable(shape.Orientable());
+    top.Infinite(shape.Infinite());
+    top.Convex(shape.Convex());
+    return top;
+}
+
+}  // namespace
+
 TopoDS_Shape PropertyPartShape::locatedForRestore(const TopoDS_Shape& shape) const
 {
     TopoDS_Shape geometry = shape;
@@ -449,12 +516,20 @@ TopoDS_Shape PropertyPartShape::locatedForRestore(const TopoDS_Shape& shape) con
     // someone reads. An App::Link that replaces its source's placement with
     // its own reads exactly that, and would then draw this geometry where
     // the instance it was borrowed from sits, which is what a first attempt
-    // at this did to 1146 links. So the motion costs a copy of the geometry
-    // and leaves the location meaning what it has always meant.
+    // at this did to 1146 links. So the motion goes one level down, into a
+    // new top node over the shared children (shallowMove()), and leaves the
+    // location meaning what it has always meant; only a shape that holds its
+    // own geometry at the top is copied.
     if (!_RestoreMotion.IsIdentity() && !geometry.IsNull()) {
-        BRepBuilderAPI_Transform moved(geometry, _RestoreMotion.Transformation(), Standard_True);
-        if (moved.IsDone())
-            geometry = moved.Shape();
+        TopoDS_Shape moved = shallowMove(geometry, _RestoreMotion);
+        if (!moved.IsNull()) {
+            geometry = moved;
+        }
+        else {
+            BRepBuilderAPI_Transform copy(geometry, _RestoreMotion.Transformation(), Standard_True);
+            if (copy.IsDone())
+                geometry = copy.Shape();
+        }
     }
     if (_RestoreLoc.IsIdentity() || geometry.IsNull())
         return geometry;

@@ -540,6 +540,32 @@ class ShapeBlobCases(ShapeTestCase):
             else:
                 part.RemBool("ImmutableShapeValues")
 
+    def testAReleasedParseIsKeptForAWhile(self):
+        """A file closed and opened again finds its shapes' parses kept, with
+        shape values frozen: the same TShape comes back, nothing is parsed
+        (docs/TransactionLog.md sec 27.25 item 5)."""
+        part = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Part")
+        had = "ImmutableShapeValues" in part.GetBools()
+        kept = part.GetBool("ImmutableShapeValues", True)
+        doc = self.newDocument()
+        self.box(doc, "Box")
+        doc.recompute()
+        project = self.projectPath()
+        doc.saveAs(project)
+        FreeCAD.closeDocument(doc.Name)
+        try:
+            part.SetBool("ImmutableShapeValues", True)
+            doc = self.openDocument(project)
+            first = doc.getObject("Box").Shape
+            FreeCAD.closeDocument(doc.Name)
+            again = self.openDocument(project).getObject("Box").Shape
+            self.assertTrue(first.isPartner(again), "parsed again after a close")
+        finally:
+            if had:
+                part.SetBool("ImmutableShapeValues", kept)
+            else:
+                part.RemBool("ImmutableShapeValues")
+
     def testUnchangedGeometryIsNotRewritten(self):
         doc = self.newDocument()
         self.box(doc, "Box")
@@ -914,6 +940,20 @@ class ShapeCongruenceCases(ShapeTestCase):
                 1e-8,
                 "%s came back in the wrong place" % name,
             )
+
+    def testMovedInstancesShareTheirFaces(self):
+        """The motion goes one level down: two instances of one part come back
+        with every face the same TShape, and so with one mesh between them
+        (docs/TransactionLog.md sec 27.25 item 3)."""
+        project, volumes, _ = self.savedWith(True, "CongFaces")
+        doc = self.openDocument(project)
+        second = doc.getObject("Second").Shape
+        third = doc.getObject("Third").Shape
+        self.assertFalse(second.isPartner(third), "the tops are the instances' own")
+        self.assertEqual(len(second.Faces), len(third.Faces))
+        for a, b in zip(second.Faces, third.Faces):
+            self.assertTrue(a.isPartner(b), "an instance's face is a copy")
+        self.assertAlmostEqual(second.Volume, volumes[1], delta=abs(volumes[1]) * 1e-9)
 
     def testPlacementIsNotUsedToCarryTheMotion(self):
         """The motion goes into the geometry, never into the placement.
