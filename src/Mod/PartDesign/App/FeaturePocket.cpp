@@ -45,6 +45,7 @@ Pocket::Pocket()
     Type.setEnums(TypeEnums);
     ADD_PROPERTY_TYPE(_Version,(0),"Part Design",(App::PropertyType)(App::Prop_Hidden), 0);
     initProperties("Pocket");
+    Type2.setEnums(TypeEnums);
 }
 
 App::DocumentObjectExecReturn *Pocket::execute()

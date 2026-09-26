@@ -33,6 +33,7 @@ from PartDesignTests.TestBodyMaterial import TestBodyMaterial
 
 # additive/subtractive features & primitives
 from PartDesignTests.TestPad import TestPad
+from PartDesignTests.TestExtrudeSides import TestExtrudeSides
 from PartDesignTests.TestPocket import TestPocket
 from PartDesignTests.TestHole import TestHole
 from PartDesignTests.TestRevolve import TestRevolve

@@ -43,7 +43,13 @@ class PartDesignExport FeatureExtrude : public ProfileBased
 public:
     FeatureExtrude();
 
+    /// "One side", "Two sides" or "Symmetric" (upstream a346c266e7). The
+    /// ProfileBased Midplane stays as an alias of Symmetric, and Type
+    /// "TwoLengths" becomes Two sides with both sides Length.
+    App::PropertyEnumeration SideType;
     App::PropertyEnumeration Type;
+    /// The type of the second side, for SideType "Two sides"
+    App::PropertyEnumeration Type2;
     App::PropertyLength      Length;
     App::PropertyLength      Length2;
     App::PropertyAngle       TaperAngle;
@@ -53,6 +59,10 @@ public:
     App::PropertyVector      Direction;
     App::PropertyBool        AlongSketchNormal;
     App::PropertyLength      Offset;
+    App::PropertyLength      Offset2;
+    /// The second side's UpToFace and UpToShape, synced the same way
+    App::PropertyLinkSub     UpToFace2;
+    App::PropertyLinkSubList UpToShape2;
     App::PropertyLinkSub     ReferenceAxis;
     App::PropertyAngle       TaperInnerAngle;
     App::PropertyAngle       TaperInnerAngleRev;
@@ -63,6 +73,7 @@ public:
     static App::PropertyQuantityConstraint::Constraints signedLengthConstraint;
     static double maxAngle;
     static App::PropertyAngle::Constraints floatAngle;
+    static const char* SideTypeEnums[];
 
     /** @name methods override feature */
     //@{
@@ -70,11 +81,28 @@ public:
     void setupObject() override;
     //@}
 
+    /** Whether an up-to reference is a single face: one object with one
+     * element, or a whole object of one face (a datum plane, say).
+     *
+     * UpToShape is the reference the panel edits; UpToFace mirrors it when it
+     * is a single face, and Type is then written as UpToFace, so that a file
+     * of a single up-to face reads as before -- in older builds and upstream,
+     * too. Anything else is Type UpToShape, and UpToFace is cleared.
+     */
+    static bool isSingleUpToFace(const App::PropertyLinkSubList &shape);
+
 protected:
     void initProperties(const char *group);
 
     void onChanged(const App::Property *) override;
+    void onDocumentRestored() override;
     void handleChangedPropertyName(Base::XMLReader &reader, const char * TypeName, const char *Name) override;
+
+    /// Mirror one side's UpToFace into its UpToShape
+    void syncUpToShape(const App::PropertyLinkSub &face, App::PropertyLinkSubList &shape);
+    /// Mirror one side's UpToShape into its UpToFace, and set its Type by it
+    void syncUpToFace(const App::PropertyLinkSubList &shape, App::PropertyLinkSub &face,
+                      App::PropertyEnumeration &type);
 
     Base::Vector3d computeDirection(const Base::Vector3d& sketchVector, bool inverse);
     bool hasTaperedAngle() const;
@@ -92,21 +120,58 @@ protected:
     App::DocumentObjectExecReturn *buildExtrusion(ExtrudeOptions options);
 
     /**
-      * Generates an extrusion of the input sketchshape and stores it in the given \a prism
+      * Generates an untapered extrusion of the input sketchshape and stores it
+      * in the given \a prism: L along the direction, and L2 against it for two
+      * sides, or L centred on the sketch for a symmetric one
       */
     void generatePrism(TopoShape& prism,
                        TopoShape sketchshape,
-                       const std::string& method,
                        const gp_Dir& direction,
                        const double L,
                        const double L2,
+                       const bool twoSides,
                        const bool midplane,
                        const bool reversed);
+
+    /// The up-to references of one side
+    struct UpToSide {
+        std::string method;
+        App::PropertyLinkSub &upToFace;
+        App::PropertyLinkSubList &upToShape;
+        double offset;
+    };
+
+    /**
+      * The shape to extrude up to, for one side: the face, the faces or the
+      * shape, moved into the feature's placement, offset for a single face.
+      * Returns the number of faces (0: the base).
+      */
+    int getUpToShape(TopoShape &upToShape,
+                     const UpToSide &side,
+                     const TopoShape &base,
+                     const TopoShape &sketchshape,
+                     const TopLoc_Location &invObjLoc,
+                     gp_Dir &dir);
+
+    /// One side extruded along \a dir, by a length or up to a shape
+    TopoShape makeSide(const UpToSide &side,
+                       const TopoShape &base,
+                       const TopoShape &sketchshape,
+                       const TopoShape &supportface,
+                       const TopLoc_Location &invObjLoc,
+                       gp_Dir dir,
+                       double length,
+                       double taperAngle,
+                       double innerTaperAngle,
+                       bool makeface);
 
     /**
       * Disables settings that are not valid for the current method
       */
-    void updateProperties(const std::string &method);
+    void updateProperties();
+
+private:
+    bool syncingSides = false;
 };
 
 } //namespace PartDesign

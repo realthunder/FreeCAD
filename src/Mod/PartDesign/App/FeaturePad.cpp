@@ -40,6 +40,7 @@ Pad::Pad(const char *propertyGroup)
     ADD_PROPERTY_TYPE(Type, (0L), propertyGroup, App::Prop_None, "Extrusion type");
     Type.setEnums(TypeEnums);
     initProperties(propertyGroup);
+    Type2.setEnums(TypeEnums);
 }
 
 App::DocumentObjectExecReturn *Pad::execute()

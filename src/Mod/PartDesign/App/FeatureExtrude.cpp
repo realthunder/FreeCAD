@@ -32,9 +32,13 @@
 # include <TopoDS_Shape.hxx>
 #endif
 
+#include <gp_Ax2.hxx>
+#include <gp_Pnt.hxx>
+
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/MappedElement.h>
+#include <App/OriginFeature.h>
 #include <Base/Console.h>
 #include <Base/Tools.h>
 #include <Mod/Part/App/ExtrusionHelper.h>
@@ -52,11 +56,66 @@ PROPERTY_SOURCE_ABSTRACT(PartDesign::FeatureExtrude, PartDesign::ProfileBased)
 App::PropertyQuantityConstraint::Constraints FeatureExtrude::signedLengthConstraint = { -DBL_MAX, DBL_MAX, 1.0 };
 double FeatureExtrude::maxAngle = 90 - Base::toDegrees<double>(Precision::Angular());
 App::PropertyAngle::Constraints FeatureExtrude::floatAngle = { -maxAngle, maxAngle, 1.0 };
+const char* FeatureExtrude::SideTypeEnums[] = {"One side", "Two sides", "Symmetric", nullptr};
+
+namespace {
+
+bool isUpToMethod(const std::string &method)
+{
+    return method == "UpToFirst" || method == "UpToLast"
+        || method == "UpToFace" || method == "UpToShape";
+}
+
+/// A whole object that is one face: an App::Plane, a datum plane
+bool isSingleFaceObject(App::DocumentObject *obj)
+{
+    if (obj->isDerivedFrom<App::Plane>())
+        return true;
+    return Part::Feature::getTopoShape(obj).countSubShapes(TopAbs_FACE) == 1;
+}
+
+bool isWholeObject(const std::vector<std::string> &subs)
+{
+    return subs.empty() || (subs.size() == 1 && subs[0].empty());
+}
+
+/// The sides combined as upstream does (a346c266e7): their union less what
+/// they share, so that a side running back into the other cancels it, as a
+/// negative length did in the old TwoLengths
+TopoShape xorSides(const std::vector<TopoShape> &sides, App::StringHasherRef hasher)
+{
+    if (sides.size() == 1)
+        return sides.front();
+    TopoShape common(0, hasher);
+    try {
+        common.makEBoolean(Part::OpCodes::Common, sides);
+    } catch (Base::Exception &) {
+        common = TopoShape();
+    } catch (Standard_Failure &) {
+        common = TopoShape();
+    }
+    TopoShape result(0, hasher);
+    if (common.isNull() || !common.hasSubShape(TopAbs_SOLID)) {
+        result.makEBoolean(Part::OpCodes::Fuse, sides, Part::OpCodes::Extrude);
+        return result;
+    }
+    TopoShape fused(0, hasher);
+    fused.makEBoolean(Part::OpCodes::Fuse, sides);
+    result.makEBoolean(Part::OpCodes::Cut, {fused, common}, Part::OpCodes::Extrude);
+    return result;
+}
+
+} // anonymous namespace
 
 FeatureExtrude::FeatureExtrude() = default;
 
 void FeatureExtrude::initProperties(const char *group)
 {
+    ADD_PROPERTY_TYPE(SideType, (0L), group, App::Prop_None,
+            "How the extrusion goes from the profile: to one side, to each side\n"
+            "by its own type, or symmetric about the profile");
+    SideType.setEnums(SideTypeEnums);
+    ADD_PROPERTY_TYPE(Type2, (0L), group, App::Prop_None, "Extrusion type of the second side");
     ADD_PROPERTY_TYPE(Length, (10.0), group, App::Prop_None, "Extrusion length");
     ADD_PROPERTY_TYPE(Length2, (10.0), group, App::Prop_None, "Extrusion length in 2nd direction");
     ADD_PROPERTY_TYPE(UseCustomVector, (false), group, App::Prop_None, "Use custom vector for pad direction");
@@ -67,6 +126,10 @@ void FeatureExtrude::initProperties(const char *group)
     ADD_PROPERTY_TYPE(UpToShape, (nullptr), group, App::Prop_None, "Faces or shapes where pad will end");
     ADD_PROPERTY_TYPE(Offset, (0.0), group, App::Prop_None, "Offset from face in which pad will end");
     Offset.setConstraints(&signedLengthConstraint);
+    ADD_PROPERTY_TYPE(UpToFace2, (nullptr), group, App::Prop_None, "Face where the second side will end");
+    ADD_PROPERTY_TYPE(UpToShape2, (nullptr), group, App::Prop_None, "Faces or shapes where the second side will end");
+    ADD_PROPERTY_TYPE(Offset2, (0.0), group, App::Prop_None, "Offset from face in which the second side will end");
+    Offset2.setConstraints(&signedLengthConstraint);
     ADD_PROPERTY_TYPE(TaperAngle,(0.0), group, App::Prop_None, "Sets the angle of slope (draft) to apply to the sides. The angle is for outward taper; negative value yields inward tapering.");
     TaperAngle.setConstraints(&floatAngle);
     ADD_PROPERTY_TYPE(TaperAngle2, (0.0), group, App::Prop_None, "Alias to TaperAngleRev, for compatibility to upstream");
@@ -97,7 +160,12 @@ void FeatureExtrude::initProperties(const char *group)
 short FeatureExtrude::mustExecute() const
 {
     if (Placement.isTouched() ||
+        SideType.isTouched() ||
         Type.isTouched() ||
+        Type2.isTouched() ||
+        Offset2.isTouched() ||
+        UpToFace2.isTouched() ||
+        UpToShape2.isTouched() ||
         Length.isTouched() ||
         Length2.isTouched() ||
         TaperAngle.isTouched() ||
@@ -165,122 +233,97 @@ bool FeatureExtrude::hasTaperedAngle() const
 
 void FeatureExtrude::generatePrism(TopoShape& prism,
                                    TopoShape sketchTopoShape,
-                                   const std::string& method,
                                    const gp_Dir& dir,
                                    const double L,
                                    const double L2,
+                                   const bool twoSides,
                                    const bool midplane,
                                    const bool reversed)
 {
-    auto sketchShape = sketchTopoShape.getShape();
-    if (method == "Length" || method == "TwoLengths" || method == "ThroughAll") {
-        double Ltotal = L;
-        double Loffset = 0.;
-        if (method == "ThroughAll")
-            Ltotal = getThroughAllLength();
+    double Ltotal = L;
+    double Loffset = 0.;
 
+    if (twoSides) {
+        // One prism from -L2 to L, as the old TwoLengths made it, so that its
+        // element names stay those of the files that have it
+        Ltotal += L2;
+        if (reversed)
+            Loffset = -L;
+        else
+            Loffset = -L2;
+    } else if (midplane)
+        Loffset = -Ltotal/2;
 
-        if (method == "TwoLengths") {
-            // Midplane makes no sense here. The property is read-only in this
-            // mode, but keeps whatever value it had when the mode changed.
-            Ltotal += L2;
-            if (reversed)
-                Loffset = -L;
-            else
-                Loffset = -L2;
-        } else if (midplane)
-            Loffset = -Ltotal/2;
+    if (twoSides || midplane) {
+        gp_Trsf mov;
+        mov.SetTranslation(Loffset * gp_Vec(dir));
+        TopLoc_Location loc(mov);
+        sketchTopoShape.move(loc);
+    } else if (reversed)
+        Ltotal *= -1.0;
 
-        if (method == "TwoLengths" || midplane) {
-            gp_Trsf mov;
-            mov.SetTranslation(Loffset * gp_Vec(dir));
-            TopLoc_Location loc(mov);
-            sketchTopoShape.move(loc);
-        } else if (reversed)
-            Ltotal *= -1.0;
-
-        // Without taper angle we create a prism because its shells are in every case no B-splines and can therefore
-        // be use as support for further features like Pads, Lofts etc. B-spline shells can break certain features,
-        // see e.g. https://forum.freecad.org/viewtopic.php?p=560785#p560785
-        // It is better not to use BRepFeat_MakePrism here even if we have a support because the
-        // resulting shape creates problems with Pocket
-        try {
-            prism.makEPrism(sketchTopoShape, Ltotal*gp_Vec(dir)); // finite prism
-        }catch(Standard_Failure &) {
-            THROWM(Base::RuntimeError, "FeatureExtrusion: Length: Could not extrude the sketch!")
-        }
+    // Without taper angle we create a prism because its shells are in every case no B-splines and can therefore
+    // be use as support for further features like Pads, Lofts etc. B-spline shells can break certain features,
+    // see e.g. https://forum.freecad.org/viewtopic.php?p=560785#p560785
+    // It is better not to use BRepFeat_MakePrism here even if we have a support because the
+    // resulting shape creates problems with Pocket
+    try {
+        prism.makEPrism(sketchTopoShape, Ltotal*gp_Vec(dir)); // finite prism
+    }catch(Standard_Failure &) {
+        THROWM(Base::RuntimeError, "FeatureExtrusion: Length: Could not extrude the sketch!")
     }
-    else {
-        std::stringstream str;
-        str << "FeatureExtrusion: Internal error: Unknown method '"
-            << method << "' for generatePrism()";
-        THROWM(Base::RuntimeError, str.str())
-    }
-
 }
 
-void FeatureExtrude::updateProperties(const std::string &method)
+void FeatureExtrude::updateProperties()
 {
     // disable settings that are not valid on the current method
     // disable everything unless we are sure we need it
-    bool isLengthEnabled = false;
-    bool isLength2Enabled = false;
-    bool isOffsetEnabled = false;
-    bool isMidplaneEnabled = false;
-    bool isReversedEnabled = false;
-    bool isUpToFaceEnabled = false;
-    bool isUpToShapeEnabled = false;
-    bool isTaperVisible = false;
-    bool isTaper2Visible = false;
-    if (method == "Length") {
-        isLengthEnabled = true;
-        isTaperVisible = true;
-        isMidplaneEnabled = true;
-        isReversedEnabled = !Midplane.getValue();
-    }
-    else if (method == "UpToLast") {
-        isOffsetEnabled = true;
-        isReversedEnabled = true;
-    }
-    else if (method == "ThroughAll") {
-        isMidplaneEnabled = true;
-        isReversedEnabled = !Midplane.getValue();
-        isTaperVisible = true;
-    }
-    else if (method == "UpToFirst") {
-        isOffsetEnabled = true;
-        isReversedEnabled = true;
-    }
-    else if (method == "UpToFace") {
-        isOffsetEnabled = true;
-        isReversedEnabled = true;
-        isUpToFaceEnabled = true;
-    }
-    else if (method == "TwoLengths") {
-        isLengthEnabled = true;
-        isLength2Enabled = true;
-        isTaperVisible = true;
-        isTaper2Visible = true;
-        isReversedEnabled = true;
-    }
-    else if (method == "UpToShape") {
-        isReversedEnabled = true;
-        isUpToShapeEnabled = true;
-        // one face can be offset, as an up to face
-        isOffsetEnabled = true;
-    }
+    std::string sideType(SideType.getValueAsString());
+    bool twoSides = sideType == "Two sides";
+    bool symmetric = sideType == "Symmetric";
 
-    Length.setReadOnly(!isLengthEnabled);
-    AlongSketchNormal.setReadOnly(!isLengthEnabled);
-    Length2.setReadOnly(!isLength2Enabled);
-    Offset.setReadOnly(!isOffsetEnabled);
-    TaperAngle.setReadOnly(!isTaperVisible);
-    TaperAngle2.setReadOnly(!isTaper2Visible);
-    TaperAngleRev.setReadOnly(!isTaper2Visible);
-    Midplane.setReadOnly(!isMidplaneEnabled);
-    Reversed.setReadOnly(!isReversedEnabled);
-    UpToFace.setReadOnly(!isUpToFaceEnabled);
-    UpToShape.setReadOnly(!isUpToShapeEnabled);
+    struct SideFlags {
+        bool length = false;
+        bool taper = false;
+        bool upTo = false;
+        bool offset = false;
+    };
+    auto flagsOf = [](const std::string &method) {
+        SideFlags flags;
+        if (method == "Length") {
+            flags.length = true;
+            flags.taper = true;
+        }
+        else if (method == "ThroughAll")
+            flags.taper = true;
+        else if (method == "UpToFace" || method == "UpToShape") {
+            // One reference edited as either (UpToShape, UpToFace its mirror)
+            flags.upTo = true;
+            flags.offset = true;
+        }
+        else if (method == "UpToFirst" || method == "UpToLast")
+            flags.offset = true;
+        return flags;
+    };
+    SideFlags side1 = flagsOf(Type.getValueAsString());
+    SideFlags side2;
+    if (twoSides)
+        side2 = flagsOf(Type2.getValueAsString());
+
+    Type2.setReadOnly(!twoSides);
+    Length.setReadOnly(!side1.length);
+    Length2.setReadOnly(!side2.length);
+    AlongSketchNormal.setReadOnly(!side1.length && !side2.length);
+    Offset.setReadOnly(!side1.offset);
+    Offset2.setReadOnly(!side2.offset);
+    TaperAngle.setReadOnly(!side1.taper);
+    TaperAngle2.setReadOnly(!side2.taper);
+    TaperAngleRev.setReadOnly(!side2.taper);
+    Reversed.setReadOnly(symmetric);
+    UpToFace.setReadOnly(!side1.upTo);
+    UpToShape.setReadOnly(!side1.upTo);
+    UpToFace2.setReadOnly(!side2.upTo);
+    UpToShape2.setReadOnly(!side2.upTo);
 }
 
 void FeatureExtrude::setupObject()
@@ -296,18 +339,22 @@ App::DocumentObjectExecReturn *FeatureExtrude::buildExtrusion(ExtrudeOptions opt
     bool legacyPocket = options.testFlag(ExtrudeOption::LegacyPocket);
     bool inverseDirection = options.testFlag(ExtrudeOption::InverseDirection);
 
-    std::string method(Type.getValueAsString());                
+    std::string sideType(SideType.getValueAsString());
+    bool twoSides = sideType == "Two sides";
+    bool symmetric = sideType == "Symmetric";
+    std::string method(Type.getValueAsString());
+    std::string method2(twoSides ? Type2.getValueAsString() : "");
+    bool upTo = isUpToMethod(method) || isUpToMethod(method2);
 
     // Validate parameters
-    double L = Length.getValue();
-    if ((method == "Length") && (L < Precision::Confusion()))
+    double L = method == "Length" ? Length.getValue() : 0.0;
+    double L2 = method2 == "Length" ? Length2.getValue() : 0.0;
+    if (!twoSides && method == "Length" && L < Precision::Confusion())
         return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Length too small"));
-    double L2 = 0;
-    if ((method == "TwoLengths")) {
-        L2 = Length2.getValue();
-        if (std::abs(L2) < Precision::Confusion())
-            return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Second length too small"));
-    }
+    // Two sides take a negative second length, which cuts into the first
+    if (twoSides && method == "Length" && method2 == "Length"
+            && std::abs(L + L2) < Precision::Confusion())
+        return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Length too small"));
 
     Part::Feature* obj = nullptr;
     TopoShape sketchshape;
@@ -404,8 +451,7 @@ App::DocumentObjectExecReturn *FeatureExtrude::buildExtrusion(ExtrudeOptions opt
 
         TopoShape prism(0,getDocument()->getStringHasher());
 
-        if (method == "UpToFirst" || method == "UpToLast" || method == "UpToFace"
-                || method == "UpToShape") {
+        if (upTo && !twoSides && !symmetric) {
             // Note: This will return an unlimited planar face if support is a datum plane
             TopoShape supportface = getSupportFace();
             supportface.move(invObjLoc);
@@ -417,52 +463,8 @@ App::DocumentObjectExecReturn *FeatureExtrude::buildExtrusion(ExtrudeOptions opt
             // shape (upstream 309dd6e30d), several faces, or the base when
             // nothing is chosen
             TopoShape upToFace;
-            int faceCount = 1;
-            if (method == "UpToFace") {
-                getUpToFaceFromLinkSub(upToFace, UpToFace);
-                upToFace.move(invObjLoc);
-            }
-            else if (method == "UpToShape") {
-                if (UpToShape.getSubListValues().empty()) {
-                    if (base.isNull())
-                        return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception",
-                            "Extrude: Up to shape: no shape selected, and no base to extrude up to"));
-                    upToFace = base;
-                    faceCount = 0;
-                }
-                else {
-                    faceCount = getUpToShapeFromLinkSubList(upToFace, UpToShape);
-                    upToFace.move(invObjLoc);
-                }
-            }
-            if (faceCount == 1) {
-                getUpToFace(upToFace, base, sketchshape, method, dir);
-                addOffsetToFace(upToFace, dir, Offset.getValue());
-            }
-            else {
-                if (std::fabs(Offset.getValue()) > Precision::Confusion())
-                    return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception",
-                        "Extrude: Can only offset one face"));
-                // Several faces, a whole shape: without the face furthest along
-                // the extrusion the shell is open, and the prism stops at the
-                // nearest (upstream 8b9f5bdc4f). Given all of them it ran on.
-                std::vector<Part::cutFaces> cfaces = Part::findAllFacesCutBy(upToFace, sketchshape, dir);
-                if (cfaces.empty())
-                    cfaces = Part::findAllFacesCutBy(upToFace, sketchshape, -dir);
-                if (cfaces.size() > 1) {
-                    auto farFace = &cfaces.front();
-                    for (auto &cface : cfaces) {
-                        if (cface.distsq > farFace->distsq)
-                            farFace = &cface;
-                    }
-                    std::vector<TopoShape> faces;
-                    for (auto &face : upToFace.getSubTopoShapes(TopAbs_FACE)) {
-                        if (!face.getShape().IsSame(farFace->face.getShape()))
-                            faces.push_back(face);
-                    }
-                    upToFace = TopoShape().makECompound(faces);
-                }
-            }
+            UpToSide side{method, UpToFace, UpToShape, Offset.getValue()};
+            int faceCount = getUpToShape(upToFace, side, base, sketchshape, invObjLoc, dir);
 
             if (!supportface.hasSubShape(TopAbs_WIRE))
                 supportface = TopoShape();
@@ -509,12 +511,62 @@ App::DocumentObjectExecReturn *FeatureExtrude::buildExtrusion(ExtrudeOptions opt
                         dir, TopoShape::PrismMode::None, CheckUpToFaceLimits.getValue());
             }
             catch (const Base::Exception &) {
-                if (method == "UpToShape" && faceCount > 1)
+                if (faceCount > 1)
                     return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception",
                         "Unable to reach the selected shape, please select faces"));
                 throw;
             }
+        } else if (upTo) {
+            // A side up to a shape with another side: each is made on its own
+            // and the two combined. Symmetric, the other side is the first
+            // one's mirror in the profile plane (upstream a346c266e7).
+            TopoShape supportface = getSupportFace();
+            supportface.move(invObjLoc);
+            if (!supportface.hasSubShape(TopAbs_WIRE))
+                supportface = TopoShape();
+
+            gp_Dir dir1 = dir;
+            if (Reversed.getValue() && !symmetric)
+                dir1.Reverse();
+
+            std::vector<TopoShape> sides;
+            UpToSide side1{method, UpToFace, UpToShape, Offset.getValue()};
+            TopoShape prism1 = makeSide(side1, base, sketchshape, supportface, invObjLoc,
+                                        dir1, L, TaperAngle.getValue(),
+                                        TaperInnerAngle.getValue(), makeface);
+            if (!prism1.isNull())
+                sides.push_back(prism1);
+            if (symmetric) {
+                if (!prism1.isNull()) {
+                    gp_Dir normal(SketchVector.x, SketchVector.y, SketchVector.z);
+                    normal.Transform(invTrsf);
+                    Base::Vector3d center = sketchshape.getBoundBox().GetCenter();
+                    sides.push_back(prism1.makEMirror(
+                                gp_Ax2(gp_Pnt(center.x, center.y, center.z), normal)));
+                }
+            }
+            else {
+                UpToSide side2{method2, UpToFace2, UpToShape2, Offset2.getValue()};
+                TopoShape prism2 = makeSide(side2, base, sketchshape, supportface, invObjLoc,
+                                            dir1.Reversed(), L2, TaperAngleRev.getValue(),
+                                            TaperInnerAngleRev.getValue(), makeface);
+                if (!prism2.isNull())
+                    sides.push_back(prism2);
+            }
+            if (sides.empty())
+                return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception",
+                            "No extrusion geometry was generated"));
+            prism = xorSides(sides, getDocument()->getStringHasher());
         } else {
+            // Through all tapers over the through-all length, as the untapered
+            // prism in generatePrism() runs. It took Length, so a tapered
+            // pocket switched to ThroughAll cut only Length deep (upstream
+            // d52260b2f4 lets the taper be set there, too).
+            if (method == "ThroughAll")
+                L = getThroughAllLength();
+            if (method2 == "ThroughAll")
+                L2 = getThroughAllLength();
+
             Part::ExtrusionHelper::Parameters params;
             params.dir = dir;
             params.solid = makeface;
@@ -523,13 +575,7 @@ App::DocumentObjectExecReturn *FeatureExtrude::buildExtrusion(ExtrudeOptions opt
             params.innerTaperAngleFwd = this->TaperInnerAngle.getValue() * M_PI / 180.0;
             params.innerTaperAngleRev = this->TaperInnerAngleRev.getValue() * M_PI / 180.0;
             params.linearize = this->Linearize.getValue();
-            // Through all tapers over the through-all length, as the untapered
-            // prism in generatePrism() runs. It took Length, so a tapered
-            // pocket switched to ThroughAll cut only Length deep (upstream
-            // d52260b2f4 lets the taper be set there, too).
-            if (method == "ThroughAll")
-                L = getThroughAllLength();
-            if (L2 == 0.0 && Midplane.getValue()) {
+            if (symmetric) {
                 params.lengthFwd = L/2;
                 params.lengthRev = L/2;
                 if (params.taperAngleRev == 0.0)
@@ -560,10 +606,10 @@ App::DocumentObjectExecReturn *FeatureExtrude::buildExtrusion(ExtrudeOptions opt
                 prism.makECompound(drafts, nullptr, false);
 
             } else
-                generatePrism(prism, sketchshape, method, dir, L, L2,
-                            Midplane.getValue(), Reversed.getValue());
+                generatePrism(prism, sketchshape, dir, L, L2, twoSides,
+                              symmetric, Reversed.getValue());
         }
-        
+
         // set the additive shape property for later usage in e.g. pattern
         prism = refineShapeIfActive(prism);
         this->AddSubShape.setValue(prism);
@@ -573,7 +619,7 @@ App::DocumentObjectExecReturn *FeatureExtrude::buildExtrusion(ExtrudeOptions opt
         this->Shape.setValue(makeBoolean(base, prism));
 
         // eventually disable some settings that are not valid for the current method
-        updateProperties(method);
+        updateProperties();
 
         return App::DocumentObject::StdReturn;
     }
@@ -589,6 +635,210 @@ App::DocumentObjectExecReturn *FeatureExtrude::buildExtrusion(ExtrudeOptions opt
         return new App::DocumentObjectExecReturn(e.what());
     }
 
+}
+
+int FeatureExtrude::getUpToShape(TopoShape &upToShape,
+                                 const UpToSide &side,
+                                 const TopoShape &base,
+                                 const TopoShape &sketchshape,
+                                 const TopLoc_Location &invObjLoc,
+                                 gp_Dir &dir)
+{
+    int faceCount = 1;
+    // UpToFace holds a single face, as it always did; anything else is in
+    // UpToShape, which the panel edits for both types
+    if (side.method == "UpToFace" && side.upToFace.getValue()) {
+        getUpToFaceFromLinkSub(upToShape, side.upToFace);
+        upToShape.move(invObjLoc);
+    }
+    else if (side.method == "UpToFace" || side.method == "UpToShape") {
+        if (side.upToShape.getSubListValues().empty()) {
+            if (side.method == "UpToFace")
+                THROWM(Base::ValueError, "SketchBased: No face selected")
+            if (base.isNull())
+                THROWM(Base::ValueError,
+                       "Extrude: Up to shape: no shape selected, and no base to extrude up to")
+            upToShape = base;
+            faceCount = 0;
+        }
+        else {
+            faceCount = getUpToShapeFromLinkSubList(upToShape, side.upToShape);
+            upToShape.move(invObjLoc);
+        }
+    }
+    if (faceCount == 1) {
+        getUpToFace(upToShape, base, sketchshape, side.method, dir);
+        addOffsetToFace(upToShape, dir, side.offset);
+        return faceCount;
+    }
+    if (std::fabs(side.offset) > Precision::Confusion())
+        THROWM(Base::ValueError, "Extrude: Can only offset one face")
+    // Several faces, a whole shape: without the face furthest along the
+    // extrusion the shell is open, and the prism stops at the nearest
+    // (upstream 8b9f5bdc4f). Given all of them it ran on.
+    std::vector<Part::cutFaces> cfaces = Part::findAllFacesCutBy(upToShape, sketchshape, dir);
+    if (cfaces.empty()) {
+        // The shape is behind: extrude towards it, as a single face does in
+        // getUpToFace() (upstream 17ac7dab3d). Only looking the other way
+        // left the prism running away from it.
+        dir.Reverse();
+        cfaces = Part::findAllFacesCutBy(upToShape, sketchshape, dir);
+    }
+    if (cfaces.size() > 1) {
+        auto farFace = &cfaces.front();
+        for (auto &cface : cfaces) {
+            if (cface.distsq > farFace->distsq)
+                farFace = &cface;
+        }
+        std::vector<TopoShape> faces;
+        for (auto &face : upToShape.getSubTopoShapes(TopAbs_FACE)) {
+            if (!face.getShape().IsSame(farFace->face.getShape()))
+                faces.push_back(face);
+        }
+        // One face left is given as the face: a compound of one face does not
+        // stop the prism, which ran through all
+        upToShape = faces.size() == 1 ? faces.front() : TopoShape().makECompound(faces);
+    }
+    return faceCount;
+}
+
+TopoShape FeatureExtrude::makeSide(const UpToSide &side,
+                                   const TopoShape &base,
+                                   const TopoShape &sketchshape,
+                                   const TopoShape &supportface,
+                                   const TopLoc_Location &invObjLoc,
+                                   gp_Dir dir,
+                                   double length,
+                                   double taperAngle,
+                                   double innerTaperAngle,
+                                   bool makeface)
+{
+    TopoShape prism(0,getDocument()->getStringHasher());
+    if (isUpToMethod(side.method)) {
+        TopoShape upToShape;
+        int faceCount = getUpToShape(upToShape, side, base, sketchshape, invObjLoc, dir);
+        try {
+            prism.makEPrismUntil(base, sketchshape, supportface, upToShape,
+                    dir, TopoShape::PrismMode::None, CheckUpToFaceLimits.getValue());
+        }
+        catch (const Base::Exception &) {
+            if (faceCount > 1)
+                THROWM(Base::RuntimeError, "Unable to reach the selected shape, please select faces")
+            throw;
+        }
+        return prism;
+    }
+
+    if (side.method == "ThroughAll")
+        length = getThroughAllLength();
+    // A side of no length adds nothing
+    if (std::fabs(length) < Precision::Confusion())
+        return TopoShape();
+
+    Part::ExtrusionHelper::Parameters params;
+    params.dir = dir;
+    params.solid = makeface;
+    params.lengthFwd = length;
+    params.lengthRev = 0.0;
+    params.taperAngleFwd = taperAngle * M_PI / 180.0;
+    params.taperAngleRev = 0.0;
+    params.innerTaperAngleFwd = innerTaperAngle * M_PI / 180.0;
+    params.innerTaperAngleRev = 0.0;
+    params.linearize = this->Linearize.getValue();
+    if (std::fabs(params.taperAngleFwd) < Precision::Angular()
+            && std::fabs(params.innerTaperAngleFwd) < Precision::Angular()) {
+        try {
+            prism.makEPrism(sketchshape, length * gp_Vec(dir));
+        } catch (Standard_Failure &) {
+            THROWM(Base::RuntimeError, "FeatureExtrusion: Length: Could not extrude the sketch!")
+        }
+        return prism;
+    }
+    if (fabs(params.taperAngleFwd) > M_PI * 0.5 - Precision::Angular())
+        THROWM(Base::ValueError, "Magnitude of taper angle matches or exceeds 90 degrees")
+    if (fabs(params.innerTaperAngleFwd) > M_PI * 0.5 - Precision::Angular())
+        THROWM(Base::ValueError, "Magnitude of inner taper angle matches or exceeds 90 degrees")
+    std::vector<TopoShape> drafts;
+    params.usepipe = this->UsePipeForDraft.getValue();
+    Part::ExtrusionHelper::makeDraft(params, sketchshape, drafts, getDocument()->getStringHasher());
+    if (drafts.empty())
+        THROWM(Base::RuntimeError, "Padding with draft angle failed")
+    prism.makECompound(drafts, nullptr, false);
+    return prism;
+}
+
+bool FeatureExtrude::isSingleUpToFace(const App::PropertyLinkSubList &shape)
+{
+    const auto &objs = shape.getValues();
+    if (objs.size() != 1 || !objs.front())
+        return false;
+    const auto &subs = shape.getSubValues();
+    if (!isWholeObject(subs))
+        return true;
+    return isSingleFaceObject(objs.front());
+}
+
+void FeatureExtrude::syncUpToShape(const App::PropertyLinkSub &face, App::PropertyLinkSubList &shape)
+{
+    auto obj = face.getValue();
+    if (!obj) {
+        if (shape.getSize())
+            shape.setValues(std::vector<App::DocumentObject*>(), std::vector<std::string>());
+        return;
+    }
+    std::vector<std::string> subs = face.getSubValues();
+    // UpToFace on a whole object of several faces has always meant its first
+    // face (getUpToFace() takes it), where UpToShape means them all
+    if (isWholeObject(subs) && !isSingleFaceObject(obj))
+        subs = {"Face1"};
+    shape.setValue(obj, subs);
+}
+
+void FeatureExtrude::syncUpToFace(const App::PropertyLinkSubList &shape,
+                                  App::PropertyLinkSub &face,
+                                  App::PropertyEnumeration &type)
+{
+    if (isSingleUpToFace(shape)) {
+        face.setValue(shape.getValues().front(), shape.getSubValues());
+        if (strcmp(type.getValueAsString(), "UpToShape") == 0)
+            type.setValue("UpToFace");
+        return;
+    }
+    if (face.getValue())
+        face.setValue(nullptr);
+    if (shape.getSize() && strcmp(type.getValueAsString(), "UpToFace") == 0)
+        type.setValue("UpToShape");
+}
+
+void FeatureExtrude::onDocumentRestored()
+{
+    {
+        Base::StateLocker guard(syncingSides);
+        if (strcmp(Type.getValueAsString(), "TwoLengths") == 0) {
+            Type.setValue("Length");
+            Type2.setValue("Length");
+            SideType.setValue("Two sides");
+        }
+        else if (Midplane.getValue() && strcmp(SideType.getValueAsString(), "One side") == 0) {
+            // Midplane was read only for the lengths: an up-to feature built
+            // one side, whatever it said
+            std::string method(Type.getValueAsString());
+            if (method == "Length" || method == "ThroughAll")
+                SideType.setValue("Symmetric");
+        }
+        if (strcmp(Type2.getValueAsString(), "TwoLengths") == 0)
+            Type2.setValue("Length");
+        // Midplane is Symmetric's alias; upstream saves it false
+        bool symmetric = strcmp(SideType.getValueAsString(), "Symmetric") == 0;
+        if (Midplane.getValue() != symmetric)
+            Midplane.setValue(symmetric);
+        // A file from before the panel edited UpToShape has its face in UpToFace
+        if (UpToFace.getValue() && !UpToShape.getSize())
+            syncUpToShape(UpToFace, UpToShape);
+        if (UpToFace2.getValue() && !UpToShape2.getSize())
+            syncUpToShape(UpToFace2, UpToShape2);
+    }
+    ProfileBased::onDocumentRestored();
 }
 
 void FeatureExtrude::handleChangedPropertyName(Base::XMLReader &reader, const char * TypeName, const char *Name)
@@ -611,6 +861,45 @@ void FeatureExtrude::handleChangedPropertyName(Base::XMLReader &reader, const ch
 
 void FeatureExtrude::onChanged(const App::Property *prop)
 {
+    // Keep the aliases in step: Midplane with Symmetric, TwoLengths as two
+    // sides, UpToFace with UpToShape. Undo and redo bring back values that
+    // were in step already.
+    if (!isRestoring() && !syncingSides
+            && !(getDocument() && getDocument()->isPerformingTransaction())) {
+        Base::StateLocker guard(syncingSides);
+        if (prop == &Midplane) {
+            if (Midplane.getValue())
+                SideType.setValue("Symmetric");
+            else if (strcmp(SideType.getValueAsString(), "Symmetric") == 0)
+                SideType.setValue("One side");
+        }
+        else if (prop == &SideType) {
+            bool symmetric = strcmp(SideType.getValueAsString(), "Symmetric") == 0;
+            if (Midplane.getValue() != symmetric)
+                Midplane.setValue(symmetric);
+        }
+        else if (prop == &Type) {
+            if (strcmp(Type.getValueAsString(), "TwoLengths") == 0) {
+                Type.setValue("Length");
+                Type2.setValue("Length");
+                SideType.setValue("Two sides");
+                Midplane.setValue(false);
+            }
+        }
+        else if (prop == &Type2) {
+            if (strcmp(Type2.getValueAsString(), "TwoLengths") == 0)
+                Type2.setValue("Length");
+        }
+        else if (prop == &UpToFace)
+            syncUpToShape(UpToFace, UpToShape);
+        else if (prop == &UpToFace2)
+            syncUpToShape(UpToFace2, UpToShape2);
+        else if (prop == &UpToShape)
+            syncUpToFace(UpToShape, UpToFace, Type);
+        else if (prop == &UpToShape2)
+            syncUpToFace(UpToShape2, UpToFace2, Type2);
+    }
+
     if (prop == &TaperAngle
             || prop == &TaperAngleRev
             || prop == &AutoTaperInnerAngle)
