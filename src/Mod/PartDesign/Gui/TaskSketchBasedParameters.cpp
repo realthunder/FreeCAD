@@ -33,10 +33,15 @@
 # include <QTextStream>
 # include <QListWidget>
 # include <QMessageBox>
+# include <QPointer>
 # include <QScrollBar>
+# include <QTimer>
 # include <Precision.hxx>
 #endif
 
+#include <QHBoxLayout>
+#include <QHeaderView>
+#include <QTableWidget>
 #include <boost/algorithm/string/predicate.hpp>
 
 #include <Base/Tools.h>
@@ -88,6 +93,177 @@ Q_DECLARE_METATYPE(SubInfo)
 
 /* TRANSLATOR PartDesignGui::TaskSketchBasedParameters */
 
+namespace PartDesignGui {
+
+/** The table of LinkSubWidget, its object column frozen
+ *
+ * The frozen column is Qt's: a second view laid over the table's left edge,
+ * sharing its model, selection and delegate, showing only column 0. It keeps
+ * its width, row heights and vertical scroll in step with the table.
+ */
+class LinkSubTable : public QTableWidget
+{
+public:
+    explicit LinkSubTable(QWidget *parent)
+        : QTableWidget(parent)
+        , frozen(new QTableView(this))
+    {
+        for (QTableView *view : {static_cast<QTableView*>(this), frozen}) {
+            view->horizontalHeader()->hide();
+            view->verticalHeader()->hide();
+            view->verticalHeader()->setMinimumSectionSize(1);
+            view->setShowGrid(false);
+            view->setWordWrap(false);
+            view->setMouseTracking(true);
+            view->setSelectionMode(QAbstractItemView::SingleSelection);
+            view->setEditTriggers(QAbstractItemView::DoubleClicked
+                                  | QAbstractItemView::EditKeyPressed);
+            view->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
+        }
+        setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+        setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+
+        frozen->setModel(model());
+        frozen->setSelectionModel(selectionModel());
+        frozen->setFocusProxy(this);
+        frozen->setFrameShape(QFrame::NoFrame);
+        frozen->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        frozen->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        viewport()->stackUnder(frozen);
+
+        connect(horizontalHeader(), &QHeaderView::sectionResized,
+                this, [this](int logical, int, int size) {
+            if (logical == 0) {
+                frozen->setColumnWidth(0, size);
+                updateFrozenGeometry();
+            }
+        });
+        connect(verticalHeader(), &QHeaderView::sectionResized,
+                this, [this](int logical, int, int size) {
+            frozen->setRowHeight(logical, size);
+        });
+        connect(frozen->verticalScrollBar(), &QAbstractSlider::valueChanged,
+                verticalScrollBar(), &QAbstractSlider::setValue);
+        connect(verticalScrollBar(), &QAbstractSlider::valueChanged,
+                frozen->verticalScrollBar(), &QAbstractSlider::setValue);
+    }
+
+    QTableView *frozenView() const
+    {
+        return frozen;
+    }
+
+    /// Fit the columns to their text, and show only the object column in the
+    /// frozen view. Call after the rows are rebuilt.
+    void fitColumns(int padding)
+    {
+        resizeColumnsToContents();
+        for (int col = 0; col < columnCount(); ++col) {
+            setColumnWidth(col, columnWidth(col) + padding);
+            frozen->setColumnHidden(col, col != 0);
+        }
+        if (columnCount())
+            frozen->setColumnWidth(0, columnWidth(0));
+        for (int row = 0; row < rowCount(); ++row)
+            frozen->setRowHeight(row, rowHeight(row));
+        updateFrozenGeometry();
+    }
+
+protected:
+    void resizeEvent(QResizeEvent *event) override
+    {
+        QTableWidget::resizeEvent(event);
+        updateFrozenGeometry();
+    }
+
+    QModelIndex moveCursor(CursorAction cursorAction, Qt::KeyboardModifiers modifiers) override
+    {
+        QModelIndex current = QTableWidget::moveCursor(cursorAction, modifiers);
+        // Keep the element the cursor lands on out from under the frozen column
+        if (cursorAction == MoveLeft && current.column() > 0
+                && visualRect(current).topLeft().x() < frozen->columnWidth(0)) {
+            horizontalScrollBar()->setValue(horizontalScrollBar()->value()
+                    + visualRect(current).topLeft().x() - frozen->columnWidth(0));
+        }
+        return current;
+    }
+
+    void scrollTo(const QModelIndex &index, ScrollHint hint = EnsureVisible) override
+    {
+        if (index.column() > 0) {
+            QTableWidget::scrollTo(index, hint);
+            return;
+        }
+        // The object column never scrolls sideways; only bring its row in
+        int value = horizontalScrollBar()->value();
+        QTableWidget::scrollTo(index, hint);
+        horizontalScrollBar()->setValue(value);
+    }
+
+private:
+    void updateFrozenGeometry()
+    {
+        QRect rect = viewport()->geometry();
+        frozen->setGeometry(rect.x(), rect.y(),
+                            columnCount() ? columnWidth(0) : 0, rect.height());
+    }
+
+private:
+    QTableView *frozen;
+};
+
+} // namespace PartDesignGui
+
+namespace {
+
+using LinkRows = std::vector<std::pair<App::DocumentObject*, std::vector<std::string>>>;
+
+void writeLinkRows(App::PropertyLinkBase &prop, LinkRows &&rows)
+{
+    if (auto propLink = Base::freecad_dynamic_cast<App::PropertyLinkSub>(&prop)) {
+        if (rows.empty()) {
+            propLink->setValue(nullptr);
+            return;
+        }
+        auto &row = rows.front();
+        if (row.second.empty())
+            row.second.emplace_back();
+        propLink->setValue(row.first, std::move(row.second));
+    }
+    else if (auto propList = Base::freecad_dynamic_cast<App::PropertyLinkSubList>(&prop)) {
+        propList->setSubListValues(rows);
+    }
+}
+
+/// Merge a picked (and imported) element into the rows: an element of a
+/// listed object joins its row, another object starts one. A whole object
+/// does not replace the elements already chosen of it; an element replaces
+/// the whole object.
+bool mergeLinkRow(LinkRows &rows, const App::SubObjectT &objT)
+{
+    auto obj = objT.getSubObject();
+    if (!obj)
+        return false;
+    std::string element = objT.getOldElementName();
+    auto it = std::find_if(rows.begin(), rows.end(),
+                           [obj](const auto &row) { return row.first == obj; });
+    if (it == rows.end()) {
+        rows.emplace_back(obj, std::vector<std::string>());
+        if (element.size())
+            rows.back().second.push_back(std::move(element));
+        return true;
+    }
+    if (element.empty())
+        return false;
+    auto &subs = it->second;
+    if (std::find(subs.begin(), subs.end(), element) != subs.end())
+        return false;
+    subs.push_back(std::move(element));
+    return true;
+}
+
+} // anonymous namespace
+
 LinkSubWidgetDelegate::LinkSubWidgetDelegate(QObject *parent) : QItemDelegate(parent)
 {
 }
@@ -103,10 +279,12 @@ QWidget *LinkSubWidgetDelegate::createEditor(QWidget *parent, const QStyleOption
     if (!prop)
         return nullptr;
     App::ObjectIdentifier path(*prop);
-    if (obj->getExpression(path).expression && index.row() != 0)
-        return nullptr;
-    if (index.row() != 0)
+    bool hasExpression = !!obj->getExpression(path).expression;
+    if (index.column() != 0 || owner->multiObject) {
+        if (hasExpression)
+            return nullptr;
         return new QLineEdit(parent);
+    }
     auto editor = new Gui::ExpLineEdit(parent);
     editor->bind(path);
     return editor;
@@ -120,21 +298,14 @@ void LinkSubWidgetDelegate::setEditorData(QWidget *editor, const QModelIndex &in
     auto owner = qobject_cast<LinkSubWidget*>(this->parent());
     if (!owner)
         return;
-    App::DocumentObject *obj;
-    auto prop = owner->getProperty(&obj);
-    if (!prop)
+    auto rows = owner->getRows();
+    if (index.row() >= (int)rows.size() || !rows[index.row()].first)
         return;
-    auto link = prop->getValue();
-    if (!link)
-        return;
-
-    if (index.row() == 0) {
-        lineEdit->setText(QString::fromUtf8(link->getNameInDocument()));
-        return;
-    }
-    const auto &subs = prop->getSubValues(false);
-    if (index.row()-1 < (int)subs.size())
-        lineEdit->setText(QString::fromUtf8(subs[index.row()-1].c_str()));
+    const auto &row = rows[index.row()];
+    if (index.column() == 0)
+        lineEdit->setText(QString::fromUtf8(row.first->getNameInDocument()));
+    else if (index.column() - 1 < (int)row.second.size())
+        lineEdit->setText(QString::fromUtf8(row.second[index.column()-1].c_str()));
 }
 
 void LinkSubWidgetDelegate::setModelData(QWidget *editor, QAbstractItemModel *model,
@@ -155,50 +326,61 @@ void LinkSubWidgetDelegate::setModelData(QWidget *editor, QAbstractItemModel *mo
     if (obj->getExpression(path).expression)
         return;
 
-    auto item = owner->listWidget->item(0);
-    if (!item)
+    auto rows = owner->getRows();
+    if (index.row() >= (int)rows.size())
         return;
-    App::DocumentObject *link = qvariant_cast<App::SubObjectT>(item->data(Qt::UserRole)).getSubObject();
-    std::vector<std::string> subs;
-    for (int i=1;;++i) {
-        auto item = owner->listWidget->item(i);
-        if (!item)
-            break;
-        subs.push_back(item->text().toUtf8().constData());
-    }
-    if (index.row() == 0) {
+    auto &row = rows[index.row()];
+    if (index.column() == 0) {
         auto newLink = obj->getDocument()->getObject(lineEdit->text().toUtf8().constData());
-        if (!newLink)
+        if (!newLink) {
             QMessageBox::critical(Gui::getMainWindow(),
                     QObject::tr("Error"), QObject::tr("Object not found"));
-        link = newLink;
-    } else if (index.row() - 1 < (int)subs.size())
-        subs[index.row()-1] = lineEdit->text().toUtf8().constData();
-
-    if (!link)
+            return;
+        }
+        row.first = newLink;
+    } else if (index.column() - 1 < (int)row.second.size())
+        row.second[index.column()-1] = lineEdit->text().toUtf8().constData();
+    else
         return;
 
-    owner->parentTask->setupTransaction();
-    prop->setValue(link, std::move(subs));
-    owner->refresh();
-    owner->parentTask->recomputeFeature();
+    if (!row.first)
+        return;
+    // Write once the edit is over: setRows() rebuilds the table, which would
+    // pull the editor from under the view still committing it
+    QPointer<LinkSubWidget> ownerPtr(owner);
+    QTimer::singleShot(0, owner, [ownerPtr, rows = std::move(rows)]() mutable {
+        if (ownerPtr)
+            ownerPtr->setRows(std::move(rows));
+    });
 }
 
 LinkSubWidget::LinkSubWidget(TaskSketchBasedParameters *parent,
                              const QString &title,
                              App::PropertyLinkSub &prop,
-                             bool singleElement,
-                             QPushButton *_button,
-                             QListWidget *_listWidget,
-                             QPushButton *_clearButton)
+                             bool singleElement)
     :QWidget(parent)
     ,parentTask(parent)
     ,selectionMode(TaskSketchBasedParameters::SelectionMode::refAdd)
     ,linkProp(&prop)
     ,singleElement(singleElement)
 {
+    init(title);
+}
 
+LinkSubWidget::LinkSubWidget(TaskSketchBasedParameters *parent,
+                             const QString &title,
+                             App::PropertyLinkSubList &prop)
+    :QWidget(parent)
+    ,parentTask(parent)
+    ,selectionMode(TaskSketchBasedParameters::SelectionMode::refAdd)
+    ,linkProp(&prop)
+    ,multiObject(true)
+{
+    init(title);
+}
 
+void LinkSubWidget::init(const QString &title)
+{
     selectionConf.setFlag(AllowSelection::EDGE);
     selectionConf.setFlag(AllowSelection::FACE);
     selectionConf.setFlag(AllowSelection::PLANAR, false);
@@ -206,67 +388,46 @@ LinkSubWidget::LinkSubWidget(TaskSketchBasedParameters *parent,
     selectionConf.setFlag(AllowSelection::WIRE);
     selectionConf.setFlag(AllowSelection::POINT);
 
-    if (_button && _listWidget) {
-        button = _button;
-        listWidget = _listWidget;
-        clearButton = _clearButton;
-        setVisible(false);
-    }
-    else {
-        QHBoxLayout *hlayout = new QHBoxLayout();
-        hlayout->setSpacing(2);
-        setLayout(hlayout);
-        hlayout->setContentsMargins(0,0,0,0);
-        setContentsMargins(0,0,0,0);
-        button = new QPushButton(this);
-        hlayout->addWidget(button);
+    QHBoxLayout *hlayout = new QHBoxLayout();
+    hlayout->setSpacing(2);
+    setLayout(hlayout);
+    hlayout->setContentsMargins(0,0,0,0);
+    setContentsMargins(0,0,0,0);
+    button = new QPushButton(this);
+    hlayout->addWidget(button, 0, Qt::AlignTop);
 
-        listWidget = new QListWidget(this);
-        hlayout->addWidget(listWidget);
+    table = new LinkSubTable(this);
+    hlayout->addWidget(table);
 
-        clearButton = new QPushButton(this);
-        hlayout->addWidget(clearButton);
-    }
+    clearButton = new QPushButton(this);
+    hlayout->addWidget(clearButton, 0, Qt::AlignTop);
+
     button->setText(title);
     button->setCheckable(true);
     QObject::connect(button, &QPushButton::clicked, [this](bool checked) {onButton(checked);});
     if (button->toolTip().isEmpty())
         button->setToolTip(tr("Click to enter selection mode"));
 
-    listWidget->setItemDelegate(new LinkSubWidgetDelegate(this));
-    listWidget->setViewMode(QListView::IconMode);
-    listWidget->setWrapping(false);
-    listWidget->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    listWidget->setMouseTracking(true);
-    listWidget->setSpacing(5);
-    listWidget->horizontalScrollBar()->installEventFilter(this);
-    QObject::connect(listWidget, &QListWidget::itemEntered, [this](QListWidgetItem *item) {
-        App::DocumentObject *obj;
-        auto prop = getProperty(&obj);
-        if (!prop)
-            return;
-        if (auto link = prop->getValue()) {
-            if (item == listWidget->item(0))
-                PartDesignGui::highlightObjectOnTop(link);
-            else
-                PartDesignGui::highlightObjectOnTop(App::SubObjectT(link, item->text().toUtf8().constData()));
-        }
-    });
-    listWidget->installEventFilter(this);
-    setListWidgetHeight(listWidget->horizontalScrollBar()->isVisible());
-
     QAction* remove = new QAction(tr("Remove"), this);
     remove->setShortcut(Gui::QtTools::deleteKeySequence());
-    listWidget->addAction(remove);
-    listWidget->setContextMenuPolicy(Qt::ActionsContextMenu);
     QObject::connect(remove, &QAction::triggered, [this](){onDelete();});
-
-    if (clearButton) {
-        clearButton->setIcon(Gui::BitmapFactory().pixmap("edit-cleartext"));
-        if (clearButton->toolTip().isEmpty())
-            clearButton->setToolTip(tr("Temporary clear link references for new selection"));
-        QObject::connect(clearButton, &QPushButton::clicked, [this]() {onClear();});
+    for (QTableView *view : {static_cast<QTableView*>(table), table->frozenView()}) {
+        // A delegate each: one shared would send each view the other's
+        // commits ("commitData called with an editor that does not belong
+        // to this view")
+        view->setItemDelegate(new LinkSubWidgetDelegate(this));
+        QObject::connect(view, &QAbstractItemView::entered,
+                         [this](const QModelIndex &index) {onItemEntered(index);});
+        view->installEventFilter(this);
+        view->addAction(remove);
+        view->setContextMenuPolicy(Qt::ActionsContextMenu);
     }
+    table->horizontalScrollBar()->installEventFilter(this);
+
+    clearButton->setIcon(Gui::BitmapFactory().pixmap("edit-cleartext"));
+    if (clearButton->toolTip().isEmpty())
+        clearButton->setToolTip(tr("Temporary clear link references for new selection"));
+    QObject::connect(clearButton, &QPushButton::clicked, [this]() {onClear();});
 
     if (auto prop = getProperty()) {
         conn = prop->signalChanged.connect([this](const App::Property &) {toggleShowOnTop();});
@@ -282,6 +443,21 @@ LinkSubWidget::LinkSubWidget(TaskSketchBasedParameters *parent,
             button->setChecked(false);
         }
     });
+
+    updateHeight();
+}
+
+App::PropertyLinkBase *LinkSubWidget::getProperty(App::DocumentObject **pObj) const
+{
+    auto obj = linkProp.getObject();
+    if (!obj)
+        return nullptr;
+    if (pObj)
+        *pObj = obj;
+    auto prop = obj->getPropertyByName(linkProp.getPropertyName().c_str());
+    if (multiObject)
+        return Base::freecad_dynamic_cast<App::PropertyLinkSubList>(prop);
+    return Base::freecad_dynamic_cast<App::PropertyLinkSub>(prop);
 }
 
 void LinkSubWidget::onSelectionChanged(const Gui::SelectionChanges& msg)
@@ -300,29 +476,63 @@ void LinkSubWidget::setSelectionConfig(const AllowSelectionFlags &conf)
     selectionConf = conf;
 }
 
+LinkSubWidget::LinkRows LinkSubWidget::getRows() const
+{
+    LinkRows rows;
+    for (int row = 0; row < table->rowCount(); ++row) {
+        auto item = table->item(row, 0);
+        if (!item)
+            continue;
+        rows.emplace_back(qvariant_cast<App::SubObjectT>(item->data(Qt::UserRole)).getSubObject(),
+                          std::vector<std::string>());
+        for (int col = 1; col < table->columnCount(); ++col) {
+            item = table->item(row, col);
+            if (!item || !(item->flags() & Qt::ItemIsEnabled))
+                break;
+            rows.back().second.emplace_back(item->text().toUtf8().constData());
+        }
+    }
+    return rows;
+}
+
+bool LinkSubWidget::setRows(LinkRows &&rows)
+{
+    App::DocumentObject *obj;
+    auto prop = getProperty(&obj);
+    if (!prop)
+        return false;
+    try {
+        parentTask->setupTransaction();
+        writeLinkRows(*prop, std::move(rows));
+        parentTask->recomputeFeature();
+    } catch (Base::Exception &e) {
+        e.ReportException();
+    }
+    refresh();
+    return true;
+}
+
 void LinkSubWidget::onDelete()
 {
-    auto item = listWidget->currentItem();
-    if (!item)
+    QModelIndex index = table->currentIndex();
+    if (!index.isValid())
         return;
-    auto firstItem = listWidget->item(0);
-    if (item == firstItem) {
-        onClear();
+    auto rows = getRows();
+    if (index.row() >= (int)rows.size())
         return;
-    }
-    if (auto link = qvariant_cast<App::SubObjectT>(firstItem->data(Qt::UserRole)).getSubObject()) {
-        delete item;
-        std::vector<App::SubObjectT> sobjs;
-        for (int i=1;;++i) {
-            item = listWidget->item(i);
-            if (!item)
-                break;
-            sobjs.emplace_back(link, item->text().toUtf8().constData());
+    if (index.column() == 0) {
+        if (!multiObject) {
+            onClear();
+            return;
         }
-        if (sobjs.empty())
-            sobjs.emplace_back(link, "");
-        setLinks(sobjs);
+        rows.erase(rows.begin() + index.row());
+    } else {
+        auto &subs = rows[index.row()].second;
+        if (index.column() - 1 >= (int)subs.size())
+            return;
+        subs.erase(subs.begin() + index.column() - 1);
     }
+    setRows(std::move(rows));
 }
 
 void LinkSubWidget::onButton(bool checked)
@@ -348,51 +558,74 @@ void LinkSubWidget::toggleShowOnTop(bool init)
 {
     auto vp = Base::freecad_dynamic_cast<Gui::ViewProviderDocumentObject>(
                 Gui::Application::Instance->getViewProvider(linkProp.getObject()));
-    PartDesignGui::toggleShowOnTop(vp, lastReference, linkProp.getPropertyName().c_str(), init);
+    PartDesignGui::toggleShowOnTop(vp, lastReferences, linkProp.getPropertyName().c_str(), init);
 }
 
 void LinkSubWidget::disableShowOnTop()
 {
     auto vp = Base::freecad_dynamic_cast<Gui::ViewProviderDocumentObject>(
                 Gui::Application::Instance->getViewProvider(linkProp.getObject()));
-    PartDesignGui::toggleShowOnTop(vp, lastReference, nullptr);
+    PartDesignGui::toggleShowOnTop(vp, lastReferences, nullptr);
 }
 
 void LinkSubWidget::onClear()
 {
-    if (!listWidget)
-        return;
-
     Gui::Selection().clearSelection();
-    listWidget->clear();
+    table->setRowCount(0);
+    table->setColumnCount(0);
+    table->fitColumns(0);
+    updateHeight();
     if (parentTask->getSelectionMode() != selectionMode)
         onButton(true);
 }
 
-void LinkSubWidget::setListWidgetHeight(bool expand)
+void LinkSubWidget::updateHeight()
 {
-    auto scrollbar = listWidget->horizontalScrollBar();
-    int height = button->sizeHint().height() + listWidget->frameWidth() + (expand?scrollbar->height():0);
-    listWidget->setMinimumHeight(height);
-    listWidget->setMaximumHeight(height);
+    int frame = table->frameWidth();
+    int rowHeight = std::max(button->sizeHint().height(),
+                             table->fontMetrics().height() + 2);
+    table->verticalHeader()->setDefaultSectionSize(rowHeight);
+    table->frozenView()->verticalHeader()->setDefaultSectionSize(rowHeight);
+    int rows = std::clamp(table->rowCount(), 1, maxVisibleRows);
+    auto scrollbar = table->horizontalScrollBar();
+    int height = rows * rowHeight + 2 * frame
+        + (scrollbar->isVisible() ? scrollbar->sizeHint().height() : 0);
+    table->setMinimumHeight(height);
+    table->setMaximumHeight(height);
+}
+
+void LinkSubWidget::onItemEntered(const QModelIndex &index)
+{
+    auto rows = getRows();
+    if (!index.isValid() || index.row() >= (int)rows.size())
+        return;
+    const auto &row = rows[index.row()];
+    if (!row.first)
+        return;
+    if (index.column() == 0)
+        PartDesignGui::highlightObjectOnTop(row.first);
+    else if (index.column() - 1 < (int)row.second.size())
+        PartDesignGui::highlightObjectOnTop(
+                App::SubObjectT(row.first, row.second[index.column()-1].c_str()));
 }
 
 bool LinkSubWidget::eventFilter(QObject *o, QEvent *ev)
 {
+    bool isView = o == table || o == table->frozenView();
     switch(ev->type()) {
     case QEvent::Show:
     case QEvent::Hide:
-        if (listWidget && o == listWidget->horizontalScrollBar())
-            setListWidgetHeight(ev->type() == QEvent::Show);
+        if (o == table->horizontalScrollBar())
+            updateHeight();
         break;
     case QEvent::Leave:
-        if (o == listWidget)
+        if (isView)
             Gui::Selection().rmvPreselect();
         break;
     case QEvent::ShortcutOverride:
     case QEvent::KeyPress: {
         QKeyEvent * kevent = static_cast<QKeyEvent*>(ev);
-        if (o == listWidget && kevent->modifiers() == Qt::NoModifier) {
+        if (isView && kevent->modifiers() == Qt::NoModifier) {
             if (kevent->matches(Gui::QtTools::deleteKeySequence())) {
                 kevent->accept();
                 if (ev->type() == QEvent::KeyPress)
@@ -407,6 +640,36 @@ bool LinkSubWidget::eventFilter(QObject *o, QEvent *ev)
     return false;
 }
 
+void LinkSubWidget::addRow(App::DocumentObject *link,
+                           const std::vector<std::string> &subs,
+                           bool hasExpression)
+{
+    auto linkColor = QApplication::palette().color(QPalette::Link);
+    auto makeItem = [&](const QString &text) {
+        auto item = new QTableWidgetItem(text);
+        item->setFlags(item->flags() | Qt::ItemIsEditable);
+        item->setTextAlignment(Qt::AlignCenter);
+        if (hasExpression)
+            item->setForeground(linkColor);
+        return item;
+    };
+
+    int row = table->rowCount();
+    table->setRowCount(row + 1);
+    if (table->columnCount() < (int)subs.size() + 1)
+        table->setColumnCount((int)subs.size() + 1);
+
+    App::SubObjectT linkT(link);
+    App::DocumentObject *owner = linkProp.getObject();
+    auto item = makeItem(QString::fromUtf8(linkT.getObjectFullName(
+                    owner ? owner->getDocument()->getName() : nullptr).c_str()));
+    item->setData(Qt::UserRole, QVariant::fromValue(linkT));
+    table->setItem(row, 0, item);
+    int col = 1;
+    for (const auto &sub : subs)
+        table->setItem(row, col++, makeItem(QString::fromUtf8(sub.c_str())));
+}
+
 void LinkSubWidget::refresh()
 {
     App::DocumentObject *obj;
@@ -415,74 +678,94 @@ void LinkSubWidget::refresh()
         linkInited = true;
         return;
     }
-    QSignalBlocker guard(listWidget);
-    listWidget->clear();
-    App::ObjectIdentifier path(*prop);
-    bool hasExpression = !!obj->getExpression(path).expression;
-    auto linkColor = QVariant::fromValue(QApplication::palette().color(QPalette::Link));
-    if (auto link = prop->getValue()) {
-        App::SubObjectT linkT(link);
-        auto item = new QListWidgetItem(QString::fromUtf8(
-                    linkT.getObjectFullName(obj->getDocument()->getName()).c_str()));
-        listWidget->addItem(item);
-        item->setFlags(item->flags() | Qt::ItemIsEditable);
-        if (hasExpression)
-            item->setData(Qt::ForegroundRole, linkColor);
-        item->setData(Qt::UserRole, QVariant::fromValue(linkT));
 
-        std::vector<std::string> subnames;
-        for (const auto &sub : prop->getSubValues(false)) {
-            if (linkInited || !App::GeoFeature::hasMissingElement(sub.c_str()))
-                subnames.push_back(sub);
+    // Flatten the property: one entry per element, or per whole object
+    std::vector<App::DocumentObject*> links;
+    std::vector<std::string> subs;
+    std::vector<App::PropertyLinkBase::ShadowSub> shadows;
+    if (auto propLink = Base::freecad_dynamic_cast<App::PropertyLinkSub>(prop)) {
+        if (auto link = propLink->getValue()) {
+            subs = propLink->getSubValues(false);
+            shadows = propLink->getShadowSubs();
+            if (subs.empty())
+                subs.emplace_back();
+            links.assign(subs.size(), link);
         }
-        bool touched = false;
-        if (subnames.size() != prop->getSubValues().size()) {
-            subnames.clear();
-            const auto &subs = prop->getShadowSubs();
-            std::set<std::string> subSet;
-            std::string indexedName;
-            for (const auto &sub : subs) {
-                subSet.insert(sub.second);
-                subSet.insert(sub.first);
-            }
-            for (const auto &sub : subs) {
-                subnames.push_back(sub.second);
-                if (App::GeoFeature::hasMissingElement(sub.second.c_str())) {
-                    auto related = Part::Feature::getRelatedElements(link, sub.first.c_str());
-                    if (!related.empty()) {
-                        indexedName.clear();
-                        const auto &element = related.front();
-                        element.index.appendToStringBuffer(indexedName);
-                        FC_WARN("guess element reference in " << prop->getFullName() 
-                                << ": " << sub.second << " -> " << indexedName);
-                        if (subSet.insert(indexedName).second)
-                            subnames.back() = indexedName;
-                        else
-                            subnames.pop_back();
-                        touched = true;
-                    }
+    }
+    else if (auto propList = Base::freecad_dynamic_cast<App::PropertyLinkSubList>(prop)) {
+        links = propList->getValues();
+        subs = propList->getSubValues(false);
+        shadows = propList->getShadowSubs();
+    }
+    shadows.resize(subs.size());
+
+    // On first show, a reference to an element that is gone is replaced by
+    // the element it most likely became
+    bool touched = false;
+    if (!linkInited) {
+        std::set<std::pair<App::DocumentObject*, std::string>> subSet;
+        for (std::size_t i = 0; i < subs.size(); ++i) {
+            subSet.emplace(links[i], shadows[i].first);
+            subSet.emplace(links[i], shadows[i].second);
+        }
+        std::string indexedName;
+        for (std::size_t i = 0; i < subs.size(); ++i) {
+            if (!App::GeoFeature::hasMissingElement(subs[i].c_str()) || !links[i])
+                continue;
+            auto related = Part::Feature::getRelatedElements(links[i], shadows[i].first.c_str());
+            if (related.empty())
+                continue;
+            indexedName.clear();
+            related.front().index.appendToStringBuffer(indexedName);
+            FC_WARN("guess element reference in " << prop->getFullName()
+                    << ": " << subs[i] << " -> " << indexedName);
+            if (subSet.emplace(links[i], indexedName).second)
+                subs[i] = indexedName;
+            else
+                subs[i].clear();
+            touched = true;
+        }
+    }
+
+    LinkRows rows;
+    for (std::size_t i = 0; i < subs.size(); ++i) {
+        if (!links[i])
+            continue;
+        auto it = std::find_if(rows.begin(), rows.end(),
+                               [&](const auto &row) { return row.first == links[i]; });
+        if (it == rows.end()) {
+            rows.emplace_back(links[i], std::vector<std::string>());
+            it = rows.end() - 1;
+        }
+        if (subs[i].size())
+            it->second.push_back(subs[i]);
+    }
+
+    {
+        QSignalBlocker guard(table);
+        table->setRowCount(0);
+        table->setColumnCount(0);
+        App::ObjectIdentifier path(*prop);
+        bool hasExpression = !!obj->getExpression(path).expression;
+        for (const auto &row : rows)
+            addRow(row.first, row.second, hasExpression);
+        // Cells past the end of a shorter row are neither picked nor edited
+        for (int row = 0; row < table->rowCount(); ++row) {
+            for (int col = 1; col < table->columnCount(); ++col) {
+                if (!table->item(row, col)) {
+                    auto item = new QTableWidgetItem;
+                    item->setFlags(Qt::NoItemFlags);
+                    table->setItem(row, col, item);
                 }
             }
         }
-        if (subnames.size() != 1 || !subnames.front().empty()) {
-            for (const auto &sub : subnames) {
-                auto item = new QListWidgetItem(QString::fromUtf8(sub.c_str()));
-                listWidget->addItem(item);
-                item->setFlags(item->flags() | Qt::ItemIsEditable);
-                if (hasExpression)
-                    item->setData(Qt::ForegroundRole, linkColor);
-            }
-        }
-        if (touched) {
-            try {
-                parentTask->setupTransaction();
-                prop->setValue(link, subnames);
-                parentTask->recomputeFeature();
-            }
-            catch (Base::Exception &e) {
-                e.ReportException();
-            }
-        }
+        table->fitColumns(10);
+    }
+    updateHeight();
+
+    if (touched) {
+        linkInited = true;
+        setRows(std::move(rows));
     }
     linkInited = true;
 }
@@ -494,15 +777,24 @@ bool LinkSubWidget::setLinks(const std::vector<App::SubObjectT> &objs)
     if (!prop || objs.empty())
         return false;
     try {
+        if (multiObject) {
+            LinkRows rows;
+            for (const auto &objT : objs)
+                mergeLinkRow(rows, PartDesignGui::importExternalObject(objT, false));
+            if (rows.empty())
+                return false;
+            return setLinkRows(std::move(rows));
+        }
         parentTask->setupTransaction();
+        auto propLink = static_cast<App::PropertyLinkSub*>(prop);
         if (singleElement) {
             auto ref = PartDesignGui::importExternalElement(objs.front());
-            prop->setValue(ref.getObject(), {ref.getSubName()});
-        } else if (!PartDesignGui::importExternalElements(*prop, objs))
+            propLink->setValue(ref.getObject(), {ref.getSubName()});
+        } else if (!PartDesignGui::importExternalElements(*propLink, objs))
             return false;
         parentTask->recomputeFeature();
-        if (auto o = prop->getValue()) {
-            if (!o->isDerivedFrom(PartDesign::Feature::getClassTypeId()))
+        if (auto o = propLink->getValue()) {
+            if (hideLinked && !o->isDerivedFrom(PartDesign::Feature::getClassTypeId()))
                 o->Visibility.setValue(false);
         }
         refresh();
@@ -513,34 +805,93 @@ bool LinkSubWidget::setLinks(const std::vector<App::SubObjectT> &objs)
     return false;
 }
 
+bool LinkSubWidget::setLinkRows(LinkRows &&rows)
+{
+    if (hideLinked) {
+        for (const auto &row : rows) {
+            if (row.first && !row.first->isDerivedFrom(PartDesign::Feature::getClassTypeId()))
+                row.first->Visibility.setValue(false);
+        }
+    }
+    return setRows(std::move(rows));
+}
+
 bool LinkSubWidget::addLink(const App::SubObjectT &objT)
 {
-    if (!listWidget)
-        return false;
-    App::DocumentObject *obj;
-    auto prop = getProperty(&obj);
-    std::vector<App::SubObjectT> links;
-    if (listWidget->count() == 0 || !prop->getValue() || singleElement)
-        links.push_back(objT);
-    else {
-        if (auto linked = prop->getValue()) {
-            if (prop->getSubValues().empty()) {
-                links.emplace_back(linked, "");
-            }
-            else {
-                for (const auto &sub : prop->getSubValues()) {
-                    if (!App::GeoFeature::hasMissingElement(sub.c_str())) {
-                        links.emplace_back(linked, sub.c_str());
+    if (!multiObject) {
+        App::DocumentObject *obj;
+        auto prop = static_cast<App::PropertyLinkSub*>(getProperty(&obj));
+        if (!prop)
+            return false;
+        std::vector<App::SubObjectT> links;
+        if (table->rowCount() == 0 || !prop->getValue() || singleElement)
+            links.push_back(objT);
+        else {
+            if (auto linked = prop->getValue()) {
+                if (prop->getSubValues().empty()) {
+                    links.emplace_back(linked, "");
+                }
+                else {
+                    for (const auto &sub : prop->getSubValues()) {
+                        if (!App::GeoFeature::hasMissingElement(sub.c_str())) {
+                            links.emplace_back(linked, sub.c_str());
+                        }
                     }
                 }
             }
+            links.push_back(objT);
         }
-        links.push_back(objT);
+        if (!setLinks(links))
+            return false;
+        selectLast(nullptr);
+        return true;
     }
-    if (!setLinks(links))
+
+    // Several objects: the current rows, less the elements that are gone, and
+    // the pick
+    LinkRows rows;
+    if (table->rowCount()) {
+        rows = getRows();
+        for (auto &row : rows) {
+            auto &subs = row.second;
+            subs.erase(std::remove_if(subs.begin(), subs.end(), [](const std::string &sub) {
+                return App::GeoFeature::hasMissingElement(sub.c_str());
+            }), subs.end());
+        }
+    }
+    App::SubObjectT imported;
+    try {
+        imported = PartDesignGui::importExternalObject(objT, false);
+    } catch (Base::Exception &e) {
+        e.ReportException();
         return false;
-    listWidget->setCurrentItem(listWidget->item(listWidget->count()-1));
+    }
+    if (!mergeLinkRow(rows, imported))
+        return false;
+    if (!setLinkRows(std::move(rows)))
+        return false;
+    selectLast(imported.getSubObject());
     return true;
+}
+
+void LinkSubWidget::selectLast(App::DocumentObject *link)
+{
+    // The last element of the row of the given object, or of the last row
+    for (int row = table->rowCount() - 1; row >= 0; --row) {
+        auto item = table->item(row, 0);
+        if (!item)
+            continue;
+        if (link && qvariant_cast<App::SubObjectT>(item->data(Qt::UserRole)).getSubObject() != link)
+            continue;
+        int col = table->columnCount() - 1;
+        for (; col > 0; --col) {
+            auto cell = table->item(row, col);
+            if (cell && (cell->flags() & Qt::ItemIsEnabled))
+                break;
+        }
+        table->setCurrentCell(row, col);
+        return;
+    }
 }
 
 void LinkSubWidget::setSelectionMode(TaskSketchBasedParameters::SelectionMode mode)
