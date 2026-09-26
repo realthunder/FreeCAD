@@ -532,34 +532,79 @@ App::DocumentObjectExecReturn *FeatureExtrude::buildExtrusion(ExtrudeOptions opt
             if (Reversed.getValue() && !symmetric)
                 dir1.Reverse();
 
-            std::vector<TopoShape> sides;
             UpToSide side1{method, UpToFace, UpToShape, Offset.getValue()};
-            TopoShape prism1 = makeSide(side1, base, sketchshape, supportface, invObjLoc,
-                                        dir1, L, TaperAngle.getValue(),
-                                        TaperInnerAngle.getValue(), makeface);
-            if (!prism1.isNull())
-                sides.push_back(prism1);
-            if (symmetric) {
-                if (!prism1.isNull()) {
-                    gp_Dir normal(SketchVector.x, SketchVector.y, SketchVector.z);
-                    normal.Transform(invTrsf);
-                    Base::Vector3d center = sketchshape.getBoundBox().GetCenter();
-                    sides.push_back(prism1.makEMirror(
-                                gp_Ax2(gp_Pnt(center.x, center.y, center.z), normal)));
-                }
+            UpToSide side2{method2, UpToFace2, UpToShape2, Offset2.getValue()};
+
+            // A length on one side and up to a face on the other is one prism,
+            // from the end of the length back up to the face (upstream
+            // 94750baa6b); two combined leave a seam in the profile plane. It
+            // is the same solid wherever the face is -- but only for one given
+            // face. The first, the last, or the nearest of several faces are
+            // looked for from the profile, and from the moved profile the
+            // search may find another (a through all pocket up to a box's top
+            // and bottom then cut nothing), so those are still made as two.
+            auto untapered = [](double angle, double innerAngle) {
+                return std::fabs(angle) < Precision::Angular()
+                    && std::fabs(innerAngle) < Precision::Angular();
+            };
+            auto isLength = [](const std::string &m) {
+                return m == "Length" || m == "ThroughAll";
+            };
+            auto isOneFace = [](const UpToSide &side) {
+                return (side.method == "UpToFace" && side.upToFace.getValue())
+                    || ((side.method == "UpToFace" || side.method == "UpToShape")
+                        && isSingleUpToFace(side.upToShape));
+            };
+            int lengthSide = 0;
+            if (twoSides) {
+                if (isLength(method) && isOneFace(side2)
+                        && untapered(TaperAngle.getValue(), TaperInnerAngle.getValue()))
+                    lengthSide = 1;
+                else if (isLength(method2) && isOneFace(side1)
+                        && untapered(TaperAngleRev.getValue(), TaperInnerAngleRev.getValue()))
+                    lengthSide = 2;
+            }
+            if (lengthSide) {
+                const std::string &lengthMethod = lengthSide == 1 ? method : method2;
+                double length = lengthMethod == "ThroughAll" ? getThroughAllLength()
+                                                             : (lengthSide == 1 ? L : L2);
+                gp_Dir lengthDir = lengthSide == 1 ? dir1 : dir1.Reversed();
+                gp_Trsf mov;
+                mov.SetTranslation(length * gp_Vec(lengthDir));
+                TopoShape moved = sketchshape.makECopy();
+                moved.move(TopLoc_Location(mov));
+                // The support face is where the profile was, not where it is
+                prism = makeSide(lengthSide == 1 ? side2 : side1, base, moved, TopoShape(),
+                                 invObjLoc, lengthDir.Reversed(), 0.0, 0.0, 0.0, makeface);
             }
             else {
-                UpToSide side2{method2, UpToFace2, UpToShape2, Offset2.getValue()};
-                TopoShape prism2 = makeSide(side2, base, sketchshape, supportface, invObjLoc,
-                                            dir1.Reversed(), L2, TaperAngleRev.getValue(),
-                                            TaperInnerAngleRev.getValue(), makeface);
-                if (!prism2.isNull())
-                    sides.push_back(prism2);
+                std::vector<TopoShape> sides;
+                TopoShape prism1 = makeSide(side1, base, sketchshape, supportface, invObjLoc,
+                                            dir1, L, TaperAngle.getValue(),
+                                            TaperInnerAngle.getValue(), makeface);
+                if (!prism1.isNull())
+                    sides.push_back(prism1);
+                if (symmetric) {
+                    if (!prism1.isNull()) {
+                        gp_Dir normal(SketchVector.x, SketchVector.y, SketchVector.z);
+                        normal.Transform(invTrsf);
+                        Base::Vector3d center = sketchshape.getBoundBox().GetCenter();
+                        sides.push_back(prism1.makEMirror(
+                                    gp_Ax2(gp_Pnt(center.x, center.y, center.z), normal)));
+                    }
+                }
+                else {
+                    TopoShape prism2 = makeSide(side2, base, sketchshape, supportface, invObjLoc,
+                                                dir1.Reversed(), L2, TaperAngleRev.getValue(),
+                                                TaperInnerAngleRev.getValue(), makeface);
+                    if (!prism2.isNull())
+                        sides.push_back(prism2);
+                }
+                if (sides.empty())
+                    return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception",
+                                "No extrusion geometry was generated"));
+                prism = xorSides(sides, getDocument()->getStringHasher());
             }
-            if (sides.empty())
-                return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception",
-                            "No extrusion geometry was generated"));
-            prism = xorSides(sides, getDocument()->getStringHasher());
         } else {
             // Through all tapers over the through-all length, as the untapered
             // prism in generatePrism() runs. It took Length, so a tapered

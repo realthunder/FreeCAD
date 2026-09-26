@@ -113,6 +113,32 @@ class TestExtrudeSides(unittest.TestCase):
         self.assertEqual(self.zRange(pad.AddSubShape), (10, 25))
         self.assertAlmostEqual(pad.Shape.Volume, 16000 + 1500)
 
+    def testLengthAndUpToFaceIsOnePrism(self):
+        # One prism from the end of the length back to the face: two joined
+        # left a seam around the profile
+        box = self.box()
+        pad = self.pad(z=20)
+        pad.Refine = False
+        pad.SideType = "Two sides"
+        pad.Length = 5
+        pad.Type2 = "UpToFace"
+        pad.UpToFace2 = (box, [self.faceAt(box, 10)])
+        self.Doc.recompute()
+        self.assertEqual(len(pad.AddSubShape.Faces), 6)
+        self.assertEqual(self.zRange(pad.AddSubShape), (10, 25))
+        # Several faces are looked for from the profile, which the moved
+        # profile would not find: a pocket through all one way and up to
+        # the box's top and bottom the other still cuts the box
+        pocket = self.Body.newObject("PartDesign::Pocket", "Pocket")
+        pocket.Profile = (self.sketch("PocketSketch", (0, 0), (10, 10), z=20), [""])
+        pocket.SideType = "Two sides"
+        pocket.Type = "ThroughAll"
+        pocket.Type2 = "UpToShape"
+        pocket.UpToShape2 = [(box, [self.faceAt(box, 0), self.faceAt(box, 10)])]
+        self.Doc.recompute()
+        self.assertTrue(pocket.isValid())
+        self.assertAlmostEqual(pocket.Shape.Volume, pad.Shape.Volume - 1000)
+
     def testSymmetricUpToFace(self):
         box = self.box()
         pad = self.pad(z=20)
