@@ -215,8 +215,11 @@ private:
         uint8_t pattern = 0;  ///< App::SurfaceFinish::Pattern, 0 = none
         float pitch = 0.0f;   ///< mm of object space, feature spacing
         float depth = 0.0f;   ///< mm of object space, peak to valley
-        float angle = 0.0f;   ///< lay direction, radians
+        float angle = 0.0f;   ///< lay direction, radians (a thread's profile angle)
         SurfaceFrame frame;   ///< Unframed = triplanar
+        /// Where the pattern lies when the frame cannot say
+        /// (FinishPalette::Entry::extent): a thread's axis and band
+        float extent[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         bool any() const
         {
             return pattern != 0;
@@ -235,7 +238,8 @@ private:
                                 float pitch,
                                 float depth,
                                 float angleDeg,
-                                const SurfaceFrame &frame);
+                                const SurfaceFrame &frame,
+                                const float *extent = nullptr);
     /// Perturb links.normal by the finish's height field: the pattern
     /// (groove profile, brushed and blasted noise) sampled from baked
     /// periodic tables, the projection frames built in-graph.

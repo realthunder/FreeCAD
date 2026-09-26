@@ -220,6 +220,37 @@ public:
      */
     virtual bool getFaceWeights(std::vector<double> &weights) const;
 
+    /** A surface finish the object's own data implies for one face
+     *
+     * What a feature knows about a face that nobody painted on it: the
+     * bore of a hole tapped without a modelled thread is threaded, and a
+     * picture of that bore should say so. It sits BENEATH the appearance
+     * -- a face the appearance finishes on its own keeps its own -- and
+     * is never stored: it is re-derived from the object every time the
+     * render material is, so it cannot go stale against the geometry.
+     */
+    struct GuiExport ImpliedFinish
+    {
+        int face = -1;              ///< 0-based face index
+        App::SurfaceFinish finish;
+        /// Where the pattern lies when the face's own frame cannot say:
+        /// the axis, octahedrally encoded, and the band along it the
+        /// pattern covers (Render::FinishPalette::Entry::extent). All
+        /// zero lays it in the face's projection frame, face-wide.
+        float extent[4] = {0.0F, 0.0F, 0.0F, 0.0F};
+
+        /** State the extent: the pattern is laid about the direction
+         * (dx, dy, dz), in object space, and covers the part of the face
+         * whose coordinate dot(p, axis) lies in [zmin, zmax] -- the axis
+         * as it is normalised here, so the caller measures the band
+         * along the same unit vector it passed. zmin < zmax, or nothing
+         * is stated.
+         */
+        void setExtent(double dx, double dy, double dz, double zmin, double zmax);
+    };
+    /// The implied finishes, face by face; the default states none.
+    virtual void getImpliedFinishes(std::vector<ImpliedFinish> &finishes) const;
+
     /** Take the object's material card as the appearance's base
      *
      * A no-op unless the appearance is FOLLOWING the card
@@ -301,9 +332,13 @@ protected:
     virtual unsigned long getBoundColor() const;
     void updateBoundingBox();
     void addBoundSwitch();
+public:
     /// Sync the optional SoFCRenderMaterial node (render engine per-object
-    /// PBR parameters) with the Render_* dynamic properties.
+    /// PBR parameters) with the Render_* dynamic properties. Public so a
+    /// subclass whose implied finishes changed (getImpliedFinishes) can
+    /// ask for it, and so can whatever changed them.
     void updateRenderMaterial();
+protected:
     /** Sync the shared MaterialX program node with the appearance
      *
      * The base's MaterialAppearance::materialx names a card-carried

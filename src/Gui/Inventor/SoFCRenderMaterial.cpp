@@ -63,6 +63,9 @@ SoFCRenderMaterial::SoFCRenderMaterial()
     finishPalette.setDefault(TRUE);
     finishIndices.setNum(0);
     finishIndices.setDefault(TRUE);
+    SO_NODE_ADD_FIELD(finishExtents, (SbVec4f(0.0f, 0.0f, 0.0f, 0.0f)));
+    finishExtents.setNum(0);
+    finishExtents.setDefault(TRUE);
     // Likewise: no frame until the geometry states one, and then the
     // finish above decides whether it is worth publishing.
     SO_NODE_ADD_FIELD(framePalette, (SbVec4f(0.0f, 0.0f, 0.0f, 0.0f)));

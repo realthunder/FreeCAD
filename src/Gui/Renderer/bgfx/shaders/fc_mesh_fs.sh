@@ -244,7 +244,12 @@ void main()
 	// entry 0 (the draw's own finish) for a draw that does not consume
 	// the stream -- the same u_matEmissive.w gate the material fields
 	// above use, so an unbound attribute is never read.
-	vec3 finishSlot = v_findex * perFace;
+	// Rounded HERE, not only in the vertex stage: three equal integers
+	// interpolated across a triangle land a hair under the value in
+	// some pixels, and the int() of every palette lookup below then
+	// reads the entry before -- salt and pepper of the neighbouring
+	// finish across the whole face.
+	vec3 finishSlot = floor(v_findex * perFace + 0.5);
 	vec4 finishParams = fcFinishEntry(finishSlot.x);
 	if (finishParams.x > 0.5)
 	{
@@ -257,7 +262,8 @@ void main()
 		float frough = phong ? fcRoughFromShininess(matSpec.w)
 		                     : rough;
 		fcApplyFinish(v_opos, v_onrm, v_vpos, finishParams,
-		              finishSlot.y, n, frough);
+		              fcFinishExtentEntry(finishSlot.x), finishSlot.y,
+		              n, frough, occ);
 		if (phong)
 			matSpec.w = fcShininessFromRough(frough);
 		else

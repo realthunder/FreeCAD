@@ -1133,6 +1133,10 @@ void BGFXView::init(bool keepShared)
     // must match the shader's FC_FINISH_PALETTE).
     ensureUniform(u_finishParams, "u_finishParams", bgfx::UniformType::Vec4,
                   Render::MaxFinishPalette);
+    // Where each of those entries lies, when the face's frame cannot
+    // say: a screw thread's axis and the band of it the thread covers.
+    ensureUniform(u_finishExtent, "u_finishExtent", bgfx::UniformType::Vec4,
+                  Render::MaxFinishPalette);
     // The projection frames that finish is laid out in: three vec4 per
     // frame, entry 0 the draw's own. Kind 0 is the unframed frame --
     // the triplanar projection that predates these -- so a zero upload

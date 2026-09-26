@@ -2069,10 +2069,22 @@ struct FinishPalette {
         float pitch = 0.0f;     ///< mm of object space, feature spacing
         float depth = 0.0f;     ///< mm of object space, peak to valley
         float angle = 0.0f;     ///< degrees, lay direction
+        /// Where the pattern lies when the face's projection frame
+        /// cannot say: (axis u, axis v, zmin, zmax), the axis
+        /// octahedrally encoded (encodeFinishAxis) and the band of the
+        /// object-space coordinate dot(p, axis) the pattern covers. All
+        /// zero = the face's own frame, face-wide, which is everything
+        /// an appearance authors. A screw thread is what states one: it
+        /// is laid about its bore's axis whatever the frame palette
+        /// kept, and a tapped hole's thread stops at the thread depth,
+        /// part way down one face.
+        float extent[4] = {0.0f, 0.0f, 0.0f, 0.0f};
 
         bool operator==(const Entry &o) const {
             return pattern == o.pattern && pitch == o.pitch
-                && depth == o.depth && angle == o.angle;
+                && depth == o.depth && angle == o.angle
+                && extent[0] == o.extent[0] && extent[1] == o.extent[1]
+                && extent[2] == o.extent[2] && extent[3] == o.extent[3];
         }
     };
 

@@ -992,6 +992,10 @@ float MaterialIcons::finishRoughness(uint8_t pattern)
         case App::SurfaceFinish::Turned:
             actual = {0.200F, 0.008F, true};
             break;
+        case App::SurfaceFinish::Thread:
+        case App::SurfaceFinish::ThreadLeft:
+            actual = {1.000F, 0.540F, true};   // M6, crest to root
+            break;
         case App::SurfaceFinish::Brushed:
             actual = {0.040F, 0.004F, false};
             break;
@@ -1049,6 +1053,13 @@ App::SurfaceFinish MaterialIcons::defaultFinish(uint8_t pattern)
         case App::SurfaceFinish::Turned:
             finish.pitch = 0.240F;
             finish.depth = 0.052F;
+            break;
+        case App::SurfaceFinish::Thread:
+        case App::SurfaceFinish::ThreadLeft:
+            // A real thread is already coarse enough to read; a few
+            // turns across the billet is what says "screw" at a glance
+            finish.pitch = 0.600F;
+            finish.depth = 0.325F;
             break;
         default:
             return {};

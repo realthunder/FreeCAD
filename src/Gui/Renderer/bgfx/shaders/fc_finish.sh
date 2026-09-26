@@ -65,6 +65,34 @@ vec4 fcFinishEntry(float index)
 	return u_finishParams[i];
 }
 
+// Where each palette entry above LIES, when the face's projection frame
+// cannot say (Render::FinishPalette::Entry::extent): xy = the axis the
+// pattern is laid about, octahedrally encoded, zw = the band of the
+// object-space coordinate dot(p, axis) the pattern covers. Stated only
+// when z < w; all zero (everything an appearance authors) is the face's
+// own frame, face-wide. A screw thread is what states one: it is cut
+// about its BORE's axis, which the frame palette may have had to drop,
+// and a tapped hole's thread stops at the thread depth, part way down
+// one face.
+uniform vec4 u_finishExtent[FC_FINISH_PALETTE];
+
+vec4 fcFinishExtentEntry(float index)
+{
+	int i = int(clamp(index, 0.0, float(FC_FINISH_PALETTE - 1)));
+	return u_finishExtent[i];
+}
+
+/// The inverse of ViewProviderGeometryObject::ImpliedFinish::setExtent:
+/// the octahedral square unfolded back onto the unit sphere.
+vec3 fcFinishDecodeAxis(vec2 e)
+{
+	vec3 v = vec3(e.x, e.y, 1.0 - abs(e.x) - abs(e.y));
+	float t = max(-v.z, 0.0);
+	v.x += v.x >= 0.0 ? -t : t;
+	v.y += v.y >= 0.0 ? -t : t;
+	return normalize(v);
+}
+
 // The draw's PROJECTION FRAME palette: what the pattern above is laid
 // out ON. Three vec4 an entry -- (origin, kind), (axis, radius),
 // (xdir, spare) -- and the material stream's fourth byte (v_findex.y)
@@ -86,7 +114,9 @@ uniform vec4 u_frameParams[FC_FRAME_PALETTE * 3];
 #define FC_FINISH_BRUSHED         3.0
 #define FC_FINISH_BLASTED         4.0
 #define FC_FINISH_TURNED          5.0
-#define FC_FINISH_LAST            5.0
+#define FC_FINISH_THREAD          6.0
+#define FC_FINISH_THREAD_LEFT     7.0
+#define FC_FINISH_LAST            7.0
 
 #define FC_FINISH_TWOPI 6.2831853
 #define FC_FINISH_PI    3.1415927
@@ -222,11 +252,8 @@ vec2 fcFinishPattern(vec2 p, float pattern, float pitch, float depth,
 /// 2x2 quad granularity that would otherwise blur every crest is simply
 /// not in this path. dox/doy are dFdx/dFdy of opos, measured once by the
 /// caller because the filter needs them too.
-void fcFinishPerturb(vec3 g, vec3 opos, vec3 vpos, vec3 dox, vec3 doy,
-                     inout vec3 n)
+void fcFinishPerturbD(float dhdx, float dhdy, vec3 vpos, inout vec3 n)
 {
-	float dhdx = dot(g, dox);
-	float dhdy = dot(g, doy);
 	vec3 dpx = dFdx(vpos);
 	vec3 dpy = dFdy(vpos);
 	vec3 r1 = cross(dpy, n);
@@ -236,6 +263,223 @@ void fcFinishPerturb(vec3 g, vec3 opos, vec3 vpos, vec3 dox, vec3 doy,
 		return;
 	vec3 sg = sign(det) * (dhdx * r1 + dhdy * r2);
 	n = normalize(abs(det) * n - sg);
+}
+
+void fcFinishPerturb(vec3 g, vec3 opos, vec3 vpos, vec3 dox, vec3 doy,
+                     inout vec3 n)
+{
+	fcFinishPerturbD(dot(g, dox), dot(g, doy), vpos, n);
+}
+
+/// One turn of a screw thread's profile, as a height in [-1, 0] -- 0 at
+/// the crest the bore was drilled to, -1 at the root the tap cut --
+/// against the phase along the helix. The truncated V every standard
+/// thread is: a crest flat, a straight flank down, a root flat, a flank
+/// back up, laid symmetrically about the root's centre at phase 0.5.
+/// prof.x is half the root flat, prof.y one flank's width, both in turns.
+float fcThreadProfile(float ph, vec2 prof)
+{
+	float y = abs(fract(ph) - 0.5);
+	return -clamp((prof.x + prof.y - y) / prof.y, 0.0, 1.0);
+}
+
+/// A screw thread (App::SurfaceFinish::Thread / ThreadLeft): the helical
+/// relief a tap or a die leaves, shaded on the smooth bore the model
+/// carries.
+///
+/// What makes a thread read as a thread rather than as stripes is that
+/// it is DEEP -- over half the pitch, flanks at sixty degrees -- so four
+/// things are done that the shallow finishes above can do without:
+///
+/// - The helix is laid about the bore's own axis: the phase is the
+///   distance along it in pitches, less the turn about it (taken off the
+///   normal, which on a surface of revolution points straight at the
+///   axis), so one crest runs round and down the bore the way the tap
+///   did, left-handed with the sign flipped.
+/// - The flank slope is BOX-FILTERED over the pixel's footprint in phase:
+///   the difference of the profile across the footprint over its width,
+///   which is exact for a piecewise linear profile. The sharp corners a
+///   thread really has stay sharp up close and average away at a
+///   distance, without the sine-shaped stand-in the finishes above use.
+/// - A PARALLAX march along the profile: the view ray enters at the
+///   crest and is followed down the groove until it meets a flank, so a
+///   flank turned away from the eye is hidden behind the one in front of
+///   it. Looking into a tapped hole, that is most of what it looks like.
+/// - The roots are OCCLUDED: they see little of the sky between two
+///   sixty-degree flanks, which is what darkens a real thread's grooves.
+///
+/// The band (extent zw) ends the thread where the tap stopped, with the
+/// last pitch and a half running out rather than cut off square.
+void fcFinishThread(vec3 opos, vec3 onrm, vec3 vpos, vec4 params,
+                    vec4 extent, float frameIndex, vec3 dox, vec3 doy,
+                    inout vec3 n, inout float rough, inout float occ)
+{
+	float pitch = max(params.y, 1.0e-6);
+
+	// The axis the thread is cut about: stated beside the finish when
+	// the feature that implied it knew, else the face's own frame -- and
+	// a face that is not a surface of revolution has no axis to cut one
+	// about.
+	vec3 axis;
+	bool banded = extent.z < extent.w;
+	if (banded)
+		axis = fcFinishDecodeAxis(extent.xy);
+	else
+	{
+		int fi = int(clamp(frameIndex, 0.0,
+		                   float(FC_FRAME_PALETTE - 1))) * 3;
+		if (u_frameParams[fi].w < FC_FRAME_RADIAL - 0.5)
+			return;
+		axis = normalize(u_frameParams[fi + 1].xyz);
+	}
+
+	float z = dot(opos, axis);
+	// Past the band there is no thread; toward either end it runs out.
+	float amount = 1.0;
+	if (banded)
+	{
+		float run = 1.5 * pitch;
+		amount = clamp((z - extent.z) / run, 0.0, 1.0)
+		       * clamp((extent.w - z) / run, 0.0, 1.0);
+		if (amount <= 0.0)
+			return;
+	}
+
+	// The turn about the axis, off the normal's radial part. The frame
+	// round the axis is any one fixed by the axis alone, so every face
+	// of one bore -- a bore a later cut split in two -- agrees on it.
+	vec3 nr = onrm - axis * dot(onrm, axis);
+	float nrl = length(nr);
+	if (nrl < 1.0e-4)
+		return;   // an end face: no turn to measure
+	nr /= nrl;
+	vec3 ref = abs(axis.z) < 0.9 ? vec3(0.0, 0.0, 1.0)
+	                             : vec3(1.0, 0.0, 0.0);
+	vec3 xd = normalize(cross(axis, ref));
+	vec3 yd = cross(axis, xd);
+	float theta = atan2(dot(nr, yd), dot(nr, xd));
+	float hand = params.x > FC_FINISH_THREAD + 0.5 ? -1.0 : 1.0;
+	// Wrapped before the turn is added, as fcFinishGroove wraps: a bore
+	// far from the object origin is thousands of pitches out.
+	float ph = fract(z / pitch) - hand * theta / FC_FINISH_TWOPI;
+
+	// The profile, from the height and the included angle. Toward the
+	// runout the thread is shallower and its groove narrower, as the
+	// chamfered lead of a tap leaves it.
+	float halfAngle = params.w > 1.0e-3 ? 0.5 * params.w : 0.52359878;
+	float d = params.z * amount;
+	float f = clamp(d * tan(halfAngle) / pitch, 1.0e-3, 0.5);
+	// What the flanks leave is crest and root, two to one: ISO's P/4
+	// crest flat and P/8 root flat for its 5/8 H working height.
+	float rest = 1.0 - 2.0 * f;
+	vec2 prof = vec2(rest / 6.0, f);
+
+	// The pixel's footprint in turns: along the axis, and round it (the
+	// turn's own screen derivative, unwrapped across atan2's cut).
+	float dthx = dFdx(theta);
+	float dthy = dFdy(theta);
+	dthx -= FC_FINISH_TWOPI * floor(dthx / FC_FINISH_TWOPI + 0.5);
+	dthy -= FC_FINISH_TWOPI * floor(dthy / FC_FINISH_TWOPI + 0.5);
+	float dphx = dot(axis, dox) / pitch - hand * dthx / FC_FINISH_TWOPI;
+	float dphy = dot(axis, doy) / pitch - hand * dthy / FC_FINISH_TWOPI;
+	float w = max(abs(dphx), abs(dphy));
+	float vis = smoothstep(1.5, 4.0, 1.0 / max(w, 1.0e-6));
+
+	// The flank's slope, and the mean square of it over a turn: what a
+	// thread too fine to draw still does to a highlight.
+	float slope = d / (f * pitch);
+	float lost = (1.0 - vis) * 2.0 * f * slope * slope;
+	rough = min(sqrt(rough * rough + lost), 1.0);
+
+	// Occlusion a turn's worth averaged, for where the thread is not
+	// drawn: the mean of 1 - 0.55 u^1.5 over the profile, u the depth
+	// fraction (zero on the crest, a linear ramp on the flanks, one on
+	// the root).
+	float aoFar = 1.0 - 0.55 * (2.0 * f * 0.4 + 2.0 * prof.x);
+	if (vis <= 0.0)
+	{
+		occ *= mix(1.0, aoFar, amount);
+		return;
+	}
+
+	// Parallax: follow the view ray from the crest down the groove.
+	// The axis in view space comes off the surface's own Jacobian
+	// (the object and view derivatives of the same pixel), which holds
+	// for an instanced draw too, whose model matrix this stage never
+	// sees. The phase the ray gains per millimetre of depth is the
+	// view direction's run along the axis over its rise off the face.
+	vec3 dpx = dFdx(vpos);
+	vec3 dpy = dFdy(vpos);
+	float xx = dot(dox, dox);
+	float xy = dot(dox, doy);
+	float yy = dot(doy, doy);
+	float det = xx * yy - xy * xy;
+	float phHit = ph;
+	if (det > 1.0e-30)
+	{
+		float ax = dot(axis, dox);
+		float ay = dot(axis, doy);
+		vec3 av = ((ax * yy - ay * xy) * dpx + (ay * xx - ax * xy) * dpy)
+		        / det;
+		float avl = length(av);
+		vec3 vdir = FC_MTX(u_proj, 2, 3) != 0.0
+			? normalize(-vpos) : vec3(0.0, 0.0, 1.0);
+		float vn = dot(vdir, n);
+		if (avl > 1.0e-12 && vn > 0.02)
+		{
+			float k = -dot(vdir, av / avl) / (vn * pitch);
+			// At grazing incidence the ray crosses turn after turn
+			// before it reaches the root. One turn over the whole
+			// depth is as far as the march may carry a pixel: past
+			// that neighbouring pixels land on unrelated flanks and
+			// the picture turns to noise, which reads less like a
+			// thread than no parallax at all. And it fades in from
+			// grazing, where the same holds for every ray.
+			float kmax = 1.0 / max(d, 1.0e-6);
+			k = clamp(k, -kmax, kmax) * smoothstep(0.05, 0.35, vn);
+			float stepT = d / 16.0;
+			float t = 0.0;
+			float g = -fcThreadProfile(ph, prof) * d;
+			float tp = 0.0;
+			float gp = g;
+			for (int i = 0; i < 16; ++i)
+			{
+				if (t >= g)
+					break;
+				tp = t;
+				gp = g;
+				t += stepT;
+				g = -fcThreadProfile(ph + k * t, prof) * d;
+			}
+			// Between the last step above the flank and the first
+			// below it, where the ray's depth meets the groove's.
+			float e0 = tp - gp;
+			float e1 = t - g;
+			float s = e1 - e0 > 1.0e-9 ? clamp(-e0 / (e1 - e0), 0.0, 1.0)
+			                          : 0.0;
+			phHit = ph + k * mix(tp, t, s) * vis;
+		}
+	}
+
+	// The flank's slope at the point the ray met, box-filtered across
+	// the footprint, and through the chain rule into screen space. The
+	// march stretches the phase across the pixel -- a flank seen edge
+	// on spans a few turns' worth of rays -- so the footprint is the
+	// larger of the surface's and the marched phase's own (unwrapped:
+	// the phase carries fract()'s cut).
+	float dhx = dFdx(phHit);
+	float dhy = dFdy(phHit);
+	dhx -= floor(dhx + 0.5);
+	dhy -= floor(dhy + 0.5);
+	float hw = 0.5 * max(max(w, max(abs(dhx), abs(dhy))), 1.0e-4);
+	float dH = (fcThreadProfile(phHit + hw, prof)
+	          - fcThreadProfile(phHit - hw, prof)) / (2.0 * hw);
+	float dh = d * dH * vis;
+	fcFinishPerturbD(dh * dphx, dh * dphy, vpos, n);
+
+	float u = -fcThreadProfile(phHit, prof);
+	float aoNear = 1.0 - 0.55 * u * sqrt(u);
+	occ *= mix(1.0, mix(aoFar, aoNear, vis), amount);
 }
 
 /// The object-space gradient of the height field over the face's own
@@ -329,10 +573,13 @@ vec3 fcFinishFramed(vec3 opos, vec4 f0, vec4 f1, vec4 f2, float pattern,
 ///
 /// opos/onrm are the object-space position and normal, vpos the view-
 /// space position, params the palette entry this fragment's face names
-/// (fcFinishEntry) and frameIndex the projection frame it names beside
-/// it. Does nothing at all when no finish is stated.
+/// (fcFinishEntry), extent where that entry lies (fcFinishExtentEntry)
+/// and frameIndex the projection frame it names beside it. occ is the
+/// indirect-light occlusion, which only a thread's grooves are deep
+/// enough to change. Does nothing at all when no finish is stated.
 void fcApplyFinish(vec3 opos, vec3 onrm, vec3 vpos, vec4 params,
-                   float frameIndex, inout vec3 n, inout float rough)
+                   vec4 extent, float frameIndex, inout vec3 n,
+                   inout float rough, inout float occ)
 {
 	float pattern = params.x;
 	if (pattern < 0.5 || pattern > FC_FINISH_LAST + 0.5)
@@ -346,6 +593,15 @@ void fcApplyFinish(vec3 opos, vec3 onrm, vec3 vpos, vec4 params,
 	// which is why one measurement filters all of them.
 	vec3 dox = dFdx(opos);
 	vec3 doy = dFdy(opos);
+
+	// A thread is laid about an axis and filters itself along it; it
+	// shares nothing below but the footprint.
+	if (pattern > FC_FINISH_THREAD - 0.5)
+	{
+		fcFinishThread(opos, onrm, vpos, params, extent, frameIndex,
+		               dox, doy, n, rough, occ);
+		return;
+	}
 	float fw = max(length(dox), length(doy));
 	// Pixels per feature, faded out below the two the Nyquist limit
 	// asks for. The window has to be wide enough that the fade itself

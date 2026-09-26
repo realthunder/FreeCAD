@@ -504,6 +504,7 @@ void BGFXView::setTriangleFrameState(const Render::Material &mat, int pass,
     // build's shader does not know reaches it unchanged and shades as
     // none, the same way the cache passes one through.
     float finishParams[Render::MaxFinishPalette][4] = {};
+    float finishExtent[Render::MaxFinishPalette][4] = {};
     uint16_t numFinish = 1;
     const bool finishOn = mat.lighting && pass != PassDepthOnly;
     // Per-face images: a colour, not a shading trick, so unlike the
@@ -541,11 +542,16 @@ void BGFXView::setTriangleFrameState(const Render::Material &mat, int pass,
                 setFinish(finishParams[i], entries[i].pattern,
                           entries[i].pitch, entries[i].depth,
                           entries[i].angle);
+                for (int k = 0; k < 4; ++k)
+                    finishExtent[i][k] = entries[i].extent[k];
             }
             numFinish = Render::MaxFinishPalette;
         }
     }
     bgfx::setUniform(u_finishParams, finishParams, numFinish);
+    // Always, and as long as the finish: a global uniform keeps its
+    // value, and a stale band would clip the next draw's thread.
+    bgfx::setUniform(u_finishExtent, finishExtent, numFinish);
     // The projection frames that finish is laid out in. Uploaded on the
     // same terms and only when a finish is actually shading: three vec4
     // an entry, entry 0 being the draw's own -- which is what a mesh

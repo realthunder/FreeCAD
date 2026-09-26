@@ -5273,6 +5273,7 @@ public:
         fn(s_texBump, LifeProgram);
         fn(u_bumpParams, LifeProgram);
         fn(u_finishParams, LifeProgram);
+        fn(u_finishExtent, LifeProgram);
         fn(u_frameParams, LifeProgram);
         fn(s_texEmissive, LifeProgram);
         fn(s_texOcclusion, LifeProgram);
@@ -7500,6 +7501,12 @@ public:
     /// draw uploads its whole palette, everything else uploads entry 0
     /// alone (which is all an unbound or zero index attribute reads).
     bgfx::UniformHandle u_finishParams = BGFX_INVALID_HANDLE;
+    /// Where each entry of u_finishParams lies when its face's frame
+    /// cannot say (FinishPalette::Entry::extent): the axis,
+    /// octahedrally encoded, and the band of dot(p, axis) the pattern
+    /// covers. Parallel to u_finishParams, uploaded with it; all zero
+    /// is the face's own frame, face-wide.
+    bgfx::UniformHandle u_finishExtent = BGFX_INVALID_HANDLE;
     /// The projection frames of the finish above (Material::frame and
     /// Material::framepalette), THREE vec4 per entry: (origin, kind),
     /// (axis, radius), (xdir, spare). Entry 0 is the draw's own frame,

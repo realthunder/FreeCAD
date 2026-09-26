@@ -326,7 +326,13 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     Sketcher datum -- arrowheads, the gap left for the number --
 //     resolved against the viewer's own camera. An older reader would
 //     fail the chunk on its version; refused here instead.
-const uint32_t kVersion = 77;
+// 78: a finish palette entry carries its extent (FinishPalette::Entry::
+//     extent) after the angle: the axis a screw thread is laid about
+//     and the band of it the thread covers. An older snapshot has none,
+//     which reads as the face's own frame, face-wide -- all a finish
+//     could state before. The material chunk carries the palette, so
+//     kChunkVersion moves with it.
+const uint32_t kVersion = 78;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -375,8 +381,10 @@ const uint32_t kVersion = 77;
 /// 18: a mesh chunk may carry screen-space offsets after the material
 ///     stream (v77), said by flag 32. Nothing older moved, but an older
 ///     cached chunk would answer "no offsets" forever and draw a datum
-///     without its arrowheads.)
-const uint32_t kChunkVersion = 18;
+///     without its arrowheads.
+/// 19: a material chunk's finish palette entries carry their extent
+///     (v78). The bytes moved.)
+const uint32_t kChunkVersion = 19;
 
 /// Bytes per vertex of MeshData::materials, whose layout Renderer.h
 /// documents. Named here because the stride is what a reader of an
@@ -1675,6 +1683,8 @@ void writeMaterial(Writer &w, const Material &m, const RefWriter &refs)
         w.f(entry.pitch);
         w.f(entry.depth);
         w.f(entry.angle);
+        for (int k = 0; k < 4; ++k)   // v78
+            w.f(entry.extent[k]);
     }
     // The projection frames the finish is laid out in (v51). The draw's
     // own frame first -- which is what a reader takes when the palette
@@ -1840,6 +1850,10 @@ void readMaterial(Reader &r, Material &m, const RefReader &refs,
                 entry.pitch = r.f();
                 entry.depth = r.f();
                 entry.angle = r.f();
+                if (version >= 78) {
+                    for (int k = 0; k < 4; ++k)
+                        entry.extent[k] = r.f();
+                }
                 if (i < uint32_t(MaxFinishPalette))
                     palette->entries.push_back(entry);
             }
