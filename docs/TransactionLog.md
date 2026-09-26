@@ -5412,3 +5412,18 @@ than one branch (proposed)?
 
 The build order of 27.22 stands; names (`parseName`, labels) join step
 1, live branch links join step 2.
+
+### 27.24 Ruling: Qa, and the tip form (user, 2026-09-26)
+
+- **Qa: with the suffix.** The file's own document shows
+  `@<branch>@v<num>` after its label in the tree while the file has more
+  than one branch.
+- **The version may be omitted to mean the tip**, and the name then ends
+  in `@`: `<doc>@<branch>@`. `parseName` accepts it (`version` 0, branch
+  set). It is the stable form of a live link's identity (27.23), whose
+  version tail would otherwise move with every save: a live link keys on
+  `<file>@<branch>@`, and opening that name finds the document holding
+  the branch, or opens the branch's head as an editable instance.
+
+Grammar, after the file: `@v<num>` (a version, frozen), `@<branch>@v<num>`
+(an editable instance at a version), `@<branch>@` (a branch's tip).
