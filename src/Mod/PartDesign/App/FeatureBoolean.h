@@ -49,6 +49,9 @@ public:
 
     App::PropertyBool Refine;
     App::PropertyBool UsePlacement;
+    /// The tool shapes, in the frame of the base shape, as the edit preview
+    /// draws them. Not saved; kept current by execute(), paused or not.
+    Part::PropertyPartShape ToolShape;
 
    /** @name methods override feature */
     //@{
@@ -64,8 +67,17 @@ public:
 
     void onNewSolidChanged() override;
     void unsetupObject() override;
+    void setPauseRecompute(bool enable) override;
 
 protected:
+    /** The operands in the order the boolean takes them: the base first,
+     *  then the tools. \a hasBase says whether the base is the base
+     *  feature's shape rather than a tool standing in for it.
+     */
+    App::DocumentObjectExecReturn *collectOperands(std::vector<TopoShape> &shapes,
+                                                   bool &hasBase) const;
+    void updateToolShape(const std::vector<TopoShape> &shapes, bool hasBase);
+
     void handleChangedPropertyName(Base::XMLReader &reader, const char * TypeName, const char *PropName) override;
 
 

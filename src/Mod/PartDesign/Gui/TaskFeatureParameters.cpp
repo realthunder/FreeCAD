@@ -226,7 +226,7 @@ void TaskFeatureParameters::recomputeFeature(bool delay)
 
     if (delay && updateViewTimer) {
         int interval = PartGui::PartParams::getEditRecomputeWait();
-        auto feat = Base::freecad_dynamic_cast<PartDesign::FeatureAddSub>(vp->getObject());
+        auto feat = Base::freecad_dynamic_cast<PartDesign::Feature>(vp->getObject());
         if (feat && feat->isRecomputePaused())
             interval /= 3;
         updateViewTimer->start(interval);

@@ -57,6 +57,9 @@ Boolean::Boolean()
     Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter()
         .GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("Mod/PartDesign");
     this->Refine.setValue(hGrp->GetBool("RefineModel", false));
+    ADD_PROPERTY_TYPE(ToolShape, (TopoShape()), "Part Design",
+                      App::PropertyType(App::Prop_Output | App::Prop_Transient | App::Prop_Hidden),
+                      "The tool shapes the edit preview draws");
     initExtension(this);
 }
 
@@ -67,7 +70,8 @@ short Boolean::mustExecute() const
     return PartDesign::Feature::mustExecute();
 }
 
-App::DocumentObjectExecReturn *Boolean::execute()
+App::DocumentObjectExecReturn *Boolean::collectOperands(std::vector<TopoShape> &shapes,
+                                                        bool &hasBase) const
 {
     // Get the operation type
     std::string type = Type.getValueAsString();
@@ -110,8 +114,10 @@ App::DocumentObjectExecReturn *Boolean::execute()
             if (found)
                 break;
         }
-        if (!found)
+        if (!found) {
             baseShape = getBaseShape();
+            hasBase = !baseShape.isNull();
+        }
     }
 
     // If not base shape, use the first tool shape as base
@@ -137,8 +143,7 @@ App::DocumentObjectExecReturn *Boolean::execute()
                     "Cannot do boolean operation with invalid base shape"));
         }
     }
-        
-    std::vector<TopoShape> shapes;
+
     shapes.push_back(baseShape);
     for(auto it=itBegin; it<itEnd; ++it) {
         auto shape = getTopoShape(*it);
@@ -146,7 +151,49 @@ App::DocumentObjectExecReturn *Boolean::execute()
             return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception","Tool shape is null"));
         shapes.push_back(shape);
     }
+    return nullptr;
+}
 
+void Boolean::updateToolShape(const std::vector<TopoShape> &shapes, bool hasBase)
+{
+    // What the base is combined with; with no base feature, the first or
+    // last tool stands in for it and is drawn as a tool too
+    std::vector<TopoShape> tools(shapes.begin() + (hasBase ? 1 : 0), shapes.end());
+    if (tools.empty())
+        ToolShape.setValue(TopoShape());
+    else
+        ToolShape.setValue(TopoShape().makECompound(tools));
+}
+
+void Boolean::setPauseRecompute(bool enable)
+{
+    inherited::setPauseRecompute(enable);
+    // ToolShape is not saved, so a Boolean first edited after a load has none
+    if (enable && ToolShape.getShape().isNull()) {
+        std::vector<TopoShape> shapes;
+        bool hasBase = false;
+        std::unique_ptr<App::DocumentObjectExecReturn> ret(collectOperands(shapes, hasBase));
+        if (!ret)
+            updateToolShape(shapes, hasBase);
+    }
+}
+
+App::DocumentObjectExecReturn *Boolean::execute()
+{
+    std::vector<TopoShape> shapes;
+    bool hasBase = false;
+    if (auto ret = collectOperands(shapes, hasBase)) {
+        ToolShape.setValue(TopoShape());
+        return ret;
+    }
+    updateToolShape(shapes, hasBase);
+
+    // Edited with a preview: the base and the tools are drawn as they are
+    // and the boolean waits for the panel to close
+    if (isRecomputePaused())
+        return App::DocumentObject::StdReturn;
+
+    std::string type = Type.getValueAsString();
     TopoShape result(0,getDocument()->getStringHasher());
     if (shapes.size() == 1) {
         if (shapes.front().getPlacement().isIdentity()) {

@@ -61,10 +61,18 @@ public:
     void setPreviewDisplayMode(bool);
     virtual void checkAddSubColor();
 
-protected: 
+protected:
     virtual void setAddSubColor(const App::Color &color, float t);
+    /// Colours the preview \a color, translucent or not as the user chose
+    void applyPreviewColor(const App::Color &color);
     virtual void updateAddSubShapeIndicator();
     virtual PartGui::ViewProviderPartExt * getAddSubView();
+    /// The shape property the preview draws
+    virtual const char *getPreviewShapeName() const { return "AddSubShape"; }
+    /// Places \a shape, in this feature's frame, in the base feature's view
+    void updatePreviewTransform(const Part::TopoShape &shape);
+    /// Moves the preview into the view of a base feature that changed
+    void refreshPreviewBase();
 
 protected:
     Gui::CoinPtr<Gui::SoFCPathAnnotation>   previewGroup;

@@ -397,6 +397,22 @@ void Feature::onBaseFeatureRerouted(App::DocumentObject*, App::DocumentObject*)
 {
 }
 
+void Feature::setPauseRecompute(bool enable)
+{
+    if (enable == pauseRecompute)
+        return;
+    pauseRecompute = enable;
+    if (enable)
+        pausedRevision = this->getRevision();
+    else if (pausedRevision != this->getRevision())
+        touch();
+}
+
+bool Feature::isRecomputePaused() const
+{
+    return pauseRecompute;
+}
+
 bool Feature::relinkToMatchingSubElements(App::PropertyLinkSub& link,
                                           App::DocumentObject* oldBase,
                                           App::DocumentObject* newBase)

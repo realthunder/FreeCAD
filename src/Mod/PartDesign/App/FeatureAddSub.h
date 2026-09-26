@@ -56,9 +56,6 @@ public:
 
     static const std::string &addsubElementPrefix();
 
-    virtual void setPauseRecompute(bool enable);
-    bool isRecomputePaused() const;
-
     Part::TopoShape makeBoolean(const Part::TopoShape &base,
                                 const Part::TopoShape &tool);
 
@@ -67,8 +64,6 @@ protected:
 
 private:
     Type addSubType{Additive};
-    bool pauseRecompute{false};
-    int pausedRevision{0};
 };
 
 using FeatureAddSubPython = App::FeaturePythonT<FeatureAddSub>;

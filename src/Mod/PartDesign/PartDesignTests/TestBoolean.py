@@ -101,6 +101,40 @@ class TestBoolean(unittest.TestCase):
         self.Doc.recompute()
         self.assertAlmostEqual(self.BooleanCommon.Shape.Volume, 500)
 
+    def testBooleanToolShape(self):
+        """ToolShape holds what the edit preview draws: the tools alone,
+        where the boolean puts them, and every tool when there is no base"""
+        self.Body = self.Doc.addObject('PartDesign::Body','Body')
+        self.Box = self.Doc.addObject('PartDesign::AdditiveBox','Box')
+        self.Box.Length=10
+        self.Box.Width=10
+        self.Box.Height=10
+        self.Body.addObject(self.Box)
+        self.Body.Placement.Base = App.Vector(0,0,20)
+        self.Body001 = self.Doc.addObject('PartDesign::Body','Body001')
+        self.Box001 = self.Doc.addObject('PartDesign::AdditiveBox','Box001')
+        self.Box001.Length=10
+        self.Box001.Width=10
+        self.Box001.Height=10
+        self.Box001.Placement.Base = App.Vector(-5,0,0)
+        self.Body001.addObject(self.Box001)
+        self.Doc.recompute()
+        self.BooleanCut = self.Doc.addObject('PartDesign::Boolean','BooleanCut')
+        self.Body001.addObject(self.BooleanCut)
+        self.BooleanCut.setObjects([self.Body,])
+        self.BooleanCut.Type = 1
+        self.Doc.recompute()
+        tool = self.BooleanCut.ToolShape
+        self.assertAlmostEqual(tool.Volume, 1000)
+        # the tool body is placed 20 up, so nothing is cut
+        self.assertAlmostEqual(tool.BoundBox.ZMin, 20)
+        self.assertAlmostEqual(self.BooleanCut.Shape.Volume, 1000)
+
+        self.BooleanCut.NewSolid = True
+        self.Doc.recompute()
+        # no base: the base feature is added as a tool, and all are drawn
+        self.assertAlmostEqual(self.BooleanCut.ToolShape.Volume, 2000)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestBoolean")

@@ -878,7 +878,7 @@ public:
                         auto vp = Base::freecad_dynamic_cast<ViewProviderAddSub>(
                                 Gui::Application::Instance->getViewProvider(editObj));
                         if (vp) {
-                            auto feat = Base::freecad_dynamic_cast<PartDesign::FeatureAddSub>(editObj);
+                            auto feat = Base::freecad_dynamic_cast<PartDesign::Feature>(editObj);
                             if (feat)
                                 feat->setPauseRecompute(true);
                             editPreview = true;
@@ -1014,7 +1014,7 @@ public:
         auto vp = Base::freecad_dynamic_cast<ViewProviderAddSub>(
                 Gui::Application::Instance->getViewProvider(editObj));
         if (vp) {
-            auto feat = Base::freecad_dynamic_cast<PartDesign::FeatureAddSub>(editObj);
+            auto feat = Base::freecad_dynamic_cast<PartDesign::Feature>(editObj);
             if (feat)
                 feat->setPauseRecompute(false);
             vp->setPreviewDisplayMode(false);
@@ -1582,7 +1582,7 @@ void MonitorProxy::onPreview(bool checked)
     if (vp) {
         _MonitorInstance->editPreview = checked;
         vp->setPreviewDisplayMode(checked);
-        auto feat = Base::freecad_dynamic_cast<PartDesign::FeatureAddSub>(editObj);
+        auto feat = Base::freecad_dynamic_cast<PartDesign::Feature>(editObj);
         if (feat)
             feat->setPauseRecompute(checked);
         if (!checked) {

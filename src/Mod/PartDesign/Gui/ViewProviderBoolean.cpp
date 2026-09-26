@@ -37,11 +37,12 @@
 #include <Gui/Command.h>
 #include <Gui/Document.h>
 #include <Gui/SoFCUnifiedSelection.h>
+#include <Mod/Part/Gui/PartParams.h>
 
 
 using namespace PartDesignGui;
 
-PROPERTY_SOURCE_WITH_EXTENSIONS(PartDesignGui::ViewProviderBoolean,PartDesignGui::ViewProvider)
+PROPERTY_SOURCE_WITH_EXTENSIONS(PartDesignGui::ViewProviderBoolean,PartDesignGui::ViewProviderAddSub)
 
 const char* PartDesignGui::ViewProviderBoolean::DisplayEnum[] = {"Result","Tools",nullptr};
 
@@ -73,10 +74,42 @@ TaskDlgFeatureParameters *ViewProviderBoolean::getEditDialog()
 }
 
 void ViewProviderBoolean::attach(App::DocumentObject* obj) {
-    PartGui::ViewProviderPartExt::attach(obj);
+    ViewProviderAddSub::attach(obj);
 
     //set default display mode to override the "Group" display mode
     setDisplayMode("Flat Lines");
+}
+
+void ViewProviderBoolean::updateData(const App::Property* prop)
+{
+    if (auto feat = Base::freecad_dynamic_cast<PartDesign::Boolean>(getObject())) {
+        if (prop == &feat->ToolShape)
+            updateAddSubShapeIndicator();
+        else if (prop == &feat->Type)
+            checkAddSubColor();
+        else if (prop == &feat->BaseFeature)
+            refreshPreviewBase();
+
+        if (prop == &feat->BaseFeature || prop == &feat->Placement || prop == &feat->ToolShape)
+            updatePreviewTransform(feat->ToolShape.getShape());
+    }
+    ViewProviderAddSub::updateData(prop);
+}
+
+void ViewProviderBoolean::checkAddSubColor()
+{
+    auto feat = Base::freecad_dynamic_cast<PartDesign::Boolean>(getObject());
+    if (!feat)
+        return;
+    const char *type = feat->Type.getValueAsString();
+    uint32_t color;
+    if (type && strcmp(type, "Cut") == 0)
+        color = PartGui::PartParams::getPreviewSubColor();
+    else if (type && strcmp(type, "Common") == 0)
+        color = PartGui::PartParams::getPreviewIntersectColor();
+    else
+        color = PartGui::PartParams::getPreviewAddColor();
+    applyPreviewColor(App::Color(color));
 }
 
 // The DisplayMode property's own default, not just the mode shown: the

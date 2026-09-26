@@ -105,6 +105,16 @@ public:
     virtual void onBaseFeatureRerouted(App::DocumentObject* oldBase,
                                        App::DocumentObject* newBase);
 
+    /** Pauses the costly half of the recompute while the feature is edited
+     *  with a preview: it then computes only what the preview draws -- the
+     *  tool of an additive or subtractive feature, the tools of a Boolean --
+     *  and leaves Shape alone. Resuming touches the feature if anything
+     *  changed meanwhile. Features whose preview needs the full result
+     *  override this to do nothing.
+     */
+    virtual void setPauseRecompute(bool enable);
+    bool isRecomputePaused() const;
+
 protected:
     /** Relinks \a link from \a oldBase to \a newBase when every element it
      *  names is found by geometry in \a newBase exactly once. Otherwise
@@ -142,6 +152,10 @@ protected:
     /// Make a shape from a base plane (convenience method)
     static gp_Pln makePlnFromPlane(const App::DocumentObject* obj);
     static TopoShape makeShapeFromPlane(const App::DocumentObject* obj);
+
+private:
+    bool pauseRecompute{false};
+    int pausedRevision{0};
 };
 
 using FeaturePython = App::FeaturePythonT<Feature>;

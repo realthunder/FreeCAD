@@ -81,7 +81,8 @@ TaskBooleanParameters::TaskBooleanParameters(ViewProviderBoolean *BooleanView,QW
             this, &TaskBooleanParameters::onNewSolidChanged);
 
     this->groupLayout()->addWidget(proxy);
-    
+    PartDesignGui::addTaskCheckBox(BooleanView, proxy);
+
     ui->listWidgetBodies->setMouseTracking(true); // needed for itemEntered() to work
 
     ui->listWidgetBodies->setDragDropMode(QListWidget::InternalMove);
