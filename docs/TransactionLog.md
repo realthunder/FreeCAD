@@ -5865,3 +5865,31 @@ and the stock material card).
 
 Gates: Python 2927 OK; ctest 842/842; recovery 15, branch 27, version 18,
 pin 28, frozen 16 PASS.
+
+### 27.33 27.25 item 1, first step: what the scratch document costs (2026-09-26)
+
+Restore to a version that differs from the document by one label, through
+the scratch document (`restoreTransactionVersion`), against undoing that
+restore (the same change, applied from the undo stack):
+
+| model | open | restore via scratch | again | undo |
+| --- | --- | --- | --- | --- |
+| issue360_fillet_spike.FCStd (7 MB, 148 objects, 126 shapes; headless) | 2.90 s | 3.91 s | 7.07 s | 0.02 s |
+| 150 cylinders + 150 boxes, generated; headless | -- | 0.11 s | 0.10 s | 0.000 s |
+| the same in the GUI (offscreen) | -- | 0.14 s | 0.14 s | 0.002 s |
+
+- On a real model the scratch path costs more than opening the file: every
+  shape of the version is parsed again, and the second restore, with two
+  generations of values to capture and compare, costs more still.
+- Primitives are cheap to parse, so the generated model shows the fixed
+  cost only. The GUI adds about a third -- a Gui document and a view
+  provider per object for the scratch -- and nothing that looks like
+  meshing: 150 cylinders tessellated would show.
+- The same fillet model would not open in the GUI here: it needs the
+  Assembly3 module, which this build lacks, and the open stopped on a
+  dialog. The GUI column is the generated model's.
+
+Also measured: `saveToLog` on the 7 MB model, 1.41 s -- the snapshot, and
+the archive rewrite, which decodes and hashes every blob member to know
+what the archive holds. `Content.xml` or the History element's own list
+could answer most of that without the decode; not done.
