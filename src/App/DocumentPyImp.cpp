@@ -1056,6 +1056,17 @@ PyObject* DocumentPy::saveVersionAsFile(PyObject *args)
     } PY_CATCH;
 }
 
+PyObject* DocumentPy::saveToLog(PyObject *args)
+{
+    const char* name = "Saved to history";
+    if (!PyArg_ParseTuple(args, "|s", &name))
+        return nullptr;
+    PY_TRY {
+        return Py::new_reference_to(
+            Py::Long(static_cast<long long>(getDocumentPtr()->saveToLog(name))));
+    } PY_CATCH;
+}
+
 PyObject* DocumentPy::getTransactionCursor(PyObject *args)
 {
     if (!PyArg_ParseTuple(args, ""))

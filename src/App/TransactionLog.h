@@ -192,6 +192,12 @@ public:
         int64_t version {0};
     };
     Embedded embed(const std::string& saveDate);
+    /** The copy a save to the log only puts into the file (sec 27.28): the
+     * file's document is not written, so the copy carries the file's own
+     * save id and date -- the guard on open then still matches -- and
+     * leaves the branch the file reopens on as the store has it.
+     */
+    Embedded embedForFile(const std::string& saveDate, const std::string& saveId);
 
     /** Continue from an embedded copy (sec 16.4): the live store is
      * replaced by `path`'s content, the counters follow the copy's, and
@@ -283,7 +289,8 @@ public:
 
     /// The unnamed version between saves (sec 16.3), from
     /// Document::snapshotToLog: like onSave, with a `snapshot` record.
-    int64_t onSnapshot(const Captures& entries, const Blobs& blobs, int schema);
+    int64_t onSnapshot(const Captures& entries, const Blobs& blobs, int schema,
+                       const char* kind = "snapshot");
 
     int64_t session() const;
     int64_t environment() const;
@@ -525,7 +532,8 @@ public:
     bool readRevert(int64_t seq, TransactionLog::Revert& out);
     /// `branch`: the saving document's, the one the file reopens on
     /// (sec 27.16); 0 leaves the store's.
-    TransactionLog::Embedded embed(const std::string& saveDate, int64_t branch = 0);
+    TransactionLog::Embedded embed(const std::string& saveDate, int64_t branch = 0,
+                                   const std::string& saveId = std::string());
     /// The documents of the file and their branches (sec 27.7).
     Document* holderOf(int64_t id) const;
     std::vector<Document*> documents() const;

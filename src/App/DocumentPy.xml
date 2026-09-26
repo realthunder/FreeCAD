@@ -365,6 +365,17 @@ reopens on that branch. The document keeps its name. Returns the version
 the save became.</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="saveToLog">
+      <Documentation>
+        <UserDocu>saveToLog(name='Saved to history') -> int
+
+Save the document into its file's history only (docs/TransactionLog.md
+sec 27.22, 27.28): the log records a version, named so it is kept, and the
+file gets the new history -- but what the file opens as is not changed.
+Refused for a pinned version, a document not saved to a file, and a file
+that does not carry its history. Returns the version.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="getTransactionCursor">
       <Documentation>
         <UserDocu>getTransactionCursor() -> dict or None

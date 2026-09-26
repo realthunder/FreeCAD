@@ -779,11 +779,12 @@ TransactionStore& TransactionLogCore::store()
     return *_reader;
 }
 
-TransactionLog::Embedded TransactionLogCore::embed(const std::string& saveDate, int64_t branch)
+TransactionLog::Embedded TransactionLogCore::embed(const std::string& saveDate, int64_t branch,
+                                                  const std::string& saveId)
 {
     flush();
     TransactionLog::Embedded out;
-    out.saveId = Base::Uuid::createUuid();
+    out.saveId = saveId.empty() ? Base::Uuid::createUuid() : saveId;
     out.version = _nextVersion + 1;
     const std::string dir = _history.directory() + "/history";
     Base::FileInfo(dir).createDirectories();
@@ -1157,6 +1158,12 @@ TransactionLog::Embedded TransactionLog::embed(const std::string& saveDate)
     return _c.embed(saveDate, _branch);
 }
 
+TransactionLog::Embedded TransactionLog::embedForFile(const std::string& saveDate,
+                                                      const std::string& saveId)
+{
+    return _c.embed(saveDate, 0, saveId);
+}
+
 Document* TransactionLog::holderOf(int64_t id) const
 {
     return _c.holderOf(id);
@@ -1360,9 +1367,10 @@ bool TransactionLogCore::restoreBlob(const std::string& hash, const std::string&
     return true;
 }
 
-int64_t TransactionLog::onSnapshot(const Captures& entries, const Blobs& blobs, int schema)
+int64_t TransactionLog::onSnapshot(const Captures& entries, const Blobs& blobs, int schema,
+                                   const char* kind)
 {
-    return snapshot("snapshot", _doc.FileName.getValue(), entries, blobs, schema);
+    return snapshot(kind, _doc.FileName.getValue(), entries, blobs, schema);
 }
 
 int64_t TransactionLog::onRestore(const std::string& path, const Entries& entries,

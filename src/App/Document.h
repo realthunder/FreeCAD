@@ -359,6 +359,14 @@ public:
      * there is no log or the document is not in a state to snapshot.
      */
     int64_t snapshotToLog();
+    /** Save to the log only (docs/TransactionLog.md sec 27.22, 27.28): the
+     * log records a version of the document, named `name` so that it is
+     * kept, and the file is written again with the new history in it -- its
+     * other members copied as they are stored, so what the file opens as
+     * does not change. For any editable document of a saved file that
+     * carries its history. Returns the version; throws when refused.
+     */
+    int64_t saveToLog(const char* name = "Saved to history");
     /** Restore the document to a version of its log (docs/TransactionLog.md
      * sec 24.5): one forward transaction, kind `restore`, that makes the
      * document what the version was -- objects the version lacks removed,
@@ -1137,6 +1145,7 @@ protected:
     void _readVersion(int64_t num, const std::function<void(Document&)>& fn);
     /// Sec 27.7: share `history`, another document's of the same file.
     void _joinHistory(const std::shared_ptr<FileHistory>& history);
+    int64_t _snapshotToLog(const char* kind);
     /// Sec 26: refuse a branch operation in the middle of something else;
     /// an implicit transaction is committed first.
     void _checkBranchable(const char* what);

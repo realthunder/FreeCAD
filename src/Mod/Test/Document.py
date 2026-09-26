@@ -3175,6 +3175,59 @@ class TransactionBranchCases(unittest.TestCase):
             link2.pinLink("LinkedObject", first)
         self.assertIs(link2.LinkedObject, other)
 
+    def testSaveToTheLogOnly(self):
+        # Sec 27.22, 27.28: a version recorded, and kept, in the file's
+        # history -- the file written again with that history in it, but
+        # opening as it did.
+        import re
+        import zipfile
+
+        def model(path):
+            xml = zipfile.ZipFile(path).read("Document.xml").decode("utf-8")
+            return re.sub(r"<History[^>]*/>|<History .*?</History>", "", xml, flags=re.S)
+
+        doc = self.track(FreeCAD.newDocument("LogOnly"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        obj = doc.addObject("App::FeatureTest", "Obj")
+        obj.Integer = 1
+        doc.commitTransaction()
+        path = os.path.join(self.dir, "logonly.FCStd")
+        doc.saveAs(path)
+        onDisk = int(doc.Version.split()[0])
+        before = model(path)
+
+        doc.openTransaction("edit")
+        obj.Integer = 5
+        doc.commitTransaction()
+        num = doc.saveToLog()
+        self.assertGreater(num, onDisk)
+        self.assertEqual(model(path), before)
+        self.assertEqual(int(doc.Version.split()[0]), onDisk)
+        saved = {v["num"]: v for v in doc.getTransactionVersions()}
+        self.assertEqual(saved[num]["kind"], "named")
+        self.assertEqual(saved[num]["name"], "Saved to history")
+        self.assertEqual(obj.Integer, 5)
+
+        # Reopened: the file as it was, its history with the version in it,
+        # continued (the guard held), and the version restorable.
+        FreeCAD.closeDocument(doc.Name)
+        doc = self.track(FreeCAD.openDocument(path))
+        doc.UndoMode = 1
+        self.assertEqual(doc.getObject("Obj").Integer, 1)
+        self.assertIn(num, [v["num"] for v in doc.getTransactionVersions()])
+        self.assertFalse([b for b in doc.getTransactionBranches() if b["closed"]])
+        doc.restoreTransactionVersion(num)
+        self.assertEqual(doc.getObject("Obj").Integer, 5)
+
+        # A file that does not carry its history: refused.
+        self.param.SetInt("TransactionLog", 1)
+        try:
+            with self.assertRaises(Exception):
+                doc.saveToLog()
+        finally:
+            self.param.SetInt("TransactionLog", 2)
+
     def testOpeningADocumentKeepsAnotherOnesTransaction(self):
         # Sec 27.15: a document made or opened while another has a transaction
         # open joins none, so its restore does not commit that transaction

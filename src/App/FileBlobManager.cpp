@@ -1803,6 +1803,106 @@ void FileBlobManager::readBlobEntry(const std::string& name, Base::Reader& entry
     hold(std::move(blob));
 }
 
+bool FileBlobManager::readArchiveMember(const std::string& path, const std::string& name,
+                                        std::string& bytes)
+{
+    bytes.clear();
+    BlobArchive archive(path, false);
+    const auto& entries = archive.entries();
+    for (std::size_t i = 0; i < entries.size(); ++i) {
+        if (entries[i].name == name)
+            return archive.read(i, bytes);
+    }
+    return false;
+}
+
+std::map<std::string, std::string> FileBlobManager::archiveBlobHashes(const std::string& path)
+{
+    std::map<std::string, std::string> hashes;
+    BlobArchive archive(path, false);
+    const std::string prefix = archivePrefix();
+    const std::string index = prefix + indexName();
+    std::string bytes;
+    const auto& entries = archive.entries();
+    for (std::size_t i = 0; i < entries.size(); ++i) {
+        const auto& name = entries[i].name;
+        if (name.compare(0, prefix.size(), prefix) != 0 || name == index)
+            continue;
+        if (archive.read(i, bytes))
+            hashes[name] = hashBytes(bytes);
+    }
+    return hashes;
+}
+
+void FileBlobManager::rewriteArchive(
+    const std::string& path, const std::string& target,
+    const std::map<std::string, std::string>& replace,
+    const std::vector<std::pair<std::string, FileBlobHandle>>& add) const
+{
+    BlobArchive archive(path, false);
+    Base::FileInfo out(target);
+    {
+        Base::ofstream file(out, std::ios::out | std::ios::binary);
+        if (!file.is_open())
+            throw Base::FileException("Failed to open file", out);
+        Base::ZipWriter writer(file);
+        writer.setComment("FreeCAD Document");
+        writer.setLevel(Base::clamp<int>(DocumentParams::getCompressionLevel(),
+                                         Z_NO_COMPRESSION, Z_BEST_COMPRESSION));
+        const auto& entries = archive.entries();
+        for (std::size_t i = 0; i < entries.size(); ++i) {
+            const auto& name = entries[i].name;
+            auto it = replace.find(name);
+            if (it != replace.end()) {
+                writer.putNextEntry(name.c_str());
+                writer.Stream().write(it->second.data(),
+                                      static_cast<std::streamsize>(it->second.size()));
+                continue;
+            }
+            BlobRawMember member;
+            if (!archive.readRaw(i, member))
+                THROWM(Base::FileSystemError, "cannot read " + name + " of " + path)
+            Base::Writer::RawEntry raw;
+            raw.method = member.method;
+            raw.crc = member.crc;
+            raw.size = member.size;
+            raw.data = member.data.data();
+            raw.compressedSize = member.data.size();
+            if (writer.putRawEntry(name.c_str(), raw))
+                continue;
+            std::string bytes;
+            if (!decodeMember(member, bytes))
+                THROWM(Base::FileSystemError, "cannot decode " + name + " of " + path)
+            writer.putNextEntry(name.c_str());
+            writer.Stream().write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+        }
+        for (const auto& a : add) {
+            const std::string name = std::string(archivePrefix()) + a.first;
+            const FileBlob& blob = *a.second;
+            if (blob.inPack()) {
+                auto member = readMember(blob);
+                if (!member)
+                    THROWM(Base::FileSystemError, "cannot read blob " + blob.hash())
+                Base::Writer::RawEntry raw;
+                raw.method = member->method;
+                raw.crc = member->crc;
+                raw.size = member->size;
+                raw.data = member->data.data();
+                raw.compressedSize = member->data.size();
+                if (writer.putRawEntry(name.c_str(), raw))
+                    continue;
+            }
+            std::string bytes;
+            if (!blob.read(bytes))
+                THROWM(Base::FileSystemError, "cannot read blob " + blob.hash())
+            writer.putNextEntry(name.c_str());
+            writer.Stream().write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+        }
+        writer.writeFiles();
+    }
+    archive.close();
+}
+
 bool FileBlobManager::restoreFromArchive(const std::string& source)
 {
     FC_TIME_INIT(tSplit);

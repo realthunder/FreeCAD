@@ -5677,3 +5677,60 @@ not reach, and a pin refused for a version without the object.
 
 Gates: Python 2924 OK; ctest 842/842; recovery 15, branch 27, version 18,
 pin 28 PASS.
+
+### 27.28 Step 3 as built: save to the log only (2026-09-26)
+
+`Document::saveToLog(name)`; Python `doc.saveToLog(name='Saved to
+history')`. For any editable document of a saved file -- the file's own
+document or an editable version instance; refused for a frozen one, for a
+document with no file, and when the file does not carry its history
+(preference not 2 and no pins).
+
+1. The file's guard is read from its `Document.xml`: the save id in
+   `Version` and `LastModifiedDate`. A file with no history element or no
+   save id is refused ("save it with its history first").
+2. Every document of the file flushes what is still parked in the archive
+   (as `saveToFile` does), and the implicit transaction is committed.
+3. The cursor takes its branch; a snapshot (transaction kind `history`)
+   records the version, which is **named** (`name`) at once: a version the
+   file does not hold must travel in its history, and embed() keeps only
+   named versions and each branch's newest.
+4. The history copy is made with `TransactionLog::embedForFile(date,
+   saveId)`: the file's own save id and date, so the guard on open still
+   matches, and the store's `meta` branch left as it is -- the file
+   reopens on the branch it did.
+5. The archive is written again (`FileBlobManager::rewriteArchive`) to a
+   temporary file beside it and moved over it: every member copied as it
+   is stored, not decoded, except `Document.xml`, whose `<History>`
+   element alone is replaced; the new database and the kept blobs the
+   archive lacks are appended, named by hash. Members under `blobs/` are
+   identified by content on open (`restoreFromArchive` hashes each), so
+   names do not matter, and `Content.xml` is left as it was.
+6. The document's `Version` is not touched -- it is the version the file
+   is -- and an editable instance's name takes the new version as its tail.
+
+**The old history database is kept in the file.** The first cut replaced
+it where it was, and restoring the saved version failed: the version's
+capture names it. Every capture includes the document's own `History`
+property, so a kept version keeps the history database of its time.
+
+**Found: a file carries its previous history database.** The same
+capture does it on every ordinary save. Probe: five saves of a one-object
+document, each file with two `.db` members -- `History.db` and the one
+before it (94 KB + 122 KB after the second save, 151 KB + 167 KB after
+the fifth). It predates today. The fix belongs in the capture: the
+document's own `History` is bookkeeping (`keptOnRestore` already skips
+it), so no version should hold its database. Next, as its own commit.
+
+Not done: members of the old history that nothing references any more
+are not dropped by a log-only save; the next ordinary save writes the
+archive from scratch and leaves them out.
+
+Test: Python `TransactionBranchCases.testSaveToTheLogOnly` -- the model
+in the file unchanged (Document.xml without its History element compared
+byte for byte), the version named and kept, reopened: the file's value,
+the version in its history, no closed branches (the guard held), and a
+restore to it; refused with the preference off.
+
+Gates: Python 2925 OK; ctest 842/842; recovery 15, branch 27, version 18,
+pin 28 PASS.

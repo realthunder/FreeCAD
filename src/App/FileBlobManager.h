@@ -514,6 +514,25 @@ public:
      */
     static const char* indexName();
 
+    /** A save that rewrites only part of an archive (docs/TransactionLog.md
+     * sec 27.28, save to the log only): read one member of the zip archive
+     * at `path`, decoded. False when there is no such member.
+     */
+    static bool readArchiveMember(const std::string& path, const std::string& name,
+                                  std::string& bytes);
+    /// The content hash of each blob member of the archive, by member name,
+    /// as a restore hashes them: what an archive holds, whatever its members
+    /// are named.
+    static std::map<std::string, std::string> archiveBlobHashes(const std::string& path);
+    /** Write the archive at `path` again into `target`: every member copied
+     * as it is stored, not decoded, except the ones `replace` names, written
+     * with its bytes, and `add` appended -- each a blob of this store under
+     * its member name. Throws on failure.
+     */
+    void rewriteArchive(const std::string& path, const std::string& target,
+                        const std::map<std::string, std::string>& replace,
+                        const std::vector<std::pair<std::string, FileBlobHandle>>& add) const;
+
     /// Where a save puts the content the document refers to.
     enum class BlobFormat
     {

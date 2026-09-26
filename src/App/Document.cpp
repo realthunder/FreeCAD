@@ -4436,6 +4436,11 @@ bool Document::adoptEmbeddedHistory()
 
 int64_t Document::snapshotToLog()
 {
+    return _snapshotToLog("snapshot");
+}
+
+int64_t Document::_snapshotToLog(const char* kind)
+{
     TransactionLog* log = getTransactionLog();
     if (!log || d->snapshotting || testStatus(PartialDoc) || testStatus(Restoring)
             || isPerformingTransaction() || d->activeUndoTransaction)
@@ -4486,7 +4491,7 @@ int64_t Document::snapshotToLog()
         TransactionLog::Blobs blobs = getFileBlobManager().collectedEntries();
         TransactionLog::Captures entries = std::move(d->captures);
         d->captures.clear();
-        int64_t num = log->onSnapshot(entries, blobs, writer.getSchemaVersion());
+        int64_t num = log->onSnapshot(entries, blobs, writer.getSchemaVersion(), kind);
         if (num)
             noteVersionTaken();
         return num;
@@ -5148,6 +5153,159 @@ bool Document::isPinned() const
         return true;
     return !FileName.getStrValue().empty() && !testStatus(VersionDoc)
         && !PropertyXLink::getPinsTo(FileName.getStrValue()).empty();
+}
+
+namespace {
+
+/// The value of the document-level `<Property name="...">` of Document.xml
+/// whose content is `<String value="..."/>`; empty if there is none.
+std::string documentString(const std::string& xml, const char* name)
+{
+    const std::string open = std::string("<Property name=\"") + name + "\"";
+    size_t at = xml.find(open);
+    if (at == std::string::npos)
+        return {};
+    const size_t end = xml.find("</Property>", at);
+    const size_t value = xml.find("<String value=\"", at);
+    if (value == std::string::npos || value > end)
+        return {};
+    const size_t from = value + std::strlen("<String value=\"");
+    const size_t to = xml.find('"', from);
+    return to == std::string::npos ? std::string() : xml.substr(from, to - from);
+}
+
+/// Where the `<History .../>` or `<History ...>...</History>` element of the
+/// document's History property is in Document.xml: false if it has none.
+bool findHistoryElement(const std::string& xml, size_t& from, size_t& to)
+{
+    const size_t at = xml.find("<Property name=\"History\"");
+    if (at == std::string::npos)
+        return false;
+    const size_t end = xml.find("</Property>", at);
+    from = xml.find("<History", at);
+    if (from == std::string::npos || from > end)
+        return false;
+    const size_t close = xml.find('>', from);
+    if (close == std::string::npos)
+        return false;
+    if (xml[close - 1] == '/') {
+        to = close + 1;
+        return true;
+    }
+    const size_t closing = xml.find("</History>", close);
+    if (closing == std::string::npos || closing > end)
+        return false;
+    to = closing + std::strlen("</History>");
+    return true;
+}
+
+} // namespace
+
+int64_t Document::saveToLog(const char* name)
+{
+    // docs/TransactionLog.md sec 27.22, 27.28.
+    checkNotFrozen("save to the log");
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        THROWM(Base::RuntimeError, "no transaction log");
+    std::string file = FileName.getStrValue();
+    FileHistory::splitVersion(file);
+    Base::FileInfo fi(file);
+    if (file.empty() || !fi.isFile())
+        THROWM(Base::RuntimeError,
+               "'" + Label.getStrValue() + "' has no file to save its history into");
+    if (DocumentParams::getTransactionLog() != 2 && log->store().getMeta("pins").empty()
+            && PropertyXLink::getPinsTo(file).empty())
+        THROWM(Base::RuntimeError,
+               "the file does not carry its history: saving to the history alone would lose it");
+
+    // The file's own guard, which it keeps: the save id and the date its
+    // document says it was saved with (sec 16.4).
+    std::string xml;
+    if (!FileBlobManager::readArchiveMember(file, "Document.xml", xml))
+        THROWM(Base::FileException, ("cannot read the document of '" + file + "'").c_str());
+    std::string saveId;
+    {
+        std::istringstream in(documentString(xml, "Version"));
+        int64_t num = 0;
+        in >> num >> saveId;
+    }
+    const std::string saveDate = documentString(xml, "LastModifiedDate");
+    size_t hFrom = 0, hTo = 0;
+    if (saveId.empty() || !findHistoryElement(xml, hFrom, hTo))
+        THROWM(Base::RuntimeError, "the file carries no history: save it with its history first");
+
+    // Nothing of any document of the file may still be parked in the
+    // archive being replaced (as for a save, saveToFile()).
+    for (auto doc : log->documents())
+        doc->flushDeferredFiles();
+    commitImplicitTransaction();
+
+    log->takeBranch();
+    const int64_t num = _snapshotToLog("history");
+    if (!num)
+        THROWM(Base::RuntimeError, "'" + Label.getStrValue() + "' cannot be saved to the log now");
+    // Kept: a version the file does not hold must travel in its history.
+    log->store().nameVersion(num, name && name[0] ? name : "Saved to history");
+
+    // The history, as the file will carry it.
+    TransactionLog::Embedded copy = log->embedForFile(saveDate, saveId);
+    auto& manager = getFileBlobManager();
+    FileBlobHandle db = manager.adoptFile(copy.path.c_str(), "db");
+    if (!db)
+        THROWM(Base::RuntimeError, "cannot store the history");
+    std::ostringstream element;
+    element << "<History db=\"" << db->hash() << "\" count=\"" << copy.blobs.size() << "\">\n";
+    std::vector<FileBlobHandle> blobs;
+    for (const auto& b : copy.blobs) {
+        auto blob = manager.find(b.first);
+        if (!blob) {
+            FC_WARN("history of " << getName() << ": blob " << b.first << " is not in the store");
+            continue;
+        }
+        blobs.push_back(blob);
+        element << "  <Blob hash=\"" << b.first << "\" ext=\"" << Property::encodeAttribute(b.second)
+                << "\"/>\n";
+    }
+    element << "</History>";
+    xml.replace(hFrom, hTo - hFrom, element.str());
+
+    // What the archive holds already is copied as stored, and what it lacks
+    // is added: the new database, and the blobs the history keeps. The old
+    // database stays -- a version the history keeps may name it (the
+    // document's own History property is in every version's capture).
+    const std::map<std::string, std::string> hashes = FileBlobManager::archiveBlobHashes(file);
+    std::map<std::string, std::string> replace {{"Document.xml", xml}};
+    blobs.push_back(db);
+    std::set<std::string> held;
+    for (const auto& h : hashes)
+        held.insert(h.second);
+    std::vector<std::pair<std::string, FileBlobHandle>> add;
+    for (const auto& blob : blobs) {
+        if (held.insert(blob->hash()).second) {
+            std::string ext = blob->extension();
+            add.emplace_back(blob->hash() + (ext.empty() ? "" : "." + ext), blob);
+        }
+    }
+
+    const std::string tmp = file + "." + Base::Uuid::createUuid();
+    try {
+        manager.rewriteArchive(file, tmp, replace, add);
+    }
+    catch (...) {
+        Base::FileInfo(tmp).deleteFile();
+        throw;
+    }
+    if (!fi.deleteFile() || !Base::FileInfo(tmp).renameFile(file.c_str()))
+        THROWM(Base::FileException, ("cannot replace '" + file + "'").c_str());
+    Base::FileInfo(copy.path).deleteFile();
+
+    noteVersionTaken();
+    if (testStatus(VersionDoc)) {
+        d->versionTail = num;
+        refreshVersionNames();
+    }
+    return num;
 }
 
 int64_t Document::saveVersionAsFile()
