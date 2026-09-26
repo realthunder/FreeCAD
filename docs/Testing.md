@@ -400,7 +400,9 @@ against the real `%TEMP%`.
 
 **And again, 2026-09-26**, on the same box: 41,626 entries (40,478 loose
 `.tmp`, so about 2,500 a day since the sweep), a 25-minute timeout under
-`ctest`, and **14.8 s** through `ctest-fcad-cleantmp.cmd`. A timeout on this
+`ctest`, and **14.8 s** through `ctest-fcad-cleantmp.cmd`. Swept (40,506
+loose `.tmp` older than an hour, 57 MB; `claude\` and the ssh-agent socket
+untouched), it passes against the real `%TEMP%` again. A timeout on this
 suite is the temp directory until shown otherwise.
 
 **Two things a sweep must not take with it, one of them learned the hard
