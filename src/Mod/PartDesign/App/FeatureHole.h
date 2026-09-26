@@ -24,8 +24,11 @@
 #ifndef PARTDESIGN_Hole_H
 #define PARTDESIGN_Hole_H
 
+#include <functional>
 #include <optional>
+#include <vector>
 #include <App/PropertyUnits.h>
+#include <Base/Vector3D.h>
 #include "json_fwd.hpp"
 #include "FeatureSketchBased.h"
 
@@ -50,6 +53,7 @@ public:
 
     App::PropertyBool           Threaded;
     App::PropertyBool           ModelThread;
+    App::PropertyBool           CosmeticThread;
     App::PropertyLength         ThreadPitch;
     App::PropertyEnumeration    ThreadType;
     App::PropertyEnumeration    ThreadSize;
@@ -123,6 +127,31 @@ public:
     void onDocumentRestored() override;
 
     virtual void updateProps();
+
+    /** One bore the hole leaves threaded without modelling the thread
+     *
+     * What a view needs to draw the thread on it (a cosmetic thread), in
+     * the feature's own shape coordinates -- the frame execute() builds
+     * the hole in, i.e. with the feature's Placement taken off. The
+     * thread starts at `origin`, the hole's mouth on the profile, and
+     * runs `length` along `direction` into the material.
+     */
+    struct CosmeticThreadBore
+    {
+        Base::Vector3d origin;
+        Base::Vector3d direction;   ///< unit, from the mouth into the material
+        double radius = 0.0;        ///< the bore's radius at the mouth
+        double taper = 0.0;         ///< radians the wall leans off the axis, 0 = straight
+        double length = 0.0;        ///< how far the thread runs
+        double pitch = 0.0;         ///< the lead of a single-start thread
+        double height = 0.0;        ///< crest to root, the standard's working height
+        double profileAngle = 60.0; ///< degrees, included between the flanks
+        bool leftHand = false;
+    };
+    /// The threaded bores, one per hole the profile centres; empty unless
+    /// the hole is threaded with CosmeticThread on and ModelThread off.
+    std::vector<CosmeticThreadBore> getCosmeticThreads() const;
+    double getThreadPitch() const;
 
 protected:
     void onChanged(const App::Property* prop) override;
@@ -248,7 +277,6 @@ private:
     double getCountersinkAngle() const;
     double getThreadClassClearance() const;
     double getThreadRunout(int mode = 1) const;
-    double getThreadPitch() const;
     double getThreadProfileAngle();
     void findClosestDesignation();
     /// The pitch of the size ThreadDiameter was taken from, 0 if none:
@@ -260,6 +288,10 @@ private:
     Base::Vector3d guessNormalDirection(const TopoShape& profileshape) const;
     TopoDS_Shape makeThread(const gp_Vec&, const gp_Vec&, double);
     TopoShape findHoles(std::vector<TopoShape> &holes, const TopoShape& profileshape, const TopoDS_Shape& protohole) const;
+    /// Every point of the profile a hole is centred on, with the profile
+    /// element it comes from, in the order findHoles() drills them
+    void forEachHoleCenter(const TopoShape& profileshape,
+                           const std::function<void(const TopoShape&, const gp_Pnt&)>& fn) const;
 
     // helpers for nlohmann json
     friend void from_json(const nlohmann::json &j, CounterBoreDimension &t);

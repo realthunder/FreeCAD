@@ -122,6 +122,8 @@ TaskHoleParameters::TaskHoleParameters(ViewProviderHole* HoleView, QWidget* pare
             this, &TaskHoleParameters::taperedAngleChanged);
     connect(ui->ModelThread, &QCheckBox::clicked,
             this, &TaskHoleParameters::modelThreadChanged);
+    connect(ui->CosmeticThread, &QCheckBox::clicked,
+            this, &TaskHoleParameters::cosmeticThreadChanged);
     connect(ui->UseCustomThreadClearance, &QCheckBox::toggled,
             this, &TaskHoleParameters::useCustomThreadClearanceChanged);
     connect(ui->CustomThreadClearance, qOverload<double>(&Gui::QuantitySpinBox::valueChanged),
@@ -256,6 +258,7 @@ void TaskHoleParameters::refresh()
     PartDesign::Hole* pcHole = static_cast<PartDesign::Hole*>(vp->getObject());
 
     ui->ModelThread->setChecked(pcHole->ModelThread.getValue());
+    ui->CosmeticThread->setChecked(pcHole->CosmeticThread.getValue());
     ui->UseCustomThreadClearance->setChecked(pcHole->UseCustomThreadClearance.getValue());
     ui->CustomThreadClearance->setValue(pcHole->CustomThreadClearance.getValue());
     ui->ThreadDepthType->setCurrentIndex(pcHole->ThreadDepthType.getValue());
@@ -272,12 +275,12 @@ void TaskHoleParameters::refresh()
     ui->ThreadType->setCurrentIndex(pcHole->ThreadType.getValue());
 
     ui->ModelThread->setEnabled(ui->Threaded->isChecked() && ui->ThreadType->currentIndex() != 0);
+    ui->CosmeticThread->setEnabled(ui->Threaded->isChecked() && ui->ThreadType->currentIndex() != 0);
     ui->UseCustomThreadClearance->setEnabled(ui->Threaded->isChecked() && ui->ModelThread->isChecked());
     ui->labelThreadClearance->setEnabled(ui->Threaded->isChecked() && ui->ModelThread->isChecked() && ui->UseCustomThreadClearance->isChecked());
     ui->CustomThreadClearance->setEnabled(ui->Threaded->isChecked() && ui->ModelThread->isChecked() && ui->UseCustomThreadClearance->isChecked());
 
-    ui->ThreadDepthType->setEnabled(ui->Threaded->isChecked() && ui->ModelThread->isChecked());
-    ui->ThreadDepth->setEnabled(ui->Threaded->isChecked() && ui->ModelThread->isChecked() && std::string(pcHole->ThreadDepthType.getValueAsString()) == "Dimension");
+    updateThreadDepthEnabled();
 
     ui->ThreadSize->clear();
     std::vector<std::string> cursor = pcHole->ThreadSize.getEnumVector();
@@ -383,10 +386,8 @@ void TaskHoleParameters::threadedChanged()
     pcHole->Threaded.setValue(isChecked);
 
     ui->ModelThread->setEnabled(isChecked);
-    ui->ThreadDepthType->setEnabled(isChecked);
-    // as refresh() and modelThreadChanged() have it (upstream 44e8f91085)
-    ui->ThreadDepth->setEnabled(isChecked && ui->ModelThread->isChecked()
-        && std::string(pcHole->ThreadDepthType.getValueAsString()) == "Dimension");
+    ui->CosmeticThread->setEnabled(isChecked);
+    updateThreadDepthEnabled();
 
     // conditional enabling of thread modeling options
     ui->UseCustomThreadClearance->setEnabled(ui->Threaded->isChecked() && ui->ModelThread->isChecked());
@@ -421,10 +422,33 @@ void TaskHoleParameters::modelThreadChanged()
     ui->UseCustomThreadClearance->setEnabled(ui->Threaded->isChecked() && ui->ModelThread->isChecked());
     ui->CustomThreadClearance->setEnabled(ui->Threaded->isChecked() && ui->ModelThread->isChecked() && ui->UseCustomThreadClearance->isChecked());
 
-    ui->ThreadDepthType->setEnabled(ui->Threaded->isChecked() && ui->ModelThread->isChecked());
-    ui->ThreadDepth->setEnabled(ui->Threaded->isChecked() && ui->ModelThread->isChecked() && std::string(pcHole->ThreadDepthType.getValueAsString()) == "Dimension");
+    updateThreadDepthEnabled();
 
     recomputeFeature();
+}
+
+void TaskHoleParameters::cosmeticThreadChanged()
+{
+    PartDesign::Hole* pcHole = static_cast<PartDesign::Hole*>(vp->getObject());
+
+    // The App side keeps the two exclusive, and changedObject() brings
+    // the Model Thread box along
+    pcHole->CosmeticThread.setValue(ui->CosmeticThread->isChecked());
+    updateThreadDepthEnabled();
+    recomputeFeature();
+}
+
+void TaskHoleParameters::updateThreadDepthEnabled()
+{
+    PartDesign::Hole* pcHole = static_cast<PartDesign::Hole*>(vp->getObject());
+
+    // Where the thread stops matters to a thread drawn on the bore as
+    // much as to a modelled one
+    bool used = ui->Threaded->isChecked()
+        && (ui->ModelThread->isChecked() || ui->CosmeticThread->isChecked());
+    ui->ThreadDepthType->setEnabled(used);
+    ui->ThreadDepth->setEnabled(used
+        && std::string(pcHole->ThreadDepthType.getValueAsString()) == "Dimension");
 }
 
 void TaskHoleParameters::baseProfileTypeChanged(int index)
@@ -1052,6 +1076,15 @@ void TaskHoleParameters::changedObject(const App::Document&, const App::Property
         }
         ui->ModelThread->setDisabled(ro);
     }
+    else if (&Prop == &pcHole->CosmeticThread) {
+        ui->CosmeticThread->setEnabled(true);
+        if (ui->CosmeticThread->isChecked() ^ pcHole->CosmeticThread.getValue()) {
+            ui->CosmeticThread->blockSignals(true);
+            ui->CosmeticThread->setChecked(pcHole->CosmeticThread.getValue());
+            ui->CosmeticThread->blockSignals(false);
+        }
+        ui->CosmeticThread->setDisabled(ro);
+    }
     else if (&Prop == &pcHole->UseCustomThreadClearance) {
         ui->UseCustomThreadClearance->setEnabled(true);
         if (ui->UseCustomThreadClearance->isChecked() ^ pcHole->UseCustomThreadClearance.getValue()) {
@@ -1228,6 +1261,11 @@ bool TaskHoleParameters::getModelThread() const
     return ui->ModelThread->isChecked();
 }
 
+bool TaskHoleParameters::getCosmeticThread() const
+{
+    return ui->CosmeticThread->isChecked();
+}
+
 int TaskHoleParameters::getBaseProfileType() const
 {
     return PartDesign::Hole::baseProfileOption_idxToBitmask(ui->BaseProfileType->currentIndex());
@@ -1262,6 +1300,8 @@ void TaskHoleParameters::apply()
         FCMD_OBJ_CMD(obj, "Threaded = " << (getThreaded() ? 1 : 0));
     if (!pcHole->ModelThread.isReadOnly())
         FCMD_OBJ_CMD(obj, "ModelThread = " << (getModelThread() ? 1 : 0));
+    if (!pcHole->CosmeticThread.isReadOnly())
+        FCMD_OBJ_CMD(obj, "CosmeticThread = " << (getCosmeticThread() ? 1 : 0));
     if (!pcHole->ThreadDepthType.isReadOnly())
         FCMD_OBJ_CMD(obj, "ThreadDepthType = " << getThreadDepthType());
     if (!pcHole->BaseProfileType.isReadOnly() && getBaseProfileType() > 0)

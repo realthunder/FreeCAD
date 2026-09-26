@@ -754,6 +754,10 @@ Hole::Hole()
 
     ADD_PROPERTY_TYPE(ModelThread, (false), "Hole", App::Prop_None, "Model actual thread");
 
+    // Upstream's name and default (180c39709a), so a file travels both ways
+    ADD_PROPERTY_TYPE(CosmeticThread, (true), "Hole", App::Prop_None,
+                      "Draw the thread on the bore without modelling it");
+
     ADD_PROPERTY_TYPE(ThreadType, (0L), "Hole", App::Prop_None, "Thread type");
     ThreadType.setEnums(ThreadTypeEnums);
 
@@ -1666,6 +1670,10 @@ void Hole::onChanged(const App::Property* prop)
             }
         }
 
+        // Every type above states ModelThread's; the cosmetic thread goes
+        // with it, whatever the type
+        CosmeticThread.setReadOnly(type == "None" || !Threaded.getValue());
+
         // Signal changes to these
         ProfileBased::onChanged(&ThreadSize);
         ProfileBased::onChanged(&ThreadClass);
@@ -1686,6 +1694,7 @@ void Hole::onChanged(const App::Property* prop)
             ThreadDirection.setReadOnly(false);
             ThreadFit.setReadOnly(true);
             ModelThread.setReadOnly(false);
+            CosmeticThread.setReadOnly(false);
             UseCustomThreadClearance.setReadOnly(false);
             CustomThreadClearance.setReadOnly(!UseCustomThreadClearance.getValue());
             ThreadDepthType.setReadOnly(false);
@@ -1701,6 +1710,10 @@ void Hole::onChanged(const App::Property* prop)
             else
                 ThreadFit.setReadOnly(false);
             ModelThread.setReadOnly(true);
+            // Read only, but left as it was: upstream clears it here, and
+            // then ticking Threaded again brings the hole back with no
+            // thread drawn, which is not what anyone ticking it meant
+            CosmeticThread.setReadOnly(true);
             UseCustomThreadClearance.setReadOnly(true);
             CustomThreadClearance.setReadOnly(true);
             ThreadDepthType.setReadOnly(true);
@@ -1714,6 +1727,16 @@ void Hole::onChanged(const App::Property* prop)
         // Diameter parameter depends on this
         updateDiameterParam();
         UseCustomThreadClearance.setReadOnly(!ModelThread.getValue());
+        // A modelled thread is the thread; drawing one over it would be
+        // two. Kept exclusive in the stored values too, as upstream keeps
+        // them, because upstream's own restore enforces it the other way
+        // round and would drop the modelled one from a file holding both.
+        if (ModelThread.getValue() && CosmeticThread.getValue())
+            CosmeticThread.setValue(false);
+    }
+    else if (prop == &CosmeticThread) {
+        if (CosmeticThread.getValue() && ModelThread.getValue())
+            ModelThread.setValue(false);
     }
     else if (prop == &DrillPoint) {
         if (DrillPoint.getValue() == 1) {
@@ -2337,6 +2360,104 @@ Base::Vector3d Hole::guessNormalDirection(const TopoShape& profileshape) const
     return getProfileNormal();
 }
 
+void Hole::forEachHoleCenter(
+    const TopoShape& profileshape,
+    const std::function<void(const TopoShape&, const gp_Pnt&)>& fn) const
+{
+    const int types = BaseProfileType.getValue();
+    if (types & (OnCircles | OnArcs)) {
+        for(const auto &profileEdge : profileshape.getSubTopoShapes(TopAbs_EDGE)) {
+            BRepAdaptor_Curve adaptor(TopoDS::Edge(profileEdge.getShape()));
+            if (adaptor.GetType() != GeomAbs_Circle)
+                continue;
+            if (!(types & (adaptor.IsClosed() ? OnCircles : OnArcs)))
+                continue;
+            fn(profileEdge, adaptor.Circle().Location());
+        }
+    }
+    // Points on their own, not the ends of the edges
+    if (types & OnPoints) {
+        for (const auto &vertex : profileshape.getSubTopoShapes(TopAbs_VERTEX, TopAbs_EDGE))
+            fn(vertex, BRep_Tool::Pnt(TopoDS::Vertex(vertex.getShape())));
+    }
+}
+
+std::vector<Hole::CosmeticThreadBore> Hole::getCosmeticThreads() const
+{
+    std::vector<CosmeticThreadBore> bores;
+    if (!Threaded.getValue() || !CosmeticThread.getValue() || ModelThread.getValue()
+            || Suppress.getValue())
+        return bores;
+
+    const int type = ThreadType.getValue();
+    const int size = ThreadSize.getValue();
+    if (type <= 0 || size < 0)
+        return bores;
+    const double pitch = threadDescription[type][size].pitch;
+    if (!(pitch > 0.0))
+        return bores;
+
+    try {
+        TopoShape profileshape = getProfileShape();
+        if (profileshape.isNull())
+            return bores;
+
+        // The frame execute() drills in: the feature's own shape
+        // coordinates, its Placement taken off (execute() gets there
+        // through positionByPrevious(), which has already set the
+        // Placement this inverts)
+        const TopLoc_Location invObjLoc = getLocation().Inverted();
+        Base::Vector3d normal = guessNormalDirection(profileshape);
+        profileshape.move(invObjLoc);
+        if (Reversed.getValue())
+            normal *= -1.0;
+        gp_Vec zDir(normal.x, normal.y, normal.z);
+        zDir.Transform(invObjLoc.Transformation());
+        if (zDir.Magnitude() < Precision::Confusion())
+            return bores;
+        zDir.Normalize();
+
+        const std::string depthType = DepthType.getValueAsString();
+        const double holeLength =
+            depthType == "ThroughAll" ? getThroughAllLength() : Depth.getValue();
+        const std::string threadDepthType = ThreadDepthType.getValueAsString();
+        const double length = threadDepthType == "Hole Depth"
+            ? holeLength : std::min(ThreadDepth.getValue(), holeLength);
+        if (!(length > 0.0))
+            return bores;
+
+        CosmeticThreadBore bore;
+        // The hole goes down -zDir from the profile
+        bore.direction = Base::Vector3d(-zDir.X(), -zDir.Y(), -zDir.Z());
+        bore.radius = Diameter.getValue() / 2.0;
+        bore.taper = Tapered.getValue()
+            ? Base::toRadians<double>(90.0 - TaperedAngle.getValue()) : 0.0;
+        bore.length = length;
+        bore.pitch = pitch;
+        // Whitworth and the pipe threads derived from it are 55 degrees
+        // with a rounded 0.640P form; ISO, Unified and NPT are 60 degrees
+        // with the 5/8 H = 0.541P of a truncated one
+        const std::string threadType = ThreadType.getValueAsString();
+        const bool whitworth =
+            threadType == "BSW" || threadType == "BSF" || threadType == "BSP";
+        bore.profileAngle = whitworth ? 55.0 : 60.0;
+        bore.height = (whitworth ? 0.640327 : 0.541266) * pitch;
+        bore.leftHand = std::string(ThreadDirection.getValueAsString()) == "Left";
+
+        forEachHoleCenter(profileshape, [&](const TopoShape&, const gp_Pnt& loc) {
+            bore.origin = Base::Vector3d(loc.X(), loc.Y(), loc.Z());
+            bores.push_back(bore);
+        });
+    }
+    catch (const Base::Exception&) {
+        bores.clear();
+    }
+    catch (const Standard_Failure&) {
+        bores.clear();
+    }
+    return bores;
+}
+
 TopoShape Hole::findHoles(std::vector<TopoShape> &holes,
                           const TopoShape& profileshape,
                           const TopoDS_Shape& protoHole) const
@@ -2357,22 +2478,7 @@ TopoShape Hole::findHoles(std::vector<TopoShape> &holes,
         holes.push_back(hole);
     };
 
-    const int types = BaseProfileType.getValue();
-    if (types & (OnCircles | OnArcs)) {
-        for(const auto &profileEdge : profileshape.getSubTopoShapes(TopAbs_EDGE)) {
-            BRepAdaptor_Curve adaptor(TopoDS::Edge(profileEdge.getShape()));
-            if (adaptor.GetType() != GeomAbs_Circle)
-                continue;
-            if (!(types & (adaptor.IsClosed() ? OnCircles : OnArcs)))
-                continue;
-            addHole(profileEdge, adaptor.Circle().Location());
-        }
-    }
-    // Points on their own, not the ends of the edges
-    if (types & OnPoints) {
-        for (const auto &vertex : profileshape.getSubTopoShapes(TopAbs_VERTEX, TopAbs_EDGE))
-            addHole(vertex, BRep_Tool::Pnt(TopoDS::Vertex(vertex.getShape())));
-    }
+    forEachHoleCenter(profileshape, addHole);
     return TopoShape().makECompound(holes);
 }
 

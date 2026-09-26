@@ -116,6 +116,10 @@ public:
 
     std::map<std::string,App::Color> getElementColors(const char *element) const;
 
+    /// The Tip's cosmetic threads, for when the body draws the Tip's
+    /// shape itself (ViewProvider::cosmeticThreadFinishes)
+    void getImpliedFinishes(std::vector<ImpliedFinish> &finishes) const override;
+
 protected:
     /// Copy over all visual properties to the child features
     void unifyVisualProperty(const App::Property* prop);
@@ -136,6 +140,8 @@ private:
     static const char* BodyModeEnum[];
     bool checkingSiblings = false;
     bool followingChange = false;
+    /// Whether the render material last stated a thread
+    bool impliedThreads = false;
 };
 
 

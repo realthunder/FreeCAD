@@ -82,6 +82,7 @@ public:
     bool getUseCustomThreadClearance() const;
     double getCustomThreadClearance() const;
     bool getModelThread() const;
+    bool getCosmeticThread() const;
     long getThreadDepthType() const;
     double getThreadDepth() const;
     int getBaseProfileType() const;
@@ -109,6 +110,7 @@ private Q_SLOTS:
     void taperedAngleChanged(double value);
     void reversedChanged();
     void modelThreadChanged();
+    void cosmeticThreadChanged();
     void useCustomThreadClearanceChanged();
     void customThreadClearanceChanged(double value);
     void threadDepthTypeChanged(int index);
@@ -131,6 +133,8 @@ protected:
     void finishedRecomputeFeature() override;
 
 private:
+    /// Thread depth type and depth, for a modelled or a drawn thread
+    void updateThreadDepthEnabled();
 
     using Connection = fastsignals::scoped_connection;
     Connection connectPropChanged;

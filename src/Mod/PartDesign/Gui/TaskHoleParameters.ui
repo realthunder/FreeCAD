@@ -396,10 +396,26 @@ Only available for holes without thread</string>
         </property>
        </widget>
       </item>
-      <item row="3" column="0" colspan="2">
+      <item row="3" column="0">
        <widget class="QCheckBox" name="ModelThread">
+        <property name="toolTip">
+         <string>Build the thread as geometry. Slow, and needed only
+where the thread itself is the point: for export, or for
+printing a threaded part</string>
+        </property>
         <property name="text">
          <string>Model Thread</string>
+        </property>
+       </widget>
+      </item>
+      <item row="3" column="1">
+       <widget class="QCheckBox" name="CosmeticThread">
+        <property name="toolTip">
+         <string>Draw the thread on the bore without modelling it.
+Shown by the render engine; the geometry stays a plain bore</string>
+        </property>
+        <property name="text">
+         <string>Cosmetic Thread</string>
         </property>
        </widget>
       </item>

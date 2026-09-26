@@ -342,6 +342,37 @@ class TestHole(unittest.TestCase):
         self.Doc.recompute()
         self.assertEqual(self.Hole.ThreadSize, "M10x1.25")
 
+    def testCosmeticThread(self):
+        """The thread drawn on the bore without modelling it (upstream
+        180c39709a): on by default, read only until the hole is threaded,
+        exclusive with ModelThread in the stored values the way upstream
+        keeps them, and never a change of geometry."""
+        hole = self.Hole
+        self.assertTrue(hole.CosmeticThread)
+        hole.ThreadType = "ISOMetricProfile"
+        hole.ThreadSize = "M6"
+        hole.Threaded = True
+        hole.DepthType = "Dimension"
+        hole.Depth = 8
+        self.Doc.recompute()
+        self.assertNotIn("ReadOnly", hole.getEditorMode("CosmeticThread"))
+        drawn = hole.Shape.Volume
+
+        hole.ModelThread = True
+        self.assertFalse(hole.CosmeticThread)
+        hole.CosmeticThread = True
+        self.assertFalse(hole.ModelThread)
+
+        hole.CosmeticThread = False
+        self.Doc.recompute()
+        self.assertAlmostEqual(hole.Shape.Volume, drawn)
+
+        # Unthreading leaves the choice where it was, for the next time
+        hole.CosmeticThread = True
+        hole.Threaded = False
+        self.assertTrue(hole.CosmeticThread)
+        self.assertIn("ReadOnly", hole.getEditorMode("CosmeticThread"))
+
     def testThreadEnums(self):
         """Test thread enums for correct order (upstream 0fdb02c6eb; the BSP
         list is the table's, which the list the BSP pick brought did not

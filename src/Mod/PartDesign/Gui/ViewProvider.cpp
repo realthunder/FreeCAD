@@ -30,6 +30,11 @@
 # include <QMenu>
 # include <QMouseEvent>
 # include <Inventor/details/SoFaceDetail.h>
+# include <BRepAdaptor_Surface.hxx>
+# include <gp_Lin.hxx>
+# include <TopExp.hxx>
+# include <TopoDS.hxx>
+# include <TopTools_IndexedMapOfShape.hxx>
 #endif
 
 #include <Base/Exception.h>
@@ -54,6 +59,8 @@
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/Feature.h>
 #include <Mod/PartDesign/App/FeatureExtrusion.h>
+#include <Mod/PartDesign/App/FeatureHole.h>
+#include <Mod/PartDesign/App/FeatureTransformed.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 
 #include "TaskFeatureParameters.h"
@@ -463,6 +470,203 @@ void ViewProvider::updateData(const App::Property* prop)
     }
 
     inherited::updateData(prop);
+
+    // A new shape has new faces, and the holes behind it may have changed
+    // what they thread: re-derive the cosmetic threads, but only where
+    // there are some to state or some to take away -- the render material
+    // is not rebuilt for every feature of every body on every recompute.
+    if (prop == &feature->Shape) {
+        const bool threads = hasCosmeticThreads(feature);
+        if (threads || impliedThreads) {
+            impliedThreads = threads;
+            updateRenderMaterial();
+        }
+    }
+}
+
+namespace {
+
+using Bore = PartDesign::Hole::CosmeticThreadBore;
+
+/// A bore moved by a placement: its origin as a point, its direction as a
+/// direction
+Bore placed(Bore bore, const Base::Placement &pla)
+{
+    pla.multVec(bore.origin, bore.origin);
+    pla.getRotation().multVec(bore.direction, bore.direction);
+    return bore;
+}
+
+/// The threads of the holes up to and including \a last, in the body's
+/// coordinates, stopping at the first one when \a first
+std::vector<Bore> threadsReaching(const PartDesign::Feature *last, bool first)
+{
+    std::vector<Bore> bores;
+    auto body = PartDesign::Body::findBodyOf(last);
+    if (!body)
+        return bores;
+    const auto &group = body->Group.getValues();
+    auto end = std::find(group.begin(), group.end(), last);
+    if (end == group.end())
+        return bores;
+    ++end;
+    for (auto it = group.begin(); it != end; ++it) {
+        if (auto hole = Base::freecad_dynamic_cast<PartDesign::Hole>(*it)) {
+            for (const Bore &bore : hole->getCosmeticThreads()) {
+                bores.push_back(placed(bore, hole->Placement.getValue()));
+                if (first)
+                    return bores;
+            }
+            continue;
+        }
+        auto pattern = Base::freecad_dynamic_cast<PartDesign::Transformed>(*it);
+        if (!pattern || pattern->Suppress.getValue())
+            continue;
+        // The holes the pattern copies. A MultiTransform's steps have no
+        // originals of their own; the MultiTransform does.
+        std::vector<App::DocumentObject *> originals = pattern->Originals.getValues();
+        for (auto obj : pattern->OriginalSubs.getValues())
+            originals.push_back(obj);
+        std::vector<Bore> sources;
+        std::set<App::DocumentObject *> seen;
+        const Base::Placement toPattern = pattern->Placement.getValue().inverse();
+        for (auto obj : originals) {
+            auto hole = Base::freecad_dynamic_cast<PartDesign::Hole>(obj);
+            if (!hole || !seen.insert(obj).second)
+                continue;
+            for (const Bore &bore : hole->getCosmeticThreads())
+                sources.push_back(placed(bore, toPattern * hole->Placement.getValue()));
+        }
+        if (sources.empty())
+            continue;
+        std::list<gp_Trsf> transforms;
+        try {
+            // Only Scaled needs the original shapes, and a thread scaled
+            // is no longer the thread its hole states anyway
+            transforms = pattern->getTransformations({});
+        }
+        catch (const Base::Exception &) {
+            continue;
+        }
+        catch (const Standard_Failure &) {
+            continue;
+        }
+        for (const gp_Trsf &trsf : transforms) {
+            if (std::fabs(std::fabs(trsf.ScaleFactor()) - 1.0) > 1e-9)
+                continue;
+            for (Bore bore : sources) {
+                gp_Pnt o(bore.origin.x, bore.origin.y, bore.origin.z);
+                gp_Vec d(bore.direction.x, bore.direction.y, bore.direction.z);
+                o.Transform(trsf);
+                d.Transform(trsf);
+                bore.origin = Base::Vector3d(o.X(), o.Y(), o.Z());
+                // A mirror copies the hole, not the tap: the thread keeps
+                // the hand its hole states, as the part it drills would
+                bore.direction = Base::Vector3d(d.X(), d.Y(), d.Z());
+                bores.push_back(placed(bore, pattern->Placement.getValue()));
+                if (first)
+                    return bores;
+            }
+        }
+    }
+    return bores;
+}
+
+} // namespace
+
+bool ViewProvider::hasCosmeticThreads(const PartDesign::Feature *last)
+{
+    return last && !threadsReaching(last, true).empty();
+}
+
+void ViewProvider::cosmeticThreadFinishes(const PartDesign::Feature *last,
+                                          const Base::Placement &toLocal,
+                                          const TopoDS_Shape &shape,
+                                          std::vector<ImpliedFinish> &finishes)
+{
+    if (!last || shape.IsNull())
+        return;
+    std::vector<Bore> bores = threadsReaching(last, false);
+    if (bores.empty())
+        return;
+    for (Bore &bore : bores) {
+        bore = placed(bore, toLocal);
+        bore.direction.Normalize();
+    }
+
+    TopTools_IndexedMapOfShape faces;
+    TopExp::MapShapes(shape.Located(TopLoc_Location()), TopAbs_FACE, faces);
+    for (int i = 1; i <= faces.Extent(); ++i) {
+        gp_Ax1 axis;
+        double radius = -1.0;
+        double semiAngle = 0.0;
+        try {
+            BRepAdaptor_Surface adapt(TopoDS::Face(faces(i)));
+            switch (adapt.GetType()) {
+            case GeomAbs_Cylinder:
+                axis = adapt.Cylinder().Axis();
+                radius = adapt.Cylinder().Radius();
+                break;
+            case GeomAbs_Cone:
+                axis = adapt.Cone().Axis();
+                semiAngle = std::fabs(adapt.Cone().SemiAngle());
+                break;
+            default:
+                continue;
+            }
+        }
+        catch (const Standard_Failure &) {
+            continue;
+        }
+        const gp_Lin line(axis);
+        for (const Bore &bore : bores) {
+            const gp_Dir dir(bore.direction.x, bore.direction.y, bore.direction.z);
+            if (!axis.Direction().IsParallel(dir, 1e-6))
+                continue;
+            const gp_Pnt origin(bore.origin.x, bore.origin.y, bore.origin.z);
+            const double tol = std::max(1e-5, 1e-7 * bore.radius);
+            if (line.Distance(origin) > tol)
+                continue;
+            if (bore.taper == 0.0) {
+                if (radius < 0.0 || std::fabs(radius - bore.radius) > tol)
+                    continue;
+            }
+            else if (radius >= 0.0 || std::fabs(semiAngle - bore.taper) > 1e-6)
+                continue;
+
+            ImpliedFinish finish;
+            finish.face = i - 1;
+            finish.finish.pattern = bore.leftHand ? App::SurfaceFinish::ThreadLeft
+                                                  : App::SurfaceFinish::Thread;
+            finish.finish.pitch = float(bore.pitch);
+            finish.finish.depth = float(bore.height);
+            finish.finish.angle = float(bore.profileAngle);
+            finish.finish.normalize();
+            // The band starts a couple of turns short of the mouth, so the
+            // runout the shader gives either end of it only shows where
+            // the tap stopped
+            const double z0 = bore.origin.Dot(bore.direction);
+            finish.setExtent(bore.direction.x, bore.direction.y, bore.direction.z,
+                             z0 - 2.0 * bore.pitch, z0 + bore.length);
+            finishes.push_back(finish);
+            break;
+        }
+    }
+}
+
+void ViewProvider::getImpliedFinishes(std::vector<ImpliedFinish> &finishes) const
+{
+    auto feature = Base::freecad_dynamic_cast<PartDesign::Feature>(getObject());
+    if (!feature || !PartDesign::Body::findBodyOf(feature))
+        return;
+    TopoDS_Shape shape;
+    try {
+        shape = getShape().getShape();
+    }
+    catch (const Base::Exception &) {
+        return;
+    }
+    cosmeticThreadFinishes(feature, feature->Placement.getValue().inverse(), shape, finishes);
 }
 
 void ViewProvider::updateVisual()

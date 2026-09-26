@@ -531,6 +531,37 @@ void ViewProviderBody::updateData(const App::Property* prop)
     }
 
     PartGui::ViewProviderPart::updateData(prop);
+
+    // As a feature does (ViewProvider::updateData): the Tip's threads,
+    // re-derived only where there are some to state or to take away
+    if (prop == &body->Shape) {
+        auto tip = Base::freecad_dynamic_cast<PartDesign::Feature>(body->Tip.getValue());
+        const bool threads = PartDesignGui::ViewProvider::hasCosmeticThreads(tip);
+        if (threads || impliedThreads) {
+            impliedThreads = threads;
+            updateRenderMaterial();
+        }
+    }
+}
+
+void ViewProviderBody::getImpliedFinishes(std::vector<ImpliedFinish> &finishes) const
+{
+    auto body = Base::freecad_dynamic_cast<PartDesign::Body>(getObject());
+    if (!body)
+        return;
+    auto tip = Base::freecad_dynamic_cast<PartDesign::Feature>(body->Tip.getValue());
+    if (!tip)
+        return;
+    TopoDS_Shape shape;
+    try {
+        shape = getShape().getShape();
+    }
+    catch (const Base::Exception &) {
+        return;
+    }
+    // The body's shape is the Tip's with the Tip's own placement baked
+    // in (Body::execute), i.e. in the body's coordinates already
+    PartDesignGui::ViewProvider::cosmeticThreadFinishes(tip, Base::Placement(), shape, finishes);
 }
 
 void ViewProviderBody::checkColorUpdate()
