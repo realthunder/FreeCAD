@@ -6016,3 +6016,109 @@ Before the file-scope state of 27.18, chase what was seen and not chased:
 
 Then the file-scope state (27.18: last object id, string hasher, object
 name table, per-object id counters), design first.
+
+### 27.37 The seen issues of 27.36, chased (2026-09-26)
+
+**1. "blob 1e39ec8b... of a named version is not in the store".** The blob
+is the stock material card (675 bytes, `.FCMat`). The log captures a value
+from a detached copy of the property (`ValueTask::copy`, on its worker), and
+`PropertyMaterial::ensureBlob()` makes the card's blob on first use -- in
+`blobManager()`, which for a property with no container was the
+process-wide `FileBlobManager::defaultManager()`. So the op value of the
+object's creation named a blob that lived in the system temp directory, not
+in the file's store: `embedHistory` could not find it and left it out, and
+`makeDurable` never saw it. Any file whose first saved transaction created
+a Part feature carried a history naming a blob the file did not hold; a
+version needing that card was then restorable only while the library had
+the same stock card.
+
+Fixed at the capture: `CaptureConfig` carries the document's blob manager,
+`captureValue` hands it to its `BlobRecorder`, and
+`FileBlobManager::managerFor(container)` -- the document's manager, else the
+one a capture on this thread names, else the default -- replaces the seven
+copies of the fallback (`PropertyMaterial`, `PropertyPartShape`,
+`PropertyHistory`, `PropertyAppearanceList`, `PropertyFileIncluded`,
+`PropertyStringIncluded`, `PropertyFileIncludedList`).
+
+Test: Python `TransactionBranchCases.testTheHistoryCarriesEveryBlobItNames`
+-- a `Part::Box` created in a transaction and saved; the blobs the embedded
+history database holds as files equal the `<Blob>` list of the file's
+History element.
+
+**2 and 5. `saveToLog` reads the archive's index; the old history goes.**
+`FileBlobManager::archiveBlobIndex(path)` answers what the archive holds
+from its `blobs/Content.xml` (member -> hash and referrers), decoding and
+hashing only a member the index does not list. A member whose every
+referrer is the document's `History` (`FileBlobManager::historyReferrer()`,
+`0:History`) and whose hash the new history does not keep is left out of
+the rewrite (`rewriteArchive`'s new `drop` set) -- no version holds the
+history since 27.29, so the old database is nothing's. What is added is
+entered in the index, which is written again in place (it must stay ahead
+of the content: reaching it is what makes a restore serve the whole
+archive). In a file without an index -- schema 4, where nothing but the
+history is under `blobs/` -- a member is the old history's when the old
+History element names its hash and nothing else in `Document.xml` or
+`GuiDocument.xml` does.
+
+`saveToLog` logs its phases (`App` log level): on the 7 MB model of 27.33,
+saved as schema 5 -- index 0.002 s, rewrite 0.022 s, snapshot 5.0 s. The
+1.41 s of 27.33 was the file as found, **schema 4** (snapshot 1.3 s there).
+The schema-5 snapshot costs what an ordinary schema-5 save of the same
+document costs -- 4.9 s with the log off, 5.1 s on -- since it is a save
+pass into a null writer; the time is the save path's, not the log's.
+**Seen, not chased**: a label edit on this model costs a 5 s schema-5 save.
+
+Tests: `testSaveToTheLogOnly` now also checks one `.db` member after the
+save, the index listing exactly the archive's blob members, and the index
+ahead of them. The index-less case was run by hand on the model: three
+log-only saves, one database member after each, the history reopened with
+all its versions.
+
+**3. The shallow move of a face.** A face on top is moved by a new TFace
+(`moveOwnSurface()`): `EmptyCopied()` takes the surface, the location and
+the tolerance; the location becomes `motion * location`, the natural
+restriction and the triangulations are the original's, and the wires are
+added moved like any other top's children. A pcurve is looked up by the
+surface and location its face's surface is at, and the motion cancels out
+of that. Surface, triangulation, wires, edges and their curves are shared.
+
+An edge on top was the other half of the item, and there is nothing to do:
+a restore motion comes only from congruence at save
+(`CongruenceIndex::find`), and `shapeCongruenceKey()` needs three vertices
+to recover a frame. An edge has two at most, so an edge top is never
+stored as a moved instance. A first cut that moved an edge's curve
+representations was taken out as dead code.
+
+Test: `ShapeStorage.ShapeCongruenceCases.testMovedFaceTopsShareTheirSurface`
+-- a holed face in two places, stored once; reopened, the tops are distinct,
+every wire is shared, every edge has its pcurve, area and position as
+saved.
+
+**4.** Not built: it needs a ruling, 27.38.
+
+Gates: Python 2932 OK; ctest 842/842; recovery 15, branch 27, version 18,
+pin 28, frozen 16 PASS. The warning of item 1 appears nowhere in them (it
+was in six suite tests and the pin check).
+
+### 27.38 Proposed: closing a released pinned version with no Gui (2026-09-26)
+
+With no Gui, `ClosePinnedVersion` 1 (close) does nothing: `signalPinsReleased`
+fires from `DocInfo::deinit`, inside the link machinery, and closing a
+document there pulls it out from under the caller (27.30). The Gui waits for
+the next event loop turn; FreeCADCmd has no loop.
+
+Proposed: the App keeps the released documents in a pending set when no one
+handles the signal (the Gui connects, so the App knows), and drains it at the
+end of the outermost of these, when no document is recomputing, restoring or
+closing:
+
+- `Application::closeDocument` -- the linking document closed, the common
+  case;
+- a transaction's commit or abort at depth 0 -- an unpin, a re-pin, a
+  deleted link;
+- undo and redo.
+
+Each drain looks again (a later step may have pinned it again), and closes
+only with the preference at 1; Ask stays keep, headless. A Python
+`FreeCAD.closeReleasedVersions()` would let a script drain at a point of its
+own. Waiting on the user.
