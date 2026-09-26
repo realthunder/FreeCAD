@@ -54,7 +54,7 @@ def transactionLogIsOn():
     # (docs/TransactionLog.md sec 24.13).
     return FreeCAD.ParamGet(
             'User parameter:BaseApp/Preferences/Document').GetInt(
-                    'TransactionLog',0) != 0
+                    'TransactionLog',2) != 0
 
 class DocumentBasicCases(unittest.TestCase):
     def setUp(self):
@@ -2155,6 +2155,13 @@ class DocumentObserverCases(unittest.TestCase):
         self.Doc1.saveAs(SaveName)
         self.assertEqual(self.Obs.signal.pop(), "DocFinishSave")
         self.assertEqual(self.Obs.parameter2.pop(), self.Doc1.FileName)
+        # A save that writes the history into the file (the default with the
+        # transaction log on, docs/TransactionLog.md sec 27.5) sets the
+        # document's History, Version and Branch properties as it goes.
+        while self.Obs.parameter2[-1] in ("History", "Version", "Branch"):
+            self.Obs.signal.pop()
+            self.Obs.parameter.pop()
+            self.Obs.parameter2.pop()
         self.assertEqual(self.Obs.signal.pop(), "DocStartSave")
         self.assertEqual(self.Obs.parameter2.pop(), self.Doc1.FileName)
         FreeCAD.closeDocument(self.Doc1.Name)
@@ -2802,7 +2809,7 @@ class TransactionBranchCases(unittest.TestCase):
 
     def setUp(self):
         self.param = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Document")
-        self.mode = self.param.GetInt("TransactionLog", 0)
+        self.mode = self.param.GetInt("TransactionLog", 2)
         self.param.SetInt("TransactionLog", 2)  # embedded
         self.dir = tempfile.mkdtemp(prefix="fc-branches-")
         self.docs = []
@@ -2834,6 +2841,16 @@ class TransactionBranchCases(unittest.TestCase):
 
     def branches(self, doc):
         return {b["name"]: b for b in doc.getTransactionBranches()}
+
+    def testSaveWithHistoryIsNoUndoStep(self):
+        # The save adds and sets History, Version and Branch itself: none of
+        # that is the user's edit, so none of it is a step to undo (sec 27.5).
+        doc, path = self.saved()
+        before = list(doc.UndoNames)
+        doc.save()
+        self.assertEqual(list(doc.UndoNames), before)
+        self.assertIn("History", doc.PropertiesList)
+        self.assertFalse([n for n in doc.UndoNames if n.startswith("<implicit")])
 
     def testBranchTravelsInTheFile(self):
         doc, path = self.saved()

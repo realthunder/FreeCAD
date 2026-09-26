@@ -57,6 +57,7 @@ class MaterialBlobTestCases(unittest.TestCase):
         self.steelName = self.MaterialManager.getMaterial(STEEL).Name
         self.tmp = tempfile.mkdtemp(prefix="fc_material_blob_")
         self.docs = []
+        self.history = ArchiveMembers.HistoryLeftOut()
 
     def tearDown(self):
         for name in list(self.docs):
@@ -64,6 +65,7 @@ class MaterialBlobTestCases(unittest.TestCase):
                 FreeCAD.closeDocument(name)
         shutil.rmtree(self.tmp, ignore_errors=True)
         self.restoreSaveMaterialCards()
+        self.history.release()
 
     # -- settings this case depends on -------------------------------------
 

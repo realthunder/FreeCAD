@@ -4382,3 +4382,46 @@ here" and "branch from here" on the panel, using the same path as a pin.
 6. **5.f The Gui.** Pin/unpin and the version picker on a link, the
    version document's label and save-with-warning, re-pin on save, and a
    GUI check script.
+
+### 27.9 5.a as built: the log on by default (2026-09-26)
+
+`TransactionLog` defaults to **2**: the log is on and a save writes its
+history into the file. 1 keeps the history out of files; the log is still
+on. 0 switches the log off, kept for A/B checks. No preference page carries
+it yet.
+
+**Save and Save As were undo steps, with the log on.** Nothing had
+noticed because every earlier log-on run used mode 1. Save As writes
+`FileName` and `Label`, a save writes `TipName`, `LastModifiedDate` and
+`LastModifiedBy`, and an embedded save adds and sets `History`, `Version`
+and `Branch`. With the log on, a write outside a transaction opens an
+implicit one (24.13), so every save left an `<implicit>` step on the undo
+stack, and undoing it after a Save As cleared the document's file name.
+These writes are now **bookkeeping**. A flag (`DocumentP::bookkeeping`) is
+held around them, and while it is held:
+
+- `Document::onBeforeChange` neither opens nor records a transaction;
+- `_addOrRemoveProperty` records nothing;
+- `onChanged` tells the log to forget what it held for the property
+  (`TransactionLog::forgetValue`), so the next composed snapshot serialises
+  it afresh instead of claiming a stale part (23.3).
+
+The flag covers only the document's own properties at those sites. An
+object that writes during a save still opens its transaction, as before.
+Branch rename (26) writes `Branch` under the same flag. The gtest that
+counted the implicit step (`embeddedHistoryRoundTrips`) now counts one row
+fewer. `Document.TransactionBranchCases.testSaveWithHistoryIsNoUndoStep` is
+the new case.
+
+**Tests.** Cases that read what an archive carries -- `FileBlobs`,
+`ShapeStorage`, `TestMaterialBlobs` -- now meet the embedded history's
+entries: the log database, and the blobs of the versions it keeps.
+They are about the document's own content, so they take
+`ArchiveMembers.HistoryLeftOut()` in `setUp`, which sets mode 1 when the
+mode is 2, and release it in `tearDown`. `DocumentObserverCases.testSave`
+skips the signals for `History`, `Version` and `Branch`. The GUI tests now
+run with the log too: `serve-undo-redo.py` clears the undo stack after its
+set-up, which is an implicit step with the log on.
+
+Gates: Python 2914 OK and ctest 834/834 in a fresh `FREECAD_USER_HOME`,
+which is now a log-on run; Python 2914 OK with `TransactionLog=0`.

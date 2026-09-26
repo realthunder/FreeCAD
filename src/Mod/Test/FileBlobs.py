@@ -66,7 +66,7 @@ def logIsOn():
     """The transaction log keeps what a document drops, as its history
     (docs/TransactionLog.md sec 23.16), so nothing dies with it on."""
     params = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Document")
-    return params.GetInt("TransactionLog", 0) != 0
+    return params.GetInt("TransactionLog", 2) != 0
 
 
 # ---------------------------------------------------------------------------
@@ -81,12 +81,14 @@ class BlobTestCase(unittest.TestCase):
         self.tmp = tempfile.mkdtemp(prefix="fc_blob_test_")
         self.docs = []
         self.sources = 0
+        self.history = ArchiveMembers.HistoryLeftOut()
 
     def tearDown(self):
         for name in list(self.docs):
             if name in FreeCAD.listDocuments():
                 FreeCAD.closeDocument(name)
         shutil.rmtree(self.tmp, ignore_errors=True)
+        self.history.release()
 
     # -- fixtures ----------------------------------------------------------
 

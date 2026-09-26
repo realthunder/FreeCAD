@@ -185,6 +185,10 @@ def build():
         box = doc.addObject("Part::Box", OBJ)
         box.Length = box.Width = box.Height = 10
         doc.recompute()
+        # With the transaction log on (the default), the set-up above is an
+        # implicit step of its own (docs/TransactionLog.md sec 24.13); it is
+        # not what is under test.
+        doc.clearUndos()
         # The one step on the stack, recomputed inside the transaction as
         # a command's would be, so the shape travels with the length.
         doc.openTransaction("Stretch")

@@ -181,10 +181,12 @@ Params = [
     ParamInt('ThumbnailSize', 128),
     ParamBool('DuplicateLabels', False),
     ParamBool('TransactionOnRecompute', False),
-    ParamInt('TransactionLog', 0,
-        doc='Transaction log mode (docs/TransactionLog.md sec 13.3): 0 off,\n'
-            '1 session -- the log lives in the document transient directory\n'
-            'and dies with it. Off by default while the writer is synchronous.'),
+    ParamInt('TransactionLog', 2,
+        doc='Transaction log mode (docs/TransactionLog.md sec 13.3, 27.5). The\n'
+            'log is always on; what this chooses is whether a save writes the\n'
+            'history into the file: 2 (the default) writes it, 1 keeps it in\n'
+            'the document transient directory only, where it dies with the\n'
+            'session. 0 switches the log off, for A/B checks.'),
     ParamBool('TransactionLogIdentity', False,
         doc='Record the user and host name in the transaction log session\n'
             'row (sec 13.3, privacy). Off by default.'),

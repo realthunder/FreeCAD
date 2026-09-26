@@ -245,7 +245,7 @@ public:
         funcs["DuplicateLabels"] = &DocumentParamsP::updateDuplicateLabels;
         TransactionOnRecompute = this->handle->GetBool("TransactionOnRecompute", false);
         funcs["TransactionOnRecompute"] = &DocumentParamsP::updateTransactionOnRecompute;
-        TransactionLog = this->handle->GetInt("TransactionLog", 0);
+        TransactionLog = this->handle->GetInt("TransactionLog", 2);
         funcs["TransactionLog"] = &DocumentParamsP::updateTransactionLog;
         TransactionLogIdentity = this->handle->GetBool("TransactionLogIdentity", false);
         funcs["TransactionLogIdentity"] = &DocumentParamsP::updateTransactionLogIdentity;
@@ -454,7 +454,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateTransactionLog(DocumentParamsP *self) {
-        self->TransactionLog = self->handle->GetInt("TransactionLog", 0);
+        self->TransactionLog = self->handle->GetInt("TransactionLog", 2);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateTransactionLogIdentity(DocumentParamsP *self) {
@@ -708,11 +708,13 @@ static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
         .setTitle("Duplicate Labels"),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "TransactionOnRecompute", "TransactionOnRecompute", App::ParamInfo::Bool, false)
         .setTitle("Transaction On Recompute"),
-    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "TransactionLog", "TransactionLog", App::ParamInfo::Int, 0)
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "TransactionLog", "TransactionLog", App::ParamInfo::Int, 2)
         .setTitle("Transaction Log")
-        .setDoc("Transaction log mode (docs/TransactionLog.md sec 13.3): 0 off,\n"
-"1 session -- the log lives in the document transient directory\n"
-"and dies with it. Off by default while the writer is synchronous."),
+        .setDoc("Transaction log mode (docs/TransactionLog.md sec 13.3, 27.5). The\n"
+"log is always on; what this chooses is whether a save writes the\n"
+"history into the file: 2 (the default) writes it, 1 keeps it in\n"
+"the document transient directory only, where it dies with the\n"
+"session. 0 switches the log off, for A/B checks."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "TransactionLogIdentity", "TransactionLogIdentity", App::ParamInfo::Bool, false)
         .setTitle("Transaction Log Identity")
         .setDoc("Record the user and host name in the transaction log session\n"
@@ -1983,9 +1985,11 @@ void DocumentParams::removeTransactionOnRecompute() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docTransactionLog() {
     return QT_TRANSLATE_NOOP("DocumentParams",
-"Transaction log mode (docs/TransactionLog.md sec 13.3): 0 off,\n"
-"1 session -- the log lives in the document transient directory\n"
-"and dies with it. Off by default while the writer is synchronous.");
+"Transaction log mode (docs/TransactionLog.md sec 13.3, 27.5). The\n"
+"log is always on; what this chooses is whether a save writes the\n"
+"history into the file: 2 (the default) writes it, 1 keeps it in\n"
+"the document transient directory only, where it dies with the\n"
+"session. 0 switches the log off, for A/B checks.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1995,7 +1999,7 @@ const long & DocumentParams::getTransactionLog() {
 
 // Auto generated code (Tools/params_utils.py:413)
 const long & DocumentParams::defaultTransactionLog() {
-    const static long def = 0;
+    const static long def = 2;
     return def;
 }
 

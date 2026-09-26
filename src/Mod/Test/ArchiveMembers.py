@@ -110,3 +110,33 @@ def members(path):
                 info.compress_type = zipfile.ZIP_DEFLATED
             out.append((info, data))
     return out
+
+
+_DOCUMENT_PARAMS = "User parameter:BaseApp/Preferences/Document"
+
+
+class HistoryLeftOut:
+    """Saves write no history into the file while this is held.
+
+    The transaction log is on by default and a save writes the history into
+    the file (docs/TransactionLog.md sec 27.5): the log's database and the
+    blobs of the versions it keeps become archive entries too. A case that
+    reads what an archive carries is about the document's own content, so
+    it takes this in setUp and release() in tearDown. The log stays on
+    (TransactionLog 1); a run with it off is left as it is.
+    """
+
+    def __init__(self):
+        import FreeCAD
+
+        self._params = FreeCAD.ParamGet(_DOCUMENT_PARAMS)
+        self._had = "TransactionLog" in self._params.GetInts()
+        self._was = self._params.GetInt("TransactionLog", 2)
+        if self._was == 2:
+            self._params.SetInt("TransactionLog", 1)
+
+    def release(self):
+        if self._had:
+            self._params.SetInt("TransactionLog", self._was)
+        else:
+            self._params.RemInt("TransactionLog")

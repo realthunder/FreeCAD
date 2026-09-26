@@ -75,6 +75,7 @@ class ShapeTestCase(unittest.TestCase):
         self.tmp = tempfile.mkdtemp(prefix="fc_shape_test_")
         self.docs = []
         self.stateSaveMaterialCards(False)
+        self.history = ArchiveMembers.HistoryLeftOut()
 
     def tearDown(self):
         for name in list(self.docs):
@@ -82,6 +83,7 @@ class ShapeTestCase(unittest.TestCase):
                 FreeCAD.closeDocument(name)
         shutil.rmtree(self.tmp, ignore_errors=True)
         self.restoreSaveMaterialCards()
+        self.history.release()
 
     # -- settings this case depends on -------------------------------------
 
