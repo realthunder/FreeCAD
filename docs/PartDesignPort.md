@@ -1140,8 +1140,8 @@ the cylinder (3392.9) once the edit starts; Cancel restores. Test:
 **Seen, not changed:** the fork's Boolean command leaves the tool bodies
 visible (the binders reference them where they are), so with the preview
 off a Cut still shows the whole tool body over the notch. Upstream hides
-them by grouping them. Whether the command should hide them is a
-behaviour question for the user, not a preview fix. The Boolean itself
+them by grouping them. Whether the command should hide them was a
+behaviour question for the user; the answer was yes (below). The Boolean itself
 is right: checked on the saved Cut, its Result mode draws only its own
 shape (the notched box once Body001 is hidden) and hides its children,
 and its Tools mode draws only the binder. The cylinder over the notch is
@@ -1150,3 +1150,31 @@ Body001, a separate object in the document.
 Commit: `ec429cd0da`. 25 ledger rows settled: 2 adapted, 6 have, 2
 declined, 15 n/a. Suites: ctest 750/750; Python 2982 OK (50 skipped, 6
 expected failures).
+
+**The tool bodies are hidden now (user, 2026-09-27).** The Boolean
+command hides each tool it binds whole from outside the active body --
+the body the Boolean now draws, as its result or in Tools mode as its
+binder -- the way the spacebar would: through the parent's element
+visibility where the parent keeps one, else the object's own. A tool
+picked by one solid of a multi-solid shape stays visible, since hiding
+its object would hide the other solids; siblings in the active body were
+already hidden. The change is inside the command's transaction, so
+Cancel and undo bring the bodies back.
+
+**Two defects under it, found by the same run.** A body picked inside a
+Part bound the whole Part: `a8d928c760` (2020) turned
+`std::string linkSub = sel.getSubName();` into a bare
+`sel.getSubName();`, so the sub-path was dropped and the binder took the
+top object with everything in it. Restored; the binder now reads
+`(Part, 'Body002.')`. And an undo that deletes the Boolean while its
+panel still exists (the panel listens for undo to refill its list, and
+is deleted later than the dialog closes) dereferenced the deleted view
+provider in `TaskBooleanParameters::populate()`, "Illegal storage
+access". The panel keeps the Boolean as a `DocumentObjectT` and checks
+it before touching the view provider.
+
+Commit `9032b2b2f6`. Checked in the GUI: a Cut with Body001 (top level) and Body002 (inside a
+Part) as tools: both hidden during the edit, both back on Cancel, both
+hidden after OK with both cuts in the result (10411.4 = 12000 - 1086.0
+- 502.7), both back after undo, and no fault on that undo.
+Suites after it: ctest 750/750; Python 2982 OK.
