@@ -1135,8 +1135,11 @@ protected:
                     const ColdRevert* cold = nullptr);
     /// Write version `num` out as an unpacked project; returns its directory.
     std::string _materialiseVersion(int64_t num, const std::string& where = std::string());
+    /// `blobsInStore`: a schema-5 version's blobs go into the file's blob
+    /// store, not onto disk, for a document that restores from that store
+    /// (docs/TransactionLog.md sec 27.25 item 2).
     static std::string materialiseVersion(TransactionLogCore& log, int64_t num,
-                                          const std::string& dir);
+                                          const std::string& dir, bool blobsInStore = false);
     /// Apply the log's rows after `after` forward, folded (sec 25.2 item
     /// 3); returns the rows applied and sets `last` to the last one.
     size_t _replayLog(int64_t after, int64_t& last);

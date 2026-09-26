@@ -4512,7 +4512,8 @@ std::string Document::_materialiseVersion(int64_t num, const std::string& where)
     return materialiseVersion(TransactionLogCore::of(getFileHistory()), num, dir);
 }
 
-std::string Document::materialiseVersion(TransactionLogCore& log, int64_t num, const std::string& dir)
+std::string Document::materialiseVersion(TransactionLogCore& log, int64_t num, const std::string& dir,
+                                         bool blobsInStore)
 {
     // An unpacked project: every entry from the log, the blobs under
     // blobs/, which a directory restore reads by content. Every entry is
@@ -4526,12 +4527,28 @@ std::string Document::materialiseVersion(TransactionLogCore& log, int64_t num, c
     if (!Base::FileInfo(dir + "/" + FileBlobManager::archivePrefix()).createDirectories())
         THROWM(Base::RuntimeError, "cannot create the checkout directory");
     bool haveDocXml = false;
+    // A schema-5 version names its blobs by content, and a restore finds a
+    // blob the store already has by its hash: no file written, none hashed
+    // again on the way back in (sec 27.25 item 2). One that is not live is
+    // made so by restoreBlob, which the log then holds.
+    const bool inStore = blobsInStore && version.schema >= 5;
+    size_t written = 0, fromStore = 0;
+    if (inStore)
+        log.flush();
     for (const auto& e : manifest) {
         LogEntity entity;
         if (!log.store().getEntity(e.hash, entity))
             THROWM(Base::RuntimeError, "version entry " + e.entry + " of version "
                                            + std::to_string(num) + " is not in the store");
         const bool isBlob = entity.kind == "blob";
+        // Live: held by whoever holds it, which the restore does not touch.
+        if (isBlob && inStore
+                && (log.liveBlob(e.hash)
+                    || log.restoreBlob(e.hash, Base::FileInfo(e.entry).extension()))) {
+            ++fromStore;
+            continue;
+        }
+        ++written;
         Base::FileInfo target(dir + "/" + (isBlob ? FileBlobManager::archivePrefix() : "")
                               + e.entry);
         CapturedValue v;
@@ -4548,6 +4565,8 @@ std::string Document::materialiseVersion(TransactionLogCore& log, int64_t num, c
     }
     if (!haveDocXml)
         THROWM(Base::RuntimeError, "version has no Document.xml");
+    FC_LOG("version " << num << " materialised: " << written << " entries written, " << fromStore
+                      << " blobs from the store");
     return dir;
 }
 
@@ -5602,7 +5621,7 @@ Document* Document::openFileVersion(const std::shared_ptr<FileHistory>& history,
     idBase += branchStride();
 
     const std::string dir = materialiseVersion(
-        log, num, history->directory() + "/history/open-v" + std::to_string(num));
+        log, num, history->directory() + "/history/open-v" + std::to_string(num), true);
     struct Cleanup
     {
         std::string dir;

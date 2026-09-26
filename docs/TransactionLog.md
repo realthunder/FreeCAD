@@ -5842,3 +5842,26 @@ freeze on; a second copy opened with it off does not.
 
 Gates: Python 2927 OK; ctest 842/842; recovery 15, branch 27, version 18,
 pin 28, frozen 16 PASS.
+
+### 27.32 27.25 item 2 as built: a version opened without the disk round trip (2026-09-26)
+
+`Document::materialiseVersion(log, num, dir, blobsInStore)`. With
+`blobsInStore` and a version written under schema 5 -- whose Document.xml
+names every blob by its hash -- a blob entry is not written to the
+checkout directory: one the file's store has live is left to whoever holds
+it, and one it has not is made live by `TransactionLogCore::restoreBlob`
+(decoded from a delta if need be, then held by the log). The restore finds
+each by hash when its property asks. Only the XML entries go to disk.
+`openFileVersion` passes it; the scratch document of a restore or a switch
+(`_readVersion`) and a crash recovery do not -- the scratch has a store of
+its own (item 1 removes it), and a recovery rebuilds the store it would
+read from. A schema-4 version still goes to disk whole: it names its files.
+`TransactionLogCore::liveBlob(hash)` is new; `materialiseVersion` logs how
+many entries it wrote and how many blobs it took from the store.
+
+Measured on five boxes, version 1 opened after the boxes changed: "1
+entries written, 6 blobs from the store" (Document.xml; the five shapes
+and the stock material card).
+
+Gates: Python 2927 OK; ctest 842/842; recovery 15, branch 27, version 18,
+pin 28, frozen 16 PASS.

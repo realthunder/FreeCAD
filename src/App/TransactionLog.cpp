@@ -1724,6 +1724,11 @@ void TransactionLogCore::releaseBlobs()
     }
 }
 
+FileBlobHandle TransactionLogCore::liveBlob(const std::string& hash) const
+{
+    return _history.blobs().find(hash);
+}
+
 FileBlobHandle TransactionLogCore::heldBlob(const std::string& hash)
 {
     flush();

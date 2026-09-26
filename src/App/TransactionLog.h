@@ -582,6 +582,8 @@ public:
     /// blobs it reads (sec 24.3); `ext` is its extension, which a blob kept
     /// as a delta no longer carries in `data`. Main thread, queue drained.
     bool restoreBlob(const std::string& hash, const std::string& ext, int depth = 0);
+    /// The blob `hash` if the file's store has it live, null if not.
+    FileBlobHandle liveBlob(const std::string& hash) const;
     /// Let go of the file of every blob no longer stored as `file`: gone
     /// to the collector, or kept as a delta. After anything that removes
     /// or re-encodes entities.
