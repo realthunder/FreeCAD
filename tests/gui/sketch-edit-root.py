@@ -8,14 +8,20 @@ moved out of the view provider's root and put back afterwards are the
 same code, running from one place instead of two.
 
 That rule is what makes this checkable from Python without reaching into
-Coin. setupEditingRoot() *moves* every child of the editing view
-provider's root under the editing root and leaves the provider's root
-empty; resetEditingRoot() gives them back. So the child count of
-ViewObject.RootNode is a direct read of both halves:
+Coin. In render-cache modes 0-2, setupEditingRoot() *moves* every child of
+the editing view provider's root under the editing root and leaves the
+provider's root empty; resetEditingRoot() gives them back. So the child
+count of ViewObject.RootNode is a direct read of both halves:
 
   - before edit it is whatever the sketch built,
   - in edit it is zero, because the viewer took them,
   - after edit it is what it was, because the viewer gave them back.
+
+In mode 3 the sketch hands the editing root a node of its own
+(Sketch_EditContent: the grid and the edit geometry) and hides the edited
+occurrence per view instead (sketch-edit-hide.py), so the provider's root
+keeps exactly its children throughout, and the handed node is in the
+view's graph for the edit and only for it.
 
 Get the hoist wrong in the direction that matters -- the base owning
 nodes a view still unrefs, a root left hanging in the wrong graph -- and
@@ -76,6 +82,32 @@ def view_cursor():
     return tuple(shapes)
 
 
+def mode3():
+    params = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View")
+    return params.GetInt("RenderCache", 3) == 3
+
+
+def edit_content_hung():
+    """Whether the sketch's handed node is in the active view's graph."""
+    from pivy import coin
+    sa = coin.SoSearchAction()
+    sa.setName(coin.SbName("Sketch_EditContent"))
+    sa.setInterest(coin.SoSearchAction.FIRST)
+    sa.setSearchingAll(True)
+    sa.apply(FreeCADGui.ActiveDocument.ActiveView.getViewer().getSoRenderManager().getSceneGraph())
+    return sa.getPath() is not None
+
+
+def in_edit_reading(root, before, what):
+    if mode3():
+        check("mode 3: %s keeps the view provider's children" % what,
+              root.getNumChildren() == before, (root.getNumChildren(), before))
+        check("mode 3: %s hangs the handed edit node" % what, edit_content_hung())
+    else:
+        check("%s empties the view provider's root" % what,
+              root.getNumChildren() == 0, root.getNumChildren())
+
+
 def finish():
     if state["done"]:
         return
@@ -115,10 +147,10 @@ def run():
         check("setEdit was accepted", opened)
         check("the document says it is in edit",
               FreeCADGui.ActiveDocument.getInEdit() is not None)
-        # The viewer took the provider's children; this is setupEditingRoot
-        # working, and it is the half that used to live in the viewer.
-        check("the view provider's root was emptied into the editing root",
-              root.getNumChildren() == 0, root.getNumChildren())
+        # The viewer took the provider's children (modes 0-2), or was
+        # handed the sketch's own edit node (mode 3); this is
+        # setupEditingRoot working, the half that used to live in the viewer.
+        in_edit_reading(root, before, "the edit")
 
         # Something added while in edit, so that what comes back is
         # demonstrably the live graph.
@@ -136,6 +168,9 @@ def run():
         check("the view provider got its children back",
               root.getNumChildren() >= before,
               (root.getNumChildren(), before))
+        if mode3():
+            check("mode 3: the handed edit node is gone with the edit",
+                  not edit_content_hung())
 
         # And it can be done twice: the restore flag is per session, and a
         # second entry that found the root already emptied would be the
@@ -143,8 +178,7 @@ def run():
         opened = FreeCADGui.ActiveDocument.setEdit(sketch, 0)
         pump()
         check("a second edit session opens", opened)
-        check("and empties the root again", root.getNumChildren() == 0,
-              root.getNumChildren())
+        in_edit_reading(root, before, "a second edit")
 
         # A drawing tool, inside this second session. This is the part
         # that reaches for a view of its own: DrawSketchHandler used to

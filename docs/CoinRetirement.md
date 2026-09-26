@@ -2761,10 +2761,47 @@ client's table changes: the serve source publishes on document signals,
 and a client's show raises none. Verified in a real browser by
 `tests/gui/serve-client-visibility-browser.py`.
 
+**An edit's own hide (user ruling 2026-09-26: transient, 2026-09-27).**
+Entering a sketch used to turn its `Visibility` off in every view
+(TempoVis `tv.hide(ActiveSketch)`) and MOVE its view provider's children
+under the editing root, so the sketch vanished from every view and from
+every Link to it. In mode 3 it now does neither: it hands the editing
+root its own node (`Sketch_EditContent`: the grid and `Sketch_EditRoot`)
+and asks `ViewerContext::hideEditedObject()`, which hides the ONE
+occurrence being edited (`Gui::Document::getInEdit`'s parent and
+subname) in every view of the edit session. The hide is a path entry of
+each view's table from a second, TRANSIENT source
+(`ViewVisibility::setTransient`), placed ahead of the persisted map so
+it beats a persisted show of the same path, and never written into
+`ObjectVisibilities`. `EditingRoot` holds it and applies it to each view
+as it attaches -- a view opened mid-edit hides it too -- and
+`resetEditingRoot` clears it everywhere. A served client's mirror
+republishes and re-announces its table when the hide comes or goes.
+Modes 0-2 have no per-view table (`setEditHide` answers false there) and
+keep the move and the TempoVis hide. What changes in-session is nothing
+visible, since every view of the document joins the session; the payoff
+is a view outside it -- another document showing the sketch through a
+link -- and per-client sessions later. The sketch's `getElementPicked`
+now answers as edit geometry only for a pick through the edit graph: a
+pick of another occurrence of the shape, now in the scene during the
+edit, is the shape's element. Verified by `tests/gui/edit-hide.py` (the
+mechanism, a Python view provider, two views and one opened mid-edit)
+and `tests/gui/sketch-edit-hide.py` (a sketch in a Body, in a Part a
+Link shows, and edited through that Link).
+
+- **Found on the way (`5124c6cc87`):** a path hide leaked to every
+  other occurrence of the same node. An object's root sits under each
+  group and link that shows it, and the caches above its switch -- its
+  root's bounding box cache, which culls a pick -- keyed only on the
+  table: built under the hidden occurrence, the empty box was reused
+  for the Link's. `SoFCVisibilityElement::check` now invalidates the
+  open caches when the view has a rooted entry ending at the object.
+
 **Verified** by `tests/gui/per-view-visibility.py`
-(`GuiPerViewVisibility_tests_run`), two views of one document, 27
+(`GuiPerViewVisibility_tests_run`), two views of one document, 38
 checks: picks, scene bounds and backend frame pixels per view, bare
-entries gated, path entries through an App::Part and a Link, a bare
+entries gated, path entries through an App::Part and a Link, each
+occurrence of one node hidden alone (a Link showing the Part), a bare
 show of a hidden object drawn in one view only, and the other view
 untouched throughout.
 

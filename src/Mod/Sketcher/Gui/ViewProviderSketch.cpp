@@ -245,6 +245,7 @@ struct EditData {
     FullyConstrained(false),
     //ActSketch(0), // if you are wondering, it went to SketchObject, accessible via getSolvedSketch() and via SketchObject interface as appropriate
     EditRoot(0),
+    EditContent(0),
     PointSwitch(0),
     CurveSwitch(0),
     PointsMaterials(0),
@@ -407,6 +408,9 @@ struct EditData {
 
     // nodes for the visuals
     SoSeparator   *EditRoot;
+    /// The grid and EditRoot: what the edit draws, hung under the
+    /// editing root as one node (setEditViewer).
+    SoGroup       *EditContent;
     SoSwitch      *PointSwitch;
     SoSwitch      *CurveSwitch;
     SoMaterial    *PointsMaterials;
@@ -1569,7 +1573,11 @@ bool ViewProviderSketch::getPreselectionAtViewportPos(const SbVec2s &pos,
 
 bool ViewProviderSketch::getElementPicked(const SoPickedPoint *pp, std::string &subname) const
 {
-    if (edit && editViewer()) {
+    // The edit geometry only. In mode 3 the sketch's own shape stays in the
+    // scene during the edit, hidden only where it is being edited, so a
+    // pick can reach it through another occurrence -- a Link -- and that
+    // is the shape's element, not the edit's.
+    if (edit && editViewer() && isPointOnSketch(pp)) {
         const_cast<ViewProviderSketch*>(this)->detectPreselection(
                 pp, editViewer(), edit->curCursorPos, false);
         if (edit->lastPreselection.empty())
@@ -8554,7 +8562,6 @@ bool ViewProviderSketch::setEdit(int ModNum)
     Base::Placement plm = getEditingPlacement();
     setGridOrientation(plm.getPosition(), plm.getRotation());
     updateGridParameters();
-    addNodeToRoot(gridnode);
     setGridEnabled(true);
     // create the container for the additional edit data
     assert(!edit);
@@ -8598,12 +8605,18 @@ bool ViewProviderSketch::setEdit(int ModNum)
                         "if ActiveSketch.ViewObject.ShowLinks:\n"
                         "  tv.show([ref[0] for ref in ActiveSketch.ExternalGeometry])\n"
                         "tv.hide(ActiveSketch.Exports)\n"
-                        "tv.hide(ActiveSketch)\n"
+                        "%5"
                         "del(tv)\n"
                         ).arg(QString::fromUtf8(getDocument()->getDocument()->getName()),
                               QString::fromUtf8(getSketchObject()->getNameInDocument()),
                               QString::fromUtf8(Gui::Command::getObjectCmd(editObj).c_str()),
-                              QString::fromUtf8(editSubName.c_str()));
+                              QString::fromUtf8(editSubName.c_str()),
+                              // Not in mode 3: there each view of the edit
+                              // hides the occurrence being edited on its own
+                              // (setEditViewer), and the sketch stays shown
+                              // everywhere else.
+                              Gui::ViewParams::isUsingRenderer()
+                                  ? QString() : QStringLiteral("tv.hide(ActiveSketch)\n"));
             QByteArray cmdstr_bytearray = cmdstr.toUtf8();
             Gui::Command::runCommand(Gui::Command::Gui, cmdstr_bytearray);
         } catch (Base::PyException &e){
@@ -8799,10 +8812,15 @@ void ViewProviderSketch::createEditInventorNodes(void)
 {
     assert(edit);
 
+    edit->EditContent = new SoGroup;
+    edit->EditContent->ref();
+    edit->EditContent->setName("Sketch_EditContent");
+    edit->EditContent->addChild(getGridNode());
+
     edit->EditRoot = new SoAnnotation;
     edit->EditRoot->ref();
     edit->EditRoot->setName("Sketch_EditRoot");
-    pcRoot->addChild(edit->EditRoot);
+    edit->EditContent->addChild(edit->EditRoot);
     edit->EditRoot->renderCaching = SoSeparator::OFF ;
 
     // stuff for the points ++++++++++++++++++++++++++++++++++++++
@@ -9166,8 +9184,6 @@ void ViewProviderSketch::unsetEdit(int ModNum)
     }
 
     setGridEnabled(false);
-    auto gridnode = getGridNode();
-    pcRoot->removeChild(gridnode);
 
     if (edit) {
         if (edit->sketchHandler)
@@ -9178,8 +9194,13 @@ void ViewProviderSketch::unsetEdit(int ModNum)
         }
 
         Gui::coinRemoveAllChildren(edit->EditRoot);
-        pcRoot->removeChild(edit->EditRoot);
         edit->EditRoot->unref();
+        // In pcRoot only where the children were moved (setEditViewer).
+        int index = pcRoot->findChild(edit->EditContent);
+        if (index >= 0)
+            pcRoot->removeChild(index);
+        Gui::coinRemoveAllChildren(edit->EditContent);
+        edit->EditContent->unref();
 
         edit = nullptr;
         snapManager = nullptr;
@@ -9403,7 +9424,38 @@ void ViewProviderSketch::setEditViewer(Gui::ViewerContext* viewer, int ModNum)
     viewer->addGraphicsItem(rubberband.get());
     rubberband->setViewer(viewer);
 
-    viewer->setupEditingRoot();
+    // Mode 3: the sketch's own geometry stays where it is, hidden in each
+    // view of the edit session -- the occurrence being edited, per view
+    // (ViewerContext::hideEditedObject) -- and the edit draws through the
+    // node handed here. A view outside the session, another document's
+    // showing the sketch through a link, still sees the sketch. Otherwise
+    // the children move under the editing root, this content with them.
+    // setEditViewer runs again when the edit moves to another view, after
+    // the first view gave the children back.
+    int index = pcRoot->findChild(edit->EditContent);
+    if (index >= 0)
+        pcRoot->removeChild(index);
+    if (viewer->hideEditedObject()) {
+        viewer->setupEditingRoot(edit->EditContent);
+    }
+    else {
+        pcRoot->addChild(edit->EditContent);
+        viewer->setupEditingRoot();
+        // setEdit left the hide to this view, and the view could not.
+        if (Gui::ViewParams::isUsingRenderer()) {
+            try {
+                QString cmdstr = QStringLiteral(
+                            "ActiveSketch = App.getDocument('%1').getObject('%2')\n"
+                            "if ActiveSketch.ViewObject.TempoVis:\n"
+                            "  ActiveSketch.ViewObject.TempoVis.hide(ActiveSketch)\n"
+                            ).arg(QString::fromUtf8(getDocument()->getDocument()->getName()),
+                                  QString::fromUtf8(getSketchObject()->getNameInDocument()));
+                Gui::Command::runCommand(Gui::Command::Gui, cmdstr.toUtf8());
+            } catch (Base::PyException &e) {
+                e.ReportException();
+            }
+        }
+    }
     edit->viewer = viewer;
 
     // The window moved to a screen with another scale (upstream

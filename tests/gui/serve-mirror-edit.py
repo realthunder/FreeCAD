@@ -18,7 +18,11 @@ What is asserted:
   - entering edit MOVES the sketch's scene graph under the editing root,
     which is in the served graph exactly so the change-driven traversal
     publishes it. Read as the view provider's own child count going to
-    zero and coming back, the same reading the desktop probe takes;
+    zero and coming back, the same reading the desktop probe takes. In
+    render-cache mode 3 the sketch hands the root its own edit node
+    instead and hides the edited occurrence per view: the count stays,
+    and the client is told a visibility table that hides the sketch for
+    the edit and an empty one after it;
   - an 'E' input event is replayed in that view: a pointer move over the
     sketch reaches the edit path and the server pushes the result;
   - and what that client selects is its own (8.11). A 'P' pick sent in
@@ -122,6 +126,8 @@ class Client(threading.Thread):
         self.edit_with_camera = None
         self.input_pushed = None
         self.view_pick_told = None
+        self.edit_visibility = None
+        self.reset_visibility = None
         self.reset = None
 
     def run(self):
@@ -156,9 +162,11 @@ class Client(threading.Thread):
 
         # 4. Now into edit, which is where the mirror's own selection
         # starts being the one that counts.
+        mark = len(ws.pushes)
         self.edit_with_camera = reply_of(ws.op(
             '{"id":2,"op":"edit","obj":"%s","mode":0}' % OBJ))
         ws.drain(0.5)
+        self.edit_visibility = ws.next_push("visibility", 3.0, since=mark)
 
         # 5. The same click, now that this client is editing. It is this
         # client's own, so the room must not move -- and it was left empty
@@ -178,8 +186,10 @@ class Client(threading.Thread):
         # 7. Out of edit, on the client's word. What the sketcher does to
         # selection on its way out is this client's too, so the room is
         # still empty afterwards.
+        mark = len(ws.pushes)
         self.reset = reply_of(ws.op('{"id":3,"op":"resetEdit"}'))
         ws.drain(0.5)
+        self.reset_visibility = ws.next_push("visibility", 3.0, since=mark)
 
         # 8. Back in, and then the socket simply goes away. The document
         # is left in edit with its viewer about to be destroyed, which
@@ -286,8 +296,20 @@ def verify():
         check("the sketch had a scene graph to begin with", before > 0, before)
         check("the document entered edit", any(s[0] for s in seen),
               [s[0] for s in seen])
-        check("entering edit emptied the view provider's root",
-              any(s[0] and s[1] == 0 for s in seen), seen[:40])
+        params = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View")
+        if params.GetInt("RenderCache", 3) == 3:
+            check("mode 3: entering edit kept the view provider's children",
+                  any(s[0] for s in seen)
+                  and all(s[1] == before for s in seen if s[0]), seen[:40])
+            told = client.edit_visibility or b""
+            check("mode 3: the client is told its table hides the edited sketch",
+                  b'"v":0' in told and ('"%s"' % OBJ).encode() in told, told[:200])
+            told = client.reset_visibility or b""
+            check("mode 3: and told an empty table when the edit ends",
+                  b'"entries":[]' in told, told[:200])
+        else:
+            check("entering edit emptied the view provider's root",
+                  any(s[0] and s[1] == 0 for s in seen), seen[:40])
         check("the session bound to the mirror rather than making a 3D view",
               all(s[2] == 0 for s in seen),
               sorted({s[2] for s in seen}))

@@ -225,6 +225,16 @@ fc_add_gui_test(GuiEditHide_tests_run
                 edit-hide.py
                 --timeout 240)
 
+# A sketch in edit (mode 3) no longer turns its Visibility off nor moves
+# its view provider's children: it hands the editing root its own edit
+# node and each view of the session hides the occurrence being edited.
+# Red shapes tell the sketch's own drawing from the edit geometry: gone
+# in edit, back after; another occurrence through a Link stays, both
+# ways round.
+fc_add_gui_test(GuiSketchEditHide_tests_run
+                sketch-edit-hide.py
+                --timeout 240)
+
 # A portrait view draws (backend frame), projects (getPointOnViewport)
 # and picks (Coin ray) with ONE projection: Coin's ADJUST_CAMERA widens
 # the volume by 1/aspect below unit aspect, and the backend feed skipped
