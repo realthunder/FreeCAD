@@ -408,7 +408,6 @@ private:
 
     class Sink;
     friend class Sink;
-    class FlushingStore;
 
     /// Open the file's store in the history's directory (the core's), and
     /// take the branch the store names.
@@ -417,13 +416,90 @@ private:
     void pickBranch();
     /// Sec 27.5 ruling 3: a detached cursor's first row puts it on a branch.
     void ensureBranch();
-    /// Row `seq` is on the chain ending at `head`, and nothing after it
-    /// there changed the document: only records (save, snapshot, switch).
-    bool unchangedSince(int64_t head, int64_t seq);
     /// A version from the file's entries plus the record (`save` or
     /// `restore`) that names it; what onSave and onRestore share.
     int64_t snapshot(const char* kind, const std::string& path, const Captures& entries,
                      const Blobs& blobs, int schema);
+    /// Serialise each task's copy and write what it fills and resolves.
+    /// Worker thread.
+    void writeValues(std::vector<ValueTask>& tasks, std::vector<LogOp>& ops);
+    /// Take the pending entry of `key` into `task`, if there is one.
+    void takePending(int64_t key, ValueTask& task);
+    /// Queue a job for the worker, in order.
+    void post(std::function<void()> job);
+    /// Number a row: the next seq, on the current branch, following its
+    /// head, which moves to it. Main thread.
+    void number(LogTransaction& t);
+
+    /// The file's history (docs/TransactionLog.md sec 27.7) and the shared
+    /// half of its log in it: the store, the worker, the counters, the
+    /// entities held (TransactionLogCore, in TransactionLog.cpp). What is
+    /// below is this document's cursor on one branch.
+    FileHistory& _history;
+    TransactionLogCore& _c;
+
+    Document& _doc;
+    /// The current branch and its head (sec 26); main thread only.
+    int64_t _branch {1};
+    int64_t _head {0};
+    /// An embedded copy was just adopted: the next onRestore is its version.
+    bool _adopted {false};
+    /// A detached cursor's version (sec 27.5), and the id base its branch
+    /// will start at.
+    int64_t _at {0};
+    long _idBase {0};
+    /// Property id -> the op whose after ref that property's next copy
+    /// resolves; main thread only.
+    std::unordered_map<int64_t, Pending> _pending;
+    /// Property ids whose newest value the worker holds by hash (23.3):
+    /// every copy posted with a key, every part a snapshot stored; taken
+    /// out by a change whose value is not recorded. Main thread only.
+    std::unordered_set<int64_t> _recorded;
+    /// What the sink of the snapshot in progress did not claim, to join
+    /// _recorded once the snapshot is posted. Main thread only.
+    std::unordered_set<int64_t> _misses;
+    std::unique_ptr<Sink> _sink;
+    bool _verify {false};
+    /// What a capture on the worker needs of the document.
+    CaptureConfig _config;
+    friend class TransactionLogCore;
+};
+
+/** The shared half of a file's log (docs/TransactionLog.md sec 27.7): what
+ * every document of the file writes through -- the store, the worker that
+ * writes it, the sequence and version counters, the entities held -- owned
+ * by the file's history, so it outlives any one document. Each document's
+ * TransactionLog is a cursor on one branch over it.
+ */
+class AppExport TransactionLogCore
+{
+public:
+    explicit TransactionLogCore(FileHistory& history);
+    ~TransactionLogCore();
+
+    /// Open the store in the history's directory; the counters follow it.
+    void openStore();
+
+    /// The store, for reading: every call waits for the queue first, so the
+    /// reference can be kept.
+    TransactionStore& store();
+    /// Read a value back (TransactionLog::readValue), and one entity's bytes.
+    bool readValue(const std::string& hash, CapturedValue& out);
+    bool readBytes(const std::string& hash, std::string& out, LogEntity* entity = nullptr,
+                   int depth = 0);
+    FileBlobHandle heldBlob(const std::string& hash);
+    size_t heldBlobCount();
+    bool readRevert(int64_t seq, TransactionLog::Revert& out);
+    TransactionLog::Embedded embed(const std::string& saveDate);
+    /// The documents of the file and their branches (sec 27.7).
+    Document* holderOf(int64_t id) const;
+    std::vector<Document*> documents() const;
+    Document* documentAt(const LogVersion& version);
+    /// Row `seq` is on the chain ending at `head`, and nothing after it
+    /// there changed the document: only records (save, snapshot, switch).
+    bool unchangedSince(int64_t head, int64_t seq);
+
+    // The entity functions (sec 23).
     /// Store one captured entry as a composite (23.3): the parts resolved
     /// or stored, the skeleton, the composite row. `previous` is the last
     /// version's composite of the same entry, for supersession. Returns
@@ -473,51 +549,65 @@ private:
     void supersede(const std::string& older, const std::string& newer);
     /// The longest delta chain hanging off `hash`, in hops.
     int chainBelow(const std::string& hash, int depth = 0);
-    /// Serialise each task's copy and write what it fills and resolves.
-    /// Worker thread.
-    void writeValues(std::vector<ValueTask>& tasks, std::vector<LogOp>& ops);
-    /// Take the pending entry of `key` into `task`, if there is one.
-    void takePending(int64_t key, ValueTask& task);
-    /// Queue a job for the worker, in order.
+
+    void run();
     void post(std::function<void()> job);
-    /// Number a row: the next seq, on the current branch, following its
-    /// head, which moves to it. Main thread.
-    void number(LogTransaction& t);
+    void flush();
+    void stopWorker();
+    void retire(std::shared_ptr<const Property>&& copy);
+    void releaseRetired();
+    /// The logs alive in the process; `core` null stops every one's worker,
+    /// which an atexit handler does.
+    static void liveLogs(TransactionLogCore* core, bool add);
 
-    /// The file's history (docs/TransactionLog.md sec 27.7) and the shared
-    /// half of its log in it: the store, the worker, the counters, the
-    /// entities held (TransactionLogCore, in TransactionLog.cpp). What is
-    /// below is this document's cursor on one branch.
     FileHistory& _history;
-    TransactionLogCore& _c;
-
-    Document& _doc;
+    std::string _path;
+    std::string _envJson;
+    std::string _user;
+    std::string _host;
+    int64_t _environment {0};
+    int64_t _session {0};
+    std::unique_ptr<TransactionStore> _store;
+    class FlushingStore;
     std::unique_ptr<FlushingStore> _reader;
-    /// The current branch and its head (sec 26); main thread only.
-    int64_t _branch {1};
-    int64_t _head {0};
-    /// An embedded copy was just adopted: the next onRestore is its version.
-    bool _adopted {false};
-    /// A detached cursor's version (sec 27.5), and the id base its branch
-    /// will start at.
-    int64_t _at {0};
-    long _idBase {0};
-    /// Property id -> the op whose after ref that property's next copy
-    /// resolves; main thread only.
-    std::unordered_map<int64_t, Pending> _pending;
-    /// Property ids whose newest value the worker holds by hash (23.3):
-    /// every copy posted with a key, every part a snapshot stored; taken
-    /// out by a change whose value is not recorded. Main thread only.
-    std::unordered_set<int64_t> _recorded;
-    /// What the sink of the snapshot in progress did not claim, to join
-    /// _recorded once the snapshot is posted. Main thread only.
-    std::unordered_set<int64_t> _misses;
-    std::unique_ptr<Sink> _sink;
-    bool _verify {false};
-    /// What a capture on the worker needs of the document.
-    CaptureConfig _config;
-    friend class TransactionLogCore;
+    /// The last seq and version number handed out; main thread only.
+    int64_t _nextSeq {0};
+    int64_t _nextVersion {0};
+    /// The delta policy, read on the main thread as each job is posted so
+    /// the worker never touches the preferences.
+    std::atomic<long> _deltaHops {0};
+    std::atomic<long> _deltaRatio {0};
+    /// Property id -> the hash of its newest value. Worker thread only.
+    std::unordered_map<int64_t, std::string> _hashById;
+    /// The blobs stored as `file` (sec 23.16), held so the blob store keeps
+    /// their files: every one a version or a value names, until the
+    /// collector drops it or a delta replaces it (releaseBlobs). Worker
+    /// thread, or a flushed caller.
+    std::unordered_map<std::string, FileBlobHandle> _blobs;
+    /// The blobs putSources() has read. Worker thread.
+    std::unordered_set<std::string> _sourced;
+
+    std::thread _worker;
+    std::mutex _mutex;
+    std::condition_variable _wake;
+    std::condition_variable _done;
+    std::deque<std::function<void()>> _queue;
+    bool _running {false};
+    bool _stop {false};
+    /// Copies the worker has written, released on the main thread: a copy
+    /// may unregister itself from a list the main thread walks (an
+    /// expression engine's copy leaves PropertyExpressionContainer's), so
+    /// its last reference is never dropped on the worker (sec 25.4).
+    std::vector<std::shared_ptr<const Property>> _retired;
+    std::mutex _retiredMutex;
+    std::thread::id _mainThread {std::this_thread::get_id()};
+
+    /// The documents' cursors, and which holds each branch: a branch is
+    /// checked out by one document at most (sec 27.7). Main thread.
+    std::set<TransactionLog*> _cursors;
+    std::map<int64_t, TransactionLog*> _holders;
 };
+
 
 } // namespace App
 

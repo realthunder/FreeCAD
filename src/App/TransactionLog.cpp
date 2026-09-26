@@ -142,85 +142,14 @@ ContainerInfo describe(Document& doc, const TransactionalObject* tobj, const std
 
 } // namespace
 
-/** The shared half of a file's log (docs/TransactionLog.md sec 27.7): what
- * every document of the file writes through -- the store, the worker that
- * writes it, the sequence and version counters, the entities held -- owned
- * by the file's history, so it outlives any one document. Each document's
- * TransactionLog is a cursor on one branch over it.
- */
-class App::TransactionLogCore
-{
-public:
-    explicit TransactionLogCore(FileHistory& history);
-    ~TransactionLogCore();
-
-    /// Open the store in the history's directory; the counters follow it.
-    void openStore();
-
-    void run();
-    void post(std::function<void()> job);
-    void flush();
-    void stopWorker();
-    void retire(std::shared_ptr<const Property>&& copy);
-    void releaseRetired();
-    /// The logs alive in the process; `core` null stops every one's worker,
-    /// which an atexit handler does.
-    static void liveLogs(TransactionLogCore* core, bool add);
-
-    FileHistory& _history;
-    std::string _path;
-    std::string _envJson;
-    std::string _user;
-    std::string _host;
-    int64_t _environment {0};
-    int64_t _session {0};
-    std::unique_ptr<TransactionStore> _store;
-    /// The last seq and version number handed out; main thread only.
-    int64_t _nextSeq {0};
-    int64_t _nextVersion {0};
-    /// The delta policy, read on the main thread as each job is posted so
-    /// the worker never touches the preferences.
-    std::atomic<long> _deltaHops {0};
-    std::atomic<long> _deltaRatio {0};
-    /// Property id -> the hash of its newest value. Worker thread only.
-    std::unordered_map<int64_t, std::string> _hashById;
-    /// The blobs stored as `file` (sec 23.16), held so the blob store keeps
-    /// their files: every one a version or a value names, until the
-    /// collector drops it or a delta replaces it (releaseBlobs). Worker
-    /// thread, or a flushed caller.
-    std::unordered_map<std::string, FileBlobHandle> _blobs;
-    /// The blobs putSources() has read. Worker thread.
-    std::unordered_set<std::string> _sourced;
-
-    std::thread _worker;
-    std::mutex _mutex;
-    std::condition_variable _wake;
-    std::condition_variable _done;
-    std::deque<std::function<void()>> _queue;
-    bool _running {false};
-    bool _stop {false};
-    /// Copies the worker has written, released on the main thread: a copy
-    /// may unregister itself from a list the main thread walks (an
-    /// expression engine's copy leaves PropertyExpressionContainer's), so
-    /// its last reference is never dropped on the worker (sec 25.4).
-    std::vector<std::shared_ptr<const Property>> _retired;
-    std::mutex _retiredMutex;
-    std::thread::id _mainThread {std::this_thread::get_id()};
-
-    /// The documents' cursors, and which holds each branch: a branch is
-    /// checked out by one document at most (sec 27.7). Main thread.
-    std::set<TransactionLog*> _cursors;
-    std::map<int64_t, TransactionLog*> _holders;
-};
-
 /** What store() hands out: every call waits for the worker's queue to
  * drain, then forwards. A reference kept across commits stays safe, which
  * a bare reference to the store would not be.
  */
-class TransactionLog::FlushingStore : public TransactionStore
+class TransactionLogCore::FlushingStore : public TransactionStore
 {
 public:
-    explicit FlushingStore(TransactionLog& log) : _log(log) {}
+    explicit FlushingStore(TransactionLogCore& core) : _core(core) {}
 
     int64_t append(LogTransaction& txn, std::vector<LogOp>& ops) override
     { return inner().append(txn, ops); }
@@ -252,18 +181,18 @@ public:
     void truncate(int64_t before) override
     {
         inner().truncate(before);
-        _log.releaseBlobs();
+        _core.releaseBlobs();
     }
     void removeTransactions(const std::vector<int64_t>& seqs) override
     {
         inner().removeTransactions(seqs);
-        _log.releaseBlobs();
+        _core.releaseBlobs();
     }
     void replaceTransactions(const LogTransaction& txn, std::vector<LogOp>& ops,
                              const std::vector<int64_t>& seqs) override
     {
         inner().replaceTransactions(txn, ops, seqs);
-        _log.releaseBlobs();
+        _core.releaseBlobs();
     }
     int64_t environment(const std::string& json) override { return inner().environment(json); }
     std::string environmentJson(int64_t id) override { return inner().environmentJson(id); }
@@ -284,13 +213,13 @@ public:
     void evictVersion(int64_t num) override
     {
         inner().evictVersion(num);
-        _log.releaseBlobs();
+        _core.releaseBlobs();
     }
     void copyTo(const std::string& path) override { inner().copyTo(path); }
     void dropTier(const std::string& tier) override
     {
         inner().dropTier(tier);
-        _log.releaseBlobs();
+        _core.releaseBlobs();
     }
     bool nameVersion(int64_t num, const std::string& name) override
     { return inner().nameVersion(num, name); }
@@ -311,10 +240,10 @@ public:
 private:
     TransactionStore& inner()
     {
-        _log.flush();
-        return *_log._c._store;
+        _core.flush();
+        return *_core._store;
     }
-    TransactionLog& _log;
+    TransactionLogCore& _core;
 };
 
 /** The property sink (sec 23.3). Record mode claims nothing; compose
@@ -656,24 +585,24 @@ int64_t TransactionLog::lastSeq() const
     return _c._nextSeq;
 }
 
-TransactionStore& TransactionLog::store()
+TransactionStore& TransactionLogCore::store()
 {
     if (!_reader)
         _reader = std::make_unique<FlushingStore>(*this);
     return *_reader;
 }
 
-TransactionLog::Embedded TransactionLog::embed(const std::string& saveDate)
+TransactionLog::Embedded TransactionLogCore::embed(const std::string& saveDate)
 {
     flush();
-    Embedded out;
+    TransactionLog::Embedded out;
     out.saveId = Base::Uuid::createUuid();
-    out.version = _c._nextVersion + 1;
-    const std::string dir = _doc.getFileHistory().directory() + "/history";
+    out.version = _nextVersion + 1;
+    const std::string dir = _history.directory() + "/history";
     Base::FileInfo(dir).createDirectories();
     out.path = dir + "/embed-" + out.saveId + ".db";
     Base::FileInfo(out.path).deleteFile();
-    _c._store->copyTo(out.path);
+    _store->copyTo(out.path);
     auto copy = TransactionStore::openSQLite(out.path);
     // Retention (16.4, 13.3): the named versions travel, the unnamed ones
     // and the cache tier do not; the ops do. Each branch's newest travels
@@ -878,7 +807,7 @@ void TransactionLog::ensureBranch()
         }
     }
     if (haveFrom && from.closed == 0 && !_c._holders.count(from.id)
-            && unchangedSince(from.head, _head)) {
+            && _c.unchangedSince(from.head, _head)) {
         _c._holders[from.id] = this;
         _branch = from.id;
         _head = from.head;
@@ -924,21 +853,21 @@ void TransactionLog::ensureBranch()
     _doc.signalBranchesChanged(_doc);
 }
 
-Document* TransactionLog::holderOf(int64_t id) const
+Document* TransactionLogCore::holderOf(int64_t id) const
 {
-    auto it = _c._holders.find(id);
-    return it != _c._holders.end() ? &it->second->_doc : nullptr;
+    auto it = _holders.find(id);
+    return it != _holders.end() ? &it->second->_doc : nullptr;
 }
 
-std::vector<Document*> TransactionLog::documents() const
+std::vector<Document*> TransactionLogCore::documents() const
 {
     std::vector<Document*> docs;
-    for (auto cursor : _c._cursors)
+    for (auto cursor : _cursors)
         docs.push_back(&cursor->_doc);
     return docs;
 }
 
-bool TransactionLog::unchangedSince(int64_t head, int64_t seq)
+bool TransactionLogCore::unchangedSince(int64_t head, int64_t seq)
 {
     if (head == seq)
         return true;
@@ -946,20 +875,20 @@ bool TransactionLog::unchangedSince(int64_t head, int64_t seq)
         return false;
     flush();
     bool reached = false;
-    for (const auto& t : _c._store->chain(head, seq)) {
+    for (const auto& t : _store->chain(head, seq)) {
         if (t.seq == seq)
             reached = true;
-        else if (t.seq > seq && !_c._store->ops(t.seq).empty())
+        else if (t.seq > seq && !_store->ops(t.seq).empty())
             return false;
     }
     return reached;
 }
 
-Document* TransactionLog::documentAt(const LogVersion& version)
+Document* TransactionLogCore::documentAt(const LogVersion& version)
 {
     // A document is the version when its branch moved past it only by
     // records -- a save, a snapshot, a switch: rows with no ops.
-    for (auto cursor : _c._cursors) {
+    for (auto cursor : _cursors) {
         if (cursor->_head == version.seq)
             return &cursor->_doc;
         if (cursor->_branch != version.branch && cursor->_branch != 0)
@@ -968,6 +897,59 @@ Document* TransactionLog::documentAt(const LogVersion& version)
             return &cursor->_doc;
     }
     return nullptr;
+}
+
+// The file-level half is the core's (sec 27.7); a document's log hands it on.
+
+TransactionStore& TransactionLog::store()
+{
+    return _c.store();
+}
+
+bool TransactionLog::readValue(const std::string& hash, CapturedValue& out)
+{
+    return _c.readValue(hash, out);
+}
+
+bool TransactionLog::readBytes(const std::string& hash, std::string& out, LogEntity* entity,
+                               int depth)
+{
+    return _c.readBytes(hash, out, entity, depth);
+}
+
+FileBlobHandle TransactionLog::heldBlob(const std::string& hash)
+{
+    return _c.heldBlob(hash);
+}
+
+size_t TransactionLog::heldBlobCount()
+{
+    return _c.heldBlobCount();
+}
+
+bool TransactionLog::readRevert(int64_t seq, Revert& out)
+{
+    return _c.readRevert(seq, out);
+}
+
+TransactionLog::Embedded TransactionLog::embed(const std::string& saveDate)
+{
+    return _c.embed(saveDate);
+}
+
+Document* TransactionLog::holderOf(int64_t id) const
+{
+    return _c.holderOf(id);
+}
+
+std::vector<Document*> TransactionLog::documents() const
+{
+    return _c.documents();
+}
+
+Document* TransactionLog::documentAt(const LogVersion& version)
+{
+    return _c.documentAt(version);
 }
 
 void TransactionLog::forgetLiveValues()
@@ -1162,20 +1144,20 @@ int64_t TransactionLog::onSave(const std::string& path, const Captures& entries,
     return snapshot("save", path, entries, blobs, schema);
 }
 
-bool TransactionLog::readRevert(int64_t seq, Revert& out)
+bool TransactionLogCore::readRevert(int64_t seq, TransactionLog::Revert& out)
 {
     flush();
     bool found = false;
-    for (const auto& t : _c._store->transactions(seq, 1))
+    for (const auto& t : _store->transactions(seq, 1))
         found = t.seq == seq;
     if (!found)
         return false;
-    out.ops = _c._store->ops(seq);
+    out.ops = _store->ops(seq);
     for (const auto& o : out.ops) {
         if (o.vbefore.empty() || out.values.count(o.vbefore))
             continue;
         LogEntity e;
-        if (!_c._store->getEntity(o.vbefore, e))
+        if (!_store->getEntity(o.vbefore, e))
             continue;
         for (const auto& r : e.refs) {
             if (r.role == "blob")
@@ -1188,14 +1170,14 @@ bool TransactionLog::readRevert(int64_t seq, Revert& out)
     return true;
 }
 
-bool TransactionLog::restoreBlob(const std::string& hash, const std::string& ext, int depth)
+bool TransactionLogCore::restoreBlob(const std::string& hash, const std::string& ext, int depth)
 {
     if (depth > 1024)
         return false;
     LogEntity e;
-    if (!_c._store->getEntity(hash, e) || e.kind != "blob")
+    if (!_store->getEntity(hash, e) || e.kind != "blob")
         return false;
-    auto& manager = _doc.getFileBlobManager();
+    auto& manager = _history.blobs();
     FileBlobHandle blob = manager.find(hash);
     if (!blob) {
         std::string bytes;
@@ -1311,7 +1293,7 @@ int64_t TransactionLog::snapshot(const char* kind, const std::string& path,
             for (const auto& e : entries) {
                 auto it = previous.find(e.first);
                 std::string full;
-                const std::string hash = putComposite(
+                const std::string hash = _c.putComposite(
                     e.first, e.second, it != previous.end() ? it->second : std::string(), full);
                 // Document.xml, first by contract: matched to a file on
                 // disk by the SHA-1 of the bytes (sec 11) when they were
@@ -1328,16 +1310,16 @@ int64_t TransactionLog::snapshot(const char* kind, const std::string& path,
             _doc.getFileBlobManager().makeDurable(named);
             for (const auto& b : blobs) {
                 if (b.second)
-                    manifest.push_back({b.first, putBlob(b.second), "entity"});
+                    manifest.push_back({b.first, _c.putBlob(b.second), "entity"});
             }
             blobs.clear();   // the log holds what it keeps; the job lets go
             _c._store->addVersion(v, manifest);
             for (const auto& e : manifest) {
                 auto it = previous.find(e.entry);
                 if (it != previous.end() && it->second != e.hash)
-                    supersede(it->second, e.hash);
+                    _c.supersede(it->second, e.hash);
             }
-            evictVersions(keep);
+            _c.evictVersions(keep);
 
             t.script = "{\"version\":" + std::to_string(v.num) + ",\"docxml\":\"" + docHash
                      + "\",\"blobs\":" + std::to_string(nblobs) + ",\"schema\":"
@@ -1356,7 +1338,7 @@ int64_t TransactionLog::snapshot(const char* kind, const std::string& path,
     return 0;
 }
 
-void TransactionLog::evictVersions(long keep)
+void TransactionLogCore::evictVersions(long keep)
 {
     // Sec 16.3: unnamed versions over the limit go, oldest first; named
     // ones never, and never the newest, which is what the cadence and a
@@ -1364,7 +1346,7 @@ void TransactionLog::evictVersions(long keep)
     // was read on the main thread when the job was posted.
     if (keep <= 0)
         return;
-    auto versions = _c._store->versions();
+    auto versions = _store->versions();
     // The newest of each branch stays whatever the limit (sec 26): what a
     // switch to it checks out, so a switch never replays more than the
     // branch's own tail. On a log that never branched, the newest.
@@ -1385,7 +1367,7 @@ void TransactionLog::evictVersions(long keep)
                         ? unnamed.size() + 1 - static_cast<size_t>(keep) : 0;
     for (size_t i = 0; i < excess; ++i) {
         FC_LOG("transaction log: evict version " << unnamed[i]);
-        _c._store->evictVersion(unnamed[i]);
+        _store->evictVersion(unnamed[i]);
     }
     if (excess)
         releaseBlobs();
@@ -1475,7 +1457,7 @@ bool TransactionLog::deltaDecode(const std::string& patch, const std::string& ba
 #endif
 }
 
-std::string TransactionLog::putValue(const CapturedValue& value, const std::string& tier)
+std::string TransactionLogCore::putValue(const CapturedValue& value, const std::string& tier)
 {
     LogEntity e;
     e.kind = "prop";
@@ -1488,10 +1470,10 @@ std::string TransactionLog::putValue(const CapturedValue& value, const std::stri
         ae.tier = tier;
         ae.hash = hashBytes(a.bytes);
         e.refs.push_back(LogRef {ae.hash, "attach", a.name});
-        if (_c._store->hasEntity(ae.hash))
+        if (_store->hasEntity(ae.hash))
             continue;
         compressInto(ae, a.bytes);
-        _c._store->putEntity(ae);
+        _store->putEntity(ae);
     }
     std::string keyed = value.fragment;
     for (auto& r : e.refs) {
@@ -1512,28 +1494,28 @@ std::string TransactionLog::putValue(const CapturedValue& value, const std::stri
         blobRefs.push_back(LogRef {putBlob(blob), "blob", blob->extension()});
         putSources(blob);
     }
-    if (_c._store->hasEntity(e.hash)) {
+    if (_store->hasEntity(e.hash)) {
         // Stored before, possibly as a part that named the files without
         // an edge to them.
         for (const auto& r : blobRefs)
-            _c._store->addRef(e.hash, r);
+            _store->addRef(e.hash, r);
         return e.hash;
     }
     e.refs.insert(e.refs.end(), blobRefs.begin(), blobRefs.end());
     compressInto(e, value.fragment);
-    _c._store->putEntity(e);
+    _store->putEntity(e);
     return e.hash;
 }
 
-std::string TransactionLog::putBlob(const FileBlobHandle& blob)
+std::string TransactionLogCore::putBlob(const FileBlobHandle& blob)
 {
     const std::string& hash = blob->hash();
     // The row below names the blob, so its bytes go to the disk first
     // (docs/FileBlobsManager.md sec 15.8). A commit made its blobs durable
     // in one go already; this catches whatever path did not.
-    _doc.getFileBlobManager().makeDurable({blob});
+    _history.blobs().makeDurable({blob});
     LogEntity e;
-    if (!_c._store->getEntity(hash, e)) {
+    if (!_store->getEntity(hash, e)) {
         e = LogEntity();
         e.hash = hash;
         e.kind = "blob";
@@ -1541,78 +1523,78 @@ std::string TransactionLog::putBlob(const FileBlobHandle& blob)
         e.tier = "durable";
         e.size = blob->size();
         e.data = blob->extension();
-        _c._store->putEntity(e);
+        _store->putEntity(e);
     }
     else if (e.enc == "delta") {
         // Superseded once and current again (a shape changed and changed
         // back): the newest is full (23.2), and here is its file.
-        _c._store->reencodeEntity(hash, "file", "", blob->extension());
+        _store->reencodeEntity(hash, "file", "", blob->extension());
     }
     else if (e.enc != "file") {
         return hash;   // the same bytes stored in the log already
     }
-    _c._blobs[hash] = blob;
+    _blobs[hash] = blob;
     return hash;
 }
 
-void TransactionLog::putSources(const FileBlobHandle& blob, int depth)
+void TransactionLogCore::putSources(const FileBlobHandle& blob, int depth)
 {
-    if (!blob || depth > 1024 || !_c._sourced.insert(blob->hash()).second)
+    if (!blob || depth > 1024 || !_sourced.insert(blob->hash()).second)
         return;
     for (const auto& hash : blob->sources()) {
         std::string ext;
-        if (auto source = _doc.getFileBlobManager().find(hash)) {
+        if (auto source = _history.blobs().find(hash)) {
             putBlob(source);
             putSources(source, depth + 1);
             ext = source->extension();
         }
-        else if (!_c._store->hasEntity(hash)) {
+        else if (!_store->hasEntity(hash)) {
             FC_WARN("transaction log: blob " << blob->hash() << " reads " << hash
                     << ", which is in no store");
             continue;
         }
-        _c._store->addRef(blob->hash(), LogRef {hash, "blob", ext});
+        _store->addRef(blob->hash(), LogRef {hash, "blob", ext});
     }
 }
 
-void TransactionLog::releaseBlobs()
+void TransactionLogCore::releaseBlobs()
 {
-    if (_c._blobs.empty())
+    if (_blobs.empty())
         return;
-    const auto files = _c._store->entitiesStoredAs("file");
+    const auto files = _store->entitiesStoredAs("file");
     const std::unordered_set<std::string> kept(files.begin(), files.end());
-    for (auto it = _c._blobs.begin(); it != _c._blobs.end();) {
+    for (auto it = _blobs.begin(); it != _blobs.end();) {
         if (kept.count(it->first))
             ++it;
         else
-            it = _c._blobs.erase(it);
+            it = _blobs.erase(it);
     }
 }
 
-FileBlobHandle TransactionLog::heldBlob(const std::string& hash)
+FileBlobHandle TransactionLogCore::heldBlob(const std::string& hash)
 {
     flush();
-    auto it = _c._blobs.find(hash);
-    return it != _c._blobs.end() ? it->second : FileBlobHandle();
+    auto it = _blobs.find(hash);
+    return it != _blobs.end() ? it->second : FileBlobHandle();
 }
 
-size_t TransactionLog::heldBlobCount()
+size_t TransactionLogCore::heldBlobCount()
 {
     flush();
-    return _c._blobs.size();
+    return _blobs.size();
 }
 
-std::string TransactionLog::putBytes(const std::string& bytes, const std::string& kind,
+std::string TransactionLogCore::putBytes(const std::string& bytes, const std::string& kind,
                                      const std::string& tier)
 {
     LogEntity e;
     e.kind = kind;
     e.tier = tier;
     e.hash = hashBytes(bytes);
-    if (_c._store->hasEntity(e.hash))
+    if (_store->hasEntity(e.hash))
         return e.hash;
     compressInto(e, bytes);
-    _c._store->putEntity(e);
+    _store->putEntity(e);
     return e.hash;
 }
 
@@ -1669,7 +1651,7 @@ bool TransactionLog::Composite::decode(const std::string& data)
     return !skeleton.empty();
 }
 
-std::string TransactionLog::putComposite(const std::string& entry,
+std::string TransactionLogCore::putComposite(const std::string& entry,
                                          const Base::EntryCapture& capture,
                                          const std::string& previous, std::string& full)
 {
@@ -1707,8 +1689,8 @@ std::string TransactionLog::putComposite(const std::string& entry,
             continue;
         std::string hash;
         if (s.claimed) {
-            auto it = _c._hashById.find(s.key);
-            if (it == _c._hashById.end())
+            auto it = _hashById.find(s.key);
+            if (it == _hashById.end())
                 throw Base::RuntimeError("transaction log: " + entry + ": " + container + "."
                                          + s.name + " claimed but not held");
             hash = it->second;
@@ -1719,7 +1701,7 @@ std::string TransactionLog::putComposite(const std::string& entry,
                            << " changed without aboutToSetValue (held " << hash << ", is "
                            << fresh << ")");
                     hash = putBytes(s.text, "prop", "durable");
-                    _c._hashById[s.key] = hash;
+                    _hashById[s.key] = hash;
                 }
             }
             else {
@@ -1728,7 +1710,7 @@ std::string TransactionLog::putComposite(const std::string& entry,
         }
         else {
             hash = putBytes(s.text, "prop", "durable");
-            _c._hashById[s.key] = hash;
+            _hashById[s.key] = hash;
         }
         hashes[i] = hash;
         // Equal to the shared default the file carries: left out, as the
@@ -1749,7 +1731,7 @@ std::string TransactionLog::putComposite(const std::string& entry,
 
     // The skeleton, the composite, and the entry's bytes when they are
     // all here (record mode: what a file on disk is matched by, sec 11).
-    Composite c;
+    TransactionLog::Composite c;
     std::string skeleton;
     std::string composed;
     container.clear();
@@ -1774,7 +1756,7 @@ std::string TransactionLog::putComposite(const std::string& entry,
             if (!keep[i])
                 break;
             skeleton += s.open;
-            CompositePart p;
+            TransactionLog::CompositePart p;
             p.offset = skeleton.size();
             p.hash = hashes[i];
             p.container = container;
@@ -1796,7 +1778,7 @@ std::string TransactionLog::putComposite(const std::string& entry,
     ce.tier = "durable";
     const std::string data = c.encode();
     ce.hash = hashBytes(data);
-    if (!_c._store->hasEntity(ce.hash)) {
+    if (!_store->hasEntity(ce.hash)) {
         ce.refs.push_back(LogRef {c.skeleton, "skeleton", ""});
         std::unordered_set<std::string> seen;
         for (const auto& p : c.parts) {
@@ -1804,7 +1786,7 @@ std::string TransactionLog::putComposite(const std::string& entry,
                 ce.refs.push_back(LogRef {p.hash, "part", ""});
         }
         compressInto(ce, data);
-        _c._store->putEntity(ce);
+        _store->putEntity(ce);
     }
     full = allBytes ? hashBytes(composed) : ce.hash;
 
@@ -1815,8 +1797,8 @@ std::string TransactionLog::putComposite(const std::string& entry,
     if (!previous.empty() && previous != ce.hash) {
         LogEntity pe;
         std::string pdata;
-        Composite pc;
-        if (_c._store->getEntity(previous, pe) && pe.kind == "composite"
+        TransactionLog::Composite pc;
+        if (_store->getEntity(previous, pe) && pe.kind == "composite"
                 && readBytes(previous, pdata) && pc.decode(pdata)) {
             if (pc.skeleton != c.skeleton)
                 supersede(pc.skeleton, c.skeleton);
@@ -1833,9 +1815,9 @@ std::string TransactionLog::putComposite(const std::string& entry,
     return ce.hash;
 }
 
-bool TransactionLog::composeEntry(const std::string& data, std::string& out)
+bool TransactionLogCore::composeEntry(const std::string& data, std::string& out)
 {
-    Composite c;
+    TransactionLog::Composite c;
     if (!c.decode(data))
         return false;
     std::string skeleton;
@@ -1857,31 +1839,31 @@ bool TransactionLog::composeEntry(const std::string& data, std::string& out)
     return true;
 }
 
-int TransactionLog::chainBelow(const std::string& hash, int depth)
+int TransactionLogCore::chainBelow(const std::string& hash, int depth)
 {
     if (depth > 64)
         return depth;
     int longest = 0;
-    for (const auto& below : _c._store->basedOn(hash))
+    for (const auto& below : _store->basedOn(hash))
         longest = std::max(longest, 1 + chainBelow(below, depth + 1));
     return longest;
 }
 
-void TransactionLog::supersede(const std::string& older, const std::string& newer)
+void TransactionLogCore::supersede(const std::string& older, const std::string& newer)
 {
-    const long hops = _c._deltaHops;
-    const long ratio = _c._deltaRatio;
+    const long hops = _deltaHops;
+    const long ratio = _deltaRatio;
     if (hops <= 0 || older.empty() || newer.empty() || older == newer)
         return;
     LogEntity old;
-    if (!_c._store->getEntity(older, old))
+    if (!_store->getEntity(older, old))
         return;
     if (old.kind == "prop") {
         // A value's files are superseded with it (23.16): its attachments
         // by name, the blob it names when each names one. A shape's
         // fragment is a line; its geometry is what the pair is for.
         LogEntity cur;
-        if (_c._store->getEntity(newer, cur) && cur.kind == "prop") {
+        if (_store->getEntity(newer, cur) && cur.kind == "prop") {
             std::map<std::string, std::string> attach;
             std::vector<std::string> oldBlobs, newBlobs;
             for (const auto& r : cur.refs) {
@@ -1914,7 +1896,7 @@ void TransactionLog::supersede(const std::string& older, const std::string& newe
     // hop, must fit the bound.
     LogEntity walk;
     for (std::string h = newer; !h.empty();) {
-        if (h == older || !_c._store->getEntity(h, walk))
+        if (h == older || !_store->getEntity(h, walk))
             return;
         h = walk.enc == "delta" ? walk.base : std::string();
     }
@@ -1923,7 +1905,7 @@ void TransactionLog::supersede(const std::string& older, const std::string& newe
     std::string oldBytes, newBytes, patch;
     if (!readBytes(older, oldBytes) || !readBytes(newer, newBytes))
         return;
-    if (!deltaEncode(oldBytes, newBytes, patch))
+    if (!TransactionLog::deltaEncode(oldBytes, newBytes, patch))
         return;
     // Against what it costs full in the log: its compressed size. A file
     // (23.16) is not compressed where it lies, so that is measured here.
@@ -1935,20 +1917,20 @@ void TransactionLog::supersede(const std::string& older, const std::string& newe
     }
     if (patch.size() * 100 > full * static_cast<size_t>(ratio))
         return;
-    _c._store->reencodeEntity(older, "delta", newer, patch);
+    _store->reencodeEntity(older, "delta", newer, patch);
     // The patch is the content now; the file can go, unless something
     // else holds it (the live property, an undo copy).
     if (old.enc == "file")
-        _c._blobs.erase(older);
+        _blobs.erase(older);
 }
 
 /// The full bytes of an entity, decoding a delta chain base first (sec
 /// 23.2). `depth` guards a cycle a corrupt store could hold.
-bool TransactionLog::readBytes(const std::string& hash, std::string& out, LogEntity* entity,
+bool TransactionLogCore::readBytes(const std::string& hash, std::string& out, LogEntity* entity,
                                int depth)
 {
     LogEntity e;
-    if (!_c._store->getEntity(hash, e))
+    if (!_store->getEntity(hash, e))
         return false;
     bool ok = false;
     if (e.enc == "raw") {
@@ -1966,15 +1948,15 @@ bool TransactionLog::readBytes(const std::string& hash, std::string& out, LogEnt
 #endif
     else if (e.enc == "file") {
         // Sec 23.16: the document's blob store holds the bytes.
-        auto it = _c._blobs.find(hash);
+        auto it = _blobs.find(hash);
         FileBlobHandle blob =
-            it != _c._blobs.end() ? it->second : _doc.getFileBlobManager().find(hash);
+            it != _blobs.end() ? it->second : _history.blobs().find(hash);
         ok = blob && blob->read(out);
     }
     else if (e.enc == "delta" && depth < 1024) {
         std::string base;
         ok = readBytes(e.base, base, nullptr, depth + 1)
-            && deltaDecode(e.data, base, e.size, out);
+            && TransactionLog::deltaDecode(e.data, base, e.size, out);
     }
     if (ok && entity) {
         e.data.clear();
@@ -1983,7 +1965,7 @@ bool TransactionLog::readBytes(const std::string& hash, std::string& out, LogEnt
     return ok;
 }
 
-bool TransactionLog::readValue(const std::string& hash, CapturedValue& out)
+bool TransactionLogCore::readValue(const std::string& hash, CapturedValue& out)
 {
     flush();
     LogEntity e;
@@ -2081,7 +2063,7 @@ void TransactionLog::writeValues(std::vector<ValueTask>& tasks, std::vector<LogO
         else if (task.copy || task.isCaptured) {
             CapturedValue& cv = captured[i];
             if (cv.ok)
-                hash = putValue(cv, task.tier);
+                hash = _c.putValue(cv, task.tier);
         }
         if (task.hashOut)
             *task.hashOut = hash;
@@ -2095,14 +2077,14 @@ void TransactionLog::writeValues(std::vector<ValueTask>& tasks, std::vector<LogO
             // The op's before is now the older of the pair (sec 23.2); the
             // before tasks of this job come first, so it is filled.
             if (!hash.empty() && !op.vbefore.empty())
-                supersede(op.vbefore, hash);
+                _c.supersede(op.vbefore, hash);
         }
         if (task.resolveTxn > 0) {
             _c._store->resolveAfter(task.resolveTxn, task.resolveIdx, hash);
             // The op's before is now the older of the pair (sec 23.2).
             LogOp resolved;
             if (!hash.empty() && _c._store->getOp(task.resolveTxn, task.resolveIdx, resolved))
-                supersede(resolved.vbefore, hash);
+                _c.supersede(resolved.vbefore, hash);
         }
         // The share goes as soon as it is written, dropped on the main
         // thread.
