@@ -2059,8 +2059,14 @@ SoFCVertexCache::addTriangle(const SoPrimitiveVertex * v0,
   // vertex of a uniformly coloured object, which would have handed the
   // whole shape face 0's frame. -1 = no detail, and then the material
   // index is the only answer there is.
+  //
+  // The finish too: an appearance's finishes are indexed by face like
+  // everything else in it, and a uniformly COLOURED shape -- one colour,
+  // a threaded bore among its faces -- answers material index 0 for all
+  // of them, which handed every face face 0's finish.
   int partidx = -1;
-  if (PRIVATE(this)->matframe || PRIVATE(this)->matfacetex) {
+  if (PRIVATE(this)->matframe || PRIVATE(this)->matfacetex
+      || PRIVATE(this)->matfinish) {
     const SoDetail * fdetail = v0->getDetail();
     if (fdetail && fdetail->isOfType(SoFaceDetail::getClassTypeId()))
       partidx = static_cast<const SoFaceDetail *>(fdetail)->getPartIndex();
@@ -2950,9 +2956,10 @@ SoFCVertexCacheP::packedFinishIndex(int midx, int partidx) const
   // the draw material's own -- its finish, and the unframed frame --
   // which is exactly what a uniformly zero slot resolves to.
   uint32_t packed = 0;
+  (void)midx;
   if (this->matfinish) {
     const int32_t idx = this->tmp->finishptr[
-        midx < this->tmp->numfinish ? midx : 0];
+        partidx >= 0 && partidx < this->tmp->numfinish ? partidx : 0];
     if (idx > 0 && idx < 256)
       packed |= uint32_t(idx);
   }
