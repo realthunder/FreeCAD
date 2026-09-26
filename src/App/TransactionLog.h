@@ -292,6 +292,11 @@ public:
         std::map<std::string, CapturedValue> values;
     };
     bool readRevert(int64_t seq, Revert& out);
+    /// Make every blob value `hash` names live in the file's store, as
+    /// readRevert() does for the values it reads (sec 27.34): a value applied
+    /// forward names its blobs by hash, and one the log keeps as a delta is
+    /// not live until decoded.
+    void restoreBlobsOf(const std::string& hash);
 
     /// The unnamed version between saves (sec 16.3), from
     /// Document::snapshotToLog: like onSave, with a `snapshot` record.

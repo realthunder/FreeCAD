@@ -1724,6 +1724,18 @@ void TransactionLogCore::releaseBlobs()
     }
 }
 
+void TransactionLog::restoreBlobsOf(const std::string& hash)
+{
+    flush();
+    LogEntity e;
+    if (!_c._store->getEntity(hash, e))
+        return;
+    for (const auto& r : e.refs) {
+        if (r.role == "blob" && !_c.liveBlob(r.target))
+            _c.restoreBlob(r.target, r.name);
+    }
+}
+
 FileBlobHandle TransactionLogCore::liveBlob(const std::string& hash) const
 {
     return _history.blobs().find(hash);

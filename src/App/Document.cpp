@@ -235,6 +235,12 @@ struct Document::ColdRevert
     /// Undo of a row that is not the tip (sec 24.4): checked against the
     /// ops after it, and derived values left to recompute.
     bool selective {false};
+    /// Revert the row's view ops too (sec 24.9); a restore to a version
+    /// does only under ViewObjectTransaction.
+    bool views {true};
+    /// A refusal is not an error but a reason to take another path (sec
+    /// 27.34): logged, not reported.
+    bool quiet {false};
 };
 
 namespace {
@@ -366,8 +372,11 @@ bool Document::_prepareRevert(int64_t seq, const std::string& name, ColdRevert& 
     else if (!log->readRevert(seq, revert.log))
         why << "row " << seq << " is not in the log";
     if (why.str().empty()) {
-        for (auto it = revert.log.ops.rbegin(); it != revert.log.ops.rend(); ++it)
+        for (auto it = revert.log.ops.rbegin(); it != revert.log.ops.rend(); ++it) {
+            if (!revert.views && it->ckind == "view")
+                continue;
             revert.ops.push_back(&*it);
+        }
         // Objects the revert recreates: their sets need no live container.
         std::set<long> recreated;
         for (const LogOp* o : revert.ops) {
@@ -427,8 +436,12 @@ bool Document::_prepareRevert(int64_t seq, const std::string& name, ColdRevert& 
             FC_LOG("cold " << name << ": " << views << " view op(s) not reverted");
     }
     if (!why.str().empty()) {
-        FC_ERR("Cannot undo '" << name << "' of " << getName() << " from the log:"
-               << why.str());
+        if (revert.quiet)
+            FC_LOG("Cannot revert '" << name << "' of " << getName() << " from the log:"
+                   << why.str());
+        else
+            FC_ERR("Cannot undo '" << name << "' of " << getName() << " from the log:"
+                   << why.str());
         return false;
     }
     return true;
@@ -4825,7 +4838,7 @@ bool Document::recoverFromLog(const std::string& oldDir)
     return true;
 }
 
-size_t Document::_replayLog(int64_t after, int64_t& last)
+size_t Document::_replayLog(int64_t after, int64_t& last, int64_t head, bool* whole)
 {
     // Folded, not applied row by row: the end state of every object,
     // dynamic property and value the tail touched, then applied in the
@@ -4860,7 +4873,7 @@ size_t Document::_replayLog(int64_t after, int64_t& last)
 
     size_t rows = 0;
     last = after;
-    for (const auto& t : store.chain(log->head(), after + 1)) {
+    for (const auto& t : store.chain(head ? head : log->head(), after + 1)) {
         auto ops = store.ops(t.seq);
         if (t.kind == "recompute" && ops.empty()) {
             // The record (sec 21): {"id":N,"name":...[,"error":...]} per object;
@@ -4895,6 +4908,10 @@ size_t Document::_replayLog(int64_t after, int64_t& last)
             }
         }
         if (!complete) {
+            if (whole) {
+                *whole = false;
+                return rows;
+            }
             FC_WARN("recovery of " << getName() << ": row " << t.seq << " (" << t.name
                     << ") is incomplete; the replay ends before it");
             break;
@@ -5001,6 +5018,7 @@ size_t Document::_replayLog(int64_t after, int64_t& last)
             CapturedValue v;
             if (!log->readValue(kv.second, v))
                 throw Base::RuntimeError("value " + kv.second + " is not in the log");
+            log->restoreBlobsOf(kv.second);
             restoreValue(*prop, v);
         });
     }
@@ -5113,15 +5131,21 @@ bool Document::restoreVersion(int64_t num)
     if (!log->store().getVersion(num, version))
         THROWM(Base::RuntimeError, "no such version");
 
-    _readVersion(num, [&](Document& scratch) {
-        _clearRedos();
-        d->activeUndoTransaction = new Transaction(0);
-        d->activeUndoTransaction->Name = "Restore version " + std::to_string(num)
-            + (version.name.empty() ? "" : " " + version.name);
-        d->activeUndoTransaction->LogKind = "restore";
-        mUndoMap[d->activeUndoTransaction->getID()] = d->activeUndoTransaction;
-        _applyVersion(scratch);
-    });
+    _clearRedos();
+    d->activeUndoTransaction = new Transaction(0);
+    d->activeUndoTransaction->Name = "Restore version " + std::to_string(num)
+        + (version.name.empty() ? "" : " " + version.name);
+    d->activeUndoTransaction->LogKind = "restore";
+    mUndoMap[d->activeUndoTransaction->getID()] = d->activeUndoTransaction;
+    // Through the rows between here and the version when the log has them
+    // (sec 27.34): only what changed since is written. Else the version is
+    // read whole into a scratch document and its difference applied -- which
+    // also puts right whatever the rows got part way through.
+    const int64_t head = log->head();
+    if (!_moveAlongLog(head, version.seq, DocumentParams::getViewObjectTransaction())) {
+        FC_LOG(getName() << ": version " << num << " restored by reading it whole");
+        _readVersion(num, [&](Document& scratch) { _applyVersion(scratch); });
+    }
     if (d->activeUndoTransaction->isEmpty()) {
         // Already what the version was: nothing to record.
         mUndoMap.erase(d->activeUndoTransaction->getID());
@@ -5763,14 +5787,361 @@ void Document::_leaveBranch()
     }
 }
 
-void Document::_checkoutHead()
+namespace {
+
+/// The net effect of a run of log rows (docs/TransactionLog.md sec 27.34):
+/// for every object, dynamic property and value they touched, where it ends.
+struct LogFold
+{
+    using Key = std::tuple<std::string, long, std::string>;   // ckind, cid, prop
+    struct Obj
+    {
+        bool exists {false};
+        std::string name;
+        std::string type;
+    };
+    std::map<long, Obj> objects;
+    std::map<Key, std::string> values;   // the value it ends with, by hash
+    std::map<Key, LogOp> added;          // there at the end, with what adds it
+    std::set<Key> removed;               // gone at the end
+    std::set<long> touch;                // its derived values the log did not keep
+    std::set<long> derived;              // objects with a derived value in the rows
+
+    void forget(long cid)
+    {
+        for (auto it = values.begin(); it != values.end();)
+            it = std::get<1>(it->first) == cid ? values.erase(it) : std::next(it);
+        for (auto it = added.begin(); it != added.end();)
+            it = std::get<1>(it->first) == cid ? added.erase(it) : std::next(it);
+        for (auto it = removed.begin(); it != removed.end();)
+            it = std::get<1>(*it) == cid ? removed.erase(it) : std::next(it);
+    }
+
+    /// One row undone: its ops newest first, each taken back to its before.
+    void back(const std::vector<LogOp>& ops, bool views)
+    {
+        for (auto it = ops.rbegin(); it != ops.rend(); ++it) {
+            const LogOp& o = *it;
+            if (o.ckind == "view" && !views)
+                continue;
+            Key key(o.ckind, o.cid, o.prop);
+            if (o.op == "create" && o.ckind == "obj") {
+                forget(o.cid);
+                objects[o.cid] = Obj {false, o.cname, o.ctype};
+            }
+            else if (o.op == "remove" && o.ckind == "obj") {
+                forget(o.cid);
+                objects[o.cid] = Obj {true, o.cname, o.ctype};
+            }
+            else if (o.op == "addprop") {
+                added.erase(key);
+                values.erase(key);
+                removed.insert(key);
+            }
+            else if (o.op == "delprop") {
+                removed.erase(key);
+                added[key] = o;
+            }
+            else if (o.op == "set") {
+                if (o.derived && o.ckind == "obj")
+                    derived.insert(o.cid);
+                if (!o.vbefore.empty()) {
+                    values[key] = o.vbefore;
+                    if (o.derived)
+                        touch.erase(o.cid);
+                }
+                else if (o.derived && o.ckind == "obj") {
+                    values.erase(key);
+                    touch.insert(o.cid);
+                }
+                // A set's meta says how to add its dynamic property back.
+                if (!o.meta.empty() && added.count(key))
+                    added[key].meta = o.meta;
+            }
+        }
+    }
+
+    /// One row done: its ops in order, each to its after. False when a value
+    /// never reached the log (sec 25.2 item 3).
+    bool forward(const std::vector<LogOp>& ops, bool views)
+    {
+        std::set<long> removes;
+        for (const auto& o : ops) {
+            if (o.op == "remove")
+                removes.insert(o.cid);
+        }
+        for (const auto& o : ops) {
+            if (o.ckind == "view" && !views)
+                continue;
+            Key key(o.ckind, o.cid, o.prop);
+            if (o.op == "create" && o.ckind == "obj") {
+                forget(o.cid);
+                objects[o.cid] = Obj {true, o.cname, o.ctype};
+            }
+            else if (o.op == "remove" && o.ckind == "obj") {
+                forget(o.cid);
+                objects[o.cid] = Obj {false, o.cname, o.ctype};
+            }
+            else if (o.op == "addprop") {
+                added[key] = o;
+                removed.erase(key);
+            }
+            else if (o.op == "delprop") {
+                added.erase(key);
+                values.erase(key);
+                removed.insert(key);
+            }
+            else if (o.op == "set") {
+                if (o.derived && o.ckind == "obj")
+                    derived.insert(o.cid);
+                if (!o.vafter.empty()) {
+                    values[key] = o.vafter;
+                    if (o.derived)
+                        touch.erase(o.cid);
+                }
+                else if (o.derived && o.ckind == "obj") {
+                    values.erase(key);
+                    touch.insert(o.cid);
+                }
+                else if (!removes.count(o.cid)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+};
+
+} // namespace
+
+bool Document::_moveAlongLog(int64_t fromHead, int64_t toSeq, bool views)
+{
+    // docs/TransactionLog.md sec 27.25 item 1, 27.34. From the state at row
+    // `fromHead` to the state at `toSeq` by the rows between them: those on
+    // `fromHead`'s chain after the two chains meet, taken back, then those on
+    // `toSeq`'s chain after it, taken forward -- folded into where every
+    // object, dynamic property and value ends, and only what differs from
+    // the document as it is written. No version is read whole, no shape that
+    // did not change is parsed, and a move that changes nothing records
+    // nothing. False, with nothing done, when the chains do not meet in
+    // stored rows (a trim cut one), a row cannot be folded (a value the log
+    // does not have), or a row made the document other than its ops say --
+    // an open's record of a file that is not its history's tip, which a
+    // save to the log only leaves (sec 27.28).
+    TransactionLog* log = getTransactionLog();
+    if (!log || fromHead < 0 || toSeq < 0)
+        return false;
+    // The newest rows' values may still be pending (as for a cold undo).
+    log->resolvePending();
+    auto& store = log->store();
+    const auto from = store.chain(fromHead);
+    const auto to = store.chain(toSeq);
+    // Where the chains meet: the newest point of `toSeq`'s chain -- itself,
+    // or a row's parent -- that is also on `fromHead`'s.
+    std::set<int64_t> onFrom {0};
+    for (const auto& t : from)
+        onFrom.insert(t.seq);
+    int64_t meet = -1;
+    if (onFrom.count(toSeq)) {
+        meet = toSeq;
+    }
+    else {
+        for (auto it = to.rbegin(); it != to.rend(); ++it) {
+            if (onFrom.count(it->parent)) {
+                meet = it->parent;
+                break;
+            }
+        }
+    }
+    if (meet < 0)
+        return false;
+    auto tail = [meet](const std::vector<LogTransaction>& chain, int64_t end,
+                       std::vector<const LogTransaction*>& rows) {
+        for (const auto& t : chain) {
+            if (t.seq > meet)
+                rows.push_back(&t);
+        }
+        // Whole down to the meeting point: a chain a trim cut starts at a
+        // row whose parent is gone.
+        if (rows.empty())
+            return end == meet || end == 0;
+        return rows.front()->parent == meet && rows.back()->seq == end;
+    };
+    std::vector<const LogTransaction*> back, forward;
+    if (!tail(from, fromHead, back) || (toSeq != meet && !tail(to, toSeq, forward)))
+        return false;
+
+    // An open's record is the file as found; it jumped the document when
+    // the file is not what the rows before it add up to.
+    const auto versions = store.versions();
+    auto docXml = [&](int64_t num) {
+        for (const auto& e : store.manifest(num)) {
+            if (e.entry == "Document.xml")
+                return e.hash;
+        }
+        return std::string();
+    };
+    auto jumps = [&](const LogTransaction& t) {
+        if (t.kind != "restore")
+            return false;
+        const LogVersion* at = nullptr;
+        const LogVersion* before = nullptr;
+        for (const auto& v : versions) {
+            if (v.seq == t.seq)
+                at = &v;
+            else if (v.seq < t.seq && onFrom.count(v.seq) && (!before || v.seq > before->seq))
+                before = &v;
+        }
+        return !at || !before || docXml(at->num) != docXml(before->num);
+    };
+
+    LogFold fold;
+    for (auto it = back.rbegin(); it != back.rend(); ++it) {
+        auto ops = store.ops((*it)->seq);
+        if (ops.empty()) {
+            if (jumps(**it))
+                return false;
+            continue;
+        }
+        fold.back(ops, views);
+    }
+    for (const LogTransaction* t : forward) {
+        auto ops = store.ops(t->seq);
+        if (ops.empty()) {
+            if (jumps(*t))
+                return false;
+            continue;
+        }
+        if (!fold.forward(ops, views))
+            return false;
+    }
+
+    // Every value there, before anything is written.
+    std::map<LogFold::Key, CapturedValue> want;
+    for (const auto& kv : fold.values) {
+        CapturedValue v;
+        if (!log->readValue(kv.second, v))
+            return false;
+        want.emplace(kv.first, std::move(v));
+    }
+
+    auto guarded = [&](const char* what, const std::string& name, const std::function<void()>& fn) {
+        try {
+            fn();
+        }
+        catch (Base::Exception& e) {
+            FC_ERR("move along the log, " << what << " " << name << ": " << e.what());
+        }
+        catch (std::exception& e) {
+            FC_ERR("move along the log, " << what << " " << name << ": " << e.what());
+        }
+    };
+    auto container = [&](const LogFold::Key& key) -> PropertyContainer* {
+        LogOp o;
+        o.ckind = std::get<0>(key);
+        o.cid = std::get<1>(key);
+        return opContainer(*this, o);
+    };
+    // 1. The objects there at the end that are not, under id and name.
+    for (const auto& kv : fold.objects) {
+        if (!kv.second.exists || getObjectByID(kv.first))
+            continue;
+        guarded("create", kv.second.name, [&]() {
+            if (getObject(kv.second.name.c_str()))
+                throw Base::RuntimeError("name taken by another object");
+            Base::Type type = Base::Type::getTypeIfDerivedFrom(
+                kv.second.type.c_str(), DocumentObject::getClassTypeId(), true);
+            auto obj = type.isBad() ? nullptr : static_cast<DocumentObject*>(type.createInstance());
+            if (!obj)
+                throw Base::RuntimeError("cannot create " + kv.second.type);
+            obj->_Id = kv.first;
+            addObject(obj, kv.second.name.c_str(), false);
+        });
+    }
+    // 2. Dynamic properties as they end.
+    for (const auto& kv : fold.added) {
+        guarded("add property", std::get<2>(kv.first), [&]() {
+            auto c = container(kv.first);
+            if (!c || c->getPropertyByName(std::get<2>(kv.first).c_str()))
+                return;
+            DynamicMeta m = parseMeta(kv.second.meta);
+            c->addDynamicProperty(kv.second.ptype.c_str(), std::get<2>(kv.first).c_str(),
+                                  m.group.c_str(), m.doc.c_str(), m.attr, m.readonly, m.hidden);
+        });
+    }
+    for (const auto& key : fold.removed) {
+        guarded("remove property", std::get<2>(key), [&]() {
+            auto c = container(key);
+            if (c && c->getPropertyByName(std::get<2>(key).c_str()))
+                c->removeDynamicProperty(std::get<2>(key).c_str());
+        });
+    }
+    // 3. Every value that differs from the document's.
+    CaptureConfig config(*this);
+    std::set<long> written;
+    for (auto& kv : want) {
+        guarded("value of", std::get<2>(kv.first), [&]() {
+            auto c = container(kv.first);
+            if (!c)
+                return;   // a view with no Gui, or an object gone
+            Property* prop = c->getPropertyByName(std::get<2>(kv.first).c_str());
+            if (!prop)
+                throw Base::RuntimeError("no such property");
+            CapturedValue now = captureValue(config, *prop);
+            const CapturedValue& v = kv.second;
+            if (now.ok && now.fragment == v.fragment
+                    && now.attachments.size() == v.attachments.size()
+                    && std::equal(now.attachments.begin(), now.attachments.end(),
+                                  v.attachments.begin(), [](const auto& a, const auto& b) {
+                                      return a.name == b.name && a.bytes == b.bytes;
+                                  }))
+                return;
+            log->restoreBlobsOf(fold.values[kv.first]);
+            restoreValue(*prop, v);
+            if (std::get<0>(kv.first) == "obj")
+                written.insert(std::get<1>(kv.first));
+        });
+    }
+    // 4. Touched as the end state was: an object whose derived values the log
+    // did not keep is touched; one whose derived values came back with its
+    // inputs is not -- writing the inputs touched it.
+    for (long cid : fold.touch) {
+        if (auto obj = getObjectByID(cid))
+            obj->touch();
+    }
+    for (long cid : written) {
+        if (fold.touch.count(cid) || !fold.derived.count(cid))
+            continue;
+        if (auto obj = getObjectByID(cid))
+            obj->purgeTouched();
+    }
+    // 5. What is gone at the end.
+    for (const auto& kv : fold.objects) {
+        if (kv.second.exists)
+            continue;
+        if (auto obj = getObjectByID(kv.first)) {
+            guarded("remove", kv.second.name, [&]() { removeObject(obj->getNameInDocument()); });
+        }
+    }
+    return true;
+}
+
+void Document::_checkoutHead(int64_t fromHead)
 {
     // Sec 26.2 item 4: this document made the state at the log's current
-    // head -- the newest version on its chain, checked out in place, and
-    // the rows after it replayed -- with nothing recorded: the branch's
-    // content did not change, the document moved to it.
+    // head with nothing recorded: the branch's content did not change, the
+    // document moved to it. Through the rows between where it was and there
+    // when the log has them (sec 27.34); else the newest version on the
+    // chain, read whole and checked out in place, and the rows after it
+    // replayed.
     TransactionLog* log = getTransactionLog();
     auto& store = log->store();
+    {
+        Base::FlagToggler<> replaying(d->replaying);
+        if (_moveAlongLog(fromHead, log->head(), true))
+            return;
+    }
+    FC_LOG(getName() << ": switched by reading a version whole");
     const std::set<int64_t> onChain = chainPoints(store, log->head());
     LogVersion anchor;
     bool haveAnchor = false;
@@ -5870,7 +6241,7 @@ int64_t Document::createBranch(const std::string& name, int64_t version, int64_t
         clearUndos();
         _clearRedos();
         log->setBranch(branch.id);
-        _checkoutHead();
+        _checkoutHead(leftHead);
         log->forgetLiveValues();
     }
     else {
@@ -5927,11 +6298,12 @@ bool Document::switchBranch(const std::string& name)
     LogBranch left;
     store.getBranch(log->branch(), left);
 
+    const int64_t fromHead = log->head();
     _leaveBranch();
     clearUndos();
     _clearRedos();
     log->setBranch(branch.id);
-    _checkoutHead();
+    _checkoutHead(fromHead);
     log->forgetLiveValues();
     _arriveOnBranch(branch);
 

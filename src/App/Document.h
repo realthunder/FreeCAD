@@ -1142,7 +1142,9 @@ protected:
                                           const std::string& dir, bool blobsInStore = false);
     /// Apply the log's rows after `after` forward, folded (sec 25.2 item
     /// 3); returns the rows applied and sets `last` to the last one.
-    size_t _replayLog(int64_t after, int64_t& last);
+    /// `head` 0 is the log's head; with `whole`, a row that cannot be applied
+    /// stops the replay with `*whole` false instead of ending it early.
+    size_t _replayLog(int64_t after, int64_t& last, int64_t head = 0, bool* whole = nullptr);
     /// The undo and redo stacks the rows after `after` on the current
     /// branch's chain leave, as cold stubs.
     void _rebuildUndoFromLog(int64_t after = 0);
@@ -1162,7 +1164,11 @@ protected:
     /// Sec 26: the tip snapshotted and the last id kept, before leaving.
     void _leaveBranch();
     /// Sec 26: the state at the log's head, checked out in place, unrecorded.
-    void _checkoutHead();
+    void _checkoutHead(int64_t fromHead = -1);
+    /// Move the document from the state at row `fromHead` to the state at
+    /// row `toSeq` through the rows between them (sec 27.34); false when a
+    /// row cannot be reverted or applied, or the chains do not meet.
+    bool _moveAlongLog(int64_t fromHead, int64_t toSeq, bool views);
     /// Sec 26: the id counter and the undo stacks of `branch`, arrived on.
     void _arriveOnBranch(const LogBranch& branch);
     /// Keep at most UndoMaxStackSize steps of `stack` hot (sec 24.3): with

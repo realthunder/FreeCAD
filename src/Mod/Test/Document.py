@@ -3259,6 +3259,63 @@ class TransactionBranchCases(unittest.TestCase):
         versions = doc.getTransactionVersions()
         self.assertTrue(versions)
 
+    def testRestoreAndSwitchGoThroughTheRows(self):
+        # Sec 27.25 item 1, 27.34: a restore to a version and a branch switch
+        # move the document through the rows between -- no scratch document
+        # is made, and the values are the version's.
+        class Made:
+            def __init__(self):
+                self.names = []
+
+            def slotCreatedDocument(self, doc):
+                self.names.append(doc.Name)
+
+        doc = self.track(FreeCAD.newDocument("Rows"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        obj = doc.addObject("App::FeatureTest", "Obj")
+        obj.Integer = 1
+        doc.commitTransaction()
+        path = os.path.join(self.dir, "rows.FCStd")
+        doc.saveAs(path)
+        first = int(doc.Version.split()[0])
+        doc.openTransaction("two")
+        obj.Integer = 2
+        extra = doc.addObject("App::FeatureTest", "Extra")
+        doc.commitTransaction()
+        doc.openTransaction("three")
+        obj.Integer = 3
+        doc.commitTransaction()
+
+        made = Made()
+        FreeCAD.addDocumentObserver(made)
+        try:
+            doc.restoreTransactionVersion(first)
+            self.assertEqual(made.names, [])
+            self.assertEqual(obj.Integer, 1)
+            self.assertIsNone(doc.getObject("Extra"))
+            doc.undo()
+            self.assertEqual(doc.getObject("Obj").Integer, 3)
+            self.assertIsNotNone(doc.getObject("Extra"))
+
+            # A branch from the first version, edited, and back to main.
+            doc.createTransactionBranch("side", first)
+            self.assertEqual(made.names, [])
+            self.assertEqual(doc.getObject("Obj").Integer, 1)
+            doc.openTransaction("side edit")
+            doc.getObject("Obj").Integer = 7
+            doc.commitTransaction()
+            doc.switchTransactionBranch("main")
+            self.assertEqual(made.names, [])
+            self.assertEqual(doc.getObject("Obj").Integer, 3)
+            self.assertIsNotNone(doc.getObject("Extra"))
+            doc.switchTransactionBranch("side")
+            self.assertEqual(made.names, [])
+            self.assertEqual(doc.getObject("Obj").Integer, 7)
+            self.assertIsNone(doc.getObject("Extra"))
+        finally:
+            FreeCAD.removeDocumentObserver(made)
+
     def testOpeningADocumentKeepsAnotherOnesTransaction(self):
         # Sec 27.15: a document made or opened while another has a transaction
         # open joins none, so its restore does not commit that transaction

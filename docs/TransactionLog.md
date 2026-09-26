@@ -5893,3 +5893,68 @@ Also measured: `saveToLog` on the 7 MB model, 1.41 s -- the snapshot, and
 the archive rewrite, which decodes and hashes every blob member to know
 what the archive holds. `Content.xml` or the History element's own list
 could answer most of that without the decode; not done.
+
+### 27.34 27.25 item 1 as built: restore and switch through the rows (2026-09-26)
+
+`Document::_moveAlongLog(fromHead, toSeq, views)` takes the document from
+the state at log row `fromHead` to the state at `toSeq` by the rows
+between them, and nothing else:
+
+1. **Where the chains meet**: the newest point of `toSeq`'s chain -- the
+   row itself or a row's parent -- that is on `fromHead`'s. Both tails from
+   there must be whole: a chain a trim cut starts at a row whose parent is
+   gone, and then there is no way through the rows.
+2. **The fold** (`LogFold`): the tail of `fromHead`'s chain taken back,
+   newest row first and each row's ops in reverse, every op to its
+   before -- an object a row created is gone, one it removed is there with
+   the values the row's sets had before, a dynamic property it added is
+   gone -- then the tail of `toSeq`'s chain taken forward, as the crash
+   replay folds (25.7). The result is where every object, dynamic property
+   and value touched on the way ends.
+3. **Applied by difference**, in the passes of a cold undo: the objects
+   there at the end that are missing, the dynamic properties, then each
+   value whose captured form differs from the document's (the comparison
+   `_applyVersion` made), its blobs made live first
+   (`TransactionLog::restoreBlobsOf`, what `readRevert` does for a cold
+   undo); objects whose derived values the log did not keep are touched,
+   and one whose derived values came back with its inputs is not; then
+   what is gone at the end. A move that changes nothing writes nothing, so
+   a restore to the version the document already is leaves no step.
+
+It declines, with nothing written, when the chains do not meet, a forward
+row has a value that never reached the log, a value cannot be read, or the
+path crosses an open's record (an ops-less `restore` row) whose file is not
+what the rows before it add up to -- its Document.xml differs from the
+previous version's on the chain. A save to the log only (27.28) leaves
+exactly that: the file reopens older than its history's tip. The first cut
+reverted row by row and missed it; `testSaveToTheLogOnly` found it.
+Reverting row by row also recorded writes that netted to nothing, which
+`restoresAVersion` found ("already version 2: no step"): hence the fold.
+
+Callers: `restoreVersion` (views only under ViewObjectTransaction, as
+before) inside its one `restore` transaction; `_checkoutHead(fromHead)`
+for `switchBranch` and for `createBranch` from an older version, under
+`replaying` as before, views included. When it declines, the old path
+runs: the version read whole into the scratch document and its difference
+applied. The scratch path stays for that: trimmed history, and a file
+reopened behind its history.
+
+`_replayLog` takes an explicit head and a strict mode, and makes each
+value's blobs live before restoring it: a blob the log keeps as a delta is
+not live until decoded, which a crash recovery never met because it
+recovers the whole store first.
+
+Measured on the model of 27.33:
+
+| | before | now |
+| --- | --- | --- |
+| restore to va | 3.91 s | 0.078 s |
+| restore to va again | 7.07 s | 0.166 s |
+
+Test: Python `TransactionBranchCases.testRestoreAndSwitchGoThroughTheRows`
+-- a restore and its undo, a branch made from an older version, switches
+both ways; no document is made on the way, and values and objects are the
+target's.
+
+Gates: Python 2928 OK; ctest 842/842; recovery 15, branch 27, version 18,
+pin 28, frozen 16 PASS.
