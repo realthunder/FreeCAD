@@ -5059,3 +5059,104 @@ Tests: `ViewProviderHooks.ViewProviderObserverTest` (GUI, through
 `App::Link` is made carries the object, and the view provider is a
 `ViewProviderLink` to the observer and afterwards. Before the fix the
 first case killed the process.
+
+### 27.20 A local link pinned to another version: proposed design (2026-09-26)
+
+Item 2 of 27.18. A link in a document names an object of the same
+document, pinned to a version of the document's own file. Nothing of
+this is built; the questions at the end need rulings first.
+
+**What it is for.** Seeing, or reusing, an earlier state of the same
+model beside the current one: an old variant of a part placed next to
+the new, a reference copy to measure a change against, a frozen
+sub-assembly while the rest moves on. Today the only way is to save a
+copy of the file and link to that.
+
+**What exists (survey).**
+
+- `pinLink` refuses a link whose target is in the owner's document
+  ("a pin needs a link to another file"), and so does `setPin`.
+- `PropertyXLink` treats a same-document target as local: no `DocInfo`,
+  `file=""` in the save, and `Restore` resolves `file=""` by name in the
+  owner's document.
+- `DocInfo::get` keys a pinned link by `<absolute file>@v<num>`
+  (27.14). A key with the owner's own file and a version is therefore
+  already a different key from the owner's document, and would open a
+  version document as for any pin. The one guard in the way is "make
+  sure to attach only external object": it returns a `DocInfo` whose
+  document is the owner's without registering the link -- which is what
+  a *failed* self-pin should do (it falls back to the live object, 27.5
+  ruling 2).
+- A version document's `FileName` is `<file>@v<num>`; a link set to one
+  of its objects is pinned by `DocInfo::get` through `splitVersion`
+  (27.14). So setting a link to an object of a version document of the
+  owner's own file already takes the external path in `setValue` -- the
+  two documents differ -- and is pinned. What is missing is making that
+  deliberate, and the save form.
+
+**Proposed shape.**
+
+1. **Save form.** `<XLink file="" version="N" vuuid="..." name="Box"/>`:
+   an empty `file` with a pin means *this document's own file*. Not the
+   file's name: a Save As would then leave the link on the old file's
+   version, while the history travels with the new file (the embedded
+   log is the document's). A FreeCAD that does not know `version` reads
+   `file=""` as a local link and shows the live object, which is the
+   fallback of 27.5 ruling 2 anyway.
+2. **Restore.** `file=""` with a pin resolves through
+   `DocInfo::get(<owner's file>, ...)`, where the owner's file is its
+   `FileName` with any `@v<num>` split off -- so a link inside a version
+   document resolves against the same file. The version document is
+   opened after the owner's restore, by the pending-document machinery
+   (the history is registered by then, 27.12). A failed pin warns once
+   and resolves to the object in the owner's document.
+3. **Pinning.** `pinLink(link, N)` on a local link: allowed when the
+   document is saved with history. `N = 0` means the version the file is
+   on disk (27.6 Q3), as for another file. The version is named
+   `pinned`, the `pins` meta line names the file itself, and the owner
+   is the one document marked modified. The link's value moves to the
+   same-named object of the version document; if the version has no
+   object of that name the pin is refused.
+4. **Unpinning** goes back to the object of that name in the owner's
+   document, or clears the link if there is none (it was deleted after
+   the version).
+5. **Undo.** Pin and unpin are writes of the property, as today; with
+   `file=""` meaning "own file", a before-copy restored from its XML
+   comes back pinned to the same version, which also closes the
+   restore-from-XML doubt of 27.14 for this case.
+6. **Cycles** cannot recurse: each version opens once (27.12), and a
+   link inside version `N` pinned to `N` finds its own document (the
+   guard above) and is local there.
+7. **The version document is read-only** (27.5 ruling 4), as for any
+   pin. It shows in the tree as a document of its own, `<label> (vN)`.
+
+**What the version document's changes do to the file's own document.**
+A version document takes no edits; the only way its state reaches the
+file is the Gui's "save the version as its file" (27.16, 27.18: last
+save wins). For a self-pin that save would overwrite the very document
+that holds the link, which is always open, and whose next save
+overwrites it back. Q3 below.
+
+**Questions.**
+
+- **Q1. Scope of a local pin.** Only `PropertyXLink` (App::Link's
+  `LinkedObject`, and every property that is an `XLink`), as for
+  external pins; `PropertyLink`/`PropertyLinkSub` (Part features'
+  `Base`, PartDesign's `Profile`, expressions) stay unpinnable. Proposed:
+  yes, XLink only.
+- **Q2. The save form**: `file=""` + `version` (proposed, Save-As
+  proof), or the file's own relative name (what an external pin writes)?
+- **Q3. Saving a self-pinned version as the file.** (a) refuse, and
+  offer "restore this version into the document" instead -- the forward
+  `restore` transaction of 24.d, undoable, then an ordinary save; (b) the
+  27.18 rule unchanged; (c) warn and go ahead. Proposed: (a) whenever
+  the file's own document is open, which would change 27.18's ruling for
+  external pins too -- or (a) for self-pins only, if 27.18 should stand.
+- **Q4. Pinning to the current version.** A pin to the version the
+  document was last saved as is a snapshot of the saved state: later
+  edits do not reach the linked copy. Allowed (proposed), or refused as
+  surprising?
+- **Q5. Closing.** When the last link pinned to a version document is
+  unpinned or deleted, close the version document (proposed, for local
+  pins and external ones alike -- it has no other reason to be open
+  unless the user opened it), or leave it open?
