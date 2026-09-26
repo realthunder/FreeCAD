@@ -4777,3 +4777,52 @@ Gates:
 Not done yet (5.f): the Gui -- pin/unpin and a version picker on a link,
 the label of a version document in the tree, save-with-warning for a
 version document, and re-pinning after one is saved -- and a GUI check.
+
+### 27.15 The open item of 27.14: a document opened mid-transaction (2026-09-26)
+
+**Undoing an unpin works; the test was wrong.** The reopened assembly
+had `UndoMode` 0, the default for a document opened in FreeCADCmd, so
+`undo()` had no step to undo. With `UndoMode` 1 the pin comes back on
+undo and goes again on redo, and the test now checks both.
+
+**The chase found a real defect.** Pinning left two undo steps, `pin`
+and an `<implicit>` one after it. Unpinning a link whose file was
+closed did the same. In both cases the link's write opens a document:
+the version document for a pin, the file itself for an unpin. The
+new document's first writes joined the transaction the assembly had
+open, the application's active one:
+
+- `Label`, set by `Application::newDocument`;
+- `FileName`, set by `openDocumentPrivate` before the restore.
+
+Its restore then calls `clearUndos()`, which commits its transaction
+with notification, and `closeActiveTransaction` commits every document
+holding that id, the assembly with it. The rest of the link's write
+found no transaction and opened an implicit one.
+
+Neither write joined anything with the log off, because a new document
+in FreeCADCmd has undo off. With the log on, `transactionsWanted()` is
+true whatever the undo mode, so this happens to every document made or
+opened while another has a transaction open.
+
+**The fix** is at both sites, as for 27.9's saves: who a document is
+is not a change to it.
+
+- `transactionsWanted()` is false while the document is `Initializing`,
+  which covers `newDocument`'s `Label`.
+- `openDocumentPrivate` writes `FileName` as bookkeeping, as
+  `openFileVersion` already did.
+
+Test: `testOpeningADocumentKeepsAnotherOnesTransaction` makes one
+document and opens another inside a transaction, then checks that it is
+one step and that it undoes whole. It and the pin test both fail
+without the fix.
+
+Gates:
+
+- Python 2920 OK;
+- ctest 840/840;
+- recovery check 15 PASS;
+- branch check 27 PASS;
+- version check 17 PASS.
+

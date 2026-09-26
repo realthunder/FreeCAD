@@ -2912,6 +2912,9 @@ class TransactionBranchCases(unittest.TestCase):
         pinned = link.pinLink("LinkedObject")
         asm.commitTransaction()
         self.assertEqual(pinned, onDisk)
+        # One step: the version document opened by the pin joins no
+        # transaction, so the pin's is not committed half way (sec 27.15).
+        self.assertEqual(asm.UndoNames, ["pin", "link"])
         version, uuid, fellBack = link.getLinkPin("LinkedObject")
         self.assertEqual(version, onDisk)
         self.assertTrue(uuid)
@@ -2937,6 +2940,7 @@ class TransactionBranchCases(unittest.TestCase):
         for doc in (asm, shown.Document, part):
             FreeCAD.closeDocument(doc.Name)
         asm = self.track(FreeCAD.openDocument(asmPath))
+        asm.UndoMode = 1
         link = asm.getObject("L")
         shown = link.LinkedObject
         self.assertIsNotNone(shown)
@@ -2954,8 +2958,38 @@ class TransactionBranchCases(unittest.TestCase):
         self.track(live.Document)
         self.assertEqual(live.Document.FileName, partPath)
         self.assertEqual(live.Integer, 2)
-        # Open (docs/TransactionLog.md sec 27.14): undoing the unpin does not
-        # bring the pin back yet.
+        self.assertEqual(asm.UndoNames, ["unpin"])
+        asm.undo()
+        self.assertEqual(link.getLinkPin("LinkedObject")[0], onDisk)
+        self.assertTrue(link.LinkedObject.Document.FileName.endswith("@v%d" % onDisk))
+        asm.redo()
+        self.assertIsNone(link.getLinkPin("LinkedObject"))
+        self.assertEqual(link.LinkedObject.Document.FileName, partPath)
+
+    def testOpeningADocumentKeepsAnotherOnesTransaction(self):
+        # Sec 27.15: a document made or opened while another has a transaction
+        # open joins none, so its restore does not commit that transaction
+        # half way and leave the rest of it as a step of its own.
+        other = self.track(FreeCAD.newDocument("MidOther"))
+        other.addObject("App::FeatureTest", "Obj")
+        otherPath = os.path.join(self.dir, "midother.FCStd")
+        other.saveAs(otherPath)
+        FreeCAD.closeDocument(other.Name)
+
+        doc = self.track(FreeCAD.newDocument("MidTxn"))
+        doc.UndoMode = 1
+        obj = doc.addObject("App::FeatureTest", "Obj")
+        doc.clearUndos()
+        doc.openTransaction("edit")
+        obj.Integer = 1
+        self.track(FreeCAD.newDocument("MidNew"))
+        obj.Integer = 2
+        self.track(FreeCAD.openDocument(otherPath))
+        obj.Integer = 3
+        doc.commitTransaction()
+        self.assertEqual(doc.UndoNames, ["edit"])
+        doc.undo()
+        self.assertEqual(obj.Integer, 4711)
 
     def testPinThatCannotBeFoundShowsTheFile(self):
         # Sec 27.5 ruling 2: a version that cannot be opened falls back to

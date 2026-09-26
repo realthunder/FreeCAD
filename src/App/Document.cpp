@@ -909,7 +909,11 @@ void Document::renameTransaction(const char *name, int id) {
 
 bool Document::transactionsWanted() const
 {
-    if (d->replaying)
+    // A document being made joins no transaction: its creation is not a
+    // step of whatever command made it. With the log on, its Label joined
+    // the command's transaction, and the restore that followed committed
+    // that transaction in every document (docs/TransactionLog.md sec 27.15).
+    if (d->replaying || testStatus(Initializing))
         return false;
     return d->iUndoMode || DocumentParams::getTransactionLog() != 0;
 }

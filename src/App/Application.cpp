@@ -98,6 +98,7 @@
 #include "DocumentObserver.h"
 #include "DocumentObserver.h"
 #include "DocumentParams.h"
+#include "private/DocumentP.h"
 #include "TransactionLog.h"
 #include "DocumentPy.h"
 #include "ExpressionParser.h"
@@ -1110,7 +1111,13 @@ Document* Application::openDocumentPrivate(const char * FileName,
         label = name.c_str();
     Document* newDoc = newDocument(name.c_str(),label,isMainDoc && createView);
 
-    newDoc->FileName.setValue(propFileName==FileName?File.filePath():propFileName);
+    // Who the document is, not a change to it (docs/TransactionLog.md sec
+    // 27.9): outside any transaction, so it joins none that is open, which
+    // the restore below would commit in every document (sec 27.15).
+    {
+        Base::FlagToggler<> quiet(newDoc->d->bookkeeping, false);
+        newDoc->FileName.setValue(propFileName==FileName?File.filePath():propFileName);
+    }
 
     try {
         // read the document
