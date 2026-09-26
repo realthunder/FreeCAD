@@ -2418,7 +2418,7 @@ bool View3DInventorViewer::renderWithCycles(const std::string &path, int width, 
     // Framed for the requested size, not the widget's: the camera's
     // viewport mapping adjusts the volume to the aspect asked for.
     SbMatrix viewMat, projMat;
-    SbViewVolume vol = cam->getViewVolume(float(width) / float(height));
+    SbViewVolume vol = getMappedViewVolume(cam, float(width) / float(height));
     vol.getMatrices(viewMat, projMat);
     std::memcpy(input.camera.view, viewMat.getValue(), sizeof(input.camera.view));
     std::memcpy(input.camera.proj, projMat.getValue(), sizeof(input.camera.proj));
@@ -4708,7 +4708,7 @@ void View3DInventorViewer::renderToFramebuffer(QtGLFramebufferObject* fbo)
                                          : nullptr) {
         SbMatrix viewMat, projMat;
         SbViewportRegion capvp {short(width), short(height)};
-        SbViewVolume vol = cam->getViewVolume(capvp.getViewportAspectRatio());
+        SbViewVolume vol = getMappedViewVolume(cam, capvp.getViewportAspectRatio());
         vol.getMatrices(viewMat, projMat);
         // Same style context as the on-screen frame (docs/
         // CoinRetirement.md 5.9): a capture of a view with per-object
@@ -6536,7 +6536,9 @@ void View3DInventorViewer::renderScene()
     else if (cam && _pimpl->renderer) {
         SbMatrix viewMat, projMat;
         const SbViewportRegion vp = getSoRenderManager()->getViewportRegion();
-        SbViewVolume vol = cam->getViewVolume(vp.getViewportAspectRatio());
+        // Coin's own mapping, the one its pick and the residue drawn
+        // over this frame use: a portrait view widens the volume.
+        SbViewVolume vol = getMappedViewVolume(cam, vp.getViewportAspectRatio());
         vol.getMatrices(viewMat, projMat);
         // The plain frame's style context (docs/CoinRetirement.md
         // 5.9): at rest unless this view carries per-object display
@@ -7157,7 +7159,7 @@ SbVec2s View3DInventorViewer::getPointOnViewport(const SbVec3f& pnt) const
     const SbViewportRegion& vp = this->getSoRenderManager()->getViewportRegion();
     float fRatio = vp.getViewportAspectRatio();
     const SbVec2s& sp = vp.getViewportSizePixels();
-    SbViewVolume vv = this->getSoRenderManager()->getCamera()->getViewVolume(fRatio);
+    SbViewVolume vv = getMappedViewVolume(this->getSoRenderManager()->getCamera(), fRatio);
 
     SbVec3f pt(pnt);
     vv.projectToScreen(pt, pt);

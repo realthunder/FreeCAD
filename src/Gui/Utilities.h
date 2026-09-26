@@ -35,6 +35,7 @@
 
 
 class SbViewVolume;
+class SoCamera;
 class QAbstractItemView;
 
 namespace Base {
@@ -108,6 +109,16 @@ private:
 
 namespace App{ class DocumentObject; }
 namespace Gui {
+
+/// The view volume \a camera shows in a viewport of \a aspect (width /
+/// height), mapped the way Coin maps it when it draws and picks
+/// (SoCamera::getView): ADJUST_CAMERA widens the volume by 1 / aspect
+/// on a portrait viewport, so the camera's height spans the WIDTH.
+/// SoCamera::getViewVolume(aspect) alone skips that, and anything that
+/// draws or projects for a Coin camera outside Coin's own traversal --
+/// the render backend above all -- must use this instead, or a portrait
+/// view draws with one projection and picks with another.
+GuiExport SbViewVolume getMappedViewVolume(const SoCamera *camera, float aspect);
 
 /**
  */

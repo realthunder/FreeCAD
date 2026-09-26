@@ -216,6 +216,14 @@ fc_add_gui_test(GuiPerViewVisibility_tests_run
                 per-view-visibility.py
                 --timeout 240)
 
+# A portrait view draws (backend frame), projects (getPointOnViewport)
+# and picks (Coin ray) with ONE projection: Coin's ADJUST_CAMERA widens
+# the volume by 1/aspect below unit aspect, and the backend feed skipped
+# that. Off-centre cubes in both axes; a landscape view is the control.
+fc_add_gui_test(GuiPortraitPickVsDraw_tests_run
+                portrait-pick-vs-draw.py
+                --timeout 240)
+
 # Ctrl+A in a focused spreadsheet selects its cells (upstream 4f4e9244e6):
 # Ctrl+A is Std_SelectAll's window shortcut, and the table keeps it only by
 # claiming it in ShortcutOverride.

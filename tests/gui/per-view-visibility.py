@@ -71,10 +71,9 @@ def xmax(view):
 
 def pixel(view, pt, tag):
     """The backend's own framebuffer (mode 3) at the projection of 3D
-    point pt. Projected, not swept: in a portrait view the backend frame
-    agrees with getPointOnViewport and the ray pick does not (a known,
-    separate defect),
-    as (r, g, b). The view is made active first: a view in a hidden
+    point pt, as (r, g, b). The frame, getPointOnViewport and the ray
+    pick share one projection, portrait views included
+    (portrait-pick-vs-draw.py). The view is made active first: a view in a hidden
     tab does not paint, and the dump waits for a painted frame."""
     FreeCADGui.getMainWindow().setActiveWindow(view)
     settle()
@@ -122,9 +121,8 @@ def run():
         box3.ViewObject.Visibility = False
         settle()
 
-        # Where each object picks, found by a blind sweep rather than by
-        # projection: getPointOnViewport scales x by the viewport aspect
-        # on a portrait view (427x608 here), off by a third.
+        # Where each object picks, found by a blind sweep: it does not
+        # lean on the projection that portrait-pick-vs-draw.py checks.
         w, h = v1.getSize()
         found = {}
         for gy in range(0, h, 4):

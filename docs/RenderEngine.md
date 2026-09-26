@@ -1102,7 +1102,7 @@ clip against `[0, 1]`, and `caps->homogeneousDepth` says which. Every
 projection the engine *builds* -- the shadow crop, the bulb tiles, the
 overlays, the 2D page -- is built to the caps flag. The camera
 projection is the one it does not build: Coin hands it over in GL
-convention (`View3DInventorViewer`, `cam->getViewVolume`). `render()`
+convention (`View3DInventorViewer`, `getMappedViewVolume`). `render()`
 remaps it once, at the top of the frame, `z -> (z + w) / 2` on the z row
 alone, and everything downstream -- `setViewTransform`, the predefined
 `u_proj`, `BGFXView::projMatrix`, the frustum planes, the proxy
@@ -1113,6 +1113,18 @@ on a backend of its own.
 The w row is deliberately left alone: `u_proj[2][3]` is how a dozen
 shaders tell a perspective camera from an orthographic one, and no
 shader reads the z row at all, so the remap stays confined to clipping.
+
+**Viewport mapping.** The fed camera volume is Coin's own mapping,
+`Gui::getMappedViewVolume` (`Utilities.h`), never
+`SoCamera::getViewVolume(aspect)` alone. Under the default
+`ADJUST_CAMERA` a viewport taller than wide widens the volume by
+`1 / aspect`, so the camera's height spans the width; Coin's draw, ray
+pick and pan all do that (`SoCamera::getView`), and the bare call does
+not. Every feed goes through the helper -- `renderScene`, the offscreen
+capture, the unified canvas cells, `getPointOnViewport`, Cycles --
+because a feed that skips it draws a portrait view `1 / aspect` larger
+than it picks, in both axes, and exactly right at the centre where one
+would check (`tests/gui/portrait-pick-vs-draw.py`, 2026-09-26).
 
 **Texture origin.** A render target's texture v = 0 is the bottom row
 under OpenGL and the top row everywhere else (`caps->originBottomLeft`),

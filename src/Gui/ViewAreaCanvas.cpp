@@ -52,6 +52,7 @@
 #include "SoFCUnifiedSelection.h"
 #include "Inventor/SoFCOwnDisplayModeElement.h"
 #include "RenderParams.h"
+#include "Utilities.h"
 #include "View3DInventor.h"
 #include "View3DInventorViewer.h"
 #include "ViewArea.h"
@@ -726,7 +727,7 @@ void ViewAreaCanvas::paintGL()
         // The camera is read against the CELL's aspect, not the
         // canvas's: each sub-view is a viewport of its own.
         SbViewportRegion vp(short(r.width()), short(r.height()));
-        SbViewVolume vol = cam->getViewVolume(vp.getViewportAspectRatio());
+        SbViewVolume vol = getMappedViewVolume(cam, vp.getViewportAspectRatio());
         mats.emplace_back();
         mats.emplace_back();
         SbMatrix &viewMat = mats[mats.size() - 2];

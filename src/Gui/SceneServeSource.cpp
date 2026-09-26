@@ -77,6 +77,7 @@
 #include "Selection.h"
 #include "SoFCSelectionAction.h"
 #include "SoFCUnifiedSelection.h"
+#include "Utilities.h"
 #include "ViewProviderDocumentObject.h"
 
 using namespace Gui;
@@ -823,7 +824,7 @@ public:
 
         SbMatrix viewMat;
         SbMatrix projMat;
-        camera->getViewVolume(viewport.getViewportAspectRatio())
+        getMappedViewVolume(camera, viewport.getViewportAspectRatio())
             .getMatrices(viewMat, projMat);
         std::memcpy(viewMatrix, viewMat.getValue(), 16 * sizeof(float));
         std::memcpy(projMatrix, projMat.getValue(), 16 * sizeof(float));

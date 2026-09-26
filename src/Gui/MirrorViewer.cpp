@@ -1015,7 +1015,7 @@ SbVec2s MirrorViewer::getPointOnViewport(const SbVec3f& pnt) const
     }
     const SbVec2s& size = pimpl->viewport.getViewportSizePixels();
     SbViewVolume vol =
-        pimpl->camera->getViewVolume(pimpl->viewport.getViewportAspectRatio());
+        getMappedViewVolume(pimpl->camera, pimpl->viewport.getViewportAspectRatio());
     SbVec3f point(pnt);
     vol.projectToScreen(point, point);
     return {short(std::lround(point[0] * size[0])), short(std::lround(point[1] * size[1]))};
