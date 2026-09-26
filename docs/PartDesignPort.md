@@ -790,3 +790,71 @@ Found on the way, and fixed:
 
 TestPartDesignApp 138 OK, TestPartApp 125 OK; the Gui defects test 34
 checks, six runs in a row green (it was about one in three failing).
+
+### Two sides, and the up-to reference as a table (2026-09-26)
+
+The user's rulings: take upstream's UpToShape (a link list), but pick it with
+the fork's profile widget grown to several objects -- a table, a row per
+object, up to four rows shown, the object column frozen when the elements
+scroll -- not upstream's face list; UpToFace becomes UpToShape's mirror for
+the single-face case; Type is set by the reference.
+
+| commit | what |
+|---|---|
+| `af6937a0c9` | LinkSubWidget on a table: one row for a PropertyLinkSub (looks as before, measured beside the old one), a row per object for a PropertyLinkSubList; frozen object column; a pick joins its object's row; Delete on an element or a row |
+| `7315361904` | SideType (One side, Two sides, Symmetric), Type2, Offset2, UpToFace2, UpToShape2 (upstream `a346c266e7`); the aliases; two up-to defects |
+| `c83780a685` | the panel: Mode combo, Side 2 group, the up-to rows; the Face button and line edit gone |
+
+How the App side keeps old files:
+
+- Both sides lengths (or through all) are still the one prism TwoLengths
+  made, from -Length2 to Length, so its element names stay. Mixed sides are
+  made one by one and combined as upstream does, union less what they share
+  (what a negative second length did). Symmetric up to a shape mirrors the
+  side in the profile plane.
+- Midplane is a live alias of Symmetric. On restore it becomes Symmetric only
+  for Length and ThroughAll, as an up-to feature always ignored it.
+- Type "TwoLengths" stays in the enum (so indices hold) and becomes Two sides
+  with both Length, on restore and when a script sets it.
+- UpToShape is the reference; UpToFace mirrors it while it is one face, and
+  Type is then written UpToFace, so older builds and upstream read a single
+  up-to face as before. A whole object of several faces in UpToFace (script
+  only) comes in as Face1, which is what UpToFace always used.
+
+Checked against the old build: a file of every old mode (TwoLengths plain,
+reversed, negative, tapered; Midplane plain and tapered; Midplane left on an
+UpToFace pad; UpToFace to a face, a datum, a whole object; Pocket ThroughAll
+symmetric, two lengths, up to face), saved by the old build and recomputed
+by this one: all volumes, face counts and bound boxes equal, no feature
+touched on open. `TestExtrudeSides` (10) is new; TestPad and TestPocket pass.
+
+Found and fixed on the way, in the up-to-shape path of `ba5df83a6e`: faces
+behind the profile were searched for the other way but extruded towards the
+front (upstream `17ac7dab3d` turns the direction); two faces less the far
+one left a compound of one face, which does not stop the prism -- it ran
+through all.
+
+Open:
+
+- **Several up-to faces that do not touch** (a box's top and bottom and a
+  plane) still run through all: after the far face is dropped they are a
+  compound, not a shell. A whole object works (its faces make a shell). Seen
+  in the GUI; upstream's approach is the same. Candidate: keep only the
+  connected part of the faces that holds the nearest one.
+- The Pocket panel showed a stale volume while editing two sides through all
+  until a recompute was forced; headless it is right. Not yet reproduced as
+  a bug.
+- Rows still deferred on this family, each to be read: `7d3dd2605f`
+  (symmetric and AlongSketchNormal), `02479a1528` (symmetric with a custom
+  direction), `aef10a1bc8` (two lengths / up to shape), `94750baa6b` (single
+  prism where possible), `168cebd41f` (up to shape not recomputing),
+  `0ff0359524` (UpToShape not saving), `9b2734c640` (taper across SideType).
+  Settled now: `49d7d77274`, `bdea174d13`, `e07d1b074b`, `3208b6de5f` n/a,
+  `67948d60a2` declined, `8b9048a784` have.
+
+Full suites at `c83780a685`: Python 2974 OK (50 skipped, 6 expected
+failures); ctest 749 of 750 -- `DeferredLoad_tests_run` timed out at 25
+minutes, every case passing but taking about 100 s each, alone as well as
+under `-j 6`. It links only FreeCADApp and FreeCADBase, and neither they nor
+the test changed since `5f10f6b3db`, where it passed: an environment stall on
+this box, not this work, but not yet explained.
