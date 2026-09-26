@@ -105,6 +105,60 @@ std::uint64_t Render::CacheSerial::forNode(const void *node)
     return res.first->second;
 }
 
+int Render::resolveVisibility(const VisibilityOverrideTable &table,
+                              const std::vector<ObjectRef> &chain,
+                              size_t len)
+{
+    if (len == 0 || len > chain.size())
+        return -1;
+    const size_t last = len - 1;
+    int bare = -1;
+    for (const auto &ov : table.entries) {
+        if (ov.path.empty() || !(ov.path.back() == chain[last]))
+            continue;
+        if (!ov.rooted) {
+            bare = ov.visible ? 1 : 0;
+            continue;
+        }
+        if (!(ov.path.front() == chain[0]))
+            continue;
+        if (ov.path.size() == 1) {
+            if (last == 0)
+                return ov.visible ? 1 : 0;
+            continue;
+        }
+        if (last == 0)
+            continue;
+        // The elements in between: an ordered subsequence of the
+        // chain's own, strictly between its first and last.
+        size_t p = 1;
+        for (size_t i = 1; p + 1 < ov.path.size() && i < last; ++i) {
+            if (ov.path[p] == chain[i])
+                ++p;
+        }
+        if (p + 1 == ov.path.size())
+            return ov.visible ? 1 : 0;
+    }
+    return bare;
+}
+
+uint16_t Render::perViewShownModeId()
+{
+    // Not a display mode name any object can register.
+    static const uint16_t id = internModeName("<per-view shown>");
+    return id;
+}
+
+bool Render::isChainHidden(const VisibilityOverrideTable &table,
+                           const std::vector<ObjectRef> &chain)
+{
+    for (size_t len = 1; len <= chain.size(); ++len) {
+        if (resolveVisibility(table, chain, len) == 0)
+            return true;
+    }
+    return false;
+}
+
 uint16_t Render::internModeName(const char *name)
 {
     if (!name || !name[0])

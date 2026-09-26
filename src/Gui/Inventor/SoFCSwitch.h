@@ -71,6 +71,18 @@ public:
 
   SoFCSwitch();
 
+  /** Count \a node, a display-mode switch, as belonging to a HIDDEN
+   * object some view shows on its own (View3DInventor
+   * ObjectVisibilities). While counted -- and afterwards, until the
+   * node goes -- the render cache capture traverses its defaultChild
+   * even with whichChild off, every draw below tagged
+   * Render::perViewShownModeId(), which every view drops unless its own
+   * table shows the object. So toggling that view's entry never
+   * re-captures: only the first count does, by touching the node.
+   */
+  static void setPerViewShown(SoFCSwitch *node, bool enable);
+  static bool isPerViewShown(const SoFCSwitch *node);
+
   virtual void doAction(SoAction *action);
   virtual void getBoundingBox(SoGetBoundingBoxAction * action);
   virtual void search(SoSearchAction * action);
@@ -78,6 +90,11 @@ public:
   virtual void pick(SoPickAction *action);
   virtual void handleEvent(SoHandleEventAction *action);
   virtual void notify(SoNotList * nl);
+
+protected:
+  virtual ~SoFCSwitch();
+
+public:
 
   /// Enables switching override for the give action
   static void switchOverride(SoAction *action, OverrideSwitch o=OverrideDefault);

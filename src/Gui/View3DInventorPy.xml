@@ -609,6 +609,30 @@ pla: clipping plane placement
         <UserDocu>hasClippingPlane(): check whether clipping plane is active</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="setObjectVisibility" Keyword="true">
+      <Documentation>
+        <UserDocu>
+setObjectVisibility(obj, visible=None, subname=None) -> bool
+
+Set this view's own visibility of an object; None clears the entry, so
+the object follows its Visibility again. Without subname the entry is
+the object wherever it appears in this view, and counts only while the
+view's PerViewVisibilities is on. With a subname (may be empty) it is
+the one occurrence at obj.subname, obj being a top-level object of the
+view's document, and always counts. Returns whether the entry changed.
+        </UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getObjectVisibility" Keyword="true">
+      <Documentation>
+        <UserDocu>
+getObjectVisibility(obj, subname=None) -> bool or None
+
+This view's own visibility entry of an object (see setObjectVisibility),
+or None when there is none.
+        </UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="addObjectOnTop">
       <Documentation>
         <UserDocu>

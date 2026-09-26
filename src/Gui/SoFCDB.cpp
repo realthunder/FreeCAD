@@ -86,6 +86,7 @@
 #include "Inventor/SoFCRenderCache.h"
 #include "Inventor/SoFCDisplayMode.h"
 #include "Inventor/SoFCOwnDisplayModeElement.h"
+#include "Inventor/SoFCVisibilityElement.h"
 #include "Inventor/SoFCShapeInfo.h"
 #include "Inventor/SoAutoZoomTranslation.h"
 #include "Inventor/SoFCRenderMaterial.h"
@@ -173,6 +174,7 @@ void Gui::SoFCDB::init()
     SoVRMLAction                    ::initClass();
     SoFCDisplayModeElement          ::initClass();
     SoFCOwnDisplayModeElement       ::initClass();
+    SoFCVisibilityElement           ::initClass();
     SoFCModeInterestElement         ::initClass();
     SoFCCapturedModeElement         ::initClass();
     SoFCDisplayMode                 ::initClass();

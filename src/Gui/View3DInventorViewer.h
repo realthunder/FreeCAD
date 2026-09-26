@@ -47,6 +47,7 @@
 #include "Selection.h"
 #include "InventorBase.h"
 #include "Inventor/SoFCDisplayModeElement.h"
+#include "Inventor/SoFCVisibilityElement.h"
 #include "View3DInventorSelection.h"
 #include "ViewerContext.h"
 #include "Quarter/SoQTQuarterAdaptor.h"
@@ -85,6 +86,7 @@ namespace Quarter = SIM::Coin3D::Quarter;
 namespace Render {
 class Renderer;
 struct StyleOverrideTable;
+struct VisibilityOverrideTable;
 struct CaptureInterestTable;
 }
 
@@ -425,6 +427,17 @@ public:
     /// child even outside a canvas, because an override can ADD
     /// geometry the object's own mode does not draw.
     void setObjectStyleOverrides(Render::StyleOverrideTable &&table);
+    /// This view's per-object visibility, parsed from View3DInventor's
+    /// ObjectVisibilities property (bare entries only while its
+    /// PerViewVisibilities switch is on). Takes ownership and bumps the
+    /// table's version.
+    void setObjectVisibilities(Render::VisibilityOverrideTable &&table);
+    /// The table above, or null when it is empty. The pointer stays
+    /// valid for the viewer's lifetime.
+    const Render::VisibilityOverrideTable *objectVisibilities() const;
+    /// The same table as SoFCVisibilityElement carries it, or null when
+    /// empty; SoFCUnifiedSelection sets it for this view's traversals.
+    const SoFCVisibilityElement::Table *visibilityElementTable() const;
     /// The table above, or null when it is empty. The pointer stays
     /// valid for the viewer's lifetime; a unified canvas puts it on
     /// its SubViewFrame, the plain frame states it through

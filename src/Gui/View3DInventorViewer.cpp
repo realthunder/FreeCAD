@@ -132,6 +132,7 @@
 #include <App/PropertyUnits.h>
 #include <App/PropertyFile.h>
 #include <App/ComplexGeoDataPy.h>
+#include <App/Application.h>
 #include <App/Document.h>
 #include <App/GeoFeatureGroupExtension.h>
 #include <Quarter/devices/InputDevice.h>
@@ -190,6 +191,7 @@
 #include "Inventor/SoFCVertexCache.h"
 #include "Inventor/ScenePublishDelta.h"
 #include "ViewProviderDocumentObject.h"
+#include "Inventor/SoFCSwitch.h"
 #include "ViewProviderLink.h"
 #include "Renderer/CyclesRenderer.h"
 #include "Renderer/Renderer.h"
@@ -580,6 +582,37 @@ struct View3DInventorViewer::Private
     /// lifetime; the serial keeps version monotonic across re-parses.
     Render::StyleOverrideTable styleOverrides;
     uint32_t styleOverrideSerial = 0;
+
+    /// This view's per-object visibility, parsed by View3DInventor
+    /// from its ObjectVisibilities property. Kept for the viewer's
+    /// lifetime for the same reason as styleOverrides.
+    Render::VisibilityOverrideTable visibilities;
+    uint32_t visibilitySerial = 0;
+    /// visibilities as SoFCVisibilityElement carries it.
+    SoFCVisibilityElement::Table visibilityElement;
+    /// The objects this view SHOWS on its own, each counted once on its
+    /// display-mode switch (SoFCSwitch::setPerViewShown) and its
+    /// ViewProvider's forced update, so a hidden one is tessellated and
+    /// captured. Released when the table drops them and with the viewer.
+    std::set<std::pair<std::string, std::string>> perViewShown;
+
+    /// Count or release \a key's object as shown by this view.
+    static void countShown(const std::pair<std::string, std::string> &key,
+                           bool enable)
+    {
+        if (!Application::Instance)
+            return;
+        auto doc = App::GetApplication().getDocument(key.first.c_str());
+        auto obj = doc ? doc->getObject(key.second.c_str()) : nullptr;
+        auto vp = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(
+                Application::Instance->getViewProvider(obj));
+        if (!vp)
+            return;
+        vp->forceUpdate(enable);
+        SoSwitch *sw = vp->getModeSwitch();
+        if (sw && sw->isOfType(SoFCSwitch::getClassTypeId()))
+            SoFCSwitch::setPerViewShown(static_cast<SoFCSwitch*>(sw), enable);
+    }
 
     /// The capture's additive-mode interest (docs/CoinRetirement.md
     /// 5.9 "Non-standard modes"): the Coin-side list pushed to the
@@ -1841,6 +1874,11 @@ View3DInventorViewer::~View3DInventorViewer()
     // and destroying it joins them before anything they name goes.
     setCyclesViewport(nullptr, nullptr);
 
+    // What this view showed on its own is no longer shown by it.
+    for (const auto &key : _pimpl->perViewShown)
+        Private::countShown(key, false);
+    _pimpl->perViewShown.clear();
+
     // to prevent following OpenGL error message: "Texture is not valid in the current context. Texture has not been destroyed"
     aboutToDestroyGLContext();
 
@@ -2905,6 +2943,60 @@ void View3DInventorViewer::setObjectStyleOverrides(
     // in the same sense a style change is.
     if (_pimpl->view)
         Application::Instance->signalViewModeChanged(_pimpl->view);
+}
+
+void View3DInventorViewer::setObjectVisibilities(
+        Render::VisibilityOverrideTable &&table)
+{
+    if (table.entries.empty() && _pimpl->visibilities.entries.empty())
+        return;
+    table.version = ++_pimpl->visibilitySerial;
+    _pimpl->visibilities = std::move(table);
+    _pimpl->visibilityElement.update(objectVisibilities());
+
+    std::set<std::pair<std::string, std::string>> shown;
+    for (const auto &ov : _pimpl->visibilities.entries) {
+        if (ov.visible && !ov.path.empty())
+            shown.emplace(ov.path.back().doc, ov.path.back().obj);
+    }
+    for (const auto &key : shown) {
+        if (!_pimpl->perViewShown.count(key))
+            Private::countShown(key, true);
+    }
+    for (const auto &key : _pimpl->perViewShown) {
+        if (!shown.count(key))
+            Private::countShown(key, false);
+    }
+    _pimpl->perViewShown = std::move(shown);
+
+    // The element is set by selectionRoot from this viewer's state, which
+    // no cache ABOVE that node can see: a separator caching its bounding
+    // box there would keep answering with the old table. Touching the node
+    // tells them. Below it the element's own version does the work, and
+    // the render caches of the objects are left alone -- their nodes did
+    // not move.
+    // The backend's scene bounds answer for this view too (onGetBoundingBox).
+    if (_pimpl->renderer)
+        _pimpl->renderer->setMainViewVisibility(objectVisibilities());
+    if (selectionRoot)
+        selectionRoot->touch();
+    // The element's version is what re-validates the Coin caches that
+    // read it; the traversals themselves are per frame.
+    getSoRenderManager()->scheduleRedraw();
+}
+
+const SoFCVisibilityElement::Table *
+View3DInventorViewer::visibilityElementTable() const
+{
+    return _pimpl->visibilityElement.table ? &_pimpl->visibilityElement : nullptr;
+}
+
+const Render::VisibilityOverrideTable *
+View3DInventorViewer::objectVisibilities() const
+{
+    if (_pimpl->visibilities.entries.empty())
+        return nullptr;
+    return &_pimpl->visibilities;
 }
 
 const Render::StyleOverrideTable *
@@ -4628,6 +4720,7 @@ void View3DInventorViewer::renderToFramebuffer(QtGLFramebufferObject* fbo)
         else
             _pimpl->renderer->setMainViewStyle(
                     Render::StyleAsIs, 0, false, nullptr, 0);
+        _pimpl->renderer->setMainViewVisibility(objectVisibilities());
         _pimpl->renderer->setCaptureInterest(captureInterestTable());
         _pimpl->renderer->setBackground(_pimpl->backgroundFeed(col));
         externalRendered = _pimpl->renderer->renderOffscreen(
@@ -6458,6 +6551,7 @@ void View3DInventorViewer::renderScene()
         else
             _pimpl->renderer->setMainViewStyle(
                     Render::StyleAsIs, 0, false, nullptr, 0);
+        _pimpl->renderer->setMainViewVisibility(objectVisibilities());
         _pimpl->renderer->setCaptureInterest(captureInterestTable());
         _pimpl->renderer->setBackground(_pimpl->backgroundFeed(col));
         // The backend draws what the LAST traversal fed it. If that

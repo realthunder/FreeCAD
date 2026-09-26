@@ -61,6 +61,12 @@ public:
   /// the icon is not doubled — mirrors SoDatumLabel::SuppressGLRender.
   static bool SuppressImageGLRender;
 
+  /// Whether \a action is a render cache manager's own capture
+  /// traversal -- as opposed to any other SoCallbackAction, an export
+  /// most of all. What a capture alone may traverse (a hidden object
+  /// some view shows on its own, SoFCSwitch) must not reach those.
+  static bool isCaptureAction(const SoAction *action);
+
   void render(SoGLRenderAction *action);
 
   /// Build (or refresh, keyed on \a root's node id) the render cache of an

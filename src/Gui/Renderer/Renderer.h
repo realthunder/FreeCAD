@@ -2884,6 +2884,49 @@ struct StyleOverrideTable {
     uint32_t version = 0;
 };
 
+/// One per-view visibility entry, parsed by the producer from the
+/// view's ObjectVisibilities property. Same key forms and the same
+/// matching as StyleOverride: a rooted entry names ONE occurrence (a
+/// path hide), a bare one the object wherever it appears in the view.
+/// \c visible false hides the object -- and everything reached through
+/// it -- in this view only; true shows it here even where its own
+/// Visibility is off.
+struct VisibilityOverride {
+    std::vector<ObjectRef> path;
+    bool rooted = true;
+    bool visible = false;
+};
+
+/// A view's visibility table. Bare entries are present only while the
+/// view's PerViewVisibilities switch is on; rooted (path) entries are
+/// always present. version bumps on every content change, like
+/// StyleOverrideTable's.
+struct VisibilityOverrideTable {
+    std::vector<VisibilityOverride> entries;
+    uint32_t version = 0;
+};
+
+/// This table's answer for the object at chain[len-1] reached through
+/// chain[0..len-1]: 1 shown, 0 hidden, -1 no entry. Only entries that
+/// END at that object count. A rooted entry must anchor at chain[0] and
+/// follow it in order, not contiguously (a subname elides a Link's
+/// target); a bare entry is the object wherever it appears. Rooted
+/// beats bare. The one rule both the Coin traversal
+/// (SoFCVisibilityElement) and the backend's draw filter apply.
+RendererExport int resolveVisibility(const VisibilityOverrideTable &table,
+                                     const std::vector<ObjectRef> &chain,
+                                     size_t len);
+/// The captured-mode id (DrawCall::capturedMode) tagging the draws of
+/// a HIDDEN object captured only because some view shows it on its own
+/// (ObjectVisibilities). Every view -- and every snapshot -- drops such
+/// a draw unless its own table shows the object; one that does draws
+/// it as the object's own, untagged draw.
+RendererExport uint16_t perViewShownModeId();
+/// Whether a draw reached through \a chain is hidden: some object on it
+/// -- the draw's own or a container above it -- resolves hidden.
+RendererExport bool isChainHidden(const VisibilityOverrideTable &table,
+                                  const std::vector<ObjectRef> &chain);
+
 /// Process-lifetime intern table for display mode NAMES outside the
 /// four Class-A styles (docs/CoinRetirement.md 5.9 "Non-standard
 /// modes"). A name's id is stable for the life of the process and
@@ -3073,6 +3116,11 @@ public:
         /// owns the table and keeps it alive across the frame; null
         /// means no overrides.
         const StyleOverrideTable *styleOverrides = nullptr;
+        /// This sub-view's own object visibility: draws whose object
+        /// (or a container above it) resolves hidden are dropped from
+        /// every pass of this sub-view only. The producer owns the
+        /// table; null means the sub-view hides nothing of its own.
+        const VisibilityOverrideTable *visibilities = nullptr;
     };
     /// Render one frame as \a count sub-views tiling the backbuffer:
     /// the same resident scene feeds every sub-view, each drawn with
@@ -3105,6 +3153,13 @@ public:
     {
         (void)styleMask; (void)styleNameBit;
         (void)fromSuperset; (void)overrides; (void)styleMode;
+    }
+    /// The plain (sub-view id 0) frame's own object visibility, the
+    /// counterpart of SubViewFrame::visibilities. The caller owns the
+    /// table and keeps it alive; null = none.
+    virtual void setMainViewVisibility(const VisibilityOverrideTable *table)
+    {
+        (void)table;
     }
     /// The additive-mode interest list of the capture feeding this
     /// backend (docs/CoinRetirement.md 5.9 "Non-standard modes") --

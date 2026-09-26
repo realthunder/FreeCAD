@@ -21,6 +21,7 @@
  ****************************************************************************/
 
 #include "PreCompiled.h"
+#include <unordered_map>
 #include <Inventor/misc/SoChildList.h>
 #include <Inventor/actions/SoActions.h>
 #include <Inventor/elements/SoSwitchElement.h>
@@ -31,6 +32,9 @@
 #include "SoFCSwitch.h"
 #include "SoFCDisplayModeElement.h"
 #include "SoFCOwnDisplayModeElement.h"
+#include "SoFCVisibilityElement.h"
+#include "SoFCRenderCacheManager.h"
+#include "../Renderer/Renderer.h"
 
 using namespace Gui;
 
@@ -54,6 +58,45 @@ SoFCSwitch::SoFCSwitch()
 
   SO_ENABLE(SoGLRenderAction, SoSwitchElement);
   SO_ENABLE(SoGetBoundingBoxAction, SoSwitchElement);
+}
+
+// Switches of hidden objects some view shows on its own, with how many
+// such views; an entry at zero stays until the node goes (see
+// setPerViewShown). Gui thread only, like the scene graph it names.
+// Never destroyed: a node can outlive static destruction, and its
+// destructor erases itself from here.
+static std::unordered_map<const SoFCSwitch *, int> &_PerViewShown =
+    *new std::unordered_map<const SoFCSwitch *, int>;
+
+SoFCSwitch::~SoFCSwitch()
+{
+  _PerViewShown.erase(this);
+}
+
+void
+SoFCSwitch::setPerViewShown(SoFCSwitch *node, bool enable)
+{
+  if (!node)
+    return;
+  auto it = _PerViewShown.find(node);
+  if (enable) {
+    if (it == _PerViewShown.end()) {
+      _PerViewShown.emplace(node, 1);
+      // The one re-capture: the capture must now reach below a switch
+      // whose whichChild did not move.
+      node->touch();
+    }
+    else
+      ++it->second;
+  }
+  else if (it != _PerViewShown.end() && it->second > 0)
+    --it->second;
+}
+
+bool
+SoFCSwitch::isPerViewShown(const SoFCSwitch *node)
+{
+  return _PerViewShown.count(node) != 0;
 }
 
 // switch to defaultChild when invisible
@@ -179,6 +222,25 @@ SoFCSwitch::doAction(SoAction *action)
 {
   auto state = action->getState();
 
+  // This view's own visibility of the object, when this is the
+  // object's display-mode switch (SoFCVisibilityElement). Hidden skips
+  // the object outright -- on-top and path overrides included, since
+  // the object is not in this view at all. Shown traverses the child a
+  // visibility override always takes, defaultChild, while the object's
+  // own Visibility is off.
+  const int perview = SoFCVisibilityElement::check(action, this);
+  if (perview == 0)
+    return;
+  if (perview > 0 && this->whichChild.getValue() == SO_SWITCH_NONE) {
+    const int idx = this->defaultChild.getValue();
+    if (idx >= 0 && idx < this->getNumChildren()) {
+      traverseHead(action, idx);
+      traverseChild(action, idx);
+      traverseTail(action, idx);
+    }
+    return;
+  }
+
   // Record which display mode this object is in, and which style names
   // it has a child for, for whatever traverses below
   // (docs/CoinRetirement.md 5.8). A display style is applied by
@@ -206,6 +268,24 @@ SoFCSwitch::doAction(SoAction *action)
         ownmask = Gui::drawStyleMaskFromModeName(childNames[i]);
     }
     SoFCOwnDisplayModeElement::set(state, ownmask, registered);
+  }
+
+  // A hidden object some view shows on its own: the scene capture --
+  // shared by every view -- carries it anyway, tagged, and each view
+  // admits it or not when it draws.
+  if (this->whichChild.getValue() == SO_SWITCH_NONE
+      && !_PerViewShown.empty() && _PerViewShown.count(this)
+      && SoFCRenderCacheManager::isCaptureAction(action)) {
+    const int idx = this->defaultChild.getValue();
+    if (idx >= 0 && idx < this->getNumChildren()) {
+      const uint16_t prev = SoFCCapturedModeElement::get(state);
+      SoFCCapturedModeElement::set(state, Render::perViewShownModeId());
+      traverseHead(action, idx);
+      traverseChild(action, idx);
+      traverseTail(action, idx);
+      SoFCCapturedModeElement::set(state, prev);
+    }
+    return;
   }
 
   uint32_t mask = ((uint32_t)SoSwitchElement::get(state)) & FC_SWITCH_MASK;

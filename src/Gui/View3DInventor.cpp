@@ -148,6 +148,14 @@ View3DInventor::View3DInventor(Gui::Document* pcDocument, QWidget* parent,
     ADD_PROPERTY_TYPE(OnTopObjects, (), nullptr, App::Prop_Hidden,
             "Objects this view draws on top of everything else.\n"
             "One entry per object, as '<internal name>.<subname path>'.");
+    ADD_PROPERTY_TYPE(PerViewVisibilities, (false), nullptr, App::Prop_None,
+            "Let this view show and hide objects on its own, independent\n"
+            "of their Visibility.");
+    ADD_PROPERTY_TYPE(ObjectVisibilities, (), nullptr, App::Prop_Hidden,
+            "Per-object visibility of this view.\n"
+            "Key: a subname path (one occurrence) or a bare internal\n"
+            "name (the object anywhere in this view); value: '1' shown,\n"
+            "'0' hidden. Bare keys count only with PerViewVisibilities.");
 
     stack = new QStackedWidget(this);
     // important for highlighting
@@ -1265,6 +1273,76 @@ void View3DInventor::Restore(Base::XMLReader &reader)
 }
 
 namespace {
+/// Resolve one per-view override KEY -- the form ObjectDisplayModes
+/// and ObjectVisibilities share -- into {doc, obj} steps. A key with no
+/// dot is BARE (the object wherever it appears in this view; "Doc#Obj"
+/// for an object of another document shown through a link); one with
+/// a dot is a subname PATH from a top-level object of \a doc, naming
+/// one occurrence. False when the key does not resolve -- its object
+/// was deleted -- which callers treat as inert, not as an error.
+bool parseOverrideKey(const std::string &key,
+                      App::Document *doc,
+                      std::vector<Render::ObjectRef> &path,
+                      bool &rooted)
+{
+    path.clear();
+    if (key.find('.') == std::string::npos) {
+        rooted = false;
+        auto sep = key.find('#');
+        if (sep != std::string::npos)
+            path.push_back({key.substr(0, sep), key.substr(sep + 1)});
+        else
+            path.push_back({doc->getName(), key});
+        return true;
+    }
+    // Path form: one occurrence, resolved token by token so every
+    // element carries its true document -- getSubObject follows links
+    // across documents the same way the scene graph does.
+    rooted = true;
+    std::istringstream iss(key);
+    std::string tok;
+    App::DocumentObject *cur = nullptr;
+    while (std::getline(iss, tok, '.')) {
+        if (tok.empty())
+            continue;
+        if (!cur)
+            cur = doc->getObject(tok.c_str());
+        else
+            cur = cur->getSubObject((tok + ".").c_str());
+        if (!cur || !cur->isAttachedToDocument())
+            return false;
+        path.push_back({cur->getDocument()->getName(),
+                        cur->getNameInDocument()});
+    }
+    return !path.empty();
+}
+
+/// Parse the ObjectVisibilities property into the view's visibility
+/// table. Bare entries are this view's own per-object visibility and
+/// count only while \a perView (PerViewVisibilities) is on; path
+/// entries -- a hide of one occurrence -- always count.
+Render::VisibilityOverrideTable parseObjectVisibilities(
+        const std::map<std::string, std::string> &values,
+        App::Document *doc,
+        bool perView)
+{
+    Render::VisibilityOverrideTable table;
+    if (!doc)
+        return table;
+    for (const auto &kv : values) {
+        if (kv.first.empty() || kv.second.empty())
+            continue;
+        Render::VisibilityOverride ov;
+        if (!parseOverrideKey(kv.first, doc, ov.path, ov.rooted))
+            continue;
+        if (!ov.rooted && !perView)
+            continue;
+        ov.visible = View3DInventor::visibilityValue(kv.second);
+        table.entries.push_back(std::move(ov));
+    }
+    return table;
+}
+
 /// Parse the ObjectDisplayModes property (docs/CoinRetirement.md 5.9)
 /// into backend override entries, resolving every path element to its
 /// true {document, object} pair so the backend never touches a
@@ -1311,50 +1389,49 @@ Render::StyleOverrideTable parseObjectDisplayModes(
                 ov.mask =
                     View3DInventorViewer::drawStyleMaskFromName(mode.c_str());
         }
-        if (key.find('.') == std::string::npos) {
-            // Bare form: the object wherever it appears in this view.
-            // "Doc#Obj" names an object of another document shown here
-            // through a link; a plain name is of this view's document.
-            ov.rooted = false;
-            auto sep = key.find('#');
-            if (sep != std::string::npos)
-                ov.path.push_back({key.substr(0, sep),
-                                   key.substr(sep + 1)});
-            else
-                ov.path.push_back({doc->getName(), key});
-        }
-        else {
-            // Path form: one occurrence, resolved token by token so
-            // every element carries its true document -- getSubObject
-            // follows links across documents the same way the scene
-            // graph does.
-            ov.rooted = true;
-            std::istringstream iss(key);
-            std::string tok;
-            App::DocumentObject *cur = nullptr;
-            bool ok = true;
-            while (std::getline(iss, tok, '.')) {
-                if (tok.empty())
-                    continue;
-                if (!cur)
-                    cur = doc->getObject(tok.c_str());
-                else
-                    cur = cur->getSubObject((tok + ".").c_str());
-                if (!cur || !cur->isAttachedToDocument()) {
-                    ok = false;
-                    break;
-                }
-                ov.path.push_back({cur->getDocument()->getName(),
-                                   cur->getNameInDocument()});
-            }
-            if (!ok || ov.path.empty())
-                continue;
-        }
+        if (!parseOverrideKey(key, doc, ov.path, ov.rooted))
+            continue;
         table.entries.push_back(std::move(ov));
     }
     return table;
 }
 } // namespace
+
+bool View3DInventor::visibilityValue(const std::string &value)
+{
+    return !(value == "0" || value == "false" || value == "False");
+}
+
+bool View3DInventor::setObjectVisibility(const std::string &key,
+                                         const bool *visible)
+{
+    if (key.empty())
+        return false;
+    auto values = ObjectVisibilities.getValues();
+    auto it = values.find(key);
+    if (!visible) {
+        if (it == values.end())
+            return false;
+        values.erase(it);
+    }
+    else {
+        const char *value = *visible ? "1" : "0";
+        if (it != values.end() && it->second == value)
+            return false;
+        values[key] = value;
+    }
+    ObjectVisibilities.setValues(std::move(values));
+    return true;
+}
+
+int View3DInventor::getObjectVisibility(const std::string &key) const
+{
+    const auto &values = ObjectVisibilities.getValues();
+    auto it = values.find(key);
+    if (it == values.end())
+        return -1;
+    return visibilityValue(it->second) ? 1 : 0;
+}
 
 void View3DInventor::applyOnTopObjects()
 {
@@ -1451,6 +1528,13 @@ void View3DInventor::onChanged(const App::Property *prop)
                         App::Property::User1, &DrawStyle);
                 _viewer->setOverrideMode(DrawStyle.getValueAsString());
             }
+        }
+        else if (prop == &ObjectVisibilities || prop == &PerViewVisibilities) {
+            _viewer->setObjectVisibilities(parseObjectVisibilities(
+                    ObjectVisibilities.getValues(),
+                    getGuiDocument() ? getGuiDocument()->getDocument()
+                                     : nullptr,
+                    PerViewVisibilities.getValue()));
         }
         else if (prop == &ObjectDisplayModes) {
             _viewer->setObjectStyleOverrides(parseObjectDisplayModes(

@@ -786,6 +786,9 @@ void ViewAreaCanvas::paintGL()
                     && viewer->hasObjectStyleOverrides())
                 s.styleOverrides = viewer->objectStyleOverrides();
         }
+        // The cell's own object visibility: a draw-time filter over the
+        // shared capture, so every service hosts it.
+        s.visibilities = viewer->objectVisibilities();
         subs.push_back(s);
         rects.push_back(r);
         drawnCells.push_back(c.cell);

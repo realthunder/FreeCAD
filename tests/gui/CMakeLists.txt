@@ -208,6 +208,14 @@ fc_add_gui_test(GuiSketchSupportVisibility_tests_run
                 sketch-support-visibility.py
                 --timeout 240)
 
+# A view's own object visibility (View3DInventor ObjectVisibilities,
+# PerViewVisibilities): picks, the scene bounding box and the backend
+# frame of one view follow its map, the other view never sees it. Bare
+# entries are gated by the switch, path entries are not.
+fc_add_gui_test(GuiPerViewVisibility_tests_run
+                per-view-visibility.py
+                --timeout 240)
+
 # Ctrl+A in a focused spreadsheet selects its cells (upstream 4f4e9244e6):
 # Ctrl+A is Std_SelectAll's window shortcut, and the table keeps it only by
 # claiming it in ShortcutOverride.

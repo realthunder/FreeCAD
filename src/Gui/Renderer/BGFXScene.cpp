@@ -78,13 +78,22 @@ void BGFXRenderer::Private::makeSnapshot(Render::SceneSnapshot &snap,
         }
         mainStyle.ovInterest = captureInterest;
     }
+    // ...and against the main view's own object visibility: what it
+    // hides is not in what it draws, and a draw captured only because
+    // some OTHER view shows a hidden object never is. A served root has
+    // no view and so no table, which drops exactly those.
+    if (mainVisibilities && !mainVisibilities->entries.empty()) {
+        mainStyle.visCache = &mainStyle.subVisCaches[0];
+        mainStyle.visTable = mainVisibilities;
+        mainStyle.visInfo = &objectInfo;
+    }
     auto copyFeed = [&](const Render::DrawCallList &src) {
-        if (!resolving)
-            return src;
         Render::DrawCallList out;
         out.reserve(src.size());
         for (const auto &d : src) {
-            if (mainStyle.styleAdmits(d))
+            if (mainStyle.visibilityHides(d))
+                continue;
+            if (!resolving || mainStyle.styleAdmits(d))
                 out.push_back(d);
         }
         return out;
@@ -694,12 +703,26 @@ void BGFXRenderer::Private::updateBBox()
 {
     static const bool dbg = getenv("FC_BGFX_DEBUG_BBOX") != nullptr;
     bboxValid = false;
+    // What the main view hides of its own accord is not in its scene,
+    // nor is a draw captured only because ANOTHER view shows a hidden
+    // object: the bounds fit-all frames and the shadow ground covers are
+    // this view's.
+    BGFXStyleState vis;
+    if (mainVisibilities && !mainVisibilities->entries.empty()) {
+        vis.visCache = &vis.subVisCaches[0];
+        vis.visTable = mainVisibilities;
+        vis.visInfo = &objectInfo;
+    }
+    bboxVisTable = mainVisibilities;
+    bboxVisVersion = mainVisibilities ? mainVisibilities->version : 0;
     for (const auto &draw : scene) {
         // A navigation gizmo is not the scene (DrawCall::skipbounds):
         // the rotation-centre sphere sits wherever the spin is centred
         // and moves with it, and counting it would drag the shadow
         // ground and the auto near/far along with the mouse.
         if (draw.skipbounds)
+            continue;
+        if (vis.visibilityHides(draw))
             continue;
         if (draw.bboxMin[0] > draw.bboxMax[0])
             continue;

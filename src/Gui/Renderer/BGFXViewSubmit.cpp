@@ -76,6 +76,22 @@ int matchStyleOverride(const Render::StyleOverride &ov,
 
 bool BGFXStyleState::styleAdmits(const Render::DrawCall &draw)
 {
+    // A draw of a hidden object captured only because some view shows
+    // it on its own (Render::perViewShownModeId): not a mode copy, but
+    // the object's own draw, admitted where this view's visibility
+    // shows it and then styled like any untagged draw.
+    uint16_t captured = draw.capturedMode;
+    if (captured && captured == Render::perViewShownModeId()) {
+        if (visibilityHides(draw))
+            return false;
+        captured = 0;
+    }
+    return styleAdmitsAs(draw, captured);
+}
+
+bool BGFXStyleState::styleAdmitsAs(const Render::DrawCall &draw,
+                                   uint16_t captured)
+{
     // This sub-view's Class-A display style, resolved PER OBJECT the
     // way Rhino and SolidWorks resolve a display mode
     // (docs/CoinRetirement.md 5.8, 5.9), in order:
@@ -133,8 +149,8 @@ bool BGFXStyleState::styleAdmits(const Render::DrawCall &draw)
         //   over the superset, where the name is registered;
         // - and an object with no child of the name keeps its own
         //   mode, the same fallback a Class-A style takes.
-        if (draw.capturedMode)
-            return draw.capturedMode == ov->modeId;
+        if (captured)
+            return captured == ov->modeId;
         if (draw.traversedMode == ov->modeId)
             return true;
         if (ov->interestBit && (draw.interestBits & ov->interestBit))
@@ -161,14 +177,14 @@ bool BGFXStyleState::styleAdmits(const Render::DrawCall &draw)
         // Falling through means the switch has no child of the name:
         // the object keeps its own mode, the same fallback the mask
         // path below reaches through registeredStyles.
-        if (draw.capturedMode)
-            return draw.capturedMode == drawStyleMode;
+        if (captured)
+            return captured == drawStyleMode;
         if (draw.traversedMode == drawStyleMode)
             return true;
         if (draw.interestBits & drawStyleModeBit)
             return false;
     }
-    if (draw.capturedMode) {
+    if (captured) {
         // An additively captured draw serves exactly one thing: an
         // override -- or, since 5.11, a view style -- resolving to its
         // very mode. Every other resolution must drop it, or the
@@ -189,6 +205,36 @@ bool BGFXStyleState::styleAdmits(const Render::DrawCall &draw)
     return effective == Render::StyleAsIs
         || effective == Render::StyleUnknown
         || (effective & Render::styleBitOf(draw.material)) != 0;
+}
+
+bool BGFXStyleState::visibilityHides(const Render::DrawCall &draw)
+{
+    // A draw captured only because SOME view shows its hidden object
+    // is hidden in every view that does not show it itself.
+    const bool pershown = draw.capturedMode
+        && draw.capturedMode == Render::perViewShownModeId();
+    // Gizmos sit under no object, like the style filter's exemption.
+    if (!visCache || !visTable || !draw.objectKey || draw.skipbounds)
+        return pershown;
+    auto it = visCache->map.find(draw.objectKey);
+    if (it == visCache->map.end()) {
+        VisState vs;
+        if (visInfo) {
+            auto oit = visInfo->find(draw.objectKey);
+            if (oit != visInfo->end()) {
+                const auto &path = oit->second.path;
+                for (size_t len = 1; len <= path.size(); ++len) {
+                    const int r = Render::resolveVisibility(*visTable, path, len);
+                    if (r == 0)
+                        vs.hidden = true;
+                    else if (r > 0)
+                        vs.shown = true;
+                }
+            }
+        }
+        it = visCache->map.emplace(draw.objectKey, vs).first;
+    }
+    return it->second.hidden || (pershown && !it->second.shown);
 }
 
 const BGFXStyleState::OvStyle *
@@ -1010,7 +1056,7 @@ void BGFXView::submit(const Render::DrawCall &input, const float *viewMatrix,
     // The per-object per-view display style resolution
     // (docs/CoinRetirement.md 5.8, 5.9) -- see styleAdmits, which the
     // instanced group partition shares.
-    if (!styleAdmits(draw))
+    if (!styleAdmits(draw) || visibilityHides(draw))
         return;
 
     GpuMesh *mesh = getMesh(*draw.mesh);

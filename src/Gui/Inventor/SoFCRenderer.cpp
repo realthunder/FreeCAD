@@ -1371,6 +1371,10 @@ SoFCRenderer::setScene(const RenderCachePtr &cache)
     auto & ventries = v.second;
     if (ventries.empty()) continue;
     if (material.drawstyle == SoDrawStyleElement::INVISIBLE) continue;
+    // Captured only because some view shows a hidden object on its own;
+    // this renderer has no per-view visibility to admit it with.
+    if (material.capturedmode
+        && material.capturedmode == Render::perViewShownModeId()) continue;
 
     bool fulltransp = material.transptexture;
     if (!fulltransp && !material.pervertexcolor)

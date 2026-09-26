@@ -157,6 +157,19 @@ public:
     /// there and migrated on restore. Stays Hidden: the on-top set is
     /// edited from the 3D view and the tree, not from a property row.
     App::PropertyStringList OnTopObjects;
+    /// Whether THIS view overrides object visibility on its own: the
+    /// bare entries of ObjectVisibilities count only while it is on.
+    /// Path entries (one occurrence hidden, e.g. the instance a sketch
+    /// is being edited through) count regardless.
+    App::PropertyBool PerViewVisibilities;
+    /// Per-view visibility of THIS view. Key: the same two forms as
+    /// ObjectDisplayModes -- a bare internal name ("Part", "Doc#Part")
+    /// for the object wherever it appears, or a subname path
+    /// ("Asm.Sub.Part.") for one occurrence. Value: "1" shown, "0"
+    /// hidden; an absent key follows the object's own Visibility.
+    /// Hidden: edited through setObjectVisibility() and the commands
+    /// that call it.
+    App::PropertyMap ObjectVisibilities;
 
     View3DInventor(Gui::Document* pcDocument, QWidget* parent, const QtGLWidget* sharewidget = nullptr, Qt::WindowFlags wflags=Qt::WindowFlags());
     ~View3DInventor() override;
@@ -176,6 +189,16 @@ public:
     /// changes are then the file's own content, not user edits, so
     /// handlers that would write back to the document must stand down.
     bool isRestoring() const { return _restoring; }
+
+    /// Set, or with a null \a visible clear, the ObjectVisibilities
+    /// entry of \a key (either key form). Returns whether the map
+    /// changed.
+    bool setObjectVisibility(const std::string &key, const bool *visible);
+    /// The ObjectVisibilities entry of \a key: 1 shown, 0 hidden, -1
+    /// no entry.
+    int getObjectVisibility(const std::string &key) const;
+    /// The bool an ObjectVisibilities value spells.
+    static bool visibilityValue(const std::string &value);
 
     void bindCamera(SoCamera *camera, bool sync=false);
     void syncCamera(View3DInventor *view);

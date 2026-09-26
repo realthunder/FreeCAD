@@ -175,6 +175,7 @@ bool BGFXRenderer::renderSubViews(const QColor &col,
         ctx.fromSuperset = s.styleFromSuperset;
         ctx.styleMode = s.drawStyleMode;
         ctx.styleOverrides = s.styleOverrides;
+        ctx.visibilities = s.visibilities;
         _BGFXLib.captureWidth = uint16_t(s.width);
         _BGFXLib.captureHeight = uint16_t(s.height);
         ok = render(col, s.viewMatrix, s.projMatrix) && ok;
@@ -223,6 +224,7 @@ bool BGFXRenderer::renderSubViews(const QColor &col,
         ctx.fromSuperset = s.styleFromSuperset;
         ctx.styleMode = s.drawStyleMode;
         ctx.styleOverrides = s.styleOverrides;
+        ctx.visibilities = s.visibilities;
         _BGFXLib.standaloneSubWidth = uint16_t(s.width);
         _BGFXLib.standaloneSubHeight = uint16_t(s.height);
         const bool subOk = render(col, s.viewMatrix, s.projMatrix);
@@ -279,6 +281,7 @@ void BGFXRenderer::dropSubView(int id)
     view->selectSubView(0);
     view->subBanks.erase(id);
     view->subOvCaches.erase(id);
+    view->subVisCaches.erase(id);
 }
 
 void BGFXRenderer::setMainViewStyle(uint8_t styleMask, uint8_t styleNameBit,
@@ -291,6 +294,14 @@ void BGFXRenderer::setMainViewStyle(uint8_t styleMask, uint8_t styleNameBit,
     pimpl->mainFromSuperset = fromSuperset;
     pimpl->mainStyleOverrides = overrides;
     pimpl->mainStyleMode = styleMode;
+}
+
+void BGFXRenderer::setMainViewVisibility(const VisibilityOverrideTable *table)
+{
+    pimpl->mainVisibilities = (table && !table->entries.empty()) ? table : nullptr;
+    const uint32_t version = pimpl->mainVisibilities ? pimpl->mainVisibilities->version : 0;
+    if (pimpl->bboxVisTable != pimpl->mainVisibilities || pimpl->bboxVisVersion != version)
+        pimpl->updateBBox();
 }
 
 void BGFXRenderer::setCaptureInterest(const CaptureInterestTable *table)
@@ -354,6 +365,7 @@ void BGFXRenderer::prepareSubViews(const QColor &col,
         ctx.fromSuperset = s.styleFromSuperset;
         ctx.styleMode = s.drawStyleMode;
         ctx.styleOverrides = s.styleOverrides;
+        ctx.visibilities = s.visibilities;
         _BGFXLib.standaloneSubWidth = uint16_t(s.width);
         _BGFXLib.standaloneSubHeight = uint16_t(s.height);
         pimpl->render(col, s.viewMatrix, s.projMatrix);

@@ -817,13 +817,24 @@ SoFCRenderCacheManagerP::SoFCRenderCacheManagerP()
   this->renderer = new SoFCRenderer;
 }
 
+// Every manager's capture action, for SoFCRenderCacheManager::
+// isCaptureAction.
+static FC_COIN_THREAD_LOCAL std::unordered_set<const SoAction *> _CaptureActions;
+
+bool SoFCRenderCacheManager::isCaptureAction(const SoAction *action)
+{
+  return action && _CaptureActions.count(action) != 0;
+}
+
 void SoFCRenderCacheManagerP::initAction()
 {
   if (this->action && this->shapetypeid && _shapetypeid == this->shapetypeid)
     return;
+  _CaptureActions.erase(this->action);
   delete this->action;
   _shapetypeid = this->shapetypeid = getMaxShapeTypeId();
   this->action = new SoCallbackAction;
+  _CaptureActions.insert(this->action);
   if (this->lastvpset)
     this->action->setViewportRegion(this->lastvp);
   this->action->addPreCallback(SoFCSelectionRoot::getClassTypeId(), &preSeparator, this);
@@ -881,6 +892,7 @@ void SoFCRenderCacheManagerP::initAction()
 
 SoFCRenderCacheManagerP::~SoFCRenderCacheManagerP()
 {
+  _CaptureActions.erase(this->action);
   delete this->action;
   delete this->renderer;
 }

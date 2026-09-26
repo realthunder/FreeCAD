@@ -163,6 +163,7 @@ public:
     void callback(SoCallbackAction *action) override;
 
     void getBoundingBox(SoGetBoundingBoxAction * action) override;
+    void rayPick(SoRayPickAction * action) override;
 
     bool hasHighlight();
 
@@ -474,6 +475,24 @@ public:
 
     static SoFCSelectionRoot *getCurrentActionRoot(
             SoAction *action, bool front=false, SoFCSelectionRoot *def=0);
+
+    /// The innermost root \a action is inside, whatever the action:
+    /// GL render keeps its roots on SelStack, every other action on
+    /// its own stack.
+    static SoFCSelectionRoot *getInnermostRoot(SoAction *action);
+
+    /// The document object this root renders, as internal names: its
+    /// ViewProvider's object, or the node origin a Link snapshot
+    /// stands in for (setNodeOrigin). False when it renders none.
+    bool getRenderedObject(const char *&doc, const char *&obj) const;
+
+    /// The objects of the roots \a action is inside, outermost first,
+    /// consecutive duplicates collapsed -- the chain a per-view
+    /// override entry matches against, the same one the render cache
+    /// records as Render::ObjectInfo::path.
+    static void getActionObjectChain(
+            SoAction *action,
+            std::vector<std::pair<const char *, const char *>> &chain);
 
     int getRenderPathCode() const;
 

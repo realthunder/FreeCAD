@@ -101,6 +101,7 @@
 
 #include "Inventor/SoFCRenderCacheManager.h"
 #include "Inventor/SoFCDiffuseElement.h"
+#include "Inventor/SoFCVisibilityElement.h"
 #include "SoFCUnifiedSelection.h"
 #include "Application.h"
 #include "Document.h"
@@ -271,6 +272,7 @@ public:
     bool doAction(SoAction *);
     bool handleEvent(SoHandleEventAction * action);
     void applyOverrideMode(SoState * state) const;
+    void applyVisibility(SoState * state) const;
 
     /// The capture's additive-mode interest set (5.9 "Non-standard
     /// modes"); owned by the viewer, pushed onto the element in
@@ -483,7 +485,27 @@ void SoFCUnifiedSelection::getBoundingBox(SoGetBoundingBoxAction * action)
     // SoSeparator::getBoundingBox already answers from it without
     // descending; when it does not, the descent is what builds that cache
     // and every per-object one below it.
+    //
+    // Pushed around the base class, which does not come through
+    // doAction(): the view's own visibility has to reach the switches
+    // below, and must not leak past this node.
+    SoState *state = action->getState();
+    state->push();
+    pimpl->applyVisibility(state);
     inherited::getBoundingBox(action);
+    state->pop();
+}
+
+void SoFCUnifiedSelection::rayPick(SoRayPickAction * action)
+{
+    // SoSeparator::rayPick does not come through doAction() either, and
+    // a pick has to see this view's own visibility like everything else
+    // it traverses; see getBoundingBox().
+    SoState *state = action->getState();
+    state->push();
+    pimpl->applyVisibility(state);
+    inherited::rayPick(action);
+    state->pop();
 }
 
 void SoFCUnifiedSelection::setSelectAll(bool enable)
@@ -802,6 +824,7 @@ SoFCUnifiedSelection::Private::getPickedList(const SbVec2s &pos,
         SoOverrideElement::setPickStyleOverride(this->rayPickAction.getState(),0,true);
 
     SoFCDisplayModeElement::set(this->rayPickAction.getState(),0,SbName::empty(),false);
+    applyVisibility(this->rayPickAction.getState());
 
     this->rayPickAction.cleanup();
 
@@ -1030,8 +1053,18 @@ SbName SoFCUnifiedSelection::DisplayModeNoShading("No Shading");
 SbName SoFCUnifiedSelection::DisplayModeWireframe("Wireframe");
 SbName SoFCUnifiedSelection::DisplayModePoints("Points");
 
+void SoFCUnifiedSelection::Private::applyVisibility(SoState * state) const
+{
+    // This view's own object visibility, for the per-view traversals
+    // the element is enabled in (SoFCVisibilityElement).
+    if (pcViewer
+            && state->isElementEnabled(SoFCVisibilityElement::getClassStackIndex()))
+        SoFCVisibilityElement::set(state, pcViewer->visibilityElementTable());
+}
+
 void SoFCUnifiedSelection::Private::applyOverrideMode(SoState * state) const
 {
+    applyVisibility(state);
     bool shading = true;
     if (state->isElementEnabled(SoFCDisplayModeElement::getClassStackIndex())) {
         SbName mode = master->overrideMode.getValue();
@@ -2428,6 +2461,52 @@ SoFCSelectionRoot *SoFCSelectionRoot::getCurrentActionRoot(
     if (!stack || stack->empty())
         return def;
     return static_cast<SoFCSelectionRoot*>(front?stack->front():stack->back());
+}
+
+SoFCSelectionRoot *SoFCSelectionRoot::getInnermostRoot(SoAction *action)
+{
+    if (action->isOfType(SoGLRenderAction::getClassTypeId()))
+        return getCurrentRoot();
+    return getCurrentActionRoot(action);
+}
+
+bool SoFCSelectionRoot::getRenderedObject(const char *&doc, const char *&obj) const
+{
+    auto vpd = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(viewProvider);
+    if (vpd) {
+        auto o = vpd->getObject();
+        if (!o || !o->isAttachedToDocument() || !o->getDocument())
+            return false;
+        doc = o->getDocument()->getName();
+        obj = o->getNameInDocument();
+        return true;
+    }
+    if (!nodeOrigin)
+        return false;
+    doc = nodeOrigin->doc.c_str();
+    obj = nodeOrigin->obj.c_str();
+    return true;
+}
+
+void SoFCSelectionRoot::getActionObjectChain(
+        SoAction *action,
+        std::vector<std::pair<const char *, const char *>> &chain)
+{
+    chain.clear();
+    const Stack *stack = action->isOfType(SoGLRenderAction::getClassTypeId())
+        ? &SelStack : getActionStack(action);
+    if (!stack)
+        return;
+    for (auto node : *stack) {
+        auto root = static_cast<const SoFCSelectionRoot*>(node);
+        const char *doc, *obj;
+        if (!root->getRenderedObject(doc, obj))
+            continue;
+        if (!chain.empty() && strcmp(chain.back().second, obj) == 0
+                && strcmp(chain.back().first, doc) == 0)
+            continue;
+        chain.emplace_back(doc, obj);
+    }
 }
 
 int SoFCSelectionRoot::getRenderPathCode() const {

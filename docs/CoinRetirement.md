@@ -2625,6 +2625,81 @@ designed.
   cell and reads its own confusion as a product bug. Click into the
   cell instead.
 
+### 5.18 Per-view object visibility (2026-09-26)
+
+A view can show and hide objects on its own, independent of their
+`Visibility`: the first half of editing per view (each client editing
+without the others seeing the edit geometry replace the shape).
+
+**Storage (user ruling).** One bool map on the view,
+`View3DInventor::ObjectVisibilities`, persisted in GuiDocument.xml like
+`ObjectDisplayModes` and keyed the same two ways: a bare name ("Part",
+"Doc#Part") is the object wherever it appears in the view, a subname
+path ("Asm.Sub.Part.") is one occurrence. Value "1" shows, "0" hides.
+Bare entries count only while the view's `PerViewVisibilities` switch
+is on; path entries -- the "path hide" an edit uses -- always count.
+Python: `view.setObjectVisibility(obj, visible=None, subname=None)` and
+`getObjectVisibility`. One rule resolves both forms,
+`Render::resolveVisibility`: an entry counts for the object it ENDS at,
+rooted beats bare, and a draw is hidden when any object on its chain
+resolves hidden.
+
+**Coin side (user design).** `SoFCVisibilityElement` mirrors the map,
+set by the view's `SoFCUnifiedSelection` for GL render, bounding box,
+pick and event traversals; `SoFCSwitch` reads it, but only for the
+object's own display-mode switch (a direct child of the innermost
+`SoFCSelectionRoot`). So picks and fit-all of one view follow its map.
+Not enabled for `SoCallbackAction` (the capture, and exports) nor for
+`SoSearchAction` (a hidden object must stay addressable). The element
+read records a cache dependency, so a table change re-validates the
+bounding box caches below the root; the root itself is touched, since
+the caches above it cannot see the table.
+
+**Capture side: shared, filtered at draw.** The mode-3 capture is one
+traversal shared by every view, canvas cell and served client, so it
+stays view-independent and each view drops what it hides when it DRAWS:
+`BGFXStyleState::visibilityHides`, resolved once per objectKey and
+cached per sub-view like the style overrides, checked beside the on-top
+replacement in every pass (fill, shadow casters, outlines, section caps,
+instance groups), in the scene bounds and in the snapshot. A per-view
+hide or unhide therefore re-captures nothing.
+
+A per-view SHOW of a hidden object needs the object in the capture. The
+view counts the object's switch (`SoFCSwitch::setPerViewShown`) and
+forces its ViewProvider to tessellate; the capture then traverses the
+switch's defaultChild although whichChild is off, every draw tagged
+`Render::perViewShownModeId()`. A tagged draw is admitted only by a
+view whose own table shows the object (and never by the internal-GL
+renderer or a served snapshot). Only the first count touches the node;
+a release leaves the entry, so toggling back re-captures nothing either.
+Eviction of a released entry is still to do: it lasts until the node
+goes.
+
+Why not capture every hidden object up front with box stand-ins (the
+first plan): hidden objects outnumber visible ones about 6 to 1 in the
+sketcher corpus (3332 against 570 shape objects, 5.5x the BRep bytes),
+tessellation is synchronous so a box would never be on screen, and
+every consumer of the draw list would need the new filter at once.
+Capture on first show touches only objects someone shows.
+
+- **Found on the way:** `Material::operator<` compared the style
+  resolution fields (ownstyle, registeredstyles, capturedmode,
+  traversedmode, interestbits) only for triangles. A line or point draw
+  fell into the bucket of an equal-looking draw of another object and
+  took its tag: the shown object's faces were admitted and its edges
+  counted in every view's bounds. Now compared for every type.
+- **Open, not fixed here:** in a portrait cell the backend frame (and
+  `getPointOnViewport`) places objects at x scaled by the aspect
+  relative to the Coin ray pick. The test locates picks by a blind
+  sweep and pixels by projection for that reason.
+
+**Verified** by `tests/gui/per-view-visibility.py`
+(`GuiPerViewVisibility_tests_run`), two views of one document, 27
+checks: picks, scene bounds and backend frame pixels per view, bare
+entries gated, path entries through an App::Part and a Link, a bare
+show of a hidden object drawn in one view only, and the other view
+untouched throughout.
+
 ## 5. Evaluated and not taken: one capture root to catch everything
 
 Stage 1b left an obvious-looking follow-on: if what Coin still draws is

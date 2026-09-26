@@ -237,6 +237,25 @@ bool BGFXRenderer::Private::render(const QColor &col,
         view->ovTable = nullptr;
         view->ovInfo = nullptr;
     }
+    // The sub-view's own object visibility, latched the same way.
+    const Render::VisibilityOverrideTable *vist =
+        subCtx.active ? subCtx.visibilities : mainVisibilities;
+    if (vist && !vist->entries.empty()) {
+        auto &c = view->subVisCaches[subCtx.active ? subCtx.id : 0];
+        if (c.tableVersion != vist->version
+                || c.infoVersion != objectInfoStamp) {
+            c.map.clear();
+            c.tableVersion = vist->version;
+            c.infoVersion = objectInfoStamp;
+        }
+        view->visCache = &c;
+        view->visTable = vist;
+        view->visInfo = &objectInfo;
+    } else {
+        view->visCache = nullptr;
+        view->visTable = nullptr;
+        view->visInfo = nullptr;
+    }
     // Latched whether or not there is an override table: since 5.11 the
     // sub-view's own STYLE can resolve through the interest list too,
     // and lookupStyleOverride guards on ovCache/ovTable of its own.
@@ -1448,9 +1467,12 @@ bool BGFXRenderer::Private::render(const QColor &col,
                 hiddenKeys.insert(draw.objectKey);
         }
     }
-    auto isHidden = [this](const Render::DrawCall &d) {
-        return d.objectKey && !hiddenKeys.empty()
-            && hiddenKeys.count(d.objectKey);
+    // ...and so is a draw this sub-view hides of its own accord (the
+    // view's ObjectVisibilities): it is not in this view at all.
+    auto isHidden = [this, view](const Render::DrawCall &d) {
+        return (d.objectKey && !hiddenKeys.empty()
+                && hiddenKeys.count(d.objectKey))
+            || view->visibilityHides(d);
     };
 
     // The scene light of the feed (the Shadow draw style's light, or
@@ -7326,7 +7348,8 @@ void BGFXRenderer::Private::submitSectionCaps(BGFXView *view, const float *projM
     for (const auto &draw : scene) {
         if (eligible(draw)
                 && !(draw.objectKey && !hiddenKeys.empty()
-                     && hiddenKeys.count(draw.objectKey)))
+                     && hiddenKeys.count(draw.objectKey))
+                && !view->visibilityHides(draw))
             items[isTransp(draw) ? 1 : 0].push_back(&draw);
     }
     for (const auto &sel : selections) {

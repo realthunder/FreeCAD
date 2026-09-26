@@ -85,6 +85,8 @@ public:
                                   bool fromSuperset,
                                   const StyleOverrideTable *overrides,
                                   uint16_t styleMode = 0) override;
+    virtual void setMainViewVisibility(
+            const VisibilityOverrideTable *table) override;
     virtual void setCaptureInterest(
             const CaptureInterestTable *table) override;
     virtual void prepareSubViews(const QColor &bg,
