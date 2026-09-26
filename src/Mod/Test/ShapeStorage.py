@@ -508,6 +508,38 @@ class ShapeBlobCases(ShapeTestCase):
         # And they are still where they belong.
         self.assertPlacement(reopened.getObject("Box001"), self.placement(50, 0, 0))
 
+    def testTwoFilesWithTheSameGeometryShareItsParse(self):
+        """Two files holding the same bytes have two blobs; with shape values
+        frozen, the second finds the first's parse by the content hash and
+        the two documents share one TShape (docs/TransactionLog.md sec 27.25
+        item 4). Not frozen, each file parses its own."""
+        part = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Part")
+        had = "ImmutableShapeValues" in part.GetBools()
+        kept = part.GetBool("ImmutableShapeValues", True)
+        doc = self.newDocument()
+        self.box(doc, "Box")
+        doc.recompute()
+        project = self.projectPath()
+        doc.saveAs(project)
+        FreeCAD.closeDocument(doc.Name)
+        copies = []
+        for name in ("copy1.FCStd", "copy2.FCStd"):
+            copies.append(os.path.join(self.tmp, name))
+            shutil.copyfile(project, copies[-1])
+        try:
+            part.SetBool("ImmutableShapeValues", True)
+            first = self.openDocument(project).getObject("Box").Shape
+            second = self.openDocument(copies[0]).getObject("Box").Shape
+            self.assertTrue(first.isPartner(second), "two files, same bytes, two TShapes")
+            part.SetBool("ImmutableShapeValues", False)
+            third = self.openDocument(copies[1]).getObject("Box").Shape
+            self.assertFalse(first.isPartner(third))
+        finally:
+            if had:
+                part.SetBool("ImmutableShapeValues", kept)
+            else:
+                part.RemBool("ImmutableShapeValues")
+
     def testUnchangedGeometryIsNotRewritten(self):
         doc = self.newDocument()
         self.box(doc, "Box")

@@ -227,8 +227,13 @@ struct ParsedShape
  * and it is why equal-but-unshared duplicates cost one parse and one
  * tessellation instead of N (docs/SharedShapeStorage.md sec 12.5).
  *
- * Keyed on the blob rather than on its hash: a blob belongs to one document,
- * and sharing a TShape across documents is not this cache's decision to make.
+ * Keyed on the blob. A blob is one blob manager's, and a manager is a file's
+ * (docs/TransactionLog.md sec 27.10): every document of one file -- its own,
+ * its versions, its branches -- shares it, and so shares the parse. Two
+ * files holding the same bytes have two blobs; with shape values frozen
+ * (PartParams ImmutableShapeValues, sec 23.13) nothing can change a TShape
+ * in place, so the second finds the first's parse by the content hash
+ * (sec 27.25 item 4). With them not frozen, each file parses its own.
  * The weak handle is what says an entry has outlived its content.
  */
 class ShapeParseCache
@@ -246,13 +251,27 @@ public:
      * erasure of this entry -- which the sweep only does once the blob has
      * expired, i.e. once the caller has stopped holding it.
      */
-    const ParsedShape* get(const App::FileBlobHandle& blob) const
+    const ParsedShape* get(const App::FileBlobHandle& blob)
     {
         std::lock_guard<std::mutex> guard(_mutex);
         auto found = _entries.find(blob.get());
-        if (found == _entries.end() || found->second.blob.expired())
+        if (found != _entries.end() && !found->second.blob.expired())
+            return &found->second.parsed;
+        if (!PartParams::getImmutableShapeValues())
             return nullptr;
-        return &found->second.parsed;
+        // Another file's parse of the same bytes: taken under this blob too,
+        // so it lives as long as either holds it.
+        auto byHash = _byHash.find(blob->hash());
+        if (byHash == _byHash.end())
+            return nullptr;
+        auto other = _entries.find(byHash->second);
+        if (other == _entries.end() || other->second.blob.expired())
+            return nullptr;
+        ParsedShape shared = other->second.parsed;
+        Entry& entry = _entries[blob.get()];
+        entry.blob = blob;
+        entry.parsed = std::move(shared);
+        return &entry.parsed;
     }
 
     const ParsedShape* put(const App::FileBlobHandle& blob, ParsedShape parsed)
@@ -265,11 +284,17 @@ public:
             for (auto it = _entries.begin(); it != _entries.end();) {
                 it = it->second.blob.expired() ? _entries.erase(it) : std::next(it);
             }
+            _byHash.clear();
+            for (auto& kv : _entries) {
+                if (auto live = kv.second.blob.lock())
+                    _byHash[live->hash()] = kv.first;
+            }
             _sweepAt = std::max<std::size_t>(64, _entries.size() * 2);
         }
         Entry& entry = _entries[blob.get()];
         entry.blob = blob;
         entry.parsed = std::move(parsed);
+        _byHash[blob->hash()] = blob.get();
         return &entry.parsed;
     }
 
@@ -281,6 +306,8 @@ private:
     };
     mutable std::mutex _mutex;
     std::unordered_map<const App::FileBlob*, Entry> _entries;
+    /// Content hash -> a blob whose parse is in _entries (sec 27.25 item 4).
+    std::unordered_map<std::string, const App::FileBlob*> _byHash;
     std::size_t _sweepAt {64};
 };
 

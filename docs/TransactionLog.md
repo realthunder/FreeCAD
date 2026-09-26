@@ -5823,3 +5823,22 @@ this work.
 
 Gates: Python 2926 OK; ctest 842/842; recovery 15, branch 27, version 18,
 pin 28, frozen 16 PASS.
+
+### 27.31 27.25 item 4 as built: one parse for the same bytes in two files (2026-09-26)
+
+`ShapeParseCache` (`src/Mod/Part/App/PropertyTopoShape.cpp`) keeps a second
+index, content hash -> a blob whose parse it holds. `get()` misses by blob
+object, then, when `PartParams ImmutableShapeValues` is on, finds another
+file's parse of the same bytes by its hash and enters it under this blob
+too -- so it lives while either file holds it. With shape values not
+frozen nothing changes: a TShape could then be changed in place, and each
+file parses its own. The sweep rebuilds the hash index from the entries it
+keeps. The stale comment is rewritten: a blob belongs to a file's history,
+shared by all of the file's documents (27.10), not to one document.
+
+Test: `ShapeStorage.ShapeBlobCases.testTwoFilesWithTheSameGeometryShareItsParse`
+-- a file and a byte copy of it, opened together, share one TShape with the
+freeze on; a second copy opened with it off does not.
+
+Gates: Python 2927 OK; ctest 842/842; recovery 15, branch 27, version 18,
+pin 28, frozen 16 PASS.
