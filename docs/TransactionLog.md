@@ -5238,3 +5238,34 @@ files should get the same offer when the file's own document is open is
 a separate choice: (a) there too, or 27.18's rule stays for them. Either
 way the offer could carry the same Ask / always-restore / always-save
 preference as Q5, so a user who wants 27.18's behaviour can have it.
+
+**Q3 restated (same day).** The user asked whether saving V3 changes
+anything in D, since a version is immutable. It does not: v3 is a row
+that never changes, L goes on showing v3, and D in memory is untouched.
+The only thing the save writes is the *file*, `Foo.FCStd`, which is also
+D's file. So Q3 is only "which of the two decides what the file holds on
+disk" -- 27.18's question, which for a self-pin comes up every time
+because D is always open. Saving an unedited V3 over the file means "make
+the file v3 again", which is what a restore into D does, undoably.
+
+**Found while checking: a pinned version document takes edits, and the
+pin shows them.** Probe (FreeCADCmd, a pin to another file): pin a link
+to v1, then set `Integer = 99` on the object in the version document. The
+edit is accepted (27.7: the first change makes it a branch document on
+`<branch>@v1`), recompute runs, and the link -- still pinned to v1 --
+shows 99. The version is immutable; the version *document* is not, and
+the pin follows the document. 27.14 says a pin never takes a branch
+document, but a version document becomes one under the pin. This holds
+for every pin, not only self-pins. Two ways to close it:
+
+- **(i)** a version document that a pin shows refuses edits;
+  editing that version means opening it again, which gives a document
+  of its own;
+- **(ii)** ruling 3 stands (the version document may be edited, on its
+  implicit branch), but at its first change it stops being what the
+  pins show: the pinned links re-resolve to a fresh, unedited document
+  of the same version. 27.12's "one version, opened once" still holds,
+  since the edited document is a branch document from then on.
+
+Proposed: (ii). It keeps ruling 3 and makes a pin mean the version
+itself.
