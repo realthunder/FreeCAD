@@ -1079,6 +1079,10 @@ TEST_F(SketchObjectTest, groupQueriesFollowConstraintChanges)  // NOLINT
     EXPECT_TRUE(getObject()->isInGroup(ids[1], false));
     EXPECT_FALSE(getObject()->isGroupHandle(ids[1]));
     EXPECT_FALSE(getObject()->isInGroup(ids[3], true));
+    EXPECT_EQ(getObject()->getGroupHandleIfInGroup(ids[1]), ids[0]);
+    EXPECT_EQ(getObject()->getGroupHandleIfInGroup(ids[2]), ids[0]);
+    EXPECT_EQ(getObject()->getGroupHandleIfInGroup(ids[0]), ids[0]);
+    EXPECT_EQ(getObject()->getGroupHandleIfInGroup(ids[3]), ids[3]);
     const auto& constraints = getObject()->Constraints.getValues();
     EXPECT_FALSE(getObject()->isConstraintActiveInSketch(constraints[1]));
     EXPECT_TRUE(getObject()->isConstraintActiveInSketch(constraints[2]));
@@ -1090,6 +1094,7 @@ TEST_F(SketchObjectTest, groupQueriesFollowConstraintChanges)  // NOLINT
     // Assert
     EXPECT_FALSE(getObject()->isGroupHandle(ids[0]));
     EXPECT_FALSE(getObject()->isInGroup(ids[1], true));
+    EXPECT_EQ(getObject()->getGroupHandleIfInGroup(ids[1]), ids[1]);
     for (const auto* constr : getObject()->Constraints.getValues()) {
         EXPECT_TRUE(getObject()->isConstraintActiveInSketch(constr));
     }

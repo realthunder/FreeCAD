@@ -1107,11 +1107,12 @@ private:
     /// Who is in a Group or Text: built on the first question, dropped when
     /// Constraints change. Without it isConstraintActiveInSketch() scanned
     /// every constraint for each element of each constraint it was asked
-    /// about, and the view asks about all of them on every redraw.
+    /// about, and the view asks about all of them on every redraw -- and
+    /// getGroupHandleIfInGroup() did the same for every curve.
     struct GroupIndex
     {
-        std::set<int> members;  // the elements after the handle
-        std::set<int> handles;  // the construction line first in each
+        std::map<int, int> members;  // the elements after the handle, to their handle
+        std::set<int> handles;       // the construction line first in each
     };
     mutable std::unique_ptr<GroupIndex> groupIndex;
     const GroupIndex& getGroupIndex() const;

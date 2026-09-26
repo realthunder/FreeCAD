@@ -845,9 +845,12 @@ const SketchObject::GroupIndex& SketchObject::getGroupIndex() const
         auto index = std::make_unique<GroupIndex>();
         for (const auto& constr : Constraints.getValues()) {
             if (constr->Type == Group || constr->Type == Text) {
-                // First is the group construction line.
-                for (int i = 0; constr->hasElement(i); ++i) {
-                    (i == 0 ? index->handles : index->members).insert(constr->getGeoId(i));
+                // First is the group construction line. A member of two
+                // groups answers with the first, as the scan this replaces did.
+                int handle = constr->getGeoId(0);
+                index->handles.insert(handle);
+                for (int i = 1; constr->hasElement(i); ++i) {
+                    index->members.emplace(constr->getGeoId(i), handle);
                 }
             }
         }
@@ -870,23 +873,9 @@ bool SketchObject::isGroupHandle(int geoId) const
 
 int SketchObject::getGroupHandleIfInGroup(int geoId) const
 {
-    const std::vector<Sketcher::Constraint*>& vals = Constraints.getValues();
-
-    for (const auto& constr : vals) {
-        if (constr->Type == Group || constr->Type == Text) {
-            // First is the group construction line.
-            int groupHandleGeoId = GeoEnum::GeoUndef;
-            for (int i = 0; constr->hasElement(i); ++i) {
-                if (i == 0) {
-                    groupHandleGeoId = constr->getGeoId(i);
-                }
-                else if (constr->getGeoId(i) == geoId) {
-                    return groupHandleGeoId;
-                }
-            }
-        }
-    }
-    return geoId;
+    const GroupIndex& index = getGroupIndex();
+    auto it = index.members.find(geoId);
+    return it == index.members.end() ? geoId : it->second;
 }
 
 std::set<int> SketchObject::getGroupGeometries(int handleGeoId) const
