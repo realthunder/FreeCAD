@@ -604,6 +604,7 @@ void Document::_trimHotWindow(std::list<Transaction*>& stack, std::map<int, Tran
 
 bool Document::undoLogged(int64_t seq)
 {
+    OperationScope scope;   // sec 27.38
     // docs/TransactionLog.md sec 24.4: a new transaction applying row
     // `seq` reversed, refused when anything since changed what it touched.
     if (isPerformingTransaction() || d->committing)
@@ -637,6 +638,7 @@ bool Document::undoLogged(int64_t seq)
 
 bool Document::undo(int id)
 {
+    OperationScope scope;   // sec 27.38
     if (d->iUndoMode) {
         if(id) {
             auto it = mUndoMap.find(id);
@@ -691,6 +693,7 @@ bool Document::undo(int id)
 
 bool Document::redo(int id)
 {
+    OperationScope scope;   // sec 27.38
     if (d->iUndoMode) {
         if(id) {
             auto it = mRedoMap.find(id);
@@ -1055,6 +1058,7 @@ void Document::_clearRedos()
 }
 
 void Document::commitTransaction() {
+    OperationScope scope;   // sec 27.38
     if(isPerformingTransaction() || d->committing) {
         if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG))
             FC_WARN("Cannot commit transaction while transacting");
@@ -1129,6 +1133,7 @@ void Document::_commitTransaction(bool notify)
 }
 
 void Document::abortTransaction() {
+    OperationScope scope;   // sec 27.38
     if(isPerformingTransaction() || d->committing) {
         if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG))
             FC_WARN("Cannot abort transaction while transacting");
@@ -1240,6 +1245,14 @@ void Document::clearDocument()
 
 void Document::clearUndos()
 {
+    OperationScope scope;   // sec 27.38
+    // Nothing to clear: a document opened while another applies a
+    // transaction (Transaction::isApplying() is process-wide) -- a pinned
+    // version reopened by the undo of an unpin (sec 27.38) -- is not
+    // transacting itself.
+    if (!d->activeUndoTransaction && mUndoTransactions.empty() && mRedoTransactions.empty()
+            && mUndoMap.empty())
+        return;
     if(isPerformingTransaction() || d->committing) {
         FC_ERR("Cannot clear undos while transacting");
         return;
@@ -5114,6 +5127,7 @@ void Document::_rebuildUndoFromLog(int64_t after)
 
 bool Document::restoreVersion(int64_t num)
 {
+    OperationScope scope;   // sec 27.38
     // docs/TransactionLog.md sec 24.5: a restore to version N is one
     // forward transaction that makes the document what N was -- undoable,
     // logged, and the document never reloaded.
@@ -5457,6 +5471,7 @@ int64_t Document::saveVersionAsFile()
 
 int64_t Document::pinLink(PropertyXLink& link, int64_t version)
 {
+    OperationScope scope;   // sec 27.38
     // docs/TransactionLog.md sec 16.5, 27.6 Q3, 27.7.
     auto owner = Base::freecad_dynamic_cast<DocumentObject>(link.getContainer());
     if (!owner || !owner->isAttachedToDocument())
@@ -6330,6 +6345,7 @@ int64_t Document::createBranch(const std::string& name, int64_t version, int64_t
 
 bool Document::switchBranch(const std::string& name)
 {
+    OperationScope scope;   // sec 27.38
     // docs/TransactionLog.md sec 17.1, 26: the document becomes the head of
     // another branch, in place; not an undo step (26.4) -- each branch has
     // its own steps, since this document was opened.
@@ -6422,6 +6438,7 @@ bool Document::renameBranch(const std::string& name, const std::string& newName)
 
 size_t Document::trimBranch(const std::string& name, int64_t version)
 {
+    OperationScope scope;   // sec 27.38
     // docs/TransactionLog.md sec 16.7, "trim a branch".
     TransactionLog* log = getTransactionLog();
     if (!log)
@@ -6495,6 +6512,7 @@ size_t Document::trimBranch(const std::string& name, int64_t version)
 
 size_t Document::deleteBranch(const std::string& name)
 {
+    OperationScope scope;   // sec 27.38
     // docs/TransactionLog.md sec 16.7, "delete a branch".
     TransactionLog* log = getTransactionLog();
     if (!log)
@@ -7566,6 +7584,7 @@ bool Document::isAnyRecomputing()
 
 int Document::recompute(const std::vector<App::DocumentObject*> &objs, bool force, bool *hasError, int options)
 {
+    OperationScope operation;   // sec 27.38
     RecomputeCounter counter;
     // A recompute is an invocation of its own: writes made by execute()
     // with no transaction active group under one implicit transaction
@@ -8427,6 +8446,7 @@ void Document::_addObject(DocumentObject* pcObject, const char* pObjectName)
 /// Remove an object out of the document
 void Document::removeObject(const char* sName)
 {
+    OperationScope scope;   // sec 27.38
     // Creating or deleting an object is a change this document may not take
     // while it is still filling itself in (Document::UserEditGuard). Neither
     // goes through DocumentObject::touch(), so each is asked here -- which

@@ -500,6 +500,9 @@ Application::Application(bool GUIenabled)
         // the sandbox guest's FreeCADGui reaches the host through the
         // gui.* bridge ops (docs/Sandbox.md 7.9)
         SandboxGui::registerOps();
+        // A released pinned version is the Gui's: it asks, and closes on
+        // its event loop (Gui::Document::slotPinsReleased, sec 27.30).
+        App::GetApplication().setReleasedVersionsHandled(true);
         //NOLINTBEGIN
         App::GetApplication().signalNewDocument.connect(
             std::bind(&Gui::Application::slotNewDocument, this, sp::_1, sp::_2));

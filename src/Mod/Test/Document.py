@@ -3003,6 +3003,97 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertIsNone(link.getLinkPin("LinkedObject"))
         self.assertEqual(link.LinkedObject.Document.FileName, partPath)
 
+    def testReleasedPinnedVersionClosesHeadless(self):
+        # Sec 27.30, 27.38: with ClosePinnedVersion at close, a version
+        # opened for pins is closed once the operation that let go of its
+        # last pin has ended -- here, with no Gui, as in the Gui.
+        part = self.track(FreeCAD.newDocument("RelPart"))
+        part.UndoMode = 1
+        part.openTransaction("create")
+        target = part.addObject("App::FeatureTest", "Obj")
+        part.commitTransaction()
+        partPath = os.path.join(self.dir, "relpart.FCStd")
+        part.saveAs(partPath)
+
+        asm = self.track(FreeCAD.newDocument("RelAsm"))
+        asm.UndoMode = 1
+        asm.openTransaction("links")
+        link = asm.addObject("App::Link", "L")
+        link.LinkedObject = target
+        other = asm.addObject("App::Link", "M")
+        other.LinkedObject = target
+        asm.commitTransaction()
+        asm.saveAs(os.path.join(self.dir, "relasm.FCStd"))
+
+        def frozenName():
+            return link.LinkedObject.Document.Name
+
+        previous = self.param.GetInt("ClosePinnedVersion", 0)
+        self.param.SetInt("ClosePinnedVersion", 1)
+        try:
+            asm.openTransaction("pin")
+            link.pinLink("LinkedObject")
+            asm.commitTransaction()
+            name = frozenName()
+            self.assertIn(name, FreeCAD.listDocuments())
+
+            # Unpinned: closed as soon as the unpin has returned.
+            asm.openTransaction("unpin")
+            link.unpinLink("LinkedObject")
+            asm.commitTransaction()
+            self.assertNotIn(name, FreeCAD.listDocuments())
+            # Undone: pinned again, and the version opened again for it.
+            asm.undo()
+            name = frozenName()
+            self.assertIn(name, FreeCAD.listDocuments())
+            # By file: the undo's copy named the closed document.
+            self.assertTrue(FreeCAD.getDocument(name).FileName.startswith(partPath + "@"))
+
+            # A second pin keeps it open when the first goes.
+            asm.openTransaction("pin other")
+            other.pinLink("LinkedObject", link.getLinkPin("LinkedObject")[0])
+            asm.commitTransaction()
+            self.assertEqual(other.LinkedObject.Document.Name, name)
+            asm.openTransaction("unpin one")
+            link.unpinLink("LinkedObject")
+            asm.commitTransaction()
+            self.assertIn(name, FreeCAD.listDocuments())
+
+            # The last pinning link deleted: closed.
+            asm.openTransaction("delete")
+            asm.removeObject("M")
+            asm.commitTransaction()
+            self.assertNotIn(name, FreeCAD.listDocuments())
+
+            # The linking document closed: closed with it.
+            asm.openTransaction("pin again")
+            link.pinLink("LinkedObject")
+            asm.commitTransaction()
+            name = frozenName()
+            FreeCAD.closeDocument(asm.Name)
+            self.assertNotIn(name, FreeCAD.listDocuments())
+            self.assertIn(part.Name, FreeCAD.listDocuments())
+        finally:
+            self.param.SetInt("ClosePinnedVersion", 0)
+
+        try:
+            self.askKeeps()
+        finally:
+            self.param.SetInt("ClosePinnedVersion", previous)
+
+    def askKeeps(self):
+        # Ask, with no one to ask, keeps it; so does an explicit drain.
+        asm = self.track(FreeCAD.openDocument(os.path.join(self.dir, "relasm.FCStd")))
+        asm.UndoMode = 1
+        link = asm.getObject("L")
+        link.pinLink("LinkedObject")
+        name = link.LinkedObject.Document.Name
+        self.track(FreeCAD.getDocument(name))
+        link.unpinLink("LinkedObject")
+        self.assertIn(name, FreeCAD.listDocuments())
+        self.assertEqual(FreeCAD.closeReleasedVersions(), 0)
+        self.assertIn(name, FreeCAD.listDocuments())
+
     def testPinnedVersionIsFrozen(self):
         # Sec 27.22-27.24: what a pin shows is the version itself -- frozen,
         # every change refused -- and the same version opens a second time,

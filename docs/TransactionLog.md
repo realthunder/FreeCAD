@@ -6122,3 +6122,56 @@ Each drain looks again (a later step may have pinned it again), and closes
 only with the preference at 1; Ask stays keep, headless. A Python
 `FreeCAD.closeReleasedVersions()` would let a script drain at a point of its
 own. Waiting on the user.
+
+### 27.39 Ruling and as built: a released pinned version closes with no Gui (2026-09-27)
+
+**Ruling (user):** a frozen version no link pins is safe to close -- the
+only question is where. Close it once the operation that released it has
+ended, if it is still unpinned. The 27.30 deviation (no Gui, nothing
+closes) is withdrawn.
+
+**As built.** `App::OperationScope` marks one App operation that may let go
+of a pin; `Application` counts how deep they nest. `DocInfo::deinit` notes
+the released version (`Application::noteReleasedVersion`) as well as
+emitting `signalPinsReleased`; when the outermost scope ends,
+`Application::closeReleasedVersions()` looks at each again -- still frozen,
+opened for pins, no link into it (`PropertyXLink::getDocumentInList`) --
+and closes it with `ClosePinnedVersion` at 1. At 0 (ask) and 2 (keep) it
+forgets them: with no one to ask, ask keeps. It does nothing while a
+document restores, recomputes, or all are closing, and loops, since a
+closed version may release the pins it held.
+
+Scopes: `Application::closeDocument`, `openDocuments`,
+`closeActiveTransaction`; `Document::commitTransaction`,
+`abortTransaction`, `undo`, `redo`, `undoLogged`, `clearUndos`,
+`removeObject`, `recompute`, `restoreVersion`, `switchBranch`,
+`trimBranch`, `deleteBranch`, `pinLink`; `PropertyXLink::setPin` and
+`setPyObject`. A release under none of them waits for the next scope to
+end, or `FreeCAD.closeReleasedVersions()`, which a script may call at a
+point of its own.
+
+The Gui keeps its own handling -- it asks, and closes on the event loop --
+and says so at start (`Application::setReleasedVersionsHandled(true)`), so
+the App stands aside there.
+
+**Found on the way: undo of an unpin lost the pin's document.** An undo
+copy of a link names the linked object by its document's name
+(`PropertyXLink::copyTo`) and dropped the file path. Once the pinned
+version had been closed -- by hand before today, by this rule now -- the
+undo's `Paste` warned "Document not found" and returned, after it had
+already restored the pin fields: the link showed the live file while
+`getLinkPin` reported the pin. The copy now keeps the file path, and
+`Paste` resolves by file when the named document is gone, which opens the
+version again. That open, inside the undo, then refused its own
+`clearUndos` (`Transaction::isApplying()` is process-wide); a document with
+nothing to clear now returns first.
+
+Test: Python `TransactionBranchCases.testReleasedPinnedVersionClosesHeadless`
+-- with close: an unpin closes it at once; the undo pins again and opens
+it again, by file; a second pin keeps it open when the first goes;
+deleting the last pinning link closes it; closing the linking document
+closes it, and not the file's own document. With ask: an unpin keeps it,
+and `closeReleasedVersions()` closes nothing.
+
+Gates: Python 2933 OK; ctest 842/842; recovery 15, branch 27, version 18,
+pin 28, frozen 16 PASS (the frozen check covers the Gui's prompt, unchanged).

@@ -28,6 +28,8 @@
 
 #include <deque>
 #include <list>
+#include <set>
+#include <string>
 #include <vector>
 
 #include <Base/Parameter.h>
@@ -185,6 +187,23 @@ public:
     bool isRestoring() const;
     /// Indicate the application is closing all document
     bool isClosingAll() const;
+    //@}
+
+    /** @name Pinned versions no link pins any more (docs/TransactionLog.md sec 27.38) */
+    //@{
+    /** A frozen version opened for pins lost its last one (DocInfo::deinit).
+     * Noted, not closed: the caller is inside the code that let go. The
+     * outermost OperationScope to end closes it, if nothing handles it.
+     */
+    void noteReleasedVersion(const Document& doc);
+    /** Close the released versions nothing links to any more, when
+     * ClosePinnedVersion says close (1); with ask or keep, forget them.
+     * Does nothing inside an OperationScope. Returns how many it closed.
+     */
+    int closeReleasedVersions();
+    /// The Gui handles released versions itself: it asks, and closes on its
+    /// event loop (sec 27.30).
+    void setReleasedVersionsHandled(bool handled);
     //@}
 
     /** @name Application-wide trandaction setting */
@@ -619,6 +638,7 @@ private:
     static PyObject* sSaveDocumentAs    (PyObject *self,PyObject *args);
     static PyObject* sNewDocument       (PyObject *self,PyObject *args, PyObject *kwd);
     static PyObject* sCloseDocument     (PyObject *self,PyObject *args);
+    static PyObject* sCloseReleasedVersions(PyObject *self,PyObject *args);
     static PyObject* sActiveDocument    (PyObject *self,PyObject *args);
     static PyObject* sSetActiveDocument (PyObject *self,PyObject *args);
     static PyObject* sGetDocument       (PyObject *self,PyObject *args);
@@ -706,6 +726,12 @@ private:
     bool _allowPartial{false};
     bool _isClosingAll{false};
 
+    int _operationDepth{0};
+    bool _closingReleased{false};
+    bool _releasedHandled{false};
+    std::set<std::string> _releasedVersions;
+    friend class OperationScope;
+
     // for estimate max link depth
     int _objCount{-1};
 
@@ -725,6 +751,22 @@ private:
 inline App::Application &GetApplication(){
     return *App::Application::_pcSingleton;
 }
+
+/** One App operation that may let go of a pin: a document closed or opened,
+ * a transaction committed or aborted, an undo or a redo, an object removed,
+ * a recompute, a pin set or cleared, a version restored, a branch changed.
+ * When the outermost one ends, the pinned versions released inside it and
+ * still unpinned are closed (Application::closeReleasedVersions(),
+ * docs/TransactionLog.md sec 27.38).
+ */
+class AppExport OperationScope
+{
+public:
+    OperationScope();
+    ~OperationScope();
+    OperationScope(const OperationScope&) = delete;
+    OperationScope& operator=(const OperationScope&) = delete;
+};
 
 } // namespace App
 

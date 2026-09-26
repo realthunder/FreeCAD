@@ -3757,8 +3757,12 @@ public:
         myPos = _DocInfoMap.end();
         myPath.clear();
         pcDoc = nullptr;
-        if (released)
+        if (released) {
+            // Closed later, when the operation that let go has ended (sec
+            // 27.38), unless the Gui handles the signal.
+            App::GetApplication().noteReleasedVersion(*released);
             released->signalPinsReleased(*released);
+        }
     }
 
     void init(DocInfoMap::iterator pos, const char *objName, PropertyXLink *l) {
@@ -4380,6 +4384,7 @@ const char *PropertyXLink::getObjectName() const {
 
 void PropertyXLink::setPin(int64_t version, const std::string& uuid)
 {
+    OperationScope scope;   // sec 27.38
     if (version < 0)
         version = 0;
     if (version == _pinVersion && (version == 0 || uuid == _pinUuid))
@@ -4958,7 +4963,10 @@ void PropertyXLink::copyTo(PropertyXLink &other,
         other.docName = linked->getDocument()->getName();
         other.objectName = linked->getNameInDocument();
         other.docInfo.reset();
-        other.filePath.clear();
+        // Kept for Paste(): the document may be gone by then -- a pinned
+        // version is closed when its last pin goes (docs/TransactionLog.md
+        // sec 27.38), and an undo that pins again must find it by file.
+        other.filePath = linked == _pcLink ? filePath : std::string();
     }else{
         other.objectName = objectName;
         other.docName.clear();
@@ -5026,8 +5034,8 @@ void PropertyXLink::Paste(const Property &from)
     _pinUuid = other._pinUuid;
     _liveBranch = other._liveBranch;
     _selfFile = other._selfFile;
-    if(!other.docName.empty()) {
-        auto doc = GetApplication().getDocument(other.docName.c_str());
+    auto doc = other.docName.empty() ? nullptr : GetApplication().getDocument(other.docName.c_str());
+    if(!other.docName.empty() && (doc || other.filePath.empty())) {
         if(!doc) {
             FC_WARN("Document '" << other.docName << "' not found");
             return;
@@ -5040,6 +5048,8 @@ void PropertyXLink::Paste(const Property &from)
         setValue(obj,std::vector<std::string>(other._SubList),
                  std::vector<ShadowSub>(other._ShadowSubList));
     } else
+        // By file: no document was named, or the one named is gone and the
+        // file it was a document of opens it again (a pinned version, 27.38).
         setValue(std::string(other.filePath),std::string(other.objectName),
                 std::vector<std::string>(other._SubList),
                 std::vector<ShadowSub>(other._ShadowSubList));
@@ -5153,6 +5163,7 @@ PyObject *PropertyXLink::getPyObject()
 }
 
 void PropertyXLink::setPyObject(PyObject *value) {
+    OperationScope scope;   // sec 27.38
     if(PySequence_Check(value)) {
         Py::Sequence seq(value);
         if(seq.size()!=2)

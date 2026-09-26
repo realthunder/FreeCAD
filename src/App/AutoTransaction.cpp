@@ -219,6 +219,7 @@ const char *Application::getActiveTransaction(int *id) const {
 }
 
 void Application::closeActiveTransaction(bool abort, int id) {
+    OperationScope scope;   // sec 27.38
     auto stillOpen = [this](int tid) {
         for (auto &v : DocMap) {
             if (v.second->hasPendingTransaction() && v.second->getTransactionID(true) == tid)

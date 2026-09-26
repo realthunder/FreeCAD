@@ -143,6 +143,11 @@ PyMethodDef Application::Methods[] = {
     {"closeDocument",  (PyCFunction) Application::sCloseDocument, METH_VARARGS,
      "closeDocument(string) -> None\n\n"
      "Close the document with a given name."},
+    {"closeReleasedVersions", (PyCFunction) Application::sCloseReleasedVersions, METH_VARARGS,
+     "closeReleasedVersions() -> int\n\n"
+     "Close the pinned versions no link pins any more, now, when the ClosePinnedVersion\n"
+     "preference says close. Also done when an operation that released one ends\n"
+     "(docs/TransactionLog.md sec 27.38). Returns how many were closed."},
     {"activeDocument", (PyCFunction) Application::sActiveDocument, METH_VARARGS,
      "activeDocument() -> object or None\n\n"
      "Return the active document or None if there is no one."},
@@ -399,6 +404,15 @@ PyObject* Application::sSetActiveDocument(PyObject * /*self*/, PyObject *args)
         GetApplication().setActiveDocument(pstr);
     } PY_CATCH
     Py_Return;
+}
+
+PyObject* Application::sCloseReleasedVersions(PyObject * /*self*/, PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    PY_TRY {
+        return Py::new_reference_to(Py::Long(GetApplication().closeReleasedVersions()));
+    } PY_CATCH;
 }
 
 PyObject* Application::sCloseDocument(PyObject * /*self*/, PyObject *args)

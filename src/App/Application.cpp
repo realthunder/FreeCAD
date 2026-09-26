@@ -575,6 +575,8 @@ bool Application::closeDocument(const char* name)
     if (pos == DocMap.end()) // no such document
         return false;
 
+    OperationScope scope;
+
     Base::ConsoleRefreshDisabler disabler;
 
     pos->second->commitImplicitTransaction();
@@ -701,6 +703,74 @@ bool Application::isClosingAll() const {
     return _isClosingAll;
 }
 
+void Application::noteReleasedVersion(const Document& doc)
+{
+    if (!_releasedHandled)
+        _releasedVersions.insert(doc.getName());
+}
+
+void Application::setReleasedVersionsHandled(bool handled)
+{
+    _releasedHandled = handled;
+    if (handled)
+        _releasedVersions.clear();
+}
+
+int Application::closeReleasedVersions()
+{
+    // Not inside an operation, and not inside itself: a close is an
+    // operation, and may release the pins the closed version held.
+    if (_releasedVersions.empty() || _operationDepth > 0 || _closingReleased
+            || isRestoring() || _isClosingAll || Document::isAnyRecomputing())
+        return 0;
+    if (DocumentParams::getClosePinnedVersion() != 1) {
+        // Ask keeps it, with no one to ask; keep keeps it.
+        _releasedVersions.clear();
+        return 0;
+    }
+    Base::FlagToggler<bool> flag(_closingReleased);
+    int closed = 0;
+    while (!_releasedVersions.empty()) {
+        std::set<std::string> names;
+        names.swap(_releasedVersions);
+        for (const auto& name : names) {
+            Document* doc = getDocument(name.c_str());
+            if (!doc || !doc->testStatus(Document::FrozenVersion)
+                    || !doc->testStatus(Document::OpenedForPin))
+                continue;
+            // Pinned again since, or linked to some other way.
+            auto in = PropertyXLink::getDocumentInList(doc);
+            if (!in[doc].empty())
+                continue;
+            FC_LOG("closing " << name << ": no link pins it any more");
+            if (closeDocument(name.c_str()))
+                ++closed;
+        }
+    }
+    return closed;
+}
+
+OperationScope::OperationScope()
+{
+    ++GetApplication()._operationDepth;
+}
+
+OperationScope::~OperationScope()
+{
+    auto& app = GetApplication();
+    if (--app._operationDepth == 0 && !app._releasedVersions.empty()) {
+        try {
+            app.closeReleasedVersions();
+        }
+        catch (Base::Exception& e) {
+            e.ReportException();
+        }
+        catch (...) {
+            FC_ERR("closing released versions failed");
+        }
+    }
+}
+
 struct DocTiming {
     FC_DURATION_DECLARE(d1);
     FC_DURATION_DECLARE(d2);
@@ -782,6 +852,7 @@ std::vector<Document*> Application::openDocuments(const std::vector<std::string>
                                                   std::vector<std::string> *errs,
                                                   bool createView)
 {
+    OperationScope scope;   // sec 27.38
     std::vector<Document*> res(filenames.size(), nullptr);
     if (filenames.empty())
         return res;
