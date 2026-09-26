@@ -75,6 +75,9 @@ FileHistory::~FileHistory()
     // open on Windows, and a segment of the blob store may be; nor may the
     // store's worker write one meanwhile.
     try {
+        // The log first: its worker writes into the store and the blob
+        // segments until its queue is empty.
+        _logCore.reset();
         if (_blobs)
             _blobs->shutdown();
         if (!_dir.empty())

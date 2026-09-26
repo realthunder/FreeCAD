@@ -34,6 +34,7 @@ namespace App
 
 class Document;
 class FileBlobManager;
+class TransactionLogCore;
 
 /** What the documents of one physical file share (docs/TransactionLog.md
  * sec 27.5, 27.7): one log per file, where it used to be one document per
@@ -47,9 +48,9 @@ class FileBlobManager;
  * path of the file once the file has one, so that another document opened
  * from the same file can find it (sec 27.8, 5.c).
  *
- * 5.b: the blob manager, the directory and the registry. The log's shared
- * half -- the store, its worker, the counters -- moves here in 5.c, when a
- * second document on one file first needs it.
+ * It holds the blob manager, the directory, the registry, and the shared
+ * half of the log (TransactionLogCore): the store, its worker, the
+ * counters. Each document's TransactionLog is a cursor on one branch.
  */
 class AppExport FileHistory: public std::enable_shared_from_this<FileHistory>
 {
@@ -76,6 +77,10 @@ public:
     /// The blob store if it was made, else null.
     FileBlobManager* blobsIfMade() const { return _blobs.get(); }
 
+    /// The shared half of the file's log (TransactionLog.cpp), made by the
+    /// first document's log and kept for as long as the history is.
+    std::shared_ptr<TransactionLogCore>& logCore() { return _logCore; }
+
     /// The canonical path the history is registered under, empty if none.
     const std::string& path() const { return _path; }
     /** Register under the file at `path` (an empty path unregisters). A
@@ -95,6 +100,7 @@ private:
     std::string _dir;
     std::string _path;
     std::unique_ptr<FileBlobManager> _blobs;
+    std::shared_ptr<TransactionLogCore> _logCore;
 };
 
 } // namespace App

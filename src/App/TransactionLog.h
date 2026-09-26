@@ -47,6 +47,7 @@ namespace App
 {
 
 class Document;
+class FileHistory;
 class Property;
 class PropertyContainer;
 class Transaction;
@@ -83,6 +84,8 @@ class Transaction;
  * every main-thread read goes through store(), which waits for the queue
  * to drain first.
  */
+class TransactionLogCore;
+
 class AppExport TransactionLog
 {
 public:
@@ -260,8 +263,8 @@ public:
     /// Document::snapshotToLog: like onSave, with a `snapshot` record.
     int64_t onSnapshot(const Captures& entries, const Blobs& blobs, int schema);
 
-    int64_t session() const { return _session; }
-    int64_t environment() const { return _environment; }
+    int64_t session() const;
+    int64_t environment() const;
 
     /// Serialise the live value behind every pending after ref. What a
     /// version snapshot does first; also what makes the log complete for
@@ -272,11 +275,11 @@ public:
     /// The store, for reading: what it returns waits for every queued
     /// write before each call, so the reference can be kept.
     TransactionStore& store();
-    const std::string& path() const { return _path; }
+    const std::string& path() const;
     /// Wait until every queued job has been written.
     void flush();
     /// Transactions numbered so far (the last seq, queued writes included).
-    int64_t lastSeq() const { return _nextSeq; }
+    int64_t lastSeq() const;
     /// The branch the document is on (sec 26) and its head: the seq of its
     /// newest row, queued writes included, which the next row follows.
     int64_t branch() const { return _branch; }
@@ -383,9 +386,13 @@ private:
 
     class Sink;
     friend class Sink;
+    class FlushingStore;
 
-    /// Open the store under the document's current transient directory.
+    /// Open the file's store in the history's directory (the core's), and
+    /// take the branch the store names.
     void openStore();
+    /// This cursor on the branch the store's meta names, at its head.
+    void pickBranch();
     /// A version from the file's entries plus the record (`save` or
     /// `restore`) that names it; what onSave and onRestore share.
     int64_t snapshot(const char* kind, const std::string& path, const Captures& entries,
@@ -450,25 +457,15 @@ private:
     /// head, which moves to it. Main thread.
     void number(LogTransaction& t);
 
-    /// The delta policy, read on the main thread as each job is posted so
-    /// the worker never touches the preferences.
-    std::atomic<long> _deltaHops {0};
-    std::atomic<long> _deltaRatio {0};
-    void run();
+    /// The file's history (docs/TransactionLog.md sec 27.7) and the shared
+    /// half of its log in it: the store, the worker, the counters, the
+    /// entities held (TransactionLogCore, in TransactionLog.cpp). What is
+    /// below is this document's cursor on one branch.
+    FileHistory& _history;
+    TransactionLogCore& _c;
 
     Document& _doc;
-    std::string _path;
-    std::string _envJson;
-    std::string _user;
-    std::string _host;
-    int64_t _environment {0};
-    int64_t _session {0};
-    std::unique_ptr<TransactionStore> _store;
-    class FlushingStore;
     std::unique_ptr<FlushingStore> _reader;
-    /// The last seq and version number handed out; main thread only.
-    int64_t _nextSeq {0};
-    int64_t _nextVersion {0};
     /// The current branch and its head (sec 26); main thread only.
     int64_t _branch {1};
     int64_t _head {0};
@@ -486,39 +483,9 @@ private:
     std::unordered_set<int64_t> _misses;
     std::unique_ptr<Sink> _sink;
     bool _verify {false};
-    /// Property id -> the hash of its newest value. Worker thread only.
-    std::unordered_map<int64_t, std::string> _hashById;
     /// What a capture on the worker needs of the document.
     CaptureConfig _config;
-    /// The blobs stored as `file` (sec 23.16), held so the document's
-    /// blob store keeps their files: every one a version or a value
-    /// names, until the collector drops it or a delta replaces it
-    /// (releaseBlobs). Worker thread, or a flushed caller.
-    std::unordered_map<std::string, FileBlobHandle> _blobs;
-    /// The blobs putSources() has read. Worker thread.
-    std::unordered_set<std::string> _sourced;
-
-    std::thread _worker;
-    std::mutex _mutex;
-    std::condition_variable _wake;
-    std::condition_variable _done;
-    std::deque<std::function<void()>> _queue;
-    bool _running {false};
-    /// Copies the worker has written, released on the main thread: a copy
-    /// may unregister itself from a list the main thread walks (an
-    /// expression engine's copy leaves PropertyExpressionContainer's), so
-    /// its last reference is never dropped on the worker (sec 25.4).
-    std::vector<std::shared_ptr<const Property>> _retired;
-    std::mutex _retiredMutex;
-    std::thread::id _mainThread {std::this_thread::get_id()};
-    void retire(std::shared_ptr<const Property>&& copy);
-    void releaseRetired();
-    /// Write what is queued, then stop and join the worker.
-    void stopWorker();
-    /// The logs alive in the process; `log` null stops every one's worker,
-    /// which an atexit handler does.
-    static void liveLogs(TransactionLog* log, bool add);
-    bool _stop {false};
+    friend class TransactionLogCore;
 };
 
 } // namespace App

@@ -4455,3 +4455,47 @@ cases that test it. The log's paths (`history/`, the recovery's
 With one document per file nothing changes, and the gates say so: Python
 2914 OK, ctest 835/835 (+1, `fileHistoryIsTheFilesAndLivesInItsDirectory`),
 the recovery GUI check 15 PASS, and the branch GUI check 27 PASS.
+
+### 27.11 5.c, first half: the log's core in the file history (2026-09-26)
+
+**The split.** `TransactionLogCore`, defined in `TransactionLog.cpp` and
+owned by the `FileHistory` (`logCore()`), is the half of the log the
+documents of a file share:
+
+- the store and its path;
+- the environment and the session;
+- the sequence and version counters;
+- the held blobs (`_blobs`, `_sourced`) and `_hashById`;
+- the delta policy;
+- the worker thread with its queue, and the retired copies;
+- `liveLogs`.
+
+`TransactionLog` is now one document's **cursor**: its branch and head,
+`_pending`, `_recorded`, `_misses`, the snapshot sink, and the capture
+configuration. It reaches the shared state through `_c`. The first
+document's log makes the core (`coreOf`), and the core opens the store in
+the history's directory. `~TransactionLog` flushes the jobs that name it
+and no longer stops the worker; `~FileHistory` destroys the core before it
+shuts the blob store down. File-level operations -- `adoptStore`,
+`adoptClosed`, `recover`, `closeStore`/`reopenStore` -- still go through a
+cursor, and act on the core.
+
+**Found on the way: a switch or a restore renamed the document.**
+`_applyVersion` copies every document property but those
+`keptOnRestore` lists, and `Label` was not on the list. The version is
+read into a scratch document called `VersionRestore`, and that name is
+what a branch switch or a restore to a version gave the live document.
+It predates this phase (26, 24.8). Nothing had noticed, because the
+branch check reads objects rather than the label. `Label` is kept now;
+`TransactionBranchCases.testSwitchAndRestoreKeepTheLabel` checks it. It
+showed up as the recovery check failing: the branch check exits with
+`os._exit`, and its leftover directory, whose log `meta` said
+`VersionRestore`, was listed by the next run's recovery dialog.
+
+**The GUI checks share `~/.cache/FreeCAD/Cache`**, where every crashed or
+`os._exit`-ed session leaves its directory, and the recovery dialog lists
+every log there. Run them with their own `XDG_CACHE_HOME`, one per check,
+or a leftover from an earlier run fails "it lists the crashed document".
+
+Gates: Python 2915 OK, ctest 835/835, recovery check 15 PASS, branch
+check 27 PASS.

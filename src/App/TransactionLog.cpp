@@ -142,6 +142,72 @@ ContainerInfo describe(Document& doc, const TransactionalObject* tobj, const std
 
 } // namespace
 
+/** The shared half of a file's log (docs/TransactionLog.md sec 27.7): what
+ * every document of the file writes through -- the store, the worker that
+ * writes it, the sequence and version counters, the entities held -- owned
+ * by the file's history, so it outlives any one document. Each document's
+ * TransactionLog is a cursor on one branch over it.
+ */
+class App::TransactionLogCore
+{
+public:
+    explicit TransactionLogCore(FileHistory& history);
+    ~TransactionLogCore();
+
+    /// Open the store in the history's directory; the counters follow it.
+    void openStore();
+
+    void run();
+    void post(std::function<void()> job);
+    void flush();
+    void stopWorker();
+    void retire(std::shared_ptr<const Property>&& copy);
+    void releaseRetired();
+    /// The logs alive in the process; `core` null stops every one's worker,
+    /// which an atexit handler does.
+    static void liveLogs(TransactionLogCore* core, bool add);
+
+    FileHistory& _history;
+    std::string _path;
+    std::string _envJson;
+    std::string _user;
+    std::string _host;
+    int64_t _environment {0};
+    int64_t _session {0};
+    std::unique_ptr<TransactionStore> _store;
+    /// The last seq and version number handed out; main thread only.
+    int64_t _nextSeq {0};
+    int64_t _nextVersion {0};
+    /// The delta policy, read on the main thread as each job is posted so
+    /// the worker never touches the preferences.
+    std::atomic<long> _deltaHops {0};
+    std::atomic<long> _deltaRatio {0};
+    /// Property id -> the hash of its newest value. Worker thread only.
+    std::unordered_map<int64_t, std::string> _hashById;
+    /// The blobs stored as `file` (sec 23.16), held so the blob store keeps
+    /// their files: every one a version or a value names, until the
+    /// collector drops it or a delta replaces it (releaseBlobs). Worker
+    /// thread, or a flushed caller.
+    std::unordered_map<std::string, FileBlobHandle> _blobs;
+    /// The blobs putSources() has read. Worker thread.
+    std::unordered_set<std::string> _sourced;
+
+    std::thread _worker;
+    std::mutex _mutex;
+    std::condition_variable _wake;
+    std::condition_variable _done;
+    std::deque<std::function<void()>> _queue;
+    bool _running {false};
+    bool _stop {false};
+    /// Copies the worker has written, released on the main thread: a copy
+    /// may unregister itself from a list the main thread walks (an
+    /// expression engine's copy leaves PropertyExpressionContainer's), so
+    /// its last reference is never dropped on the worker (sec 25.4).
+    std::vector<std::shared_ptr<const Property>> _retired;
+    std::mutex _retiredMutex;
+    std::thread::id _mainThread {std::this_thread::get_id()};
+};
+
 /** What store() hands out: every call waits for the worker's queue to
  * drain, then forwards. A reference kept across commits stays safe, which
  * a bare reference to the store would not be.
@@ -241,7 +307,7 @@ private:
     TransactionStore& inner()
     {
         _log.flush();
-        return *_log._store;
+        return *_log._c._store;
     }
     TransactionLog& _log;
 };
@@ -289,8 +355,8 @@ Base::PropertySink* TransactionLog::beginSnapshot(bool compose)
     return _sink.get();
 }
 
-TransactionLog::TransactionLog(Document& doc)
-    : _doc(doc)
+TransactionLogCore::TransactionLogCore(FileHistory& history)
+    : _history(history)
 {
     openStore();
 
@@ -331,30 +397,58 @@ TransactionLog::TransactionLog(Document& doc)
     }
     _environment = _store->environment(_envJson);
     _session = _store->openSession(_environment, _user, _host, now());
-    _config = CaptureConfig(doc);
     _worker = std::thread([this]() { run(); });
     liveLogs(this, true);
     FC_LOG("transaction log " << _path << " session " << _session);
 }
 
-void TransactionLog::liveLogs(TransactionLog* log, bool add)
+TransactionLogCore::~TransactionLogCore()
+{
+    liveLogs(this, false);
+    try {
+        stopWorker();
+        _blobs.clear();
+        if (_store && _session)
+            _store->closeSession(_session, now());
+    }
+    catch (...) {
+    }
+}
+
+void TransactionLogCore::openStore()
+{
+    std::string dir = _history.directory() + "/history";
+    Base::FileInfo(dir).createDirectories();
+    _path = dir + "/log.db";
+    _store = TransactionStore::openSQLite(_path);
+    _nextSeq = _store->lastSeq();
+    _nextVersion = _store->lastVersion();
+    // An adopted embedded copy may have had every version dropped by its
+    // retention; the counter it carries keeps the numbering monotonic.
+    const std::string counter = _store->getMeta("version_counter");
+    if (!counter.empty())
+        _nextVersion = std::max<int64_t>(_nextVersion, std::stoll(counter) - 1);
+}
+
+void TransactionLogCore::liveLogs(TransactionLogCore* core, bool add)
 {
     // A process may end with documents open -- a script, a test, a crash
-    // handler's exit -- and then no ~TransactionLog runs, while a worker
-    // exporting a shape meets OCCT's statics being destroyed (sec 25.6).
-    // atexit handlers run before the destructors of statics constructed
-    // earlier, which the libraries loaded before the first log's are.
+    // handler's exit -- and then no ~TransactionLogCore runs, while a
+    // worker exporting a shape meets OCCT's statics being destroyed (sec
+    // 25.6). atexit handlers run before the destructors of statics
+    // constructed earlier, which the libraries loaded before the first
+    // log's are.
     static std::mutex mutex;
-    static std::set<TransactionLog*> logs;
+    static std::set<TransactionLogCore*> logs;
     static bool registered = false;
-    std::vector<TransactionLog*> all;
+    std::vector<TransactionLogCore*> all;
     {
         std::lock_guard<std::mutex> lock(mutex);
-        if (log) {
+        if (core) {
             if (add)
-                logs.insert(log);
+                logs.insert(core);
             else
-                logs.erase(log);
+                logs.erase(core);
             if (add && !registered) {
                 registered = true;
                 std::atexit([]() { liveLogs(nullptr, false); });
@@ -367,7 +461,7 @@ void TransactionLog::liveLogs(TransactionLog* log, bool add)
         l->stopWorker();
 }
 
-void TransactionLog::stopWorker()
+void TransactionLogCore::stopWorker()
 {
     try {
         flush();
@@ -383,7 +477,7 @@ void TransactionLog::stopWorker()
         _worker.join();
 }
 
-void TransactionLog::run()
+void TransactionLogCore::run()
 {
     std::unique_lock<std::mutex> lock(_mutex);
     for (;;) {
@@ -415,13 +509,13 @@ void TransactionLog::run()
     }
 }
 
-void TransactionLog::retire(std::shared_ptr<const Property>&& copy)
+void TransactionLogCore::retire(std::shared_ptr<const Property>&& copy)
 {
     std::lock_guard<std::mutex> lock(_retiredMutex);
     _retired.push_back(std::move(copy));
 }
 
-void TransactionLog::releaseRetired()
+void TransactionLogCore::releaseRetired()
 {
     if (std::this_thread::get_id() != _mainThread)
         return;
@@ -432,7 +526,7 @@ void TransactionLog::releaseRetired()
     }
 }
 
-void TransactionLog::post(std::function<void()> job)
+void TransactionLogCore::post(std::function<void()> job)
 {
     releaseRetired();   // every post is the main thread's
     _deltaHops = DocumentParams::getTransactionLogDeltaHops();
@@ -446,7 +540,7 @@ void TransactionLog::post(std::function<void()> job)
     _wake.notify_one();
 }
 
-void TransactionLog::flush()
+void TransactionLogCore::flush()
 {
     {
         // Never wait for the worker holding the GIL: a value's Save may
@@ -460,6 +554,82 @@ void TransactionLog::flush()
     releaseRetired();
 }
 
+namespace {
+
+/// The core of `history`'s log, made on the first document's log.
+TransactionLogCore& coreOf(FileHistory& history)
+{
+    auto& core = history.logCore();
+    if (!core)
+        core = std::make_shared<TransactionLogCore>(history);
+    return *core;
+}
+
+} // namespace
+
+TransactionLog::TransactionLog(Document& doc)
+    : _history(doc.getFileHistory())
+    , _c(coreOf(_history))
+    , _doc(doc)
+{
+    if (_c._store->getMeta("document").empty())
+        _c._store->setMeta("document", _doc.Uid.getValueStr());
+    pickBranch();
+    _config = CaptureConfig(doc);
+}
+
+void TransactionLog::pickBranch()
+{
+    // The branch the document is on (sec 26), `main` unless the store says
+    // otherwise, and its head: what the next row follows.
+    _branch = 1;
+    const std::string current = _c._store->getMeta("branch");
+    if (!current.empty())
+        _branch = std::stoll(current);
+    LogBranch branch;
+    if (!_c._store->getBranch(_branch, branch)) {
+        _branch = 1;
+        _c._store->getBranch(_branch, branch);
+    }
+    _head = branch.head;
+}
+
+void TransactionLog::openStore()
+{
+    _c.openStore();
+    pickBranch();
+}
+
+void TransactionLog::post(std::function<void()> job)
+{
+    _c.post(std::move(job));
+}
+
+void TransactionLog::flush()
+{
+    _c.flush();
+}
+
+int64_t TransactionLog::session() const
+{
+    return _c._session;
+}
+
+int64_t TransactionLog::environment() const
+{
+    return _c._environment;
+}
+
+const std::string& TransactionLog::path() const
+{
+    return _c._path;
+}
+
+int64_t TransactionLog::lastSeq() const
+{
+    return _c._nextSeq;
+}
+
 TransactionStore& TransactionLog::store()
 {
     if (!_reader)
@@ -467,46 +637,17 @@ TransactionStore& TransactionLog::store()
     return *_reader;
 }
 
-void TransactionLog::openStore()
-{
-    std::string dir = _doc.getFileHistory().directory() + "/history";
-    Base::FileInfo(dir).createDirectories();
-    _path = dir + "/log.db";
-    _store = TransactionStore::openSQLite(_path);
-    if (_store->getMeta("document").empty())
-        _store->setMeta("document", _doc.Uid.getValueStr());
-    _nextSeq = _store->lastSeq();
-    _nextVersion = _store->lastVersion();
-    // The branch the document is on (sec 26), `main` unless the store says
-    // otherwise, and its head: what the next row follows.
-    _branch = 1;
-    const std::string current = _store->getMeta("branch");
-    if (!current.empty())
-        _branch = std::stoll(current);
-    LogBranch branch;
-    if (!_store->getBranch(_branch, branch)) {
-        _branch = 1;
-        _store->getBranch(_branch, branch);
-    }
-    _head = branch.head;
-    // An adopted embedded copy may have had every version dropped by its
-    // retention; the counter it carries keeps the numbering monotonic.
-    const std::string counter = _store->getMeta("version_counter");
-    if (!counter.empty())
-        _nextVersion = std::max<int64_t>(_nextVersion, std::stoll(counter) - 1);
-}
-
 TransactionLog::Embedded TransactionLog::embed(const std::string& saveDate)
 {
     flush();
     Embedded out;
     out.saveId = Base::Uuid::createUuid();
-    out.version = _nextVersion + 1;
+    out.version = _c._nextVersion + 1;
     const std::string dir = _doc.getFileHistory().directory() + "/history";
     Base::FileInfo(dir).createDirectories();
     out.path = dir + "/embed-" + out.saveId + ".db";
     Base::FileInfo(out.path).deleteFile();
-    _store->copyTo(out.path);
+    _c._store->copyTo(out.path);
     auto copy = TransactionStore::openSQLite(out.path);
     // Retention (16.4, 13.3): the named versions travel, the unnamed ones
     // and the cache tier do not; the ops do. Each branch's newest travels
@@ -558,8 +699,8 @@ void TransactionLog::noteIdentity()
     std::string label = _doc.Label.getValue();
     std::string file = _doc.FileName.getValue();
     post([this, label, file]() {
-        _store->setMeta("label", label);
-        _store->setMeta("file", file);
+        _c._store->setMeta("label", label);
+        _c._store->setMeta("file", file);
     });
 }
 
@@ -569,16 +710,16 @@ bool TransactionLog::recover(const std::string& oldDir, RecoverInfo& info)
     const std::string oldLog = oldDir + "/history/log.db";
     if (!Base::FileInfo(oldLog).exists())
         return false;
-    if (_nextSeq != 0 || _nextVersion != 0) {
+    if (_c._nextSeq != 0 || _c._nextVersion != 0) {
         FC_ERR("transaction log of " << _doc.getName() << " has history; not recovering "
                << oldDir);
         return false;
     }
-    if (_store && _session)
-        _store->closeSession(_session, now());
-    _store.reset();
+    if (_c._store && _c._session)
+        _c._store->closeSession(_c._session, now());
+    _c._store.reset();
     for (const char* suffix : {"", "-wal", "-shm"}) {
-        Base::FileInfo(_path + suffix).deleteFile();
+        Base::FileInfo(_c._path + suffix).deleteFile();
     }
     // The WAL moves with the database: the rows the crashed process
     // committed and SQLite had not yet written back are in it. The shared
@@ -588,14 +729,14 @@ bool TransactionLog::recover(const std::string& oldDir, RecoverInfo& info)
         Base::FileInfo from(oldLog + suffix);
         if (!from.exists())
             continue;
-        if (!from.renameFile((_path + suffix).c_str()) && !from.copyTo((_path + suffix).c_str()))
+        if (!from.renameFile((_c._path + suffix).c_str()) && !from.copyTo((_c._path + suffix).c_str()))
             moved = false;
     }
     Base::FileInfo(oldLog + "-shm").deleteFile();
     if (!moved) {
         FC_ERR("cannot take over the log of " << oldDir);
         openStore();
-        _session = _store->openSession(_environment, _user, _host, now());
+        _c._session = _c._store->openSession(_c._environment, _c._user, _c._host, now());
         return false;
     }
 
@@ -616,12 +757,12 @@ bool TransactionLog::recover(const std::string& oldDir, RecoverInfo& info)
     manager.recoverStore();
 
     openStore();
-    _blobs.clear();
-    _sourced.clear();
+    _c._blobs.clear();
+    _c._sourced.clear();
     size_t missing = 0;
-    for (const auto& hash : _store->entitiesStoredAs("file")) {
+    for (const auto& hash : _c._store->entitiesStoredAs("file")) {
         if (auto blob = manager.recovered(hash))
-            _blobs[hash] = blob;
+            _c._blobs[hash] = blob;
         else
             ++missing;
     }
@@ -629,18 +770,18 @@ bool TransactionLog::recover(const std::string& oldDir, RecoverInfo& info)
         FC_WARN("recovery of " << _doc.getName() << ": " << missing
                 << " blob(s) the log names are not in the store left behind");
     const double closed = now();
-    for (const auto& session : _store->sessions()) {
+    for (const auto& session : _c._store->sessions()) {
         if (session.closed == 0) {
-            _store->closeSession(session.id, closed);
+            _c._store->closeSession(session.id, closed);
             info.crashedSessions.push_back(session.id);
         }
     }
-    info.label = _store->getMeta("label");
-    info.fileName = _store->getMeta("file");
-    _environment = _store->environment(_envJson);
-    _session = _store->openSession(_environment, _user, _host, now());
+    info.label = _c._store->getMeta("label");
+    info.fileName = _c._store->getMeta("file");
+    _c._environment = _c._store->environment(_c._envJson);
+    _c._session = _c._store->openSession(_c._environment, _c._user, _c._host, now());
     FC_LOG("transaction log of " << _doc.getName() << " recovered from " << oldDir << ": seq "
-           << _nextSeq << ", versions " << _nextVersion);
+           << _c._nextSeq << ", versions " << _c._nextVersion);
     return true;
 }
 
@@ -657,11 +798,11 @@ int64_t TransactionLog::record(const char* kind, const std::string& name,
     t.kind = kind;
     t.name = name;
     t.time = now();
-    t.session = _session;
+    t.session = _c._session;
     t.script = script;
     post([this, t]() mutable {
         std::vector<LogOp> none;
-        _store->append(t, none);
+        _c._store->append(t, none);
     });
     return t.seq;
 }
@@ -670,11 +811,11 @@ bool TransactionLog::setBranch(int64_t id)
 {
     flush();
     LogBranch branch;
-    if (!_store->getBranch(id, branch))
+    if (!_c._store->getBranch(id, branch))
         return false;
     _branch = id;
     _head = branch.head;
-    _store->setMeta("branch", std::to_string(id));
+    _c._store->setMeta("branch", std::to_string(id));
     return true;
 }
 
@@ -688,7 +829,7 @@ void TransactionLog::forgetLiveValues()
     _pending.clear();
     _recorded.clear();
     _misses.clear();
-    _hashById.clear();
+    _c._hashById.clear();
     TransactionCopyCache::dropOwner(this);
 }
 
@@ -700,17 +841,17 @@ void TransactionLog::forgetValue(const Property& prop)
 bool TransactionLog::adoptStore(const std::string& path)
 {
     flush();
-    if (_nextSeq != 0 || _nextVersion != 0) {
+    if (_c._nextSeq != 0 || _c._nextVersion != 0) {
         FC_WARN("transaction log of " << _doc.getName() << " has history; not adopting the embedded copy");
         return false;
     }
-    if (_store && _session)
-        _store->closeSession(_session, now());
-    _store.reset();
-    Base::FileInfo(_path).deleteFile();
-    Base::FileInfo(_path + "-wal").deleteFile();
-    Base::FileInfo(_path + "-shm").deleteFile();
-    if (!Base::FileInfo(path).copyTo(_path.c_str())) {
+    if (_c._store && _c._session)
+        _c._store->closeSession(_c._session, now());
+    _c._store.reset();
+    Base::FileInfo(_c._path).deleteFile();
+    Base::FileInfo(_c._path + "-wal").deleteFile();
+    Base::FileInfo(_c._path + "-shm").deleteFile();
+    if (!Base::FileInfo(path).copyTo(_c._path.c_str())) {
         FC_ERR("cannot adopt the embedded history of " << _doc.getName());
         openStore();
         return false;
@@ -718,21 +859,21 @@ bool TransactionLog::adoptStore(const std::string& path)
     openStore();
     // The copy's blobs came with the file, restored into the document's
     // store for the History property; the log holds them from here.
-    _blobs.clear();
-    _sourced.clear();
+    _c._blobs.clear();
+    _c._sourced.clear();
     auto& manager = _doc.getFileBlobManager();
-    for (const auto& hash : _store->entitiesStoredAs("file")) {
+    for (const auto& hash : _c._store->entitiesStoredAs("file")) {
         if (auto blob = manager.find(hash))
-            _blobs[hash] = blob;
+            _c._blobs[hash] = blob;
         else
             FC_WARN("embedded history of " << _doc.getName() << ": blob " << hash
                     << " is not in the document's store");
     }
-    _environment = _store->environment(_envJson);
-    _session = _store->openSession(_environment, _user, _host, now());
+    _c._environment = _c._store->environment(_c._envJson);
+    _c._session = _c._store->openSession(_c._environment, _c._user, _c._host, now());
     _adopted = true;
     FC_LOG("transaction log of " << _doc.getName() << " continues from the embedded copy: seq "
-           << _nextSeq << ", next version " << (_nextVersion + 1));
+           << _c._nextSeq << ", next version " << (_c._nextVersion + 1));
     return true;
 }
 
@@ -746,48 +887,48 @@ bool TransactionLog::adoptClosed(const std::string& path)
     if (!adoptStore(path))
         return false;
     const double closed = now();
-    std::string date = _store->getMeta("save_date");
+    std::string date = _c._store->getMeta("save_date");
     if (date.empty())
         date = std::to_string(static_cast<int64_t>(closed));
-    for (auto b : _store->branches()) {
+    for (auto b : _c._store->branches()) {
         if (b.name == "main") {
             std::string name = "main@" + date;
             LogBranch taken;
-            for (int i = 2; _store->findBranch(name, taken); ++i)
+            for (int i = 2; _c._store->findBranch(name, taken); ++i)
                 name = "main@" + date + "#" + std::to_string(i);
             b.name = name;
         }
         if (b.closed == 0)
             b.closed = closed;
-        _store->updateBranch(b);
+        _c._store->updateBranch(b);
     }
     // The copy's counter is the number the save that wrote the file took in
     // the store it came from; the file edited since is not that version, so
     // it numbers past it.
-    const std::string counter = _store->getMeta("version_counter");
+    const std::string counter = _c._store->getMeta("version_counter");
     if (!counter.empty())
-        _nextVersion = std::max<int64_t>(_nextVersion, std::stoll(counter));
+        _c._nextVersion = std::max<int64_t>(_c._nextVersion, std::stoll(counter));
     LogBranch fresh;
     fresh.name = "main";
-    fresh.fromVersion = _store->lastVersion();
+    fresh.fromVersion = _c._store->lastVersion();
     fresh.created = closed;
-    _store->addBranch(fresh);
+    _c._store->addBranch(fresh);
     return setBranch(fresh.id);
 }
 
 void TransactionLog::closeStore()
 {
     flush();
-    _store.reset();
+    _c._store.reset();
 }
 
 bool TransactionLog::reopenStore()
 {
-    if (_store)
+    if (_c._store)
         return true;
     try {
         openStore();
-        FC_LOG("transaction log moved to " << _path);
+        FC_LOG("transaction log moved to " << _c._path);
         return true;
     }
     catch (Base::Exception& e) {
@@ -798,13 +939,11 @@ bool TransactionLog::reopenStore()
 
 TransactionLog::~TransactionLog()
 {
-    liveLogs(this, false);
+    // The worker is the file's and goes on; this document's jobs, which
+    // name this cursor, are written before it goes.
     TransactionCopyCache::dropOwner(this);
     try {
-        stopWorker();
-        _blobs.clear();
-        if (_store && _session)
-            _store->closeSession(_session, now());
+        flush();
     }
     catch (...) {
     }
@@ -820,10 +959,10 @@ void TransactionLog::onRecompute(const std::vector<RecomputedObject>& objects, d
         t.kind = "recompute";
         t.name = "recompute";
         t.time = now();
-        t.session = _session;
+        t.session = _c._session;
         // The record, as JSON in the script column: environment, duration,
         // and per object its id, name, and error text if any.
-        std::string j = "{\"env\":" + std::to_string(_environment)
+        std::string j = "{\"env\":" + std::to_string(_c._environment)
                       + ",\"seconds\":" + std::to_string(seconds) + ",\"objects\":[";
         bool first = true;
         for (auto& o : objects) {
@@ -849,7 +988,7 @@ void TransactionLog::onRecompute(const std::vector<RecomputedObject>& objects, d
         t.script = j;
         post([this, t]() mutable {
             std::vector<LogOp> none;
-            _store->append(t, none);
+            _c._store->append(t, none);
         });
     }
     catch (Base::Exception& e) {
@@ -870,16 +1009,16 @@ bool TransactionLog::readRevert(int64_t seq, Revert& out)
 {
     flush();
     bool found = false;
-    for (const auto& t : _store->transactions(seq, 1))
+    for (const auto& t : _c._store->transactions(seq, 1))
         found = t.seq == seq;
     if (!found)
         return false;
-    out.ops = _store->ops(seq);
+    out.ops = _c._store->ops(seq);
     for (const auto& o : out.ops) {
         if (o.vbefore.empty() || out.values.count(o.vbefore))
             continue;
         LogEntity e;
-        if (!_store->getEntity(o.vbefore, e))
+        if (!_c._store->getEntity(o.vbefore, e))
             continue;
         for (const auto& r : e.refs) {
             if (r.role == "blob")
@@ -897,7 +1036,7 @@ bool TransactionLog::restoreBlob(const std::string& hash, const std::string& ext
     if (depth > 1024)
         return false;
     LogEntity e;
-    if (!_store->getEntity(hash, e) || e.kind != "blob")
+    if (!_c._store->getEntity(hash, e) || e.kind != "blob")
         return false;
     auto& manager = _doc.getFileBlobManager();
     FileBlobHandle blob = manager.find(hash);
@@ -932,7 +1071,7 @@ int64_t TransactionLog::onSnapshot(const Captures& entries, const Blobs& blobs, 
 int64_t TransactionLog::onRestore(const std::string& path, const Entries& entries,
                                   const Blobs& blobs, int schema)
 {
-    if (!_adopted && (_nextSeq != 0 || _nextVersion != 0)) {
+    if (!_adopted && (_c._nextSeq != 0 || _c._nextVersion != 0)) {
         // A store with history at restore is either an adopted embedded
         // copy, whose version the file now becomes, or a mistake.
         FC_WARN("transaction log of " << _doc.getName() << " is not empty at restore");
@@ -974,11 +1113,11 @@ int64_t TransactionLog::snapshot(const char* kind, const std::string& path,
         // before it -- the resolves above included, so the version's ops
         // are complete when it lands.
         LogVersion v;
-        v.num = ++_nextVersion;
+        v.num = ++_c._nextVersion;
         v.uuid = Base::Uuid::createUuid();
         v.seq = _head;
         v.branch = _branch;
-        v.env = _environment;
+        v.env = _c._environment;
         v.schema = schema;
         v.created = now();
 
@@ -987,7 +1126,7 @@ int64_t TransactionLog::snapshot(const char* kind, const std::string& path,
         t.kind = kind;
         t.name = kind;
         t.time = v.created;
-        t.session = _session;
+        t.session = _c._session;
 
         std::string escaped;
         for (char c : path) {
@@ -1006,8 +1145,8 @@ int64_t TransactionLog::snapshot(const char* kind, const std::string& path,
             // skeletons included. A blob's name is its referrer's
             // (`Box.Shape.brp`), so one property's files pair up too.
             std::map<std::string, std::string> previous;
-            if (const int64_t prev = _store->lastVersion()) {
-                for (const auto& e : _store->manifest(prev))
+            if (const int64_t prev = _c._store->lastVersion()) {
+                for (const auto& e : _c._store->manifest(prev))
                     previous[e.entry] = e.hash;
             }
             std::vector<LogManifestEntry> manifest;
@@ -1035,7 +1174,7 @@ int64_t TransactionLog::snapshot(const char* kind, const std::string& path,
                     manifest.push_back({b.first, putBlob(b.second), "entity"});
             }
             blobs.clear();   // the log holds what it keeps; the job lets go
-            _store->addVersion(v, manifest);
+            _c._store->addVersion(v, manifest);
             for (const auto& e : manifest) {
                 auto it = previous.find(e.entry);
                 if (it != previous.end() && it->second != e.hash)
@@ -1047,7 +1186,7 @@ int64_t TransactionLog::snapshot(const char* kind, const std::string& path,
                      + "\",\"blobs\":" + std::to_string(nblobs) + ",\"schema\":"
                      + std::to_string(schema) + ",\"path\":\"" + escaped + "\"}";
             std::vector<LogOp> none;
-            _store->append(t, none);
+            _c._store->append(t, none);
         });
         return v.num;
     }
@@ -1068,7 +1207,7 @@ void TransactionLog::evictVersions(long keep)
     // was read on the main thread when the job was posted.
     if (keep <= 0)
         return;
-    auto versions = _store->versions();
+    auto versions = _c._store->versions();
     // The newest of each branch stays whatever the limit (sec 26): what a
     // switch to it checks out, so a switch never replays more than the
     // branch's own tail. On a log that never branched, the newest.
@@ -1089,7 +1228,7 @@ void TransactionLog::evictVersions(long keep)
                         ? unnamed.size() + 1 - static_cast<size_t>(keep) : 0;
     for (size_t i = 0; i < excess; ++i) {
         FC_LOG("transaction log: evict version " << unnamed[i]);
-        _store->evictVersion(unnamed[i]);
+        _c._store->evictVersion(unnamed[i]);
     }
     if (excess)
         releaseBlobs();
@@ -1192,10 +1331,10 @@ std::string TransactionLog::putValue(const CapturedValue& value, const std::stri
         ae.tier = tier;
         ae.hash = hashBytes(a.bytes);
         e.refs.push_back(LogRef {ae.hash, "attach", a.name});
-        if (_store->hasEntity(ae.hash))
+        if (_c._store->hasEntity(ae.hash))
             continue;
         compressInto(ae, a.bytes);
-        _store->putEntity(ae);
+        _c._store->putEntity(ae);
     }
     std::string keyed = value.fragment;
     for (auto& r : e.refs) {
@@ -1216,16 +1355,16 @@ std::string TransactionLog::putValue(const CapturedValue& value, const std::stri
         blobRefs.push_back(LogRef {putBlob(blob), "blob", blob->extension()});
         putSources(blob);
     }
-    if (_store->hasEntity(e.hash)) {
+    if (_c._store->hasEntity(e.hash)) {
         // Stored before, possibly as a part that named the files without
         // an edge to them.
         for (const auto& r : blobRefs)
-            _store->addRef(e.hash, r);
+            _c._store->addRef(e.hash, r);
         return e.hash;
     }
     e.refs.insert(e.refs.end(), blobRefs.begin(), blobRefs.end());
     compressInto(e, value.fragment);
-    _store->putEntity(e);
+    _c._store->putEntity(e);
     return e.hash;
 }
 
@@ -1237,7 +1376,7 @@ std::string TransactionLog::putBlob(const FileBlobHandle& blob)
     // in one go already; this catches whatever path did not.
     _doc.getFileBlobManager().makeDurable({blob});
     LogEntity e;
-    if (!_store->getEntity(hash, e)) {
+    if (!_c._store->getEntity(hash, e)) {
         e = LogEntity();
         e.hash = hash;
         e.kind = "blob";
@@ -1245,23 +1384,23 @@ std::string TransactionLog::putBlob(const FileBlobHandle& blob)
         e.tier = "durable";
         e.size = blob->size();
         e.data = blob->extension();
-        _store->putEntity(e);
+        _c._store->putEntity(e);
     }
     else if (e.enc == "delta") {
         // Superseded once and current again (a shape changed and changed
         // back): the newest is full (23.2), and here is its file.
-        _store->reencodeEntity(hash, "file", "", blob->extension());
+        _c._store->reencodeEntity(hash, "file", "", blob->extension());
     }
     else if (e.enc != "file") {
         return hash;   // the same bytes stored in the log already
     }
-    _blobs[hash] = blob;
+    _c._blobs[hash] = blob;
     return hash;
 }
 
 void TransactionLog::putSources(const FileBlobHandle& blob, int depth)
 {
-    if (!blob || depth > 1024 || !_sourced.insert(blob->hash()).second)
+    if (!blob || depth > 1024 || !_c._sourced.insert(blob->hash()).second)
         return;
     for (const auto& hash : blob->sources()) {
         std::string ext;
@@ -1270,40 +1409,40 @@ void TransactionLog::putSources(const FileBlobHandle& blob, int depth)
             putSources(source, depth + 1);
             ext = source->extension();
         }
-        else if (!_store->hasEntity(hash)) {
+        else if (!_c._store->hasEntity(hash)) {
             FC_WARN("transaction log: blob " << blob->hash() << " reads " << hash
                     << ", which is in no store");
             continue;
         }
-        _store->addRef(blob->hash(), LogRef {hash, "blob", ext});
+        _c._store->addRef(blob->hash(), LogRef {hash, "blob", ext});
     }
 }
 
 void TransactionLog::releaseBlobs()
 {
-    if (_blobs.empty())
+    if (_c._blobs.empty())
         return;
-    const auto files = _store->entitiesStoredAs("file");
+    const auto files = _c._store->entitiesStoredAs("file");
     const std::unordered_set<std::string> kept(files.begin(), files.end());
-    for (auto it = _blobs.begin(); it != _blobs.end();) {
+    for (auto it = _c._blobs.begin(); it != _c._blobs.end();) {
         if (kept.count(it->first))
             ++it;
         else
-            it = _blobs.erase(it);
+            it = _c._blobs.erase(it);
     }
 }
 
 FileBlobHandle TransactionLog::heldBlob(const std::string& hash)
 {
     flush();
-    auto it = _blobs.find(hash);
-    return it != _blobs.end() ? it->second : FileBlobHandle();
+    auto it = _c._blobs.find(hash);
+    return it != _c._blobs.end() ? it->second : FileBlobHandle();
 }
 
 size_t TransactionLog::heldBlobCount()
 {
     flush();
-    return _blobs.size();
+    return _c._blobs.size();
 }
 
 std::string TransactionLog::putBytes(const std::string& bytes, const std::string& kind,
@@ -1313,10 +1452,10 @@ std::string TransactionLog::putBytes(const std::string& bytes, const std::string
     e.kind = kind;
     e.tier = tier;
     e.hash = hashBytes(bytes);
-    if (_store->hasEntity(e.hash))
+    if (_c._store->hasEntity(e.hash))
         return e.hash;
     compressInto(e, bytes);
-    _store->putEntity(e);
+    _c._store->putEntity(e);
     return e.hash;
 }
 
@@ -1411,8 +1550,8 @@ std::string TransactionLog::putComposite(const std::string& entry,
             continue;
         std::string hash;
         if (s.claimed) {
-            auto it = _hashById.find(s.key);
-            if (it == _hashById.end())
+            auto it = _c._hashById.find(s.key);
+            if (it == _c._hashById.end())
                 throw Base::RuntimeError("transaction log: " + entry + ": " + container + "."
                                          + s.name + " claimed but not held");
             hash = it->second;
@@ -1423,7 +1562,7 @@ std::string TransactionLog::putComposite(const std::string& entry,
                            << " changed without aboutToSetValue (held " << hash << ", is "
                            << fresh << ")");
                     hash = putBytes(s.text, "prop", "durable");
-                    _hashById[s.key] = hash;
+                    _c._hashById[s.key] = hash;
                 }
             }
             else {
@@ -1432,7 +1571,7 @@ std::string TransactionLog::putComposite(const std::string& entry,
         }
         else {
             hash = putBytes(s.text, "prop", "durable");
-            _hashById[s.key] = hash;
+            _c._hashById[s.key] = hash;
         }
         hashes[i] = hash;
         // Equal to the shared default the file carries: left out, as the
@@ -1500,7 +1639,7 @@ std::string TransactionLog::putComposite(const std::string& entry,
     ce.tier = "durable";
     const std::string data = c.encode();
     ce.hash = hashBytes(data);
-    if (!_store->hasEntity(ce.hash)) {
+    if (!_c._store->hasEntity(ce.hash)) {
         ce.refs.push_back(LogRef {c.skeleton, "skeleton", ""});
         std::unordered_set<std::string> seen;
         for (const auto& p : c.parts) {
@@ -1508,7 +1647,7 @@ std::string TransactionLog::putComposite(const std::string& entry,
                 ce.refs.push_back(LogRef {p.hash, "part", ""});
         }
         compressInto(ce, data);
-        _store->putEntity(ce);
+        _c._store->putEntity(ce);
     }
     full = allBytes ? hashBytes(composed) : ce.hash;
 
@@ -1520,7 +1659,7 @@ std::string TransactionLog::putComposite(const std::string& entry,
         LogEntity pe;
         std::string pdata;
         Composite pc;
-        if (_store->getEntity(previous, pe) && pe.kind == "composite"
+        if (_c._store->getEntity(previous, pe) && pe.kind == "composite"
                 && readBytes(previous, pdata) && pc.decode(pdata)) {
             if (pc.skeleton != c.skeleton)
                 supersede(pc.skeleton, c.skeleton);
@@ -1566,26 +1705,26 @@ int TransactionLog::chainBelow(const std::string& hash, int depth)
     if (depth > 64)
         return depth;
     int longest = 0;
-    for (const auto& below : _store->basedOn(hash))
+    for (const auto& below : _c._store->basedOn(hash))
         longest = std::max(longest, 1 + chainBelow(below, depth + 1));
     return longest;
 }
 
 void TransactionLog::supersede(const std::string& older, const std::string& newer)
 {
-    const long hops = _deltaHops;
-    const long ratio = _deltaRatio;
+    const long hops = _c._deltaHops;
+    const long ratio = _c._deltaRatio;
     if (hops <= 0 || older.empty() || newer.empty() || older == newer)
         return;
     LogEntity old;
-    if (!_store->getEntity(older, old))
+    if (!_c._store->getEntity(older, old))
         return;
     if (old.kind == "prop") {
         // A value's files are superseded with it (23.16): its attachments
         // by name, the blob it names when each names one. A shape's
         // fragment is a line; its geometry is what the pair is for.
         LogEntity cur;
-        if (_store->getEntity(newer, cur) && cur.kind == "prop") {
+        if (_c._store->getEntity(newer, cur) && cur.kind == "prop") {
             std::map<std::string, std::string> attach;
             std::vector<std::string> oldBlobs, newBlobs;
             for (const auto& r : cur.refs) {
@@ -1618,7 +1757,7 @@ void TransactionLog::supersede(const std::string& older, const std::string& newe
     // hop, must fit the bound.
     LogEntity walk;
     for (std::string h = newer; !h.empty();) {
-        if (h == older || !_store->getEntity(h, walk))
+        if (h == older || !_c._store->getEntity(h, walk))
             return;
         h = walk.enc == "delta" ? walk.base : std::string();
     }
@@ -1639,11 +1778,11 @@ void TransactionLog::supersede(const std::string& older, const std::string& newe
     }
     if (patch.size() * 100 > full * static_cast<size_t>(ratio))
         return;
-    _store->reencodeEntity(older, "delta", newer, patch);
+    _c._store->reencodeEntity(older, "delta", newer, patch);
     // The patch is the content now; the file can go, unless something
     // else holds it (the live property, an undo copy).
     if (old.enc == "file")
-        _blobs.erase(older);
+        _c._blobs.erase(older);
 }
 
 /// The full bytes of an entity, decoding a delta chain base first (sec
@@ -1652,7 +1791,7 @@ bool TransactionLog::readBytes(const std::string& hash, std::string& out, LogEnt
                                int depth)
 {
     LogEntity e;
-    if (!_store->getEntity(hash, e))
+    if (!_c._store->getEntity(hash, e))
         return false;
     bool ok = false;
     if (e.enc == "raw") {
@@ -1670,9 +1809,9 @@ bool TransactionLog::readBytes(const std::string& hash, std::string& out, LogEnt
 #endif
     else if (e.enc == "file") {
         // Sec 23.16: the document's blob store holds the bytes.
-        auto it = _blobs.find(hash);
+        auto it = _c._blobs.find(hash);
         FileBlobHandle blob =
-            it != _blobs.end() ? it->second : _doc.getFileBlobManager().find(hash);
+            it != _c._blobs.end() ? it->second : _doc.getFileBlobManager().find(hash);
         ok = blob && blob->read(out);
     }
     else if (e.enc == "delta" && depth < 1024) {
@@ -1790,7 +1929,7 @@ void TransactionLog::writeValues(std::vector<ValueTask>& tasks, std::vector<LogO
         if (task.hashOut)
             *task.hashOut = hash;
         if (task.key && !hash.empty())
-            _hashById[task.key] = hash;
+            _c._hashById[task.key] = hash;
         if (task.opIndex >= 0)
             ops[task.opIndex].vbefore = hash;
         if (task.afterIndex >= 0) {
@@ -1802,16 +1941,16 @@ void TransactionLog::writeValues(std::vector<ValueTask>& tasks, std::vector<LogO
                 supersede(op.vbefore, hash);
         }
         if (task.resolveTxn > 0) {
-            _store->resolveAfter(task.resolveTxn, task.resolveIdx, hash);
+            _c._store->resolveAfter(task.resolveTxn, task.resolveIdx, hash);
             // The op's before is now the older of the pair (sec 23.2).
             LogOp resolved;
-            if (!hash.empty() && _store->getOp(task.resolveTxn, task.resolveIdx, resolved))
+            if (!hash.empty() && _c._store->getOp(task.resolveTxn, task.resolveIdx, resolved))
                 supersede(resolved.vbefore, hash);
         }
         // The share goes as soon as it is written, dropped on the main
         // thread.
         if (task.copy)
-            retire(std::move(task.copy));
+            _c.retire(std::move(task.copy));
     }
 }
 
@@ -1819,7 +1958,7 @@ void TransactionLog::number(LogTransaction& t)
 {
     t.parent = _head;
     t.branch = _branch;
-    t.seq = ++_nextSeq;
+    t.seq = ++_c._nextSeq;
     _head = t.seq;
 }
 
@@ -1836,7 +1975,7 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
         t.origin = origin;
         t.name = txn.Name;
         t.time = now();
-        t.session = _session;
+        t.session = _c._session;
         t.inverts = inverts;
 
         std::vector<LogOp> ops;
@@ -2018,7 +2157,7 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
         if (ops.empty()) {
             // Nothing to record; copies that only resolve earlier ops are
             // still written.
-            --_nextSeq;
+            --_c._nextSeq;
             _head = t.parent;
             if (!tasks.empty()) {
                 post([this, tasks]() mutable {
@@ -2059,7 +2198,7 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
         }
         post([this, t, ops, tasks]() mutable {
             writeValues(tasks, ops);
-            _store->append(t, ops);
+            _c._store->append(t, ops);
         });
         return t.seq;
     }
