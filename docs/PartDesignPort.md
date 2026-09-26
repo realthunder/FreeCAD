@@ -1061,3 +1061,88 @@ PartDesign side). Four ledger rows settled.
 
 Tests: `TestHole.testCosmeticThread`; `TestPartDesignApp` 155 OK; ctest
 750/750; Python 2981 OK (50 skipped, 6 expected failures).
+
+### Edit previews: what the fork had, and the Boolean (2026-09-26, late)
+
+The handoff queued upstream's PreviewExtension family (`802af4c464`,
+`7f87d87f61`, `6caceacb95`, `18792297f6` and about twenty fix rows). The
+fork has had an edit preview of its own for years, so the first step was
+to look at it in the GUI, feature by feature, before porting anything.
+
+**The two designs.** Upstream recomputes the whole feature while it is
+edited and adds a `PreviewShape` (the tool, the removed volume of a cut,
+the generated faces of a dress-up) drawn translucent over either the
+result or the previous feature ("Show final"). The fork *pauses* the
+costly half instead: `setPauseRecompute(true)` makes the feature compute
+only what the preview draws -- the tool, `AddSubShape` -- and leave
+`Shape` alone until the panel closes, and `ViewProviderAddSub` hangs that
+tool into the base feature's `SoFCSwitch` as its head child, tinted by
+operation (`PartParams::PreviewAddColor`, `PreviewSubColor`,
+`PreviewIntersectColor`, `PreviewDressColor`). Each panel carries the
+row "Show preview / Transparent preview / Show on top / Refine"
+(`Utils.cpp`, `addTaskCheckBox`); unticking Show preview recomputes the
+real feature, which is upstream's Show final. So an edit here costs no
+boolean at all, where upstream's costs the boolean plus the preview's.
+
+**Seen in the GUI, on a pad with a pocket, a 3x LinearPattern of the
+pocket, a fillet and a draft:** the pocket's tool over the base in the
+subtractive tint; the pattern's copies each in its operation's tint
+(`ViewProviderTransformed::checkAddSubColor`, per face for mixed
+patterns); the fillet's and the draft's generated faces in the dress-up
+tint. Every PartDesign panel had the preview row -- the sketch-based ones
+through `TaskSketchBasedParameters::initUI`, the dress-ups, primitives,
+patterns and Wrap directly -- except one.
+
+**The gap was the Boolean**, which showed its result and nothing else, so
+a Cut could not be told from a Fuse until OK. It previews the fork's way
+now:
+
+- `setPauseRecompute`/`isRecomputePaused` moved from `FeatureAddSub` up to
+  `PartDesign::Feature` (same code, same overrides: dress-ups and
+  primitives still decline it).
+- `Boolean::ToolShape`, transient and hidden: the tools in the frame of
+  the base, as the boolean takes them (every tool when there is no base
+  feature, since the first or last then stands in for it). `execute()`
+  splits into `collectOperands()` and the operation; paused, it stops
+  after filling `ToolShape`. `ToolShape` is not saved, so pausing a
+  Boolean that has none (the first edit after a load) collects it then.
+- `ViewProviderBoolean` derives from `ViewProviderAddSub`, which learned
+  to work for a feature that is not an add/sub one: the shape property
+  it draws is virtual (`getPreviewShapeName()`, "ToolShape" here), the
+  placing and base-swap code are shared helpers, and the colour is
+  chosen by the subclass (Fuse additive, Cut subtractive, Common
+  intersecting). The Boolean panel gets the preview row.
+
+**Checked** in the GUI with the base body rotated 15 deg and raised 5 and
+the tool body placed elsewhere, so a preview in the wrong frame would
+show: Fuse, Cut and Common each tinted; while paused `Shape` stays the
+Fuse (14706.1) with Cut chosen; Show preview off gives the Cut (11313.2)
+and the notch lands exactly under the previewed cylinder; OK keeps it;
+saved, closed, reopened: `ToolShape` is empty after the load and holds
+the cylinder (3392.9) once the edit starts; Cancel restores. Test:
+`TestBoolean.testBooleanToolShape`.
+
+**Not taken, on purpose:**
+
+- The removed volume of a subtractive feature (`928e5e0fbb`, upstream's
+  `FeatureAddSub::updatePreviewShape`) is a Common of base and tool --
+  the very boolean the pause exists to skip. If it is wanted, the render
+  engine can draw it without one: an in/out parity test of the tool's
+  fragments against the base's depth layers, the stencil trick the
+  section caps already use. Recorded as a candidate, not started.
+- The profile highlight (`767c3f1f67` and its two fixes): the fork's
+  preview draws the tool, which starts at the profile, so the face is
+  already on screen while the preview is on.
+- The theming, opacity, scheduler and Python-extension rows follow
+  upstream's `PreviewExtension` classes, which the fork does not have;
+  the colours are `PartParams`, the debounce is `EditRecomputeWait`.
+
+**Seen, not changed:** the fork's Boolean command leaves the tool bodies
+visible (the binders reference them where they are), so with the preview
+off a Cut still shows the whole tool body over the notch. Upstream hides
+them by grouping them. Whether the command should hide them is a
+behaviour question for the user, not a preview fix.
+
+Commit: `ec429cd0da`. 25 ledger rows settled: 2 adapted, 6 have, 2
+declined, 15 n/a. Suites: ctest 750/750; Python 2982 OK (50 skipped, 6
+expected failures).
