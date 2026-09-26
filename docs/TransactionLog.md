@@ -5427,3 +5427,95 @@ The build order of 27.22 stands; names (`parseName`, labels) join step
 
 Grammar, after the file: `@v<num>` (a version, frozen), `@<branch>@v<num>`
 (an editable instance at a version), `@<branch>@` (a branch's tip).
+
+### 27.25 Where a shape is not shared, and how to close each (2026-09-26)
+
+Asked by the user after the check of 27.24: every document of one file
+shares one blob manager (27.10); `ShapeParseCache`
+(`src/Mod/Part/App/PropertyTopoShape.cpp:234`) is keyed on the blob
+object, so the file's documents share each parsed `TopoDS_TShape`, and
+through it the triangulation (BRepMesh writes it into the TShape, and
+PartGui's tables key on the TShape). Where that breaks, cheapest fix
+first:
+
+**1. The scratch document (restore to a version, branch switch,
+`_checkoutHead`).** `_readVersion` materialises the whole version into a
+checkout directory -- every blob read from the store (deltas decoded) and
+written to disk -- then restores it into a new document with its own
+history, so its own blob manager (`getFileHistory` joins by `FileName`,
+and the scratch's is the checkout directory). The Gui gives it a
+`Gui::Document` and a view provider per object (`slotNewDocument` does
+that for every document). `_applyVersion` then captures every property of
+every object on both sides, and a shape's `Save` calls `ensureRestored()`:
+**every shape of the version is parsed again, only to be compared by its
+hash and thrown away.** Cost grows with the model, not with the change.
+
+It is not necessary. The log already holds the path between any two
+states: the rows. Cold undo (24.b) applies a row's inverse to the live
+document, and `_replayLog` (25.7) applies rows forward. So:
+
+- **restore to version N on the same branch** = the net inverse of the
+  rows from the head back to N, folded per property (the fold of 26.8's
+  squash), applied as one forward `restore` transaction;
+- **switch to another branch** = the inverse fold back to the common
+  ancestor, then the forward fold of the other branch's rows to its head;
+- only the properties that changed between the two points are written;
+  every other value, shape and mesh is left exactly as it is -- not even
+  compared.
+
+The snapshot path stays only as the fallback where rows are missing:
+trimmed history (26.8) or a chain that crosses a version with no rows
+(a file's first version read from its archive, 27.13). Where it runs, it
+should (a) join the file's history, so it finds live blobs and parsed
+shapes, and (b) have no Gui document (a scratch status that
+`Gui::Application::slotNewDocument` skips; view values come from
+`GuiDocument.xml` as the version holds them).
+
+**2. Materialising a version to open it (`openFileVersion`).** The
+version document joins the history, so its shapes share -- but every blob
+is still written to the checkout directory and hashed again by
+`insertFile` on the way back in. Fix: materialise only the XML entries,
+and hand the manager each blob by hash (`find`, or `adoptBytes` from the
+store for one it does not hold) before the restore. No disk round trip,
+no rehash. Same fix for the fallback of item 1.
+
+**3. A shape restored with a motion** (`locatedForRestore`,
+`PropertyTopoShape.cpp:427`): a blob shared by several objects that
+differ by a rigid motion (SharedShapeStorage) is copied with
+`BRepBuilderAPI_Transform(copy=True)`, because the top location must stay
+the object's placement (a `Located` shape broke 1146 links). The copy
+drops the sharing all the way down, and its mesh. Fix: a **shallow
+move** -- a new top `TShape` (`EmptyCopied`) whose children are the
+shared children `Moved(motion)`. The top location is untouched, the
+shape type and the element names are the same, and every face and edge
+below the top is the shared `TShape`, with its triangulation. Only a
+shape whose top is itself a face, edge or vertex needs a copy (its
+geometry lives in the top node); those are rare as object shapes.
+
+**4. Two files with the same bytes.** Two managers, two blob objects, two
+parses. The comment above `ShapeParseCache` says sharing a TShape across
+documents "is not this cache's decision to make"; that was true while a
+shape could be changed in place. With shape values frozen (23.13) it can
+not be, so the cache can key on the content hash when
+`ImmutableShapeValues` is on, and on the blob object otherwise. The
+comment is stale in any case: a blob belongs to a file's history now, not
+to one document (27.10).
+
+**5. A blob every document let go of.** The cache holds weak entries, so
+closing a version document and opening it again, or switching away from
+a branch and back, parses again. Fix: keep the last few released parses
+(bounded by size) alive. Item 1 removes most of the cases; this catches
+the rest.
+
+**6. Coin nodes and vertex arrays** are per view provider unless
+instancing applies (render-cache mode 3 with `ShapeInstancing`); the
+triangulation under them is shared, and the bgfx backend shares GPU
+buffers by a content hash of the mesh (docs/TShapeRenderCache.md). Out
+of this thread's scope.
+
+**Proposed order.** 4 and the stale comment (small, isolated), 2, then 1
+(rows instead of the scratch -- the largest, and it touches restore and
+switch, both gated by the branch and version checks), then 3 and 5. Not
+measured yet: how much of a restore's time the scratch path costs on a
+real model, and whether PartGui meshes the scratch document's shapes
+through its view providers. The first step of 1 is that measurement.
