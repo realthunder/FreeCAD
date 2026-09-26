@@ -4968,3 +4968,54 @@ Gates:
 - branch check 27 PASS;
 - version check 17 PASS;
 - pin check 25 PASS.
+
+### 27.18 Rulings and what comes next (user, 2026-09-26)
+
+**Ruling.** The default in 27.16 stands. A version saved over its file
+while the file's own document is open goes ahead, the warning names that
+document, and whichever is saved last is what the file holds.
+
+**Next, in order:**
+
+1. **The crash in 27.17.** `ViewProviderDocumentObjectPy::getObject`
+   dereferences a null object when a Python Gui observer reads
+   `vp.Object` during a view provider's construction.
+2. **A local link pinned to another version.** The link is to an object
+   of its own document, but pinned to a different version of that
+   document's file. The version should be loaded as a version document,
+   as for any pin, and the link should behave as an external link to it.
+   Today `pinLink` refuses ("a pin needs a link to another file"), and
+   `PropertyXLink` treats a same-document target as local. Design it
+   first: what the link saves, how it resolves on open, what undo does,
+   and what the version document's changes do to the file's own document.
+
+**Afterwards: state that belongs to the file, not to one version.**
+Several counters and tables are per document, so each version document
+and branch has its own copy. When two branches meet in a merge (phase
+6), those copies collide. Making them **file scope** -- one per
+`FileHistory`, shared by every document of the file -- removes the
+collisions at the source.
+
+1. **The last object id** (`DocumentP::lastObjectId`). Two branches both
+   hand out the next id. Today they are kept apart by a stride per
+   branch (`idBase`, `branchStride()`, sec 17.2). A file-scope counter
+   makes the stride unnecessary.
+2. **The string hasher used for element names** (`DocumentP::Hasher`).
+   Each version hashes the same strings to different ids, so the element
+   maps of the same shape in two branches disagree, and merging them means
+   re-hashing.
+3. **Object names** (`getUniqueObjectName`). Two branches that each add a
+   `Pad` both get `Pad001`. A merge must then rename one of them, along
+   with every expression, link and subname that refers to it. Names
+   reserved file-wide cannot collide. Labels, where duplicates are not
+   allowed, are the same case in a weaker form.
+4. **Id counters kept inside objects**, for example Sketcher's
+   `geoLastId`. Two branches editing the same sketch mint the same
+   geometry ids, and constraints refer to geometry by id. This is object
+   state, not document state, so the fix is different: the counter would
+   have to be kept per object, but across the file.
+5. Follows from 1 with nothing more: the `Tag` in element maps, which is
+   the object id.
+
+Already file scope: the log's sequence and version counters, the branch
+table, the blob manager and the transient directory (27.10, 27.11).
