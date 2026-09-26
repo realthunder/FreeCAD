@@ -1373,6 +1373,52 @@ int64_t TransactionLog::onSnapshot(const Captures& entries, const Blobs& blobs, 
     return snapshot(kind, _doc.FileName.getValue(), entries, blobs, schema);
 }
 
+TransactionLog::Blobs TransactionLog::versionBlobs(const Entries& entries, const Blobs& blobs)
+{
+    auto hashesIn = [](const std::string& xml, size_t from, size_t to, std::set<std::string>& out) {
+        static const std::string attrs[] = {"hash=\"", "db=\""};
+        for (const auto& attr : attrs) {
+            for (size_t at = xml.find(attr, from); at != std::string::npos && at < to;
+                 at = xml.find(attr, at + 1)) {
+                const size_t start = at + attr.size();
+                const size_t end = xml.find('"', start);
+                if (end == std::string::npos)
+                    break;
+                out.insert(xml.substr(start, end - start));
+            }
+        }
+    };
+    std::set<std::string> history, model;
+    for (const auto& e : entries) {
+        const std::string& xml = e.second;
+        size_t from = std::string::npos, to = std::string::npos;
+        if (e.first == "Document.xml") {
+            const size_t prop = xml.find("<Property name=\"History\"");
+            if (prop != std::string::npos) {
+                from = xml.find("<History", prop);
+                const size_t close = xml.find("</Property>", prop);
+                to = close;
+                if (from == std::string::npos || from > close)
+                    from = to = std::string::npos;
+            }
+        }
+        if (from == std::string::npos) {
+            hashesIn(xml, 0, xml.size(), model);
+            continue;
+        }
+        hashesIn(xml, from, to, history);
+        hashesIn(xml, 0, from, model);
+        hashesIn(xml, to, xml.size(), model);
+    }
+    Blobs out;
+    for (const auto& b : blobs) {
+        if (b.second && history.count(b.second->hash()) && !model.count(b.second->hash()))
+            continue;
+        out.push_back(b);
+    }
+    return out;
+}
+
 int64_t TransactionLog::onRestore(const std::string& path, const Entries& entries,
                                   const Blobs& blobs, int schema)
 {

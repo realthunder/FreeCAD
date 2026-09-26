@@ -284,7 +284,8 @@ std::shared_ptr<FileHistory> FileHistory::openFile(const std::string& path, std:
                 << " is not the file's (edited elsewhere?): kept as closed branches");
         core.closeAdopted();
     }
-    history->_fileVersion = core.recordFile(path, entries, blobs.restoredEntries(), facts.schema);
+    history->_fileVersion = core.recordFile(
+        path, entries, TransactionLog::versionBlobs(entries, blobs.restoredEntries()), facts.schema);
     core.flush();
     return history;
 }

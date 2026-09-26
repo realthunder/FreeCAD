@@ -3228,6 +3228,37 @@ class TransactionBranchCases(unittest.TestCase):
         finally:
             self.param.SetInt("TransactionLog", 2)
 
+    def testAFileCarriesOneHistory(self):
+        # Sec 27.29: a version holds what the document refers to, not the
+        # history database its History property names -- else each save
+        # carried the history before it as one more member.
+        import zipfile
+
+        doc = self.track(FreeCAD.newDocument("OneHistory"))
+        doc.UndoMode = 1
+        obj = doc.addObject("App::FeatureTest", "Obj")
+        path = os.path.join(self.dir, "onehistory.FCStd")
+        for i in range(4):
+            doc.openTransaction("edit %d" % i)
+            obj.Integer = i
+            doc.commitTransaction()
+            if i == 0:
+                doc.saveAs(path)
+            else:
+                doc.save()
+            dbs = [n for n in zipfile.ZipFile(path).namelist() if n.endswith(".db")]
+            self.assertEqual(dbs, ["blobs/History.db"])
+        # Reopened and saved again: the version the open records holds no
+        # history either.
+        FreeCAD.closeDocument(doc.Name)
+        doc = self.track(FreeCAD.openDocument(path))
+        doc.getObject("Obj").Integer = 9
+        doc.save()
+        dbs = [n for n in zipfile.ZipFile(path).namelist() if n.endswith(".db")]
+        self.assertEqual(dbs, ["blobs/History.db"])
+        versions = doc.getTransactionVersions()
+        self.assertTrue(versions)
+
     def testOpeningADocumentKeepsAnotherOnesTransaction(self):
         # Sec 27.15: a document made or opened while another has a transaction
         # open joins none, so its restore does not commit that transaction

@@ -133,6 +133,12 @@ public:
     /// gives it inside `blobs/` (FileBlobManager::collectedEntries(), or
     /// restoredEntries() as read), with the handle the log takes over.
     using Blobs = std::vector<std::pair<std::string, FileBlobHandle>>;
+    /** A version of a file as read (sec 27.29): its blobs, less the ones only
+     * the document's History property names. Read off the XML, the only
+     * record of who refers to what at that point: a hash in Document.xml's
+     * History element and in no other entry goes.
+     */
+    static Blobs versionBlobs(const Entries& entries, const Blobs& blobs);
 
     /** The property sink a save or snapshot serialises under (sec 23.3).
      *

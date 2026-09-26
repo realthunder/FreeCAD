@@ -671,6 +671,12 @@ public:
      * old content with the new for a delta.
      */
     std::vector<std::pair<std::string, FileBlobHandle>> collectedEntries() const;
+    /** The same, less the content only the document's own History property
+     * refers to -- its database and the blobs it keeps (docs/TransactionLog.md
+     * sec 27.29): what a version of the document holds. A version holding
+     * them would keep the history of its time in every later history.
+     */
+    std::vector<std::pair<std::string, FileBlobHandle>> versionEntries() const;
 
     /** Every live blob with the name the restore read it under, in hash order.
      *

@@ -3819,7 +3819,7 @@ void Document::save(Base::Writer &writer, bool archive) const {
         writer.setPropertySink(nullptr);
         // Named as the archive names them (docs/TransactionLog.md sec
         // 23.16), which is what pairs a property's file with its next one.
-        TransactionLog::Blobs blobs = getFileBlobManager().collectedEntries();
+        TransactionLog::Blobs blobs = getFileBlobManager().versionEntries();
         TransactionLog::Captures entries = std::move(d->captures);
         d->captures.clear();
         if (log->onSave(FileName.getValue(), entries, blobs, writer.getSchemaVersion()))
@@ -4249,7 +4249,8 @@ void Document::restore(Base::XMLReader &reader,
         if (log) {
             // Under the names the file gave them, which are the names the
             // next save gives them (sec 23.16).
-            TransactionLog::Blobs blobs = getFileBlobManager().restoredEntries();
+            TransactionLog::Blobs blobs =
+                TransactionLog::versionBlobs(entries, getFileBlobManager().restoredEntries());
             if (log->onRestore(FileName.getValue(), entries, blobs, reader.DocumentSchema))
                 noteVersionTaken();
         }
@@ -4488,7 +4489,7 @@ int64_t Document::_snapshotToLog(const char* kind)
         writer.setEntrySink(nullptr);
         writer.setPropertySink(nullptr);
 
-        TransactionLog::Blobs blobs = getFileBlobManager().collectedEntries();
+        TransactionLog::Blobs blobs = getFileBlobManager().versionEntries();
         TransactionLog::Captures entries = std::move(d->captures);
         d->captures.clear();
         int64_t num = log->onSnapshot(entries, blobs, writer.getSchemaVersion(), kind);

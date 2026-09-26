@@ -5734,3 +5734,34 @@ restore to it; refused with the preference off.
 
 Gates: Python 2925 OK; ctest 842/842; recovery 15, branch 27, version 18,
 pin 28 PASS.
+
+### 27.29 A version no longer holds the history (2026-09-26)
+
+The defect found in 27.28. Every version's blobs included the ones only the
+document's own `History` property names -- its database and the blobs it
+keeps -- so a kept version kept the history of its time, and each file
+carried the history database before its own. The probe of 27.28: two
+`.db` members after every save.
+
+A version holds what the document refers to:
+
+- **save and snapshot** take `FileBlobManager::versionEntries()`, the
+  collected entries less those whose every referrer is `0:History` (the
+  document-level History property, as `referrerOf` names it);
+- **open, and a closed file's history read from its archive** (27.13),
+  where no referrer is known, filter with
+  `TransactionLog::versionBlobs(entries, blobs)`: a hash that appears in
+  Document.xml's History element and in no other XML entry of the version
+  is not the model's.
+
+`History` was already kept out of what a restore to a version applies
+(`keptOnRestore`); a version's Document.xml still names the database, which
+a materialised version then lacks, and a version document's History reads
+empty -- which is what it should be.
+
+Test: Python `TransactionBranchCases.testAFileCarriesOneHistory` -- four
+saves, and a reopen and a save, each file with the one member
+`blobs/History.db`. It failed before the fix (two members).
+
+Gates: Python 2926 OK; ctest 842/842; recovery 15, branch 27, version 18,
+pin 28 PASS.

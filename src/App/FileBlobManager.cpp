@@ -1199,6 +1199,22 @@ std::vector<std::pair<std::string, FileBlobHandle>> FileBlobManager::collectedEn
     return out;
 }
 
+std::vector<std::pair<std::string, FileBlobHandle>> FileBlobManager::versionEntries() const
+{
+    // The History property is the document's, so its referrer is id 0 and
+    // named after the property (referrerOf()).
+    static const std::string history = "0:History";
+    std::vector<std::pair<std::string, FileBlobHandle>> out;
+    for (auto& entry : planSave({})) {
+        const bool onlyHistory = !entry.referrers.empty()
+            && std::all_of(entry.referrers.begin(), entry.referrers.end(),
+                           [](const std::string& r) { return r == history; });
+        if (!onlyHistory)
+            out.emplace_back(std::move(entry.name), std::move(entry.blob));
+    }
+    return out;
+}
+
 std::vector<std::pair<std::string, FileBlobHandle>> FileBlobManager::restoredEntries() const
 {
     std::vector<FileBlobHandle> live = blobs();
