@@ -989,6 +989,18 @@ reads a reparent as the view being torn away and collapses the tile.
   invisible cells and a single visible cell drops the canvas entirely
   (nothing to share). The same rule keeps an unsplit view on the plain
   path, which is why the regression smokes are byte-identical.
+- **Resizing a hidden child moves nothing inside it** (found and fixed
+  2026-09-26). Qt only records a hidden widget's new geometry
+  (`WA_PendingResizeEvent`): no resize event, so no layout pass, and the
+  viewer inside the View3DInventor kept the size it last had while
+  shown -- 174 px in a 241 px cell, 400 in a 333 one. The canvas drew
+  the cell right, but the viewer's viewport, which every pick,
+  projection and forwarded event is read against, was the old one, so a
+  click picked something other than what it landed on. `placeHiddenView`
+  sets the geometry and then delivers what showing the widget would:
+  the pending resize events and layout passes down the subtree. Watched
+  by `tests/gui/portrait-pick-vs-draw.py`, after a claim and after a
+  resize.
 
 ### 14.4 Verified
 

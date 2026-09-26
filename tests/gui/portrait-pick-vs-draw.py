@@ -21,8 +21,10 @@ Claims, in a portrait view and in a landscape one (the control):
   - the pick at proj hits the cube;
   - proj, pick and frame agree within a few pixels.
 And in a portrait split cell of the ViewArea unified canvas, which
-feeds the backend per cell: the frame puts each cube where the mapped
-camera does in the cell's rect.
+feeds the backend per cell, after the split and again after a resize:
+the frame puts each cube where the mapped camera does in the cell's
+rect, and the cell's hidden viewer is the cell's size, so its
+projection and a pick where the cube is drawn agree with that frame.
 """
 import colorsys
 import os
@@ -130,7 +132,7 @@ def canvas_cell(view, tag):
 def frame(view, tag, canvas):
     """Centroid of each cube in the backend framebuffer, bottom-left
     origin to match the pick: the largest connected blob of its hue, so
-    the NaviCube's axis lines (same red, green, blue) do not count."""
+    stray pixels of the same hue elsewhere do not count."""
     if canvas:
         img = canvas_cell(view, tag)
         if img is None:
@@ -232,11 +234,11 @@ def measure(view, tag):
 
 def measure_cell(view, tag):
     """A split cell of the ViewArea unified canvas, which draws its cells
-    itself (ViewAreaCanvas) rather than through renderScene. Only the
-    frame is checked, against where Coin's mapping puts each cube in the
-    CELL's rect: the cell's hidden viewer is not kept at the cell's size
-    (a separate defect), so its projection and pick say nothing about
-    what the canvas drew. A fixed camera height keeps the cubes large."""
+    itself (ViewAreaCanvas) rather than through renderScene, while the
+    cell's own view is hidden behind it. Everything is judged against
+    the CELL's rect: the frame, and the hidden viewer's size, projection
+    and pick, which Qt does not keep in step with a hidden widget's
+    geometry on its own. A fixed camera height keeps the cubes large."""
     view.viewFront()
     view.fitAll()
     settle()
@@ -245,19 +247,29 @@ def measure_cell(view, tag):
     FreeCADGui.updateGui()
     settle()
     frames, fsize = frame(view, tag, True)
-    note("%s cell size %s" % (tag, fsize))
+    note("%s cell size %s, viewer size %s" % (tag, fsize, tuple(view.getSize())))
     if not check("%s: the canvas cell was grabbed" % tag, fsize is not None):
         return
+    check("%s: the viewer is the cell's size" % tag,
+          tuple(view.getSize()) == fsize, tuple(view.getSize()))
     w, h = fsize
     # ADJUST_CAMERA: the camera height spans the SMALLER side.
     s = min(w, h) / float(CELL_HEIGHT)
     for n, x, z, _h, _c in CUBES:
         want = ((w - 1) / 2.0 + x * s, (h - 1) / 2.0 + z * s)
         fr = frames.get(n)
-        note("%s %s want=(%.1f,%.1f) frame=%s" % (
-            tag, n, want[0], want[1], "(%.1f,%.1f)" % fr if fr else None))
+        p = view.getPointOnViewport(centre_of(n))
+        proj = (float(p[0]), float(p[1]))
+        info = view.getObjectInfo((int(round(want[0])), int(round(want[1]))))
+        got = info.get("Object") if info else None
+        note("%s %s want=(%.1f,%.1f) frame=%s proj=(%.1f,%.1f) pick=%s" % (
+            tag, n, want[0], want[1], "(%.1f,%.1f)" % fr if fr else None,
+            proj[0], proj[1], got))
         check("%s %s: frame is where the mapped camera puts it" % (tag, n),
               fr is not None and dist(fr, want) <= TOL, fr)
+        check("%s %s: projection agrees with the frame" % (tag, n),
+              dist(proj, want) <= TOL, proj)
+        check("%s %s: pick where it is drawn hits it" % (tag, n), got == n, got)
 
 
 def run():
@@ -273,6 +285,9 @@ def run():
             vo.ShapeColor = _rest[-1]
             vo.LineColor = _rest[-1]
             vo.PointColor = _rest[-1]
+        # The NaviCube's axis lines share the cubes' hues.
+        FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View").SetBool(
+            "ShowNaviCube", False)
         view = FreeCADGui.getDocument(DOC).activeView()
         mw = FreeCADGui.getMainWindow()
         mw.showNormal()
@@ -291,7 +306,13 @@ def run():
         settle()
         FreeCADGui.runCommand("Std_ViewSplitRight")
         settle()
-        measure_cell(FreeCADGui.getDocument(DOC).activeView(), "cell")
+        cell = FreeCADGui.getDocument(DOC).activeView()
+        measure_cell(cell, "cell")
+        # Resized while claimed: the canvas re-places the hidden child
+        # from the cell's resize event, not from a claim.
+        mw.resize(900, 1000)
+        settle()
+        measure_cell(cell, "cell-resized")
     except Exception:
         note("ABORT " + traceback.format_exc().replace("\n", " | "))
     finish()
