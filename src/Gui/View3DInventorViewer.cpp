@@ -7664,10 +7664,6 @@ void View3DInventorViewer::animatedViewAll(const SbBox3f &box, int steps, int ms
 
     SbVec3f campos = cam->position.getValue();
     SbRotation camrot = cam->orientation.getValue();
-    SbViewportRegion vp = this->getSoRenderManager()->getViewportRegion();
-
-    float aspectRatio = vp.getViewportAspectRatio();
-
     if (box.isEmpty()) {
         return;
     }
@@ -7689,12 +7685,10 @@ void View3DInventorViewer::animatedViewAll(const SbBox3f &box, int steps, int ms
     if (cam->isOfType(SoOrthographicCamera::getClassTypeId())) {
         isOrthographic = true;
         height = static_cast<SoOrthographicCamera*>(cam)->height.getValue();  // NOLINT
-        if (aspectRatio < 1.0F) {
-            diff = sphere.getRadius() * 2 - height * aspectRatio;
-        }
-        else {
-            diff = sphere.getRadius() * 2 - height;
-        }
+        // Toward the height viewBoundBox ends on: the diameter, at any
+        // aspect, since the mapped volume puts the height across the
+        // smaller side.
+        diff = sphere.getRadius() * 2 - height;
         pos = (box.getCenter() - direction * sphere.getRadius());
     }
     else if (cam->isOfType(SoPerspectiveCamera::getClassTypeId())) {
@@ -8259,6 +8253,14 @@ void View3DInventorViewer::viewBoundBox(const SbBox3f &box) {
         case SoCamera::CROP_VIEWPORT_LINE_FRAME:
         case SoCamera::CROP_VIEWPORT_NO_FRAME:
             aspectratio = 1.0f;
+            break;
+        case SoCamera::ADJUST_CAMERA:
+            // Coin's viewBoundingBox divides the height by a portrait
+            // aspect, and ADJUST_CAMERA then widens the volume by
+            // 1/aspect again when it draws (getMappedViewVolume): the
+            // scene would fill only `aspect` of the width. Under this
+            // mapping the camera height already spans the smaller side.
+            aspectratio = std::max(aspectratio, 1.0f);
             break;
         default:
             break;

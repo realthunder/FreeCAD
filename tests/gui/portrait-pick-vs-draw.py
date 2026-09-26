@@ -17,6 +17,7 @@ screen positions are compared:
   - frame: centroid of the cube's colour in the backend's own
            framebuffer (saveRenderDump "renderer").
 Claims, in a portrait view and in a landscape one (the control):
+  - fit-all frames the scene's bounding sphere across the smaller side;
   - the pick at proj hits the cube;
   - proj, pick and frame agree within a few pixels.
 And in a portrait split cell of the ViewArea unified canvas, which
@@ -178,6 +179,26 @@ def dist(a, b):
     return max(abs(a[0] - b[0]), abs(a[1] - b[1]))
 
 
+def check_fit(view, tag):
+    """Fit-all frames the scene's bounding sphere across the SMALLER side
+    of the view: ADJUST_CAMERA already makes the camera height span it,
+    and Coin's viewBoundingBox dividing the height by a portrait aspect
+    on top left the scene at `aspect` of the width."""
+    doc = FreeCAD.getDocument(DOC)
+    box = FreeCAD.BoundBox()
+    for n, *_ in CUBES:
+        box.add(doc.getObject(n).Shape.BoundBox)
+    radius = box.DiagonalLength / 2.0
+    w, h = view.getSize()
+    a = view.getPointOnViewport(centre_of("LeftUp"))
+    b = view.getPointOnViewport(centre_of("RightUp"))
+    scale = (b[0] - a[0]) / 80.0
+    want = min(w, h) / (2.0 * radius)
+    note("%s fit: %.3f px/mm, want %.3f" % (tag, scale, want))
+    check("%s: fit-all spans the smaller side" % tag,
+          abs(scale - want) <= 0.02 * want, "%.3f" % scale)
+
+
 def measure(view, tag):
     view.viewFront()
     view.fitAll()
@@ -186,6 +207,7 @@ def measure(view, tag):
     settle()
     w, h = view.getSize()
     note("%s view %dx%d aspect %.3f" % (tag, w, h, float(w) / h))
+    check_fit(view, tag)
     picks = sweep(view)
     frames, fsize = frame(view, tag, False)
     note("%s frame size %s" % (tag, fsize))
