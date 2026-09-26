@@ -2921,9 +2921,26 @@ void View3DInventorViewer::setObjectStyleOverrides(
 void View3DInventorViewer::setObjectVisibilities(
         Render::VisibilityOverrideTable &&table)
 {
-    if (!_pimpl->visibility.set(std::move(table)))
-        return;
+    if (_pimpl->visibility.set(std::move(table)))
+        onVisibilityChanged();
+}
 
+bool View3DInventorViewer::setEditHide(const Render::VisibilityOverride *hide)
+{
+    // The table is read only where the render-cache manager is (mode 3);
+    // modes 0-2 have no per-view visibility at all.
+    if (!getRenderCacheManager())
+        return false;
+    std::vector<Render::VisibilityOverride> entries;
+    if (hide)
+        entries.push_back(*hide);
+    if (_pimpl->visibility.setTransient(std::move(entries)))
+        onVisibilityChanged();
+    return true;
+}
+
+void View3DInventorViewer::onVisibilityChanged()
+{
     // The element is set by selectionRoot from this viewer's state, which
     // no cache ABOVE that node can see: a separator caching its bounding
     // box there would keep answering with the old table. Touching the node

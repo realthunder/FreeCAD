@@ -432,6 +432,16 @@ public:
             if (owner)
                 owner->schedulePublish();
         });
+        // An edit session hides the occurrence it draws itself in
+        // every view of the session, this client's included: what the
+        // capture carries and the table the client draws by changed
+        // with no document signal and no op from the client.
+        mirror->setOnVisibilityCallback([this, client]() {
+            if (owner) {
+                owner->schedulePublish();
+                owner->announceVisibility(client);
+            }
+        });
         // What the others already have selected, for the ones whose
         // route says this client may see it (8.11a). Said now rather
         // than waiting for them to pick again; the viewer keeps the

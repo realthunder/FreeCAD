@@ -432,8 +432,12 @@ public:
     /// PerViewVisibilities switch is on). Takes ownership and bumps the
     /// table's version.
     void setObjectVisibilities(Render::VisibilityOverrideTable &&table);
-    /// The table above, or null when it is empty. The pointer stays
-    /// valid for the viewer's lifetime.
+    /// An edit session's transient hide in this view, ahead of the table
+    /// above; see ViewerContext::setEditHide.
+    bool setEditHide(const Render::VisibilityOverride *hide) override;
+    /// The table this view draws by -- the edit hide, then the parsed
+    /// map -- or null when it is empty. The pointer stays valid for the
+    /// viewer's lifetime.
     const Render::VisibilityOverrideTable *objectVisibilities() const;
     /// The same table as SoFCVisibilityElement carries it, or null when
     /// empty; SoFCUnifiedSelection sets it for this view's traversals.
@@ -1021,6 +1025,9 @@ private:
     /// Rebuild the additive-mode interest (own overrides + imposed),
     /// push it to the selection root, and schedule the re-capture.
     void rebuildCaptureInterest();
+    /// Tell what caches this view's visibility answers that its table
+    /// changed: the selection root, the backend, the next frame.
+    void onVisibilityChanged();
     void drawAxisCross();
     static void drawArrow();
     static void drawSingleBackground(const QColor&);

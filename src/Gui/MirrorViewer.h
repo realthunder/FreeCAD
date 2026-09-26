@@ -261,7 +261,15 @@ public:
     //@{
     /// Replace the table; false when nothing changed.
     bool setObjectVisibilities(Render::VisibilityOverrideTable&& table);
-    /// The table, or null when it is empty.
+    /// An edit session's transient hide, ahead of the table above (see
+    /// ViewerContext::setEditHide). Raised by the session rather than by
+    /// the client, so a change is reported through the callback below.
+    bool setEditHide(const Render::VisibilityOverride* hide) override;
+    /// Told when setEditHide changes the table, so the serving source
+    /// republishes and tells the client the table it draws by.
+    void setOnVisibilityCallback(std::function<void()> callback);
+    /// The table this client draws by -- the edit hide, then the parsed
+    /// map -- or null when it is empty.
     const Render::VisibilityOverrideTable* objectVisibilities() const;
     //@}
 

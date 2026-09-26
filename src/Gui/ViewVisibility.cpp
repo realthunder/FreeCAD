@@ -23,7 +23,7 @@
 #include "PreCompiled.h"
 
 #include <algorithm>
-#include <sstream>
+#include <cstring>
 
 #include <App/Application.h>
 #include <App/Document.h>
@@ -170,10 +170,23 @@ ViewVisibility::~ViewVisibility()
 
 bool ViewVisibility::set(Render::VisibilityOverrideTable &&table)
 {
-    if (table.entries.empty() && entries.entries.empty())
+    persisted = std::move(table.entries);
+    return rebuild();
+}
+
+bool ViewVisibility::setTransient(std::vector<Render::VisibilityOverride> &&table)
+{
+    transient = std::move(table);
+    return rebuild();
+}
+
+bool ViewVisibility::rebuild()
+{
+    if (persisted.empty() && transient.empty() && entries.entries.empty())
         return false;
-    table.version = ++serial;
-    entries = std::move(table);
+    entries.entries = transient;
+    entries.entries.insert(entries.entries.end(), persisted.begin(), persisted.end());
+    entries.version = ++serial;
     element.update(this->table());
 
     std::set<std::pair<std::string, std::string>> nowShown;
@@ -216,6 +229,8 @@ void ViewVisibility::clear()
     for (const auto &key : overridden)
         countOverride(key, false);
     overridden.clear();
+    persisted.clear();
+    transient.clear();
     entries.entries.clear();
     element.update(nullptr);
 }
@@ -245,26 +260,40 @@ bool Gui::parseOverrideKey(const std::string &key,
             path.push_back({doc->getName(), key});
         return true;
     }
-    // Path form: one occurrence, resolved token by token so every
-    // element carries its true document -- getSubObject follows links
-    // across documents the same way the scene graph does.
+    // Path form: one occurrence, from a top-level object of doc.
     rooted = true;
-    std::istringstream iss(key);
-    std::string tok;
-    App::DocumentObject *cur = nullptr;
-    while (std::getline(iss, tok, '.')) {
-        if (tok.empty())
+    const auto dot = key.find('.');
+    App::DocumentObject *root = doc->getObject(key.substr(0, dot).c_str());
+    std::string subname = key.substr(dot + 1);
+    if (!subname.empty() && subname.back() != '.')
+        subname += '.';
+    return resolveObjectPath(root, subname.c_str(), path);
+}
+
+bool Gui::resolveObjectPath(App::DocumentObject *root,
+                            const char *subname,
+                            std::vector<Render::ObjectRef> &path)
+{
+    path.clear();
+    if (!root || !root->isAttachedToDocument())
+        return false;
+    path.push_back({root->getDocument()->getName(), root->getNameInDocument()});
+    // Token by token, so every step carries its true document --
+    // getSubObject follows links across documents the same way the scene
+    // graph does. Only dot-terminated tokens are objects; what follows
+    // the last dot is an element name.
+    App::DocumentObject *cur = root;
+    const char *tok = subname;
+    for (const char *dot = tok ? strchr(tok, '.') : nullptr; dot;
+         tok = dot + 1, dot = strchr(tok, '.')) {
+        if (dot == tok)
             continue;
-        if (!cur)
-            cur = doc->getObject(tok.c_str());
-        else
-            cur = cur->getSubObject((tok + ".").c_str());
+        cur = cur->getSubObject(std::string(tok, dot + 1).c_str());
         if (!cur || !cur->isAttachedToDocument())
             return false;
-        path.push_back({cur->getDocument()->getName(),
-                        cur->getNameInDocument()});
+        path.push_back({cur->getDocument()->getName(), cur->getNameInDocument()});
     }
-    return !path.empty();
+    return true;
 }
 
 Render::VisibilityOverrideTable Gui::parseObjectVisibilities(

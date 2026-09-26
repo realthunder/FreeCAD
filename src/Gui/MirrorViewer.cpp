@@ -113,8 +113,10 @@ public:
     SoFCRenderCacheManager* cacheManager = nullptr;
     Render::Renderer* renderer = nullptr;
 
-    /// The client's own object visibility (setObjectVisibilities).
+    /// The client's own object visibility (setObjectVisibilities), and
+    /// an edit session's hide (setEditHide).
     ViewVisibility visibility;
+    std::function<void()> onVisibilityChanged;
 
     /// The client's, as of its last 'C' frame.
     MirrorViewer::Camera state;
@@ -382,6 +384,10 @@ MirrorViewer::MirrorViewer(Document* doc, SoNode* scene,
 
 MirrorViewer::~MirrorViewer()
 {
+    // Leaving the session below shows the edited object again here, and
+    // a client going away is not told anything: its serving source would
+    // look this mirror up while it is being destroyed.
+    pimpl->onVisibilityChanged = nullptr;
     // A connection can drop in the middle of an edit, and this view is
     // what the document's edit session was bound to. Ending the session
     // first is what keeps Gui::Document from being left holding a pointer
@@ -892,6 +898,26 @@ bool MirrorViewer::setObjectVisibilities(Render::VisibilityOverrideTable&& table
     // cache check, and the pick root above it holds the camera, which no
     // bounding box cache survives.
     return pimpl->visibility.set(std::move(table));
+}
+
+bool MirrorViewer::setEditHide(const Render::VisibilityOverride* hide)
+{
+    if (!pimpl->cacheManager) {
+        return false;
+    }
+    std::vector<Render::VisibilityOverride> entries;
+    if (hide) {
+        entries.push_back(*hide);
+    }
+    if (pimpl->visibility.setTransient(std::move(entries)) && pimpl->onVisibilityChanged) {
+        pimpl->onVisibilityChanged();
+    }
+    return true;
+}
+
+void MirrorViewer::setOnVisibilityCallback(std::function<void()> callback)
+{
+    pimpl->onVisibilityChanged = std::move(callback);
 }
 
 const Render::VisibilityOverrideTable* MirrorViewer::objectVisibilities() const

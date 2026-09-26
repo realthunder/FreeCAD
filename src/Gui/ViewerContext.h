@@ -69,6 +69,11 @@ class Placement;
 
 namespace Render {
 class Renderer;
+struct VisibilityOverride;
+}
+
+namespace App {
+class DocumentObject;
 }
 
 namespace Gui {
@@ -235,6 +240,36 @@ public:
     void detachView(ViewerContext* view);
     //@}
 
+    /** @name The edited occurrence's own hide
+     *
+     * An edit that draws its object itself -- a sketch hands its edit
+     * graph rather than moving the view provider's children -- leaves the
+     * object's own geometry where it was, in every view that shows it. In
+     * the views of the session that geometry is hidden: the ONE occurrence
+     * being edited, \a subname under \a parent (Gui::Document::getInEdit),
+     * as a path entry of each view's own visibility table, TRANSIENT
+     * (ViewerContext::setEditHide) -- never written into a view's map, and
+     * gone when the edit ends. A view joining later hides it on attach and
+     * shows it again on detach; a view outside the session -- another
+     * document's showing the object through a link -- keeps it.
+     */
+    //@{
+    /** Hide the edited occurrence in every view of the session.
+     *
+     * False, and nothing hidden anywhere, when the path does not resolve or
+     * some view cannot hide one (render-cache modes 0-2, which have no
+     * per-view table): the caller falls back to moving the children.
+     */
+    bool hideEdited(App::DocumentObject* parent, const char* subname);
+    /// Undo hideEdited. Idempotent.
+    void showEdited();
+    /// Whether hideEdited is in force.
+    bool isEditedHidden() const
+    {
+        return editHide != nullptr;
+    }
+    //@}
+
 private:
     SoSeparator* root {nullptr};
     SoTransform* transform {nullptr};
@@ -246,6 +281,7 @@ private:
     bool restore {false};
     ViewerContext* holder {nullptr};
     unsigned held {0};
+    std::unique_ptr<Render::VisibilityOverride> editHide;
 };
 
 /** What an edit mode is allowed to ask of the view it is running in.
@@ -468,7 +504,28 @@ public:
     /// Hang an edit mode's geometry under the session's root; see
     /// EditingRoot::setup. A no-op with no editing view provider.
     void setupEditingRoot(SoNode* node = nullptr, const Base::Matrix4D* mat = nullptr);
+    /// Give the view provider its geometry back, and show the edited
+    /// occurrence again if hideEditedObject hid it.
     void resetEditingRoot(bool updateLinks = true);
+    /** Hide the occurrence being edited in every view of the session.
+     *
+     * For an edit mode that hands setupEditingRoot a node of its own and
+     * leaves the view provider's geometry where it is; see
+     * EditingRoot::hideEdited. The occurrence is the document's
+     * (Gui::Document::getInEdit), else the edited object itself. Only the
+     * initiator may ask. False when it could not be hidden: the edit mode
+     * moves the children instead (setupEditingRoot with no node).
+     */
+    bool hideEditedObject();
+    /** Hide \a hide's occurrence in this view, or with null show it again.
+     *
+     * An edit session's own, transient entry of the view's visibility
+     * table (EditingRoot::hideEdited), ahead of the view's persisted map
+     * and never written into it. False when the view has no per-view
+     * table to put it in -- no render-cache manager, modes 0-2 -- which is
+     * what the base answers.
+     */
+    virtual bool setEditHide(const Render::VisibilityOverride* hide);
     void setEditingTransform(const Base::Matrix4D& mat);
     /** The root this view shows the edit through.
      *

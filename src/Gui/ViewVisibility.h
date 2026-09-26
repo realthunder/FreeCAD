@@ -36,6 +36,7 @@
 
 namespace App {
 class Document;
+class DocumentObject;
 }
 
 namespace Gui {
@@ -51,6 +52,14 @@ namespace Gui {
  * tessellated and captured). Held by a desktop view (View3DInventorViewer)
  * and by a served client's view (MirrorViewer) alike; the counts are
  * released when the table drops them and with the holder.
+ *
+ * Two sources feed the one table. The PERSISTED entries are the view's
+ * own map (set()); the TRANSIENT ones are what an edit session hides in
+ * this view while it runs (setTransient(): the occurrence being edited,
+ * whose geometry the session draws itself). The transient entries come
+ * first, so an edit hide beats a persisted show of the same path
+ * (Render::resolveVisibility takes the first rooted match). They are
+ * never written anywhere: a save during the edit sees only the map.
  */
 class GuiExport ViewVisibility
 {
@@ -60,11 +69,14 @@ public:
     ViewVisibility(const ViewVisibility &) = delete;
     ViewVisibility &operator=(const ViewVisibility &) = delete;
 
-    /// Replace the table. False when nothing changed (no entries before
-    /// or after); otherwise the holder has to tell whatever caches what
-    /// it answered -- its selection root, its backend.
+    /// Replace the persisted entries. False when nothing changed (no
+    /// entries before or after); otherwise the holder has to tell
+    /// whatever caches what it answered -- its selection root, its
+    /// backend.
     bool set(Render::VisibilityOverrideTable &&table);
-    /// Drop the table and release every count.
+    /// Replace the transient entries; false as set().
+    bool setTransient(std::vector<Render::VisibilityOverride> &&entries);
+    /// Drop both sources and release every count.
     void clear();
 
     /// The table, or null when it has no entries.
@@ -73,6 +85,12 @@ public:
     const SoFCVisibilityElement::Table *elementTable() const;
 
 private:
+    /// Rebuild the table from both sources and recount; false when it
+    /// was empty and still is.
+    bool rebuild();
+
+    std::vector<Render::VisibilityOverride> persisted;
+    std::vector<Render::VisibilityOverride> transient;
     Render::VisibilityOverrideTable entries;
     uint32_t serial = 0;
     SoFCVisibilityElement::Table element;
@@ -91,6 +109,14 @@ GuiExport bool parseOverrideKey(const std::string &key,
                                 App::Document *doc,
                                 std::vector<Render::ObjectRef> &path,
                                 bool &rooted);
+
+/// Resolve the occurrence \a subname names under \a root -- the object
+/// path of a subname, its element name ignored -- into {doc, obj} steps
+/// from \a root down; a null or empty \a subname is \a root itself.
+/// False when a step does not resolve.
+GuiExport bool resolveObjectPath(App::DocumentObject *root,
+                                 const char *subname,
+                                 std::vector<Render::ObjectRef> &path);
 
 /// Parse an ObjectVisibilities map ("1" shown, "0" hidden) into a
 /// visibility table. Bare entries count only while \a perView

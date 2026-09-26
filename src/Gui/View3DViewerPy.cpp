@@ -84,6 +84,13 @@ void View3DInventorViewerPy::init_type()
         "hidden. Call resetEditingRoot() to restore everything back to normal");
     add_varargs_method("resetEditingRoot", &View3DInventorViewerPy::resetEditingRoot,
         "resetEditingRoot(updateLinks=True): restore the editing ViewProvider's root node");
+    add_varargs_method("hideEditedObject", &View3DInventorViewerPy::hideEditedObject,
+        "hideEditedObject() -> bool: hide the occurrence being edited in every view of\n"
+        "the edit session, for an edit mode that hands setupEditingRoot() a node of its\n"
+        "own and leaves the ViewProvider's children where they are. Transient: never\n"
+        "written into a view's ObjectVisibilities, undone by resetEditingRoot(). False\n"
+        "when it cannot hide it (render cache modes 0-2), in which case call\n"
+        "setupEditingRoot() without a node to move the children instead.");
     add_varargs_method("setBackgroundColor", &View3DInventorViewerPy::setBackgroundColor,
         "setBackgroundColor(r,g,b): sets the background color of the current viewer.");
     add_varargs_method("setGradientBackground", &View3DInventorViewerPy::setGradientBackground,
@@ -449,6 +456,14 @@ Py::Object View3DInventorViewerPy::setupEditingRoot(const Py::Tuple& args)
     catch(...) {
         throw Py::RuntimeError("Unknown C++ exception");
     }
+}
+
+Py::Object View3DInventorViewerPy::hideEditedObject(const Py::Tuple& args)
+{
+    if (!PyArg_ParseTuple(args.ptr(), "")) {
+        throw Py::Exception();
+    }
+    return Py::Boolean(_viewer->hideEditedObject());
 }
 
 Py::Object View3DInventorViewerPy::resetEditingRoot(const Py::Tuple& args)

@@ -216,6 +216,15 @@ fc_add_gui_test(GuiPerViewVisibility_tests_run
                 per-view-visibility.py
                 --timeout 240)
 
+# An edit session hides the occurrence it edits (ViewerContext::
+# hideEditedObject) in every view of the session, a view opened during
+# the edit included, as a transient path entry: picks and the backend
+# frame lose it, another occurrence through a Link keeps it, no view's
+# map or saved file holds it, and leaving the edit brings it back.
+fc_add_gui_test(GuiEditHide_tests_run
+                edit-hide.py
+                --timeout 240)
+
 # A portrait view draws (backend frame), projects (getPointOnViewport)
 # and picks (Coin ray) with ONE projection: Coin's ADJUST_CAMERA widens
 # the volume by 1/aspect below unit aspect, and the backend feed skipped
