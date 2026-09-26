@@ -2694,6 +2694,25 @@ void CmdPartDesignBoolean::languageChange()
     cmd4->setStatusTip(cmd4->toolTip());
 }
 
+// Hides the object a Boolean takes whole as a tool, as the spacebar would:
+// through its parent's element visibility where the parent keeps one, so a
+// body reached through a container or a link is hidden there only.
+static void hideBooleanToolSource(const App::SubObjectT &sobjT)
+{
+    auto top = sobjT.getObject();
+    if (!top)
+        return;
+    App::DocumentObject *parent = nullptr;
+    std::string elementName;
+    auto obj = top->resolve(sobjT.getSubName().c_str(), &parent, &elementName);
+    if (!obj)
+        return;
+    if (parent && parent->isElementVisible(elementName.c_str()) >= 0)
+        parent->setElementVisible(elementName.c_str(), false);
+    else
+        obj->Visibility.setValue(false);
+}
+
 void CmdPartDesignBoolean::activated(int iMsg)
 {
     std::string bodySub;
@@ -2723,7 +2742,9 @@ void CmdPartDesignBoolean::activated(int iMsg)
         }
         else {
             link = sel.getObject();
-            sel.getSubName();
+            // lost in a8d928c760, which bound the whole top object --
+            // a Part and everything in it for a body picked inside one
+            linkSub = sel.getSubName();
             if(bodyParent && bodyParent != pcActiveBody) {
                 std::string sub = bodySub;
                 bodyParent->resolveRelativeLink(sub,link,linkSub);
@@ -2782,7 +2803,12 @@ void CmdPartDesignBoolean::activated(int iMsg)
     bool updateDocument = false;
 
     std::set<App::SubObjectT> boundObjects;
+    // Tools bound whole. One picked by a solid of a multi-solid shape is
+    // not, and hiding its object would hide the other solids too.
+    std::set<App::SubObjectT> wholeObjects;
     for(auto &v : binderLinks) {
+        if (v.second.empty())
+            wholeObjects.emplace(v.first.first, v.first.second.c_str());
         std::string FeatName = getUniqueObjectName("Reference",pcActiveBody);
         Gui::cmdAppObject(pcActiveBody, std::ostringstream()
                 << "newObject('PartDesign::SubShapeBinder','" << FeatName << "')");
@@ -2813,6 +2839,14 @@ void CmdPartDesignBoolean::activated(int iMsg)
             if (pcActiveBody->Group.find(sobj->getNameInDocument()))
                 sobj->Visibility.setValue(false);
         }
+    }
+    // A tool from outside the body is drawn by the Boolean now, as its
+    // result or, in Tools mode, as its binder; left showing, it covers
+    // what a Cut or a Common took away
+    for (auto &sobjT : wholeObjects) {
+        auto sobj = sobjT.getSubObject();
+        if (sobj && !pcActiveBody->Group.find(sobj->getNameInDocument()))
+            hideBooleanToolSource(sobjT);
     }
 
     finishFeature(this, Feat, nullptr, false, updateDocument);

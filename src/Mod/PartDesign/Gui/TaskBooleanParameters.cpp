@@ -62,6 +62,7 @@ TaskBooleanParameters::TaskBooleanParameters(ViewProviderBoolean *BooleanView,QW
     : TaskBox(Gui::BitmapFactory().pixmap("PartDesign_Boolean"), tr("Boolean parameters"), true, parent)
     , ui(new Ui_TaskBooleanParameters)
     , BooleanView(BooleanView)
+    , booleanT(BooleanView->getObject())
 {
     // we need a separate container widget to add all controls to
     proxy = new QWidget(this);
@@ -127,8 +128,12 @@ void TaskBooleanParameters::onDeleteOnRemove(bool checked) {
 }
 
 void TaskBooleanParameters::populate() {
-    if (!BooleanView || !BooleanView->getObject())
+    // Compared, never dereferenced, until the object is known to be alive
+    auto obj = booleanT.getObject();
+    if (!obj || Application::Instance->getViewProvider(obj) != BooleanView) {
+        BooleanView = nullptr;
         return;
+    }
 
     ui->listWidgetBodies->clear();
     PartDesign::Boolean* pcBoolean = static_cast<PartDesign::Boolean*>(BooleanView->getObject());
