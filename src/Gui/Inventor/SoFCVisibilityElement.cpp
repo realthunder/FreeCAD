@@ -23,6 +23,9 @@
 #include "PreCompiled.h"
 
 #include <cstring>
+#include <map>
+#include <string>
+#include <string_view>
 
 #include <Inventor/SoPath.h>
 #include <Inventor/actions/SoActions.h>
@@ -36,6 +39,41 @@
 using namespace Gui;
 
 SO_ELEMENT_SOURCE(SoFCVisibilityElement)
+
+namespace {
+
+/// The objects some view's table has an entry ending at, counted per
+/// view: object name -> document name -> count. Object first, since a
+/// check that finds no object stops there.
+using OverrideCounts = std::map<std::string, std::map<std::string, int, std::less<>>, std::less<>>;
+
+OverrideCounts &overrides()
+{
+  static OverrideCounts counts;
+  return counts;
+}
+
+} // namespace
+
+bool
+SoFCVisibilityElement::countOverride(const char * doc, const char * obj, bool add)
+{
+  auto &counts = overrides();
+  if (add) {
+    auto &docs = counts[obj];
+    return ++docs[doc] == 1;
+  }
+  auto it = counts.find(std::string_view(obj));
+  if (it == counts.end())
+    return false;
+  auto dit = it->second.find(std::string_view(doc));
+  if (dit == it->second.end() || --dit->second > 0)
+    return false;
+  it->second.erase(dit);
+  if (it->second.empty())
+    counts.erase(it);
+  return true;
+}
 
 void
 SoFCVisibilityElement::initClass(void)
@@ -127,10 +165,8 @@ int
 SoFCVisibilityElement::check(SoAction * action, const SoNode * node)
 {
   SoState *state = action->getState();
-  if (!state->isElementEnabled(classStackIndex))
-    return -1;
-  const Table *table = get(state);
-  if (!table || !table->table)
+  const auto &counts = overrides();
+  if (counts.empty() || !state->isElementEnabled(classStackIndex))
     return -1;
   // The object's own display-mode switch only: a direct child of the
   // innermost selection root.
@@ -143,6 +179,16 @@ SoFCVisibilityElement::check(SoAction * action, const SoNode * node)
     return -1;
   const char *doc, *obj;
   if (!root->getRenderedObject(doc, obj))
+    return -1;
+  // No view has an entry for this object: every view answers the same,
+  // so the element is not read and records no dependency.
+  auto it = counts.find(std::string_view(obj));
+  if (it == counts.end() || !it->second.count(std::string_view(doc)))
+    return -1;
+  // Read (and recorded) even when THIS view has no table: a cache built
+  // here must not be reused by a view whose table does hide the object.
+  const Table *table = get(state);
+  if (!table || !table->table)
     return -1;
   if (!table->leaves.count(std::string_view(obj)))
     return -1;

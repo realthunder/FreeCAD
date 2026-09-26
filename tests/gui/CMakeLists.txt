@@ -224,6 +224,14 @@ fc_add_gui_test(GuiPortraitPickVsDraw_tests_run
                 portrait-pick-vs-draw.py
                 --timeout 240)
 
+# One view's own visibility table costs no other view its pick culling:
+# the per-object bounding box caches are shared by the views, and only
+# the switch of an object some view has an entry for may read the
+# table. Times a pick through a gap in the other view, before and after.
+fc_add_gui_test(GuiPerViewVisibilityPickCull_tests_run
+                per-view-visibility-pick-cull.py
+                --timeout 240)
+
 # Ctrl+A in a focused spreadsheet selects its cells (upstream 4f4e9244e6):
 # Ctrl+A is Std_SelectAll's window shortcut, and the table keeps it only by
 # claiming it in ShortcutOverride.

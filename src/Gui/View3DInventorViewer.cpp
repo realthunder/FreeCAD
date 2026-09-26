@@ -595,6 +595,29 @@ struct View3DInventorViewer::Private
     /// ViewProvider's forced update, so a hidden one is tessellated and
     /// captured. Released when the table drops them and with the viewer.
     std::set<std::pair<std::string, std::string>> perViewShown;
+    /// The objects this view's entries END at, each counted once in
+    /// SoFCVisibilityElement::countOverride -- the only objects whose
+    /// switch reads the element, in any view. Released like perViewShown.
+    std::set<std::pair<std::string, std::string>> overridden;
+
+    /// Count or release \a key's object as one some view has an entry
+    /// for. Its switch is touched when that changes whether ANY view
+    /// has one: the caches above it (shared by every view) were built
+    /// without reading the element, or will stop reading it.
+    static void countOverride(const std::pair<std::string, std::string> &key,
+                              bool add)
+    {
+        if (!SoFCVisibilityElement::countOverride(key.first.c_str(), key.second.c_str(), add))
+            return;
+        if (!Application::Instance)
+            return;
+        auto doc = App::GetApplication().getDocument(key.first.c_str());
+        auto obj = doc ? doc->getObject(key.second.c_str()) : nullptr;
+        auto vp = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(
+                Application::Instance->getViewProvider(obj));
+        if (SoSwitch *sw = vp ? vp->getModeSwitch() : nullptr)
+            sw->touch();
+    }
 
     /// Count or release \a key's object as shown by this view.
     static void countShown(const std::pair<std::string, std::string> &key,
@@ -1878,6 +1901,9 @@ View3DInventorViewer::~View3DInventorViewer()
     for (const auto &key : _pimpl->perViewShown)
         Private::countShown(key, false);
     _pimpl->perViewShown.clear();
+    for (const auto &key : _pimpl->overridden)
+        Private::countOverride(key, false);
+    _pimpl->overridden.clear();
 
     // to prevent following OpenGL error message: "Texture is not valid in the current context. Texture has not been destroyed"
     aboutToDestroyGLContext();
@@ -2955,10 +2981,25 @@ void View3DInventorViewer::setObjectVisibilities(
     _pimpl->visibilityElement.update(objectVisibilities());
 
     std::set<std::pair<std::string, std::string>> shown;
+    std::set<std::pair<std::string, std::string>> overridden;
     for (const auto &ov : _pimpl->visibilities.entries) {
-        if (ov.visible && !ov.path.empty())
+        if (ov.path.empty())
+            continue;
+        overridden.emplace(ov.path.back().doc, ov.path.back().obj);
+        if (ov.visible)
             shown.emplace(ov.path.back().doc, ov.path.back().obj);
     }
+    // Counted in before the old ones go, so an object this change keeps
+    // is not touched on the way through.
+    for (const auto &key : overridden) {
+        if (!_pimpl->overridden.count(key))
+            Private::countOverride(key, true);
+    }
+    for (const auto &key : _pimpl->overridden) {
+        if (!overridden.count(key))
+            Private::countOverride(key, false);
+    }
+    _pimpl->overridden = std::move(overridden);
     for (const auto &key : shown) {
         if (!_pimpl->perViewShown.count(key))
             Private::countShown(key, true);

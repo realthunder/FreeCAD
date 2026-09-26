@@ -95,7 +95,20 @@ public:
   /// its own whichChild). Only the object's OWN switch -- a direct
   /// child of the innermost SoFCSelectionRoot -- is answered for;
   /// switches inside a ViewProvider keep their own logic.
+  ///
+  /// The element is READ, and so becomes a dependency of every cache
+  /// open above the switch, only for an object some view's table has an
+  /// entry ending at (countOverride). Any other object answers -1 in
+  /// every view, and the caches above it -- shared by all the views of
+  /// the document -- stay valid whichever view built them.
   static int check(SoAction *action, const SoNode *node);
+
+  /// Count the object \a doc#\a obj in (\a add) or out of the objects
+  /// that entries of any view's table end at. Returns whether it entered
+  /// or left that set, in which case the caller must touch the object's
+  /// switch: the caches above it were built without reading the element,
+  /// or will now stop reading it.
+  static bool countOverride(const char *doc, const char *obj, bool add);
 
   /// An object chain, outermost first, as {document, object} internal
   /// names.

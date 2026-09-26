@@ -2655,6 +2655,19 @@ read records a cache dependency, so a table change re-validates the
 bounding box caches below the root; the root itself is touched, since
 the caches above it cannot see the table.
 
+Only an object some view has an entry for reads the element
+(`SoFCVisibilityElement::countOverride`, counted per view). The
+per-object separators are shared by every view of the document, and a
+cache that read the element matches only the view that built it: when
+every switch read it, one view's entry cost every other view its pick
+culling, since `SoSeparator::rayPick` culls only with a valid bounding
+box cache (400 boxes, a pick through a gap in the other view: 266 us ->
+1882 us; `tests/gui/per-view-visibility-pick-cull.py`). Any other
+object answers the same in every view and records nothing. An object
+entering or leaving that set gets its switch touched, because the
+caches above it were built without the dependency, or will stop having
+it; a toggle of an object already in the set touches nothing.
+
 **Capture side: shared, filtered at draw.** The mode-3 capture is one
 traversal shared by every view, canvas cell and served client, so it
 stays view-independent and each view drops what it hides when it DRAWS:
@@ -2688,10 +2701,10 @@ Capture on first show touches only objects someone shows.
   fell into the bucket of an equal-looking draw of another object and
   took its tag: the shown object's faces were admitted and its edges
   counted in every view's bounds. Now compared for every type.
-- **Open, not fixed here:** in a portrait cell the backend frame (and
-  `getPointOnViewport`) places objects at x scaled by the aspect
-  relative to the Coin ray pick. The test locates picks by a blind
-  sweep and pixels by projection for that reason.
+- **Found here, fixed after (`e0c37b32ce`):** in a portrait cell the
+  backend frame (and `getPointOnViewport`) placed objects 1/aspect
+  farther from the centre than the Coin ray pick, in both axes: the
+  backend feed skipped Coin's `ADJUST_CAMERA` widening.
 
 **Verified** by `tests/gui/per-view-visibility.py`
 (`GuiPerViewVisibility_tests_run`), two views of one document, 27
