@@ -5995,3 +5995,24 @@ file opened, closed and opened again gives the same TShape.
 
 Gates: Python 2930 OK; ctest 842/842; recovery 15, branch 27, version 18,
 pin 28, frozen 16 PASS.
+
+### 27.36 Next (user, 2026-09-26)
+
+Before the file-scope state of 27.18, chase what was seen and not chased:
+
+1. The first `saveAs` of a new document holding a `Part::Box` warns
+   "embedded history of <doc>: blob 1e39ec8b... of a named version is not
+   in the store" (27.30). Predates this work.
+2. `saveToLog` decodes and hashes every blob member of the archive to learn
+   what it holds (27.28, 27.33: 1.4 s on a 7 MB file); `Content.xml` or the
+   History element's own list could answer without the decode.
+3. A shallow move of a shape whose top is an edge copies it, though its
+   curves and 3D polygon could be shared (27.35).
+4. Headless, a released pinned version never closes, whatever
+   `ClosePinnedVersion` says (27.30) -- find a safe point, or rule the
+   deviation.
+5. A log-only save leaves members of the old history that nothing
+   references in the file until the next ordinary save (27.28).
+
+Then the file-scope state (27.18: last object id, string hasher, object
+name table, per-object id counters), design first.
