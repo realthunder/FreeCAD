@@ -52,31 +52,23 @@ TaskPadParameters::TaskPadParameters(ViewProviderPad *PadView,
 
 TaskPadParameters::~TaskPadParameters() = default;
 
-void TaskPadParameters::translateModeList(int index)
+void TaskPadParameters::fillModeList(Gui::Fw::QComboBox *combo)
 {
-    ui->changeMode->clear();
-    ui->changeMode->addItem(tr("Dimension"));
-    ui->changeMode->addItem(tr("To last"));
-    ui->changeMode->addItem(tr("To first"));
+    combo->clear();
+    combo->addItem(tr("Dimension"));
+    combo->addItem(tr("To last"));
+    combo->addItem(tr("To first"));
     if (vp && vp->isDerivedFrom(ViewProviderExtrusion::getClassTypeId()))
-        ui->changeMode->addItem(tr("Up to Element"));
+        combo->addItem(tr("Up to Element"));
     else
-        ui->changeMode->addItem(tr("Up to face"));
-    ui->changeMode->addItem(tr("Two dimensions"));
-    ui->changeMode->addItem(tr("Up to shape"));
-    ui->changeMode->setCurrentIndex(index);
+        combo->addItem(tr("Up to face"));
 }
 
-
-void TaskPadParameters::translateFaceNamePlaceHolder()
+QString TaskPadParameters::upToTitle() const
 {
-    if (vp && vp->isDerivedFrom(ViewProviderExtrusion::getClassTypeId())) {
-        ui->buttonFace->setText(tr("Element"));
-        ui->lineFaceName->setPlaceholderText(tr("No element selected"));
-    }
-    else {
-        TaskExtrudeParameters::translateFaceNamePlaceHolder();
-    }
+    if (vp && vp->isDerivedFrom(ViewProviderExtrusion::getClassTypeId()))
+        return tr("Element");
+    return TaskExtrudeParameters::upToTitle();
 }
 
 void TaskPadParameters::onModeChanged(int index)
@@ -99,20 +91,14 @@ void TaskPadParameters::onModeChanged(int index)
     case Modes::ToFace:
         // Note: ui->checkBoxReversed is purposely enabled because the selected face
         // could be a circular one around the sketch
-        pcPad->Type.setValue("UpToFace");
-        if (ui->lineFaceName->text().isEmpty()) {
-            ui->buttonFace->setChecked(true);
-        }
-        if (!pcPad->UpToFace.getValue()) {
+        setSideMode(pcPad->Type, pcPad->UpToShape, index);
+        // nothing to go up to yet: pick it first
+        if (!pcPad->UpToShape.getSize()) {
             setCheckboxes();
+            if (upToWidget)
+                upToWidget->startSelection();
             return;
         }
-        break;
-    case Modes::TwoDimensions:
-        pcPad->Type.setValue("TwoLengths");
-        break;
-    case Modes::ToShape:
-        pcPad->Type.setValue("UpToShape");
         break;
     }
 
@@ -122,11 +108,7 @@ void TaskPadParameters::onModeChanged(int index)
 
 void TaskPadParameters::apply()
 {
-    QString facename = QStringLiteral("None");
-    if (static_cast<Modes>(getMode()) == Modes::ToFace) {
-        facename = getFaceName();
-    }
-    applyParameters(facename);
+    applyParameters();
 }
 
 //**************************************************************************

@@ -25,6 +25,8 @@
 #ifndef GUI_TASKVIEW_TaskSketchBasedParameters_H
 #define GUI_TASKVIEW_TaskSketchBasedParameters_H
 
+#include <functional>
+
 #include <QStandardItemModel>
 #include <QItemDelegate>
 #include <QGroupBox>
@@ -72,11 +74,19 @@ public:
         refSpine,
         refAuxSpine,
         refSection,
+        refUpTo,
+        refUpTo2,
     };
 
     virtual void _onSelectionChanged(const Gui::SelectionChanges&) {}
 
     const QString onSelectUpToFace(const Gui::SelectionChanges& msg);
+
+    /** A pick on the feature itself, traced back to the base's element and
+     * picked again as that. Returns false when the pick is not of the
+     * feature, true when it is (handled, or nothing to trace it to).
+     */
+    bool reselectBaseElement(const Gui::SelectionChanges& msg);
 
     void onSelectReference(QWidget *blinkWidget,
                            const AllowSelectionFlags &conf = ReferenceSelection::defaultFlags())
@@ -200,6 +210,17 @@ public:
     /// sketch, say) is hidden once linked. On by default.
     void setHideLinked(bool enable) { hideLinked = enable; }
 
+    /// Called on each pick before it is linked: may rewrite the reference,
+    /// or return false to drop the pick
+    using PickFilter = std::function<bool(const Gui::SelectionChanges&, App::SubObjectT&)>;
+    void setPickFilter(PickFilter filter) { pickFilter = std::move(filter); }
+
+    /// Enter selection mode, leaving the current selection alone
+    void startSelection();
+
+    /// The pick button's text
+    void setTitle(const QString &title);
+
     static constexpr int maxVisibleRows = 4;
 
 protected:
@@ -234,6 +255,7 @@ protected:
     std::vector<App::SubObjectT> lastReferences;
     App::DocumentObjectT linkProp;
     AllowSelectionFlags selectionConf;
+    PickFilter pickFilter;
     fastsignals::scoped_connection connModeChange;
     bool singleElement = false;
     bool multiObject = false;

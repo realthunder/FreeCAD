@@ -53,8 +53,8 @@ public:
 
 private:
     void onModeChanged(int index) override;
-    void translateModeList(int index) override;
-    void translateFaceNamePlaceHolder() override;
+    void fillModeList(Gui::Fw::QComboBox *combo) override;
+    QString upToTitle() const override;
 };
 
 /// simulation dialog for the TaskView
