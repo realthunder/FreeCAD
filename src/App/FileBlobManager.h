@@ -534,17 +534,26 @@ public:
      */
     static bool readArchiveMember(const std::string& path, const std::string& name,
                                   std::string& bytes);
-    /// The content hash of each blob member of the archive, by member name,
-    /// as a restore hashes them: what an archive holds, whatever its members
-    /// are named.
-    static std::map<std::string, std::string> archiveBlobHashes(const std::string& path);
+    /** Every blob member of the archive, by member name (without the
+     * prefix): its hash and referrers as the archive's content index lists
+     * them. A member the index does not list -- or every member, when there
+     * is no index -- is decoded and hashed, and its referrers are left empty:
+     * unknown. `hasIndex` says whether the archive has an index.
+     */
+    static std::map<std::string, BlobIndexEntry> archiveBlobIndex(const std::string& path,
+                                                                  bool* hasIndex = nullptr);
+    /// The content index of these entries, as a save writes it.
+    static std::string indexText(const std::map<std::string, BlobIndexEntry>& entries);
+    /// The referrer the document's own History property is listed under.
+    static const std::string& historyReferrer();
     /** Write the archive at `path` again into `target`: every member copied
      * as it is stored, not decoded, except the ones `replace` names, written
-     * with its bytes, and `add` appended -- each a blob of this store under
-     * its member name. Throws on failure.
+     * with its bytes, and those `drop` names, left out; then `add` appended
+     * -- each a blob of this store under its member name. Throws on failure.
      */
     void rewriteArchive(const std::string& path, const std::string& target,
                         const std::map<std::string, std::string>& replace,
+                        const std::set<std::string>& drop,
                         const std::vector<std::pair<std::string, FileBlobHandle>>& add) const;
 
     /// Where a save puts the content the document refers to.
@@ -728,6 +737,12 @@ private:
     std::vector<SaveEntry> planSave(const std::map<std::string, BlobIndexEntry>& previous) const;
     /// Parse a content index, or nothing if it is absent or unreadable.
     static std::map<std::string, BlobIndexEntry> readIndex(const std::string& path);
+    static std::map<std::string, BlobIndexEntry> readIndex(std::istream& from,
+                                                           const std::string& name);
+    /// One line of the content index.
+    static void writeIndexLine(std::ostream& str, const std::string& name,
+                               const std::string& hash,
+                               const std::vector<std::string>& referrers);
     /// Write the content index as the first entry of the blob directory.
     static void writeIndex(Base::Writer& writer, const std::vector<SaveEntry>& entries);
     /// Remove the files the previous index listed and this save did not write.

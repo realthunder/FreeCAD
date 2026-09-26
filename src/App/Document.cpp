@@ -5285,6 +5285,7 @@ int64_t Document::saveToLog(const char* name)
         doc->flushDeferredFiles();
     commitImplicitTransaction();
 
+    FC_TIME_INIT(tSnap);
     log->takeBranch();
     const int64_t num = _snapshotToLog("history");
     if (!num)
@@ -5292,6 +5293,7 @@ int64_t Document::saveToLog(const char* name)
     // Kept: a version the file does not hold must travel in its history.
     log->store().nameVersion(num, name && name[0] ? name : "Saved to history");
 
+    FC_TIME_INIT(tEmbed);
     // The history, as the file will carry it.
     TransactionLog::Embedded copy = log->embedForFile(saveDate, saveId);
     auto& manager = getFileBlobManager();
@@ -5312,29 +5314,73 @@ int64_t Document::saveToLog(const char* name)
                 << "\"/>\n";
     }
     element << "</History>";
+    const std::string oldElement = xml.substr(hFrom, hTo - hFrom);
+    const std::string outside = xml.substr(0, hFrom) + xml.substr(hTo);
     xml.replace(hFrom, hTo - hFrom, element.str());
 
-    // What the archive holds already is copied as stored, and what it lacks
-    // is added: the new database, and the blobs the history keeps. The old
-    // database stays -- a version the history keeps may name it (the
-    // document's own History property is in every version's capture).
-    const std::map<std::string, std::string> hashes = FileBlobManager::archiveBlobHashes(file);
-    std::map<std::string, std::string> replace {{"Document.xml", xml}};
+    // What the archive holds is known from its content index, not by
+    // decoding every member (sec 27.37). The model's members are copied as
+    // stored; a member only the old history referred to is left out unless
+    // the new one keeps it (no version holds the history, sec 27.29); what
+    // the archive lacks is added -- the new database, and the blobs the
+    // history keeps -- and the index is written again to say so.
+    FC_TIME_INIT(tIndex);
+    bool hasIndex = false;
+    std::map<std::string, BlobIndexEntry> members =
+        FileBlobManager::archiveBlobIndex(file, &hasIndex);
+    // A member the index does not list -- every member, in a file without
+    // one (below schema 5 nothing but the history is under blobs/) -- is the
+    // old history's when its element names it and nothing else in the
+    // document does.
+    std::string gui;
+    FileBlobManager::readArchiveMember(file, "GuiDocument.xml", gui);
+    for (auto& m : members) {
+        const std::string& hash = m.second.hash;
+        if (m.second.referrers.empty() && oldElement.find(hash) != std::string::npos
+                && outside.find(hash) == std::string::npos && gui.find(hash) == std::string::npos)
+            m.second.referrers.push_back(FileBlobManager::historyReferrer());
+    }
     blobs.push_back(db);
+    std::set<std::string> kept;
+    for (const auto& blob : blobs)
+        kept.insert(blob->hash());
+    const std::string& historyRef = FileBlobManager::historyReferrer();
+    const std::string prefix = FileBlobManager::archivePrefix();
+    std::set<std::string> drop;
     std::set<std::string> held;
-    for (const auto& h : hashes)
-        held.insert(h.second);
+    for (auto it = members.begin(); it != members.end();) {
+        const auto& refs = it->second.referrers;
+        const bool onlyHistory = !refs.empty()
+            && std::all_of(refs.begin(), refs.end(),
+                           [&historyRef](const std::string& r) { return r == historyRef; });
+        if (onlyHistory && !kept.count(it->second.hash)) {
+            drop.insert(prefix + it->first);
+            it = members.erase(it);
+            continue;
+        }
+        held.insert(it->second.hash);
+        ++it;
+    }
     std::vector<std::pair<std::string, FileBlobHandle>> add;
     for (const auto& blob : blobs) {
         if (held.insert(blob->hash()).second) {
             std::string ext = blob->extension();
-            add.emplace_back(blob->hash() + (ext.empty() ? "" : "." + ext), blob);
+            std::string member = blob->hash() + (ext.empty() ? "" : "." + ext);
+            members[member] = BlobIndexEntry {blob->hash(), {historyRef}};
+            add.emplace_back(std::move(member), blob);
         }
     }
+    std::map<std::string, std::string> replace {{"Document.xml", xml}};
+    // In place, so it stays ahead of the content it describes (a restore
+    // serves the whole archive when it reaches it). An archive without one
+    // is read member by member and gets none.
+    if (hasIndex)
+        replace[prefix + FileBlobManager::indexName()] = FileBlobManager::indexText(members);
 
+    FC_TIME_INIT(tWrite);
     const std::string tmp = file + "." + Base::Uuid::createUuid();
     try {
-        manager.rewriteArchive(file, tmp, replace, add);
+        manager.rewriteArchive(file, tmp, replace, drop, add);
     }
     catch (...) {
         Base::FileInfo(tmp).deleteFile();
@@ -5343,6 +5389,11 @@ int64_t Document::saveToLog(const char* name)
     if (!fi.deleteFile() || !Base::FileInfo(tmp).renameFile(file.c_str()))
         THROWM(Base::FileException, ("cannot replace '" + file + "'").c_str());
     Base::FileInfo(copy.path).deleteFile();
+    FC_LOG("saveToLog " << getName() << ": snapshot " << FC_DURATION(tEmbed - tSnap).count()
+           << "s, history " << FC_DURATION(tIndex - tEmbed).count()
+           << "s, index " << FC_DURATION(tWrite - tIndex).count() << "s (" << members.size()
+           << " members, " << drop.size() << " dropped, " << add.size()
+           << " added), rewrite " << Base::GetDuration(tWrite).count() << 's');
 
     noteVersionTaken();
     if (testStatus(VersionDoc)) {

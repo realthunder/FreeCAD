@@ -3203,6 +3203,19 @@ class TransactionBranchCases(unittest.TestCase):
         num = doc.saveToLog()
         self.assertGreater(num, onDisk)
         self.assertEqual(model(path), before)
+        # Sec 27.37: the old history's database is gone -- nothing but the
+        # history it replaced referred to it -- and the content index lists
+        # what the archive now holds, the new database included.
+        import ArchiveMembers
+
+        names = zipfile.ZipFile(path).namelist()
+        self.assertEqual(len([n for n in names if n.endswith(".db")]), 1)
+        index = ArchiveMembers.readFile(path, "blobs/Content.xml").decode("utf-8")
+        listed = sorted("blobs/" + n for n in re.findall(r'<F n="([^"]*)"', index))
+        held = sorted(n for n in names if n.startswith("blobs/") and n != "blobs/Content.xml")
+        self.assertEqual(listed, held)
+        self.assertLess(names.index("blobs/Content.xml"),
+                        min(names.index(n) for n in held))
         self.assertEqual(int(doc.Version.split()[0]), onDisk)
         saved = {v["num"]: v for v in doc.getTransactionVersions()}
         self.assertEqual(saved[num]["kind"], "named")

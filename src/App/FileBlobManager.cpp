@@ -1216,14 +1216,12 @@ std::vector<std::pair<std::string, FileBlobHandle>> FileBlobManager::collectedEn
 
 std::vector<std::pair<std::string, FileBlobHandle>> FileBlobManager::versionEntries() const
 {
-    // The History property is the document's, so its referrer is id 0 and
-    // named after the property (referrerOf()).
-    static const std::string history = "0:History";
+    const std::string& history = historyReferrer();
     std::vector<std::pair<std::string, FileBlobHandle>> out;
     for (auto& entry : planSave({})) {
         const bool onlyHistory = !entry.referrers.empty()
             && std::all_of(entry.referrers.begin(), entry.referrers.end(),
-                           [](const std::string& r) { return r == history; });
+                           [&history](const std::string& r) { return r == history; });
         if (!onlyHistory)
             out.emplace_back(std::move(entry.name), std::move(entry.blob));
     }
@@ -1407,11 +1405,18 @@ std::map<std::string, BlobIndexEntry> FileBlobManager::readIndex(const std::stri
         return index;
     }
 
+    Base::ifstream from(fi, std::ios::in | std::ios::binary);
+    if (!from) {
+        return index;
+    }
+    return readIndex(from, path);
+}
+
+std::map<std::string, BlobIndexEntry> FileBlobManager::readIndex(std::istream& from,
+                                                                 const std::string& path)
+{
+    std::map<std::string, BlobIndexEntry> index;
     try {
-        Base::ifstream from(fi, std::ios::in | std::ios::binary);
-        if (!from) {
-            return index;
-        }
         Base::XMLReader reader(path.c_str(), from);
         if (!reader.isValid()) {
             return index;
@@ -1455,14 +1460,41 @@ void FileBlobManager::writeIndex(Base::Writer& writer, const std::vector<SaveEnt
     // One element per line and sorted by name, so a content edit is a one-line
     // diff and two branches touching different parts of a project merge.
     for (const auto& entry : entries) {
-        str << "  <F n=\"" << Base::Persistence::encodeAttribute(entry.name) << "\" h=\""
-            << entry.blob->hash() << "\" r=\"";
-        for (std::size_t i = 0; i < entry.referrers.size(); ++i) {
-            str << (i ? " " : "") << entry.referrers[i];
-        }
-        str << "\"/>\n";
+        writeIndexLine(str, entry.name, entry.blob->hash(), entry.referrers);
     }
     str << "</FileStore>\n";
+}
+
+void FileBlobManager::writeIndexLine(std::ostream& str, const std::string& name,
+                                     const std::string& hash,
+                                     const std::vector<std::string>& referrers)
+{
+    str << "  <F n=\"" << Base::Persistence::encodeAttribute(name) << "\" h=\"" << hash
+        << "\" r=\"";
+    for (std::size_t i = 0; i < referrers.size(); ++i) {
+        str << (i ? " " : "") << referrers[i];
+    }
+    str << "\"/>\n";
+}
+
+std::string FileBlobManager::indexText(const std::map<std::string, BlobIndexEntry>& entries)
+{
+    std::ostringstream str;
+    str << "<?xml version='1.0' encoding='utf-8'?>\n"
+        << "<FileStore v=\"1\">\n";
+    for (const auto& entry : entries) {
+        writeIndexLine(str, entry.first, entry.second.hash, entry.second.referrers);
+    }
+    str << "</FileStore>\n";
+    return str.str();
+}
+
+const std::string& FileBlobManager::historyReferrer()
+{
+    // The History property is the document's, so its referrer is id 0 and
+    // named after the property (referrerOf()).
+    static const std::string history = "0:History";
+    return history;
 }
 
 void FileBlobManager::prune(const std::string& dir,
@@ -1847,27 +1879,53 @@ bool FileBlobManager::readArchiveMember(const std::string& path, const std::stri
     return false;
 }
 
-std::map<std::string, std::string> FileBlobManager::archiveBlobHashes(const std::string& path)
+std::map<std::string, BlobIndexEntry> FileBlobManager::archiveBlobIndex(const std::string& path,
+                                                                      bool* hasIndex)
 {
-    std::map<std::string, std::string> hashes;
     BlobArchive archive(path, false);
     const std::string prefix = archivePrefix();
     const std::string index = prefix + indexName();
-    std::string bytes;
     const auto& entries = archive.entries();
+    std::map<std::string, BlobIndexEntry> listed;
+    bool found = false;
+    std::string bytes;
+    for (std::size_t i = 0; i < entries.size(); ++i) {
+        if (entries[i].name != index)
+            continue;
+        found = true;
+        if (archive.read(i, bytes)) {
+            std::istringstream in(bytes);
+            listed = readIndex(in, path + "/" + index);
+        }
+        break;
+    }
+    if (hasIndex)
+        *hasIndex = found;
+    // What a member holds is taken from the index its save wrote, which a
+    // restore does not trust (restoreFromArchive() hashes every member): the
+    // caller here decides only what to copy and what to add, and a member
+    // the index does not list is hashed as a restore would.
+    std::map<std::string, BlobIndexEntry> out;
     for (std::size_t i = 0; i < entries.size(); ++i) {
         const auto& name = entries[i].name;
         if (name.compare(0, prefix.size(), prefix) != 0 || name == index)
             continue;
+        const std::string member = name.substr(prefix.size());
+        auto it = listed.find(member);
+        if (it != listed.end() && !it->second.hash.empty()) {
+            out[member] = it->second;
+            continue;
+        }
         if (archive.read(i, bytes))
-            hashes[name] = hashBytes(bytes);
+            out[member].hash = hashBytes(bytes);
     }
-    return hashes;
+    return out;
 }
 
 void FileBlobManager::rewriteArchive(
     const std::string& path, const std::string& target,
     const std::map<std::string, std::string>& replace,
+    const std::set<std::string>& drop,
     const std::vector<std::pair<std::string, FileBlobHandle>>& add) const
 {
     BlobArchive archive(path, false);
@@ -1883,6 +1941,8 @@ void FileBlobManager::rewriteArchive(
         const auto& entries = archive.entries();
         for (std::size_t i = 0; i < entries.size(); ++i) {
             const auto& name = entries[i].name;
+            if (drop.count(name))
+                continue;
             auto it = replace.find(name);
             if (it != replace.end()) {
                 writer.putNextEntry(name.c_str());
