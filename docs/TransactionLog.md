@@ -5765,3 +5765,61 @@ saves, and a reopen and a save, each file with the one member
 
 Gates: Python 2926 OK; ctest 842/842; recovery 15, branch 27, version 18,
 pin 28 PASS.
+
+### 27.30 Step 4 as built: the Gui (2026-09-26)
+
+- **Tree labels.** The file's own document shows `@<branch>@v<num>` after
+  its label while the file has more than one open branch -- the branch it
+  is on and the version it is on disk (its `Version`); refreshed on
+  `signalBranchesChanged` and whenever the label is (a save clears the
+  modified mark). A frozen version is shown in italics. Version documents
+  carry their names in their labels already (27.23).
+- **Read-only.** The property editor shows every property of an object of
+  a frozen version read-only, but `Visibility` (`PropertyItem::updateData`).
+  The App refuses the write anyway (27.26); this only says so up front.
+- **Save to History.** `Std_SaveToHistory` in the File menu after Save a
+  Copy, for any editable document of a saved file with a log; it records
+  the call as a macro line (`App.getDocument(...).saveToLog()`). A version
+  document's Save now offers **Save to History** (the default), **Save over
+  File** (the standard Save button, renamed: the 27.16 path, warning and
+  re-pin offer unchanged) and Cancel. A version document saved to history
+  is no longer marked modified -- its history holds what it shows, and a
+  close would otherwise ask again forever; the file's own document stays
+  modified, since its file still differs.
+- **Closing a pinned version** (27.21 Q5). A frozen version opened *for a
+  pin* -- through a link resolving (`openDocumentPrivate` with object
+  names) or by `pinLink` -- has status `OpenedForPin`; one opened by hand
+  has not and is never offered. When the last `DocInfo` pinned to it goes
+  (`DocInfo::deinit`: unpinned, deleted, re-pinned, or the linking
+  document closed; not while closing everything), the document emits
+  `signalPinsReleased`. The Gui looks again on the next event loop turn --
+  an undo in the same step may pin it again -- and then, per
+  `DocumentParams ClosePinnedVersion` (0 ask, 1 close, 2 keep), closes it,
+  keeps it, or asks: "No link pins '<label>' any more. Close it?", Close /
+  Keep Open, with "Remember my choice", which sets the preference.
+
+**Deviation from the 27.21 proposal:** with no Gui nothing closes, whatever
+the preference. The App has no point at which closing a document from
+inside the link machinery is safe, and nothing else to run it from. A
+headless caller closes the document itself.
+
+GUI check: `scripts/transaction-log-frozen-check.py` (own
+`XDG_CACHE_HOME`): the tree suffix appears with a second branch, the pinned
+version's label and italics, Save to History from the command (a named
+version, the file's model unchanged) and not offered for a frozen version,
+a version document's Save to History (not modified after, its name's tail
+moved, the pin unchanged), and the close prompt: asked, closed, remembered,
+then closed without asking. 16 PASS.
+
+The pin check (`scripts/transaction-log-pin-check.py`) now sets
+`ClosePinnedVersion` to 2: it unpins, and the close prompt is not what it
+checks -- without it the run hung on an unanswered dialog.
+
+**Seen, not chased:** the first `saveAs` of a new document holding a
+`Part::Box` warns "embedded history of <doc>: blob 1e39ec8b... of a named
+version is not in the store" (Document.cpp, embedHistory). Same hash every
+run; present in the previous session's pin-check log too, so it predates
+this work.
+
+Gates: Python 2926 OK; ctest 842/842; recovery 15, branch 27, version 18,
+pin 28, frozen 16 PASS.

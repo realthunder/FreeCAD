@@ -3740,6 +3740,12 @@ public:
     void deinit() {
         FC_LOG("deinit " << (pcDoc?pcDoc->getName():filePath()));
         assert(links.empty());
+        // The last pin of a version opened for pins lets go (sec 27.30).
+        App::Document* released = version && pcDoc
+                && pcDoc->testStatus(App::Document::FrozenVersion)
+                && pcDoc->testStatus(App::Document::OpenedForPin)
+                && !App::GetApplication().isClosingAll()
+            ? pcDoc : nullptr;
         connFinishRestoreDocument.disconnect();
         connPendingReloadDocument.disconnect();
         connDeleteDocument.disconnect();
@@ -3751,6 +3757,8 @@ public:
         myPos = _DocInfoMap.end();
         myPath.clear();
         pcDoc = nullptr;
+        if (released)
+            released->signalPinsReleased(*released);
     }
 
     void init(DocInfoMap::iterator pos, const char *objName, PropertyXLink *l) {

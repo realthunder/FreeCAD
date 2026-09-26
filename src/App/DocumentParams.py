@@ -204,6 +204,11 @@ Params = [
         doc='How many unnamed versions the transaction log keeps (sec 16.3):\n'
             'when a version is added, the oldest unnamed ones over this count\n'
             'are evicted -- never a named one, never the newest. 0 keeps all.'),
+    ParamInt('ClosePinnedVersion', 0,
+        doc='When the last link pinned to a version of a file goes, what\n'
+            'happens to the document that showed it (docs/TransactionLog.md\n'
+            'sec 27.21 Q5): 0 ask, 1 close it, 2 keep it open. With no Gui to\n'
+            'ask, 0 keeps it open.'),
     ParamBool('AutoSaveEnabled', True,
         doc='Autosave. Without the transaction log, the Gui writes a recovery\n'
             'file every AutoSaveTimeout minutes; with it, the log takes an\n'

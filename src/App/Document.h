@@ -103,6 +103,8 @@ public:
         FrozenVersion = 18, // The instance of a version that pins show
                             // (docs/TransactionLog.md sec 27.22): every
                             // change to its data is refused
+        OpenedForPin = 19, // Opened because a link pinned it, not by hand:
+                           // offered for closing when its pins go (sec 27.30)
     };
 
     /** @name Properties */
@@ -204,6 +206,11 @@ public:
     /// (docs/TransactionLog.md sec 26): a switch, a new branch, a trim or a
     /// deleted branch
     fastsignals::signal<void (const App::Document&)> signalBranchesChanged;
+    /// signal on a frozen version document opened for a pin when the last
+    /// link pinned to it lets go (docs/TransactionLog.md sec 27.21 Q5, 27.30):
+    /// unpinned, deleted, re-pinned, or its document closed. What becomes of
+    /// the document is the Gui's (DocumentParams ClosePinnedVersion).
+    fastsignals::signal<void (const App::Document&)> signalPinsReleased;
     /** signal on load/save document
      * this signal is given when the document gets streamed.
      * you can use this hook to write additional information in

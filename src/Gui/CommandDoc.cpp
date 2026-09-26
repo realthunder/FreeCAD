@@ -856,6 +856,54 @@ bool StdCmdSaveCopy::isActive()
 }
 
 //===========================================================================
+// Std_SaveToHistory
+//===========================================================================
+DEF_STD_CMD_A(StdCmdSaveToHistory)
+
+StdCmdSaveToHistory::StdCmdSaveToHistory()
+  :Command("Std_SaveToHistory")
+{
+  sGroup        = "File";
+  sMenuText     = QT_TR_NOOP("Save to &History");
+  sToolTipText  = QT_TR_NOOP("Keep the active document as a version in its file's history, "
+                             "without changing what the file opens as");
+  sWhatsThis    = "Std_SaveToHistory";
+  sStatusTip    = sToolTipText;
+  eType         = 0;
+}
+
+void StdCmdSaveToHistory::activated(int iMsg)
+{
+    // docs/TransactionLog.md sec 27.22, 27.28.
+    Q_UNUSED(iMsg);
+    Gui::Document* gdoc = getActiveGuiDocument();
+    if (!gdoc)
+        return;
+    App::Document* doc = gdoc->getDocument();
+    try {
+        Gui::WaitCursor wc;
+        doCommand(Command::Doc, "App.getDocument('%s').saveToLog()", doc->getName());
+    }
+    catch (const Base::Exception& e) {
+        QMessageBox::critical(getMainWindow(), QObject::tr("Save to History"),
+                              QString::fromUtf8(e.what()));
+        return;
+    }
+    // A version of the file has nothing left to save: its history holds what
+    // it shows. The file's own document still differs from its file.
+    if (doc->testStatus(App::Document::VersionDoc))
+        gdoc->setModified(false);
+}
+
+bool StdCmdSaveToHistory::isActive()
+{
+    Gui::Document* gdoc = getActiveGuiDocument();
+    App::Document* doc = gdoc ? gdoc->getDocument() : nullptr;
+    return doc && doc->getTransactionLog() && !doc->testStatus(App::Document::FrozenVersion)
+        && !doc->FileName.getStrValue().empty();
+}
+
+//===========================================================================
 // Std_SaveAll
 //===========================================================================
 DEF_STD_CMD_A(StdCmdSaveAll)
@@ -1971,6 +2019,7 @@ void CreateDocCommands()
     rcCmdMgr.addCommand(new StdCmdSaveAs());
     rcCmdMgr.addCommand(new StdCmdSaveAsDirectory());
     rcCmdMgr.addCommand(new StdCmdSaveCopy());
+    rcCmdMgr.addCommand(new StdCmdSaveToHistory());
     rcCmdMgr.addCommand(new StdCmdSaveAll());
     rcCmdMgr.addCommand(new StdCmdRevert());
     rcCmdMgr.addCommand(new StdCmdProjectInfo());

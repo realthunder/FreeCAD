@@ -229,8 +229,17 @@ void PropertyItem::updateData()
     bool ro = true;
     for (auto it : propertyItems) {
         App::PropertyContainer* parent = it->getContainer();
-        if (parent)
-            ro &= (parent->isReadOnly(it) || it->testStatus(App::Property::ReadOnly));
+        if (!parent)
+            continue;
+        // A pinned version refuses every change to its data but the view's
+        // (docs/TransactionLog.md sec 27.22): shown read-only.
+        bool frozen = false;
+        if (auto obj = Base::freecad_dynamic_cast<App::DocumentObject>(parent)) {
+            frozen = obj->getDocument()
+                && obj->getDocument()->testStatus(App::Document::FrozenVersion)
+                && it != &obj->Visibility;
+        }
+        ro &= (frozen || parent->isReadOnly(it) || it->testStatus(App::Property::ReadOnly));
     }
     this->setReadOnly(ro);
 }

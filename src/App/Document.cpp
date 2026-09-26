@@ -5420,6 +5420,8 @@ int64_t Document::pinLink(PropertyXLink& link, int64_t version)
         const char* name = link.getValue() ? link.getValue()->getNameInDocument()
                                            : link.getObjectName();
         Document* frozen = openFileVersion(history, version, false, nullptr, true);
+        if (frozen)
+            frozen->setStatus(OpenedForPin, true);
         if (!frozen || !frozen->getObject(name))
             THROWM(Base::ValueError, std::string("version ") + std::to_string(version)
                                          + " of the file has no object '" + name + "'");

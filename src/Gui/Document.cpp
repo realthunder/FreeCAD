@@ -31,6 +31,7 @@
 # include <QHBoxLayout>
 # include <QLabel>
 # include <QMessageBox>
+# include <QPushButton>
 # include <QRadioButton>
 # include <QTextStream>
 # include <QTimer>
@@ -295,6 +296,7 @@ struct DocumentP
     Connection connectSkipRecompute;
     Connection connectTransactionAppend;
     Connection connectTransactionRemove;
+    Connection connectPinsReleased;
     Connection connectTouchedObject;
     Connection connectPurgeTouchedObject;
     Connection connectChangePropertyEditor;
@@ -412,6 +414,8 @@ Document::Document(App::Document* pcDocument,Application * app)
         (std::bind(&Gui::Document::slotTransactionAppend, this, sp::_1, sp::_2));
     d->connectTransactionRemove = pcDocument->signalTransactionRemove.connect
         (std::bind(&Gui::Document::slotTransactionRemove, this, sp::_1, sp::_2));
+    d->connectPinsReleased = pcDocument->signalPinsReleased.connect
+        (std::bind(&Gui::Document::slotPinsReleased, this, sp::_1));
     //NOLINTEND
 
     // The on-top set is stored in each view's own OnTopObjects property
@@ -1790,9 +1794,32 @@ bool saveVersionDocument(Gui::Document* gdoc)
                               "what the file holds.")
                       .arg(QString::fromUtf8(other->Label.getValue()));
     }
-    if (QMessageBox::warning(getMainWindow(), QObject::tr("Save a version"), text,
-                             QMessageBox::Save | QMessageBox::Cancel, QMessageBox::Cancel)
-            != QMessageBox::Save)
+    // Save to History (docs/TransactionLog.md sec 27.22, 27.28), the default:
+    // the version's work kept in the file's history, the file as it was.
+    text += QStringLiteral("\n\n")
+        + QObject::tr("Save to History keeps it in the file's history instead, and leaves "
+                      "what the file opens as unchanged.");
+    QMessageBox box(QMessageBox::Warning, QObject::tr("Save a version"), text,
+                    QMessageBox::Save | QMessageBox::Cancel, getMainWindow());
+    box.button(QMessageBox::Save)->setText(QObject::tr("Save over File"));
+    QPushButton* toHistory = box.addButton(QObject::tr("Save to History"), QMessageBox::AcceptRole);
+    box.setDefaultButton(toHistory);
+    box.exec();
+    if (box.clickedButton() == toHistory) {
+        try {
+            Gui::WaitCursor wc;
+            doc->saveToLog();
+        }
+        catch (const Base::Exception& e) {
+            QMessageBox::critical(getMainWindow(), QObject::tr("Saving document failed"),
+                                  QString::fromUtf8(e.what()));
+            return false;
+        }
+        // Its history holds what it shows: nothing is left to save.
+        gdoc->setModified(false);
+        return true;
+    }
+    if (box.clickedButton() != box.button(QMessageBox::Save))
         return false;
 
     int64_t saved = 0;
@@ -1834,6 +1861,44 @@ bool saveVersionDocument(Gui::Document* gdoc)
     return true;
 }
 }   // namespace
+
+void Document::slotPinsReleased(const App::Document& doc)
+{
+    // Later, not inside the link machinery that let go: an undo in the same
+    // step may pin it again, and closing a document from here would pull it
+    // out from under that code.
+    const std::string name = doc.getName();
+    QTimer::singleShot(0, getMainWindow(), [name]() {
+        App::Document* pinned = App::GetApplication().getDocument(name.c_str());
+        if (!pinned || !pinned->testStatus(App::Document::FrozenVersion))
+            return;
+        App::FileHistory::NameParts parts;
+        if (!App::FileHistory::parseName(pinned->FileName.getStrValue(), parts)
+                || !linksPinnedTo(parts.file, parts.version).empty())
+            return;
+        long choice = App::DocumentParams::getClosePinnedVersion();
+        if (choice == 0) {
+            QMessageBox box(QMessageBox::Question, QObject::tr("Pinned version"),
+                            QObject::tr("No link pins '%1' any more. Close it?")
+                                .arg(QString::fromUtf8(pinned->Label.getValue())),
+                            QMessageBox::Close | QMessageBox::No, getMainWindow());
+            box.button(QMessageBox::No)->setText(QObject::tr("Keep Open"));
+            box.setDefaultButton(QMessageBox::Close);
+            auto remember = new QCheckBox(QObject::tr("Remember my choice"));
+            box.setCheckBox(remember);
+            const bool close = box.exec() == QMessageBox::Close;
+            choice = close ? 1 : 2;
+            if (remember->isChecked())
+                App::DocumentParams::setClosePinnedVersion(choice);
+            // The answer took a while: look again.
+            pinned = App::GetApplication().getDocument(name.c_str());
+            if (!pinned || !linksPinnedTo(parts.file, parts.version).empty())
+                return;
+        }
+        if (choice == 1)
+            App::GetApplication().closeDocument(name.c_str());
+    });
+}
 
 /// Save the document
 bool Document::save()

@@ -589,9 +589,11 @@ public:
     //@{
     /// Accessor for parameter TransactionLog
     ///
-    /// Transaction log mode (docs/TransactionLog.md sec 13.3): 0 off,
-    /// 1 session -- the log lives in the document transient directory
-    /// and dies with it. Off by default while the writer is synchronous.
+    /// Transaction log mode (docs/TransactionLog.md sec 13.3, 27.5). The
+    /// log is always on; what this chooses is whether a save writes the
+    /// history into the file: 2 (the default) writes it, 1 keeps it in
+    /// the document transient directory only, where it dies with the
+    /// session. 0 switches the log off, for A/B checks.
     static const long & getTransactionLog();
     static const long & defaultTransactionLog();
     static void removeTransactionLog();
@@ -654,6 +656,21 @@ public:
     static void removeTransactionLogKeepVersions();
     static void setTransactionLogKeepVersions(const long &v);
     static const char *docTransactionLogKeepVersions();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter ClosePinnedVersion
+    ///
+    /// When the last link pinned to a version of a file goes, what
+    /// happens to the document that showed it (docs/TransactionLog.md
+    /// sec 27.21 Q5): 0 ask, 1 close it, 2 keep it open. With no Gui to
+    /// ask, 0 keeps it open.
+    static const long & getClosePinnedVersion();
+    static const long & defaultClosePinnedVersion();
+    static void removeClosePinnedVersion();
+    static void setClosePinnedVersion(const long &v);
+    static const char *docClosePinnedVersion();
     //@}
 
     // Auto generated code (Tools/params_utils.py:139)

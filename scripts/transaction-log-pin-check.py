@@ -78,6 +78,10 @@ def run():
         # FREECAD_USER_HOME does not keep the GUI off ~/.config/FreeCAD, and
         # os._exit below never writes the setting back.
         App.ParamGet("User parameter:BaseApp/Preferences/Document").SetInt("TransactionLog", 2)
+        # Unpinning is not closing here: the close prompt (sec 27.30) has its
+        # own check, transaction-log-frozen-check.py.
+        App.ParamGet("User parameter:BaseApp/Preferences/Document").SetInt(
+            "ClosePinnedVersion", 2)
         part = App.newDocument("PinPart")
         part.openTransaction("box")
         box = part.addObject("Part::Box", "Box")

@@ -91,6 +91,7 @@ public:
         signalParamChanged("TransactionLogDerived");
         signalParamChanged("TransactionLogSnapshotTransactions");
         signalParamChanged("TransactionLogKeepVersions");
+        signalParamChanged("ClosePinnedVersion");
         signalParamChanged("AutoSaveEnabled");
         signalParamChanged("AutoSaveTimeout");
         signalParamChanged("TransactionLogDeltaHops");
@@ -149,6 +150,7 @@ public:
     long TransactionLogDerived;
     long TransactionLogSnapshotTransactions;
     long TransactionLogKeepVersions;
+    long ClosePinnedVersion;
     bool AutoSaveEnabled;
     long AutoSaveTimeout;
     long TransactionLogDeltaHops;
@@ -255,6 +257,8 @@ public:
         funcs["TransactionLogSnapshotTransactions"] = &DocumentParamsP::updateTransactionLogSnapshotTransactions;
         TransactionLogKeepVersions = this->handle->GetInt("TransactionLogKeepVersions", 0);
         funcs["TransactionLogKeepVersions"] = &DocumentParamsP::updateTransactionLogKeepVersions;
+        ClosePinnedVersion = this->handle->GetInt("ClosePinnedVersion", 0);
+        funcs["ClosePinnedVersion"] = &DocumentParamsP::updateClosePinnedVersion;
         AutoSaveEnabled = this->handle->GetBool("AutoSaveEnabled", true);
         funcs["AutoSaveEnabled"] = &DocumentParamsP::updateAutoSaveEnabled;
         AutoSaveTimeout = this->handle->GetInt("AutoSaveTimeout", 15);
@@ -471,6 +475,10 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateTransactionLogKeepVersions(DocumentParamsP *self) {
         self->TransactionLogKeepVersions = self->handle->GetInt("TransactionLogKeepVersions", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateClosePinnedVersion(DocumentParamsP *self) {
+        self->ClosePinnedVersion = self->handle->GetInt("ClosePinnedVersion", 0);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateAutoSaveEnabled(DocumentParamsP *self) {
@@ -736,6 +744,12 @@ static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
         .setDoc("How many unnamed versions the transaction log keeps (sec 16.3):\n"
 "when a version is added, the oldest unnamed ones over this count\n"
 "are evicted -- never a named one, never the newest. 0 keeps all."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "ClosePinnedVersion", "ClosePinnedVersion", App::ParamInfo::Int, 0)
+        .setTitle("Close Pinned Version")
+        .setDoc("When the last link pinned to a version of a file goes, what\n"
+"happens to the document that showed it (docs/TransactionLog.md\n"
+"sec 27.21 Q5): 0 ask, 1 close it, 2 keep it open. With no Gui to\n"
+"ask, 0 keeps it open."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "AutoSaveEnabled", "AutoSaveEnabled", App::ParamInfo::Bool, true)
         .setTitle("Auto Save Enabled")
         .setDoc("Autosave. Without the transaction log, the Gui writes a recovery\n"
@@ -2133,6 +2147,37 @@ void DocumentParams::setTransactionLogKeepVersions(const long &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void DocumentParams::removeTransactionLogKeepVersions() {
     instance()->handle->RemoveInt("TransactionLogKeepVersions");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docClosePinnedVersion() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"When the last link pinned to a version of a file goes, what\n"
+"happens to the document that showed it (docs/TransactionLog.md\n"
+"sec 27.21 Q5): 0 ask, 1 close it, 2 keep it open. With no Gui to\n"
+"ask, 0 keeps it open.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & DocumentParams::getClosePinnedVersion() {
+    return instance()->ClosePinnedVersion;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & DocumentParams::defaultClosePinnedVersion() {
+    const static long def = 0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setClosePinnedVersion(const long &v) {
+    instance()->handle->SetInt("ClosePinnedVersion",v);
+    instance()->ClosePinnedVersion = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeClosePinnedVersion() {
+    instance()->handle->RemoveInt("ClosePinnedVersion");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

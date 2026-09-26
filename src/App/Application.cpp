@@ -1036,6 +1036,10 @@ Document* Application::openDocumentPrivate(const char * FileName,
                 THROWM(Base::FileSystemError, "no history in '" + parts.file + "': " + reason)
             Document* doc = Document::openFileBranch(history, parts.branch, parts.version,
                                                      isMainDoc && createView);
+            // Asked for by a link resolving (the objects it wants are named):
+            // opened for a pin, offered for closing when its pins go (27.30).
+            if (!objNames.empty() && doc->testStatus(Document::FrozenVersion))
+                doc->setStatus(Document::OpenedForPin, true);
             if (!DocFileMap.empty())
                 DocFileMap[FileInfo(doc->FileName.getValue()).filePath()] = doc;
             return doc;

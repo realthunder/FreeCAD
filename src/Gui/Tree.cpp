@@ -56,6 +56,8 @@
 #include <App/DocumentObject.h>
 #include <App/DocumentObjectGroup.h>
 #include <App/DocumentParams.h>
+#include <App/TransactionLog.h>
+#include <App/TransactionStore.h>
 #include <App/AutoTransaction.h>
 #include <optional>
 #include <App/GeoFeatureGroupExtension.h>
@@ -237,6 +239,7 @@ private:
     fastsignals::scoped_connection connOnTopObject;
     fastsignals::scoped_connection connActivateView;
     fastsignals::scoped_connection connSignalChanged;
+    fastsignals::scoped_connection connBranches;
 
     std::map<App::SubObjectT, std::vector<DocumentObjectItem*>> itemsOnTop;
     bool updatingItemsOnTop = false;
@@ -5681,6 +5684,10 @@ DocumentItem::DocumentItem(const Gui::Document* doc, QTreeWidgetItem * parent)
     connectRecomputedObj = adoc->signalRecomputedObject.connect(
             std::bind(&DocumentItem::slotRecomputedObject, this, sp::_1));
     connectChangedModified = doc->signalChangedModified.connect([this](const Document &) { setDocumentLabel(); });
+    // The branch suffix follows the file's branches (docs/TransactionLog.md
+    // sec 27.24).
+    connBranches = adoc->signalBranchesChanged.connect(
+        [this](const App::Document &) { setDocumentLabel(); });
 
     connectDetachView = doc->signalDetachView.connect(
         [this](const BaseView &, bool passive) {
@@ -5748,9 +5755,38 @@ void DocumentItem::setDocumentLabel() {
     auto doc = document()->getDocument();
     if(!doc)
         return;
-    setText(0, QStringLiteral("%1%2").arg(
-                QString::fromUtf8(doc->Label.getValue()),
+    // The file's own document, while the file has more than one branch:
+    // `@<branch>@v<num>`, the branch it is on and the version it is on disk
+    // (docs/TransactionLog.md sec 27.24). A version document's label carries
+    // its own (27.23).
+    QString suffix;
+    auto log = doc->getTransactionLog();
+    if (log && !doc->testStatus(App::Document::VersionDoc)) {
+        int open = 0;
+        std::string branch;
+        for (const auto &b : log->store().branches()) {
+            if (b.closed != 0)
+                continue;
+            ++open;
+            if (b.id == log->branch())
+                branch = b.name;
+        }
+        auto version = Base::freecad_dynamic_cast<App::PropertyString>(
+                doc->getPropertyByName("Version"));
+        const long long num = version ? std::atoll(version->getValue()) : 0;
+        if (open > 1 && !branch.empty()) {
+            suffix = QStringLiteral("@%1@").arg(QString::fromUtf8(branch.c_str()));
+            if (num > 0)
+                suffix += QStringLiteral("v%1").arg(num);
+        }
+    }
+    setText(0, QStringLiteral("%1%2%3").arg(
+                QString::fromUtf8(doc->Label.getValue()), suffix,
                 document()->isModified()?QStringLiteral(" *"):QStringLiteral("")));
+    // A pinned version is the version itself: shown as not editable (27.22).
+    QFont f = font(0);
+    f.setItalic(doc->testStatus(App::Document::FrozenVersion));
+    setFont(0, f);
 }
 
 #define _FOREACH_ITEM(_item, _obj) \
