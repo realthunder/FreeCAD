@@ -4520,10 +4520,12 @@ namespace {
 
 /// Document properties a restore to a version leaves alone (sec 24.5):
 /// where the document lives and who it is, which a version of it does
-/// not change, and what the log itself keeps there.
+/// not change, and what the log itself keeps there. The label is who it
+/// is too: the scratch document a version is read into has its own, and a
+/// switch or a restore gave the document that name (sec 27.11).
 bool keptOnRestore(const char* name)
 {
-    static const std::set<std::string> kept {"FileName", "TransientDir", "Uid", "Id",
+    static const std::set<std::string> kept {"FileName", "TransientDir", "Uid", "Id", "Label",
         "History", "Version", "Branch", "LastModifiedBy", "LastModifiedDate", "CreatedBy",
         "CreationDate"};
     return kept.count(name) != 0;

@@ -2842,6 +2842,20 @@ class TransactionBranchCases(unittest.TestCase):
     def branches(self, doc):
         return {b["name"]: b for b in doc.getTransactionBranches()}
 
+    def testSwitchAndRestoreKeepTheLabel(self):
+        # The version a switch or a restore applies is read into a scratch
+        # document with a name of its own; the document keeps its label
+        # (sec 27.11).
+        doc, path = self.saved()
+        label = doc.Label
+        doc.switchTransactionBranch("main")
+        self.assertEqual(doc.Label, label)
+        doc.switchTransactionBranch("side")
+        self.assertEqual(doc.Label, label)
+        versions = doc.getTransactionVersions()
+        doc.restoreTransactionVersion(versions[0]["num"])
+        self.assertEqual(doc.Label, label)
+
     def testSaveWithHistoryIsNoUndoStep(self):
         # The save adds and sets History, Version and Branch itself: none of
         # that is the user's edit, so none of it is a step to undo (sec 27.5).
