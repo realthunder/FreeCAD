@@ -5464,8 +5464,8 @@ document, and `_replayLog` (25.7) applies rows forward. So:
   compared.
 
 The snapshot path stays only as the fallback where rows are missing:
-trimmed history (26.8) or a chain that crosses a version with no rows
-(a file's first version read from its archive, 27.13). Where it runs, it
+trimmed history (26.8), and any chain that crosses a version with no
+rows before it (which cases those are is to be checked, not assumed). Where it runs, it
 should (a) join the file's history, so it finds live blobs and parsed
 shapes, and (b) have no Gui document (a scratch status that
 `Gui::Application::slotNewDocument` skips; view values come from
