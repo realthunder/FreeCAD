@@ -13,6 +13,9 @@ Claims:
     a Link to it included;
   - a path entry hides ONE occurrence (the Link, a child inside an
     App::Part) and counts with PerViewVisibilities off;
+  - ONE occurrence even where two share a node: Link2 shows the Part,
+    so Box2's own root sits under both, and whichever occurrence a
+    traversal meets first must not decide for the other;
   - a bare show brings in an object whose Visibility is off, in that
     view only;
   - fit-all frames what the view shows, a per-view show and a path hide
@@ -102,6 +105,9 @@ def run():
         link = doc.addObject("App::Link", "Link")
         link.LinkedObject = box1
         link.Placement.Base = FreeCAD.Vector(60, 0, 0)
+        link2 = doc.addObject("App::Link", "Link2")
+        link2.LinkedObject = asm
+        link2.Placement.Base = FreeCAD.Vector(0, 0, 30)
         box3 = doc.addObject("Part::Box", "Box3")
         box3.Placement.Base = FreeCAD.Vector(90, 0, 0)
         doc.recompute()
@@ -141,6 +147,20 @@ def run():
             note("ABORT sweep did not find Box1, Box2 and the Link: %s" % centre)
             finish()
             return
+        # Link2 shows Box2 a row higher up, and a pick names it by its
+        # leaf: tell the two Box2 occurrences apart by Box1's row.
+        rows = [p[1] for p in found["Box1"]]
+        top, bottom = min(rows), max(rows)
+        own = [p for p in found["Box2"] if top <= p[1] <= bottom]
+        other = [p for p in found["Box2"] if not top <= p[1] <= bottom]
+        if not own or not other:
+            note("ABORT sweep did not find both Box2 occurrences")
+            finish()
+            return
+        centre["Box2"] = (sum(p[0] for p in own) // len(own),
+                          sum(p[1] for p in own) // len(own))
+        c4 = (sum(p[0] for p in other) // len(other),
+              sum(p[1] for p in other) // len(other))
         c1, c2, cl = centre["Box1"], centre["Box2"], centre["Link"]
         # Box3 is hidden: one more step of the same spacing along x.
         c3 = (cl[0] + (cl[0] - c2[0]), cl[1])
@@ -148,6 +168,7 @@ def run():
         def state_of(view):
             return {"box1": hit(view, c1), "box2": hit(view, c2),
                     "link": hit(view, cl), "box3": hit(view, c3),
+                    "link2": hit(view, c4),
                     "xmax": xmax(view)}
 
         base1 = state_of(v1)
@@ -201,6 +222,37 @@ def run():
         v1.setObjectVisibility(link, None, "")
         v1.setObjectVisibility(asm, None, "Box2.")
         settle()
+
+        # 3b. One node, two occurrences. Box2's root is under Asm and,
+        # through Link2, under Link2 as well; a cache in it (a bounding
+        # box, which is what culls a pick) must not carry one
+        # occurrence's answer to the other. Each way round, the hidden
+        # occurrence met first and then second.
+        v1.setObjectVisibility(asm, False, "Box2.")
+        settle()
+        first = hit(v1, c2)
+        other = hit(v1, c4)
+        box = xmax(v1)
+        again = hit(v1, c4)
+        check("shared node: Box2 in Asm is gone", first is None, first)
+        check("shared node: Link2's Box2 stays", other == base1["link2"], other)
+        check("shared node: and stays after a bounding box pass",
+              again == base1["link2"], (again, box))
+        v1.setObjectVisibility(asm, None, "Box2.")
+        v1.setObjectVisibility(link2, False, "Box2.")
+        settle()
+        first = hit(v1, c4)
+        other = hit(v1, c2)
+        box = xmax(v1)
+        again = hit(v1, c2)
+        check("shared node: Link2's Box2 is gone", first is None, first)
+        check("shared node: Box2 in Asm stays", other == base1["box2"], other)
+        check("shared node: and stays after a bounding box pass",
+              again == base1["box2"], (again, box))
+        v1.setObjectVisibility(link2, None, "Box2.")
+        settle()
+        s = state_of(v1)
+        check("shared node: cleared, back to the baseline", s == base1, s)
 
         # 4. A bare SHOW of an object whose Visibility is off.
         v1.PerViewVisibilities = True

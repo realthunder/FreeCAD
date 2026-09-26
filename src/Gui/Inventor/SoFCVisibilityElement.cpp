@@ -29,6 +29,7 @@
 
 #include <Inventor/SoPath.h>
 #include <Inventor/actions/SoActions.h>
+#include <Inventor/elements/SoCacheElement.h>
 #include <Inventor/misc/SoState.h>
 
 #include "../InventorBase.h"
@@ -152,12 +153,16 @@ SoFCVisibilityElement::Table::update(const Render::VisibilityOverrideTable *t)
 {
   this->table = t;
   this->leaves.clear();
+  this->rooted.clear();
   this->version = t ? t->version : 0;
   if (!t)
     return;
   for (const auto &ov : t->entries) {
-    if (!ov.path.empty())
-      this->leaves.insert(ov.path.back().obj);
+    if (ov.path.empty())
+      continue;
+    this->leaves.insert(ov.path.back().obj);
+    if (ov.rooted)
+      this->rooted.insert(ov.path.back().obj);
   }
 }
 
@@ -192,6 +197,15 @@ SoFCVisibilityElement::check(SoAction * action, const SoNode * node)
     return -1;
   if (!table->leaves.count(std::string_view(obj)))
     return -1;
+  // A path entry answers per occurrence, and one node can be several:
+  // an object's root sits under every group and link that shows it. A
+  // cache open above this switch -- that root's own bounding box, which
+  // is what culls a pick -- would be reused through the other
+  // occurrences with this one's answer, since all it keys on is the
+  // table. So none is kept while such an entry exists; the caches
+  // BELOW, and every other object's, are unaffected.
+  if (table->rooted.count(std::string_view(obj)))
+    SoCacheElement::invalidate(state);
   static FC_COIN_THREAD_LOCAL Chain chain;
   static FC_COIN_THREAD_LOCAL std::vector<Render::ObjectRef> refs;
   SoFCSelectionRoot::getActionObjectChain(action, chain);

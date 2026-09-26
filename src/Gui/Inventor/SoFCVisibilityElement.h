@@ -71,6 +71,9 @@ public:
     /// Internal names of the objects the entries END at -- the only
     /// objects a lookup can answer for -- viewing the table's strings.
     std::unordered_set<std::string_view> leaves;
+    /// Those of them a ROOTED (path) entry ends at: the answer for such
+    /// an object depends on the chain it is reached through.
+    std::unordered_set<std::string_view> rooted;
     uint32_t version = 0;
 
     /// Rebuild \c leaves from \c table and take its version.
