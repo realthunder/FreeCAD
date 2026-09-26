@@ -49,6 +49,7 @@ class FileHistory;
 class DocumentObject;
 class FileBlobManager;
 class Property;
+class PropertyContainer;
 class PropertyFileIncluded;
 
 /** Who refers to a blob, for the purpose of naming the file it is saved to.
@@ -295,7 +296,10 @@ public:
 class AppExport BlobRecorder
 {
 public:
-    BlobRecorder();
+    /// `store`: the manager of the document the captured value belongs to.
+    /// A value captured from a detached copy has no container to name it,
+    /// and its blobs go there rather than to the default manager.
+    explicit BlobRecorder(FileBlobManager* store = nullptr);
     ~BlobRecorder();
 
     BlobRecorder(const BlobRecorder&) = delete;
@@ -307,12 +311,16 @@ public:
     /// The recorder in effect on this thread, or null.
     static BlobRecorder* current();
 
+    /// The manager the value belongs to, or null.
+    FileBlobManager* store() const { return _store; }
+
 private:
     friend class FileBlobManager;
     void add(const FileBlobHandle& blob);
 
     std::vector<FileBlobHandle> _blobs;
     BlobRecorder* _previous {nullptr};
+    FileBlobManager* _store {nullptr};
 };
 
 /** Per-document store of the files referenced by PropertyFileIncluded.
@@ -399,6 +407,12 @@ public:
      * same; only cross-document de-duplication is meaningless here.
      */
     static FileBlobManager& defaultManager();
+
+    /** The store for a property of `container`: its document's, else the
+     * one a capture on this thread names (a detached copy the transaction
+     * log serialises, docs/TransactionLog.md sec 27.37), else the default.
+     */
+    static FileBlobManager& managerFor(const PropertyContainer* container);
 
     /** Point a blob at a new location after its file has moved.
      *

@@ -3598,14 +3598,9 @@ void PropertyAppearanceList::assignRestoredBlob(const FileBlobHandle &blob)
 
 FileBlobManager &PropertyAppearanceList::blobManager() const
 {
-    if (auto container = getContainer()) {
-        // A view provider answers with the document of the object it
-        // presents, which is where its appearance belongs
-        if (auto doc = container->getOwnerDocument()) {
-            return doc->getFileBlobManager();
-        }
-    }
-    return FileBlobManager::defaultManager();
+    // A view provider answers with the document of the object it presents,
+    // which is where its appearance belongs
+    return FileBlobManager::managerFor(getContainer());
 }
 
 

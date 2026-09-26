@@ -108,6 +108,7 @@ private:
 App::CaptureConfig::CaptureConfig(const Document& doc)
     : schema(static_cast<int>(doc.getSaveSchemaVersion()))
     , preferBinary(doc.PreferBinary.getValue())
+    , blobs(&doc.getFileBlobManager())
 {
 }
 
@@ -122,7 +123,7 @@ CapturedValue App::captureValue(const CaptureConfig& config, const Base::Persist
     CaptureWriter writer(config, v);
     // What the Save notes goes to the value, not to the save set of the
     // document's next save (sec 23.16).
-    BlobRecorder recorder;
+    BlobRecorder recorder(config.blobs);
     try {
         what.Save(writer);
         writer.writeFiles();

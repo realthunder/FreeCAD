@@ -37,6 +37,7 @@ namespace App
 class Document;
 class DocumentObject;
 class FileBlob;
+class FileBlobManager;
 class Property;
 
 /** A value as the transaction log sees it (docs/TransactionLog.md sec 9.3,
@@ -74,6 +75,8 @@ struct CaptureConfig
 {
     int schema {0};
     bool preferBinary {false};
+    /// The document's blob store: where a detached copy's blobs go.
+    FileBlobManager* blobs {nullptr};
     CaptureConfig() = default;
     explicit CaptureConfig(const Document& doc);
 };

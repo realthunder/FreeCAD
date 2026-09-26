@@ -55,11 +55,7 @@ PropertyHistory::~PropertyHistory()
 
 FileBlobManager& PropertyHistory::blobManager() const
 {
-    if (auto container = getContainer()) {
-        if (auto doc = container->getOwnerDocument())
-            return doc->getFileBlobManager();
-    }
-    return FileBlobManager::defaultManager();
+    return FileBlobManager::managerFor(getContainer());
 }
 
 void PropertyHistory::setValue(const FileBlobHandle& db, const std::vector<FileBlobHandle>& blobs,

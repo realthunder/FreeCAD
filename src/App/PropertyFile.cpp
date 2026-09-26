@@ -70,12 +70,7 @@ PropertyFileIncluded::~PropertyFileIncluded()
 
 FileBlobManager &PropertyFileIncluded::blobManager() const
 {
-    if (auto container = getContainer()) {
-        if (auto doc = container->getOwnerDocument()) {
-            return doc->getFileBlobManager();
-        }
-    }
-    return FileBlobManager::defaultManager();
+    return FileBlobManager::managerFor(getContainer());
 }
 
 std::string PropertyFileIncluded::getDocTransientPath() const
@@ -636,12 +631,7 @@ PropertyStringIncluded::~PropertyStringIncluded()
 
 FileBlobManager &PropertyStringIncluded::blobManager() const
 {
-    if (auto container = getContainer()) {
-        if (auto doc = container->getOwnerDocument()) {
-            return doc->getFileBlobManager();
-        }
-    }
-    return FileBlobManager::defaultManager();
+    return FileBlobManager::managerFor(getContainer());
 }
 
 void PropertyStringIncluded::setBlobExtension(const char* ext)
@@ -831,12 +821,7 @@ PropertyFileIncludedList::~PropertyFileIncludedList()
 
 FileBlobManager &PropertyFileIncludedList::blobManager() const
 {
-    if (auto container = getContainer()) {
-        if (auto doc = container->getOwnerDocument()) {
-            return doc->getFileBlobManager();
-        }
-    }
-    return FileBlobManager::defaultManager();
+    return FileBlobManager::managerFor(getContainer());
 }
 
 void PropertyFileIncludedList::cancelPending()

@@ -538,11 +538,7 @@ TopoDS_Shape PropertyPartShape::locatedForRestore(const TopoDS_Shape& shape) con
 
 App::FileBlobManager& PropertyPartShape::blobManager() const
 {
-    if (auto container = getContainer()) {
-        if (auto doc = container->getOwnerDocument())
-            return doc->getFileBlobManager();
-    }
-    return App::FileBlobManager::defaultManager();
+    return App::FileBlobManager::managerFor(getContainer());
 }
 
 bool PropertyPartShape::usesBlob(Base::Writer& writer) const

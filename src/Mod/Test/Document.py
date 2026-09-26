@@ -3259,6 +3259,49 @@ class TransactionBranchCases(unittest.TestCase):
         versions = doc.getTransactionVersions()
         self.assertTrue(versions)
 
+    def testTheHistoryCarriesEveryBlobItNames(self):
+        # Sec 27.37: a value the log captures from a detached copy of a
+        # property -- a Part::Box's material card, made on first use -- went
+        # to the process-wide default store, where the save did not look:
+        # the file's history named a blob the file did not carry.
+        import re
+        import sqlite3
+        import zipfile
+        import ArchiveMembers
+
+        doc = self.track(FreeCAD.newDocument("HistoryBlobs"))
+        doc.UndoMode = 1
+        doc.openTransaction("box")
+        try:
+            doc.addObject("Part::Box", "Box")
+        except Exception:
+            doc.abortTransaction()
+            self.skipTest("Part is not available")
+        doc.commitTransaction()
+        doc.recompute()
+        path = os.path.join(self.dir, "historyblobs.FCStd")
+        doc.saveAs(path)
+        with zipfile.ZipFile(path) as archive:
+            xml = archive.read("Document.xml").decode("utf-8")
+            start = xml.index("<History db=")
+            element = xml[start : xml.index("</History>", start)]
+            db = re.search(r'db="([0-9a-f]+)"', element).group(1)
+            carried = set(re.findall(r'<Blob hash="([0-9a-f]+)"', element))
+            index = ArchiveMembers.read(archive, "blobs/Content.xml").decode("utf-8")
+            member = re.search(r'<F n="([^"]*)" h="%s"' % db, index).group(1)
+            data = ArchiveMembers.read(archive, "blobs/" + member)
+        dbPath = os.path.join(self.dir, "historyblobs.db")
+        with open(dbPath, "wb") as f:
+            f.write(data)
+        con = sqlite3.connect(dbPath)
+        try:
+            named = {h for (h,) in con.execute(
+                "SELECT hash FROM entity WHERE kind='blob' AND enc='file'")}
+        finally:
+            con.close()
+        self.assertTrue(named, "the material card is a blob the history holds")
+        self.assertEqual(named, carried)
+
     def testRestoreAndSwitchGoThroughTheRows(self):
         # Sec 27.25 item 1, 27.34: a restore to a version and a branch switch
         # move the document through the rows between -- no scratch document

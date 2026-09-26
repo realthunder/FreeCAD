@@ -793,6 +793,20 @@ FileBlobManager& FileBlobManager::defaultManager()
     return manager;
 }
 
+FileBlobManager& FileBlobManager::managerFor(const PropertyContainer* container)
+{
+    if (container) {
+        if (auto doc = container->getOwnerDocument()) {
+            return doc->getFileBlobManager();
+        }
+    }
+    auto recorder = BlobRecorder::current();
+    if (recorder && recorder->store()) {
+        return *recorder->store();
+    }
+    return defaultManager();
+}
+
 std::string FileBlobManager::transientPath() const
 {
     if (!_history) {
@@ -1083,8 +1097,9 @@ namespace
 thread_local BlobRecorder* currentRecorder = nullptr;
 }
 
-BlobRecorder::BlobRecorder()
+BlobRecorder::BlobRecorder(FileBlobManager* store)
     : _previous(currentRecorder)
+    , _store(store)
 {
     currentRecorder = this;
 }

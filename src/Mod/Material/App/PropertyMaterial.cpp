@@ -62,12 +62,7 @@ PropertyMaterial::~PropertyMaterial()
 
 App::FileBlobManager& PropertyMaterial::blobManager() const
 {
-    if (auto container = getContainer()) {
-        if (auto doc = container->getOwnerDocument()) {
-            return doc->getFileBlobManager();
-        }
-    }
-    return App::FileBlobManager::defaultManager();
+    return App::FileBlobManager::managerFor(getContainer());
 }
 
 void PropertyMaterial::setValue(const Material& mat)
