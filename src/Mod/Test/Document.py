@@ -3076,6 +3076,105 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertEqual(live.LinkedObject.Integer, 7)
         self.assertEqual(asm.getObject("L").LinkedObject.Integer, 1)
 
+    def testLocalLinkPinnedToItsOwnVersion(self):
+        # Sec 27.20, 27.21: a link to an object of its own document, pinned
+        # to a version of the document's own file -- saved with no file,
+        # shown through the version's frozen instance, found again after a
+        # reopen and a Save As.
+        import zipfile
+
+        doc = self.track(FreeCAD.newDocument("SelfPin"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        obj = doc.addObject("App::FeatureTest", "Obj")
+        obj.Integer = 1
+        link = doc.addObject("App::Link", "L")
+        link.LinkedObject = obj
+        doc.commitTransaction()
+        path = os.path.join(self.dir, "selfpin.FCStd")
+        doc.saveAs(path)
+        first = int(doc.Version.split()[0])
+        doc.openTransaction("two")
+        obj.Integer = 2
+        doc.commitTransaction()
+        doc.save()
+
+        doc.openTransaction("pin")
+        self.assertEqual(link.pinLink("LinkedObject", first), first)
+        doc.commitTransaction()
+        shown = link.LinkedObject
+        frozen = self.track(shown.Document)
+        self.assertEqual(frozen.FileName, path + "@v%d" % first)
+        self.assertEqual(shown.Integer, 1)
+        self.assertEqual(obj.Integer, 2)
+        self.assertEqual(link.getLinkPin("LinkedObject")[0], first)
+        # The live document moves on; the pin does not.
+        doc.openTransaction("three")
+        obj.Integer = 3
+        doc.commitTransaction()
+        self.assertEqual(link.LinkedObject.Integer, 1)
+
+        doc.save()
+        xml = zipfile.ZipFile(path).read("Document.xml").decode("utf-8")
+        self.assertIn('<XLink file="" stamp=', xml)
+        self.assertIn('version="%d"' % first, xml)
+
+        # Reopened: the pin opens its own file's version again.
+        for d in (frozen, doc):
+            FreeCAD.closeDocument(d.Name)
+        doc = self.track(FreeCAD.openDocument(path))
+        doc.UndoMode = 1
+        link = doc.getObject("L")
+        shown = link.LinkedObject
+        self.assertIsNotNone(shown)
+        self.track(shown.Document)
+        self.assertIsNot(shown.Document, doc)
+        self.assertEqual(shown.Integer, 1)
+        self.assertEqual(doc.getObject("Obj").Integer, 3)
+
+        # Save As: the pin follows the file, whose history went with it.
+        path2 = os.path.join(self.dir, "selfpin2.FCStd")
+        doc.saveAs(path2)
+        FreeCAD.closeDocument(shown.Document.Name)
+        FreeCAD.closeDocument(doc.Name)
+        doc = self.track(FreeCAD.openDocument(path2))
+        doc.UndoMode = 1
+        link = doc.getObject("L")
+        self.track(link.LinkedObject.Document)
+        self.assertEqual(link.LinkedObject.Document.FileName, path2 + "@v%d" % first)
+        self.assertEqual(link.LinkedObject.Integer, 1)
+
+        # Unpinned: the object of that name in the document; undone: pinned.
+        doc.openTransaction("unpin")
+        link.unpinLink("LinkedObject")
+        doc.commitTransaction()
+        self.assertIsNone(link.getLinkPin("LinkedObject"))
+        self.assertIs(link.LinkedObject, doc.getObject("Obj"))
+        doc.undo()
+        self.assertEqual(link.getLinkPin("LinkedObject")[0], first)
+        self.assertEqual(link.LinkedObject.Integer, 1)
+        doc.redo()
+        self.assertIs(link.LinkedObject, doc.getObject("Obj"))
+
+        # Pinned to the version on disk (sec 27.21 Q4): a copy of the saved
+        # state, which later edits do not reach.
+        doc.openTransaction("pin current")
+        onDisk = link.pinLink("LinkedObject")
+        doc.commitTransaction()
+        self.track(link.LinkedObject.Document)
+        self.assertEqual(onDisk, int(doc.Version.split()[0]))
+        self.assertEqual(link.LinkedObject.Integer, 3)
+        doc.getObject("Obj").Integer = 4
+        self.assertEqual(link.LinkedObject.Integer, 3)
+
+        # A version without the object: refused.
+        other = doc.addObject("App::FeatureTest", "New")
+        link2 = doc.addObject("App::Link", "L2")
+        link2.LinkedObject = other
+        with self.assertRaises(Exception):
+            link2.pinLink("LinkedObject", first)
+        self.assertIs(link2.LinkedObject, other)
+
     def testOpeningADocumentKeepsAnotherOnesTransaction(self):
         # Sec 27.15: a document made or opened while another has a transaction
         # open joins none, so its restore does not commit that transaction

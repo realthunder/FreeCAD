@@ -5209,8 +5209,12 @@ int64_t Document::pinLink(PropertyXLink& link, int64_t version)
     if (!owner || !owner->isAttachedToDocument())
         THROWM(Base::RuntimeError, "the link has no owner");
     Document* linked = link.getValue() ? link.getValue()->getDocument() : link.getDocument();
-    if (!linked || linked == owner->getDocument())
-        THROWM(Base::RuntimeError, "a pin needs a link to another file");
+    // A local link pins a version of its own file (sec 27.20).
+    if (!linked && !link.getObjectName()[0])
+        THROWM(Base::RuntimeError, "the link links to nothing");
+    if (!linked)
+        linked = owner->getDocument();
+    const bool self = linked == owner->getDocument();
     std::string file = linked->FileName.getStrValue();
     FileHistory::splitVersion(file);
     if (file.empty())
@@ -5251,6 +5255,16 @@ int64_t Document::pinLink(PropertyXLink& link, int64_t version)
     LogVersion v;
     if (!log.store().getVersion(version, v))
         THROWM(Base::ValueError, "the linked file has no version " + std::to_string(version));
+    if (self) {
+        // The version must have the object, or the pin would show nothing:
+        // its frozen instance is opened now, as the pin would open it.
+        const char* name = link.getValue() ? link.getValue()->getNameInDocument()
+                                           : link.getObjectName();
+        Document* frozen = openFileVersion(history, version, false, nullptr, true);
+        if (!frozen || !frozen->getObject(name))
+            THROWM(Base::ValueError, std::string("version ") + std::to_string(version)
+                                         + " of the file has no object '" + name + "'");
+    }
     // Named, so the linked file's own eviction keeps it (16.3), and noted as
     // pinned, so the file is saved with its history from now on.
     if (v.kind != "named")
@@ -5443,6 +5457,8 @@ Document* Document::openFileVersion(const std::shared_ptr<FileHistory>& history,
         label = from->d->versionLabel;
     std::string file = fileName;
     FileHistory::splitVersion(file);
+    if (label.empty())
+        label = Base::FileInfo(file).fileNamePure();
     auto& app = GetApplication();
     Document* active = app.getActiveDocument();
     const std::string suffix = "@v" + std::to_string(num);

@@ -3319,6 +3319,29 @@ bool PropertyLinkSubList::adjustLink(const std::set<App::DocumentObject*> &inLis
 using DocInfoMap = std::map<QString, DocInfoPtr>;
 DocInfoMap _DocInfoMap;
 
+namespace {
+
+/// The file a link's owner is a document of: its FileName, or the file a
+/// version document is of (docs/TransactionLog.md sec 27.20); empty when
+/// the owner is not saved.
+std::string ownFileOf(const DocumentObject* owner)
+{
+    if (!owner || !owner->getDocument())
+        return {};
+    std::string file = owner->getDocument()->FileName.getStrValue();
+    FileHistory::splitVersion(file);
+    return file;
+}
+
+bool isOwnFile(const DocumentObject* owner, const std::string& file)
+{
+    const std::string own = ownFileOf(owner);
+    return !own.empty() && !file.empty()
+        && FileHistory::canonicalPath(own) == FileHistory::canonicalPath(file);
+}
+
+} // namespace
+
 class App::DocInfo :
     public std::enable_shared_from_this<App::DocInfo>
 {
@@ -3595,7 +3618,12 @@ public:
         // keeps is the file's.
         std::string plain(filename ? filename : "");
         FileHistory::NameParts parts;
-        if (FileHistory::parseName(plain, parts)) {
+        const bool named = FileHistory::parseName(plain, parts);
+        if (named)
+            plain = parts.file;
+        l->_selfFile = isOwnFile(Base::freecad_dynamic_cast<DocumentObject>(l->getContainer()),
+                                 plain);
+        if (named) {
             plain = parts.file;
             if (parts.branch.empty()) {
                 if (l->_pinVersion != parts.version) {
@@ -4361,8 +4389,13 @@ void PropertyXLink::setPin(int64_t version, const std::string& uuid)
         file = name ? name : "";
         FileHistory::splitVersion(file);
     }
+    else if (_pcLink || !objectName.empty()) {
+        // A local link: pinned to a version of its own file (sec 27.20).
+        file = ownFileOf(owner);
+    }
     if (file.empty())
-        THROWM(Base::RuntimeError, "a pin needs a link to another, saved file")
+        THROWM(Base::RuntimeError, "a pin needs a link to a saved file")
+    const bool self = isOwnFile(owner, file);
     std::string name = _pcLink && _pcLink->isAttachedToDocument()
         ? std::string(_pcLink->getNameInDocument()) : objectName;
     std::vector<std::string> subs(_SubList);
@@ -4377,6 +4410,14 @@ void PropertyXLink::setPin(int64_t version, const std::string& uuid)
     if (docInfo) {
         docInfo->remove(this);
         docInfo.reset();
+    }
+    if (self && !version) {
+        // Unpinned, a link to its own file is local again: to the object of
+        // that name in the document, or to none if it is gone (sec 27.20).
+        setValue(owner->getDocument()->getObject(name.c_str()), std::move(subs),
+                 std::move(shadows));
+        hasSetValue();
+        return;
     }
     setValue(std::move(file), std::move(name), std::move(subs), std::move(shadows));
     hasSetValue();
@@ -4459,6 +4500,17 @@ int PropertyXLink::checkRestore(std::string *msg) const {
 
 void PropertyXLink::afterRestore() {
     assert(_SubList.size() == _ShadowSubList.size());
+    if (_restoreSelf) {
+        _restoreSelf = false;
+        auto owner = dynamic_cast<DocumentObject*>(getContainer());
+        std::string file = ownFileOf(owner);
+        if (owner && !file.empty()) {
+            std::vector<std::string> subs(_SubList);
+            std::vector<ShadowSub> shadows(_ShadowSubList);
+            setValue(std::move(file), std::string(objectName), std::move(subs),
+                     std::move(shadows));
+        }
+    }
     if(!testFlag(LinkRestoreLabel) || !_pcLink || !_pcLink->isAttachedToDocument())
         return;
     setFlag(LinkRestoreLabel,false);
@@ -4642,6 +4694,12 @@ void PropertyXLink::Save (Base::Writer &writer) const {
         }
         if(!_path.empty())
             path = _path.c_str();
+        // A pin or a live branch of the owner's own file is saved with no
+        // file: "this document's file", whatever it is called after a Save
+        // As (sec 27.20, 27.21 Q2). A FreeCAD that does not know the pin
+        // reads a local link.
+        if (!exporting && docInfo && (_pinVersion > 0 || !_liveBranch.empty()) && _selfFile)
+            path = "";
         writer.Stream() << writer.ind()
             << "<XLink file=\"" << encodeAttribute(path)
             << "\" stamp=\"" << (docInfo&&docInfo->pcDoc?docInfo->pcDoc->LastModifiedDate.getValue():"")
@@ -4747,6 +4805,11 @@ void PropertyXLink::Restore(Base::XMLReader &reader)
         ? std::atoll(reader.getAttribute("version")) : 0;
     _pinUuid = reader.hasAttribute("vuuid") ? reader.getAttribute("vuuid") : "";
     _liveBranch = reader.hasAttribute("branch") ? reader.getAttribute("branch") : "";
+    // No file with a pin or a branch: the owner's own file (sec 27.20). Not
+    // saved (a copy being pasted into a new document): a local link.
+    const bool self = file.empty() && (_pinVersion > 0 || !_liveBranch.empty());
+    if (self)
+        file = ownFileOf(static_cast<DocumentObject*>(getContainer()));
     std::string name;
     if(file.empty())
         name = reader.getName(reader.getAttribute("name"));
@@ -4810,6 +4873,20 @@ void PropertyXLink::Restore(Base::XMLReader &reader)
 
     if (name.empty()) {
         setValue(nullptr);
+        return;
+    }
+
+    // Its own file's version is in the history the document reads after its
+    // objects: named now, resolved in afterRestore().
+    if (self && !file.empty()) {
+        aboutToSetValue();
+        setFlag(LinkDetached, false);
+        _pcLink = nullptr;
+        _restoreSelf = true;
+        objectName = std::move(name);
+        setSubValues(std::move(subs), std::move(shadows));
+        _mapped = std::move(mapped);
+        hasSetValue();
         return;
     }
 
@@ -4890,6 +4967,7 @@ void PropertyXLink::copyTo(PropertyXLink &other,
     other._pinVersion = _pinVersion;
     other._pinUuid = _pinUuid;
     other._liveBranch = _liveBranch;
+    other._selfFile = _selfFile;
 }
 
 void PropertyXLink::getLinkIdentity(std::string &doc, std::string &obj) const
@@ -4939,6 +5017,7 @@ void PropertyXLink::Paste(const Property &from)
     _pinVersion = other._pinVersion;
     _pinUuid = other._pinUuid;
     _liveBranch = other._liveBranch;
+    _selfFile = other._selfFile;
     if(!other.docName.empty()) {
         auto doc = GetApplication().getDocument(other.docName.c_str());
         if(!doc) {

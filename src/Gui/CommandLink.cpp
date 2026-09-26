@@ -1118,7 +1118,8 @@ struct PinnableLink
     std::string file;   ///< the linked file, without `@v<num>`
 };
 
-/// The selected links whose link property is an XLink to another saved file.
+/// The selected links whose link property is an XLink to a saved file --
+/// another one, or their own (docs/TransactionLog.md sec 27.20).
 std::vector<PinnableLink> getPinnableLinks(bool pinnedOnly)
 {
     std::vector<PinnableLink> links;
@@ -1135,7 +1136,7 @@ std::vector<PinnableLink> getPinnableLinks(bool pinnedOnly)
             continue;
         App::DocumentObject* linked = prop->getValue();
         App::Document* doc = linked ? linked->getDocument() : prop->getDocument();
-        if (!doc || doc == obj->getDocument())
+        if (!doc)
             continue;
         std::string file = doc->FileName.getStrValue();
         App::FileHistory::splitVersion(file);

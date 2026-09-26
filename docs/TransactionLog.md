@@ -5633,3 +5633,47 @@ Gates:
 - branch check 27 PASS;
 - version check 18 PASS;
 - pin check 28 PASS.
+
+### 27.27 Step 2 as built: a local link pinned to its own file (2026-09-26)
+
+27.20 with the rulings of 27.21 (Q1 XLink only, Q2 `file=""`, Q4 allowed).
+
+- **Pinning.** `Document::pinLink` no longer refuses a link into its own
+  document. It pins the owner's file; version 0 is the version on disk.
+  For a self-pin the version's frozen instance is opened first and the
+  pin refused if it has no object of the link's name. `setPin` takes the
+  owner's file for a local link; unpinning a self-pin makes the link local
+  again, to the object of that name or to none. The Gui's Pin command
+  offers local links too.
+- **Saved** with no file: `<XLink file="" ... version="N" vuuid="..."/>`,
+  and a live branch of the own file the same way with `branch=`. Whether
+  the file is the owner's own is decided when the link resolves
+  (`_selfFile`, set by `DocInfo::get`), not at save time: after a Save As
+  the paths differ, and the link must still save as "this file". A copy
+  exported to another document gets the absolute path, as before.
+- **Restored** against the owner's file -- a version document's file for
+  a link inside one. Not in `Restore` itself: the document's embedded
+  history is read after its objects (`adoptEmbeddedHistory`), and a pin
+  resolved earlier finds a store with no such version and falls back. It
+  is named in `Restore` and resolved in `PropertyXLink::afterRestore`,
+  where the version's frozen instance is opened as a pending document.
+- **The frozen check lets link machinery through.** Closing the linked
+  document detaches a frozen version's links (`LinkDetached`), and
+  reopening it restores them (`LinkRestoring`); an object being destroyed
+  or removed is not changed either. None of these is a change to the
+  version. Found by the test's tearDown: the pinned version (which itself
+  carried the self-pinned link to v1) threw while the documents closed.
+- A version document of a file whose history has no label is labelled
+  after the file's name.
+
+After a Save As the live link still shows the old file's frozen instance
+(same content -- the history is a copy) until the document is reopened,
+when `file=""` resolves against the new file.
+
+Test: Python `TransactionBranchCases.testLocalLinkPinnedToItsOwnVersion`
+-- pin, `file=""` in the saved XML, the pin after a reopen and after a
+Save As, unpin/undo/redo, a pin to the version on disk that later edits do
+not reach, and a pin refused for a version without the object.
+
+Gates: Python 2924 OK; ctest 842/842; recovery 15, branch 27, version 18,
+pin 28 PASS.

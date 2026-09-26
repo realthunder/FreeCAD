@@ -991,9 +991,14 @@ void DocumentObject::onBeforeChange(const Property* prop)
     // changes (docs/TransactionLog.md sec 27.22). Exempt as checkUserEdit
     // exempts them: Visibility is view state, TreeRank the tree's own
     // ordering, ViewObject the mirror of the view provider; and a property
-    // never saved is a cache.
-    if (_pDoc && prop != &Visibility && prop != &TreeRank && prop != &ViewObject
-            && !(prop->getType() & Prop_NoPersist) && !prop->testStatus(Property::PropNoPersist))
+    // never saved is a cache. A link letting go of a document that closes,
+    // or taking it back when it opens again, is not a change to this one.
+    auto link = dynamic_cast<const PropertyLinkBase*>(prop);
+    if (_pDoc && !testStatus(ObjectStatus::Destroy) && !testStatus(ObjectStatus::Remove)
+            && prop != &Visibility && prop != &TreeRank && prop != &ViewObject
+            && !(prop->getType() & Prop_NoPersist) && !prop->testStatus(Property::PropNoPersist)
+            && !(link && (link->testFlag(PropertyLinkBase::LinkDetached)
+                          || link->testFlag(PropertyLinkBase::LinkRestoring))))
         _pDoc->checkNotFrozen(prop->getName() ? prop->getName() : "a property");
 
     if (prop == &Label)

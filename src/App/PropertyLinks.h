@@ -1372,6 +1372,12 @@ protected:
     /// A live link to a branch of the file (docs/TransactionLog.md sec
     /// 27.23): to whatever document holds it.
     std::string _liveBranch;
+    /// Restored pinned to a version of its own file: resolved in
+    /// afterRestore(), once the document's history is read (sec 27.20).
+    bool _restoreSelf {false};
+    /// The link's file is its owner's own (sec 27.20): set when it resolves,
+    /// so a Save As, which renames the owner's file, still saves it as such.
+    bool _selfFile {false};
     PathResolveMode resolveMode = PathResolveMode::Dynamic;
     std::vector<std::string> _SubList;
     std::vector<ShadowSub> _ShadowSubList;
