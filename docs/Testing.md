@@ -168,9 +168,10 @@ which need `xcb` under Xvfb and a guest runtime. `ViewProviderHooks` and
 `ViewProviderChain` are the exceptions and run on `offscreen` with neither:
 between them they are the only cover the tree has for
 `ViewProviderFeaturePythonImp`, every hook of which is invisible to both
-suites above. `ViewProviderHooks` (8 cases) pins which hook each view query
+suites above. `ViewProviderHooks` (10 cases) pins which hook each view query
 reaches and what arguments the Proxy is handed, per the table in
-`docs/ProxyChain.md` sec 3; `ViewProviderChain` (17) is the view half of the
+`docs/ProxyChain.md` sec 3, and what a Gui document observer is handed while
+a view provider is made (docs/TransactionLog.md sec 27.19); `ViewProviderChain` (17) is the view half of the
 proxy chain -- `ViewProxyExp`, the walk, the deferred attach and a
 spreadsheet as an extension (`docs/ProxyChain.md` sec 4.4). Its App-side twin,
 `FeaturePythonChain`, is headless and rides the Python suite.

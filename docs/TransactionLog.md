@@ -5028,3 +5028,34 @@ collisions at the source.
 
 Already file scope: the log's sequence and version counters, the branch
 table, the blob manager and the transient directory (27.10, 27.11).
+
+### 27.19 The crash of 27.17: a view provider announced before its object (2026-09-26)
+
+Item 1 of 27.18. The constructor of `ViewProviderDocumentObject` sets
+`Selectable` from the preferences. The property change reached
+`ViewProvider::onBeforeChange`/`onChanged`, which announced it through
+`Application::signalBeforeChangeObject`/`signalChangedObject` -- before
+`Gui::Document::slotNewObject` had attached the view provider to its
+object. A Python Gui observer was handed a view provider with no object,
+and `vp.Object` dereferenced null. Any Gui observer with a change slot
+crashed on the first object made.
+
+It did a second thing, silently: the observer's `getPyObject()` ran while
+the base class was being constructed, so it made a
+`ViewProviderDocumentObjectPy`, and the view provider kept that wrapper.
+Every derived class makes its own type only `if (!pyViewObject)`, so an
+`App::Link`'s `ViewObject` stayed the base type, without the methods of
+`ViewProviderLink`, for as long as it lived.
+
+The fix is at the signal: `ViewProvider::announcesChanges()`, true by
+default, and false for a `ViewProviderDocumentObject` until it has its
+object. A change before then is not announced; the observers learn of the
+view provider from `signalNewObject` after the attach, as before. The
+getter also returns None for a view provider with no object rather than
+crash, since nothing else stops Python from asking.
+
+Tests: `ViewProviderHooks.ViewProviderObserverTest` (GUI, through
+`scripts/sandbox-gui-gate.py`): every change an observer sees while an
+`App::Link` is made carries the object, and the view provider is a
+`ViewProviderLink` to the observer and afterwards. Before the fix the
+first case killed the process.

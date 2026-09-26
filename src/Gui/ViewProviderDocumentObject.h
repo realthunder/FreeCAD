@@ -272,6 +272,11 @@ protected:
     void onBeforeChange(const App::Property* prop) override;
     /// Gets called by the container whenever a property has been changed
     void onChanged(const App::Property* prop) override;
+    /// No change is announced before the object is attached
+    bool announcesChanges() const override
+    {
+        return pcObject != nullptr;
+    }
     /** Searches in all view providers that are attached to an object that
      * is part of the same document as the object this view provider is
      * attached to for an front root of \a type.

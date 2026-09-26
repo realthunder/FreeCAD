@@ -687,6 +687,17 @@ protected:
     /// Reimplemented from subclass
     void onChanged(const App::Property* prop) override;
 
+    /** Whether a property change is announced through the application's
+     * signalBeforeChangeObject and signalChangedObject. A view provider of a
+     * document object says no until it has its object: its constructor may
+     * set properties, and an observer handed it then finds no object, and
+     * caches a Python wrapper of the base class being constructed.
+     */
+    virtual bool announcesChanges() const
+    {
+        return true;
+    }
+
     /** @name Methods used by the Tree
      * If you want to take control over the
      * viewprovider specific overlay icons, such as status, you

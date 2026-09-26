@@ -600,14 +600,18 @@ int ViewProvider::getDefaultMode(bool noOverride) const {
 
 void ViewProvider::onBeforeChange(const App::Property* prop)
 {
-    Application::Instance->signalBeforeChangeObject(*this, *prop);
+    if (announcesChanges()) {
+        Application::Instance->signalBeforeChangeObject(*this, *prop);
+    }
 
     App::TransactionalObject::onBeforeChange(prop);
 }
 
 void ViewProvider::onChanged(const App::Property* prop)
 {
-    Application::Instance->signalChangedObject(*this, *prop);
+    if (announcesChanges()) {
+        Application::Instance->signalChangedObject(*this, *prop);
+    }
     Application::Instance->updateActions();
 
     App::TransactionalObject::onChanged(prop);

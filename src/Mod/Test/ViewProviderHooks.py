@@ -166,3 +166,57 @@ class ViewProviderHooksTest(unittest.TestCase):
         obj.ViewObject.Visibility = not obj.ViewObject.Visibility
         self.assertEqual(rec.args("onChanged"),
                          ["ViewProviderDocumentObject", "str"])
+
+
+class ViewProviderObserverTest(unittest.TestCase):
+    """What a Gui document observer is handed while a view provider is made.
+
+    The constructor of ViewProviderDocumentObject sets Selectable, and the
+    change used to be announced before the view provider had its object.
+    An observer reading vp.Object then dereferenced a null object and
+    crashed the process, and its vp was a Python wrapper of the base class
+    under construction, which the view provider kept for good."""
+
+    class Observer:
+        def __init__(self):
+            self.seen = []
+
+        def _see(self, slot, vp, prop=None):
+            obj = vp.Object
+            self.seen.append((slot, type(vp).__name__, obj.Name if obj else None, prop))
+
+        def slotCreatedObject(self, vp):
+            self._see("created", vp)
+
+        def slotBeforeChangeObject(self, vp, prop):
+            self._see("before", vp, prop)
+
+        def slotChangedObject(self, vp, prop):
+            self._see("changed", vp, prop)
+
+    def setUp(self):
+        if not FreeCAD.GuiUp:
+            self.skipTest("needs the GUI")
+        self.doc = FreeCAD.newDocument("ViewProviderObserver")
+        self.obs = self.Observer()
+        FreeCAD.Gui.addDocumentObserver(self.obs)
+
+    def tearDown(self):
+        if getattr(self, "obs", None):
+            FreeCAD.Gui.removeDocumentObserver(self.obs)
+            self.obs = None
+        if getattr(self, "doc", None):
+            FreeCAD.closeDocument(self.doc.Name)
+            self.doc = None
+
+    def testNoChangeIsAnnouncedBeforeTheObject(self):
+        link = self.doc.addObject("App::Link", "Link")
+        self.assertTrue(self.obs.seen)
+        for slot, _, name, prop in self.obs.seen:
+            self.assertEqual(name, "Link", (slot, prop))
+
+    def testTheViewProviderKeepsItsOwnPythonType(self):
+        link = self.doc.addObject("App::Link", "Link")
+        for slot, typename, _, prop in self.obs.seen:
+            self.assertEqual(typename, "ViewProviderLink", (slot, prop))
+        self.assertEqual(type(link.ViewObject).__name__, "ViewProviderLink")

@@ -70,6 +70,9 @@ PyObject* ViewProviderDocumentObjectPy::isShowable(PyObject *args)
 Py::Object ViewProviderDocumentObjectPy::getObject() const
 {
     App::DocumentObject* obj = getViewProviderDocumentObjectPtr()->getObject();
+    if (!obj) {
+        return Py::None();
+    }
     return Py::Object(obj->getPyObject(), true); // do not inc'ref twice
 }
 
