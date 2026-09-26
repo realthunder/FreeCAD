@@ -2234,6 +2234,45 @@ Two things the pair of pictures settles:
   of the two and the other model is being shown whatever the default
   happened to be.
 
+### 9.13 Landed 2026-09-26: the screw thread, and finishes a feature implies
+
+Upstream's thread texture (`180c39709a`) draws a tapped hole's thread
+as a PNG laid over a second mesh of the bore. The fork has this whole
+section instead, so the thread became a finish: two more patterns,
+`Thread` and `ThreadLeft` (`"thread"`, `"thread-left"` in Python), and
+anyone may put one on any turned face through the appearance -- the
+bore of a nut modelled plain, the shank of a bolt.
+
+- **The record keeps its four numbers.** Pitch is the lead of a
+  single-start thread, depth the working height crest to root, and the
+  angle slot -- a helix has no lay to state -- holds the included
+  profile angle, 0 meaning 60. `normalize()` needs no case of its own:
+  60 and 55 are already inside [0, 180). The defaults
+  (`applyFinishDefaults`) are M6: pitch 1, depth 0.541 of it.
+- **A finish the object implies** (`getImpliedFinishes`, a virtual on
+  `ViewProviderGeometryObject`). A tapped hole's thread is not something
+  a user paints; it is a fact the feature states, and storing it in the
+  appearance would make it a second copy that goes stale the moment the
+  hole moves. So it is derived every time the render material is, and
+  merged BENEATH the appearance: a face the appearance finishes on its
+  own keeps its own, a face wearing only the object's finish takes the
+  implied one. Entry 0 of the palette is now always the object's own
+  finish rather than the first face's -- it is what a face past the
+  index array reads, and a threaded face 0 must not leak onto them.
+- **An extent beside the entry, render side only**
+  (`SoFCRenderMaterial::finishExtents`, `Render::FinishPalette::Entry::
+  extent`): the axis the pattern is laid about and the band along it it
+  covers. A thread that stops at the thread depth stops part way down
+  one face, and its axis must not depend on the frame palette, which a
+  plate of tapped holes overflows. Nothing App-side carries it: an
+  authored thread is face-wide and takes the face's radial frame, and
+  the only producer of a band is a feature, which re-derives it.
+- **Deliberately excluded**: multi-start threads (the lead is the
+  pitch), a thread on a face that is not a surface of revolution (it
+  draws nothing), and an extent on an authored finish -- a knurled band
+  part way along a shaft would want one, and would need the record to
+  grow, which 9.4.2 made possible and nobody has asked for.
+
 ## 10. Textures: the last fold into the appearance
 
 Stage 9 moved the surface finish onto `App::Material`. This stage moves what

@@ -982,3 +982,82 @@ Occurrences spin from 0 to 1 while its handler was live, and wrote 1 back.
 
 Tests: `TestLinearPattern` 10, `TestPolarPattern` 9 (four new between them, the
 mode names updated), `TestPartDesignApp` 153 OK. Ledger: 11 rows settled.
+
+### Thread texture (2026-09-26, night)
+
+Upstream `180c39709a` draws a tapped hole's thread without modelling it:
+a PNG of a thread laid over a second mesh of the bore, with UVs unwrapped
+about the hole, clipped at the thread depth, added to the body's scene by
+the Hole's view provider and refreshed on every recompute and visibility
+change through signals on the Body. The fork has a render engine with
+procedural surface finishes (`docs/ShapeAppearanceDesign.md` 9), so the
+thread became one of those instead, and nothing of upstream's view
+provider came over:
+
+- **App, as upstream.** `Hole::CosmeticThread` under upstream's name and
+  default (on), exclusive with `ModelThread` in the stored values as
+  upstream keeps them -- upstream's restore enforces it the other way
+  round, and would drop a modelled thread from a file holding both. One
+  deviation: unthreading makes it read only but leaves its value, where
+  upstream clears it, so ticking Threaded again brings the thread back.
+  New: `Hole::getCosmeticThreads()`, one bore per hole the profile
+  centres (axis, radius, taper, thread length, pitch, the standard's
+  working height and flank angle, hand), in the feature's own shape
+  coordinates. `findHoles()` and it share `forEachHoleCenter()`.
+- **The thread is a finish** (`Thread`, `ThreadLeft`; ShapeAppearanceDesign
+  9.13), so it is also something anyone may put on any turned face.
+  `fc_finish.sh` shades it as the helix about the bore's axis with the
+  standard's truncated V across it, box-filtered, with a parallax march
+  down the groove and the roots occluded (RenderEngine.md, "Surface
+  finish"); Cycles builds the same height in its graph (CyclesIntegration
+  6.6).
+- **Nobody stores it.** A view provider may now state finishes its object
+  implies (`ViewProviderGeometryObject::getImpliedFinishes`), merged under
+  the appearance each time the render material is built. Every
+  PartDesign feature's view provider -- and the Body's, which draws the
+  Tip in Tip mode -- states the threads of the holes up to it: the bores
+  are found by what they ARE, a cylinder (or a cone, tapered) on a hole's
+  axis at its radius, so a bore a later pocket split, or one a
+  LinearPattern / PolarPattern / Mirrored / MultiTransform copied (their
+  transformations applied to the hole's bores), is still threaded, and a
+  bore of the same size on another axis is not. That is also upstream's
+  `7a5dea9033` (same diameter, same plane, different hole) by
+  construction, and `80dc19d0c0` (a profile that is not a sketch): the
+  bores come from the profile shape, whatever made it. The render
+  material is rebuilt on a feature's Shape change only when threads reach
+  it or last reached it.
+- **The thread depth works** (upstream's clip plane): a finish palette
+  entry may carry an extent -- the axis and the band along it -- so the
+  thread stops part way down one face and runs out over the last pitch
+  and a half. A mirrored hole keeps its stated hand, as the tap would.
+- **The panel**: a Cosmetic Thread box beside Model Thread (the fork's
+  panel is the pre-redesign one), and the thread depth enabled for
+  either, which is upstream's `6729540a78`.
+
+**Two engine defects under it, found by the first picture.** The finish
+index of the per-vertex stream was looked up by MATERIAL index, which is
+0 for every vertex of a uniformly coloured shape, so a per-face finish on
+a one-colour part could never show; it is looked up by face now, as the
+frames always were (`SoFCVertexCache`). And the palette index reached the
+fragment as three equal integers interpolated across the triangle, which
+land a hair under the value in some pixels: `int()` then read the entry
+before, and every per-face finish was salt and pepper of its neighbour's
+(`fc_mesh_fs.sh` rounds it now).
+
+**Checked** with `scripts/demo-thread.py`: an M12 right-hand blind hole
+threaded 12 of 20 mm, cut in half on the block's edge so the helix, the
+runout and the plain bore below it are in view; the same hole whole; an
+M16 left-hand through hole along the top edge. PBR under the environment
+and Phong under the headlight, perspective and orthographic, D3D11; the
+Cycles render of the same camera. `THREAD_OFF=1` is the control.
+`THREAD_DUMP=1` prints the palette the Tip built: two entries (M12:
+pitch 1.75, height 0.947; M16: pitch 2, left) with the axes -Z and -X,
+the M12 band [-29.5, -14] (the mouth at z 26, two pitches of margin, 12
+mm of thread), and exactly the four bore faces indexed.
+
+Commits: `80841b42d6` (the finish index by face), `c620377be3` (the thread
+finish, extents, implied finishes, the index rounding), `bb92a4a91f` (the
+PartDesign side). Four ledger rows settled.
+
+Tests: `TestHole.testCosmeticThread`; `TestPartDesignApp` 155 OK; ctest
+750/750; Python 2981 OK (50 skipped, 6 expected failures).
