@@ -740,6 +740,19 @@ decision 2 has decided one by one: two-sided extrude (`a346c266e7`), the
 pattern rework (`5d2037c820`), thread texture (`180c39709a`). The full
 suites were green at `5f10f6b3db` (ctest 750/750, Python 2962 OK).
 
+Settled with the user (2026-09-26): the Boolean tool-body display family is
+`n/a`. Upstream's Boolean groups the tool bodies themselves, so an activated
+tool body is hidden inside it (`84ab5d5547`, `9bbbd59291` expose it at its
+real place) and its Tools mode reparents them (`5aac4c1036` draws copies
+instead). The fork's Boolean command wraps each tool in a SubShapeBinder
+(`CmdPartDesignBoolean`), the bodies stay where they are, and the Tools mode
+shows the binders, highlighted from the panel's list. What is left of the
+family is upstream's in-edit preview (tools translucent in the
+Cut/Common/Fuse colour), which waits with PreviewExtension. The order after
+it: the two-sided extrude with UpToFace2/UpToShape2, picked with the fork's
+own UpToFace picker (not upstream's face list), then the pattern rework, then
+thread texture.
+
 The spacebar pair is done without upstream's Tree.cpp interception: a
 selection picked in the view names an element and one from the tree does
 not, so `ViewProvider::getPickedVisibilityTarget()` (a PartDesign solid

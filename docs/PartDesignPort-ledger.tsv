@@ -723,10 +723,10 @@ db6ef154e6	2026-03-19	wwmayer	feature		0	0	open	106		PD: Add class PartDesignPar
 23d8dc4125	2026-05-19	Celeste Wouters	feature		0	0	open	6		Add global Qt resource compression control options	Gui/CMakeLists.txt
 c81df6a5ac	2026-07-02	ilya	fix		0	0	open	13	deferred (Part::FaceMakerBuildFace (24ab301685))	PartDesign: Gate FaceMakerBuildFace for SubShapeBinder behind a version bump (#31024) (#31049)	App/ShapeBinder.cpp
 b4f988f449	2026-07-06	PaddleStroke	fix		0	0	open	5	deferred (Direction2 (two-direction pattern))	PartDesign: Linear pattern: fix direction2 of primitive (#31100)	Gui/Command.cpp
-84ab5d5547	2026-07-08	Max Wilfinger	feature		0	0	open	372		PD: Make bodies inside booleans visible if active (#30002)	Gui/ViewProviderBoolean.cpp Gui/ViewProviderBoolean.h PartDesignTests/TestActiveObject.py
+84ab5d5547	2026-07-08	Max Wilfinger	feature		0	0	open	372	n/a (fork Boolean holds SubShapeBinders; tool bodies stay in place, never hidden in the Boolean)	PD: Make bodies inside booleans visible if active (#30002)	Gui/ViewProviderBoolean.cpp Gui/ViewProviderBoolean.h PartDesignTests/TestActiveObject.py
 093c3f6977	2026-07-10	Max Wilfinger	refactor		0	0	open	74	superseded (helper for 9c7a761589; not needed here)	PD: Resolve linked shapes in body coordinates	App/Feature.cpp App/Feature.h
 9c7a761589	2026-07-10	Max Wilfinger	fix		0	0	open	139	superseded (fork's Boolean wraps tools in SubShapeBinders (Gui/Command.cpp:2781))	PD: Keep boolean tools as references	App/FeatureBoolean.cpp App/FeatureBoolean.h
-5aac4c1036	2026-07-10	Max Wilfinger	feature		0	0	open	274		PD: Display Boolean tools without reparenting	Gui/ViewProviderBoolean.cpp Gui/ViewProviderBoolean.h
+5aac4c1036	2026-07-10	Max Wilfinger	feature		0	0	open	274	n/a (fork Boolean holds SubShapeBinders; Tools mode shows the binders, nothing reparented)	PD: Display Boolean tools without reparenting	Gui/ViewProviderBoolean.cpp Gui/ViewProviderBoolean.h
 f608705825	2026-07-10	Max Wilfinger	feature		0	0	open	200		PD: Add tests for Boolean body placement	PartDesignTests/TestBoolean.py
 302a8f9db6	2026-07-13	Grzegorz Kwacz	refactor		0	0	open	3	n/a (binder never disables undo here)	Core: Always use undo/redo	App/ShapeBinder.cpp PartDesignTests/TestActiveObject.py PartDesignTests/TestSketch.py
 0ec51a1eaf	2026-07-16	Max Wilfinger	refactor		0	0	open	92		PD: Remove deprecated PD Datum suggestions	Gui/Workbench.cpp
@@ -757,7 +757,7 @@ c8eafbd772	2026-08-22	Max Wilfinger	refactor		0	0	open	18		PartDesign: Replace P
 c3d5915100	2026-08-13	Roy-043	refactor		0	0	open	26		PartDesign: FreeCADGui.SendMsgToActiveView is deprecated	InvoluteGearFeature.py Scripts/Gear.py SprocketFeature.py TestPartDesignGui.py WizardShaft/ShaftFeature.py fcsprocket/fcsprocketdialog.py
 c1b23e6fe8	2026-04-26	Kacper Donat	feature		0	0	open	33	deferred (PreviewExtension)	Part: Make PreviewExtension usable from Python workbenches	Gui/ViewProvider.cpp Gui/ViewProvider.h
 1b13adabd7	2026-08-10	Max Wilfinger	feature		0	0	open	49		PD: Allow Sketcher internal faces as offset reference	App/FeatureSketchBased.cpp Gui/ReferenceSelection.cpp PartDesignTests/TestPad.py
-9bbbd59291	2026-08-24	Max Wilfinger	fix		0	0	open	26		PD: Keep active Boolean tools at their real location	Gui/ViewProviderBoolean.cpp
+9bbbd59291	2026-08-24	Max Wilfinger	fix		0	0	open	26	n/a (fixes 84ab5d5547, n/a here)	PD: Keep active Boolean tools at their real location	Gui/ViewProviderBoolean.cpp
 154d73a44f	2026-08-24	Max Wilfinger	refactor		0	0	open	57		PD: Test Boolean tool visibility cleanup	PartDesignTests/TestActiveObject.py
 83eb84157d	2026-06-12	Pieter Hijma	noise		0	0	open	2		Build: Disable deprecation warnings OCCT 8	CMakeLists.txt
 9a95906333	2026-08-28	Shubham Pawar	fix		0	0	open	7	have (Loft tooltips already say "through other profile sections")	Fix #32027 PartDesign Loft tooltip (#32034)	Gui/Command.cpp
