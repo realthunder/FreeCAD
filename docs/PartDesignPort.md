@@ -923,3 +923,62 @@ StartType).
 of them loose `.tmp`. With `TMP`/`TEMP` pointed at an empty directory
 (`ctest-fcad-cleantmp.cmd`) it passes in 14.8 s. The sweep of `%TEMP%` itself
 is left to the user.
+
+### The pattern rework (2026-09-26, evening)
+
+| commit | what |
+|---|---|
+| `70b4946311` | two-direction linear pattern, individual spacings, one pattern panel (upstream `5d2037c820`, adapted) |
+
+**What came over.** Upstream's final semantics, not its first commit: the
+logic has since moved into `Part::LinearPatternExtension` and
+`PolarPatternExtension` (`c334ac5062`), for Part's LinkArrayLinear/Polar,
+which the fork does not have, so it stays in the PD features. LinearPattern
+has a second direction (`Direction2` ... `Occurrences2`, off at the default
+of one occurrence) and makes the grid, row by row along the first. Both
+patterns have `Spacings`, one gap each, `-1` for a gap following `Offset`,
+and `SpacingPattern`, gaps repeated when it holds more than one value;
+individual beats pattern beats Offset. The mode names are upstream's,
+`Extent` and `Spacing`: a file stores the index, so old files load as they
+were, but a script setting `"length"`, `"offset"` or `"angle"` needs the new
+name. Upstream's `SuppressedPositions` (`0ea40a10e2`) serves only the
+LinkArray and was left out.
+
+**Adapted.** Upstream's `updateSpacings()` resizes `Spacings` from
+`execute()`, touching the feature while it recomputes; here it follows
+`Occurrences` in `onChanged` (not while restoring), and a list of the wrong
+size reads `-1` where it is short. The resize is capped at 1000 items, after
+the GUI check below set `Occurrences` to two billion and the process took
+16 GB on the spot. A second direction with more than one occurrence and no
+reference is an error, not upstream's silent zero step (`7e57b6e7b0`). The
+fork's own direction handling stays (sketch edges and circles, `App::Line`
+where it is, the whole sketch as its normal), and an `App::Plane` now gives
+its normal (`cf0412b7e2`): the panel let an origin plane be picked and the
+pattern refused it.
+
+**The panel.** One `TaskPatternParameters` for both, as upstream merged
+them, but on a `PatternDirectionWidget` of the fork's own per direction:
+reference, Reversed, the mode with its value, Occurrences, and "Individual
+spacings" -- a row per gap (at most 100; the rest in the property editor),
+bold where set on its own, following the spacing again when it is typed
+back in. The second direction is a checkable group (`b82505e86c`); checking
+it sets Occurrences2 to 2 (`e293a943e4`) and, if empty, Direction2 to the
+other in-plane axis of the first. The command sets Direction2 to the
+sketch's V_Axis beside H_Axis, as upstream's. Upstream's on-view spacing
+labels (`6fa9125919`) and the later shared Part editors (`a540770659`) stay
+deferred. Found on the way: the old LinearPattern panel never connected its
+Mode combo or its Offset spin box, so its Offset mode did nothing.
+
+**Checked in the GUI** (`scripts/mcp_run.py`): the Direction 2 group,
+the mode switch, typing Occurrences, each individual-spacing case, Enter
+(accepts with the typed value, `5264cb1f9e`'s bug not present), OK, the
+polar panel, and the panel as a MultiTransform sub-task. Two traps for the
+next one driving these panels from Python: `Gui::UIntSpinBox.setValue(n)`
+from PySide reaches `QSpinBox`'s raw int, which the spin box maps to about
+2^31 -- type into it (`QTest.keyClicks`) instead; and Return in a spin box
+accepts the whole task dialog, so commit a typed value with Tab. The first
+also caught a real bug before commit: binding the spin boxes clamped the
+Occurrences spin from 0 to 1 while its handler was live, and wrote 1 back.
+
+Tests: `TestLinearPattern` 10, `TestPolarPattern` 9 (three new, the mode
+names updated), `TestPartDesignApp` 153 OK. Ledger: 11 rows settled.
