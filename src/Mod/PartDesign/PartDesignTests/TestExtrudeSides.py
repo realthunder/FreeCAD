@@ -166,6 +166,38 @@ class TestExtrudeSides(unittest.TestCase):
         pad.UpToFace = (box, [top])
         self.assertEqual([(o, list(s)) for o, s in pad.UpToShape], [(box, [top])])
 
+    def testUpToFacesApart(self):
+        # Faces that do not touch: the prism stops at the nearest it meets,
+        # where it ran through all, or failed when it met only the plane
+        box = self.box()
+        plane = self.Body.newObject("PartDesign::Plane", "Plane")
+        plane.AttachmentSupport = [(self.Doc.getObject("XY_Plane"), "")]
+        plane.MapMode = "FlatFace"
+        plane.AttachmentOffset = FreeCAD.Placement(FreeCAD.Vector(0, 0, 20), FreeCAD.Rotation())
+        faces = [(box, [self.faceAt(box, 0), self.faceAt(box, 10)]), (plane, [""])]
+        pad = self.pad(z=-5)
+        pad.Type = "UpToShape"
+        pad.UpToShape = faces
+        self.Doc.recompute()
+        self.assertTrue(pad.isValid())
+        self.assertEqual(self.zRange(pad.AddSubShape), (-5, 0))
+        # beside the box, only the plane is in the way
+        pad.Profile = (self.sketch("BesideSketch", (30, 0), (10, 10), -5), [""])
+        self.Doc.recompute()
+        self.assertTrue(pad.isValid())
+        self.assertEqual(self.zRange(pad.AddSubShape), (-5, 20))
+        # above them all, looking back
+        pad.Profile = (self.sketch("AboveSketch", (0, 0), (10, 10), 30), [""])
+        self.Doc.recompute()
+        self.assertTrue(pad.isValid())
+        self.assertEqual(self.zRange(pad.AddSubShape), (20, 30))
+        # a whole shape and a plane beyond it: the shape, less its far face
+        pad.Profile = (self.Doc.getObject("PadSketch"), [""])
+        pad.UpToShape = [(box, [""]), (plane, [""])]
+        self.Doc.recompute()
+        self.assertTrue(pad.isValid())
+        self.assertEqual(self.zRange(pad.AddSubShape), (-5, 0))
+
     def testWholeObjectUpToFaceMeansFirstFace(self):
         # UpToFace has always taken a whole object's first face; UpToShape,
         # its mirror, names that face rather than meaning the whole shape

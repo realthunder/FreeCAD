@@ -26,10 +26,13 @@
 # include <BRepPrimAPI_MakePrism.hxx>
 # include <gp_Dir.hxx>
 # include <Precision.hxx>
+# include <TopExp.hxx>
 # include <TopExp_Explorer.hxx>
 # include <TopoDS_Compound.hxx>
 # include <TopoDS_Face.hxx>
 # include <TopoDS_Shape.hxx>
+# include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
+# include <TopTools_IndexedMapOfShape.hxx>
 #endif
 
 #include <gp_Ax2.hxx>
@@ -684,21 +687,49 @@ int FeatureExtrude::getUpToShape(TopoShape &upToShape,
         dir.Reverse();
         cfaces = Part::findAllFacesCutBy(upToShape, sketchshape, dir);
     }
-    if (cfaces.size() > 1) {
-        auto farFace = &cfaces.front();
-        for (auto &cface : cfaces) {
-            if (cface.distsq > farFace->distsq)
-                farFace = &cface;
-        }
-        std::vector<TopoShape> faces;
-        for (auto &face : upToShape.getSubTopoShapes(TopAbs_FACE)) {
-            if (!face.getShape().IsSame(farFace->face.getShape()))
-                faces.push_back(face);
-        }
-        // One face left is given as the face: a compound of one face does not
-        // stop the prism, which ran through all
-        upToShape = faces.size() == 1 ? faces.front() : TopoShape().makECompound(faces);
+    if (cfaces.empty())
+        return faceCount;
+
+    // Only the faces joined to the nearest one it reaches stop the prism.
+    // Faces that do not touch (a box's top and bottom, a plane beyond) are
+    // no shell once the far face goes, and the prism ran through all; left
+    // in when the prism meets none of them, it failed outright.
+    auto nearFace = &cfaces.front();
+    for (auto &cface : cfaces) {
+        if (cface.distsq < nearFace->distsq)
+            nearFace = &cface;
     }
+    TopTools_IndexedDataMapOfShapeListOfShape edgeFaces;
+    TopExp::MapShapesAndAncestors(upToShape.getShape(), TopAbs_EDGE, TopAbs_FACE, edgeFaces);
+    TopTools_IndexedMapOfShape joined;
+    joined.Add(nearFace->face.getShape());
+    for (int i = 1; i <= joined.Extent(); ++i) {
+        for (TopExp_Explorer xp(joined(i), TopAbs_EDGE); xp.More(); xp.Next()) {
+            int index = edgeFaces.FindIndex(xp.Current());
+            if (index == 0)
+                continue;
+            for (const auto &face : edgeFaces(index))
+                joined.Add(face);
+        }
+    }
+
+    // Then without the face furthest along the extrusion, or the shell is
+    // closed and the prism runs on (upstream 8b9f5bdc4f)
+    const Part::cutFaces *farFace = nullptr;
+    for (auto &cface : cfaces) {
+        if (joined.Contains(cface.face.getShape())
+                && (!farFace || cface.distsq > farFace->distsq))
+            farFace = &cface;
+    }
+    std::vector<TopoShape> faces;
+    for (auto &face : upToShape.getSubTopoShapes(TopAbs_FACE)) {
+        if (joined.Contains(face.getShape())
+                && (farFace == nearFace || !face.getShape().IsSame(farFace->face.getShape())))
+            faces.push_back(face);
+    }
+    // One face left is given as the face: a compound of one face does not
+    // stop the prism, which ran through all
+    upToShape = faces.size() == 1 ? faces.front() : TopoShape().makECompound(faces);
     return faceCount;
 }
 
