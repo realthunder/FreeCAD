@@ -552,6 +552,23 @@ public:
       // often lines (the axis cross) as it is faces.
       if (skipbounds < other.skipbounds) return true;
       if (skipbounds > other.skipbounds) return false;
+      // The per-view style resolution fields, for every primitive type:
+      // a view filters lines and points by them exactly as it does faces
+      // (docs/CoinRetirement.md 5.8, 5.9), so two draws that differ in
+      // any of them must not share a bucket. Inside the Triangle branch
+      // they let an object's edges fall into the bucket of another
+      // object's identical edges, and take that object's own mode, its
+      // additive-capture tag and its interest bits with them.
+      if (ownstyle < other.ownstyle) return true;
+      if (ownstyle > other.ownstyle) return false;
+      if (registeredstyles < other.registeredstyles) return true;
+      if (registeredstyles > other.registeredstyles) return false;
+      if (capturedmode < other.capturedmode) return true;
+      if (capturedmode > other.capturedmode) return false;
+      if (traversedmode < other.traversedmode) return true;
+      if (traversedmode > other.traversedmode) return false;
+      if (interestbits < other.interestbits) return true;
+      if (interestbits > other.interestbits) return false;
       if (this->type == Triangle) {
         if (shapetype < other.shapetype) return true;
         if (shapetype > other.shapetype) return false;
@@ -689,16 +706,6 @@ public:
         if (twoside > other.twoside) return false;
         if (drawstyle < other.drawstyle) return true;
         if (drawstyle > other.drawstyle) return false;
-        if (ownstyle < other.ownstyle) return true;
-        if (ownstyle > other.ownstyle) return false;
-        if (registeredstyles < other.registeredstyles) return true;
-        if (registeredstyles > other.registeredstyles) return false;
-        if (capturedmode < other.capturedmode) return true;
-        if (capturedmode > other.capturedmode) return false;
-        if (traversedmode < other.traversedmode) return true;
-        if (traversedmode > other.traversedmode) return false;
-        if (interestbits < other.interestbits) return true;
-        if (interestbits > other.interestbits) return false;
         if (polygonoffsetstyle < other.polygonoffsetstyle) return true;
         if (polygonoffsetstyle > other.polygonoffsetstyle) return false;
         if (polygonoffsetfactor < other.polygonoffsetfactor) return true;
