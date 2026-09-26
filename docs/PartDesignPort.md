@@ -834,7 +834,7 @@ front (upstream `17ac7dab3d` turns the direction); two faces less the far
 one left a compound of one face, which does not stop the prism -- it ran
 through all.
 
-Open:
+Open then (all closed in the next subsection):
 
 - **Several up-to faces that do not touch** (a box's top and bottom and a
   plane) still run through all: after the far face is dropped they are a
@@ -857,4 +857,69 @@ failures); ctest 749 of 750 -- `DeferredLoad_tests_run` timed out at 25
 minutes, every case passing but taking about 100 s each, alone as well as
 under `-j 6`. It links only FreeCADApp and FreeCADBase, and neither they nor
 the test changed since `5f10f6b3db`, where it passed: an environment stall on
-this box, not this work, but not yet explained.
+this box, not this work, but not yet explained. (Explained in the next
+subsection: the temp directory.)
+
+### The open items of two sides, closed (2026-09-26, later)
+
+| commit | what |
+|---|---|
+| `251235a040` | up to several faces stops at the faces joined to the nearest one it meets |
+| `208f7b45a3` | a length on one side and up to one face on the other is one prism (upstream `94750baa6b`, narrowed) |
+
+**Faces that do not touch.** Reproduced headless before the fix: a box's
+bottom and top and a datum plane beyond, a profile under the box, ran
+through all (z to 155); beside the box, where the prism meets only the
+plane, the three faces were left as they were and the extrusion failed with
+"BRep_Builder::Infinite parameter". Now `getUpToShape` keeps the faces
+joined by edges to the nearest face the prism meets, and only then drops
+the furthest of those. The order matters: dropping the far face first, a
+whole box with a plane beyond would lose the plane and keep the box closed.
+Under the box it stops at the bottom, beside it at the plane, above them
+all at the plane looking back; `TestExtrudeSides.testUpToFacesApart`.
+
+**One prism for a length and a face** (`94750baa6b`). The fork made the two
+sides and combined them, which leaves a seam around the profile (10 faces
+where one prism has 6, with Refine off). Upstream moves the profile to the
+end of the length and extrudes it back up to the face. For one given face
+that is the same solid wherever the face is -- in front, behind, inside the
+length. It is not for a face that is searched for: up to first, up to last,
+and the nearest of several faces are found from the profile, and from the
+moved profile the search can find another. The case that showed it: a
+pocket through all one way and up to a box's top and bottom the other cut
+nothing, since from the far end the nearest face is the bottom rather than
+the top. So only UpToFace, or UpToShape naming one face, takes the single
+prism; upstream takes it for all but up to first. Checked on 384
+combinations (Pad and Pocket; profile above, inside and below a box; the
+length on either side, Length or ThroughAll; up to top, bottom, a plane,
+two faces, first, last; reversed; a custom direction along the normal),
+run on the old code and the new: every solid the same volume and bound
+box, 108 with fewer faces, none with more.
+
+**The stale Pocket volume was the edit preview.** With `PreviewOnEdit` (the
+default) a feature being edited computes only its AddSubShape; the boolean
+is paused (`FeatureExtrude::buildExtrusion`, `isRecomputePaused`) and
+`Shape` is rebuilt when the panel closes. Driven in the GUI: two sides,
+both through all, `Shape` still removed 72 while the panel was open and 360
+(6 x 6 x 10, right) after OK. The session before had read `Shape` mid-edit.
+The preview itself trails a setting by the panel's recompute delay, which
+is why a read in the same script call looked stale too. Not a bug.
+
+**The seven deferred rows**, each read against the fork's code rather than
+upstream's, since most patch upstream's own rewrite of `buildExtrusion`:
+`7d3dd2605f` have (the symmetric length is halved and the along-normal
+factor applied to both lengths; the panel shows the along-direction box by
+the modes, not by a widget's visibility); `02479a1528` have (the symmetric
+mirror is in the profile plane); `aef10a1bc8` have (TwoLengths kept at
+upstream's enum index); `94750baa6b` adapted, above; `168cebd41f` n/a (a
+parameter threaded through upstream's helper; `makeSide` has it);
+`0ff0359524` have (the panel writes Type by name, so the TwoLengths slot
+cannot shift it); `9b2734c640` n/a (it guards upstream's deep copy of the
+profile and its StartType; the fork tapers the profile itself and has no
+StartType).
+
+**`DeferredLoad_tests_run` was the temp directory again**, as
+[Testing.md](./Testing.md) records twice: `%TEMP%` held 41,626 files, 40,478
+of them loose `.tmp`. With `TMP`/`TEMP` pointed at an empty directory
+(`ctest-fcad-cleantmp.cmd`) it passes in 14.8 s. The sweep of `%TEMP%` itself
+is left to the user.

@@ -398,6 +398,11 @@ one-time fix on one machine. Sweeping the loose files out of the top level
 touched in the last hour or held open skipped) took the suite to **12.29 s**
 against the real `%TEMP%`.
 
+**And again, 2026-09-26**, on the same box: 41,626 entries (40,478 loose
+`.tmp`, so about 2,500 a day since the sweep), a 25-minute timeout under
+`ctest`, and **14.8 s** through `ctest-fcad-cleantmp.cmd`. A timeout on this
+suite is the temp directory until shown otherwise.
+
 **Two things a sweep must not take with it, one of them learned the hard
 way.** `%TEMP%\claude` holds a live agent session's scratchpad and its
 background-task output files. And **`/tmp` in Git Bash IS `%TEMP%`**, so
