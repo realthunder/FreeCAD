@@ -5004,11 +5004,20 @@ collisions at the source.
    Each version hashes the same strings to different ids, so the element
    maps of the same shape in two branches disagree, and merging them means
    re-hashing.
-3. **Object names** (`getUniqueObjectName`). Two branches that each add a
-   `Pad` both get `Pad001`. A merge must then rename one of them, along
-   with every expression, link and subname that refers to it. Names
-   reserved file-wide cannot collide. Labels, where duplicates are not
-   allowed, are the same case in a weaker form.
+3. **An object name table** (`getUniqueObjectName`). Two branches that
+   each add a `Pad` both get `Pad001`. A merge must then rename one of
+   them, along with every expression, link and subname that refers to it.
+   The fix is a file-scope table of name -> object id, which every
+   document of the file allocates from:
+   - a name is given to one object only, in any version or branch;
+   - the same object keeps its name in every version;
+   - a deleted object's name stays taken, so an undo or an old version
+     can bring the object back under its name, and a merge never finds
+     two objects with one name.
+
+   With item 1, the pair (id, name) identifies an object across the whole
+   file. Labels, where duplicates are not allowed, are the same case in a
+   weaker form.
 4. **Id counters kept inside objects**, for example Sketcher's
    `geoLastId`. Two branches editing the same sketch mint the same
    geometry ids, and constraints refer to geometry by id. This is object
