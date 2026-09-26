@@ -91,6 +91,7 @@
 #include "Application.h"
 #include "ComplexGeoData.h"
 #include "Document.h"
+#include "FileHistory.h"
 #include "DocumentObjectFileIncluded.h"
 #include "DocumentObjectGroup.h"
 #include "DocumentObjectGroupPy.h"
@@ -942,6 +943,13 @@ std::vector<Document*> Application::openDocuments(const std::vector<std::string>
 
             auto &timing = timings[doc];
             FC_TIME_INIT(t1);
+            // A version's document was restored whole when it was opened
+            // (Document::openFileVersion): nothing is left to finish.
+            if (doc->testStatus(Document::VersionDoc)) {
+                openedDocs.emplace_back(doc);
+                it = docs.erase(it);
+                continue;
+            }
             // Finalize document restoring with the correct order
             if(doc->afterRestore(true)) {
                 openedDocs.emplace_back(doc);
@@ -1010,6 +1018,27 @@ Document* Application::openDocumentPrivate(const char * FileName,
     // check below, which is itself an answer about the host's disk.
     ExpressionSecurity::checkHostPath(ExpressionSecurity::Permission::FsRead,
                                       FileName ? FileName : "");
+
+    // `<file>@v<num>`: version `num` of the file, opened as a document of its
+    // own (docs/TransactionLog.md sec 27.7) -- what a pinned link asks for.
+    {
+        std::string file(FileName ? FileName : "");
+        if (int64_t num = FileHistory::splitVersion(file)) {
+            if (auto doc = getDocumentByPath(FileName))
+                return isMainDoc ? doc : nullptr;
+            std::string reason;
+            auto history = FileHistory::openFile(file, &reason);
+            if (!history)
+                THROWM(Base::FileSystemError, "no history in '" + file + "': " + reason)
+            // A pin's version: always a version document, never the file's
+            // own document that happens to be at it (sec 27.14).
+            Document* doc = Document::openFileVersion(history, num, isMainDoc && createView,
+                                                      nullptr, true);
+            if (!DocFileMap.empty())
+                DocFileMap[FileInfo(doc->FileName.getValue()).filePath()] = doc;
+            return doc;
+        }
+    }
 
     FileInfo File(FileName);
 

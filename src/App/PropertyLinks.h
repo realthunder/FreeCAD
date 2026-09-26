@@ -1211,6 +1211,27 @@ public:
     const char *getDocumentPath() const;
     const char *getObjectName() const;
 
+    /** @name Pinned links (docs/TransactionLog.md sec 16.5, 27)
+     *
+     * A link to another file may be pinned to one of the file's versions: it
+     * then resolves to that version, opened as a document of its own, and not
+     * to the file's live state. A link to an object of a version document is
+     * pinned to that version. When the version cannot be found the link warns
+     * and resolves to the file, keeping its pin for the next open.
+     */
+    //@{
+    /// Pin to version `version` (0 unpins), whose uuid is `uuid` if known;
+    /// an undoable change of the link's value. Throws when the link is not
+    /// to another saved file.
+    void setPin(int64_t version, const std::string& uuid = std::string());
+    int64_t getPinVersion() const { return _pinVersion; }
+    const std::string& getPinUuid() const { return _pinUuid; }
+    /// The pinned version could not be opened and the link shows the file.
+    bool pinFellBack() const { return _pinFellBack; }
+    /// Every loaded link pinned to a version of the file at `path`.
+    static std::vector<PropertyXLink*> getPinsTo(const std::string& path);
+    //@}
+
     int checkRestore(std::string *msg=nullptr) const override;
 
     void Save (Base::Writer &writer) const override;
@@ -1341,6 +1362,9 @@ protected:
     std::string docName;
     std::string objectName;
     std::string stamp;
+    int64_t _pinVersion {0};
+    std::string _pinUuid;
+    bool _pinFellBack {false};
     PathResolveMode resolveMode = PathResolveMode::Dynamic;
     std::vector<std::string> _SubList;
     std::vector<ShadowSub> _ShadowSubList;

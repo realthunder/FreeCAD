@@ -30,6 +30,7 @@
 
 #include "DocumentObject.h"
 #include "Document.h"
+#include "PropertyLinks.h"
 #include "DocumentObserver.h"
 #include "ExpressionParser.h"
 #include "ExpressionSecurityRuntime.h"
@@ -175,6 +176,59 @@ PyObject*  DocumentObjectPy::supportedProperties(PyObject *args)
         }
     }
     return Py::new_reference_to(res);
+}
+
+namespace {
+
+App::PropertyXLink* xlinkOf(App::DocumentObject* obj, const char* name)
+{
+    auto prop = obj->getPropertyByName(name);
+    if (!prop)
+        throw Py::AttributeError(std::string("no property ") + name);
+    auto link = Base::freecad_dynamic_cast<App::PropertyXLink>(prop);
+    if (!link)
+        throw Py::TypeError(std::string(name) + " is not a link to another file");
+    return link;
+}
+
+} // namespace
+
+PyObject* DocumentObjectPy::pinLink(PyObject* args)
+{
+    char* name;
+    long long version = 0;
+    if (!PyArg_ParseTuple(args, "s|L", &name, &version))
+        return nullptr;
+    PY_TRY {
+        auto link = xlinkOf(getDocumentObjectPtr(), name);
+        return Py::new_reference_to(Py::Long(Document::pinLink(*link, version)));
+    } PY_CATCH;
+}
+
+PyObject* DocumentObjectPy::unpinLink(PyObject* args)
+{
+    char* name;
+    if (!PyArg_ParseTuple(args, "s", &name))
+        return nullptr;
+    PY_TRY {
+        xlinkOf(getDocumentObjectPtr(), name)->setPin(0);
+        Py_Return;
+    } PY_CATCH;
+}
+
+PyObject* DocumentObjectPy::getLinkPin(PyObject* args)
+{
+    char* name;
+    if (!PyArg_ParseTuple(args, "s", &name))
+        return nullptr;
+    PY_TRY {
+        auto link = xlinkOf(getDocumentObjectPtr(), name);
+        if (!link->getPinVersion())
+            Py_Return;
+        return Py::new_reference_to(Py::TupleN(Py::Long(link->getPinVersion()),
+                                               Py::String(link->getPinUuid()),
+                                               Py::Boolean(link->pinFellBack())));
+    } PY_CATCH;
 }
 
 PyObject*  DocumentObjectPy::touch(PyObject * args)

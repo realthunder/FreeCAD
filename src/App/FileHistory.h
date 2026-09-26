@@ -107,6 +107,17 @@ public:
     static std::shared_ptr<FileHistory> find(const std::string& path);
     /// The canonical form of `path` the registry keys by.
     static std::string canonicalPath(const std::string& path);
+    /** A version document's name, `<file>@v<num>` (docs/TransactionLog.md
+     * sec 27.7): `path` becomes the file's and the number is returned; 0,
+     * with `path` untouched, for any other name -- one that is a file.
+     */
+    static int64_t splitVersion(std::string& path);
+    /** Whether version `num` of the file at `path` can be opened (sec
+     * 27.13): its history opened (and returned in `history`), the version
+     * in it, and its uuid `uuid` when one is given. `reason` says why not.
+     */
+    static bool findVersion(const std::string& path, int64_t num, const std::string& uuid,
+                            std::shared_ptr<FileHistory>& history, std::string& reason);
 
 private:
     explicit FileHistory(Document& home);

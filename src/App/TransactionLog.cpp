@@ -1071,11 +1071,14 @@ bool TransactionLogCore::unchangedSince(int64_t head, int64_t seq)
     return reached;
 }
 
-Document* TransactionLogCore::documentAt(const LogVersion& version)
+Document* TransactionLogCore::documentAt(const LogVersion& version, bool versionDocsOnly)
 {
     // A document is the version when its branch moved past it only by
     // records -- a save, a snapshot, a switch: rows with no ops.
     for (auto cursor : _cursors) {
+        // A pin never takes a branch document, which moves on (sec 27.14).
+        if (versionDocsOnly && !cursor->_doc.testStatus(Document::VersionDoc))
+            continue;
         if (cursor->_head == version.seq)
             return &cursor->_doc;
         if (cursor->_branch != version.branch && cursor->_branch != 0)

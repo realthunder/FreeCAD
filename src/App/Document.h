@@ -57,6 +57,7 @@ namespace App
     class Application;
     class FileBlobManager;
     class FileHistory;
+    class PropertyXLink;
     class TransactionLogCore;
     class TransactionLog;
     struct LogBranch;
@@ -376,12 +377,23 @@ public:
      * there is no log or no such version.
      */
     Document* openVersion(int64_t num, bool createView = true);
+    /** Pin `link` to version `version` of the file it links to
+     * (docs/TransactionLog.md sec 16.5, 27.7); 0 pins the version the linked
+     * document is -- the file on disk, or a version document's own. The
+     * version is named, the file noted as pinned so it saves with its history
+     * whatever the preference (27.5 ruling 1), and its document marked
+     * modified. The link's change is an undoable write. Returns the version.
+     */
+    static int64_t pinLink(PropertyXLink& link, int64_t version = 0);
+    /// This file is pinned by a link: its log says so, or a loaded link is.
+    bool isPinned() const;
     /** The same for a file's history, whether or not a document of the file
      * is open (docs/TransactionLog.md sec 27.13; FileHistory::openFile()).
      * `from`, when given, is the document of the file it is named after.
      */
     static Document* openFileVersion(const std::shared_ptr<FileHistory>& history, int64_t num,
-                                     bool createView = true, const Document* from = nullptr);
+                                     bool createView = true, const Document* from = nullptr,
+                                     bool versionDocsOnly = false);
 
     /** Branches (docs/TransactionLog.md sec 17, 26). createBranch() makes
      * branch `name` from version `version`, or else from log row `seq`, or

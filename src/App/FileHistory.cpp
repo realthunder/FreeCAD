@@ -365,6 +365,42 @@ bool FileHistory::setPath(const std::string& path)
     return true;
 }
 
+int64_t FileHistory::splitVersion(std::string& path)
+{
+    const size_t at = path.rfind("@v");
+    if (at == std::string::npos || at + 2 >= path.size())
+        return 0;
+    for (size_t i = at + 2; i < path.size(); ++i) {
+        if (path[i] < '0' || path[i] > '9')
+            return 0;
+    }
+    if (Base::FileInfo(path).exists())
+        return 0;
+    const int64_t num = std::stoll(path.substr(at + 2));
+    if (num <= 0)
+        return 0;
+    path.resize(at);
+    return num;
+}
+
+bool FileHistory::findVersion(const std::string& path, int64_t num, const std::string& uuid,
+                              std::shared_ptr<FileHistory>& history, std::string& reason)
+{
+    history = openFile(path, &reason);
+    if (!history)
+        return false;
+    LogVersion version;
+    if (!TransactionLogCore::of(*history).store().getVersion(num, version)) {
+        reason = "it has no version " + std::to_string(num);
+        return false;
+    }
+    if (!uuid.empty() && version.uuid != uuid) {
+        reason = "its version " + std::to_string(num) + " is another history's";
+        return false;
+    }
+    return true;
+}
+
 std::shared_ptr<FileHistory> FileHistory::find(const std::string& path)
 {
     const std::string key = canonicalPath(path);

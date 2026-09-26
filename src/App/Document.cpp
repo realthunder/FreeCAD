@@ -4289,9 +4289,12 @@ void Document::embedHistory(bool archive)
     Base::FlagToggler<> quiet(d->bookkeeping, false);
     auto history = Base::freecad_dynamic_cast<PropertyHistory>(getPropertyByName("History"));
     auto version = Base::freecad_dynamic_cast<PropertyString>(getPropertyByName("Version"));
-    TransactionLog* log = archive && !d->savingWithoutHistory
-            && DocumentParams::getTransactionLog() == 2
-        ? getTransactionLog() : nullptr;
+    // With the history when the preference says so, and always for a file
+    // another document pins a version of (docs/TransactionLog.md sec 27.5
+    // ruling 1): the pinned version must travel.
+    TransactionLog* log = archive && !d->savingWithoutHistory ? getTransactionLog() : nullptr;
+    if (log && DocumentParams::getTransactionLog() != 2 && !isPinned())
+        log = nullptr;
     if (!log) {
         // Not embedding: a property left from an earlier embedded save is
         // emptied rather than carried on with stale content. For a copy
@@ -5125,6 +5128,77 @@ void Document::_readVersion(int64_t num, const std::function<void(Document&)>& f
     fn(*scratch);
 }
 
+bool Document::isPinned() const
+{
+    TransactionLog* log = getTransactionLog();
+    if (log && !log->store().getMeta("pins").empty())
+        return true;
+    return !FileName.getStrValue().empty() && !testStatus(VersionDoc)
+        && !PropertyXLink::getPinsTo(FileName.getStrValue()).empty();
+}
+
+int64_t Document::pinLink(PropertyXLink& link, int64_t version)
+{
+    // docs/TransactionLog.md sec 16.5, 27.6 Q3, 27.7.
+    auto owner = Base::freecad_dynamic_cast<DocumentObject>(link.getContainer());
+    if (!owner || !owner->isAttachedToDocument())
+        THROWM(Base::RuntimeError, "the link has no owner");
+    Document* linked = link.getValue() ? link.getValue()->getDocument() : link.getDocument();
+    if (!linked || linked == owner->getDocument())
+        THROWM(Base::RuntimeError, "a pin needs a link to another file");
+    std::string file = linked->FileName.getStrValue();
+    FileHistory::splitVersion(file);
+    if (file.empty())
+        THROWM(Base::RuntimeError, "the linked document is not saved");
+    std::string reason;
+    auto history = FileHistory::openFile(file, &reason);
+    if (!history)
+        THROWM(Base::RuntimeError, "the linked file has no history: " + reason);
+    TransactionLogCore& log = TransactionLogCore::of(*history);
+
+    if (version <= 0) {
+        // The version the linked document is: a version document's own, or
+        // the one the file is on disk (27.6 Q3) -- its `Version`.
+        if (auto vlog = linked->getTransactionLog(); vlog && vlog->detachedAt())
+            version = vlog->detachedAt();
+        else if (linked->testStatus(VersionDoc) && link.getPinVersion())
+            version = link.getPinVersion();
+        else if (auto prop = Base::freecad_dynamic_cast<PropertyString>(
+                     linked->getPropertyByName("Version")))
+            version = std::atoll(prop->getValue());
+        else if (history->fileVersion())
+            version = history->fileVersion();
+        if (version <= 0)
+            THROWM(Base::RuntimeError,
+                   "the linked file has no version on disk: save it with its history first");
+    }
+    LogVersion v;
+    if (!log.store().getVersion(version, v))
+        THROWM(Base::ValueError, "the linked file has no version " + std::to_string(version));
+    // Named, so the linked file's own eviction keeps it (16.3), and noted as
+    // pinned, so the file is saved with its history from now on.
+    if (v.kind != "named")
+        log.store().nameVersion(version, "pinned");
+    std::string pins = log.store().getMeta("pins");
+    std::ostringstream entry;
+    entry << version << '\t' << owner->getDocument()->FileName.getStrValue() << '\t'
+          << owner->getDocument()->Uid.getValueStr();
+    if (pins.find(entry.str()) == std::string::npos) {
+        if (!pins.empty())
+            pins += '\n';
+        pins += entry.str();
+        log.store().setMeta("pins", pins);
+    }
+    // The pin reaches the file with its next save: the file's own document
+    // is marked modified (the convention DocInfo uses for a stamp change).
+    for (auto doc : log.documents()) {
+        if (!doc->testStatus(VersionDoc))
+            doc->Comment.touch();
+    }
+    link.setPin(version, v.uuid);
+    return version;
+}
+
 void Document::_joinHistory(const std::shared_ptr<FileHistory>& history)
 {
     // A new document may have a log and a history of its own already: the
@@ -5158,7 +5232,7 @@ Document* Document::openVersion(int64_t num, bool createView)
 }
 
 Document* Document::openFileVersion(const std::shared_ptr<FileHistory>& history, int64_t num,
-                                    bool createView, const Document* from)
+                                    bool createView, const Document* from, bool versionDocsOnly)
 {
     // Sec 27.7, 27.13: with or without a document of the file open.
     if (!history)
@@ -5167,7 +5241,7 @@ Document* Document::openFileVersion(const std::shared_ptr<FileHistory>& history,
     LogVersion version;
     if (!log.store().getVersion(num, version))
         THROWM(Base::ValueError, "no version " + std::to_string(num));
-    if (Document* open = log.documentAt(version))
+    if (Document* open = log.documentAt(version, versionDocsOnly))
         return open;
 
     // The ids its branch will hand out start a stride above every other

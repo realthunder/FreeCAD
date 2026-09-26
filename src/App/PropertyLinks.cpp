@@ -39,6 +39,8 @@
 
 #include "PropertyLinks.h"
 #include "Application.h"
+#include "FileHistory.h"
+#include "TransactionLog.h"
 #include "Document.h"
 #include "DocumentObject.h"
 #include "DocumentObjectPy.h"
@@ -3332,6 +3334,11 @@ public:
     std::string myPath;
     App::Document *pcDoc{nullptr};
     std::set<PropertyXLink*> links;
+    /// For a pinned link's DocInfo (docs/TransactionLog.md sec 27.7), keyed
+    /// `<file>@v<num>`: the version, and the file's history, kept open until
+    /// the version's document has it.
+    int64_t version {0};
+    std::shared_ptr<App::FileHistory> history;
 
     /** Cross-document links made while the owner or the linked document
      * had no file: setValue() delays their DocInfo till Save(), so no
@@ -3561,19 +3568,57 @@ public:
     static DocInfoPtr get(const char *filename,
             App::Document *pDoc,PropertyXLink *l, const char *objName)
     {
+        // A version document is named `<file>@v<num>` (docs/TransactionLog.md
+        // sec 27.7): a link to it is pinned to that version, and the path it
+        // keeps is the file's.
+        std::string plain(filename ? filename : "");
+        if (int64_t v = FileHistory::splitVersion(plain)) {
+            if (l->_pinVersion != v) {
+                l->_pinVersion = v;
+                l->_pinUuid.clear();
+            }
+        }
         QString fullPath;
-        l->filePath = getDocPath(filename,pDoc,l->getPathResolveMode(),&fullPath);
-        
+        l->filePath = getDocPath(plain.c_str(),pDoc,l->getPathResolveMode(),&fullPath);
+
         FC_LOG("finding doc " << filename);
 
-        auto it = _DocInfoMap.find(fullPath);
+        // Pinned: resolved to the version when it can be found, else to the
+        // file as an unpinned link is, with a warning (27.5 ruling 2); the
+        // pin stays for the next open.
+        QString key = fullPath;
+        std::shared_ptr<FileHistory> history;
+        l->_pinFellBack = false;
+        if (l->_pinVersion > 0 && !fullPath.startsWith(QStringLiteral("https://"))) {
+            std::string reason;
+            const std::string path = fullPath.toUtf8().constData();
+            if (FileHistory::findVersion(path, l->_pinVersion, l->_pinUuid, history, reason)) {
+                key += QStringLiteral("@v") + QString::number(l->_pinVersion);
+                if (l->_pinUuid.empty()) {
+                    LogVersion version;
+                    if (TransactionLogCore::of(*history).store().getVersion(l->_pinVersion, version))
+                        l->_pinUuid = version.uuid;
+                }
+            }
+            else {
+                l->_pinFellBack = true;
+                history.reset();
+                static std::set<std::string> warned;
+                if (warned.insert(path + "@v" + std::to_string(l->_pinVersion)).second)
+                    FC_WARN("link " << l->getFullName() << " is pinned to version "
+                            << l->_pinVersion << " of " << path << ", which cannot be opened ("
+                            << reason << "): it shows the file");
+            }
+        }
+
+        auto it = _DocInfoMap.find(key);
         DocInfoPtr info;
         if(it != _DocInfoMap.end()) {
             info = it->second;
             if(!info->pcDoc) {
                 if (l->testFlag(PropertyLinkBase::LinkSilentRestore) || QFileInfo(fullPath).exists()) {
                     if (auto doc = App::GetApplication().addPendingDocument(
-                                fullPath.toUtf8().constData(),
+                                key.toUtf8().constData(),
                                 objName,
                                 l->testFlag(PropertyLinkBase::LinkAllowPartial))) {
                             info->attach(doc);
@@ -3582,7 +3627,9 @@ public:
             }
         } else {
             info = std::make_shared<DocInfo>();
-            auto ret = _DocInfoMap.insert(std::make_pair(fullPath,info));
+            info->history = history;
+            info->version = key == fullPath ? 0 : l->_pinVersion;
+            auto ret = _DocInfoMap.insert(std::make_pair(key,info));
             info->init(ret.first,objName,l);
         }
 
@@ -3641,6 +3688,8 @@ public:
     void init(DocInfoMap::iterator pos, const char *objName, PropertyXLink *l) {
         myPos = pos;
         myPath = myPos->first.toUtf8().constData();
+        // A version's key is `<file>@v<num>`; the path is the file's.
+        FileHistory::splitVersion(myPath);
         App::Application &app = App::GetApplication();
         //NOLINTBEGIN
         connFinishRestoreDocument = app.signalFinishRestoreDocument.connect(
@@ -3665,7 +3714,8 @@ public:
                     return;
                 }
             }
-            if (l->testFlag(PropertyLinkBase::LinkSilentRestore) && !QFileInfo(fullpath).exists()) {
+            if (l->testFlag(PropertyLinkBase::LinkSilentRestore)
+                    && !QFileInfo(QString::fromUtf8(myPath.c_str())).exists()) {
                 FC_LOG("document file does not exists: " << filePath());
                 return;
             }
@@ -4219,6 +4269,58 @@ const char *PropertyXLink::getObjectName() const {
     return objectName.c_str();
 }
 
+void PropertyXLink::setPin(int64_t version, const std::string& uuid)
+{
+    if (version < 0)
+        version = 0;
+    if (version == _pinVersion && (version == 0 || uuid == _pinUuid))
+        return;
+    auto owner = dynamic_cast<DocumentObject*>(getContainer());
+    if (!owner || !owner->isAttachedToDocument())
+        THROWM(Base::RuntimeError, "invalid container")
+    // The file linked, whatever its document is now -- the file itself, or
+    // a version of it (docs/TransactionLog.md sec 27.7).
+    std::string file;
+    if (docInfo)
+        file = docInfo->myPath;
+    else if (_pcLink && _pcLink->getDocument() != owner->getDocument()) {
+        const char* name = _pcLink->getDocument()->getFileName();
+        file = name ? name : "";
+        FileHistory::splitVersion(file);
+    }
+    if (file.empty())
+        THROWM(Base::RuntimeError, "a pin needs a link to another, saved file")
+    std::string name = _pcLink && _pcLink->isAttachedToDocument()
+        ? std::string(_pcLink->getNameInDocument()) : objectName;
+    std::vector<std::string> subs(_SubList);
+    std::vector<ShadowSub> shadows(_ShadowSubList);
+    aboutToSetValue();
+    _pinVersion = version;
+    _pinUuid = version ? uuid : std::string();
+    // Resolved again under the pin: a new DocInfo, `<file>@v<num>` or the
+    // file's own.
+    if (docInfo) {
+        docInfo->remove(this);
+        docInfo.reset();
+    }
+    setValue(std::move(file), std::move(name), std::move(subs), std::move(shadows));
+    hasSetValue();
+}
+
+std::vector<PropertyXLink*> PropertyXLink::getPinsTo(const std::string& path)
+{
+    std::vector<PropertyXLink*> pins;
+    const std::string file = FileHistory::canonicalPath(path);
+    for (auto& v : _DocInfoMap) {
+        if (!v.second || !v.second->version)
+            continue;
+        if (FileHistory::canonicalPath(v.second->myPath) != file)
+            continue;
+        pins.insert(pins.end(), v.second->links.begin(), v.second->links.end());
+    }
+    return pins;
+}
+
 bool PropertyXLink::upgrade(Base::XMLReader &reader, const char *typeName) {
     if(strcmp(typeName,App::PropertyLinkGlobal::getClassTypeId().getName())==0 ||
        strcmp(typeName,App::PropertyLink::getClassTypeId().getName())==0 ||
@@ -4473,6 +4575,13 @@ void PropertyXLink::Save (Base::Writer &writer) const {
         if (this->resolveMode != PathResolveMode::Dynamic) {
             writer.Stream() << "\" resolve=\"" << getPathResolveModeName();
         }
+        // Pinned (docs/TransactionLog.md sec 16.5, 27): absent otherwise,
+        // and a FreeCAD that does not know them resolves the file.
+        if (_pinVersion > 0) {
+            writer.Stream() << "\" version=\"" << _pinVersion;
+            if (!_pinUuid.empty())
+                writer.Stream() << "\" vuuid=\"" << encodeAttribute(_pinUuid);
+        }
     }
 
     if(testFlag(LinkAllowPartial))
@@ -4555,6 +4664,9 @@ void PropertyXLink::Restore(Base::XMLReader &reader)
     setFlag(LinkAllowPartial,
             reader.hasAttribute("partial") &&
             reader.getAttributeAsInteger("partial"));
+    _pinVersion = reader.hasAttribute("version")
+        ? std::atoll(reader.getAttribute("version")) : 0;
+    _pinUuid = reader.hasAttribute("vuuid") ? reader.getAttribute("vuuid") : "";
     std::string name;
     if(file.empty())
         name = reader.getName(reader.getAttribute("name"));
@@ -4695,6 +4807,8 @@ void PropertyXLink::copyTo(PropertyXLink &other,
         other._ShadowSubList = _ShadowSubList;
     }
     other._Flags = _Flags;
+    other._pinVersion = _pinVersion;
+    other._pinUuid = _pinUuid;
 }
 
 void PropertyXLink::getLinkIdentity(std::string &doc, std::string &obj) const
@@ -4722,7 +4836,8 @@ bool PropertyXLink::isSame(const Property &other) const
     o.getLinkIdentity(otherDoc, otherObj);
     return doc == otherDoc && obj == otherObj
         && filePath == o.filePath
-        && _SubList == o._SubList;
+        && _SubList == o._SubList
+        && _pinVersion == o._pinVersion && _pinUuid == o._pinUuid;
 }
 
 Property *PropertyXLink::Copy() const
@@ -4738,6 +4853,9 @@ void PropertyXLink::Paste(const Property &from)
         THROWM(Base::TypeError, "Incompatible property to paste to")
 
     const auto &other = static_cast<const PropertyXLink&>(from);
+    // The pin first: resolving the value reads it.
+    _pinVersion = other._pinVersion;
+    _pinUuid = other._pinUuid;
     if(!other.docName.empty()) {
         auto doc = GetApplication().getDocument(other.docName.c_str());
         if(!doc) {

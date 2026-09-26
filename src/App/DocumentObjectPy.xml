@@ -52,6 +52,35 @@
             </Documentation>
           <Sandbox tier="call"/>
         </Methode>
+        <Methode Name="pinLink">
+            <Documentation>
+                <UserDocu>pinLink(prop, version=0) -> int
+
+Pin the link property `prop`, which links to another file, to version
+`version` of that file (docs/TransactionLog.md sec 16.5, 27.7); 0 pins the
+version the linked document is: the file on disk, or a version document's
+own. The link then shows that version, opened as a document of its own.
+The version is named, the file marks itself pinned -- it saves with its
+history from then on -- and its document is marked modified. Undoable.
+Returns the version pinned.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="unpinLink">
+            <Documentation>
+                <UserDocu>unpinLink(prop)
+
+The link property `prop` shows the live file again (sec 27.7). Undoable.</UserDocu>
+            </Documentation>
+        </Methode>
+        <Methode Name="getLinkPin">
+            <Documentation>
+                <UserDocu>getLinkPin(prop) -> (version, uuid, fellBack) or None
+
+The version the link property `prop` is pinned to, its uuid, and whether
+it could not be opened and the link shows the file instead (sec 27.7).
+None for a link that is not pinned.</UserDocu>
+            </Documentation>
+        </Methode>
         <Methode Name="purgeTouched">
             <Documentation>
                 <UserDocu>Mark the object as unchanged</UserDocu>

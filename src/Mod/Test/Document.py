@@ -2883,6 +2883,114 @@ class TransactionBranchCases(unittest.TestCase):
         with self.assertRaises(Exception):
             FreeCAD.openFileVersion(path, 999, False)
 
+    def testPinnedLinkKeepsItsVersion(self):
+        # Sec 16.5, 27.7: a link pinned to a version of another file shows
+        # that version, opened as a document of its own, across the linked
+        # file's later saves and a reopen; unpinned, it shows the file.
+        import zipfile
+
+        part = self.track(FreeCAD.newDocument("PinPart"))
+        part.UndoMode = 1
+        part.openTransaction("create")
+        target = part.addObject("App::FeatureTest", "Obj")
+        target.Integer = 1
+        part.commitTransaction()
+        partPath = os.path.join(self.dir, "pinpart.FCStd")
+        part.saveAs(partPath)
+        onDisk = int(part.Version.split()[0])
+
+        asm = self.track(FreeCAD.newDocument("PinAsm"))
+        asm.UndoMode = 1
+        asm.openTransaction("link")
+        link = asm.addObject("App::Link", "L")
+        link.LinkedObject = target
+        asm.commitTransaction()
+        asmPath = os.path.join(self.dir, "pinasm.FCStd")
+        asm.saveAs(asmPath)
+
+        asm.openTransaction("pin")
+        pinned = link.pinLink("LinkedObject")
+        asm.commitTransaction()
+        self.assertEqual(pinned, onDisk)
+        version, uuid, fellBack = link.getLinkPin("LinkedObject")
+        self.assertEqual(version, onDisk)
+        self.assertTrue(uuid)
+        self.assertFalse(fellBack)
+        shown = link.LinkedObject
+        self.assertTrue(shown.Document.FileName.endswith("@v%d" % onDisk))
+        self.track(shown.Document)
+        self.assertEqual(shown.Integer, 1)
+
+        # The linked file moves on, saved with the preference off: pinned,
+        # it keeps its history anyway (27.5 ruling 1).
+        self.param.SetInt("TransactionLog", 1)
+        part.openTransaction("two")
+        target.Integer = 2
+        part.commitTransaction()
+        part.save()
+        self.assertIn("blobs/History.db", zipfile.ZipFile(partPath).namelist())
+        self.assertEqual(link.LinkedObject.Integer, 1)
+        self.param.SetInt("TransactionLog", 2)
+
+        # Reopened, with the part closed: the pin opens the version.
+        asm.save()
+        for doc in (asm, shown.Document, part):
+            FreeCAD.closeDocument(doc.Name)
+        asm = self.track(FreeCAD.openDocument(asmPath))
+        link = asm.getObject("L")
+        shown = link.LinkedObject
+        self.assertIsNotNone(shown)
+        self.track(shown.Document)
+        self.assertTrue(shown.Document.FileName.endswith("@v%d" % onDisk))
+        self.assertEqual(shown.Integer, 1)
+        self.assertEqual(link.getLinkPin("LinkedObject")[0], onDisk)
+
+        # Unpinned: the file itself, as it is now; undone: the version again.
+        asm.openTransaction("unpin")
+        link.unpinLink("LinkedObject")
+        asm.commitTransaction()
+        self.assertIsNone(link.getLinkPin("LinkedObject"))
+        live = link.LinkedObject
+        self.track(live.Document)
+        self.assertEqual(live.Document.FileName, partPath)
+        self.assertEqual(live.Integer, 2)
+        # Open (docs/TransactionLog.md sec 27.14): undoing the unpin does not
+        # bring the pin back yet.
+
+    def testPinThatCannotBeFoundShowsTheFile(self):
+        # Sec 27.5 ruling 2: a version that cannot be opened falls back to
+        # the file, with a warning, and the pin stays for the next open.
+        part = self.track(FreeCAD.newDocument("PinGone"))
+        target = part.addObject("App::FeatureTest", "Obj")
+        target.Integer = 5
+        partPath = os.path.join(self.dir, "pingone.FCStd")
+        part.saveAs(partPath)
+        asm = self.track(FreeCAD.newDocument("PinGoneAsm"))
+        link = asm.addObject("App::Link", "L")
+        link.LinkedObject = target
+        asmPath = os.path.join(self.dir, "pingoneasm.FCStd")
+        asm.saveAs(asmPath)
+        pinned = link.pinLink("LinkedObject")
+        self.track(link.LinkedObject.Document)
+        asm.save()
+        # The part replaced by a copy with no history.
+        plain = os.path.join(self.dir, "pingone-plain.FCStd")
+        part.saveCopy(plain, False)
+        for doc in list(FreeCAD.listDocuments().values()):
+            if doc.Name in self.docs:
+                FreeCAD.closeDocument(doc.Name)
+        os.replace(plain, partPath)
+        asm = self.track(FreeCAD.openDocument(asmPath))
+        link = asm.getObject("L")
+        version, uuid, fellBack = link.getLinkPin("LinkedObject")
+        self.assertEqual(version, pinned)
+        self.assertTrue(fellBack)
+        shown = link.LinkedObject
+        self.assertIsNotNone(shown)
+        self.track(shown.Document)
+        self.assertEqual(shown.Document.FileName, partPath)
+        self.assertEqual(shown.Integer, 5)
+
     def testSwitchAndRestoreKeepTheLabel(self):
         # The version a switch or a restore applies is read into a scratch
         # document with a name of its own; the document keeps its label
