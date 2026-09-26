@@ -2739,7 +2739,7 @@ lead.
 | `22a98d81f0` | **adapted** `3b5af6dfe9`: an edit entered from the tree left the keyboard there and Escape did nothing (measured); `setEditViewer` focuses its view through `ViewerContext`, which a mirror ignores. Upstream's second half, focus after a purged tool, was never lost here (measured) and is not taken |
 | `a1487106ab` | **taken** `3b5af6dfe9`: measured, a click with the line tool put the edit cursor back until the next move |
 | `8def94e6f8`, `e260cf5c8a`, `97e7b9d1f2` | **adapted** `51d863d806`, see below |
-| `fbd7f7090c` | **deferred** to the in-edit highlight move, see below; the move's first half has landed and a hover echo costs 0.035 ms, so the twice-per-hover repaint is now harmless -- open for a ruling |
+| `fbd7f7090c` | **n/a** (session 98, user ruling): the in-edit highlight overlay made a hover echo cost 0.035 ms, so the twice-per-hover repaint it removes is harmless; see below |
 
 Guarded by `tests/gui/sketch-focus-cursor.py` (2 of 6 fail before) and
 `tests/gui/sketch-auto-color.py` (23 checks).
