@@ -5344,3 +5344,71 @@ the frozen instance only, `openVersion` to the editable one, the probe of
 27.21 as a test; (2) self-pins per 27.20/27.21 (Q1, Q2, Q4); (3)
 `saveToLog`; (4) the Gui: labels, gray-out, Save to History, the Q5
 close prompt and its preference; a GUI check.
+
+### 27.23 Ruling: names carry the branch; links to a working copy are live (user, 2026-09-26)
+
+**Ruled.**
+
+1. **An editable instance is named `<doc>@<branch>@v<num>`.** Editing is
+   always on a branch, so the name says which, and the version tail is
+   the version it last saved (or started from); a save -- to the file or
+   to the log only -- moves the tail. The full form also disambiguates an
+   implicit branch named after its starting version: `Foo@main@v3@v3`
+   is branch `main@v3` at v3, and after a save `Foo@main@v3@v8`.
+2. **A link to an editable instance is live.** No automatic pin (27.22's
+   proposal withdrawn). Pinning is only ever the user's act; when the
+   user pins a link to an editable document, that document is saved first
+   to get a concrete version number, and the pin names it.
+
+**Proposed detail.**
+
+*Names.* One parser, `FileHistory::parseName(name) -> {file, branch,
+version}`, replaces `splitVersion` at its 9 call sites. The file is the
+longest prefix that is an existing file or a registered history's path;
+the remainder is `@v<num>` (a version: the frozen instance) or
+`@<branch>@v<num>` (an editable instance). Everything between the file
+and the last `@v<num>` is the branch, so branch names may contain `@v`.
+
+| Instance | `FileName` | Label |
+| --- | --- | --- |
+| frozen (pins) | `<file>@v<num>` (unchanged) | `<label>@v<num>` |
+| editable | `<file>@<branch>@v<num>` | `<label>@<branch>@v<num>` |
+| the file's own document | `<file>` (unchanged) | `<label>` (unchanged) |
+
+- An editable instance with no change yet has no branch yet (27.6: at
+  the first change). It is named for the branch it will take -- the
+  branch whose free tip it is, or the implicit `<branch>@v<num>` -- and
+  renamed if creating the branch has to add a `#2` suffix.
+- The file's own document keeps its label: that label is the user's and
+  is saved in the file. Proposed: the tree shows its branch and version
+  as a suffix only while the file has more than one branch (Qa).
+
+*Live links to an editable instance.* The XLink saves the branch, not a
+version: `file="Foo.FCStd" branch="main@v3"` (`file=""` when it is the
+owner's own file, as for a self-pin, 27.21 Q2). A FreeCAD that does not
+know `branch` resolves the file. Resolution keys on (file, branch), not
+on the name string, whose version tail moves:
+
+- the document holding that branch, whichever it is (27.12's worktree
+  rule: at most one) -- so if the file's own document switches onto the
+  branch, the link follows it there;
+- else the branch's head opened as an editable instance;
+- else (the branch was deleted or trimmed) the file, with a warning, as
+  for a failed pin (27.5 ruling 2).
+
+A link set to an editable instance that has no branch yet makes it take
+its branch then: the link has to save a name.
+
+*The user pins a link to an editable document.* If the document has
+changed since its version, it is saved **to the log only** (27.22) --
+the concrete version number without touching the file -- and the pin
+names that version; with no change, the pin names the version it is at.
+The frozen instance opens and the link moves to it. The same holds for
+a link to the file's own document.
+
+**Question left.** Qa: the file's own document in the tree -- label
+unchanged always, or a `@<branch>@v<num>` suffix while the file has more
+than one branch (proposed)?
+
+The build order of 27.22 stands; names (`parseName`, labels) join step
+1, live branch links join step 2.
