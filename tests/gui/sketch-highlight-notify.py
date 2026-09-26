@@ -24,6 +24,11 @@ line sets still pass notification on after a highlight.
 
 Scored against the tree before the fix: the coordinates' id stood still
 while two points moved, and the SelectedCurveSet was silenced.
+
+Since the highlight moved into overlays of its own (sketch-highlight-
+overlay.py), a highlighted point is lifted as a copy in the overlay's
+coordinates rather than in the geometry's: those are the coordinates
+measured here now.
 """
 import os
 import traceback
@@ -71,19 +76,13 @@ def edit_nodes(view):
     root = view.getAuxSceneGraph()
     coords = None
     for node, _ in find_all(root, coin.SoCoordinate3):
-        if node.getName().getString() == "PointsCoordinate":
+        if node.getName().getString() == "SelectedPointsCoordinate":
             coords = node
             break
-    # The (pre)selected curve sets share the curves' material: they are the
-    # line sets of the separator that starts with it, other than the curves'
-    # own, in order Selected then PreSelected.
-    sets = []
-    for node, parent in find_all(root, coin.SoIndexedLineSet):
-        if node.getName().getString() in ("CurvesLineSet", "DashedCurvesLineSet"):
-            continue
-        if (parent is not None and parent.getNumChildren()
-                and parent.getChild(0).getName().getString() == "CurvesMaterials"):
-            sets.append(node)
+    byname = {}
+    for node, _ in find_all(root, coin.SoIndexedLineSet):
+        byname[node.getName().getString()] = node
+    sets = [byname[n] for n in ("SelectedCurveSet", "PreSelectedCurveSet") if n in byname]
     return coords, sets
 
 
@@ -157,9 +156,9 @@ def after_constraint():
     try:
         coords = state["coords"]
         z = [coords.point[i][2] for i in range(coords.point.getNum())]
-        lifted = [i for i, (a, b) in enumerate(zip(state["z"], z)) if a != b]
         check("selecting a coincident constraint lifts its points",
-              len(lifted) >= 2, "points moved in z: %s" % lifted)
+              len(z) >= 2 and len(z) > len(state["z"]),
+              "%d -> %d lifted copies" % (len(state["z"]), len(z)))
         check("the point coordinates announce it (node id moves)",
               coords.getNodeId() != state["id"],
               "%d -> %d" % (state["id"], coords.getNodeId()))

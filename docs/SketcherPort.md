@@ -2739,7 +2739,7 @@ lead.
 | `22a98d81f0` | **adapted** `3b5af6dfe9`: an edit entered from the tree left the keyboard there and Escape did nothing (measured); `setEditViewer` focuses its view through `ViewerContext`, which a mirror ignores. Upstream's second half, focus after a purged tool, was never lost here (measured) and is not taken |
 | `a1487106ab` | **taken** `3b5af6dfe9`: measured, a click with the line tool put the edit cursor back until the next move |
 | `8def94e6f8`, `e260cf5c8a`, `97e7b9d1f2` | **adapted** `51d863d806`, see below |
-| `fbd7f7090c` | **deferred** to the in-edit highlight move, see below |
+| `fbd7f7090c` | **deferred** to the in-edit highlight move, see below; the move's first half has landed and a hover echo costs 0.035 ms, so the twice-per-hover repaint is now harmless -- open for a ruling |
 
 Guarded by `tests/gui/sketch-focus-cursor.py` (2 of 6 fail before) and
 `tests/gui/sketch-auto-color.py` (23 checks).
@@ -2788,6 +2788,46 @@ sketch does not have; fixed in `a7ddac3021` (13.2 ms to 4.7 ms per hover change,
 the in-edit highlight move (evaluated 2026-09-10: draw the
 (pre)selection at render time, as the rest of the shapes do) removes
 outright, so `fbd7f7090c`'s echo is left to it rather than patched.
+
+**The highlight overlay (session 98).** The move was re-scoped once its
+route was checked: the edit graph is not under the selection root but is
+captured into the backend by its own overlay manager (`editingCapture`,
+overlay id 7), so the unified selection's highlight cannot reach it, and
+that manager's `setHighlight` would overwrite the model's. The ruling:
+first a Coin-side move that works in every render-cache mode (option C),
+then a mode-3 highlight overlay on top of it for per-view highlight
+(option B, still to do).
+
+C: the four highlight sets (`Selected`/`PreSelected` x `Curve`/`Point`)
+already drew the highlighted elements on top, but indexed into the
+geometry's own coordinates and material, so `updateColor()` had to rewrite
+every colour and every layer (z) to change one. They now draw copies of
+the highlighted vertices, lifted to the highlight layer, from coordinates
+and a three-colour material of their own, and are unpickable.
+`updateColor()` is split into `updateBaseColor()` (semantic colours and
+layers, run by every caller that was not a selection change, and again
+when the camera turns to the other side of the sketch) and
+`updateHighlight()` (the overlays, the constraints whose highlight
+changed, and `updateVirtualSpace()`, which now writes only on a change).
+`onSelectionChanged` and `mouseMove`'s preselection call only the second.
+The point selection helpers keep state only.
+
+On the way: the three defects of the 2026-09-10 evaluation were two
+(`f6dea571ce`, the third already gone), and
+`getGroupHandleIfInGroup()` was the sibling of the `isInGroup()`
+quadratic (`257e490b44`), 94% of what was left of a hover. Sketch028's
+hover echo: 4.6 ms before, 1.26 ms with C alone, 0.035 ms with both; the
+3-geometry control 0.03 -> 0.014 ms. Guarded by
+`tests/gui/sketch-highlight-overlay.py` (a hover leaves the geometry's
+nodes alone; the overlay colours; only the changed constraint's label is
+written; the backend draws the hovered edge in the preselection colour --
+4 of its checks fail before) and `tests/gui/sketch-highlight-notify.py`.
+`sketch-bulk-selection.py` and `sketch-visual-layers.py` read the
+highlight from the overlays now, not from `CurvesMaterials`.
+
+`sketch-drag-arc-conic.py` is flaky, independently of this work: a drag
+that never starts, a different one each time, 2 of 10 runs without C and
+2 of 9 with it.
 
 **Harness notes.** To make a file from before a property existed, taking
 its `<Property>` out of `GuiDocument.xml` is not enough: the reader loops

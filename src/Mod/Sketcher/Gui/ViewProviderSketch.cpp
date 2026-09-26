@@ -444,6 +444,17 @@ struct EditData {
     bool originPointMarkerHollow = false;
     SoIndexedMarkerSet   *SelectedPointSet;
     SoIndexedMarkerSet   *PreSelectedPointSet;
+    // The (pre)selection is drawn by the four sets above, over copies of
+    // the highlighted vertices lifted to the highlight layer, in colours of
+    // their own: a selection change leaves the geometry's nodes alone.
+    SoMaterial    *SelCurvesMaterials = nullptr;
+    SoCoordinate3 *SelCurvesCoordinate = nullptr;
+    SoMaterial    *SelPointsMaterials = nullptr;
+    SoCoordinate3 *SelPointsCoordinate = nullptr;
+    // the constraints drawn in a highlight colour, and which colour
+    std::map<int, const SbColor *> HighlightedConstraints;
+    // getEditZDir() when the geometry's layers were last set
+    float baseZDir = 0.0f;
 
     SoText2       *textX;
     SoTranslation *textPos;
@@ -1704,7 +1715,7 @@ bool ViewProviderSketch::mouseMove(const SbVec2s &cursorPos, Gui::ViewerContext 
         case STATUS_NONE:
             if (preselectChanged) {
                 this->drawConstraintIcons();
-                this->updateColor();
+                this->updateHighlight();
                 return true;
             }
             return false;
@@ -1773,7 +1784,7 @@ bool ViewProviderSketch::mouseMove(const SbVec2s &cursorPos, Gui::ViewerContext 
             edit->sketchHandler->mouseMove(snapHandle);
             if (preselectChanged) {
                 this->drawConstraintIcons();
-                this->updateColor();
+                this->updateHighlight();
             }
             return true;
         case STATUS_SKETCH_StartRubberBand: {
@@ -2539,7 +2550,7 @@ void ViewProviderSketch::onSelectionChanged(const Gui::SelectionChanges& msg)
                 edit->SelCurveMap.clear();
                 edit->SelConstraintSet.clear();
                 this->drawConstraintIcons();
-                this->updateColor();
+                this->updateHighlight();
             }
         }
         else if (msg.Type == Gui::SelectionChanges::AddSelection) {
@@ -2547,7 +2558,7 @@ void ViewProviderSketch::onSelectionChanged(const Gui::SelectionChanges& msg)
             if (selObj == getObject() && msg.pSubName) {
                 if (addSelectedElement(msg.pSubName))
                     this->drawConstraintIcons();
-                this->updateColor();
+                this->updateHighlight();
             }
         }
         else if (msg.Type == Gui::SelectionChanges::RmvSelection) {
@@ -2560,36 +2571,36 @@ void ViewProviderSketch::onSelectionChanged(const Gui::SelectionChanges& msg)
                         if (boost::starts_with(shapetype, "Edge")) {
                             int GeoId = std::atoi(&shapetype[4]) - 1;
                             edit->removeSelectEdge(GeoId);
-                            this->updateColor();
+                            this->updateHighlight();
                         }
                         else if (boost::starts_with(shapetype, "ExternalEdge")) {
                             int GeoId = std::atoi(&shapetype[12]) - 1;
                             GeoId = -GeoId - 3;
                             edit->removeSelectEdge(GeoId);
-                            this->updateColor();
+                            this->updateHighlight();
                         }
                         else if (boost::starts_with(shapetype, "Vertex")) {
                             int VtId = std::atoi(&shapetype[6]) - 1;
                             removeSelectPoint(VtId);
-                            this->updateColor();
+                            this->updateHighlight();
                         }
                         else if (boost::equals(shapetype, "RootPoint")) {
                             removeSelectPoint(Sketcher::GeoEnum::RtPnt);
-                            this->updateColor();
+                            this->updateHighlight();
                         }
                         else if (boost::equals(shapetype, "H_Axis")) {
                             edit->removeSelectEdge(Sketcher::GeoEnum::HAxis);
-                            this->updateColor();
+                            this->updateHighlight();
                         }
                         else if (boost::equals(shapetype, "V_Axis")) {
                             edit->removeSelectEdge(Sketcher::GeoEnum::VAxis);
-                            this->updateColor();
+                            this->updateHighlight();
                         }
                         else if (boost::starts_with(shapetype, "Constraint")) {
                             int ConstrId = std::atoi(&shapetype[10]) - 1;
                             edit->SelConstraintSet.erase(ConstrId);
                             this->drawConstraintIcons();
-                            this->updateColor();
+                            this->updateHighlight();
                         }
                     }
                 }
@@ -2613,7 +2624,7 @@ void ViewProviderSketch::onSelectionChanged(const Gui::SelectionChanges& msg)
                     addSelectedElement(sub.c_str());
             }
             this->drawConstraintIcons();
-            this->updateColor();
+            this->updateHighlight();
         }
         else if (msg.Type == Gui::SelectionChanges::SetPreselect) {
             if (selObj == getObject()) {
@@ -2627,7 +2638,7 @@ void ViewProviderSketch::onSelectionChanged(const Gui::SelectionChanges& msg)
 
                         if (edit->sketchHandler)
                             edit->sketchHandler->applyCursor();
-                        this->updateColor();
+                        this->updateHighlight();
                     } 
                     else if (boost::starts_with(msg.pSubName, "ExternalEdge")) {
                         int GeoId = std::atoi(&msg.pSubName[12]) - 1;
@@ -2639,7 +2650,7 @@ void ViewProviderSketch::onSelectionChanged(const Gui::SelectionChanges& msg)
 
                         if (edit->sketchHandler)
                             edit->sketchHandler->applyCursor();
-                        this->updateColor();
+                        this->updateHighlight();
                     }
                     else if (boost::istarts_with(msg.pSubName, "Vertex")) {
                         int PtIndex = std::atoi(&msg.pSubName[6]) - 1;
@@ -2650,7 +2661,7 @@ void ViewProviderSketch::onSelectionChanged(const Gui::SelectionChanges& msg)
 
                         if (edit->sketchHandler)
                             edit->sketchHandler->applyCursor();
-                        this->updateColor();
+                        this->updateHighlight();
                     }
                     else if (boost::starts_with(msg.pSubName, "Constraint")) {
                         int index = std::atoi(&msg.pSubName[10]) - 1;
@@ -2663,7 +2674,7 @@ void ViewProviderSketch::onSelectionChanged(const Gui::SelectionChanges& msg)
                             if (edit->sketchHandler)
                                 edit->sketchHandler->applyCursor();
                             this->drawConstraintIcons();
-                            this->updateColor();
+                            this->updateHighlight();
                         }
                     }
                 }
@@ -2683,7 +2694,7 @@ void ViewProviderSketch::onSelectionChanged(const Gui::SelectionChanges& msg)
                     edit->PreselectConstraintSet.clear();
                     this->drawConstraintIcons();
                 }
-                this->updateColor();
+                this->updateHighlight();
             }
         }
     }
@@ -3779,6 +3790,24 @@ GeometryCreationMode ViewProviderSketch::getGeometryCreationMode() const
     return geometryCreationMode;
 }
 
+namespace {
+// Where a highlight colour sits in the (pre)selection overlays' materials.
+enum HighlightColorIndex
+{
+    HighlightSelect = 0,
+    HighlightPreselect = 1,
+    HighlightPreselectSelected = 2,
+};
+
+// the constraints drawn as a datum label; the others carry a material or nothing
+bool constraintHasDatumLabel(Sketcher::ConstraintType type)
+{
+    return type == Sketcher::Angle || type == Sketcher::Radius || type == Sketcher::Diameter
+        || type == Sketcher::Weight || type == Sketcher::Symmetric || type == Sketcher::Distance
+        || type == Sketcher::DistanceX || type == Sketcher::DistanceY;
+}
+}  // namespace
+
 void ViewProviderSketch::updateColor(void)
 {
     assert(edit);
@@ -3787,11 +3816,12 @@ void ViewProviderSketch::updateColor(void)
         return;
     }
 
-    //Base::Console().Log("Draw preseletion\n");
+    updateBaseColor();
+    updateHighlight();
+}
 
-    // update the virtual space
-    updateVirtualSpace();
-
+float ViewProviderSketch::getEditZDir() const
+{
     SbVec3f pnt, dir;
     editViewer()->getNearPlane(pnt, dir);
     auto transform = getEditingPlacement();
@@ -3800,13 +3830,18 @@ void ViewProviderSketch::updateColor(void)
     transform.multVec(Base::Vector3d(0,0,1), v1);
     Base::Vector3d norm = v1 - v0;
     norm.Normalize();
-    float zdir = norm.Dot(Base::Vector3d(dir[0], dir[1], dir[2])) < 0.0f ? -1.0 : 1.0;
+    return norm.Dot(Base::Vector3d(dir[0], dir[1], dir[2])) < 0.0f ? -1.0f : 1.0f;
+}
+
+void ViewProviderSketch::updateBaseColor()
+{
+    float zdir = getEditZDir();
+    edit->baseZDir = zdir;
 
     int PtNum = edit->PointsMaterials->diffuseColor.getNum();
     SbColor *pcolor = edit->PointsMaterials->diffuseColor.startEditing();
     int CurvNum = edit->CurvesMaterials->diffuseColor.getNum();
     SbColor *color = edit->CurvesMaterials->diffuseColor.startEditing();
-    SbColor *crosscolor = edit->RootCrossMaterials->diffuseColor.startEditing();
 
     SbVec3f *verts = edit->CurvesCoordinate->point.startEditing();
     SbVec3f *pverts = edit->PointsCoordinate->point.startEditing();
@@ -3918,17 +3953,6 @@ void ViewProviderSketch::updateColor(void)
         }
     }
 
-    for (int i : edit->ImplicitSelPoints) {
-        auto it = edit->SelPointMap.find(i);
-        if (it != edit->SelPointMap.end() && --it->second <= 0)
-            edit->SelPointMap.erase(it);
-    }
-    edit->ImplicitSelPoints.clear();
-
-    for (int i : edit->ImplicitSelCurves)
-        edit->removeSelectEdge(i);
-    edit->ImplicitSelCurves.clear();
-
     auto sketch = getSketchObject();
     for (int  i=0; i < PtNum; i++) { // 0 is the origin
         pverts[i].getValue(x,y,z);
@@ -3946,6 +3970,8 @@ void ViewProviderSketch::updateColor(void)
                 pverts[i].setValue(x,y,zNormPoint);
         }
     }
+    if (PtNum > 0)
+        pverts[0][2] = zdir*zRootPoint;
 
     // A group's members are not editable on their own, so their vertices carry no marker:
     // nothing to see and nothing to pick. The group handle keeps its own.
@@ -3982,9 +4008,6 @@ void ViewProviderSketch::updateColor(void)
     }
 
     // colors of the curves
-  //int intGeoCount = getSketchObject()->getHighestCurveIndex() + 1;
-  //int extGeoCount = getSketchObject()->getExternalGeometryCount();
-
     float zNormLine = zdir * (topid==1?zHighLines:midid==1?zMidLines:zLowLines);
     float zConstrLine = zdir * (topid==2?zHighLines:midid==2?zMidLines:zLowLines);
     float zExtLine = zdir * (topid==3?zHighLines:midid==3?zMidLines:zLowLines);
@@ -3992,65 +4015,19 @@ void ViewProviderSketch::updateColor(void)
     int j=0; // vertexindex
     int vcount = 0;
 
-
-    // Rebuilt index by index below: silent until done, then one notification
-    // each at the end.
-    edit->SelectedCurveSet->enableNotify(false);
-    edit->PreSelectedCurveSet->enableNotify(false);
-    edit->SelectedCurveSet->coordIndex.setNum(0);
-    edit->SelectedCurveSet->materialIndex.setNum(0);
-    edit->PreSelectedCurveSet->coordIndex.setNum(0);
-    edit->PreSelectedCurveSet->materialIndex.setNum(0);
-
     for (int  i=0; i < CurvNum; i++, j+=vcount) {
         int GeoId = edit->CurvIdToGeoId[i];
         // CurvId has several vertices associated to 1 material
         vcount = edit->CurveVertexCount[i];
 
-        bool preselected = (!edit->hasDraggedCurve() && edit->PreselectCurve == GeoId)
-                           || edit->isDraggedCurve(GeoId);
-
-        // A group's members take the colour of its handle: they are selected, preselected
-        // and dragged as one. A member under the cursor still highlights on its own.
+        // A group's members take the colour of its handle.
         if (GeoId >= 0) {
             GeoId = sketch->getGroupHandleIfInGroup(GeoId);
         }
 
-        bool selected = (edit->SelCurveMap.find(GeoId) != edit->SelCurveMap.end());
-        preselected = preselected || (!edit->hasDraggedCurve() && edit->PreselectCurve == GeoId)
-                      || edit->isDraggedCurve(GeoId);
-
         bool constrainedElement = isFullyConstraintElement(sketch, GeoId);
 
-        if (preselected) {
-            color[i] = selected ? PreselectSelectedColor : PreselectColor;
-            int offset = edit->PreSelectedCurveSet->coordIndex.getNum();
-            edit->PreSelectedCurveSet->coordIndex.setNum(offset + vcount + 1);
-            auto indices = edit->PreSelectedCurveSet->coordIndex.startEditing() + offset;
-            edit->PreSelectedCurveSet->materialIndex.set1Value(
-                    edit->PreSelectedCurveSet->materialIndex.getNum(), i);
-            for (int k=j; k<j+vcount; k++) {
-                verts[k].getValue(x,y,z);
-                verts[k] = SbVec3f(x,y,zdir*zHighLine);
-                *indices++ = k;
-            }
-            *indices = -1;
-        }
-        else if (selected){
-            color[i] = SelectColor;
-            int offset = edit->SelectedCurveSet->coordIndex.getNum();
-            edit->SelectedCurveSet->coordIndex.setNum(offset + vcount + 1);
-            auto indices = edit->SelectedCurveSet->coordIndex.startEditing() + offset;
-            edit->SelectedCurveSet->materialIndex.set1Value(
-                    edit->SelectedCurveSet->materialIndex.getNum(), i);
-            for (int k=j; k<j+vcount; k++) {
-                verts[k].getValue(x,y,z);
-                verts[k] = SbVec3f(x,y,zdir*zHighLine);
-                *indices++ = k;
-            }
-            *indices = -1;
-        }
-        else if (GeoId <= Sketcher::GeoEnum::RefExt) {  // external Geometry
+        if (GeoId <= Sketcher::GeoEnum::RefExt) {  // external Geometry
             auto geo = getSketchObject()->getGeometry(GeoId);
             if (!geo)
                 continue;
@@ -4109,7 +4086,7 @@ void ViewProviderSketch::updateColor(void)
                 verts[k] = SbVec3f(x,y,zNormLine);
             }
         }
-        else if (!showOriginalColor && isFullyConstraintElement(getSketchObject(), GeoId)) {
+        else if (!showOriginalColor && constrainedElement) {
             color[i] = FullyConstraintElementColor;
             for (int k=j; k<j+vcount; k++) {
                 verts[k].getValue(x,y,z);
@@ -4125,7 +4102,119 @@ void ViewProviderSketch::updateColor(void)
         }
     }
 
+    edit->CurvesMaterials->diffuseColor.finishEditing();
+    edit->PointsMaterials->diffuseColor.finishEditing();
+    edit->CurvesCoordinate->point.finishEditing();
+    edit->PointsCoordinate->point.finishEditing();
+
+    // colors of the constraints: all of them back to their own, the
+    // highlight pass colours the highlighted ones again
+    int count = std::min(edit->constrGroup->getNumChildren(), getSketchObject()->Constraints.getSize());
+    if(getSketchObject()->Constraints.hasInvalidGeometry())
+        count = 0;
+    for (int i=0; i < count; i++)
+        restoreConstraintColor(i);
+    edit->HighlightedConstraints.clear();
+}
+
+void ViewProviderSketch::restoreConstraintColor(int i)
+{
+    SoSeparator *s = static_cast<SoSeparator *>(edit->constrGroup->getChild(i));
+    Sketcher::Constraint* constraint = getSketchObject()->Constraints.getValues()[i];
+    ConstraintType type = constraint->Type;
+    bool active = getSketchObject()->isConstraintActiveInSketch(constraint);
+    if (constraintHasDatumLabel(type)) {
+        auto l = static_cast<Gui::SoDatumLabel *>(s->getChild(CONSTRAINT_SEPARATOR_INDEX_MATERIAL_OR_DATUMLABEL));
+        l->textColor = active ?
+                            (getSketchObject()->constraintHasExpression(i) ?
+                                ExprBasedConstrDimColor
+                                :(constraint->isDriving ?
+                                    ConstrDimColor
+                                    : NonDrivingConstrDimColor))
+                            :DeactivatedConstrDimColor;
+    }
+    else if (type != Sketcher::Coincident && type != Sketcher::InternalAlignment) {
+        auto m = static_cast<SoMaterial *>(s->getChild(CONSTRAINT_SEPARATOR_INDEX_MATERIAL_OR_DATUMLABEL));
+        m->diffuseColor = active ?
+                            (constraint->isDriving ?
+                                ConstrDimColor
+                                :NonDrivingConstrDimColor)
+                            :DeactivatedConstrDimColor;
+    }
+}
+
+void ViewProviderSketch::updateHighlight()
+{
+    assert(edit);
+    if (edit->needUpdate) {
+        edit->timer.start(100);
+        return;
+    }
+
+    float zdir = getEditZDir();
+    if (zdir != edit->baseZDir)
+        updateBaseColor(); // seen from the other side now: the layers turn over
+
+    // update the virtual space
+    updateVirtualSpace();
+
+    auto sketch = getSketchObject();
+
+    // what the last pass highlighted on behalf of a highlighted constraint
+    for (int i : edit->ImplicitSelPoints) {
+        auto it = edit->SelPointMap.find(i);
+        if (it != edit->SelPointMap.end() && --it->second <= 0)
+            edit->SelPointMap.erase(it);
+    }
+    edit->ImplicitSelPoints.clear();
+
+    for (int i : edit->ImplicitSelCurves)
+        edit->removeSelectEdge(i);
+    edit->ImplicitSelCurves.clear();
+
+    const int PtNum = edit->PointsCoordinate->point.getNum();
+    const int CurvNum = std::min(edit->CurvesMaterials->diffuseColor.getNum(),
+                                 static_cast<int>(edit->CurveVertexCount.size()));
+    const SbVec3f *verts = edit->CurvesCoordinate->point.getValues(0);
+    const SbVec3f *pverts = edit->PointsCoordinate->point.getValues(0);
+
+    // a highlighted curve: its vertices in CurvesCoordinate, and its colour
+    struct HighlightCurve
+    {
+        int first;
+        int count;
+        int color;
+    };
+    std::vector<HighlightCurve> selCurves, preCurves;
+
+    if (!edit->SelCurveMap.empty() || edit->PreselectCurve != -1 || edit->hasDraggedCurve()) {
+        int j = 0;
+        for (int i = 0; i < CurvNum; j += edit->CurveVertexCount[i], ++i) {
+            int GeoId = edit->CurvIdToGeoId[i];
+
+            bool preselected = (!edit->hasDraggedCurve() && edit->PreselectCurve == GeoId)
+                               || edit->isDraggedCurve(GeoId);
+
+            // A group's members are selected, preselected and dragged as one with its
+            // handle. A member under the cursor still highlights on its own.
+            if (GeoId >= 0) {
+                GeoId = sketch->getGroupHandleIfInGroup(GeoId);
+            }
+
+            bool selected = (edit->SelCurveMap.find(GeoId) != edit->SelCurveMap.end());
+            preselected = preselected || (!edit->hasDraggedCurve() && edit->PreselectCurve == GeoId)
+                          || edit->isDraggedCurve(GeoId);
+
+            if (preselected)
+                preCurves.push_back({j, edit->CurveVertexCount[i],
+                                     selected ? HighlightPreselectSelected : HighlightPreselect});
+            else if (selected)
+                selCurves.push_back({j, edit->CurveVertexCount[i], HighlightSelect});
+        }
+    }
+
     // colors of the cross
+    SbColor crosscolor[2];
     if (edit->SelCurveMap.find(-1) != edit->SelCurveMap.end())
         crosscolor[0] = edit->PreselectCross == 1 ? PreselectSelectedColor : SelectColor;
     else if (edit->PreselectCross == 1)
@@ -4139,218 +4228,223 @@ void ViewProviderSketch::updateColor(void)
         crosscolor[1] = PreselectColor;
     else
         crosscolor[1] = CrossColorV;
+    if (edit->RootCrossMaterials->diffuseColor.getNum() != 2
+            || edit->RootCrossMaterials->diffuseColor[0] != crosscolor[0]
+            || edit->RootCrossMaterials->diffuseColor[1] != crosscolor[1])
+        edit->RootCrossMaterials->diffuseColor.setValues(0, 2, crosscolor);
 
+    // the highlighted points, by index in PointsCoordinate
+    std::map<int, int> pointColor;
+    auto pointOfSelId = [&](int SelId) {
+        int PtId = SelId;
+        if (PtId && PtId <= (int)edit->VertexIdToPointId.size())
+            PtId = edit->VertexIdToPointId[PtId-1];
+        return PtId >= 0 && PtId < PtNum ? PtId : -1;
+    };
+    for (auto &v : edit->SelPointMap) {
+        int PtId = pointOfSelId(v.first);
+        if (PtId >= 0)
+            pointColor[PtId] = HighlightSelect;
+    }
+
+    // colors of the constraints
     int count = std::min(edit->constrGroup->getNumChildren(), getSketchObject()->Constraints.getSize());
     if(getSketchObject()->Constraints.hasInvalidGeometry())
         count = 0;
 
-    for (auto &v : edit->SelPointMap) {
-        int SelId = v.first;
-        int PtId = SelId;
-        if (PtId && PtId <= (int)edit->VertexIdToPointId.size())
-            PtId = edit->VertexIdToPointId[PtId-1];
-        if (PtId >= 0 && PtId < PtNum) {
-            pcolor[PtId] = SelectColor;
-            pverts[PtId].getValue(x,y,z);
-            pverts[PtId].setValue(x,y,zdir*zHighlight);
-        }
-    }
-
-    // colors of the constraints
-
-    auto setConstraintColors = [&](int i, const SbColor *highlightColor) {
-        SoSeparator *s = static_cast<SoSeparator *>(edit->constrGroup->getChild(i));
-
-        // Check Constraint Type
-        Sketcher::Constraint* constraint = getSketchObject()->Constraints.getValues()[i];
-        ConstraintType type = constraint->Type;
-        bool hasDatumLabel  = (type == Sketcher::Angle ||
-                               type == Sketcher::Radius ||
-                               type == Sketcher::Diameter ||
-                               type == Sketcher::Weight ||
-                               type == Sketcher::Symmetric ||
-                               type == Sketcher::Distance ||
-                               type == Sketcher::DistanceX ||
-                               type == Sketcher::DistanceY);
-
-        // Non DatumLabel Nodes will have a material excluding coincident
-        bool hasMaterial = false;
-
-        SoMaterial *m = 0;
-        if (!hasDatumLabel && type != Sketcher::Coincident && type != Sketcher::InternalAlignment) {
-            hasMaterial = true;
-            m = static_cast<SoMaterial *>(s->getChild(CONSTRAINT_SEPARATOR_INDEX_MATERIAL_OR_DATUMLABEL));
-        }
-        if (highlightColor) {
-            if (hasDatumLabel) {
-                Gui::SoDatumLabel *l = static_cast<Gui::SoDatumLabel *>(s->getChild(CONSTRAINT_SEPARATOR_INDEX_MATERIAL_OR_DATUMLABEL));
-                l->textColor = *highlightColor;
-            } else if (hasMaterial) {
-                m->diffuseColor = *highlightColor;
-            } else if (type == Sketcher::Coincident) {
-                for (int i=0; i<2; ++i) {
-                    int geoid = i ? constraint->Second : constraint->First;
-                    const Sketcher::PointPos &pos = i ? constraint->SecondPos : constraint->FirstPos;
-                    if(geoid >= 0) {
-                        int index = getSolvedSketch().getPointId(geoid, pos);
-                        if (index >= 0 && index < (int)edit->VertexIdToPointId.size()) {
-                            int PtId = edit->VertexIdToPointId[index];
-                            if (PtId >= 0 && PtId < PtNum) { 
-                                edit->ImplicitSelPoints.push_back(index+1);
-                                pcolor[PtId] = *highlightColor;
-                                if (++edit->SelPointMap[index+1] == 1) {
-                                    float x,y,z;
-                                    pverts[PtId].getValue(x,y,z);
-                                    pverts[PtId].setValue(x,y,zdir*zHighlight);
-                                }
-                            }
-                        }
-                    }
-                };
-            } else if (type == Sketcher::InternalAlignment) {
-                switch(constraint->AlignmentType) {
-                    case EllipseMajorDiameter:
-                    case EllipseMinorDiameter:
-                    case BSplineControlPoint:
-                    {
-                        // color line
-                        int CurvNum = edit->CurvesMaterials->diffuseColor.getNum();
-                        int j = 0;
-                        int count = 0;
-                        for (int  i=0; i < CurvNum; i++,j+=count) {
-                            int cGeoId = edit->CurvIdToGeoId[i];
-                            count = edit->CurveVertexCount[i];
-                            if(cGeoId == constraint->First) {
-                                color[i] = *highlightColor;
-                                edit->ImplicitSelCurves.push_back(cGeoId);
-                                ++edit->SelCurveMap[cGeoId];
-                                auto lineset = highlightColor == &PreselectColor ?
-                                    edit->PreSelectedCurveSet : edit->SelectedCurveSet;
-                                int offset = lineset->coordIndex.getNum();
-                                lineset->coordIndex.setNum(offset + count + 1);
-                                auto indices = lineset->coordIndex.startEditing() + offset;
-                                lineset->materialIndex.set1Value(lineset->materialIndex.getNum(), i);
-                                for (int k=j;k<j+count;++k)
-                                    *indices++ = k;
-                                *indices = -1;
-                                break;
-                            }
-                        }
-                    }
-                    break;
-                    case EllipseFocus1:
-                    case EllipseFocus2:
-                    case BSplineKnotPoint:
-                    {
-                        int index = getSolvedSketch().getPointId(constraint->First, constraint->FirstPos);
-                        if (index >= 0 && index < (int)edit->VertexIdToPointId.size()) {
-                            int PtId = edit->VertexIdToPointId[index];
-                            if (PtId >= 0 && PtId < PtNum) {
-                                edit->ImplicitSelPoints.push_back(index+1);
-                                pcolor[PtId] = *highlightColor;
-                                if (++edit->SelPointMap[index+1] == 1) {
-                                    float x,y,z;
-                                    pverts[PtId].getValue(x,y,z);
-                                    pverts[PtId].setValue(x,y,zdir*zHighlight);
-                                }
-                            }
-                        }
-                    }
-                    break;
-                    default:
-                    break;
-                }
-            }
-        } else {
-            if (hasDatumLabel) {
-                Gui::SoDatumLabel *l = static_cast<Gui::SoDatumLabel *>(s->getChild(CONSTRAINT_SEPARATOR_INDEX_MATERIAL_OR_DATUMLABEL));
-
-                l->textColor = getSketchObject()->isConstraintActiveInSketch(constraint) ?
-                                    (getSketchObject()->constraintHasExpression(i) ?
-                                        ExprBasedConstrDimColor
-                                        :(constraint->isDriving ?
-                                            ConstrDimColor
-                                            : NonDrivingConstrDimColor))
-                                    :DeactivatedConstrDimColor;
-
-            } else if (hasMaterial) {
-                m->diffuseColor = getSketchObject()->isConstraintActiveInSketch(constraint) ?
-                                    (constraint->isDriving ?
-                                        ConstrDimColor
-                                        :NonDrivingConstrDimColor)
-                                    :DeactivatedConstrDimColor;
-            }
-        }
-    };
-
-    for (int i=0; i < count; i++)
-        setConstraintColors(i, nullptr);
-
     // Both sets can name a constraint that is gone: an undo redraws from
     // inside its solve, before anything has had the chance to prune them.
+    std::map<int, const SbColor *> highlighted;
     for (int i : edit->SelConstraintSet)
         if (i >= 0 && i < count)
-            setConstraintColors(i, &SelectColor);
-
+            highlighted[i] = &SelectColor;
     for (int i : edit->PreselectConstraintSet)
         if (i >= 0 && i < count)
-            setConstraintColors(i, &PreselectColor);
+            highlighted[i] = &PreselectColor;
 
-    if (edit->PreselectCross == 0) {
-        pcolor[0] = pcolor[0] == SelectColor ? PreselectSelectedColor : PreselectColor;
-        edit->PreSelectedPointSet->coordIndex.setValue(0);
-        pverts[0][2] = zdir*zHighlight;
-    } else
-        pverts[0][2] = zdir*zRootPoint;
-    if (edit->PreselectPoint != -1 || edit->DragPreselectPoint != -1) {
-        int PtId = (edit->DragPreselectPoint >= 0 ? edit->DragPreselectPoint : edit->PreselectPoint) + 1;
-        if (PtId && PtId <= (int)edit->VertexIdToPointId.size())
-            PtId = edit->VertexIdToPointId[PtId-1];
-        if (PtId >= 0 && PtId < PtNum) {
-            pcolor[PtId] = pcolor[PtId] == SelectColor ? PreselectSelectedColor : PreselectColor;
-            edit->PreSelectedPointSet->coordIndex.setValue(PtId);
-        }
+    for (auto &v : edit->HighlightedConstraints) {
+        auto it = highlighted.find(v.first);
+        if (v.first < count && (it == highlighted.end() || it->second != v.second))
+            restoreConstraintColor(v.first);
     }
 
-    edit->SelectedPointSet->coordIndex.setNum(edit->SelPointMap.size());
-    edit->SelectedPointSet->markerIndex.setNum(edit->SelPointMap.size());
-    if (edit->SelPointMap.size()) {
-        auto mindices = edit->SelectedPointSet->markerIndex.startEditing();
-        auto indices = edit->SelectedPointSet->coordIndex.startEditing();
-        int i=0;
-        for (auto &v : edit->SelPointMap) {
-            int PtId = v.first;
-            if (PtId && PtId <= (int)edit->VertexIdToPointId.size()) {
-                PtId = edit->VertexIdToPointId[PtId-1];
-                if (PtId >= 0 && PtId < PtNum) {
-                    indices[i] = PtId;
-                    mindices[i++] = edit->defaultMarkerIndex;
-                }
+    // A constraint drawn with a node of its own is coloured there; a
+    // coincidence or an internal alignment is drawn by highlighting what it holds.
+    auto highlightPoint = [&](int GeoId, Sketcher::PointPos PosId, int color) {
+        int index = getSolvedSketch().getPointId(GeoId, PosId);
+        if (index < 0 || index >= (int)edit->VertexIdToPointId.size())
+            return;
+        int PtId = edit->VertexIdToPointId[index];
+        if (PtId < 0 || PtId >= PtNum)
+            return;
+        edit->ImplicitSelPoints.push_back(index+1);
+        ++edit->SelPointMap[index+1];
+        pointColor[PtId] = color;
+    };
+
+    for (auto &v : highlighted) {
+        int i = v.first;
+        const SbColor *highlightColor = v.second;
+        Sketcher::Constraint* constraint = getSketchObject()->Constraints.getValues()[i];
+        ConstraintType type = constraint->Type;
+        int color = highlightColor == &PreselectColor ? HighlightPreselect : HighlightSelect;
+        auto old = edit->HighlightedConstraints.find(i);
+        bool write = old == edit->HighlightedConstraints.end() || old->second != highlightColor;
+        SoSeparator *s = static_cast<SoSeparator *>(edit->constrGroup->getChild(i));
+
+        if (constraintHasDatumLabel(type)) {
+            if (write)
+                static_cast<Gui::SoDatumLabel *>(s->getChild(CONSTRAINT_SEPARATOR_INDEX_MATERIAL_OR_DATUMLABEL))
+                    ->textColor = *highlightColor;
+        }
+        else if (type == Sketcher::Coincident) {
+            for (int k=0; k<2; ++k) {
+                int geoid = k ? constraint->Second : constraint->First;
+                if (geoid >= 0)
+                    highlightPoint(geoid, k ? constraint->SecondPos : constraint->FirstPos, color);
             }
         }
-        if (i != (int)edit->SelPointMap.size()) {
-            edit->SelectedPointSet->markerIndex.setNum(i);
-            edit->SelectedPointSet->coordIndex.setNum(i);
+        else if (type == Sketcher::InternalAlignment) {
+            switch(constraint->AlignmentType) {
+                case EllipseMajorDiameter:
+                case EllipseMinorDiameter:
+                case BSplineControlPoint:
+                {
+                    int j = 0;
+                    for (int c = 0; c < CurvNum; j += edit->CurveVertexCount[c], ++c) {
+                        int cGeoId = edit->CurvIdToGeoId[c];
+                        if (cGeoId == constraint->First) {
+                            edit->ImplicitSelCurves.push_back(cGeoId);
+                            ++edit->SelCurveMap[cGeoId];
+                            auto &curves = color == HighlightPreselect ? preCurves : selCurves;
+                            curves.push_back({j, edit->CurveVertexCount[c], color});
+                            break;
+                        }
+                    }
+                }
+                break;
+                case EllipseFocus1:
+                case EllipseFocus2:
+                case BSplineKnotPoint:
+                    highlightPoint(constraint->First, constraint->FirstPos, color);
+                break;
+                default:
+                break;
+            }
         }
-        edit->SelectedPointSet->markerIndex.finishEditing();
-        edit->SelectedPointSet->coordIndex.finishEditing();
+        else if (write) {
+            static_cast<SoMaterial *>(s->getChild(CONSTRAINT_SEPARATOR_INDEX_MATERIAL_OR_DATUMLABEL))
+                ->diffuseColor = *highlightColor;
+        }
+    }
+    edit->HighlightedConstraints = std::move(highlighted);
+
+    // the point under the cursor, and the origin
+    std::vector<int> prePoints;
+    auto preselectPoint = [&](int PtId) {
+        auto it = pointColor.find(PtId);
+        pointColor[PtId] = it != pointColor.end() && it->second == HighlightSelect ?
+                                HighlightPreselectSelected : HighlightPreselect;
+        prePoints.push_back(PtId);
+    };
+    if (edit->PreselectCross == 0 && PtNum > 0)
+        preselectPoint(0);
+    if (edit->PreselectPoint != -1 || edit->DragPreselectPoint != -1) {
+        int PtId = pointOfSelId(
+                (edit->DragPreselectPoint >= 0 ? edit->DragPreselectPoint : edit->PreselectPoint) + 1);
+        if (PtId >= 0)
+            preselectPoint(PtId);
     }
 
-    if (int count = edit->SelectedCurveSet->coordIndex.getNum())
-        edit->SelectedCurveSet->coordIndex.setNum(count - 1); // trim the last -1 index
-    if (int count = edit->PreSelectedCurveSet->coordIndex.getNum())
-        edit->PreSelectedCurveSet->coordIndex.setNum(count - 1); // trim the last -1 index
-    edit->SelectedCurveSet->enableNotify(true);
-    edit->PreSelectedCurveSet->enableNotify(true);
-    edit->SelectedCurveSet->touch();
-    edit->PreSelectedCurveSet->touch();
+    auto setColors = [](SoMaterial *material) {
+        const SbColor colors[] = {SelectColor, PreselectColor, PreselectSelectedColor};
+        const int n = sizeof(colors) / sizeof(colors[0]);
+        bool same = material->diffuseColor.getNum() == n;
+        for (int k = 0; same && k < n; ++k)
+            same = material->diffuseColor[k] == colors[k];
+        if (!same) {
+            material->diffuseColor.setNum(n);
+            material->diffuseColor.setValues(0, n, colors);
+        }
+    };
+    setColors(edit->SelCurvesMaterials);
+    setColors(edit->SelPointsMaterials);
 
-    // end editing
-    edit->CurvesMaterials->diffuseColor.finishEditing();
-    edit->PointsMaterials->diffuseColor.finishEditing();
-    edit->RootCrossMaterials->diffuseColor.finishEditing();
-    edit->CurvesCoordinate->point.finishEditing();
-    edit->PointsCoordinate->point.finishEditing();
+    // Fill a set's indices silently and notify once.
+    auto setIndices = [](SoIndexedShape *shape,
+                         const std::vector<int32_t> &coords,
+                         const std::vector<int32_t> &materials) {
+        shape->enableNotify(false);
+        shape->coordIndex.setNum(coords.size());
+        if (!coords.empty())
+            shape->coordIndex.setValues(0, coords.size(), coords.data());
+        shape->materialIndex.setNum(materials.size());
+        if (!materials.empty())
+            shape->materialIndex.setValues(0, materials.size(), materials.data());
+        shape->enableNotify(true);
+        shape->touch();
+    };
+
+    // the curve overlays: copies lifted to the highlight layer
+    {
+        int total = 0;
+        for (auto *curves : {&selCurves, &preCurves})
+            for (auto &c : *curves)
+                total += c.count;
+        edit->SelCurvesCoordinate->point.setNum(total);
+        SbVec3f *out = edit->SelCurvesCoordinate->point.startEditing();
+        int k = 0;
+        for (auto *curves : {&selCurves, &preCurves}) {
+            std::vector<int32_t> coords, materials;
+            for (auto &c : *curves) {
+                if (!coords.empty())
+                    coords.push_back(-1);
+                for (int v = c.first; v < c.first + c.count; ++v) {
+                    out[k].setValue(verts[v][0], verts[v][1], zdir*zHighLine);
+                    coords.push_back(k++);
+                }
+                materials.push_back(c.color);
+            }
+            setIndices(curves == &selCurves ? edit->SelectedCurveSet : edit->PreSelectedCurveSet,
+                       coords, materials);
+        }
+        edit->SelCurvesCoordinate->point.finishEditing();
+    }
+
+    // the point overlays, likewise
+    {
+        std::vector<int> selPoints;
+        for (auto &v : edit->SelPointMap) {
+            int PtId = pointOfSelId(v.first);
+            if (PtId >= 0)
+                selPoints.push_back(PtId);
+        }
+        edit->SelPointsCoordinate->point.setNum(selPoints.size() + prePoints.size());
+        SbVec3f *out = edit->SelPointsCoordinate->point.startEditing();
+        int k = 0;
+        for (auto *points : {&selPoints, &prePoints}) {
+            std::vector<int32_t> coords, materials;
+            for (int PtId : *points) {
+                out[k].setValue(pverts[PtId][0], pverts[PtId][1], zdir*zHighlight);
+                coords.push_back(k++);
+                auto it = pointColor.find(PtId);
+                materials.push_back(it != pointColor.end() ? it->second : HighlightSelect);
+            }
+            // one marker per point: Coin reads markerIndex[i] for the i-th
+            auto set = points == &selPoints ? edit->SelectedPointSet : edit->PreSelectedPointSet;
+            const int n = static_cast<int>(coords.size());
+            bool same = set->markerIndex.getNum() == std::max(n, 1);
+            for (int m = 0; same && m < set->markerIndex.getNum(); ++m)
+                same = set->markerIndex[m] == edit->defaultMarkerIndex;
+            if (!same) {
+                std::vector<int32_t> markers(std::max(n, 1), edit->defaultMarkerIndex);
+                set->markerIndex.setValues(0, markers.size(), markers.data());
+                set->markerIndex.setNum(markers.size());
+            }
+            setIndices(set, coords, materials);
+        }
+        edit->SelPointsCoordinate->point.finishEditing();
+    }
 }
 
 bool ViewProviderSketch::isPointOnSketch(const SoPickedPoint *pp) const
@@ -7930,9 +8024,7 @@ void ViewProviderSketch::updateVirtualSpace(void)
 
     if(constrlist.size() == edit->vConstrType.size()) {
 
-        edit->constrGroup->enable.setNum(constrlist.size());
-
-        SbBool *sws = edit->constrGroup->enable.startEditing();
+        std::vector<SbBool> sws(constrlist.size());
 
         for (size_t i = 0; i < constrlist.size(); i++) {
             // XOR of constraint mode and VP mode, OR if the constraint is (pre)selected
@@ -7942,7 +8034,7 @@ void ViewProviderSketch::updateVirtualSpace(void)
         // The sets can name a constraint an undo has just taken away: the
         // undo's solve redraws before anything prunes them.
         const int size = static_cast<int>(constrlist.size());
-        auto showSelectedConstraint = [this, sws, size](const std::set<int> &idset) {
+        auto showSelectedConstraint = [this, &sws, size](const std::set<int> &idset) {
             for (int id : idset) {
                 auto it = edit->combinedConstrMap.find(id);
                 int index = it == edit->combinedConstrMap.end() ? id : it->second;
@@ -7953,7 +8045,17 @@ void ViewProviderSketch::updateVirtualSpace(void)
         showSelectedConstraint(edit->SelConstraintSet);
         showSelectedConstraint(edit->PreselectConstraintSet);
 
-        edit->constrGroup->enable.finishEditing();
+        // Runs on every (pre)selection change: a write re-renders the whole
+        // constraint group, so only when something shows or hides.
+        auto &enable = edit->constrGroup->enable;
+        bool same = enable.getNum() == size;
+        for (int i = 0; same && i < size; ++i)
+            same = enable[i] == sws[i];
+        if (!same) {
+            enable.setNum(size);
+            if (size)
+                enable.setValues(0, size, sws.data());
+        }
     }
 }
 
@@ -8734,9 +8836,18 @@ void ViewProviderSketch::createEditInventorNodes(void)
     pointsRoot->addChild(edit->PointSet);
 
     // stuff for the (pre)selected points ++++++++++++++++++++++++++++++++++++++
+    // Copies of the highlighted points, in the highlight colours (see
+    // updateHighlight()). Never picked: the points they copy are.
     auto selPointsRoot = new SoSeparator;
-    selPointsRoot->addChild(edit->PointsMaterials);
-    selPointsRoot->addChild(edit->PointsCoordinate);
+    auto selPickStyle = new SoPickStyle;
+    selPickStyle->style = SoPickStyle::UNPICKABLE;
+    selPointsRoot->addChild(selPickStyle);
+    edit->SelPointsMaterials = new SoMaterial;
+    edit->SelPointsMaterials->setName("SelectedPointsMaterials");
+    selPointsRoot->addChild(edit->SelPointsMaterials);
+    edit->SelPointsCoordinate = new SoCoordinate3;
+    edit->SelPointsCoordinate->setName("SelectedPointsCoordinate");
+    selPointsRoot->addChild(edit->SelPointsCoordinate);
     selPointsRoot->addChild(edit->PointsDrawStyle);
 
     MtlBind = new SoMaterialBinding;
@@ -8795,9 +8906,15 @@ void ViewProviderSketch::createEditInventorNodes(void)
     curvesRoot->addChild(edit->DashedCurveSet);
 
     // stuff for the selected Curves +++++++++++++++++++++++++++++++++++++++
+    // Copies of the highlighted curves, as for the points above.
     auto selCurvesRoot = new SoSeparator;
-    selCurvesRoot->addChild(edit->CurvesMaterials);
-    selCurvesRoot->addChild(edit->CurvesCoordinate);
+    selCurvesRoot->addChild(selPickStyle);
+    edit->SelCurvesMaterials = new SoMaterial;
+    edit->SelCurvesMaterials->setName("SelectedCurvesMaterials");
+    selCurvesRoot->addChild(edit->SelCurvesMaterials);
+    edit->SelCurvesCoordinate = new SoCoordinate3;
+    edit->SelCurvesCoordinate->setName("SelectedCurvesCoordinate");
+    selCurvesRoot->addChild(edit->SelCurvesCoordinate);
     selCurvesRoot->addChild(edit->CurvesDrawStyle);
 
     MtlBind = new SoMaterialBinding;
@@ -8805,9 +8922,11 @@ void ViewProviderSketch::createEditInventorNodes(void)
     selCurvesRoot->addChild(MtlBind);
 
     edit->SelectedCurveSet = new SoIndexedLineSet;
+    edit->SelectedCurveSet->setName("SelectedCurveSet");
     selCurvesRoot->addChild(edit->SelectedCurveSet);
 
     edit->PreSelectedCurveSet = new SoIndexedLineSet;
+    edit->PreSelectedCurveSet->setName("PreSelectedCurveSet");
     selCurvesRoot->addChild(edit->PreSelectedCurveSet);
 
     // stuff for the RootCross lines +++++++++++++++++++++++++++++++++++++++
@@ -9367,6 +9486,7 @@ void ViewProviderSketch::resetPositionText(void)
     edit->textX->string = "";
 }
 
+// The five below only keep the state: updateHighlight() draws it.
 void ViewProviderSketch::setPreselectPoint(int PreselectPoint)
 {
     if (edit) {
@@ -9374,103 +9494,35 @@ void ViewProviderSketch::setPreselectPoint(int PreselectPoint)
         int PtId = PreselectPoint + 1;
         if (PtId && PtId <= (int)edit->VertexIdToPointId.size())
             PtId = edit->VertexIdToPointId[PtId-1];
-        if (PtId >= 0 && PtId < edit->PointsCoordinate->point.getNum()) {
-            SbVec3f *pverts = edit->PointsCoordinate->point.startEditing();
-            float x,y,z;
-            // bring to foreground
-            pverts[PtId].getValue(x,y,z);
-            pverts[PtId].setValue(x,y,zHighlight);
-            edit->PreSelectedPointSet->coordIndex.setValue(PtId);
+        if (PtId >= 0 && PtId < edit->PointsCoordinate->point.getNum())
             edit->PreselectPoint = PreselectPoint;
-            edit->PointsCoordinate->point.finishEditing();
-        }
     }
 }
 
 void ViewProviderSketch::resetPreselectPoint(void)
 {
-    if (edit) {
-        int oldPtId = -1;
-        if (edit->PreselectPoint != -1)
-            oldPtId = edit->PreselectPoint;
-        else if (edit->PreselectCross == 0)
-            oldPtId = 0;
-        if (oldPtId != -1 &&
-            edit->SelPointMap.find(oldPtId) == edit->SelPointMap.end()) {
-            if (oldPtId && oldPtId <= (int)edit->VertexIdToPointId.size())
-                oldPtId = edit->VertexIdToPointId[oldPtId-1];
-            if (oldPtId >= 0 && oldPtId < edit->PointsCoordinate->point.getNum()) {
-                // send to background
-                SbVec3f *pverts = edit->PointsCoordinate->point.startEditing();
-                float x,y,z;
-                pverts[oldPtId].getValue(x,y,z);
-                pverts[oldPtId].setValue(x,y,zLowPoints);
-                edit->PointsCoordinate->point.finishEditing();
-            }
-        }
-        edit->PreSelectedPointSet->coordIndex.setNum(0);
+    if (edit)
         edit->PreselectPoint = -1;
-    }
 }
 
 void ViewProviderSketch::addSelectPoint(int SelectPoint)
 {
-    if (edit) {
-        int PtId = SelectPoint + 1;
-        ++edit->SelPointMap[PtId];
-        if (PtId && PtId <= (int)edit->VertexIdToPointId.size())
-            PtId = edit->VertexIdToPointId[PtId-1];
-        if (PtId >= 0 && PtId < edit->PointsCoordinate->point.getNum()) {
-            SbVec3f *pverts = edit->PointsCoordinate->point.startEditing();
-            // bring to foreground
-            float x,y,z;
-            pverts[PtId].getValue(x,y,z);
-            pverts[PtId].setValue(x,y,zHighlight);
-            edit->PointsCoordinate->point.finishEditing();
-        }
-    }
+    if (edit)
+        ++edit->SelPointMap[SelectPoint + 1];
 }
 
 void ViewProviderSketch::removeSelectPoint(int SelectPoint)
 {
-    int PtId = SelectPoint + 1;
     if (!edit)
         return;
-    auto it = edit->SelPointMap.find(PtId);
-    if (it == edit->SelPointMap.end())
-        return;
-    if (--it->second == 0) {
+    auto it = edit->SelPointMap.find(SelectPoint + 1);
+    if (it != edit->SelPointMap.end() && --it->second == 0)
         edit->SelPointMap.erase(it);
-        if (PtId && PtId <= (int)edit->VertexIdToPointId.size())
-            PtId = edit->VertexIdToPointId[PtId-1];
-        if (PtId >= 0 && PtId < edit->PointsCoordinate->point.getNum()) {
-            SbVec3f *pverts = edit->PointsCoordinate->point.startEditing();
-            // send to background
-            float x,y,z;
-            pverts[PtId].getValue(x,y,z);
-            pverts[PtId].setValue(x,y,zLowPoints);
-            edit->PointsCoordinate->point.finishEditing();
-        }
-    }
 }
 
 void ViewProviderSketch::clearSelectPoints(void)
 {
     if (edit) {
-        SbVec3f *pverts = edit->PointsCoordinate->point.startEditing();
-        // send to background
-        float x,y,z;
-        for (auto &v : edit->SelPointMap) {
-            int PtId = v.first;
-            if (PtId && PtId <= (int)edit->VertexIdToPointId.size())
-                PtId = edit->VertexIdToPointId[PtId-1];
-            if (PtId < 0 || PtId >= edit->PointsCoordinate->point.getNum())
-                continue;
-            pverts[PtId].getValue(x,y,z);
-            pverts[PtId].setValue(x,y,zLowPoints);
-        }
-        edit->PointsCoordinate->point.finishEditing();
-        edit->SelectedPointSet->coordIndex.setNum(0);
         edit->SelPointMap.clear();
         edit->ImplicitSelPoints.clear();
     }

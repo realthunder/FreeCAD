@@ -318,6 +318,14 @@ fc_add_gui_test(GuiSketchHighlightNotify_tests_run
                 sketch-highlight-notify.py
                 --timeout 180)
 
+# A sketch's (pre)selection is drawn by overlays of its own: a hover leaves
+# the geometry's materials, coordinates and line set alone, writes only the
+# constraint whose highlight changed, and the backend draws the hovered
+# edge in the preselection colour.
+fc_add_gui_test(GuiSketchHighlightOverlay_tests_run
+                sketch-highlight-overlay.py
+                --timeout 180)
+
 # An SoImage is drawn pixel for pixel in mode 3, as glDrawPixels does. The
 # backend's textured quad sat wherever the anchor projected, and half a
 # pixel off the filter spread each texel over two pixels: a Sketcher

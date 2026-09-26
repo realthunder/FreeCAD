@@ -9,9 +9,11 @@ batch of more than a hundred elements was selected in `Gui.Selection` and
 nowhere a user could see: no curve turned the selection colour and no row
 of either list was selected.
 
-The sketch is read from the edit graph's `CurvesMaterials` node, one diffuse
-colour per curve (a selected curve is `ViewProviderSketch::SelectColor`);
-the panels from their list widgets' selected rows.
+The sketch is read from the edit graph's highlight overlay, the
+`SelectedCurveSet`: one polyline per selected curve, each with the index of
+its colour (0 is `ViewProviderSketch::SelectColor`); the panels from their
+list widgets' selected rows. (Until the highlight moved into overlays, from
+`CurvesMaterials`, one diffuse colour per curve.)
 
 Checks, on a sketch of 200 lines, 150 of them with a Vertical constraint:
 
@@ -61,14 +63,21 @@ def check(name, cond, detail=""):
          + ("" if detail == "" else " (%s)" % (detail,)))
 
 
+def overlay_colours(name):
+    """The colour index of each polyline of a highlight overlay set: 0 the
+    selection colour, 1 preselection, 2 preselected-and-selected."""
+    node = coin.SoNode.getByName(name)
+    if not node:
+        return None
+    return [node.materialIndex[i] for i in range(node.materialIndex.getNum())]
+
+
 def coloured_curves():
-    """How many edit curves are drawn in SelectColor (0.11, 0.68, 0.11)."""
-    mat = coin.SoNode.getByName("CurvesMaterials")
-    if not mat:
+    """How many edit curves are drawn in the selection colour."""
+    sel = overlay_colours("SelectedCurveSet")
+    if sel is None:
         return -1
-    return sum(1 for c in mat.diffuseColor.getValues()
-               if abs(c[0] - 0.11) < 0.02 and abs(c[1] - 0.68) < 0.02
-               and abs(c[2] - 0.11) < 0.02)
+    return sel.count(0)
 
 
 def selected_rows(name):
@@ -83,18 +92,12 @@ def selected_rows(name):
 
 def coloured_or_preselected(sk):
     """Curves drawn as selected, counting one the pointer rests on: that one
-    is PreselectSelectedColor, 0.6 * PreselectColor + 0.4 * SelectColor."""
-    mat = coin.SoNode.getByName("CurvesMaterials")
-    if not mat:
+    is in the preselection overlay, in the preselected-and-selected colour."""
+    sel = overlay_colours("SelectedCurveSet")
+    pre = overlay_colours("PreSelectedCurveSet")
+    if sel is None or pre is None:
         return -1
-    select = (0.11, 0.68, 0.11)
-    preselect_selected = tuple(0.6 * p + 0.4 * q for p, q in zip((0.88, 0.88, 0.0), select))
-
-    def near(c, want):
-        return all(abs(c[i] - want[i]) < 0.1 for i in range(3))
-
-    return sum(1 for c in mat.diffuseColor.getValues()
-               if near(c, select) or near(c, preselect_selected))
+    return sel.count(0) + pre.count(2)
 
 
 class Counter:

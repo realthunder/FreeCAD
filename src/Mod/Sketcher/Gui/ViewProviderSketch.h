@@ -357,6 +357,10 @@ public:
 
     /// helper change the color of the sketch according to selection and solver status
     void updateColor();
+    /// Redraw only the (pre)selection: the highlight overlays and the
+    /// highlighted constraints. What a selection change needs; the geometry's
+    /// own colours and layers are left as the last updateColor() made them.
+    void updateHighlight();
     /// get the pointer to the sketch document object
     Sketcher::SketchObject *getSketchObject() const;
 
@@ -683,6 +687,13 @@ protected:
     void addSelectPoint(int SelectPoint);
     void removeSelectPoint(int SelectPoint);
     void clearSelectPoints();
+
+    // the two halves of updateColor()
+    void updateBaseColor();
+    /// +1 or -1: which way the sketch's layers stack as seen from the camera
+    float getEditZDir() const;
+    /// a constraint's colour when it is not highlighted
+    void restoreConstraintColor(int ConstrId);
 
     // modes while sketching
     SketchMode _Mode;
