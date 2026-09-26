@@ -229,6 +229,14 @@ public:
      */
     MirrorViewer *clientViewer(uint64_t client);
 
+    /*!
+     * Tell \a client its own visibility table as the host parsed it
+     * ({"cmd":"visibility"}): each entry's object chain, whether it is
+     * rooted and whether it shows. The client draws by it with the
+     * renderer's own rule (docs/CoinRetirement.md 5.18). GUI thread only.
+     */
+    void announceVisibility(uint64_t client);
+
 private Q_SLOTS:
     void onPublishTimeout();
 

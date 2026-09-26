@@ -79,9 +79,10 @@ void BGFXRenderer::Private::makeSnapshot(Render::SceneSnapshot &snap,
         mainStyle.ovInterest = captureInterest;
     }
     // ...and against the main view's own object visibility: what it
-    // hides is not in what it draws, and a draw captured only because
-    // some OTHER view shows a hidden object never is. A served root has
-    // no view and so no table, which drops exactly those.
+    // hides is not in what it draws. A draw captured only because some
+    // view shows a hidden object TRAVELS, flagged (SceneDump v80): the
+    // viewer that loads it admits it by its own table, which is how a
+    // served client shows a hidden object on its own.
     if (mainVisibilities && !mainVisibilities->entries.empty()) {
         mainStyle.visCache = &mainStyle.subVisCaches[0];
         mainStyle.visTable = mainVisibilities;
@@ -91,7 +92,7 @@ void BGFXRenderer::Private::makeSnapshot(Render::SceneSnapshot &snap,
         Render::DrawCallList out;
         out.reserve(src.size());
         for (const auto &d : src) {
-            if (mainStyle.visibilityHides(d))
+            if (mainStyle.visibilityHidesObject(d))
                 continue;
             if (!resolving || mainStyle.styleAdmits(d))
                 out.push_back(d);

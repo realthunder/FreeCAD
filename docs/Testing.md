@@ -674,9 +674,10 @@ being filled, all live at once.
 The table is the two oldest; `tests/gui/CMakeLists.txt` is the list that is
 current.
 
-**Three of them are not registered, and are meant not to be**:
-`camera-uplink-browser.py`, `serve-edit-browser.py` and
-`serve-peer-selection-browser.py` drive a real Chrome
+**Four of them are not registered, and are meant not to be**:
+`camera-uplink-browser.py`, `serve-edit-browser.py`,
+`serve-peer-selection-browser.py` and `serve-client-visibility-browser.py`
+drive a real Chrome
 through the built WASM viewer, so they need three things this repository does
 not carry -- `build/wasm`, a `puppeteer-core` install, and a Chrome binary --
 and they skip rather than fail when any is missing. Registering them would
@@ -706,6 +707,16 @@ a measured noise floor of two shots of a scene nobody touched. The result
 line records the GL backend, since headless swiftshader answers this test
 too and has masked GPU bugs before. Scored against the viewer WITHOUT the
 paint, five of its sixteen checks fail and the control checks still pass.
+
+`serve-client-visibility-browser.py` (2026-09-26, `scripts/clientvis-drive.js`)
+is judged by pixels too, counted by COLOUR: two browsers over a red, a green
+and a hidden yellow box; client A hides the green one and shows the yellow
+one for itself with the `view.visibility` op (`docs/CoinRetirement.md`
+5.18), B sets nothing. 17 checks: A's canvas loses the green and gains the
+yellow, B's canvas does not change at all -- not even its framing, which is
+what caught the viewer fitting to an object only another client shows. Its
+first runs found two more on the way: a client's show raised no publish on
+the host, and the snapshot never carried a per-view-shown draw at all.
 
 **On Windows they do not register**, and cannot: `tests/gui/CMakeLists.txt`
 wants `xvfb-run` and `.conda/run.sh`, and the box has neither. Run one by

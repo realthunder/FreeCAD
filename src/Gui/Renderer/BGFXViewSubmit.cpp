@@ -213,28 +213,36 @@ bool BGFXStyleState::visibilityHides(const Render::DrawCall &draw)
     // is hidden in every view that does not show it itself.
     const bool pershown = draw.capturedMode
         && draw.capturedMode == Render::perViewShownModeId();
+    const VisState *vs = visibilityState(draw);
+    if (!vs)
+        return pershown;
+    return vs->hidden || (pershown && !vs->shown);
+}
+
+bool BGFXStyleState::visibilityHidesObject(const Render::DrawCall &draw)
+{
+    const VisState *vs = visibilityState(draw);
+    return vs && vs->hidden;
+}
+
+const BGFXStyleState::VisState *
+BGFXStyleState::visibilityState(const Render::DrawCall &draw)
+{
     // Gizmos sit under no object, like the style filter's exemption.
     if (!visCache || !visTable || !draw.objectKey || draw.skipbounds)
-        return pershown;
+        return nullptr;
     auto it = visCache->map.find(draw.objectKey);
     if (it == visCache->map.end()) {
         VisState vs;
         if (visInfo) {
             auto oit = visInfo->find(draw.objectKey);
-            if (oit != visInfo->end()) {
-                const auto &path = oit->second.path;
-                for (size_t len = 1; len <= path.size(); ++len) {
-                    const int r = Render::resolveVisibility(*visTable, path, len);
-                    if (r == 0)
-                        vs.hidden = true;
-                    else if (r > 0)
-                        vs.shown = true;
-                }
-            }
+            if (oit != visInfo->end())
+                Render::resolveChainVisibility(*visTable, oit->second.path,
+                                               vs.hidden, vs.shown);
         }
         it = visCache->map.emplace(draw.objectKey, vs).first;
     }
-    return it->second.hidden || (pershown && !it->second.shown);
+    return &it->second;
 }
 
 const BGFXStyleState::OvStyle *

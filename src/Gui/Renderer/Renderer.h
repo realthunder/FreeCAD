@@ -2916,6 +2916,15 @@ struct VisibilityOverrideTable {
 RendererExport int resolveVisibility(const VisibilityOverrideTable &table,
                                      const std::vector<ObjectRef> &chain,
                                      size_t len);
+/// A draw's answer from \a table, for the object chain \a path of the
+/// object it belongs to (ObjectInfo::path): \a hidden when some object
+/// on it resolves hidden, \a shown when some object on it resolves
+/// shown -- what admits a per-view-shown draw. The backend's draw filter
+/// and a served client's own pick ask it alike.
+RendererExport void resolveChainVisibility(const VisibilityOverrideTable &table,
+                                           const std::vector<ObjectRef> &path,
+                                           bool &hidden,
+                                           bool &shown);
 /// The captured-mode id (DrawCall::capturedMode) tagging the draws of
 /// a HIDDEN object captured only because some view shows it on its own
 /// (ObjectVisibilities). Every view -- and every snapshot -- drops such

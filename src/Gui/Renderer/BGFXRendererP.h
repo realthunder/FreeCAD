@@ -4528,6 +4528,14 @@ public:
     /// (BGFXRenderer::Private isHidden), so a hidden draw neither
     /// renders nor casts nor outlines nor caps.
     bool visibilityHides(const Render::DrawCall &draw);
+    /// Whether this sub-view's own table HIDES \a draw's object or a
+    /// container of it -- visibilityHides without the per-view-shown
+    /// rule. What a snapshot drops: a per-view-shown draw travels, and
+    /// the viewer that loads it admits it by its own table.
+    bool visibilityHidesObject(const Render::DrawCall &draw);
+    /// \a draw's object's answer from this sub-view's table, looked up
+    /// once and cached; null without a table (or for a gizmo).
+    const VisState *visibilityState(const Render::DrawCall &draw);
     /// Whether this sub-view's per-object style resolution (override,
     /// then view style where registered, then own mode -- 5.8/5.9)
     /// admits \a draw's bucket. Asked by the per-draw submit AND by

@@ -2743,8 +2743,23 @@ through the new `ViewerContext::visibilityElementTable()`: the host's
 picks and bounds for a client follow that client's table and no one
 else's. A client may set its own table with view access only: it is view
 state, not an edit. Verified by `tests/gui/serve-client-visibility.py`.
-What the client DRAWS follows in the next step: the stream ships the
-superset and the client filters by the same table.
+
+What the client DRAWS (user design: ship the chains and the table). The
+host tells the client its table as parsed (`{"cmd":"visibility"}`, each
+entry's object chain, rooted, shown), and the WASM viewer hands it to its
+own backend with `setMainViewVisibility`, against the object chains the
+scene now carries (`SceneDump` v80: `ObjectInfo::path` on each scene object
+entry). So the SAME rule filters every pass in the browser as on the
+desktop, `Render::resolveChainVisibility` (shared with the viewer's local
+pick, which skips what the client does not see). A hidden object some view
+shows on its own now TRAVELS: the snapshot drops only what its own table
+hides (`visibilityHidesObject`), each draw says whether it is per-view
+shown (a flag -- the id is interned per process), and so does the object
+entry when all of it is, so a viewer that does not show it leaves it out
+of its framing before its geometry arrives. The host republishes when a
+client's table changes: the serve source publishes on document signals,
+and a client's show raises none. Verified in a real browser by
+`tests/gui/serve-client-visibility-browser.py`.
 
 **Verified** by `tests/gui/per-view-visibility.py`
 (`GuiPerViewVisibility_tests_run`), two views of one document, 27

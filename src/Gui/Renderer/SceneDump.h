@@ -406,6 +406,11 @@ struct SceneSnapshot {
         /// producer's capture backlog drains. Inside a content key it
         /// would retire an object's cached chunks for a state bit.
         bool incomplete = false;
+        /// Every draw of this object is a per-view-shown one (v80): a
+        /// hidden object in the scene only because some view shows it on
+        /// its own. What a viewer that does not show it leaves out of its
+        /// framing before any of its geometry has arrived.
+        bool perViewShown = false;
     };
 
     /// Which publish this one is, and which it is encoded against.
@@ -611,8 +616,11 @@ struct SceneObjectModel {
     /// the geometry inside them has arrived. This is what the initial
     /// camera fit wants: it frames the model correctly before the
     /// first triangle exists, and does not lurch as geometry streams
-    /// in (§6). False when the model names nothing.
-    bool boundBox(float *min3, float *max3) const;
+    /// in (sec 6). False when the model names nothing. \a skip, when
+    /// given, leaves out the objects it answers true for -- what a
+    /// viewer's own visibility keeps off its screen.
+    bool boundBox(float *min3, float *max3,
+                  const std::function<bool(const Object &)> &skip = {}) const;
 };
 
 /// The unit box every coarse stand-in is drawn with: the corners of

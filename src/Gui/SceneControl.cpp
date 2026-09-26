@@ -1006,6 +1006,14 @@ QJsonObject viewVisibilityOp(const QJsonObject &req, const std::string &boundDoc
     Render::VisibilityOverrideTable table = parseObjectVisibilities(values, doc, perView);
     const int entries = int(table.entries.size());
     const bool changed = mirror->setObjectVisibilities(std::move(table));
+    // A show changes what the one capture carries (a hidden object is
+    // captured, flagged, for whoever shows it), and this source publishes
+    // on document signals, of which a client's table raises none. A
+    // publish that changes nothing sends nothing.
+    if (changed)
+        source->schedulePublish();
+    // The client draws by the same table: it is told it, parsed.
+    source->announceVisibility(client);
 
     QJsonObject reply;
     reply[QLatin1String("id")] = id;

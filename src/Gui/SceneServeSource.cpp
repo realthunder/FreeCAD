@@ -1661,6 +1661,40 @@ MirrorViewer *SceneServeSource::clientViewer(uint64_t client)
     return pimpl->ensureClient(client);
 }
 
+void SceneServeSource::announceVisibility(uint64_t client)
+{
+    MirrorViewer *mirror = pimpl->mirrorFor(client);
+    if (!mirror)
+        return;
+    // {"v": shows, "r": rooted, "p": [doc, obj, doc, obj, ...]} -- the
+    // chain flat, since the viewer reads it with a string scanner.
+    std::string json = "{\"cmd\":\"visibility\",\"doc\":";
+    jsonQuoted(json, pimpl->groupName);
+    json += ",\"entries\":[";
+    if (const Render::VisibilityOverrideTable *table = mirror->objectVisibilities()) {
+        bool first = true;
+        for (const auto &ov : table->entries) {
+            if (!first)
+                json += ',';
+            first = false;
+            json += ov.visible ? "{\"v\":1" : "{\"v\":0";
+            json += ov.rooted ? ",\"r\":1,\"p\":[" : ",\"r\":0,\"p\":[";
+            bool firstRef = true;
+            for (const auto &ref : ov.path) {
+                if (!firstRef)
+                    json += ',';
+                firstRef = false;
+                jsonQuoted(json, ref.doc);
+                json += ',';
+                jsonQuoted(json, ref.obj);
+            }
+            json += "]}";
+        }
+    }
+    json += "]}";
+    Render::SceneStreamServer::instance().sendControl(client, json);
+}
+
 namespace
 {
 

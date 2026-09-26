@@ -142,6 +142,21 @@ int Render::resolveVisibility(const VisibilityOverrideTable &table,
     return bare;
 }
 
+void Render::resolveChainVisibility(const VisibilityOverrideTable &table,
+                                    const std::vector<ObjectRef> &path,
+                                    bool &hidden,
+                                    bool &shown)
+{
+    hidden = shown = false;
+    for (size_t len = 1; len <= path.size(); ++len) {
+        const int r = resolveVisibility(table, path, len);
+        if (r == 0)
+            hidden = true;
+        else if (r > 0)
+            shown = true;
+    }
+}
+
 uint16_t Render::perViewShownModeId()
 {
     // Not a display mode name any object can register.

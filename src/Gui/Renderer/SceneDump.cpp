@@ -334,7 +334,14 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     after the plane normal). Without it a viewer sized every billboard
 //     image with the text factor -- a constraint icon at 1.35 of its
 //     pixels -- and a datum's number from the capture's viewport height.
-const uint32_t kVersion = 79;
+// 80: per-client visibility (docs/CoinRetirement.md 5.18). A scene object
+//     entry carries its object chain (ObjectInfo::path, after the type) and
+//     whether all of it is per-view shown (after the chain), and
+//     a draw says whether it belongs to a hidden object some view shows on
+//     its own (the per-view-shown tag, after skipbounds). A client resolves
+//     its own table against both, with the renderer's own rule; before, the
+//     snapshot dropped those draws and a remote viewer could match no path.
+const uint32_t kVersion = 80;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -387,7 +394,9 @@ const uint32_t kVersion = 79;
 /// 19: a mesh chunk may carry point markers after the point parts
 ///     (v78), said by flag 64.
 /// 20: a material chunk's autozoom entries carry their pixel scale (v79).
-const uint32_t kChunkVersion = 20;
+/// 21: a group chunk's draws carry the per-view-shown flag (v80). The bytes
+///     moved, so an older cached chunk would be misread.
+const uint32_t kChunkVersion = 21;
 
 /// Bytes per vertex of MeshData::materials, whose layout Renderer.h
 /// documents. Named here because the stride is what a reader of an
@@ -2201,6 +2210,8 @@ void writeDraw(Writer &w, const DrawCall &d, const DrawRefWriter &refs)
     w.floats(d.bboxMax, 3);
     // v67
     w.b(d.skipbounds);
+    // v80: the tag is an id interned per process, so it travels as a flag.
+    w.b(d.capturedMode == perViewShownModeId());
 }
 
 typedef std::vector<Material> MaterialTable;
@@ -2230,6 +2241,8 @@ void readDraw(Reader &r, DrawCall &d, const DrawRefReader &refs,
     r.floats(d.bboxMax, 3);
     if (version >= 67)
         d.skipbounds = r.b();
+    if (version >= 80 && r.b())
+        d.capturedMode = perViewShownModeId();
 }
 
 void writeDrawList(Writer &w, const DrawCallList &draws,
@@ -2566,7 +2579,7 @@ void groupScene(const DrawCallList &scene,
 /// (that entry goes by reference), a missing provider on a delta is a
 /// format error the reader cannot detect.
 template<typename EntryPtr>
-void writeObjectSection(Writer &w,
+void writeObjectSection(bool withPath, Writer &w,
                         const std::vector<uint64_t> &removed,
                         const std::vector<EntryPtr> &carried,
                         const ChunkBytesFor *bytesFor = nullptr)
@@ -2584,6 +2597,16 @@ void writeObjectSection(Writer &w,
         w.str(e.info.obj);
         w.str(e.info.label);
         w.str(e.info.type);
+        // v80: the object chain, for a client resolving its own
+        // visibility table. Not in the 2D page form, which has none.
+        if (withPath) {
+            w.u32(uint32_t(e.info.path.size()));
+            for (const auto &ref : e.info.path) {
+                w.str(ref.doc);
+                w.str(ref.obj);
+            }
+            w.b(e.perViewShown);
+        }
         // v55: whether this publish held part of the object back.
         w.b(e.incomplete);
         writeGroupRef(w, e);
@@ -2607,7 +2630,7 @@ void writeObjectList(Writer &w,
     for (const auto &e : entries)
         all.push_back(&e);
     // Nothing retired: this list replaces whatever was held.
-    writeObjectSection(w, std::vector<uint64_t>(), all);
+    writeObjectSection(true, w, std::vector<uint64_t>(), all);
 }
 
 /// Both lists are ordered by objectKey, so the difference is one linear
@@ -2656,7 +2679,7 @@ void writeObjectDelta(Writer &w,
     std::vector<uint64_t> removed;
     std::vector<const SceneSnapshot::ObjectEntry *> changed;
     diffObjectPtrs(base, entries, changed, removed);
-    writeObjectSection(w, removed, changed, &bytesFor);
+    writeObjectSection(true, w, removed, changed, &bytesFor);
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -3310,6 +3333,14 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
                     break;
                 }
             }
+            // v80: all of it here only because some view shows it.
+            entry.perViewShown = !group.second.empty();
+            for (const DrawCall *d : group.second) {
+                if (d->capturedMode != perViewShownModeId()) {
+                    entry.perViewShown = false;
+                    break;
+                }
+            }
             if (snap.objectInfo) {
                 auto it = snap.objectInfo->find(group.first);
                 if (it != snap.objectInfo->end())
@@ -3815,6 +3846,18 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
                 r.str(up.entry.info.label, 0x1000u);
                 r.str(up.entry.info.type, 0x1000u);
             }
+            if (version >= 80) {
+                uint32_t npath = r.u32();
+                if (!r.ok || npath > 0x10000u)
+                    r.ok = false;
+                for (uint32_t k = 0; r.ok && k < npath; ++k) {
+                    Render::ObjectRef ref;
+                    r.str(ref.doc, 0x1000u);
+                    r.str(ref.obj, 0x1000u);
+                    up.entry.info.path.push_back(std::move(ref));
+                }
+                up.entry.perViewShown = r.b();
+            }
             if (version >= 55)
                 up.entry.incomplete = r.b();
             up.group = snap.groups.size();
@@ -4123,10 +4166,14 @@ size_t Render::SceneObjectModel::unresolved() const
     return n;
 }
 
-bool Render::SceneObjectModel::boundBox(float *min3, float *max3) const
+bool Render::SceneObjectModel::boundBox(
+        float *min3, float *max3,
+        const std::function<bool(const Object &)> &skip) const
 {
     bool any = false;
     for (const auto &entry : objects) {
+        if (skip && skip(entry.second))
+            continue;
         const float *b = entry.second.entry.bbox;
         // The producer writes an empty box as one that is inside out,
         // which would otherwise swallow the origin and pull the fit
@@ -4608,7 +4655,7 @@ bool Render::spliceObjectDelta(
     refs.reserve(changed.size());
     for (const auto &e : changed)
         refs.push_back(&e);
-    writeObjectSection(w, removed, refs, &bytesFor);
+    writeObjectSection(true, w, removed, refs, &bytesFor);
     if (!w.ok)
         return false;
 
@@ -4636,7 +4683,7 @@ bool Render::writeObjectSection(
     refs.reserve(entries.size());
     for (const auto &e : entries)
         refs.push_back(&e);
-    ::writeObjectSection(w, removed, refs, bytesFor);
+    ::writeObjectSection(false, w, removed, refs, bytesFor);
     return w.ok;
 }
 

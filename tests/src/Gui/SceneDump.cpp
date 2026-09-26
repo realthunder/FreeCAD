@@ -1182,6 +1182,67 @@ TEST(SceneDump, anObjectEntryNamesItsDocumentObject)
     EXPECT_TRUE(unnamed->second.entry.info.doc.empty());
 }
 
+/// Per-client visibility (v80, docs/CoinRetirement.md 5.18): a client
+/// resolves its own table against each object's CHAIN, and admits a draw
+/// of a hidden object some view shows on its own only when its table
+/// shows it. So both have to cross: the chain on the object entry, the
+/// per-view-shown tag on the draw (as a flag -- the id is interned per
+/// process). Before v80 neither did, and the snapshot dropped the draws.
+TEST(SceneDump, anObjectCarriesItsChainAndADrawItsPerViewShownTag)
+{
+    BlobStore store;
+    Render::SceneSnapshot snap = makeScene();
+    // The second draw of 0x1111 is one only some view shows.
+    int tagged = 0;
+    for (auto& d : snap.scene) {
+        if (d.objectKey == 0x1111 && tagged++ == 1)
+            d.capturedMode = Render::perViewShownModeId();
+        // All of 0x2222 is per-view shown: its entry says so, so a viewer
+        // that does not show it can leave it out before its draws arrive.
+        if (d.objectKey == 0x2222)
+            d.capturedMode = Render::perViewShownModeId();
+    }
+    attachSinks(snap, store);
+    Render::ObjectInfoMap info;
+    info[0x1111] = {"MainDoc", "Box", "Box", "Part::Box",
+                    {{"MainDoc", "Asm"}, {"OtherDoc", "Box"}}};
+    snap.objectInfo = &info;
+    std::vector<Render::SceneSnapshot::ObjectEntry> entries;
+    snap.objectEntries = &entries;
+
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(payload.data(), payload.size(), loaded));
+    Render::SceneObjectModel model;
+    ASSERT_TRUE(resolveInto(loaded, store, model));
+
+    auto named = model.objects.find(0x1111);
+    ASSERT_TRUE(named != model.objects.end());
+    const auto& path = named->second.entry.info.path;
+    ASSERT_EQ(path.size(), 2u);
+    EXPECT_EQ(path[0].doc, "MainDoc");
+    EXPECT_EQ(path[0].obj, "Asm");
+    EXPECT_EQ(path[1].doc, "OtherDoc");
+    EXPECT_EQ(path[1].obj, "Box");
+
+    int shown = 0, plain = 0;
+    for (const auto& d : named->second.draws) {
+        if (d.capturedMode == Render::perViewShownModeId())
+            ++shown;
+        else
+            ++plain;
+    }
+    EXPECT_EQ(shown, 1);
+    EXPECT_EQ(plain, 1);
+    EXPECT_FALSE(named->second.entry.perViewShown);
+
+    auto whole = model.objects.find(0x2222);
+    ASSERT_TRUE(whole != model.objects.end());
+    EXPECT_TRUE(whole->second.entry.perViewShown);
+}
+
 /// What the whole phase is for: publishing an unchanged scene again
 /// must send no bytes, and the root must stay small because the draws
 /// are not in it.
