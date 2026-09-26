@@ -159,9 +159,28 @@ def run():
         asm.undo()
         settle()
 
-        # The version document, edited and saved over the file through the
-        # Gui: the warning first, then the offer to re-pin.
-        vdoc = link.LinkedObject.Document
+        # What the pin shows is frozen (sec 27.22): no edit, and the Gui's
+        # Save says why instead of saving.
+        frozen = link.LinkedObject.Document
+        try:
+            frozen.getObject("Box").Height = 44
+            refused = False
+        except Exception:
+            refused = True
+        check("the pinned version refuses an edit", refused)
+        del seen[:]
+        answer(pressButton(QtWidgets.QMessageBox.Ok))
+        ok = Gui.getDocument(frozen.Name).save()
+        settle()
+        check("the Gui does not save it, and says why: %r" % (seen,),
+              not ok and len(seen) >= 1 and "cannot be changed" in seen[0])
+
+        # The editable instance of the version, edited and saved over the
+        # file through the Gui: the warning first, then the offer to re-pin.
+        vdoc = App.openFileVersion(partPath, first)
+        settle()
+        check("the editable instance is another document: %s" % vdoc.FileName,
+              vdoc is not frozen and ("@v%d" % first) in vdoc.FileName)
         vdoc.openTransaction("taller")
         vdoc.getObject("Box").Height = 44
         vdoc.commitTransaction()

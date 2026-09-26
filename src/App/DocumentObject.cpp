@@ -987,6 +987,15 @@ void DocumentObject::onBeforeChange(const Property* prop)
 {
     // Store current name in oldLabel, to be able to easily retrieve old name of document object later
     // when renaming expressions.
+    // A pinned version refuses every change to its data, before anything
+    // changes (docs/TransactionLog.md sec 27.22). Exempt as checkUserEdit
+    // exempts them: Visibility is view state, TreeRank the tree's own
+    // ordering, ViewObject the mirror of the view provider; and a property
+    // never saved is a cache.
+    if (_pDoc && prop != &Visibility && prop != &TreeRank && prop != &ViewObject
+            && !(prop->getType() & Prop_NoPersist) && !prop->testStatus(Property::PropNoPersist))
+        _pDoc->checkNotFrozen(prop->getName() ? prop->getName() : "a property");
+
     if (prop == &Label)
         oldLabel = Label.getStrValue();
 

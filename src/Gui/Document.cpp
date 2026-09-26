@@ -1750,11 +1750,25 @@ std::vector<App::PropertyXLink*> linksPinnedTo(const std::string& file, int64_t 
 bool saveVersionDocument(Gui::Document* gdoc)
 {
     App::Document* doc = gdoc->getDocument();
-    std::string file = doc->FileName.getStrValue();
-    const int64_t num = App::FileHistory::splitVersion(file);
+    App::FileHistory::NameParts parts;
+    if (!App::FileHistory::parseName(doc->FileName.getStrValue(), parts))
+        return false;
+    const std::string file = parts.file;
+    const int64_t num = parts.version;
     App::TransactionLog* log = doc->getTransactionLog();
     if (!num || file.empty() || !log)
         return false;
+    // The instance pins show is the version itself (docs/TransactionLog.md
+    // sec 27.22): nothing in it can change, so there is nothing to save.
+    if (doc->testStatus(App::Document::FrozenVersion)) {
+        QMessageBox::information(
+            getMainWindow(), QObject::tr("Save a version"),
+            QObject::tr("This is version %1 of %2 as the links pinned to it show it. It cannot "
+                        "be changed or saved; open the version from the log to work on it.")
+                .arg(num)
+                .arg(QString::fromUtf8(Base::FileInfo(file).fileName().c_str())));
+        return false;
+    }
     const QString name = QString::fromUtf8(Base::FileInfo(file).fileName().c_str());
     QString text = linksPinnedTo(file, num).empty()
         ? QObject::tr("This is version %1 of %2.").arg(num).arg(name)

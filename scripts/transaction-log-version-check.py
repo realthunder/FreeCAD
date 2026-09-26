@@ -54,8 +54,11 @@ def run():
         settle()
         gdoc = Gui.getDocument(opened.Name)
         check("the version has a Gui document", gdoc is not None)
-        check("named after the file: %s" % opened.FileName,
-              opened.FileName == doc.FileName + "@v%d" % first)
+        # Named for the branch its first change will take (sec 27.23).
+        check("named after the file and its branch: %s" % opened.FileName,
+              opened.FileName == doc.FileName + "@main@v%d@v%d" % (first, first))
+        check("and so labelled: %s" % opened.Label,
+              opened.Label.endswith("@main@v%d@v%d" % (first, first)))
         vbox = opened.getObject("Box")
         check("the version's box is the saved one: %s" % (vbox and vbox.Length.Value),
               vbox is not None and abs(vbox.Length.Value - 10) < 1e-9)

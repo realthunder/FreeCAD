@@ -1230,6 +1230,10 @@ public:
     bool pinFellBack() const { return _pinFellBack; }
     /// Every loaded link pinned to a version of the file at `path`.
     static std::vector<PropertyXLink*> getPinsTo(const std::string& path);
+    /// The branch of the linked file a live link follows (sec 27.23): set
+    /// when the link is to an editable instance of a version, whose name
+    /// carries its branch; empty for a link to the file.
+    const std::string& getLiveBranch() const { return _liveBranch; }
     //@}
 
     int checkRestore(std::string *msg=nullptr) const override;
@@ -1365,6 +1369,9 @@ protected:
     int64_t _pinVersion {0};
     std::string _pinUuid;
     bool _pinFellBack {false};
+    /// A live link to a branch of the file (docs/TransactionLog.md sec
+    /// 27.23): to whatever document holds it.
+    std::string _liveBranch;
     PathResolveMode resolveMode = PathResolveMode::Dynamic;
     std::vector<std::string> _SubList;
     std::vector<ShadowSub> _ShadowSubList;

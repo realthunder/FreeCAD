@@ -100,6 +100,9 @@ public:
         VersionDoc = 17, // A version of a file opened as a document of its own
                          // (docs/TransactionLog.md sec 27.7): read-only as a
                          // partial document is -- save refuses it
+        FrozenVersion = 18, // The instance of a version that pins show
+                            // (docs/TransactionLog.md sec 27.22): every
+                            // change to its data is refused
     };
 
     /** @name Properties */
@@ -375,6 +378,10 @@ public:
      * change puts it on a branch: the one whose tip the version is if no
      * document holds it, else a new one, `<branch>@v<num>`. Throws when
      * there is no log or no such version.
+     *
+     * This is the editable instance (sec 27.22), named
+     * `<file>@<branch>@v<num>` (27.23); the frozen one, which pins show,
+     * is opened by openFileVersion() with `frozen`.
      */
     Document* openVersion(int64_t num, bool createView = true);
     /** Pin `link` to version `version` of the file it links to
@@ -394,13 +401,37 @@ public:
      * Returns the version the save became; throws on failure.
      */
     int64_t saveVersionAsFile();
+    /** Name every version document of this document's file for where it
+     * is now (docs/TransactionLog.md sec 27.23): `<file>@v<num>` and
+     * `<label>@v<num>` for the frozen instance, `<file>@<branch>@v<num>`
+     * and `<label>@<branch>@v<num>` for an editable one -- its branch, or
+     * the one its first change will take. After a branch is made, renamed
+     * or switched to, and after a save moves a version tail.
+     */
+    void refreshVersionNames();
+    /// A frozen version (FrozenVersion, sec 27.22), throwing `what` refused.
+    void checkNotFrozen(const char* what) const;
     /** The same for a file's history, whether or not a document of the file
      * is open (docs/TransactionLog.md sec 27.13; FileHistory::openFile()).
      * `from`, when given, is the document of the file it is named after.
+     * `frozen` opens the instance a pin shows (sec 27.22): status
+     * FrozenVersion, named `<file>@v<num>`, every change refused; a version
+     * has at most one of each.
      */
     static Document* openFileVersion(const std::shared_ptr<FileHistory>& history, int64_t num,
                                      bool createView = true, const Document* from = nullptr,
-                                     bool versionDocsOnly = false);
+                                     bool frozen = false);
+
+    /** What a name of parseName() opens (docs/TransactionLog.md sec 27.23,
+     * 27.24): with no `branch`, the frozen instance of version `num`; with
+     * a branch and a version, the editable instance at that version; with a
+     * branch and no version, the document holding the branch, or else the
+     * branch's head opened as an editable instance. Throws when there is no
+     * such version or branch.
+     */
+    static Document* openFileBranch(const std::shared_ptr<FileHistory>& history,
+                                    const std::string& branch, int64_t num,
+                                    bool createView = true);
 
     /** Branches (docs/TransactionLog.md sec 17, 26). createBranch() makes
      * branch `name` from version `version`, or else from log row `seq`, or

@@ -5074,6 +5074,7 @@ bool Document::restoreVersion(int64_t num)
     // docs/TransactionLog.md sec 24.5: a restore to version N is one
     // forward transaction that makes the document what N was -- undoable,
     // logged, and the document never reloaded.
+    checkNotFrozen("restore a version");
     TransactionLog* log = getTransactionLog();
     if (!log)
         return false;
@@ -5154,6 +5155,7 @@ int64_t Document::saveVersionAsFile()
     // docs/TransactionLog.md sec 27.5 ruling 4, 27.16.
     if (!testStatus(VersionDoc))
         THROWM(Base::RuntimeError, "'" + Label.getStrValue() + "' is not a version of a file");
+    checkNotFrozen("save");
     TransactionLog* log = getTransactionLog();
     if (!log)
         THROWM(Base::RuntimeError, "no transaction log");
@@ -5171,10 +5173,33 @@ int64_t Document::saveVersionAsFile()
         if (DocumentParams::getprefSetAuthorOnSave())
             LastModifiedBy.setValue(DocumentParams::getprefAuthor().c_str());
     }
-    if (!saveToFile(file.c_str()))
+    // The file gets the label it is named after, not the version name
+    // (27.23), which the document takes back after.
+    bool written = false;
+    {
+        const std::string shown = Label.getStrValue();
+        Base::FlagToggler<> quiet(d->bookkeeping, false);
+        if (!d->versionLabel.empty())
+            Label.setValue(d->versionLabel);
+        try {
+            written = saveToFile(file.c_str());
+        }
+        catch (...) {
+            Label.setValue(shown);
+            throw;
+        }
+        Label.setValue(shown);
+    }
+    if (!written)
         THROWM(Base::FileException, ("saving '" + file + "' failed").c_str());
     auto version = Base::freecad_dynamic_cast<PropertyString>(getPropertyByName("Version"));
-    return version ? std::atoll(version->getValue()) : 0;
+    const int64_t saved = version ? std::atoll(version->getValue()) : 0;
+    // The name ends in the version it last saved (27.23).
+    if (saved > 0) {
+        d->versionTail = saved;
+        refreshVersionNames();
+    }
+    return saved;
 }
 
 int64_t Document::pinLink(PropertyXLink& link, int64_t version)
@@ -5203,6 +5228,17 @@ int64_t Document::pinLink(PropertyXLink& link, int64_t version)
             version = vlog->detachedAt();
         else if (linked->testStatus(VersionDoc) && link.getPinVersion())
             version = link.getPinVersion();
+        else if (linked->testStatus(VersionDoc) && linked->d->versionTail) {
+            // An editable instance (27.23): the version its name ends in, if
+            // nothing changed since; else what it shows has no number yet.
+            LogVersion tail;
+            if (log.store().getVersion(linked->d->versionTail, tail)
+                    && log.documentAt(tail) == linked)
+                version = linked->d->versionTail;
+            else
+                THROWM(Base::RuntimeError, "'" + linked->Label.getStrValue()
+                           + "' has changed since its last version: save it first");
+        }
         else if (auto prop = Base::freecad_dynamic_cast<PropertyString>(
                      linked->getPropertyByName("Version")))
             version = std::atoll(prop->getValue());
@@ -5258,6 +5294,43 @@ int64_t Document::pinLink(PropertyXLink& link, int64_t version)
     return version;
 }
 
+Document* Document::openFileBranch(const std::shared_ptr<FileHistory>& history,
+                                   const std::string& branch, int64_t num, bool createView)
+{
+    // docs/TransactionLog.md sec 27.23, 27.24.
+    if (!history)
+        THROWM(Base::RuntimeError, "no file history");
+    if (branch.empty())
+        return openFileVersion(history, num, createView, nullptr, true);
+    TransactionLogCore& log = TransactionLogCore::of(*history);
+    auto& store = log.store();
+    LogBranch b;
+    if (!store.findBranch(branch, b))
+        THROWM(Base::ValueError, "no branch '" + branch + "'");
+    if (num > 0)
+        return openFileVersion(history, num, createView, nullptr, false);
+    // The tip: whoever holds the branch (27.12's worktree rule: one at
+    // most), else its newest version opened and moved to the head in place.
+    if (Document* holder = log.holderOf(b.id))
+        return holder;
+    const std::set<int64_t> onChain = chainPoints(store, b.head);
+    LogVersion anchor;
+    bool haveAnchor = false;
+    for (const auto& v : store.versions()) {
+        if (onChain.count(v.seq) && (!haveAnchor || v.num > anchor.num)) {
+            anchor = v;
+            haveAnchor = true;
+        }
+    }
+    if (!haveAnchor)
+        THROWM(Base::RuntimeError, "branch '" + branch + "' has no version to open");
+    Document* doc = openFileVersion(history, anchor.num, createView, nullptr, false);
+    TransactionLog* dlog = doc->getTransactionLog();
+    if (dlog && dlog->branch() != b.id)
+        doc->switchBranch(branch);
+    return doc;
+}
+
 void Document::_joinHistory(const std::shared_ptr<FileHistory>& history)
 {
     // A new document may have a log and a history of its own already: the
@@ -5290,17 +5363,57 @@ Document* Document::openVersion(int64_t num, bool createView)
     return openFileVersion(d->history, num, createView, this);
 }
 
-Document* Document::openFileVersion(const std::shared_ptr<FileHistory>& history, int64_t num,
-                                    bool createView, const Document* from, bool versionDocsOnly)
+void Document::refreshVersionNames()
 {
-    // Sec 27.7, 27.13: with or without a document of the file open.
+    // docs/TransactionLog.md sec 27.23.
+    TransactionLog* log = getTransactionLog();
+    std::vector<Document*> docs = log ? log->documents() : std::vector<Document*> {this};
+    for (auto doc : docs) {
+        if (!doc->testStatus(VersionDoc) || doc->d->versionFile.empty()
+                || !doc->d->versionTail)
+            continue;
+        std::string tail = "@v" + std::to_string(doc->d->versionTail);
+        if (!doc->testStatus(FrozenVersion)) {
+            TransactionLog* dlog = doc->getTransactionLog();
+            std::string branch = dlog ? dlog->branchName() : std::string();
+            if (branch.empty())
+                continue;
+            tail = "@" + branch + tail;
+        }
+        Base::FlagToggler<> quiet(doc->d->bookkeeping, false);
+        const std::string fileName = doc->d->versionFile + tail;
+        if (doc->FileName.getStrValue() != fileName)
+            doc->FileName.setValue(fileName);
+        const std::string label = doc->d->versionLabel + tail;
+        if (doc->Label.getStrValue() != label)
+            doc->Label.setValue(label);
+    }
+}
+
+void Document::checkNotFrozen(const char* what) const
+{
+    // Sec 27.22: the instance a pin shows is the version, which never
+    // changes. Its restore, and the bookkeeping that names it, are not
+    // changes.
+    if (!testStatus(FrozenVersion) || d->checkingOut || d->bookkeeping
+            || testStatus(Restoring))
+        return;
+    THROWM(Base::RuntimeError, "'" + Label.getStrValue() + "' is a pinned version of a file and "
+                                   "cannot be changed (" + what + ")");
+}
+
+Document* Document::openFileVersion(const std::shared_ptr<FileHistory>& history, int64_t num,
+                                    bool createView, const Document* from, bool frozen)
+{
+    // Sec 27.7, 27.13: with or without a document of the file open; the
+    // frozen instance or the editable one (27.22), at most one of each.
     if (!history)
         THROWM(Base::RuntimeError, "no file history");
     TransactionLogCore& log = TransactionLogCore::of(*history);
     LogVersion version;
     if (!log.store().getVersion(num, version))
         THROWM(Base::ValueError, "no version " + std::to_string(num));
-    if (Document* open = log.documentAt(version, versionDocsOnly))
+    if (Document* open = log.documentAt(version, frozen))
         return open;
 
     // The ids its branch will hand out start a stride above every other
@@ -5326,11 +5439,15 @@ Document* Document::openFileVersion(const std::shared_ptr<FileHistory>& history,
     std::string baseName = from ? std::string(from->getName())
                                 : Base::FileInfo(fileName).fileNamePure();
     std::string label = from ? std::string(from->Label.getValue()) : history->fileLabel();
+    if (from && from->testStatus(VersionDoc) && !from->d->versionLabel.empty())
+        label = from->d->versionLabel;
+    std::string file = fileName;
+    FileHistory::splitVersion(file);
     auto& app = GetApplication();
     Document* active = app.getActiveDocument();
     const std::string suffix = "@v" + std::to_string(num);
-    const std::string name =
-        app.getUniqueDocumentName((baseName + "_v" + std::to_string(num)).c_str());
+    const std::string name = app.getUniqueDocumentName(
+        (baseName + "_v" + std::to_string(num) + (frozen ? "_pinned" : "")).c_str());
     Document* doc = app.newDocument(name.c_str(), name.c_str(), createView);
     if (!doc)
         THROWM(Base::RuntimeError, "cannot make the version's document");
@@ -5339,17 +5456,23 @@ Document* Document::openFileVersion(const std::shared_ptr<FileHistory>& history,
         doc->d->noLog = true;
         doc->_joinHistory(history);
         // Who the document is, not a change to it (27.9): no transaction.
-        if (!fileName.empty()) {
+        // Named for now as the frozen instance is: the restore reads
+        // relative links against the file's directory either way, and the
+        // editable one is named for its branch once it has a log (27.23).
+        if (!file.empty()) {
             Base::FlagToggler<> quiet(doc->d->bookkeeping, false);
-            doc->FileName.setValue(fileName + suffix);
+            doc->FileName.setValue(file + suffix);
         }
         {
             Base::FlagToggler<> guard(doc->d->checkingOut);
             doc->restore(dir.c_str(), false);
         }
+        doc->d->versionFile = file;
+        doc->d->versionLabel = label;
+        doc->d->versionTail = num;
         {
             Base::FlagToggler<> quiet(doc->d->bookkeeping, false);
-            doc->Label.setValue(label + " (v" + std::to_string(num) + ")");
+            doc->Label.setValue(label + suffix);
         }
         if (from)
             doc->setUndoMode(from->getUndoMode());
@@ -5360,6 +5483,12 @@ Document* Document::openFileVersion(const std::shared_ptr<FileHistory>& history,
         doc->d->undoFloor = doc->d->transactionLog->lastSeq();
         if (from)
             doc->d->lastVersionTime = from->d->lastVersionTime;
+        if (frozen) {
+            // Nothing to undo, ever; set last, the restore being over.
+            doc->setUndoMode(0);
+            doc->setStatus(FrozenVersion, true);
+        }
+        doc->refreshVersionNames();
     }
     catch (...) {
         app.closeDocument(name.c_str());
@@ -5488,6 +5617,7 @@ int64_t Document::createBranch(const std::string& name, int64_t version, int64_t
 {
     // docs/TransactionLog.md sec 17.1, 26: a new branch from a version, a
     // row, or the current head, and the document switched to it.
+    checkNotFrozen("create a branch");
     TransactionLog* log = getTransactionLog();
     if (!log)
         return 0;
@@ -5575,6 +5705,7 @@ int64_t Document::createBranch(const std::string& name, int64_t version, int64_t
     script << "{\"from_branch\":" << jsonString(left.name) << ",\"from_version\":" << fork.num
            << ",\"from_seq\":" << forkSeq << ",\"id_base\":" << branch.idBase << "}";
     log->record("branch", "Branch " + name, script.str());
+    refreshVersionNames();
     signalBranchesChanged(*this);
     return branch.id;
 }
@@ -5584,6 +5715,7 @@ bool Document::switchBranch(const std::string& name)
     // docs/TransactionLog.md sec 17.1, 26: the document becomes the head of
     // another branch, in place; not an undo step (26.4) -- each branch has
     // its own steps, since this document was opened.
+    checkNotFrozen("switch branch");
     TransactionLog* log = getTransactionLog();
     if (!log)
         return false;
@@ -5611,6 +5743,7 @@ bool Document::switchBranch(const std::string& name)
     script << "{\"from_branch\":" << jsonString(left.name) << ",\"from_head\":" << left.head
            << "}";
     log->record("switch", "Switch from " + left.name, script.str());
+    refreshVersionNames();
     signalBranchesChanged(*this);
     return true;
 }
@@ -5663,6 +5796,7 @@ bool Document::renameBranch(const std::string& name, const std::string& newName)
         if (auto prop = Base::freecad_dynamic_cast<PropertyString>(getPropertyByName("Branch")))
             prop->setValue(newName);
     }
+    refreshVersionNames();
     signalBranchesChanged(*this);
     return true;
 }
@@ -5735,6 +5869,7 @@ size_t Document::trimBranch(const std::string& name, int64_t version)
     script << "{\"branch\":" << jsonString(name) << ",\"version\":" << keep.num
            << ",\"rows\":" << rows.size() << ",\"versions\":" << versions.size() << "}";
     log->record("trim", "Trim " + name + " to version " + std::to_string(keep.num), script.str());
+    refreshVersionNames();
     signalBranchesChanged(*this);
     return rows.size();
 }
@@ -5784,6 +5919,7 @@ size_t Document::deleteBranch(const std::string& name)
     script << "{\"deleted\":" << jsonString(name) << ",\"rows\":" << rows.size()
            << ",\"versions\":" << versions.size() << ",\"kept\":" << kept << "}";
     log->record("trim", "Delete branch " + name, script.str());
+    refreshVersionNames();
     signalBranchesChanged(*this);
     return rows.size();
 }
@@ -6015,6 +6151,7 @@ size_t Document::squashVersions(int64_t from, int64_t to)
         _clearRedos();
         _rebuildUndoFromLog(d->undoFloor);
     }
+    refreshVersionNames();
     signalBranchesChanged(*this);
     return path.size();
 }
@@ -6831,6 +6968,11 @@ int Document::recompute(const std::vector<App::DocumentObject*> &objs, bool forc
             FC_WARN("Please reload partial document '" << Label.getValue() << "' for recomputation.");
         return 0;
     }
+    // A pinned version is as it was saved (docs/TransactionLog.md sec 27.22).
+    if (testStatus(Document::FrozenVersion)) {
+        FC_LOG("pinned version '" << Label.getValue() << "' is not recomputed");
+        return 0;
+    }
     if (testStatus(Document::Recomputing)) {
         // this is clearly a bug in the calling instance
         FC_ERR("Recursive calling of recompute for document " << getName());
@@ -6936,6 +7078,10 @@ int Document::recompute(const std::vector<App::DocumentObject*> &objs, bool forc
             for (; idx < topoSortedObjects.size(); ++idx) {
                 auto obj = topoSortedObjects[idx];
                 if(!obj->isAttachedToDocument() || filter.find(obj)!=filter.end())
+                    continue;
+                // Reached through a link from another document: a pinned
+                // version is as it was saved, touched or not (sec 27.22).
+                if (obj->getDocument()->testStatus(Document::FrozenVersion))
                     continue;
                 // ask the object if it should be recomputed
                 bool doRecompute = false;
@@ -7371,6 +7517,8 @@ bool Document::recomputeFeature(DocumentObject* Feat, bool recursive)
             recompute({Feat},true,&hasError);
             return !hasError;
         } else {
+            if (testStatus(FrozenVersion))
+                return Feat->isValid();
             _recomputeFeature(Feat);
             signalRecomputedObject(*Feat);
             GetApplication().signalRecomputedObject(*this, *Feat);
@@ -7388,6 +7536,7 @@ DocumentObject * Document::addObject(const char* sType, const char* pObjectName,
     // goes through DocumentObject::touch(), so each is asked here -- which
     // also covers the commands no name list would know about.
     checkUserEdit(this, nullptr, nullptr);
+    checkNotFrozen("add an object");
     Base::Type type = Base::Type::getTypeIfDerivedFrom(sType, App::DocumentObject::getClassTypeId(), true);
     if (type.isBad()) {
         std::stringstream str;
@@ -7469,6 +7618,7 @@ DocumentObject * Document::addObject(const char* sType, const char* pObjectName,
 
 std::vector<DocumentObject *> Document::addObjects(const char* sType, const std::vector<std::string>& objectNames, bool isNew)
 {
+    checkNotFrozen("add objects");
     Base::Type type = Base::Type::getTypeIfDerivedFrom(sType, App::DocumentObject::getClassTypeId(), true);
     if (type.isBad()) {
         std::stringstream str;
@@ -7571,6 +7721,7 @@ void Document::addObject(DocumentObject* pcObject, const char* pObjectName, bool
     // goes through DocumentObject::touch(), so each is asked here -- which
     // also covers the commands no name list would know about.
     checkUserEdit(this, nullptr, nullptr);
+    checkNotFrozen("add an object");
     if (pcObject->getDocument()) {
         THROWM(Base::RuntimeError, "Document object is already added to a document")
     }
@@ -7662,6 +7813,7 @@ void Document::removeObject(const char* sName)
     // goes through DocumentObject::touch(), so each is asked here -- which
     // also covers the commands no name list would know about.
     checkUserEdit(this, nullptr, nullptr);
+    checkNotFrozen("remove an object");
     auto pos = d->objectMap.find(sName);
 
     // name not found?
@@ -7871,6 +8023,7 @@ void Document::removeObjects(const std::vector<std::string> &objs)
     // goes through DocumentObject::touch(), so each is asked here -- which
     // also covers the commands no name list would know about.
     checkUserEdit(this, nullptr, nullptr);
+    checkNotFrozen("remove objects");
     if (_RemovingObjects) {
         FC_ERR("recursive calling of Document.removeObjects()");
         return;

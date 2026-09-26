@@ -5544,3 +5544,92 @@ through its view providers. The first step of 1 is that measurement.
 
 **Ruled (user, same day):** the order above, after the frozen and naming
 work of 27.22-27.24.
+
+### 27.26 Step 1 as built: frozen versions, names, live branch links (2026-09-26)
+
+Step 1 of 27.22 with the names of 27.23-27.24. Live branch links, planned
+for step 2, came in here: without them a link to an editable instance
+resolved to the file's own document (its name no longer parses as a pin),
+and `setValue` asserts that the found document is the object's.
+
+**Names.** `FileHistory::parseName(name, parts)` reads the three forms
+after the file -- `@v<num>`, `@<branch>@v<num>`, `@<branch>@` -- taking
+the file as the longest prefix that exists or is a registered history's
+path, so a branch named `main@v3` parses. A file that is gone and has no
+history open falls back to the frozen form only, as before. `splitVersion`
+wraps it: the file, and the version for the frozen form, -1 for the other
+two. Every caller was checked: the ones that only want the file are
+unchanged; `DocInfo::get`, the Gui's version save and `Application`'s open
+use the parts.
+
+`Document::refreshVersionNames()` names every version document of the
+file: `<file>@v<num>` / `<label>@v<num>` for the frozen instance,
+`<file>@<branch>@v<num>` / `<label>@<branch>@v<num>` for an editable one,
+where the branch is the one it holds or, before its first change, the one
+it will take (`TransactionLog::branchName()`, from `planBranch()`, which is
+`ensureBranch()`'s choice split out with no side effects). It runs after a
+branch is made (including the implicit one), renamed, switched to,
+trimmed, deleted or squashed, and after a save moves the version tail.
+`saveVersionAsFile` writes the label the document is named after into the
+file, not the decorated one.
+
+**Frozen.** `Document::FrozenVersion`, set by `openFileVersion(...,
+frozen)` after the restore, with undo mode 0. `checkNotFrozen(what)`
+throws, except during a restore, a checkout or bookkeeping. Called at:
+
+- `DocumentObject::onBeforeChange`, so a property write throws before
+  anything changes -- except `Visibility`, `TreeRank` and `ViewObject`
+  (the same three `checkUserEdit` exempts, for the same reasons) and
+  properties never saved;
+- `addObject` (both), `addObjects`, `removeObject`, `removeObjects`;
+- `restoreVersion`, `createBranch`, `switchBranch`, `saveVersionAsFile`.
+
+`recompute` returns 0 for a frozen document, and the recompute loop skips
+a frozen document's objects when another document's recompute reaches
+them through a link. The Gui's Save of a frozen document says why and
+saves nothing.
+
+`TransactionLogCore::documentAt(version, frozen)` finds only frozen
+instances for a pin and never one otherwise; so a version has at most one
+of each. The editable instance of the version a file's own document is at
+is that document (27.12) -- a second, separate editable instance exists
+only for a version the file has moved on from.
+
+**Live branch links.** `PropertyXLink::_liveBranch`, saved as
+`branch="..."` when not pinned, read back by `Restore`, carried by
+`copyTo`/`Paste`/`isSame`. `DocInfo::get` sets it from an editable
+instance's name and keys the `DocInfo` `<file>@<branch>@`;
+`DocInfo::isDocument` then matches whichever document holds the branch
+(`holderOf`), in `init`, `slotFinishRestoreDocument` and
+`restoreDocument`. A save of the holder no longer re-keys a version's or
+a branch's `DocInfo` (its key is not a document name). Setting a link to
+an object of the file's own document clears the branch; pinning clears
+it too, so unpinning shows the file. A link set to an editable instance
+with no branch yet makes it take its branch (`takeBranch`).
+
+`Application::openDocumentPrivate` hands any parsed name to
+`Document::openFileBranch(history, branch, num)`: no branch -> the frozen
+instance; branch and version -> the editable instance at that version;
+branch only -> the holder, or the branch's newest version opened
+editable and switched to the branch in place.
+
+`pinLink` on a link to an editable instance pins the version its name
+ends in when nothing changed since, and otherwise refuses ("save it
+first") until step 3's save to the log does that save itself.
+
+Tests: gtests `aNameSaysVersionOrBranch`, `aPinnedVersionIsFrozen`;
+Python `TransactionBranchCases.testPinnedVersionIsFrozen` (frozen edits
+refused, the editable instance separate once the file moves on, a live
+link saved with `branch=` and found again through the holder after the
+assembly is reopened). The version and pin GUI checks follow the new
+names; the pin check now edits and saves the editable instance, and
+checks that the frozen one refuses an edit and a Gui save.
+
+Gates:
+
+- Python 2923 OK;
+- ctest 842/842;
+- recovery check 15 PASS;
+- branch check 27 PASS;
+- version check 18 PASS;
+- pin check 28 PASS.

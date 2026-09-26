@@ -2717,7 +2717,10 @@ TEST_F(TransactionLogTest, versionDocumentsShareTheFilesLog)
     ASSERT_TRUE(d1);
     ASSERT_NE(d1, doc());
     EXPECT_TRUE(d1->testStatus(App::Document::VersionDoc));
-    EXPECT_EQ(d1->FileName.getStrValue(), doc()->FileName.getStrValue() + "@v" + std::to_string(v1));
+    // Editable, named for the branch its first change will take (sec 27.23):
+    // main moved on, so a branch of its own, `main@v<v1>`.
+    EXPECT_EQ(d1->FileName.getStrValue(), doc()->FileName.getStrValue() + "@main@v"
+                                              + std::to_string(v1) + "@v" + std::to_string(v1));
     EXPECT_EQ(&d1->getFileHistory(), &doc()->getFileHistory());
     EXPECT_EQ(&d1->getFileBlobManager(), &doc()->getFileBlobManager());
     // The file is still registered as itself, not as the version.
@@ -2812,6 +2815,111 @@ TEST_F(TransactionLogTest, aVersionBranchesAtItsFirstChange)
 
     App::GetApplication().closeDocument(d1->getName());
     EXPECT_FALSE(log().holderOf(branch.id));
+}
+
+TEST_F(TransactionLogTest, aNameSaysVersionOrBranch)
+{
+    // Sec 27.23, 27.24: after the file, `@v<num>`, `@<branch>@v<num>` or
+    // `@<branch>@`; the file is the longest prefix that is one, so a branch
+    // name may hold `@v`.
+    const std::string path = Base::FileInfo::getTempPath() + "txnlog-names.FCStd";
+    Base::FileInfo(path).deleteFile();
+    ASSERT_TRUE(doc()->saveAs(path.c_str()));
+    App::FileHistory::NameParts parts;
+    EXPECT_FALSE(App::FileHistory::parseName(path, parts));
+    ASSERT_TRUE(App::FileHistory::parseName(path + "@v3", parts));
+    EXPECT_EQ(parts.file, path);
+    EXPECT_TRUE(parts.branch.empty());
+    EXPECT_EQ(parts.version, 3);
+    ASSERT_TRUE(App::FileHistory::parseName(path + "@main@v3@v8", parts));
+    EXPECT_EQ(parts.file, path);
+    EXPECT_EQ(parts.branch, "main@v3");
+    EXPECT_EQ(parts.version, 8);
+    ASSERT_TRUE(App::FileHistory::parseName(path + "@main@v3@", parts));
+    EXPECT_EQ(parts.branch, "main@v3");
+    EXPECT_EQ(parts.version, 0);
+    ASSERT_TRUE(App::FileHistory::parseName(path + "@v2@v5", parts));
+    EXPECT_EQ(parts.branch, "v2");
+    EXPECT_EQ(parts.version, 5);
+    EXPECT_FALSE(App::FileHistory::parseName(path + "@", parts));
+    EXPECT_FALSE(App::FileHistory::parseName(path + "@main", parts));
+    EXPECT_FALSE(App::FileHistory::parseName(path + "@v0", parts));
+    EXPECT_FALSE(App::FileHistory::parseName(path + "@v99999999999999999999", parts));
+    std::string file = path + "@main@";
+    EXPECT_EQ(App::FileHistory::splitVersion(file), -1);
+    EXPECT_EQ(file, path);
+    Base::FileInfo(path).deleteFile();
+}
+
+TEST_F(TransactionLogTest, aPinnedVersionIsFrozen)
+{
+    // Sec 27.22: a version is open at most twice, as the frozen instance
+    // pins show -- every change refused -- and as an editable one.
+    doc()->openTransaction("create");
+    auto obj = make("Obj");
+    obj->Integer.setValue(1);
+    doc()->commitTransaction();
+    const int64_t v1 = doc()->snapshotToLog();
+    doc()->openTransaction("two");
+    obj->Integer.setValue(2);
+    doc()->commitTransaction();
+    const std::string path = Base::FileInfo::getTempPath() + "txnlog-frozen.FCStd";
+    Base::FileInfo(path).deleteFile();
+    ASSERT_TRUE(doc()->saveAs(path.c_str()));
+    auto history = App::FileHistory::find(path);
+    ASSERT_TRUE(history);
+
+    App::Document* frozen = App::Document::openFileVersion(history, v1, false, nullptr, true);
+    ASSERT_TRUE(frozen);
+    EXPECT_TRUE(frozen->testStatus(App::Document::FrozenVersion));
+    EXPECT_EQ(frozen->FileName.getStrValue(), doc()->FileName.getStrValue() + "@v" + std::to_string(v1));
+    EXPECT_EQ(App::Document::openFileVersion(history, v1, false, nullptr, true), frozen);
+    App::Document* editable = doc()->openVersion(v1, false);
+    ASSERT_TRUE(editable);
+    EXPECT_NE(editable, frozen);
+    EXPECT_FALSE(editable->testStatus(App::Document::FrozenVersion));
+    EXPECT_EQ(doc()->openVersion(v1, false), editable);
+
+    auto fo = dynamic_cast<App::FeatureTest*>(frozen->getObject("Obj"));
+    ASSERT_TRUE(fo);
+    const int64_t rows = log().lastSeq();
+    EXPECT_THROW(fo->Integer.setValue(99), Base::Exception);
+    EXPECT_EQ(fo->Integer.getValue(), 1);
+    EXPECT_THROW(frozen->addObject("App::FeatureTest", "More"), Base::Exception);
+    EXPECT_THROW(frozen->removeObject("Obj"), Base::Exception);
+    EXPECT_THROW(frozen->restoreVersion(v1), Base::Exception);
+    EXPECT_THROW(frozen->saveVersionAsFile(), Base::Exception);
+    fo->touch();
+    EXPECT_EQ(frozen->recompute(), 0);
+    EXPECT_FALSE(frozen->undo());
+    // View state is not data.
+    fo->Visibility.setValue(!fo->Visibility.getValue());
+    EXPECT_EQ(log().lastSeq(), rows);
+
+    // The editable instance takes edits, on a branch; the frozen one is
+    // still the version.
+    auto eo = dynamic_cast<App::FeatureTest*>(editable->getObject("Obj"));
+    ASSERT_TRUE(eo);
+    editable->openTransaction("edit");
+    eo->Integer.setValue(7);
+    editable->commitTransaction();
+    EXPECT_EQ(eo->Integer.getValue(), 7);
+    EXPECT_EQ(fo->Integer.getValue(), 1);
+    EXPECT_EQ(editable->FileName.getStrValue(), doc()->FileName.getStrValue() + "@main@v"
+                                                    + std::to_string(v1) + "@v"
+                                                    + std::to_string(v1));
+
+    // The tip form finds the holder of the branch.
+    App::Document* tip = App::GetApplication().openDocument(
+        (doc()->FileName.getStrValue() + "@main@v" + std::to_string(v1) + "@").c_str(), false);
+    EXPECT_EQ(tip, editable);
+    App::Document* own =
+        App::GetApplication().openDocument((doc()->FileName.getStrValue() + "@main@").c_str(), false);
+    EXPECT_EQ(own, doc());
+
+    App::GetApplication().closeDocument(editable->getName());
+    App::GetApplication().closeDocument(frozen->getName());
+    Base::FileInfo(path).deleteFile();
 }
 
 TEST_F(TransactionLogTest, aFreeTipIsContinuedAndAHeldBranchIsNotSwitchedTo)
@@ -2934,7 +3042,8 @@ TEST_F(TransactionLogTest, aClosedFilesHistoryIsReadFromTheArchive)
     App::Document* d1 = App::Document::openFileVersion(history, v1, false);
     ASSERT_TRUE(d1);
     EXPECT_TRUE(d1->testStatus(App::Document::VersionDoc));
-    EXPECT_EQ(d1->FileName.getStrValue(), history->path() + "@v" + std::to_string(v1));
+    EXPECT_EQ(d1->FileName.getStrValue(),
+              history->path() + "@main@v" + std::to_string(v1) + "@v" + std::to_string(v1));
     auto o1 = dynamic_cast<App::FeatureTest*>(d1->getObject("Obj"));
     ASSERT_TRUE(o1);
     EXPECT_EQ(o1->Integer.getValue(), 1);

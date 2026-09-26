@@ -115,6 +115,12 @@ struct DocumentP
     /// made (docs/TransactionLog.md sec 27.7): its restore does not start
     /// or adopt a history, the log has one.
     bool joinedHistory {false};
+    /// A version document's name parts (docs/TransactionLog.md sec 27.23):
+    /// the file and the label it is named after, and the version its name
+    /// ends in -- the one it was opened at, then the one it last saved.
+    std::string versionFile;
+    std::string versionLabel;
+    int64_t versionTail {0};
     /// Document.xml as the reader saw it, tapped by restore(const char*)
     /// for the log's version 1 (docs/TransactionLog.md sec 16.6); empty
     /// when no tap was installed.

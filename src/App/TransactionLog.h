@@ -309,6 +309,9 @@ public:
     /// Sec 27.16: a version document about to be saved as its file takes
     /// its branch now, as its first change would.
     void takeBranch() { ensureBranch(); }
+    /// The name of the branch the document is on, or, before its first
+    /// change, of the one it will take (sec 27.23: its name shows it).
+    std::string branchName();
 
     /** The store follows the transient directory.
      *
@@ -419,6 +422,9 @@ private:
     void pickBranch();
     /// Sec 27.5 ruling 3: a detached cursor's first row puts it on a branch.
     void ensureBranch();
+    /// The branch ensureBranch() would take: true when it continues
+    /// `from`, false when it makes a new one named `name`.
+    bool planBranch(LogBranch& from, std::string& name);
     /// A version from the file's entries plus the record (`save` or
     /// `restore`) that names it; what onSave and onRestore share.
     int64_t snapshot(const char* kind, const std::string& path, const Captures& entries,
@@ -523,7 +529,7 @@ public:
     /// The documents of the file and their branches (sec 27.7).
     Document* holderOf(int64_t id) const;
     std::vector<Document*> documents() const;
-    Document* documentAt(const LogVersion& version, bool versionDocsOnly = false);
+    Document* documentAt(const LogVersion& version, bool frozen = false);
     /// Row `seq` is on the chain ending at `head`, and nothing after it
     /// there changed the document: only records (save, snapshot, switch).
     bool unchangedSince(int64_t head, int64_t seq);

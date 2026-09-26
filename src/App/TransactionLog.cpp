@@ -979,17 +979,13 @@ bool TransactionLog::setBranch(int64_t id)
     return true;
 }
 
-void TransactionLog::ensureBranch()
+bool TransactionLog::planBranch(LogBranch& from, std::string& name)
 {
-    if (_branch != 0)
-        return;
-    flush();
     auto& store = *_c._store;
     LogVersion version;
     const bool haveVersion = _at && store.getVersion(_at, version);
     // The branch whose tip this is, if nothing moved it since and no
     // document holds it: the version's document continues it.
-    LogBranch from;
     bool haveFrom = false;
     for (const auto& b : store.branches()) {
         if (haveVersion ? b.id == version.branch : b.head == _head) {
@@ -1000,19 +996,46 @@ void TransactionLog::ensureBranch()
     }
     if (haveFrom && from.closed == 0 && !_c._holders.count(from.id)
             && _c.unchangedSince(from.head, _head)) {
+        name = from.name;
+        return true;
+    }
+    // A branch of its own (sec 27.5 ruling 3), named after where it forked.
+    std::string base = haveFrom ? from.name : std::string("branch");
+    base += haveVersion ? "@v" + std::to_string(version.num) : "@" + std::to_string(_head);
+    name = base;
+    LogBranch taken;
+    for (int i = 2; store.findBranch(name, taken); ++i)
+        name = base + "#" + std::to_string(i);
+    return false;
+}
+
+std::string TransactionLog::branchName()
+{
+    LogBranch branch;
+    if (_branch != 0)
+        return store().getBranch(_branch, branch) ? branch.name : std::string();
+    std::string name;
+    planBranch(branch, name);
+    return name;
+}
+
+void TransactionLog::ensureBranch()
+{
+    if (_branch != 0)
+        return;
+    flush();
+    auto& store = *_c._store;
+    LogVersion version;
+    const bool haveVersion = _at && store.getVersion(_at, version);
+    LogBranch from;
+    std::string name;
+    if (planBranch(from, name)) {
         _c._holders[from.id] = this;
         _branch = from.id;
         _head = from.head;
         _at = 0;
         return;
     }
-    // A branch of its own (sec 27.5 ruling 3), named after where it forked.
-    std::string base = haveFrom ? from.name : std::string("branch");
-    base += haveVersion ? "@v" + std::to_string(version.num) : "@" + std::to_string(_head);
-    std::string name = base;
-    LogBranch taken;
-    for (int i = 2; store.findBranch(name, taken); ++i)
-        name = base + "#" + std::to_string(i);
     LogBranch branch;
     branch.name = name;
     branch.fromVersion = haveVersion ? version.num : 0;
@@ -1042,6 +1065,7 @@ void TransactionLog::ensureBranch()
         std::vector<LogOp> none;
         _c._store->append(t, none);
     });
+    _doc.refreshVersionNames();
     _doc.signalBranchesChanged(_doc);
 }
 
@@ -1076,13 +1100,14 @@ bool TransactionLogCore::unchangedSince(int64_t head, int64_t seq)
     return reached;
 }
 
-Document* TransactionLogCore::documentAt(const LogVersion& version, bool versionDocsOnly)
+Document* TransactionLogCore::documentAt(const LogVersion& version, bool frozen)
 {
     // A document is the version when its branch moved past it only by
     // records -- a save, a snapshot, a switch: rows with no ops.
     for (auto cursor : _cursors) {
-        // A pin never takes a branch document, which moves on (sec 27.14).
-        if (versionDocsOnly && !cursor->_doc.testStatus(Document::VersionDoc))
+        // A pin takes only the frozen instance, which never moves (sec
+        // 27.14, 27.22); anything else never takes it.
+        if (frozen != cursor->_doc.testStatus(Document::FrozenVersion))
             continue;
         if (cursor->_head == version.seq)
             return &cursor->_doc;

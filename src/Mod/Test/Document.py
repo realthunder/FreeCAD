@@ -2850,7 +2850,9 @@ class TransactionBranchCases(unittest.TestCase):
         first = versions[0]["num"]
         opened = self.track(doc.openTransactionVersion(first, False))
         self.assertNotEqual(opened.Name, doc.Name)
-        self.assertEqual(opened.FileName, doc.FileName + "@v%d" % first)
+        # Editable, named for the branch it will continue (sec 27.23).
+        self.assertEqual(opened.FileName, doc.FileName + "@main@v%d" % first)
+        self.assertTrue(opened.Label.endswith("@main@v%d" % first))
         self.assertIs(doc.openTransactionVersion(first, False), opened)
         cursor = opened.getTransactionCursor()
         self.assertTrue(cursor["detached"])
@@ -2894,7 +2896,8 @@ class TransactionBranchCases(unittest.TestCase):
         opened.commitTransaction()
         saved = opened.saveVersionAsFile()
         self.assertGreater(saved, first)
-        self.assertTrue(opened.FileName.endswith("@v%d" % first))
+        # The name ends in the version it last saved (sec 27.23).
+        self.assertTrue(opened.FileName.endswith("@main@v%d" % saved))
         with self.assertRaises(ValueError):
             opened.save()
         for d in (opened, doc):
@@ -2999,6 +3002,79 @@ class TransactionBranchCases(unittest.TestCase):
         asm.redo()
         self.assertIsNone(link.getLinkPin("LinkedObject"))
         self.assertEqual(link.LinkedObject.Document.FileName, partPath)
+
+    def testPinnedVersionIsFrozen(self):
+        # Sec 27.22-27.24: what a pin shows is the version itself -- frozen,
+        # every change refused -- and the same version opens a second time,
+        # editable, for work; a link to that one is live, to its branch.
+        import zipfile
+
+        part = self.track(FreeCAD.newDocument("FrozenPart"))
+        part.UndoMode = 1
+        part.openTransaction("create")
+        target = part.addObject("App::FeatureTest", "Obj")
+        target.Integer = 1
+        part.commitTransaction()
+        partPath = os.path.join(self.dir, "frozenpart.FCStd")
+        part.saveAs(partPath)
+        onDisk = int(part.Version.split()[0])
+
+        asm = self.track(FreeCAD.newDocument("FrozenAsm"))
+        asm.UndoMode = 1
+        link = asm.addObject("App::Link", "L")
+        link.LinkedObject = target
+        asmPath = os.path.join(self.dir, "frozenasm.FCStd")
+        asm.saveAs(asmPath)
+        link.pinLink("LinkedObject")
+        shown = link.LinkedObject
+        frozen = self.track(shown.Document)
+        self.assertEqual(frozen.FileName, partPath + "@v%d" % onDisk)
+        self.assertTrue(frozen.Label.endswith("@v%d" % onDisk))
+
+        with self.assertRaises(Exception):
+            shown.Integer = 99
+        self.assertEqual(shown.Integer, 1)
+        with self.assertRaises(Exception):
+            frozen.addObject("App::FeatureTest", "More")
+        with self.assertRaises(Exception):
+            frozen.saveVersionAsFile()
+
+        # The file moves on. The editable instance of the pinned version is
+        # then a document of its own -- while the file's document was still
+        # at the version, it was that document (27.12).
+        self.assertIs(FreeCAD.openFileVersion(partPath, onDisk, False), part)
+        part.openTransaction("two")
+        target.Integer = 2
+        part.commitTransaction()
+        part.save()
+        editable = self.track(FreeCAD.openFileVersion(partPath, onDisk, False))
+        self.assertIsNot(editable, frozen)
+        self.assertIsNot(editable, part)
+        eobj = editable.getObject("Obj")
+        editable.openTransaction("edit")
+        eobj.Integer = 7
+        editable.commitTransaction()
+        self.assertEqual(shown.Integer, 1)
+        self.assertEqual(link.LinkedObject.Integer, 1)
+        branch = editable.FileName[len(partPath) + 1 : editable.FileName.rindex("@")]
+        self.assertTrue(branch)
+
+        # A link to the editable instance is live, to its branch: no pin.
+        live = asm.addObject("App::Link", "Live")
+        live.LinkedObject = eobj
+        self.assertIsNone(live.getLinkPin("LinkedObject"))
+        self.assertEqual(live.LinkedObject.Integer, 7)
+        asm.save()
+        xml = zipfile.ZipFile(asmPath).read("Document.xml").decode("utf-8")
+        self.assertIn('branch="%s"' % branch, xml)
+
+        # Reopened with the branch still held: the link finds its holder.
+        FreeCAD.closeDocument(asm.Name)
+        asm = self.track(FreeCAD.openDocument(asmPath))
+        live = asm.getObject("Live")
+        self.assertIs(live.LinkedObject.Document, editable)
+        self.assertEqual(live.LinkedObject.Integer, 7)
+        self.assertEqual(asm.getObject("L").LinkedObject.Integer, 1)
 
     def testOpeningADocumentKeepsAnotherOnesTransaction(self):
         # Sec 27.15: a document made or opened while another has a transaction

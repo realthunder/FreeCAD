@@ -107,9 +107,25 @@ public:
     static std::shared_ptr<FileHistory> find(const std::string& path);
     /// The canonical form of `path` the registry keys by.
     static std::string canonicalPath(const std::string& path);
-    /** A version document's name, `<file>@v<num>` (docs/TransactionLog.md
-     * sec 27.7): `path` becomes the file's and the number is returned; 0,
-     * with `path` untouched, for any other name -- one that is a file.
+    /// The parts of a name `parseName` reads.
+    struct NameParts
+    {
+        std::string file;   ///< the file's path
+        std::string branch; ///< empty for a version (the frozen instance)
+        int64_t version = 0; ///< 0 for a branch's tip
+    };
+    /** The name of a document of a file (docs/TransactionLog.md sec 27.23,
+     * 27.24): after the file, `@v<num>` (a version, the frozen instance a
+     * pin shows), `@<branch>@v<num>` (an editable instance at a version) or
+     * `@<branch>@` (a branch's tip). The file is the longest prefix that is
+     * a file or a registered history's path, so a branch name may hold `@`
+     * and `@v`. False, with `parts` untouched, for any other name -- one
+     * that is a file.
+     */
+    static bool parseName(const std::string& name, NameParts& parts);
+    /** `parseName` reduced to the file: `path` becomes the file's, and the
+     * version is returned when the name is the frozen form `<file>@v<num>`,
+     * -1 for the other two forms, 0 (with `path` untouched) for a file.
      */
     static int64_t splitVersion(std::string& path);
     /** Whether version `num` of the file at `path` can be opened (sec

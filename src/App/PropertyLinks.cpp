@@ -3339,6 +3339,28 @@ public:
     /// the version's document has it.
     int64_t version {0};
     std::shared_ptr<App::FileHistory> history;
+    /// For a live link to a branch (sec 27.23), keyed `<file>@<branch>@`:
+    /// the branch, whose holder is the document.
+    std::string branch;
+
+    /// Whether `doc` is this DocInfo's document: for a branch, the document
+    /// holding it, whichever that is -- the file's own or an editable
+    /// instance; else the document whose file is this one's.
+    bool isDocument(const App::Document* doc) const
+    {
+        if (!doc)
+            return false;
+        if (!branch.empty()) {
+            auto h = FileHistory::find(myPath);
+            if (!h)
+                return false;
+            auto& core = TransactionLogCore::of(*h);
+            LogBranch b;
+            return core.store().findBranch(branch, b) && core.holderOf(b.id) == doc;
+        }
+        QString fullpath(getFullPath());
+        return !fullpath.isEmpty() && getFullPath(doc->getFileName()) == fullpath;
+    }
 
     /** Cross-document links made while the owner or the linked document
      * had no file: setValue() delays their DocInfo till Save(), so no
@@ -3572,9 +3594,21 @@ public:
         // sec 27.7): a link to it is pinned to that version, and the path it
         // keeps is the file's.
         std::string plain(filename ? filename : "");
-        if (int64_t v = FileHistory::splitVersion(plain)) {
-            if (l->_pinVersion != v) {
-                l->_pinVersion = v;
+        FileHistory::NameParts parts;
+        if (FileHistory::parseName(plain, parts)) {
+            plain = parts.file;
+            if (parts.branch.empty()) {
+                if (l->_pinVersion != parts.version) {
+                    l->_pinVersion = parts.version;
+                    l->_pinUuid.clear();
+                }
+                l->_liveBranch.clear();
+            }
+            else {
+                // An editable instance, or a branch's tip: a live link to the
+                // branch, never a pin -- pinning is the user's act (27.23).
+                l->_liveBranch = parts.branch;
+                l->_pinVersion = 0;
                 l->_pinUuid.clear();
             }
         }
@@ -3610,6 +3644,10 @@ public:
                             << reason << "): it shows the file");
             }
         }
+        else if (!l->_liveBranch.empty() && !fullPath.startsWith(QStringLiteral("https://"))) {
+            key += QStringLiteral("@") + QString::fromUtf8(l->_liveBranch.c_str())
+                + QStringLiteral("@");
+        }
 
         auto it = _DocInfoMap.find(key);
         DocInfoPtr info;
@@ -3628,7 +3666,9 @@ public:
         } else {
             info = std::make_shared<DocInfo>();
             info->history = history;
-            info->version = key == fullPath ? 0 : l->_pinVersion;
+            info->version = key == fullPath || l->_pinVersion <= 0 ? 0 : l->_pinVersion;
+            if (key != fullPath && !info->version)
+                info->branch = l->_liveBranch;
             auto ret = _DocInfoMap.insert(std::make_pair(key,info));
             info->init(ret.first,objName,l);
         }
@@ -3707,7 +3747,7 @@ public:
             FC_ERR("document not found " << filePath());
         else {
             for(App::Document *doc : App::GetApplication().getDocuments()) {
-                if(getFullPath(doc->getFileName()) == fullpath) {
+                if(isDocument(doc)) {
                     if(doc->testStatus(App::Document::PartialDoc) && !doc->getObject(objName))
                         break;
                     attach(doc);
@@ -3789,16 +3829,23 @@ public:
 
     static void restoreDocument(const App::Document &doc) {
         auto it = _DocInfoMap.find(getFullPath(doc.FileName.getValue()));
-        if(it==_DocInfoMap.end())
-            return;
-        it->second->slotFinishRestoreDocument(doc);
+        if(it!=_DocInfoMap.end())
+            it->second->slotFinishRestoreDocument(doc);
+        // A branch's DocInfo is keyed by the branch, not by any document's
+        // name: whichever document holds the branch (sec 27.23).
+        std::vector<DocInfoPtr> branches;
+        for (auto& v : _DocInfoMap) {
+            if (v.second && !v.second->branch.empty() && !v.second->pcDoc)
+                branches.push_back(v.second);
+        }
+        for (auto& info : branches)
+            info->slotFinishRestoreDocument(doc);
     }
 
     void slotFinishRestoreDocument(const App::Document &doc) {
         if(pcDoc)
             return;
-        QString fullpath(getFullPath());
-        if(!fullpath.isEmpty() && getFullPath(doc.getFileName())==fullpath)
+        if(isDocument(&doc))
             attach(const_cast<App::Document*>(&doc));
     }
 
@@ -3810,7 +3857,12 @@ public:
         if(&doc!=pcDoc)
             return;
 
+        // A version's or a branch's DocInfo is keyed by what it names, not by
+        // the document's name, which a save of a branch's holder moves (sec
+        // 27.23): nothing to rekey, only the stamp to pass on.
         QFileInfo info(myPos->first);
+        if (version || !branch.empty())
+            info = QFileInfo(getFullPath(doc.getFileName()));
         QString path(info.absoluteFilePath());
         const char *filename = doc.getFileName();
         QString docPath(getFullPath(filename));
@@ -4166,8 +4218,20 @@ void PropertyXLink::setValue(App::DocumentObject *lValue,
         if(lValue->getDocument() != owner->getDocument()) {
             if (!docInfo || lValue->getDocument()!=docInfo->pcDoc) {
                 this->filePath.clear();
+                // An editable instance with no branch yet takes it now: the
+                // link is to the branch, and has to save its name (sec 27.23).
+                Document* linkedDoc = lValue->getDocument();
+                if (linkedDoc->testStatus(Document::VersionDoc)
+                        && !linkedDoc->testStatus(Document::FrozenVersion)) {
+                    if (auto vlog = linkedDoc->getTransactionLog(); vlog && vlog->detached())
+                        vlog->takeBranch();
+                }
                 const char *filename = lValue->getDocument()->getFileName();
                 const char *ownerPath = owner->getDocument()->getFileName();
+                // To the file itself, not to a branch of it (sec 27.23).
+                FileHistory::NameParts parts;
+                if (!filename || !FileHistory::parseName(filename, parts))
+                    _liveBranch.clear();
                 if(!filename || *filename==0 || !ownerPath || *ownerPath==0) {
                     // linked or owner document not saved, delay getting file path till Save()
                 } else {
@@ -4306,6 +4370,8 @@ void PropertyXLink::setPin(int64_t version, const std::string& uuid)
     aboutToSetValue();
     _pinVersion = version;
     _pinUuid = version ? uuid : std::string();
+    // A pin names a version, not a branch; unpinned, the link is to the file.
+    _liveBranch.clear();
     // Resolved again under the pin: a new DocInfo, `<file>@v<num>` or the
     // file's own.
     if (docInfo) {
@@ -4591,6 +4657,10 @@ void PropertyXLink::Save (Base::Writer &writer) const {
             if (!_pinUuid.empty())
                 writer.Stream() << "\" vuuid=\"" << encodeAttribute(_pinUuid);
         }
+        // Live to a branch of the file (sec 27.23): whatever holds it.
+        else if (!_liveBranch.empty()) {
+            writer.Stream() << "\" branch=\"" << encodeAttribute(_liveBranch);
+        }
     }
 
     if(testFlag(LinkAllowPartial))
@@ -4676,6 +4746,7 @@ void PropertyXLink::Restore(Base::XMLReader &reader)
     _pinVersion = reader.hasAttribute("version")
         ? std::atoll(reader.getAttribute("version")) : 0;
     _pinUuid = reader.hasAttribute("vuuid") ? reader.getAttribute("vuuid") : "";
+    _liveBranch = reader.hasAttribute("branch") ? reader.getAttribute("branch") : "";
     std::string name;
     if(file.empty())
         name = reader.getName(reader.getAttribute("name"));
@@ -4818,6 +4889,7 @@ void PropertyXLink::copyTo(PropertyXLink &other,
     other._Flags = _Flags;
     other._pinVersion = _pinVersion;
     other._pinUuid = _pinUuid;
+    other._liveBranch = _liveBranch;
 }
 
 void PropertyXLink::getLinkIdentity(std::string &doc, std::string &obj) const
@@ -4846,7 +4918,8 @@ bool PropertyXLink::isSame(const Property &other) const
     return doc == otherDoc && obj == otherObj
         && filePath == o.filePath
         && _SubList == o._SubList
-        && _pinVersion == o._pinVersion && _pinUuid == o._pinUuid;
+        && _pinVersion == o._pinVersion && _pinUuid == o._pinUuid
+        && _liveBranch == o._liveBranch;
 }
 
 Property *PropertyXLink::Copy() const
@@ -4865,6 +4938,7 @@ void PropertyXLink::Paste(const Property &from)
     // The pin first: resolving the value reads it.
     _pinVersion = other._pinVersion;
     _pinUuid = other._pinUuid;
+    _liveBranch = other._liveBranch;
     if(!other.docName.empty()) {
         auto doc = GetApplication().getDocument(other.docName.c_str());
         if(!doc) {

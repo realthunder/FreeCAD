@@ -365,22 +365,84 @@ bool FileHistory::setPath(const std::string& path)
     return true;
 }
 
+namespace
+{
+
+bool allDigits(const std::string& s, size_t from)
+{
+    // Up to 18 digits: what an int64_t takes without a range check.
+    if (from >= s.size() || s.size() - from > 18)
+        return false;
+    for (size_t i = from; i < s.size(); ++i) {
+        if (s[i] < '0' || s[i] > '9')
+            return false;
+    }
+    return true;
+}
+
+/// What follows the file: `@v<num>`, `@<branch>@v<num>` or `@<branch>@`.
+bool parseTail(const std::string& tail, FileHistory::NameParts& parts)
+{
+    if (tail.size() < 2 || tail[0] != '@')
+        return false;
+    if (tail[1] == 'v' && allDigits(tail, 2)) {
+        parts.branch.clear();
+        parts.version = std::stoll(tail.substr(2));
+        return parts.version > 0;
+    }
+    if (tail.back() == '@') {
+        parts.branch = tail.substr(1, tail.size() - 2);
+        parts.version = 0;
+        return !parts.branch.empty();
+    }
+    const size_t at = tail.rfind("@v");
+    if (at == 0 || at == std::string::npos || !allDigits(tail, at + 2))
+        return false;
+    parts.branch = tail.substr(1, at - 1);
+    parts.version = std::stoll(tail.substr(at + 2));
+    return !parts.branch.empty() && parts.version > 0;
+}
+
+} // namespace
+
+bool FileHistory::parseName(const std::string& name, NameParts& parts)
+{
+    if (name.empty() || Base::FileInfo(name).exists())
+        return false;
+    // The longest prefix that is the file: a branch name may hold `@`.
+    for (size_t at = name.rfind('@'); at != std::string::npos && at > 0;
+         at = name.rfind('@', at - 1)) {
+        const std::string file = name.substr(0, at);
+        if (!Base::FileInfo(file).exists() && !find(file))
+            continue;
+        NameParts found;
+        if (!parseTail(name.substr(at), found))
+            return false;
+        found.file = file;
+        parts = std::move(found);
+        return true;
+    }
+    // A file that is gone and has no history open: the frozen form only, as
+    // before names carried a branch.
+    const size_t at = name.rfind("@v");
+    if (at == 0 || at == std::string::npos || !allDigits(name, at + 2))
+        return false;
+    NameParts found;
+    found.file = name.substr(0, at);
+    found.version = std::stoll(name.substr(at + 2));
+    if (found.version <= 0)
+        return false;
+    parts = std::move(found);
+    return true;
+}
+
 int64_t FileHistory::splitVersion(std::string& path)
 {
-    const size_t at = path.rfind("@v");
-    if (at == std::string::npos || at + 2 >= path.size())
+    NameParts parts;
+    if (!parseName(path, parts))
         return 0;
-    for (size_t i = at + 2; i < path.size(); ++i) {
-        if (path[i] < '0' || path[i] > '9')
-            return 0;
-    }
-    if (Base::FileInfo(path).exists())
-        return 0;
-    const int64_t num = std::stoll(path.substr(at + 2));
-    if (num <= 0)
-        return 0;
-    path.resize(at);
-    return num;
+    path = parts.file;
+    return parts.branch.empty() ? parts.version : -1;
 }
 
 bool FileHistory::findVersion(const std::string& path, int64_t num, const std::string& uuid,

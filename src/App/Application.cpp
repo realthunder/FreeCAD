@@ -1020,21 +1020,22 @@ Document* Application::openDocumentPrivate(const char * FileName,
     ExpressionSecurity::checkHostPath(ExpressionSecurity::Permission::FsRead,
                                       FileName ? FileName : "");
 
-    // `<file>@v<num>`: version `num` of the file, opened as a document of its
-    // own (docs/TransactionLog.md sec 27.7) -- what a pinned link asks for.
+    // A document of a file named for a version or a branch (docs/
+    // TransactionLog.md sec 27.7, 27.23, 27.24): `<file>@v<num>`, the frozen
+    // instance a pin shows; `<file>@<branch>@v<num>`, an editable instance
+    // at that version; `<file>@<branch>@`, the branch's tip -- whatever
+    // document holds the branch, or its head opened as an editable instance.
     {
-        std::string file(FileName ? FileName : "");
-        if (int64_t num = FileHistory::splitVersion(file)) {
+        FileHistory::NameParts parts;
+        if (FileHistory::parseName(FileName ? FileName : "", parts)) {
             if (auto doc = getDocumentByPath(FileName))
                 return isMainDoc ? doc : nullptr;
             std::string reason;
-            auto history = FileHistory::openFile(file, &reason);
+            auto history = FileHistory::openFile(parts.file, &reason);
             if (!history)
-                THROWM(Base::FileSystemError, "no history in '" + file + "': " + reason)
-            // A pin's version: always a version document, never the file's
-            // own document that happens to be at it (sec 27.14).
-            Document* doc = Document::openFileVersion(history, num, isMainDoc && createView,
-                                                      nullptr, true);
+                THROWM(Base::FileSystemError, "no history in '" + parts.file + "': " + reason)
+            Document* doc = Document::openFileBranch(history, parts.branch, parts.version,
+                                                     isMainDoc && createView);
             if (!DocFileMap.empty())
                 DocFileMap[FileInfo(doc->FileName.getValue()).filePath()] = doc;
             return doc;
