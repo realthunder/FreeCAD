@@ -437,6 +437,7 @@ SET(Document_CPP_SRCS
     Document.cpp
     DocumentParams.cpp
     FileBlobManager.cpp
+    FileHistory.cpp
     FileSet.cpp
     GroupParams.cpp
     DocumentObject.cpp
@@ -515,6 +516,7 @@ SET(Document_HPP_SRCS
     Document.h
     DocumentParams.h
     FileBlobManager.h
+    FileHistory.h
     FileSet.h
     GroupParams.h
     DocumentObject.h

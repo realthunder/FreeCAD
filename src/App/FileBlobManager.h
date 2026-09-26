@@ -45,6 +45,7 @@ namespace App
 class BlobArchive;
 struct BlobRawMember;
 class Document;
+class FileHistory;
 class DocumentObject;
 class FileBlobManager;
 class Property;
@@ -332,7 +333,9 @@ private:
 class AppExport FileBlobManager
 {
 public:
-    explicit FileBlobManager(Document* doc);
+    /// The store of `history`'s directory (docs/TransactionLog.md sec 27.7);
+    /// null for the process-wide default, which lives in the temp directory.
+    explicit FileBlobManager(FileHistory* history);
     ~FileBlobManager();
 
     FileBlobManager(const FileBlobManager&) = delete;
@@ -758,7 +761,7 @@ private:
     void stopWorker();
     //@}
 
-    Document* _doc {nullptr};
+    FileHistory* _history {nullptr};
     mutable std::mutex _mutex;
     /// Format the save in progress writes its content in, see beginSave().
     BlobFormat _format {BlobFormat::None};

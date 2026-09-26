@@ -56,6 +56,7 @@ namespace App
     class DocumentPy; // the python document class
     class Application;
     class FileBlobManager;
+    class FileHistory;
     class TransactionLog;
     struct LogBranch;
     class Transaction;
@@ -331,6 +332,12 @@ public:
      * archive entries itself. See App::FileBlobManager.
      */
     FileBlobManager& getFileBlobManager() const;
+    /** The history of the file this document is (docs/TransactionLog.md
+     * sec 27.7): the blob store and the directory the log lives in, shared
+     * by every document of the file. Made on first use, in this document's
+     * transient directory.
+     */
+    FileHistory& getFileHistory() const;
     /** The transaction log, or null when the mode is off
      * (DocumentParams::TransactionLog). Created on the first commit
      * after the mode is set, in the transient directory.

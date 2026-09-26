@@ -1354,6 +1354,14 @@ void Document::onChanged(const Property* prop)
         App::GetApplication().signalRelabelDocument(*this);
     } else if(prop == &ShowHidden) {
         App::GetApplication().signalShowHidden(*this);
+    } else if (prop == &TransientDir) {
+        // The history lives in its home's transient directory and moves
+        // with it (docs/TransactionLog.md sec 27.7).
+        if (d->history && d->history->home() == this)
+            d->history->setDirectory(TransientDir.getStrValue());
+    } else if (prop == &FileName) {
+        if (d->history)
+            d->history->setPath(FileName.getStrValue());
     } else if (prop == &Uid) {
         std::string new_dir = getTransientDirectoryName(this->Uid.getValueStr(),this->FileName.getStrValue());
         std::string old_dir = this->TransientDir.getStrValue();
@@ -1373,9 +1381,10 @@ void Document::onChanged(const Property* prop)
                 // closed, whose worker writes here -- and a segment opens
                 // again on its next read.
                 std::unique_lock<std::mutex> blobWrites;
-                if (d->fileBlobs) {
-                    blobWrites = d->fileBlobs->holdWrites();
-                    d->fileBlobs->closeArchives();
+                FileBlobManager* blobs = d->history ? d->history->blobsIfMade() : nullptr;
+                if (blobs) {
+                    blobWrites = blobs->holdWrites();
+                    blobs->closeArchives();
                 }
                 const bool renamed = TransDirOld.renameFile(new_dir.c_str());
                 if (renamed)
@@ -1399,8 +1408,8 @@ void Document::onChanged(const Property* prop)
                     // needs this: creating one here, while the document is
                     // still being constructed, is what the manager's lazy
                     // construction avoids.
-                    if (d->fileBlobs)
-                        d->fileBlobs->relocate();
+                    if (blobs)
+                        blobs->relocate();
                 }
             }
             else {
@@ -1643,12 +1652,20 @@ Document::~Document()
         // yet the case here. Nothing makes another one afterwards.
         d->noLog = true;
         d->transactionLog.reset();
-        // Nothing deletes a file held open on Windows, and a segment of the
-        // blob store may be; nor may its worker write one meanwhile.
-        if (d->fileBlobs)
-            d->fileBlobs->shutdown();
-        Base::FileInfo TransDir(TransientDir.getValue());
-        TransDir.deleteDirectoryRecursive();
+        // The history removes its directory, this one's transient directory
+        // when this is its home, once the last document of the file lets go
+        // (docs/TransactionLog.md sec 27.7). A directory of this document's
+        // own goes now.
+        bool shared = false;
+        if (d->history) {
+            d->history->releaseHome(*this);
+            shared = d->history->directory() == TransientDir.getStrValue();
+            d->history.reset();
+        }
+        if (!shared) {
+            Base::FileInfo TransDir(TransientDir.getValue());
+            TransDir.deleteDirectoryRecursive();
+        }
     }
     catch (const Base::Exception& e) {
         std::cerr << "Removing transient directory failed: " << e.what() << std::endl;
@@ -5999,12 +6016,18 @@ TransactionLog* Document::getTransactionLog() const
 
 FileBlobManager& Document::getFileBlobManager() const
 {
-    // Created on demand rather than in the constructor: the manager resolves
-    // paths against TransientDir, which is not set up yet at that point.
-    if (!d->fileBlobs) {
-        d->fileBlobs = std::make_unique<FileBlobManager>(const_cast<Document*>(this));
+    return getFileHistory().blobs();
+}
+
+FileHistory& Document::getFileHistory() const
+{
+    // Created on demand rather than in the constructor: the history lives in
+    // TransientDir, which is not set up yet at that point.
+    if (!d->history) {
+        d->history = FileHistory::create(*const_cast<Document*>(this));
+        d->history->setPath(FileName.getStrValue());
     }
-    return *d->fileBlobs;
+    return *d->history;
 }
 
 void Document::collectFileBlobs(const std::vector<App::DocumentObject*>& objs) const

@@ -4425,3 +4425,33 @@ set-up, which is an implicit step with the log on.
 
 Gates: Python 2914 OK and ctest 834/834 in a fresh `FREECAD_USER_HOME`,
 which is now a log-on run; Python 2914 OK with `TransactionLog=0`.
+
+### 27.10 5.b as built: the file history (2026-09-26)
+
+`App::FileHistory` (`src/App/FileHistory.h`) is what the documents of one
+file share. In this step it holds:
+
+- **the blob manager.** `Document::getFileBlobManager()` is now
+  `getFileHistory().blobs()`. `FileBlobManager` takes the history where it
+  took the document, and resolves its directory through it. The document
+  was only ever used for that directory, and for the "is a document store"
+  test of the pack store.
+- **the directory**: its home document's transient directory. The history
+  follows it when a restore renames it after the file's Uid, through
+  `Document::onChanged(TransientDir)`. The history removes the directory
+  when the last document holding it lets go. `~Document` removes its
+  transient directory itself only when that directory is not the history's.
+- **the registry**: the canonical path of the file maps to its history
+  (`FileHistory::find`), kept in step with `FileName`. Registering a path
+  another live history holds is refused with a warning (one file, one
+  history).
+
+The log object itself stays per document. Its shared half -- the store,
+the worker, the counters, the entity functions -- moves in 5.c, where a
+second document on one file first needs it, so the split lands with the
+cases that test it. The log's paths (`history/`, the recovery's
+`blobs/`) go through the history's directory now.
+
+With one document per file nothing changes, and the gates say so: Python
+2914 OK, ctest 835/835 (+1, `fileHistoryIsTheFilesAndLivesInItsDirectory`),
+the recovery GUI check 15 PASS, and the branch GUI check 27 PASS.

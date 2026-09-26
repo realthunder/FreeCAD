@@ -32,6 +32,7 @@
 #include <App/DocumentObserver.h>
 #include <App/StringHasher.h>
 #include <App/FileBlobManager.h>
+#include <App/FileHistory.h>
 #include <App/TransactionLog.h>
 #include <Base/Reader.h>
 #include <Base/Sequencer.h>
@@ -98,7 +99,9 @@ struct DocumentP
     std::string programVersion;
     mutable HasherMap hashers;
     /// Lifetime of the files behind this document's PropertyFileIncluded.
-    mutable std::unique_ptr<App::FileBlobManager> fileBlobs;
+    /// The file's history (docs/TransactionLog.md sec 27.7): its blob store
+    /// and directory, shared with the other documents of the file.
+    mutable std::shared_ptr<App::FileHistory> history;
     /// The transaction log (docs/TransactionLog.md), when the mode is not off.
     std::unique_ptr<App::TransactionLog> transactionLog;
     /// Whether the mode was looked at for this document yet.

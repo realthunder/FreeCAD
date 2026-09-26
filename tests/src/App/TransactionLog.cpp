@@ -20,6 +20,8 @@
 #include "App/DocumentObject.h"
 #include "App/DocumentParams.h"
 #include "App/FeatureTest.h"
+#include "App/FileBlobManager.h"
+#include "App/FileHistory.h"
 #include "App/PropertyFile.h"
 #include "App/PropertyHistory.h"
 #include "App/TransactionLog.h"
@@ -143,6 +145,15 @@ protected:
             }
         }
         return h;
+    }
+
+    /// Close the fixture's document and give it a fresh one, for a case that
+    /// needs the document gone in the middle.
+    void closeAndRenew()
+    {
+        App::GetApplication().closeDocument(_docName.c_str());
+        _doc = App::GetApplication().newDocument(_docName.c_str(), "testUser");
+        _doc->setUndoMode(1);
     }
 
 private:
@@ -2623,4 +2634,49 @@ TEST_F(TransactionLogTest, squashFoldsTheNetChange)
     doc()->commitTransaction();
     const int64_t v4 = doc()->snapshotToLog();
     EXPECT_THROW(doc()->squashVersions(v3, v4), Base::Exception);
+}
+
+TEST_F(TransactionLogTest, fileHistoryIsTheFilesAndLivesInItsDirectory)
+{
+    // Sec 27.7, 5.b: the blob store and the log live in the history, in
+    // the document's transient directory, registered under the file once
+    // the document has one, and gone -- directory and registration -- with
+    // the last document of the file.
+    const std::string path = Base::FileInfo::getTempPath() + "txnlog-filehistory.FCStd";
+    Base::FileInfo(path).deleteFile();
+    auto& history = doc()->getFileHistory();
+    EXPECT_EQ(history.directory(), doc()->TransientDir.getStrValue());
+    EXPECT_EQ(&history.blobs(), &doc()->getFileBlobManager());
+    EXPECT_EQ(history.home(), doc());
+    EXPECT_TRUE(history.path().empty());
+
+    doc()->openTransaction("create");
+    make("Obj")->Integer.setValue(1);
+    doc()->commitTransaction();
+    const std::string logPath = log().path();
+    EXPECT_EQ(logPath.compare(0, history.directory().size(), history.directory()), 0);
+
+    ASSERT_TRUE(doc()->saveAs(path.c_str()));
+    // A save renames nothing, but the file is known now.
+    EXPECT_EQ(history.path(), App::FileHistory::canonicalPath(path));
+    EXPECT_EQ(App::FileHistory::find(path).get(), &history);
+
+    const std::string dir = history.directory();
+    closeAndRenew();
+    EXPECT_FALSE(App::FileHistory::find(path));
+    EXPECT_FALSE(Base::FileInfo(dir).exists());
+
+    // Reopened: a history of its own again, in the new transient directory
+    // (the restore renamed it after the file's Uid), registered anew.
+    App::Document* opened = App::GetApplication().openDocument(path.c_str(), false);
+    ASSERT_TRUE(opened);
+    auto& again = opened->getFileHistory();
+    EXPECT_EQ(again.directory(), opened->TransientDir.getStrValue());
+    EXPECT_TRUE(Base::FileInfo(again.directory()).isDir());
+    EXPECT_EQ(App::FileHistory::find(path).get(), &again);
+    auto olog = opened->getTransactionLog();
+    ASSERT_TRUE(olog);
+    EXPECT_EQ(olog->path().compare(0, again.directory().size(), again.directory()), 0);
+    App::GetApplication().closeDocument(opened->getName());
+    Base::FileInfo(path).deleteFile();
 }

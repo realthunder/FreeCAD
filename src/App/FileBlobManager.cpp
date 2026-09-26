@@ -61,6 +61,7 @@
 #include <Base/Uuid.h>
 
 #include "FileBlobManager.h"
+#include "FileHistory.h"
 #include "Document.h"
 #include "DocumentObject.h"
 #include "DocumentParams.h"
@@ -749,8 +750,8 @@ bool FileBlob::read(std::string& bytes) const
 // FileBlobManager
 // ---------------------------------------------------------------------------
 
-FileBlobManager::FileBlobManager(Document* doc)
-    : _doc(doc)
+FileBlobManager::FileBlobManager(FileHistory* history)
+    : _history(history)
 {}
 
 FileBlobManager::~FileBlobManager()
@@ -794,10 +795,10 @@ FileBlobManager& FileBlobManager::defaultManager()
 
 std::string FileBlobManager::transientPath() const
 {
-    if (!_doc) {
+    if (!_history) {
         return Base::FileInfo::getTempPath();
     }
-    return QDir::fromNativeSeparators(QString::fromUtf8(_doc->TransientDir.getValue()))
+    return QDir::fromNativeSeparators(QString::fromUtf8(_history->directory().c_str()))
         .toUtf8()
         .constData();
 }
@@ -2466,7 +2467,7 @@ struct FileBlobManager::Segment
 
 bool FileBlobManager::packStore() const
 {
-    return _doc && DocumentParams::getArchiveBlobStore();
+    return _history && DocumentParams::getArchiveBlobStore();
 }
 
 uint64_t FileBlobManager::segmentCap() const

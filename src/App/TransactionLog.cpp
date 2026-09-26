@@ -46,6 +46,7 @@
 #include "DocumentObject.h"
 #include "DocumentParams.h"
 #include "FileBlobManager.h"
+#include "FileHistory.h"
 #include "Property.h"
 #include "PropertyLinks.h"
 #include "PropertyPythonObject.h"
@@ -468,7 +469,7 @@ TransactionStore& TransactionLog::store()
 
 void TransactionLog::openStore()
 {
-    std::string dir = _doc.TransientDir.getStrValue() + "/history";
+    std::string dir = _doc.getFileHistory().directory() + "/history";
     Base::FileInfo(dir).createDirectories();
     _path = dir + "/log.db";
     _store = TransactionStore::openSQLite(_path);
@@ -501,7 +502,7 @@ TransactionLog::Embedded TransactionLog::embed(const std::string& saveDate)
     Embedded out;
     out.saveId = Base::Uuid::createUuid();
     out.version = _nextVersion + 1;
-    const std::string dir = _doc.TransientDir.getStrValue() + "/history";
+    const std::string dir = _doc.getFileHistory().directory() + "/history";
     Base::FileInfo(dir).createDirectories();
     out.path = dir + "/embed-" + out.saveId + ".db";
     Base::FileInfo(out.path).deleteFile();
@@ -601,7 +602,7 @@ bool TransactionLog::recover(const std::string& oldDir, RecoverInfo& info)
     // The blobs: every file of the old store into this one's, then swept.
     auto& manager = _doc.getFileBlobManager();
     const std::string oldBlobs = oldDir + "/blobs";
-    const std::string newBlobs = _doc.TransientDir.getStrValue() + "/blobs";
+    const std::string newBlobs = _doc.getFileHistory().directory() + "/blobs";
     if (Base::FileInfo(oldBlobs).isDir()) {
         Base::FileInfo(newBlobs).createDirectories();
         for (const auto& file : Base::FileInfo(oldBlobs).getDirectoryContent()) {
