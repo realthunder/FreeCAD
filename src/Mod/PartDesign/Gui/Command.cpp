@@ -2294,6 +2294,9 @@ void CmdPartDesignLinearPattern::activated(int iMsg)
             if (sketch) {
                 Gui::cmdAppObject(Feat, std::ostringstream()
                         <<"Direction = ("<<Gui::Command::getObjectCmd(sketch)<<", ['H_Axis'])");
+                // Ready for the second direction, off while Occurrences2 is 1
+                Gui::cmdAppObject(Feat, std::ostringstream()
+                        <<"Direction2 = ("<<Gui::Command::getObjectCmd(sketch)<<", ['V_Axis'])");
                 direction = true;
             }
         }

@@ -24,14 +24,14 @@
 #include "PreCompiled.h"
 
 #include "ViewProviderLinearPattern.h"
-#include "TaskLinearPatternParameters.h"
+#include "TaskPatternParameters.h"
 
 using namespace PartDesignGui;
 
 PROPERTY_SOURCE(PartDesignGui::ViewProviderLinearPattern,PartDesignGui::ViewProviderTransformed)
 
 TaskDlgFeatureParameters *ViewProviderLinearPattern::getEditDialog() {
-    return new TaskDlgLinearPatternParameters (this);
+    return new TaskDlgPatternParameters (this);
 }
 
 void ViewProviderLinearPattern::setupContextMenu(QMenu* menu, QObject* receiver, const char* member)

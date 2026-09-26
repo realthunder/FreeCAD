@@ -23,6 +23,7 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
+# include <algorithm>
 # include <TopoDS.hxx>
 # include <TopoDS_Face.hxx>
 # include <gp_Lin.hxx>
@@ -53,11 +54,13 @@ const App::PropertyIntegerConstraint::Constraints PolarPattern::intOccurrences =
 // clamped to nothing, and the occurrences fell on each other
 const App::PropertyAngle::Constraints PolarPattern::floatAngle = { -360.0, 360.0, 1.0 };
 
-const char* PolarPattern::ModeEnums[] = {"angle", "offset", nullptr};
+// Upstream renamed "angle" and "offset" with the spacings (5d2037c820); a
+// file stores the index, which stays the same
+const char* PolarPattern::ModeEnums[] = {"Extent", "Spacing", nullptr};
 
 PolarPattern::PolarPattern()
 {
-    auto initialMode = PolarPatternMode::angle;
+    auto initialMode = PolarPatternMode::Extent;
 
     ADD_PROPERTY_TYPE(Axis, (nullptr), "PolarPattern", (App::PropertyType)(App::Prop_None), "Direction");
     ADD_PROPERTY(Reversed, (0));
@@ -69,8 +72,15 @@ PolarPattern::PolarPattern()
     Offset.setConstraints(&floatAngle);
     ADD_PROPERTY(Occurrences, (3));
     Occurrences.setConstraints(&intOccurrences);
+    ADD_PROPERTY_TYPE(Spacings, (std::vector<double>()), "PolarPattern", App::Prop_None,
+        "Individual angles in 'Spacing' mode, one per gap: item i is the angle before\n"
+        "occurrence i + 2. -1 uses SpacingPattern, or Offset.");
+    ADD_PROPERTY_TYPE(SpacingPattern, (std::vector<double>()), "PolarPattern", App::Prop_None,
+        "Angles repeated around the axis in 'Spacing' mode, e.g. [10, 20] alternates\n"
+        "10 and 20 degrees. Used when it has more than one value.");
 
     setReadWriteStatusForMode(initialMode);
+    resizeSpacings();
 }
 
 short PolarPattern::mustExecute() const
@@ -81,7 +91,9 @@ short PolarPattern::mustExecute() const
         // Angle and Offset are mutually exclusive, only one could be updated at once
         Angle.isTouched() || 
         Offset.isTouched() || 
-        Occurrences.isTouched())
+        Occurrences.isTouched() ||
+        Spacings.isTouched() ||
+        SpacingPattern.isTouched())
         return 1;
     return Transformed::mustExecute();
 }
@@ -192,31 +204,21 @@ std::list<gp_Trsf> PolarPattern::getTransformations(const std::vector<Part::Topo
     if (reversed)
         axis.SetDirection(axis.Direction().Reversed());
 
-    double angle;
+    bool extent = Mode.getValue() == static_cast<long>(PolarPatternMode::Extent);
+    double offset = 0.0;
+    if (extent) {
+        double angle = Angle.getValue();
 
-    switch (static_cast<PolarPatternMode>(Mode.getValue())) {
-        case PolarPatternMode::angle:
-            angle = Angle.getValue();
+        if (std::fabs(std::fabs(angle) - 360.0) < Precision::Confusion())
+            angle /= occurrences; // Because e.g. two occurrences in 360 degrees need to be 180 degrees apart
+        else
+            angle /= occurrences - 1;
 
-            if (std::fabs(std::fabs(angle) - 360.0) < Precision::Confusion())
-                angle /= occurrences; // Because e.g. two occurrences in 360 degrees need to be 180 degrees apart
-            else
-                angle /= occurrences - 1;
+        offset = Base::toRadians<double>(angle);
 
-            break;
-
-        case PolarPatternMode::offset:
-            angle = Offset.getValue();
-            break;
-
-        default:
-            THROWM(Base::ValueError, "Invalid mode")
+        if (std::fabs(offset) < Precision::Angular())
+            THROWM(Base::ValueError, "Pattern angle too small")
     }
-
-    double offset = Base::toRadians<double>(angle);
-
-    if (std::fabs(offset) < Precision::Angular())
-        THROWM(Base::ValueError, "Pattern angle too small")
 
     std::list<gp_Trsf> transformations;
     gp_Trsf trans;
@@ -224,12 +226,31 @@ std::list<gp_Trsf> PolarPattern::getTransformations(const std::vector<Part::Topo
 
     // Note: The original feature is already included in the list of transformations!
     // Therefore we start with occurrence number 1
+    double cumulative = 0.0;
     for (int i = 1; i < occurrences; i++) {
-        trans.SetRotation(axis.Axis(), i * offset);
+        if (extent)
+            cumulative = i * offset;
+        else
+            cumulative += Base::toRadians<double>(getSpacing(i - 1));
+        trans.SetRotation(axis.Axis(), cumulative);
         transformations.push_back(trans);
     }
 
     return transformations;
+}
+
+double PolarPattern::getSpacing(int index) const
+{
+    // Individual spacing > spacing pattern > Offset (upstream 5d2037c820,
+    // indexed as 0f07a936d9 fixed it). A list of another size than the gaps
+    // reads -1 where it is short.
+    const auto& spacings = Spacings.getValues();
+    if (index >= 0 && index < static_cast<int>(spacings.size()) && spacings[index] != -1.0)
+        return spacings[index];
+    const auto& pattern = SpacingPattern.getValues();
+    if (pattern.size() > 1)
+        return pattern[index % pattern.size()];
+    return Offset.getValue();
 }
 
 void PolarPattern::handleChangedPropertyType(Base::XMLReader& reader, const char* TypeName, App::Property* prop)
@@ -254,14 +275,38 @@ void PolarPattern::onChanged(const App::Property* prop)
         auto mode = static_cast<PolarPatternMode>(Mode.getValue());
         setReadWriteStatusForMode(mode);
     }
+    else if (prop == &Occurrences && !isRestoring()) {
+        resizeSpacings();
+    }
 
     Transformed::onChanged(prop);
 }
 
+void PolarPattern::onDocumentRestored()
+{
+    setReadWriteStatusForMode(static_cast<PolarPatternMode>(Mode.getValue()));
+    Transformed::onDocumentRestored();
+}
+
 void PolarPattern::setReadWriteStatusForMode(PolarPatternMode mode)
 {
-    Offset.setReadOnly(mode != PolarPatternMode::offset);
-    Angle.setReadOnly(mode != PolarPatternMode::angle);
+    Offset.setReadOnly(mode != PolarPatternMode::Spacing);
+    Angle.setReadOnly(mode != PolarPatternMode::Extent);
+}
+
+void PolarPattern::resizeSpacings()
+{
+    // One item per gap, so that the property editor shows them all, up to
+    // MaxListedSpacings as LinearPattern::resizeSpacings() explains. Not on
+    // recompute, as upstream does, which touches the feature there.
+    int gaps = std::max(0L, Occurrences.getValue() - 1);
+    int size = Spacings.getSize();
+    int target = size > gaps ? gaps : std::min(gaps, std::max(size, MaxListedSpacings));
+    if (size == target)
+        return;
+    std::vector<double> spacings = Spacings.getValues();
+    spacings.resize(target, -1.0);
+    Spacings.setValues(spacings);
 }
 
 }

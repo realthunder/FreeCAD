@@ -155,23 +155,104 @@ class TestLinearPattern(unittest.TestCase):
         pattern.Originals = [self.Box]
         pattern.Direction = ([f for f in self.Body.Origin.OriginFeatures
                               if f.Role == "X_Axis"][0], [""])
-        pattern.Mode = "length"
+        pattern.Mode = "Extent"
         pattern.Length = 40
         pattern.Occurrences = 3
         self.assertAlmostEqual(pattern.Offset.Value, 20)
         pattern.Occurrences = 5
         self.assertAlmostEqual(pattern.Offset.Value, 10)
-        pattern.Mode = "offset"
+        pattern.Mode = "Spacing"
         pattern.Offset = 20
         self.assertAlmostEqual(pattern.Length.Value, 80)
         pattern.Occurrences = 2
         self.assertAlmostEqual(pattern.Length.Value, 20)
-        pattern.Mode = "length"
+        pattern.Mode = "Extent"
         pattern.Occurrences = 1
         pattern.Length = 30
         self.assertAlmostEqual(pattern.Offset.Value, 30)
         self.Doc.recompute()
         self.assertIn("Up-to-date", pattern.State)
+
+    def _boxPattern(self):
+        self.Body = self.Doc.addObject("PartDesign::Body", "Body")
+        box = self.Body.newObject("PartDesign::AdditiveBox", "Box")
+        pattern = self.Body.newObject("PartDesign::LinearPattern", "LinearPattern")
+        pattern.Originals = [box]
+        axes = {f.Role: f for f in self.Body.Origin.OriginFeatures}
+        pattern.Direction = (axes["X_Axis"], [""])
+        return pattern, axes
+
+    def _check(self, pattern, volume, xmax, ymax):
+        self.Doc.recompute()
+        self.assertIn("Up-to-date", pattern.State)
+        self.assertAlmostEqual(pattern.Shape.Volume, volume)
+        box = pattern.Shape.BoundBox
+        self.assertAlmostEqual(box.XMax, xmax)
+        self.assertAlmostEqual(box.YMax, ymax)
+
+    def testTwoDirections(self):
+        """A grid of Occurrences x Occurrences2, each direction with its own
+        mode (upstream 5d2037c820)"""
+        pattern, axes = self._boxPattern()
+        pattern.Mode = "Extent"
+        pattern.Length = 40
+        pattern.Occurrences = 3
+        self._check(pattern, 3000, 50, 10)
+        pattern.Direction2 = (axes["Y_Axis"], [""])
+        pattern.Mode2 = "Spacing"
+        pattern.Offset2 = 20
+        pattern.Occurrences2 = 2
+        self.assertAlmostEqual(pattern.Length2.Value, 20)
+        self._check(pattern, 6000, 50, 30)
+        pattern.Reversed2 = True
+        self.Doc.recompute()
+        self.assertAlmostEqual(pattern.Shape.BoundBox.YMin, -20)
+        # One occurrence leaves the second direction off, set or not
+        pattern.Occurrences2 = 1
+        pattern.Direction2 = None
+        self._check(pattern, 3000, 50, 10)
+
+    def testSpacings(self):
+        """Individual spacings, then the spacing pattern, then Offset
+        (upstream 5d2037c820)"""
+        pattern, _ = self._boxPattern()
+        pattern.Mode = "Spacing"
+        pattern.Offset = 20
+        pattern.Occurrences = 4
+        # one item per gap, -1 for the gaps that follow Offset
+        self.assertEqual(pattern.Spacings, [-1.0, -1.0, -1.0])
+        self._check(pattern, 4000, 70, 10)
+        pattern.Spacings = [-1, 30, -1]
+        self._check(pattern, 4000, 80, 10)
+        pattern.Occurrences = 5
+        self.assertEqual(pattern.Spacings, [-1.0, 30.0, -1.0, -1.0])
+        self._check(pattern, 5000, 100, 10)
+        pattern.Spacings = []
+        pattern.SpacingPattern = [15, 25]
+        # a short list reads -1: 0, 15, 40, 55, 80
+        self._check(pattern, 5000, 90, 10)
+        pattern.Spacings = [-1, -1, 12]
+        self._check(pattern, 5000, 87, 10)
+        # The list grows to 1000 gaps at most; the gaps after read -1
+        pattern.Occurrences = 5000
+        self.assertEqual(len(pattern.Spacings), 1000)
+        self.assertEqual(pattern.Spacings[:4], [-1.0, -1.0, 12.0, -1.0])
+        pattern.Occurrences = 5
+        self.assertEqual(pattern.Spacings, [-1.0, -1.0, 12.0, -1.0])
+        # Extent mode ignores them all
+        pattern.Mode = "Extent"
+        pattern.Length = 40
+        self._check(pattern, 5000, 50, 10)
+
+    def testOriginPlaneDirection(self):
+        """An origin plane is the direction of its normal (upstream
+        cf0412b7e2); it was refused"""
+        pattern, axes = self._boxPattern()
+        pattern.Direction = (axes["XY_Plane"], [""])
+        pattern.Length = 40
+        pattern.Occurrences = 3
+        self._check(pattern, 3000, 10, 10)
+        self.assertAlmostEqual(pattern.Shape.BoundBox.ZMax, 50)
 
     def tearDown(self):
         #closing doc

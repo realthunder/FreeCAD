@@ -191,15 +191,46 @@ class TestPolarPattern(unittest.TestCase):
         pattern.Angle = -90
         self.assertAlmostEqual(pattern.Angle.Value, -90)
         self.assertEqual(bounds(), reversed_)
-        pattern.Mode = "offset"
+        pattern.Mode = "Spacing"
         pattern.Offset = -90
         self.assertEqual(bounds(), reversed_)
         # a negative full turn is a full turn
-        pattern.Mode = "angle"
+        pattern.Mode = "Extent"
         pattern.Angle = -360
         pattern.Occurrences = 4
         self.Doc.recompute()
         self.assertAlmostEqual(pattern.Shape.Volume, 4000)
+
+    def testSpacings(self):
+        """Individual angles in Spacing mode (upstream 5d2037c820), item i the
+        angle before occurrence i + 2 (0f07a936d9)"""
+        self.Body = self.Doc.addObject("PartDesign::Body", "Body")
+        box = self.Body.newObject("PartDesign::AdditiveBox", "Box")
+        box.Placement.Base = FreeCAD.Vector(20, 0, 0)
+        pattern = self.Body.newObject("PartDesign::PolarPattern", "PolarPattern")
+        pattern.Originals = [box]
+        pattern.Axis = (self.Doc.Z_Axis, [""])
+        pattern.Mode = "Spacing"
+        pattern.Offset = 90
+        pattern.Occurrences = 3
+        self.assertEqual(pattern.Spacings, [-1.0, -1.0])
+
+        def bounds():
+            self.Doc.recompute()
+            self.assertIn("Up-to-date", pattern.State)
+            self.assertAlmostEqual(pattern.Shape.Volume, 3000)
+            b = pattern.Shape.BoundBox
+            return (round(b.XMin, 6), round(b.YMin, 6), round(b.XMax, 6), round(b.YMax, 6))
+
+        # 0, 90, 180
+        self.assertEqual(bounds(), (-30, -10, 30, 30))
+        # 0, 90, 270
+        pattern.Spacings = [-1, 180]
+        self.assertEqual(bounds(), (-10, -30, 30, 30))
+        # 0, 180, 270 from the pattern, the individual one cleared
+        pattern.Spacings = [-1, -1]
+        pattern.SpacingPattern = [180, 90]
+        self.assertEqual(bounds(), (-30, -30, 30, 10))
 
     def tearDown(self):
         #closing doc

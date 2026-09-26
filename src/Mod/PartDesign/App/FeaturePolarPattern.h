@@ -32,8 +32,8 @@
 namespace PartDesign
 {
 enum class PolarPatternMode {
-    angle,
-    offset
+    Extent,
+    Spacing
 };
 
 class PartDesignExport PolarPattern : public PartDesign::Transformed
@@ -49,6 +49,8 @@ public:
     App::PropertyAngle       Angle;
     App::PropertyAngle       Offset;
     App::PropertyIntegerConstraint Occurrences;
+    App::PropertyFloatList   Spacings;
+    App::PropertyFloatList   SpacingPattern;
 
    /** @name methods override feature */
     //@{
@@ -66,11 +68,12 @@ public:
       * is not counted. Each transformation will rotate the shape it is applied to by the supplied angle.
       * 
       * Depending on Mode selection list will be constructed differently:
-      * 1. For "angle" mode each feature will be rotated by (Angle / (Occurrences - 1)) so 
+      * 1. For "Extent" mode each feature will be rotated by (Angle / (Occurrences - 1)) so 
       * that the transformations will cover the total Angle. The only exception is Angle = 360 degrees in 
       * which case the transformation angle will be (Angle / Occurrences) so that the last transformed shape 
       * is not identical with the original shape. 
-      * 2. For "offset" mode each feature will be rotated using exact angle from Offset parameter. It can 
+      * 2. For "Spacing" mode the angle before occurrence i + 1 is Spacings[i] when that is not -1,
+      * else SpacingPattern[i % n] when the pattern has more than one value, else Offset. It can 
       * potentially result in transformation that extends beyond full rotation or results in overlapping shapes.
       * This situations are considered as potential user errors and should be solved by user.
       * 
@@ -81,17 +84,28 @@ public:
       */
     std::list<gp_Trsf> getTransformations(const std::vector<Part::TopoShape> &) override;
 
+    /// The angle before occurrence \a index + 1 in Spacing mode, in degrees
+    double getSpacing(int index) const;
+
 protected:
     void handleChangedPropertyType(Base::XMLReader& reader, const char* TypeName, App::Property* prop) override;
     void onChanged(const App::Property* prop) override;
+    void onDocumentRestored() override;
 
     static const App::PropertyIntegerConstraint::Constraints intOccurrences;
+
+public:
+    /// The most gaps Spacings is grown to when Occurrences changes
+    static constexpr int MaxListedSpacings = 1000;
+
+protected:
     static const App::PropertyAngle::Constraints floatAngle;
 
 private:
     static const char* ModeEnums[];
 
     void setReadWriteStatusForMode(PolarPatternMode mode);
+    void resizeSpacings();
 };
 
 } //namespace PartDesign
