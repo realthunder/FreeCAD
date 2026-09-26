@@ -2991,6 +2991,23 @@ class TransactionBranchCases(unittest.TestCase):
         doc.undo()
         self.assertEqual(obj.Integer, 4711)
 
+    def testAnUnsavedPropertyOpensNoTransaction(self):
+        # Sec 27.17: a property never saved, added while a command's
+        # transaction is pending (a cache made by an isActive() check), is
+        # no change: the command leaves no empty undo step behind.
+        doc = self.track(FreeCAD.newDocument("UnsavedProp"))
+        doc.UndoMode = 1
+        obj = doc.addObject("App::FeatureTest", "Obj")
+        doc.clearUndos()
+        FreeCAD.setActiveTransaction("command")
+        obj.addProperty("App::PropertyInteger", "Cache", "Base", "", 32)   # Prop_NoPersist
+        FreeCAD.closeActiveTransaction()
+        self.assertEqual(doc.UndoNames, [])
+        FreeCAD.setActiveTransaction("command")
+        obj.addProperty("App::PropertyInteger", "Kept", "Base", "")
+        FreeCAD.closeActiveTransaction()
+        self.assertEqual(doc.UndoNames, ["command"])
+
     def testPinThatCannotBeFoundShowsTheFile(self):
         # Sec 27.5 ruling 2: a version that cannot be opened falls back to
         # the file, with a warning, and the pin stays for the next open.

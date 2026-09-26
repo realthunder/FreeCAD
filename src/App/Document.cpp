@@ -796,7 +796,15 @@ void Document::_addOrRemoveProperty(TransactionalObject* obj, Property *prop, bo
 {
     if (d->bookkeeping)
         return;
-    if(transactionsWanted() && !isPerformingTransaction() && !d->activeUndoTransaction) {
+    // A property never saved -- a cache like Part's shape cache, added when
+    // a command's isActive() builds a link's shape -- is no change to the
+    // document: it opens no transaction, where it opened the running
+    // command's, which then committed as an undo step with nothing in it
+    // (docs/TransactionLog.md sec 27.17). One open already still records it.
+    // Prop_Transient is not one: its name and type are saved.
+    const bool unsaved = prop && (prop->getType() & Prop_NoPersist);
+    if(transactionsWanted() && !isPerformingTransaction() && !d->activeUndoTransaction
+            && !unsaved) {
         if(!testStatus(Restoring) || testStatus(Importing)) {
             int tid=0;
             const char *name = GetApplication().getActiveTransaction(&tid);
