@@ -191,10 +191,10 @@
 #include "Inventor/SoFCVertexCache.h"
 #include "Inventor/ScenePublishDelta.h"
 #include "ViewProviderDocumentObject.h"
+#include "ViewVisibility.h"
 #include "Inventor/SoFCSwitch.h"
 #include "ViewProviderLink.h"
 #include "Renderer/CyclesRenderer.h"
-#include "Renderer/MeshSource.h"
 #include "Renderer/Renderer.h"
 #include "Renderer/SceneServer.h"
 #include "SceneControl.h"
@@ -587,141 +587,7 @@ struct View3DInventorViewer::Private
     /// This view's per-object visibility, parsed by View3DInventor
     /// from its ObjectVisibilities property. Kept for the viewer's
     /// lifetime for the same reason as styleOverrides.
-    Render::VisibilityOverrideTable visibilities;
-    uint32_t visibilitySerial = 0;
-    /// visibilities as SoFCVisibilityElement carries it.
-    SoFCVisibilityElement::Table visibilityElement;
-    /// The objects this view SHOWS on its own, each counted once on its
-    /// display-mode switch (SoFCSwitch::setPerViewShown) and its
-    /// ViewProvider's forced update, so a hidden one is tessellated and
-    /// captured. Released when the table drops them and with the viewer.
-    std::set<std::pair<std::string, std::string>> perViewShown;
-    /// The objects this view's entries END at, each counted once in
-    /// SoFCVisibilityElement::countOverride -- the only objects whose
-    /// switch reads the element, in any view. Released like perViewShown.
-    std::set<std::pair<std::string, std::string>> overridden;
-
-    /// Count or release \a key's object as one some view has an entry
-    /// for. Its switch is touched when that changes whether ANY view
-    /// has one: the caches above it (shared by every view) were built
-    /// without reading the element, or will stop reading it.
-    static void countOverride(const std::pair<std::string, std::string> &key,
-                              bool add)
-    {
-        if (!SoFCVisibilityElement::countOverride(key.first.c_str(), key.second.c_str(), add))
-            return;
-        if (!Application::Instance)
-            return;
-        auto doc = App::GetApplication().getDocument(key.first.c_str());
-        auto obj = doc ? doc->getObject(key.second.c_str()) : nullptr;
-        auto vp = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(
-                Application::Instance->getViewProvider(obj));
-        if (SoSwitch *sw = vp ? vp->getModeSwitch() : nullptr)
-            sw->touch();
-    }
-
-    /// Count or release \a key's object as shown by this view.
-    static void countShown(const std::pair<std::string, std::string> &key,
-                           bool enable)
-    {
-        if (!Application::Instance)
-            return;
-        auto doc = App::GetApplication().getDocument(key.first.c_str());
-        auto obj = doc ? doc->getObject(key.second.c_str()) : nullptr;
-        auto vp = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(
-                Application::Instance->getViewProvider(obj));
-        if (!vp)
-            return;
-        vp->forceUpdate(enable);
-        SoSwitch *sw = vp->getModeSwitch();
-        if (sw && sw->isOfType(SoFCSwitch::getClassTypeId()))
-            SoFCSwitch::setPerViewShown(static_cast<SoFCSwitch*>(sw), enable);
-        if (enable)
-            registerShownEvictor();
-    }
-
-    /// The display-mode switch of \a doc#\a obj, if it is an SoFCSwitch.
-    static SoFCSwitch *switchOf(const std::string &docName, const std::string &objName)
-    {
-        auto doc = App::GetApplication().getDocument(docName.c_str());
-        auto obj = doc ? doc->getObject(objName.c_str()) : nullptr;
-        auto vp = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(
-                Application::Instance->getViewProvider(obj));
-        SoSwitch *sw = vp ? vp->getModeSwitch() : nullptr;
-        return (sw && sw->isOfType(SoFCSwitch::getClassTypeId()))
-            ? static_cast<SoFCSwitch *>(sw) : nullptr;
-    }
-
-    /// Released per-view-shown entries go first under memory pressure
-    /// (Render::MeshSourceRegistry's shown evictor): registered once,
-    /// the first time any view shows an object on its own.
-    static void registerShownEvictor()
-    {
-        static bool registered;
-        if (registered)
-            return;
-        registered = true;
-        Render::MeshSourceRegistry::instance().setShownEvictor(
-                &Private::evictShown, &SoFCSwitch::releasedPerViewShownCount);
-    }
-
-    /// Evict released entries until \a deficit bytes are covered.
-    /// Each candidate's bytes belong to the entry it draws under -- the
-    /// innermost object on its chain that has one, and a candidate whose
-    /// innermost entry some view still counts is not evictable at all.
-    /// Ranked by size times time since release: the big and the long
-    /// unwanted go first, a quick hide-show keeps what it is toggling.
-    static size_t evictShown(
-            const std::vector<Render::MeshSourceRegistry::ShownCandidate> &candidates,
-            size_t deficit)
-    {
-        if (!Application::Instance)
-            return 0;
-        struct Entry {
-            size_t bytes = 0;
-            double age = 0.0;
-            const Render::ObjectRef *ref = nullptr;
-        };
-        std::map<SoFCSwitch *, Entry> entries;
-        for (const auto &cand : candidates) {
-            for (auto it = cand.path.rbegin(); it != cand.path.rend(); ++it) {
-                SoFCSwitch *sw = switchOf(it->doc, it->obj);
-                if (!sw || !SoFCSwitch::isPerViewShown(sw))
-                    continue;
-                const double age = SoFCSwitch::perViewShownReleasedAge(sw);
-                if (age >= 0.0) {
-                    auto &entry = entries[sw];
-                    entry.bytes += cand.bytes;
-                    entry.age = age;
-                    entry.ref = &*it;
-                }
-                break;
-            }
-        }
-        std::vector<std::pair<double, std::pair<SoFCSwitch *, const Entry *>>> ranked;
-        for (const auto &[sw, entry] : entries) {
-            if (entry.bytes)
-                ranked.push_back({double(entry.bytes) * entry.age, {sw, &entry}});
-        }
-        std::sort(ranked.begin(), ranked.end(),
-                  [](const auto &a, const auto &b) { return a.first > b.first; });
-        size_t freed = 0;
-        for (const auto &item : ranked) {
-            if (freed >= deficit)
-                break;
-            const Entry &entry = *item.second.second;
-            if (!SoFCSwitch::evictPerViewShown(item.second.first))
-                continue;
-            freed += entry.bytes;
-            if (RenderParams::getLevelDebug())
-                Base::Console().Message(
-                        "render levels: evict released per-view-shown %s#%s "
-                        "(%.1fKB, released %.1fs ago)\n",
-                        entry.ref->doc.c_str(), entry.ref->obj.c_str(),
-                        double(entry.bytes) / 1024.0, entry.age);
-        }
-        return freed;
-    }
+    ViewVisibility visibility;
 
     /// The capture's additive-mode interest (docs/CoinRetirement.md
     /// 5.9 "Non-standard modes"): the Coin-side list pushed to the
@@ -1984,12 +1850,7 @@ View3DInventorViewer::~View3DInventorViewer()
     setCyclesViewport(nullptr, nullptr);
 
     // What this view showed on its own is no longer shown by it.
-    for (const auto &key : _pimpl->perViewShown)
-        Private::countShown(key, false);
-    _pimpl->perViewShown.clear();
-    for (const auto &key : _pimpl->overridden)
-        Private::countOverride(key, false);
-    _pimpl->overridden.clear();
+    _pimpl->visibility.clear();
 
     // to prevent following OpenGL error message: "Texture is not valid in the current context. Texture has not been destroyed"
     aboutToDestroyGLContext();
@@ -3060,41 +2921,8 @@ void View3DInventorViewer::setObjectStyleOverrides(
 void View3DInventorViewer::setObjectVisibilities(
         Render::VisibilityOverrideTable &&table)
 {
-    if (table.entries.empty() && _pimpl->visibilities.entries.empty())
+    if (!_pimpl->visibility.set(std::move(table)))
         return;
-    table.version = ++_pimpl->visibilitySerial;
-    _pimpl->visibilities = std::move(table);
-    _pimpl->visibilityElement.update(objectVisibilities());
-
-    std::set<std::pair<std::string, std::string>> shown;
-    std::set<std::pair<std::string, std::string>> overridden;
-    for (const auto &ov : _pimpl->visibilities.entries) {
-        if (ov.path.empty())
-            continue;
-        overridden.emplace(ov.path.back().doc, ov.path.back().obj);
-        if (ov.visible)
-            shown.emplace(ov.path.back().doc, ov.path.back().obj);
-    }
-    // Counted in before the old ones go, so an object this change keeps
-    // is not touched on the way through.
-    for (const auto &key : overridden) {
-        if (!_pimpl->overridden.count(key))
-            Private::countOverride(key, true);
-    }
-    for (const auto &key : _pimpl->overridden) {
-        if (!overridden.count(key))
-            Private::countOverride(key, false);
-    }
-    _pimpl->overridden = std::move(overridden);
-    for (const auto &key : shown) {
-        if (!_pimpl->perViewShown.count(key))
-            Private::countShown(key, true);
-    }
-    for (const auto &key : _pimpl->perViewShown) {
-        if (!shown.count(key))
-            Private::countShown(key, false);
-    }
-    _pimpl->perViewShown = std::move(shown);
 
     // The element is set by selectionRoot from this viewer's state, which
     // no cache ABOVE that node can see: a separator caching its bounding
@@ -3115,15 +2943,13 @@ void View3DInventorViewer::setObjectVisibilities(
 const SoFCVisibilityElement::Table *
 View3DInventorViewer::visibilityElementTable() const
 {
-    return _pimpl->visibilityElement.table ? &_pimpl->visibilityElement : nullptr;
+    return _pimpl->visibility.elementTable();
 }
 
 const Render::VisibilityOverrideTable *
 View3DInventorViewer::objectVisibilities() const
 {
-    if (_pimpl->visibilities.entries.empty())
-        return nullptr;
-    return &_pimpl->visibilities;
+    return _pimpl->visibility.table();
 }
 
 const Render::StyleOverrideTable *

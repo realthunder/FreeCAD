@@ -248,6 +248,21 @@ public:
     }
     SoFCRenderCacheManager* getRenderCacheManager() const override;
     Render::Renderer* getExternalRenderer() const override;
+    const SoFCVisibilityElement::Table* visibilityElementTable() const override;
+    //@}
+
+    /** @name The client's own object visibility (docs/CoinRetirement.md 5.18)
+     *
+     * A client's ObjectVisibilities map, parsed on the host (a subname path
+     * needs the document), held here like a desktop view holds its own:
+     * host picks and bounds for this client follow it, and the client draws
+     * by the same table (docs/ThinClient.md, per-client visibility).
+     */
+    //@{
+    /// Replace the table; false when nothing changed.
+    bool setObjectVisibilities(Render::VisibilityOverrideTable&& table);
+    /// The table, or null when it is empty.
+    const Render::VisibilityOverrideTable* objectVisibilities() const;
     //@}
 
     /** @name ViewerContext -- what the input device supplies */

@@ -221,6 +221,14 @@ public:
      */
     MirrorViewer *mirrorViewerFor(uint64_t client) const;
 
+    /*!
+     * The client's mirror, built on first contact, whether or not the
+     * client has stated a camera yet: for the client's own view state --
+     * its object visibility -- which a client sets before it looks.
+     * Null only without a root or a client. GUI thread only.
+     */
+    MirrorViewer *clientViewer(uint64_t client);
+
 private Q_SLOTS:
     void onPublishTimeout();
 

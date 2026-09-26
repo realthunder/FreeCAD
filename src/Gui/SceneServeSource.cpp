@@ -1656,6 +1656,11 @@ ViewerContext *SceneServeSource::viewerFor(uint64_t client) const
     return mirrorViewerFor(client);
 }
 
+MirrorViewer *SceneServeSource::clientViewer(uint64_t client)
+{
+    return pimpl->ensureClient(client);
+}
+
 namespace
 {
 

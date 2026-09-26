@@ -85,6 +85,7 @@
 #include "SoFCVectorizeSVGAction.h"
 #include "View3DInventorExamples.h"
 #include "View3DInventorViewer.h"
+#include "ViewVisibility.h"
 #include "ViewArea.h"
 #include "View3DInventorPy.h"
 #include "ViewProvider.h"
@@ -1273,76 +1274,6 @@ void View3DInventor::Restore(Base::XMLReader &reader)
 }
 
 namespace {
-/// Resolve one per-view override KEY -- the form ObjectDisplayModes
-/// and ObjectVisibilities share -- into {doc, obj} steps. A key with no
-/// dot is BARE (the object wherever it appears in this view; "Doc#Obj"
-/// for an object of another document shown through a link); one with
-/// a dot is a subname PATH from a top-level object of \a doc, naming
-/// one occurrence. False when the key does not resolve -- its object
-/// was deleted -- which callers treat as inert, not as an error.
-bool parseOverrideKey(const std::string &key,
-                      App::Document *doc,
-                      std::vector<Render::ObjectRef> &path,
-                      bool &rooted)
-{
-    path.clear();
-    if (key.find('.') == std::string::npos) {
-        rooted = false;
-        auto sep = key.find('#');
-        if (sep != std::string::npos)
-            path.push_back({key.substr(0, sep), key.substr(sep + 1)});
-        else
-            path.push_back({doc->getName(), key});
-        return true;
-    }
-    // Path form: one occurrence, resolved token by token so every
-    // element carries its true document -- getSubObject follows links
-    // across documents the same way the scene graph does.
-    rooted = true;
-    std::istringstream iss(key);
-    std::string tok;
-    App::DocumentObject *cur = nullptr;
-    while (std::getline(iss, tok, '.')) {
-        if (tok.empty())
-            continue;
-        if (!cur)
-            cur = doc->getObject(tok.c_str());
-        else
-            cur = cur->getSubObject((tok + ".").c_str());
-        if (!cur || !cur->isAttachedToDocument())
-            return false;
-        path.push_back({cur->getDocument()->getName(),
-                        cur->getNameInDocument()});
-    }
-    return !path.empty();
-}
-
-/// Parse the ObjectVisibilities property into the view's visibility
-/// table. Bare entries are this view's own per-object visibility and
-/// count only while \a perView (PerViewVisibilities) is on; path
-/// entries -- a hide of one occurrence -- always count.
-Render::VisibilityOverrideTable parseObjectVisibilities(
-        const std::map<std::string, std::string> &values,
-        App::Document *doc,
-        bool perView)
-{
-    Render::VisibilityOverrideTable table;
-    if (!doc)
-        return table;
-    for (const auto &kv : values) {
-        if (kv.first.empty() || kv.second.empty())
-            continue;
-        Render::VisibilityOverride ov;
-        if (!parseOverrideKey(kv.first, doc, ov.path, ov.rooted))
-            continue;
-        if (!ov.rooted && !perView)
-            continue;
-        ov.visible = View3DInventor::visibilityValue(kv.second);
-        table.entries.push_back(std::move(ov));
-    }
-    return table;
-}
-
 /// Parse the ObjectDisplayModes property (docs/CoinRetirement.md 5.9)
 /// into backend override entries, resolving every path element to its
 /// true {document, object} pair so the backend never touches a

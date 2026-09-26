@@ -957,6 +957,7 @@ SET(View3D_CPP_SRCS
     View3DInventorSelection.cpp
     View3DInventorViewer.cpp
     ViewerContext.cpp
+    ViewVisibility.cpp
     MirrorViewer.cpp
     OmniControl.cpp
     SceneControl.cpp
@@ -991,6 +992,7 @@ SET(View3D_SRCS
     View3DInventorSelection.h
     View3DInventorViewer.h
     ViewerContext.h
+    ViewVisibility.h
     MirrorViewer.h
     OmniControl.h
     SceneControl.h

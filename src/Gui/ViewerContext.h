@@ -44,6 +44,8 @@
 #include <Inventor/SoType.h>
 #include <Inventor/nodes/SoEventCallback.h>
 
+#include "Inventor/SoFCVisibilityElement.h"
+
 class SoNode;
 class SoPath;
 class SoPickedPoint;
@@ -284,6 +286,16 @@ public:
     virtual Gui::Document* getDocument() = 0;
     virtual SoFCRenderCacheManager* getRenderCacheManager() const = 0;
     virtual Render::Renderer* getExternalRenderer() const = 0;
+    /** This view's own object visibility as SoFCVisibilityElement
+     * carries it (docs/CoinRetirement.md 5.18), or null for none. A
+     * selection root shared by several views -- the served root, one per
+     * document for every client -- sets the element for the view whose
+     * traversal it is, so each client's picks follow its own table.
+     */
+    virtual const SoFCVisibilityElement::Table *visibilityElementTable() const
+    {
+        return nullptr;
+    }
     //@}
 
     /** @name Values the input device supplies

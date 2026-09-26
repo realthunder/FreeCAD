@@ -2730,6 +2730,22 @@ Capture on first show touches only objects someone shows.
   farther from the centre than the Coin ray pick, in both axes: the
   backend feed skipped Coin's `ADJUST_CAMERA` widening.
 
+**Per client on the served tier (user design, 2026-09-26: the table on
+the mirror).** A browser client sets its own map with the `view.visibility`
+op (`{map, perView}`, the ObjectVisibilities keys and values; it replaces
+the whole table). The host parses it -- a subname path needs the document
+-- onto that client's `MirrorViewer`, which holds a `ViewVisibility` exactly
+as a desktop view does (`ViewVisibility.h`: the table, the element form,
+the per-object counts). The served root is one `SoFCUnifiedSelection` per
+document shared by every client, so it takes the element from its pick
+view -- `ViewerContext::current()` inside the client's `ViewerScope` --
+through the new `ViewerContext::visibilityElementTable()`: the host's
+picks and bounds for a client follow that client's table and no one
+else's. A client may set its own table with view access only: it is view
+state, not an edit. Verified by `tests/gui/serve-client-visibility.py`.
+What the client DRAWS follows in the next step: the stream ships the
+superset and the client filters by the same table.
+
 **Verified** by `tests/gui/per-view-visibility.py`
 (`GuiPerViewVisibility_tests_run`), two views of one document, 27
 checks: picks, scene bounds and backend frame pixels per view, bare

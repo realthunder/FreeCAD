@@ -2131,8 +2131,9 @@ fork has. `ToolBarManager::setState` and `tv.activateWorkbench`: one active work
 layer's singleton store, one producer, no focus arbitration between producers, modal
 dialogs as nested `exec()`; per client, a store keyed per client, `open()` plus a callback
 carrying a client tag, a focus owner per client. TempoVis and `Visibility`: document
-state, `ViewProvider::isShow()` global; per client, per-view visibility overrides, which
-exist today only as the browser's local hide. The main window's status bar and dock
+state, `ViewProvider::isShow()` global; per client, per-view visibility overrides --
+built 2026-09-26 (`docs/CoinRetirement.md` 5.18, the `view.visibility` op: the client's
+table on its mirror). The main window's status bar and dock
 registry, `WaitCursor`, `Base::Console` reports; per client, routed to the session that
 caused them.
 

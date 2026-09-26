@@ -1056,10 +1056,14 @@ SbName SoFCUnifiedSelection::DisplayModePoints("Points");
 void SoFCUnifiedSelection::Private::applyVisibility(SoState * state) const
 {
     // This view's own object visibility, for the per-view traversals
-    // the element is enabled in (SoFCVisibilityElement).
-    if (pcViewer
-            && state->isElementEnabled(SoFCVisibilityElement::getClassStackIndex()))
-        SoFCVisibilityElement::set(state, pcViewer->visibilityElementTable());
+    // the element is enabled in (SoFCVisibilityElement). The view is the
+    // pick view: this root's own viewer, or -- on a root several views
+    // share, the served one -- the view whose traversal this is, so each
+    // client picks and bounds by its own table.
+    if (!state->isElementEnabled(SoFCVisibilityElement::getClassStackIndex()))
+        return;
+    if (ViewerContext *view = pickView())
+        SoFCVisibilityElement::set(state, view->visibilityElementTable());
 }
 
 void SoFCUnifiedSelection::Private::applyOverrideMode(SoState * state) const

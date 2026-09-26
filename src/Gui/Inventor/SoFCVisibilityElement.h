@@ -31,6 +31,7 @@
 
 #include <FCGlobal.h>
 #include <Inventor/elements/SoElement.h>
+#include <Inventor/elements/SoSubElement.h>
 
 class SoAction;
 class SoNode;

@@ -437,7 +437,7 @@ public:
     const Render::VisibilityOverrideTable *objectVisibilities() const;
     /// The same table as SoFCVisibilityElement carries it, or null when
     /// empty; SoFCUnifiedSelection sets it for this view's traversals.
-    const SoFCVisibilityElement::Table *visibilityElementTable() const;
+    const SoFCVisibilityElement::Table *visibilityElementTable() const override;
     /// The table above, or null when it is empty. The pointer stays
     /// valid for the viewer's lifetime; a unified canvas puts it on
     /// its SubViewFrame, the plain frame states it through

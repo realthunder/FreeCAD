@@ -240,6 +240,13 @@ fc_add_gui_test(GuiPerViewShownEviction_tests_run
                 per-view-shown-eviction.py
                 --timeout 240)
 
+# A served client's own visibility map (the view.visibility op) steers the
+# host's picks for that client alone: hide, show, a path entry, a clear,
+# with a second client untouched throughout.
+fc_add_gui_test(GuiServeClientVisibility_tests_run
+                serve-client-visibility.py
+                --timeout 240)
+
 # Ctrl+A in a focused spreadsheet selects its cells (upstream 4f4e9244e6):
 # Ctrl+A is Std_SelectAll's window shortcut, and the table keeps it only by
 # claiming it in ShortcutOverride.

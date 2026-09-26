@@ -66,6 +66,7 @@
 #include "SoFCUnifiedSelection.h"
 #include "SoMouseWheelEvent.h"
 #include "Utilities.h"
+#include "ViewVisibility.h"
 #include "ViewProvider.h"
 
 using namespace Gui;
@@ -111,6 +112,9 @@ public:
     SoNode* scene = nullptr;
     SoFCRenderCacheManager* cacheManager = nullptr;
     Render::Renderer* renderer = nullptr;
+
+    /// The client's own object visibility (setObjectVisibilities).
+    ViewVisibility visibility;
 
     /// The client's, as of its last 'C' frame.
     MirrorViewer::Camera state;
@@ -875,6 +879,24 @@ SoFCRenderCacheManager* MirrorViewer::getRenderCacheManager() const
 Render::Renderer* MirrorViewer::getExternalRenderer() const
 {
     return pimpl->renderer;
+}
+
+const SoFCVisibilityElement::Table* MirrorViewer::visibilityElementTable() const
+{
+    return pimpl->visibility.elementTable();
+}
+
+bool MirrorViewer::setObjectVisibilities(Render::VisibilityOverrideTable&& table)
+{
+    // No node to touch: the shared root reads the element below its own
+    // cache check, and the pick root above it holds the camera, which no
+    // bounding box cache survives.
+    return pimpl->visibility.set(std::move(table));
+}
+
+const Render::VisibilityOverrideTable* MirrorViewer::objectVisibilities() const
+{
+    return pimpl->visibility.table();
 }
 
 float MirrorViewer::getPickRadius() const

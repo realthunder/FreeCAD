@@ -56,6 +56,7 @@
 #include "SceneWidgets.h"
 #include "SceneControlP.h"
 #include "SceneServeSource.h"
+#include "ViewVisibility.h"
 #include "Selection.h"
 #include "View3DInventor.h"
 #include "ViewProvider.h"
@@ -967,6 +968,54 @@ QJsonObject onViewFocusOp(const QJsonObject &req, const std::string &boundDoc,
 }
 
 
+/// The client's own object visibility (docs/CoinRetirement.md 5.18,
+/// per client): `map` is an ObjectVisibilities map -- a bare key is the
+/// object wherever it appears, a subname path one occurrence; "1" shows,
+/// "0" hides -- and `perView` its PerViewVisibilities switch. It replaces
+/// the client's whole table, parsed here, where a subname path can be
+/// resolved, onto the client's mirror, so the host's picks and bounds for
+/// that client follow it. View state, not an edit: a view-only client may
+/// set its own.
+QJsonObject viewVisibilityOp(const QJsonObject &req, const std::string &boundDoc,
+                             uint64_t client)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+    const QString docName = req.value(QLatin1String("doc")).toString();
+    App::Document *doc = requestDocument(req, boundDoc);
+    if (!doc)
+        return errorReply(id, "UnknownDocument", docName);
+    SceneServeSource *source = SceneServeSource::sourceFor(doc);
+    MirrorViewer *mirror = source ? source->clientViewer(client) : nullptr;
+    if (!mirror)
+        return errorReply(id, "NoView", QStringLiteral("no view for this client"));
+
+    std::map<std::string, std::string> values;
+    const QJsonObject map = req.value(QLatin1String("map")).toObject();
+    for (auto it = map.begin(); it != map.end(); ++it) {
+        const QJsonValue v = it.value();
+        std::string value;
+        if (v.isBool())
+            value = v.toBool() ? "1" : "0";
+        else if (v.isString())
+            value = v.toString().toStdString();
+        else
+            continue;
+        values[it.key().toStdString()] = value;
+    }
+    const bool perView = req.value(QLatin1String("perView")).toBool(false);
+    Render::VisibilityOverrideTable table = parseObjectVisibilities(values, doc, perView);
+    const int entries = int(table.entries.size());
+    const bool changed = mirror->setObjectVisibilities(std::move(table));
+
+    QJsonObject reply;
+    reply[QLatin1String("id")] = id;
+    reply[QLatin1String("ok")] = true;
+    reply[QLatin1String("entries")] = entries;
+    reply[QLatin1String("changed")] = changed;
+    return reply;
+}
+
+
 /// The `undo` and `redo` ops (docs/ThinClient.md 8.11 item 2): the
 /// document's transactions, which under the shared session are everyone's
 /// -- one document, one undo stack. What Ctrl+Z does on the desktop,
@@ -1154,6 +1203,8 @@ std::string Gui::handleSceneControlRequest(const std::string &json,
             reply = runCommandOp(req, boundDoc, client);
         else if (op == QLatin1String("onViewFocus"))
             reply = onViewFocusOp(req, boundDoc, client);
+        else if (op == QLatin1String("view.visibility"))
+            reply = viewVisibilityOp(req, boundDoc, client);
         else if (op == QLatin1String("undo"))
             reply = undoRedoOp(req, boundDoc, false);
         else if (op == QLatin1String("redo"))
