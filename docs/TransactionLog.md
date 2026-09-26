@@ -5488,9 +5488,31 @@ drops the sharing all the way down, and its mesh. Fix: a **shallow
 move** -- a new top `TShape` (`EmptyCopied`) whose children are the
 shared children `Moved(motion)`. The top location is untouched, the
 shape type and the element names are the same, and every face and edge
-below the top is the shared `TShape`, with its triangulation. Only a
-shape whose top is itself a face, edge or vertex needs a copy (its
-geometry lives in the top node); those are rare as object shapes.
+below the top is the shared `TShape`, with its triangulation.
+
+What the top node is decides what the move costs, because a node's own
+geometry lives in the node, and the move has to change it:
+
+- *compound, solid, shell, wire*: the node holds nothing but its list of
+  children, each with a location. The move is in the new list; nothing
+  is lost.
+- *edge*: its curves, pcurves and 3D polygon are representations, each
+  with its own location (`BRep_Tool::Polygon3D` returns
+  `E.Location() * GC->Location()`). The new edge node carries the same
+  curve and polygon handles with the motion folded into those
+  locations; nothing is lost but a few small representation objects.
+- *face*: the new face node keeps the same surface handle with the
+  motion in its location, and its wires are the shared ones, moved. But
+  its triangulation cannot come along: `BRep_Tool::Triangulation` applies
+  only the face's own `Location()` on top of the nodes, so the nodes are
+  stored with the face node's surface location already in them. Moving
+  the surface location makes them wrong. That one face is meshed again
+  (or its nodes transformed into a new `Poly_Triangulation`); everything
+  under it stays shared.
+- *vertex*: a point stored by value; there is nothing to share.
+
+So only an object whose whole shape is a single face loses anything, and
+only that face's mesh.
 
 **4. Two files with the same bytes.** Two managers, two blob objects, two
 parses. The comment above `ShapeParseCache` says sharing a TShape across
@@ -5519,3 +5541,6 @@ switch, both gated by the branch and version checks), then 3 and 5. Not
 measured yet: how much of a restore's time the scratch path costs on a
 real model, and whether PartGui meshes the scratch document's shapes
 through its view providers. The first step of 1 is that measurement.
+
+**Ruled (user, same day):** the order above, after the frozen and naming
+work of 27.22-27.24.
