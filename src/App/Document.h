@@ -387,6 +387,13 @@ public:
     static int64_t pinLink(PropertyXLink& link, int64_t version = 0);
     /// This file is pinned by a link: its log says so, or a loaded link is.
     bool isPinned() const;
+    /** Save a version document over its file (docs/TransactionLog.md sec
+     * 27.16), which a plain save() refuses: the document takes its branch
+     * if it has none, as its first change would, and the file is written
+     * from it and reopens on that branch. The document keeps its name.
+     * Returns the version the save became; throws on failure.
+     */
+    int64_t saveVersionAsFile();
     /** The same for a file's history, whether or not a document of the file
      * is open (docs/TransactionLog.md sec 27.13; FileHistory::openFile()).
      * `from`, when given, is the document of the file it is named after.

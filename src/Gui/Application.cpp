@@ -2172,6 +2172,12 @@ struct LiveLoad
     /// bit is cleared on exactly the ones that were claimed -- a document
     /// that had it set by an actual import must keep it.
     std::set<std::string> claimed;
+    /// The documents whose load a running command started: a link's
+    /// target, a pinned link's version (docs/TransactionLog.md sec 27.16).
+    /// The command's own doing, like an import into an open document, so
+    /// not claimed while that command runs -- claimed, the load's own
+    /// writes aborted it, and the document was left empty.
+    std::set<std::string> commandLoads;
 };
 
 LiveLoad& liveLoad()
@@ -2190,6 +2196,9 @@ void Application::refreshLiveLoad(const App::Document* starting)
     // behind. A stuck claim is not cosmetic: it refuses every AlterDoc
     // command for the rest of the session.
     std::set<std::string> loading;
+    if (starting && App::Document::isUserEditing()) {
+        live.commandLoads.insert(starting->getName());
+    }
     if (starting) {
         // Its Restoring bit is not set yet -- the signal that brings us here
         // is emitted one line before it -- so this is the only evidence that
@@ -2227,6 +2236,18 @@ void Application::refreshLiveLoad(const App::Document* starting)
             if (App::GetApplication().getDocument(name.c_str())) {
                 loading.insert(name);
             }
+        }
+    }
+
+    for (auto it = live.commandLoads.begin(); it != live.commandLoads.end();) {
+        if (!loading.count(*it)) {
+            it = live.commandLoads.erase(it);
+        }
+        else {
+            if (App::Document::isUserEditing()) {
+                loading.erase(*it);
+            }
+            ++it;
         }
     }
 

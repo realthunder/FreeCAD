@@ -5149,6 +5149,34 @@ bool Document::isPinned() const
         && !PropertyXLink::getPinsTo(FileName.getStrValue()).empty();
 }
 
+int64_t Document::saveVersionAsFile()
+{
+    // docs/TransactionLog.md sec 27.5 ruling 4, 27.16.
+    if (!testStatus(VersionDoc))
+        THROWM(Base::RuntimeError, "'" + Label.getStrValue() + "' is not a version of a file");
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        THROWM(Base::RuntimeError, "no transaction log");
+    std::string file = FileName.getStrValue();
+    if (!FileHistory::splitVersion(file) || file.empty())
+        THROWM(Base::RuntimeError, "'" + Label.getStrValue() + "' names no file");
+    // On a branch before the save names one: the embedded copy says which
+    // branch the file reopens on.
+    log->takeBranch();
+    {
+        Base::FlagToggler<> quiet(d->bookkeeping, false);
+        if (Tip.getValue())
+            TipName.setValue(Tip.getValue()->getNameInDocument());
+        LastModifiedDate.setValue(Base::TimeInfo::currentDateTimeString().c_str());
+        if (DocumentParams::getprefSetAuthorOnSave())
+            LastModifiedBy.setValue(DocumentParams::getprefAuthor().c_str());
+    }
+    if (!saveToFile(file.c_str()))
+        THROWM(Base::FileException, ("saving '" + file + "' failed").c_str());
+    auto version = Base::freecad_dynamic_cast<PropertyString>(getPropertyByName("Version"));
+    return version ? std::atoll(version->getValue()) : 0;
+}
+
 int64_t Document::pinLink(PropertyXLink& link, int64_t version)
 {
     // docs/TransactionLog.md sec 16.5, 27.6 Q3, 27.7.
@@ -5202,11 +5230,30 @@ int64_t Document::pinLink(PropertyXLink& link, int64_t version)
         log.store().setMeta("pins", pins);
     }
     // The pin reaches the file with its next save: the file's own document
-    // is marked modified (the convention DocInfo uses for a stamp change).
-    for (auto doc : log.documents()) {
-        if (!doc->testStatus(VersionDoc))
-            doc->Comment.touch();
+    // is marked modified (the convention DocInfo uses for a stamp change),
+    // opened first when none is (27.6 Q3, 27.16) -- a store no save writes
+    // would lose the row.
+    auto fileDocs = [&log]() {
+        std::vector<Document*> docs;
+        for (auto doc : log.documents()) {
+            if (!doc->testStatus(VersionDoc))
+                docs.push_back(doc);
+        }
+        return docs;
+    };
+    std::vector<Document*> docs = fileDocs();
+    if (docs.empty()) {
+        auto& app = GetApplication();
+        Document* active = app.getActiveDocument();
+        app.openDocument(file.c_str());
+        if (active && app.getActiveDocument() != active)
+            app.setActiveDocument(active);
+        docs = fileDocs();
+        if (docs.empty())
+            THROWM(Base::RuntimeError, "the linked file '" + file + "' cannot be opened");
     }
+    for (auto doc : docs)
+        doc->Comment.touch();
     link.setPin(version, v.uuid);
     return version;
 }

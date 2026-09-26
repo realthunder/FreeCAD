@@ -779,7 +779,7 @@ TransactionStore& TransactionLogCore::store()
     return *_reader;
 }
 
-TransactionLog::Embedded TransactionLogCore::embed(const std::string& saveDate)
+TransactionLog::Embedded TransactionLogCore::embed(const std::string& saveDate, int64_t branch)
 {
     flush();
     TransactionLog::Embedded out;
@@ -815,6 +815,11 @@ TransactionLog::Embedded TransactionLogCore::embed(const std::string& saveDate)
     copy->setMeta("save_id", out.saveId);
     copy->setMeta("save_date", saveDate);
     copy->setMeta("version_counter", std::to_string(out.version));
+    // The branch the file reopens on is the saving document's (sec 27.16):
+    // the store's names whichever document of the file last switched, and a
+    // version document saved as the file never sets it.
+    if (branch)
+        copy->setMeta("branch", std::to_string(branch));
     copy.reset();
     return out;
 }
@@ -1124,7 +1129,7 @@ bool TransactionLog::readRevert(int64_t seq, Revert& out)
 
 TransactionLog::Embedded TransactionLog::embed(const std::string& saveDate)
 {
-    return _c.embed(saveDate);
+    return _c.embed(saveDate, _branch);
 }
 
 Document* TransactionLog::holderOf(int64_t id) const

@@ -4826,3 +4826,145 @@ Gates:
 - branch check 27 PASS;
 - version check 17 PASS.
 
+### 27.16 5.f plan: the Gui (2026-09-26)
+
+27.7 and 27.8 set what 5.f does. These are the details they leave open,
+with the default taken for each.
+
+**Pin and unpin are link commands.** `Std_LinkPin` ("Pin to version...")
+and `Std_LinkUnpin` join the link menu and `Std_LinkActions`.
+
+- They apply to a selected object whose link property is a
+  `PropertyXLink` to another saved file: an `App::Link`'s
+  `LinkedObject`, or any link extension's linked-object property.
+- The picker lists the linked file's versions from its log: number,
+  name, branch and date. It starts on the current pin, or else on the
+  version the file is on disk.
+- Several selected links to the same file are pinned together, in one
+  transaction. Links to other files in the selection are left alone.
+
+**Pinning opens the file's own document** when none is open (27.6 Q3).
+As built, `pinLink` only marks an open branch document modified. A pin
+made while the link shows a version document, with the file itself
+closed, would put its row in a store that no save writes. `pinLink` now
+opens the file, in App, so Python gets it too.
+
+**Save with warning.** The Gui's Save of a version document asks first:
+
+> This is version N of F [, which other documents pin]. Saving writes
+> it over F, as branch B.
+
+A new App call, `Document::saveVersionAsFile()`, does the write:
+
+- the cursor takes a branch (`ensureBranch`) if it has none, so a
+  version saved unchanged continues a free tip or makes `<branch>@v<num>`;
+- the file is written from this document, with history under the usual
+  rules;
+- the store's `meta` branch becomes this branch, so the file reopens on
+  it;
+- the document keeps its name `<file>@v<num>` (27.7, Identity);
+- the call returns the version the save became.
+
+Save All still skips version documents.
+
+**Re-pin.** After such a save, the Gui lists the loaded links pinned to
+version N of F and offers to re-pin them to the new version, one
+transaction per owning document. Pins in files that are not loaded keep
+naming N.
+
+**The question this leaves (default taken, not ruled).** F's own
+document may be open while a version of it is saved over F. The default
+is that the save goes ahead, and the warning names that document. F on
+disk is then this version's branch, and the open document keeps its own
+branch and changes; whichever saves last writes F. That is git's
+worktree rule again, applied to the one file both write.
+
+**GUI check** `scripts/transaction-log-pin-check.py`. Message boxes and
+the picker are answered by the script. It covers:
+
+- pin through the command, and see the version document;
+- unpin, undo and redo;
+- save a version document through the Gui with the warning, and re-pin;
+- Save All skips the version document.
+
+### 27.17 5.f as built: the Gui (2026-09-26)
+
+27.16 is built as planned. **Phase 5 is complete.**
+
+**App.**
+
+- `Document::saveVersionAsFile()` (Python `doc.saveVersionAsFile()`)
+  takes the branch first (`TransactionLog::takeBranch()`), stamps as
+  `save()` does, writes the file and returns the version the save became.
+- The embedded copy now carries the **saving document's branch** in its
+  `meta` (`TransactionLogCore::embed(date, branch)`). Before this, the
+  file reopened on whichever branch the store last named -- the one the
+  last branch document switched to. A version document never sets that,
+  so its file would have reopened on the wrong branch.
+  `testSaveAVersionAsTheFile` shows both cases.
+- `pinLink` opens the file's own document when only version documents of
+  it are open, and keeps the active document.
+
+**Gui.**
+
+- `Std_LinkPin` and its picker (`QDialog` "Std_LinkPin", a tree of the
+  file's versions, newest first), and `Std_LinkUnpin`. Both are in the
+  link menu.
+- `Gui::Document::save` of a version document shows the warning and
+  calls `saveVersionAsFile`, then offers the re-pin as a "Re-pin links"
+  command.
+
+**Found by the GUI check, fixed.**
+
+1. **A load a command starts was guarded against that command.** The Gui
+   marks every loading document `LiveImport`
+   (`Application::refreshLiveLoad`), and `UserEditGuard` refuses a
+   running command's writes to such a document. `Std_LinkPin` opened the
+   version document inside the command, so its restore aborted at the
+   first object, and the link showed an empty document. The pin from
+   Python, outside a command, worked.
+
+   `refreshLiveLoad` now remembers a load that started while a command
+   runs (`isUserEditing()`), and does not claim it while the command
+   lasts. It is the command's own doing, like the import into an open
+   document that was already exempt. A link's target file, opened by a
+   command, went the same way before pins.
+2. **A re-pin was undone by the document's name.** `PropertyXLink::setValue(file, name)`
+   found the object through the `DocInfo` for `<file>@v3`, then passed it
+   to `setValue(object)`. That call derived a `DocInfo` again from the
+   document's `FileName`, and the version document saved as its file is
+   still named `<file>@v1` (27.7), so the link was pinned back to v1. The
+   `DocInfo` found is now handed over.
+3. **A cancelled command left an empty undo step.** While the picker's
+   modal loop ran, the Gui's action update asked `Part_CrossSections`
+   whether it was active. That built the selected link's shape, and
+   `Part::PropertyShapeCache` added its cache to the link as a dynamic
+   `Prop_NoPersist` property. `_addOrRemoveProperty` opened the running
+   command's transaction for it, and the command committed that as a
+   step. A property never saved no longer *opens* a transaction; if one
+   is open, it is still recorded, as before. `Prop_Transient` is not
+   exempt, because its name and type are saved. Any modal command with a
+   link selected did this. Test: `testAnUnsavedPropertyOpensNoTransaction`.
+
+**Two things seen, not chased:**
+
+- `FREECAD_USER_HOME` does not keep the GUI off `~/.config/FreeCAD`.
+  The GUI checks read the real `user.cfg`, which here has
+  `TransactionLog=1`, so a GUI save left the history out. The pin
+  check sets the preference in-process. It exits with `os._exit`, so the
+  setting is never written back.
+- `ViewProviderDocumentObjectPy::getObject` dereferences a null object:
+  a Python Gui observer that reads `vp.Object` during a view provider's
+  construction crashes the process.
+
+GUI check: `scripts/transaction-log-pin-check.py`, run with its own
+`XDG_CACHE_HOME`.
+
+Gates:
+
+- Python 2922 OK, with the log on and with it off (`TransactionLog=0`);
+- ctest 840/840;
+- recovery check 15 PASS;
+- branch check 27 PASS;
+- version check 17 PASS;
+- pin check 25 PASS.

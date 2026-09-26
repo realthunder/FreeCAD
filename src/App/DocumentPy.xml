@@ -354,6 +354,17 @@ puts it on a branch: the one whose tip the version is if no document holds
 it, else a new one, `BRANCH@vN`.</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="saveVersionAsFile">
+      <Documentation>
+        <UserDocu>saveVersionAsFile() -> int
+
+Save this version document over its file (docs/TransactionLog.md sec
+27.16), which save() refuses: the document takes its branch if it has
+none, as its first change would, and the file is written from it and
+reopens on that branch. The document keeps its name. Returns the version
+the save became.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="getTransactionCursor">
       <Documentation>
         <UserDocu>getTransactionCursor() -> dict or None

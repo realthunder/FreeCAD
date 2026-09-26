@@ -2883,6 +2883,40 @@ class TransactionBranchCases(unittest.TestCase):
         with self.assertRaises(Exception):
             FreeCAD.openFileVersion(path, 999, False)
 
+    def testSaveAVersionAsTheFile(self):
+        # Sec 27.16: save() refuses a version document; saveVersionAsFile()
+        # writes it over the file, which reopens on the version's branch.
+        doc, path = self.saved()
+        first = doc.getTransactionVersions()[0]["num"]
+        opened = self.track(doc.openTransactionVersion(first, False))
+        opened.openTransaction("edit the version")
+        opened.getObject("Obj").Integer = 7
+        opened.commitTransaction()
+        saved = opened.saveVersionAsFile()
+        self.assertGreater(saved, first)
+        self.assertTrue(opened.FileName.endswith("@v%d" % first))
+        with self.assertRaises(ValueError):
+            opened.save()
+        for d in (opened, doc):
+            FreeCAD.closeDocument(d.Name)
+        doc = self.track(FreeCAD.openDocument(path))
+        self.assertEqual(doc.getObject("Obj").Integer, 7)
+        self.assertEqual(doc.Branch, "main")
+        self.assertEqual(int(doc.Version.split()[0]), saved)
+
+        # Unchanged, and not the tip of its branch any more: saved as the
+        # file, it makes a branch of its own, and the file reopens on it
+        # whatever branch the store last named.
+        again = self.track(doc.openTransactionVersion(first, False))
+        again.saveVersionAsFile()
+        for d in (again, doc):
+            FreeCAD.closeDocument(d.Name)
+        doc = self.track(FreeCAD.openDocument(path))
+        self.assertEqual(doc.getObject("Obj").Integer, 1)
+        self.assertEqual(doc.Branch, "main@v%d" % first)
+        names = {b["id"]: b["name"] for b in doc.getTransactionBranches()}
+        self.assertEqual(names[doc.getTransactionCursor()["branch"]], doc.Branch)
+
     def testPinnedLinkKeepsItsVersion(self):
         # Sec 16.5, 27.7: a link pinned to a version of another file shows
         # that version, opened as a document of its own, across the linked

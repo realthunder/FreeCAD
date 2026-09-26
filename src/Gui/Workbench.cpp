@@ -349,7 +349,7 @@ void Workbench::createLinkMenu(MenuItem *item) {
 
     auto &rMgr = Application::Instance->commandManager();
     const char *cmds[] = {"Std_LinkMakeRelative",nullptr,"Std_LinkUnlink","Std_LinkReplace",
-        "Std_LinkImport","Std_LinkImportAll",nullptr,"Std_LinkCreateInPlace","Std_LinkCreateInContainer",nullptr,
+        "Std_LinkImport","Std_LinkImportAll",nullptr,"Std_LinkPin","Std_LinkUnpin",nullptr,"Std_LinkCreateInPlace","Std_LinkCreateInContainer",nullptr,
         "Std_LinkSelectLinked", "Std_LinkSelectLinkedFinal","Std_LinkSelectAllLinks"};
     bool separator = true;
     for(const auto & it : cmds) {

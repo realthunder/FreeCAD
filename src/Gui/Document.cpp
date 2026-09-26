@@ -51,13 +51,18 @@
 #include <App/DocumentParams.h>
 #include <App/DocumentObjectGroup.h>
 #include <App/FileBlobManager.h>
+#include <App/FileHistory.h>
 #include <App/GeoFeatureGroupExtension.h>
 #include <App/PropertyFile.h>
+#include <App/PropertyLinks.h>
+#include <App/TransactionLog.h>
+#include <App/TransactionStore.h>
 #include <App/Transactions.h>
 #include <App/ElementNamingUtils.h>
 #include <Base/Console.h>
 #include <Base/Sequencer.h>
 #include <Base/Exception.h>
+#include <Base/FileInfo.h>
 #include <Base/Matrix.h>
 #include <Base/Reader.h>
 #include <Base/Writer.h>
@@ -1727,9 +1732,100 @@ bool Document::offerSchemaUpgrade(const std::vector<App::Document*> &docs)
     return true;
 }
 
+namespace {
+/// The loaded links pinned to version `num` of `file`.
+std::vector<App::PropertyXLink*> linksPinnedTo(const std::string& file, int64_t num)
+{
+    std::vector<App::PropertyXLink*> links;
+    for (auto link : App::PropertyXLink::getPinsTo(file)) {
+        if (link->getPinVersion() == num)
+            links.push_back(link);
+    }
+    return links;
+}
+
+/// Save a version document over its file, asking first, then offer to
+/// re-pin the loaded links that pin the version it was
+/// (docs/TransactionLog.md sec 27.5 ruling 4, 27.16).
+bool saveVersionDocument(Gui::Document* gdoc)
+{
+    App::Document* doc = gdoc->getDocument();
+    std::string file = doc->FileName.getStrValue();
+    const int64_t num = App::FileHistory::splitVersion(file);
+    App::TransactionLog* log = doc->getTransactionLog();
+    if (!num || file.empty() || !log)
+        return false;
+    const QString name = QString::fromUtf8(Base::FileInfo(file).fileName().c_str());
+    QString text = linksPinnedTo(file, num).empty()
+        ? QObject::tr("This is version %1 of %2.").arg(num).arg(name)
+        : QObject::tr("This is version %1 of %2, and other documents pin it.")
+              .arg(num).arg(name);
+    App::LogBranch branch;
+    if (log->branch() && log->store().getBranch(log->branch(), branch))
+        text += QLatin1Char(' ')
+            + QObject::tr("Saving writes it over %1, as branch %2.")
+                  .arg(name, QString::fromUtf8(branch.name.c_str()));
+    else
+        text += QLatin1Char(' ')
+            + QObject::tr("Saving writes it over %1, which then reopens on this version's branch.")
+                  .arg(name);
+    for (auto other : log->documents()) {
+        if (other != doc && !other->testStatus(App::Document::VersionDoc))
+            text += QStringLiteral("\n\n")
+                + QObject::tr("%1 is open too: whichever of the two is saved last is "
+                              "what the file holds.")
+                      .arg(QString::fromUtf8(other->Label.getValue()));
+    }
+    if (QMessageBox::warning(getMainWindow(), QObject::tr("Save a version"), text,
+                             QMessageBox::Save | QMessageBox::Cancel, QMessageBox::Cancel)
+            != QMessageBox::Save)
+        return false;
+
+    int64_t saved = 0;
+    try {
+        Gui::WaitCursor wc;
+        saved = doc->saveVersionAsFile();
+    }
+    catch (const Base::Exception& e) {
+        QMessageBox::critical(getMainWindow(), QObject::tr("Saving document failed"),
+                              QString::fromUtf8(e.what()));
+        return false;
+    }
+    gdoc->setModified(false);
+
+    auto pins = linksPinnedTo(file, num);
+    if (pins.empty() || !saved)
+        return true;
+    if (QMessageBox::question(getMainWindow(), QObject::tr("Re-pin links"),
+                              QObject::tr("%n link(s) pin version %1 of %2. Pin them to "
+                                          "version %3, which was just saved?",
+                                          nullptr, int(pins.size()))
+                                  .arg(num).arg(name).arg(saved),
+                              QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes)
+            != QMessageBox::Yes)
+        return true;
+    Command::openCommand(QT_TRANSLATE_NOOP("Command", "Re-pin links"));
+    try {
+        for (auto link : pins) {
+            if (auto owner = Base::freecad_dynamic_cast<App::DocumentObject>(link->getContainer()))
+                FCMD_OBJ_CMD(owner, "pinLink('" << link->getName() << "', " << saved << ")");
+        }
+        Command::commitCommand();
+    }
+    catch (const Base::Exception& e) {
+        Command::abortCommand();
+        QMessageBox::critical(getMainWindow(), QObject::tr("Re-pin links"),
+                              QString::fromUtf8(e.what()));
+    }
+    return true;
+}
+}   // namespace
+
 /// Save the document
 bool Document::save()
 {
+    if (d->_pcDocument->testStatus(App::Document::VersionDoc))
+        return saveVersionDocument(this);
     if (d->_pcDocument->isSaved()) {
         try {
             std::vector<App::Document*> docs;

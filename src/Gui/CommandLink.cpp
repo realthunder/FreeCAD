@@ -24,7 +24,14 @@
 
 #ifndef _PreComp_
 # include <sstream>
+# include <QDateTime>
+# include <QDialog>
+# include <QDialogButtonBox>
+# include <QHeaderView>
+# include <QLabel>
 # include <QMessageBox>
+# include <QTreeWidget>
+# include <QVBoxLayout>
 #endif
 
 #include <iomanip>
@@ -38,10 +45,15 @@
 #include <App/DocumentObjectGroup.h>
 #include <App/DocumentObject.h>
 #include <App/DocumentObserver.h>
+#include <App/FileHistory.h>
 #include <App/Link.h>
 #include <App/Part.h>
+#include <App/PropertyLinks.h>
+#include <App/TransactionLog.h>
+#include <App/TransactionStore.h>
 #include <Base/Console.h>
 #include <Base/Exception.h>
+#include <Base/FileInfo.h>
 #include <Base/Tools.h>
 
 #include "Action.h"
@@ -1092,6 +1104,187 @@ public:
     const char* className() const override {return "StdCmdLinkSelectActions";}
 };
 
+//===========================================================================
+// Std_LinkPin, Std_LinkUnpin: links pinned to a version of another file
+// (docs/TransactionLog.md sec 27.16)
+//===========================================================================
+
+namespace {
+
+struct PinnableLink
+{
+    App::DocumentObject* owner;
+    App::PropertyXLink* prop;
+    std::string file;   ///< the linked file, without `@v<num>`
+};
+
+/// The selected links whose link property is an XLink to another saved file.
+std::vector<PinnableLink> getPinnableLinks(bool pinnedOnly)
+{
+    std::vector<PinnableLink> links;
+    std::set<App::DocumentObject*> seen;
+    for (auto& sel : Selection().getCompleteSelection(ResolveMode::NoResolve)) {
+        auto obj = sel.pObject ? sel.pObject->resolve(sel.SubName) : nullptr;
+        if (!obj || !obj->isAttachedToDocument() || !seen.insert(obj).second)
+            continue;
+        auto ext = obj->getExtensionByType<App::LinkBaseExtension>(true);
+        auto prop = ext ? Base::freecad_dynamic_cast<App::PropertyXLink>(
+                              ext->getLinkedObjectProperty())
+                        : nullptr;
+        if (!prop || (pinnedOnly && !prop->getPinVersion()))
+            continue;
+        App::DocumentObject* linked = prop->getValue();
+        App::Document* doc = linked ? linked->getDocument() : prop->getDocument();
+        if (!doc || doc == obj->getDocument())
+            continue;
+        std::string file = doc->FileName.getStrValue();
+        App::FileHistory::splitVersion(file);
+        if (file.empty())
+            continue;
+        links.push_back({obj, prop, file});
+    }
+    return links;
+}
+
+/// The picker: the linked file's versions, newest first. Returns the one
+/// chosen, 0 when cancelled.
+int64_t pickVersion(const std::string& file, int64_t current)
+{
+    std::string reason;
+    auto history = App::FileHistory::openFile(file, &reason);
+    if (!history) {
+        QMessageBox::warning(getMainWindow(), QObject::tr("Pin to version"),
+                             QObject::tr("%1 has no history to pin a version of: %2")
+                                 .arg(QString::fromUtf8(file.c_str()),
+                                      QString::fromUtf8(reason.c_str())));
+        return 0;
+    }
+    auto& store = App::TransactionLogCore::of(*history).store();
+    std::map<int64_t, std::string> branches;
+    for (const auto& b : store.branches())
+        branches[b.id] = b.name;
+    if (current <= 0)
+        current = history->fileVersion();
+
+    QDialog dlg(getMainWindow());
+    dlg.setObjectName(QStringLiteral("Std_LinkPin"));
+    dlg.setWindowTitle(QObject::tr("Pin to version"));
+    auto layout = new QVBoxLayout(&dlg);
+    layout->addWidget(new QLabel(QObject::tr("Pin the link to a version of %1:")
+                                     .arg(QString::fromUtf8(
+                                         Base::FileInfo(file).fileName().c_str())),
+                                 &dlg));
+    auto tree = new QTreeWidget(&dlg);
+    tree->setRootIsDecorated(false);
+    tree->setHeaderLabels({QObject::tr("Version"), QObject::tr("Name"), QObject::tr("Branch"),
+                           QObject::tr("Taken")});
+    const auto versions = store.versions();
+    for (auto it = versions.rbegin(); it != versions.rend(); ++it) {
+        auto item = new QTreeWidgetItem(tree);
+        item->setData(0, Qt::UserRole, QVariant::fromValue<qlonglong>(it->num));
+        item->setText(0, QString::number(it->num));
+        item->setText(1, QString::fromUtf8(it->name.c_str()));
+        item->setText(2, QString::fromUtf8(branches[it->branch].c_str()));
+        item->setText(3, QDateTime::fromMSecsSinceEpoch(qint64(it->created * 1000.0))
+                             .toString(Qt::ISODate));
+        if (it->num == current)
+            tree->setCurrentItem(item);
+    }
+    if (!tree->currentItem() && tree->topLevelItemCount())
+        tree->setCurrentItem(tree->topLevelItem(0));
+    tree->header()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    layout->addWidget(tree);
+    auto buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    layout->addWidget(buttons);
+    QObject::connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    QObject::connect(tree, &QTreeWidget::itemDoubleClicked, &dlg, &QDialog::accept);
+    if (dlg.exec() != QDialog::Accepted || !tree->currentItem())
+        return 0;
+    return tree->currentItem()->data(0, Qt::UserRole).toLongLong();
+}
+
+}   // namespace
+
+DEF_STD_CMD_A(StdCmdLinkPin)
+
+StdCmdLinkPin::StdCmdLinkPin()
+  : Command("Std_LinkPin")
+{
+    sGroup        = "Link";
+    sMenuText     = QT_TR_NOOP("Pin to version...");
+    sToolTipText  = QT_TR_NOOP("Pin the selected link(s) to a version of the file they link to");
+    sWhatsThis    = "Std_LinkPin";
+    sStatusTip    = sToolTipText;
+    eType         = AlterDoc;
+}
+
+bool StdCmdLinkPin::isActive()
+{
+    return !getPinnableLinks(false).empty();
+}
+
+void StdCmdLinkPin::activated(int)
+{
+    auto links = getPinnableLinks(false);
+    if (links.empty())
+        return;
+    // The first link's file; the other selected links to it go with it.
+    const std::string file = links.front().file;
+    int64_t num = pickVersion(file, links.front().prop->getPinVersion());
+    if (!num)
+        return;
+    openCommand(QT_TRANSLATE_NOOP("Command", "Pin link"));
+    try {
+        for (auto& link : links) {
+            if (link.file == file)
+                FCMD_OBJ_CMD(link.owner, "pinLink('" << link.prop->getName() << "', " << num
+                                                     << ")");
+        }
+        commitCommand();
+    }
+    catch (const Base::Exception& e) {
+        abortCommand();
+        QMessageBox::critical(getMainWindow(), QObject::tr("Pin to version"),
+                              QString::fromUtf8(e.what()));
+    }
+}
+
+DEF_STD_CMD_A(StdCmdLinkUnpin)
+
+StdCmdLinkUnpin::StdCmdLinkUnpin()
+  : Command("Std_LinkUnpin")
+{
+    sGroup        = "Link";
+    sMenuText     = QT_TR_NOOP("Unpin");
+    sToolTipText  = QT_TR_NOOP("Let the selected link(s) follow the file they link to again");
+    sWhatsThis    = "Std_LinkUnpin";
+    sStatusTip    = sToolTipText;
+    eType         = AlterDoc;
+}
+
+bool StdCmdLinkUnpin::isActive()
+{
+    return !getPinnableLinks(true).empty();
+}
+
+void StdCmdLinkUnpin::activated(int)
+{
+    auto links = getPinnableLinks(true);
+    if (links.empty())
+        return;
+    openCommand(QT_TRANSLATE_NOOP("Command", "Unpin link"));
+    try {
+        for (auto& link : links)
+            FCMD_OBJ_CMD(link.owner, "unpinLink('" << link.prop->getName() << "')");
+        commitCommand();
+    }
+    catch (const Base::Exception& e) {
+        abortCommand();
+        QMessageBox::critical(getMainWindow(), QObject::tr("Unpin"), QString::fromUtf8(e.what()));
+    }
+}
+
 //======================================================================
 // Std_LinkActions
 //===========================================================================
@@ -1137,6 +1330,8 @@ void CreateLinkCommands()
     rcCmdMgr.addCommand(new StdCmdLinkActions());
     rcCmdMgr.addCommand(new StdCmdLinkMakeGroup());
     rcCmdMgr.addCommand(new StdCmdLinkSelectActions());
+    rcCmdMgr.addCommand(new StdCmdLinkPin());
+    rcCmdMgr.addCommand(new StdCmdLinkUnpin());
 
 }
 

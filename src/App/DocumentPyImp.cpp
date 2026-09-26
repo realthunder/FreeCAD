@@ -1046,6 +1046,16 @@ PyObject* DocumentPy::openTransactionVersion(PyObject *args)
     } PY_CATCH;
 }
 
+PyObject* DocumentPy::saveVersionAsFile(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    PY_TRY {
+        return Py::new_reference_to(
+            Py::Long(static_cast<long long>(getDocumentPtr()->saveVersionAsFile())));
+    } PY_CATCH;
+}
+
 PyObject* DocumentPy::getTransactionCursor(PyObject *args)
 {
     if (!PyArg_ParseTuple(args, ""))

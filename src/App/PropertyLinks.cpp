@@ -4227,6 +4227,15 @@ void PropertyXLink::setValue(std::string &&filename, std::string &&name,
         pObject = owner->getDocument()->getObject(name.c_str());
 
     if(pObject) {
+        // Through the DocInfo just found, not one derived again from the
+        // document's name: a version document saved as its file keeps the
+        // name of the version it was opened at (docs/TransactionLog.md sec
+        // 27.16), and that name would pin the link back to it.
+        if (info && docInfo != info) {
+            if (docInfo)
+                docInfo->remove(this);
+            docInfo = info;
+        }
         setValue(pObject,std::move(subs),std::move(shadows));
         return;
     }

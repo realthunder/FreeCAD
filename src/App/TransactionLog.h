@@ -306,6 +306,9 @@ public:
     /// newest row, queued writes included, which the next row follows.
     int64_t branch() const { return _branch; }
     int64_t head() const { return _head; }
+    /// Sec 27.16: a version document about to be saved as its file takes
+    /// its branch now, as its first change would.
+    void takeBranch() { ensureBranch(); }
 
     /** The store follows the transient directory.
      *
@@ -514,7 +517,9 @@ public:
     FileBlobHandle heldBlob(const std::string& hash);
     size_t heldBlobCount();
     bool readRevert(int64_t seq, TransactionLog::Revert& out);
-    TransactionLog::Embedded embed(const std::string& saveDate);
+    /// `branch`: the saving document's, the one the file reopens on
+    /// (sec 27.16); 0 leaves the store's.
+    TransactionLog::Embedded embed(const std::string& saveDate, int64_t branch = 0);
     /// The documents of the file and their branches (sec 27.7).
     Document* holderOf(int64_t id) const;
     std::vector<Document*> documents() const;
