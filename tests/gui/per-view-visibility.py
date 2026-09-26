@@ -15,6 +15,8 @@ Claims:
     App::Part) and counts with PerViewVisibilities off;
   - a bare show brings in an object whose Visibility is off, in that
     view only;
+  - fit-all frames what the view shows, a per-view show and a path hide
+    included;
   - the other view is untouched throughout.
 
 Scored against the tree before the feature: setObjectVisibility does not
@@ -275,6 +277,36 @@ def run():
         a1 = pixel(v1, p_c3, "v1-box3-again")
         check("drawn: showing it again draws it again",
               not differ(s1, a1), (s1, a1))
+        v1.ObjectVisibilities = {}
+        v1.PerViewVisibilities = False
+        settle()
+
+        # 7. Fit-all frames what THIS view shows. In mode 3 it took the
+        # render cache's scene box -- one capture for every view -- so it
+        # followed no view's map. A point projects inside a view's frame
+        # after its fit exactly when the view's scene reaches it.
+        def inside(v, pt):
+            FreeCADGui.getMainWindow().setActiveWindow(v)
+            settle()
+            v.fitAll()
+            settle()
+            x, y = v.getPointOnViewport(pt)
+            w, h = v.getSize()
+            return 0 <= x < w and 0 <= y < h
+
+        far3 = FreeCAD.Vector(100, 5, 5)
+        farl = FreeCAD.Vector(70, 5, 5)
+        v1.PerViewVisibilities = True
+        v1.setObjectVisibility(box3, True)
+        settle()
+        check("fit: a view that shows Box3 frames it", inside(v1, far3))
+        check("fit: the other view does not", not inside(v2, far3))
+        v1.setObjectVisibility(box3, None)
+        v1.setObjectVisibility(link, False, "")
+        settle()
+        check("fit: a view that hides the Link frames without it",
+              not inside(v1, farl))
+        check("fit: the other view still frames the Link", inside(v2, farl))
         v1.ObjectVisibilities = {}
         v1.PerViewVisibilities = False
     except Exception:

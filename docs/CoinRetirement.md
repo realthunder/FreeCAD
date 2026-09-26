@@ -2649,6 +2649,12 @@ set by the view's `SoFCUnifiedSelection` for GL render, bounding box,
 pick and event traversals; `SoFCSwitch` reads it, but only for the
 object's own display-mode switch (a direct child of the innermost
 `SoFCSelectionRoot`). So picks and fit-all of one view follow its map.
+Fit-all did not until 2026-09-26: in mode 3 `getSceneBoundBox` answered
+from the render cache's scene box, which describes the one capture all
+views share, and its fallbacks start below `selectionRoot`, the node
+that sets the element. A view with a map now sets the element on its
+own action and takes the traversal (the tight per-ViewProvider box asks
+only `Visibility`, so it is skipped too).
 Not enabled for `SoCallbackAction` (the capture, and exports) nor for
 `SoSearchAction` (a hidden object must stay addressable). The element
 read records a cache dependency, so a table change re-validates the

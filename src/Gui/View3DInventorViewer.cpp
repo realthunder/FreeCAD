@@ -7673,10 +7673,19 @@ bool View3DInventorViewer::getSceneBoundBox(Base::BoundBox3d &box) const {
 
     SoGetBoundingBoxAction action(this->getSoRenderManager()->getViewportRegion());
     SoSkipBoundingBoxElement::set(action.getState(), SoSkipBoundingGroup::EXCLUDE_BBOX);
+    // This view's own visibility (docs/CoinRetirement.md 5.18). The
+    // traversals below start under selectionRoot, which is what sets it
+    // for every other action, so they set it themselves.
+    const SoFCVisibilityElement::Table *visibility = visibilityElementTable();
+    if (visibility)
+        SoFCVisibilityElement::set(action.getState(), visibility);
 
+    // The render cache's scene box answers for the one capture every
+    // view shares, so it cannot follow a view's own map: a view with one
+    // takes the traversal.
     auto manager = selectionRoot->getRenderManager();
     SbBox3f bbox;
-    if (manager && manager->getSceneNodeId() == selectionRoot->getNodeId())
+    if (manager && !visibility && manager->getSceneNodeId() == selectionRoot->getNodeId())
         manager->getBoundingBox(bbox);
     if (isValidBBox(bbox)) {
         float minx,miny,minz,maxx,maxy,maxz;
@@ -7688,7 +7697,10 @@ bool View3DInventorViewer::getSceneBoundBox(Base::BoundBox3d &box) const {
         box.MaxY = maxy;
         box.MaxZ = maxz;
     } else {
-        if(guiDocument && ViewParams::getUseTightBoundingBox()) {
+        // Per ViewProvider, the tight box asks only the object's own
+        // Visibility; a view with its own map takes the traversal, which
+        // answers every entry form (a path entry below a container too).
+        if(guiDocument && ViewParams::getUseTightBoundingBox() && !visibility) {
             for(int i=0;i<pcViewProviderRoot->getNumChildren();++i) {
                 auto node = pcViewProviderRoot->getChild(i);
                 auto vp = guiDocument->getViewProvider(node);
