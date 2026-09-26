@@ -955,6 +955,54 @@ class ShapeCongruenceCases(ShapeTestCase):
             self.assertTrue(a.isPartner(b), "an instance's face is a copy")
         self.assertAlmostEqual(second.Volume, volumes[1], delta=abs(volumes[1]) * 1e-9)
 
+    def testMovedFaceTopsShareTheirSurface(self):
+        """A face on top holds its own surface: the instance's top is a new
+        TShape whose surface is placed by the motion, and its wires are the
+        shared ones (docs/TransactionLog.md sec 27.37). Every pcurve must
+        still be found where the motion put the surface."""
+        group = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Document")
+        previous = group.GetBool("DedupCongruentShapes", True)
+        group.SetBool("DedupCongruentShapes", True)
+        try:
+            doc = self.newDocument("CongTops")
+            face = Part.makePlane(20, 30).cut(
+                Part.makeCylinder(3, 5, FreeCAD.Vector(5, 10, -1))
+            ).Faces[0]
+            one = FreeCAD.Matrix()
+            one.rotateZ(0.7)
+            one.move(FreeCAD.Vector(100, 50, 25))
+            two = FreeCAD.Matrix()
+            two.rotateX(1.3)
+            two.move(FreeCAD.Vector(-40, 5, 9))
+            expected = {}
+            for name, motion in (("FaceA", one), ("FaceB", two)):
+                obj = doc.addObject("Part::Feature", name)
+                obj.Shape = face.transformGeometry(motion)
+                expected[name] = (obj.Shape.Area, self.centre(obj.Shape))
+            doc.recompute()
+            project = self.directoryPath("CongTops_dir")
+            doc.saveAs(project)
+            FreeCAD.closeDocument(doc.Name)
+            self.docs.remove("CongTops")
+        finally:
+            group.SetBool("DedupCongruentShapes", previous)
+        self.assertEqual(len([n for n in self.blobNames(project) if n.endswith(".brp")]), 1,
+                         "the two instances should be stored once")
+        doc = self.openDocument(project)
+        for name, (area, centre) in expected.items():
+            shape = doc.getObject(name).Shape
+            self.assertEqual(shape.ShapeType, "Face")
+            self.assertTrue(shape.isValid(), name)
+            self.assertAlmostEqual(shape.Area, area, delta=area * 1e-9, msg=name)
+            self.assertLess((self.centre(shape) - centre).Length, 1e-8, name)
+            for e in shape.Edges:
+                self.assertIsNotNone(shape.curveOnSurface(e), "a pcurve is lost")
+        a, b = doc.FaceA.Shape, doc.FaceB.Shape
+        self.assertFalse(a.isPartner(b), "the tops are the instances' own")
+        self.assertEqual(len(a.Wires), len(b.Wires))
+        for x, y in zip(a.Wires, b.Wires):
+            self.assertTrue(x.isPartner(y), "an instance's wire is a copy")
+
     def testPlacementIsNotUsedToCarryTheMotion(self):
         """The motion goes into the geometry, never into the placement.
 

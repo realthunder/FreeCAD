@@ -34,6 +34,7 @@
 # include <BRepBuilderAPI_Transform.hxx>
 # include <BRepTools.hxx>
 # include <BRep_Builder.hxx>
+# include <BRep_TFace.hxx>
 # include <BRepTools_ShapeSet.hxx>
 # include <OSD_OpenFile.hxx>
 # include <TopExp.hxx>
@@ -469,16 +470,35 @@ TopoDS_Shape PropertyPartShape::shapeForSave(Base::Writer& writer) const
 
 namespace {
 
+/** A face on top holds its geometry itself, so the new top node is a new
+ * TShape: its surface is the original's, placed by `motion` where the
+ * original's is placed, and the surface and the triangulation are shared
+ * (sec 27.37). The wires, moved by `motion` as any other top's children,
+ * line up with it: a pcurve is found by the surface and the location its
+ * face's surface is at, and the motion cancels out of that.
+ */
+void moveOwnSurface(const TopoDS_Shape& shape, const TopoDS_Shape& top,
+                    const TopLoc_Location& motion)
+{
+    auto from = occ::down_cast<BRep_TFace>(shape.TShape());
+    auto to = occ::down_cast<BRep_TFace>(top.TShape());
+    to->Location(motion * from->Location());
+    to->NaturalRestriction(from->NaturalRestriction());
+    to->Triangulations(from->Triangulations(), from->ActiveTriangulation());
+}
+
 /** `shape` moved by `motion` with its top location unchanged, sharing all it
- * can (docs/TransactionLog.md sec 27.25 item 3, 27.35).
+ * can (docs/TransactionLog.md sec 27.25 item 3, 27.35, 27.37).
  *
  * The motion cannot go on the top: the top location is the object's
  * Placement. It goes one level down instead -- a new top node whose children
  * are the shared ones, each moved. Every face and edge below is the same
  * TShape as the original's, triangulation included, so two instances of a
- * part share their meshes. A shape whose top holds its own geometry -- a
- * face, an edge, a vertex -- and a motion that scales, which OCCT refuses as
- * a location, are copied as before. Null when it cannot be done this way.
+ * part share their meshes. A face on top shares its surface and mesh too
+ * (moveOwnSurface()). An edge or a vertex on top never comes here: a motion
+ * is found by congruence, which needs three vertices to recover a frame
+ * (shapeCongruenceKey()). A motion that scales, which OCCT refuses as a
+ * location, is copied as before. Null when it cannot be done this way.
  */
 TopoDS_Shape shallowMove(const TopoDS_Shape& shape, const TopLoc_Location& motion)
 {
@@ -488,6 +508,7 @@ TopoDS_Shape shallowMove(const TopoDS_Shape& shape, const TopLoc_Location& motio
         case TopAbs_SOLID:
         case TopAbs_SHELL:
         case TopAbs_WIRE:
+        case TopAbs_FACE:
             break;
         default:
             return {};
@@ -495,6 +516,8 @@ TopoDS_Shape shallowMove(const TopoDS_Shape& shape, const TopLoc_Location& motio
     if (std::abs(motion.Transformation().ScaleFactor() - 1.0) > 1e-12)
         return {};
     TopoDS_Shape top = shape.EmptyCopied();
+    if (shape.ShapeType() == TopAbs_FACE)
+        moveOwnSurface(shape, top, motion);
     BRep_Builder builder;
     for (TopoDS_Iterator it(shape, Standard_False, Standard_False); it.More(); it.Next())
         builder.Add(top, it.Value().Moved(motion));
