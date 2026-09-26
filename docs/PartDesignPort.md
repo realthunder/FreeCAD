@@ -980,5 +980,5 @@ accepts the whole task dialog, so commit a typed value with Tab. The first
 also caught a real bug before commit: binding the spin boxes clamped the
 Occurrences spin from 0 to 1 while its handler was live, and wrote 1 back.
 
-Tests: `TestLinearPattern` 10, `TestPolarPattern` 9 (three new, the mode
-names updated), `TestPartDesignApp` 153 OK. Ledger: 11 rows settled.
+Tests: `TestLinearPattern` 10, `TestPolarPattern` 9 (four new between them, the
+mode names updated), `TestPartDesignApp` 153 OK. Ledger: 11 rows settled.
