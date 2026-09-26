@@ -794,6 +794,8 @@ void Document::addOrRemovePropertyOfObject(TransactionalObject* obj, Property *p
 
 void Document::_addOrRemoveProperty(TransactionalObject* obj, Property *prop, bool add)
 {
+    if (d->bookkeeping)
+        return;
     if(transactionsWanted() && !isPerformingTransaction() && !d->activeUndoTransaction) {
         if(!testStatus(Restoring) || testStatus(Importing)) {
             int tid=0;
@@ -1321,7 +1323,7 @@ unsigned int Document::getMaxUndoStackSize()const
 
 void Document::onBeforeChange(const Property* prop)
 {
-    if(!d->rollback) {
+    if(!d->rollback && !d->bookkeeping) {
         _checkTransaction(0, prop, __LINE__);
         if (d->activeUndoTransaction)
             d->activeUndoTransaction->addObjectChange(nullptr, prop);
@@ -1336,6 +1338,12 @@ void Document::onBeforeChange(const Property* prop)
 void Document::onChanged(const Property* prop)
 {
     signalChanged(*this, *prop);
+
+    // Bookkeeping is no transaction, so the log never hears of it: what it
+    // holds for the property is stale from here (docs/TransactionLog.md sec
+    // 23.3), and the next snapshot serialises it afresh.
+    if (d->bookkeeping && d->transactionLog)
+        d->transactionLog->forgetValue(*prop);
 
     // What a crash recovery shows before it reads anything (sec 25.2).
     if ((prop == &Label || prop == &FileName) && d->transactionLog)
@@ -3102,6 +3110,7 @@ bool Document::saveAs(const char* _file)
     ExpressionSecurity::checkHostPath(ExpressionSecurity::Permission::FsWrite, file);
     Base::FileInfo fi(file.c_str());
     if (this->FileName.getStrValue() != file) {
+        Base::FlagToggler<> quiet(d->bookkeeping, false);
         this->FileName.setValue(file);
         this->Label.setValue(fi.fileNamePure());
         this->Uid.touch(); // this forces a rename of the transient directory
@@ -3141,17 +3150,20 @@ bool Document::save ()
     }
 
     if (*(FileName.getValue()) != '\0') {
-        // Save the name of the tip object in order to handle in Restore()
-        if (Tip.getValue()) {
-            TipName.setValue(Tip.getValue()->getNameInDocument());
-        }
+        {
+            Base::FlagToggler<> quiet(d->bookkeeping, false);
+            // Save the name of the tip object in order to handle in Restore()
+            if (Tip.getValue()) {
+                TipName.setValue(Tip.getValue()->getNameInDocument());
+            }
 
-        std::string LastModifiedDateString = Base::TimeInfo::currentDateTimeString();
-        LastModifiedDate.setValue(LastModifiedDateString.c_str());
-        // set author if needed
-        bool saveAuthor = DocumentParams::getprefSetAuthorOnSave();
-        if (saveAuthor) {
-            LastModifiedBy.setValue(DocumentParams::getprefAuthor().c_str());
+            std::string LastModifiedDateString = Base::TimeInfo::currentDateTimeString();
+            LastModifiedDate.setValue(LastModifiedDateString.c_str());
+            // set author if needed
+            bool saveAuthor = DocumentParams::getprefSetAuthorOnSave();
+            if (saveAuthor) {
+                LastModifiedBy.setValue(DocumentParams::getprefAuthor().c_str());
+            }
         }
 
         return saveToFile(FileName.getValue());
@@ -3778,6 +3790,7 @@ void Document::save(Base::Writer &writer, bool archive) const {
     }
 
     if (d->restoreHistory) {
+        Base::FlagToggler<> quiet(d->bookkeeping, false);
         d->restoreHistory();
         d->restoreHistory = nullptr;
     }
@@ -4246,6 +4259,9 @@ void Document::embedHistory(bool archive)
     // here opens no transaction and touches nothing (sec 16.4): `History`
     // holds the copy and the retained manifests' blobs, `Version` the
     // number this save becomes and the save id the guard on open compares.
+    // Written by the save, not by the user: no transaction opens for them,
+    // and an open one does not record them.
+    Base::FlagToggler<> quiet(d->bookkeeping, false);
     auto history = Base::freecad_dynamic_cast<PropertyHistory>(getPropertyByName("History"));
     auto version = Base::freecad_dynamic_cast<PropertyString>(getPropertyByName("Version"));
     TransactionLog* log = archive && !d->savingWithoutHistory
@@ -5359,6 +5375,7 @@ bool Document::renameBranch(const std::string& name, const std::string& newName)
     // The file says which branch it is (26.6): kept in step for the one the
     // document is on, as the next save would write it.
     if (branch.id == log->branch()) {
+        Base::FlagToggler<> quiet(d->bookkeeping, false);
         if (auto prop = Base::freecad_dynamic_cast<PropertyString>(getPropertyByName("Branch")))
             prop->setValue(newName);
     }

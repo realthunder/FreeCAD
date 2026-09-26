@@ -103,6 +103,11 @@ struct DocumentP
     std::unique_ptr<App::TransactionLog> transactionLog;
     /// Whether the mode was looked at for this document yet.
     bool transactionLogChecked {false};
+    /// The document's own bookkeeping being written -- a save's stamps, the
+    /// file name and label Save As gives it, the log's History, Version and
+    /// Branch: never a transaction, never an undo step (docs/TransactionLog.md
+    /// sec 16.4, 27.5).
+    bool bookkeeping {false};
     /// Document.xml as the reader saw it, tapped by restore(const char*)
     /// for the log's version 1 (docs/TransactionLog.md sec 16.6); empty
     /// when no tap was installed.

@@ -236,6 +236,9 @@ public:
     /// Forget what the log knew of the live values (sec 26): after the
     /// document was made another state without a transaction.
     void forgetLiveValues();
+    /// The same for one property of the document, written as bookkeeping
+    /// rather than in a transaction (sec 27.5). Main thread.
+    void forgetValue(const Property& prop);
 
 
     /** What a cold undo needs of row `seq` (sec 24.3): its ops in log

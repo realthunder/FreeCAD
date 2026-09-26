@@ -691,6 +691,11 @@ void TransactionLog::forgetLiveValues()
     TransactionCopyCache::dropOwner(this);
 }
 
+void TransactionLog::forgetValue(const Property& prop)
+{
+    _recorded.erase(prop.getID());
+}
+
 bool TransactionLog::adoptStore(const std::string& path)
 {
     flush();

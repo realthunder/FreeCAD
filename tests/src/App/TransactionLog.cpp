@@ -838,9 +838,9 @@ TEST_F(TransactionLogTest, embeddedHistoryRoundTrips)
     auto txns = store.transactions();
     ASSERT_GE(txns.size(), static_cast<size_t>(seqBefore + 1));
     EXPECT_EQ(txns.back().kind, "restore");
-    // The copy holds the save's implicit transaction (the date stamp) and
-    // is taken before the save's own record; the restore follows.
-    EXPECT_EQ(txns.back().seq, seqBefore + 2);
+    // The copy is taken before the save's own record; the restore follows.
+    // The save's stamps are bookkeeping, no transaction (sec 27.5).
+    EXPECT_EQ(txns.back().seq, seqBefore + 1);
     auto versions = store.versions();
     ASSERT_EQ(versions.size(), 2u);
     EXPECT_EQ(versions[0].num, 1);
