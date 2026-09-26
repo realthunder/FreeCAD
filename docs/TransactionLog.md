@@ -4262,3 +4262,123 @@ survey, the proposed shape and the questions to rule on before building.
 4. **5.d** Pinning names the version; Q4's kept `History`.
 5. **5.e** The Gui: context menu, picker, label, fallback overlay; a GUI
    check script.
+
+### 27.5 Rulings (user, 2026-09-26)
+
+These override 27.2-27.4 where they disagree.
+
+1. **The log is always on**; that is the aim of this branch. What the user
+   chooses is whether a save writes the history into the file. A document
+   another file pins is saved with its history whatever that choice is.
+2. **A version that fails to resolve opens the live document**, as an
+   unpinned link does today, with a warning.
+3. **One log per physical file**, where today it is one document per
+   physical file. Several versions of a file, from its one log, can be open
+   at once; one version only once. A version opened that is not the tip of
+   a branch gets a branch made implicitly, so any change to it is kept.
+4. **Read-only like a partial document.** A partially loaded document is
+   already read-only (`Document::save` and `recompute` refuse it, Save All
+   skips it, the tree offers reload). Versions use the same mechanism, but
+   the Gui offers to save anyway, with a warning.
+
+### 27.6 The questions again
+
+| # | Was | Now |
+| --- | --- | --- |
+| Q1 | where a closed file's versions come from | **From the file's log, with no document.** Under ruling 3 the log belongs to the file, not to a document, so it is opened from the file's `History` entry and blobs straight from the archive. No live document is loaded to resolve a pin. |
+| Q2 | a pin with the log off | **Gone** (ruling 1). The log-off mode stays only as a hidden switch for A/B checks. |
+| Q3 | what a pin names, and when it reaches the file | Pinning **records a pin row in the linked file's log** (version, linking file, linking document uuid) and names the version. A save of a file whose log holds pin rows, or that a loaded link pins, **writes its history whatever the preference is** (ruling 1). The row only reaches disk when the linked file is saved, so pinning **opens the linked document fully** (reloading it if it was partial) **and marks it modified**. Default pin: the version the file is on disk. |
+| Q4 | a save with the log off empties `History` | **Mostly gone.** The log is always on. A save without history is a choice the user makes, and it is refused for a file with pins. |
+| Q5 | how read-only a version is | **Ruling 4**: the partial-document gate, plus a Gui save-with-warning. |
+| Q6 | live links inside a version | Unchanged: **resolved live**, and shown as live. |
+| Q7 | Save As of a version | **Allowed**, as for any document: the new file gets a copy of the log with this document's branch current, and the old file keeps its own log. |
+| new | when the implicit branch is made | **At the first change**, so opening a version only to look leaves nothing behind. It is named `<branch>@v<num>`, with a suffix if the name is taken. |
+| new | the default for writing history into the file | **Write it.** Pins and history are the point of this branch; "Save without history" stays as a per-save choice. |
+
+### 27.7 Revised shape
+
+**The per-file log.** `App::FileHistory` is a process registry entry keyed
+by the canonical path. It owns what the file's documents share: the
+`TransactionStore`, the log's worker, the sequence counter, the branch
+table, and the **blob manager**. That is 16.2's "one blob manager per
+history" made literal. Documents hold a reference to it, and it lives while
+any document of the file is open, or while a pin still needs it.
+`TransactionLog` stays per document as the cursor on one branch: that
+document's pending values, its recorded state, its undo floor and stacks.
+`FileBlobManager` and the transient directory move from the document to
+the `FileHistory`. That makes this the largest step. It also removes
+copying: a version document restored from its own file's log takes
+handles on blobs the store already holds.
+
+**Git's worktree rule.** A branch is checked out by at most one open
+document. Every open document of a file is either:
+
+- a **branch document**, on a branch it holds -- the live document is one;
+- or a **version document**, at a version, holding no branch until it
+  changes.
+
+The rules follow from that:
+
+- Opening a version that some document already *is* (a version document
+  of it, or a branch document at that version with no change since)
+  returns that document.
+- A version document's first change makes it a branch document. If the
+  version is the tip of a branch nobody holds, it takes that branch.
+  Otherwise it gets the implicit branch `<branch>@v<num>`.
+- An in-place switch (phase 4) to a branch another document holds is
+  refused, and the refusal names that document.
+
+**Identity.** Unchanged from 27.2: `<abs path>@v<num>` is the version
+document's `FileName` and its `DocInfo` key. The directory is the file's,
+so the version's own relative links resolve as the file's do. Once a
+version document becomes a branch document it keeps that name.
+
+**Read-only.** A new status, `VersionDoc`, rides on every `PartialDoc`
+check that is about saving: App `save()` refuses it and Save All skips
+it. The Gui's Save asks instead: "This is version 17 of Part.FCStd, and
+other documents pin it. Saving writes it over Part.FCStd, as branch
+X." A saved change leaves the pins naming v17, and the dialog offers to
+re-pin them to the new version. Recompute is **not** refused: unlike a
+partial document, a version document is complete, and its snapshot
+already carries the shapes, so nothing needs a recompute until something
+changes.
+
+**Resolution.** A pinned `DocInfo` asks the `FileHistory` of the path,
+opening it from the archive if no document of the file is open, for
+version `num` with a matching uuid, then opens or returns the version
+document. On any failure it falls back to the physical file, as an
+unpinned link would, and warns once per link per open (ruling 2). The pin
+stays in the property, so a later open retries.
+
+**Opening a version from the panel.** "Open version N" joins "restore to
+here" and "branch from here" on the panel, using the same path as a pin.
+
+### 27.8 Build order (revised)
+
+1. **5.a Always on.** `TransactionLog` defaults on. A preference sets
+   whether a save writes history (default: yes), and 0 is kept as the
+   hidden switch. The suites run with it on, which is already green
+   (24.13).
+2. **5.b `FileHistory`.** The store, worker, sequence, branches, blob
+   manager and transient directory move from the document to the per-file
+   registry, and `TransactionLog` becomes the per-document cursor. With one
+   document per file nothing changes: both suites unchanged, and the
+   recovery and branch checks pass.
+3. **5.c Several documents per file.** Version documents, the worktree
+   rule, the implicit branch at the first change, `VersionDoc` on the
+   partial-document save gate, and "Open version N" in App, Python and the
+   panel. Gtests: two versions open, each opened once; edit a non-tip
+   version and it branches; edit a free tip and it continues that branch;
+   a switch onto a held branch is refused; closing one document leaves the
+   other's log working.
+4. **5.d Opening a log from the archive**, with no document: the
+   `History` entry and its blobs read from the zip into a `FileHistory`.
+5. **5.e The pin.** The `version`/`vuuid` attributes as a `set` op; pin
+   rows in the linked log; a save forced to write history when the file
+   is pinned; resolution and the fallback warning; and Python `pinLink`,
+   `unpinLink` and `getLinkPin`. Gtests: pin v1, edit and save the linked
+   file, reopen, still see v1; two pins share one document; each fallback
+   cause; the save-without-history refusal.
+6. **5.f The Gui.** Pin/unpin and the version picker on a link, the
+   version document's label and save-with-warning, re-pin on save, and a
+   GUI check script.
