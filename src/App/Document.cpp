@@ -1360,7 +1360,9 @@ void Document::onChanged(const Property* prop)
         if (d->history && d->history->home() == this)
             d->history->setDirectory(TransientDir.getStrValue());
     } else if (prop == &FileName) {
-        if (d->history)
+        // A version document is named after its file (`<file>@v<num>`) but
+        // is not what the file is registered as (sec 27.7).
+        if (d->history && !testStatus(VersionDoc))
             d->history->setPath(FileName.getStrValue());
     } else if (prop == &Uid) {
         std::string new_dir = getTransientDirectoryName(this->Uid.getValueStr(),this->FileName.getStrValue());
@@ -3158,6 +3160,12 @@ bool Document::saveCopy(const char* _file, bool withHistory) const
 // Save the document under the name it has been opened
 bool Document::save ()
 {
+    if (testStatus(Document::VersionDoc)) {
+        // Read-only as a partial document is (docs/TransactionLog.md sec
+        // 27.5 ruling 4); the Gui offers to save it anyway, with a warning.
+        FC_ERR("'" << Label.getValue() << "' is a version of a file and cannot be saved");
+        return false;
+    }
     if(testStatus(Document::PartialDoc)) {
         FC_ERR("Partial loaded document '" << Label.getValue() << "' cannot be saved");
         // TODO We don't make this a fatal error and return 'true' to make it possible to
@@ -3854,7 +3862,7 @@ void Document::restore (const char *filename,
     auto tap = [this, &objNames](Base::Reader& reader) {
         // A partial document is never snapshotted (sec 16.1), and a
         // checkout is a version already.
-        if (!objNames.empty() || d->checkingOut || !getTransactionLog())
+        if (!objNames.empty() || d->checkingOut || !getTransactionLog() || d->joinedHistory)
             return;
         reader.beginTap([this](const char* p, std::size_t n) { d->restoreDocXml.append(p, n); });
         d->restoreTapped = true;
@@ -5098,6 +5106,9 @@ void Document::_readVersion(int64_t num, const std::function<void(Document&)>& f
                 app.setActiveDocument(active);
         });
     scratch->d->noLog = true;
+    // The Gui's log panel may have given the new, active document a log
+    // already (sec 27.7); a scratch document keeps none.
+    scratch->d->transactionLog.reset();
     scratch->setUndoMode(0);
     scratch->FileName.setValue(dir);
     {
@@ -5106,6 +5117,101 @@ void Document::_readVersion(int64_t num, const std::function<void(Document&)>& f
     }
 
     fn(*scratch);
+}
+
+void Document::_joinHistory(const std::shared_ptr<FileHistory>& history)
+{
+    // A new document may have a log and a history of its own already: the
+    // Gui's log panel asks the active document for its log, and a new one is
+    // active before whoever made it is back (sec 27.7). Both go; the
+    // history's directory was this document's transient directory, which
+    // the document needs again.
+    if (d->history == history)
+        return;
+    d->transactionLog.reset();
+    if (d->history) {
+        d->history->releaseHome(*this);
+        d->history.reset();
+        Base::FileInfo(TransientDir.getStrValue()).createDirectories();
+    }
+    d->history = history;
+    d->joinedHistory = true;
+}
+
+namespace {
+long branchStride();
+}
+
+Document* Document::openVersion(int64_t num, bool createView)
+{
+    // docs/TransactionLog.md sec 27.5 ruling 3, 27.7.
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        THROWM(Base::RuntimeError, "no transaction log");
+    LogVersion version;
+    if (!log->store().getVersion(num, version))
+        THROWM(Base::ValueError, "no version " + std::to_string(num));
+    if (Document* open = log->documentAt(version))
+        return open;
+
+    // The ids its branch will hand out start a stride above every other
+    // branch's and every open document's (sec 17.2): its first change may
+    // create an object before the branch exists.
+    long idBase = 0;
+    for (const auto& b : log->store().branches())
+        idBase = std::max({idBase, b.idBase, b.lastId});
+    for (auto doc : log->documents())
+        idBase = std::max(idBase, doc->d->lastObjectId);
+    idBase += branchStride();
+
+    const std::string dir = _materialiseVersion(
+        num, getFileHistory().directory() + "/history/open-v" + std::to_string(num));
+    struct Cleanup
+    {
+        std::string dir;
+        ~Cleanup() { Base::FileInfo(dir).deleteDirectoryRecursive(); }
+    } cleanup {dir};
+
+    auto& app = GetApplication();
+    Document* active = app.getActiveDocument();
+    const std::string suffix = "@v" + std::to_string(num);
+    const std::string name =
+        app.getUniqueDocumentName((std::string(getName()) + "_v" + std::to_string(num)).c_str());
+    Document* doc = app.newDocument(name.c_str(), name.c_str(), createView);
+    if (!doc)
+        THROWM(Base::RuntimeError, "cannot make the version's document");
+    try {
+        doc->setStatus(VersionDoc, true);
+        doc->d->noLog = true;
+        doc->_joinHistory(d->history);
+        // Who the document is, not a change to it (27.9): no transaction.
+        if (!FileName.getStrValue().empty()) {
+            Base::FlagToggler<> quiet(doc->d->bookkeeping, false);
+            doc->FileName.setValue(FileName.getStrValue() + suffix);
+        }
+        {
+            Base::FlagToggler<> guard(doc->d->checkingOut);
+            doc->restore(dir.c_str(), false);
+        }
+        {
+            Base::FlagToggler<> quiet(doc->d->bookkeeping, false);
+            doc->Label.setValue(std::string(Label.getValue()) + " (v" + std::to_string(num) + ")");
+        }
+        doc->setUndoMode(getUndoMode());
+        doc->d->noLog = false;
+        doc->d->transactionLog = std::make_unique<TransactionLog>(*doc, &version);
+        doc->d->transactionLog->setIdBase(idBase);
+        doc->d->lastObjectId = std::max(doc->d->lastObjectId, idBase);
+        doc->d->undoFloor = doc->d->transactionLog->lastSeq();
+        doc->d->lastVersionTime = d->lastVersionTime;
+    }
+    catch (...) {
+        app.closeDocument(name.c_str());
+        if (active && app.getActiveDocument() != active)
+            app.setActiveDocument(active);
+        throw;
+    }
+    return doc;
 }
 
 namespace {
@@ -5150,6 +5256,9 @@ void Document::_leaveBranch()
     // already, so that switching back checks it out with no replay; and the
     // branch keeps the last id it handed out.
     TransactionLog* log = getTransactionLog();
+    // A version document not yet changed leaves nothing behind (sec 27.5).
+    if (log->detached())
+        return;
     log->resolvePending();
     // A version is the tip when nothing after it on the chain changed the
     // document: only records (save, snapshot, switch, branch) follow it.
@@ -6024,8 +6133,17 @@ FileBlobManager& Document::getFileBlobManager() const
 FileHistory& Document::getFileHistory() const
 {
     // Created on demand rather than in the constructor: the history lives in
-    // TransientDir, which is not set up yet at that point.
+    // TransientDir, which is not set up yet at that point. A file another
+    // document of this process has open already has its history, which
+    // this one joins: one log per file (docs/TransactionLog.md sec 27.5).
     if (!d->history) {
+        if (!testStatus(VersionDoc) && !FileName.getStrValue().empty()) {
+            if (auto existing = FileHistory::find(FileName.getStrValue())) {
+                d->history = existing;
+                d->joinedHistory = true;
+                return *d->history;
+            }
+        }
         d->history = FileHistory::create(*const_cast<Document*>(this));
         d->history->setPath(FileName.getStrValue());
     }

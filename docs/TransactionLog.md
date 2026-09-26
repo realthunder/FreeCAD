@@ -4499,3 +4499,107 @@ or a leftover from an earlier run fails "it lists the crashed document".
 
 Gates: Python 2915 OK, ctest 835/835, recovery check 15 PASS, branch
 check 27 PASS.
+
+### 27.12 5.c, second half: several documents per file (2026-09-26)
+
+**Opening a version.** `Document::openVersion(num)` opens a version of the
+file (Python `openTransactionVersion(num, createView=True)`, and "Open
+version N" on the log panel's version menu) as a document of its own:
+
+- `VersionDoc` status;
+- `FileName` `<file>@v<num>`, label `<label> (v<num>)`;
+- on the file's `FileHistory`: the same store, worker and blob manager;
+- restored from the version materialised under the history's
+  `history/open-v<num>`, with `checkingOut` set, so the restore neither
+  starts nor adopts a history, and the directory removed after.
+
+Its log is a cursor **detached** at the version (`TransactionLog(doc,
+&version)`: branch 0, head = the version's seq). The undo mode is the
+source document's; the undo floor is the log's end when it opened. The
+file stays registered as itself: a `VersionDoc` never re-registers the
+history under its own `FileName`. `getTransactionCursor()` reports branch,
+head, `detached`, `version`, and the file's documents.
+
+**One version, one document.** `TransactionLog::documentAt(version)`
+returns the document that *is* the version: a cursor whose head is the
+version's row, or whose branch moved past it only by records -- save,
+snapshot, switch (`unchangedSince`). `openVersion` returns that document
+instead of opening another. So a live document that has not changed since
+it saved is what opening its saved version gives. `theFilesLogOutlivesItsFirstDocument`
+states this, then edits to move the document off the version.
+
+**The first change** is the first row the cursor numbers (`number()` ->
+`ensureBranch()`):
+
+- If the branch the version was taken on is open, no document holds it,
+  and nothing but records follows the version on it, the version document
+  continues that branch, from its head.
+- Otherwise a branch of its own is made, named `<branch>@v<num>` (with
+  `#2`... when taken), forked at the version, which is named if it was
+  not. Its `branch` record precedes the row that made it.
+
+The ids the new branch hands out start at a base `openVersion` reserved:
+a stride above every branch's `idBase`/`lastId` and every open document's
+last id, because the first change may create an object before the branch
+exists.
+
+A recompute of a detached document writes no record and makes no branch.
+An implicit recompute *transaction*, which writes derived values, is a
+change like any other.
+
+**Git's worktree rule.** The core records which cursor holds each branch
+(`_holders`). A document's log holds the branch it opens on; `setBranch`,
+and so a switch or a create, refuses a branch another document holds, and
+the refusal names that document; closing a document lets its branch go.
+A document that opens on a branch already held -- the file reopened while
+a version document continues its branch -- warns and stays detached at the
+head, branching at its first change. Only a branch document writes the
+store's `meta` branch, which is the branch the file reopens on.
+
+**Read-only like a partial document** (27.5 ruling 4):
+
+- App `save()` refuses a `VersionDoc`, and Python raises "the document is
+  a version of a file".
+- In the Gui, `VersionDoc` joins `PartialDoc` in Save All, in saving
+  dependents, in the schema-upgrade offer, and in the close prompts: a
+  version document is never asked to be saved.
+- Its changes are rows on its branch in the file's log, which travel with
+  the file when a branch document of it saves with history.
+- Save-with-warning is 5.f.
+
+**Joining a history** (`_joinHistory`). A document can have a log and a
+history of its own before its maker is back: the Gui's log panel asks the
+new, active document for its log. The GUI version check found this as a
+SIGSEGV. `openVersion` then replaced the history, and freed the core the
+log's cursor still referred to. Joining drops the document's own log and
+history first, and recreates its transient directory, which went with that
+history. `_readVersion`'s scratch document drops a log it was given the
+same way.
+
+The GUI check found one more thing: `openVersion`'s own writes of the
+version document's `FileName` and `Label` opened an implicit transaction,
+which the Gui committed at the next event-loop turn. So in the Gui, merely
+opening a version made a branch. They are bookkeeping (27.9) now.
+
+**A file reopened** while another document of it is open joins the
+registered history (`getFileHistory()` looks the path up). Its restore
+then neither snapshots nor adopts (`joinedHistory`).
+
+Tests:
+
+- gtests: `versionDocumentsShareTheFilesLog`,
+  `aVersionBranchesAtItsFirstChange`,
+  `aFreeTipIsContinuedAndAHeldBranchIsNotSwitchedTo`,
+  `theFilesLogOutlivesItsFirstDocument`;
+- Python: `TransactionBranchCases.testOpenVersionIsADocumentOfItsOwn`;
+- GUI: `scripts/transaction-log-version-check.py`.
+
+Gates:
+
+- Python 2916 OK;
+- ctest 839/839;
+- recovery check 15 PASS;
+- branch check 27 PASS;
+- version check 17 PASS.
+
+Each GUI check runs with its own `XDG_CACHE_HOME`.

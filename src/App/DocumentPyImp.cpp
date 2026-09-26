@@ -142,7 +142,11 @@ PyObject*  DocumentPy::save(PyObject * args)
 
     PY_TRY {
         if (!getDocumentPtr()->save()) {
-            PyErr_SetString(PyExc_ValueError, "Object attribute 'FileName' is not set");
+            if (getDocumentPtr()->testStatus(Document::VersionDoc))
+                PyErr_SetString(PyExc_ValueError,
+                                "the document is a version of a file and is not saved");
+            else
+                PyErr_SetString(PyExc_ValueError, "Object attribute 'FileName' is not set");
             return nullptr;
         }
     } PY_CATCH;
@@ -1027,6 +1031,39 @@ PyObject* DocumentPy::restoreTransactionVersion(PyObject *args)
         return nullptr;
     PY_TRY {
         return Py::new_reference_to(Py::Boolean(getDocumentPtr()->restoreVersion(num)));
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::openTransactionVersion(PyObject *args)
+{
+    long long num;
+    PyObject* createView = Py_True;
+    if (!PyArg_ParseTuple(args, "L|O!", &num, &PyBool_Type, &createView))
+        return nullptr;
+    PY_TRY {
+        Document* doc = getDocumentPtr()->openVersion(num, Base::asBoolean(createView));
+        return doc->getPyObject();
+    } PY_CATCH;
+}
+
+PyObject* DocumentPy::getTransactionCursor(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    PY_TRY {
+        TransactionLog* log = getDocumentPtr()->getTransactionLog();
+        if (!log)
+            Py_Return;
+        Py::Dict d;
+        d.setItem("branch", Py::Long(log->branch()));
+        d.setItem("head", Py::Long(log->head()));
+        d.setItem("detached", Py::Boolean(log->detached()));
+        d.setItem("version", Py::Long(log->detachedAt()));
+        Py::List docs;
+        for (auto doc : log->documents())
+            docs.append(Py::String(doc->getName()));
+        d.setItem("documents", docs);
+        return Py::new_reference_to(d);
     } PY_CATCH;
 }
 

@@ -65,7 +65,7 @@ def column(tree, title):
 
 def run():
     p = App.ParamGet("User parameter:BaseApp/Preferences/Document")
-    mode = p.GetInt("TransactionLog", 0)
+    mode = p.GetInt("TransactionLog", 2)
     try:
         p.SetInt("TransactionLog", 1)
         doc = App.newDocument("Branches")

@@ -1329,6 +1329,7 @@ bool MainWindow::closeAllDocuments (bool close)
             return false;
         if (!gdoc->isModified()
                 || doc->testStatus(App::Document::PartialDoc)
+                || doc->testStatus(App::Document::VersionDoc)
                 || doc->testStatus(App::Document::TempDoc))
             continue;
         bool save = saveAll;

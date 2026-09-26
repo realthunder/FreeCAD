@@ -2842,6 +2842,34 @@ class TransactionBranchCases(unittest.TestCase):
     def branches(self, doc):
         return {b["name"]: b for b in doc.getTransactionBranches()}
 
+    def testOpenVersionIsADocumentOfItsOwn(self):
+        # Sec 27.7: a version opens beside the document, on the file's one
+        # log, once; its first change makes it a branch.
+        doc, path = self.saved()
+        versions = doc.getTransactionVersions()
+        first = versions[0]["num"]
+        opened = self.track(doc.openTransactionVersion(first, False))
+        self.assertNotEqual(opened.Name, doc.Name)
+        self.assertEqual(opened.FileName, doc.FileName + "@v%d" % first)
+        self.assertIs(doc.openTransactionVersion(first, False), opened)
+        cursor = opened.getTransactionCursor()
+        self.assertTrue(cursor["detached"])
+        self.assertEqual(cursor["version"], first)
+        self.assertEqual(sorted(cursor["documents"]), sorted([doc.Name, opened.Name]))
+        self.assertEqual(opened.getObject("Obj").Integer, 1)
+        with self.assertRaises(ValueError):
+            opened.save()
+        opened.openTransaction("edit the version")
+        opened.getObject("Obj").Integer = 9
+        opened.commitTransaction()
+        cursor = opened.getTransactionCursor()
+        self.assertFalse(cursor["detached"])
+        # The document is on `side`, so `main`, whose tip the version is, is
+        # free: the version's document continues it.
+        names = {b["id"]: b["name"] for b in doc.getTransactionBranches()}
+        self.assertEqual(names[cursor["branch"]], "main")
+        self.assertEqual(doc.getObject("Obj").Integer, 2)
+
     def testSwitchAndRestoreKeepTheLabel(self):
         # The version a switch or a restore applies is read into a scratch
         # document with a name of its own; the document keeps its label

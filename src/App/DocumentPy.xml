@@ -342,6 +342,29 @@ document is not reloaded; view providers are not restored. False if there
 is no log; raises if the version is missing.</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="openTransactionVersion">
+      <Documentation>
+        <UserDocu>openTransactionVersion(num, createView=True) -> Document
+
+Open version `num` of this document's file as a document of its own
+(docs/TransactionLog.md sec 27.5, 27.7): on the file's one log, at that
+version, named after the file with `@vN`, read-only as a partial
+document is. A version open already is returned instead. Its first change
+puts it on a branch: the one whose tip the version is if no document holds
+it, else a new one, `BRANCH@vN`.</UserDocu>
+      </Documentation>
+    </Methode>
+    <Methode Name="getTransactionCursor">
+      <Documentation>
+        <UserDocu>getTransactionCursor() -> dict or None
+
+Where this document is on its file's log (docs/TransactionLog.md sec 27.7):
+branch (its id, 0 for none yet), head (the seq its next row follows),
+detached (a version document not yet changed), version (the version a
+detached one is at), and documents (the names of every document of the
+file). None if there is no log.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="undoTransactionFromLog">
       <Documentation>
         <UserDocu>undoTransactionFromLog(seq) -> bool

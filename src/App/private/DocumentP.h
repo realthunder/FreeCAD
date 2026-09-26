@@ -111,6 +111,10 @@ struct DocumentP
     /// Branch: never a transaction, never an undo step (docs/TransactionLog.md
     /// sec 16.4, 27.5).
     bool bookkeeping {false};
+    /// This document joined a file history another document of the file
+    /// made (docs/TransactionLog.md sec 27.7): its restore does not start
+    /// or adopt a history, the log has one.
+    bool joinedHistory {false};
     /// Document.xml as the reader saw it, tapped by restore(const char*)
     /// for the log's version 1 (docs/TransactionLog.md sec 16.6); empty
     /// when no tap was installed.

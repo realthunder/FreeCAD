@@ -1270,6 +1270,9 @@ void TransactionLogView::onVersionContextMenu(const QPoint& pos)
     auto restore = menu.addAction(tr("Restore to version %1").arg(num));
     restore->setToolTip(tr("One undoable transaction making the document what this "
                            "version was (sec 24.5)"));
+    auto open = menu.addAction(tr("Open version %1").arg(num));
+    open->setToolTip(tr("The version as a document of its own, beside this one, on the "
+                        "file's one log; its first change makes it a branch (sec 27.7)"));
     auto name = menu.addAction(named ? tr("Rename version %1...").arg(num)
                                      : tr("Name version %1...").arg(num));
     name->setToolTip(tr("A named version is never evicted (sec 16.3)"));
@@ -1309,6 +1312,12 @@ void TransactionLogView::onVersionContextMenu(const QPoint& pos)
         if (chosen == restore) {
             // A transaction: the panel refreshes on its commit.
             doc->restoreVersion(num);
+            return;
+        }
+        if (chosen == open) {
+            App::Document* opened = doc->openVersion(num);
+            if (auto gdoc = Application::Instance->getDocument(opened))
+                Application::Instance->setActiveDocument(gdoc);
             return;
         }
         auto l = log();

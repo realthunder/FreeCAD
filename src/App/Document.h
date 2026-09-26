@@ -95,6 +95,9 @@ public:
                            // See RestoreDrainGuard.
         Initializing = 16, // Being constructed by Application::newDocument: the
                            // writes that set it up open no implicit transaction
+        VersionDoc = 17, // A version of a file opened as a document of its own
+                         // (docs/TransactionLog.md sec 27.7): read-only as a
+                         // partial document is -- save refuses it
     };
 
     /** @name Properties */
@@ -362,6 +365,16 @@ public:
      * when there is no log.
      */
     bool restoreVersion(int64_t num);
+    /** Open version `num` of this document's file as a document of its own
+     * (docs/TransactionLog.md sec 27.5, 27.7): on the file's one log, at
+     * that version, named `<file>@v<num>`, with status VersionDoc. A
+     * version open already -- a version document of it, or a document
+     * whose branch has not changed since -- is returned instead. Its first
+     * change puts it on a branch: the one whose tip the version is if no
+     * document holds it, else a new one, `<branch>@v<num>`. Throws when
+     * there is no log or no such version.
+     */
+    Document* openVersion(int64_t num, bool createView = true);
 
     /** Branches (docs/TransactionLog.md sec 17, 26). createBranch() makes
      * branch `name` from version `version`, or else from log row `seq`, or
@@ -1063,6 +1076,8 @@ protected:
     /// Version `num` read into a hidden scratch document, handed to `fn`,
     /// and closed.
     void _readVersion(int64_t num, const std::function<void(Document&)>& fn);
+    /// Sec 27.7: share `history`, another document's of the same file.
+    void _joinHistory(const std::shared_ptr<FileHistory>& history);
     /// Sec 26: refuse a branch operation in the middle of something else;
     /// an implicit transaction is committed first.
     void _checkBranchable(const char* what);

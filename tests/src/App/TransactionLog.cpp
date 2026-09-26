@@ -2680,3 +2680,220 @@ TEST_F(TransactionLogTest, fileHistoryIsTheFilesAndLivesInItsDirectory)
     App::GetApplication().closeDocument(opened->getName());
     Base::FileInfo(path).deleteFile();
 }
+
+namespace {
+
+int64_t cursorBranch(App::Document* doc)
+{
+    auto log = doc->getTransactionLog();
+    return log ? log->branch() : -1;
+}
+
+} // namespace
+
+TEST_F(TransactionLogTest, versionDocumentsShareTheFilesLog)
+{
+    // Sec 27.5 ruling 3, 27.7: versions of one file open as documents of
+    // their own, on the file's one log and blob store; one version, one
+    // document.
+    doc()->openTransaction("create");
+    auto obj = make("Obj");
+    obj->Integer.setValue(1);
+    doc()->commitTransaction();
+    const int64_t v1 = doc()->snapshotToLog();
+    doc()->openTransaction("two");
+    obj->Integer.setValue(2);
+    doc()->commitTransaction();
+    const int64_t v2 = doc()->snapshotToLog();
+    doc()->openTransaction("three");
+    obj->Integer.setValue(3);
+    doc()->commitTransaction();
+
+    const std::string path = Base::FileInfo::getTempPath() + "txnlog-versions.FCStd";
+    Base::FileInfo(path).deleteFile();
+    ASSERT_TRUE(doc()->saveAs(path.c_str()));
+
+    App::Document* d1 = doc()->openVersion(v1, false);
+    ASSERT_TRUE(d1);
+    ASSERT_NE(d1, doc());
+    EXPECT_TRUE(d1->testStatus(App::Document::VersionDoc));
+    EXPECT_EQ(d1->FileName.getStrValue(), doc()->FileName.getStrValue() + "@v" + std::to_string(v1));
+    EXPECT_EQ(&d1->getFileHistory(), &doc()->getFileHistory());
+    EXPECT_EQ(&d1->getFileBlobManager(), &doc()->getFileBlobManager());
+    // The file is still registered as itself, not as the version.
+    EXPECT_EQ(App::FileHistory::find(path).get(), &doc()->getFileHistory());
+    auto o1 = dynamic_cast<App::FeatureTest*>(d1->getObject("Obj"));
+    ASSERT_TRUE(o1);
+    EXPECT_EQ(o1->Integer.getValue(), 1);
+    ASSERT_TRUE(d1->getTransactionLog());
+    EXPECT_TRUE(d1->getTransactionLog()->detached());
+    EXPECT_EQ(d1->getTransactionLog()->detachedAt(), v1);
+    EXPECT_EQ(d1->getTransactionLog()->lastSeq(), log().lastSeq());
+
+    // Opened once: asking again gives the same document.
+    EXPECT_EQ(doc()->openVersion(v1, false), d1);
+    EXPECT_EQ(d1->openVersion(v1, false), d1);
+    App::Document* d2 = doc()->openVersion(v2, false);
+    ASSERT_TRUE(d2);
+    EXPECT_NE(d2, d1);
+    EXPECT_EQ(dynamic_cast<App::FeatureTest*>(d2->getObject("Obj"))->Integer.getValue(), 2);
+    EXPECT_EQ(log().documents().size(), 3u);
+
+    // Read-only as a partial document is: no save.
+    EXPECT_FALSE(d1->save());
+    // The live document is untouched by any of it.
+    EXPECT_EQ(obj->Integer.getValue(), 3);
+    EXPECT_EQ(cursorBranch(doc()), 1);
+
+    App::GetApplication().closeDocument(d2->getName());
+    App::GetApplication().closeDocument(d1->getName());
+    EXPECT_EQ(log().documents().size(), 1u);
+    Base::FileInfo(path).deleteFile();
+}
+
+TEST_F(TransactionLogTest, aVersionBranchesAtItsFirstChange)
+{
+    // Sec 27.5 ruling 3: a version that is not a branch tip gets a branch
+    // of its own when it first changes; ids never collide with the file's.
+    doc()->openTransaction("create");
+    auto obj = make("Obj");
+    obj->Integer.setValue(1);
+    doc()->commitTransaction();
+    const int64_t v1 = doc()->snapshotToLog();
+    doc()->openTransaction("two");
+    obj->Integer.setValue(2);
+    make("Later");
+    doc()->commitTransaction();
+    const size_t branchesBefore = log().store().branches().size();
+
+    App::Document* d1 = doc()->openVersion(v1, false);
+    ASSERT_TRUE(d1);
+    auto vlog = d1->getTransactionLog();
+    ASSERT_TRUE(vlog);
+    // Opening is not changing: no branch, no row.
+    EXPECT_TRUE(vlog->detached());
+    EXPECT_EQ(log().lastSeq(), vlog->lastSeq());
+    EXPECT_EQ(log().store().branches().size(), branchesBefore);
+
+    auto o1 = dynamic_cast<App::FeatureTest*>(d1->getObject("Obj"));
+    ASSERT_TRUE(o1);
+    d1->openTransaction("version edit");
+    o1->Integer.setValue(10);
+    auto made = d1->addObject("App::FeatureTest", "Made");
+    d1->commitTransaction();
+    EXPECT_FALSE(vlog->detached());
+    EXPECT_NE(vlog->branch(), log().branch());
+    App::LogBranch branch;
+    ASSERT_TRUE(log().store().getBranch(vlog->branch(), branch));
+    EXPECT_EQ(branch.name, "main@v" + std::to_string(v1));
+    EXPECT_EQ(branch.fromVersion, v1);
+    EXPECT_EQ(log().holderOf(branch.id), d1);
+    EXPECT_EQ(log().holderOf(1), doc());
+    // The fork is kept: named.
+    App::LogVersion fork;
+    ASSERT_TRUE(log().store().getVersion(v1, fork));
+    EXPECT_EQ(fork.kind, "named");
+    // Ids start above everything the file handed out.
+    long highest = 0;
+    for (auto o : doc()->getObjects())
+        highest = std::max(highest, o->getID());
+    EXPECT_GT(made->getID(), highest);
+    EXPECT_GE(made->getID(), branch.idBase);
+
+    // Each document is its own: the live one did not move.
+    EXPECT_EQ(obj->Integer.getValue(), 2);
+    EXPECT_FALSE(doc()->getObject("Made"));
+    EXPECT_EQ(o1->Integer.getValue(), 10);
+    EXPECT_FALSE(d1->getObject("Later"));
+    // Undo in the version document undoes its own edit.
+    ASSERT_TRUE(d1->undo());
+    EXPECT_EQ(o1->Integer.getValue(), 1);
+    EXPECT_EQ(obj->Integer.getValue(), 2);
+
+    App::GetApplication().closeDocument(d1->getName());
+    EXPECT_FALSE(log().holderOf(branch.id));
+}
+
+TEST_F(TransactionLogTest, aFreeTipIsContinuedAndAHeldBranchIsNotSwitchedTo)
+{
+    // Sec 27.7, git's worktree rule: the version at a branch's tip, when
+    // no document holds the branch, continues it; a branch another
+    // document holds cannot be switched to.
+    doc()->openTransaction("create");
+    auto obj = make("Obj");
+    obj->Integer.setValue(1);
+    doc()->commitTransaction();
+    doc()->createBranch("side");
+    doc()->openTransaction("side edit");
+    obj->Integer.setValue(5);
+    doc()->commitTransaction();
+    const int64_t tip = doc()->snapshotToLog();
+    ASSERT_TRUE(doc()->switchBranch("main"));
+    App::LogBranch side;
+    ASSERT_TRUE(log().store().findBranch("side", side));
+    const size_t branchesBefore = log().store().branches().size();
+
+    App::Document* d = doc()->openVersion(tip, false);
+    ASSERT_TRUE(d);
+    auto o = dynamic_cast<App::FeatureTest*>(d->getObject("Obj"));
+    ASSERT_TRUE(o);
+    EXPECT_EQ(o->Integer.getValue(), 5);
+    d->openTransaction("continue side");
+    o->Integer.setValue(6);
+    d->commitTransaction();
+    EXPECT_EQ(d->getTransactionLog()->branch(), side.id);
+    EXPECT_EQ(log().store().branches().size(), branchesBefore);
+    EXPECT_EQ(log().holderOf(side.id), d);
+
+    // Held: the live document cannot switch to it, and stays where it is.
+    EXPECT_THROW(doc()->switchBranch("side"), Base::Exception);
+    EXPECT_EQ(log().branch(), 1);
+    EXPECT_EQ(obj->Integer.getValue(), 1);
+
+    // Let go: now it can, and it arrives at the version document's edit.
+    App::GetApplication().closeDocument(d->getName());
+    ASSERT_TRUE(doc()->switchBranch("side"));
+    EXPECT_EQ(obj->Integer.getValue(), 6);
+}
+
+TEST_F(TransactionLogTest, theFilesLogOutlivesItsFirstDocument)
+{
+    // Sec 27.7: the history, its directory and its log live while any
+    // document of the file does, the one that made it included.
+    doc()->openTransaction("create");
+    make("Obj")->Integer.setValue(1);
+    doc()->commitTransaction();
+    const int64_t v1 = doc()->snapshotToLog();
+    // The live document is v1 until it changes, and would be what opening
+    // v1 returns (one version, one document).
+    EXPECT_EQ(doc()->openVersion(v1, false), doc());
+    doc()->openTransaction("moved on");
+    make("Other");
+    doc()->commitTransaction();
+    const std::string dir = doc()->getFileHistory().directory();
+    App::Document* d1 = doc()->openVersion(v1, false);
+    ASSERT_TRUE(d1);
+    ASSERT_NE(d1, doc());
+    const std::string name = d1->getName();
+
+    closeAndRenew();
+    EXPECT_TRUE(Base::FileInfo(dir).isDir());
+    EXPECT_EQ(d1->getFileHistory().directory(), dir);
+    EXPECT_FALSE(d1->getFileHistory().home());
+    auto o = dynamic_cast<App::FeatureTest*>(d1->getObject("Obj"));
+    ASSERT_TRUE(o);
+    d1->openTransaction("after the first went");
+    o->Integer.setValue(7);
+    d1->commitTransaction();
+    auto vlog = d1->getTransactionLog();
+    ASSERT_TRUE(vlog);
+    EXPECT_FALSE(vlog->detached());
+    // Not main's tip (main moved on): a branch of its own.
+    EXPECT_NE(vlog->branch(), 1);
+    const auto rows = vlog->store().chain(vlog->head());
+    ASSERT_FALSE(rows.empty());
+    EXPECT_EQ(rows.back().name, "after the first went");
+
+    App::GetApplication().closeDocument(name.c_str());
+    EXPECT_FALSE(Base::FileInfo(dir).exists());
+}

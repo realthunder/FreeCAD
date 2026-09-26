@@ -206,6 +206,11 @@ public:
     std::vector<std::shared_ptr<const Property>> _retired;
     std::mutex _retiredMutex;
     std::thread::id _mainThread {std::this_thread::get_id()};
+
+    /// The documents' cursors, and which holds each branch: a branch is
+    /// checked out by one document at most (sec 27.7). Main thread.
+    std::set<TransactionLog*> _cursors;
+    std::map<int64_t, TransactionLog*> _holders;
 };
 
 /** What store() hands out: every call waits for the worker's queue to
@@ -567,14 +572,35 @@ TransactionLogCore& coreOf(FileHistory& history)
 
 } // namespace
 
-TransactionLog::TransactionLog(Document& doc)
+TransactionLog::TransactionLog(Document& doc, const LogVersion* at)
     : _history(doc.getFileHistory())
     , _c(coreOf(_history))
     , _doc(doc)
 {
+    _c._cursors.insert(this);
     if (_c._store->getMeta("document").empty())
         _c._store->setMeta("document", _doc.Uid.getValueStr());
-    pickBranch();
+    if (at) {
+        _branch = 0;
+        _head = at->seq;
+        _at = at->num;
+    }
+    else {
+        pickBranch();
+        auto it = _c._holders.find(_branch);
+        if (it == _c._holders.end()) {
+            _c._holders[_branch] = this;
+        }
+        else {
+            // Its branch is checked out already (sec 27.7), by a version
+            // document that took it: this one stays at its head, and a
+            // change makes a branch of its own.
+            FC_WARN("the branch " << _branch << " of " << _history.path()
+                    << " is open in another document; " << _doc.getName()
+                    << " branches at its first change");
+            _branch = 0;
+        }
+    }
     _config = CaptureConfig(doc);
 }
 
@@ -813,10 +839,135 @@ bool TransactionLog::setBranch(int64_t id)
     LogBranch branch;
     if (!_c._store->getBranch(id, branch))
         return false;
+    // One document per branch (sec 27.7, git's worktree rule).
+    auto other = _c._holders.find(id);
+    if (other != _c._holders.end() && other->second != this)
+        THROWM(Base::RuntimeError, "branch '" + branch.name + "' is open in "
+                                       + other->second->_doc.Label.getStrValue());
+    auto held = _c._holders.find(_branch);
+    if (held != _c._holders.end() && held->second == this)
+        _c._holders.erase(held);
+    _c._holders[id] = this;
     _branch = id;
     _head = branch.head;
-    _c._store->setMeta("branch", std::to_string(id));
+    _at = 0;
+    // The branch a file continues on when it is next opened: a version
+    // document's is not the file's, until it is saved as the file.
+    if (!_doc.testStatus(Document::VersionDoc))
+        _c._store->setMeta("branch", std::to_string(id));
     return true;
+}
+
+void TransactionLog::ensureBranch()
+{
+    if (_branch != 0)
+        return;
+    flush();
+    auto& store = *_c._store;
+    LogVersion version;
+    const bool haveVersion = _at && store.getVersion(_at, version);
+    // The branch whose tip this is, if nothing moved it since and no
+    // document holds it: the version's document continues it.
+    LogBranch from;
+    bool haveFrom = false;
+    for (const auto& b : store.branches()) {
+        if (haveVersion ? b.id == version.branch : b.head == _head) {
+            from = b;
+            haveFrom = true;
+            break;
+        }
+    }
+    if (haveFrom && from.closed == 0 && !_c._holders.count(from.id)
+            && unchangedSince(from.head, _head)) {
+        _c._holders[from.id] = this;
+        _branch = from.id;
+        _head = from.head;
+        _at = 0;
+        return;
+    }
+    // A branch of its own (sec 27.5 ruling 3), named after where it forked.
+    std::string base = haveFrom ? from.name : std::string("branch");
+    base += haveVersion ? "@v" + std::to_string(version.num) : "@" + std::to_string(_head);
+    std::string name = base;
+    LogBranch taken;
+    for (int i = 2; store.findBranch(name, taken); ++i)
+        name = base + "#" + std::to_string(i);
+    LogBranch branch;
+    branch.name = name;
+    branch.fromVersion = haveVersion ? version.num : 0;
+    branch.fromSeq = _head;
+    branch.head = _head;
+    branch.idBase = _idBase;
+    branch.created = now();
+    store.addBranch(branch);
+    if (haveVersion && version.kind != "named")
+        store.nameVersion(version.num, "branch " + name);
+    _c._holders[branch.id] = this;
+    _branch = branch.id;
+    _at = 0;
+    FC_LOG(_doc.getName() << " branches as '" << name << "' at its first change");
+    // The branch's own record, before the row that made it.
+    std::ostringstream script;
+    script << "{\"from_version\":" << branch.fromVersion << ",\"from_seq\":" << branch.fromSeq
+           << ",\"id_base\":" << branch.idBase << ",\"implicit\":true}";
+    LogTransaction t;
+    number(t);
+    t.kind = "branch";
+    t.name = "Branch " + name;
+    t.time = now();
+    t.session = _c._session;
+    t.script = script.str();
+    post([this, t]() mutable {
+        std::vector<LogOp> none;
+        _c._store->append(t, none);
+    });
+    _doc.signalBranchesChanged(_doc);
+}
+
+Document* TransactionLog::holderOf(int64_t id) const
+{
+    auto it = _c._holders.find(id);
+    return it != _c._holders.end() ? &it->second->_doc : nullptr;
+}
+
+std::vector<Document*> TransactionLog::documents() const
+{
+    std::vector<Document*> docs;
+    for (auto cursor : _c._cursors)
+        docs.push_back(&cursor->_doc);
+    return docs;
+}
+
+bool TransactionLog::unchangedSince(int64_t head, int64_t seq)
+{
+    if (head == seq)
+        return true;
+    if (head < seq)
+        return false;
+    flush();
+    bool reached = false;
+    for (const auto& t : _c._store->chain(head, seq)) {
+        if (t.seq == seq)
+            reached = true;
+        else if (t.seq > seq && !_c._store->ops(t.seq).empty())
+            return false;
+    }
+    return reached;
+}
+
+Document* TransactionLog::documentAt(const LogVersion& version)
+{
+    // A document is the version when its branch moved past it only by
+    // records -- a save, a snapshot, a switch: rows with no ops.
+    for (auto cursor : _c._cursors) {
+        if (cursor->_head == version.seq)
+            return &cursor->_doc;
+        if (cursor->_branch != version.branch && cursor->_branch != 0)
+            continue;
+        if (unchangedSince(cursor->_head, version.seq))
+            return &cursor->_doc;
+    }
+    return nullptr;
 }
 
 void TransactionLog::forgetLiveValues()
@@ -941,6 +1092,10 @@ TransactionLog::~TransactionLog()
 {
     // The worker is the file's and goes on; this document's jobs, which
     // name this cursor, are written before it goes.
+    _c._cursors.erase(this);
+    auto held = _c._holders.find(_branch);
+    if (held != _c._holders.end() && held->second == this)
+        _c._holders.erase(held);
     TransactionCopyCache::dropOwner(this);
     try {
         flush();
@@ -951,7 +1106,9 @@ TransactionLog::~TransactionLog()
 
 void TransactionLog::onRecompute(const std::vector<RecomputedObject>& objects, double seconds)
 {
-    if (objects.empty())
+    // A version document recomputed but not changed is still the version:
+    // no record, and no branch for it (sec 27.5).
+    if (objects.empty() || _branch == 0)
         return;
     try {
         LogTransaction t;
@@ -1956,6 +2113,9 @@ void TransactionLog::writeValues(std::vector<ValueTask>& tasks, std::vector<LogO
 
 void TransactionLog::number(LogTransaction& t)
 {
+    // A version document's first row puts it on a branch (sec 27.5).
+    if (_branch == 0)
+        ensureBranch();
     t.parent = _head;
     t.branch = _branch;
     t.seq = ++_c._nextSeq;

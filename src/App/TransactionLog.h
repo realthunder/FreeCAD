@@ -89,7 +89,14 @@ class TransactionLogCore;
 class AppExport TransactionLog
 {
 public:
-    explicit TransactionLog(Document& doc);
+    /** The log of `doc`: a cursor over its file's shared log (sec 27.7).
+     * With `at`, the cursor of a version document (sec 27.5 ruling 3): at
+     * that version and on no branch until the first change, which takes
+     * the branch whose tip the version is when no document holds it, and
+     * otherwise makes one, `<branch>@v<num>`. Without it, on the branch the
+     * store names, held for this document.
+     */
+    explicit TransactionLog(Document& doc, const LogVersion* at = nullptr);
     ~TransactionLog();
 
     TransactionLog(const TransactionLog&) = delete;
@@ -236,6 +243,21 @@ public:
     /// Put the log on branch `id` (sec 26): the next row follows its head.
     /// Kept in `meta` so a recovery continues on it. False if no such branch.
     bool setBranch(int64_t id);
+    /// On no branch yet: a version document before its first change.
+    bool detached() const { return _branch == 0; }
+    /// The version a detached cursor is at, 0 for none.
+    int64_t detachedAt() const { return _at; }
+    /// The object id base the branch a detached cursor makes starts at.
+    void setIdBase(long base) { _idBase = base; }
+    /** Sec 27.5 ruling 3, one version open once: the document of the file
+     * that is version `version` -- a version document not yet changed, or
+     * one whose branch has not changed since that version -- null if none.
+     */
+    Document* documentAt(const LogVersion& version);
+    /// The document of the file holding branch `id`, null if none.
+    Document* holderOf(int64_t id) const;
+    /// Every document of the file with a log (sec 27.7).
+    std::vector<Document*> documents() const;
     /// Forget what the log knew of the live values (sec 26): after the
     /// document was made another state without a transaction.
     void forgetLiveValues();
@@ -393,6 +415,11 @@ private:
     void openStore();
     /// This cursor on the branch the store's meta names, at its head.
     void pickBranch();
+    /// Sec 27.5 ruling 3: a detached cursor's first row puts it on a branch.
+    void ensureBranch();
+    /// Row `seq` is on the chain ending at `head`, and nothing after it
+    /// there changed the document: only records (save, snapshot, switch).
+    bool unchangedSince(int64_t head, int64_t seq);
     /// A version from the file's entries plus the record (`save` or
     /// `restore`) that names it; what onSave and onRestore share.
     int64_t snapshot(const char* kind, const std::string& path, const Captures& entries,
@@ -471,6 +498,10 @@ private:
     int64_t _head {0};
     /// An embedded copy was just adopted: the next onRestore is its version.
     bool _adopted {false};
+    /// A detached cursor's version (sec 27.5), and the id base its branch
+    /// will start at.
+    int64_t _at {0};
+    long _idBase {0};
     /// Property id -> the op whose after ref that property's next copy
     /// resolves; main thread only.
     std::unordered_map<int64_t, Pending> _pending;

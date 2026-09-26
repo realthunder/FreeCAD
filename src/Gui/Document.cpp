@@ -1696,6 +1696,7 @@ bool Document::offerSchemaUpgrade(const std::vector<App::Document*> &docs)
         auto gdoc = Application::Instance->getDocument(doc);
         if (!gdoc || gdoc->d->_schemaDowngradeAcked
                 || doc->testStatus(App::Document::PartialDoc)
+                || doc->testStatus(App::Document::VersionDoc)
                 || doc->testStatus(App::Document::TempDoc)
                 || !doc->isSaved()
                 || doc->getSaveSchemaVersion() >= 5
@@ -1745,6 +1746,7 @@ bool Document::save()
                     auto gdoc = Application::Instance->getDocument(doc);
                     if ((gdoc && !gdoc->isModified())
                             || doc->testStatus(App::Document::PartialDoc)
+                            || doc->testStatus(App::Document::VersionDoc)
                             || doc->testStatus(App::Document::TempDoc))
                     {
                         it = docs.erase(it);
@@ -2081,7 +2083,8 @@ void Document::saveAll()
 
     std::map<App::Document *, bool> dmap;
     for(auto doc : docs) {
-        if (doc->testStatus(App::Document::PartialDoc) || doc->testStatus(App::Document::TempDoc))
+        if (doc->testStatus(App::Document::PartialDoc) || doc->testStatus(App::Document::VersionDoc)
+                || doc->testStatus(App::Document::TempDoc))
             continue;
         dmap[doc] = doc->mustExecute();
     }
@@ -2096,7 +2099,8 @@ void Document::saveAll()
         return;
 
     for(auto doc : docs) {
-        if (doc->testStatus(App::Document::PartialDoc) || doc->testStatus(App::Document::TempDoc))
+        if (doc->testStatus(App::Document::PartialDoc) || doc->testStatus(App::Document::VersionDoc)
+                || doc->testStatus(App::Document::TempDoc))
             continue;
         auto gdoc = Application::Instance->getDocument(doc);
         if(!gdoc)
@@ -4304,7 +4308,8 @@ bool Document::canClose (bool checkModify, bool checkLink)
         return true;
 
     bool ok = true;
-    if (checkModify && isModified() && !getDocument()->testStatus(App::Document::PartialDoc)) {
+    if (checkModify && isModified() && !getDocument()->testStatus(App::Document::PartialDoc)
+            && !getDocument()->testStatus(App::Document::VersionDoc)) {
         const char *docName = getDocument()->Label.getValue();
         int res = getMainWindow()->confirmSave(docName, getActiveView());
         switch (res)
