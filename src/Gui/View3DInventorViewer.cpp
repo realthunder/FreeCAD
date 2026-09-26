@@ -194,6 +194,7 @@
 #include "Inventor/SoFCSwitch.h"
 #include "ViewProviderLink.h"
 #include "Renderer/CyclesRenderer.h"
+#include "Renderer/MeshSource.h"
 #include "Renderer/Renderer.h"
 #include "Renderer/SceneServer.h"
 #include "SceneControl.h"
@@ -635,6 +636,91 @@ struct View3DInventorViewer::Private
         SoSwitch *sw = vp->getModeSwitch();
         if (sw && sw->isOfType(SoFCSwitch::getClassTypeId()))
             SoFCSwitch::setPerViewShown(static_cast<SoFCSwitch*>(sw), enable);
+        if (enable)
+            registerShownEvictor();
+    }
+
+    /// The display-mode switch of \a doc#\a obj, if it is an SoFCSwitch.
+    static SoFCSwitch *switchOf(const std::string &docName, const std::string &objName)
+    {
+        auto doc = App::GetApplication().getDocument(docName.c_str());
+        auto obj = doc ? doc->getObject(objName.c_str()) : nullptr;
+        auto vp = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(
+                Application::Instance->getViewProvider(obj));
+        SoSwitch *sw = vp ? vp->getModeSwitch() : nullptr;
+        return (sw && sw->isOfType(SoFCSwitch::getClassTypeId()))
+            ? static_cast<SoFCSwitch *>(sw) : nullptr;
+    }
+
+    /// Released per-view-shown entries go first under memory pressure
+    /// (Render::MeshSourceRegistry's shown evictor): registered once,
+    /// the first time any view shows an object on its own.
+    static void registerShownEvictor()
+    {
+        static bool registered;
+        if (registered)
+            return;
+        registered = true;
+        Render::MeshSourceRegistry::instance().setShownEvictor(
+                &Private::evictShown, &SoFCSwitch::releasedPerViewShownCount);
+    }
+
+    /// Evict released entries until \a deficit bytes are covered.
+    /// Each candidate's bytes belong to the entry it draws under -- the
+    /// innermost object on its chain that has one, and a candidate whose
+    /// innermost entry some view still counts is not evictable at all.
+    /// Ranked by size times time since release: the big and the long
+    /// unwanted go first, a quick hide-show keeps what it is toggling.
+    static size_t evictShown(
+            const std::vector<Render::MeshSourceRegistry::ShownCandidate> &candidates,
+            size_t deficit)
+    {
+        if (!Application::Instance)
+            return 0;
+        struct Entry {
+            size_t bytes = 0;
+            double age = 0.0;
+            const Render::ObjectRef *ref = nullptr;
+        };
+        std::map<SoFCSwitch *, Entry> entries;
+        for (const auto &cand : candidates) {
+            for (auto it = cand.path.rbegin(); it != cand.path.rend(); ++it) {
+                SoFCSwitch *sw = switchOf(it->doc, it->obj);
+                if (!sw || !SoFCSwitch::isPerViewShown(sw))
+                    continue;
+                const double age = SoFCSwitch::perViewShownReleasedAge(sw);
+                if (age >= 0.0) {
+                    auto &entry = entries[sw];
+                    entry.bytes += cand.bytes;
+                    entry.age = age;
+                    entry.ref = &*it;
+                }
+                break;
+            }
+        }
+        std::vector<std::pair<double, std::pair<SoFCSwitch *, const Entry *>>> ranked;
+        for (const auto &[sw, entry] : entries) {
+            if (entry.bytes)
+                ranked.push_back({double(entry.bytes) * entry.age, {sw, &entry}});
+        }
+        std::sort(ranked.begin(), ranked.end(),
+                  [](const auto &a, const auto &b) { return a.first > b.first; });
+        size_t freed = 0;
+        for (const auto &item : ranked) {
+            if (freed >= deficit)
+                break;
+            const Entry &entry = *item.second.second;
+            if (!SoFCSwitch::evictPerViewShown(item.second.first))
+                continue;
+            freed += entry.bytes;
+            if (RenderParams::getLevelDebug())
+                Base::Console().Message(
+                        "render levels: evict released per-view-shown %s#%s "
+                        "(%.1fKB, released %.1fs ago)\n",
+                        entry.ref->doc.c_str(), entry.ref->obj.c_str(),
+                        double(entry.bytes) / 1024.0, entry.age);
+        }
+        return freed;
     }
 
     /// The capture's additive-mode interest (docs/CoinRetirement.md

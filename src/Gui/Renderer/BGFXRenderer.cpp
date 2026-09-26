@@ -1447,6 +1447,16 @@ void BGFXRenderer::setLevelBudgetDeadband(float fraction)
     // standing total outside it, and only a plan pass can act on that.
     pimpl->levelPlanner.markDirty();
 }
+
+void BGFXRenderer::setPerViewShownEvictWatermark(float fraction)
+{
+    const float mark = fraction > 0.0f ? fraction : 0.0f;
+    if (pimpl->shownEvictWatermark == mark)
+        return;
+    pimpl->shownEvictWatermark = mark;
+    // Lowering it can put the standing use over it.
+    pimpl->levelPlanner.markDirty();
+}
 #endif
 
 void BGFXRenderer::setTinyElementCutoff(int prims)

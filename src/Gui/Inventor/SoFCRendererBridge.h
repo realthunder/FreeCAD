@@ -227,6 +227,10 @@ GuiExport int translateDescentOrderBatch(App::PropertyContainer * view);
 /// does not trigger (docs/SceneStreaming.md #13c.6) -- what lets an
 /// equilibrium that lands on the budget line stand instead of dither.
 GuiExport float translateLevelBudgetDeadband(App::PropertyContainer * view);
+/// The fraction of the GPU budget above which released per-view-shown
+/// objects are evicted, ahead of any visible-quality sweep
+/// (docs/CoinRetirement.md 5.18).
+GuiExport float translatePerViewShownEvictWatermark(App::PropertyContainer * view);
 GuiExport bool translateShapeVertices(App::PropertyContainer * view);
 GuiExport bool translatePressureDropEdges(App::PropertyContainer * view);
 /// The frame wait between the element contract's pressure stages,

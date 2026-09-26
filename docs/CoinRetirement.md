@@ -2685,8 +2685,26 @@ switch's defaultChild although whichChild is off, every draw tagged
 view whose own table shows the object (and never by the internal-GL
 renderer or a served snapshot). Only the first count touches the node;
 a release leaves the entry, so toggling back re-captures nothing either.
-Eviction of a released entry is still to do: it lasts until the node
-goes.
+
+**Eviction (user design, 2026-09-26): released entries go first under
+memory pressure.** A released entry is stamped with the time its count
+fell to zero. The level plan (docs/SceneStreaming.md sec 13) evicts
+released entries before either of its sweeps trades anything visible:
+on the GPU from `PerViewShownEvictWatermark`, a fraction of the GPU
+budget (0.9 by default, so BELOW the budget), and under an observed CPU
+ceiling against its shortfall. It prices each tagged draw in the
+currency of the pressure it answers (`uploadedBytesOf`, or the resident
+bytes), hands the candidates to the Gui evictor through
+`MeshSourceRegistry::evictReleasedShown`, and takes what that freed off
+the sweep's deficit for the round. The evictor charges each draw to the
+innermost object on its chain that has an entry (a shown container's
+children draw under their own names), never evicts one a view still
+counts, and ranks the released by size times time since release: the
+big and the long unwanted go first, a quick hide and show keeps what it
+toggles. An evicted entry is erased and its switch touched, so the next
+capture leaves the object out; showing it again re-captures it. No GPU
+budget (GL states none) means no GPU trigger. `LevelDebug` names every
+eviction. Verified by `tests/gui/per-view-shown-eviction.py`.
 
 Why not capture every hidden object up front with box stand-ins (the
 first plan): hidden objects outnumber visible ones about 6 to 1 in the

@@ -3257,6 +3257,12 @@ RendererBridge::translateLevelBudgetDeadband(App::PropertyContainer *)
     return float(RenderParams::getLevelBudgetDeadband());
 }
 
+float
+RendererBridge::translatePerViewShownEvictWatermark(App::PropertyContainer *)
+{
+    return float(RenderParams::getPerViewShownEvictWatermark());
+}
+
 bool
 RendererBridge::translateShapeVertices(App::PropertyContainer *)
 {

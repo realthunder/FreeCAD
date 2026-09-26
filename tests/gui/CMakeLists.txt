@@ -232,6 +232,14 @@ fc_add_gui_test(GuiPerViewVisibilityPickCull_tests_run
                 per-view-visibility-pick-cull.py
                 --timeout 240)
 
+# Released per-view-shown objects (hidden objects no view shows any more,
+# kept in the capture for a quick show again) are evicted first when
+# memory stands over PerViewShownEvictWatermark, never one a view still
+# shows, and come back when shown again. A simulated 1 MB GPU budget.
+fc_add_gui_test(GuiPerViewShownEviction_tests_run
+                per-view-shown-eviction.py
+                --timeout 240)
+
 # Ctrl+A in a focused spreadsheet selects its cells (upstream 4f4e9244e6):
 # Ctrl+A is Std_SelectAll's window shortcut, and the table keeps it only by
 # claiming it in ShortcutOverride.

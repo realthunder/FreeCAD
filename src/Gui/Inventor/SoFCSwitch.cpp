@@ -21,6 +21,7 @@
  ****************************************************************************/
 
 #include "PreCompiled.h"
+#include <chrono>
 #include <unordered_map>
 #include <Inventor/misc/SoChildList.h>
 #include <Inventor/actions/SoActions.h>
@@ -60,17 +61,32 @@ SoFCSwitch::SoFCSwitch()
   SO_ENABLE(SoGetBoundingBoxAction, SoSwitchElement);
 }
 
+namespace {
+struct PerViewShownEntry {
+  /// Views showing the object; 0 = released.
+  int count = 0;
+  /// When the count last fell to 0.
+  std::chrono::steady_clock::time_point released;
+};
+} // namespace
+
 // Switches of hidden objects some view shows on its own, with how many
-// such views; an entry at zero stays until the node goes (see
-// setPerViewShown). Gui thread only, like the scene graph it names.
-// Never destroyed: a node can outlive static destruction, and its
-// destructor erases itself from here.
-static std::unordered_map<const SoFCSwitch *, int> &_PerViewShown =
-    *new std::unordered_map<const SoFCSwitch *, int>;
+// such views; an entry at zero is released and stays until evicted or
+// the node goes (see setPerViewShown). Gui thread only, like the scene
+// graph it names. Never destroyed: a node can outlive static
+// destruction, and its destructor erases itself from here.
+static std::unordered_map<const SoFCSwitch *, PerViewShownEntry> &_PerViewShown =
+    *new std::unordered_map<const SoFCSwitch *, PerViewShownEntry>;
+static size_t _PerViewShownReleased = 0;
 
 SoFCSwitch::~SoFCSwitch()
 {
-  _PerViewShown.erase(this);
+  auto it = _PerViewShown.find(this);
+  if (it == _PerViewShown.end())
+    return;
+  if (it->second.count == 0)
+    --_PerViewShownReleased;
+  _PerViewShown.erase(it);
 }
 
 void
@@ -81,22 +97,55 @@ SoFCSwitch::setPerViewShown(SoFCSwitch *node, bool enable)
   auto it = _PerViewShown.find(node);
   if (enable) {
     if (it == _PerViewShown.end()) {
-      _PerViewShown.emplace(node, 1);
+      _PerViewShown[node].count = 1;
       // The one re-capture: the capture must now reach below a switch
       // whose whichChild did not move.
       node->touch();
     }
-    else
-      ++it->second;
+    else if (it->second.count++ == 0)
+      --_PerViewShownReleased;
   }
-  else if (it != _PerViewShown.end() && it->second > 0)
-    --it->second;
+  else if (it != _PerViewShown.end() && it->second.count > 0) {
+    if (--it->second.count == 0) {
+      it->second.released = std::chrono::steady_clock::now();
+      ++_PerViewShownReleased;
+    }
+  }
 }
 
 bool
 SoFCSwitch::isPerViewShown(const SoFCSwitch *node)
 {
   return _PerViewShown.count(node) != 0;
+}
+
+double
+SoFCSwitch::perViewShownReleasedAge(const SoFCSwitch *node)
+{
+  auto it = _PerViewShown.find(node);
+  if (it == _PerViewShown.end() || it->second.count != 0)
+    return -1.0;
+  return std::chrono::duration<double>(
+      std::chrono::steady_clock::now() - it->second.released).count();
+}
+
+size_t
+SoFCSwitch::releasedPerViewShownCount()
+{
+  return _PerViewShownReleased;
+}
+
+bool
+SoFCSwitch::evictPerViewShown(SoFCSwitch *node)
+{
+  auto it = _PerViewShown.find(node);
+  if (it == _PerViewShown.end() || it->second.count != 0)
+    return false;
+  _PerViewShown.erase(it);
+  --_PerViewShownReleased;
+  // The capture reached below this switch only because of the entry.
+  node->touch();
+  return true;
 }
 
 // switch to defaultChild when invisible

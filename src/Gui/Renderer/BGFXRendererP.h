@@ -10677,6 +10677,13 @@ public:
     /// does not trigger (it still corrects back to the budget when it
     /// does). See the plan callback for the dither it removes.
     float levelBudgetDeadband = 0.03f;
+    /// PerViewShownEvictWatermark parameter: the fraction of the GPU
+    /// budget above which the plan evicts released per-view-shown
+    /// objects first (MeshSourceRegistry::evictReleasedShown).
+    float shownEvictWatermark = 0.9f;
+    /// Whether the last frame stood over that watermark, for the
+    /// rising-edge wake, as gpuOverBudget is for the budget.
+    bool gpuOverShownWatermark = false;
     // GPU geometry budget (setGpuMemoryBudget); 0 = automatic.
     size_t gpuBudget = 0;
 

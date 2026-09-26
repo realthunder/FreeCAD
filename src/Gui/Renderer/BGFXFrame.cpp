@@ -517,10 +517,19 @@ bool BGFXRenderer::Private::render(const QColor &col,
         // least as often as the exact one would, and the plan then
         // decides on the exact one.
         if (const size_t budget = gpuBudgetBytes()) {
-            const bool over = gpuUsedBytes() > budget;
+            const size_t used = gpuUsedBytes();
+            const bool over = used > budget;
             if (over && !gpuOverBudget)
                 levelPlanner.markDirty();
             gpuOverBudget = over;
+            // The per-view-shown watermark wakes it too, below the
+            // budget, while there is something released to evict.
+            const bool overMark =
+                used > size_t(double(budget) * double(shownEvictWatermark))
+                && Render::MeshSourceRegistry::instance().releasedShownCount() > 0;
+            if (overMark && !gpuOverShownWatermark)
+                levelPlanner.markDirty();
+            gpuOverShownWatermark = overMark;
         }
         levelPlanner.observe(
             reinterpret_cast<const float *>(viewMatrix),
@@ -592,6 +601,69 @@ bool BGFXRenderer::Private::render(const QColor &col,
                 // after the batch lands takes the rest.
                 const size_t descentBatch =
                     size_t(std::max(0, descentOrderBatch));
+                // Released per-view-shown objects go FIRST
+                // (docs/CoinRetirement.md 5.18): hidden objects some
+                // view showed on its own and none shows any more, kept
+                // in the capture for a quick show again. Nothing on
+                // screen needs them, so they are evicted before either
+                // sweep below trades anything visible -- against the
+                // CPU shortfall under an observed ceiling, and on the
+                // GPU from the watermark (PerViewShownEvictWatermark)
+                // below the budget. Each is priced in the currency of
+                // the pressure it answers, and what it frees comes off
+                // that sweep's deficit this round: the bytes leave the
+                // meters only once the next capture drops the object.
+                size_t shownFreedCpu = 0, shownFreedGpu = 0;
+                if (reg.releasedShownCount()) {
+                    auto shownCandidates = [this, view](bool gpuCurrency) {
+                        std::vector<Render::MeshSourceRegistry::ShownCandidate> out;
+                        std::unordered_map<uint64_t, size_t> index;
+                        BGFXView::UploadCharge charge;
+                        std::set<const Render::MeshData *> seen;
+                        const uint16_t tag = Render::perViewShownModeId();
+                        for (const auto &draw : scene) {
+                            if (draw.capturedMode != tag || !draw.mesh)
+                                continue;
+                            size_t bytes = 0;
+                            if (gpuCurrency)
+                                bytes = view ? size_t(view->uploadedBytesOf(*draw.mesh, &charge))
+                                             : 0;
+                            else if (seen.insert(draw.mesh.get()).second)
+                                bytes = size_t(Render::meshResidentBytes(draw.mesh.get()));
+                            if (!bytes)
+                                continue;
+                            auto it = index.find(draw.objectKey);
+                            if (it == index.end()) {
+                                auto info = objectInfo.find(draw.objectKey);
+                                if (info == objectInfo.end())
+                                    continue;
+                                it = index.emplace(draw.objectKey, out.size()).first;
+                                out.emplace_back();
+                                out.back().path = info->second.path;
+                                if (out.back().path.empty())
+                                    out.back().path.push_back(
+                                        {info->second.doc, info->second.obj});
+                            }
+                            out[it->second].bytes += bytes;
+                        }
+                        return out;
+                    };
+                    if (reg.memoryCeilingEpoch() && reg.memoryShortfall())
+                        shownFreedCpu = reg.evictReleasedShown(
+                            shownCandidates(false), reg.memoryShortfall());
+                    const size_t budgetNow = gpuBudgetBytes();
+                    const size_t mark =
+                        size_t(double(budgetNow) * double(shownEvictWatermark));
+                    if (budgetNow && size_t(gpu.total) > mark)
+                        shownFreedGpu = reg.evictReleasedShown(
+                            shownCandidates(true), size_t(gpu.total) - mark);
+                    if ((shownFreedCpu || shownFreedGpu) && levelDebug())
+                        Base::Console().Message(
+                            "render levels: evicted released per-view-shown "
+                            "objects, cpu %.1fKB gpu %.1fKB\n",
+                            double(shownFreedCpu) / 1024.0,
+                            double(shownFreedGpu) / 1024.0);
+                }
                 if (reg.memoryCeilingEpoch()) {
                     reg.dropHiddenLevels();
                     // How much RAM the observer wanted back (the
@@ -609,7 +681,9 @@ bool BGFXRenderer::Private::render(const QColor &col,
                         [&reg](const void *t) {
                             return reg.demoteError(t);
                         },
-                        &dmStats, dmDeficit = reg.memoryShortfall(),
+                        &dmStats,
+                        dmDeficit = reg.memoryShortfall() > shownFreedCpu
+                            ? reg.memoryShortfall() - shownFreedCpu : 0,
                         {}, {}, descentBatch);
                     nDemote = drops.size();
                     for (const void *tag : drops)
@@ -682,6 +756,9 @@ bool BGFXRenderer::Private::render(const QColor &col,
                         if (!deficit)
                             dgHeld = gpuUsed - gpuBudget;
                     }
+                    // What the released per-view-shown eviction above
+                    // already freed, which the meter cannot show yet.
+                    deficit = deficit > shownFreedGpu ? deficit - shownFreedGpu : 0;
                     if (deficit) {
                     // Priced in GPU bytes, because that is what the
                     // deficit is quoted in -- see uploadedBytesOf.

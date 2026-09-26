@@ -2796,6 +2796,9 @@ SoFCRenderer::pushExternalConfigs(SoState * state, bool viewport)
     PRIVATE(this)->external->setLevelBudgetDeadband(
         RendererBridge::translateLevelBudgetDeadband(
             PRIVATE(this)->externalview));
+    PRIVATE(this)->external->setPerViewShownEvictWatermark(
+        RendererBridge::translatePerViewShownEvictWatermark(
+            PRIVATE(this)->externalview));
     PRIVATE(this)->external->setLevelDebug(
         RendererBridge::translateLevelDebug(PRIVATE(this)->externalview));
     PRIVATE(this)->external->setElementGates(

@@ -85,6 +85,7 @@ public:
     long LevelCount;
     double LevelScale;
     double LevelBudgetDeadband;
+    double PerViewShownEvictWatermark;
     double LevelScaleBoxError;
     bool SimplifyExhausted;
     bool SimplifyMergeParts;
@@ -278,6 +279,8 @@ public:
         funcs["LevelScale"] = &RenderParamsP::updateLevelScale;
         LevelBudgetDeadband = this->handle->GetFloat("LevelBudgetDeadband", 0.03);
         funcs["LevelBudgetDeadband"] = &RenderParamsP::updateLevelBudgetDeadband;
+        PerViewShownEvictWatermark = this->handle->GetFloat("PerViewShownEvictWatermark", 0.9);
+        funcs["PerViewShownEvictWatermark"] = &RenderParamsP::updatePerViewShownEvictWatermark;
         LevelScaleBoxError = this->handle->GetFloat("LevelScaleBoxError", 0.25);
         funcs["LevelScaleBoxError"] = &RenderParamsP::updateLevelScaleBoxError;
         SimplifyExhausted = this->handle->GetBool("SimplifyExhausted", true);
@@ -668,6 +671,10 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateLevelBudgetDeadband(RenderParamsP *self) {
         self->LevelBudgetDeadband = self->handle->GetFloat("LevelBudgetDeadband", 0.03);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updatePerViewShownEvictWatermark(RenderParamsP *self) {
+        self->PerViewShownEvictWatermark = self->handle->GetFloat("PerViewShownEvictWatermark", 0.9);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateLevelScaleBoxError(RenderParamsP *self) {
@@ -1709,6 +1716,19 @@ static const App::ParamRegistry::Registrar _RenderParamsRegistrar({
 "The band tolerates standing that fraction over the stated\n"
 "budget (about 2MB at 64MB). 0 restores the bare line and with\n"
 "it the dither."),
+    App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "PerViewShownEvictWatermark", "PerViewShownEvictWatermark", App::ParamInfo::Float, 0.9)
+        .setTitle("Per-view shown eviction watermark")
+        .setDoc("The memory level, as a fraction of the GPU memory budget, above\n"
+"which the level plan evicts RELEASED per-view-shown objects:\n"
+"hidden objects some view showed on its own and none shows any\n"
+"more, which the shared capture keeps for a quick show again.\n"
+"Nothing on screen needs them, so they go first -- below the\n"
+"budget, before any sweep that costs visible quality -- the big\n"
+"and the long released before the recent, until the use is back\n"
+"at the watermark. Under an observed CPU memory ceiling they go\n"
+"first too, against the CPU shortfall. No GPU budget (GL states\n"
+"none) means no GPU trigger. 1 or more waits for the budget\n"
+"itself."),
     App::ParamInfo("Gui", "RenderParams", "User parameter:BaseApp/Preferences/View/Render", "LevelScaleBoxError", "LevelScaleBoxError", App::ParamInfo::Float, 0.25)
         .setTitle("Level scale box error")
         .setDoc("The scaled error at which an object stops being tessellated\n"
@@ -4317,6 +4337,44 @@ void RenderParams::setLevelBudgetDeadband(const double &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void RenderParams::removeLevelBudgetDeadband() {
     instance()->handle->RemoveFloat("LevelBudgetDeadband");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *RenderParams::docPerViewShownEvictWatermark() {
+    return QT_TRANSLATE_NOOP("RenderParams",
+"The memory level, as a fraction of the GPU memory budget, above\n"
+"which the level plan evicts RELEASED per-view-shown objects:\n"
+"hidden objects some view showed on its own and none shows any\n"
+"more, which the shared capture keeps for a quick show again.\n"
+"Nothing on screen needs them, so they go first -- below the\n"
+"budget, before any sweep that costs visible quality -- the big\n"
+"and the long released before the recent, until the use is back\n"
+"at the watermark. Under an observed CPU memory ceiling they go\n"
+"first too, against the CPU shortfall. No GPU budget (GL states\n"
+"none) means no GPU trigger. 1 or more waits for the budget\n"
+"itself.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & RenderParams::getPerViewShownEvictWatermark() {
+    return instance()->PerViewShownEvictWatermark;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & RenderParams::defaultPerViewShownEvictWatermark() {
+    const static double def = 0.9;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void RenderParams::setPerViewShownEvictWatermark(const double &v) {
+    instance()->handle->SetFloat("PerViewShownEvictWatermark",v);
+    instance()->PerViewShownEvictWatermark = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void RenderParams::removePerViewShownEvictWatermark() {
+    instance()->handle->RemoveFloat("PerViewShownEvictWatermark");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

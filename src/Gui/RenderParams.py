@@ -557,6 +557,18 @@ Params = [
         "The band tolerates standing that fraction over the stated\n"
         "budget (about 2MB at 64MB). 0 restores the bare line and with\n"
         "it the dither."),
+    ParamFloat('PerViewShownEvictWatermark',  0.9, title='Per-view shown eviction watermark',
+        doc="The memory level, as a fraction of the GPU memory budget, above\n"
+        "which the level plan evicts RELEASED per-view-shown objects:\n"
+        "hidden objects some view showed on its own and none shows any\n"
+        "more, which the shared capture keeps for a quick show again.\n"
+        "Nothing on screen needs them, so they go first -- below the\n"
+        "budget, before any sweep that costs visible quality -- the big\n"
+        "and the long released before the recent, until the use is back\n"
+        "at the watermark. Under an observed CPU memory ceiling they go\n"
+        "first too, against the CPU shortfall. No GPU budget (GL states\n"
+        "none) means no GPU trigger. 1 or more waits for the budget\n"
+        "itself."),
     ParamFloat('LevelScaleBoxError',  0.25, title='Level scale box error',
         doc="The scaled error at which an object stops being tessellated\n"
         "at all and is drawn as its bounding box (12 triangles whatever\n"

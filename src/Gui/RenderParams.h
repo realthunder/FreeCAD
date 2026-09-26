@@ -909,6 +909,28 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter PerViewShownEvictWatermark
+    ///
+    /// The memory level, as a fraction of the GPU memory budget, above
+    /// which the level plan evicts RELEASED per-view-shown objects:
+    /// hidden objects some view showed on its own and none shows any
+    /// more, which the shared capture keeps for a quick show again.
+    /// Nothing on screen needs them, so they go first -- below the
+    /// budget, before any sweep that costs visible quality -- the big
+    /// and the long released before the recent, until the use is back
+    /// at the watermark. Under an observed CPU memory ceiling they go
+    /// first too, against the CPU shortfall. No GPU budget (GL states
+    /// none) means no GPU trigger. 1 or more waits for the budget
+    /// itself.
+    static const double & getPerViewShownEvictWatermark();
+    static const double & defaultPerViewShownEvictWatermark();
+    static void removePerViewShownEvictWatermark();
+    static void setPerViewShownEvictWatermark(const double &v);
+    static const char *docPerViewShownEvictWatermark();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter LevelScaleBoxError
     ///
     /// The scaled error at which an object stops being tessellated

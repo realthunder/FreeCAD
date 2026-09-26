@@ -300,6 +300,33 @@ public:
     uint64_t memoryCeilingEpoch() const { return ceilingEpoch; }
     size_t memoryShortfall() const { return ceilingShortfall; }
 
+    /// Released per-view-shown objects (docs/CoinRetirement.md 5.18):
+    /// hidden objects some view showed on its own and none shows any
+    /// more, which the shared capture still carries, tessellated and
+    /// perhaps uploaded, for a quick show again. Nothing on screen needs
+    /// them, so under memory pressure they go FIRST, before any sweep
+    /// that trades visible quality. Gui keeps them (SoFCSwitch) and
+    /// registers the evictor; the level plan prices the candidates in
+    /// the currency of the pressure it is answering and calls it.
+    struct ShownCandidate {
+        /// The draw's object chain (ObjectInfo::path), outermost first:
+        /// a shown container's children draw under their own names.
+        std::vector<ObjectRef> path;
+        size_t bytes = 0;
+    };
+    /// Evicts from \a candidates until \a deficit bytes are covered or
+    /// no released one is left; returns the bytes of what it evicted.
+    using ShownEvictor =
+        std::function<size_t(const std::vector<ShownCandidate> &candidates, size_t deficit)>;
+    /// \a pending answers how many released entries Gui holds: the
+    /// plan's cheap test for whether pricing candidates is worth a walk
+    /// of the scene. A function rather than a count pushed here, so the
+    /// nodes that change it never reach into this registry (a node can
+    /// outlive the registry's static destruction).
+    void setShownEvictor(ShownEvictor evictor, std::function<size_t()> pending);
+    size_t evictReleasedShown(const std::vector<ShownCandidate> &candidates, size_t deficit);
+    size_t releasedShownCount() const;
+
     /// Plan-ordered descent jobs (worker-side coarsenings: the
     /// dynamic-scale re-tessellation and the decimation rung) currently
     /// queued or running. The producer notes every enqueue and every
@@ -407,6 +434,8 @@ private:
     std::unordered_map<std::string, const void *> keys;
     std::atomic<uint64_t> ceilingEpoch {0};
     std::atomic<size_t> ceilingShortfall {0};
+    ShownEvictor shownEvictor;
+    std::function<size_t()> shownPending;
     std::atomic<uint32_t> descentJobs {0};
     std::atomic<uint64_t> descentSettles {0};
     std::atomic<uint64_t> descentGenCounter {0};

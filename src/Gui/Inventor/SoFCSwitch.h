@@ -79,9 +79,22 @@ public:
    * Render::perViewShownModeId(), which every view drops unless its own
    * table shows the object. So toggling that view's entry never
    * re-captures: only the first count does, by touching the node.
+   *
+   * An entry whose count falls to zero is RELEASED: kept for a quick
+   * show again, stamped with the time, until memory pressure evicts it
+   * (evictPerViewShown, called by the level plan through
+   * Render::MeshSourceRegistry's shown evictor) or the node goes.
    */
   static void setPerViewShown(SoFCSwitch *node, bool enable);
   static bool isPerViewShown(const SoFCSwitch *node);
+  /// Seconds since \a node's entry was released, or a negative number
+  /// when it is not a released entry (absent, or some view shows it).
+  static double perViewShownReleasedAge(const SoFCSwitch *node);
+  /// Drop \a node's entry if it is released, and touch the node so the
+  /// next capture leaves the object out. Returns whether it did.
+  static bool evictPerViewShown(SoFCSwitch *node);
+  /// How many entries are released.
+  static size_t releasedPerViewShownCount();
 
   virtual void doAction(SoAction *action);
   virtual void getBoundingBox(SoGetBoundingBoxAction * action);

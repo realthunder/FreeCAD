@@ -3589,6 +3589,13 @@ public:
     /// direction acts. 0 restores the bare line and with it the
     /// boundary dither.
     virtual void setLevelBudgetDeadband(float fraction) { (void)fraction; }
+    /// The memory level, as a fraction of the GPU budget
+    /// (Render_PerViewShownEvictWatermark), above which the level plan
+    /// evicts released per-view-shown objects -- hidden objects no view
+    /// shows any more, kept in the capture for a quick show again --
+    /// before any sweep that costs visible quality
+    /// (MeshSourceRegistry::evictReleasedShown).
+    virtual void setPerViewShownEvictWatermark(float fraction) { (void)fraction; }
     /// The element contract's inputs (docs/SceneStreaming.md #13b),
     /// pushed in like every other parameter -- this library knows
     /// nothing of RenderParams. The contract itself lives in the
