@@ -5269,3 +5269,78 @@ for every pin, not only self-pins. Two ways to close it:
 
 Proposed: (ii). It keeps ruling 3 and makes a pin mean the version
 itself.
+
+### 27.22 Ruling: pinned versions are frozen; save to the log only (user, 2026-09-26)
+
+**Ruled.**
+
+1. **(i): a pinned version is frozen.** A version can be open at most
+   twice in one FreeCAD: once as the **frozen** instance that pins show,
+   which refuses every edit, and once as an **editable** instance, which
+   the user opens to work on (ruling 3: it branches at its first
+   change). A flag tells the two apart.
+2. **Save to the log only.** An editable document is offered a save that
+   records a version in the file's history without changing the
+   outward-facing document -- what the file opens as.
+
+**Proposed shape (for the user's OK).**
+
+*The flag and the names.*
+
+- A new `Document` status `FrozenVersion`, set only on the instance a
+  pin opens. `VersionDoc` stays on both instances (the save gates of
+  27.7 apply to both).
+- Pins resolve to the frozen instance only: `documentAt(version,
+  frozenOnly)`, and `DocInfo::init` matches a pinned key only against a
+  document with the flag. The user's `openVersion` (log panel, Python)
+  returns the editable instance only.
+- Both instances keep `FileName` `<file>@v<num>` (27.7, Identity), so
+  relative links inside either resolve as the file's do. The label
+  tells them apart in the tree: `<label> (v<num>, pinned)` for the frozen
+  one, `<label> (v<num>)` as today for the editable one.
+- A link *set* to an object of the editable instance (drag, Python) is a
+  link to a working copy, not to a version. Proposed: it pins to the
+  version that instance started from and shows the frozen instance, and
+  says so in the report view -- a working copy has no identity a file
+  could name until it is saved (item 2).
+
+*What frozen refuses.* Every change to the document's data: a property
+write on any object (checked at `DocumentObject::onBeforeChange`, so it
+throws before anything changes), adding, removing or renaming objects,
+recompute, undo/redo, transactions, branch switch and restore. The Gui's
+commands gray out through the same test. View state (visibility, colors,
+camera) stays free, and is never logged for a frozen document: it is a
+view of a version, not a change to it.
+
+*Save to the log only* (`Document::saveToLog()`, Python
+`doc.saveToLog()`, Gui "Save to History"):
+
+- the log records a version of the document's branch -- exactly what a
+  save records (27.9), with the same bookkeeping writes -- and the
+  branch head moves to it;
+- the file's document members are **not** rewritten: what the file opens
+  as, its `Version` on disk and its `meta` branch all stay;
+- the history has one durable home, the file (27.10): so the archive is
+  rewritten with its document members copied raw (`putRawEntry`, 15.11)
+  and the history members new. A log-only save with no history in the
+  file (preference off) is refused with that reason;
+- the document stays marked modified, since the file still does not
+  hold what it shows;
+- available for any editable document of a saved file: the file's own
+  document and an editable version instance alike. For an editable
+  version instance, the Save dialog of 27.16 gains it as the default
+  button: **Save to History** / Save over File / Cancel.
+
+That also settles Q3 for the ordinary case: saving a version's work no
+longer means writing over the file. "Save over File" keeps 27.18's rule
+(last save wins); a self-pinned version is frozen now and cannot be saved
+at all.
+
+*Undo.* Save to the log only is bookkeeping, not an undo step, as a save
+is (27.9).
+
+**Build order.** (1) `FrozenVersion`: status, the edit refusal, pins to
+the frozen instance only, `openVersion` to the editable one, the probe of
+27.21 as a test; (2) self-pins per 27.20/27.21 (Q1, Q2, Q4); (3)
+`saveToLog`; (4) the Gui: labels, gray-out, Save to History, the Q5
+close prompt and its preference; a GUI check.
