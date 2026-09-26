@@ -1141,7 +1141,11 @@ the cylinder (3392.9) once the edit starts; Cancel restores. Test:
 visible (the binders reference them where they are), so with the preview
 off a Cut still shows the whole tool body over the notch. Upstream hides
 them by grouping them. Whether the command should hide them is a
-behaviour question for the user, not a preview fix.
+behaviour question for the user, not a preview fix. The Boolean itself
+is right: checked on the saved Cut, its Result mode draws only its own
+shape (the notched box once Body001 is hidden) and hides its children,
+and its Tools mode draws only the binder. The cylinder over the notch is
+Body001, a separate object in the document.
 
 Commit: `ec429cd0da`. 25 ledger rows settled: 2 adapted, 6 have, 2
 declined, 15 n/a. Suites: ctest 750/750; Python 2982 OK (50 skipped, 6
