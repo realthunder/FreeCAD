@@ -5160,3 +5160,81 @@ overwrites it back. Q3 below.
   unpinned or deleted, close the version document (proposed, for local
   pins and external ones alike -- it has no other reason to be open
   unless the user opened it), or leave it open?
+
+### 27.21 Rulings on 27.20, and Q3 set out (user, 2026-09-26)
+
+**Ruled.**
+
+- **Q1: XLink only.** Only a `PropertyXLink` can be pinned to a version
+  of its own file, as for another file.
+- **Q2: `file=""` + `version`** is the save form of a self-pin.
+- **Q4: allowed.** A pin to the version the file was last saved as is a
+  frozen copy of the saved state.
+- **Q5: ask.** When the last link pinned to a version document goes --
+  unpinned, deleted, or re-pinned elsewhere -- the Gui asks whether to
+  close the version document, with "remember my choice" kept as a
+  preference (Ask / Close / Keep open, default Ask). It applies to
+  self-pins and pins to other files alike. With no Gui to ask (App,
+  Python, headless), the preference decides, and Ask means keep open. A
+  version document the user opened by hand, not through a pin, is never
+  offered for closing.
+
+**Q3 set out: saving a self-pinned version as the file.** Asked for
+detail before a ruling.
+
+The case. `Foo.FCStd` is open as its document D, on branch `main`, at
+v7 with some unsaved edits. A link L in D is pinned to v3, so the
+version document V3 (`Foo.FCStd@v3`) is open. V3 may have been edited,
+which gave it the implicit branch `main@v3` (27.7).
+
+What 27.16/27.18 do today when the user saves V3 (Save, answered yes):
+
+1. `saveVersionAsFile` writes V3 over `Foo.FCStd` as version v8 on
+   `main@v3`, and sets the file's `meta` branch to `main@v3`: the file
+   now reopens as v3 plus V3's edits.
+2. The save's stamp change touches every document linking to V3 --
+   D, through L -- so D is marked modified.
+3. D is unchanged in memory: still `main`, v7 plus its edits.
+4. D's next save -- which its modified mark all but guarantees, at the
+   latest when it is closed -- writes D over the file as v9 on `main`,
+   and the file reopens on `main` again. V3's save survives only as a
+   row in the history.
+
+For a pin to another file this is a corner: it needs that file's own
+document to be open too. For a self-pin it is **every time**, because the
+document holding the pin is the file's own document, and it is always
+open. And the save's own side effect (step 2) arranges for it to be
+overwritten. The user's evident intent -- "this old version is what I
+want the file to be" -- lasts until the next Ctrl+S.
+
+Three ways to go:
+
+- **(a) Restore into D instead.** The save is refused for a self-pin,
+  and the Gui offers "Restore this version into Foo". D runs the forward
+  `restore` transaction of 24.d with V3's state as the source -- V3's
+  version, or V3's current state if it has been edited. It is ONE undo
+  step in D, on `main`; then the user saves D as usual. The history stays
+  linear: v8 on `main` is v3's content. If L was added after v3 it goes
+  with the restore, and so does the pin (Q5's prompt follows). Needs:
+  `restoreVersion` taking a document's current state as its source, not
+  only a version number (the scratch document of 24.d is replaced by
+  V3). Cost: small. What is lost: nothing -- `main@v3`'s edits stay rows
+  in the history.
+- **(b) 27.18 unchanged.** Save goes ahead, warning names D, last save
+  wins. No new code. The warning would appear on every save of a
+  self-pinned version, and the result is undone by D's next save unless
+  the user closes D without saving.
+- **(c) D follows the save.** After V3 is written over the file, D
+  switches in place to `main@v3` (26: a switch keeps each branch's
+  changes and stacks), V3 hands the branch over and goes back to being a
+  detached, read-only v3. D and the file then agree, and `main` keeps
+  D's unsaved edits as rows. More git-like -- the file moved to a
+  branch -- but a switch is not an undo step (26.4), so the user cannot
+  Ctrl+Z out of it, and the worktree hand-over is new code.
+
+**Proposed: (a) for self-pins.** It says what the user means, it is
+undoable, and it keeps one writer to the file. Whether pins to other
+files should get the same offer when the file's own document is open is
+a separate choice: (a) there too, or 27.18's rule stays for them. Either
+way the offer could carry the same Ask / always-restore / always-save
+preference as Q5, so a user who wants 27.18's behaviour can have it.
