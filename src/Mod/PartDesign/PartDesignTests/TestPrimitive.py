@@ -88,6 +88,23 @@ class TestPrimitive(unittest.TestCase):
         self.Doc.recompute()
         self.assertAlmostEqual(self.Cone001.Shape.Volume, 1/3.0 * pi * 10 * (4**2 - 3**2))
 
+    def testConeEqualRadii(self):
+        # Equal radii make a cylinder (upstream 1eb0444bd5), through the
+        # cone's angle (990b9b27fe); both cones refused them before
+        import math
+        partCone = self.Doc.addObject('Part::Cone', 'PartCone')
+        self.Body = self.Doc.addObject('PartDesign::Body', 'Body')
+        cone = self.Body.newObject('PartDesign::AdditiveCone', 'Cone')
+        for c in (partCone, cone):
+            c.Radius1 = 3
+            c.Radius2 = 3
+            c.Height = 10
+            c.Angle = 180
+        self.Doc.recompute()
+        for c in (partCone, cone):
+            self.assertNotIn('Invalid', c.State)
+            self.assertAlmostEqual(c.Shape.Volume, math.pi * 3 * 3 * 10 / 2, places=6)
+
     def testPrimitiveEllipsoid(self):
         self.Body = self.Doc.addObject('PartDesign::Body','Body')
         self.Ellipsoid = self.Doc.addObject('PartDesign::AdditiveEllipsoid','Ellipsoid')
