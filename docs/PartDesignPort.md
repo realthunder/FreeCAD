@@ -1350,13 +1350,19 @@ on first sight. `scripts/material-icons.py` lists them now, and
 copied in: the rest of the run matched the bundled digests, and re-rendered
 on another backend they would churn every PNG for shading noise.
 
-**The preset pitch changed, 0.6 -> 0.75** (`MaterialIcons::defaultFinish`,
-depth kept at 0.541 of it). The hand is what tells Thread from ThreadLeft
-and from Turned, and on the unit billet the lead angle at 0.6 is 5 degrees:
-at 32 px both hands were stacked grooves. A contact sheet of 0.3 to 1.2
-settled it -- 0.75 leans the two hands apart and still shows two turns;
-from 0.9 up it is one slanted band. `defaultFinish` is the icon preset
-only; the finish a user applies keeps `applyFinishDefaults` (M6).
+**A thread is shown on a bolt, not the billet** (`IconShape::Bolt`,
+`MaterialIcons::finishShape`). The hand is what tells Thread from
+ThreadLeft and from Turned, and on the unit billet the lead angle at the
+first preset, pitch 0.6, is 5 degrees: at 32 px both hands were stacked
+grooves. Coarser pitches leaned them apart but left one or two turns on a
+stub, which the user judged too thick; the shape was the problem. The bolt
+is a plain hex head over a shank of radius 0.4 that alone wears the
+finish, framed by a computed height rather than a measured one. Pitch 0.36
+(depth 0.541 of it) gives 8 degrees and five turns; a 32 px sheet of 0.24
+to 0.44 chose it, and the hand was checked in the pixels (a right-hand
+groove sits 6 px higher on the shank's right). `defaultFinish` is the
+icon preset only; the finish a user applies keeps `applyFinishDefaults`
+(M6).
 
 **An engine defect on the way.** The first run wrote every icon one request
 late, the first blank: on Direct3D 11 the composite is the readback, which

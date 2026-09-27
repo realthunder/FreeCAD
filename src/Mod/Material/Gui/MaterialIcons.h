@@ -51,12 +51,15 @@ class IconScene;
  * An appearance is shown on a sphere and a surface finish on a
  * cylinder, because they answer different questions and because the
  * finish shader needs a frame the geometry states -- a sphere has none.
- * The reasoning is on MatGui::IconScene.
+ * A screw thread is shown on a bolt: on the billet's wide wall its
+ * lead angle is too shallow for the hand to show. The reasoning is on
+ * MatGui::IconScene.
  */
 enum class IconShape
 {
     Sphere,
-    Cylinder
+    Cylinder,
+    Bolt
 };
 
 /** Material icons rendered the way the 3D view renders the material
@@ -153,6 +156,10 @@ public:
      * rendered instead.
      */
     static App::SurfaceFinish defaultFinish(uint8_t pattern);
+
+    /// What a surface finish \a pattern is shown on: a bolt for a
+    /// thread, the billet for the rest.
+    static IconShape finishShape(uint8_t pattern);
 
     /// The name an appearance icon is bundled and looked up under, and
     /// the same for a surface finish pattern. Both are ordinary icon
