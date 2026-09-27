@@ -202,10 +202,15 @@ SoFCVisibilityElement::check(SoAction * action, const SoNode * node)
   // cache open above this switch -- that root's own bounding box, which
   // is what culls a pick -- would be reused through the other
   // occurrences with this one's answer, since all it keys on is the
-  // table. So none is kept while such an entry exists; the caches
-  // BELOW, and every other object's, are unaffected.
+  // table. So while such an entry exists none is kept inside the root
+  // of the chain's first object down to this switch. The caches outside
+  // that span stay: those BELOW, every other object's, and that root's
+  // own and those ABOVE it, which hold the whole chain in their subtree
+  // and so get the same answer however they are reached. Keeping the
+  // scene root's lets the per-frame auto-clip pass answer without
+  // walking the scene; keeping the object root's lets a pick cull it.
   if (table->rooted.count(std::string_view(obj)))
-    SoCacheElement::invalidate(state);
+    SoFCSelectionRoot::invalidateObjectChainCaches(action);
   static FC_COIN_THREAD_LOCAL Chain chain;
   static FC_COIN_THREAD_LOCAL std::vector<Render::ObjectRef> refs;
   SoFCSelectionRoot::getActionObjectChain(action, chain);

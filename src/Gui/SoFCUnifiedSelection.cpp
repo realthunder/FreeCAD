@@ -69,6 +69,7 @@
 
 #include <Inventor/annex/FXViz/elements/SoShadowStyleElement.h>
 #include <Inventor/SbDPLine.h>
+#include <Inventor/caches/SoCache.h>
 
 #ifdef FC_OS_MACOSX
 # include <OpenGL/gl.h>
@@ -2903,6 +2904,16 @@ void SoFCSeparator::_GLRenderInPath(SoNode *node, SoGLRenderAction * action)
     }
 }
 
+/// The innermost cache open in \a state, or null -- also for an action
+/// that does not enable SoCacheElement (the selection actions), where
+/// SoCacheElement::getCurrentCache() would read a missing element.
+static SoCache *currentCache(SoState *state)
+{
+    if (!state || !state->isElementEnabled(SoCacheElement::getClassStackIndex()))
+        return nullptr;
+    return SoCacheElement::getCurrentCache(state);
+}
+
 void SoFCSelectionRoot::renderPrivate(SoGLRenderAction * action, bool inPath) {
     if(renderPathCode) {
         reportCyclicScene(action, this);
@@ -2913,6 +2924,8 @@ void SoFCSelectionRoot::renderPrivate(SoGLRenderAction * action, bool inPath) {
     auto state = action->getState();
     bool pushed = false;
     SelStack.push_back(this);
+    SelStack.entryCaches.resize(SelStack.size() - 1);
+    SelStack.entryCaches.push_back({currentCache(state), state->getDepth()});
     if(_renderPrivate(action,inPath,pushed)) {
         if(inPath)
             _GLRenderInPath(this, action);
@@ -2922,12 +2935,14 @@ void SoFCSelectionRoot::renderPrivate(SoGLRenderAction * action, bool inPath) {
     if(pushed)
         state->pop();
     SelStack.pop_back();
+    if (SelStack.entryCaches.size() > SelStack.size())
+        SelStack.entryCaches.resize(SelStack.size());
 }
 
 bool SoFCSelectionRoot::_renderPrivate(SoGLRenderAction * action, bool inPath, bool &pushed) {
 
     auto state = action->getState();
-    selCounter.checkCache(state,true);
+    checkSecondaryCache(state, SelStack);
 
     if(!SoFCSwitch::testTraverseState(SoFCSwitch::TraverseOverride)
             || action->getCurPathCode()!=SoAction::IN_PATH)
@@ -3128,7 +3143,81 @@ SoFCSelectionRoot::beginAction(SoAction *action, bool checkcycle)
         return nullptr;
     }
     stack->push_back(this);
+    // Where this root entered the traversal's caches. A stack handed in by
+    // setActionStack() carries no mark for the roots it was seeded with.
+    stack->entryCaches.resize(stack->size() - 1);
+    stack->entryCaches.push_back({currentCache(action->getState()),
+                                  action->getState()->getDepth()});
     return stack;
+}
+
+void SoFCSelectionRoot::invalidateCachesInside(SoState *state, const Stack &stack, size_t index)
+{
+    if (index >= stack.size() || index >= stack.entryCaches.size()) {
+        SoCacheElement::invalidate(state);
+        return;
+    }
+    if (!state->isElementEnabled(SoCacheElement::getClassStackIndex()))
+        return;
+    // Innermost first, the way SoCacheElement::invalidate() walks them,
+    // stopping at the cache that was already open when the root was
+    // entered: that one, and every cache outside it, keeps its answer.
+    const auto &entry = stack.entryCaches[index];
+    auto elem = static_cast<const SoCacheElement*>(
+            state->getElementNoPush(SoCacheElement::getClassStackIndex()));
+    for (; elem && elem->getCache() && elem->getCache() != entry.cache;
+           elem = elem->getNextCacheElement())
+    {
+        // So does the root's own cache. Its separator pushes the state and
+        // sets the cache at the new depth before any child runs, so nothing
+        // else is opened at that depth; every node below opens deeper. It
+        // holds the whole chain the answer depends on, and keeping it is
+        // what lets a pick cull the root. Where the root pushed once more
+        // first (a colour override on the GL render), its cache sits
+        // deeper and is spoiled like the rest -- the safe side.
+        if (entry.depth >= 0 && elem->getDepth() == entry.depth + 1)
+            continue;
+        elem->getCache()->invalidate();
+    }
+    SoCacheElement::setInvalid(TRUE);
+}
+
+void SoFCSelectionRoot::checkSecondaryCache(SoState *state, const Stack &stack)
+{
+    if (SoFCSwitch::testTraverseState(SoFCSwitch::TraverseOverride)
+            || !selCounter.hasCounted() || contextMap2.empty()) {
+        selCounter.checkCache(state, true);
+        return;
+    }
+    // A secondary context answers by the tail of the chain of roots this
+    // node is reached through, never a longer tail than its longest key
+    // (the map orders keys by length). Whether a key matches is therefore
+    // decided within the subtree of the root that tail starts at: only the
+    // caches opened inside it are shared by chains that can answer
+    // differently -- a Link reuses the Part's children root -- and every
+    // cache above it gets the same answer whichever way it is reached. The
+    // view's auto clipping runs a bounding box pass per frame; spoiling the
+    // scene root's cache made that pass walk every object.
+    const auto &longest = contextMap2.rbegin()->first;
+    size_t len = longest.size() - longest.offset;
+    invalidateCachesInside(state, stack, len >= stack.size() ? 0 : stack.size() - len);
+}
+
+void SoFCSelectionRoot::invalidateObjectChainCaches(SoAction *action)
+{
+    SoState *state = action->getState();
+    const Stack *stack = action->isOfType(SoGLRenderAction::getClassTypeId())
+        ? &SelStack : getActionStack(action);
+    if (stack) {
+        for (size_t i = 0; i < stack->size(); ++i) {
+            const char *doc, *obj;
+            if (static_cast<const SoFCSelectionRoot*>((*stack)[i])->getRenderedObject(doc, obj)) {
+                invalidateCachesInside(state, *stack, i);
+                return;
+            }
+        }
+    }
+    SoCacheElement::invalidate(state);
 }
 
 void SoFCSelectionRoot::endAction(SoAction *action, Stack &stack, bool checkcycle)
@@ -3139,6 +3228,8 @@ void SoFCSelectionRoot::endAction(SoAction *action, Stack &stack, bool checkcycl
         if(checkcycle && ViewParams::getCoinCycleCheck())
             stack.nodeSet.erase(this);
         stack.pop_back();
+        if (stack.entryCaches.size() > stack.size())
+            stack.entryCaches.resize(stack.size());
         if(stack.empty())
             ActionStacks.erase(action);
     }
@@ -3206,7 +3297,7 @@ void SoFCSelectionRoot::getBoundingBox(SoGetBoundingBoxAction * action)
     // node's other occurrences -- a Link to the Part holding it -- and one
     // built without it answers for those too, where a pick is then culled
     // at the separator and misses the node that is shown there.
-    selCounter.checkCache(action->getState(),true);
+    checkSecondaryCache(action->getState(), *stack);
     if(doActionPrivate(*stack,action))
         inherited::getBoundingBox(action);
     endAction(action, *stack);

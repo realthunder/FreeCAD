@@ -46,6 +46,7 @@
 #include "SoFCSelectionContext.h"
 #include "View3DInventorViewer.h"
 
+class SoCache;
 class SoFullPath;
 class SoPickedPoint;
 class SoDetail;
@@ -494,6 +495,14 @@ public:
             SoAction *action,
             std::vector<std::pair<const char *, const char *>> &chain);
 
+    /// Invalidate the caches \a action opened inside the outermost root on
+    /// its stack that renders an object, and keep that root's own and every
+    /// cache open above it. A per-view path entry answers by the
+    /// object chain, which is decided within the subtree of the chain's
+    /// first object: a cache above it gets the same answer however the
+    /// node below is reached.
+    static void invalidateObjectChainCaches(SoAction *action);
+
     int getRenderPathCode() const;
 
     void resetContext();
@@ -544,6 +553,16 @@ protected:
         }
         std::unordered_set<SoNode*> nodeSet;
         size_t offset = 0;
+        /// Where a root entered a traversal: the cache open then, and the
+        /// state depth (the root's own cache, if it opens one, is set one
+        /// level deeper).
+        struct EntryCache {
+            SoCache *cache = nullptr;
+            int depth = -1;
+        };
+        /// On a traversal's live stack: where each root was entered,
+        /// parallel to the nodes. What invalidateCachesInside() reads.
+        std::vector<EntryCache> entryCaches;
     };
 
     // Helper class to compress vector of SoFCSelectionRoot node pointer using
@@ -697,6 +716,17 @@ protected:
     static Stack *getActionStack(SoAction *action, bool create=false);
 
     Stack *beginAction(SoAction *action, bool checkcycle=true);
+
+    /// Invalidate the caches the traversal opened inside the root at
+    /// \a index of \a stack -- but not the root's own, which holds the
+    /// whole chain below it -- and none outside it.
+    /// Everything, as SoCacheElement::invalidate() does, when the stack
+    /// does not know where that root was entered.
+    static void invalidateCachesInside(SoState *state, const Stack &stack, size_t index);
+
+    /// What selCounter.checkCache(state, true) did, but spoiling only the
+    /// caches a secondary context of this node can make answer wrongly.
+    void checkSecondaryCache(SoState *state, const Stack &stack);
     void endAction(SoAction *action, Stack &stack, bool checkcycle=true);
 
     bool doActionPrivate(Stack &stack, SoAction *);

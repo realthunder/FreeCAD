@@ -162,6 +162,9 @@ public:
     /// Invalids cache if there are selections
     bool checkCache(SoState *state, bool secondary=false);
 
+    /// Whether any context of this node is counted now.
+    bool hasCounted() const { return *counter != 0; }
+
     /// Count highlight action
     void checkAction(SoHighlightElementAction *hlaction);
 

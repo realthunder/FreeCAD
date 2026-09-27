@@ -2815,43 +2815,72 @@ of 50 boxes and a Link to each Part (2000 drawn occurrences), top view;
 k boxes hidden in their Part occurrence, either as a path entry
 (`setObjectVisibility(part, False, "Box.")`) or as a tail hide
 (`partialRender(["Box.!hide"])`); median of five batches, two rounds
-that agree to about 10%. Microseconds, frame in milliseconds:
+that agree to about 10%.
 
-| arm, k | bbox | pick, gap | pick, hit | frame, mode 3 | frame, mode 0 |
-|---|---|---|---|---|---|
-| none | 2.5 | 58 | 95 | 0.14 | 36-41 |
-| tail 1 | 105 | 110-136 | 155 | 0.35-0.44 | 37-42 |
-| path 1 | 110-128 | 127-135 | 172-184 | 0.38-0.67 | 42 |
-| tail 10 | 835-841 | 668-673 | 732 | 1.33-1.76 | 40-44 |
-| path 10 | 1002-1026 | 747-760 | 791-806 | 1.48 | 44-45 |
-| tail 100 | 1593-1602 | 1177-1179 | 1231-1250 | 2.30-2.38 | 41 |
-| path 100 | 3025-3537 | 2104-2142 | 2199-2219 | 5.00 | 51 |
+First as the hides were built (after the two bookkeeping fixes at the end
+of this section), then with the invalidation confined to the key's span.
+Microseconds, frame in milliseconds, mode 3 (mode 0 measures the same for
+bbox and picks):
+
+| arm, k | bbox | pick, gap | pick, hit | frame |
+|---|---|---|---|---|
+| none | 2.5 | 58 | 95 | 0.14 |
+| tail 1 | 105 | 110-136 | 155 | 0.35-0.44 |
+| path 1 | 110-128 | 127-135 | 172-184 | 0.38-0.67 |
+| tail 10 | 835-841 | 668-673 | 732 | 1.33-1.76 |
+| path 10 | 1002-1026 | 747-760 | 791-806 | 1.48 |
+| tail 100 | 1593-1602 | 1177-1179 | 1231-1250 | 2.30-2.38 |
+| path 100 | 3025-3537 | 2104-2142 | 2199-2219 | 5.00 |
+| **confined:** tail 1-100 | 2.5-2.6 | 56-59 | 89-105 | 0.12-0.21 |
+| **confined:** path 1-100 | 2.4-2.6 | 60-70 | 97-122 | 0.13-0.15 |
 
 The frame is `SoRenderManager::render()` in the viewport's GL context:
-traversal and submission (the mode-0 column is llvmpipe and moves by
-about 5 ms between identical cells). Bounding box and picks are the same
-traversal in both modes and measured the same; mode 3 is shown.
+traversal and submission. The mode-0 GL frame (llvmpipe, 36-46 ms, about
+5 ms of noise between identical cells) showed nothing either way.
 
-- **What costs is the cache loss, and both pay it.** A hidden node is
-  shared by every occurrence, so each mechanism gives up the bounding box
-  (and mode-0 render) caches above it in all of them; at k = 10 half the
-  Parts carry a hide and half the scene is walked. The mechanism's own
-  lookup is small beside it.
-- **The tail context is never the dearer one**, and at k = 100 costs half
-  (bbox about 2x, pick 1.8x, mode-3 frame 2.1x cheaper) although it hides
-  twice as many occurrences (below). A path entry resolves the object
-  chain of every overridden switch against the whole table.
+**The frame slowdown was the bounding box pass.** `SoRenderManager` runs
+one per render for auto clipping, so every frame paid what the bbox
+column shows. That pass, and the picks, were slow because a hide spoiled
+every open cache up to the scene root -- `SoCacheElement::invalidate()`
+walks them all -- so each pass walked every object, and each pick every
+Part or Link carrying a hide. Only the caches INSIDE the key's span can
+answer wrongly. A key is matched by the tail of the chain of roots, so
+whether it matches is decided within the subtree of the root it starts
+at: that root's own cache and every cache above it get the same answer
+however they are reached. The caches between it and the node are the
+ones other occurrences share (a Link reuses the Part's children root).
+
+Now each root on a traversal's stack records where it entered: the cache
+open then and the state depth (`Stack::entryCaches`, pushed by
+`beginAction` and `renderPrivate`). `SoFCSelectionRoot::
+invalidateCachesInside()` invalidates innermost-first like Coin but stops
+at the entry cache, and skips the root's own -- the one set at entry depth
++ 1, since its separator pushes and sets the cache before any child runs.
+The span is the node's longest secondary key for a tail context
+(`checkSecondaryCache`, replacing `selCounter.checkCache(state, true)` in
+bbox and GL render) and the chain from its first object for a path entry
+(`invalidateObjectChainCaches`, in `SoFCVisibilityElement::check`). A
+stack without a mark, or an action without a cache element, falls back to
+the full invalidation.
+
+- **A hide now costs next to nothing**: bbox and frame at the no-hide
+  baseline for either mechanism and any k; picks within 10-25 us of it at
+  k = 100 (the few Parts a ray enters walk their boxes).
+- **Before that, the tail context was never the dearer one**: at k = 100
+  about half the path entry's cost, although it hid twice the occurrences
+  (below); a path entry resolves the chain of every overridden switch
+  against the whole table. Confined, the two are level.
 - **No hide costs nothing** in either: both are gated by a count of the
   nodes that carry one.
-- **An edit's hide is k = 1**: about +100 us per bounding box pass and
-  +50-75 us per pick on this scene.
 
-The tail arm hides the box through the Link too. That is `partialRender`,
-not the tail rule: it resolves its path without append, so its key starts
-at the Part's CHILDREN root, and a Link replaces the Part's own root and
-switch but shares that children root. The per-occurrence key (5.18's
-user model: `getDetailPath` WITH append, `[Part root, children root,
-box]`) makes the same lookups, so it costs the same.
+The tail arm hides the box through the Link too, as `partialRender`
+means to: it changes what the object itself draws, so its key is the
+object's own content (`getDetailPath` without append), starting at the
+Part's children root -- which a Link to the Part reuses, replacing only
+the Part's own root and switch. A per-view hide of one occurrence keys
+from the top instead (5.18's user model: `getDetailPath` WITH append,
+`[Part root, children root, box]`); it makes the same lookups, so it
+costs the same.
 
 Found on the way, fixed in the same round: the tail hide's cache
 bookkeeping was broken twice over, which contaminated every cell after
@@ -2866,7 +2895,8 @@ the first unhide until fixed.
   every other occurrence -- the leak `5124c6cc87` fixed for path entries.
   `getBoundingBox` now checks first; GL render already did.
 Both pinned by `tests/src/Gui/SecondaryHide.cpp`, a Part-and-Link graph
-reduced to its nodes.
+reduced to its nodes, as is the confinement (the scene root and the key's
+first root keep their caches).
 
 ## 5. Evaluated and not taken: one capture root to catch everything
 

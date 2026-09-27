@@ -70,14 +70,13 @@ public:
         ++passes;
         inherited::getBoundingBox(action);
     }
-    static int passes;
+    int passes = 0;
 
 protected:
     ~BoundsProbe() override = default;
 };
 
 SO_NODE_SOURCE(BoundsProbe);
-int BoundsProbe::passes = 0;
 
 constexpr float LinkOffset = 10.0F;
 constexpr float YOffset = 5.0F;
@@ -120,11 +119,14 @@ protected:
         y->addChild(new SoCube);
 
         shared = new SoSeparator;
-        shared->addChild(new BoundsProbe);
+        sharedProbe = new BoundsProbe;
+        shared->addChild(sharedProbe);
         shared->addChild(x);
         shared->addChild(y);
 
         a = new Gui::SoFCSelectionRoot(true);
+        aProbe = new BoundsProbe;
+        a->addChild(aProbe);
         a->addChild(shared);
         auto* b = new Gui::SoFCSelectionRoot(true);
         auto* offset = new SoTranslation;
@@ -134,6 +136,8 @@ protected:
 
         scene = new Gui::SoFCUnifiedSelection;
         scene->ref();
+        sceneProbe = new BoundsProbe;
+        scene->addChild(sceneProbe);
         scene->addChild(a);
         scene->addChild(b);
 
@@ -169,12 +173,15 @@ protected:
 
     /// One bounding box pass over the view, returning how many times it
     /// walked into the shared separator: zero once its cache is valid.
+    /// The other probes count the scene root and A the same way.
     int boundingBoxPass()
     {
-        BoundsProbe::passes = 0;
+        for (auto* probe : {sharedProbe, aProbe, sceneProbe}) {
+            probe->passes = 0;
+        }
         SoGetBoundingBoxAction action(viewport);
         action.apply(root);
-        return BoundsProbe::passes;
+        return sharedProbe->passes;
     }
 
     bool picksAt(float px, float py)
@@ -190,6 +197,9 @@ protected:
     Gui::SoFCSelectionRoot* a = nullptr;
     Gui::SoFCSelectionRoot* x = nullptr;
     SoSeparator* shared = nullptr;
+    BoundsProbe* sharedProbe = nullptr;
+    BoundsProbe* aProbe = nullptr;
+    BoundsProbe* sceneProbe = nullptr;
     SoOrthographicCamera* camera = nullptr;
     SoSeparator* root = nullptr;
     int renderCacheWas = 0;
@@ -227,6 +237,37 @@ TEST_F(SecondaryHideTest, showingAgainGivesTheCachesBack)
     EXPECT_EQ(boundingBoxPass(), 0);
     EXPECT_TRUE(picksAt(0.0F, 0.0F));
     EXPECT_TRUE(picksAt(0.0F, LinkOffset));
+}
+
+TEST_F(SecondaryHideTest, aHideSpoilsOnlyTheCachesInsideItsKey)
+{
+    // What a hide costs every frame: the view's auto clipping runs a
+    // bounding box pass per render. The key [A, X] matches within A's
+    // subtree, so only the caches opened inside A (and inside B, where
+    // the same node answers the other way) may be spoiled; the scene
+    // root's cache gets the same answer on every pass and must survive,
+    // or each pass walks every object under it.
+    hideXInA(true);
+    boundingBoxPass();
+    boundingBoxPass();
+
+    EXPECT_EQ(sceneProbe->passes, 0) << "the scene root answered from its cache";
+    EXPECT_FALSE(picksAt(0.0F, 0.0F));
+    EXPECT_TRUE(picksAt(0.0F, LinkOffset));
+}
+
+TEST_F(SecondaryHideTest, theKeysFirstRootKeepsItsOwnCache)
+{
+    // A holds the whole key in its subtree, so its own cache answers the
+    // same on every pass, and a pick can cull A with it. Only what A holds
+    // -- G, shared with B -- is spoiled.
+    hideXInA(true);
+    boundingBoxPass();
+    scene->touch();
+    boundingBoxPass();
+
+    EXPECT_GT(sceneProbe->passes, 0) << "the touched scene root was walked";
+    EXPECT_EQ(aProbe->passes, 0) << "A answered from its own cache";
 }
 
 }  // namespace
