@@ -2278,7 +2278,7 @@ TEST_F(TransactionLogTest, branchesSwitchInPlace)
     App::LogVersion forkVersion;
     ASSERT_TRUE(log().store().getVersion(sideRow.fromVersion, forkVersion));
     EXPECT_EQ(forkVersion.kind, "named");
-    EXPECT_GT(sideRow.idBase, obj->getID() + 65535);
+    EXPECT_EQ(sideRow.idBase, 0);   // no stride: one counter for the file (sec 27.40)
     EXPECT_THROW(doc()->createBranch("side"), Base::Exception);
 
     doc()->openTransaction("side edit");
@@ -2287,7 +2287,7 @@ TEST_F(TransactionLogTest, branchesSwitchInPlace)
     sideOnly->String.setValue("side");
     doc()->commitTransaction();
     const long sideOnlyId = sideOnly->getID();
-    EXPECT_GT(sideOnlyId, sideRow.idBase);
+    EXPECT_GT(sideOnlyId, obj->getID());
     const auto sideUndos = doc()->getAvailableUndoNames();
 
     ASSERT_TRUE(doc()->switchBranch("main"));
@@ -2301,7 +2301,7 @@ TEST_F(TransactionLogTest, branchesSwitchInPlace)
     obj->Integer.setValue(4);
     auto mainOnly = make("MainOnly");
     doc()->commitTransaction();
-    EXPECT_LT(mainOnly->getID(), sideRow.idBase);
+    EXPECT_GT(mainOnly->getID(), sideOnlyId);   // past the other branch's
 
     ASSERT_TRUE(doc()->switchBranch("side"));
     EXPECT_EQ(obj->Integer.getValue(), 3);
@@ -2801,7 +2801,8 @@ TEST_F(TransactionLogTest, aVersionBranchesAtItsFirstChange)
     for (auto o : doc()->getObjects())
         highest = std::max(highest, o->getID());
     EXPECT_GT(made->getID(), highest);
-    EXPECT_GE(made->getID(), branch.idBase);
+    EXPECT_EQ(branch.idBase, 0);
+    const long madeId = made->getID();
 
     // Each document is its own: the live one did not move.
     EXPECT_EQ(obj->Integer.getValue(), 2);
@@ -2812,6 +2813,12 @@ TEST_F(TransactionLogTest, aVersionBranchesAtItsFirstChange)
     ASSERT_TRUE(d1->undo());
     EXPECT_EQ(o1->Integer.getValue(), 1);
     EXPECT_EQ(obj->Integer.getValue(), 2);
+    // One counter for the file: the live document goes on past the version
+    // document's id (sec 27.40 item 1).
+    doc()->openTransaction("after");
+    auto after = make("AfterMade");
+    doc()->commitTransaction();
+    EXPECT_GT(after->getID(), madeId);   // `made` went with the undo
 
     App::GetApplication().closeDocument(d1->getName());
     EXPECT_FALSE(log().holderOf(branch.id));

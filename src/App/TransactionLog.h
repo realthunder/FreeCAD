@@ -259,8 +259,6 @@ public:
     bool detached() const { return _branch == 0; }
     /// The version a detached cursor is at, 0 for none.
     int64_t detachedAt() const { return _at; }
-    /// The object id base the branch a detached cursor makes starts at.
-    void setIdBase(long base) { _idBase = base; }
     /** Sec 27.5 ruling 3, one version open once: the document of the file
      * that is version `version` -- a version document not yet changed, or
      * one whose branch has not changed since that version -- null if none.
@@ -474,7 +472,6 @@ private:
     /// A detached cursor's version (sec 27.5), and the id base its branch
     /// will start at.
     int64_t _at {0};
-    long _idBase {0};
     /// Property id -> the op whose after ref that property's next copy
     /// resolves; main thread only.
     std::unordered_map<int64_t, Pending> _pending;

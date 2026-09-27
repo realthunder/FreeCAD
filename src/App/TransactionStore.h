@@ -56,8 +56,9 @@ struct LogTransaction
 /** A branch row (sec 17.1, 26): a named tip into the `parent` tree.
  * `head` is the seq of its newest transaction, moved by every append on
  * it; the branch's history is the parent chain from there. `idBase` is
- * where its object ids start (sec 17.2), 0 for `main`; `lastId` the last
- * id it handed out, kept when the document leaves it. `closed` is the
+ * where its object ids started under the stride of sec 17.2, which the
+ * file's own counter replaced (sec 27.40 item 1): 0 for any branch made
+ * since. `lastId` the last id its document had, kept when it leaves it. `closed` is the
  * time it was closed, 0 while open.
  */
 struct LogBranch
@@ -233,6 +234,8 @@ public:
     virtual bool lastOpOn(const std::string& ckind, long cid, const std::string& prop,
                           int64_t after, int64_t head, LogOp& op) = 0;
     virtual int64_t lastSeq() = 0;
+    /// The largest object id any op names (sec 27.40 item 1), 0 if none.
+    virtual long maxObjectId() = 0;
 
     /// Drop every transaction with seq < before, and the entities nothing
     /// reaches any more (sec 23.5).

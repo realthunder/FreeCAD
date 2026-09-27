@@ -542,6 +542,16 @@ public:
         return seq;
     }
 
+    long maxObjectId() override
+    {
+        auto s = prepare("SELECT MAX(cid) FROM op");
+        long id = 0;
+        if (sqlite3_step(s) == SQLITE_ROW)
+            id = static_cast<long>(sqlite3_column_int64(s, 0));
+        sqlite3_reset(s);
+        return id;
+    }
+
     void truncate(int64_t before) override
     {
         exec("BEGIN");

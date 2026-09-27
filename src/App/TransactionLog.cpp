@@ -178,6 +178,7 @@ public:
                   int64_t head, LogOp& op) override
     { return inner().lastOpOn(ckind, cid, prop, after, head, op); }
     int64_t lastSeq() override { return inner().lastSeq(); }
+    long maxObjectId() override { return inner().maxObjectId(); }
     void truncate(int64_t before) override
     {
         inner().truncate(before);
@@ -362,6 +363,15 @@ void TransactionLogCore::openStore()
     const std::string counter = _store->getMeta("version_counter");
     if (!counter.empty())
         _nextVersion = std::max<int64_t>(_nextVersion, std::stoll(counter) - 1);
+    // The file's object ids go on past every id its history knows (sec
+    // 27.40 item 1): the one an embedded copy carries, any op's, and any
+    // branch's -- the ops of a removed object may be trimmed away.
+    const std::string lastId = _store->getMeta("last_object_id");
+    if (!lastId.empty())
+        _history.noteObjectId(std::stol(lastId));
+    _history.noteObjectId(_store->maxObjectId());
+    for (const auto& b : _store->branches())
+        _history.noteObjectId(std::max(b.idBase, b.lastId));
 }
 
 void TransactionLogCore::liveLogs(TransactionLogCore* core, bool add)
@@ -816,6 +826,7 @@ TransactionLog::Embedded TransactionLogCore::embed(const std::string& saveDate, 
     copy->setMeta("save_id", out.saveId);
     copy->setMeta("save_date", saveDate);
     copy->setMeta("version_counter", std::to_string(out.version));
+    copy->setMeta("last_object_id", std::to_string(_history.lastObjectId()));
     // The branch the file reopens on is the saving document's (sec 27.16):
     // the store's names whichever document of the file last switched, and a
     // version document saved as the file never sets it.
@@ -1042,7 +1053,6 @@ void TransactionLog::ensureBranch()
     branch.fromVersion = haveVersion ? version.num : 0;
     branch.fromSeq = _head;
     branch.head = _head;
-    branch.idBase = _idBase;
     branch.created = now();
     store.addBranch(branch);
     if (haveVersion && version.kind != "named")
@@ -1054,7 +1064,7 @@ void TransactionLog::ensureBranch()
     // The branch's own record, before the row that made it.
     std::ostringstream script;
     script << "{\"from_version\":" << branch.fromVersion << ",\"from_seq\":" << branch.fromSeq
-           << ",\"id_base\":" << branch.idBase << ",\"implicit\":true}";
+           << ",\"implicit\":true}";
     LogTransaction t;
     number(t);
     t.kind = "branch";

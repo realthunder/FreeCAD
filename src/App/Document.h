@@ -1169,8 +1169,9 @@ protected:
     /// row `toSeq` through the rows between them (sec 27.34); false when a
     /// row cannot be reverted or applied, or the chains do not meet.
     bool _moveAlongLog(int64_t fromHead, int64_t toSeq, bool views);
-    /// Sec 26: the id counter and the undo stacks of `branch`, arrived on.
-    void _arriveOnBranch(const LogBranch& branch);
+    /// Sec 26: the undo stacks of the branch arrived on. The id counter is
+    /// the file's and does not move (sec 27.40 item 1).
+    void _arriveOnBranch();
     /// Keep at most UndoMaxStackSize steps of `stack` hot (sec 24.3): with
     /// the log, the oldest beyond it become cold stubs; without it, they go.
     /// The undo stack only: its steps are deleted oldest first, the order

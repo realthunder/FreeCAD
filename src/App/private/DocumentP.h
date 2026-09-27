@@ -80,6 +80,8 @@ struct DocumentP
     std::vector<DocumentObjectT> pendingRemove;
     std::vector<App::DocumentObject*> skippedObjs;
     long lastObjectId;
+    /// The id readObjects restores the next object under, 0 for a new one.
+    long restoringId = 0;
     mutable std::pair<long, long> treeRanks = std::make_pair(0,0);
     long treeRankRevision = 0;
     long revision = 0; // will increase on object add or remove
@@ -251,9 +253,13 @@ struct DocumentP
     DocumentP();
 
     long addObject(App::DocumentObject *pcObject) {
-        int id = pcObject->getID();
+        long id = pcObject->getID();
+        if (!id)
+            id = restoringId;
         for (;;) {
-            auto &entry = this->objectIdMap[id ? id : ++this->lastObjectId];
+            if (!id)
+                id = nextObjectId();
+            auto &entry = this->objectIdMap[id];
             if (entry) {
                 id = 0;
                 continue;
@@ -261,9 +267,30 @@ struct DocumentP
             entry = pcObject;
             break;
         }
+        noteObjectId(id);
         ++revision;
         this->objectArray.push_back(pcObject);
-        return id ? id : this->lastObjectId;
+        return id;
+    }
+
+    /// A new object's id: from the file's counter when the document has a
+    /// history (docs/TransactionLog.md sec 27.40 item 1), else its own.
+    long nextObjectId() {
+        if (history) {
+            history->noteObjectId(lastObjectId);
+            lastObjectId = history->nextObjectId();
+        }
+        else
+            ++lastObjectId;
+        return lastObjectId;
+    }
+
+    /// An id in use: neither counter hands it out again.
+    void noteObjectId(long id) {
+        if (id > lastObjectId)
+            lastObjectId = id;
+        if (history)
+            history->noteObjectId(id);
     }
 
     void addRecomputeLog(const char *why, App::DocumentObject *obj) {

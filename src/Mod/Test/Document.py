@@ -3631,3 +3631,39 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertEqual(len(fork), 1)
         opened.createTransactionBranch("revived", version=fork[0]["num"])
         self.assertEqual(opened.getObject("Obj").Integer, 1)
+
+    def testReopenHandsOutNoDeletedId(self):
+        # Sec 27.40 item 1: a deleted object's id is not handed out again
+        # after a reopen -- from the file's LastId with the log off, and from
+        # the file's counter with it on; and two branches share one counter.
+        for mode in (0, 2):
+            self.param.SetInt("TransactionLog", mode)
+            doc = self.track(FreeCAD.newDocument("Ids"))
+            doc.UndoMode = 1
+            doc.addObject("App::FeatureTest", "Keep")
+            gone = doc.addObject("App::FeatureTest", "Gone")
+            goneId = gone.ID
+            doc.removeObject("Gone")
+            path = os.path.join(self.dir, "ids%d.FCStd" % mode)
+            doc.saveAs(path)
+            FreeCAD.closeDocument(doc.Name)
+            doc = self.track(FreeCAD.openDocument(path))
+            made = doc.addObject("App::FeatureTest", "Made")
+            self.assertGreater(made.ID, goneId, "mode %d" % mode)
+            FreeCAD.closeDocument(doc.Name)
+        self.param.SetInt("TransactionLog", 2)
+        doc = self.track(FreeCAD.newDocument("Ids"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        doc.addObject("App::FeatureTest", "Obj")
+        doc.commitTransaction()
+        doc.createTransactionBranch("side")
+        doc.openTransaction("side")
+        sideId = doc.addObject("App::FeatureTest", "Side").ID
+        doc.commitTransaction()
+        doc.switchTransactionBranch("main")
+        doc.openTransaction("main")
+        mainId = doc.addObject("App::FeatureTest", "Main").ID
+        doc.commitTransaction()
+        self.assertGreater(mainId, sideId)
+        self.assertTrue(all(b["id_base"] == 0 for b in doc.getTransactionBranches()))

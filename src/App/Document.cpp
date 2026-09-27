@@ -1775,6 +1775,8 @@ void Document::Save (Base::Writer &writer) const
                     << "\" FileVersion=\"" << writer.getFileVersion()
                     << "\" Uid=\"" << Uid.getValueStr()
                     << "\" StringHasher=\"1\"";
+    if (d->lastObjectId > 0)
+        writer.Stream() << " LastId=\"" << d->lastObjectId << "\"";
     // Announced the same way the string hasher is, because the reader has to
     // know whether the element is there before it can read past it.
     if (getFileBlobManager().hasInlineBlobs())
@@ -1870,6 +1872,10 @@ void Document::Restore(Base::XMLReader &reader)
     // still there.
     const bool hasInlineBlobs = reader.hasAttribute("Blobs");
     const bool hasStringHasher = reader.hasAttribute("StringHasher");
+    // The last id the file handed out (sec 27.40 item 1), above every object
+    // it holds when the newest ones were deleted: none is handed out again.
+    const long savedLastId = reader.hasAttribute("LastId")
+        ? static_cast<long>(reader.getAttributeAsInteger("LastId")) : 0;
 
     // Content carried inside the XML comes first, so everything parsed from
     // here on finds what it refers to already in the store. The Uid is set
@@ -1955,6 +1961,7 @@ void Document::Restore(Base::XMLReader &reader)
     else if ( scheme >= 3 ) {
         // read the feature types
         readObjects(reader);
+        d->noteObjectId(savedLastId);
 
         // tip object handling. First the whole document has to be read, then we
         // can restore the Tip link out of the TipName Property:
@@ -2922,11 +2929,11 @@ Document::readObjects(Base::XMLReader& reader)
             partial = !it->second;
         }
 
-        if(!testStatus(Status::Importing) && reader.hasAttribute("id")) {
-            // if not importing, then temporary reset lastObjectId and make the
-            // following addObject() generate the correct id for this object.
-            d->lastObjectId = reader.getAttributeAsInteger("id")-1;
-        }
+        // if not importing, the following addObject() gives the object the
+        // id it was saved with.
+        d->restoringId = 0;
+        if(!testStatus(Status::Importing) && reader.hasAttribute("id"))
+            d->restoringId = reader.getAttributeAsInteger("id");
 
         // To prevent duplicate name when export/import of objects from
         // external documents, we append those external object name with
@@ -2950,7 +2957,14 @@ Document::readObjects(Base::XMLReader& reader)
             // Example: Object 'Cut001' references object 'Cut' and removing the
             // digits we make an object 'Cut' referencing itself.
             FC_TIME_INIT(tAdd);
-            App::DocumentObject* obj = addObject(type.c_str(), obj_name, /*isNew=*/ false, viewType.c_str(), partial);
+            App::DocumentObject* obj = nullptr;
+            {
+                struct Reset {
+                    long& id;
+                    ~Reset() { id = 0; }
+                } reset {d->restoringId};
+                obj = addObject(type.c_str(), obj_name, /*isNew=*/ false, viewType.c_str(), partial);
+            }
             FC_DURATION_PLUS(d->restoreTiming.createAdd, tAdd);
             if (obj) {
                 if(lastId < obj->_Id)
@@ -2983,7 +2997,7 @@ Document::readObjects(Base::XMLReader& reader)
         }
     }
     if(!testStatus(Status::Importing))
-        d->lastObjectId = lastId;
+        d->noteObjectId(lastId);
 
     reader.readEndElement("Objects");
     FC_DURATION_PLUS(d->restoreTiming.create, t);
@@ -5632,10 +5646,7 @@ void Document::_joinHistory(const std::shared_ptr<FileHistory>& history)
     }
     d->history = history;
     d->joinedHistory = true;
-}
-
-namespace {
-long branchStride();
+    history->noteObjectId(d->lastObjectId);
 }
 
 Document* Document::openVersion(int64_t num, bool createView)
@@ -5700,16 +5711,6 @@ Document* Document::openFileVersion(const std::shared_ptr<FileHistory>& history,
     if (Document* open = log.documentAt(version, frozen))
         return open;
 
-    // The ids its branch will hand out start a stride above every other
-    // branch's and every open document's (sec 17.2): its first change may
-    // create an object before the branch exists.
-    long idBase = 0;
-    for (const auto& b : log.store().branches())
-        idBase = std::max({idBase, b.idBase, b.lastId});
-    for (auto doc : log.documents())
-        idBase = std::max(idBase, doc->d->lastObjectId);
-    idBase += branchStride();
-
     const std::string dir = materialiseVersion(
         log, num, history->directory() + "/history/open-v" + std::to_string(num), true);
     struct Cleanup
@@ -5764,8 +5765,6 @@ Document* Document::openFileVersion(const std::shared_ptr<FileHistory>& history,
             doc->setUndoMode(from->getUndoMode());
         doc->d->noLog = false;
         doc->d->transactionLog = std::make_unique<TransactionLog>(*doc, &version);
-        doc->d->transactionLog->setIdBase(idBase);
-        doc->d->lastObjectId = std::max(doc->d->lastObjectId, idBase);
         doc->d->undoFloor = doc->d->transactionLog->lastSeq();
         if (from)
             doc->d->lastVersionTime = from->d->lastVersionTime;
@@ -5786,16 +5785,6 @@ Document* Document::openFileVersion(const std::shared_ptr<FileHistory>& history,
 }
 
 namespace {
-
-/// The id stride of a new branch (docs/TransactionLog.md sec 17.2): a
-/// random 2^16..2^20, so that some two thousand branches fit in the 31
-/// bits an id has where `long` is 32.
-long branchStride()
-{
-    static std::mt19937 gen {std::random_device {}()};
-    std::uniform_int_distribution<long> dist(1L << 16, 1L << 20);
-    return dist(gen);
-}
 
 std::string jsonString(const std::string& s)
 {
@@ -6235,14 +6224,8 @@ void Document::_checkoutHead(int64_t fromHead)
     _replayLog(haveAnchor ? anchor.seq : 0, last);
 }
 
-void Document::_arriveOnBranch(const LogBranch& branch)
+void Document::_arriveOnBranch()
 {
-    // The ids go on from where this branch left them, never below its base
-    // nor below an object the checkout brought (sec 17.2).
-    long id = std::max(branch.lastId, branch.idBase);
-    for (auto obj : getObjects())
-        id = std::max(id, obj->getID());
-    d->lastObjectId = id;
     _rebuildUndoFromLog(d->undoFloor);
 }
 
@@ -6289,15 +6272,11 @@ int64_t Document::createBranch(const std::string& name, int64_t version, int64_t
         }
     }
 
-    long base = d->lastObjectId;
-    for (const auto& b : store.branches())
-        base = std::max({base, b.idBase, b.lastId});
     LogBranch branch;
     branch.name = name;
     branch.fromVersion = fork.num;
     branch.fromSeq = forkSeq;
     branch.head = forkSeq;
-    branch.idBase = base + branchStride();
     branch.created = std::chrono::duration<double>(
                          std::chrono::system_clock::now().time_since_epoch()).count();
     store.addBranch(branch);
@@ -6329,14 +6308,12 @@ int64_t Document::createBranch(const std::string& name, int64_t version, int64_t
         branch.fromVersion = fork.num;
         store.updateBranch(branch);
     }
-    long id = std::max(d->lastObjectId, branch.idBase);
-    d->lastObjectId = id;
     if (forkSeq != leftHead)
-        _arriveOnBranch(branch);
+        _arriveOnBranch();
 
     std::ostringstream script;
     script << "{\"from_branch\":" << jsonString(left.name) << ",\"from_version\":" << fork.num
-           << ",\"from_seq\":" << forkSeq << ",\"id_base\":" << branch.idBase << "}";
+           << ",\"from_seq\":" << forkSeq << "}";
     log->record("branch", "Branch " + name, script.str());
     refreshVersionNames();
     signalBranchesChanged(*this);
@@ -6372,7 +6349,7 @@ bool Document::switchBranch(const std::string& name)
     log->setBranch(branch.id);
     _checkoutHead(fromHead);
     log->forgetLiveValues();
-    _arriveOnBranch(branch);
+    _arriveOnBranch();
 
     std::ostringstream script;
     script << "{\"from_branch\":" << jsonString(left.name) << ",\"from_head\":" << left.head
@@ -7071,11 +7048,13 @@ FileHistory& Document::getFileHistory() const
             if (auto existing = FileHistory::find(FileName.getStrValue())) {
                 d->history = existing;
                 d->joinedHistory = true;
+                d->history->noteObjectId(d->lastObjectId);
                 return *d->history;
             }
         }
         d->history = FileHistory::create(*const_cast<Document*>(this));
         d->history->setPath(FileName.getStrValue());
+        d->history->noteObjectId(d->lastObjectId);
     }
     return *d->history;
 }

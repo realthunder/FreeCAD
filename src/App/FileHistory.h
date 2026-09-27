@@ -92,6 +92,21 @@ public:
     /// first document's log and kept for as long as the history is.
     std::shared_ptr<TransactionLogCore>& logCore() { return _logCore; }
 
+    /** The file's object ids (docs/TransactionLog.md sec 27.40 item 1): the
+     * last id any document of the file handed out or found. Every document
+     * of the file allocates from it, so no two objects of the file, in any
+     * version or branch, share an id -- and a reopen does not hand out a
+     * deleted object's id again.
+     */
+    long lastObjectId() const { return _lastObjectId; }
+    /// An id in use or once used: the counter goes past it.
+    void noteObjectId(long id)
+    {
+        if (id > _lastObjectId)
+            _lastObjectId = id;
+    }
+    long nextObjectId() { return ++_lastObjectId; }
+
     /// The canonical path the history is registered under, empty if none.
     const std::string& path() const { return _path; }
     /// What a history opened from a file (openFile) read of it: its label,
@@ -142,6 +157,7 @@ private:
     Document* _home {nullptr};
     std::string _fileLabel;
     int64_t _fileVersion {0};
+    long _lastObjectId {0};
     std::string _dir;
     std::string _path;
     std::unique_ptr<FileBlobManager> _blobs;

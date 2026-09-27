@@ -6343,3 +6343,37 @@ five GUI checks) and a test of its own.
   place of one counter for every sketch.
 - **Q6: delayed.** Every allocation goes through the one allocator; blocks
   from the store are not built.
+
+### 27.42 Step 1 as built: one object id counter per file (2026-09-27)
+
+`FileHistory` holds the counter (`lastObjectId`, `noteObjectId`,
+`nextObjectId`). `DocumentP::addObject` takes a new object's id from it when
+the document has a history, from its own counter otherwise, and notes every
+id it places -- restored, undone, folded back -- into both, so neither
+counter hands out an id in use. A document that gets or joins its history
+later notes what it made before (`_noteObjectsInHistory`).
+
+Where the counter comes from on open, the largest of:
+- the root element's new `LastId` attribute (Q1), written by every save --
+  so a file opened with the log off does not reuse an id either;
+- the largest id restored;
+- from the store (`TransactionLogCore::openStore`): the embedded copy's
+  meta `last_object_id` (written by `embed`), the largest cid of any op
+  (`TransactionStore::maxObjectId`), and every branch's `idBase`/`lastId`.
+
+`readObjects` no longer borrows `lastObjectId` to place a restored object
+under its saved id; it passes the id in `DocumentP::restoringId`, which a
+shared counter needs.
+
+The stride is gone: `branchStride`, `TransactionLog::setIdBase`, the id
+arithmetic of `openFileVersion`, `createBranch` and `_arriveOnBranch`. A new
+branch row has `idBase` 0, and the branch records drop `id_base`. Old
+strided branches keep their ids, and their bases still raise the counter.
+`_leaveBranch` still records the branch's `lastId`.
+
+Tests: Python `TransactionBranchCases.testReopenHandsOutNoDeletedId` -- the
+case of 27.40, with the log off and on, and a branch and main adding one
+object each get increasing ids from one counter. C++: the branch tests
+assert `idBase` 0 and that main's next id is past the side branch's; the
+version test that the live document's next id is past the version
+document's.
