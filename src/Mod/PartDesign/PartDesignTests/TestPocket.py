@@ -294,6 +294,61 @@ class TestPocket(unittest.TestCase):
         # down to the plate's top at z = 15
         self.assertAlmostEqual(box.Shape.Volume - pocket.Shape.Volume, 10 * 10 * 25)
 
+    def testUpstreamOperationCommon(self):
+        # Upstream 4a71de647d saves the boolean as Operation, "Subtraction"
+        # or "Common" for a subtractive feature, where the fork has
+        # AddSubType. A file of upstream's, made here from one of ours,
+        # keeps what is common.
+        import os, re, tempfile, zipfile
+        self.Body = self.Doc.addObject('PartDesign::Body', 'Body')
+        self.PadSketch = self.Body.newObject('Sketcher::SketchObject', 'PadSketch')
+        TestSketcherApp.CreateRectangleSketch(self.PadSketch, (0, 0), (10, 10))
+        self.Pad = self.Body.newObject("PartDesign::Pad", "Pad")
+        self.Pad.Profile = self.PadSketch
+        self.Pad.Length = 1
+        self.PocketSketch = self.Body.newObject('Sketcher::SketchObject', 'PocketSketch')
+        TestSketcherApp.CreateRectangleSketch(self.PocketSketch, (2.5, 2.5), (5, 5))
+        self.Pocket = self.Body.newObject("PartDesign::Pocket", "Pocket")
+        self.Pocket.Profile = self.PocketSketch
+        self.Pocket.Length = 1
+        self.Pocket.Reversed = True
+        self.Doc.recompute()
+        self.assertAlmostEqual(self.Pocket.Shape.Volume, 75.0)
+
+        folder = tempfile.mkdtemp()
+        ours = os.path.join(folder, "ours.FCStd")
+        theirs = os.path.join(folder, "theirs.FCStd")
+        self.Doc.saveAs(ours)
+        operation = ('<Property name="Operation" type="App::PropertyEnumeration" status="1">\n'
+                     '<Integer value="1" CustomEnum="true"/>\n'
+                     '<CustomEnumList count="2">\n'
+                     '<Enum value="Subtraction"/>\n<Enum value="Common"/>\n'
+                     '</CustomEnumList>\n</Property>\n')
+        with zipfile.ZipFile(ours) as src, zipfile.ZipFile(theirs, "w") as dst:
+            for item in src.infolist():
+                data = src.read(item.filename)
+                if item.filename == "Document.xml":
+                    xml = data.decode("utf-8")
+                    # the Pocket's AddSubType, which upstream lacks, becomes
+                    # its Operation, in place so the count holds
+                    start = xml.index('<Object name="Pocket"', xml.index("<ObjectData"))
+                    end = xml.index("</Object>", start)
+                    part = re.sub(r'<Property name="AddSubType".*?</Property>\s*',
+                                  lambda m: operation, xml[start:end], count=1, flags=re.S)
+                    data = (xml[:start] + part + xml[end:]).encode("utf-8")
+                dst.writestr(item, data)
+        doc = FreeCAD.openDocument(theirs)
+        try:
+            pocket = doc.getObject("Pocket")
+            self.assertEqual(pocket.AddSubType, "Intersecting")
+            pocket.touch()
+            doc.recompute()
+            self.assertNotIn("Invalid", pocket.State)
+            # what the 5 x 5 pocket shares with the plate
+            self.assertAlmostEqual(pocket.Shape.Volume, 25.0)
+        finally:
+            FreeCAD.closeDocument(doc.Name)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestPocket")

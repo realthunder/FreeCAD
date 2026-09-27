@@ -120,6 +120,10 @@ void FeaturePrimitive::onChanged(const App::Property* prop)
 
 void FeaturePrimitive::handleChangedPropertyName(Base::XMLReader &reader, const char* TypeName, const char* PropName)
 {
+    if (strcmp(PropName, "Operation") == 0) {
+        FeatureAddSub::handleChangedPropertyName(reader, TypeName, PropName);
+        return;
+    }
     extHandleChangedPropertyName(reader, TypeName, PropName); // AttachExtension
 }
 

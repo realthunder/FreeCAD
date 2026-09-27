@@ -80,6 +80,28 @@ void FeatureAddSub::initAddSubType(Type t)
     }
 }
 
+void FeatureAddSub::handleChangedPropertyName(Base::XMLReader &reader, const char *TypeName,
+                                              const char *PropName)
+{
+    // Upstream's Operation is the fork's AddSubType: Union, Subtraction and
+    // Common for Additive, Subtractive and Intersecting. Its list is the
+    // class's own ({"Union"} or {"Subtraction", "Common"}), saved with it.
+    if (strcmp(PropName, "Operation") == 0
+            && strcmp(TypeName, App::PropertyEnumeration::getClassTypeId().getName()) == 0) {
+        App::PropertyEnumeration operation;
+        operation.Restore(reader);
+        const char *value = operation.isValid() ? operation.getValueAsString() : nullptr;
+        if (value && strcmp(value, "Common") == 0)
+            AddSubType.setValue("Intersecting");
+        else if (value && strcmp(value, "Subtraction") == 0)
+            AddSubType.setValue("Subtractive");
+        else if (value && strcmp(value, "Union") == 0)
+            AddSubType.setValue("Additive");
+        return;
+    }
+    PartDesign::Feature::handleChangedPropertyName(reader, TypeName, PropName);
+}
+
 void FeatureAddSub::onChanged(const App::Property *prop)
 {
     if (prop == &AddSubType) {

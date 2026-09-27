@@ -61,6 +61,9 @@ public:
 
 protected:
     void initAddSubType(Type t);
+    /// Reads upstream's Operation (4a71de647d) into AddSubType
+    void handleChangedPropertyName(Base::XMLReader &reader, const char *TypeName,
+                                   const char *PropName) override;
 
 private:
     Type addSubType{Additive};
