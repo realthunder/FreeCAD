@@ -6927,3 +6927,6 @@ file's element-map version is older than this build's.
 - T5: the Gui (offscreen): view-provider values are logged too.
 - T6: after 27.50 (the shared string table), the same run, for what
   leaving the table out of every version saves.
+
+**Order (user, 2026-09-27):** F1-F3 first, then 27.50's steps 1-4. Starts
+next session.
