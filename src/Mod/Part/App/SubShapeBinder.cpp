@@ -419,6 +419,26 @@ void SubShapeBinder::update(SubShapeBinder::UpdateOption options) {
                     }
                     if(recomputeCopy && !copied->recomputeFeature(true))
                         copyerror = 2;
+                    // And back what the copy computed from them -- a B the
+                    // support makes 3 * A reads 900 here once A is 300 -- for
+                    // a ReadOnly+Output property only, which nobody sets
+                    // (upstream 2501296c95, 66e1c0154d)
+                    for(auto prop : props) {
+                        if(copyerror)
+                            break;
+                        if(!prop->testStatus(App::Property::Output)
+                                || !prop->testStatus(App::Property::ReadOnly)
+                                || !App::LinkBaseExtension::isCopyOnChangeProperty(this,*prop))
+                            continue;
+                        auto p = copied->getPropertyByName(prop->getName());
+                        if(p && p->getContainer()==copied
+                                && p->getTypeId()==prop->getTypeId()
+                                && !p->isSame(*prop))
+                        {
+                            std::unique_ptr<App::Property> pcopy(p->Copy());
+                            prop->Paste(*pcopy);
+                        }
+                    }
                 }
                 obj = copied;
                 _CopiedLink.setValue(copied,l.getSubValues(false));

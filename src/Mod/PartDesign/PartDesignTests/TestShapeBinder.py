@@ -52,6 +52,29 @@ class TestShapeBinder(unittest.TestCase):
         #print ("omit closing document for debugging")
 
 
+class _Triple:
+    """A feature whose B is computed, 3 * A; its shape is a box B long.
+    At module level, so that a binder's copy of it restores its proxy."""
+
+    def __init__(self, obj):
+        obj.Proxy = self
+        obj.addProperty("App::PropertyLength", "A")
+        obj.addProperty("App::PropertyLength", "B")
+        obj.A = 200
+        obj.setPropertyStatus("A", ["CopyOnChange"])
+        obj.setPropertyStatus("B", ["CopyOnChange", "ReadOnly", "Output"])
+
+    def execute(self, obj):
+        obj.B = 3 * obj.A.Value
+        obj.Shape = Part.makeBox(obj.B.Value, 10, 10)
+
+    def dumps(self):
+        return None
+
+    def loads(self, state):
+        return None
+
+
 class TestSubShapeBinder(unittest.TestCase):
     def setUp(self):
         self.Doc = FreeCAD.newDocument("PartDesignTestSubShapeBinder")
@@ -82,6 +105,26 @@ class TestSubShapeBinder(unittest.TestCase):
         self.Doc.recompute()
         self.assertAlmostEqual(box.Shape.BoundBox.XLength, 25)
         # tearDown closes the document
+
+    def testCopyOnChangeComputedComesBack(self):
+        """A computed copy-on-change property -- ReadOnly and Output -- reads
+        what the binder's copy computed, not the support's value (upstream
+        2501296c95, 66e1c0154d)."""
+        feat = self.Doc.addObject("Part::FeaturePython", "Triple")
+        _Triple(feat)
+        self.Doc.recompute()
+        binder = self.Doc.addObject("PartDesign::SubShapeBinder", "Binder")
+        binder.Support = [(feat, "")]
+        binder.BindCopyOnChange = "Enabled"
+        self.Doc.recompute()
+        self.assertAlmostEqual(binder.B.Value, 600)
+        binder.A = 300
+        self.Doc.recompute()
+        self.assertEqual(binder.BindCopyOnChange, "Mutated")
+        self.assertAlmostEqual(binder.Shape.BoundBox.XLength, 900)
+        self.assertAlmostEqual(binder.B.Value, 900)
+        self.assertAlmostEqual(feat.B.Value, 600)
+        self.assertNotIn("Touched", binder.State)
 
     def testOffsetBinder(self):
         # See PR 7445
