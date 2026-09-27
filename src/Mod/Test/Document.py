@@ -3831,9 +3831,9 @@ class TransactionBranchCases(unittest.TestCase):
         import Part
 
         # Explicit only: the automatic compaction of sec 27.48 off.
-        ratio = self.param.GetInt("TransactionLogCompactRatio", 50)
-        self.param.SetInt("TransactionLogCompactRatio", 0)
-        self.addCleanup(self.param.SetInt, "TransactionLogCompactRatio", ratio)
+        size = self.param.GetInt("TransactionLogCompactSize", 256)
+        self.param.SetInt("TransactionLogCompactSize", 0)
+        self.addCleanup(self.param.SetInt, "TransactionLogCompactSize", size)
         doc = self.track(FreeCAD.newDocument("Compact"))
         doc.UndoMode = 1
         doc.openTransaction("create")
@@ -3874,53 +3874,58 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertEqual(doc.addObject("App::FeatureTest", "Temp").Name, "Temp002")
 
     def testTrimEstimatesAndCompacts(self):
-        # Sec 27.48: deleting a branch estimates the objects left referred to
-        # by nothing, records it, keeps a file-wide count, and compacts once
-        # the count reaches TransactionLogCompactRatio of the name table.
+        # Sec 27.48, 27.49: deleting a branch estimates the objects left
+        # referred to by nothing and their bytes, records it, keeps a
+        # file-wide count, and compacts once the bytes reach
+        # TransactionLogCompactSize.
         import json
 
-        ratio = self.param.GetInt("TransactionLogCompactRatio", 50)
-        try:
-            for setting, compacts in ((90, False), (50, True)):
-                self.param.SetInt("TransactionLogCompactRatio", setting)
-                doc = self.track(FreeCAD.newDocument("Estimate"))
+        def trimRecord(doc):
+            record = [r for r in doc.getTransactionLog() if r["kind"] == "trim"][-1]
+            return json.loads(record["script"])
+
+        size = self.param.GetInt("TransactionLogCompactSize", 256)
+        self.addCleanup(self.param.SetInt, "TransactionLogCompactSize", size)
+        names = ["Unreferenced%02dObjectName" % i for i in range(40)]
+        # 40 names of 24 characters, each with its id: over 1 KB, under 256.
+        entryBytes = sum(len(n) for n in names) + 40 * 8
+        for setting, compacts in ((256, False), (1, True)):
+            self.param.SetInt("TransactionLogCompactSize", setting)
+            doc = self.track(FreeCAD.newDocument("Estimate"))
+            doc.UndoMode = 1
+            doc.openTransaction("create")
+            doc.addObject("App::FeatureTest", "Obj")
+            doc.commitTransaction()
+            doc.createTransactionBranch("side")
+            doc.openTransaction("side")
+            for n in names:
+                doc.addObject("App::FeatureTest", n)
+            doc.commitTransaction()
+            doc.switchTransactionBranch("main")
+            doc.deleteTransactionBranch("side")
+            info = trimRecord(doc)
+            self.assertEqual(info["unreferenced"], 40, setting)
+            self.assertEqual(info["unreferenced_bytes"], entryBytes, setting)
+            self.assertEqual(info["compacted"], compacts, setting)
+            doc.openTransaction("again")
+            name = doc.addObject("App::FeatureTest", names[0]).Name
+            doc.commitTransaction()
+            self.assertEqual(name, names[0] if compacts else names[0] + "001", setting)
+            if not compacts:
+                # The count is the file's: it survives a reopen, and an
+                # explicit compaction resets it.
+                self.assertEqual(info["unreferenced_bytes_total"], entryBytes)
+                path = os.path.join(self.dir, "estimate.FCStd")
+                doc.saveAs(path)
+                FreeCAD.closeDocument(doc.Name)
+                doc = self.track(FreeCAD.openDocument(path))
                 doc.UndoMode = 1
-                doc.openTransaction("create")
-                doc.addObject("App::FeatureTest", "Obj")
-                doc.commitTransaction()
-                doc.createTransactionBranch("side")
-                doc.openTransaction("side")
-                doc.addObject("App::FeatureTest", "Temp")
-                doc.addObject("App::FeatureTest", "Other")
+                doc.createTransactionBranch("more")
+                doc.openTransaction("more")
+                doc.addObject("App::FeatureTest", "Third")
                 doc.commitTransaction()
                 doc.switchTransactionBranch("main")
-                doc.deleteTransactionBranch("side")
-                record = [r for r in doc.getTransactionLog() if r["kind"] == "trim"][-1]
-                info = json.loads(record["script"])
-                self.assertEqual(info["unreferenced"], 2, setting)
-                self.assertEqual(info["compacted"], compacts, setting)
-                doc.openTransaction("again")
-                name = doc.addObject("App::FeatureTest", "Temp").Name
-                doc.commitTransaction()
-                self.assertEqual(name, "Temp" if compacts else "Temp001", setting)
-                if not compacts:
-                    # The count is the file's: it survives a reopen, and an
-                    # explicit compaction resets it.
-                    self.assertEqual(info["unreferenced_total"], 2)
-                    path = os.path.join(self.dir, "estimate.FCStd")
-                    doc.saveAs(path)
-                    FreeCAD.closeDocument(doc.Name)
-                    doc = self.track(FreeCAD.openDocument(path))
-                    doc.UndoMode = 1
-                    doc.createTransactionBranch("more")
-                    doc.openTransaction("more")
-                    doc.addObject("App::FeatureTest", "Third")
-                    doc.commitTransaction()
-                    doc.switchTransactionBranch("main")
-                    doc.deleteTransactionBranch("more")
-                    record = [r for r in doc.getTransactionLog() if r["kind"] == "trim"][-1]
-                    self.assertEqual(json.loads(record["script"])["unreferenced_total"], 3)
-                    self.assertEqual(doc.compactFileState()["names"], 3)
-                FreeCAD.closeDocument(doc.Name)
-        finally:
-            self.param.SetInt("TransactionLogCompactRatio", ratio)
+                doc.deleteTransactionBranch("more")
+                self.assertEqual(trimRecord(doc)["unreferenced_bytes_total"], entryBytes + 5 + 8)
+                self.assertEqual(doc.compactFileState()["names"], 41)
+            FreeCAD.closeDocument(doc.Name)

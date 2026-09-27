@@ -6636,3 +6636,89 @@ compacts on its own and `Temp` is free at once.
 
 Gates: Python 2940 OK; ctest 842/842; recovery 15, branch 27, version 18,
 pin 28, frozen 16 PASS.
+
+### 27.49 How the string ids reach the log, and a size threshold (user, 2026-09-27)
+
+**Asked:** how the string hasher's entries get into the log -- riding
+along with the shape values, which being derived are evictable? -- and how
+a reference to one is tracked. And: make the trigger of 27.48 a concrete
+size of unreferenced entries, not a ratio, which fires on every small file.
+
+**How they get in (read from the code, checked on a `Part::Cut`).**
+
+- *Versions carry their own table.* A version's `Document.xml` is written by
+  a real save or snapshot: `Document::Save` clears the marks
+  (`addStringHasher`), every shape's `beforeSave` marks the ids its element
+  map uses (`ComplexGeoData::beforeSave`, main thread), and the root's
+  `StringHasher` element writes the marked ones. It lives in the
+  `Document.xml` composite's skeleton, not a property part, so versions
+  share it by the reverse deltas of 23.2. A shape in a compose-mode
+  snapshot is never claimed from the log (a blob referrer, 23.16): it is
+  always written by that pass. So a version is self-contained.
+- *An op's shape value carries ids but no table.* A shape set by a
+  recompute is derived: its value goes to the `cache` tier
+  (`TransactionLogDerived` 1, the default), evictable and dropped from
+  the embedded copy -- so yes, what rides with it is evictable. The value
+  is a detached copy written on the worker: no owner, so no
+  `HasherIndex`, no `SaveHasher`, no table. Its element map keeps a string
+  id only as text inside a name (`Edge12;:G#8;CUT;...` names string 8 as
+  `#8`). The list of ids an element map writes after each name -- what
+  re-attaches a reference on restore -- is written only for *marked* ids
+  (`ElementMap::save`), and nothing marks for a capture: it writes what
+  the last save left marked. Measured on a Cut whose names refer to 12
+  string ids: with no save before, its captured values wrote none of them;
+  a capture after a save wrote all 12, because the save's marks were still
+  set.
+- *Nothing tracks the reference.* No row of the store refers to a string
+  id. The only tracking is the hasher's own reference count, which covers
+  what is in memory: live shapes, the hot undo stack's copies, copies in
+  flight on the worker. Restoring an op's shape value (a cold undo, the
+  folds of 27.34) gets names that say `#8` and no reference to 8, resolved
+  against the file's hasher by number when something expands the name.
+
+**What follows.**
+- Never a *wrong* string: ids are never handed out twice (27.44), so `#8`
+  can only mean one string or be unresolvable.
+- It is unresolvable once the hasher no longer has 8: after a reopen, if
+  no saved state used it (the saved table holds marked ids only) -- the
+  case before this work -- and, in-session, after 27.47 drops unheld
+  strings. Compaction brings the reopen case forward; it does not add a
+  new one. Name matching works on the text either way; expanding a hashed
+  name (its element history) does not.
+- **Found, not fixed:** the capture on the worker *reads* the `Marked`
+  flags a save on the main thread is clearing and setting -- a data race
+  on the flags, which makes a captured element map depend on timing. 27.44
+  said the worker marks nothing, which is true; it does read.
+- **Proposed, not built:** make a captured shape value self-contained as a
+  version is. On the worker, walk its element map with a set of its own
+  instead of the shared `Marked` flag -- which ends the race -- write every
+  id it uses, and a table of just those strings (the `SaveHasher` form,
+  with the ids kept). Deduplicated as entities, it costs little, and
+  restoring the value then brings its strings back, merged under their ids
+  (27.44), whatever the hasher dropped. With that, compacting strings is
+  exact: an id in a retained value travels with the value.
+
+**The size threshold.** `TransactionLogCompactRatio` is replaced by
+`TransactionLogCompactSize`, in KB (default 256, 0 never): after a trim, a
+branch deletion or a squash, compaction runs once the estimated bytes of
+unreferenced name and geometry-id entries (the file's count) and the bytes
+of the strings the hasher holds for nobody (`getStorageSize()`, total less
+referenced) come to that much together. An entry's bytes are its text plus
+8 per key, fixed so the estimate is the same on every platform. The file's
+count is now in bytes (`compact_estimate`), and the trim record carries
+`unreferenced`, `unreferenced_bytes`, `unreferenced_bytes_total`,
+`unheld_strings`, `unheld_string_bytes` and `compacted`.
+
+For scale, on issue360_fillet_spike.FCStd: the string table is 1.2 MB
+(0.55 MB of it shared text), and a full recompute leaves about 126 bytes
+unheld -- it mints the same strings again. 256 KB is a fifth of that large
+model's whole table.
+
+Test: `testTrimEstimatesAndCompacts` now deletes a branch of 40 objects
+with 24-character names (1280 bytes by the rule above): at 256 KB it
+records the bytes and does not compact, the count survives a reopen and
+grows by the next deletion's 13 bytes, and an explicit compaction frees
+all 41; at 1 KB the deletion compacts on its own.
+
+Gates: Python 2940 OK; ctest 842/842; recovery 15, branch 27, version 18,
+pin 28, frozen 16 PASS.

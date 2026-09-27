@@ -497,9 +497,11 @@ public:
     /// What _noteDroppedRows estimated (sec 27.48).
     struct CompactEstimate
     {
-        size_t objects = 0;    ///< objects left referred to by nothing, these rows
-        size_t total = 0;      ///< the file's estimate since the last compaction
-        size_t strings = 0;    ///< strings of the file's hasher nothing holds
+        size_t objects = 0;       ///< objects left referred to by nothing, these rows
+        size_t bytes = 0;         ///< their name and geometry-id entries, in bytes
+        size_t totalBytes = 0;    ///< the file's estimate since the last compaction
+        size_t strings = 0;       ///< strings of the file's hasher nothing holds
+        size_t stringBytes = 0;   ///< and their bytes
         bool compacted = false;
     };
     /** Squash the rows between versions `from` and `to` (sec 16.7) into one
@@ -1212,8 +1214,8 @@ protected:
     /** After rows went (sec 27.48): how many of `named`, the objects their
      * ops named, nothing refers to now -- no op left names it, no document
      * of the file holds it; versions are not read, hence an estimate --
-     * added to the file's estimate, and compactFileState() run when that,
-     * or the strings nothing holds, reach TransactionLogCompactRatio.
+     * added to the file's estimate in bytes, and compactFileState() run
+     * when that and the strings nothing holds reach TransactionLogCompactSize.
      */
     CompactEstimate _noteDroppedRows(const std::set<long>& named);
     /// Keep at most UndoMaxStackSize steps of `stack` hot (sec 24.3): with

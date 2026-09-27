@@ -124,8 +124,12 @@ public:
         auto it = _idOfName.find(name);
         return it == _idOfName.end() ? 0 : it->second;
     }
-    /// Whether the table gives `id` a name.
-    bool hasObjectName(long id) const { return _nameOfId.count(id) != 0; }
+    /// The name the table gives `id`, null if none.
+    const std::string* objectNameOfId(long id) const
+    {
+        auto it = _nameOfId.find(id);
+        return it == _nameOfId.end() ? nullptr : &it->second;
+    }
     /** `id` has `name`. The first pairing of either stays: a name or an id
      * the table already pairs otherwise is left as it is (history written
      * before the table can hold both; the merge resolves those).
@@ -156,10 +160,10 @@ public:
     }
     const std::unordered_map<long, long>& lastGeoIds() const { return _lastGeoIds; }
 
-    /** The objects estimated to be referred to by nothing since the last
-     * compaction (docs/TransactionLog.md sec 27.48): what trimming,
-     * deleting a branch and squashing left behind. Kept in the store's
-     * meta by the log; compaction resets it.
+    /** The bytes of name and geometry-id entries estimated to be referred
+     * to by nothing since the last compaction (docs/TransactionLog.md sec
+     * 27.48, 27.49): what trimming, deleting a branch and squashing left
+     * behind. Kept in the store's meta by the log; compaction resets it.
      */
     std::size_t compactEstimate() const { return _compactEstimate; }
     void setCompactEstimate(std::size_t n) { _compactEstimate = n; }

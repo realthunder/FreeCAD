@@ -5817,9 +5817,10 @@ namespace {
 std::string compactJson(const Document::CompactEstimate& e)
 {
     std::ostringstream out;
-    out << ",\"unreferenced\":" << e.objects << ",\"unreferenced_total\":" << e.total
-        << ",\"unheld_strings\":" << e.strings << ",\"compacted\":"
-        << (e.compacted ? "true" : "false");
+    out << ",\"unreferenced\":" << e.objects << ",\"unreferenced_bytes\":" << e.bytes
+        << ",\"unreferenced_bytes_total\":" << e.totalBytes
+        << ",\"unheld_strings\":" << e.strings << ",\"unheld_string_bytes\":" << e.stringBytes
+        << ",\"compacted\":" << (e.compacted ? "true" : "false");
     return out.str();
 }
 
@@ -9208,30 +9209,44 @@ Document::CompactEstimate Document::_noteDroppedRows(const std::set<long>& named
         }
         const auto& geo = history.lastGeoIds();
         for (long id : named) {
+            if (used.count(id))
+                continue;
             // Only what compaction could drop: an object the tables know.
-            if (!used.count(id) && (history.hasObjectName(id) || geo.count(id)))
-                ++estimate.objects;
+            const std::string* name = history.objectNameOfId(id);
+            const bool hasGeo = geo.count(id) != 0;
+            if (!name && !hasGeo)
+                continue;
+            ++estimate.objects;
+            // An entry's bytes: its text and its key, in either table -- a
+            // key counted as 8 bytes everywhere, so the estimate is the same
+            // on every platform.
+            constexpr std::size_t key = 8;
+            if (name)
+                estimate.bytes += name->size() + key;
+            if (hasGeo)
+                estimate.bytes += 2 * key;
         }
     }
-    estimate.total = history.compactEstimate() + estimate.objects;
-    history.setCompactEstimate(estimate.total);
-    store.setMeta("compact_estimate", std::to_string(estimate.total));
-    const StringHasherRef& hasher = history.hasher();
-    const std::size_t strings = hasher ? hasher->size() : 0;
-    estimate.strings = hasher ? strings - hasher->count() : 0;
+    estimate.totalBytes = history.compactEstimate() + estimate.bytes;
+    history.setCompactEstimate(estimate.totalBytes);
+    store.setMeta("compact_estimate", std::to_string(estimate.totalBytes));
+    if (const StringHasherRef& hasher = history.hasher()) {
+        estimate.strings = hasher->size() - hasher->count();
+        const auto sizes = hasher->getStorageSize();
+        estimate.stringBytes = sizes.total_size - sizes.referenced_size;
+    }
 
-    const long ratio = DocumentParams::getTransactionLogCompactRatio();
-    const std::size_t names = history.objectNames().size();
-    if (ratio > 0
-            && ((names && estimate.total * 100 >= static_cast<std::size_t>(ratio) * names)
-                || (strings && estimate.strings * 100 >= static_cast<std::size_t>(ratio) * strings))) {
+    const long threshold = DocumentParams::getTransactionLogCompactSize();
+    if (threshold > 0
+            && estimate.totalBytes + estimate.stringBytes
+                   >= static_cast<std::size_t>(threshold) * 1024) {
         compactFileState();
         estimate.compacted = true;
     }
-    FC_LOG(getName() << ": " << estimate.objects << " object(s) left unreferenced, "
-           << estimate.total << " since the last compaction of " << names << " names; "
-           << estimate.strings << " of " << strings << " strings unheld"
-           << (estimate.compacted ? "; compacted" : ""));
+    FC_LOG(getName() << ": " << estimate.objects << " object(s) left unreferenced ("
+           << estimate.bytes << " bytes, " << estimate.totalBytes
+           << " since the last compaction); " << estimate.strings << " strings unheld ("
+           << estimate.stringBytes << " bytes)" << (estimate.compacted ? "; compacted" : ""));
     return estimate;
 }
 

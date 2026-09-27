@@ -204,12 +204,12 @@ Params = [
         doc='How many unnamed versions the transaction log keeps (sec 16.3):\n'
             'when a version is added, the oldest unnamed ones over this count\n'
             'are evicted -- never a named one, never the newest. 0 keeps all.'),
-    ParamInt('TransactionLogCompactRatio', 50,
+    ParamInt('TransactionLogCompactSize', 256,
         doc='When the file-scope state of the transaction log is compacted on\n'
-            'its own (docs/TransactionLog.md sec 27.48), as a percent: after a\n'
-            'trim, a branch deletion or a squash, once the objects estimated to\n'
-            'be referred to by nothing reach this share of the name table, or\n'
-            'the strings nothing holds this share of the string hasher. 0 never.'),
+            'its own (docs/TransactionLog.md sec 27.48, 27.49), in KB: after a\n'
+            'trim, a branch deletion or a squash, once the names estimated to be\n'
+            'referred to by nothing and the strings of the file hasher nothing\n'
+            'holds come to this many bytes together. 0 never.'),
     ParamInt('ClosePinnedVersion', 0,
         doc='When the last link pinned to a version of a file goes, what\n'
             'happens to the document that showed it (docs/TransactionLog.md\n'
