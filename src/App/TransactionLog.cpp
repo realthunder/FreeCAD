@@ -630,9 +630,11 @@ void TransactionLogCore::postVersion(LogVersion v, LogTransaction t,
             // skeletons included. A blob's name is its referrer's
             // (`Box.Shape.brp`), so one property's files pair up too.
             std::map<std::string, std::string> previous;
+            LogVersion pv;
             if (const int64_t prev = _store->lastVersion()) {
                 for (const auto& e : _store->manifest(prev))
                     previous[e.entry] = e.hash;
+                _store->getVersion(prev, pv);
             }
             std::vector<LogManifestEntry> manifest;
             std::string docHash;
@@ -665,6 +667,10 @@ void TransactionLogCore::postVersion(LogVersion v, LogTransaction t,
                 if (it != previous.end() && it->second != e.hash)
                     supersede(it->second, e.hash);
             }
+            // The entry list too (sec 27.54): the previous one a delta on
+            // this one, a line or two where a save changed that many.
+            if (!pv.manifest.empty() && pv.manifest != v.manifest)
+                supersede(pv.manifest, v.manifest);
             evictVersions(keep);
 
             t.script = "{\"version\":" + std::to_string(v.num) + ",\"docxml\":\"" + docHash
@@ -2111,7 +2117,8 @@ void TransactionLogCore::supersede(const std::string& older, const std::string& 
     if (old.enc == "delta" || old.size <= 128)
         return;
     if (old.kind != "prop" && old.kind != "xml" && old.kind != "skeleton"
-            && old.kind != "composite" && old.kind != "attach" && old.kind != "blob")
+            && old.kind != "composite" && old.kind != "manifest" && old.kind != "attach"
+            && old.kind != "blob")
         return;
     // The newer one must not decode through the older, or the chain is a
     // loop; and the chain already hanging off the older one, plus this

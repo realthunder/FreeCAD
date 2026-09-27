@@ -23,6 +23,7 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+# include <algorithm>
 # include <map>
 # include <set>
 # include <sstream>
@@ -136,17 +137,22 @@ public:
              " cid INTEGER, cname TEXT, ctype TEXT, prop TEXT, ptype TEXT, meta TEXT,"
              " vbefore TEXT, vafter TEXT, derived INTEGER, PRIMARY KEY(txn, idx))");
         exec("CREATE INDEX IF NOT EXISTS op_container ON op(cid, prop)");
+        // Schema 7 (sec 27.54): `manifest` names the version's entry list,
+        // an entity of kind `manifest`.
         exec("CREATE TABLE IF NOT EXISTS version(num INTEGER PRIMARY KEY, uuid TEXT, branch INTEGER,"
              " kind TEXT, name TEXT, seq INTEGER, env INTEGER, docxml_hash TEXT, schema INTEGER,"
-             " created REAL)");
+             " created REAL, manifest BLOB)");
         exec("CREATE INDEX IF NOT EXISTS version_hash ON version(docxml_hash)");
         // Sec 27.40 item 3: the file's object names, one to one.
         exec("CREATE TABLE IF NOT EXISTS objname(cid INTEGER PRIMARY KEY, name TEXT UNIQUE)");
         // Item 4: the last geometry id of each object.
         exec("CREATE TABLE IF NOT EXISTS lastgeoid(cid INTEGER PRIMARY KEY, id INTEGER)");
-        exec("CREATE TABLE IF NOT EXISTS manifest(version INTEGER, entry TEXT, hash TEXT,"
-             " source TEXT, PRIMARY KEY(version, entry))");
         const std::string schema = getMeta("schema");
+        // The table of manifest rows before schema 7, which convertManifests()
+        // folds into entities.
+        if (!schema.empty())
+            exec("CREATE TABLE IF NOT EXISTS manifest(version INTEGER, entry TEXT, hash TEXT,"
+                 " source TEXT, PRIMARY KEY(version, entry))");
         if (schema == "1")
             migrateValues();
         if (schema.empty()) {
@@ -181,10 +187,121 @@ public:
             exec("INSERT INTO branch(id,name,from_version,from_seq,head_seq,id_base,created,"
                  "closed) VALUES(1,'main',0,0,(SELECT COALESCE(MAX(seq),0) FROM txn),0,"
                  "(SELECT COALESCE(MIN(time),0) FROM txn),0)");
-        if (!schema.empty() && schema < "6")
+        const int from = schema.empty() ? 0 : std::atoi(schema.c_str());
+        if (from && from < 6)
             convertHashes();
-        if (schema != "6")
-            setMeta("schema", "6");
+        if (from && from < 7)
+            convertManifests();
+        if (schema != "7")
+            setMeta("schema", "7");
+    }
+
+    /// Schema 7 (sec 27.54): each version's manifest rows become one
+    /// entity of kind `manifest` that the version row names; the table
+    /// goes.
+    void convertManifests()
+    {
+        exec("BEGIN");
+        try {
+            if (!hasColumn("version", "manifest"))
+                exec("ALTER TABLE version ADD COLUMN manifest BLOB");
+            std::map<int64_t, std::vector<LogManifestEntry>> all;
+            auto s = prepare("SELECT version, entry, hash FROM manifest");
+            while (sqlite3_step(s) == SQLITE_ROW) {
+                LogManifestEntry e;
+                e.entry = text(s, 1);
+                e.hash = text(s, 2);
+                all[sqlite3_column_int64(s, 0)].push_back(std::move(e));
+            }
+            sqlite3_reset(s);
+            for (const auto& v : all) {
+                const std::string hash = putManifest(v.second);
+                auto u = prepare("UPDATE version SET manifest=? WHERE num=?");
+                bindHash(u, 1, hash);
+                sqlite3_bind_int64(u, 2, v.first);
+                step(u);
+            }
+            exec("DROP TABLE manifest");
+            exec("COMMIT");
+        }
+        catch (...) {
+            exec("ROLLBACK");
+            throw;
+        }
+    }
+
+    /** A version's entry list as an entity (sec 27.54): one line per entry,
+     * `<hash> <entry>`, by entry name, raw or zstd as any entity; the log
+     * supersedes the previous version's with it, so that one is stored as
+     * a delta (23.2). What it names is held by the collector through it.
+     * Inside the caller's transaction; the hash.
+     */
+    std::string putManifest(std::vector<LogManifestEntry> entries)
+    {
+        std::stable_sort(entries.begin(), entries.end(),
+                         [](const LogManifestEntry& a, const LogManifestEntry& b) {
+                             return a.entry < b.entry;
+                         });
+        std::string bytes;
+        for (size_t i = 0; i < entries.size(); ++i) {
+            const auto& e = entries[i];
+            // One line per name, the last given, as the rows' key was.
+            if (i + 1 < entries.size() && entries[i + 1].entry == e.entry)
+                continue;
+            bytes += e.hash;
+            bytes += ' ';
+            bytes += e.entry;
+            bytes += '\n';
+        }
+        const std::string hash = hashBytes(bytes);
+        std::string enc = "raw";
+        std::string data = bytes;
+#ifdef FC_HAVE_ZSTD
+        if (bytes.size() > 128) {
+            data.resize(ZSTD_compressBound(bytes.size()));
+            size_t n = ZSTD_compress(data.data(), data.size(), bytes.data(), bytes.size(), 3);
+            if (!ZSTD_isError(n) && n < bytes.size()) {
+                data.resize(n);
+                enc = "zstd";
+            }
+            else {
+                data = bytes;
+            }
+        }
+#endif
+        auto s = prepare("INSERT OR IGNORE INTO entity(hash,kind,enc,base,tier,size,data)"
+                         " VALUES(?,'manifest',?,'','durable',?,?)");
+        bindHash(s, 1, hash);
+        bindText(s, 2, enc);
+        sqlite3_bind_int64(s, 3, static_cast<sqlite3_int64>(bytes.size()));
+        sqlite3_bind_blob(s, 4, data.data(), static_cast<int>(data.size()), SQLITE_TRANSIENT);
+        step(s);
+        return hash;
+    }
+
+    /// The entries of a manifest entity, as putManifest() wrote them.
+    bool readManifest(const std::string& hash, std::vector<LogManifestEntry>& out)
+    {
+        out.clear();
+        std::string bytes;
+        Decoded decoded;
+        if (!readStored(hash, bytes, decoded))
+            return false;
+        size_t pos = 0;
+        while (pos < bytes.size()) {
+            size_t end = bytes.find('\n', pos);
+            if (end == std::string::npos)
+                end = bytes.size();
+            const size_t space = bytes.find(' ', pos);
+            if (space == std::string::npos || space > end)
+                return false;
+            LogManifestEntry e;
+            e.hash = bytes.substr(pos, space - pos);
+            e.entry = bytes.substr(space + 1, end - space - 1);
+            out.push_back(std::move(e));
+            pos = end + 1;
+        }
+        return true;
     }
 
     /// Schema 6 (sec 27.53): the hashes of `entity` and `ref` as 20-byte
@@ -447,11 +564,33 @@ public:
     {
         exec("BEGIN");
         try {
-            auto s = prepare("UPDATE entity SET enc=?, base=?, data=? WHERE hash=?");
-            bindText(s, 1, enc);
-            bindHash(s, 2, base);
-            sqlite3_bind_blob(s, 3, data.data(), static_cast<int>(data.size()), SQLITE_TRANSIENT);
-            bindHash(s, 4, hash);
+            // Delete and insert, not update (sec 27.54, F6): a row shrunk
+            // in place leaves its leaf page mostly empty, and SQLite merges
+            // a leaf only under a third full; the new row goes with the
+            // other new ones at the end.
+            auto s = prepare("SELECT kind,tier,size FROM entity WHERE hash=?");
+            bindHash(s, 1, hash);
+            if (sqlite3_step(s) != SQLITE_ROW) {
+                sqlite3_reset(s);
+                exec("COMMIT");
+                return;
+            }
+            const std::string kind = text(s, 0);
+            const std::string tier = text(s, 1);
+            const sqlite3_int64 size = sqlite3_column_int64(s, 2);
+            sqlite3_reset(s);
+            s = prepare("DELETE FROM entity WHERE hash=?");
+            bindHash(s, 1, hash);
+            step(s);
+            s = prepare("INSERT INTO entity(hash,kind,enc,base,tier,size,data)"
+                        " VALUES(?,?,?,?,?,?,?)");
+            bindHash(s, 1, hash);
+            bindText(s, 2, kind);
+            bindText(s, 3, enc);
+            bindHash(s, 4, base);
+            bindText(s, 5, tier);
+            sqlite3_bind_int64(s, 6, size);
+            sqlite3_bind_blob(s, 7, data.data(), static_cast<int>(data.size()), SQLITE_TRANSIENT);
             step(s);
             s = prepare("DELETE FROM ref WHERE entity=? AND role='base'");
             bindHash(s, 1, hash);
@@ -844,7 +983,7 @@ public:
     {
         if (!markHeld("SELECT vbefore FROM op WHERE vbefore<>''"
                       " UNION SELECT vafter FROM op WHERE vafter<>''"
-                      " UNION SELECT hash FROM manifest WHERE source='entity'"))
+                      " UNION SELECT manifest FROM version WHERE manifest IS NOT NULL"))
             return;
         exec("DELETE FROM entity WHERE hash NOT IN (SELECT hash FROM held)");
         exec("DELETE FROM ref WHERE entity NOT IN (SELECT hash FROM entity)");
@@ -870,31 +1009,44 @@ public:
             exec("WITH RECURSIVE live(hash) AS (SELECT hash FROM held"
                  "  UNION SELECT r.target FROM ref r JOIN live ON r.entity=live.hash)"
                  " INSERT OR IGNORE INTO held SELECT hash FROM live");
-            std::vector<std::string> composites;
-            auto s = prepare("SELECT e.hash FROM held h JOIN entity e ON e.hash=h.hash"
-                             " WHERE e.kind='composite'");
+            std::vector<std::pair<std::string, bool>> composites;
+            auto s = prepare("SELECT e.hash, e.kind FROM held h JOIN entity e ON e.hash=h.hash"
+                             " WHERE e.kind IN ('composite','manifest')");
             while (sqlite3_step(s) == SQLITE_ROW) {
                 std::string hash = columnHash(s, 0);
                 if (!expanded.count(hash))
-                    composites.push_back(std::move(hash));
+                    composites.emplace_back(std::move(hash), text(s, 1) == "manifest");
             }
             sqlite3_reset(s);
             if (composites.empty())
                 return true;
-            for (const auto& hash : composites) {
+            for (const auto& item : composites) {
+                const std::string& hash = item.first;
                 expanded.insert(hash);
+                std::vector<std::string> held;
                 std::string data;
                 TransactionLog::Composite c;
-                if (!readStored(hash, data, decoded) || !c.decode(data)) {
-                    FC_WARN("transaction log: composite " << hash
-                            << " cannot be read; nothing collected");
+                std::vector<LogManifestEntry> entries;
+                bool ok = false;
+                if (item.second) {
+                    ok = readManifest(hash, entries);
+                    for (const auto& e : entries)
+                        held.push_back(e.hash);
+                }
+                else if (readStored(hash, data, decoded) && c.decode(data)) {
+                    ok = true;
+                    held.push_back(c.skeleton);
+                    for (const auto& p : c.parts)
+                        held.push_back(p.hash);
+                }
+                if (!ok) {
+                    FC_WARN("transaction log: " << (item.second ? "manifest " : "composite ")
+                            << hash << " cannot be read; nothing collected");
                     return false;
                 }
                 auto ins = prepare("INSERT OR IGNORE INTO held(hash) VALUES(?)");
-                bindHash(ins, 1, c.skeleton);
-                step(ins);
-                for (const auto& p : c.parts) {
-                    bindHash(ins, 1, p.hash);
+                for (const auto& h : held) {
+                    bindHash(ins, 1, h);
                     step(ins);
                 }
             }
@@ -995,7 +1147,7 @@ public:
             // not one a surviving delta is based on: the base of a
             // cache-tier chain is what the durable row above it decodes
             // through.
-            if (markHeld("SELECT hash FROM manifest WHERE source='entity'")) {
+            if (markHeld("SELECT manifest FROM version WHERE manifest IS NOT NULL")) {
                 auto s = prepare("DELETE FROM entity WHERE tier=?"
                                  " AND hash NOT IN (SELECT hash FROM held)"
                                  " AND hash NOT IN (SELECT target FROM ref WHERE role='base')");
@@ -1032,10 +1184,7 @@ public:
         exec("BEGIN");
         try {
             for (int64_t num : nums) {
-                auto s = prepare("DELETE FROM manifest WHERE version=?");
-                sqlite3_bind_int64(s, 1, num);
-                step(s);
-                s = prepare("DELETE FROM version WHERE num=?");
+                auto s = prepare("DELETE FROM version WHERE num=?");
                 sqlite3_bind_int64(s, 1, num);
                 step(s);
             }
@@ -1117,8 +1266,9 @@ public:
     {
         exec("BEGIN");
         try {
+            v.manifest = putManifest(manifest);
             auto s = prepare("INSERT INTO version(num,uuid,branch,kind,name,seq,env,docxml_hash,"
-                             "schema,created) VALUES(?,?,?,?,?,?,?,?,?,?)");
+                             "schema,created,manifest) VALUES(?,?,?,?,?,?,?,?,?,?,?)");
             if (v.num > 0)
                 sqlite3_bind_int64(s, 1, v.num);
             else
@@ -1132,18 +1282,9 @@ public:
             bindText(s, 8, v.docxml_hash);
             sqlite3_bind_int(s, 9, v.schema);
             sqlite3_bind_double(s, 10, v.created);
+            bindHash(s, 11, v.manifest);
             step(s);
             v.num = sqlite3_last_insert_rowid(db);
-            auto m = prepare("INSERT OR REPLACE INTO manifest(version,entry,hash,source)"
-                             " VALUES(?,?,?,?)");
-            for (const auto& e : manifest) {
-                sqlite3_reset(m);
-                sqlite3_bind_int64(m, 1, v.num);
-                bindText(m, 2, e.entry);
-                bindText(m, 3, e.hash);
-                bindText(m, 4, e.source);
-                step(m);
-            }
             exec("COMMIT");
         }
         catch (...) {
@@ -1165,6 +1306,7 @@ public:
         v.docxml_hash = text(s, 7);
         v.schema = sqlite3_column_int(s, 8);
         v.created = sqlite3_column_double(s, 9);
+        v.manifest = columnHash(s, 10);
     }
 
     int64_t lastVersion() override
@@ -1179,7 +1321,7 @@ public:
 
     std::vector<LogVersion> versions() override
     {
-        auto s = prepare("SELECT num,uuid,branch,kind,name,seq,env,docxml_hash,schema,created"
+        auto s = prepare("SELECT num,uuid,branch,kind,name,seq,env,docxml_hash,schema,created,manifest"
                          " FROM version ORDER BY num");
         std::vector<LogVersion> out;
         while (sqlite3_step(s) == SQLITE_ROW) {
@@ -1193,7 +1335,7 @@ public:
 
     bool getVersion(int64_t num, LogVersion& v) override
     {
-        auto s = prepare("SELECT num,uuid,branch,kind,name,seq,env,docxml_hash,schema,created"
+        auto s = prepare("SELECT num,uuid,branch,kind,name,seq,env,docxml_hash,schema,created,manifest"
                          " FROM version WHERE num=?");
         sqlite3_bind_int64(s, 1, num);
         bool found = sqlite3_step(s) == SQLITE_ROW;
@@ -1205,7 +1347,7 @@ public:
 
     bool findVersion(const std::string& hash, LogVersion& v) override
     {
-        auto s = prepare("SELECT num,uuid,branch,kind,name,seq,env,docxml_hash,schema,created"
+        auto s = prepare("SELECT num,uuid,branch,kind,name,seq,env,docxml_hash,schema,created,manifest"
                          " FROM version WHERE docxml_hash=? ORDER BY num DESC LIMIT 1");
         bindText(s, 1, hash);
         bool found = sqlite3_step(s) == SQLITE_ROW;
@@ -1217,17 +1359,15 @@ public:
 
     std::vector<LogManifestEntry> manifest(int64_t num) override
     {
-        auto s = prepare("SELECT entry,hash,source FROM manifest WHERE version=? ORDER BY entry");
+        auto s = prepare("SELECT manifest FROM version WHERE num=?");
         sqlite3_bind_int64(s, 1, num);
-        std::vector<LogManifestEntry> out;
-        while (sqlite3_step(s) == SQLITE_ROW) {
-            LogManifestEntry e;
-            e.entry = text(s, 0);
-            e.hash = text(s, 1);
-            e.source = text(s, 2);
-            out.push_back(std::move(e));
-        }
+        std::string hash;
+        if (sqlite3_step(s) == SQLITE_ROW)
+            hash = columnHash(s, 0);
         sqlite3_reset(s);
+        std::vector<LogManifestEntry> out;
+        if (!hash.empty() && !readManifest(hash, out))
+            FC_ERR("transaction log: the manifest of version " << num << " cannot be read");
         return out;
     }
 

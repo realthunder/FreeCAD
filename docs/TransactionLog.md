@@ -7051,4 +7051,57 @@ object, and that a recompute with nothing touched writes none), the GUI
 checks RC 15, BC 27, VC 18, PC 28, FC 16. `test_historyCarriesItsBlobs`
 reads the copy's hashes as `lower(hex(hash))`.
 
-**Next.** 27.50 steps 1-4 as ordered, unless F5/F6 come first (user).
+**Next.** F5/F6 first (user, 2026-09-28), then 27.50 steps 1-4.
+
+### 27.54 F5 and F6 as built (user, 2026-09-28)
+
+**Asked (user):** F5 and F6 now.
+
+**F5, a version's manifest as an entity: store schema 7.** The `manifest`
+table is gone. `addVersion` writes the entry list as one entity of kind
+`manifest` -- a line `<hash> <entry>` per entry, by entry name, the last of
+a repeated name kept as the rows' key kept it, raw or zstd -- and the
+`version` row names it in a new column `manifest` (`LogVersion::manifest`).
+`manifest(num)` decodes it; the interface is unchanged. The log supersedes
+the previous version's list with the new one after each version (`postVersion`,
+23.2 -- `manifest` joins the kinds `supersede` re-encodes), so an older list
+is a delta of a line or two. The collector's and `dropTier`'s roots are the
+versions' `manifest` column, and `markHeld` expands a manifest as it
+expands a composite: what it names is held. An older store's rows are folded
+into entities when it is opened (`convertManifests`), after schema 6's move.
+Two versions with the same entries share one entity.
+
+**F6, the leaf slack.** Two ways were proposed; both measured.
+- (a) `reencodeEntity` deletes the row and inserts it again instead of
+  updating it in place. The row keeps its hash, so every edge still reaches
+  it; it gets a new rowid, at the end with the other new rows, and the page
+  it left may merge. Built.
+- (d) vacuum the live store at a save once its unused share passes a bound.
+  With (a) in, a `VACUUM` of the store at the end of the run takes 12.5 MB to
+  11.8 MB (0.05 s): 6% left to take, not worth rewriting the store for at a
+  save. Not built. (Without (a) it took 15.1 MB to 11.8 MB.)
+
+**The run again** (100 edits, a save every 10; growth from edit 20 to 100,
+per edit):
+
+| | T3 (F1-F3) | F5 | F5 + F6 (a) |
+| --- | --- | --- | --- |
+| store growth | 60 KB | 53 KB | **32 KB** |
+| `entity` | 35 KB | 37 KB | 14 KB |
+| `manifest` + its index | 9 KB | -- | -- |
+| store at edit 100 | 15.5 MB | 14.7 MB | 12.2 MB |
+| `entity` leaf pages unused | 3.2 MB | 3.2 MB | 0.68 MB |
+| save at edit 100 | 0.98 s | 1.13 s | 0.97 s |
+
+T1, before F1, grew 172 KB an edit. Of the 32 KB now: the stored content
+about 11 KB, `entity` pages 14 KB, `op` 5.4 KB with its two indexes 1.3 KB,
+`ref` and `ref_target` 6.1 KB (the `base` and `attach` edges of the new
+values), `txn` 0.8 KB. The embedded copy is 10.3 MB, reopen 1.10 s, the
+oldest version 1.11 s, restore to it 2.05 s -- unchanged.
+
+**Gates.** Python 2940 OK (52 skipped, 6 expected failures), ctest 843/843
+(`schema5StorePacksHashesAndReadsComposites` now also checks the rows of a
+schema 5 manifest come back from one `manifest` entity), the GUI checks RC
+15, BC 27, VC 18, PC 28, FC 16.
+
+**Next.** 27.50 steps 1-4, the shared string table.

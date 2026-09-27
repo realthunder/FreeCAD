@@ -2257,7 +2257,7 @@ TEST_F(TransactionLogTest, schema4StoreMovesOntoMain)
     Base::FileInfo(path).setPermissions(Base::FileInfo::ReadWrite);
     {
         auto store = App::TransactionStore::openSQLite(path);
-        EXPECT_EQ(store->getMeta("schema"), "6");
+        EXPECT_EQ(store->getMeta("schema"), "7");
         auto branches = store->branches();
         ASSERT_EQ(branches.size(), 1u);
         EXPECT_EQ(branches[0].name, "main");
@@ -2294,6 +2294,8 @@ TEST_F(TransactionLogTest, schema5StorePacksHashesAndReadsComposites)
             "CREATE TABLE ref(entity TEXT, target TEXT, role TEXT, name TEXT, seq INTEGER,"
             " PRIMARY KEY(entity, role, name, target));"
             "CREATE INDEX IF NOT EXISTS ref_target ON ref(target, role);"
+            "CREATE TABLE manifest(version INTEGER, entry TEXT, hash TEXT, source TEXT,"
+            " PRIMARY KEY(version, entry));"
             "INSERT INTO entity VALUES('" + comp + "','composite','raw','','durable',"
             + std::to_string(data.size()) + ",CAST('" + data + "' AS BLOB));"
             "INSERT INTO entity VALUES('" + skel + "','skeleton','raw','','durable',3,"
@@ -2315,15 +2317,26 @@ TEST_F(TransactionLogTest, schema5StorePacksHashesAndReadsComposites)
     }
     {
         auto store = App::TransactionStore::openSQLite(path);
-        EXPECT_EQ(store->getMeta("schema"), "6");
+        EXPECT_EQ(store->getMeta("schema"), "7");
+        // Schema 7 (sec 27.54): the manifest rows are one entity now.
+        auto manifest = store->manifest(1);
+        ASSERT_EQ(manifest.size(), 1u);
+        EXPECT_EQ(manifest[0].entry, "Document.xml");
+        EXPECT_EQ(manifest[0].hash, comp);
+        App::LogVersion kept;
+        ASSERT_TRUE(store->getVersion(1, kept));
+        App::LogEntity list;
+        ASSERT_TRUE(store->getEntity(kept.manifest, list));
+        EXPECT_EQ(list.kind, "manifest");
         App::LogEntity e;
         ASSERT_TRUE(store->getEntity(comp, e));
         EXPECT_EQ(e.kind, "composite");
         ASSERT_EQ(e.refs.size(), 1u);
         EXPECT_EQ(e.refs[0].role, "skeleton");
         EXPECT_EQ(e.refs[0].target, skel);
-        EXPECT_EQ(store->entitiesStoredAs("raw"),
-                  (std::vector<std::string> {skel, part, comp, orphan}));
+        auto raw = store->entitiesStoredAs("raw");
+        raw.erase(std::remove(raw.begin(), raw.end(), kept.manifest), raw.end());
+        EXPECT_EQ(raw, (std::vector<std::string> {skel, part, comp, orphan}));
         // A collection: the composite's value is held through its data,
         // the orphan goes.
         store->truncate(0);
@@ -2349,7 +2362,7 @@ TEST_F(TransactionLogTest, schema5StorePacksHashesAndReadsComposites)
             EXPECT_EQ(sqlite3_column_int(s, 1), 20);
         }
         sqlite3_finalize(s);
-        EXPECT_EQ(rows, 4);
+        EXPECT_EQ(rows, 5);
         sqlite3_close(db);
     }
     Base::FileInfo(path).deleteFile();

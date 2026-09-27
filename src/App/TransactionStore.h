@@ -171,9 +171,11 @@ struct LogVersion
     std::string docxml_hash;
     int schema {0};                 ///< the document schema it was written under
     double created {0};
+    std::string manifest;           ///< the entity holding its entries (sec 27.54)
 };
 
 /// One entry of a version's manifest: archive entry name -> entity hash.
+/// Kept as one entity per version since store schema 7 (sec 27.54).
 /// The XML entries by their archive names, the blobs by the names a save
 /// gives them under `blobs/` (sec 23.16).
 struct LogManifestEntry
