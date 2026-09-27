@@ -68,6 +68,7 @@ private:
     Gui::LinearGizmo* linearGizmo = nullptr;
     void setupGizmos(ViewProviderDressUp* vp);
     void setGizmoPositions();
+    void updateModeControls(int mode);
 };
 
 /// simulation dialog for the TaskView
