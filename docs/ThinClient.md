@@ -1745,7 +1745,8 @@ flag and the move/restore bodies that used to sit on every `ViewerContext`, and
 `Gui::Document::editingRoot()` builds one on first need. A view hangs it through
 `hangEditingRoot(root, hang)` -- the desktop under its aux root (outside the render-cache
 feed, captured by `editingCapture`, which re-inits when the node changes), a mirror at the
-head of the served graph -- and the root counts its parents (`hangUnder`/`unhangFrom`), so
+head of the served graph (since 2026-09-27 beside it, in the mirror's own event graph; 8.12
+item J) -- and the root counts its parents (`hangUnder`/`unhangFrom`), so
 N mirrors on one served graph insert it once and the last to leave takes it out. The
 capture-policy spike answered itself: one node under a desktop aux root and inside a served
 graph at the same time is a Coin multi-parent, and the render cache manager keys its caches
@@ -2173,6 +2174,33 @@ millimetres is the everyday case.
 assumes it; `SceneServeSource` publishes one delta stream for all. Per client: deltas per
 client for per-client state (highlight, hides, a session's edit geometry). Connection
 identity and grants are per connection already, and `announceEdit` targets one.
+
+**Built 2026-09-27: a session's edit geometry is a tagged overlay.** A mirror no longer
+hangs the session's editing root inside the served `SoFCUnifiedSelection`; it hangs it last
+in its own event graph (camera, selection probe, edit callback, served scene, edit root) --
+the desktop's aux-root shape -- and its pick root and scene bound box take it in. Nothing
+publishes the event root, so the serving source captures the root itself
+(`SceneServeSource::Private::feedEditOverlay`, the desktop's `editingCapture` restated) into
+overlay 7 with a scene-camera anchor carrying `OverlayAnchor::session`, a per-source counter
+minted on `signalInEdit`. A node sensor on the root schedules the publish a change under it
+needs (a desktop drag in a shared session replays no client input). The overlay rides the one
+snapshot every client shares (`SceneDump` v81 carries the tag); the `edit` push names the
+session (`"session":N`, absent on the leaving edge), and the WASM viewer feeds only the
+overlays that are untagged or its own, refeeding when the push moves it. Chosen over a
+per-client binary message because under 8.11 every client with a view joins the one
+session, so the bytes are identical and the shared stream already deltas an overlay as a
+root plus one group chunk; the tag keeps the targeting explicit for when sessions fork, which
+is when a per-client channel would earn its extra serializer. A drag no longer spoils the
+served scene's caches above the edited object. Two rules came with it. An overlay-mode render
+cache manager never pushes scene configs (`SoFCRenderer::pushExternalConfigs`), since the
+headless `traverse()` would otherwise restate every default onto the shared backend. And the
+viewer frames its scene-camera overlays only while its camera has framed nothing (`s_framed`,
+reset with the object model): the edit hides the sketch in the session's views, so a document
+holding only that sketch looks empty to the automatic fit, which then framed the overlay's
+sketch axes -- `serve-edit-browser.py` measured the 10 mm edit line at 20 pixels instead of the
+880 it had in view mode, where the old in-scene geometry, keyless, had framed nothing and left
+the camera alone. That test now counts the edit overlay's pixels before, during and after the
+session (the edited-edge colour set to magenta).
 
 **Reading the list.** A is done; C, D and J have their seams built; B, E, F and I are
 wide but mechanical -- each is the move stages 1-5 made, a global becoming a row on a

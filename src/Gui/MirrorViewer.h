@@ -307,20 +307,20 @@ public:
     SoPickedPoint* getPointOnRay(const SbVec3f& pos, const SbVec3f& dir,
                                  const ViewProvider* vp) const override;
     void appendDetailPath(SoPath* path, ViewProvider* vp) override;
-    /// The event root: the client's camera, then the served scene.
+    /// The event root: the client's camera, then the served scene, then
+    /// the session's editing root while this view is in one.
     SoNode* getPickRoot() const override;
     //@}
 
     /** @name ViewerContext -- edit mode
      *
      * The editing root and what is done to it are ViewerContext's. What is
-     * this mirror's is where that root hangs: in the graph the server
-     * publishes, because the change-driven traversal is the only thing here
-     * that plays the part a redraw plays on the desktop, and it only sees
-     * what is in that graph (docs/ThinClient.md section 8.5). It is hung
-     * there for the duration of an edit and taken out again after, so a
-     * connected client that is not editing does not put an empty separator
-     * in everybody's scene.
+     * this mirror's is where that root hangs: beside the served scene in
+     * this client's event graph, the desktop's aux-root shape, for the
+     * duration of an edit. It is not published from here -- the serving
+     * source captures the session's root as an overlay tagged with the
+     * session (docs/ThinClient.md 8.12 item J), so a drag spoils no cache
+     * of the scene every client shares.
      */
     //@{
     void setEditing(bool edit) override;

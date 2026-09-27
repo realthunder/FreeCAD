@@ -15,6 +15,11 @@
 // Phases (also appended to EDIT_PHASES, a file, because node buffers its
 // stdout to a pipe and the caller samples its counters on these):
 //   PHASE settled | viewclick | entered | editclick | drawn | escaped | done
+// The edit geometry's pixels are counted too, by colour: the caller sets
+// the sketcher's edited-edge colour to pure magenta, and in render-cache
+// mode 3 the edited sketch's own occurrence is hidden in the session's
+// views, so what is magenta on the canvas is the served edit overlay and
+// nothing else (docs/ThinClient.md 8.12 item J).
 // EDIT_RESULT names a file the page's own readings are written to as
 // JSON -- what the VIEWER believed, against what the server saw.
 const ppPath = process.env.PUPPETEER_PATH || 'puppeteer-core';
@@ -64,6 +69,26 @@ const HELPERS = () => {
     document.dispatchEvent(new KeyboardEvent(type, {
       bubbles: true, cancelable: true, key: key}));
   };
+  // Magenta pixels in a PNG of the canvas: strong red and blue, little
+  // green. Decoded in the page, which has the image decoder.
+  window.__fcMagenta = async (b64) => {
+    const img = new Image();
+    img.src = 'data:image/png;base64,' + b64;
+    await img.decode();
+    const c = document.createElement('canvas');
+    c.width = img.width;
+    c.height = img.height;
+    const g = c.getContext('2d', {willReadFrequently: true});
+    g.drawImage(img, 0, 0);
+    const d = g.getImageData(0, 0, c.width, c.height).data;
+    let n = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i], gr = d[i + 1], bl = d[i + 2];
+      if (r > 150 && bl > 150 && gr < 0.5 * Math.min(r, bl))
+        ++n;
+    }
+    return n;
+  };
   window.__fcClick = async (x, y) => {
     // A pointer is somewhere before it presses: the move is what an edit
     // mode preselects on, and the sketcher selects on release what the
@@ -75,6 +100,41 @@ const HELPERS = () => {
     window.__fcMouse('mouseup', x, y, 0, 0);
   };
 };
+
+// EDIT_SHOTS names a directory each counted canvas is written to as
+// <label>.png, to look at when a count surprises.
+async function magenta(page, label) {
+  const r = await page.evaluate(() => {
+    const b = document.getElementById('canvas').getBoundingClientRect();
+    return {x: b.left, y: b.top, w: b.width, h: b.height};
+  });
+  const b64 = await page.screenshot({
+    encoding: 'base64',
+    clip: {x: Math.round(r.x), y: Math.round(r.y),
+           width: Math.round(r.w), height: Math.round(r.h)},
+  });
+  if (process.env.EDIT_SHOTS && label) {
+    try {
+      fs.writeFileSync(process.env.EDIT_SHOTS + '/' + label + '.png',
+                       Buffer.from(b64, 'base64'));
+    }
+    catch (e) { console.error('shot file:', e.message); }
+  }
+  return page.evaluate(d => window.__fcMagenta(d), b64);
+}
+
+// Read magenta until `done` says the count is the one expected, or the
+// time runs out: the overlay comes and goes with a publish, not with the
+// state change the caller waited on.
+async function magentaUntil(page, label, done, ms) {
+  const t0 = Date.now();
+  let n = await magenta(page, label);
+  while (!done(n) && Date.now() - t0 < ms) {
+    await sleep(250);
+    n = await magenta(page, label);
+  }
+  return n;
+}
 
 (async () => {
   const url = process.argv[2];
@@ -120,6 +180,7 @@ const HELPERS = () => {
     await page.goto(url, {waitUntil: 'domcontentloaded'});
     await page.evaluate(HELPERS);
     await sleep(settleMs);
+    out.magentaView = await magenta(page, 'view');
     phase('settled');
 
     // 1. A click in view mode, at the middle of the canvas where the
@@ -149,6 +210,8 @@ const HELPERS = () => {
       out.entered = false;
     }
     out.editingAfterEnter = await page.evaluate(() => window.fcviewerEditing);
+    // Before the click below, which selects the line and recolours it.
+    out.magentaEdit = await magentaUntil(page, 'edit', n => n > 100, 10000);
     phase('entered');
 
     // 3. A click while editing, at the middle of the canvas where the
@@ -209,6 +272,7 @@ const HELPERS = () => {
       out.leftOnEscape = false;
     }
     out.editingAfterEscape = await page.evaluate(() => window.fcviewerEditing);
+    out.magentaEscaped = await magentaUntil(page, 'escaped', n => n < 20, 10000);
     out.selections = await page.evaluate(() => window.__fcSelections);
     phase('escaped');
     await sleep(500);

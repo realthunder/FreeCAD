@@ -32,6 +32,10 @@ What is asserted:
     would leave a window and a GL context behind in this process;
   - entering edit moves the sketch's graph under the editing root (the
     view provider's own child count goes to zero and comes back);
+  - the edit geometry is drawn in the browser while the session runs and
+    not before or after it: the serving source's overlay of the session's
+    editing root, tagged with the session (8.12 item J), counted as
+    magenta pixels -- the edited-edge colour this sets;
   - the pointer stream arrives: a drag and a hover across the canvas
     are counted as 'E' frames on this connection, and the hover half is
     the one that never travels in view mode (sec 8.2a stops at the edit
@@ -245,6 +249,10 @@ def build():
             "RenderCache", 3)
         FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View/Render").SetString(
             "Type", "bgfx - OpenGL")
+        # The edited-edge colour, pure magenta: what the page counts to
+        # see the edit overlay (scripts/edit-drive.js).
+        FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View").SetUnsigned(
+            "EditedEdgeColor", 0xFF00FFFF)
         doc = FreeCAD.newDocument(DOC, hidden=True)
         state["doc"] = doc
         sketch = doc.addObject("Sketcher::SketchObject", OBJ)
@@ -368,6 +376,21 @@ def verify():
               said.get("entered") is True
               and said.get("editingAfterEnter") == OBJ,
               (said.get("entered"), said.get("editingAfterEnter")))
+
+        # 2a. The edit geometry reaches the browser and leaves with the
+        # session. It is the serving source's overlay of the session's
+        # root, tagged with the session, and the viewer draws it once the
+        # `edit` push has told it the session is its own (docs/
+        # ThinClient.md 8.12 item J). Magenta is the edited-edge colour
+        # set in build(); the sketch's own occurrence is hidden in the
+        # session's views, so magenta is the overlay alone.
+        check("no edit geometry is drawn in view mode",
+              said.get("magentaView", 1 << 30) < 20, said.get("magentaView"))
+        check("the edit overlay is drawn in the editing browser",
+              said.get("magentaEdit", 0) > 100, said.get("magentaEdit"))
+        check("and is gone once the session ends",
+              said.get("magentaEscaped", 1 << 30) < 20,
+              said.get("magentaEscaped"))
 
         # 3. The binding: no 3D view was ever created for this document.
         check("the session bound to the mirror rather than making a 3D view",

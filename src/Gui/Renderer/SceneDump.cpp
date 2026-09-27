@@ -341,7 +341,11 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     its own (the per-view-shown tag, after skipbounds). A client resolves
 //     its own table against both, with the renderer's own rule; before, the
 //     snapshot dropped those draws and a remote viewer could match no path.
-const uint32_t kVersion = 80;
+// 81: an overlay anchor carries its edit session (OverlayAnchor::session,
+//     after the sub-view). A served document's edit geometry left the
+//     scene for an overlay the host tags with its session, and a viewer
+//     draws only its own session's (docs/ThinClient.md 8.12 item J).
+const uint32_t kVersion = 81;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -3617,6 +3621,7 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
         w.f(a.marginY);
         w.b(a.sceneCamera); // v6
         w.i32(a.subView);   // v69
+        w.u32(a.session);   // v81
         writeFeed(ov.draws, 0, true);
     }
 
@@ -4111,6 +4116,7 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
             }
             a.sceneCamera = version >= 6 ? r.b() : false;
             a.subView = version >= 69 ? r.i32() : 0;
+            a.session = version >= 81 ? r.u32() : 0;
             snap.overlays.push_back(std::move(ov));
             readFeed(snap.overlays.back().draws, GroupTarget::Overlay,
                      snap.overlays.size() - 1);

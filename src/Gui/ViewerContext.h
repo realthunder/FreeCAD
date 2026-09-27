@@ -126,8 +126,8 @@ protected:
  * desktop's windows and every client's mirror all show the same edit, so
  * they all hang the same node -- a Coin node takes several parents -- and
  * each of them decides only WHERE it hangs (under the aux root on the
- * desktop, outside the render-cache feed; inside the served graph for a
- * mirror). Gui::Document owns its session's root; a ViewerContext with no
+ * desktop, outside the render-cache feed; beside the served scene in a
+ * mirror's own event graph). Gui::Document owns its session's root; a ViewerContext with no
  * document (the unit harness) builds a private one.
  *
  * Not a view. Nothing here reads a camera or a viewport; the bodies used to
@@ -172,10 +172,10 @@ public:
     void reset(Gui::ViewProvider* vp, bool updateLinks);
     /** Put the node under \a parent (at \a index; -1 appends), counted.
      *
-     * N views may share one parent -- every client's mirror hangs the
-     * root in the one served graph -- so the first to hang it inserts it
-     * and the last to unhang it takes it out; the desktop's aux roots are
-     * one parent per view and count to one.
+     * N views may share one parent, so the first to hang it inserts it
+     * and the last to unhang it takes it out. Today every view hangs it
+     * under a parent of its own -- a desktop view's aux root, a mirror's
+     * event root -- and each counts to one.
      */
     void hangUnder(SoGroup* parent, int index = -1);
     void unhangFrom(SoGroup* parent);
@@ -724,8 +724,9 @@ protected:
      *
      * Called with the root just bound (\a hang true) and with the root
      * about to be unbound (false), always in pairs, never twice in a row.
-     * The desktop puts it under the aux root; a mirror inserts it into the
-     * served graph. The base does nothing, for a view that only picks.
+     * The desktop puts it under the aux root; a mirror beside the served
+     * scene in its own event graph. The base does nothing, for a view
+     * that only picks.
      */
     virtual void hangEditingRoot(EditingRoot* root, bool hang);
 

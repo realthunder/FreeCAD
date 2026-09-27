@@ -174,6 +174,19 @@ public:
      */
     SoEventCallback* selectionProbe = nullptr;
     SoFCUnifiedSelection* selectionRoot = nullptr;
+    /** The session's editing root while this view hangs it: the last
+     * child of the event root, beside the served scene rather than in it.
+     *
+     * The desktop's shape. There the root hangs under the aux root, a
+     * sibling of the captured selection root, so an edit never reaches
+     * the scene feed and is captured as an overlay of its own. A mirror
+     * used to hang it INSIDE the served graph, where it was published as
+     * part of the one scene every client shares -- and every drag spoiled
+     * that scene's caches above it. The serving source captures it as an
+     * overlay now (docs/ThinClient.md 8.12 item J), and here it is only
+     * what this client's events and picks go through.
+     */
+    SoSeparator* editRoot = nullptr;
 
     /// What the client's pointer and keyboard last said. Coin's events
     /// carry the modifier state on every event, and the button state is
@@ -270,6 +283,9 @@ public:
         CoinPtr<SoSeparator> root(new SoSeparator, true);
         root->addChild(camera);
         root->addChild(scene);
+        if (editRoot) {
+            root->addChild(editRoot);
+        }
         return root;
     }
 
@@ -1138,7 +1154,17 @@ bool MirrorViewer::getSceneBoundBox(SbBox3f& box) const
         return false;
     }
     SoGetBoundingBoxAction action(pimpl->viewport);
-    action.apply(pimpl->scene);
+    if (pimpl->editRoot) {
+        // The edit is part of what this view shows, as the aux root is
+        // part of a desktop view's scene.
+        CoinPtr<SoGroup> both(new SoGroup, true);
+        both->addChild(pimpl->scene);
+        both->addChild(pimpl->editRoot);
+        action.apply(both);
+    }
+    else {
+        action.apply(pimpl->scene);
+    }
     const SbBox3f bbox = action.getBoundingBox();
     if (bbox.isEmpty()) {
         return false;
@@ -1287,23 +1313,27 @@ bool MirrorViewer::isEditing() const
 
 void MirrorViewer::hangEditingRoot(EditingRoot* root, bool hang)
 {
-    // Into the published graph when bound, which the base does before the
-    // initiator fills it, because filling it is what the change-driven
-    // traversal has to notice; out of it when unbound, which the base does
-    // after the restore, so the children leaving is published too. First
-    // child, which is where the desktop's sits: the aux root is added to
-    // the selection root at construction, ahead of every view provider.
-    // One session's root under N mirrors is N parents of one node, which
-    // is a Coin graph's ordinary condition.
-    if (!pimpl->scene || !pimpl->scene->isOfType(SoGroup::getClassTypeId())) {
+    // Beside the served scene in this client's own event graph, last,
+    // which is where the desktop's sits: the aux root follows the
+    // selection root under the scene node. Events reach it after the
+    // callbacks and the scene, as they do there, and a dragger an edit
+    // hangs in it grabs from this view alone. What the client SEES of it
+    // is the serving source's overlay capture of the same node, tagged
+    // with the session (SceneServeSource), not this graph -- nothing
+    // publishes the event root. One session under N mirrors is N parents
+    // of one node, one each.
+    if (!root || !pimpl->eventRoot) {
         return;
     }
-    auto* group = static_cast<SoGroup*>(pimpl->scene);
     if (hang) {
-        root->hangUnder(group, 0);
+        root->hangUnder(pimpl->eventRoot);
+        pimpl->editRoot = root->node();
     }
     else {
-        root->unhangFrom(group);
+        root->unhangFrom(pimpl->eventRoot);
+        if (pimpl->editRoot == root->node()) {
+            pimpl->editRoot = nullptr;
+        }
     }
 }
 

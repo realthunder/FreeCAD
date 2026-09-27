@@ -30,6 +30,7 @@
 #include <Inventor/actions/SoRayPickAction.h>
 #include <Inventor/nodes/SoOrthographicCamera.h>
 #include <Inventor/nodes/SoSeparator.h>
+#include <Inventor/sensors/SoNodeSensor.h>
 #include <QApplication>
 #include <QColor>
 #include <QJsonArray>
@@ -328,6 +329,37 @@ public:
     /// its definition below.
     std::unique_ptr<SelectionMirror> selectionMirror;
 
+    /** The edit session's geometry, published as an overlay of its own
+     * (docs/ThinClient.md 8.12 item J).
+     *
+     * A mirror hangs the session's editing root beside the served scene
+     * in its own event graph, not in it, so nothing here would publish it;
+     * this is the desktop's editingCapture restated for the serving
+     * backend. The overlay rides the one snapshot every client of this
+     * document shares, tagged with the session, and a viewer draws it
+     * only once the `edit` push has told it that session is its own.
+     * Under 8.11 every client with a view joins the one session, so all
+     * of them draw it today; the tag is what keeps that a decision rather
+     * than an accident once sessions fork.
+     */
+    std::unique_ptr<SoFCRenderCacheManager> editCapture;
+    /// The node the capture was built on: a new session's root is a
+    /// new capture.
+    SoNode *editCaptureRoot = nullptr;
+    /// The session running now, 0 when none. Minted per session here
+    /// and nowhere else -- it only has to tell this document's sessions
+    /// apart on this document's wire.
+    uint32_t editSession = 0;
+    uint32_t lastEditSession = 0;
+    /** Republishes a change under the session's root that no replayed
+     * input asked for: a desktop drag in a shared session, a solve
+     * finishing, a tool redrawing on a timer. Input from a client
+     * schedules its own publish; nothing else did, because the root used
+     * to hang in the served graph, whose changes the document signals
+     * cover.
+     */
+    SoNodeSensor editSensor;
+
     /** One client's own selection, told back to that client
      * (docs/ThinClient.md 8.11, view mode).
      *
@@ -488,9 +520,9 @@ public:
      * Nothing happens for a client with no mirror: an event is a place
      * in a view, and without a stated camera there is no view to place
      * it in. The publish afterwards is what carries the result back --
-     * an edit mode's geometry lives under the mirror's editing root,
-     * which is in the served graph exactly so that the change-driven
-     * traversal sees it. Coalesced, so a drag's worth of moves costs
+     * an edit mode's geometry lives under the session's editing root,
+     * which the publish captures as the session's overlay
+     * (feedEditOverlay). Coalesced, so a drag's worth of moves costs
      * one traversal rather than one each. GUI thread only.
      */
     void replayInput(const Render::SceneInputFrame &frame)
@@ -580,6 +612,9 @@ public:
             json += obj->getNameInDocument() ? obj->getNameInDocument() : "";
             json += "\"";
         }
+        // Which session's overlay is this client's to draw (8.12 item J).
+        if (editing && editSession)
+            json += ",\"session\":" + std::to_string(editSession);
         json += ",\"doc\":\"" + groupName + "\"}";
         auto &server = Render::SceneStreamServer::instance();
         if (onlyClient) {
@@ -612,6 +647,65 @@ public:
     {
         for (auto &entry : mirrors)
             entry.second->leaveEditing();
+    }
+
+    /// A session began (signalInEdit): mint its id and watch its root.
+    void beginEditSession()
+    {
+        editSession = ++lastEditSession;
+        if (lastEditSession == 0)   // wrapped; 0 means "every viewer"
+            editSession = lastEditSession = 1;
+        editSensor.detach();
+        if (doc)
+            editSensor.attach(doc->editingRoot()->node());
+    }
+
+    void endEditSession()
+    {
+        editSession = 0;
+        editSensor.detach();
+    }
+
+    /// The overlay id: the desktop's OverlayEditing, the one feed of its
+    /// kind a document has while one session runs at a time.
+    static constexpr int kEditOverlayId = 7;
+
+    void dropEditOverlay()
+    {
+        if (!editCapture)
+            return;
+        editCapture->setExternalOverlay(nullptr, kEditOverlayId, Render::OverlayAnchor());
+        editCapture.reset();
+        editCaptureRoot = nullptr;
+    }
+
+    /** Capture the session's editing root into the serving backend's
+     * overlay feed, or take the overlay away when there is nothing to
+     * show. Part of every publish, after the scene's own traversal; an
+     * unchanged root is a node-id compare (SoFCRenderCacheManager::
+     * traverse).
+     *
+     * Content means more than the editing transform, the desktop's own
+     * gate (View3DInventorViewer::Private::updateOverlayCaptures).
+     */
+    void feedEditOverlay(const SbViewportRegion &viewport)
+    {
+        EditingRoot *edit = editSession && doc ? doc->editingRoot() : nullptr;
+        SoNode *node = edit && edit->hasContent() ? edit->node() : nullptr;
+        if (editCapture && editCaptureRoot != node)
+            dropEditOverlay();
+        if (!node || !renderer)
+            return;
+        if (!editCapture) {
+            editCapture = std::make_unique<SoFCRenderCacheManager>();
+            editCaptureRoot = node;
+        }
+        Render::OverlayAnchor anchor;
+        anchor.sceneCamera = true;
+        anchor.session = editSession;
+        // A no-op unless the session moved on: the anchor is compared.
+        editCapture->setExternalOverlay(renderer.get(), kEditOverlayId, anchor);
+        editCapture->traverse(node, viewport);
     }
 
     /** Restate one client's on-view parameters to it (sec 8.7).
@@ -739,6 +833,9 @@ public:
         // The observers on the mirrors' instances before the mirrors.
         clientSelections.clear();
         mirrors.clear();
+        // Before the backend it feeds: detaching removes its overlay.
+        editSensor.detach();
+        dropEditOverlay();
         // The path tracers next: each joins its encoder thread and
         // tears its session down, and nothing below feeds them again.
         {
@@ -1424,6 +1521,10 @@ SceneServeSource::SceneServeSource(Document *doc)
     pimpl->timer.setInterval(0);
     connect(&pimpl->timer, &QTimer::timeout,
             this, &SceneServeSource::onPublishTimeout);
+    pimpl->editSensor.setFunction([](void *data, SoSensor *) {
+        static_cast<SceneServeSource *>(data)->schedulePublish();
+    });
+    pimpl->editSensor.setData(this);
 
     if (doc) {
         pimpl->connections.emplace_back(doc->signalNewObject.connect(
@@ -1465,13 +1566,17 @@ SceneServeSource::SceneServeSource(Document *doc)
         // handler rather than anything that runs later.
         pimpl->connections.emplace_back(doc->signalInEdit.connect(
             [this](const ViewProviderDocumentObject &vp) {
+                pimpl->beginEditSession();
                 pimpl->joinEditing();
                 pimpl->announceEdit(true, vp);
+                schedulePublish();
             }));
         pimpl->connections.emplace_back(doc->signalResetEdit.connect(
             [this](const ViewProviderDocumentObject &vp) {
                 pimpl->leaveEditing();
                 pimpl->announceEdit(false, vp);
+                pimpl->endEditSession();
+                schedulePublish();
             }));
         pimpl->connections.emplace_back(doc->signalDeleteDocument.connect(
             [this](const Document &) { unserve(pimpl->doc); }));
@@ -2107,6 +2212,7 @@ bool SceneServeSource::publishNow()
     // drawing viewer's render path did for the feed.
     SbViewportRegion viewport{short(kDefaultWidth), short(kDefaultHeight)};
     manager->traverse(pimpl->root, viewport);
+    pimpl->feedEditOverlay(viewport);
 
     float viewMatrix[16];
     float projMatrix[16];

@@ -653,15 +653,26 @@ protected:
         vp.reset();
         MirrorViewerTest::TearDown();
     }
-    int timesInScene(SoNode* node) const
+    static int timesIn(SoNode* group, SoNode* node)
     {
+        auto* g = static_cast<SoGroup*>(group);
         int count = 0;
-        for (int i = 0; i < scene->getNumChildren(); ++i) {
-            if (scene->getChild(i) == node) {
+        for (int i = 0; i < g->getNumChildren(); ++i) {
+            if (g->getChild(i) == node) {
                 ++count;
             }
         }
         return count;
+    }
+    int timesInScene(SoNode* node) const
+    {
+        return timesIn(scene, node);
+    }
+    /// A mirror's own event graph, which is its pick root: where it hangs
+    /// the session's root, beside the served scene (8.12 item J).
+    static SoGroup* eventGraph(const Gui::MirrorViewer& view)
+    {
+        return static_cast<SoGroup*>(view.getPickRoot());
     }
     std::unique_ptr<Gui::MirrorViewer> other;
     std::unique_ptr<Gui::ViewProvider> vp;
@@ -674,15 +685,21 @@ TEST_F(SharedEditingRootTest, theInitiatorShowsThroughTheSessionsRoot)
     EXPECT_TRUE(mirror->isEditingInitiator());
     EXPECT_EQ(mirror->getEditRootNode(), root->node());
     EXPECT_EQ(mirror->editingRoot(), root.get());
-    // In the served graph, first, once.
-    EXPECT_EQ(scene->findChild(root->node()), 0);
-    EXPECT_EQ(timesInScene(root->node()), 1);
+    // Beside the served graph, never in it: last in this view's own
+    // event graph, once. What clients see of it is the serving source's
+    // overlay capture, not the shared scene.
+    EXPECT_EQ(scene->findChild(root->node()), -1);
+    SoGroup* events = eventGraph(*mirror);
+    ASSERT_GT(events->getNumChildren(), 0);
+    EXPECT_EQ(events->getChild(events->getNumChildren() - 1), root->node());
+    EXPECT_EQ(timesIn(events, root->node()), 1);
 
     mirror->resetEditingViewProvider();
     EXPECT_FALSE(mirror->isEditingViewProvider());
     // Back on its own root, which is in no graph.
     EXPECT_NE(mirror->getEditRootNode(), root->node());
     EXPECT_EQ(scene->findChild(root->node()), -1);
+    EXPECT_EQ(timesIn(events, root->node()), 0);
     EXPECT_EQ(static_cast<SoSeparator*>(mirror->getEditRootNode())->getNumChildren(), 1);
 }
 
@@ -704,23 +721,28 @@ TEST_F(SharedEditingRootTest, aJoinerShowsTheSameRootAndTheSameContent)
     EXPECT_EQ(static_cast<SoSeparator*>(other->getEditRootNode())->getChild(1), extra);
 }
 
-TEST_F(SharedEditingRootTest, twoViewsOnOneGraphHangTheRootOnce)
+TEST_F(SharedEditingRootTest, twoViewsOnOneGraphHangTheRootEachInTheirOwn)
 {
-    // Both mirrors publish into the same served graph. The root goes in
-    // once, and stays while any view of the session still shows it.
+    // Both mirrors share one served graph, and neither puts the root in
+    // it: each hangs it in its own event graph, once, and one view
+    // leaving takes it out of that view's graph alone.
     mirror->setEditingViewProvider(vp.get(), 0, root.get());
     other->joinEditing(vp.get(), root.get());
-    EXPECT_EQ(timesInScene(root->node()), 1);
-    EXPECT_EQ(root->hangCount(scene), 2);
+    EXPECT_EQ(timesInScene(root->node()), 0);
+    EXPECT_EQ(root->hangCount(scene), 0);
+    EXPECT_EQ(root->hangCount(eventGraph(*mirror)), 1);
+    EXPECT_EQ(root->hangCount(eventGraph(*other)), 1);
+    EXPECT_EQ(timesIn(eventGraph(*other), root->node()), 1);
 
     other->leaveEditing();
-    EXPECT_EQ(timesInScene(root->node()), 1);
-    EXPECT_EQ(root->hangCount(scene), 1);
+    EXPECT_EQ(root->hangCount(eventGraph(*other)), 0);
+    EXPECT_EQ(timesIn(eventGraph(*other), root->node()), 0);
+    EXPECT_EQ(timesIn(eventGraph(*mirror), root->node()), 1);
     EXPECT_FALSE(other->isEditingViewProvider());
 
     mirror->resetEditingViewProvider();
-    EXPECT_EQ(timesInScene(root->node()), 0);
-    EXPECT_EQ(root->hangCount(scene), 0);
+    EXPECT_EQ(timesIn(eventGraph(*mirror), root->node()), 0);
+    EXPECT_EQ(root->hangCount(eventGraph(*mirror)), 0);
 }
 
 TEST_F(SharedEditingRootTest, theInitiatorLeavingFirstKeepsTheJoinersRoot)
@@ -728,11 +750,12 @@ TEST_F(SharedEditingRootTest, theInitiatorLeavingFirstKeepsTheJoinersRoot)
     mirror->setEditingViewProvider(vp.get(), 0, root.get());
     other->joinEditing(vp.get(), root.get());
     mirror->resetEditingViewProvider();
-    // The joiner still shows the session's root, still in the graph.
+    // The joiner still shows the session's root, still in its graph.
     EXPECT_EQ(other->getEditRootNode(), root->node());
-    EXPECT_EQ(timesInScene(root->node()), 1);
+    EXPECT_EQ(timesIn(eventGraph(*other), root->node()), 1);
+    EXPECT_EQ(timesIn(eventGraph(*mirror), root->node()), 0);
     other->leaveEditing();
-    EXPECT_EQ(timesInScene(root->node()), 0);
+    EXPECT_EQ(timesIn(eventGraph(*other), root->node()), 0);
 }
 
 TEST_F(SharedEditingRootTest, aJoinerNeverMovesTheGeometry)
@@ -769,11 +792,12 @@ TEST_F(SharedEditingRootTest, joiningTwiceOrLeavingIdleIsHarmless)
     mirror->setEditingViewProvider(vp.get(), 0, root.get());
     other->joinEditing(vp.get(), root.get());
     other->joinEditing(vp.get(), root.get());
-    EXPECT_EQ(root->hangCount(scene), 2);
+    EXPECT_EQ(root->hangCount(eventGraph(*other)), 1);
+    EXPECT_EQ(timesIn(eventGraph(*other), root->node()), 1);
     // The initiator asked to join its own session stays the initiator.
     mirror->joinEditing(vp.get(), root.get());
     EXPECT_TRUE(mirror->isEditingInitiator());
-    EXPECT_EQ(root->hangCount(scene), 2);
+    EXPECT_EQ(root->hangCount(eventGraph(*mirror)), 1);
 }
 
 TEST_F(SharedEditingRootTest, aRootlessSessionUsesTheViewsOwn)

@@ -16,13 +16,15 @@ What is asserted:
     and the session is bound to that connection's mirror -- not to some
     view left over from anywhere else;
   - entering edit MOVES the sketch's scene graph under the editing root,
-    which is in the served graph exactly so the change-driven traversal
-    publishes it. Read as the view provider's own child count going to
+    which the serving source captures as the session's overlay. Read as the view provider's own child count going to
     zero and coming back, the same reading the desktop probe takes. In
     render-cache mode 3 the sketch hands the root its own edit node
     instead and hides the edited occurrence per view: the count stays,
     and the client is told a visibility table that hides the sketch for
     the edit and an empty one after it;
+  - the `edit` push names the session the client is in, which is the tag
+    on the edit overlay it may draw (docs/ThinClient.md 8.12 item J), and
+    the leaving edge names none;
   - an 'E' input event is replayed in that view: a pointer move over the
     sketch reaches the edit path and the server pushes the result;
   - and what that client selects is its own (8.11). A 'P' pick sent in
@@ -128,6 +130,8 @@ class Client(threading.Thread):
         self.view_pick_told = None
         self.edit_visibility = None
         self.reset_visibility = None
+        self.edit_push = None
+        self.reset_push = None
         self.reset = None
 
     def run(self):
@@ -167,6 +171,7 @@ class Client(threading.Thread):
             '{"id":2,"op":"edit","obj":"%s","mode":0}' % OBJ))
         ws.drain(0.5)
         self.edit_visibility = ws.next_push("visibility", 3.0, since=mark)
+        self.edit_push = ws.next_push("edit", 3.0, since=mark)
 
         # 5. The same click, now that this client is editing. It is this
         # client's own, so the room must not move -- and it was left empty
@@ -190,6 +195,7 @@ class Client(threading.Thread):
         self.reset = reply_of(ws.op('{"id":3,"op":"resetEdit"}'))
         ws.drain(0.5)
         self.reset_visibility = ws.next_push("visibility", 3.0, since=mark)
+        self.reset_push = ws.next_push("edit", 3.0, since=mark)
 
         # 8. Back in, and then the socket simply goes away. The document
         # is left in edit with its viewer about to be destroyed, which
@@ -310,6 +316,14 @@ def verify():
         else:
             check("entering edit emptied the view provider's root",
                   any(s[0] and s[1] == 0 for s in seen), seen[:40])
+        pushed = jsonlib.loads(client.edit_push) if client.edit_push else {}
+        check("the edit push names the client's session",
+              pushed.get("editing") is True
+              and isinstance(pushed.get("session"), int)
+              and pushed["session"] > 0, pushed)
+        pushed = jsonlib.loads(client.reset_push) if client.reset_push else {}
+        check("and the leaving edge names none",
+              pushed.get("editing") is False and "session" not in pushed, pushed)
         check("the session bound to the mirror rather than making a 3D view",
               all(s[2] == 0 for s in seen),
               sorted({s[2] for s in seen}))

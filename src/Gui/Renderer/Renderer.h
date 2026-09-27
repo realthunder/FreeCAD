@@ -372,6 +372,14 @@ struct OverlayAnchor {
     /// so without this every cell would draw the feeding cell's cube,
     /// turned by the feeding cell's camera (docs/SplitViews.md sec 16.3).
     int subView = 0;
+    /// Which edit session this feed belongs to (docs/ThinClient.md 8.12
+    /// item J). 0 -- the default -- means every viewer. A non-zero id is
+    /// one session's edit geometry, published in the one snapshot every
+    /// client of a served document shares and drawn only by a viewer the
+    /// host told it is in that session (the `session` of the `edit`
+    /// push). A process drawing its own feeds ignores it: whatever a
+    /// desktop view is fed is its own.
+    uint32_t session = 0;
 
     bool operator==(const OverlayAnchor &o) const {
         return corner == o.corner && sizeFraction == o.sizeFraction
@@ -382,6 +390,7 @@ struct OverlayAnchor {
             && pixelSpace == o.pixelSpace
             && sceneCamera == o.sceneCamera
             && subView == o.subView
+            && session == o.session
             && marginX == o.marginX && marginY == o.marginY;
     }
     bool operator!=(const OverlayAnchor &o) const { return !(*this == o); }

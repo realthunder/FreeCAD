@@ -173,10 +173,23 @@ static void decLog(const char *fmt, ...)
 }
 static std::set<int> s_selIds;
 static std::set<int> s_overlayIds;
+/// The edit session the host says this viewer is in (the `session` of
+/// the `edit` push), 0 when none. A served document's edit geometry is
+/// an overlay tagged with its session in the snapshot every client
+/// shares, and it is drawn only by that session's viewers
+/// (docs/ThinClient.md 8.12 item J).
+static uint32_t s_editSession = 0;
 /// Whether the automatic camera has ever framed the scene's own objects
 /// (fitCamera). Until it has, a scene with nothing to frame is framed by
 /// its scene-camera overlays instead; after, it is left where it is.
 static bool s_framed = false;
+
+/// Whether an overlay of the snapshot is this viewer's to draw: every
+/// untagged one, and the tagged one of the session it is in.
+static bool overlayIsMine(const Render::OverlayAnchor &a)
+{
+    return a.session == 0 || a.session == s_editSession;
+}
 
 // Live streaming (?scene=<http://host:port> page parameter): connect a
 // WebSocket to the desktop scene server (FC_BGFX_SERVE_SCENE) and
@@ -5310,7 +5323,7 @@ static bool fitCamera()
     // shrinking from 880 pixels to 20 on entering the edit.
     if (!have && !s_framed) {
         for (const auto &ov : s_snap.overlays) {
-            if (!ov.anchor.sceneCamera)
+            if (!ov.anchor.sceneCamera || !overlayIsMine(ov.anchor))
                 continue;
             for (const auto &d : ov.draws) {
                 if (d.bboxMin[0] > d.bboxMax[0] || d.bboxMin[1] > d.bboxMax[1]
@@ -5436,6 +5449,52 @@ static int s_accumSamples = 0;
 /// an instrument.
 static bool s_levelDebug = false;
 
+/// Hand the snapshot's overlays to the renderer: the ones this viewer
+/// draws, and only once whole. Run by every commit, and again when the
+/// host moves this viewer into or out of an edit session -- which
+/// overlays are its own changes then with no new snapshot.
+static void feedOverlays()
+{
+    std::set<int> ovIds;
+    for (const auto &ov : s_snap.overlays) {
+        // Another session's edit geometry: left out of ovIds too, so a
+        // feed this viewer drew before it left that session goes away.
+        if (!overlayIsMine(ov.anchor))
+            continue;
+        ovIds.insert(ov.id);
+        // A republish re-parses the overlay feed into fresh payload
+        // objects, and for the length of their re-read (a local
+        // cache hit, usually, but a visible frame regardless) the
+        // feed is a cube with no faces or no glyphs. While a
+        // previous feed is on screen, hold it: the renderer keeps
+        // drawing what it was last given, and the new feed goes up
+        // only once every mesh and texture it names is in hand.
+        // Without this the navigation cube blinked once per
+        // announcement of a 62-delta chain.
+        bool whole = true;
+        for (const auto &d : ov.draws) {
+            if ((d.mesh
+                 && !(d.mesh->numVertices > 0 && d.mesh->positions))
+                    || (d.material.texture
+                        && d.material.texture->deferred)) {
+                whole = false;
+                break;
+            }
+        }
+        if (!whole && s_overlayIds.count(ov.id)) {
+            decLog("overlay %d held (feed not whole yet)", ov.id);
+            continue;
+        }
+        Render::DrawCallList odraws = ov.draws;
+        s_renderer->setOverlay(ov.id, std::move(odraws), ov.anchor);
+    }
+    for (int id : s_overlayIds) {
+        if (!ovIds.count(id))
+            s_renderer->removeOverlay(id);
+    }
+    s_overlayIds.swap(ovIds);
+}
+
 /// Feed the loaded snapshot to the renderer; a first load also fits
 /// the camera (streamed updates keep the user's).
 static void applySnapshot(bool fit)
@@ -5546,40 +5605,7 @@ static void applySnapshot(bool fit)
         // renderer re-derives viewport and camera each frame, so
         // overlays re-anchor on resize and follow the local orbit
         // camera.
-        std::set<int> ovIds;
-        for (const auto &ov : s_snap.overlays) {
-            ovIds.insert(ov.id);
-            // A republish re-parses the overlay feed into fresh payload
-            // objects, and for the length of their re-read (a local
-            // cache hit, usually, but a visible frame regardless) the
-            // feed is a cube with no faces or no glyphs. While a
-            // previous feed is on screen, hold it: the renderer keeps
-            // drawing what it was last given, and the new feed goes up
-            // only once every mesh and texture it names is in hand.
-            // Without this the navigation cube blinked once per
-            // announcement of a 62-delta chain.
-            bool whole = true;
-            for (const auto &d : ov.draws) {
-                if ((d.mesh
-                     && !(d.mesh->numVertices > 0 && d.mesh->positions))
-                        || (d.material.texture
-                            && d.material.texture->deferred)) {
-                    whole = false;
-                    break;
-                }
-            }
-            if (!whole && s_overlayIds.count(ov.id)) {
-                decLog("overlay %d held (feed not whole yet)", ov.id);
-                continue;
-            }
-            Render::DrawCallList odraws = ov.draws;
-            s_renderer->setOverlay(ov.id, std::move(odraws), ov.anchor);
-        }
-        for (int id : s_overlayIds) {
-            if (!ovIds.count(id))
-                s_renderer->removeOverlay(id);
-        }
-        s_overlayIds.swap(ovIds);
+        feedOverlays();
     }
     if (!s_snap.highlight.empty()) {
         Render::DrawCallList hdraws = s_snap.highlight;
@@ -8945,6 +8971,21 @@ static void handleControlMessage(const char *json)
             }
         }
         setEditing(on, obj);
+        // Which tagged overlay is this viewer's now (8.12 item J). Only
+        // this push carries it: the answer to this viewer's own request
+        // does not, and the push reaches every view of the session, this
+        // one included, ahead of that answer (it is sent from inside
+        // setEdit, the answer after it returns).
+        uint32_t session = 0;
+        if (const char *p = on ? std::strstr(json, "\"session\":") : nullptr)
+            session = uint32_t(std::strtoul(p + 10, nullptr, 10));
+        if (session != s_editSession) {
+            s_editSession = session;
+            if (s_renderer && s_haveScene) {
+                feedOverlays();
+                markDirty();
+            }
+        }
     }
     else if (std::strstr(json, "\"cmd\":\"onview\"")) {
         // The entry boxes this client's edit session has open (sec 8.7).
