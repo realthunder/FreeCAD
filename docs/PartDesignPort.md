@@ -1425,3 +1425,201 @@ Tests: upstream's `testStartOffsetAndReference`,
 `testStartOffsetReversedTaperedAndBySketch`. Commit `9c15951818`. Suites:
 TestPartDesignApp 165 OK; the whole Python suite 2991 OK (50 skipped, 6
 expected failures); ctest 750/750.
+
+### Revolution and Groove: two sides and the start (2026-09-27, night)
+
+The first of the deferred families (the handoff's order): upstream
+`b2da06bfe0` (two sides), its start controls `06a4b1db99` (App) and
+`a4b3950ac1` (panel), and their test `be0d14c042`. They build on a chain of
+open rows the fork had not taken, taken with them: `0e6494c35f` and
+`f8701f3b5c` (Revolution and Groove on one base class, `Revolved`),
+`4d80f3ec28` and `df5c75d6b0` (the two made alike), `80664a0d30` (up to
+first and last).
+
+| commit | what |
+|---|---|
+| `35b648e1ac` | `PartDesign::Revolved`: SideType, Type2, UpToFace2, StartType/StartOffset/StartReference; up to first and last; signed angles; the up-to defects below |
+| `31063bcca3` | the panel: Start rows, Mode, a Side 2 group, the up-to faces and the start reference as `LinkSubWidget`s, a start gizmo |
+| `4126344fd9` | a single reference (the Pad's start, these up-to faces) picked in the feature's own body is linked, not bound |
+
+**App.** Revolution and Groove keep their own Type enums (Revolution's
+second value is UpToLast, Groove's ThroughAll) and differ now only in
+those, the boolean and Reversed's suggestion. Upstream's property names
+and types throughout, so its files load. The start is an angle about the
+axis: Offset turns the profile by StartOffset; Reference by the angle at
+which the orbit of the profile's centre meets the reference (where it
+crosses a plane, anywhere round; the nearest cut of any other face) plus
+the offset. The profile is turned once, before any branch, as the Pad's
+start is moved. A turned profile goes without its support face.
+
+How old files keep their shapes, as the Pad's two sides did:
+
+- Midplane is a live alias of Symmetric; on restore it becomes Symmetric
+  only for Angle (and a Groove's ThroughAll), as an up-to feature ignored it.
+- Type "TwoAngles" stays in the enum at its index and becomes Two sides
+  with both Angle, on restore and when a script sets it.
+- One side, symmetric, and two sides of two angles are still the one
+  revolve the old code made, so their element names stay. Mixed sides are
+  made one by one: fused when a side goes up to a face, else their union
+  less what they share (the Pad's `xorSides`, moved to `ProfileBased`).
+- Reversed still turns the axis of a symmetric revolution; it makes the
+  same solid, and the panel disables it there.
+
+Checked against the old build, as the Pad's were: the pre-port App code was
+rebuilt, a file of every old mode saved with it (Revolution: angle plain,
+reversed, symmetric, symmetric reversed, TwoAngles plain, reversed, with a
+negative second angle, with Midplane set too, full turn, up to a datum
+plane, up to it with Midplane left on; Groove: angle, reversed, symmetric,
+TwoAngles, full turn, through all at 360 and at 90, through all symmetric,
+up to a plane), then reopened and recomputed by this build: all 20 the
+same volume, face count, bound box and element-map hash. Nothing is
+touched on open but the one feature the old build had saved invalid.
+
+**Defects found on the way**, all in the up-to path the fork already had:
+
+- BRepFeat_MakeRevol in mode "none" gives the base with the side fused in,
+  not the side alone. So a Groove up to a face cut the base from itself
+  and failed ("Resulting shape is not a solid" -- the old build's `GrvFace`
+  above), and a Revolution's AddSubShape held the whole base (a pattern of
+  it would repeat the base). Now the side is that result less the base
+  (upstream's own `tryToRevolveToFace` does the same), a Groove cuts from
+  the base and takes what went, and a one-sided Revolution's Shape is still
+  made from BRepFeat's result so its names stay.
+- A face of the base as the up-to face was not taken as the end: BRepFeat
+  ran a full turn. Up to first and last always name such a face. A copy of
+  the face is.
+- `TopoShape::makEMirror` puts a located shape's placement on twice, so
+  the mirror of a datum plane for a symmetric up-to was wrong (a full
+  turn). Upstream fixed it in Part (`9eed3a8d77`), but the fork's
+  Part::Mirroring leans on the old behaviour -- with the fix a placed box
+  mirrored to the wrong place -- and upstream reworked that feature with
+  it. So `Revolved` mirrors with `BRepBuilderAPI_Transform` itself, and
+  **`Shape.mirror()` of a placed shape is still wrong in the fork**
+  (reproduced: a box at y 30..50 by its Placement mirrors to y -20..0, not
+  -50..-30). Left for a Part port.
+- No base: an up-to side needs one (upstream refuses too). The message is
+  now said plainly instead of OCCT's "Bnd_Box is void".
+
+Upstream `8c399e1fd0` (FuseOrder) is declined: it keeps upstream 1.0's
+reversed fuse, a bug the fork's files never had. `9e042ff480` is superseded
+(up to first is implemented). The Angle2 default stays 60, not upstream's 0,
+so that Two sides shows a second side at once.
+
+**Tests.** Upstream's C++ `Revolution.cpp` cases, in Python since the fork
+has no `tests/src/Mod/PartDesign`, and its `testRevolutionStartOffsetAndReference`;
+and the fork's own: the start at a curved face and a plane, up to first and
+last and the other way round, the side alone in AddSubShape, symmetric up
+to a face, and a Groove up to a datum plane one, both and two sides.
+`TestRevolve` 20 OK; with TestExtrudeSides, TestPad, TestPocket 54 OK.
+
+**The panel.** The Pad's rows: Start (Profile plane, Offset, Reference)
+with its offset and reference, Mode in place of the Symmetric check box,
+Type and Angle, and a Side 2 group; "Two dimensions" is gone from the type
+lists. The up-to faces and the start reference are single-element
+`LinkSubWidget`s with the Pad's pick filter, now shared in
+`TaskSketchBasedParameters`. Up to face or Reference with nothing picked
+starts the pick. The angle gizmos stand at the start, a click on one
+reverses, and a rotation gizmo drags the start offset (a4b3950ac1); the
+gizmo layer had the click callback and the periodic drag already.
+
+**Linked, not bound (`4126344fd9`).** Driving the panel showed a pick of a
+face of the box in the same body linked `(Binder, [''])`: the
+single-element path of `LinkSubWidget`, whose first user was the Pad's
+start reference, took every pick through `importExternalElement()`, which
+binds anything picked with an element. A pick in the edited feature's own
+body is now linked as it is; outside it, imported as before. Seen on the
+Revolution panel; the Pad's start reference goes the same way.
+
+**Checked in the GUI** through the MCP console, on a body with a box the
+profile's orbit crosses: Two sides shows Side 2 and revolves 120 deg; side
+2 at -20 makes 20 to 60 deg; side 2 up to the box's far face, picked,
+links `(Box, ['Face1'])` and gives 60 + 260.4 deg; Start Offset 20 turns
+both sides, 340.4 deg after OK; Start Reference picked on the near face
+starts 80.4 deg round plus the offset (bound box as computed); reopened,
+the panel shows all of it; Symmetric sets Midplane with it and Cancel
+restores Two sides. A Groove lists Through all and cuts the whole torus.
+Not checked: the gizmos' drawing and drag.
+
+Harness notes, for the next panel driven this way: a force-killed FreeCAD
+leaves its document to the Document Recovery dialog, which holds the next
+launch's MCP console until it is answered (answered here through UI
+Automation, Cleanup of the one test document); `QApplication.allWidgets()`
+hands back wrappers of deleted widgets once task panels have come and gone,
+so look widgets up from `Gui.getMainWindow().findChildren()` inside a
+function and skip a `RuntimeError`; a `QuantitySpinBox` in a window that
+never had focus does not commit typed text on Tab -- set its `rawValue`.
+
+Suites at `31063bcca3`: Python 3008 OK (50 skipped, 6 expected failures);
+ctest 750/750.
+
+### More of the deferred rows (2026-09-27, night)
+
+| commit | what |
+|---|---|
+| `89772157ca` | `Revolved` takes a Groove's ways (ThroughAll, a base, a closed profile) from its class, not from AddSubType |
+| `6283494bae` | an upstream file's `Operation` (4a71de647d) is read into AddSubType |
+| `d425f51d31` | upstream's `TestTopologicalNamingProblem.py` |
+| `8ea657caa0` | a primitive's linear pattern gets Direction2 (upstream `b4f988f449`) |
+| `fda7e0a6ce` | a subtractive helix's Outside works again: it is AddSubType's Intersecting (upstream `6293a0d873`) |
+| `7bb2b15f85` | Part's and PartDesign's cones take equal radii, as a cylinder through the angle (upstream `1eb0444bd5`, `990b9b27fe`) |
+
+**The class, not the Operation (`89772157ca`).** `35b648e1ac` read the
+Groove's own ways off AddSubType, which is what every feature panel's
+Operation combo (New shape, Additive, Subtractive, Intersecting) switches:
+a Groove made additive took Through all for up to last. They follow
+`isGroove()` now; the Operation still decides how an up-to side is made.
+
+**The operation selector (`82c7a09b35`, `4a71de647d`).** The fork has had
+it longer than upstream: AddSubType with Intersecting, and the combo on
+every feature panel. What was missing is upstream's files: they save the
+boolean as `Operation` and have no AddSubType, so a pocket saved as Common
+loaded here as a cut. Checked with a saved pocket whose AddSubType was
+rewritten as upstream writes Operation "Common": Intersecting on reopening,
+and the volume the pocket shares with the plate.
+
+**The element-name tests (`d425f51d31`).** Upstream's file at `3383e9119f`,
+which its four deferred rows build up, ran on the fork unchanged: 64 of 68
+passed. The four, each checked against the shape's own topology: the
+feature-first FuseOrder case goes with the declined FuseOrder; the
+Revolution's face name records 22 steps where upstream's records 19 (the
+shape and its counts are upstream's); a refined box-and-cylinder fusion
+maps 32, not 44, because the fork's refine merges the faces the cylinder
+split (7, 15, 10 -- all mapped); the fork's ellipsoid is two B-spline
+faces, so it maps 10, not 6.
+
+Also settled: `ef2156d0f6` and `1f35398d5a` are n/a (upstream's own
+face-list picking and highlighting, which the fork's `LinkSubWidget`
+replaces). Driven in the GUI: a Linear Pattern of an AdditiveBox reads
+Direction X_Axis, Direction2 Y_Axis; the Pad's start reference picked on a
+box in the same body links `(Box, ['Face5'])` and starts the pad there.
+
+**Helix Outside (`fda7e0a6ce`).** Reading upstream's `6293a0d873` (its
+Operation restored from the deprecated Outside) turned up a fork defect:
+the fork's helix has not read Outside since the boolean moved to
+AddSubType -- the sweep's own Common on Outside went in a merge. So a file
+from before AddSubType cut where it should keep: a subtractive helix with
+Outside on removed 6056.989 of a cylinder, where Intersecting leaves the
+226.196 the two share. Outside and Intersecting now follow each other, and
+a restored Outside reads as Intersecting.
+
+**Equal radii (`7bb2b15f85`).** Both cones refused them (OCCT's "cone with
+two identic radii" for Part's, the fork's own check and a panel warning for
+PartDesign's). They make a cylinder now, through the cone's angle.
+
+Read and settled without code: `648faf5d36` n/a (a cast in upstream's
+TransformMode, which the fork's Transformed lacks); `c81df6a5ac` n/a (the
+fork's binders never switched to FaceMakerBuildFace). Still deferred, with
+what was found: `13e7952ccc` -- a sketch of a lone point has an empty Shape
+here, so a Hole refuses it as its Profile ("Linked shape object is empty")
+before upstream's edge case is reached; `ff17eb611a`/`3aabb826aa` --
+upstream's final countersink formula, (D/2)/tan(A/2), is right, but whether
+the fork's countersink reads HoleCutDepth at all comes first; the three
+pattern rows are one family on upstream's `Part/Gui/PatternParametersWidget`,
+which the fork's `PatternDirectionWidget` replaced; `3082039b3a` needs a
+drag in the tree to reproduce and reaches into `Gui/Tree.cpp`.
+
+Deferred rows left: 20 of 35.
+
+Suites at `8ea657caa0`: Python 3077 OK, ctest 750/750; at `7bb2b15f85`
+(with TestTopologicalNamingProblem): Python 3079 OK (50 skipped, 6 expected
+failures), ctest 750/750.
