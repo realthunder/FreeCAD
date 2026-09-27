@@ -1007,8 +1007,11 @@ void Hole::updateHoleCutParams()
             if (HoleCutCountersinkAngle.getValue() == 0.0) {
                 HoleCutCountersinkAngle.setValue(counter.angle);
             }
-            if (HoleCutDepth.getValue() == 0.0 && holeCutTypeStr == "Counterdrill") {
-                HoleCutDepth.setValue(1.0);
+            if (HoleCutDepth.getValue() == 0.0) {
+                if (holeCutTypeStr == "Counterdrill")
+                    HoleCutDepth.setValue(1.0);
+                else
+                    updateCountersinkDepth();
             }
             HoleCutDiameter.setReadOnly(false);
             HoleCutDepth.setReadOnly(false);
@@ -1150,8 +1153,11 @@ void Hole::updateHoleCutParams()
             if (HoleCutCountersinkAngle.getValue() == 0.0) {
                 HoleCutCountersinkAngle.setValue(getCountersinkAngle());
             }
-            if (HoleCutDepth.getValue() == 0.0 && holeCutTypeStr == "Counterdrill") {
-                HoleCutDepth.setValue(1.0);
+            if (HoleCutDepth.getValue() == 0.0) {
+                if (holeCutTypeStr == "Counterdrill")
+                    HoleCutDepth.setValue(1.0);
+                else
+                    updateCountersinkDepth();
             }
             HoleCutDiameter.setReadOnly(false);
             HoleCutDepth.setReadOnly(false);
@@ -1875,6 +1881,12 @@ void Hole::onChanged(const App::Property* prop)
         // also to find out if HoleCutCountersinkAngle can be ReadOnly
         // both an also the read-only states is done in updateHoleCutParams()
         updateHoleCutParams();
+    }
+    else if (prop == &HoleCutDiameter || prop == &HoleCutCountersinkAngle) {
+        // An old file keeps the depth it was saved with; the document is
+        // still restoring when onDocumentRestored() calls this again
+        if (!_isRestoring(getDocument()))
+            updateCountersinkDepth();
     }
     else if (prop == &DepthType) {
         std::string DepthMode(DepthType.getValueAsString());
@@ -2819,10 +2831,28 @@ void Hole::calculateAndSetCountersink()
     // estimate a reasonable value since it's not on the standard
     double threadDiameter = Diameter.getValue();
     double dk = 2.24 * threadDiameter;
-    double k = 0.62 * threadDiameter;
 
     HoleCutDiameter.setValue(dk);
-    HoleCutDepth.setValue(k);
+    updateCountersinkDepth();
+}
+
+void Hole::updateCountersinkDepth()
+{
+    // A countersink is drawn from its diameter and angle alone (execute()
+    // takes its depth as 0). The depth shown is the cone's, from the
+    // diameter down to its apex, so that it and the diameter agree: the
+    // panel moves the diameter by 2 tan(A/2) per unit of depth (upstream
+    // ff17eb611a, 3aabb826aa)
+    std::string holeCutType = HoleCutType.getValueAsString();
+    if (holeCutType != "Countersink"
+            && !isDynamicCountersink(ThreadType.getValueAsString(), holeCutType))
+        return;
+    double angle = Base::toRadians(HoleCutCountersinkAngle.getValue());
+    double tanHalfAngle = std::tan(angle / 2.0);
+    if (angle <= 0.0 || angle >= M_PI || std::fabs(tanHalfAngle) < 1e-6)
+        HoleCutDepth.setValue(2.0);
+    else
+        HoleCutDepth.setValue(HoleCutDiameter.getValue() / 2.0 / tanHalfAngle);
 }
 
 

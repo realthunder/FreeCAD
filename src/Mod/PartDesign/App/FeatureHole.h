@@ -287,6 +287,7 @@ private:
     void updateHoleCutParams();
     void calculateAndSetCounterbore();
     void calculateAndSetCountersink();
+    void updateCountersinkDepth();
     std::optional<double> determineDiameter() const;
     void updateDiameterParam();
     void updateThreadDepthParam();

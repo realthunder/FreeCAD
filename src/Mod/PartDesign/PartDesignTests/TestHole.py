@@ -117,6 +117,36 @@ class TestHole(unittest.TestCase):
         self.Doc.recompute()
         self.assertAlmostEqual(self.Hole.Shape.Volume, 10**3 - pi * 3**2 * 10 - 24.7400421)
 
+    def testCountersinkDepthFollowsDiameterAndAngle(self):
+        # A countersink is made from its diameter and angle; its depth is the
+        # cone's down to the apex, (D/2)/tan(A/2) (upstream ff17eb611a)
+        import math
+        self.Hole.Diameter = 6
+        self.Hole.ThreadType = 0
+        self.Hole.HoleCutType = "Countersink"
+        self.Hole.HoleCutDiameter = 9
+        self.Hole.HoleCutCountersinkAngle = 90
+        self.assertAlmostEqual(self.Hole.HoleCutDepth.Value, 4.5)
+        self.Hole.HoleCutCountersinkAngle = 60
+        self.assertAlmostEqual(self.Hole.HoleCutDepth.Value, 4.5 / math.tan(math.radians(30)))
+        self.Hole.HoleCutDiameter = 12
+        self.assertAlmostEqual(self.Hole.HoleCutDepth.Value, 6 / math.tan(math.radians(30)))
+        # a counterdrill's depth is its own
+        self.Hole.HoleCutType = "Counterdrill"
+        self.Hole.HoleCutDepth = 1.5
+        self.Hole.HoleCutDiameter = 10
+        self.assertAlmostEqual(self.Hole.HoleCutDepth.Value, 1.5)
+        # and the countersink's depth is not in its shape
+        self.Hole.HoleCutType = "Countersink"
+        self.Hole.HoleCutDiameter = 9
+        self.Hole.HoleCutCountersinkAngle = 90
+        self.Hole.Depth = 10
+        self.Hole.DepthType = 0
+        self.Hole.DrillPoint = 0
+        self.Hole.Tapered = 0
+        self.Doc.recompute()
+        self.assertAlmostEqual(self.Hole.Shape.Volume, 10**3 - pi * 3**2 * 10 - 24.7400421)
+
     def _holeOnSecondBox(self, refine):
         """A plain hole through a second, unrefined box that overlaps the
         first, so that refining merges faces the hole leaves split
@@ -365,8 +395,10 @@ class TestHole(unittest.TestCase):
         sketch.Placement = App.Placement(App.Vector(0, 0, 100), App.Rotation())
         TestSketcherApp.CreateCircleSketch(sketch, (100, 100), 5)
         self.Doc.recompute()
+        # A countersink's depth is its cone's, (D/2)/tan(90/2) (upstream
+        # 3aabb826aa dropped the estimate 0.62 * 74)
         for cut, diameter, depth in (("Counterbore", 1.5 * 74 + 1, 74),
-                                     ("Countersink", 2.24 * 74, 0.62 * 74)):
+                                     ("Countersink", 2.24 * 74, 2.24 * 74 / 2)):
             hole = self.Body.newObject("PartDesign::Hole", "Hole")
             hole.Profile = sketch
             hole.ThreadType = "ISOMetricProfile"
