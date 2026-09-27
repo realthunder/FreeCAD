@@ -6504,3 +6504,40 @@ pin 28, frozen 16 PASS.
 **Step 5, labels,** has nothing to build here: per Q4 they stay document
 scope, and the clash is the merge's to resolve (phase 6), which does not
 exist yet. The file-scope state of 27.18 is complete.
+
+### 27.46 The seen issue of 27.44, chased: version 1 of a schema-4 file (2026-09-27)
+
+**Cause.** Version 1, the file as found (16.6), is `Document.xml` as
+tapped, the other XML entries as their readers served them, and the
+members of the blob store (`blobs/`). A file written before schema 5 keeps
+its shapes -- and any other attachment a property writes with
+`writer.addFile` -- as members at the top of the archive, read through
+`reader.addFile` by the property itself, and nothing tapped them. The
+version's `Document.xml` then named files it did not carry, and a checkout
+found none of them. Schema-5 files were never affected: their attachments
+are blobs.
+
+**Fix.** `Document::restore` adds the untapped members to version 1
+(`addUntappedMembers`): every member of the archive that is not an entry
+already taken, not under `blobs/` (the version holds those as blobs) and
+not a thumbnail, read through a `Base::ZipFileReader` index of the file
+(`entryNames()`, new) as the entry of the same name. A checkout writes a
+non-blob entry at the top of its directory, which is where the directory
+restore looks for it. A restore from an unpacked directory is left alone.
+
+Measured on issue360_fillet_spike.FCStd (schema 4): 496 members, 50 MB
+inflated, read in 0.12 s on open; the worker stores them after. Version 1
+then opens in 1.18 s with all 91 shapes the live document has, the same
+volume and face count each (before: every shape missing and the features
+built on them failing).
+
+Left as is: the members are stored as entries, so a later schema-5 save of
+the same shape, which writes it as a blob, does not share its bytes with
+them.
+
+Test: Python `TransactionBranchCases.testVersionOfASchema4FileCarriesItsShapes`
+-- a box and a fillet saved at schema 4 and reopened; version 1 has both
+shapes, with their volumes.
+
+Gates: Python 2939 OK; ctest 842/842; recovery 15, branch 27, version 18,
+pin 28, frozen 16 PASS (measured with 27.47 in the tree).

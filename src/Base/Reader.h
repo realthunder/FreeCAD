@@ -674,6 +674,8 @@ public:
     ~ZipFileReader() override;
 
     bool hasEntry(const std::string &name) const;
+    /// Every entry's name, in archive order.
+    const std::vector<std::string> &entryNames() const { return _entryOrder; }
     /// Open an archive entry as an independent stream; null when absent.
     std::unique_ptr<zipios::ZipInputStream> openEntry(const std::string &name) const;
 

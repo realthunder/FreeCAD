@@ -3800,3 +3800,26 @@ class TransactionBranchCases(unittest.TestCase):
         sk.addGeometry(line(50))
         doc.commitTransaction()
         self.assertGreater(sk.getGeometryId(3), side)
+
+    def testVersionOfASchema4FileCarriesItsShapes(self):
+        # Sec 27.46: a file written before schema 5 keeps its shapes as
+        # members at the top of the archive; version 1, the file as found,
+        # carries them, so opening it gives the shapes back.
+        doc = self.track(FreeCAD.newDocument("Schema4"))
+        box = doc.addObject("Part::Box", "Box")
+        box.Length = 7
+        fillet = doc.addObject("Part::Fillet", "Fillet")
+        fillet.Base = box
+        fillet.Edges = [(1, 1.0, 1.0)]
+        doc.recompute()
+        volume = fillet.Shape.Volume
+        doc.SaveSchemaVersion = 4
+        path = os.path.join(self.dir, "schema4.FCStd")
+        doc.saveAs(path)
+        FreeCAD.closeDocument(doc.Name)
+        doc = self.track(FreeCAD.openDocument(path))
+        first = min(v["num"] for v in doc.getTransactionVersions())
+        v = self.track(doc.openTransactionVersion(first, False))
+        self.assertFalse(v.getObject("Fillet").Shape.isNull())
+        self.assertAlmostEqual(v.getObject("Fillet").Shape.Volume, volume, places=6)
+        self.assertAlmostEqual(v.getObject("Box").Shape.Volume, 7 * 10 * 10, places=6)

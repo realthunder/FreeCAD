@@ -4188,6 +4188,11 @@ bool Document::serveDeferredFiles(double budgetSeconds)
     return true;
 }
 
+namespace {
+void addUntappedMembers(const std::string& path,
+                        std::vector<std::pair<std::string, std::string>>& entries);
+}
+
 void Document::restore(Base::XMLReader &reader,
         bool delaySignal, const std::vector<std::string> &objNames)
 {
@@ -4312,6 +4317,7 @@ void Document::restore(Base::XMLReader &reader,
             // next save gives them (sec 23.16).
             TransactionLog::Blobs blobs =
                 TransactionLog::versionBlobs(entries, getFileBlobManager().restoredEntries());
+            addUntappedMembers(FileName.getValue(), entries);
             if (log->onRestore(FileName.getValue(), entries, blobs, reader.DocumentSchema))
                 noteVersionTaken();
         }
@@ -6797,6 +6803,52 @@ void Document::noteVersionTaken()
     d->lastVersionTime = std::chrono::duration<double>(
                              std::chrono::steady_clock::now().time_since_epoch()).count();
 }
+
+namespace {
+
+/** The archive members no reader taps, for version 1 (docs/TransactionLog.md
+ * sec 27.46): a file written before schema 5 keeps its shapes and other
+ * attachments at the top of the archive, and without them the version's
+ * Document.xml names files it does not carry. Everything but the entries
+ * already in `entries`, the blob store's members -- the version holds
+ * those as blobs -- and the thumbnails.
+ */
+void addUntappedMembers(const std::string& path,
+                        std::vector<std::pair<std::string, std::string>>& entries)
+{
+    std::unique_ptr<Base::ZipFileReader> zip;
+    try {
+        zip = std::make_unique<Base::ZipFileReader>(path);
+    }
+    catch (...) {
+        return;   // not an archive: a directory restore, which taps its files
+    }
+    const auto start = std::chrono::steady_clock::now();
+    std::size_t count = 0, size = 0;
+    std::set<std::string> have;
+    for (const auto& e : entries)
+        have.insert(e.first);
+    const std::string blobs = FileBlobManager::archivePrefix();
+    for (const auto& name : zip->entryNames()) {
+        if (name.empty() || name.back() == '/' || have.count(name)
+                || boost::starts_with(name, blobs) || boost::starts_with(name, "thumbnails/"))
+            continue;
+        auto in = zip->openEntry(name);
+        if (!in)
+            continue;
+        std::string bytes((std::istreambuf_iterator<char>(*in)), std::istreambuf_iterator<char>());
+        ++count;
+        size += bytes.size();
+        entries.emplace_back(name, std::move(bytes));
+    }
+    if (count)
+        FC_LOG("version 1 of " << path << ": " << count << " untapped members, " << size
+               << " bytes, read in "
+               << std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count()
+               << " s");
+}
+
+} // namespace
 
 void Document::endRestoreTap(Base::XMLReader& reader)
 {
