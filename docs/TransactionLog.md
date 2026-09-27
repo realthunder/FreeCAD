@@ -6930,3 +6930,125 @@ file's element-map version is older than this build's.
 
 **Order (user, 2026-09-27):** F1-F3 first, then 27.50's steps 1-4. Starts
 next session.
+
+### 27.53 F1-F3 as built, and T3 (user, 2026-09-27)
+
+**Rulings (user).** F1 as proposed, the composite's `part` rows dropped;
+hashes as 20-byte blobs in `entity` and `ref` only (the `op`, `manifest` and
+`version` columns stay text). F2: the record lists what the recompute made
+up to date, not every object it looked at, and carries no environment --
+the user proposed it only in the first record after a restore; the
+`session` row is that record already, opened at every store open, adopt
+and move, and every `txn` row names its session, so a record's environment
+is `txn.session -> session.env` and the record keeps none. F3: vacuum the
+embedded copy after retention. The pieces a composite is cut into are the
+bodies of each `<Property>` element -- the unit is the property, not the
+object, because one edit changes a property or two and the object's other
+properties keep their bytes; 23.3 named them parts, and this section calls
+them property values.
+
+**F1, the store at schema 6** (`src/App/TransactionStoreSQLite.cpp`). This
+is the log store's own schema, `meta.schema`, not the document's (27.51
+Q2).
+- `entity(hash BLOB PRIMARY KEY, ..., base BLOB, ...)` and
+  `ref(entity BLOB, target BLOB, role, name, seq, PRIMARY KEY(entity, role,
+  name, target)) WITHOUT ROWID`: the key is the table, no autoindex copy.
+  `entity` keeps its rowid -- its rows carry the data, and a `WITHOUT ROWID`
+  table is for small rows.
+- A hash is packed at the SQLite boundary: `bindHash` turns 40 lowercase hex
+  digits into their 20 bytes and binds anything else as text, `columnHash`
+  reads a 20-byte blob back as hex. The C++ side keeps hex strings
+  throughout. SQL function `fc_hash()` does the same for the text hashes of
+  `op` and `manifest` where they meet `entity` (registered on the
+  connection; `unhex()` is SQLite 3.41 and later, which not every platform's
+  SQLite is).
+- A composite writes its skeleton edge only. The collector reads the
+  property values from the composite's own data: `markHeld(roots)` fills a
+  temporary table `held` with the roots, closes it over the ref edges,
+  decodes every composite in it (raw, zstd, or a delta chain, from the store
+  alone -- `readStored`, decoded bytes kept for the chain within one pass up
+  to 64 MB) and adds its skeleton and values, and repeats until nothing new
+  comes in. `collectEntities` and `dropTier` both go through it. A composite
+  that cannot be read makes the pass drop nothing, with a warning: what it
+  holds is then unknown.
+- `evictVersions(nums)` evicts several versions with one collection -- the
+  embedded copy's retention, the log's own `evictVersions(keep)`, and the
+  trim and squash paths of `Document.cpp`, which had evicted one by one,
+  each a full collection.
+- An older store moves on when opened writable (`convertHashes`): both tables
+  rebuilt with `fc_hash`, the `part` rows left out, `ref_target` remade.
+
+**F2, the recompute record.** `Document::recompute` notes each object that
+reaches the up-to-date branch (executed, or touched and purged) and each
+whose execute failed, once, with the seconds its `_recomputeFeature` took; the
+record is `{"seconds":S,"objects":[{"id":N,"s":x[,"error":"..."]}]}`. A
+recompute that made nothing up to date writes no record. The replay's reading
+of it (27.34) is unchanged: an object named without an error after its last
+input change is up to date; one not named keeps the touched state it had --
+which is right for an object with no input change (the anchor's state
+stands) and for one the recompute skipped behind a failure (still touched).
+The per-object time is the cost to regenerate that sec 10 wanted for
+eviction and never had. The probe that prompted this: on scanner.FCStd
+every record listed all 615 objects, 19,393 bytes, when an edit to
+`Pad.Length` executes about 25 -- the list was `topoSortedObjects`, which for a
+whole-document recompute is every object -- with the three standing errors
+(`Fillet001`: `BRep_Builder::UpdateVertex`, and two more) repeated in full
+every time.
+
+**F3, the embedded copy.** `embed()` still takes `VACUUM INTO` (the live store
+cannot be edited for it), applies retention to the copy, and now ends with
+`vacuum()`, a new `TransactionStore` call: the copy is what it holds, and
+what it leaves out does not travel as free pages or come back as the live
+store when the file is opened elsewhere.
+
+**T3: the run of T1 again** (100 edits of `Pad.Length`, a save every 10,
+values never repeated):
+
+| after | T1 store | T3 store | T3 save | T3 embedded copy |
+| --- | --- | --- | --- | --- |
+| 20 | 14.7 MB | 10.7 MB | 1.00 s | 8.3 MB |
+| 60 | 21.6 MB | 13.3 MB | 0.96 s | -- |
+| 100 | 28.5 MB | 15.5 MB | 0.98 s | 10.4 MB |
+
+From edit 20 to 100 the store grows **60 KB an edit, was 172**; the save
+time is flat (T1 crept 0.90 -> 1.20 s); the embedded copy is 10.4 MB where
+T1's was 25.3; the recompute records are 745 bytes on average, were 19 KB;
+`ref` with `ref_target` is 0.79 MB in all, where T1 added about 1 MB a
+version. Reopen 1.13 s, compaction 0.005 s, the oldest version 1.11 s,
+restore to it 2.06 s: as T1. The saved file stays 5.7 MB.
+
+**What the other 60 KB an edit is** (the live store kept at the end,
+`SCALE_KEEP_DB`, which the script gained):
+- *`entity`, 35 KB an edit, of which its stored content is 10.* At the end
+  its 1,359 leaf pages hold 2.3 MB of payload and 3.2 MB unused -- 58%
+  empty -- while its 1,761 overflow pages are full. A superseded value is
+  re-encoded in place as a small delta (23.2): its row shrinks, and SQLite
+  rebalances a leaf only once it is under a third full. The rest of the 25
+  KB is presumably that slack; not measured edit by edit.
+- *`manifest`, about 9 KB an edit (90 KB a version).* Every version writes
+  all of its 737 entries, as text hashes, twice over (the rowid table and its
+  `(version, entry)` autoindex), yet the 8,106 rows of ten versions name 845
+  distinct hashes -- one version adds about eleven new members. It is the
+  `part` rows' shape again.
+- `op`, about 7 KB an edit (37 ops, text hashes, three indexes), and `ref`
+  about 6 KB (the `base` and `attach` edges of new values).
+
+**Proposed, not built.**
+- F5: a version's manifest as a content-addressed entity -- an entry list
+  that deltas against the previous version's like a composite -- with the
+  version row naming it and `markHeld` expanding it as it expands a
+  composite; failing that, `manifest` `WITHOUT ROWID` with blob hashes.
+- F6: the leaf slack -- re-encode as delete and insert (the row moves to the
+  end, the old page may merge), or vacuum the live store at a save once the
+  unused share of its pages passes a bound; measure both.
+
+**Gates.** Python 2940 OK (52 skipped, 6 expected failures), ctest 843/843
+(+1: `schema5StorePacksHashesAndReadsComposites` -- a schema 5 store's
+hashes come back as hex, its `part` rows are gone, and a collection keeps
+the composite's value and drops an orphan; `recomputeRecordAndSession`
+now checks the record has no name or environment, leaves out an untouched
+object, and that a recompute with nothing touched writes none), the GUI
+checks RC 15, BC 27, VC 18, PC 28, FC 16. `test_historyCarriesItsBlobs`
+reads the copy's hashes as `lower(hex(hash))`.
+
+**Next.** 27.50 steps 1-4 as ordered, unless F5/F6 come first (user).

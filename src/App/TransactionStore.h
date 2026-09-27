@@ -289,6 +289,8 @@ public:
     /// Remove a version and its manifest, and the entities nothing reaches
     /// any more (sec 16.3, eviction). Ops are never removed by this.
     virtual void evictVersion(int64_t num) = 0;
+    /// evictVersion() of each of `nums`, collected once.
+    virtual void evictVersions(const std::vector<int64_t>& nums) = 0;
     /// Make a version named (kind `named`, never evicted) with `name`; an
     /// empty name makes it unnamed again. False if there is no such version.
     virtual bool nameVersion(int64_t num, const std::string& name) = 0;
@@ -315,6 +317,9 @@ public:
     /// A consistent, compacted copy of the whole store at `path` (SQLite's
     /// VACUUM INTO); the file must not exist. What the embedded mode ships.
     virtual void copyTo(const std::string& path) = 0;
+    /// Rewrite the store without its free pages (SQLite's VACUUM): what
+    /// the embedded copy does once retention has emptied them (sec 27.53).
+    virtual void vacuum() = 0;
     /// Drop every entity of `tier` that no manifest reaches and no delta
     /// is based on (the embedded copy carries no cache tier, sec 13.3).
     /// The ops' refs stay; the entity goes.

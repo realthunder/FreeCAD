@@ -11,6 +11,7 @@
 # size, the log store's size, and the store's entities by tier and encoding.
 # At the end it reopens the file and times the history's operations. Prints
 # one line per save and writes everything to SCALE_OUT as JSON.
+# SCALE_KEEP_DB=path copies the live store there before the reopen.
 
 import json
 import os
@@ -171,6 +172,15 @@ for i in range(edits):
         )
 
 versions = sorted(v["num"] for v in doc.getTransactionVersions())
+keep = env.get("SCALE_KEEP_DB", "")
+if keep:
+    # The live store as it stands, for a closer look (sqlite3's backup
+    # reads through the WAL).
+    src = sqlite3.connect(os.path.join(doc.TransientDir, "history", "log.db"))
+    dst = sqlite3.connect(keep)
+    src.backup(dst)
+    dst.close()
+    src.close()
 FreeCAD.closeDocument(doc.Name)
 
 doc, t = timed(lambda: FreeCAD.openDocument(path))

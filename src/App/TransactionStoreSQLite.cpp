@@ -23,14 +23,21 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+# include <map>
+# include <set>
 # include <sstream>
 #endif
 
 #include <sqlite3.h>
 
+#ifdef FC_HAVE_ZSTD
+# include <zstd.h>
+#endif
+
 #include <Base/Console.h>
 #include <Base/Exception.h>
 
+#include "TransactionLog.h"
 #include "TransactionStore.h"
 
 FC_LOG_LEVEL_INIT("App", true, true)
@@ -38,6 +45,56 @@ FC_LOG_LEVEL_INIT("App", true, true)
 using namespace App;
 
 namespace {
+
+// Schema 6 (docs/TransactionLog.md sec 27.53): an entity's hash, its base
+// and both ends of an edge are the SHA-1's 20 bytes, and `ref` is its key.
+#define FC_ENTITY_COLUMNS                                                              \
+    "(hash BLOB PRIMARY KEY, kind TEXT, enc TEXT, base BLOB, tier TEXT,"         \
+    " size INTEGER, data BLOB)"
+#define FC_REF_COLUMNS                                                                 \
+    "(entity BLOB, target BLOB, role TEXT, name TEXT, seq INTEGER,"                 \
+    " PRIMARY KEY(entity, role, name, target)) WITHOUT ROWID"
+
+int hexDigit(char c)
+{
+    if (c >= '0' && c <= '9')
+        return c - '0';
+    if (c >= 'a' && c <= 'f')
+        return c - 'a' + 10;
+    return -1;
+}
+
+/// A hash as the store keeps it: 40 lowercase hex digits become their 20
+/// bytes; anything else -- empty, or not a SHA-1 -- stays as it is, text,
+/// and reads back unchanged.
+bool packHash(const char* hex, size_t n, unsigned char* out)
+{
+    if (n != 40)
+        return false;
+    for (size_t i = 0; i < 20; ++i) {
+        int hi = hexDigit(hex[2 * i]);
+        int lo = hexDigit(hex[2 * i + 1]);
+        if (hi < 0 || lo < 0)
+            return false;
+        out[i] = static_cast<unsigned char>(hi << 4 | lo);
+    }
+    return true;
+}
+
+/// fc_hash(x): packHash in SQL, for the text hashes the other tables hold
+/// (an op's values, a manifest's entries) where they meet `entity`.
+void sqlHash(sqlite3_context* ctx, int, sqlite3_value** argv)
+{
+    unsigned char packed[20];
+    if (sqlite3_value_type(argv[0]) == SQLITE_TEXT) {
+        const char* t = reinterpret_cast<const char*>(sqlite3_value_text(argv[0]));
+        if (packHash(t, static_cast<size_t>(sqlite3_value_bytes(argv[0])), packed)) {
+            sqlite3_result_blob(ctx, packed, 20, SQLITE_TRANSIENT);
+            return;
+        }
+    }
+    sqlite3_result_value(ctx, argv[0]);
+}
 
 /** The SQLite log (docs/TransactionLog.md sec 13). One database per
  * document history; every append is one SQL transaction, so atomicity
@@ -56,6 +113,9 @@ public:
             db = nullptr;
             throw Base::RuntimeError("Cannot open transaction log " + path + ": " + msg);
         }
+        sqlite3_create_function(db, "fc_hash", 1,
+                                SQLITE_UTF8 | SQLITE_DETERMINISTIC | SQLITE_INNOCUOUS, nullptr,
+                                sqlHash, nullptr, nullptr);
         // Read-only -- the embedded copy as the guard reads it (sec 16.4),
         // a blob file -- is read as it is: no journal mode set, no table
         // made, no schema moved. What the guard reads, `meta`, is in every
@@ -86,14 +146,21 @@ public:
         exec("CREATE TABLE IF NOT EXISTS lastgeoid(cid INTEGER PRIMARY KEY, id INTEGER)");
         exec("CREATE TABLE IF NOT EXISTS manifest(version INTEGER, entry TEXT, hash TEXT,"
              " source TEXT, PRIMARY KEY(version, entry))");
-        if (getMeta("schema") == "1")
-            migrateValues();
-        exec("CREATE TABLE IF NOT EXISTS entity(hash TEXT PRIMARY KEY, kind TEXT, enc TEXT,"
-             " base TEXT, tier TEXT, size INTEGER, data BLOB)");
-        exec("CREATE TABLE IF NOT EXISTS ref(entity TEXT, target TEXT, role TEXT, name TEXT,"
-             " seq INTEGER, PRIMARY KEY(entity, role, name, target))");
-        exec("CREATE INDEX IF NOT EXISTS ref_target ON ref(target, role)");
         const std::string schema = getMeta("schema");
+        if (schema == "1")
+            migrateValues();
+        if (schema.empty()) {
+            exec("CREATE TABLE IF NOT EXISTS entity" FC_ENTITY_COLUMNS);
+            exec("CREATE TABLE IF NOT EXISTS ref" FC_REF_COLUMNS);
+        }
+        else {
+            // The layout before schema 6, which convertHashes() moves on.
+            exec("CREATE TABLE IF NOT EXISTS entity(hash TEXT PRIMARY KEY, kind TEXT, enc TEXT,"
+                 " base TEXT, tier TEXT, size INTEGER, data BLOB)");
+            exec("CREATE TABLE IF NOT EXISTS ref(entity TEXT, target TEXT, role TEXT, name TEXT,"
+                 " seq INTEGER, PRIMARY KEY(entity, role, name, target))");
+        }
+        exec("CREATE INDEX IF NOT EXISTS ref_target ON ref(target, role)");
         if (schema == "1" || schema == "2")
             migrateBlobs();
         if (!schema.empty() && schema < "4" && !hasColumn("txn", "inverts"))
@@ -114,8 +181,38 @@ public:
             exec("INSERT INTO branch(id,name,from_version,from_seq,head_seq,id_base,created,"
                  "closed) VALUES(1,'main',0,0,(SELECT COALESCE(MAX(seq),0) FROM txn),0,"
                  "(SELECT COALESCE(MIN(time),0) FROM txn),0)");
-        if (schema != "5")
-            setMeta("schema", "5");
+        if (!schema.empty() && schema < "6")
+            convertHashes();
+        if (schema != "6")
+            setMeta("schema", "6");
+    }
+
+    /// Schema 6 (sec 27.53): the hashes of `entity` and `ref` as 20-byte
+    /// blobs, `ref` without a rowid, and no `part` edges -- a composite's
+    /// values are read from the composite (heldComposites).
+    void convertHashes()
+    {
+        exec("BEGIN");
+        try {
+            exec("CREATE TABLE entity_6" FC_ENTITY_COLUMNS);
+            exec("INSERT INTO entity_6(hash,kind,enc,base,tier,size,data)"
+                 " SELECT fc_hash(hash),kind,enc,fc_hash(base),tier,size,data FROM entity");
+            exec("DROP TABLE entity");
+            exec("ALTER TABLE entity_6 RENAME TO entity");
+            exec("CREATE TABLE ref_6" FC_REF_COLUMNS);
+            exec("INSERT OR IGNORE INTO ref_6(entity,target,role,name,seq)"
+                 " SELECT fc_hash(entity),fc_hash(target),role,name,seq FROM ref"
+                 " WHERE role<>'part'");
+            exec("DROP INDEX IF EXISTS ref_target");
+            exec("DROP TABLE ref");
+            exec("ALTER TABLE ref_6 RENAME TO ref");
+            exec("CREATE INDEX ref_target ON ref(target, role)");
+            exec("COMMIT");
+        }
+        catch (...) {
+            exec("ROLLBACK");
+            throw;
+        }
     }
 
     bool hasRow(const char* sql)
@@ -279,7 +376,7 @@ public:
     bool hasEntity(const std::string& hash) override
     {
         auto s = prepare("SELECT 1 FROM entity WHERE hash=?");
-        bindText(s, 1, hash);
+        bindHash(s, 1, hash);
         bool found = sqlite3_step(s) == SQLITE_ROW;
         sqlite3_reset(s);
         return found;
@@ -291,10 +388,10 @@ public:
         try {
             auto s = prepare("INSERT OR IGNORE INTO entity(hash,kind,enc,base,tier,size,data)"
                              " VALUES(?,?,?,?,?,?,?)");
-            bindText(s, 1, e.hash);
+            bindHash(s, 1, e.hash);
             bindText(s, 2, e.kind);
             bindText(s, 3, e.enc);
-            bindText(s, 4, e.base);
+            bindHash(s, 4, e.base);
             bindText(s, 5, e.tier);
             sqlite3_bind_int64(s, 6, static_cast<sqlite3_int64>(e.size));
             sqlite3_bind_blob(s, 7, e.data.data(), static_cast<int>(e.data.size()),
@@ -320,7 +417,7 @@ public:
     bool getEntity(const std::string& hash, LogEntity& e) override
     {
         auto s = prepare("SELECT kind,enc,base,tier,size,data FROM entity WHERE hash=?");
-        bindText(s, 1, hash);
+        bindHash(s, 1, hash);
         if (sqlite3_step(s) != SQLITE_ROW) {
             sqlite3_reset(s);
             return false;
@@ -328,7 +425,7 @@ public:
         e.hash = hash;
         e.kind = text(s, 0);
         e.enc = text(s, 1);
-        e.base = text(s, 2);
+        e.base = columnHash(s, 2);
         e.tier = text(s, 3);
         e.size = static_cast<uint64_t>(sqlite3_column_int64(s, 4));
         const void* blob = sqlite3_column_blob(s, 5);
@@ -338,9 +435,9 @@ public:
         e.refs.clear();
         auto r = prepare("SELECT target,role,name FROM ref WHERE entity=? AND role<>'base'"
                          " ORDER BY seq");
-        bindText(r, 1, hash);
+        bindHash(r, 1, hash);
         while (sqlite3_step(r) == SQLITE_ROW)
-            e.refs.push_back(LogRef {text(r, 0), text(r, 1), text(r, 2)});
+            e.refs.push_back(LogRef {columnHash(r, 0), text(r, 1), text(r, 2)});
         sqlite3_reset(r);
         return true;
     }
@@ -352,12 +449,12 @@ public:
         try {
             auto s = prepare("UPDATE entity SET enc=?, base=?, data=? WHERE hash=?");
             bindText(s, 1, enc);
-            bindText(s, 2, base);
+            bindHash(s, 2, base);
             sqlite3_bind_blob(s, 3, data.data(), static_cast<int>(data.size()), SQLITE_TRANSIENT);
-            bindText(s, 4, hash);
+            bindHash(s, 4, hash);
             step(s);
             s = prepare("DELETE FROM ref WHERE entity=? AND role='base'");
-            bindText(s, 1, hash);
+            bindHash(s, 1, hash);
             step(s);
             if (enc == "delta" && !base.empty())
                 insertRef(hash, LogRef {base, "base", ""}, 1 << 30);
@@ -372,7 +469,7 @@ public:
     void addRef(const std::string& entity, const LogRef& r) override
     {
         auto s = prepare("SELECT COALESCE(MAX(seq),-1)+1 FROM ref WHERE entity=? AND role<>'base'");
-        bindText(s, 1, entity);
+        bindHash(s, 1, entity);
         int seq = 0;
         if (sqlite3_step(s) == SQLITE_ROW)
             seq = sqlite3_column_int(s, 0);
@@ -386,7 +483,7 @@ public:
         bindText(s, 1, enc);
         std::vector<std::string> out;
         while (sqlite3_step(s) == SQLITE_ROW)
-            out.push_back(text(s, 0));
+            out.push_back(columnHash(s, 0));
         sqlite3_reset(s);
         return out;
     }
@@ -394,10 +491,10 @@ public:
     std::vector<std::string> basedOn(const std::string& hash) override
     {
         auto s = prepare("SELECT entity FROM ref WHERE target=? AND role='base'");
-        bindText(s, 1, hash);
+        bindHash(s, 1, hash);
         std::vector<std::string> out;
         while (sqlite3_step(s) == SQLITE_ROW)
-            out.push_back(text(s, 0));
+            out.push_back(columnHash(s, 0));
         sqlite3_reset(s);
         return out;
     }
@@ -740,25 +837,137 @@ public:
 
     /// The one collector (sec 23.5): delete every entity not reachable from
     /// a root -- an op's ref or a manifest entry -- over the ref edges, of
-    /// every role. A delta's base and a composite's parts are held the
-    /// same way an attachment is. Inside the caller's transaction.
+    /// every role, and into each composite's values (markHeld). A delta's
+    /// base and a composite's values are held the same way an attachment
+    /// is. Inside the caller's transaction.
     void collectEntities()
     {
-        exec("WITH RECURSIVE live(hash) AS ("
-             "  SELECT vbefore FROM op WHERE vbefore<>''"
-             "  UNION SELECT vafter FROM op WHERE vafter<>''"
-             "  UNION SELECT hash FROM manifest WHERE source='entity'"
-             "  UNION SELECT r.target FROM ref r JOIN live ON r.entity=live.hash)"
-             " DELETE FROM entity WHERE hash NOT IN (SELECT hash FROM live)");
+        if (!markHeld("SELECT vbefore FROM op WHERE vbefore<>''"
+                      " UNION SELECT vafter FROM op WHERE vafter<>''"
+                      " UNION SELECT hash FROM manifest WHERE source='entity'"))
+            return;
+        exec("DELETE FROM entity WHERE hash NOT IN (SELECT hash FROM held)");
         exec("DELETE FROM ref WHERE entity NOT IN (SELECT hash FROM entity)");
+    }
+
+    /** Fill the temporary table `held` with every entity reachable from
+     * `roots` (a query of text hashes): over the ref edges of every role,
+     * and since schema 6 into each composite's skeleton and values, which
+     * the composite's own data lists (sec 27.53) -- no edge repeats them,
+     * one row per value per version as they were. False when a composite
+     * cannot be read: what it holds is then unknown, and the caller drops
+     * nothing.
+     */
+    bool markHeld(const char* roots)
+    {
+        exec("CREATE TEMP TABLE IF NOT EXISTS held(hash PRIMARY KEY) WITHOUT ROWID");
+        exec("DELETE FROM held");
+        exec(("WITH roots(h) AS (" + std::string(roots)
+              + ") INSERT OR IGNORE INTO held SELECT fc_hash(h) FROM roots").c_str());
+        std::set<std::string> expanded;
+        Decoded decoded;
+        for (;;) {
+            exec("WITH RECURSIVE live(hash) AS (SELECT hash FROM held"
+                 "  UNION SELECT r.target FROM ref r JOIN live ON r.entity=live.hash)"
+                 " INSERT OR IGNORE INTO held SELECT hash FROM live");
+            std::vector<std::string> composites;
+            auto s = prepare("SELECT e.hash FROM held h JOIN entity e ON e.hash=h.hash"
+                             " WHERE e.kind='composite'");
+            while (sqlite3_step(s) == SQLITE_ROW) {
+                std::string hash = columnHash(s, 0);
+                if (!expanded.count(hash))
+                    composites.push_back(std::move(hash));
+            }
+            sqlite3_reset(s);
+            if (composites.empty())
+                return true;
+            for (const auto& hash : composites) {
+                expanded.insert(hash);
+                std::string data;
+                TransactionLog::Composite c;
+                if (!readStored(hash, data, decoded) || !c.decode(data)) {
+                    FC_WARN("transaction log: composite " << hash
+                            << " cannot be read; nothing collected");
+                    return false;
+                }
+                auto ins = prepare("INSERT OR IGNORE INTO held(hash) VALUES(?)");
+                bindHash(ins, 1, c.skeleton);
+                step(ins);
+                for (const auto& p : c.parts) {
+                    bindHash(ins, 1, p.hash);
+                    step(ins);
+                }
+            }
+        }
+    }
+
+    /// Bytes decoded during one markHeld(), for the delta chains composites
+    /// share (each version's is based on the next, sec 23.2); dropped
+    /// whole past a bound.
+    struct Decoded
+    {
+        std::map<std::string, std::string> bytes;
+        size_t total {0};
+    };
+
+    /// An entity's full bytes from the store alone: raw, zstd, or a delta
+    /// on another such. A file (23.16) is the log's to read, and no
+    /// composite is one.
+    bool readStored(const std::string& hash, std::string& out, Decoded& decoded, int depth = 0)
+    {
+        auto it = decoded.bytes.find(hash);
+        if (it != decoded.bytes.end()) {
+            out = it->second;
+            return true;
+        }
+        auto s = prepare("SELECT enc,base,size,data FROM entity WHERE hash=?");
+        bindHash(s, 1, hash);
+        if (sqlite3_step(s) != SQLITE_ROW) {
+            sqlite3_reset(s);
+            return false;
+        }
+        const std::string enc = text(s, 0);
+        const std::string base = columnHash(s, 1);
+        const auto size = static_cast<size_t>(sqlite3_column_int64(s, 2));
+        const void* blob = sqlite3_column_blob(s, 3);
+        std::string data(static_cast<const char*>(blob), blob ? sqlite3_column_bytes(s, 3) : 0);
+        sqlite3_reset(s);
+        bool ok = false;
+        if (enc == "raw") {
+            out = std::move(data);
+            ok = true;
+        }
+#ifdef FC_HAVE_ZSTD
+        else if (enc == "zstd") {
+            out.assign(size, '\0');
+            size_t n = ZSTD_decompress(out.data(), out.size(), data.data(), data.size());
+            ok = !ZSTD_isError(n);
+            if (ok)
+                out.resize(n);
+        }
+#endif
+        else if (enc == "delta" && depth < 1024) {
+            std::string b;
+            ok = readStored(base, b, decoded, depth + 1)
+                && TransactionLog::deltaDecode(data, b, size, out);
+        }
+        if (ok) {
+            if (decoded.total > (64u << 20)) {
+                decoded.bytes.clear();
+                decoded.total = 0;
+            }
+            decoded.total += out.size();
+            decoded.bytes[hash] = out;
+        }
+        return ok;
     }
 
     void insertRef(const std::string& entity, const LogRef& r, int seq)
     {
         auto s = prepare("INSERT OR IGNORE INTO ref(entity,target,role,name,seq)"
                          " VALUES(?,?,?,?,?)");
-        bindText(s, 1, entity);
-        bindText(s, 2, r.target);
+        bindHash(s, 1, entity);
+        bindHash(s, 2, r.target);
         bindText(s, 3, r.role);
         bindText(s, 4, r.name);
         sqlite3_bind_int(s, 5, seq);
@@ -772,24 +981,29 @@ public:
         step(s);
     }
 
+    void vacuum() override
+    {
+        exec("VACUUM");
+    }
+
     void dropTier(const std::string& tier) override
     {
         exec("BEGIN");
         try {
-            // Not one a manifest reaches -- through a composite's parts and
-            // an attachment's refs as much as directly (23.3) -- and not
-            // one a surviving delta is based on: the base of a cache-tier
-            // chain is what the durable row above it decodes through.
-            auto s = prepare("WITH RECURSIVE held(hash) AS ("
-                             "  SELECT hash FROM manifest WHERE source='entity'"
-                             "  UNION SELECT r.target FROM ref r JOIN held ON r.entity=held.hash)"
-                             " DELETE FROM entity WHERE tier=?"
-                             " AND hash NOT IN (SELECT hash FROM held)"
-                             " AND hash NOT IN (SELECT target FROM ref WHERE role='base')");
-            bindText(s, 1, tier);
-            step(s);
-            exec("DELETE FROM ref WHERE entity NOT IN (SELECT hash FROM entity)");
-            collectEntities();
+            // Not one a manifest reaches -- through a composite's values
+            // and an attachment's refs as much as directly (23.3) -- and
+            // not one a surviving delta is based on: the base of a
+            // cache-tier chain is what the durable row above it decodes
+            // through.
+            if (markHeld("SELECT hash FROM manifest WHERE source='entity'")) {
+                auto s = prepare("DELETE FROM entity WHERE tier=?"
+                                 " AND hash NOT IN (SELECT hash FROM held)"
+                                 " AND hash NOT IN (SELECT target FROM ref WHERE role='base')");
+                bindText(s, 1, tier);
+                step(s);
+                exec("DELETE FROM ref WHERE entity NOT IN (SELECT hash FROM entity)");
+                collectEntities();
+            }
             exec("COMMIT");
         }
         catch (...) {
@@ -810,14 +1024,21 @@ public:
 
     void evictVersion(int64_t num) override
     {
+        evictVersions({num});
+    }
+
+    void evictVersions(const std::vector<int64_t>& nums) override
+    {
         exec("BEGIN");
         try {
-            auto s = prepare("DELETE FROM manifest WHERE version=?");
-            sqlite3_bind_int64(s, 1, num);
-            step(s);
-            s = prepare("DELETE FROM version WHERE num=?");
-            sqlite3_bind_int64(s, 1, num);
-            step(s);
+            for (int64_t num : nums) {
+                auto s = prepare("DELETE FROM manifest WHERE version=?");
+                sqlite3_bind_int64(s, 1, num);
+                step(s);
+                s = prepare("DELETE FROM version WHERE num=?");
+                sqlite3_bind_int64(s, 1, num);
+                step(s);
+            }
             collectEntities();
             exec("COMMIT");
         }
@@ -1189,6 +1410,31 @@ private:
     {
         const unsigned char* t = sqlite3_column_text(s, col);
         return t ? reinterpret_cast<const char*>(t) : "";
+    }
+
+    /// A hash into a schema 6 column (packHash); every other hash column
+    /// is text.
+    static void bindHash(sqlite3_stmt* s, int i, const std::string& v)
+    {
+        unsigned char packed[20];
+        if (packHash(v.data(), v.size(), packed))
+            sqlite3_bind_blob(s, i, packed, 20, SQLITE_TRANSIENT);
+        else
+            bindText(s, i, v);
+    }
+
+    static std::string columnHash(sqlite3_stmt* s, int col)
+    {
+        if (sqlite3_column_type(s, col) != SQLITE_BLOB || sqlite3_column_bytes(s, col) != 20)
+            return text(s, col);
+        static const char digits[] = "0123456789abcdef";
+        const auto* b = static_cast<const unsigned char*>(sqlite3_column_blob(s, col));
+        std::string out(40, '0');
+        for (int i = 0; i < 20; ++i) {
+            out[2 * i] = digits[b[i] >> 4];
+            out[2 * i + 1] = digits[b[i] & 15];
+        }
+        return out;
     }
 
     sqlite3* db {nullptr};

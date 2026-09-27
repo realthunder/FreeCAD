@@ -6521,8 +6521,8 @@ size_t Document::trimBranch(const std::string& name, int64_t version)
     }
     const std::set<long> named = _objectIdsOfRows(rows);
     store.removeTransactions(rows);
-    for (int64_t num : versions)
-        store.evictVersion(num);
+    if (!versions.empty())
+        store.evictVersions(versions);
     if (current) {
         // The steps that named the rows gone are gone with them.
         clearUndos();
@@ -6580,8 +6580,8 @@ size_t Document::deleteBranch(const std::string& name)
     }
     const std::set<long> named = _objectIdsOfRows(rows);
     store.removeTransactions(rows);
-    for (int64_t num : versions)
-        store.evictVersion(num);
+    if (!versions.empty())
+        store.evictVersions(versions);
     store.removeBranch(branch.id);
     const CompactEstimate estimate = _noteDroppedRows(named);
 
@@ -6819,8 +6819,8 @@ size_t Document::squashVersions(int64_t from, int64_t to)
             named.insert(o.cid);
     }
     store.replaceTransactions(t, ops, drop);
-    for (int64_t num : evict)
-        store.evictVersion(num);
+    if (!evict.empty())
+        store.evictVersions(evict);
     // Steps of this branch's that named the rows gone, gone with them.
     if (chainPoints(store, log->head()).count(last.seq)) {
         clearUndos();
@@ -7806,6 +7806,19 @@ int Document::recompute(const std::vector<App::DocumentObject*> &objs, bool forc
     std::set<App::DocumentObject *> filter;
     size_t idx = 0;
 
+    // For the recompute record (docs/TransactionLog.md sec 27.53): each
+    // object this recompute made up to date or failed on, once, with the
+    // seconds its execute() took -- not every object it looked at.
+    std::vector<std::pair<App::DocumentObject*, double>> done;
+    std::map<App::DocumentObject*, size_t> doneAt;
+    auto noteDone = [&](App::DocumentObject* obj, double seconds) {
+        auto res = doneAt.emplace(obj, done.size());
+        if (res.second)
+            done.emplace_back(obj, seconds);
+        else
+            done[res.first->second].second += seconds;
+    };
+
     FC_TIME_INIT(t2);
 
     bool aborted = false;
@@ -7827,11 +7840,16 @@ int Document::recompute(const std::vector<App::DocumentObject*> &objs, bool forc
                     continue;
                 // ask the object if it should be recomputed
                 bool doRecompute = false;
+                double took = 0;
                 if (obj->mustRecompute()) {
                     doRecompute = true;
                     ++objectCount;
+                    const auto start = std::chrono::steady_clock::now();
                     int res = _recomputeFeature(obj);
+                    took = std::chrono::duration<double>(std::chrono::steady_clock::now() - start)
+                               .count();
                     if(res) {
+                        noteDone(obj, took);
                         if(hasError)
                             *hasError = true;
                         if(res < 0) {
@@ -7846,6 +7864,7 @@ int Document::recompute(const std::vector<App::DocumentObject*> &objs, bool forc
                     }
                 }
                 if(obj->isTouched() || doRecompute) {
+                    noteDone(obj, took);
                     signalRecomputedObject(*obj);
                     GetApplication().signalRecomputedObject(*this, *obj);
                     obj->purgeTouched();
@@ -7914,21 +7933,22 @@ int Document::recompute(const std::vector<App::DocumentObject*> &objs, bool forc
     // at. It is logged after the implicit transaction of the derived writes,
     // so it follows them.
     auto log = getTransactionLog();
-    std::vector<TransactionLog::RecomputedObject> done;
+    std::vector<TransactionLog::RecomputedObject> record;
     if (log) {
-        done.reserve(topoSortedObjects.size());
-        for (auto obj : topoSortedObjects) {
+        record.reserve(done.size());
+        for (const auto& d : done) {
+            auto obj = d.first;
             if (!obj->isAttachedToDocument())
                 continue;
             TransactionLog::RecomputedObject r;
             r.id = obj->getID();
-            r.name = obj->getNameInDocument();
+            r.seconds = d.second;
             r.error = obj->isError();
             if (r.error) {
                 const char* msg = getErrorDescription(obj);
                 r.message = msg ? msg : "";
             }
-            done.push_back(std::move(r));
+            record.push_back(std::move(r));
         }
     }
 
@@ -7936,7 +7956,7 @@ int Document::recompute(const std::vector<App::DocumentObject*> &objs, bool forc
 
     if (log) {
         commitImplicitTransaction();
-        log->onRecompute(done, std::chrono::duration<double>(
+        log->onRecompute(record, std::chrono::duration<double>(
                                    std::chrono::steady_clock::now() - recomputeClock).count());
     }
 

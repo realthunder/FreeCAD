@@ -226,7 +226,13 @@ public:
         inner().evictVersion(num);
         _core.releaseBlobs();
     }
+    void evictVersions(const std::vector<int64_t>& nums) override
+    {
+        inner().evictVersions(nums);
+        _core.releaseBlobs();
+    }
     void copyTo(const std::string& path) override { inner().copyTo(path); }
+    void vacuum() override { inner().vacuum(); }
     void dropTier(const std::string& tier) override
     {
         inner().dropTier(tier);
@@ -839,10 +845,12 @@ TransactionLog::Embedded TransactionLogCore::embed(const std::string& saveDate, 
     const auto versions = copy->versions();
     for (const auto& v : versions)
         newest[v.branch] = v.num;
+    std::vector<int64_t> evicted;
     for (const auto& v : versions) {
         if (v.kind != "named" && newest[v.branch] != v.num)
-            copy->evictVersion(v.num);
+            evicted.push_back(v.num);
     }
+    copy->evictVersions(evicted);
     copy->dropTier("cache");
     // Every blob the copy still holds as a file (23.16): a kept version's,
     // and an op value's. The ones kept as deltas travel inside the copy.
@@ -860,6 +868,10 @@ TransactionLog::Embedded TransactionLogCore::embed(const std::string& saveDate, 
     // version document saved as the file never sets it.
     if (branch)
         copy->setMeta("branch", std::to_string(branch));
+    // The copy was the whole store; what retention took out is free pages,
+    // which would travel in the file and come back as the live store when
+    // it is opened elsewhere (sec 27.53).
+    copy->vacuum();
     copy.reset();
     return out;
 }
@@ -1302,15 +1314,20 @@ void TransactionLog::onRecompute(const std::vector<RecomputedObject>& objects, d
         t.name = "recompute";
         t.time = now();
         t.session = _c._session;
-        // The record, as JSON in the script column: environment, duration,
-        // and per object its id, name, and error text if any.
-        std::string j = "{\"env\":" + std::to_string(_c._environment)
-                      + ",\"seconds\":" + std::to_string(seconds) + ",\"objects\":[";
+        // The record, as JSON in the script column: the duration, and per
+        // object its id, the seconds it took, and its error text if any.
+        // The environment is not repeated: the row's session names it.
+        auto secs = [](double v) {
+            char buf[32];
+            snprintf(buf, sizeof(buf), "%.4g", v);
+            return std::string(buf);
+        };
+        std::string j = "{\"seconds\":" + secs(seconds) + ",\"objects\":[";
         bool first = true;
         for (auto& o : objects) {
             j += first ? "{" : ",{";
             first = false;
-            j += "\"id\":" + std::to_string(o.id) + ",\"name\":\"" + o.name + "\"";
+            j += "\"id\":" + std::to_string(o.id) + ",\"s\":" + secs(o.seconds);
             if (o.error) {
                 j += ",\"error\":\"";
                 for (char c : o.message) {
@@ -1556,12 +1573,12 @@ void TransactionLogCore::evictVersions(long keep)
     // them so that, with the newest, `keep` unnamed versions remain.
     size_t excess = unnamed.size() + 1 > static_cast<size_t>(keep)
                         ? unnamed.size() + 1 - static_cast<size_t>(keep) : 0;
-    for (size_t i = 0; i < excess; ++i) {
-        FC_LOG("transaction log: evict version " << unnamed[i]);
-        _store->evictVersion(unnamed[i]);
-    }
-    if (excess)
-        releaseBlobs();
+    if (!excess)
+        return;
+    unnamed.resize(excess);
+    FC_LOG("transaction log: evict versions " << unnamed.front() << ".." << unnamed.back());
+    _store->evictVersions(unnamed);
+    releaseBlobs();
 }
 
 namespace {
@@ -1987,12 +2004,9 @@ std::string TransactionLogCore::putComposite(const std::string& entry,
     const std::string data = c.encode();
     ce.hash = hashBytes(data);
     if (!_store->hasEntity(ce.hash)) {
+        // No edge per value: the composite's data lists them, and the
+        // collector reads it (sec 27.53).
         ce.refs.push_back(LogRef {c.skeleton, "skeleton", ""});
-        std::unordered_set<std::string> seen;
-        for (const auto& p : c.parts) {
-            if (seen.insert(p.hash).second)
-                ce.refs.push_back(LogRef {p.hash, "part", ""});
-        }
         compressInto(ce, data);
         _store->putEntity(ce);
     }

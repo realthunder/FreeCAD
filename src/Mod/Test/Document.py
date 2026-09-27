@@ -3400,7 +3400,7 @@ class TransactionBranchCases(unittest.TestCase):
         con = sqlite3.connect(dbPath)
         try:
             named = {h for (h,) in con.execute(
-                "SELECT hash FROM entity WHERE kind='blob' AND enc='file'")}
+                "SELECT lower(hex(hash)) FROM entity WHERE kind='blob' AND enc='file'")}
         finally:
             con.close()
         self.assertTrue(named, "the material card is a blob the history holds")

@@ -110,17 +110,20 @@ public:
     int64_t onCommit(const Transaction& txn, const char* kind = "user",
                      const char* origin = "", int64_t inverts = 0);
 
-    /// One recomputed object, for the recompute record.
+    /// One object a recompute made up to date or failed on, for the
+    /// recompute record.
     struct RecomputedObject
     {
         long id;
-        std::string name;
+        double seconds;      ///< in its execute(); 0 when only its touches were purged
         bool error;
         std::string message;
     };
-    /// The recompute pseudo transaction (sec 11): no ops, a record of what
-    /// was recomputed under which environment, how long it took, and how
-    /// each object came out. Written at Document::signalRecomputed.
+    /// The recompute pseudo transaction (sec 11, 27.53): no ops, a record
+    /// of the objects the recompute made up to date or failed on -- not
+    /// every one it looked at -- by id, with the time each took, the error
+    /// text of a failure, and the whole duration. The environment is the
+    /// row's session's. Written at Document::signalRecomputed.
     void onRecompute(const std::vector<RecomputedObject>& objects, double seconds);
 
     /// The archive entries a version holds, as read: (name, bytes), the

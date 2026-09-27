@@ -408,8 +408,28 @@ TEST_F(TransactionLogTest, recomputeRecordAndSession)
     EXPECT_EQ(rec.session, log().session());
     EXPECT_NE(rec.script.find("\"objects\":[{\"id\":" + std::to_string(obj->getID())),
               std::string::npos) << rec.script;
-    EXPECT_NE(rec.script.find("\"name\":\"Obj\""), std::string::npos);
+    // Sec 27.53: by id and time only -- the name is the file's name table's,
+    // the environment the session's -- and only what was recomputed.
+    EXPECT_EQ(rec.script.find("\"name\""), std::string::npos) << rec.script;
+    EXPECT_EQ(rec.script.find("\"env\""), std::string::npos) << rec.script;
+    EXPECT_NE(rec.script.find(",\"s\":"), std::string::npos) << rec.script;
     EXPECT_EQ(rec.script.find("error"), std::string::npos);
+    auto other = make("Other");
+    doc()->recompute();
+    obj->Integer.setValue(4);
+    doc()->recompute();
+    // What was made up to date, not every object looked at: `Other` was
+    // not touched.
+    const auto second = store.transactions().back();
+    ASSERT_EQ(second.kind, "recompute");
+    EXPECT_NE(second.script.find("{\"id\":" + std::to_string(obj->getID()) + ","),
+              std::string::npos) << second.script;
+    EXPECT_EQ(second.script.find("{\"id\":" + std::to_string(other->getID()) + ","),
+              std::string::npos) << second.script;
+    // Nothing touched: no record at all.
+    const auto count = store.transactions().size();
+    doc()->recompute();
+    EXPECT_EQ(store.transactions().size(), count);
     EXPECT_TRUE(store.ops(rec.seq).empty());
     // The implicit transaction holding the write comes before the record.
     EXPECT_EQ(txns[txns.size() - 2].kind, "implicit");
@@ -1816,6 +1836,7 @@ TEST_F(TransactionLogTest, recomputeRecordSurvivesARemovalWithUndoOff)
     doc()->commitTransaction();
     remover->touch();
     temp->touch();
+    const std::string removerId = "{\"id\":" + std::to_string(remover->getID()) + ",";
     doc()->recompute();
     EXPECT_FALSE(doc()->getObject("Temp"));
     // The record is written and names what was recomputed; the removal,
@@ -1823,7 +1844,7 @@ TEST_F(TransactionLogTest, recomputeRecordSurvivesARemovalWithUndoOff)
     auto& store = log().store();
     bool record = false, removal = false;
     for (auto& t : store.transactions()) {
-        if (t.kind == "recompute" && t.script.find("Remover") != std::string::npos)
+        if (t.kind == "recompute" && t.script.find(removerId) != std::string::npos)
             record = true;
         for (auto& o : store.ops(t.seq)) {
             if (o.op == "remove" && o.cname == "Temp")
@@ -1851,12 +1872,13 @@ TEST_F(TransactionLogTest, recomputeRecordSurvivesAnObserverRemovingWithUndoOff)
                 owner.removeObject("Temp");
         });
     temp->touch();
+    const std::string tempId = "{\"id\":" + std::to_string(temp->getID()) + ",";
     doc()->recompute();
     connection.disconnect();
     EXPECT_FALSE(doc()->getObject("Temp"));
     bool record = false;
     for (auto& t : log().store().transactions()) {
-        if (t.kind == "recompute" && t.script.find("Temp") != std::string::npos)
+        if (t.kind == "recompute" && t.script.find(tempId) != std::string::npos)
             record = true;
     }
     EXPECT_TRUE(record);
@@ -2235,7 +2257,7 @@ TEST_F(TransactionLogTest, schema4StoreMovesOntoMain)
     Base::FileInfo(path).setPermissions(Base::FileInfo::ReadWrite);
     {
         auto store = App::TransactionStore::openSQLite(path);
-        EXPECT_EQ(store->getMeta("schema"), "5");
+        EXPECT_EQ(store->getMeta("schema"), "6");
         auto branches = store->branches();
         ASSERT_EQ(branches.size(), 1u);
         EXPECT_EQ(branches[0].name, "main");
@@ -2247,6 +2269,88 @@ TEST_F(TransactionLogTest, schema4StoreMovesOntoMain)
         App::LogVersion v;
         ASSERT_TRUE(store->getVersion(1, v));
         EXPECT_EQ(v.branch, 1);
+    }
+    Base::FileInfo(path).deleteFile();
+}
+
+TEST_F(TransactionLogTest, schema5StorePacksHashesAndReadsComposites)
+{
+    // Schema 6 (docs/TransactionLog.md sec 27.53): the hashes of `entity`
+    // and `ref` become 20-byte blobs, and a composite's `part` edges go --
+    // the collector reads its values from the composite itself.
+    const std::string path = Base::FileInfo::getTempFileName("txnlog-schema5") + ".db";
+    const std::string comp(40, 'c'), skel(40, 'a'), part(40, 'b'), orphan(40, 'd');
+    const std::string data = "skeleton " + skel + "\nc Obj\np 3 " + part + " Integer\n";
+    {
+        auto store = App::TransactionStore::openSQLite(path);
+        store.reset();
+        sqlite3* db = nullptr;
+        ASSERT_EQ(sqlite3_open(path.c_str(), &db), SQLITE_OK);
+        const std::string sql =
+            "UPDATE meta SET value='5' WHERE key='schema';"
+            "DROP TABLE entity; DROP TABLE ref;"
+            "CREATE TABLE entity(hash TEXT PRIMARY KEY, kind TEXT, enc TEXT, base TEXT,"
+            " tier TEXT, size INTEGER, data BLOB);"
+            "CREATE TABLE ref(entity TEXT, target TEXT, role TEXT, name TEXT, seq INTEGER,"
+            " PRIMARY KEY(entity, role, name, target));"
+            "CREATE INDEX IF NOT EXISTS ref_target ON ref(target, role);"
+            "INSERT INTO entity VALUES('" + comp + "','composite','raw','','durable',"
+            + std::to_string(data.size()) + ",CAST('" + data + "' AS BLOB));"
+            "INSERT INTO entity VALUES('" + skel + "','skeleton','raw','','durable',3,"
+            "CAST('<a>' AS BLOB));"
+            "INSERT INTO entity VALUES('" + part + "','prop','raw','','durable',1,"
+            "CAST('1' AS BLOB));"
+            "INSERT INTO entity VALUES('" + orphan + "','prop','raw','','durable',1,"
+            "CAST('2' AS BLOB));"
+            "INSERT INTO ref VALUES('" + comp + "','" + skel + "','skeleton','',0);"
+            "INSERT INTO ref VALUES('" + comp + "','" + part + "','part','',1);"
+            "INSERT INTO version(num,uuid,branch,kind,name,seq,env,docxml_hash,schema,created)"
+            " VALUES(1,'u',1,'named','kept',0,0,'h',5,1.0);"
+            "INSERT INTO manifest VALUES(1,'Document.xml','" + comp + "','entity');";
+        char* err = nullptr;
+        EXPECT_EQ(sqlite3_exec(db, sql.c_str(), nullptr, nullptr, &err), SQLITE_OK)
+            << (err ? err : "");
+        sqlite3_free(err);
+        sqlite3_close(db);
+    }
+    {
+        auto store = App::TransactionStore::openSQLite(path);
+        EXPECT_EQ(store->getMeta("schema"), "6");
+        App::LogEntity e;
+        ASSERT_TRUE(store->getEntity(comp, e));
+        EXPECT_EQ(e.kind, "composite");
+        ASSERT_EQ(e.refs.size(), 1u);
+        EXPECT_EQ(e.refs[0].role, "skeleton");
+        EXPECT_EQ(e.refs[0].target, skel);
+        EXPECT_EQ(store->entitiesStoredAs("raw"),
+                  (std::vector<std::string> {skel, part, comp, orphan}));
+        // A collection: the composite's value is held through its data,
+        // the orphan goes.
+        store->truncate(0);
+        EXPECT_TRUE(store->hasEntity(comp));
+        EXPECT_TRUE(store->hasEntity(skel));
+        EXPECT_TRUE(store->hasEntity(part));
+        EXPECT_FALSE(store->hasEntity(orphan));
+        store->dropTier("durable");
+        EXPECT_TRUE(store->hasEntity(part));
+    }
+    {
+        sqlite3* db = nullptr;
+        ASSERT_EQ(sqlite3_open(path.c_str(), &db), SQLITE_OK);
+        sqlite3_stmt* s = nullptr;
+        ASSERT_EQ(sqlite3_prepare_v2(db, "SELECT typeof(hash), length(hash) FROM entity"
+                                     " UNION ALL SELECT typeof(target), length(target) FROM ref",
+                                     -1, &s, nullptr),
+                  SQLITE_OK);
+        int rows = 0;
+        while (sqlite3_step(s) == SQLITE_ROW) {
+            ++rows;
+            EXPECT_STREQ(reinterpret_cast<const char*>(sqlite3_column_text(s, 0)), "blob");
+            EXPECT_EQ(sqlite3_column_int(s, 1), 20);
+        }
+        sqlite3_finalize(s);
+        EXPECT_EQ(rows, 4);
+        sqlite3_close(db);
     }
     Base::FileInfo(path).deleteFile();
 }
