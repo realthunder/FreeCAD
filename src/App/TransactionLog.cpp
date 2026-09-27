@@ -186,6 +186,9 @@ public:
     std::vector<std::pair<long, long>> lastGeoIds() override { return inner().lastGeoIds(); }
     void addLastGeoIds(const std::vector<std::pair<long, long>>& ids) override
     { inner().addLastGeoIds(ids); }
+    std::vector<long> objectIdsInOps() override { return inner().objectIdsInOps(); }
+    void removeObjectState(const std::vector<long>& ids) override
+    { inner().removeObjectState(ids); }
     void truncate(int64_t before) override
     {
         inner().truncate(before);

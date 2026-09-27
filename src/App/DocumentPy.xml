@@ -462,6 +462,18 @@ rows only it holds, its versions but those another branch forked from.
 Returns the rows removed.</UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="compactFileState">
+      <Documentation>
+        <UserDocu>compactFileState() -> dict
+
+Compact the state the documents of this file share (docs/TransactionLog.md
+sec 27.47): the name and last geometry id of every object nothing refers
+to any more -- no document of the file holds it, no op of the log names
+it, no version has it -- are forgotten, so the name is free again, and the
+strings of the file's hasher nothing holds are dropped. The id counters
+stay. Returns {'names', 'geo_ids', 'strings'}: how many of each went.</UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="squashTransactionVersions">
       <Documentation>
         <UserDocu>squashTransactionVersions(from, to) -> int

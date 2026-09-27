@@ -9072,6 +9072,77 @@ std::string Document::getUniqueObjectName(const char *Name, long id) const
     }
 }
 
+namespace {
+
+/// The object ids a Document.xml's <Objects> list names (sec 27.47).
+void collectObjectIds(const std::string& xml, std::unordered_set<long>& ids)
+{
+    std::size_t pos = xml.find("<Objects");
+    const std::size_t end = xml.find("</Objects>", pos == std::string::npos ? 0 : pos);
+    if (pos == std::string::npos || end == std::string::npos)
+        return;
+    while ((pos = xml.find("<Object ", pos)) != std::string::npos && pos < end) {
+        const std::size_t close = xml.find('>', pos);
+        const std::size_t id = xml.find(" id=\"", pos);
+        if (id != std::string::npos && id < close)
+            ids.insert(std::strtol(xml.c_str() + id + 5, nullptr, 10));
+        pos = close;
+    }
+}
+
+} // namespace
+
+Document::CompactResult Document::compactFileState()
+{
+    // docs/TransactionLog.md sec 27.47. What the retained history can reach
+    // is a version plus the ops after it, so an object alive anywhere in it
+    // is in a version's object list or named by an op: those, and what the
+    // documents of the file hold now, are the objects still referred to.
+    CompactResult result;
+    if (!getTransactionLog())
+        return result;
+    FileHistory& history = getFileHistory();
+    TransactionLogCore& core = TransactionLogCore::of(history);
+    TransactionStore& store = core.store();
+    std::unordered_set<long> used;
+    std::vector<Document*> docs = core.documents();
+    if (std::find(docs.begin(), docs.end(), this) == docs.end())
+        docs.push_back(this);
+    for (auto doc : docs) {
+        for (auto obj : doc->getObjects())
+            used.insert(obj->getID());
+    }
+    for (long id : store.objectIdsInOps())
+        used.insert(id);
+    for (const auto& v : store.versions()) {
+        for (const auto& e : store.manifest(v.num)) {
+            if (e.entry != "Document.xml")
+                continue;
+            CapturedValue value;
+            if (core.readValue(e.hash, value))
+                collectObjectIds(value.fragment, used);
+            else
+                FC_WARN("compact: cannot read Document.xml of version " << v.num);
+        }
+    }
+    const std::size_t geoBefore = history.lastGeoIds().size();
+    const std::vector<long> gone = history.forgetObjects(used, result.names);
+    result.geoIds = geoBefore - history.lastGeoIds().size();
+    if (!gone.empty())
+        store.removeObjectState(gone);
+
+    // The strings nothing but the table holds: dropped, the counter kept, so
+    // no id is handed out again and a version bringing one back is merged.
+    if (const StringHasherRef& hasher = history.hasher()) {
+        const std::size_t before = hasher->size();
+        hasher->compact();
+        result.strings = before - hasher->size();
+    }
+    FC_LOG("compacted the file state of " << getName() << ": " << result.names << " names, "
+           << result.geoIds << " geometry ids, " << result.strings << " strings");
+    return result;
+}
+
 long Document::nextGeoId(const DocumentObject& obj, long floor) const
 {
     if (obj.getID() <= 0)

@@ -28,6 +28,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -152,6 +153,36 @@ public:
             last = id;
     }
     const std::unordered_map<long, long>& lastGeoIds() const { return _lastGeoIds; }
+
+    /** Compaction (docs/TransactionLog.md sec 27.47): forget the name and
+     * the last geometry id of every object not in `used`. The counters stay
+     * where they are. Returns the ids forgotten, and in `names` how many
+     * names went.
+     */
+    std::vector<long> forgetObjects(const std::unordered_set<long>& used, std::size_t& names)
+    {
+        std::unordered_set<long> gone;
+        names = 0;
+        for (auto it = _nameOfId.begin(); it != _nameOfId.end();) {
+            if (used.count(it->first)) {
+                ++it;
+                continue;
+            }
+            _idOfName.erase(it->second);
+            gone.insert(it->first);
+            ++names;
+            it = _nameOfId.erase(it);
+        }
+        for (auto it = _lastGeoIds.begin(); it != _lastGeoIds.end();) {
+            if (used.count(it->first)) {
+                ++it;
+                continue;
+            }
+            gone.insert(it->first);
+            it = _lastGeoIds.erase(it);
+        }
+        return {gone.begin(), gone.end()};
+    }
 
     /** The file's string hasher (sec 27.40 item 2), the one every document
      * of the file hashes element names with, so one shape has one element

@@ -1198,6 +1198,20 @@ PyObject* DocumentPy::deleteTransactionBranch(PyObject *args)
     } PY_CATCH;
 }
 
+PyObject* DocumentPy::compactFileState(PyObject *args)
+{
+    if (!PyArg_ParseTuple(args, ""))
+        return nullptr;
+    PY_TRY {
+        auto r = getDocumentPtr()->compactFileState();
+        Py::Dict d;
+        d.setItem("names", Py::Long(static_cast<unsigned long long>(r.names)));
+        d.setItem("geo_ids", Py::Long(static_cast<unsigned long long>(r.geoIds)));
+        d.setItem("strings", Py::Long(static_cast<unsigned long long>(r.strings)));
+        return Py::new_reference_to(d);
+    } PY_CATCH;
+}
+
 PyObject* DocumentPy::squashTransactionVersions(PyObject *args)
 {
     long long from;

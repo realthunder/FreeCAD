@@ -612,6 +612,31 @@ public:
         exec("COMMIT");
     }
 
+    std::vector<long> objectIdsInOps() override
+    {
+        std::vector<long> out;
+        auto s = prepare("SELECT DISTINCT cid FROM op WHERE ckind='obj'");
+        while (sqlite3_step(s) == SQLITE_ROW)
+            out.push_back(static_cast<long>(sqlite3_column_int64(s, 0)));
+        sqlite3_reset(s);
+        return out;
+    }
+
+    void removeObjectState(const std::vector<long>& ids) override
+    {
+        exec("BEGIN");
+        auto names = prepare("DELETE FROM objname WHERE cid=?");
+        auto geo = prepare("DELETE FROM lastgeoid WHERE cid=?");
+        for (long id : ids) {
+            for (auto s : {names, geo}) {
+                sqlite3_bind_int64(s, 1, id);
+                sqlite3_step(s);
+                sqlite3_reset(s);
+            }
+        }
+        exec("COMMIT");
+    }
+
     void truncate(int64_t before) override
     {
         exec("BEGIN");

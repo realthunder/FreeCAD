@@ -479,6 +479,21 @@ public:
      * branch the document is on. Returns the rows removed.
      */
     size_t deleteBranch(const std::string& name);
+    /// What compactFileState() dropped.
+    struct CompactResult
+    {
+        size_t names = 0;     ///< object names freed
+        size_t geoIds = 0;    ///< objects whose last geometry id was forgotten
+        size_t strings = 0;   ///< strings dropped from the file's hasher
+    };
+    /** Compact the file-scope state (docs/TransactionLog.md sec 27.47): the
+     * name and last geometry id of every object nothing refers to any more
+     * -- no document of the file holds it, no op names it, no version has
+     * it -- are forgotten, in memory and in the store, so the name is free
+     * again; and the strings of the file's hasher nothing holds go. The
+     * counters stay. Nothing without a log.
+     */
+    CompactResult compactFileState();
     /** Squash the rows between versions `from` and `to` (sec 16.7) into one
      * `squash` transaction whose ops are the net change -- undone, replayed
      * and browsed like any. Both versions stay; unnamed ones between go.

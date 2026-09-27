@@ -6541,3 +6541,52 @@ shapes, with their volumes.
 
 Gates: Python 2939 OK; ctest 842/842; recovery 15, branch 27, version 18,
 pin 28, frozen 16 PASS (measured with 27.47 in the tree).
+
+### 27.47 Compacting the file-scope state (user, 2026-09-27)
+
+**Asked:** a way to compact the tables of 27.40 -- go through the history
+and drop the names, strings, ids and so on nothing refers to any more.
+
+**What refers to an object.** What the retained history can reach is a
+retained version plus the ops after it on some chain. So an object alive in
+any reachable state -- including one an expression or a link in a retained
+value names -- is in some version's object list or named by some op. The
+objects still referred to are therefore:
+- every object of every document of the file open now (the log core's
+  documents, the caller included);
+- every object id an op names (`TransactionStore::objectIdsInOps`,
+  `SELECT DISTINCT cid FROM op`);
+- every object in the `<Objects>` list of each retained version's
+  `Document.xml`, read back from the store.
+
+**What goes.** `Document::compactFileState()` (Python
+`doc.compactFileState()`, returning `{'names', 'geo_ids', 'strings'}`):
+- the name and the last geometry id of every other object, in memory
+  (`FileHistory::forgetObjects`) and in the store
+  (`TransactionStore::removeObjectState`, from `objname` and `lastgeoid`)
+  -- the name is free for a new object again;
+- the strings of the file's hasher that nothing but the table holds
+  (`StringHasher::compact`). A string a closed version used and a later
+  open of it brings back is merged in again under its id (27.44).
+
+**What stays: the counters** -- the file's last object id, the hasher's
+last id, and each remaining object's last geometry id. The numbers cost
+nothing; lowering one is the only way a later id could collide with one a
+retained value, an old copy of the file, or a string id held by number
+only still carries. Dropping an entry never renumbers anything.
+
+When: on request only. Trimming and deleting branches, which are what make
+entries unreferenced, do not run it; a caller that trims can call it after.
+
+Test: Python `TransactionBranchCases.testCompactFileState` -- an object and
+a sketch made only on `side` keep their names while the branch exists
+(`Temp001` for a new `Temp`); once `side` is deleted, compaction frees both
+names and the sketch's geometry id, a new `Temp` is `Temp` again with an id
+above the old one, a name still named by undone rows stays taken, and the
+compacted table is what the saved file carries.
+
+Measured on issue360_fillet_spike.FCStd with six versions: 0.09 s, and
+nothing to drop -- every object is live and every string held.
+
+Gates: Python 2939 OK; ctest 842/842; recovery 15, branch 27, version 18,
+pin 28, frozen 16 PASS.

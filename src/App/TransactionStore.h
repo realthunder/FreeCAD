@@ -250,6 +250,10 @@ public:
     virtual std::vector<std::pair<long, long>> lastGeoIds() = 0;
     /// Raise the rows of `ids`, adding the missing ones.
     virtual void addLastGeoIds(const std::vector<std::pair<long, long>>& ids) = 0;
+    /// Every object id an op names (sec 27.47).
+    virtual std::vector<long> objectIdsInOps() = 0;
+    /// Drop the `objname` and `lastgeoid` rows of `ids` (sec 27.47).
+    virtual void removeObjectState(const std::vector<long>& ids) = 0;
 
     /// Drop every transaction with seq < before, and the entities nothing
     /// reaches any more (sec 23.5).

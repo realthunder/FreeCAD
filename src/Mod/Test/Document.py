@@ -3823,3 +3823,48 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertFalse(v.getObject("Fillet").Shape.isNull())
         self.assertAlmostEqual(v.getObject("Fillet").Shape.Volume, volume, places=6)
         self.assertAlmostEqual(v.getObject("Box").Shape.Volume, 7 * 10 * 10, places=6)
+
+    def testCompactFileState(self):
+        # Sec 27.47: a name and a last geometry id nothing refers to any more
+        # -- no document holds the object, no op names it, no version has it
+        # -- are forgotten, and the name is free again; the counters stay.
+        import Part
+
+        doc = self.track(FreeCAD.newDocument("Compact"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        doc.addObject("App::FeatureTest", "Obj")
+        doc.commitTransaction()
+        doc.createTransactionBranch("side")
+        doc.openTransaction("side")
+        temp = doc.addObject("App::FeatureTest", "Temp")
+        tempId = temp.ID
+        sk = doc.addObject("Sketcher::SketchObject", "TempSketch")
+        sk.addGeometry(Part.LineSegment(FreeCAD.Vector(), FreeCAD.Vector(10, 0, 0)))
+        doc.commitTransaction()
+        doc.switchTransactionBranch("main")
+        # Still on a branch: nothing goes.
+        r = doc.compactFileState()
+        self.assertEqual((r["names"], r["geo_ids"]), (0, 0))
+        doc.openTransaction("taken")
+        self.assertEqual(doc.addObject("App::FeatureTest", "Temp").Name, "Temp001")
+        doc.commitTransaction()
+        doc.undo()
+        doc.deleteTransactionBranch("side")
+        r = doc.compactFileState()
+        # Temp and TempSketch; Temp001 is still named by the undone rows.
+        self.assertEqual(r["names"], 2)
+        self.assertEqual(r["geo_ids"], 1)
+        self.assertIn("strings", r)
+        doc.openTransaction("again")
+        again = doc.addObject("App::FeatureTest", "Temp")
+        doc.commitTransaction()
+        self.assertEqual(again.Name, "Temp")
+        self.assertGreater(again.ID, tempId)
+        # And it stays compact in the file.
+        path = os.path.join(self.dir, "compact.FCStd")
+        doc.saveAs(path)
+        FreeCAD.closeDocument(doc.Name)
+        doc = self.track(FreeCAD.openDocument(path))
+        self.assertEqual(doc.addObject("Sketcher::SketchObject", "TempSketch").Name, "TempSketch")
+        self.assertEqual(doc.addObject("App::FeatureTest", "Temp").Name, "Temp002")
