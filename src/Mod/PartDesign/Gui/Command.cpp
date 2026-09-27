@@ -2300,9 +2300,13 @@ void CmdPartDesignLinearPattern::activated(int iMsg)
                 direction = true;
             }
         }
-        if (!direction)
+        if (!direction) {
             Gui::cmdAppObject(Feat, std::ostringstream() <<"Direction = ("
                     << Gui::Command::getObjectCmd(pcActiveBody->getOrigin()->getX())<<",[''])");
+            // The second direction beside it, as for a sketch (upstream b4f988f449)
+            Gui::cmdAppObject(Feat, std::ostringstream() <<"Direction2 = ("
+                    << Gui::Command::getObjectCmd(pcActiveBody->getOrigin()->getY())<<",[''])");
+        }
 
         Gui::cmdAppObject(Feat, std::ostringstream() <<"Length = 100");
         Gui::cmdAppObject(Feat, std::ostringstream() <<"Occurrences = 2");
