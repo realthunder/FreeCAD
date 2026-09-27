@@ -23,11 +23,15 @@
 
 #include "PreCompiled.h"
 
+#include <QHBoxLayout>
+
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/Origin.h>
 #include <Base/Console.h>
+#include <Base/Converter.h>
 #include <Base/ExceptionSafeCall.h>
+#include <Base/Rotation.h>
 #include <Base/Tools.h>
 #include <Gui/Application.h>
 #include <Gui/CommandT.h>
@@ -48,31 +52,68 @@
 using namespace PartDesignGui;
 using namespace Gui;
 
+namespace {
+
+using RevolMethod = PartDesign::Revolved::RevolMethod;
+
+bool isGrooveView(PartDesignGui::ViewProvider* vp)
+{
+    return vp && vp->getObject() && vp->getObject()->isDerivedFrom<PartDesign::Groove>();
+}
+
+/// A link for Python: an object with no element is written with an empty one
+std::string linkStr(const App::PropertyLinkSub &link)
+{
+    const auto &subs = link.getSubValues();
+    return buildLinkSingleSubPythonStr(link.getValue(),
+                                       subs.empty() ? std::vector<std::string>{""} : subs);
+}
+
+} // anonymous namespace
+
 /* TRANSLATOR PartDesignGui::TaskRevolutionParameters */
 
 TaskRevolutionParameters::TaskRevolutionParameters(PartDesignGui::ViewProvider* RevolutionView, QWidget *parent)
-    : TaskSketchBasedParameters(RevolutionView, parent, "PartDesign_Revolution", tr("Revolution parameters")),
+    : TaskSketchBasedParameters(RevolutionView, parent,
+                                isGrooveView(RevolutionView) ? "PartDesign_Groove" : "PartDesign_Revolution",
+                                isGrooveView(RevolutionView) ? tr("Groove parameters")
+                                                             : tr("Revolution parameters")),
       ui(new Ui_TaskRevolutionParameters),
       proxy(new QWidget(this)),
-      isGroove(false)
+      isGroove(isGrooveView(RevolutionView))
 {
     // we need a separate container widget to add all controls to
     ui->setupUi(proxy);
 
     ui->axis->setMouseTracking(true);
     ui->axis->installEventFilter(this);
-    ui->lineFaceName->setMouseTracking(true);
-    ui->lineFaceName->installEventFilter(this);
 
     this->initUI(proxy);
     this->groupLayout()->addWidget(proxy);
 
-    PartDesign::ProfileBased* pcFeat = static_cast<PartDesign::ProfileBased*>(vp->getObject());
-    if (pcFeat->isDerivedFrom(PartDesign::Revolution::getClassTypeId())) {
-        ui->revolveAngle->bind(static_cast<PartDesign::Revolution *>(pcFeat)->Angle);
-    } else if (pcFeat->isDerivedFrom(PartDesign::Groove::getClassTypeId())) {
-        ui->revolveAngle->bind(static_cast<PartDesign::Groove *> (pcFeat)->Angle);
-    }
+    PartDesign::Revolved* feat = getRevolved();
+    ui->revolveAngle->bind(feat->Angle);
+    ui->revolveAngle2->bind(feat->Angle2);
+    ui->startOffsetEdit->bind(feat->StartOffset);
+
+    // The up-to faces, one per side, picked like the Pad's
+    upToWidget = makeUpToWidget(ui->upToFaceHolder, feat->UpToFace, SelectionMode::refUpTo);
+    upToWidget2 = makeUpToWidget(ui->upToFaceHolder2, feat->UpToFace2, SelectionMode::refUpTo2);
+    // Where it starts, with StartType Reference (upstream a4b3950ac1): one
+    // face, a datum plane or a sketch, picked like the up-to faces
+    startWidget = new LinkSubWidget(this, tr("Reference"), feat->StartReference,
+                                    /*singleElement*/true);
+    startWidget->setSelectionMode(SelectionMode::refStart);
+    startWidget->setHideLinked(false);
+    startWidget->setSelectionConfig(AllowSelection::FACE
+                                    | AllowSelection::OTHERBODY
+                                    | AllowSelection::WHOLE);
+    startWidget->setPickFilter([this](const Gui::SelectionChanges &msg, App::SubObjectT &objT) {
+        return filterUpToPick(msg, objT);
+    });
+    auto layout = new QHBoxLayout(ui->startReferenceHolder);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->addWidget(startWidget);
 
     refresh();
     setFocus ();
@@ -92,10 +133,37 @@ TaskRevolutionParameters::TaskRevolutionParameters(PartDesignGui::ViewProvider* 
 
     onAxisButton(true);
 
-    addBlinkWidget(ui->lineFaceName);
     connectSignals();
 
     setupGizmos(RevolutionView);
+}
+
+PartDesign::Revolved* TaskRevolutionParameters::getRevolved() const
+{
+    auto feat = vp ? Base::freecad_dynamic_cast<PartDesign::Revolved>(vp->getObject()) : nullptr;
+    if (!feat)
+        THROWM(Base::TypeError, "The object is neither a Groove nor a Revolution.")
+    return feat;
+}
+
+LinkSubWidget *TaskRevolutionParameters::makeUpToWidget(QWidget *holder,
+                                                        App::PropertyLinkSub &prop,
+                                                        SelectionMode mode)
+{
+    auto widget = new LinkSubWidget(this, tr("Face"), prop, /*singleElement*/true);
+    widget->setSelectionMode(mode);
+    // what the revolution goes up to stays in sight
+    widget->setHideLinked(false);
+    widget->setSelectionConfig(AllowSelection::FACE
+                               | AllowSelection::OTHERBODY
+                               | AllowSelection::WHOLE);
+    widget->setPickFilter([this](const Gui::SelectionChanges &msg, App::SubObjectT &objT) {
+        return filterUpToPick(msg, objT);
+    });
+    auto layout = new QHBoxLayout(holder);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->addWidget(widget);
+    return widget;
 }
 
 void TaskRevolutionParameters::setupGizmos(ViewProvider* vp)
@@ -104,10 +172,19 @@ void TaskRevolutionParameters::setupGizmos(ViewProvider* vp)
         return;
     }
 
-    rotationGizmo = new Gui::RadialGizmo(ui->revolveAngle);
-    rotationGizmo2 = new Gui::RadialGizmo(ui->revolveAngle2);
+    // A click on an angle gizmo that does not drag it turns the revolution
+    const auto toggleReversed = [this] {
+        if (ui->checkBoxReversed->isEnabled())
+            ui->checkBoxReversed->setChecked(!ui->checkBoxReversed->isChecked());
+    };
 
-    gizmoContainer = GizmoContainer::create({rotationGizmo, rotationGizmo2}, vp);
+    rotationGizmo = new Gui::RadialGizmo(ui->revolveAngle);
+    rotationGizmo->setClickCallback(toggleReversed);
+    rotationGizmo2 = new Gui::RadialGizmo(ui->revolveAngle2);
+    rotationGizmo2->setClickCallback(toggleReversed);
+    startOffsetGizmo = new Gui::RotationGizmo(ui->startOffsetEdit);
+
+    gizmoContainer = GizmoContainer::create({rotationGizmo, rotationGizmo2, startOffsetGizmo}, vp);
     rotationGizmo->flipArrow();
     rotationGizmo2->flipArrow();
 
@@ -123,41 +200,23 @@ void TaskRevolutionParameters::setGizmoPositions()
         return;
     }
 
-    Base::Vector3d profileCog;
-    Base::Vector3d basePos;
-    Base::Vector3d axisDir;
-    bool reversed = false;
-    bool symmetric = false;
-    std::string sideType;
-
-    auto getFeatureProps = [&](auto* feature) {
-        if (!feature || feature->isError()) {
-            return false;
-        }
-        Part::TopoShape profile = feature->getProfileShape();
-
-        profile.getCenterOfGravity(profileCog);
-        basePos = feature->Base.getValue();
-        axisDir = feature->Axis.getValue();
-        reversed = feature->Reversed.getValue();
-        symmetric = feature->Midplane.getValue();
-        sideType = std::string(feature->Type.getValueAsString());
-        return true;
-    };
-
-    auto obj = vp ? vp->getObject() : nullptr;
-    bool ret;
-    if (isGroove) {
-        ret = getFeatureProps(dynamic_cast<PartDesign::Groove*>(obj));
-    }
-    else {
-        ret = getFeatureProps(dynamic_cast<PartDesign::Revolution*>(obj));
-    }
-
-    gizmoContainer->visible = ret;
-    if (!ret) {
+    auto feature = getRevolved();
+    if (!feature || feature->isError()) {
+        gizmoContainer->visible = false;
         return;
     }
+    gizmoContainer->visible = true;
+
+    Base::Vector3d profileCog;
+    Part::TopoShape profile = feature->getProfileShape();
+    profile.getCenterOfGravity(profileCog);
+    const Base::Vector3d basePos = feature->Base.getValue();
+    Base::Vector3d axisDir = feature->Axis.getValue();
+    const bool reversed = feature->Reversed.getValue();
+    const std::string sideType = feature->SideType.getValueAsString();
+    const bool symmetric = sideType == "Symmetric";
+    const auto method = PartDesign::Revolved::methodOf(feature->Type);
+    const auto method2 = PartDesign::Revolved::methodOf(feature->Type2);
 
     auto diff = profileCog - basePos;
     axisDir.Normalize();
@@ -167,16 +226,36 @@ void TaskRevolutionParameters::setGizmoPositions()
     if (reversed) {
         axisDir = -axisDir;
     }
+    // Reversed does not turn a symmetric revolution's start (Revolved::startAxis)
+    const Base::Vector3d startAxisDir = reversed && symmetric ? -axisDir : axisDir;
 
-    rotationGizmo->Gizmo::setDraggerPlacement(basePos + axisComp, normalComp);
+    // The angles are measured from the start, wherever StartType puts it;
+    // the start offset from where the reference is met
+    Base::Vector3d startDirection = normalComp;
+    Base::Vector3d referenceDirection = normalComp;
+    try {
+        const double start = feature->getStartOffset();
+        startDirection = Base::Rotation(startAxisDir, Base::toRadians(start)).multVec(normalComp);
+        referenceDirection = Base::Rotation(startAxisDir,
+                Base::toRadians(start - feature->StartOffset.getValue())).multVec(normalComp);
+    }
+    catch (const Base::Exception&) {
+    }
+
+    const Base::Vector3d axisPosition = basePos + axisComp;
+    rotationGizmo->Gizmo::setDraggerPlacement(axisPosition, startDirection);
     rotationGizmo->getDraggerContainer()->setArcNormalDirection(Base::convertTo<SbVec3f>(axisDir));
-    rotationGizmo->setVisibility(sideType == "Angle" || sideType == "TwoAngles");
+    rotationGizmo->setVisibility(method == RevolMethod::Angle);
 
-    rotationGizmo2->Gizmo::setDraggerPlacement(basePos + axisComp, normalComp);
+    rotationGizmo2->Gizmo::setDraggerPlacement(axisPosition, startDirection);
     rotationGizmo2->getDraggerContainer()->setArcNormalDirection(Base::convertTo<SbVec3f>(-axisDir));
-    rotationGizmo2->setVisibility(sideType == "TwoAngles");
+    rotationGizmo2->setVisibility(sideType == "Two sides" && method2 == RevolMethod::Angle);
 
-    if (sideType == "TwoAngles" || !symmetric) {
+    startOffsetGizmo->Gizmo::setDraggerPlacement(axisPosition, referenceDirection);
+    startOffsetGizmo->getDraggerContainer()->setArcNormalDirection(Base::convertTo<SbVec3f>(startAxisDir));
+    startOffsetGizmo->setVisibility(strcmp(feature->StartType.getValueAsString(), "Profile plane") != 0);
+
+    if (!symmetric) {
         rotationGizmo->setMultFactor(defaultGizmoMultFactor);
     }
     else {
@@ -205,18 +284,9 @@ void TaskRevolutionParameters::onAxisButton(bool checked)
 
 void TaskRevolutionParameters::onSelectionModeChanged(SelectionMode)
 {
-    ui->buttonFace->setChecked(false);
-    ui->buttonAxis->setChecked(false);
-    switch(getSelectionMode()) {
-    case SelectionMode::refAxis:
-        ui->buttonAxis->setChecked(true);
-        break;
-    case SelectionMode::refAdd:
-        ui->buttonFace->setChecked(true);
-        break;
-    default:
-        break;
-    }
+    // The reference widgets follow the mode themselves
+    QSignalBlocker blocker(ui->buttonAxis);
+    ui->buttonAxis->setChecked(getSelectionMode() == SelectionMode::refAxis);
 }
 
 void TaskRevolutionParameters::refresh()
@@ -228,91 +298,31 @@ void TaskRevolutionParameters::refresh()
     for (QWidget* child : proxy->findChildren<QWidget*>())
         child->blockSignals(true);
 
-    //bind property mirrors
-    if (auto rev = Base::freecad_dynamic_cast<PartDesign::Revolution>(vp->getObject())) {
-        this->propAngle = &(rev->Angle);
-        this->propAngle2 = &(rev->Angle2);
-        this->propMidPlane = &(rev->Midplane);
-        this->propReferenceAxis = &(rev->ReferenceAxis);
-        this->propReversed = &(rev->Reversed);
-        this->propUpToFace = &(rev->UpToFace);
-        ui->revolveAngle->bind(rev->Angle);
-        ui->revolveAngle2->bind(rev->Angle2);
-    }
-    else if (auto rev = Base::freecad_dynamic_cast<PartDesign::Groove>(vp->getObject())) {
-        isGroove = true;
-        this->propAngle = &(rev->Angle);
-        this->propAngle2 = &(rev->Angle2);
-        this->propMidPlane = &(rev->Midplane);
-        this->propReferenceAxis = &(rev->ReferenceAxis);
-        this->propReversed = &(rev->Reversed);
-        this->propUpToFace = &(rev->UpToFace);
-        ui->revolveAngle->bind(rev->Angle);
-        ui->revolveAngle2->bind(rev->Angle2);
-    }
-    else {
-        THROWM(Base::TypeError, "The object is neither a Groove nor a Revolution.")
-    }
+    PartDesign::Revolved* feat = getRevolved();
 
-    ui->checkBoxMidplane->setChecked(propMidPlane->getValue());
-    ui->checkBoxReversed->setChecked(propReversed->getValue());
+    ui->startMode->setCurrentIndex(feat->StartType.getValue());
+    ui->startOffsetEdit->setValue(feat->StartOffset.getValue());
+    ui->sideTypeCB->setCurrentIndex(feat->SideType.getValue());
+    ui->checkBoxReversed->setChecked(feat->Reversed.getValue());
 
-    ui->revolveAngle->setValue(propAngle->getValue());
-    ui->revolveAngle->setMaximum(propAngle->getMaximum());
-    ui->revolveAngle->setMinimum(propAngle->getMinimum());
+    ui->revolveAngle->setMinimum(feat->Angle.getMinimum());
+    ui->revolveAngle->setMaximum(feat->Angle.getMaximum());
+    ui->revolveAngle->setValue(feat->Angle.getValue());
+    ui->revolveAngle2->setMinimum(feat->Angle2.getMinimum());
+    ui->revolveAngle2->setMaximum(feat->Angle2.getMaximum());
+    ui->revolveAngle2->setValue(feat->Angle2.getValue());
 
-    App::DocumentObject* obj = propUpToFace->getValue();
-    std::vector<std::string> subStrings = propUpToFace->getSubValues();
-    std::string upToFace;
-    int faceId = -1;
-    if (obj && !subStrings.empty()) {
-        upToFace = subStrings.front();
-        if (upToFace.compare(0, 4, "Face") == 0)
-            faceId = std::atoi(&upToFace[4]);
+    translateModeList(ui->changeMode, static_cast<int>(PartDesign::Revolved::methodOf(feat->Type)));
+    translateModeList(ui->changeMode2, static_cast<int>(PartDesign::Revolved::methodOf(feat->Type2)));
+
+    for (auto widget : {upToWidget, upToWidget2, startWidget}) {
+        if (widget)
+            widget->refresh();
     }
-
-    // Set object labels
-    if (obj && PartDesign::Feature::isDatum(obj)) {
-        ui->lineFaceName->setText(QString::fromUtf8(obj->Label.getValue()));
-        ui->lineFaceName->setProperty("FeatureName", QByteArray(obj->getNameInDocument()));
-    }
-    else if (obj && faceId >= 0) {
-        ui->lineFaceName->setText(QStringLiteral("%1:%2%3")
-                                  .arg(QString::fromUtf8(obj->Label.getValue()),
-                                       tr("Face"),
-                                       QString::number(faceId)));
-        ui->lineFaceName->setProperty("FeatureName", QByteArray(obj->getNameInDocument()));
-    }
-    else {
-        ui->lineFaceName->clear();
-        ui->lineFaceName->setProperty("FeatureName", QVariant());
-    }
-
-    ui->lineFaceName->setProperty("FaceName", QByteArray(upToFace.c_str()));
-    int index = 0;
-
-    // TODO: This should also be implemented for groove
-    if (!isGroove) {
-        PartDesign::Revolution* rev = static_cast<PartDesign::Revolution*>(vp->getObject());
-        ui->revolveAngle2->setValue(propAngle2->getValue());
-        ui->revolveAngle2->setMaximum(propAngle2->getMaximum());
-        ui->revolveAngle2->setMinimum(propAngle2->getMinimum());
-
-        index = rev->Type.getValue();
-    }
-    else {
-        PartDesign::Groove* rev = static_cast<PartDesign::Groove*>(vp->getObject());
-        ui->revolveAngle2->setValue(propAngle2->getValue());
-        ui->revolveAngle2->setMaximum(propAngle2->getMaximum());
-        ui->revolveAngle2->setMinimum(propAngle2->getMinimum());
-
-        index = rev->Type.getValue();
-    }
-
-    translateModeList(index);
 
     blockUpdate = false;
 
+    updateStartUI();
     updateUI();
     TaskSketchBasedParameters::refresh();
 
@@ -320,20 +330,19 @@ void TaskRevolutionParameters::refresh()
         child->blockSignals(false);
 }
 
-void TaskRevolutionParameters::translateModeList(int index)
+void TaskRevolutionParameters::translateModeList(QComboBox *combo, int index)
 {
-    ui->changeMode->clear();
-    ui->changeMode->addItem(tr("Dimension"));
+    combo->clear();
+    combo->addItem(tr("Angle"));
     if (!isGroove) {
-        ui->changeMode->addItem(tr("To last"));
+        combo->addItem(tr("To last"));
     }
     else {
-        ui->changeMode->addItem(tr("Through all"));
+        combo->addItem(tr("Through all"));
     }
-    ui->changeMode->addItem(tr("To first"));
-    ui->changeMode->addItem(tr("Up to face"));
-    ui->changeMode->addItem(tr("Two dimensions"));
-    ui->changeMode->setCurrentIndex(index);
+    combo->addItem(tr("To first"));
+    combo->addItem(tr("Up to face"));
+    combo->setCurrentIndex(index >= 0 && index < combo->count() ? index : 0);
 }
 
 void TaskRevolutionParameters::fillAxisCombo(bool forceRefill)
@@ -382,8 +391,9 @@ void TaskRevolutionParameters::fillAxisCombo(bool forceRefill)
     //add current link, if not in list
     //first, figure out the item number for current axis
     int indexOfCurrent = -1;
-    App::DocumentObject* ax = propReferenceAxis->getValue();
-    const std::vector<std::string> &subList = propReferenceAxis->getSubValues();
+    const App::PropertyLinkSub &refAxis = getRevolved()->ReferenceAxis;
+    App::DocumentObject* ax = refAxis.getValue();
+    const std::vector<std::string> &subList = refAxis.getSubValues();
     for (size_t i = 0; i < axesInList.size(); i++) {
         if (ax == axesInList[i]->getValue() && subList == axesInList[i]->getSubValues())
             indexOfCurrent = i;
@@ -412,70 +422,50 @@ void TaskRevolutionParameters::addAxisToCombo(App::DocumentObject* linkObj,
     lnk.setValue(linkObj,std::vector<std::string>(1,linkSubname));
 }
 
-void TaskRevolutionParameters::setCheckboxes(PartDesign::Revolution::RevolMethod mode)
+void TaskRevolutionParameters::setCheckboxes()
 {
-    // disable/hide everything unless we are sure we don't need it
-    // exception: the direction parameters are in any case visible
-    bool isRevolveAngleVisible = false;
-    bool isRevolveAngle2Visible = false;
-    bool isMidplaneEnabled = false;
-    bool isMidplaneVisible = false;
-    bool isReversedEnabled = false;
-    bool isFaceEditEnabled = false;
+    const int sideType = ui->sideTypeCB->currentIndex();
+    const bool twoSides = sideType == 1;
+    const bool symmetric = sideType == 2;
+    const auto method = static_cast<RevolMethod>(ui->changeMode->currentIndex());
+    const auto method2 = static_cast<RevolMethod>(ui->changeMode2->currentIndex());
 
-    if (mode == PartDesign::Revolution::RevolMethod::Angle) {
-        isRevolveAngleVisible = true;
-        ui->revolveAngle->selectNumber();
-        QMetaObject::invokeMethod(ui->revolveAngle, "setFocus", Qt::QueuedConnection);
-        isMidplaneVisible = true;
-        isMidplaneEnabled = true;
-        // Reverse only makes sense if Midplane is not true
-        isReversedEnabled = !ui->checkBoxMidplane->isChecked();
-    }
-    else if (mode == PartDesign::Revolution::RevolMethod::ThroughAll && isGroove) {
-        isMidplaneEnabled = true;
-        isMidplaneVisible = true;
-        isReversedEnabled = !ui->checkBoxMidplane->isChecked();
-    }
-    else if (mode == PartDesign::Revolution::RevolMethod::ToLast && !isGroove) {
-        isReversedEnabled = true;
-    }
-    else if (mode == PartDesign::Revolution::RevolMethod::ToFirst) {
-        isReversedEnabled = true;
-    }
-    else if (mode == PartDesign::Revolution::RevolMethod::ToFace) {
-        isReversedEnabled = true;
-        isFaceEditEnabled = true;
-        QMetaObject::invokeMethod(ui->lineFaceName, "setFocus", Qt::QueuedConnection);
-        // Go into reference selection mode if no face has been selected yet
-        if (ui->lineFaceName->property("FeatureName").isNull())
-            ui->buttonFace->setChecked(true);
-    }
-    else if (mode == PartDesign::Revolution::RevolMethod::TwoAngles) {
-        isRevolveAngleVisible = true;
-        isRevolveAngle2Visible = true;
-        isReversedEnabled = true;
-    }
+    const bool angle = method == RevolMethod::Angle;
+    ui->labelAngle->setVisible(angle);
+    ui->revolveAngle->setVisible(angle);
+    ui->revolveAngle->setEnabled(angle);
+    ui->upToFaceHolder->setVisible(method == RevolMethod::ToFace);
 
-    ui->revolveAngle->setVisible(isRevolveAngleVisible);
-    ui->revolveAngle->setEnabled(isRevolveAngleVisible);
-    ui->labelAngle->setVisible(isRevolveAngleVisible);
+    ui->groupBoxSide2->setVisible(twoSides);
+    const bool angle2 = method2 == RevolMethod::Angle;
+    ui->labelAngle2->setVisible(angle2);
+    ui->revolveAngle2->setVisible(angle2);
+    ui->revolveAngle2->setEnabled(twoSides && angle2);
+    ui->upToFaceHolder2->setVisible(method2 == RevolMethod::ToFace);
 
-    ui->revolveAngle2->setVisible(isRevolveAngle2Visible);
-    ui->revolveAngle2->setEnabled(isRevolveAngle2Visible);
-    ui->labelAngle2->setVisible(isRevolveAngle2Visible);
+    // Turning a symmetric sweep makes the same solid
+    const bool throughAll = isGroove && method == RevolMethod::ThroughAll;
+    ui->checkBoxReversed->setEnabled(!(symmetric && (angle || throughAll)));
 
-    ui->checkBoxMidplane->setEnabled(isMidplaneEnabled);
-    ui->checkBoxMidplane->setVisible(isMidplaneVisible);
-
-    ui->checkBoxReversed->setEnabled(isReversedEnabled);
-
-    ui->buttonFace->setEnabled(isFaceEditEnabled);
-    ui->lineFaceName->setEnabled(isFaceEditEnabled);
-    if (!isFaceEditEnabled) {
-        ui->buttonFace->setChecked(false);
-    }
+    // Leave a face pick that has no row to show it
+    if (method != RevolMethod::ToFace && getSelectionMode() == SelectionMode::refUpTo)
+        exitSelectionMode();
+    if ((!twoSides || method2 != RevolMethod::ToFace)
+            && getSelectionMode() == SelectionMode::refUpTo2)
+        exitSelectionMode();
 }
+
+void TaskRevolutionParameters::updateStartUI()
+{
+    const int type = ui->startMode->currentIndex();
+    ui->labelStartOffset->setVisible(type != 0);
+    ui->startOffsetEdit->setVisible(type != 0);
+    ui->startReferenceHolder->setVisible(type == 2);
+    // Leave the start pick once there is no reference to pick
+    if (type != 2 && getSelectionMode() == SelectionMode::refStart)
+        exitSelectionMode();
+}
+
 void TaskRevolutionParameters::connectSignals()
 {
     QMetaObject::connectSlotsByName(this);
@@ -483,17 +473,20 @@ void TaskRevolutionParameters::connectSignals()
                   this, &TaskRevolutionParameters::onAngleChanged);
     Base::connect(ui->revolveAngle2, qOverload<double>(&Gui::QuantitySpinBox::valueChanged),
                  this, &TaskRevolutionParameters::onAngle2Changed);
+    Base::connect(ui->startOffsetEdit, qOverload<double>(&Gui::QuantitySpinBox::valueChanged),
+                 this, &TaskRevolutionParameters::onStartOffsetChanged);
     Base::connect(ui->axis, QOverload<int>::of(&QComboBox::currentIndexChanged),
                   this, &TaskRevolutionParameters::onAxisChanged);
-    Base::connect(ui->checkBoxMidplane, &QCheckBox::toggled, this, &TaskRevolutionParameters::onMidplane);
     Base::connect(ui->checkBoxReversed, &QCheckBox::toggled, this, &TaskRevolutionParameters::onReversed);
     Base::connect(ui->buttonAxis, &QPushButton::clicked, this, &TaskRevolutionParameters::onAxisButton);
     Base::connect(ui->changeMode, qOverload<int>(&QComboBox::currentIndexChanged),
                  this, &TaskRevolutionParameters::onModeChanged);
-    Base::connect(ui->buttonFace, &QPushButton::toggled,
-                 this, &TaskRevolutionParameters::onButtonFace);
-    Base::connect(ui->lineFaceName, &QLineEdit::textEdited,
-                 this, &TaskRevolutionParameters::onFaceName);
+    Base::connect(ui->changeMode2, qOverload<int>(&QComboBox::currentIndexChanged),
+                 this, &TaskRevolutionParameters::onMode2Changed);
+    Base::connect(ui->sideTypeCB, qOverload<int>(&QComboBox::currentIndexChanged),
+                 this, &TaskRevolutionParameters::onSideTypeChanged);
+    Base::connect(ui->startMode, qOverload<int>(&QComboBox::currentIndexChanged),
+                 this, &TaskRevolutionParameters::onStartModeChanged);
 }
 
 void TaskRevolutionParameters::updateUI()
@@ -501,177 +494,80 @@ void TaskRevolutionParameters::updateUI()
     if (blockUpdate)
         return;
     Base::StateLocker lock(blockUpdate, true);
-    int index = ui->changeMode->currentIndex();
     fillAxisCombo();
-    setCheckboxes(static_cast<PartDesign::Revolution::RevolMethod>(index));
+    setCheckboxes();
 }
 
 void TaskRevolutionParameters::_onSelectionChanged(const Gui::SelectionChanges& msg)
 {
-    if (msg.Type == Gui::SelectionChanges::AddSelection) {
-        if (getSelectionMode() == SelectionMode::refAxis) {
-            std::vector<std::string> axis;
-            App::DocumentObject* selObj;
-            if (getReferencedSelection(vp->getObject(), msg, selObj, axis) && selObj) {
-                setupTransaction();
-                propReferenceAxis->setValue(selObj, axis);
-                recomputeFeature();
-                updateUI();
-            }
-        }
-        else if (getSelectionMode() == SelectionMode::refAdd) {
-            QString refText = onSelectUpToFace(msg);
-            if (refText.length() > 0) {
-                QSignalBlocker guard(ui->lineFaceName);
-                ui->lineFaceName->setText(refText);
-                QStringList list(refText.split(QLatin1Char(':')));
-                ui->lineFaceName->setProperty("FeatureName", list[0].toUtf8());
-                ui->lineFaceName->setProperty("FaceName", list.size()>1 ? list[1].toUtf8() : QByteArray());
-                // Turn off reference selection mode
-                onButtonFace(false);
-            } else {
-                clearFaceName();
-            }
-        }
+    if (msg.Type != Gui::SelectionChanges::AddSelection
+            || getSelectionMode() != SelectionMode::refAxis)
+        return;
+    std::vector<std::string> axis;
+    App::DocumentObject* selObj;
+    if (getReferencedSelection(vp->getObject(), msg, selObj, axis) && selObj) {
+        setupTransaction();
+        getRevolved()->ReferenceAxis.setValue(selObj, axis);
+        recomputeFeature();
+        updateUI();
     }
-}
-
-void TaskRevolutionParameters::onButtonFace(bool checked)
-{
-    if (checked) {
-        AllowSelectionFlags conf;
-        conf.setFlag(AllowSelection::FACE);
-        TaskSketchBasedParameters::onSelectReference(ui->buttonFace, conf);
-    } else
-        exitSelectionMode();
-}
-
-void TaskRevolutionParameters::onFaceName(const QString& text)
-{
-    if (text.isEmpty()) {
-        // if user cleared the text field then also clear the properties
-        ui->lineFaceName->setProperty("FeatureName", QVariant());
-        ui->lineFaceName->setProperty("FaceName", QVariant());
-    }
-    else {
-        // expect that the label of an object is used
-        QStringList parts = text.split(QChar::fromLatin1(':'));
-        QString label = parts[0];
-        QVariant name = objectNameByLabel(label, ui->lineFaceName->property("FeatureName"));
-        if (name.isValid()) {
-            parts[0] = name.toString();
-            QString uptoface = parts.join(QStringLiteral(":"));
-            ui->lineFaceName->setProperty("FeatureName", name);
-            ui->lineFaceName->setProperty("FaceName", setUpToFace(uptoface));
-        }
-        else {
-            ui->lineFaceName->setProperty("FeatureName", QVariant());
-            ui->lineFaceName->setProperty("FaceName", QVariant());
-        }
-    }
-}
-
-void TaskRevolutionParameters::translateFaceName()
-{
-    ui->lineFaceName->setPlaceholderText(tr("No face selected"));
-    QVariant featureName = ui->lineFaceName->property("FeatureName");
-    if (featureName.isValid()) {
-        QStringList parts = ui->lineFaceName->text().split(QChar::fromLatin1(':'));
-        QByteArray upToFace = ui->lineFaceName->property("FaceName").toByteArray();
-        int faceId = -1;
-        bool ok = false;
-        if (upToFace.indexOf("Face") == 0) {
-            faceId = upToFace.remove(0,4).toInt(&ok);
-        }
-
-        if (ok) {
-            ui->lineFaceName->setText(QStringLiteral("%1:%2%3")
-                                      .arg(parts[0])
-                                      .arg(tr("Face"))
-                                      .arg(faceId));
-        }
-        else {
-            ui->lineFaceName->setText(parts[0]);
-        }
-    }
-}
-
-QString TaskRevolutionParameters::getFaceName(void) const
-{
-    QVariant featureName = ui->lineFaceName->property("FeatureName");
-    if (featureName.isValid()) {
-        QString faceName = ui->lineFaceName->property("FaceName").toString();
-        return getFaceReference(featureName.toString(), faceName);
-    }
-
-    return QStringLiteral("None");
-}
-
-void TaskRevolutionParameters::clearFaceName()
-{
-    QSignalBlocker block(ui->lineFaceName);
-    ui->lineFaceName->clear();
-    ui->lineFaceName->setProperty("FeatureName", QVariant());
-    ui->lineFaceName->setProperty("FaceName", QVariant());
 }
 
 void TaskRevolutionParameters::onAngleChanged(double len)
 {
     setupTransaction();
-    propAngle->setValue(len);
+    getRevolved()->Angle.setValue(len);
+    recomputeFeature();
+}
+
+void TaskRevolutionParameters::onAngle2Changed(double len)
+{
+    setupTransaction();
+    getRevolved()->Angle2.setValue(len);
+    exitSelectionMode();
+    recomputeFeature();
+}
+
+void TaskRevolutionParameters::onStartOffsetChanged(double len)
+{
+    setupTransaction();
+    getRevolved()->StartOffset.setValue(len);
     recomputeFeature();
 }
 
 bool TaskRevolutionParameters::eventFilter(QObject *o, QEvent *ev)
 {
-    if (!vp)
+    if (!vp || o != ui->axis)
         return false;
     switch(ev->type()) {
     case QEvent::Leave:
-        if (o == ui->axis || o == ui->lineFaceName)
-            Gui::Selection().rmvPreselect();
+        Gui::Selection().rmvPreselect();
         break;
-    case QEvent::Enter:
-        if (ui->axis) {
-            if (auto obj = propReferenceAxis->getValue()) {
-                const auto &subs = propReferenceAxis->getSubValues();
-                PartDesignGui::highlightObjectOnTop(App::SubObjectT(obj, subs.size()?subs.front().c_str():""));
-            }
-        }
-        else if (ui->lineFaceName) {
-            if (auto obj = propUpToFace->getValue()) {
-                const auto &subs = propUpToFace->getSubValues();
-                PartDesignGui::highlightObjectOnTop(App::SubObjectT(obj, subs.size()?subs.front().c_str():""));
-            }
+    case QEvent::Enter: {
+        const App::PropertyLinkSub &refAxis = getRevolved()->ReferenceAxis;
+        if (auto obj = refAxis.getValue()) {
+            const auto &subs = refAxis.getSubValues();
+            PartDesignGui::highlightObjectOnTop(App::SubObjectT(obj, subs.size()?subs.front().c_str():""));
         }
         break;
+    }
     default:
         break;
     }
     return false;
 }
 
-void TaskRevolutionParameters::onAngle2Changed(double len)
-{
-    if (propAngle2) {
-        setupTransaction();
-        propAngle2->setValue(len);
-    }
-    exitSelectionMode();
-    recomputeFeature();
-}
-
 void TaskRevolutionParameters::onAxisChanged(int num)
 {
     if (blockUpdate)
         return;
-    PartDesign::ProfileBased* pcRevolution = static_cast<PartDesign::ProfileBased*>(vp->getObject());
+    PartDesign::Revolved* pcRevolution = getRevolved();
 
     if (axesInList.empty())
         return;
 
-    App::DocumentObject *oldRefAxis = propReferenceAxis->getValue();
-    std::vector<std::string> oldSubRefAxis = propReferenceAxis->getSubValues();
+    App::DocumentObject *oldRefAxis = pcRevolution->ReferenceAxis.getValue();
+    std::vector<std::string> oldSubRefAxis = pcRevolution->ReferenceAxis.getSubValues();
     std::string oldRefName;
     if (!oldSubRefAxis.empty())
         oldRefName = oldSubRefAxis.front();
@@ -683,12 +579,12 @@ void TaskRevolutionParameters::onAxisChanged(int num)
             return;
         }
         setupTransaction();
-        propReferenceAxis->Paste(lnk);
+        pcRevolution->ReferenceAxis.Paste(lnk);
     }
 
     try {
-        App::DocumentObject *newRefAxis = propReferenceAxis->getValue();
-        const std::vector<std::string> &newSubRefAxis = propReferenceAxis->getSubValues();
+        App::DocumentObject *newRefAxis = pcRevolution->ReferenceAxis.getValue();
+        const std::vector<std::string> &newSubRefAxis = pcRevolution->ReferenceAxis.getSubValues();
         std::string newRefName;
         if (!newSubRefAxis.empty())
             newRefName = newSubRefAxis.front();
@@ -696,17 +592,11 @@ void TaskRevolutionParameters::onAxisChanged(int num)
         if (oldRefAxis != newRefAxis ||
             oldSubRefAxis.size() != newSubRefAxis.size() ||
             oldRefName != newRefName) {
-            bool reversed = propReversed->getValue();
-            if (pcRevolution->isDerivedFrom(PartDesign::Revolution::getClassTypeId()))
-                reversed = static_cast<PartDesign::Revolution*>(pcRevolution)->suggestReversed();
-            if (pcRevolution->isDerivedFrom(PartDesign::Groove::getClassTypeId()))
-                reversed = static_cast<PartDesign::Groove*>(pcRevolution)->suggestReversed();
-
-            if (reversed != propReversed->getValue()) {
-                propReversed->setValue(reversed);
-                ui->checkBoxReversed->blockSignals(true);
+            bool reversed = pcRevolution->suggestReversed();
+            if (reversed != pcRevolution->Reversed.getValue()) {
+                pcRevolution->Reversed.setValue(reversed);
+                QSignalBlocker blocker(ui->checkBoxReversed);
                 ui->checkBoxReversed->setChecked(reversed);
-                ui->checkBoxReversed->blockSignals(false);
             }
         }
 
@@ -717,54 +607,73 @@ void TaskRevolutionParameters::onAxisChanged(int num)
     }
 }
 
-void TaskRevolutionParameters::onMidplane(bool on)
-{
-    setupTransaction();
-    propMidPlane->setValue(on);
-    recomputeFeature();
-}
-
 void TaskRevolutionParameters::onReversed(bool on)
 {
     setupTransaction();
-    propReversed->setValue(on);
+    getRevolved()->Reversed.setValue(on);
     recomputeFeature();
 }
 
 void TaskRevolutionParameters::onModeChanged(int index)
 {
     setupTransaction();
-    App::PropertyEnumeration* pcType;
-    if (!isGroove)
-        pcType = &(static_cast<PartDesign::Revolution*>(vp->getObject())->Type);
-    else
-        pcType = &(static_cast<PartDesign::Groove*>(vp->getObject())->Type);
-
-    switch (static_cast<PartDesign::Revolution::RevolMethod>(index)) {
-    case PartDesign::Revolution::RevolMethod::Angle:
-        pcType->setValue("Angle");
-        // Avoid error message
-        // if (ui->revolveAngle->value() < Base::Quantity(Precision::Angular(), Base::Unit::Angle)) // TODO: Ensure radians/degree consistency
-        //     ui->revolveAngle->setValue(5.0);
-        break;
-    case PartDesign::Revolution::RevolMethod::ToLast:
-        if (!isGroove)
-            pcType->setValue("UpToLast");
-        else
-            pcType->setValue("ThroughAll");
-        break;
-    case PartDesign::Revolution::RevolMethod::ToFirst:
-        pcType->setValue("UpToFirst");
-        break;
-    case PartDesign::Revolution::RevolMethod::ToFace:
-        pcType->setValue("UpToFace");
-        break;
-    case PartDesign::Revolution::RevolMethod::TwoAngles:
-        pcType->setValue("TwoAngles");
-        break;
+    PartDesign::Revolved* feat = getRevolved();
+    feat->Type.setValue(static_cast<long>(index));
+    setCheckboxes();
+    // nothing to revolve up to yet: pick it first
+    if (static_cast<RevolMethod>(index) == RevolMethod::ToFace && !feat->UpToFace.getValue()) {
+        if (upToWidget)
+            upToWidget->startSelection();
+        return;
     }
+    if (static_cast<RevolMethod>(index) == RevolMethod::Angle) {
+        ui->revolveAngle->selectNumber();
+        QMetaObject::invokeMethod(ui->revolveAngle, "setFocus", Qt::QueuedConnection);
+    }
+    recomputeFeature();
+}
 
-    updateUI();
+void TaskRevolutionParameters::onMode2Changed(int index)
+{
+    setupTransaction();
+    PartDesign::Revolved* feat = getRevolved();
+    feat->Type2.setValue(static_cast<long>(index));
+    setCheckboxes();
+    if (static_cast<RevolMethod>(index) == RevolMethod::ToFace && !feat->UpToFace2.getValue()) {
+        if (upToWidget2)
+            upToWidget2->startSelection();
+        return;
+    }
+    recomputeFeature();
+}
+
+void TaskRevolutionParameters::onSideTypeChanged(int index)
+{
+    setupTransaction();
+    PartDesign::Revolved* feat = getRevolved();
+    feat->SideType.setValue(static_cast<long>(index));
+    setCheckboxes();
+    if (index == 1 && PartDesign::Revolved::methodOf(feat->Type2) == RevolMethod::ToFace
+            && !feat->UpToFace2.getValue()) {
+        if (upToWidget2)
+            upToWidget2->startSelection();
+        return;
+    }
+    recomputeFeature();
+}
+
+void TaskRevolutionParameters::onStartModeChanged(int index)
+{
+    setupTransaction();
+    PartDesign::Revolved* feat = getRevolved();
+    feat->StartType.setValue(static_cast<long>(index));
+    updateStartUI();
+    // nothing to start at yet: pick it first
+    if (index == 2 && !feat->StartReference.getValue()) {
+        if (startWidget)
+            startWidget->startSelection();
+        return;
+    }
     recomputeFeature();
 }
 
@@ -786,16 +695,6 @@ void TaskRevolutionParameters::getReferenceAxis(App::DocumentObject*& obj, std::
         obj = lnk.getValue();
         sub = lnk.getSubValues();
     }
-}
-
-bool TaskRevolutionParameters::getMidplane() const
-{
-    return ui->checkBoxMidplane->isChecked();
-}
-
-bool TaskRevolutionParameters::getReversed() const
-{
-    return ui->checkBoxReversed->isChecked();
 }
 
 TaskRevolutionParameters::~TaskRevolutionParameters()
@@ -820,33 +719,40 @@ void TaskRevolutionParameters::changeEvent(QEvent *event)
 {
     TaskBox::changeEvent(event);
     if (event->type() == QEvent::LanguageChange) {
+        const int mode = ui->changeMode->currentIndex();
+        const int mode2 = ui->changeMode2->currentIndex();
         ui->retranslateUi(proxy);
 
         // Translate mode items
-        translateModeList(ui->changeMode->currentIndex());
+        translateModeList(ui->changeMode, mode);
+        translateModeList(ui->changeMode2, mode2);
     }
 }
 
 void TaskRevolutionParameters::apply()
 {
-    //Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Revolution changed"));
     ui->revolveAngle->apply();
     ui->revolveAngle2->apply();
+    ui->startOffsetEdit->apply();
     std::vector<std::string> sub;
     App::DocumentObject* obj;
     getReferenceAxis(obj, sub);
     std::string axis = buildLinkSingleSubPythonStr(obj, sub);
     auto tobj = vp->getObject();
+    PartDesign::Revolved* feat = getRevolved();
     FCMD_OBJ_CMD(tobj, "ReferenceAxis = " << axis);
-    FCMD_OBJ_CMD(tobj, "Midplane = " << (getMidplane() ? 1 : 0));
-    FCMD_OBJ_CMD(tobj, "Reversed = " << (getReversed() ? 1 : 0));
-    int mode = ui->changeMode->currentIndex();
-    FCMD_OBJ_CMD(tobj, "Type = " << mode);
-    QString facename = QStringLiteral("None");
-    if (static_cast<PartDesign::Revolution::RevolMethod>(mode) == PartDesign::Revolution::RevolMethod::ToFace) {
-        facename = getFaceName();
-    }
-    FCMD_OBJ_CMD(tobj, "UpToFace = " << facename.toUtf8().data());
+    FCMD_OBJ_CMD(tobj, "SideType = '" << feat->SideType.getValueAsString() << "'");
+    FCMD_OBJ_CMD(tobj, "Reversed = " << (feat->Reversed.getValue() ? 1 : 0));
+    FCMD_OBJ_CMD(tobj, "Type = '" << feat->Type.getValueAsString() << "'");
+    FCMD_OBJ_CMD(tobj, "Type2 = '" << feat->Type2.getValueAsString() << "'");
+    // A face a side no longer goes up to is let go
+    const bool twoSides = strcmp(feat->SideType.getValueAsString(), "Two sides") == 0;
+    const bool upTo = PartDesign::Revolved::methodOf(feat->Type) == RevolMethod::ToFace;
+    const bool upTo2 = twoSides && PartDesign::Revolved::methodOf(feat->Type2) == RevolMethod::ToFace;
+    FCMD_OBJ_CMD(tobj, "UpToFace = " << (upTo ? linkStr(feat->UpToFace) : std::string("None")));
+    FCMD_OBJ_CMD(tobj, "UpToFace2 = " << (upTo2 ? linkStr(feat->UpToFace2) : std::string("None")));
+    FCMD_OBJ_CMD(tobj, "StartType = '" << feat->StartType.getValueAsString() << "'");
+    FCMD_OBJ_CMD(tobj, "StartReference = " << linkStr(feat->StartReference));
 }
 
 //**************************************************************************

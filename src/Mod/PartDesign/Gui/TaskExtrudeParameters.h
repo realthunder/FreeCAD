@@ -169,7 +169,6 @@ private:
     void selectedReferenceAxis(const Gui::SelectionChanges& msg);
     LinkSubWidget *makeUpToWidget(Gui::Fw::Widget *holder, App::PropertyLinkSubList &prop,
                                   SelectionMode mode);
-    bool filterUpToPick(const Gui::SelectionChanges& msg, App::SubObjectT &objT);
 
     std::unique_ptr<Gui::GizmoContainer> gizmoContainer;
     Gui::LinearGizmo* lengthGizmo1 = nullptr;

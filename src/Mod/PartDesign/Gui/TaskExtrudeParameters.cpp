@@ -124,18 +124,6 @@ LinkSubWidget *TaskExtrudeParameters::makeUpToWidget(Gui::Fw::Widget *holder,
     return widget;
 }
 
-bool TaskExtrudeParameters::filterUpToPick(const Gui::SelectionChanges &msg, App::SubObjectT &objT)
-{
-    // A face of this feature is the base's face it came from
-    if (reselectBaseElement(msg))
-        return false;
-    // A plane or datum is taken whole
-    auto sobj = objT.getSubObject();
-    if (sobj && PartDesign::Feature::isDatum(sobj))
-        objT.setSubName(objT.getSubNameNoElement());
-    return true;
-}
-
 TaskExtrudeParameters::~TaskExtrudeParameters() = default;
 
 void TaskExtrudeParameters::setupDialog(bool newObj, const char *historyPath)

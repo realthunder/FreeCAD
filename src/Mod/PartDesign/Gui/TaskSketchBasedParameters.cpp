@@ -1471,6 +1471,18 @@ void TaskSketchBasedParameters::onInnerFitJoinChanged(int v)
     recomputeFeature();
 }
 
+bool TaskSketchBasedParameters::filterUpToPick(const Gui::SelectionChanges &msg, App::SubObjectT &objT)
+{
+    // A face of this feature is the base's face it came from
+    if (reselectBaseElement(msg))
+        return false;
+    // A plane or datum is taken whole
+    auto sobj = objT.getSubObject();
+    if (sobj && PartDesign::Feature::isDatum(sobj))
+        objT.setSubName(objT.getSubNameNoElement());
+    return true;
+}
+
 bool TaskSketchBasedParameters::reselectBaseElement(const Gui::SelectionChanges& msg)
 {
     PartDesign::ProfileBased* pcSketchBased = static_cast<PartDesign::ProfileBased*>(vp->getObject());

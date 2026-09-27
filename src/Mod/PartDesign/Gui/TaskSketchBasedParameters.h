@@ -92,6 +92,12 @@ public:
      */
     bool reselectBaseElement(const Gui::SelectionChanges& msg);
 
+    /** The pick filter of an up-to or start reference (LinkSubWidget::
+     * setPickFilter): a face of this feature is the base's face it came
+     * from, and a plane or datum is taken whole
+     */
+    bool filterUpToPick(const Gui::SelectionChanges& msg, App::SubObjectT &objT);
+
     void onSelectReference(QWidget *blinkWidget,
                            const AllowSelectionFlags &conf = ReferenceSelection::defaultFlags())
     {
