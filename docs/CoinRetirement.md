@@ -2898,6 +2898,35 @@ Both pinned by `tests/src/Gui/SecondaryHide.cpp`, a Part-and-Link graph
 reduced to its nodes, as is the confinement (the scene root and the key's
 first root keep their caches).
 
+### 5.20 Measured: bare entries against a one-node tail key (2026-09-28)
+
+Step 4 of the served edit root plan moves path entries and the edit hide
+onto per-view tail contexts. Whether BARE entries (the object wherever
+it appears; `PerViewVisibilities` on) follow, as a one-node key
+`[object root]`, or keep their name match in `SoFCVisibilityElement`, was
+measured first. `visibility-context-bench.py` gained a `bare` arm
+(`setObjectVisibility(box, False)`). The `tail` arm stands in for the
+one-node key: its key `[children root, box]` is shared by the Link, so it
+reaches the same two occurrences, and `getNodeContext2` makes the same
+lookups whatever a key's length. Median of five batches, two rounds.
+
+| mode 3, k = 1-100 | bbox | pick, gap | pick, hit | frame |
+|---|---|---|---|---|
+| none | 2.6-2.8 | 64-73 | 103-116 | 0.15-0.17 |
+| tail | 2.7-3.0 | 63-73 | 102-110 | 0.12-0.18 |
+| path | 2.7 | 67-74 | 103-127 | 0.14-0.25 |
+| bare | 2.7-3.1 | 68-73 | 108-117 | 0.13-0.19 |
+
+Mode 0 is the same picture (bbox 2.1-2.8 us for every arm, picks within
+the no-hide spread, the llvmpipe frame 39-47 ms either way). **Every arm
+is at the baseline**, the differences inside the run-to-run spread: since
+the invalidation was confined (5.19), no mechanism costs anything a
+traversal can see, and the choice for bare entries is one of meaning, not
+of speed. The meanings do differ: a Link REPLACES its target's root, so
+a one-node key on a leaf object does not reach a Link to that object (as
+its own Visibility does not), where the name match does; an object
+INSIDE a linked container is reached by both, its root being shared.
+
 ## 5. Evaluated and not taken: one capture root to catch everything
 
 Stage 1b left an obvious-looking follow-on: if what Coin still draws is

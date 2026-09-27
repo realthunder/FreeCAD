@@ -10,6 +10,13 @@ traversals differently.
          (view.setObjectVisibility(top, False, subname)), read through
          SoFCVisibilityElement by the object's switch, which resolves
          the object chain of the traversal against the table.
+  bare   a BARE entry in the view's table (PerViewVisibilities on,
+         view.setObjectVisibility(box, False)): the object wherever it
+         appears in the view, matched by NAME in SoFCVisibilityElement.
+         Chain-independent, so it keeps the caches above the switch
+         (they record only the element read). It hides every occurrence,
+         as the tail arm does here, and is what a one-node tail key
+         [box root] would replace (docs/CoinRetirement.md 5.20).
   tail   the secondary selection context: SoSelectionElementAction Hide
          on the occurrence's path (ViewProvider.partialRender with the
          hidden marker) stores a hideAll context in the hidden node's
@@ -176,6 +183,7 @@ class Bench:
         self.hit = self.at(*box_centre(mid, 0))
         self.tail = []
         self.path = []
+        self.bare = []
 
     def at(self, x, y):
         p = self.view.getPointOnViewport(FreeCAD.Vector(x, y, 0.5))
@@ -201,7 +209,7 @@ class Bench:
         finally:
             self.glwidget.doneCurrent()
 
-    # -- the two arms -------------------------------------------------------
+    # -- the three arms -------------------------------------------------------
     def hide_tail(self, pairs):
         for p, b in pairs:
             n = self.parts[p].ViewObject.partialRender(
@@ -215,13 +223,24 @@ class Bench:
             self.view.setObjectVisibility(self.parts[p], False, "B%d_%d." % (p, b))
             self.path.append((p, b))
 
+    def hide_bare(self, pairs):
+        self.view.PerViewVisibilities = True
+        for p, b in pairs:
+            self.view.setObjectVisibility(self.doc.getObject("B%d_%d" % (p, b)), False)
+            self.bare.append((p, b))
+
     def clear(self):
         for p, b in self.tail:
             self.parts[p].ViewObject.partialRender(["B%d_%d.%s" % (p, b, "!hide")], True)
         for p, b in self.path:
             self.view.setObjectVisibility(self.parts[p], None, "B%d_%d." % (p, b))
+        for p, b in self.bare:
+            self.view.setObjectVisibility(self.doc.getObject("B%d_%d" % (p, b)), None)
+        if self.bare:
+            self.view.PerViewVisibilities = False
         self.tail = []
         self.path = []
+        self.bare = []
 
     # -- measurement --------------------------------------------------------
     def cell(self, arm, k, rnd):
@@ -247,6 +266,9 @@ class Bench:
         shown = bool(inlink) and name in (inlink[1] or "")
         if arm == "path":
             check("path: %s still picks through Link%d" % (name, p), shown, inlink)
+        elif arm == "bare":
+            check("bare: %s hidden through Link%d too (every occurrence)" % (name, p),
+                  not shown, inlink)
         else:
             check("tail: %s hidden through Link%d too (shared children root)" % (name, p),
                   not shown, inlink)
@@ -279,6 +301,9 @@ def run():
         bench.hide_path(hidden_set(1))
         bench.witness("path")
         bench.clear()
+        bench.hide_bare(hidden_set(1))
+        bench.witness("bare")
+        bench.clear()
 
         for rnd in range(ROUNDS):
             bench.cell("none", 0, rnd)
@@ -289,6 +314,10 @@ def run():
             for k in KS:
                 bench.hide_path(hidden_set(k))
                 bench.cell("path", k, rnd)
+                bench.clear()
+            for k in KS:
+                bench.hide_bare(hidden_set(k))
+                bench.cell("bare", k, rnd)
                 bench.clear()
         bench.cell("none", 0, ROUNDS)
     except Exception:
