@@ -6818,3 +6818,19 @@ read before the objects, skipped by hash. 2: the log keeps the file table
 once; versions carry none. 3: reference sets for versions and values, and
 compaction on them. 4: keep-all as the file's switch. Each with the gates
 and a measurement on scanner.FCStd.
+
+### 27.51 Rulings on 27.50 (user, 2026-09-27)
+
+- **Q1: one table** for every version of the file.
+- **Q2: schema 5.** Development so far is private and nothing has been
+  released, so no new schema: a schema-5 file writes the table as its own
+  member.
+- **Q3: yes, with a new meaning.** Keep-all (`SaveAll`) only switches the
+  automatic compaction (27.48, 27.49) off. A save never compacts: it writes
+  the file's whole table, whatever the switch says. An explicit
+  `compactFileState()` still compacts.
+- **Q4: asked what "reference sets recorded at write time" means;** the
+  answer went back (the save's marks are the exact ids a version uses,
+  written as ranges beside the version; a capture lists its value's ids
+  likewise; compaction takes their union instead of decoding the history).
+  Awaiting the ruling; steps 1 and 2 do not depend on it.
