@@ -19,6 +19,10 @@
         <file>icons/materials/Finish_knurl-straight.png</file>
         <!-- surface finish: knurl -->
         <file>icons/materials/Finish_knurl.png</file>
+        <!-- surface finish: thread-left -->
+        <file>icons/materials/Finish_thread-left.png</file>
+        <!-- surface finish: thread -->
+        <file>icons/materials/Finish_thread.png</file>
         <!-- surface finish: turned -->
         <file>icons/materials/Finish_turned.png</file>
         <!-- AusteniticStainlessSteel, and 102 more: CalculiX-Steel, GrayCastIron, Invar-Generic, Iron-Generic, LowAlloySteel, MalleableCastIron, MildSteel, ... -->

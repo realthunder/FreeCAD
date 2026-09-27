@@ -1056,10 +1056,15 @@ App::SurfaceFinish MaterialIcons::defaultFinish(uint8_t pattern)
             break;
         case App::SurfaceFinish::Thread:
         case App::SurfaceFinish::ThreadLeft:
-            // A real thread is already coarse enough to read; a few
-            // turns across the billet is what says "screw" at a glance
-            finish.pitch = 0.600F;
-            finish.depth = 0.325F;
+            // Coarse enough for the HAND to show, which is the one thing
+            // telling Thread from ThreadLeft -- and from Turned. The lead
+            // angle is pitch / (2 pi r) on the unit billet: at 0.6 it is
+            // 5 degrees, and at 32 px both hands read as stacked grooves.
+            // 0.75 leans them visibly apart and still leaves two turns;
+            // from 0.9 up it is one slanted band, no longer a screw.
+            // Depth keeps M6's working height, 0.541 of the pitch.
+            finish.pitch = 0.750F;
+            finish.depth = 0.406F;
             break;
         default:
             return {};

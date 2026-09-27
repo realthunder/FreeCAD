@@ -87,7 +87,9 @@ END = "        <!-- end rendered icons -->\n"
 # Python API uses. Each is rendered on the neutral material and at the
 # pitch and depth MaterialIcons::defaultFinish states; a finish the user
 # has given a scale of its own no longer matches and renders at runtime.
-FINISHES = ["knurl", "knurl-straight", "brushed", "blasted", "turned"]
+FINISHES = [
+    "knurl", "knurl-straight", "brushed", "blasted", "turned", "thread", "thread-left",
+]
 
 
 # Libraries whose cards never want a rendered sphere, whatever they
