@@ -6846,3 +6846,84 @@ and a measurement on scanner.FCStd.
   automatic. Names and geometry ids keep the trim trigger of 27.48 and
   27.49: a version's objects are known only by reading its `Document.xml`,
   until object ids are recorded per version the same way.
+
+### 27.52 How the log scales on a real model: first measurements and a plan (user, 2026-09-27)
+
+**Asked (user):** with a real file in hand, test how the whole log scales --
+if twenty versions already mean 100 MB of XML, perhaps deltas instead.
+(The 100 MB was what a compaction scan would decode, 27.50 Q4 -- not what
+the log stores; the store already keeps older content as zstd deltas,
+23.2. What had not been measured is how it holds up.)
+
+**The tool:** `scripts/transaction-log-scale.py` (FreeCADCmd; `SCALE_FILE`,
+`SCALE_OBJECT`, `SCALE_PROPERTY`, `SCALE_EDITS`, `SCALE_SAVE_EVERY`,
+`SCALE_UNIQUE`, `SCALE_OUT`). It opens a copy of a file with the log on,
+edits one property N times -- a transaction and a recompute each, a value
+never set before unless `SCALE_UNIQUE=0` -- and saves every K edits. After
+each save it records the file, the store (pages, free pages, per-table
+bytes via `dbstat`, the WAL), the entities by tier, encoding and kind, the
+`ref` rows by role, the `txn` rows by kind, and the blob folder by
+extension; at the end it times reopening, compacting, opening the oldest
+version and restoring to it.
+
+**The model:** scanner.FCStd (5.5 MB, schema 4, 615 objects: 45 pads, 32
+pockets, 40 sketches, a spreadsheet driving expressions, 119 TechDraw
+dimensions). The edit: `Pad.Length`, which 25 objects depend on.
+
+**100 edits, a save every 10 (values never repeat):**
+
+| after | recompute /10 | save | file | store (+WAL) | entities stored (durable / cache) | content full (durable / cache) |
+| --- | --- | --- | --- | --- | --- | --- |
+| 10 | 16.3 s (first) | 0.97 s | 5.7 MB | 9.1 (+4.1) MB | 4.69 / 2.49 MB | 36.1 / 17.3 MB |
+| 20 | 1.87 s | 0.90 s | 5.7 MB | 14.7 (+4.4) MB | 7.58 / 2.56 MB | 67.7 / 19.6 MB |
+| 60 | 2.27 s | 1.00 s | 5.7 MB | 21.6 (+5.9) MB | 7.65 / 2.80 MB | 83.0 / 28.7 MB |
+| 100 | 2.33 s | 1.20 s | 5.7 MB | 28.5 (+5.9) MB | 7.70 / 3.06 MB | 98.2 / 37.8 MB |
+
+Then: reopen 1.09 s, compaction 0.005 s, open the oldest version 1.09 s,
+restore to it 1.99 s -- none of them moved with the history. A commit costs
+1-2 ms. The first ten edits' recompute is every element map rebuilt: the
+file's element-map version is older than this build's.
+
+**What it says.**
+1. *The encoding is not the problem.* Between edit 20 and 100 the durable
+   content grew by 30 MB and its stored form by 0.12 MB (about 1.5 KB an
+   edit); the cache tier grew by 18 MB and stored 0.5 MB. Deltas and
+   content addressing are doing their job.
+2. *The store file is.* It grows about 170 KB an edit -- some twenty times
+   the content it adds -- with no free pages. Per ten edits (one version):
+   - `ref` and its two indexes, ~1.0 MB: one `part` row per property part of
+     each version's `Document.xml` composite (3,397 rows a version here),
+     keyed by 40-character hex hashes, stored three times over (the rowid
+     table, its primary key's autoindex, `ref_target`);
+   - `txn`, ~0.2 MB: the recompute records -- 19 KB of JSON an edit, every
+     recomputed object listed by name;
+   - `entity`, ~0.34 MB of pages for ~0.1 MB of data.
+3. *The embedded copy* (`History.db` in the blob store) grew with the store,
+   8.7 -> 25.3 MB on disk, while the saved file stayed 5.7 MB: the copy is
+   `VACUUM INTO`, then evicts and drops the cache tier without vacuuming
+   again, so it is mostly empty pages, which the archive compresses away.
+   Its cost shows as the save time creeping 0.90 -> 1.20 s.
+4. *Recompute per ten edits crept* 1.87 -> 2.33 s. Not yet attributed.
+
+**Proposed fixes, largest first.**
+- F1: `ref` -- a `WITHOUT ROWID` table (the key is the table, no autoindex
+  copy), hashes as 20-byte blobs instead of hex text; and consider not
+  storing a composite's `part` rows at all, since the composite's own data
+  lists its parts and only the collector needs them.
+- F2: recompute records -- ids, times and outcomes only, messages only for
+  errors, compressed.
+- F3: the embedded copy -- apply retention first and vacuum last, so the
+  copy is its content and the save does not grow with the session.
+- F4: attribute the recompute creep (the same run with the log off, and
+  with undo off).
+
+**Test plan.**
+- T1 (done): the baseline above.
+- T2: log off vs on, undo off -- F4.
+- T3: after F1-F3, the same run; the target is a store that grows with its
+  content.
+- T4: long: 1000 edits, a save every 10, a branch switch every 50, a trim
+  every 200; open the oldest version and restore at the end.
+- T5: the Gui (offscreen): view-provider values are logged too.
+- T6: after 27.50 (the shared string table), the same run, for what
+  leaving the table out of every version saves.
