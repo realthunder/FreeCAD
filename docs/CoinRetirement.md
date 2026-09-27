@@ -2805,6 +2805,69 @@ occurrence of one node hidden alone (a Link showing the Part), a bare
 show of a hidden object drawn in one view only, and the other view
 untouched throughout.
 
+### 5.19 Measured: tail-matched contexts against path entries (2026-09-27)
+
+Step 1 of the served edit root plan, before the per-view contexts are
+built on the selection roots' secondary contexts (`contextMap2`, matched
+by tail in `SoFCSelectionRoot::getNodeContext2`) instead of the path
+entries of 5.18. `tests/gui/visibility-context-bench.py`: 20 App::Parts
+of 50 boxes and a Link to each Part (2000 drawn occurrences), top view;
+k boxes hidden in their Part occurrence, either as a path entry
+(`setObjectVisibility(part, False, "Box.")`) or as a tail hide
+(`partialRender(["Box.!hide"])`); median of five batches, two rounds
+that agree to about 10%. Microseconds, frame in milliseconds:
+
+| arm, k | bbox | pick, gap | pick, hit | frame, mode 3 | frame, mode 0 |
+|---|---|---|---|---|---|
+| none | 2.5 | 58 | 95 | 0.14 | 36-41 |
+| tail 1 | 105 | 110-136 | 155 | 0.35-0.44 | 37-42 |
+| path 1 | 110-128 | 127-135 | 172-184 | 0.38-0.67 | 42 |
+| tail 10 | 835-841 | 668-673 | 732 | 1.33-1.76 | 40-44 |
+| path 10 | 1002-1026 | 747-760 | 791-806 | 1.48 | 44-45 |
+| tail 100 | 1593-1602 | 1177-1179 | 1231-1250 | 2.30-2.38 | 41 |
+| path 100 | 3025-3537 | 2104-2142 | 2199-2219 | 5.00 | 51 |
+
+The frame is `SoRenderManager::render()` in the viewport's GL context:
+traversal and submission (the mode-0 column is llvmpipe and moves by
+about 5 ms between identical cells). Bounding box and picks are the same
+traversal in both modes and measured the same; mode 3 is shown.
+
+- **What costs is the cache loss, and both pay it.** A hidden node is
+  shared by every occurrence, so each mechanism gives up the bounding box
+  (and mode-0 render) caches above it in all of them; at k = 10 half the
+  Parts carry a hide and half the scene is walked. The mechanism's own
+  lookup is small beside it.
+- **The tail context is never the dearer one**, and at k = 100 costs half
+  (bbox about 2x, pick 1.8x, mode-3 frame 2.1x cheaper) although it hides
+  twice as many occurrences (below). A path entry resolves the object
+  chain of every overridden switch against the whole table.
+- **No hide costs nothing** in either: both are gated by a count of the
+  nodes that carry one.
+- **An edit's hide is k = 1**: about +100 us per bounding box pass and
+  +50-75 us per pick on this scene.
+
+The tail arm hides the box through the Link too. That is `partialRender`,
+not the tail rule: it resolves its path without append, so its key starts
+at the Part's CHILDREN root, and a Link replaces the Part's own root and
+switch but shares that children root. The per-occurrence key (5.18's
+user model: `getDetailPath` WITH append, `[Part root, children root,
+box]`) makes the same lookups, so it costs the same.
+
+Found on the way, fixed in the same round: the tail hide's cache
+bookkeeping was broken twice over, which contaminated every cell after
+the first unhide until fixed.
+- `SoFCSelectionCounter::checkAction` read the context BEFORE it changed,
+  so a hide was never counted and a SHOW was, and the count was never
+  given back: from the first unhide on, the node spoiled every cache
+  above it on every pass (bbox 2.5 us -> 1.6 ms on this scene, for good).
+  Now `recount()` after the change.
+- A hidden root returned from `doActionPrivate` before its count was
+  checked, so the caches above it were built without it and answered for
+  every other occurrence -- the leak `5124c6cc87` fixed for path entries.
+  `getBoundingBox` now checks first; GL render already did.
+Both pinned by `tests/src/Gui/SecondaryHide.cpp`, a Part-and-Link graph
+reduced to its nodes.
+
 ## 5. Evaluated and not taken: one capture root to catch everything
 
 Stage 1b left an obvious-looking follow-on: if what Coin still draws is
