@@ -1516,7 +1516,8 @@ bool TaskSketchBasedParameters::reselectBaseElement(const Gui::SelectionChanges&
     return true;
 }
 
-const QString TaskSketchBasedParameters::onSelectUpToFace(const Gui::SelectionChanges& msg)
+const QString TaskSketchBasedParameters::onSelectUpToFace(const Gui::SelectionChanges& msg,
+                                                          App::PropertyLinkSub* prop)
 {
     // Note: The validity checking has already been done in ReferenceSelection.cpp
     PartDesign::ProfileBased* pcSketchBased = static_cast<PartDesign::ProfileBased*>(vp->getObject());
@@ -1532,7 +1533,7 @@ const QString TaskSketchBasedParameters::onSelectUpToFace(const Gui::SelectionCh
 
     objT = PartDesignGui::importExternalObject(objT, false, false);
     if (auto sobj = objT.getSubObject()) {
-        pcSketchBased->UpToFace.setValue(sobj, {objT.getOldElementName()});
+        (prop ? prop : &pcSketchBased->UpToFace)->setValue(sobj, {objT.getOldElementName()});
         recomputeFeature();
         auto subElement = objT.getOldElementName();
         if (subElement.size()) {

@@ -152,8 +152,29 @@ public:
     void onBaseFeatureRerouted(App::DocumentObject* oldBase,
                                App::DocumentObject* newBase) override;
 
+    /// The start of a feature that can begin off its profile's plane:
+    /// "Profile plane", "Offset" (along the feature) or "Reference" (a face,
+    /// plane or sketch, plus the offset); upstream f394f1b669
+    static const char* StartTypesEnums[];
+
 protected:
     void remapSupportShape(const TopoDS_Shape&);
+
+    /** How far along  direction the profile moves to start at  reference,
+     * plus  offset. A planar reference is met where the line through the
+     * profile's centre crosses its plane, anywhere; any other face must be
+     * cut by that line, ahead or behind.  invObjLoc takes the reference
+     * into the frame the profile is in.
+     */
+    double getStartReferenceOffset(const TopoShape& profileShape,
+                                   const App::PropertyLinkSub& reference,
+                                   const gp_Dir& direction,
+                                   double offset,
+                                   const TopLoc_Location& invObjLoc) const;
+    /// The profile moved  offset along  direction
+    static TopoShape moveProfileToStart(const TopoShape& profileShape,
+                                        const gp_Dir& direction,
+                                        double offset);
 
     bool shouldApplyPlacement() override;
 

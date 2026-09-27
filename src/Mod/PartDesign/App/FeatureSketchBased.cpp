@@ -73,6 +73,8 @@ using namespace PartDesign;
 
 PROPERTY_SOURCE(PartDesign::ProfileBased, PartDesign::FeatureAddSub)
 
+const char* ProfileBased::StartTypesEnums[] = {"Profile plane", "Offset", "Reference", nullptr};
+
 ProfileBased::ProfileBased()
 {
     ADD_PROPERTY_TYPE(Profile,(0),"SketchBased", App::Prop_None, "Reference to sketch");
@@ -610,6 +612,63 @@ void ProfileBased::getUpToFaceFromLinkSub(TopoShape& upToFace,
     upToFace = Part::Feature::getTopoShape(ref, subs.size()?subs[0].c_str():nullptr,true);
     if (!upToFace.hasSubShape(TopAbs_FACE))
         THROWM(Base::ValueError, "SketchBased: Up to face: Failed to extract face")
+}
+
+double ProfileBased::getStartReferenceOffset(const TopoShape& profileShape,
+                                             const App::PropertyLinkSub& reference,
+                                             const gp_Dir& direction,
+                                             double offset,
+                                             const TopLoc_Location& invObjLoc) const
+{
+    App::DocumentObject* ref = reference.getValue();
+    // Upstream starts at the profile until a reference is picked
+    if (!ref)
+        return 0.0;
+
+    // A datum plane or a sketch is its placement's plane; a sketch's own
+    // shape has no face to take
+    TopoShape referenceShape;
+    if (ref->isDerivedFrom<App::Plane>() || ref->isDerivedFrom<Part::Part2DObject>())
+        referenceShape = makeShapeFromPlane(ref);
+    else
+        getUpToFaceFromLinkSub(referenceShape, reference);
+    referenceShape.move(invObjLoc);
+
+    Base::Vector3d center;
+    gp_Pln plane;
+    if (referenceShape.findPlane(plane) && profileShape.getCenterOfGravity(center)) {
+        const gp_Dir normal = plane.Axis().Direction();
+        const double denominator = gp_Vec(direction).Dot(gp_Vec(normal));
+        if (std::fabs(denominator) > Precision::Confusion()) {
+            const gp_Vec toPlane(gp_Pnt(center.x, center.y, center.z), plane.Location());
+            return toPlane.Dot(gp_Vec(normal)) / denominator + offset;
+        }
+    }
+
+    auto faces = Part::findAllFacesCutBy(referenceShape, profileShape, direction);
+    double sign = 1.0;
+    if (faces.empty()) {
+        faces = Part::findAllFacesCutBy(referenceShape, profileShape, direction.Reversed());
+        sign = -1.0;
+    }
+    if (faces.empty())
+        THROWM(Base::ValueError, "SketchBased: Start reference does not intersect the profile direction")
+
+    double distsq = faces.front().distsq;
+    for (const auto& face : faces)
+        distsq = std::min(distsq, face.distsq);
+    return sign * std::sqrt(distsq) + offset;
+}
+
+TopoShape ProfileBased::moveProfileToStart(const TopoShape& profileShape,
+                                           const gp_Dir& direction,
+                                           double offset)
+{
+    if (std::fabs(offset) < Precision::Confusion())
+        return profileShape;
+    gp_Trsf transform;
+    transform.SetTranslation(gp_Vec(direction) * offset);
+    return profileShape.moved(TopLoc_Location(transform));
 }
 
 int ProfileBased::getUpToShapeFromLinkSubList(TopoShape& upToShape,

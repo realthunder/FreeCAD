@@ -79,6 +79,10 @@ public:
     App::PropertyBool           UseCustomThreadClearance;
     App::PropertyLength         CustomThreadClearance;
     App::PropertyInteger        BaseProfileType;
+    /// Where the holes start: see ProfileBased::StartTypesEnums
+    App::PropertyEnumeration    StartType;
+    App::PropertyLength         StartOffset;
+    App::PropertyLinkSub        StartReference;
 
     /// What of the profile a hole is centred on: bits of BaseProfileType
     enum BaseProfileTypeOptions {
@@ -152,6 +156,9 @@ public:
     /// the hole is threaded with CosmeticThread on and ModelThread off.
     std::vector<CosmeticThreadBore> getCosmeticThreads() const;
     double getThreadPitch() const;
+    /// How far along the hole the holes start from the profile, as
+    /// StartType says; throws if the reference cannot be met
+    double getStartOffset() const;
 
     /// Whether a screw standard's cut is a counterbore or a countersink;
     /// the Hole panel draws its diagram by it
@@ -297,6 +304,11 @@ private:
     void rotateToNormal(const gp_Dir& helixAxis, const gp_Dir& normalAxis, TopoDS_Shape& helixShape) const;
     gp_Vec computePerpendicular(const gp_Vec&) const;
     TopoDS_Shape makeThread(const gp_Vec&, const gp_Vec&, double);
+    /** The start offset for a profile in the frame  invObjLoc takes the
+     * reference to, the holes going along  holeDirection
+     */
+    double startOffset(const TopoShape& profileshape, const gp_Dir& holeDirection,
+                       const TopLoc_Location& invObjLoc) const;
     TopoShape findHoles(std::vector<TopoShape> &holes, const TopoShape& profileshape, const TopoDS_Shape& protohole) const;
 
     // helpers for nlohmann json

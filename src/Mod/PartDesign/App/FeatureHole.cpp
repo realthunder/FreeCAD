@@ -862,6 +862,37 @@ Hole::Hole()
     // hole takes the preference in setupObject() (upstream 774ec2cc93)
     ADD_PROPERTY_TYPE(BaseProfileType, (BaseProfileTypeOptions::OnCirclesArcs), "Hole", App::Prop_None,
                       "What of the profile the holes are centred on: 1 points, 2 circles, 4 arcs, summed");
+    // Upstream f394f1b669's properties, under its names
+    ADD_PROPERTY_TYPE(StartType, (0L), "Start", App::Prop_None, "How to define the start plane");
+    StartType.setEnums(StartTypesEnums);
+    ADD_PROPERTY_TYPE(StartOffset, (0.0), "Start", App::Prop_None,
+                      "How far into the material from the start plane the holes start");
+    ADD_PROPERTY_TYPE(StartReference, (nullptr), "Start", App::Prop_None,
+                      "Face, plane or sketch the holes start at, with StartType Reference");
+    StartOffset.setReadOnly(true);
+    StartReference.setReadOnly(true);
+}
+
+double Hole::startOffset(const TopoShape& profileshape, const gp_Dir& holeDirection,
+                         const TopLoc_Location& invObjLoc) const
+{
+    const std::string type = StartType.getValueAsString();
+    if (type == "Offset")
+        return StartOffset.getValue();
+    if (type == "Reference")
+        return getStartReferenceOffset(profileshape, StartReference, holeDirection,
+                                       StartOffset.getValue(), invObjLoc);
+    return 0.0;
+}
+
+double Hole::getStartOffset() const
+{
+    // In global coordinates, where the profile and the reference both are
+    TopoShape profileshape = getProfileShape();
+    Base::Vector3d normal = guessNormalDirection(profileshape);
+    if (!Reversed.getValue())
+        normal *= -1.0;
+    return startOffset(profileshape, gp_Dir(normal.x, normal.y, normal.z), TopLoc_Location());
 }
 
 void Hole::setupObject()
@@ -1492,7 +1523,12 @@ void Hole::findClosestDesignation()
 
 void Hole::onChanged(const App::Property* prop)
 {
-    if (prop == &ThreadType) {
+    if (prop == &StartType) {
+        const std::string type = StartType.getValueAsString();
+        StartOffset.setReadOnly(type == "Profile plane");
+        StartReference.setReadOnly(type != "Reference");
+    }
+    else if (prop == &ThreadType) {
         std::string type, holeCutTypeStr;
         if (ThreadType.isValid()) {
             type = ThreadType.getValueAsString();
@@ -1967,7 +2003,10 @@ short Hole::mustExecute() const
         CustomThreadClearance.isTouched() ||
         ThreadDepthType.isTouched() ||
         ThreadDepth.isTouched() ||
-        BaseProfileType.isTouched()
+        BaseProfileType.isTouched() ||
+        StartType.isTouched() ||
+        StartOffset.isTouched() ||
+        StartReference.isTouched()
         )
         return 1;
     return ProfileBased::mustExecute();
@@ -2003,6 +2042,7 @@ void Hole::updateProps()
     onChanged(&CustomThreadClearance);
     onChanged(&ThreadDepthType);
     onChanged(&ThreadDepth);
+    onChanged(&StartType);
 }
 
 static gp_Pnt toPnt(gp_Vec dir)
@@ -2065,6 +2105,11 @@ App::DocumentObjectExecReturn* Hole::execute()
         gp_Vec zDir(SketchVector.x, SketchVector.y, SketchVector.z);
         zDir.Transform(invObjLoc.Transformation());
         gp_Vec xDir = computePerpendicular(zDir);
+
+        // The holes go down -zDir; they start where StartType says
+        const gp_Dir holeDirection(-zDir);
+        profileshape = moveProfileToStart(profileshape, holeDirection,
+                                          startOffset(profileshape, holeDirection, invObjLoc));
 
         if (method == "Dimension")
             length = Depth.getValue();
@@ -2463,6 +2508,10 @@ std::vector<Hole::CosmeticThreadBore> Hole::getCosmeticThreads() const
         if (zDir.Magnitude() < Precision::Confusion())
             return bores;
         zDir.Normalize();
+        // Where execute() starts them
+        const gp_Dir holeDirection(-zDir);
+        profileshape = moveProfileToStart(profileshape, holeDirection,
+                                          startOffset(profileshape, holeDirection, invObjLoc));
 
         const std::string depthType = DepthType.getValueAsString();
         const double holeLength =

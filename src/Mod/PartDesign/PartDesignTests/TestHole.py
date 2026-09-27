@@ -23,6 +23,7 @@ from math import pi
 import unittest
 
 import FreeCAD
+import Part
 import TestSketcherApp
 
 App = FreeCAD
@@ -398,6 +399,80 @@ class TestHole(unittest.TestCase):
         self.Hole.ThreadType = "ISOMetricFineProfile"
         self.Doc.recompute()
         self.assertEqual(self.Hole.ThreadSize, "M10x1.25")
+
+    def testStartOffset(self):
+        """The holes start off the profile (upstream f394f1b669): by an
+        offset into the material, or at a reference face plus the offset."""
+        self.Hole.Diameter = 6
+        self.Hole.Depth = 5
+        self.Hole.DepthType = 0
+        self.Hole.DrillPoint = 0
+        self.assertIn("ReadOnly", self.Hole.getEditorMode("StartOffset"))
+        self.Hole.StartType = "Offset"
+        self.assertNotIn("ReadOnly", self.Hole.getEditorMode("StartOffset"))
+        self.Hole.StartOffset = 2
+        self.Doc.recompute()
+        self.assertAlmostEqual(self.Hole.Shape.Volume, 10**3 - pi * 3**2 * 5)
+        self.assertAlmostEqual(self.Hole.AddSubShape.BoundBox.ZMin, 2)
+        self.assertAlmostEqual(self.Hole.AddSubShape.BoundBox.ZMax, 7)
+
+        reference = self.Doc.addObject("Part::Feature", "StartReference")
+        reference.Shape = Part.makePlane(20, 20, App.Vector(-10, -10, 1))
+        self.Hole.StartType = "Reference"
+        self.Hole.StartReference = (reference, ["Face1"])
+        self.Doc.recompute()
+        self.assertAlmostEqual(self.Hole.Shape.Volume, 10**3 - pi * 3**2 * 5)
+        self.assertAlmostEqual(self.Hole.AddSubShape.BoundBox.ZMin, 3)
+        self.assertAlmostEqual(self.Hole.AddSubShape.BoundBox.ZMax, 8)
+
+    def testStartReferenceOffsetForPointProfile(self):
+        """A reference plane is met from the centre of a profile of points
+        too (upstream f394f1b669)."""
+        self.HoleSketch.deleteAllGeometry()
+        for point in ((2, 2), (8, 2), (2, 8), (8, 8)):
+            index = self.HoleSketch.addGeometry(Part.Point(App.Vector(*point)), False)
+            # a point is added as construction here; a real one is toggled
+            self.HoleSketch.setConstruction(index, False)
+
+        self.Hole.BaseProfileType = 1
+        self.Hole.Diameter = 2
+        self.Hole.Depth = 5
+        self.Hole.DepthType = 0
+        self.Hole.DrillPoint = 0
+
+        reference = self.Doc.addObject("Part::Feature", "StartReference")
+        reference.Shape = Part.makePlane(20, 20, App.Vector(-5, -5, 20))
+        self.Hole.StartType = "Reference"
+        self.Hole.StartReference = (reference, ["Face1"])
+        self.Hole.StartOffset = 2
+        self.Doc.recompute()
+
+        self.assertAlmostEqual(self.Hole.AddSubShape.BoundBox.ZMin, 22)
+        self.assertAlmostEqual(self.Hole.AddSubShape.BoundBox.ZMax, 27)
+
+    def testStartReferenceSketchAndMiss(self):
+        """A sketch is its plane as a start reference; a curved face the
+        hole's line does not cross is an error, not a hole at the profile."""
+        self.Hole.Diameter = 2
+        self.Hole.Depth = 3
+        self.Hole.DepthType = 0
+        self.Hole.DrillPoint = 0
+        sketch = self.Body.newObject("Sketcher::SketchObject", "StartSketch")
+        sketch.MapMode = "Deactivated"
+        sketch.Placement = App.Placement(App.Vector(0, 0, 4), App.Rotation())
+        self.Doc.recompute()
+        self.Hole.StartType = "Reference"
+        self.Hole.StartReference = (sketch, [""])
+        self.Doc.recompute()
+        self.assertNotIn("Invalid", self.Hole.State)
+        self.assertAlmostEqual(self.Hole.AddSubShape.BoundBox.ZMin, 4)
+        self.assertAlmostEqual(self.Hole.AddSubShape.BoundBox.ZMax, 7)
+
+        far = self.Doc.addObject("Part::Feature", "Far")
+        far.Shape = Part.makeCylinder(1, 5, App.Vector(50, 50, 0)).Faces[0]
+        self.Hole.StartReference = (far, ["Face1"])
+        self.Doc.recompute()
+        self.assertIn("Invalid", self.Hole.State)
 
     def testCosmeticThread(self):
         """The thread drawn on the bore without modelling it (upstream

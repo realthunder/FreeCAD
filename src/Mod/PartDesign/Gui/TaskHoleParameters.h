@@ -115,6 +115,9 @@ private Q_SLOTS:
     void threadDepthTypeChanged(int index);
     void threadDepthChanged(double value);
     void baseProfileTypeChanged(int index);
+    void startTypeChanged(int index);
+    void startOffsetChanged(double value);
+    void selectStartReference(bool checked);
 
 private:
     class Observer : public App::DocumentObserver {
@@ -133,11 +136,20 @@ private:
         TapDrill = 1,
         Threaded = 2
     };
+    /// The entries of the StartType combo, PartDesign::ProfileBased::StartTypesEnums
+    enum StartTypeIndex : int
+    {
+        ProfilePlane = 0,
+        Offset = 1,
+        Reference = 2
+    };
 
 protected:
     void changeEvent(QEvent *e) override;
     void changedObject(const App::Document&, const App::Property& Prop);
     void finishedRecomputeFeature() override;
+    void _onSelectionChanged(const Gui::SelectionChanges& msg) override;
+    void onSelectionModeChanged(SelectionMode oldMode) override;
 
 private:
     PartDesign::Hole* getHole() const;
@@ -151,6 +163,7 @@ private:
     void updateViewBlocking();
     void updateHoleCutLimits();
     void setCutDiagram();
+    void updateStartReferenceName();
 
     using Connection = fastsignals::scoped_connection;
     Connection connectPropChanged;
@@ -161,6 +174,7 @@ private:
 
     std::unique_ptr<Gui::GizmoContainer> gizmoContainer;
     Gui::LinearGizmo* holeDepthGizmo = nullptr;
+    Gui::LinearGizmo* startOffsetGizmo = nullptr;
     void setupGizmos(ViewProviderHole* vp);
     void setGizmoPositions();
 };

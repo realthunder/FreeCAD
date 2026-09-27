@@ -45,6 +45,7 @@ class QListWidget;
 
 namespace App {
 class Property;
+class PropertyLinkSub;
 }
 
 namespace Gui {
@@ -80,7 +81,9 @@ public:
 
     virtual void _onSelectionChanged(const Gui::SelectionChanges&) {}
 
-    const QString onSelectUpToFace(const Gui::SelectionChanges& msg);
+    /// Sets the pick as  prop, UpToFace if none; returns "Object:Face"
+    const QString onSelectUpToFace(const Gui::SelectionChanges& msg,
+                                   App::PropertyLinkSub* prop = nullptr);
 
     /** A pick on the feature itself, traced back to the base's element and
      * picked again as that. Returns false when the pick is not of the

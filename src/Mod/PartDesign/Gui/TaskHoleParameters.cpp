@@ -61,9 +61,9 @@ namespace sp = std::placeholders;
 
 // The panel's layout is upstream's redesign (114166a0e3, be3ce13a7c and the
 // January 2025 series, 69f3dae845): a cut diagram in the middle, and one
-// Hole type combo for Threaded, ModelThread and CosmeticThread. Upstream's
-// Start controls and Operation selector are not here (the fork's Hole has
-// no StartType, and initUI() adds the fork's own operation combo).
+// Hole type combo for Threaded, ModelThread and CosmeticThread; the Start
+// rows are f394f1b669. Upstream's Operation selector is not here: initUI()
+// adds the fork's own operation combo.
 
 namespace
 {
@@ -173,6 +173,12 @@ TaskHoleParameters::TaskHoleParameters(ViewProviderHole* HoleView, QWidget* pare
             this, &TaskHoleParameters::threadDepthChanged);
     connect(ui->BaseProfileType, qOverload<int>(&QComboBox::currentIndexChanged),
             this, &TaskHoleParameters::baseProfileTypeChanged);
+    connect(ui->StartType, qOverload<int>(&QComboBox::currentIndexChanged),
+            this, &TaskHoleParameters::startTypeChanged);
+    connect(ui->StartOffset, qOverload<double>(&Gui::QuantitySpinBox::valueChanged),
+            this, &TaskHoleParameters::startOffsetChanged);
+    connect(ui->buttonStartReference, &QPushButton::toggled,
+            this, &TaskHoleParameters::selectStartReference);
 
     PartDesign::Hole* pcHole = getHole();
 
@@ -185,6 +191,9 @@ TaskHoleParameters::TaskHoleParameters(ViewProviderHole* HoleView, QWidget* pare
     ui->TaperedAngle->bind(pcHole->TaperedAngle);
     ui->ThreadDepth->bind(pcHole->ThreadDepth);
     ui->CustomThreadClearance->bind(pcHole->CustomThreadClearance);
+    ui->StartOffset->bind(pcHole->StartOffset);
+    ui->StartOffset->setMinimum(0.0);
+    ui->StartOffset->setToolTip(tr("How far into the material from the start plane the holes start"));
     // The property allows a negative clearance; the form's default minimum
     // is 0
     ui->CustomThreadClearance->setMinimum(pcHole->CustomThreadClearance.getMinimum());
@@ -230,7 +239,10 @@ void TaskHoleParameters::setupGizmos(ViewProviderHole* vp)
         }
     });
 
-    gizmoContainer = GizmoContainer::create({holeDepthGizmo}, vp);
+    startOffsetGizmo = new LinearGizmo(ui->StartOffset);
+    startOffsetGizmo->setDraggerStyle(LinearDraggerStyle::Sphere);
+
+    gizmoContainer = GizmoContainer::create({holeDepthGizmo, startOffsetGizmo}, vp);
 
     setGizmoPositions();
     showDraggerHints();
@@ -263,6 +275,20 @@ void TaskHoleParameters::setGizmoPositions()
         return;
     }
     gizmoContainer->visible = true;
+
+    // The start gizmo sits where the offset is measured from (the profile,
+    // or the reference) and drags the offset; the depth gizmo moves with
+    // the start
+    const bool hasStartOffset = hole->StartType.getValue() != ProfilePlane;
+    try {
+        const double start = hole->getStartOffset();
+        startOffsetGizmo->Gizmo::setDraggerPlacement(
+            holePositions[0] - (start - hole->StartOffset.getValue()) * dir, -dir);
+        holePositions[0] -= start * dir;
+    }
+    catch (const Base::Exception&) {
+    }
+    startOffsetGizmo->setVisibility(hasStartOffset);
 
     holeDepthGizmo->Gizmo::setDraggerPlacement(
         holePositions[0] - ui->HoleCutDepth->value().getValue() * dir,
@@ -347,6 +373,10 @@ void TaskHoleParameters::refresh()
     ui->ThreadDepthType->setCurrentIndex(pcHole->ThreadDepthType.getValue());
     ui->ThreadDepth->setValue(pcHole->ThreadDepth.getValue());
 
+    ui->StartType->setCurrentIndex(pcHole->StartType.getValue());
+    ui->StartOffset->setValue(pcHole->StartOffset.getValue());
+    updateStartReferenceName();
+
     for (QWidget* child : proxy->findChildren<QWidget*>())
         child->blockSignals(false);
 
@@ -419,8 +449,92 @@ void TaskHoleParameters::updateVisibility()
     ui->HoleCutDepth->setDisabled(hole->HoleCutDepth.isReadOnly());
     ui->HoleCutCountersinkAngle->setDisabled(hole->HoleCutCountersinkAngle.isReadOnly());
 
+    // An offset from the profile or from a reference; the reference only
+    // for a reference
+    const int start = hole->StartType.getValue();
+    ui->labelStartOffset->setVisible(start != ProfilePlane);
+    ui->StartOffset->setVisible(start != ProfilePlane);
+    ui->labelStartReference->setVisible(start == Reference);
+    ui->lineStartReference->setVisible(start == Reference);
+    ui->buttonStartReference->setVisible(start == Reference);
+
     setCutDiagram();
     updateViewBlocking();
+}
+
+void TaskHoleParameters::updateStartReferenceName()
+{
+    auto hole = getHole();
+    if (!hole)
+        return;
+    QString text;
+    if (auto obj = hole->StartReference.getValue()) {
+        text = QString::fromUtf8(obj->Label.getValue());
+        const auto& subs = hole->StartReference.getSubValues();
+        if (!subs.empty() && !subs.front().empty())
+            text += QLatin1String(":") + QString::fromStdString(subs.front());
+    }
+    ui->lineStartReference->setText(text);
+    ui->lineStartReference->setPlaceholderText(tr("No start reference selected"));
+}
+
+void TaskHoleParameters::startTypeChanged(int index)
+{
+    auto pcHole = editHole();
+    if (!pcHole)
+        return;
+    pcHole->StartType.setValue(index);
+    // A reference start with nothing picked yet: pick it now
+    if (index == Reference && !pcHole->StartReference.getValue())
+        ui->buttonStartReference->setChecked(true);
+    else if (index != Reference && ui->buttonStartReference->isChecked())
+        ui->buttonStartReference->setChecked(false);
+    updateVisibility();
+    recomputeFeature();
+}
+
+void TaskHoleParameters::startOffsetChanged(double value)
+{
+    if (auto pcHole = editHole()) {
+        pcHole->StartOffset.setValue(value);
+        recomputeFeature();
+    }
+}
+
+void TaskHoleParameters::selectStartReference(bool checked)
+{
+    if (checked) {
+        AllowSelectionFlags conf;
+        // as the Revolution picks its up-to face
+        conf.setFlag(AllowSelection::FACE);
+        onSelectReference(ui->lineStartReference, conf);
+    }
+    else {
+        exitSelectionMode();
+    }
+}
+
+void TaskHoleParameters::onSelectionModeChanged(SelectionMode)
+{
+    QSignalBlocker blocker(ui->buttonStartReference);
+    ui->buttonStartReference->setChecked(getSelectionMode() == SelectionMode::refAdd);
+    ui->buttonStartReference->setText(ui->buttonStartReference->isChecked()
+                                          ? tr("Cancel") : tr("Pick Reference"));
+}
+
+void TaskHoleParameters::_onSelectionChanged(const Gui::SelectionChanges& msg)
+{
+    if (msg.Type != Gui::SelectionChanges::AddSelection
+        || getSelectionMode() != SelectionMode::refAdd)
+        return;
+    auto pcHole = editHole();
+    if (!pcHole)
+        return;
+    // A face, a datum plane or a sketch, taken as the up-to face would be
+    if (!onSelectUpToFace(msg, &pcHole->StartReference).isEmpty()) {
+        updateStartReferenceName();
+        exitSelectionMode();
+    }
 }
 
 void TaskHoleParameters::updateViewBlocking()
@@ -980,6 +1094,16 @@ void TaskHoleParameters::changedObject(const App::Document&, const App::Property
     else if (&Prop == &pcHole->ThreadDepth) {
         updateSpinBox(ui->ThreadDepth, pcHole->ThreadDepth.getValue());
     }
+    else if (&Prop == &pcHole->StartType) {
+        updateComboBox(ui->StartType, pcHole->StartType.getValue());
+        updateVisibility();
+    }
+    else if (&Prop == &pcHole->StartOffset) {
+        updateSpinBox(ui->StartOffset, pcHole->StartOffset.getValue());
+    }
+    else if (&Prop == &pcHole->StartReference) {
+        updateStartReferenceName();
+    }
     else if (&Prop == &pcHole->BaseProfileType) {
         // -1, an unlisted combination set from Python, shows no choice
         updateComboBox(ui->BaseProfileType,
@@ -1143,6 +1267,7 @@ void TaskHoleParameters::apply()
     ui->Depth->apply();
     ui->DrillPointAngle->apply();
     ui->TaperedAngle->apply();
+    ui->StartOffset->apply();
 
     if (!pcHole->Threaded.isReadOnly())
         FCMD_OBJ_CMD(obj, "Threaded = " << (getThreaded() ? 1 : 0));
@@ -1182,6 +1307,15 @@ void TaskHoleParameters::apply()
         FCMD_OBJ_CMD(obj, "DrillForDepth = " << (getDrillForDepth() ? 1 : 0));
     if (!pcHole->Tapered.isReadOnly())
         FCMD_OBJ_CMD(obj, "Tapered = " << getTapered());
+    FCMD_OBJ_CMD(obj, "StartType = " << ui->StartType->currentIndex());
+    if (auto ref = pcHole->StartReference.getValue()) {
+        const auto& subs = pcHole->StartReference.getSubValues();
+        FCMD_OBJ_CMD(obj, "StartReference = (" << Gui::Command::getObjectCmd(ref) << ", ['"
+                     << (subs.empty() ? std::string() : subs.front()) << "'])");
+    }
+    else {
+        FCMD_OBJ_CMD(obj, "StartReference = None");
+    }
 }
 
 //**************************************************************************
