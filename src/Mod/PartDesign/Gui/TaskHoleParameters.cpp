@@ -49,12 +49,14 @@ namespace sp = std::placeholders;
     qApp->translate("PartDesignGui::TaskHoleParameters", "Counterbore");
     qApp->translate("PartDesignGui::TaskHoleParameters", "Countersink");
     qApp->translate("PartDesignGui::TaskHoleParameters", "Counterdrill");
-    // Hole::ClearanceMetricEnums and Hole::ClearanceUTSEnums
-    qApp->translate("PartDesignGui::TaskHoleParameters", "Standard");
-    qApp->translate("PartDesignGui::TaskHoleParameters", "Close");
-    qApp->translate("PartDesignGui::TaskHoleParameters", "Wide");
+    // Hole::ClearanceMetricEnums, ClearanceUTSEnums and ClearanceOtherEnums
+    qApp->translate("PartDesignGui::TaskHoleParameters", "Medium");
+    qApp->translate("PartDesignGui::TaskHoleParameters", "Fine");
+    qApp->translate("PartDesignGui::TaskHoleParameters", "Coarse");
     qApp->translate("PartDesignGui::TaskHoleParameters", "Normal");
+    qApp->translate("PartDesignGui::TaskHoleParameters", "Close");
     qApp->translate("PartDesignGui::TaskHoleParameters", "Loose");
+    qApp->translate("PartDesignGui::TaskHoleParameters", "Wide");
 #endif
 
 // The panel's layout is upstream's redesign (114166a0e3, be3ce13a7c and the
@@ -101,8 +103,8 @@ TaskHoleParameters::TaskHoleParameters(ViewProviderHole* HoleView, QWidget* pare
     ui->setupUi(proxy);
     QMetaObject::connectSlotsByName(this);
 
-    // The data is the family whose clearance names apply; see
-    // Hole::ClearanceMetricEnums and Hole::ClearanceUTSEnums
+    // The data is the family whose clearance names apply (see
+    // Hole::ClearanceMetricEnums); the fit combo is filled from the enums
     ui->ThreadType->addItem(tr("None"), QByteArray("None"));
     ui->ThreadType->addItem(tr("ISO metric regular"), QByteArray("ISO"));
     ui->ThreadType->addItem(tr("ISO metric fine"), QByteArray("ISO"));
@@ -113,6 +115,7 @@ TaskHoleParameters::TaskHoleParameters(ViewProviderHole* HoleView, QWidget* pare
     ui->ThreadType->addItem(tr("ISO/BSP pipes"), QByteArray("ISO"));
     ui->ThreadType->addItem(tr("BSW whitworth"), QByteArray("Other"));
     ui->ThreadType->addItem(tr("BSF whitworth fine"), QByteArray("Other"));
+    ui->ThreadType->addItem(tr("ISO tyre valves"), QByteArray("Other"));
 
     refresh();
 

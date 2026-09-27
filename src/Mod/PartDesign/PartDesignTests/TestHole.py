@@ -294,6 +294,63 @@ class TestHole(unittest.TestCase):
             self.Body.removeObject(hole)
             self.Doc.removeObject(hole.Name)
 
+    def testTyreValveThreads(self):
+        """ISO 4570 tyre valve threads (upstream 551c15b48f): a modelled
+        thread with a rounded crest, and a tap drill of diameter - pitch,
+        as the table has no core holes."""
+        self.Body = self.Doc.addObject("PartDesign::Body", "Body")
+        box = self.Body.newObject("PartDesign::AdditiveBox", "Box")
+        box.Length = box.Width = box.Height = 30
+        self.Doc.recompute()
+        sketch = self.Body.newObject("Sketcher::SketchObject", "Center")
+        sketch.MapMode = "Deactivated"
+        sketch.Placement = App.Placement(App.Vector(0, 0, 30), App.Rotation())
+        TestSketcherApp.CreateCircleSketch(sketch, (15, 15), 1)
+        self.Doc.recompute()
+        hole = self.Body.newObject("PartDesign::Hole", "Hole")
+        hole.Profile = sketch
+        hole.ThreadType = "ISOTyre"
+        hole.ThreadSize = "8v1"  # Schrader external
+        hole.Threaded = True
+        hole.DepthType = "Dimension"
+        hole.Depth = 10
+        self.Doc.recompute()
+        self.assertAlmostEqual(hole.Diameter.Value, 7.798 - 0.794, places=6)
+        hole.ModelThread = True
+        self.Doc.recompute()
+        self.assertNotIn("Invalid", hole.State)
+        self.assertTrue(hole.Shape.isValid())
+        self.assertGreater(box.Shape.Volume - hole.Shape.Volume, 0)
+
+    def testClearanceNames(self):
+        """Each type names its fits after its standard (upstream 70007a28c1):
+        ISO 273's fine, medium and coarse, ASME's close, normal and loose.
+        The pipe and Whitworth types kept the previous type's names. The
+        index, which files store, means the same fit as before."""
+        expected = {
+            "ISOMetricProfile": ["Medium", "Fine", "Coarse"],
+            "UNC": ["Normal", "Close", "Loose"],
+            "BSW": ["Normal", "Close", "Wide"],
+            "BSP": ["Medium", "Fine", "Coarse"],
+            "NPT": ["Normal", "Close", "Loose"],
+            "BSF": ["Normal", "Close", "Wide"],
+            "ISOTyre": ["Normal", "Close", "Wide"],
+            "None": ["-", "-", "-"],
+        }
+        for thread_type, names in expected.items():
+            self.Hole.ThreadType = thread_type
+            self.assertEqual(self.Hole.getEnumerationsOfProperty("ThreadFit"), names,
+                             thread_type)
+        # ISO 273 for M8: fine 8.4, medium 9, coarse 10
+        self.Hole.ThreadType = "ISOMetricProfile"
+        self.Hole.ThreadSize = "M8"
+        self.Hole.Threaded = False
+        for index, diameter in ((0, 9.0), (1, 8.4), (2, 10.0)):
+            self.Hole.ThreadFit = index
+            self.Doc.recompute()
+            self.assertAlmostEqual(self.Hole.Diameter.Value, diameter,
+                                   msg=self.Hole.ThreadFit)
+
     def testCutBeyondStandard(self):
         """A counterbore or countersink for a size its standard has no entry
         for is estimated from the diameter (upstream 07e7918baf); it was the
@@ -488,6 +545,11 @@ class TestHole(unittest.TestCase):
                 "2", "2 1/4", "2 1/2", "2 3/4",
                 "3", "3 1/4", "3 1/2", "3 3/4",
                 "4", "4 1/4",
+            ],
+            'ISOTyre': [
+                "5v1", "5v2", "6v1", "8v1", "9v1", "10v2",
+                "12v1", "13v1", "8v2", "10v1", "11v1", "13v2",
+                "15v1", "16v1", "17v1", "17v2", "17v3", "19v1", "20v1",
             ],
         }
         allowed_types = self.Hole.getEnumerationsOfProperty("ThreadType")

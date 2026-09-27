@@ -72,9 +72,13 @@ namespace PartDesign {
 
 const char* Hole::DepthTypeEnums[]                   = { "Dimension", "ThroughAll", /*, "UpToFirst", */ nullptr };
 const char* Hole::ThreadDepthTypeEnums[]             = { "Hole Depth", "Dimension", "Tapped (DIN76)",  nullptr };
-const char* Hole::ThreadTypeEnums[]                  = { "None", "ISOMetricProfile", "ISOMetricFineProfile", "UNC", "UNF", "UNEF", "NPT", "BSP", "BSW", "BSF", nullptr};
-const char* Hole::ClearanceMetricEnums[]             = { "Standard", "Close", "Wide", nullptr};
+const char* Hole::ThreadTypeEnums[]                  = { "None", "ISOMetricProfile", "ISOMetricFineProfile", "UNC", "UNF", "UNEF", "NPT", "BSP", "BSW", "BSF", "ISOTyre", nullptr};
+// The fits by index: 0 the middle one, 1 the closest, 2 the widest; the
+// names are each standard's own (ISO 273, ASME B18.2.8), upstream 70007a28c1
+const char* Hole::ClearanceNoneEnums[]               = { "-", "-", "-", nullptr};
+const char* Hole::ClearanceMetricEnums[]             = { "Medium", "Fine", "Coarse", nullptr};
 const char* Hole::ClearanceUTSEnums[]                = { "Normal", "Close", "Loose", nullptr };
+const char* Hole::ClearanceOtherEnums[]              = { "Normal", "Close", "Wide", nullptr };
 const char* Hole::DrillPointEnums[]                  = { "Flat", "Angled", nullptr};
 
 /* "None" profile */
@@ -524,13 +528,37 @@ const Hole::ThreadDescription Hole::threadDescription[][171] =
         { "3 3/4",  95.250,   5.644,   0.0   },
         { "4",      101.600,  5.644,   0.0   },
         { "4 1/4",  107.950,  6.350,   0.0   },
+    },
+    /* ISO tyre valve threads, ISO 4570:2002, ordered as the standard
+       (upstream 551c15b48f) */
+    // {name, thread diameter, thread pitch, core hole diameter}
+    {
+        { "5v1",  5.334, 0.705, 0.0 }, // Schrader internal
+        { "5v2",  5.370, 1.058, 0.0 }, // Presta cap
+        { "6v1",  6.160, 0.800, 0.0 }, // Presta body
+        { "8v1",  7.798, 0.794, 0.0 }, // Schrader external
+        { "9v1",  9.525, 0.794, 0.0 },
+        { "10v2", 10.414, 0.907, 0.0 },
+        { "12v1", 12.319, 0.977, 0.0 },
+        { "13v1", 12.700, 1.270, 0.0 },
+        { "8v2",  7.938, 1.058, 0.0 },
+        { "10v1", 9.800, 1.000, 0.0 },
+        { "11v1", 11.113, 1.270, 0.0 },
+        { "13v2", 12.700, 0.794, 0.0 },
+        { "15v1", 15.137, 1.000, 0.0 },
+        { "16v1", 15.875, 0.941, 0.0 },
+        { "17v1", 17.137, 1.000, 0.0 },
+        { "17v2", 17.463, 1.058, 0.0 },
+        { "17v3", 17.463, 1.588, 0.0 },
+        { "19v1", 19.050, 1.588, 0.0 },
+        { "20v1", 20.642, 1.000, 0.0 },
     }
 };
 
 const double Hole::metricHoleDiameters[51][4] =
 {
     /* ISO metric clearance hole diameters according to ISO 273 */
-    // {screw diameter, close, standard, coarse}
+    // {screw diameter, fine, medium, coarse}
         { 1.0,      1.1,    1.2,    1.3},
         { 1.2,      1.3,    1.4,    1.5},
         { 1.4,      1.5,    1.6,    1.8},
@@ -1497,6 +1525,7 @@ void Hole::onChanged(const App::Property* prop)
             Threaded.setValue(false);
             ModelThread.setValue(false);
             UseCustomThreadClearance.setValue(false);
+            ThreadFit.setEnums(ClearanceNoneEnums);
         }
         else if (type == "ISOMetricProfile") {
             ThreadClass.setEnums(ThreadClass_ISOmetric_Enums);
@@ -1586,6 +1615,7 @@ void Hole::onChanged(const App::Property* prop)
         else if (type == "BSP") {
             ThreadClass.setEnums(ThreadClass_None_Enums);
             HoleCutType.setEnums(HoleCutType_BSP_Enums);
+            ThreadFit.setEnums(ClearanceMetricEnums);
             Threaded.setReadOnly(false);
             ThreadSize.setReadOnly(false);
             ThreadFit.setReadOnly(Threaded.getValue());
@@ -1599,6 +1629,7 @@ void Hole::onChanged(const App::Property* prop)
         else if (type == "NPT") {
             ThreadClass.setEnums(ThreadClass_None_Enums);
             HoleCutType.setEnums(HoleCutType_NPT_Enums);
+            ThreadFit.setEnums(ClearanceUTSEnums);
             Threaded.setReadOnly(false);
             ThreadSize.setReadOnly(false);
             ThreadFit.setReadOnly(Threaded.getValue());
@@ -1612,6 +1643,7 @@ void Hole::onChanged(const App::Property* prop)
         else if (type == "BSW") {
             ThreadClass.setEnums(ThreadClass_BSW_Enums);
             HoleCutType.setEnums(HoleCutType_BSW_Enums);
+            ThreadFit.setEnums(ClearanceOtherEnums);
             Threaded.setReadOnly(false);
             ThreadSize.setReadOnly(false);
             ThreadFit.setReadOnly(Threaded.getValue());
@@ -1625,6 +1657,21 @@ void Hole::onChanged(const App::Property* prop)
         else if (type == "BSF") {
             ThreadClass.setEnums(ThreadClass_BSF_Enums);
             HoleCutType.setEnums(HoleCutType_BSF_Enums);
+            ThreadFit.setEnums(ClearanceOtherEnums);
+            Threaded.setReadOnly(false);
+            ThreadSize.setReadOnly(false);
+            ThreadFit.setReadOnly(Threaded.getValue());
+            Diameter.setReadOnly(true);
+            ModelThread.setReadOnly(!Threaded.getValue());
+            UseCustomThreadClearance.setReadOnly(!Threaded.getValue() || !ModelThread.getValue());
+            CustomThreadClearance.setReadOnly(!Threaded.getValue() || !ModelThread.getValue() || !UseCustomThreadClearance.getValue());
+            ThreadDepthType.setReadOnly(!Threaded.getValue());
+            ThreadDepth.setReadOnly(!Threaded.getValue());
+        }
+        else if (type == "ISOTyre") {
+            ThreadClass.setEnums(ThreadClass_None_Enums);
+            HoleCutType.setEnums(HoleCutType_None_Enums);
+            ThreadFit.setEnums(ClearanceOtherEnums);
             Threaded.setReadOnly(false);
             ThreadSize.setReadOnly(false);
             ThreadFit.setReadOnly(Threaded.getValue());
@@ -2550,7 +2597,15 @@ TopoDS_Shape Hole::makeThread(const gp_Vec& xDir, const gp_Vec& zDir, double len
         gp_Pnt p6 = toPnt(0.9 * (Dmaj - h) * xDir + Pitch / 8 * zDir);
 
         mkThreadWire.Add(BRepBuilderAPI_MakeEdge(p1, p2).Edge());
-        mkThreadWire.Add(BRepBuilderAPI_MakeEdge(p2, p3).Edge());
+        if (threadTypeStr == "ISOTyre") {
+            // ISO 4570 rounds the crest (upstream 551c15b48f)
+            gp_Pnt crest = toPnt((Dmaj + clearance + Pitch / 32) * xDir + Pitch / 2 * zDir);
+            Handle(Geom_TrimmedCurve) arc1 = GC_MakeArcOfCircle(p2, crest, p3).Value();
+            mkThreadWire.Add(BRepBuilderAPI_MakeEdge(arc1).Edge());
+        }
+        else {
+            mkThreadWire.Add(BRepBuilderAPI_MakeEdge(p2, p3).Edge());
+        }
         mkThreadWire.Add(BRepBuilderAPI_MakeEdge(p3, p4).Edge());
         mkThreadWire.Add(BRepBuilderAPI_MakeEdge(p4, p5).Edge());
         mkThreadWire.Add(BRepBuilderAPI_MakeEdge(p5, p6).Edge());
