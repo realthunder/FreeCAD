@@ -105,6 +105,7 @@ protected:
     void handleChangedPropertyType(Base::XMLReader& reader, const char* TypeName, App::Property* prop) override;
 
     void onChanged(const App::Property* prop) override;
+    void onDocumentRestored() override;
 
     static const App::PropertyFloatConstraint::Constraints floatTurns;
     static const App::PropertyAngle::Constraints floatAngle;
@@ -115,6 +116,8 @@ private:
 
     // Sets the read-only status bit for properties depending on the input mode.
     void setReadWriteStatusForMode(HelixMode inputMode);
+
+    bool syncingOutside = false;
 };
 
 

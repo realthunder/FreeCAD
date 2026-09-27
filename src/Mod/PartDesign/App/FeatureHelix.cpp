@@ -554,7 +554,31 @@ void Helix::onChanged(const App::Property* prop)
         Tolerance.setStatus(App::Property::Hidden, isLegacySweep());
     }
 
+    // A subtractive helix's Outside is its Operation's Intersecting: the
+    // boolean moved to AddSubType and left Outside doing nothing, so keep
+    // the two in step (upstream 6293a0d873 does the same with its Operation)
+    if ((prop == &Outside || prop == &AddSubType) && !isRestoring() && !syncingOutside
+            && isDerivedFrom<SubtractiveHelix>()) {
+        Base::StateLocker guard(syncingOutside);
+        if (prop == &Outside)
+            AddSubType.setValue(Outside.getValue() ? "Intersecting" : "Subtractive");
+        else
+            Outside.setValue(strcmp(AddSubType.getValueAsString(), "Intersecting") == 0);
+    }
+
     ProfileBased::onChanged(prop);
+}
+
+void Helix::onDocumentRestored()
+{
+    // A file from before AddSubType (up to upstream 1.1) says Intersecting
+    // with Outside
+    if (isDerivedFrom<SubtractiveHelix>() && Outside.getValue()
+            && strcmp(AddSubType.getValueAsString(), "Subtractive") == 0) {
+        Base::StateLocker guard(syncingOutside);
+        AddSubType.setValue("Intersecting");
+    }
+    ProfileBased::onDocumentRestored();
 }
 
 void Helix::setReadWriteStatusForMode(HelixMode inputMode)

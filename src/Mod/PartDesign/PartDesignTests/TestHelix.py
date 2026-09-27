@@ -442,5 +442,64 @@ class TestHelix(unittest.TestCase):
         # the auxiliary spine's cone, 2.8% short of the exact 3.8829e5
         self.assertAlmostEqual(helix.Shape.Volume / 1e5, 3.7757, places=4)
 
+    def testSubtractiveOutside(self):
+        """Outside keeps what the helix shares with the base: it is the
+        Operation's Intersecting, which took the boolean over and left
+        Outside doing nothing (the fork's side of upstream 6293a0d873)"""
+        import os, re, tempfile, zipfile
+        body = self.Doc.addObject("PartDesign::Body", "Body")
+        cylinder = body.newObject("PartDesign::AdditiveCylinder", "Cylinder")
+        cylinder.Radius = 10
+        cylinder.Height = 20
+        sketch = body.newObject("Sketcher::SketchObject", "Sketch")
+        sketch.AttachmentSupport = (self.Doc.getObject("XZ_Plane"), [""])
+        sketch.MapMode = "FlatFace"
+        TestSketcherApp.CreateRectangleSketch(sketch, (8, 2), (4, 1))
+        helix = body.newObject("PartDesign::SubtractiveHelix", "SubtractiveHelix")
+        helix.Profile = sketch
+        helix.ReferenceAxis = (sketch, ["V_Axis"])
+        helix.Pitch = 5
+        helix.Height = 10
+        self.Doc.recompute()
+        cut = helix.Shape.Volume
+        helix.Outside = True
+        self.assertEqual(helix.AddSubType, "Intersecting")
+        self.Doc.recompute()
+        common = helix.Shape.Volume
+        # the part of the helix inside the cylinder: with the cut, all of it
+        self.assertLess(common, cut)
+        self.assertAlmostEqual(common + cut, cylinder.Shape.Volume, places=3)
+        helix.AddSubType = "Subtractive"
+        self.assertFalse(helix.Outside)
+
+        # A file from before AddSubType has Outside with a Subtractive type
+        helix.Outside = True
+        folder = tempfile.mkdtemp()
+        ours = os.path.join(folder, "ours.FCStd")
+        old = os.path.join(folder, "old.FCStd")
+        self.Doc.saveAs(ours)
+        with zipfile.ZipFile(ours) as src, zipfile.ZipFile(old, "w") as dst:
+            for item in src.infolist():
+                data = src.read(item.filename)
+                if item.filename == "Document.xml":
+                    xml = data.decode("utf-8")
+                    start = xml.index('<Object name="SubtractiveHelix"', xml.index("<ObjectData"))
+                    end = xml.index("</Object>", start)
+                    part = re.sub(r'(<Property name="AddSubType"[^>]*>\s*<Integer value=")2"',
+                                  r'\g<1>1"', xml[start:end], count=1)
+                    self.assertNotEqual(part, xml[start:end])
+                    data = (xml[:start] + part + xml[end:]).encode("utf-8")
+                dst.writestr(item, data)
+        doc = FreeCAD.openDocument(old)
+        try:
+            restored = doc.getObject("SubtractiveHelix")
+            self.assertTrue(restored.Outside)
+            self.assertEqual(restored.AddSubType, "Intersecting")
+            restored.touch()
+            doc.recompute()
+            self.assertAlmostEqual(restored.Shape.Volume, common, places=3)
+        finally:
+            FreeCAD.closeDocument(doc.Name)
+
     def tearDown(self):
         FreeCAD.closeDocument("PartDesignTestHelix")
