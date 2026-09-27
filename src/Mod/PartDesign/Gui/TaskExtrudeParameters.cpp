@@ -388,6 +388,11 @@ void TaskExtrudeParameters::refresh()
 
     ui->checkBoxUsePipe->setChecked(extrude->UsePipeForDraft.getValue());
 
+    // Lost in a merge (bcaa82d71a): the box started unchecked, and accepting
+    // the panel wrote that back, so a pad in a custom direction measured
+    // along the sketch normal went over to measuring along the direction
+    ui->checkBoxAlongDirection->setChecked(extrude->AlongSketchNormal.getValue());
+
     for (auto widget : {upToWidget, upToWidget2, startWidget}) {
         if (widget)
             widget->refresh();

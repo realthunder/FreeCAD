@@ -23,6 +23,11 @@
 #ifndef TASKFEATUREPARAMETERS_H_NAHKE2YZ
 #define TASKFEATUREPARAMETERS_H_NAHKE2YZ
 
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include <QPointer>
 #include <QWidget>
 
@@ -36,6 +41,10 @@ class QCheckBox;
 class QComboBox;
 class QTimer;
 class QBoxLayout;
+
+namespace App {
+class Property;
+}
 
 namespace Gui {
 class PrefCheckBox;
@@ -75,6 +84,14 @@ public:
     int getTransactionID() const {
         return transactionID;
     }
+
+    /// Orders the panels' full recomputes of their feature; 0 for none
+    unsigned long getComputedSequence() const {
+        return computedSequence;
+    }
+    /// Whether the feature's inputs are what this panel's last full
+    /// recompute of it saw, so its Shape is already theirs
+    bool isInputComputed() const;
 
 protected Q_SLOTS:
     // TODO Add update view to all dialogs (2015-12-05, Fat-Zer)
@@ -127,6 +144,13 @@ protected:
         void setText(const QString &text);
     };
     std::unordered_map<void*, BlinkInfo> blinkWidgets;
+
+private:
+    void saveComputedInput();
+
+    /// The feature's input values at the last full recompute, by name
+    std::vector<std::pair<std::string, std::unique_ptr<App::Property>>> computedInput;
+    unsigned long computedSequence = 0;
 };
 
 /// A common base for sketch based, dressup and other solid parameters dialogs
