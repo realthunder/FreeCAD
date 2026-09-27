@@ -169,6 +169,11 @@ public:
     void checkAction(SoSelectionElementAction *selaction,
             SoFCSelectionContextBasePtr ctx = SoFCSelectionContextBasePtr());
 
+    /// Hold one count for \a ctx exactly while it is counted (isCounted()).
+    /// Called AFTER the context changed, unlike checkAction(), which reads
+    /// it before.
+    void recount(const SoFCSelectionContextBasePtr &ctx);
+
 protected:
     std::shared_ptr<int> counter;
     bool hasSelection{false};

@@ -3201,10 +3201,14 @@ void SoFCSelectionRoot::getBoundingBox(SoGetBoundingBoxAction * action)
     auto stack = beginAction(action);
     if (!stack)
         return;
-    if(doActionPrivate(*stack,action)) {
-        selCounter.checkCache(action->getState(),true);
+    // Before the hide test, not after it: a node hidden in THIS occurrence
+    // must spoil the caches above it all the same. They are shared with the
+    // node's other occurrences -- a Link to the Part holding it -- and one
+    // built without it answers for those too, where a pick is then culled
+    // at the separator and misses the node that is shown there.
+    selCounter.checkCache(action->getState(),true);
+    if(doActionPrivate(*stack,action))
         inherited::getBoundingBox(action);
-    }
     endAction(action, *stack);
 }
 
@@ -3293,9 +3297,11 @@ bool SoFCSelectionRoot::doActionPrivate(Stack &stack, SoAction *action) {
                 action->getWhatAppliedTo()==SoAction::NODE))
             {
                 auto ctx = getActionContext(action,this,SelContextPtr(),false);
-                selCounter.checkAction(selAction,ctx);
                 if(ctx && ctx->hideAll) {
                     ctx->hideAll = false;
+                    // Give the count back, or this node spoils the caches
+                    // above it on every pass from now on.
+                    selCounter.recount(ctx);
                     if(!ctx->hlAll && !ctx->selAll)
                         removeActionContext(action,this);
                     touch();
@@ -3308,9 +3314,12 @@ bool SoFCSelectionRoot::doActionPrivate(Stack &stack, SoAction *action) {
             }else if(selAction->getType() == SoSelectionElementAction::Hide) {
                 if(action->getCurPathCode()==SoAction::BELOW_PATH || isTail) {
                     auto ctx = getActionContext(action,this,SelContextPtr());
-                    selCounter.checkAction(selAction,ctx);
                     if(ctx && !ctx->hideAll) {
                         ctx->hideAll = true;
+                        // Counted once hidden, not before: checkAction()
+                        // read the context before the change and so counted
+                        // the show instead of the hide.
+                        selCounter.recount(ctx);
                         touch();
                     }
                     return false;
