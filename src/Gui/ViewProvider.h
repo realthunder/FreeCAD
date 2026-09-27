@@ -389,6 +389,11 @@ public:
      */
     virtual std::string dropObjectEx(App::DocumentObject *obj, App::DocumentObject *owner,
             const char *subname, const std::vector<std::string> &elements);
+    /// The drop action the cursor shows over this view provider, for one
+    /// whose drop reads the modifiers its own way; the drop is unchanged
+    virtual Qt::DropAction getDropActionForTarget(Qt::DropAction action) const {
+        return action;
+    }
     /** Replace an object claimed by the view provider by drag and drop
      *
      * @param oldObj: object to be replaced

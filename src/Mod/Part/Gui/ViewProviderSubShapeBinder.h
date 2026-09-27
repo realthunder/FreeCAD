@@ -45,8 +45,17 @@ public:
     bool canDragAndDropObject(App::DocumentObject*) const override {return false;}
     bool canDropObjectEx(App::DocumentObject *obj, App::DocumentObject *owner, 
             const char *subname, const std::vector<std::string> &elements) const override;
-    std::string dropObjectEx(App::DocumentObject*, App::DocumentObject*, const char *, 
+    std::string dropObjectEx(App::DocumentObject*, App::DocumentObject*, const char *,
             const std::vector<std::string> &) override;
+    /// A drop adds to the binding without Ctrl and replaces it with Ctrl,
+    /// so the cursor shows Copy and Move the other way round
+    Qt::DropAction getDropActionForTarget(Qt::DropAction action) const override {
+        if (action == Qt::CopyAction)
+            return Qt::MoveAction;
+        if (action == Qt::MoveAction)
+            return Qt::CopyAction;
+        return action;
+    }
     std::vector<App::DocumentObject*> claimChildren(void) const override;
 
     virtual bool doubleClicked() override;

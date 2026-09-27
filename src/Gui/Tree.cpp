@@ -433,7 +433,8 @@ public:
 
     void refreshIcons();
 
-    void checkDropEvent(QDropEvent *event, bool *replace = nullptr, int *reorder = nullptr);
+    void checkDropEvent(QDropEvent *event, bool *replace = nullptr, int *reorder = nullptr,
+                        QTreeWidgetItem **target = nullptr);
 
     void setReorderingItem(QTreeWidgetItem *item, bool before = true)
     {
@@ -3098,10 +3099,18 @@ void TreeWidget::dragMoveEvent(QDragMoveEvent *event)
     if (!event->isAccepted())
         return;
 
-    pimpl->checkDropEvent(event);
+    QTreeWidgetItem *target = nullptr;
+    pimpl->checkDropEvent(event, nullptr, nullptr, &target);
+    // The cursor only: a SubShapeBinder adds what is dropped without Ctrl and
+    // replaces with it, the reverse of Move and Copy (upstream 3082039b3a)
+    if (event->isAccepted() && target && target->type() == ObjectType) {
+        if (auto vp = static_cast<DocumentObjectItem*>(target)->object())
+            event->setDropAction(vp->getDropActionForTarget(event->dropAction()));
+    }
 }
 
-void TreeWidget::Private::checkDropEvent(QDropEvent *event, bool *pReplace, int *pReorder)
+void TreeWidget::Private::checkDropEvent(QDropEvent *event, bool *pReplace, int *pReorder,
+                                         QTreeWidgetItem **pTarget)
 {
     checkActiveDocument = false;
 
@@ -3141,6 +3150,8 @@ void TreeWidget::Private::checkDropEvent(QDropEvent *event, bool *pReplace, int 
         if (targetItem)
             master->setCurrentItem(targetItem, 0, QItemSelectionModel::NoUpdate);
     }
+    if (pTarget)
+        *pTarget = targetItem;
 
     auto items = master->selectedItems();
 
