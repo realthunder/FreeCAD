@@ -40,6 +40,7 @@
 #include <Base/Exception.h>
 #include <Base/Parameter.h>
 #include <Base/Reader.h>
+#include <Base/Sequencer.h>
 #include <Mod/Part/App/modelRefine.h>
 
 #include <Mod/Part/App/TopoShapeOpCode.h>
@@ -585,6 +586,10 @@ App::DocumentObjectExecReturn *Transformed::execute()
             }
             std::vector<gp_Trsf>::const_iterator t = transformations.begin() + idx;
             for (; t != transformations.end(); ++t,++idx) {
+                // Nothing else lets the user's Esc in while a pattern is
+                // made (upstream eadd0bc191, 638f86a10f): every 500 ms the
+                // events are seen, and a confirmed abort throws
+                Base::Sequencer().checkAbort();
                 ss.str("");
                 if (idx)
                     ss << 'I' << idx;
@@ -644,6 +649,7 @@ App::DocumentObjectExecReturn *Transformed::execute()
 
         std::vector<gp_Trsf>::const_iterator t = transformations.begin() + idx;
         for (; t != transformations.end(); ++t,++idx) {
+            Base::Sequencer().checkAbort();
             auto shapeCopy = CopyShape.getValue()?shape.makECopy():shape;
             if (shapeCopy.isNull())
                 return new App::DocumentObjectExecReturn("Transformed: Linked shape object is empty");
