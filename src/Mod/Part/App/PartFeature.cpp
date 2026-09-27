@@ -37,6 +37,7 @@
 # include <BRepExtrema_DistShapeShape.hxx>
 # include <BRepGProp.hxx>
 # include <BRepIntCurveSurface_Inter.hxx>
+# include <gce_MakeCirc.hxx>
 # include <gce_MakeDir.hxx>
 # include <BRepBuilderAPI_MakeEdge.hxx>
 # include <BRepBuilderAPI_MakeFace.hxx>
@@ -44,9 +45,13 @@
 # include <BRepBuilderAPI_Copy.hxx>
 # include <gce_MakeLin.hxx>
 # include <gp_Ax1.hxx>
+# include <gp_Ax2.hxx>
+# include <gp_Ax3.hxx>
 # include <gp_Dir.hxx>
 # include <gp_Pln.hxx>
 # include <gp_Trsf.hxx>
+# include <Geom_Circle.hxx>
+# include <GeomAdaptor_Curve.hxx>
 # include <GProp_GProps.hxx>
 # include <IntCurveSurface_IntersectionPoint.hxx>
 # include <Precision.hxx>
@@ -2533,6 +2538,55 @@ std::vector<Part::cutFaces> Part::findAllFacesCutBy(
         newF.face = mkSection.Face();
         newF.face.mapSubElement(shape);
         newF.distsq = dsq;
+        result.push_back(newF);
+    }
+
+    return result;
+}
+
+std::vector<Part::cutFaces> Part::findAllFacesCutBy(
+        const TopoShape& shape, const TopoShape& face, const gp_Ax1& axis)
+{
+    // The circle the centre of gravity of the face runs on around the axis
+    GProp_GProps props;
+    BRepGProp::SurfaceProperties(face.getShape(),props);
+    gp_Pnt cog = props.CentreOfMass();
+
+    const gp_XYZ axisDir = axis.Direction().XYZ();
+    const double parameter = (cog.XYZ() - axis.Location().XYZ()).Dot(axisDir);
+    const gp_Pnt center(axis.Location().XYZ() + axisDir * parameter);
+    const double radius = center.Distance(cog);
+
+    std::vector<cutFaces> result;
+    if (radius < Precision::Confusion())
+        return result;
+
+    Handle(Geom_Circle) circle = new Geom_Circle(gce_MakeCirc(center, axis.Direction(), radius));
+    GeomAdaptor_Curve adaptor(circle);
+
+    // Local frame with X towards the centre of gravity, to measure the
+    // angle each hit is turned from it about the axis
+    gp_Ax3 lcs(gp_Ax2(center, axis.Direction(), gp_Dir(gp_Vec(center, cog))));
+    gp_Trsf toLocal;
+    toLocal.SetTransformation(lcs);
+
+    BRepIntCurveSurface_Inter mkSection;
+    for (mkSection.Init(shape.getShape(), adaptor, Precision::Confusion()); mkSection.More(); mkSection.Next()) {
+        gp_Pnt iPnt = mkSection.Pnt();
+        if (cog.SquareDistance(iPnt) < Precision::Confusion())
+            continue; // intersection with original face
+
+        gp_Pnt iLoc = iPnt.Transformed(toLocal);
+        double angle = std::acos(std::clamp(iLoc.X() / radius, -1.0, 1.0));
+        if (iLoc.Y() < 0.0)
+            angle = 2.0 * M_PI - angle;
+
+        cutFaces newF;
+        newF.face = mkSection.Face();
+        newF.face.mapSubElement(shape);
+        // The arc length to the hit, not a squared distance, but it sorts
+        // the faces the same way
+        newF.distsq = angle * radius;
         result.push_back(newF);
     }
 

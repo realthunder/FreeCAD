@@ -112,6 +112,7 @@ PyMOD_INIT_FUNC(_PartDesign)
     PartDesign::Extrusion                   ::init();
     PartDesign::Pocket                      ::init();
     PartDesign::Fillet                      ::init();
+    PartDesign::Revolved                    ::init();
     PartDesign::Revolution                  ::init();
     PartDesign::Groove                      ::init();
     PartDesign::Chamfer                     ::init();

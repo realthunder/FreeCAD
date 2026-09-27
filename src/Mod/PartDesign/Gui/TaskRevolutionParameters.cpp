@@ -423,7 +423,7 @@ void TaskRevolutionParameters::setCheckboxes(PartDesign::Revolution::RevolMethod
     bool isReversedEnabled = false;
     bool isFaceEditEnabled = false;
 
-    if (mode == PartDesign::Revolution::RevolMethod::Dimension) {
+    if (mode == PartDesign::Revolution::RevolMethod::Angle) {
         isRevolveAngleVisible = true;
         ui->revolveAngle->selectNumber();
         QMetaObject::invokeMethod(ui->revolveAngle, "setFocus", Qt::QueuedConnection);
@@ -451,7 +451,7 @@ void TaskRevolutionParameters::setCheckboxes(PartDesign::Revolution::RevolMethod
         if (ui->lineFaceName->property("FeatureName").isNull())
             ui->buttonFace->setChecked(true);
     }
-    else if (mode == PartDesign::Revolution::RevolMethod::TwoDimensions) {
+    else if (mode == PartDesign::Revolution::RevolMethod::TwoAngles) {
         isRevolveAngleVisible = true;
         isRevolveAngle2Visible = true;
         isReversedEnabled = true;
@@ -741,7 +741,7 @@ void TaskRevolutionParameters::onModeChanged(int index)
         pcType = &(static_cast<PartDesign::Groove*>(vp->getObject())->Type);
 
     switch (static_cast<PartDesign::Revolution::RevolMethod>(index)) {
-    case PartDesign::Revolution::RevolMethod::Dimension:
+    case PartDesign::Revolution::RevolMethod::Angle:
         pcType->setValue("Angle");
         // Avoid error message
         // if (ui->revolveAngle->value() < Base::Quantity(Precision::Angular(), Base::Unit::Angle)) // TODO: Ensure radians/degree consistency
@@ -759,7 +759,7 @@ void TaskRevolutionParameters::onModeChanged(int index)
     case PartDesign::Revolution::RevolMethod::ToFace:
         pcType->setValue("UpToFace");
         break;
-    case PartDesign::Revolution::RevolMethod::TwoDimensions:
+    case PartDesign::Revolution::RevolMethod::TwoAngles:
         pcType->setValue("TwoAngles");
         break;
     }

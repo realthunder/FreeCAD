@@ -29,6 +29,7 @@
 #include <Mod/Part/App/Part2DObject.h>
 #include "FeatureAddSub.h"
 
+class gp_Ax1;
 class gp_Dir;
 class gp_Lin;
 class TopoDS_Face;
@@ -171,6 +172,12 @@ protected:
                                    const gp_Dir& direction,
                                    double offset,
                                    const TopLoc_Location& invObjLoc) const;
+    /** The shape of a start reference, in the frame  invObjLoc takes it
+     * into: a datum plane or a sketch is its placement's plane, anything
+     * else the face (or the object's faces) it names
+     */
+    static TopoShape getStartReferenceShape(const App::PropertyLinkSub& reference,
+                                            const TopLoc_Location& invObjLoc);
     /// The profile moved  offset along  direction
     static TopoShape moveProfileToStart(const TopoShape& profileShape,
                                         const gp_Dir& direction,
@@ -194,6 +201,21 @@ protected:
                             const TopoShape& sketchshape,
                             const std::string& method,
                             gp_Dir& dir);
+
+    /// Find a valid face to revolve up to (upstream 80664a0d30)
+    static void getUpToFace(TopoShape& upToFace,
+                            const TopoShape& support,
+                            const TopoShape& sketchshape,
+                            const std::string& method,
+                            const gp_Ax1& axis);
+
+    /** Two sides combined as upstream does (a346c266e7): their union less
+     * what they share, so that a side running back into the other cancels
+     * it. One side is returned as it is.
+     */
+    static TopoShape xorSides(const std::vector<TopoShape>& sides,
+                              App::StringHasherRef hasher,
+                              const char* op);
 
     /// Add an offset to the face
     static void addOffsetToFace(TopoShape& upToFace,

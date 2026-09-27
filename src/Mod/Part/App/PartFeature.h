@@ -35,6 +35,7 @@
 #include <TopoDS_Face.hxx>
 #include "PropertyTopoShape.h"
 
+class gp_Ax1;
 class gp_Dir;
 
 namespace Data
@@ -369,6 +370,15 @@ struct cutFaces {
 PartExport
 std::vector<cutFaces> findAllFacesCutBy(const TopoShape& shape,
                                         const TopoShape& face, const gp_Dir& dir);
+
+/**
+ * Find all faces cut by the circle the centre of gravity of a given face runs
+ * on around an axis, for the "up to face" options of a revolution. distsq is
+ * the arc length from the face along the axis' turn, not a squared distance.
+ */
+PartExport
+std::vector<cutFaces> findAllFacesCutBy(const TopoShape& shape,
+                                        const TopoShape& face, const gp_Ax1& axis);
 
 /**
   * Check for intersection between the two shapes. Only solids are guaranteed to work properly

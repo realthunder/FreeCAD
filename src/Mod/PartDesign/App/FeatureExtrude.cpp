@@ -82,32 +82,6 @@ bool isWholeObject(const std::vector<std::string> &subs)
     return subs.empty() || (subs.size() == 1 && subs[0].empty());
 }
 
-/// The sides combined as upstream does (a346c266e7): their union less what
-/// they share, so that a side running back into the other cancels it, as a
-/// negative length did in the old TwoLengths
-TopoShape xorSides(const std::vector<TopoShape> &sides, App::StringHasherRef hasher)
-{
-    if (sides.size() == 1)
-        return sides.front();
-    TopoShape common(0, hasher);
-    try {
-        common.makEBoolean(Part::OpCodes::Common, sides);
-    } catch (Base::Exception &) {
-        common = TopoShape();
-    } catch (Standard_Failure &) {
-        common = TopoShape();
-    }
-    TopoShape result(0, hasher);
-    if (common.isNull() || !common.hasSubShape(TopAbs_SOLID)) {
-        result.makEBoolean(Part::OpCodes::Fuse, sides, Part::OpCodes::Extrude);
-        return result;
-    }
-    TopoShape fused(0, hasher);
-    fused.makEBoolean(Part::OpCodes::Fuse, sides);
-    result.makEBoolean(Part::OpCodes::Cut, {fused, common}, Part::OpCodes::Extrude);
-    return result;
-}
-
 } // anonymous namespace
 
 FeatureExtrude::FeatureExtrude() = default;
@@ -654,7 +628,10 @@ App::DocumentObjectExecReturn *FeatureExtrude::buildExtrusion(ExtrudeOptions opt
                 if (sides.empty())
                     return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception",
                                 "No extrusion geometry was generated"));
-                prism = xorSides(sides, getDocument()->getStringHasher());
+                // Union less what they share, as a negative length did in the
+                // old TwoLengths
+                prism = xorSides(sides, getDocument()->getStringHasher(),
+                                 Part::OpCodes::Extrude);
             }
         } else {
             // Through all tapers over the through-all length, as the untapered
