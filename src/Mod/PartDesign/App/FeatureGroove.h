@@ -55,6 +55,7 @@ public:
 
 protected:
     bool suggestReversedAngle(double angle) const override;
+    bool isGroove() const override { return true; }
 
 private:
     static const char* TypeEnums[];

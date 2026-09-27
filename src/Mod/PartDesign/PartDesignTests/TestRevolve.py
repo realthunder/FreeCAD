@@ -219,6 +219,17 @@ class TestRevolve(unittest.TestCase):
         self.Doc.recompute()
         self.assertAlmostEqual(groove.Shape.Volume, cylinder - self.torusVolume(360), delta=1.0)
 
+    def testGrooveTypesFollowTheClass(self):
+        # The panel's Operation switches AddSubType, not the class: a Groove
+        # made additive still reads its second type as Through all
+        cylinder = self.addBaseCylinder()
+        groove = self.addRevolved('Groove', Type='ThroughAll')
+        groove.AddSubType = 'Additive'
+        self.Doc.recompute()
+        self.assertSweep(groove, 360)
+        # The torus lies inside the cylinder: adding it changes nothing
+        self.assertAlmostEqual(groove.Shape.Volume, cylinder, delta=1.0)
+
     def testGrooveStartOffset(self):
         cylinder = self.addBaseCylinder()
         groove = self.addRevolved('Groove', Angle=30, StartType='Offset', StartOffset=90)

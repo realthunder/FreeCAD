@@ -172,20 +172,22 @@ Revolved::RevolMethod Revolved::methodOf(const App::PropertyEnumeration &type)
 
 bool Revolved::isAdditive() const
 {
-    return const_cast<Revolved*>(this)->getAddSubType() != FeatureAddSub::Subtractive;
+    return const_cast<Revolved*>(this)->getAddSubType() == FeatureAddSub::Additive;
 }
 
 App::DocumentObjectExecReturn *Revolved::executeRevolved()
 {
-    const bool additive = isAdditive();
+    // What the class is, not the Operation the panel may switch: a Groove
+    // needs a base, a Revolution may turn an open profile into a shell
+    const bool groove = isGroove();
     const bool symmetric = isValue(SideType, "Symmetric");
     // Type TwoAngles is two sides, should a script get it past onChanged()
     const bool twoSides = isValue(SideType, "Two sides") || isValue(Type, "TwoAngles");
     const RevolMethod method = methodOf(Type);
     const RevolMethod method2 = twoSides ? methodOf(Type2) : RevolMethod::Angle;
     // Revolution's second Type is UpToLast where Groove's is ThroughAll
-    auto isThroughAll = [additive](RevolMethod m) {
-        return !additive && m == RevolMethod::ThroughAll;
+    auto isThroughAll = [groove](RevolMethod m) {
+        return groove && m == RevolMethod::ThroughAll;
     };
     auto isUpTo = [&isThroughAll](RevolMethod m) {
         return m != RevolMethod::Angle && !isThroughAll(m);
@@ -209,14 +211,14 @@ App::DocumentObjectExecReturn *Revolved::executeRevolved()
     TopoShape sketchshape;
     try {
         // A revolution may turn an open profile into a shell
-        sketchshape = getVerifiedFace(/*silent*/false, /*doFit*/true, /*allowOpen*/additive);
+        sketchshape = getVerifiedFace(/*silent*/false, /*doFit*/true, /*allowOpen*/!groove);
     } catch (const Base::Exception& e) {
         return new App::DocumentObjectExecReturn(e.what());
     }
 
     // if the Base property has a valid shape, fuse the AddShape into it
     TopoShape base;
-    if (additive)
+    if (!groove)
         base = getBaseShape(/*silent*/true, /*force*/false, /*checkSolid*/false);
     else {
         try {
@@ -373,7 +375,7 @@ App::DocumentObjectExecReturn *Revolved::executeRevolved()
         if (result.isNull())
             return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Could not revolve the sketch!"));
 
-        if (additive)
+        if (!groove)
             result = refineShapeIfActive(result);
 
         // eventually disable some settings that are not valid for the current method
@@ -417,7 +419,7 @@ TopoShape Revolved::makeSide(RevolMethod method,
             return TopoShape();
         generateRevolution(revol, sketchshape, axis, angle, 0.0, false, RevolMethod::Angle);
     }
-    else if (method == RevolMethod::ThroughAll && !isAdditive())
+    else if (method == RevolMethod::ThroughAll && isGroove())
         generateRevolution(revol, sketchshape, axis, fullTurn, 0.0, false, RevolMethod::Angle);
     else {
         TopoShape face = getRevolutionUpToFace(method, upToFace, base, sketchshape, invObjLoc, axis);
@@ -435,8 +437,8 @@ TopoShape Revolved::revolveUpTo(const TopoShape& base,
 {
     auto hasher = getDocument()->getStringHasher();
 
-    // A groove cuts up to the face from the base; what it removed is the
-    // tool (upstream b2da06bfe0)
+    // To cut, or to keep what is common, cut up to the face from the base:
+    // what went is the tool (upstream b2da06bfe0)
     if (!isAdditive() && !base.isNull()) {
         try {
             TopoShape cut(0, hasher);
@@ -688,7 +690,7 @@ void Revolved::onDocumentRestored()
             // one side, whatever it said
             RevolMethod method = methodOf(Type);
             if (method == RevolMethod::Angle
-                    || (method == RevolMethod::ThroughAll && !isAdditive()))
+                    || (method == RevolMethod::ThroughAll && isGroove()))
                 SideType.setValue("Symmetric");
         }
         if (isValue(Type2, "TwoAngles"))

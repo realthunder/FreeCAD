@@ -107,6 +107,10 @@ protected:
     /// Whether Reversed gives material on the support side, for the signed
     /// angle between the axis and the profile normal
     virtual bool suggestReversedAngle(double angle) const = 0;
+    /// Whether this is a Groove: its second Type is ThroughAll (a
+    /// Revolution's is UpToLast), it needs a base and a closed profile.
+    /// The Operation (AddSubType) may still be switched in the panel.
+    virtual bool isGroove() const = 0;
 
     /// updates Axis from ReferenceAxis
     void updateAxis();
@@ -184,6 +188,7 @@ private:
     /// Disables settings that are not valid for the current methods
     void updateProperties();
 
+    /// The Operation adds: the up-to side is BRepFeat's fuse less the base
     bool isAdditive() const;
 
     static const App::PropertyAngle::Constraints floatAngle;
