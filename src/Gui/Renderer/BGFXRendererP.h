@@ -6474,11 +6474,13 @@ public:
     /// staging buffer while bgfx still owes it a write.
     bool readbackInFlight() const;
     /// Spin frames until every copy in flight has landed, and return
-    /// the frame reached. Benchmark-only
-    /// (FC_BGFX_READBACK_SYNC): it converts the pipelined route into
-    /// the fully serialized one docs/DeviceAdoption.md section 2
-    /// measured, at the cost of the frames it spins.
-    uint32_t syncReadback(uint32_t frameNum);
+    /// the frame reached. On screen only under FC_BGFX_READBACK_SYNC,
+    /// a benchmark switch: it converts the pipelined route into the
+    /// fully serialized one docs/DeviceAdoption.md section 2 measured,
+    /// at the cost of the frames it spins. Always when \a capture: a
+    /// capture is read once, right after this frame, and a pipelined
+    /// one hands back the frame before it.
+    uint32_t syncReadback(uint32_t frameNum, bool capture);
     /// Upload whatever has landed and draw it into the caller's bound
     /// framebuffer. Same destination rect convention as blit().
     void blitReadback(uint32_t frameNum, int dstX, int dstY, int dstH);

@@ -2141,9 +2141,15 @@ void BGFXView::noteReadbackFrame(uint32_t frameNum)
             slot.queuedFrame = frameNum;
 }
 
-uint32_t BGFXView::syncReadback(uint32_t frameNum)
+uint32_t BGFXView::syncReadback(uint32_t frameNum, bool capture)
 {
-    if (!readbackSync())
+    // A capture cannot trail. The screen redraws the previous image and
+    // catches up a frame later; renderOffscreen() is read once, right
+    // after this frame, so a pipelined capture IS the previous frame.
+    // On Direct3D 11 -- the Windows default, where the composite is
+    // always the readback -- every material icon came out one request
+    // late, the first blank, even through the grab's own second render.
+    if (!capture && !readbackSync())
         return frameNum;
     uint32_t want = 0;
     for (const auto &slot : readbackSlots)

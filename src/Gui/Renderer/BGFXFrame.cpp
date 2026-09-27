@@ -6560,13 +6560,16 @@ bool BGFXRenderer::Private::render(const QColor &col,
         // Benchmark only (FC_BGFX_READBACK_SYNC): spin until the copy
         // has landed, which is the fully serialized route section 2
         // costed. Off by default -- the pipelined form shows a frame
-        // that is one or two old and pays nothing for the wait.
+        // that is one or two old and pays nothing for the wait. A
+        // capture (renderOffscreen) always waits: nothing redraws it
+        // later, so the frame it gets is the one it keeps.
         //
         // Above the phase clock's restart on purpose: those frames are
         // bgfx's, not the context hand-off's, and charging them to
         // CpuCtxIn would put a benchmark switch's cost inside a number
         // that is supposed to be flat.
-        frameNum = view->syncReadback(frameNum);
+        frameNum = view->syncReadback(frameNum,
+                                      _BGFXLib.captureWidth != 0);
     }
     // bgfx::frame() has its own timer; restart the chain past it so
     // it is not counted twice.
