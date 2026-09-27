@@ -173,6 +173,10 @@ static void decLog(const char *fmt, ...)
 }
 static std::set<int> s_selIds;
 static std::set<int> s_overlayIds;
+/// Whether the automatic camera has ever framed the scene's own objects
+/// (fitCamera). Until it has, a scene with nothing to frame is framed by
+/// its scene-camera overlays instead; after, it is left where it is.
+static bool s_framed = false;
 
 // Live streaming (?scene=<http://host:port> page parameter): connect a
 // WebSocket to the desktop scene server (FC_BGFX_SERVE_SCENE) and
@@ -5287,6 +5291,8 @@ static bool fitCamera()
         }
         have = true;
     }
+    if (have)
+        s_framed = true;
     // Nothing in the scene at all: frame what the scene camera shows
     // instead. A sketch being edited is the whole of a document that holds
     // only it, and all of it rides the editing overlay -- which drew, and
@@ -5294,7 +5300,15 @@ static bool fitCamera()
     // was off screen and a ?cam= parameter, which waits for a fit, never
     // applied. Only the scene-camera overlays: the others are anchored to
     // the screen and have no place in the world to frame.
-    if (!have) {
+    //
+    // And only while the camera has framed nothing, which is that case.
+    // A scene that goes empty LATER is a client hiding what it had -- a
+    // served edit hides the edited sketch in the session's views, and its
+    // geometry rides the session's overlay (docs/ThinClient.md 8.12 item
+    // J) -- and refitting then threw the view the user was looking at
+    // away for one framing the sketch's axes, measured as a 10 mm line
+    // shrinking from 880 pixels to 20 on entering the edit.
+    if (!have && !s_framed) {
         for (const auto &ov : s_snap.overlays) {
             if (!ov.anchor.sceneCamera)
                 continue;
@@ -8535,6 +8549,7 @@ static bool applyScenePayload(const char *data, size_t size)
                             "dropping the object model\n");
             s_sessionId = snap.sessionId;
             s_objects = Render::SceneObjectModel();
+            s_framed = false;
             s_textureMemo->clear();
             s_sceneVersion = 0;
             // Deltas held from the old session chain to nothing now.
