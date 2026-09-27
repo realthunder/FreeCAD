@@ -73,6 +73,24 @@ TaskExtrudeParameters::TaskExtrudeParameters(ViewProviderSketchBased *SketchBase
                                     SelectionMode::refUpTo);
         upToWidget2 = makeUpToWidget(ui->upToShapeHolder2, extrude->UpToShape2,
                                      SelectionMode::refUpTo2);
+        // Where it starts, with StartType Reference (upstream bcc3e296fa):
+        // one face, a datum plane or a sketch, picked like the up-to faces
+        if (QWidget *holder = Gui::FwQt::widgetOf(ui->startReferenceHolder)) {
+            startWidget = new LinkSubWidget(this, tr("Reference"), extrude->StartReference,
+                                            /*singleElement*/true);
+            startWidget->setSelectionMode(SelectionMode::refStart);
+            startWidget->setHideLinked(false);
+            startWidget->setSelectionConfig(AllowSelection::FACE
+                                            | AllowSelection::OTHERBODY
+                                            | AllowSelection::WHOLE);
+            startWidget->setPickFilter(
+                [this](const Gui::SelectionChanges &msg, App::SubObjectT &objT) {
+                    return filterUpToPick(msg, objT);
+                });
+            auto layout = new QHBoxLayout(holder);
+            layout->setContentsMargins(0, 0, 0, 0);
+            layout->addWidget(startWidget);
+        }
     }
 
     this->groupLayout()->addWidget(proxy);
@@ -144,6 +162,7 @@ void TaskExtrudeParameters::setupDialog(bool newObj, const char *historyPath)
     // Bind input fields to properties
     ui->lengthEdit->bind(extrude->Length);
     ui->lengthEdit2->bind(extrude->Length2);
+    ui->startOffsetEdit->bind(extrude->StartOffset);
     ui->offsetEdit->bind(extrude->Offset);
     ui->offsetEdit2->bind(extrude->Offset2);
     ui->taperAngleEdit->bind(extrude->TaperAngle);
@@ -220,7 +239,8 @@ void TaskExtrudeParameters::setupGizmos()
     auto length2 = spinBoxOf(ui->lengthEdit2);
     auto taper1 = spinBoxOf(ui->taperAngleEdit);
     auto taper2 = spinBoxOf(ui->taperAngleEdit2);
-    if (!length1 || !length2 || !taper1 || !taper2) {
+    auto startOffset = spinBoxOf(ui->startOffsetEdit);
+    if (!length1 || !length2 || !taper1 || !taper2 || !startOffset) {
         return;
     }
 
@@ -234,11 +254,13 @@ void TaskExtrudeParameters::setupGizmos()
     lengthGizmo1->setClickCallback(toggleReversed);
     lengthGizmo2 = new Gui::LinearGizmo(length2);
     lengthGizmo2->setClickCallback(toggleReversed);
+    startOffsetGizmo = new Gui::LinearGizmo(startOffset);
+    startOffsetGizmo->setDraggerStyle(Gui::LinearDraggerStyle::Sphere);
     taperAngleGizmo1 = new Gui::RotationGizmo(taper1);
     taperAngleGizmo2 = new Gui::RotationGizmo(taper2);
 
     gizmoContainer = GizmoContainer::create(
-        {lengthGizmo1, lengthGizmo2, taperAngleGizmo1, taperAngleGizmo2},
+        {lengthGizmo1, lengthGizmo2, startOffsetGizmo, taperAngleGizmo1, taperAngleGizmo2},
         vp
     );
 
@@ -269,6 +291,21 @@ void TaskExtrudeParameters::setGizmoPositions()
     double dir = extrude->Reversed.getValue() && !symmetric ? -1 : 1;
 
     Base::Vector3d direction = extrude->Direction.getValue() * dir;
+    // The lengths are measured from the start, wherever StartType puts it,
+    // and the start offset from the plane it is added to: the profile's,
+    // or the reference's
+    const bool hasStart = strcmp(extrude->StartType.getValueAsString(), "Profile plane") != 0;
+    try {
+        const Base::Vector3d startDir = direction.Normalized();
+        const double start = extrude->getStartOffset();
+        startOffsetGizmo->Gizmo::setDraggerPlacement(
+            center + startDir * (start - extrude->StartOffset.getValue()), direction);
+        center += startDir * start;
+    }
+    catch (const Base::Exception&) {
+        // an unreachable reference: the feature is in error and says so
+    }
+    startOffsetGizmo->setVisibility(hasStart);
 
     lengthGizmo1->Gizmo::setDraggerPlacement(center, direction);
     lengthGizmo1->setVisibility(length1);
@@ -342,6 +379,8 @@ void TaskExtrudeParameters::refresh()
     // Fill data into dialog elements
     ui->lengthEdit->setValue(l);
     ui->lengthEdit2->setValue(l2);
+    ui->startMode->setCurrentIndex(extrude->StartType.getValue());
+    ui->startOffsetEdit->setValue(extrude->StartOffset.getQuantityValue());
     ui->XDirectionEdit->setEnabled(useCustom);
     ui->YDirectionEdit->setEnabled(useCustom);
     ui->ZDirectionEdit->setEnabled(useCustom);
@@ -361,7 +400,7 @@ void TaskExtrudeParameters::refresh()
 
     ui->checkBoxUsePipe->setChecked(extrude->UsePipeForDraft.getValue());
 
-    for (auto widget : {upToWidget, upToWidget2}) {
+    for (auto widget : {upToWidget, upToWidget2, startWidget}) {
         if (widget)
             widget->refresh();
     }
@@ -378,6 +417,7 @@ void TaskExtrudeParameters::refresh()
         child->blockSignals(false);
 
     setCheckboxes();
+    updateStartUI();
     TaskSketchBasedParameters::refresh();
 }
 
@@ -413,6 +453,10 @@ void TaskExtrudeParameters::connectSlots()
         this, &TaskExtrudeParameters::onOffsetChanged);
     Base::connect(ui->offsetEdit2, qOverload<double>(&Gui::Fw::QuantitySpinBox::valueChanged),
         this, &TaskExtrudeParameters::onOffset2Changed);
+    Base::connect(ui->startMode, qOverload<int>(&Gui::Fw::QComboBox::currentIndexChanged),
+        this, &TaskExtrudeParameters::onStartModeChanged);
+    Base::connect(ui->startOffsetEdit, qOverload<double>(&Gui::Fw::QuantitySpinBox::valueChanged),
+        this, &TaskExtrudeParameters::onStartOffsetChanged);
     Base::connect(ui->sideTypeCB, qOverload<int>(&Gui::Fw::QComboBox::currentIndexChanged),
         this, &TaskExtrudeParameters::onSideTypeChanged);
     Base::connect(ui->changeMode2, qOverload<int>(&Gui::Fw::QComboBox::currentIndexChanged),
@@ -503,6 +547,40 @@ int TaskExtrudeParameters::modeOf(const App::PropertyEnumeration &type)
     if (strcmp(name, "TwoLengths") == 0)
         return static_cast<int>(Modes::Dimension);
     return type.getValue();
+}
+
+void TaskExtrudeParameters::updateStartUI()
+{
+    const int type = ui->startMode->currentIndex();
+    ui->labelStartOffset->setVisible(type != 0);
+    ui->startOffsetEdit->setVisible(type != 0);
+    ui->startReferenceHolder->setVisible(type == 2);
+    // Leave the start pick once there is no reference to pick
+    if (type != 2 && getSelectionMode() == SelectionMode::refStart)
+        exitSelectionMode();
+}
+
+void TaskExtrudeParameters::onStartModeChanged(int index)
+{
+    setupTransaction();
+    PartDesign::FeatureExtrude* extrude = static_cast<PartDesign::FeatureExtrude*>(vp->getObject());
+    extrude->StartType.setValue(static_cast<long>(index));
+    updateStartUI();
+    // nothing to start at yet: pick it first
+    if (index == 2 && !extrude->StartReference.getValue()) {
+        if (startWidget)
+            startWidget->startSelection();
+        return;
+    }
+    recomputeFeature();
+}
+
+void TaskExtrudeParameters::onStartOffsetChanged(double len)
+{
+    setupTransaction();
+    PartDesign::FeatureExtrude* extrude = static_cast<PartDesign::FeatureExtrude*>(vp->getObject());
+    extrude->StartOffset.setValue(len);
+    recomputeFeature();
 }
 
 void TaskExtrudeParameters::onSideTypeChanged(int index)
@@ -1047,6 +1125,7 @@ void TaskExtrudeParameters::changeEvent(QEvent *e)
         QSignalBlocker ydir(ui->YDirectionEdit);
         QSignalBlocker zdir(ui->ZDirectionEdit);
         QSignalBlocker dir(ui->directionCB);
+        QSignalBlocker startMode(ui->startMode);
         QSignalBlocker sideType(ui->sideTypeCB);
         QSignalBlocker mode(ui->changeMode);
         QSignalBlocker mode2(ui->changeMode2);
@@ -1072,6 +1151,8 @@ void TaskExtrudeParameters::changeEvent(QEvent *e)
             if (widget)
                 widget->setTitle(upToTitle());
         }
+        if (startWidget)
+            startWidget->setTitle(tr("Reference"));
         translateTooltips();
 
         axesInList.clear();
@@ -1103,6 +1184,7 @@ void TaskExtrudeParameters::applyParameters()
 
     ui->lengthEdit->apply();
     ui->lengthEdit2->apply();
+    ui->startOffsetEdit->apply();
     ui->taperAngleEdit->apply();
     ui->taperAngleEdit2->apply();
     ui->innerTaperEdit->apply();
@@ -1123,6 +1205,9 @@ void TaskExtrudeParameters::applyParameters()
     FCMD_OBJ_CMD(obj, "Reversed = " << (getReversed() ? 1 : 0));
     FCMD_OBJ_CMD(obj, "Offset = " << getOffset());
     FCMD_OBJ_CMD(obj, "Offset2 = " << ui->offsetEdit2->value().getValue());
+    FCMD_OBJ_CMD(obj, "StartType = '" << extrude->StartType.getValueAsString() << "'");
+    FCMD_OBJ_CMD(obj, "StartReference = " << buildLinkSingleSubPythonStr(
+                extrude->StartReference.getValue(), extrude->StartReference.getSubValues()));
 }
 
 void TaskExtrudeParameters::onModeChanged(int)

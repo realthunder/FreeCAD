@@ -58,6 +58,11 @@ public:
     App::PropertyBool        UseCustomVector;
     App::PropertyVector      Direction;
     App::PropertyBool        AlongSketchNormal;
+    /// Where the extrusion starts: see ProfileBased::StartTypesEnums
+    /// (upstream bcc3e296fa, under its names)
+    App::PropertyEnumeration StartType;
+    App::PropertyLength      StartOffset;
+    App::PropertyLinkSub     StartReference;
     App::PropertyLength      Offset;
     App::PropertyLength      Offset2;
     /// The second side's UpToFace and UpToShape, synced the same way
@@ -91,7 +96,21 @@ public:
      */
     static bool isSingleUpToFace(const App::PropertyLinkSubList &shape);
 
+    /** How far along the extrusion the profile moves to start where
+     * StartType says, in global coordinates; throws if the reference
+     * cannot be met. For the panel and its gizmo.
+     */
+    double getStartOffset() const;
+
 protected:
+    /// The start offset of \a profile, extruded along \a direction; both
+    /// in the frame \a invObjLoc takes the reference into
+    double startOffset(const TopoShape &profile, const gp_Dir &direction,
+                       const TopLoc_Location &invObjLoc) const;
+    /// The direction the start moves along: the extrusion's, reversed
+    /// with it except for a symmetric one, which Reversed does not turn
+    gp_Dir startDirection(const Base::Vector3d &direction) const;
+
     void initProperties(const char *group);
 
     void onChanged(const App::Property *) override;

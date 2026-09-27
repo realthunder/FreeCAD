@@ -77,6 +77,7 @@ public:
         refSection,
         refUpTo,
         refUpTo2,
+        refStart,
     };
 
     virtual void _onSelectionChanged(const Gui::SelectionChanges&) {}

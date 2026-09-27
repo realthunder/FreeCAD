@@ -94,6 +94,8 @@ public:
     };
 
 protected:
+    void onStartModeChanged(int);
+    void onStartOffsetChanged(double);
     void onSideTypeChanged(int);
     void onMode2Changed(int);
     void onLengthChanged(double);
@@ -120,6 +122,8 @@ protected:
     void _onSelectionChanged(const Gui::SelectionChanges& msg) override;
 
     void setCheckboxes();
+    /// Show the start rows StartType asks for
+    void updateStartUI();
     void setupDialog(bool newObj, const char *historyPath);
     void readValuesFromHistory();
     App::PropertyLinkSub* propReferenceAxis;
@@ -155,6 +159,8 @@ protected:
 
     LinkSubWidget *upToWidget = nullptr;
     LinkSubWidget *upToWidget2 = nullptr;
+    /// The start reference: a face, a datum plane or a sketch
+    LinkSubWidget *startWidget = nullptr;
 
 private:
     void tryRecomputeFeature();
@@ -168,6 +174,8 @@ private:
     std::unique_ptr<Gui::GizmoContainer> gizmoContainer;
     Gui::LinearGizmo* lengthGizmo1 = nullptr;
     Gui::LinearGizmo* lengthGizmo2 = nullptr;
+    /// Drags StartOffset from the plane it is measured from (upstream a01fad4f53)
+    Gui::LinearGizmo* startOffsetGizmo = nullptr;
     Gui::RotationGizmo* taperAngleGizmo1 = nullptr;
     Gui::RotationGizmo* taperAngleGizmo2 = nullptr;
     void setupGizmos();

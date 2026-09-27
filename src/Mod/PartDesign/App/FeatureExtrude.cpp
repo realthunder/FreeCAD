@@ -125,6 +125,15 @@ void FeatureExtrude::initProperties(const char *group)
     ADD_PROPERTY_TYPE(Direction, (Base::Vector3d(1.0, 1.0, 1.0)), group, App::Prop_None, "Extrusion direction vector");
     ADD_PROPERTY_TYPE(ReferenceAxis, (nullptr), group, App::Prop_None, "Reference axis of direction");
     ADD_PROPERTY_TYPE(AlongSketchNormal, (true), group, App::Prop_None, "Measure pad length along the sketch normal direction");
+    ADD_PROPERTY_TYPE(StartType, (0L), "Start", App::Prop_None, "How to define the start plane");
+    StartType.setEnums(StartTypesEnums);
+    ADD_PROPERTY_TYPE(StartOffset, (0.0), "Start", App::Prop_None,
+                      "How far along the extrusion from the start plane it starts");
+    StartOffset.setConstraints(&signedLengthConstraint);
+    ADD_PROPERTY_TYPE(StartReference, (nullptr), "Start", App::Prop_None,
+                      "Face, plane or sketch the extrusion starts at, with StartType Reference");
+    StartOffset.setReadOnly(true);
+    StartReference.setReadOnly(true);
     ADD_PROPERTY_TYPE(UpToFace, (nullptr), group, App::Prop_None, "Face where pad will end");
     ADD_PROPERTY_TYPE(UpToShape, (nullptr), group, App::Prop_None, "Faces or shapes where pad will end");
     ADD_PROPERTY_TYPE(Offset, (0.0), group, App::Prop_None, "Offset from face in which pad will end");
@@ -177,6 +186,9 @@ short FeatureExtrude::mustExecute() const
         Direction.isTouched() ||
         ReferenceAxis.isTouched() ||
         AlongSketchNormal.isTouched() ||
+        StartType.isTouched() ||
+        StartOffset.isTouched() ||
+        StartReference.isTouched() ||
         Offset.isTouched() ||
         UpToFace.isTouched() ||
         UpToShape.isTouched())
@@ -329,6 +341,36 @@ void FeatureExtrude::updateProperties()
     UpToShape2.setReadOnly(!side2.upTo);
 }
 
+gp_Dir FeatureExtrude::startDirection(const Base::Vector3d &direction) const
+{
+    gp_Dir dir(direction.x, direction.y, direction.z);
+    if (Reversed.getValue() && strcmp(SideType.getValueAsString(), "Symmetric") != 0)
+        dir.Reverse();
+    return dir;
+}
+
+double FeatureExtrude::startOffset(const TopoShape &profile, const gp_Dir &direction,
+                                   const TopLoc_Location &invObjLoc) const
+{
+    const std::string type = StartType.getValueAsString();
+    if (type == "Offset")
+        return StartOffset.getValue();
+    if (type == "Reference")
+        return getStartReferenceOffset(profile, StartReference, direction,
+                                       StartOffset.getValue(), invObjLoc);
+    return 0.0;
+}
+
+double FeatureExtrude::getStartOffset() const
+{
+    // In global coordinates, where the profile, the reference and the
+    // Direction the last recompute stated all are
+    if (strcmp(StartType.getValueAsString(), "Profile plane") == 0)
+        return 0.0;
+    return startOffset(getVerifiedFace(), startDirection(Direction.getValue()),
+                       TopLoc_Location());
+}
+
 void FeatureExtrude::setupObject()
 {
     ProfileBased::setupObject();
@@ -451,6 +493,15 @@ App::DocumentObjectExecReturn *FeatureExtrude::buildExtrusion(ExtrudeOptions opt
             return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception",
                         "Creating a face from sketch failed"));
         sketchshape.move(invObjLoc);
+
+        // Where it starts (upstream bcc3e296fa): the profile moved along the
+        // extrusion, by an offset or to a reference. Everything below builds
+        // from the moved profile. Measured: a support face left where the
+        // profile was changes nothing, up to a face or the first, pad or
+        // pocket.
+        const gp_Dir startDir = startDirection(Base::Vector3d(dir.X(), dir.Y(), dir.Z()));
+        sketchshape = moveProfileToStart(sketchshape, startDir,
+                                         startOffset(sketchshape, startDir, invObjLoc));
 
         TopoShape prism(0,getDocument()->getStringHasher());
 
@@ -974,6 +1025,12 @@ void FeatureExtrude::onChanged(const App::Property *prop)
             syncUpToFace(UpToShape, UpToFace, Type);
         else if (prop == &UpToShape2)
             syncUpToFace(UpToShape2, UpToFace2, Type2);
+    }
+
+    if (prop == &StartType) {
+        const std::string type = StartType.getValueAsString();
+        StartOffset.setReadOnly(type == "Profile plane");
+        StartReference.setReadOnly(type != "Reference");
     }
 
     if (prop == &TaperAngle

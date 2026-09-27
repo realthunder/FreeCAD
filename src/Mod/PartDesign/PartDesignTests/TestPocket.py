@@ -52,6 +52,44 @@ class TestPocket(unittest.TestCase):
         self.Doc.recompute()
         self.assertAlmostEqual(self.Pocket.Shape.Volume, 75.0)
 
+    def testStartOffset(self):
+        # upstream bcc3e296fa: the offset goes into the material
+        self.Body = self.Doc.addObject("PartDesign::Body", "Body")
+        self.PadSketch = self.Doc.addObject("Sketcher::SketchObject", "PadSketch")
+        self.Body.addObject(self.PadSketch)
+        TestSketcherApp.CreateRectangleSketch(self.PadSketch, (0, 0), (10, 10))
+        self.Doc.recompute()
+        self.Pad = self.Doc.addObject("PartDesign::Pad", "Pad")
+        self.Body.addObject(self.Pad)
+        self.Pad.Profile = self.PadSketch
+        self.Pad.Length = 1
+        self.Pad.Reversed = 1
+        self.Doc.recompute()
+
+        self.PocketSketch = self.Doc.addObject("Sketcher::SketchObject", "PocketSketch")
+        self.Body.addObject(self.PocketSketch)
+        TestSketcherApp.CreateRectangleSketch(self.PocketSketch, (2.5, 2.5), (5, 5))
+        self.Doc.recompute()
+        self.Pocket = self.Doc.addObject("PartDesign::Pocket", "Pocket")
+        self.Body.addObject(self.Pocket)
+        self.Pocket.Profile = self.PocketSketch
+        self.Pocket.StartType = "Offset"
+        self.Pocket.StartOffset = 0.5
+        self.Pocket.Length = 0.25
+        self.Doc.recompute()
+        self.assertAlmostEqual(self.Pocket.Shape.Volume, 93.75)
+
+        # Up to a face, from the moved start
+        bottom = min(
+            range(1, len(self.Pad.Shape.Faces) + 1),
+            key=lambda index: self.Pad.Shape.Faces[index - 1].CenterOfMass.z,
+        )
+        self.Pocket.Type = "UpToFace"
+        self.Pocket.UpToFace = (self.Pad, [f"Face{bottom}"])
+        self.Doc.recompute()
+        self.assertTrue(self.Pocket.isValid())
+        self.assertAlmostEqual(self.Pocket.Shape.Volume, 87.5)
+
     def testPocketThroughAllCase(self):
         self.Body = self.Doc.addObject('PartDesign::Body','Body')
         self.PadSketch = self.Doc.addObject('Sketcher::SketchObject', 'PadSketch')
