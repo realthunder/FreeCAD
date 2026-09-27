@@ -511,7 +511,8 @@ wait on them:
 - **Upstream's PreviewExtension** (the in-panel feature preview, `802af4c464`)
   -- about a dozen fix rows are its own fixes.
 - **Upstream's Hole panel redesign** (`114166a0e3` and the January 2025
-  series) -- four rows here, more among the features.
+  series) -- four rows here, more among the features. Taken 2026-09-27,
+  "The Hole panel redesign" below.
 
 Fork gaps the agents saw that no upstream commit names:
 
@@ -1178,3 +1179,94 @@ Part) as tools: both hidden during the edit, both back on Cancel, both
 hidden after OK with both cuts in the result (10411.4 = 12000 - 1086.0
 - 502.7), both back after undo, and no fault on that undo.
 Suites after it: ctest 750/750; Python 2982 OK.
+
+### The Hole panel redesign (2026-09-27)
+
+Queued by the handoff after the edit previews: upstream's Hole panel
+(`114166a0e3`, `be3ce13a7c` and the January 2025 series, `69f3dae845`,
+`f0d43b0ca9`) and the pitch-qualified ISO sizes (`599f100c4f`). The two
+panels had drifted too far for picks (fork 266 lines changed since the
+merge base, upstream 1489), so the fork took upstream's `.ui` as it is at
+`3383e9119f` and rewrote the `.cpp` onto it.
+
+**What the panel is now.** Profile (base profile types) on top; then
+Standard, Size, Head type, Depth type; the head, drill point, depth and
+diameter fields around a cut diagram that follows the head type, the
+drill point and Include in depth (twelve SVGs, `images/hole_*.svg`, drawn
+at a font-scaled size by `Gui::FontScaledSVG`); Switch direction and
+Tapered; Hole type -- Clearance / Passthrough, Tap drill, Threaded --
+with the clearance under it; and the Thread group. `Gui::ElideLabel` and
+`Gui::ElideCheckBox` shorten long labels instead of widening the panel.
+All three are upstream's files as they are at the tip, so `57a8b2879a`'s
+check box spacing fix comes with them.
+
+**The Hole type combo states three properties.** Clearance is
+`Threaded` off; Tap drill is `Threaded` on with no thread drawn or
+modelled (the bore is the tap drill); Threaded shows the Thread group,
+and its Model Thread box picks `ModelThread`, unticked meaning
+`CosmeticThread` -- the fork's render-engine thread finish ("Thread
+texture" above), where upstream draws its overlay. The old panel's
+separate Threaded, Model Thread and Cosmetic Thread boxes are gone; old
+files map onto the combo as they are (`Threaded` with neither is Tap
+drill).
+
+**Differences from upstream, on purpose:**
+
+- No Start row (`f394f1b669`, the fork's Hole has no `StartType`) and no
+  Operation row (`82c7a09b35`; `initUI()` adds the fork's own operation
+  combo above the form). Upstream's "Update thread view" box is the
+  fork's Update view box at the foot of the panel, enabled only for a
+  modelled thread as before.
+- The show/hide/enable state is one routine, `updateVisibility()`, read
+  from the properties, called from `refresh()`, each slot and
+  `changedObject()`. Upstream toggles widgets slot by slot, and its
+  constructor and `holeTypeChanged()` disagree on when the Thread group
+  shows (Threaded in one, modelled-or-drawn in the other).
+- The clearance names come from the `ThreadFit` enums
+  (`ClearanceMetricEnums`, `ClearanceUTSEnums`). The old panel kept the
+  `.ui`'s ISO names until the type changed, so a UTS hole opened showing
+  Standard/Close/Wide.
+- **ISO coarse sizes show their pitch, but only in the list**: the panel
+  lists "M6x1.0", the property stays "M6". Upstream renamed the sizes
+  themselves, which breaks every file and script that names one and made
+  it rewrite the head cut tables to match (`236c287f16`). The display
+  gets upstream's disambiguation from the fine sizes ("M6x0.75") for
+  nothing.
+- `QuantitySpinBox`'s width hint (12 -> 9 characters, in `be3ce13a7c`)
+  is left alone: it narrows every quantity box in the application, and
+  the panel fits without it.
+
+**Two fork defects fixed on the way.** The panel never opened the edit's
+transaction before its first change -- every other PartDesign panel calls
+`setupTransaction()` first -- so the first change of an edit landed
+outside it and Cancel kept it. Seen: OK on a modelled M10 thread, reopen,
+Hole type -> Tap drill, Cancel: `ModelThread` stayed off. Now every slot
+takes the Hole through `editHole()`, which opens the transaction; the
+same steps leave `ModelThread` on. And the depth gizmo's click did not
+reverse the hole: it called `setChecked()` on Switch direction, which
+emits no `clicked()`, the signal the panel listens to; it clicks the box
+now (read from the code, not driven). The gizmo also sits on the first
+hole whatever `BaseProfileType` centres holes on, points included,
+through `Hole::forEachHoleCenter()` and `guessNormalDirection()`, made
+public for it with `isDynamicCounterbore/Countersink()`.
+
+**Checked in the GUI** (`win-relwithdebinfo-801`), a box with a circle
+and a point in the sketch, the panel driven through every state from a
+script and grabbed: None (no Size, no Hole type, Diameter editable); ISO
+regular (sizes "M8x1.25"; Diameter off); Tap drill (Thread group hidden,
+Clearance hidden); Threaded (group shown, Model Thread off ->
+`CosmeticThread` on); Model Thread on (Custom Clearance row appears,
+Update view enabled); Counterbore, Countersink (angle field appears),
+ISO 4762 (Custom head values appears, the head fields read-only at
+15 x 8.6); Drill angle off (flat diagram, Include in depth disabled;
+the `_included` diagrams were not shown);
+Through all (depth and drill frame off); Clearance (the Clearance combo
+appears); UTS coarse (fit names Normal/Close/Loose); None again. The
+Hole is valid in every head type. OK, reopen: the combo, Model Thread,
+the group and the countersink angle come back as saved.
+
+Commit `17f59a0c35`. 25 ledger rows settled: 20 adapted, 2 taken, 2 n/a,
+and `599f100c4f` turned from declined to adapted. Still open near it:
+the clearance renames (`70007a28c1`) and the ISO tyre valves
+(`551c15b48f`, which rests on them), and the Start controls
+(`f394f1b669`). Suites: ctest 750/750; TestPartDesignApp 156 OK.
