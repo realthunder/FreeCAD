@@ -31,6 +31,7 @@
 #include <vector>
 
 #include <FCGlobal.h>
+#include <App/StringHasher.h>
 
 namespace App
 {
@@ -132,6 +133,24 @@ public:
         _idOfName.emplace(name, id);
         _nameOfId.emplace(id, name);
     }
+    /** The file's string hasher (sec 27.40 item 2), the one every document
+     * of the file hashes element names with, so one shape has one element
+     * map in every version and branch. Null until a document gives it
+     * its own (`shareHasher`).
+     */
+    const StringHasherRef& hasher() const { return _hasher; }
+    /** The hasher `doc` should use: the file's, made `own` if the file has
+     * none yet; `own` if the file's is another and `own` already holds
+     * strings, which stay the document's (a document that hashed before it
+     * had its history).
+     */
+    StringHasherRef shareHasher(const StringHasherRef& own)
+    {
+        if (!_hasher)
+            _hasher = own;
+        return own && own != _hasher && own->size() ? own : _hasher;
+    }
+
     /// Every (name, id) pair, in no order.
     const std::unordered_map<std::string, long>& objectNames() const { return _idOfName; }
 
@@ -188,6 +207,7 @@ private:
     long _lastObjectId {0};
     std::unordered_map<std::string, long> _idOfName;
     std::unordered_map<long, std::string> _nameOfId;
+    StringHasherRef _hasher;
     std::string _dir;
     std::string _path;
     std::unique_ptr<FileBlobManager> _blobs;

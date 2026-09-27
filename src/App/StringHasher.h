@@ -774,6 +774,14 @@ public:
     /// Compact string storage by eliminating unused strings from the table.
     void compact();
 
+    /** Take in `other`'s table (docs/TransactionLog.md sec 27.40 item 2):
+     * each id it has that this one has not, under the same id. False, with
+     * nothing changed, when an id means something else here. `aliased`
+     * gets how many strings came in that this table already had under
+     * another id (sec 27.41 Q2).
+     */
+    bool merge(const StringHasher& other, std::size_t* aliased = nullptr);
+
     class HashMap;
     friend class StringID;
 

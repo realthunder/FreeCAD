@@ -6,9 +6,12 @@
 #include <App/StringHasher.h>
 #include <App/StringHasherPy.h>
 #include <App/StringIDPy.h>
+#include <Base/Reader.h>
+#include <Base/Writer.h>
 
 #include <QCryptographicHash>
 #include <array>
+#include <sstream>
 
 class StringIDTest: public ::testing::Test
 {
@@ -1581,4 +1584,84 @@ TEST_F(StringHasherTest, compact)  // NOLINT
 
     // Assert
     EXPECT_EQ(0, Hasher()->count());
+}
+
+TEST_F(StringHasherTest, mergeTakesInAnotherTable)  // NOLINT
+{
+    // docs/TransactionLog.md sec 27.40 item 2: a table read on its own
+    // joins the file's under its own ids, references remapped.
+    Base::Reference<App::StringHasher> other(new App::StringHasher);
+    auto a = other->getID("A");
+    auto b = other->getID("B");
+    QVector<App::StringIDRef> sids {a, b};
+    auto c = other->getID(Data::MappedName("C"), sids);
+    auto here = Hasher()->getID("A");
+    ASSERT_EQ(here.value(), a.value());
+
+    std::size_t aliased = 1;
+    EXPECT_TRUE(Hasher()->merge(*other, &aliased));
+    EXPECT_EQ(aliased, 0u);
+    EXPECT_EQ(Hasher()->getID(a.value()), here);   // shared, not replaced
+    auto c2 = Hasher()->getID(c.value());
+    ASSERT_TRUE(c2);
+    EXPECT_EQ(c2.dataToText(), c.dataToText());
+    auto related = c2.relatedIDs();
+    ASSERT_EQ(related.size(), 2);
+    EXPECT_TRUE(related[0].isFromSameHasher(Hasher()));
+    EXPECT_EQ(related[1].value(), b.value());
+    // New ids go on past everything taken in.
+    EXPECT_GT(Hasher()->getID("D").value(), c.value());
+}
+
+TEST_F(StringHasherTest, mergeRefusesAnIdThatMeansSomethingElse)  // NOLINT
+{
+    Base::Reference<App::StringHasher> other(new App::StringHasher);
+    other->getID("A");
+    other->getID("B");
+    Hasher()->getID("A");
+    Hasher()->getID("X");   // id 2 is "X" here, "B" there
+    const auto size = Hasher()->size();
+    EXPECT_FALSE(Hasher()->merge(*other));
+    EXPECT_EQ(Hasher()->size(), size);
+}
+
+TEST_F(StringHasherTest, mergeKeepsOneStringUnderTwoIds)  // NOLINT
+{
+    // Sec 27.41 Q2: a string this table has under another id comes in
+    // under its own as well; both find it.
+    Hasher()->getID("A");
+    Hasher()->getID("W");
+    auto b3 = Hasher()->getID("B");   // 3 here
+    Base::Reference<App::StringHasher> other(new App::StringHasher);
+    auto a = other->getID("A");
+    auto w = other->getID("W");
+    other->getID("Q");                // 3 there, dropped below
+    auto b4 = other->getID("B");      // 4 there
+    other->compact();
+    ASSERT_FALSE(other->getID(3));
+    std::size_t aliased = 0;
+    EXPECT_TRUE(Hasher()->merge(*other, &aliased));
+    EXPECT_EQ(aliased, 1u);
+    EXPECT_EQ(Hasher()->getID(b4.value()).dataToText(), "B");
+    EXPECT_EQ(Hasher()->getID(b3.value()).dataToText(), "B");
+    EXPECT_EQ(Hasher()->getID("B").dataToText(), "B");
+}
+
+TEST_F(StringHasherTest, lastIdSurvivesASave)  // NOLINT
+{
+    // Sec 27.40 item 2: an id the saved state no longer uses is not handed
+    // out again after a restore.
+    Hasher()->getID("kept").mark();
+    const long dropped = Hasher()->getID("dropped").value();
+    Base::StringWriter writer;
+    writer.Stream() << "<Root>\n";
+    Hasher()->Save(writer);
+    writer.Stream() << "</Root>\n";
+    std::istringstream stream(writer.getString());
+    Base::XMLReader reader("hasher", stream);
+    reader.readElement("Root");
+    Base::Reference<App::StringHasher> restored(new App::StringHasher);
+    restored->Restore(reader);
+    EXPECT_EQ(restored->size(), 1u);
+    EXPECT_GT(restored->getID("new").value(), dropped);
 }

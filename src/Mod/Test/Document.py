@@ -3722,3 +3722,38 @@ class TransactionBranchCases(unittest.TestCase):
         FreeCAD.closeDocument(doc.Name)
         doc = self.track(FreeCAD.openDocument(path))
         self.assertEqual(doc.addObject("App::FeatureTest", "Pad").Name, "Pad002")
+
+    def testFileSharesOneStringHasher(self):
+        # Sec 27.40 item 2: every document of a file hashes with the file's
+        # one hasher, so a shape has one element map in every version; and
+        # a string id the saved state no longer uses is not reused.
+        doc = self.track(FreeCAD.newDocument("Hashes"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        a = doc.addObject("Part::Box", "A")
+        b = doc.addObject("Part::Box", "B")
+        b.Placement.Base = FreeCAD.Vector(5, 5, 5)
+        cut = doc.addObject("Part::Cut", "Cut")
+        cut.Base = a
+        cut.Tool = b
+        doc.recompute()
+        doc.commitTransaction()
+        self.assertGreater(doc.Hasher.Size, 0)
+        dropped = doc.Hasher.getID("not used by anything").Value
+        path = os.path.join(self.dir, "hashes.FCStd")
+        doc.saveAs(path)
+        first = max(v["num"] for v in doc.getTransactionVersions())
+        doc.openTransaction("edit")
+        a.Length = 20
+        doc.recompute()
+        doc.commitTransaction()
+        doc.save()
+        v = self.track(doc.openTransactionVersion(first, False))
+        self.assertTrue(v.Hasher.isSame(doc.Hasher))
+        a.Length = 10
+        doc.recompute()
+        self.assertEqual(v.getObject("Cut").Shape.ElementMap, cut.Shape.ElementMap)
+        FreeCAD.closeDocument(v.Name)
+        FreeCAD.closeDocument(doc.Name)
+        doc = self.track(FreeCAD.openDocument(path))
+        self.assertGreater(doc.Hasher.getID("a new string").Value, dropped)

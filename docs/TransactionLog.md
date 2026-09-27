@@ -6408,3 +6408,60 @@ and reopen on `side`).
 
 Gates (steps 1 and 2): Python 2935 OK; ctest 842/842; recovery 15, branch
 27, version 18, pin 28, frozen 16 PASS.
+
+### 27.44 Step 3 as built: one string hasher per file (2026-09-27)
+
+`FileHistory` holds the file's hasher (`hasher`, `shareHasher`). The first
+document to get its history gives it its own; every other document of the
+file -- a version, a branch, a second open of the file -- takes the file's
+when it joins, unless its own already holds strings (a document that
+hashed before it had a history), which then stay its own
+(`Document::_noteObjectsInHistory`).
+
+`Document::Restore` never clears a hasher other documents may be using.
+When the document's hasher is the file's and holds strings, the table read
+goes into a hasher of its own first, and `StringHasher::merge` takes it in:
+each id the file's lacks under the same id, references remapped. Should an
+id mean something else there -- history written before the hasher was the
+file's -- nothing changes and the document keeps the table it read, as
+every document did before; the log says so.
+
+In `StringHasher`:
+- the string side of the table is a multiset (Q2 (b)): a string brought in
+  under an id while the table has it under another keeps both, and a
+  lookup by string finds either; `merge` counts them and the log says how
+  many;
+- a stored counter (`HashMap::LastID`): `lastID()` is the larger of it and
+  the largest id held; `compact()` keeps it past what it drops; a save
+  writes it as the `lastid` attribute and a restore reads it back, so an id
+  the saved state no longer uses is not handed out again after a reopen --
+  the single-lineage case of 27.40. `clear()` still starts over.
+
+The worry of 27.40 does not arise: string ids are marked only by
+`ComplexGeoData::beforeSave`, which `PropertyPartShape::beforeSave` calls
+in `Document::Save`'s first pass on the main thread; the log's worker
+writes copies whose hasher index is set by then and marks nothing.
+
+A shape copied between documents of one file now has the document's own
+hasher, index 0, and writes no second table.
+
+Measured on issue360_fillet_spike.FCStd (7 MB, 148 objects, a table of
+81,847 strings), saved by this build and opened as a version beside the
+file's document: 0.78 s, with the merge finding every id identical.
+
+Seen, not chased: version 1 of that file -- the file as found, schema 4,
+its shapes `.brp` archive members -- opens with "Failed to open
+.../open-v1/Fillet007.Shape.brp" for each shape and the features that
+depend on them fail. A schema-4 file's members as a version; nothing to do
+with the hasher.
+
+Tests: C++ `StringHasherTest.mergeTakesInAnotherTable` (shared ids kept,
+references remapped, new ids past everything taken in),
+`mergeRefusesAnIdThatMeansSomethingElse`, `mergeKeepsOneStringUnderTwoIds`,
+`lastIdSurvivesASave`. Python
+`TransactionBranchCases.testFileSharesOneStringHasher`: a version document
+uses the file's hasher, its Cut has the live Cut's element map, and a
+string id minted and never saved is not reused after a reopen.
+
+Gates: Python 2936 OK; ctest 842/842; recovery 15, branch 27, version 18,
+pin 28, frozen 16 PASS.

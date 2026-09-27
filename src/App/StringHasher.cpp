@@ -35,6 +35,7 @@
 #include <boost/algorithm/string/classification.hpp>
 #include <boost/bimap.hpp>
 #include <boost/bimap/unordered_set_of.hpp>
+#include <boost/bimap/unordered_multiset_of.hpp>
 #include <boost/bimap/set_of.hpp>
 #include <QHash>
 #include <QCryptographicHash>
@@ -75,10 +76,15 @@ struct StringIDHasher {
     }
 };
 
+// The string side is a multiset (docs/TransactionLog.md sec 27.41 Q2): a
+// table shared by the documents of one file can come to hold one string
+// under two ids -- dropped from the saved state, minted again after a
+// reopen, then brought back under its old id by an old version. Both ids
+// stay valid; a lookup by string finds either.
 typedef boost::bimap<
-            boost::bimaps::unordered_set_of<StringID*,
-                                            StringIDHasher,
-                                            StringIDHasher>,
+            boost::bimaps::unordered_multiset_of<StringID*,
+                                                 StringIDHasher,
+                                                 StringIDHasher>,
             boost::bimaps::set_of<long> >
             HashMapBase;
 
@@ -87,6 +93,10 @@ class StringHasher::HashMap: public HashMapBase
 public:
     bool SaveAll = false;
     int Threshold = 0;
+    /// The last id handed out or read (sec 27.40 item 2), which a save
+    /// writes and a restore reads back: ids the saved state no longer
+    /// uses are not handed out again.
+    long LastID = 0;
 };
 
 ///////////////////////////////////////////////////////////
@@ -183,6 +193,8 @@ void StringHasher::compact()
     if (_hashes->SaveAll)
         return;
 
+    // What goes is not handed out again (sec 27.40 item 2).
+    _hashes->LastID = lastID();
     std::deque<StringIDRef> pendings;
     for (auto & v : _hashes->right) {
         if (!v.second->isPersistent() && v.second->getRefCount() == 1)
@@ -241,11 +253,60 @@ int StringHasher::getThreshold() const {
 long StringHasher::lastID() const
 {
     if (_hashes->right.empty()) {
-        return 0;
+        return _hashes->LastID;
     }
     auto it = _hashes->right.end();
     --it;
-    return it->first;
+    return std::max(_hashes->LastID, it->first);
+}
+
+bool StringHasher::merge(const StringHasher& other, std::size_t* aliased)
+{
+    // docs/TransactionLog.md sec 27.40 item 2: the table of one document of
+    // a file, read on its own, joins the file's. First see that no id means
+    // something else here; only then change anything.
+    constexpr auto kept = ~static_cast<int>(StringID::Flag::Marked);
+    auto same = [&](const StringID& a, const StringID& b) {
+        if (a._data != b._data || a._postfix != b._postfix
+                || (a._flags.toUnderlyingType() & kept) != (b._flags.toUnderlyingType() & kept)
+                || a._sids.size() != b._sids.size())
+            return false;
+        for (int i = 0; i < a._sids.size(); ++i) {
+            if (a._sids[i].value() != b._sids[i].value()
+                    || a._sids[i].getIndex() != b._sids[i].getIndex())
+                return false;
+        }
+        return true;
+    };
+    for (const auto& v : other._hashes->right) {
+        auto it = _hashes->right.find(v.first);
+        if (it != _hashes->right.end() && !same(*it->second, *v.second))
+            return false;
+    }
+    std::size_t aliases = 0;
+    // In id order, so each one's references are here before it.
+    for (const auto& v : other._hashes->right) {
+        if (_hashes->right.count(v.first))
+            continue;
+        const StringID& from = *v.second;
+        StringIDRef sid(new StringID(v.first, from._data, static_cast<StringID::Flag>(
+            from._flags.toUnderlyingType() & kept)));
+        sid._sid->_postfix = from._postfix;
+        sid._sid->_sids.reserve(from._sids.size());
+        for (const auto& ref : from._sids) {
+            StringIDRef here = getID(ref.value(), ref.getIndex());
+            if (!here)
+                FC_THROWM(Base::RuntimeError, "Invalid string id reference");
+            sid._sid->_sids.push_back(here);
+        }
+        if (_hashes->left.find(sid._sid) != _hashes->left.end())
+            ++aliases;
+        insert(sid);
+    }
+    _hashes->LastID = std::max(_hashes->LastID, other.lastID());
+    if (aliased)
+        *aliased = aliases;
+    return true;
 }
 
 StringIDRef StringHasher::getID(const char* text, int len, bool hashable)
@@ -478,7 +539,7 @@ void StringHasher::Save(Base::Writer& writer) const
 
     writer.Stream() << writer.ind()
         << "<StringHasher saveall=\"" << _hashes->SaveAll
-        << "\" threshold=\"" << _hashes->Threshold << "\"";
+        << "\" threshold=\"" << _hashes->Threshold << "\" lastid=\"" << lastID() << "\"";
 
     if(!count) {
         writer.Stream() << " count=\"0\"></StringHasher>\n";
@@ -781,6 +842,7 @@ void StringHasher::clear() {
         v.second->unref();
     }
     _hashes->clear();
+    _hashes->LastID = 0;
 }
 
 size_t StringHasher::size() const
@@ -805,6 +867,7 @@ void StringHasher::Restore(Base::XMLReader& reader)
     reader.readElement("StringHasher");
     _hashes->SaveAll = reader.getAttributeAsInteger("saveall")?true:false;
     _hashes->Threshold = reader.getAttributeAsInteger("threshold");
+    _hashes->LastID = std::max<long>(_hashes->LastID, reader.getAttributeAsInteger("lastid", "0"));
 
     bool newTag = false;
     if (reader.getAttributeAsInteger("new","0") > 0) {

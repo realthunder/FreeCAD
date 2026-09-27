@@ -1884,10 +1884,31 @@ void Document::Restore(Base::XMLReader &reader)
     if (hasInlineBlobs)
         getFileBlobManager().restoreInlineBlobs(reader);
 
+    // The file's hasher, which other documents of the file may be using
+    // (sec 27.40 item 2), is never cleared: the table read joins it, unless
+    // an id there means something else -- history written before the
+    // hasher was the file's -- and then the document keeps what it read.
+    const bool shared = d->history && d->Hasher == d->history->hasher()
+                        && d->Hasher->size() > 0;
     if (hasStringHasher) {
         Base::ReaderContext rctx("StringHasher");
-        d->Hasher->Restore(reader);
-    } else {
+        if (!shared)
+            d->Hasher->Restore(reader);
+        else {
+            StringHasherRef read(new StringHasher);
+            read->Restore(reader);
+            std::size_t aliased = 0;
+            if (d->Hasher->merge(*read, &aliased)) {
+                if (aliased)
+                    FC_LOG(getName() << ": " << aliased
+                           << " string(s) under a second id in the file's hasher");
+            }
+            else {
+                FC_LOG(getName() << ": string table disagrees with the file's; kept apart");
+                d->Hasher = read;
+            }
+        }
+    } else if (!shared) {
         d->Hasher->clear();
     }
 
@@ -7062,8 +7083,10 @@ FileHistory& Document::getFileHistory() const
 void Document::_noteObjectsInHistory() const
 {
     // The file's counter and name table (sec 27.40 items 1, 3) take in what
-    // the document made before it had its history.
+    // the document made before it had its history, and its string hasher is
+    // the file's (item 2) unless it hashed already.
     d->history->noteObjectId(d->lastObjectId);
+    d->Hasher = d->history->shareHasher(d->Hasher);
     for (auto obj : d->objectArray)
         d->history->noteObjectName(obj->getNameInDocument(), obj->getID());
 }
