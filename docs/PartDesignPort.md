@@ -1669,3 +1669,133 @@ Part::Mirroring and a link.
 Suites with the fix: Python 3080 OK (50 skipped, 6 expected failures; one
 run hung in a known CAM flake, see `docs/Testing.md`, and the re-run
 passed), ctest 750/750.
+
+### The deferred rows, continued (2026-09-27, late night)
+
+| commit | what |
+|---|---|
+| `3ebcbd4b4b` | accepting a feature panel does not make the feature again (upstream `c1c9cb63e0`); the Pad panel keeps AlongSketchNormal |
+| `bc9241b8e7` | Esc stops a pattern while it is made (upstream `eadd0bc191`, `638f86a10f`) |
+| `e4430dd082` | a countersink's depth follows its diameter and angle (upstream `ff17eb611a`, `3aabb826aa`) |
+| `a7a721cea8` | a binder's copy on change brings back what the copy computed (upstream `2501296c95`, `66e1c0154d`) |
+| `b498307318` | recto-verso thickness is a wall centred on the faces (upstream `f4a9a68df2`, `1f0127b4cc`, `903ab41a37`) |
+| `3e0dc271f9` | a SubShapeBinder shows the drop cursor its drop means (upstream `3082039b3a`) |
+
+**Accept made the feature twice (`3ebcbd4b4b`).** Counted with a document
+observer in the GUI: the panel's own recompute (non-recursive
+`Document::recomputeFeature`) leaves the feature touched, so accept's
+`recompute()` made it again -- a Fillet every time (dress-ups do not
+pause for the edit preview), a Pad or Pocket with the preview off. With
+the preview on, accept's recompute is the first to make the boolean, so it
+stays. Upstream's fix, `purgeTouched()` on the whole document, would leave
+the features after it stale. The panel now keeps the feature's input
+values from its last full, valid, unpaused recompute; accept compares them
+after `apply()` and the dialogs' own re-writes, and when nothing changed
+purges only the feature and has its dependents recomputed. Measured: a
+Fillet's accept recomputes nothing; a Pad's (preview off) the Pocket,
+pattern and Fillet after it and not the Pad; a full recompute of every
+object gives the same volumes in each case. Links are compared both ways:
+`PropertyLinkBase::isSame()` compares one side's old-style element names
+with the other's new-style ones, so a link to a mapped element never
+equals its own copy (upstream has the same asymmetry; left alone).
+
+Found on the way, a fork defect: the Pad and Pocket panel no longer set
+its "length along profile normal" box from AlongSketchNormal -- the line
+went in a merge (`bcaa82d71a`) -- and accepting the panel wrote the empty
+box back. A 20x20 pad of length 10 in direction (1,0,1) went from volume
+4000 to 2828 on open-and-OK; it stays at 4000 now.
+
+**Esc in a pattern (`bc9241b8e7`).** Nothing let the events in while a
+Transformed feature was made, so an abort waited for the whole pattern.
+Each instance now calls `Base::Sequencer().checkAbort()`, the fork's way
+(it looks at the events every 500 ms and throws on a confirmed abort),
+where upstream polls a flag nothing sets during the loop. A 200-instance
+sequential pattern with Esc sent at 1.5 s: aborted at 1.65 s, where it
+ran on to 8.5 s; the pattern is left touched and the next recompute makes
+it whole.
+
+**Countersink depth (`e4430dd082`).** Neither the fork nor upstream draws
+a countersink from its depth (execute() takes 0), but the panel shows it
+and moves the diameter by 2 tan(A/2) per unit of depth -- from 0 or an
+unrelated estimate. It is the cone's depth to its apex now, (D/2)/tan(A/2),
+kept up with the diameter and angle. Upstream's second commit calls the
+non-virtual `ProfileBased::onChanged()` where a zero depth is filled in,
+which leaves it 0; the helper does it here. Not while the document
+restores or undoes: `onDocumentRestored()` replays every onChanged() after
+`isRestoring()` is false, so the guard is the document's Restoring status.
+An old custom and ISO 10642 countersink keep depth 0 and their volumes.
+
+**The binder back-copy (`a7a721cea8`).** Driven with a Python feature
+whose B (ReadOnly, Output, copy on change) is 3 * A: a binder with A 300
+had a shape 900 long and B 600; B is 900 now.
+
+**Recto verso (`b498307318`).** OCCT's recto-verso offset mode made the
+one-sided skin here, the same as Skin (and Pipe): a box opened at the top
+gave 1084 in all three. The wall is now two half-thickness skins fused,
+Value the total. Fork additions: with no face to open, the solid grown by
+half the thickness less the solid shrunk by as much (OCCT returns the
+grown one inside out; both are oriented first); each wall gets the
+feature's `fixShape()` before it is checked; Reversed and MakeOffset do not
+apply and are disabled in the panel; Pipe is hidden there with the mode
+indices kept. A file with a recto-verso thickness makes the wall it asked
+for now, not the skin. Upstream's tests, one an expected failure (below).
+
+**Found, not fixed: an OCCT 8.0.1 thick-solid defect.** The inner
+Arc-joined skin of an open cylinder is wrong: `Part.makeCylinder(20, 10)`
+opened at the top, offset -1, Arc join, comes back invalid with volume
+17713.5 at any tolerance (Intersection join: 2359.3, right). In PartDesign
+with FixShape off (the default here) a Skin thickness of 2, reversed, Arc,
+on that cup reports Valid with volume 16585.7 for 4423.4. A PartDesign
+AdditiveCylinder of the same size, thickness 1, came out right. Upstream's
+`testArcJoinProducesValidCenteredCurvedWall` is marked an expected failure
+for it -- a kernel fix will show as an unexpected success.
+
+**The drop cursor (`3e0dc271f9`).** The fork's binder drop has upstream's
+convention (no modifier adds, Ctrl replaces) and the fork's tree shows
+Move and Copy the other way round. The hook changes the shown action in
+`dragMoveEvent()` only. Not driven: a tree drag cannot be made from a
+script.
+
+Settled without code:
+
+- `13e7952ccc` n/a. A hole on a sketch point works here in every form --
+  one point, the point as `Vertex1`, two points, a point beside a line, a
+  circle's centre, the circle as `Edge1`; the fork's getTopoShape() has
+  no compound simplification to trip. The "empty Shape" in the ledger was
+  a construction point: the fork adds a point as construction
+  (`SketchObject::addGeometry`, "not to break legacy code") until it is
+  toggled. Upstream removed that rule in `3db4633f9d`, which the Sketcher
+  ledger marks `have(sync)` -- wrongly; the fork still has it.
+- `d712537638` n/a. It guards upstream's return-to-previous-feature code,
+  which the fork does not have (`38db306a84` is "have" by the fork's own
+  restore); editing a PartDesign feature outside any body opens its panel.
+- `f31bd4a1c0` n/a. It guards a null view provider in `b942275957`'s own
+  plane loop.
+- `b942275957` declined. The fork's origin sizes itself to the body
+  (`ViewProviderOriginGroupExtension::updateOriginSize`); the temporary 3x
+  scale and plane labels while picking need upstream's `ViewProviderPlane`
+  rework.
+
+Still deferred, each on a decision:
+
+- `5639728e8a`, `cfd1cdfb36` (sketch on a non-origin LCS plane). The fork's
+  Body does not take an `App::LocalCoordinateSystem` ("object is not
+  allowed"; upstream's `Body::isAllowed` takes it and any DatumElement),
+  so the new sketch goes through a SubShapeBinder of the plane, and
+  FlatFace puts the sketch origin at the projection of the binder's
+  identity placement: an LCS at z 50 turned 90 deg about X gave a sketch in
+  the right plane at z 0. A sketch on another placed Body's XY plane (Body
+  at x 100) lands at x 0 the same way. Attached directly to (LCS,
+  ['XY_Plane.']) the placement is right. Needs a decision: an LCS in a
+  Body, or a binder of a datum that carries its placement.
+- `62cbaf7336` goes with the Assembly port.
+- The pattern family (`6fa9125919`, `c334ac5062`, `a540770659`): upstream's
+  pattern logic moved into Part extensions for LinkArrayLinear/Polar with
+  shared editors, which the fork lacks.
+- `51be8e7b4e` goes with the Material port.
+
+Deferred rows left: 7 of 35, each on a decision or another port.
+
+Suites at `3e0dc271f9`: Python 3091 OK (50 skipped, 7 expected failures --
+the new one is the OCCT Arc-join case; the CAM loopback hang struck once
+more, see `docs/Testing.md`, and the re-run passed), ctest 750/750.

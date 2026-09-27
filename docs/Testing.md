@@ -503,7 +503,10 @@ asyncio's event loop makes its self-pipe with the emulated
 `socket.socketpair()` (listen on localhost, connect, accept), so every
 `asyncio.run` does a loopback accept, and on this managed box one of them
 occasionally hangs inside the hook. The environment, not FreeCAD: kill the
-run and re-run. The re-run completed.
+run and re-run. The re-run completed. It came back the same night in
+another CAM case (`TestPathToolBitSerializer.test_deserialize`), the main
+thread in the same `WSPAccept` under `dgapi64` -- twice in four suite runs,
+so expect it.
 
 **A pseudo-console, which is what `script -qec` provides on Linux.** The same
 `CAMTests.TestCAMSanity` case named in section 1 leaves stdout closed here
