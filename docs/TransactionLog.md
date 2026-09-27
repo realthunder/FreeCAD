@@ -6834,3 +6834,7 @@ and a measurement on scanner.FCStd.
   written as ranges beside the version; a capture lists its value's ids
   likewise; compaction takes their union instead of decoding the history).
   Awaiting the ruling; steps 1 and 2 do not depend on it.
+- **Q4 (ruled): recorded at write time** -- a version's ids from its save's
+  marks, a captured value's from its own walk, as ranges beside each in the
+  store, removed with them; compaction takes their union plus what memory
+  holds. The full scan stays as the check `TransactionLogVerify` runs.
