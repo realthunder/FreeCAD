@@ -801,7 +801,16 @@ bool LinkSubWidget::setLinks(const std::vector<App::SubObjectT> &objs)
         parentTask->setupTransaction();
         auto propLink = static_cast<App::PropertyLinkSub*>(prop);
         if (singleElement) {
-            auto ref = PartDesignGui::importExternalElement(objs.front());
+            // A reference in the edited feature's own body is linked as it
+            // is; importExternalElement() would bind even that, as it binds
+            // anything picked with an element
+            App::SubObjectT ref = objs.front();
+            auto sobj = ref.getSubObject();
+            auto body = PartDesign::Body::findBodyOf(obj);
+            if (sobj && body && PartDesign::Body::findBodyOf(sobj) == body)
+                ref = App::SubObjectT(sobj, ref.getOldElementName().c_str());
+            else
+                ref = PartDesignGui::importExternalElement(ref);
             propLink->setValue(ref.getObject(), {ref.getSubName()});
         } else if (!PartDesignGui::importExternalElements(*propLink, objs))
             return false;
