@@ -2625,9 +2625,10 @@ TopoShape &TopoShape::makEMirror(const TopoShape &shape, const gp_Ax2 &ax2, cons
 
     gp_Trsf mat;
     mat.SetMirror(ax2);
-    TopLoc_Location loc = shape.getShape().Location();
-    gp_Trsf placement = loc.Transformation();
-    mat = placement * mat;
+    // No premultiplying the shape's Location: BRepBuilderAPI_Transform keeps
+    // it on the result and mirrors the geometry beneath it to suit, so the
+    // premultiply put a placed shape's placement on twice (upstream
+    // 9eed3a8d77). Part::Mirroring, which drops the Location, has its own.
     BRepBuilderAPI_Transform mkTrf(shape.getShape(), mat);
     return makEShape(mkTrf,shape,op);
 }

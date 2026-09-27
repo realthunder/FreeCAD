@@ -509,3 +509,57 @@ class RegressionTests(unittest.TestCase):
         finally:
             FreeCAD.closeDocument(doc.Name)
             shutil.rmtree(os.path.dirname(path), ignore_errors=True)
+
+    def test_mirror_of_a_placed_shape(self):
+        """
+        Shape.mirror() puts a placed shape's placement on once (upstream
+        9eed3a8d77, issue 20834): the mirror of a box placed by its Placement
+        is the mirror of the same box made in place. Part::Mirroring, whose
+        Shape takes its Location from its own Placement, must agree.
+        """
+        import FreeCAD
+
+        def assertSameBox(a, b, msg):
+            for attr in ("XMin", "YMin", "ZMin", "XMax", "YMax", "ZMax"):
+                self.assertAlmostEqual(getattr(a, attr), getattr(b, attr), places=5,
+                                       msg="%s: %s" % (msg, attr))
+
+        base, normal = Vector(3, 4, 5), Vector(1, 2, 3)
+        for placement in (FreeCAD.Placement(Vector(0, 30, 0), FreeCAD.Rotation()),
+                          FreeCAD.Placement(Vector(0, 30, 0),
+                                            FreeCAD.Rotation(Vector(0, 0, 1), 30))):
+            placed = Part.makeBox(10, 20, 30)
+            placed.Placement = placement
+            # the same box, its placement copied into the geometry
+            direct = Part.makeBox(10, 20, 30)
+            direct.transformShape(placement.toMatrix(), True)
+            self.assertTrue(direct.Placement.isIdentity())
+            assertSameBox(placed.BoundBox, direct.BoundBox, "the boxes")
+
+            expected = direct.mirror(base, normal)
+            assertSameBox(placed.mirror(base, normal).BoundBox, expected.BoundBox,
+                          "Shape.mirror")
+
+            doc = FreeCAD.newDocument("MirrorPlaced")
+            try:
+                box = doc.addObject("Part::Box", "Box")
+                box.Length, box.Width, box.Height = 10, 20, 30
+                box.Placement = placement
+                mirror = doc.addObject("Part::Mirroring", "Mirror")
+                mirror.Source = box
+                mirror.Base = base
+                mirror.Normal = normal
+                link = doc.addObject("App::Link", "Link")
+                link.LinkedObject = box
+                link.Placement = placement
+                linkMirror = doc.addObject("Part::Mirroring", "LinkMirror")
+                linkMirror.Source = link
+                linkMirror.Base = base
+                linkMirror.Normal = normal
+                doc.recompute()
+                assertSameBox(mirror.Shape.BoundBox, expected.BoundBox, "Part::Mirroring")
+                assertSameBox(linkMirror.Shape.BoundBox, expected.BoundBox,
+                              "Part::Mirroring of a link")
+                self.assertAlmostEqual(mirror.Shape.Volume, 6000, places=5)
+            finally:
+                FreeCAD.closeDocument(doc.Name)

@@ -26,7 +26,6 @@
 # include <algorithm>
 # include <cmath>
 # include <cstring>
-# include <BRepBuilderAPI_Transform.hxx>
 # include <BRepFeat_MakeRevol.hxx>
 # include <gp_Ax1.hxx>
 # include <gp_Ax2.hxx>
@@ -347,14 +346,9 @@ App::DocumentObjectExecReturn *Revolved::executeRevolved()
                 if (!sketchshape.findPlane(plane))
                     return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception",
                                 "Could not determine the sketch plane"));
-                // Not makEMirror(): it puts a located shape's placement on
-                // twice (upstream fixed it in 9eed3a8d77, but the fork's
-                // Part::Mirroring leans on it), and a datum face is located
-                gp_Trsf mirror;
-                mirror.SetMirror(gp_Ax2(plane.Location(), plane.Axis().Direction()));
-                BRepBuilderAPI_Transform mkMirror(upToFace.getShape(), mirror, Standard_True);
                 TopoShape mirrored(0, getDocument()->getStringHasher());
-                mirrored.makEShape(mkMirror, upToFace, Part::OpCodes::Mirror);
+                mirrored.makEMirror(upToFace,
+                                    gp_Ax2(plane.Location(), plane.Axis().Direction()));
                 addSide(revolveUpTo(base, sketchshape, supportface, mirrored, axis.Reversed()));
             }
         }

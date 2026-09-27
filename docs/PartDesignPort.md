@@ -1496,7 +1496,8 @@ touched on open but the one feature the old build had saved invalid.
   it. So `Revolved` mirrors with `BRepBuilderAPI_Transform` itself, and
   **`Shape.mirror()` of a placed shape is still wrong in the fork**
   (reproduced: a box at y 30..50 by its Placement mirrors to y -20..0, not
-  -50..-30). Left for a Part port.
+  -50..-30). Left for a Part port -- done next, see "Shape.mirror() and
+  Part::Mirroring" below.
 - No base: an up-to side needs one (upstream refuses too). The message is
   now said plainly instead of OCCT's "Bnd_Box is void".
 
@@ -1623,3 +1624,48 @@ Deferred rows left: 20 of 35.
 Suites at `8ea657caa0`: Python 3077 OK, ctest 750/750; at `7bb2b15f85`
 (with TestTopologicalNamingProblem): Python 3079 OK (50 skipped, 6 expected
 failures), ctest 750/750.
+
+### Shape.mirror() and Part::Mirroring (2026-09-27, late)
+
+The Part defect the Revolution work turned up (above), fixed.
+`BRepBuilderAPI_Transform` keeps a located shape's Location on its result
+and mirrors the geometry beneath it so that the located result is right.
+`TopoShape::makEMirror` premultiplied the Location into the mirror as
+well, so the geometry under the kept Location was already the right
+answer and the Location went on again: a box rotated 30 deg and placed at
+y 30 mirrored in y=0 came out unrotated at x 15..25 (the placement, the
+mirror, then the placement once more). `TopoShape::mirror`, which the
+no-element-map build uses, never premultiplied.
+
+`Part::Mirroring` was right only by accident: its Shape takes its Location
+from its own Placement (`Feature::onChanged`), which threw the kept
+Location away and left the premultiplied geometry, the right one. With
+upstream's fix alone (`9eed3a8d77`) it throws away a Location the geometry
+now needs. So `makEMirror` no longer premultiplies, and Mirroring strips
+the source's Location itself and mirrors with mirror * Location -- the
+same transform on the same geometry as before, with the element map made
+the same way (`makEShape`, op `MIR`). `Revolved` goes back to
+`makEMirror`, whose workaround was this fix.
+
+Upstream reworked Mirroring differently at the same time (bakes the
+source's Placement with a copying transform, and an App::Link's location
+separately); the fork's getTopoShape() already returns every source,
+links included, with its placement as the Location, so one path covers
+them.
+
+Checked: `Shape.mirror()` of the placed, rotated box equals the mirror of
+the same box made in place. An old file saved with the pre-change build --
+Mirroring of a placed and rotated box, the same in a tilted plane, of an
+App::Link with its own placement, of a scaled link, a mirror of a mirror
+with its own Placement, and a placed Body with a symmetric up-to-face Pad
+that sticks out of the pad beneath it -- reopened with the new build,
+every object touched and recomputed: volume, area, face count, bbox and
+element-map hash equal on every object. The only other `makEMirror`
+caller, the Pad's symmetric up-to side, got an unlocated prism and is
+unchanged (the Pad above). Upstream's regression test is in
+`parttests/regression_tests.py`, extended to the rotated placement,
+Part::Mirroring and a link.
+
+Suites with the fix: Python 3080 OK (50 skipped, 6 expected failures; one
+run hung in a known CAM flake, see `docs/Testing.md`, and the re-run
+passed), ctest 750/750.

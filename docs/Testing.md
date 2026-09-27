@@ -494,6 +494,17 @@ goes through `asyncio.run` on a ProactorEventLoop, which is where to look
 if it recurs. Recorded so the next person sees a known flake rather than a
 new hang; if it becomes reproducible it deserves its own entry.
 
+It recurred 2026-09-27, on the module's last case
+(`test_replace_returns_false_when_no_library_match`): no output for 30
+minutes, CPU flat. A cdb stack dump (`~*kc`) put the main thread in
+`MSWSOCK!WSPAccept` under `dgapi64!DGAPI_SelectTab` -- an `accept()` the
+endpoint-security hook DLL sits in, and that never returns. On Windows
+asyncio's event loop makes its self-pipe with the emulated
+`socket.socketpair()` (listen on localhost, connect, accept), so every
+`asyncio.run` does a loopback accept, and on this managed box one of them
+occasionally hangs inside the hook. The environment, not FreeCAD: kill the
+run and re-run. The re-run completed.
+
 **A pseudo-console, which is what `script -qec` provides on Linux.** The same
 `CAMTests.TestCAMSanity` case named in section 1 leaves stdout closed here
 too; with a file or a pipe on the far end, the unittest runner's next
