@@ -6326,3 +6326,20 @@ five GUI checks) and a test of its own.
 4. The geometry-id counter. Test: a sketch edited in two branches mints no
    id twice; a reopen does not reuse a deleted geometry's id.
 5. Labels, per Q4.
+
+### 27.41 Rulings on 27.40 (user, 2026-09-27)
+
+- **Q1: yes.** The root element carries `LastId`.
+- **Q2: (b).** A string brought back under its old id while the table has
+  it under a new one keeps both, the old id reachable by number only; the
+  log counts the cases.
+- **Q3: the name table is one-to-one, object id <-> name.** Restoring a
+  deleted object -- undo, a version, a branch -- always gives back its
+  exact id and name. What follows, and is the visible change: a *new*
+  object never takes a name the table gives another id, so add `Pad001`,
+  undo, add a new pad gives `Pad002` (today `Pad001`).
+- **Q4: (a).** Labels stay document scope; the merge resolves a clash.
+- **Q5: per object.** A file-scope map object id -> last geometry id, in
+  place of one counter for every sketch.
+- **Q6: delayed.** Every allocation goes through the one allocator; blocks
+  from the store are not built.
