@@ -6838,3 +6838,11 @@ and a measurement on scanner.FCStd.
   marks, a captured value's from its own walk, as ranges beside each in the
   store, removed with them; compaction takes their union plus what memory
   holds. The full scan stays as the check `TransactionLogVerify` runs.
+- **Q3 revised (user):** with the reference sets of Q4, compaction is a
+  union over rows the store already has, so **a save compacts the file's
+  string table again**: it drops every string no live object, retained
+  version or retained value uses, and writes the rest. **Keep-all goes back
+  to its old meaning:** every string is kept -- no compaction at save, none
+  automatic. Names and geometry ids keep the trim trigger of 27.48 and
+  27.49: a version's objects are known only by reading its `Document.xml`,
+  until object ids are recorded per version the same way.
