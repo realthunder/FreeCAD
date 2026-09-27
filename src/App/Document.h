@@ -494,6 +494,14 @@ public:
      * counters stay. Nothing without a log.
      */
     CompactResult compactFileState();
+    /// What _noteDroppedRows estimated (sec 27.48).
+    struct CompactEstimate
+    {
+        size_t objects = 0;    ///< objects left referred to by nothing, these rows
+        size_t total = 0;      ///< the file's estimate since the last compaction
+        size_t strings = 0;    ///< strings of the file's hasher nothing holds
+        bool compacted = false;
+    };
     /** Squash the rows between versions `from` and `to` (sec 16.7) into one
      * `squash` transaction whose ops are the net change -- undone, replayed
      * and browsed like any. Both versions stay; unnamed ones between go.
@@ -1199,6 +1207,15 @@ protected:
     void _arriveOnBranch();
     /// The document's ids and names, into the file's history just joined.
     void _noteObjectsInHistory() const;
+    /// The object ids the ops of `rows` name: taken before they go.
+    std::set<long> _objectIdsOfRows(const std::vector<int64_t>& rows);
+    /** After rows went (sec 27.48): how many of `named`, the objects their
+     * ops named, nothing refers to now -- no op left names it, no document
+     * of the file holds it; versions are not read, hence an estimate --
+     * added to the file's estimate, and compactFileState() run when that,
+     * or the strings nothing holds, reach TransactionLogCompactRatio.
+     */
+    CompactEstimate _noteDroppedRows(const std::set<long>& named);
     /// Keep at most UndoMaxStackSize steps of `stack` hot (sec 24.3): with
     /// the log, the oldest beyond it become cold stubs; without it, they go.
     /// The undo stack only: its steps are deleted oldest first, the order

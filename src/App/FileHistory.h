@@ -124,6 +124,8 @@ public:
         auto it = _idOfName.find(name);
         return it == _idOfName.end() ? 0 : it->second;
     }
+    /// Whether the table gives `id` a name.
+    bool hasObjectName(long id) const { return _nameOfId.count(id) != 0; }
     /** `id` has `name`. The first pairing of either stays: a name or an id
      * the table already pairs otherwise is left as it is (history written
      * before the table can hold both; the merge resolves those).
@@ -153,6 +155,14 @@ public:
             last = id;
     }
     const std::unordered_map<long, long>& lastGeoIds() const { return _lastGeoIds; }
+
+    /** The objects estimated to be referred to by nothing since the last
+     * compaction (docs/TransactionLog.md sec 27.48): what trimming,
+     * deleting a branch and squashing left behind. Kept in the store's
+     * meta by the log; compaction resets it.
+     */
+    std::size_t compactEstimate() const { return _compactEstimate; }
+    void setCompactEstimate(std::size_t n) { _compactEstimate = n; }
 
     /** Compaction (docs/TransactionLog.md sec 27.47): forget the name and
      * the last geometry id of every object not in `used`. The counters stay
@@ -260,6 +270,7 @@ private:
     std::unordered_map<long, std::string> _nameOfId;
     StringHasherRef _hasher;
     std::unordered_map<long, long> _lastGeoIds;
+    std::size_t _compactEstimate {0};
     std::string _dir;
     std::string _path;
     std::unique_ptr<FileBlobManager> _blobs;

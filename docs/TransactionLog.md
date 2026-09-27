@@ -6575,8 +6575,8 @@ nothing; lowering one is the only way a later id could collide with one a
 retained value, an old copy of the file, or a string id held by number
 only still carries. Dropping an entry never renumbers anything.
 
-When: on request only. Trimming and deleting branches, which are what make
-entries unreferenced, do not run it; a caller that trims can call it after.
+When: on request, and on its own after a trim, a branch deletion or a
+squash once the estimate of 27.48 says it is worth it.
 
 Test: Python `TransactionBranchCases.testCompactFileState` -- an object and
 a sketch made only on `side` keep their names while the branch exists
@@ -6589,4 +6589,50 @@ Measured on issue360_fillet_spike.FCStd with six versions: 0.09 s, and
 nothing to drop -- every object is live and every string held.
 
 Gates: Python 2939 OK; ctest 842/842; recovery 15, branch 27, version 18,
+pin 28, frozen 16 PASS.
+
+### 27.48 An estimate at every trim, and compaction on its own (user, 2026-09-27)
+
+**Asked:** when trimming or deleting, go through the transactions, record an
+estimate of the ids, strings and names left unreferenced, keep a file-scope
+count, and compact on its own once a ratio set by a preference is reached
+(default 50%).
+
+**The estimate.** `trimBranch`, `deleteBranch` and `squashVersions` take
+the object ids the ops of the rows they remove name
+(`Document::_objectIdsOfRows`), before removing them. Afterwards
+`_noteDroppedRows` counts those that nothing refers to now -- no op left
+names it, no document of the file holds it -- and that the tables still
+know (a name or a last geometry id): what compaction could drop. Versions
+are not read, which is what makes it an estimate: an object a retained
+version holds is counted and then kept by the compaction.
+
+**The count.** Added to a file-scope count, `FileHistory::compactEstimate`,
+kept in the store's meta (`compact_estimate`), so it travels in the
+embedded copy and survives a reopen; `compactFileState` resets it.
+
+**The record.** A trim's or a deletion's own record (kind `trim`) carries
+it in its script: `unreferenced` (these rows), `unreferenced_total` (the
+count), `unheld_strings`, `compacted`. A squash's record is its own row,
+written before the rows go, so its estimate goes to the count only.
+
+**Strings** are not estimated from the rows: which string ids a removed
+row's values used is not recorded, and the in-memory hasher answers
+exactly and cheaply -- its entries that nothing but the table holds
+(`size() - count()`).
+
+**The trigger.** `TransactionLogCompactRatio` (DocumentParams, percent,
+default 50, 0 never): after each of the three, `compactFileState` runs when
+the count reaches that share of the name table, or the unheld strings that
+share of the file's hasher.
+
+Test: Python `TransactionBranchCases.testTrimEstimatesAndCompacts` -- a
+branch holding two objects deleted from a file of three names: at 90% the
+record says 2 unreferenced and not compacted, the names stay taken
+(`Temp001`), and the count is 2, then 3 after a reopen and another
+deletion, and an explicit compaction frees all 3; at 50% the deletion
+compacts on its own and `Temp` is free at once.
+`testCompactFileState` turns the ratio off, as it tests the explicit call.
+
+Gates: Python 2940 OK; ctest 842/842; recovery 15, branch 27, version 18,
 pin 28, frozen 16 PASS.

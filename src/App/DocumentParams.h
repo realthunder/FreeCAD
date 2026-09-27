@@ -660,6 +660,22 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter TransactionLogCompactRatio
+    ///
+    /// When the file-scope state of the transaction log is compacted on
+    /// its own (docs/TransactionLog.md sec 27.48), as a percent: after a
+    /// trim, a branch deletion or a squash, once the objects estimated to
+    /// be referred to by nothing reach this share of the name table, or
+    /// the strings nothing holds this share of the string hasher. 0 never.
+    static const long & getTransactionLogCompactRatio();
+    static const long & defaultTransactionLogCompactRatio();
+    static void removeTransactionLogCompactRatio();
+    static void setTransactionLogCompactRatio(const long &v);
+    static const char *docTransactionLogCompactRatio();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter ClosePinnedVersion
     ///
     /// When the last link pinned to a version of a file goes, what

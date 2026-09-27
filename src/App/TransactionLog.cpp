@@ -388,6 +388,10 @@ void TransactionLogCore::openStore()
     // And the last geometry id of each object (item 4).
     for (const auto& g : _store->lastGeoIds())
         _history.noteGeoId(g.first, g.second);
+    // What compaction would drop, as estimated so far (sec 27.48).
+    const std::string estimate = _store->getMeta("compact_estimate");
+    if (!estimate.empty())
+        _history.setCompactEstimate(std::stoul(estimate));
 }
 
 void TransactionLogCore::liveLogs(TransactionLogCore* core, bool add)

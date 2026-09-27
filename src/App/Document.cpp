@@ -5813,6 +5813,16 @@ Document* Document::openFileVersion(const std::shared_ptr<FileHistory>& history,
 
 namespace {
 
+/// The estimate of sec 27.48 as fields of a trim record.
+std::string compactJson(const Document::CompactEstimate& e)
+{
+    std::ostringstream out;
+    out << ",\"unreferenced\":" << e.objects << ",\"unreferenced_total\":" << e.total
+        << ",\"unheld_strings\":" << e.strings << ",\"compacted\":"
+        << (e.compacted ? "true" : "false");
+    return out.str();
+}
+
 std::string jsonString(const std::string& s)
 {
     std::string out = "\"";
@@ -6495,6 +6505,7 @@ size_t Document::trimBranch(const std::string& name, int64_t version)
                 && gone.count(v.seq))
             versions.push_back(v.num);
     }
+    const std::set<long> named = _objectIdsOfRows(rows);
     store.removeTransactions(rows);
     for (int64_t num : versions)
         store.evictVersion(num);
@@ -6504,10 +6515,12 @@ size_t Document::trimBranch(const std::string& name, int64_t version)
         _clearRedos();
         _rebuildUndoFromLog(d->undoFloor);
     }
+    const CompactEstimate estimate = _noteDroppedRows(named);
 
     std::ostringstream script;
     script << "{\"branch\":" << jsonString(name) << ",\"version\":" << keep.num
-           << ",\"rows\":" << rows.size() << ",\"versions\":" << versions.size() << "}";
+           << ",\"rows\":" << rows.size() << ",\"versions\":" << versions.size()
+           << compactJson(estimate) << "}";
     log->record("trim", "Trim " + name + " to version " + std::to_string(keep.num), script.str());
     refreshVersionNames();
     signalBranchesChanged(*this);
@@ -6551,14 +6564,17 @@ size_t Document::deleteBranch(const std::string& name)
         }
         versions.push_back(v.num);
     }
+    const std::set<long> named = _objectIdsOfRows(rows);
     store.removeTransactions(rows);
     for (int64_t num : versions)
         store.evictVersion(num);
     store.removeBranch(branch.id);
+    const CompactEstimate estimate = _noteDroppedRows(named);
 
     std::ostringstream script;
     script << "{\"deleted\":" << jsonString(name) << ",\"rows\":" << rows.size()
-           << ",\"versions\":" << versions.size() << ",\"kept\":" << kept << "}";
+           << ",\"versions\":" << versions.size() << ",\"kept\":" << kept
+           << compactJson(estimate) << "}";
     log->record("trim", "Delete branch " + name, script.str());
     refreshVersionNames();
     signalBranchesChanged(*this);
@@ -6783,6 +6799,11 @@ size_t Document::squashVersions(int64_t from, int64_t to)
            << ",\"ops\":" << ops.size() << "}";
     t.script = script.str();
     std::vector<int64_t> drop(inside.begin(), inside.end());
+    std::set<long> named = _objectIdsOfRows(drop);
+    for (const auto& o : store.ops(last.seq)) {
+        if (o.ckind == "obj")
+            named.insert(o.cid);
+    }
     store.replaceTransactions(t, ops, drop);
     for (int64_t num : evict)
         store.evictVersion(num);
@@ -6792,6 +6813,9 @@ size_t Document::squashVersions(int64_t from, int64_t to)
         _clearRedos();
         _rebuildUndoFromLog(d->undoFloor);
     }
+    // The squash row is written already; the estimate goes to the file's
+    // count only (sec 27.48).
+    _noteDroppedRows(named);
     refreshVersionNames();
     signalBranchesChanged(*this);
     return path.size();
@@ -9130,6 +9154,8 @@ Document::CompactResult Document::compactFileState()
     result.geoIds = geoBefore - history.lastGeoIds().size();
     if (!gone.empty())
         store.removeObjectState(gone);
+    history.setCompactEstimate(0);
+    store.setMeta("compact_estimate", "0");
 
     // The strings nothing but the table holds: dropped, the counter kept, so
     // no id is handed out again and a version bringing one back is merged.
@@ -9141,6 +9167,72 @@ Document::CompactResult Document::compactFileState()
     FC_LOG("compacted the file state of " << getName() << ": " << result.names << " names, "
            << result.geoIds << " geometry ids, " << result.strings << " strings");
     return result;
+}
+
+std::set<long> Document::_objectIdsOfRows(const std::vector<int64_t>& rows)
+{
+    std::set<long> ids;
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        return ids;
+    auto& store = log->store();
+    for (int64_t seq : rows) {
+        for (const auto& o : store.ops(seq)) {
+            if (o.ckind == "obj")
+                ids.insert(o.cid);
+        }
+    }
+    return ids;
+}
+
+Document::CompactEstimate Document::_noteDroppedRows(const std::set<long>& named)
+{
+    // docs/TransactionLog.md sec 27.48.
+    CompactEstimate estimate;
+    TransactionLog* log = getTransactionLog();
+    if (!log)
+        return estimate;
+    FileHistory& history = getFileHistory();
+    TransactionLogCore& core = TransactionLogCore::of(history);
+    TransactionStore& store = core.store();
+    if (!named.empty()) {
+        std::unordered_set<long> used;
+        for (long id : store.objectIdsInOps())
+            used.insert(id);
+        std::vector<Document*> docs = core.documents();
+        if (std::find(docs.begin(), docs.end(), this) == docs.end())
+            docs.push_back(this);
+        for (auto doc : docs) {
+            for (auto obj : doc->getObjects())
+                used.insert(obj->getID());
+        }
+        const auto& geo = history.lastGeoIds();
+        for (long id : named) {
+            // Only what compaction could drop: an object the tables know.
+            if (!used.count(id) && (history.hasObjectName(id) || geo.count(id)))
+                ++estimate.objects;
+        }
+    }
+    estimate.total = history.compactEstimate() + estimate.objects;
+    history.setCompactEstimate(estimate.total);
+    store.setMeta("compact_estimate", std::to_string(estimate.total));
+    const StringHasherRef& hasher = history.hasher();
+    const std::size_t strings = hasher ? hasher->size() : 0;
+    estimate.strings = hasher ? strings - hasher->count() : 0;
+
+    const long ratio = DocumentParams::getTransactionLogCompactRatio();
+    const std::size_t names = history.objectNames().size();
+    if (ratio > 0
+            && ((names && estimate.total * 100 >= static_cast<std::size_t>(ratio) * names)
+                || (strings && estimate.strings * 100 >= static_cast<std::size_t>(ratio) * strings))) {
+        compactFileState();
+        estimate.compacted = true;
+    }
+    FC_LOG(getName() << ": " << estimate.objects << " object(s) left unreferenced, "
+           << estimate.total << " since the last compaction of " << names << " names; "
+           << estimate.strings << " of " << strings << " strings unheld"
+           << (estimate.compacted ? "; compacted" : ""));
+    return estimate;
 }
 
 long Document::nextGeoId(const DocumentObject& obj, long floor) const

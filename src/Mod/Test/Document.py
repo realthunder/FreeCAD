@@ -3830,6 +3830,10 @@ class TransactionBranchCases(unittest.TestCase):
         # -- are forgotten, and the name is free again; the counters stay.
         import Part
 
+        # Explicit only: the automatic compaction of sec 27.48 off.
+        ratio = self.param.GetInt("TransactionLogCompactRatio", 50)
+        self.param.SetInt("TransactionLogCompactRatio", 0)
+        self.addCleanup(self.param.SetInt, "TransactionLogCompactRatio", ratio)
         doc = self.track(FreeCAD.newDocument("Compact"))
         doc.UndoMode = 1
         doc.openTransaction("create")
@@ -3868,3 +3872,55 @@ class TransactionBranchCases(unittest.TestCase):
         doc = self.track(FreeCAD.openDocument(path))
         self.assertEqual(doc.addObject("Sketcher::SketchObject", "TempSketch").Name, "TempSketch")
         self.assertEqual(doc.addObject("App::FeatureTest", "Temp").Name, "Temp002")
+
+    def testTrimEstimatesAndCompacts(self):
+        # Sec 27.48: deleting a branch estimates the objects left referred to
+        # by nothing, records it, keeps a file-wide count, and compacts once
+        # the count reaches TransactionLogCompactRatio of the name table.
+        import json
+
+        ratio = self.param.GetInt("TransactionLogCompactRatio", 50)
+        try:
+            for setting, compacts in ((90, False), (50, True)):
+                self.param.SetInt("TransactionLogCompactRatio", setting)
+                doc = self.track(FreeCAD.newDocument("Estimate"))
+                doc.UndoMode = 1
+                doc.openTransaction("create")
+                doc.addObject("App::FeatureTest", "Obj")
+                doc.commitTransaction()
+                doc.createTransactionBranch("side")
+                doc.openTransaction("side")
+                doc.addObject("App::FeatureTest", "Temp")
+                doc.addObject("App::FeatureTest", "Other")
+                doc.commitTransaction()
+                doc.switchTransactionBranch("main")
+                doc.deleteTransactionBranch("side")
+                record = [r for r in doc.getTransactionLog() if r["kind"] == "trim"][-1]
+                info = json.loads(record["script"])
+                self.assertEqual(info["unreferenced"], 2, setting)
+                self.assertEqual(info["compacted"], compacts, setting)
+                doc.openTransaction("again")
+                name = doc.addObject("App::FeatureTest", "Temp").Name
+                doc.commitTransaction()
+                self.assertEqual(name, "Temp" if compacts else "Temp001", setting)
+                if not compacts:
+                    # The count is the file's: it survives a reopen, and an
+                    # explicit compaction resets it.
+                    self.assertEqual(info["unreferenced_total"], 2)
+                    path = os.path.join(self.dir, "estimate.FCStd")
+                    doc.saveAs(path)
+                    FreeCAD.closeDocument(doc.Name)
+                    doc = self.track(FreeCAD.openDocument(path))
+                    doc.UndoMode = 1
+                    doc.createTransactionBranch("more")
+                    doc.openTransaction("more")
+                    doc.addObject("App::FeatureTest", "Third")
+                    doc.commitTransaction()
+                    doc.switchTransactionBranch("main")
+                    doc.deleteTransactionBranch("more")
+                    record = [r for r in doc.getTransactionLog() if r["kind"] == "trim"][-1]
+                    self.assertEqual(json.loads(record["script"])["unreferenced_total"], 3)
+                    self.assertEqual(doc.compactFileState()["names"], 3)
+                FreeCAD.closeDocument(doc.Name)
+        finally:
+            self.param.SetInt("TransactionLogCompactRatio", ratio)

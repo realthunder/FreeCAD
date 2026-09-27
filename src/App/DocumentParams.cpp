@@ -91,6 +91,7 @@ public:
         signalParamChanged("TransactionLogDerived");
         signalParamChanged("TransactionLogSnapshotTransactions");
         signalParamChanged("TransactionLogKeepVersions");
+        signalParamChanged("TransactionLogCompactRatio");
         signalParamChanged("ClosePinnedVersion");
         signalParamChanged("AutoSaveEnabled");
         signalParamChanged("AutoSaveTimeout");
@@ -150,6 +151,7 @@ public:
     long TransactionLogDerived;
     long TransactionLogSnapshotTransactions;
     long TransactionLogKeepVersions;
+    long TransactionLogCompactRatio;
     long ClosePinnedVersion;
     bool AutoSaveEnabled;
     long AutoSaveTimeout;
@@ -257,6 +259,8 @@ public:
         funcs["TransactionLogSnapshotTransactions"] = &DocumentParamsP::updateTransactionLogSnapshotTransactions;
         TransactionLogKeepVersions = this->handle->GetInt("TransactionLogKeepVersions", 0);
         funcs["TransactionLogKeepVersions"] = &DocumentParamsP::updateTransactionLogKeepVersions;
+        TransactionLogCompactRatio = this->handle->GetInt("TransactionLogCompactRatio", 50);
+        funcs["TransactionLogCompactRatio"] = &DocumentParamsP::updateTransactionLogCompactRatio;
         ClosePinnedVersion = this->handle->GetInt("ClosePinnedVersion", 0);
         funcs["ClosePinnedVersion"] = &DocumentParamsP::updateClosePinnedVersion;
         AutoSaveEnabled = this->handle->GetBool("AutoSaveEnabled", true);
@@ -475,6 +479,10 @@ public:
     // Auto generated code (Tools/params_utils.py:314)
     static void updateTransactionLogKeepVersions(DocumentParamsP *self) {
         self->TransactionLogKeepVersions = self->handle->GetInt("TransactionLogKeepVersions", 0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateTransactionLogCompactRatio(DocumentParamsP *self) {
+        self->TransactionLogCompactRatio = self->handle->GetInt("TransactionLogCompactRatio", 50);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateClosePinnedVersion(DocumentParamsP *self) {
@@ -744,6 +752,13 @@ static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
         .setDoc("How many unnamed versions the transaction log keeps (sec 16.3):\n"
 "when a version is added, the oldest unnamed ones over this count\n"
 "are evicted -- never a named one, never the newest. 0 keeps all."),
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "TransactionLogCompactRatio", "TransactionLogCompactRatio", App::ParamInfo::Int, 50)
+        .setTitle("Transaction Log Compact Ratio")
+        .setDoc("When the file-scope state of the transaction log is compacted on\n"
+"its own (docs/TransactionLog.md sec 27.48), as a percent: after a\n"
+"trim, a branch deletion or a squash, once the objects estimated to\n"
+"be referred to by nothing reach this share of the name table, or\n"
+"the strings nothing holds this share of the string hasher. 0 never."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "ClosePinnedVersion", "ClosePinnedVersion", App::ParamInfo::Int, 0)
         .setTitle("Close Pinned Version")
         .setDoc("When the last link pinned to a version of a file goes, what\n"
@@ -2147,6 +2162,38 @@ void DocumentParams::setTransactionLogKeepVersions(const long &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void DocumentParams::removeTransactionLogKeepVersions() {
     instance()->handle->RemoveInt("TransactionLogKeepVersions");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *DocumentParams::docTransactionLogCompactRatio() {
+    return QT_TRANSLATE_NOOP("DocumentParams",
+"When the file-scope state of the transaction log is compacted on\n"
+"its own (docs/TransactionLog.md sec 27.48), as a percent: after a\n"
+"trim, a branch deletion or a squash, once the objects estimated to\n"
+"be referred to by nothing reach this share of the name table, or\n"
+"the strings nothing holds this share of the string hasher. 0 never.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const long & DocumentParams::getTransactionLogCompactRatio() {
+    return instance()->TransactionLogCompactRatio;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const long & DocumentParams::defaultTransactionLogCompactRatio() {
+    const static long def = 50;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void DocumentParams::setTransactionLogCompactRatio(const long &v) {
+    instance()->handle->SetInt("TransactionLogCompactRatio",v);
+    instance()->TransactionLogCompactRatio = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void DocumentParams::removeTransactionLogCompactRatio() {
+    instance()->handle->RemoveInt("TransactionLogCompactRatio");
 }
 
 // Auto generated code (Tools/params_utils.py:397)
