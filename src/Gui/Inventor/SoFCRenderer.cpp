@@ -2731,7 +2731,13 @@ SoFCRenderer::pushExternalConfigs(SoState * state, bool viewport)
   // and is resolved per render; mirror it to the external backend (which
   // draws before this traversal, so it applies one frame late like the
   // scene feed).
-  if (PRIVATE(this)->external) {
+  //
+  // Not from an overlay feed: its backend is some scene's, and the
+  // configs are that scene's to state. An overlay manager has no view
+  // object, so what it would push is every default -- a served edit
+  // overlay (SceneServeSource) built through traverse() would switch the
+  // serving backend's AO, PBR and section settings off on each publish.
+  if (PRIVATE(this)->external && !PRIVATE(this)->overlaymode) {
     PRIVATE(this)->external->setHiddenLineConfig(
         RendererBridge::translateHiddenLineConfig(state));
     PRIVATE(this)->external->setSectionConfig(
