@@ -80,6 +80,8 @@ public:
              " kind TEXT, name TEXT, seq INTEGER, env INTEGER, docxml_hash TEXT, schema INTEGER,"
              " created REAL)");
         exec("CREATE INDEX IF NOT EXISTS version_hash ON version(docxml_hash)");
+        // Sec 27.40 item 3: the file's object names, one to one.
+        exec("CREATE TABLE IF NOT EXISTS objname(cid INTEGER PRIMARY KEY, name TEXT UNIQUE)");
         exec("CREATE TABLE IF NOT EXISTS manifest(version INTEGER, entry TEXT, hash TEXT,"
              " source TEXT, PRIMARY KEY(version, entry))");
         if (getMeta("schema") == "1")
@@ -550,6 +552,35 @@ public:
             id = static_cast<long>(sqlite3_column_int64(s, 0));
         sqlite3_reset(s);
         return id;
+    }
+
+    std::vector<std::pair<long, std::string>> objectNames() override
+    {
+        std::vector<std::pair<long, std::string>> out;
+        auto read = [&](sqlite3_stmt* s) {
+            while (sqlite3_step(s) == SQLITE_ROW)
+                out.emplace_back(static_cast<long>(sqlite3_column_int64(s, 0)), text(s, 1));
+            sqlite3_reset(s);
+        };
+        // A store opened read-only may predate the table.
+        if (hasRow("SELECT 1 FROM sqlite_master WHERE type='table' AND name='objname'"))
+            read(prepare("SELECT cid, name FROM objname"));
+        read(prepare("SELECT cid, cname FROM op WHERE op='create' AND ckind='obj'"
+                     " AND cname<>'' ORDER BY txn DESC, idx DESC"));
+        return out;
+    }
+
+    void addObjectNames(const std::vector<std::pair<long, std::string>>& names) override
+    {
+        exec("BEGIN");
+        auto s = prepare("INSERT OR IGNORE INTO objname(cid, name) VALUES(?, ?)");
+        for (const auto& n : names) {
+            sqlite3_bind_int64(s, 1, n.first);
+            bindText(s, 2, n.second);
+            sqlite3_step(s);
+            sqlite3_reset(s);
+        }
+        exec("COMMIT");
     }
 
     void truncate(int64_t before) override

@@ -5646,7 +5646,7 @@ void Document::_joinHistory(const std::shared_ptr<FileHistory>& history)
     }
     d->history = history;
     d->joinedHistory = true;
-    history->noteObjectId(d->lastObjectId);
+    _noteObjectsInHistory();
 }
 
 Document* Document::openVersion(int64_t num, bool createView)
@@ -7048,15 +7048,24 @@ FileHistory& Document::getFileHistory() const
             if (auto existing = FileHistory::find(FileName.getStrValue())) {
                 d->history = existing;
                 d->joinedHistory = true;
-                d->history->noteObjectId(d->lastObjectId);
+                _noteObjectsInHistory();
                 return *d->history;
             }
         }
         d->history = FileHistory::create(*const_cast<Document*>(this));
         d->history->setPath(FileName.getStrValue());
-        d->history->noteObjectId(d->lastObjectId);
+        _noteObjectsInHistory();
     }
     return *d->history;
+}
+
+void Document::_noteObjectsInHistory() const
+{
+    // The file's counter and name table (sec 27.40 items 1, 3) take in what
+    // the document made before it had its history.
+    d->history->noteObjectId(d->lastObjectId);
+    for (auto obj : d->objectArray)
+        d->history->noteObjectName(obj->getNameInDocument(), obj->getID());
 }
 
 void Document::collectFileBlobs(const std::vector<App::DocumentObject*>& objs) const
@@ -8181,9 +8190,9 @@ DocumentObject * Document::addObject(const char* sType, const char* pObjectName,
     string ObjectName;
 
     if (pObjectName && pObjectName[0] != '\0')
-        ObjectName = getUniqueObjectName(pObjectName);
+        ObjectName = getUniqueObjectName(pObjectName, d->restoringId);
     else
-        ObjectName = getUniqueObjectName(sType);
+        ObjectName = getUniqueObjectName(sType, d->restoringId);
 
 
     d->activeObject = pcObject;
@@ -8192,6 +8201,7 @@ DocumentObject * Document::addObject(const char* sType, const char* pObjectName,
     d->objectMap[ObjectName] = pcObject;
     // generate object id and add to id map;
     pcObject->_Id = d->addObject(pcObject);
+    d->noteObjectName(ObjectName, pcObject->_Id);
     // cache the pointer to the name string in the Object (for performance of DocumentObject::getNameInDocument())
     pcObject->pcNameInDocument = &(d->objectMap.find(ObjectName)->first);
 
@@ -8259,6 +8269,16 @@ std::vector<DocumentObject *> Document::addObjects(const char* sType, const std:
     for (const auto & pos : d->objectMap) {
         reservedNames.push_back(pos.first);
     }
+    // And every name the file gave (sec 27.40 item 3): these are new.
+    std::set<std::string> fileNames;
+    if (d->history) {
+        for (const auto& n : d->history->objectNames()) {
+            if (!d->objectMap.count(n.first)) {
+                reservedNames.push_back(n.first);
+                fileNames.insert(n.first);
+            }
+        }
+    }
 
     for (auto it = objects.begin(); it != objects.end(); ++it) {
         auto index = std::distance(objects.begin(), it);
@@ -8279,7 +8299,7 @@ std::vector<DocumentObject *> Document::addObjects(const char* sType, const std:
         if (ObjectName.empty())
             ObjectName = sType;
         ObjectName = Base::Tools::getIdentifier(ObjectName);
-        if (d->objectMap.find(ObjectName) != d->objectMap.end()) {
+        if (d->objectMap.find(ObjectName) != d->objectMap.end() || fileNames.count(ObjectName)) {
             // remove also trailing digits from clean name which is to avoid to create lengthy names
             // like 'Box001001'
             if (!testStatus(KeepTrailingDigits)) {
@@ -8298,6 +8318,7 @@ std::vector<DocumentObject *> Document::addObjects(const char* sType, const std:
         d->objectMap[ObjectName] = pcObject;
         // generate object id and add to id map;
         pcObject->_Id = d->addObject(pcObject);
+        d->noteObjectName(ObjectName, pcObject->_Id);
         // cache the pointer to the name string in the Object (for performance of DocumentObject::getNameInDocument())
         pcObject->pcNameInDocument = &(d->objectMap.find(ObjectName)->first);
 
@@ -8356,9 +8377,9 @@ void Document::addObject(DocumentObject* pcObject, const char* pObjectName, bool
     // get unique name
     string ObjectName;
     if (pObjectName && pObjectName[0] != '\0')
-        ObjectName = getUniqueObjectName(pObjectName);
+        ObjectName = getUniqueObjectName(pObjectName, pcObject->getID());
     else
-        ObjectName = getUniqueObjectName(pcObject->getTypeId().getName());
+        ObjectName = getUniqueObjectName(pcObject->getTypeId().getName(), pcObject->getID());
 
     if (activate)
         d->activeObject = pcObject;
@@ -8367,6 +8388,7 @@ void Document::addObject(DocumentObject* pcObject, const char* pObjectName, bool
     d->objectMap[ObjectName] = pcObject;
     // generate object id and add to id map;
     pcObject->_Id = d->addObject(pcObject);
+    d->noteObjectName(ObjectName, pcObject->_Id);
     // cache the pointer to the name string in the Object (for performance of DocumentObject::getNameInDocument())
     pcObject->pcNameInDocument = &(d->objectMap.find(ObjectName)->first);
 
@@ -8392,10 +8414,11 @@ void Document::addObject(DocumentObject* pcObject, const char* pObjectName, bool
 
 void Document::_addObject(DocumentObject* pcObject, const char* pObjectName)
 {
-    std::string ObjectName = getUniqueObjectName(pObjectName);
+    std::string ObjectName = getUniqueObjectName(pObjectName, pcObject->getID());
     d->objectMap[ObjectName] = pcObject;
     // generate object id and add to id map;
     pcObject->_Id = d->addObject(pcObject);
+    d->noteObjectName(ObjectName, pcObject->_Id);
     // cache the pointer to the name string in the Object (for performance of DocumentObject::getNameInDocument())
     pcObject->pcNameInDocument = &(d->objectMap.find(ObjectName)->first);
 
@@ -8922,16 +8945,19 @@ const char * Document::getObjectName(DocumentObject *pFeat) const
     return nullptr;
 }
 
-std::string Document::getUniqueObjectName(const char *Name) const
+std::string Document::getUniqueObjectName(const char *Name, long id) const
 {
     if (!Name || *Name == '\0')
         return {};
     std::string CleanName = Base::Tools::getIdentifier(Name);
 
-    // name in use?
-    auto pos = d->objectMap.find(CleanName);
+    // A new object takes no name the file gave another (sec 27.40 item 3);
+    // one coming back under its id has its own.
+    const FileHistory* history = id ? nullptr : d->history.get();
 
-    if (pos == d->objectMap.end()) {
+    // name in use?
+    if (!d->objectMap.count(CleanName)
+            && (!history || !history->objectIdOfName(CleanName))) {
         // if not, name is OK
         return CleanName;
     }
@@ -8951,10 +8977,18 @@ std::string Document::getUniqueObjectName(const char *Name) const
         // import of 13636 IFC products, all of them named 'Component', spent
         // most of addObject() here.
         auto it = d->objectMap.begin();
+        using NameTable = std::unordered_map<std::string, long>;
+        NameTable::const_iterator tableIt, tableEnd;
+        if (history) {
+            tableIt = history->objectNames().begin();
+            tableEnd = history->objectNames().end();
+        }
         auto next = [&]() -> const char * {
-            if (it == d->objectMap.end())
-                return nullptr;
-            return (it++)->first.c_str();
+            if (it != d->objectMap.end())
+                return (it++)->first.c_str();
+            if (history && tableIt != tableEnd)
+                return (tableIt++)->first.c_str();
+            return nullptr;
         };
         return Base::Tools::getUniqueName(CleanName, next, 3);
     }

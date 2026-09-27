@@ -6377,3 +6377,34 @@ object each get increasing ids from one counter. C++: the branch tests
 assert `idBase` 0 and that main's next id is past the side branch's; the
 version test that the live document's next id is past the version
 document's.
+
+### 27.43 Step 2 as built: the file's object name table (2026-09-27)
+
+`FileHistory` holds the table, one to one (`objectIdOfName`,
+`noteObjectName`, `objectNames`): the first pairing of a name or an id
+stays, so a pair from history written before the table -- one name on two
+branches with two ids -- leaves the table as it is, for the merge.
+
+Every add registers its (name, id) -- the three `addObject` paths,
+`addObjects` and `_addObject` -- and a document that gets or joins its
+history registers what it has (`_noteObjectsInHistory`).
+`getUniqueObjectName(name, id)` gains the id: for a new object (0) a name
+the table gives any object is taken, and the uniquing numbers past the
+table's names as well as the document's; an object coming back under its
+id -- undo, redo, `readObjects` (its `restoringId`), the folds of 27.34 --
+keeps its name whenever the document has it free, whatever the table says.
+So a restore never renames. `addObjects` reserves the table's names too.
+
+Stored as the store's `objname(cid, name)`, written into every embedded
+copy (`embed`). On open (`openStore`) the table is seeded from `objname`,
+then from every `create` op newest first -- which covers what came after
+the last copy, and a store that predates the table.
+
+Test: Python `TransactionBranchCases.testObjectNamesAreFileScope` -- undo
+and redo bring `Box001` back with its id; a new object after them is
+`Box002`, after a reopen `Box003`; `side` and `main` each adding a `Pad` get
+`Pad` and `Pad001`; the table travels in the file (`Pad002` after a save
+and reopen on `side`).
+
+Gates (steps 1 and 2): Python 2935 OK; ctest 842/842; recovery 15, branch
+27, version 18, pin 28, frozen 16 PASS.

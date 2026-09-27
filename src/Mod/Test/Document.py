@@ -3667,3 +3667,58 @@ class TransactionBranchCases(unittest.TestCase):
         doc.commitTransaction()
         self.assertGreater(mainId, sideId)
         self.assertTrue(all(b["id_base"] == 0 for b in doc.getTransactionBranches()))
+
+    def testObjectNamesAreFileScope(self):
+        # Sec 27.40 item 3, 27.41 Q3: one name per object across the file,
+        # never freed; an object coming back has its own name and id.
+        doc = self.track(FreeCAD.newDocument("Names"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        doc.addObject("App::FeatureTest", "Box")
+        gone = doc.addObject("App::FeatureTest", "Box")
+        self.assertEqual(gone.Name, "Box001")
+        goneId = gone.ID
+        doc.commitTransaction()
+        doc.openTransaction("remove")
+        doc.removeObject("Box001")
+        doc.commitTransaction()
+        # Undo brings it back as it was; redo removes it again.
+        doc.undo()
+        back = doc.getObject("Box001")
+        self.assertTrue(back)
+        self.assertEqual(back.ID, goneId)
+        doc.redo()
+        self.assertFalse(doc.getObject("Box001"))
+        # A new object does not take the removed one's name.
+        doc.openTransaction("again")
+        again = doc.addObject("App::FeatureTest", "Box")
+        doc.commitTransaction()
+        self.assertEqual(again.Name, "Box002")
+        # Nor after a reopen.
+        path = os.path.join(self.dir, "names.FCStd")
+        doc.saveAs(path)
+        FreeCAD.closeDocument(doc.Name)
+        doc = self.track(FreeCAD.openDocument(path))
+        doc.UndoMode = 1
+        doc.openTransaction("reopened")
+        self.assertEqual(doc.addObject("App::FeatureTest", "Box").Name, "Box003")
+        doc.commitTransaction()
+        # Two branches adding a Pad get two names.
+        doc.createTransactionBranch("side")
+        doc.openTransaction("side pad")
+        sideName = doc.addObject("App::FeatureTest", "Pad").Name
+        doc.commitTransaction()
+        doc.switchTransactionBranch("main")
+        doc.openTransaction("main pad")
+        mainName = doc.addObject("App::FeatureTest", "Pad").Name
+        doc.commitTransaction()
+        self.assertEqual(sideName, "Pad")
+        self.assertEqual(mainName, "Pad001")
+        doc.switchTransactionBranch("side")
+        self.assertEqual(doc.getObject("Pad").TypeId, "App::FeatureTest")
+        self.assertFalse(doc.getObject("Pad001"))
+        # The table travels in the file.
+        doc.save()
+        FreeCAD.closeDocument(doc.Name)
+        doc = self.track(FreeCAD.openDocument(path))
+        self.assertEqual(doc.addObject("App::FeatureTest", "Pad").Name, "Pad002")

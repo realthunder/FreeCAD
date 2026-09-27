@@ -26,6 +26,8 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include <FCGlobal.h>
@@ -107,6 +109,32 @@ public:
     }
     long nextObjectId() { return ++_lastObjectId; }
 
+    /** The file's object names (docs/TransactionLog.md sec 27.40 item 3,
+     * 27.41 Q3): one to one, object id <-> name, over every version and
+     * branch, and never freed. A new object takes no name the table gives
+     * another id; an object coming back -- undo, a version, a branch --
+     * has its own.
+     */
+    /// The id `name` was given to, 0 if none.
+    long objectIdOfName(const std::string& name) const
+    {
+        auto it = _idOfName.find(name);
+        return it == _idOfName.end() ? 0 : it->second;
+    }
+    /** `id` has `name`. The first pairing of either stays: a name or an id
+     * the table already pairs otherwise is left as it is (history written
+     * before the table can hold both; the merge resolves those).
+     */
+    void noteObjectName(const std::string& name, long id)
+    {
+        if (name.empty() || id <= 0 || _idOfName.count(name) || _nameOfId.count(id))
+            return;
+        _idOfName.emplace(name, id);
+        _nameOfId.emplace(id, name);
+    }
+    /// Every (name, id) pair, in no order.
+    const std::unordered_map<std::string, long>& objectNames() const { return _idOfName; }
+
     /// The canonical path the history is registered under, empty if none.
     const std::string& path() const { return _path; }
     /// What a history opened from a file (openFile) read of it: its label,
@@ -158,6 +186,8 @@ private:
     std::string _fileLabel;
     int64_t _fileVersion {0};
     long _lastObjectId {0};
+    std::unordered_map<std::string, long> _idOfName;
+    std::unordered_map<long, std::string> _nameOfId;
     std::string _dir;
     std::string _path;
     std::unique_ptr<FileBlobManager> _blobs;

@@ -795,8 +795,12 @@ public:
     bool isIn(const DocumentObject *pFeat) const;
     /// Returns a Name of an Object or 0
     const char *getObjectName(DocumentObject *pFeat) const;
-    /// Returns a Name of an Object or 0
-    std::string getUniqueObjectName(const char *Name) const;
+    /** A name no object of the document has. For a new object (`id` 0), also
+     * none the file's name table gives another object, in any version or
+     * branch (docs/TransactionLog.md sec 27.40 item 3); an object coming
+     * back under its id keeps its name when the document has it free.
+     */
+    std::string getUniqueObjectName(const char *Name, long id = 0) const;
     /// Returns a name of the form prefix_number. d specifies the number of digits.
     std::string getStandardObjectName(const char *Name, int d) const;
     /// Returns a list of document's objects including the dependencies
@@ -1172,6 +1176,8 @@ protected:
     /// Sec 26: the undo stacks of the branch arrived on. The id counter is
     /// the file's and does not move (sec 27.40 item 1).
     void _arriveOnBranch();
+    /// The document's ids and names, into the file's history just joined.
+    void _noteObjectsInHistory() const;
     /// Keep at most UndoMaxStackSize steps of `stack` hot (sec 24.3): with
     /// the log, the oldest beyond it become cold stubs; without it, they go.
     /// The undo stack only: its steps are deleted oldest first, the order

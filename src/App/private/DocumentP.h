@@ -285,6 +285,12 @@ struct DocumentP
         return lastObjectId;
     }
 
+    /// `id` has `name`, in the file's name table (sec 27.40 item 3).
+    void noteObjectName(const std::string& name, long id) {
+        if (history)
+            history->noteObjectName(name, id);
+    }
+
     /// An id in use: neither counter hands it out again.
     void noteObjectId(long id) {
         if (id > lastObjectId)

@@ -179,6 +179,10 @@ public:
     { return inner().lastOpOn(ckind, cid, prop, after, head, op); }
     int64_t lastSeq() override { return inner().lastSeq(); }
     long maxObjectId() override { return inner().maxObjectId(); }
+    std::vector<std::pair<long, std::string>> objectNames() override
+    { return inner().objectNames(); }
+    void addObjectNames(const std::vector<std::pair<long, std::string>>& names) override
+    { inner().addObjectNames(names); }
     void truncate(int64_t before) override
     {
         inner().truncate(before);
@@ -372,6 +376,9 @@ void TransactionLogCore::openStore()
     _history.noteObjectId(_store->maxObjectId());
     for (const auto& b : _store->branches())
         _history.noteObjectId(std::max(b.idBase, b.lastId));
+    // And its names (item 3).
+    for (const auto& n : _store->objectNames())
+        _history.noteObjectName(n.second, n.first);
 }
 
 void TransactionLogCore::liveLogs(TransactionLogCore* core, bool add)
@@ -827,6 +834,11 @@ TransactionLog::Embedded TransactionLogCore::embed(const std::string& saveDate, 
     copy->setMeta("save_date", saveDate);
     copy->setMeta("version_counter", std::to_string(out.version));
     copy->setMeta("last_object_id", std::to_string(_history.lastObjectId()));
+    std::vector<std::pair<long, std::string>> names;
+    names.reserve(_history.objectNames().size());
+    for (const auto& n : _history.objectNames())
+        names.emplace_back(n.second, n.first);
+    copy->addObjectNames(names);
     // The branch the file reopens on is the saving document's (sec 27.16):
     // the store's names whichever document of the file last switched, and a
     // version document saved as the file never sets it.

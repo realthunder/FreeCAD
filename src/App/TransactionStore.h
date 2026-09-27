@@ -236,6 +236,15 @@ public:
     virtual int64_t lastSeq() = 0;
     /// The largest object id any op names (sec 27.40 item 1), 0 if none.
     virtual long maxObjectId() = 0;
+    /** The file's object names (sec 27.40 item 3): the `objname` table's
+     * pairs, then every `create` op's (id, name), newest first -- the
+     * table is written only into an embedded copy, and the ops cover what
+     * came after it.
+     */
+    virtual std::vector<std::pair<long, std::string>> objectNames() = 0;
+    /// Add `names` to the `objname` table; a pair whose id or name it has
+    /// is left out.
+    virtual void addObjectNames(const std::vector<std::pair<long, std::string>>& names) = 0;
 
     /// Drop every transaction with seq < before, and the entities nothing
     /// reaches any more (sec 23.5).
