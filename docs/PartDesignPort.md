@@ -153,12 +153,13 @@ hint bar only when this panel put the hints there.
 | Draft | angle | `FeatureDraft` keeps its last pull direction and neutral plane (`getLastComputedProps`), the App half of `6aee8b81c9` |
 | Helix | height | none |
 | Revolution, Groove | angle, second angle | upstream's code from before the two-sides work (`b2da06bfe0^`); it matches the fork's feature |
-| Hole | depth | hole centres are the profile's circle and arc centres and the direction is the profile normal, as `Hole::execute()` has them here; no `BaseProfileType` (holes on points), no start offset |
+| Hole | depth, start offset | hole centres from `Hole::forEachHoleCenter()` (points too, by `BaseProfileType`) and the direction from `guessNormalDirection()`; the start gizmo since `ef750c2874` |
 | Box, Cylinder, Sphere | the dimensions | the Placement is watched through `slotChangedObject`; the fork's `TaskAttacher` has no `placementUpdated` signal |
 | Pad, Pocket | length, second length, both tapers | Fw widgets (above); `TwoLengths` shows the second side and `Midplane` halves the step, where upstream reads `SideType`/`Type2`; no start offset |
 
-Waiting for App features: the start-offset gizmos of Pad/Pocket and Hole
-(`a01fad4f53`, and upstream's `StartType`/`StartOffset`), Revolution's two
+Waiting for App features: the start-offset gizmos of Pad/Pocket
+(`a01fad4f53`, and upstream's `StartType`/`StartOffset`; the Hole's came
+with its start controls, `ef750c2874`), Revolution's two
 sides (`b2da06bfe0`) and its start controls (`a4b3950ac1`). Part's own
 Thickness dialog has a gizmo upstream, but upstream leaves it switched off
 ("a proof"), so it is not taken.
@@ -1212,9 +1213,10 @@ drill).
 
 **Differences from upstream, on purpose:**
 
-- No Start row (`f394f1b669`, the fork's Hole has no `StartType`) and no
-  Operation row (`82c7a09b35`; `initUI()` adds the fork's own operation
-  combo above the form). Upstream's "Update thread view" box is the
+- No Operation row (`82c7a09b35`; `initUI()` adds the fork's own
+  operation combo above the form). The Start rows were left out at first,
+  the fork's Hole having no `StartType`; they came back with it the same
+  day (below). Upstream's "Update thread view" box is the
   fork's Update view box at the foot of the panel, enabled only for a
   modelled thread as before.
 - The show/hide/enable state is one routine, `updateVisibility()`, read
@@ -1259,14 +1261,83 @@ Clearance hidden); Threaded (group shown, Model Thread off ->
 Update view enabled); Counterbore, Countersink (angle field appears),
 ISO 4762 (Custom head values appears, the head fields read-only at
 15 x 8.6); Drill angle off (flat diagram, Include in depth disabled;
-the `_included` diagrams were not shown);
+the `_included` diagrams were shown in the next section's run);
 Through all (depth and drill frame off); Clearance (the Clearance combo
 appears); UTS coarse (fit names Normal/Close/Loose); None again. The
 Hole is valid in every head type. OK, reopen: the combo, Model Thread,
 the group and the countersink angle come back as saved.
 
 Commit `17f59a0c35`. 25 ledger rows settled: 20 adapted, 2 taken, 2 n/a,
-and `599f100c4f` turned from declined to adapted. Still open near it:
-the clearance renames (`70007a28c1`) and the ISO tyre valves
-(`551c15b48f`, which rests on them), and the Start controls
-(`f394f1b669`). Suites: ctest 750/750; TestPartDesignApp 156 OK.
+and `599f100c4f` turned from declined to adapted. Left open then, and
+taken the same day (next section): the clearance renames
+(`70007a28c1`), the ISO tyre valves (`551c15b48f`) and the Start
+controls (`f394f1b669`). Suites: ctest 750/750; TestPartDesignApp 156 OK.
+
+### The Hole panel's open rows (2026-09-27, later)
+
+The three rows the redesign left open, and its two unchecked claims.
+
+**The unchecked claims, checked.** The `_included` diagrams: Drill angle
+and Include in depth both on draw the depth bracket down to the tip (178
+pixels of the diagram differ from the plain angled one). The depth gizmo's
+click: it clicks Switch direction now, and a `click()` on that box from a
+script reverses the hole (`Reversed` False -> True), which is the path the
+gizmo takes; the gizmo itself was not clicked in the view.
+
+**Clearance names by standard** (`70007a28c1`). The fits keep their
+indices -- 0 the middle one, 1 the closest, 2 the widest -- and files
+store the index, so nothing saved changes meaning. The names are each
+standard's: ISO 273's Medium, Fine, Coarse for metric and BSP (were
+Standard, Close, Wide); Normal, Close, Loose for UTS and NPT; Normal,
+Close, Wide for BSW, BSF and the tyre valves; "-" with no type. Reproduced
+first on the old binary: the pipe and Whitworth types set no names at
+all, so BSW read Standard/Close/Wide after ISO and Normal/Close/Loose
+after UNC. A script that sets `ThreadFit = "Standard"` must now say
+"Medium" (or 0), as it must on upstream.
+
+**ISO tyre valve threads** (`551c15b48f`): `ISOTyre` at the end of
+`ThreadType`, the nineteen ISO 4570 sizes in the standard's order, no
+core holes in the table (the tap drill is diameter - pitch, 7.004 for
+8v1), a rounded crest on the modelled thread (the fork's `makeThread`,
+not upstream's), no head cuts or classes. The panel lists "ISO tyre
+valves".
+
+**Start controls** (`f394f1b669`). `Hole::StartType` ("Profile plane",
+"Offset", "Reference"), `StartOffset` (a length, into the material) and
+`StartReference`, upstream's names and types, so its files load with
+them. The helpers upstream moved from `FeatureExtrude` into
+`ProfileBased` are in `ProfileBased` here, written against the fork's
+shapes: a datum plane or a sketch is its placement's plane
+(`makeShapeFromPlane`; a sketch's own shape has no face); a planar
+reference is met where the line through the profile's centre crosses the
+plane, anywhere; any other face must be cut by that line, ahead or
+behind, or the hole fails. No reference picked starts at the profile, as
+upstream. The Pad/Pocket half of the family (`bcc3e296fa`, and its gizmos
+`a01fad4f53`) is not taken; the helpers wait for it.
+
+Beyond upstream: the cosmetic thread follows the start.
+`getCosmeticThreads()` moves the bores as `execute()` moves the holes;
+without it the render engine's thread would stay at the profile while the
+hole moved (the axis matches either way, so the band is what shows it).
+Checked in the GUI: an M6 hole 4 deep, the finish band (-12, -6) at the
+profile plane and (-9, -3) with the start 3 in -- the solid's shift.
+
+The panel: upstream's Start rows back in the Profile and Placement group,
+shown by the type; Reference with nothing picked starts the pick. The pick
+goes through the Revolution's up-to-face path, `onSelectUpToFace()`, which
+now takes the property to set (UpToFace if none), so external faces are
+imported and picks on the feature are traced to the base as they are
+there. A sphere gizmo drags the offset from where it is measured and the
+depth gizmo moves with the start (not driven in the view). Checked in the
+GUI: Offset and Reference show their rows; the pick of the box's top face
+reads `Box:Face6` and releases the button; OK gives a hole from 10 down to
+6 (depth 4), with offset 3 from 7 down to 3; reopened, the panel shows it;
+a change to Profile plane and Cancel restores the reference start.
+
+Tests: `testClearanceNames`, `testTyreValveThreads`, and upstream's
+`testStartOffset` and `testStartReferenceOffsetForPointProfile` (its
+points made real geometry: a point is added as construction here), plus
+`testStartReferenceSketchAndMiss` (a sketch as the reference; a curved
+face off the line is an error). Commits `e31d0b9c16`, `ef750c2874`.
+Suites: ctest 750/750; TestPartDesignApp 161 OK; the whole Python suite
+2987 OK (50 skipped, 6 expected failures).
