@@ -155,12 +155,12 @@ hint bar only when this panel put the hints there.
 | Revolution, Groove | angle, second angle | upstream's code from before the two-sides work (`b2da06bfe0^`); it matches the fork's feature |
 | Hole | depth, start offset | hole centres from `Hole::forEachHoleCenter()` (points too, by `BaseProfileType`) and the direction from `guessNormalDirection()`; the start gizmo since `ef750c2874` |
 | Box, Cylinder, Sphere | the dimensions | the Placement is watched through `slotChangedObject`; the fork's `TaskAttacher` has no `placementUpdated` signal |
-| Pad, Pocket | length, second length, both tapers | Fw widgets (above); `TwoLengths` shows the second side and `Midplane` halves the step, where upstream reads `SideType`/`Type2`; no start offset |
+| Pad, Pocket | length, second length, both tapers | Fw widgets (above); `TwoLengths` shows the second side and `Midplane` halves the step, where upstream reads `SideType`/`Type2`; the start offset, a sphere, since the Pad/Pocket start controls (2026-09-27) |
 
-Waiting for App features: the start-offset gizmos of Pad/Pocket
-(`a01fad4f53`, and upstream's `StartType`/`StartOffset`; the Hole's came
-with its start controls, `ef750c2874`), Revolution's two
-sides (`b2da06bfe0`) and its start controls (`a4b3950ac1`). Part's own
+Waiting for App features: Revolution's two sides (`b2da06bfe0`) and its
+start controls (`a4b3950ac1`). The start-offset gizmos came with their
+features: the Hole's with `ef750c2874`, Pad and Pocket's (`a01fad4f53`)
+with the Pad/Pocket start controls. Part's own
 Thickness dialog has a gizmo upstream, but upstream leaves it switched off
 ("a proof"), so it is not taken.
 
@@ -1373,3 +1373,55 @@ every capture drawn through `renderToFramebuffer` on the Windows default
 
 The other follow-up, Cycles' missing flank occlusion, was already written
 up as a limit in docs/CyclesIntegration.md ("Screw threads").
+
+### Pad and Pocket start controls (2026-09-27, evening)
+
+The Pad/Pocket half of the start family, left open by the Hole's: upstream
+`bcc3e296fa` (the App feature and the panel rows) and `a01fad4f53` (the
+gizmo). `FeatureExtrude::StartType` ("Profile plane", "Offset",
+"Reference"), `StartOffset` (signed, a length along the extrusion) and
+`StartReference`, upstream's names and types in a "Start" group, so its
+files load with them. The reference is resolved by the helpers the Hole
+port put in `ProfileBased`.
+
+**Where the profile moves.** Once, right after it is placed and before any
+branch, so the lengths, the up-to faces, the tapers, two sides and
+symmetric all build from the moved start without a case each. The
+direction is the extrusion's (a Pocket's already points into the
+material), reversed with `Reversed` -- except for Symmetric, which the
+fork does not let `Reversed` turn, and so neither does the start.
+`getStartOffset()` gives the same number in global coordinates for the
+panel.
+
+**Measured, not assumed: the support face.** The first version cleared
+the profile's support face once the start moved, on the reasoning that it
+lies where the profile was. With the clearing disabled, a pocket up to a
+face and to the first from an attached sketch, and a pad up to a face from
+a start inside and outside the base, came out with identical volumes and
+solid counts, so it was taken out.
+
+**The panel.** Upstream's Start rows at the top of the grid, the offset
+shown for Offset and Reference, the reference for Reference only.
+The reference is a single-element `LinkSubWidget` (the up-to faces' widget;
+the first user of its single-element path) with its own selection mode,
+`refStart`, and the up-to pick filter: a face of this feature is traced to
+the base's, a datum is taken whole, a sketch or datum plane may be picked
+whole. A face of an object outside the body is imported as a
+SubShapeBinder of that face, as the fork imports external references
+everywhere. Choosing Reference with nothing picked starts the pick. The
+length gizmos stand at the start, and a sphere gizmo drags the offset from
+the plane it is added to (the Hole's style); the length gizmos' click
+already reversed the direction here.
+
+**Checked in the GUI** through the MCP console: Offset shows the offset
+row, typing 2 moves the added solid to z 2..7; Reference starts the pick,
+and a pick of a box's bottom face at z 20 makes the binder and puts the
+solid at 22..27; OK keeps all three and recomputes to 22..27; reopened,
+the panel shows Reference, and Profile plane then Cancel restores it.
+
+Tests: upstream's `testStartOffsetAndReference`,
+`testStartOffsetForTwoSidedAndSymmetricPad` and Pocket's `testStartOffset`
+(with a pocket up to a face from the moved start), and
+`testStartOffsetReversedTaperedAndBySketch`. Commit `9c15951818`. Suites:
+TestPartDesignApp 165 OK; the whole Python suite 2991 OK (50 skipped, 6
+expected failures); ctest 750/750.
