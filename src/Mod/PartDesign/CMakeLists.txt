@@ -57,6 +57,7 @@ set(PartDesign_TestScripts
     PartDesignTests/TestDraft.py
     PartDesignTests/TestThickness.py
     PartDesignTests/TestInvoluteGear.py
+    PartDesignTests/TestTopologicalNamingProblem.py
 )
 
 set(PartDesign_TestFixtures
