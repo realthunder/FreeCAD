@@ -1892,6 +1892,19 @@ void Document::Restore(Base::XMLReader &reader)
                         && d->Hasher->size() > 0;
     if (hasStringHasher) {
         Base::ReaderContext rctx("StringHasher");
+        const auto hasherStart = std::chrono::steady_clock::now();
+        struct HasherTime
+        {
+            const Document* doc;
+            std::chrono::steady_clock::time_point start;
+            ~HasherTime()
+            {
+                FC_LOG(doc->getName() << ": string table read in "
+                       << std::chrono::duration<double>(std::chrono::steady_clock::now() - start)
+                              .count()
+                       << " s");
+            }
+        } hasherTime {this, hasherStart};
         if (!shared)
             d->Hasher->Restore(reader);
         else {

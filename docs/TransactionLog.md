@@ -6722,3 +6722,99 @@ all 41; at 1 KB the deletion compacts on its own.
 
 Gates: Python 2940 OK; ctest 842/842; recovery 15, branch 27, version 18,
 pin 28, frozen 16 PASS.
+
+### 27.50 The string table as a file of its own, shared by every version: design (user, 2026-09-27)
+
+**Asked (user).** The document-level table already compacts at each save
+(`beforeSave` marks what the shapes use; only the marked ids are written),
+and has a switch to keep every string instead. Now the table is the
+file's (27.44), shared by every version: store it as a separate file, so
+every version's `Document.xml` -- the outer file's included -- refers to
+the same table, and loading any version reads and parses it at most once.
+Compaction without loss is going through every name in every shape and
+keeping what they refer to.
+
+**What exists (survey).**
+- *Keep-all* is the hasher's own `SaveAll` flag, written as the
+  `saveall` attribute and settable from Python (`doc.Hasher.SaveAll`);
+  there is no document property. With it, `Save` writes every entry and
+  `compact()` does nothing.
+- *A separate table file* is supported by `StringHasher` itself
+  (`setPersistenceFileName` -> `writer.addFile`, read back through
+  `reader.addFile` / `RestoreDocFile`), and used for a shape's private
+  table (`<prop>.Table`). `Document::Save` turns it off for the document's
+  table: an archive member is read after the XML walk, and the objects need
+  the table during it.
+- *Why during:* element maps are restored inline -- `scanner.FCStd` (the
+  real file, schema 4, 615 objects) has 678 `<ElementMap2>` blocks in
+  `Document.xml` -- and `ElementMap::restore` resolves each string id with
+  `hasher->getID(id)` as it reads.
+- *Where the ids live in a version:* each version's `Document.xml` carries
+  the table of its own save, in the composite's skeleton (27.49).
+
+**Measured on scanner.FCStd.** 38,156 strings, 1.1 MB in memory; read in
+0.036 s of a 1.27 s open. Saved at schema 5 by this build, `Document.xml`
+is 5.0 MB, of which the table is 0.74 MB. So parsing once saves little
+time per version open; what it saves is carrying 0.74 MB in every
+version's `Document.xml`, and what it buys is one table for the file.
+
+**Proposed shape.**
+1. *The table is file-scope state, not version content.* One table per
+   file -- the history's hasher of 27.44 -- written whole: every id the file
+   holds, whichever document saves. That is what lets two versions refer to
+   the same bytes; a table of only the saving document's marked ids would
+   differ per version.
+2. *In the archive,* one member (say `StringTable.txt`), and the root's
+   `<StringHasher>` element names it with its content hash and `lastid`,
+   holding no entries. *In the log,* the table is kept once, as the store's
+   file-scope state beside `objname` (27.43), not in each version's
+   `Document.xml`: a version refers to it and carries nothing.
+3. *Read before the objects, at most once.* At the `<StringHasher>`
+   element: a table whose hash the history has already taken in is
+   skipped. Otherwise it is read then and there -- by entry from an indexed
+   archive (`ZipFileReader::openEntry`, the default reader), by path from an
+   unpacked directory, and for the forward-only reader by opening the same
+   archive by path with an index. A version checked out of the log never
+   reads a table: the store's is in memory once the history is open.
+4. *Compaction without loss is tracked, not scanned.* Since versions no
+   longer carry their tables, what a retained version refers to has to be
+   known. Record it where it is known exactly and for free:
+   - a version: the ids its save marked -- precisely the ids its element
+     maps use -- as id ranges in the store, per version;
+   - an op's shape value: the ids its element map names, collected on the
+     worker at capture with a set of its own (which also ends the race on
+     the `Marked` flags, 27.49), per value entity.
+   Compaction keeps what memory holds, plus every retained version's and
+   value's ids, closed over the ids a kept string is built from; the rest
+   goes. That is the user's "every name in every shape", done once at write
+   time instead of by decoding the whole history at each compaction. A
+   store written before this has no records: its versions' own tables are
+   their sets, and its values are scanned once, on the first compaction.
+5. *Keep-all* becomes the file's: `SaveAll` on the file's hasher means no
+   string is ever dropped, by the save or by compaction.
+6. *What the per-save compaction becomes.* The save no longer shrinks the
+   table it writes (it writes the file's). Its marks still decide which ids
+   an element map lists (27.49), and they are now also the version's
+   reference set of item 4.
+
+**Questions.**
+- **Q1.** The log keeps one table for all versions (item 2), or each
+  version keeps its table as a blob, shared by content when unchanged?
+  Recommended: one -- a blob per version would differ whenever a string was
+  added, and parse again.
+- **Q2.** Compatibility. A `Document.xml` without an inline table cannot be
+  read by any build before this one: every element map would lose its
+  names. Write the separate table only at a new schema 6 (with 5 and below
+  writing inline as now), or at 5 as well? Recommended: schema 6; 5 files
+  already went out.
+- **Q3.** Keep-all stays off by default (compaction allowed), as
+  `saveall="0"` is today?
+- **Q4.** Reference sets recorded at write time (item 4), with a one-off
+  scan for older stores -- or scan everything at each compaction?
+  Recommended: recorded.
+
+**Build order (proposed).** 1: the table as an archive member at schema 6,
+read before the objects, skipped by hash. 2: the log keeps the file table
+once; versions carry none. 3: reference sets for versions and values, and
+compaction on them. 4: keep-all as the file's switch. Each with the gates
+and a measurement on scanner.FCStd.
