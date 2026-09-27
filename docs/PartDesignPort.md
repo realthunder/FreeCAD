@@ -1341,3 +1341,29 @@ points made real geometry: a point is added as construction here), plus
 face off the line is an error). Commits `e31d0b9c16`, `ef750c2874`.
 Suites: ctest 750/750; TestPartDesignApp 161 OK; the whole Python suite
 2987 OK (50 skipped, 6 expected failures).
+
+### Thread follow-ups: the bundled finish icons (2026-09-27, evening)
+
+The two thread patterns had no bundled icon, so the finish list rendered them
+on first sight. `scripts/material-icons.py` lists them now, and
+`Finish_thread.png` / `Finish_thread-left.png` ship. Only those two were
+copied in: the rest of the run matched the bundled digests, and re-rendered
+on another backend they would churn every PNG for shading noise.
+
+**The preset pitch changed, 0.6 -> 0.75** (`MaterialIcons::defaultFinish`,
+depth kept at 0.541 of it). The hand is what tells Thread from ThreadLeft
+and from Turned, and on the unit billet the lead angle at 0.6 is 5 degrees:
+at 32 px both hands were stacked grooves. A contact sheet of 0.3 to 1.2
+settled it -- 0.75 leans the two hands apart and still shows two turns;
+from 0.9 up it is one slanted band. `defaultFinish` is the icon preset
+only; the finish a user applies keeps `applyFinishDefaults` (M6).
+
+**An engine defect on the way.** The first run wrote every icon one request
+late, the first blank: on Direct3D 11 the composite is the readback, which
+is pipelined, and an offscreen capture then gets the previous frame. A
+capture is now always serialized (docs/DeviceAdoption.md sec 10); it hit
+every capture drawn through `renderToFramebuffer` on the Windows default
+(`imageFromFramebuffer` included), not only icons.
+
+The other follow-up, Cycles' missing flank occlusion, was already written
+up as a limit in docs/CyclesIntegration.md ("Screw threads").
