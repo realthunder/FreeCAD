@@ -1740,15 +1740,21 @@ apply and are disabled in the panel; Pipe is hidden there with the mode
 indices kept. A file with a recto-verso thickness makes the wall it asked
 for now, not the skin. Upstream's tests, one an expected failure (below).
 
-**Found, not fixed: an OCCT 8.0.1 thick-solid defect.** The inner
-Arc-joined skin of an open cylinder is wrong: `Part.makeCylinder(20, 10)`
-opened at the top, offset -1, Arc join, comes back invalid with volume
-17713.5 at any tolerance (Intersection join: 2359.3, right). In PartDesign
-with FixShape off (the default here) a Skin thickness of 2, reversed, Arc,
-on that cup reports Valid with volume 16585.7 for 4423.4. A PartDesign
-AdditiveCylinder of the same size, thickness 1, came out right. Upstream's
-`testArcJoinProducesValidCenteredCurvedWall` is marked an expected failure
-for it -- a kernel fix will show as an unexpected success.
+**Found, not fixed: the fork kernel's inward-cap thick-solid defect.** The
+inner Arc-joined skin of a cylinder opened at its top is wrong:
+`Part.makeCylinder(20, 10)` with Face2 (the top) removed, offset -1, Arc
+join, comes back invalid with volume 17713.5 at any tolerance
+(Intersection join: 2359.3, right). Every radius and height tried fails
+with the top opened and passes with the bottom opened. In PartDesign with
+FixShape off (the default here) a Skin thickness of 2, reversed, Arc, on
+that cup reports Valid with volume 16585.7 for 4423.4. It is not an 8.0.1
+regression: it is the OCCT fork's thickness suite's known XFAIL (a
+casualty of the fork's MakeThickSolid fix chain, the same on 7.7.2), whose
+notes had top and bottom swapped. Recorded in the OCCT repo as
+`tests/occ-issues` `local01_thickness_open_top_cup.FCStd`, names corrected
+(OCCT `c86e824eb4`). Upstream's `testArcJoinProducesValidCenteredCurvedWall`
+is marked an expected failure for it -- a kernel fix will show as an
+unexpected success.
 
 **The drop cursor (`3e0dc271f9`).** The fork's binder drop has upstream's
 convention (no modifier adds, Ctrl replaces) and the fork's tree shows

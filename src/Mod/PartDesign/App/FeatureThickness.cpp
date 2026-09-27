@@ -76,8 +76,9 @@ TopoShape makeRectoVersoThickness(const TopoShape &solid, const std::vector<Topo
                                               join, "RectoVersoRecto");
     TopoShape verso = oriented.makEThickSolid(faces, -distance, tol, intersection, false, skin,
                                               join, "RectoVersoVerso");
-    // As the feature fixes a skin: OCCT 8.0.1 makes the inner Arc-joined
-    // skin of an open cylinder invalid, and the fix mends it. A solid grown
+    // As the feature fixes a skin: the fork's OCCT makes the inner
+    // Arc-joined skin of a cylinder opened at its top invalid (occt
+    // tests/occ-issues local01), and the fix may mend it. A solid grown
     // with no face open comes back inside out.
     for (auto wall : {&recto, &verso}) {
         fixShape(*wall);
