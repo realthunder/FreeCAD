@@ -6175,3 +6175,154 @@ and `closeReleasedVersions()` closes nothing.
 
 Gates: Python 2933 OK; ctest 842/842; recovery 15, branch 27, version 18,
 pin 28, frozen 16 PASS (the frozen check covers the Gui's prompt, unchanged).
+
+### 27.40 File-scope state: survey and proposed design (2026-09-27)
+
+The last item of 27.18: the counters and tables that are per document
+today, so that each version document and branch of one file has its own
+copy, made one per file.
+
+**What exists.**
+
+- *Object ids.* `DocumentP::addObject` hands out `++lastObjectId`. A new
+  document starts it at a random 10..5000; `Document::readObjects` sets it
+  to the largest id restored. Branches are kept apart by a stride:
+  `openFileVersion` and `createBranch` start a branch `branchStride()`
+  (2^16..2^20, random) above every branch's `idBase`/`lastId` and every
+  open document, and `_leaveBranch` records the branch's `lastId`. Nothing
+  records the counter itself.
+- *The string hasher.* `DocumentP::Hasher`, one per document; a version
+  document restores its own. `StringHasher::lastID()` is the largest id in
+  the table plus one. The table holds a reference on every id it made and
+  frees none within a session (`compact()` runs only from
+  `setSaveAll(false)`), but a save writes only the marked ids and a restore
+  reads back only those, so after a reopen the ids above the largest one
+  the saved state uses are handed out again, to other strings.
+- *Object names.* `getUniqueObjectName` checks the live `objectMap` only:
+  a deleted object's name is free again at once.
+- *Labels.* Unique among the live objects of one document
+  (`PropertyString` for `Label`, unless `DuplicateLabels` or
+  `allowDuplicateLabel()`).
+- *Counters inside objects.* The survey of `src/Mod` found one that
+  persists in effect: Sketcher's `geoLastId`. It is not saved; each
+  restore sets it to the largest geometry id present (SketchObject.cpp
+  ~1021, ~1149, ~1343). The other `++counter` sites are solver-local.
+- *Already file scope:* the log's sequence and version counters, the
+  branch table, the blob manager, the transient directory.
+
+**Found: one branch reuses ids and names after a reopen.** Measured on
+the default build (log on): add `Box` (id 1286) and `Box001` (1287),
+delete `Box001`, save, close, reopen, add a cylinder -- it is `Box001`,
+id 1287. So the log's chain has ops on cid 1287 for two different objects,
+and an element-map tag 1287 in an old version names another object than
+it does at the tip. The hasher does the same with string ids by reading of
+the code (above). None of this needs a second branch; the stride never
+covered it. What reads the log by cid (`lastOpOn`, the fold of 27.34, the
+refuse rule of selective undo) can conflate the two objects; no failure
+was chased.
+
+**Proposed shape.** One allocator per file, held by `TransactionLogCore`
+beside the sequence counters, written to the store's `meta` in the same
+worker job as the append that first uses a value, and carried by the
+embedded copy and `saveToLog` like the rest of the store. A document with
+no history (log off, or saved without it) keeps a document-scope
+allocator with the same interface. Two documents of the file open in one
+process draw from one allocator, so neither can hand out a value the other
+has.
+
+1. **Object ids.** `lastObjectId` moves to the file. A store written before
+   this starts the counter at the largest of: every branch's `idBase` and
+   `lastId`, every cid in the `op` table, every open document's counter.
+   New branches record `idBase` 0 and the stride goes; old strided
+   branches keep their ids. The root element also gains a `LastId`
+   attribute, read back as the larger of it and the largest id restored,
+   so a file opened with the log off does not reuse either.
+2. **The string hasher.** The file's history owns one `StringHasher`,
+   which every document of the file uses as `d->Hasher`. It counts from a
+   stored `_lastId` that never goes down (a `lastid` attribute on the
+   `StringHasher` element, and the store's meta), not from the table's
+   largest entry. A document restoring into it stages its table first:
+   an id already present with the same string is shared; an absent id is
+   inserted under its number. An id present with another string can only
+   come from history written before this change: that document gets a
+   private hasher, as every document has today, and the log says so. One
+   case stays: a string the tip no longer used when the file was saved,
+   minted again after the reopen under a new id, and then brought back
+   under its old id by restoring an old version -- two ids for one string,
+   which the table's unique string key does not allow. See Q2.
+3. **The object name table.** A file-scope map name -> cid, in the store
+   (a `name` table) and in memory. `getUniqueObjectName` treats a name as
+   taken when a live object has it or the table gives it to another cid;
+   the same cid may always take its own name back (undo, restore, a
+   version). The name enters the table when `addObject` allocates it, not
+   at commit, so two documents of the file cannot both hand out `Pad001`
+   in between. A store written before this seeds the table from the
+   `create` ops (cname, cid) and the open documents; an old collision (one
+   name, two cids) keeps the newer cid and is left to the merge, as 17.2
+   said. An import renames through `readObjects`' name map as it does now.
+   Names are never freed, trimming included.
+4. **Ids inside objects.** One file-scope counter for sketch geometry ids:
+   the next id is one above the larger of the counter and the sketch's own
+   largest id. Geometry ids need be unique only within a sketch, which one
+   counter for every sketch of the file gives with no per-object table;
+   they grow faster, and they are `long`. A sketch in a document with no
+   history uses the same rule with a document counter. The restore repair
+   of duplicate ids stays. Offered to other modules as
+   `DocumentObject::allocateId(key)` -> the file's counter for `key`.
+5. **Tags** follow from 1.
+
+**Questions.**
+
+- **Q1. Object ids without a log.** Add the `LastId` attribute (a file
+  opened with the log off then never reuses an id either), or leave the
+  log-off case as it is today? Recommended: add it; it is one attribute and
+  closes the single-branch defect for every file.
+- **Q2. One string at two ids.** (a) Keep the file's whole string table in
+  the store -- every id ever handed out, the union of every version's --
+  and look a string up there before minting, so a string always gets its
+  old id back; costs a store lookup on every miss (element map building
+  is hot) or an in-memory index of every string's hash. (b) Allow the
+  second id as an entry reachable by number only; the two versions then
+  name the same element differently, which is the rare leftover of today's
+  problem, not a wrong answer. Recommended: (b) now, with a count of how
+  often it happens, and (a) only if the count says so.
+- **Q3. Names never freed, undo included.** Add `Pad001`, undo, add again:
+  today `Pad001` again, with the table `Pad002`, because the undone create
+  is still in the log and a redo must be able to bring it back. This is
+  the visible change of the whole section, on the commonest path.
+  Recommended: accept -- it is what "deleted names stay taken" means.
+- **Q4. Labels.** (a) Leave them document scope and let the merge resolve a
+  clash -- suffix the incoming label and rewrite the `<<label>>`
+  references, which relabelling already does. (b) The same rule as names:
+  a label once given stays its object's, in every version and branch, so a
+  label the user types can come out suffixed because a deleted object once
+  had it. Recommended: (a); labels are the user's text, and (b) makes
+  typing one surprising.
+- **Q5. One geometry-id counter per file, or one per object** (a table
+  keyed by (cid, key))? Recommended: one per file (4 above); per object
+  only if some module needs dense ids.
+- **Q6. Two processes on one file** (17.5) would need the allocator in the
+  store itself -- ids reserved in blocks. Nothing runs two processes on one
+  store today. Recommended: keep every allocation behind the one allocator
+  so blocks can come later, and not build them now.
+
+**To check while building.** The log's worker serialises detached copies
+(sec 20); if a shape's element map is written there, its `StringID` marks
+are set off the main thread while a save on the main thread clears them.
+With one hasher per file that race spans documents; today it spans one.
+
+**Build order (proposed).** Each step with the gates (Python, ctest, the
+five GUI checks) and a test of its own.
+
+1. Object ids: the file counter, `LastId`, the stride retired, old stores
+   seeded. Test: the reopen case above, and two branches and two version
+   documents of one file never sharing an id.
+2. The name table. Test: the reopen case gives `Box002`; two branches
+   adding a `Pad` get `Pad001` and `Pad002`; undo, restore and a version
+   take their own names back.
+3. The shared hasher, per Q2. Test: one shape in two branches has the same
+   element map; a pre-change file with colliding tables falls back to a
+   private hasher.
+4. The geometry-id counter. Test: a sketch edited in two branches mints no
+   id twice; a reopen does not reuse a deleted geometry's id.
+5. Labels, per Q4.
