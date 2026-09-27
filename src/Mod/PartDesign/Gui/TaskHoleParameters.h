@@ -88,7 +88,7 @@ public:
     int getBaseProfileType() const;
 
 private Q_SLOTS:
-    void threadedChanged();
+    void holeTypeChanged(int index);
     void threadTypeChanged(int index);
     void threadSizeChanged(int index);
     void threadClassChanged(int index);
@@ -110,7 +110,6 @@ private Q_SLOTS:
     void taperedAngleChanged(double value);
     void reversedChanged();
     void modelThreadChanged();
-    void cosmeticThreadChanged();
     void useCustomThreadClearanceChanged();
     void customThreadClearanceChanged(double value);
     void threadDepthTypeChanged(int index);
@@ -126,6 +125,14 @@ private:
         TaskHoleParameters * owner;
         PartDesign::Hole * hole;
     };
+    /// The entries of the HoleType combo, which states Threaded,
+    /// ModelThread and CosmeticThread together
+    enum HoleTypeIndex : int
+    {
+        Clearance = 0,
+        TapDrill = 1,
+        Threaded = 2
+    };
 
 protected:
     void changeEvent(QEvent *e) override;
@@ -133,14 +140,22 @@ protected:
     void finishedRecomputeFeature() override;
 
 private:
-    /// Thread depth type and depth, for a modelled or a drawn thread
-    void updateThreadDepthEnabled();
+    PartDesign::Hole* getHole() const;
+    /// The Hole, for a change: opens the edit's transaction first
+    PartDesign::Hole* editHole();
+    /// Shows, hides and enables the widgets as the properties say
+    void updateVisibility();
+    /// The HoleType combo and Model Thread box from the three properties
+    void updateHoleTypeCombo();
+    /// Only a modelled thread is slow enough to want Update view off
+    void updateViewBlocking();
+    void updateHoleCutLimits();
+    void setCutDiagram();
 
     using Connection = fastsignals::scoped_connection;
     Connection connectPropChanged;
 
     std::unique_ptr<Observer> observer;
-    bool isApplying;
     QWidget* proxy;
     std::unique_ptr<Ui_TaskHoleParameters> ui;
 

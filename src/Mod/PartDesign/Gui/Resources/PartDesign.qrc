@@ -98,4 +98,18 @@
         <file>icons/PartDesign_GroupDatum.svg</file>
         <file>icons/PartDesign_GroupMisc.svg</file>
     </qresource>
+    <qresource>
+        <file>images/hole_counterbore_angled.svg</file>
+        <file>images/hole_counterbore_angled_included.svg</file>
+        <file>images/hole_counterbore_flat.svg</file>
+        <file>images/hole_counterdrill_angled.svg</file>
+        <file>images/hole_counterdrill_angled_included.svg</file>
+        <file>images/hole_counterdrill_flat.svg</file>
+        <file>images/hole_countersink_angled.svg</file>
+        <file>images/hole_countersink_angled_included.svg</file>
+        <file>images/hole_countersink_flat.svg</file>
+        <file>images/hole_none_angled.svg</file>
+        <file>images/hole_none_angled_included.svg</file>
+        <file>images/hole_none_flat.svg</file>
+    </qresource>
 </RCC>

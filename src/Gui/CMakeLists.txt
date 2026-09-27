@@ -1266,7 +1266,10 @@ SOURCE_GROUP("View3D\\Inventor" FILES ${Inventor_SRCS})
 
 # The widget sources
 SET(Widget_CPP_SRCS
+    ElideCheckBox.cpp
+    ElideLabel.cpp
     FileDialog.cpp
+    FontScaledSVG.cpp
     InputHintPy.cpp
     InputHintWidget.cpp
     MainWindow.cpp
@@ -1288,7 +1291,10 @@ SET(Widget_CPP_SRCS
 )
 
 SET(Widget_HPP_SRCS
+    ElideCheckBox.h
+    ElideLabel.h
     FileDialog.h
+    FontScaledSVG.h
     InputHint.h
     InputHintPy.h
     InputHintWidget.h

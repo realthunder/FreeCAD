@@ -153,6 +153,17 @@ public:
     std::vector<CosmeticThreadBore> getCosmeticThreads() const;
     double getThreadPitch() const;
 
+    /// Whether a screw standard's cut is a counterbore or a countersink;
+    /// the Hole panel draws its diagram by it
+    bool isDynamicCounterbore(const std::string &thread, const std::string &holeCutType);
+    bool isDynamicCountersink(const std::string &thread, const std::string &holeCutType);
+    /// The axis the holes are drilled along, before Reversed
+    Base::Vector3d guessNormalDirection(const TopoShape& profileshape) const;
+    /// Every point of the profile a hole is centred on, with the profile
+    /// element it comes from, in the order findHoles() drills them
+    void forEachHoleCenter(const TopoShape& profileshape,
+                           const std::function<void(const TopoShape&, const gp_Pnt&)>& fn) const;
+
 protected:
     void onChanged(const App::Property* prop) override;
     void setupObject() override;
@@ -264,8 +275,6 @@ private:
     const CutDimensionSet& find_cutDimensionSet(const CutDimensionKey &k);
 
     void addCutType(const CutDimensionSet& dimensions);
-    bool isDynamicCounterbore(const std::string &thread, const std::string &holeCutType);
-    bool isDynamicCountersink(const std::string &thread, const std::string &holeCutType);
     void updateHoleCutParams();
     void calculateAndSetCounterbore();
     void calculateAndSetCountersink();
@@ -285,13 +294,8 @@ private:
     bool changingThreadType = false;
     void rotateToNormal(const gp_Dir& helixAxis, const gp_Dir& normalAxis, TopoDS_Shape& helixShape) const;
     gp_Vec computePerpendicular(const gp_Vec&) const;
-    Base::Vector3d guessNormalDirection(const TopoShape& profileshape) const;
     TopoDS_Shape makeThread(const gp_Vec&, const gp_Vec&, double);
     TopoShape findHoles(std::vector<TopoShape> &holes, const TopoShape& profileshape, const TopoDS_Shape& protohole) const;
-    /// Every point of the profile a hole is centred on, with the profile
-    /// element it comes from, in the order findHoles() drills them
-    void forEachHoleCenter(const TopoShape& profileshape,
-                           const std::function<void(const TopoShape&, const gp_Pnt&)>& fn) const;
 
     // helpers for nlohmann json
     friend void from_json(const nlohmann::json &j, CounterBoreDimension &t);
