@@ -218,7 +218,8 @@ async function magentaUntil(page, label, done, ms) {
     // sketch's line still is (the drag below moves it). It goes up the
     // 'E' channel, not as a pick: the sketcher selects the line into the
     // session's instance, which is this client's own, and the server
-    // tells the client so; with the sync toggle on the room follows too.
+    // tells the client so. The room follows only on a route that
+    // forwards (sec 8.11a); this connection starts on `none`.
     await page.evaluate(async () => {
       const {cx, cy} = window.__fcRect();
       await window.__fcClick(cx, cy);

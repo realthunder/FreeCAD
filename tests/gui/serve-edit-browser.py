@@ -30,8 +30,12 @@ What is asserted:
     document having ZERO 3D views throughout. setEdit given no view does
     not refuse, it CREATES one, so a browser that had not been bound
     would leave a window and a GL context behind in this process;
-  - entering edit moves the sketch's graph under the editing root (the
-    view provider's own child count goes to zero and comes back);
+  - entering edit takes the sketch's own geometry off this client's
+    screen. In render-cache mode 3 -- what this runs in -- the sketch
+    hands the editing root its own edit node and the edited occurrence is
+    hidden per view, so the view provider's child count STAYS; in modes
+    0-2 its children move under the editing root and the count goes to
+    zero and comes back;
   - the edit geometry is drawn in the browser while the session runs and
     not before or after it: the serving source's overlay of the session's
     editing root, tagged with the session (8.12 item J), counted as
@@ -40,9 +44,12 @@ What is asserted:
     are counted as 'E' frames on this connection, and the hover half is
     the one that never travels in view mode (sec 8.2a stops at the edit
     boundary);
-  - what the browser clicks while editing is not the room's. The same
-    click in view mode before it IS -- that is what makes the second
-    reading a reading rather than a coincidence;
+  - what the browser clicks while editing is its own and not the room's.
+    The connection starts on the `none` selection route (sec 8.11a), and
+    the session's selections are routed under its initiator's route --
+    this browser's. That the click selected at all is read from the
+    `selection` push it was told, so an empty room is the route working
+    and not a click that missed;
   - and Escape, which the sketcher handles itself, ends the session AND
     the viewer is told: the server pushes the leaving edge to the client
     whose view it was, and window.fcviewerEditing goes back to null. A
@@ -397,12 +404,22 @@ def verify():
               all(s[3] == 0 for s in trace),
               sorted({s[3] for s in trace}))
 
-        # 4. The graph moved under the editing root and came back.
+        # 4. The sketch's own geometry during the edit. Mode 3 keeps it
+        # where it is and hides the edited occurrence per view (the edit
+        # draws its own node); modes 0-2 move it under the editing root.
+        # serve-mirror-edit.py reads the same fork.
         before = state["children_before"]
         check("the sketch had a scene graph to begin with", before > 0, before)
-        check("entering edit emptied the view provider's root",
-              any(s[1] and s[2] == 0 for s in trace),
-              [(s[1], s[2]) for s in trace[:80]])
+        params = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View")
+        if params.GetInt("RenderCache", 3) == 3:
+            check("mode 3: entering edit kept the view provider's children",
+                  any(s[1] for s in trace)
+                  and all(s[2] == before for s in trace if s[1]),
+                  [(s[1], s[2]) for s in trace[:80]])
+        else:
+            check("entering edit emptied the view provider's root",
+                  any(s[1] and s[2] == 0 for s in trace),
+                  [(s[1], s[2]) for s in trace[:80]])
 
         # 5. The pointer stream. Counted on this side, per connection:
         # the drag and the hover after it are 'E' frames, and in view
@@ -420,12 +437,20 @@ def verify():
               % (after_input - before_input, moves))
 
         # 6. A click while editing lands in the session's instance, the
-        # mirror's, and with the sync toggle on is forwarded into the
-        # room, which entering the edit had left empty.
+        # mirror's, and stays there: the session's selections are routed
+        # under the initiator's route (sec 8.11a), and this browser -- the
+        # initiator -- is on `none`, where a connection admitted below full
+        # control starts. serve-selection-echo.py and serve-shared-edit.py
+        # pin what the other routes forward.
         check("entering edit left the room selecting nothing",
               not entered["room"], entered["room"])
-        check("a click while editing follows into the room (sync on)",
-              bool(editclick["room"]), editclick["room"])
+        route = (editclick["client"] or {}).get("selection")
+        check("the browser is on the `none` selection route", route == "none",
+              route)
+        check("a click while editing stays out of the room (route none)",
+              not editclick["room"]
+              and not any(s[4] for s in trace if s[1]),
+              editclick["room"])
         # And what the server told the browser, both times: its own
         # instance, whole, as a `selection` message the viewer handed to
         # the DOM layer.
