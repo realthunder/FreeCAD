@@ -801,6 +801,12 @@ public:
      * back under its id keeps its name when the document has it free.
      */
     std::string getUniqueObjectName(const char *Name, long id = 0) const;
+    /** A new geometry id for `obj`, above `floor` -- the largest it holds --
+     * and, when the document has a file history, above every id `obj` had
+     * in any version or branch of the file (docs/TransactionLog.md sec
+     * 27.40 item 4). Sketcher's geometry ids.
+     */
+    long nextGeoId(const DocumentObject& obj, long floor) const;
     /// Returns a name of the form prefix_number. d specifies the number of digits.
     std::string getStandardObjectName(const char *Name, int d) const;
     /// Returns a list of document's objects including the dependencies

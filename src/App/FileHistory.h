@@ -23,6 +23,7 @@
 #ifndef APP_FILE_HISTORY_H
 #define APP_FILE_HISTORY_H
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -133,6 +134,25 @@ public:
         _idOfName.emplace(name, id);
         _nameOfId.emplace(id, name);
     }
+    /** The last geometry id of each object, file wide (docs/TransactionLog.md
+     * sec 27.40 item 4, 27.41 Q5): a sketch edited in two branches, or
+     * reopened after a deletion, mints no id twice. `floor` is the largest
+     * id the object holds itself.
+     */
+    long nextGeoId(long objectId, long floor)
+    {
+        long& last = _lastGeoIds[objectId];
+        last = std::max(last, floor) + 1;
+        return last;
+    }
+    void noteGeoId(long objectId, long id)
+    {
+        long& last = _lastGeoIds[objectId];
+        if (id > last)
+            last = id;
+    }
+    const std::unordered_map<long, long>& lastGeoIds() const { return _lastGeoIds; }
+
     /** The file's string hasher (sec 27.40 item 2), the one every document
      * of the file hashes element names with, so one shape has one element
      * map in every version and branch. Null until a document gives it
@@ -208,6 +228,7 @@ private:
     std::unordered_map<std::string, long> _idOfName;
     std::unordered_map<long, std::string> _nameOfId;
     StringHasherRef _hasher;
+    std::unordered_map<long, long> _lastGeoIds;
     std::string _dir;
     std::string _path;
     std::unique_ptr<FileBlobManager> _blobs;

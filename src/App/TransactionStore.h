@@ -245,6 +245,11 @@ public:
     /// Add `names` to the `objname` table; a pair whose id or name it has
     /// is left out.
     virtual void addObjectNames(const std::vector<std::pair<long, std::string>>& names) = 0;
+    /// The last geometry id of each object (sec 27.40 item 4), table
+    /// `lastgeoid`: (object id, id).
+    virtual std::vector<std::pair<long, long>> lastGeoIds() = 0;
+    /// Raise the rows of `ids`, adding the missing ones.
+    virtual void addLastGeoIds(const std::vector<std::pair<long, long>>& ids) = 0;
 
     /// Drop every transaction with seq < before, and the entities nothing
     /// reaches any more (sec 23.5).

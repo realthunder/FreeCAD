@@ -183,6 +183,9 @@ public:
     { return inner().objectNames(); }
     void addObjectNames(const std::vector<std::pair<long, std::string>>& names) override
     { inner().addObjectNames(names); }
+    std::vector<std::pair<long, long>> lastGeoIds() override { return inner().lastGeoIds(); }
+    void addLastGeoIds(const std::vector<std::pair<long, long>>& ids) override
+    { inner().addLastGeoIds(ids); }
     void truncate(int64_t before) override
     {
         inner().truncate(before);
@@ -379,6 +382,9 @@ void TransactionLogCore::openStore()
     // And its names (item 3).
     for (const auto& n : _store->objectNames())
         _history.noteObjectName(n.second, n.first);
+    // And the last geometry id of each object (item 4).
+    for (const auto& g : _store->lastGeoIds())
+        _history.noteGeoId(g.first, g.second);
 }
 
 void TransactionLogCore::liveLogs(TransactionLogCore* core, bool add)
@@ -807,6 +813,15 @@ TransactionLog::Embedded TransactionLogCore::embed(const std::string& saveDate, 
     Base::FileInfo(dir).createDirectories();
     out.path = dir + "/embed-" + out.saveId + ".db";
     Base::FileInfo(out.path).deleteFile();
+    // The file-scope state (sec 27.40), into the store itself, so that the
+    // copy carries it and a recovery after a crash has it as of this save.
+    _store->setMeta("last_object_id", std::to_string(_history.lastObjectId()));
+    std::vector<std::pair<long, std::string>> names;
+    names.reserve(_history.objectNames().size());
+    for (const auto& n : _history.objectNames())
+        names.emplace_back(n.second, n.first);
+    _store->addObjectNames(names);
+    _store->addLastGeoIds({_history.lastGeoIds().begin(), _history.lastGeoIds().end()});
     _store->copyTo(out.path);
     auto copy = TransactionStore::openSQLite(out.path);
     // Retention (16.4, 13.3): the named versions travel, the unnamed ones
@@ -833,12 +848,6 @@ TransactionLog::Embedded TransactionLogCore::embed(const std::string& saveDate, 
     copy->setMeta("save_id", out.saveId);
     copy->setMeta("save_date", saveDate);
     copy->setMeta("version_counter", std::to_string(out.version));
-    copy->setMeta("last_object_id", std::to_string(_history.lastObjectId()));
-    std::vector<std::pair<long, std::string>> names;
-    names.reserve(_history.objectNames().size());
-    for (const auto& n : _history.objectNames())
-        names.emplace_back(n.second, n.first);
-    copy->addObjectNames(names);
     // The branch the file reopens on is the saving document's (sec 27.16):
     // the store's names whichever document of the file last switched, and a
     // version document saved as the file never sets it.

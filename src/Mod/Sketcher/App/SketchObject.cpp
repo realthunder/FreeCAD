@@ -632,9 +632,15 @@ void SketchObject::updateGeoHistory() {
     FC_TIME_LOG(t,"update geometry history (" << geoHistory->size() << ", " << geoMap.size()<<')');
 }
 
+long SketchObject::newGeoId() {
+    auto doc = getDocument();
+    geoLastId = doc ? doc->nextGeoId(*this, geoLastId) : geoLastId + 1;
+    return geoLastId;
+}
+
 void SketchObject::generateId(Part::Geometry *geo) {
     if(!geoHistoryLevel) {
-        GeometryFacade::setId(geo, ++geoLastId);
+        GeometryFacade::setId(geo, newGeoId());
         geoMap[GeometryFacade::getId(geo)] = (long)Geometry.getSize();
         return;
     }
@@ -659,7 +665,7 @@ void SketchObject::generateId(Part::Geometry *geo) {
 
     if(geoHistoryLevel<=1 && (it==geoHistory->end() || it2==it)) {
         // level<=1 means we only reuse id if both start and end matches
-        newId = ++geoLastId;
+        newId = newGeoId();
         goto END;
     }
 
@@ -701,7 +707,7 @@ void SketchObject::generateId(Part::Geometry *geo) {
         FC_TRACE("found " << found.front());
         newId = found.front();
     }else
-        newId = ++geoLastId;
+        newId = newGeoId();
 END:
     GeometryFacade::setId(geo, newId);
     geoMap[newId] = (long)Geometry.getSize();
@@ -1018,14 +1024,14 @@ void SketchObject::onChanged(const App::Property* prop)
             auto geo = vals[i];
             long id = GeometryFacade::getId(geo);
             if(!id) {
-                id = ++geoLastId;
+                id = newGeoId();
                 GeometryFacade::setId(Geometry.mutableValue(guard, i), id);
             }
             else if(id > geoLastId)
                 geoLastId = id;
             while(!geoMap.insert(std::make_pair(id,i)).second) {
                 FC_WARN("duplicate geometry id " << id << " -> " << geoLastId+1);
-                id = ++geoLastId;
+                id = newGeoId();
                 GeometryFacade::setId(Geometry.mutableValue(guard, i), id);
             }
         }
@@ -1150,7 +1156,7 @@ void SketchObject::onChanged(const App::Property* prop)
                 geoLastId = egf->getId();
             if(!externalGeoMap.emplace(egf->getId(),i).second) {
                 FC_WARN("duplicate geometry id " << egf->getId() << " -> " << geoLastId+1);
-                ExternalGeometryFacade::getFacade(ExternalGeo.mutableValue(guard, i))->setId(++geoLastId);
+                ExternalGeometryFacade::getFacade(ExternalGeo.mutableValue(guard, i))->setId(newGeoId());
                 externalGeoMap[egf->getId()] = i;
             }
             if(egf->getRef().size())

@@ -6465,3 +6465,42 @@ string id minted and never saved is not reused after a reopen.
 
 Gates: Python 2936 OK; ctest 842/842; recovery 15, branch 27, version 18,
 pin 28, frozen 16 PASS.
+
+### 27.45 Step 4 as built: the last geometry id of each object (2026-09-27)
+
+Per Q5, a file-scope map object id -> last geometry id: `FileHistory`
+(`nextGeoId`, `noteGeoId`, `lastGeoIds`), reached through
+`Document::nextGeoId(obj, floor)`. The next id is one above the larger of
+the map's entry and `floor`, the largest id the object holds -- so a
+sketch that predates the map, or whose entry was lost, still mints above
+what it has. A document with no file history yet keeps the map itself
+(`DocumentP::lastGeoIds`) and hands it over when the history comes
+(`_noteObjectsInHistory`): a new document gets its history only at its
+first save, and its sketches mint before that.
+
+Sketcher: `SketchObject::newGeoId()` at every site that minted a fresh id
+with `++geoLastId` -- `generateId` (both of its fresh-id branches), the
+restore's repair of missing and duplicate ids, the external geometry's
+repair, and the two sites in `SketchObjectExternal.cpp`. The reuse of a
+deleted geometry's id by `geoHistory` point matching is unchanged: that
+is the same geometry coming back, by design.
+
+Stored as the store's `lastgeoid(cid, id)`. **Changed with it, for items
+1-4:** `embed` now writes the file-scope state -- `last_object_id`, the
+name table, the geometry ids -- into the live store before copying it,
+where 27.42 and 27.43 wrote only into the copy; the copy carries it as
+before, and a recovery after a crash has it as of the last save rather
+than not at all. What was minted after the last save and before a crash
+is not in the store: ids and names come back through the ops (27.42,
+27.43), geometry ids only through `floor`.
+
+Test: Python `TransactionBranchCases.testSketchMintsNoGeometryIdTwice` --
+a line deleted before a save does not lend its id to a line added after
+the reopen; a line added on `side` and one on `main` get increasing ids.
+
+Gates: Python 2937 OK; ctest 842/842; recovery 15, branch 27, version 18,
+pin 28, frozen 16 PASS.
+
+**Step 5, labels,** has nothing to build here: per Q4 they stay document
+scope, and the clash is the merge's to resolve (phase 6), which does not
+exist yet. The file-scope state of 27.18 is complete.

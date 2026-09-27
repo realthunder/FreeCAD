@@ -82,6 +82,8 @@ public:
         exec("CREATE INDEX IF NOT EXISTS version_hash ON version(docxml_hash)");
         // Sec 27.40 item 3: the file's object names, one to one.
         exec("CREATE TABLE IF NOT EXISTS objname(cid INTEGER PRIMARY KEY, name TEXT UNIQUE)");
+        // Item 4: the last geometry id of each object.
+        exec("CREATE TABLE IF NOT EXISTS lastgeoid(cid INTEGER PRIMARY KEY, id INTEGER)");
         exec("CREATE TABLE IF NOT EXISTS manifest(version INTEGER, entry TEXT, hash TEXT,"
              " source TEXT, PRIMARY KEY(version, entry))");
         if (getMeta("schema") == "1")
@@ -577,6 +579,33 @@ public:
         for (const auto& n : names) {
             sqlite3_bind_int64(s, 1, n.first);
             bindText(s, 2, n.second);
+            sqlite3_step(s);
+            sqlite3_reset(s);
+        }
+        exec("COMMIT");
+    }
+
+    std::vector<std::pair<long, long>> lastGeoIds() override
+    {
+        std::vector<std::pair<long, long>> out;
+        if (!hasRow("SELECT 1 FROM sqlite_master WHERE type='table' AND name='lastgeoid'"))
+            return out;
+        auto s = prepare("SELECT cid, id FROM lastgeoid");
+        while (sqlite3_step(s) == SQLITE_ROW)
+            out.emplace_back(static_cast<long>(sqlite3_column_int64(s, 0)),
+                             static_cast<long>(sqlite3_column_int64(s, 1)));
+        sqlite3_reset(s);
+        return out;
+    }
+
+    void addLastGeoIds(const std::vector<std::pair<long, long>>& ids) override
+    {
+        exec("BEGIN");
+        auto s = prepare("INSERT INTO lastgeoid(cid, id) VALUES(?, ?)"
+                         " ON CONFLICT(cid) DO UPDATE SET id=MAX(id, excluded.id)");
+        for (const auto& n : ids) {
+            sqlite3_bind_int64(s, 1, n.first);
+            sqlite3_bind_int64(s, 2, n.second);
             sqlite3_step(s);
             sqlite3_reset(s);
         }

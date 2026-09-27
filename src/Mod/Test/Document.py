@@ -3757,3 +3757,46 @@ class TransactionBranchCases(unittest.TestCase):
         FreeCAD.closeDocument(doc.Name)
         doc = self.track(FreeCAD.openDocument(path))
         self.assertGreater(doc.Hasher.getID("a new string").Value, dropped)
+
+    def testSketchMintsNoGeometryIdTwice(self):
+        # Sec 27.40 item 4, 27.41 Q5: a sketch's geometry ids come from the
+        # file's last id for that sketch -- not reused after a deletion and a
+        # reopen, nor by two branches.
+        import Part
+
+        def line(x):
+            return Part.LineSegment(FreeCAD.Vector(x, 0, 0), FreeCAD.Vector(x, 10, 0))
+
+        doc = self.track(FreeCAD.newDocument("GeoIds"))
+        doc.UndoMode = 1
+        doc.openTransaction("sketch")
+        sk = doc.addObject("Sketcher::SketchObject", "Sketch")
+        for x in (0, 10, 20):
+            sk.addGeometry(line(x))
+        doc.commitTransaction()
+        gone = sk.getGeometryId(2)
+        doc.openTransaction("delete")
+        sk.delGeometry(2)
+        doc.commitTransaction()
+        path = os.path.join(self.dir, "geoids.FCStd")
+        doc.saveAs(path)
+        FreeCAD.closeDocument(doc.Name)
+        doc = self.track(FreeCAD.openDocument(path))
+        doc.UndoMode = 1
+        sk = doc.getObject("Sketch")
+        doc.openTransaction("again")
+        sk.addGeometry(line(30))
+        doc.commitTransaction()
+        again = sk.getGeometryId(2)
+        self.assertGreater(again, gone)
+        doc.createTransactionBranch("side")
+        doc.openTransaction("side line")
+        sk.addGeometry(line(40))
+        doc.commitTransaction()
+        side = sk.getGeometryId(3)
+        doc.switchTransactionBranch("main")
+        sk = doc.getObject("Sketch")
+        doc.openTransaction("main line")
+        sk.addGeometry(line(50))
+        doc.commitTransaction()
+        self.assertGreater(sk.getGeometryId(3), side)

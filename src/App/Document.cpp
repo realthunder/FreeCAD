@@ -7089,6 +7089,9 @@ void Document::_noteObjectsInHistory() const
     d->Hasher = d->history->shareHasher(d->Hasher);
     for (auto obj : d->objectArray)
         d->history->noteObjectName(obj->getNameInDocument(), obj->getID());
+    for (const auto& g : d->lastGeoIds)
+        d->history->noteGeoId(g.first, g.second);
+    d->lastGeoIds.clear();
 }
 
 void Document::collectFileBlobs(const std::vector<App::DocumentObject*>& objs) const
@@ -9015,6 +9018,17 @@ std::string Document::getUniqueObjectName(const char *Name, long id) const
         };
         return Base::Tools::getUniqueName(CleanName, next, 3);
     }
+}
+
+long Document::nextGeoId(const DocumentObject& obj, long floor) const
+{
+    if (obj.getID() <= 0)
+        return floor + 1;
+    if (d->history)
+        return d->history->nextGeoId(obj.getID(), floor);
+    long& last = d->lastGeoIds[obj.getID()];
+    last = std::max(last, floor) + 1;
+    return last;
 }
 
 std::string Document::getStandardObjectName(const char *Name, int d) const

@@ -517,7 +517,7 @@ int SketchObject::carbonCopy(App::DocumentObject* pObj, bool construction)
             }
             auto copy = geo->copy();
             auto egf = ExternalGeometryFacade::getFacade(copy);
-            egf->setId(++geoLastId);
+            egf->setId(newGeoId());
             if (!egf->getRef().empty()) {
                 auto &refs = this->externalGeoRefMap[egf->getRef()];
                 refs.push_back(geoLastId);
@@ -2691,7 +2691,7 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
                 taken[next] = true;
             }
             else
-                ids[i] = ++geoLastId;
+                ids[i] = newGeoId();
         }
 
         // In case a projection reduces output geometries, delete them

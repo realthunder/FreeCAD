@@ -82,6 +82,9 @@ struct DocumentP
     long lastObjectId;
     /// The id readObjects restores the next object under, 0 for a new one.
     long restoringId = 0;
+    /// The last geometry id of each object while the document has no file
+    /// history; the history takes them when it comes (sec 27.40 item 4).
+    std::unordered_map<long, long> lastGeoIds;
     mutable std::pair<long, long> treeRanks = std::make_pair(0,0);
     long treeRankRevision = 0;
     long revision = 0; // will increase on object add or remove

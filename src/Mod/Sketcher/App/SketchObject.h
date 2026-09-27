@@ -1009,6 +1009,10 @@ protected:
 
     void updateGeoHistory();
     void generateId(Part::Geometry *geo);
+    /// A geometry id never given in this sketch, in any version or branch
+    /// of its file (docs/TransactionLog.md sec 27.40 item 4); moves
+    /// geoLastId to it.
+    long newGeoId();
 
     /// Helper functions for `deleteUnusedInternalGeometry` by cases
     /// two foci for ellipses and arcs of ellipses and hyperbolas
