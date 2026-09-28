@@ -29,6 +29,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 #include <boost/dynamic_bitset.hpp>
 #include <boost/filesystem/path.hpp>
@@ -380,6 +381,29 @@ public:
 
 protected:
     long getPyValue(PyObject *item) const override;
+
+    void restoreXML(Base::XMLReader &) override;
+    bool saveXML(Base::Writer &) const override;
+};
+
+/** A list of signed integer pairs, exposed to Python as a list of tuples
+ * (upstream 04cb10696f)
+ */
+class AppExport PropertyIntPairList: public PropertyListsT<std::pair<long, long>>
+{
+    TYPESYSTEM_HEADER_WITH_OVERRIDE();
+
+public:
+    using IntPair = std::pair<long, long>;
+
+    PyObject* getPyObject() override;
+    void setPyObject(PyObject* value) override;
+    Property* Copy() const override;
+    void Paste(const Property& from) override;
+    unsigned int getMemSize() const override;
+
+protected:
+    IntPair getPyValue(PyObject* item) const override;
 
     void restoreXML(Base::XMLReader &) override;
     bool saveXML(Base::Writer &) const override;

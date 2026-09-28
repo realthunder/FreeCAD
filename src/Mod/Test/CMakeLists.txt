@@ -11,6 +11,7 @@ SET(Test_SRCS
     StringHasher.py
     Menu.py
     TestApp.py
+    TestIntPairList.py
     TestGui.py
     UnicodeTests.py
     UnitTests.py
