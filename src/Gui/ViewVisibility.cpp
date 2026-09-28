@@ -23,6 +23,7 @@
 #include "PreCompiled.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 
 #include <QCoreApplication>
@@ -254,16 +255,43 @@ ViewVisibility::~ViewVisibility()
     clear();
 }
 
+ViewVisibility::Stats &ViewVisibility::stats()
+{
+    static Stats s;
+    return s;
+}
+
+namespace {
+/// For the counters.
+uint64_t nowNs()
+{
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+}
+
 bool ViewVisibility::set(std::vector<VisibilityEntry> &&entries)
 {
     persisted = std::move(entries);
-    return rebuild();
+    return rebuildSet();
 }
 
 bool ViewVisibility::setTransient(std::vector<VisibilityEntry> &&entries)
 {
     transient = std::move(entries);
-    return rebuild();
+    return rebuildSet();
+}
+
+bool ViewVisibility::rebuildSet()
+{
+    const uint64_t t = nowNs();
+    const bool changed = rebuild();
+    auto &st = stats();
+    ++st.sets;
+    st.setEntries += persisted.size() + transient.size();
+    st.setResolved += resolved.size();
+    st.setNs += nowNs() - t;
+    return changed;
 }
 
 void ViewVisibility::setOnChanged(std::function<void()> callback)
@@ -276,18 +304,31 @@ void ViewVisibility::scheduleResolve()
     // Once the event loop is back: a structure change reaches the scene
     // graph through the view providers, which hear of it on the same
     // signal and may rebuild their nodes later still.
+    ++stats().triggers;
     if (ResolvePending || instances().empty() || !QCoreApplication::instance())
         return;
+    ++stats().scheduled;
     ResolvePending = true;
     QTimer::singleShot(0, QCoreApplication::instance(), []() {
         ResolvePending = false;
         // Copied: a holder told of a change may set its tables again.
         std::vector<ViewVisibility *> list(instances().begin(), instances().end());
+        auto &st = stats();
+        ++st.passes;
         for (ViewVisibility *vis : list) {
             if (!instances().count(vis))
                 continue;
-            if (vis->rebuild() && vis->onChanged)
-                vis->onChanged();
+            const uint64_t t = nowNs();
+            const bool changed = vis->rebuild();
+            st.passNs += nowNs() - t;
+            ++st.passTables;
+            st.passEntries += vis->persisted.size() + vis->transient.size();
+            st.passResolved += vis->resolved.size();
+            if (changed) {
+                ++st.passChanged;
+                if (vis->onChanged)
+                    vis->onChanged();
+            }
         }
     });
 }
@@ -417,11 +458,16 @@ const Render::VisibilitySet *ViewVisibility::drawSet(SoFCRenderCacheManager *fee
     // Every key of the scene through the one matcher the traversals use,
     // each root on its chain that an entry ends at: the backend then only
     // looks a draw up. A key no entry reaches is simply absent.
+    const uint64_t t0 = nowNs();
     std::unordered_map<uint64_t, uint8_t> keys;
     for (const auto &item : info) {
         if (const uint8_t flags = element.resolveDraw(item.second.nodes))
             keys.emplace(item.first, flags);
     }
+    auto &st = stats();
+    ++st.draws;
+    st.drawKeys += info.size();
+    st.drawNs += nowNs() - t0;
     if (keys != draws.keys) {
         draws.keys = std::move(keys);
         ++draws.version;

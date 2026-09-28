@@ -129,10 +129,36 @@ public:
     /// with entries is resolved again once the event loop is back.
     static void sceneChanged() { scheduleResolve(); }
 
+    /// What keeping the tables resolved has cost, process-wide, since the
+    /// last reset (docs/CoinRetirement.md 5.24): the deferred passes after
+    /// structure changes, the direct rebuilds of set()/setTransient(), and
+    /// the per-draw rescans of drawSet(). Two clock reads per rebuild or
+    /// rescan, nothing per frame. FreeCADGui.viewVisibilityStats().
+    struct Stats {
+        uint64_t triggers = 0;      ///< structure changes heard (scheduleResolve)
+        uint64_t scheduled = 0;     ///< of them, the ones that queued a pass
+        uint64_t passes = 0;        ///< deferred passes run
+        uint64_t passTables = 0;    ///< tables rebuilt by them
+        uint64_t passEntries = 0;   ///< entries they resolved
+        uint64_t passResolved = 0;  ///< of those, the ones that resolved
+        uint64_t passChanged = 0;   ///< tables whose keys came out different
+        uint64_t passNs = 0;
+        uint64_t sets = 0;          ///< set()/setTransient() rebuilds
+        uint64_t setEntries = 0;
+        uint64_t setResolved = 0;
+        uint64_t setNs = 0;
+        uint64_t draws = 0;         ///< drawSet() rescans
+        uint64_t drawKeys = 0;      ///< draw keys they scanned
+        uint64_t drawNs = 0;
+    };
+    static Stats &stats();
+
 private:
     /// Resolve both sources and recount; false when the table came out
     /// the same.
     bool rebuild();
+    /// rebuild() for set()/setTransient(), counted.
+    bool rebuildSet();
     static void scheduleResolve();
 
     std::vector<VisibilityEntry> persisted;

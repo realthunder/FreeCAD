@@ -3153,6 +3153,106 @@ serve-client-visibility-browser 17 on the rebuilt v82 viewer.
   claim FAILS; with only the claim half, the Link's occurrence still does not
   pick; after both, all pass.
 
+### 5.24 Measured: re-resolution after structure changes, against node sensors (2026-09-28)
+
+5.23 resolves a view's entries into node keys when they are set and again
+after every STRUCTURE change: a new or deleted object, any
+`PropertyLinkBase` change, a restore, a container's 3D children rebuilt
+(`sceneChanged()`). Each change schedules ONE deferred pass for the
+event-loop turn, and the pass rebuilds every table that has entries, in
+every document, resolving every entry again (object lookup, subname walk,
+`getDetailPath`). The question asked: how does that scale, and would
+SoNodeSensors on the keys' nodes -- resolving only an entry whose path
+changed -- be cheaper?
+
+`tests/gui/visibility-resolve-bench.py`, mode 3, the 5.19 scene (20
+App::Parts of 50 boxes, a Link to each Part), up to four 3D views; E
+entries hiding boxes, as path entries (`PartN.Bn_i.`), through the Link
+(`LinkN.Bn_i.`) or bare (`Bn_i`). Timed in C++ by counters kept for this
+(`ViewVisibility::Stats`, `FreeCADGui.viewVisibilityStats()`: exact pass
+counts and the passes' own time, so no frame leaks into the numbers). Two
+rounds, agreeing to about 10%.
+
+**One pass**, triggered by flipping a PropertyLink of a lone
+FeaturePython, microseconds per pass:
+
+| E | path T=1 | path T=4 | link T=1 | link T=4 | bare T=1 | bare T=4 |
+|---|---|---|---|---|---|---|
+| 1 | 10-13 | 17-18 | 12 | 19-20 | 1.5-1.7 | 2.9 |
+| 10 | 40-48 | 97-120 | 52 | 124-126 | 6.4 | 12 |
+| 100 | 292-315 | 1028-1053 | 381 | 1377-1386 | 77-78 | 164-193 |
+| 1000 | 4294-4509 | 14481-15351 | 5378-5471 | 18694-19777 | 674-697 | 1978-2033 |
+
+Linear in entries x views: about 3-4.5 us per path entry, 3.5-5.5 through
+a Link, 0.5-0.8 bare (no `getDetailPath`). Setting a table
+(`ObjectVisibilities = map`) is the same full rebuild, 6.5-14 us per entry
+at E = 1000, so a map built one `setObjectVisibility` at a time is
+quadratic (inferred from the per-set cost, not timed: about 2.5 s for 1000).
+
+**Over an operation** (path entries):
+- **geometry recompute** (every box's Height, `recompute()`): **zero**
+  triggers, zero passes, at every E and T. A recompute moves no node and
+  says so.
+- **20 turns each adding a box to a Part**: exactly one pass per turn. Per
+  turn: E=100 T=1 0.75 ms, E=1000 T=1 5.5 ms, E=100 T=4 1.7 ms, E=1000 T=4
+  22 ms -- against a turn that takes 190-250 ms itself. `drawSet`
+  rescans each view's ~2100-2400 draw keys once per turn, 0.6-1.1 ms per
+  view. The wall clock at E=1000 T=4 grows by ~130 ms per turn, of which
+  pass and rescans are ~27 ms; the rest is not resolution (not attributed
+  here -- the frame side of 5.19 is the likely place).
+- **a spreadsheet-driven PartDesign Body in a SECOND document**: every
+  recompute fires one trigger (the sheet's `PropertySheet` is a
+  `PropertyLinkBase`), and so does every expression edit, so each costs
+  the FIRST document's tables a pass (0.7-0.9 ms at E=100). The pass is
+  process-wide.
+- **reopen** with E entries saved: one pass, after the drain. It is dear
+  -- 32-42 ms at E=100, 345-373 ms at E=1000, ~350 us per entry -- while
+  the next pass on the loaded scene is back to 6-9 us per entry. The
+  load's wall clock does not grow with E (2.15-2.30 s at 0, 1.85-1.97 s at
+  1000), so the first pass is taking over work the load does anyway
+  (inferred, not traced); it is still one 0.35 s turn at E = 1000.
+
+**The node-sensor alternative.** A sensor that can tell a structure
+change (a child added, removed, replaced ON the watched node) from a
+field change below it has to be priority 0: Coin records the trigger
+node and operation only for immediate sensors (`SoDataSensor::notify`),
+so its callback runs synchronously for EVERY notification passing through
+the node, and filters there. A standalone Coin program (a chain of
+groups, a leaf field changed 200k times) prices that filter at 47-58 ns
+per watched node per notification -- the notification itself costs ~60 ns
+per level, so a sensor on every level doubles it. A delayed sensor is
+11-17 ns once scheduled but cannot tell geometry from structure, so it
+would resolve again after every recompute. Counted in the bench (pivy,
+priority 0, on every group node of each resolved path but its last):
+
+| E | watched | geometry recompute: calls / hits | 20 turns: calls / hits |
+|---|---|---|---|
+| 100 | 160 | 223,280 / 0 | 140 / 20 |
+| 1000 | 1060 | 288,080 / 0 | 140 / 20 |
+
+So the sensors would cost a 1000-box recompute 11-14 ms of callbacks
+(now: nothing) and save on a turn: a hit re-resolves only the entries
+through the changed node (5 or 50 here), ~20-250 us per view instead of
+0.75-5.5 ms. It is also not a replacement: an entry that does not resolve
+has no nodes to watch, and a bare key changes only when its object is
+recreated, so the new/deleted/restore signals stay; the sensors would be
+attached and detached as keys change, per view, on nodes views share.
+
+**Decision: keep the structure-signal pass.** It costs nothing on the hot
+path -- geometry changes, recomputes, drags -- and at plausible sizes
+(E <= 100, T <= 4) under 2 ms on a structure turn that takes ~200 ms;
+the sensor moves cost onto every geometry notification to save it on the
+rare turn, and needs the signals anyway. What the numbers do flag, for
+when served clients multiply T or maps grow:
+- the pass is linear in T and process-wide. The cheap levers, NOT
+  measured: resolve an entry once per pass for all tables that hold it;
+  skip the tables of a document no signal touched (the PartDesign case);
+  remember the objects on each entry's path (including link targets) and
+  resolve again only entries whose path holds the changed object, plus
+  the unresolved -- the sensor's selectivity at no per-notification cost;
+- the first pass after a reopen (0.35 s at E = 1000);
+- building a map entry by entry (quadratic).
+
 ## 5. Evaluated and not taken: one capture root to catch everything
 
 Stage 1b left an obvious-looking follow-on: if what Coin still draws is
