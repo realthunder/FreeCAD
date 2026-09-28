@@ -3435,6 +3435,30 @@ counters kept): 400 builds for 200 boxes without entries; with them 300,
 100 of them inside the pass (31 ms for 100 entries) -- three FAILs, the
 geometry checks passing both ways. ctest 824/824 on the fixes.
 
+### 5.28 Measured: what entries cost a structure turn after 5.25-5.27 (2026-09-29)
+
+5.25 left ~50 ms of excess on a structure turn at E = 1000, T = 4, with
+"bgfx ~15 ms" in it unattributed. Measured again with the same loop (the
+5.24 scene, four views, 20 turns each adding a box to Part19, DWARF
+profile around the turns only, E = 0 against 1000 path entries in every
+view), per turn:
+
+- **wall clock: no excess left** -- 181-184 ms at E = 1000, 184-193 at 0
+  (three untimed-by-perf rounds: 154-187 against 178-188).
+- **the bgfx render is 3.2 ms CHEAPER** at E = 1000: the entries hide
+  half the Part occurrences, so it submits less. The +15 ms does not
+  reproduce; what the per-view answer costs inside the backend is the
+  per-draw `BGFXStyleState::visibilityFlags` lookup, 1.9 ms.
+- **the render-cache manager, +6.3 ms**: `ViewVisibility::drawSet` 2.4
+  (each view rescans its ~2400 draw keys when the object info moves, 0.6
+  ms a view), `RendererBridge::translate` +2.4, `setScene` +1.2.
+- **the pass**, 0.7 ms (5.26).
+
+So entries cost a structure turn ~7-9 ms at this size, against a turn of
+~180 ms, and the frame they save pays most of it back. Not taken, noted
+for when T grows: views whose tables share an identity (5.25) could share
+one `drawSet` scan -- four equal maps here, one scan instead of four.
+
 ## 5. Evaluated and not taken: one capture root to catch everything
 
 Stage 1b left an obvious-looking follow-on: if what Coin still draws is
