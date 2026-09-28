@@ -1642,8 +1642,9 @@ Document::Document(const char* documentName)
     // fork's own format (user ruling 2026-08-20). What that costs is stated
     // rather than inherited -- Gui::Document warns explicitly, once, before
     // the first compact save of a file, and the choice is per document from
-    // then on. A document RESTORED from a file keeps the format that file
-    // was written in instead of this default; see Restore().
+    // then on. A document restored from a file in an older format takes
+    // this one too, and says so (sec 27.62 of docs/TransactionLog.md); see
+    // Restore().
     ADD_PROPERTY_TYPE(SaveSchemaVersion,(getCurrentSchemaVersion()),"Format",Prop_None,
             "Document schema version to write.\n"
             "5 is this fork's compact format and the default for a new\n"
@@ -1941,20 +1942,6 @@ void Document::Restore(Base::XMLReader &reader)
     std::string FilePath = FileName.getValue();
     std::string DocLabel = Label.getValue();
 
-    // The format this file already is, as this document's cap -- set BEFORE
-    // its own properties are read, so a file that states SaveSchemaVersion
-    // still overrides it with what it states. A file written before the
-    // property existed, or by an upstream FreeCAD, would otherwise inherit
-    // the class default (5) and be converted to a format nothing else opens
-    // by the next plain Save. Restoring is not the place to make that
-    // choice: the document keeps the format it arrived in, and changing it
-    // stays something a user does.
-    if (scheme > 0) {
-        const auto &writable = getWritableSchemaVersions();
-        SaveSchemaVersion.setValue(std::min<long>(std::max<long>(scheme,
-                        writable.front()), writable.back()));
-    }
-
     // read the Document Properties, when reading in Uid the transient directory gets renamed automatically
     PropertyContainer::Restore(reader);
 
@@ -1962,6 +1949,25 @@ void Document::Restore(Base::XMLReader &reader)
     // value could be invalid.
     FileName.setValue(FilePath.c_str());
     Label.setValue(DocLabel.c_str());
+
+    // A file in an older format is this fork's own format from here on (user,
+    // 2026-09-28, docs/TransactionLog.md sec 27.62): the next plain Save
+    // writes the current schema, and the transaction log holds nothing else.
+    // The user is told once, at the open; Save As with the standard format
+    // still writes the old one for upstream. Whatever the file says it was
+    // -- the schema it was written in, or a SaveSchemaVersion it states.
+    const long current = getCurrentSchemaVersion();
+    const long was = std::min<long>(scheme > 0 ? scheme : current, SaveSchemaVersion.getValue());
+    if (was < current) {
+        SaveSchemaVersion.setValue(current);
+        if (!d->checkingOut && !testStatus(VersionDoc) && !testStatus(Importing))
+            Base::Console().warning(DocLabel,
+                "'%s' is in an older file format (schema %ld) and will be saved in the "
+                "current one (schema %ld), which only this FreeCAD reads. To keep a copy "
+                "other FreeCAD versions can open, use Save As and choose the standard "
+                "format.\n",
+                DocLabel.c_str(), was, current);
+    }
 
     // SchemeVersion "2"
     if ( scheme == 2 ) {
@@ -3753,6 +3759,12 @@ bool Document::saveToFile(const char* filename) const
 
     signalFinishSave(*this, filename);
 
+    // A file written below the current schema -- for upstream, the user's
+    // choice -- is not what the log keeps: the version of this save is the
+    // document as it is, serialised at the current schema (sec 27.62).
+    if (getSaveSchemaVersion() < getCurrentSchemaVersion() && getTransactionLog())
+        const_cast<Document*>(this)->_snapshotToLog("save");
+
     if(!archive) {
         std::vector<std::pair<std::string,int> > files;
         for(const auto &f : fileNames) {
@@ -3853,8 +3865,11 @@ void Document::save(Base::Writer &writer, bool archive) const {
     // rather than serialised twice. Document.xml here, the other XML
     // entries the manifest holds (GuiDocument.xml, the split object files)
     // through the same sink as writeFiles() serves them. Record mode: the
-    // sink claims nothing, the file is what it is.
-    TransactionLog* log = getTransactionLog();
+    // sink claims nothing, the file is what it is. Not below the current
+    // schema: the log holds no other, and saveToFile() records that save's
+    // version as a snapshot of its own (sec 27.62).
+    TransactionLog* log = writer.getSchemaVersion() >= getCurrentSchemaVersion()
+        ? getTransactionLog() : nullptr;
     d->captures.clear();
     if (log) {
         writer.setPropertySink(log->beginSnapshot(false));
@@ -4336,7 +4351,13 @@ void Document::restore(Base::XMLReader &reader,
             entries.push_back(std::move(e));
         d->fileEntries.clear();
         TransactionLog* log = testStatus(Document::RestoreError) ? nullptr : getTransactionLog();
-        if (log) {
+        if (log && reader.DocumentSchema < getCurrentSchemaVersion()) {
+            // An older format is not what the log keeps (sec 27.62): the file
+            // as found is recorded once the restore is over, serialised at
+            // the current schema (afterRestore()).
+            d->openVersionPending = true;
+        }
+        else if (log) {
             // Under the names the file gave them, which are the names the
             // next save gives them (sec 23.16).
             TransactionLog::Blobs blobs =
@@ -4546,8 +4567,10 @@ int64_t Document::_snapshotToLog(const char* kind)
         // Configured as save() configures an archive's writer -- the
         // writer's defaults, not the directory layout's -- so that a part
         // composed here is the bytes a save writes (sec 23.3).
+        // At the current schema, whatever the document is saved as: the log
+        // holds no other (sec 27.62).
         Base::NullWriter writer;
-        writer.setSchemaVersion(resolveSchemaVersion(writer));
+        writer.setSchemaVersion(getCurrentSchemaVersion());
         if (PreferBinary.getValue()) {
             writer.setMode("BinaryBrep");
             writer.setPreferBinary(true);
@@ -7098,6 +7121,16 @@ bool Document::afterRestore(bool checkPartial) {
     // belongs to nothing and goes. Deliberately not reached on the partial
     // reload path above, which still has a restore ahead of it.
     getFileBlobManager().endRestore();
+    // The version of a file in an older format (sec 27.62): the document as
+    // it was read, view providers included, at the current schema. Undo
+    // reaches back to it and no further, as to the version of any open.
+    if (d->openVersionPending) {
+        d->openVersionPending = false;
+        if (_snapshotToLog("restore")) {
+            if (auto log = getTransactionLog())
+                d->undoFloor = log->lastSeq();
+        }
+    }
     return true;
 }
 

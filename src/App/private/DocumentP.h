@@ -78,6 +78,9 @@ struct DocumentP
     /// `Touched` attribute as saved, before the restore touched anything
     /// of its own (docs/TransactionLog.md sec 27.60).
     std::set<long> savedTouched;
+    /// A file in an older format was opened: its version is taken once the
+    /// restore is over, at the current schema (sec 27.62).
+    bool openVersionPending = false;
     std::unordered_map<std::string, DocumentObject*> objectMap;
     std::unordered_map<long, DocumentObject*> objectIdMap;
     std::unordered_map<std::string, bool> partialLoadObjects;

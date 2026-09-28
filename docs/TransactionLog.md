@@ -7488,3 +7488,60 @@ snapshot does (`_snapshotToLog` with the writer at 5). Where that is paid:
 
 Recommended: (b) -- nothing is paid by a file whose first version is
 never read, and every read after the first is the fast one.
+
+### 27.62 Ruling and as built: the log holds schema 5 only (user, 2026-09-28)
+
+**Ruling (user), replacing 27.61:** everything inside the log is schema 5,
+never schema 4. A schema-4 serialisation happens only when the user saves
+for upstream on purpose. And a file opened in an older format is updated:
+the open warns that the file format will be updated, and the user may still
+export the old format.
+
+**As built.**
+- **Open.** `Document::Restore`: a file older than the current schema
+  (5) -- by the schema it was written in or a `SaveSchemaVersion` it states
+  -- takes the current one as its `SaveSchemaVersion`, and the open posts a
+  warning -- the Gui's notification area, the report view and the log --
+  naming the file, its schema, and Save As with the standard format as the
+  way to keep a copy upstream opens. (`userWarning` reaches the
+  notification area only, and a headless run shows nothing of it.) Not for a checkout, a version document, or an import.
+  This reverses the rule of 2026-08-20 that a restored document keeps its
+  file's format; a plain Save now converts it, as the warning says.
+- **Values.** `CaptureConfig` captures at the current schema and
+  `restoreValue` reads at it, whatever the document is saved as.
+- **Snapshots.** `_snapshotToLog` serialises at the current schema.
+- **A save below it** (the user's choice, Save As with the standard
+  format) writes the file at 4 with no log capture; `saveToFile` then
+  records that save's version as a snapshot at 5 (kind `save`). The save
+  serialises twice; the snapshot claims what the log holds current.
+- **The open of an older file** taps nothing into the log: once
+  `afterRestore` is over -- view providers included -- the document is
+  snapshotted at 5 as the open's version (kind `restore`), and undo
+  reaches back to it. 27.46's untapped members matter only to a schema-5
+  file now.
+
+**Measured.** The original scanner.FCStd (schema 4, 615 objects) opens in
+2.2 s with the log on, 1.05 s with it off: the snapshot of the open's
+version costs about a save, 1.1 s, where tapping cost next to nothing. A
+schema-5 file's open is unchanged -- it still taps.
+
+**Tests.** `TransactionBranchCases.testVersionOfASchema4FileCarriesItsShapes`
+now also checks the reopened document is saved at 5, every version in the
+log is schema 5, and a save at 4 writes a schema-4 file whose version in the
+log is schema 5 and has the new shape. `ShapeStorage.testSchemaFourIsUnchanged`
+expects the reopened upstream-format document at 5.
+
+**Gates.** Python 2943 OK (52 skipped, 6 expected failures), ctest 843/843,
+RC 15, BC 27, VC 18, PC 28, FC 16.
+
+`docxml_hash` stays the SHA-1 of the version's own `Document.xml`: nothing
+looks a version up by it (`findVersion` has no caller), and `jumps()`
+compares versions with each other. A schema-4 file carries no history, so
+no reopen has to match one.
+
+**On the undo proposal of 27.59 (user).** An object whose derived value an
+undo cannot write back -- evicted from the cache tier, or never kept -- is
+touched whatever the rows record: the recorded flags first, the forced
+touch last, as the walk already does (`fold.touch` after
+`TouchedFold::apply`) and the cold undo too. Only then is the result one a
+recompute puts right.

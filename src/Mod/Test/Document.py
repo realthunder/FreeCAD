@@ -3971,9 +3971,11 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertGreater(sk.getGeometryId(3), side)
 
     def testVersionOfASchema4FileCarriesItsShapes(self):
-        # Sec 27.46: a file written before schema 5 keeps its shapes as
-        # members at the top of the archive; version 1, the file as found,
-        # carries them, so opening it gives the shapes back.
+        # Sec 27.46, 27.62: a file written before schema 5 keeps its shapes as
+        # members at the top of the archive. Version 1, the file as found, is
+        # the document as read, serialised at schema 5 -- the log holds no
+        # other -- so its shapes are blobs by hash and opening it gives them
+        # back; and the document itself is now saved at 5.
         doc = self.track(FreeCAD.newDocument("Schema4"))
         box = doc.addObject("Part::Box", "Box")
         box.Length = 7
@@ -3987,11 +3989,35 @@ class TransactionBranchCases(unittest.TestCase):
         doc.saveAs(path)
         FreeCAD.closeDocument(doc.Name)
         doc = self.track(FreeCAD.openDocument(path))
-        first = min(v["num"] for v in doc.getTransactionVersions())
+        self.assertEqual(doc.SaveSchemaVersion, 5)
+        doc.resolveTransactionLog()
+        versions = doc.getTransactionVersions()
+        self.assertTrue(versions)
+        self.assertEqual({v["schema"] for v in versions}, {5})
+        first = min(v["num"] for v in versions)
         v = self.track(doc.openTransactionVersion(first, False))
         self.assertFalse(v.getObject("Fillet").Shape.isNull())
         self.assertAlmostEqual(v.getObject("Fillet").Shape.Volume, volume, places=6)
         self.assertAlmostEqual(v.getObject("Box").Shape.Volume, 7 * 10 * 10, places=6)
+        FreeCAD.closeDocument(v.Name)
+
+        # Saved for upstream on purpose: the file is schema 4, the version the
+        # log keeps of that save is schema 5.
+        doc.getObject("Box").Length = 8
+        doc.recompute()
+        doc.SaveSchemaVersion = 4
+        doc.save()
+        import zipfile
+
+        with zipfile.ZipFile(path) as archive:
+            self.assertIn('SchemaVersion="4"', archive.read("Document.xml").decode("utf-8"))
+        doc.resolveTransactionLog()
+        versions = doc.getTransactionVersions()
+        self.assertEqual({v["schema"] for v in versions}, {5})
+        newest = max(v["num"] for v in versions)
+        self.assertGreater(newest, first)
+        v = self.track(doc.openTransactionVersion(newest, False))
+        self.assertAlmostEqual(v.getObject("Box").Shape.Volume, 8 * 10 * 10, places=6)
 
     def testCompactFileState(self):
         # Sec 27.47: a name and a last geometry id nothing refers to any more

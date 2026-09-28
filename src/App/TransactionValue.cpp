@@ -105,8 +105,10 @@ private:
 
 } // namespace
 
+// The log's schema, not the document's: everything the log holds is the
+// current schema, whatever the document is saved as (sec 27.62).
 App::CaptureConfig::CaptureConfig(const Document& doc)
-    : schema(static_cast<int>(doc.getSaveSchemaVersion()))
+    : schema(static_cast<int>(Document::getCurrentSchemaVersion()))
     , preferBinary(doc.PreferBinary.getValue())
     , blobs(&doc.getFileBlobManager())
 {
@@ -182,8 +184,8 @@ void App::restoreValue(Property& prop, const CapturedValue& value)
                            + value.fragment + "</Value>\n");
     Base::XMLReader reader("Value.xml", xml);
     reader.FileVersion = 1;   // what the capture writes under
-    if (auto doc = prop.getContainer() ? prop.getContainer()->getOwnerDocument() : nullptr)
-        reader.DocumentSchema = static_cast<int>(doc->getSaveSchemaVersion());
+    // Captured at the log's schema (CaptureConfig).
+    reader.DocumentSchema = static_cast<int>(Document::getCurrentSchemaVersion());
     if (!reader.isValid())
         throw Base::RuntimeError("transaction value: fragment does not parse");
     prop.Restore(reader);

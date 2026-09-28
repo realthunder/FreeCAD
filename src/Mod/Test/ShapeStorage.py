@@ -448,9 +448,10 @@ class ShapeLocationCases(ShapeTestCase):
 
         reopened = self.openDocument(project)
         self.assertPlacement(reopened.getObject("Moved"), wanted)
-        # And the file's own format comes back with it: a document restored
-        # from upstream's format is not converted by the next save.
-        self.assertEqual(reopened.SaveSchemaVersion, 4)
+        # Opened, it is this fork's own format from then on (user, 2026-09-28,
+        # docs/TransactionLog.md sec 27.62): the next plain save writes the
+        # current schema, and the open says so. Save As keeps the old one.
+        self.assertEqual(reopened.SaveSchemaVersion, 5)
 
 
 @unittest.skipUnless(HAS_PART, "Part module not available")
