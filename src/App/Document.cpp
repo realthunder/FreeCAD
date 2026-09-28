@@ -1180,6 +1180,11 @@ bool Document::isPerformingTransaction() const
     return d->undoing || d->rollback || Transaction::isApplying();
 }
 
+bool Document::isReplaying() const
+{
+    return d->replaying || d->checkingOut;
+}
+
 std::vector<std::string> Document::getAvailableUndoNames() const
 {
     std::vector<std::string> vList;

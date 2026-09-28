@@ -23,6 +23,7 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+# include <algorithm>
 # include <limits>
 # include <sstream>
 #endif
@@ -32,7 +33,9 @@
 #include <Base/Writer.h>
 
 #include "TransactionValue.h"
+#include "Application.h"
 #include "Document.h"
+#include "DocumentObject.h"
 #include "ElementMap.h"
 #include "FileBlobManager.h"
 #include "Property.h"
@@ -252,6 +255,24 @@ App::RestoreBatch::RestoreBatch()
     : _outer(restoreBatch)
 {
     restoreBatch = this;
+    _removed = GetApplication().signalRemoveDynamicProperty.connect(
+        [this](const Property& prop) { forget(&prop); });
+    _deleted = GetApplication().signalDeletedObject.connect([this](const DocumentObject& obj) {
+        _props.erase(std::remove_if(_props.begin(), _props.end(),
+                                    [&](Property* p) { return p->getContainer() == &obj; }),
+                     _props.end());
+    });
+}
+
+void App::RestoreBatch::defer(Property& prop)
+{
+    if (std::find(_props.begin(), _props.end(), &prop) == _props.end())
+        _props.push_back(&prop);
+}
+
+void App::RestoreBatch::forget(const Property* prop)
+{
+    _props.erase(std::remove(_props.begin(), _props.end(), prop), _props.end());
 }
 
 App::RestoreBatch::~RestoreBatch()
@@ -270,8 +291,12 @@ void App::RestoreBatch::finish()
         return;
     _finished = true;
     // Unlinked first: an afterRestore() that restores a value runs it now.
+    // Taken out one by one, so an afterRestore() that removes a property
+    // yet to come is heard (forget()).
     restoreBatch = _outer;
-    for (auto prop : _props) {
+    while (!_props.empty()) {
+        Property* prop = _props.front();
+        _props.erase(_props.begin());
         try {
             prop->afterRestore();
         }
@@ -284,7 +309,8 @@ void App::RestoreBatch::finish()
                    << e.what());
         }
     }
-    _props.clear();
+    _removed.disconnect();
+    _deleted.disconnect();
 }
 
 namespace {

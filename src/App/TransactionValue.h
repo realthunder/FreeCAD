@@ -28,6 +28,7 @@
 #include <unordered_map>
 #include <vector>
 #include <FCGlobal.h>
+#include <fastsignals/signal.h>
 
 namespace Base { class Persistence; }
 
@@ -110,7 +111,9 @@ AppExport void restoreValue(Property& prop, const CapturedValue& value);
  * one naming `Constraints[3]` needs the constraints restored first. While a
  * batch lives on a thread, restoreValue() leaves afterRestore() to the
  * batch's finish() (or its destructor), which runs them in restore order.
- * Nothing restored in a batch may be destroyed before it finishes.
+ * A property removed meanwhile, or one of an object deleted, is dropped
+ * from it: restoring a copy-on-change link's target makes the link remove
+ * and add again the properties it mirrors.
  */
 class AppExport RestoreBatch
 {
@@ -122,12 +125,15 @@ public:
     void finish();
     /// The innermost batch on this thread, or null.
     static RestoreBatch* current();
-    void defer(Property& prop) { _props.push_back(&prop); }
+    void defer(Property& prop);
 
 private:
+    void forget(const Property* prop);
     std::vector<Property*> _props;
     RestoreBatch* _outer;
     bool _finished {false};
+    fastsignals::scoped_connection _removed;
+    fastsignals::scoped_connection _deleted;
 };
 
 /** The names a capture writes for objects that have left the document

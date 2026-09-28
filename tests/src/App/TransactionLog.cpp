@@ -15,10 +15,13 @@
 #include "App/Application.h"
 #include "Base/Interpreter.h"
 #include "App/PropertyPythonObject.h"
+#include "App/PropertyExpressionEngine.h"
+#include "App/ObjectIdentifier.h"
 #include "App/AutoTransaction.h"
 #include "App/Document.h"
 #include "App/DocumentObject.h"
 #include "App/DocumentParams.h"
+#include "App/Expression.h"
 #include "App/FeatureTest.h"
 #include "App/FileBlobManager.h"
 #include "App/FileHistory.h"
@@ -3475,4 +3478,31 @@ TEST_F(TransactionLogTest, stringTableAndReferenceSets)
         EXPECT_TRUE(store->stringIds().empty());
     }
     Base::FileInfo(path).deleteFile();
+}
+
+// Sec 27.67: values restored in a batch run afterRestore() once all are in,
+// and a property removed before then -- a copy-on-change link removes and
+// adds again the properties it mirrors when its target is restored -- is
+// dropped from the batch, not called on.
+TEST_F(TransactionLogTest, restoreBatchForgetsARemovedProperty)
+{
+    auto a = make("A");
+    auto kept = a->addDynamicProperty("App::PropertyExpressionEngine", "Kept");
+    auto gone = a->addDynamicProperty("App::PropertyExpressionEngine", "Gone");
+    ASSERT_TRUE(kept);
+    ASSERT_TRUE(gone);
+    a->setExpression(App::ObjectIdentifier::parse(a, "Integer"),
+                     std::shared_ptr<App::Expression>(App::Expression::parse(a, "1 + 1")));
+    const App::CapturedValue value = App::captureValue(*doc(), a->ExpressionEngine);
+    ASSERT_TRUE(value.ok);
+    {
+        App::RestoreBatch batch;
+        App::restoreValue(*kept, value);
+        App::restoreValue(*gone, value);
+        ASSERT_TRUE(a->removeDynamicProperty("Gone"));
+        batch.finish();
+    }
+    // The engine that stayed got its expression once the batch was done.
+    auto engine = static_cast<App::PropertyExpressionEngine*>(kept);
+    EXPECT_EQ(engine->getExpressions().size(), 1u);
 }

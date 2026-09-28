@@ -967,6 +967,13 @@ public:
     bool redo(int id=0) ;
     /// returns true if the document is in an Transaction phase, e.g. currently performing a redo/undo or rollback
     bool isPerformingTransaction() const;
+    /** Whether the document is being rebuilt from its transaction log: a
+     * branch switch or a crash recovery replaying rows, or a restore to a
+     * version (docs/TransactionLog.md sec 27.67). What it writes comes from
+     * the log, and an object that makes objects of its own on demand -- an
+     * Origin its axes and planes -- must wait for the log to supply them.
+     */
+    bool isReplaying() const;
     /// \internal add or remove property from a transactional object
     void addOrRemovePropertyOfObject(TransactionalObject*, Property *prop, bool add);
     //@}

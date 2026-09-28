@@ -4362,3 +4362,55 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertEqual(doc.UndoNames[0], "expression")
         doc.undo()
         self.assertEqual([e[0] for e in a.ExpressionEngine], ["Integer"])
+
+    def testSwitchMakesNoOriginOfItsOwn(self):
+        # Sec 27.67: a copy-on-change link's private body comes back by a
+        # switch with the Origin features its rows name. An Origin makes its
+        # axes and planes on first demand; recreated before its
+        # OriginFeatures were restored, it made seven more, which stayed.
+        import Part
+
+        doc = self.track(FreeCAD.newDocument("SwitchOrigin"))
+        doc.UndoMode = 1
+        doc.saveAs(os.path.join(self.dir, "switchorigin.FCStd"))
+
+        def step(name, fn):
+            doc.openTransaction(name)
+            fn()
+            doc.recompute()
+            doc.commitTransaction()
+
+        def build():
+            body = doc.addObject("PartDesign::Body", "Body")
+            sketch = body.newObject("Sketcher::SketchObject", "Sketch")
+            sketch.addGeometry(Part.Circle(FreeCAD.Vector(), FreeCAD.Vector(0, 0, 1), 5))
+            pad = body.newObject("PartDesign::Pad", "Pad")
+            pad.Profile = sketch
+            body.addProperty("App::PropertyLength", "Config_L", "Config")
+            body.setPropertyStatus("Config_L", "CopyOnChange")
+            body.Config_L = 10
+            pad.setExpression("Length", "hiddenref(Body.Config_L)")
+
+        def instance(name, length):
+            link = doc.addObject("App::Link", name)
+            link.LinkedObject = doc.getObject("Body")
+            link.LinkCopyOnChange = "Owned"
+            link.Config_L = length
+
+        def names():
+            return sorted(o.Name for o in doc.Objects)
+
+        step("build", build)
+        step("A", lambda: instance("A", 20))
+        doc.save()
+        main = names()
+        doc.createTransactionBranch("side")
+        step("B", lambda: instance("B", 30))
+        doc.save()
+        side = names()
+        for branch, want in (("main", main), ("side", side), ("main", main), ("side", side)):
+            doc.switchTransactionBranch(branch)
+            self.assertEqual(names(), want, branch)
+        b = doc.getObject("B")
+        self.assertNotEqual(b.getLinkedObject(False).Name, "B")
+        self.assertEqual(b.Config_L.Value, 30)
