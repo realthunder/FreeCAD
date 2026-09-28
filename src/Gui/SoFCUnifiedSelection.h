@@ -778,30 +778,30 @@ protected:
         SbColor hlColor;
         bool selAll = false;
         bool hlAll = false;
-        /// Read freely, written only through setHidden(), which keeps
-        /// HiddenContextCount.
-        bool hideAll = false;
+        /// A secondary context's override of the whole object: -1 none,
+        /// 0 hidden, 1 shown. Read freely, written only through
+        /// setVisibility(), which keeps HiddenContextCount.
+        int8_t visibility = -1;
         static MergeFunc merge;
 
         SelContext() = default;
         SelContext(const SelContext &) = delete;
         SelContext &operator=(const SelContext &) = delete;
         ~SelContext() override {
-            if (hideAll)
-                --HiddenContextCount;
+            setVisibility(-1);
         }
-        void setHidden(bool hide) {
-            if (hide == hideAll)
+        void setVisibility(int8_t vis) {
+            if (vis == visibility)
                 return;
-            hideAll = hide;
-            if (hide)
-                ++HiddenContextCount;
-            else
+            if (visibility == 0)
                 --HiddenContextCount;
+            visibility = vis;
+            if (visibility == 0)
+                ++HiddenContextCount;
         }
 
         bool isCounted() const override {
-            return selAll || hideAll;
+            return selAll || visibility >= 0;
         }
     };
     using SelContextPtr = std::shared_ptr<SelContext>;

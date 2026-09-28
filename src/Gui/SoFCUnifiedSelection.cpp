@@ -2355,7 +2355,7 @@ bool SoFCSelectionRoot::NodeKey::isHidden() const
         // by a tail of the chain that reaches it.
         auto ctx = std::static_pointer_cast<SelContext>(
                 getNodeContext2(prefix, root, SelContext::merge));
-        if (ctx && ctx->hideAll) {
+        if (ctx && ctx->visibility == 0) {
             hidden = true;
             break;
         }
@@ -2981,7 +2981,7 @@ bool SoFCSelectionRoot::_renderPrivate(SoGLRenderAction * action, bool inPath, b
             || action->getCurPathCode()!=SoAction::IN_PATH)
     {
         auto ctx2 = std::static_pointer_cast<SelContext>(getNodeContext2(SelStack,this,SelContext::merge));
-        if(ctx2 && ctx2->hideAll)
+        if(ctx2 && ctx2->visibility == 0)
             return false;
     }
 
@@ -2999,7 +2999,7 @@ bool SoFCSelectionRoot::_renderPrivate(SoGLRenderAction * action, bool inPath, b
 
     int style = selectionStyle.getValue();
     if((style==SoFCSelectionRoot::Box || SoFCUnifiedSelection::getShowSelectionBoundingBox())
-       && ctx && !ctx->hideAll && (ctx->selAll || ctx->hlAll))
+       && ctx && ctx->visibility != 0 && (ctx->selAll || ctx->hlAll))
     {
         if (style==SoFCSelectionRoot::PassThrough) {
             style = SoFCSelectionRoot::Box;
@@ -3038,7 +3038,7 @@ bool SoFCSelectionRoot::_renderPrivate(SoGLRenderAction * action, bool inPath, b
     // honour the secondary color override.
 
     bool colorPushed = false;
-    if(style==SoFCSelectionRoot::Box || !ctx || (!ctx->selAll && !ctx->hideAll)) {
+    if(style==SoFCSelectionRoot::Box || !ctx || (!ctx->selAll && ctx->visibility != 0)) {
         colorPushed = setupColorOverride(state, pushed);
         if (colorPushed)
             pushed = true;
@@ -3418,7 +3418,7 @@ bool SoFCSelectionRoot::doActionPrivate(Stack &stack, SoAction *action) {
         {
             ctx2Searched = true;
             ctx2 = std::static_pointer_cast<SelContext>(getNodeContext2(stack,this,SelContext::merge));
-            if(ctx2 && ctx2->hideAll && !keepsHidden(action))
+            if(ctx2 && ctx2->visibility == 0 && !keepsHidden(action))
                 return false;
         }
         if(!isTail)
@@ -3436,8 +3436,8 @@ bool SoFCSelectionRoot::doActionPrivate(Stack &stack, SoAction *action) {
                 action->getWhatAppliedTo()==SoAction::NODE))
             {
                 auto ctx = getActionContext(action,this,SelContextPtr(),false);
-                if(ctx && ctx->hideAll) {
-                    ctx->setHidden(false);
+                if(ctx && ctx->visibility >= 0) {
+                    ctx->setVisibility(-1);
                     // Give the count back, or this node spoils the caches
                     // above it on every pass from now on.
                     selCounter.recount(ctx);
@@ -3453,8 +3453,8 @@ bool SoFCSelectionRoot::doActionPrivate(Stack &stack, SoAction *action) {
             }else if(selAction->getType() == SoSelectionElementAction::Hide) {
                 if(action->getCurPathCode()==SoAction::BELOW_PATH || isTail) {
                     auto ctx = getActionContext(action,this,SelContextPtr());
-                    if(ctx && !ctx->hideAll) {
-                        ctx->setHidden(true);
+                    if(ctx && ctx->visibility != 0) {
+                        ctx->setVisibility(0);
                         // Counted once hidden, not before: checkAction()
                         // read the context before the change and so counted
                         // the show instead of the hide.
@@ -3534,7 +3534,7 @@ bool SoFCSelectionRoot::doActionPrivate(Stack &stack, SoAction *action) {
                 || !SoFCSwitch::testTraverseState(SoFCSwitch::TraverseOverride)))
     {
         ctx2 = std::static_pointer_cast<SelContext>(getNodeContext2(stack,this,SelContext::merge));
-        if(ctx2 && ctx2->hideAll && !keepsHidden(action))
+        if(ctx2 && ctx2->visibility == 0 && !keepsHidden(action))
             return false;
     }
     return true;
@@ -3544,7 +3544,7 @@ int SoFCSelectionRoot::SelContext::merge(int status, SoFCSelectionContextBasePtr
         SoFCSelectionContextBasePtr input, SoNode *)
 {
     auto ctx = std::dynamic_pointer_cast<SelContext>(input);
-    if(ctx && ctx->hideAll) {
+    if(ctx && ctx->visibility == 0) {
         output = ctx;
         return -1;
     }
