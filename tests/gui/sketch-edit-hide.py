@@ -231,6 +231,36 @@ def run():
         check("C: both drawn after the edit",
               ink(view, e2, "renderer", "C-after-sk2", True) > 0
               and ink(view, el, "renderer", "C-after-link", True) > 0)
+
+        # D. While the Part's occurrence is edited, the Link's is still in
+        # the scene, and an element of it must resolve for a highlight:
+        # the sketch's internal face, drawn by its internal view. The
+        # sketch used to skip that view whenever it was in edit, which was
+        # right only while edit moved its children out of its root.
+        from pivy import coin
+        sk2.MakeInternals = True
+        doc.recompute()
+        settle(30)
+
+        def internal_detail():
+            path = coin.SoPath()
+            path.ref()
+            det = link.ViewObject.getDetailPath("Sketch2.InternalFace1", path, True)
+            return (det is not None and det.isOfType(coin.SoFaceDetail.getClassTypeId()),
+                    path.getLength())
+
+        outside = internal_detail()
+        check("D: outside the edit the Link's internal face resolves",
+              outside[0], outside)
+        gdoc.setEdit(asm, 0, "Sketch2.")
+        settle(30)
+        check("D: in edit", gdoc.getInEdit() is not None)
+        inside = internal_detail()
+        check("D: in edit the Link's internal face still resolves",
+              inside[0] and inside[1] == outside[1], (inside, outside))
+        gdoc.resetEdit()
+        FreeCADGui.Selection.clearSelection()
+        settle(30)
     except Exception:
         note("ABORT:\n" + traceback.format_exc())
     finish()

@@ -1625,7 +1625,11 @@ bool ViewProviderSketch::getElementPicked(const SoPickedPoint *pp, std::string &
 bool ViewProviderSketch::getDetailPath(
         const char *subname, SoFullPath *pPath, bool append, SoDetail *&det) const
 {
-    if (!edit && pInternalView && subname) {
+    // The internal view hangs under the display switch. In edit that switch
+    // leaves the root only where the edit moves the children away (modes
+    // 0-2); in mode 3 it stays, and another occurrence of the sketch -- a
+    // Link showing its Part -- is still drawn and must still resolve.
+    if ((!edit || pcRoot->findChild(pcModeSwitch) >= 0) && pInternalView && subname) {
         const char *realName = strrchr(subname, '.');
         if (realName)
             ++realName;

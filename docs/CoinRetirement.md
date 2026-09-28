@@ -3109,6 +3109,14 @@ element-color-hide 624, serve-mirror-edit 22 (the push now carries keys),
 sketch-edit-root 14, serve-shared-edit 29, and in a real browser
 serve-client-visibility-browser 17 on the rebuilt v82 viewer.
 
+- **The sketch's own paths during an edit** (a commit of its own):
+  `ViewProviderSketch::getDetailPath` skipped its internal view whenever
+  it was in edit, which was right only while the edit moved its children
+  away. In mode 3 they stay, and another occurrence -- a Link showing the
+  sketch's Part -- is drawn during the edit, so an element of it (an
+  internal face) must resolve for a highlight. It skips the view now only
+  when the display switch has left the root. `sketch-edit-hide.py` D:
+  failed before, 25/25 after; the Sketch ctest entries 136/136.
 - **Found on the way, not fixed here:** after a save and reopen, nothing
   inside an App::Part -- nor inside a Link to it -- picks in mode 3, though
   all of it draws; a top-level box picks. It happens with no visibility
