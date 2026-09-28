@@ -3117,10 +3117,36 @@ serve-client-visibility-browser 17 on the rebuilt v82 viewer.
   internal face) must resolve for a highlight. It skips the view now only
   when the display switch has left the root. `sketch-edit-hide.py` D:
   failed before, 25/25 after; the Sketch ctest entries 136/136.
-- **Found on the way, not fixed here:** after a save and reopen, nothing
-  inside an App::Part -- nor inside a Link to it -- picks in mode 3, though
-  all of it draws; a top-level box picks. It happens with no visibility
-  entry at all, so the reopen check judges by the frame.
+- **Found on the way, fixed after (a commit of its own):** after a save and
+  reopen, nothing inside an App::Part a Link also shows picked any more, in
+  either occurrence, though it stayed drawn -- no visibility entry needed.
+  A load creates the view providers in its own order (the progressive
+  drain, phase one), and each claims its children as it is created, so a
+  Part made before its child claimed it while the child had no view
+  provider. Two things were lost, and nothing after the load put either
+  back:
+  - **the claim**: `ViewProviderDocumentObject::updateChildren` could not
+    put the Part in the child's `parentSet`, and with the child already in
+    `claimedChildren` the retry (`Document::slotFinishImportObjects`) found
+    the list unchanged. `isShowable()` then judged the child by the Link
+    alone, which draws it through nodes of its own, and switched the
+    child's display off; with no Link the empty set counted as showable.
+    A claimed child without a view provider now defeats "unchanged" until
+    it is registered -- only once it HAS one, since the call re-enters
+    itself through `signalChangedChildren` and "unchanged" is what ends
+    that (a first cut without this recursed to a stack overflow);
+  - **the 3D structure**: the Part's child group was built without the
+    child, which stayed at the top level of the scene, and the Link's copy
+    of the Part was empty. `slotFinishImportObjects` now also runs
+    `handleChildren3D`, which caches only children that had a view
+    provider, so it redoes exactly what was missed.
+  Which parent a load reaches first follows allocation order (pointer-keyed
+  sets, dependency-sort ties), so a scene failed most runs, not every run --
+  the same file flipped between runs, a synchronous `flushLoad()` too. With
+  both halves, 21 scene/order cells over three runs all hold; each half
+  alone leaves failures. `reopen-claimed-child-pick.py`: before, every Link
+  claim FAILS; with only the claim half, the Link's occurrence still does not
+  pick; after both, all pass.
 
 ## 5. Evaluated and not taken: one capture root to catch everything
 

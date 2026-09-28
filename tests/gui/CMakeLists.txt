@@ -216,6 +216,15 @@ fc_add_gui_test(GuiPerViewVisibility_tests_run
                 per-view-visibility.py
                 --timeout 240)
 
+# A child a Link also shows is still drawn and picked after a reopen: the
+# load created its view provider after its Part claimed it: the Part went
+# missing from its claimers, so only the Link judged it and switched it
+# off (ViewProviderDocumentObject::updateChildren), and the Part built its
+# 3D children without it (Document::slotFinishImportObjects).
+fc_add_gui_test(GuiReopenClaimedChildPick_tests_run
+                reopen-claimed-child-pick.py
+                --timeout 240)
+
 # A colour-dialog hide (element colours with the hidden marker) of a
 # grandchild: an App::Part's is its content, so a Link to the Part hides it
 # too; a Link's own stays in that Link -- picked, bounded AND drawn. The

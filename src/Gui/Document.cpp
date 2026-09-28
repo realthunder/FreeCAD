@@ -3958,6 +3958,16 @@ void Document::slotFinishImportObjects(const std::vector<App::DocumentObject*> &
         if(vpd) {
             vpd->isShowable(true);
             vpd->updateChildren(false);
+            // The 3D side of the same reconciliation. A load creates the
+            // view providers in its own order, and each claims its 3D
+            // children as it is created (slotNewObject), so a parent made
+            // before a child built its child group without it -- and
+            // nothing re-ran it once the child existed: the child stayed
+            // at the top level of the scene, out of its container, and a
+            // Link to the container showed an empty copy. The call caches
+            // only the children that had a view provider, so it redoes
+            // exactly what was missed and is a compare otherwise.
+            handleChildren3D(vpd);
         }
     }
 }

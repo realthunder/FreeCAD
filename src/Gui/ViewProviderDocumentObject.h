@@ -320,6 +320,10 @@ private:
     std::vector<App::DocumentObject*> claimedChildren;
     std::set<App::DocumentObject*> childSet;
     std::set<App::DocumentObject*> parentSet;
+    /// Some claimed child had no view provider yet when updateChildren()
+    /// last ran, so it is not in childSet and this object is not in its
+    /// parentSet: the next updateChildren() must not skip it as unchanged.
+    bool _childVpMissing = false;
 
     friend class Document;
 };
