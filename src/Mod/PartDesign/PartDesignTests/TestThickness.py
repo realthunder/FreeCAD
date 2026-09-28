@@ -244,11 +244,8 @@ class TestThickness(unittest.TestCase):
         self.assertAlmostEqual(bounds.ZMin, -1.0, delta=1e-7)
         self.assertAlmostEqual(bounds.ZMax, 10.0, delta=1e-7)
 
-    # The fork's OCCT makes the inner Arc-joined skin of a cylinder opened
-    # at its top invalid (occt tests/occ-issues local01) -- Skin mode,
-    # reversed, gives a volume of 16585.7 for 4423.4 --
-    # so the negative-side wall is refused. Intersection joins are right.
-    @unittest.expectedFailure
+    # Failed until the OCCT fork's 672c546b4d (occt tests/occ-issues local01):
+    # the inner Arc-joined skin of a cylinder opened at its top was invalid.
     def testArcJoinProducesValidCenteredCurvedWall(self):
         cylinder = Part.makeCylinder(20, 10)
         topFace = max(range(len(cylinder.Faces)),
