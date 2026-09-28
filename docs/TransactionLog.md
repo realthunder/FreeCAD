@@ -8131,4 +8131,8 @@ no replay).
 (1, 2). **Gates** (9776edf92b): Python 2951 OK (52 skipped, 6 expected
 failures), ctest 846/846, the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16.
 
-**Next:** T5 (27.66): the same workload at 100 steps under the Gui.
+**Next (user, 2026-09-29):** the issues above first, in the order they
+matter: the save growing with the history, a switch after a trim reading a
+version whole, the trim time, the link's element tags after a switch, the
+intermittent material-blob adoption, the recompute creep, the SIGSEGV at
+exit. T5 (27.66) after.
