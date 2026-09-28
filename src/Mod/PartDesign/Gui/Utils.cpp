@@ -300,7 +300,12 @@ PartDesign::Body *getBodyFor(const App::DocumentObject* obj, bool messageIfNot,
 App::Part* getActivePart(App::DocumentObject **topParent, std::string *subname) {
     Gui::MDIView *activeView = Gui::Application::Instance->activeView();
     if ( activeView ) {
-        return activeView->getActiveObject<App::Part*> (PARTKEY,topParent,subname);
+        auto part = activeView->getActiveObject<App::Part*> (PARTKEY,topParent,subname);
+        // An active assembly takes new bodies the way an active part does
+        // (upstream 62cbaf7336)
+        if (!part)
+            part = activeView->getActiveObject<App::Part*> (ASSEMBLYKEY,topParent,subname);
+        return part;
     } else {
         return nullptr;
     }
