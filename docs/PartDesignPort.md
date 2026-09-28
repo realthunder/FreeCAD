@@ -2027,3 +2027,54 @@ enum switches widgets), the commands, PD's panels on the shared editors
 Commits `97a74ad026`..`ddd5eb4afc`. Suites at `ddd5eb4afc`: Python 3136 OK
 (50 skipped, 6 expected failures; +43: the two LinkArray modules and
 `TestIntPairList`), ctest 750/750.
+
+### The Gui half: shared editors and the link array panel (2026-09-28)
+
+The Gui goes where the App half went, into `src/Gui`, so that an array of
+meshes is edited without Part loaded:
+
+- **`Gui/PatternWidgets.*`**: PD's `PatternDirectionWidget` (the one
+  direction of a linear pattern, or a polar pattern: reference, Reversed,
+  Extent/Spacing, Occurrences, individual gaps) and its `ComboLinks` moved
+  here from PartDesign, and `PatternParametersWidget` added for the other
+  kinds -- circular, path, point -- one row per input, bound to the property
+  of its name, a row hidden when its property is. PD's pattern panel uses
+  the moved widgets unchanged, which is upstream's `a540770659` in the
+  fork's form: PD's tasks on the shared editors. `ComboLinks::clear()`
+  deleted its links and never forgot them, so a combo refilled matched its
+  new items against freed ones; it forgets them now, and knows its "Select
+  reference..." item apart from a null link (`addSelectItem`), which for a
+  link array means the local default axis.
+- **`Gui::ViewProviderLinkArray`**: double-click and "Edit pattern" open the
+  panel. A link forwards its default edit to the linked object; an array's
+  is its own, so `startEditing(Default)` stops at the array.
+- **`Gui::TaskLinkArray`**: the linked object (picked in the view), the
+  PatternType combo, Show elements, and the editors of the kind, rebuilt
+  when the kind changes -- the properties they edit are other properties
+  then. A reference is picked in the view; a selection through the group
+  holding the array is taken relative to that group, since linking to it
+  is a cycle, and a path is picked edge by edge. OK records the parameters
+  for the macro recorder and commits; Cancel aborts the transaction, a kind
+  change and the array's creation included.
+- **Commands** `Std_LinkArrayLinear/Polar/Circular/Path/Point` in the
+  `Std_LinkArrayActions` group (structure toolbar, Link actions menu): an
+  `App::LinkArray` of the selected object, in the active container, then its
+  panel. Upstream's icons for the four new kinds; linear keeps `LinkArray`.
+
+Verified in the running GUI through the MCP console: the command makes the
+array and opens the panel; the kind combo swaps the editors and recomputes
+(polar 2, circular 38 elements); "Select reference..." then a picked
+`Box:Edge1` turns the elements along Z; OK leaves one undo step, which undo
+and redo take back and forth; double-click, a kind change and Cancel put
+the kind and the Direction back; PD's linear pattern panel comes up on the
+shared widgets.
+
+Not ported: upstream's object-axis items `(None, ["Y_Axis"])` -- the fork's
+`PropertyLinkSub` refuses None with elements from Python, so the combos
+offer the local default axis and "Select reference..."; upstream PD's
+Circular/Path/PointPattern features; the on-view spacing labels
+(`6fa9125919`), whose `EditableDatumLabel` the fork has reworked for the
+thin client.
+
+Commits `89d7712ce9` and the panel after it. Suites with the Gui half:
+Python 3136 OK, ctest 750/750.
