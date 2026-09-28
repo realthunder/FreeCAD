@@ -2582,12 +2582,22 @@ void TreeWidget::mouseMoveEvent(QMouseEvent *event) {
                 nullptr, event->buttons(), event->modifiers());
         bool replace = true;
         int reorder = 0;
-        pimpl->checkDropEvent(&de, &replace, &reorder);
+        QTreeWidgetItem *target = nullptr;
+        pimpl->checkDropEvent(&de, &replace, &reorder, &target);
+        Qt::DropAction action = de.dropAction();
+        // The target's own reading of the action, as in dragMoveEvent(): this
+        // is the path every tree drag takes, as startDrag() never starts Qt's
+        // (upstream 3082039b3a)
+        if (de.isAccepted() && target && target->type() == ObjectType) {
+            if (auto vp = static_cast<DocumentObjectItem*>(target)->object())
+                action = vp->getDropActionForTarget(action);
+        }
+        FC_LOG("drag action " << int(action) << (de.isAccepted() ? "" : " refused"));
         Qt::CursorShape cursor;
         if(!de.isAccepted()) {
             cursor = Qt::ForbiddenCursor;
         } else {
-            switch(de.dropAction()) {
+            switch(action) {
             case Qt::CopyAction:
                 cursor = Qt::DragCopyCursor;
                 break;
