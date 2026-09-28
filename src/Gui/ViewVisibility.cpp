@@ -25,16 +25,25 @@
 #include <algorithm>
 #include <cstring>
 
+#include <QCoreApplication>
+#include <QTimer>
+
+#include <Inventor/SoPath.h>
+#include <Inventor/details/SoDetail.h>
+
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
+#include <App/PropertyLinks.h>
 #include <Base/Console.h>
 
 #include "Application.h"
 #include "RenderParams.h"
+#include "SoFCUnifiedSelection.h"
 #include "View3DInventor.h"
 #include "ViewProviderDocumentObject.h"
 #include "ViewVisibility.h"
+#include "Inventor/SoFCRenderCacheManager.h"
 #include "Inventor/SoFCSwitch.h"
 #include "Renderer/MeshSource.h"
 
@@ -134,18 +143,92 @@ void registerShownEvictor()
             &evictShown, &SoFCSwitch::releasedPerViewShownCount);
 }
 
-/// Count or release \a key's object as one some view has an entry for.
-/// Its switch is touched when that changes whether ANY view has one: the
-/// caches above it (shared by every view) were built without reading the
-/// element, or will stop reading it.
-void countOverride(const std::pair<std::string, std::string> &key, bool add)
+/// Count or release the root \a id as one some view has an entry ending
+/// at. Its switch is touched when that changes whether ANY view has one:
+/// the caches above it (shared by every view) were built without reading
+/// the element, or will stop reading it. A root deleted meanwhile has no
+/// caches left to tell.
+void countOverride(uint32_t id, bool add)
 {
-    if (!SoFCVisibilityElement::countOverride(key.first.c_str(), key.second.c_str(), add))
+    if (!SoFCVisibilityElement::countOverride(id, add))
         return;
-    auto vp = viewProviderOf(key.first, key.second);
-    if (SoSwitch *sw = vp ? vp->getModeSwitch() : nullptr)
-        sw->touch();
+    SoFCSelectionRoot *root = SoFCSelectionRoot::getRootById(id);
+    if (!root)
+        return;
+    // The root's own switch, the one the element is read by.
+    for (int i = 0, n = root->getNumChildren(); i < n; ++i) {
+        SoNode *child = root->getChild(i);
+        if (child->isOfType(SoFCSwitch::getClassTypeId())) {
+            child->touch();
+            return;
+        }
+    }
+    root->touch();
 }
+
+/// Resolve \a entry into its node key, and the object it ends at in
+/// \a leaf. False when it does not resolve -- its object gone, its path
+/// no longer through the scene -- which leaves it inert until the next
+/// resolution.
+bool resolveEntry(const VisibilityEntry &entry,
+                  std::vector<uint32_t> &key,
+                  std::pair<std::string, std::string> &leaf)
+{
+    key.clear();
+    if (!Application::Instance)
+        return false;
+    auto doc = App::GetApplication().getDocument(entry.doc.c_str());
+    auto obj = doc ? doc->getObject(entry.obj.c_str()) : nullptr;
+    auto vp = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(
+            Application::Instance->getViewProvider(obj));
+    if (!vp)
+        return false;
+    if (!entry.rooted || entry.subname.empty()) {
+        // The object's own root: wherever it is drawn -- which a Link to
+        // the object is not, having a root of its own.
+        SoNode *root = vp->getRoot();
+        if (!root || !root->isOfType(SoFCSelectionRoot::getClassTypeId()))
+            return false;
+        key.push_back(static_cast<SoFCSelectionRoot *>(root)->getSelNodeId());
+        leaf = {entry.doc, entry.obj};
+        return true;
+    }
+    std::vector<Render::ObjectRef> refs;
+    if (!resolveObjectPath(obj, entry.subname.c_str(), refs))
+        return false;
+    // The occurrence's node path from the top-level object's REAL root
+    // (append), and of it the selection roots: what a traversal's stack
+    // holds when it reaches that object's switch, and what the render
+    // cache composes the draw's key of.
+    CoinPtr<SoPath> path(new SoPath(10));
+    SoDetail *det = nullptr;
+    const bool ok = vp->getDetailPath(entry.subname.c_str(),
+                                      static_cast<SoFullPath *>(path.get()), true, det);
+    delete det;
+    if (!ok)
+        return false;
+    auto full = static_cast<SoFullPath *>(path.get());
+    for (int i = 0, n = full->getLength(); i < n; ++i) {
+        SoNode *node = full->getNode(i);
+        if (node->isOfType(SoFCSelectionRoot::getClassTypeId()))
+            key.push_back(static_cast<SoFCSelectionRoot *>(node)->getSelNodeId());
+    }
+    if (key.empty())
+        return false;
+    leaf = {refs.back().doc, refs.back().obj};
+    return true;
+}
+
+/// Every table with entries, for the resolution after a structure change.
+/// Never destroyed: a holder can outlive static destruction's turn for it
+/// (a served mirror owned by a singleton).
+std::set<ViewVisibility *> &instances()
+{
+    static auto *set = new std::set<ViewVisibility *>;
+    return *set;
+}
+
+bool ResolvePending = false;
 
 /// Count or release \a key's object as shown by one view.
 void countShown(const std::pair<std::string, std::string> &key, bool enable)
@@ -163,50 +246,127 @@ void countShown(const std::pair<std::string, std::string> &key, bool enable)
 
 } // namespace
 
+ViewVisibility::ViewVisibility() = default;
+
 ViewVisibility::~ViewVisibility()
 {
+    instances().erase(this);
     clear();
 }
 
-bool ViewVisibility::set(Render::VisibilityOverrideTable &&table)
+bool ViewVisibility::set(std::vector<VisibilityEntry> &&entries)
 {
-    persisted = std::move(table.entries);
+    persisted = std::move(entries);
     return rebuild();
 }
 
-bool ViewVisibility::setTransient(std::vector<Render::VisibilityOverride> &&table)
+bool ViewVisibility::setTransient(std::vector<VisibilityEntry> &&entries)
 {
-    transient = std::move(table);
+    transient = std::move(entries);
     return rebuild();
+}
+
+void ViewVisibility::setOnChanged(std::function<void()> callback)
+{
+    onChanged = std::move(callback);
+}
+
+void ViewVisibility::scheduleResolve()
+{
+    // Once the event loop is back: a structure change reaches the scene
+    // graph through the view providers, which hear of it on the same
+    // signal and may rebuild their nodes later still.
+    if (ResolvePending || instances().empty() || !QCoreApplication::instance())
+        return;
+    ResolvePending = true;
+    QTimer::singleShot(0, QCoreApplication::instance(), []() {
+        ResolvePending = false;
+        // Copied: a holder told of a change may set its tables again.
+        std::vector<ViewVisibility *> list(instances().begin(), instances().end());
+        for (ViewVisibility *vis : list) {
+            if (!instances().count(vis))
+                continue;
+            if (vis->rebuild() && vis->onChanged)
+                vis->onChanged();
+        }
+    });
 }
 
 bool ViewVisibility::rebuild()
 {
-    if (persisted.empty() && transient.empty() && entries.entries.empty())
-        return false;
-    entries.entries = transient;
-    entries.entries.insert(entries.entries.end(), persisted.begin(), persisted.end());
-    entries.version = ++serial;
-    element.update(this->table());
+    // What makes a change a STRUCTURE change: an object coming or going,
+    // and a link property -- a group's members, a link's target -- which
+    // is how an object moves in the scene. Connected once, and only ever
+    // acted on while some table has entries.
+    static bool connected;
+    if (!connected) {
+        connected = true;
+        auto &app = App::GetApplication();
+        app.signalNewObject.connect([](const App::DocumentObject &) { scheduleResolve(); });
+        app.signalDeletedObject.connect([](const App::DocumentObject &) { scheduleResolve(); });
+        app.signalFinishRestoreDocument.connect([](const App::Document &) { scheduleResolve(); });
+        app.signalChangedObject.connect(
+                [](const App::DocumentObject &, const App::Property &prop) {
+                    if (prop.isDerivedFrom(App::PropertyLinkBase::getClassTypeId()))
+                        scheduleResolve();
+                });
+    }
 
+    std::vector<SoFCVisibilityElement::Entry> now;
     std::set<std::pair<std::string, std::string>> nowShown;
-    std::set<std::pair<std::string, std::string>> nowOverridden;
-    for (const auto &ov : entries.entries) {
-        if (ov.path.empty())
-            continue;
-        nowOverridden.emplace(ov.path.back().doc, ov.path.back().obj);
-        if (ov.visible)
-            nowShown.emplace(ov.path.back().doc, ov.path.back().obj);
+    now.reserve(transient.size() + persisted.size());
+    std::pair<std::string, std::string> leaf;
+    for (const auto *source : {&transient, &persisted}) {
+        for (const auto &entry : *source) {
+            SoFCVisibilityElement::Entry e;
+            if (!resolveEntry(entry, e.key, leaf))
+                continue;
+            e.visibility = entry.visible ? 1 : 0;
+            if (entry.visible)
+                nowShown.insert(leaf);
+            now.push_back(std::move(e));
+        }
     }
-    // Counted in before the old ones go, so an object this change keeps
-    // is not touched on the way through.
-    for (const auto &key : nowOverridden) {
-        if (!overridden.count(key))
-            countOverride(key, true);
+    if (persisted.empty() && transient.empty())
+        instances().erase(this);
+    else
+        instances().insert(this);
+
+    const bool same = now.size() == resolved.size()
+        && std::equal(now.begin(), now.end(), resolved.begin(),
+                      [](const auto &a, const auto &b) {
+                          return a.visibility == b.visibility && a.key == b.key;
+                      })
+        && nowShown == shown;
+    if (same)
+        return false;
+
+    resolved = std::move(now);
+    element.byEnd.clear();
+    for (const auto &e : resolved)
+        element.byEnd[e.key.back()].push_back(e);
+    // Longest key first; an equal key keeps the source order, so the
+    // edit's hide stays ahead of a persisted show of the same path.
+    for (auto &item : element.byEnd) {
+        std::stable_sort(item.second.begin(), item.second.end(),
+                         [](const auto &a, const auto &b) {
+                             return a.key.size() > b.key.size();
+                         });
     }
-    for (const auto &key : overridden) {
-        if (!nowOverridden.count(key))
-            countOverride(key, false);
+    element.version = ++serial;
+
+    std::set<uint32_t> nowOverridden;
+    for (const auto &item : element.byEnd)
+        nowOverridden.insert(item.first);
+    // Counted in before the old ones go, so a root this change keeps is
+    // not touched on the way through.
+    for (uint32_t id : nowOverridden) {
+        if (!overridden.count(id))
+            countOverride(id, true);
+    }
+    for (uint32_t id : overridden) {
+        if (!nowOverridden.count(id))
+            countOverride(id, false);
     }
     overridden = std::move(nowOverridden);
     for (const auto &key : nowShown) {
@@ -226,23 +386,47 @@ void ViewVisibility::clear()
     for (const auto &key : shown)
         countShown(key, false);
     shown.clear();
-    for (const auto &key : overridden)
-        countOverride(key, false);
+    for (uint32_t id : overridden)
+        countOverride(id, false);
     overridden.clear();
     persisted.clear();
     transient.clear();
-    entries.entries.clear();
-    element.update(nullptr);
-}
-
-const Render::VisibilityOverrideTable *ViewVisibility::table() const
-{
-    return entries.entries.empty() ? nullptr : &entries;
+    resolved.clear();
+    element.byEnd.clear();
+    element.version = ++serial;
+    instances().erase(this);
 }
 
 const SoFCVisibilityElement::Table *ViewVisibility::elementTable() const
 {
-    return element.table ? &element : nullptr;
+    return element.empty() ? nullptr : &element;
+}
+
+const Render::VisibilitySet *ViewVisibility::drawSet(SoFCRenderCacheManager *feed)
+{
+    if (element.empty() || !feed)
+        return nullptr;
+    uint64_t infoSerial = 0;
+    const Render::ObjectInfoMap &info = feed->getObjectInfo(infoSerial);
+    if (feed == drawFeed && infoSerial == drawInfoSerial
+            && element.version == drawTableVersion)
+        return &draws;
+    drawFeed = feed;
+    drawInfoSerial = infoSerial;
+    drawTableVersion = element.version;
+    // Every key of the scene through the one matcher the traversals use,
+    // each root on its chain that an entry ends at: the backend then only
+    // looks a draw up. A key no entry reaches is simply absent.
+    std::unordered_map<uint64_t, uint8_t> keys;
+    for (const auto &item : info) {
+        if (const uint8_t flags = element.resolveDraw(item.second.nodes))
+            keys.emplace(item.first, flags);
+    }
+    if (keys != draws.keys) {
+        draws.keys = std::move(keys);
+        ++draws.version;
+    }
+    return &draws;
 }
 
 bool Gui::parseOverrideKey(const std::string &key,
@@ -296,24 +480,40 @@ bool Gui::resolveObjectPath(App::DocumentObject *root,
     return true;
 }
 
-Render::VisibilityOverrideTable Gui::parseObjectVisibilities(
+std::vector<VisibilityEntry> Gui::parseObjectVisibilities(
         const std::map<std::string, std::string> &values,
         App::Document *doc,
         bool perView)
 {
-    Render::VisibilityOverrideTable table;
+    std::vector<VisibilityEntry> entries;
     if (!doc)
-        return table;
+        return entries;
     for (const auto &kv : values) {
-        if (kv.first.empty() || kv.second.empty())
+        const std::string &key = kv.first;
+        if (key.empty() || kv.second.empty())
             continue;
-        Render::VisibilityOverride ov;
-        if (!parseOverrideKey(kv.first, doc, ov.path, ov.rooted))
-            continue;
-        if (!ov.rooted && !perView)
-            continue;
-        ov.visible = View3DInventor::visibilityValue(kv.second);
-        table.entries.push_back(std::move(ov));
+        VisibilityEntry entry;
+        const auto dot = key.find('.');
+        if (dot == std::string::npos) {
+            // Bare: "Obj", or "Doc#Obj" for an object of another document
+            // shown through a link.
+            if (!perView)
+                continue;
+            entry.rooted = false;
+            const auto sep = key.find('#');
+            entry.doc = sep == std::string::npos ? doc->getName() : key.substr(0, sep);
+            entry.obj = sep == std::string::npos ? key : key.substr(sep + 1);
+        }
+        else {
+            // Path: one occurrence, from a top-level object of doc.
+            entry.doc = doc->getName();
+            entry.obj = key.substr(0, dot);
+            entry.subname = key.substr(dot + 1);
+            if (!entry.subname.empty() && entry.subname.back() != '.')
+                entry.subname += '.';
+        }
+        entry.visible = View3DInventor::visibilityValue(kv.second);
+        entries.push_back(std::move(entry));
     }
-    return table;
+    return entries;
 }

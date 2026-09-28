@@ -237,25 +237,9 @@ bool BGFXRenderer::Private::render(const QColor &col,
         view->ovTable = nullptr;
         view->ovInfo = nullptr;
     }
-    // The sub-view's own object visibility, latched the same way.
-    const Render::VisibilityOverrideTable *vist =
-        subCtx.active ? subCtx.visibilities : mainVisibilities;
-    if (vist && !vist->entries.empty()) {
-        auto &c = view->subVisCaches[subCtx.active ? subCtx.id : 0];
-        if (c.tableVersion != vist->version
-                || c.infoVersion != objectInfoStamp) {
-            c.map.clear();
-            c.tableVersion = vist->version;
-            c.infoVersion = objectInfoStamp;
-        }
-        view->visCache = &c;
-        view->visTable = vist;
-        view->visInfo = &objectInfo;
-    } else {
-        view->visCache = nullptr;
-        view->visTable = nullptr;
-        view->visInfo = nullptr;
-    }
+    // The sub-view's own object visibility, resolved by the producer:
+    // nothing to cache here, the set is the answer per objectKey.
+    view->visSet = subCtx.active ? subCtx.visibilities : mainVisibilities;
     // Latched whether or not there is an override table: since 5.11 the
     // sub-view's own STYLE can resolve through the interest list too,
     // and lookupStyleOverride guards on ovCache/ovTable of its own.

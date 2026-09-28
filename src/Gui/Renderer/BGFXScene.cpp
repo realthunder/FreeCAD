@@ -83,11 +83,7 @@ void BGFXRenderer::Private::makeSnapshot(Render::SceneSnapshot &snap,
     // view shows a hidden object TRAVELS, flagged (SceneDump v80): the
     // viewer that loads it admits it by its own table, which is how a
     // served client shows a hidden object on its own.
-    if (mainVisibilities && !mainVisibilities->entries.empty()) {
-        mainStyle.visCache = &mainStyle.subVisCaches[0];
-        mainStyle.visTable = mainVisibilities;
-        mainStyle.visInfo = &objectInfo;
-    }
+    mainStyle.visSet = mainVisibilities;
     auto copyFeed = [&](const Render::DrawCallList &src) {
         Render::DrawCallList out;
         out.reserve(src.size());
@@ -709,11 +705,7 @@ void BGFXRenderer::Private::updateBBox()
     // object: the bounds fit-all frames and the shadow ground covers are
     // this view's.
     BGFXStyleState vis;
-    if (mainVisibilities && !mainVisibilities->entries.empty()) {
-        vis.visCache = &vis.subVisCaches[0];
-        vis.visTable = mainVisibilities;
-        vis.visInfo = &objectInfo;
-    }
+    vis.visSet = mainVisibilities;
     bboxVisTable = mainVisibilities;
     bboxVisVersion = mainVisibilities ? mainVisibilities->version : 0;
     for (const auto &draw : scene) {

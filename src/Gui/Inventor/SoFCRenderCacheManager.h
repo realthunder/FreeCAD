@@ -23,6 +23,9 @@
 #ifndef GUI_SOFCRENDERCACHEMANAGER_H
 #define GUI_SOFCRENDERCACHEMANAGER_H
 
+#include <cstdint>
+#include <unordered_map>
+
 #include "COWData.h"
 #include "../InventorBase.h"
 
@@ -37,6 +40,7 @@ class SoDetail;
 
 namespace Render {
 class Renderer;
+struct ObjectInfo;
 struct OverlayAnchor;
 struct UserShader;
 }
@@ -106,6 +110,11 @@ public:
   /// that is baked into a translated draw instead of read per frame (see
   /// SoFCRenderer::refreshExternalFeed).
   void refreshExternalFeed();
+
+  /// The identities of the draws this manager fed its backend, and a
+  /// serial that changes with them (SoFCRenderer::getObjectInfo).
+  const std::unordered_map<uint64_t, Render::ObjectInfo> &
+  getObjectInfo(uint64_t &serial) const;
 
   /// Route the scene feed to the backend's overlay feed instead (see
   /// SoFCRenderer::setExternalOverlay()): this manager then captures an

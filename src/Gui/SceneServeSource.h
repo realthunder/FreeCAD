@@ -230,10 +230,11 @@ public:
     MirrorViewer *clientViewer(uint64_t client);
 
     /*!
-     * Tell \a client its own visibility table as the host parsed it
-     * ({"cmd":"visibility"}): each entry's object chain, whether it is
-     * rooted and whether it shows. The client draws by it with the
-     * renderer's own rule (docs/CoinRetirement.md 5.18). GUI thread only.
+     * Tell \a client its own visibility as the host resolved it per draw
+     * of the served scene ({"cmd":"visibility"}: the objectKeys it hides
+     * and those it shows, hex). The client draws and picks by that set
+     * alone (docs/CoinRetirement.md 5.18, 5.23); a publish that changes
+     * it tells it again, before the scene goes out. GUI thread only.
      */
     void announceVisibility(uint64_t client);
 

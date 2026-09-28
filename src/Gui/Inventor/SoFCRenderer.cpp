@@ -475,6 +475,9 @@ public:
   // stops being the one this describes -- a new backend, or a cleared
   // scene -- so it can never claim a key the backend does not hold.
   Render::ObjectInfoMap objinfo;
+  // Bumped whenever objinfo changes, for whoever resolves something per
+  // key over it (SoFCRenderer::getObjectInfo).
+  uint64_t objinfoserial = 0;
   // Draws the last publish produced, which is what the resident map's
   // size is judged against.
   std::size_t objinfodraws = 0;
@@ -1095,6 +1098,7 @@ SoFCRenderer::setExternalRenderer(Render::Renderer * renderer,
   // told, so the resident map describes nothing until this re-feed
   // restates it.
   PRIVATE(this)->objinfo.clear();
+  ++PRIVATE(this)->objinfoserial;
   if (!renderer)
     return;
   // Feed the current state so a backend attached mid-session (e.g. on a
@@ -1116,6 +1120,7 @@ SoFCRendererP::feedExternal()
           this->sectionOnTop(), 0, false, false,
           &this->objinfo);
     this->external->setObjectInfo(Render::ObjectInfoMap(this->objinfo));
+    ++this->objinfoserial;
     this->objinfodraws = draws.size();
     this->objinfoSynced();
     this->external->setScene(std::move(draws));
@@ -1216,6 +1221,7 @@ SoFCRenderer::clear()
     PRIVATE(this)->external->clearHighlight();
   }
   PRIVATE(this)->objinfo.clear();
+  ++PRIVATE(this)->objinfoserial;
 
   PRIVATE(this)->prevplane = SbPlane();
   PRIVATE(this)->opaquevcache.clear();
@@ -1320,6 +1326,13 @@ const Gui::CoinPtr<SoFCRenderCache> &
 SoFCRenderer::getScene() const
 {
   return PRIVATE(this)->scene;
+}
+
+const Render::ObjectInfoMap &
+SoFCRenderer::getObjectInfo(uint64_t & serial) const
+{
+  serial = PRIVATE(this)->objinfoserial;
+  return PRIVATE(this)->objinfo;
 }
 
 void
@@ -1472,6 +1485,8 @@ SoFCRenderer::setScene(const RenderCachePtr &cache)
       PRIVATE(this)->objinfodraws = draws.size();
       xlate.stop();
       Gui::RenderTiming::Scope backend(Gui::RenderTiming::Backend);
+      if (restate || !added.empty())
+        ++PRIVATE(this)->objinfoserial;
       if (restate)
         PRIVATE(this)->external->setObjectInfo(Render::ObjectInfoMap(resident));
       else

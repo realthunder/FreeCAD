@@ -1003,8 +1003,8 @@ QJsonObject viewVisibilityOp(const QJsonObject &req, const std::string &boundDoc
         values[it.key().toStdString()] = value;
     }
     const bool perView = req.value(QLatin1String("perView")).toBool(false);
-    Render::VisibilityOverrideTable table = parseObjectVisibilities(values, doc, perView);
-    const int entries = int(table.entries.size());
+    std::vector<VisibilityEntry> table = parseObjectVisibilities(values, doc, perView);
+    const int entries = int(table.size());
     const bool changed = mirror->setObjectVisibilities(std::move(table));
     // A show changes what the one capture carries (a hidden object is
     // captured, flagged, for whoever shows it), and this source publishes

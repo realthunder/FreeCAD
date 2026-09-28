@@ -346,6 +346,13 @@ MirrorViewer::MirrorViewer(Document* doc, SoNode* scene,
     pimpl->cacheManager = cacheManager;
     pimpl->renderer = renderer;
     pimpl->renderManager = new SoRenderManager;
+    // The entries resolved again after a structure change moved the nodes
+    // they name: the same duty as a change of the edit's hide.
+    pimpl->visibility.setOnChanged([this]() {
+        if (pimpl->onVisibilityChanged) {
+            pimpl->onVisibilityChanged();
+        }
+    });
 
     // The event path. The callback node's user data is the ViewerContext
     // base subobject deliberately: a pointer to this object and a pointer
@@ -908,20 +915,20 @@ const SoFCVisibilityElement::Table* MirrorViewer::visibilityElementTable() const
     return pimpl->visibility.elementTable();
 }
 
-bool MirrorViewer::setObjectVisibilities(Render::VisibilityOverrideTable&& table)
+bool MirrorViewer::setObjectVisibilities(std::vector<VisibilityEntry>&& entries)
 {
     // No node to touch: the shared root reads the element below its own
     // cache check, and the pick root above it holds the camera, which no
     // bounding box cache survives.
-    return pimpl->visibility.set(std::move(table));
+    return pimpl->visibility.set(std::move(entries));
 }
 
-bool MirrorViewer::setEditHide(const Render::VisibilityOverride* hide)
+bool MirrorViewer::setEditHide(const VisibilityEntry* hide)
 {
     if (!pimpl->cacheManager) {
         return false;
     }
-    std::vector<Render::VisibilityOverride> entries;
+    std::vector<VisibilityEntry> entries;
     if (hide) {
         entries.push_back(*hide);
     }
@@ -936,9 +943,9 @@ void MirrorViewer::setOnVisibilityCallback(std::function<void()> callback)
     pimpl->onVisibilityChanged = std::move(callback);
 }
 
-const Render::VisibilityOverrideTable* MirrorViewer::objectVisibilities() const
+const Render::VisibilitySet* MirrorViewer::objectVisibilities()
 {
-    return pimpl->visibility.table();
+    return pimpl->visibility.drawSet(pimpl->cacheManager);
 }
 
 float MirrorViewer::getPickRadius() const

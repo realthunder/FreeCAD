@@ -237,10 +237,16 @@ void EditingRoot::detachView(ViewerContext* view)
 bool EditingRoot::hideEdited(App::DocumentObject* parent, const char* subname)
 {
     showEdited();
-    auto hide = std::make_unique<Render::VisibilityOverride>();
-    if (!resolveObjectPath(parent, subname, hide->path)) {
+    // The occurrence as a path entry: resolved to its node key by each
+    // view's table, which also resolves it again should the scene move.
+    std::vector<Render::ObjectRef> path;
+    if (!parent || !resolveObjectPath(parent, subname, path)) {
         return false;
     }
+    auto hide = std::make_unique<VisibilityEntry>();
+    hide->doc = path.front().doc;
+    hide->obj = path.front().obj;
+    hide->subname = subname ? subname : "";
     hide->rooted = true;
     hide->visible = false;
     editHide = std::move(hide);
@@ -668,7 +674,7 @@ bool ViewerContext::hideEditedObject()
     return editRoot->hideEdited(parent, subname.c_str());
 }
 
-bool ViewerContext::setEditHide(const Render::VisibilityOverride*)
+bool ViewerContext::setEditHide(const VisibilityEntry*)
 {
     return false;
 }

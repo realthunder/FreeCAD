@@ -1183,12 +1183,13 @@ TEST(SceneDump, anObjectEntryNamesItsDocumentObject)
 }
 
 /// Per-client visibility (v80, docs/CoinRetirement.md 5.18): a client
-/// resolves its own table against each object's CHAIN, and admits a draw
-/// of a hidden object some view shows on its own only when its table
-/// shows it. So both have to cross: the chain on the object entry, the
-/// per-view-shown tag on the draw (as a flag -- the id is interned per
-/// process). Before v80 neither did, and the snapshot dropped the draws.
-TEST(SceneDump, anObjectCarriesItsChainAndADrawItsPerViewShownTag)
+/// admits a draw of a hidden object some view shows on its own only when
+/// its own visibility shows it, so the per-view-shown tag has to cross, on
+/// the draw (as a flag -- the id is interned per process). Before v80 it
+/// did not, and the snapshot dropped the draws. v80 also sent the object's
+/// CHAIN for the client to resolve its table against; since v82 the host
+/// resolves (5.23) and tells the client objectKeys, so the chain stays home.
+TEST(SceneDump, aDrawCarriesItsPerViewShownTagAndNoChain)
 {
     BlobStore store;
     Render::SceneSnapshot snap = makeScene();
@@ -1220,12 +1221,8 @@ TEST(SceneDump, anObjectCarriesItsChainAndADrawItsPerViewShownTag)
 
     auto named = model.objects.find(0x1111);
     ASSERT_TRUE(named != model.objects.end());
-    const auto& path = named->second.entry.info.path;
-    ASSERT_EQ(path.size(), 2u);
-    EXPECT_EQ(path[0].doc, "MainDoc");
-    EXPECT_EQ(path[0].obj, "Asm");
-    EXPECT_EQ(path[1].doc, "OtherDoc");
-    EXPECT_EQ(path[1].obj, "Box");
+    EXPECT_EQ(named->second.entry.info.obj, "Box");
+    EXPECT_TRUE(named->second.entry.info.path.empty());
 
     int shown = 0, plain = 0;
     for (const auto& d : named->second.draws) {

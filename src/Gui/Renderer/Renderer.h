@@ -2830,6 +2830,14 @@ struct ObjectInfo {
     /// serialized by SceneDump: a remote viewer holds no per-view
     /// override table to resolve against.
     std::vector<ObjectRef> path;
+    /// The draw's key itself: the ids of the scene-graph nodes it was
+    /// composed from (Gui's selection root ids), outermost first, as
+    /// the producer reads them off the key. Identity like the rest --
+    /// an id is never reused -- and opaque here: the producer resolves
+    /// a view's visibility entries against it (docs/CoinRetirement.md
+    /// 5.23) and hands the backend the answer (VisibilitySet). Not
+    /// serialized.
+    std::vector<uint32_t> nodes;
 };
 
 typedef std::unordered_map<uint64_t, ObjectInfo> ObjectInfoMap;
@@ -2893,57 +2901,40 @@ struct StyleOverrideTable {
     uint32_t version = 0;
 };
 
-/// One per-view visibility entry, parsed by the producer from the
-/// view's ObjectVisibilities property. Same key forms and the same
-/// matching as StyleOverride: a rooted entry names ONE occurrence (a
-/// path hide), a bare one the object wherever it appears in the view.
-/// \c visible false hides the object -- and everything reached through
-/// it -- in this view only; true shows it here even where its own
-/// Visibility is off.
-struct VisibilityOverride {
-    std::vector<ObjectRef> path;
-    bool rooted = true;
-    bool visible = false;
-};
-
-/// A view's visibility table. Bare entries are present only while the
-/// view's PerViewVisibilities switch is on; rooted (path) entries are
-/// always present. version bumps on every content change, like
-/// StyleOverrideTable's.
-struct VisibilityOverrideTable {
-    std::vector<VisibilityOverride> entries;
+/// A view's own object visibility (docs/CoinRetirement.md 5.18, 5.23),
+/// as the answer per objectKey. The producer resolves the view's entries
+/// -- node keys, matched by tail against each draw's key (ObjectInfo::
+/// nodes), the same rule its Coin traversals follow -- and the backend
+/// only looks the draw up: a key absent from \c keys is one the view has
+/// no entry for. Handed by pointer, per sub-view via SubViewFrame::
+/// visibilities, for the plain view via setMainViewVisibility(); the
+/// producer owns it and keeps it alive while the backend may render with
+/// it, and bumps \c version on every content change.
+struct VisibilitySet {
+    enum : uint8_t {
+        /// The object, or a container it is reached through, is hidden
+        /// in this view.
+        Hidden = 1,
+        /// Something on the draw's chain is shown in this view: what
+        /// admits a per-view-shown draw.
+        Shown = 2,
+    };
+    std::unordered_map<uint64_t, uint8_t> keys;
     uint32_t version = 0;
+
+    uint8_t flagsOf(uint64_t objectKey) const
+    {
+        auto it = keys.find(objectKey);
+        return it == keys.end() ? 0 : it->second;
+    }
 };
 
-/// This table's answer for the object at chain[len-1] reached through
-/// chain[0..len-1]: 1 shown, 0 hidden, -1 no entry. Only entries that
-/// END at that object count. A rooted entry must anchor at chain[0] and
-/// follow it in order, not contiguously (a subname elides a Link's
-/// target); a bare entry is the object wherever it appears. Rooted
-/// beats bare. The one rule both the Coin traversal
-/// (SoFCVisibilityElement) and the backend's draw filter apply.
-RendererExport int resolveVisibility(const VisibilityOverrideTable &table,
-                                     const std::vector<ObjectRef> &chain,
-                                     size_t len);
-/// A draw's answer from \a table, for the object chain \a path of the
-/// object it belongs to (ObjectInfo::path): \a hidden when some object
-/// on it resolves hidden, \a shown when some object on it resolves
-/// shown -- what admits a per-view-shown draw. The backend's draw filter
-/// and a served client's own pick ask it alike.
-RendererExport void resolveChainVisibility(const VisibilityOverrideTable &table,
-                                           const std::vector<ObjectRef> &path,
-                                           bool &hidden,
-                                           bool &shown);
 /// The captured-mode id (DrawCall::capturedMode) tagging the draws of
 /// a HIDDEN object captured only because some view shows it on its own
 /// (ObjectVisibilities). Every view -- and every snapshot -- drops such
 /// a draw unless its own table shows the object; one that does draws
 /// it as the object's own, untagged draw.
 RendererExport uint16_t perViewShownModeId();
-/// Whether a draw reached through \a chain is hidden: some object on it
-/// -- the draw's own or a container above it -- resolves hidden.
-RendererExport bool isChainHidden(const VisibilityOverrideTable &table,
-                                  const std::vector<ObjectRef> &chain);
 
 /// Process-lifetime intern table for display mode NAMES outside the
 /// four Class-A styles (docs/CoinRetirement.md 5.9 "Non-standard
@@ -3135,10 +3126,10 @@ public:
         /// means no overrides.
         const StyleOverrideTable *styleOverrides = nullptr;
         /// This sub-view's own object visibility: draws whose object
-        /// (or a container above it) resolves hidden are dropped from
-        /// every pass of this sub-view only. The producer owns the
-        /// table; null means the sub-view hides nothing of its own.
-        const VisibilityOverrideTable *visibilities = nullptr;
+        /// (or a container above it) is hidden are dropped from every
+        /// pass of this sub-view only. The producer owns the set; null
+        /// means the sub-view hides and shows nothing of its own.
+        const VisibilitySet *visibilities = nullptr;
     };
     /// Render one frame as \a count sub-views tiling the backbuffer:
     /// the same resident scene feeds every sub-view, each drawn with
@@ -3174,10 +3165,10 @@ public:
     }
     /// The plain (sub-view id 0) frame's own object visibility, the
     /// counterpart of SubViewFrame::visibilities. The caller owns the
-    /// table and keeps it alive; null = none.
-    virtual void setMainViewVisibility(const VisibilityOverrideTable *table)
+    /// set and keeps it alive; null = none.
+    virtual void setMainViewVisibility(const VisibilitySet *set)
     {
-        (void)table;
+        (void)set;
     }
     /// The additive-mode interest list of the capture feeding this
     /// backend (docs/CoinRetirement.md 5.9 "Non-standard modes") --

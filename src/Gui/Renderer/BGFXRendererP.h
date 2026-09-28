@@ -4502,26 +4502,10 @@ public:
     const OvStyle *lookupStyleOverride(uint64_t objectKey);
 
     /// This sub-view's own object visibility (the view's
-    /// ObjectVisibilities), resolved per objectKey against its object
-    /// chain once and cached like OvCache, and for the same reasons.
-    /// One objectKey's answer: some object on its chain hidden here,
-    /// some object on it shown here (what admits a per-view-shown draw).
-    struct VisState {
-        bool hidden = false;
-        bool shown = false;
-    };
-    struct VisCache {
-        uint32_t tableVersion = 0;
-        uint32_t infoVersion = 0;
-        std::unordered_map<uint64_t, VisState> map;
-    };
-    /// Per sub-view id; erased with the bank in dropSubView.
-    std::map<int, VisCache> subVisCaches;
-    /// Latched at the top of the frame; all null when the sub-view
-    /// hides nothing.
-    VisCache *visCache = nullptr;
-    const Render::VisibilityOverrideTable *visTable = nullptr;
-    const Render::ObjectInfoMap *visInfo = nullptr;
+    /// ObjectVisibilities), as the producer resolved it per objectKey
+    /// (docs/CoinRetirement.md 5.23). Latched at the top of the frame;
+    /// null when the sub-view has no entries.
+    const Render::VisibilitySet *visSet = nullptr;
     /// Whether this sub-view's own visibility hides \a draw: its
     /// object, or a container it is reached through, is hidden here
     /// (BGFXViewSubmit.cpp). Checked beside the on-top replacement
@@ -4533,9 +4517,9 @@ public:
     /// rule. What a snapshot drops: a per-view-shown draw travels, and
     /// the viewer that loads it admits it by its own table.
     bool visibilityHidesObject(const Render::DrawCall &draw);
-    /// \a draw's object's answer from this sub-view's table, looked up
-    /// once and cached; null without a table (or for a gizmo).
-    const VisState *visibilityState(const Render::DrawCall &draw);
+    /// \a draw's VisibilitySet flags in this sub-view; 0 without a set
+    /// (or for a gizmo).
+    uint8_t visibilityFlags(const Render::DrawCall &draw) const;
     /// Whether this sub-view's per-object style resolution (override,
     /// then view style where registered, then own mode -- 5.8/5.9)
     /// admits \a draw's bucket. Asked by the per-draw submit AND by
@@ -9896,7 +9880,7 @@ public:
         /// submit like the style; the producer owns the storage.
         const Render::StyleOverrideTable *styleOverrides = nullptr;
         /// The cell's own object visibility, restated per submit.
-        const Render::VisibilityOverrideTable *visibilities = nullptr;
+        const Render::VisibilitySet *visibilities = nullptr;
     } subCtx;
 
     /// The plain (sub-view id 0) frame's style context, stated by the
@@ -9912,10 +9896,10 @@ public:
     const Render::StyleOverrideTable *mainStyleOverrides = nullptr;
     /// The plain frame's own object visibility, stated through
     /// setMainViewVisibility(); null = the view hides nothing of its own.
-    const Render::VisibilityOverrideTable *mainVisibilities = nullptr;
-    /// The visibility table (and its version) the scene bounds were last
+    const Render::VisibilitySet *mainVisibilities = nullptr;
+    /// The visibility set (and its version) the scene bounds were last
     /// computed under: a change re-runs updateBBox.
-    const Render::VisibilityOverrideTable *bboxVisTable = nullptr;
+    const Render::VisibilitySet *bboxVisTable = nullptr;
     uint32_t bboxVisVersion = 0;
     /// The capture's additive-mode interest list, stated through
     /// setCaptureInterest() (docs/CoinRetirement.md 5.9 "Non-standard

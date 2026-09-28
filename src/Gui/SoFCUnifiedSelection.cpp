@@ -2363,6 +2363,25 @@ bool SoFCSelectionRoot::NodeKey::convert(SoFCSelectionRoot::Stack &stack, bool c
     return true;
 }
 
+void SoFCSelectionRoot::NodeKey::getNodeIds(std::vector<uint32_t> &ids) const
+{
+    uint32_t id = 0;
+    int len = 0;
+    for (uint8_t i=0; i<data.back(); ++i) {
+        uint8_t d = data[i];
+        id |= uint32_t(d & 127) << (len*7);
+        if (d & 128)
+            ++len;
+        else {
+            ids.push_back(id);
+            id = 0;
+            len = 0;
+        }
+    }
+    if (next)
+        next->getNodeIds(ids);
+}
+
 SoFCSelectionRoot *
 SoFCSelectionRoot::NodeKey::getLastNode() const
 {
@@ -2644,25 +2663,15 @@ bool SoFCSelectionRoot::getRenderedObject(const char *&doc, const char *&obj) co
     return true;
 }
 
-void SoFCSelectionRoot::getActionObjectChain(
-        SoAction *action,
-        std::vector<std::pair<const char *, const char *>> &chain)
+void SoFCSelectionRoot::getActionRootIds(SoAction *action, std::vector<uint32_t> &ids)
 {
-    chain.clear();
+    ids.clear();
     const Stack *stack = action->isOfType(SoGLRenderAction::getClassTypeId())
         ? &SelStack : getActionStack(action);
     if (!stack)
         return;
-    for (auto node : *stack) {
-        auto root = static_cast<const SoFCSelectionRoot*>(node);
-        const char *doc, *obj;
-        if (!root->getRenderedObject(doc, obj))
-            continue;
-        if (!chain.empty() && strcmp(chain.back().second, obj) == 0
-                && strcmp(chain.back().first, doc) == 0)
-            continue;
-        chain.emplace_back(doc, obj);
-    }
+    for (auto node : *stack)
+        ids.push_back(static_cast<const SoFCSelectionRoot*>(node)->getSelNodeId());
 }
 
 int SoFCSelectionRoot::getRenderPathCode() const {
@@ -3354,21 +3363,26 @@ void SoFCSelectionRoot::checkSecondaryCache(SoState *state, const Stack &stack)
     invalidateCachesInside(state, stack, len >= stack.size() ? 0 : stack.size() - len);
 }
 
-void SoFCSelectionRoot::invalidateObjectChainCaches(SoAction *action)
+void SoFCSelectionRoot::invalidateKeyCaches(SoAction *action, size_t keyLength)
 {
     SoState *state = action->getState();
     const Stack *stack = action->isOfType(SoGLRenderAction::getClassTypeId())
         ? &SelStack : getActionStack(action);
-    if (stack) {
-        for (size_t i = 0; i < stack->size(); ++i) {
-            const char *doc, *obj;
-            if (static_cast<const SoFCSelectionRoot*>((*stack)[i])->getRenderedObject(doc, obj)) {
-                invalidateCachesInside(state, *stack, i);
-                return;
-            }
-        }
+    if (!stack || stack->empty()) {
+        SoCacheElement::invalidate(state);
+        return;
     }
-    SoCacheElement::invalidate(state);
+    // As checkSecondaryCache(): a key longer than the chain cannot match
+    // here, but may through a longer one that reuses these caches.
+    invalidateCachesInside(state, *stack,
+                           keyLength >= stack->size() ? 0 : stack->size() - keyLength);
+}
+
+SoFCSelectionRoot *SoFCSelectionRoot::getRootById(uint32_t id)
+{
+    SelectionRootMapLock(guard);
+    auto it = SelectionRootMap.find(id);
+    return it == SelectionRootMap.end() ? nullptr : it->second;
 }
 
 void SoFCSelectionRoot::endAction(SoAction *action, Stack &stack, bool checkcycle)

@@ -1155,63 +1155,51 @@ static bool pickFilterAllows(PickKind k)
     }
 }
 
-/// This client's own object visibility (docs/CoinRetirement.md 5.18), as
-/// the host parsed the map this client set with the `view.visibility` op
-/// and told it back ({"cmd":"visibility"}). The backend draws by it
-/// (setMainViewVisibility, against the object chains SceneDump v80 ships);
-/// the local pick asks clientHides.
-static Render::VisibilityOverrideTable s_visibility;
-static uint32_t s_visibilitySerial = 0;
+/// This client's own object visibility (docs/CoinRetirement.md 5.18,
+/// 5.23): the host resolves the map this client set with the
+/// `view.visibility` op per draw of the served scene, with the rule its
+/// own traversals follow, and tells the answer ({"cmd":"visibility"}: the
+/// objectKeys hidden and those shown). The backend draws by it
+/// (setMainViewVisibility); the local pick and the framing ask
+/// clientHides and clientSkipsEntry. Nothing here resolves anything.
+static Render::VisibilitySet s_visibility;
 
-/// Whether this client's table keeps \a d out: its object, or a
-/// container it is reached through, hidden -- or a draw of a hidden
-/// object some view shows on its own that this client does not show.
-/// The backend's rule (BGFXStyleState::visibilityHides), for the pick.
+/// This client's flags for objectKey \a key.
+static uint8_t clientFlags(uint64_t key)
+{
+    return key ? s_visibility.flagsOf(key) : 0;
+}
+
+/// Whether this client keeps \a d out: its object, or a container it is
+/// reached through, hidden -- or a draw of a hidden object some view
+/// shows on its own that this client does not show. The backend's rule
+/// (BGFXStyleState::visibilityHides), for the pick.
 static bool clientHides(const Render::DrawCall &d)
 {
     const bool pershown = d.capturedMode
         && d.capturedMode == Render::perViewShownModeId();
-    if (s_visibility.entries.empty() || !d.objectKey || d.skipbounds)
-        return pershown;
-    auto it = s_objects.objects.find(d.objectKey);
-    if (it == s_objects.objects.end())
-        return pershown;
-    bool hidden = false, shown = false;
-    Render::resolveChainVisibility(s_visibility, it->second.entry.info.path,
-                                   hidden, shown);
-    return hidden || (pershown && !shown);
+    const uint8_t flags = d.skipbounds ? 0 : clientFlags(d.objectKey);
+    return (flags & Render::VisibilitySet::Hidden)
+        || (pershown && !(flags & Render::VisibilitySet::Shown));
 }
 
 /// Whether this client keeps object entry \a e off its screen before any
-/// of its geometry is in: an object only in the scene because some view
-/// shows it (SceneDump v80), which this client's own table does not show.
+/// of its geometry is in: an object it hides, or one only in the scene
+/// because some view shows it (SceneDump v80) which this client does not
+/// show.
 static bool clientSkipsEntry(const Render::SceneSnapshot::ObjectEntry &e)
 {
-    if (!e.perViewShown)
-        return false;
-    if (s_visibility.entries.empty())
+    const uint8_t flags = clientFlags(e.objectKey);
+    if (flags & Render::VisibilitySet::Hidden)
         return true;
-    bool hidden = false, shown = false;
-    Render::resolveChainVisibility(s_visibility, e.info.path, hidden, shown);
-    return hidden || !shown;
+    return e.perViewShown && !(flags & Render::VisibilitySet::Shown);
 }
 
-/// Hand the backend this client's table and, while it has entries, the
-/// object chains it resolves against. Again after every scene: the
-/// objects a publish carries are what the table is matched to.
+/// Hand the backend this client's set.
 static void feedVisibility()
 {
-    if (!s_renderer)
-        return;
-    if (s_visibility.entries.empty()) {
-        s_renderer->setMainViewVisibility(nullptr);
-        return;
-    }
-    Render::ObjectInfoMap info;
-    for (const auto &item : s_objects.objects)
-        info.emplace(item.first, item.second.entry.info);
-    s_renderer->setObjectInfo(std::move(info));
-    s_renderer->setMainViewVisibility(&s_visibility);
+    if (s_renderer)
+        s_renderer->setMainViewVisibility(&s_visibility);
 }
 
 /// Nearest face (exact ray/triangle), edge and vertex (screen-space proximity
@@ -2391,48 +2379,46 @@ EM_JS(void, fcviewer_peerselection_event, (const char *json), {
     } catch (e) {}
 });
 
+/// The objectKeys of the list \a name opens ("\"hidden\":[") in \a json,
+/// each hex in quotes, flagged \a flag in \a keys.
+static void readVisibilityKeys(const char *json, const char *name, uint8_t flag,
+                               std::unordered_map<uint64_t, uint8_t> &keys)
+{
+    const char *p = std::strstr(json, name);
+    if (!p)
+        return;
+    p += std::strlen(name);
+    while (*p && *p != ']') {
+        if (*p != '"') {
+            ++p;
+            continue;
+        }
+        char *end = nullptr;
+        const uint64_t key = std::strtoull(p + 1, &end, 16);
+        if (!end || *end != '"')
+            break;
+        keys[key] |= flag;
+        p = end + 1;
+    }
+}
+
+/// {"cmd":"visibility","hidden":["<hex key>",...],"shown":[...]}: this
+/// client's own visibility, resolved on the host (SceneServeSource::
+/// announceVisibility). Replaces the whole set.
+static void applyVisibility(const char *json)
+{
+    std::unordered_map<uint64_t, uint8_t> keys;
+    readVisibilityKeys(json, "\"hidden\":[", Render::VisibilitySet::Hidden, keys);
+    readVisibilityKeys(json, "\"shown\":[", Render::VisibilitySet::Shown, keys);
+    s_visibility.keys = std::move(keys);
+    ++s_visibility.version;
+    feedVisibility();
+}
+
 /// Take in one peerselection push: resolve it, paint it, and tell the DOM
 /// layer who has what. The event is deliberately NOT 'fc:selection' -- a
 /// page that shows a roster can listen for it, and the inspector, which
 /// describes what this client selected, never sees it.
-/// {"cmd":"visibility","entries":[{"v":1,"r":0,"p":["Doc","Obj",...]}]}:
-/// this client's own table, parsed on the host (SceneServeSource::
-/// announceVisibility). Replaces the whole table.
-static void applyVisibility(const char *json)
-{
-    Render::VisibilityOverrideTable table;
-    const char *p = std::strstr(json, "\"entries\":[");
-    while (p && (p = std::strstr(p, "{\"v\":")) != nullptr) {
-        Render::VisibilityOverride ov;
-        ov.visible = p[5] == '1';
-        const char *r = std::strstr(p, "\"r\":");
-        const char *list = std::strstr(p, "\"p\":[");
-        if (!r || !list)
-            break;
-        ov.rooted = r[4] == '1';
-        p = list + 5;
-        std::string doc, obj;
-        while (p && *p && *p != ']') {
-            if (*p != '"') {
-                ++p;
-                continue;
-            }
-            p = readJsonString(p, doc);
-            while (p && *p && *p != '"' && *p != ']')
-                ++p;
-            if (!p || *p != '"')
-                break;
-            p = readJsonString(p, obj);
-            ov.path.push_back({doc, obj});
-        }
-        if (!ov.path.empty())
-            table.entries.push_back(std::move(ov));
-    }
-    table.version = ++s_visibilitySerial;
-    s_visibility = std::move(table);
-    feedVisibility();
-}
-
 static void applyPeerSelection(const char *json)
 {
     std::string owner;
@@ -5580,9 +5566,6 @@ static void applySnapshot(bool fit)
         s_renderer->setScene(std::move(draws));
         s_feedJustSet = true;
     }
-    // This client's own visibility, against the objects this scene has.
-    if (!s_visibility.entries.empty())
-        feedVisibility();
     // The client owns selection (rebuildSelection below): the backend's own
     // streamed selection feed is ignored so its slow full re-stream never
     // drives the visible selection. Any previously applied streamed selection

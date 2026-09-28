@@ -260,17 +260,19 @@ public:
      */
     //@{
     /// Replace the table; false when nothing changed.
-    bool setObjectVisibilities(Render::VisibilityOverrideTable&& table);
+    bool setObjectVisibilities(std::vector<VisibilityEntry>&& entries);
     /// An edit session's transient hide, ahead of the table above (see
     /// ViewerContext::setEditHide). Raised by the session rather than by
     /// the client, so a change is reported through the callback below.
-    bool setEditHide(const Render::VisibilityOverride* hide) override;
-    /// Told when setEditHide changes the table, so the serving source
-    /// republishes and tells the client the table it draws by.
+    bool setEditHide(const VisibilityEntry* hide) override;
+    /// Told when setEditHide -- or a structure change resolving the
+    /// entries again -- changes the table, so the serving source
+    /// republishes and tells the client what it draws by.
     void setOnVisibilityCallback(std::function<void()> callback);
-    /// The table this client draws by -- the edit hide, then the parsed
-    /// map -- or null when it is empty.
-    const Render::VisibilityOverrideTable* objectVisibilities() const;
+    /// What this client draws by -- the edit hide, then the parsed map --
+    /// resolved per draw of the served scene, or null when the table is
+    /// empty.
+    const Render::VisibilitySet* objectVisibilities();
     //@}
 
     /** @name ViewerContext -- what the input device supplies */

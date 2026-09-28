@@ -281,7 +281,6 @@ void BGFXRenderer::dropSubView(int id)
     view->selectSubView(0);
     view->subBanks.erase(id);
     view->subOvCaches.erase(id);
-    view->subVisCaches.erase(id);
 }
 
 void BGFXRenderer::setMainViewStyle(uint8_t styleMask, uint8_t styleNameBit,
@@ -296,9 +295,9 @@ void BGFXRenderer::setMainViewStyle(uint8_t styleMask, uint8_t styleNameBit,
     pimpl->mainStyleMode = styleMode;
 }
 
-void BGFXRenderer::setMainViewVisibility(const VisibilityOverrideTable *table)
+void BGFXRenderer::setMainViewVisibility(const VisibilitySet *set)
 {
-    pimpl->mainVisibilities = (table && !table->entries.empty()) ? table : nullptr;
+    pimpl->mainVisibilities = set;
     const uint32_t version = pimpl->mainVisibilities ? pimpl->mainVisibilities->version : 0;
     if (pimpl->bboxVisTable != pimpl->mainVisibilities || pimpl->bboxVisVersion != version)
         pimpl->updateBBox();

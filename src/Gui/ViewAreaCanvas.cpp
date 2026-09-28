@@ -821,8 +821,9 @@ void ViewAreaCanvas::paintGL()
                 s.styleOverrides = viewer->objectStyleOverrides();
         }
         // The cell's own object visibility: a draw-time filter over the
-        // shared capture, so every service hosts it.
-        s.visibilities = viewer->objectVisibilities();
+        // shared capture, so every service hosts it -- resolved over the
+        // draws of that capture, the feeder's.
+        s.visibilities = viewer->objectVisibilities(feeder->getRenderCacheManager());
         subs.push_back(s);
         rects.push_back(r);
         drawnCells.push_back(c.cell);

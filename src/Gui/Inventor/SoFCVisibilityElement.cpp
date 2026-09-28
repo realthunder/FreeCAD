@@ -22,14 +22,12 @@
 
 #include "PreCompiled.h"
 
-#include <cstring>
-#include <map>
-#include <string>
-#include <string_view>
+#include <algorithm>
+#include <iterator>
+#include <unordered_map>
 
 #include <Inventor/SoPath.h>
 #include <Inventor/actions/SoActions.h>
-#include <Inventor/elements/SoCacheElement.h>
 #include <Inventor/misc/SoState.h>
 
 #include "../InventorBase.h"
@@ -43,37 +41,70 @@ SO_ELEMENT_SOURCE(SoFCVisibilityElement)
 
 namespace {
 
-/// The objects some view's table has an entry ending at, counted per
-/// view: object name -> document name -> count. Object first, since a
-/// check that finds no object stops there.
-using OverrideCounts = std::map<std::string, std::map<std::string, int, std::less<>>, std::less<>>;
-
-OverrideCounts &overrides()
+/// The roots some view's table has an entry ending at, counted per
+/// view: selection root id -> count.
+std::unordered_map<uint32_t, int> &overrides()
 {
-  static OverrideCounts counts;
+  static std::unordered_map<uint32_t, int> counts;
   return counts;
+}
+
+/// The first entry of \a list (longest key first) whose key is a tail of
+/// \a ids[0 .. len - 1]; every key in it ends at ids[len - 1].
+int matchTail(const std::vector<SoFCVisibilityElement::Entry> &list,
+              const uint32_t *ids, size_t len)
+{
+  for (const auto &entry : list) {
+    const size_t n = entry.key.size();
+    if (n == 0 || n > len)
+      continue;
+    if (std::equal(entry.key.begin(), entry.key.end(), ids + (len - n)))
+      return entry.visibility;
+  }
+  return -1;
 }
 
 } // namespace
 
 bool
-SoFCVisibilityElement::countOverride(const char * doc, const char * obj, bool add)
+SoFCVisibilityElement::countOverride(uint32_t id, bool add)
 {
   auto &counts = overrides();
-  if (add) {
-    auto &docs = counts[obj];
-    return ++docs[doc] == 1;
-  }
-  auto it = counts.find(std::string_view(obj));
-  if (it == counts.end())
+  if (add)
+    return ++counts[id] == 1;
+  auto it = counts.find(id);
+  if (it == counts.end() || --it->second > 0)
     return false;
-  auto dit = it->second.find(std::string_view(doc));
-  if (dit == it->second.end() || --dit->second > 0)
-    return false;
-  it->second.erase(dit);
-  if (it->second.empty())
-    counts.erase(it);
+  counts.erase(it);
   return true;
+}
+
+int
+SoFCVisibilityElement::Table::resolve(const uint32_t * ids, size_t len) const
+{
+  if (!len)
+    return -1;
+  auto it = byEnd.find(ids[len - 1]);
+  if (it == byEnd.end())
+    return -1;
+  return matchTail(it->second, ids, len);
+}
+
+uint8_t
+SoFCVisibilityElement::Table::resolveDraw(const std::vector<uint32_t> & ids) const
+{
+  uint8_t flags = 0;
+  for (size_t i = 0; i < ids.size(); ++i) {
+    auto it = byEnd.find(ids[i]);
+    if (it == byEnd.end())
+      continue;
+    const int r = matchTail(it->second, ids.data(), i + 1);
+    if (r == 0)
+      flags |= Render::VisibilitySet::Hidden;
+    else if (r > 0)
+      flags |= Render::VisibilitySet::Shown;
+  }
+  return flags;
 }
 
 void
@@ -133,7 +164,7 @@ SoFCVisibilityElement::set(SoState * state, const Table * table)
       state->getElement(classStackIndex));
   if (!elem)
     return;
-  elem->table = (table && table->table) ? table : nullptr;
+  elem->table = (table && !table->empty()) ? table : nullptr;
   elem->version = elem->table ? table->version : 0;
 }
 
@@ -146,24 +177,6 @@ SoFCVisibilityElement::get(SoState * state)
   auto elem = static_cast<const SoFCVisibilityElement *>(
       SoElement::getConstElement(state, classStackIndex));
   return elem ? elem->table : nullptr;
-}
-
-void
-SoFCVisibilityElement::Table::update(const Render::VisibilityOverrideTable *t)
-{
-  this->table = t;
-  this->leaves.clear();
-  this->rooted.clear();
-  this->version = t ? t->version : 0;
-  if (!t)
-    return;
-  for (const auto &ov : t->entries) {
-    if (ov.path.empty())
-      continue;
-    this->leaves.insert(ov.path.back().obj);
-    if (ov.rooted)
-      this->rooted.insert(ov.path.back().obj);
-  }
 }
 
 int
@@ -182,44 +195,36 @@ SoFCVisibilityElement::check(SoAction * action, const SoNode * node)
   if (!path || path->getLength() < 2 || path->getNodeFromTail(0) != node
       || path->getNodeFromTail(1) != root)
     return -1;
-  const char *doc, *obj;
-  if (!root->getRenderedObject(doc, obj))
-    return -1;
-  // No view has an entry for this object: every view answers the same,
-  // so the element is not read and records no dependency.
-  auto it = counts.find(std::string_view(obj));
-  if (it == counts.end() || !it->second.count(std::string_view(doc)))
+  // No view has an entry ending at this root: every view answers the
+  // same, so the element is not read and records no dependency.
+  const uint32_t id = root->getSelNodeId();
+  if (!counts.count(id))
     return -1;
   // Read (and recorded) even when THIS view has no table: a cache built
   // here must not be reused by a view whose table does hide the object.
   const Table *table = get(state);
-  if (!table || !table->table)
+  if (!table)
     return -1;
-  if (!table->leaves.count(std::string_view(obj)))
+  auto it = table->byEnd.find(id);
+  if (it == table->byEnd.end())
     return -1;
-  // A path entry answers per occurrence, and one node can be several:
-  // an object's root sits under every group and link that shows it. A
-  // cache open above this switch -- that root's own bounding box, which
-  // is what culls a pick -- would be reused through the other
-  // occurrences with this one's answer, since all it keys on is the
-  // table. So while such an entry exists none is kept inside the root
-  // of the chain's first object down to this switch. The caches outside
-  // that span stay: those BELOW, every other object's, and that root's
-  // own and those ABOVE it, which hold the whole chain in their subtree
-  // and so get the same answer however they are reached. Keeping the
-  // scene root's lets the per-frame auto-clip pass answer without
-  // walking the scene; keeping the object root's lets a pick cull it.
-  if (table->rooted.count(std::string_view(obj)))
-    SoFCSelectionRoot::invalidateObjectChainCaches(action);
-  static FC_COIN_THREAD_LOCAL Chain chain;
-  static FC_COIN_THREAD_LOCAL std::vector<Render::ObjectRef> refs;
-  SoFCSelectionRoot::getActionObjectChain(action, chain);
-  refs.resize(chain.size());
-  for (size_t i = 0; i < chain.size(); ++i) {
-    refs[i].doc = chain[i].first;
-    refs[i].obj = chain[i].second;
-  }
-  return Render::resolveVisibility(*table->table, refs, refs.size());
+  // A key longer than the root itself answers per occurrence, and one
+  // node can be several: an object's root sits under every group and
+  // link that shows it. A cache open above this switch -- that root's
+  // own bounding box, which is what culls a pick -- would be reused
+  // through the other occurrences with this one's answer. So none is
+  // kept inside the root the longest key starts at, the same span
+  // checkSecondaryCache() spoils for a tail context. The caches outside
+  // it stay: every other object's, and that root's own and those ABOVE
+  // it, which hold the whole chain in their subtree and so get the same
+  // answer however they are reached. A one-node key -- a bare entry --
+  // spoils nothing: its answer is the root's own, wherever it is.
+  const size_t longest = it->second.front().key.size();
+  if (longest > 1)
+    SoFCSelectionRoot::invalidateKeyCaches(action, longest);
+  static FC_COIN_THREAD_LOCAL std::vector<uint32_t> ids;
+  SoFCSelectionRoot::getActionRootIds(action, ids);
+  return table->resolve(ids.data(), ids.size());
 }
 
 // vim: noai:ts=2:sw=2

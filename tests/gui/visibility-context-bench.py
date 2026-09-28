@@ -6,17 +6,20 @@ per-view contexts are built: a view's hide of ONE occurrence of an object
 through a Link) can be carried two ways, and they cost the per-view
 traversals differently.
 
-  path   what is built today: an entry in the view's visibility table
+  path   an entry in the view's visibility table
          (view.setObjectVisibility(top, False, subname)), read through
-         SoFCVisibilityElement by the object's switch, which resolves
-         the object chain of the traversal against the table.
+         SoFCVisibilityElement by the object's switch. Until 5.23 it
+         resolved the traversal's object chain against the table; since,
+         it is a NODE key -- the selection roots of the occurrence's
+         path -- matched by tail against the traversal's stack of roots,
+         the tail arm's rule, held by the view instead of the node.
   bare   a BARE entry in the view's table (PerViewVisibilities on,
          view.setObjectVisibility(box, False)): the object wherever it
-         appears in the view, matched by NAME in SoFCVisibilityElement.
-         Chain-independent, so it keeps the caches above the switch
-         (they record only the element read). It hides every occurrence,
-         as the tail arm does here, and is what a one-node tail key
-         [box root] would replace (docs/CoinRetirement.md 5.20).
+         appears in the view. Matched by NAME until 5.23, now the one-node
+         key [box root] (docs/CoinRetirement.md 5.20, 5.23). Chain-
+         independent, so it keeps the caches above the switch (they
+         record only the element read). It hides every occurrence, as
+         the tail arm does here.
   tail   the secondary selection context: SoSelectionElementAction Hide
          on the occurrence's path (ViewProvider.partialRender with the
          hidden marker) stores a hideAll context in the hidden node's

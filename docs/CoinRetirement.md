@@ -3033,6 +3033,87 @@ and dropped it). After: 588/588, both LinkChildrenDirect modes. With the
 container shape volumes: 8 FAIL before the App side, 2 more for the Link's
 own hide; after, 624/624.
 
+### 5.23 Per-view entries are node keys (2026-09-28)
+
+Step 4 of the served edit root plan, the per-view half (user rulings:
+path entry = OCCURRENCE key, bare entry = one-node key, storage B, the
+host resolves the draws). 5.18 matched a view's entries by OBJECT NAME:
+the chain of objects a traversal passes through, with an ordered
+subsequence rule so a subname could elide a Link's target. That chain is
+not the scene: which object a Link snapshot "is" was my own `setNodeOrigin`
+naming (5.9), and a bare name reached a Link to the object that the Link's
+own Visibility does not. The entries are now what the selection contexts
+of `contextMap2` are: keys of selection root NODES, matched by tail.
+
+**The key.** A path entry ("Asm.Box2.") is the selection roots of
+`getDetailPath(subname, append = true)` from the top-level object's real
+root -- `[Asm root, Box2 root]` -- so its first node is at the top of the
+scene and it names ONE occurrence: Link2 -> Asm reaches Box2 through
+Link2's own root and does not match. A bare entry is the object's own root
+alone: every occurrence that draws that root (inside a container a Link
+shows, since the Link shares the container's children -- 5.21), and not a
+Link to the object itself, which replaces the root with its own. The edit
+session's transient hide is the edited occurrence's path entry. Ids are
+never reused, so a key naming a deleted node matches nothing.
+
+**Storage B: the view owns the keys.** `ViewVisibility` resolves its
+entries (`VisibilityEntry`: document, top object, subname, rooted,
+visible -- names, since the scene under them changes) into
+`SoFCVisibilityElement::Table`, keyed by the root each entry ENDS at, the
+lists longest key first. `contextMap2` stays document-level (the colour
+dialog, `partialRender`); no shared node is touched when a view's table
+changes, which would recapture and republish for everyone.
+
+**One matcher.** `Table::resolve(ids, len)`: a key matches when it is a
+tail of the chain of roots, the longest match decides -- `getNodeContext2`'s
+rule. Two callers:
+- **Coin** (`SoFCVisibilityElement::check`, at the object's own switch):
+  the chain is the action's stack of roots (`getActionRootIds`). The quick
+  reject is a process-wide count of END root ids (was object names). Caches
+  are spoiled only inside the root the longest key starts at
+  (`invalidateKeyCaches`, `checkSecondaryCache`'s span); a one-node key
+  spoils nothing. `5124c6cc87`'s `invalidateObjectChainCaches` is gone, its
+  test stands.
+- **The host, per draw** (`ViewVisibility::drawSet`): each draw's key is a
+  chain of the same root ids (`NodeKey::getNodeIds`, recorded once per key
+  as `Render::ObjectInfo::nodes`); `Table::resolveDraw` asks `resolve` at
+  every root on it that an entry ends at -- hidden if any prefix resolves
+  hidden, shown if any resolves shown. The answer is a
+  `Render::VisibilitySet` (objectKey -> Hidden/Shown), resolved over the
+  object info of the render-cache manager that feeds the backend (a canvas
+  cell's over the feeder's), again only when that map or the table
+  changed. The backend only looks draws up: `VisibilityOverrideTable`,
+  `resolveVisibility`, `resolveChainVisibility` and the backend's per
+  sub-view resolve cache are gone.
+
+**Served.** A client is told its SET (`{"cmd":"visibility","hidden":[..],
+"shown":[..]}`, objectKeys in hex), re-told by a publish that changed it,
+before the scene goes out. The WASM viewer draws, picks and frames by a
+lookup. SceneDump v82 drops the object chain v80 added (the per-view-shown
+flag stays); a v80/v81 chain is read and discarded.
+
+**Keys follow the scene.** Resolved when set, and again after a STRUCTURE
+change -- an object added or removed, any link property changed (a group's
+members, a link's target), a document restored -- once the event loop is
+back, since the view providers rebuild their nodes on the same signals; a
+holder whose keys changed is told. Not per recompute: a recompute moves no
+node.
+
+**Verified.** Before-state first: `per-view-visibility.py` with the bare
+claim ruled (Q2: a Link to the object is NOT affected) failed on HEAD in
+exactly those two checks, the pick and the frame. After, green across the
+set: per-view-visibility (with a new save/reopen check: the saved path
+entry applies to the reopened scene), edit-hide 25, sketch-edit-hide A-C,
+serve-client-visibility 16, per-view-shown-eviction 5, pick-cull 4,
+element-color-hide 624, serve-mirror-edit 22 (the push now carries keys),
+sketch-edit-root 14, serve-shared-edit 29, and in a real browser
+serve-client-visibility-browser 17 on the rebuilt v82 viewer.
+
+- **Found on the way, not fixed here:** after a save and reopen, nothing
+  inside an App::Part -- nor inside a Link to it -- picks in mode 3, though
+  all of it draws; a top-level box picks. It happens with no visibility
+  entry at all, so the reopen check judges by the frame.
+
 ## 5. Evaluated and not taken: one capture root to catch everything
 
 Stage 1b left an obvious-looking follow-on: if what Coin still draws is

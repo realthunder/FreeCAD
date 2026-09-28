@@ -935,6 +935,12 @@ SoFCRenderCacheManager::refreshExternalFeed()
   PRIVATE(this)->renderer->refreshExternalFeed();
 }
 
+const std::unordered_map<uint64_t, Render::ObjectInfo> &
+SoFCRenderCacheManager::getObjectInfo(uint64_t &serial) const
+{
+  return PRIVATE(this)->renderer->getObjectInfo(serial);
+}
+
 void
 SoFCRenderCacheManager::setExternalOverlay(Render::Renderer *renderer,
                                            int id,

@@ -69,7 +69,7 @@ class Placement;
 
 namespace Render {
 class Renderer;
-struct VisibilityOverride;
+struct VisibilitySet;
 }
 
 namespace App {
@@ -77,6 +77,8 @@ class DocumentObject;
 }
 
 namespace Gui {
+
+struct VisibilityEntry;
 
 class Document;
 class ViewProvider;
@@ -281,7 +283,7 @@ private:
     bool restore {false};
     ViewerContext* holder {nullptr};
     unsigned held {0};
-    std::unique_ptr<Render::VisibilityOverride> editHide;
+    std::unique_ptr<VisibilityEntry> editHide;
 };
 
 /** What an edit mode is allowed to ask of the view it is running in.
@@ -525,7 +527,7 @@ public:
      * table to put it in -- no render-cache manager, modes 0-2 -- which is
      * what the base answers.
      */
-    virtual bool setEditHide(const Render::VisibilityOverride* hide);
+    virtual bool setEditHide(const VisibilityEntry* hide);
     void setEditingTransform(const Base::Matrix4D& mat);
     /** The root this view shows the edit through.
      *

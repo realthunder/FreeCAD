@@ -426,6 +426,9 @@ public:
      * handler and the pick handler both marshal.
      */
     std::map<uint64_t, std::unique_ptr<MirrorViewer>> mirrors;
+    /// The version of each client's visibility set it was last told
+    /// (announceVisibility), so a publish that changed it re-tells it.
+    std::map<uint64_t, uint32_t> visibilityTold;
 
     /** This connection's mirror viewer, built on first contact.
      *
@@ -1733,6 +1736,7 @@ void SceneServeSource::installHandlers()
                 self->pimpl->clientSelections.erase(client);
                 self->pimpl->selectionDirty.erase(client);
                 self->pimpl->mirrors.erase(client);
+                self->pimpl->visibilityTold.erase(client);
             }
         }, Qt::QueuedConnection);
     }, docName);
@@ -1781,32 +1785,27 @@ void SceneServeSource::announceVisibility(uint64_t client)
     MirrorViewer *mirror = pimpl->mirrorFor(client);
     if (!mirror)
         return;
-    // {"v": shows, "r": rooted, "p": [doc, obj, doc, obj, ...]} -- the
-    // chain flat, since the viewer reads it with a string scanner.
-    std::string json = "{\"cmd\":\"visibility\",\"doc\":";
-    jsonQuoted(json, pimpl->groupName);
-    json += ",\"entries\":[";
-    if (const Render::VisibilityOverrideTable *table = mirror->objectVisibilities()) {
-        bool first = true;
-        for (const auto &ov : table->entries) {
-            if (!first)
-                json += ',';
-            first = false;
-            json += ov.visible ? "{\"v\":1" : "{\"v\":0";
-            json += ov.rooted ? ",\"r\":1,\"p\":[" : ",\"r\":0,\"p\":[";
-            bool firstRef = true;
-            for (const auto &ref : ov.path) {
-                if (!firstRef)
-                    json += ',';
-                firstRef = false;
-                jsonQuoted(json, ref.doc);
-                json += ',';
-                jsonQuoted(json, ref.obj);
-            }
-            json += "]}";
+    // The client's table as the host resolved it per draw of the served
+    // scene (docs/CoinRetirement.md 5.23): the objectKeys it hides, and
+    // those it shows. Hex strings, since a JSON number cannot carry 64
+    // bits, and the viewer reads them with a string scanner.
+    const Render::VisibilitySet *set = mirror->objectVisibilities();
+    pimpl->visibilityTold[client] = set ? set->version : 0;
+    std::string hidden, shown;
+    if (set) {
+        char buf[24];
+        for (const auto &item : set->keys) {
+            std::snprintf(buf, sizeof(buf), "\"%016llx\"",
+                          static_cast<unsigned long long>(item.first));
+            if (item.second & Render::VisibilitySet::Hidden)
+                (hidden.empty() ? hidden : hidden += ',') += buf;
+            if (item.second & Render::VisibilitySet::Shown)
+                (shown.empty() ? shown : shown += ',') += buf;
         }
     }
-    json += "]}";
+    std::string json = "{\"cmd\":\"visibility\",\"doc\":";
+    jsonQuoted(json, pimpl->groupName);
+    json += ",\"hidden\":[" + hidden + "],\"shown\":[" + shown + "]}";
     Render::SceneStreamServer::instance().sendControl(client, json);
 }
 
@@ -2213,6 +2212,17 @@ bool SceneServeSource::publishNow()
     SbViewportRegion viewport{short(kDefaultWidth), short(kDefaultHeight)};
     manager->traverse(pimpl->root, viewport);
     pimpl->feedEditOverlay(viewport);
+
+    // Each client's visibility answers per draw, and the draws may have
+    // just changed: a client whose answer did is told before the scene
+    // it describes goes out.
+    for (const auto &entry : pimpl->mirrors) {
+        const Render::VisibilitySet *set = entry.second->objectVisibilities();
+        const uint32_t version = set ? set->version : 0;
+        auto told = pimpl->visibilityTold.find(entry.first);
+        if (told != pimpl->visibilityTold.end() && told->second != version)
+            announceVisibility(entry.first);
+    }
 
     float viewMatrix[16];
     float projMatrix[16];

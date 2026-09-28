@@ -23,6 +23,7 @@
 #ifndef GUI_VIEWVISIBILITY_H
 #define GUI_VIEWVISIBILITY_H
 
+#include <functional>
 #include <map>
 #include <set>
 #include <string>
@@ -34,6 +35,8 @@
 #include "Inventor/SoFCVisibilityElement.h"
 #include "Renderer/Renderer.h"
 
+class SoFCRenderCacheManager;
+
 namespace App {
 class Document;
 class DocumentObject;
@@ -41,61 +44,105 @@ class DocumentObject;
 
 namespace Gui {
 
-/** One view's own object visibility (docs/CoinRetirement.md 5.18).
+/// One visibility entry as a view states it, before it is resolved
+/// against the scene: a BARE entry is \c obj wherever its own root is
+/// drawn; a PATH entry (\c rooted) is the one occurrence \c subname
+/// names under the top-level object \c obj. Names, not nodes, because
+/// the scene an entry resolves to changes under it -- an object moved
+/// into a group, a link relinked -- and the view's map outlives that.
+struct VisibilityEntry {
+    std::string doc;        ///< document internal name of \c obj
+    std::string obj;        ///< object internal name
+    std::string subname;    ///< from \c obj, dot terminated; empty when bare
+    bool rooted = true;
+    bool visible = false;
+};
+
+/** One view's own object visibility (docs/CoinRetirement.md 5.18, 5.23).
  *
- * The parsed table the backend resolves draws against, the same table
- * as SoFCVisibilityElement carries it for the Coin traversals, and the
- * objects the table makes this view count: every object its entries END
- * at (SoFCVisibilityElement::countOverride -- the only switches that read
- * the element, in any view) and every object it SHOWS (SoFCSwitch::
- * setPerViewShown and a forced ViewProvider update, so a hidden one is
- * tessellated and captured). Held by a desktop view (View3DInventorViewer)
- * and by a served client's view (MirrorViewer) alike; the counts are
- * released when the table drops them and with the holder.
+ * The entries resolved into NODE keys (SoFCVisibilityElement::Entry):
+ * a path entry into the selection roots of the occurrence's node path
+ * (ViewProvider::getDetailPath with append, from the top-level object),
+ * a bare one into the object's own root. That one table is what the
+ * view's Coin traversals read (the element) and what the draws are
+ * resolved against (drawSet(), the per-objectKey answer the backend
+ * filters by), with one matcher, so the two cannot disagree. Held by a
+ * desktop view (View3DInventorViewer) and by a served client's view
+ * (MirrorViewer) alike.
+ *
+ * The table also makes this view count, in the process-wide sets every
+ * view shares: every root an entry ENDS at (SoFCVisibilityElement::
+ * countOverride -- the only switches that read the element, in any
+ * view) and every object it SHOWS (SoFCSwitch::setPerViewShown and a
+ * forced ViewProvider update, so a hidden one is tessellated and
+ * captured). Released when the table drops them and with the holder.
  *
  * Two sources feed the one table. The PERSISTED entries are the view's
  * own map (set()); the TRANSIENT ones are what an edit session hides in
  * this view while it runs (setTransient(): the occurrence being edited,
  * whose geometry the session draws itself). The transient entries come
- * first, so an edit hide beats a persisted show of the same path
- * (Render::resolveVisibility takes the first rooted match). They are
- * never written anywhere: a save during the edit sees only the map.
+ * first, so an edit hide beats a persisted show of the same path. They
+ * are never written anywhere: a save during the edit sees only the map.
+ *
+ * Node keys follow the scene, not the names: after a change to the
+ * document's STRUCTURE -- an object added or removed, a link property
+ * changed (a group's members, a link's target) -- every table with
+ * entries is resolved again once the event loop is back, and a holder
+ * whose keys changed is told (setOnChanged()). Not per recompute: a
+ * recompute moves no node.
  */
 class GuiExport ViewVisibility
 {
 public:
-    ViewVisibility() = default;
+    ViewVisibility();
     ~ViewVisibility();
     ViewVisibility(const ViewVisibility &) = delete;
     ViewVisibility &operator=(const ViewVisibility &) = delete;
 
-    /// Replace the persisted entries. False when nothing changed (no
-    /// entries before or after); otherwise the holder has to tell
-    /// whatever caches what it answered -- its selection root, its
-    /// backend.
-    bool set(Render::VisibilityOverrideTable &&table);
+    /// Replace the persisted entries. False when the table came out the
+    /// same; otherwise the holder has to tell whatever caches what it
+    /// answered -- its selection root, its backend.
+    bool set(std::vector<VisibilityEntry> &&entries);
     /// Replace the transient entries; false as set().
-    bool setTransient(std::vector<Render::VisibilityOverride> &&entries);
+    bool setTransient(std::vector<VisibilityEntry> &&entries);
     /// Drop both sources and release every count.
     void clear();
 
-    /// The table, or null when it has no entries.
-    const Render::VisibilityOverrideTable *table() const;
-    /// The table as SoFCVisibilityElement carries it, or null.
+    /// Called when a deferred resolution -- after a structure change --
+    /// changed the table, with the same duty as a true from set().
+    void setOnChanged(std::function<void()> callback);
+
+    /// The table as SoFCVisibilityElement carries it, or null when it has
+    /// no entries.
     const SoFCVisibilityElement::Table *elementTable() const;
 
-private:
-    /// Rebuild the table from both sources and recount; false when it
-    /// was empty and still is.
-    bool rebuild();
+    /// The table's answer per draw of the scene \a feed captures -- the
+    /// render-cache manager feeding the backend the set is for -- or null
+    /// when the table has no entries. Resolved again when the table or
+    /// the feed's draw identities changed since the last call; the set's
+    /// version moves only when its content does.
+    const Render::VisibilitySet *drawSet(SoFCRenderCacheManager *feed);
 
-    std::vector<Render::VisibilityOverride> persisted;
-    std::vector<Render::VisibilityOverride> transient;
-    Render::VisibilityOverrideTable entries;
-    uint32_t serial = 0;
+private:
+    /// Resolve both sources and recount; false when the table came out
+    /// the same.
+    bool rebuild();
+    static void scheduleResolve();
+
+    std::vector<VisibilityEntry> persisted;
+    std::vector<VisibilityEntry> transient;
+    /// The resolved entries in source order, what rebuild() compares.
+    std::vector<SoFCVisibilityElement::Entry> resolved;
     SoFCVisibilityElement::Table element;
+    uint32_t serial = 0;
+    std::set<uint32_t> overridden;
     std::set<std::pair<std::string, std::string>> shown;
-    std::set<std::pair<std::string, std::string>> overridden;
+    std::function<void()> onChanged;
+
+    Render::VisibilitySet draws;
+    const SoFCRenderCacheManager *drawFeed = nullptr;
+    uint64_t drawInfoSerial = 0;
+    uint32_t drawTableVersion = 0;
 };
 
 /// Resolve one per-view override KEY -- the form ObjectDisplayModes and
@@ -118,10 +165,10 @@ GuiExport bool resolveObjectPath(App::DocumentObject *root,
                                  const char *subname,
                                  std::vector<Render::ObjectRef> &path);
 
-/// Parse an ObjectVisibilities map ("1" shown, "0" hidden) into a
-/// visibility table. Bare entries count only while \a perView
-/// (PerViewVisibilities) is on; path entries always count.
-GuiExport Render::VisibilityOverrideTable parseObjectVisibilities(
+/// Parse an ObjectVisibilities map ("1" shown, "0" hidden) into entries.
+/// Bare entries count only while \a perView (PerViewVisibilities) is
+/// on; path entries always count.
+GuiExport std::vector<VisibilityEntry> parseObjectVisibilities(
         const std::map<std::string, std::string> &values,
         App::Document *doc,
         bool perView);

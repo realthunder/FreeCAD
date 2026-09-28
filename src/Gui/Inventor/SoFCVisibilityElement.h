@@ -23,10 +23,9 @@
 #ifndef FC_SOFCVISIBILITYELEMENT_H
 #define FC_SOFCVISIBILITYELEMENT_H
 
+#include <cstddef>
 #include <cstdint>
-#include <string_view>
-#include <unordered_set>
-#include <utility>
+#include <unordered_map>
 #include <vector>
 
 #include <FCGlobal.h>
@@ -36,18 +35,15 @@
 class SoAction;
 class SoNode;
 
-namespace Render {
-struct VisibilityOverrideTable;
-}
-
 /** A view's own object visibility, in traversal state.
  *
- * Mirrors the view's ObjectVisibilities map (View3DInventor): set by
- * the view's SoFCUnifiedSelection for the traversals that must answer
- * per view -- GL render, bounding box, pick and event handling -- and
- * read by SoFCSwitch, which is how an object hidden in one view drops
- * out of that view's picking and fit-all while every other view keeps
- * it.
+ * Mirrors the view's ObjectVisibilities map (View3DInventor) and the
+ * hide of an edit session, resolved into NODE keys
+ * (docs/CoinRetirement.md 5.23): set by the view's SoFCUnifiedSelection
+ * for the traversals that must answer per view -- GL render, bounding
+ * box, pick and event handling -- and read by SoFCSwitch, which is how
+ * an object hidden in one view drops out of that view's picking and
+ * fit-all while every other view keeps it.
  *
  * NOT enabled for SoCallbackAction, deliberately. That is the mode-3
  * scene capture, which one traversal shares between every view (and
@@ -64,20 +60,48 @@ class GuiExport SoFCVisibilityElement : public SoElement {
   SO_ELEMENT_HEADER(SoFCVisibilityElement);
 
 public:
-  /// What the element carries: the view's parsed table plus a quick
-  /// reject set, owned by the viewer and kept alive while set.
+  /// One entry: a node key and what it says.
+  struct Entry {
+    /// The ids (SoFCSelectionRoot::getSelNodeId) of the selection roots
+    /// on the occurrence's node path, outermost first, ending at the
+    /// object's own root. A path entry's key is the roots of
+    /// getDetailPath(subname, append) from the top-level object, so its
+    /// first node is at the top of the scene; a bare entry's is the
+    /// object's root alone. An id is never reused, so a key naming a
+    /// deleted node matches nothing, ever.
+    std::vector<uint32_t> key;
+    /// 0 hidden, 1 shown.
+    int8_t visibility = 0;
+  };
+
+  /// What the element carries, owned by the viewer and kept alive while
+  /// set: the entries by the root they END at, which is also the quick
+  /// reject -- no other root can be answered for.
   struct Table {
-    const Render::VisibilityOverrideTable *table = nullptr;
-    /// Internal names of the objects the entries END at -- the only
-    /// objects a lookup can answer for -- viewing the table's strings.
-    std::unordered_set<std::string_view> leaves;
-    /// Those of them a ROOTED (path) entry ends at: the answer for such
-    /// an object depends on the chain it is reached through.
-    std::unordered_set<std::string_view> rooted;
+    /// Each list longest key first, entries of equal length in the
+    /// order the view gave them (an edit's hide ahead of the persisted
+    /// map).
+    std::unordered_map<uint32_t, std::vector<Entry>> byEnd;
     uint32_t version = 0;
 
-    /// Rebuild \c leaves from \c table and take its version.
-    void update(const Render::VisibilityOverrideTable *t);
+    bool empty() const { return byEnd.empty(); }
+
+    /// THE matcher, the one rule of contextMap2 (SoFCSelectionRoot::
+    /// getNodeContext2): a key matches when it is a TAIL of the chain
+    /// of roots \a ids[0 .. \a len - 1], and the longest key that
+    /// matches decides. 1 shown, 0 hidden, -1 no entry, for the object
+    /// whose root is ids[len - 1]. What a traversal asks at an object's
+    /// switch, and what the host asks per draw (resolveDraw) -- so the
+    /// Coin side and what the backend draws cannot disagree.
+    int resolve(const uint32_t *ids, size_t len) const;
+
+    /// A draw's flags (Render::VisibilitySet) from the ids of its key
+    /// (Render::ObjectInfo::nodes): hidden when the chain up to some
+    /// root on it resolves hidden -- the object's own or a container's,
+    /// as a traversal stops at the first hidden switch -- and shown when
+    /// some root resolves shown, which is what admits a draw captured
+    /// only because some view shows its object.
+    uint8_t resolveDraw(const std::vector<uint32_t> &ids) const;
   };
 
   static void initClass(void);
@@ -98,25 +122,22 @@ public:
   /// is traversing: 1 shown, 0 hidden, -1 no entry (the switch follows
   /// its own whichChild). Only the object's OWN switch -- a direct
   /// child of the innermost SoFCSelectionRoot -- is answered for;
-  /// switches inside a ViewProvider keep their own logic.
+  /// switches inside a ViewProvider keep their own logic. The chain is
+  /// the action's stack of roots, matched by Table::resolve.
   ///
   /// The element is READ, and so becomes a dependency of every cache
-  /// open above the switch, only for an object some view's table has an
-  /// entry ending at (countOverride). Any other object answers -1 in
-  /// every view, and the caches above it -- shared by all the views of
-  /// the document -- stay valid whichever view built them.
+  /// open above the switch, only for a root some view's table has an
+  /// entry ending at (countOverride). Any other root answers -1 in every
+  /// view, and the caches above it -- shared by all the views of the
+  /// document -- stay valid whichever view built them.
   static int check(SoAction *action, const SoNode *node);
 
-  /// Count the object \a doc#\a obj in (\a add) or out of the objects
+  /// Count the selection root \a id in (\a add) or out of the roots
   /// that entries of any view's table end at. Returns whether it entered
-  /// or left that set, in which case the caller must touch the object's
+  /// or left that set, in which case the caller must touch the root's
   /// switch: the caches above it were built without reading the element,
   /// or will now stop reading it.
-  static bool countOverride(const char *doc, const char *obj, bool add);
-
-  /// An object chain, outermost first, as {document, object} internal
-  /// names.
-  typedef std::vector<std::pair<const char *, const char *>> Chain;
+  static bool countOverride(uint32_t id, bool add);
 
 private:
   const Table *table = nullptr;

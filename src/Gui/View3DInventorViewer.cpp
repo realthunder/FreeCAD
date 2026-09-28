@@ -1592,6 +1592,10 @@ void View3DInventorViewer::init()
 {
     _pimpl.reset(new Private(this));
 
+    // This view's visibility entries resolved again after a change to the
+    // document's structure moved the nodes they name.
+    _pimpl->visibility.setOnChanged([this] { onVisibilityChanged(); });
+
     // A redraw held back by the throttle comes back through this timer, so a
     // scene that stops changing still gets its last frame.
     _pimpl->throttleTimer.setSingleShot(true);
@@ -2918,20 +2922,19 @@ void View3DInventorViewer::setObjectStyleOverrides(
         Application::Instance->signalViewModeChanged(_pimpl->view);
 }
 
-void View3DInventorViewer::setObjectVisibilities(
-        Render::VisibilityOverrideTable &&table)
+void View3DInventorViewer::setObjectVisibilities(std::vector<VisibilityEntry> &&entries)
 {
-    if (_pimpl->visibility.set(std::move(table)))
+    if (_pimpl->visibility.set(std::move(entries)))
         onVisibilityChanged();
 }
 
-bool View3DInventorViewer::setEditHide(const Render::VisibilityOverride *hide)
+bool View3DInventorViewer::setEditHide(const VisibilityEntry *hide)
 {
     // The table is read only where the render-cache manager is (mode 3);
     // modes 0-2 have no per-view visibility at all.
     if (!getRenderCacheManager())
         return false;
-    std::vector<Render::VisibilityOverride> entries;
+    std::vector<VisibilityEntry> entries;
     if (hide)
         entries.push_back(*hide);
     if (_pimpl->visibility.setTransient(std::move(entries)))
@@ -2963,10 +2966,10 @@ View3DInventorViewer::visibilityElementTable() const
     return _pimpl->visibility.elementTable();
 }
 
-const Render::VisibilityOverrideTable *
-View3DInventorViewer::objectVisibilities() const
+const Render::VisibilitySet *
+View3DInventorViewer::objectVisibilities(SoFCRenderCacheManager *feed)
 {
-    return _pimpl->visibility.table();
+    return _pimpl->visibility.drawSet(feed ? feed : getRenderCacheManager());
 }
 
 const Render::StyleOverrideTable *

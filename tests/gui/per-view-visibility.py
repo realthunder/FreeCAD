@@ -9,8 +9,11 @@ frames).
 
 Claims:
   - a bare entry counts only while PerViewVisibilities is on;
-  - a bare hide takes the object out wherever it appears in that view,
-    a Link to it included;
+  - a bare hide is a one-node key, the object's own root: it takes the
+    object out wherever that root is drawn -- inside a container a Link
+    shows, both occurrences -- but NOT a Link to the object itself,
+    which replaces that root with its own (docs/CoinRetirement.md 5.20,
+    5.23; the Link's own Visibility does not reach it either);
   - a path entry hides ONE occurrence (the Link, a child inside an
     App::Part) and counts with PerViewVisibilities off;
   - ONE occurrence even where two share a node: Link2 shows the Part,
@@ -189,12 +192,12 @@ def run():
         check("bare hide is inert while PerViewVisibilities is off",
               s["box1"] == base1["box1"], s)
 
-        # 2. Switch on: Box1 goes, and so does the Link showing it.
+        # 2. Switch on: Box1 goes; the Link to it has a root of its own.
         v1.PerViewVisibilities = True
         settle()
         s = state_of(v1)
         check("bare hide: Box1 no longer picked in the view", s["box1"] is None, s)
-        check("bare hide: the Link to Box1 is gone too", s["link"] is None, s)
+        check("bare hide: the Link to Box1 stays", s["link"] == base1["link"], s)
         check("bare hide: Box2 still picked", s["box2"] == base1["box2"], s)
         check("the other view still picks Box1 and the Link",
               state_of(v2) == base2, state_of(v2))
@@ -204,6 +207,17 @@ def run():
         settle()
         s = state_of(v1)
         check("clearing the entry brings Box1 back", s["box1"] == base1["box1"], s)
+        # Box2's own root is under Asm and, shared, under Link2's copy of
+        # Asm: a bare hide reaches both occurrences.
+        v1.setObjectVisibility(box2, False)
+        settle()
+        s = state_of(v1)
+        check("bare hide inside a linked Part: Box2 in Asm is gone",
+              s["box2"] is None, s)
+        check("bare hide inside a linked Part: Link2's Box2 is gone too",
+              s["link2"] is None, s)
+        v1.setObjectVisibility(box2, None)
+        settle()
 
         # 3. Path entries, with the switch off: one occurrence each.
         v1.PerViewVisibilities = False
@@ -296,8 +310,8 @@ def run():
         h2 = pixel(v2, p_c1, "v2-other")
         check("drawn: Box1 is gone from this view's frame", differ(p1, h1),
               (p1, h1))
-        check("drawn: the Link to Box1 is gone from this view's frame",
-              differ(pl, hl), (pl, hl))
+        check("drawn: the Link to Box1 stays in this view's frame",
+              not differ(pl, hl), (pl, hl))
         check("drawn: the other view still draws Box1", not differ(p2, h2),
               (p2, h2))
         v1.setObjectVisibility(box1, None)
@@ -361,6 +375,45 @@ def run():
         check("fit: the other view still frames the Link", inside(v2, farl))
         v1.ObjectVisibilities = {}
         v1.PerViewVisibilities = False
+        settle()
+
+        # 8. The map is saved with the document and applies again on
+        # reopen: a path entry is a node key, resolved against the scene
+        # as it is restored rather than by name at every traversal.
+        v1.setObjectVisibility(asm, False, "Box2.")
+        settle()
+        path = os.path.join(OUT, "reopen.FCStd")
+        doc.saveAs(path)
+        name = doc.Name
+        FreeCAD.closeDocument(name)
+        settle()
+        doc = FreeCAD.openDocument(path)
+        settle()
+        gdoc = FreeCADGui.getDocument(doc.Name)
+        asm = doc.getObject("Asm")
+        views = gdoc.mdiViewsOfType("Gui::View3DInventor")
+        mine = [v for v in views
+                if v.getObjectVisibility(asm, "Box2.") is False]
+        check("reopen: a view carries the saved path entry", len(mine) == 1,
+              len(views))
+        if mine:
+            v = mine[0]
+            FreeCADGui.getMainWindow().setActiveWindow(v)
+            v.viewFront()
+            v.fitAll()
+            settle()
+            p_own = FreeCAD.Vector(35, 5, 5)
+            p_other = FreeCAD.Vector(35, 5, 35)
+            p_gap = FreeCAD.Vector(20, 5, 5)
+            # Judged by the frame only: after a reopen nothing inside the
+            # Part or the Link picks at all, entry or none (a separate
+            # defect, found here 2026-09-28), so a pick proves nothing.
+            po = pixel(v, p_own, "reopen-own")
+            pl = pixel(v, p_other, "reopen-link2")
+            pg = pixel(v, p_gap, "reopen-gap")
+            check("reopen: Box2 in Asm is not drawn", not differ(po, pg),
+                  (po, pg))
+            check("reopen: Link2's Box2 is drawn", differ(pl, pg), (pl, pg))
     except Exception:
         note("ABORT:\n" + traceback.format_exc())
     finish()

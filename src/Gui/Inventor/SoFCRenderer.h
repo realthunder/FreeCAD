@@ -23,6 +23,9 @@
 #ifndef GUI_SOFCRENDERER_H
 #define GUI_SOFCRENDERER_H
 
+#include <cstdint>
+#include <unordered_map>
+
 #include "../InventorBase.h"
 #include "SoFCRenderCache.h"
 
@@ -34,6 +37,7 @@ class SoFCRendererP;
 
 namespace Render {
 class Renderer;
+struct ObjectInfo;
 struct OverlayAnchor;
 struct UserShaderConfig;
 }
@@ -113,6 +117,15 @@ public:
   /// The scene cache last given to setScene(); null before the first
   /// build. Read-only inspection (tests, external consumers).
   const Gui::CoinPtr<SoFCRenderCache> & getScene() const;
+
+  /// The identities of the draws the external backend holds, by
+  /// objectKey (Render::ObjectInfoMap: every key of the scene fed to it,
+  /// and possibly some that have left since), and in \a serial a number
+  /// that changes whenever the map does. What a view resolves its own
+  /// visibility over per draw (Gui::ViewVisibility). Empty without a
+  /// backend.
+  const std::unordered_map<uint64_t, Render::ObjectInfo> &
+  getObjectInfo(uint64_t & serial) const;
 
   /// User shader programs captured from scene SoShaderProgram nodes by
   /// the render cache manager during the last cache rebuild; mirrored to

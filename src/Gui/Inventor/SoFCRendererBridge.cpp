@@ -1494,6 +1494,10 @@ RendererBridge::translate(const SoFCRenderCache::VertexCacheMap & vcachemap,
                             continue;
                         info.path.push_back({org2->doc, org2->obj});
                     }
+                    // The key's own node ids, which a view's visibility
+                    // entries match by tail (docs/CoinRetirement.md
+                    // 5.23): the host resolves each view's set over them.
+                    ventry.key->getNodeIds(info.nodes);
                     if (addedInfo)
                         (*addedInfo)[draw.objectKey] = info;
                     (*objectInfo)[draw.objectKey] = std::move(info);

@@ -345,7 +345,12 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     after the sub-view). A served document's edit geometry left the
 //     scene for an overlay the host tags with its session, and a viewer
 //     draws only its own session's (docs/ThinClient.md 8.12 item J).
-const uint32_t kVersion = 81;
+// 82: the object chain v80 put on a scene object entry is gone again
+//     (the per-view-shown flag stays): a client no longer resolves its
+//     own visibility, the host does, per draw with its node keys, and
+//     tells it the objectKeys hidden and shown (docs/CoinRetirement.md
+//     5.23). A v80/v81 chain is read and dropped.
+const uint32_t kVersion = 82;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -2583,7 +2588,7 @@ void groupScene(const DrawCallList &scene,
 /// (that entry goes by reference), a missing provider on a delta is a
 /// format error the reader cannot detect.
 template<typename EntryPtr>
-void writeObjectSection(bool withPath, Writer &w,
+void writeObjectSection(bool withShown, Writer &w,
                         const std::vector<uint64_t> &removed,
                         const std::vector<EntryPtr> &carried,
                         const ChunkBytesFor *bytesFor = nullptr)
@@ -2601,16 +2606,10 @@ void writeObjectSection(bool withPath, Writer &w,
         w.str(e.info.obj);
         w.str(e.info.label);
         w.str(e.info.type);
-        // v80: the object chain, for a client resolving its own
-        // visibility table. Not in the 2D page form, which has none.
-        if (withPath) {
-            w.u32(uint32_t(e.info.path.size()));
-            for (const auto &ref : e.info.path) {
-                w.str(ref.doc);
-                w.str(ref.obj);
-            }
+        // v80: whether all of the object is per-view shown (its chain,
+        // v80-81, is no longer written). Not in the 2D page form.
+        if (withShown)
             w.b(e.perViewShown);
-        }
         // v55: whether this publish held part of the object back.
         w.b(e.incomplete);
         writeGroupRef(w, e);
@@ -3851,18 +3850,19 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
                 r.str(up.entry.info.label, 0x1000u);
                 r.str(up.entry.info.type, 0x1000u);
             }
-            if (version >= 80) {
+            if (version >= 80 && version < 82) {
+                // The v80-81 object chain, which nothing reads any more.
                 uint32_t npath = r.u32();
                 if (!r.ok || npath > 0x10000u)
                     r.ok = false;
+                std::string skip;
                 for (uint32_t k = 0; r.ok && k < npath; ++k) {
-                    Render::ObjectRef ref;
-                    r.str(ref.doc, 0x1000u);
-                    r.str(ref.obj, 0x1000u);
-                    up.entry.info.path.push_back(std::move(ref));
+                    r.str(skip, 0x1000u);
+                    r.str(skip, 0x1000u);
                 }
-                up.entry.perViewShown = r.b();
             }
+            if (version >= 80)
+                up.entry.perViewShown = r.b();
             if (version >= 55)
                 up.entry.incomplete = r.b();
             up.group = snap.groups.size();

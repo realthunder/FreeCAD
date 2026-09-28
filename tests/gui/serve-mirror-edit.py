@@ -307,12 +307,14 @@ def verify():
             check("mode 3: entering edit kept the view provider's children",
                   any(s[0] for s in seen)
                   and all(s[1] == before for s in seen if s[0]), seen[:40])
+            # The host resolves the table per draw and tells the objectKeys
+            # (docs/CoinRetirement.md 5.23): the sketch's draws hidden.
             told = client.edit_visibility or b""
-            check("mode 3: the client is told its table hides the edited sketch",
-                  b'"v":0' in told and ('"%s"' % OBJ).encode() in told, told[:200])
+            check("mode 3: the client is told it hides the edited sketch's draws",
+                  b'"hidden":["' in told, told[:200])
             told = client.reset_visibility or b""
-            check("mode 3: and told an empty table when the edit ends",
-                  b'"entries":[]' in told, told[:200])
+            check("mode 3: and told it hides nothing when the edit ends",
+                  b'"hidden":[]' in told, told[:200])
         else:
             check("entering edit emptied the view provider's root",
                   any(s[0] and s[1] == 0 for s in seen), seen[:40])

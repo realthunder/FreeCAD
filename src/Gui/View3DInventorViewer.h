@@ -86,7 +86,7 @@ namespace Quarter = SIM::Coin3D::Quarter;
 namespace Render {
 class Renderer;
 struct StyleOverrideTable;
-struct VisibilityOverrideTable;
+struct VisibilitySet;
 struct CaptureInterestTable;
 }
 
@@ -115,6 +115,7 @@ class SoFCSelectionAction;
 class SoFCHighlightAction;
 class SoFCPathAnnotation;
 class Document;
+struct VisibilityEntry;
 class GLGraphicsItem;
 class SoShapeScale;
 class ViewerEventFilter;
@@ -429,16 +430,16 @@ public:
     void setObjectStyleOverrides(Render::StyleOverrideTable &&table);
     /// This view's per-object visibility, parsed from View3DInventor's
     /// ObjectVisibilities property (bare entries only while its
-    /// PerViewVisibilities switch is on). Takes ownership and bumps the
-    /// table's version.
-    void setObjectVisibilities(Render::VisibilityOverrideTable &&table);
+    /// PerViewVisibilities switch is on).
+    void setObjectVisibilities(std::vector<VisibilityEntry> &&entries);
     /// An edit session's transient hide in this view, ahead of the table
     /// above; see ViewerContext::setEditHide.
-    bool setEditHide(const Render::VisibilityOverride *hide) override;
-    /// The table this view draws by -- the edit hide, then the parsed
-    /// map -- or null when it is empty. The pointer stays valid for the
-    /// viewer's lifetime.
-    const Render::VisibilityOverrideTable *objectVisibilities() const;
+    bool setEditHide(const VisibilityEntry *hide) override;
+    /// What this view draws by -- the edit hide, then the parsed map --
+    /// resolved per draw of the scene \a feed captures (this viewer's
+    /// own render-cache manager when null), or null when the table is
+    /// empty. The pointer stays valid for the viewer's lifetime.
+    const Render::VisibilitySet *objectVisibilities(SoFCRenderCacheManager *feed = nullptr);
     /// The same table as SoFCVisibilityElement carries it, or null when
     /// empty; SoFCUnifiedSelection sets it for this view's traversals.
     const SoFCVisibilityElement::Table *visibilityElementTable() const override;

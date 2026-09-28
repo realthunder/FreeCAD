@@ -487,21 +487,22 @@ public:
     /// stands in for (setNodeOrigin). False when it renders none.
     bool getRenderedObject(const char *&doc, const char *&obj) const;
 
-    /// The objects of the roots \a action is inside, outermost first,
-    /// consecutive duplicates collapsed -- the chain a per-view
-    /// override entry matches against, the same one the render cache
-    /// records as Render::ObjectInfo::path.
-    static void getActionObjectChain(
-            SoAction *action,
-            std::vector<std::pair<const char *, const char *>> &chain);
+    /// The ids (getSelNodeId) of the roots \a action is inside, outermost
+    /// first: the chain a per-view visibility key is matched against by
+    /// tail (SoFCVisibilityElement::Table::resolve), the same ids the
+    /// render cache composes a draw's key of.
+    static void getActionRootIds(SoAction *action, std::vector<uint32_t> &ids);
 
-    /// Invalidate the caches \a action opened inside the outermost root on
-    /// its stack that renders an object, and keep that root's own and every
-    /// cache open above it. A per-view path entry answers by the
-    /// object chain, which is decided within the subtree of the chain's
-    /// first object: a cache above it gets the same answer however the
-    /// node below is reached.
-    static void invalidateObjectChainCaches(SoAction *action);
+    /// Invalidate the caches \a action opened inside the root a key of
+    /// \a keyLength roots ending at the innermost one starts at, and keep
+    /// that root's own and every cache open above it -- what
+    /// checkSecondaryCache() does for a tail context, for a view's
+    /// visibility key: whether it matches is decided within that root's
+    /// subtree.
+    static void invalidateKeyCaches(SoAction *action, size_t keyLength);
+
+    /// The live selection root whose getSelNodeId() is \a id, or null.
+    static SoFCSelectionRoot *getRootById(uint32_t id);
 
     int getRenderPathCode() const;
 
@@ -625,6 +626,13 @@ protected:
             if (next)
                 next->getOriginPath(path);
         }
+
+        /// The ids the key is made of, outermost first, appended to
+        /// \a ids: selection root ids (getSelNodeId) and whatever was
+        /// forcePush'ed. What a view's visibility entries are matched
+        /// against per draw (SoFCVisibilityElement::Table), since an id
+        /// is never reused.
+        void getNodeIds(std::vector<uint32_t> &ids) const;
 
         std::size_t hash(std::size_t seed = 0) const {
             if (empty())
