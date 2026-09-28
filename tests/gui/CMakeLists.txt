@@ -216,6 +216,15 @@ fc_add_gui_test(GuiPerViewVisibility_tests_run
                 per-view-visibility.py
                 --timeout 240)
 
+# A colour-dialog hide (element colours with the hidden marker) of a
+# grandchild: an App::Part's is its content, so a Link to the Part hides it
+# too; a Link's own stays in that Link -- picked, bounded AND drawn. The
+# capture shares one cache per node between occurrences, so it keeps what
+# a hide takes out and the flatten drops the draw per its key.
+fc_add_gui_test(GuiElementColorHide_tests_run
+                element-color-hide.py
+                --timeout 240)
+
 # An edit session hides the occurrence it edits (ViewerContext::
 # hideEditedObject) in every view of the session, a view opened during
 # the edit included, as a transient path entry: picks and the backend

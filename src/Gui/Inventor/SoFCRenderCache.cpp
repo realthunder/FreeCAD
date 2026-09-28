@@ -2114,6 +2114,14 @@ SoFCRenderCacheP::mergeChildCache(SoFCRenderCache::VertexCacheMap &vcachemap,
   bool sliceable = slicesout != nullptr;
   auto it = vcachemap.end();
   const auto & childvcaches = entry.cache->getVertexCaches(canmerge, depth+1);
+  // Whole-object secondary hides (partialRender, a Part's or Link's element
+  // hide list) are dropped here, per entry, from the key composed at this
+  // level: the capture keeps what they hide (SoFCSelectionRoot::
+  // doActionPrivate), since its caches are shared by the occurrences a
+  // hide tells apart. A key matched within this cache's subtree matches
+  // wherever the subtree is reused, so each level may drop what it can
+  // tell; the top level holds the whole chain and tells the rest.
+  const bool hides = this->selnode && SoFCRenderCache::CacheKey::anyHidden();
   for (const auto & child : childvcaches) {
     bool identity = entry.identity;
     Material material = this->mergeMaterial(
@@ -2143,6 +2151,8 @@ SoFCRenderCacheP::mergeChildCache(SoFCRenderCache::VertexCacheMap &vcachemap,
           key->append(childentry.key);
         }
       }
+      if (hides && key->isHidden())
+        continue;
       SoFCSelectionContextExPtr ctx;
       if (this->selnode)
         ctx = key->getSecondaryContext(SoFCRenderCacheP::RenderCacheStack, vcache->getNode());
@@ -2375,6 +2385,9 @@ SoFCRenderCache::getVertexCaches(bool canmerge, int depth)
   PRIVATE(this)->spliceprev.reset();
   PRIVATE(this)->splicematch.clear();
 
+  // This cache's own shapes, hidden as a whole by a hide on its own root
+  // (see mergeChildCache): asked once, their key is the same.
+  int selfhidden = -1;
   if (!spliced)
   for (auto & entry : PRIVATE(this)->caches) {
     if (entry.vcache) {
@@ -2387,6 +2400,10 @@ SoFCRenderCache::getVertexCaches(bool canmerge, int depth)
             selfkey->forcePush(id);
         }
       }
+      if (selfkey && selfhidden < 0)
+        selfhidden = CacheKey::anyHidden() && selfkey->isHidden() ? 1 : 0;
+      if (selfhidden > 0)
+        continue;
       SoFCSelectionContextExPtr ctx;
       if (selfkey)
           ctx = selfkey->getSecondaryContext(

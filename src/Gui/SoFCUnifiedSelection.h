@@ -672,6 +672,16 @@ protected:
 
         SoFCSelectionContextExPtr getSecondaryContext(Stack &stack, SoNode *node);
 
+        /// Whether a whole-object secondary hide -- partialRender with the
+        /// hidden marker, a Part's or a Link's element hide list -- applies
+        /// to the chain of roots this key names: some root on it holds a
+        /// hide whose key is a tail of the chain up to that root. What the
+        /// render cache feed asks per draw, since the capture keeps what a
+        /// hide takes out (see doActionPrivate).
+        bool isHidden() const;
+        /// Whether any such hide exists anywhere: the feed's gate.
+        static bool anyHidden() { return hasHiddenContext(); }
+
         void append(const std::shared_ptr<NodeKey> &other);
 
     private:
@@ -711,6 +721,10 @@ protected:
     /// flatten asks per child entry, and the answer is no for every scene
     /// that has no element colours or partial rendering in it.
     static bool hasSecondaryContext() { return SecondaryContextCount > 0; }
+
+    /// Whether any whole-object secondary hide exists anywhere; the gate on
+    /// NodeKey::isHidden(), which is asked per draw.
+    static bool hasHiddenContext() { return HiddenContextCount > 0; }
 
     static void setActionStack(SoAction *action, Stack *stack);
     static Stack *getActionStack(SoAction *action, bool create=false);
@@ -755,6 +769,8 @@ protected:
     /// findActionContext(), which is the only place contextMap2 is added to
     /// or erased from, and by the destructor.
     static FC_COIN_COUNTER(int) SecondaryContextCount;
+    /// How many SelContexts hold a hide; kept by SelContext itself.
+    static FC_COIN_COUNTER(int) HiddenContextCount;
 
     struct SelContext: SoFCSelectionContextBase {
     public:
@@ -762,8 +778,27 @@ protected:
         SbColor hlColor;
         bool selAll = false;
         bool hlAll = false;
+        /// Read freely, written only through setHidden(), which keeps
+        /// HiddenContextCount.
         bool hideAll = false;
         static MergeFunc merge;
+
+        SelContext() = default;
+        SelContext(const SelContext &) = delete;
+        SelContext &operator=(const SelContext &) = delete;
+        ~SelContext() override {
+            if (hideAll)
+                --HiddenContextCount;
+        }
+        void setHidden(bool hide) {
+            if (hide == hideAll)
+                return;
+            hideAll = hide;
+            if (hide)
+                ++HiddenContextCount;
+            else
+                --HiddenContextCount;
+        }
 
         bool isCounted() const override {
             return selAll || hideAll;

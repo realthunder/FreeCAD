@@ -2927,6 +2927,59 @@ a one-node key on a leaf object does not reach a Link to that object (as
 its own Visibility does not), where the name match does; an object
 INSIDE a linked container is reached by both, its root being shared.
 
+### 5.21 A hide keyed per occurrence was drawn anyway (fixed 2026-09-28)
+
+Found writing the colour-dialog test (`tests/gui/element-color-hide.py`)
+for step 4. A Link's own colour-dialog hide of a grandchild
+(`Link2: "Sub.Box2.!hide"`, Link2 -> Asm -> Sub -> Box2) was honoured by
+picks and the bounding box and still DRAWN in mode 3; the Part's own hide
+of the same grandchild worked everywhere.
+
+**What a Link shares with a Part** (measured, `getDetailPath` dumps):
+- `LinkChildrenDirect` on (the default, 96e6abfaf2 / 54478c3596): the
+  Part holds its children through its own `LinkView` with type
+  `SnapshotMax`, i.e. the children's REAL roots, and a Link replaces only
+  the Part's root and switch (`LinkInfo::getSnapshot`). Everything below
+  the Part's children root -- Sub's root, its children root, Box2's root
+  -- is the same node for Asm, Link2 and any other Link to Asm.
+- Off: the original scheme. `LinkInfo::updateChildren` mirrors the
+  children as `SnapshotChild` nodes, recursively, which lets the Links
+  override them; nothing is shared with Asm, but the mirror belongs to
+  the linked object's `LinkInfo`, so every Link to Asm shares it. A
+  linked object with no child root (and not a plain group) is always
+  mirrored this way. By design a Part's own hide does not reach a mirror.
+- Element switches (`LinkView` elements of a LinkGroup, an array, an
+  Assembly3 group in `GroupMode` with `VisibilityList`) are the structural
+  per-child override: a container's OWN children. The colour dialog is
+  for what lies below them (user ruling).
+
+**Cause.** A whole-object secondary hide (`SelContext::hideAll`) took
+effect during the capture traversal, but the render cache keeps one cache
+per NODE (`SoFCRenderCacheManagerP::preSeparator`, `cachetable[node]`,
+reused while `isValid(state)`), which the hide is no dependency of. The
+first occurrence to build a shared node's cache decided for all of them.
+A Part's hide keys its content, which every occurrence matches, so it
+never showed; a Link's keys from the Link's own root. The flatten
+re-checks secondary contexts per composed key, but only ELEMENT contexts
+on the shape node.
+
+**Fix.** The render-cache capture keeps what a hide takes out
+(`keepsHidden()` in `SoFCSelectionRoot::doActionPrivate`, gated on the
+capture flag so an export still leaves it out); the flatten drops a
+hidden entry per the key composed at each level
+(`NodeKey::isHidden()`, the traversal's own tail lookup at every root of
+the chain; gated on a count of hiding contexts). A key matched inside a
+cache's subtree matches wherever the subtree is reused, so a level may
+drop what it can tell, and the top level holds the whole chain. Every
+consumer of the flattened map -- the backend feed, the render-cache GL
+modes, selection and highlight -- sees the same. Cost: an object hidden
+this way is tessellated and captured (not one whose own Visibility is
+off: `SoFCSwitch` keeps those out).
+
+Before-state, HEAD code with the new test: direct mode, Link2's hide drawn
+(3 FAIL); mirror mode, Link2's hide took Link3's Box2 out of the frame
+through the shared mirror (3 FAIL). After: 322/322 in both modes.
+
 ## 5. Evaluated and not taken: one capture root to catch everything
 
 Stage 1b left an obvious-looking follow-on: if what Coin still draws is

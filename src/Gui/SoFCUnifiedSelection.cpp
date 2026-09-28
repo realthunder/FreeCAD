@@ -103,6 +103,7 @@
 #include "Inventor/SoFCRenderCacheManager.h"
 #include "Inventor/SoFCDiffuseElement.h"
 #include "Inventor/SoFCVisibilityElement.h"
+#include "Inventor/SoFCZoomOffsetElement.h"
 #include "SoFCUnifiedSelection.h"
 #include "Application.h"
 #include "Document.h"
@@ -2243,6 +2244,7 @@ SO_NODE_SOURCE(SoFCSelectionRoot)
 static FC_COIN_COUNTER(uint32_t) SelectionRootCount;
 static FC_COIN_COUNTER(uint32_t) SelectionRootId;
 FC_COIN_COUNTER(int) SoFCSelectionRoot::SecondaryContextCount;
+FC_COIN_COUNTER(int) SoFCSelectionRoot::HiddenContextCount;
 std::unordered_map<uint32_t, SoFCSelectionRoot*> SelectionRootMap;
 FC_COIN_STATIC_MUTEX(SelectionRootMapMutex);
 #define SelectionRootMapLock(_name) FC_COIN_LOCK(_name, SelectionRootMapMutex)
@@ -2330,6 +2332,37 @@ SoFCSelectionRoot::NodeKey::getSecondaryContext(Stack &stack, SoNode *node)
     }
     stack.resize(len);
     return ctx;
+}
+
+bool SoFCSelectionRoot::NodeKey::isHidden() const
+{
+    if (!hasHiddenContext())
+        return false;
+    static FC_COIN_THREAD_LOCAL Stack chain;
+    static FC_COIN_THREAD_LOCAL Stack prefix;
+    // A key may end in an id that is no root (forcePush); convert() stops
+    // there with the roots before it in hand, which are all a hide can be
+    // held by.
+    convert(chain);
+    prefix.clear();
+    bool hidden = false;
+    for (auto node : chain) {
+        prefix.push_back(node);
+        auto root = static_cast<SoFCSelectionRoot*>(node);
+        if (root->contextMap2.empty())
+            continue;
+        // The same lookup a traversal makes at this root: its hides keyed
+        // by a tail of the chain that reaches it.
+        auto ctx = std::static_pointer_cast<SelContext>(
+                getNodeContext2(prefix, root, SelContext::merge));
+        if (ctx && ctx->hideAll) {
+            hidden = true;
+            break;
+        }
+    }
+    chain.clear();
+    prefix.clear();
+    return hidden;
 }
 
 void SoFCSelectionRoot::NodeKey::noteOrigin(SoFCSelectionRoot *node)
@@ -3345,6 +3378,21 @@ void SoFCSelectionRoot::doAction(SoAction *action) {
     endAction(action, *stack);
 }
 
+/// Whether \a action is the render cache capture, which keeps what a
+/// whole-object secondary hide takes out. Its caches are per NODE, reused
+/// through every occurrence of it -- a Link to a Part reuses the Part's
+/// children root -- while a hide answers per chain: one keyed from a Link's
+/// own root hides that occurrence and not the Part's. Taken out during the
+/// capture, whichever occurrence built the shared cache first decided for
+/// all of them, and a Link's own element hide was drawn. The feed drops a
+/// hidden draw instead, per draw from its full key (NodeKey::isHidden).
+/// Every other callback traversal -- an export -- still leaves it out.
+static bool keepsHidden(SoAction *action)
+{
+    return SoFCZoomOffsetElement::isCapturing()
+        && action->isOfType(SoCallbackAction::getClassTypeId());
+}
+
 bool SoFCSelectionRoot::doActionPrivate(Stack &stack, SoAction *action) {
     // Selection action short-circuit optimization. In case of whole object
     // selection/pre-selection, we shall store a SelContext keyed by ourself.
@@ -3370,7 +3418,7 @@ bool SoFCSelectionRoot::doActionPrivate(Stack &stack, SoAction *action) {
         {
             ctx2Searched = true;
             ctx2 = std::static_pointer_cast<SelContext>(getNodeContext2(stack,this,SelContext::merge));
-            if(ctx2 && ctx2->hideAll)
+            if(ctx2 && ctx2->hideAll && !keepsHidden(action))
                 return false;
         }
         if(!isTail)
@@ -3389,7 +3437,7 @@ bool SoFCSelectionRoot::doActionPrivate(Stack &stack, SoAction *action) {
             {
                 auto ctx = getActionContext(action,this,SelContextPtr(),false);
                 if(ctx && ctx->hideAll) {
-                    ctx->hideAll = false;
+                    ctx->setHidden(false);
                     // Give the count back, or this node spoils the caches
                     // above it on every pass from now on.
                     selCounter.recount(ctx);
@@ -3406,7 +3454,7 @@ bool SoFCSelectionRoot::doActionPrivate(Stack &stack, SoAction *action) {
                 if(action->getCurPathCode()==SoAction::BELOW_PATH || isTail) {
                     auto ctx = getActionContext(action,this,SelContextPtr());
                     if(ctx && !ctx->hideAll) {
-                        ctx->hideAll = true;
+                        ctx->setHidden(true);
                         // Counted once hidden, not before: checkAction()
                         // read the context before the change and so counted
                         // the show instead of the hide.
@@ -3486,7 +3534,7 @@ bool SoFCSelectionRoot::doActionPrivate(Stack &stack, SoAction *action) {
                 || !SoFCSwitch::testTraverseState(SoFCSwitch::TraverseOverride)))
     {
         ctx2 = std::static_pointer_cast<SelContext>(getNodeContext2(stack,this,SelContext::merge));
-        if(ctx2 && ctx2->hideAll)
+        if(ctx2 && ctx2->hideAll && !keepsHidden(action))
             return false;
     }
     return true;
