@@ -19,6 +19,7 @@ import shutil
 import sqlite3
 import tempfile
 import time
+import zipfile
 
 import FreeCAD
 
@@ -32,6 +33,9 @@ out = env.get("SCALE_OUT", "")
 # 1: every edit a value never set before, so no shape repeats and content
 # addressing cannot share one; 0: seven values in turn.
 unique = env.get("SCALE_UNIQUE", "1") == "1"
+# The schema the file is saved at: below 5 a file carries no history (sec
+# 27.56), so a schema 4 model is saved up to 5 unless asked otherwise.
+schema = int(env.get("SCALE_SCHEMA", "5"))
 
 params = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Document")
 params.SetInt("TransactionLog", 2)
@@ -57,6 +61,15 @@ def dirSize(folder):
             except OSError:
                 pass
     return total
+
+
+def historyMember(path):
+    """(bytes, bytes in the archive) of the embedded history, or (0, 0)."""
+    with zipfile.ZipFile(path) as archive:
+        for info in archive.infolist():
+            if info.filename.startswith("blobs/") and info.filename.endswith(".db"):
+                return info.file_size, info.compress_size
+    return 0, 0
 
 
 def storeStats(doc):
@@ -126,6 +139,8 @@ def storeStats(doc):
 doc, t = timed(lambda: FreeCAD.openDocument(path))
 result["open"] = t
 doc.UndoMode = 1
+if doc.SaveSchemaVersion < schema:
+    doc.SaveSchemaVersion = schema
 obj = doc.getObject(objectName)
 base = getattr(obj, propertyName)
 base = float(getattr(base, "Value", base))
@@ -147,6 +162,7 @@ for i in range(edits):
                 "edit": i + 1,
                 "save": dt,
                 "file_bytes": os.path.getsize(path),
+                "history_bytes": historyMember(path),
                 "recompute": recompute,
                 "commit": commit,
                 "drain": drain,
@@ -156,12 +172,14 @@ for i in range(edits):
         result["saves"].append(stats)
         stored = sum(e["stored"] for e in stats["entities"])
         print(
-            "SCALE edit %d: save %.2fs, file %.1f MB, store %.1f MB + wal %.1f MB (entities %.1f MB),"
-            " blobs %.1f MB, versions %d, ops %d"
+            "SCALE edit %d: save %.2fs, file %.1f MB (history %.2f MB, %.2f MB packed),"
+            " store %.1f MB + wal %.1f MB (entities %.1f MB), blobs %.1f MB, versions %d, ops %d"
             % (
                 i + 1,
                 dt,
                 stats["file_bytes"] / 1e6,
+                stats["history_bytes"][0] / 1e6,
+                stats["history_bytes"][1] / 1e6,
                 stats["db_bytes"] / 1e6,
                 stats["wal_bytes"] / 1e6,
                 stored / 1e6,
@@ -181,21 +199,31 @@ if keep:
     src.backup(dst)
     dst.close()
     src.close()
-FreeCAD.closeDocument(doc.Name)
-
-doc, t = timed(lambda: FreeCAD.openDocument(path))
-result["reopen"] = t
-_, t = timed(doc.compactFileState)
-result["compact"] = t
+# The oldest version the live log keeps; the file carries fewer (each
+# branch's newest and the named ones, sec 16.4).
 oldest = versions[0]
 v, t = timed(lambda: doc.openTransactionVersion(oldest, False))
 result["open_oldest_version"] = t
 FreeCAD.closeDocument(v.Name)
 _, t = timed(lambda: doc.restoreTransactionVersion(oldest))
 result["restore_oldest"] = t
+FreeCAD.closeDocument(doc.Name)
+
+doc, t = timed(lambda: FreeCAD.openDocument(path))
+result["reopen"] = t
+result["versions_carried"] = sorted(v["num"] for v in doc.getTransactionVersions())
+_, t = timed(doc.compactFileState)
+result["compact"] = t
 print(
-    "SCALE reopen %.2fs, compact %.3fs, open oldest version %.2fs, restore to it %.2fs"
-    % (result["reopen"], result["compact"], result["open_oldest_version"], result["restore_oldest"])
+    "SCALE open oldest version %.2fs, restore to it %.2fs; reopen %.2fs (versions %s),"
+    " compact %.3fs"
+    % (
+        result["open_oldest_version"],
+        result["restore_oldest"],
+        result["reopen"],
+        result["versions_carried"],
+        result["compact"],
+    )
 )
 FreeCAD.closeDocument(doc.Name)
 if out:

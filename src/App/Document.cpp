@@ -3825,7 +3825,9 @@ void Document::save(Base::Writer &writer, bool archive) const {
     const double tBegin = phaseSplit();
     // The embedded history (sec 16.4) is a blob like the others and has to
     // be in place before the collect pass notes what the archive carries.
-    const_cast<Document*>(this)->embedHistory(archive);
+    // Below schema 5 there is no blob store to carry it (PropertyHistory
+    // writes an empty element), so no copy is made (sec 27.56).
+    const_cast<Document*>(this)->embedHistory(archive && writer.getSchemaVersion() >= 5);
     collectFileBlobs();
     const double tCollect = phaseSplit();
 

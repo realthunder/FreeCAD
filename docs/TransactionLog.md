@@ -7138,4 +7138,57 @@ matter and keep their compatibility code (27.46).
 (-1, the deleted schema 4 case), the GUI checks RC 15, BC 27, VC 18, PC 28,
 FC 16.
 
+
+### 27.56 The history in the file, measured; a schema 4 save embeds nothing (user, 2026-09-28)
+
+**Asked (user):** when the log is saved to the file, can the database be
+compacted?
+
+**It is, since F3 (27.53):** `embed()` takes `VACUUM INTO`, applies retention
+to the copy, and vacuums it. Read back out of a saved file (30 edits, a save
+every 10), `blobs/History.db` is 2.88 MB with no free page and about 5% of
+its pages unused; the archive packs it (zstd) to 1.79 MB.
+
+**A correction to 27.52-27.54.** scanner.FCStd is a schema 4 document, and a
+document keeps its file's schema (`SaveSchemaVersion`); below schema 5 there
+is no blob store and `PropertyHistory::Save` writes an empty `<History/>`.
+So none of the scale runs' saves carried a history. The "embedded copy"
+figures there (25.3 MB in T1, 10.4 and 10.3 MB after) are of a copy each
+save made and then did not write, and "the saved file stays 5.7 MB" says
+nothing about the history. The script now saves at schema 5 unless
+`SCALE_SCHEMA` says otherwise, and reports the history member's size in the
+file.
+
+**Fixed:** a save below schema 5 made that copy anyway -- the whole store
+through `VACUUM INTO`, retention, vacuum -- at every save.
+`Document::saveToFile` now passes `archive && schema >= 5` to
+`embedHistory`, so such a save takes the no-history path (the `History`
+property emptied, as for a save without history). On scanner.FCStd at schema
+4: no copy in the blob folder (0.5 MB, was 13.5 MB) and a save of 0.72-0.81 s
+where it was about 0.97 s.
+
+**The run at schema 5** (100 edits, a save every 10):
+
+| after | file | history in it (raw / packed) | live store | save |
+| --- | --- | --- | --- | --- |
+| 10 | 8.8 MB | 5.07 / 4.57 MB | 5.2 MB | 1.14 s |
+| 20 | 7.4 MB | 2.71 / 1.76 MB | 8.6 MB | 1.00 s |
+| 60 | 7.1 MB | 3.58 / 2.08 MB | 10.3 MB | 0.97 s |
+| 100 | 7.4 MB | 4.37 / 2.32 MB | 11.5 MB | 0.98 s |
+
+At the first save the newest version is the file as found, which travels
+whole; from the second on, what travels is the ops and the newest version,
+and the history in the file grows about 7 KB an edit packed (21 KB raw). The
+live store grows 35.5 KB an edit. Reopened, the file carries versions 10 and
+11 (the newest, and the one the reopen records).
+
+**Seen, not chased:** the script now opens and restores the oldest version
+in the live session, before the reopen, since the file does not carry it --
+open 1.15 s, restore **9.03 s**, 100 edits back, and the log shows a boolean
+and a hidden-line pass during it. T1's 1.99 s was a restore after a reopen,
+so the two do not compare; whether the restore recomputes, and why, is open.
+
+**Gates.** Python 2940 OK (52 skipped, 6 expected failures), ctest 842/842,
+the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16.
+
 **Next.** 27.50 steps 1-4, the shared string table.
