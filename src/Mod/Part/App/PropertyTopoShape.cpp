@@ -970,6 +970,13 @@ void PropertyPartShape::validateShape(App::DocumentObject *obj)
     // neither fixed nor allowed to flag the owner invalid.
     if (Feature::isBaseShapeVersion(this))
         return;
+    // An undo, a redo or an abort puts back a value the document had, checked
+    // when it was made, and InvalidShape comes back with it in the same
+    // transaction. Checking again is a full BRepCheck -- 16 s for one polar
+    // pattern (docs/TransactionLog.md sec 27.64) -- and a fix() would make
+    // the value put back other than the one recorded.
+    if (obj->getDocument()->isPerformingTransaction())
+        return;
     if (auto feat = Base::freecad_dynamic_cast<Part::Feature>(obj)) {
         if (_Shape.isNull()) {
             feat->InvalidShape.setValue(false);
