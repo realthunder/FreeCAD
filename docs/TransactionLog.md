@@ -7846,5 +7846,55 @@ is cleared, stay, and a restore to the version before has its element map),
 **Gates.** Python 2947 OK (52 skipped, 6 expected failures; +3), ctest
 845/845 (+1), the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16.
 
-**Next:** open. The steps of 27.50 are built; 27.52's T4 (the long run) and
-T5 (the Gui) are the scale plan's rest.
+**Next:** 27.66.
+
+### 27.66 T4 and T5 of 27.52, with real modeling: plan (user, 2026-09-28)
+
+**Asked (user):** elaborate T4 and T5; then: editing `Pad.Length` creates no
+new element names, so model instead.
+
+**What the probes found on scanner.FCStd.**
+- The bearing (`Body002`, label "Bearing", in `Part007`) has a property
+  group `Config` -- `Config_OD`, `Config_ID`, `Config_WT`, `Config_Gap`,
+  `Config_Height` -- flagged copy-on-change, which its sketch and pads read.
+  No table drives them (the user remembered one; it is the same effect). A
+  copy-on-change `App::Link` to it with its own values gets a private copy
+  of the body (`Link005` -> `Body006`, "Bearing002", is one in the file).
+  Scripted, `LinkCopyOnChange = "Owned"`: 0.1 s, 15 objects, 37 new strings;
+  deleting the link takes the 15 objects with it.
+- Editing an instance's dimensions mints no names (the same topology): the
+  churn comes from making instances, not from editing them.
+- The only configuration table in the file is the Spreadsheet's rows 8-14
+  driving `Body007.Configuration` -- a more complex model the user has not
+  tried configurations on, and not the one meant. `Body007` does not finish
+  a recompute here: `Helix001` fails with `Sub shape not found:
+  s#Helix.?Face24` and `Pocket034` with "Null shape" behind it.
+- `SubShapeBinder` copy-on-change (to `Prism001`, `Body004`) goes through
+  temporary documents (user); a scripted change of `Configurations_Length`
+  on an `Enabled` binder made no copy in the first probe. **Left for a later
+  session (user).**
+
+**T4, links only first (ruling, user).** A script of its own (the modeling
+differs from `transaction-log-scale.py`'s one property), about 1000 steps,
+each a transaction and a recompute, fixed seed:
+- add a bearing instance: a copy-on-change link, `Owned`, dimensions never
+  used before;
+- edit an instance's dimensions (no new names, new geometry);
+- delete an instance (strings nothing holds, for the save's compaction);
+- a save every 10 steps; branch `side` at step 50, a switch every 50; a trim
+  of the current branch every 200;
+- at the end: open the oldest version, restore to it, undo that, a 20-step
+  cold undo, reopen, `compactFileState()`; every instance's element map
+  compared with what it was;
+- and a run with the log off (27.52's T2), for the recompute creep.
+
+Recorded per save as the scale script records, plus strings minted and
+dropped, `strtable`/`strref` rows and bytes, the hasher's size, objects,
+process memory, recompute time per 10 steps; per switch and trim the time
+and the store before and after. Expected finding: `compactFileState()`
+decodes every retained version's `Document.xml` for its object ids (27.47),
+which the trims start on their own.
+
+**T5 (Gui)** after T4: the same workload at 100 steps under the Gui
+(offscreen), rows split by `ckind`, `GuiDocument.xml` per version,
+main-thread commit time against FreeCADCmd, a version opened with its view.
