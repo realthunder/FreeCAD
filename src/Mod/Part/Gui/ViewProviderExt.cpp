@@ -5789,10 +5789,18 @@ void ViewProviderPartExt::updateVisual()
     // MEASURED at 25 minutes of pegged CPU on a 17058-solid document
     // against 8. It also stops a non-build being counted as one, which
     // is most of what "visual build 607" over 200 features was.
+    const unsigned fillSeq = meshLadder.visualFillSeq;
     if (shapeStillMissing()) {
         VisualTouched = true;
         return;
     }
+    // That read may have been the fault-in, and a shape landing is a
+    // property change: updateData has already built (or queued) this
+    // visual inside it, colours and all, taking the arrays over as every
+    // rebuild does. Going on would build the same shape a second time --
+    // what every blob-held shape cost the progressive drain.
+    if (meshLadder.visualFillSeq != fillSeq)
+        return;
 
     // A giant rebuild called from a pump item is deferred into its OWN
     // pump item (Render_VisualFillOnPool): the landing that called this
