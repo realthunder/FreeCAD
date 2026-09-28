@@ -24,88 +24,40 @@
 #ifndef PARTDESIGN_FeaturePolarPattern_H
 #define PARTDESIGN_FeaturePolarPattern_H
 
-#include <App/PropertyStandard.h>
-#include <App/PropertyUnits.h>
+#include <Mod/Part/App/PatternExtension.h>
 #include "FeatureTransformed.h"
-
 
 namespace PartDesign
 {
-enum class PolarPatternMode {
-    Extent,
-    Spacing
-};
 
-class PartDesignExport PolarPattern : public PartDesign::Transformed
+/** A pattern around an axis (upstream c334ac5062)
+ *
+ * The inputs are Part::PolarPatternExtension's, the pattern App::Pattern's:
+ * Occurrences rotations, the first one the identity. In "Extent" mode they
+ * are spread over Angle, evenly around a full turn; in "Spacing" mode they
+ * are Offset apart, or as Spacings and SpacingPattern say. A negative angle
+ * turns the other way.
+ *
+ * The axis is a straight edge, a circular edge (its center and normal), a
+ * datum line or a sketch axis. Reversed turns the other way.
+ */
+class PartDesignExport PolarPattern : public PartDesign::Transformed,
+                                      public Part::PolarPatternExtension
 {
-    PROPERTY_HEADER_WITH_OVERRIDE(PartDesign::PolarPattern);
+    PROPERTY_HEADER_WITH_EXTENSIONS(PartDesign::PolarPattern);
 
 public:
     PolarPattern();
-
-    App::PropertyLinkSub     Axis;
-    App::PropertyBool        Reversed;
-    App::PropertyEnumeration Mode;
-    App::PropertyAngle       Angle;
-    App::PropertyAngle       Offset;
-    App::PropertyIntegerConstraint Occurrences;
-    App::PropertyFloatList   Spacings;
-    App::PropertyFloatList   SpacingPattern;
-
-   /** @name methods override feature */
-    //@{
-    short mustExecute() const override;
 
     /// returns the type name of the view provider
     const char* getViewProviderName() const override {
         return "PartDesignGui::ViewProviderPolarPattern";
     }
-    //@}
 
-    /** Create transformations
-     * 
-      * Returns a list of (Occurrences - 1) transformations since the first, untransformed instance
-      * is not counted. Each transformation will rotate the shape it is applied to by the supplied angle.
-      * 
-      * Depending on Mode selection list will be constructed differently:
-      * 1. For "Extent" mode each feature will be rotated by (Angle / (Occurrences - 1)) so 
-      * that the transformations will cover the total Angle. The only exception is Angle = 360 degrees in 
-      * which case the transformation angle will be (Angle / Occurrences) so that the last transformed shape 
-      * is not identical with the original shape. 
-      * 2. For "Spacing" mode the angle before occurrence i + 1 is Spacings[i] when that is not -1,
-      * else SpacingPattern[i % n] when the pattern has more than one value, else Offset. It can 
-      * potentially result in transformation that extends beyond full rotation or results in overlapping shapes.
-      * This situations are considered as potential user errors and should be solved by user.
-      * 
-      * If Axis contains a feature and an edge name, then the transformation axis will be
-      * the given edge, which must be linear.
-      * 
-      * If Reversed is true, the direction of rotation will be opposite.
-      */
     std::list<gp_Trsf> getTransformations(const std::vector<Part::TopoShape> &) override;
-
-    /// The angle before occurrence \a index + 1 in Spacing mode, in degrees
-    double getSpacing(int index) const;
 
 protected:
     void handleChangedPropertyType(Base::XMLReader& reader, const char* TypeName, App::Property* prop) override;
-    void onChanged(const App::Property* prop) override;
-    void onDocumentRestored() override;
-
-    static const App::PropertyIntegerConstraint::Constraints intOccurrences;
-
-public:
-    /// The most gaps Spacings is grown to when Occurrences changes
-    static constexpr int MaxListedSpacings = 1000;
-
-protected:
-    static const App::PropertyAngle::Constraints floatAngle;
-
-private:
-    static const char* ModeEnums[];
-
-    void setReadWriteStatusForMode(PolarPatternMode mode);
-    void resizeSpacings();
 };
 
 } //namespace PartDesign
