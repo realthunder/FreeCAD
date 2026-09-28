@@ -222,6 +222,11 @@ bool Body::isAllowed(const App::DocumentObject *obj)
 {
     if (!obj)
         return false;
+    // a datum element of a coordinate system stays with it
+    if (auto datum = Base::freecad_dynamic_cast<App::DatumElement>(obj)) {
+        if (datum->getLCS())
+            return false;
+    }
     return isAllowed(obj->getTypeId());
 }
 
@@ -233,7 +238,12 @@ bool Body::isAllowed(const Base::Type &type)
             type.isDerivedFrom(Part::Part2DObject::getClassTypeId()) ||
             type.isDerivedFrom(PartDesign::ShapeBinder::getClassTypeId()) ||
             type.isDerivedFrom(Part::SubShapeBinder::getClassTypeId()) ||
-            type.isDerivedFrom(PartDesign::AuxGroup::getClassTypeId()));
+            type.isDerivedFrom(PartDesign::AuxGroup::getClassTypeId()) ||
+            // a coordinate system and a lone datum element, as upstream
+            // takes them; an origin belongs to its own container
+            type.isDerivedFrom(App::DatumElement::getClassTypeId()) ||
+            (type.isDerivedFrom(App::LocalCoordinateSystem::getClassTypeId())
+                && !type.isDerivedFrom(App::Origin::getClassTypeId())));
 }
 
 

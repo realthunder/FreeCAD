@@ -22,6 +22,7 @@
 import unittest
 
 import FreeCAD
+import Part
 
 App = FreeCAD
 
@@ -124,3 +125,55 @@ class TestDatumPlane(unittest.TestCase):
         FreeCAD.closeDocument("PartDesignTestDatumPlane")
         #print ("omit closing document for debugging")
 
+
+
+class TestCoordinateSystemInBody(unittest.TestCase):
+    """A body takes a coordinate system and a lone datum element, as upstream's
+    does; the datum elements of a coordinate system stay with it."""
+
+    def setUp(self):
+        self.Doc = FreeCAD.newDocument("PartDesignTestCoordinateSystemInBody")
+        self.Body = self.Doc.addObject("PartDesign::Body", "Body")
+        self.Body.Placement = App.Placement(App.Vector(10, 0, 0), App.Rotation())
+        self.LCS = self.Doc.addObject("Part::LocalCoordinateSystem", "LCS")
+        self.LCS.Placement = App.Placement(
+            App.Vector(0, 0, 50), App.Rotation(App.Vector(1, 0, 0), 90)
+        )
+        self.Body.addObject(self.LCS)
+        self.Doc.recompute()
+        self.XY = [p for p in self.LCS.OriginFeatures if p.Role == "XY_Plane"][0]
+
+    def testMembership(self):
+        self.assertTrue(self.Body.hasObject(self.LCS))
+        # putting the system in the body keeps its own datum elements; the body
+        # used to relink them to its origin's
+        own = set(o.Name for o in self.LCS.OriginFeatures)
+        origin = set(o.Name for o in self.Body.Origin.OriginFeatures)
+        self.assertFalse(own & origin)
+        for obj in (self.XY, self.Body.Origin):
+            with self.assertRaises(Exception):
+                self.Body.addObject(obj)
+        plane = self.Doc.addObject("App::Plane", "LonePlane")
+        self.Body.addObject(plane)
+        self.assertTrue(self.Body.hasObject(plane))
+
+    def testSketchOnPlane(self):
+        sketch = self.Body.newObject("Sketcher::SketchObject", "Sketch")
+        sketch.AttachmentSupport = [(self.LCS, [self.XY.Name + "."])]
+        sketch.MapMode = "FlatFace"
+        for a, b in (((0, 0), (10, 0)), ((10, 0), (10, 10)), ((10, 10), (0, 10)), ((0, 10), (0, 0))):
+            sketch.addGeometry(
+                Part.LineSegment(App.Vector(a[0], a[1], 0), App.Vector(b[0], b[1], 0))
+            )
+        pad = self.Body.newObject("PartDesign::Pad", "Pad")
+        pad.Profile = sketch
+        pad.Length = 5
+        self.Doc.recompute()
+        self.assertTrue(sketch.getGlobalPlacement().isSame(
+            App.Placement(App.Vector(10, 0, 50), App.Rotation(App.Vector(1, 0, 0), 90)), 1e-7))
+        self.assertAlmostEqual(pad.Shape.Volume, 500)
+        self.assertAlmostEqual(pad.Shape.BoundBox.ZMin, 50)
+        self.assertEqual(self.Body.Tip, pad)
+
+    def tearDown(self):
+        FreeCAD.closeDocument("PartDesignTestCoordinateSystemInBody")

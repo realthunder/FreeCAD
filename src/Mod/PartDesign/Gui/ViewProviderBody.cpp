@@ -805,6 +805,8 @@ bool ViewProviderBody::canDragAndDropObject(App::DocumentObject * obj) const
 
     auto type = obj->getTypeId();
     if (type.isDerivedFrom(Part::Datum::getClassTypeId())   ||
+        type.isDerivedFrom(App::DatumElement::getClassTypeId()) ||
+        type.isDerivedFrom(App::LocalCoordinateSystem::getClassTypeId()) ||
         type.isDerivedFrom(Part::Part2DObject::getClassTypeId()) ||
         type.isDerivedFrom(PartDesign::ShapeBinder::getClassTypeId()) ||
         type.isDerivedFrom(Part::SubShapeBinder::getClassTypeId()))
@@ -853,6 +855,8 @@ std::string ViewProviderBody::dropObjectEx(App::DocumentObject *obj,
 
     auto type = obj->getTypeId();
     if (type.isDerivedFrom(Part::Datum::getClassTypeId())   ||
+        type.isDerivedFrom(App::DatumElement::getClassTypeId()) ||
+        type.isDerivedFrom(App::LocalCoordinateSystem::getClassTypeId()) ||
         type.isDerivedFrom(Part::Part2DObject::getClassTypeId()) ||
         type.isDerivedFrom(PartDesign::ShapeBinder::getClassTypeId()) ||
         type.isDerivedFrom(Part::SubShapeBinder::getClassTypeId()))

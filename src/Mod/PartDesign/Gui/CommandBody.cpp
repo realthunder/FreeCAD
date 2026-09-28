@@ -959,6 +959,14 @@ void CmdPartDesignMoveFeatureInTree::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
     std::vector<App::DocumentObject*> features = getSelection().getObjectsOfType(Part::Feature::getClassTypeId());
+    // coordinate systems and lone datum elements move too (upstream 443b71d96e)
+    for (auto type : {App::LocalCoordinateSystem::getClassTypeId(),
+                      App::DatumElement::getClassTypeId()}) {
+        for (auto obj : getSelection().getObjectsOfType(type)) {
+            if (PartDesign::Body::isAllowed(obj))
+                features.push_back(obj);
+        }
+    }
     if (features.empty())
         return;
 

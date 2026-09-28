@@ -29,6 +29,7 @@
 #include <Base/Console.h>
 #include <Base/Exception.h>
 #include <Base/Tools.h>
+#include <App/Datums.h>
 #include <App/Document.h>
 #include <Mod/Part/App/Part2DObject.h>
 #include <Mod/Part/App/DatumFeature.h>
@@ -109,14 +110,18 @@ bool AuxGroup::isObjectAllowed(const App::DocumentObject *obj) const
     if (!obj || boost::starts_with(obj->getNameInDocument(), "BaseFeature"))
         return false;
     auto type = obj->getTypeId();
+    // App datums and coordinate systems go with the PartDesign datums
+    bool isDatum = type.isDerivedFrom(Part::Datum::getClassTypeId())
+        || type.isDerivedFrom(App::DatumElement::getClassTypeId())
+        || type.isDerivedFrom(App::LocalCoordinateSystem::getClassTypeId());
     switch (getGroupType()) {
     case SketchGroup:
         return type.isDerivedFrom(Part::Part2DObject::getClassTypeId());
     case DatumGroup:
-        return type.isDerivedFrom(Part::Datum::getClassTypeId());
+        return isDatum;
     case MiscGroup:
         return !type.isDerivedFrom(Part::Part2DObject::getClassTypeId())
-            && !type.isDerivedFrom(Part::Datum::getClassTypeId())
+            && !isDatum
             && !type.isDerivedFrom(Feature::getClassTypeId())
             && !type.isDerivedFrom(Solid::getClassTypeId())
             && !type.isDerivedFrom(AuxGroup::getClassTypeId());
