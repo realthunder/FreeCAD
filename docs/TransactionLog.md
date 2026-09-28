@@ -7636,10 +7636,9 @@ edits undone and redone. Every step lands on exactly the objects the state
 it returns to had touched -- 20 at the head, 204 at the version -- none
 missing, none extra; 27.59's undo of the restore had 86 where the head had
 20. The same after 100 edits. The pass costs 3-13 ms to fold the rows and
-about 4 ms after the writes. **Seen, not chased:** the hot apply itself --
-`Transaction::apply`, before any of this -- takes 18 s to undo the restore
-(its ~530 values) and 5 s to redo it, where the restore through the rows
-took 0.4 s.
+about 4 ms after the writes. The hot apply itself -- `Transaction::apply`,
+before any of this -- took 18 s to undo the restore and 5 s to redo it,
+where the restore through the rows took 0.4 s: chased in 27.64.
 
 **Not covered.** A restore that changes flags and no value writes no row
 (the empty transaction is dropped, as before), so an undo does not bring
@@ -7660,6 +7659,38 @@ undoes again; `testUndoRowsSayTheStateTheyLeft`: an edit undone leaves the
 object clean, and a switch away and back -- which crosses the undo's row
 forward -- leaves it clean too: crossed forward, the undo's sets alone
 would read as edits and touch it.
+
+**Gates.** Python 2944 OK (52 skipped, 6 expected failures), ctest 844/844,
+the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16.
+
+
+### 27.64 The slow hot undo of 27.63, chased (user, 2026-09-28)
+
+With the log on, the in-memory `Transaction` copies are not bypassed: a
+step inside the hot window keeps them as the log's cache (sec 24.3), and
+`Document::undo` applies them (`Transaction::apply`). The undo of the
+restore in 27.63's measurement -- about 507 shapes -- took 18 s, its redo
+5 s, where the restore through the rows took 0.4 s.
+
+**The cause: one shape's validation.** Timed per property, every paste but
+two took well under a second together; `PolarPattern003.Shape` took 16.4 s
+and its `AddSubShape` 1.2 s, all of it in
+`PropertyPartShape::validateShape()`, which `setValue()` runs on every
+write. With `FixShape` Enabled (the PartParams default) it runs
+`TopoShape::isValid()` -- a full BRepCheck -- and `fix()` when that fails.
+The walk's `restoreValue` goes through a property restore, where
+`validateShape` returns early; the hot apply's `Paste` does not.
+
+**Fixed.** `validateShape` returns early while the document performs a
+transaction (`Document::isPerformingTransaction()`: a hot or cold undo or
+redo, an abort). The value put back is one the document had and checked
+when it was made, and `InvalidShape` comes back with it in the same
+transaction; a `fix()` there would also have made the value put back other
+than the one recorded.
+
+**Measured**, `touchprobe.py` on scanner.FCStd, 3 and 100 edits: undo of
+the restore **0.02 s** (was 18.3-23.1 s), its redo **0.01-0.02 s** (was
+4.7-5.2 s); the touched state still exact at every step.
 
 **Gates.** Python 2944 OK (52 skipped, 6 expected failures), ctest 844/844,
 the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16.
