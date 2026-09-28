@@ -7696,3 +7696,155 @@ the restore **0.02 s** (was 18.3-23.1 s), its redo **0.01-0.02 s** (was
 the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16.
 
 **Next:** 27.50 steps 1-4, the shared string table (27.62's item 2).
+
+### 27.65 27.50 steps 1-4 as built: one string table for the file (2026-09-28)
+
+Built as one change: a version can stop carrying its table only once the
+log holds the file's, so steps 1 and 2 do not stand apart, and step 3 has to
+come with them -- without reference sets a save's compaction would drop
+strings only the log's versions use.
+
+**Step 1, the member.** A save at schema 5 whose content is archive entries
+(`FileBlobManager::BlobFormat::Entries`: an archive or a directory, not
+`ForceXML` above 3) writes the whole table -- every id, marked or not -- as
+the member `StringTable.txt` (`Document::stringTableName()`), and the root
+names it: `<StringHasher2 table="StringTable.txt" hash="<sha1>" count="N"
+used="..."/>`, no entries inline (`StringHasher::saveTable`,
+`saveReference`; `Document::_saveStringTable`). The member is
+`StringTableStart v1 <count>` and the entries as `saveStream` writes them,
+which `restoreTable` reads. The restore reads it at the element, before the
+objects (`Document::_restoreStringTable`): by entry from the indexed reader,
+by path from a directory, and for the forward-only reader through an index
+of the same archive opened by path. Below schema 5, and for every other
+writer, the table stays inline as before.
+
+**Step 2, the log keeps it once.** No version carries a table:
+- *In the store*, table `strtable(id, flags, sids, data, postfix)`, one row
+  per string (`TransactionStore::addStrings`, `strings`, `stringIds`,
+  `removeStrings`). `TransactionLogCore::syncStrings` posts the strings the
+  store lacks ahead of the job that needs them: at every commit the ones
+  minted since (so a recovery has every string a value it replays names), at
+  every version and every embed all of them. `loadStrings` takes the store's
+  strings the file's hasher lacks into it, once per hasher and store; after
+  that memory holds everything the store does.
+- *A version's `Document.xml`* names the table and holds none: a file save
+  records the bytes it wrote, and a snapshot for the log names the same
+  table with the same hash without writing it (`StringHasher::contentHash`,
+  cached until the entries change, so the snapshot's bytes are still the
+  bytes a save writes, 23.3 -- `composedSnapshotIsTheFile` caught the first
+  cut, which left the hash out). The member is kept out of every manifest:
+  the save's entry sink skips it, and neither `addUntappedMembers` (27.46) nor
+  `FileHistory::openFile` takes it as an entry.
+- *A checkout* -- a version opened, a restore's fallback, a recovery
+  (`d->checkingOut`) -- reads no member: `loadStrings`, and the file's
+  hasher resolves every id.
+- *The embedded copy* leaves `strtable` out (`clearStrings`): the file it
+  travels in carries the table as its member. `FileHistory::openFile` reads
+  that member into the history's hasher before anything is read from the
+  history.
+
+**Step 3 (item 3 of 27.50), read at most once.** `FileHistory` keeps the
+content hashes of the tables its hasher has taken in (`noteTable`,
+`tookTable`); a document joining the history -- the same file opened again
+-- skips a member it names by one of them. The log's table covers the rest.
+
+**Step 4 of the build order (item 4), reference sets, and the save
+compacts** (27.51 Q3 revised, Q4):
+- *A version's ids* are its save's marks (`StringHasher::markedIDs`, taken
+  after every object's `beforeSave`), handed to the log
+  (`TransactionLog::noteVersionStrings`) and stored beside the version's
+  entry list, keyed by its manifest entity.
+- *A value's ids* come from the capture's own walk: while a
+  `StringIDCollector` lives on the thread, an element map lists after each
+  name every id of the file's hasher the name uses and notes it, instead of
+  what the last save marked (`ElementMap` save, `StringIDCollector::take`).
+  That also ends the race of 27.49 -- the worker no longer reads the
+  `Marked` flags a save on the main thread sets -- and makes a captured
+  value's bytes independent of when the last save ran. `CaptureConfig`
+  carries the file's hasher by address; the log refreshes it with the worker
+  idle. `putValue` stores the ids beside the value.
+- *A version recorded from a file as read* (the open's `restore` row,
+  `recordFile`) has no marks of this session: the save that wrote the file
+  put its marks on the table element as ranges (`used="1-40,45,..."`), and
+  the log takes them from there (`StringHasher::parseUsed`); failing that,
+  every id the hasher holds. The first cut used every id always, and a file
+  saved without its history pinned every string it had until its open's
+  version went.
+- *Stored* as table `strref(owner, ranges)`, one row per entity, the ranges
+  packed as LEB128 gaps and lengths, and dropped with the entity by the
+  collector and `dropTier`. One row per range, as first built, cost 33 KB an
+  edit on scanner.FCStd (a recomputed shape's ids come in hundreds of short
+  runs); packed, 2.6 KB.
+- *Compaction* (`Document::_compactStrings`) keeps a string that memory
+  holds or that a retained version or value uses (`retainedStrings`, the
+  union of `strref`), and what a kept string is built from stays with it
+  (it holds a reference to each, so `StringHasher::compact(keep)` never
+  reaches them); the rest goes, from memory and from the store
+  (`dropStrings`). A save runs it before writing the table, whichever
+  document of the file keeps the log; `compactFileState()` runs the same.
+  A snapshot does not: it is no save.
+
+**Keep-all** is the old meaning (Q3 revised): with `SaveAll` a save keeps
+every string, and neither the save nor `compactFileState()` compacts. It is
+the file hasher's flag, so the file's. `setSaveAll(false)` no longer
+compacts on its own -- that `compact()` knew nothing of the log and would
+have dropped strings only the history uses; the next save compacts.
+
+**Fixed on the way:** `StringHasher::SaveDocFile` (a shape's private
+`.Table`) wrote a count of the strings held elsewhere where it wrote the
+marked ones, in the new entry format under a header `RestoreDocFile` read as
+the old one. It now writes `StringTableStart v1` and the count it writes.
+
+**Measured on scanner.FCStd** (38,156 strings; a fresh user home, the
+history embedded): the schema-4 file opens in 2.5 s; saved at schema 5,
+`Document.xml` is 3.26 MB (0.47 MB packed) and `StringTable.txt` 0.74 MB
+(0.10 MB packed) -- the table that used to sit in `Document.xml`, and in
+every version's. The versions' `Document.xml` are 3.25-3.26 MB with no
+table. Reopened, 1.12 s; version 1 opened from the embedded history in
+1.08 s, every shape's element map equal to the file's; a save 0.63 s.
+
+**T6 of 27.52**, the run of 27.56 again (100 edits of `Pad.Length`, a save
+every 10, schema 5):
+
+| | 27.56 | now |
+| --- | --- | --- |
+| history in the file at edit 100 (raw / packed) | 4.37 / 2.32 MB | 4.45 / 1.81 MB |
+| history in the file, growth per edit (packed) | 7 KB | 6 KB |
+| live store at edit 100 | 11.5 MB | 10.2 MB |
+| live store, growth per edit 20-100 | 35.5 KB | 40 KB |
+| save at edit 100 | 0.98 s | 1.09 s |
+
+The store's growth is `strref` (2.6 KB an edit) and the recompute records'
+`txn` rows, which carry the touched bits since 27.59 (4.4 KB an edit, 0.8 in
+27.54). `strtable` is 2.2 MB and does not grow: 57 bytes a string as rows,
+three times the member's encoding. Restore to the oldest version 0.25 s,
+reopen 1.19 s, compaction 0.06 s.
+
+**Seen, not chased:** opening version 1 in the live session after the 100
+edits takes 1.7 s (27.56: 1.15 s, before 27.57-27.64); on the file as just
+opened it takes 1.24 s. Not attributed.
+
+**Not built:** the full scan `TransactionLogVerify` was to run as a check on
+the recorded sets (27.51 Q4); and `strtable` is compacted only by
+`dropStrings`, never packed.
+
+**Tests.** C++ `StringHasherTest.wholeTableRoundTrips`,
+`rowsTakenInElsewhere` (a held row left alone, a differing one counted),
+`compactKeepsWhatHistoryUses` (a kept string keeps what it is built from),
+`collectorListsItsHashersIds` (marks without a collector, the collector's
+hasher with one), `usedRangesRoundTrip`;
+`TransactionLogTest.stringTableAndReferenceSets` (the store's strings, and
+the ranges gone with their entity). Python
+`TransactionBranchCases.testStringTableIsAMemberOfItsOwn` (the member, no
+table in any version, the file reopened, a named version opened from the
+file's history and from the archive with no document open, the same element
+map each time), `testSaveCompactsTheStringTable` (a string nothing holds
+goes; the removed `Cut`'s strings, held only by the log once the undo stack
+is cleared, stay, and a restore to the version before has its element map),
+`testKeepAllKeepsEveryString`.
+
+**Gates.** Python 2947 OK (52 skipped, 6 expected failures; +3), ctest
+845/845 (+1), the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16.
+
+**Next:** open. The steps of 27.50 are built; 27.52's T4 (the long run) and
+T5 (the Gui) are the scale plan's rest.
