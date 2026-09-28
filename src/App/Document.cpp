@@ -1177,7 +1177,12 @@ void Document::_addOrRemoveProperty(TransactionalObject* obj, Property *prop, bo
 
 bool Document::isPerformingTransaction() const
 {
-    return d->undoing || d->rollback || Transaction::isApplying();
+    // A switch or a crash recovery replaying rows puts the document back
+    // into a recorded state, as an undo does, and object code must not
+    // react to it any more than to an undo (docs/TransactionLog.md sec
+    // 27.68). A replay records nothing already (transactionsWanted()). A
+    // restore to a version is not one: it is a recorded step.
+    return d->undoing || d->rollback || d->replaying || Transaction::isApplying();
 }
 
 bool Document::isReplaying() const
@@ -6554,9 +6559,13 @@ struct LogFold
                     values.erase(key);
                     touch.insert(o.cid);
                 }
-                // A set's meta says how to add its dynamic property back.
-                if (!o.meta.empty() && added.count(key))
-                    added[key].meta = o.meta;
+                // A set's meta says how to add its dynamic property back: a
+                // removed object's, which the walk back recreates, or one
+                // the cascade removing it took first (sec 27.68).
+                if (!o.meta.empty()) {
+                    removed.erase(key);
+                    added[key] = o;
+                }
             }
         }
     }

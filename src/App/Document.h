@@ -965,7 +965,8 @@ public:
     std::vector<std::string> getAvailableRedoNames() const;
     /// Will REDO one step, returns False if no redo was done (Redos == 0).
     bool redo(int id=0) ;
-    /// returns true if the document is in an Transaction phase, e.g. currently performing a redo/undo or rollback
+    /// returns true if the document is in an Transaction phase, e.g. currently performing a redo/undo or rollback,
+    /// or replaying transaction log rows (a branch switch, a crash recovery)
     bool isPerformingTransaction() const;
     /** Whether the document is being rebuilt from its transaction log: a
      * branch switch or a crash recovery replaying rows, or a restore to a

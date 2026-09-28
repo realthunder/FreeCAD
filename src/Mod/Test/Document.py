@@ -4414,3 +4414,51 @@ class TransactionBranchCases(unittest.TestCase):
         b = doc.getObject("B")
         self.assertNotEqual(b.getLinkedObject(False).Name, "B")
         self.assertEqual(b.Config_L.Value, 30)
+
+    def testSwitchBringsBackARemovedCopyOnChangeLink(self):
+        # Sec 27.68: an instance made on main, edited and deleted on a side
+        # branch, comes back by the switch to main as it was there. A replay
+        # counts as performing a transaction: the link does not react to
+        # its target being restored -- it dropped itself to Enabled and the
+        # properties it mirrors, as it would for a user's edit.
+        import Part
+
+        doc = self.track(FreeCAD.newDocument("SwitchBack"))
+        doc.UndoMode = 1
+        doc.saveAs(os.path.join(self.dir, "switchback.FCStd"))
+
+        def step(name, fn):
+            doc.openTransaction(name)
+            fn()
+            doc.recompute()
+            doc.commitTransaction()
+
+        def build():
+            body = doc.addObject("PartDesign::Body", "Body")
+            sketch = body.newObject("Sketcher::SketchObject", "Sketch")
+            sketch.addGeometry(Part.Circle(FreeCAD.Vector(), FreeCAD.Vector(0, 0, 1), 5))
+            pad = body.newObject("PartDesign::Pad", "Pad")
+            pad.Profile = sketch
+            body.addProperty("App::PropertyLength", "Config_L", "Config")
+            body.setPropertyStatus("Config_L", "CopyOnChange")
+            body.Config_L = 10
+            pad.setExpression("Length", "hiddenref(Body.Config_L)")
+            link = doc.addObject("App::Link", "A")
+            link.LinkedObject = body
+            link.LinkCopyOnChange = "Owned"
+            link.Config_L = 20
+
+        step("build", build)
+        doc.save()
+        main = sorted(o.Name for o in doc.Objects)
+        copy = doc.A.getLinkedObject(False).Name
+        doc.createTransactionBranch("side")
+        step("edit", lambda: setattr(doc.A, "Config_L", 25))
+        step("delete", lambda: doc.removeObject("A"))
+        doc.save()
+        doc.switchTransactionBranch("main")
+        link = doc.getObject("A")
+        self.assertEqual(link.getLinkedObject(False).Name, copy)
+        self.assertEqual(link.LinkCopyOnChange, "Owned")
+        self.assertEqual(link.Config_L.Value, 20)
+        self.assertEqual(sorted(o.Name for o in doc.Objects), main)
