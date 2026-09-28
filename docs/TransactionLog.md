@@ -8032,8 +8032,8 @@ at eight sites of `Link.cpp`, and about forty sites across App, Part,
 PartDesign, Sketcher and the Gui -- and a replay does not count. Whether a
 replay should count as performing a transaction (every one of those sites
 at once, and with it the document's own transaction bookkeeping during a
-replay) or object code should ask `isReplaying()` as well is open
-(27.68).
+replay) or object code should ask `isReplaying()` as well was open;
+ruled in 27.68.
 
 **Also seen, not chased:** in the 41-step pilot, undoing one of `main`'s own
 deletes after a switch back rebuilt the copy's shapes -- the same names,
@@ -8046,3 +8046,89 @@ known SIGSEGV at exit (a static destructor in Part.so tearing down
 +3), ctest 846/846 (+1), the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16.
 
 **Next:** the ruling of 27.68, then T4 again; then T5.
+
+### 27.68 Ruling and as built: a replay counts as performing a transaction (user, 2026-09-29)
+
+**Ruling (user):** of 27.67's open question, a replay counts --
+`isPerformingTransaction()` is true while a switch or a crash recovery
+replays rows, so every object-code site that stands down for an undo stands
+down for it too; not a second predicate at each site.
+
+**As built** (b660d0dd73, 9776edf92b):
+1. *`isPerformingTransaction()` includes `d->replaying`.* It is set in two
+   places only, a switch (`_checkoutHead`) and a recovery; a restore to a
+   version walks rows without it, as a recorded step, and stays out. The
+   document's own uses were read one by one: a replay already recorded
+   nothing (`transactionsWanted()` is false while it runs), and nothing
+   inside the replay opens, commits, aborts or clears a transaction, takes
+   a snapshot or undoes, so the refusals it now meets are ones it never
+   asked for. `isReplaying()` (27.67 item 8) stays, for the restore to a
+   version (`checkingOut`), which is no replay.
+2. *The fold adds a removed object's dynamic properties back.* Walking a
+   remove backwards, a set carrying metadata only updated a property the
+   fold already knew; a link removed with the properties it mirrors came
+   back without them. It now puts the property in `added` itself. The cold
+   undo had its own path for this (`dynamicSets`), which is why only the
+   switch showed it.
+3. *A version read whole adds every dynamic property first.* The fallback
+   of a switch whose chains a trim cut (`_applyVersion`) did the dynamic
+   properties and the values container by container, in id order: a link,
+   older than its copy, had its target restored before the copy had the
+   `CopyOnChange` properties the link mirrors, and `setupCopyOnChange`
+   (with `checkExisting`) dropped the link's own. The pause does not cover
+   that step. All dynamic properties now come first, then all values, as in
+   the other passes. Seen only after T4's first trim (step 200): every
+   switch from 250 on lost 15-29 instances' `Config_*`; a small trim probe
+   reached `_applyVersion` and did not show it, so there is no small case.
+
+**T4 checks the stored state.** The element map compared in 27.67 was the
+link's own shape (`Part.getShape`), made on demand; after a switch its
+element tags are minted afresh (`#2c;:Ha17,E` -> `#37;:Ha17,E`, the same
+strings), while the copy's stored shapes are unchanged. The script now
+compares each instance's copy, mode, `Config_*` values and every copy
+object's stored element map, and reports the link's shape apart. The
+pilot residual of 27.67 (new tags after an undo past a switch) was this.
+
+**T4, log on, after the fixes:** 0 errors; all 62 checks agree -- 19
+switches, the restore's undo, 39 undos (hot, then cold), the reopen, the
+compaction. The link's own shape differed at 33 of them.
+
+| step | recompute /10 | save | file | store (+WAL) | `strtable` rows | `strref` | objects | RSS |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 10 | 0.70 s | 0.92 s | 6.7 MB | 6.7 (+4.2) MB | 43,258 | 77 KB | 645 | 870 MB |
+| 100 | 0.78 s | 1.21 s | 8.3 MB | 12.6 (+4.2) MB | 44,827 | 239 KB | 930 | 878 MB |
+| 300 | 0.83 s | 1.62 s | 11.5 MB | 24.1 (+5.0) MB | 46,563 | 588 KB | 825 | 1036 MB |
+| 500 | 0.85 s | 2.37 s | 18.8 MB | 36.0 (+7.7) MB | 49,642 | 900 KB | 945 | 1084 MB |
+| 700 | 0.87 s | 3.04 s | 23.2 MB | 45.5 (+9.0) MB | 52,488 | 1161 KB | 1200 | 1096 MB |
+| 1000 | 0.94 s | 4.29 s | 29.9 MB | 63.6 (+9.6) MB | 56,208 | 1596 KB | 1170 | 1105 MB |
+
+At the end: 71 versions, 1,385 rows, 128,948 ops (154,089 before the
+fixes), 49,607 entities; `entity` 30.6 MB, `op` 13.7 (+ `op_container`
+3.7, its autoindex 2.0), `txn` 3.6, `strtable` 2.9, `strref` 1.9, `ref`
+1.8. Strings minted 14,537, dropped 9,594. Switches 0.32-0.76 s up to step
+200, 1.95 s at 250 and 3.2-4.3 s after: from the first trim on, a switch
+reads a version whole. Trims 0.70, 1.37, 2.13, 3.05 s. The oldest version
+opened in 3.93 s, restored in 1.67 s, its undo 0.11 s; the undos 0.03-0.19
+s; reopen 1.63 s (8 of 72 versions carried); `compactFileState()` 0.61 s,
+465 names and 5,154 strings. The log-off control of 27.67 stands (it takes
+no replay).
+
+**What the numbers say, not chased:**
+- *A save grows with the history* -- 0.92 -> 4.29 s, the file 6.7 -> 29.9
+  MB, about 23 KB a step -- where the log off holds 0.83-0.86 s and 4.6 MB.
+- *A switch after a trim reads a version whole*, 2-4 s here: the trim cuts
+  the chain the row walk needs to reach the meeting point.
+- *Recompute creep* is the model's, not the log's (27.67).
+- *A link's shape is made with new element tags* after a switch: a
+  reference into a link's elements by mapped name would see them move.
+- *Intermittent:* `testSwitchMakesNoOriginOfItsOwn` failed 3 times in 11
+  runs of the four new cases together (never alone, 8 of 8; never in a
+  suite run): making the copy adopts the default material blob from a path
+  under the document's post-`saveAs` transient directory that is missing --
+  apparently the move of the transient directory racing a blob path.
+
+**Tests:** `TransactionBranchCases.testSwitchBringsBackARemovedCopyOnChangeLink`
+(1, 2). **Gates** (9776edf92b): Python 2951 OK (52 skipped, 6 expected
+failures), ctest 846/846, the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16.
+
+**Next:** T5 (27.66): the same workload at 100 steps under the Gui.
