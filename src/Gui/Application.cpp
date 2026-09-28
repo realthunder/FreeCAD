@@ -157,6 +157,7 @@
 #include "ViewProviderInventorObject.h"
 #include "ViewProviderLine.h"
 #include "ViewProviderLink.h"
+#include "ViewProviderLinkArray.h"
 #include "ViewProviderLinkPy.h"
 #include "ViewProviderMaterialObject.h"
 #include "ViewProviderMeasureDistance.h"
@@ -2527,6 +2528,7 @@ void Application::initTypes()
     Gui::LinkView                               ::init();
     Gui::ViewProviderLink                       ::init();
     Gui::ViewProviderLinkPython                 ::init();
+    Gui::ViewProviderLinkArray                  ::init();
     // ViewProviderShaderBinding derives ViewProviderLink -- init after it
     Gui::ViewProviderShaderProgram              ::init();
     Gui::ViewProviderShaderProgramPython        ::init();

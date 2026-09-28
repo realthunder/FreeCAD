@@ -345,7 +345,7 @@ void Workbench::createLinkMenu(MenuItem *item) {
 
     auto linkMenu = new MenuItem;
     linkMenu->setCommand("Link actions");
-    *linkMenu << "Std_LinkMakeGroup" << "Std_LinkMake";
+    *linkMenu << "Std_LinkMakeGroup" << "Std_LinkMake" << "Std_LinkArrayActions";
 
     auto &rMgr = Application::Instance->commandManager();
     const char *cmds[] = {"Std_LinkMakeRelative",nullptr,"Std_LinkUnlink","Std_LinkReplace",
@@ -884,7 +884,7 @@ ToolBarItem* StdWorkbench::setupToolBars() const
     // Structure
     auto structure = new ToolBarItem( root );
     structure->setCommand("Structure");
-    *structure << "Std_PartActions" << "Std_Group" << "Std_LinkActions" << "Std_DatumActions";
+    *structure << "Std_PartActions" << "Std_Group" << "Std_LinkActions" << "Std_LinkArrayActions" << "Std_DatumActions";
 
     // Help
     auto help = new ToolBarItem( root );

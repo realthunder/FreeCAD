@@ -1077,6 +1077,8 @@ SET(Viewprovider_CPP_SRCS
     ViewProviderShaderObject.cpp
     ViewProviderTextDocument.cpp
     ViewProviderLink.cpp
+    ViewProviderLinkArray.cpp
+    TaskLinkArray.cpp
     LinkViewPyImp.cpp
     ViewProviderLinkPyImp.cpp
     ViewProviderSavedViewPyImp.cpp
@@ -1122,6 +1124,8 @@ SET(Viewprovider_SRCS
     ViewProviderShaderObject.h
     ViewProviderTextDocument.h
     ViewProviderLink.h
+    ViewProviderLinkArray.h
+    TaskLinkArray.h
     AxisOrigin.h
     ViewProviderSavedView.h
 )

@@ -61,6 +61,11 @@ public:
 
     Pattern::Type getPatternType() const;
 
+    const char* getViewProviderName() const override
+    {
+        return "Gui::ViewProviderLinkArray";
+    }
+
     DocumentObjectExecReturn* execute() override;
     short mustExecute() const override;
     std::vector<std::string> getSubObjects(int reason = GS_DEFAULT) const override;

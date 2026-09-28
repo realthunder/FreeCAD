@@ -278,6 +278,10 @@
         <file>Std_PlaneYZ.svg</file>
         <file>Link.svg</file>
         <file>LinkArray.svg</file>
+        <file>LinkArrayCircular.svg</file>
+        <file>LinkArrayPath.svg</file>
+        <file>LinkArrayPoint.svg</file>
+        <file>LinkArrayPolar.svg</file>
         <file>LinkElement.svg</file>
         <file>LinkGroup.svg</file>
         <file>LinkOverlay.svg</file>
