@@ -6080,34 +6080,46 @@ bool Document::_moveAlongLog(int64_t fromHead, int64_t toSeq, bool views)
         return false;
 
     // An open's record is the file as found; it jumped the document when
-    // the file is not what the rows before it add up to.
+    // the file is not what the rows before it add up to. The version the row
+    // recorded is the state at the row's parent -- snapshot() stamps the
+    // version with the head, then numbers the row (sec 27.57) -- and the
+    // rows add up to it when the newest version before it on the chain has
+    // the same Document.xml bytes and no row with ops lies between the two.
     const auto versions = store.versions();
-    auto docXml = [&](int64_t num) {
-        for (const auto& e : store.manifest(num)) {
-            if (e.entry == "Document.xml")
-                return e.hash;
-        }
-        return std::string();
-    };
-    auto jumps = [&](const LogTransaction& t) {
+    auto jumps = [&](const LogTransaction& t, const std::vector<LogTransaction>& chain) {
         if (t.kind != "restore")
             return false;
+        std::set<int64_t> on {0};
+        for (const auto& c : chain)
+            on.insert(c.seq);
         const LogVersion* at = nullptr;
         const LogVersion* before = nullptr;
         for (const auto& v : versions) {
-            if (v.seq == t.seq)
-                at = &v;
-            else if (v.seq < t.seq && onFrom.count(v.seq) && (!before || v.seq > before->seq))
+            if (v.seq == t.parent) {
+                if (!at || v.num > at->num)
+                    at = &v;
+            }
+            else if (v.seq < t.parent && on.count(v.seq) && (!before || v.seq > before->seq)) {
                 before = &v;
+            }
         }
-        return !at || !before || docXml(at->num) != docXml(before->num);
+        if (!at || !before || at->docxml_hash.empty() || at->docxml_hash != before->docxml_hash)
+            return true;
+        for (const auto& c : chain) {
+            if (c.seq > before->seq && c.seq <= t.parent && !store.ops(c.seq).empty())
+                return true;
+        }
+        return false;
     };
 
     LogFold fold;
     for (auto it = back.rbegin(); it != back.rend(); ++it) {
         auto ops = store.ops((*it)->seq);
         if (ops.empty()) {
-            if (jumps(**it))
+            // Back to exactly the row's parent is back to the file as found,
+            // which is the version the row recorded: a jump matters only
+            // past it.
+            if (meet < (*it)->parent && jumps(**it, from))
                 return false;
             continue;
         }
@@ -6116,7 +6128,7 @@ bool Document::_moveAlongLog(int64_t fromHead, int64_t toSeq, bool views)
     for (const LogTransaction* t : forward) {
         auto ops = store.ops(t->seq);
         if (ops.empty()) {
-            if (jumps(*t))
+            if (jumps(*t, to))
                 return false;
             continue;
         }

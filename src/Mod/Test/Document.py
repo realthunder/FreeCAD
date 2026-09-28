@@ -3463,6 +3463,50 @@ class TransactionBranchCases(unittest.TestCase):
         finally:
             FreeCAD.removeDocumentObserver(made)
 
+    def testRestoreAcrossAnOpenGoesThroughTheRows(self):
+        # Sec 27.57: an open's record was taken for a jump whatever the file
+        # was -- the version it records is at the row's parent, not at the row
+        # -- so a restore to the file as found read the version whole, 30 times
+        # slower on a real model. Opened with no history, the file is version
+        # 1, and going back to it is going back through the rows.
+        class Made:
+            def __init__(self):
+                self.names = []
+
+            def slotCreatedDocument(self, doc):
+                self.names.append(doc.Name)
+
+        doc = self.track(FreeCAD.newDocument("AcrossOpen"))
+        doc.addObject("App::FeatureTest", "Obj").Integer = 1
+        path = os.path.join(self.dir, "acrossopen.FCStd")
+        self.param.SetInt("TransactionLog", 1)
+        try:
+            doc.saveAs(path)
+        finally:
+            self.param.SetInt("TransactionLog", 2)
+        FreeCAD.closeDocument(doc.Name)
+
+        doc = self.track(FreeCAD.openDocument(path))
+        doc.UndoMode = 1
+        for value in (2, 3):
+            doc.openTransaction("edit")
+            doc.getObject("Obj").Integer = value
+            doc.commitTransaction()
+        doc.resolveTransactionLog()
+        versions = doc.getTransactionVersions()
+        self.assertEqual([v["num"] for v in versions], [1])
+
+        made = Made()
+        FreeCAD.addDocumentObserver(made)
+        try:
+            doc.restoreTransactionVersion(1)
+            self.assertEqual(made.names, [])
+            self.assertEqual(doc.getObject("Obj").Integer, 1)
+            doc.undo()
+            self.assertEqual(doc.getObject("Obj").Integer, 3)
+        finally:
+            FreeCAD.removeDocumentObserver(made)
+
     def testOpeningADocumentKeepsAnotherOnesTransaction(self):
         # Sec 27.15: a document made or opened while another has a transaction
         # open joins none, so its restore does not commit that transaction

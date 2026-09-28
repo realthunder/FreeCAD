@@ -7191,4 +7191,53 @@ so the two do not compare; whether the restore recomputes, and why, is open.
 **Gates.** Python 2940 OK (52 skipped, 6 expected failures), ctest 842/842,
 the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16.
 
-**Next.** 27.50 steps 1-4, the shared string table.
+
+### 27.57 The slow restore of 27.56, chased (user, 2026-09-28)
+
+**The cause.** The restore of 27.56 (9 s, 100 edits back to version 1 of
+scanner.FCStd) never went through the rows: `_moveAlongLog` gave up on the
+open's `restore` row and `restoreVersion` read the version whole -- a
+scratch document restored from the materialised version (the boolean and
+hidden-line pass in the log were that document's restore), then its
+difference applied. `jumps()`, which asks whether an open's record jumped
+the document (27.28), looked for the version the row recorded at the row's
+own seq; `snapshot()` stamps the version with the head and then numbers the
+row, so the version is at the row's *parent*. It never found it, and every
+`restore` row counted as a jump.
+
+**Fixed** (`Document::_moveAlongLog`):
+- The version a `restore` row recorded is the one at `t.parent`, and the one
+  before it the newest older version on the same chain -- the chain the row
+  is on, `from` or `to`, where it had been `from`'s for both.
+- The rows add up to the file as found when those two versions' `docxml_hash`
+  (the SHA-1 of the bytes) is the same and no row with ops lies between
+  them. It compared the manifests' `Document.xml` entity hashes, which differ
+  for the same bytes when one is a composite and the other the bytes as read.
+- Back across a `restore` row to exactly its parent is back to the file as
+  found, which is the version the row recorded: a jump matters only past it.
+
+Scanner.FCStd, the same run: **0.28 s** (531 values; readValue 16 ms,
+restoreValue 0.22 s), was 8.7 s. Python case
+`testRestoreAcrossAnOpenGoesThroughTheRows`: a file opened with no history,
+edited, restored to version 1 -- no scratch document is made, the value is
+the file's, and undo brings the edits back. It fails on the old code with the
+scratch document `VersionRestore`.
+
+**What the rows cannot say: the touched state.** Through the rows, step 4
+of 27.34 touches an object whose derived values the log did not keep and
+purges one whose derived values came back with its inputs; an object no row
+wrote keeps the flag it has. Going back across a recompute that is wrong
+both ways. Three edits of scanner.FCStd, restored to version 1: 31 objects
+touched at open, 25 after the restore -- 11 of the 31 come back clean
+(their pre-recompute shapes restored, marked up to date) and 5 others,
+written by no row, touched. After 100 edits, 89 touched. The values are the
+version's; the flags are not. The whole read gets them right, since
+`Document.xml` carries each object's status. Proposed, not built: record the
+ids of the touched objects with each version (a column of `version`, taken
+at the snapshot, which already walks the document), and have a restore
+through the rows to a version set exactly those.
+
+**Gates.** Python 2941 OK (52 skipped, 6 expected failures; +1), ctest
+842/842, the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16.
+
+**Next.** A ruling on the touched state; then 27.50 steps 1-4.
