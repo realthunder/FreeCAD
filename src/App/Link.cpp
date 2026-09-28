@@ -1809,6 +1809,9 @@ void LinkBaseExtension::update(App::DocumentObject *parent, const Property *prop
             else if (matrixList)
                 matrixList->touch();
 
+            // The elements are going, and a new one may come at the address
+            // of an old one; VisibilityList keeps which are hidden
+            myHiddenElements.clear();
             for(auto obj : objs) {
                 if(obj && obj->isAttachedToDocument())
                     obj->getDocument()->removeObject(obj->getNameInDocument());
@@ -1935,6 +1938,7 @@ void LinkBaseExtension::update(App::DocumentObject *parent, const Property *prop
                 }
                 getElementListProperty()->setValue(objs);
                 for(auto obj : tmpObjs) {
+                    myHiddenElements.erase(obj);
                     if(obj && obj->isAttachedToDocument())
                         obj->getDocument()->removeObject(obj->getNameInDocument());
                 }
