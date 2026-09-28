@@ -3507,6 +3507,73 @@ class TransactionBranchCases(unittest.TestCase):
         finally:
             FreeCAD.removeDocumentObserver(made)
 
+    def testWholeReadAndWalkBringBackARemovedShape(self):
+        # Sec 27.60: a switch the rows cannot make reads the version whole --
+        # into a document joined to the file's history -- and writes what
+        # differs, shapes named by their blobs among it. And the walk back
+        # across a dynamic property's removal brought the property back
+        # without its value (a null shape).
+        class Made:
+            def __init__(self):
+                self.names = []
+
+            def slotCreatedDocument(self, doc):
+                self.names.append(doc.Name)
+
+        doc = self.track(FreeCAD.newDocument("WholeRead"))
+        doc.UndoMode = 1
+        # Shapes as blobs named by their hash.
+        doc.SaveSchemaVersion = 5
+        doc.openTransaction("box")
+        try:
+            import Part
+
+            box = doc.addObject("Part::Box", "Box")
+        except Exception:
+            doc.abortTransaction()
+            self.skipTest("Part is not available")
+        doc.commitTransaction()
+        doc.recompute()
+        # A shape in a dynamic property, as Part keeps a retained base shape
+        # (`_BaseShape<N>`): gone by the time the switch reads the version,
+        # so the read adds it and writes its value into a fresh property.
+        doc.openTransaction("extra")
+        box.addProperty("Part::PropertyPartShape", "Extra")
+        box.Extra = Part.makeSphere(2)
+        doc.commitTransaction()
+        path = os.path.join(self.dir, "wholeread.FCStd")
+        doc.saveAs(path)
+        first = int(doc.Version.split()[0])
+        for length in (20, 30):
+            doc.openTransaction("length")
+            box.Length = length
+            doc.recompute()
+            doc.commitTransaction()
+        doc.openTransaction("no extra")
+        box.removeProperty("Extra")
+        doc.commitTransaction()
+        doc.createTransactionBranch("again", first)
+        self.assertAlmostEqual(box.Shape.Volume, 1000.0)
+        self.assertAlmostEqual(box.Extra.Volume, 4 / 3 * math.pi * 8, 6)
+        doc.switchTransactionBranch("main")
+        self.assertAlmostEqual(box.Shape.Volume, 3000.0)
+        self.assertFalse(hasattr(box, "Extra"))
+        # Every row only main holds goes: nothing to walk from here to again.
+        doc.trimTransactionBranch("main")
+        made = Made()
+        FreeCAD.addDocumentObserver(made)
+        try:
+            doc.switchTransactionBranch("again")
+        finally:
+            FreeCAD.removeDocumentObserver(made)
+        self.assertEqual(len(made.names), 1, "the version is read whole")
+        self.assertEqual(box.Length.Value, 10.0)
+        self.assertAlmostEqual(box.Shape.Volume, 1000.0)
+        self.assertAlmostEqual(box.Extra.Volume, 4 / 3 * math.pi * 8, 6)
+        doc.switchTransactionBranch("main")
+        self.assertEqual(box.Length.Value, 30.0)
+        self.assertAlmostEqual(box.Shape.Volume, 3000.0)
+
     def testTouchedStateThroughTheRows(self):
         # Sec 27.58: the rows carry the touched state -- a set the state
         # before it, a recompute record each object's before and after -- so a

@@ -2668,7 +2668,24 @@ TEST_F(TransactionLogTest, trimAndDeleteBranches)
     EXPECT_GT(doc()->trimBranch("main"), 0u);
     EXPECT_EQ(obj->Integer.getValue(), 4);
     EXPECT_EQ(doc()->getAvailableUndos(), 0);
+    // No rows from here to `again`: the version is read whole, into a
+    // document joined to this file's history (sec 27.60), not a scratch
+    // one with a store of its own.
+    std::vector<std::string> read;
+    auto connection = App::GetApplication().signalFinishRestoreDocument.connect(
+        [&](const App::Document& d) {
+            if (&d == doc())
+                return;
+            read.emplace_back(d.getName());
+            EXPECT_TRUE(d.testStatus(App::Document::VersionDoc)) << d.getName();
+            EXPECT_EQ(&d.getFileHistory(), &doc()->getFileHistory()) << d.getName();
+            EXPECT_FALSE(d.getTransactionLog()) << d.getName();
+        });
     ASSERT_TRUE(doc()->switchBranch("again"));
+    connection.disconnect();
+    EXPECT_EQ(read.size(), 1u);
+    for (const auto& name : read)
+        EXPECT_FALSE(App::GetApplication().getDocument(name.c_str())) << name;
     EXPECT_EQ(obj->Integer.getValue(), 1);
     ASSERT_TRUE(doc()->switchBranch("main"));
     EXPECT_EQ(obj->Integer.getValue(), 4);

@@ -7389,3 +7389,102 @@ checks RC 15, BC 27, VC 18, PC 28, FC 16 -- each check with its own
 `XDG_CACHE_HOME` (27.11): run twice in one cache, the second recovery
 check recovers what the first run's other checks left.
 
+### 27.60 Step 2 of 27.58 as built: the fallback reads through a version document (2026-09-28)
+
+`_readVersion` -- the whole read a restore or a switch falls back to when
+the rows cannot make the state -- reads the version the way
+`openFileVersion` does: `materialiseVersion(..., blobsInStore = true)` into
+the history's directory, a new document with no view and no log, joined to
+this file's history (`_joinHistory`), `VersionDoc`, named
+`<file>@v<num>`, restored; `_applyVersion` takes its difference; the
+document is closed. A blob is found by hash in the store the file already
+has, and a shape already parsed is shared (27.31); the scratch document,
+with a transient directory and a blob store of its own that every blob was
+written to and read back from, is gone. The common part of the two is
+`Document::_restoreAsVersion(history, dir, fileName)`. It is never the
+version document a user opened: that one may have been edited.
+
+**The whole read's touched state.** `_applyVersion`'s last pass purged an
+object the version document had clean and left the rest as the writes left
+them. But the version document's flags are not the version's: its restore
+touches more of its own -- an object in error stays touched, a link it had
+to fix touches its owner, so does an expression -- and on scanner.FCStd a
+switch through the whole read ended with 72 objects touched where the tip
+had 26. The restore now keeps the ids it read as `Touched="1"`
+(`DocumentP::savedTouched`), and the last pass sets each object from that,
+through the `TouchedFold::apply` the walk uses: a clean one clean, every
+property too; a touched one touched, with the properties the writes left
+touched. `Document.xml` records no more than that.
+
+**Found: the whole read crashed writing a shape named by its blob.**
+`restoreValue` brackets the restore with `aboutToSetValue`/`hasSetValue`.
+A schema-5 shape's restore only takes its blob (`assignRestoredBlob`) and
+is served on first read -- and the first read was `hasSetValue`'s own
+`isSame`, whose `getComplexData()` served it, whose `setValue()` came back
+into `hasSetValue`, which freed the before copy the outer compare was
+reading: SIGSEGV in `PropertyComplexGeoData::isSame`, on scanner.FCStd
+(`Helix._BaseShape1`, a retained generation). The scratch path crashed the
+same way; it predates this step. `Property::hasSetValue` now takes the copy
+out for the compare and puts it back only when nothing replaced it. No unit
+case reaches it: a box's shape, or a shape in a dynamic property the read
+adds back, is not served inside that compare; the scale probe below is what
+does.
+
+**Found: the walk brought a removed dynamic property back empty.**
+`LogFold::back` re-added a property a `delprop` removed but left out its
+value, which the op keeps as its before (the cold undo already used it): a
+restore or switch across the removal gave a null shape. It takes the value
+now.
+
+**Measured** on scanner.FCStd at schema 5: three edits, a save, a branch
+from it with two edits, two edits on main, main trimmed to its head, and a
+switch back to the branch, which the rows cannot make: 1.61 s through a
+version document (`<doc>_read_v4`), the value the branch had, and **26
+objects touched, the branch tip's 26** (72 before the saved-flags change;
+the scratch path crashed there).
+
+**Not done: a schema-4 version materialised as schema 5** (27.58, last
+ruling). Version 1 of a schema-4 file is its `Document.xml` as tapped with
+the archive's members (27.46), which name files, not hashes; making it
+schema 5 means serialising the document at schema 5 once, since the
+entries are property-specific. Where that is paid is the open question --
+see 27.61.
+
+**Tests.** Gtest `trimAndDeleteBranches`: the switch after main is trimmed
+to its head goes through the whole read; the document read is a version
+document of this file's history with no log, and it is closed after.
+Python `testWholeReadAndWalkBringBackARemovedShape`: a box with a sphere in
+a dynamic property, saved at schema 5, lengthened, the property removed; a
+branch from the save has the sphere back (the walk -- it failed with "shape
+is invalid" before the `delprop` fix), and after main is trimmed a switch to
+it reads the version whole, once, with both shapes right.
+
+**Gates.** As 27.59's: Python 2943 OK, ctest 843/843, RC 15, BC 27, VC 18,
+PC 28, FC 16.
+
+### 27.61 Open: where a schema-4 file's version becomes schema 5 (2026-09-28)
+
+The last ruling of 27.58: a version recorded from a schema-4 file is to
+materialise as schema 5, a blob named by its hash, never a file written
+under a name. Version 1 of such a file is its `Document.xml` as tapped and
+the archive's other members (27.46); each property names its attachment
+file (`PartShape.brp`) in its own XML, so no rewrite of the entries makes
+it schema 5 -- the document has to be serialised at schema 5 once, as a
+snapshot does (`_snapshotToLog` with the writer at 5). Where that is paid:
+
+- (a) **At open.** The open's snapshot serialises instead of tapping, for a
+  schema-4 file only: every version then materialises as schema 5 from
+  the start. Cost: about a save -- 0.7 to 1.0 s on scanner.FCStd -- on an
+  open of about 1.1 s. `docxml_hash`, which 27.57's `jumps()` compares, is
+  then of bytes the file does not hold; the file's own hash would have to
+  be recorded beside it.
+- (b) **On first read.** The first time version 1 is materialised (a
+  version document, a whole read), the document restored from it is
+  snapshotted at schema 5 and its manifest replaced; later reads are
+  schema 5. The open stays as it is; the first read pays a save, once.
+- (c) **At the first save at schema 5.** The file becomes schema 5 there
+  anyway, and version 1 is superseded by the save's version; only a read
+  of version 1 itself, before then or after, would still write it out.
+
+Recommended: (b) -- nothing is paid by a file whose first version is
+never read, and every read after the first is the fast one.

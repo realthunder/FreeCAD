@@ -2884,6 +2884,7 @@ std::vector<App::DocumentObject*>
 Document::readObjects(Base::XMLReader& reader)
 {
     d->touchedObjs.clear();
+    d->savedTouched.clear();
     bool keepDigits = testStatus(Document::KeepTrailingDigits);
     setStatus(Document::KeepTrailingDigits, !reader.doNameMapping());
     std::vector<App::DocumentObject*> objs;
@@ -3016,8 +3017,10 @@ Document::readObjects(Base::XMLReader& reader)
 
                 // restore touch/error status flags
                 if (reader.hasAttribute("Touched")) {
-                    if(reader.getAttributeAsInteger("Touched") != 0)
+                    if(reader.getAttributeAsInteger("Touched") != 0) {
                         d->touchedObjs.insert(obj);
+                        d->savedTouched.insert(obj->getID());
+                    }
                 }
                 if (reader.hasAttribute("Invalid")) {
                     obj->setStatus(ObjectStatus::Error, reader.getAttributeAsInteger("Invalid") != 0);
@@ -4821,8 +4824,8 @@ struct TouchedFold
 /// Document properties a restore to a version leaves alone (sec 24.5):
 /// where the document lives and who it is, which a version of it does
 /// not change, and what the log itself keeps there. The label is who it
-/// is too: the scratch document a version is read into has its own, and a
-/// switch or a restore gave the document that name (sec 27.11).
+/// is too: the document a version is read into has its own, and a switch or
+/// a restore gave the document that name (sec 27.11).
 bool keptOnRestore(const char* name)
 {
     static const std::set<std::string> kept {"FileName", "TransientDir", "Uid", "Id", "Label",
@@ -4967,7 +4970,7 @@ void Document::_applyVersion(Document& version, bool views)
     }
     // View providers (sec 24.9), where view state is undo state: under
     // ViewObjectTransaction, the setting that has a view provider's change
-    // open a transaction of its own. The scratch document's are the
+    // open a transaction of its own. The version document's are the
     // version's, restored by the Gui from its GuiDocument.xml.
     if (views || DocumentParams::getViewObjectTransaction()) {
         for (auto& kv : target) {
@@ -4977,12 +4980,21 @@ void Document::_applyVersion(Document& version, bool views)
                 restoreContainer(*live, *from, false);
         }
     }
-    // 5. What the version had touched is touched; the rest is as it was.
+    // 5. Touched as the version was saved (sec 27.60): its Document.xml
+    // says which objects were, not which properties, and the restore of the
+    // version document touched more of its own -- an object in error, a link
+    // it had to fix, an expression. A clean one is clean; a touched one keeps
+    // the properties the writes above touched.
+    TouchedFold touched;
+    std::set<long> ids;
     for (auto& kv : target) {
-        auto obj = getObjectByID(kv.first);
-        if (obj && !kv.second->isTouched())
-            obj->purgeTouched();
+        auto& f = touched.objects[kv.first];
+        const bool was = version.d->savedTouched.count(kv.first) != 0;
+        f.bits = was ? DocumentObject::LogTouch : 0;
+        f.exact = !was;
+        ids.insert(kv.first);
     }
+    touched.apply(*this, touched.save(*this, ids));
 }
 
 namespace {
@@ -5352,12 +5364,12 @@ bool Document::restoreVersion(int64_t num)
     mUndoMap[d->activeUndoTransaction->getID()] = d->activeUndoTransaction;
     // Through the rows between here and the version when the log has them
     // (sec 27.34): only what changed since is written. Else the version is
-    // read whole into a scratch document and its difference applied -- which
-    // also puts right whatever the rows got part way through.
+    // read whole into a document of its own and its difference applied --
+    // which also puts right whatever the rows got part way through.
     const int64_t head = log->head();
     if (!_moveAlongLog(head, version.seq, DocumentParams::getViewObjectTransaction())) {
         FC_LOG(getName() << ": version " << num << " restored by reading it whole");
-        _readVersion(num, [&](Document& scratch) { _applyVersion(scratch); });
+        _readVersion(num, [&](Document& read) { _applyVersion(read); });
     }
     if (d->activeUndoTransaction->isEmpty()) {
         // Already what the version was: nothing to record.
@@ -5370,37 +5382,61 @@ bool Document::restoreVersion(int64_t num)
     return true;
 }
 
+void Document::_restoreAsVersion(const std::shared_ptr<FileHistory>& history,
+                                 const std::string& dir, const std::string& fileName)
+{
+    setStatus(VersionDoc, true);
+    d->noLog = true;
+    _joinHistory(history);
+    // Who the document is, not a change to it (27.9): no transaction.
+    if (!fileName.empty()) {
+        Base::FlagToggler<> quiet(d->bookkeeping, false);
+        FileName.setValue(fileName);
+    }
+    Base::FlagToggler<> guard(d->checkingOut);
+    restore(dir.c_str(), false);
+}
+
 void Document::_readVersion(int64_t num, const std::function<void(Document&)>& fn)
 {
-    const std::string dir = _materialiseVersion(num);
-    // The version, read into a scratch document of its own. The name of
-    // its transient directory hashes FileName, which keeps it apart from
-    // this one's though the Uid the restore reads is the same.
+    // Sec 27.58, 27.60: read as openFileVersion() reads a version -- joined to
+    // this file's history, so a blob is found by its hash in the store the
+    // file already has and a shape already parsed is shared -- not into a
+    // scratch document with a store of its own that every blob is written to
+    // and every shape parsed again from. It keeps no log and has no view,
+    // and it is not the version's document a user opens: that one may be
+    // edited, and is left alone.
+    getFileHistory();
+    std::shared_ptr<FileHistory> history = d->history;
+    TransactionLogCore& log = TransactionLogCore::of(*history);
+    const std::string dir = materialiseVersion(
+        log, num, history->directory() + "/history/read-v" + std::to_string(num), true);
+    struct Cleanup
+    {
+        std::string dir;
+        ~Cleanup() { Base::FileInfo(dir).deleteDirectoryRecursive(); }
+    } cleanup {dir};
+
     // A new document becomes the active one; the active one is handed back.
     auto& app = GetApplication();
     Document* active = app.getActiveDocument();
-    const std::string scratchName = app.getUniqueDocumentName("VersionRestore", true);
-    Document* scratch = app.newDocument(scratchName.c_str(), scratchName.c_str(), false, true);
-    if (!scratch)
-        THROWM(Base::RuntimeError, "cannot make the scratch document");
+    const std::string name = app.getUniqueDocumentName(
+        (std::string(getName()) + "_read_v" + std::to_string(num)).c_str(), true);
+    Document* version = app.newDocument(name.c_str(), name.c_str(), false, true);
+    if (!version)
+        THROWM(Base::RuntimeError, "cannot make the version's document");
     std::unique_ptr<void, std::function<void(void*)>> closer(
-        scratch, [&app, scratchName, active](void*) {
-            app.closeDocument(scratchName.c_str());
+        version, [&app, name, active](void*) {
+            app.closeDocument(name.c_str());
             if (active && app.getActiveDocument() != active)
                 app.setActiveDocument(active);
         });
-    scratch->d->noLog = true;
-    // The Gui's log panel may have given the new, active document a log
-    // already (sec 27.7); a scratch document keeps none.
-    scratch->d->transactionLog.reset();
-    scratch->setUndoMode(0);
-    scratch->FileName.setValue(dir);
-    {
-        Base::FlagToggler<> guard(scratch->d->checkingOut);
-        scratch->restore(dir.c_str(), false);
-    }
-
-    fn(*scratch);
+    version->setUndoMode(0);
+    std::string file = FileName.getStrValue();
+    FileHistory::splitVersion(file);
+    version->_restoreAsVersion(history, dir,
+                               file.empty() ? file : file + "@v" + std::to_string(num));
+    fn(*version);
 }
 
 bool Document::isPinned() const
@@ -5924,21 +5960,10 @@ Document* Document::openFileVersion(const std::shared_ptr<FileHistory>& history,
     if (!doc)
         THROWM(Base::RuntimeError, "cannot make the version's document");
     try {
-        doc->setStatus(VersionDoc, true);
-        doc->d->noLog = true;
-        doc->_joinHistory(history);
-        // Who the document is, not a change to it (27.9): no transaction.
         // Named for now as the frozen instance is: the restore reads
         // relative links against the file's directory either way, and the
         // editable one is named for its branch once it has a log (27.23).
-        if (!file.empty()) {
-            Base::FlagToggler<> quiet(doc->d->bookkeeping, false);
-            doc->FileName.setValue(file + suffix);
-        }
-        {
-            Base::FlagToggler<> guard(doc->d->checkingOut);
-            doc->restore(dir.c_str(), false);
-        }
+        doc->_restoreAsVersion(history, dir, file.empty() ? file : file + suffix);
         doc->d->versionFile = file;
         doc->d->versionLabel = label;
         doc->d->versionTail = num;
@@ -6091,8 +6116,12 @@ struct LogFold
                 removed.insert(key);
             }
             else if (o.op == "delprop") {
+                // Its value before the removal is the op's (sec 27.60): the
+                // property comes back with it.
                 removed.erase(key);
                 added[key] = o;
+                if (!o.vbefore.empty())
+                    values[key] = o.vbefore;
             }
             else if (o.op == "set") {
                 touched.back(o);

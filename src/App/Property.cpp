@@ -317,8 +317,16 @@ void Property::hasSetValue()
     // break the claim that execute() will not change it.
     bool changed = false;
     if (father && _old) {
-        if(isSame(*_old)) {
+        // Taken out for the compare: reading the value may serve a deferred
+        // restore, whose setValue() comes back here and would free the copy
+        // under the compare (PropertyPartShape::serveFromBlob, reached from
+        // isSame() when a restore to a version wrote a shape named by its
+        // blob -- docs/TransactionLog.md sec 27.60).
+        std::unique_ptr<Property> old = std::move(_old);
+        if(isSame(*old)) {
             FC_TRACE("no change of " << getFullName());
+            if (!_old)
+                _old = std::move(old);
             return;
         }
         _old.reset();

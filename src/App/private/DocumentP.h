@@ -74,6 +74,10 @@ struct DocumentP
     // Array to preserve the creation order of created objects
     std::vector<DocumentObject*> objectArray;
     std::unordered_set<App::DocumentObject*> touchedObjs;
+    /// The ids of the objects the last restore read as touched -- the
+    /// `Touched` attribute as saved, before the restore touched anything
+    /// of its own (docs/TransactionLog.md sec 27.60).
+    std::set<long> savedTouched;
     std::unordered_map<std::string, DocumentObject*> objectMap;
     std::unordered_map<long, DocumentObject*> objectIdMap;
     std::unordered_map<std::string, bool> partialLoadObjects;

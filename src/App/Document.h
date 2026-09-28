@@ -1187,9 +1187,14 @@ protected:
     /// version) is, recorded into the open transaction (sec 24.5); the view
     /// providers too when `views`, or under ViewObjectTransaction.
     void _applyVersion(Document& version, bool views = false);
-    /// Version `num` read into a hidden scratch document, handed to `fn`,
-    /// and closed.
+    /// Version `num` read into a document of its own as openFileVersion()
+    /// reads one -- joined to this file's history, blobs by hash, no view,
+    /// no log (sec 27.60) -- handed to `fn`, and closed.
     void _readVersion(int64_t num, const std::function<void(Document&)>& fn);
+    /// Restore this new document from `dir`, a materialised version of the
+    /// file `history` records, as a version document named `fileName`.
+    void _restoreAsVersion(const std::shared_ptr<FileHistory>& history, const std::string& dir,
+                           const std::string& fileName);
     /// Sec 27.7: share `history`, another document's of the same file.
     void _joinHistory(const std::shared_ptr<FileHistory>& history);
     int64_t _snapshotToLog(const char* kind);
