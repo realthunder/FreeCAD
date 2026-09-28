@@ -31,6 +31,7 @@ class Ui_TaskMultiTransformParameters;
 class QModelIndex;
 
 namespace PartDesign {
+class Body;
 class Transformed;
 }
 
@@ -74,6 +75,9 @@ private Q_SLOTS:
     void onTransformAddMirrored();
     void onTransformAddLinearPattern();
     void onTransformAddPolarPattern();
+    void onTransformAddCircularPattern();
+    void onTransformAddPathPattern();
+    void onTransformAddPointPattern();
     void onTransformAddScaled();
     void onMoveUp();
     void onMoveDown();
@@ -85,12 +89,18 @@ private Q_SLOTS:
 
 protected:
     void changeEvent(QEvent *e) override;
+    void onSelectionChanged(const Gui::SelectionChanges& msg) override;
 
 private:
     void updateUI() override;
     void closeSubTask();
     void moveTransformFeature(const int increment);
     void finishAdd(std::string &newFeatName);
+    /// Create a transformation of the PartDesign type in the active body,
+    /// named after it, after closing the sub-task
+    App::DocumentObject* newTransformFeature(const char* type, std::string& newFeatName);
+    /// The sketch's normal, else the body's Z axis
+    void setDefaultAxis(App::DocumentObject* Feat, PartDesign::Body* body);
 
 private:
     std::unique_ptr<Ui_TaskMultiTransformParameters> ui;

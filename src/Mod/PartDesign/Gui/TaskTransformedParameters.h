@@ -96,6 +96,10 @@ public:
     App::DocumentObject* getSketchObject() const;
 
     void exitSelectionMode();
+    /// Whether a pick in the view is this panel's, a reference or a placement
+    bool isSelecting() const {
+        return selectionMode != none;
+    }
     void changeVisibility();
 
     virtual void apply() = 0;

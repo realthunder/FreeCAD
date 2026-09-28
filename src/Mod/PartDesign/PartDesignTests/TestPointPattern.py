@@ -133,3 +133,48 @@ class TestPointPattern(unittest.TestCase):
             self._bounds(pattern.Shape),
             [(-48, -49, -44, -45), (-33, -49, -29, -45), (5, 5, 7, 6), (20, 5, 22, 6)],
         )
+
+    def testInMultiTransform(self):
+        # The fork's: inside a MultiTransform the pattern has no base of its
+        # own, so the original stays and the copies keep the points' layout
+        # relative to the first point, composing with what follows
+        body = self.doc.addObject("PartDesign::Body", "Body")
+        points = body.newObject("PartDesign::Feature", "Points")
+        points.Shape = Part.makeCompound(
+            [
+                Part.Vertex(FreeCAD.Vector(5, 5, 0)),
+                Part.Vertex(FreeCAD.Vector(20, 5, 0)),
+                Part.Vertex(FreeCAD.Vector(5, 20, 0)),
+            ]
+        )
+        box = body.newObject("PartDesign::AdditiveBox", "Box")
+        box.Length = 2
+        box.Width = 1
+        box.Height = 1
+        box.Placement = FreeCAD.Placement(FreeCAD.Vector(3, 4, 0), FreeCAD.Rotation())
+        self.doc.recompute()
+
+        multi = body.newObject("PartDesign::MultiTransform", "MultiTransform")
+        multi.Originals = [box]
+        pattern = body.newObject("PartDesign::PointPattern", "PointPattern")
+        pattern.PointObject = points
+        linear = body.newObject("PartDesign::LinearPattern", "LinearPattern")
+        linear.Direction = (self.doc.X_Axis, [""])
+        linear.Length = 100
+        linear.Occurrences = 2
+        multi.Transformations = [pattern, linear]
+        body.Tip = multi
+        self.doc.recompute()
+
+        self.assertEqual(multi.getStatusString(), "Valid")
+        self.assertEqual(
+            self._bounds(multi.Shape),
+            [
+                (3, 4, 5, 5),
+                (3, 19, 5, 20),
+                (18, 4, 20, 5),
+                (103, 4, 105, 5),
+                (103, 19, 105, 20),
+                (118, 4, 120, 5),
+            ],
+        )

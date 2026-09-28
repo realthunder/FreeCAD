@@ -119,3 +119,36 @@ class TestPathPattern(unittest.TestCase):
         self.assertAlmostEqual(bounds.XMax, 10)
         self.assertAlmostEqual(bounds.YMin, 0)
         self.assertAlmostEqual(bounds.YMax, 1)
+
+    def testInMultiTransform(self):
+        # The fork's: inside a MultiTransform the original stays and the
+        # copies follow the path's steps from its start
+        body = self.doc.addObject("PartDesign::Body", "Body")
+        path = body.newObject("PartDesign::Feature", "Path")
+        path.Shape = Part.makePolygon(
+            [FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(30, 0, 0), FreeCAD.Vector(30, 30, 0)]
+        )
+        box = body.newObject("PartDesign::AdditiveBox", "Box")
+        box.Length = 2
+        box.Width = 1
+        box.Height = 1
+        box.Placement = FreeCAD.Placement(FreeCAD.Vector(3, 4, 0), FreeCAD.Rotation())
+        self.doc.recompute()
+
+        multi = body.newObject("PartDesign::MultiTransform", "MultiTransform")
+        multi.Originals = [box]
+        pattern = body.newObject("PartDesign::PathPattern", "PathPattern")
+        pattern.Path = (path, ["Edge1", "Edge2"])
+        pattern.Count = 3
+        multi.Transformations = [pattern]
+        body.Tip = multi
+        self.doc.recompute()
+
+        self.assertEqual(multi.getStatusString(), "Valid")
+        self.assertEqual(
+            sorted(
+                tuple(round(v, 6) for v in (b.XMin, b.YMin, b.XMax, b.YMax))
+                for b in (s.BoundBox for s in multi.Shape.Solids)
+            ),
+            [(3, 4, 5, 5), (33, 4, 35, 5), (33, 34, 35, 35)],
+        )

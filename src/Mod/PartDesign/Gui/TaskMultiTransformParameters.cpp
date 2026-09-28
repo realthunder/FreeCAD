@@ -36,9 +36,12 @@
 #include <Gui/Selection.h>
 #include <Gui/Command.h>
 #include <Mod/PartDesign/App/Body.h>
+#include <Mod/PartDesign/App/FeatureCircularPattern.h>
 #include <Mod/PartDesign/App/FeatureLinearPattern.h>
 #include <Mod/PartDesign/App/FeatureMirrored.h>
 #include <Mod/PartDesign/App/FeatureMultiTransform.h>
+#include <Mod/PartDesign/App/FeaturePathPattern.h>
+#include <Mod/PartDesign/App/FeaturePointPattern.h>
 #include <Mod/PartDesign/App/FeaturePolarPattern.h>
 #include <Mod/PartDesign/App/FeatureScaled.h>
 
@@ -89,6 +92,18 @@ TaskMultiTransformParameters::TaskMultiTransformParameters(ViewProviderTransform
     action = new QAction(tr("Add polar pattern"), ui->listTransformFeatures);
     Base::connect(action, &QAction::triggered,
                     this, &TaskMultiTransformParameters::onTransformAddPolarPattern);
+    ui->listTransformFeatures->addAction(action);
+    action = new QAction(tr("Add circular pattern"), ui->listTransformFeatures);
+    Base::connect(action, &QAction::triggered,
+                    this, &TaskMultiTransformParameters::onTransformAddCircularPattern);
+    ui->listTransformFeatures->addAction(action);
+    action = new QAction(tr("Add path pattern"), ui->listTransformFeatures);
+    Base::connect(action, &QAction::triggered,
+                    this, &TaskMultiTransformParameters::onTransformAddPathPattern);
+    ui->listTransformFeatures->addAction(action);
+    action = new QAction(tr("Add point pattern"), ui->listTransformFeatures);
+    Base::connect(action, &QAction::triggered,
+                    this, &TaskMultiTransformParameters::onTransformAddPointPattern);
     ui->listTransformFeatures->addAction(action);
     action = new QAction(tr("Add scaled transformation"), ui->listTransformFeatures);
     Base::connect(action, &QAction::triggered,
@@ -145,6 +160,16 @@ void TaskMultiTransformParameters::slotDeletedObject(const Gui::ViewProviderDocu
     TaskTransformedParameters::slotDeletedObject(Obj);
 }
 
+void TaskMultiTransformParameters::onSelectionChanged(const Gui::SelectionChanges& msg)
+{
+    // A reference the sub-task is picking is no original of ours. Both panels
+    // observe the same selection and this one was attached first, so the
+    // sub-task is still in its selection mode when the pick arrives here.
+    if (subTask && subTask->isSelecting())
+        return;
+    TaskTransformedParameters::onSelectionChanged(msg);
+}
+
 void TaskMultiTransformParameters::closeSubTask()
 {
     if (subTask) {
@@ -196,7 +221,10 @@ void TaskMultiTransformParameters::onTransformEdit()
     if (transformFeatures[row]->is<PartDesign::Mirrored>())
         subTask = new TaskMirroredParameters(this, ui->verticalLayout);
     else if (transformFeatures[row]->is<PartDesign::LinearPattern>()
-            || transformFeatures[row]->is<PartDesign::PolarPattern>())
+            || transformFeatures[row]->is<PartDesign::PolarPattern>()
+            || transformFeatures[row]->is<PartDesign::CircularPattern>()
+            || transformFeatures[row]->is<PartDesign::PathPattern>()
+            || transformFeatures[row]->is<PartDesign::PointPattern>())
         subTask = new TaskPatternParameters(this, ui->verticalLayout);
     else if (transformFeatures[row]->is<PartDesign::Scaled>())
         subTask = new TaskScaledParameters(this, ui->verticalLayout);
@@ -296,16 +324,71 @@ void TaskMultiTransformParameters::onTransformAddPolarPattern()
     if (!Feat)
         return;
     //Gui::Command::updateActive();
+    setDefaultAxis(Feat, pcActiveBody);
+    FCMD_OBJ_CMD(Feat, "Angle = 360");
+    FCMD_OBJ_CMD(Feat, "Occurrences = 2");
+
+    finishAdd(newFeatName);
+}
+
+void TaskMultiTransformParameters::setDefaultAxis(App::DocumentObject* Feat,
+                                                  PartDesign::Body* body)
+{
     App::DocumentObject* sketch = getSketchObject();
     if (sketch)
         FCMD_OBJ_CMD(Feat, "Axis = ("<<Gui::Command::getObjectCmd(sketch)<<",['N_Axis'])");
     else {
         FCMD_OBJ_CMD(Feat, "Axis = ("
-                << Gui::Command::getObjectCmd(pcActiveBody->getOrigin()->getZ())<<",[''])");
+                << Gui::Command::getObjectCmd(body->getOrigin()->getZ())<<",[''])");
     }
-    FCMD_OBJ_CMD(Feat, "Angle = 360");
-    FCMD_OBJ_CMD(Feat, "Occurrences = 2");
+}
 
+App::DocumentObject* TaskMultiTransformParameters::newTransformFeature(const char* type,
+                                                                       std::string& newFeatName)
+{
+    closeSubTask();
+    newFeatName = TransformedView->getObject()->getDocument()->getUniqueObjectName(type);
+    auto pcActiveBody = PartDesignGui::getBody(false);
+    if (!pcActiveBody)
+        return nullptr;
+
+    if (isEnabledTransaction())
+        setupTransaction();
+
+    FCMD_OBJ_CMD(pcActiveBody, "newObject('PartDesign::"<<type<<"','"<<newFeatName<<"')");
+    return pcActiveBody->getDocument()->getObject(newFeatName.c_str());
+}
+
+void TaskMultiTransformParameters::onTransformAddCircularPattern()
+{
+    // The axis as a polar pattern's, the rings as the feature's defaults
+    std::string newFeatName;
+    auto Feat = newTransformFeature("CircularPattern", newFeatName);
+    if (!Feat)
+        return;
+    setDefaultAxis(Feat, PartDesign::Body::findBodyOf(Feat));
+    finishAdd(newFeatName);
+}
+
+void TaskMultiTransformParameters::onTransformAddPathPattern()
+{
+    // The path is picked in the sub-panel; until then the pattern is the
+    // original alone
+    std::string newFeatName;
+    if (!newTransformFeature("PathPattern", newFeatName))
+        return;
+    finishAdd(newFeatName);
+}
+
+void TaskMultiTransformParameters::onTransformAddPointPattern()
+{
+    // The points are picked in the sub-panel. With no base of its own inside
+    // a MultiTransform, the copies keep the points' layout relative to the
+    // first point, where the original stays, so that the pattern composes
+    // with the other transformations as theirs do
+    std::string newFeatName;
+    if (!newTransformFeature("PointPattern", newFeatName))
+        return;
     finishAdd(newFeatName);
 }
 
