@@ -1939,3 +1939,91 @@ new; run under `pytest-fcad-pty.cmd`, a plain redirect dies in
 `TestCAMSanity` as `docs/Testing.md` says), ctest 750/750 --
 `ReaderTest.beginCharStreamOpenClose` failed once under `-j 6` and passed
 alone.
+
+### Patterns in App: App::Pattern and App::LinkArray (2026-09-28)
+
+Upstream put its link arrays in Part (PR #30840: "primarily useful in
+Assembly ... in Part because there was no reason to put them in
+assembly"), one class per kind, each over a pattern extension that reads
+its references with OCCT. The fork's `App::Link` is geometry-free on
+purpose, so that it arrays meshes as well as solids, and the user asked for
+the same of its patterns: the logic in App, a kind that can change at run
+time, and Part left with thin wrappers so that upstream's files and API
+still work.
+
+- **`App::Pattern`** (`src/App/Pattern.*`) is the engine, all five kinds --
+  linear (two directions), polar, circular, path, point -- on
+  `Base::Placement`. It reads its inputs by property name, upstream's names,
+  from whatever carries them: a static member, an extension member, a
+  dynamic property. The property table, defaults, constraints and the
+  keeping in step (Length with Offset, Spacings with Occurrences, the
+  read-only side by Mode, the path's hidden inputs) are the engine's too.
+  The fork's adaptations of `70b4946311` live there: Spacings resized when
+  Occurrences changes, never on recompute, to 1000 at most; a list shorter
+  than the gaps reads -1; the polar spacings indexed as `0f07a936d9`; a
+  second direction with more than one occurrence needs a reference.
+- **References are resolved by plug-ins.** App resolves its own datums
+  (`App::Line`, `App::Plane`, `App::Point`, a coordinate system and its
+  elements) through `getSubObject()`, so a moved or linked LCS counts. Part
+  registers `Part::PatternResolver` for the rest, through
+  `Part::Feature::getTopoShape()`: a straight edge or planar face as a
+  direction, a straight or circular edge as an axis, sketch axes
+  (`H_Axis`, `V_Axis`, `N_Axis`, `AxisN`, the sketch as a whole for its
+  normal), edges or the first wire as a path, vertices as points. PD's datums
+  are shapes, so PD needs no override of its own.
+- **`App::LinkArray`** is an `App::Link` with a `PatternType` enum. The
+  active kind's inputs are dynamic properties, swapped when it changes; one
+  two kinds share with the same type (Occurrences, Reversed, Mode, Axis)
+  keeps its value, so Offset can be a Length in one kind and an Angle in
+  another. A reference is brought into the array's frame by its Placement.
+- **Suppression is the fork's `VisibilityList`**, not upstream's
+  `SuppressibleExtension` on every link element (`5321fd261d`). A hidden
+  element is left out of `getSubObjects()` and so of the array's shape
+  (`Part::Feature::getTopoShape` already honoured `VisibilityList`). A
+  linear array keeps its hidden elements by grid position in
+  `SuppressedPositions` (upstream's `PropertyIntPairList`, `04cb10696f`,
+  saved in upstream's `<Pair first= second=/>` form), remapped onto
+  VisibilityList when the counts change; positions outside the grid are
+  kept for when it grows back. An upstream file's element `Suppressed` flag
+  is read into VisibilityList on restore, and the `SuppressibleExtension`
+  its link elements carry is skipped with a log line, not an error per
+  element.
+- **Part** keeps upstream's names: `Part::LinkArrayLinear/Polar/Circular/
+  Path/Point` are `App::LinkArray` with the kind preset, and
+  `Part::Linear/Polar/Circular/Path/PointPatternExtension` carry the inputs
+  as static members and hand out the engine's result as upstream's
+  `gp_Trsf` list. PD's `LinearPattern` and `PolarPattern` derive from them
+  as upstream's do (`c334ac5062`), -750 lines of pattern code of their own.
+
+Four defects outside the patterns turned up on the way:
+
+- **An LCS's elements were resolved without the LCS's placement.**
+  `LCSExtension::extensionGetSubObject` ignored `transform` (upstream's does
+  too), so `(LCS, "X_Axis")` through `getSubObject()` came out where the
+  LCS would be unmoved. The elements are placed in the coordinate system,
+  as a group's children are.
+- **A link array could hide a new element it never hid.** Collapsing an
+  array (ShowElement off) deleted the elements but kept their pointers in
+  `myHiddenElements`; expanding it again allocated new elements, one at an
+  old address, and VisibilityList was rebuilt from the stale set -- a
+  different element hidden on every run.
+- **Undo of a dynamic property replaced by one of the same name and
+  another type restored the old value into the new property and then
+  removed it.** The transaction applies its property records in no order;
+  the removals of added properties now go first.
+- **A link answers `getPropertyByName()` with the linked object's
+  properties** when it has none of that name, so a pattern over an
+  `App::FeatureTest` read the test object's `Angle` and `Path`. The engine
+  reads only the object's own properties (`Pattern::getProperty`).
+
+Tests: `TestLinkArray` (App, 12, no geometry module) and
+`parttests.TestLinkArray` (Part, 23, upstream's link array tests adapted to
+hiding for suppression).
+
+Left for the Gui half: the editors and panels (one widget per kind, so the
+enum switches widgets), the commands, PD's panels on the shared editors
+(`a540770659`) and the on-view spacing labels (`6fa9125919`).
+
+Commits `97a74ad026`..`ddd5eb4afc`. Suites at `ddd5eb4afc`: Python 3136 OK
+(50 skipped, 6 expected failures; +43: the two LinkArray modules and
+`TestIntPairList`), ctest 750/750.
