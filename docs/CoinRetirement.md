@@ -3097,7 +3097,12 @@ change -- an object added or removed, any link property changed (a group's
 members, a link's target), a document restored -- once the event loop is
 back, since the view providers rebuild their nodes on the same signals; a
 holder whose keys changed is told. Not per recompute: a recompute moves no
-node.
+node. And whenever a container's 3D children actually change
+(`Document::handleChildren3D` past its "unchanged" return,
+`ViewVisibility::sceneChanged()`): nodes move there with no App signal to
+say so, the case that matters being a load, whose view is restored with
+its map before the drain has put the children in their containers -- the
+saved path entry resolved against the half-built scene and never matched.
 
 **Verified.** Before-state first: `per-view-visibility.py` with the bare
 claim ruled (Q2: a Link to the object is NOT affected) failed on HEAD in

@@ -123,6 +123,12 @@ public:
     /// version moves only when its content does.
     const Render::VisibilitySet *drawSet(SoFCRenderCacheManager *feed);
 
+    /// The scene's structure changed where no App signal says so -- a
+    /// container rebuilt its 3D children (Document::handleChildren3D), as
+    /// a load does once the children's view providers exist: every table
+    /// with entries is resolved again once the event loop is back.
+    static void sceneChanged() { scheduleResolve(); }
+
 private:
     /// Resolve both sources and recount; false when the table came out
     /// the same.

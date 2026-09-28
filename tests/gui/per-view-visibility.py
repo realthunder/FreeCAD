@@ -405,9 +405,10 @@ def run():
             p_own = FreeCAD.Vector(35, 5, 5)
             p_other = FreeCAD.Vector(35, 5, 35)
             p_gap = FreeCAD.Vector(20, 5, 5)
-            # Judged by the frame only: after a reopen nothing inside the
-            # Part or the Link picks at all, entry or none (a separate
-            # defect, found here 2026-09-28), so a pick proves nothing.
+            own = hit(v, v.getPointOnViewport(p_own))
+            other = hit(v, v.getPointOnViewport(p_other))
+            check("reopen: Box2 in Asm is not picked", own is None, own)
+            check("reopen: Link2's Box2 still is", other is not None, other)
             po = pixel(v, p_own, "reopen-own")
             pl = pixel(v, p_other, "reopen-link2")
             pg = pixel(v, p_gap, "reopen-gap")

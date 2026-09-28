@@ -86,6 +86,7 @@
 #include "ViewProviderDocumentObject.h"
 #include "ViewProviderDocumentObjectGroup.h"
 #include "ViewProviderLink.h"
+#include "ViewVisibility.h"
 #include "ViewProviderShaderObject.h"
 #include "WaitCursor.h"
 
@@ -4810,6 +4811,10 @@ void Document::handleChildren3D(ViewProvider* viewProvider, bool deleting)
         if(children == *childCache)
             return;
     }
+
+    // Nodes move below: a view's visibility entries name nodes, and must be
+    // resolved against the new structure.
+    ViewVisibility::sceneChanged();
 
     // Obtained the old view provider
     std::set<ViewProviderDocumentObject*> oldChildren;
