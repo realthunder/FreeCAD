@@ -251,6 +251,8 @@ App::DocumentObjectExecReturn *Transformed::execute()
 
     this->positionBySupport();
     bool hasOffset = !TransformOffset.getValue().isIdentity();
+    // The first instance is moved, by the offset or by the pattern itself
+    bool moveFirst = hasOffset || isFirstInstanceTransformed();
 
     // Get the support
     TopoShape support;
@@ -284,7 +286,7 @@ App::DocumentObjectExecReturn *Transformed::execute()
             }
         } 
         else if (_Version.getValue() > 2
-                && hasOffset
+                && moveFirst
                 && OffsetBaseFeature.getValue()
                 && SubTransform.getValue())
         {
@@ -345,7 +347,9 @@ App::DocumentObjectExecReturn *Transformed::execute()
                                        : "because of its type"));
             } else {
                 if (auto feature = Base::freecad_dynamic_cast<FeatureAddSub>(firstObj)) {
-                    support = feature->getBaseShape(true, false, false);
+                    // A base without a solid, points or a path, is none, as
+                    // it was to the original itself
+                    support = feature->getBaseShape(true, false, true);
                     if (baseObj)
                         this->Placement.setValue(baseObj->Placement.getValue());
                 }
@@ -362,8 +366,17 @@ App::DocumentObjectExecReturn *Transformed::execute()
         offset = TopoShape::convert(TransformOffset.getValue().toMatrix());
     auto trsfInv = placementInv.Multiplied(offset);
 
-    // create an untransformed copy of the support shape
-    support.setTransform(Base::Matrix4D());
+    // The support in our frame. It is normally at our placement, which then
+    // leaves it untransformed; a rewritten history's support is an earlier
+    // feature's, at that feature's placement.
+    if (!support.isNull()) {
+        Base::Matrix4D mat = support.getTransform();
+        if (Base::Placement(mat).isSame(this->Placement.getValue(), Precision::Confusion()))
+            mat = Base::Matrix4D();
+        else
+            mat = this->Placement.getValue().inverse().toMatrix() * mat;
+        support.setTransform(mat);
+    }
     if(!support.Hasher)
         support.Hasher = getDocument()->getStringHasher();
 
@@ -381,7 +394,8 @@ App::DocumentObjectExecReturn *Transformed::execute()
         if(!obj) 
             continue;
 
-        int startIndex = canSkipFirst && body && body->isSibling(this, obj) ? 1 : 0;
+        int startIndex = canSkipFirst && !isFirstInstanceTransformed()
+            && body && body->isSibling(this, obj) ? 1 : 0;
 
         if (SubTransform.getValue() 
                 && obj->isDerivedFrom<PartDesign::FeatureAddSub>()) 
@@ -610,7 +624,7 @@ App::DocumentObjectExecReturn *Transformed::execute()
                     return new App::DocumentObjectExecReturn("Transformed: Linked shape object is empty");
                 try {
                     shapeCopy = shapeCopy.makETransform(*t, ss.str().c_str());
-                    if (idx == 0 && canSkipFirst && (_Version.getValue()==0 || !hasOffset || !OffsetBaseFeature.getValue())) {
+                    if (idx == 0 && canSkipFirst && (_Version.getValue()==0 || !moveFirst || !OffsetBaseFeature.getValue())) {
                         // Skip first transformation in case we do not transform the
                         // first instance (i.e. original feature belongs to the same
                         // sibling group)
@@ -666,7 +680,7 @@ App::DocumentObjectExecReturn *Transformed::execute()
             if (shapeCopy.isNull())
                 return new App::DocumentObjectExecReturn("Transformed: Linked shape object is empty");
 
-            if (idx == 0 && canSkipFirst && (_Version.getValue()==0 || !hasOffset)) {
+            if (idx == 0 && canSkipFirst && (_Version.getValue()==0 || !moveFirst)) {
                 // Skip first transformation in case we do not transform the
                 // first instance (i.e. original feature belongs to the same
                 // sibling group)

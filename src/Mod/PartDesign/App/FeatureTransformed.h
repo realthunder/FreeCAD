@@ -78,6 +78,16 @@ public:
         return std::list<gp_Trsf>(); // Default method
     }
 
+    /** Whether the first transformation moves the originals as well
+     *
+     * Normally it is the identity, the originals where they are. When it is
+     * not, the history is rewritten as for TransformOffset: the support is
+     * the originals' base, so that they are not left in place as well.
+     */
+    virtual bool isFirstInstanceTransformed() const {
+        return false;
+    }
+
    /** @name methods override feature */
     //@{
     /** Recalculate the feature

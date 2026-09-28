@@ -283,6 +283,34 @@ class TestLinearPattern(unittest.TestCase):
             self.assertAlmostEqual(bound.YMax, 2)
         self.assertAlmostEqual(max(b.ZMax for b in copies), 21)
 
+    def testOffsetFirstInstanceKeepsTheBaseInPlace(self):
+        # TransformOffset moves the first instance by rewriting the history:
+        # the support is the original's base, which must stay at its own
+        # placement rather than take the pattern's
+        body = self.Doc.addObject('PartDesign::Body', 'Body')
+        plate = body.newObject('PartDesign::AdditiveBox', 'Plate')
+        plate.Length = 4
+        plate.Width = 4
+        plate.Height = 1
+        plate.Placement = FreeCAD.Placement(FreeCAD.Vector(-50, -50, 0), FreeCAD.Rotation())
+        box = body.newObject('PartDesign::AdditiveBox', 'Box')
+        box.Length = 2
+        box.Width = 1
+        box.Height = 1
+        box.Placement = FreeCAD.Placement(FreeCAD.Vector(3, 4, 0), FreeCAD.Rotation())
+        self.Doc.recompute()
+        pattern = body.newObject('PartDesign::LinearPattern', 'LinearPattern')
+        pattern.Originals = [box]
+        pattern.Direction = (self.Doc.X_Axis, [''])
+        pattern.Length = 20
+        pattern.Occurrences = 2
+        pattern.TransformOffset = FreeCAD.Placement(FreeCAD.Vector(0, 0, 10), FreeCAD.Rotation())
+        self.Doc.recompute()
+        self.assertEqual(pattern.getStatusString(), 'Valid')
+        bounds = sorted((round(b.XMin, 6), round(b.YMin, 6), round(b.ZMin, 6))
+                        for b in (s.BoundBox for s in pattern.Shape.Solids))
+        self.assertEqual(bounds, [(-50, -50, 0), (3, 4, 10), (23, 4, 10)])
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestLinearPattern")

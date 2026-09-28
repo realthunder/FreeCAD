@@ -23,12 +23,23 @@ std::list<gp_Trsf> PointPattern::getTransformations(const std::vector<Part::Topo
     }
 
     // The points are in the body's frame, the originals in the feature's.
-    // An original moves from the base feature's origin to each point, and
+    // Transforming features, an original moves from its own origin to each
+    // point, and the base stays where it is: Transformed rewrites the
+    // history so that the original is not left in place as well. Whole
+    // shapes move from the base feature's origin, as upstream's do, and
     // positionBySupport() has already put the feature, and with it the
-    // support, on the first one. Without a base, as inside a MultiTransform,
-    // the copies are relative to the first point.
+    // support, on the first point. Without a reference, as inside a
+    // MultiTransform, the copies are relative to the first point.
     Base::Vector3d origin = points.front().getPosition();
-    if (auto base = getBaseObject(/*silent=*/true)) {
+    if (SubTransform.getValue()) {
+        for (auto obj : OriginalSubs.getValues()) {
+            if (auto feature = Base::freecad_dynamic_cast<Part::Feature>(obj)) {
+                origin = feature->Placement.getValue().getPosition();
+                break;
+            }
+        }
+    }
+    else if (auto base = getBaseObject(/*silent=*/true)) {
         origin = base->Placement.getValue().getPosition();
     }
     const Base::Rotation inverse = Placement.getValue().getRotation().inverse();
@@ -44,9 +55,17 @@ std::list<gp_Trsf> PointPattern::getTransformations(const std::vector<Part::Topo
     return res;
 }
 
+bool PointPattern::isFirstInstanceTransformed() const
+{
+    return SubTransform.getValue() && PointObject.getValue();
+}
+
 void PointPattern::positionBySupport()
 {
     Transformed::positionBySupport();
+    if (SubTransform.getValue()) {
+        return;
+    }
 
     std::vector<Base::Placement> points;
     try {
