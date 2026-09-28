@@ -7240,4 +7240,39 @@ through the rows to a version set exactly those.
 **Gates.** Python 2941 OK (52 skipped, 6 expected failures; +1), ctest
 842/842, the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16.
 
-**Next.** A ruling on the touched state; then 27.50 steps 1-4.
+**Next.** 27.58.
+
+### 27.58 Rulings: touched state in the rows, the fallback through openFileVersion (user, 2026-09-28)
+
+**The touched state goes in the rows (user: "can we just store this in the
+op for property change?").** The touch side rides on the op that causes it:
+a `set` op carries the state before it -- the property's touched bit and
+the object's Touch/Enforce bits, one small integer in a new `op` column;
+the state after is implied (a write leaves the property and its object
+touched). The purge side has no op of its own -- an object whose outputs came
+out the same writes none -- so it rides on the recompute record, the row of
+the purge: each entry also carries the object's bits and its touched
+property names from just before the recompute. The walk through the rows
+(27.34) then starts from the document's flags and applies each crossed
+row's before and after, in either direction, replacing step 4's rule; the
+recovery replay (25.7) reads the same instead of inferring from the records.
+Not covered, and left so: an explicit `touch()` that changes no property
+shows only in the next record's before bits.
+
+**The fallback reads the version through `openFileVersion` (user: "why do
+you need the fallback again?").** A whole read is still needed where the rows
+cannot make the state -- a trim deleted them (26.8), a value never reached
+the log (25.2 item 3), or an open's record jumped (the file changed outside
+its history). But not through `_readVersion`'s scratch document, with its own
+store, every blob written and every shape parsed again: the version is opened
+as `openFileVersion` opens one (27.32) -- joined to the file's history, blobs
+by hash, parsed shapes shared, no view -- its difference applied, and the
+version document closed. The scratch path goes.
+
+**Only schema 5 in the transient directory (user).** What a version
+materialises there -- today the XML entries -- is schema 5 and on: a blob named
+by its hash, never a file written under a name. A version recorded from a
+schema 4 file (the file as found) is to be kept so that it materialises as
+schema 5, not written out whole as 27.32 still does for it.
+
+**Order (user):** the touched state first, then the fallback. Next session.
