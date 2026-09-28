@@ -476,16 +476,25 @@ void TransactionObject::applyChn(Document &Doc, TransactionalObject *pcObj, bool
         container = &Doc;
 
     if (status == New || status == Chn) {
-        // Property change order is not preserved, as it is recursive in nature
+        // Property change order is not preserved, as it is recursive in nature.
+        //
+        // But the properties added are removed first: a property removed and
+        // one of the same name added in its place, of another type, as
+        // App::LinkArray swaps its inputs, must not have the old one restored
+        // into the new one before that goes.
+        for(auto &v : _PropChangeMap) {
+            auto &data = v.second;
+            if(!data.property) {
+                // here means we are undoing/redoing and property add operation
+                container->removeDynamicProperty(data.name.c_str());
+            }
+        }
         for(auto &v : _PropChangeMap) {
             auto &data = v.second;
             auto prop = const_cast<Property*>(data.propertyOrig);
 
-            if(!data.property) {
-                // here means we are undoing/redoing and property add operation
-                container->removeDynamicProperty(data.name.c_str());
+            if(!data.property)
                 continue;
-            }
 
             // getPropertyName() is specially coded to be safe even if prop has
             // been destroies. We must prepare for the case where user removed
