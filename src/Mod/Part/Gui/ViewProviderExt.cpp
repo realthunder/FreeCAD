@@ -2607,6 +2607,12 @@ bool ViewProviderPartExt::getDetailPath(const char *subname,
         pPath->append(pcModeSwitch);
     }
 
+    // No element: the whole object, which needs no shape. Asking for it
+    // would restore a shape a load left in the blob store, and so rebuild
+    // the object's visual, for a path that does not depend on either.
+    if (!*subelement)
+        return true;
+
     // TShape-instanced representation: per-instance sub-element
     // highlight. The instance wrappers are SoFCSelectionRoot and the
     // selection contexts key on the traversed selection-root stack, so
