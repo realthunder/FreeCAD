@@ -31,6 +31,7 @@
 #endif
 
 #include <App/Application.h>
+#include <App/Datums.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
 #include <App/DocumentObjectPy.h>
@@ -599,6 +600,17 @@ int SelectionSingleton::getAsPropertyLinkSubList(App::PropertyLinkSubList &prop)
     for (auto & selitem : sel) {
         App::DocumentObject* obj = selitem.getObject();
         const std::vector<std::string> &subnames = selitem.getSubNames();
+
+        // LCS datums have placements relative to their coordinate system
+        // (upstream cfd1cdfb36)
+        if (auto datum = Base::freecad_dynamic_cast<App::DatumElement>(obj)) {
+            auto lcs = datum->getLCS();
+            if (lcs && !lcs->isOrigin() && lcs->hasObject(datum)) {
+                objs.push_back(lcs);
+                subs.push_back(std::string(datum->getNameInDocument()) + ".");
+                continue;
+            }
+        }
 
         //whole object is selected
         if (subnames.empty()){

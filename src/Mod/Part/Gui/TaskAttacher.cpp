@@ -573,6 +573,17 @@ void TaskAttacher::onSelectionChanged(const Gui::SelectionChanges& msg)
             selObj = sel.getSubObject();
             auto selElement = sel.getOldElementName();
 
+            // A datum element of a coordinate system is referenced through
+            // the system: the element's own placement is relative to it
+            // (upstream cfd1cdfb36)
+            if (auto datum = Base::freecad_dynamic_cast<App::DatumElement>(selObj)) {
+                auto lcs = datum->getLCS();
+                if (lcs && !lcs->isOrigin() && lcs->hasObject(datum)) {
+                    selObj = lcs;
+                    selElement = std::string(datum->getNameInDocument()) + ".";
+                }
+            }
+
             // eliminate duplicate selections
             for (size_t r = 0; r < refs.size(); r++) {
                 if (selObj == refs[r]) {

@@ -1410,6 +1410,16 @@ SubShapeBinder::import(const App::SubObjectT &_feature,
             if ((!noSubElement || !resolved.hasSubElement())
                     && (!noSubObject || !resolved.hasSubObject()))
                 return App::SubObjectT(sobj, feature.getElementName());
+            // A datum element of a coordinate system in scope is referenced
+            // through the system, which carries its placement (upstream
+            // cfd1cdfb36). A binder of it would sit at the identity.
+            auto lcs = Base::freecad_dynamic_cast<App::LocalCoordinateSystem>(link);
+            if (lcs && !lcs->isOrigin() && !resolved.hasSubElement()) {
+                auto datum = Base::freecad_dynamic_cast<App::DatumElement>(
+                        lcs->getSubObject(linkSub.c_str()));
+                if (datum && lcs->hasObject(datum))
+                    return resolved;
+            }
             featName = "Binder";
         }
     }
