@@ -387,7 +387,7 @@ bool LocalCoordinateSystem::LCSExtension::extensionGetSubObject(DocumentObject*&
                                                                 const char* subname,
                                                                 PyObject** pyobj,
                                                                 Base::Matrix4D* mat,
-                                                                bool,
+                                                                bool transform,
                                                                 int depth) const
 {
     if (Base::Tools::isNullOrEmpty(subname)) {
@@ -415,6 +415,11 @@ bool LocalCoordinateSystem::LCSExtension::extensionGetSubObject(DocumentObject*&
         ret = obj->getDatumElement(name.c_str());
         if (!ret) {
             return false;
+        }
+        // The elements are placed in the coordinate system, as the children
+        // of any group are
+        if (mat && transform) {
+            *mat *= obj->Placement.getValue().toMatrix();
         }
         const char* dot = strchr(subname, '.');
         if (dot) {
