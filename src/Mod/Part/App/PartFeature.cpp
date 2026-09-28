@@ -947,17 +947,34 @@ static inline bool checkLink(const App::DocumentObject *obj) {
             || obj->getExtensionByType<App::GeoFeatureGroupExtension>(obj);
 }
 
-static bool checkLinkVisibility(std::set<std::string> &hiddens,
+/// The visibility marks (element colours with the hidden or the shown
+/// marker, DocumentObject::hiddenMarker/shownMarker) of the containers on
+/// the way to \a subname, relative to it on return: subname -> shown.
+/// With \a check, false when the way passes through a hidden one, and
+/// \a forced tells whether the object \a subname names is forced shown
+/// (although its own Visibility is off). A container's marks come before
+/// those of the containers inside it, so an outer mark wins.
+using VisibilityMarks = std::map<std::string, bool>;
+
+static void addVisibilityMarks(VisibilityMarks &marks, const App::DocumentObject *obj,
+                               const std::string &prefix = std::string())
+{
+    for(auto &s : App::LinkBaseExtension::getHiddenSubnames(obj))
+        marks.emplace(prefix + s, false);
+    for(auto &s : App::LinkBaseExtension::getShownSubnames(obj))
+        marks.emplace(prefix + s, true);
+}
+
+static bool checkLinkVisibility(VisibilityMarks &hiddens,
         bool check, const App::DocumentObject *&lastLink,
-        const App::DocumentObject *obj, const char *subname)
+        const App::DocumentObject *obj, const char *subname, bool *forced = nullptr)
 {
     if(!obj || !obj->isAttachedToDocument())
         return false;
 
     if(checkLink(obj)) {
         lastLink = obj;
-        for(auto &s : App::LinkBaseExtension::getHiddenSubnames(obj))
-            hiddens.emplace(std::move(s));
+        addVisibilityMarks(hiddens, obj);
     }
 
     if(!subname || !subname[0])
@@ -971,11 +988,17 @@ static bool checkLinkVisibility(std::set<std::string> &hiddens,
         sub[pos+1] = 0;
 
         for(auto it=hiddens.begin();it!=hiddens.end();) {
-            if(!boost::starts_with(*it,CharRange(sub.c_str(),sub.c_str()+pos+1)))
+            if(!boost::starts_with(it->first,CharRange(sub.c_str(),sub.c_str()+pos+1)))
                 it = hiddens.erase(it);
             else {
-                if(check && it->size()==pos+1)
-                    return false;
+                if(check && it->first.size()==pos+1) {
+                    if(!it->second)
+                        return false;
+                    // Forced shown: only the object the subname names; a
+                    // container on the way keeps its own Visibility.
+                    if(forced && pos+1 == sub.size())
+                        *forced = true;
+                }
                 ++it;
             }
         }
@@ -983,17 +1006,18 @@ static bool checkLinkVisibility(std::set<std::string> &hiddens,
         if(!sobj || !sobj->isAttachedToDocument())
             return false;
         if(checkLink(sobj)) {
-            for(auto &s : App::LinkBaseExtension::getHiddenSubnames(sobj))
-                hiddens.insert(std::string(sub)+s);
+            // The whole of sub, NUL included, as it was: the prefix is cut
+            // by its full size below.
+            addVisibilityMarks(hiddens, sobj, sub);
             lastLink = sobj;
         }
         sub[pos+1] = c;
     }
 
-    std::set<std::string> res;
+    VisibilityMarks res;
     for(auto &s : hiddens) {
-        if(s.size()>sub.size())
-            res.insert(s.c_str()+sub.size());
+        if(s.first.size()>sub.size())
+            res.emplace(s.first.c_str()+sub.size(), s.second);
     }
     hiddens = std::move(res);
     return true;
@@ -1001,7 +1025,7 @@ static bool checkLinkVisibility(std::set<std::string> &hiddens,
 
 static TopoShape _getTopoShape(const App::DocumentObject *obj, const char *subname, 
         bool needSubElement, Base::Matrix4D *pmat, App::DocumentObject **powner, 
-        bool resolveLink, bool noElementMap, const std::set<std::string> hiddens,
+        bool resolveLink, bool noElementMap, const VisibilityMarks hiddens,
         const App::DocumentObject *lastLink)
 {
     (void) noElementMap;
@@ -1169,11 +1193,14 @@ static TopoShape _getTopoShape(const App::DocumentObject *obj, const char *subna
 
     auto link = owner->getExtensionByType<App::LinkBaseExtension>(true);
     if(owner!=linked
+            && hiddens.empty()
             && (!link || (!link->_ChildCache.getSize()
                             && link->getSubElements().size()<=1)))
     {
         // if there is a linked object, and there is no child cache (which is used
-        // for special handling of plain group), obtain shape from the linked object
+        // for special handling of plain group), obtain shape from the linked object.
+        // Not while visibility marks apply here: a Link's own hide or force
+        // show of what lies below it is not in the linked object's shape.
         shape = Feature::getTopoShape(linked,nullptr,false,nullptr,nullptr,false,false);
         if(shape.isNull())
             return shape;
@@ -1219,15 +1246,16 @@ static TopoShape _getTopoShape(const App::DocumentObject *obj, const char *subna
                 else
                     visible = parent->isElementVisibleEx(childName.c_str());
             }
-            if(visible==0)
-                continue;
-
-            std::set<std::string> nextHiddens = hiddens;
+            VisibilityMarks nextHiddens = hiddens;
             const App::DocumentObject *nextLink = lastLink;
-            if(!checkLinkVisibility(nextHiddens,true,nextLink,owner,sub.c_str())) {
-                cacheable = false;
+            bool forced = false;
+            if(!checkLinkVisibility(nextHiddens,true,nextLink,owner,sub.c_str(),&forced)) {
+                if(visible!=0)
+                    cacheable = false;
                 continue;
             }
+            if(visible==0 && !forced)
+                continue;
 
             TopoShape shape;
 
@@ -1235,7 +1263,7 @@ static TopoShape _getTopoShape(const App::DocumentObject *obj, const char *subna
                 shape = _getTopoShape(owner,sub.c_str(),true,nullptr,&subObj,false,false,nextHiddens,nextLink);
                 if(shape.isNull())
                     continue;
-                if(visible<0 && subObj && !subObj->Visibility.getValue())
+                if(visible<0 && subObj && !subObj->Visibility.getValue() && !forced)
                     continue;
             }else{
                 if(link && !link->getShowElementValue())
@@ -1284,7 +1312,7 @@ TopoShape Feature::getTopoShape(const App::DocumentObject *obj, const char *subn
     }
 
     const App::DocumentObject *lastLink=0;
-    std::set<std::string> hiddens;
+    VisibilityMarks hiddens;
     if(!checkLinkVisibility(hiddens,false,lastLink,obj,subname))
         return TopoShape();
 

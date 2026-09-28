@@ -425,7 +425,8 @@ void ExportOCAF2::setupObject(TDF_Label label,
 
     std::map<std::string, std::map<std::string, App::Color>> colors;
     static std::string marker(App::DocumentObject::hiddenMarker() + "*");
-    static std::array<const char*, 3> keys = {"Face*", "Edge*", marker.c_str()};
+    static std::string shown(App::DocumentObject::shownMarker() + "*");
+    static std::array<const char*, 4> keys = {"Face*", "Edge*", marker.c_str(), shown.c_str()};
     std::string childName;
     if (name) {
         childName = name;
@@ -469,6 +470,11 @@ void ExportOCAF2::setupObject(TDF_Label label,
         for (auto& vv : v.second) {
             if (vv.first == App::DocumentObject::hiddenMarker()) {
                 aColorTool->SetVisibility(nodeLabel, Standard_False);
+                continue;
+            }
+            // Forced shown by the container although hidden on its own.
+            if (vv.first == App::DocumentObject::shownMarker()) {
+                aColorTool->SetVisibility(nodeLabel, Standard_True);
                 continue;
             }
             const App::Color& c = vv.second;

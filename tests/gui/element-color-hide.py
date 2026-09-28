@@ -198,6 +198,19 @@ def scenario(direct):
 
         every = ("asm.box2", "link2.box2", "link3.box2") if direct else ("asm.box2",)
 
+        import Part
+
+        def volumes(tag, want):
+            """The containers' App shapes (Part.getShape): a force show
+            puts the object into the shape of every container that shows
+            it, as a hide takes it out. 1000 per box."""
+            tag = "%s %s" % (mode, tag)
+            for o, w in zip((asm, link2, link3), want):
+                shape = Part.getShape(o)
+                got = 0 if shape.isNull() else round(shape.Volume)
+                check("%s: %s's shape volume" % (tag, o.Name), got == w, (got, w))
+
+
         # 1. The Part's own hide of a grandchild: its content, so the Links
         # to it show the same -- when they link it directly.
         asm.ViewObject.setElementColors(HIDE)
@@ -207,6 +220,7 @@ def scenario(direct):
               asm.ViewObject.getElementColors())
         expect("Asm hide", v1, every, base, pix)
         expect("Asm hide, other view", v2, every, base2)
+        volumes("Asm hide", (1000, 1000, 1000))
         asm.ViewObject.setElementColors({})
         settle()
         expect("Asm hide cleared", v1, (), base, pix)
@@ -220,6 +234,7 @@ def scenario(direct):
               link2.ViewObject.getElementColors())
         expect("Link2 hide", v1, ("link2.box2",), base, pix)
         expect("Link2 hide, other view", v2, ("link2.box2",), base2)
+        volumes("Link2 hide", (2000, 1000, 2000))
 
         # 3. A per-view path hide of Asm's Sub.Box2 on top: both gone in
         # v1, the other view keeps Asm's; clearing it leaves Link2's hide.
@@ -244,6 +259,7 @@ def scenario(direct):
         settle()
         allbox2 = ("asm.box2", "link2.box2", "link3.box2")
         expect("Box2 Visibility off", v1, allbox2, base, pix)
+        volumes("Box2 Visibility off", (1000, 1000, 1000))
         asm.ViewObject.setElementColors(SHOW)
         settle()
         check("%s: Asm's element colours hold the shown marker" % mode,
@@ -252,6 +268,9 @@ def scenario(direct):
         shown = every
         expect("Asm show", v1, [k for k in allbox2 if k not in shown], base, pix)
         expect("Asm show, other view", v2, [k for k in allbox2 if k not in shown], base2)
+        # The App shape follows the Link chain's element colours in either
+        # mode (LinkBaseExtension::getShownSubnames), as a hide's does.
+        volumes("Asm show", (2000, 2000, 2000))
         asm.ViewObject.setElementColors({})
         settle()
         expect("Asm show cleared", v1, allbox2, base, pix)
@@ -259,9 +278,11 @@ def scenario(direct):
         settle()
         expect("Link2 show", v1, ("asm.box2", "link3.box2"), base, pix)
         expect("Link2 show, other view", v2, ("asm.box2", "link3.box2"), base2)
+        volumes("Link2 show", (1000, 2000, 1000))
         link2.ViewObject.setElementColors({})
         settle()
         expect("Link2 show cleared", v1, allbox2, base, pix)
+        volumes("Link2 show cleared", (1000, 1000, 1000))
         box2.Visibility = True
         settle()
         expect("Box2 Visibility back on", v1, (), base, pix)

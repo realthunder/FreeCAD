@@ -736,9 +736,13 @@ bool GroupExtension::extensionGetSubObjects(std::vector<std::string> &ret, int r
 int GroupExtension::extensionIsElementVisibleEx(const char *subname, int reason) const {
     auto element = Data::findElementName(subname);
     if(subname != element) {
-        if(reason!=DocumentObject::GS_SELECT || !LinkBaseExtension::isSubnameHidden(getExtendedObject(),subname))
+        if(reason!=DocumentObject::GS_SELECT)
             return -1;
-        return 0;
+        if(LinkBaseExtension::isSubnameHidden(getExtendedObject(),subname))
+            return 0;
+        if(LinkBaseExtension::isSubnameShown(getExtendedObject(),subname))
+            return 1;
+        return -1;
     }
     if(reason == DocumentObject::GS_DEFAULT && ExportMode.getValue()==ExportByChildQuery)
         return 1;

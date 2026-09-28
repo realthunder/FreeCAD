@@ -2989,9 +2989,21 @@ context's hide became a tri-state `SelContext::visibility` (-1 none, 0
 hidden, 1 shown); `SoSelectionElementAction::ForceShow` sets 1 and `Show`
 clears either. `App::DocumentObject::shownMarker()` (`"!show"`) sits beside
 `hiddenMarker()`; `partialRender`, `ViewProviderLink::applyColorsTo`, the
-`"!show*"` colour query and the dialog's new Show button all take it. The
-App/Part side (container shapes, `isElementVisibleEx`, STEP export) is its
-own commit.
+`"!show*"` colour query and the dialog's new Show button all take it.
+
+**App and Part** (full symmetry with the hide, user ruling):
+`LinkBaseExtension::getShownSubnames`/`isSubnameShown` beside the hidden
+ones; `Part::Feature`'s shape building carries a map of marks (subname ->
+shown) where it carried the hidden set, and a force-shown child enters the
+container's shape although its own Visibility is off;
+`extensionIsElementVisibleEx` answers 1 for it (the Link's always, the
+group's for selection); the STEP export writes it visible for that usage
+(with `ExportHiddenObject`, the default -- otherwise the hidden child is
+not written at all). Found on the way: a Link to an App::Part took the
+Part's shape as it is, so a Link's OWN hide of a grandchild never left the
+Link's shape; the short cut is now skipped while marks apply. Not done: the
+STEP import maps an invisible usage back to `!hide` but has no counterpart
+for a visible usage of a hidden component.
 
 Where the answer is made, each for the reason of 5.21:
 - **Coin traversals** (GL, pick, bounding box): the object's own
@@ -3017,7 +3029,9 @@ of it, and the reverse.
 
 Before-state, the extended `element-color-hide.py`: 32 FAIL (the marker did
 not even survive storage: `GeoFeature` resolved `!show` as an element name
-and dropped it). After: 588/588, both LinkChildrenDirect modes.
+and dropped it). After: 588/588, both LinkChildrenDirect modes. With the
+container shape volumes: 8 FAIL before the App side, 2 more for the Link's
+own hide; after, 624/624.
 
 ## 5. Evaluated and not taken: one capture root to catch everything
 
