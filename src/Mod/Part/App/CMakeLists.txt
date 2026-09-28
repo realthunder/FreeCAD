@@ -226,6 +226,12 @@ SET(Features_SRCS
     SubShapeBinderPython.cpp
     PartParams.h
     PartParams.cpp
+    LinkArrays.cpp
+    LinkArrays.h
+    PatternExtension.cpp
+    PatternExtension.h
+    PatternResolver.cpp
+    PatternResolver.h
     PrismExtension.cpp
     PrismExtension.h
 )

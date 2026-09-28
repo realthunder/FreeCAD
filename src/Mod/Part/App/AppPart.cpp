@@ -62,6 +62,7 @@
 #include "CylinderPy.h"
 #include "DatumFeature.h"
 #include "Datums.h"
+#include "LinkArrays.h"
 #include "EllipsePy.h"
 #include "FaceMaker.h"
 #include "FaceMakerBullseye.h"
@@ -131,6 +132,8 @@
 #include "TopoShapeWirePy.h"
 #include "ToroidPy.h"
 #include "OCCError.h"
+#include "PatternExtension.h"
+#include "PatternResolver.h"
 #include "PrismExtension.h"
 #include "PropertyGeometryList.h"
 #include "PropertyShapeStore.h"
@@ -560,6 +563,20 @@ PyMOD_INIT_FUNC(Part)
     Part::DatumLine               	::init();
     Part::DatumPoint              	::init();
     Part::LocalCoordinateSystem   	::init();
+
+    // Upstream's pattern extensions and link arrays, over App::Pattern
+    Part::PatternExtension        	::init();
+    Part::LinearPatternExtension  	::init();
+    Part::PolarPatternExtension   	::init();
+    Part::CircularPatternExtension	::init();
+    Part::PathPatternExtension    	::init();
+    Part::PointPatternExtension   	::init();
+    Part::LinkArrayLinear         	::init();
+    Part::LinkArrayPolar          	::init();
+    Part::LinkArrayCircular       	::init();
+    Part::LinkArrayPath           	::init();
+    Part::LinkArrayPoint          	::init();
+    Part::PatternResolver::init();
 
     // Geometry2d types
     Part::Geometry2d              ::init();

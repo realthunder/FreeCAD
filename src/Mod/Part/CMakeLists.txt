@@ -72,6 +72,7 @@ set(Part_tests
     parttests/ColorPerFaceTest.py
     parttests/ElementNameTest.py
     parttests/HLRProjectionTest.py
+    parttests/TestLinkArray.py
 )
 
 add_custom_target(PartScripts ALL SOURCES
