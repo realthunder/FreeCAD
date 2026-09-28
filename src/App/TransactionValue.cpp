@@ -35,6 +35,7 @@
 #include "Document.h"
 #include "FileBlobManager.h"
 #include "Property.h"
+#include "StringHasher.h"
 
 FC_LOG_LEVEL_INIT("App", true, true)
 
@@ -111,6 +112,7 @@ App::CaptureConfig::CaptureConfig(const Document& doc)
     : schema(static_cast<int>(Document::getCurrentSchemaVersion()))
     , preferBinary(doc.PreferBinary.getValue())
     , blobs(&doc.getFileBlobManager())
+    , hasher(doc.getHasher().get())
 {
 }
 
@@ -126,10 +128,15 @@ CapturedValue App::captureValue(const CaptureConfig& config, const Base::Persist
     // What the Save notes goes to the value, not to the save set of the
     // document's next save (sec 23.16).
     BlobRecorder recorder(config.blobs);
+    // An element map lists the ids of the file's hasher it uses, whatever a
+    // save on the main thread is marking meanwhile (sec 27.49), and the
+    // value records them (sec 27.50 item 4).
+    StringIDCollector strings(config.hasher);
     try {
         what.Save(writer);
         writer.writeFiles();
         v.blobs = recorder.blobs();
+        v.stringIds = strings.sortedIds();
         v.ok = true;
     }
     catch (Base::Exception& e) {

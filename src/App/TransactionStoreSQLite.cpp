@@ -147,6 +147,14 @@ public:
         exec("CREATE TABLE IF NOT EXISTS objname(cid INTEGER PRIMARY KEY, name TEXT UNIQUE)");
         // Item 4: the last geometry id of each object.
         exec("CREATE TABLE IF NOT EXISTS lastgeoid(cid INTEGER PRIMARY KEY, id INTEGER)");
+        // Sec 27.50 item 2: the file's string table, kept once for every
+        // version; item 4: the ids each version and value uses, as ranges.
+        exec("CREATE TABLE IF NOT EXISTS strtable(id INTEGER PRIMARY KEY, flags INTEGER,"
+             " sids TEXT, data BLOB, postfix BLOB)");
+        // One row per owner, its ranges packed (packRanges): a recomputed
+        // shape's ids come in hundreds of short runs.
+        exec("CREATE TABLE IF NOT EXISTS strref(owner BLOB PRIMARY KEY, ranges BLOB)"
+             " WITHOUT ROWID");
         exec("CREATE TABLE IF NOT EXISTS entity" FC_ENTITY_COLUMNS);
         exec("CREATE TABLE IF NOT EXISTS ref" FC_REF_COLUMNS);
         exec("CREATE INDEX IF NOT EXISTS ref_target ON ref(target, role)");
@@ -704,6 +712,169 @@ public:
         exec("COMMIT");
     }
 
+    void addStrings(const std::vector<LogString>& strings) override
+    {
+        if (strings.empty())
+            return;
+        exec("BEGIN");
+        auto s = prepare("INSERT OR IGNORE INTO strtable(id, flags, sids, data, postfix)"
+                         " VALUES(?, ?, ?, ?, ?)");
+        for (const auto& str : strings) {
+            sqlite3_bind_int64(s, 1, str.id);
+            sqlite3_bind_int(s, 2, str.flags);
+            bindText(s, 3, str.sids);
+            sqlite3_bind_blob(s, 4, str.data.data(), static_cast<int>(str.data.size()),
+                              SQLITE_TRANSIENT);
+            sqlite3_bind_blob(s, 5, str.postfix.data(), static_cast<int>(str.postfix.size()),
+                              SQLITE_TRANSIENT);
+            sqlite3_step(s);
+            sqlite3_reset(s);
+        }
+        exec("COMMIT");
+    }
+
+    std::vector<LogString> strings(const std::vector<long>& ids) override
+    {
+        std::vector<LogString> out;
+        auto blob = [](sqlite3_stmt* s, int col) {
+            const void* p = sqlite3_column_blob(s, col);
+            const int n = sqlite3_column_bytes(s, col);
+            return p ? std::string(static_cast<const char*>(p), static_cast<std::size_t>(n))
+                     : std::string();
+        };
+        auto read = [&](sqlite3_stmt* s) {
+            while (sqlite3_step(s) == SQLITE_ROW) {
+                LogString str;
+                str.id = static_cast<long>(sqlite3_column_int64(s, 0));
+                str.flags = sqlite3_column_int(s, 1);
+                str.sids = text(s, 2);
+                str.data = blob(s, 3);
+                str.postfix = blob(s, 4);
+                out.push_back(std::move(str));
+            }
+            sqlite3_reset(s);
+        };
+        if (ids.empty()) {
+            read(prepare("SELECT id, flags, sids, data, postfix FROM strtable ORDER BY id"));
+            return out;
+        }
+        std::vector<long> sorted(ids);
+        std::sort(sorted.begin(), sorted.end());
+        auto s = prepare("SELECT id, flags, sids, data, postfix FROM strtable WHERE id=?");
+        for (long id : sorted) {
+            sqlite3_bind_int64(s, 1, id);
+            read(s);
+        }
+        return out;
+    }
+
+    std::vector<long> stringIds() override
+    {
+        std::vector<long> out;
+        auto s = prepare("SELECT id FROM strtable ORDER BY id");
+        while (sqlite3_step(s) == SQLITE_ROW)
+            out.push_back(static_cast<long>(sqlite3_column_int64(s, 0)));
+        sqlite3_reset(s);
+        return out;
+    }
+
+    void removeStrings(const std::vector<long>& ids) override
+    {
+        if (ids.empty())
+            return;
+        exec("BEGIN");
+        auto s = prepare("DELETE FROM strtable WHERE id=?");
+        for (long id : ids) {
+            sqlite3_bind_int64(s, 1, id);
+            sqlite3_step(s);
+            sqlite3_reset(s);
+        }
+        exec("COMMIT");
+    }
+
+    void clearStrings() override
+    {
+        exec("DELETE FROM strtable");
+    }
+
+    void addStringRefs(const std::string& owner,
+                       const std::vector<std::pair<long, long>>& ranges) override
+    {
+        if (owner.empty() || ranges.empty())
+            return;
+        // An owner's ids are its content's: the same hash, the same ranges.
+        const std::string packed = packRanges(ranges);
+        auto s = prepare("INSERT OR IGNORE INTO strref(owner, ranges) VALUES(?, ?)");
+        bindHash(s, 1, owner);
+        sqlite3_bind_blob(s, 2, packed.data(), static_cast<int>(packed.size()), SQLITE_TRANSIENT);
+        sqlite3_step(s);
+        sqlite3_reset(s);
+    }
+
+    /// Ranges as unsigned LEB128 pairs: the gap from the previous range's
+    /// end, then the length less one.
+    static std::string packRanges(const std::vector<std::pair<long, long>>& ranges)
+    {
+        std::string out;
+        auto put = [&out](uint64_t v) {
+            do {
+                unsigned char b = v & 0x7f;
+                v >>= 7;
+                out += static_cast<char>(v ? b | 0x80 : b);
+            } while (v);
+        };
+        long last = 0;
+        for (const auto& r : ranges) {
+            put(static_cast<uint64_t>(r.first - last));
+            put(static_cast<uint64_t>(r.second - r.first));
+            last = r.second;
+        }
+        return out;
+    }
+
+    static void unpackRanges(const unsigned char* p, int n,
+                             std::vector<std::pair<long, long>>& out)
+    {
+        const unsigned char* end = p + n;
+        auto get = [&p, end](uint64_t& v) {
+            v = 0;
+            for (int shift = 0; p < end && shift < 64; shift += 7) {
+                const unsigned char b = *p++;
+                v |= static_cast<uint64_t>(b & 0x7f) << shift;
+                if (!(b & 0x80))
+                    return true;
+            }
+            return false;
+        };
+        long last = 0;
+        uint64_t gap = 0, length = 0;
+        while (p < end && get(gap) && get(length)) {
+            const long lo = last + static_cast<long>(gap);
+            last = lo + static_cast<long>(length);
+            out.emplace_back(lo, last);
+        }
+    }
+
+    std::vector<std::pair<long, long>> stringRefs() override
+    {
+        std::vector<std::pair<long, long>> all;
+        auto s = prepare("SELECT ranges FROM strref");
+        while (sqlite3_step(s) == SQLITE_ROW) {
+            unpackRanges(static_cast<const unsigned char*>(sqlite3_column_blob(s, 0)),
+                         sqlite3_column_bytes(s, 0), all);
+        }
+        sqlite3_reset(s);
+        std::sort(all.begin(), all.end());
+        std::vector<std::pair<long, long>> out;
+        for (const auto& r : all) {
+            if (!out.empty() && r.first <= out.back().second + 1)
+                out.back().second = std::max(out.back().second, r.second);
+            else
+                out.push_back(r);
+        }
+        return out;
+    }
+
     void truncate(int64_t before) override
     {
         exec("BEGIN");
@@ -822,6 +993,7 @@ public:
             return;
         exec("DELETE FROM entity WHERE hash NOT IN (SELECT hash FROM held)");
         exec("DELETE FROM ref WHERE entity NOT IN (SELECT hash FROM entity)");
+        exec("DELETE FROM strref WHERE owner NOT IN (SELECT hash FROM entity)");
     }
 
     /** Fill the temporary table `held` with every entity reachable from
@@ -990,6 +1162,7 @@ public:
                 bindText(s, 1, tier);
                 step(s);
                 exec("DELETE FROM ref WHERE entity NOT IN (SELECT hash FROM entity)");
+                exec("DELETE FROM strref WHERE owner NOT IN (SELECT hash FROM entity)");
                 collectEntities();
             }
             exec("COMMIT");

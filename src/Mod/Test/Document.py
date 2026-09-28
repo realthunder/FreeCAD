@@ -3962,6 +3962,109 @@ class TransactionBranchCases(unittest.TestCase):
         doc = self.track(FreeCAD.openDocument(path))
         self.assertGreater(doc.Hasher.getID("a new string").Value, dropped)
 
+    def cutDocument(self, name):
+        doc = self.track(FreeCAD.newDocument(name))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        a = doc.addObject("Part::Box", "A")
+        b = doc.addObject("Part::Box", "B")
+        b.Placement.Base = FreeCAD.Vector(5, 5, 5)
+        cut = doc.addObject("Part::Cut", "Cut")
+        cut.Base = a
+        cut.Tool = b
+        doc.recompute()
+        doc.commitTransaction()
+        return doc
+
+    def testStringTableIsAMemberOfItsOwn(self):
+        # Sec 27.50 items 1-3: a schema-5 file keeps its string table as a
+        # member of its own, read before the objects; the log keeps the table
+        # once and no version carries one; the file reopened and a version
+        # opened from its log have the element maps they had.
+        import zipfile
+
+        doc = self.cutDocument("Table")
+        em = doc.getObject("Cut").Shape.ElementMap
+        path = os.path.join(self.dir, "table.FCStd")
+        doc.saveAs(path)
+        with zipfile.ZipFile(path) as z:
+            self.assertIn("StringTable.txt", z.namelist())
+            xml = z.read("Document.xml").decode()
+            table = z.read("StringTable.txt").decode("latin-1")
+        self.assertEqual(xml.count("<StringHasher2"), 1)
+        self.assertIn('<StringHasher2 table="StringTable.txt" hash="', xml)
+        self.assertTrue(table.startswith("StringTableStart v1 %d\n" % doc.Hasher.Size))
+        versions = doc.getTransactionVersions()
+        for v in versions:
+            self.assertNotIn("StringTable.txt", [e for e, h in v["manifest"]])
+            docxml = [h for e, h in v["manifest"] if e == "Document.xml"][0]
+            self.assertIn('<StringHasher2 table="', doc.getTransactionValue(docxml)[0])
+        num = max(v["num"] for v in versions)
+        # A later save, so that the version is not the file; named, so that
+        # the file carries it.
+        doc.nameTransactionVersion(num, "first")
+        doc.openTransaction("edit")
+        doc.getObject("A").Length = 20
+        doc.recompute()
+        doc.commitTransaction()
+        doc.save()
+        FreeCAD.closeDocument(doc.Name)
+
+        doc = self.track(FreeCAD.openDocument(path))
+        self.assertIn(num, [v["num"] for v in doc.getTransactionVersions()])
+        v = self.track(doc.openTransactionVersion(num, False))
+        self.assertTrue(v.Hasher.isSame(doc.Hasher))
+        self.assertEqual(v.getObject("Cut").Shape.ElementMap, em)
+        FreeCAD.closeDocument(v.Name)
+        FreeCAD.closeDocument(doc.Name)
+        # And with no document of the file open: the history from the
+        # archive takes the file's table.
+        v = self.track(FreeCAD.openFileVersion(path, num, False))
+        self.assertEqual(v.getObject("Cut").Shape.ElementMap, em)
+
+    def testSaveCompactsTheStringTable(self):
+        # Sec 27.50 item 4, 27.51 Q3-Q4: a save drops every string nothing
+        # holds and no retained version or value uses, and keeps the ones
+        # only the log's versions and values use -- by the ids recorded with
+        # each, not by reading them back.
+        doc = self.cutDocument("Compacts")
+        em = doc.getObject("Cut").Shape.ElementMap
+        path = os.path.join(self.dir, "compacts.FCStd")
+        doc.saveAs(path)
+        first = max(v["num"] for v in doc.getTransactionVersions())
+        before = set(doc.Hasher.Table)
+        unused = doc.Hasher.getID("held by nothing").Value
+        doc.openTransaction("remove")
+        doc.removeObject("Cut")
+        doc.commitTransaction()
+        doc.clearUndos()
+        doc.save()
+        after = set(doc.Hasher.Table)
+        self.assertNotIn(unused, after)
+        self.assertTrue(before <= after, sorted(before - after))
+        doc.restoreTransactionVersion(first)
+        self.assertEqual(doc.getObject("Cut").Shape.ElementMap, em)
+
+    def testKeepAllKeepsEveryString(self):
+        # Sec 27.51 Q3 (revised): keep-all keeps every string -- no compaction
+        # at a save, none asked for -- and is the file's.
+        doc = self.cutDocument("KeepAll")
+        doc.Hasher.SaveAll = True
+        unused = doc.Hasher.getID("held by nothing").Value
+        path = os.path.join(self.dir, "keepall.FCStd")
+        doc.saveAs(path)
+        self.assertIn(unused, doc.Hasher.Table)
+        self.assertEqual(doc.compactFileState()["strings"], 0)
+        self.assertIn(unused, doc.Hasher.Table)
+        FreeCAD.closeDocument(doc.Name)
+        doc = self.track(FreeCAD.openDocument(path))
+        self.assertTrue(doc.Hasher.SaveAll)
+        self.assertIn(unused, doc.Hasher.Table)
+        doc.Hasher.SaveAll = False
+        self.assertIn(unused, doc.Hasher.Table)
+        doc.save()
+        self.assertNotIn(unused, doc.Hasher.Table)
+
     def testSketchMintsNoGeometryIdTwice(self):
         # Sec 27.40 item 4, 27.41 Q5: a sketch's geometry ids come from the
         # file's last id for that sketch -- not reused after a deletion and a

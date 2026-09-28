@@ -216,6 +216,17 @@ public:
         return own && own != _hasher && own->size() ? own : _hasher;
     }
 
+    /** The string tables, by content hash, this history's hasher has taken
+     * in (docs/TransactionLog.md sec 27.50 item 3): a document of the file
+     * reads a table at most once.
+     */
+    void noteTable(const std::string& hash) { _tables.insert(hash); }
+    bool tookTable(const std::string& hash) const { return _tables.count(hash) != 0; }
+    /** Read the file at `path`'s string table member into the file's
+     * hasher, made if there is none (sec 27.50 item 1); the history of a
+     * file no document of it has open. False when there is no member.
+     */
+    bool readTable(const std::string& path);
     /// Every (name, id) pair, in no order.
     const std::unordered_map<std::string, long>& objectNames() const { return _idOfName; }
 
@@ -273,6 +284,7 @@ private:
     std::unordered_map<std::string, long> _idOfName;
     std::unordered_map<long, std::string> _nameOfId;
     StringHasherRef _hasher;
+    std::unordered_set<std::string> _tables;
     std::unordered_map<long, long> _lastGeoIds;
     std::size_t _compactEstimate {0};
     std::string _dir;

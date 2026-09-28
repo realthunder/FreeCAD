@@ -405,7 +405,7 @@ public:
                     << child.postfix << ' '
                     << '0';
                 for (auto & sid : child.sids) {
-                    if (sid.isMarked())
+                    if (App::StringIDCollector::take(sid))
                         s << '.' << sid.value();
                 }
                 s << '\n';
@@ -438,7 +438,8 @@ public:
                         prefixid = App::StringID::fromString(r->name.dataBytes());
                         if (prefixid.id) {
                             for (auto & sid : r->sids) {
-                                if (sid.isMarked() && sid.value() == prefixid.id) {
+                                if (sid.value() == prefixid.id
+                                        && App::StringIDCollector::take(sid)) {
                                     s << '$' << r->name.dataBytes();
                                     printName = false;
                                     break;
@@ -460,7 +461,7 @@ public:
                         s << '.' << it->second;
                     }
                     for (auto & sid : r->sids) {
-                        if (sid.isMarked() && sid.value() != prefixid.id)
+                        if (sid.value() != prefixid.id && App::StringIDCollector::take(sid))
                             s << '.' << sid.value();
                     }
 

@@ -50,6 +50,7 @@ class Document;
 class FileHistory;
 class Property;
 class PropertyContainer;
+class StringHasher;
 class Transaction;
 
 /** The document's transaction log (docs/TransactionLog.md).
@@ -319,6 +320,16 @@ public:
     /// Document::snapshotToLog: like onSave, with a `snapshot` record.
     int64_t onSnapshot(const Captures& entries, const Blobs& blobs, int schema,
                        const char* kind = "snapshot");
+    /** The string ids the version the next save or snapshot records uses
+     * (docs/TransactionLog.md sec 27.50 item 4): what its save marked. A
+     * version recorded without them -- a file as read -- keeps every id the
+     * file's hasher holds.
+     */
+    void noteVersionStrings(std::vector<long> ids)
+    {
+        _versionStrings = std::move(ids);
+        _haveVersionStrings = true;
+    }
 
     int64_t session() const;
     int64_t environment() const;
@@ -527,6 +538,8 @@ private:
     std::unordered_set<int64_t> _misses;
     std::unique_ptr<Sink> _sink;
     bool _verify {false};
+    std::vector<long> _versionStrings;
+    bool _haveVersionStrings {false};
     /// What a capture on the worker needs of the document.
     CaptureConfig _config;
     friend class TransactionLogCore;
@@ -569,7 +582,11 @@ public:
     /// Write version `v` and its record `t`, numbered already, from the
     /// captured entries and blobs: the worker's half of a snapshot.
     void postVersion(LogVersion v, LogTransaction t, const TransactionLog::Captures& entries,
-                     const TransactionLog::Blobs& blobs, int schema, const std::string& path);
+                     const TransactionLog::Blobs& blobs, int schema, const std::string& path,
+                     std::vector<std::pair<long, long>> strings = {}, bool marked = true);
+    /// The ids a version recorded with no marks keeps: every one the file's
+    /// hasher holds (sec 27.50 item 4).
+    std::vector<std::pair<long, long>> allStrings() const;
 
     /// The store, for reading: every call waits for the queue first, so the
     /// reference can be kept.
@@ -646,6 +663,29 @@ public:
     /// The longest delta chain hanging off `hash`, in hops.
     int chainBelow(const std::string& hash, int depth = 0);
 
+    /** The file's strings into the store (docs/TransactionLog.md sec 27.50
+     * item 2): those minted since the last call, or with `all` every one the
+     * store lacks. Main thread; the worker writes them ahead of the job
+     * posted next. The first call for a hasher takes the store's strings it
+     * lacks into it first (loadStrings).
+     */
+    void syncStrings(bool all);
+    /** The store's strings the file's hasher lacks, into it: a version or a
+     * value read from the log carries no table (sec 27.50 item 3). Once per
+     * hasher and store; memory holds every string the store does after.
+     * Main thread.
+     */
+    void loadStrings();
+    /** Every string id a retained version or value uses (sec 27.50 item 4,
+     * 27.51 Q4), merged into ranges: what a compaction keeps besides what
+     * memory holds. Main thread; waits for the worker.
+     */
+    std::vector<std::pair<long, long>> retainedStrings();
+    /// A compaction dropped `ids` from the file's hasher: from the store too.
+    void dropStrings(const std::vector<long>& ids);
+    /// Sorted ids as the inclusive ranges the store keeps them in.
+    static std::vector<std::pair<long, long>> idRanges(const std::vector<long>& ids);
+
     void run();
     void post(std::function<void()> job);
     void flush();
@@ -676,6 +716,12 @@ public:
     /// the worker never touches the preferences.
     std::atomic<long> _deltaHops {0};
     std::atomic<long> _deltaRatio {0};
+    /// The ids the store's string table holds, and the largest, as posted
+    /// (sec 27.50 item 2); the hasher whose strings the store's were last
+    /// taken into (loadStrings). Main thread.
+    std::unordered_set<long> _storedStrings;
+    long _storedMax {0};
+    const StringHasher* _stringsFor {nullptr};
     /// Property id -> the hash of its newest value. Worker thread only.
     std::unordered_map<int64_t, std::string> _hashById;
     /// The blobs stored as `file` (sec 23.16), held so the blob store keeps

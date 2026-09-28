@@ -26,7 +26,9 @@
 #ifndef _PreComp_
 #endif
 
+#include <algorithm>
 #include <deque>
+#include <sstream>
 #include <boost/io/ios_state.hpp>
 #include <boost/iostreams/device/array.hpp>
 #include <boost/iostreams/stream.hpp>
@@ -97,6 +99,9 @@ public:
     /// writes and a restore reads back: ids the saved state no longer
     /// uses are not handed out again.
     long LastID = 0;
+    /// Counts the changes to the entries, which is what the cached hash of
+    /// the whole table (contentHash()) is valid for.
+    uint64_t Revision = 0;
 };
 
 ///////////////////////////////////////////////////////////
@@ -105,8 +110,10 @@ TYPESYSTEM_SOURCE_ABSTRACT(App::StringID, Base::BaseClass)
 
 StringID::~StringID()
 {
-    if (_hasher)
+    if (_hasher) {
         _hasher->_hashes->right.erase(_id);
+        ++_hasher->_hashes->Revision;
+    }
 }
 
 PyObject *StringID::getPyObject() {
@@ -182,22 +189,29 @@ StringHasher::~StringHasher() {
 }
 
 void StringHasher::setSaveAll(bool enable) {
-    if (_hashes->SaveAll == enable)
-        return;
+    // No compaction here: what may go depends on what the file's history
+    // still uses, which only the document knows (docs/TransactionLog.md sec
+    // 27.50 item 4). The next save compacts.
     _hashes->SaveAll = enable;
-    compact();
 }
 
-void StringHasher::compact()
+std::vector<long> StringHasher::compact(const std::function<bool(long)>& keep)
 {
+    std::vector<long> dropped;
     if (_hashes->SaveAll)
-        return;
+        return dropped;
 
     // What goes is not handed out again (sec 27.40 item 2).
     _hashes->LastID = lastID();
+    // Kept: persistent, or used by what memory does not hold (sec 27.50 item
+    // 4). What a kept string is built from stays with it: the kept one holds
+    // a reference to each, so none of them falls to one reference below.
+    auto kept = [&keep](const StringID& sid) {
+        return sid.isPersistent() || (keep && keep(sid.value()));
+    };
     std::deque<StringIDRef> pendings;
     for (auto & v : _hashes->right) {
-        if (!v.second->isPersistent() && v.second->getRefCount() == 1)
+        if (!kept(*v.second) && v.second->getRefCount() == 1)
             pendings.emplace_back(v.second);
     }
     while(pendings.size()) {
@@ -205,15 +219,136 @@ void StringHasher::compact()
         pendings.pop_front();
         if (!_hashes->right.erase(sid.value()))
             continue;
+        ++_hashes->Revision;
+        dropped.push_back(sid.value());
         sid._sid->_hasher = nullptr;
         sid._sid->unref();
         for (auto & sid : sid._sid->_sids) {
             if (sid._sid->_hasher == this
-                    && !sid._sid->isPersistent()
+                    && !kept(*sid._sid)
                     && sid._sid->getRefCount() == 2)
                 pendings.push_back(sid);
         }
     }
+    std::sort(dropped.begin(), dropped.end());
+    return dropped;
+}
+
+std::string StringHasher::saveTable() const
+{
+    std::ostringstream out;
+    out << "StringTableStart v1 " << size() << '\n';
+    saveStream(out, true);
+    std::string bytes = out.str();
+    _contentHash = QCryptographicHash::hash(QByteArray::fromRawData(bytes.data(),
+                                                                     static_cast<int>(bytes.size())),
+                                            QCryptographicHash::Sha1)
+                       .toHex()
+                       .toStdString();
+    _hashRevision = _hashes->Revision;
+    return bytes;
+}
+
+const std::string& StringHasher::contentHash() const
+{
+    if (_contentHash.empty() || _hashRevision != _hashes->Revision)
+        saveTable();
+    return _contentHash;
+}
+
+void StringHasher::restoreTable(std::istream& stream)
+{
+    // The last id stays what the element that named the table said.
+    const long last = _hashes->LastID;
+    clear();
+    _hashes->LastID = last;
+    std::string marker;
+    stream >> marker;
+    if (marker == "StringTableStart") {
+        std::string ver;
+        std::size_t count = 0;
+        stream >> ver >> count;
+        if (ver != "v1") {
+            FC_WARN("Unknown string table format");
+        }
+        restoreStreamNew(stream, count);
+        return;
+    }
+    // A count alone: the older private tables (<shape>.Table).
+    restoreStream(stream, std::strtoul(marker.c_str(), nullptr, 10));
+}
+
+std::vector<StringHasher::Row> StringHasher::rows(long after,
+                                                  const std::function<bool(long)>& want) const
+{
+    std::vector<Row> out;
+    for (auto it = _hashes->right.upper_bound(after); it != _hashes->right.end(); ++it) {
+        const StringID& d = *it->second;
+        if (want && !want(d._id))
+            continue;
+        Row row;
+        row.id = d._id;
+        auto flags = d._flags;
+        flags.setFlag(StringID::Flag::Marked, false);
+        row.flags = static_cast<int>(flags.toUnderlyingType());
+        row.sids.reserve(d._sids.size());
+        for (const auto& sid : d._sids)
+            row.sids.emplace_back(sid.value(), sid.getIndex());
+        row.data = d._data;
+        row.postfix = d._postfix;
+        out.push_back(std::move(row));
+    }
+    return out;
+}
+
+std::size_t StringHasher::insertRows(const std::vector<Row>& rows, std::size_t* conflicts)
+{
+    constexpr auto kept = ~static_cast<int>(StringID::Flag::Marked);
+    std::size_t taken = 0;
+    std::size_t clashes = 0;
+    for (const auto& row : rows) {
+        auto it = _hashes->right.find(row.id);
+        if (it != _hashes->right.end()) {
+            const StringID& d = *it->second;
+            bool same = d._data == row.data && d._postfix == row.postfix
+                && (static_cast<int>(d._flags.toUnderlyingType()) & kept) == (row.flags & kept)
+                && d._sids.size() == static_cast<int>(row.sids.size());
+            for (int i = 0; same && i < d._sids.size(); ++i) {
+                same = d._sids[i].value() == row.sids[i].first
+                    && d._sids[i].getIndex() == row.sids[i].second;
+            }
+            if (!same)
+                ++clashes;
+            continue;
+        }
+        StringIDRef sid(new StringID(row.id, row.data, static_cast<StringID::Flag>(row.flags & kept)));
+        sid._sid->_postfix = row.postfix;
+        sid._sid->_sids.reserve(static_cast<int>(row.sids.size()));
+        bool complete = true;
+        for (const auto& ref : row.sids) {
+            StringIDRef here = getID(ref.first, ref.second);
+            if (!here) {
+                complete = false;
+                break;
+            }
+            sid._sid->_sids.push_back(here);
+        }
+        if (!complete) {
+            ++clashes;
+            continue;
+        }
+        insert(sid);
+        ++taken;
+    }
+    _hashes->LastID = lastID();
+    if (conflicts)
+        *conflicts = clashes;
+    return taken;
+}
+
+bool StringHasher::hasID(long id) const
+{
+    return _hashes->right.count(id) != 0;
 }
 
 StringHasher::StorageSizes StringHasher::getStorageSize() const
@@ -561,13 +696,84 @@ void StringHasher::Save(Base::Writer& writer) const
     writer.Stream() << writer.ind() << "</StringHasher2>\n";
 }
 
+void StringHasher::saveReference(Base::Writer& writer, const std::string& file,
+                                 const std::string& hash, std::size_t count,
+                                 const std::vector<long>& used) const
+{
+    writer.Stream() << writer.ind()
+        << "<StringHasher saveall=\"" << _hashes->SaveAll
+        << "\" threshold=\"" << _hashes->Threshold << "\" lastid=\"" << lastID()
+        << "\" count=\"0\" new=\"1\"/>\n";
+    writer.Stream() << writer.ind() << "<StringHasher2 table=\"" << encodeAttribute(file) << '"';
+    if (!hash.empty())
+        writer.Stream() << " hash=\"" << hash << '"';
+    writer.Stream() << " count=\"" << count << "\" used=\"";
+    for (std::size_t i = 0; i < used.size();) {
+        std::size_t j = i;
+        while (j + 1 < used.size() && used[j + 1] == used[j] + 1)
+            ++j;
+        if (i)
+            writer.Stream() << ',';
+        writer.Stream() << used[i];
+        if (j > i)
+            writer.Stream() << '-' << used[j];
+        i = j + 1;
+    }
+    writer.Stream() << "\"/>\n";
+}
+
+bool StringHasher::parseUsed(const std::string& xml, std::vector<std::pair<long, long>>& ranges)
+{
+    ranges.clear();
+    const std::size_t element = xml.find("<StringHasher2 table=");
+    if (element == std::string::npos)
+        return false;
+    const std::size_t end = xml.find('>', element);
+    const std::size_t at = xml.find(" used=\"", element);
+    if (at == std::string::npos || at > end)
+        return false;
+    const char* p = xml.c_str() + at + 7;
+    while (*p && *p != '"') {
+        char* next = nullptr;
+        const long lo = std::strtol(p, &next, 10);
+        if (next == p)
+            return false;
+        long hi = lo;
+        p = next;
+        if (*p == '-') {
+            hi = std::strtol(p + 1, &next, 10);
+            p = next;
+        }
+        ranges.emplace_back(lo, hi);
+        if (*p == ',')
+            ++p;
+    }
+    return true;
+}
+
+std::vector<long> StringHasher::markedIDs() const
+{
+    std::vector<long> out;
+    for (auto & v : _hashes->right) {
+        if (v.second->isMarked() || v.second->isPersistent())
+            out.push_back(v.first);
+    }
+    return out;
+}
+
 void StringHasher::SaveDocFile (Base::Writer &writer) const {
-    std::size_t count = _hashes->SaveAll ? this->size() : this->count();
-    writer.Stream() << count << '\n';
+    // What saveStream() writes, under the marker RestoreDocFile() reads it
+    // by: a bare count there means the older format.
+    std::size_t count = 0;
+    for (auto & v : _hashes->right) {
+        if (_hashes->SaveAll || v.second->isMarked() || v.second->isPersistent())
+            ++count;
+    }
+    writer.Stream() << "StringTableStart v1 " << count << '\n';
     saveStream(writer.Stream());
 }
 
-void StringHasher::saveStream(std::ostream &stream) const {
+void StringHasher::saveStream(std::ostream &stream, bool all) const {
     Base::OutputStream str(stream,false);
     boost::io::ios_flags_saver ifs(stream);
     stream << std::hex;
@@ -581,7 +787,7 @@ void StringHasher::saveStream(std::ostream &stream) const {
     for(auto &v : _hashes->right) {
         auto & d = *v.second;
         long id = d._id;
-        if (!_hashes->SaveAll && !d.isMarked() && !d.isPersistent()) {
+        if (!all && !_hashes->SaveAll && !d.isMarked() && !d.isPersistent()) {
             continue;
         }
 
@@ -670,21 +876,7 @@ void StringHasher::saveStream(std::ostream &stream) const {
 
 void StringHasher::RestoreDocFile(Base::Reader& reader)
 {
-    std::string marker;
-    std::string ver;
-    reader >> marker;
-    std::size_t count = 0;
-    _hashes->clear();
-    if (marker == "StringTableStart") {
-        reader >> ver >> count;
-        if (ver != "v1") {
-            FC_WARN("Unknown string table format");
-        }
-        restoreStreamNew(reader, count);
-        return;
-    }
-    count = atoi(marker.c_str());
-    restoreStream(reader,count);
+    restoreTable(reader);
 }
 
 void StringHasher::restoreStreamNew(std::istream &stream, std::size_t count)
@@ -808,6 +1000,7 @@ StringID* StringHasher::insert(const StringIDRef& sid)
     auto & d = *sid._sid;
     d._hasher = this;
     d.ref();
+    ++_hashes->Revision;
     auto res = _hashes->right.insert(_hashes->right.end(),
             HashMap::right_map::value_type(sid.value(),&d));
     if (res->second != &d) {
@@ -843,6 +1036,7 @@ void StringHasher::clear() {
     }
     _hashes->clear();
     _hashes->LastID = 0;
+    ++_hashes->Revision;
 }
 
 size_t StringHasher::size() const
@@ -873,6 +1067,19 @@ void StringHasher::Restore(Base::XMLReader& reader)
     if (reader.getAttributeAsInteger("new","0") > 0) {
         reader.readElement("StringHasher2");
         newTag = true;
+    }
+
+    // The file's table as a member of its own (docs/TransactionLog.md sec
+    // 27.50 item 1): read before the objects by whoever restores the
+    // document, which knows the archive -- or not at all, when the table is
+    // in memory already (item 3).
+    _tableFile.clear();
+    _tableHash.clear();
+    if (newTag && reader.hasAttribute("table")) {
+        _tableFile = reader.getAttribute("table");
+        if (reader.hasAttribute("hash"))
+            _tableHash = reader.getAttribute("hash");
+        return;
     }
 
     if(reader.hasAttribute("file")) {
@@ -942,4 +1149,41 @@ void StringHasher::clearMarks() const
     for (auto & v : _hashes->right) {
         v.second->_flags.setFlag(StringID::Flag::Marked, false);
     }
+}
+
+///////////////////////////////////////////////////////////
+
+namespace {
+thread_local App::StringIDCollector* idCollector = nullptr;
+}
+
+StringIDCollector::StringIDCollector(const StringHasher* hasher)
+    : hasher(hasher)
+    , _outer(idCollector)
+{
+    idCollector = this;
+}
+
+StringIDCollector::~StringIDCollector()
+{
+    idCollector = _outer;
+}
+
+bool StringIDCollector::take(const StringIDRef& sid)
+{
+    StringIDCollector* collector = idCollector;
+    if (!collector)
+        return sid.isMarked();
+    if (!sid.isFromHasher(collector->hasher))
+        return false;
+    collector->ids.push_back(sid.value());
+    return true;
+}
+
+std::vector<long> StringIDCollector::sortedIds() const
+{
+    std::vector<long> out = ids;
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+    return out;
 }

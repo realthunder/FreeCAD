@@ -570,6 +570,10 @@ public:
     static const std::vector<long>& getWritableSchemaVersions();
     /// Newest writable schema version.
     static long getCurrentSchemaVersion();
+    /** The archive member a schema-5 file keeps its string table in
+     * (docs/TransactionLog.md sec 27.50 item 1), read before the objects.
+     */
+    static const char* stringTableName();
     /// Schema version this document asks to be written with -- the user's
     /// cap, validated against the writable list.
     long getSaveSchemaVersion() const;
@@ -1223,6 +1227,21 @@ protected:
      * when that and the strings nothing holds reach TransactionLogCompactSize.
      */
     CompactEstimate _noteDroppedRows(const std::set<long>& named);
+    /** The string table as the file's member (docs/TransactionLog.md sec
+     * 27.50 item 1), compacted first (item 4, 27.51 Q3): the whole table,
+     * written after Document.xml and named here with its content hash; or,
+     * snapshotting for the log, named and not written (item 2).
+     */
+    void _saveStringTable(Base::Writer& writer);
+    /// Read the member `read` was named to, before the objects -- or not,
+    /// when the log or an earlier open has the table in memory (item 3).
+    void _restoreStringTable(Base::XMLReader& reader, StringHasher& read);
+    /** Drop the strings of the document's hasher that nothing in memory
+     * holds and, when it is the file's, no retained version or value of the
+     * log uses (item 4): from memory and from the store. Keep-all keeps
+     * every one. Returns how many went.
+     */
+    std::size_t _compactStrings();
     /// Keep at most UndoMaxStackSize steps of `stack` hot (sec 24.3): with
     /// the log, the oldest beyond it become cold stubs; without it, they go.
     /// The undo stack only: its steps are deleted oldest first, the order

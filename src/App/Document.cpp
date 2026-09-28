@@ -2112,11 +2112,10 @@ void Document::Save (Base::Writer &writer) const
     // asked for pure XML; otherwise they are archive entries of their own.
     getFileBlobManager().writeInlineBlobs(writer);
 
-    // NOTE: DO NOT save the main string hasher as separate file, because it is
-    // required by many objects, which assume the string hasher is fully
-    // restored.
-    //
-    // d->Hasher->setPersistenceFileName("StringHasher.Table");
+    // NOTE: DO NOT save the main string hasher as a file the reader serves
+    // after the XML, because it is required by many objects, which assume
+    // the string hasher is fully restored. The member of a schema-5 file
+    // (docs/TransactionLog.md sec 27.50) is read at its element instead.
     d->Hasher->setPersistenceFileName(nullptr);
 
     // Two passes, and the order between them is load-bearing: every object
@@ -2140,7 +2139,10 @@ void Document::Save (Base::Writer &writer) const
     beforeSave(writer);
     const double tBefore = saveSplit();
 
-    d->Hasher->Save(writer);
+    if (d->tableAsMember)
+        const_cast<Document*>(this)->_saveStringTable(writer);
+    else
+        d->Hasher->Save(writer);
     const double tHasher = saveSplit();
 
     writer.decInd();
@@ -2227,11 +2229,12 @@ void Document::Restore(Base::XMLReader &reader)
                        << " s");
             }
         } hasherTime {this, hasherStart};
-        if (!shared)
-            d->Hasher->Restore(reader);
-        else {
-            StringHasherRef read(new StringHasher);
-            read->Restore(reader);
+        StringHasherRef read = shared ? StringHasherRef(new StringHasher) : d->Hasher;
+        read->Restore(reader);
+        // Named, not held: the file's member, or the log's table (sec 27.50).
+        if (!read->tableFile().empty())
+            _restoreStringTable(reader, *read);
+        if (shared && read->size() > 0) {
             std::size_t aliased = 0;
             if (d->Hasher->merge(*read, &aliased)) {
                 if (aliased)
@@ -2332,6 +2335,168 @@ void Document::Restore(Base::XMLReader &reader)
     // Nameless on purpose: the next end element is the root's own, whichever
     // of the two roots this file used.
     reader.readEndElement();
+}
+
+const char* Document::stringTableName()
+{
+    return "StringTable.txt";
+}
+
+namespace {
+
+/// The bytes of the file's string table, as the writer asks for the member
+/// after Document.xml (docs/TransactionLog.md sec 27.50 item 1).
+class StringTableMember: public Base::Persistence
+{
+public:
+    explicit StringTableMember(std::string bytes)
+        : _bytes(std::move(bytes))
+    {}
+    unsigned int getMemSize() const override
+    {
+        return static_cast<unsigned int>(_bytes.size());
+    }
+    void Save(Base::Writer& /*writer*/) const override
+    {}
+    void Restore(Base::XMLReader& /*reader*/) override
+    {}
+    void SaveDocFile(Base::Writer& writer) const override
+    {
+        writer.Stream().write(_bytes.data(), static_cast<std::streamsize>(_bytes.size()));
+    }
+
+private:
+    std::string _bytes;
+};
+
+/// The member `name` of the archive or directory `reader` reads, open for
+/// reading ahead of its turn; null when there is none.
+std::unique_ptr<std::istream> openMember(Base::XMLReader& reader, const std::string& name)
+{
+    Base::Reader* source = reader.getReader();
+    if (!source)
+        return {};
+    if (auto zip = dynamic_cast<Base::ZipFileReader*>(source))
+        return zip->hasEntry(name) ? zip->openEntry(name) : nullptr;
+    const std::string dir = source->getDirectory();
+    if (!dir.empty()) {
+        Base::FileInfo fi(dir + "/" + name);
+        if (!fi.exists())
+            return {};
+        return std::make_unique<Base::ifstream>(fi, std::ios::in | std::ios::binary);
+    }
+    // The forward-only reader: the same archive again, through its index.
+    try {
+        Base::ZipFileReader zip(source->getFileName());
+        if (zip.hasEntry(name))
+            return zip.openEntry(name);
+    }
+    catch (...) {
+    }
+    return {};
+}
+
+} // namespace
+
+void Document::_saveStringTable(Base::Writer& writer)
+{
+    // docs/TransactionLog.md sec 27.50, 27.51. A save compacts first (Q3):
+    // what memory holds, and every string a retained version or value of
+    // the log uses, stays. A snapshot is no save and drops nothing.
+    if (!d->snapshotting)
+        _compactStrings();
+    // The ids this version uses: the marks the pass before this one set
+    // (item 4) -- for the log, which records the version, and in the file,
+    // for the version a later open of it records.
+    const std::vector<long> used = d->Hasher->markedIDs();
+    if (TransactionLog* log = getTransactionLog())
+        log->noteVersionStrings(used);
+    if (d->snapshotting) {
+        // A version the log keeps: the log's table, not a copy of it (item 2)
+        // -- named as a save names it, so that its Document.xml is the bytes
+        // a save writes (sec 23.3).
+        d->Hasher->saveReference(writer, stringTableName(), d->Hasher->contentHash(),
+                                 d->Hasher->size(), used);
+        return;
+    }
+    std::string bytes = d->Hasher->saveTable();
+    const std::string hash = d->Hasher->contentHash();
+    auto member = std::make_unique<StringTableMember>(std::move(bytes));
+    d->tableEntry = writer.addFile(stringTableName(), member.get());
+    d->tableMember = std::move(member);
+    d->Hasher->saveReference(writer, d->tableEntry, hash, d->Hasher->size(), used);
+    // The saved file's table is in memory: a second open of it reads none.
+    if (d->history && d->history->hasher() == d->Hasher)
+        d->history->noteTable(hash);
+}
+
+void Document::_restoreStringTable(Base::XMLReader& reader, StringHasher& read)
+{
+    const std::string file = read.tableFile();
+    const std::string hash = read.tableHash();
+    const bool fileHasher = d->history && d->history->hasher() == d->Hasher;
+    // From the log -- a checkout, a version, a recovery: no version carries
+    // a table, and the log's is the file's (item 2).
+    if (d->checkingOut && fileHasher && d->history->logCore()) {
+        d->history->logCore()->loadStrings();
+        return;
+    }
+    // A table this file's history has taken in already (item 3): the
+    // second open of the same file.
+    if (!hash.empty() && fileHasher && &read != d->Hasher.get() && d->history->tookTable(hash)) {
+        FC_LOG(getName() << ": string table " << hash << " is in memory already");
+        return;
+    }
+    std::unique_ptr<std::istream> in = openMember(reader, file);
+    if (!in) {
+        FC_ERR(getName() << ": the string table " << file << " is missing. It is strongly "
+               "recommended to recompute the whole document.");
+        reader.setPartialRestore(true);
+        return;
+    }
+    try {
+        read.restoreTable(*in);
+    }
+    catch (const Base::Exception& e) {
+        e.ReportException();
+        FC_ERR(getName() << ": the string table " << file << " cannot be read. It is strongly "
+               "recommended to recompute the whole document.");
+        reader.setPartialRestore(true);
+        return;
+    }
+    if (!hash.empty() && d->history)
+        d->history->noteTable(hash);
+}
+
+std::size_t Document::_compactStrings()
+{
+    // docs/TransactionLog.md sec 27.50 item 4, 27.51 Q3 and Q4: a string
+    // stays while memory holds it, or a retained version or value uses it
+    // (the ranges beside each in the store) -- and what a kept one is built
+    // from stays with it. Only the file's hasher is the log's to judge.
+    const StringHasherRef hasher = d->Hasher;
+    if (!hasher || hasher->getSaveAll())
+        return 0;
+    std::vector<std::pair<long, long>> kept;
+    TransactionLogCore* core = nullptr;
+    // Whichever document of the file keeps the log: its versions and values
+    // are this hasher's too.
+    if (d->history && d->history->hasher() == hasher && d->history->logCore()) {
+        core = d->history->logCore().get();
+        kept = core->retainedStrings();
+    }
+    auto keep = [&kept](long id) {
+        auto it = std::upper_bound(kept.begin(), kept.end(), id,
+                                   [](long v, const std::pair<long, long>& r) { return v < r.first; });
+        return it != kept.begin() && std::prev(it)->second >= id;
+    };
+    const std::vector<long> dropped = hasher->compact(keep);
+    if (core)
+        core->dropStrings(dropped);
+    if (!dropped.empty())
+        FC_LOG(getName() << ": " << dropped.size() << " string(s) dropped, " << hasher->size()
+               << " kept");
+    return dropped.size();
 }
 
 std::pair<bool,int> Document::addStringHasher(const StringHasherRef & hasher) const {
@@ -4185,10 +4350,27 @@ void Document::save(Base::Writer &writer, bool archive) const {
     // version as a snapshot of its own (sec 27.62).
     TransactionLog* log = writer.getSchemaVersion() >= getCurrentSchemaVersion()
         ? getTransactionLog() : nullptr;
+    // The string table as a member of its own from schema 5 on, where the
+    // content is archive entries (docs/TransactionLog.md sec 27.50 item 1).
+    // It is the file's, not a version's: the log keeps it once (item 2).
+    struct TableGuard
+    {
+        DocumentP* d;
+        ~TableGuard()
+        {
+            d->tableAsMember = false;
+            d->tableMember.reset();
+            d->tableEntry.clear();
+        }
+    } tableGuard {d};
+    d->tableAsMember = writer.getSchemaVersion() >= 5
+        && getFileBlobManager().blobFormat() == FileBlobManager::BlobFormat::Entries;
     d->captures.clear();
     if (log) {
         writer.setPropertySink(log->beginSnapshot(false));
         writer.setEntrySink([this](const std::string& name, Base::EntryCapture capture) {
+            if (name == d->tableEntry)
+                return;
             d->captures.emplace_back(name, std::move(capture));
         });
         writer.beginCapture();
@@ -4901,6 +5083,9 @@ int64_t Document::_snapshotToLog(const char* kind)
         // captured is the skeleton, the misses, and under verification
         // the claimed bodies too.
         d->captures.clear();
+        // The log's table stands for the one a save writes as a member
+        // (docs/TransactionLog.md sec 27.50 item 2).
+        Base::FlagToggler<> tableAsMember(d->tableAsMember, false);
         writer.setPropertySink(log->beginSnapshot(true));
         writer.setEntrySink([this](const std::string& name, Base::EntryCapture capture) {
             d->captures.emplace_back(name, std::move(capture));
@@ -7254,7 +7439,10 @@ void addUntappedMembers(const std::string& path,
         have.insert(e.first);
     const std::string blobs = FileBlobManager::archivePrefix();
     for (const auto& name : zip->entryNames()) {
+        // The string table is the file's, which the log keeps once (sec
+        // 27.50 item 2), not a version's.
         if (name.empty() || name.back() == '/' || have.count(name)
+                || name == Document::stringTableName()
                 || boost::starts_with(name, blobs) || boost::starts_with(name, "thumbnails/"))
             continue;
         auto in = zip->openEntry(name);
@@ -9631,13 +9819,10 @@ Document::CompactResult Document::compactFileState()
     history.setCompactEstimate(0);
     store.setMeta("compact_estimate", "0");
 
-    // The strings nothing but the table holds: dropped, the counter kept, so
-    // no id is handed out again and a version bringing one back is merged.
-    if (const StringHasherRef& hasher = history.hasher()) {
-        const std::size_t before = hasher->size();
-        hasher->compact();
-        result.strings = before - hasher->size();
-    }
+    // The strings nothing holds and no retained version or value uses
+    // (sec 27.50 item 4): dropped, the counter kept, so no id is handed out
+    // again.
+    result.strings = _compactStrings();
     FC_LOG("compacted the file state of " << getName() << ": " << result.names << " names, "
            << result.geoIds << " geometry ids, " << result.strings << " strings");
     return result;

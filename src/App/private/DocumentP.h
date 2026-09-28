@@ -150,6 +150,13 @@ struct DocumentP
     long commitsSinceVersion {0};
     double lastVersionTime {0};
     bool snapshotting {false};
+    /// The save in progress writes the string table as a member of its own
+    /// (docs/TransactionLog.md sec 27.50 item 1) -- or, snapshotting, names
+    /// the log's table and writes none; `tableMember` is what the writer
+    /// writes it from, `tableEntry` the name it got.
+    bool tableAsMember {false};
+    std::unique_ptr<Base::Persistence> tableMember;
+    std::string tableEntry;
     /// A restoreVersion() in progress: the restore takes no version 1.
     bool checkingOut {false};
     /// The scratch document a restore to a version reads the version into

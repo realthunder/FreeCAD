@@ -24,6 +24,7 @@
 
 #ifndef _PreComp_
 # include <cstring>
+# include <iterator>
 # include <map>
 # include <mutex>
 # include <sstream>
@@ -38,6 +39,7 @@
 
 #include <Base/Console.h>
 #include <Base/FileInfo.h>
+#include <Base/Reader.h>
 #include <Base/Uuid.h>
 
 #include "FileHistory.h"
@@ -220,7 +222,10 @@ std::shared_ptr<FileHistory> FileHistory::openFile(const std::string& path, std:
         const std::string prefix = FileBlobManager::archivePrefix();
         for (const auto& entry : zip.entries()) {
             const std::string name = entry->getName();
-            if (name == "Document.xml" || name.compare(0, prefix.size(), prefix) == 0
+            // The string table is the file's, not a version's (sec 27.50):
+            // read into the history's hasher below.
+            if (name == "Document.xml" || name == Document::stringTableName()
+                    || name.compare(0, prefix.size(), prefix) == 0
                     || name.compare(0, 11, "thumbnails/") == 0 || entry->isDirectory())
                 continue;
             std::string bytes;
@@ -276,6 +281,9 @@ std::shared_ptr<FileHistory> FileHistory::openFile(const std::string& path, std:
     catch (const Base::Exception& e) {
         return fail(std::string("the history's database cannot be read: ") + e.what());
     }
+    // The file's strings, before anything is read from its history: a
+    // version carries none (sec 27.50 item 2).
+    history->readTable(path);
     auto& core = TransactionLogCore::of(*history);
     if (!core.adoptEmbedded(db->path()))
         return fail("the history cannot be adopted");
@@ -288,6 +296,40 @@ std::shared_ptr<FileHistory> FileHistory::openFile(const std::string& path, std:
         path, entries, TransactionLog::versionBlobs(entries, blobs.restoredEntries()), facts.schema);
     core.flush();
     return history;
+}
+
+bool FileHistory::readTable(const std::string& path)
+{
+    std::string bytes;
+    try {
+        Base::ZipFileReader zip(path);
+        if (!zip.hasEntry(Document::stringTableName()))
+            return false;
+        auto in = zip.openEntry(Document::stringTableName());
+        if (!in)
+            return false;
+        bytes.assign(std::istreambuf_iterator<char>(*in), std::istreambuf_iterator<char>());
+    }
+    catch (...) {
+        return false;
+    }
+    StringHasherRef table(new StringHasher);
+    try {
+        std::istringstream in(bytes);
+        table->restoreTable(in);
+    }
+    catch (const Base::Exception& e) {
+        FC_ERR("the string table of " << path << " cannot be read: " << e.what());
+        return false;
+    }
+    if (!_hasher)
+        _hasher = table;
+    else if (!_hasher->merge(*table)) {
+        FC_WARN("the string table of " << path << " disagrees with the file's hasher");
+        return false;
+    }
+    _tables.insert(FileBlobManager::hashBytes(bytes));
+    return true;
 }
 
 FileHistory::~FileHistory()

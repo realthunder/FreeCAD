@@ -3406,3 +3406,73 @@ TEST_F(TransactionLogTest, aClosedFilesHistoryIsReadFromTheArchive)
     Base::FileInfo(plain).deleteFile();
     Base::FileInfo(path).deleteFile();
 }
+
+TEST_F(TransactionLogTest, stringTableAndReferenceSets)
+{
+    // docs/TransactionLog.md sec 27.50 items 2 and 4: the store keeps the
+    // file's strings once, and each version's and value's ids as ranges
+    // that go with their entity.
+    const std::string path = Base::FileInfo::getTempFileName("txnlog-strings") + ".db";
+    const std::string kept(40, 'a'), gone(40, 'b');
+    {
+        auto store = App::TransactionStore::openSQLite(path);
+        App::LogString s1;
+        s1.id = 1;
+        s1.data = std::string("E\0dge", 5);
+        App::LogString s2;
+        s2.id = 2;
+        s2.flags = 8;
+        s2.sids = "1 3:4";
+        s2.data = "x";
+        s2.postfix = ";:H";
+        store->addStrings({s2, s1});
+        App::LogString again = s1;
+        again.data = "changed";
+        store->addStrings({again});   // an id held is left as it is
+        EXPECT_EQ(store->stringIds(), (std::vector<long> {1, 2}));
+        auto all = store->strings();
+        ASSERT_EQ(all.size(), 2u);
+        EXPECT_EQ(all[0].data, s1.data);
+        EXPECT_EQ(all[1].sids, "1 3:4");
+        EXPECT_EQ(all[1].postfix, ";:H");
+        EXPECT_EQ(all[1].flags, 8);
+        auto some = store->strings({2});
+        ASSERT_EQ(some.size(), 1u);
+        EXPECT_EQ(some[0].id, 2);
+        store->removeStrings({1});
+        EXPECT_EQ(store->stringIds(), (std::vector<long> {2}));
+
+        auto put = [&](const std::string& hash) {
+            App::LogEntity e;
+            e.hash = hash;
+            e.enc = "raw";
+            e.data = "v";
+            e.size = 1;
+            store->putEntity(e);
+        };
+        put(kept);
+        put(gone);
+        store->addStringRefs(kept, {{1, 3}, {10, 12}});
+        store->addStringRefs(gone, {{4, 5}, {20, 20}});
+        EXPECT_EQ(store->stringRefs(),
+                  (std::vector<std::pair<long, long>> {{1, 5}, {10, 12}, {20, 20}}));
+        // `kept` is named by an op, `gone` by nothing: a collection takes
+        // `gone` and its ranges.
+        App::LogTransaction t;
+        t.kind = "user";
+        std::vector<App::LogOp> ops(1);
+        ops[0].op = "set";
+        ops[0].ckind = "obj";
+        ops[0].cid = 1;
+        ops[0].prop = "P";
+        ops[0].vafter = kept;
+        store->append(t, ops);
+        store->truncate(0);
+        EXPECT_TRUE(store->hasEntity(kept));
+        EXPECT_FALSE(store->hasEntity(gone));
+        EXPECT_EQ(store->stringRefs(), (std::vector<std::pair<long, long>> {{1, 3}, {10, 12}}));
+        store->clearStrings();
+        EXPECT_TRUE(store->stringIds().empty());
+    }
+    Base::FileInfo(path).deleteFile();
+}

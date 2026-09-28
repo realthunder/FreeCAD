@@ -192,6 +192,21 @@ struct LogManifestEntry
     std::string hash;
 };
 
+/** One string of the file's string table (docs/TransactionLog.md sec 27.50
+ * item 2, table `strtable`): the table is file-scope state, kept once, and
+ * no version carries one. `sids` names the strings it is built from, as
+ * `id` or `id:index`, space separated; `data` and `postfix` are its bytes as
+ * the hasher holds them.
+ */
+struct LogString
+{
+    long id {0};
+    int flags {0};
+    std::string sids;
+    std::string data;
+    std::string postfix;
+};
+
 /** The interface the document sees: a log is appended, read and truncated
  * through this and nothing else (sec 13.2). openSQLite() is the one
  * implementation.
@@ -263,6 +278,27 @@ public:
     virtual std::vector<long> objectIdsInOps() = 0;
     /// Drop the `objname` and `lastgeoid` rows of `ids` (sec 27.47).
     virtual void removeObjectState(const std::vector<long>& ids) = 0;
+
+    /// Add `strings` to the file's string table (sec 27.50 item 2); an id
+    /// the table has is left as it is.
+    virtual void addStrings(const std::vector<LogString>& strings) = 0;
+    /// The strings of `ids`, all of them when `ids` is empty, in id order.
+    virtual std::vector<LogString> strings(const std::vector<long>& ids = {}) = 0;
+    /// Every id the string table holds, in order.
+    virtual std::vector<long> stringIds() = 0;
+    /// Drop the strings of `ids` (a compaction, sec 27.50 item 4).
+    virtual void removeStrings(const std::vector<long>& ids) = 0;
+    /// Drop the whole string table: an embedded copy, whose file carries
+    /// the table as a member of its own.
+    virtual void clearStrings() = 0;
+    /** The string ids entity `owner` uses (sec 27.50 item 4, 27.51 Q4), as
+     * inclusive ranges: a version's manifest (the ids its save marked), a
+     * value (the ids its capture listed). Dropped with the entity.
+     */
+    virtual void addStringRefs(const std::string& owner,
+                               const std::vector<std::pair<long, long>>& ranges) = 0;
+    /// Every range any entity holds, merged, in order.
+    virtual std::vector<std::pair<long, long>> stringRefs() = 0;
 
     /// Drop every transaction with seq < before, and the entities nothing
     /// reaches any more (sec 23.5).

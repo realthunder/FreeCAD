@@ -39,6 +39,7 @@ class DocumentObject;
 class FileBlob;
 class FileBlobManager;
 class Property;
+class StringHasher;
 
 /** A value as the transaction log sees it (docs/TransactionLog.md sec 9.3,
  * sec 20.2 decision 5): the XML fragment Property::Save writes, plus every
@@ -58,6 +59,10 @@ struct CapturedValue
     /// as the Save noted them (BlobRecorder, sec 23.16). Not content: the
     /// log holds them as entities of their own.
     std::vector<std::shared_ptr<FileBlob>> blobs;
+    /// The ids of the file's string table the value's element maps use,
+    /// sorted (docs/TransactionLog.md sec 27.50 item 4): found by the
+    /// capture's own walk, not by what a save marked.
+    std::vector<long> stringIds;
     bool ok {false};
 
     size_t attachmentBytes() const
@@ -77,6 +82,9 @@ struct CaptureConfig
     bool preferBinary {false};
     /// The document's blob store: where a detached copy's blobs go.
     FileBlobManager* blobs {nullptr};
+    /// The file's string hasher, compared by address only: the ids of it
+    /// an element map uses are listed, and noted in stringIds.
+    const StringHasher* hasher {nullptr};
     CaptureConfig() = default;
     explicit CaptureConfig(const Document& doc);
 };

@@ -28,6 +28,7 @@
 # include <cstdlib>
 # include <map>
 # include <set>
+# include <sstream>
 #endif
 
 #ifdef FC_HAVE_ZSTD
@@ -189,6 +190,17 @@ public:
     std::vector<long> objectIdsInOps() override { return inner().objectIdsInOps(); }
     void removeObjectState(const std::vector<long>& ids) override
     { inner().removeObjectState(ids); }
+    void addStrings(const std::vector<LogString>& strings) override
+    { inner().addStrings(strings); }
+    std::vector<LogString> strings(const std::vector<long>& ids) override
+    { return inner().strings(ids); }
+    std::vector<long> stringIds() override { return inner().stringIds(); }
+    void removeStrings(const std::vector<long>& ids) override { inner().removeStrings(ids); }
+    void clearStrings() override { inner().clearStrings(); }
+    void addStringRefs(const std::string& owner,
+                       const std::vector<std::pair<long, long>>& ranges) override
+    { inner().addStringRefs(owner, ranges); }
+    std::vector<std::pair<long, long>> stringRefs() override { return inner().stringRefs(); }
     void truncate(int64_t before) override
     {
         inner().truncate(before);
@@ -401,6 +413,120 @@ void TransactionLogCore::openStore()
     const std::string estimate = _store->getMeta("compact_estimate");
     if (!estimate.empty())
         _history.setCompactEstimate(std::stoul(estimate));
+    // The strings the store holds (sec 27.50 item 2); memory takes in the
+    // ones it lacks before anything is read from the log (loadStrings).
+    _storedStrings.clear();
+    _storedMax = 0;
+    for (long id : _store->stringIds()) {
+        _storedStrings.insert(id);
+        _storedMax = std::max(_storedMax, id);
+    }
+    _stringsFor = nullptr;
+    loadStrings();
+}
+
+void TransactionLogCore::syncStrings(bool all)
+{
+    const StringHasherRef& hasher = _history.hasher();
+    if (!hasher || !_store)
+        return;
+    if (_stringsFor != hasher.get()) {
+        loadStrings();
+        all = true;
+    }
+    const auto rows = hasher->rows(all ? 0 : _storedMax,
+                                   [this](long id) { return _storedStrings.count(id) == 0; });
+    if (rows.empty())
+        return;
+    std::vector<LogString> out;
+    out.reserve(rows.size());
+    for (const auto& row : rows) {
+        LogString str;
+        str.id = row.id;
+        str.flags = row.flags;
+        for (const auto& sid : row.sids) {
+            if (!str.sids.empty())
+                str.sids += ' ';
+            str.sids += std::to_string(sid.first);
+            if (sid.second)
+                str.sids += ':' + std::to_string(sid.second);
+        }
+        str.data.assign(row.data.constData(), static_cast<std::size_t>(row.data.size()));
+        str.postfix.assign(row.postfix.constData(), static_cast<std::size_t>(row.postfix.size()));
+        _storedStrings.insert(row.id);
+        _storedMax = std::max(_storedMax, row.id);
+        out.push_back(std::move(str));
+    }
+    post([this, out = std::move(out)]() { _store->addStrings(out); });
+}
+
+void TransactionLogCore::loadStrings()
+{
+    const StringHasherRef& hasher = _history.hasher();
+    if (!hasher || !_store || _stringsFor == hasher.get())
+        return;
+    _stringsFor = hasher.get();
+    std::vector<long> missing;
+    for (long id : _storedStrings) {
+        if (!hasher->hasID(id))
+            missing.push_back(id);
+    }
+    if (missing.empty())
+        return;
+    std::vector<StringHasher::Row> rows;
+    for (const auto& str : store().strings(missing)) {
+        StringHasher::Row row;
+        row.id = str.id;
+        row.flags = str.flags;
+        std::istringstream in(str.sids);
+        std::string token;
+        while (in >> token) {
+            const auto colon = token.find(':');
+            row.sids.emplace_back(std::stol(token.substr(0, colon)),
+                                  colon == std::string::npos ? 0
+                                                             : std::stoi(token.substr(colon + 1)));
+        }
+        row.data = QByteArray(str.data.data(), static_cast<int>(str.data.size()));
+        row.postfix = QByteArray(str.postfix.data(), static_cast<int>(str.postfix.size()));
+        rows.push_back(std::move(row));
+    }
+    std::size_t conflicts = 0;
+    const std::size_t taken = hasher->insertRows(rows, &conflicts);
+    FC_LOG("transaction log: " << taken << " string(s) of the store taken into the file's hasher");
+    if (conflicts)
+        FC_WARN("transaction log: " << conflicts
+                << " string(s) of the store disagree with the file's hasher or miss a part;"
+                   " left out");
+}
+
+std::vector<std::pair<long, long>> TransactionLogCore::retainedStrings()
+{
+    return store().stringRefs();
+}
+
+void TransactionLogCore::dropStrings(const std::vector<long>& ids)
+{
+    if (ids.empty() || !_store)
+        return;
+    std::vector<long> stored;
+    for (long id : ids) {
+        if (_storedStrings.erase(id))
+            stored.push_back(id);
+    }
+    if (!stored.empty())
+        post([this, stored]() { _store->removeStrings(stored); });
+}
+
+std::vector<std::pair<long, long>> TransactionLogCore::idRanges(const std::vector<long>& ids)
+{
+    std::vector<std::pair<long, long>> out;
+    for (long id : ids) {
+        if (!out.empty() && id <= out.back().second + 1)
+            out.back().second = std::max(out.back().second, id);
+        else
+            out.emplace_back(id, id);
+    }
+    return out;
 }
 
 void TransactionLogCore::liveLogs(TransactionLogCore* core, bool add)
@@ -614,7 +740,8 @@ TransactionLogCore& TransactionLogCore::of(FileHistory& history)
 void TransactionLogCore::postVersion(LogVersion v, LogTransaction t,
                                      const TransactionLog::Captures& entries,
                                      const TransactionLog::Blobs& blobs, int schema,
-                                     const std::string& path)
+                                     const std::string& path,
+                                     std::vector<std::pair<long, long>> strings, bool marked)
 {
         std::string escaped;
         for (char c : path) {
@@ -624,7 +751,8 @@ void TransactionLogCore::postVersion(LogVersion v, LogTransaction t,
         }
         const size_t nblobs = blobs.size();
         const long keep = DocumentParams::getTransactionLogKeepVersions();
-        post([this, v, t, entries, blobs = TransactionLog::Blobs(blobs), schema, escaped, nblobs, keep]() mutable {
+        post([this, v, t, entries, blobs = TransactionLog::Blobs(blobs), schema, escaped, nblobs,
+              keep, strings = std::move(strings), marked]() mutable {
             // Each XML entry is a composite (sec 23.3): its skeleton plus
             // the parts, or the bytes themselves when it was read rather
             // than written; each blob an entity the log holds (23.16). The
@@ -654,6 +782,15 @@ void TransactionLogCore::postVersion(LogVersion v, LogTransaction t,
                 manifest.push_back({e.first, hash});
             }
             v.docxml_hash = docHash;
+            // A file as read has no marks of this session: it uses what the
+            // save that wrote it marked, which its table element says
+            // (`used`), and else every string the hasher held -- sec 27.50
+            // item 4.
+            if (!marked && !entries.empty()) {
+                std::vector<std::pair<long, long>> used;
+                if (StringHasher::parseUsed(entries.front().second.bytes(), used))
+                    strings = std::move(used);
+            }
             std::vector<FileBlobHandle> named;
             for (const auto& b : blobs)
                 named.push_back(b.second);
@@ -665,6 +802,9 @@ void TransactionLogCore::postVersion(LogVersion v, LogTransaction t,
             }
             blobs.clear();   // the log holds what it keeps; the job lets go
             _store->addVersion(v, manifest);
+            // The string ids it uses, beside its entry list and gone with it
+            // (sec 27.50 item 4).
+            _store->addStringRefs(v.manifest, strings);
             for (const auto& e : manifest) {
                 auto it = previous.find(e.entry);
                 if (it != previous.end() && it->second != e.hash)
@@ -682,6 +822,14 @@ void TransactionLogCore::postVersion(LogVersion v, LogTransaction t,
             std::vector<LogOp> none;
             _store->append(t, none);
         });
+}
+
+std::vector<std::pair<long, long>> TransactionLogCore::allStrings() const
+{
+    const StringHasherRef& hasher = _history.hasher();
+    if (!hasher || hasher->lastID() <= 0)
+        return {};
+    return {{1, hasher->lastID()}};
 }
 
 int64_t TransactionLogCore::metaBranch(int64_t& head)
@@ -729,7 +877,8 @@ int64_t TransactionLogCore::recordFile(const std::string& path, const Transactio
     TransactionLog::Captures captures;
     for (const auto& e : entries)
         captures.emplace_back(e.first, Base::EntryCapture(e.second));
-    postVersion(v, t, captures, blobs, schema, path);
+    syncStrings(true);
+    postVersion(v, t, captures, blobs, schema, path, allStrings(), false);
     return v.num;
 }
 
@@ -837,6 +986,10 @@ TransactionLog::Embedded TransactionLogCore::embed(const std::string& saveDate, 
     Base::FileInfo(out.path).deleteFile();
     // The file-scope state (sec 27.40), into the store itself, so that the
     // copy carries it and a recovery after a crash has it as of this save.
+    // The strings too (sec 27.50 item 2), which the copy then leaves out:
+    // the file carries them as a member of its own.
+    syncStrings(true);
+    flush();
     _store->setMeta("last_object_id", std::to_string(_history.lastObjectId()));
     std::vector<std::pair<long, std::string>> names;
     names.reserve(_history.objectNames().size());
@@ -861,6 +1014,7 @@ TransactionLog::Embedded TransactionLogCore::embed(const std::string& saveDate, 
     }
     copy->evictVersions(evicted);
     copy->dropTier("cache");
+    copy->clearStrings();
     // Every blob the copy still holds as a file (23.16): a kept version's,
     // and an op value's. The ones kept as deltas travel inside the copy.
     for (const auto& hash : copy->entitiesStoredAs("file")) {
@@ -1531,6 +1685,9 @@ int64_t TransactionLog::onRestore(const std::string& path, const Entries& entrie
         return 0;
     }
     _adopted = false;
+    // Read, not saved: no marks say which strings it uses (sec 27.50 item 4).
+    _versionStrings.clear();
+    _haveVersionStrings = false;
     // As read, the entries are bytes: no parts to hold, the file itself.
     Captures captures;
     for (const auto& e : entries)
@@ -1581,7 +1738,15 @@ int64_t TransactionLog::snapshot(const char* kind, const std::string& path,
         t.time = v.created;
         t.session = _c._session;
 
-        _c.postVersion(v, t, entries, blobs, schema, path);
+        // The file's strings go first, and the ids this version uses with it
+        // (sec 27.50 items 2, 4).
+        _c.syncStrings(true);
+        const bool marked = _haveVersionStrings;
+        std::vector<std::pair<long, long>> strings =
+            marked ? TransactionLogCore::idRanges(_versionStrings) : _c.allStrings();
+        _versionStrings.clear();
+        _haveVersionStrings = false;
+        _c.postVersion(v, t, entries, blobs, schema, path, std::move(strings), marked);
         return v.num;
     }
     catch (Base::Exception& e) {
@@ -1759,6 +1924,8 @@ std::string TransactionLogCore::putValue(const CapturedValue& value, const std::
     e.refs.insert(e.refs.end(), blobRefs.begin(), blobRefs.end());
     compressInto(e, value.fragment);
     _store->putEntity(e);
+    // The string ids it uses (sec 27.50 item 4), dropped with it.
+    _store->addStringRefs(e.hash, idRanges(value.stringIds));
     return e.hash;
 }
 
@@ -2451,6 +2618,15 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
     if (txn.isEmpty())
         return 0;
     try {
+        // The strings minted since, ahead of the values that name them
+        // (sec 27.50 item 2): a recovery has every one a value it replays
+        // refers to. The hasher the captures list ids of is the document's;
+        // changed only with the worker idle, which reads it.
+        _c.syncStrings(false);
+        if (_config.hasher != _doc.getHasher().get()) {
+            flush();
+            _config.hasher = _doc.getHasher().get();
+        }
         LogTransaction t;
         number(t);
         t.id = txn.getID();
