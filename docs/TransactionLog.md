@@ -7558,3 +7558,110 @@ leave the touched state the rows record -- the proposal of 27.59 with the
 user's note above: the recorded flags first, an object whose derived value
 could not be written back touched last, and a restore recording the flags
 it changed with no value; (2) 27.50 steps 1-4, the shared string table.
+
+### 27.63 Undo and redo leave the touched state the rows record (2026-09-28)
+
+Item (1) of 27.62's next, the proposal of 27.59 with the user's note.
+
+**An undo is the walk back to the step's row.** The touched state an undo
+of a logged step leaves is the one the rows say the document had just
+before that row: every row from the head back to the step's own, crossed
+back as `_moveAlongLog` crosses them (`TouchedFold`) -- a set leaves the
+state it recorded before it, a recompute record its `"b"`/`"p"`. Recomputes
+after the step are crossed too: undoing an edit that a recompute followed
+leaves the object as it was before the edit, not touched by the undo's
+write. A redo's step is the undo's own row (sec 24.2), so a redo is that
+row crossed back: the state just before the undo. The state is folded
+before anything is written (`StepTouched::begin`), each object that may
+change -- one the rows name, one the step's row names, one the hot step
+holds -- saved; after the writes the fold goes on top of the saved state,
+and an object whose derived value could not be written back (a cold undo
+of a value the log did not keep, `ColdRevert::touched`) is touched last,
+the user's note of 27.62. An object no crossed row speaks of keeps its
+flags.
+
+**Set again after the guard's touches.** `TransactionGuard` defers each
+written property's `touch()` to its destructor, the outermost one of a run
+of undos, and that `touch()` marks the object touched again. The state the
+fold made is therefore set a second time from there:
+`TransactionGuard::afterTouches(fn)` runs `fn` after those touches and
+before `signalUndo`/`signalRedo`, at once when no guard is active.
+
+**Hot steps never wait for the worker.** The rows are the log's, and the
+store is written by the worker (a read waits for it, `FlushingStore`); a hot
+undo read nothing from the store before. `TransactionLog` now keeps the
+rows it numbered lately in memory (`_recent`: parent, script, the sets'
+touched bits, no values; the newest 4096) and `rowsBackTo(seq)` walks them
+from the head; only a row it does not hold -- another document's on the
+same file, one numbered before a reopen -- sends it to the store. A trim,
+a squash or a removal of rows (`FlushingStore::truncate`,
+`removeTransactions`, `replaceTransactions`) counts a rewrite
+(`TransactionLogCore::_rewrites`), and a cursor whose copies predate it
+drops them.
+
+**An undo, a redo and a restore record the state they left.** Their rows'
+sets say only the state before each write; crossed forward, a set means
+"touched", which is what a user's edit leaves and not what an undo leaves
+now. Each of the three writes a record in its row's `script`, in the
+recompute record's form -- `{"objects":[{"id","b","p","a","q"}]}`, every
+object whose state it may have changed, `"b"` left out for one it made --
+through `Transaction::LogScript`, which `onCommit` copies. The fold crosses
+a row's record after its ops (`TouchedFold::record`, now in the walk, the
+replay and the undo alike), and the record is exact. For a restore this is
+also where an object whose flags alone changed goes -- it is in no op.
+
+**The log's "touched" is the property's bit.** `PropertyLink::isTouched()`
+also answers true once the link's target's revision moved since the link was
+purged -- a write to A makes B's link to A read as touched, and no write to
+B happened. That is the target's revision, not a state the rows can carry:
+an undo of the write to A leaves B's link reading as touched, since the undo
+writes A again, and the state before the undo is not the state before the
+step. The log now reads and records the property's own bit
+(`Property::hasTouchedBit()`, new) -- the set's before bits, the recompute
+record's property names, the fold -- and clears a bit through
+`purgeTouched()`, which for a link also takes the target's revision as
+seen. What `isTouched()` adds on top is left as the revisions make it, as
+before this step.
+
+**Found on the way: a hot redo lost a transient property's bit.** An
+object the step makes -- a redo of a create -- was given an empty state to
+fold on, so every property no row names came out clean: a transient one
+(`FeatureTest::TypeTransient`) is never logged. Its base is now its state
+as the writes left it; a hot redo brings back the object itself.
+
+**Measured** on scanner.FCStd (the schema-5 copy, 204 objects touched at
+open in this run), `touchprobe.py`: three edits of `Pad.Length` each with
+its recompute, a restore to version 1, then undo, redo, undo, the three
+edits undone and redone. Every step lands on exactly the objects the state
+it returns to had touched -- 20 at the head, 204 at the version -- none
+missing, none extra; 27.59's undo of the restore had 86 where the head had
+20. The same after 100 edits. The pass costs 3-13 ms to fold the rows and
+about 4 ms after the writes. **Seen, not chased:** the hot apply itself --
+`Transaction::apply`, before any of this -- takes 18 s to undo the restore
+(its ~530 values) and 5 s to redo it, where the restore through the rows
+took 0.4 s.
+
+**Not covered.** A restore that changes flags and no value writes no row
+(the empty transaction is dropped, as before), so an undo does not bring
+those flags back. Selective undo (`undoLogged`, sec 24.4) is left as it
+was: its row is not the tip, and the state before it is not the state to
+go to. A squash row's sets carry no before bits (sec 16.7), so a walk across
+one keeps the flags the document had.
+
+**Tests.** Gtest `undoAndRedoLeaveTheRowsTouchedState`, hot and cold (an
+undo stack of one): create, recompute, edits with and without their
+recomputes, one inside its transaction; each undo lands on the state the
+document had before the operation that made that step, each redo on the
+state before the undo it redoes, and a second round of undos agrees; the
+undo and redo rows carry their records. Python
+`TransactionBranchCases.testTouchedStateThroughTheRows` now also undoes the
+restore (the head's state, `C` included), redoes it (the version's) and
+undoes again; `testUndoRowsSayTheStateTheyLeft`: an edit undone leaves the
+object clean, and a switch away and back -- which crosses the undo's row
+forward -- leaves it clean too: crossed forward, the undo's sets alone
+would read as edits and touch it.
+
+**Gates.** Python 2944 OK (52 skipped, 6 expected failures), ctest 844/844,
+the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16.
+
+**Next:** 27.50 steps 1-4, the shared string table (27.62's item 2).
