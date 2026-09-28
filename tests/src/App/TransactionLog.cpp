@@ -526,7 +526,6 @@ TEST_F(TransactionLogTest, saveRecordAndVersion)
     auto manifest = store.manifest(v.num);
     ASSERT_GE(manifest.size(), 1u);
     EXPECT_EQ(manifest[0].entry, "Document.xml");
-    EXPECT_EQ(manifest[0].source, "entity");
     App::CapturedValue stored;
     ASSERT_TRUE(log().readValue(manifest[0].hash, stored));
     EXPECT_EQ(stored.fragment, fromFile);
@@ -985,7 +984,7 @@ TEST_F(TransactionLogTest, deltaChainReadsAndHolds)
     // keep both bases it decodes through, and drop them once it goes.
     App::LogVersion v;
     v.seq = store.lastSeq();
-    store.addVersion(v, {{"Document.xml", hBase, "entity"}});
+    store.addVersion(v, {{"Document.xml", hBase}});
     store.truncate(store.lastSeq() + 1);
     EXPECT_TRUE(store.hasEntity(hBase));
     EXPECT_TRUE(store.hasEntity(hMid));
@@ -2221,149 +2220,91 @@ TEST_F(TransactionLogTest, branchesAreChainsInTheStore)
     Base::FileInfo(path).deleteFile();
 }
 
-TEST_F(TransactionLogTest, schema4StoreMovesOntoMain)
+TEST_F(TransactionLogTest, compositeAndManifestHoldWithoutEdges)
 {
-    // A store written before branches (schema 4) opens with every row and
-    // version on `main`, whose head is the newest row.
-    const std::string path = Base::FileInfo::getTempFileName("txnlog-schema4") + ".db";
-    {
-        sqlite3* db = nullptr;
-        ASSERT_EQ(sqlite3_open(path.c_str(), &db), SQLITE_OK);
-        const char* sql =
-            "CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT);"
-            "INSERT INTO meta VALUES('schema','4');"
-            "CREATE TABLE txn(seq INTEGER PRIMARY KEY, parent INTEGER, id INTEGER, kind TEXT,"
-            " origin TEXT, name TEXT, time REAL, script TEXT, session INTEGER,"
-            " inverts INTEGER DEFAULT 0);"
-            "INSERT INTO txn VALUES(1,0,0,'user','','one',10.0,'',1,0);"
-            "INSERT INTO txn VALUES(2,1,0,'user','','two',11.0,'',1,0);"
-            "INSERT INTO txn VALUES(3,2,0,'save','','save',12.0,'',1,0);"
-            "CREATE TABLE version(num INTEGER PRIMARY KEY, uuid TEXT, branch TEXT, kind TEXT,"
-            " name TEXT, seq INTEGER, env INTEGER, docxml_hash TEXT, schema INTEGER,"
-            " created REAL);"
-            "INSERT INTO version VALUES(1,'u','main','unnamed','',2,0,'h',5,12.0);";
-        char* err = nullptr;
-        EXPECT_EQ(sqlite3_exec(db, sql, nullptr, nullptr, &err), SQLITE_OK) << (err ? err : "");
-        sqlite3_free(err);
-        sqlite3_close(db);
-    }
-    {
-        // Read-only, as the embedded guard opens a copy (sec 16.4): read
-        // as it is, nothing migrated, and no throw.
-        Base::FileInfo(path).setPermissions(Base::FileInfo::ReadOnly);
-        auto store = App::TransactionStore::openSQLite(path);
-        EXPECT_EQ(store->getMeta("schema"), "4");
-    }
-    Base::FileInfo(path).setPermissions(Base::FileInfo::ReadWrite);
-    {
-        auto store = App::TransactionStore::openSQLite(path);
-        EXPECT_EQ(store->getMeta("schema"), "7");
-        auto branches = store->branches();
-        ASSERT_EQ(branches.size(), 1u);
-        EXPECT_EQ(branches[0].name, "main");
-        EXPECT_EQ(branches[0].head, 3);
-        EXPECT_DOUBLE_EQ(branches[0].created, 10.0);
-        for (const auto& t : store->transactions())
-            EXPECT_EQ(t.branch, 1);
-        EXPECT_EQ(store->chain(3).size(), 3u);
-        App::LogVersion v;
-        ASSERT_TRUE(store->getVersion(1, v));
-        EXPECT_EQ(v.branch, 1);
-    }
-    Base::FileInfo(path).deleteFile();
-}
-
-TEST_F(TransactionLogTest, schema5StorePacksHashesAndReadsComposites)
-{
-    // Schema 6 (docs/TransactionLog.md sec 27.53): the hashes of `entity`
-    // and `ref` become 20-byte blobs, and a composite's `part` edges go --
-    // the collector reads its values from the composite itself.
-    const std::string path = Base::FileInfo::getTempFileName("txnlog-schema5") + ".db";
-    const std::string comp(40, 'c'), skel(40, 'a'), part(40, 'b'), orphan(40, 'd');
+    // docs/TransactionLog.md sec 27.53-27.54: the hashes of `entity` and
+    // `ref` are 20-byte blobs; a composite has no edge per value and a
+    // version no manifest rows -- the collector reads both lists from the
+    // entities themselves.
+    const std::string path = Base::FileInfo::getTempFileName("txnlog-held") + ".db";
+    const std::string skel(40, 'a'), part(40, 'b'), orphan(40, 'd');
     const std::string data = "skeleton " + skel + "\nc Obj\np 3 " + part + " Integer\n";
+    const std::string comp = App::hashBytes(data);
+    std::string list;
     {
         auto store = App::TransactionStore::openSQLite(path);
-        store.reset();
-        sqlite3* db = nullptr;
-        ASSERT_EQ(sqlite3_open(path.c_str(), &db), SQLITE_OK);
-        const std::string sql =
-            "UPDATE meta SET value='5' WHERE key='schema';"
-            "DROP TABLE entity; DROP TABLE ref;"
-            "CREATE TABLE entity(hash TEXT PRIMARY KEY, kind TEXT, enc TEXT, base TEXT,"
-            " tier TEXT, size INTEGER, data BLOB);"
-            "CREATE TABLE ref(entity TEXT, target TEXT, role TEXT, name TEXT, seq INTEGER,"
-            " PRIMARY KEY(entity, role, name, target));"
-            "CREATE INDEX IF NOT EXISTS ref_target ON ref(target, role);"
-            "CREATE TABLE manifest(version INTEGER, entry TEXT, hash TEXT, source TEXT,"
-            " PRIMARY KEY(version, entry));"
-            "INSERT INTO entity VALUES('" + comp + "','composite','raw','','durable',"
-            + std::to_string(data.size()) + ",CAST('" + data + "' AS BLOB));"
-            "INSERT INTO entity VALUES('" + skel + "','skeleton','raw','','durable',3,"
-            "CAST('<a>' AS BLOB));"
-            "INSERT INTO entity VALUES('" + part + "','prop','raw','','durable',1,"
-            "CAST('1' AS BLOB));"
-            "INSERT INTO entity VALUES('" + orphan + "','prop','raw','','durable',1,"
-            "CAST('2' AS BLOB));"
-            "INSERT INTO ref VALUES('" + comp + "','" + skel + "','skeleton','',0);"
-            "INSERT INTO ref VALUES('" + comp + "','" + part + "','part','',1);"
-            "INSERT INTO version(num,uuid,branch,kind,name,seq,env,docxml_hash,schema,created)"
-            " VALUES(1,'u',1,'named','kept',0,0,'h',5,1.0);"
-            "INSERT INTO manifest VALUES(1,'Document.xml','" + comp + "','entity');";
-        char* err = nullptr;
-        EXPECT_EQ(sqlite3_exec(db, sql.c_str(), nullptr, nullptr, &err), SQLITE_OK)
-            << (err ? err : "");
-        sqlite3_free(err);
-        sqlite3_close(db);
-    }
-    {
-        auto store = App::TransactionStore::openSQLite(path);
-        EXPECT_EQ(store->getMeta("schema"), "7");
-        // Schema 7 (sec 27.54): the manifest rows are one entity now.
-        auto manifest = store->manifest(1);
+        auto put = [&](const std::string& hash, const char* kind, const std::string& bytes,
+                       std::vector<App::LogRef> refs = {}) {
+            App::LogEntity e;
+            e.hash = hash;
+            e.kind = kind;
+            e.enc = "raw";
+            e.tier = "durable";
+            e.size = bytes.size();
+            e.data = bytes;
+            e.refs = std::move(refs);
+            store->putEntity(e);
+        };
+        put(skel, "skeleton", "<a>");
+        put(part, "prop", "1");
+        put(orphan, "prop", "2");
+        put(comp, "composite", data, {App::LogRef {skel, "skeleton", ""}});
+        App::LogVersion v;
+        v.kind = "named";
+        store->addVersion(v, {{"Document.xml", comp}});
+        list = v.manifest;
+        ASSERT_FALSE(list.empty());
+
+        auto manifest = store->manifest(v.num);
         ASSERT_EQ(manifest.size(), 1u);
         EXPECT_EQ(manifest[0].entry, "Document.xml");
         EXPECT_EQ(manifest[0].hash, comp);
-        App::LogVersion kept;
-        ASSERT_TRUE(store->getVersion(1, kept));
-        App::LogEntity list;
-        ASSERT_TRUE(store->getEntity(kept.manifest, list));
-        EXPECT_EQ(list.kind, "manifest");
         App::LogEntity e;
+        ASSERT_TRUE(store->getEntity(list, e));
+        EXPECT_EQ(e.kind, "manifest");
         ASSERT_TRUE(store->getEntity(comp, e));
-        EXPECT_EQ(e.kind, "composite");
         ASSERT_EQ(e.refs.size(), 1u);
-        EXPECT_EQ(e.refs[0].role, "skeleton");
         EXPECT_EQ(e.refs[0].target, skel);
         auto raw = store->entitiesStoredAs("raw");
-        raw.erase(std::remove(raw.begin(), raw.end(), kept.manifest), raw.end());
-        EXPECT_EQ(raw, (std::vector<std::string> {skel, part, comp, orphan}));
-        // A collection: the composite's value is held through its data,
-        // the orphan goes.
+        EXPECT_NE(std::find(raw.begin(), raw.end(), part), raw.end());
+
+        // A collection: the composite's value is held through its data and
+        // the composite through the manifest; the orphan goes.
         store->truncate(0);
+        EXPECT_TRUE(store->hasEntity(list));
         EXPECT_TRUE(store->hasEntity(comp));
         EXPECT_TRUE(store->hasEntity(skel));
         EXPECT_TRUE(store->hasEntity(part));
         EXPECT_FALSE(store->hasEntity(orphan));
         store->dropTier("durable");
         EXPECT_TRUE(store->hasEntity(part));
-    }
-    {
-        sqlite3* db = nullptr;
-        ASSERT_EQ(sqlite3_open(path.c_str(), &db), SQLITE_OK);
-        sqlite3_stmt* s = nullptr;
-        ASSERT_EQ(sqlite3_prepare_v2(db, "SELECT typeof(hash), length(hash) FROM entity"
-                                     " UNION ALL SELECT typeof(target), length(target) FROM ref",
-                                     -1, &s, nullptr),
-                  SQLITE_OK);
-        int rows = 0;
-        while (sqlite3_step(s) == SQLITE_ROW) {
-            ++rows;
-            EXPECT_STREQ(reinterpret_cast<const char*>(sqlite3_column_text(s, 0)), "blob");
-            EXPECT_EQ(sqlite3_column_int(s, 1), 20);
+        // As stored: 20 bytes each (the store's own connection is in WAL
+        // mode, which a second reader sees through).
+        {
+            sqlite3* db = nullptr;
+            ASSERT_EQ(sqlite3_open(path.c_str(), &db), SQLITE_OK);
+            sqlite3_stmt* s = nullptr;
+            ASSERT_EQ(sqlite3_prepare_v2(db,
+                                         "SELECT typeof(hash), length(hash) FROM entity"
+                                         " UNION ALL SELECT typeof(entity), length(entity) FROM ref"
+                                         " UNION ALL SELECT typeof(target), length(target) FROM ref",
+                                         -1, &s, nullptr),
+                      SQLITE_OK);
+            int rows = 0;
+            while (sqlite3_step(s) == SQLITE_ROW) {
+                ++rows;
+                EXPECT_STREQ(reinterpret_cast<const char*>(sqlite3_column_text(s, 0)), "blob");
+                EXPECT_EQ(sqlite3_column_int(s, 1), 20);
+            }
+            sqlite3_finalize(s);
+            EXPECT_EQ(rows, 6);   // four entities, one edge
+            sqlite3_close(db);
         }
-        sqlite3_finalize(s);
-        EXPECT_EQ(rows, 5);
-        sqlite3_close(db);
+        // The version gone, everything it held goes with it.
+        store->evictVersion(v.num);
+        EXPECT_FALSE(store->hasEntity(list));
+        EXPECT_FALSE(store->hasEntity(comp));
+        EXPECT_FALSE(store->hasEntity(part));
     }
     Base::FileInfo(path).deleteFile();
 }

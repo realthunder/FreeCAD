@@ -1002,10 +1002,9 @@ PyObject* DocumentPy::getTransactionVersions(PyObject *args)
             d.setItem("created", Py::Float(v.created));
             Py::List manifest;
             for (auto& e : store.manifest(v.num)) {
-                Py::Tuple entry(3);
+                Py::Tuple entry(2);
                 entry.setItem(0, Py::String(e.entry));
                 entry.setItem(1, Py::String(e.hash));
-                entry.setItem(2, Py::String(e.source));
                 manifest.append(entry);
             }
             d.setItem("manifest", manifest);

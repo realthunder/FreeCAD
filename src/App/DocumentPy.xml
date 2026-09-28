@@ -319,7 +319,7 @@ The XML fragment of a logged value and its attachments, or None.</UserDocu>
 
 The versions of this document's log (docs/TransactionLog.md sec 16.3),
 each a dict with num, uuid, branch, kind, name, seq, env, docxml, schema,
-created, and manifest: a list of (entry, hash, source).</UserDocu>
+created, and manifest: a list of (entry, hash).</UserDocu>
       </Documentation>
     </Methode>
     <Methode Name="snapshotTransactionLog">

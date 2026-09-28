@@ -175,14 +175,13 @@ struct LogVersion
 };
 
 /// One entry of a version's manifest: archive entry name -> entity hash.
-/// Kept as one entity per version since store schema 7 (sec 27.54).
 /// The XML entries by their archive names, the blobs by the names a save
-/// gives them under `blobs/` (sec 23.16).
+/// gives them under `blobs/` (sec 23.16). A version's entries are kept as
+/// one entity (sec 27.54).
 struct LogManifestEntry
 {
     std::string entry;
     std::string hash;
-    std::string source {"entity"};   ///< always "entity" since schema 3
 };
 
 /** The interface the document sees: a log is appended, read and truncated

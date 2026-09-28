@@ -7105,3 +7105,37 @@ schema 5 manifest come back from one `manifest` entity), the GUI checks RC
 15, BC 27, VC 18, PC 28, FC 16.
 
 **Next.** 27.50 steps 1-4, the shared string table.
+
+### 27.55 No store schema, no migration (user, 2026-09-28)
+
+**Ruled (user):** the log is in early development and has shipped in no
+release; there is no need to version its store yet, and migration code is
+dead weight.
+
+**Removed** (`src/App/TransactionStoreSQLite.cpp`): the `meta.schema`
+number and everything keyed on it -- `migrateValues` (schema 1), `migrateBlobs`
+(2), the `inverts` and `branch` columns added to an older `txn` (4, 5), the
+move of an older `version.branch` onto `main` (5), `convertHashes` (27.53)
+and `convertManifests` (27.54), the old-layout `CREATE`s they needed, and the
+guards in `objectNames()` and `lastGeoIds()` for a read-only store that
+predates the table. The store creates the one current layout. Also gone: the
+`source` field of `LogManifestEntry` (always `entity` since schema 3), so
+`getTransactionVersions()` lists a version's manifest as `(entry, hash)`
+pairs. Gtest `schema4StoreMovesOntoMain` is deleted, and
+`schema5StorePacksHashesAndReadsComposites` is now
+`compositeAndManifestHoldWithoutEdges`, the same checks on a store made through the
+interface. What 27.53 and 27.54 call store schemas 6 and 7 is simply the
+layout.
+
+**Consequence:** a store written by an earlier development build -- a live
+log in an old transient directory, or the history embedded in a file saved
+before 27.53 -- is not read correctly; queries on it fail. Delete it (or
+save the file again without its history) rather than expect it to load.
+Document-file schemas, which released FreeCAD writes, are a different
+matter and keep their compatibility code (27.46).
+
+**Gates.** Python 2940 OK (52 skipped, 6 expected failures), ctest 842/842
+(-1, the deleted schema 4 case), the GUI checks RC 15, BC 27, VC 18, PC 28,
+FC 16.
+
+**Next.** 27.50 steps 1-4, the shared string table.

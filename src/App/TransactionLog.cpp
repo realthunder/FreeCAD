@@ -648,7 +648,7 @@ void TransactionLogCore::postVersion(LogVersion v, LogTransaction t,
                 // all in hand, else named by its composite.
                 if (docHash.empty())
                     docHash = full;
-                manifest.push_back({e.first, hash, "entity"});
+                manifest.push_back({e.first, hash});
             }
             v.docxml_hash = docHash;
             std::vector<FileBlobHandle> named;
@@ -658,7 +658,7 @@ void TransactionLogCore::postVersion(LogVersion v, LogTransaction t,
             _history.blobs().makeDurable(named);
             for (const auto& b : blobs) {
                 if (b.second)
-                    manifest.push_back({b.first, putBlob(b.second), "entity"});
+                    manifest.push_back({b.first, putBlob(b.second)});
             }
             blobs.clear();   // the log holds what it keeps; the job lets go
             _store->addVersion(v, manifest);

@@ -47,8 +47,8 @@ using namespace App;
 
 namespace {
 
-// Schema 6 (docs/TransactionLog.md sec 27.53): an entity's hash, its base
-// and both ends of an edge are the SHA-1's 20 bytes, and `ref` is its key.
+// docs/TransactionLog.md sec 27.53: an entity's hash, its base and both
+// ends of an edge are the SHA-1's 20 bytes, and `ref` is its key.
 #define FC_ENTITY_COLUMNS                                                              \
     "(hash BLOB PRIMARY KEY, kind TEXT, enc TEXT, base BLOB, tier TEXT,"         \
     " size INTEGER, data BLOB)"
@@ -119,13 +119,13 @@ public:
                                 sqlHash, nullptr, nullptr);
         // Read-only -- the embedded copy as the guard reads it (sec 16.4),
         // a blob file -- is read as it is: no journal mode set, no table
-        // made, no schema moved. What the guard reads, `meta`, is in every
-        // schema; the store the log adopts is a writable copy, migrated
-        // when opened.
+        // made. The store the log adopts is a writable copy.
         if (sqlite3_db_readonly(db, "main") == 1)
             return;
         exec("PRAGMA journal_mode=WAL");
         exec("PRAGMA synchronous=NORMAL");
+        // One layout, no schema number and no migration: the log has shipped
+        // in no release (user, 2026-09-28, sec 27.55).
         exec("CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT)");
         exec("CREATE TABLE IF NOT EXISTS txn(seq INTEGER PRIMARY KEY, parent INTEGER, id INTEGER,"
              " kind TEXT, origin TEXT, name TEXT, time REAL, script TEXT, session INTEGER,"
@@ -137,8 +137,8 @@ public:
              " cid INTEGER, cname TEXT, ctype TEXT, prop TEXT, ptype TEXT, meta TEXT,"
              " vbefore TEXT, vafter TEXT, derived INTEGER, PRIMARY KEY(txn, idx))");
         exec("CREATE INDEX IF NOT EXISTS op_container ON op(cid, prop)");
-        // Schema 7 (sec 27.54): `manifest` names the version's entry list,
-        // an entity of kind `manifest`.
+        // `manifest` names the version's entry list, an entity of kind
+        // `manifest` (sec 27.54).
         exec("CREATE TABLE IF NOT EXISTS version(num INTEGER PRIMARY KEY, uuid TEXT, branch INTEGER,"
              " kind TEXT, name TEXT, seq INTEGER, env INTEGER, docxml_hash TEXT, schema INTEGER,"
              " created REAL, manifest BLOB)");
@@ -147,87 +147,25 @@ public:
         exec("CREATE TABLE IF NOT EXISTS objname(cid INTEGER PRIMARY KEY, name TEXT UNIQUE)");
         // Item 4: the last geometry id of each object.
         exec("CREATE TABLE IF NOT EXISTS lastgeoid(cid INTEGER PRIMARY KEY, id INTEGER)");
-        const std::string schema = getMeta("schema");
-        // The table of manifest rows before schema 7, which convertManifests()
-        // folds into entities.
-        if (!schema.empty())
-            exec("CREATE TABLE IF NOT EXISTS manifest(version INTEGER, entry TEXT, hash TEXT,"
-                 " source TEXT, PRIMARY KEY(version, entry))");
-        if (schema == "1")
-            migrateValues();
-        if (schema.empty()) {
-            exec("CREATE TABLE IF NOT EXISTS entity" FC_ENTITY_COLUMNS);
-            exec("CREATE TABLE IF NOT EXISTS ref" FC_REF_COLUMNS);
-        }
-        else {
-            // The layout before schema 6, which convertHashes() moves on.
-            exec("CREATE TABLE IF NOT EXISTS entity(hash TEXT PRIMARY KEY, kind TEXT, enc TEXT,"
-                 " base TEXT, tier TEXT, size INTEGER, data BLOB)");
-            exec("CREATE TABLE IF NOT EXISTS ref(entity TEXT, target TEXT, role TEXT, name TEXT,"
-                 " seq INTEGER, PRIMARY KEY(entity, role, name, target))");
-        }
+        exec("CREATE TABLE IF NOT EXISTS entity" FC_ENTITY_COLUMNS);
+        exec("CREATE TABLE IF NOT EXISTS ref" FC_REF_COLUMNS);
         exec("CREATE INDEX IF NOT EXISTS ref_target ON ref(target, role)");
-        if (schema == "1" || schema == "2")
-            migrateBlobs();
-        if (!schema.empty() && schema < "4" && !hasColumn("txn", "inverts"))
-            exec("ALTER TABLE txn ADD COLUMN inverts INTEGER DEFAULT 0");
-        // Schema 5 (sec 26): branches. Every row before it is on `main`,
-        // whose head is the newest row; a version's branch was the text
-        // "main" and is the branch's id.
+        // Sec 26: branches; `main` is id 1.
         exec("CREATE TABLE IF NOT EXISTS branch(id INTEGER PRIMARY KEY, name TEXT UNIQUE,"
              " from_version INTEGER, from_seq INTEGER, head_seq INTEGER, id_base INTEGER,"
              " last_id INTEGER DEFAULT 0, created REAL, closed REAL)");
-        if (!hasColumn("txn", "branch"))
-            exec("ALTER TABLE txn ADD COLUMN branch INTEGER DEFAULT 1");
-        if (!schema.empty() && schema < "5")
-            exec("UPDATE version SET branch=1 WHERE branch='main' OR branch IS NULL OR branch=''");
-        // Written only when missing: a store opened read-only (the embedded
-        // copy the guard reads, sec 16.4) at this schema must not write.
         if (!hasRow("SELECT 1 FROM branch WHERE id=1"))
             exec("INSERT INTO branch(id,name,from_version,from_seq,head_seq,id_base,created,"
                  "closed) VALUES(1,'main',0,0,(SELECT COALESCE(MAX(seq),0) FROM txn),0,"
                  "(SELECT COALESCE(MIN(time),0) FROM txn),0)");
-        const int from = schema.empty() ? 0 : std::atoi(schema.c_str());
-        if (from && from < 6)
-            convertHashes();
-        if (from && from < 7)
-            convertManifests();
-        if (schema != "7")
-            setMeta("schema", "7");
     }
 
-    /// Schema 7 (sec 27.54): each version's manifest rows become one
-    /// entity of kind `manifest` that the version row names; the table
-    /// goes.
-    void convertManifests()
+    bool hasRow(const char* sql)
     {
-        exec("BEGIN");
-        try {
-            if (!hasColumn("version", "manifest"))
-                exec("ALTER TABLE version ADD COLUMN manifest BLOB");
-            std::map<int64_t, std::vector<LogManifestEntry>> all;
-            auto s = prepare("SELECT version, entry, hash FROM manifest");
-            while (sqlite3_step(s) == SQLITE_ROW) {
-                LogManifestEntry e;
-                e.entry = text(s, 1);
-                e.hash = text(s, 2);
-                all[sqlite3_column_int64(s, 0)].push_back(std::move(e));
-            }
-            sqlite3_reset(s);
-            for (const auto& v : all) {
-                const std::string hash = putManifest(v.second);
-                auto u = prepare("UPDATE version SET manifest=? WHERE num=?");
-                bindHash(u, 1, hash);
-                sqlite3_bind_int64(u, 2, v.first);
-                step(u);
-            }
-            exec("DROP TABLE manifest");
-            exec("COMMIT");
-        }
-        catch (...) {
-            exec("ROLLBACK");
-            throw;
-        }
+        auto s = prepare(sql);
+        bool found = sqlite3_step(s) == SQLITE_ROW;
+        sqlite3_reset(s);
+        return found;
     }
 
     /** A version's entry list as an entity (sec 27.54): one line per entry,
@@ -245,7 +183,7 @@ public:
         std::string bytes;
         for (size_t i = 0; i < entries.size(); ++i) {
             const auto& e = entries[i];
-            // One line per name, the last given, as the rows' key was.
+            // One line per name, the last given.
             if (i + 1 < entries.size() && entries[i + 1].entry == e.entry)
                 continue;
             bytes += e.hash;
@@ -302,115 +240,6 @@ public:
             pos = end + 1;
         }
         return true;
-    }
-
-    /// Schema 6 (sec 27.53): the hashes of `entity` and `ref` as 20-byte
-    /// blobs, `ref` without a rowid, and no `part` edges -- a composite's
-    /// values are read from the composite (heldComposites).
-    void convertHashes()
-    {
-        exec("BEGIN");
-        try {
-            exec("CREATE TABLE entity_6" FC_ENTITY_COLUMNS);
-            exec("INSERT INTO entity_6(hash,kind,enc,base,tier,size,data)"
-                 " SELECT fc_hash(hash),kind,enc,fc_hash(base),tier,size,data FROM entity");
-            exec("DROP TABLE entity");
-            exec("ALTER TABLE entity_6 RENAME TO entity");
-            exec("CREATE TABLE ref_6" FC_REF_COLUMNS);
-            exec("INSERT OR IGNORE INTO ref_6(entity,target,role,name,seq)"
-                 " SELECT fc_hash(entity),fc_hash(target),role,name,seq FROM ref"
-                 " WHERE role<>'part'");
-            exec("DROP INDEX IF EXISTS ref_target");
-            exec("DROP TABLE ref");
-            exec("ALTER TABLE ref_6 RENAME TO ref");
-            exec("CREATE INDEX ref_target ON ref(target, role)");
-            exec("COMMIT");
-        }
-        catch (...) {
-            exec("ROLLBACK");
-            throw;
-        }
-    }
-
-    bool hasRow(const char* sql)
-    {
-        auto s = prepare(sql);
-        bool found = sqlite3_step(s) == SQLITE_ROW;
-        sqlite3_reset(s);
-        return found;
-    }
-
-    bool hasColumn(const char* table, const char* column)
-    {
-        auto s = prepare("SELECT 1 FROM pragma_table_info(?) WHERE name=?");
-        bindText(s, 1, table);
-        bindText(s, 2, column);
-        bool found = sqlite3_step(s) == SQLITE_ROW;
-        sqlite3_reset(s);
-        return found;
-    }
-
-    /// Schema 2 listed a version's blobs in the manifest as
-    /// `source='blob'`, pointing into the document's blob store. Schema 3
-    /// makes each an entity of kind `blob` stored as `file` (sec 23.16),
-    /// its extension as data, so the collector holds them like the rest.
-    /// The size is not known here and stays 0, which keeps such a row out
-    /// of the delta policy; it is still read and held.
-    void migrateBlobs()
-    {
-        exec("BEGIN");
-        try {
-            exec("INSERT OR IGNORE INTO entity(hash,kind,enc,base,tier,size,data)"
-                 " SELECT hash,'blob','file','','durable',0,"
-                 " CAST(CASE WHEN length(entry)>41 THEN substr(entry,42) ELSE '' END AS BLOB)"
-                 " FROM manifest WHERE source='blob'");
-            exec("UPDATE manifest SET source='entity' WHERE source='blob'");
-            exec("COMMIT");
-        }
-        catch (...) {
-            exec("ROLLBACK");
-            throw;
-        }
-    }
-
-    /// Schema 1 kept values in `value(hash, enc, tier, size, data, attach)`
-    /// with the attachment list as lines of `attach`, and the manifest named
-    /// them `source='value'`. Schema 2 is the entity table and the ref edges
-    /// of sec 23.1. A store from the days between is rare (the log has
-    /// shipped in no release) but an embedded copy from one opens again.
-    void migrateValues()
-    {
-        exec("BEGIN");
-        try {
-            exec("CREATE TABLE IF NOT EXISTS entity(hash TEXT PRIMARY KEY, kind TEXT, enc TEXT,"
-                 " base TEXT, tier TEXT, size INTEGER, data BLOB)");
-            exec("CREATE TABLE IF NOT EXISTS ref(entity TEXT, target TEXT, role TEXT, name TEXT,"
-                 " seq INTEGER, PRIMARY KEY(entity, role, name, target))");
-            exec("INSERT OR IGNORE INTO entity(hash,kind,enc,base,tier,size,data)"
-                 " SELECT hash,'prop',enc,'',tier,size,data FROM value");
-            // An attachment is a value with no attachments of its own that
-            // some other value's list names; mark those `attach`.
-            exec("WITH RECURSIVE lines(hash, rest, line, seq) AS ("
-                 "  SELECT hash, attach || char(10), '', -1 FROM value WHERE attach<>''"
-                 "  UNION ALL"
-                 "  SELECT hash, substr(rest, instr(rest, char(10)) + 1),"
-                 "         substr(rest, 1, instr(rest, char(10)) - 1), seq + 1"
-                 "  FROM lines WHERE rest<>'')"
-                 " INSERT OR IGNORE INTO ref(entity,target,role,name,seq)"
-                 " SELECT hash, substr(line, 1, 40), 'attach', substr(line, 42), seq"
-                 " FROM lines WHERE line<>''");
-            exec("UPDATE entity SET kind='attach' WHERE hash IN"
-                 " (SELECT target FROM ref WHERE role='attach')");
-            exec("UPDATE entity SET kind='xml' WHERE hash IN"
-                 " (SELECT hash FROM manifest WHERE source='value')");
-            exec("UPDATE manifest SET source='entity' WHERE source='value'");
-            exec("DROP TABLE value");
-            exec("COMMIT");
-        }
-        catch (...) {
-            exec("ROLLBACK");
-            throw;
-        }
     }
 
     ~SQLiteStore() override
@@ -800,9 +629,7 @@ public:
                 out.emplace_back(static_cast<long>(sqlite3_column_int64(s, 0)), text(s, 1));
             sqlite3_reset(s);
         };
-        // A store opened read-only may predate the table.
-        if (hasRow("SELECT 1 FROM sqlite_master WHERE type='table' AND name='objname'"))
-            read(prepare("SELECT cid, name FROM objname"));
+        read(prepare("SELECT cid, name FROM objname"));
         read(prepare("SELECT cid, cname FROM op WHERE op='create' AND ckind='obj'"
                      " AND cname<>'' ORDER BY txn DESC, idx DESC"));
         return out;
@@ -824,8 +651,6 @@ public:
     std::vector<std::pair<long, long>> lastGeoIds() override
     {
         std::vector<std::pair<long, long>> out;
-        if (!hasRow("SELECT 1 FROM sqlite_master WHERE type='table' AND name='lastgeoid'"))
-            return out;
         auto s = prepare("SELECT cid, id FROM lastgeoid");
         while (sqlite3_step(s) == SQLITE_ROW)
             out.emplace_back(static_cast<long>(sqlite3_column_int64(s, 0)),
@@ -990,8 +815,9 @@ public:
     }
 
     /** Fill the temporary table `held` with every entity reachable from
-     * `roots` (a query of text hashes): over the ref edges of every role,
-     * and since schema 6 into each composite's skeleton and values, which
+     * `roots` (a query of hashes): over the ref edges of every role, and
+     * into each composite's skeleton and values and each manifest's
+     * entries, which
      * the composite's own data lists (sec 27.53) -- no edge repeats them,
      * one row per value per version as they were. False when a composite
      * cannot be read: what it holds is then unknown, and the caller drops
@@ -1552,8 +1378,8 @@ private:
         return t ? reinterpret_cast<const char*>(t) : "";
     }
 
-    /// A hash into a schema 6 column (packHash); every other hash column
-    /// is text.
+    /// A hash into an `entity` or `ref` column, or a version's manifest
+    /// (packHash); every other hash column is text.
     static void bindHash(sqlite3_stmt* s, int i, const std::string& v)
     {
         unsigned char packed[20];
