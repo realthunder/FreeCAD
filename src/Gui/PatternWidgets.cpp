@@ -163,7 +163,10 @@ int ComboLinks::setCurrentLink(const App::PropertyLinkSub& lnk)
             continue;
         }
         App::PropertyLinkSub& it = *(linksInList[i]);
-        if (lnk.getValue() == it.getValue() && lnk.getSubValues() == it.getSubValues()) {
+        // No object is the same link whatever its subs: an entry added as
+        // (nullptr, "") holds one empty sub, a property never set holds none
+        if (lnk.getValue() == it.getValue()
+            && (!lnk.getValue() || lnk.getSubValues() == it.getSubValues())) {
             QSignalBlocker blocker(_combo);
             _combo->setCurrentIndex(static_cast<int>(i));
             return static_cast<int>(i);
