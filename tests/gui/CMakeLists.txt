@@ -220,7 +220,9 @@ fc_add_gui_test(GuiPerViewVisibility_tests_run
 # grandchild: an App::Part's is its content, so a Link to the Part hides it
 # too; a Link's own stays in that Link -- picked, bounded AND drawn. The
 # capture shares one cache per node between occurrences, so it keeps what
-# a hide takes out and the flatten drops the draw per its key.
+# a hide takes out and the flatten drops the draw per its key. A force show
+# ("!show") of a grandchild whose Visibility is off mirrors it. Both
+# LinkChildrenDirect modes.
 fc_add_gui_test(GuiElementColorHide_tests_run
                 element-color-hide.py
                 --timeout 240)

@@ -2980,6 +2980,45 @@ Before-state, HEAD code with the new test: direct mode, Link2's hide drawn
 (3 FAIL); mirror mode, Link2's hide took Link3's Box2 out of the frame
 through the shared mirror (3 FAIL). After: 322/322 in both modes.
 
+### 5.22 Force show: the colour dialog's `!show` (2026-09-28)
+
+The counterpart of `!hide` (user design, step 4 of the served edit root
+plan): a container's colour dialog forces a grandchild shown through that
+container although the grandchild's own Visibility is off. The secondary
+context's hide became a tri-state `SelContext::visibility` (-1 none, 0
+hidden, 1 shown); `SoSelectionElementAction::ForceShow` sets 1 and `Show`
+clears either. `App::DocumentObject::shownMarker()` (`"!show"`) sits beside
+`hiddenMarker()`; `partialRender`, `ViewProviderLink::applyColorsTo`, the
+`"!show*"` colour query and the dialog's new Show button all take it. The
+App/Part side (container shapes, `isElementVisibleEx`, STEP export) is its
+own commit.
+
+Where the answer is made, each for the reason of 5.21:
+- **Coin traversals** (GL, pick, bounding box): the object's own
+  `SoFCSwitch` asks its root (`SoFCSelectionRoot::isSwitchShown`) and
+  traverses the default child when a show matches the chain. The root's
+  OWN cache is open at that point, which `checkSecondaryCache()` at the
+  root's entry cannot reach (a hide returns before it opens), so the switch
+  runs it again: without that, the bounding box built through the hidden
+  occurrence culled every pick through the shown one.
+- **The capture** cannot answer per chain, so a root holding any show
+  takes its hidden object in TAGGED -- the per-view show's tag,
+  `Render::perViewShownModeId()` -- and the flatten untags an entry whose
+  key `NodeKey::isShown()`: every root on the chain whose own switch hides
+  its object holds a show matching the chain up to it. Anything else stays
+  tagged, which every view drops unless it shows the object itself.
+- **Tessellation**: a view provider skips the visual update of a hidden
+  object, so a show holds `forceUpdate()` on it while it lasts, as a
+  per-view show does.
+
+`merge()` now takes the first override of either kind scanning longest key
+first: a show held for this very chain beats a hide held for a shorter tail
+of it, and the reverse.
+
+Before-state, the extended `element-color-hide.py`: 32 FAIL (the marker did
+not even survive storage: `GeoFeature` resolved `!show` as an element name
+and dropped it). After: 588/588, both LinkChildrenDirect modes.
+
 ## 5. Evaluated and not taken: one capture root to catch everything
 
 Stage 1b left an obvious-looking follow-on: if what Coin still draws is

@@ -2245,6 +2245,90 @@ static FC_COIN_COUNTER(uint32_t) SelectionRootCount;
 static FC_COIN_COUNTER(uint32_t) SelectionRootId;
 FC_COIN_COUNTER(int) SoFCSelectionRoot::SecondaryContextCount;
 FC_COIN_COUNTER(int) SoFCSelectionRoot::HiddenContextCount;
+FC_COIN_COUNTER(int) SoFCSelectionRoot::ShownContextCount;
+
+/// Hold (or release) the tessellation of the object \a doc#\a obj a force
+/// show brings in: its view provider skips the visual update of a hidden
+/// object otherwise, and a shown one would draw nothing.
+static void forceShownUpdate(const std::string &doc, const std::string &obj, bool enable)
+{
+    if (doc.empty() || obj.empty() || !Application::Instance)
+        return;
+    auto d = App::GetApplication().getDocument(doc.c_str());
+    auto o = d ? d->getObject(obj.c_str()) : nullptr;
+    if (auto vp = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(
+                o ? Application::Instance->getViewProvider(o) : nullptr))
+        vp->forceUpdate(enable);
+}
+
+void SoFCSelectionRoot::SelContext::setVisibility(int8_t vis, const char *doc, const char *obj)
+{
+    if (vis == visibility)
+        return;
+    if (visibility == 0)
+        --HiddenContextCount;
+    else if (visibility == 1) {
+        --ShownContextCount;
+        forceShownUpdate(shownDoc, shownObj, false);
+        shownDoc.clear();
+        shownObj.clear();
+    }
+    visibility = vis;
+    if (visibility == 0)
+        ++HiddenContextCount;
+    else if (visibility == 1) {
+        ++ShownContextCount;
+        if (doc && obj) {
+            shownDoc = doc;
+            shownObj = obj;
+            forceShownUpdate(shownDoc, shownObj, true);
+        }
+    }
+}
+
+SoNode *SoFCSelectionRoot::getOwnSwitch() const
+{
+    for (int i = 0, n = getNumChildren(); i < n; ++i) {
+        SoNode *child = getChild(i);
+        if (child->isOfType(SoFCSwitch::getClassTypeId()))
+            return child;
+    }
+    return nullptr;
+}
+
+bool SoFCSelectionRoot::isSwitchShown(SoAction *action, const SoNode *sw, bool capture)
+{
+    if (!hasShownContext())
+        return false;
+    SoFCSelectionRoot *root = getInnermostRoot(action);
+    if (!root || root->contextMap2.empty())
+        return false;
+    const SoPath *path = action->getCurPath();
+    if (!path || path->getLength() < 2 || path->getNodeFromTail(0) != sw
+            || path->getNodeFromTail(1) != root)
+        return false;
+    if (capture) {
+        for (const auto &v : root->contextMap2) {
+            auto ctx = std::dynamic_pointer_cast<SelContext>(v.second);
+            if (ctx && ctx->visibility == 1)
+                return true;
+        }
+        return false;
+    }
+    Stack *stack = action->isOfType(SoGLRenderAction::getClassTypeId())
+        ? &SelStack : getActionStack(action);
+    if (!stack || stack->empty() || stack->back() != root)
+        return false;
+    // The answer depends on the chain, and it is made below the root: the
+    // root's OWN cache is open now -- the one checkSecondaryCache() at its
+    // entry cannot reach, since a hide returns before it is opened -- and
+    // would carry this occurrence's answer to the others (a bounding box
+    // culling a pick through the occurrence the show is for).
+    root->checkSecondaryCache(action->getState(), *stack);
+    auto ctx = std::static_pointer_cast<SelContext>(
+            getNodeContext2(*stack, root, SelContext::merge));
+    return ctx && ctx->visibility == 1;
+}
 std::unordered_map<uint32_t, SoFCSelectionRoot*> SelectionRootMap;
 FC_COIN_STATIC_MUTEX(SelectionRootMapMutex);
 #define SelectionRootMapLock(_name) FC_COIN_LOCK(_name, SelectionRootMapMutex)
@@ -2363,6 +2447,40 @@ bool SoFCSelectionRoot::NodeKey::isHidden() const
     chain.clear();
     prefix.clear();
     return hidden;
+}
+
+bool SoFCSelectionRoot::NodeKey::isShown() const
+{
+    if (!hasShownContext())
+        return false;
+    static FC_COIN_THREAD_LOCAL Stack chain;
+    static FC_COIN_THREAD_LOCAL Stack prefix;
+    convert(chain);
+    prefix.clear();
+    // Only a root whose own switch hides its object took the draw in
+    // tagged (SoFCSwitch), and each such root must hold a show for this
+    // chain -- a show held for another occurrence, or an object some
+    // single view shows on its own, leaves the draw tagged.
+    bool shown = false;
+    for (auto node : chain) {
+        prefix.push_back(node);
+        auto root = static_cast<SoFCSelectionRoot*>(node);
+        auto sw = root->getOwnSwitch();
+        if (!sw || static_cast<SoSwitch*>(sw)->whichChild.getValue() != SO_SWITCH_NONE)
+            continue;
+        SelContextPtr ctx;
+        if (!root->contextMap2.empty())
+            ctx = std::static_pointer_cast<SelContext>(
+                    getNodeContext2(prefix, root, SelContext::merge));
+        if (!ctx || ctx->visibility != 1) {
+            shown = false;
+            break;
+        }
+        shown = true;
+    }
+    chain.clear();
+    prefix.clear();
+    return shown;
 }
 
 void SoFCSelectionRoot::NodeKey::noteOrigin(SoFCSelectionRoot *node)
@@ -3463,6 +3581,19 @@ bool SoFCSelectionRoot::doActionPrivate(Stack &stack, SoAction *action) {
                     }
                     return false;
                 }
+            }else if(selAction->getType() == SoSelectionElementAction::ForceShow) {
+                if(action->getCurPathCode()==SoAction::BELOW_PATH || isTail) {
+                    auto ctx = getActionContext(action,this,SelContextPtr());
+                    if(ctx && ctx->visibility != 1) {
+                        const char *doc = nullptr, *obj = nullptr;
+                        if (!getRenderedObject(doc, obj))
+                            doc = obj = nullptr;
+                        ctx->setVisibility(1, doc, obj);
+                        selCounter.recount(ctx);
+                        touch();
+                    }
+                    return false;
+                }
             }
             return true;
         }
@@ -3544,7 +3675,9 @@ int SoFCSelectionRoot::SelContext::merge(int status, SoFCSelectionContextBasePtr
         SoFCSelectionContextBasePtr input, SoNode *)
 {
     auto ctx = std::dynamic_pointer_cast<SelContext>(input);
-    if(ctx && ctx->visibility == 0) {
+    // The longest key with an override decides: a hide or a show held for
+    // this very chain beats one held for a shorter tail of it.
+    if(ctx && ctx->visibility >= 0) {
         output = ctx;
         return -1;
     }

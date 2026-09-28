@@ -707,6 +707,16 @@ public:
     static const std::string &hiddenMarker();
     /// Check if the subname reference ends with hidden marker.
     static const char *hasHiddenMarker(const char *subname);
+    /** Special marker to force the object shown, the counterpart of
+     * hiddenMarker(): the object shows through this container even when
+     * its own Visibility is off.
+     */
+    static const std::string &shownMarker();
+    /// Check if the subname reference ends with shown marker.
+    static const char *hasShownMarker(const char *subname);
+    /// Check if the subname reference ends with either visibility marker;
+    /// \a shown, if given, tells which.
+    static const char *hasVisibilityMarker(const char *subname, bool *shown = nullptr);
 
     /// Return a revision number that will change if the object changes.
     virtual int getRevision() const { return _revision; }

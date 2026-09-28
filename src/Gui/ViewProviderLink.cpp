@@ -3721,6 +3721,8 @@ std::map<std::string, App::Color> ViewProviderLink::getElementColorsFrom(
         wildcard.resize(5);
     else if(wildcard == ViewProvider::hiddenMarker()+"*")
         wildcard.resize(ViewProvider::hiddenMarker().size());
+    else if(wildcard == ViewProvider::shownMarker()+"*")
+        wildcard.resize(ViewProvider::shownMarker().size());
     else if(wildcard.back() == '*') {
         _subname = std::move(wildcard);
         _subname.resize(_subname.size()-1);
@@ -3747,8 +3749,11 @@ std::map<std::string, App::Color> ViewProviderLink::getElementColorsFrom(
                 colors[sub.second.substr(0,element-sub.second.c_str())+wildcard] = colorList[i];
         }
 
+        // A visibility marker is no colour: no material override for it.
+        const bool marker = wildcard == ViewProvider::hiddenMarker()
+            || wildcard == ViewProvider::shownMarker();
         bool overridden = false;
-        if(wildcard!=ViewProvider::hiddenMarker() && overrideMaterial) {
+        if(!marker && overrideMaterial) {
             auto color = shapeMaterial->diffuseColor;
             color.setTransparency(shapeMaterial->transparency);
             colors.emplace(wildcard,color);
@@ -3768,7 +3773,7 @@ std::map<std::string, App::Color> ViewProviderLink::getElementColorsFrom(
                     Application::Instance->getViewProvider(link));
             if(!next)
                 break;
-            if(!overridden && wildcard!=ViewProvider::hiddenMarker() && next->OverrideMaterial.getValue()) {
+            if(!overridden && !marker && next->OverrideMaterial.getValue()) {
                 auto color = next->ShapeAppearance.getBase().diffuseColor;
                 color.setTransparency(next->ShapeAppearance.getBase().transparency);
                 colors.emplace(wildcard,color);
@@ -3779,7 +3784,7 @@ std::map<std::string, App::Color> ViewProviderLink::getElementColorsFrom(
             vpd = next;
         }
 
-        if(wildcard!=ViewProvider::hiddenMarker()) {
+        if(!marker) {
             // Get collapsed array color override.
             const App::LinkBaseExtension *ext=0;
             auto vpLink = freecad_dynamic_cast<ViewProviderLink>(&vp);
@@ -3989,6 +3994,7 @@ bool ViewProviderLink::applyColorsTo(ViewProviderDocumentObject &vp, bool prevOv
 
     std::map<std::string, std::map<std::string,App::Color> > colorMap;
     std::set<std::string> hideList;
+    std::set<std::string> showList;
     auto colors = vp.getElementColors();
     colors.erase("Face");
     for(const auto &v : colors) {
@@ -3999,6 +4005,8 @@ bool ViewProviderLink::applyColorsTo(ViewProviderDocumentObject &vp, bool prevOv
             continue;
         if(ViewProvider::hiddenMarker() == element)
             hideList.emplace(subname,element-subname);
+        else if(ViewProvider::shownMarker() == element)
+            showList.emplace(subname,element-subname);
         else
             colorMap[std::string(subname,element-subname)][element] = v.second;
     }
@@ -4021,15 +4029,19 @@ bool ViewProviderLink::applyColorsTo(ViewProviderDocumentObject &vp, bool prevOv
         delete det;
     }
 
-    action.setType(SoSelectionElementAction::Hide);
-    for(const auto &sub : hideList) {
-        SoDetail *det=nullptr;
-        path.truncate(0);
-        if(!sub.empty() && vp.getDetailPath(sub.c_str(), &path, false, det)) {
-            prevOverride = true;
-            action.apply(&path);
+    // Hides and force shows alike: keyed from this provider's own content
+    // (getDetailPath without append), so a Link to it shows the same.
+    for (auto type : {SoSelectionElementAction::Hide, SoSelectionElementAction::ForceShow}) {
+        action.setType(type);
+        for(const auto &sub : type == SoSelectionElementAction::Hide ? hideList : showList) {
+            SoDetail *det=nullptr;
+            path.truncate(0);
+            if(!sub.empty() && vp.getDetailPath(sub.c_str(), &path, false, det)) {
+                prevOverride = true;
+                action.apply(&path);
+            }
+            delete det;
         }
-        delete det;
     }
     path.unrefNoDelete();
     return prevOverride;

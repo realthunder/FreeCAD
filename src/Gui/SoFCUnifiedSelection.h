@@ -682,6 +682,15 @@ protected:
         /// Whether any such hide exists anywhere: the feed's gate.
         static bool anyHidden() { return hasHiddenContext(); }
 
+        /// Whether a force show (the shown marker) admits a draw captured
+        /// tagged under this chain (SoFCSwitch takes an object whose own
+        /// Visibility is off in, tagged, while its root holds a show):
+        /// every root on the chain whose own switch hides its object holds
+        /// a show matching the chain up to it.
+        bool isShown() const;
+        /// Whether any force show exists anywhere: the feed's gate.
+        static bool anyShown() { return hasShownContext(); }
+
         void append(const std::shared_ptr<NodeKey> &other);
 
     private:
@@ -725,6 +734,19 @@ protected:
     /// Whether any whole-object secondary hide exists anywhere; the gate on
     /// NodeKey::isHidden(), which is asked per draw.
     static bool hasHiddenContext() { return HiddenContextCount > 0; }
+    static bool hasShownContext() { return ShownContextCount > 0; }
+
+public:
+    /// Whether the display-mode switch \a sw the action is traversing, the
+    /// own switch of the innermost root, shows its object by a force show
+    /// held by that root. In the render cache capture (\a capture) any
+    /// show the root holds answers yes -- the capture is shared by every
+    /// occurrence, so the object goes in tagged and the flatten admits it
+    /// per key (NodeKey::isShown); elsewhere the show must match the
+    /// traversal's own chain.
+    static bool isSwitchShown(SoAction *action, const SoNode *sw, bool capture);
+
+protected:
 
     static void setActionStack(SoAction *action, Stack *stack);
     static Stack *getActionStack(SoAction *action, bool create=false);
@@ -769,8 +791,12 @@ protected:
     /// findActionContext(), which is the only place contextMap2 is added to
     /// or erased from, and by the destructor.
     static FC_COIN_COUNTER(int) SecondaryContextCount;
-    /// How many SelContexts hold a hide; kept by SelContext itself.
+    /// How many SelContexts hold a hide, and a show; kept by SelContext.
     static FC_COIN_COUNTER(int) HiddenContextCount;
+    static FC_COIN_COUNTER(int) ShownContextCount;
+
+    /// The display-mode switch that is this root's own child, or null.
+    SoNode *getOwnSwitch() const;
 
     struct SelContext: SoFCSelectionContextBase {
     public:
@@ -780,7 +806,8 @@ protected:
         bool hlAll = false;
         /// A secondary context's override of the whole object: -1 none,
         /// 0 hidden, 1 shown. Read freely, written only through
-        /// setVisibility(), which keeps HiddenContextCount.
+        /// setVisibility(), which keeps the counts, and holds the shown
+        /// object's tessellation while it is shown.
         int8_t visibility = -1;
         static MergeFunc merge;
 
@@ -790,19 +817,18 @@ protected:
         ~SelContext() override {
             setVisibility(-1);
         }
-        void setVisibility(int8_t vis) {
-            if (vis == visibility)
-                return;
-            if (visibility == 0)
-                --HiddenContextCount;
-            visibility = vis;
-            if (visibility == 0)
-                ++HiddenContextCount;
-        }
+        /// \a doc / \a obj: the object a show brings in, whose view
+        /// provider has to keep tessellating it while its own Visibility is
+        /// off (ViewProvider::forceUpdate); ignored for anything but 1.
+        void setVisibility(int8_t vis, const char *doc = nullptr, const char *obj = nullptr);
 
         bool isCounted() const override {
             return selAll || visibility >= 0;
         }
+
+    private:
+        std::string shownDoc;
+        std::string shownObj;
     };
     using SelContextPtr = std::shared_ptr<SelContext>;
     using ColorStack = std::vector<SbColor>;
@@ -864,7 +890,9 @@ class GuiExport SoSelectionElementAction : public SoAction
     SO_ACTION_HEADER(SoSelectionElementAction);
 
 public:
-    enum Type {None, Append, Remove, All, Color, Hide, Show, Retrieve, RetrieveAll};
+    /// Hide and ForceShow set a secondary whole-object visibility (the
+    /// hidden and shown markers); Show clears either.
+    enum Type {None, Append, Remove, All, Color, Hide, Show, Retrieve, RetrieveAll, ForceShow};
 
     SoSelectionElementAction (Type=None, bool secondary = false, bool noTouch = false);
     ~SoSelectionElementAction() override;

@@ -1046,6 +1046,18 @@ const char *ViewProvider::hasHiddenMarker(const char *subname) {
     return App::DocumentObject::hasHiddenMarker(subname);
 }
 
+const std::string &ViewProvider::shownMarker() {
+    return App::DocumentObject::shownMarker();
+}
+
+const char *ViewProvider::hasShownMarker(const char *subname) {
+    return App::DocumentObject::hasShownMarker(subname);
+}
+
+const char *ViewProvider::hasVisibilityMarker(const char *subname, bool *shown) {
+    return App::DocumentObject::hasVisibilityMarker(subname, shown);
+}
+
 int ViewProvider::partialRender(const std::vector<std::string> &elements, bool clear) {
     if(elements.empty()) {
         auto node = pcModeSwitch->getChild(_iActualMode);
@@ -1061,9 +1073,12 @@ int ViewProvider::partialRender(const std::vector<std::string> &elements, bool c
     SoSelectionElementAction action;
     action.setSecondary(true);
     for(auto element : elements) {
-        bool hidden = hasHiddenMarker(element.c_str());
+        // A visibility marker: hidden, or (shown) forced shown.
+        bool shown = false;
+        const char *marker = hasVisibilityMarker(element.c_str(), &shown);
+        bool hidden = marker != nullptr;
         if(hidden)
-            element.resize(element.size()-hiddenMarker().size());
+            element.resize(element.size()-std::strlen(marker));
         path->truncate(0);
         SoDetail *det = nullptr;
         if(getDetailPath(element.c_str(),path,false,det)) {
@@ -1075,7 +1090,9 @@ int ViewProvider::partialRender(const std::vector<std::string> &elements, bool c
             if(!hidden)
                 action.setType(clear?SoSelectionElementAction::Remove:SoSelectionElementAction::Append);
             else
-                action.setType(clear?SoSelectionElementAction::Show:SoSelectionElementAction::Hide);
+                action.setType(clear ? SoSelectionElementAction::Show
+                               : (shown ? SoSelectionElementAction::ForceShow
+                                        : SoSelectionElementAction::Hide));
             action.setElement(det);
             action.apply(path);
             ++count;

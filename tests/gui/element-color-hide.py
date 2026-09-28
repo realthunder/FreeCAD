@@ -28,6 +28,8 @@ pixel the backend draws (mode 3):
     only;
   - the other view follows the colour hides (they are the document's,
     not a view's) and never the per-view one;
+  - a force show ("!show") of a grandchild whose own Visibility is off
+    brings it back exactly where the matching hide would take it out;
   - all of it in both LinkChildrenDirect modes (see scenario()).
 """
 import os
@@ -41,6 +43,7 @@ OUT = os.environ["GT_OUT"]
 RESULT = os.environ.get("GT_RESULT", os.path.join(OUT, "result.txt"))
 DOC = "ElementColorHide"
 HIDE = {"Sub.Box2.!hide": (0.0, 0.0, 0.0, 0.0)}
+SHOW = {"Sub.Box2.!show": (0.0, 0.0, 0.0, 0.0)}
 
 
 def note(msg):
@@ -232,6 +235,36 @@ def scenario(direct):
         settle()
         expect("Link2 hide cleared", v1, (), base, pix)
         expect("Link2 hide cleared, other view", v2, (), base2)
+
+        # 4. Force show ("!show"): Box2's own Visibility off takes it out of
+        # every occurrence; a container's show brings it back where the
+        # hide above would take it out -- captured tagged, since every
+        # occurrence shares the capture, and admitted per key.
+        box2.Visibility = False
+        settle()
+        allbox2 = ("asm.box2", "link2.box2", "link3.box2")
+        expect("Box2 Visibility off", v1, allbox2, base, pix)
+        asm.ViewObject.setElementColors(SHOW)
+        settle()
+        check("%s: Asm's element colours hold the shown marker" % mode,
+              "Sub.Box2.!show" in asm.ViewObject.getElementColors(),
+              asm.ViewObject.getElementColors())
+        shown = every
+        expect("Asm show", v1, [k for k in allbox2 if k not in shown], base, pix)
+        expect("Asm show, other view", v2, [k for k in allbox2 if k not in shown], base2)
+        asm.ViewObject.setElementColors({})
+        settle()
+        expect("Asm show cleared", v1, allbox2, base, pix)
+        link2.ViewObject.setElementColors(SHOW)
+        settle()
+        expect("Link2 show", v1, ("asm.box2", "link3.box2"), base, pix)
+        expect("Link2 show, other view", v2, ("asm.box2", "link3.box2"), base2)
+        link2.ViewObject.setElementColors({})
+        settle()
+        expect("Link2 show cleared", v1, allbox2, base, pix)
+        box2.Visibility = True
+        settle()
+        expect("Box2 Visibility back on", v1, (), base, pix)
     finally:
         FreeCAD.closeDocument(name)
         settle()

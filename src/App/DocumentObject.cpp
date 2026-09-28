@@ -1838,6 +1838,36 @@ const char *DocumentObject::hasHiddenMarker(const char *subname) {
     return hiddenMarker()==marker?marker:nullptr;
 }
 
+const std::string &DocumentObject::shownMarker() {
+    static std::string marker("!show");
+    return marker;
+}
+
+const char *DocumentObject::hasShownMarker(const char *subname) {
+    if(!subname)
+        return nullptr;
+    const char *marker = strrchr(subname,'.');
+    if(!marker)
+        marker = subname;
+    else
+        ++marker;
+    return shownMarker()==marker?marker:nullptr;
+}
+
+const char *DocumentObject::hasVisibilityMarker(const char *subname, bool *shown) {
+    if (const char *marker = hasHiddenMarker(subname)) {
+        if (shown)
+            *shown = false;
+        return marker;
+    }
+    if (const char *marker = hasShownMarker(subname)) {
+        if (shown)
+            *shown = true;
+        return marker;
+    }
+    return nullptr;
+}
+
 bool DocumentObject::redirectSubName(std::ostringstream &, DocumentObject *, DocumentObject *) const {
     return false;
 }

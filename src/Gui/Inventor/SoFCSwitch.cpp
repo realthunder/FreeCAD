@@ -28,6 +28,7 @@
 #include <Inventor/elements/SoSwitchElement.h>
 
 #include "../InventorBase.h"
+#include "../SoFCUnifiedSelection.h"
 #include "../ViewParams.h"
 
 #include "SoFCSwitch.h"
@@ -280,7 +281,17 @@ SoFCSwitch::doAction(SoAction *action)
   const int perview = SoFCVisibilityElement::check(action, this);
   if (perview == 0)
     return;
-  if (perview > 0 && this->whichChild.getValue() == SO_SWITCH_NONE) {
+  // A force show held by the object's root (the colour dialog's shown
+  // marker): the object shows through that container although its own
+  // Visibility is off. The capture cannot answer per chain -- its caches
+  // are shared by every occurrence -- so there it takes the object in
+  // tagged, like a per-view show below, and the flatten admits it per key.
+  const bool capture = SoFCRenderCacheManager::isCaptureAction(action);
+  bool forced = false;
+  if (this->whichChild.getValue() == SO_SWITCH_NONE && perview < 0)
+    forced = Gui::SoFCSelectionRoot::isSwitchShown(action, this, capture);
+  if ((perview > 0 || (forced && !capture))
+      && this->whichChild.getValue() == SO_SWITCH_NONE) {
     const int idx = this->defaultChild.getValue();
     if (idx >= 0 && idx < this->getNumChildren()) {
       traverseHead(action, idx);
@@ -323,8 +334,8 @@ SoFCSwitch::doAction(SoAction *action)
   // shared by every view -- carries it anyway, tagged, and each view
   // admits it or not when it draws.
   if (this->whichChild.getValue() == SO_SWITCH_NONE
-      && !_PerViewShown.empty() && _PerViewShown.count(this)
-      && SoFCRenderCacheManager::isCaptureAction(action)) {
+      && (forced || (!_PerViewShown.empty() && _PerViewShown.count(this)))
+      && capture) {
     const int idx = this->defaultChild.getValue();
     if (idx >= 0 && idx < this->getNumChildren()) {
       const uint16_t prev = SoFCCapturedModeElement::get(state);

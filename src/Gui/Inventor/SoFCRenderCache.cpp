@@ -2122,6 +2122,9 @@ SoFCRenderCacheP::mergeChildCache(SoFCRenderCache::VertexCacheMap &vcachemap,
   // wherever the subtree is reused, so each level may drop what it can
   // tell; the top level holds the whole chain and tells the rest.
   const bool hides = this->selnode && SoFCRenderCache::CacheKey::anyHidden();
+  // ...and a force show admits, from the same key, what the capture took
+  // in tagged for it (SoFCSwitch): the entry becomes the object's own.
+  const bool shows = this->selnode && SoFCRenderCache::CacheKey::anyShown();
   for (const auto & child : childvcaches) {
     bool identity = entry.identity;
     Material material = this->mergeMaterial(
@@ -2153,12 +2156,25 @@ SoFCRenderCacheP::mergeChildCache(SoFCRenderCache::VertexCacheMap &vcachemap,
       }
       if (hides && key->isHidden())
         continue;
+      bool untag = false;
+      if (shows && material.capturedmode == Render::perViewShownModeId()
+          && key->isShown()) {
+        material.capturedmode = 0;
+        untag = true;
+      }
       SoFCSelectionContextExPtr ctx;
       if (this->selnode)
         ctx = key->getSecondaryContext(SoFCRenderCacheP::RenderCacheStack, vcache->getNode());
       res = checkSelectionContext(material, ctx, vcache);
-      if (!res)
+      if (!res) {
+        if (untag)
+          material = value.first;
         continue;
+      }
+      // An untagged entry lands in a bucket of its own, as one whose
+      // material a context rewrote.
+      if (untag && res > 0)
+        res = -1;
 
       if (res < 0) {
         // The context rewrote the material, so this entry lands in a

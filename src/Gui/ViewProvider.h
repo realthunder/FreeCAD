@@ -507,6 +507,9 @@ public:
     }
     static const std::string &hiddenMarker();
     static const char *hasHiddenMarker(const char *subname);
+    static const std::string &shownMarker();
+    static const char *hasShownMarker(const char *subname);
+    static const char *hasVisibilityMarker(const char *subname, bool *shown = nullptr);
     //@}
 
     /** @name Edit methods

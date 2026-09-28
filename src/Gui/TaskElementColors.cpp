@@ -208,14 +208,15 @@ public:
             return;
         auto itE = elements.find(sub);
         if(i<0 && itE!=elements.end()) {
-            if(push && !ViewProvider::hasHiddenMarker(sub))
+            if(push && !ViewProvider::hasVisibilityMarker(sub))
                 items.push_back(itE->second);
             return;
         }
 
-        const char *marker = ViewProvider::hasHiddenMarker(sub);
+        bool shown = false;
+        const char *marker = ViewProvider::hasVisibilityMarker(sub, &shown);
         if(marker) {
-            auto icon = BitmapFactory().pixmap("Invisible");
+            auto icon = BitmapFactory().pixmap(shown ? "TreeItemVisible" : "Invisible");
             auto item = new QListWidgetItem(icon,
                     QString::fromUtf8(std::string(sub,marker-sub).c_str()), ui->elementList);
             item->setData(Qt::UserRole,QColor());
@@ -363,7 +364,7 @@ public:
 
     void editItem(QWidget *parent, QListWidgetItem *item) {
         std::string sub = qPrintable(item->data(Qt::UserRole+1).value<QString>());
-        if(ViewProvider::hasHiddenMarker(sub.c_str()))
+        if(ViewProvider::hasVisibilityMarker(sub.c_str()))
             return;
         auto color = item->data(Qt::UserRole).value<QColor>();
         QColorDialog cd(color, parent);
@@ -468,6 +469,7 @@ ElementColors::ElementColors(ViewProviderDocumentObject* vp, bool noHide)
 
     if (noHide) {
         d->ui->hideSelection->setVisible(false);
+        d->ui->showSelection->setVisible(false);
     }
 
     d->ui->onTop->setChecked(ViewParams::getColorOnTop());
@@ -530,6 +532,8 @@ void ElementColors::setupConnections()
             this, &ElementColors::onTopClicked);
     connect(d->ui->hideSelection, &QPushButton::clicked,
             this, &ElementColors::onHideSelectionClicked);
+    connect(d->ui->showSelection, &QPushButton::clicked,
+            this, &ElementColors::onShowSelectionClicked);
     connect(d->ui->boxSelect, &QPushButton::clicked,
             this, &ElementColors::onBoxSelectClicked);
 }
@@ -568,6 +572,14 @@ void ElementColors::onBoxSelectClicked()
 }
 
 void ElementColors::onHideSelectionClicked() {
+    addVisibilityMarker(ViewProvider::hiddenMarker());
+}
+
+void ElementColors::onShowSelectionClicked() {
+    addVisibilityMarker(ViewProvider::shownMarker());
+}
+
+void ElementColors::addVisibilityMarker(const std::string &marker) {
     auto sels = Selection().getSelectionEx(d->editDoc.c_str(), App::DocumentObject::getClassTypeId(), ResolveMode::NoResolve);
     for(auto &sel : sels) {
         if(d->editObj!=sel.getFeatName())
@@ -577,7 +589,7 @@ void ElementColors::onHideSelectionClicked() {
             for(auto &sub : subs) {
                 if(boost::starts_with(sub,d->editSub)) {
                     auto name = Data::noElementName(sub.c_str()+d->editSub.size());
-                    name += ViewProvider::hiddenMarker();
+                    name += marker;
                     d->addItem(-1,name.c_str());
                 }
             }
@@ -681,9 +693,9 @@ void ElementColors::leaveEvent(QEvent *e) {
 
 void ElementColors::onElementListItemEntered(QListWidgetItem *item) {
     std::string name(qPrintable(item->data(Qt::UserRole+1).value<QString>()));
-    const char *hidden = ViewProvider::hasHiddenMarker(name.c_str());
-    if(hidden)
-        name.resize(name.size()-std::strlen(hidden));
+    const char *marker = ViewProvider::hasVisibilityMarker(name.c_str());
+    if(marker)
+        name.resize(name.size()-std::strlen(marker));
     Selection().setPreselect(d->editDoc.c_str(),
             d->editObj.c_str(), (d->editSub+name).c_str(),0,0,0,
             d->ui->onTop->isChecked() ? Gui::SelectionChanges::MsgSource::TreeView
