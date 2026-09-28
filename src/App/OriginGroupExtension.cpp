@@ -111,7 +111,10 @@ App::DocumentObject *OriginGroupExtension::getGroupOfObject (const DocumentObjec
     for (auto o : list) {
         if(o->hasExtension(App::OriginGroupExtension::getExtensionClassTypeId()))
             return o;
-        else if (isOriginFeature && o->isDerivedFrom(App::Origin::getClassTypeId())) {
+        // through any coordinate system, not only an origin: a datum
+        // element of an LCS in a body is in the body's scope (upstream
+        // 19702dcb21)
+        else if (isOriginFeature && o->isDerivedFrom(App::LocalCoordinateSystem::getClassTypeId())) {
             auto result = getGroupOfObject(o);
             if(result)
                 return result;
@@ -199,11 +202,19 @@ void OriginGroupExtension::relinkToOrigin(App::DocumentObject* obj)
     std::vector< App::DocumentObject* > result;
     std::vector<App::Property*> list;
     obj->getPropertyList(list);
+    // Only an origin's own features move to this origin; a datum element of
+    // a coordinate system, or a lone one, stays what it is (upstream
+    // 19702dcb21). Relinking those made an LCS put into a body take the
+    // body's origin features for its own.
+    auto isOriginFeature = [](App::DocumentObject* o) {
+        auto datum = Base::freecad_dynamic_cast<App::DatumElement>(o);
+        return datum && datum->isOriginFeature();
+    };
     for(App::Property* prop : list) {
         if(prop->isDerivedFrom<App::PropertyLink>()) {
 
             auto p = static_cast<App::PropertyLink*>(prop);
-            if(!p->getValue() || !p->getValue()->isDerivedFrom(App::DatumElement::getClassTypeId()))
+            if(!p->getValue() || !isOriginFeature(p->getValue()))
                 continue;
 
             p->setValue(getOrigin()->getDatumElement(static_cast<DatumElement*>(p->getValue())->Role.getValue()));
@@ -214,7 +225,7 @@ void OriginGroupExtension::relinkToOrigin(App::DocumentObject* obj)
             std::vector<App::DocumentObject*> result;
             bool changed = false;
             for(App::DocumentObject* o : vec) {
-                if(!o || !o->isDerivedFrom(App::DatumElement::getClassTypeId()))
+                if(!isOriginFeature(o))
                     result.push_back(o);
                 else {
                     result.push_back(getOrigin()->getDatumElement(static_cast<DatumElement*>(o)->Role.getValue()));
@@ -226,7 +237,7 @@ void OriginGroupExtension::relinkToOrigin(App::DocumentObject* obj)
         }
         else if(prop->isDerivedFrom<App::PropertyLinkSub>()) {
             auto p = static_cast<App::PropertyLinkSub*>(prop);
-            if(!p->getValue() || !p->getValue()->isDerivedFrom(App::DatumElement::getClassTypeId()))
+            if(!p->getValue() || !isOriginFeature(p->getValue()))
                 continue;
 
             std::vector<std::string> subValues = p->getSubValues();
@@ -237,7 +248,7 @@ void OriginGroupExtension::relinkToOrigin(App::DocumentObject* obj)
             auto vec = p->getSubListValues();
             bool changed = false;
             for(auto &v : vec) {
-                if(v.first && v.first->isDerivedFrom(App::DatumElement::getClassTypeId())) {
+                if(isOriginFeature(v.first)) {
                     v.first = getOrigin()->getDatumElement(static_cast<DatumElement*>(v.first)->Role.getValue());
                     changed = true;
                 }
