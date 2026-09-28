@@ -47,7 +47,6 @@
 
 #include "ui_TaskPatternParameters.h"
 #include "TaskPatternParameters.h"
-#include "PatternDirectionWidget.h"
 #include "ReferenceSelection.h"
 #include "TaskMultiTransformParameters.h"
 
@@ -108,9 +107,9 @@ void TaskPatternParameters::setupUI()
 
     auto layout = ui->directionsLayout;
     if (auto polar = dynamic_cast<PartDesign::PolarPattern*>(getObject())) {
-        direction1 = new PatternDirectionWidget(PatternDirectionWidget::Kind::Polar, proxy);
+        direction1 = new Gui::PatternDirectionWidget(Gui::PatternDirectionWidget::Kind::Polar, proxy);
         layout->addWidget(direction1);
-        PatternDirectionWidget::Properties props;
+        Gui::PatternDirectionWidget::Properties props;
         props.reference = &polar->Axis;
         props.reversed = &polar->Reversed;
         props.mode = &polar->Mode;
@@ -127,10 +126,10 @@ void TaskPatternParameters::setupUI()
 
         groupDirection1 = new QGroupBox(proxy);
         auto groupLayout1 = new QVBoxLayout(groupDirection1);
-        direction1 = new PatternDirectionWidget(PatternDirectionWidget::Kind::Linear, groupDirection1);
+        direction1 = new Gui::PatternDirectionWidget(Gui::PatternDirectionWidget::Kind::Linear, groupDirection1);
         groupLayout1->addWidget(direction1);
         layout->addWidget(groupDirection1);
-        PatternDirectionWidget::Properties props;
+        Gui::PatternDirectionWidget::Properties props;
         props.reference = &linear->Direction;
         props.reversed = &linear->Reversed;
         props.mode = &linear->Mode;
@@ -148,10 +147,10 @@ void TaskPatternParameters::setupUI()
         groupDirection2->setCheckable(true);
         groupDirection2->setChecked(linear->Occurrences2.getValue() > 1);
         auto groupLayout2 = new QVBoxLayout(groupDirection2);
-        direction2 = new PatternDirectionWidget(PatternDirectionWidget::Kind::Linear, groupDirection2);
+        direction2 = new Gui::PatternDirectionWidget(Gui::PatternDirectionWidget::Kind::Linear, groupDirection2);
         groupLayout2->addWidget(direction2);
         layout->addWidget(groupDirection2);
-        PatternDirectionWidget::Properties props2;
+        Gui::PatternDirectionWidget::Properties props2;
         props2.reference = &linear->Direction2;
         props2.reversed = &linear->Reversed2;
         props2.mode = &linear->Mode2;
@@ -165,15 +164,15 @@ void TaskPatternParameters::setupUI()
 
         connect(groupDirection2, &QGroupBox::toggled,
                 this, &TaskPatternParameters::onDirection2Toggled);
-        connect(direction2, &PatternDirectionWidget::referenceActivated,
+        connect(direction2, &Gui::PatternDirectionWidget::referenceActivated,
                 this, [this]() { onReferenceActivated(direction2); });
-        connect(direction2, &PatternDirectionWidget::changed,
+        connect(direction2, &Gui::PatternDirectionWidget::changed,
                 this, &TaskPatternParameters::onParametersChanged);
     }
 
-    connect(direction1, &PatternDirectionWidget::referenceActivated,
+    connect(direction1, &Gui::PatternDirectionWidget::referenceActivated,
             this, [this]() { onReferenceActivated(direction1); });
-    connect(direction1, &PatternDirectionWidget::changed,
+    connect(direction1, &Gui::PatternDirectionWidget::changed,
             this, &TaskPatternParameters::onParametersChanged);
     connect(ui->checkBoxUpdateView, &QCheckBox::toggled,
             this, &TaskPatternParameters::onUpdateView);
@@ -194,7 +193,7 @@ void TaskPatternParameters::retranslate()
         direction2->retranslate();
 }
 
-void TaskPatternParameters::fillReferenceCombo(PatternDirectionWidget* widget)
+void TaskPatternParameters::fillReferenceCombo(Gui::PatternDirectionWidget* widget)
 {
     App::DocumentObject* sketch = getSketchObject();
     this->fillAxisCombo(widget->links(), Base::freecad_dynamic_cast<Part::Part2DObject>(sketch));
@@ -258,7 +257,7 @@ void TaskPatternParameters::onSelectionChanged(const Gui::SelectionChanges& msg)
     TaskTransformedParameters::onSelectionChanged(msg);
 }
 
-void TaskPatternParameters::onReferenceActivated(PatternDirectionWidget* widget)
+void TaskPatternParameters::onReferenceActivated(Gui::PatternDirectionWidget* widget)
 {
     try {
         if (!widget->links().getCurrentLink().getValue()) {

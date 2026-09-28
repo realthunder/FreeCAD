@@ -190,8 +190,6 @@ SET(PartDesignGuiTaskDlgs_SRCS
     TaskPatternParameters.ui
     TaskPatternParameters.cpp
     TaskPatternParameters.h
-    PatternDirectionWidget.cpp
-    PatternDirectionWidget.h
     TaskGenericPatternParameters.ui
     TaskGenericPatternParameters.cpp
     TaskGenericPatternParameters.h
