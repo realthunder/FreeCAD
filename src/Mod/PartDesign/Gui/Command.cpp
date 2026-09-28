@@ -2438,6 +2438,171 @@ bool CmdPartDesignPolarPattern::isActive()
 }
 
 //===========================================================================
+// PartDesign_CircularPattern
+//===========================================================================
+DEF_STD_CMD_A(CmdPartDesignCircularPattern)
+
+CmdPartDesignCircularPattern::CmdPartDesignCircularPattern()
+  : Command("PartDesign_CircularPattern")
+{
+    sAppModule    = "PartDesign";
+    sGroup        = QT_TR_NOOP("PartDesign");
+    sMenuText     = QT_TR_NOOP("CircularPattern");
+    sToolTipText  = QT_TR_NOOP("Create a circular pattern feature: concentric rings of copies around an axis");
+    sWhatsThis    = "PartDesign_CircularPattern";
+    sStatusTip    = sToolTipText;
+    sPixmap       = "PartDesign_CircularPattern";
+}
+
+void CmdPartDesignCircularPattern::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    App::Document *doc = getDocument();
+    if (!PartDesignGui::assureModernWorkflow(doc))
+        return;
+
+    PartDesign::Body *pcActiveBody = PartDesignGui::getBody(true);
+    if (!pcActiveBody)
+        return;
+
+    Gui::Command* cmd = this;
+    auto worker = [pcActiveBody, cmd](App::DocumentObject *Feat,
+                                      const std::vector<App::DocumentObject*> &features,
+                                      std::vector<App::SubObjectT> &subfeatures)
+    {
+        // The axis as a polar pattern's
+        setOrigins(Feat, features, subfeatures, false);
+        bool axis = false;
+        if (subfeatures.size()) {
+            Gui::cmdAppObject(Feat, std::ostringstream()
+                    <<"Axis = " << subfeatures[0].getSubObjectPython());
+            axis = true;
+        }
+        else if (features.size()
+                && features.front()->isDerivedFrom<PartDesign::ProfileBased>()) {
+            Part::Part2DObject *sketch = (static_cast<PartDesign::ProfileBased*>(features.front()))->getVerifiedSketch(/* silent =*/ true);
+            if (sketch) {
+                Gui::cmdAppObject(Feat, std::ostringstream() <<"Axis = ("<<Gui::Command::getObjectCmd(sketch)<<",['N_Axis'])");
+                axis = true;
+            }
+        }
+        if (!axis)
+            Gui::cmdAppObject(Feat, std::ostringstream() <<"Axis = ("
+                    << Gui::Command::getObjectCmd(pcActiveBody->getOrigin()->getZ())<<",[''])");
+
+        finishTransformed(cmd, Feat);
+    };
+
+    prepareTransformed(pcActiveBody, this, "CircularPattern", worker);
+}
+
+bool CmdPartDesignCircularPattern::isActive()
+{
+    return hasActiveDocument();
+}
+
+//===========================================================================
+// PartDesign_PathPattern
+//===========================================================================
+DEF_STD_CMD_A(CmdPartDesignPathPattern)
+
+CmdPartDesignPathPattern::CmdPartDesignPathPattern()
+  : Command("PartDesign_PathPattern")
+{
+    sAppModule    = "PartDesign";
+    sGroup        = QT_TR_NOOP("PartDesign");
+    sMenuText     = QT_TR_NOOP("PathPattern");
+    sToolTipText  = QT_TR_NOOP("Create a path pattern feature: copies along a path of edges");
+    sWhatsThis    = "PartDesign_PathPattern";
+    sStatusTip    = sToolTipText;
+    sPixmap       = "PartDesign_PathPattern";
+}
+
+void CmdPartDesignPathPattern::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    App::Document *doc = getDocument();
+    if (!PartDesignGui::assureModernWorkflow(doc))
+        return;
+
+    PartDesign::Body *pcActiveBody = PartDesignGui::getBody(true);
+    if (!pcActiveBody)
+        return;
+
+    Gui::Command* cmd = this;
+    auto worker = [cmd](App::DocumentObject *Feat,
+                        const std::vector<App::DocumentObject*> &features,
+                        std::vector<App::SubObjectT> &subfeatures)
+    {
+        // A single selected edge is the path; otherwise it is picked in the panel
+        setOrigins(Feat, features, subfeatures, false);
+        if (subfeatures.size())
+            Gui::cmdAppObject(Feat, std::ostringstream()
+                    <<"Path = " << subfeatures[0].getSubObjectPython());
+        finishTransformed(cmd, Feat);
+    };
+
+    prepareTransformed(pcActiveBody, this, "PathPattern", worker);
+}
+
+bool CmdPartDesignPathPattern::isActive()
+{
+    return hasActiveDocument();
+}
+
+//===========================================================================
+// PartDesign_PointPattern
+//===========================================================================
+DEF_STD_CMD_A(CmdPartDesignPointPattern)
+
+CmdPartDesignPointPattern::CmdPartDesignPointPattern()
+  : Command("PartDesign_PointPattern")
+{
+    sAppModule    = "PartDesign";
+    sGroup        = QT_TR_NOOP("PartDesign");
+    sMenuText     = QT_TR_NOOP("PointPattern");
+    sToolTipText  = QT_TR_NOOP("Create a point pattern feature: copies at the vertices of a sketch or shape");
+    sWhatsThis    = "PartDesign_PointPattern";
+    sStatusTip    = sToolTipText;
+    sPixmap       = "PartDesign_PointPattern";
+}
+
+void CmdPartDesignPointPattern::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    App::Document *doc = getDocument();
+    if (!PartDesignGui::assureModernWorkflow(doc))
+        return;
+
+    PartDesign::Body *pcActiveBody = PartDesignGui::getBody(true);
+    if (!pcActiveBody)
+        return;
+
+    Gui::Command* cmd = this;
+    auto worker = [cmd](App::DocumentObject *Feat,
+                        const std::vector<App::DocumentObject*> &features,
+                        std::vector<App::SubObjectT> &subfeatures)
+    {
+        // The points are all of the object a single selected element is of;
+        // otherwise it is picked in the panel
+        setOrigins(Feat, features, subfeatures, false);
+        if (subfeatures.size()) {
+            if (auto obj = subfeatures[0].getSubObject())
+                Gui::cmdAppObject(Feat, std::ostringstream()
+                        <<"PointObject = " << Gui::Command::getObjectCmd(obj));
+        }
+        finishTransformed(cmd, Feat);
+    };
+
+    prepareTransformed(pcActiveBody, this, "PointPattern", worker);
+}
+
+bool CmdPartDesignPointPattern::isActive()
+{
+    return hasActiveDocument();
+}
+
+//===========================================================================
 // PartDesign_Scaled
 //===========================================================================
 DEF_STD_CMD_A(CmdPartDesignScaled)
@@ -3001,6 +3166,9 @@ void CreatePartDesignCommands()
     rcCmdMgr.addCommand(new CmdPartDesignMirrored());
     rcCmdMgr.addCommand(new CmdPartDesignLinearPattern());
     rcCmdMgr.addCommand(new CmdPartDesignPolarPattern());
+    rcCmdMgr.addCommand(new CmdPartDesignCircularPattern());
+    rcCmdMgr.addCommand(new CmdPartDesignPathPattern());
+    rcCmdMgr.addCommand(new CmdPartDesignPointPattern());
     rcCmdMgr.addCommand(new CmdPartDesignScaled());
     rcCmdMgr.addCommand(new CmdPartDesignGenericPattern());
     rcCmdMgr.addCommand(new CmdPartDesignMultiTransform());

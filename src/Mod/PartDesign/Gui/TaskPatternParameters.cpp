@@ -42,7 +42,10 @@
 #include <Gui/Selection.h>
 #include <Gui/ViewProviderCoordinateSystem.h>
 #include <Mod/PartDesign/App/Body.h>
+#include <Mod/PartDesign/App/FeatureCircularPattern.h>
 #include <Mod/PartDesign/App/FeatureLinearPattern.h>
+#include <Mod/PartDesign/App/FeaturePathPattern.h>
+#include <Mod/PartDesign/App/FeaturePointPattern.h>
 #include <Mod/PartDesign/App/FeaturePolarPattern.h>
 
 #include "ui_TaskPatternParameters.h"
@@ -98,7 +101,8 @@ TaskPatternParameters::TaskPatternParameters(TaskMultiTransformParameters *paren
 
 bool TaskPatternParameters::isPolar() const
 {
-    return getObject()->isDerivedFrom<PartDesign::PolarPattern>();
+    return getObject()->isDerivedFrom<PartDesign::PolarPattern>()
+        || getObject()->isDerivedFrom<PartDesign::CircularPattern>();
 }
 
 void TaskPatternParameters::setupUI()
@@ -118,8 +122,23 @@ void TaskPatternParameters::setupUI()
         props.occurrences = &polar->Occurrences;
         props.spacings = &polar->Spacings;
         props.spacingPattern = &polar->SpacingPattern;
-        fillReferenceCombo(direction1);
+        fillReferenceCombo(direction1->links());
         direction1->bind(props);
+    }
+    else if (!getObject()->isDerivedFrom<PartDesign::LinearPattern>()) {
+        auto kind = Gui::PatternParametersWidget::Kind::Point;
+        if (getObject()->isDerivedFrom<PartDesign::CircularPattern>())
+            kind = Gui::PatternParametersWidget::Kind::Circular;
+        else if (getObject()->isDerivedFrom<PartDesign::PathPattern>())
+            kind = Gui::PatternParametersWidget::Kind::Path;
+        parameters = new Gui::PatternParametersWidget(kind, proxy);
+        layout->addWidget(parameters);
+        fillReferenceCombo(parameters->links());
+        parameters->bind(getObject());
+        connect(parameters, &Gui::PatternParametersWidget::referenceActivated,
+                this, [this]() { onReferenceActivated(parameters->links(), parameters->referenceProperty()); });
+        connect(parameters, &Gui::PatternParametersWidget::changed,
+                this, &TaskPatternParameters::onParametersChanged);
     }
     else {
         auto linear = static_cast<PartDesign::LinearPattern*>(getObject());
@@ -138,7 +157,7 @@ void TaskPatternParameters::setupUI()
         props.occurrences = &linear->Occurrences;
         props.spacings = &linear->Spacings;
         props.spacingPattern = &linear->SpacingPattern;
-        fillReferenceCombo(direction1);
+        fillReferenceCombo(direction1->links());
         direction1->bind(props);
 
         // Checked as long as the second direction has more than one
@@ -159,21 +178,23 @@ void TaskPatternParameters::setupUI()
         props2.occurrences = &linear->Occurrences2;
         props2.spacings = &linear->Spacings2;
         props2.spacingPattern = &linear->SpacingPattern2;
-        fillReferenceCombo(direction2);
+        fillReferenceCombo(direction2->links());
         direction2->bind(props2);
 
         connect(groupDirection2, &QGroupBox::toggled,
                 this, &TaskPatternParameters::onDirection2Toggled);
         connect(direction2, &Gui::PatternDirectionWidget::referenceActivated,
-                this, [this]() { onReferenceActivated(direction2); });
+                this, [this]() { onReferenceActivated(direction2->links(), direction2->properties().reference); });
         connect(direction2, &Gui::PatternDirectionWidget::changed,
                 this, &TaskPatternParameters::onParametersChanged);
     }
 
-    connect(direction1, &Gui::PatternDirectionWidget::referenceActivated,
-            this, [this]() { onReferenceActivated(direction1); });
-    connect(direction1, &Gui::PatternDirectionWidget::changed,
-            this, &TaskPatternParameters::onParametersChanged);
+    if (direction1) {
+        connect(direction1, &Gui::PatternDirectionWidget::referenceActivated,
+                this, [this]() { onReferenceActivated(direction1->links(), direction1->properties().reference); });
+        connect(direction1, &Gui::PatternDirectionWidget::changed,
+                this, &TaskPatternParameters::onParametersChanged);
+    }
     connect(ui->checkBoxUpdateView, &QCheckBox::toggled,
             this, &TaskPatternParameters::onUpdateView);
 
@@ -191,12 +212,22 @@ void TaskPatternParameters::retranslate()
         direction1->retranslate();
     if (direction2)
         direction2->retranslate();
+    if (parameters)
+        parameters->retranslate();
 }
 
-void TaskPatternParameters::fillReferenceCombo(Gui::PatternDirectionWidget* widget)
+void TaskPatternParameters::fillReferenceCombo(Gui::ComboLinks& links)
 {
+    // A path or the points come from a pick; a direction or an axis may be
+    // one of the sketch's or the origin's as well
+    if (getObject()->isDerivedFrom<PartDesign::PathPattern>()
+            || getObject()->isDerivedFrom<PartDesign::PointPattern>()) {
+        links.clear();
+        links.addLink(nullptr, std::string(), tr("Select reference..."));
+        return;
+    }
     App::DocumentObject* sketch = getSketchObject();
-    this->fillAxisCombo(widget->links(), Base::freecad_dynamic_cast<Part::Part2DObject>(sketch));
+    this->fillAxisCombo(links, Base::freecad_dynamic_cast<Part::Part2DObject>(sketch));
 }
 
 void TaskPatternParameters::showOriginAxes(bool show)
@@ -230,6 +261,8 @@ void TaskPatternParameters::updateUI()
         groupDirection2->setChecked(linear->Occurrences2.getValue() > 1);
         direction2->updateUI();
     }
+    if (parameters)
+        parameters->updateUI();
 }
 
 void TaskPatternParameters::onSelectionChanged(const Gui::SelectionChanges& msg)
@@ -244,11 +277,28 @@ void TaskPatternParameters::onSelectionChanged(const Gui::SelectionChanges& msg)
         // ReferenceSelection has already checked the selection for validity
         if (!selObj)
             return;
-        auto widget = picking;
-        exitSelectionMode();
-        picking = nullptr;
+        auto prop = picking;
         setupTransaction();
-        widget->properties().reference->setValue(selObj, subs);
+        if (getObject()->isDerivedFrom<PartDesign::PointPattern>()) {
+            // The points are all of the object's, whatever of it was clicked
+            // (upstream f5abab2768)
+            subs.clear();
+        }
+        else if (getObject()->isDerivedFrom<PartDesign::PathPattern>()) {
+            // A path is picked edge by edge, of one object, until something
+            // else is done in the panel
+            if (prop->getValue() == selObj && !subs.empty() && !subs.front().empty()) {
+                auto edges = prop->getSubValues();
+                if (std::find(edges.begin(), edges.end(), subs.front()) == edges.end())
+                    edges.push_back(subs.front());
+                subs = std::move(edges);
+            }
+        }
+        if (!getObject()->isDerivedFrom<PartDesign::PathPattern>()) {
+            exitSelectionMode();
+            picking = nullptr;
+        }
+        prop->setValue(selObj, subs);
         recomputeFeature();
         updateUI();
         return;
@@ -257,15 +307,22 @@ void TaskPatternParameters::onSelectionChanged(const Gui::SelectionChanges& msg)
     TaskTransformedParameters::onSelectionChanged(msg);
 }
 
-void TaskPatternParameters::onReferenceActivated(Gui::PatternDirectionWidget* widget)
+void TaskPatternParameters::onReferenceActivated(Gui::ComboLinks& links, App::PropertyLinkSub* prop)
 {
+    if (!prop)
+        return;
     try {
-        if (!widget->links().getCurrentLink().getValue()) {
+        if (!links.getCurrentLink().getValue()) {
             // enter reference selection mode
-            picking = widget;
+            picking = prop;
             selectionMode = reference;
             Gui::Selection().clearSelection();
-            if (isPolar())
+            if (getObject()->isDerivedFrom<PartDesign::PointPattern>())
+                addReferenceSelectionGate(AllowSelection::POINT | AllowSelection::EDGE
+                                          | AllowSelection::FACE | AllowSelection::WHOLE);
+            else if (getObject()->isDerivedFrom<PartDesign::PathPattern>())
+                addReferenceSelectionGate(AllowSelection::EDGE | AllowSelection::WHOLE);
+            else if (isPolar())
                 addReferenceSelectionGate(AllowSelection::EDGE | AllowSelection::CIRCLE);
             else
                 addReferenceSelectionGate(AllowSelection::EDGE | AllowSelection::FACE
@@ -274,7 +331,7 @@ void TaskPatternParameters::onReferenceActivated(Gui::PatternDirectionWidget* wi
         else {
             exitSelectionMode();
             picking = nullptr;
-            widget->properties().reference->Paste(widget->links().getCurrentLink());
+            prop->Paste(links.getCurrentLink());
         }
     }
     catch (Base::Exception &e) {
@@ -389,6 +446,10 @@ void TaskPatternParameters::changeEvent(QEvent *e)
 void TaskPatternParameters::apply()
 {
     auto tobj = getObject();
+    if (parameters) {
+        parameters->apply(tobj);
+        return;
+    }
     direction1->apply(tobj);
     if (direction2) {
         if (groupDirection2->isChecked())

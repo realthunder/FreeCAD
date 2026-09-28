@@ -35,8 +35,9 @@ namespace PartDesignGui {
 
 class TaskMultiTransformParameters;
 
-/// The panel of a linear pattern, one or two directions, and of a polar
-/// pattern (upstream 5d2037c820 merged the two panels as well)
+/// The panel of a linear pattern, one or two directions, of a polar pattern
+/// (upstream 5d2037c820 merged the two panels as well), and of a circular,
+/// path or point pattern on the shared editor of those kinds
 class TaskPatternParameters : public TaskTransformedParameters
 {
     Q_OBJECT
@@ -62,9 +63,9 @@ private:
     void updateUI() override;
     void retranslate();
     bool isPolar() const;
-    void fillReferenceCombo(Gui::PatternDirectionWidget* widget);
+    void fillReferenceCombo(Gui::ComboLinks& links);
     void showOriginAxes(bool show);
-    void onReferenceActivated(Gui::PatternDirectionWidget* widget);
+    void onReferenceActivated(Gui::ComboLinks& links, App::PropertyLinkSub* prop);
     void onParametersChanged();
     void onDirection2Toggled(bool on);
     void setDefaultDirection2();
@@ -76,8 +77,10 @@ private:
     QGroupBox* groupDirection2 = nullptr;
     Gui::PatternDirectionWidget* direction1 = nullptr;
     Gui::PatternDirectionWidget* direction2 = nullptr;
-    /// The direction whose reference is being picked in the view
-    Gui::PatternDirectionWidget* picking = nullptr;
+    /// The editor of a circular, path or point pattern
+    Gui::PatternParametersWidget* parameters = nullptr;
+    /// The reference being picked in the view
+    App::PropertyLinkSub* picking = nullptr;
 };
 
 

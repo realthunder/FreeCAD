@@ -104,6 +104,8 @@ SET(PartDesignGuiViewProvider_SRCS
     ViewProviderGenericPattern.h
     ViewProviderPolarPattern.cpp
     ViewProviderPolarPattern.h
+    ViewProviderPatterns.cpp
+    ViewProviderPatterns.h
     ViewProviderScaled.cpp
     ViewProviderScaled.h
     ViewProviderMultiTransform.cpp

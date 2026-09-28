@@ -48,6 +48,9 @@
         <file>icons/PartDesign_Pocket.svg</file>
         <file>icons/PartDesign_Point.svg</file>
         <file>icons/PartDesign_PolarPattern.svg</file>
+        <file>icons/PartDesign_CircularPattern.svg</file>
+        <file>icons/PartDesign_PathPattern.svg</file>
+        <file>icons/PartDesign_PointPattern.svg</file>
         <file>icons/PartDesign_Revolution.svg</file>
         <file>icons/PartDesign_Scaled.svg</file>
         <file>icons/PartDesign_Split.svg</file>
