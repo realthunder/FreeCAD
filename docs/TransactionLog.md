@@ -7545,3 +7545,10 @@ touched whatever the rows record: the recorded flags first, the forced
 touch last, as the walk already does (`fold.touch` after
 `TouchedFold::apply`) and the cold undo too. Only then is the result one a
 recompute puts right.
+
+**Kept as built (user, 2026-09-28).** Weighed against a middle way -- tap a
+schema-4 file at open as before, adopt its members as blobs so a later
+schema-5 save shares their bytes, convert the version on first read -- the
+log stays schema 5 only: schema 4 duplicates in too many ways (a shape per
+property, no congruent sharing, placement in the bytes) for the open time
+it saves to be worth a second format in the log.
