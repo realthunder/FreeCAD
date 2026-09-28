@@ -173,6 +173,16 @@ public:
     bool mustRecompute() const;
     /// reset this document object touched
     void purgeTouched();
+    /** The touched state as the transaction log records it
+     * (docs/TransactionLog.md sec 27.58), packed: a property's own Touched
+     * bit, the object's Touch and Enforce bits, and an explicit request to
+     * recompute (touch(), enforceRecompute()).
+     */
+    enum LogTouchedBit { LogPropTouched = 1, LogTouch = 2, LogEnforce = 4, LogRequested = 8 };
+    /// The object's bits of the above; LogPropTouched is never set.
+    int getLogTouchedBits() const;
+    /// Set the object's bits to `bits`, signalling a change of Touch.
+    void setLogTouchedBits(int bits);
     /// set this feature to error
     bool isError() const {return  StatusBits.test(ObjectStatus::Error);}
     bool isValid() const {return !StatusBits.test(ObjectStatus::Error);}

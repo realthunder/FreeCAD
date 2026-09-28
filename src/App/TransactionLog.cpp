@@ -1307,7 +1307,8 @@ TransactionLog::~TransactionLog()
     }
 }
 
-void TransactionLog::onRecompute(const std::vector<RecomputedObject>& objects, double seconds)
+void TransactionLog::onRecompute(const std::vector<RecomputedObject>& objects, double seconds,
+                                 Transaction* open)
 {
     // A version document recomputed but not changed is still the version:
     // no record, and no branch for it (sec 27.5).
@@ -1315,46 +1316,82 @@ void TransactionLog::onRecompute(const std::vector<RecomputedObject>& objects, d
         return;
     try {
         LogTransaction t;
-        number(t);
         t.kind = "recompute";
         t.name = "recompute";
         t.time = now();
         t.session = _c._session;
         // The record, as JSON in the script column: the duration, and per
-        // object its id, the seconds it took, and its error text if any.
-        // The environment is not repeated: the row's session names it.
+        // object its id, the seconds it took, and its error text if any;
+        // then its touched state before ("b" the bits, "p" the touched
+        // properties) and after ("a", "q"), after left out when clean
+        // (sec 27.58). The environment is not repeated: the row's session
+        // names it.
         auto secs = [](double v) {
             char buf[32];
             snprintf(buf, sizeof(buf), "%.4g", v);
             return std::string(buf);
+        };
+        auto quoted = [](std::string& j, const std::string& text) {
+            j += '"';
+            for (char c : text) {
+                if (c == '"' || c == '\\')
+                    j += '\\';
+                else if (c == '\n') {
+                    j += "\\n";
+                    continue;
+                }
+                j += c;
+            }
+            j += '"';
+        };
+        auto names = [&](std::string& j, const char* key, const std::vector<std::string>& props) {
+            if (props.empty())
+                return;
+            j += ",\"";
+            j += key;
+            j += "\":[";
+            for (size_t i = 0; i < props.size(); ++i) {
+                if (i)
+                    j += ',';
+                quoted(j, props[i]);
+            }
+            j += ']';
         };
         std::string j = "{\"seconds\":" + secs(seconds) + ",\"objects\":[";
         bool first = true;
         for (auto& o : objects) {
             j += first ? "{" : ",{";
             first = false;
-            j += "\"id\":" + std::to_string(o.id) + ",\"s\":" + secs(o.seconds);
+            j += "\"id\":" + std::to_string(o.id);
+            if (o.done)
+                j += ",\"s\":" + secs(o.seconds);
             if (o.error) {
-                j += ",\"error\":\"";
-                for (char c : o.message) {
-                    if (c == '"' || c == '\\')
-                        j += '\\';
-                    else if (c == '\n') {
-                        j += "\\n";
-                        continue;
-                    }
-                    j += c;
-                }
-                j += '"';
+                j += ",\"error\":";
+                quoted(j, o.message);
+            }
+            if (o.before >= 0) {
+                j += ",\"b\":" + std::to_string(o.before);
+                names(j, "p", o.beforeProps);
+            }
+            if (o.after || !o.afterProps.empty()) {
+                j += ",\"a\":" + std::to_string(o.after);
+                names(j, "q", o.afterProps);
             }
             j += '}';
         }
         j += "]}";
         t.script = j;
-        post([this, t]() mutable {
-            std::vector<LogOp> none;
-            _c._store->append(t, none);
-        });
+        auto write = [t](TransactionLog& log) mutable {
+            log.number(t);
+            log.post([&log, t]() mutable {
+                std::vector<LogOp> none;
+                log._c._store->append(t, none);
+            });
+        };
+        if (open)
+            open->AfterLogRow.emplace_back(std::move(write));
+        else
+            write(*this);
     }
     catch (Base::Exception& e) {
         FC_ERR("transaction log: " << e.what());
@@ -2452,6 +2489,10 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
                 // what is serialised. Each resolves whatever was pending.
                 std::map<std::string, Property*> props;
                 c.container->getPropertyMap(props);
+                // The touched state it goes with (sec 27.58): a removal
+                // leaves it alone, so it is the state before.
+                auto removed = Base::freecad_dynamic_cast<const DocumentObject>(tobj);
+                const int objectBits = removed ? removed->getLogTouchedBits() : -1;
                 for (auto& kv : props) {
                     short ptype = c.container->getPropertyType(kv.second);
                     if ((ptype & Prop_Transient) || (ptype & Prop_NoPersist))
@@ -2459,6 +2500,9 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
                     if (!kv.second->getName())
                         continue;
                     auto o = emit("set", kv.first, kv.second->getTypeId().getName());
+                    if (objectBits >= 0)
+                        o->touched = objectBits
+                            | (kv.second->isTouched() ? DocumentObject::LogPropTouched : 0);
                     // A dynamic property's metadata rides on its set, so a
                     // cold undo can add it back to the recreated object.
                     auto dyn = c.container->getDynamicPropertyData(kv.second);
@@ -2515,6 +2559,8 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
                 }
                 auto o = emit("set", name, typeName);
                 o->derived = derived;
+                if (!derived)
+                    o->touched = data.touchedBefore;
                 if (recordsValue(derived) || waiting)
                     task(share(data), tierFor(derived), recordsValue(derived) ? last() : -1,
                          kv.first, data.logHash);

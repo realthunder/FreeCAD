@@ -106,6 +106,14 @@ struct LogOp
     std::string vbefore;
     std::string vafter;
     bool derived {false};
+    /// A set's touched state before it (sec 27.58), DocumentObject::
+    /// LogTouchedBit packed: the property's bit and its object's. -1 when
+    /// not recorded -- another op, a container that is no object, a write
+    /// made during a recompute (the recompute record has the recompute's),
+    /// a created object.
+    /// The state after is the write's: the property touched, and the object
+    /// too unless the property is an output.
+    int touched {-1};
 };
 
 /// One edge out of an entity (table `ref`, sec 23.1): an attachment it

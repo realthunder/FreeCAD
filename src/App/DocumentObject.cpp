@@ -324,6 +324,29 @@ void DocumentObject::purgeTouched()
     }
 }
 
+int DocumentObject::getLogTouchedBits() const
+{
+    return (StatusBits.test(ObjectStatus::Touch) ? LogTouch : 0)
+        | (StatusBits.test(ObjectStatus::Enforce) ? LogEnforce : 0)
+        | (_enforceRecompute ? LogRequested : 0);
+}
+
+void DocumentObject::setLogTouchedBits(int bits)
+{
+    StatusBits.set(ObjectStatus::Enforce, (bits & LogEnforce) != 0);
+    _enforceRecompute = (bits & LogRequested) != 0;
+    const bool touch = (bits & LogTouch) != 0;
+    if (touch == StatusBits.test(ObjectStatus::Touch))
+        return;
+    StatusBits.set(ObjectStatus::Touch, touch);
+    if (_pDoc) {
+        if (touch)
+            _pDoc->signalTouchedObject(*this);
+        else
+            _pDoc->signalPurgeTouchedObject(*this);
+    }
+}
+
 /**
  * @brief Enforces this document object to be recomputed.
  * This can be useful to recompute the feature without

@@ -3507,6 +3507,64 @@ class TransactionBranchCases(unittest.TestCase):
         finally:
             FreeCAD.removeDocumentObserver(made)
 
+    def testTouchedStateThroughTheRows(self):
+        # Sec 27.58: the rows carry the touched state -- a set the state
+        # before it, a recompute record each object's before and after -- so a
+        # restore through the rows leaves every object touched as it was at the
+        # version, across recomputes. The walk used to purge an object whose
+        # derived values came back and leave the rest alone.
+        class Made:
+            def __init__(self):
+                self.names = []
+
+            def slotCreatedDocument(self, doc):
+                self.names.append(doc.Name)
+
+        doc = self.track(FreeCAD.newDocument("TouchedRows"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        a = doc.addObject("App::FeatureTest", "A")
+        b = doc.addObject("App::FeatureTest", "B")
+        b.Link = a
+        c = doc.addObject("App::FeatureTest", "C")
+        doc.commitTransaction()
+        doc.recompute()
+        # A command's pattern: the edit and its recompute in one transaction.
+        doc.openTransaction("edit A")
+        a.Integer = 2
+        doc.recompute()
+        doc.commitTransaction()
+        doc.openTransaction("edit C")
+        c.Integer = 5
+        doc.commitTransaction()
+        state = lambda: {o.Name: "Touched" in o.State for o in (a, b, c)}
+        atVersion = {"A": False, "B": False, "C": True}
+        self.assertEqual(state(), atVersion)
+        path = os.path.join(self.dir, "touchedrows.FCStd")
+        doc.saveAs(path)
+        version = int(doc.Version.split()[0])
+
+        doc.recompute()
+        doc.openTransaction("edit A again")
+        a.Integer = 3
+        doc.commitTransaction()
+        atHead = {"A": True, "B": False, "C": False}
+        self.assertEqual(state(), atHead)
+
+        made = Made()
+        FreeCAD.addDocumentObserver(made)
+        try:
+            doc.restoreTransactionVersion(version)
+            self.assertEqual(made.names, [])
+            self.assertEqual(a.Integer, 2)
+            self.assertEqual(state(), atVersion)
+            # Undo is not the walk: it touches what it writes, and a flag the
+            # restore changed with no value stays (sec 27.59).
+            doc.undo()
+            self.assertEqual(a.Integer, 3)
+        finally:
+            FreeCAD.removeDocumentObserver(made)
+
     def testOpeningADocumentKeepsAnotherOnesTransaction(self):
         # Sec 27.15: a document made or opened while another has a transaction
         # open joins none, so its restore does not commit that transaction

@@ -126,6 +126,8 @@ recompute path. Also, it enables more complicated dependencies beyond trees.
 #include "PropertyHistory.h"
 #include "TransactionLog.h"
 
+#include <nlohmann/json.hpp>
+
 #ifdef _MSC_VER
 #include <zipios++/zipios-config.h>
 #endif
@@ -1096,6 +1098,10 @@ void Document::_commitTransaction(bool notify)
                               !kind.empty() ? kind.c_str() : implicit ? "implicit" : "user",
                               d->activeUndoTransaction->Origin.c_str(),
                               d->activeUndoTransaction->Inverts);
+            // What waited on the row: a recompute record (sec 27.59).
+            auto after = std::move(d->activeUndoTransaction->AfterLogRow);
+            for (auto& write : after)
+                write(*log);
             // The cadence of unnamed versions (docs/TransactionLog.md sec
             // 16.3): every N commits, or the first commit the autosave
             // interval after the last version (sec 25.3). Taken once the
@@ -4654,6 +4660,164 @@ std::string Document::materialiseVersion(TransactionLogCore& log, int64_t num, c
 
 namespace {
 
+/// An object's touched state as the log records it (docs/TransactionLog.md
+/// sec 27.58): its bits and the names of its touched properties.
+struct TouchedState
+{
+    int bits {0};
+    std::vector<std::string> props;
+
+    bool operator==(const TouchedState& other) const
+    {
+        return bits == other.bits && props == other.props;
+    }
+};
+
+TouchedState touchedStateOf(const DocumentObject& obj)
+{
+    TouchedState state;
+    state.bits = obj.getLogTouchedBits();
+    std::vector<Property*> props;
+    obj.getPropertyList(props);
+    for (auto prop : props) {
+        if (prop->isTouched() && prop->getName())
+            state.props.emplace_back(prop->getName());
+    }
+    std::sort(state.props.begin(), state.props.end());
+    return state;
+}
+
+/// The touched state a run of log rows leaves (docs/TransactionLog.md sec
+/// 27.58), folded as the rows are crossed in either direction: a set taken
+/// back leaves the state it recorded before it, a set done leaves the
+/// property touched and its object too unless the property is an output, a
+/// recompute record leaves the state it recorded before or after it. What
+/// no crossed row says keeps the state the document had.
+struct TouchedFold
+{
+    struct Flags
+    {
+        int bits {-1};                       ///< the object's, -1 when no row said
+        std::map<std::string, bool> props;   ///< touched or not, as the rows said
+        bool exact {false};                  ///< a property not in `props` is clean
+        std::set<std::string> written;       ///< set since `bits`: touches unless an output
+    };
+    std::map<long, Flags> objects;
+
+    void forget(long cid)
+    {
+        objects.erase(cid);
+    }
+
+    void back(const LogOp& o)
+    {
+        if (o.op != "set" || o.ckind != "obj" || o.touched < 0)
+            return;
+        auto& f = objects[o.cid];
+        f.bits = o.touched & ~DocumentObject::LogPropTouched;
+        f.written.clear();
+        f.props[o.prop] = (o.touched & DocumentObject::LogPropTouched) != 0;
+    }
+
+    void forward(const LogOp& o)
+    {
+        // A derived write's state is the recompute's, in its record.
+        if (o.op != "set" || o.ckind != "obj" || o.derived)
+            return;
+        auto& f = objects[o.cid];
+        f.props[o.prop] = true;
+        f.written.insert(o.prop);
+    }
+
+    /// A recompute record's entries: {"id", "b", "p", "a", "q"}, sec 27.58.
+    void record(const std::string& script, bool back)
+    {
+        auto j = nlohmann::json::parse(script, nullptr, false);
+        if (!j.is_object() || !j.contains("objects") || !j["objects"].is_array())
+            return;
+        for (const auto& e : j["objects"]) {
+            if (!e.is_object() || !e.contains("id") || !e["id"].is_number_integer())
+                continue;
+            const long cid = e["id"].get<long>();
+            if (back && !e.contains("b"))
+                continue;   // made by the recompute, or recorded before sec 27.58
+            const char* bits = back ? "b" : "a";
+            const char* props = back ? "p" : "q";
+            if (e.contains(bits) && !e[bits].is_number_integer())
+                continue;
+            auto& f = objects[cid];
+            f.bits = e.contains(bits) ? e[bits].get<int>() : 0;
+            f.written.clear();
+            f.props.clear();
+            f.exact = true;
+            if (e.contains(props) && e[props].is_array()) {
+                for (const auto& name : e[props]) {
+                    if (name.is_string())
+                        f.props[name.get<std::string>()] = true;
+                }
+            }
+        }
+    }
+
+    /// The document's state for each object the fold names, taken before
+    /// the values are written back, which touch what they write.
+    std::map<long, TouchedState> save(Document& doc, const std::set<long>& also) const
+    {
+        std::map<long, TouchedState> saved;
+        auto take = [&](long cid) {
+            if (auto obj = doc.getObjectByID(cid))
+                saved.emplace(cid, touchedStateOf(*obj));
+        };
+        for (const auto& kv : objects)
+            take(kv.first);
+        for (long cid : also)
+            take(cid);
+        return saved;
+    }
+
+    /// Each saved object back to its saved state with what the rows said on
+    /// top.
+    void apply(Document& doc, const std::map<long, TouchedState>& saved) const
+    {
+        for (const auto& kv : saved) {
+            auto obj = doc.getObjectByID(kv.first);
+            if (!obj)
+                continue;
+            auto it = objects.find(kv.first);
+            const Flags* f = it == objects.end() ? nullptr : &it->second;
+            int bits = f && f->bits >= 0 ? f->bits : kv.second.bits;
+            std::vector<Property*> props;
+            obj->getPropertyList(props);
+            for (auto prop : props) {
+                const char* name = prop->getName();
+                if (!name)
+                    continue;
+                bool touched = std::binary_search(kv.second.props.begin(),
+                                                  kv.second.props.end(), std::string(name));
+                if (f) {
+                    auto p = f->props.find(name);
+                    if (p != f->props.end())
+                        touched = p->second;
+                    else if (f->exact)
+                        touched = false;
+                    if (f->written.count(name) && !obj->testStatus(ObjectStatus::NoTouch)
+                            && !(prop->getType() & Prop_Output)
+                            && !prop->testStatus(Property::Output))
+                        bits |= DocumentObject::LogTouch;
+                }
+                // The bit alone: setStatus(Touched) would touch() and
+                // signal a change.
+                if (prop->isTouched() != touched) {
+                    Property::StatusBits bit;
+                    bit.set(Property::Touched);
+                    prop->setStatus(bit, touched);
+                }
+            }
+            obj->setLogTouchedBits(bits);
+        }
+    }
+};
+
 /// Document properties a restore to a version leaves alone (sec 24.5):
 /// where the document lives and who it is, which a version of it does
 /// not change, and what the log itself keeps there. The label is who it
@@ -4926,12 +5090,10 @@ size_t Document::_replayLog(int64_t after, int64_t& last, int64_t head, bool* wh
     std::map<Key, LogOp> added;
     std::set<Key> removed;
     std::set<long> touch;
-    // Whether an object was recomputed after its inputs last changed -- a
-    // recompute record naming it -- which is its touched state at the
-    // crash, and which restoring the inputs would lose.
-    std::map<long, int64_t> lastInput;
-    std::map<long, int64_t> lastDone;
+    // The touched state the rows leave (sec 27.58).
+    TouchedFold touched;
     auto forget = [&](long cid) {
+        touched.forget(cid);
         for (auto it = values.begin(); it != values.end();)
             it = std::get<1>(it->first) == cid ? values.erase(it) : std::next(it);
         for (auto it = added.begin(); it != added.end();)
@@ -4945,18 +5107,7 @@ size_t Document::_replayLog(int64_t after, int64_t& last, int64_t head, bool* wh
     for (const auto& t : store.chain(head ? head : log->head(), after + 1)) {
         auto ops = store.ops(t.seq);
         if (t.kind == "recompute" && ops.empty()) {
-            // The record (sec 21): {"id":N,"name":...[,"error":...]} per object;
-            // one that failed stays touched.
-            const std::string& j = t.script;
-            const std::string tag = "{\"id\":";
-            for (auto pos = j.find(tag); pos != std::string::npos;) {
-                auto next = j.find(tag, pos + tag.size());
-                const std::string entry = j.substr(pos, next == std::string::npos ? next : next - pos);
-                long cid = std::atol(entry.c_str() + tag.size());
-                if (entry.find("\"error\":") == std::string::npos)
-                    lastDone[cid] = t.seq;
-                pos = next;
-            }
+            touched.record(t.script, false);
             ++rows;
             last = t.seq;
             continue;
@@ -4989,7 +5140,6 @@ size_t Document::_replayLog(int64_t after, int64_t& last, int64_t head, bool* wh
             Key key(o.ckind, o.cid, o.prop);
             if (o.op == "create" && o.ckind == "obj") {
                 forget(o.cid);
-                lastInput[o.cid] = t.seq;
                 auto& obj = objects[o.cid];
                 obj.exists = true;
                 obj.name = o.cname;
@@ -5012,15 +5162,11 @@ size_t Document::_replayLog(int64_t after, int64_t& last, int64_t head, bool* wh
                 removed.insert(key);
             }
             else if (o.op == "set") {
+                touched.forward(o);
                 if (!o.vafter.empty())
                     values[key] = o.vafter;
                 else if (o.derived && o.ckind == "obj")
                     touch.insert(o.cid);
-                // Only a recompute record says an object was recomputed: a
-                // primitive rewrites its shape as its input changes, and is
-                // touched all the same (sec 20.3).
-                if (o.ckind == "obj" && !o.derived && !removes.count(o.cid))
-                    lastInput[o.cid] = t.seq;
             }
         }
         ++rows;
@@ -5075,7 +5221,14 @@ size_t Document::_replayLog(int64_t after, int64_t& last, int64_t head, bool* wh
                 c->removeDynamicProperty(std::get<2>(key).c_str());
         });
     }
-    // 3. Every value, the newest the tail wrote.
+    // 3. Every value, the newest the tail wrote -- each write touches what it
+    // writes, so the touched state is taken first.
+    std::set<long> valued;
+    for (const auto& kv : values) {
+        if (std::get<0>(kv.first) == "obj")
+            valued.insert(std::get<1>(kv.first));
+    }
+    const auto touchedNow = touched.save(*this, valued);
     for (const auto& kv : values) {
         guarded("value of", std::get<2>(kv.first), [&]() {
             auto c = container(kv.first);
@@ -5091,20 +5244,10 @@ size_t Document::_replayLog(int64_t after, int64_t& last, int64_t head, bool* wh
             restoreValue(*prop, v);
         });
     }
-    // 4. The touched state the session had: an object whose inputs changed
-    // after its last recompute, or whose derived values the log did not
-    // keep (sec 24.1), is touched; one recomputed since is not -- restoring
-    // its inputs touched it, and its outputs are restored too.
-    for (const auto& kv : lastInput) {
-        auto obj = getObjectByID(kv.first);
-        if (!obj)
-            continue;
-        auto done = lastDone.find(kv.first);
-        if (done != lastDone.end() && done->second >= kv.second && !touch.count(kv.first))
-            obj->purgeTouched();
-        else
-            obj->touch();
-    }
+    // 4. The touched state the session had: the anchor's with what the rows
+    // said on top (sec 27.58), and an object whose derived values the log
+    // did not keep (sec 24.1) touched.
+    touched.apply(*this, touchedNow);
     for (long cid : touch) {
         if (auto obj = getObjectByID(cid))
             obj->touch();
@@ -5913,10 +6056,11 @@ struct LogFold
     std::map<Key, LogOp> added;          // there at the end, with what adds it
     std::set<Key> removed;               // gone at the end
     std::set<long> touch;                // its derived values the log did not keep
-    std::set<long> derived;              // objects with a derived value in the rows
+    TouchedFold touched;                 // the touched state, sec 27.58
 
     void forget(long cid)
     {
+        touched.forget(cid);
         for (auto it = values.begin(); it != values.end();)
             it = std::get<1>(it->first) == cid ? values.erase(it) : std::next(it);
         for (auto it = added.begin(); it != added.end();)
@@ -5951,8 +6095,7 @@ struct LogFold
                 added[key] = o;
             }
             else if (o.op == "set") {
-                if (o.derived && o.ckind == "obj")
-                    derived.insert(o.cid);
+                touched.back(o);
                 if (!o.vbefore.empty()) {
                     values[key] = o.vbefore;
                     if (o.derived)
@@ -6000,8 +6143,7 @@ struct LogFold
                 removed.insert(key);
             }
             else if (o.op == "set") {
-                if (o.derived && o.ckind == "obj")
-                    derived.insert(o.cid);
+                touched.forward(o);
                 if (!o.vafter.empty()) {
                     values[key] = o.vafter;
                     if (o.derived)
@@ -6121,6 +6263,8 @@ bool Document::_moveAlongLog(int64_t fromHead, int64_t toSeq, bool views)
             // past it.
             if (meet < (*it)->parent && jumps(**it, from))
                 return false;
+            if ((*it)->kind == "recompute")
+                fold.touched.record((*it)->script, true);
             continue;
         }
         fold.back(ops, views);
@@ -6130,6 +6274,8 @@ bool Document::_moveAlongLog(int64_t fromHead, int64_t toSeq, bool views)
         if (ops.empty()) {
             if (jumps(*t, to))
                 return false;
+            if (t->kind == "recompute")
+                fold.touched.record(t->script, false);
             continue;
         }
         if (!fold.forward(ops, views))
@@ -6196,9 +6342,15 @@ bool Document::_moveAlongLog(int64_t fromHead, int64_t toSeq, bool views)
                 c->removeDynamicProperty(std::get<2>(key).c_str());
         });
     }
-    // 3. Every value that differs from the document's.
+    // 3. Every value that differs from the document's -- each write touches
+    // what it writes, so the touched state is taken first.
+    std::set<long> valued;
+    for (const auto& kv : want) {
+        if (std::get<0>(kv.first) == "obj")
+            valued.insert(std::get<1>(kv.first));
+    }
+    const auto touchedNow = fold.touched.save(*this, valued);
     CaptureConfig config(*this);
-    std::set<long> written;
     for (auto& kv : want) {
         guarded("value of", std::get<2>(kv.first), [&]() {
             auto c = container(kv.first);
@@ -6218,22 +6370,15 @@ bool Document::_moveAlongLog(int64_t fromHead, int64_t toSeq, bool views)
                 return;
             log->restoreBlobsOf(fold.values[kv.first]);
             restoreValue(*prop, v);
-            if (std::get<0>(kv.first) == "obj")
-                written.insert(std::get<1>(kv.first));
         });
     }
-    // 4. Touched as the end state was: an object whose derived values the log
-    // did not keep is touched; one whose derived values came back with its
-    // inputs is not -- writing the inputs touched it.
+    // 4. Touched as the end state was: the state the document had with what
+    // the crossed rows said on top (sec 27.58), and an object whose derived
+    // values the log did not keep touched.
+    fold.touched.apply(*this, touchedNow);
     for (long cid : fold.touch) {
         if (auto obj = getObjectByID(cid))
             obj->touch();
-    }
-    for (long cid : written) {
-        if (fold.touch.count(cid) || !fold.derived.count(cid))
-            continue;
-        if (auto obj = getObjectByID(cid))
-            obj->purgeTouched();
     }
     // 5. What is gone at the end.
     for (const auto& kv : fold.objects) {
@@ -7749,6 +7894,17 @@ int Document::recompute(const std::vector<App::DocumentObject*> &objs, bool forc
     FC_TIME_INIT(t);
 
     Base::ObjectStatusLocker<Document::Status, Document> exe(Document::Recomputing, this);
+    // Every object's touched state before anything here changes it, for the
+    // recompute record (docs/TransactionLog.md sec 27.58). Asked without
+    // making the log, which is made where it always was, after the
+    // recompute: made here, its end-of-process flush was registered before
+    // the statics OCCT makes on first use in the recompute, and ran after
+    // they were gone (Part_tests_run, FeaturePartCutTest.testMustExecute).
+    std::map<long, TouchedState> touchedBefore;
+    if (DocumentParams::getTransactionLog() != 0 && !d->noLog) {
+        for (auto obj : d->objectArray)
+            touchedBefore.emplace(obj->getID(), touchedStateOf(*obj));
+    }
     signalBeforeRecompute(*this);
 
     // The input recompute stratum. Every parameter settles here, in its own
@@ -7946,10 +8102,21 @@ int Document::recompute(const std::vector<App::DocumentObject*> &objs, bool forc
     // CAMTests.TestPathHelix -- delete objects topoSortedObjects still points
     // at. It is logged after the implicit transaction of the derived writes,
     // so it follows them.
+    // With each object's touched state before and after (sec 27.58), and
+    // any other object whose touched state the recompute changed.
     auto log = getTransactionLog();
     std::vector<TransactionLog::RecomputedObject> record;
     if (log) {
         record.reserve(done.size());
+        auto withState = [&](TransactionLog::RecomputedObject& r, const TouchedState& after) {
+            auto it = touchedBefore.find(r.id);
+            if (it != touchedBefore.end()) {
+                r.before = it->second.bits;
+                r.beforeProps = it->second.props;
+            }
+            r.after = after.bits;
+            r.afterProps = after.props;
+        };
         for (const auto& d : done) {
             auto obj = d.first;
             if (!obj->isAttachedToDocument())
@@ -7962,6 +8129,24 @@ int Document::recompute(const std::vector<App::DocumentObject*> &objs, bool forc
                 const char* msg = getErrorDescription(obj);
                 r.message = msg ? msg : "";
             }
+            withState(r, touchedStateOf(*obj));
+            record.push_back(std::move(r));
+        }
+        for (auto obj : d->objectArray) {
+            if (doneAt.count(obj))
+                continue;
+            auto it = touchedBefore.find(obj->getID());
+            if (it == touchedBefore.end())
+                continue;
+            TouchedState now = touchedStateOf(*obj);
+            if (now == it->second)
+                continue;
+            TransactionLog::RecomputedObject r;
+            r.id = obj->getID();
+            r.seconds = 0;
+            r.error = false;
+            r.done = false;
+            withState(r, now);
             record.push_back(std::move(r));
         }
     }
@@ -7970,8 +8155,12 @@ int Document::recompute(const std::vector<App::DocumentObject*> &objs, bool forc
 
     if (log) {
         commitImplicitTransaction();
-        log->onRecompute(record, std::chrono::duration<double>(
-                                   std::chrono::steady_clock::now() - recomputeClock).count());
+        // A transaction still open holds writes made before the recompute:
+        // the record follows its row (sec 27.59).
+        log->onRecompute(record,
+                         std::chrono::duration<double>(std::chrono::steady_clock::now()
+                                                       - recomputeClock).count(),
+                         d->activeUndoTransaction);
     }
 
     if(!d->skippedObjs.empty())

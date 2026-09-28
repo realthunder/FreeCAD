@@ -28,6 +28,7 @@
 #include <functional>
 #include <memory>
 #include <unordered_map>
+#include <vector>
 #include <Base/Factory.h>
 #include <Base/Persistence.h>
 #include <App/PropertyContainer.h>
@@ -83,6 +84,12 @@ public:
     /// the kind the log records ("undo") and the row it inverts.
     std::string LogKind;
     int64_t Inverts {0};
+    /** Log writes held until this transaction's own row is written
+     * (docs/TransactionLog.md sec 27.59): a recompute run while it is open
+     * comes after its writes, and its record must follow its row. Dropped
+     * with the transaction when it is aborted.
+     */
+    std::vector<std::function<void(TransactionLog&)>> AfterLogRow;
     /** Take each changed property's derived flag from `from`, the
      * transaction this one is the inverse of (sec 24.2). The flag is set
      * where the write happens -- the owner is recomputing -- and an undo's
@@ -199,8 +206,16 @@ protected:
         /// the copy as an after value, so the before value it now is need
         /// not be serialised again (docs/TransactionLog.md sec 25.4).
         std::shared_ptr<std::string> logHash;
+        /// The touched state before the first write of this transaction,
+        /// for the log (sec 27.58): the property's Touched bit and its
+        /// object's, as TransactionLog::touchedBits() packs them; -1 for a
+        /// container that is not a document object.
+        int touchedBefore = -1;
     };
     std::unordered_map<int64_t, PropData> _PropChangeMap;
+    /// The object's own touched bits before this transaction first wrote
+    /// any of its properties; -1 until then.
+    int _objectBitsBefore = -1;
 
     std::string _NameInDocument;
 

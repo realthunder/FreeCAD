@@ -135,7 +135,7 @@ public:
              " host TEXT, opened REAL, closed REAL)");
         exec("CREATE TABLE IF NOT EXISTS op(txn INTEGER, idx INTEGER, op TEXT, ckind TEXT,"
              " cid INTEGER, cname TEXT, ctype TEXT, prop TEXT, ptype TEXT, meta TEXT,"
-             " vbefore TEXT, vafter TEXT, derived INTEGER, PRIMARY KEY(txn, idx))");
+             " vbefore TEXT, vafter TEXT, derived INTEGER, touched INTEGER, PRIMARY KEY(txn, idx))");
         exec("CREATE INDEX IF NOT EXISTS op_container ON op(cid, prop)");
         // `manifest` names the version's entry list, an entity of kind
         // `manifest` (sec 27.54).
@@ -280,7 +280,7 @@ public:
             step(head);
 
             auto op = prepare("INSERT INTO op(txn,idx,op,ckind,cid,cname,ctype,prop,ptype,meta,"
-                              "vbefore,vafter,derived) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)");
+                              "vbefore,vafter,derived,touched) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
             int idx = 0;
             for (auto& o : ops) {
                 o.txn = txn.seq;
@@ -299,6 +299,10 @@ public:
                 bindText(op, 11, o.vbefore);
                 bindText(op, 12, o.vafter);
                 sqlite3_bind_int(op, 13, o.derived ? 1 : 0);
+                if (o.touched < 0)
+                    sqlite3_bind_null(op, 14);
+                else
+                    sqlite3_bind_int(op, 14, o.touched);
                 step(op);
             }
             exec("COMMIT");
@@ -521,7 +525,7 @@ public:
     std::vector<LogOp> ops(int64_t txn) override
     {
         auto s = prepare("SELECT idx,op,ckind,cid,cname,ctype,prop,ptype,meta,vbefore,vafter,"
-                         "derived FROM op WHERE txn=? ORDER BY idx");
+                         "derived,touched FROM op WHERE txn=? ORDER BY idx");
         sqlite3_bind_int64(s, 1, txn);
         std::vector<LogOp> out;
         while (sqlite3_step(s) == SQLITE_ROW) {
@@ -539,6 +543,7 @@ public:
             o.vbefore = text(s, 9);
             o.vafter = text(s, 10);
             o.derived = sqlite3_column_int(s, 11) != 0;
+            o.touched = sqlite3_column_type(s, 12) == SQLITE_NULL ? -1 : sqlite3_column_int(s, 12);
             out.push_back(std::move(o));
         }
         sqlite3_reset(s);
@@ -576,8 +581,8 @@ public:
 
     bool getOp(int64_t txn, int idx, LogOp& o) override
     {
-        auto s = prepare("SELECT op,ckind,cid,cname,ctype,prop,ptype,meta,vbefore,vafter,derived"
-                         " FROM op WHERE txn=? AND idx=?");
+        auto s = prepare("SELECT op,ckind,cid,cname,ctype,prop,ptype,meta,vbefore,vafter,derived,"
+                         "touched FROM op WHERE txn=? AND idx=?");
         sqlite3_bind_int64(s, 1, txn);
         sqlite3_bind_int(s, 2, idx);
         if (sqlite3_step(s) != SQLITE_ROW) {
@@ -597,6 +602,7 @@ public:
         o.vbefore = text(s, 8);
         o.vafter = text(s, 9);
         o.derived = sqlite3_column_int(s, 10) != 0;
+        o.touched = sqlite3_column_type(s, 11) == SQLITE_NULL ? -1 : sqlite3_column_int(s, 11);
         sqlite3_reset(s);
         return true;
     }
@@ -769,7 +775,7 @@ public:
             sqlite3_bind_int64(s, 11, txn.seq);
             step(s);
             auto op = prepare("INSERT INTO op(txn,idx,op,ckind,cid,cname,ctype,prop,ptype,meta,"
-                              "vbefore,vafter,derived) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)");
+                              "vbefore,vafter,derived,touched) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
             int idx = 0;
             for (auto& o : ops) {
                 o.txn = txn.seq;
@@ -788,6 +794,10 @@ public:
                 bindText(op, 11, o.vbefore);
                 bindText(op, 12, o.vafter);
                 sqlite3_bind_int(op, 13, o.derived ? 1 : 0);
+                if (o.touched < 0)
+                    sqlite3_bind_null(op, 14);
+                else
+                    sqlite3_bind_int(op, 14, o.touched);
                 step(op);
             }
             collectEntities();

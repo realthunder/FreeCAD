@@ -7276,3 +7276,116 @@ schema 4 file (the file as found) is to be kept so that it materialises as
 schema 5, not written out whole as 27.32 still does for it.
 
 **Order (user):** the touched state first, then the fallback. Next session.
+
+### 27.59 Step 1 of 27.58 as built: the touched state in the rows (2026-09-28)
+
+**A set carries the state before it.** `op` has a column `touched`, NULL
+unless recorded: `DocumentObject::LogTouchedBit` packed -- the property's
+Touched bit (1) and its object's Touch (2), Enforce (4) and explicit
+recompute request (8, `touch()`/`enforceRecompute()`, which the recompute's
+optimisation reads apart from Enforce). `TransactionObject::setProperty`
+takes it at the property's first write of the transaction; the object's
+bits are taken once, at the transaction's first write to the object, so
+every op of one object in a row says the same and the order the row lists
+them in does not matter. A removal's sets carry the removed object's state
+(a removal leaves it alone). Not recorded: a create's sets (the object was
+not there), any write made while the document recomputes (the recompute's
+state is in its record), a view's or the document's. "Any", not only a
+derived write: on scanner.FCStd a Body feature's `SuppressedShape` is
+written while an earlier feature runs, and a binder's `Shape` is refreshed
+from its source after the binder itself was purged -- neither is the
+owner's own output, and each recorded the state half way through the
+recompute, which then overrode the record's on the way back (nine
+features touched and one binder clean that should not have been).
+
+The state after a set is the write's: the property touched, and its
+object's Touch set unless the property is an output (`Prop_Output`,
+`Property::Output`) or the object is `NoTouch` -- as
+`DocumentObject::onChanged` does it. The walk reads that from the live
+property, so no after column is needed.
+
+**A recompute record carries each object's before and after.** At the
+start of `Document::recompute`, with the log on, every object's state is
+taken (`touchedStateOf`: the bits and the sorted touched property names;
+615 objects is well under a millisecond). Each entry of the record gains
+`"b"` and `"p"` (the state before; left out for an object the recompute
+made) and, when the object did not end clean, `"a"` and `"q"` -- a failed
+one, or one marked and not run. An object the recompute neither ran nor
+purged whose state it changed all the same -- a dependent a partial
+recompute marked -- gets an entry with no `"s"`.
+
+**The record follows the transaction it ran in (new).** A recompute run
+inside an open transaction -- a Gui command's edit, recompute, commit --
+was recorded before that transaction's row: its record went in at
+`signalRecomputed`, the row at the commit. The rows then said the edit
+touched the object after the recompute purged it. `onRecompute` now takes
+the open transaction and, when there is one, holds the record on it
+(`Transaction::AfterLogRow`); `_commitTransaction` writes it right after
+the row. An aborted transaction drops its records with it: the values the
+recompute ran on are gone, and so are its derived writes. Not covered: an
+edit made after the recompute in the same transaction is in the row before
+the record, so crossing the record forward purges it (a command that
+edits after its recompute and leaves the object touched).
+
+**The walk** (`TouchedFold`, used by `_moveAlongLog` and `_replayLog`)
+folds the crossed rows in order -- a set taken back leaves its before, a
+set done leaves the property touched and marks the object touched unless
+the property is an output, a record crossed back leaves its before, forward
+its after (clean when it records none) -- and applies the result after the
+values are written: each object the fold names or whose value was written
+is set to the state it had before the writes with what the rows said on
+top. An object no crossed row speaks of keeps its flags, as before. The
+rule of 27.34 step 4 (purge an object whose derived values came back) and
+the replay's last-input/last-recompute comparison are gone; an object
+whose derived value the log did not keep is still touched.
+
+**Measured** on scanner.FCStd as 27.57 ran it (the copy saved at schema 5,
+31 objects touched at open), edits of `Pad.Length` each with its recompute
+in the transaction, then a restore to version 1: after 3 edits and after
+100, **31 touched after the restore, the same 31** -- none missing, none
+extra -- in 0.11 s and 0.16 s. 27.57 had 25 and 89. Before the fix to
+writes made during a recompute above, the same run left nine features
+touched and one binder clean.
+
+**Found on the way: making the log at the start of a recompute crashed
+three Part tests at exit.** The snapshot first asked `getTransactionLog()`,
+which makes the log on first use -- and with it the worker's end-of-process
+flush (`std::atexit`). A document whose first write is its first recompute
+then registered that flush before the statics OCCT makes lazily in the
+boolean, which are destroyed before it runs; the flush wrote the pending
+shape with them gone (`FeaturePart{Cut,Fuse,Common}Test.testMustExecute`,
+SIGSEGV in `GeomTools_CurveSet::PrintCurve` on the worker). The recompute
+now asks the preference and `noLog`, and the log is made where it was.
+Left as is: the flush at exit still writes whatever is pending, after
+static destruction has begun; a pending shape at exit in a process that
+made its log before its first boolean would do the same.
+
+**Undo is not the walk.** A hot undo re-applies its transaction's copies
+and `TransactionGuard` touches every property it wrote, as FreeCAD always
+has: on the run above, undoing the restore leaves 86 objects touched where
+the head had 20. And a flag the walk changed with no value -- an object
+written by no crossed row whose state the rows say differs -- is not in the
+restore's transaction, so undo leaves it as the restore did (the Python
+case's `C`). Before this, the walk touched no such object, so its undo got
+it right by leaving it alone. Proposed, not built: an undo or redo of a
+logged row applies the touched state as the walk does, and a restore
+records the flags it changed without a value (in its row's script, as a
+recompute record does, so a cold undo reads it too).
+
+**Tests.** Gtest `touchedStateInTheRows`: a set's before bits (clean, and
+after an edit the edit's), a derived write's none, the record's `"b"`/`"p"`
+and no `"a"` when clean, the record right after the row it ran in, and an
+aborted transaction's record gone. `undoAndRedoAreLoggedAsInverses` and
+`selectiveUndoRefusesWhatChangedSince` look the edit's row up rather than
+taking the last. Python `testTouchedStateThroughTheRows`: three objects, a
+command-style edit with its recompute, an edit left touched, a save, a
+recompute and another edit, then a restore through the rows -- each object
+touched as at the version. Under the old rule `C`, written by no crossed
+row, kept the clean flag the later recompute gave it (by reading, not run).
+
+**Gates** (with 27.60 in the tree; this step was not built on its own):
+Python 2943 OK (52 skipped, 6 expected failures), ctest 843/843, the GUI
+checks RC 15, BC 27, VC 18, PC 28, FC 16 -- each check with its own
+`XDG_CACHE_HOME` (27.11): run twice in one cache, the second recovery
+check recovers what the first run's other checks left.
+

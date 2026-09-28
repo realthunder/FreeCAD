@@ -435,6 +435,80 @@ TEST_F(TransactionLogTest, recomputeRecordAndSession)
     EXPECT_EQ(txns[txns.size() - 2].kind, "implicit");
 }
 
+TEST_F(TransactionLogTest, touchedStateInTheRows)
+{
+    // Sec 27.58: a set records the touched state before it, and a recompute
+    // record each object's before and, when not clean, after. Sec 27.59: a
+    // recompute run inside a transaction is recorded after its row.
+    using Obj = App::DocumentObject;
+    auto& store = log().store();
+    doc()->openTransaction("create");
+    auto obj = make("Obj");
+    doc()->commitTransaction();
+    obj->touch();
+    doc()->recompute();
+    ASSERT_EQ(obj->getLogTouchedBits(), 0);
+    ASSERT_FALSE(obj->Integer.isTouched());
+
+    doc()->openTransaction("edit");
+    obj->Integer.setValue(5);
+    const int atRecompute = obj->getLogTouchedBits();
+    doc()->recompute();
+    doc()->commitTransaction();
+    EXPECT_EQ(obj->getLogTouchedBits(), 0);
+    auto txns = store.transactions();
+    ASSERT_GE(txns.size(), 2u);
+    const auto& rec = txns.back();
+    const auto& edit = txns[txns.size() - 2];
+    ASSERT_EQ(rec.kind, "recompute");
+    EXPECT_EQ(edit.name, "edit");
+    EXPECT_EQ(rec.parent, edit.seq);
+    int integerBefore = -2;
+    int derivedBefore = -2;
+    for (const auto& o : store.ops(edit.seq)) {
+        if (o.op == "set" && o.prop == "Integer")
+            integerBefore = o.touched;
+        if (o.op == "set" && o.derived)
+            derivedBefore = o.touched;
+    }
+    EXPECT_EQ(integerBefore, 0);
+    // A derived write's state is the record's.
+    EXPECT_EQ(derivedBefore, -1);
+    const std::string id = "{\"id\":" + std::to_string(obj->getID()) + ",";
+    const auto at = rec.script.find(id);
+    ASSERT_NE(at, std::string::npos) << rec.script;
+    const std::string entry = rec.script.substr(at, rec.script.find('}', at) - at);
+    EXPECT_NE(entry.find(",\"b\":" + std::to_string(atRecompute) + ",\"p\":[\"Integer\"]"),
+              std::string::npos) << entry;
+    EXPECT_EQ(entry.find("\"a\""), std::string::npos) << entry;
+
+    // Two edits and no recompute: the second's before is the first's after.
+    doc()->openTransaction("one");
+    obj->Integer.setValue(6);
+    doc()->commitTransaction();
+    const int afterOne = obj->getLogTouchedBits();
+    EXPECT_TRUE(afterOne & Obj::LogTouch);
+    doc()->openTransaction("two");
+    obj->Integer.setValue(7);
+    doc()->commitTransaction();
+    txns = store.transactions();
+    ASSERT_EQ(txns.back().name, "two");
+    int second = -2;
+    for (const auto& o : store.ops(txns.back().seq)) {
+        if (o.op == "set" && o.prop == "Integer")
+            second = o.touched;
+    }
+    EXPECT_EQ(second, afterOne | Obj::LogPropTouched);
+
+    // An aborted transaction takes its recompute record with it.
+    const auto count = store.transactions().size();
+    doc()->openTransaction("dropped");
+    obj->Integer.setValue(8);
+    doc()->recompute();
+    doc()->abortTransaction();
+    EXPECT_EQ(store.transactions().size(), count);
+}
+
 TEST_F(TransactionLogTest, writerOutlivesTransaction)
 {
     // Undo off: the transaction is deleted at commit, and with it the
@@ -1439,9 +1513,13 @@ TEST_F(TransactionLogTest, undoAndRedoAreLoggedAsInverses)
     doc()->commitTransaction();
     const int execs = obj->ExecCount.getValue();
 
+    // The recompute's record follows the row it ran in (sec 27.59).
     auto& store = log().store();
-    const int64_t edit = store.transactions().back().seq;
-    ASSERT_EQ(store.transactions().back().name, "edit");
+    const auto rows = store.transactions();
+    ASSERT_GE(rows.size(), 2u);
+    EXPECT_EQ(rows.back().kind, "recompute");
+    const int64_t edit = rows[rows.size() - 2].seq;
+    ASSERT_EQ(rows[rows.size() - 2].name, "edit");
 
     ASSERT_TRUE(doc()->undo());
     EXPECT_EQ(obj->Integer.getValue(), 4711);
@@ -1450,7 +1528,11 @@ TEST_F(TransactionLogTest, undoAndRedoAreLoggedAsInverses)
     EXPECT_EQ(obj->ExecCount.getValue(), execs);
     log().resolvePending();
 
-    auto txns = store.transactions(edit);
+    std::vector<App::LogTransaction> txns;
+    for (auto& t : store.transactions(edit)) {
+        if (t.kind != "recompute")
+            txns.push_back(t);
+    }
     ASSERT_EQ(txns.size(), 3u);
     EXPECT_EQ(txns[0].inverts, 0);
     EXPECT_EQ(txns[1].kind, "undo");
@@ -1588,7 +1670,16 @@ TEST_F(TransactionLogTest, selectiveUndoRefusesWhatChangedSince)
     doc()->openTransaction("create");
     auto a = make("A");
     doc()->commitTransaction();
-    auto lastSeq = [&]() { return log().store().transactions().back().seq; };
+    // The newest row that is not a recompute's record, which follows the
+    // row it ran in (sec 27.59).
+    auto lastSeq = [&]() {
+        const auto rows = log().store().transactions();
+        for (auto it = rows.rbegin(); it != rows.rend(); ++it) {
+            if (it->kind != "recompute")
+                return it->seq;
+        }
+        return int64_t(0);
+    };
 
     doc()->openTransaction("int");
     a->Integer.setValue(1);

@@ -111,20 +111,36 @@ public:
                      const char* origin = "", int64_t inverts = 0);
 
     /// One object a recompute made up to date or failed on, for the
-    /// recompute record.
+    /// recompute record, or one whose touched state it changed otherwise.
     struct RecomputedObject
     {
         long id;
         double seconds;      ///< in its execute(); 0 when only its touches were purged
         bool error;
         std::string message;
+        /// False for an object the recompute neither made up to date nor
+        /// failed on, whose touched state it changed all the same -- one it
+        /// marked for a recompute it did not run (a partial recompute).
+        bool done {true};
+        /// The touched state just before the recompute (sec 27.58): the
+        /// object's DocumentObject::LogTouchedBit bits and the names of its
+        /// touched properties; `before` is -1 for an object the recompute
+        /// made. `after` and `afterProps` the same once it is done.
+        int before {-1};
+        std::vector<std::string> beforeProps;
+        int after {0};
+        std::vector<std::string> afterProps;
     };
     /// The recompute pseudo transaction (sec 11, 27.53): no ops, a record
     /// of the objects the recompute made up to date or failed on -- not
     /// every one it looked at -- by id, with the time each took, the error
-    /// text of a failure, and the whole duration. The environment is the
-    /// row's session's. Written at Document::signalRecomputed.
-    void onRecompute(const std::vector<RecomputedObject>& objects, double seconds);
+    /// text of a failure, and the whole duration, and each one's touched
+    /// state before and after (sec 27.58). The environment is the row's
+    /// session's. Written at Document::signalRecomputed; with a transaction
+    /// `open`, after that transaction's row instead (sec 27.59), since the
+    /// writes made before the recompute are in it.
+    void onRecompute(const std::vector<RecomputedObject>& objects, double seconds,
+                     Transaction* open = nullptr);
 
     /// The archive entries a version holds, as read: (name, bytes), the
     /// first being Document.xml, then GuiDocument.xml when there is one.

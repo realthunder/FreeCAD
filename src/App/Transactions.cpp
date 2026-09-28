@@ -693,8 +693,22 @@ void TransactionObject::setProperty(const Property* pcProp)
             data.property->setStatusValue(pcProp->getStatus());
         }
         data.propertyType = pcProp->getTypeId();
-        if (auto obj = Base::freecad_dynamic_cast<DocumentObject>(pcProp->getContainer()))
+        if (auto obj = Base::freecad_dynamic_cast<DocumentObject>(pcProp->getContainer())) {
             data.derived = obj->isRecomputing();
+            // The touched state before this write, for the log (sec 27.58):
+            // the object's as it was before the transaction first wrote to
+            // it, so every op of the object in the row says the same. None
+            // for a write a recompute makes -- derived or not: a binder
+            // refreshed from its source, a feature's flags set as another
+            // runs -- whose state is the recompute record's.
+            auto doc = obj->getDocument();
+            if (!doc || !doc->testStatus(Document::Recomputing)) {
+                if (_objectBitsBefore < 0)
+                    _objectBitsBefore = obj->getLogTouchedBits();
+                data.touchedBefore = _objectBitsBefore
+                    | (pcProp->isTouched() ? DocumentObject::LogPropTouched : 0);
+            }
+        }
     }
 }
 
