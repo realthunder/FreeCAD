@@ -252,6 +252,55 @@ inline std::ostream & operator << (std::ostream &s, const QByteArray &bytes)
 static std::unordered_map<const ElementMap*, unsigned> ToId;
 static std::unordered_map<unsigned, ElementMapPtr> _IdToElementMap;
 
+namespace {
+thread_local Data::ElementMapIdScope* idScope = nullptr;
+}
+
+Data::ElementMapIdScope::ElementMapIdScope()
+    : _outer(idScope)
+{
+    idScope = this;
+}
+
+Data::ElementMapIdScope::~ElementMapIdScope()
+{
+    idScope = _outer;
+}
+
+Data::ElementMapIdScope* Data::ElementMapIdScope::current()
+{
+    return idScope;
+}
+
+unsigned Data::ElementMapIdScope::idOf(const ElementMap* map)
+{
+    auto res = _toId.emplace(map, 0);
+    if (res.second)
+        res.first->second = static_cast<unsigned>(_toId.size());
+    return res.first->second;
+}
+
+Data::ElementMapPtr& Data::ElementMapIdScope::restored(unsigned id)
+{
+    return _fromId[id];
+}
+
+/// The id a map is written under: its scope's, else the one beforeSave gave.
+static unsigned savedId(const ElementMap* map, unsigned id)
+{
+    if (auto scope = Data::ElementMapIdScope::current())
+        return scope->idOf(map);
+    return id;
+}
+
+/// Where a map restored under `id` is kept: in the scope, else process-wide.
+static ElementMapPtr& restoredMap(unsigned id)
+{
+    if (auto scope = Data::ElementMapIdScope::current())
+        return scope->restored(id);
+    return _IdToElementMap[id];
+}
+
 class ElementMap : public std::enable_shared_from_this<ElementMap> {
 public:
 
@@ -380,7 +429,7 @@ public:
               const std::map<const ElementMap*,int> &childMapSet,
               const std::map<QByteArray, int> &postfixMap) const
     {
-        s << "\nElementMap " << index << ' ' << this->_id << ' ' 
+        s << "\nElementMap " << index << ' ' << savedId(this, this->_id) << ' ' 
             << this->indexedNames.size() << '\n';
 
         for (auto & v : this->indexedNames) {
@@ -481,7 +530,7 @@ public:
 
         collectChildMaps(childMapSet, childMaps, postfixMap, postfixes);
 
-        s << this->_id << " PostfixCount " << postfixes.size() << '\n';
+        s << savedId(this, this->_id) << " PostfixCount " << postfixes.size() << '\n';
         for (auto & p : postfixes)
             s << p << '\n';
         int index = 0;
@@ -500,7 +549,7 @@ public:
         if (! (s >> id >> tmp >> count) || tmp != "PostfixCount")
             FC_THROWM(Base::RuntimeError, msg);
 
-        auto & map = _IdToElementMap[id];
+        auto & map = restoredMap(id);
         if (map)
             return map;
 
@@ -537,7 +586,7 @@ public:
         if (! (s >> tmp >> index >> id >> typeCount) || tmp != "ElementMap")
             FC_THROWM(Base::RuntimeError, msg);
 
-        auto & map = _IdToElementMap[id];
+        auto & map = restoredMap(id);
         if (map) {
             do {
                 if (! std::getline(s, tmp))

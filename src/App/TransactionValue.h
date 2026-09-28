@@ -85,6 +85,10 @@ struct CaptureConfig
     /// The file's string hasher, compared by address only: the ids of it
     /// an element map uses are listed, and noted in stringIds.
     const StringHasher* hasher {nullptr};
+    /// The document the values are the log's for: the owner a detached
+    /// copy of an XLink writes relative to (capturingDocument()). Read on
+    /// the main thread only -- links are captured there (sec 24.3).
+    const Document* document {nullptr};
     CaptureConfig() = default;
     explicit CaptureConfig(const Document& doc);
 };
@@ -95,8 +99,36 @@ AppExport CapturedValue captureValue(const Document& doc, const Base::Persistenc
 AppExport CapturedValue captureValue(const CaptureConfig& config, const Base::Persistence& what);
 
 /// Restore a property from a captured value: the fragment through
-/// Property::Restore, then each attachment through RestoreDocFile.
+/// Property::Restore, each attachment through RestoreDocFile, then
+/// Property::afterRestore() -- at once, or when the innermost RestoreBatch
+/// on this thread finishes.
 AppExport void restoreValue(Property& prop, const CapturedValue& value);
+
+/** Values restored together (docs/TransactionLog.md sec 27.67). A document's
+ * restore reads every property before any afterRestore(), and some depend
+ * on it: an expression engine installs the expressions it read there, and
+ * one naming `Constraints[3]` needs the constraints restored first. While a
+ * batch lives on a thread, restoreValue() leaves afterRestore() to the
+ * batch's finish() (or its destructor), which runs them in restore order.
+ * Nothing restored in a batch may be destroyed before it finishes.
+ */
+class AppExport RestoreBatch
+{
+public:
+    RestoreBatch();
+    ~RestoreBatch();
+    RestoreBatch(const RestoreBatch&) = delete;
+    RestoreBatch& operator=(const RestoreBatch&) = delete;
+    void finish();
+    /// The innermost batch on this thread, or null.
+    static RestoreBatch* current();
+    void defer(Property& prop) { _props.push_back(&prop); }
+
+private:
+    std::vector<Property*> _props;
+    RestoreBatch* _outer;
+    bool _finished {false};
+};
 
 /** The names a capture writes for objects that have left the document
  * (docs/TransactionLog.md sec 24.3). A link's value is its target's name,
@@ -119,6 +151,16 @@ private:
     std::unordered_map<const DocumentObject*, std::string> _names;
     CaptureNames* _outer;
 };
+
+/** The document a capture on this thread is for, or null outside one
+ * (docs/TransactionLog.md sec 27.67). A detached copy of a property has no
+ * container: the undo system's copy at the first write, a value the log
+ * copies at commit. A link names its target by the owner's document, and
+ * PropertyXLink::Save of an ownerless copy writes relative to this one --
+ * without it, it wrote nothing, and every App::Link target in the log was
+ * empty.
+ */
+AppExport const Document* capturingDocument();
 
 /// SHA-1 hex of `bytes`, spelled as FileBlobManager spells it.
 AppExport std::string hashBytes(const std::string& bytes);

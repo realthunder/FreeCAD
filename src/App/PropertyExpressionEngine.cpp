@@ -392,8 +392,12 @@ void PropertyExpressionEngine::Restore(Base::XMLReader &reader)
 {
     reader.readElement("ExpressionEngine");
     int count = reader.getAttributeAsInteger("count");
-    if(!count)
+    if(!count) {
+        // Nothing to add; restoring into a live engine still empties it
+        // (afterRestore()).
+        restoredExpressions.reset(new std::vector<RestoredExpression>);
         return;
+    }
 
     int cdata = reader.getAttributeAsInteger("cdata","");
     if(reader.hasAttribute("xlink") && reader.getAttributeAsInteger("xlink"))
@@ -528,6 +532,24 @@ void PropertyExpressionEngine::afterRestore()
 
         PropertyExpressionContainer::afterRestore();
         ObjectIdentifier::DocumentMapper mapper(this->_DocMap);
+
+        // Into a live engine -- a value of the transaction log restored
+        // (docs/TransactionLog.md sec 27.67) -- the value replaces what the
+        // engine holds; a document's restore starts from an empty one.
+        auto doc = docObj->getDocument();
+        if (!docObj->isRestoring() && doc && !doc->testStatus(Document::Restoring)
+                && !expressions.empty()) {
+            std::set<std::string> kept;
+            for (auto &info : *restoredExpressions)
+                kept.insert(info.path);
+            std::vector<ObjectIdentifier> gone;
+            for (auto &v : expressions) {
+                if (!kept.count(v.first.toString()))
+                    gone.push_back(v.first);
+            }
+            for (auto &path : gone)
+                setValue(path, std::shared_ptr<Expression>());
+        }
 
         for(auto &info : *restoredExpressions) {
             try {

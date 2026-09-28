@@ -70,7 +70,12 @@ bool recordsValue(bool derived)
     return !derived || DocumentParams::getTransactionLogDerived() != 0;
 }
 
-std::string dynamicMeta(const DynamicProperty::PropData& d)
+/// A dynamic property's metadata: group, doc, then "attr[ ro][ hidden]"
+/// and, with `prop`, " status=N" -- its status bits as a save writes them
+/// (sec 27.67): an object a cold undo or a switch recreates gets them back,
+/// CopyOnChange among them, which a copy-on-change link reads off its
+/// target. A static property's status is not carried: its op has no meta.
+std::string dynamicMeta(const DynamicProperty::PropData& d, const Property* prop = nullptr)
 {
     std::string m = d.group;
     m += '\n';
@@ -79,6 +84,10 @@ std::string dynamicMeta(const DynamicProperty::PropData& d)
     m += std::to_string(d.attr);
     m += d.readonly ? " ro" : "";
     m += d.hidden ? " hidden" : "";
+    if (prop) {
+        m += " status=";
+        m += std::to_string(prop->getStatus());
+    }
     return m;
 }
 
@@ -2725,7 +2734,7 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
                     auto dyn = c.container->getDynamicPropertyData(kv.second);
                     if (!dyn.name.empty()) {
                         auto a = emit("addprop", kv.first, typeName);
-                        a->meta = dynamicMeta(dyn);
+                        a->meta = dynamicMeta(dyn, kv.second);
                     }
                     emit("set", kv.first, typeName);
                     pendOp(*kv.second, c, "durable", false);
@@ -2739,29 +2748,69 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
                 // the worker may need it: each value is copied here, the
                 // way the undo system copies a changed one, and the copy is
                 // what is serialised. Each resolves whatever was pending.
+                //
+                // The value is the one the transaction began with (sec
+                // 27.67). A removal is often the end of a cascade that
+                // wrote to the object first -- a copy-on-change link loses
+                // its copy, its target and the properties it mirrored
+                // before it goes -- and the undo system's copy at the
+                // first write is what the object was; the live value is
+                // what the cascade left.
                 std::map<std::string, Property*> props;
                 c.container->getPropertyMap(props);
                 // The touched state it goes with (sec 27.58): a removal
                 // leaves it alone, so it is the state before.
                 auto removed = Base::freecad_dynamic_cast<const DocumentObject>(tobj);
-                const int objectBits = removed ? removed->getLogTouchedBits() : -1;
+                const int objectBits = rec._objectBitsBefore >= 0 ? rec._objectBitsBefore
+                    : removed                                     ? removed->getLogTouchedBits()
+                                                                  : -1;
                 for (auto& kv : props) {
                     short ptype = c.container->getPropertyType(kv.second);
                     if ((ptype & Prop_Transient) || (ptype & Prop_NoPersist))
                         continue;
                     if (!kv.second->getName())
                         continue;
+                    auto it = rec._PropChangeMap.find(kv.second->getID());
+                    auto* first = it != rec._PropChangeMap.end() && it->second.property
+                            && it->second.propertyType == kv.second->getTypeId()
+                        ? &it->second
+                        : nullptr;
                     auto o = emit("set", kv.first, kv.second->getTypeId().getName());
-                    if (objectBits >= 0)
+                    if (first && first->touchedBefore >= 0)
+                        o->touched = first->touchedBefore;
+                    else if (objectBits >= 0)
                         o->touched = objectBits
                             | (kv.second->hasTouchedBit() ? DocumentObject::LogPropTouched : 0);
                     // A dynamic property's metadata rides on its set, so a
                     // cold undo can add it back to the recreated object.
                     auto dyn = c.container->getDynamicPropertyData(kv.second);
                     if (!dyn.name.empty())
-                        o->meta = dynamicMeta(dyn);
+                        o->meta = dynamicMeta(dyn, first ? first->property : kv.second);
+                    if (first) {
+                        task(share(*first), "durable", last(), it->first, first->logHash);
+                        continue;
+                    }
                     std::shared_ptr<const Property> copy(kv.second->Copy());
                     task(std::move(copy), "durable", last(), kv.second->getID());
+                }
+                // Dynamic properties the cascade removed before the object:
+                // gone from it, kept by the transaction, and set like the
+                // rest so a cold undo adds them back.
+                for (auto& kv : rec._PropChangeMap) {
+                    auto& data = kv.second;
+                    if (!data.property || data.name.empty())
+                        continue;
+                    auto prop = data.propertyOrig;
+                    const char* name = c.container->getPropertyName(prop);
+                    if (name && data.name == name && data.propertyType == prop->getTypeId())
+                        continue;   // still there: set above
+                    if ((data.attr & Prop_Transient) || (data.attr & Prop_NoPersist))
+                        continue;
+                    auto o = emit("set", data.name, data.propertyType.getName());
+                    if (data.touchedBefore >= 0)
+                        o->touched = data.touchedBefore;
+                    o->meta = dynamicMeta(data, data.property);
+                    task(share(data), "durable", last(), kv.first, data.logHash);
                 }
                 auto o = emit("remove", "", "");
                 o->cname = c.cname;
@@ -2776,9 +2825,10 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
                 if (!data.property) {
                     // Dynamic property added: metadata, then its value pending.
                     auto a = emit("addprop", data.name, typeName);
-                    a->meta = dynamicMeta(data);
                     const char* name = c.container->getPropertyName(prop);
-                    if (name && data.name == name) {
+                    const bool alive = name && data.name == name;
+                    a->meta = dynamicMeta(data, alive ? prop : nullptr);
+                    if (alive) {
                         emit("set", data.name, typeName);
                         pendOp(*prop, c, "durable", false);
                     }
@@ -2791,7 +2841,7 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
                     if (data.name.empty())
                         continue;
                     auto o = emit("delprop", data.name, typeName);
-                    o->meta = dynamicMeta(data);
+                    o->meta = dynamicMeta(data, data.property);
                     task(share(data), "durable", last(), kv.first);
                     continue;
                 }

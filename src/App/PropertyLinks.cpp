@@ -39,6 +39,7 @@
 
 #include "PropertyLinks.h"
 #include "Application.h"
+#include "TransactionValue.h"
 #include "FileHistory.h"
 #include "TransactionLog.h"
 #include "Document.h"
@@ -1900,6 +1901,14 @@ void PropertyLinkSub::purgeTouched() {
 #define ATTR_SHADOW "shadow"
 #define ATTR_MAPPED "mapped"
 
+/// Whether a link target is written: in the document, or removed while a
+/// transaction-log capture holds the name it had (docs/TransactionLog.md sec
+/// 24.3, 27.67) -- a value of an object removed with its target.
+static bool isSavedTarget(const DocumentObject* obj)
+{
+    return obj && (obj->isAttachedToDocument() || CaptureNames::find(obj));
+}
+
 void PropertyLinkSub::Save (Base::Writer &writer) const
 {
     assert(_cSubList.size() == _ShadowSubList.size());
@@ -1907,7 +1916,7 @@ void PropertyLinkSub::Save (Base::Writer &writer) const
     std::string internal_name;
     // it can happen that the object is still alive but is not part of the document anymore and thus
     // returns 0
-    if (_pcLinkSub && _pcLinkSub->isAttachedToDocument())
+    if (isSavedTarget(_pcLinkSub))
         internal_name = _pcLinkSub->getExportName();
     writer.Stream() << writer.ind() << "<LinkSub value=\""
         <<  internal_name <<"\" count=\"" <<  _cSubList.size();
@@ -2877,7 +2886,7 @@ void PropertyLinkSubList::Save (Base::Writer &writer) const
 
     int count = 0;
     for(auto obj : _lValueList) {
-        if(obj && obj->isAttachedToDocument())
+        if(isSavedTarget(obj))
             ++count;
     }
     writer.Stream() << writer.ind() << "<LinkSubList count=\"" << count <<"\">\n";
@@ -2886,7 +2895,7 @@ void PropertyLinkSubList::Save (Base::Writer &writer) const
     bool exporting = owner && owner->isExporting();
     for (int i = 0; i < getSize(); i++) {
         auto obj = _lValueList[i];
-        if(!obj || !obj->isAttachedToDocument())
+        if(!isSavedTarget(obj))
             continue;
         const auto &shadow = _ShadowSubList[i];
         // shadow.second stores the old style element name. For backward
@@ -4661,18 +4670,23 @@ const char *PropertyXLink::getPathResolveModeName() const
 
 void PropertyXLink::Save (Base::Writer &writer) const {
     auto owner = dynamic_cast<const DocumentObject *>(getContainer());
-    if(!owner || !owner->getDocument())
+    // A detached copy -- a before value the undo system took, a value the
+    // transaction log copies at commit -- has no owner; it writes relative
+    // to the document the log's capture is for (docs/TransactionLog.md sec
+    // 27.67). It holds no _pcLink, only the names copyTo() kept.
+    const Document* ownerDoc = owner ? owner->getDocument() : capturingDocument();
+    if(!ownerDoc)
         return;
 
     assert(_SubList.size() == _ShadowSubList.size());
 
-    auto exporting = owner->isExporting();
+    auto exporting = owner && owner->isExporting();
     if(_pcLink && exporting && _pcLink->isExporting()) {
         // this means, we are exporting the owner and the linked object together.
         // Lets save the export name
         writer.Stream() << writer.ind() << "<XLink name=\"" << _pcLink->getExportName();
     }else {
-        if (filePath.empty() && _pcLink && _pcLink->getDocument() != owner->getDocument()) {
+        if (owner && filePath.empty() && _pcLink && _pcLink->getDocument() != owner->getDocument()) {
             const char *filename = _pcLink->getDocument()->getFileName();
             if(!filename || *filename == 0) {
                 FC_ERR("Linked document not saved for object " << _pcLink->getFullName());
@@ -4687,6 +4701,21 @@ void PropertyXLink::Save (Base::Writer &writer) const {
 
         const char *path = filePath.c_str();
         std::string _path;
+        if (!owner && filePath.empty() && !docName.empty() && docName != ownerDoc->getName()) {
+            // A copy of a link to another document that was never saved
+            // with its file: the file, as the owner's save would write it.
+            auto doc = GetApplication().getDocument(docName.c_str());
+            const char* filename = doc ? doc->getFileName() : nullptr;
+            if (filename && *filename) {
+                try {
+                    _path = DocInfo::getDocPath(
+                        filename, const_cast<Document*>(ownerDoc), resolveMode);
+                }
+                catch (Base::Exception&) {
+                    _path = filename;
+                }
+            }
+        }
         if(exporting) {
             // docInfo!=nullptr means we are exporting the owner but not exporting the
             // linked object.  Try to use absolute file path for easy transition

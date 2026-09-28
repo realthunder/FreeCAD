@@ -4262,3 +4262,103 @@ class TransactionBranchCases(unittest.TestCase):
                 self.assertEqual(trimRecord(doc)["unreferenced_bytes_total"], entryBytes + 5 + 8)
                 self.assertEqual(doc.compactFileState()["names"], 41)
             FreeCAD.closeDocument(doc.Name)
+
+    def pushCold(self, doc, steps=21):
+        # Past the hot window (20 steps): what was the top becomes a stub
+        # whose undo reads its row (sec 24.3). Returns once the stub is next.
+        doc.openTransaction("filler")
+        filler = doc.addObject("App::FeatureTest", "Filler")
+        doc.commitTransaction()
+        for i in range(steps):
+            doc.openTransaction("filler %d" % i)
+            filler.Integer = i + 1
+            doc.commitTransaction()
+        for i in range(steps + 1):
+            doc.undo()
+
+    def testColdUndoBringsBackACopyOnChangeLink(self):
+        # Sec 27.67: a copy-on-change link removed with its private copy
+        # comes back whole from the row -- the values the transaction began
+        # with, not what the removal's cascade left; its target (an XLink);
+        # its copy's links to objects removed with it; the properties the
+        # link mirrors, and the status that makes them copy-on-change; the
+        # expressions; and every shape's own element map.
+        import Part
+
+        doc = self.track(FreeCAD.newDocument("CopyOnChange"))
+        doc.UndoMode = 1
+        doc.openTransaction("body")
+        body = doc.addObject("PartDesign::Body", "Body")
+        sketch = body.newObject("Sketcher::SketchObject", "Sketch")
+        sketch.addGeometry(Part.Circle(FreeCAD.Vector(), FreeCAD.Vector(0, 0, 1), 5))
+        pad = body.newObject("PartDesign::Pad", "Pad")
+        pad.Profile = sketch
+        body.addProperty("App::PropertyLength", "Config_L", "Config")
+        body.setPropertyStatus("Config_L", "CopyOnChange")
+        body.Config_L = 10
+        pad.setExpression("Length", "hiddenref(Body.Config_L)")
+        doc.recompute()
+        doc.commitTransaction()
+
+        doc.openTransaction("instance")
+        link = doc.addObject("App::Link", "Inst")
+        link.LinkedObject = body
+        link.LinkCopyOnChange = "Owned"
+        link.Config_L = 20
+        doc.recompute()
+        doc.commitTransaction()
+        copy = link.getLinkedObject(False)
+        self.assertNotEqual(copy.Name, body.Name)
+        before = {o.Name: dict(o.Shape.ElementMap) for o in [copy] + copy.Group}
+        copyPad = [o for o in copy.Group if o.isDerivedFrom("PartDesign::Pad")][0].Name
+        copySketch = [o for o in copy.Group if o.isDerivedFrom("Sketcher::SketchObject")][0].Name
+        # The target is in the log (an XLink copy saved nothing before).
+        doc.resolveTransactionLog()
+        row = [r for r in doc.getTransactionLog() if r["name"] == "instance"][-1]
+        target = [o for o in doc.getTransactionOps(row["seq"]) if o["prop"] == "LinkedObject"][0]
+        self.assertIn('name="%s"' % copy.Name, doc.getTransactionValue(target["after"])[0])
+
+        copyName = copy.Name
+        doc.openTransaction("remove")
+        doc.removeObject("Inst")
+        doc.recompute()
+        doc.commitTransaction()
+        self.assertFalse(doc.getObject(copyName))
+        self.pushCold(doc)
+        self.assertEqual(doc.UndoNames[0], "remove")
+        doc.undo()
+
+        link = doc.getObject("Inst")
+        self.assertTrue(link)
+        copy = link.getLinkedObject(False)
+        self.assertNotEqual(copy.Name, "Inst")
+        self.assertEqual(link.LinkCopyOnChange, "Owned")
+        self.assertTrue(link.LinkCopyOnChangeGroup)
+        self.assertEqual(link.Config_L.Value, 20)
+        self.assertIn("CopyOnChange", copy.getPropertyStatus("Config_L"))
+        pad = doc.getObject(copyPad)
+        self.assertEqual(pad.Profile[0].Name, copySketch)
+        self.assertEqual([e[0] for e in pad.ExpressionEngine], ["Length"])
+        for o in [copy] + copy.Group:
+            self.assertEqual(dict(o.Shape.ElementMap), before[o.Name], o.Name)
+
+    def testColdUndoTakesBackAnExpression(self):
+        # Sec 27.67: an engine value restored into a live engine replaces
+        # what it holds; undoing the step that added an expression takes it
+        # away again.
+        doc = self.track(FreeCAD.newDocument("Expression"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        a = doc.addObject("App::FeatureTest", "A")
+        b = doc.addObject("App::FeatureTest", "B")
+        a.setExpression("Integer", "B.Integer + 1")
+        doc.recompute()
+        doc.commitTransaction()
+        doc.openTransaction("expression")
+        a.setExpression("Float", "B.Integer * 2")
+        doc.recompute()
+        doc.commitTransaction()
+        self.pushCold(doc)
+        self.assertEqual(doc.UndoNames[0], "expression")
+        doc.undo()
+        self.assertEqual([e[0] for e in a.ExpressionEngine], ["Integer"])

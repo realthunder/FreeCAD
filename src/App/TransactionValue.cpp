@@ -33,6 +33,7 @@
 
 #include "TransactionValue.h"
 #include "Document.h"
+#include "ElementMap.h"
 #include "FileBlobManager.h"
 #include "Property.h"
 #include "StringHasher.h"
@@ -113,7 +114,17 @@ App::CaptureConfig::CaptureConfig(const Document& doc)
     , preferBinary(doc.PreferBinary.getValue())
     , blobs(&doc.getFileBlobManager())
     , hasher(doc.getHasher().get())
+    , document(&doc)
 {
+}
+
+namespace {
+thread_local const App::Document* captureDocument = nullptr;
+}
+
+const App::Document* App::capturingDocument()
+{
+    return captureDocument;
 }
 
 CapturedValue App::captureValue(const Document& doc, const Base::Persistence& what)
@@ -132,6 +143,10 @@ CapturedValue App::captureValue(const CaptureConfig& config, const Base::Persist
     // save on the main thread is marking meanwhile (sec 27.49), and the
     // value records them (sec 27.50 item 4).
     StringIDCollector strings(config.hasher);
+    // Element maps numbered for this value alone (sec 27.67).
+    Data::ElementMapIdScope mapIds;
+    const Document* outer = captureDocument;
+    captureDocument = config.document;
     try {
         what.Save(writer);
         writer.writeFiles();
@@ -148,6 +163,7 @@ CapturedValue App::captureValue(const CaptureConfig& config, const Base::Persist
     catch (...) {
         FC_WARN("transaction value: serialise failed");
     }
+    captureDocument = outer;
     return v;
 }
 
@@ -184,6 +200,9 @@ private:
 
 void App::restoreValue(Property& prop, const CapturedValue& value)
 {
+    // The value's element maps read by the ids it wrote, not the ones some
+    // earlier restore left (sec 27.67).
+    Data::ElementMapIdScope mapIds;
     PropertyValueRestorer bracket(prop);
     // The fragment is one element; Property::Restore expects to read it
     // from inside an open parent, so wrap it the way Document.xml does.
@@ -215,6 +234,57 @@ void App::restoreValue(Property& prop, const CapturedValue& value)
         Base::Reader in(bytes, entry.FileName, &reader);
         entry.Object->RestoreDocFile(in);
     }
+    // What a document's restore does once every property is read (sec
+    // 27.67): an expression engine only parks the expressions its Restore
+    // read, and installs them here -- without it, every logged engine
+    // value restored to nothing.
+    if (auto batch = RestoreBatch::current())
+        batch->defer(prop);
+    else
+        prop.afterRestore();
+}
+
+namespace {
+thread_local App::RestoreBatch* restoreBatch = nullptr;
+}
+
+App::RestoreBatch::RestoreBatch()
+    : _outer(restoreBatch)
+{
+    restoreBatch = this;
+}
+
+App::RestoreBatch::~RestoreBatch()
+{
+    finish();
+}
+
+App::RestoreBatch* App::RestoreBatch::current()
+{
+    return restoreBatch;
+}
+
+void App::RestoreBatch::finish()
+{
+    if (_finished)
+        return;
+    _finished = true;
+    // Unlinked first: an afterRestore() that restores a value runs it now.
+    restoreBatch = _outer;
+    for (auto prop : _props) {
+        try {
+            prop->afterRestore();
+        }
+        catch (Base::Exception& e) {
+            FC_ERR("transaction value: after restore of " << prop->getFullName() << ": "
+                   << e.what());
+        }
+        catch (std::exception& e) {
+            FC_ERR("transaction value: after restore of " << prop->getFullName() << ": "
+                   << e.what());
+        }
+    }
+    _props.clear();
 }
 
 namespace {

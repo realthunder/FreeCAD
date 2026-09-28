@@ -274,7 +274,8 @@ std::function<void()>& implicitCloser()
 }
 
 /// The dynamic-property metadata of an addprop/delprop op, as
-/// TransactionLog writes it: group, doc, then "attr[ ro][ hidden]".
+/// TransactionLog writes it: group, doc, then "attr[ ro][ hidden]" and
+/// " status=N" (sec 27.67; absent from rows written before it).
 struct DynamicMeta
 {
     std::string group;
@@ -282,6 +283,8 @@ struct DynamicMeta
     short attr {0};
     bool readonly {false};
     bool hidden {false};
+    bool hasStatus {false};
+    unsigned long status {0};
 };
 
 DynamicMeta parseMeta(const std::string& meta)
@@ -304,8 +307,32 @@ DynamicMeta parseMeta(const std::string& meta)
             m.readonly = true;
         else if (word == "hidden")
             m.hidden = true;
+        else if (word.compare(0, 7, "status=") == 0) {
+            m.hasStatus = true;
+            m.status = std::stoul(word.substr(7));
+        }
     }
     return m;
+}
+
+/// Add back a dynamic property an op's metadata describes, with the status
+/// bits it had (as PropertyContainer::Restore applies a saved status: the
+/// User bits are the session's, and the touched state is the rows').
+Property* addLoggedProperty(PropertyContainer& container, const std::string& ptype,
+                            const std::string& name, const std::string& meta)
+{
+    DynamicMeta m = parseMeta(meta);
+    Property* prop = container.addDynamicProperty(ptype.c_str(), name.c_str(), m.group.c_str(),
+                                                  m.doc.c_str(), m.attr, m.readonly, m.hidden);
+    if (prop && m.hasStatus) {
+        Property::StatusBits status(m.status);
+        status.reset(Property::User1);
+        status.reset(Property::User2);
+        status.reset(Property::User3);
+        status.set(Property::Touched, prop->testStatus(Property::Touched));
+        prop->setStatusValue(status.to_ulong());
+    }
+    return prop;
 }
 
 /// An object's touched state as the log records it (docs/TransactionLog.md
@@ -794,10 +821,7 @@ void Document::_applyRevert(ColdRevert& revert)
             for (auto& kv : dynamicSets) {
                 if (kv.first.first != o->cid || obj->getPropertyByName(kv.first.second.c_str()))
                     continue;
-                DynamicMeta m = parseMeta(kv.second->meta);
-                obj->addDynamicProperty(kv.second->ptype.c_str(), kv.first.second.c_str(),
-                                        m.group.c_str(), m.doc.c_str(), m.attr, m.readonly,
-                                        m.hidden);
+                addLoggedProperty(*obj, kv.second->ptype, kv.first.second, kv.second->meta);
             }
         });
     }
@@ -809,12 +833,11 @@ void Document::_applyRevert(ColdRevert& revert)
             auto container = opContainer(*this, *o);
             if (!container || container->getPropertyByName(o->prop.c_str()))
                 return;
-            DynamicMeta m = parseMeta(o->meta);
-            container->addDynamicProperty(o->ptype.c_str(), o->prop.c_str(), m.group.c_str(),
-                                          m.doc.c_str(), m.attr, m.readonly, m.hidden);
+            addLoggedProperty(*container, o->ptype, o->prop, o->meta);
         });
     }
-    // 3. Every value the row replaced.
+    // 3. Every value the row replaced, each afterRestore() once all are in.
+    RestoreBatch batch;
     for (const LogOp* o : revert.ops) {
         if (o->op != "set" && o->op != "delprop")
             continue;
@@ -842,6 +865,7 @@ void Document::_applyRevert(ColdRevert& revert)
             restoreValue(*prop, it->second);
         });
     }
+    batch.finish();
     // 4. The dynamic properties the row added, where the object stays.
     std::set<long> created;
     for (const LogOp* o : revert.ops) {
@@ -5306,6 +5330,13 @@ void Document::_applyVersion(Document& version, bool views)
                                                    dyn.hidden);
                     if (!prop)
                         return;
+                    // With its status, CopyOnChange among it (sec 27.67).
+                    Property::StatusBits status(kv.second->getStatus());
+                    status.reset(Property::User1);
+                    status.reset(Property::User2);
+                    status.reset(Property::User3);
+                    status.set(Property::Touched, prop->testStatus(Property::Touched));
+                    prop->setStatusValue(status.to_ulong());
                 }
                 CapturedValue want = captureValue(config, *kv.second);
                 if (!want.ok)
@@ -5327,11 +5358,14 @@ void Document::_applyVersion(Document& version, bool views)
             });
         }
     };
-    restoreContainer(*this, version, true);
-    for (auto& kv : target) {
-        auto obj = getObjectByID(kv.first);
-        if (obj)
-            restoreContainer(*obj, *kv.second, false);
+    {
+        RestoreBatch batch;
+        restoreContainer(*this, version, true);
+        for (auto& kv : target) {
+            auto obj = getObjectByID(kv.first);
+            if (obj)
+                restoreContainer(*obj, *kv.second, false);
+        }
     }
     // View providers (sec 24.9), where view state is undo state: under
     // ViewObjectTransaction, the setting that has a view provider's change
@@ -5588,9 +5622,7 @@ size_t Document::_replayLog(int64_t after, int64_t& last, int64_t head, bool* wh
             auto c = container(kv.first);
             if (!c || c->getPropertyByName(std::get<2>(kv.first).c_str()))
                 return;
-            DynamicMeta m = parseMeta(kv.second.meta);
-            c->addDynamicProperty(kv.second.ptype.c_str(), std::get<2>(kv.first).c_str(),
-                                  m.group.c_str(), m.doc.c_str(), m.attr, m.readonly, m.hidden);
+            addLoggedProperty(*c, kv.second.ptype, std::get<2>(kv.first), kv.second.meta);
         });
     }
     for (const auto& key : removed) {
@@ -5607,6 +5639,7 @@ size_t Document::_replayLog(int64_t after, int64_t& last, int64_t head, bool* wh
             valued.insert(std::get<1>(kv.first));
     }
     const auto touchedNow = touched.save(*this, valued);
+    RestoreBatch batch;   // each afterRestore() once all are in (sec 27.67)
     for (const auto& kv : values) {
         guarded("value of", std::get<2>(kv.first), [&]() {
             auto c = container(kv.first);
@@ -5622,6 +5655,7 @@ size_t Document::_replayLog(int64_t after, int64_t& last, int64_t head, bool* wh
             restoreValue(*prop, v);
         });
     }
+    batch.finish();
     // 4. The touched state the session had: the anchor's with what the rows
     // said on top (sec 27.58), and an object whose derived values the log
     // did not keep (sec 24.1) touched.
@@ -6742,9 +6776,7 @@ bool Document::_moveAlongLog(int64_t fromHead, int64_t toSeq, bool views)
             auto c = container(kv.first);
             if (!c || c->getPropertyByName(std::get<2>(kv.first).c_str()))
                 return;
-            DynamicMeta m = parseMeta(kv.second.meta);
-            c->addDynamicProperty(kv.second.ptype.c_str(), std::get<2>(kv.first).c_str(),
-                                  m.group.c_str(), m.doc.c_str(), m.attr, m.readonly, m.hidden);
+            addLoggedProperty(*c, kv.second.ptype, std::get<2>(kv.first), kv.second.meta);
         });
     }
     for (const auto& key : fold.removed) {
@@ -6763,6 +6795,7 @@ bool Document::_moveAlongLog(int64_t fromHead, int64_t toSeq, bool views)
     }
     const auto touchedNow = fold.touched.save(*this, valued);
     CaptureConfig config(*this);
+    RestoreBatch batch;   // each afterRestore() once all are in (sec 27.67)
     for (auto& kv : want) {
         guarded("value of", std::get<2>(kv.first), [&]() {
             auto c = container(kv.first);
@@ -6784,6 +6817,7 @@ bool Document::_moveAlongLog(int64_t fromHead, int64_t toSeq, bool views)
             restoreValue(*prop, v);
         });
     }
+    batch.finish();
     // 4. Touched as the end state was: the state the document had with what
     // the crossed rows said on top (sec 27.58), and an object whose derived
     // values the log did not keep touched.
