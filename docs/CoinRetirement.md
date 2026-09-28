@@ -3321,6 +3321,60 @@ one view, pick culling never worked under per-view entries, every other
 view's clip pass having rebuilt the caches -- and D fails, 1511 us against
 374 on this small scene.
 
+### 5.26 A structure change resolves only the entries it can have moved (2026-09-28)
+
+After 5.25 the resolution pass was the largest cost left in a structure
+turn: every change anywhere in the process resolved every entry of every
+table again, 20-23 ms a turn with 1000 path entries in four views (5.24's
+linear 3-5 us per entry per view), and a spreadsheet recompute in ANOTHER
+document cost the first one a pass. The node-sensor alternative 5.24
+priced (~50 ns per callback on every geometry notification) buys the same
+selectivity at a per-notification cost; this gets it from the App signals
+the pass already hears, which name the object they touched.
+
+**Dependencies.** Each resolution (`ViewVisibility::Resolution`) keeps the
+objects it went through: the top object, every step of the subname and,
+for each, what it links to, link by link (`addDependency`) -- `L.B4.` on a
+Link to PartB depends on L, PartB and B4, so PartB losing B4 reaches it
+though PartB is no step of the path. An entry that does not resolve keeps
+the steps it did get through, and the path is walked before the view
+provider is asked for, so a failure there still depends on its path. The
+pointers are compared, never dereferenced: a reused address costs one
+resolution too many, nothing else.
+
+**Triggers.** A deleted object and a changed link property mark their
+object; the pass resolves again the entries (resolved or not) whose
+dependencies hold a marked object. A new object and a container's rebuilt
+3D children (`sceneChanged(container)`, which now names the container)
+also retry every unresolved entry -- what a missing top object or a view
+provider still to be built waits for. A restore resolves everything. The
+trigger sources are 5.23's; where they miss a structure change (a link
+array's ElementCount is no link property) the gap is the same as before.
+Marks made while no table has entries are dropped: a table set later
+resolves in full, and stale marks would make its first pass resolve what
+they named.
+
+**Measured.** Turns adding a box to Part19 with 1000 entries: the pass
+22 -> 1.3 ms a turn in four views, 7 -> 0.6 ms in one; ~50 entries resolved
+per view per pass (those through Part19) instead of 1000. The PartDesign
+Body in a second document: 0 entries resolved per recompute or expression
+edit (0.02-0.05 ms a pass, was 0.7-0.9 ms). A reopen still resolves every
+entry once (a restore), 330-350 ms for 1000 -- 5.24's first pass after a
+load, still open.
+
+**Test.** `tests/gui/per-view-resolve-selective.py`, by the counters
+(`passResolves`, entries resolved again; `passResolved`, entries that
+resolve): an unrelated link change resolves nothing; a box moved out of
+its Part, a child taken out of a Link's target, a relink, a new object an
+entry waited for and a deleted object each resolve their entry, and picks
+follow. 11/11. The first check failed on the first cut (4 of 5 resolved:
+the stale marks above, and every link change retrying the unresolved
+entries, which their partial dependencies make unnecessary). Visibility set
+green (per-view-clip-cache 15, per-view-visibility 45, pick-cull 4,
+eviction 5, edit-hide 25, sketch-edit-hide 25, element-color-hide 624,
+reopen-claimed-child-pick 9, serve-client-visibility 16, serve-mirror-edit
+22, sketch-edit-root 14, serve-shared-edit 29); ctest 823/823.
+
 ## 5. Evaluated and not taken: one capture root to catch everything
 
 Stage 1b left an obvious-looking follow-on: if what Coin still draws is

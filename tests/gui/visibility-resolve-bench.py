@@ -203,16 +203,19 @@ class Bench:
 def fmt_pass(st):
     passes = st["passes"] or 1
     ent = st["passEntries"] or 1
-    return ("passes=%d tables=%d entries=%d resolved=%d pass_us=%.1f entry_us=%.2f"
-            % (st["passes"], st["passTables"], st["passEntries"], st["passResolved"],
-               st["passNs"] / passes / 1e3, st["passNs"] / ent / 1e3))
+    # entries: held by the tables the passes visited; resolves: resolved
+    # again (5.26: only those through what the change touched).
+    return ("passes=%d tables=%d entries=%d resolves=%d resolved=%d pass_us=%.1f "
+            "entry_us=%.2f"
+            % (st["passes"], st["passTables"], st["passEntries"], st["passResolves"],
+               st["passResolved"], st["passNs"] / passes / 1e3, st["passNs"] / ent / 1e3))
 
 
 def fmt_storm(st, wall):
-    return ("wall_ms=%.1f triggers=%d scheduled=%d passes=%d entries=%d resolved=%d "
+    return ("wall_ms=%.1f triggers=%d scheduled=%d passes=%d entries=%d resolves=%d resolved=%d "
             "pass_ms=%.2f sets=%d set_ms=%.2f draws=%d draw_keys=%d draw_ms=%.2f"
             % (wall * 1e3, st["triggers"], st["scheduled"], st["passes"],
-               st["passEntries"], st["passResolved"], st["passNs"] / 1e6,
+               st["passEntries"], st["passResolves"], st["passResolved"], st["passNs"] / 1e6,
                st["sets"], st["setNs"] / 1e6, st["draws"], st["drawKeys"],
                st["drawNs"] / 1e6))
 

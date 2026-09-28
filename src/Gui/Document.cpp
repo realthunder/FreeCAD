@@ -4812,9 +4812,10 @@ void Document::handleChildren3D(ViewProvider* viewProvider, bool deleting)
             return;
     }
 
-    // Nodes move below: a view's visibility entries name nodes, and must be
-    // resolved against the new structure.
-    ViewVisibility::sceneChanged();
+    // Nodes move below: a view's visibility entries name nodes, and those
+    // through this container must be resolved against the new structure.
+    auto container = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(viewProvider);
+    ViewVisibility::sceneChanged(container ? container->getObject() : nullptr);
 
     // Obtained the old view provider
     std::set<ViewProviderDocumentObject*> oldChildren;

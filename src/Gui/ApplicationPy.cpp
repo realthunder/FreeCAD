@@ -95,9 +95,10 @@ PyObject* sViewVisibilityStats(PyObject * /*self*/, PyObject *args)
     if (!PyArg_ParseTuple(args, "|O!", &PyBool_Type, &reset))
         return nullptr;
     auto &st = Gui::ViewVisibility::stats();
-    PyObject *d = Py_BuildValue("{s:K,s:K,s:K,s:K,s:K,s:K,s:K,s:K,s:K,s:K,s:K,s:K,s:K,s:K,s:K}",
+    PyObject *d = Py_BuildValue("{s:K,s:K,s:K,s:K,s:K,s:K,s:K,s:K,s:K,s:K,s:K,s:K,s:K,s:K,s:K,s:K}",
         "triggers", st.triggers, "scheduled", st.scheduled, "passes", st.passes,
         "passTables", st.passTables, "passEntries", st.passEntries,
+        "passResolves", st.passResolves,
         "passChanged", st.passChanged, "passNs", st.passNs,
         "passResolved", st.passResolved, "setResolved", st.setResolved,
         "draws", st.draws, "drawKeys", st.drawKeys, "drawNs", st.drawNs,

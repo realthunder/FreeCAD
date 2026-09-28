@@ -86,9 +86,11 @@ struct VisibilityEntry {
  *
  * Node keys follow the scene, not the names: after a change to the
  * document's STRUCTURE -- an object added or removed, a link property
- * changed (a group's members, a link's target) -- every table with
- * entries is resolved again once the event loop is back, and a holder
- * whose keys changed is told (setOnChanged()). Not per recompute: a
+ * changed (a group's members, a link's target) -- the entries that change
+ * can have moved are resolved again once the event loop is back, and a
+ * holder whose keys changed is told (setOnChanged()). Which ones: each
+ * resolution remembers the objects it went through, a link's target
+ * included, and a change names its object (5.26). Not per recompute: a
  * recompute moves no node.
  */
 class GuiExport ViewVisibility
@@ -125,9 +127,10 @@ public:
 
     /// The scene's structure changed where no App signal says so -- a
     /// container rebuilt its 3D children (Document::handleChildren3D), as
-    /// a load does once the children's view providers exist: every table
-    /// with entries is resolved again once the event loop is back.
-    static void sceneChanged() { scheduleResolve(); }
+    /// a load does once the children's view providers exist: the entries
+    /// through \a container, and those that did not resolve, are resolved
+    /// again once the event loop is back. Null for every entry.
+    static void sceneChanged(const App::DocumentObject *container);
 
     /// What keeping the tables resolved has cost, process-wide, since the
     /// last reset (docs/CoinRetirement.md 5.24): the deferred passes after
@@ -138,9 +141,10 @@ public:
         uint64_t triggers = 0;      ///< structure changes heard (scheduleResolve)
         uint64_t scheduled = 0;     ///< of them, the ones that queued a pass
         uint64_t passes = 0;        ///< deferred passes run
-        uint64_t passTables = 0;    ///< tables rebuilt by them
-        uint64_t passEntries = 0;   ///< entries they resolved
-        uint64_t passResolved = 0;  ///< of those, the ones that resolved
+        uint64_t passTables = 0;    ///< tables they visited
+        uint64_t passEntries = 0;   ///< entries those tables hold
+        uint64_t passResolves = 0;  ///< of them, the ones resolved again
+        uint64_t passResolved = 0;  ///< entries the tables hold resolved
         uint64_t passChanged = 0;   ///< tables whose keys came out different
         uint64_t passNs = 0;
         uint64_t sets = 0;          ///< set()/setTransient() rebuilds
@@ -154,15 +158,37 @@ public:
     static Stats &stats();
 
 private:
-    /// Resolve both sources and recount; false when the table came out
-    /// the same.
+    /// One entry of a source as last resolved.
+    struct Resolution {
+        bool ok = false;
+        SoFCVisibilityElement::Entry entry;
+        std::pair<std::string, std::string> leaf;
+        /// The objects the resolution went through: every step of the
+        /// path and, for a link, what it links to. Compared, never
+        /// dereferenced -- a deleted one may be gone.
+        std::vector<const App::DocumentObject *> deps;
+    };
+
+    /// Resolve every entry of both sources and recount; false when the
+    /// table came out the same.
     bool rebuild();
+    /// Resolve again only the entries a structure change can have moved:
+    /// those whose resolution went through an object in \a dirty, the
+    /// unresolved ones when \a unresolved, all when \a all. False as
+    /// rebuild().
+    bool refresh(const std::set<const App::DocumentObject *> &dirty,
+                 bool unresolved, bool all, size_t &count);
+    /// The table from the resolutions, recounted; false when the same.
+    bool commit();
+    static void resolveInto(const VisibilityEntry &entry, Resolution &res);
     /// rebuild() for set()/setTransient(), counted.
     bool rebuildSet();
     static void scheduleResolve();
 
     std::vector<VisibilityEntry> persisted;
     std::vector<VisibilityEntry> transient;
+    std::vector<Resolution> persistedRes;
+    std::vector<Resolution> transientRes;
     /// The resolved entries in source order, what rebuild() compares.
     std::vector<SoFCVisibilityElement::Entry> resolved;
     SoFCVisibilityElement::Table element;

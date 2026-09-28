@@ -280,6 +280,15 @@ fc_add_gui_test(GuiPerViewClipCache_tests_run
                 per-view-clip-cache.py
                 --timeout 240)
 
+# A structure change resolves again only the visibility entries whose
+# resolution went through the object it names (docs/CoinRetirement.md
+# 5.26): an unrelated change resolves none; a box moved out of its Part, a
+# Link's target losing a child, a relink, a new object an entry waited for
+# and a deleted one each resolve theirs, and picks follow.
+fc_add_gui_test(GuiPerViewResolveSelective_tests_run
+                per-view-resolve-selective.py
+                --timeout 240)
+
 # Released per-view-shown objects (hidden objects no view shows any more,
 # kept in the capture for a quick show again) are evicted first when
 # memory stands over PerViewShownEvictWatermark, never one a view still

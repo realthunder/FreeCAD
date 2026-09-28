@@ -169,24 +169,53 @@ void countOverride(uint32_t id, bool add)
     root->touch();
 }
 
+/// Add \a obj to \a deps, and what it links to, link by link.
+void addDependency(const App::DocumentObject *obj,
+                   std::vector<const App::DocumentObject *> &deps)
+{
+    while (obj && std::find(deps.begin(), deps.end(), obj) == deps.end()) {
+        deps.push_back(obj);
+        auto linked = obj->getLinkedObject(false);
+        obj = linked != obj ? linked : nullptr;
+    }
+}
+
 /// Resolve \a entry into its node key, and the object it ends at in
 /// \a leaf. False when it does not resolve -- its object gone, its path
 /// no longer through the scene -- which leaves it inert until the next
-/// resolution.
+/// resolution. \a deps gets the objects the resolution went through,
+/// resolved or not: a change to any of them may move the key.
 bool resolveEntry(const VisibilityEntry &entry,
                   std::vector<uint32_t> &key,
-                  std::pair<std::string, std::string> &leaf)
+                  std::pair<std::string, std::string> &leaf,
+                  std::vector<const App::DocumentObject *> &deps)
 {
     key.clear();
+    deps.clear();
     if (!Application::Instance)
         return false;
     auto doc = App::GetApplication().getDocument(entry.doc.c_str());
     auto obj = doc ? doc->getObject(entry.obj.c_str()) : nullptr;
+    addDependency(obj, deps);
+    const bool bare = !entry.rooted || entry.subname.empty();
+    // The path first, for its dependencies: an entry that fails further on
+    // must still be tried again when a step of it changes.
+    std::vector<Render::ObjectRef> refs;
+    bool pathOk = true;
+    if (!bare) {
+        pathOk = resolveObjectPath(obj, entry.subname.c_str(), refs);
+        // The steps it got through, each with what it links to: a Link's
+        // target is where the children it shows are grouped.
+        for (size_t i = 1; i < refs.size(); ++i) {
+            auto stepDoc = App::GetApplication().getDocument(refs[i].doc.c_str());
+            addDependency(stepDoc ? stepDoc->getObject(refs[i].obj.c_str()) : nullptr, deps);
+        }
+    }
     auto vp = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(
             Application::Instance->getViewProvider(obj));
     if (!vp)
         return false;
-    if (!entry.rooted || entry.subname.empty()) {
+    if (bare) {
         // The object's own root: wherever it is drawn -- which a Link to
         // the object is not, having a root of its own.
         SoNode *root = vp->getRoot();
@@ -196,8 +225,7 @@ bool resolveEntry(const VisibilityEntry &entry,
         leaf = {entry.doc, entry.obj};
         return true;
     }
-    std::vector<Render::ObjectRef> refs;
-    if (!resolveObjectPath(obj, entry.subname.c_str(), refs))
+    if (!pathOk)
         return false;
     // The occurrence's node path from the top-level object's REAL root
     // (append), and of it the selection roots: what a traversal's stack
@@ -293,6 +321,12 @@ std::set<ViewVisibility *> &instances()
 }
 
 bool ResolvePending = false;
+/// What the structure changes since the last pass touched: the objects
+/// whose entries must resolve again, whether the unresolved ones must try
+/// again, and whether every entry must.
+std::set<const App::DocumentObject *> PendingObjects;
+bool PendingUnresolved = false;
+bool PendingAll = false;
 
 /// Count or release \a key's object as shown by one view.
 void countShown(const std::pair<std::string, std::string> &key, bool enable)
@@ -368,12 +402,25 @@ void ViewVisibility::scheduleResolve()
     // graph through the view providers, which hear of it on the same
     // signal and may rebuild their nodes later still.
     ++stats().triggers;
-    if (ResolvePending || instances().empty() || !QCoreApplication::instance())
+    if (ResolvePending)
         return;
+    if (instances().empty() || !QCoreApplication::instance()) {
+        // No table to keep: one set later resolves in full. Kept, the
+        // marks would make the first pass after it resolve what they
+        // named then.
+        PendingObjects.clear();
+        PendingUnresolved = PendingAll = false;
+        return;
+    }
     ++stats().scheduled;
     ResolvePending = true;
     QTimer::singleShot(0, QCoreApplication::instance(), []() {
         ResolvePending = false;
+        const auto dirty = std::move(PendingObjects);
+        PendingObjects.clear();
+        const bool unresolved = PendingUnresolved;
+        const bool all = PendingAll;
+        PendingUnresolved = PendingAll = false;
         // Copied: a holder told of a change may set its tables again.
         std::vector<ViewVisibility *> list(instances().begin(), instances().end());
         auto &st = stats();
@@ -382,10 +429,12 @@ void ViewVisibility::scheduleResolve()
             if (!instances().count(vis))
                 continue;
             const uint64_t t = nowNs();
-            const bool changed = vis->rebuild();
+            size_t count = 0;
+            const bool changed = vis->refresh(dirty, unresolved, all, count);
             st.passNs += nowNs() - t;
             ++st.passTables;
             st.passEntries += vis->persisted.size() + vis->transient.size();
+            st.passResolves += count;
             st.passResolved += vis->resolved.size();
             if (changed) {
                 ++st.passChanged;
@@ -396,39 +445,106 @@ void ViewVisibility::scheduleResolve()
     });
 }
 
+void ViewVisibility::sceneChanged(const App::DocumentObject *container)
+{
+    if (container)
+        PendingObjects.insert(container);
+    else
+        PendingAll = true;
+    PendingUnresolved = true;
+    scheduleResolve();
+}
+
+void ViewVisibility::resolveInto(const VisibilityEntry &entry, Resolution &res)
+{
+    res.ok = resolveEntry(entry, res.entry.key, res.leaf, res.deps);
+    res.entry.visibility = entry.visible ? 1 : 0;
+}
+
 bool ViewVisibility::rebuild()
 {
     // What makes a change a STRUCTURE change: an object coming or going,
     // and a link property -- a group's members, a link's target -- which
-    // is how an object moves in the scene. Connected once, and only ever
-    // acted on while some table has entries.
+    // is how an object moves in the scene. Each names the object it
+    // touched: only the entries whose resolution went through it can
+    // have moved. A new object can be on no path resolved so far, but may
+    // be what an unresolved entry names, or bring the view provider one
+    // was waiting for; so may a container's rebuilt children. Connected
+    // once, and only ever acted on while some table has entries.
     static bool connected;
     if (!connected) {
         connected = true;
         auto &app = App::GetApplication();
-        app.signalNewObject.connect([](const App::DocumentObject &) { scheduleResolve(); });
-        app.signalDeletedObject.connect([](const App::DocumentObject &) { scheduleResolve(); });
-        app.signalFinishRestoreDocument.connect([](const App::Document &) { scheduleResolve(); });
+        app.signalNewObject.connect([](const App::DocumentObject &) {
+            PendingUnresolved = true;
+            scheduleResolve();
+        });
+        app.signalDeletedObject.connect([](const App::DocumentObject &obj) {
+            PendingObjects.insert(&obj);
+            scheduleResolve();
+        });
+        app.signalFinishRestoreDocument.connect([](const App::Document &) {
+            PendingAll = true;
+            scheduleResolve();
+        });
         app.signalChangedObject.connect(
-                [](const App::DocumentObject &, const App::Property &prop) {
-                    if (prop.isDerivedFrom(App::PropertyLinkBase::getClassTypeId()))
-                        scheduleResolve();
+                [](const App::DocumentObject &obj, const App::Property &prop) {
+                    if (!prop.isDerivedFrom(App::PropertyLinkBase::getClassTypeId()))
+                        return;
+                    // An unresolved entry is tried again here too when it
+                    // got through this object: its dependencies are the
+                    // steps it did resolve, where a change can complete it.
+                    PendingObjects.insert(&obj);
+                    scheduleResolve();
                 });
     }
 
+    transientRes.resize(transient.size());
+    for (size_t i = 0; i < transient.size(); ++i)
+        resolveInto(transient[i], transientRes[i]);
+    persistedRes.resize(persisted.size());
+    for (size_t i = 0; i < persisted.size(); ++i)
+        resolveInto(persisted[i], persistedRes[i]);
+    return commit();
+}
+
+bool ViewVisibility::refresh(const std::set<const App::DocumentObject *> &dirty,
+                             bool unresolved, bool all, size_t &count)
+{
+    count = 0;
+    auto stale = [&](const Resolution &res) {
+        if (all || (!res.ok && unresolved))
+            return true;
+        for (const auto *obj : res.deps) {
+            if (dirty.count(obj))
+                return true;
+        }
+        return false;
+    };
+    for (auto [source, results] : {std::make_pair(&transient, &transientRes),
+                                   std::make_pair(&persisted, &persistedRes)}) {
+        for (size_t i = 0; i < source->size(); ++i) {
+            if (!stale((*results)[i]))
+                continue;
+            resolveInto((*source)[i], (*results)[i]);
+            ++count;
+        }
+    }
+    return count ? commit() : false;
+}
+
+bool ViewVisibility::commit()
+{
     std::vector<SoFCVisibilityElement::Entry> now;
     std::set<std::pair<std::string, std::string>> nowShown;
-    now.reserve(transient.size() + persisted.size());
-    std::pair<std::string, std::string> leaf;
-    for (const auto *source : {&transient, &persisted}) {
-        for (const auto &entry : *source) {
-            SoFCVisibilityElement::Entry e;
-            if (!resolveEntry(entry, e.key, leaf))
+    now.reserve(transientRes.size() + persistedRes.size());
+    for (const auto *results : {&transientRes, &persistedRes}) {
+        for (const auto &res : *results) {
+            if (!res.ok)
                 continue;
-            e.visibility = entry.visible ? 1 : 0;
-            if (entry.visible)
-                nowShown.insert(leaf);
-            now.push_back(std::move(e));
+            if (res.entry.visibility)
+                nowShown.insert(res.leaf);
+            now.push_back(res.entry);
         }
     }
     if (persisted.empty() && transient.empty())
@@ -498,6 +614,8 @@ void ViewVisibility::clear()
     overridden.clear();
     persisted.clear();
     transient.clear();
+    persistedRes.clear();
+    transientRes.clear();
     resolved.clear();
     element.byEnd.clear();
     element.version = ++serial;
