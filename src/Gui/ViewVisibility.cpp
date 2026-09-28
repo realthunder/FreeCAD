@@ -429,9 +429,11 @@ void ViewVisibility::scheduleResolve()
             if (!instances().count(vis))
                 continue;
             const uint64_t t = nowNs();
+            const std::size_t builds = ViewProvider::VisualBuildCount;
             size_t count = 0;
             const bool changed = vis->refresh(dirty, unresolved, all, count);
             st.passNs += nowNs() - t;
+            st.passBuilds += ViewProvider::VisualBuildCount - builds;
             ++st.passTables;
             st.passEntries += vis->persisted.size() + vis->transient.size();
             st.passResolves += count;

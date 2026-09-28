@@ -560,3 +560,12 @@ fc_add_gui_test(GuiSketchAutoColor_tests_run
 fc_add_gui_test(GuiSketchDragArcConic_tests_run
                 sketch-drag-arc-conic.py
                 --timeout 240)
+
+# A reopen builds each shape's visual once, and resolving the per-view
+# entries it brings back builds none: a path entry's getDetailPath faulted
+# the blob-held shape in (and rebuilt its visual) inside the pass, and the
+# load's drain built every blob-held shape twice (docs/CoinRetirement.md
+# 5.27).
+fc_add_gui_test(GuiReopenVisualBuilds_tests_run
+                reopen-visual-builds.py
+                --timeout 240)

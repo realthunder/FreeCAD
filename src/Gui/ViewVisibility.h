@@ -146,6 +146,10 @@ public:
         uint64_t passResolves = 0;  ///< of them, the ones resolved again
         uint64_t passResolved = 0;  ///< entries the tables hold resolved
         uint64_t passChanged = 0;   ///< tables whose keys came out different
+        /// Visual builds that happened inside the passes. Resolving a key
+        /// is a lookup and should build nothing; a load's shapes still in
+        /// the blob store are what a careless lookup faults in (5.27).
+        uint64_t passBuilds = 0;
         uint64_t passNs = 0;
         uint64_t sets = 0;          ///< set()/setTransient() rebuilds
         uint64_t setEntries = 0;

@@ -3360,7 +3360,7 @@ per view per pass (those through Part19) instead of 1000. The PartDesign
 Body in a second document: 0 entries resolved per recompute or expression
 edit (0.02-0.05 ms a pass, was 0.7-0.9 ms). A reopen still resolves every
 entry once (a restore), 330-350 ms for 1000 -- 5.24's first pass after a
-load, still open.
+load, fixed in 5.27.
 
 **Test.** `tests/gui/per-view-resolve-selective.py`, by the counters
 (`passResolves`, entries resolved again; `passResolved`, entries that
@@ -3374,6 +3374,66 @@ green (per-view-clip-cache 15, per-view-visibility 45, pick-cull 4,
 eviction 5, edit-hide 25, sketch-edit-hide 25, element-color-hide 624,
 reopen-claimed-child-pick 9, serve-client-visibility 16, serve-mirror-edit
 22, sketch-edit-root 14, serve-shared-edit 29); ctest 823/823.
+
+### 5.27 The first pass after a reopen built the visuals it resolved through (fixed 2026-09-29)
+
+5.24 left the first pass after a reopen open: ~350 us per entry (0.35 s at
+E = 1000) against 6-9 us for the next one, and a load whose wall clock did
+not grow with E, so the pass looked like work pulled forward. It was, and
+the work was the load's visual builds.
+
+**Why.** A DWARF profile of the pass (the 5.24 scene, one view, 1000 path
+entries): 97% of it in `ViewProviderPartExt::getDetailPath`, which the
+resolution calls for each entry's leaf with an empty element
+(`Part0.B0_3.` names the whole box). The function appended the root and
+the mode switch and then asked for the shape anyway, to find no element in
+it and return with no detail. A progressive load leaves each shape in the
+blob store until first use, so the ask restored it
+(`PropertyPartShape::serveFromBlob`), and the restore's `setValue` is a
+property change: `updateData` -> `updateVisual`, a full visual build of
+the box, inside the pass, per entry. The fix returns before the shape when
+there is no element -- the same answer.
+
+**What that uncovered.** With the pass no longer building them, the
+hidden boxes were built by the load's drain, and the reopen got slower,
+not faster: 1.23 -> 1.46 s over five reopens. The drain builds a queued
+object with `updateVisual`, whose first act (`shapeStillMissing`) reads the
+shape property -- documented as the fault-in -- and that read lands the
+blob the same way: the notification builds the visual inside the read,
+colours and all, and the outer call then found the shape present and built
+it again. Every blob-held shape of every progressive load was built twice
+(profile: 391 samples in the nested build, 288 in the outer one). The fix:
+`updateVisual` notes `meshLadder.visualFillSeq`, which every rebuild path
+bumps as it takes the display arrays over (the full build, the pooled
+deferral, the rung rewrite), and returns when the fault-in moved it. An
+object the nested call did not build -- hidden, or its shape unchanged --
+leaves the seq alone and is built by the outer call as before.
+
+**Measured** (five reopens each, the 5.24 scene, one view):
+
+| | E = 0 | E = 1000 | first pass, E = 1000 |
+|---|---|---|---|
+| before | 1.39-1.43 s | 1.16-1.33 s | 273-358 ms |
+| getDetailPath only | -- | 1.42-1.50 s | 7.5-8.8 ms |
+| both | 1.22-1.27 s | 1.27-1.33 s | 7.7-8.6 ms |
+
+A reopen is ~12% faster with no entries at all, and 1000 entries now add
+~40 ms to it instead of ~270 ms of pass; the first pass costs what a full
+re-set of the same map does on the loaded scene (8-13 ms).
+
+**Counters.** `viewVisibilityStats()` gains `passBuilds`, the visual builds
+that happened inside the passes (a resolution is a lookup and should build
+nothing), and `FreeCADGui.visualBuildStats()` reads
+`ViewProvider::VisualBuildCount`/`VisualBuildTime`, which a document open
+zeroes -- so, read after the drain, a load's builds.
+
+**Test.** `tests/gui/reopen-visual-builds.py`: four Parts of 50 boxes with
+a Link each, saved without entries and with 100; after each reopen every
+box is built once and has geometry, and with entries the pass resolves
+all 100 and builds nothing. 8/8. Before-state (the two fixes reverted,
+counters kept): 400 builds for 200 boxes without entries; with them 300,
+100 of them inside the pass (31 ms for 100 entries) -- three FAILs, the
+geometry checks passing both ways. ctest 824/824 on the fixes.
 
 ## 5. Evaluated and not taken: one capture root to catch everything
 
