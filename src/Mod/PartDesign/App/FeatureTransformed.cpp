@@ -50,6 +50,7 @@
 #include "FeatureMirrored.h"
 #include "FeatureLinearPattern.h"
 #include "FeaturePolarPattern.h"
+#include "FeatureCircularPattern.h"
 #include "FeatureSketchBased.h"
 
 FC_LOG_LEVEL_INIT("PartDesign",true,true)
@@ -153,6 +154,9 @@ App::DocumentObject* Transformed::getSketchObject() const
     else if (this->isDerivedFrom<PolarPattern>()) {
         // if Originals is empty then try the polar pattern's Axis property
         const PolarPattern* pattern = static_cast<const PolarPattern*>(this);
+        return pattern->Axis.getValue();
+    }
+    else if (auto pattern = Base::freecad_dynamic_cast<CircularPattern>(this)) {
         return pattern->Axis.getValue();
     }
     else if (this->isDerivedFrom<Mirrored>()) {

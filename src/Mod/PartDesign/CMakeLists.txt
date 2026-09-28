@@ -50,6 +50,9 @@ set(PartDesign_TestScripts
     PartDesignTests/TestMirrored.py
     PartDesignTests/TestLinearPattern.py
     PartDesignTests/TestPolarPattern.py
+    PartDesignTests/TestCircularPattern.py
+    PartDesignTests/TestPathPattern.py
+    PartDesignTests/TestPointPattern.py
     PartDesignTests/TestMultiTransform.py
     PartDesignTests/TestBoolean.py
     PartDesignTests/TestFillet.py
