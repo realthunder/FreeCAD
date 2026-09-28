@@ -221,9 +221,7 @@ class TestHole(unittest.TestCase):
         sketch.MapMode = "Deactivated"
         sketch.Placement = App.Placement(App.Vector(0, 0, 10), App.Rotation())
         sketch.addGeometry(Part.Circle(App.Vector(10, 10, 0), App.Vector(0, 0, 1), 1))
-        point = sketch.addGeometry(Part.Point(App.Vector(30, 30, 0)))
-        # a point is added as construction; a real one is toggled
-        sketch.setConstruction(point, False)
+        sketch.addGeometry(Part.Point(App.Vector(30, 30, 0)))
         self.Doc.recompute()
         hole = self.Body.newObject("PartDesign::Hole", "Hole")
         # as PartDesign_Hole writes it
@@ -462,9 +460,7 @@ class TestHole(unittest.TestCase):
         too (upstream f394f1b669)."""
         self.HoleSketch.deleteAllGeometry()
         for point in ((2, 2), (8, 2), (2, 8), (8, 8)):
-            index = self.HoleSketch.addGeometry(Part.Point(App.Vector(*point)), False)
-            # a point is added as construction here; a real one is toggled
-            self.HoleSketch.setConstruction(index, False)
+            self.HoleSketch.addGeometry(Part.Point(App.Vector(*point)), False)
 
         self.Hole.BaseProfileType = 1
         self.Hole.Diameter = 2
