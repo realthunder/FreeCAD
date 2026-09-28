@@ -294,6 +294,11 @@ public:
     virtual bool isTouched() const {
         return _StatusBits.test(Touched);
     }
+    /// The Touched bit alone. isTouched() may say more: a link also reads
+    /// as touched once its target's revision moved (PropertyLink::isTouched).
+    bool hasTouchedBit() const {
+        return _StatusBits.test(Touched);
+    }
     /// Reset this property touched
     virtual void purgeTouched() {
         _StatusBits.reset(Touched);

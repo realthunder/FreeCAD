@@ -192,17 +192,20 @@ public:
     void truncate(int64_t before) override
     {
         inner().truncate(before);
+        ++_core._rewrites;
         _core.releaseBlobs();
     }
     void removeTransactions(const std::vector<int64_t>& seqs) override
     {
         inner().removeTransactions(seqs);
+        ++_core._rewrites;
         _core.releaseBlobs();
     }
     void replaceTransactions(const LogTransaction& txn, std::vector<LogOp>& ops,
                              const std::vector<int64_t>& seqs) override
     {
         inner().replaceTransactions(txn, ops, seqs);
+        ++_core._rewrites;
         _core.releaseBlobs();
     }
     int64_t environment(const std::string& json) override { return inner().environment(json); }
@@ -1383,6 +1386,7 @@ void TransactionLog::onRecompute(const std::vector<RecomputedObject>& objects, d
         t.script = j;
         auto write = [t](TransactionLog& log) mutable {
             log.number(t);
+            log.remember(t, nullptr);
             log.post([&log, t]() mutable {
                 std::vector<LogOp> none;
                 log._c._store->append(t, none);
@@ -2368,6 +2372,77 @@ void TransactionLog::number(LogTransaction& t)
     t.branch = _branch;
     t.seq = ++_c._nextSeq;
     _head = t.seq;
+    // Every row, so a walk back from the head finds its parent in memory.
+    remember(t, nullptr);
+}
+
+void TransactionLog::remember(const LogTransaction& t, const std::vector<LogOp>* ops)
+{
+    if (_recentAt != _c._rewrites) {
+        _recent.clear();
+        _recentAt = _c._rewrites;
+    }
+    auto& row = _recent[t.seq];
+    row.seq = t.seq;
+    row.parent = t.parent;
+    row.kind = t.kind;
+    row.script = t.script;
+    row.ops.clear();
+    if (ops) {
+        for (const auto& o : *ops) {
+            if (o.op != "set" || o.ckind != "obj")
+                continue;
+            LogOp slim;
+            slim.op = o.op;
+            slim.ckind = o.ckind;
+            slim.cid = o.cid;
+            slim.prop = o.prop;
+            slim.derived = o.derived;
+            slim.touched = o.touched;
+            row.ops.push_back(std::move(slim));
+        }
+    }
+    while (_recent.size() > 4096)
+        _recent.erase(_recent.begin());
+}
+
+bool TransactionLog::rowsBackTo(int64_t seq, std::vector<TouchedRow>& rows)
+{
+    rows.clear();
+    if (seq <= 0)
+        return false;
+    // A trim or a squash rewrote rows the copies may name.
+    if (_recentAt != _c._rewrites) {
+        _recent.clear();
+        _recentAt = _c._rewrites;
+    }
+    for (int64_t cur = _head; cur >= seq;) {
+        auto it = _recent.find(cur);
+        if (it == _recent.end())
+            break;
+        rows.push_back(it->second);
+        if (cur == seq)
+            return true;
+        cur = it->second.parent;
+    }
+    // Not all in memory: the store's, which waits for the worker.
+    rows.clear();
+    const auto chain = store().chain(_head, seq);
+    if (chain.empty() || chain.front().seq != seq)
+        return false;
+    for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
+        TouchedRow row;
+        row.seq = it->seq;
+        row.parent = it->parent;
+        row.kind = it->kind;
+        row.script = it->script;
+        for (auto& o : store().ops(it->seq)) {
+            if (o.op == "set" && o.ckind == "obj")
+                row.ops.push_back(std::move(o));
+        }
+        rows.push_back(std::move(row));
+    }
+    return true;
 }
 
 int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const char* origin,
@@ -2385,6 +2460,7 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
         t.time = now();
         t.session = _c._session;
         t.inverts = inverts;
+        t.script = txn.LogScript;
 
         std::vector<LogOp> ops;
         std::vector<ValueTask> tasks;
@@ -2502,7 +2578,7 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
                     auto o = emit("set", kv.first, kv.second->getTypeId().getName());
                     if (objectBits >= 0)
                         o->touched = objectBits
-                            | (kv.second->isTouched() ? DocumentObject::LogPropTouched : 0);
+                            | (kv.second->hasTouchedBit() ? DocumentObject::LogPropTouched : 0);
                     // A dynamic property's metadata rides on its set, so a
                     // cold undo can add it back to the recreated object.
                     auto dyn = c.container->getDynamicPropertyData(kv.second);
@@ -2576,6 +2652,7 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
             // still written.
             --_c._nextSeq;
             _head = t.parent;
+            _recent.erase(t.seq);
             if (!tasks.empty()) {
                 post([this, tasks]() mutable {
                     std::vector<LogOp> none;
@@ -2613,6 +2690,7 @@ int64_t TransactionLog::onCommit(const Transaction& txn, const char* kind, const
             }
             tasks.push_back(std::move(v));
         }
+        remember(t, &ops);
         post([this, t, ops, tasks]() mutable {
             writeValues(tasks, ops);
             _c._store->append(t, ops);

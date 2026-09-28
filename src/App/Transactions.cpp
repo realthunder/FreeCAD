@@ -230,6 +230,7 @@ static std::unordered_map<Property*, int> _PendingProps;
 static std::vector<TransactionalObject *> _PendingRemove;
 static std::set<std::string> _TransactionDocs;
 static int _PendingPropIndex;
+static std::vector<std::function<void()>> _AfterTouches;
 
 TransactionGuard::TransactionGuard(TransactionType type)
     :transactionType(type)
@@ -296,6 +297,16 @@ TransactionGuard::~TransactionGuard()
         }
     }
 
+    auto after = std::move(_AfterTouches);
+    _AfterTouches.clear();
+    for (auto& fn : after) {
+        Base::exceptionSafeCall(errMsg, fn);
+        if (errMsg.size()) {
+            FC_ERR("Exception on finishing transaction: " << errMsg);
+            errMsg.clear();
+        }
+    }
+
     switch (transactionType) {
     case Undo:
         for (auto &docName : _TransactionDocs) {
@@ -339,6 +350,15 @@ TransactionGuard::~TransactionGuard()
         delete obj;
     _PendingRemove.clear();
     _TransactionDocs.clear();
+}
+
+void TransactionGuard::afterTouches(std::function<void()> fn)
+{
+    if (!_TransactionActive || _FlushingProps) {
+        fn();
+        return;
+    }
+    _AfterTouches.push_back(std::move(fn));
 }
 
 bool TransactionGuard::addPendingRemove(TransactionalObject *obj)
@@ -706,7 +726,7 @@ void TransactionObject::setProperty(const Property* pcProp)
                 if (_objectBitsBefore < 0)
                     _objectBitsBefore = obj->getLogTouchedBits();
                 data.touchedBefore = _objectBitsBefore
-                    | (pcProp->isTouched() ? DocumentObject::LogPropTouched : 0);
+                    | (pcProp->hasTouchedBit() ? DocumentObject::LogPropTouched : 0);
             }
         }
     }

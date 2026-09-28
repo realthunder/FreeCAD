@@ -84,6 +84,9 @@ public:
     /// the kind the log records ("undo") and the row it inverts.
     std::string LogKind;
     int64_t Inverts {0};
+    /// The row's script (sec 27.63): an undo's, a redo's or a restore's
+    /// record of the touched state it changed.
+    std::string LogScript;
     /** Log writes held until this transaction's own row is written
      * (docs/TransactionLog.md sec 27.59): a recompute run while it is open
      * comes after its writes, and its record must follow its row. Dropped
@@ -335,6 +338,12 @@ public:
     ~TransactionGuard();
 
     static bool addPendingRemove(TransactionalObject *);
+    /** Run `fn` once the outermost guard has touched what the transactions
+     * applied under it wrote, before it signals the undo or redo; at once
+     * when no guard is active (docs/TransactionLog.md sec 27.63: the
+     * touched state an undo leaves is set after those touches).
+     */
+    static void afterTouches(std::function<void()> fn);
 
 private:
     TransactionType transactionType;

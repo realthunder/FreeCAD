@@ -509,6 +509,145 @@ TEST_F(TransactionLogTest, touchedStateInTheRows)
     EXPECT_EQ(store.transactions().size(), count);
 }
 
+TEST_F(TransactionLogTest, undoAndRedoLeaveTheRowsTouchedState)
+{
+    // Sec 27.63: an undo leaves every object touched as it was before the
+    // step -- recomputes after the step taken back too -- and a redo as it
+    // was before the undo, hot or cold; not touched by every write the undo
+    // made. And the undo's row records the state it left, which a restore
+    // through the rows reads.
+    using State = std::map<std::string, std::pair<int, std::vector<std::string>>>;
+    auto state = [&]() {
+        State s;
+        for (auto obj : doc()->getObjects()) {
+            std::vector<App::Property*> props;
+            obj->getPropertyList(props);
+            std::vector<std::string> touched;
+            // The bit: a link's isTouched() is also its target's revision.
+            for (auto p : props) {
+                if (p->hasTouchedBit())
+                    touched.emplace_back(p->getName());
+            }
+            std::sort(touched.begin(), touched.end());
+            s[obj->getNameInDocument()] = {obj->getLogTouchedBits(), touched};
+        }
+        return s;
+    };
+    // What differs, for the failure message.
+    auto diff = [](const State& got, const State& want) {
+        std::ostringstream out;
+        for (const auto& kv : want) {
+            auto it = got.find(kv.first);
+            if (it == got.end()) {
+                out << " " << kv.first << " missing;";
+                continue;
+            }
+            if (it->second.first != kv.second.first)
+                out << " " << kv.first << " bits " << it->second.first << " want "
+                    << kv.second.first << ";";
+            for (const auto& p : it->second.second) {
+                if (!std::count(kv.second.second.begin(), kv.second.second.end(), p))
+                    out << " " << kv.first << "." << p << " touched;";
+            }
+            for (const auto& p : kv.second.second) {
+                if (!std::count(it->second.second.begin(), it->second.second.end(), p))
+                    out << " " << kv.first << "." << p << " clean;";
+            }
+        }
+        for (const auto& kv : got) {
+            if (!want.count(kv.first))
+                out << " " << kv.first << " extra;";
+        }
+        return out.str();
+    };
+    for (int cold = 0; cold < 2; ++cold) {
+        SCOPED_TRACE(cold ? "cold" : "hot");
+        if (cold)
+            closeAndRenew();
+        doc()->setMaxUndoStackSize(cold ? 1 : 20);
+        // Each operation: the undo count before and after it, and the
+        // state before it.
+        struct Before
+        {
+            int count;
+            int after;
+            State state;
+        };
+        std::vector<Before> before;
+        auto op = [&](const std::function<void()>& fn) {
+            before.push_back({doc()->getAvailableUndos(), 0, state()});
+            fn();
+            before.back().after = doc()->getAvailableUndos();
+        };
+        App::FeatureTest* a {};
+        App::FeatureTest* b {};
+        op([&]() {
+            doc()->openTransaction("create");
+            a = make("A");
+            b = make("B");
+            b->Link.setValue(a);
+            doc()->commitTransaction();
+        });
+        op([&]() { doc()->recompute(); });
+        op([&]() {
+            doc()->openTransaction("one");
+            a->Integer.setValue(1);
+            doc()->commitTransaction();
+        });
+        op([&]() { doc()->recompute(); });
+        op([&]() {
+            doc()->openTransaction("two");
+            a->Integer.setValue(2);
+            doc()->commitTransaction();
+        });
+        op([&]() {
+            doc()->openTransaction("three");
+            b->Integer.setValue(3);
+            doc()->recompute();
+            doc()->commitTransaction();
+        });
+        op([&]() {
+            doc()->openTransaction("four");
+            a->Integer.setValue(4);
+            doc()->commitTransaction();
+        });
+        const int steps = doc()->getAvailableUndos();
+        ASSERT_GE(steps, 5);
+        // The state the undo to `count` steps must leave: the one before the
+        // operation that made step count + 1.
+        auto expected = [&](int count) {
+            for (const auto& o : before) {
+                if (o.count == count && o.after > count)
+                    return o.state;
+            }
+            ADD_FAILURE() << "no operation made step " << count + 1;
+            return State();
+        };
+        std::vector<State> beforeUndo(steps + 1);
+        for (int count = steps - 1; count >= 0; --count) {
+            beforeUndo[count + 1] = state();
+            ASSERT_TRUE(doc()->undo()) << count;
+            EXPECT_EQ(diff(state(), expected(count)), "") << "undo to " << count;
+        }
+        for (int count = 1; count <= steps; ++count) {
+            ASSERT_TRUE(doc()->redo()) << count;
+            EXPECT_EQ(diff(state(), beforeUndo[count]), "") << "redo to " << count;
+        }
+        for (int count = steps - 1; count >= 0; --count) {
+            ASSERT_TRUE(doc()->undo()) << count;
+            EXPECT_EQ(diff(state(), expected(count)), "") << "undo again to " << count;
+        }
+        // Each undo's row carries the state it left.
+        int recorded = 0;
+        for (const auto& t : log().store().transactions()) {
+            if ((t.kind == "undo" || t.kind == "redo")
+                    && t.script.find("\"objects\"") != std::string::npos)
+                ++recorded;
+        }
+        EXPECT_GE(recorded, 3 * (steps - 1));
+    }
+}
+
 TEST_F(TransactionLogTest, writerOutlivesTransaction)
 {
     // Undo off: the transaction is deleted at commit, and with it the

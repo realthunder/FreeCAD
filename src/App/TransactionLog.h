@@ -341,6 +341,24 @@ public:
     /// newest row, queued writes included, which the next row follows.
     int64_t branch() const { return _branch; }
     int64_t head() const { return _head; }
+
+    /// One row as the touched state reads it (sec 27.63): its script and
+    /// its sets' ops, the values left out.
+    struct TouchedRow
+    {
+        int64_t seq {0};
+        int64_t parent {0};
+        std::string kind;
+        std::string script;
+        std::vector<LogOp> ops;
+    };
+    /** The rows from the head back to `seq`, both included, newest first
+     * (sec 27.63). From memory for the rows this document numbered lately,
+     * so an undo of a step still hot never waits for the worker; else from
+     * the store. False when `seq` is not on the head's chain, or a row on
+     * the way is gone.
+     */
+    bool rowsBackTo(int64_t seq, std::vector<TouchedRow>& rows);
     /// Sec 27.16: a version document about to be saved as its file takes
     /// its branch now, as its first change would.
     void takeBranch() { ensureBranch(); }
@@ -474,6 +492,8 @@ private:
     /// Number a row: the next seq, on the current branch, following its
     /// head, which moves to it. Main thread.
     void number(LogTransaction& t);
+    /// Keep row `t` in `_recent`, with the sets of `ops` (sec 27.63).
+    void remember(const LogTransaction& t, const std::vector<LogOp>* ops);
 
     /// The file's history (docs/TransactionLog.md sec 27.7) and the shared
     /// half of its log in it: the store, the worker, the counters, the
@@ -486,6 +506,10 @@ private:
     /// The current branch and its head (sec 26); main thread only.
     int64_t _branch {1};
     int64_t _head {0};
+    /// The rows numbered lately, by seq, as rowsBackTo reads them; the
+    /// oldest go past a few thousand. Main thread only.
+    std::map<int64_t, TouchedRow> _recent;
+    int64_t _recentAt {0};   ///< TransactionLogCore::_rewrites when it was kept
     /// An embedded copy was just adopted: the next onRestore is its version.
     bool _adopted {false};
     /// A detached cursor's version (sec 27.5), and the id base its branch
@@ -642,6 +666,9 @@ public:
     std::unique_ptr<TransactionStore> _store;
     class FlushingStore;
     std::unique_ptr<FlushingStore> _reader;
+    /// Counts the rewrites of stored rows -- a trim, a squash, a removal --
+    /// after which a copy of a row may be stale (sec 27.63); main thread.
+    int64_t _rewrites {0};
     /// The last seq and version number handed out; main thread only.
     int64_t _nextSeq {0};
     int64_t _nextVersion {0};

@@ -243,6 +243,8 @@ struct Document::ColdRevert
     /// A refusal is not an error but a reason to take another path (sec
     /// 27.34): logged, not reported.
     bool quiet {false};
+    /// Objects touched because a derived value is not in the log.
+    std::set<long> touched;
 };
 
 namespace {
@@ -305,6 +307,307 @@ DynamicMeta parseMeta(const std::string& meta)
     }
     return m;
 }
+
+/// An object's touched state as the log records it (docs/TransactionLog.md
+/// sec 27.58): its bits and the names of its touched properties -- each
+/// property's Touched bit, not isTouched(): a link also reads as touched
+/// once its target's revision moved (PropertyLink::isTouched), which is the
+/// target's and moves with any write to it (sec 27.63).
+struct TouchedState
+{
+    int bits {0};
+    std::vector<std::string> props;
+
+    bool operator==(const TouchedState& other) const
+    {
+        return bits == other.bits && props == other.props;
+    }
+};
+
+TouchedState touchedStateOf(const DocumentObject& obj)
+{
+    TouchedState state;
+    state.bits = obj.getLogTouchedBits();
+    std::vector<Property*> props;
+    obj.getPropertyList(props);
+    for (auto prop : props) {
+        if (prop->hasTouchedBit() && prop->getName())
+            state.props.emplace_back(prop->getName());
+    }
+    std::sort(state.props.begin(), state.props.end());
+    return state;
+}
+
+/// `prop`'s Touched bit set or cleared, the bit alone: setStatus(Touched)
+/// would touch() and signal a change. Cleared through purgeTouched(), which
+/// for a link also takes its target's revision as seen.
+void setPropertyTouched(Property& prop, bool touched)
+{
+    if (prop.hasTouchedBit() == touched)
+        return;
+    if (!touched) {
+        prop.purgeTouched();
+        return;
+    }
+    Property::StatusBits bit;
+    bit.set(Property::Touched);
+    prop.setStatus(bit, true);
+}
+
+/// The touched state a run of log rows leaves (docs/TransactionLog.md sec
+/// 27.58), folded as the rows are crossed in either direction: a set taken
+/// back leaves the state it recorded before it, a set done leaves the
+/// property touched and its object too unless the property is an output, a
+/// recompute record leaves the state it recorded before or after it. What
+/// no crossed row says keeps the state the document had.
+struct TouchedFold
+{
+    struct Flags
+    {
+        int bits {-1};                       ///< the object's, -1 when no row said
+        std::map<std::string, bool> props;   ///< touched or not, as the rows said
+        bool exact {false};                  ///< a property not in `props` is clean
+        std::set<std::string> written;       ///< set since `bits`: touches unless an output
+    };
+    std::map<long, Flags> objects;
+
+    void forget(long cid)
+    {
+        objects.erase(cid);
+    }
+
+    void back(const LogOp& o)
+    {
+        if (o.op != "set" || o.ckind != "obj" || o.touched < 0)
+            return;
+        auto& f = objects[o.cid];
+        f.bits = o.touched & ~DocumentObject::LogPropTouched;
+        f.written.clear();
+        f.props[o.prop] = (o.touched & DocumentObject::LogPropTouched) != 0;
+    }
+
+    void forward(const LogOp& o)
+    {
+        // A derived write's state is the recompute's, in its record.
+        if (o.op != "set" || o.ckind != "obj" || o.derived)
+            return;
+        auto& f = objects[o.cid];
+        f.props[o.prop] = true;
+        f.written.insert(o.prop);
+    }
+
+    /// A recompute record's entries: {"id", "b", "p", "a", "q"}, sec 27.58;
+    /// an undo's, a redo's or a restore's the same (sec 27.63). Crossed
+    /// after the row's ops: it is exact.
+    void record(const std::string& script, bool back)
+    {
+        if (script.empty() || script[0] != '{')
+            return;
+        auto j = nlohmann::json::parse(script, nullptr, false);
+        if (!j.is_object() || !j.contains("objects") || !j["objects"].is_array())
+            return;
+        for (const auto& e : j["objects"]) {
+            if (!e.is_object() || !e.contains("id") || !e["id"].is_number_integer())
+                continue;
+            const long cid = e["id"].get<long>();
+            if (back && !e.contains("b"))
+                continue;   // made by the recompute, or recorded before sec 27.58
+            const char* bits = back ? "b" : "a";
+            const char* props = back ? "p" : "q";
+            if (e.contains(bits) && !e[bits].is_number_integer())
+                continue;
+            auto& f = objects[cid];
+            f.bits = e.contains(bits) ? e[bits].get<int>() : 0;
+            f.written.clear();
+            f.props.clear();
+            f.exact = true;
+            if (e.contains(props) && e[props].is_array()) {
+                for (const auto& name : e[props]) {
+                    if (name.is_string())
+                        f.props[name.get<std::string>()] = true;
+                }
+            }
+        }
+    }
+
+    /// The document's state for each object the fold names, taken before
+    /// the values are written back, which touch what they write.
+    std::map<long, TouchedState> save(Document& doc, const std::set<long>& also) const
+    {
+        std::map<long, TouchedState> saved;
+        auto take = [&](long cid) {
+            if (auto obj = doc.getObjectByID(cid))
+                saved.emplace(cid, touchedStateOf(*obj));
+        };
+        for (const auto& kv : objects)
+            take(kv.first);
+        for (long cid : also)
+            take(cid);
+        return saved;
+    }
+
+    /// Each saved object back to its saved state with what the rows said on
+    /// top.
+    void apply(Document& doc, const std::map<long, TouchedState>& saved) const
+    {
+        for (const auto& kv : saved) {
+            auto obj = doc.getObjectByID(kv.first);
+            if (!obj)
+                continue;
+            auto it = objects.find(kv.first);
+            const Flags* f = it == objects.end() ? nullptr : &it->second;
+            int bits = f && f->bits >= 0 ? f->bits : kv.second.bits;
+            std::vector<Property*> props;
+            obj->getPropertyList(props);
+            for (auto prop : props) {
+                const char* name = prop->getName();
+                if (!name)
+                    continue;
+                bool touched = std::binary_search(kv.second.props.begin(),
+                                                  kv.second.props.end(), std::string(name));
+                if (f) {
+                    auto p = f->props.find(name);
+                    if (p != f->props.end())
+                        touched = p->second;
+                    else if (f->exact)
+                        touched = false;
+                    if (f->written.count(name) && !obj->testStatus(ObjectStatus::NoTouch)
+                            && !(prop->getType() & Prop_Output)
+                            && !prop->testStatus(Property::Output))
+                        bits |= DocumentObject::LogTouch;
+                }
+                setPropertyTouched(*prop, touched);
+            }
+            obj->setLogTouchedBits(bits);
+        }
+    }
+};
+
+/// `obj` set to `state`, the bits alone: nothing is signalled as changed.
+void setTouchedState(DocumentObject& obj, const TouchedState& state)
+{
+    std::vector<Property*> props;
+    obj.getPropertyList(props);
+    for (auto prop : props) {
+        const char* name = prop->getName();
+        if (!name)
+            continue;
+        setPropertyTouched(
+            *prop, std::binary_search(state.props.begin(), state.props.end(), std::string(name)));
+    }
+    obj.setLogTouchedBits(state.bits);
+}
+
+/// The record a row carries of the touched state it left (sec 27.63), in
+/// a recompute record's form: every object of `after`, with its state in
+/// `before` when it had one -- an object the row made has none.
+std::string touchedRecord(const std::map<long, TouchedState>& before,
+                          const std::map<long, TouchedState>& after)
+{
+    auto list = nlohmann::json::array();
+    for (const auto& kv : after) {
+        nlohmann::json e;
+        e["id"] = kv.first;
+        auto it = before.find(kv.first);
+        if (it != before.end()) {
+            e["b"] = it->second.bits;
+            if (!it->second.props.empty())
+                e["p"] = it->second.props;
+        }
+        if (kv.second.bits || !kv.second.props.empty()) {
+            e["a"] = kv.second.bits;
+            if (!kv.second.props.empty())
+                e["q"] = kv.second.props;
+        }
+        list.push_back(std::move(e));
+    }
+    if (list.empty())
+        return {};
+    nlohmann::json j;
+    j["objects"] = std::move(list);
+    return j.dump();
+}
+
+/** An undo or redo of a logged step (docs/TransactionLog.md sec 27.63)
+ * leaves the touched state its rows record, as the walk does (sec 27.59):
+ * the rows from the head back to the step's own, crossed back -- a redo's
+ * step is the undo's row, so a redo is the undo taken back. Folded before
+ * the writes, applied after them, and set again once the transaction guard
+ * has touched what they wrote; an object whose derived value could not be
+ * written back is touched last.
+ */
+struct StepTouched
+{
+    TouchedFold fold;
+    std::map<long, TouchedState> before;   ///< each object that may change
+    std::map<long, TouchedState> after;    ///< the same, as the step leaves it
+    bool active {false};
+
+    /// Before the step is applied.
+    void begin(Document& doc, TransactionLog& log, const Transaction& step)
+    {
+        std::vector<TransactionLog::TouchedRow> rows;
+        if (step.LogSeq <= 0 || !log.rowsBackTo(step.LogSeq, rows))
+            return;
+        std::set<long> named;
+        for (const auto& r : rows) {   // newest first
+            for (auto it = r.ops.rbegin(); it != r.ops.rend(); ++it)
+                fold.back(*it);
+            fold.record(r.script, true);
+        }
+        for (const auto& o : rows.back().ops)
+            named.insert(o.cid);
+        std::set<long> ids;
+        for (auto obj : doc.getObjects()) {
+            const long id = obj->getID();
+            if (fold.objects.count(id) || named.count(id) || step.hasObject(obj))
+                ids.insert(id);
+        }
+        before = fold.save(doc, ids);
+        active = true;
+    }
+
+    /// After the writes, before the guard's touches: the fold on the state
+    /// before, each of `touch` touched, and the record for the inverse row.
+    std::string end(Document& doc, const Transaction& inverse, const std::set<long>& touch)
+    {
+        std::map<long, TouchedState> base;
+        for (auto obj : doc.getObjects()) {
+            const long id = obj->getID();
+            auto it = before.find(id);
+            if (it != before.end())
+                base.emplace(id, it->second);
+            else if (fold.objects.count(id) || inverse.hasObject(obj) || touch.count(id))
+                // Made by the step: as it comes back -- a hot redo's is the
+                // object itself -- with what the rows say on top.
+                base.emplace(id, touchedStateOf(*obj));
+        }
+        fold.apply(doc, base);
+        for (long cid : touch) {
+            if (auto obj = doc.getObjectByID(cid))
+                obj->touch();
+        }
+        for (const auto& kv : base) {
+            if (auto obj = doc.getObjectByID(kv.first))
+                after.emplace(kv.first, touchedStateOf(*obj));
+        }
+        return touchedRecord(before, after);
+    }
+
+    /// After the writes: the end state, recorded on `inverse`'s row and set
+    /// again once the guard has touched what the step wrote.
+    void leave(Document& doc, Transaction& inverse, const std::set<long>& touch)
+    {
+        inverse.LogScript = end(doc, inverse, touch);
+        TransactionGuard::afterTouches([&doc, after = after]() {
+            for (const auto& kv : after) {
+                auto obj = doc.getObjectByID(kv.first);
+                if (obj && !(touchedStateOf(*obj) == kv.second))
+                    setTouchedState(*obj, kv.second);
+            }
+        });
+    }
+};
 
 /** Section 24.4's refuse rule for undoing row `seq` when it is not the tip:
  * every property it left in a state must still be in that state -- the
@@ -527,8 +830,10 @@ void Document::_applyRevert(ColdRevert& revert)
                 // that holds none (a create's, or the `none` policy): the
                 // owner recomputes it.
                 if (o->derived) {
-                    if (auto obj = Base::freecad_dynamic_cast<DocumentObject>(container))
+                    if (auto obj = Base::freecad_dynamic_cast<DocumentObject>(container)) {
                         obj->touch();
+                        revert.touched.insert(obj->getID());
+                    }
                 }
                 return;
             }
@@ -664,6 +969,9 @@ bool Document::undo(int id)
         ColdRevert cold;
         if (step->Cold && !_prepareRevert(step->LogSeq, step->Name, cold))
             return false;
+        StepTouched touched;   // sec 27.63
+        if (auto log = getTransactionLog())
+            touched.begin(*this, *log, *step);
 
         TransactionGuard guard(TransactionGuard::Undo);
 
@@ -677,6 +985,8 @@ bool Document::undo(int id)
             _applyRevert(cold);
         else
             step->apply(*this,false);
+        if (touched.active)
+            touched.leave(*this, *d->activeUndoTransaction, cold.touched);
         logInverse(*step, "undo", step->Cold ? &cold : nullptr);
 
         // save the redo
@@ -720,6 +1030,9 @@ bool Document::redo(int id)
         ColdRevert cold;
         if (step->Cold && !_prepareRevert(step->LogSeq, step->Name, cold))
             return false;
+        StepTouched touched;   // sec 27.63
+        if (auto log = getTransactionLog())
+            touched.begin(*this, *log, *step);
 
         TransactionGuard guard(TransactionGuard::Redo);
 
@@ -733,6 +1046,8 @@ bool Document::redo(int id)
             _applyRevert(cold);
         else
             step->apply(*this,true);
+        if (touched.active)
+            touched.leave(*this, *d->activeUndoTransaction, cold.touched);
         logInverse(*step, "redo", step->Cold ? &cold : nullptr);
 
         mUndoMap[d->activeUndoTransaction->getID()] = d->activeUndoTransaction;
@@ -4686,164 +5001,6 @@ std::string Document::materialiseVersion(TransactionLogCore& log, int64_t num, c
 
 namespace {
 
-/// An object's touched state as the log records it (docs/TransactionLog.md
-/// sec 27.58): its bits and the names of its touched properties.
-struct TouchedState
-{
-    int bits {0};
-    std::vector<std::string> props;
-
-    bool operator==(const TouchedState& other) const
-    {
-        return bits == other.bits && props == other.props;
-    }
-};
-
-TouchedState touchedStateOf(const DocumentObject& obj)
-{
-    TouchedState state;
-    state.bits = obj.getLogTouchedBits();
-    std::vector<Property*> props;
-    obj.getPropertyList(props);
-    for (auto prop : props) {
-        if (prop->isTouched() && prop->getName())
-            state.props.emplace_back(prop->getName());
-    }
-    std::sort(state.props.begin(), state.props.end());
-    return state;
-}
-
-/// The touched state a run of log rows leaves (docs/TransactionLog.md sec
-/// 27.58), folded as the rows are crossed in either direction: a set taken
-/// back leaves the state it recorded before it, a set done leaves the
-/// property touched and its object too unless the property is an output, a
-/// recompute record leaves the state it recorded before or after it. What
-/// no crossed row says keeps the state the document had.
-struct TouchedFold
-{
-    struct Flags
-    {
-        int bits {-1};                       ///< the object's, -1 when no row said
-        std::map<std::string, bool> props;   ///< touched or not, as the rows said
-        bool exact {false};                  ///< a property not in `props` is clean
-        std::set<std::string> written;       ///< set since `bits`: touches unless an output
-    };
-    std::map<long, Flags> objects;
-
-    void forget(long cid)
-    {
-        objects.erase(cid);
-    }
-
-    void back(const LogOp& o)
-    {
-        if (o.op != "set" || o.ckind != "obj" || o.touched < 0)
-            return;
-        auto& f = objects[o.cid];
-        f.bits = o.touched & ~DocumentObject::LogPropTouched;
-        f.written.clear();
-        f.props[o.prop] = (o.touched & DocumentObject::LogPropTouched) != 0;
-    }
-
-    void forward(const LogOp& o)
-    {
-        // A derived write's state is the recompute's, in its record.
-        if (o.op != "set" || o.ckind != "obj" || o.derived)
-            return;
-        auto& f = objects[o.cid];
-        f.props[o.prop] = true;
-        f.written.insert(o.prop);
-    }
-
-    /// A recompute record's entries: {"id", "b", "p", "a", "q"}, sec 27.58.
-    void record(const std::string& script, bool back)
-    {
-        auto j = nlohmann::json::parse(script, nullptr, false);
-        if (!j.is_object() || !j.contains("objects") || !j["objects"].is_array())
-            return;
-        for (const auto& e : j["objects"]) {
-            if (!e.is_object() || !e.contains("id") || !e["id"].is_number_integer())
-                continue;
-            const long cid = e["id"].get<long>();
-            if (back && !e.contains("b"))
-                continue;   // made by the recompute, or recorded before sec 27.58
-            const char* bits = back ? "b" : "a";
-            const char* props = back ? "p" : "q";
-            if (e.contains(bits) && !e[bits].is_number_integer())
-                continue;
-            auto& f = objects[cid];
-            f.bits = e.contains(bits) ? e[bits].get<int>() : 0;
-            f.written.clear();
-            f.props.clear();
-            f.exact = true;
-            if (e.contains(props) && e[props].is_array()) {
-                for (const auto& name : e[props]) {
-                    if (name.is_string())
-                        f.props[name.get<std::string>()] = true;
-                }
-            }
-        }
-    }
-
-    /// The document's state for each object the fold names, taken before
-    /// the values are written back, which touch what they write.
-    std::map<long, TouchedState> save(Document& doc, const std::set<long>& also) const
-    {
-        std::map<long, TouchedState> saved;
-        auto take = [&](long cid) {
-            if (auto obj = doc.getObjectByID(cid))
-                saved.emplace(cid, touchedStateOf(*obj));
-        };
-        for (const auto& kv : objects)
-            take(kv.first);
-        for (long cid : also)
-            take(cid);
-        return saved;
-    }
-
-    /// Each saved object back to its saved state with what the rows said on
-    /// top.
-    void apply(Document& doc, const std::map<long, TouchedState>& saved) const
-    {
-        for (const auto& kv : saved) {
-            auto obj = doc.getObjectByID(kv.first);
-            if (!obj)
-                continue;
-            auto it = objects.find(kv.first);
-            const Flags* f = it == objects.end() ? nullptr : &it->second;
-            int bits = f && f->bits >= 0 ? f->bits : kv.second.bits;
-            std::vector<Property*> props;
-            obj->getPropertyList(props);
-            for (auto prop : props) {
-                const char* name = prop->getName();
-                if (!name)
-                    continue;
-                bool touched = std::binary_search(kv.second.props.begin(),
-                                                  kv.second.props.end(), std::string(name));
-                if (f) {
-                    auto p = f->props.find(name);
-                    if (p != f->props.end())
-                        touched = p->second;
-                    else if (f->exact)
-                        touched = false;
-                    if (f->written.count(name) && !obj->testStatus(ObjectStatus::NoTouch)
-                            && !(prop->getType() & Prop_Output)
-                            && !prop->testStatus(Property::Output))
-                        bits |= DocumentObject::LogTouch;
-                }
-                // The bit alone: setStatus(Touched) would touch() and
-                // signal a change.
-                if (prop->isTouched() != touched) {
-                    Property::StatusBits bit;
-                    bit.set(Property::Touched);
-                    prop->setStatus(bit, touched);
-                }
-            }
-            obj->setLogTouchedBits(bits);
-        }
-    }
-};
-
 /// Document properties a restore to a version leaves alone (sec 24.5):
 /// where the document lives and who it is, which a version of it does
 /// not change, and what the log itself keeps there. The label is who it
@@ -5204,6 +5361,7 @@ size_t Document::_replayLog(int64_t after, int64_t& last, int64_t head, bool* wh
                     touch.insert(o.cid);
             }
         }
+        touched.record(t.script, false);   // an undo's, a restore's (sec 27.63)
         ++rows;
         last = t.seq;
     }
@@ -5389,11 +5547,26 @@ bool Document::restoreVersion(int64_t num)
     // (sec 27.34): only what changed since is written. Else the version is
     // read whole into a document of its own and its difference applied --
     // which also puts right whatever the rows got part way through.
+    // The touched state it changes goes on its row (sec 27.63): an object
+    // whose flags alone changed is in no op, and a set's after, crossed
+    // forward, is the write's, not the version's.
+    std::map<long, TouchedState> before;
+    for (auto obj : getObjects())
+        before.emplace(obj->getID(), touchedStateOf(*obj));
     const int64_t head = log->head();
     if (!_moveAlongLog(head, version.seq, DocumentParams::getViewObjectTransaction())) {
         FC_LOG(getName() << ": version " << num << " restored by reading it whole");
         _readVersion(num, [&](Document& read) { _applyVersion(read); });
     }
+    std::map<long, TouchedState> after;
+    for (auto obj : getObjects()) {
+        auto state = touchedStateOf(*obj);
+        auto it = before.find(obj->getID());
+        if (it == before.end() || !(it->second == state)
+                || d->activeUndoTransaction->hasObject(obj))
+            after.emplace(obj->getID(), std::move(state));
+    }
+    d->activeUndoTransaction->LogScript = touchedRecord(before, after);
     if (d->activeUndoTransaction->isEmpty()) {
         // Already what the version was: nothing to record.
         mUndoMap.erase(d->activeUndoTransaction->getID());
@@ -6320,6 +6493,7 @@ bool Document::_moveAlongLog(int64_t fromHead, int64_t toSeq, bool views)
             continue;
         }
         fold.back(ops, views);
+        fold.touched.record((*it)->script, true);   // an undo's, a restore's (sec 27.63)
     }
     for (const LogTransaction* t : forward) {
         auto ops = store.ops(t->seq);
@@ -6332,6 +6506,7 @@ bool Document::_moveAlongLog(int64_t fromHead, int64_t toSeq, bool views)
         }
         if (!fold.forward(ops, views))
             return false;
+        fold.touched.record(t->script, false);
     }
 
     // Every value there, before anything is written.

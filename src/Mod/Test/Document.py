@@ -3625,12 +3625,47 @@ class TransactionBranchCases(unittest.TestCase):
             self.assertEqual(made.names, [])
             self.assertEqual(a.Integer, 2)
             self.assertEqual(state(), atVersion)
-            # Undo is not the walk: it touches what it writes, and a flag the
-            # restore changed with no value stays (sec 27.59).
+            # Sec 27.63: undo and redo leave the state the rows record -- not
+            # every write touched, and a flag the restore changed with no
+            # value (C) put back from the restore's own record.
             doc.undo()
             self.assertEqual(a.Integer, 3)
+            self.assertEqual(state(), atHead)
+            doc.redo()
+            self.assertEqual(a.Integer, 2)
+            self.assertEqual(state(), atVersion)
+            doc.undo()
+            self.assertEqual(state(), atHead)
         finally:
             FreeCAD.removeDocumentObserver(made)
+
+    def testUndoRowsSayTheStateTheyLeft(self):
+        # Sec 27.63: an undo's row records the touched state the undo left, so
+        # the walk crossing it forward -- a switch back to the branch it is on
+        # -- does not take its writes for edits and touch what they wrote.
+        doc = self.track(FreeCAD.newDocument("UndoRows"))
+        doc.UndoMode = 1
+        doc.openTransaction("create")
+        a = doc.addObject("App::FeatureTest", "A")
+        doc.commitTransaction()
+        doc.recompute()
+        path = os.path.join(self.dir, "undorows.FCStd")
+        doc.saveAs(path)
+        first = int(doc.Version.split()[0])
+        doc.openTransaction("edit")
+        a.Integer = 5
+        doc.commitTransaction()
+        self.assertIn("Touched", a.State)
+        doc.undo()
+        self.assertEqual(a.Integer, 4711)
+        self.assertNotIn("Touched", a.State, "the undo leaves the state before the edit")
+        doc.createTransactionBranch("other", first)
+        doc.openTransaction("edit other")
+        a.Integer = 6
+        doc.commitTransaction()
+        doc.switchTransactionBranch("main")
+        self.assertEqual(a.Integer, 4711)
+        self.assertNotIn("Touched", a.State)
 
     def testOpeningADocumentKeepsAnotherOnesTransaction(self):
         # Sec 27.15: a document made or opened while another has a transaction
