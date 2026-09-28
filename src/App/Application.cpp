@@ -112,6 +112,7 @@
 #include "ImagePlane.h"
 #include "InventorObject.h"
 #include "Link.h"
+#include "LinkArray.h"
 #include "LinkBaseExtensionPy.h"
 #include "MaterialObject.h"
 #include "MeasureDistance.h"
@@ -2510,6 +2511,7 @@ void Application::initTypes()
     App::Origin                    ::init();
     App::Link                      ::init();
     App::LinkPython                ::init();
+    App::LinkArray                 ::init();
     App::LinkElement               ::init();
     App::LinkElementPython         ::init();
     App::LinkGroup                 ::init();

@@ -2299,6 +2299,16 @@ void LinkBaseExtension::_handleChangedPropertyName(
             hasOldSubElement = true;
         }
     }
+    else if(strcmp(PropName,"Suppressed")==0
+        && strcmp(TypeName,PropertyBool::getClassTypeId().getName())==0)
+    {
+        // Upstream suppresses a link array element by a Suppressed property
+        // of its own. App::LinkArray reads it into its VisibilityList.
+        PropertyBool prop;
+        prop.setContainer(getContainer());
+        prop.Restore(reader);
+        restoredSuppressed = prop.getValue();
+    }
 }
 
 void LinkBaseExtension::setLink(int index, DocumentObject *obj,

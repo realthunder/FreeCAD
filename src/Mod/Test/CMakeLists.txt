@@ -12,6 +12,7 @@ SET(Test_SRCS
     Menu.py
     TestApp.py
     TestIntPairList.py
+    TestLinkArray.py
     TestGui.py
     UnicodeTests.py
     UnitTests.py
