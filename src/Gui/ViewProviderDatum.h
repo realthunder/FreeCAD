@@ -24,17 +24,28 @@
 #define GUI_VIEWPROVIDERDATUM_H
 
 #include "ViewProviderGeometryObject.h"
+#include "ParamHandler.h"
 
 class SoAsciiText;
+class SoFont;
 class SoScale;
+class SoSwitch;
 
 namespace Gui
 {
 
 class SoFCSelection;
+class SoAutoZoomTranslation;
 
 /**
  * View provider associated with an App::DatumElement.
+ *
+ * Two size models, switched by ViewParams DatumScreenSize. On (the default),
+ * upstream's: the datum keeps a constant size on screen, laid out in screen
+ * units under an SoAutoZoomTranslation and sized by DatumScale, DatumPlaneSize
+ * and DatumLineSize. Off, the fork's: the datum is drawn in world units scaled
+ * by Size, which ViewProviderCoordinateSystem sets to fit the objects of the
+ * owning body or part.
  */
 class GuiExport ViewProviderDatum: public ViewProviderGeometryObject {
     PROPERTY_HEADER_WITH_OVERRIDE(Gui::ViewProviderDatum);
@@ -69,14 +80,51 @@ public:
 
     QIcon getIcon() const override;
 
+    /// Whether datums keep a constant size on screen (ViewParams DatumScreenSize)
+    static bool isScreenSize();
+    /// The on-screen size of a datum plane, or an axis, in screen units
+    static float screenPlaneSize();
+    static float screenLineSize();
+
+    /** Enlarge the datum while it may be picked, e.g. by the attachment
+     * editor; constant screen size only (upstream b942275957)
+     */
+    void setTemporaryScale(double factor);
+    void resetTemporarySize();
+    /// Show or hide the label, which planes of a coordinate system hide in
+    /// constant screen size unless it is shown this way
+    void setLabelVisibility(bool visible);
+
 protected:
     void onChanged ( const App::Property* prop ) override;
     bool onDelete ( const std::vector<std::string> & ) override;
+
+    /// Lay the geometry out for the current size model; called on attach and
+    /// whenever a datum size parameter changes
+    virtual void updateDatumSize();
+    /// Whether the label shows in constant screen size when not forced on
+    virtual bool showLabelOnScreen() const { return true; }
+    /// The label text in constant screen size
+    virtual std::string screenLabel() const;
+    /// The object's role, "XY_Plane", "X_Axis", ..., empty for a lone datum
+    std::string getRole() const;
+    /// Whether the geometry is laid out for constant screen size
+    bool screenSize = false;
+    /// Put the scale node and font size of the current size model in place
+    void applySizeModel();
+    /// Set the label's text and visibility for the current size model
+    void updateLabel();
 protected:
     SoSeparator    * pOriginFeatureRoot;
     SoFCSelection  * pHighlight;
     SoScale        * pScale;
+    SoAutoZoomTranslation * pZoom;
+    SoFont         * pFont;
+    SoSwitch       * pLabelSwitch;
     SoAsciiText    * pLabel;
+    double temporaryScale = 1.0;
+    bool labelForced = false;
+    ParamHandlers handlers;
 };
 
 } /* Gui */

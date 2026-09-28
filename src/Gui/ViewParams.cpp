@@ -243,6 +243,11 @@ public:
     unsigned long AxisXColor;
     unsigned long AxisYColor;
     unsigned long AxisZColor;
+    bool DatumScreenSize;
+    double DatumScale;
+    double DatumPlaneSize;
+    double DatumLineSize;
+    double DatumTemporaryScaleFactor;
 
     // Auto generated code (Tools/params_utils.py:254)
     ViewParamsP() {
@@ -615,6 +620,16 @@ public:
         funcs["AxisYColor"] = &ViewParamsP::updateAxisYColor;
         AxisZColor = this->handle->GetUnsigned("AxisZColor", 0x3333CC00);
         funcs["AxisZColor"] = &ViewParamsP::updateAxisZColor;
+        DatumScreenSize = this->handle->GetBool("DatumScreenSize", true);
+        funcs["DatumScreenSize"] = &ViewParamsP::updateDatumScreenSize;
+        DatumScale = this->handle->GetFloat("DatumScale", 100.0);
+        funcs["DatumScale"] = &ViewParamsP::updateDatumScale;
+        DatumPlaneSize = this->handle->GetFloat("DatumPlaneSize", 62.0);
+        funcs["DatumPlaneSize"] = &ViewParamsP::updateDatumPlaneSize;
+        DatumLineSize = this->handle->GetFloat("DatumLineSize", 70.0);
+        funcs["DatumLineSize"] = &ViewParamsP::updateDatumLineSize;
+        DatumTemporaryScaleFactor = this->handle->GetFloat("DatumTemporaryScaleFactor", 2.0);
+        funcs["DatumTemporaryScaleFactor"] = &ViewParamsP::updateDatumTemporaryScaleFactor;
     }
 
     // Auto generated code (Tools/params_utils.py:284)
@@ -1400,6 +1415,26 @@ public:
     static void updateAxisZColor(ViewParamsP *self) {
         self->AxisZColor = self->handle->GetUnsigned("AxisZColor", 0x3333CC00);
     }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateDatumScreenSize(ViewParamsP *self) {
+        self->DatumScreenSize = self->handle->GetBool("DatumScreenSize", true);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateDatumScale(ViewParamsP *self) {
+        self->DatumScale = self->handle->GetFloat("DatumScale", 100.0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateDatumPlaneSize(ViewParamsP *self) {
+        self->DatumPlaneSize = self->handle->GetFloat("DatumPlaneSize", 62.0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateDatumLineSize(ViewParamsP *self) {
+        self->DatumLineSize = self->handle->GetFloat("DatumLineSize", 70.0);
+    }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateDatumTemporaryScaleFactor(ViewParamsP *self) {
+        self->DatumTemporaryScaleFactor = self->handle->GetFloat("DatumTemporaryScaleFactor", 2.0);
+    }
 };
 
 // Auto generated code (Tools/params_utils.py:336)
@@ -2104,6 +2139,32 @@ static const App::ParamRegistry::Registrar _ViewParamsRegistrar({
         .setTitle("Axis YColor"),
     App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "AxisZColor", "AxisZColor", App::ParamInfo::Hex, 0x3333CC00)
         .setTitle("Axis ZColor"),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DatumScreenSize", "DatumScreenSize", App::ParamInfo::Bool, true)
+        .setTitle("Constant datum size on screen")
+        .setDoc("Draw origins, coordinate systems and datum elements at a constant size on\n"
+"screen, the way upstream FreeCAD does. When off, an origin is sized to the\n"
+"objects of its body or part."),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DatumScale", "DatumScale", App::ParamInfo::Float, 100.0)
+        .setTitle("Datum scale")
+        .setDoc("Size in percent of origins, coordinate systems and datum elements drawn\n"
+"at a constant size on screen.")
+        .setProxy("SpinBox")
+        .setRange(1.0, 1000.0, 10.0, 0),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DatumPlaneSize", "DatumPlaneSize", App::ParamInfo::Float, 62.0)
+        .setTitle("Datum plane size")
+        .setDoc("On-screen size of a datum plane, before the datum scale.")
+        .setProxy("SpinBox")
+        .setRange(1.0, 1000.0, 1.0, 0),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DatumLineSize", "DatumLineSize", App::ParamInfo::Float, 70.0)
+        .setTitle("Datum line size")
+        .setDoc("On-screen length of a datum axis, before the datum scale.")
+        .setProxy("SpinBox")
+        .setRange(1.0, 1000.0, 1.0, 0),
+    App::ParamInfo("Gui", "ViewParams", "User parameter:BaseApp/Preferences/View", "DatumTemporaryScaleFactor", "DatumTemporaryScaleFactor", App::ParamInfo::Float, 2.0)
+        .setTitle("Datum temporary scale")
+        .setDoc("How much datum planes grow while a reference is picked from them.")
+        .setProxy("SpinBox")
+        .setRange(1.0, 10.0, 0.5, 1),
 });
 
 // Auto generated code (Tools/params_utils.py:368)
@@ -7290,7 +7351,150 @@ void ViewParams::removeAxisZColor() {
     instance()->handle->RemoveUnsigned("AxisZColor");
 }
 
-// Auto generated code (Gui/ViewParams.py:644)
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docDatumScreenSize() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Draw origins, coordinate systems and datum elements at a constant size on\n"
+"screen, the way upstream FreeCAD does. When off, an origin is sized to the\n"
+"objects of its body or part.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const bool & ViewParams::getDatumScreenSize() {
+    return instance()->DatumScreenSize;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const bool & ViewParams::defaultDatumScreenSize() {
+    const static bool def = true;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setDatumScreenSize(const bool &v) {
+    instance()->handle->SetBool("DatumScreenSize",v);
+    instance()->DatumScreenSize = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeDatumScreenSize() {
+    instance()->handle->RemoveBool("DatumScreenSize");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docDatumScale() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"Size in percent of origins, coordinate systems and datum elements drawn\n"
+"at a constant size on screen.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & ViewParams::getDatumScale() {
+    return instance()->DatumScale;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & ViewParams::defaultDatumScale() {
+    const static double def = 100.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setDatumScale(const double &v) {
+    instance()->handle->SetFloat("DatumScale",v);
+    instance()->DatumScale = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeDatumScale() {
+    instance()->handle->RemoveFloat("DatumScale");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docDatumPlaneSize() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"On-screen size of a datum plane, before the datum scale.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & ViewParams::getDatumPlaneSize() {
+    return instance()->DatumPlaneSize;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & ViewParams::defaultDatumPlaneSize() {
+    const static double def = 62.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setDatumPlaneSize(const double &v) {
+    instance()->handle->SetFloat("DatumPlaneSize",v);
+    instance()->DatumPlaneSize = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeDatumPlaneSize() {
+    instance()->handle->RemoveFloat("DatumPlaneSize");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docDatumLineSize() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"On-screen length of a datum axis, before the datum scale.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & ViewParams::getDatumLineSize() {
+    return instance()->DatumLineSize;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & ViewParams::defaultDatumLineSize() {
+    const static double def = 70.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setDatumLineSize(const double &v) {
+    instance()->handle->SetFloat("DatumLineSize",v);
+    instance()->DatumLineSize = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeDatumLineSize() {
+    instance()->handle->RemoveFloat("DatumLineSize");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *ViewParams::docDatumTemporaryScaleFactor() {
+    return QT_TRANSLATE_NOOP("ViewParams",
+"How much datum planes grow while a reference is picked from them.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & ViewParams::getDatumTemporaryScaleFactor() {
+    return instance()->DatumTemporaryScaleFactor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & ViewParams::defaultDatumTemporaryScaleFactor() {
+    const static double def = 2.0;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void ViewParams::setDatumTemporaryScaleFactor(const double &v) {
+    instance()->handle->SetFloat("DatumTemporaryScaleFactor",v);
+    instance()->DatumTemporaryScaleFactor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void ViewParams::removeDatumTemporaryScaleFactor() {
+    instance()->handle->RemoveFloat("DatumTemporaryScaleFactor");
+}
+
+// Auto generated code (Gui/ViewParams.py:661)
 const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("Linear"),
     QStringLiteral("InQuad"),
@@ -7335,7 +7539,7 @@ const std::vector<QString> ViewParams::AnimationCurveTypes = {
     QStringLiteral("OutInBounce"),
 };
 
-// Auto generated code (Gui/ViewParams.py:652)
+// Auto generated code (Gui/ViewParams.py:669)
 static const char *DrawStyleNames[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "As Is"),
     QT_TRANSLATE_NOOP("DrawStyle", "Points"),
@@ -7348,7 +7552,7 @@ static const char *DrawStyleNames[] = {
     nullptr,
 };
 
-// Auto generated code (Gui/ViewParams.py:662)
+// Auto generated code (Gui/ViewParams.py:679)
 static const char *DrawStyleDocs[] = {
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, normal display mode"),
     QT_TRANSLATE_NOOP("DrawStyle", "Display style, show points only"),
@@ -7361,13 +7565,13 @@ static const char *DrawStyleDocs[] = {
 };
 
 namespace Gui {
-// Auto generated code (Gui/ViewParams.py:672)
+// Auto generated code (Gui/ViewParams.py:689)
 const char **drawStyleNames()
 {
     return DrawStyleNames;
 }
 
-// Auto generated code (Gui/ViewParams.py:679)
+// Auto generated code (Gui/ViewParams.py:696)
 const char *drawStyleNameFromIndex(int i)
 {
     if (i < 0 || i>= 8)
@@ -7375,7 +7579,7 @@ const char *drawStyleNameFromIndex(int i)
     return DrawStyleNames[i];
 }
 
-// Auto generated code (Gui/ViewParams.py:688)
+// Auto generated code (Gui/ViewParams.py:705)
 int drawStyleIndexFromName(const char *name)
 {
     if (!name)
@@ -7387,7 +7591,7 @@ int drawStyleIndexFromName(const char *name)
     return -1;
 }
 
-// Auto generated code (Gui/ViewParams.py:701)
+// Auto generated code (Gui/ViewParams.py:718)
 const char *drawStyleDocumentation(int i)
 {
     if (i < 0 || i>= 8)

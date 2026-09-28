@@ -34,7 +34,7 @@ import ViewParams
 ViewParams.declare_begin()
 ]]]*/
 
-// Auto generated code (Gui/ViewParams.py:609)
+// Auto generated code (Gui/ViewParams.py:626)
 #include <QString>
 
 // Auto generated code (Tools/params_utils.py:82)
@@ -2277,7 +2277,70 @@ public:
     static const char *docAxisZColor();
     //@}
 
-    // Auto generated code (Gui/ViewParams.py:615)
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DatumScreenSize
+    ///
+    /// Draw origins, coordinate systems and datum elements at a constant size on
+    /// screen, the way upstream FreeCAD does. When off, an origin is sized to the
+    /// objects of its body or part.
+    static const bool & getDatumScreenSize();
+    static const bool & defaultDatumScreenSize();
+    static void removeDatumScreenSize();
+    static void setDatumScreenSize(const bool &v);
+    static const char *docDatumScreenSize();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DatumScale
+    ///
+    /// Size in percent of origins, coordinate systems and datum elements drawn
+    /// at a constant size on screen.
+    static const double & getDatumScale();
+    static const double & defaultDatumScale();
+    static void removeDatumScale();
+    static void setDatumScale(const double &v);
+    static const char *docDatumScale();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DatumPlaneSize
+    ///
+    /// On-screen size of a datum plane, before the datum scale.
+    static const double & getDatumPlaneSize();
+    static const double & defaultDatumPlaneSize();
+    static void removeDatumPlaneSize();
+    static void setDatumPlaneSize(const double &v);
+    static const char *docDatumPlaneSize();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DatumLineSize
+    ///
+    /// On-screen length of a datum axis, before the datum scale.
+    static const double & getDatumLineSize();
+    static const double & defaultDatumLineSize();
+    static void removeDatumLineSize();
+    static void setDatumLineSize(const double &v);
+    static const char *docDatumLineSize();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
+    /// Accessor for parameter DatumTemporaryScaleFactor
+    ///
+    /// How much datum planes grow while a reference is picked from them.
+    static const double & getDatumTemporaryScaleFactor();
+    static const double & defaultDatumTemporaryScaleFactor();
+    static void removeDatumTemporaryScaleFactor();
+    static void setDatumTemporaryScaleFactor(const double &v);
+    static const char *docDatumTemporaryScaleFactor();
+    //@}
+
+    // Auto generated code (Gui/ViewParams.py:632)
     static const std::vector<QString> AnimationCurveTypes;
 
     static void onViewParamChanged(const char *sReason);
@@ -2308,7 +2371,7 @@ ViewParams.declare_end()
 }; // class ViewParams
 } // namespace Gui
 
-// Auto generated code (Gui/ViewParams.py:628)
+// Auto generated code (Gui/ViewParams.py:645)
 namespace Gui {
 /// Obtain all display style names, terminated by nullptr entry.
 GuiExport const char **drawStyleNames();

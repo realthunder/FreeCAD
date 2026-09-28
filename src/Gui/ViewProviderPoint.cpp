@@ -28,6 +28,7 @@
 # include <Inventor/nodes/SoCoordinate3.h>
 # include <Inventor/nodes/SoPickStyle.h>
 # include <Inventor/nodes/SoSeparator.h>
+# include <Inventor/nodes/SoSwitch.h>
 # include <Inventor/nodes/SoSphere.h>
 # include <Inventor/nodes/SoTranslation.h>
 #endif
@@ -53,6 +54,8 @@ ViewProviderPoint::~ViewProviderPoint() = default;
 void ViewProviderPoint::attach ( App::DocumentObject *obj ) {
     ViewProviderDatum::attach ( obj );
 
+    // In world units scaled by Size, or in screen units, the same numbers:
+    // the marker keeps upstream's radius on screen
     static const float size = ViewProviderCoordinateSystem::baseSize ();
 
     SoSeparator *sep = getDatumRoot ();
@@ -79,5 +82,5 @@ void ViewProviderPoint::attach ( App::DocumentObject *obj ) {
     ps->style.setValue(SoPickStyle::BOUNDING_BOX);
     sep->addChild(ps);
 
-    sep->addChild ( getLabel () );
+    sep->addChild ( pLabelSwitch );
 }

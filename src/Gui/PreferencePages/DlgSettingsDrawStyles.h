@@ -96,6 +96,18 @@ private:
     Gui::PrefDoubleSpinBox *OutlineThicken = nullptr;
 
     // Auto generated code (Tools/params_utils.py:451)
+    QGroupBox * groupDatums = nullptr;
+    Gui::PrefCheckBox *DatumScreenSize = nullptr;
+    QLabel *labelDatumScale = nullptr;
+    Gui::PrefDoubleSpinBox *DatumScale = nullptr;
+    QLabel *labelDatumPlaneSize = nullptr;
+    Gui::PrefDoubleSpinBox *DatumPlaneSize = nullptr;
+    QLabel *labelDatumLineSize = nullptr;
+    Gui::PrefDoubleSpinBox *DatumLineSize = nullptr;
+    QLabel *labelDatumTemporaryScaleFactor = nullptr;
+    Gui::PrefDoubleSpinBox *DatumTemporaryScaleFactor = nullptr;
+
+    // Auto generated code (Tools/params_utils.py:451)
     QGroupBox * groupHiddenLines = nullptr;
     QLabel *labelHiddenLineSync = nullptr;
     Gui::PrefComboBox *HiddenLineSync = nullptr;

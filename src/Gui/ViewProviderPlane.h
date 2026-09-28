@@ -26,11 +26,16 @@
 #define GUI_ViewProviderPlane_H
 
 #include "ViewProviderDatum.h"
+#include "Selection.h"
+
+class SoCoordinate3;
+class SoTranslation;
+class SoVertexProperty;
 
 namespace Gui
 {
 
-class GuiExport ViewProviderPlane : public ViewProviderDatum
+class GuiExport ViewProviderPlane : public ViewProviderDatum, public SelectionObserver
 {
     PROPERTY_HEADER_WITH_OVERRIDE(Gui::ViewProviderPlane);
 public:
@@ -39,6 +44,24 @@ public:
     ~ViewProviderPlane() override;
 
     void attach ( App::DocumentObject * ) override;
+
+protected:
+    void updateDatumSize() override;
+    /// A plane of a coordinate system shows its label on screen only while
+    /// it may be picked (upstream b942275957)
+    bool showLabelOnScreen() const override { return getRole().empty(); }
+
+private:
+    /// Constant screen size: a plane of a coordinate system is drawn as the
+    /// corner of its first quadrant unless it is selected or hovered
+    void onSelectionChanged(const SelectionChanges& msg) override;
+
+private:
+    SoCoordinate3 *pCoords = nullptr;
+    SoVertexProperty *pFaceVertices = nullptr;
+    SoTranslation *pTextTranslation = nullptr;
+    bool isSelected = false;
+    bool isHovered = false;
 };
 
 } //namespace Gui
