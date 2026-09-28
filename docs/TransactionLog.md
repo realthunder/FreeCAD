@@ -7898,3 +7898,151 @@ which the trims start on their own.
 **T5 (Gui)** after T4: the same workload at 100 steps under the Gui
 (offscreen), rows split by `ckind`, `GuiDocument.xml` per version,
 main-thread commit time against FreeCADCmd, a version opened with its view.
+
+### 27.67 T4 as run: the row paths could not bring a copy-on-change instance back (2026-09-29)
+
+**The script.** `scripts/transaction-log-instances.py` (FreeCADCmd; `T4_FILE`,
+`T4_STEPS`, `T4_SAVE_EVERY`, `T4_BRANCH_AT`, `T4_SWITCH_EVERY`,
+`T4_TRIM_EVERY`, `T4_UNDO`, `T4_MAX_INSTANCES`, `T4_SEED`, `T4_LOG`,
+`T4_DUMP`, `T4_OUT`), as 27.66 planned it: 1000 steps on scanner.FCStd, each
+a transaction and a recompute -- add a copy-on-change link to `Body002`
+(`Owned`, dimensions never used before), edit an instance's dimensions,
+delete one -- at most 40 instances, seed 27; a save every 10; branch `side`
+at 50 and a switch every 50; a trim of the current branch every 200. The
+last step switches and trims nothing. Each branch's states are kept in step
+order (an undo walks its own branch's steps since the document was opened),
+and every instance's element map is compared at each switch, after a
+restore and its undo, after each undo back through the steps, after the
+reopen and after `compactFileState()`. `T4_DUMP=1` keeps the maps whole and
+reports how the ones that differ do, with the hasher strings the names use.
+
+**It found eight defects, all in the paths that rebuild the document from
+rows -- cold undo, switch, replay.** The hot undo hides them: it puts the
+detached objects themselves back. Fixed in 8239381ba8 and e6e325f775:
+
+1. *A removed object was logged after its removal's cascade.* The remove
+   branch of the commit copied every property live, but deleting a
+   copy-on-change link first removes its copy group, which empties the
+   link's target, drops it to `Enabled` and removes the properties it
+   mirrors; the row recorded that. It now records the undo system's
+   first-write copy where the transaction holds one (with its touched
+   state), and sets the dynamic properties the cascade removed, with their
+   metadata, so a cold undo adds them back.
+2. *Every `PropertyXLink` value in the log was empty.* The log serialises
+   detached copies, and `PropertyXLink::Save` of a property with no owner
+   wrote nothing -- every `App::Link.LinkedObject` of every row. A capture
+   now names its document (`CaptureConfig::document`,
+   `capturingDocument()`), and an ownerless copy writes relative to it from
+   the names `copyTo()` kept.
+3. *A dynamic property's status bits were not logged.* A recreated body's
+   `Config_*` lost `CopyOnChange`, and the link restored onto it dropped
+   the properties it mirrors (`setupCopyOnChange` with `checkExisting`).
+   The metadata carries ` status=N`; the cold undo, the replay and the fold
+   apply it (User bits and `Touched` left alone), and so does a restore
+   through a version document. A static property's status is still not
+   carried: its op has no metadata, and non-empty metadata means an
+   `addprop` to the squash.
+4. *`PropertyLinkSub` and `PropertyLinkSubList` wrote a target removed in
+   the same transaction as empty.* A recreated pad came back with no
+   `Profile`. Sec 24.3's `CaptureNames` reached only the savers that call
+   `getExportName()` unguarded; these two checked `isAttachedToDocument()`
+   first.
+5. *`restoreValue` never ran `afterRestore()`.* An expression engine only
+   parks what its `Restore` reads and installs it there, so every logged
+   engine value restored to nothing. It runs once a pass's values are all
+   in (`RestoreBatch`: a sketch's expression on `Constraints[3]` needs the
+   constraints first), and an engine restored live now drops the
+   expressions the value lacks -- a cold undo of an added expression took
+   nothing away. `count="0"` no longer returns before that.
+6. *Element map ids crossed between values.* `ElementMap` numbers its maps
+   in process-wide tables that only a document's save and restore reset.
+   A capture runs no `beforeSave`, so it wrote whatever id the last save
+   left -- 0 for a map never saved, which is every fresh copy -- and a
+   restore took the map an earlier value had left under that id: after a
+   cold undo, every shape of the copy carried its sketch's map on its own
+   geometry. The same tables were read from the log's worker while the
+   main thread could be saving. `Data::ElementMapIdScope` numbers and reads
+   a value's maps in tables of its own, on its own thread; `captureValue`
+   and `restoreValue` open one.
+7. *`RestoreBatch` called `afterRestore()` on freed properties* -- the
+   first long run died at its first switch. A switch that reads a version
+   whole restores a link's target, and the link removes and adds again the
+   properties it mirrors. The batch now forgets a property removed, and
+   the properties of an object deleted, while it lives.
+8. *A switch leaked seven objects per recreated body.* An `App::Origin`
+   makes its axes, planes and point on first demand, but not while the
+   document restores or performs a transaction; a replay is neither. The
+   replay recreated the origin with no `OriginFeatures` yet, something
+   asked, and the seven it made were orphaned once the logged list came in
+   -- 2941 objects for 29 instances by step 600. `Document::isReplaying()`
+   (a switch or recovery replaying rows, or a restore to a version) and the
+   origin waits for it.
+
+Tests: `TransactionBranchCases.testColdUndoBringsBackACopyOnChangeLink`
+(1-6: the link, its target in the log, the copy's links and expressions,
+the status, every shape's element map), `testColdUndoTakesBackAnExpression`
+(5), `testSwitchMakesNoOriginOfItsOwn` (8: four switches, the same object
+names each time); C++ `TransactionLogTest.restoreBatchForgetsARemovedProperty`
+(7).
+
+**The run, log on** (after the fixes; per save, the ten steps before it):
+
+| step | recompute /10 | save | file | store (+WAL) | `strtable` rows | `strref` | objects | RSS |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 10 | 0.72 s | 0.90 s | 6.7 MB | 6.7 (+4.2) MB | 43,258 | 77 KB | 645 | 853 MB |
+| 100 | 0.74 s | 1.12 s | 8.3 MB | 12.7 (+4.3) MB | 44,827 | 239 KB | 930 | 863 MB |
+| 300 | 0.82 s | 1.71 s | 11.8 MB | 25.8 (+6.3) MB | 46,866 | 579 KB | 825 | 1056 MB |
+| 500 | 0.84 s | 2.39 s | 19.2 MB | 38.3 (+7.9) MB | 50,409 | 889 KB | 945 | 1090 MB |
+| 700 | 0.89 s | 3.27 s | 24.1 MB | 49.1 (+7.9) MB | 53,820 | 1150 KB | 1200 | 1104 MB |
+| 1000 | 0.96 s | 4.55 s | 31.2 MB | 68.1 (+11.5) MB | 58,132 | 1585 KB | 1170 | 1110 MB |
+
+At the end: 71 versions, 1,385 rows, 154,089 ops, 50,466 entities; `entity`
+30.8 MB, `op` 16.2 MB (+ `op_container` 4.3, its autoindex 2.4), `txn` 4.3,
+`strtable` 3.1, `strref` 1.9, `ref` 1.7. Strings minted 16,795, dropped by
+the saves' compaction 9,702. Objects are always 615 + 15 per instance.
+- *Save grows with the history*, 0.90 -> 4.55 s, the file 6.7 -> 31.2 MB,
+  while the log-off run's save stays at 0.83-0.86 s and 4.6 MB: it is the
+  embedded copy, and it grows about 25 KB a step.
+- *The ops are the bulk*: about 150 a step, since an instance is 15 objects
+  and a create or remove sets every property of each.
+- *Switch* 0.38 s at 100, 4.6 s from 700 on; *trim* (105-213 rows) 0.68,
+  1.61, 2.51, 7.56 s at 200-800 -- the finding 27.66 expected: each trim's
+  compaction decodes every retained version.
+- *At the end*: the oldest version opened in 3.53 s, restored in 2.02 s, its
+  undo 0.09 s; 39 undos 0.03-0.20 s each; reopen 1.64 s (8 versions
+  carried of 72), `compactFileState()` 0.62 s, 5,413 strings.
+- *Recompute creep* is not the log: log off, the same seed goes 0.76 ->
+  1.26 s per ten steps, at a steady 37-40 instances from step 300 on (the
+  log-on run's count differs: its branches hold different instances). Not
+  chased.
+
+**Log off** (T2 of 27.52, same seed, no branches): 0 errors, and all 22
+element-map checks agree -- the hot undos, the reopen.
+
+**Still wrong with the log on: object code reacts during a replay.** The
+restore to the oldest version, its undo, the reopen and the compaction keep
+every instance's element map exactly. The switches do not: from the first
+switch back to `main` (step 100) instances come back as `Enabled` links
+without their `Config_*` -- 21 edits failed on them -- and most instances'
+maps differ at every switch after, and at 31 of the 39 undos at the end,
+which walk steps made on top of switched states. The cause is the one of
+item 8, in more places: object code pauses its reactions while the
+document `isPerformingTransaction()` -- the link's copy-on-change handling
+at eight sites of `Link.cpp`, and about forty sites across App, Part,
+PartDesign, Sketcher and the Gui -- and a replay does not count. Whether a
+replay should count as performing a transaction (every one of those sites
+at once, and with it the document's own transaction bookkeeping during a
+replay) or object code should ask `isReplaying()` as well is open
+(27.68).
+
+**Also seen, not chased:** in the 41-step pilot, undoing one of `main`'s own
+deletes after a switch back rebuilt the copy's shapes -- the same names,
+new geometry-id tags on its faces and vertices (`#1ff96;:Hb84,F` ->
+`#201a5;:Hb84,F`); a minimal switch-then-undo did not reproduce it. The
+known SIGSEGV at exit (a static destructor in Part.so tearing down
+`TopoDS_TShape`s) ends every run, after the results are written.
+
+**Gates** (e6e325f775): Python 2950 OK (52 skipped, 6 expected failures;
++3), ctest 846/846 (+1), the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16.
+
+**Next:** the ruling of 27.68, then T4 again; then T5.
