@@ -7552,3 +7552,9 @@ schema-5 save shares their bytes, convert the version on first read -- the
 log stays schema 5 only: schema 4 duplicates in too many ways (a shape per
 property, no congruent sharing, placement in the bytes) for the open time
 it saves to be worth a second format in the log.
+
+**Next (user, 2026-09-28), next session, in order:** (1) undo and redo
+leave the touched state the rows record -- the proposal of 27.59 with the
+user's note above: the recorded flags first, an object whose derived value
+could not be written back touched last, and a restore recording the flags
+it changed with no value; (2) 27.50 steps 1-4, the shared string table.
