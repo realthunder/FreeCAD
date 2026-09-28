@@ -15,8 +15,10 @@
 # T4_TRIM_EVERY. The last step switches and trims nothing, so the end runs on
 # the branch the steps before it made. At the end: open the oldest version,
 # restore to it, undo that, undo T4_UNDO steps (the hot window, then cold),
-# reopen, compactFileState(); every instance's element map is compared with
-# what it was at each of those points.
+# reopen, compactFileState(); every instance's stored state -- its copy, its
+# mode, its Config_* values, every copy object's element map -- is compared
+# with what it was at each of those points. The link's own shape, made on
+# demand, is compared too and reported apart.
 #
 # T4_LOG=0 runs the same steps with the log off (T2 of sec 27.52): no
 # branches, trims, versions or store; the recompute creep and the saves.
@@ -52,6 +54,9 @@ out = env.get("T4_OUT", "")
 dump = env.get("T4_DUMP", "0") == "1"
 fullMaps = {}
 
+# T4_LOGLEVEL=Log shows, among much else, a switch that read a version whole.
+if env.get("T4_LOGLEVEL"):
+    FreeCAD.setLogLevel("App", env["T4_LOGLEVEL"])
 params = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Document")
 params.SetInt("TransactionLog", 2 if logOn else 0)
 
@@ -128,18 +133,39 @@ def instances(doc):
 
 
 def elementMaps(doc):
-    """{instance: digest of its copy's element map}, or the error it raised."""
+    """{instance: (digest of its stored state, digest of its link's shape)}.
+
+    The stored state is what the document holds for the instance: its copy's
+    name, LinkCopyOnChange, the Config_* values, and every copy object's
+    stored element map. The link's shape is made on demand (Part.getShape)
+    and is reported apart: its element tags are minted when it is made."""
     maps = {}
     for link in instances(doc):
         try:
+            linked = link.getLinkedObject(False)
+            objs = [linked] + list(getattr(linked, "Group", []))
+            stored = {
+                "copy": linked.Name,
+                "mode": link.LinkCopyOnChange,
+                "config": sorted(
+                    (n, round(getattr(link, n).Value, 9))
+                    for n in link.PropertiesList
+                    if n.startswith("Config")
+                ),
+                "maps": {
+                    o.Name: sorted(o.Shape.ElementMap.items()) for o in objs if hasattr(o, "Shape")
+                },
+            }
+            digest = hashlib.sha1(repr(sorted(stored.items())).encode()).hexdigest()[:16]
             shape = Part.getShape(link, needSubElement=False, retType=0)
-            items = sorted(shape.ElementMap.items())
-            digest = hashlib.sha1(repr(items).encode()).hexdigest()[:16]
-            maps[link.Name] = digest
+            derived = hashlib.sha1(repr(sorted(shape.ElementMap.items())).encode()).hexdigest()[:16]
+            maps[link.Name] = (digest, derived)
             if dump:
-                fullMaps[digest] = dict(items)
+                fullMaps[digest] = {
+                    "%s %s" % (o, n): e for o, items in stored["maps"].items() for n, e in items
+                }
         except Exception as e:
-            maps[link.Name] = "error: %s" % e
+            maps[link.Name] = ("error: %s" % e, "")
     return maps
 
 
@@ -168,15 +194,26 @@ def strings(doc, name):
 
 
 def compare(label, doc, expected):
-    now = elementMaps(doc)
-    differ = sorted(k for k in set(now) | set(expected) if now.get(k) != expected.get(k))
-    entry = {"at": label, "instances": len(now), "differ": len(differ), "names": differ[:10]}
+    both = elementMaps(doc)
+    now = {k: v[0] for k, v in both.items()}
+    want = {k: v[0] for k, v in expected.items()}
+    differ = sorted(k for k in set(now) | set(want) if now.get(k) != want.get(k))
+    derived = sorted(
+        k for k in set(both) & set(expected) if both[k][1] != expected[k][1] and k not in differ
+    )
+    entry = {
+        "at": label,
+        "instances": len(now),
+        "differ": len(differ),
+        "names": differ[:10],
+        "link_shapes_differ": len(derived),
+    }
     entry["detail"] = {
-        k: {"now": now.get(k), "expected": expected.get(k), "state": describe(doc, k)}
+        k: {"now": now.get(k), "expected": want.get(k), "state": describe(doc, k)}
         for k in differ[:10]
     }
     for k in differ[:3] if dump else []:
-        a, b = fullMaps.get(now.get(k)), fullMaps.get(expected.get(k))
+        a, b = fullMaps.get(now.get(k)), fullMaps.get(want.get(k))
         if a is None or b is None:
             continue
         # By element: the name it had, and the name it has.
@@ -194,8 +231,8 @@ def compare(label, doc, expected):
         }
     result.setdefault("element_maps", []).append(entry)
     print(
-        "T4 element maps %s: %d instances, %d differ %s"
-        % (label, len(now), len(differ), differ[:5])
+        "T4 element maps %s: %d instances, %d differ %s (link shapes only: %d)"
+        % (label, len(now), len(differ), differ[:5], len(derived))
     )
     return entry
 

@@ -5307,17 +5307,23 @@ void Document::_applyVersion(Document& version, bool views)
         });
     }
 
-    // 3 and 4, per container: the dynamic properties, then the values.
+    // 3. The dynamic properties of every container, then 4. every value: a
+    // value's restore can read another container's properties -- a
+    // copy-on-change link restored onto its copy mirrors the copy's
+    // CopyOnChange ones, and drops its own the copy does not have yet
+    // (sec 27.68).
     CaptureConfig config(*this);
     auto& manager = getFileBlobManager();
     std::vector<FileBlobHandle> held;
     const auto& fromManager = version.getFileBlobManager();
     auto restoreContainer = [&](PropertyContainer& live, const PropertyContainer& from,
-                                bool isDocument) {
+                                bool isDocument, bool values) {
         std::map<std::string, Property*> want, have;
         from.getPropertyMap(want);
         live.getPropertyMap(have);
         for (auto& kv : have) {
+            if (values)
+                break;
             if (want.count(kv.first) || live.getDynamicPropertyData(kv.second).name.empty())
                 continue;
             guarded(kv.first, [&]() { live.removeDynamicProperty(kv.first.c_str()); });
@@ -5330,7 +5336,9 @@ void Document::_applyVersion(Document& version, bool views)
                 continue;
             guarded(kv.first, [&]() {
                 Property* prop = live.getPropertyByName(kv.first.c_str());
-                if (!prop) {
+                if (!values) {
+                    if (prop)
+                        return;
                     auto dyn = from.getDynamicPropertyData(kv.second);
                     if (dyn.name.empty())
                         return;
@@ -5347,7 +5355,10 @@ void Document::_applyVersion(Document& version, bool views)
                     status.reset(Property::User3);
                     status.set(Property::Touched, prop->testStatus(Property::Touched));
                     prop->setStatusValue(status.to_ulong());
+                    return;
                 }
+                if (!prop)
+                    return;
                 CapturedValue want = captureValue(config, *kv.second);
                 if (!want.ok)
                     throw Base::RuntimeError("cannot read the version's value");
@@ -5368,13 +5379,13 @@ void Document::_applyVersion(Document& version, bool views)
             });
         }
     };
-    {
+    for (bool values : {false, true}) {
         RestoreBatch batch;
-        restoreContainer(*this, version, true);
+        restoreContainer(*this, version, true, values);
         for (auto& kv : target) {
             auto obj = getObjectByID(kv.first);
             if (obj)
-                restoreContainer(*obj, *kv.second, false);
+                restoreContainer(*obj, *kv.second, false, values);
         }
     }
     // View providers (sec 24.9), where view state is undo state: under
@@ -5385,8 +5396,10 @@ void Document::_applyVersion(Document& version, bool views)
         for (auto& kv : target) {
             auto live = viewOf(getObjectByID(kv.first));
             auto from = viewOf(kv.second);
-            if (live && from)
-                restoreContainer(*live, *from, false);
+            if (live && from) {
+                restoreContainer(*live, *from, false, false);
+                restoreContainer(*live, *from, false, true);
+            }
         }
     }
     // 5. Touched as the version was saved (sec 27.60): its Document.xml
