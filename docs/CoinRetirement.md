@@ -3253,6 +3253,74 @@ when served clients multiply T or maps grow:
 - the first pass after a reopen (0.35 s at E = 1000);
 - building a map entry by entry (quadratic).
 
+### 5.25 The auto clipping answered per view, and every view paid for it (fixed 2026-09-28)
+
+Chasing 5.24's scaling found that the passes were not the dear part. With
+1000 path entries in four views a structure turn cost ~166 ms more than
+with none, and a profile of the turns (DWARF call graphs, the four corners
+E = 0/1000 x T = 1/4) put 107 ms of it in ONE place: the bounding box pass
+`SoRenderManagerP::setClippingPlanes` applies on EVERY render of every view
+(auto clipping; there is no delay -- coin3d's `7ee8ef260a` removed a clip
+sensor that only ran a SECOND pass on scene changes, the per-render one was
+always there). The pass itself was cheap while its caches held (3 us); it
+was the caches that did not hold.
+
+**Why.** A view's table is read at the switch of every object some view has
+an entry for, and every cache open above records the read -- in particular
+the bounding box cache of each Part's root, which 5.23 keeps (it spoils only
+the caches inside a key's span). `SoFCVisibilityElement::matches` compared
+the table by ADDRESS, and every view has its own table. After any change
+(one box added to one Part, or anything a drag or a recompute touches) each
+view's clip pass found every Part root's cache built by the previous view,
+invalid, and walked every box under it. Measured by the loop (touch one
+Part's root, one clip pass per view): 62 ms a round in four views with 1000
+entries, 0.13 ms with none; 0.11 ms in one view. Disabling the element for
+bounding boxes (a probe, reverted) brought the four-view round to 0.13 ms:
+the cause. Coin keeps ONE match record per element per cache (the first
+read, `SoCache::addElement`), so a cache cannot depend on "the answers of
+the roots below me" -- only on the whole table.
+
+**The fix (user ruling: both halves).**
+- **The clip pass answers for no view** (`SoFCVisibilityElement::Superset`):
+  nothing hidden, and shown whatever some view shows
+  (`SoFCSwitch::isPerViewShown`). The same answer in every view and every
+  occurrence, so it spoils nothing and every view's clip pass shares what
+  the last one built. A box too large only loosens the near and far planes.
+  It is recognised as the bounding box pass applied to the traversing view's
+  render-manager scene (`SoFCUnifiedSelection::Private::isClipPass`), which
+  nothing else applies one to.
+- **Picks cull with it** (`Cull`): a pick answers by its view's table but
+  accepts a Superset cache, a box that holds everything it can hit. Without
+  this, a pick in any view with entries would have found no valid cache and
+  culled nothing (`SoFCUnifiedSelection::getBoundingBox`'s note: 222 us
+against 13 us over 400 boxes).
+- **Every other pass matches by CONTENT**: `Table::identity`, interned by
+  `ViewVisibility` (equal entries, equal identity; never reused), replaces
+  the address. Exact passes -- the viewer's scene box, which fit-all takes
+  when the view has a map -- stay per view and share caches between views
+  whose maps are equal.
+
+**Measured.** The loop's clip round after a one-Part change, four views,
+1000 entries: 0.17 ms with equal maps, 0.18 ms with a different map per
+view, 0.15 ms with none (was 62 / 57 ms). The turn profile at E=1000 T=4:
+clip bbox 108 -> 2.0 ms per turn (1.5 with different maps; 2.0 with no
+entries); the whole turn's excess over no entries ~166 -> ~50 ms, of which
+the resolution pass is 20-23 ms (5.24) and bgfx ~15 ms (not chased yet).
+
+**Tests.** `tests/gui/per-view-clip-cache.py` (three views, different maps):
+A the clip pass holds an object only one view shows and one only one view
+hides, in every view; B the exact box stays per view right after the clip
+passes rebuilt the shared caches (the order a superset would leak in); C
+picks answer per view and a miss through a gap still culls (31 us, 30 with
+no entries); D the clip round after a one-Part change costs what it does
+with no entries (258 vs 255 us). Before-state, the same test against the
+old code (the four source files stashed, rebuilt): A fails as meant (each
+view's clip box was its own), B passes (it does both before and after), C
+FAILS -- a gap pick cost 235 us against 31 with no entries: with more than
+one view, pick culling never worked under per-view entries, every other
+view's clip pass having rebuilt the caches -- and D fails, 1511 us against
+374 on this small scene.
+
 ## 5. Evaluated and not taken: one capture root to catch everything
 
 Stage 1b left an obvious-looking follow-on: if what Coin still draws is

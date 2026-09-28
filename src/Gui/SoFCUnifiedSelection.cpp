@@ -84,6 +84,8 @@
 #include <optional>
 #include <boost/algorithm/string/predicate.hpp>
 
+#include <Inventor/SoRenderManager.h>
+
 #include <QApplication>
 #include <QtOpenGL.h>
 
@@ -274,7 +276,18 @@ public:
     bool doAction(SoAction *);
     bool handleEvent(SoHandleEventAction * action);
     void applyOverrideMode(SoState * state) const;
-    void applyVisibility(SoState * state) const;
+    void applyVisibility(SoState * state,
+                         SoFCVisibilityElement::Mode mode = SoFCVisibilityElement::Exact) const;
+    /// Whether \a action is the auto clipping of the view it traverses
+    /// for: a bounding box pass over that view's render manager's scene,
+    /// which nothing else applies one to.
+    bool isClipPass(SoAction *action) const {
+        ViewerContext *view = pickView();
+        if (!view || action->getWhatAppliedTo() != SoAction::NODE)
+            return false;
+        SoRenderManager *manager = view->getSoRenderManager();
+        return manager && action->getNodeAppliedTo() == manager->getSceneGraph();
+    }
 
     /// The capture's additive-mode interest set (5.9 "Non-standard
     /// modes"); owned by the viewer, pushed onto the element in
@@ -491,9 +504,17 @@ void SoFCUnifiedSelection::getBoundingBox(SoGetBoundingBoxAction * action)
     // Pushed around the base class, which does not come through
     // doAction(): the view's own visibility has to reach the switches
     // below, and must not leak past this node.
+    //
+    // The auto clipping every view runs on every render answers for no
+    // view in particular (SoFCVisibilityElement::Superset): what it builds
+    // below is then every view's, where this view's own answer would have
+    // made the next view rebuild the caches of every object an entry of
+    // any view names (docs/CoinRetirement.md 5.25).
     SoState *state = action->getState();
     state->push();
-    pimpl->applyVisibility(state);
+    pimpl->applyVisibility(state, pimpl->isClipPass(action)
+                                  ? SoFCVisibilityElement::Superset
+                                  : SoFCVisibilityElement::Exact);
     inherited::getBoundingBox(action);
     state->pop();
 }
@@ -503,9 +524,11 @@ void SoFCUnifiedSelection::rayPick(SoRayPickAction * action)
     // SoSeparator::rayPick does not come through doAction() either, and
     // a pick has to see this view's own visibility like everything else
     // it traverses; see getBoundingBox().
+    // It answers by this view's table, and may cull with a box every
+    // view shares.
     SoState *state = action->getState();
     state->push();
-    pimpl->applyVisibility(state);
+    pimpl->applyVisibility(state, SoFCVisibilityElement::Cull);
     inherited::rayPick(action);
     state->pop();
 }
@@ -1055,7 +1078,8 @@ SbName SoFCUnifiedSelection::DisplayModeNoShading("No Shading");
 SbName SoFCUnifiedSelection::DisplayModeWireframe("Wireframe");
 SbName SoFCUnifiedSelection::DisplayModePoints("Points");
 
-void SoFCUnifiedSelection::Private::applyVisibility(SoState * state) const
+void SoFCUnifiedSelection::Private::applyVisibility(SoState * state,
+                                                   SoFCVisibilityElement::Mode mode) const
 {
     // This view's own object visibility, for the per-view traversals
     // the element is enabled in (SoFCVisibilityElement). The view is the
@@ -1065,7 +1089,7 @@ void SoFCUnifiedSelection::Private::applyVisibility(SoState * state) const
     if (!state->isElementEnabled(SoFCVisibilityElement::getClassStackIndex()))
         return;
     if (ViewerContext *view = pickView())
-        SoFCVisibilityElement::set(state, view->visibilityElementTable());
+        SoFCVisibilityElement::set(state, view->visibilityElementTable(), mode);
 }
 
 void SoFCUnifiedSelection::Private::applyOverrideMode(SoState * state) const

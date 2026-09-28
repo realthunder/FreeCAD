@@ -25,6 +25,8 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <map>
+#include <unordered_map>
 
 #include <QCoreApplication>
 #include <QTimer>
@@ -220,6 +222,67 @@ bool resolveEntry(const VisibilityEntry &entry,
     return true;
 }
 
+/// A table's content in one canonical order (by the root its entries end
+/// at, each list as the table keeps it), what two tables must share to
+/// answer alike.
+using TableContent = std::vector<std::pair<uint32_t, std::vector<std::pair<std::vector<uint32_t>, int8_t>>>>;
+
+struct Interned {
+    uint64_t id = 0;
+    int refs = 0;
+};
+
+/// The content of every live table, and the identity it is known by
+/// (SoFCVisibilityElement::Table::identity). An identity lives while some
+/// table holds it; one released for good is never handed out again, so a
+/// cache recorded against it can match nothing later.
+std::map<TableContent, Interned> &identities()
+{
+    static auto *map = new std::map<TableContent, Interned>;
+    return *map;
+}
+
+std::unordered_map<uint64_t, std::map<TableContent, Interned>::iterator> &identityIndex()
+{
+    static auto *map = new std::unordered_map<uint64_t, std::map<TableContent, Interned>::iterator>;
+    return *map;
+}
+
+uint64_t acquireIdentity(const SoFCVisibilityElement::Table &table)
+{
+    static uint64_t lastId;
+    TableContent content;
+    content.reserve(table.byEnd.size());
+    for (const auto &[end, list] : table.byEnd) {
+        std::vector<std::pair<std::vector<uint32_t>, int8_t>> entries;
+        entries.reserve(list.size());
+        for (const auto &entry : list)
+            entries.emplace_back(entry.key, entry.visibility);
+        content.emplace_back(end, std::move(entries));
+    }
+    std::sort(content.begin(), content.end(),
+              [](const auto &a, const auto &b) { return a.first < b.first; });
+    auto res = identities().emplace(std::move(content), Interned());
+    auto &interned = res.first->second;
+    if (res.second) {
+        interned.id = ++lastId;
+        identityIndex()[interned.id] = res.first;
+    }
+    ++interned.refs;
+    return interned.id;
+}
+
+void releaseIdentity(uint64_t id)
+{
+    auto it = identityIndex().find(id);
+    if (it == identityIndex().end())
+        return;
+    if (--it->second->second.refs > 0)
+        return;
+    identities().erase(it->second);
+    identityIndex().erase(it);
+}
+
 /// Every table with entries, for the resolution after a structure change.
 /// Never destroyed: a holder can outlive static destruction's turn for it
 /// (a served mirror owned by a singleton).
@@ -395,6 +458,9 @@ bool ViewVisibility::rebuild()
                          });
     }
     element.version = ++serial;
+    const uint64_t oldIdentity = element.identity;
+    element.identity = element.empty() ? 0 : acquireIdentity(element);
+    releaseIdentity(oldIdentity);
 
     std::set<uint32_t> nowOverridden;
     for (const auto &item : element.byEnd)
@@ -435,6 +501,8 @@ void ViewVisibility::clear()
     resolved.clear();
     element.byEnd.clear();
     element.version = ++serial;
+    releaseIdentity(element.identity);
+    element.identity = 0;
     instances().erase(this);
 }
 

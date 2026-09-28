@@ -271,6 +271,15 @@ fc_add_gui_test(GuiPerViewVisibilityPickCull_tests_run
                 per-view-visibility-pick-cull.py
                 --timeout 240)
 
+# The auto clipping's bounding box pass, which every view runs on every
+# render, answers for no view (docs/CoinRetirement.md 5.25): it holds what
+# any view shows, and views with DIFFERENT maps share its caches after a
+# change instead of each rebuilding the last one's. The exact scene box
+# stays per view right after it, picks answer per view and still cull.
+fc_add_gui_test(GuiPerViewClipCache_tests_run
+                per-view-clip-cache.py
+                --timeout 240)
+
 # Released per-view-shown objects (hidden objects no view shows any more,
 # kept in the capture for a quick show again) are evicted first when
 # memory stands over PerViewShownEvictWatermark, never one a view still

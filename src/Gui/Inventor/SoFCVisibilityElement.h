@@ -83,6 +83,12 @@ public:
     /// map).
     std::unordered_map<uint32_t, std::vector<Entry>> byEnd;
     uint32_t version = 0;
+    /// What a cache built under this table depends on: the same for two
+    /// tables with the same entries, never for two that differ, never
+    /// reused (ViewVisibility interns the content). Views with the same
+    /// map share the caches of the document's nodes; comparing tables by
+    /// address made each view rebuild the ones the last view had built.
+    uint64_t identity = 0;
 
     bool empty() const { return byEnd.empty(); }
 
@@ -115,7 +121,23 @@ public:
   virtual SbBool matches(const SoElement *element) const;
   virtual SoElement *copyMatchInfo(void) const;
 
-  static void set(SoState *state, const Table *table);
+  /// How a traversal answers (docs/CoinRetirement.md 5.25).
+  enum Mode : uint8_t {
+    /// By the table: this view's own answer. Fit-all, the scene box.
+    Exact,
+    /// Not by any view: nothing hidden, and shown what some view shows
+    /// (SoFCSwitch::isPerViewShown), so every view gets the same answer
+    /// and shares the caches it builds. The auto-clipping bounding box
+    /// every view takes on every render, for which a box too large only
+    /// loosens the near and far planes.
+    Superset,
+    /// By the table, and a cache built under Superset is good enough to
+    /// cull with: a pick, which only needs its box to hold everything it
+    /// can hit.
+    Cull,
+  };
+
+  static void set(SoState *state, const Table *table, Mode mode = Exact);
   static const Table *get(SoState *state);
 
   /// This view's answer for the display-mode switch \a node the action
@@ -141,7 +163,8 @@ public:
 
 private:
   const Table *table = nullptr;
-  uint32_t version = 0;
+  uint64_t identity = 0;
+  Mode mode = Exact;
 };
 
 #endif // FC_SOFCVISIBILITYELEMENT_H

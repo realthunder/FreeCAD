@@ -33,6 +33,7 @@
 #include "../InventorBase.h"
 #include "../Renderer/Renderer.h"
 #include "../SoFCUnifiedSelection.h"
+#include "SoFCSwitch.h"
 #include "SoFCVisibilityElement.h"
 
 using namespace Gui;
@@ -129,7 +130,8 @@ SoFCVisibilityElement::init(SoState * state)
 {
   inherited::init(state);
   this->table = nullptr;
-  this->version = 0;
+  this->identity = 0;
+  this->mode = Exact;
 }
 
 void
@@ -138,14 +140,24 @@ SoFCVisibilityElement::push(SoState * state)
   inherited::push(state);
   auto prev = static_cast<const SoFCVisibilityElement *>(this->getNextInStack());
   this->table = prev->table;
-  this->version = prev->version;
+  this->identity = prev->identity;
+  this->mode = prev->mode;
 }
 
 SbBool
 SoFCVisibilityElement::matches(const SoElement * element) const
 {
+  // This is the copy a cache holds, \a element the current state's.
   auto other = static_cast<const SoFCVisibilityElement *>(element);
-  return this->table == other->table && this->version == other->version;
+  // A superset answer is every view's, and a box that holds everything
+  // is all a cull asks of it.
+  if (this->mode == Superset)
+    return other->mode == Superset || other->mode == Cull;
+  if (other->mode == Superset)
+    return FALSE;
+  // By content, not address: two views with the same entries answer
+  // alike.
+  return this->identity == other->identity;
 }
 
 SoElement *
@@ -153,19 +165,21 @@ SoFCVisibilityElement::copyMatchInfo(void) const
 {
   auto elem = static_cast<SoFCVisibilityElement *>(this->getTypeId().createInstance());
   elem->table = this->table;
-  elem->version = this->version;
+  elem->identity = this->identity;
+  elem->mode = this->mode;
   return elem;
 }
 
 void
-SoFCVisibilityElement::set(SoState * state, const Table * table)
+SoFCVisibilityElement::set(SoState * state, const Table * table, Mode mode)
 {
   auto elem = static_cast<SoFCVisibilityElement *>(
       state->getElement(classStackIndex));
   if (!elem)
     return;
-  elem->table = (table && !table->empty()) ? table : nullptr;
-  elem->version = elem->table ? table->version : 0;
+  elem->mode = mode;
+  elem->table = (mode != Superset && table && !table->empty()) ? table : nullptr;
+  elem->identity = elem->table ? table->identity : 0;
 }
 
 const SoFCVisibilityElement::Table *
@@ -202,7 +216,16 @@ SoFCVisibilityElement::check(SoAction * action, const SoNode * node)
     return -1;
   // Read (and recorded) even when THIS view has no table: a cache built
   // here must not be reused by a view whose table does hide the object.
-  const Table *table = get(state);
+  auto elem = static_cast<const SoFCVisibilityElement *>(
+      SoElement::getConstElement(state, classStackIndex));
+  if (!elem)
+    return -1;
+  // Every view's answer: hidden nowhere, shown where some view shows it.
+  // The same in every occurrence, so no cache needs spoiling for it.
+  if (elem->mode == Superset)
+    return node->isOfType(SoFCSwitch::getClassTypeId())
+        && SoFCSwitch::isPerViewShown(static_cast<const SoFCSwitch *>(node)) ? 1 : -1;
+  const Table *table = elem->table;
   if (!table)
     return -1;
   auto it = table->byEnd.find(id);
