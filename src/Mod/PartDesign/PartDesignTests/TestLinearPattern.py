@@ -254,6 +254,35 @@ class TestLinearPattern(unittest.TestCase):
         self._check(pattern, 3000, 10, 10)
         self.assertAlmostEqual(pattern.Shape.BoundBox.ZMax, 50)
 
+    def testOriginalPlacedApartFromSupport(self):
+        # The original is turned and the support, a later feature, is moved:
+        # the copies of the original must stay above it (upstream 5d8162107a;
+        # the fork composed the two placements the other way round)
+        body = self.Doc.addObject('PartDesign::Body', 'Body')
+        box1 = body.newObject('PartDesign::AdditiveBox', 'Box1')
+        box1.Length = 2
+        box1.Width = 1
+        box1.Height = 1
+        box1.Placement = FreeCAD.Placement(
+            FreeCAD.Vector(), FreeCAD.Rotation(FreeCAD.Vector(0, 0, 1), 90))
+        box2 = body.newObject('PartDesign::AdditiveBox', 'Box2')
+        box2.Placement = FreeCAD.Placement(FreeCAD.Vector(50, 0, 0), FreeCAD.Rotation())
+        self.Doc.recompute()
+        pattern = body.newObject('PartDesign::LinearPattern', 'LinearPattern')
+        pattern.Originals = [box1]
+        pattern.Direction = (self.Doc.Z_Axis, [''])
+        pattern.Length = 20
+        pattern.Occurrences = 2
+        self.Doc.recompute()
+        self.assertEqual(pattern.getStatusString(), 'Valid')
+        copies = [s.BoundBox for s in pattern.Shape.Solids if s.BoundBox.XMax < 10]
+        self.assertEqual(len(copies), 2)
+        for bound in copies:
+            self.assertAlmostEqual(bound.XMin, -1)
+            self.assertAlmostEqual(bound.YMin, 0)
+            self.assertAlmostEqual(bound.YMax, 2)
+        self.assertAlmostEqual(max(b.ZMax for b in copies), 21)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestLinearPattern")

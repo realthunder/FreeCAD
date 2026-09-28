@@ -352,9 +352,11 @@ App::DocumentObjectExecReturn *Transformed::execute()
         }
     }
 
-    auto trsfInv = TopoShape::convert(this->Placement.getValue().toMatrix()).Inverted();
+    const auto placementInv = TopoShape::convert(this->Placement.getValue().toMatrix()).Inverted();
+    gp_Trsf offset;
     if (hasOffset)
-        trsfInv.Multiply(TopoShape::convert(TransformOffset.getValue().toMatrix()));
+        offset = TopoShape::convert(TransformOffset.getValue().toMatrix());
+    auto trsfInv = placementInv.Multiplied(offset);
 
     // create an untransformed copy of the support shape
     support.setTransform(Base::Matrix4D());
@@ -396,7 +398,13 @@ App::DocumentObjectExecReturn *Transformed::execute()
                 if (!shapeSet.insert(shape.getShape()).second)
                     continue;
                 shape.Tag = -shape.Tag;
-                auto trsf = feature->getLocation().Transformation().Multiplied(trsfInv);
+                // The add/sub shape is in the feature's own frame: out of it
+                // by the feature's placement, into ours by the inverse of
+                // ours (upstream 5d8162107a), then offset. The two orders
+                // agree only while the original and the support share a
+                // placement, which is why the reversed one went unnoticed.
+                auto trsf = offset.Multiplied(
+                    placementInv.Multiplied(feature->getLocation().Transformation()));
                 originalShapes.push_back(shape.makETransform(trsf));
                 originalSubs.push_back(feature->getFullName());
                 operations.push_back(v.second);
