@@ -101,8 +101,9 @@ public:
     ViewVisibility(const ViewVisibility &) = delete;
     ViewVisibility &operator=(const ViewVisibility &) = delete;
 
-    /// Replace the persisted entries. False when the table came out the
-    /// same; otherwise the holder has to tell whatever caches what it
+    /// Replace the persisted entries: an entry already held keeps its
+    /// resolution (5.29), only the new ones are resolved. False when the
+    /// table came out the same; otherwise the holder has to tell whatever caches what it
     /// answered -- its selection root, its backend.
     bool set(std::vector<VisibilityEntry> &&entries);
     /// Replace the transient entries; false as set().
@@ -153,6 +154,7 @@ public:
         uint64_t passNs = 0;
         uint64_t sets = 0;          ///< set()/setTransient() rebuilds
         uint64_t setEntries = 0;
+        uint64_t setResolves = 0;   ///< of them, the new ones (resolved)
         uint64_t setResolved = 0;
         uint64_t setNs = 0;
         uint64_t draws = 0;         ///< drawSet() rescans
@@ -173,9 +175,15 @@ private:
         std::vector<const App::DocumentObject *> deps;
     };
 
-    /// Resolve every entry of both sources and recount; false when the
-    /// table came out the same.
-    bool rebuild();
+    /// Replace \a source (with its \a results) by \a entries, resolving
+    /// only the entries it did not hold (\a count of them), and recount;
+    /// false when the table came out the same.
+    bool rebuild(std::vector<VisibilityEntry> &source,
+                 std::vector<Resolution> &results,
+                 std::vector<VisibilityEntry> &&entries,
+                 size_t &count);
+    /// The App structure signals the passes are scheduled from, once.
+    static void connectSignals();
     /// Resolve again only the entries a structure change can have moved:
     /// those whose resolution went through an object in \a dirty, the
     /// unresolved ones when \a unresolved, all when \a all. False as
@@ -186,7 +194,9 @@ private:
     bool commit();
     static void resolveInto(const VisibilityEntry &entry, Resolution &res);
     /// rebuild() for set()/setTransient(), counted.
-    bool rebuildSet();
+    bool rebuildSet(std::vector<VisibilityEntry> &source,
+                    std::vector<Resolution> &results,
+                    std::vector<VisibilityEntry> &&entries);
     static void scheduleResolve();
 
     std::vector<VisibilityEntry> persisted;

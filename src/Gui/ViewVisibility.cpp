@@ -26,6 +26,7 @@
 #include <chrono>
 #include <cstring>
 #include <map>
+#include <tuple>
 #include <unordered_map>
 
 #include <QCoreApplication>
@@ -369,23 +370,25 @@ uint64_t nowNs()
 
 bool ViewVisibility::set(std::vector<VisibilityEntry> &&entries)
 {
-    persisted = std::move(entries);
-    return rebuildSet();
+    return rebuildSet(persisted, persistedRes, std::move(entries));
 }
 
 bool ViewVisibility::setTransient(std::vector<VisibilityEntry> &&entries)
 {
-    transient = std::move(entries);
-    return rebuildSet();
+    return rebuildSet(transient, transientRes, std::move(entries));
 }
 
-bool ViewVisibility::rebuildSet()
+bool ViewVisibility::rebuildSet(std::vector<VisibilityEntry> &source,
+                                std::vector<Resolution> &results,
+                                std::vector<VisibilityEntry> &&entries)
 {
     const uint64_t t = nowNs();
-    const bool changed = rebuild();
+    size_t count = 0;
+    const bool changed = rebuild(source, results, std::move(entries), count);
     auto &st = stats();
     ++st.sets;
     st.setEntries += persisted.size() + transient.size();
+    st.setResolves += count;
     st.setResolved += resolved.size();
     st.setNs += nowNs() - t;
     return changed;
@@ -463,7 +466,7 @@ void ViewVisibility::resolveInto(const VisibilityEntry &entry, Resolution &res)
     res.entry.visibility = entry.visible ? 1 : 0;
 }
 
-bool ViewVisibility::rebuild()
+void ViewVisibility::connectSignals()
 {
     // What makes a change a STRUCTURE change: an object coming or going,
     // and a link property -- a group's members, a link's target -- which
@@ -500,13 +503,45 @@ bool ViewVisibility::rebuild()
                     scheduleResolve();
                 });
     }
+}
 
-    transientRes.resize(transient.size());
-    for (size_t i = 0; i < transient.size(); ++i)
-        resolveInto(transient[i], transientRes[i]);
-    persistedRes.resize(persisted.size());
-    for (size_t i = 0; i < persisted.size(); ++i)
-        resolveInto(persisted[i], persistedRes[i]);
+bool ViewVisibility::rebuild(std::vector<VisibilityEntry> &source,
+                             std::vector<Resolution> &results,
+                             std::vector<VisibilityEntry> &&entries,
+                             size_t &count)
+{
+    connectSignals();
+    // An entry the source already holds keeps its resolution, whatever
+    // its value: the path is the same, and the structure changes since it
+    // was resolved have marked it for the pass already queued, which
+    // resolves it again here as it would have there. Only the new entries
+    // are resolved -- a map built one entry at a time, or a served
+    // client's whole map sent again for one toggle, costs the entries
+    // that changed, not the map.
+    using Identity = std::tuple<const std::string &, const std::string &,
+                                const std::string &, bool>;
+    auto identity = [](const VisibilityEntry &e) {
+        return Identity(e.doc, e.obj, e.subname, e.rooted);
+    };
+    std::map<Identity, size_t> known;
+    for (size_t i = 0; i < source.size(); ++i)
+        known.emplace(identity(source[i]), i);
+    std::vector<Resolution> now(entries.size());
+    count = 0;
+    for (size_t i = 0; i < entries.size(); ++i) {
+        auto it = known.find(identity(entries[i]));
+        if (it == known.end()) {
+            resolveInto(entries[i], now[i]);
+            ++count;
+            continue;
+        }
+        now[i] = results[it->second];
+        now[i].entry.visibility = entries[i].visible ? 1 : 0;
+    }
+    // After the lookups: the identities point into the old source.
+    known.clear();
+    source = std::move(entries);
+    results = std::move(now);
     return commit();
 }
 

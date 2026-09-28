@@ -3459,6 +3459,49 @@ So entries cost a structure turn ~7-9 ms at this size, against a turn of
 for when T grows: views whose tables share an identity (5.25) could share
 one `drawSet` scan -- four equal maps here, one scan instead of four.
 
+### 5.29 A set resolves only the entries the view did not hold (2026-09-29)
+
+Setting a table (`set()`, `setTransient()`) resolved every entry of both
+sources again. No GUI command edits a view's map entry by entry -- the
+only per-entry caller is the Python `view.setObjectVisibility`, and a map
+built with it was quadratic (5.24) -- but a served client's
+`view.visibility` op sends its WHOLE map for every toggle
+(`SceneControl`), so each toggle resolved all of it again.
+
+**The change.** A set replaces one source, and an entry that source
+already held (same document, object, subname and bare/path form) keeps
+its resolution, whatever its new value; only the new entries are resolved
+(`setResolves` counts them). The other source is not touched at all. A
+kept resolution is exactly as current as it was before the set: a
+structure change since it was made has marked it for the pass already
+queued (5.26), which runs over the table this set leaves and resolves it
+again there. The one thing lost: setting a map again no longer resolves
+it afresh, so it no longer papers over a structure change the signals
+miss (5.26's ElementCount gap) -- which it never did reliably, as a
+signal-less change between sets was just as missed.
+
+**Measured** (the 5.24 scene, one view, 1000 path entries, three rounds):
+
+| | before | after |
+|---|---|---|
+| one value flipped: set | 6.3-7.2 ms, 1000 resolved | 3.4-3.5 ms, 0 resolved |
+| 1000 entries one `setObjectVisibility` at a time: sets | 2.38-2.43 s, 500500 resolved | 0.76-0.87 s, 1000 resolved |
+| ...wall clock | 3.05-3.22 s | 1.23-1.47 s |
+
+What is left of a set is `commit()`, ~3.4 us per entry: the table rebuilt
+by end root and its identity interned (5.25) -- so a map built singly is
+still quadratic, at a third of the constant. Not taken.
+
+**Test.** `tests/gui/per-view-resolve-selective.py` cases 7-10: a flipped
+value resolves nothing and the pick follows; one entry added resolves
+one and hides its box; a box moved out of its Part and the map set again
+in the same turn -- the kept resolution stale -- is still resolved again
+by the pass (the entry stops resolving, the box picks in its new Part);
+twenty entries added singly resolve twenty. 23/23. Before-state (the
+lookup made to miss, so every entry resolves as before, counter kept):
+the four count checks FAIL, every behaviour check passes. GUI tests 67/67,
+the rest of ctest (expression-image suites aside) 685/685.
+
 ## 5. Evaluated and not taken: one capture root to catch everything
 
 Stage 1b left an obvious-looking follow-on: if what Coin still draws is

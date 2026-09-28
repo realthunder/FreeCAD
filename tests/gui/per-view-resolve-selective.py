@@ -22,6 +22,16 @@ that the entries it concerns were resolved again and the others were not:
      resolves, and hides the box it names there;
   5. a new object where an unresolved entry names it: resolves, hides;
   6. a deleted object: its bare entry stops resolving.
+Setting a map resolves only the entries the view did not hold
+(docs/CoinRetirement.md 5.29): a held entry keeps its resolution whatever
+its value, and one made stale by a structure change in the same turn is
+resolved again by the pass the change queued:
+  7. one entry's value flipped: nothing resolved, and the pick follows;
+  8. one entry added: that one resolved, and it hides its box;
+  9. a box moved out of its Part and the map set again in the same turn:
+     the pass still resolves the kept entry, which no longer resolves;
+ 10. twenty entries added one setObjectVisibility at a time: twenty
+     resolved in all, not the map's size each time.
 
   scripts/gui-test.sh tests/gui/per-view-resolve-selective.py /tmp/pvrs
 """
@@ -154,6 +164,45 @@ def run():
         st = op(lambda: doc.removeObject("B3"))
         check("6: deleting B3 resolves its bare entry again, and it no longer resolves",
               st["passResolves"] >= 1 and st["passResolved"] == 2, st)
+
+        def set_map(update):
+            m = dict(view.ObjectVisibilities)
+            m.update(update)
+            view.ObjectVisibilities = m
+
+        # 7. One entry's value flipped: L.B4. shown again, nothing resolved.
+        st = op(lambda: set_map({"L.B4.": "1"}))
+        check("7: flipping one value resolves nothing", st["sets"] == 1
+              and st["setResolves"] == 0 and st["setResolved"] == 2, st)
+        check("7: B4 through L picks again", "B4" in str(hit(view, (23.0, 40.5, 0.5))),
+              hit(view, (23.0, 40.5, 0.5)))
+
+        # 8. One entry added: A3 in PartA hidden.
+        st = op(lambda: set_map({"PartA.A3.": "0"}))
+        check("8: adding one entry resolves that one", st["setResolves"] == 1
+              and st["setResolved"] == 3, st)
+        check("8: A3 in PartA is hidden", "A3" not in str(hit(view, (15.5, 0.5, 0.5))),
+              hit(view, (15.5, 0.5, 0.5)))
+
+        # 9. A3 moved to PartB and the map set again before the pass: the
+        # kept resolution is stale, and the queued pass must still see it.
+        def move_and_set():
+            pb.addObject(doc.getObject("A3"))
+            set_map({"PartB.Other.": "0"})
+        st = op(move_and_set)
+        check("9: the set resolved only the new entry", st["setResolves"] == 1, st)
+        check("9: the pass resolved the kept PartA.A3. again, and it no longer resolves",
+              st["passResolves"] >= 1 and st["passResolved"] == 2, st)
+        check("9: A3 picks in PartB", "A3" in str(hit(view, (15.5, 20.5, 0.5))),
+              hit(view, (15.5, 20.5, 0.5)))
+
+        # 10. One at a time.
+        def one_by_one():
+            for i in range(20):
+                view.setObjectVisibility(pb, False, "N%d." % i)
+        st = op(one_by_one)
+        check("10: twenty entries added singly resolve twenty in all",
+              st["sets"] == 20 and st["setResolves"] == 20, st)
     except Exception:
         note("ABORT " + traceback.format_exc().replace("\n", " | "))
     finally:
