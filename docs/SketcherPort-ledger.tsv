@@ -283,7 +283,7 @@ d43dbf2449	2024-08-29	Ajinkya Dahale	fix	0	0	open	4	taken 88c9baa853	[planegcs] 
 2a541c9536	2024-08-28	bgbsww	fix	0	0	have(sync)	119		Toponaming:  Remove remaining FC_USE_TNP_FIX defines	App/SketchObject.cpp
 ff74dd5106	2024-08-05	PaddleStroke	?	0	0	partial(sync)	683	partial 88c9baa853: App/PythonConverter.cpp	Sketcher: Make it possible to specify if the constraint is active or driving during python creation.	App/ConstraintPyImp.cpp App/PythonConverter.cpp
 33e00078a5	2024-08-05	PaddleStroke	?	1	0	have(sync)	2		Sketcher: Fillet preserving point : Make point construction.	App/SketchObject.cpp
-3db4633f9d	2024-08-06	PaddleStroke	feature	0	0	have(sync)	18		Sketcher: addGeometry : Remove point construction limitation.	App/PythonConverter.cpp App/SketchObject.cpp Gui/DrawSketchHandlerPoint.h
+3db4633f9d	2024-08-06	PaddleStroke	feature	0	0	have(sync)	18	taken 42ad5eac96 (have(sync) was wrong: the Gui half was synced, the App half forced every point to construction)	Sketcher: addGeometry : Remove point construction limitation.	App/PythonConverter.cpp App/SketchObject.cpp Gui/DrawSketchHandlerPoint.h
 4972335385	2024-09-01	PaddleStroke	?	0	0	open	294	taken 88c9baa853	Sketcher: ConstraintPyImp: replace 'cstr' name by 'constraint'	App/ConstraintPyImp.cpp
 abb1eb46e9	2024-09-03	PaddleStroke	?	0	0	have(sync)	11		"Sketcher: Point DSH : remove unecessary ""toggleConstruction(%d)"","	Gui/DrawSketchHandlerPoint.h
 d01d71198d	2024-09-03	PaddleStroke	?	0	1	have(rev)	12		Sketcher: CommandConstraints: Make sure points are created as constructions in few functions.	Gui/CommandConstraints.cpp

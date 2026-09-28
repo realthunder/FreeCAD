@@ -1805,3 +1805,137 @@ Deferred rows left: 7 of 35, each on a decision or another port.
 Suites at `3e0dc271f9`: Python 3091 OK (50 skipped, 7 expected failures --
 the new one is the OCCT Arc-join case; the CAM loopback hang struck once
 more, see `docs/Testing.md`, and the re-run passed), ctest 750/750.
+
+### The open issues chased (2026-09-28)
+
+The user's list of 2026-09-28, taken without asking again: an LCS in a
+Body, the pattern family by upstream's LinkArray route, upstream's datum
+sizing as a preference, the Assembly and Material rows, a driven drag
+test, the OCCT Arc-join defect, and the Sketcher ledger.
+
+| commit | what |
+|---|---|
+| `9a66947d12` | a new body goes into the active assembly (upstream `62cbaf7336`) |
+| `a09cc45b26` | the Material inspectors in the Part Design and Part menus (upstream `51be8e7b4e`) |
+| `42ad5eac96` | Sketcher: a point is construction only when asked (upstream `3db4633f9d`) |
+| `fe16e7837a` | App: an LCS in a body keeps its datum elements, in the body's scope (upstream `19702dcb21`) |
+| `40d2b60fe1` | a body takes an LCS and a lone datum element (upstream `48dbdacdbd`, `443b71d96e`) |
+| `c9f3a1b2c9` | a datum element of an LCS is referenced through it (upstream `cfd1cdfb36`) |
+| `fb46e2991a` | the tree drag shows the cursor its target reads (fix of `3e0dc271f9`) |
+| `5f94f7940f` | the Arc-joined thickness test passes (OCCT `672c546b4d`) |
+| `7e1824d01d` | datums at a constant size on screen, a preference on by default (upstream `b942275957`) |
+
+**Assembly and Material (`9a66947d12`, `a09cc45b26`).** Both ports were
+already in; the rows only lacked their last pieces. Reproduced in the GUI:
+with an Assembly in edit, `PartDesign_Body` put the body at the document
+root; `getActivePart()` looked at the part key only and now falls back to
+the assembly key, and the body lands in the assembly, which stays in edit.
+The rest of `62cbaf7336` (the assembly key, `signalActivatedViewProvider`,
+the edit restore) came with the Assembly port. The inspectors open from
+both menus and read the fork's appearance: on a PartDesign box face the
+appearance inspector shows shininess 0.37 and transparency 0 -- the old
+note that it needed a ShapeAppearance the fork lacks was wrong.
+
+**Sketcher points (`42ad5eac96`).** The ledger's `have(sync)` for
+`3db4633f9d` was wrong, and worse than a ledger error: the point tool,
+resynced onto upstream's controller framework, passes the construction
+mode as the flag and no longer toggles afterwards, but `addGeometry()`
+still forced every point to construction. So the tool's construction mode
+did nothing, and no drawn point reached the sketch's shape. Measured with
+the call the tool makes: `addGeometry(Part.Point(..), False)` came back
+construction (a line and two points: 2 vertices); now 4. The two TestHole
+cases that toggled their points back lose the toggle.
+
+**An LCS in a Body (`fe16e7837a`, `40d2b60fe1`, `c9f3a1b2c9`).** The user
+chose upstream's way: the Body takes `App::LocalCoordinateSystem` (not an
+Origin) and a lone `App::DatumElement` (not one of an LCS). Putting one in
+turned up two App defects the Body had never met. `relinkToOrigin()`
+moved every link to a datum element onto the body's origin, so the LCS's
+own `OriginFeatures` were replaced by the body's origin features;
+upstream relinks origin features only. And `getGroupOfObject()` looked
+through an Origin only, so the elements of an LCS in a body were in no
+group and every recompute warned that the LCS's links went out of scope;
+upstream looks through any coordinate system. Both taken from upstream's
+`19702dcb21`.
+
+The fork's `PartDesign_NewSketch` does not use `SketchWorkflow` (upstream
+`5639728e8a` is for it): a preselected face or plane goes through
+`SubShapeBinder::import()`, no selection opens the attachment editor.
+Both linked the plane object itself, whose placement is relative to its
+LCS and which the attacher reads as it stands, so a sketch on the XY plane
+of an LCS at z 50 turned 90 deg landed at z 0. As upstream's `cfd1cdfb36`
+has it, a datum element of an LCS is referenced as `(LCS, 'XY_Plane.')`
+now -- by the selection's link strings, the attachment editor, and
+`import()` for an LCS in the editing body. Measured in the GUI:
+
+| LCS | preselected plane | attachment editor |
+|---|---|---|
+| in the body | `(LCS, 'XY_Plane001.')`, z 50 (was a Binder at z 0) | `(LCS, ...)`, z 50 (was the plane, z 0) |
+| outside it | an Import binder, z 0 (unchanged) | `(LCS, ...)`, z 50 (was the plane, z 0) |
+
+The one wrong row left is the fork's binder of a datum, which sits at
+the identity; the user chose the LCS in the body over making that binder
+carry its placement. `TestDatum.TestCoordinateSystemInBody` covers the
+membership, the refusals, and a pad on the LCS plane through save and
+reload.
+
+**The drag test (`fb46e2991a`).** `Std_TreeDrag` drives a tree drag from
+a script: select, run it, send mouse moves to the tree's viewport, a
+left release drops, Esc cancels. It showed that `3e0dc271f9`'s hook never
+ran: `startDrag()` does not start a Qt drag, the tree tracks its own in
+the mouse events, and `dragMoveEvent()` -- where the hook was -- is not
+called. It applies in `mouseMoveEvent()` now. Over a SubShapeBinder the
+action is Copy without Ctrl and Move with it (logged, and the cursor
+images differ); a plain drop adds to the binding; an LCS dropped on a
+Body goes in with its own planes. A pre-fix binary was not run; the
+evidence that the old hook was dead is the code path above.
+
+**The OCCT Arc-join defect (OCCT `672c546b4d`, `5f94f7940f`).** Found
+with `Part.showShapeOCCT()`, which turns the fork kernel's
+`SHOW_TOPO_SHAPE` calls into document objects: both cases dumped, the
+bottom one mirrored in z and diffed against the top one. The steps were
+the same in another order. On a periodic face `BRepAlgo_Loop` makes the
+wire of each closed edge, then a seam wire of two closed edges and the
+seam, removing the wires of the closed edges it takes -- only those found
+so far; with the top opened the floor circle was reached after the seam
+wire, kept a wire of its own, and the inner wall came out with three
+wires and no floor. After the search, a plain wire that takes a closed
+edge of a seam wire now goes. The kernel's thickness suite: `cyl_top_in`
+and `hole_top_in` pass with their bottom twins' volumes, nothing else
+moved (10 PASS became 12, the other 6 XFAIL stay); `local01` recomputes
+to 4423.36. `TestThickness`'s Arc case is no longer an expected failure.
+
+**Datum sizing (`7e1824d01d`).** The user dislikes the fork's
+size-to-body origin and asked for upstream's sizing as a preference, on
+by default. `ViewParams` `DatumScreenSize` (Display styles > Datums, with
+`DatumScale`, `DatumPlaneSize`, `DatumLineSize`,
+`DatumTemporaryScaleFactor`): on, origin, LCS and datum elements keep a
+constant size on screen in upstream's layout -- a plane of a coordinate
+system is the corner of its first quadrant, the whole square when
+selected or hovered, its label shown only while it may be picked; an
+axis starts off its origin with its letter past the end. Off, the fork's
+world-unit model unchanged. The attachment editor and the feature pick
+panel enlarge the planes and show their labels while open, which is the
+declined `b942275957` taken now. `PartDesign::Plane` keeps its own
+`ResizeMode`.
+
+The constant size goes through the fork's `SoAutoZoomTranslation` rather
+than upstream's pixel-counting `SoShapeScale`: every render path, the
+bgfx backend and the browser viewer implement autozoom, whose unit is a
+share of the view height. A screen unit is a thousandth of the view
+height, a pixel of a 1000-pixel view, so a datum keeps its share of the
+view as the window is resized, where upstream's keeps its pixels.
+Measured in 800 x 600 renders: the origin spans the same 28 x 56 pixels
+fitted and zoomed out four times; the world-unit model 238 x 356 and
+58 x 86.
+
+Deferred rows left: the pattern family (`6fa9125919`, `c334ac5062`,
+`a540770659`), which the user decided goes upstream's LinkArray way --
+ported next, on its own.
+
+Suites at `7e1824d01d`: Python 3093 OK (50 skipped, 6 expected failures:
+the Arc thickness case is off the list, the two LCS-in-Body tests are
+new; run under `pytest-fcad-pty.cmd`, a plain redirect dies in
+`TestCAMSanity` as `docs/Testing.md` says), ctest 750/750 --
+`ReaderTest.beginCharStreamOpenClose` failed once under `-j 6` and passed
+alone.
