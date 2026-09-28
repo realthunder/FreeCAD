@@ -2078,3 +2078,108 @@ thin client.
 
 Commits `89d7712ce9` and the panel after it. Suites with the Gui half:
 Python 3136 OK, ctest 750/750.
+
+### PD's circular, path and point patterns (2026-09-28)
+
+Upstream's three PD features (`173276b175`, `c633c5c88e`, `f5abab2768`)
+are thin, as its linear and polar ones are: a `PartDesign::Transformed`
+with the Part extension of its kind. Here they sit on the extensions the
+link arrays brought (`Part::Circular/Path/PointPatternExtension` over
+`App::Pattern`), so the pattern code is App's and each feature is a
+handful of lines. Upstream's tests come along unchanged.
+
+- **Circular.** Upstream overrides `getRotation()` to read a PD datum line
+  and bring it into the feature's frame. Neither is needed here: a PD
+  datum is a shape to `Part::PatternResolver`, and the engine brings every
+  axis into the frame through `Context::placement`.
+- **Path: the steps are conjugated into the feature's frame.** The path is
+  resolved in the body's frame and each step is relative to the first
+  occurrence's frame there; the fork's `Transformed` places the originals
+  in the feature's frame (the support's placement). Upstream applies the
+  steps as they are, which agrees while that placement is the identity --
+  a box at the origin, upstream's tests -- and sends the copies along the
+  wrong axis for a pad on an XZ sketch, whose feature is turned. Here the
+  step is `P^-1 * step * P`. `testPathStepsInFeatureFrame` is the fork's
+  case: a box turned 90 deg about Z, a path along X, copies along X.
+- **Point: the base stays, SubTransform decides what moves** (the user,
+  2026-09-28: "Base should not move with subtransform"). Upstream moves
+  the feature's Placement onto the first point, which moves the whole
+  support there. The fork keeps that only for whole shapes
+  (`SubTransform` off): `positionBySupport()` puts the feature on the
+  first point and copy `i` is a translation by `R^-1 (p_i - s)`, `s` the
+  base feature's position, `R` the feature's rotation. Transforming
+  features (`SubTransform` on, the default) the base stays where it is and
+  the original moves from its own origin to each point. Its first
+  transformation is then no identity, so `Transformed` rewrites the
+  history as it does for `TransformOffset` -- the support is the
+  original's base, the original is not left in place -- through a new
+  virtual, `isFirstInstanceTransformed()`, which also keeps
+  `HideBaseFeature` from dropping the copy on the first point. Where the
+  rewrite is refused (originals that are not the immediate history, or
+  `OffsetBaseFeature` off) the original stays and the copies are added.
+  Upstream's two tests pass either way: their box is the whole body.
+  Without a reference (inside a MultiTransform) the copies are relative
+  to the first point.
+
+**The rewritten history put its support at the wrong placement.** Taking
+the original's base as the support (the `TransformOffset` path, and now
+the point pattern's) then stripped that shape's placement and re-placed
+it at the pattern's own, which is the last feature's. The two agree for
+sketch features on one plane and not for a primitive with a placement of
+its own: a plate at (-50, -50) jumped onto the patterned box. The support
+is now brought into the pattern's frame from where it is (an exact
+identity when it is already there, as before), and a base without a solid
+-- the points of upstream's tests -- is no support, as it was to the
+original. `testOffsetFirstInstanceKeepsTheBaseInPlace` covers it.
+
+The Gui is the fork's own; upstream ships no command or view provider for
+the three (its `getViewProviderName()` names classes it lacks), only the
+panel branches of `a540770659`:
+
+- `ViewProviderCircularPattern/PathPattern/PointPattern`
+  (`ViewProviderPatterns.*`), with upstream's icons.
+- PD's pattern panel takes the three kinds on the shared
+  `Gui::PatternParametersWidget`, the link array's editor. A circular
+  axis offers the sketch and origin axes as the polar one does; a path or
+  the points come from a pick. A path is picked edge by edge, as in the
+  link array panel; a point pick keeps the object only, all its vertices
+  (upstream's rule).
+- Commands `PartDesign_CircularPattern/PathPattern/PointPattern` beside
+  the polar one: a single selected element becomes the axis, the path, or
+  the point object; otherwise it is picked in the panel.
+
+Not done: the three in MultiTransform's panel (the App side works there;
+`testCircularPatternInMultiTransform`).
+
+**A fork defect under all the patterns, and a ledger row reversed.** The
+first run of upstream's point test with a turned source left the copies
+50 mm off. `Transformed::execute()` took an additive/subtractive original
+into the pattern's frame as `featureLocation * placement^-1`; the right
+composition is `placement^-1 * featureLocation`, which is what upstream's
+`5d8162107a` ("Fix pattern failing with primitive") changed on its side.
+The two agree while the original and the support share a placement --
+the usual case, and the one the ledger's earlier check ("n/a, fork's
+convention gives correct results (checked)") must have used. Reproduced
+with a plain linear pattern: a box turned 90 deg, a later box moved to
+x = 50 as the support, the copies of the first box landed at y = -50
+instead of above it. Fixed in `034c14d4f4`, with that case as
+`testOriginalPlacedApartFromSupport`; the ledger row now says adapted.
+`TransformOffset` keeps its meaning, the offset in the pattern's frame,
+which is what the old order gave whenever it was right. The whole-shape
+branch (an original that is not an add/sub feature) was already right.
+
+Verified in the running GUI through the MCP console: each command makes
+its feature (a selected edge becomes the path, a selected vertex the
+point object), the panel comes up on the shared editor, OK leaves one
+undo step; "Select reference..." then a picked edge sets a circular axis
+and a linear direction; a path takes Edge1 then Edge2; a vertex pick sets
+the point object with the element dropped. One trap for the next driver:
+a whole drive in one MCP call keeps every closed task panel alive (its
+`deleteLater` waits for the outer event loop), and the stale panels take
+the later selections as originals -- one MCP call per step.
+
+Commits `034c14d4f4`, `5433db2601`, `59210a4025`, and `e926c7cdc5` for
+the base kept in place. Suites: Python 3150 OK (50 skipped, 6 expected
+failures; +14: upstream's 8, the path frame case, the two Transformed
+cases, three point cases -- the base kept, HideBaseFeature, whole
+shapes), ctest 750/750.
