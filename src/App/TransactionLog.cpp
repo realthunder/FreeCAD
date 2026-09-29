@@ -257,9 +257,9 @@ public:
     }
     void copyTo(const std::string& path) override { inner().copyTo(path); }
     void vacuum() override { inner().vacuum(); }
-    void dropTier(const std::string& tier) override
+    void dropTier(const std::string& tier, const std::vector<int64_t>& evict) override
     {
-        inner().dropTier(tier);
+        inner().dropTier(tier, evict);
         _core.releaseBlobs();
     }
     bool nameVersion(int64_t num, const std::string& name) override
@@ -985,6 +985,13 @@ TransactionStore& TransactionLogCore::store()
 TransactionLog::Embedded TransactionLogCore::embed(const std::string& saveDate, int64_t branch,
                                                   const std::string& saveId)
 {
+    auto clock = std::chrono::steady_clock::now();
+    auto split = [&clock]() {
+        auto now = std::chrono::steady_clock::now();
+        double secs = std::chrono::duration<double>(now - clock).count();
+        clock = now;
+        return secs;
+    };
     flush();
     TransactionLog::Embedded out;
     out.saveId = saveId.empty() ? Base::Uuid::createUuid() : saveId;
@@ -1006,8 +1013,10 @@ TransactionLog::Embedded TransactionLogCore::embed(const std::string& saveDate, 
         names.emplace_back(n.second, n.first);
     _store->addObjectNames(names);
     _store->addLastGeoIds({_history.lastGeoIds().begin(), _history.lastGeoIds().end()});
+    const double tState = split();
     _store->copyTo(out.path);
     auto copy = TransactionStore::openSQLite(out.path);
+    const double tCopy = split();
     // Retention (16.4, 13.3): the named versions travel, the unnamed ones
     // and the cache tier do not; the ops do. Each branch's newest travels
     // too (sec 26.2 item 5), so a switch in the file opened elsewhere
@@ -1021,8 +1030,7 @@ TransactionLog::Embedded TransactionLogCore::embed(const std::string& saveDate, 
         if (v.kind != "named" && newest[v.branch] != v.num)
             evicted.push_back(v.num);
     }
-    copy->evictVersions(evicted);
-    copy->dropTier("cache");
+    copy->dropTier("cache", evicted);
     copy->clearStrings();
     // Every blob the copy still holds as a file (23.16): a kept version's,
     // and an op value's. The ones kept as deltas travel inside the copy.
@@ -1043,8 +1051,11 @@ TransactionLog::Embedded TransactionLogCore::embed(const std::string& saveDate, 
     // The copy was the whole store; what retention took out is free pages,
     // which would travel in the file and come back as the live store when
     // it is opened elsewhere (sec 27.53).
+    const double tRetain = split();
     copy->vacuum();
     copy.reset();
+    FC_LOG("embed: state and flush " << tState << "s, copy " << tCopy << "s, retention "
+           << tRetain << "s, vacuum " << split() << "s");
     return out;
 }
 

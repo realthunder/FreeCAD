@@ -367,8 +367,10 @@ public:
     virtual void vacuum() = 0;
     /// Drop every entity of `tier` that no manifest reaches and no delta
     /// is based on (the embedded copy carries no cache tier, sec 13.3).
-    /// The ops' refs stay; the entity goes.
-    virtual void dropTier(const std::string& tier) = 0;
+    /// The ops' refs stay; the entity goes. The versions `evict` go first,
+    /// as evictVersions() would take them, in the same collection -- the
+    /// embedded copy's retention, which paid for three (sec 27.69).
+    virtual void dropTier(const std::string& tier, const std::vector<int64_t>& evict) = 0;
 
     /// Open or create the SQLite log at `path` (WAL, synchronous=NORMAL).
     /// Throws Base::RuntimeError on failure.

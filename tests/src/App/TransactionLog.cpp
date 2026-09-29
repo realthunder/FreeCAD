@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <iterator>
 #include <map>
+#include <set>
 #include <sqlite3.h>
 #include <zipios++/zipfile.h>
 
@@ -2509,7 +2510,7 @@ TEST_F(TransactionLogTest, compositeAndManifestHoldWithoutEdges)
         EXPECT_TRUE(store->hasEntity(skel));
         EXPECT_TRUE(store->hasEntity(part));
         EXPECT_FALSE(store->hasEntity(orphan));
-        store->dropTier("durable");
+        store->dropTier("durable", {});
         EXPECT_TRUE(store->hasEntity(part));
         // As stored: 20 bytes each (the store's own connection is in WAL
         // mode, which a second reader sees through).
@@ -2540,6 +2541,121 @@ TEST_F(TransactionLogTest, compositeAndManifestHoldWithoutEdges)
         EXPECT_FALSE(store->hasEntity(part));
     }
     Base::FileInfo(path).deleteFile();
+}
+
+TEST_F(TransactionLogTest, dropTierWithEvictionIsTheTwoCalls)
+{
+    // docs/TransactionLog.md sec 27.69: the embedded copy's retention --
+    // evict the versions, drop the cache tier -- as one collection keeps
+    // exactly what the two calls one after the other keep.
+    const std::string pathA = Base::FileInfo::getTempFileName("txnlog-tier") + ".db";
+    const std::string pathB = Base::FileInfo::getTempFileName("txnlog-tier") + ".db";
+    auto h = [](char c) { return std::string(40, c); };
+    // Version 1 (evicted) lists p1 and the cache value p2; version 2 (kept)
+    // lists p3 and the cache value k2. The ops name p2, k1, k3's delta d3,
+    // k4 and k5; d4, the delta on k4, only version 1's composite lists.
+    const std::string p1 = h('1'), p2 = h('2'), p3 = h('3'), k1 = h('4'), k2 = h('5');
+    const std::string k3 = h('6'), d3 = h('7'), k4 = h('8'), d4 = h('9'), k5 = h('a');
+    const std::string a5 = h('b'), skel = h('c');
+    const std::string data1 = "skeleton " + skel + "\nc Obj\np 0 " + p1 + " A\np 1 " + p2
+        + " B\np 2 " + d4 + " C\n";
+    const std::string data2 = "skeleton " + skel + "\nc Obj\np 0 " + p3 + " A\np 1 " + k2
+        + " B\n";
+    const std::string c1 = App::hashBytes(data1), c2 = App::hashBytes(data2);
+    int64_t v1 = 0;
+    {
+        auto store = App::TransactionStore::openSQLite(pathA);
+        auto put = [&](const std::string& hash, const char* kind, const char* tier,
+                       const std::string& bytes, const std::string& base = {},
+                       std::vector<App::LogRef> refs = {}) {
+            App::LogEntity e;
+            e.hash = hash;
+            e.kind = kind;
+            e.enc = base.empty() ? "raw" : "delta";
+            e.base = base;
+            e.tier = tier;
+            e.size = bytes.size();
+            e.data = bytes;
+            e.refs = std::move(refs);
+            store->putEntity(e);
+        };
+        put(skel, "skeleton", "durable", "<a>");
+        put(p1, "prop", "durable", "1");
+        put(p2, "prop", "cache", "2");
+        put(p3, "prop", "durable", "3");
+        put(k1, "prop", "cache", "4");
+        put(k2, "prop", "cache", "5");
+        put(k3, "prop", "cache", "6");
+        put(d3, "prop", "durable", "7", k3);
+        put(k4, "prop", "cache", "8");
+        put(d4, "prop", "durable", "9", k4);
+        put(a5, "attach", "durable", "b");
+        put(k5, "prop", "cache", "a", {}, {App::LogRef {a5, "attach", "file"}});
+        put(c1, "composite", "durable", data1, {}, {App::LogRef {skel, "skeleton", ""}});
+        put(c2, "composite", "durable", data2, {}, {App::LogRef {skel, "skeleton", ""}});
+        App::LogVersion v;
+        v.kind = "unnamed";
+        store->addVersion(v, {{"Document.xml", c1}});
+        v1 = v.num;
+        App::LogVersion w;
+        w.kind = "named";
+        store->addVersion(w, {{"Document.xml", c2}});
+        App::LogTransaction t;
+        t.kind = "user";
+        std::vector<App::LogOp> ops;
+        for (const auto& value : {p2, k1, d3, k4, k5}) {
+            App::LogOp op;
+            op.op = "set";
+            op.ckind = "obj";
+            op.cid = 7;
+            op.prop = "P";
+            op.vafter = value;
+            ops.push_back(op);
+        }
+        store->append(t, ops);
+        store->copyTo(pathB);
+        store->evictVersions({v1});
+        store->dropTier("cache", {});
+    }
+    {
+        auto store = App::TransactionStore::openSQLite(pathB);
+        store->dropTier("cache", {v1});
+    }
+    auto contents = [](const std::string& path) {
+        std::set<std::string> out;
+        sqlite3* db = nullptr;
+        EXPECT_EQ(sqlite3_open(path.c_str(), &db), SQLITE_OK);
+        sqlite3_stmt* s = nullptr;
+        EXPECT_EQ(sqlite3_prepare_v2(db,
+                                     "SELECT 'e ' || hex(hash) FROM entity"
+                                     " UNION ALL SELECT 'r ' || hex(entity) || hex(target) || role"
+                                     " FROM ref UNION ALL SELECT 'v ' || num FROM version",
+                                     -1, &s, nullptr),
+                  SQLITE_OK);
+        while (sqlite3_step(s) == SQLITE_ROW)
+            out.insert(reinterpret_cast<const char*>(sqlite3_column_text(s, 0)));
+        sqlite3_finalize(s);
+        sqlite3_close(db);
+        return out;
+    };
+    auto entity = [](const std::string& hash) {
+        std::string upper = hash;
+        std::transform(upper.begin(), upper.end(), upper.begin(), ::toupper);
+        return "e " + upper;
+    };
+    const auto a = contents(pathA);
+    const auto b = contents(pathB);
+    EXPECT_EQ(a, b);
+    // Kept: version 2's composite and what it lists, the cache value it
+    // lists, and the cache base of a kept delta.
+    for (const auto& kept : {c2, skel, p3, k2, d3, k3})
+        EXPECT_TRUE(b.count(entity(kept))) << kept;
+    // Gone: version 1 and what only it held; the cache values the ops alone
+    // name, and what only they reached; the cache base of a delta gone.
+    for (const auto& gone : {c1, p1, p2, k1, k5, a5, d4, k4})
+        EXPECT_FALSE(b.count(entity(gone))) << gone;
+    Base::FileInfo(pathA).deleteFile();
+    Base::FileInfo(pathB).deleteFile();
 }
 
 TEST_F(TransactionLogTest, branchesSwitchInPlace)

@@ -24,9 +24,13 @@
 
 #ifndef _PreComp_
 # include <algorithm>
+# include <array>
+# include <cstring>
 # include <map>
 # include <set>
 # include <sstream>
+# include <unordered_map>
+# include <unordered_set>
 #endif
 
 #include <sqlite3.h>
@@ -82,21 +86,6 @@ bool packHash(const char* hex, size_t n, unsigned char* out)
     return true;
 }
 
-/// fc_hash(x): packHash in SQL, for the text hashes the other tables hold
-/// (an op's values, a manifest's entries) where they meet `entity`.
-void sqlHash(sqlite3_context* ctx, int, sqlite3_value** argv)
-{
-    unsigned char packed[20];
-    if (sqlite3_value_type(argv[0]) == SQLITE_TEXT) {
-        const char* t = reinterpret_cast<const char*>(sqlite3_value_text(argv[0]));
-        if (packHash(t, static_cast<size_t>(sqlite3_value_bytes(argv[0])), packed)) {
-            sqlite3_result_blob(ctx, packed, 20, SQLITE_TRANSIENT);
-            return;
-        }
-    }
-    sqlite3_result_value(ctx, argv[0]);
-}
-
 /** The SQLite log (docs/TransactionLog.md sec 13). One database per
  * document history; every append is one SQL transaction, so atomicity
  * and crash recovery are the database's, not ours.
@@ -114,9 +103,6 @@ public:
             db = nullptr;
             throw Base::RuntimeError("Cannot open transaction log " + path + ": " + msg);
         }
-        sqlite3_create_function(db, "fc_hash", 1,
-                                SQLITE_UTF8 | SQLITE_DETERMINISTIC | SQLITE_INNOCUOUS, nullptr,
-                                sqlHash, nullptr, nullptr);
         // Read-only -- the embedded copy as the guard reads it (sec 16.4),
         // a blob file -- is read as it is: no journal mode set, no table
         // made. The store the log adopts is a writable copy.
@@ -980,88 +966,131 @@ public:
         }
     }
 
-    /// The one collector (sec 23.5): delete every entity not reachable from
-    /// a root -- an op's ref or a manifest entry -- over the ref edges, of
-    /// every role, and into each composite's values (markHeld). A delta's
-    /// base and a composite's values are held the same way an attachment
-    /// is. Inside the caller's transaction.
-    void collectEntities()
+    /// A hash as the collector keys it, the way bindHash() stores one: a
+    /// SHA-1, packed or in hex, as its 20 bytes; anything else in `other`,
+    /// 'b' and a blob's bytes or 't' and the text. The ops' values and the
+    /// manifests' entries are hex, `entity` and `ref` packed.
+    struct HeldKey
     {
-        if (!markHeld("SELECT vbefore FROM op WHERE vbefore<>''"
-                      " UNION SELECT vafter FROM op WHERE vafter<>''"
-                      " UNION SELECT manifest FROM version WHERE manifest IS NOT NULL"))
-            return;
-        exec("DELETE FROM entity WHERE hash NOT IN (SELECT hash FROM held)");
-        exec("DELETE FROM ref WHERE entity NOT IN (SELECT hash FROM entity)");
-        exec("DELETE FROM strref WHERE owner NOT IN (SELECT hash FROM entity)");
+        std::array<unsigned char, 20> packed {};
+        std::string other;
+        bool operator==(const HeldKey& k) const
+        {
+            return packed == k.packed && other == k.other;
+        }
+    };
+    struct HeldKeyHash
+    {
+        size_t operator()(const HeldKey& k) const
+        {
+            if (!k.other.empty())
+                return std::hash<std::string>()(k.other);
+            size_t v;
+            std::memcpy(&v, k.packed.data(), sizeof(v));
+            return v;
+        }
+    };
+
+    static void makeKey(const char* p, size_t n, bool blob, HeldKey& key)
+    {
+        if (blob && n == 20)
+            std::memcpy(key.packed.data(), p, 20);
+        else if (blob || !packHash(p, n, key.packed.data())) {
+            key.other.reserve(n + 1);
+            key.other += blob ? 'b' : 't';
+            key.other.append(p, n);
+        }
     }
 
-    /** Fill the temporary table `held` with every entity reachable from
-     * `roots` (a query of hashes): over the ref edges of every role, and
-     * into each composite's skeleton and values and each manifest's
-     * entries, which
-     * the composite's own data lists (sec 27.53) -- no edge repeats them,
-     * one row per value per version as they were. False when a composite
-     * cannot be read: what it holds is then unknown, and the caller drops
-     * nothing.
-     */
-    bool markHeld(const char* roots)
+    /// Column `col` as makeKey(); false for a NULL.
+    static bool columnKey(sqlite3_stmt* s, int col, HeldKey& key)
     {
-        exec("CREATE TEMP TABLE IF NOT EXISTS held(hash PRIMARY KEY) WITHOUT ROWID");
-        exec("DELETE FROM held");
-        exec(("WITH roots(h) AS (" + std::string(roots)
-              + ") INSERT OR IGNORE INTO held SELECT fc_hash(h) FROM roots").c_str());
-        std::set<std::string> expanded;
-        Decoded decoded;
-        for (;;) {
-            exec("WITH RECURSIVE live(hash) AS (SELECT hash FROM held"
-                 "  UNION SELECT r.target FROM ref r JOIN live ON r.entity=live.hash)"
-                 " INSERT OR IGNORE INTO held SELECT hash FROM live");
-            std::vector<std::pair<std::string, bool>> composites;
-            auto s = prepare("SELECT e.hash, e.kind FROM held h JOIN entity e ON e.hash=h.hash"
-                             " WHERE e.kind IN ('composite','manifest')");
-            while (sqlite3_step(s) == SQLITE_ROW) {
-                std::string hash = columnHash(s, 0);
-                if (!expanded.count(hash))
-                    composites.emplace_back(std::move(hash), text(s, 1) == "manifest");
-            }
-            sqlite3_reset(s);
-            if (composites.empty())
+        switch (sqlite3_column_type(s, col)) {
+            case SQLITE_NULL:
+                return false;
+            case SQLITE_BLOB:
+                makeKey(static_cast<const char*>(sqlite3_column_blob(s, col)),
+                        static_cast<size_t>(sqlite3_column_bytes(s, col)), true, key);
                 return true;
-            for (const auto& item : composites) {
-                const std::string& hash = item.first;
-                expanded.insert(hash);
-                std::vector<std::string> held;
-                std::string data;
-                TransactionLog::Composite c;
-                std::vector<LogManifestEntry> entries;
-                bool ok = false;
-                if (item.second) {
-                    ok = readManifest(hash, entries);
-                    for (const auto& e : entries)
-                        held.push_back(e.hash);
-                }
-                else if (readStored(hash, data, decoded) && c.decode(data)) {
-                    ok = true;
-                    held.push_back(c.skeleton);
-                    for (const auto& p : c.parts)
-                        held.push_back(p.hash);
-                }
-                if (!ok) {
-                    FC_WARN("transaction log: " << (item.second ? "manifest " : "composite ")
-                            << hash << " cannot be read; nothing collected");
-                    return false;
-                }
-                auto ins = prepare("INSERT OR IGNORE INTO held(hash) VALUES(?)");
-                for (const auto& h : held) {
-                    bindHash(ins, 1, h);
-                    step(ins);
-                }
+            default: {
+                const auto* t = reinterpret_cast<const char*>(sqlite3_column_text(s, col));
+                makeKey(t ? t : "", static_cast<size_t>(sqlite3_column_bytes(s, col)), false,
+                        key);
+                return true;
             }
         }
     }
 
-    /// Bytes decoded during one markHeld(), for the delta chains composites
+    /// The hash a key names, as the rest of the store spells it (columnHash).
+    static std::string keyHash(const HeldKey& key)
+    {
+        if (!key.other.empty())
+            return key.other.substr(1);
+        static const char digits[] = "0123456789abcdef";
+        std::string out(40, '0');
+        for (int i = 0; i < 20; ++i) {
+            out[2 * i] = digits[key.packed[i] >> 4];
+            out[2 * i + 1] = digits[key.packed[i] & 15];
+        }
+        return out;
+    }
+
+    /// Each hash a composite's data lists -- its skeleton, its parts -- as
+    /// Composite::decode() reads them, without making the parts; false
+    /// where decode() fails.
+    template<class F>
+    static bool compositeHashes(const std::string& data, F&& f)
+    {
+        bool skeleton = false;
+        size_t pos = 0;
+        while (pos < data.size()) {
+            size_t end = data.find('\n', pos);
+            if (end == std::string::npos)
+                end = data.size();
+            const char* line = data.data() + pos;
+            const size_t n = end - pos;
+            pos = end + 1;
+            if (n >= 9 && std::memcmp(line, "skeleton ", 9) == 0) {
+                if (n > 9) {
+                    f(line + 9, n - 9);
+                    skeleton = true;
+                }
+            }
+            else if (n >= 2 && std::memcmp(line, "p ", 2) == 0) {
+                const char* a = static_cast<const char*>(std::memchr(line + 2, ' ', n - 2));
+                const char* b = a ? static_cast<const char*>(
+                                        std::memchr(a + 1, ' ', line + n - a - 1))
+                                  : nullptr;
+                if (!b)
+                    return false;
+                f(a + 1, static_cast<size_t>(b - a - 1));
+            }
+            else if (n != 0 && !(n >= 2 && std::memcmp(line, "c ", 2) == 0)) {
+                return false;
+            }
+        }
+        return skeleton;
+    }
+
+    /// Each hash a manifest's data lists, as readManifest() reads them.
+    template<class F>
+    static bool manifestHashes(const std::string& data, F&& f)
+    {
+        size_t pos = 0;
+        while (pos < data.size()) {
+            size_t end = data.find('\n', pos);
+            if (end == std::string::npos)
+                end = data.size();
+            const size_t space = data.find(' ', pos);
+            if (space == std::string::npos || space > end)
+                return false;
+            f(data.data() + pos, space - pos);
+            pos = end + 1;
+        }
+        return true;
+    }
+
+    /// Bytes decoded during one collection, for the delta chains composites
     /// share (each version's is based on the next, sec 23.2); dropped
     /// whole past a bound.
     struct Decoded
@@ -1069,6 +1098,195 @@ public:
         std::map<std::string, std::string> bytes;
         size_t total {0};
     };
+
+    /// The one collector (sec 23.5): delete every entity not reachable from
+    /// a root -- an op's ref or a manifest entry -- over the ref edges, of
+    /// every role, and into each composite's values (HeldGraph). A delta's
+    /// base and a composite's values are held the same way an attachment
+    /// is. Inside the caller's transaction.
+    void collectEntities()
+    {
+        HeldGraph g;
+        loadGraph(g);
+        std::vector<uint32_t> roots;
+        addRoots(g, opRoots, roots);
+        addRoots(g, manifestRoots, roots);
+        std::vector<char> held;
+        if (walk(g, roots, nullptr, held))
+            sweep(g, held);
+    }
+
+    // UNION ALL: the walk takes each hash once, where UNION would sort every
+    // op's values first.
+    static constexpr const char* opRoots = "SELECT vbefore FROM op WHERE vbefore<>''"
+                                           " UNION ALL SELECT vafter FROM op WHERE vafter<>''";
+    static constexpr const char* manifestRoots =
+        "SELECT manifest FROM version WHERE manifest IS NOT NULL";
+
+    /** What the collector walks: every hash the ref edges, the roots and the
+     * composites' and manifests' own data name, numbered, with the edges of
+     * every role -- and, once a walk reaches one, a composite's skeleton and
+     * values or a manifest's entries, which no edge repeats (sec 27.53).
+     *
+     * Read once for an operation, however many walks it takes, and walked
+     * in memory. The versions' composites list mostly the same values, and
+     * marking each part of each of them in SQL, one walk per step of a
+     * retention, made a save of a long history spend seconds collecting
+     * (sec 27.69).
+     */
+    struct HeldGraph
+    {
+        static constexpr uint32_t none = UINT32_MAX;
+        enum List : char
+        {
+            NotAList,
+            Composite,
+            Manifest,
+            Expanded,
+        };
+        std::vector<HeldKey> keys;
+        std::unordered_map<HeldKey, uint32_t, HeldKeyHash> ids;
+        std::vector<std::vector<uint32_t>> edges;
+        /// A delta's base, or none.
+        std::vector<uint32_t> base;
+        std::vector<List> list;
+        Decoded decoded;
+
+        uint32_t id(HeldKey&& key)
+        {
+            auto it = ids.find(key);
+            if (it != ids.end())
+                return it->second;
+            const auto n = static_cast<uint32_t>(keys.size());
+            ids.emplace(key, n);
+            keys.push_back(std::move(key));
+            edges.emplace_back();
+            base.push_back(none);
+            list.push_back(NotAList);
+            return n;
+        }
+    };
+
+    void loadGraph(HeldGraph& g)
+    {
+        auto s = prepare("SELECT entity, target, role FROM ref");
+        while (sqlite3_step(s) == SQLITE_ROW) {
+            HeldKey from, to;
+            if (!columnKey(s, 0, from) || !columnKey(s, 1, to))
+                continue;
+            const uint32_t f = g.id(std::move(from));
+            const uint32_t t = g.id(std::move(to));
+            g.edges[f].push_back(t);
+            if (text(s, 2) == "base")
+                g.base[f] = t;
+        }
+        sqlite3_reset(s);
+        s = prepare("SELECT hash, kind FROM entity WHERE kind IN ('composite','manifest')");
+        while (sqlite3_step(s) == SQLITE_ROW) {
+            HeldKey key;
+            if (columnKey(s, 0, key))
+                g.list[g.id(std::move(key))] =
+                    text(s, 1) == "manifest" ? HeldGraph::Manifest : HeldGraph::Composite;
+        }
+        sqlite3_reset(s);
+    }
+
+    /// The hashes the query `roots` returns, numbered in `g`.
+    void addRoots(HeldGraph& g, const char* roots, std::vector<uint32_t>& out)
+    {
+        auto s = prepare(roots);
+        while (sqlite3_step(s) == SQLITE_ROW) {
+            HeldKey key;
+            if (columnKey(s, 0, key))
+                out.push_back(g.id(std::move(key)));
+        }
+        sqlite3_reset(s);
+    }
+
+    /// A composite's or a manifest's entries as edges of its own. False when
+    /// its data cannot be read: what it holds is then unknown.
+    bool expand(HeldGraph& g, uint32_t n)
+    {
+        const bool manifest = g.list[n] == HeldGraph::Manifest;
+        const std::string hash = keyHash(g.keys[n]);
+        std::string data;
+        std::vector<uint32_t> listed;
+        auto add = [&g, &listed](const char* p, size_t len) {
+            HeldKey key;
+            makeKey(p, len, false, key);
+            listed.push_back(g.id(std::move(key)));
+        };
+        if (!readStored(hash, data, g.decoded)
+            || !(manifest ? manifestHashes(data, add) : compositeHashes(data, add))) {
+            FC_WARN("transaction log: " << (manifest ? "manifest " : "composite ") << hash
+                    << " cannot be read; nothing collected");
+            return false;
+        }
+        g.list[n] = HeldGraph::Expanded;
+        g.edges[n].insert(g.edges[n].end(), listed.begin(), listed.end());
+        return true;
+    }
+
+    /** Mark in `held` every node reachable from `roots`, not passing
+     * through one `gone` marks. False when a composite or manifest on the
+     * way cannot be read, and the caller must then drop nothing.
+     */
+    bool walk(HeldGraph& g, const std::vector<uint32_t>& roots, const std::vector<char>* gone,
+              std::vector<char>& held)
+    {
+        held.assign(g.keys.size(), 0);
+        std::vector<uint32_t> work;
+        auto reach = [&](uint32_t n) {
+            if (n >= held.size())
+                held.resize(g.keys.size(), 0);
+            if (held[n] || (gone && n < gone->size() && (*gone)[n]))
+                return;
+            held[n] = 1;
+            work.push_back(n);
+        };
+        for (uint32_t r : roots)
+            reach(r);
+        while (!work.empty()) {
+            const uint32_t n = work.back();
+            work.pop_back();
+            if (g.list[n] == HeldGraph::Composite || g.list[n] == HeldGraph::Manifest) {
+                if (!expand(g, n))
+                    return false;
+            }
+            // By index: an expansion numbers new nodes, and edges grows.
+            for (size_t i = 0; i < g.edges[n].size(); ++i)
+                reach(g.edges[n][i]);
+        }
+        held.resize(g.keys.size(), 0);
+        return true;
+    }
+
+    /// Delete every entity `held` does not mark, and the refs and string
+    /// ranges it owned.
+    void sweep(const HeldGraph& g, const std::vector<char>& held)
+    {
+        exec("CREATE TEMP TABLE IF NOT EXISTS held(hash PRIMARY KEY) WITHOUT ROWID");
+        exec("DELETE FROM held");
+        auto ins = prepare("INSERT OR IGNORE INTO held(hash) VALUES(?)");
+        for (size_t n = 0; n < held.size(); ++n) {
+            if (!held[n])
+                continue;
+            const HeldKey& key = g.keys[n];
+            sqlite3_reset(ins);
+            if (key.other.empty())
+                sqlite3_bind_blob(ins, 1, key.packed.data(), 20, SQLITE_TRANSIENT);
+            else if (key.other[0] == 'b')
+                sqlite3_bind_blob(ins, 1, key.other.data() + 1,
+                                  static_cast<int>(key.other.size() - 1), SQLITE_TRANSIENT);
+            else
+                sqlite3_bind_text(ins, 1, key.other.data() + 1,
+                                  static_cast<int>(key.other.size() - 1), SQLITE_TRANSIENT);
+            step(ins);
+        }
+        exec("DELETE FROM entity WHERE hash NOT IN (SELECT hash FROM held)");
+        exec("DELETE FROM ref WHERE entity NOT IN (SELECT hash FROM entity)");
+        exec("DELETE FROM strref WHERE owner NOT IN (SELECT hash FROM entity)");
+    }
 
     /// An entity's full bytes from the store alone: raw, zstd, or a delta
     /// on another such. A file (23.16) is the log's to read, and no
@@ -1146,24 +1364,52 @@ public:
         exec("VACUUM");
     }
 
-    void dropTier(const std::string& tier) override
+    void dropTier(const std::string& tier, const std::vector<int64_t>& evict) override
     {
         exec("BEGIN");
         try {
-            // Not one a manifest reaches -- through a composite's values
-            // and an attachment's refs as much as directly (23.3) -- and
-            // not one a surviving delta is based on: the base of a
-            // cache-tier chain is what the durable row above it decodes
-            // through.
-            if (markHeld("SELECT manifest FROM version WHERE manifest IS NOT NULL")) {
-                auto s = prepare("DELETE FROM entity WHERE tier=?"
-                                 " AND hash NOT IN (SELECT hash FROM held)"
-                                 " AND hash NOT IN (SELECT target FROM ref WHERE role='base')");
-                bindText(s, 1, tier);
+            for (int64_t num : evict) {
+                auto s = prepare("DELETE FROM version WHERE num=?");
+                sqlite3_bind_int64(s, 1, num);
                 step(s);
-                exec("DELETE FROM ref WHERE entity NOT IN (SELECT hash FROM entity)");
-                exec("DELETE FROM strref WHERE owner NOT IN (SELECT hash FROM entity)");
-                collectEntities();
+            }
+            // What evicting the versions keeps is what every root reaches
+            // (`all`). Of that, the tier's entities go that no manifest
+            // reaches -- through a composite's values and an attachment's
+            // refs as much as directly (23.3) -- and that no kept delta is
+            // based on: the base of a cache-tier chain is what the durable
+            // row above it decodes through. Then what only they reached.
+            HeldGraph g;
+            loadGraph(g);
+            std::vector<uint32_t> manifests, roots;
+            addRoots(g, manifestRoots, manifests);
+            addRoots(g, opRoots, roots);
+            roots.insert(roots.end(), manifests.begin(), manifests.end());
+            std::vector<char> listed, all;
+            if (walk(g, manifests, nullptr, listed) && walk(g, roots, nullptr, all)) {
+                std::vector<char> based(g.keys.size(), 0);
+                for (size_t n = 0; n < all.size(); ++n) {
+                    if (all[n] && g.base[n] != HeldGraph::none)
+                        based[g.base[n]] = 1;
+                }
+                std::vector<char> gone(g.keys.size(), 0);
+                auto s = prepare("SELECT hash FROM entity WHERE tier=?");
+                bindText(s, 1, tier);
+                while (sqlite3_step(s) == SQLITE_ROW) {
+                    HeldKey key;
+                    if (!columnKey(s, 0, key))
+                        continue;
+                    auto it = g.ids.find(key);
+                    if (it == g.ids.end())
+                        continue;   // reached by nothing: the sweep takes it
+                    const uint32_t n = it->second;
+                    if (all[n] && !listed[n] && !based[n])
+                        gone[n] = 1;
+                }
+                sqlite3_reset(s);
+                std::vector<char> kept;
+                if (walk(g, roots, &gone, kept))
+                    sweep(g, kept);
             }
             exec("COMMIT");
         }
