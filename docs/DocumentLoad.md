@@ -1174,8 +1174,10 @@ hides its inputs on an update, and the Body a user had shown again came
 back hidden. Guarding each such handler (every boolean, every feature that
 hides its base, every Python feature) is a list that never closes; the
 drain now has four phases in the eager order -- create, sweep (the
-restoring flag down, as for the eager updates), records, finish. Two more
-pieces were needed before the user files agreed:
+restoring flag down, as for the eager updates), records, finish (and,
+since `1c12f663cc`, the updates `afterRestore()` raised after the records
+were read, replayed per object in the finish phase). Two more pieces were
+needed before the user files agreed:
 
 - a view provider restored at once (sec 16 item 8) had its record before
   the sweep, and in older files that is most of them: a colour array saved
@@ -1240,16 +1242,19 @@ differences in two. Examined (2026-09-29, session 108):
   EAGER opens as well (10351 on the first open of the process, 22520 on
   the second, 22779 progressive) -- the level ladder had not refined the
   first open's curves when its frame was taken.
-- **Left, and not a timing effect: record order after a migration.** A
-  visible origin whose axes a 2021 build saved at its planes' size (27;
-  the current rule draws them 1.5 times longer) opens at 40.5 eagerly
-  and 27 progressively. Eagerly, `App::Origin::onDocumentRestored()`
-  migrates the origin point into `OriginFeatures` during
-  `App::Document::afterRestore`, AFTER GuiDocument.xml was read, and that
-  update re-applies the rule over the axes' records; the drain folds the
-  same update into its phase-two sweep, before the records, which then
-  win. Replaying what `afterRestore` changed after phase three would
-  match; not done (it is a new drain mechanism).
+- **Record order after a migration.** A visible origin whose axes a
+  2021 build saved at its planes' size (27; the current rule draws them
+  1.5 times longer) opened at 40.5 eagerly and 27 progressively. Eagerly,
+  `App::Origin::onDocumentRestored()` migrates the origin point into
+  `OriginFeatures` during `App::Document::afterRestore`, AFTER
+  GuiDocument.xml was read, and that update re-applies the rule over the
+  axes' records; the drain folded the same update into its phase-two
+  sweep, before the records, which then won. A change made after the
+  document's records were parked, while the App load still runs and the
+  object has no view provider, is now noted by name and replayed in phase
+  four just before that object is finished -- `afterRestore()`'s own
+  per-object order (`1c12f663cc`; test: `datum-size-after-open.py`, an
+  origin saved without its point, progressive 3/3 wrong before).
 - **Left, cause not found:** the origins of the file's hidden Parts are
   sized differently (200 x 270 eagerly, 227 x 284 progressively, the
   same 227 x 284 for origins of different Parts).
@@ -1264,7 +1269,7 @@ and so never cleared the cache. A drain slice that builds anything now
 clears it (`0a22d41452`; 10 progressive opens of 10 agree). Why that
 visual's box is so much larger than its shape is not answered; the
 frames of both modes are identical. The other six: the legacy origin
-axes above; line-level tessellation pixels in four files (0.7-2%; in
+axes above (since fixed); line-level tessellation pixels in four files (0.7-2%; in
 two of them the two eager opens agree exactly and progressive differs
 consistently, so it is the curves' level at capture, not noise); and one
 pick cell in one run of one file (a Loft against the Loft beside it),
