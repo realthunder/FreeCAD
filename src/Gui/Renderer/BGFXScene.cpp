@@ -281,9 +281,18 @@ void BGFXRenderer::Private::publishScene(const void *viewMatrix,
     }
     // The environment variable is one way to start the server, not
     // the definition of serving: Gui.serveDocument(doc, port) starts
-    // it directly (docs/HeadlessServe.md §4, stage 2d). What decides
-    // whether to publish is whether anything is listening.
-    if (server.running()) {
+    // it directly (docs/HeadlessServe.md sec 4, stage 2d). But a document
+    // served that way is published by its serve source, into its own
+    // group, and a viewer's renderer names no group: it would publish
+    // into the default one, which is the first served document's, and
+    // the first to publish keeps the stream. A desktop view of that
+    // document then fed its browsers, and what a browser's own edit
+    // hangs in the served graph -- an on-view label, a sketch's edit
+    // geometry -- was drawn by nothing (docs/MultiDocServe.md sec 5:
+    // the publisher that owns the document's stream owns its
+    // container). So a viewer publishes on the variable's path alone.
+    const bool mayPublish = !publishGroup.empty() || (servePort && *servePort);
+    if (mayPublish && server.running()) {
         // Publish whenever there is anything to show, not just a non-empty
         // main scene: while editing the only object (e.g. a Sketcher sketch
         // with no other geometry) the whole edit graph lives in the editing
