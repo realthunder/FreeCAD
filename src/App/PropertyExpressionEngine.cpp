@@ -322,6 +322,110 @@ void PropertyExpressionEngine::Paste(const Property &from)
     signaller.tryInvoke();
 }
 
+namespace {
+
+/// The variables of an expression that name a sub-object, in the order a
+/// visit meets them: what the ids saved beside the expressions are keyed by
+/// (docs/TransactionLog.md sec 27.77).
+class ElementPathCollector : public ExpressionVisitor
+{
+public:
+    std::vector<VariableExpression*> vars;
+    void visit(Expression &e) override
+    {
+        auto var = dynamic_cast<VariableExpression*>(&e);
+        if (var && !var->getPath().getSubObjectName().empty())
+            vars.push_back(var);
+    }
+};
+
+std::vector<VariableExpression*> elementPaths(Expression &expr)
+{
+    ElementPathCollector collector;
+    expr.visit(collector);
+    return std::move(collector.vars);
+}
+
+} // namespace
+
+void PropertyExpressionEngine::beforeSave(Base::Writer &writer) const
+{
+    PropertyExpressionContainer::beforeSave(writer);
+    // As a link property marks what its shadows hold (sec 27.75): the ids of
+    // the owner's own table, which the saved version uses.
+    auto owner = dynamic_cast<const DocumentObject*>(getContainer());
+    if (!owner || !owner->getDocument())
+        return;
+    StringHasherRef hasher = owner->getDocument()->getStringHasher();
+    if (!hasher)
+        return;
+    for (const auto &v : expressions) {
+        if (!v.second.expression)
+            continue;
+        for (auto var : elementPaths(*v.second.expression)) {
+            for (const auto &sid : var->getPath().getShadowSub().sids) {
+                if (sid.isFromSameHasher(hasher))
+                    sid.mark();
+            }
+        }
+    }
+}
+
+/** The string ids the expressions' element paths hold, written after the
+ * expressions as an element of their own, which a reader that does not know
+ * it skips (docs/TransactionLog.md sec 27.77): the expression text has no
+ * room for them. Keyed by the expression's place among those written and
+ * the path's place in a visit of it; hex, space separated, as a link
+ * property writes its own (sec 27.75), and not when exporting, the ids
+ * being this file's.
+ */
+static void saveElementPathIds(Base::Writer &writer, const DocumentObject *owner,
+        const std::vector<std::shared_ptr<Expression>> &exprs)
+{
+    if (owner && owner->isExporting())
+        return;
+    struct Entry {
+        int index;
+        int ref;
+        std::string ids;
+    };
+    std::vector<Entry> entries;
+    int index = -1;
+    for (const auto &expr : exprs) {
+        ++index;
+        int ref = -1;
+        for (auto var : elementPaths(*expr)) {
+            ++ref;
+            const auto &shadow = var->getPath().getShadowSub();
+            if (shadow.sids.empty() && shadow.savedIds.empty())
+                continue;
+            std::ostringstream ids;
+            ids << std::hex;
+            const char *sep = "";
+            for (const auto &sid : shadow.sids) {
+                StringIDCollector::take(sid);
+                ids << sep << sid.value();
+                sep = " ";
+            }
+            for (long id : shadow.savedIds) {
+                ids << sep << id;
+                sep = " ";
+            }
+            entries.push_back({index, ref, ids.str()});
+        }
+    }
+    if (entries.empty())
+        return;
+    writer.Stream() << writer.ind() << "<ExpressionIds count=\"" << entries.size() << "\">\n";
+    writer.incInd();
+    for (const auto &e : entries) {
+        writer.Stream() << writer.ind() << "<Ids index=\"" << e.index << "\" ref=\"" << e.ref
+                        << "\" sids=\"" << e.ids << "\"/>\n";
+    }
+    writer.decInd();
+    writer.Stream() << writer.ind() << "</ExpressionIds>\n";
+}
+
 void PropertyExpressionEngine::Save(Base::Writer &writer) const
 {
     writer.Stream() << writer.ind() << "<ExpressionEngine count=\"";
@@ -384,6 +488,12 @@ void PropertyExpressionEngine::Save(Base::Writer &writer) const
             writer.Stream() << "/>\n";
         }
     }
+    std::vector<std::shared_ptr<Expression>> written;
+    for (const auto &entry : expressions) {
+        if (entry.second.expression)
+            written.push_back(entry.second.expression);
+    }
+    saveElementPathIds(writer, dynamic_cast<const DocumentObject*>(getContainer()), written);
     writer.decInd();
     writer.Stream() << writer.ind() << "</ExpressionEngine>\n";
 }
@@ -419,6 +529,28 @@ void PropertyExpressionEngine::Restore(Base::XMLReader &reader)
             info.expr = reader.getAttribute("expression");
             info.comment = reader.getAttribute("comment","");
         }
+    }
+
+    // The ids the element paths hold (saveElementPathIds), absent from a
+    // file written before them.
+    if (reader.readNextElement() && std::strcmp(reader.localName(), "ExpressionIds") == 0) {
+        long entries = reader.getAttributeAsInteger("count");
+        for (long i = 0; i < entries; ++i) {
+            reader.readElement("Ids");
+            long index = reader.getAttributeAsInteger("index");
+            long ref = reader.getAttributeAsInteger("ref");
+            std::vector<long> ids;
+            std::istringstream in(reader.getAttribute("sids"));
+            in >> std::hex;
+            long id;
+            while (in >> id) {
+                if (id > 0)
+                    ids.push_back(id);
+            }
+            if (index >= 0 && index < count && ref >= 0 && !ids.empty())
+                (*restoredExpressions)[index].ids.emplace_back(static_cast<int>(ref), std::move(ids));
+        }
+        reader.readEndElement("ExpressionIds");
     }
 
     reader.readEndElement("ExpressionEngine");
@@ -556,8 +688,17 @@ void PropertyExpressionEngine::afterRestore()
                 ObjectIdentifier path = ObjectIdentifier::parse(docObj, info.path);
                 if (!info.expr.empty()) {
                     std::shared_ptr<Expression> expression(Expression::parse(docObj, info.expr.c_str()));
-                    if(expression)
+                    if(expression) {
                         expression->comment = std::move(info.comment);
+                        // Held when the paths resolve (onContainerRestored).
+                        if (!info.ids.empty()) {
+                            auto vars = elementPaths(*expression);
+                            for (auto &v : info.ids) {
+                                if (v.first < static_cast<int>(vars.size()))
+                                    vars[v.first]->setSavedShadowIds(std::move(v.second));
+                            }
+                        }
+                    }
                     setValue(path, expression);
                 }
             } catch (Base::Exception &e) {

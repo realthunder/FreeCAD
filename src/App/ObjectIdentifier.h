@@ -401,6 +401,17 @@ public:
     const std::string &getSubObjectName(bool newStyle) const;
     const std::string &getSubObjectName() const;
 
+    /// The element path's shadow and the string ids it holds
+    /// (docs/TransactionLog.md sec 27.75).
+    const PropertyLinkBase::ShadowSub &getShadowSub() const {
+        return shadowSub;
+    }
+    /// The ids a file gave for the shadow, held once the reference resolves
+    /// against its target (sec 27.77).
+    void setSavedShadowIds(std::vector<long> ids) {
+        shadowSub.savedIds = std::move(ids);
+    }
+
     using SubNameMap = std::map<std::pair<App::DocumentObject*,std::string>,std::string>;
     void importSubNames(const SubNameMap &subNameMap);
 

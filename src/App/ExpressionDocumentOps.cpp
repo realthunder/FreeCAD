@@ -723,6 +723,37 @@ bool ObjectIdentifier::updateElementReference(ExpressionVisitor &v,
         return false;
 
     ResolveResults result(*this);
+    // The ids a file gave are held against the target's table first, as a
+    // link's are on registering, whether the element is there or missing
+    // (docs/TransactionLog.md sec 27.77): else the next save's compaction
+    // drops the strings the reference names.
+    if (!shadowSub.savedIds.empty()) {
+        App::DocumentObject *target = result.resolvedDocumentObject;
+        if (!target && owner && owner->getDocument()) {
+            auto doc = result.resolvedDocument ? result.resolvedDocument : owner->getDocument();
+            const auto &name = documentObjectName.getString();
+            target = doc->getObject(name.c_str());
+            if (!target && documentObjectName.isRealString()) {
+                for (auto obj : doc->getObjects()) {
+                    if (name == obj->Label.getValue()) {
+                        target = obj;
+                        break;
+                    }
+                }
+            }
+        }
+        StringHasherRef hasher;
+        if (target && target->getDocument())
+            hasher = target->getDocument()->getStringHasher();
+        if (hasher) {
+            shadowSub.sids.clear();
+            for (long id : shadowSub.savedIds) {
+                if (auto sid = hasher->getID(id))
+                    shadowSub.sids.push_back(sid);
+            }
+            shadowSub.savedIds.clear();
+        }
+    }
     if(!result.resolvedSubObject)
         return false;
     if(v.getPropertyLink()->_updateElementReference(

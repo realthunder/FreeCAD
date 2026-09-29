@@ -4673,24 +4673,18 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertEqual(references(doc), before)
         self.assertEqual([o.Name for o in doc.Objects if "Touched" in o.State], [])
 
-    def testAReferenceHoldsTheStringsItNames(self):
-        # Sec 27.75: a reference into an element holds the string ids of the
-        # element's name -- the map's for it, which include what the name
-        # was made from and its text does not show -- saved beside its
-        # shadow and held again at the next open. With the element gone and
-        # nothing else holding them, a save's compaction keeps those and
-        # drops the rest of the old shape's. The log is off: its retained
-        # versions would keep the rest as well.
-        import io
+    def _heldStringsModel(self, docName):
+        # A feature holding a pocket's names and nothing else, one of its
+        # edges whose ids include one its text does not show, those ids,
+        # and the rest of the old shape's (sec 27.75).
         import re
-        import zipfile
 
         import Part
 
         self.param.SetInt("TransactionLog", 0)
-        doc = self.track(FreeCAD.newDocument("HeldStrings"))
+        doc = self.track(FreeCAD.newDocument(docName))
         doc.UndoMode = 0
-        doc.saveAs(os.path.join(self.dir, "heldstrings.FCStd"))
+        doc.saveAs(os.path.join(self.dir, docName.lower() + ".FCStd"))
         V = FreeCAD.Vector
         body = doc.addObject("PartDesign::Body", "Body")
         sketch = body.newObject("Sketcher::SketchObject", "Sketch")
@@ -4751,6 +4745,24 @@ class TransactionBranchCases(unittest.TestCase):
         others -= closure(held)
         self.assertTrue(others)
 
+        return doc, feature, element, held, others
+
+    def testAReferenceHoldsTheStringsItNames(self):
+        # Sec 27.75: a reference into an element holds the string ids of the
+        # element's name -- the map's for it, which include what the name
+        # was made from and its text does not show -- saved beside its
+        # shadow and held again at the next open. With the element gone and
+        # nothing else holding them, a save's compaction keeps those and
+        # drops the rest of the old shape's. The log is off: its retained
+        # versions would keep the rest as well.
+        import io
+        import re
+        import zipfile
+
+        import Part
+
+        doc, feature, element, held, others = self._heldStringsModel("HeldStrings")
+
         ref = doc.addObject("App::FeaturePython", "Ref")
         ref.addProperty("App::PropertyLinkSub", "S")
         ref.S = (feature, [element])
@@ -4767,6 +4779,46 @@ class TransactionBranchCases(unittest.TestCase):
         # The element goes; the feature's retained generation would keep
         # the old shape's strings, so it goes too, and a reopen forgets the
         # one it keeps in memory.
+        feature.Shape = Part.makeBox(1, 1, 1)
+        doc.recompute()
+        for prop in [p for p in feature.PropertiesList if p.startswith("_BaseShape")]:
+            feature.removeProperty(prop)
+        doc.save()
+        path = doc.FileName
+        FreeCAD.closeDocument(doc.Name)
+        doc = self.track(FreeCAD.openDocument(path))
+        self.assertEqual(saved(doc), held)
+        doc.save()
+        self.assertEqual({i for i in held if doc.Hasher.getID(i)}, held)
+        self.assertEqual({i for i in others if doc.Hasher.getID(i)}, set())
+
+    def testAnExpressionHoldsTheStringsItNames(self):
+        # Sec 27.77: an expression's element path holds its string ids as a
+        # link does (27.75). The expression text has no room for them, so the
+        # engine writes them beside the expressions, and a reopen holds them
+        # again -- the element missing by then, which is when nothing else
+        # does.
+        import io
+        import re
+        import zipfile
+
+        import Part
+
+        doc, feature, element, held, others = self._heldStringsModel("HeldExpression")
+        ref = doc.addObject("App::FeaturePython", "Ref")
+        ref.addProperty("App::PropertyFloat", "T")
+        ref.setExpression("T", "F.<<%s>>._shape.Length" % element)
+        doc.recompute()
+        self.assertGreater(ref.T, 0)
+
+        def saved(doc):
+            data = bytes(doc.Ref.dumpPropertyContent("ExpressionEngine", Compression=0))
+            archive = zipfile.ZipFile(io.BytesIO(data))
+            xml = "".join(archive.read(n).decode() for n in archive.namelist())
+            found = re.search(r'<Ids index="0" ref="0" sids="([^"]*)"', xml)
+            return {int(x, 16) for x in found.group(1).split()} if found else set()
+
+        self.assertEqual(saved(doc), held)
         feature.Shape = Part.makeBox(1, 1, 1)
         doc.recompute()
         for prop in [p for p in feature.PropertiesList if p.startswith("_BaseShape")]:

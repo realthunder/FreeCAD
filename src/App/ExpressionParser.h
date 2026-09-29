@@ -306,6 +306,12 @@ public:
 
     const ObjectIdentifier &getPath() const;
 
+    /// The ids a file gave for the element path's shadow
+    /// (docs/TransactionLog.md sec 27.77).
+    void setSavedShadowIds(std::vector<long> ids) {
+        var.setSavedShadowIds(std::move(ids));
+    }
+
     void addComponent(ComponentPtr &&component) override;
 
     std::vector<std::string> getStringList() const;

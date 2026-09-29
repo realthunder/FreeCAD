@@ -125,6 +125,7 @@ public:
     void Paste(const Property &from) override;
 
     void Save (Base::Writer & writer) const override;
+    void beforeSave(Base::Writer &writer) const override;
 
     void Restore(Base::XMLReader &reader) override;
 
@@ -273,6 +274,9 @@ private:
         std::string path;
         std::string expr;
         std::string comment;
+        /// The string ids the element paths hold, by their order in a
+        /// visit (docs/TransactionLog.md sec 27.77).
+        std::vector<std::pair<int, std::vector<long>>> ids;
     };
     /**< Expressions are read from file to this map first before they are validated and inserted into the actual map */
     std::unique_ptr<std::vector<RestoredExpression> > restoredExpressions;
