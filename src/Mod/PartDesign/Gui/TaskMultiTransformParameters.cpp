@@ -156,6 +156,14 @@ void TaskMultiTransformParameters::slotDeletedObject(const Gui::ViewProviderDocu
     TaskTransformedParameters::slotDeletedObject(Obj);
 }
 
+void TaskMultiTransformParameters::slotDeleteDocument(const Gui::Document& Doc)
+{
+    // The sub-task reaches its feature through this one
+    if (TransformedView && TransformedView->getDocument() == &Doc)
+        this->subFeature = nullptr;
+    TaskTransformedParameters::slotDeleteDocument(Doc);
+}
+
 void TaskMultiTransformParameters::refreshAfterUndo()
 {
     TaskTransformedParameters::refreshAfterUndo();

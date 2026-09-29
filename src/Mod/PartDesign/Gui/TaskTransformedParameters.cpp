@@ -137,6 +137,14 @@ void TaskTransformedParameters::slotRedoDocument(const Gui::Document& Doc)
         refreshAfterUndo();
 }
 
+void TaskTransformedParameters::slotDeleteDocument(const Gui::Document& Doc)
+{
+    // The view providers go with the document, telling nobody, and the
+    // panel is deleted after them: its destructor must not reach the feature
+    if (TransformedView && TransformedView->getDocument() == &Doc)
+        TransformedView = nullptr;
+}
+
 void TaskTransformedParameters::refreshAfterUndo()
 {
     refresh();

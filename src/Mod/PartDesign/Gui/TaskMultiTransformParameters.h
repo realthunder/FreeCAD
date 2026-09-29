@@ -90,6 +90,7 @@ private Q_SLOTS:
     void onUpdateView(bool) override;
     /** Notifies when the object is about to be removed. */
     void slotDeletedObject(const Gui::ViewProviderDocumentObject& Obj) override;
+    void slotDeleteDocument(const Gui::Document& Doc) override;
     void refreshAfterUndo() override;
 
 protected:

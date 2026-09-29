@@ -177,6 +177,7 @@ protected:
     void slotDeletedObject(const Gui::ViewProviderDocumentObject& Obj) override;
     void slotUndoDocument(const Gui::Document& Doc) override;
     void slotRedoDocument(const Gui::Document& Doc) override;
+    void slotDeleteDocument(const Gui::Document& Doc) override;
     void changeEvent(QEvent *e) override = 0;
     void onSelectionChanged(const Gui::SelectionChanges& msg) override;
     virtual void updateUI() = 0;
