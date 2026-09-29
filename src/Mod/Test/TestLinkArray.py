@@ -231,6 +231,23 @@ class TestLinkArray(unittest.TestCase):
         self.array.Occurrences = 0
         self.assertEqual(self.array.Occurrences, 1)
 
+    def testLabelFollowsTheKind(self):
+        # The array of setUp, named Array, labelled after its kind
+        array = self.array
+        self.assertEqual(array.Label, "LinearLinkArray")
+        array.PatternType = "Polar"
+        self.assertEqual(array.Label, "PolarLinkArray")
+        # A second one keeps its suffix
+        other = self.doc.addObject("App::LinkArray", "LinkArray")
+        self.assertEqual(other.Label, "LinearLinkArray")
+        other.PatternType = "Polar"
+        self.assertTrue(other.Label.startswith("PolarLinkArray"))
+        self.assertNotEqual(other.Label, array.Label)
+        # Renamed by the user: left alone
+        array.Label = "Spokes"
+        array.PatternType = "Circular"
+        self.assertEqual(array.Label, "Spokes")
+
     def testKindChangeUndoRedo(self):
         self.doc.UndoMode = 1
         self.array.Occurrences = 3

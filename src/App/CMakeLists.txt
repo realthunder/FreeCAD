@@ -481,6 +481,7 @@ SET(Document_CPP_SRCS
     LinkArray.cpp
     LinkParams.cpp
     Pattern.cpp
+    PatternExtension.cpp
     LinkBaseExtensionPyImp.cpp
     ExpressionPyImp.cpp
     SavedView.cpp
@@ -551,6 +552,7 @@ SET(Document_HPP_SRCS
     Link.h
     LinkArray.h
     Pattern.h
+    PatternExtension.h
     SavedView.h
 )
 SET(Document_SRCS

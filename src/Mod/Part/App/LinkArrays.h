@@ -33,7 +33,8 @@ namespace Part
  *
  * Each is an App::LinkArray with its PatternType preset, so that upstream's
  * files load. The array itself, and the switch to another kind, are
- * App::LinkArray's.
+ * App::LinkArray's. An array is saved as the class of the kind it has then,
+ * so that upstream reads it as that kind.
  */
 class PartExport LinkArrayLinear: public App::LinkArray
 {

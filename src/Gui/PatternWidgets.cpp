@@ -29,6 +29,7 @@
 #include <sstream>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QCoreApplication>
 #include <QFont>
 #include <QFormLayout>
 #include <QLabel>
@@ -185,6 +186,27 @@ QComboBox& ComboLinks::combo() const
 
 // ----------------------------------------------------------------------------
 
+void Gui::fillPatternTypeCombo(QComboBox* combo)
+{
+    const QString texts[] = {
+        QCoreApplication::translate("Gui::PatternWidgets", "Linear"),
+        QCoreApplication::translate("Gui::PatternWidgets", "Polar"),
+        QCoreApplication::translate("Gui::PatternWidgets", "Circular"),
+        QCoreApplication::translate("Gui::PatternWidgets", "Along a path"),
+        QCoreApplication::translate("Gui::PatternWidgets", "On points"),
+    };
+    int i = 0;
+    for (const auto& text : texts) {
+        if (i < combo->count()) {
+            combo->setItemText(i, text);
+        }
+        else {
+            combo->addItem(text);
+        }
+        ++i;
+    }
+}
+
 QString Gui::patternReferenceText(const App::DocumentObject* obj,
                                   const std::vector<std::string>& subs)
 {
@@ -222,6 +244,32 @@ std::string Gui::patternReferencePython(const App::DocumentObject* obj,
 }
 
 // ----------------------------------------------------------------------------
+
+PatternDirectionWidget::Properties
+PatternDirectionWidget::propertiesOf(const App::PropertyContainer& obj, Kind kind, bool second)
+{
+    const bool polar = kind == Kind::Polar;
+    const char* suffix = second ? "2" : "";
+    auto find = [&obj, suffix](const char* base, bool withSuffix = true) {
+        std::string name = base;
+        if (withSuffix) {
+            name += suffix;
+        }
+        return App::Pattern::getProperty(obj, name.c_str());
+    };
+    Properties props;
+    props.reference = dynamic_cast<App::PropertyLinkSub*>(polar ? find("Axis", false)
+                                                                : find("Direction"));
+    props.reversed = dynamic_cast<App::PropertyBool*>(find("Reversed"));
+    props.mode = dynamic_cast<App::PropertyEnumeration*>(find("Mode"));
+    props.extent = dynamic_cast<App::PropertyQuantity*>(polar ? find("Angle", false)
+                                                              : find("Length"));
+    props.spacing = dynamic_cast<App::PropertyQuantity*>(find("Offset"));
+    props.occurrences = dynamic_cast<App::PropertyIntegerConstraint*>(find("Occurrences"));
+    props.spacings = dynamic_cast<App::PropertyFloatList*>(find("Spacings"));
+    props.spacingPattern = dynamic_cast<App::PropertyFloatList*>(find("SpacingPattern"));
+    return props;
+}
 
 PatternDirectionWidget::PatternDirectionWidget(Kind kind, QWidget* parent)
     : QWidget(parent)
@@ -821,6 +869,18 @@ bool Gui::patternLabelFrame(PatternDirectionWidget::Kind kind,
 }
 
 // ----------------------------------------------------------------------------
+
+PatternParametersWidget::Kind PatternParametersWidget::kindOf(App::Pattern::Type type)
+{
+    switch (type) {
+        case App::Pattern::Type::Circular:
+            return Kind::Circular;
+        case App::Pattern::Type::Path:
+            return Kind::Path;
+        default:
+            return Kind::Point;
+    }
+}
 
 PatternParametersWidget::PatternParametersWidget(Kind kind, QWidget* parent)
     : QWidget(parent)

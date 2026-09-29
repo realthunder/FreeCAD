@@ -113,6 +113,7 @@
 #include "InventorObject.h"
 #include "Link.h"
 #include "LinkArray.h"
+#include "PatternExtension.h"
 #include "LinkBaseExtensionPy.h"
 #include "MaterialObject.h"
 #include "MeasureDistance.h"
@@ -2462,6 +2463,7 @@ void Application::initTypes()
     App::GeoFeatureGroupExtensionPython::init();
     App::SuppressibleExtension         ::init();
     App::SuppressibleExtensionPython   ::init();
+    App::PatternExtension              ::init();
     App::OriginGroupExtension          ::init();
     App::OriginGroupExtensionPython    ::init();
     App::LinkBaseExtension             ::init();

@@ -132,9 +132,7 @@ TaskLinkArray::TaskLinkArray(ViewProviderLinkArray* vp, QWidget* parent)
 
     labelType = new QLabel(proxy);
     comboType = new QComboBox(proxy);
-    for (int i = 0; App::Pattern::TypeEnums[i]; ++i) {
-        comboType->addItem(QString());
-    }
+    fillPatternTypeCombo(comboType);
     form->addRow(labelType, comboType);
 
     checkShowElement = new QCheckBox(proxy);
@@ -167,11 +165,7 @@ void TaskLinkArray::retranslate()
     buttonLinked->setText(tr("Select"));
     buttonLinked->setToolTip(tr("Pick the object to array in the 3D view or the tree"));
     labelType->setText(tr("Pattern"));
-    comboType->setItemText(0, tr("Linear"));
-    comboType->setItemText(1, tr("Polar"));
-    comboType->setItemText(2, tr("Circular"));
-    comboType->setItemText(3, tr("Along a path"));
-    comboType->setItemText(4, tr("On points"));
+    fillPatternTypeCombo(comboType);
     checkShowElement->setText(tr("Show elements"));
     checkShowElement->setToolTip(tr("Make an object of each element, which the tree shows and "
                                     "which can be hidden, suppressing it"));
@@ -237,25 +231,7 @@ void TaskLinkArray::buildPatternWidgets()
     direction1 = direction2 = nullptr;
     parameters = nullptr;
 
-    auto directionProperties = [array](const char* suffix, bool polar) {
-        auto name = [suffix](const char* base) {
-            return std::string(base) + suffix;
-        };
-        PatternDirectionWidget::Properties props;
-        props.reference = patternProperty<App::PropertyLinkSub>(
-            array, polar ? "Axis" : name("Direction").c_str());
-        props.reversed = patternProperty<App::PropertyBool>(array, name("Reversed").c_str());
-        props.mode = patternProperty<App::PropertyEnumeration>(array, name("Mode").c_str());
-        props.extent = patternProperty<App::PropertyQuantity>(
-            array, polar ? "Angle" : name("Length").c_str());
-        props.spacing = patternProperty<App::PropertyQuantity>(array, name("Offset").c_str());
-        props.occurrences =
-            patternProperty<App::PropertyIntegerConstraint>(array, name("Occurrences").c_str());
-        props.spacings = patternProperty<App::PropertyFloatList>(array, name("Spacings").c_str());
-        props.spacingPattern =
-            patternProperty<App::PropertyFloatList>(array, name("SpacingPattern").c_str());
-        return props;
-    };
+    using Kind = PatternDirectionWidget::Kind;
     auto connectDirection = [this](PatternDirectionWidget* widget) {
         connect(widget, &PatternDirectionWidget::referenceActivated, this, [this, widget]() {
             onReferenceActivated(widget->links(), widget->properties().reference);
@@ -272,7 +248,7 @@ void TaskLinkArray::buildPatternWidgets()
             layout1->addWidget(direction1);
             patternLayout->addWidget(groupDirection1);
             fillReferenceCombo(direction1->links(), false);
-            direction1->bind(directionProperties("", false));
+            direction1->bind(PatternDirectionWidget::propertiesOf(*array, Kind::Linear, false));
             connectDirection(direction1);
 
             // Checked as long as the second direction has more than one
@@ -285,7 +261,7 @@ void TaskLinkArray::buildPatternWidgets()
             layout2->addWidget(direction2);
             patternLayout->addWidget(groupDirection2);
             fillReferenceCombo(direction2->links(), true);
-            direction2->bind(directionProperties("2", false));
+            direction2->bind(PatternDirectionWidget::propertiesOf(*array, Kind::Linear, true));
             connectDirection(direction2);
             connect(groupDirection2, &QGroupBox::toggled, this, &TaskLinkArray::onDirection2Toggled);
             break;
@@ -294,18 +270,13 @@ void TaskLinkArray::buildPatternWidgets()
             direction1 = new PatternDirectionWidget(PatternDirectionWidget::Kind::Polar, patternBox);
             patternLayout->addWidget(direction1);
             fillReferenceCombo(direction1->links(), false);
-            direction1->bind(directionProperties("", true));
+            direction1->bind(PatternDirectionWidget::propertiesOf(*array, Kind::Polar, false));
             connectDirection(direction1);
             break;
         default: {
-            auto kind = PatternParametersWidget::Kind::Point;
-            if (array->getPatternType() == App::Pattern::Type::Circular) {
-                kind = PatternParametersWidget::Kind::Circular;
-            }
-            else if (array->getPatternType() == App::Pattern::Type::Path) {
-                kind = PatternParametersWidget::Kind::Path;
-            }
-            parameters = new PatternParametersWidget(kind, patternBox);
+            parameters = new PatternParametersWidget(
+                PatternParametersWidget::kindOf(array->getPatternType()),
+                patternBox);
             patternLayout->addWidget(parameters);
             fillReferenceCombo(parameters->links(), false);
             parameters->bind(array);

@@ -26,32 +26,43 @@
 
 using namespace Part;
 
+namespace
+{
+// The class a file names for an array of each kind, which upstream reads
+const char* SaveTypes[] = {"Part::LinkArrayLinear",
+                           "Part::LinkArrayPolar",
+                           "Part::LinkArrayCircular",
+                           "Part::LinkArrayPath",
+                           "Part::LinkArrayPoint",
+                           nullptr};
+}  // namespace
+
 PROPERTY_SOURCE_WITH_EXTENSIONS(Part::LinkArrayLinear, App::LinkArray)
 
 LinkArrayLinear::LinkArrayLinear()
-    : App::LinkArray(App::Pattern::Type::Linear)
+    : App::LinkArray(App::Pattern::Type::Linear, SaveTypes)
 {}
 
 PROPERTY_SOURCE_WITH_EXTENSIONS(Part::LinkArrayPolar, App::LinkArray)
 
 LinkArrayPolar::LinkArrayPolar()
-    : App::LinkArray(App::Pattern::Type::Polar)
+    : App::LinkArray(App::Pattern::Type::Polar, SaveTypes)
 {}
 
 PROPERTY_SOURCE_WITH_EXTENSIONS(Part::LinkArrayCircular, App::LinkArray)
 
 LinkArrayCircular::LinkArrayCircular()
-    : App::LinkArray(App::Pattern::Type::Circular)
+    : App::LinkArray(App::Pattern::Type::Circular, SaveTypes)
 {}
 
 PROPERTY_SOURCE_WITH_EXTENSIONS(Part::LinkArrayPath, App::LinkArray)
 
 LinkArrayPath::LinkArrayPath()
-    : App::LinkArray(App::Pattern::Type::Path)
+    : App::LinkArray(App::Pattern::Type::Path, SaveTypes)
 {}
 
 PROPERTY_SOURCE_WITH_EXTENSIONS(Part::LinkArrayPoint, App::LinkArray)
 
 LinkArrayPoint::LinkArrayPoint()
-    : App::LinkArray(App::Pattern::Type::Point)
+    : App::LinkArray(App::Pattern::Type::Point, SaveTypes)
 {}

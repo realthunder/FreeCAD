@@ -24,7 +24,7 @@
 #define APP_LINKARRAY_H
 
 #include "Link.h"
-#include "Pattern.h"
+#include "PatternExtension.h"
 
 namespace App
 {
@@ -32,10 +32,9 @@ namespace App
 /** A link array whose elements are placed by a pattern
  *
  * PatternType picks the kind of pattern -- linear, polar, circular, along a
- * path, on points -- and may be changed at any time. The inputs of the active
- * kind are dynamic properties with upstream's names, swapped when PatternType
- * changes; a property two kinds share with the same type (Occurrences,
- * Reversed, Axis, ...) keeps its value across the change.
+ * path, on points -- and may be changed at any time; App::PatternExtension
+ * swaps the inputs with it. The label follows the kind until the user
+ * renames it.
  *
  * Like App::Link it knows no geometry, so it arrays meshes as well as solids:
  * references are resolved through App::Pattern's resolvers.
@@ -46,7 +45,7 @@ namespace App
  * SuppressedPositions, so that they stay where they were when the counts
  * change.
  */
-class AppExport LinkArray: public App::Link
+class AppExport LinkArray: public App::Link, public App::PatternExtension
 {
     PROPERTY_HEADER_WITH_EXTENSIONS(App::LinkArray);
     using inherited = App::Link;
@@ -54,12 +53,14 @@ class AppExport LinkArray: public App::Link
 public:
     LinkArray();
 
-    App::PropertyEnumeration PatternType;
     /// Occurrences2 of the elements as they were generated, the stride of
     /// their grid positions
     App::PropertyInteger GeneratedOccurrences2;
 
-    Pattern::Type getPatternType() const;
+    /// The labels of the kinds, which a label follows until it is renamed
+    static const char* KindLabels[];
+
+    Base::Type getSaveType() const override;
 
     const char* getViewProviderName() const override
     {
@@ -76,18 +77,18 @@ public:
     void setElementSuppressed(int index, bool suppressed);
 
 protected:
-    /// For the classes presetting the kind of pattern, as Part's
-    explicit LinkArray(Pattern::Type type);
+    /** For the classes presetting the kind of pattern, as Part's
+     *
+     * @param saveTypes: the classes of the kinds, indexed by Pattern::Type,
+     * which a file names for the array as its kind changes
+     */
+    LinkArray(Pattern::Type type, const char* const* saveTypes);
 
     void onChanged(const Property* prop) override;
     void onDocumentRestored() override;
     void onUndoRedoFinished() override;
-    void handleChangedPropertyType(Base::XMLReader& reader,
-                                   const char* TypeName,
-                                   Property* prop) override;
 
 private:
-    void setupPatternProperties();
     void setupStatus();
     void syncElements(const std::vector<Base::Placement>& placements);
     void applySuppression();

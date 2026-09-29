@@ -39,77 +39,34 @@ using namespace App;
 
 PROPERTY_SOURCE_WITH_EXTENSIONS(App::LinkArray, App::Link)
 
+const char* LinkArray::KindLabels[] = {"LinearLinkArray",
+                                       "PolarLinkArray",
+                                       "CircularLinkArray",
+                                       "PathLinkArray",
+                                       "PointLinkArray",
+                                       nullptr};
+
 LinkArray::LinkArray()
-    : LinkArray(Pattern::Type::Linear)
+    : LinkArray(Pattern::Type::Linear, nullptr)
 {}
 
-LinkArray::LinkArray(Pattern::Type type)
+LinkArray::LinkArray(Pattern::Type type, const char* const* saveTypes)
+    : PatternExtension(type)
 {
-    ADD_PROPERTY_TYPE(PatternType,
-                      (static_cast<long>(type)),
-                      "Pattern",
-                      App::Prop_None,
-                      "The kind of pattern placing the elements. Its inputs change with it.");
-    PatternType.setEnums(Pattern::TypeEnums);
     ADD_PROPERTY_TYPE(GeneratedOccurrences2,
                       (0),
                       "Pattern",
                       static_cast<App::PropertyType>(App::Prop_Hidden | App::Prop_ReadOnly
                                                      | App::Prop_Output),
                       "Occurrences2 of a linear pattern when its elements were generated");
-    setupPatternProperties();
-}
-
-Pattern::Type LinkArray::getPatternType() const
-{
-    long value = PatternType.getValue();
-    if (value < 0 || value > static_cast<long>(Pattern::Type::Point)) {
-        return Pattern::Type::Linear;
-    }
-    return static_cast<Pattern::Type>(value);
-}
-
-void LinkArray::setupPatternProperties()
-{
-    const auto type = getPatternType();
-
-    // Drop the inputs of the other kinds, but a property this kind has too,
-    // with the same type, keeps its value
-    for (int i = 0; Pattern::TypeEnums[i]; ++i) {
-        const auto other = static_cast<Pattern::Type>(i);
-        if (other == type) {
-            continue;
-        }
-        for (const auto& spec : Pattern::getPropertySpecs(other)) {
-            auto prop = getDynamicPropertyByName(spec.name);
-            if (!prop) {
-                continue;
-            }
-            auto wanted = Pattern::getPropertySpec(type, spec.name);
-            if (wanted && std::strcmp(wanted->type, prop->getTypeId().getName()) == 0) {
-                continue;
-            }
-            removeDynamicProperty(spec.name);
-        }
-    }
-
-    for (const auto& spec : Pattern::getPropertySpecs(type)) {
-        auto prop = Pattern::getProperty(*this, spec.name);
-        if (prop && std::strcmp(prop->getTypeId().getName(), spec.type) == 0) {
-            continue;
-        }
-        if (prop) {
-            if (!getDynamicPropertyByName(spec.name) || !removeDynamicProperty(spec.name)) {
-                FC_ERR("Cannot replace property " << spec.name << " of "
-                                                  << getFullName());
-                continue;
-            }
-        }
-        prop = addDynamicProperty(spec.type, spec.name, spec.group, spec.doc);
-        Pattern::initProperty(type, prop);
-    }
-    Pattern::setupProperties(type, *this);
+    setPatternNames(KindLabels, saveTypes);
+    PatternExtension::initExtension(this);
     setupStatus();
+}
+
+Base::Type LinkArray::getSaveType() const
+{
+    return PatternExtension::getSaveType(getTypeId());
 }
 
 void LinkArray::setupStatus()
@@ -132,58 +89,24 @@ void LinkArray::onChanged(const Property* prop)
 {
     auto doc = getDocument();
     bool undoing = doc && doc->isPerformingTransaction();
-    if (prop == &PatternType) {
-        // Undo and redo bring the properties back themselves, without what
-        // a file does not keep either
-        if (!undoing) {
-            setupPatternProperties();
-        }
-        else {
-            setStatus(ObjectStatus::PendingTransactionUpdate, true);
-        }
-    }
-    else if (!isRestoring() && !syncing && !undoing) {
+    if (!isRestoring() && !syncing && !undoing) {
         if (prop == &VisibilityList) {
             readSuppression();
         }
         else if (prop->getName() && std::strcmp(prop->getName(), "SuppressedPositions") == 0) {
             applySuppression();
         }
-        else if (Pattern::isPatternProperty(getPatternType(), prop)) {
-            Pattern::onChanged(getPatternType(), *this, prop);
-        }
     }
+    // The extension swaps the inputs for a new kind
     inherited::onChanged(prop);
-}
-
-void LinkArray::handleChangedPropertyType(Base::XMLReader& reader,
-                                          const char* TypeName,
-                                          Property* prop)
-{
-    // A file may keep the inputs of its kind before PatternType, so that one
-    // meets the input of the kind the array starts as, of the same name and
-    // another type: an Offset that is an angle, say. Replace it.
-    if (prop->getContainer() == this && getDynamicPropertyByName(prop->getName())) {
-        for (int i = 0; Pattern::TypeEnums[i]; ++i) {
-            const auto type = static_cast<Pattern::Type>(i);
-            auto spec = Pattern::getPropertySpec(type, prop->getName());
-            if (!spec || std::strcmp(spec->type, TypeName) != 0) {
-                continue;
-            }
-            std::string name = prop->getName();
-            removeDynamicProperty(name.c_str());
-            auto newProp = addDynamicProperty(TypeName, name.c_str(), spec->group, spec->doc);
-            Pattern::initProperty(type, newProp);
-            newProp->Restore(reader);
-            return;
-        }
+    if (prop == &PatternType && !undoing) {
+        setupStatus();
     }
-    inherited::handleChangedPropertyType(reader, TypeName, prop);
 }
 
 void LinkArray::onUndoRedoFinished()
 {
-    Pattern::setupProperties(getPatternType(), *this);
+    onPatternUndoRedoFinished();
     setupStatus();
     inherited::onUndoRedoFinished();
 }
@@ -191,17 +114,14 @@ void LinkArray::onUndoRedoFinished()
 void LinkArray::onDocumentRestored()
 {
     inherited::onDocumentRestored();
-    Pattern::setupProperties(getPatternType(), *this);
     setupStatus();
     restoreElementSuppression();
 }
 
 short LinkArray::mustExecute() const
 {
-    if (PatternType.isTouched() || Pattern::isTouched(getPatternType(), *this)) {
-        return 1;
-    }
-    // The references are brought into the frame of the array by its placement
+    // The inputs are the extension's to watch. The references are brought
+    // into the frame of the array by its placement, though.
     if (Placement.isTouched()) {
         for (const auto& spec : Pattern::getPropertySpecs(getPatternType())) {
             auto link = dynamic_cast<PropertyLinkSub*>(Pattern::getProperty(*this, spec.name));

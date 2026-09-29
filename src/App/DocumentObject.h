@@ -140,6 +140,17 @@ public:
         return getViewProviderName();
     }
 
+    /** The class a file names for this object, normally its own
+     *
+     * An object whose class stands for a choice it can change -- a pattern
+     * class for its kind -- is saved as the class of the choice it has now,
+     * which restores it as it is. The class must restore the object's
+     * properties as its own.
+     */
+    virtual Base::Type getSaveType() const {
+        return getTypeId();
+    }
+
     /// Constructor
     DocumentObject();
     ~DocumentObject() override;

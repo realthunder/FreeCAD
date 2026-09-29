@@ -1667,9 +1667,11 @@ void Document::buildDefaults(Base::Writer &writer,
     // been shared at all.
     const std::size_t minInstances = 3;
 
+    // By the class the file names, which is the class the reader builds and
+    // looks the block up by (DocumentObject::getSaveType())
     std::map<std::string, std::size_t> counts;
     for (auto o : obj)
-        ++counts[o->getTypeId().getName()];
+        ++counts[o->getSaveType().getName()];
     for (const auto &v : counts) {
         if (v.second < minInstances)
             continue;
@@ -1917,7 +1919,7 @@ void Document::writeObjects(const std::vector<App::DocumentObject*>& obj,
             d->saveSeq->next();
         }
         writer.Stream() << writer.ind() << "<Object "
-        << "type=\"" << writer.typeName((*it)->getTypeId()) << "\" "
+        << "type=\"" << writer.typeName((*it)->getSaveType()) << "\" "
         << "name=\"" << (*it)->getExportName()       << "\" "
         << "id=\"" << (*it)->getID()       << "\" "
         << "revision=\"" << (*it)->getRevision() << "\" ";
@@ -2001,7 +2003,7 @@ void Document::writeObjects(const std::vector<App::DocumentObject*>& obj,
         // outlive this call.
         auto pointAtDefaults = [&](bool on) {
             for (auto o : obj) {
-                auto def = defaults.find(o->getTypeId().getName());
+                auto def = defaults.find(o->getSaveType().getName());
                 o->setSaveDefaults(
                         on && def != defaults.end() ? &def->second : nullptr);
             }

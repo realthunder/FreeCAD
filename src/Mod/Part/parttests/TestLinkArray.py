@@ -8,6 +8,7 @@ resolves for App::Pattern. Adapted from upstream's TestLinkArray* tests.
 import os
 import tempfile
 import unittest
+import zipfile
 
 import FreeCAD as App
 import Part
@@ -57,6 +58,29 @@ class TestLinkArrayClasses(LinkArrayCase):
                 self.assertTrue(array.isDerivedFrom("App::LinkArray"))
                 self.assertEqual(array.PatternType, kind)
                 self.doc.removeObject(array.Name)
+
+    def testSavedAsTheClassOfItsKind(self):
+        array = self.addArray("Linear")
+        array.PatternType = "Polar"
+        array.Occurrences = 5
+        array.Mode = "Spacing"
+        array.Offset = 30
+        self.doc.recompute()
+        with tempfile.TemporaryDirectory(prefix="freecad_part_link_array_") as directory:
+            path = os.path.join(directory, "array.FCStd")
+            self.doc.saveAs(path)
+            with zipfile.ZipFile(path) as archive:
+                xml = archive.read("Document.xml").decode("utf-8")
+            self.assertRegex(xml, r'<Object type="Part::LinkArrayPolar" name="Array"')
+            # The extension is the object's properties, not recorded itself
+            self.assertNotIn("App::PatternExtension", xml)
+            App.closeDocument(self.doc.Name)
+            self.doc = App.openDocument(path)
+        array = self.doc.getObject("Array")
+        self.assertEqual(array.TypeId, "Part::LinkArrayPolar")
+        self.assertEqual(array.PatternType, "Polar")
+        self.assertEqual(array.Occurrences, 5)
+        self.assertAlmostEqual(array.Offset.Value, 30)
 
     def testUpstreamPropertyTypes(self):
         array = self.addArray("Path")

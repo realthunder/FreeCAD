@@ -109,6 +109,11 @@ private:
     std::set<int> selectItems;
 };
 
+/** Fill  combo with the kinds of pattern, in the order of
+ * App::Pattern::Type, or name them again after a change of language
+ */
+GuiExport void fillPatternTypeCombo(QComboBox* combo);
+
 /// The text for a reference: the object's label, and the element
 GuiExport QString patternReferenceText(const App::DocumentObject* obj,
                                        const std::vector<std::string>& subs);
@@ -162,6 +167,10 @@ public:
 
     explicit PatternDirectionWidget(Kind kind, QWidget* parent = nullptr);
     ~PatternDirectionWidget() override;
+
+    /// The properties of the direction in  obj, by their names: the
+    /// second direction of a linear pattern if  second
+    static Properties propertiesOf(const App::PropertyContainer& obj, Kind kind, bool second);
 
     void bind(const Properties& props);
     const Properties& properties() const
@@ -290,6 +299,10 @@ public:
 
     explicit PatternParametersWidget(Kind kind, QWidget* parent = nullptr);
     ~PatternParametersWidget() override;
+
+    /// The kind of editor for a pattern of  type, which must not be a
+    /// linear or polar one
+    static Kind kindOf(App::Pattern::Type type);
 
     Kind getKind() const
     {

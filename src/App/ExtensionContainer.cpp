@@ -436,9 +436,14 @@ void ExtensionContainer::restoreExtensions(Base::XMLReader& reader) {
 
 bool ExtensionContainer::canSaveExtension(Extension *ext) const
 {
-    if (!ext)
-        return !_extensions.empty();
-    return true;
+    if (!ext) {
+        for (const auto& entry : _extensions) {
+            if (canSaveExtension(entry.second))
+                return true;
+        }
+        return false;
+    }
+    return ext->isExtensionSaved();
 }
 
 void ExtensionContainer::handleChangedPropertyName(Base::XMLReader &reader, const char * TypeName, const char *PropName)
