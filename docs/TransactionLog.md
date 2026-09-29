@@ -8245,3 +8245,10 @@ ctest 847/847 (+1), the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16.
 
 **Next:** the second issue of 27.68, a switch after a trim reading a
 version whole; then the rest in the order 27.68 gives.
+
+### 27.70 Ruling on 27.69's proposals (user, 2026-09-29)
+
+**All four, later.** (a) the 13.3 budget on what history the file carries,
+(b) the op table compacted, (c) the embedded copy without its indexes,
+built on adopt, and (d) the recompute records compacted are all wanted;
+none is built now. The 27.68 issues come first, from the second on.
