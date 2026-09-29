@@ -1177,12 +1177,14 @@ PyObject* DocumentPy::trimTransactionBranch(PyObject *args, PyObject *kwds)
 {
     const char* name;
     long long version = 0;
-    static const std::array<const char*, 3> kwlist {"name", "version", nullptr};
-    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwds, "s|L", kwlist, &name, &version))
+    PyObject* bridge = Py_True;
+    static const std::array<const char*, 4> kwlist {"name", "version", "bridge", nullptr};
+    if (!Base::Wrapped_ParseTupleAndKeywords(args, kwds, "s|LO!", kwlist, &name, &version,
+                                             &PyBool_Type, &bridge))
         return nullptr;
     PY_TRY {
-        return Py::new_reference_to(Py::Long(
-            static_cast<unsigned long long>(getDocumentPtr()->trimBranch(name, version))));
+        return Py::new_reference_to(Py::Long(static_cast<unsigned long long>(
+            getDocumentPtr()->trimBranch(name, version, PyObject_IsTrue(bridge)))));
     } PY_CATCH;
 }
 

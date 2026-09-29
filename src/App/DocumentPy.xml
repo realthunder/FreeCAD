@@ -445,12 +445,15 @@ is empty or taken, raises.</UserDocu>
     </Methode>
     <Methode Name="trimTransactionBranch" Keyword="true">
       <Documentation>
-        <UserDocu>trimTransactionBranch(name, version=0) -> int
+        <UserDocu>trimTransactionBranch(name, version=0, bridge=True) -> int
 
 Trim a branch (docs/TransactionLog.md sec 16.7): its rows up to `version`,
 else up to the version at its head, and its unnamed versions before it go,
 never a row another branch holds, a named version or one a branch forked
-from. The version kept is named. Returns the rows removed.</UserDocu>
+from. The version kept is named. With `bridge`, where another branch shares
+the history, the rows from the newest shared one up to the kept version
+become one row of their net change instead, so a switch between the two
+still walks rows (sec 27.71). Returns the rows removed.</UserDocu>
       </Documentation>
     </Methode>
     <Methode Name="deleteTransactionBranch">

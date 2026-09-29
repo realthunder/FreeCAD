@@ -3558,8 +3558,9 @@ class TransactionBranchCases(unittest.TestCase):
         doc.switchTransactionBranch("main")
         self.assertAlmostEqual(box.Shape.Volume, 3000.0)
         self.assertFalse(hasattr(box, "Extra"))
-        # Every row only main holds goes: nothing to walk from here to again.
-        doc.trimTransactionBranch("main")
+        # Every row only main holds goes, with no bridge (sec 27.71): nothing
+        # to walk from here to again.
+        doc.trimTransactionBranch("main", bridge=False)
         made = Made()
         FreeCAD.addDocumentObserver(made)
         try:

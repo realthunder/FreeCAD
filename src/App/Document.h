@@ -471,9 +471,12 @@ public:
      * version `version` -- else up to the version at its head -- and its
      * unnamed versions before it go, but never a row another branch's
      * history holds, a named version, or one a branch forked from. The
-     * version kept is named if it was not. Returns the rows removed.
+     * version kept is named if it was not. With `bridge`, where another
+     * branch shares the history, the rows from the newest shared one up to
+     * the kept version become one row of their net change instead of going,
+     * so the two still meet in rows (sec 27.71). Returns the rows removed.
      */
-    size_t trimBranch(const std::string& name, int64_t version = 0);
+    size_t trimBranch(const std::string& name, int64_t version = 0, bool bridge = true);
     /** Delete branch `name` (sec 16.7): the branch, the rows only it holds,
      * and its versions but those another branch forked from. Not the
      * branch the document is on. Returns the rows removed.

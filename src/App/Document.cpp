@@ -7053,6 +7053,183 @@ struct Shared
     std::set<int64_t> forks;
 };
 
+/** The net change of the rows `path` (oldest first), as the ops of one row
+ * (docs/TransactionLog.md sec 16.7, squash): an object born in them and
+ * there at the end is a create with a set per property; every other property
+ * its net set, addprop or delprop; an object there at the start and gone at
+ * the end a remove after its sets.
+ */
+std::vector<LogOp> netOps(TransactionStore& store, const std::vector<LogTransaction>& path)
+{
+    using Key = std::tuple<std::string, long, std::string>;   // ckind, cid, prop
+    struct Obj
+    {
+        bool born {false};
+        bool alive {true};
+        std::string cname;
+        std::string ctype;
+    };
+    struct Val
+    {
+        bool atStart {false};
+        bool atEnd {false};
+        std::string before;
+        std::string after;
+        std::string ptype;
+        std::string meta;
+        bool derived {false};
+    };
+    std::map<long, Obj> objects;
+    std::vector<long> objectOrder;
+    std::map<Key, Val> values;
+    std::vector<Key> valueOrder;
+    auto object = [&](long cid, bool born) -> Obj& {
+        auto it = objects.find(cid);
+        if (it == objects.end()) {
+            objectOrder.push_back(cid);
+            it = objects.emplace(cid, Obj()).first;
+            it->second.born = born;
+        }
+        return it->second;
+    };
+    for (const auto& t : path) {
+        for (const auto& o : store.ops(t.seq)) {
+            if (o.op == "create" || o.op == "remove") {
+                Obj& obj = object(o.cid, o.op == "create");
+                obj.alive = o.op == "create";
+                obj.cname = o.cname;
+                obj.ctype = o.ctype;
+                continue;
+            }
+            if (o.ckind == "obj")
+                object(o.cid, false);   // a set on it first: it was there
+            Key key {o.ckind, o.cid, o.prop};
+            auto it = values.find(key);
+            if (it == values.end()) {
+                valueOrder.push_back(key);
+                Val v;
+                v.atStart = o.op == "delprop" || (o.op == "set" && !o.vbefore.empty());
+                v.before = v.atStart ? o.vbefore : std::string();
+                it = values.emplace(key, v).first;
+            }
+            Val& v = it->second;
+            v.ptype = o.ptype;
+            if (!o.meta.empty())
+                v.meta = o.meta;
+            if (o.op == "addprop") {
+                v.atEnd = true;
+            }
+            else if (o.op == "delprop" || o.vafter.empty()) {
+                // Removed, or a remove's set: gone with its object.
+                v.atEnd = false;
+                v.after.clear();
+            }
+            else {
+                v.atEnd = true;
+                v.after = o.vafter;
+                v.derived = o.derived;
+            }
+        }
+    }
+    auto opOf = [](const std::string& op, const Key& key, const Val& v) {
+        LogOp o;
+        o.op = op;
+        o.ckind = std::get<0>(key);
+        o.cid = std::get<1>(key);
+        o.prop = std::get<2>(key);
+        o.ptype = v.ptype;
+        return o;
+    };
+    std::vector<LogOp> ops;
+    // Each object's values in their order, looked up once per object: a
+    // trim's span (sec 27.71) is hundreds of rows and objects.
+    std::map<long, std::vector<const Key*>> ofObject;
+    for (const auto& key : valueOrder) {
+        if (std::get<0>(key) == "obj")
+            ofObject[std::get<1>(key)].push_back(&key);
+    }
+    // Objects born in the span and there at its end: the create, then a
+    // set per property, a dynamic one's metadata before it.
+    for (long cid : objectOrder) {
+        const Obj& obj = objects[cid];
+        if (!obj.born || !obj.alive)
+            continue;
+        LogOp c;
+        c.op = "create";
+        c.ckind = "obj";
+        c.cid = cid;
+        c.cname = obj.cname;
+        c.ctype = obj.ctype;
+        ops.push_back(c);
+        for (const Key* k : ofObject[cid]) {
+            const Key& key = *k;
+            const Val& v = values[key];
+            if (!v.atEnd)
+                continue;
+            if (!v.meta.empty()) {
+                auto a = opOf("addprop", key, v);
+                a.meta = v.meta;
+                ops.push_back(a);
+            }
+            auto s = opOf("set", key, v);
+            s.vafter = v.after;
+            s.derived = v.derived;
+            ops.push_back(s);
+        }
+    }
+    // Everything else: the net change of each property.
+    for (const auto& key : valueOrder) {
+        const Val& v = values[key];
+        const std::string& ckind = std::get<0>(key);
+        const long cid = std::get<1>(key);
+        const bool owned = ckind == "obj" || ckind == "view";
+        const Obj* owner = owned && objects.count(cid) ? &objects[cid] : nullptr;
+        if (owner && owner->born && (!owner->alive || ckind == "obj"))
+            continue;   // never there at either end, or written with its create
+        const bool ownerGone = owner && !owner->born && !owner->alive && ckind == "obj";
+        if (v.atStart && v.atEnd) {
+            if (v.before == v.after)
+                continue;
+            auto s = opOf("set", key, v);
+            s.vbefore = v.before;
+            s.vafter = v.after;
+            s.derived = v.derived;
+            ops.push_back(s);
+        }
+        else if (!v.atStart && v.atEnd) {
+            auto a = opOf("addprop", key, v);
+            a.meta = v.meta;
+            ops.push_back(a);
+            auto s = opOf("set", key, v);
+            s.vafter = v.after;
+            s.derived = v.derived;
+            ops.push_back(s);
+        }
+        else if (v.atStart && !v.atEnd) {
+            // A removed object's value rides on a set, before the remove; a
+            // dynamic property removed from a living one is a delprop.
+            auto o = opOf(ownerGone ? "set" : "delprop", key, v);
+            o.vbefore = v.before;
+            o.meta = v.meta;
+            ops.push_back(o);
+        }
+    }
+    // Objects there at the start and gone at the end, after their sets.
+    for (long cid : objectOrder) {
+        const Obj& obj = objects[cid];
+        if (obj.born || obj.alive)
+            continue;
+        LogOp r;
+        r.op = "remove";
+        r.ckind = "obj";
+        r.cid = cid;
+        r.cname = obj.cname;
+        r.ctype = obj.ctype;
+        ops.push_back(r);
+    }
+    return ops;
+}
+
 Shared sharedWith(TransactionStore& store, int64_t except)
 {
     Shared shared;
@@ -7096,7 +7273,7 @@ bool Document::renameBranch(const std::string& name, const std::string& newName)
     return true;
 }
 
-size_t Document::trimBranch(const std::string& name, int64_t version)
+size_t Document::trimBranch(const std::string& name, int64_t version, bool bridge)
 {
     OperationScope scope;   // sec 27.38
     // docs/TransactionLog.md sec 16.7, "trim a branch".
@@ -7136,10 +7313,12 @@ size_t Document::trimBranch(const std::string& name, int64_t version)
     if (keep.kind != "named")
         store.nameVersion(keep.num, "trim " + name);
 
+    log->resolvePending();
     const Shared shared = sharedWith(store, branch.id);
+    const auto chain = store.chain(branch.head);
     std::vector<int64_t> rows;
     std::set<int64_t> gone;
-    for (const auto& t : store.chain(branch.head)) {
+    for (const auto& t : chain) {
         if (t.seq <= keep.seq && !shared.rows.count(t.seq)) {
             rows.push_back(t.seq);
             gone.insert(t.seq);
@@ -7152,25 +7331,76 @@ size_t Document::trimBranch(const std::string& name, int64_t version)
             versions.push_back(v.num);
     }
     const std::set<long> named = _objectIdsOfRows(rows);
-    store.removeTransactions(rows);
+
+    // The bridge (sec 27.71, user): where another branch shares this one's
+    // history, the rows from the newest shared one -- or from the start, for
+    // a branch made from nothing -- up to the kept version are squashed into
+    // the kept version's own row rather than removed, so the two histories
+    // still meet in rows and a switch between them walks them instead of
+    // reading a version whole. Below that row nothing is removed: it is the
+    // other branch's history too.
+    std::vector<LogTransaction> span;
+    int64_t from = 0;
+    if (bridge && !rows.empty() && store.branches().size() > 1) {
+        for (const auto& t : chain) {
+            if (t.seq <= keep.seq && shared.rows.count(t.seq))
+                from = std::max(from, t.seq);
+        }
+        span = store.chain(keep.seq, from + 1);
+        if (span.empty() || span.back().seq != keep.seq || span.front().parent != from)
+            span.clear();
+    }
+    size_t squashed = 0;
+    if (!span.empty()) {
+        std::vector<LogOp> ops = netOps(store, span);
+        LogTransaction t = span.back();
+        t.parent = from;
+        t.id = 0;
+        t.kind = "squash";
+        t.origin.clear();
+        t.inverts = 0;
+        t.name = "Trim " + name + " to version " + std::to_string(keep.num);
+        std::ostringstream bridgeScript;
+        bridgeScript << "{\"trim\":" << jsonString(name) << ",\"from\":" << from
+                     << ",\"rows\":" << span.size() << ",\"ops\":" << ops.size() << "}";
+        t.script = bridgeScript.str();
+        std::set<int64_t> inSpan;
+        std::vector<int64_t> drop;
+        for (const auto& r : span) {
+            inSpan.insert(r.seq);
+            if (r.seq != keep.seq)
+                drop.push_back(r.seq);
+        }
+        store.replaceTransactions(t, ops, drop);
+        squashed = drop.size();
+        rows.erase(std::remove_if(rows.begin(), rows.end(),
+                                  [&inSpan](int64_t seq) { return inSpan.count(seq) != 0; }),
+                   rows.end());
+    }
+    if (!rows.empty())
+        store.removeTransactions(rows);
     if (!versions.empty())
         store.evictVersions(versions);
     if (current) {
-        // The steps that named the rows gone are gone with them.
+        // The steps that named the rows gone are gone with them, and the
+        // bridge is none: nothing is undone past the kept version (16.7).
+        if (!span.empty())
+            d->undoFloor = std::max<int64_t>(d->undoFloor, keep.seq);
         clearUndos();
         _clearRedos();
         _rebuildUndoFromLog(d->undoFloor);
     }
     const CompactEstimate estimate = _noteDroppedRows(named);
+    const size_t removed = rows.size() + squashed;
 
     std::ostringstream script;
     script << "{\"branch\":" << jsonString(name) << ",\"version\":" << keep.num
-           << ",\"rows\":" << rows.size() << ",\"versions\":" << versions.size()
-           << compactJson(estimate) << "}";
+           << ",\"rows\":" << removed << ",\"bridge\":" << (span.empty() ? 0 : span.size())
+           << ",\"versions\":" << versions.size() << compactJson(estimate) << "}";
     log->record("trim", "Trim " + name + " to version " + std::to_string(keep.num), script.str());
     refreshVersionNames();
     signalBranchesChanged(*this);
-    return rows.size();
+    return removed;
 }
 
 size_t Document::deleteBranch(const std::string& name)
@@ -7273,165 +7503,7 @@ size_t Document::squashVersions(int64_t from, int64_t to)
         evict.push_back(v.num);
     }
 
-    // The fold.
-    using Key = std::tuple<std::string, long, std::string>;   // ckind, cid, prop
-    struct Obj
-    {
-        bool born {false};
-        bool alive {true};
-        std::string cname;
-        std::string ctype;
-    };
-    struct Val
-    {
-        bool atStart {false};
-        bool atEnd {false};
-        std::string before;
-        std::string after;
-        std::string ptype;
-        std::string meta;
-        bool derived {false};
-    };
-    std::map<long, Obj> objects;
-    std::vector<long> objectOrder;
-    std::map<Key, Val> values;
-    std::vector<Key> valueOrder;
-    auto object = [&](long cid, bool born) -> Obj& {
-        auto it = objects.find(cid);
-        if (it == objects.end()) {
-            objectOrder.push_back(cid);
-            it = objects.emplace(cid, Obj()).first;
-            it->second.born = born;
-        }
-        return it->second;
-    };
-    for (const auto& t : path) {
-        for (const auto& o : store.ops(t.seq)) {
-            if (o.op == "create" || o.op == "remove") {
-                Obj& obj = object(o.cid, o.op == "create");
-                obj.alive = o.op == "create";
-                obj.cname = o.cname;
-                obj.ctype = o.ctype;
-                continue;
-            }
-            if (o.ckind == "obj")
-                object(o.cid, false);   // a set on it first: it was there
-            Key key {o.ckind, o.cid, o.prop};
-            auto it = values.find(key);
-            if (it == values.end()) {
-                valueOrder.push_back(key);
-                Val v;
-                v.atStart = o.op == "delprop" || (o.op == "set" && !o.vbefore.empty());
-                v.before = v.atStart ? o.vbefore : std::string();
-                it = values.emplace(key, v).first;
-            }
-            Val& v = it->second;
-            v.ptype = o.ptype;
-            if (!o.meta.empty())
-                v.meta = o.meta;
-            if (o.op == "addprop") {
-                v.atEnd = true;
-            }
-            else if (o.op == "delprop" || o.vafter.empty()) {
-                // Removed, or a remove's set: gone with its object.
-                v.atEnd = false;
-                v.after.clear();
-            }
-            else {
-                v.atEnd = true;
-                v.after = o.vafter;
-                v.derived = o.derived;
-            }
-        }
-    }
-    auto opOf = [](const std::string& op, const Key& key, const Val& v) {
-        LogOp o;
-        o.op = op;
-        o.ckind = std::get<0>(key);
-        o.cid = std::get<1>(key);
-        o.prop = std::get<2>(key);
-        o.ptype = v.ptype;
-        return o;
-    };
-    std::vector<LogOp> ops;
-    // Objects born in the span and there at its end: the create, then a
-    // set per property, a dynamic one's metadata before it.
-    for (long cid : objectOrder) {
-        const Obj& obj = objects[cid];
-        if (!obj.born || !obj.alive)
-            continue;
-        LogOp c;
-        c.op = "create";
-        c.ckind = "obj";
-        c.cid = cid;
-        c.cname = obj.cname;
-        c.ctype = obj.ctype;
-        ops.push_back(c);
-        for (const auto& key : valueOrder) {
-            const Val& v = values[key];
-            if (std::get<0>(key) != "obj" || std::get<1>(key) != cid || !v.atEnd)
-                continue;
-            if (!v.meta.empty()) {
-                auto a = opOf("addprop", key, v);
-                a.meta = v.meta;
-                ops.push_back(a);
-            }
-            auto s = opOf("set", key, v);
-            s.vafter = v.after;
-            s.derived = v.derived;
-            ops.push_back(s);
-        }
-    }
-    // Everything else: the net change of each property.
-    for (const auto& key : valueOrder) {
-        const Val& v = values[key];
-        const std::string& ckind = std::get<0>(key);
-        const long cid = std::get<1>(key);
-        const bool owned = ckind == "obj" || ckind == "view";
-        const Obj* owner = owned && objects.count(cid) ? &objects[cid] : nullptr;
-        if (owner && owner->born && (!owner->alive || ckind == "obj"))
-            continue;   // never there at either end, or written with its create
-        const bool ownerGone = owner && !owner->born && !owner->alive && ckind == "obj";
-        if (v.atStart && v.atEnd) {
-            if (v.before == v.after)
-                continue;
-            auto s = opOf("set", key, v);
-            s.vbefore = v.before;
-            s.vafter = v.after;
-            s.derived = v.derived;
-            ops.push_back(s);
-        }
-        else if (!v.atStart && v.atEnd) {
-            auto a = opOf("addprop", key, v);
-            a.meta = v.meta;
-            ops.push_back(a);
-            auto s = opOf("set", key, v);
-            s.vafter = v.after;
-            s.derived = v.derived;
-            ops.push_back(s);
-        }
-        else if (v.atStart && !v.atEnd) {
-            // A removed object's value rides on a set, before the remove; a
-            // dynamic property removed from a living one is a delprop.
-            auto o = opOf(ownerGone ? "set" : "delprop", key, v);
-            o.vbefore = v.before;
-            o.meta = v.meta;
-            ops.push_back(o);
-        }
-    }
-    // Objects there at the start and gone at the end, after their sets.
-    for (long cid : objectOrder) {
-        const Obj& obj = objects[cid];
-        if (obj.born || obj.alive)
-            continue;
-        LogOp r;
-        r.op = "remove";
-        r.ckind = "obj";
-        r.cid = cid;
-        r.cname = obj.cname;
-        r.ctype = obj.ctype;
-        ops.push_back(r);
-    }
+    std::vector<LogOp> ops = netOps(store, path);
 
     LogTransaction t = path.back();
     t.parent = first.seq;

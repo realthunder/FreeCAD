@@ -2921,9 +2921,10 @@ TEST_F(TransactionLogTest, trimAndDeleteBranches)
     ASSERT_TRUE(doc()->switchBranch("main"));
     EXPECT_EQ(obj->Integer.getValue(), 4);
 
-    // Trimmed to its head: every row only main holds goes, the document
-    // stays as it is, and there is nothing left to undo.
-    EXPECT_GT(doc()->trimBranch("main"), 0u);
+    // Trimmed to its head without a bridge (sec 27.71): every row only main
+    // holds goes, the document stays as it is, and there is nothing left to
+    // undo.
+    EXPECT_GT(doc()->trimBranch("main", 0, false), 0u);
     EXPECT_EQ(obj->Integer.getValue(), 4);
     EXPECT_EQ(doc()->getAvailableUndos(), 0);
     // No rows from here to `again`: the version is read whole, into a
@@ -2951,6 +2952,81 @@ TEST_F(TransactionLogTest, trimAndDeleteBranches)
     for (const auto& t : store.transactions())
         record = record || t.kind == "trim";
     EXPECT_TRUE(record);
+}
+
+TEST_F(TransactionLogTest, trimLeavesABridgeToABranchForkedBelow)
+{
+    // docs/TransactionLog.md sec 27.71 (user): where another branch shares
+    // the history, a trim squashes the rows from the newest shared one up to
+    // the kept version into that version's row, so the two histories still
+    // meet in rows and a switch walks them -- no version is read whole.
+    doc()->openTransaction("create");
+    auto obj = make("Obj");
+    obj->Integer.setValue(1);
+    make("Old")->String.setValue("old");
+    doc()->commitTransaction();
+    const int64_t v1 = doc()->snapshotToLog();
+    ASSERT_GT(v1, 0);
+    doc()->createBranch("side");
+    doc()->openTransaction("side edit");
+    obj->Integer.setValue(10);
+    doc()->commitTransaction();
+    ASSERT_TRUE(doc()->switchBranch("main"));
+    for (int i = 2; i <= 4; ++i) {
+        doc()->openTransaction("main edit");
+        obj->Integer.setValue(i);
+        doc()->commitTransaction();
+    }
+    doc()->openTransaction("main objects");
+    make("New")->String.setValue("new");
+    doc()->removeObject("Old");
+    doc()->commitTransaction();
+    auto& store = log().store();
+    App::LogVersion fork;
+    ASSERT_TRUE(store.getVersion(v1, fork));
+
+    EXPECT_GT(doc()->trimBranch("main"), 0u);
+    EXPECT_EQ(doc()->getAvailableUndos(), 0);
+    App::LogBranch main, side;
+    ASSERT_TRUE(store.findBranch("main", main));
+    ASSERT_TRUE(store.findBranch("side", side));
+    // The bridge hangs off the newest row side's history holds: at or
+    // after the fork, before side's own.
+    std::set<int64_t> onSide;
+    for (const auto& t : store.chain(side.head))
+        onSide.insert(t.seq);
+    const auto chain = store.chain(main.head);
+    int squash = 0;
+    for (const auto& t : chain) {
+        EXPECT_NE(t.name, "main edit");
+        if (t.kind == "squash") {
+            ++squash;
+            EXPECT_TRUE(onSide.count(t.parent)) << t.parent;
+            EXPECT_GE(t.parent, fork.seq);
+        }
+    }
+    EXPECT_EQ(squash, 1);
+    ASSERT_FALSE(chain.empty());
+    EXPECT_EQ(chain.front().parent, 0);   // whole down to the start
+
+    std::vector<std::string> read;
+    auto connection = App::GetApplication().signalFinishRestoreDocument.connect(
+        [&](const App::Document& d) {
+            if (&d != doc())
+                read.emplace_back(d.getName());
+        });
+    ASSERT_TRUE(doc()->switchBranch("side"));
+    EXPECT_EQ(obj->Integer.getValue(), 10);
+    EXPECT_TRUE(doc()->getObject("Old"));
+    EXPECT_FALSE(doc()->getObject("New"));
+    ASSERT_TRUE(doc()->switchBranch("main"));
+    connection.disconnect();
+    EXPECT_TRUE(read.empty()) << read.front();
+    EXPECT_EQ(obj->Integer.getValue(), 4);
+    EXPECT_FALSE(doc()->getObject("Old"));
+    auto made = dynamic_cast<App::FeatureTest*>(doc()->getObject("New"));
+    ASSERT_TRUE(made);
+    EXPECT_EQ(std::string(made->String.getValue()), "new");
 }
 
 TEST_F(TransactionLogTest, squashFoldsTheNetChange)
