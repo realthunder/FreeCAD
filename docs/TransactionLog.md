@@ -8887,3 +8887,59 @@ B's file gone; nothing touched), `testAShapeThatCrossedAsTextAsksForARecompute`.
 form imported, the working form looked up); tracing across the marker
 (`traceElement` still stops at `;:X`; the marker now says which document's
 objects the tags left of it are, which is what crossing needs).
+
+### 27.79 The translation cache made exact; a binder's crossing (user, 2026-09-30)
+
+**Asked (user):** the translation cache in detail, and how an expression's
+id list is rebuilt and where it is kept; then fix the two weak spots the
+answer found, and whether a binder's crossing marker changed as a link's.
+
+**The cache, as built in 27.78.** Process-wide, under a mutex, in
+`ElementMap.cpp`: an entry per (source map, target table) holding weak
+pointers to the source and to its copy, so it keeps neither alive. A hit
+needs the source to lock to the same map (a freed map's address reused
+misses), the copy alive, and the source unchanged. Translation runs outside
+the lock; two threads missing at once both translate, the later copy stays
+in the cache, both are right. Dead entries are swept past 256. A copy holds
+every string it names, so compacting the target table cannot stale it.
+
+**The two weak spots, fixed.**
+1. *The target table was matched by address* and the entry held nothing of
+   it: a table dying while a copy of it is still held, and a new table made
+   at the same address, would have been handed the dead one's copy. Each
+   `StringHasher` now has a serial, from a process-wide counter, never given
+   twice (`serial()`); the key is (source map, target serial).
+2. *"Unchanged" was the name count*: a map edited in place with as many
+   names as before would have given its old copy. Each `ElementMap` now
+   counts its changes (`revision()`, bumped by `addName`, both `erase`s,
+   `addChildElements`, `hashChildMaps` and a restore); a hit needs the same
+   revision.
+
+**An expression's ids, for the record.** No list of their own: each element
+path (a `VariableExpression`'s `ObjectIdentifier`) has the shadow link
+properties use, `sids` held and `savedIds` read and not yet held. Rebuilt by
+27.75's rules through `ObjectIdentifier::updateElementReference` whenever the
+engine's value is set (every expression is visited), the target's shape
+changes (the engine is a registered referrer), and after a restore; written
+only at save, as `<ExpressionIds>` (27.78).
+
+**A binder's crossing.** Changed with the link's in 27.78:
+`SubShapeBinder` writes `;:X#<id>;BND:i:j`, `<id>` the source document's
+Uid in the binder's table, the source a copy-on-change binder's original
+document. A binder of B's fillet in A:
+`Edge2;:M;FLT;:H97c:7,E;:X#1;BND:0:0;:H97d:d,E;:H-104d:17,E`, every id
+resolving in A. Now tested.
+
+Tests: `ElementMapTest.translationFollowsTheSourceAndTheTable` (an element
+renamed in place, the count unchanged: a new copy with the new name; a
+second table: a copy of its own, the first still served);
+`TransactionBranchCases.testABinderCrossingDocumentsTakesTheIdsOfItsTable`
+(the binder's names in A's table, the marker naming B, the same after a
+reopen with B's file gone).
+
+**Gates:** Python 2961 OK (52 skipped, 6 expected failures; +1), ctest
+848/848 (`Toponaming_tests_run` 269 cases), the GUI checks RC 15, BC 27,
+VC 18, PC 28, FC 16. **The recovery check needs a cache of its own**
+(`XDG_CACHE_HOME`), not only a fresh user home: run after the other checks
+with the shared `~/.cache/FreeCAD/Cache`, its dialog offered their
+documents first and it failed 9 of 15; with its own cache, 15 of 15.
