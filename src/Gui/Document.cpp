@@ -171,6 +171,11 @@ struct DocumentP
 
     // cache map from view provider to its 3D claimed children
     std::unordered_map<const ViewProvider*,std::vector<App::DocumentObject*> > _ChildrenMap;
+    // Children a container claimed in 3D while their view provider was
+    // still being created (not yet announced), and the containers to
+    // claim them again once it is: handleChildren3D.
+    std::unordered_map<const App::DocumentObject*,
+                       std::vector<const App::DocumentObject*>> _UnannouncedClaims;
 
     // Gui-side share of a document load: the per-object finishRestoring()
     // calls, counted so the App restore line can be read against them, and
@@ -1116,6 +1121,19 @@ void Document::slotNewObject(const App::DocumentObject& Obj)
 
         // it is possible that a new viewprovider already claims children
         handleChildren3D(pcProvider);
+        // ...and that a container claimed this one while it was being
+        // created, which handleChildren3D put off until now.
+        auto waiting = d->_UnannouncedClaims.find(&Obj);
+        if (waiting != d->_UnannouncedClaims.end()) {
+            const auto containers = std::move(waiting->second);
+            d->_UnannouncedClaims.erase(waiting);
+            for (auto container : containers) {
+                // Looked up, never dereferenced: a container deleted
+                // meanwhile has no view provider left to find.
+                if (auto vp = getViewProvider(container))
+                    handleChildren3D(vp);
+            }
+        }
         FC_DURATION_PLUS(d->_newObjAnnounceTime, t);
         if (d->_isTransacting) {
             d->_redoObjects.push_back(&Obj);
@@ -4842,6 +4860,26 @@ void Document::handleChildren3D(ViewProvider* viewProvider, bool deleting)
             auto child = *it;
             auto vp = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(getViewProvider(child));
             if(!vp || !vp->getRoot()) {
+                it = children.erase(it);
+                continue;
+            }
+            // A view provider still being created: registered here, but not
+            // yet announced (slotNewObject's signalNewObject), which is when
+            // the application learns of it -- and a container claiming
+            // through a LinkView (a GeoFeatureGroup's, handled above) looks
+            // it up there and leaves it out. Left in the cache, the claim
+            // compared equal from then on and the child was never attached:
+            // a load creating the view providers in document order had a
+            // Body rebuild inside its Origin's creation, and the Origin was
+            // in no occurrence of the scene. Claimed again once announced.
+            if (!Application::Instance->getViewProvider(child)) {
+                auto container = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(viewProvider);
+                if (container && container->getObject()) {
+                    auto &waiting = d->_UnannouncedClaims[child];
+                    if (std::find(waiting.begin(), waiting.end(), container->getObject())
+                            == waiting.end())
+                        waiting.push_back(container->getObject());
+                }
                 it = children.erase(it);
                 continue;
             }
