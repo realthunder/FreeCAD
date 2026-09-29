@@ -28,6 +28,7 @@
 # include <QGroupBox>
 # include <QMessageBox>
 # include <QSignalBlocker>
+# include <QTimer>
 # include <QVBoxLayout>
 #endif
 
@@ -41,7 +42,9 @@
 #include <Gui/Command.h>
 #include <Gui/Selection.h>
 #include <Gui/ViewProviderCoordinateSystem.h>
+#include <Gui/Document.h>
 #include <Mod/PartDesign/App/Body.h>
+#include <Mod/PartDesign/App/FeatureAddSub.h>
 #include <Mod/PartDesign/App/FeatureCircularPattern.h>
 #include <Mod/PartDesign/App/FeatureLinearPattern.h>
 #include <Mod/PartDesign/App/FeaturePathPattern.h>
@@ -200,6 +203,66 @@ void TaskPatternParameters::setupUI()
 
     retranslate();
     showOriginAxes(true);
+    // Once the edit has started: the panel is built while it starts, before
+    // the view it runs in is recorded
+    QTimer::singleShot(0, this, [this]() {
+        updateLabels();
+    });
+}
+
+void TaskPatternParameters::updateLabels()
+{
+    if (!direction1) {
+        return;
+    }
+    auto vp = getTopTransformedView();
+    auto pattern = getObject();
+    Gui::ViewerContext* view = vp ? vp->getEditViewer() : nullptr;
+    if (!view || !pattern) {
+        return;
+    }
+
+    // The labels start from the middle of what is patterned (upstream's
+    // choice), in the pattern's frame. Inside a MultiTransform the originals
+    // are the MultiTransform's, whose placement this pattern shares.
+    const Base::Placement placement = pattern->Placement.getValue();
+    Base::BoundBox3d box;
+    if (auto top = getTopTransformedObject()) {
+        for (auto obj : top->OriginalSubs.getValues()) {
+            if (auto addsub = Base::freecad_dynamic_cast<PartDesign::FeatureAddSub>(obj)) {
+                auto shapeBox = addsub->AddSubShape.getShape().getBoundBox();
+                if (shapeBox.IsValid()) {
+                    box.Add(shapeBox.Transformed(addsub->Placement.getValue().toMatrix()));
+                }
+            }
+        }
+    }
+    Base::Vector3d origin;
+    if (box.IsValid()) {
+        placement.inverse().multVec(box.GetCenter(), origin);
+    }
+
+    App::Pattern::Context context;
+    context.placement = placement;
+    const Base::Matrix4D& toWorld = vp->getDocument()->getEditingTransform();
+    const auto kind = pattern->isDerivedFrom<PartDesign::PolarPattern>()
+        ? Gui::PatternDirectionWidget::Kind::Polar
+        : Gui::PatternDirectionWidget::Kind::Linear;
+
+    auto show = [&](Gui::PatternDirectionWidget* widget, bool second) {
+        if (!widget) {
+            return;
+        }
+        Gui::PatternLabelFrame frame;
+        if (Gui::patternLabelFrame(kind, *pattern, context, second, toWorld, origin, frame)) {
+            widget->showLabels(view, frame);
+        }
+        else {
+            widget->clearLabels();
+        }
+    };
+    show(direction1, false);
+    show(direction2, true);
 }
 
 void TaskPatternParameters::retranslate()
@@ -263,6 +326,7 @@ void TaskPatternParameters::updateUI()
     }
     if (parameters)
         parameters->updateUI();
+    updateLabels();
 }
 
 void TaskPatternParameters::onSelectionChanged(const Gui::SelectionChanges& msg)
@@ -338,6 +402,7 @@ void TaskPatternParameters::onReferenceActivated(Gui::ComboLinks& links, App::Pr
         QMessageBox::warning(nullptr, tr("Error"), QApplication::translate("Exception", e.what()));
     }
 
+    updateLabels();
     kickUpdateViewTimer();
 }
 
@@ -345,6 +410,7 @@ void TaskPatternParameters::onParametersChanged()
 {
     exitSelectionMode();
     picking = nullptr;
+    updateLabels();
     kickUpdateViewTimer();
 }
 

@@ -129,6 +129,12 @@ fc_add_gui_test(GuiServeExternalPick_tests_run serve-external-pick.py
 fc_add_gui_test(GuiServeOnViewParams_tests_run serve-onview-params.py
                 --timeout 200)
 
+# A pattern's on-view spacing labels over the wire (upstream 6fa9125919 on
+# the fork's label): a click replayed through the scene opens the label's
+# box, key frames type into it, and Enter sets the pattern.
+fc_add_gui_test(GuiServePatternLabels_tests_run serve-pattern-labels.py
+                --timeout 200)
+
 # The expression editor on a live desktop (docs/ExpressionEditor.md): its
 # tool bar shown only while an editor is the active view, the split that
 # does not evict the spreadsheet being edited, folding from the margin,

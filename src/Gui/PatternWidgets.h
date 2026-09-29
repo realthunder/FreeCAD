@@ -23,12 +23,15 @@
 #ifndef GUI_PATTERNWIDGETS_H
 #define GUI_PATTERNWIDGETS_H
 
+#include <memory>
 #include <set>
 #include <string>
 #include <vector>
 
 #include <QWidget>
 
+#include <App/Pattern.h>
+#include <Base/Placement.h>
 #include <FCGlobal.h>
 
 class QCheckBox;
@@ -44,14 +47,22 @@ class PropertyBool;
 class PropertyEnumeration;
 class PropertyFloatList;
 class PropertyIntegerConstraint;
+class PropertyContainer;
 class PropertyLinkSub;
 class PropertyQuantity;
 }  // namespace App
 
+namespace Base
+{
+class Matrix4D;
+}
+
 namespace Gui
 {
+class EditableDatumLabel;
 class QuantitySpinBox;
 class UIntSpinBox;
+class ViewerContext;
 
 /** A combo box of references, each item holding a link
  *
@@ -104,6 +115,19 @@ GuiExport QString patternReferenceText(const App::DocumentObject* obj,
 /// The Python value of a reference, for a recorded command
 GuiExport std::string patternReferencePython(const App::DocumentObject* obj,
                                              const std::vector<std::string>& subs);
+
+/** Where the on-view labels of a pattern direction go, in the world
+ *
+ * The placement's origin is where the original sits. A linear direction runs
+ * along its X axis; a polar axis along its Z axis, through its origin, with
+ * the original \a radius from it at \a startAngle (radians, from its X axis).
+ */
+struct PatternLabelFrame
+{
+    Base::Placement placement;
+    double radius = 0.0;
+    double startAngle = 0.0;
+};
 
 /** The parameters of one direction of a pattern: its reference, Reversed,
  * the Extent/Spacing mode with its two values, Occurrences, and the
@@ -159,6 +183,23 @@ public:
 
     void retranslate();
 
+    /** @name On-view labels (upstream 6fa9125919, on the fork's label)
+     *
+     * The extent of the direction, or in Spacing mode each of its gaps, as
+     * a dimension in the view, which a click edits in place. They are
+     * EditableDatumLabels, so a served view has them too: the dimension
+     * reaches the client as scene, the click as a replayed event through
+     * the scene, and the entry box streams as the sketcher's on-view
+     * parameters do (docs/ThinClient.md sec 8.7). A gap emptied and entered
+     * goes back to following the spacing -- upstream's right-click "Reset
+     * spacing" without a menu, which no view without a widget could open.
+     */
+    //@{
+    /// Show the labels in \a view where \a frame says, or move them there
+    void showLabels(ViewerContext* view, const PatternLabelFrame& frame);
+    void clearLabels();
+    //@}
+
 Q_SIGNALS:
     /// The user picked an item of the reference combo
     void referenceActivated();
@@ -166,6 +207,11 @@ Q_SIGNALS:
     void changed();
 
 private:
+    void refreshLabels();
+    void onLabelClicked(EditableDatumLabel* label);
+    void commitLabel(int index, double value);
+    void resetLabel(int index);
+    void endLabelEdit();
     void onModeActivated(int index);
     void onIndividualToggled(bool on);
     void onSpacingEdited(int index, double value);
@@ -199,7 +245,29 @@ private:
     QFormLayout* spacingsForm = nullptr;
     QLabel* labelMoreSpacings = nullptr;
     std::vector<Gui::QuantitySpinBox*> spacingSpins;
+
+    ViewerContext* labelView = nullptr;
+    PatternLabelFrame labelFrame;
+    std::vector<std::unique_ptr<EditableDatumLabel>> onViewLabels;
+    /// What the label in edit is connected to, for the extent of the edit
+    std::vector<QMetaObject::Connection> labelEdit;
 };
+
+/** The frame of the on-view labels of a direction of \a obj
+ *
+ * @param context: as the pattern's placements are made from it
+ * @param second: the second direction of a linear pattern
+ * @param toWorld: the object's own frame in the world -- the editing transform
+ * @param origin: where the original sits, in the object's own frame
+ * @return false when the direction has no reference to be shown along
+ */
+GuiExport bool patternLabelFrame(PatternDirectionWidget::Kind kind,
+                                 const App::PropertyContainer& obj,
+                                 const App::Pattern::Context& context,
+                                 bool second,
+                                 const Base::Matrix4D& toWorld,
+                                 const Base::Vector3d& origin,
+                                 PatternLabelFrame& frame);
 
 /** The parameters of a pattern that is not a direction -- circular, along a
  * path, on points -- each row bound to the property of its name

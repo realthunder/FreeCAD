@@ -83,6 +83,8 @@ private:
     void onDirection2Toggled(bool on);
     void onChanged();
     void recompute();
+    /// Put the directions' on-view labels where the array is now
+    void updateLabels();
 
 private:
     App::DocumentObjectT arrayT;

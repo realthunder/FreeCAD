@@ -33,6 +33,7 @@
 #include <QLabel>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QTimer>
 #include <QVBoxLayout>
 #endif
 
@@ -317,6 +318,11 @@ void TaskLinkArray::buildPatternWidgets()
     }
     retranslate();
     updateUI();
+    // Once the edit has started: the panel is built while it starts, before
+    // the view it runs in is recorded
+    QTimer::singleShot(0, this, [this]() {
+        updateLabels();
+    });
 }
 
 void TaskLinkArray::updateUI()
@@ -449,6 +455,53 @@ void TaskLinkArray::recompute()
     if (auto array = getArray()) {
         array->getDocument()->recompute();
     }
+    updateLabels();
+}
+
+void TaskLinkArray::updateLabels()
+{
+    auto array = getArray();
+    auto vp = array ? freecad_cast<ViewProviderDocumentObject*>(
+                          Application::Instance->getViewProvider(array))
+                    : nullptr;
+    ViewerContext* view = vp ? vp->getEditViewer() : nullptr;
+    if (!view) {
+        return;
+    }
+    // The labels start from the middle of the first element, in the array's
+    // own frame, whatever the element's own placement is taken for
+    Base::Vector3d origin;
+    try {
+        auto box = vp->getBoundingBox("0.", nullptr, /*transform=*/false);
+        if (box.IsValid()) {
+            origin = box.GetCenter();
+        }
+    }
+    catch (const Base::Exception&) {
+        // from the array's origin, then
+    }
+    App::Pattern::Context context;
+    context.placement = array->Placement.getValue();
+    context.defaultReferences = true;
+    const Base::Matrix4D& toWorld = vp->getDocument()->getEditingTransform();
+
+    auto show = [&](PatternDirectionWidget* widget, bool second) {
+        if (!widget) {
+            return;
+        }
+        PatternLabelFrame frame;
+        auto kind = array->getPatternType() == App::Pattern::Type::Polar
+            ? PatternDirectionWidget::Kind::Polar
+            : PatternDirectionWidget::Kind::Linear;
+        if (patternLabelFrame(kind, *array, context, second, toWorld, origin, frame)) {
+            widget->showLabels(view, frame);
+        }
+        else {
+            widget->clearLabels();
+        }
+    };
+    show(direction1, false);
+    show(direction2, true);
 }
 
 void TaskLinkArray::onSelectionChanged(const SelectionChanges& msg)

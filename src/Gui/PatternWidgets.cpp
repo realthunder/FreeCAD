@@ -42,9 +42,11 @@
 #include <App/PropertyStandard.h>
 #include <App/PropertyUnits.h>
 #include <Base/Exception.h>
+#include <Base/Quantity.h>
 #include <Base/Tools.h>
 
 #include "Command.h"
+#include "EditableDatumLabel.h"
 #include "PatternWidgets.h"
 #include "QuantitySpinBox.h"
 #include "SpinBox.h"
@@ -337,7 +339,10 @@ PatternDirectionWidget::PatternDirectionWidget(Kind kind, QWidget* parent)
             &PatternDirectionWidget::onIndividualToggled);
 }
 
-PatternDirectionWidget::~PatternDirectionWidget() = default;
+PatternDirectionWidget::~PatternDirectionWidget()
+{
+    clearLabels();
+}
 
 void PatternDirectionWidget::retranslate()
 {
@@ -446,6 +451,7 @@ void PatternDirectionWidget::updateUI()
 
     rebuildSpacingRows();
     adaptVisibilityToMode();
+    refreshLabels();
 }
 
 void PatternDirectionWidget::adaptVisibilityToMode()
@@ -577,6 +583,241 @@ void PatternDirectionWidget::apply(App::DocumentObject* obj) const
         ss << "]";
         FCMD_OBJ_CMD(obj, props.spacings->getName() << " = " << ss.str());
     }
+}
+
+void PatternDirectionWidget::showLabels(ViewerContext* view, const PatternLabelFrame& frame)
+{
+    if (view != labelView) {
+        clearLabels();
+        labelView = view;
+    }
+    labelFrame = frame;
+    refreshLabels();
+}
+
+void PatternDirectionWidget::clearLabels()
+{
+    endLabelEdit();
+    onViewLabels.clear();
+    labelView = nullptr;
+}
+
+void PatternDirectionWidget::refreshLabels()
+{
+    if (!labelView || !props.mode) {
+        return;
+    }
+    const bool extent = props.mode->getValue() == 0;
+    const bool polar = kind == Kind::Polar;
+    // The extent as one, or each gap, as many as the panel has rows for
+    int count = extent ? std::min(gapCount(), 1) : std::min(gapCount(), MaxSpacingRows);
+
+    // Kept while they last, so that the one in edit keeps its box
+    while (static_cast<int>(onViewLabels.size()) > count) {
+        if (onViewLabels.back()->isInEdit()) {
+            endLabelEdit();
+        }
+        onViewLabels.pop_back();
+    }
+    while (static_cast<int>(onViewLabels.size()) < count) {
+        // A distance's dimension line keeps its offset from the view; an
+        // angle's distance is its radius, which the frame gives
+        auto label = std::make_unique<EditableDatumLabel>(labelView,
+                                                          labelFrame.placement,
+                                                          /*autoDistance=*/!polar);
+        label->setLabelType(polar ? SoDatumLabel::ANGLE : SoDatumLabel::DISTANCE,
+                            EditableDatumLabel::Function::Dimensioning);
+        label->setPickable(true);
+        connect(label.get(),
+                &EditableDatumLabel::clicked,
+                this,
+                &PatternDirectionWidget::onLabelClicked);
+        label->activate();
+        onViewLabels.push_back(std::move(label));
+    }
+
+    const Base::Unit unit = polar ? Base::Unit::Angle : Base::Unit::Length;
+    const auto& spacings = props.spacings->getValues();
+    // Along the direction, or the angle past the original's, in radians
+    double position = 0.0;
+    for (int i = 0; i < count; ++i) {
+        auto& label = onViewLabels[i];
+        bool set = true;
+        double value = props.extent->getValue();
+        if (!extent) {
+            set = i < static_cast<int>(spacings.size()) && spacings[i] != -1.0;
+            value = set ? spacings[i] : fallbackSpacing(i);
+        }
+        label->setPlacement(labelFrame.placement);
+        if (polar) {
+            const double range = Base::toRadians(value);
+            label->setPoints(Base::Vector3d(), Base::Vector3d());
+            // SoDatumLabel draws an angle's arc at twice its distance
+            label->setLabelDistance(labelFrame.radius / 2);
+            label->setLabelStartAngle(labelFrame.startAngle + position);
+            label->setLabelRange(range);
+            position += range;
+        }
+        else {
+            label->setPoints(Base::Vector3d(position, 0, 0), Base::Vector3d(position + value, 0, 0));
+            position += value;
+        }
+        if (!label->isInEdit()) {
+            label->label->string = Base::Quantity(value, unit).getUserString().c_str();
+            // A gap of its own stands out from one following the spacing
+            if (set) {
+                label->setActivatedColor();
+            }
+            else {
+                label->setDeactivatedColor();
+            }
+        }
+    }
+}
+
+void PatternDirectionWidget::onLabelClicked(EditableDatumLabel* label)
+{
+    auto it = std::find_if(onViewLabels.begin(), onViewLabels.end(), [label](const auto& l) {
+        return l.get() == label;
+    });
+    if (it == onViewLabels.end() || !props.mode || label->isInEdit()) {
+        return;
+    }
+    const int index = static_cast<int>(it - onViewLabels.begin());
+
+    // One box at a time: another one open is abandoned
+    endLabelEdit();
+    for (auto& other : onViewLabels) {
+        if (other->isInEdit()) {
+            other->stopEdit(false);
+        }
+    }
+    refreshLabels();
+
+    const bool extent = props.mode->getValue() == 0;
+    double value = props.extent->getValue();
+    if (!extent) {
+        const auto& spacings = props.spacings->getValues();
+        bool set = index < static_cast<int>(spacings.size()) && spacings[index] != -1.0;
+        value = set ? spacings[index] : fallbackSpacing(index);
+    }
+    label->startEdit(value);
+    label->setSpinboxValue(value, kind == Kind::Polar ? Base::Unit::Angle : Base::Unit::Length);
+    // Setting the value again unselected the number, and the box reselects
+    // it only where Qt gives it the focus -- never on a mirror, where the
+    // digits typed would then go after the text rather than replace it
+    label->setFocusToSpinbox();
+
+    labelEdit.push_back(connect(label,
+                                &EditableDatumLabel::editingFinished,
+                                this,
+                                [this, index](double v) {
+                                    commitLabel(index, v);
+                                }));
+    labelEdit.push_back(connect(label, &EditableDatumLabel::parameterUnset, this, [this, index]() {
+        resetLabel(index);
+    }));
+    // Escape: the label has already put its value back and closed
+    labelEdit.push_back(connect(label, &EditableDatumLabel::editingCanceled, this, [this]() {
+        endLabelEdit();
+        refreshLabels();
+    }));
+    labelEdit.push_back(connect(label, &EditableDatumLabel::focusLost, this, [this, label]() {
+        endLabelEdit();
+        label->stopEdit(false);
+        refreshLabels();
+    }));
+}
+
+void PatternDirectionWidget::endLabelEdit()
+{
+    for (const auto& connection : labelEdit) {
+        disconnect(connection);
+    }
+    labelEdit.clear();
+}
+
+void PatternDirectionWidget::commitLabel(int index, double value)
+{
+    endLabelEdit();
+    if (index < static_cast<int>(onViewLabels.size())) {
+        onViewLabels[index]->stopEdit();
+    }
+    if (props.mode->getValue() == 0) {
+        props.extent->setValue(value);
+        updateUI();
+        Q_EMIT changed();
+    }
+    else {
+        onSpacingEdited(index, value);
+        refreshLabels();
+    }
+}
+
+void PatternDirectionWidget::resetLabel(int index)
+{
+    endLabelEdit();
+    if (index < static_cast<int>(onViewLabels.size())) {
+        onViewLabels[index]->stopEdit(false);
+    }
+    if (props.mode->getValue() == 0 || !props.spacings) {
+        refreshLabels();
+        return;
+    }
+    std::vector<double> spacings = props.spacings->getValues();
+    spacings.resize(gapCount(), -1.0);
+    if (index >= static_cast<int>(spacings.size()) || spacings[index] == -1.0) {
+        refreshLabels();
+        return;
+    }
+    spacings[index] = -1.0;
+    props.spacings->setValues(spacings);
+    updateUI();
+    Q_EMIT changed();
+}
+
+bool Gui::patternLabelFrame(PatternDirectionWidget::Kind kind,
+                            const App::PropertyContainer& obj,
+                            const App::Pattern::Context& context,
+                            bool second,
+                            const Base::Matrix4D& toWorld,
+                            const Base::Vector3d& origin,
+                            PatternLabelFrame& frame)
+{
+    Base::Placement local;
+    try {
+        if (kind == PatternDirectionWidget::Kind::Linear) {
+            Base::Vector3d dir = App::Pattern::getDirection(obj, context, second);
+            local = Base::Placement(origin, Base::Rotation(Base::Vector3d(1, 0, 0), dir));
+            frame.radius = 0.0;
+            frame.startAngle = 0.0;
+        }
+        else {
+            auto axis = App::Pattern::getAxis(obj, context);
+            Base::Vector3d dir = axis.direction;
+            dir.Normalize();
+            // On the axis level with the original, so that the arc passes
+            // through it
+            Base::Vector3d center = axis.base + dir * ((origin - axis.base) * dir);
+            Base::Rotation rot(Base::Vector3d(0, 0, 1), dir);
+            Base::Vector3d radial = origin - center;
+            frame.radius = radial.Length();
+            frame.startAngle = 0.0;
+            if (frame.radius > 1e-7) {
+                frame.startAngle = rot.multVec(Base::Vector3d(1, 0, 0)).GetAngleOriented(radial, dir);
+            }
+            else {
+                // The original on the axis: an arc of some size all the same
+                frame.radius = 1.0;
+            }
+            local = Base::Placement(center, rot);
+        }
+    }
+    catch (const Base::Exception&) {
+        return false;
+    }
+    frame.placement = Base::Placement(toWorld) * local;
+    return true;
 }
 
 // ----------------------------------------------------------------------------
