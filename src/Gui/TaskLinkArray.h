@@ -25,6 +25,7 @@
 
 #include <App/DocumentObserver.h>
 
+#include "DocumentObserver.h"
 #include "Selection.h"
 #include "TaskView/TaskDialog.h"
 #include "TaskView/TaskView.h"
@@ -52,7 +53,9 @@ class ViewProviderLinkArray;
 /** The panel of an App::LinkArray: what it links, the kind of pattern, and
  * the editors of the kind, which change with it
  */
-class GuiExport TaskLinkArray: public TaskView::TaskBox, public SelectionObserver
+class GuiExport TaskLinkArray: public TaskView::TaskBox,
+                               public SelectionObserver,
+                               public DocumentObserver
 {
     Q_OBJECT
 
@@ -68,6 +71,8 @@ public:
 protected:
     void onSelectionChanged(const SelectionChanges& msg) override;
     void changeEvent(QEvent* e) override;
+    void slotUndoDocument(const Document& doc) override;
+    void slotRedoDocument(const Document& doc) override;
 
 private:
     App::LinkArray* getArray() const;

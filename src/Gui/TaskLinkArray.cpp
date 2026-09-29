@@ -151,9 +151,27 @@ TaskLinkArray::TaskLinkArray(ViewProviderLinkArray* vp, QWidget* parent)
 
     retranslate();
     buildPatternWidgets();
+    attachDocument(vp->getDocument());
 }
 
 TaskLinkArray::~TaskLinkArray() = default;
+
+void TaskLinkArray::slotUndoDocument(const Document&)
+{
+    // Undo and redo bring back the inputs of a kind as new properties, even
+    // of the kind the editors show: bind them anew
+    buildPatternWidgets();
+    // The edit's transaction went with the undo: what follows is still the
+    // edit's, for Cancel to take back
+    if (!App::GetApplication().getActiveTransaction()) {
+        Command::openCommand(QT_TRANSLATE_NOOP("Command", "Edit link array"));
+    }
+}
+
+void TaskLinkArray::slotRedoDocument(const Document& doc)
+{
+    slotUndoDocument(doc);
+}
 
 App::LinkArray* TaskLinkArray::getArray() const
 {
