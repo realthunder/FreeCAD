@@ -187,6 +187,12 @@ protected:
 
     void refresh();
 
+public:
+    /// After an undo or a redo: a property the panel edits may be another
+    /// object now, of the same name
+    virtual void refreshAfterUndo();
+
+protected:
     void slotDiagnosis(QString msg);
 
 protected:

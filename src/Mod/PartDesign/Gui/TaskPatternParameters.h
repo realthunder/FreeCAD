@@ -59,6 +59,7 @@ public:
     ~TaskPatternParameters() override;
 
     void apply() override;
+    void refreshAfterUndo() override;
 
 private Q_SLOTS:
     void onUpdateView(bool) override;

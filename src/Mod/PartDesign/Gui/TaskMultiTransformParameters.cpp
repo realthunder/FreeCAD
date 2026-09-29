@@ -156,6 +156,14 @@ void TaskMultiTransformParameters::slotDeletedObject(const Gui::ViewProviderDocu
     TaskTransformedParameters::slotDeletedObject(Obj);
 }
 
+void TaskMultiTransformParameters::refreshAfterUndo()
+{
+    TaskTransformedParameters::refreshAfterUndo();
+    // The sub-task observes no document of its own
+    if (subTask)
+        subTask->refreshAfterUndo();
+}
+
 void TaskMultiTransformParameters::onSelectionChanged(const Gui::SelectionChanges& msg)
 {
     // A reference the sub-task is picking is no original of ours. Both panels

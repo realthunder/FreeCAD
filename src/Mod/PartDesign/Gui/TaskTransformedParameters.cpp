@@ -128,13 +128,21 @@ void TaskTransformedParameters::slotDeletedObject(const Gui::ViewProviderDocumen
 void TaskTransformedParameters::slotUndoDocument(const Gui::Document& Doc)
 {
     if (TransformedView && TransformedView->getDocument() == &Doc)
-        refresh();
+        refreshAfterUndo();
 }
 
 void TaskTransformedParameters::slotRedoDocument(const Gui::Document& Doc)
 {
     if (TransformedView && TransformedView->getDocument() == &Doc)
-        refresh();
+        refreshAfterUndo();
+}
+
+void TaskTransformedParameters::refreshAfterUndo()
+{
+    refresh();
+    // The edit's transaction went with the undo, and an editor sets its
+    // property before it asks for one: what follows is still the edit's
+    setupTransaction();
 }
 
 bool TaskTransformedParameters::isViewUpdated() const

@@ -368,10 +368,17 @@ void TaskPatternParameters::showOriginAxes(bool show)
     }
 }
 
+void TaskPatternParameters::refreshAfterUndo()
+{
+    // Undo and redo bring back the inputs of a kind as new properties, even
+    // of the kind the editors show: bind them anew
+    buildPatternWidgets();
+    TaskTransformedParameters::refreshAfterUndo();
+}
+
 void TaskPatternParameters::updateUI()
 {
-    // An undo or a redo may have changed the kind, and with it the
-    // properties the editors are bound to
+    // The editors may be of a kind the pattern no longer has
     if (getPattern() && getPatternType() != builtType) {
         buildPatternWidgets();
         return;
