@@ -98,12 +98,8 @@ SET(PartDesignGuiViewProvider_SRCS
     ViewProviderTransformed.h
     ViewProviderMirrored.cpp
     ViewProviderMirrored.h
-    ViewProviderLinearPattern.cpp
-    ViewProviderLinearPattern.h
     ViewProviderGenericPattern.cpp
     ViewProviderGenericPattern.h
-    ViewProviderPolarPattern.cpp
-    ViewProviderPolarPattern.h
     ViewProviderPatterns.cpp
     ViewProviderPatterns.h
     ViewProviderScaled.cpp

@@ -53,6 +53,7 @@ set(PartDesign_TestScripts
     PartDesignTests/TestCircularPattern.py
     PartDesignTests/TestPathPattern.py
     PartDesignTests/TestPointPattern.py
+    PartDesignTests/TestPatternKind.py
     PartDesignTests/TestMultiTransform.py
     PartDesignTests/TestBoolean.py
     PartDesignTests/TestFillet.py

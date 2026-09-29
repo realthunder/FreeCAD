@@ -27,34 +27,8 @@
 
 using namespace PartDesign;
 
-namespace PartDesign {
-
-
-PROPERTY_SOURCE_WITH_EXTENSIONS(PartDesign::PolarPattern, PartDesign::Transformed)
+PROPERTY_SOURCE_WITH_EXTENSIONS(PartDesign::PolarPattern, PartDesign::PatternFeature)
 
 PolarPattern::PolarPattern()
-{
-    Part::PolarPatternExtension::initExtension(this);
-}
-
-std::list<gp_Trsf> PolarPattern::getTransformations(const std::vector<Part::TopoShape> &)
-{
-    return calculateTransformations();
-}
-
-void PolarPattern::handleChangedPropertyType(Base::XMLReader& reader, const char* TypeName, App::Property* prop)
-// transforms properties that had been changed
-{
-    // property Occurrences had the App::PropertyInteger and was changed to App::PropertyIntegerConstraint
-    if (prop == &Occurrences && strcmp(TypeName, "App::PropertyInteger") == 0) {
-        App::PropertyInteger OccurrencesProperty;
-        // restore the PropertyInteger to be able to set its value
-        OccurrencesProperty.Restore(reader);
-        Occurrences.setValue(OccurrencesProperty.getValue());
-    }
-    else {
-        Transformed::handleChangedPropertyType(reader, TypeName, prop);
-    }
-}
-
-}
+    : PatternFeature(App::Pattern::Type::Polar)
+{}

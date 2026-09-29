@@ -64,6 +64,10 @@ public:
 
     void apply() override;
 
+    /// Show the icon and the label \a feature has now in the list, after
+    /// its kind changed
+    void refreshTransformItem(App::DocumentObject* feature);
+
 public Q_SLOTS:
     /// User finished editing a subFeature
     void onSubTaskButtonOK() override;
@@ -97,8 +101,10 @@ private:
     void moveTransformFeature(const int increment);
     void finishAdd(std::string &newFeatName);
     /// Create a transformation of the PartDesign type in the active body,
-    /// named after it, after closing the sub-task
-    App::DocumentObject* newTransformFeature(const char* type, std::string& newFeatName);
+    /// named \a name, after closing the sub-task
+    App::DocumentObject* newTransformFeature(const char* type,
+                                             const char* name,
+                                             std::string& newFeatName);
     /// The sketch's normal, else the body's Z axis
     void setDefaultAxis(App::DocumentObject* Feat, PartDesign::Body* body);
 

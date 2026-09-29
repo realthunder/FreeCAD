@@ -3,40 +3,25 @@
 #ifndef PARTDESIGN_FeaturePointPattern_H
 #define PARTDESIGN_FeaturePointPattern_H
 
-#include <Mod/Part/App/PatternExtension.h>
-#include "FeatureTransformed.h"
+#include "FeaturePattern.h"
 
 namespace PartDesign
 {
 
 /** Copies at the vertices of an object (upstream f5abab2768)
  *
- * The inputs are Part::PointPatternExtension's, the pattern App::Pattern's.
- * The originals do not stay where they are: each copy lands on its own
- * point with its orientation kept. Transforming features (SubTransform),
- * an original moves from its own origin and the base stays in place. Whole
- * shapes move as upstream's do: the support is moved so that the base
- * feature's origin lands on the first point.
+ * PatternFeature preset to the point kind. The originals do not stay where
+ * they are: each copy lands on its own point with its orientation kept.
  */
-class PartDesignExport PointPattern : public PartDesign::Transformed,
-                                      public Part::PointPatternExtension
+class PartDesignExport PointPattern : public PartDesign::PatternFeature
 {
     PROPERTY_HEADER_WITH_EXTENSIONS(PartDesign::PointPattern);
 
 public:
     PointPattern();
-
-    const char* getViewProviderName() const override {
-        return "PartDesignGui::ViewProviderPointPattern";
-    }
-
-    std::list<gp_Trsf> getTransformations(const std::vector<Part::TopoShape> &) override;
-    bool isFirstInstanceTransformed() const override;
-
-protected:
-    void positionBySupport() override;
 };
 
 } //namespace PartDesign
+
 
 #endif // PARTDESIGN_FeaturePointPattern_H

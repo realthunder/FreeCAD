@@ -49,14 +49,12 @@
 #include "ViewProviderGroove.h"
 #include "ViewProviderHelix.h"
 #include "ViewProviderHole.h"
-#include "ViewProviderLinearPattern.h"
 #include "ViewProviderLoft.h"
 #include "ViewProviderMirrored.h"
 #include "ViewProviderMultiTransform.h"
 #include "ViewProviderPad.h"
 #include "ViewProviderPipe.h"
 #include "ViewProviderPocket.h"
-#include "ViewProviderPolarPattern.h"
 #include "ViewProviderPatterns.h"
 #include "ViewProviderPrimitive.h"
 #include "ViewProviderRevolution.h"
@@ -144,6 +142,7 @@ PyMOD_INIT_FUNC(PartDesignGui)
     PartDesignGui::ViewProviderThickness     ::init();
     PartDesignGui::ViewProviderTransformed   ::init();
     PartDesignGui::ViewProviderMirrored      ::init();
+    PartDesignGui::ViewProviderPattern       ::init();
     PartDesignGui::ViewProviderLinearPattern ::init();
     PartDesignGui::ViewProviderGenericPattern ::init();
     PartDesignGui::ViewProviderPolarPattern  ::init();

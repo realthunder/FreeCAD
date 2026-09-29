@@ -25,7 +25,10 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+# include <QComboBox>
+# include <QFormLayout>
 # include <QGroupBox>
+# include <QLabel>
 # include <QMessageBox>
 # include <QSignalBlocker>
 # include <QTimer>
@@ -45,11 +48,7 @@
 #include <Gui/Document.h>
 #include <Mod/PartDesign/App/Body.h>
 #include <Mod/PartDesign/App/FeatureAddSub.h>
-#include <Mod/PartDesign/App/FeatureCircularPattern.h>
-#include <Mod/PartDesign/App/FeatureLinearPattern.h>
-#include <Mod/PartDesign/App/FeaturePathPattern.h>
-#include <Mod/PartDesign/App/FeaturePointPattern.h>
-#include <Mod/PartDesign/App/FeaturePolarPattern.h>
+#include <Mod/PartDesign/App/FeaturePattern.h>
 
 #include "ui_TaskPatternParameters.h"
 #include "TaskPatternParameters.h"
@@ -59,6 +58,17 @@
 
 using namespace PartDesignGui;
 using namespace Gui;
+
+namespace
+{
+
+template<class T>
+T* patternProperty(App::DocumentObject* obj, const char* name)
+{
+    return obj ? dynamic_cast<T*>(App::Pattern::getProperty(*obj, name)) : nullptr;
+}
+
+}  // namespace
 
 /* TRANSLATOR PartDesignGui::TaskPatternParameters */
 
@@ -102,87 +112,98 @@ TaskPatternParameters::TaskPatternParameters(TaskMultiTransformParameters *paren
     setupUI();
 }
 
+PartDesign::PatternFeature* TaskPatternParameters::getPattern() const
+{
+    return Base::freecad_dynamic_cast<PartDesign::PatternFeature>(getObject());
+}
+
+App::Pattern::Type TaskPatternParameters::getPatternType() const
+{
+    auto pattern = getPattern();
+    return pattern ? pattern->getPatternType() : App::Pattern::Type::Linear;
+}
+
 bool TaskPatternParameters::isPolar() const
 {
-    return getObject()->isDerivedFrom<PartDesign::PolarPattern>()
-        || getObject()->isDerivedFrom<PartDesign::CircularPattern>();
+    return getPatternType() == App::Pattern::Type::Polar
+        || getPatternType() == App::Pattern::Type::Circular;
 }
 
 void TaskPatternParameters::setupUI()
 {
     setupBaseUI();
 
-    auto layout = ui->directionsLayout;
-    if (auto polar = dynamic_cast<PartDesign::PolarPattern*>(getObject())) {
-        direction1 = new Gui::PatternDirectionWidget(Gui::PatternDirectionWidget::Kind::Polar, proxy);
-        layout->addWidget(direction1);
-        Gui::PatternDirectionWidget::Properties props;
-        props.reference = &polar->Axis;
-        props.reversed = &polar->Reversed;
-        props.mode = &polar->Mode;
-        props.extent = &polar->Angle;
-        props.spacing = &polar->Offset;
-        props.occurrences = &polar->Occurrences;
-        props.spacings = &polar->Spacings;
-        props.spacingPattern = &polar->SpacingPattern;
-        fillReferenceCombo(direction1->links());
-        direction1->bind(props);
-    }
-    else if (!getObject()->isDerivedFrom<PartDesign::LinearPattern>()) {
-        auto kind = Gui::PatternParametersWidget::Kind::Point;
-        if (getObject()->isDerivedFrom<PartDesign::CircularPattern>())
-            kind = Gui::PatternParametersWidget::Kind::Circular;
-        else if (getObject()->isDerivedFrom<PartDesign::PathPattern>())
-            kind = Gui::PatternParametersWidget::Kind::Path;
-        parameters = new Gui::PatternParametersWidget(kind, proxy);
-        layout->addWidget(parameters);
-        fillReferenceCombo(parameters->links());
-        parameters->bind(getObject());
-        connect(parameters, &Gui::PatternParametersWidget::referenceActivated,
-                this, [this]() { onReferenceActivated(parameters->links(), parameters->referenceProperty()); });
-        connect(parameters, &Gui::PatternParametersWidget::changed,
-                this, &TaskPatternParameters::onParametersChanged);
-    }
-    else {
-        auto linear = static_cast<PartDesign::LinearPattern*>(getObject());
+    // The kind, which may be changed: the inputs change with it
+    auto typeForm = new QFormLayout();
+    labelType = new QLabel(proxy);
+    comboType = new QComboBox(proxy);
+    fillPatternTypeCombo(comboType);
+    typeForm->addRow(labelType, comboType);
+    ui->verticalLayout->insertLayout(0, typeForm);
+    connect(comboType, qOverload<int>(&QComboBox::activated),
+            this, &TaskPatternParameters::onTypeActivated);
 
+    buildPatternWidgets();
+
+    connect(ui->checkBoxUpdateView, &QCheckBox::toggled,
+            this, &TaskPatternParameters::onUpdateView);
+
+    showOriginAxes(true);
+}
+
+void TaskPatternParameters::buildPatternWidgets()
+{
+    exitSelectionMode();
+    picking = nullptr;
+
+    // The inputs are other properties now: the old editors go
+    for (QWidget* widget : {static_cast<QWidget*>(groupDirection1),
+                            static_cast<QWidget*>(groupDirection2),
+                            static_cast<QWidget*>(direction1),
+                            static_cast<QWidget*>(direction2),
+                            static_cast<QWidget*>(parameters)}) {
+        if (widget) {
+            widget->hide();
+            widget->deleteLater();
+        }
+    }
+    groupDirection1 = groupDirection2 = nullptr;
+    direction1 = direction2 = nullptr;
+    parameters = nullptr;
+
+    auto pattern = getPattern();
+    if (!pattern)
+        return;
+    builtType = pattern->getPatternType();
+
+    using Kind = Gui::PatternDirectionWidget::Kind;
+    auto layout = ui->directionsLayout;
+    switch (builtType) {
+    case App::Pattern::Type::Polar:
+        direction1 = new Gui::PatternDirectionWidget(Kind::Polar, proxy);
+        layout->addWidget(direction1);
+        fillReferenceCombo(direction1->links());
+        direction1->bind(Gui::PatternDirectionWidget::propertiesOf(*pattern, Kind::Polar, false));
+        break;
+    case App::Pattern::Type::Linear: {
         groupDirection1 = new QGroupBox(proxy);
         auto groupLayout1 = new QVBoxLayout(groupDirection1);
-        direction1 = new Gui::PatternDirectionWidget(Gui::PatternDirectionWidget::Kind::Linear, groupDirection1);
+        direction1 = new Gui::PatternDirectionWidget(Kind::Linear, groupDirection1);
         groupLayout1->addWidget(direction1);
         layout->addWidget(groupDirection1);
-        Gui::PatternDirectionWidget::Properties props;
-        props.reference = &linear->Direction;
-        props.reversed = &linear->Reversed;
-        props.mode = &linear->Mode;
-        props.extent = &linear->Length;
-        props.spacing = &linear->Offset;
-        props.occurrences = &linear->Occurrences;
-        props.spacings = &linear->Spacings;
-        props.spacingPattern = &linear->SpacingPattern;
         fillReferenceCombo(direction1->links());
-        direction1->bind(props);
+        direction1->bind(Gui::PatternDirectionWidget::propertiesOf(*pattern, Kind::Linear, false));
 
         // Checked as long as the second direction has more than one
         // occurrence; unchecking it leaves one (upstream b82505e86c)
         groupDirection2 = new QGroupBox(proxy);
         groupDirection2->setCheckable(true);
-        groupDirection2->setChecked(linear->Occurrences2.getValue() > 1);
         auto groupLayout2 = new QVBoxLayout(groupDirection2);
-        direction2 = new Gui::PatternDirectionWidget(Gui::PatternDirectionWidget::Kind::Linear, groupDirection2);
+        direction2 = new Gui::PatternDirectionWidget(Kind::Linear, groupDirection2);
         groupLayout2->addWidget(direction2);
         layout->addWidget(groupDirection2);
-        Gui::PatternDirectionWidget::Properties props2;
-        props2.reference = &linear->Direction2;
-        props2.reversed = &linear->Reversed2;
-        props2.mode = &linear->Mode2;
-        props2.extent = &linear->Length2;
-        props2.spacing = &linear->Offset2;
-        props2.occurrences = &linear->Occurrences2;
-        props2.spacings = &linear->Spacings2;
-        props2.spacingPattern = &linear->SpacingPattern2;
         fillReferenceCombo(direction2->links());
-        direction2->bind(props2);
+        direction2->bind(Gui::PatternDirectionWidget::propertiesOf(*pattern, Kind::Linear, true));
 
         connect(groupDirection2, &QGroupBox::toggled,
                 this, &TaskPatternParameters::onDirection2Toggled);
@@ -190,6 +211,19 @@ void TaskPatternParameters::setupUI()
                 this, [this]() { onReferenceActivated(direction2->links(), direction2->properties().reference); });
         connect(direction2, &Gui::PatternDirectionWidget::changed,
                 this, &TaskPatternParameters::onParametersChanged);
+        break;
+    }
+    default:
+        parameters = new Gui::PatternParametersWidget(
+            Gui::PatternParametersWidget::kindOf(builtType), proxy);
+        layout->addWidget(parameters);
+        fillReferenceCombo(parameters->links());
+        parameters->bind(pattern);
+        connect(parameters, &Gui::PatternParametersWidget::referenceActivated,
+                this, [this]() { onReferenceActivated(parameters->links(), parameters->referenceProperty()); });
+        connect(parameters, &Gui::PatternParametersWidget::changed,
+                this, &TaskPatternParameters::onParametersChanged);
+        break;
     }
 
     if (direction1) {
@@ -198,16 +232,33 @@ void TaskPatternParameters::setupUI()
         connect(direction1, &Gui::PatternDirectionWidget::changed,
                 this, &TaskPatternParameters::onParametersChanged);
     }
-    connect(ui->checkBoxUpdateView, &QCheckBox::toggled,
-            this, &TaskPatternParameters::onUpdateView);
 
     retranslate();
-    showOriginAxes(true);
+    updateUI();
     // Once the edit has started: the panel is built while it starts, before
     // the view it runs in is recorded
     QTimer::singleShot(0, this, [this]() {
         updateLabels();
     });
+}
+
+void TaskPatternParameters::onTypeActivated(int index)
+{
+    auto pattern = getPattern();
+    if (blockUpdate || !pattern || index == pattern->PatternType.getValue())
+        return;
+    try {
+        setupTransaction();
+        // The feature gives the new kind the references it needs
+        pattern->PatternType.setValue(index);
+    }
+    catch (Base::Exception &e) {
+        QMessageBox::warning(nullptr, tr("Error"), QApplication::translate("Exception", e.what()));
+    }
+    buildPatternWidgets();
+    if (parentTask)
+        parentTask->refreshTransformItem(pattern);
+    recomputeFeature();
 }
 
 void TaskPatternParameters::updateLabels()
@@ -245,7 +296,7 @@ void TaskPatternParameters::updateLabels()
     App::Pattern::Context context;
     context.placement = placement;
     const Base::Matrix4D& toWorld = vp->getDocument()->getEditingTransform();
-    const auto kind = pattern->isDerivedFrom<PartDesign::PolarPattern>()
+    const auto kind = getPatternType() == App::Pattern::Type::Polar
         ? Gui::PatternDirectionWidget::Kind::Polar
         : Gui::PatternDirectionWidget::Kind::Linear;
 
@@ -267,6 +318,10 @@ void TaskPatternParameters::updateLabels()
 
 void TaskPatternParameters::retranslate()
 {
+    if (labelType)
+        labelType->setText(tr("Pattern"));
+    if (comboType)
+        fillPatternTypeCombo(comboType);
     if (groupDirection1)
         groupDirection1->setTitle(tr("Direction 1"));
     if (groupDirection2)
@@ -283,8 +338,8 @@ void TaskPatternParameters::fillReferenceCombo(Gui::ComboLinks& links)
 {
     // A path or the points come from a pick; a direction or an axis may be
     // one of the sketch's or the origin's as well
-    if (getObject()->isDerivedFrom<PartDesign::PathPattern>()
-            || getObject()->isDerivedFrom<PartDesign::PointPattern>()) {
+    if (getPatternType() == App::Pattern::Type::Path
+            || getPatternType() == App::Pattern::Type::Point) {
         links.clear();
         links.addLink(nullptr, std::string(), tr("Select reference..."));
         return;
@@ -315,13 +370,21 @@ void TaskPatternParameters::showOriginAxes(bool show)
 
 void TaskPatternParameters::updateUI()
 {
+    // An undo or a redo may have changed the kind, and with it the
+    // properties the editors are bound to
+    if (getPattern() && getPatternType() != builtType) {
+        buildPatternWidgets();
+        return;
+    }
     Base::StateLocker lock(blockUpdate);
+    if (comboType)
+        comboType->setCurrentIndex(static_cast<int>(getPatternType()));
     if (direction1)
         direction1->updateUI();
     if (direction2) {
-        auto linear = static_cast<PartDesign::LinearPattern*>(getObject());
+        auto occurrences2 = patternProperty<App::PropertyInteger>(getObject(), "Occurrences2");
         QSignalBlocker blocker(groupDirection2);
-        groupDirection2->setChecked(linear->Occurrences2.getValue() > 1);
+        groupDirection2->setChecked(occurrences2 && occurrences2->getValue() > 1);
         direction2->updateUI();
     }
     if (parameters)
@@ -343,12 +406,12 @@ void TaskPatternParameters::onSelectionChanged(const Gui::SelectionChanges& msg)
             return;
         auto prop = picking;
         setupTransaction();
-        if (getObject()->isDerivedFrom<PartDesign::PointPattern>()) {
+        if (getPatternType() == App::Pattern::Type::Point) {
             // The points are all of the object's, whatever of it was clicked
             // (upstream f5abab2768)
             subs.clear();
         }
-        else if (getObject()->isDerivedFrom<PartDesign::PathPattern>()) {
+        else if (getPatternType() == App::Pattern::Type::Path) {
             // A path is picked edge by edge, of one object, until something
             // else is done in the panel
             if (prop->getValue() == selObj && !subs.empty() && !subs.front().empty()) {
@@ -358,7 +421,7 @@ void TaskPatternParameters::onSelectionChanged(const Gui::SelectionChanges& msg)
                 subs = std::move(edges);
             }
         }
-        if (!getObject()->isDerivedFrom<PartDesign::PathPattern>()) {
+        if (getPatternType() != App::Pattern::Type::Path) {
             exitSelectionMode();
             picking = nullptr;
         }
@@ -381,10 +444,10 @@ void TaskPatternParameters::onReferenceActivated(Gui::ComboLinks& links, App::Pr
             picking = prop;
             selectionMode = reference;
             Gui::Selection().clearSelection();
-            if (getObject()->isDerivedFrom<PartDesign::PointPattern>())
+            if (getPatternType() == App::Pattern::Type::Point)
                 addReferenceSelectionGate(AllowSelection::POINT | AllowSelection::EDGE
                                           | AllowSelection::FACE | AllowSelection::WHOLE);
-            else if (getObject()->isDerivedFrom<PartDesign::PathPattern>())
+            else if (getPatternType() == App::Pattern::Type::Path)
                 addReferenceSelectionGate(AllowSelection::EDGE | AllowSelection::WHOLE);
             else if (isPolar())
                 addReferenceSelectionGate(AllowSelection::EDGE | AllowSelection::CIRCLE);
@@ -419,9 +482,12 @@ void TaskPatternParameters::setDefaultDirection2()
     // The other in-plane axis of the first direction's sketch or origin, as
     // upstream's command sets V_Axis beside H_Axis; else the first other
     // item of the list
-    auto linear = static_cast<PartDesign::LinearPattern*>(getObject());
-    App::DocumentObject* obj = linear->Direction.getValue();
-    const auto& subs = linear->Direction.getSubValues();
+    auto direction = patternProperty<App::PropertyLinkSub>(getObject(), "Direction");
+    auto direction2Prop = patternProperty<App::PropertyLinkSub>(getObject(), "Direction2");
+    if (!direction || !direction2Prop)
+        return;
+    App::DocumentObject* obj = direction->getValue();
+    const auto& subs = direction->getSubValues();
     std::string sub = subs.empty() ? std::string() : subs.front();
 
     std::string partnerSub;
@@ -446,13 +512,13 @@ void TaskPatternParameters::setDefaultDirection2()
         const auto& linkSubs = link.getSubValues();
         std::string linkSub = linkSubs.empty() ? std::string() : linkSubs.front();
         if (!partnerSub.empty() && linkObj == obj && linkSub == partnerSub) {
-            linear->Direction2.Paste(link);
+            direction2Prop->Paste(link);
             return;
         }
         if (!partnerRole.empty()) {
             auto feature = Base::freecad_dynamic_cast<App::DatumElement>(linkObj);
             if (feature && partnerRole == feature->Role.getValue()) {
-                linear->Direction2.Paste(link);
+                direction2Prop->Paste(link);
                 return;
             }
         }
@@ -460,21 +526,24 @@ void TaskPatternParameters::setDefaultDirection2()
             fallback = i;
     }
     if (fallback >= 0)
-        linear->Direction2.Paste(links.getLink(fallback));
+        direction2Prop->Paste(links.getLink(fallback));
 }
 
 void TaskPatternParameters::onDirection2Toggled(bool on)
 {
-    auto linear = static_cast<PartDesign::LinearPattern*>(getObject());
+    auto direction2Prop = patternProperty<App::PropertyLinkSub>(getObject(), "Direction2");
+    auto occurrences2 = patternProperty<App::PropertyInteger>(getObject(), "Occurrences2");
+    if (!direction2Prop || !occurrences2)
+        return;
     try {
         if (on) {
-            if (!linear->Direction2.getValue())
+            if (!direction2Prop->getValue())
                 setDefaultDirection2();
-            if (linear->Occurrences2.getValue() < 2)
-                linear->Occurrences2.setValue(2);
+            if (occurrences2->getValue() < 2)
+                occurrences2->setValue(2);
         }
         else {
-            linear->Occurrences2.setValue(1);
+            occurrences2->setValue(1);
         }
     }
     catch (Base::Exception &e) {
@@ -512,11 +581,14 @@ void TaskPatternParameters::changeEvent(QEvent *e)
 void TaskPatternParameters::apply()
 {
     auto tobj = getObject();
+    if (auto pattern = getPattern())
+        FCMD_OBJ_CMD(tobj, "PatternType = '" << pattern->PatternType.getValueAsString() << "'");
     if (parameters) {
         parameters->apply(tobj);
         return;
     }
-    direction1->apply(tobj);
+    if (direction1)
+        direction1->apply(tobj);
     if (direction2) {
         if (groupDirection2->isChecked())
             direction2->apply(tobj);

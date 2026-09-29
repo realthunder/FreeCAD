@@ -6,14 +6,8 @@
 
 using namespace PartDesign;
 
-PROPERTY_SOURCE_WITH_EXTENSIONS(PartDesign::CircularPattern, PartDesign::Transformed)
+PROPERTY_SOURCE_WITH_EXTENSIONS(PartDesign::CircularPattern, PartDesign::PatternFeature)
 
 CircularPattern::CircularPattern()
-{
-    Part::CircularPatternExtension::initExtension(this);
-}
-
-std::list<gp_Trsf> CircularPattern::getTransformations(const std::vector<Part::TopoShape> &)
-{
-    return calculateTransformations();
-}
+    : PatternFeature(App::Pattern::Type::Circular)
+{}

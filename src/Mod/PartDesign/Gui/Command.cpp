@@ -2125,12 +2125,15 @@ static void setOrigins(App::DocumentObject *feat,
     Gui::Command::doCommand(Gui::Command::Doc, ss.str().c_str());
 }
 
+/// Make a transformation of the class PartDesign::\a which, named \a name,
+/// else after the class
 template<class F>
 void prepareTransformed(PartDesign::Body *pcActiveBody,
                         Gui::Command* cmd,
-                        const std::string& which, F func)
+                        const std::string& which, F func,
+                        const char* name = nullptr)
 {
-    std::string FeatName = cmd->getUniqueObjectName(which.c_str(), pcActiveBody);
+    std::string FeatName = cmd->getUniqueObjectName(name ? name : which.c_str(), pcActiveBody);
 
     PartDesign::Body* activeBody = PartDesignGui::getBody(true);
 
@@ -2314,7 +2317,8 @@ void CmdPartDesignLinearPattern::activated(int iMsg)
         finishTransformed(cmd, Feat);
     };
 
-    prepareTransformed(pcActiveBody, this, "LinearPattern", worker);
+    // Named generically: a pattern may change its kind, not its name
+    prepareTransformed(pcActiveBody, this, "LinearPattern", worker, "Pattern");
 }
 
 bool CmdPartDesignLinearPattern::isActive()
@@ -2429,7 +2433,7 @@ void CmdPartDesignPolarPattern::activated(int iMsg)
         finishTransformed(cmd, Feat);
     };
 
-    prepareTransformed(pcActiveBody, this, "PolarPattern", worker);
+    prepareTransformed(pcActiveBody, this, "PolarPattern", worker, "Pattern");
 }
 
 bool CmdPartDesignPolarPattern::isActive()
@@ -2493,7 +2497,7 @@ void CmdPartDesignCircularPattern::activated(int iMsg)
         finishTransformed(cmd, Feat);
     };
 
-    prepareTransformed(pcActiveBody, this, "CircularPattern", worker);
+    prepareTransformed(pcActiveBody, this, "CircularPattern", worker, "Pattern");
 }
 
 bool CmdPartDesignCircularPattern::isActive()
@@ -2542,7 +2546,7 @@ void CmdPartDesignPathPattern::activated(int iMsg)
         finishTransformed(cmd, Feat);
     };
 
-    prepareTransformed(pcActiveBody, this, "PathPattern", worker);
+    prepareTransformed(pcActiveBody, this, "PathPattern", worker, "Pattern");
 }
 
 bool CmdPartDesignPathPattern::isActive()
@@ -2594,13 +2598,44 @@ void CmdPartDesignPointPattern::activated(int iMsg)
         finishTransformed(cmd, Feat);
     };
 
-    prepareTransformed(pcActiveBody, this, "PointPattern", worker);
+    prepareTransformed(pcActiveBody, this, "PointPattern", worker, "Pattern");
 }
 
 bool CmdPartDesignPointPattern::isActive()
 {
     return hasActiveDocument();
 }
+
+//===========================================================================
+// PartDesign_CompPattern
+//===========================================================================
+
+/// The pattern commands in one button. A pattern made by any of them may be
+/// changed to another kind later, in its panel.
+class CmdPartDesignCompPattern : public Gui::GroupCommand
+{
+public:
+    CmdPartDesignCompPattern()
+        : GroupCommand("PartDesign_CompPattern")
+    {
+        sAppModule    = "PartDesign";
+        sGroup        = QT_TR_NOOP("PartDesign");
+        sMenuText     = QT_TR_NOOP("Pattern");
+        sToolTipText  = QT_TR_NOOP("Create a pattern feature: linear, polar, circular, "
+                                   "along a path or on points. Its kind can be changed later.");
+        sWhatsThis    = "PartDesign_CompPattern";
+        sStatusTip    = sToolTipText;
+        bCanLog       = false;
+
+        addCommand("PartDesign_LinearPattern");
+        addCommand("PartDesign_PolarPattern");
+        addCommand("PartDesign_CircularPattern");
+        addCommand("PartDesign_PathPattern");
+        addCommand("PartDesign_PointPattern");
+    }
+
+    const char* className() const override { return "CmdPartDesignCompPattern"; }
+};
 
 //===========================================================================
 // PartDesign_Scaled
@@ -3169,6 +3204,8 @@ void CreatePartDesignCommands()
     rcCmdMgr.addCommand(new CmdPartDesignCircularPattern());
     rcCmdMgr.addCommand(new CmdPartDesignPathPattern());
     rcCmdMgr.addCommand(new CmdPartDesignPointPattern());
+    // After the commands it holds, which it finds by name
+    rcCmdMgr.addCommand(new CmdPartDesignCompPattern());
     rcCmdMgr.addCommand(new CmdPartDesignScaled());
     rcCmdMgr.addCommand(new CmdPartDesignGenericPattern());
     rcCmdMgr.addCommand(new CmdPartDesignMultiTransform());

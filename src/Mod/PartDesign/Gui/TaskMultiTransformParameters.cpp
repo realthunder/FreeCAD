@@ -36,13 +36,9 @@
 #include <Gui/Selection.h>
 #include <Gui/Command.h>
 #include <Mod/PartDesign/App/Body.h>
-#include <Mod/PartDesign/App/FeatureCircularPattern.h>
-#include <Mod/PartDesign/App/FeatureLinearPattern.h>
+#include <Mod/PartDesign/App/FeaturePattern.h>
 #include <Mod/PartDesign/App/FeatureMirrored.h>
 #include <Mod/PartDesign/App/FeatureMultiTransform.h>
-#include <Mod/PartDesign/App/FeaturePathPattern.h>
-#include <Mod/PartDesign/App/FeaturePointPattern.h>
-#include <Mod/PartDesign/App/FeaturePolarPattern.h>
 #include <Mod/PartDesign/App/FeatureScaled.h>
 
 #include "ui_TaskMultiTransformParameters.h"
@@ -170,6 +166,23 @@ void TaskMultiTransformParameters::onSelectionChanged(const Gui::SelectionChange
     TaskTransformedParameters::onSelectionChanged(msg);
 }
 
+void TaskMultiTransformParameters::refreshTransformItem(App::DocumentObject* feature)
+{
+    if (editHint || !feature)
+        return;
+    auto pcMultiTransform = static_cast<PartDesign::MultiTransform*>(TransformedView->getObject());
+    const auto& transformFeatures = pcMultiTransform->Transformations.getValues();
+    auto it = std::find(transformFeatures.begin(), transformFeatures.end(), feature);
+    if (it == transformFeatures.end())
+        return;
+    auto item = ui->listTransformFeatures->item(static_cast<int>(it - transformFeatures.begin()));
+    if (!item)
+        return;
+    if (auto vp = Application::Instance->getViewProvider(feature))
+        item->setIcon(vp->getIcon());
+    item->setText(QString::fromUtf8(feature->Label.getValue()));
+}
+
 void TaskMultiTransformParameters::closeSubTask()
 {
     if (subTask) {
@@ -220,11 +233,7 @@ void TaskMultiTransformParameters::onTransformEdit()
     subFeature = static_cast<PartDesign::Transformed*>(transformFeatures[row]);
     if (transformFeatures[row]->is<PartDesign::Mirrored>())
         subTask = new TaskMirroredParameters(this, ui->verticalLayout);
-    else if (transformFeatures[row]->is<PartDesign::LinearPattern>()
-            || transformFeatures[row]->is<PartDesign::PolarPattern>()
-            || transformFeatures[row]->is<PartDesign::CircularPattern>()
-            || transformFeatures[row]->is<PartDesign::PathPattern>()
-            || transformFeatures[row]->is<PartDesign::PointPattern>())
+    else if (transformFeatures[row]->isDerivedFrom<PartDesign::PatternFeature>())
         subTask = new TaskPatternParameters(this, ui->verticalLayout);
     else if (transformFeatures[row]->is<PartDesign::Scaled>())
         subTask = new TaskScaledParameters(this, ui->verticalLayout);
@@ -276,7 +285,8 @@ void TaskMultiTransformParameters::onTransformAddLinearPattern()
     // See CmdPartDesignLinearPattern
     //
     closeSubTask();
-    std::string newFeatName = TransformedView->getObject()->getDocument()->getUniqueObjectName("LinearPattern");
+    // Named generically: a pattern may change its kind, not its name
+    std::string newFeatName = TransformedView->getObject()->getDocument()->getUniqueObjectName("Pattern");
     auto pcActiveBody = PartDesignGui::getBody(false);
     if (!pcActiveBody)
         return;
@@ -311,7 +321,7 @@ void TaskMultiTransformParameters::onTransformAddLinearPattern()
 void TaskMultiTransformParameters::onTransformAddPolarPattern()
 {
     closeSubTask();
-    std::string newFeatName = TransformedView->getObject()->getDocument()->getUniqueObjectName("PolarPattern");
+    std::string newFeatName = TransformedView->getObject()->getDocument()->getUniqueObjectName("Pattern");
     auto pcActiveBody = PartDesignGui::getBody(false);
     if (!pcActiveBody)
         return;
@@ -344,10 +354,11 @@ void TaskMultiTransformParameters::setDefaultAxis(App::DocumentObject* Feat,
 }
 
 App::DocumentObject* TaskMultiTransformParameters::newTransformFeature(const char* type,
+                                                                       const char* name,
                                                                        std::string& newFeatName)
 {
     closeSubTask();
-    newFeatName = TransformedView->getObject()->getDocument()->getUniqueObjectName(type);
+    newFeatName = TransformedView->getObject()->getDocument()->getUniqueObjectName(name);
     auto pcActiveBody = PartDesignGui::getBody(false);
     if (!pcActiveBody)
         return nullptr;
@@ -363,7 +374,7 @@ void TaskMultiTransformParameters::onTransformAddCircularPattern()
 {
     // The axis as a polar pattern's, the rings as the feature's defaults
     std::string newFeatName;
-    auto Feat = newTransformFeature("CircularPattern", newFeatName);
+    auto Feat = newTransformFeature("CircularPattern", "Pattern", newFeatName);
     if (!Feat)
         return;
     setDefaultAxis(Feat, PartDesign::Body::findBodyOf(Feat));
@@ -375,7 +386,7 @@ void TaskMultiTransformParameters::onTransformAddPathPattern()
     // The path is picked in the sub-panel; until then the pattern is the
     // original alone
     std::string newFeatName;
-    if (!newTransformFeature("PathPattern", newFeatName))
+    if (!newTransformFeature("PathPattern", "Pattern", newFeatName))
         return;
     finishAdd(newFeatName);
 }
@@ -387,7 +398,7 @@ void TaskMultiTransformParameters::onTransformAddPointPattern()
     // first point, where the original stays, so that the pattern composes
     // with the other transformations as theirs do
     std::string newFeatName;
-    if (!newTransformFeature("PointPattern", newFeatName))
+    if (!newTransformFeature("PointPattern", "Pattern", newFeatName))
         return;
     finishAdd(newFeatName);
 }

@@ -24,40 +24,27 @@
 #ifndef PARTDESIGN_FeaturePolarPattern_H
 #define PARTDESIGN_FeaturePolarPattern_H
 
-#include <Mod/Part/App/PatternExtension.h>
-#include "FeatureTransformed.h"
+#include "FeaturePattern.h"
 
 namespace PartDesign
 {
 
 /** A pattern around an axis (upstream c334ac5062)
  *
- * The inputs are Part::PolarPatternExtension's, the pattern App::Pattern's:
- * Occurrences rotations, the first one the identity. In "Extent" mode they
- * are spread over Angle, evenly around a full turn; in "Spacing" mode they
- * are Offset apart, or as Spacings and SpacingPattern say. A negative angle
- * turns the other way.
+ * PatternFeature preset to the polar kind: Occurrences rotations, the first
+ * one the identity. In "Extent" mode they are spread over Angle, evenly
+ * around a full turn; in "Spacing" mode they are Offset apart, or as
+ * Spacings and SpacingPattern say. A negative angle turns the other way.
  *
  * The axis is a straight edge, a circular edge (its center and normal), a
  * datum line or a sketch axis. Reversed turns the other way.
  */
-class PartDesignExport PolarPattern : public PartDesign::Transformed,
-                                      public Part::PolarPatternExtension
+class PartDesignExport PolarPattern : public PartDesign::PatternFeature
 {
     PROPERTY_HEADER_WITH_EXTENSIONS(PartDesign::PolarPattern);
 
 public:
     PolarPattern();
-
-    /// returns the type name of the view provider
-    const char* getViewProviderName() const override {
-        return "PartDesignGui::ViewProviderPolarPattern";
-    }
-
-    std::list<gp_Trsf> getTransformations(const std::vector<Part::TopoShape> &) override;
-
-protected:
-    void handleChangedPropertyType(Base::XMLReader& reader, const char* TypeName, App::Property* prop) override;
 };
 
 } //namespace PartDesign

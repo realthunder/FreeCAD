@@ -48,9 +48,7 @@
 #include "Body.h"
 #include "FeatureAddSub.h"
 #include "FeatureMirrored.h"
-#include "FeatureLinearPattern.h"
-#include "FeaturePolarPattern.h"
-#include "FeatureCircularPattern.h"
+#include "FeaturePattern.h"
 #include "FeatureSketchBased.h"
 
 FC_LOG_LEVEL_INIT("PartDesign",true,true)
@@ -146,18 +144,23 @@ App::DocumentObject* Transformed::getSketchObject() const
     else if (!originals.empty() && originals.front()->isDerivedFrom<PartDesign::FeatureAddSub>()) {
         return nullptr;
     }
-    else if (this->isDerivedFrom<LinearPattern>()) {
-        // if Originals is empty then try the linear pattern's Direction property
-        const LinearPattern* pattern = static_cast<const LinearPattern*>(this);
-        return pattern->Direction.getValue();
-    }
-    else if (this->isDerivedFrom<PolarPattern>()) {
-        // if Originals is empty then try the polar pattern's Axis property
-        const PolarPattern* pattern = static_cast<const PolarPattern*>(this);
-        return pattern->Axis.getValue();
-    }
-    else if (auto pattern = Base::freecad_dynamic_cast<CircularPattern>(this)) {
-        return pattern->Axis.getValue();
+    else if (auto pattern = Base::freecad_dynamic_cast<PatternFeature>(this)) {
+        // if Originals is empty then try the direction of a linear pattern,
+        // the axis of a polar or circular one
+        const char* name = nullptr;
+        switch (pattern->getPatternType()) {
+            case App::Pattern::Type::Linear:
+                name = "Direction";
+                break;
+            case App::Pattern::Type::Polar:
+            case App::Pattern::Type::Circular:
+                name = "Axis";
+                break;
+            default:
+                return nullptr;
+        }
+        auto link = dynamic_cast<App::PropertyLinkSub*>(App::Pattern::getProperty(*this, name));
+        return link ? link->getValue() : nullptr;
     }
     else if (this->isDerivedFrom<Mirrored>()) {
         // if Originals is empty then try the mirror pattern's MirrorPlane property
@@ -482,6 +485,10 @@ App::DocumentObjectExecReturn *Transformed::execute()
 
     if (transformations.empty() || originalShapes.empty()) {
         Shape.setValue(support);
+        // Nothing is added either: not the copies of before, which a path or
+        // point pattern whose reference is not picked yet showed, or one
+        // switched to such a kind
+        AddSubShape.setValue(TopoShape());
         return App::DocumentObject::StdReturn; // No transformations defined, exit silently
     }
 

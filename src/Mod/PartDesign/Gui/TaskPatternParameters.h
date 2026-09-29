@@ -25,19 +25,28 @@
 #ifndef GUI_TASKVIEW_TaskPatternParameters_H
 #define GUI_TASKVIEW_TaskPatternParameters_H
 
+#include <App/Pattern.h>
+
 #include "TaskTransformedParameters.h"
 #include "ViewProviderTransformed.h"
 
+class QComboBox;
 class QGroupBox;
+class QLabel;
 class Ui_TaskPatternParameters;
+
+namespace PartDesign {
+class PatternFeature;
+}
 
 namespace PartDesignGui {
 
 class TaskMultiTransformParameters;
 
-/// The panel of a linear pattern, one or two directions, of a polar pattern
-/// (upstream 5d2037c820 merged the two panels as well), and of a circular,
-/// path or point pattern on the shared editor of those kinds
+/// The panel of a pattern of any kind: a linear pattern, one or two
+/// directions, a polar pattern (upstream 5d2037c820 merged the two panels as
+/// well), and a circular, path or point pattern on the shared editor of those
+/// kinds. The kind may be changed here; the editors change with it.
 class TaskPatternParameters : public TaskTransformedParameters
 {
     Q_OBJECT
@@ -60,6 +69,11 @@ protected:
 
 private:
     void setupUI();
+    /// The editors of the inputs of the kind the pattern has now
+    void buildPatternWidgets();
+    void onTypeActivated(int index);
+    PartDesign::PatternFeature* getPattern() const;
+    App::Pattern::Type getPatternType() const;
     void updateUI() override;
     void retranslate();
     bool isPolar() const;
@@ -74,6 +88,11 @@ private:
 
 private:
     std::unique_ptr<Ui_TaskPatternParameters> ui;
+
+    QLabel* labelType = nullptr;
+    QComboBox* comboType = nullptr;
+    /// The kind the editors were built for
+    App::Pattern::Type builtType = App::Pattern::Type::Linear;
 
     QGroupBox* groupDirection1 = nullptr;
     QGroupBox* groupDirection2 = nullptr;

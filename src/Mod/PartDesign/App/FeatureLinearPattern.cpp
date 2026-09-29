@@ -25,39 +25,16 @@
 
 #include "FeatureLinearPattern.h"
 
-
 using namespace PartDesign;
 
-namespace PartDesign {
-
-
-PROPERTY_SOURCE_WITH_EXTENSIONS(PartDesign::LinearPattern, PartDesign::Transformed)
+PROPERTY_SOURCE_WITH_EXTENSIONS(PartDesign::LinearPattern, PartDesign::PatternFeature)
 
 LinearPattern::LinearPattern()
+    : PatternFeature(App::Pattern::Type::Linear)
 {
-    Part::LinearPatternExtension::initExtension(this);
     // Three, as the feature had before it took upstream's extension
-    Occurrences.setValue(3);
-}
-
-std::list<gp_Trsf> LinearPattern::getTransformations(const std::vector<Part::TopoShape> &)
-{
-    return calculateTransformations();
-}
-
-void LinearPattern::handleChangedPropertyType(Base::XMLReader& reader, const char* TypeName, App::Property* prop)
-// transforms properties that had been changed
-{
-    // property Occurrences had the App::PropertyInteger and was changed to App::PropertyIntegerConstraint
-    if (prop == &Occurrences && strcmp(TypeName, "App::PropertyInteger") == 0) {
-        App::PropertyInteger OccurrencesProperty;
-        // restore the PropertyInteger to be able to set its value
-        OccurrencesProperty.Restore(reader);
-        Occurrences.setValue(OccurrencesProperty.getValue());
+    if (auto occurrences = dynamic_cast<App::PropertyIntegerConstraint*>(
+            App::Pattern::getProperty(*this, "Occurrences"))) {
+        occurrences->setValue(3);
     }
-    else {
-        Transformed::handleChangedPropertyType(reader, TypeName, prop);
-    }
-}
-
 }

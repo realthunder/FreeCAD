@@ -2,64 +2,80 @@
 
 #include "PreCompiled.h"
 
+#include <Mod/PartDesign/App/FeaturePattern.h>
+
 #include "ViewProviderPatterns.h"
 #include "TaskPatternParameters.h"
 
 using namespace PartDesignGui;
 
-PROPERTY_SOURCE(PartDesignGui::ViewProviderCircularPattern, PartDesignGui::ViewProviderTransformed)
+namespace
+{
+const char* Pixmaps[] = {"PartDesign_LinearPattern.svg",
+                         "PartDesign_PolarPattern.svg",
+                         "PartDesign_CircularPattern.svg",
+                         "PartDesign_PathPattern.svg",
+                         "PartDesign_PointPattern.svg"};
+}  // namespace
 
-TaskDlgFeatureParameters *ViewProviderCircularPattern::getEditDialog()
+PROPERTY_SOURCE(PartDesignGui::ViewProviderPattern, PartDesignGui::ViewProviderTransformed)
+
+ViewProviderPattern::ViewProviderPattern()
+{
+    sPixmap = Pixmaps[0];
+}
+
+PartDesign::PatternFeature* ViewProviderPattern::getPattern() const
+{
+    return Base::freecad_dynamic_cast<PartDesign::PatternFeature>(getObject());
+}
+
+TaskDlgFeatureParameters *ViewProviderPattern::getEditDialog()
 {
     return new TaskDlgPatternParameters(this);
 }
 
-void ViewProviderCircularPattern::setupContextMenu(QMenu* menu, QObject* receiver, const char* member)
+QString ViewProviderPattern::getMenuName() const
 {
-    addDefaultAction(menu, QObject::tr("Edit circular pattern"));
-    PartDesignGui::ViewProvider::setupContextMenu(menu, receiver, member);
+    return tr("%1 parameters").arg(QString::fromLatin1(featureName().c_str()));
 }
 
-const std::string & ViewProviderCircularPattern::featureName() const
+const std::string & ViewProviderPattern::featureName() const
 {
-    static const std::string name = "CircularPattern";
-    return name;
+    static const std::string names[] = {PartDesign::PatternFeature::KindLabels[0],
+                                        PartDesign::PatternFeature::KindLabels[1],
+                                        PartDesign::PatternFeature::KindLabels[2],
+                                        PartDesign::PatternFeature::KindLabels[3],
+                                        PartDesign::PatternFeature::KindLabels[4]};
+    auto pattern = getPattern();
+    return names[pattern ? static_cast<int>(pattern->getPatternType()) : 0];
 }
 
-PROPERTY_SOURCE(PartDesignGui::ViewProviderPathPattern, PartDesignGui::ViewProviderTransformed)
-
-TaskDlgFeatureParameters *ViewProviderPathPattern::getEditDialog()
+void ViewProviderPattern::updatePixmap()
 {
-    return new TaskDlgPatternParameters(this);
+    if (auto pattern = getPattern()) {
+        sPixmap = Pixmaps[static_cast<int>(pattern->getPatternType())];
+    }
 }
 
-void ViewProviderPathPattern::setupContextMenu(QMenu* menu, QObject* receiver, const char* member)
+void ViewProviderPattern::attach(App::DocumentObject* obj)
 {
-    addDefaultAction(menu, QObject::tr("Edit path pattern"));
-    PartDesignGui::ViewProvider::setupContextMenu(menu, receiver, member);
+    ViewProviderTransformed::attach(obj);
+    updatePixmap();
 }
 
-const std::string & ViewProviderPathPattern::featureName() const
+void ViewProviderPattern::updateData(const App::Property* prop)
 {
-    static const std::string name = "PathPattern";
-    return name;
+    auto pattern = getPattern();
+    if (pattern && prop == &pattern->PatternType) {
+        updatePixmap();
+        signalChangeIcon();
+    }
+    ViewProviderTransformed::updateData(prop);
 }
 
-PROPERTY_SOURCE(PartDesignGui::ViewProviderPointPattern, PartDesignGui::ViewProviderTransformed)
-
-TaskDlgFeatureParameters *ViewProviderPointPattern::getEditDialog()
-{
-    return new TaskDlgPatternParameters(this);
-}
-
-void ViewProviderPointPattern::setupContextMenu(QMenu* menu, QObject* receiver, const char* member)
-{
-    addDefaultAction(menu, QObject::tr("Edit point pattern"));
-    PartDesignGui::ViewProvider::setupContextMenu(menu, receiver, member);
-}
-
-const std::string & ViewProviderPointPattern::featureName() const
-{
-    static const std::string name = "PointPattern";
-    return name;
-}
+PROPERTY_SOURCE(PartDesignGui::ViewProviderLinearPattern, PartDesignGui::ViewProviderPattern)
+PROPERTY_SOURCE(PartDesignGui::ViewProviderPolarPattern, PartDesignGui::ViewProviderPattern)
+PROPERTY_SOURCE(PartDesignGui::ViewProviderCircularPattern, PartDesignGui::ViewProviderPattern)
+PROPERTY_SOURCE(PartDesignGui::ViewProviderPathPattern, PartDesignGui::ViewProviderPattern)
+PROPERTY_SOURCE(PartDesignGui::ViewProviderPointPattern, PartDesignGui::ViewProviderPattern)

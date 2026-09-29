@@ -5,70 +5,51 @@
 
 #include "ViewProviderTransformed.h"
 
+namespace PartDesign
+{
+class PatternFeature;
+}
+
 namespace PartDesignGui {
 
-/// The view providers of the circular, path and point patterns, edited in
-/// the pattern panel as the linear and polar ones are
-class PartDesignGuiExport ViewProviderCircularPattern : public ViewProviderTransformed
+/// The view provider of a pattern of any kind, edited in the pattern panel.
+/// Its icon follows the kind.
+class PartDesignGuiExport ViewProviderPattern : public ViewProviderTransformed
 {
-    Q_DECLARE_TR_FUNCTIONS(PartDesignGui::ViewProviderCircularPattern)
-    PROPERTY_HEADER_WITH_OVERRIDE(PartDesignGui::ViewProviderCircularPattern);
+    Q_DECLARE_TR_FUNCTIONS(PartDesignGui::ViewProviderPattern)
+    PROPERTY_HEADER_WITH_OVERRIDE(PartDesignGui::ViewProviderPattern);
+
 public:
-    ViewProviderCircularPattern() {
-        sPixmap = "PartDesign_CircularPattern.svg";
-    }
+    ViewProviderPattern();
 
-    QString getMenuName() const override {
-        return tr("CircularPattern parameters");
-    }
-
+    QString getMenuName() const override;
     const std::string & featureName() const override;
-    void setupContextMenu(QMenu*, QObject*, const char*) override;
+    void attach(App::DocumentObject* obj) override;
+    void updateData(const App::Property* prop) override;
 
 protected:
     TaskDlgFeatureParameters *getEditDialog() override;
+
+private:
+    PartDesign::PatternFeature* getPattern() const;
+    void updatePixmap();
 };
 
-class PartDesignGuiExport ViewProviderPathPattern : public ViewProviderTransformed
-{
-    Q_DECLARE_TR_FUNCTIONS(PartDesignGui::ViewProviderPathPattern)
-    PROPERTY_HEADER_WITH_OVERRIDE(PartDesignGui::ViewProviderPathPattern);
-public:
-    ViewProviderPathPattern() {
-        sPixmap = "PartDesign_PathPattern.svg";
-    }
+/// The view providers the pattern classes had, kept for a file that names
+/// one as a custom view type
+#define PARTDESIGN_PATTERN_VIEWPROVIDER(_kind_)                                    \
+    class PartDesignGuiExport ViewProvider##_kind_##Pattern : public ViewProviderPattern \
+    {                                                                              \
+        PROPERTY_HEADER_WITH_OVERRIDE(PartDesignGui::ViewProvider##_kind_##Pattern); \
+    };
 
-    QString getMenuName() const override {
-        return tr("PathPattern parameters");
-    }
-
-    const std::string & featureName() const override;
-    void setupContextMenu(QMenu*, QObject*, const char*) override;
-
-protected:
-    TaskDlgFeatureParameters *getEditDialog() override;
-};
-
-class PartDesignGuiExport ViewProviderPointPattern : public ViewProviderTransformed
-{
-    Q_DECLARE_TR_FUNCTIONS(PartDesignGui::ViewProviderPointPattern)
-    PROPERTY_HEADER_WITH_OVERRIDE(PartDesignGui::ViewProviderPointPattern);
-public:
-    ViewProviderPointPattern() {
-        sPixmap = "PartDesign_PointPattern.svg";
-    }
-
-    QString getMenuName() const override {
-        return tr("PointPattern parameters");
-    }
-
-    const std::string & featureName() const override;
-    void setupContextMenu(QMenu*, QObject*, const char*) override;
-
-protected:
-    TaskDlgFeatureParameters *getEditDialog() override;
-};
+PARTDESIGN_PATTERN_VIEWPROVIDER(Linear)
+PARTDESIGN_PATTERN_VIEWPROVIDER(Polar)
+PARTDESIGN_PATTERN_VIEWPROVIDER(Circular)
+PARTDESIGN_PATTERN_VIEWPROVIDER(Path)
+PARTDESIGN_PATTERN_VIEWPROVIDER(Point)
 
 } // namespace PartDesignGui
+
 
 #endif // PARTGUI_ViewProviderPatterns_H
