@@ -45,6 +45,7 @@ public:
 
     void extensionAttach(App::DocumentObject *pcObject) override;
     void extensionUpdateData(const App::Property* prop) override;
+    void extensionFinishRestoring() override;
 
     virtual void updateOriginSize();
 

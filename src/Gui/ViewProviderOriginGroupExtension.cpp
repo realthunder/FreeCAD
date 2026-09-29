@@ -22,6 +22,7 @@
  ***************************************************************************/
 
 #include "PreCompiled.h"
+#include <cmath>
 #include <memory>
 
 #ifndef _PreComp_
@@ -154,6 +155,34 @@ void ViewProviderOriginGroupExtension::extensionUpdateData( const App::Property*
     ViewProviderGeoFeatureGroupExtension::extensionUpdateData ( prop );
 }
 
+void ViewProviderOriginGroupExtension::extensionFinishRestoring() {
+    ViewProviderGeoFeatureGroupExtension::extensionFinishRestoring();
+    // The size follows the content, and updateData above is what hears the
+    // content change -- which a progressive load's view providers never
+    // do: they are created after the App restore and replay their
+    // properties without a change signal, so the origin kept the size it
+    // was created with (12 against 27 for a small Body). Asked once the
+    // view provider is restored; the timer waits out any restore still
+    // running, so an eager load, which gets here too, is sized as before.
+    pimpl->schedule(getExtendedViewProvider());
+}
+
+namespace {
+/// Whether \a bbox says where content is. An unbounded shape -- a datum
+/// plane, bound by a SubShapeBinder -- reports +-1e100 (OCCT's infinite
+/// extent), which would size the origin to infinity: its planes and axes
+/// came out with a Size of inf and NaN geometry, and every bounding box,
+/// fit and clip plane over them with it.
+bool boundedBox(const Base::BoundBox3d &bbox)
+{
+    constexpr double limit = 1e50;
+    return bbox.IsValid()
+        && std::fabs(bbox.MinX) < limit && std::fabs(bbox.MaxX) < limit
+        && std::fabs(bbox.MinY) < limit && std::fabs(bbox.MaxY) < limit
+        && std::fabs(bbox.MinZ) < limit && std::fabs(bbox.MaxZ) < limit;
+}
+} // namespace
+
 void ViewProviderOriginGroupExtension::updateOriginSize () {
     auto owner = getExtendedViewProvider()->getObject();
     if(!owner || !owner->isAttachedToDocument()
@@ -197,7 +226,7 @@ void ViewProviderOriginGroupExtension::updateOriginSize () {
             }
         } else {
             auto bbox = vp->getBoundingBox();
-            if(bbox.IsValid())
+            if(boundedBox(bbox))
                 bboxDatums.extendBy ( SbBox3f(bbox.MinX,bbox.MinY,bbox.MinZ,
                                               bbox.MaxX,bbox.MaxY,bbox.MaxZ) );
         }
@@ -222,7 +251,7 @@ void ViewProviderOriginGroupExtension::updateOriginSize () {
             continue;
 
         auto bbox = vp->getBoundingBox();
-        if(bbox.IsValid())
+        if(boundedBox(bbox))
             bboxOrigins.extendBy ( SbBox3f(bbox.MinX,bbox.MinY,bbox.MinZ,
                                            bbox.MaxX,bbox.MaxY,bbox.MaxZ) );
     }
