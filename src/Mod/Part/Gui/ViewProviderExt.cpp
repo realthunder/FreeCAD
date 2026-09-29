@@ -3784,10 +3784,17 @@ void ViewProviderPartExt::checkColorUpdate()
 
 void ViewProviderPartExt::updateColors(App::Document *sourceDoc, bool forceColorMap) 
 {
+    // Not while restoring -- the document, or the object alone: a shape
+    // served after the load (a deferred archive entry, a blob faulted in by
+    // the visual build) lands as a property change under the object's
+    // Restore status, and mapping the inputs' colours then wrote over the
+    // colour the file saved, which an eager load, landing every shape inside
+    // the restore, never did.
     if (UpdatingColor
             || !getObject()
             || !getObject()->getDocument()
-            || getObject()->getDocument()->testStatus(App::Document::Restoring))
+            || getObject()->getDocument()->testStatus(App::Document::Restoring)
+            || getObject()->isRestoring())
         return;
 
     auto geoFeature = Base::freecad_dynamic_cast<App::GeoFeature>(pcObject);
