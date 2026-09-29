@@ -52,10 +52,11 @@ public:
     void setupContextMenu(QMenu*, QObject*, const char*) override;
     bool doubleClicked() override;
     void onChanged(const App::Property* prop) override;
+    void finishRestoring() override;
 
 private:
     void resizePlane(float xsize, float ysize);
-    void loadImage();
+    void loadImage(bool resize = true);
     void setPlaneSize(const QSizeF& size, const QImage& img);
     void reloadIfSvg();
     bool isSvgFile(const char*) const;
