@@ -21,7 +21,6 @@
  *                                                                         *
  **************************************************************************/
 
-#include <QFile>
 #include <QMetaType>
 #include <QUuid>
 
@@ -179,25 +178,21 @@ const App::FileBlobHandle& PropertyMaterial::ensureBlob() const
         return _blob;
     }
 
-    const std::string path = manager.uniquePath(hash + ".FCMat");
-    QFile file(QString::fromUtf8(path.c_str()));
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-        Base::Console().error("PropertyMaterial: cannot write the card to '%s'\n", path.c_str());
-        return _blob;
-    }
+    // The bytes go to the store as they are, not through a scratch file:
+    // two properties holding the same card -- a live one on the main thread
+    // and the transaction log's copy of it on its worker -- chose the same
+    // scratch name, and one's adoption removed the file the other was about
+    // to adopt (docs/TransactionLog.md sec 27.73). adoptBytes() hashes them
+    // itself and shares an existing blob when the content is already stored,
+    // so the store stays the authority on identity and this hash is only a
+    // shortcut past the encoding below.
     const QByteArray canonical = _card->getCanonicalForm().toUtf8();
-    const bool written = file.write(canonical) == canonical.size();
-    file.close();
-    if (!written) {
-        Base::Console().error("PropertyMaterial: cannot write the card to '%s'\n", path.c_str());
-        Base::FileInfo(path).deleteFile();
-        return _blob;
+    try {
+        _blob = manager.adoptBytes(std::string(canonical.constData(), canonical.size()), ".FCMat");
     }
-
-    // adoptFile() hashes the file itself and shares an existing blob when the
-    // content is already stored, so the store stays the authority on identity
-    // and this hash is only a shortcut past the write above.
-    _blob = manager.adoptFile(path.c_str(), ".FCMat");
+    catch (Base::Exception& e) {
+        Base::Console().error("PropertyMaterial: cannot store the card: %s\n", e.what());
+    }
     return _blob;
 }
 

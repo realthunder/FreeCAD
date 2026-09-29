@@ -153,20 +153,12 @@ FileBlobHandle MaterialXDocument::store(FileBlobManager &manager) const
     if (auto existing = manager.find(FileBlobManager::hashBytes(text))) {
         return existing;
     }
-    // Written where the store adopts from, then handed over: adoptFile()
-    // hashes it and shares an existing blob when the same manifest is
-    // already there.
-    const std::string path = manager.uniquePath("materialx.manifest");
-    {
-        Base::ofstream to(Base::FileInfo(path), std::ios::out | std::ios::binary | std::ios::trunc);
-        if (!to) {
-            FC_ERR("cannot write a MaterialX manifest to " << path);
-            return {};
-        }
-        to.write(text.data(), std::streamsize(text.size()));
-    }
+    // Handed to the store as bytes: adoptBytes() hashes them and shares an
+    // existing blob when the same manifest is already there. Not through a
+    // scratch file, whose one name the transaction log's worker and the main
+    // thread could both write (docs/TransactionLog.md sec 27.73).
     try {
-        return manager.adoptFile(path.c_str(), "manifest");
+        return manager.adoptBytes(text, "manifest");
     }
     catch (const Base::Exception &e) {
         FC_ERR("cannot store a MaterialX manifest: " << e.what());

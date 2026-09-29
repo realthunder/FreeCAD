@@ -676,22 +676,14 @@ const FileBlobHandle &PropertyStringIncluded::ensureBlob() const
         return _blob;
     }
     try {
-        // Written where the store adopts from, then handed over: adoptFile()
-        // hashes it and drops the duplicate when the same text is already
-        // stored, which is what makes one document assigned fifty times cost
-        // one file.
-        const std::string path = manager.uniquePath("string." + _ext);
-        {
-            Base::ofstream to(Base::FileInfo(path),
-                              std::ios::out | std::ios::binary | std::ios::trunc);
-            if (!to) {
-                FC_ERR("cannot write " << getFullName() << " to " << path
-                        << ", storing it inline");
-                return _blob;
-            }
-            to.write(_cValue.data(), std::streamsize(_cValue.size()));
-        }
-        _blob = manager.adoptFile(path.c_str(), _ext.c_str());
+        // Handed to the store as bytes: adoptBytes() hashes them and shares
+        // the blob when the same text is already stored, which is what makes
+        // one document assigned fifty times cost one file. Not through a
+        // scratch file: its name was the same for every text, and the
+        // transaction log's worker stores a copy's text while the main thread
+        // stores others, so one could adopt what the other had just written
+        // (docs/TransactionLog.md sec 27.73).
+        _blob = manager.adoptBytes(_cValue, _ext.c_str());
     }
     catch (const Base::Exception &e) {
         // Losing the blob costs sharing, never content: the caller writes
