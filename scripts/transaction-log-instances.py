@@ -22,6 +22,12 @@
 #
 # T4_LOG=0 runs the same steps with the log off (T2 of sec 27.52): no
 # branches, trims, versions or store; the recompute creep and the saves.
+#
+# T4_QT=1 runs a Qt event loop as the Gui would (sec 27.71): TechDraw finishes
+# its hidden-line pass through a Qt signal, so without one no view ever stores
+# its projection, and every restore of a version projects them all again. The
+# first recompute is followed by T4_QT_PUMP seconds (default 30) of events,
+# every later recompute by whatever is pending.
 # Prints one line per save and writes everything to T4_OUT as JSON.
 
 import hashlib
@@ -52,6 +58,8 @@ logOn = env.get("T4_LOG", "1") == "1"
 out = env.get("T4_OUT", "")
 # 1: keep every element map whole, and report how the ones that differ do.
 dump = env.get("T4_DUMP", "0") == "1"
+qtLoop = env.get("T4_QT", "0") == "1"
+qtPump = float(env.get("T4_QT_PUMP", "30"))
 fullMaps = {}
 
 # T4_LOGLEVEL=Log shows, among much else, a switch that read a version whole.
@@ -259,6 +267,22 @@ def branchName(doc):
     return ""
 
 
+if qtLoop:
+    from PySide import QtCore
+
+    qtApp = QtCore.QCoreApplication.instance() or QtCore.QCoreApplication([])
+
+
+def pump(seconds):
+    """Deliver the pending Qt events, for `seconds` more if given."""
+    end = time.time() + seconds
+    while True:
+        QtCore.QCoreApplication.processEvents()
+        if time.time() >= end:
+            break
+        time.sleep(0.02)
+
+
 doc, t = timed(lambda: FreeCAD.openDocument(path))
 result["open"] = t
 doc.UndoMode = 1
@@ -268,6 +292,8 @@ body = doc.getObject(bodyName)
 # The file's element maps are older than this build's: the first recompute
 # rebuilds them all, which is not what the run measures.
 _, result["first_recompute"] = timed(doc.recompute)
+if qtLoop:
+    _, result["first_pump"] = timed(lambda: pump(qtPump))
 _, result["first_save"] = timed(doc.save)
 
 window = {"recompute": 0.0, "commit": 0.0, "drain": 0.0, "minted": 0, "kinds": {}}
@@ -316,6 +342,8 @@ for step in range(1, steps + 1):
         result["errors"].append(entry)
     _, dt = timed(doc.recompute)
     window["recompute"] += dt
+    if qtLoop:
+        pump(0)
     _, dt = timed(doc.commitTransaction)
     window["commit"] += dt
     if logOn:
