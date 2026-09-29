@@ -8778,3 +8778,112 @@ import and lookup, (2) the loft fix, (3) the translation cache in 27.76 item
 2, (4) the postfix sharing -- checked closely first: the user remembers the
 postfixes are shared in most cases -- and (5) a way for an expression's
 reference to hold its ids across a save.
+
+### 27.78 27.77's rulings and 27.76 items 1-4 as built (2026-09-29)
+
+**(2) The loft's caps.** The forward pass clears its stream before the
+single-name branch (`5af31a0d19`); a loft of two circles now names its caps
+`#7;:L;LFT;:H..:7,F` and `#9;:L;LFT;:H..:7,F`. No element map version change:
+the names change at the feature's next recompute, and a reference into a cap
+recovers as for any renamed element. Test: `LoftCapNameTest`.
+
+**(4) Postfix sharing, checked first.** The user remembered the postfixes
+shared in most cases; measured with a temporary count of distinct buffers
+over every map of scanner.FCStd, a stored name shared none:
+
+| | names with a postfix | distinct buffers | distinct texts |
+| --- | --- | --- | --- |
+| restored | 51,140 | 51,140 | 6,054 |
+| added by a full recompute | about 37,000 | about 36,600 | |
+
+What does share is a name made on the fly through a child map (a compound's,
+a link's), which is not stored. The restore read the postfix table into
+`std::string`s and `+=` copied one into each name; an op's names each took
+theirs from a stream of their own. Each map now has a pool of its postfix
+texts (`withSharedPostfix` in `addName`, the restore's table read once into
+`QByteArray`s): 6,478 buffers restored, the same ratio at recompute, and the
+open 1.65 MB lighter (149.15 -> 147.50 MB in use, two runs each). The pool
+costs about 0.4 MB of the 2.1 the buffers were. `c5ce5fb180`; the tracer fix
+and the `reserve` precedence slip are `ebc2da9e07`.
+
+**(5) An expression's ids across a save.** The expression text has no room
+for them, so `PropertyExpressionEngine` writes an element of its own after
+the expressions, `<ExpressionIds><Ids index= ref= sids=/></ExpressionIds>`,
+keyed by the expression's place among those written and the path's place in
+a visit of it (`VariableExpression`s that name a sub-object). A reader that
+does not know it skips it (`readEndElement`). The restore puts the numbers
+back into each path's shadow (`savedIds`), and
+`ObjectIdentifier::updateElementReference` holds them against the target's
+table **before** it resolves: first built after the resolve, a missing
+element -- the case that matters -- held nothing, and the second save
+dropped the strings. `beforeSave` marks those of the owner's table. An
+element in an expression is written `Obj.<<Edge14>>._shape...`: a subname
+alone resolves only through the `_shape` pseudo property. `2ce66502e0`;
+test `testAnExpressionHoldsTheStringsItNames` (the 27.75 test's model moved
+into `_heldStringsModel`).
+
+**(1) and 27.76 item 1: import by content, text-only ids folded in.**
+`StringHasher::importID(foreign)`: what the string is built from first, then
+its data and postfix with every `#id` rewritten to this table's
+(`rewriteIds`) -- a prefix reference, a `#` inside a postfix, a combo
+string's names -- then found by content (the lower of two equal ids) or
+inserted with the source's structural flags, holding its related ids and
+every string its text names (a combo string has no related ids, and once
+imported nothing else would hold its names). `lookupID` is the same taking
+nothing in; `importText` and `importName` do a text and a mapped name (its
+held ids replaced by this table's, with those its new text names). A shared
+`ImportMemo` visits each foreign string once. A text naming an id its table
+lacks cannot be imported: null, and the caller keeps the name as it was.
+
+**27.76 item 2 and ruling (3): shapes crossing, with a translation cache.**
+`Data::translateElementMap(map, from, to)` copies a map with every name,
+held id, child postfix and child map imported, cached per (source map,
+target table) while both live -- weak pointers and the source's size, so a
+dead or changed source misses. It is called where a shape takes another
+table's map: `copyElementMap` (and so `reTagElementMap`), the compound child
+maps of `mapSubElement`; and names are imported one by one in
+`mapSubElement` and in `makESHAPE`'s collection. `mapSubElement` no longer
+takes an input's table when they differ ("hasher mismatch"): the result
+keeps its own and imports.
+
+Measured, ten `App::Link`s in a new document to scanner.FCStd's
+`PolarPattern003` (25,639 names): the first link's shape 78 ms, the other
+nine 12-14 ms each through the cache -- about 65 ms, 2.5 us a name, for the
+one translation; 20,652 strings came into the new document's table.
+
+**27.76 item 4: the marker names its document.** `Document::
+externalTagPostfix(hasher)` gives `;:X#<id>`, `<id>` the source document's
+Uid as a string of the target table; `copyElementMap` holds the ids an op
+postfix names in its children's `sids`. It replaces the bare `;:X` of
+`LinkBaseExtension::checkGeoElementMap` and `SubShapeBinder` (whose copy-on-
+change source is the original's document, not the temporary one's), and is
+added where `_getTopoShape` re-tags a shape into another document's table
+and had no marker at all (the cached-owner and the linked-object paths, and
+both link-array paths).
+
+**Old files.** A shape written before carries the bare marker (`;:X;`) in a
+name or in a string one refers to. `ComplexGeoData::hasLegacyCrossing()`
+finds it -- the strings of the table carrying it, or naming one that does,
+computed once per table as read -- and `PropertyPartShape::afterRestore`
+asks for the owner's recompute, which imports. A crossing that had no marker
+(the `_getTopoShape` paths above) is not found; its names are right until
+the source's ids move, as before, and the next recompute imports them.
+
+**Seen on the way.** Part's own features refuse an external link
+(`PropertyLink`), so a direct cross-document consumer exists only through
+`App::Link`, `SubShapeBinder` and the `_getTopoShape` paths above. Reopening
+a document whose link names another reloads that one: the test moves the
+source's file away to show the consumer's file stands alone.
+
+Tests: C++ `StringHasherTest.importRewritesEveryIdItsTextNames`,
+`importFailsOnAnIdItsTableLacks`, `ElementMapTest.
+translationIsSharedWhileItLives`; Python `TransactionBranchCases.
+testAShapeCrossingDocumentsTakesTheIdsOfItsTable` (a link, a compound and a
+fuse of it in A; the link's names say the fillet's in A's ids with B's Uid
+in the marker; the compound's and fuse's read the same after a reopen with
+B's file gone; nothing touched), `testAShapeThatCrossedAsTextAsksForARecompute`.
+
+**Not built:** 27.76 item 5, references into another document (the stored
+form imported, the working form looked up); tracing across the marker
+(`traceElement` still stops at `;:X`; the marker now says which document's
+objects the tags left of it are, which is what crossing needs).
