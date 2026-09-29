@@ -330,8 +330,23 @@ def s_image(doc):
     doc.addObject("App::DocumentObjectGroup", "RefGroup").addObject(link)
 
 
+def s_shown_input(doc):
+    # A fusion's input shown again after fusing, and the fusion coloured by
+    # hand: the fusion's view provider hides its inputs on an update, and a
+    # drain that swept the updates after the records let that overrule the
+    # saved visibility (and a colour mapping overrule the saved colour).
+    a, b = box(doc, "FA", 0, 0, 0, 4), box(doc, "FB", 2, 2, 2, 4)
+    fus = doc.addObject("Part::MultiFuse", "Fus")
+    fus.Shapes = [a, b]
+    doc.recompute()
+    gd = FreeCADGui.getDocument(doc.Name)
+    gd.getObject("FA").Visibility = True
+    gd.getObject("FA").ShapeColor = (0.9, 0.2, 0.1)
+    gd.getObject("Fus").ShapeColor = (0.2, 0.7, 0.3)
+
+
 SCENES = [s_part_child_later, s_nested, s_linkgroup, s_array, s_body, s_groups,
-          s_booleans, s_sketch, s_many, s_image]
+          s_booleans, s_sketch, s_many, s_image, s_shown_input]
 
 
 def build_corpus():

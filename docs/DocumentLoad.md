@@ -1161,32 +1161,58 @@ Commits: `284429b4cc` (2), `1759f7a3f2` (5), `1aa780f7de` (3),
 `6fd064cd5f` (4), `836ba8aa2a` (6), `76a0345254` (7), `62172a0e88` (8);
 (1) is `2b184941bf`.
 
-**Open: the drain replays the records BEFORE the updates.** An eager load
-applies the App properties' updates (`updateData`, as each property
-restores) and THEN the view providers' records, so the saved Gui state
-wins over whatever a handler does on an update. The drain does the
-reverse -- records in phase two, the property sweep in phase three -- so a
-handler that acts on an update wins over the saved state. Found on a user
-file: a `Part::MultiFuse` hides its inputs and maps its face colours from
-them in `updateData`, so after a progressive open the Body the user had
-shown again is hidden, and the fusion's saved colour is replaced by its
-input's. The corpus missed it because there the inputs were saved hidden
-anyway. Two ways out, not yet chosen: guard each such handler with
-`RestoreDrain`, as (6) did -- every boolean, every feature that hides its
-base -- or run the sweep before the records, as the eager order is, which
-changes the drain's design (sec 13) and its costs.
+**The drain now runs in the eager order (was: records before updates).**
+An eager load raises every property's update as Document.xml restores it
+(`DocumentObject::onChanged` -> `signalChangedObject` ->
+`Gui::Document::slotChangedObject` -> `updateData`), with the view
+providers not yet restoring -- `Gui::Document::Restore` marks them only at
+`signalRestoreDocument` -- and reads the GuiDocument.xml records after all
+the data files: the saved Gui state overrules whatever a handler did on an
+update. The drain replayed the records in phase two and swept the updates
+in phase three, so the handler overruled the file: a `Part::MultiFuse`
+hides its inputs on an update, and the Body a user had shown again came
+back hidden. Guarding each such handler (every boolean, every feature that
+hides its base, every Python feature) is a list that never closes; the
+drain now has four phases in the eager order -- create, sweep (the
+restoring flag down, as for the eager updates), records, finish. Two more
+pieces were needed before the user files agreed:
+
+- a view provider restored at once (sec 16 item 8) had its record before
+  the sweep, and in older files that is most of them: a colour array saved
+  as `DiffuseColor.bin` makes a record name an archive entry. Its record
+  XML is kept and replayed in phase three like the parked ones -- the XML,
+  not copies by property name, because a legacy name (`ShapeColor`)
+  migrates to another property on restore and a copy undid the migration;
+  what only an archive entry holds cannot be read twice, so those
+  properties are copied as the sweep begins (after phase zero has served
+  the entries) and pasted after the replay; and the Python proxies are
+  held across it and put back -- restored twice, a proxy is a new
+  instance, a view provider attaches its proxy once, and a Draft array
+  whose new proxy had no `self.Object` claimed none of its children;
+- `ViewProviderPartExt::updateColors` maps a boolean's colours from its
+  inputs on a shape change, and returned only while the DOCUMENT restores.
+  A shape served after the load (a deferred entry, a blob faulted in by
+  the visual build) lands under the OBJECT's Restore status instead, and
+  the mapping overwrote the saved colour; it now returns then too.
 
 **The user files.** 73 distinct FCStd from `~/works/sw/bug_reports`, two
 progressive runs each, scene paths compared up to 300 objects. After the
 fixes above, 61 of the 71 that opened are identical apart from derived
 sizes, and two more differ in one run of two only (a pick, a frame);
 the Link losses (8) and the image sizes (6) came from here. What is
-left is almost all the open ordering finding: objects hidden after a
+left was almost all the ordering finding above: objects hidden after a
 progressive open that eager leaves shown (Draft wires, a fusion that is
 another boolean's input, a placement feature's input -- four files) and a
-face colour taken from an input (a Mirroring, a MultiFuse). Not yet
-examined: a Body's bounding box wider in one file, and small pixel-only
-differences in two. Two files did not open at all within 400 s, eagerly
+face colour taken from an input (a Mirroring, a MultiFuse). After the
+reorder, the files that still differed were run again (22, same-named
+siblings included): every
+visibility, claim and colour difference is gone; what remains is derived
+sizes, a wireframe's line-level pixels in one file (0.5-0.8%, a coarse
+first tessellation not refined within the 3 s wait), and -- not yet
+examined -- a Body's bounding box wider in one file (and in one copy of
+another) and small pixel-only differences in two.
+
+Two files did not open at all within 400 s, eagerly
 or progressively (`LS3_Lead_Screw_Mach_02_12.12.23`, and its sibling was
 skipped with it): stuck in `BRepTools::Read` under
 `App::Document::restoreDeferredFile`, a load defect of its own -- an OCCT
@@ -1226,7 +1252,9 @@ timer, logging it.
 **Test.** `tests/gui/progressive-load-diff.py` (registered,
 `GuiProgressiveLoadDiff_tests_run`, ~5 min): 12 corpus files x 2
 progressive runs, 7 operations during the drain, 3 closes during it and a
-whole reopen after -- 23/23. Before-state (the six fixes above reverted,
+whole reopen after -- 23/23; with a fusion whose input the user showed
+again (the ordering finding), 24/24, and that scene FAILS on the old
+order (the input hidden, 35 pick cells hitting the fusion). Before-state (the six fixes above reverted,
 (1) kept): body FAILS (the Origin's 16 scene paths, 6 origin sizes, the
 sketch's internal view), sketch FAILS (the stray origin point), image
 FAILS (the overwritten size, and the eager frame untextured), and the
