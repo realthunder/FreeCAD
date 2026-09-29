@@ -28,6 +28,7 @@
 #include <bitset>
 #include <functional>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 #include <QByteArray>
@@ -874,11 +875,46 @@ public:
      */
     bool merge(const StringHasher& other, std::size_t* aliased = nullptr);
 
+    /// What the calls of one import have found or taken in, by the other
+    /// table's string, so each is visited once (null: it cannot be had).
+    using ImportMemo = std::unordered_map<const StringID*, StringIDRef>;
+
+    /** Find or take in `foreign`, a string of another table, by content
+     * (docs/TransactionLog.md sec 27.76 item 1, 27.77). What it is built
+     * from comes first, the same way, and every id its text names -- a
+     * prefix reference, a `#` inside a postfix, the names of a combo string
+     * -- is rewritten to this table's, the string it names taken in as
+     * well. The index of `foreign` is kept; of two equal strings here the
+     * lower id is taken. Null when `foreign` belongs to no table or names an
+     * id its own table does not have.
+     */
+    StringIDRef importID(const StringIDRef& foreign, ImportMemo* memo = nullptr);
+    /// importID() taking nothing in: null when this table has not got it.
+    StringIDRef lookupID(const StringIDRef& foreign, ImportMemo* memo = nullptr) const;
+    /** `text` with every `#id` of `from`'s rewritten to this table's, each
+     * string it names taken in and added to `sids` when given. False, with
+     * `out` undefined, when one cannot be had.
+     */
+    bool importText(const QByteArray& text, const StringHasher& from, QByteArray& out,
+                    QVector<StringIDRef>* sids, ImportMemo& memo);
+    /** `name`, a name of `from`'s table, as this table would have it (sec
+     * 27.76 item 2): its text rewritten, and `sids` -- the ids it holds, of
+     * any table -- replaced by this table's, with every string the new text
+     * names. False when its text names an id that cannot be had.
+     */
+    bool importName(const Data::MappedName& name, const StringHasher& from,
+                    Data::MappedName& out, QVector<StringIDRef>& sids, ImportMemo& memo);
+
     class HashMap;
     friend class StringID;
 
 protected:
     StringID* insert(const StringIDRef& sid);
+    StringIDRef importOne(const StringIDRef& foreign, ImportMemo& memo, bool take);
+    StringIDRef importNew(const StringID& foreign, const StringHasher& from, ImportMemo& memo,
+                          bool take);
+    bool rewriteIds(const QByteArray& text, const StringHasher& from, QByteArray& out,
+                    QVector<StringIDRef>* sids, ImportMemo& memo, bool take);
     void saveStream(std::ostream& stream, bool all = false) const;
     void restoreStream(std::istream& stream, std::size_t count);
     void restoreStreamNew(std::istream& stream, std::size_t count);

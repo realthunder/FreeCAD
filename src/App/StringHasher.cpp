@@ -629,6 +629,174 @@ StringIDRef StringHasher::getID(const Data::MappedName& name, const QVector<Stri
     return {insert(newStringIDRef), indexed.getIndex()};
 }
 
+StringIDRef StringHasher::importID(const StringIDRef& foreign, ImportMemo* memo)
+{
+    ImportMemo local;
+    return importOne(foreign, memo ? *memo : local, true);
+}
+
+StringIDRef StringHasher::lookupID(const StringIDRef& foreign, ImportMemo* memo) const
+{
+    ImportMemo local;
+    // Nothing is taken in with `take` false: the table is not changed.
+    return const_cast<StringHasher*>(this)->importOne(foreign, memo ? *memo : local, false);
+}
+
+bool StringHasher::importText(const QByteArray& text, const StringHasher& from, QByteArray& out,
+                              QVector<StringIDRef>* sids, ImportMemo& memo)
+{
+    return rewriteIds(text, from, out, sids, memo, true);
+}
+
+bool StringHasher::importName(const Data::MappedName& name, const StringHasher& from,
+                              Data::MappedName& out, QVector<StringIDRef>& sids,
+                              ImportMemo& memo)
+{
+    QVector<StringIDRef> named;
+    QByteArray data;
+    QByteArray postfix;
+    if (!rewriteIds(name.dataBytes(), from, data, &named, memo, true)
+            || !rewriteIds(name.postfixBytes(), from, postfix, &named, memo, true)) {
+        return false;
+    }
+    QVector<StringIDRef> held;
+    held.reserve(sids.size() + named.size());
+    for (const auto& sid : sids) {
+        // A held id its table no longer has is not needed: what the name
+        // says is in its text, and the text's are all here.
+        if (auto here = importOne(sid, memo, true)) {
+            if (held.indexOf(here) < 0)
+                held.push_back(here);
+        }
+    }
+    for (const auto& sid : named) {
+        if (held.indexOf(sid) < 0)
+            held.push_back(sid);
+    }
+    sids = std::move(held);
+    if (data == name.dataBytes() && postfix == name.postfixBytes()) {
+        out = name;
+        return true;
+    }
+    Data::MappedName res(data.constData(), data.size());
+    res += postfix;
+    out = std::move(res);
+    return true;
+}
+
+bool StringHasher::rewriteIds(const QByteArray& text, const StringHasher& from, QByteArray& out,
+                              QVector<StringIDRef>* sids, ImportMemo& memo, bool take)
+{
+    int pos = text.indexOf('#');
+    if (pos < 0) {
+        out = text;
+        return true;
+    }
+    QByteArray res;
+    res.reserve(text.size() + 8);
+    int last = 0;
+    while (pos >= 0) {
+        int end = pos + 1;
+        while (end < text.size() && std::isxdigit(static_cast<unsigned char>(text[end])))
+            ++end;
+        if (end == pos + 1) {
+            pos = text.indexOf('#', end);
+            continue;
+        }
+        bool ok = false;
+        long id = text.mid(pos + 1, end - pos - 1).toLong(&ok, 16);
+        StringIDRef theirs = ok ? from.getID(id) : StringIDRef();
+        if (!theirs)
+            return false;
+        StringIDRef here = importOne(theirs, memo, take);
+        if (!here)
+            return false;
+        if (sids && sids->indexOf(here) < 0)
+            sids->push_back(here);
+        res.append(text.constData() + last, pos + 1 - last);
+        res.append(QByteArray::number(static_cast<qlonglong>(here.value()), 16));
+        last = end;
+        pos = text.indexOf('#', end);
+    }
+    res.append(text.constData() + last, text.size() - last);
+    out = std::move(res);
+    return true;
+}
+
+StringIDRef StringHasher::importOne(const StringIDRef& foreign, ImportMemo& memo, bool take)
+{
+    if (!foreign)
+        return {};
+    const StringID* theirs = foreign._sid;
+    if (theirs->_hasher == this)
+        return foreign;
+    const StringHasher* from = theirs->_hasher;
+    if (!from)
+        return {};
+    auto it = memo.find(theirs);
+    if (it == memo.end()) {
+        // Nothing refers to itself or above itself (a string is made after
+        // what it is built from), so the recursion ends.
+        StringIDRef res = importNew(*theirs, *from, memo, take);
+        it = memo.emplace(theirs, res).first;
+    }
+    if (!it->second)
+        return {};
+    return {it->second, foreign._index};
+}
+
+StringIDRef StringHasher::importNew(const StringID& theirs, const StringHasher& from,
+                                    ImportMemo& memo, bool take)
+{
+    QVector<StringIDRef> related;
+    related.reserve(theirs._sids.size());
+    for (const auto& sid : theirs._sids) {
+        StringIDRef here = importOne(sid, memo, take);
+        if (!here)
+            return {};
+        related.push_back(here);
+    }
+    QByteArray data = theirs._data;
+    QByteArray postfix = theirs._postfix;
+    QVector<StringIDRef> named;
+    if (!theirs.isBinary() && !theirs.isHashed()) {
+        // A prefix reference is its text too ("#7", "#7:"), and comes out
+        // as the related id it names does; a postfix string of its own has
+        // no '#' (getID(MappedName) makes one only then).
+        if (!rewriteIds(theirs._data, from, data, &named, memo, take)
+                || !rewriteIds(theirs._postfix, from, postfix, &named, memo, take)) {
+            return {};
+        }
+    }
+    StringID key;
+    key._data = data;
+    key._postfix = postfix;
+    StringID* found = nullptr;
+    auto range = _hashes->left.equal_range(&key);
+    for (auto i = range.first; i != range.second; ++i) {
+        if (!found || i->first->_id < found->_id)
+            found = i->first;
+    }
+    if (found)
+        return {found};
+    if (!take)
+        return {};
+    auto flags = theirs._flags;
+    flags.setFlag(StringID::Flag::Marked, false);
+    flags.setFlag(StringID::Flag::Persistent, false);
+    StringIDRef sid(new StringID(lastID() + 1, data, flags));
+    sid._sid->_postfix = postfix;
+    // The strings the text names are held after the related ones, whose
+    // places the flags index: a combo string has no related ids, and its
+    // names are held by nothing else once imported.
+    for (const auto& n : named) {
+        if (related.indexOf(n) < 0)
+            related.push_back(n);
+    }
+    sid._sid->_sids = std::move(related);
+    return {insert(sid)};
+}
+
 StringIDRef StringHasher::getID(long id, int index) const
 {
     if (id <= 0) {

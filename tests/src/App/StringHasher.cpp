@@ -1776,3 +1776,100 @@ TEST_F(StringHasherTest, usedRangesRoundTrip)  // NOLINT
     EXPECT_TRUE(ranges.empty());
     EXPECT_FALSE(App::StringHasher::parseUsed("<StringHasher2 count=\"3\">", ranges));
 }
+
+namespace
+{
+/// `text` with every `#id` replaced by what `hasher` holds under it, all the
+/// way down: what a string says, whichever table it is in.
+std::string expandIds(const App::StringHasherRef& hasher, const QByteArray& text)
+{
+    std::string out;
+    for (int i = 0; i < text.size();) {
+        if (text[i] != '#') {
+            out += text[i++];
+            continue;
+        }
+        int end = i + 1;
+        while (end < text.size() && std::isxdigit(static_cast<unsigned char>(text[end]))) {
+            ++end;
+        }
+        if (end == i + 1) {
+            out += text[i++];
+            continue;
+        }
+        long id = text.mid(i + 1, end - i - 1).toLong(nullptr, 16);
+        auto sid = hasher->getID(id);
+        out += sid ? expandIds(hasher, sid.deref().data() + sid.deref().postfix())
+                   : std::string("<missing>");
+        i = end;
+    }
+    return out;
+}
+}  // namespace
+
+TEST_F(StringHasherTest, importRewritesEveryIdItsTextNames)  // NOLINT
+{
+    // Sec 27.76 item 1, 27.77: a string of another table comes in by
+    // content, and an id is rewritten wherever its text names one -- the
+    // prefix reference, a '#' inside a postfix, the names of a combo string,
+    // which has no related ids at all.
+    Base::Reference<App::StringHasher> other(new App::StringHasher);
+    // Ids here are not the other's, so a copied number would name another
+    // string.
+    for (const char* s : {"one", "two", "three", "four"}) {
+        Hasher()->getID(s);
+    }
+    Data::MappedName first("Edge1");
+    first += ";:G;XTR;:H12:7";
+    Data::ElementIDRefs sids;
+    Data::MappedName hashed = first.hashElementName(other, sids);
+    auto combo = other->getID(("(" + hashed.toString() + ";:K2;:H5,E)").c_str());
+    Data::MappedName second = hashed;
+    second += (";:M" + combo.toString() + ";FLT;:H13:9").c_str();
+    sids.push_back(combo);
+    Data::MappedName top = second.hashElementName(other, sids);
+    auto theirs = other->getID(App::StringID::fromString(top.toRawBytes()));
+    ASSERT_TRUE(theirs);
+
+    auto before = Hasher()->size();
+    EXPECT_FALSE(Hasher()->lookupID(theirs));
+    EXPECT_EQ(Hasher()->size(), before);
+
+    auto here = Hasher()->importID(theirs);
+    ASSERT_TRUE(here);
+    EXPECT_TRUE(here.isFromSameHasher(Hasher()));
+    auto say = [](const App::StringIDRef& sid) {
+        return sid.deref().data() + sid.deref().postfix();
+    };
+    EXPECT_EQ(expandIds(Hasher(), say(here)), expandIds(other, say(theirs)));
+    EXPECT_EQ(expandIds(Hasher(), say(here)).find("<missing>"), std::string::npos);
+    // The strings it names are here, and held by it.
+    for (const auto& sid : here.relatedIDs()) {
+        EXPECT_TRUE(sid.isFromSameHasher(Hasher()));
+    }
+    // Once in, the same string: import and lookup both find it.
+    EXPECT_EQ(Hasher()->importID(theirs), here);
+    EXPECT_EQ(Hasher()->lookupID(theirs), here);
+    // A name comes across with its text and its ids.
+    Data::MappedName name = top;
+    name += ";:H14,E";
+    Data::ElementIDRefs nameIds {theirs};
+    Data::MappedName imported;
+    App::StringHasher::ImportMemo memo;
+    ASSERT_TRUE(Hasher()->importName(name, *other, imported, nameIds, memo));
+    EXPECT_EQ(expandIds(Hasher(), imported.toBytes()), expandIds(other, name.toBytes()));
+    ASSERT_FALSE(nameIds.isEmpty());
+    for (const auto& sid : nameIds) {
+        EXPECT_TRUE(sid.isFromSameHasher(Hasher()));
+    }
+}
+
+TEST_F(StringHasherTest, importFailsOnAnIdItsTableLacks)  // NOLINT
+{
+    // A text naming an id its own table does not have cannot be imported:
+    // any number copied would mean something else here.
+    Base::Reference<App::StringHasher> other(new App::StringHasher);
+    auto broken = other->getID("(#7f;:K2;:H5,E)");
+    EXPECT_FALSE(Hasher()->importID(broken));
+    EXPECT_EQ(Hasher()->size(), 0U);
+}
