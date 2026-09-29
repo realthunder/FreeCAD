@@ -304,6 +304,15 @@ group compared as a multiset). Excluded by design, and reportable with `--camera
 `--overlays`: the camera, the viewport, `autozoomScale` — which is camera state, being
 `getWorldToScreenScale` over the view volume — and the overlays, which are viewer furniture.
 
+**A change in one process, and one draw's arrays** (2026-09-29). `FC_BGFX_DUMP_SCENE` with a
+`%d` in the path writes every scene that settles, numbered from 0, rather than the first one
+only -- how "what did entering this edit mode add to the publish" is answered: diff the dumps
+either side of it. In a GUI process with a desktop view, two renderers dump (the view and the
+serve source); the view's carries overlays and the source's does not. And `fcscenediff --mesh
+<objectKey> A.fcsd` prints one object's draws raw -- positions, screen offsets, indices, the
+texture and the autozoom entries -- which is what a digest can only say differ. `--mesh 0` is
+the keyless draws: an on-view label, an edit mode's dimensions.
+
 ⚠️ **Capture both dumps with `FC_BGFX_DUMP_SCENE_SETTLE`** (`dumprun.sh` defaults it to 10
 quiet frames). A document does not arrive all at once, and a dump taken a fixed number of
 frames in records how far the build had got: three runs of one 40-object script produced

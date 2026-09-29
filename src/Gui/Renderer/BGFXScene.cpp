@@ -203,6 +203,10 @@ void BGFXRenderer::Private::maybeDumpScene(const void *viewMatrix,
     static const bool dumpSel = getenv("FC_BGFX_DUMP_SCENE_SEL") != nullptr;
     static const char *dumpSettle = getenv("FC_BGFX_DUMP_SCENE_SETTLE");
     static const int settleFrames = dumpSettle ? atoi(dumpSettle) : 0;
+    // A path with a %d in it dumps every scene that settles, numbered
+    // from 0, rather than the first one only: how a change in what is
+    // published -- an edit mode entered, a label shown -- is diffed
+    static const bool dumpEach = dumpPath && std::strstr(dumpPath, "%d");
 
     // What re-arms the wait is the scene's *content* changing, not
     // the dirty flag: the per-frame config push (SoFCRenderer's ~20
@@ -214,6 +218,8 @@ void BGFXRenderer::Private::maybeDumpScene(const void *viewMatrix,
     if (print != dumpFingerprint) {
         dumpFingerprint = print;
         dumpQuietFrames = 0;
+        if (dumpEach)
+            sceneDumped = false;
     }
     else
         ++dumpQuietFrames;
@@ -227,13 +233,20 @@ void BGFXRenderer::Private::maybeDumpScene(const void *viewMatrix,
         Render::SceneSnapshot snap;
         makeSnapshot(snap, viewMatrix, projMatrix, width, height,
                      clearColor);
+        std::string path = dumpPath;
+        if (dumpEach) {
+            static int dumpIndex = 0;
+            char name[1024];
+            std::snprintf(name, sizeof(name), dumpPath, dumpIndex++);
+            path = name;
+        }
         // The SNAPSHOT's count, not the feed's: since 5.16 the two
         // differ by whatever the view's style resolution removed, and
         // the number worth reading is what actually goes on the wire.
         fprintf(stderr,
-                "bgfx: scene snapshot (%zu of %zu draws) -> %s: %s\n",
-                snap.scene.size(), scene.size(), dumpPath,
-                Render::saveSceneSnapshot(dumpPath, snap)
+                "bgfx: scene snapshot (%zu of %zu draws, %zu overlays) -> %s: %s\n",
+                snap.scene.size(), scene.size(), snap.overlays.size(), path.c_str(),
+                Render::saveSceneSnapshot(path.c_str(), snap)
                     ? "ok" : "FAILED");
     }
 }

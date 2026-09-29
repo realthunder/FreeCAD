@@ -308,6 +308,7 @@ int usage()
 {
     std::fprintf(stderr,
         "usage: fcscenediff [--camera] [--overlays] [-v] A.fcsd B.fcsd\n"
+        "       fcscenediff --mesh <objectKey, hex> A.fcsd\n"
         "\n"
         "Structurally compares two scene dumps (FC_BGFX_DUMP_SCENE).\n"
         "Camera, viewport and overlays are excluded unless asked for:\n"
@@ -327,11 +328,68 @@ int usage()
 
 }  // namespace
 
+/// `--mesh KEY A.fcsd`: the raw arrays of one object's draws, the ones a
+/// digest can only say differ -- what a backend is actually handed.
+int printMeshes(const char *path, uint64_t key)
+{
+    SceneSnapshot s;
+    if (!loadSceneSnapshot(path, s)) {
+        std::fprintf(stderr, "scenediff: cannot read %s\n", path);
+        return 2;
+    }
+    size_t n = 0;
+    for (const auto &draw : s.scene) {
+        if (draw.objectKey != key)
+            continue;
+        std::printf("draw %zu: %s\n", n++, describe(draw).c_str());
+        const MeshData *mesh = draw.mesh.get();
+        if (!mesh)
+            continue;
+        if (const TextureImage *tex = draw.material.texture.get())
+            std::printf("  texture %dx%d, %zu bytes, key '%s'\n", tex->width, tex->height,
+                        tex->pixels.size(), tex->contentKey.c_str());
+        else
+            std::printf("  texture none\n");
+        std::printf("  identity %d, autozoom %zu\n", int(draw.identity),
+                    draw.material.autozoom.size());
+        for (const auto &az : draw.material.autozoom)
+            std::printf("    scale %g identity %d reset %d billboard %d flip %d at %g %g %g\n",
+                        az.scaleFactor, int(az.identity), int(az.resetmatrix),
+                        int(az.billboard), int(az.datumFlip), az.matrix[12], az.matrix[13],
+                        az.matrix[14]);
+        for (int i = 0; i < mesh->numVertices; ++i) {
+            const float *p = mesh->positions + i * 3;
+            std::printf("  v%-3d %10.4f %10.4f %10.4f", i, p[0], p[1], p[2]);
+            if (mesh->screenOffsets) {
+                const float *o = mesh->screenOffsets + i * 4;
+                std::printf("   px %8.2f %8.2f %8.2f %8.2f", o[0], o[1], o[2], o[3]);
+            }
+            std::printf("\n");
+        }
+        auto indices = [](const char *what, const int32_t *idx, int count) {
+            if (!count)
+                return;
+            std::printf("  %s:", what);
+            for (int i = 0; i < count; ++i)
+                std::printf(" %d", idx[i]);
+            std::printf("\n");
+        };
+        indices("tri", mesh->triangleIndices, mesh->numTriangleIndices);
+        indices("line", mesh->lineIndices, mesh->numLineIndices);
+        indices("point", mesh->pointIndices, mesh->numPointIndices);
+    }
+    if (!n)
+        std::printf("no draw of object %016llx\n", (unsigned long long)key);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     bool withCamera = false;
     bool withOverlays = false;
     bool verbose = false;
+    bool meshes = false;
+    uint64_t meshKey = 0;
     std::vector<const char *> paths;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -341,11 +399,17 @@ int main(int argc, char **argv)
             withOverlays = true;
         else if (arg == "-v")
             verbose = true;
+        else if (arg == "--mesh" && i + 1 < argc) {
+            meshes = true;
+            meshKey = std::strtoull(argv[++i], nullptr, 16);
+        }
         else if (!arg.empty() && arg[0] == '-')
             return usage();
         else
             paths.push_back(argv[i]);
     }
+    if (meshes && paths.size() == 1)
+        return printMeshes(paths[0], meshKey);
     if (paths.size() != 2)
         return usage();
 
