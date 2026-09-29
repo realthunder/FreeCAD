@@ -1178,7 +1178,9 @@ void TopoShape::mapSubElement(const std::vector<TopoShape> &shapes, const char *
                     child.offset = offset;
                     offset += count;
                     child.count = count;
-                    child.elementMap = s.elementMap();
+                    // A child from another table is imported, cached per
+                    // source map (docs/TransactionLog.md sec 27.76 item 2).
+                    child.elementMap = Data::translateElementMap(s.elementMap(), s.Hasher, Hasher);
                     child.tag = s.Tag;
                     if (op)
                         child.postfix = op;
@@ -1204,6 +1206,22 @@ void TopoShape::copyElementMap(const TopoShape &s, const char *op)
 {
     if (s.isNull() || isNull())
         return;
+    // The names of a shape of another table come in with this table's ids,
+    // not as text naming the other's (docs/TransactionLog.md sec 27.76 item
+    // 2); the ids the op's own postfix names -- the external marker's
+    // document, item 4 -- are this table's, and the children hold them.
+    auto elementMap = Data::translateElementMap(s.elementMap(), s.Hasher, Hasher);
+    Data::ElementIDRefs postfixIds;
+    if (op && Hasher) {
+        for (const char *p = strchr(op, '#'); p; p = strchr(p + 1, '#')) {
+            char *end = nullptr;
+            long id = std::strtol(p + 1, &end, 16);
+            if (end != p + 1 && id > 0) {
+                if (auto sid = Hasher->getID(id))
+                    postfixIds.push_back(sid);
+            }
+        }
+    }
     std::vector<Data::MappedChildElements> children;
     TopAbs_ShapeEnum types[] = {TopAbs_VERTEX, TopAbs_EDGE, TopAbs_FACE};
     for (unsigned i=0; i<sizeof(types)/sizeof(types[0]); ++i) {
@@ -1221,7 +1239,8 @@ void TopoShape::copyElementMap(const TopoShape &s, const char *op)
         child.indexedName = Data::IndexedName::fromConst(shapeName(types[i]).c_str(), 1);
         child.offset = 0;
         child.count = count;
-        child.elementMap = s.elementMap();
+        child.elementMap = elementMap;
+        child.sids = postfixIds;
         // If there is op code supplied, we must include child tag even if it's
         // the same as the tag of this shape, because otherwise we won't be able
         // to strip the op code to get back to the original name in history tracing.
@@ -1253,21 +1272,15 @@ void TopoShape::mapSubElement(const TopoShape &other, const char *op, bool force
     static const std::array<TopAbs_ShapeEnum,3> types = 
         {TopAbs_VERTEX,TopAbs_EDGE,TopAbs_FACE};
 
+    // A shape of another table has its names imported into this one's
+    // (docs/TransactionLog.md sec 27.76 item 2): this shape keeps its table,
+    // where it used to take the other's, or keep the other's ids as text.
     auto checkHasher = [this](const TopoShape &other) {
-        if(Hasher) {
-            if(other.Hasher!=Hasher) {
-                if(!getElementMapSize(false)) {
-                    if(FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG))
-                        FC_WARN("hasher mismatch");
-                }else {
-                    // FC_THROWM(Base::RuntimeError, "hasher mismatch");
-                    FC_ERR("hasher mismatch");
-                }
-                Hasher = other.Hasher;
-            }
-        }else
+        if(!Hasher)
             Hasher = other.Hasher;
     };
+    App::StringHasher::ImportMemo importMemo;
+    int importFailed = 0;
 
     for(auto type : types) {
         auto &shapeMap = _Cache->getInfo(type);
@@ -1298,6 +1311,13 @@ void TopoShape::mapSubElement(const TopoShape &other, const char *op, bool force
             {
                 auto &name = v.first;
                 auto &sids = v.second;
+                if (Hasher && other.Hasher && Hasher != other.Hasher) {
+                    Data::MappedName imported;
+                    if (Hasher->importName(name, *other.Hasher, imported, sids, importMemo))
+                        name = imported;
+                    else
+                        ++importFailed;
+                }
                 if(sids.size()) {
                     if (!Hasher)
                         Hasher = sids[0].getHasher();
@@ -1349,6 +1369,9 @@ void TopoShape::mapSubElement(const TopoShape &other, const char *op, bool force
                 mapElement(idx, i);
         }
     }
+    if (importFailed)
+        FC_WARN(importFailed << " element names of tag " << other.Tag
+                << " name a string their table does not have; kept as they were");
 }
 
 std::vector<TopoDS_Shape> TopoShape::getSubShapes(TopAbs_ShapeEnum type, TopAbs_ShapeEnum avoid) const {
@@ -4225,6 +4248,9 @@ TopoShape &TopoShape::makESHAPE(const TopoDS_Shape &shape, const Mapper &mapper,
     Data::MappedName newName;
 
     std::map<Data::IndexedName, std::map<NameKey,NameInfo> > newNames;
+    // Names of an input of another table come in with this one's ids
+    // (docs/TransactionLog.md sec 27.76 item 2).
+    App::StringHasher::ImportMemo importMemo;
 
     // First, collect names from other shapes that generates or modifies the
     // new shape
@@ -4242,8 +4268,14 @@ TopoShape &TopoShape::makESHAPE(const TopoDS_Shape &shape, const Mapper &mapper,
                 const auto &otherElement = otherMap.find(other._Shape,i);
                 // Find all new objects that are a modification of the old object
                 Data::ElementIDRefs sids;
-                NameKey key(info.type, other.getMappedName(
-                            Data::IndexedName::fromConst(info.shapetype, i),true,&sids));
+                Data::MappedName otherName = other.getMappedName(
+                            Data::IndexedName::fromConst(info.shapetype, i),true,&sids);
+                if (Hasher && other.Hasher && Hasher != other.Hasher) {
+                    Data::MappedName imported;
+                    if (Hasher->importName(otherName, *other.Hasher, imported, sids, importMemo))
+                        otherName = imported;
+                }
+                NameKey key(info.type, otherName);
 
                 int k=0;
                 for(auto &newShape : mapper.modified(otherElement)) {

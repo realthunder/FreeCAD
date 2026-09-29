@@ -1060,6 +1060,13 @@ public:
      * owner of the hasher, i.e. if addStringHasher() returns true during save.
      */
     StringHasherRef getStringHasher(int index=-1) const;
+    /** The external marker a name of this document's gets where a shape of
+     * it crosses into the table `hasher` of another document
+     * (docs/TransactionLog.md sec 27.76 item 4): `;:X#<id>`, `<id>` being
+     * this document's Uid as a string of `hasher`, so a stored name says
+     * which document even when the crossing object is gone.
+     */
+    std::string externalTagPostfix(const StringHasherRef &hasher) const;
 
     /// Return the document's own hasher regardless of UseHasher
     StringHasherRef getHasher() const;

@@ -4831,3 +4831,102 @@ class TransactionBranchCases(unittest.TestCase):
         doc.save()
         self.assertEqual({i for i in held if doc.Hasher.getID(i)}, held)
         self.assertEqual({i for i in others if doc.Hasher.getID(i)}, set())
+
+    def testAShapeCrossingDocumentsTakesTheIdsOfItsTable(self):
+        # Sec 27.76 items 1-4, 27.77: a shape made from another document's
+        # comes into this document's string table -- names, held ids, and the
+        # ids its text names -- instead of keeping the other table's numbers
+        # as text, which this table reads as its own strings. The external
+        # marker names the source document by an imported string of its Uid.
+        # With the source closed, the consumers' names read the same, from
+        # this file alone, and nothing asks for a recompute.
+        import re
+
+        import Part
+
+        self.param.SetInt("TransactionLog", 0)
+        B = self.track(FreeCAD.newDocument("CrossB"))
+        box = B.addObject("Part::Box", "Box")
+        fillet = B.addObject("Part::Fillet", "Fillet")
+        fillet.Base = box
+        fillet.Edges = [(1, 1, 1)]
+        B.recompute()
+        B.saveAs(os.path.join(self.dir, "crossb.FCStd"))
+        A = self.track(FreeCAD.newDocument("CrossA"))
+        # So that A's ids are not B's.
+        for i in range(3):
+            A.addObject("Part::Sphere", "Sphere%d" % i)
+        A.recompute()
+        link = A.addObject("App::Link", "Link")
+        link.LinkedObject = fillet
+        comp = A.addObject("Part::Compound", "Comp")
+        comp.Links = [link]
+        fuse = A.addObject("Part::MultiFuse", "Fuse")
+        fuse.Shapes = [link, A.Sphere0]
+        A.recompute()
+        A.saveAs(os.path.join(self.dir, "crossa.FCStd"))
+
+        def expand(hasher, text):
+            def one(m):
+                sid = hasher.getID(int(m.group(1), 16))
+                return expand(hasher, sid.Data) if sid else "<missing>"
+
+            return re.sub(r"#([0-9a-f]+)", one, text)
+
+        def byElement(shape):
+            return {e: n for n, e in shape.ElementMap.items()}
+
+        linked = Part.getShape(link)
+        self.assertTrue(linked.Hasher.isSame(A.Hasher))
+        source = byElement(fillet.Shape)
+        for element, name in byElement(linked).items():
+            # The link's name says what the fillet's says, then the marker.
+            said = expand(A.Hasher, name)
+            self.assertTrue(said.startswith(expand(B.Hasher, source[element])), (element, said))
+            marker = re.search(r";:X#([0-9a-f]+)", name)
+            self.assertTrue(marker, name)
+            self.assertEqual(A.Hasher.getID(int(marker.group(1), 16)).Data, B.Uid)
+
+        def said(doc):
+            return {
+                o: {e: expand(doc.Hasher, n) for e, n in byElement(doc.getObject(o).Shape).items()}
+                for o in ("Comp", "Fuse")
+            }
+
+        before = said(A)
+        self.assertTrue(before["Fuse"])
+        for names in before.values():
+            for text in names.values():
+                self.assertNotIn("<missing>", text)
+        FreeCAD.closeDocument(A.Name)
+        FreeCAD.closeDocument(B.Name)
+        # The source gone: what A's file holds is all there is.
+        os.rename(
+            os.path.join(self.dir, "crossb.FCStd"), os.path.join(self.dir, "crossb.gone")
+        )
+        A = self.track(FreeCAD.openDocument(os.path.join(self.dir, "crossa.FCStd")))
+        self.assertEqual(
+            [d for d in FreeCAD.listDocuments().values() if d.FileName.endswith("crossb.FCStd")],
+            [],
+        )
+        self.assertEqual(said(A), before)
+
+    def testAShapeThatCrossedAsTextAsksForARecompute(self):
+        # Sec 27.76 item 4: a name carrying the external marker as written
+        # before it named its document kept another table's ids as text; the
+        # file's read asks for its owner's recompute, which makes the names
+        # again. A plain feature here, whose name only the check sees.
+        import Part
+
+        self.param.SetInt("TransactionLog", 0)
+        doc = self.track(FreeCAD.newDocument("OldCrossing"))
+        shape = Part.makeBox(1, 1, 1)
+        shape.Tag = 7
+        shape.setElementName("Edge1", "Edge1;:Hbd7,E;:X;:Hbd8:3,E", overwrite=True)
+        old = doc.addObject("Part::Feature", "Old")
+        old.Shape = shape
+        doc.recompute()
+        doc.saveAs(os.path.join(self.dir, "oldcrossing.FCStd"))
+        FreeCAD.closeDocument(doc.Name)
+        doc = self.track(FreeCAD.openDocument(os.path.join(self.dir, "oldcrossing.FCStd")))
+        self.assertIn("Touched", doc.Old.State)

@@ -40,6 +40,9 @@ public:
     {
         Tag = tag;
     }
+    // For translateElementMap, which takes and gives a map.
+    using Data::ComplexGeoData::elementMap;
+    using Data::ComplexGeoData::resetElementMap;
 
     const std::vector<const char*>& getElementTypes() const override
     {
@@ -608,6 +611,50 @@ TEST_F(ElementMapTest, addAndGetChildElementsTest)
     EXPECT_TRUE(std::any_of(result.begin(), result.end(), [](const Data::MappedChildElements& e) {
         return e.indexedName.toString() == "Pong2";
     }));
+}
+
+TEST_F(ElementMapTest, translationIsSharedWhileItLives)
+{
+    // Sec 27.76 item 2, 27.77: a map of one table taken into another comes
+    // out with the other's ids, and one copy serves every taker while it
+    // lives.
+    Base::Reference<App::StringHasher> other(new App::StringHasher);
+    for (const char* s : {"one", "two", "three"}) {
+        _hasher->getID(s);
+    }
+    ElementMapHost source(12);
+    source.Hasher = other;
+    Data::MappedName name("Edge1");
+    name += ";:G;XTR;:H12:7";
+    Data::ElementIDRefs sids;
+    Data::MappedName hashed = name.hashElementName(other, sids);
+    hashed += ";:H12,E";
+    source.setElementName(Data::IndexedName("Edge", 1), hashed, &sids);
+
+    auto map = source.elementMap();
+    auto first = Data::translateElementMap(map, other, _hasher);
+    auto second = Data::translateElementMap(map, other, _hasher);
+    ASSERT_TRUE(first);
+    EXPECT_NE(first, map);
+    EXPECT_EQ(first, second);
+    // Same table: the map itself.
+    EXPECT_EQ(Data::translateElementMap(map, other, other), map);
+
+    ElementMapHost target(13);
+    target.Hasher = _hasher;
+    target.resetElementMap(first);
+    Data::ElementIDRefs held;
+    auto translated = target.getMappedName(Data::IndexedName("Edge", 1), false, &held);
+    ASSERT_TRUE(translated);
+    EXPECT_NE(translated, hashed);
+    ASSERT_FALSE(held.isEmpty());
+    for (const auto& sid : held) {
+        EXPECT_TRUE(sid.isFromSameHasher(_hasher));
+    }
+    // The name says the same thing in its new table.
+    auto sid = _hasher->getID(App::StringID::fromString(translated.dataBytes()));
+    ASSERT_TRUE(sid);
+    EXPECT_EQ(sid.dataToText(), std::string("Edge1;:G;XTR;:H12:7"));
 }
 
 // NOLINTEND(readability-magic-numbers)

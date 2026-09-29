@@ -1503,6 +1503,19 @@ void PropertyPartShape::afterRestore()
     }
     else if (_Shape.getElementMapSize() == 0)
         _Shape.Hasher.reset();
+    else if (_Shape.hasLegacyCrossing()) {
+        // A shape that crossed a document boundary before a name named its
+        // document keeps the other table's ids as text, which this table
+        // reads as its own strings (docs/TransactionLog.md sec 27.76 item
+        // 4): recomputed once, it imports them.
+        auto owner = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer());
+        if (owner && owner->getNameInDocument() && owner->getDocument()
+                  && !owner->getDocument()->testStatus(App::Document::PartialDoc)) {
+            FC_WARN("Recomputation required for " << owner->getFullName()
+                    << ": its element names crossed a document boundary as text");
+            owner->getDocument()->addRecomputeObject(owner);
+        }
+    }
     // What PropertyComplexGeoData::afterRestore() does, against the same
     // data getComplexData() would pick -- but without the ensureRestored()
     // that accessor runs: the restore-failure flag comes from the XML map

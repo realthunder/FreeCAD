@@ -1150,7 +1150,9 @@ static TopoShape _getTopoShape(const App::DocumentObject *obj, const char *subna
         if(canCache(owner) && PropertyShapeCache::getShape(owner,shape)) {
             bool scaled = shape.transformShape(mat,false,true);
             if(owner->getDocument()!=obj->getDocument()) {
-                shape.reTagElementMap(obj->getID(),obj->getDocument()->getStringHasher());
+                shape.reTagElementMap(obj->getID(),obj->getDocument()->getStringHasher(),
+                        owner->getDocument()->externalTagPostfix(
+                            obj->getDocument()->getStringHasher()).c_str());
                 PropertyShapeCache::setShape(obj,shape,subname);
             } else if(scaled || (linked != owner && linkMat.hasScale() != Base::ScaleType::NoScaling))
                 PropertyShapeCache::setShape(obj,shape,subname);
@@ -1181,7 +1183,13 @@ static TopoShape _getTopoShape(const App::DocumentObject *obj, const char *subna
             shape.transformShape(mat*linkMat,false,true);
         else
             shape.transformShape(linkMat,false,true);
-        shape.reTagElementMap(tag,hasher);
+        // A crossing names its document (docs/TransactionLog.md sec 27.76
+        // item 4).
+        if (linked->getDocument() != owner->getDocument())
+            shape.reTagElementMap(tag, hasher,
+                    linked->getDocument()->externalTagPostfix(hasher).c_str());
+        else
+            shape.reTagElementMap(tag,hasher);
 
     } else {
         // Construct a compound of sub objects
@@ -1197,8 +1205,16 @@ static TopoShape _getTopoShape(const App::DocumentObject *obj, const char *subna
             linked = link->getTrueLinkedObject(false,&baseMat);
             if(linked && linked!=owner) {
                 baseShape = Feature::getTopoShape(linked,nullptr,false,nullptr,nullptr,false,false);
-                if(!link->getShowElementValue())
-                    baseShape.reTagElementMap(owner->getID(),owner->getDocument()->getStringHasher());
+                if(!link->getShowElementValue()) {
+                    if (linked->getDocument() != owner->getDocument())
+                        baseShape.reTagElementMap(owner->getID(),
+                                owner->getDocument()->getStringHasher(),
+                                linked->getDocument()->externalTagPostfix(
+                                    owner->getDocument()->getStringHasher()).c_str());
+                    else
+                        baseShape.reTagElementMap(owner->getID(),
+                                owner->getDocument()->getStringHasher());
+                }
             }
         }
         for(auto &sub : owner->getSubObjects()) {
@@ -1242,7 +1258,14 @@ static TopoShape _getTopoShape(const App::DocumentObject *obj, const char *subna
                     shape = baseShape.makETransform(mat,(Data::indexPostfix()+childName).c_str());
                 else {
                     shape = baseShape.makETransform(mat);
-                    shape.reTagElementMap(subObj->getID(),subObj->getDocument()->getStringHasher());
+                    if (linked->getDocument() != subObj->getDocument())
+                        shape.reTagElementMap(subObj->getID(),
+                                subObj->getDocument()->getStringHasher(),
+                                linked->getDocument()->externalTagPostfix(
+                                    subObj->getDocument()->getStringHasher()).c_str());
+                    else
+                        shape.reTagElementMap(subObj->getID(),
+                                subObj->getDocument()->getStringHasher());
                 }
             }
             shapes.push_back(shape);
@@ -1261,7 +1284,9 @@ static TopoShape _getTopoShape(const App::DocumentObject *obj, const char *subna
     if(owner!=obj) {
         bool scaled = shape.transformShape(mat,false,true);
         if(owner->getDocument()!=obj->getDocument()) {
-            shape.reTagElementMap(obj->getID(),obj->getDocument()->getStringHasher());
+            shape.reTagElementMap(obj->getID(),obj->getDocument()->getStringHasher(),
+                    owner->getDocument()->externalTagPostfix(
+                        obj->getDocument()->getStringHasher()).c_str());
             scaled = true; // force cache
         }
         if(canCache(obj) && scaled)

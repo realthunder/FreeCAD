@@ -1552,7 +1552,7 @@ void LinkBaseExtension::checkGeoElementMap(const App::DocumentObject *obj,
     auto geoData = static_cast<Data::ComplexGeoDataPy*>(*pyObj)->getComplexGeoDataPtr();
     std::string _postfix;
     if (linked && obj && linked->getDocument() != obj->getDocument()) {
-        _postfix = Data::externalTagPostfix();
+        _postfix = linked->getDocument()->externalTagPostfix(obj->getDocument()->getStringHasher());
         if (postfix) {
             if (!boost::starts_with(postfix, Data::elementMapPrefix()))
                 _postfix += Data::elementMapPrefix();

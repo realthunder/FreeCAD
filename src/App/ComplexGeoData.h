@@ -321,6 +321,14 @@ public:
      */
     int checkElementMap(std::vector<std::string> * problems = nullptr) const;
 
+    /** Whether the element map carries the external marker as written
+     * before it named its document (docs/TransactionLog.md sec 27.76 item
+     * 4), in a name or in a string a name refers to: a shape that crossed a
+     * document boundary keeping the other table's ids as text, whose owner
+     * recomputes once on restore.
+     */
+    bool hasLegacyCrossing() const;
+
     /// Append the Tag (if and only if it is non zero) into the element map
     virtual void reTagElementMap(long tag,
                                  App::StringHasherRef hasher,

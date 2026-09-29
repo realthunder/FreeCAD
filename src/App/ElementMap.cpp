@@ -47,6 +47,8 @@
 #include <boost/regex.hpp>
 
 #include <QSet>
+#include <mutex>
+#include <unordered_set>
 
 #include "ElementNamingUtils.h"
 
@@ -779,6 +781,19 @@ public:
         return shared_from_this();
     }
 
+    /// This map with `to`'s ids, its names being `from`'s (translateElementMap).
+    ElementMapPtr translate(App::StringHasher &to, const App::StringHasher &from,
+                            App::StringHasher::ImportMemo &memo, int &failed) const;
+
+    /** Whether a name here, or a string one names, carries the external
+     * marker as written before it named its document (`;:X;`, sec 27.76
+     * item 4): a shape that crossed a document boundary when a name kept
+     * the other table's ids as text. `legacy` holds such strings of the
+     * shape's table.
+     */
+    bool hasLegacyCrossing(const App::StringHasher *hasher, const std::unordered_set<long> &legacy,
+                           std::set<const ElementMap*> &visited) const;
+
     /// The pool's buffer for `postfix`, which takes it in if it has none.
     const QByteArray &sharedPostfix(const QByteArray &postfix)
     {
@@ -1451,6 +1466,243 @@ private:
 };
 
 }
+
+
+namespace {
+
+/// A translation kept while its source and its copy live (sec 27.77).
+struct Translation
+{
+    std::weak_ptr<Data::ElementMap> source;
+    std::weak_ptr<Data::ElementMap> result;
+    unsigned long size = 0;
+};
+
+std::mutex translationLock;
+std::map<std::pair<const Data::ElementMap*, const App::StringHasher*>, Translation> translations;
+
+/// The ids `text` names by `#hex`, in order.
+void textIds(const QByteArray &text, std::vector<long> &ids)
+{
+    for (int pos = text.indexOf('#'); pos >= 0; pos = text.indexOf('#', pos + 1)) {
+        int end = pos + 1;
+        while (end < text.size() && std::isxdigit(static_cast<unsigned char>(text[end])))
+            ++end;
+        if (end == pos + 1)
+            continue;
+        bool ok = false;
+        long id = text.mid(pos + 1, end - pos - 1).toLong(&ok, 16);
+        if (ok && id > 0)
+            ids.push_back(id);
+    }
+}
+
+bool hasLegacyMarker(const QByteArray &text)
+{
+    static const QByteArray marker = QByteArray(Data::externalTagPostfix().c_str())
+                                     + Data::elementMapPrefix().c_str();
+    return text.contains(marker);
+}
+
+bool namesLegacy(const QByteArray &text, const std::unordered_set<long> &legacy)
+{
+    if (hasLegacyMarker(text))
+        return true;
+    if (legacy.empty())
+        return false;
+    std::vector<long> ids;
+    textIds(text, ids);
+    for (long id : ids) {
+        if (legacy.count(id))
+            return true;
+    }
+    return false;
+}
+
+/// The strings of `hasher` that carry the old marker, or name one that does:
+/// computed once per table as read (sec 27.76 item 4).
+std::shared_ptr<const std::unordered_set<long>> legacyStrings(const App::StringHasher *hasher)
+{
+    static std::mutex lock;
+    static const App::StringHasher *lastHasher = nullptr;
+    static std::size_t lastSize = 0;
+    static long lastId = 0;
+    static std::shared_ptr<const std::unordered_set<long>> last;
+    std::lock_guard<std::mutex> guard(lock);
+    if (last && hasher == lastHasher && hasher->size() == lastSize && hasher->lastID() == lastId)
+        return last;
+    auto res = std::make_shared<std::unordered_set<long>>();
+    // In id order: what a string refers to is below it.
+    for (const auto &v : hasher->getIDMap()) {
+        const auto &sid = v.second.deref();
+        bool tainted = !sid.isBinary() && !sid.isHashed()
+            && (namesLegacy(sid.data(), *res) || namesLegacy(sid.postfix(), *res));
+        for (const auto &r : sid.relatedIDs()) {
+            if (tainted)
+                break;
+            tainted = res->count(r.value()) != 0;
+        }
+        if (tainted)
+            res->insert(v.first);
+    }
+    lastHasher = hasher;
+    lastSize = hasher->size();
+    lastId = hasher->lastID();
+    last = res;
+    return last;
+}
+
+Data::ElementMapPtr translateCached(const Data::ElementMapPtr &map, App::StringHasher &to,
+                                    const App::StringHasher &from,
+                                    App::StringHasher::ImportMemo &memo, int &failed)
+{
+    auto key = std::make_pair(static_cast<const Data::ElementMap*>(map.get()),
+                              static_cast<const App::StringHasher*>(&to));
+    {
+        std::lock_guard<std::mutex> guard(translationLock);
+        auto it = translations.find(key);
+        if (it != translations.end()) {
+            auto source = it->second.source.lock();
+            auto result = it->second.result.lock();
+            if (source == map && result && it->second.size == map->size())
+                return result;
+            translations.erase(it);
+        }
+    }
+    auto result = map->translate(to, from, memo, failed);
+    std::lock_guard<std::mutex> guard(translationLock);
+    if (translations.size() > 256) {
+        for (auto it = translations.begin(); it != translations.end();) {
+            if (it->second.source.expired() || it->second.result.expired())
+                it = translations.erase(it);
+            else
+                ++it;
+        }
+    }
+    translations[key] = {map, result, map->size()};
+    return result;
+}
+
+} // namespace
+
+namespace Data {
+
+ElementMapPtr ElementMap::translate(App::StringHasher &to, const App::StringHasher &from,
+                                    App::StringHasher::ImportMemo &memo, int &failed) const
+{
+    auto res = std::make_shared<ElementMap>();
+    for (auto &v : indexedNames) {
+        auto &indices = res->indexedNames[v.first];
+        indices.names.resize(v.second.names.size());
+        for (std::size_t i = 0; i < v.second.names.size(); ++i) {
+            for (const MappedNameRef *r = &v.second.names[i]; r; r = r->next.get()) {
+                if (!r->name)
+                    continue;
+                MappedName name;
+                ElementIDRefs sids = r->sids;
+                if (!to.importName(r->name, from, name, sids, memo)) {
+                    // An id its own table does not have: kept as it was.
+                    ++failed;
+                    name = r->name;
+                    sids = r->sids;
+                }
+                name = res->withSharedPostfix(name);
+                auto ret = res->mappedNames.emplace(
+                    name, IndexedName::fromConst(v.first, static_cast<int>(i)));
+                if (!ret.second)
+                    continue;
+                ret.first->first.compact();
+                indices.names[i].append(ret.first->first, sids);
+            }
+        }
+        for (auto &c : v.second.children) {
+            MappedChildElements child = c.second;
+            if (child.elementMap)
+                child.elementMap = translateCached(child.elementMap, to, from, memo, failed);
+            // A child's postfix names ids of the map it is in (hashChildMaps).
+            ElementIDRefs sids;
+            QByteArray postfix;
+            if (to.importText(c.second.postfix, from, postfix, &sids, memo))
+                child.postfix = postfix;
+            else
+                ++failed;
+            for (const auto &sid : c.second.sids) {
+                if (auto here = to.importID(sid, &memo)) {
+                    if (sids.indexOf(here) < 0)
+                        sids.push_back(here);
+                }
+            }
+            child.sids = sids;
+            auto &inserted = indices.children[c.first] = child;
+            auto &info = res->childElements[inserted.postfix];
+            auto src = childElements.constFind(c.second.postfix);
+            if (src != childElements.constEnd())
+                info.index = src->index;
+            info.childMap = &inserted;
+            res->childElementSize += inserted.count;
+        }
+    }
+    return res;
+}
+
+bool ElementMap::hasLegacyCrossing(const App::StringHasher *hasher,
+                                   const std::unordered_set<long> &legacy,
+                                   std::set<const ElementMap*> &visited) const
+{
+    if (!visited.insert(this).second)
+        return false;
+    for (auto &v : this->mappedNames) {
+        if (namesLegacy(v.first.dataBytes(), legacy) || namesLegacy(v.first.postfixBytes(), legacy))
+            return true;
+    }
+    for (auto &v : this->indexedNames) {
+        for (auto &names : v.second.names) {
+            for (const MappedNameRef *r = &names; r; r = r->next.get()) {
+                for (auto &sid : r->sids) {
+                    if (sid.isFromHasher(hasher) && legacy.count(sid.value()))
+                        return true;
+                }
+            }
+        }
+        for (auto &c : v.second.children) {
+            if (namesLegacy(c.second.postfix, legacy))
+                return true;
+            if (c.second.elementMap
+                    && c.second.elementMap->hasLegacyCrossing(hasher, legacy, visited))
+                return true;
+        }
+    }
+    return false;
+}
+
+ElementMapPtr translateElementMap(const ElementMapPtr &map, const App::StringHasherRef &from,
+                                  const App::StringHasherRef &to)
+{
+    if (!map || !from || !to || from == to)
+        return map;
+    App::StringHasher::ImportMemo memo;
+    int failed = 0;
+    auto res = translateCached(map, *to, *from, memo, failed);
+    if (failed)
+        FC_WARN(failed << " element names name a string their table does not have;"
+                          " kept as they were");
+    return res;
+}
+
+bool ComplexGeoData::hasLegacyCrossing() const
+{
+    flushElementMap();
+    if (!_elementMap)
+        return false;
+    std::shared_ptr<const std::unordered_set<long>> legacy;
+    if (Hasher)
+        legacy = legacyStrings(Hasher.get());
+    static const std::unordered_set<long> none;
+    std::set<const ElementMap*> visited;
+    return _elementMap->hasLegacyCrossing(Hasher.get(), legacy ? *legacy : none, visited);
+}
+
+} // namespace Data
 
 std::string ComplexGeoData::getElementMapVersion() const {
     return "4";

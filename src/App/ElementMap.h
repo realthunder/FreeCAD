@@ -57,6 +57,17 @@ struct AppExport MappedChildElements
     ElementIDRefs sids;
 };
 
+/** `map`, whose names are of the table `from`, with the ids of `to`
+ * (docs/TransactionLog.md sec 27.76 item 2, 27.77): every name, held id,
+ * child postfix and child map imported (StringHasher::importName). A copy,
+ * cached per source map and target table while both live, so the shape a
+ * link makes on demand, and every link to the same object, share one.
+ * `map` itself when `from` or `to` is null or they are the same table.
+ */
+AppExport ElementMapPtr translateElementMap(const ElementMapPtr &map,
+                                            const App::StringHasherRef &from,
+                                            const App::StringHasherRef &to);
+
 /** Element map ids of their own (docs/TransactionLog.md sec 27.67).
  *
  * A document's save numbers its element maps (beforeSave) so a map shared

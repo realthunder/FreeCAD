@@ -104,6 +104,7 @@ recompute path. Also, it enables more complicated dependencies beyond trees.
 #include <Base/UnitsApi.h>
 
 #include "Document.h"
+#include "ElementNamingUtils.h"
 #include "private/DocumentP.h"
 #include "Application.h"
 #include "AutoTransaction.h"
@@ -2544,6 +2545,16 @@ std::pair<bool,int> Document::addStringHasher(const StringHasherRef & hasher) co
 
 StringHasherRef Document::getHasher() const {
     return d->Hasher;
+}
+
+std::string Document::externalTagPostfix(const StringHasherRef &hasher) const
+{
+    std::string res = Data::externalTagPostfix();
+    if (hasher) {
+        // Held by what the marker goes into (TopoShape::copyElementMap).
+        res += hasher->getID(Uid.getValueStr().c_str()).toString();
+    }
+    return res;
 }
 
 StringHasherRef Document::getStringHasher(int idx) const {

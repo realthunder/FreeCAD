@@ -267,6 +267,9 @@ void SubShapeBinder::update(SubShapeBinder::UpdateOption options) {
 
     std::vector<Part ::TopoShape> shapes;
     std::vector<std::pair<int,int> > shapeOwners;
+    // The document each shape is of: a copy's is the original's, its own
+    // being temporary (docs/TransactionLog.md sec 27.76 item 4).
+    std::vector<App::Document*> shapeDocs;
     std::vector<const Base::Matrix4D*> shapeMats;
 
     bool forced = (Shape.getValue().IsNull() || (options & UpdateForced)) ? true : false;
@@ -446,6 +449,7 @@ void SubShapeBinder::update(SubShapeBinder::UpdateOption options) {
                     throw Part::NullShapeException("Null shape");
                 shapes.push_back(shape);
                 shapeOwners.emplace_back(sidx, subidx);
+                shapeDocs.push_back((copied && l.getValue() ? l.getValue() : obj)->getDocument());
                 shapeMats.push_back(&res.first->second);
             } catch(Base::Exception &e) {
                 if (isRecomputing()) {
@@ -512,7 +516,7 @@ void SubShapeBinder::update(SubShapeBinder::UpdateOption options) {
                     && shape.Hasher != getDocument()->getStringHasher())
             {
                 ss.str("");
-                ss << Data::externalTagPostfix()
+                ss << shapeDocs[idx]->externalTagPostfix(getDocument()->getStringHasher())
                    << Data::elementMapPrefix()
                    << Part::OpCodes::Shapebinder << ':' << shapeOwners[idx].first
                    << ':' << shapeOwners[idx].second;
