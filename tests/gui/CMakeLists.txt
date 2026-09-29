@@ -600,3 +600,10 @@ fc_add_gui_test(GuiDatumSizeAfterOpen_tests_run
 fc_add_gui_test(GuiPartTessellationReload_tests_run
                 part-tessellation-reload.py
                 --timeout 240)
+
+# A SubShapeBinder keeps its saved Map*Color settings when opened: reading
+# ShapeColor from the file after MapFaceColor switched the mapping off, as
+# a colour picked by the user does (docs/DocumentLoad.md sec 16).
+fc_add_gui_test(GuiBinderMapColorRestore_tests_run
+                binder-map-color-restore.py
+                --timeout 240)
