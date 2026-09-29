@@ -8136,3 +8136,112 @@ matter: the save growing with the history, a switch after a trim reading a
 version whole, the trim time, the link's element tags after a switch, the
 intermittent material-blob adoption, the recompute creep, the SIGSEGV at
 exit. T5 (27.66) after.
+
+### 27.69 The save that grew with the history, chased (user, 2026-09-29)
+
+**Asked (user):** the issues of 27.68 in order; this is the first, a save
+growing 0.92 -> 4.29 s over T4's 1000 steps.
+
+**Where the time went.** The file T4 ends with (1000 steps, 29.9 MB),
+reopened and saved three times, 3.1-3.7 s a save, timed by phase:
+
+| phase | seconds |
+| --- | --- |
+| `VACUUM INTO` (the copy) | 0.08 |
+| `evictVersions` on the copy | 0.59-0.72 |
+| `dropTier("cache")` on the copy | 1.08-1.37 |
+| the copy's `VACUUM` | 0.13-0.16 |
+| the blobs into the archive | 0.46-0.50 |
+
+The retention was the collector (sec 23.5), three times over: the
+eviction's collection, then the tier drop's own mark from the manifests
+and its collection. A mark inserted every value each composite and
+manifest lists into the `held` table, one row at a time -- 44 composites
+and 36 manifests of about 6000 entries each, nearly all the same values
+-- and re-ran its recursive query over all of `held` each round. Its
+SQL, timed alone on the same store, took 0.15 s; the per-part inserts
+and the decoding around them took the rest. A trim paid the same: its
+row removal and its eviction collect twice.
+
+The blobs: `History.db` was 40 MB, over the pack store's member cap (a
+quarter of the 64 MB segment), so it was a file blob, and a file blob
+goes through the writer's stream -- deflated again at every save.
+
+**Fixed:**
+1. *The collector walks in memory.* `HeldGraph` reads the ref edges, the
+   composites' and manifests' kinds and the roots once per operation,
+   numbers every hash (a SHA-1 as its 20 bytes), expands a composite or
+   manifest when a walk first reaches it -- scanning its data for the
+   hashes, no parts built -- and marks each node once. The `held` table
+   is written once, at the end, for the same `DELETE`s as before. The
+   roots query is `UNION ALL`: `UNION` sorted every op's values first.
+   `fc_hash()`, the collector's SQL helper, is gone with it.
+2. *The embedded copy's retention is one collection.*
+   `TransactionStore::dropTier(tier, evict)` removes the versions first
+   and keeps exactly what the two calls one after the other kept: of
+   what every root reaches, the tier's entities go that no manifest
+   reaches and that no kept delta is based on, then whatever only they
+   reached -- three walks over one read of the store.
+3. *A file blob too large for the pack store enters an archive as raw
+   zstd*, as the pack store's members do: compressed once with the same
+   `encodeMember()` and put with `putRawEntry()`. Up to 256 MB; past it,
+   and for a project directory, it streams as before. zstd packs the
+   history tighter than deflate did (40.3 MB to 16.2, was 20.1). Python's
+   `zipfile` before 3.14 cannot read such a member; neither can it read
+   the pack store's, which schema 5 already wrote.
+
+**Checked.** The same file saved under the old and the new code: the
+embedded copies hold the same entities, refs, string ranges, versions,
+rows and ops, one for one. That file has nothing to evict, so the
+combined path has a case of its own:
+`TransactionLogTest.dropTierWithEvictionIsTheTwoCalls` runs the two
+calls and the one on copies of one store -- an evicted version's
+values, cache values the ops alone name, one with an attachment only it
+reaches, the cache base of a kept delta and of a delta the eviction
+takes -- and compares.
+
+**T4 again** (log on, the same seed; 0 errors, every check as in 27.68):
+
+| step | save before | save now | file before | file now | store (+WAL) |
+| --- | --- | --- | --- | --- | --- |
+| 10 | 0.91 s | 0.88 s | 6.7 MB | 6.7 MB | 6.7 (+4.2) MB |
+| 100 | 1.17 s | 0.94 s | 8.3 MB | 8.3 MB | 12.6 (+4.2) MB |
+| 300 | 1.72 s | 1.16 s | 11.5 MB | 11.5 MB | 24.0 (+5.6) MB |
+| 500 | 2.35 s | 1.26 s | 18.8 MB | 16.6 MB | 36.1 (+8.4) MB |
+| 700 | 3.05 s | 1.45 s | 23.1 MB | 20.3 MB | 45.5 (+8.4) MB |
+| 1000 | 4.40 s | 1.74 s | 29.9 MB | 25.9 MB | 63.8 (+8.9) MB |
+
+The trims, the third issue of 27.68, were the same collector: 0.74,
+1.38, 2.21, 7.32 s before, **0.21, 0.44, 0.59, 0.75 s** now. The
+switches are unchanged (the second issue). The reopened file's save is
+1.2-1.4 s, was 3.1-3.7.
+
+**What still grows.** The log-off save holds 0.83-0.86 s; with the log it
+is 1.74 s at step 1000 and the file 25.9 MB, about 19 KB a step, because
+**every op travels**: 13.3 designed a budget -- by size, count or age,
+the oldest transactions dropped from the copy -- and it was never built.
+The copy at step 1000, raw (40.3 MB):
+- `op` 13.8 MB, 130k ops: `ptype` 2.5 MB and `prop` 1.3 MB of repeated
+  type and property names (33 and 118 distinct), `vbefore`/`vafter` 5.2 MB
+  of hex hashes, which `entity` and `ref` keep as 20-byte blobs;
+- its indexes, `op_container` 2.9 MB and the primary key's 1.7 MB, which
+  an adopting store could build for itself;
+- `txn` 3.6 MB, of which the 654 recompute records' scripts are 2.8 MB
+  (4.3 KB each, every recomputed object's property names spelled out);
+- `entity` 14.7 MB: the kept versions' composites and manifests, the ops'
+  values.
+
+**Proposed, not built -- the user's to rule:**
+- (a) the 13.3 budget: the only one that bounds the file. What travels
+  -- the last N steps, a size, the ops since the oldest named version --
+  is a policy;
+- (b) the op table compacted: hashes as blobs, names interned (the store
+  has no schema number, 27.55);
+- (c) the copy without its indexes, built on adopt;
+- (d) recompute records compacted (27.52's F2).
+
+**Gates** (with this): Python 2951 OK (52 skipped, 6 expected failures),
+ctest 847/847 (+1), the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16.
+
+**Next:** the second issue of 27.68, a switch after a trim reading a
+version whole; then the rest in the order 27.68 gives.
