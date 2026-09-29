@@ -141,6 +141,17 @@ public:
                                                       const PropertyContainer& obj,
                                                       const Context& context);
 
+    /** The unit direction of a linear pattern, the second one if \a second,
+     * in the object's own frame and turned round if it is reversed -- what
+     * its steps are taken along. Throws as getPlacements() does for a
+     * missing reference.
+     */
+    static Base::Vector3d getDirection(const PropertyContainer& obj,
+                                       const Context& context,
+                                       bool second = false);
+    /// The axis of a polar or circular pattern, as getDirection() does it
+    static Axis getAxis(const PropertyContainer& obj, const Context& context);
+
     /// A property of a pattern, as a pattern object carries it
     struct PropertySpec
     {

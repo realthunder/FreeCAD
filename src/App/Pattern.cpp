@@ -383,22 +383,7 @@ std::vector<Base::Vector3d> linearSteps(const PropertyContainer& obj,
         throw Base::ValueError("Pattern length too small");
     }
 
-    Base::Vector3d unit;
-    std::vector<std::string> subs;
-    auto linked = getLink(obj, withSuffix("Direction", suffix).c_str(), subs);
-    if (linked) {
-        unit = toLocal(context, Pattern::resolveDirection(linked, subs));
-    }
-    else if (context.defaultReferences) {
-        unit = second ? Base::Vector3d(0, 1, 0) : Base::Vector3d(1, 0, 0);
-    }
-    else {
-        throw Base::ValueError(second ? "No reference for the second direction"
-                                      : "No direction reference specified");
-    }
-    if (getProp<PropertyBool>(obj, withSuffix("Reversed", suffix).c_str())->getValue()) {
-        unit = -unit;
-    }
+    const Base::Vector3d unit = Pattern::getDirection(obj, context, second);
 
     const auto& spacings =
         getProp<PropertyFloatList>(obj, withSuffix("Spacings", suffix).c_str())->getValues();
@@ -472,10 +457,7 @@ std::vector<Base::Placement> polarPlacements(const PropertyContainer& obj,
         return {Base::Placement()};
     }
 
-    auto axis = localAxis(obj, context);
-    if (getProp<PropertyBool>(obj, "Reversed")->getValue()) {
-        axis.direction = -axis.direction;
-    }
+    const auto axis = Pattern::getAxis(obj, context);
 
     bool extent =
         getProp<PropertyEnumeration>(obj, "Mode")->getValue() == static_cast<long>(Mode::Extent);
@@ -1026,6 +1008,40 @@ std::vector<Base::Placement> Pattern::getPlacements(Type type,
             return pointPlacements(obj, context);
     }
     throw Base::ValueError("Unknown pattern type");
+}
+
+Base::Vector3d Pattern::getDirection(const PropertyContainer& obj,
+                                     const Context& context,
+                                     bool second)
+{
+    const char* suffix = second ? "2" : "";
+    Base::Vector3d unit;
+    std::vector<std::string> subs;
+    auto linked = getLink(obj, withSuffix("Direction", suffix).c_str(), subs);
+    if (linked) {
+        unit = toLocal(context, resolveDirection(linked, subs));
+    }
+    else if (context.defaultReferences) {
+        unit = second ? Base::Vector3d(0, 1, 0) : Base::Vector3d(1, 0, 0);
+    }
+    else {
+        throw Base::ValueError(second ? "No reference for the second direction"
+                                      : "No direction reference specified");
+    }
+    if (getProp<PropertyBool>(obj, withSuffix("Reversed", suffix).c_str())->getValue()) {
+        unit = -unit;
+    }
+    return unit;
+}
+
+Pattern::Axis Pattern::getAxis(const PropertyContainer& obj, const Context& context)
+{
+    auto axis = localAxis(obj, context);
+    auto reversed = findProp<PropertyBool>(obj, "Reversed");
+    if (reversed && reversed->getValue()) {
+        axis.direction = -axis.direction;
+    }
+    return axis;
 }
 
 const std::vector<Pattern::PropertySpec>& Pattern::getPropertySpecs(Type type)
