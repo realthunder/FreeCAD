@@ -225,6 +225,14 @@ struct DocumentP
     // record -- by the user, a script, a recompute -- and re-applied over
     // that record once its view provider is finished (phase four).
     std::unordered_map<const App::DocumentObject*, bool> _deferUserVisibility;
+    // Properties App::Document::afterRestore() changed -- a migration in
+    // onDocumentRestored(), say -- while this document's view providers
+    // were parked. Eagerly those updates come after GuiDocument.xml was
+    // read, and overrule it; the drain's sweep (phase two) would deliver
+    // them BEFORE the records, which then won. Replayed in phase four,
+    // just before each object is finished, as afterRestore() has it.
+    std::unordered_map<const App::DocumentObject*, std::vector<std::string>> _deferLateChanges;
+    bool _deferRecordsRead = false;  // GuiDocument.xml parked: what changes now is late
     bool _deferScheduled = false;
     // The drain runs in the eager load's order: every object gets its view
     // provider, then every property its update (the sweep), then the parked
@@ -1169,6 +1177,7 @@ void Document::slotNewObject(const App::DocumentObject& Obj)
 void Document::slotDeletedObject(const App::DocumentObject& Obj)
 {
     d->_deferUserVisibility.erase(&Obj);
+    d->_deferLateChanges.erase(&Obj);
     std::list<Gui::BaseView*>::iterator vIt;
     setModified(true);
 
@@ -1255,6 +1264,15 @@ void Document::slotChangedObject(const App::DocumentObject& Obj, const App::Prop
             && !d->_pcDocument->testStatus(App::Document::Restoring))
         d->_deferUserVisibility[&Obj] = Obj.Visibility.getValue();
     ViewProvider* viewProvider = getViewProvider(&Obj);
+    // After this document's records were read (parked), with the App load
+    // still running: afterRestore(), which the eager load runs after it
+    // read GuiDocument.xml.
+    if (!viewProvider && d->_deferVPs && d->_deferRecordsRead && !d->_deferApplying
+            && d->_pcDocument->testStatus(App::Document::Restoring) && Prop.getName()) {
+        auto &names = d->_deferLateChanges[&Obj];
+        if (std::find(names.begin(), names.end(), Prop.getName()) == names.end())
+            names.emplace_back(Prop.getName());
+    }
     if (viewProvider) {
         ViewProvider::clearBoundingBoxCache();
         try {
@@ -2624,8 +2642,10 @@ void Document::RestoreDocFile(Base::Reader &reader)
                     readObject(xmlReader);
                 xmlReader.readEndElement("ViewProvider",&guard);
             }
-            if (d->_deferVPs)
+            if (d->_deferVPs) {
                 d->_deferBuf += "</ViewProviderData>";
+                d->_deferRecordsRead = true;
+            }
             // This one archive entry is the single biggest thing a large
             // document load parses -- larger than the document itself -- and
             // the view providers in it are almost all default. Report what
@@ -2742,6 +2762,8 @@ void Document::slotStartRestoreDocument(const App::Document& doc)
     // partial-document reload) is dropped: the new file speaks for every
     // object now.
     d->_deferVPs = Gui::RenderParams::getProgressiveLoad();
+    d->_deferRecordsRead = false;
+    d->_deferLateChanges.clear();
     d->_deferBuf.clear();
     d->_deferCount = 0;
     d->_deferReader.reset();
@@ -3472,6 +3494,15 @@ void Document::runDeferredRestoreSlice()
                             getViewProvider(obj));
                     fresh = true;
                 }
+                auto late = d->_deferLateChanges.find(obj);
+                if (late != d->_deferLateChanges.end()) {
+                    auto names = std::move(late->second);
+                    d->_deferLateChanges.erase(late);
+                    for (const auto &name : names) {
+                        if (auto prop = obj->getPropertyByName(name.c_str()))
+                            slotChangedObject(*obj, *prop);
+                    }
+                }
                 if (vpd && (fresh || vpd->testStatus(Gui::isRestoring))) {
                     FC_TIME_INIT(tFinish);
                     vpd->setStatus(Gui::isRestoring, false);
@@ -3600,6 +3631,8 @@ void Document::finishDeferredRestore()
     d->_deferFinish.clear();
     d->_restoreDefaults.clear();
     d->_deferUserVisibility.clear();
+    d->_deferLateChanges.clear();
+    d->_deferRecordsRead = false;
     d->_deferVPs = false;
     // One of the two phases that outlive the blocking open; the visual drain
     // reports the other through Application::setBuildingVisuals().

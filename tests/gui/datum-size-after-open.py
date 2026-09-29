@@ -30,6 +30,16 @@ plane has its saved size; and across all ten the enclosing Part's origin
 has one size (the pass re-sized only the Body's origin, and the Part's
 had been sized before the plane grew in some opens and after it in
 others: 50 in six, 60 in four).
+
+Third scene, the same file's last difference: a visible origin whose
+axes a 2021 build saved at its planes' size, without the origin point a
+later build added. Opening migrates the point in
+(App::Origin::onDocumentRestored, inside afterRestore), and the origin's
+update re-applies today's rule, axes 1.5 times the planes -- eagerly
+after GuiDocument.xml was read, so over the axes' records; the drain
+swept that update before the records, which put the saved size back
+(27 against 40.5). Claims, per open mode, three opens each: the point is
+back and every axis is 1.5 times the planes.
 """
 import os
 import time
@@ -160,6 +170,49 @@ def reopen_unbounded(path, progressive):
     return size, box, porigin
 
 
+def build_legacy_axes(path):
+    doc = FreeCAD.newDocument("LegacyAxes")
+    for i in range(NFILL):
+        b = doc.addObject("Part::Box", "Fill%d" % i)
+        b.Placement.Base = V(200 + (i % 20) * 12, (i // 20) * 12, 0)
+    part = doc.addObject("App::Part", "APart")
+    part.addObject(doc.addObject("Part::Box", "ABox"))
+    doc.recompute()
+    g = FreeCADGui.getDocument(doc.Name)
+    origin = part.Origin
+    g.getObject(origin.Name).Visibility = True
+    wait(1)
+    # As a 2021 build saved it: no origin point, the axes at the planes'
+    # size.
+    point = [f for f in origin.OriginFeatures if f.Role == "Origin"][0]
+    origin.OriginFeatures = [f for f in origin.OriginFeatures if f != point]
+    doc.removeObject(point.Name)
+    plane = [f for f in origin.OriginFeatures if f.Role == "XY_Plane"][0]
+    size = g.getObject(plane.Name).Size
+    for f in origin.OriginFeatures:
+        if f.Role.endswith("_Axis"):
+            g.getObject(f.Name).Size = size
+    doc.saveAs(path)
+    FreeCAD.closeDocument(doc.Name)
+    wait(0.5)
+
+
+def reopen_legacy_axes(path, progressive):
+    RENDER.SetBool("ProgressiveLoad", progressive)
+    doc = FreeCAD.openDocument(path)
+    while FreeCADGui.isBuildingVisuals():
+        QtCore.QCoreApplication.processEvents()
+    wait(2)
+    g = FreeCADGui.getDocument(doc.Name)
+    feats = doc.getObject("APart").Origin.OriginFeatures
+    planes = [g.getObject(f.Name).Size for f in feats if f.Role.endswith("_Plane")]
+    axes = [g.getObject(f.Name).Size for f in feats if f.Role.endswith("_Axis")]
+    point = any(f.Role == "Origin" for f in feats)
+    FreeCAD.closeDocument(doc.Name)
+    wait(0.5)
+    return planes, axes, point
+
+
 def reopen(path, progressive):
     RENDER.SetBool("ProgressiveLoad", progressive)
     doc = FreeCAD.openDocument(path)
@@ -214,6 +267,18 @@ def run():
     check("the Part's origin, over the Body the plane grew in, has one size "
           "in every open", all(close(o, porigins[0]) for o in porigins),
           porigins)
+
+    apath = os.path.join(OUT, "legacy-axes.FCStd")
+    build_legacy_axes(apath)
+    for progressive in (False, True):
+        mode = "progressive" if progressive else "eager"
+        for i in range(3):
+            planes, axes, point = reopen_legacy_axes(apath, progressive)
+            check("%s open %d: the origin point is migrated in" % (mode, i + 1), point)
+            check("%s open %d: the origin's axes are 1.5 times its planes"
+                  % (mode, i + 1),
+                  bool(axes) and all(abs(a - 1.5 * max(planes)) < 1e-3 for a in axes),
+                  "axes %s planes %s" % (axes, planes))
 
 
 def main():
