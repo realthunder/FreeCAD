@@ -8454,6 +8454,56 @@ the second with a trace showing the two threads); after, 12 of 12 clean.
 expected failures; +2), ctest 848/848, the GUI checks RC 15, BC 27, VC 18,
 PC 28, FC 16.
 
+### 27.74 What a copy-on-change instance refers by; a recreated shape's hasher (user, 2026-09-29)
+
+**Asked (user), of 27.72:** a copy-on-change link makes customized objects
+and links to them, so those objects are what should be referred to by
+name.
+
+**They are, and they keep their names.** The body in the check has a pad
+and a fillet on two of its edges; the instance's copy has its own
+(`Fillet001` on `Pad001`), and a `PropertyLinkSub` refers to the link's
+`Edge1`. Stored shadow names, read from the saved XML
+(`dumpPropertyContent`):
+- the copy's fillet names the copy's pad edges, tagged by the copy's own
+  objects (`;#e;:Hdd5,E.Edge3`);
+- the reference into the link names the copy's element, ending in the
+  copy's fillet tag (`...;:Hdd6:7,E;:Hdd7,E.Edge1`, `dd7` being
+  `Fillet001`) -- not a name of the link's own shape, which is 27.72's
+  point: the link's re-minted ids are not referred to;
+- all of them the same through an edit on another branch and the switch
+  back, a cold undo of an edit, an instance deleted on another branch and
+  brought back by the switch, a recompute, and a reopen.
+
+**The check found a defect: a recreated object's shape lost its hasher.**
+With the instance deleted on `side` and brought back by the switch to
+`main`, the version check warned `Sketch001.Shape: 1.15.80001.4 ->
+0.15.80001.4`, and after a save the reopened file had `Sketch001`,
+`Pad001` and `Fillet001` touched. `PropertyPartShape::Restore` takes the
+shape's hasher only from `HasherIndex`, which a captured value never
+writes -- the index is into the save's own hasher table, which a capture on
+the worker cannot touch -- and reads the element map into the live
+`_Shape` with whatever hasher it holds. An object that exists still holds
+the document's, so 27.72's cases came back right; an object the log
+recreates holds none, and the map restore skips every string id without
+one (`"No hasher"`): the names stay, nothing holds the strings behind
+them, and the version reads `0.`. It predates 27.72 (the first switch of
+27.72's probe showed it, for the bare version then).
+
+**As built.** With an owner and no `HasherIndex`, a version starting `1.`
+-- what 27.72 now writes for a value on the document's hasher -- takes the
+document's hasher before the map is read. A file save with an owner still
+writes the index, so only the log's values take the new branch.
+
+Tests: `TransactionBranchCases.testSwitchRecreatesAShapeOnTheFileHasher` (a
+fuse deleted on `side`, the switch back, a save, a reopen: nothing touched;
+fails without the fix, `['Fuse']`), `testCopyOnChangeReferencesKeepTheirNames`
+(the instance above: the shadow names through the delete and the switch
+back, a recompute, a reopen).
+
+**Gates:** Python 2955 OK (52 skipped, 6 expected failures; +2), ctest
+848/848, the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16.
+
 **Next:** the sixth issue of 27.68, the recompute creep (the model's, log
 off too; 27.71 put `Helix001` failing at every step in it); then the
 SIGSEGV at exit.
