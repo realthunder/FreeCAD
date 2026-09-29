@@ -28,6 +28,7 @@
 # include <mutex>
 # include <sstream>
 # include <unordered_map>
+# include <boost/algorithm/string/predicate.hpp>
 # include <Bnd_Box.hxx>
 # include <BRepBndLib.hxx>
 # include <BRepBuilderAPI_Copy.hxx>
@@ -1424,6 +1425,14 @@ void PropertyPartShape::Restore(Base::XMLReader &reader)
         _Shape.Hasher = owner->getDocument()->getStringHasher(hasher_idx);
         if(save_hasher)
             _Shape.Hasher->Restore(reader);
+    } else if(owner && boost::starts_with(_Ver, "1.")) {
+        // A value the transaction log captured from a detached copy names no
+        // hasher index, and its version's "1." says it used the document's.
+        // The element map below is read with whatever hasher _Shape holds: a
+        // live object's is still the document's, but an object the log
+        // recreates has none, and its map lost every string id it held
+        // (docs/TransactionLog.md sec 27.74).
+        _Shape.Hasher = owner->getDocument()->getStringHasher();
     }
 
     if(has_ver) {

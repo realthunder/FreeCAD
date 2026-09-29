@@ -4549,3 +4549,126 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertEqual(dict(doc.C.Shape.ElementMap), before)
         step("again", lambda: doc.C.touch())
         self.assertEqual(dict(doc.C.Shape.ElementMap), before)
+
+    def testSwitchRecreatesAShapeOnTheFileHasher(self):
+        # Sec 27.74: an object removed on one branch comes back by the
+        # switch to the other with its shape on the file's hasher. A value
+        # captured from a detached copy names no hasher index, and the
+        # recreated object had no hasher to read its element map with: the
+        # map kept its names and lost the string ids behind them, and once
+        # saved, the file asked for a recompute at its next open.
+        doc = self.track(FreeCAD.newDocument("RecreatedHasher"))
+        doc.UndoMode = 1
+        doc.saveAs(os.path.join(self.dir, "recreatedhasher.FCStd"))
+
+        def step(name, fn):
+            doc.openTransaction(name)
+            fn()
+            doc.recompute()
+            doc.commitTransaction()
+
+        def build():
+            fuse = doc.addObject("Part::MultiFuse", "Fuse")
+            box = doc.addObject("Part::Box", "Box")
+            fuse.Shapes = [box, doc.addObject("Part::Cylinder", "Cyl")]
+
+        step("fuse", build)
+        self.assertTrue(doc.Fuse.Shape.ElementMapSize)
+        before = dict(doc.Fuse.Shape.ElementMap)
+        doc.save()
+        doc.createTransactionBranch("side")
+        step("delete", lambda: doc.removeObject("Fuse"))
+        doc.save()
+        doc.switchTransactionBranch("main")
+        self.assertEqual(dict(doc.Fuse.Shape.ElementMap), before)
+        self.assertNotIn("Touched", doc.Fuse.State)
+        doc.save()
+        path = doc.FileName
+        FreeCAD.closeDocument(doc.Name)
+        doc = self.track(FreeCAD.openDocument(path))
+        self.assertEqual([o.Name for o in doc.Objects if "Touched" in o.State], [])
+
+    def testCopyOnChangeReferencesKeepTheirNames(self):
+        # Sec 27.74: a copy-on-change link makes customized objects and
+        # links to them, and what refers by element name refers to those:
+        # a fillet in the copy names the copy's pad edges, and a reference
+        # into the link names the copy's elements, not the link's own shape.
+        # Both keep their mapped names through an instance deleted on one
+        # branch and brought back by the switch, a recompute and a reopen.
+        import io
+        import re
+        import zipfile
+
+        import Part
+
+        doc = self.track(FreeCAD.newDocument("CopyReferences"))
+        doc.UndoMode = 1
+        doc.saveAs(os.path.join(self.dir, "copyreferences.FCStd"))
+
+        def step(name, fn):
+            doc.openTransaction(name)
+            fn()
+            doc.recompute()
+            doc.commitTransaction()
+
+        def build():
+            body = doc.addObject("PartDesign::Body", "Body")
+            sketch = body.newObject("Sketcher::SketchObject", "Sketch")
+            corners = [(0, 0), (10, 0), (10, 10), (0, 10)]
+            for (x0, y0), (x1, y1) in zip(corners, corners[1:] + corners[:1]):
+                sketch.addGeometry(
+                    Part.LineSegment(FreeCAD.Vector(x0, y0, 0), FreeCAD.Vector(x1, y1, 0))
+                )
+            pad = body.newObject("PartDesign::Pad", "Pad")
+            pad.Profile = sketch
+            body.addProperty("App::PropertyLength", "Config_L", "Config")
+            body.setPropertyStatus("Config_L", "CopyOnChange")
+            body.Config_L = 10
+            pad.setExpression("Length", "hiddenref(Body.Config_L)")
+            doc.recompute()
+            fillet = body.newObject("PartDesign::Fillet", "Fillet")
+            fillet.Base = (pad, ["Edge1", "Edge3"])
+            fillet.Radius = 1
+            link = doc.addObject("App::Link", "A")
+            link.LinkedObject = body
+            link.LinkCopyOnChange = "Owned"
+            link.Config_L = 20
+            doc.recompute()
+            ref = doc.addObject("App::FeaturePython", "Ref")
+            ref.addProperty("App::PropertyLinkSub", "S")
+            ref.S = (link, ["Edge1"])
+
+        def shadows(obj, prop):
+            data = bytes(obj.dumpPropertyContent(prop, Compression=0))
+            archive = zipfile.ZipFile(io.BytesIO(data))
+            xml = "".join(archive.read(n).decode() for n in archive.namelist())
+            return re.findall(r'shadow="([^"]*)"', xml)
+
+        def references(doc):
+            copy = doc.A.getLinkedObject(False)
+            fillet = [o for o in copy.Group if o.isDerivedFrom("PartDesign::Fillet")][0]
+            return fillet.Name, shadows(fillet, "Base"), shadows(doc.Ref, "S")
+
+        step("build", build)
+        doc.save()
+        name, filletRefs, linkRefs = references(doc)
+        self.assertNotEqual(name, "Fillet")
+        tag = ";:H%x," % doc.getObject(name).ID
+        # The copy's own elements: the reference into the link ends in the
+        # copy's fillet tag, and the fillet's in its pad's names.
+        self.assertEqual(len(filletRefs), 2)
+        self.assertIn(tag, linkRefs[0])
+        before = references(doc)
+        doc.createTransactionBranch("side")
+        step("delete", lambda: (doc.removeObject("Ref"), doc.removeObject("A")))
+        doc.save()
+        doc.switchTransactionBranch("main")
+        self.assertEqual(references(doc), before)
+        step("recompute", lambda: doc.A.getLinkedObject(False).touch())
+        self.assertEqual(references(doc), before)
+        doc.save()
+        path = doc.FileName
+        FreeCAD.closeDocument(doc.Name)
+        doc = self.track(FreeCAD.openDocument(path))
+        self.assertEqual(references(doc), before)
+        self.assertEqual([o.Name for o in doc.Objects if "Touched" in o.State], [])
