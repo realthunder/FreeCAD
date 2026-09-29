@@ -477,3 +477,52 @@ class RegressionTests(unittest.TestCase):
     def test_OptimalBox(self):
         box = Part.makeBox(1, 1, 1)
         self.assertTrue(box.optimalBoundingBox(True, False).isValid())
+
+    def test_read_brep_with_a_long_fixed_notation_real(self):
+        """An unbounded edge's range written as a 101-digit integer part.
+
+        Fixed notation from the writer, as in a user file (a PartDesign
+        datum line): OCCT 8 read reals through a 32-byte buffer, split the
+        token and every field after it, and spun forever on the failed
+        stream -- the document never opened.
+        """
+        import os
+        import tempfile
+
+        big = "2" + "0" * 16 + "318057822195198360936721617127890562779562655115495677544" \
+              "340762121626939971713630208.000000000000000"
+        brep = "\n".join([
+            "",
+            "CASCADE Topology V1, (c) Matra-Datavision",
+            "Locations 0",
+            "Curve2ds 0",
+            "Curves 1",
+            "1 0 0 0 0 0 1 ",
+            "Polygon3D 0",
+            "PolygonOnTriangulations 0",
+            "Surfaces 0",
+            "Triangulations 0",
+            "",
+            "TShapes 1",
+            "Ed",
+            " 1e-07 1 1 0",
+            "1  1 0 -%s %s" % (big, big),
+            "0",
+            "",
+            "1101010",
+            "*",
+            "",
+            "+1 0 ",
+            ""])
+        fd, path = tempfile.mkstemp(suffix=".brp")
+        try:
+            with os.fdopen(fd, "w") as f:
+                f.write(brep)
+            shape = Part.Shape()
+            shape.read(path)
+        finally:
+            os.remove(path)
+        self.assertEqual(shape.ShapeType, "Edge")
+        first, last = shape.Edges[0].ParameterRange
+        self.assertAlmostEqual(first / 2e100, -1.0)
+        self.assertAlmostEqual(last / 2e100, 1.0)

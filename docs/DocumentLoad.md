@@ -1189,7 +1189,15 @@ examined: a Body's bounding box wider in one file, and small pixel-only
 differences in two. Two files did not open at all within 400 s, eagerly
 or progressively (`LS3_Lead_Screw_Mach_02_12.12.23`, and its sibling was
 skipped with it): stuck in `BRepTools::Read` under
-`App::Document::restoreDeferredFile`, a load defect of its own.
+`App::Document::restoreDeferredFile`, a load defect of its own -- an OCCT
+8.0 regression: `GeomTools::GetReal` reads a real through a 32-byte buffer
+(256 in 7.7.2), and the file's datum line wrote its +-2e100 range in fixed
+notation, 101 digits; split, every later field came from the wrong token
+and the reader spun forever. Fixed in the OCCT fork (`310bfaf34f`,
+`LinkVibe-801`); both files now open (9.5 s eager, 5.9 s progressive --
+slow for 30 and 83 objects, not looked at). Test: Part
+`RegressionTests.test_read_brep_with_a_long_fixed_notation_real`, which
+hangs before the fix.
 
 **Not defects, and why the test does not judge them:**
 - a coarse first tessellation (27 against 62 points on a circle) that the
