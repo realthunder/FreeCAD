@@ -570,9 +570,18 @@ def open_file(path, progressive):
     wall = time.perf_counter() - t
     # The level ladder refines coarse first tessellations on idle: wait it
     # out, or a coarser polygon reads as a different bounding box.
-    t2 = time.perf_counter()
-    while time.perf_counter() - t2 < SETTLE_S:
+    # And long enough after the last slow event call for the timers it held
+    # up to run: the first render of a process took 4.9 s in ONE call,
+    # which ended the wait with the post-load sizing (origins, datums)
+    # still pending -- a first eager open that no later one agreed with.
+    t2 = quiet = time.perf_counter()
+    while True:
+        now = time.perf_counter()
+        if now - t2 >= SETTLE_S and now - quiet >= 1.0:
+            break
         QtCore.QCoreApplication.processEvents()
+        if time.perf_counter() - now > 0.2:
+            quiet = time.perf_counter()
     docs = [FreeCAD.getDocument(n) for n in FreeCAD.listDocuments() if n not in before]
     if doc not in docs:
         docs.insert(0, doc)
