@@ -1870,6 +1870,10 @@ View3DInventorViewer::~View3DInventorViewer()
     // to prevent following OpenGL error message: "Texture is not valid in the current context. Texture has not been destroyed"
     aboutToDestroyGLContext();
 
+    // A panel's on-view labels outlive this view when a closed document
+    // takes it first: out of its graph now, while this is still itself
+    releaseOnViewParameters();
+
     // It can happen that a document has several MDI views and when the about to be
     // closed 3D view is in edit mode the corresponding view provider must be restored
     // because otherwise it might be left in a broken state

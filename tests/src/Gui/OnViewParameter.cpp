@@ -468,6 +468,18 @@ TEST_F(OnViewParameterTest, theWholeNumberIsPickable)
     }
 }
 
+TEST_F(OnViewParameterTest, aLabelOutlivesItsView)
+{
+    // A closed document takes its view first and the panel holding the
+    // labels after: the view takes their dimensions out of its graph as it
+    // goes, and a label is not to reach it afterwards
+    addLabel();
+    ASSERT_GT(scene->getNumChildren(), 0);
+    mirror.reset();
+    EXPECT_EQ(scene->getNumChildren(), 0);
+    labels.clear();
+}
+
 TEST_F(OnViewParameterTest, theBoxTakesTheLabelsSize)
 {
     Gui::EditableDatumLabel* label = addLabel();

@@ -179,6 +179,14 @@ private:
     void notifyChanged();
     /// Follow the view's camera, the node it has now
     void attachCameraSensor();
+    /// Stop following it
+    void dropCameraSensor();
+    /** The view is going. While it is still itself (\a viewAlive) the
+     * label is taken out of it as deactivate() would; after, it only lets
+     * go of it: nothing of the view may be reached then.
+     */
+    void forgetViewer(bool viewAlive);
+    friend class ViewerContext;
     static void eventCallback(void* data, SoEventCallback* cb);
     void handleEvent(SoEventCallback* cb);
 

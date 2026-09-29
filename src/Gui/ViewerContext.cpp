@@ -48,6 +48,7 @@
 #include <Base/PyObjectBase.h>
 
 #include "Document.h"
+#include "EditableDatumLabel.h"
 #include "InventorBase.h"
 #include "Selection.h"
 #include "ViewProvider.h"
@@ -345,6 +346,18 @@ ViewerContext::~ViewerContext()
     // did not is at least not left in it.
     if (editRoot && editRoot != ownEditRoot.get()) {
         editRoot->detachView(this);
+    }
+    // Whatever the implementation did not release: forgotten, not taken
+    // out, which would reach a virtual
+    for (EditableDatumLabel* label : std::vector<EditableDatumLabel*>(onViewLabels)) {
+        label->forgetViewer(false);
+    }
+}
+
+void ViewerContext::releaseOnViewParameters()
+{
+    for (EditableDatumLabel* label : std::vector<EditableDatumLabel*>(onViewLabels)) {
+        label->forgetViewer(true);
     }
 }
 

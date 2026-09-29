@@ -23,6 +23,7 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
+# include <algorithm>
 # include <QApplication>
 # include <QKeyEvent>
 # include <QLineEdit>
@@ -97,6 +98,7 @@ EditableDatumLabel::EditableDatumLabel(ViewerContext* view,
 {
     initColors();
     if (viewer) {
+        viewer->onViewLabels.push_back(this);
         viewer->addOnViewParameter(this);
     }
     // NOLINTBEGIN
@@ -146,10 +148,7 @@ EditableDatumLabel::EditableDatumLabel(ViewerContext* view,
 
 EditableDatumLabel::~EditableDatumLabel()
 {
-    deactivate();
-    if (viewer) {
-        viewer->removeOnViewParameter(this);
-    }
+    forgetViewer(true);
     transform->unref();
     clickCallback->removeEventCallback(SoMouseButtonEvent::getClassTypeId(), eventCallback, this);
     clickCallback->unref();
@@ -204,9 +203,8 @@ void EditableDatumLabel::attachCameraSensor()
     }
 }
 
-void EditableDatumLabel::deactivate()
+void EditableDatumLabel::dropCameraSensor()
 {
-    stopEdit();
     connCameraReplaced.disconnect();
 
     if (cameraSensor) {
@@ -216,6 +214,31 @@ void EditableDatumLabel::deactivate()
         delete cameraSensor;
         cameraSensor = nullptr;
     }
+}
+
+void EditableDatumLabel::forgetViewer(bool viewAlive)
+{
+    if (!viewer) {
+        deactivate();
+        return;
+    }
+    if (viewAlive) {
+        deactivate();
+        viewer->removeOnViewParameter(this);
+    }
+    else {
+        // The camera node goes with the view
+        dropCameraSensor();
+    }
+    auto& labels = viewer->onViewLabels;
+    labels.erase(std::remove(labels.begin(), labels.end(), this), labels.end());
+    viewer = nullptr;
+}
+
+void EditableDatumLabel::deactivate()
+{
+    stopEdit();
+    dropCameraSensor();
 
     if (viewer) {
         if (SoGroup* parent = viewer->getOnViewParameterRoot()) {
@@ -229,7 +252,7 @@ void EditableDatumLabel::deactivate()
 
 void EditableDatumLabel::startEdit(double val, QObject* eventFilteringObj, bool visibleToMouse)
 {
-    if (isInEdit()) {
+    if (isInEdit() || !viewer) {
         return;
     }
 
@@ -654,6 +677,9 @@ void EditableDatumLabel::setLabelRange(double val)
 void EditableDatumLabel::setLabelRecommendedDistance()
 {
     // Takes the 3d view size, and set the label distance to a % of that, such that the distance does not depend on the zoom level.
+    if (!viewer) {
+        return;
+    }
     float width = -1.;
     float length = -1.;
     viewer->getDimensions(width, length);

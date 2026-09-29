@@ -378,6 +378,10 @@ MirrorViewer::MirrorViewer(Document* doc, SoNode* scene,
 
 MirrorViewer::~MirrorViewer()
 {
+    // A panel's labels outlive this view when a closed document takes it
+    // first; their dimensions come out of the served graph now
+    releaseOnViewParameters();
+
     // A connection can drop in the middle of an edit, and this view is
     // what the document's edit session was bound to. Ending the session
     // first is what keeps Gui::Document from being left holding a pointer

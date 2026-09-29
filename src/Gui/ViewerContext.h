@@ -701,9 +701,23 @@ protected:
     void bindEditingRoot(EditingRoot* root);
     void unbindEditingRoot();
 
+    /** Tell the on-view parameters made for this view that it is going.
+     *
+     * A panel that holds labels can outlive the view they were made for: a
+     * closed document takes its views first and the dialog is deleted
+     * after. Taking a label's dimension out of the view reaches
+     * getOnViewParameterRoot(), so an implementation calls this from its
+     * OWN destructor, while it is still itself; the base destructor only
+     * makes the labels forget it.
+     */
+    void releaseOnViewParameters();
+
 private:
+    friend class EditableDatumLabel;
     /// This view's private root, built on first need.
     std::unique_ptr<EditingRoot> ownEditRoot;
+    /// Every label made for this view and not yet gone
+    std::vector<EditableDatumLabel*> onViewLabels;
 };
 
 /** Make \a context the current view for this scope's dynamic extent.
