@@ -8349,3 +8349,111 @@ ctest 848/848 (+1), the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16.
 **Next:** the fourth issue of 27.68, a link's element tags re-minted
 after a switch; then the material blob, the recompute creep, the SIGSEGV
 at exit.
+
+### 27.72 A link's element tags after a switch, chased: not the log; the element map version it wrote (2026-09-29)
+
+**Asked (user):** the fourth issue of 27.68 -- after a switch, a link's own
+shape is made with new element tags (`#2c;:Ha17,E` -> `#37;:Ha17,E`).
+
+**What moves is a hasher id, and it moves with the log off too.** In
+`#2c;:Ha17,E` the tag is `:Ha17`, the link's object id, and it does not
+change; `#2c` is the id of a string in the file's hasher -- the copy's own
+name for the element, `#21;:Hf89,E`, hashed as the link retags it
+(`reTagElementMap` in `_getTopoShape`). A link's shape is made on demand and
+stored nowhere; its strings are held by the link's shape cache
+(`PropertyShapeCache`) and nothing else. Change the link and the cache goes;
+the next save's compaction (27.44, 27.69) drops what nothing holds; the next
+making of the shape mints the same string under a new id. A minimal case --
+a copy-on-change link, its shape made, an edit of its `Config_L`, a save,
+then back -- gives `#2c` -> `#37` through a switch and `#29` -> `#34` through
+a plain undo **with the log off**. The same case with the shape made again
+before the save (the cache then holds the strings through it) keeps the
+ids, log on or off.
+
+**Nothing persistent refers to those ids.** A reference into a link's
+element resolves against the linked object (`GeoFeature::resolveElement`
+takes `getLinkedObject(true)`), so it names the copy's element, whose
+strings the copy's stored shape holds. A consumer of the link's shape --
+a `Part::Compound` of the link -- stores names built on the link's ids, and
+holding them keeps them: across a switch that rebuilds the link's copy, and
+across the compound's own recompute after, its element map is unchanged.
+**Not a defect; nothing changed for it.** T4 reports the link's shape
+apart, as 27.68 made it.
+
+**Found on the way: a value read back from the log failed the element map
+version check.** The switch of the minimal case warned
+`Recomputation required ... geo element version change in Pad001.AddSubShape:
+15.80001.4 -> 1.15.80001.4`. A shape property writes its element map version
+with a prefix, `1.` when the shape uses the document's hasher and `0.` when
+not (`PropertyComplexGeoData::getElementMapVersion`), but only when it has
+an owner; the log captures detached copies (27.67 item 2), which have none,
+so every shape value in the log carried the bare `15.80001.4` unless the
+live value still had the version a file restore gave it. A restore from a
+row compared it, found no prefix, took it for a version change and kept the
+bare version. Outside a file restore that asks for nothing (no object was
+touched), but the next save wrote the bare version, and **the next open of
+the file marked the object for recompute** -- `Pad001`, its body and a
+compound of the link, in the case above; a fuse over a box whose length was
+edited on the other branch, in the test; and the same fuse after a cold undo
+of the edit (the row's before value), with no branch at all.
+
+**As built.** A detached copy captured by the log writes the version its
+owner's save would: `PropertyComplexGeoData::getElementMapVersion` takes the
+document from `capturingDocument()` when there is no owner, and
+`PropertyPartShape::Save` asks it when a capture is running (without one, an
+ownerless save writes as before). A primitive's element map is empty, which
+the check lets through, so a box alone never showed it.
+
+Tests: `TransactionBranchCases.testSwitchKeepsTheElementMapVersion` (a fuse,
+the box's length edited on `side`, a switch back, a save, a reopen: nothing
+touched; fails without the fix, `['Fuse']`),
+`testSwitchKeepsTheNamesAConsumerMadeOfALink` (the compound above).
+
+### 27.73 The intermittent material blob, chased: two threads, one scratch name (2026-09-29)
+
+**Asked (user):** the fifth issue of 27.68 -- `testSwitchMakesNoOriginOfItsOwn`
+failing now and then with `FileBlobManager: cannot adopt missing file
+.../FreeCAD_Doc_<uuid>_.../1e39ec8b....FCMat` while making the copy of a
+copy-on-change link. With 27.72's two cases just before it, it failed in a
+full suite run too, and in 1 of 6 runs of `TransactionBranchCases` alone.
+
+**Cause: a race, not the transient directory.** 27.68 guessed at the move
+of the transient directory after `saveAs`; the directory was there.
+`PropertyMaterial::ensureBlob()` wrote the card to
+`uniquePath(hash + ".FCMat")` and then `adoptFile()`d it, and the pack
+store's branch of `adoptFile()` removes (or renames) the file it adopted.
+The log's worker captures values (`writeValues`), and a material copy's
+`Save` calls `ensureBlob()` there, while the main thread, copying the body
+for the link, calls it on the live property -- the same card, so the same
+hash and the same name: `uniquePath()` checks for the file and returns the
+name, it does not create it. A trace in the failing run showed the one path
+written by the worker, then the main thread, then the worker again; one
+adoption took the file away from the other.
+
+**As built.** `ensureBlob()` hands the bytes to `adoptBytes()`, which hashes
+them under the store's lock and writes no scratch file, so there is no name
+to share.
+
+**Two more of the same, worse, changed with it.**
+`PropertyStringIncluded::ensureBlob()` staged its text as `string.<ext>` and
+`MaterialXDocument::store()` its manifest as `materialx.manifest` -- names
+that do not depend on the content, both reached from a `Save` the worker
+runs. Two writers of different texts could each truncate the other's file
+before adopting it, and one property would then hold the other's content,
+with no error: never seen, but nothing prevented it. Both go through
+`adoptBytes()` now. The remaining `uniquePath()` callers keep the
+check-then-create gap and write from a single thread: the store's own
+`blob.part` staging and `PropertyFileIncluded` on a file restore, the
+material clipboard and the shader graph on the Gui's edits.
+
+No test pins the interleaving; the evidence is the runs of
+`TransactionBranchCases`: before, 2 failures in 10 (1 of 6, then 1 of 4,
+the second with a trace showing the two threads); after, 12 of 12 clean.
+
+**Gates** (27.72 and 27.73 together): Python 2953 OK (52 skipped, 6
+expected failures; +2), ctest 848/848, the GUI checks RC 15, BC 27, VC 18,
+PC 28, FC 16.
+
+**Next:** the sixth issue of 27.68, the recompute creep (the model's, log
+off too; 27.71 put `Helix001` failing at every step in it); then the
+SIGSEGV at exit.
