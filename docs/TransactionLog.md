@@ -8678,3 +8678,103 @@ and falls back to the geometry search.
 
 **Order (user):** shapes first (items 1-4), then references (item 5). Next
 session.
+
+### 27.77 An audit of the element name encoding (user, 2026-09-29)
+
+**Asked (user):** before building 27.76, an audit of the element name
+encoding as a whole -- missing pieces other than the crossing, and
+inefficiencies.
+
+**What holds.** A name is text over string ids: each op folds the previous
+name into one `#id` (`MappedName::hashElementName`) and appends its own
+postfix and tag, so a name does not grow with the history. On
+scanner.FCStd: 51,332 names, 29 bytes on average (median 31, longest 69),
+38,156 strings. Ids are never handed out twice (27.44). The table shares
+text: a postfix without `#` is a string of its own (`PostfixEncoded`), a
+`#id` prefix is a reference (`PrefixID`). An element map writes each of its
+postfixes once, a map shared by several shapes once, and 27.75 made
+references hold what they name.
+
+**Defect: the forward pass of `makESHAPE` names from a stale stream.** Its
+single-lower-name branch appends `;:L` to `ss` without clearing it
+(`TopoShapeEx.cpp`, the forward pass), so the face gets whatever the last
+encode left there. A loft between two circles:
+
+    Loft Face2  #7;:U;LFT;:H80:7,V;:L;LFT;:H80:17,F
+    Loft Face3  #9;:U;LFT;:H80:7,V;:L;LFT;:H80:17,F;:L;LFT;:H80:28,F
+
+Face2 carries the reverse pass's last vertex, Face3 Face2's tail too: the
+names depend on unrelated elements and on the order of the passes, and grow
+with each such face. It hits a face whose outer wire gives one distinct
+name -- the caps of lofts, sweeps and ruled surfaces of circles.
+scanner.FCStd has none.
+
+**Missing from 27.76: ids that are only text.** A string id appears in a
+table's text in three ways:
+1. as a prefix reference (`PrefixID`, `PrefixIDIndex`, `PostfixEncoded`,
+   `Indexed`) -- one of the string's related ids;
+2. inside a postfix that contains `#` (`;:G#3;LFT...`, `;:L#1afc0...`),
+   which `getID(MappedName, sids)` does not make a string of its own;
+3. inside a combo string (`(a|b|c)`, made by `getID(const char *)`), which
+   has no related ids at all.
+
+The name that uses 2 or 3 holds those ids, so compaction is safe; but an
+import that follows related ids and copies the bytes carries the source's
+numbers into the target. The import has to rewrite every `#hex` of the text.
+The "digests copied as digests" of 27.76 item 1 never applies to element
+names: nothing asks for a hashable string and the threshold is 0.
+
+**Other gaps.**
+- Expressions hold their ids in memory only (27.75): after an open they hold
+  nothing until the reference updates.
+- A name kept outside a link property (a Python feature's string, a macro)
+  holds nothing.
+- One string under two ids (27.41 Q2): `getID` finds whichever the multiset
+  returns first, so two recomputes can write one element under two names, and
+  references compare names as text. Rare since compaction respects the
+  history; the lowest id could always be taken.
+
+**Inefficiencies, measured.** With the element map's own memory tracer
+(`_FC_MEM_TRACE` in `ElementMap.cpp`, which counts the nodes of the name to
+index map; it had stopped compiling -- `std::allocator`'s pointer typedefs
+and `allocator<void>` went in C++20, and the value type lacked its `const`
+-- fixed) and a temporary count of glibc's in-use bytes around the element
+map restore and the string table restore, on scanner.FCStd with the log off
+and TechDraw stubbed out:
+
+| | count | heap | each |
+| --- | --- | --- | --- |
+| element maps (340 read) | 51,514 names | 20.6 MB | about 400 B a name |
+| of which the reverse index | 51,514 nodes | 5.4 MB | 104 B a node |
+| string table | 38,156 strings | 14.1 MB | about 370 B a string, 20 of it text |
+
+About 670 bytes a name with its share of the table, 34.7 MB for this model;
+`ComplexGeoData::getMemSize()` says 10 a name. With TechDraw loaded the
+tracer counts about 100k nodes: the projections carry names of their own
+(docs/TopoNamingEnhance.md sec 8), another 20 MB or so. Beyond that:
+- every op mints a string for every element of its result, those it did not
+  change too (`Fil Edge10 #4f;:H696,E`) -- most of the table, elements times
+  features. The tag tells one source reached through two inputs apart;
+  single-input ops (fillet, chamfer, draft, thickness, refine) could pass an
+  unchanged name through. Not proposed now;
+- 27.76's import would copy every name of a linked shape each time a link's
+  on-demand shape is made (27.72) where a child map shares the source's map
+  today; a translation cache per source map and target table avoids it;
+- a name lookup is a `std::map` whose compare reads a byte at a time (0.68 us
+  a lookup through Python -- not a cost yet); the restore parser allocates a
+  string per token (its share of the 1.1 s open not measured);
+- `ElementMap.cpp` reserves 0 or 1 id slots per name (`a + b?1:0`
+  precedence), harmless.
+
+**Found on the way, not chased.** With a Qt event loop, opening
+scanner.FCStd in FreeCADCmd crashed in a TechDraw projection thread,
+`DrawUtil::isCrazy` -> `Preferences::getPreferenceGroup` ->
+`ParameterGrp::GetGroup`, with the document still open. And the missing
+`OpticalObject`/`Ray` modules of that file's Python features leave an error
+pending that a later, unrelated call raises.
+
+**Ruled (user):** record this; then (1) fold the text-only ids into 27.76's
+import and lookup, (2) the loft fix, (3) the translation cache in 27.76 item
+2, (4) the postfix sharing -- checked closely first: the user remembers the
+postfixes are shared in most cases -- and (5) a way for an expression's
+reference to hold its ids across a save.
