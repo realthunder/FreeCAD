@@ -607,3 +607,11 @@ fc_add_gui_test(GuiPartTessellationReload_tests_run
 fc_add_gui_test(GuiBinderMapColorRestore_tests_run
                 binder-map-color-restore.py
                 --timeout 240)
+
+# An instanced Part object draws a uniform face colour list at the
+# transparency the list says: the uniform branch took the colour's alpha,
+# an opacity, for the transparency, so an opaque list drew invisible
+# (docs/DocumentLoad.md sec 16).
+fc_add_gui_test(GuiInstancedFaceTransparency_tests_run
+                instanced-face-transparency.py
+                --timeout 240)

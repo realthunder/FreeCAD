@@ -4411,7 +4411,8 @@ void ViewProviderPartExt::applyInstancedFaceColors(const std::vector<App::Color>
     if (uniform) {
         clearInstanceColors();
         const App::Color &c = resolved.empty() ? base : resolved[0];
-        setOverall(c, c.a);
+        // The alpha is an opacity; the node takes a transparency.
+        setOverall(c, c.transparency());
         return;
     }
 

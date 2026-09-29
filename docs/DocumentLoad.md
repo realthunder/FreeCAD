@@ -1352,14 +1352,21 @@ two left differ in pixels only, the same way in both progressive runs:
     ShapeColor after MapFaceColor switched it off; only UseBinderStyle had
     the restore guard. Now none of the four react to a restore or an
     undo (test: `binder-map-color-restore.py`).
-  - **Open: a progressive open's visual keeps a colour its property no
-    longer has.** With the colours read right, the eager frame is right
-    and the progressive one shows a Part::FeaturePython (`Populate`, face
-    colours mapped from its inputs) with its faces fully transparent while
-    its DiffuseColor and Transparency say opaque; before the fix it was
-    the other way round (the property transparent, the visual opaque). The
-    colour list is an archive member (`DiffuseColor.bin`) served after the
-    XML pass; why the visual does not follow it is not found yet.
+  - **An instanced object drew a uniform colour list at the wrong
+    transparency** -- not a load defect. With the colours read right, the
+    progressive frame showed a Lattice `Populate` (a compound of repeated
+    solids, so built instanced) with its faces fully transparent while
+    its DiffuseColor and Transparency said opaque; before the fix above
+    it was the other way round. The uniform branch of
+    `ViewProviderPartExt::applyInstancedFaceColors` gave the Coin
+    material the colour's alpha as its transparency, where an alpha is an
+    opacity (`Base::Color::transparency()` converts; the flat path and
+    the per-instance override materials did). Any uniform list set on an
+    instanced object drew inverted, live as much as on open; the user
+    file's eager open escaped only because its colours landed before the
+    instanced representation was built. Test:
+    `instanced-face-transparency.py` (all four claims fail before the
+    fix, the eager open included).
 
 Two files did not open at all within 400 s, eagerly
 or progressively (`LS3_Lead_Screw_Mach_02_12.12.23`, and its sibling was
