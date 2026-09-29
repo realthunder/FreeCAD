@@ -220,6 +220,10 @@ struct DocumentP
     std::unique_ptr<Base::XMLReader> _deferReader;
     bool _deferVPs = false;       // this load parks its view providers
     bool _deferApplying = false;  // a drain slice is building them now
+    // Visibility given to an object while the drain still owed it its
+    // record -- by the user, a script, a recompute -- and re-applied over
+    // that record once its view provider is finished (phase three).
+    std::unordered_map<const App::DocumentObject*, bool> _deferUserVisibility;
     bool _deferScheduled = false;
     // The drain runs in two phases: first every object gets its view
     // provider, then the parked record is replayed onto them. Creating
@@ -1143,6 +1147,7 @@ void Document::slotNewObject(const App::DocumentObject& Obj)
 
 void Document::slotDeletedObject(const App::DocumentObject& Obj)
 {
+    d->_deferUserVisibility.erase(&Obj);
     std::list<Gui::BaseView*>::iterator vIt;
     setModified(true);
 
@@ -1220,6 +1225,13 @@ void Document::beforeDelete() {
 
 void Document::slotChangedObject(const App::DocumentObject& Obj, const App::Property& Prop)
 {
+    // A change made while the drain still owes this document its records:
+    // the record, replayed later, would put the file's visibility back
+    // (the property sweep of phase three pushes a view provider's restored
+    // Visibility onto its object). Kept, and re-applied after it.
+    if (&Prop == &Obj.Visibility && d->_deferVPs && !d->_deferApplying
+            && !d->_pcDocument->testStatus(App::Document::Restoring))
+        d->_deferUserVisibility[&Obj] = Obj.Visibility.getValue();
     ViewProvider* viewProvider = getViewProvider(&Obj);
     if (viewProvider) {
         ViewProvider::clearBoundingBoxCache();
@@ -3309,6 +3321,13 @@ void Document::runDeferredRestoreSlice()
                     auto dSweep = Base::GetDuration(tFinish);
                     d->_deferSweepTime += dSweep;
                     vpd->finishRestoring();
+                    auto user = d->_deferUserVisibility.find(obj);
+                    if (user != d->_deferUserVisibility.end()) {
+                        // Hidden or shown since the open, over the file.
+                        vpd->Visibility.setValue(user->second);
+                        obj->Visibility.setValue(user->second);
+                        d->_deferUserVisibility.erase(user);
+                    }
                     auto dRest = Base::GetDuration(tFinish);
                     if (!vpd->canAddToSceneGraph())
                         toggleInSceneGraph(vpd);
@@ -3426,6 +3445,7 @@ void Document::finishDeferredRestore()
     d->_deferCreate.clear();
     d->_deferFinish.clear();
     d->_restoreDefaults.clear();
+    d->_deferUserVisibility.clear();
     d->_deferVPs = false;
     // One of the two phases that outlive the blocking open; the visual drain
     // reports the other through Application::setBuildingVisuals().
