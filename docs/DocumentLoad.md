@@ -1176,6 +1176,21 @@ anyway. Two ways out, not yet chosen: guard each such handler with
 base -- or run the sweep before the records, as the eager order is, which
 changes the drain's design (sec 13) and its costs.
 
+**The user files.** 73 distinct FCStd from `~/works/sw/bug_reports`, two
+progressive runs each, scene paths compared up to 300 objects. After the
+fixes above, 61 of the 71 that opened are identical apart from derived
+sizes, and two more differ in one run of two only (a pick, a frame);
+the Link losses (8) and the image sizes (6) came from here. What is
+left is almost all the open ordering finding: objects hidden after a
+progressive open that eager leaves shown (Draft wires, a fusion that is
+another boolean's input, a placement feature's input -- four files) and a
+face colour taken from an input (a Mirroring, a MultiFuse). Not yet
+examined: a Body's bounding box wider in one file, and small pixel-only
+differences in two. Two files did not open at all within 400 s, eagerly
+or progressively (`LS3_Lead_Screw_Mach_02_12.12.23`, and its sibling was
+skipped with it): stuck in `BRepTools::Read` under
+`App::Document::restoreDeferredFile`, a load defect of its own.
+
 **Not defects, and why the test does not judge them:**
 - a coarse first tessellation (27 against 62 points on a circle) that the
   level ladder refines on idle -- waited out;
