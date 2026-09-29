@@ -166,7 +166,8 @@ public:
     bool hasGeometry() const;
     //! true when the document brought a projection back for this view and it
     //! is the projection the view would make now -- nothing has touched the
-    //! view since it was saved.  The page asks before recomputing on restore.
+    //! view since it was saved, or the log is supplying it (Document::
+    //! isReplaying()).  The page asks before recomputing on restore.
     bool canReuseStoredGeometry() const;
     TechDraw::GeometryObjectPtr getGeometryObject(bool noException=false) const;
 

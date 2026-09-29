@@ -527,9 +527,17 @@ bool DrawViewPart::restoreStoredGeometry()
 }
 
 //! whether the stored projection is still the projection this view would make
+//! -- or, while the document is read back from its transaction log (a branch
+//! switch, a version read whole), the projection the log supplies: the
+//! version's own, with the view touched as it was saved, so the next
+//! recompute projects it as it would have (docs/TransactionLog.md sec 27.71)
 bool DrawViewPart::canReuseStoredGeometry() const
 {
-    return m_geometryFromStore && !m_restoredOutOfDate && !isTouched();
+    if (!m_geometryFromStore) {
+        return false;
+    }
+    auto doc = getDocument();
+    return (!m_restoredOutOfDate && !isTouched()) || (doc && doc->isReplaying());
 }
 
 void DrawViewPart::onDocumentRestored()
