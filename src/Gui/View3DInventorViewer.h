@@ -620,6 +620,8 @@ public:
     //@}
     
     SoGroup * getAuxSceneGraph() const;
+    /// A root of the aux graph's, fed to an external backend as an overlay
+    SoGroup* getOnViewParameterRoot() const override;
 
     /**
      * Set the camera's orientation. If isAnimationEnabled() returns
@@ -1057,6 +1059,8 @@ private:
     QImage glImage;
     bool shading;
     SoSwitch *dimensionRoot;
+    /// On-view parameters' dimensions, in the aux graph beside dimensionRoot
+    SoSeparator *onViewRoot = nullptr;
 
     // small axis cross in the corner
     bool axiscrossEnabled;

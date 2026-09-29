@@ -211,6 +211,10 @@ if(TARGET FreeCADGui)
     target_link_libraries(OnViewParameter_tests_run
                           gtest_main FreeCADGui FreeCADApp FreeCADBase
                           ${QtCore_LIBRARIES} ${QtWidgets_LIBRARIES})
+    # A font for a label's number: the offscreen platform finds none on
+    # Windows, and a label without a glyph has nothing to click
+    target_compile_definitions(OnViewParameter_tests_run PRIVATE
+        FC_TEST_FONT="${CMAKE_SOURCE_DIR}/src/Mod/TechDraw/Gui/Resources/fonts/osifont-lgpl3fe.ttf")
     add_test(NAME OnViewParameter_tests_run
              COMMAND OnViewParameter_tests_run)
 

@@ -42,6 +42,10 @@ export interface OnViewParam {
   /// Whether the value has been fixed by the user rather than driven by
   /// the pointer. The desktop says it in the label colour; so do we.
   set: boolean;
+  /// The point size the label draws its number in. The box takes it, as
+  /// the desktop's does, never below the stylesheet's own size; absent
+  /// from a server that predates it.
+  pt?: number;
 }
 
 /// Where one box goes this frame ('fc:onviewlayout'), in CSS pixels.
@@ -139,6 +143,10 @@ function OnViewBox(props: {
       style={{
         left: `${props.place()?.x ?? 0}px`,
         top: `${props.place()?.y ?? 0}px`,
+        // Over the number it replaces: the label's size, never below the
+        // stylesheet's 12px, and wide enough for the text it holds
+        ...(props.param().pt ? { 'font-size': `max(12px, ${props.param().pt}pt)` } : {}),
+        width: `${Math.max(7, props.param().text.length + 1)}ch`,
       }}
       onKeyDown={(e) => onKey(e, true)}
       onKeyUp={(e) => onKey(e, false)}

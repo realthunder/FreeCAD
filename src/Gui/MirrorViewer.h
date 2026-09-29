@@ -217,6 +217,9 @@ public:
         /// Whether the value has been fixed by the user rather than driven
         /// by the pointer -- the desktop says it in the label colour.
         bool set = false;
+        /// The point size the label draws its number in, which the desktop
+        /// box takes too; the client keeps a minimum of its own.
+        double pointSize = 0.0;
     };
     std::vector<OnViewParam> onViewParameters() const;
     /// Told when any of that changes, so the connection can restate it.

@@ -699,6 +699,7 @@ public:
             json += ",\"sel\":[" + std::to_string(param.selStart) + ','
                 + std::to_string(param.selLength) + ']';
             json += param.focus ? ",\"focus\":true" : ",\"focus\":false";
+            json += ",\"pt\":" + floatJson(float(param.pointSize));
             json += param.set ? ",\"set\":true}" : ",\"set\":false}";
         }
         json += "]}";

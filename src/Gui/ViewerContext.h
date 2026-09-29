@@ -44,6 +44,8 @@
 #include <Inventor/SoType.h>
 #include <Inventor/nodes/SoEventCallback.h>
 
+#include <fastsignals/signal.h>
+
 class SoNode;
 class SoPath;
 class SoPickedPoint;
@@ -599,7 +601,25 @@ public:
      */
     virtual void onViewParametersChanged()
     {}
+    /** Where an on-view parameter's dimension hangs, in world coordinates.
+     *
+     * It has to reach whatever draws the view. A mirror's scene graph is
+     * the served root, which the publish traversal walks to the client. The
+     * desktop's is not drawn by an external backend during an edit -- only
+     * the selection root and the overlay feeds are -- so it answers a root
+     * of its own, fed as one (Blender's overlay engine, in effect: labels
+     * and dimensions are the viewport's, drawn over the scene, never the
+     * renderer's).
+     */
+    virtual SoGroup* getOnViewParameterRoot() const;
     //@}
+
+    /** The camera NODE was replaced, as a change of projection does: what
+     * watches the fields of the old one hears nothing more (upstream's
+     * View3DInventorViewer::cameraChanged, 6fa9125919, on the view-less base
+     * so that a mirror says it too).
+     */
+    fastsignals::signal<void()> signalCameraReplaced;
 
     /** The context an event callback node was installed by.
      *

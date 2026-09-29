@@ -463,6 +463,9 @@ void MirrorViewer::setCamera(const Camera& camera)
     }
     pimpl->state = camera;
     pimpl->stated = true;
+    if (typeChanged) {
+        signalCameraReplaced();
+    }
 }
 
 bool MirrorViewer::hasCamera() const
@@ -773,6 +776,7 @@ std::vector<MirrorViewer::OnViewParam> MirrorViewer::onViewParameters() const
         label->getSelection(param.selStart, param.selLength);
         param.focus = label == pimpl->focusedParam;
         param.set = label->isSet;
+        param.pointSize = label->getFontPointSize();
         params.push_back(param);
     }
     return params;
@@ -785,16 +789,20 @@ void MirrorViewer::setOnViewParametersCallback(std::function<void()> callback)
 
 bool MirrorViewer::focusOnViewParameter(int index)
 {
-    if (index < 0 || size_t(index) >= pimpl->onViewParams.size()) {
-        return false;
+    // Counted as onViewParameters() numbers them, over the boxes on screen:
+    // a label shown but not in edit, as a pattern's spacings are, is in the
+    // list and not in the feed
+    for (EditableDatumLabel* label : pimpl->onViewParams) {
+        if (!label->isActive() || !label->isInEdit()) {
+            continue;
+        }
+        if (index-- == 0) {
+            ViewerScope scope(this);
+            label->setFocusToSpinbox();
+            return true;
+        }
     }
-    EditableDatumLabel* label = pimpl->onViewParams[size_t(index)];
-    if (!label->isActive() || !label->isInEdit()) {
-        return false;
-    }
-    ViewerScope scope(this);
-    label->setFocusToSpinbox();
-    return true;
+    return false;
 }
 
 void MirrorViewer::addOnViewParameter(EditableDatumLabel* label)

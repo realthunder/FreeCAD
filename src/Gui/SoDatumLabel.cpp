@@ -720,6 +720,14 @@ void SoDatumLabel::computeBBox(SoAction * action, SbBox3f &box, SbVec3f &center)
     SoState *state = action->getState();
     float scale = getScaleFactor(state);
 
+    // The number's box is the image's, which GLRender or a capture makes.
+    // On a mirror no GL pass ever runs, so make it here if nothing has yet:
+    // without it the box is a one-pixel stand-in.
+    if (!this->glimagevalid) {
+        drawImage();
+        this->glimagevalid = true;
+    }
+
     DatumLabelBox datumBox(scale, this);
     datumBox.computeBBox(box, center);
 }
@@ -1402,6 +1410,11 @@ void SoDatumLabel::generatePrimitives(SoAction * action)
         return;
 
     // Ray-pick path: keep only the text label box selectable (unchanged).
+    // The box sized for the view being picked in: GLRender is what sized it,
+    // and with an external backend drawing it never runs -- the capture's
+    // sizing has no camera of the viewer's, and a mirror's pick has its own.
+    int srcw = 1, srch = 1;
+    updateImageSize(action->getState(), srcw, srch);
     // Initialisation check (needs something more sensible) prevents an infinite loop bug
     if (this->imgHeight <= FLT_EPSILON || this->imgWidth <= FLT_EPSILON)
         return;
@@ -1441,6 +1454,19 @@ void SoDatumLabel::notify(SoNotList * l)
         this->glimagevalid = false;
         // The glyph bitmap changed; the companion texture must be re-fed.
         this->imagesynced = false;
+    }
+    // The companion's leaders are generated from this node's fields, the
+    // number is placed by them, and the companion is a node of its own: a
+    // capture would keep what it first made of them. The two it draws in
+    // are connected to its style nodes already, and the image is made from
+    // the string, during the capture itself.
+    if (f && f != &this->textColor && f != &this->lineWidth && f != &this->image) {
+        if (this->leaderShape) {
+            this->leaderShape->touch();
+        }
+        if (this->imageAnchor) {
+            this->imageAnchor->touch();
+        }
     }
     inherited::notify(l);
 }

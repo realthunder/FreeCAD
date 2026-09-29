@@ -41,6 +41,8 @@
 
 #include <QApplication>
 #include <QEvent>
+#include <QFont>
+#include <QFontDatabase>
 #include <QKeyEvent>
 #include <QObject>
 #include <QString>
@@ -55,7 +57,9 @@
 #include <Base/Placement.h>
 
 #include <Gui/EditableDatumLabel.h>
+#include <Gui/Inventor/SoAutoZoomTranslation.h>
 #include <Gui/MirrorViewer.h>
+#include <Gui/SoDatumLabel.h>
 #include <Gui/ViewerContext.h>
 
 namespace
@@ -100,6 +104,12 @@ protected:
             SoDB::init();
             SoInteraction::init();
         }
+        // The label's own nodes: without a type no action reaches them, and
+        // a click is an action like any other
+        if (Gui::SoDatumLabel::getClassTypeId() == SoType::badType()) {
+            Gui::SoDatumLabel::initClass();
+            Gui::SoAutoZoomTranslation::initClass();
+        }
         App::Application::Config()["ExeName"] = "OnViewParameter_tests_run";
         int argc = 1;
         static std::array<char, 32> exename {"OnViewParameter_tests_run"};
@@ -113,6 +123,17 @@ protected:
         static std::array<char, 32> qexe {"OnViewParameter_tests_run"};
         static std::array<char*, 2> qargv {qexe.data(), nullptr};
         app = new QApplication(qargc, qargv.data());
+
+        // Some platform has no font at all (offscreen on Windows), and a
+        // label's number is drawn in one; any family it asks for falls
+        // back to the application's
+        if (QFontDatabase::families().isEmpty()) {
+            int id = QFontDatabase::addApplicationFont(QStringLiteral(FC_TEST_FONT));
+            auto families = QFontDatabase::applicationFontFamilies(id);
+            if (!families.isEmpty()) {
+                QApplication::setFont(QFont(families.front()));
+            }
+        }
     }
 
     static void TearDownTestSuite()
@@ -342,6 +363,90 @@ TEST_F(OnViewParameterTest, aStaleIndexFromAClientIsRefused)
     // box now sits there.
     EXPECT_FALSE(mirror->focusOnViewParameter(1));
     EXPECT_FALSE(mirror->focusOnViewParameter(-1));
+}
+
+TEST_F(OnViewParameterTest, aClientIndexCountsOnlyTheBoxesOnScreen)
+{
+    // A label shown and not in edit, as a pattern's gaps are until one is
+    // clicked, is in the view's set but not in the feed. The client's
+    // index is the feed's, so it must land on the box it was given for.
+    auto shown = std::make_unique<Gui::EditableDatumLabel>(
+        mirror.get(), Base::Placement(), SbColor(1, 1, 1), false, false);
+    shown->activate();
+    addLabel();
+    addLabel();   // opened last, so it has the keys
+
+    const auto before = mirror->onViewParameters();
+    ASSERT_EQ(before.size(), 2U);
+    EXPECT_FALSE(before[0].focus);
+    EXPECT_TRUE(mirror->focusOnViewParameter(0));
+    EXPECT_TRUE(mirror->onViewParameters()[0].focus);
+    EXPECT_FALSE(mirror->onViewParameters()[1].focus);
+    EXPECT_FALSE(mirror->focusOnViewParameter(2));
+    shown.reset();
+}
+
+namespace
+{
+
+Gui::MirrorViewer::Input pointer(Gui::MirrorViewer::Input::Kind kind, int x, int y)
+{
+    Gui::MirrorViewer::Input input;
+    input.kind = kind;
+    input.x = x;
+    input.y = y;
+    input.code = 1;
+    input.time = 1.0;
+    return input;
+}
+
+}  // namespace
+
+TEST_F(OnViewParameterTest, aClickReachesAPickableLabelThroughTheMirror)
+{
+    // A pattern's label is clicked to be edited, and on a served view the
+    // click is a replayed event through the scene -- so the label's own
+    // callback has to hear it there, and pick its number without a GL pass
+    // ever having sized it.
+    auto label = std::make_unique<Gui::EditableDatumLabel>(
+        mirror.get(), Base::Placement(), SbColor(1, 1, 1), false, false);
+    label->setLabelType(Gui::SoDatumLabel::DISTANCE,
+                        Gui::EditableDatumLabel::Function::Dimensioning);
+    label->activate();
+    label->setPoints(Base::Vector3d(0, 0, 0), Base::Vector3d(10, 0, 0));
+    label->label->string = "10 mm";
+    int clicks = 0;
+    QObject::connect(label.get(), &Gui::EditableDatumLabel::clicked,
+                     [&clicks](Gui::EditableDatumLabel*) { ++clicks; });
+
+    // The number sits on the midpoint, (5,0,0): 5 / (60 tan 22.5deg) of
+    // the half height right of the centre of an 800x600 canvas
+    const int x = 400 + int(5.0 / (60.0 * 0.41421356) * 300.0 + 0.5);
+    const int y = 300;
+    using Kind = Gui::MirrorViewer::Input::Kind;
+
+    // Not pickable, not clicked: the sketcher's labels are left alone
+    mirror->handleInput(pointer(Kind::Press, x, y));
+    mirror->handleInput(pointer(Kind::Release, x, y));
+    EXPECT_EQ(clicks, 0);
+
+    label->setPickable(true);
+    mirror->handleInput(pointer(Kind::Press, x, y));
+    mirror->handleInput(pointer(Kind::Release, x, y));
+    EXPECT_EQ(clicks, 1);
+
+    // And a click beside it is not one on it
+    mirror->handleInput(pointer(Kind::Press, x, y + 150));
+    mirror->handleInput(pointer(Kind::Release, x, y + 150));
+    EXPECT_EQ(clicks, 1);
+}
+
+TEST_F(OnViewParameterTest, theBoxTakesTheLabelsSize)
+{
+    Gui::EditableDatumLabel* label = addLabel();
+    ASSERT_EQ(mirror->onViewParameters().size(), 1U);
+    EXPECT_EQ(mirror->onViewParameters()[0].pointSize, label->getFontPointSize());
+    EXPECT_GT(mirror->onViewParameters()[0].pointSize, 0.0);
 }
 
 TEST_F(OnViewParameterTest, theViewIsToldWheneverTheSetMoves)

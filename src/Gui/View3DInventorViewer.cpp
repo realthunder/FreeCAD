@@ -626,6 +626,7 @@ struct View3DInventorViewer::Private
         OverlayEditing = 7,
         OverlayDimensions = 8,
         OverlayDebugLabel = 9,
+        OverlayOnView = 10,
     };
     /// The ids above are per VIEWER. A unified-canvas cell offsets them
     /// by its sub-view id times this stride, because the backend's
@@ -662,10 +663,15 @@ struct View3DInventorViewer::Private
     // the aux root (a sibling of the render-cache-captured selectionRoot), so
     // it never reaches the main scene feed. Mirrors editingCapture.
     OverlayCapture dimensionCapture;
+    // On-view parameters' labels (EditableDatumLabel), the same way: their
+    // root is in the aux graph too.
+    OverlayCapture onViewCapture;
     // Whether the editing overlay is currently fed to (and thus drawn by) the
     // external backend. When true, renderScene() suppresses the raw-GL datum
     // draw so it is not doubled with the backend's.
     bool editingBackendFed = false;
+    // The same for the on-view labels' overlay
+    bool onViewBackendFed = false;
     // fps overlay state: the string renderScene() wants displayed (empty
     // when the readout is off) and the nodes/values last fed.
     std::string fpsText;
@@ -1376,6 +1382,20 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
     else {
         dropCapture(dimensionCapture, OverlayDimensions);
     }
+
+    // On-view parameters' labels, as the dimensions
+    if (owner->onViewRoot && owner->onViewRoot->getNumChildren() > 0) {
+        if (!onViewCapture.manager)
+            initCapture(onViewCapture, owner->onViewRoot);
+        Render::OverlayAnchor onViewAnchor;
+        onViewAnchor.sceneCamera = true;
+        feedOverlay(onViewCapture, OverlayOnView, onViewAnchor);
+        onViewBackendFed = true;
+    }
+    else {
+        dropCapture(onViewCapture, OverlayOnView);
+        onViewBackendFed = false;
+    }
 }
 
 void View3DInventorViewer::Private::clearOverlayCaptures()
@@ -1384,7 +1404,7 @@ void View3DInventorViewer::Private::clearOverlayCaptures()
                          &graphicsItemsCapture, &fpsTextCapture,
                          &naviCubeCapture, &naviButtonCapture,
                          &editingCapture, &dimensionCapture,
-                         &debugLabelCapture}) {
+                         &onViewCapture, &debugLabelCapture}) {
         if (capture->manager) {
             capture->manager->setExternalOverlay(
                 nullptr, 0, Render::OverlayAnchor());
@@ -1751,6 +1771,14 @@ void View3DInventorViewer::init()
     inventorSelection->getAuxRoot()->addChild(dimensionRoot);
     dimensionRoot->addChild(new SoSwitch()); //first one will be for the 3d dimensions.
     dimensionRoot->addChild(new SoSwitch()); //second one for the delta dimensions.
+
+    // On-view parameters' labels: world space, in no feed of the scene's, so
+    // fed as an overlay of their own. Not under dimensionRoot, whose switch
+    // the measurement commands turn off.
+    onViewRoot = new SoSeparator;
+    onViewRoot->setName("OnViewRoot");
+    onViewRoot->renderCaching = SoSeparator::OFF;
+    inventorSelection->getAuxRoot()->addChild(onViewRoot);
 
     pcClipPlane = nullptr;
 
@@ -4654,11 +4682,11 @@ void View3DInventorViewer::renderToFramebuffer(QtGLFramebufferObject* fbo)
     // while creating a new render action has it set to GL_LEQUAL. So, in order to get
     // the exact same result set it explicitly to GL_LESS.
     glDepthFunc(GL_LESS);
-    SoDatumLabel::SuppressGLRender =
-        externalRendered && _pimpl->editingBackendFed;
+    SoFCEditingRoot::SuppressGLRender = externalRendered && _pimpl->editingBackendFed;
+    SoDatumLabel::SuppressGLRender = SoFCEditingRoot::SuppressGLRender
+        || (externalRendered && _pimpl->onViewBackendFed);
     SoFCRenderCacheManager::SuppressImageGLRender =
         SoDatumLabel::SuppressGLRender;
-    SoFCEditingRoot::SuppressGLRender = SoDatumLabel::SuppressGLRender;
     gl.apply(this->getSoRenderManager()->getSceneGraph());
     SoDatumLabel::SuppressGLRender = false;
     SoFCRenderCacheManager::SuppressImageGLRender = false;
@@ -6562,11 +6590,13 @@ void View3DInventorViewer::renderScene()
     // When the backend already draws the editing overlay (datums, constraint
     // icons), suppress the raw-GL datum and screen-space image draws during
     // this Coin pass so they are not doubled.
-    SoDatumLabel::SuppressGLRender =
+    // The on-view labels' overlay likewise.
+    SoFCEditingRoot::SuppressGLRender =
         externalRendered && _pimpl->editingBackendFed && !parallelgl;
+    SoDatumLabel::SuppressGLRender = SoFCEditingRoot::SuppressGLRender
+        || (externalRendered && _pimpl->onViewBackendFed && !parallelgl);
     SoFCRenderCacheManager::SuppressImageGLRender =
         SoDatumLabel::SuppressGLRender;
-    SoFCEditingRoot::SuppressGLRender = SoDatumLabel::SuppressGLRender;
     // * The sharp one. At render-cache mode 3 the geometry has already
     // gone to the backend above, so this traversal should be compositing
     // overlays and nothing else. If it is a large share of the frame it
@@ -7421,6 +7451,7 @@ void View3DInventorViewer::setCameraType(SoType type)
     // The camera node itself was just replaced, so the fill light's rotation
     // has to be slaved to the new one.
     syncLightRotation();
+    signalCameraReplaced();
 }
 
 void View3DInventorViewer::syncLightRotation()
@@ -7552,6 +7583,11 @@ bool View3DInventorViewer::getSceneBoundBox(Base::BoundBox3d &box) const {
 SoGroup *View3DInventorViewer::getAuxSceneGraph() const
 {
     return inventorSelection->getAuxRoot();
+}
+
+SoGroup* View3DInventorViewer::getOnViewParameterRoot() const
+{
+    return onViewRoot;
 }
 
 bool View3DInventorViewer::getSceneBoundBox(SbBox3f &box) const {

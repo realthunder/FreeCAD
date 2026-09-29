@@ -26,13 +26,16 @@
 
 #include <QObject>
 #include <QString>
+#include <fastsignals/signal.h>
 #include <Gui/QuantitySpinBox.h>
 
 #include "SoDatumLabel.h"
 
 #include <FCGlobal.h>
 
+class SoEventCallback;
 class SoNodeSensor;
+class SoPickStyle;
 class SoTransform;
 class QKeyEvent;
 
@@ -62,7 +65,9 @@ public:
     void deactivate();
 
     void startEdit(double val, QObject* eventFilteringObj = nullptr, bool visibleToMouse = false);
-    void stopEdit();
+    /// End the edit, the label showing the value typed, or with \a writeChanges
+    /// false the value the edit started from
+    void stopEdit(bool writeChanges = true);
     bool isActive() const;
     bool isInEdit() const;
     double getValue() const;
@@ -84,6 +89,12 @@ public:
     void setLabelRecommendedDistance();
     void setLabelAutoDistanceReverse(bool val);
     void setSpinboxVisibleToMouse(bool val);
+    /** Whether a click on the label in the view emits clicked(), which also
+     * makes the label stop the pointer. Off by default: the sketcher's
+     * labels are not to be clicked. A served view's click reaches the label
+     * the same way, as a replayed event through the scene.
+     */
+    void setPickable(bool val);
 
     /** @name Finished editing, as distinct from set
      *
@@ -119,6 +130,9 @@ public:
     SbVec3f getAnchorPoint() const;
     /// The box's text exactly as a desktop user would read it.
     QString getText() const;
+    /// The point size the label draws its number in, which the box takes
+    /// (the client keeps its own minimum, as the desktop does)
+    double getFontPointSize() const;
     /// What selectNumber() left selected, so the client can show the same.
     void getSelection(int& start, int& length) const;
     /// Deliver a key to the box, the desktop's focus having done it there.
@@ -146,6 +160,11 @@ Q_SIGNALS:
     void parameterUnset();
     /// Ctrl+Enter: commit every visible parameter of this stage
     void finishEditingOnAllOVPs();
+    /// the label was clicked in the view, when pickable (upstream 6fa9125919)
+    void clicked(Gui::EditableDatumLabel* label);
+    /// the entry box lost the focus -- on the desktop only, a box that is
+    /// never shown never has it
+    void focusLost();
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -158,6 +177,10 @@ private:
     SbVec3f getTextCenterPoint() const;
     /// Tell the view its on-view set moved, so a mirror can restate it.
     void notifyChanged();
+    /// Follow the view's camera, the node it has now
+    void attachCameraSensor();
+    static void eventCallback(void* data, SoEventCallback* cb);
+    void handleEvent(SoEventCallback* cb);
 
 private:
     SoSeparator* root;
@@ -170,6 +193,10 @@ private:
     bool lockedAppearance;
 
     Function function;
+
+    SoEventCallback* clickCallback;
+    SoPickStyle* pickStyle;
+    fastsignals::scoped_connection connCameraReplaced;
 };
 
 }

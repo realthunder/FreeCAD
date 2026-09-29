@@ -354,6 +354,15 @@ SoCamera* ViewerContext::getCamera() const
     return manager ? manager->getCamera() : nullptr;
 }
 
+SoGroup* ViewerContext::getOnViewParameterRoot() const
+{
+    // The served root a mirror answers with is a group but not always a
+    // separator, and it is the node the publish traversal walks
+    SoNode* scene = getSceneGraph();
+    return scene && scene->isOfType(SoGroup::getClassTypeId()) ? static_cast<SoGroup*>(scene)
+                                                                : nullptr;
+}
+
 SoNode* ViewerContext::getPickRoot() const
 {
     SoRenderManager* manager = getSoRenderManager();
