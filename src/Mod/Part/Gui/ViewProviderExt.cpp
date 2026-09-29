@@ -5570,6 +5570,7 @@ void ViewProviderPartExt::runDeferredVisualSlice()
     // serialization the single shared queue used to impose.
     const double share = budget / ready;
     bool more = false;
+    bool builtAny = false;
     for (auto it = visuals.docs.begin(); it != visuals.docs.end(); ) {
         auto &queue = it->second;
         auto doc = eligible(it->first);
@@ -5635,6 +5636,7 @@ void ViewProviderPartExt::runDeferredVisualSlice()
                     Base::StateLocker drainBuild(s_drainVisualBuild);
                     vp->updateVisual();
                     ++queue.built;
+                    builtAny = true;
                 }
             }
             if (elapsed().count() >= limit)
@@ -5652,6 +5654,15 @@ void ViewProviderPartExt::runDeferredVisualSlice()
                 << " slices, " << queue.spent.count() << 's');
         it = visuals.docs.erase(it);
     }
+
+    // A box asked for while a visual was parked came from its shape
+    // (_getBoundingBox's shortcut) and was cached; the cache is cleared by
+    // property changes, and a drain build makes none. Where the visual's
+    // box differs from the shape's, the stale answer outlived the build: a
+    // user file's Mirrored said z 0..16 after two progressive opens in six,
+    // z -31..39 (its built visual) after the rest and after every eager one.
+    if (builtAny)
+        Gui::ViewProvider::clearBoundingBoxCache();
 
     // After every erase this slice made, so the state falls on the slice
     // that empties the queue -- the frame after it is the first one that
