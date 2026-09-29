@@ -1046,3 +1046,167 @@ object's `Visibility` and the view provider's together; a view-provider
 property change allowed. The pointer half was confirmed by hand on the
 real GPU -- mouse buttons responsive during a load, which was the symptom
 this section started from.
+
+## 16. Progressive load against eager (2026-09-29)
+
+ProgressiveLoad (sec 13, default on since `d53ba63848`) builds a restored
+document's view providers after the App load, in slices: phase one creates
+every view provider, phase two replays its GuiDocument.xml record, phase
+three sweeps the properties and runs `finishRestoring`. That changes two
+things an eager load relied on without saying so: the ORDER things are
+created in (App properties are complete before any view provider exists,
+so a container claims children that have none yet), and the SIGNALS (the
+replay raises no per-property Gui change, so whatever an eager load put
+right on `slotChangedObject` is not put right). It had already lost a
+Part's children on reopen for seven weeks (`002c5c1d7f`). This section is
+the systematic pass that asked what else.
+
+**The method: a differential.** `tests/gui/progressive-load-diff.py` opens
+each file eagerly (ProgressiveLoad off, the reference), progressively N
+times -- which view provider a load reaches first follows allocation
+order, so one green run proves little -- and eagerly again, the noise
+floor (an item the two eager opens disagree on is not judged). Each open
+waits for the drain and for the level ladder's idle refinement, then
+records, for every document the file brings in:
+
+- per view provider: Visibility, isVisible, isShowable, the display
+  switch, display mode, claimChildren, ClaimedChildren and ClaimedBy,
+  element colours, bounding box (to 1% of its size);
+- the scene: every node path to every SoFCSelectionRoot as the chain of
+  objects whose roots it passes -- per OCCURRENCE, since a name-only probe
+  once called a half-broken scene green; past 300 objects, the depths of
+  each root's occurrences (pivy casts every node it returns through a
+  linear type lookup, and the chains cost 130 s a snapshot on a
+  653-object file); past `PL_PATHS_LIMIT` roots (1500) not at all -- links
+  and binders multiply occurrences, and one search over a 494-object file
+  with 92 SubShapeBinders ran for half an hour, so the user files were
+  run with the limit at 300;
+- a pick grid from one camera, an edge or vertex hit not judged (a
+  boundary cell a pixel flips);
+- the backend's frame, forced fresh after the camera is set (a frame
+  staged before it came back once, NaviCube and unlit faces included).
+
+The generated corpus: children created after their Part and before it,
+nested Parts and Links to Links, a LinkGroup with a hidden element, link
+arrays, a PartDesign Body with a Link to it, groups with a hidden, a
+wireframe, a face-coloured and a transparent member, booleans, a sketch
+attached to a face, 327 objects in interleaved creation order, and a
+cross-document pair -- placements off identity throughout, identity being
+what hid the lost Part children. Then operations made while the drain
+still runs, against the same made after an eager open: an edit and
+recompute, a delete, a move between Parts, an undo, hides, a recompute of
+everything, a revert, and closes during the drain.
+
+**Found and fixed** (each reproduced on every progressive run):
+
+1. **A shape built twice.** `updateVisual`'s read of a blob-held shape is
+   the fault-in, and the landing shape's notification builds the visual
+   inside that read; the outer call built it again. Every blob-held shape
+   of every progressive load (docs/CoinRetirement.md 5.27, `2b184941bf`).
+2. **A Body's Origin in no occurrence of the scene.** A container
+   rebuilding its 3D children while a child's view provider was being
+   created -- registered with the Gui document, not yet announced to the
+   application -- cached the child as claimed, and a claim through a
+   LinkView (a GeoFeatureGroup's) looks it up application-wide and left
+   it out. Every later rebuild compared the claim equal. The Body's
+   Origin, and with it the planes a sketch edit shows, were nowhere.
+   `Document::handleChildren3D` now leaves an unannounced child out and
+   claims it again once `slotNewObject` has announced it.
+3. **A secondary view never built.** The drain's queue names objects and
+   finds the object's own view provider, so a second one attached to the
+   same object -- a sketch's internal faces, a PartDesign feature's
+   add/sub preview or suppressed shape -- stayed parked, and the
+   bounding-box hook leaves a parked visual alone: a sketch's internal
+   face view kept a stray point at the sketch origin, which its bounding
+   box and every fit took in. Secondary views (`Gui::SecondaryView`) are
+   no longer parked.
+4. **The origin size never recomputed, then infinite.** The size follows
+   the content through `updateData`, which the replay never raises: a
+   progressive Body kept the size saved with it. Scheduling the update
+   from `finishRestoring` exposed a latent defect -- a SubShapeBinder
+   bound to a datum plane reports +-1e100, and the origin planes came out
+   with a Size of inf and NaN geometry. `updateOriginSize` now skips an
+   unbounded box, which an eager load could hit as well.
+5. **A hide during the drain undone.** Phase three's sweep pushes a view
+   provider's restored Visibility onto its object, so a Part or a Link
+   hidden while the drain ran came back visible (a box did not). A
+   visibility set outside the drain's own slices is kept and re-applied
+   after the object's `finishRestoring`.
+6. **Document data changed by opening it.** An image plane's view
+   provider writes the image's own size into `XSize`/`YSize` unless it is
+   restoring, and phase three sweeps with the restore status dropped: six
+   reference images of a user file came out 5-14 times smaller.
+   `RestoreDrainGuard` suppressed the touch but not the write, so a save
+   for any other reason would have kept it; its report
+   (`progressive restore X: N document changes suppressed ...`) named
+   them. The plane now also refuses during `RestoreDrain`.
+7. **An image plane untextured after an EAGER open** -- the one defect
+   the differential found on the other side. The image is a file included
+   in the archive, which an eager load writes out after the objects are
+   restored, so the load at restore found no file; the drain, replaying
+   later, had it. `finishRestoring` now loads the texture, and only the
+   texture (the size is the saved one).
+
+8. **A Link to an image plane drew nothing.** A view provider whose
+   record names an archive entry or a blob is restored inside the
+   blocking window (`restoreCapturedViewProvider`, the content is held
+   open only that long) -- and was then finished by the App's
+   finish-restore signal, before any other view provider existed. The
+   Link linked nothing, and, no longer restoring, phase three passed it
+   over. Three user files lost Links that way (one a Body under a Part).
+   It is now left restoring for phase three while the document parks its
+   view providers.
+
+Commits: `284429b4cc` (2), `1759f7a3f2` (5), `1aa780f7de` (3),
+`6fd064cd5f` (4), `836ba8aa2a` (6), `76a0345254` (7), `62172a0e88` (8);
+(1) is `2b184941bf`.
+
+**Open: the drain replays the records BEFORE the updates.** An eager load
+applies the App properties' updates (`updateData`, as each property
+restores) and THEN the view providers' records, so the saved Gui state
+wins over whatever a handler does on an update. The drain does the
+reverse -- records in phase two, the property sweep in phase three -- so a
+handler that acts on an update wins over the saved state. Found on a user
+file: a `Part::MultiFuse` hides its inputs and maps its face colours from
+them in `updateData`, so after a progressive open the Body the user had
+shown again is hidden, and the fusion's saved colour is replaced by its
+input's. The corpus missed it because there the inputs were saved hidden
+anyway. Two ways out, not yet chosen: guard each such handler with
+`RestoreDrain`, as (6) did -- every boolean, every feature that hides its
+base -- or run the sweep before the records, as the eager order is, which
+changes the drain's design (sec 13) and its costs.
+
+**Not defects, and why the test does not judge them:**
+- a coarse first tessellation (27 against 62 points on a circle) that the
+  level ladder refines on idle -- waited out;
+- the size of a datum or an origin feature: derived from the content at
+  whatever moment it was last asked for, and an eager load asks mid-load,
+  before all of it is built (272 against 286 on the same file) -- reported
+  apart, not judged;
+- an eager open and another eager open differing in a frame's pixels
+  (transparency) -- the noise floor.
+
+In the generated corpus those derived sizes come out the same every time,
+so there the test does judge them (it caught (4)); only for files handed
+in with `PL_FILES` are they reported apart. A non-finite bounding box is
+judged everywhere.
+
+**The harness's own traps**, each of which once made a run lie:
+`vp.isShow()` does not exist, and one `try` around all the reads blanked
+every field after it (show, showable, switch, mode, claims) -- the first
+runs compared none of them; each read is now guarded on its own. A file
+written by an older release asks, modally, whether to recompute for
+migration, which held a run for its whole timeout: the test turns
+`WarnRecomputeOnRestore` off and dismisses any other modal dialog on a
+timer, logging it.
+
+**Test.** `tests/gui/progressive-load-diff.py` (registered,
+`GuiProgressiveLoadDiff_tests_run`, ~5 min): 12 corpus files x 2
+progressive runs, 7 operations during the drain, 3 closes during it and a
+whole reopen after -- 23/23. Before-state (the six fixes above reverted,
+(1) kept): body FAILS (the Origin's 16 scene paths, 6 origin sizes, the
+sketch's internal view), sketch FAILS (the stray origin point), image
+FAILS (the overwritten size, and the eager frame untextured), and the
+hide during the drain FAILS (two Parts and a Link visible again); the
+other 19 pass both ways. (4)'s guard alone was seen before it existed:
+the size fix without it gave a user file's origin planes Size = inf.

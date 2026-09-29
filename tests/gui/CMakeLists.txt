@@ -569,3 +569,16 @@ fc_add_gui_test(GuiSketchDragArcConic_tests_run
 fc_add_gui_test(GuiReopenVisualBuilds_tests_run
                 reopen-visual-builds.py
                 --timeout 240)
+
+# A progressive load (ProgressiveLoad, view providers built after the App
+# load) builds the Gui state an eager load does: per view provider, per
+# scene path to every selection root, a pick grid and the backend's frame,
+# over a generated corpus of containers, links, a Body, a sketch, an image
+# and a cross-document pair, each opened eagerly, progressively twice and
+# eagerly again (the noise floor); then edits, deletes, moves, undo, hides,
+# a recompute and a revert made while the drain still runs, against the
+# same after an eager open, and closes during the drain
+# (docs/DocumentLoad.md sec 16).
+fc_add_gui_test(GuiProgressiveLoadDiff_tests_run
+                progressive-load-diff.py
+                --timeout 1500)
