@@ -27,6 +27,7 @@
 #endif
 
 #include <algorithm>
+#include <atomic>
 #include <deque>
 #include <sstream>
 #include <boost/io/ios_state.hpp>
@@ -182,7 +183,10 @@ TYPESYSTEM_SOURCE(App::StringHasher, Base::Persistence)
 
 StringHasher::StringHasher()
     :_hashes(new HashMap)
-{}
+{
+    static std::atomic<std::uint64_t> serials {0};
+    _serial = ++serials;
+}
 
 StringHasher::~StringHasher() {
     clear();

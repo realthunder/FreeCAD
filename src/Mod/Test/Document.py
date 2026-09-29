@@ -4930,3 +4930,51 @@ class TransactionBranchCases(unittest.TestCase):
         FreeCAD.closeDocument(doc.Name)
         doc = self.track(FreeCAD.openDocument(os.path.join(self.dir, "oldcrossing.FCStd")))
         self.assertIn("Touched", doc.Old.State)
+
+    def testABinderCrossingDocumentsTakesTheIdsOfItsTable(self):
+        # Sec 27.76 item 4, 27.78: a SubShapeBinder bound to another
+        # document's shape, as a link is: its names in its own table, the
+        # marker naming the source document, and after a reopen with the
+        # source's file gone the same names, from this file alone.
+        import re
+
+        self.param.SetInt("TransactionLog", 0)
+        B = self.track(FreeCAD.newDocument("BindB"))
+        box = B.addObject("Part::Box", "Box")
+        fillet = B.addObject("Part::Fillet", "Fillet")
+        fillet.Base = box
+        fillet.Edges = [(1, 1, 1)]
+        B.recompute()
+        B.saveAs(os.path.join(self.dir, "bindb.FCStd"))
+        A = self.track(FreeCAD.newDocument("BindA"))
+        for i in range(3):
+            A.addObject("Part::Sphere", "Sphere%d" % i)
+        A.recompute()
+        binder = A.addObject("Part::SubShapeBinder", "Binder")
+        binder.Support = [(fillet, "")]
+        A.recompute()
+        A.saveAs(os.path.join(self.dir, "binda.FCStd"))
+
+        def expand(hasher, text):
+            def one(m):
+                sid = hasher.getID(int(m.group(1), 16))
+                return expand(hasher, sid.Data) if sid else "<missing>"
+
+            return re.sub(r"#([0-9a-f]+)", one, text)
+
+        shape = binder.Shape
+        self.assertTrue(shape.Hasher.isSame(A.Hasher))
+        self.assertTrue(shape.ElementMap)
+        for name in shape.ElementMap:
+            marker = re.search(r";:X#([0-9a-f]+)", name)
+            self.assertTrue(marker, name)
+            self.assertEqual(A.Hasher.getID(int(marker.group(1), 16)).Data, B.Uid)
+        before = {e: expand(A.Hasher, n) for n, e in shape.ElementMap.items()}
+        for text in before.values():
+            self.assertNotIn("<missing>", text)
+        FreeCAD.closeDocument(A.Name)
+        FreeCAD.closeDocument(B.Name)
+        os.rename(os.path.join(self.dir, "bindb.FCStd"), os.path.join(self.dir, "bindb.gone"))
+        A = self.track(FreeCAD.openDocument(os.path.join(self.dir, "binda.FCStd")))
+        after = {e: expand(A.Hasher, n) for n, e in A.Binder.Shape.ElementMap.items()}
+        self.assertEqual(after, before)

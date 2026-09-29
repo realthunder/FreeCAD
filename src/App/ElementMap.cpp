@@ -611,6 +611,7 @@ public:
             return map;
         }
         map = shared_from_this();
+        ++_revision;
 
         const char *hasherWarn = nullptr;
         const char *hasherIDWarn = nullptr;
@@ -827,6 +828,7 @@ public:
                        bool overwrite,
                        IndexedName * existing)
     {
+        ++_revision;
         MappedName name = withSharedPostfix(_name);
         if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG)) {
             if (name.find("#") >= 0
@@ -867,6 +869,7 @@ public:
         MappedNameRef * ref = findMappedRef(it->second);
         if (!ref)
             return false;
+        ++_revision;
         ref->erase(name);
         this->mappedNames.erase(it);
         return true;
@@ -881,6 +884,7 @@ public:
         if (idx.getIndex() >= (int)indices.names.size())
             return false;
         auto & ref = indices.names[idx.getIndex()];
+        ++_revision;
         for (auto *r = &ref; r; r = r->next.get())
             this->mappedNames.erase(r->name);
         ref.clear();
@@ -1062,6 +1066,7 @@ public:
     {
         if (childElements.empty() || !master.Hasher)
             return;
+        ++_revision;
         std::ostringstream ss;
         for (auto & v : this->indexedNames) {
             for (auto & vv : v.second.children) {
@@ -1089,6 +1094,7 @@ public:
     void addChildElements(ComplexGeoData & master,
                           const std::vector<MappedChildElements> &children)
     {
+        ++_revision;
         std::ostringstream ss;
         ss << std::hex;
 
@@ -1463,6 +1469,16 @@ private:
     std::size_t childElementSize = 0;
 
     mutable unsigned _id = 0;
+
+    /// Counts the changes to the map: what a translation of it is valid for
+    /// (translateElementMap).
+    unsigned long _revision = 0;
+
+public:
+    unsigned long revision() const
+    {
+        return _revision;
+    }
 };
 
 }
@@ -1475,11 +1491,13 @@ struct Translation
 {
     std::weak_ptr<Data::ElementMap> source;
     std::weak_ptr<Data::ElementMap> result;
-    unsigned long size = 0;
+    unsigned long revision = 0;
 };
 
 std::mutex translationLock;
-std::map<std::pair<const Data::ElementMap*, const App::StringHasher*>, Translation> translations;
+// Keyed by the target table's serial, not its address: a table that dies and
+// a new one made where it was would otherwise be handed the dead one's copy.
+std::map<std::pair<const Data::ElementMap*, std::uint64_t>, Translation> translations;
 
 /// The ids `text` names by `#hex`, in order.
 void textIds(const QByteArray &text, std::vector<long> &ids)
@@ -1556,15 +1574,14 @@ Data::ElementMapPtr translateCached(const Data::ElementMapPtr &map, App::StringH
                                     const App::StringHasher &from,
                                     App::StringHasher::ImportMemo &memo, int &failed)
 {
-    auto key = std::make_pair(static_cast<const Data::ElementMap*>(map.get()),
-                              static_cast<const App::StringHasher*>(&to));
+    auto key = std::make_pair(static_cast<const Data::ElementMap*>(map.get()), to.serial());
     {
         std::lock_guard<std::mutex> guard(translationLock);
         auto it = translations.find(key);
         if (it != translations.end()) {
             auto source = it->second.source.lock();
             auto result = it->second.result.lock();
-            if (source == map && result && it->second.size == map->size())
+            if (source == map && result && it->second.revision == map->revision())
                 return result;
             translations.erase(it);
         }
@@ -1579,7 +1596,7 @@ Data::ElementMapPtr translateCached(const Data::ElementMapPtr &map, App::StringH
                 ++it;
         }
     }
-    translations[key] = {map, result, map->size()};
+    translations[key] = {map, result, map->revision()};
     return result;
 }
 

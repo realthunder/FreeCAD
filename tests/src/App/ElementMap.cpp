@@ -657,4 +657,49 @@ TEST_F(ElementMapTest, translationIsSharedWhileItLives)
     EXPECT_EQ(sid.dataToText(), std::string("Edge1;:G;XTR;:H12:7"));
 }
 
+TEST_F(ElementMapTest, translationFollowsTheSourceAndTheTable)
+{
+    // Sec 27.78: a copy is reused only for the same source as it was --
+    // changed in place with the same number of names, it is made again --
+    // and for the same table, told apart by serial, not by address.
+    Base::Reference<App::StringHasher> other(new App::StringHasher);
+    ElementMapHost source(12);
+    source.Hasher = other;
+    Data::MappedName name("Edge1");
+    name += ";:G;XTR;:H12:7";
+    Data::ElementIDRefs sids;
+    Data::MappedName hashed = name.hashElementName(other, sids);
+    hashed += ";:H12,E";
+    source.setElementName(Data::IndexedName("Edge", 1), hashed, &sids);
+    auto map = source.elementMap();
+
+    auto first = Data::translateElementMap(map, other, _hasher);
+    auto count = source.getElementMapSize();
+    // Another name for the same element: as many names as before.
+    source.eraseElementName(Data::IndexedName("Edge", 1));
+    Data::MappedName renamed("Edge2");
+    renamed += ";:M;FLT;:H13:7";
+    Data::ElementIDRefs sids2;
+    Data::MappedName hashed2 = renamed.hashElementName(other, sids2);
+    hashed2 += ";:H13,E";
+    source.setElementName(Data::IndexedName("Edge", 1), hashed2, &sids2);
+    ASSERT_EQ(source.elementMap(), map);
+    ASSERT_EQ(source.getElementMapSize(), count);
+    auto second = Data::translateElementMap(map, other, _hasher);
+    EXPECT_NE(second, first);
+    ElementMapHost target(13);
+    target.Hasher = _hasher;
+    target.resetElementMap(second);
+    auto translated = target.getMappedName(Data::IndexedName("Edge", 1));
+    auto sid = _hasher->getID(App::StringID::fromString(translated.dataBytes()));
+    ASSERT_TRUE(sid);
+    EXPECT_EQ(sid.dataToText(), std::string("Edge2;:M;FLT;:H13:7"));
+
+    Base::Reference<App::StringHasher> third(new App::StringHasher);
+    EXPECT_NE(third->serial(), _hasher->serial());
+    auto elsewhere = Data::translateElementMap(map, other, third);
+    EXPECT_NE(elsewhere, second);
+    EXPECT_EQ(Data::translateElementMap(map, other, _hasher), second);
+}
+
 // NOLINTEND(readability-magic-numbers)

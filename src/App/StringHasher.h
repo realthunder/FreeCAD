@@ -26,6 +26,7 @@
 #include <FCConfig.h>
 
 #include <bitset>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <unordered_map>
@@ -841,6 +842,13 @@ public:
     std::vector<long> markedIDs() const;
     /// The last id handed out or read; none is handed out again.
     long lastID() const;
+    /// A number of this table's own, never given to another in the process:
+    /// what a cache of its strings is keyed by, where an address may be
+    /// reused by a table made after this one dies.
+    std::uint64_t serial() const
+    {
+        return _serial;
+    }
 
     /** Write the elements naming the table as the member `file`, with content
      * `hash` and `count` strings (docs/TransactionLog.md sec 27.50 item 1),
@@ -926,6 +934,7 @@ private:
     std::string _tableHash;
     mutable std::string _contentHash;
     mutable uint64_t _hashRevision {0};
+    std::uint64_t _serial;
 };
 /** The ids an element map written on this thread uses (docs/TransactionLog.md
  * sec 27.49, 27.50 item 4). While one lives, an element map lists after each
