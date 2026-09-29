@@ -46,6 +46,8 @@
 #include <boost/io/ios_state.hpp>
 #include <boost/regex.hpp>
 
+#include <QSet>
+
 #include "ElementNamingUtils.h"
 
 #include "App/Application.h"
@@ -564,6 +566,12 @@ public:
             postfixes.emplace_back();
             s >> postfixes.back();
         }
+        // One buffer per saved postfix, which every name ending in it
+        // shares (docs/TransactionLog.md sec 27.77).
+        std::vector<QByteArray> postfixBytes;
+        postfixBytes.reserve(count);
+        for (auto &p : postfixes)
+            postfixBytes.emplace_back(p.c_str(), static_cast<int>(p.size()));
 
         std::vector<ElementMapPtr> childMaps;
         count = 0;
@@ -572,16 +580,17 @@ public:
         childMaps.reserve(count-1);
         for (int i=0; i<count-1; ++i) {
             childMaps.push_back(std::make_shared<ElementMap>()->restore(
-                        hasher, s, childMaps, postfixes));
+                        hasher, s, childMaps, postfixes, postfixBytes));
         }
 
-        return restore(hasher, s, childMaps, postfixes);
+        return restore(hasher, s, childMaps, postfixes, postfixBytes);
     }
 
     ElementMapPtr restore(App::StringHasherRef hasher,
                           std::istream &s,
                           std::vector<ElementMapPtr> &childMaps,
-                          const std::vector<std::string> &postfixes)
+                          const std::vector<std::string> &postfixes,
+                          const std::vector<QByteArray> &postfixBytes)
     {
         const char * msg = "Invalid element map";
         std::string tmp;
@@ -725,7 +734,7 @@ public:
                         if (n <= 0 || n > (int)postfixes.size())
                             postfixWarn = "Invalid element postfix index";
                         else
-                            ref->name += postfixes[n-1];
+                            ref->name += sharedPostfix(postfixBytes[n-1]);
                     }
 
                     this->mappedNames.emplace(ref->name, idx);
@@ -770,12 +779,40 @@ public:
         return shared_from_this();
     }
 
-    MappedName addName(MappedName & name,
+    /// The pool's buffer for `postfix`, which takes it in if it has none.
+    const QByteArray &sharedPostfix(const QByteArray &postfix)
+    {
+        return *postfixPool.insert(postfix);
+    }
+
+    /** `name` with the pool's buffer for its postfix.
+     *
+     * A name made by an op gets its postfix from a stream of its own
+     * (encodeElementName), so the names one op gives the same op code and
+     * tag each held a copy -- 51,140 buffers for 6,054 texts on
+     * scanner.FCStd (docs/TransactionLog.md sec 27.77).
+     */
+    MappedName withSharedPostfix(const MappedName &name)
+    {
+        const QByteArray &postfix = name.postfixBytes();
+        if (postfix.isEmpty())
+            return name;
+        const QByteArray &shared = sharedPostfix(postfix);
+        if (shared.constData() == postfix.constData())
+            return name;
+        MappedName res;
+        res.append(name, 0, name.dataBytes().size());
+        res += shared;
+        return res;
+    }
+
+    MappedName addName(MappedName & _name,
                        const IndexedName & idx,
                        const ElementIDRefs &sids,
                        bool overwrite,
                        IndexedName * existing)
     {
+        MappedName name = withSharedPostfix(_name);
         if (FC_LOG_INSTANCE.isEnabled(FC_LOGLEVEL_LOG)) {
             if (name.find("#") >= 0
                     && name.findTagInElementName() < 0)
@@ -1404,6 +1441,9 @@ private:
             > mappedNames;
 
     QHash<QByteArray, ChildMapInfo> childElements;
+
+    /// The postfix texts of this map's names, one buffer each.
+    QSet<QByteArray> postfixPool;
 
     std::size_t childElementSize = 0;
 
