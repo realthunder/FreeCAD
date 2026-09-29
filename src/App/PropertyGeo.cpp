@@ -41,6 +41,7 @@
 #include "ComplexGeoData.h"
 #include "Document.h"
 #include "PropertyGeo.h"
+#include "TransactionValue.h"
 
 #include "Document.h"
 #include "Placement.h"
@@ -1560,9 +1561,12 @@ std::string PropertyComplexGeoData::getElementMapVersion(bool) const {
     if(!data)
         return std::string();
     auto owner = Base::freecad_dynamic_cast<DocumentObject>(getContainer());
+    // A detached copy has no owner; one the transaction log captures is its
+    // document's value, and answers as the owner would
+    // (docs/TransactionLog.md sec 27.72).
+    const Document* doc = owner ? owner->getDocument() : capturingDocument();
     std::ostringstream ss;
-    if(owner && owner->getDocument()
-             && owner->getDocument()->getStringHasher()==data->Hasher)
+    if(doc && doc->getStringHasher()==data->Hasher)
         ss << "1.";
     else
         ss << "0.";

@@ -4463,3 +4463,89 @@ class TransactionBranchCases(unittest.TestCase):
         self.assertEqual(link.LinkCopyOnChange, "Owned")
         self.assertEqual(link.Config_L.Value, 20)
         self.assertEqual(sorted(o.Name for o in doc.Objects), main)
+
+    def testSwitchKeepsTheElementMapVersion(self):
+        # Sec 27.72: a shape read back from the log carries the element map
+        # version its owner's save writes. The capture of a detached copy
+        # wrote one without the hasher prefix; the switch's restore took it
+        # for a version change, and once saved, the file asked for a
+        # recompute of the object at its next open.
+        doc = self.track(FreeCAD.newDocument("MapVersion"))
+        doc.UndoMode = 1
+        doc.saveAs(os.path.join(self.dir, "mapversion.FCStd"))
+
+        def step(name, fn):
+            doc.openTransaction(name)
+            fn()
+            doc.recompute()
+            doc.commitTransaction()
+
+        def build():
+            # A primitive's element map is empty, which the check passes;
+            # a boolean's is not.
+            fuse = doc.addObject("Part::MultiFuse", "Fuse")
+            box = doc.addObject("Part::Box", "Box")
+            fuse.Shapes = [box, doc.addObject("Part::Cylinder", "Cyl")]
+
+        step("fuse", build)
+        self.assertTrue(doc.Fuse.Shape.ElementMapSize)
+        doc.save()
+        doc.createTransactionBranch("side")
+        step("edit", lambda: setattr(doc.Box, "Length", 20))
+        doc.save()
+        doc.switchTransactionBranch("main")
+        self.assertEqual(doc.Box.Length.Value, 10)
+        self.assertNotIn("Touched", doc.Fuse.State)
+        doc.save()
+        path = doc.FileName
+        FreeCAD.closeDocument(doc.Name)
+        doc = self.track(FreeCAD.openDocument(path))
+        self.assertEqual([o.Name for o in doc.Objects if "Touched" in o.State], [])
+
+    def testSwitchKeepsTheNamesAConsumerMadeOfALink(self):
+        # Sec 27.72: a link's own shape is made on demand, and the strings
+        # its element names hash to are held only while something holds
+        # them; a save drops the rest, log or no log, and the next making
+        # mints new ids. What is kept is what a consumer stored: a compound
+        # of a copy-on-change link keeps its names across a switch that
+        # rebuilds the link's copy, and across its own recompute after.
+        import Part
+
+        doc = self.track(FreeCAD.newDocument("LinkConsumer"))
+        doc.UndoMode = 1
+        doc.saveAs(os.path.join(self.dir, "linkconsumer.FCStd"))
+
+        def step(name, fn):
+            doc.openTransaction(name)
+            fn()
+            doc.recompute()
+            doc.commitTransaction()
+
+        def build():
+            body = doc.addObject("PartDesign::Body", "Body")
+            sketch = body.newObject("Sketcher::SketchObject", "Sketch")
+            sketch.addGeometry(Part.Circle(FreeCAD.Vector(), FreeCAD.Vector(0, 0, 1), 5))
+            pad = body.newObject("PartDesign::Pad", "Pad")
+            pad.Profile = sketch
+            body.addProperty("App::PropertyLength", "Config_L", "Config")
+            body.setPropertyStatus("Config_L", "CopyOnChange")
+            body.Config_L = 10
+            pad.setExpression("Length", "hiddenref(Body.Config_L)")
+            link = doc.addObject("App::Link", "A")
+            link.LinkedObject = body
+            link.LinkCopyOnChange = "Owned"
+            link.Config_L = 20
+            doc.addObject("Part::Compound", "C").Links = [link]
+
+        step("build", build)
+        doc.save()
+        before = dict(doc.C.Shape.ElementMap)
+        self.assertTrue(any(n.startswith("#") for n in before))
+        doc.createTransactionBranch("side")
+        step("edit", lambda: setattr(doc.A, "Config_L", 25))
+        doc.save()
+        doc.switchTransactionBranch("main")
+        self.assertEqual(doc.A.Config_L.Value, 20)
+        self.assertEqual(dict(doc.C.Shape.ElementMap), before)
+        step("again", lambda: doc.C.touch())
+        self.assertEqual(dict(doc.C.Shape.ElementMap), before)

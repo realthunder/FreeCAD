@@ -56,6 +56,7 @@
 #include <App/DocumentParams.h>
 #include <App/DocumentObject.h>
 #include <App/ObjectIdentifier.h>
+#include <App/TransactionValue.h>
 #include <Base/Console.h>
 #include <Base/Exception.h>
 #include <Base/FileInfo.h>
@@ -1263,6 +1264,13 @@ void PropertyPartShape::Save (Base::Writer &writer) const
     if(owner) {
         if(!owner->isExporting())
             version = _Ver.size()?_Ver:owner->getElementMapVersion(this);
+    }else if(App::capturingDocument()) {
+        // A detached copy the transaction log captures writes the version
+        // its owner's save would, hasher prefix and all: without it, every
+        // value read back from the log -- a switch, a cold undo -- failed
+        // the version check, and once saved again asked for a recompute at
+        // the next open (docs/TransactionLog.md sec 27.72).
+        version = _Ver.size()?_Ver:getElementMapVersion();
     }else
         version = _Ver.size()?_Ver:_Shape.getElementMapVersion();
     writer.Stream() << " ElementMap=\"" << version << '"';
