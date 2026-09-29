@@ -65,7 +65,14 @@ public:
                 timer.start(300);
                 return;
             }
-            for (auto obj : objs) {
+            // Taken, not read: the set is the batch since the last firing.
+            // Left in place it grew with every origin ever scheduled, each
+            // re-sized on every later firing, and kept the addresses of
+            // deleted objects, which a new object at the same address
+            // would answer to.
+            std::set<App::DocumentObject*> batch;
+            batch.swap(objs);
+            for (auto obj : batch) {
                 if (auto vp = Application::Instance->getViewProvider(obj)) {
                     if (auto ext = vp->getExtensionByType<ViewProviderOriginGroupExtension>(true))
                         ext->updateOriginSize();
