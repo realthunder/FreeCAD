@@ -58,6 +58,7 @@ public:
     ~ViewProviderDatum() override;
 
     void attach(App::DocumentObject *) override;
+    void finishRestoring() override;
     bool onDelete(const std::vector<std::string> &) override;
     std::vector<std::string> getDisplayModes(void) const override;
     void setDisplayMode(const char* ModeName) override;

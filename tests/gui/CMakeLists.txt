@@ -582,3 +582,11 @@ fc_add_gui_test(GuiReopenVisualBuilds_tests_run
 fc_add_gui_test(GuiProgressiveLoadDiff_tests_run
                 progressive-load-diff.py
                 --timeout 1500)
+
+# An automatic datum plane comes back from a file at its saved size in
+# either open mode, and the origin sized over it with it: it sized itself
+# only during the load, before the features after it had a visual
+# (docs/DocumentLoad.md sec 16).
+fc_add_gui_test(GuiDatumSizeAfterOpen_tests_run
+                datum-size-after-open.py
+                --timeout 240)
