@@ -3100,6 +3100,12 @@ void setManifestFinalize(SceneSnapshot &snap, const LoaderPtr &st)
         };
         apply(s.scene);
         apply(s.highlight);
+        // The draws no object claims too: they are taken without waiting
+        // for their appearance, so this is the only way their material
+        // reaches them -- and with it what places them. An on-view
+        // label's number drew grey and unscaled, a quad the size of its
+        // glyph in pixels, laid out in millimetres.
+        apply(s.keyless);
         // The object groups are patched in place, where they wait for
         // the model to take them.
         for (auto &group : s.groups)
