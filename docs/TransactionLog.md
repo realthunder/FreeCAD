@@ -8252,3 +8252,100 @@ version whole; then the rest in the order 27.68 gives.
 (b) the op table compacted, (c) the embedded copy without its indexes,
 built on adopt, and (d) the recompute records compacted are all wanted;
 none is built now. The 27.68 issues come first, from the second on.
+
+### 27.71 A switch after a trim, chased; ruling: a trim leaves a bridge (user, 2026-09-29)
+
+**Asked (user):** the second issue of 27.68 -- after T4's first trim every
+switch read a version whole, 2-4 s.
+
+**Why it reads one.** The trim removes this branch's rows that no other
+branch's history holds, up to the version kept (16.7). Those are exactly
+the rows between the kept version and the newest row the other branch
+shares, and the walk of 27.34 needs them to reach the point where the two
+chains meet. 16.7 accepts that ("the versions that bracket it remain as
+checkouts"); the cost is the read.
+
+**What the read cost.** A 300-step T4 (trim at 200, the switch at 250),
+profiled: 1.6 s of the switch in `_readVersion` -- 1.06 s restoring the
+scratch document, 0.43 s `_applyVersion` -- and of the restore, about
+1.2 s was TechDraw's `onDocumentRestored` projecting again every view the
+version recorded without a stored projection or touched
+(`DrawProjGroupItem`, and `DrawPage` through `updateAllViews`).
+
+- *FreeCADCmd never stores a projection.* TechDraw finishes its
+  hidden-line pass through a `QFutureWatcher` signal, and FreeCADCmd has no
+  `QCoreApplication`: no view in a T4 run ever stored one, in the file or
+  in a version, and every restore projected them all. `T4_QT=1` makes one
+  and pumps it, as the Gui would (0dafd376d1); with it 29 of the 30 views
+  store theirs.
+- *A read from the log re-projected a view saved out of date.*
+  `DrawViewPart::canReuseStoredGeometry()` now also takes the stored
+  projection while the document `isReplaying()` -- a switch, a version
+  read whole, a recovery: the projection is a value the log supplies, the
+  view stays touched as saved, and the next recompute projects it as
+  before (1d038be1db). The same run with the Qt loop: the switch after the
+  trim 1.84 s -> 1.20 s. The TechDraw Gui tests pass (9).
+
+**Ruling (user):** of a bridge, a faster whole read, both or neither --
+**the trim leaves a bridge row.**
+
+**As built.** `Document::trimBranch(name, version, bridge = true)`, Python
+`trimTransactionBranch(name, version=0, bridge=True)`:
+- where another branch exists, the rows from the newest row this branch
+  shares with one -- or from the start, for a branch made from nothing --
+  up to the kept version are squashed into the kept version's own row
+  (its seq unchanged, its parent that shared row) instead of removed; the
+  rows below it are the other branch's history and stay, as before;
+- the net change is the squash's (16.7): its fold is `netOps()` now,
+  shared by `squashVersions` and the trim, and no longer quadratic -- it
+  looked every value of the span up for each object born in it, which
+  made a bridged trim of 213 rows take 2-3 s;
+- the row is a `squash` named `Trim <branch> to version N`; the trim's
+  record says `"bridge": <rows squashed>`;
+- nothing is undone past the kept version (16.7): on the current branch
+  the undo floor rises to it, so the bridge is no undo step;
+- `bridge=False` removes the stretch as before, and a switch across it
+  reads a version whole: the tests that are about the whole read ask for
+  it (`trimAndDeleteBranches`, `testWholeReadAndWalkBringBackARemovedShape`).
+
+Test: `TransactionLogTest.trimLeavesABridgeToABranchForkedBelow` -- a trim
+of main to its head with side forked below: one squash row, hanging off a
+row side's history holds, the chain whole to the start, no undo left, and
+both switches through rows, with an object made and one removed in the
+squashed stretch.
+
+**T4 again** (log on, the same seed, no Qt loop so as to compare with
+27.69; 0 errors, every check as before):
+
+| | 27.69 | now |
+| --- | --- | --- |
+| switches 50-200 | 0.31-0.71 s | 0.32-0.74 s |
+| switches 250-950 | 1.91-4.67 s, a version read whole | 0.66-2.75 s, through the rows |
+| trims (200, 400, 600, 800) | 0.21, 0.44, 0.59, 0.75 s | 0.28, 0.52, 0.70, 0.93 s |
+| open the oldest version | 3.78 s | 2.04 s |
+| save at 1000 | 1.74 s | 1.86 s |
+| file at 1000 | 25.9 MB | 23.9 MB |
+| store at 1000 | 63.8 MB, 128,948 ops | 60.3 MB, 143,896 ops |
+
+The four bridges hold 15k net ops; the store is 3.5 MB smaller all the
+same, which was not chased. The switches still grow
+with the run -- by step 950 each branch has its own 37-odd instances of 15
+objects -- which is the difference between the two states; not profiled.
+
+**Recompute per ten steps is higher, and that is the rows being right.**
+1.32 s at step 1000 where 27.69's run had 0.88. The recompute records say
+why: `Helix001`, which fails at the first recompute ("Sub shape not
+found", 27.66), is recomputed at every step, and `Pocket034` after it
+takes twice as long. In 27.69's run it was up to date from row 752 on:
+the first whole read (the switch at row 750) had rewritten its `Shape`,
+and the next recompute succeeded. The rows keep the state the session
+had, as the log-off run does (0.76 -> 1.26 s, 27.67), so the old figure
+was a whole read's side effect on this model's broken reference. It
+belongs with the sixth issue, the recompute creep.
+
+**Gates** (with this): Python 2951 OK (52 skipped, 6 expected failures),
+ctest 848/848 (+1), the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16.
+
+**Next:** the fourth issue of 27.68, a link's element tags re-minted
+after a switch; then the material blob, the recompute creep, the SIGSEGV
+at exit.
