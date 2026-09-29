@@ -5412,6 +5412,16 @@ bool ViewProviderPartExt::deferVisualForLoad()
 {
     if (!Gui::RenderParams::getProgressiveLoad())
         return false;
+    // A secondary view -- a sketch's internal faces, a PartDesign
+    // feature's add/sub preview or suppressed shape -- shares its object
+    // with the object's own view provider, and the queue names objects:
+    // the slice finds the OWN one and never this. Parked, it stayed
+    // parked for good, and the bounding-box hook, which leaves a parked
+    // visual alone, never built it either: a sketch's internal-face view
+    // kept a stray point at the sketch origin, which its bounding box and
+    // every fit took in. Built when asked instead, as an eager load does.
+    if (testStatus(Gui::SecondaryView))
+        return false;
     auto obj = getObject();
     auto doc = obj ? obj->getDocument() : nullptr;
     if (!doc)
