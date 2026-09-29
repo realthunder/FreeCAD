@@ -2183,3 +2183,90 @@ the base kept in place. Suites: Python 3150 OK (50 skipped, 6 expected
 failures; +14: upstream's 8, the path frame case, the two Transformed
 cases, three point cases -- the base kept, HideBaseFeature, whole
 shapes), ctest 750/750.
+
+### The three kinds in MultiTransform, and the on-view spacing labels (2026-09-29)
+
+**MultiTransform's panel** offers circular, path and point patterns beside
+the others (`602b58908b`). A circular one takes its axis as a polar one
+does -- the sketch normal, else the body's Z axis; a path or the points are
+picked in the sub-panel, and until then the transformation is the
+original alone. Inside a MultiTransform a point pattern has no base of its
+own, so the original stays and the copies keep the points' layout relative
+to the first point: that is what composes with the other transformations,
+whose first instance is the original too. `testInMultiTransform` (point
+and path) pins it. Two defects came out of driving it:
+
+- **The MultiTransform took its sub-panel's picks as originals.** Both
+  panels observe the same selection and its originals editor adds
+  whatever is clicked -- a path edge, a points object, a linear
+  direction's edge alike. It stands aside while the sub-panel is picking
+  (`TaskTransformedParameters::isSelecting()`); it is attached first, so
+  it sees each pick while the sub-panel is still in its mode.
+- **An unset reference showed a blank combo entry** (`e1441206dd`):
+  `ComboLinks::setCurrentLink` compared an empty link's sub-names, and an
+  entry added as `(nullptr, "")` holds one empty sub where a property
+  never set holds none. Standalone path and point panels had it too.
+
+A trap for the next driver: while a Transformed panel is open recompute
+is paused, and `Shape` is the support alone -- the copies are in
+`AddSubShape`. A MultiTransform "losing" its copies in the GUI is that.
+
+**The on-view spacing labels** (`6fa9125919`, the last `deferred` row) are
+on the shared `Gui::PatternDirectionWidget`, so PD's panel, its
+MultiTransform sub-panel and the link array panel all have them
+(`64da7291d2`). The extent, or in Spacing mode each gap, is a dimension in
+the view -- a line along a linear direction, an arc about a polar axis,
+from the middle of what is patterned; a gap of its own in the dimension
+colour, one following the spacing greyed. A click opens the number for
+typing and Enter sets it. The frame is `App::Pattern::getDirection()` or
+`getAxis()` (`0a4da20d03`) mapped through the editing transform, so a
+body turned and moved puts them on its pattern (checked: a body at
+(0,50,0) turned 90 deg, the label from (-5,55,5) to (-5,155,5)). No
+right-click menu: emptying a gap's box and pressing Enter gives it back to
+the spacing, upstream's "Reset spacing" without a modal menu a serving
+process must not open.
+
+They are the fork's `EditableDatumLabel`, as the user asked, and getting
+there fixed the label for everyone (`17649cf561`):
+
+- **It was drawn by nothing under a backend.** The label draws on the GL
+  path; the render cache captures its lines and number from a companion
+  graph (`SoDatumLabel::getImageNode()`) that the Sketcher hangs by its
+  constraints and `EditableDatumLabel` never did. It also hung at the
+  scene root, which is in no backend feed while the GL datum draw stands
+  down for an edit. So the sketcher's own on-view parameters were
+  invisible under bgfx, and ThinClient.md 8.7's "the dimension line
+  reaches a browser by the route every other piece of edit geometry
+  takes" was not so. The label hangs its companion now, under a root the
+  view gives it: the desktop's is in the aux graph, fed as an overlay of
+  its own beside the dimensions'; a mirror's is still the served root.
+  (Cycles has nothing to do with it -- as in Blender, labels and
+  dimensions are the viewport's overlay, never the renderer's.)
+- **A companion kept its first lines.** It is a node of its own, so a
+  capture never saw the label's fields change; the label touches it.
+- **Picked a label's offset away from where it is drawn**: the pick box
+  was sized by GLRender, which does not run while a backend draws. Sized
+  by the pick's own view now.
+- **Enter committed the old value**: the box holds typed text back until
+  Enter, and the label takes Enter first.
+- **A client's box index counted every label**, where the feed numbers
+  only the ones in edit.
+- The box takes the label's point size (never below the application's),
+  on the desktop and through the feed's new `pt`, which the browser's box
+  uses (the user asked, 2026-09-29).
+
+Verified on the desktop (click, type, Enter; a gap overridden and reset;
+polar arcs; the link array; the MultiTransform sub-panel) and through a
+mirror: `OnViewParameter_tests_run` replays a click onto a label and
+checks the feed's index and size, and `tests/gui/serve-pattern-labels.py`
+serves a pattern headless, clicks its label over the wire, types key
+frames and checks the Length (run by hand here; the Linux harness has it
+as `GuiServePatternLabels_tests_run`). Not driven: a real browser -- the
+web change is type-checked only. A trap from the unit test: it had never
+initialised the Gui node classes, so a label's type was bad and no
+action reached it at all -- no image, no pick -- which looked for a while
+like three product bugs.
+
+Suites: Python 3152 OK (50 skipped, 6 expected failures; +2, the point
+and path `testInMultiTransform`), ctest 750/750 (the three new cases are
+in `OnViewParameter_tests_run`).

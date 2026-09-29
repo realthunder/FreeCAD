@@ -1087,6 +1087,16 @@ its text streamed to the client instead of painted. A widget with no window stil
 validates, formats and selects, which was verified before anything was designed around it.
 The client is told what to display and forwards keystrokes, and implements none of it.
 
+**Correction (2026-09-29): the dimension line did not reach a browser.** The render cache
+captures an `SoDatumLabel` through a companion graph (`getImageNode()`) that the Sketcher
+hangs by its constraints and `EditableDatumLabel` did not, so the on-view labels reached no
+client -- and drew nothing on a bgfx desktop either. The label hangs its companion now,
+under `ViewerContext::getOnViewParameterRoot()`: the served root on a mirror, an overlay
+feed of its own on the desktop. A label can also be clicked (`setPickable`), which on a
+mirror is a replayed pointer event through the scene with nothing new on the wire; a
+pattern's spacing labels use that (docs/PartDesignPort.md, 2026-09-29), and
+`tests/gui/serve-pattern-labels.py` drives it over a socket.
+
 Two things ARE the client's, and the line between them and the server is frequency -- the
 same line 8.2a draws for hover:
 
