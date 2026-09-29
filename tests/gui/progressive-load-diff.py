@@ -345,8 +345,28 @@ def s_shown_input(doc):
     gd.getObject("Fus").ShapeColor = (0.2, 0.7, 0.3)
 
 
+def s_unbounded(doc):
+    # A binder of an origin plane is an unbounded face, drawn as a bounded
+    # patch, and a datum plane sized over it. Asked for its box while its
+    # visual was still parked, the binder answered with the face's +-1e100
+    # and the bounding-box cache kept that past the drain's build.
+    part = doc.addObject("App::Part", "UPart")
+    part.Placement = off(0, 30, 0, 11)
+    body = doc.addObject("PartDesign::Body", "UBody")
+    part.addObject(body)
+    xz = [f for f in part.Origin.OriginFeatures if f.Role == "XZ_Plane"][0]
+    binder = body.newObject("PartDesign::SubShapeBinder", "UBinder")
+    binder.Support = [(part, "%s.%s." % (part.Origin.Name, xz.Name))]
+    doc.recompute()
+    plane = body.newObject("PartDesign::Plane", "UPlane")
+    plane.AttachmentSupport = [(binder, "")]
+    plane.MapMode = "FlatFace"
+    plane.AttachmentOffset = P(V(0, 0, 8), R())
+    doc.recompute()
+
+
 SCENES = [s_part_child_later, s_nested, s_linkgroup, s_array, s_body, s_groups,
-          s_booleans, s_sketch, s_many, s_image, s_shown_input]
+          s_booleans, s_sketch, s_many, s_image, s_shown_input, s_unbounded]
 
 
 def build_corpus():

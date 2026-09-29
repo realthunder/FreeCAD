@@ -7748,6 +7748,14 @@ ViewProviderPartExt::_getBoundingBox(const char *subname,
     // detail-path machinery of the node graph, and asking about one
     // sub-element of a never-built shape is rare enough that the
     // build is acceptable there.
+    //
+    // So does an unbounded shape -- a binder of an origin plane is an
+    // infinite face, drawn as a bounded patch. Its bounds are +-1e100
+    // and say nothing about what the visual will draw, and the answer
+    // outlives the build: the bounding-box cache is cleared by property
+    // changes, and a progressive load's drain builds without one. The
+    // binder of a user file kept +-1e100 after the drain (eager, which
+    // builds before anyone asks: +-50), and a datum plane sized over it.
     if (VisualTouched && !(subname && subname[0])) {
         try {
             TopoDS_Shape shape = getShape().getShape();
@@ -7757,9 +7765,13 @@ ViewProviderPartExt::_getBoundingBox(const char *subname,
                 Bnd_Box bounds;
                 BRepBndLib::Add(shape, bounds);
                 bounds.SetGap(0.0);
-                if (!bounds.IsVoid()) {
-                    Standard_Real xMin, yMin, zMin, xMax, yMax, zMax;
+                Standard_Real xMin = 0, yMin = 0, zMin = 0, xMax = 0, yMax = 0, zMax = 0;
+                if (!bounds.IsVoid())
                     bounds.Get(xMin, yMin, zMin, xMax, yMax, zMax);
+                if (!bounds.IsVoid() && !bounds.IsOpen()
+                        && !Precision::IsInfinite(xMin) && !Precision::IsInfinite(xMax)
+                        && !Precision::IsInfinite(yMin) && !Precision::IsInfinite(yMax)
+                        && !Precision::IsInfinite(zMin) && !Precision::IsInfinite(zMax)) {
                     Base::BoundBox3d bbox(xMin, yMin, zMin,
                                           xMax, yMax, zMax);
                     if (mat)

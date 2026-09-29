@@ -18,6 +18,15 @@ against the finished Body before the save. Claims, per open mode
   - the Body's origin has the size it had before the save.
 
 Scored against the tree before the fix: both modes change the size.
+
+Second scene, the same file's other defect: a datum plane attached to a
+SubShapeBinder of a Part's origin plane. The binder is an unbounded face
+drawn as a bounded patch; asked for its box before its visual was built,
+it answered with the face's +-1e100, which the datum refused to size
+over (and the bounding-box cache kept past the build). Claims, per open
+mode, five opens each (the drain's timing decides it, one open
+in three failed before the fix): the binder's box is finite and the plane has its
+saved size.
 """
 import os
 import time
@@ -32,6 +41,8 @@ from PySide import QtCore
 OUT = os.environ["GT_OUT"]
 RESULT = os.environ.get("GT_RESULT", os.path.join(OUT, "result.txt"))
 V = FreeCAD.Vector
+NFILL = 300
+OPENS = 5
 
 FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View").SetInt("RenderCache", 3)
 FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Document").SetBool(
@@ -90,6 +101,60 @@ def build(path):
     return saved, origin
 
 
+def build_unbounded(path):
+    doc = FreeCAD.newDocument("DatumUnbounded")
+    # Ahead of the binder in the visual queue, so a progressive drain is
+    # still building when the binder's box is asked.
+    for i in range(NFILL):
+        b = doc.addObject("Part::Box", "Fill%d" % i)
+        b.Placement.Base = V(200 + (i % 20) * 12, (i // 20) * 12, 0)
+    part = doc.addObject("App::Part", "UPart")
+    body = doc.addObject("PartDesign::Body", "UBody")
+    part.addObject(body)
+    xz = [f for f in part.Origin.OriginFeatures if f.Role == "XZ_Plane"][0]
+    binder = body.newObject("PartDesign::SubShapeBinder", "UBinder")
+    binder.Support = [(part, "%s.%s." % (part.Origin.Name, xz.Name))]
+    doc.recompute()
+    plane = body.newObject("PartDesign::Plane", "UPlane")
+    plane.AttachmentSupport = [(binder, "")]
+    plane.MapMode = "FlatFace"
+    plane.AttachmentOffset = FreeCAD.Placement(V(0, 0, 8), FreeCAD.Rotation())
+    doc.recompute()
+    wait(1)
+    plane.touch()
+    doc.recompute()
+    wait(1)
+    saved = (plane.Length.Value, plane.Width.Value)
+    doc.saveAs(path)
+    FreeCAD.closeDocument(doc.Name)
+    wait(0.5)
+    return saved
+
+
+def reopen_unbounded(path, progressive):
+    RENDER.SetBool("ProgressiveLoad", progressive)
+    RENDER.SetInt("ProgressiveLoadBudgetMS", 1)
+    doc = FreeCAD.openDocument(path)
+    # Anything may ask for a box while the visuals drain -- a fit, the
+    # origin or datum sizing: asked here, and asked again after.
+    asked = False
+    while FreeCADGui.isBuildingVisuals():
+        vp = FreeCADGui.getDocument(doc.Name).getObject("UBinder")
+        if vp is not None and not asked:
+            vp.getBoundingBox()
+            asked = True
+        QtCore.QCoreApplication.processEvents()
+    RENDER.RemInt("ProgressiveLoadBudgetMS")
+    wait(2)
+    plane = doc.getObject("UPlane")
+    size = (plane.Length.Value, plane.Width.Value)
+    bb = FreeCADGui.getDocument(doc.Name).getObject("UBinder").getBoundingBox()
+    box = (bb.XMin, bb.YMin, bb.ZMin, bb.XMax, bb.YMax, bb.ZMax)
+    FreeCAD.closeDocument(doc.Name)
+    wait(0.5)
+    return size, box
+
+
 def reopen(path, progressive):
     RENDER.SetBool("ProgressiveLoad", progressive)
     doc = FreeCAD.openDocument(path)
@@ -123,6 +188,21 @@ def run():
               close(size, saved), "%s vs saved %s" % (size, saved))
         check("%s open: the Body's origin keeps its saved size" % mode,
               close(osize, origin), "%s vs saved %s" % (osize, origin))
+
+    upath = os.path.join(OUT, "datum-unbounded.FCStd")
+    usaved = build_unbounded(upath)
+    note("saved plane over the binder %s" % (usaved,))
+    check("the saved plane over the binder is sized to the binder's patch",
+          usaved[0] > 10 and usaved[1] > 10, usaved)
+    for progressive in (False, True):
+        mode = "progressive" if progressive else "eager"
+        for i in range(OPENS):
+            size, box = reopen_unbounded(upath, progressive)
+            check("%s open %d: the binder's box is finite" % (mode, i + 1),
+                  all(abs(x) < 1e50 for x in box), [round(x, 2) for x in box])
+            check("%s open %d: the plane over the binder keeps its saved size"
+                  % (mode, i + 1), close(size, usaved),
+                  "%s vs saved %s" % (size, usaved))
 
 
 def main():
