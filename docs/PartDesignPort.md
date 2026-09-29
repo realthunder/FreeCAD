@@ -2270,3 +2270,83 @@ like three product bugs.
 Suites: Python 3152 OK (50 skipped, 6 expected failures; +2, the point
 and path `testInMultiTransform`), ctest 750/750 (the three new cases are
 in `OnViewParameter_tests_run`).
+
+### One pattern feature, its kind switchable (2026-09-29)
+
+The user's ask: "check if pattern feature can be aggregated into one
+feature that can dynamically change pattern types", then, on the
+proposal: save a switched pattern as the class of its kind (1b), a switch
+drops the other kind's inputs, the pattern commands in one group, and new
+objects named generically (names are immutable) with a label that follows
+the kind until the user renames it.
+
+- **`App::PatternExtension`** (`src/App/PatternExtension.*`) is what
+  `App::LinkArray` did by itself: `PatternType`, the active kind's inputs
+  as dynamic properties swapped on a change (a property two kinds share
+  with the same type keeps its value), the file-order fix for an input of
+  another type met on restore, the undo/redo deferral, the constraints a
+  file does not keep. The owner may give it a label and a save class per
+  kind. It is not recorded in `<Extensions>`: its whole state is the
+  object's properties, and upstream would log "No extension found" per
+  object. `Extension::isExtensionSaved()` is the new hook for that, and
+  `ExtensionContainer::canSaveExtension()` asks it.
+- **Saved as the class of its kind.** `DocumentObject::getSaveType()`,
+  normally the object's own class, is the class a file names -- the
+  `<Object type=>` and the shared-defaults block (`<Defaults>`, keyed by
+  the class the reader builds). A `PartDesign::LinearPattern` switched to
+  polar is written as `PartDesign::PolarPattern`, a
+  `Part::LinkArrayLinear` as `Part::LinkArrayPolar`, so upstream reads it
+  as that kind; the fork reads it back as that class, which restores any
+  kind anyway. A plain `App::LinkArray` stays itself.
+- **`PartDesign::PatternFeature`** (`FeaturePattern.*`) is `Transformed`
+  plus the extension, and what differed by kind is a switch on it: the
+  path frame conjugation, the point pattern's `getTransformations`,
+  `isFirstInstanceTransformed` and `positionBySupport` (a switch away from
+  point needs nothing: `Transformed::positionBySupport()` puts the
+  placement back on every execute), `Transformed::getSketchObject()`'s
+  pattern branches. `LinearPattern` ... `PointPattern` are presets of it,
+  a constructor each (LinearPattern keeps its Occurrences 3). PD no longer
+  uses `Part::*PatternExtension`; they stay for upstream's API. An old
+  file's `<Extensions>` naming them is skipped as before.
+- **A switch sets the reference the new kind lacks**, as the commands do:
+  the originals' sketch axes (`H_Axis`/`V_Axis`, `N_Axis`), else the
+  body's origin. So a switch from Python recomputes too.
+- **Label.** A new pattern is labelled after its kind whatever its name;
+  a switch relabels it while its label is one of the kinds' labels with a
+  numeric suffix, so a label the user wrote stays. PD: `LinearPattern`,
+  `PolarPattern`, ...; link arrays: `LinearLinkArray`, `PolarLinkArray`,
+  ... The PD commands and MultiTransform's add menu name patterns
+  `Pattern`; the link array command already named them `LinkArray`.
+- **Gui.** One `ViewProviderPattern`, its icon and menu name following
+  the kind (the five old view provider classes stay as subclasses, for a
+  file naming one as a custom view type). `TaskPatternParameters` has the
+  kind combo and rebuilds the editors from the properties by name --
+  also after an undo or redo that changed the kind, since the properties
+  the editors held are gone then -- and a MultiTransform sub-panel
+  refreshes its list item. `PatternDirectionWidget::propertiesOf()`,
+  `PatternParametersWidget::kindOf()` and `fillPatternTypeCombo()` are
+  shared with `TaskLinkArray`. `PartDesign_CompPattern` groups the five
+  pattern commands in the toolbar and the menu.
+
+**A pattern without transformations kept its old copies as its preview.**
+`Transformed::execute()` set `Shape` to the support and returned, leaving
+`AddSubShape` as the last recompute made it: a path or point pattern whose
+reference was not picked yet showed the copies of before, which a switch
+from circular to path made plain. It is emptied there now.
+
+Verified in the GUI through the MCP console: `PartDesign_CompPattern` holds
+the five commands; the linear command makes `Pattern` labelled
+`LinearPattern`; the panel's kind combo takes it through polar (the body's
+Z axis set), circular, path, point and back, label, icon and editors
+following; OK leaves one undo step. In a MultiTransform opened by double
+click, the sub-panel's combo relabels and re-icons the list item, Cancel
+restores the kind, label and Direction, OK is one "Edit MultiTransform"
+step that undo takes back.
+
+Tests: `TestLinkArray.testLabelFollowsTheKind`,
+`parttests.TestLinkArray.testSavedAsTheClassOfItsKind` (the file names
+`Part::LinkArrayPolar`, no `App::PatternExtension` in it) and
+`PartDesignTests.TestPatternKind` (6: label, the inputs and the default
+axis, the sketch's axes, saved as `PartDesign::PolarPattern` and read
+back, undo/redo, inside a MultiTransform). Suites: Python 3160 OK (50
+skipped, 6 expected failures; +8), ctest 750/750, the PD suite 288 OK.
