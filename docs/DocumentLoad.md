@@ -1208,9 +1208,51 @@ reorder, the files that still differed were run again (22, same-named
 siblings included): every
 visibility, claim and colour difference is gone; what remains is derived
 sizes, a wireframe's line-level pixels in one file (0.5-0.8%, a coarse
-first tessellation not refined within the 3 s wait), and -- not yet
-examined -- a Body's bounding box wider in one file (and in one copy of
-another) and small pixel-only differences in two.
+first tessellation not refined within the 3 s wait), a Body's bounding
+box wider in one file (and in one copy of another) and small pixel-only
+differences in two. Examined (2026-09-29, session 108):
+
+- **The wider Body was a datum plane sized by the load's timing, in both
+  modes.** A PartDesign datum in Automatic resize mode sizes itself to
+  the visible content of its container and writes the result into its
+  own `Length`/`Width` -- App data -- and during a load it asked only
+  from its own `updateData`, when the features restored after it had no
+  visual yet. A plane saved at 312 x 11.9 opened at 150 x 10 eagerly and
+  175 x 50 progressively; the Body's box, and the origin sized over the
+  datums, followed. Neither was the saved size, so the "derived size"
+  entry below was partly a defect. `finishRestoring` now queues the
+  datum, and one deferred pass sizes every queued datum once no document
+  restores or recomputes, then re-sizes every origin enclosing it,
+  innermost first (`a112b87e67`, `656837b508`; before the second, a
+  Part's origin over the Body came out 50 in six opens and 60 in four).
+- **An unbounded shape's box outlived its build.** The same file's other
+  copy has a SubShapeBinder of a Part's origin plane -- an infinite face,
+  drawn as a +-50 patch -- with a datum plane attached to it.
+  `ViewProviderPartExt::_getBoundingBox` answers from the shape while the
+  visual is unbuilt (so a bounds question never tessellates), which for
+  that face is +-1e100; the bounding-box cache is cleared only by
+  property changes, and the drain's build makes none, so after a
+  progressive open the binder still said +-1e100 and the datum refused to
+  size over it. An unbounded shape now takes the building path
+  (`b7fea11c63`).
+- **The two pixel-only files** are line-level tessellation, not load
+  state: the curve objects' coordinate counts differ between the two
+  EAGER opens as well (10351 on the first open of the process, 22520 on
+  the second, 22779 progressive) -- the level ladder had not refined the
+  first open's curves when its frame was taken.
+- **Left, and not a timing effect: record order after a migration.** A
+  visible origin whose axes a 2021 build saved at its planes' size (27;
+  the current rule draws them 1.5 times longer) opens at 40.5 eagerly
+  and 27 progressively. Eagerly, `App::Origin::onDocumentRestored()`
+  migrates the origin point into `OriginFeatures` during
+  `App::Document::afterRestore`, AFTER GuiDocument.xml was read, and that
+  update re-applies the rule over the axes' records; the drain folds the
+  same update into its phase-two sweep, before the records, which then
+  win. Replaying what `afterRestore` changed after phase three would
+  match; not done (it is a new drain mechanism).
+- **Left, cause not found:** the origins of the file's hidden Parts are
+  sized differently (200 x 270 eagerly, 227 x 284 progressively, the
+  same 227 x 284 for origins of different Parts).
 
 Two files did not open at all within 400 s, eagerly
 or progressively (`LS3_Lead_Screw_Mach_02_12.12.23`, and its sibling was
@@ -1229,9 +1271,10 @@ hangs before the fix.
 - a coarse first tessellation (27 against 62 points on a circle) that the
   level ladder refines on idle -- waited out;
 - the size of a datum or an origin feature: derived from the content at
-  whatever moment it was last asked for, and an eager load asks mid-load,
-  before all of it is built (272 against 286 on the same file) -- reported
-  apart, not judged;
+  whatever moment it was last asked for (272 against 286 on the same
+  file) -- reported apart, not judged. Partly a defect after all: an
+  automatic datum was sized mid-load in BOTH modes, and is now sized once
+  the load is over (above); what still differs is listed there;
 - an eager open and another eager open differing in a frame's pixels
   (transparency) -- the noise floor.
 
@@ -1241,6 +1284,11 @@ in with `PL_FILES` are they reported apart. A non-finite bounding box is
 judged everywhere.
 
 **The harness's own traps**, each of which once made a run lie:
+the first render of a process took 4.9 s inside ONE `processEvents`
+call, and a wait that measured only elapsed time ended right after it,
+with the post-load sizing timers still pending -- the first eager open
+agreed with no later one and was set aside as noise; the wait now also
+runs until 1 s after the last slow event call.
 `vp.isShow()` does not exist, and one `try` around all the reads blanked
 every field after it (show, showable, switch, mode, claims) -- the first
 runs compared none of them; each read is now guarded on its own. A file
@@ -1253,7 +1301,8 @@ timer, logging it.
 `GuiProgressiveLoadDiff_tests_run`, ~5 min): 12 corpus files x 2
 progressive runs, 7 operations during the drain, 3 closes during it and a
 whole reopen after -- 23/23; with a fusion whose input the user showed
-again (the ordering finding), 24/24, and that scene FAILS on the old
+again (the ordering finding), 24/24; with a datum plane over a binder of
+an origin plane (`s_unbounded`), 25/25, and that scene FAILS on the old
 order (the input hidden, 35 pick cells hitting the fusion). Before-state (the six fixes above reverted,
 (1) kept): body FAILS (the Origin's 16 scene paths, 6 origin sizes, the
 sketch's internal view), sketch FAILS (the stray origin point), image
@@ -1261,3 +1310,9 @@ FAILS (the overwritten size, and the eager frame untextured), and the
 hide during the drain FAILS (two Parts and a Link visible again); the
 other 19 pass both ways. (4)'s guard alone was seen before it existed:
 the size fix without it gave a user file's origin planes Size = inf.
+The datum sizing has its own test, `tests/gui/datum-size-after-open.py`
+(`GuiDatumSizeAfterOpen`, 27 checks): a plane saved against a Pad drawn
+after it (10 x 10 eagerly and 50 x 50 progressively before the fix,
+60 x 30 saved), and a plane over an unbounded binder with 300 boxes
+ahead of it in the visual queue, its box asked during the drain, five
+opens per mode (one progressive open in three failed before).
