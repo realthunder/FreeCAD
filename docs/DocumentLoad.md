@@ -1255,6 +1255,12 @@ differences in two. Examined (2026-09-29, session 108):
   four just before that object is finished -- `afterRestore()`'s own
   per-object order (`1c12f663cc`; test: `datum-size-after-open.py`, an
   origin saved without its point, progressive 3/3 wrong before).
+
+After it, the whole set again (73 files, two progressive runs each): 69
+identical apart from derived sizes; the four left are the line-level
+tessellation pixels above (error, analoy, karniz_gostinaya,
+InvoluteTemplate_01.04.23) -- no state, claim, colour, box or pick
+difference in any file.
 - **Left, cause not found:** the origins of the file's hidden Parts are
   sized differently (200 x 270 eagerly, 227 x 284 progressively, the
   same 227 x 284 for origins of different Parts).
