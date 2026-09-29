@@ -107,3 +107,44 @@ class ElementNameTest(unittest.TestCase):
         name = self.box.setElementName("Edge1", "PREFIXED", overwrite=True)
         self.assertTrue(self.box.eraseElementName(";" + name))
         self.assertEqual(len(self.box.ElementMap), 0)
+
+
+class LoftCapNameTest(unittest.TestCase):
+    """A face named from its lower elements alone names nothing else.
+
+    The forward pass of the element mapper names a face whose outer wire gives
+    one distinct name from that name alone. It used to append to a stream still
+    holding the last encode of the passes before, so a loft's caps carried a
+    vertex's name, and each cap the one before it (docs/TransactionLog.md sec
+    27.77).
+    """
+
+    def setUp(self):
+        import FreeCAD
+
+        self.doc = FreeCAD.newDocument("LoftCapNameTest")
+
+    def tearDown(self):
+        import FreeCAD
+
+        FreeCAD.closeDocument(self.doc.Name)
+
+    def testCapsNameOnlyTheirEdge(self):
+        import re
+
+        bottom = self.doc.addObject("Part::Circle", "Bottom")
+        bottom.Radius = 5
+        top = self.doc.addObject("Part::Circle", "Top")
+        top.Radius = 3
+        top.Placement.Base = (0, 0, 10)
+        loft = self.doc.addObject("Part::Loft", "Loft")
+        loft.Sections = [bottom, top]
+        loft.Solid = True
+        self.doc.recompute()
+
+        byIndex = {v: k for k, v in loft.Shape.ElementMap.items()}
+        caps = [byIndex[f] for f in ("Face2", "Face3")]
+        # One lower name, the loft's op code, the loft's tag: nothing between.
+        pattern = re.compile(r"^#[0-9a-f]+;:L;LFT;:H[0-9a-f]+(:[0-9a-f]+)?,F$")
+        for name in caps:
+            self.assertRegex(name, pattern)

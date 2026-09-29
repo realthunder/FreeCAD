@@ -4666,6 +4666,11 @@ TopoShape &TopoShape::makESHAPE(const TopoDS_Shape &shape, const Mapper &mapper,
                 }
                 auto it = names.begin();
                 newName = it->first;
+                // Cleared here, not only in the branch below: the stream still
+                // holds the last encode of the passes before, which a single
+                // lower name would otherwise carry into this one's name
+                // (docs/TransactionLog.md sec 27.77).
+                ss.str("");
                 if(names.size() == 1)
                     ss << lowerPostfix();
                 else {
