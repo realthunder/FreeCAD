@@ -856,17 +856,19 @@ void SoDatumLabel::generateDistancePrimitives(SoAction * action, const SbVec3f& 
 
     pv.setNormal( SbVec3f(0.f, 0.f, 1.f) );
 
-    // Set coordinates
+    // Set coordinates, around the rim: a quad is picked as the triangles
+    // (0,1,2) and (0,2,3), and the corners taken row by row made a bowtie
+    // that left the top of the number unpickable and its centre on an edge
     pv.setPoint( img1 );
-    shapeVertex(&pv);
-
-    pv.setPoint( img2 );
     shapeVertex(&pv);
 
     pv.setPoint( img3 );
     shapeVertex(&pv);
 
     pv.setPoint( img4 );
+    shapeVertex(&pv);
+
+    pv.setPoint( img2 );
     shapeVertex(&pv);
 
     this->endShape();
@@ -907,17 +909,19 @@ void SoDatumLabel::generateDiameterPrimitives(SoAction * action, const SbVec3f& 
 
     pv.setNormal( SbVec3f(0.f, 0.f, 1.f) );
 
-    // Set coordinates
+    // Set coordinates, around the rim: a quad is picked as the triangles
+    // (0,1,2) and (0,2,3), and the corners taken row by row made a bowtie
+    // that left the top of the number unpickable and its centre on an edge
     pv.setPoint( img1 );
-    shapeVertex(&pv);
-
-    pv.setPoint( img2 );
     shapeVertex(&pv);
 
     pv.setPoint( img3 );
     shapeVertex(&pv);
 
     pv.setPoint( img4 );
+    shapeVertex(&pv);
+
+    pv.setPoint( img2 );
     shapeVertex(&pv);
 
     this->endShape();
@@ -944,17 +948,19 @@ void SoDatumLabel::generateAnglePrimitives(SoAction * action, const SbVec3f& p0)
 
     pv.setNormal( SbVec3f(0.f, 0.f, 1.f) );
 
-    // Set coordinates
+    // Set coordinates, around the rim: a quad is picked as the triangles
+    // (0,1,2) and (0,2,3), and the corners taken row by row made a bowtie
+    // that left the top of the number unpickable and its centre on an edge
     pv.setPoint( img1 );
-    shapeVertex(&pv);
-
-    pv.setPoint( img2 );
     shapeVertex(&pv);
 
     pv.setPoint( img3 );
     shapeVertex(&pv);
 
     pv.setPoint( img4 );
+    shapeVertex(&pv);
+
+    pv.setPoint( img2 );
     shapeVertex(&pv);
 
     this->endShape();

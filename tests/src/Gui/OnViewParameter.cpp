@@ -441,6 +441,33 @@ TEST_F(OnViewParameterTest, aClickReachesAPickableLabelThroughTheMirror)
     EXPECT_EQ(clicks, 1);
 }
 
+TEST_F(OnViewParameterTest, theWholeNumberIsPickable)
+{
+    // The number's pick quad was a bowtie: its top was not pickable and its
+    // centre lay on an edge, so a browser's click on the middle of a drawn
+    // label went through it
+    auto label = std::make_unique<Gui::EditableDatumLabel>(
+        mirror.get(), Base::Placement(), SbColor(1, 1, 1), false, false);
+    label->setLabelType(Gui::SoDatumLabel::DISTANCE,
+                        Gui::EditableDatumLabel::Function::Dimensioning);
+    label->activate();
+    label->setPoints(Base::Vector3d(0, 0, 0), Base::Vector3d(10, 0, 0));
+    label->label->string = "10 mm";
+    label->setPickable(true);
+    int clicks = 0;
+    QObject::connect(label.get(), &Gui::EditableDatumLabel::clicked,
+                     [&clicks](Gui::EditableDatumLabel*) { ++clicks; });
+
+    const int x = 400 + int(5.0 / (60.0 * 0.41421356) * 300.0 + 0.5);
+    using Kind = Gui::MirrorViewer::Input::Kind;
+    int expected = 0;
+    for (int dy : {-5, 5}) {
+        mirror->handleInput(pointer(Kind::Press, x, 300 + dy));
+        mirror->handleInput(pointer(Kind::Release, x, 300 + dy));
+        EXPECT_EQ(clicks, ++expected) << "a click " << dy << " px off the centre row";
+    }
+}
+
 TEST_F(OnViewParameterTest, theBoxTakesTheLabelsSize)
 {
     Gui::EditableDatumLabel* label = addLabel();
