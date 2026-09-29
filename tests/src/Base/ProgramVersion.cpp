@@ -70,6 +70,15 @@ TEST(ProgramVersion, aLinkStage3DateIsTransparency)
     EXPECT_FALSE(Base::alphaIsOpacity("2021.1112R24961"));
 }
 
+TEST(ProgramVersion, upstreamYearReleasesAreOpacity)
+{
+    // Upstream numbers releases by the year's last two digits after 1.1
+    // (version.json: 26.3), which must not be taken for a LinkStage3 date.
+    EXPECT_TRUE(Base::alphaIsOpacity("26.3R43210"));
+    EXPECT_TRUE(Base::alphaIsOpacity("27.1"));
+    EXPECT_TRUE(Base::alphaIsOpacity("99.9"));
+}
+
 TEST(ProgramVersion, anUnreadableVersionIsNotTreatedAsNewer)
 {
     // The whole point of not reusing upstream's table: each of these would
