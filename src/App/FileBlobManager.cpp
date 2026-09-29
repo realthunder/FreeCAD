@@ -1649,6 +1649,30 @@ void FileBlobManager::writeBlobs(Base::Writer& writer)
                 << "' in transient directory doesn't exist.";
             THROWM(Base::FileSystemError, str.str())
         }
+        // A file too large for the pack store goes into an archive as its
+        // members do, compressed here and taken raw: through the writer's
+        // stream it was deflated again at every save, three times slower
+        // than zstd, and an embedded history is tens of megabytes (sec
+        // 27.69). Past the bound it streams, not to hold it twice.
+        constexpr uint64_t rawCap = 256u * 1024u * 1024u;
+        if (!fileWriter && entry.blob->size() <= rawCap) {
+            std::string bytes(static_cast<std::size_t>(entry.blob->size()), '\0');
+            if (from.read(bytes.data(), static_cast<std::streamsize>(bytes.size()))
+                && from.peek() == std::char_traits<char>::eof()) {
+                auto member = encodeMember(bytes, entry.name);
+                Base::Writer::RawEntry raw;
+                raw.method = member->method;
+                raw.crc = member->crc;
+                raw.size = member->size;
+                raw.data = member->data.data();
+                raw.compressedSize = member->data.size();
+                if (writer.putRawEntry(entryName.c_str(), raw)) {
+                    continue;
+                }
+            }
+            from.clear();
+            from.seekg(0);
+        }
         writer.putNextEntry(entryName.c_str());
         writer.Stream() << from.rdbuf();
     }
