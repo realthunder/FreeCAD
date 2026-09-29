@@ -1261,9 +1261,30 @@ identical apart from derived sizes; the four left are the line-level
 tessellation pixels above (error, analoy, karniz_gostinaya,
 InvoluteTemplate_01.04.23) -- no state, claim, colour, box or pick
 difference in any file.
-- **Left, cause not found:** the origins of the file's hidden Parts are
-  sized differently (200 x 270 eagerly, 227 x 284 progressively, the
-  same 227 x 284 for origins of different Parts).
+- **The hidden Parts' origins were sized while the visuals were still
+  being built.** A ChineseWindlass copy's hidden Parts, and the Bodies
+  in them, opened with origins of 200 x 270 eagerly and 227 x 284
+  progressively -- the same 227 x 284 for different Parts. The origin
+  sizing timer, and the automatic datums' pass after it, waited out the
+  restore and any recompute but not the visual build that follows a
+  progressive drain, so they ran in the middle of it. An unbuilt visual
+  answers a bounds question from its shape
+  (`ViewProviderPartExt::_getBoundingBox`, above), and a curved shape
+  nothing has meshed yet answers the box of its poles: the helix that
+  draws 207.8 x 277.5 read 226.97 x 284.27 -- exactly its box without
+  a triangulation -- and two Parts whose helices have that same
+  unmeshed box (an additive and a subtractive one) got the same wrong
+  size. Nothing sized them again once the build was
+  done. Both passes now wait for
+  `Gui::Application::isBuildingVisuals()` too, through one rule,
+  `ViewProviderOriginGroupExtension::sizingMustWait()`. All twelve
+  origins of the file now agree across the two modes. Test: the helix
+  scene of `datum-size-after-open.py`, which saves the origins at a
+  size no sizing computes and watches when the open replaces it (3/3
+  progressive opens sized mid-build before the fix). The scene only
+  needs the build to be running when the timer fires; whether the
+  helix is still unmeshed then is a race with the refine pool, which
+  in the user file the helix lost and in a small test file it wins.
 
 **The full rerun after these fixes** (73 files, two progressive runs
 each, session 108): 66 identical apart from derived sizes. Of the seven
@@ -1272,9 +1293,15 @@ shape) in some progressive opens and z -31..39 (its built visual) in the
 rest and in every eager one: the shortcut's answer, cached while the
 visual was parked, outlived the drain's build, which changes no property
 and so never cleared the cache. A drain slice that builds anything now
-clears it (`0a22d41452`; 10 progressive opens of 10 agree). Why that
-visual's box is so much larger than its shape is not answered; the
-frames of both modes are identical. The other six: the legacy origin
+clears it (`0a22d41452`; 10 progressive opens of 10 agree). The built
+visual's box is larger than its shape's because the feature is
+placed with a rotation: Coin boxes the points in the local frame and
+transforms that box, so the world box is the axis-aligned box of a
+rotated box -- the local box's eight corners, transformed, give the
+reported x -36.31..36.31, z -30.98..38.98 to the hundredth. OCCT
+boxes the located shape itself, so the shortcut's answer is tight.
+Both are valid bounds; any rotated shape answers the tighter one
+before its visual is built and the looser one after. Not a defect. The other six: the legacy origin
 axes above (since fixed); line-level tessellation pixels in four files (0.7-2%; in
 two of them the two eager opens agree exactly and progressive differs
 consistently, so it is the curves' level at capture, not noise); and one

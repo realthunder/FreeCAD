@@ -49,6 +49,16 @@ public:
 
     virtual void updateOriginSize();
 
+    /** Whether sizing over the content must wait: while a document
+     * restores or recomputes, or while a progressive load is still
+     * building the visuals. An unbuilt visual answers a bounds question
+     * from its shape, and an untriangulated curved shape's box is the
+     * loose box of its poles -- a helix read 227 against the 208 it
+     * draws. The origins and the automatic datums sized after a load
+     * both ask this, so they agree on when the load is over.
+     */
+    static bool sizingMustWait();
+
     virtual bool extensionCanDragObject(App::DocumentObject*) const override;
 
 protected:

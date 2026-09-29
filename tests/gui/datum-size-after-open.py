@@ -55,6 +55,7 @@ OUT = os.environ["GT_OUT"]
 RESULT = os.environ.get("GT_RESULT", os.path.join(OUT, "result.txt"))
 V = FreeCAD.Vector
 NFILL = 300
+MARK = 777.0
 OPENS = 5
 
 FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View").SetInt("RenderCache", 3)
@@ -213,6 +214,86 @@ def reopen_legacy_axes(path, progressive):
     return planes, axes, point
 
 
+def build_helix(path):
+    doc = FreeCAD.newDocument("HelixOrigin")
+    # Ahead of the helix in the visual queue, so a progressive drain is
+    # still building when the origins are sized.
+    for i in range(NFILL):
+        b = doc.addObject("Part::Box", "Fill%d" % i)
+        b.Placement.Base = V(400 + (i % 20) * 12, (i // 20) * 12, 0)
+    part = doc.addObject("App::Part", "HPart")
+    body = doc.addObject("PartDesign::Body", "HBody")
+    part.addObject(body)
+    xz = [f for f in body.Origin.OriginFeatures if f.Role == "XZ_Plane"][0]
+    sk = body.newObject("Sketcher::SketchObject", "HSketch")
+    sk.AttachmentSupport = [(xz, "")]
+    sk.MapMode = "FlatFace"
+    sk.addGeometry(Part.Circle(V(100, 0, 0), V(0, 0, 1), 8))
+    doc.recompute()
+    helix = body.newObject("PartDesign::AdditiveHelix", "Helix")
+    helix.Profile = sk
+    helix.ReferenceAxis = (sk, ["V_Axis"])
+    helix.Pitch = 40
+    # Heavy enough that meshing it outlasts the 300 ms sizing timer: an
+    # unmeshed curved shape answers the loose box of its poles.
+    helix.Height = 600
+    part.Visibility = False
+    # And behind it, so the build is still running when the origins'
+    # sizing timer fires, 300 ms after they are restored.
+    for i in range(2 * NFILL):
+        b = doc.addObject("Part::Box", "Tail%d" % i)
+        b.Placement.Base = V(400 + (i % 20) * 12, -20 - (i // 20) * 12, 0)
+    doc.recompute()
+    wait(1)
+    g = FreeCADGui.getDocument(doc.Name)
+    sizes = (tuple(g.getObject(part.Origin.Name).Size),
+             tuple(g.getObject(body.Origin.Name).Size))
+    # Saved at a size no sizing computes, so the open can see when the
+    # sizing runs: the record puts this back, the sizing replaces it.
+    for o in (part.Origin, body.Origin):
+        g.getObject(o.Name).Size = V(MARK, MARK, MARK)
+    doc.saveAs(path)
+    FreeCAD.closeDocument(doc.Name)
+    wait(0.5)
+    return sizes
+
+
+def reopen_helix(path, progressive):
+    RENDER.SetBool("ProgressiveLoad", progressive)
+    RENDER.SetInt("ProgressiveLoadBudgetMS", 1)
+    # When each origin first leaves the saved mark: whether the visuals
+    # were still being built then.
+    seen = {}
+
+    def poll():
+        for d in FreeCAD.listDocuments().values():
+            for name in ("HPart", "HBody"):
+                obj = d.getObject(name)
+                vp = obj and FreeCADGui.getDocument(d.Name).getObject(obj.Origin.Name)
+                if vp is None or name in seen:
+                    continue
+                size = tuple(vp.Size)
+                if abs(size[0] - MARK) > 1e-3 and abs(size[0] - 25) > 1e-3:
+                    seen[name] = FreeCADGui.isBuildingVisuals()
+
+    timer = QtCore.QTimer()
+    timer.timeout.connect(poll)
+    timer.start(5)
+    doc = FreeCAD.openDocument(path)
+    while FreeCADGui.isBuildingVisuals():
+        QtCore.QCoreApplication.processEvents()
+    RENDER.RemInt("ProgressiveLoadBudgetMS")
+    wait(2)
+    timer.stop()
+    g = FreeCADGui.getDocument(doc.Name)
+    sizes = (tuple(g.getObject(doc.getObject("HPart").Origin.Name).Size),
+             tuple(g.getObject(doc.getObject("HBody").Origin.Name).Size),
+             seen)
+    FreeCAD.closeDocument(doc.Name)
+    wait(0.5)
+    return sizes
+
+
 def reopen(path, progressive):
     RENDER.SetBool("ProgressiveLoad", progressive)
     doc = FreeCAD.openDocument(path)
@@ -279,6 +360,25 @@ def run():
                   % (mode, i + 1),
                   bool(axes) and all(abs(a - 1.5 * max(planes)) < 1e-3 for a in axes),
                   "axes %s planes %s" % (axes, planes))
+
+    hpath = os.path.join(OUT, "helix-origin.FCStd")
+    hsaved = build_helix(hpath)
+    note("helix origins as built: Part %s Body %s" % hsaved)
+    check("the helix is built (its origin spans it)",
+          hsaved[1][0] > 100 and hsaved[1][2] > 500, hsaved)
+    for progressive in (False, True):
+        mode = "progressive" if progressive else "eager"
+        for i in range(3):
+            part, body, seen = reopen_helix(hpath, progressive)
+            check("%s open %d: no origin is sized while the visuals are still "
+                  "being built" % (mode, i + 1),
+                  len(seen) == 2 and not any(seen.values()), seen)
+            check("%s open %d: the Part's origin has its size over the helix"
+                  % (mode, i + 1), close(part, hsaved[0]),
+                  "%s vs %s" % (part, hsaved[0]))
+            check("%s open %d: the Body's origin has its size over the helix"
+                  % (mode, i + 1), close(body, hsaved[1]),
+                  "%s vs %s" % (body, hsaved[1]))
 
 
 def main():

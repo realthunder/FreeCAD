@@ -295,8 +295,9 @@ bool extentsArmed = false;
 void sizeRestoredDatums()
 {
     // The origin sizing timer's rule: wait out any restore -- a
-    // progressive load's drain included -- and any recompute.
-    if (App::Document::isAnyRestoring() || App::Document::isAnyRecomputing()) {
+    // progressive load's drain included -- any recompute, and the
+    // visual build that follows a progressive drain.
+    if (Gui::ViewProviderOriginGroupExtension::sizingMustWait()) {
         QTimer::singleShot(300, sizeRestoredDatums);
         return;
     }

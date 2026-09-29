@@ -61,8 +61,7 @@ public:
         timer.setSingleShot(true);
 
         QObject::connect(&timer, &QTimer::timeout, [this](){
-            if (App::Document::isAnyRestoring()
-                    || App::Document::isAnyRecomputing()) {
+            if (sizingMustWait()) {
                 timer.start(300);
                 return;
             }
@@ -104,6 +103,13 @@ ViewProviderOriginGroupExtension::ViewProviderOriginGroupExtension()
 
 ViewProviderOriginGroupExtension::~ViewProviderOriginGroupExtension()
 {
+}
+
+bool ViewProviderOriginGroupExtension::sizingMustWait()
+{
+    return App::Document::isAnyRestoring()
+        || App::Document::isAnyRecomputing()
+        || Application::Instance->isBuildingVisuals();
 }
 
 void ViewProviderOriginGroupExtension::constructChildren (
