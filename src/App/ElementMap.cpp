@@ -72,18 +72,18 @@ struct MemUnit {
 };
 static std::map<int, MemUnit> _MemUnits;
 
+// The minimal allocator interface: std::allocator's pointer typedefs and
+// allocator<void>::const_pointer, which this used, are gone in C++20.
 template<typename T>
-struct MemoryMapAllocator : std::allocator<T> {
-    typedef typename std::allocator<T>::pointer pointer;
-    typedef typename std::allocator<T>::size_type size_type;
-    template<typename U> struct rebind { typedef MemoryMapAllocator<U> other; };
+struct MemoryMapAllocator {
+    using value_type = T;
 
-    MemoryMapAllocator() {}
+    MemoryMapAllocator() = default;
 
     template<typename U>
-    MemoryMapAllocator(const MemoryMapAllocator<U>& u) : std::allocator<T>(u) {}
+    MemoryMapAllocator(const MemoryMapAllocator<U>&) {}
 
-    pointer allocate(size_type size, std::allocator<void>::const_pointer = 0) {
+    T* allocate(std::size_t size) {
         void* p = std::malloc(size * sizeof(T));
         if(p == 0)
             throw std::bad_alloc();
@@ -93,13 +93,18 @@ struct MemoryMapAllocator : std::allocator<T> {
         auto &unit = _MemUnits[sizeof(T)];
         if (++unit.count > unit.maxcount)
             unit.maxcount = unit.count;
-        return static_cast<pointer>(p);
+        return static_cast<T*>(p);
     }
-    void deallocate(pointer p, size_type size) {
+    void deallocate(T* p, std::size_t size) {
         _MemSize -= size * sizeof(T);
         --_MemUnits[sizeof(T)].count;
         std::free(p);
     }
+
+    template<typename U>
+    bool operator==(const MemoryMapAllocator<U>&) const { return true; }
+    template<typename U>
+    bool operator!=(const MemoryMapAllocator<U>&) const { return false; }
 };
 
 #endif
@@ -731,7 +736,7 @@ public:
                         continue;
                     }
 
-                    ref->sids.reserve(tokens.size()-offset-1 + prefixid.id?1:0);
+                    ref->sids.reserve(tokens.size()-offset-1 + (prefixid.id?1:0));
                     if (prefixid.id) {
                         auto sid = hasher->getID(prefixid.id);
                         if (!sid)
@@ -1394,7 +1399,7 @@ private:
              ,IndexedName
              ,std::less<MappedName>
 #ifdef _FC_MEM_TRACE
-             ,MemoryMapAllocator<std::pair<MappedName, IndexedName> >
+             ,MemoryMapAllocator<std::pair<const MappedName, IndexedName> >
 #endif
             > mappedNames;
 
