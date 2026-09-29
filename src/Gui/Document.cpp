@@ -2745,6 +2745,15 @@ void Document::slotStartRestoreDocument(const App::Document& doc)
 
 void Document::slotFinishRestoreObject(const App::DocumentObject &obj) {
     auto vpd = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(getViewProvider(&obj));
+    if (vpd && d->_deferVPs) {
+        // A view provider a progressive load restored at once
+        // (restoreCapturedViewProvider: its record names an archive entry
+        // or a blob) is finished by the drain's phase three with all the
+        // others. Finished here, before the view providers it links to
+        // exist, a Link to an image plane linked nothing and drew nothing
+        // -- and, no longer restoring, phase three passed it over.
+        return;
+    }
     if(vpd) {
         FC_TIME_INIT(t);
         vpd->setStatus(Gui::isRestoring,false);
@@ -3085,8 +3094,9 @@ void Document::restoreCapturedViewProvider(const std::string &xml,
         slotNewObject(*obj);
     if (auto vpd = obj ? Base::freecad_dynamic_cast<ViewProviderDocumentObject>(
                 getViewProvider(obj)) : nullptr) {
-        // finishRestoring() arrives with signalFinishRestoreObject, like
-        // any eagerly restored view provider.
+        // finishRestoring() arrives with the drain's phase three, like the
+        // parked ones (slotFinishRestoreObject leaves it alone): what it
+        // links to has no view provider yet.
         vpd->startRestoring();
         vpd->setStatus(Gui::isRestoring, true);
     }
