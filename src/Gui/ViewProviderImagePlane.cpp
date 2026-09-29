@@ -202,7 +202,13 @@ void ViewProviderImagePlane::setPlaneSize(const QSizeF& size, const QImage& img)
 {
     if (!img.isNull()) {
         Image::ImagePlane* imagePlane = static_cast<Image::ImagePlane*>(pcObject);
-        if (!isRestoring()) {
+        // Not while restoring -- and not while a progressive load's drain
+        // replays this view provider, which it does with the restore status
+        // already dropped: the saved size is the user's, and the image's
+        // own was written over it on every progressive open (six image
+        // planes of one file came out 5-14 times smaller).
+        if (!isRestoring()
+                && !imagePlane->getDocument()->testStatus(App::Document::RestoreDrain)) {
             imagePlane->XSize.setValue(size.width());
             imagePlane->YSize.setValue(size.height());
         }
