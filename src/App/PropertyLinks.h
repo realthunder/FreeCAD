@@ -36,6 +36,7 @@
 #include <unordered_set>
 #include <unordered_map>
 
+#include "MappedName.h"
 #include "Property.h"
 
 namespace Base {
@@ -110,7 +111,46 @@ class AppExport PropertyLinkBase : public Property, public ScopedLink
     TYPESYSTEM_HEADER_WITH_OVERRIDE();
 public:
     bool canShareDefault() const override { return true; }
-    using ShadowSub = std::pair<std::string,std::string>;
+
+    /** A sub-element reference as resolved: the new style (mapped) name in
+     * first, the old style one in second -- a pair, as it always was -- and
+     * the string ids the element's name holds.
+     *
+     * The mapped name names string ids by number, as text; nothing held
+     * them, so a string table compacted while the element was gone dropped
+     * what the reference names, and the element coming back was named anew
+     * (docs/TransactionLog.md sec 27.75). The ids are the element map's for
+     * the element, which include the names it was made from, not only those
+     * its text shows. They are saved beside the shadow and held again from
+     * the numbers once the reference registers against its target: no
+     * lookup, no parse of the name. Never compared: two shadows are the same
+     * when their names are.
+     */
+    struct ShadowSub : std::pair<std::string, std::string>
+    {
+        using Names = std::pair<std::string, std::string>;
+        ShadowSub() = default;
+        ShadowSub(std::string newName, std::string oldName)
+            : Names(std::move(newName), std::move(oldName))
+        {}
+        ShadowSub(const Names& names) : Names(names) {}
+        ShadowSub(Names&& names) : Names(std::move(names)) {}
+
+        bool operator==(const ShadowSub& other) const
+        {
+            return static_cast<const Names&>(*this) == static_cast<const Names&>(other);
+        }
+        bool operator!=(const ShadowSub& other) const
+        {
+            return !(*this == other);
+        }
+
+        /// The ids held, from the target's element map
+        Data::ElementIDRefs sids;
+        /// Read from a file and not yet held: the target's document may not
+        /// be loaded, and its table is what the numbers are ids of
+        std::vector<long> savedIds;
+    };
 
     PropertyLinkBase();
     ~PropertyLinkBase() override;
@@ -924,6 +964,7 @@ public:
     PyObject *getPyObject() override;
     void setPyObject(PyObject *) override;
 
+    void beforeSave(Base::Writer &writer) const override;
     void Save (Base::Writer &writer) const override;
     void Restore(Base::XMLReader &reader) override;
 
@@ -1082,6 +1123,7 @@ public:
     PyObject *getPyObject() override;
     void setPyObject(PyObject *) override;
 
+    void beforeSave(Base::Writer &writer) const override;
     void Save (Base::Writer &writer) const override;
     void Restore(Base::XMLReader &reader) override;
     bool upgrade(Base::XMLReader &reader, const char *typeName);
@@ -1238,6 +1280,7 @@ public:
 
     int checkRestore(std::string *msg=nullptr) const override;
 
+    void beforeSave(Base::Writer &writer) const override;
     void Save (Base::Writer &writer) const override;
     void Restore(Base::XMLReader &reader) override;
 
@@ -1477,6 +1520,7 @@ public:
     PyObject *getPyObject() override;
     void setPyObject(PyObject *) override;
 
+    void beforeSave(Base::Writer &writer) const override;
     void Save (Base::Writer &writer) const override;
     void Restore(Base::XMLReader &reader) override;
 

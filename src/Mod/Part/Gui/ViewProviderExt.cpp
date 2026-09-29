@@ -3870,7 +3870,7 @@ void ViewProviderPartExt::updateColors(App::Document *sourceDoc, bool forceColor
     if(!sourceDoc)
         sourceDoc = pcObject->getDocument();
 
-    std::vector<std::pair<std::string,std::string> > _subs;
+    std::vector<App::PropertyLinkBase::ShadowSub> _subs;
     const auto &subs = prop?prop->getShadowSubs():_subs;
 
     std::array<ColorInfo,TopAbs_SHAPE> infos;

@@ -1403,6 +1403,15 @@ PropertyPartShape *Feature::shapePropertyOfElement(const char *element,
     return const_cast<PropertyPartShape*>(&Shape);
 }
 
+const Data::ComplexGeoData* Feature::getElementGeometry(const char*& element) const
+{
+    const std::string *prefix = nullptr;
+    auto prop = shapePropertyOfElement(element, &prefix);
+    if (prefix)
+        element += prefix->size();
+    return prop->getComplexData();
+}
+
 void Feature::onBeforeChange(const App::Property *prop) {
     PropertyPartShape *propShape = nullptr;
     const std::string *prefix = nullptr;

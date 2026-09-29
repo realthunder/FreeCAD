@@ -103,6 +103,17 @@ public:
     virtual std::pair<std::string,std::string> getElementName(
             const char *name, ElementNameType type=Normal) const;
 
+    /** The string ids an element's name holds: what its element map records
+     * for it -- which includes the names it was made from, not only those
+     * its text shows -- and any id the text names that the map does not
+     * know (a name made on demand, such as a wire's). A reference into the
+     * element holds them, so the string table keeps what it names
+     * (docs/TransactionLog.md sec 27.75).
+     *
+     * @param element: the element part of a sub-name, mapped or indexed
+     */
+    Data::ElementIDRefs getElementIDs(const char *element) const;
+
     /** Resolve both the new and old style element name
      *
      * @param obj: top parent object
@@ -229,6 +240,11 @@ public:
     virtual App::MaterialRenderProperties getMaterialRenderProperties() const;
 
 protected:
+    /** The geometry an element name belongs to, with 'element' moved past
+     * whatever selects it: the geometry property's data by default.
+     */
+    virtual const Data::ComplexGeoData* getElementGeometry(const char*& element) const;
+
     void onChanged(const Property* prop) override;
     void onDocumentRestored() override;
     void updateElementReference();

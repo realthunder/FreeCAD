@@ -4672,3 +4672,110 @@ class TransactionBranchCases(unittest.TestCase):
         doc = self.track(FreeCAD.openDocument(path))
         self.assertEqual(references(doc), before)
         self.assertEqual([o.Name for o in doc.Objects if "Touched" in o.State], [])
+
+    def testAReferenceHoldsTheStringsItNames(self):
+        # Sec 27.75: a reference into an element holds the string ids of the
+        # element's name -- the map's for it, which include what the name
+        # was made from and its text does not show -- saved beside its
+        # shadow and held again at the next open. With the element gone and
+        # nothing else holding them, a save's compaction keeps those and
+        # drops the rest of the old shape's. The log is off: its retained
+        # versions would keep the rest as well.
+        import io
+        import re
+        import zipfile
+
+        import Part
+
+        self.param.SetInt("TransactionLog", 0)
+        doc = self.track(FreeCAD.newDocument("HeldStrings"))
+        doc.UndoMode = 0
+        doc.saveAs(os.path.join(self.dir, "heldstrings.FCStd"))
+        V = FreeCAD.Vector
+        body = doc.addObject("PartDesign::Body", "Body")
+        sketch = body.newObject("Sketcher::SketchObject", "Sketch")
+        corners = [(0, 0), (20, 0), (20, 20), (0, 20)]
+        for a, b in zip(corners, corners[1:] + corners[:1]):
+            sketch.addGeometry(Part.LineSegment(V(*a, 0), V(*b, 0)))
+        pad = body.newObject("PartDesign::Pad", "Pad")
+        pad.Profile = sketch
+        pad.Length = 10
+        doc.recompute()
+        fillet = body.newObject("PartDesign::Fillet", "Fillet")
+        fillet.Base = (pad, ["Edge1", "Edge3"])
+        fillet.Radius = 1
+        doc.recompute()
+        circle = body.newObject("Sketcher::SketchObject", "Circle")
+        circle.addGeometry(Part.Circle(V(10, 10, 0), V(0, 0, 1), 3))
+        pocket = body.newObject("PartDesign::Pocket", "Pocket")
+        pocket.Profile = circle
+        pocket.Type = 1
+        pocket.Reversed = True
+        doc.recompute()
+        # A feature of its own holding the pocket's names, and nothing else.
+        feature = doc.addObject("Part::Feature", "F")
+        feature.Shape = pocket.Shape
+        doc.recompute()
+        body.removeObjectsFromDocument()
+        doc.removeObject("Body")
+        doc.recompute()
+
+        def value(sid):
+            return sid if isinstance(sid, int) else sid.Value
+
+        def ids(shape, name):
+            return {value(x) for x in shape.getElementIndexedName(name, True)[1]}
+
+        def closure(found):
+            # What a held string is made from stays with it.
+            out, todo = set(), list(found)
+            while todo:
+                i = todo.pop()
+                if i not in out:
+                    out.add(i)
+                    todo.extend(value(r) for r in doc.Hasher.getID(i).Related)
+            return out
+
+        shape = feature.Shape
+        hidden = [
+            (n, e)
+            for n, e in sorted(shape.ElementMap.items())
+            if ids(shape, n) - {int(x, 16) for x in re.findall(r"#([0-9a-f]+)", n)}
+        ]
+        self.assertTrue(hidden)
+        name, element = hidden[0]
+        held = ids(shape, name)
+        others = set()
+        for n in shape.ElementMap:
+            others |= ids(shape, n)
+        others -= closure(held)
+        self.assertTrue(others)
+
+        ref = doc.addObject("App::FeaturePython", "Ref")
+        ref.addProperty("App::PropertyLinkSub", "S")
+        ref.S = (feature, [element])
+        doc.recompute()
+
+        def saved(doc):
+            data = bytes(doc.Ref.dumpPropertyContent("S", Compression=0))
+            archive = zipfile.ZipFile(io.BytesIO(data))
+            xml = "".join(archive.read(n).decode() for n in archive.namelist())
+            found = re.search(r'sids="([^"]*)"', xml)
+            return {int(x, 16) for x in found.group(1).split()} if found else set()
+
+        self.assertEqual(saved(doc), held)
+        # The element goes; the feature's retained generation would keep
+        # the old shape's strings, so it goes too, and a reopen forgets the
+        # one it keeps in memory.
+        feature.Shape = Part.makeBox(1, 1, 1)
+        doc.recompute()
+        for prop in [p for p in feature.PropertiesList if p.startswith("_BaseShape")]:
+            feature.removeProperty(prop)
+        doc.save()
+        path = doc.FileName
+        FreeCAD.closeDocument(doc.Name)
+        doc = self.track(FreeCAD.openDocument(path))
+        self.assertEqual(saved(doc), held)
+        doc.save()
+        self.assertEqual({i for i in held if doc.Hasher.getID(i)}, held)
+        self.assertEqual({i for i in others if doc.Hasher.getID(i)}, set())

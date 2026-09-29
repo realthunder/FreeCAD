@@ -275,6 +275,9 @@ protected:
     PropertyPartShape *shapePropertyOfElement(const char *element,
                                               const std::string **prefix = nullptr) const;
 
+    /// The shape property the element's registered prefix selects
+    const Data::ComplexGeoData* getElementGeometry(const char*& element) const override;
+
     /** Keep or let go of every retained generation.
      *
      * Called after the element references into this feature have been

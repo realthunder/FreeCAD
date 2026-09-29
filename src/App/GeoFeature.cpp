@@ -149,6 +149,46 @@ GeoFeature::getElementName(const char *name, ElementNameType type) const
     return _getElementName(name, geo->getElementName(name));
 }
 
+const Data::ComplexGeoData* GeoFeature::getElementGeometry(const char*& element) const
+{
+    (void)element;
+    auto prop = getPropertyOfGeometry();
+    return prop ? prop->getComplexData() : nullptr;
+}
+
+Data::ElementIDRefs GeoFeature::getElementIDs(const char *element) const
+{
+    Data::ElementIDRefs sids;
+    if (!element || !element[0])
+        return sids;
+    auto geo = getElementGeometry(element);
+    if (!geo)
+        return sids;
+    geo->getElementName(element, &sids);
+    // The ids the text names: already among the map's for a mapped name,
+    // and the only ones for a name made on demand.
+    if (geo->Hasher) {
+        for (const char *p = strchr(element, '#'); p; p = strchr(p + 1, '#')) {
+            char *end = nullptr;
+            long id = std::strtol(p + 1, &end, 16);
+            if (end == p + 1 || id <= 0)
+                continue;
+            bool held = false;
+            for (const auto &sid : sids) {
+                if (sid.value() == id && sid.isFromSameHasher(geo->Hasher)) {
+                    held = true;
+                    break;
+                }
+            }
+            if (held)
+                continue;
+            if (auto sid = geo->Hasher->getID(id))
+                sids.push_back(sid);
+        }
+    }
+    return sids;
+}
+
 std::pair<std::string,std::string>
 GeoFeature::_getElementName(const char *name, const Data::MappedElement &mapped) const
 {

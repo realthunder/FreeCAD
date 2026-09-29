@@ -310,6 +310,50 @@ void PropertyLinkBase::updateElementReferences(DocumentObject *feature, bool rev
     }
 }
 
+/** Hold the string ids of the element 'shadow' names in 'geo'
+ * (docs/TransactionLog.md sec 27.75). 'element' is the element part of the
+ * resolved new style name, null while the element is missing: a missing
+ * reference keeps what it holds, which is the point. An element the
+ * reference moved to takes the map's ids. Otherwise the ids a file gave are
+ * held first -- numbers of the target document's table, looked up as they
+ * are -- and the map is asked only when nothing is held yet.
+ */
+static void holdShadowIDs(PropertyLinkBase::ShadowSub &shadow, const GeoFeature *geo,
+                          const char *element, bool moved)
+{
+    if (!geo)
+        return;
+    if (moved && element) {
+        shadow.sids = geo->getElementIDs(element);
+        shadow.savedIds.clear();
+        return;
+    }
+    if (!shadow.savedIds.empty()) {
+        auto doc = geo->getDocument();
+        StringHasherRef hasher = doc ? doc->getStringHasher() : StringHasherRef();
+        if (!hasher)
+            return;
+        shadow.sids.clear();
+        for (long id : shadow.savedIds) {
+            if (auto sid = hasher->getID(id))
+                shadow.sids.push_back(sid);
+        }
+        shadow.savedIds.clear();
+        return;
+    }
+    if (shadow.sids.empty() && element)
+        shadow.sids = geo->getElementIDs(element);
+}
+
+/// The element part of a shadow's new style name, null when it has none.
+static const char *shadowElement(const PropertyLinkBase::ShadowSub &shadow)
+{
+    if (shadow.first.empty())
+        return nullptr;
+    const char *element = Data::findElementName(shadow.first.c_str());
+    return element && element[0] ? element : nullptr;
+}
+
 void PropertyLinkBase::_registerElementReference(App::DocumentObject *obj, std::string &sub, ShadowSub &shadow)
 {
     if(!obj || !obj->isAttachedToDocument() || sub.empty())
@@ -346,6 +390,7 @@ void PropertyLinkBase::_registerElementReference(App::DocumentObject *obj, std::
         return;
     }
 
+    holdShadowIDs(shadow, geo, shadowElement(shadow), false);
     if(_ElementRefs.insert(geo).second)
         _ElementRefMap[geo].insert(this);
 }
@@ -445,8 +490,10 @@ bool PropertyLinkBase::_updateElementReference(DocumentObject *feature,
         // Unchanged, unless it is a missing reference being restored: the
         // XML pass may have resolved it before the shapes arrived, and the
         // request below is what the restore is for.
-        if(shadow==elementName && !(restoring && missing))
+        if(shadow==elementName && !(restoring && missing)) {
+            holdShadowIDs(shadow, geo, missing ? nullptr : shadowElement(shadow), false);
             return false;
+        }
     }
     if ((feature == geo || restoring) && (missing || reverse)) {
         // If the referenced element is missing, or we are generating element
@@ -536,11 +583,13 @@ bool PropertyLinkBase::_updateElementReference(DocumentObject *feature,
         else
             FC_LOG(ss.str());
         shadow.second.swap(elementName.second);
+        holdShadowIDs(shadow, geo, nullptr, false);
     } else {
         FC_TRACE(propertyName(this) 
                 << " element reference shadow update " << ret->getFullName() << " "
                 << shadow.first << " -> " << elementName.first);
         shadow.swap(elementName);
+        holdShadowIDs(shadow, geo, shadowElement(shadow), true);
         if(shadow.first.size() && Data::hasMappedElementName(sub.c_str()))
             updateSub(shadow.first);
     }
@@ -1900,6 +1949,65 @@ void PropertyLinkSub::purgeTouched() {
 #define ATTR_SHADOWED "shadowed"
 #define ATTR_SHADOW "shadow"
 #define ATTR_MAPPED "mapped"
+#define ATTR_SIDS "sids"
+
+/** The string ids a shadow holds, written beside it as the element map
+ * writes its own (hex, space separated), and noted for a transaction-log
+ * capture of the value (sec 27.50 item 4): docs/TransactionLog.md sec
+ * 27.75. Ids read and not yet held go out as they came in.
+ */
+static void saveShadowIDs(Base::Writer &writer, const PropertyLinkBase::ShadowSub &shadow)
+{
+    if (shadow.sids.empty() && shadow.savedIds.empty())
+        return;
+    std::ostringstream ids;
+    ids << std::hex;
+    const char *sep = "";
+    for (const auto &sid : shadow.sids) {
+        StringIDCollector::take(sid);
+        ids << sep << sid.value();
+        sep = " ";
+    }
+    for (long id : shadow.savedIds) {
+        ids << sep << id;
+        sep = " ";
+    }
+    writer.Stream() << "\" " ATTR_SIDS "=\"" << ids.str();
+}
+
+static void restoreShadowIDs(Base::XMLReader &reader, PropertyLinkBase::ShadowSub &shadow)
+{
+    shadow.sids.clear();
+    shadow.savedIds.clear();
+    if (!reader.hasAttribute(ATTR_SIDS))
+        return;
+    std::istringstream ids(reader.getAttribute(ATTR_SIDS));
+    ids >> std::hex;
+    long id;
+    while (ids >> id) {
+        if (id > 0)
+            shadow.savedIds.push_back(id);
+    }
+}
+
+/// Marks the ids of the owner's own table the shadows hold, as an element
+/// map marks its own before a save: the ids the saved version uses.
+static void markShadowIDs(const std::vector<PropertyLinkBase::ShadowSub> &shadows,
+                          const PropertyContainer *container)
+{
+    auto owner = dynamic_cast<const DocumentObject*>(container);
+    if (!owner || !owner->getDocument())
+        return;
+    StringHasherRef hasher = owner->getDocument()->getStringHasher();
+    if (!hasher)
+        return;
+    for (const auto &shadow : shadows) {
+        for (const auto &sid : shadow.sids) {
+            if (sid.isFromSameHasher(hasher))
+                sid.mark();
+        }
+    }
+}
 
 /// Whether a link target is written: in the document, or removed while a
 /// transaction-log capture holds the name it had (docs/TransactionLog.md sec
@@ -1907,6 +2015,12 @@ void PropertyLinkSub::purgeTouched() {
 static bool isSavedTarget(const DocumentObject* obj)
 {
     return obj && (obj->isAttachedToDocument() || CaptureNames::find(obj));
+}
+
+void PropertyLinkSub::beforeSave(Base::Writer &writer) const
+{
+    (void)writer;
+    markShadowIDs(_ShadowSubList, getContainer());
 }
 
 void PropertyLinkSub::Save (Base::Writer &writer) const
@@ -1949,6 +2063,7 @@ void PropertyLinkSub::Save (Base::Writer &writer) const
                     writer.Stream() << "\" " ATTR_SHADOW "=\"" << encodeAttribute(shadow.first);
                 }
             }
+            saveShadowIDs(writer, shadow);
         }
         writer.Stream()<<"\"/>\n";
     }
@@ -1995,6 +2110,7 @@ void PropertyLinkSub::Restore(Base::XMLReader &reader)
             if(reader.hasAttribute(ATTR_SHADOW))
                 shadows[i].first = importSubName(reader,reader.getAttribute(ATTR_SHADOW),restoreLabel);
         }
+        restoreShadowIDs(reader, shadows[i]);
         if(reader.hasAttribute(ATTR_MAPPED))
             mapped.push_back(i);
     }
@@ -2880,6 +2996,12 @@ void PropertyLinkSubList::purgeTouched() {
     }
 }
 
+void PropertyLinkSubList::beforeSave(Base::Writer &writer) const
+{
+    (void)writer;
+    markShadowIDs(_ShadowSubList, getContainer());
+}
+
 void PropertyLinkSubList::Save (Base::Writer &writer) const
 {
     assert(_lSubList.size() == _ShadowSubList.size());
@@ -2922,6 +3044,7 @@ void PropertyLinkSubList::Save (Base::Writer &writer) const
                     writer.Stream() << "\" " ATTR_SHADOW "=\"" << encodeAttribute(shadow.first);
                 }
             }
+            saveShadowIDs(writer, shadow);
         }
         writer.Stream() << "\"/>\n";
     }
@@ -2968,6 +3091,7 @@ void PropertyLinkSubList::Restore(Base::XMLReader &reader)
                 if(reader.hasAttribute(ATTR_SHADOW))
                     shadow.first = importSubName(reader,reader.getAttribute(ATTR_SHADOW),restoreLabel);
             }
+            restoreShadowIDs(reader, shadow);
             if(reader.hasAttribute(ATTR_MAPPED))
                 mapped.push_back(i);
         } else if (reader.isVerbose())
@@ -4668,6 +4792,12 @@ const char *PropertyXLink::getPathResolveModeName() const
     return it->second.name;
 }
 
+void PropertyXLink::beforeSave(Base::Writer &writer) const
+{
+    (void)writer;
+    markShadowIDs(_ShadowSubList, getContainer());
+}
+
 void PropertyXLink::Save (Base::Writer &writer) const {
     auto owner = dynamic_cast<const DocumentObject *>(getContainer());
     // A detached copy -- a before value the undo system took, a value the
@@ -4786,6 +4916,7 @@ void PropertyXLink::Save (Base::Writer &writer) const {
                 else if(!shadowSub.first.empty())
                     writer.Stream() << "\" " ATTR_SHADOW "=\"" << encodeAttribute(shadowSub.first);
             }
+            saveShadowIDs(writer, shadowSub);
         }
         writer.Stream() << "\"/>\n";
     }else {
@@ -4811,6 +4942,7 @@ void PropertyXLink::Save (Base::Writer &writer) const {
                     else if(!shadow.first.empty())
                         writer.Stream() << "\" " ATTR_SHADOW "=\"" << encodeAttribute(shadow.first);
                 }
+                saveShadowIDs(writer, shadow);
             }
             writer.Stream()<<"\"/>\n";
         }
@@ -4891,6 +5023,7 @@ void PropertyXLink::Restore(Base::XMLReader &reader)
             if(reader.hasAttribute(ATTR_SHADOW))
                 shadow.first = importSubName(reader,reader.getAttribute(ATTR_SHADOW),restoreLabel);
         }
+        restoreShadowIDs(reader, shadow);
     }else if(reader.hasAttribute("count")) {
         int count = reader.getAttributeAsInteger("count");
         subs.resize(count);
@@ -4906,6 +5039,7 @@ void PropertyXLink::Restore(Base::XMLReader &reader)
                 if(reader.hasAttribute(ATTR_SHADOW))
                     shadows[i].first = importSubName(reader,reader.getAttribute(ATTR_SHADOW),restoreLabel);
             }
+            restoreShadowIDs(reader, shadows[i]);
             if(reader.hasAttribute(ATTR_MAPPED))
                 mapped.push_back(i);
         }
@@ -5685,6 +5819,12 @@ void PropertyXLinkSubList::purgeTouched() {
     PropertyLinkBase::purgeTouched();
     for(auto &l : _Links)
         l.purgeTouched();
+}
+
+void PropertyXLinkSubList::beforeSave(Base::Writer &writer) const
+{
+    for (const auto &link : _Links)
+        link.beforeSave(writer);
 }
 
 void PropertyXLinkSubList::Save (Base::Writer &writer) const

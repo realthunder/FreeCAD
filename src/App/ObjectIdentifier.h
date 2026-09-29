@@ -52,6 +52,8 @@ inline T &any_cast(boost::any &value) {
 #include <vector>
 #include <FCConfig.h>
 
+#include "PropertyLinks.h"
+
 namespace Base {
 class PythonVariables;
 }
@@ -557,7 +559,9 @@ protected:
     String  documentName;
     String  documentObjectName;
     String  subObjectName;
-    std::pair<std::string,std::string> shadowSub;
+    /// Holds the string ids of the element it names, as a link's does
+    /// (docs/TransactionLog.md sec 27.75)
+    PropertyLinkBase::ShadowSub shadowSub;
     std::vector<Component> components;
     bool documentNameSet;
     bool documentObjectNameSet;
