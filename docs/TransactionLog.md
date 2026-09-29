@@ -8507,3 +8507,103 @@ back, a recompute, a reopen).
 **Next:** the sixth issue of 27.68, the recompute creep (the model's, log
 off too; 27.71 put `Helix001` failing at every step in it); then the
 SIGSEGV at exit.
+
+### 27.75 A reference holds the strings it names (user, 2026-09-29)
+
+**Asked (user):** after 27.74, whether the string table should be
+compacted on every save at all, and a list of every place a name can be
+evicted from it while something still names it.
+
+**Where strings leave the table.** Only three places, all through
+`StringHasher::compact()`, which drops what nothing but the table holds,
+nothing flags persistent, and no retained version or value of the log uses:
+- every save, `Document::_compactStrings()` (27.50 item 4);
+- `compactFileState()`, called explicitly and after a trim, a branch
+  deletion or a squash once `TransactionLogCompactRatio` is reached (27.48);
+- nothing else: a schema 5 file's table (`saveTable`) is written whole, so
+  a reopen loses only what a compaction already dropped. The older table
+  format writes only the marked strings.
+
+**What names a string without holding it.** An element map holds the ids
+of its names, and marks them before a save; so do dynamic property names
+and spreadsheet cells. Nothing else did. Every element reference -- the
+shadow names of `PropertyLinkSub`, `PropertyLinkSubList`, `PropertyXLink`
+and its lists, which are PartDesign's profiles and bases, the attacher's
+supports, Sketcher's external geometry, TechDraw's references and the Part
+Gui's mapped colours, and the element paths of expressions -- names ids as
+text, `;#39;:H983,E;:H985,E.Edge1`. What kept them was indirect: the
+referenced feature's current map, the source maps a composed name carries
+ids of, the undo stack's copies, the log's retained versions, and the
+generation a `Part::Feature` keeps of its outgoing shape while a reference
+into it is missing (docs/TopoNamingEnhance.md sec 7). Three probes that
+took an element away across a save -- a sketch reshaped, a fillet moved to
+another edge and back, a hole toggled to construction and back, log on
+and off, undo on and off -- lost nothing, for one of those reasons each
+time. The gaps, by reading:
+1. a reference from another document that is closed while this one is
+   edited: generations are kept for referrers loaded in memory only;
+2. a reference that goes missing through undo, redo, a switch or a replay:
+   no generation is taken while `isPerformingTransaction()`, so the ids
+   live as long as the undo window and the retained versions;
+3. a mapped name kept anywhere but a link property (a Python feature's
+   string, a macro), and geometry that is not a `Part::Feature`, which
+   keeps no generations;
+4. what is made on demand and not stored -- a link's own shape (27.72),
+   selections, an open task dialog -- remade with new ids after a save;
+   nothing stored refers to those.
+
+**Ruling (user):** a reference holds its ids, as ids saved beside its
+shadow; the compaction on every save stays.
+
+**As built.**
+- `PropertyLinkBase::ShadowSub` is a struct derived from the pair it was:
+  `first` and `second` as before, so every use of a shadow and
+  `resolveElement()` taking the pair stay as they are, plus `sids`, the ids
+  held, and `savedIds`, the numbers read from a file and not yet held.
+  Never compared: two shadows are the same when their names are.
+  `ObjectIdentifier::shadowSub`, the element path of an expression, is one
+  too.
+- *Which ids.* `GeoFeature::getElementIDs(element)`: the element map's ids
+  for the element, and any id the text names that the map does not know (a
+  name made on demand, a wire's). The map's include what the name was made
+  from and its text does not show -- in a pocket, the edge
+  `#47;:G#6c;CUT;...` holds `0x31` and `0x6b` as well, which the ids the
+  text shows do not reach through their own related ids. So the ids come
+  from the map when the reference resolves, not from the text.
+  `getElementGeometry()` picks the geometry; `Part::Feature` picks the
+  shape property a registered prefix selects (a sketch's internal shape).
+- *When.* Taken when a reference resolves to an element or moves to
+  another (`_updateElementReference`), and when a restored one registers
+  (`_registerElementReference`). A missing reference keeps what it holds.
+- *Saved.* `sids="39 4e"` beside `shadow=`, hex, space separated, as the
+  element map writes its own; not when exporting, since the ids are this
+  file's. Read back as numbers, and held from them -- no lookup and no
+  parse of the name -- once the reference registers against its target,
+  in the target document's table: a link into another document waits for
+  that document. Ids not yet held are written back as they came.
+- *Marked.* The link properties' `beforeSave` marks the ids of the owner's
+  own table they hold, as an element map does, so the version a save
+  records uses them; a log capture of the value notes them
+  (`StringIDCollector::take`), so a retained value keeps them.
+- Expressions hold their ids in memory, taken from the map whenever the
+  expression's element reference is updated; their text carries no `sids`,
+  so after an open they hold nothing until that happens (not tested).
+
+This closes gaps 2 and 3 for link properties and expressions, and makes
+every compaction safe for a name a reference holds. Gap 1 stays: the ids
+of a closed document's reference are that file's, and this file's table
+cannot know them.
+
+Test: `TransactionBranchCases.testAReferenceHoldsTheStringsItNames` -- a
+feature holding a pocket's names and nothing else, a reference into an
+edge whose ids include one its text does not show; the ids saved beside
+the shadow; the element gone, the feature's generation removed, a save, a
+reopen, a save: the reference's ids are in the table, and every other id
+of the old shape is gone (log off: the log's retained versions would keep
+those too).
+
+**Gates:** Python 2956 OK (52 skipped, 6 expected failures; +1), ctest
+848/848, the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16.
+
+**Next:** the sixth issue of 27.68, the recompute creep; then the SIGSEGV
+at exit.
