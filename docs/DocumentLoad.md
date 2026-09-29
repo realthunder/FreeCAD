@@ -1328,6 +1328,39 @@ consistently, so it is the curves' level at capture, not noise); and one
 pick cell in one run of one file (a Loft against the Loft beside it),
 not confirmed.
 
+**The rerun after session 109's fixes** (the origin sizing, the
+tessellation overwrite; 73 files, two progressive runs each): 71
+identical. analoy, karniz_gostinaya and InvoluteTemplate agree now; the
+two left differ in pixels only, the same way in both progressive runs:
+- `error` -- the 0.1% tessellation residue analoy had (a sketch at 86754
+  against 86661 coordinates), not chased.
+- `FC0.21.1_Lead_Screw_12.12.23`, new in the list, and three defects
+  under it:
+  - **A LinkStage3 file's colours were read inverted** (since
+    `139376f184`, 2026-08-12). A colour's alpha means opacity from
+    upstream 1.1 on and a transparency before, and the reader decides by
+    the release in the document's ProgramVersion. LinkStage3 numbered its
+    builds by date (`2023.131R26244`), which read as release 2023.131 --
+    past 1.1 -- so an old-convention list went unconverted and a face
+    saved opaque came back fully transparent (Transparency 100). 46 of the
+    73 files carry a date version. A year for a major number now reads as
+    the old convention (`Base::alphaIsOpacity`, unit test
+    `ProgramVersion.aLinkStage3DateIsTransparency`).
+  - **An eager open switched a binder's colour mapping off.**
+    `ViewProviderSubShapeBinder::onChanged` ends a Map*Color when its
+    colour is set, and properties restore in name order, so reading
+    ShapeColor after MapFaceColor switched it off; only UseBinderStyle had
+    the restore guard. Now none of the four react to a restore or an
+    undo (test: `binder-map-color-restore.py`).
+  - **Open: a progressive open's visual keeps a colour its property no
+    longer has.** With the colours read right, the eager frame is right
+    and the progressive one shows a Part::FeaturePython (`Populate`, face
+    colours mapped from its inputs) with its faces fully transparent while
+    its DiffuseColor and Transparency say opaque; before the fix it was
+    the other way round (the property transparent, the visual opaque). The
+    colour list is an archive member (`DiffuseColor.bin`) served after the
+    XML pass; why the visual does not follow it is not found yet.
+
 Two files did not open at all within 400 s, eagerly
 or progressively (`LS3_Lead_Screw_Mach_02_12.12.23`, and its sibling was
 skipped with it): stuck in `BRepTools::Read` under
