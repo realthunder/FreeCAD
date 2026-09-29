@@ -29,6 +29,8 @@
 # include <QAction>
 # include <QMenu>
 # include <QTimer>
+# include <functional>
+# include <map>
 # include <Inventor/actions/SoGetBoundingBoxAction.h>
 # include <Inventor/nodes/SoSeparator.h>
 # include <Inventor/nodes/SoPickStyle.h>
@@ -301,7 +303,9 @@ void sizeRestoredDatums()
     extentsArmed = false;
     std::vector<App::DocumentObjectT> pending;
     pending.swap(pendingExtents);
-    std::set<App::DocumentObject*> groups;
+    // Containers by depth, the innermost first: an origin is sized over
+    // its container's content, which includes the containers inside it.
+    std::map<int, std::set<App::DocumentObject*>, std::greater<int>> groups;
     for (auto &objT : pending) {
         auto obj = objT.getObject();
         auto vp = Base::freecad_dynamic_cast<ViewProviderDatum>(
@@ -309,12 +313,18 @@ void sizeRestoredDatums()
         if (!vp)
             continue;
         vp->updateExtents();
-        if (auto group = App::GeoFeatureGroupExtension::getGroupOfObject(obj))
-            groups.insert(group);
+        std::vector<App::DocumentObject*> chain;
+        for (auto group = App::GeoFeatureGroupExtension::getGroupOfObject(obj);
+                group && chain.size() < 100;
+                group = App::GeoFeatureGroupExtension::getGroupOfObject(group))
+            chain.push_back(group);
+        for (std::size_t i = 0; i < chain.size(); ++i)
+            groups[int(chain.size() - i)].insert(chain[i]);
     }
-    // The origin is sized over the datums' extents, so after them. Its
-    // own post-restore sizing may already have run, against the old ones.
-    for (auto group : groups) {
+    // The origins are sized over the datums' extents, so after them --
+    // every enclosing one, not just the datum's own: their post-restore
+    // sizing may already have run, against the old extents.
+    for (auto &entry : groups) for (auto group : entry.second) {
         auto vp = Gui::Application::Instance->getViewProvider(group);
         if (auto ext = vp ? vp->getExtensionByType<Gui::ViewProviderOriginGroupExtension>(true)
                           : nullptr)

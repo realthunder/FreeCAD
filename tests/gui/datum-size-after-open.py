@@ -24,9 +24,12 @@ SubShapeBinder of a Part's origin plane. The binder is an unbounded face
 drawn as a bounded patch; asked for its box before its visual was built,
 it answered with the face's +-1e100, which the datum refused to size
 over (and the bounding-box cache kept past the build). Claims, per open
-mode, five opens each (the drain's timing decides it, one open
-in three failed before the fix): the binder's box is finite and the plane has its
-saved size.
+mode, five opens each (the drain's timing decides it; one progressive
+open in three failed before the fix): the binder's box is finite and the
+plane has its saved size; and across all ten the enclosing Part's origin
+has one size (the pass re-sized only the Body's origin, and the Part's
+had been sized before the plane grew in some opens and after it in
+others: 50 in six, 60 in four).
 """
 import os
 import time
@@ -148,11 +151,13 @@ def reopen_unbounded(path, progressive):
     wait(2)
     plane = doc.getObject("UPlane")
     size = (plane.Length.Value, plane.Width.Value)
-    bb = FreeCADGui.getDocument(doc.Name).getObject("UBinder").getBoundingBox()
+    g = FreeCADGui.getDocument(doc.Name)
+    bb = g.getObject("UBinder").getBoundingBox()
     box = (bb.XMin, bb.YMin, bb.ZMin, bb.XMax, bb.YMax, bb.ZMax)
+    porigin = tuple(g.getObject(doc.getObject("UPart").Origin.Name).Size)
     FreeCAD.closeDocument(doc.Name)
     wait(0.5)
-    return size, box
+    return size, box, porigin
 
 
 def reopen(path, progressive):
@@ -194,15 +199,21 @@ def run():
     note("saved plane over the binder %s" % (usaved,))
     check("the saved plane over the binder is sized to the binder's patch",
           usaved[0] > 10 and usaved[1] > 10, usaved)
+    porigins = []
     for progressive in (False, True):
         mode = "progressive" if progressive else "eager"
         for i in range(OPENS):
-            size, box = reopen_unbounded(upath, progressive)
+            size, box, porigin = reopen_unbounded(upath, progressive)
+            porigins.append(porigin)
             check("%s open %d: the binder's box is finite" % (mode, i + 1),
                   all(abs(x) < 1e50 for x in box), [round(x, 2) for x in box])
             check("%s open %d: the plane over the binder keeps its saved size"
                   % (mode, i + 1), close(size, usaved),
                   "%s vs saved %s" % (size, usaved))
+
+    check("the Part's origin, over the Body the plane grew in, has one size "
+          "in every open", all(close(o, porigins[0]) for o in porigins),
+          porigins)
 
 
 def main():
