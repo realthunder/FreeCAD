@@ -1254,6 +1254,22 @@ differences in two. Examined (2026-09-29, session 108):
   sized differently (200 x 270 eagerly, 227 x 284 progressively, the
   same 227 x 284 for origins of different Parts).
 
+**The full rerun after these fixes** (73 files, two progressive runs
+each, session 108): 66 identical apart from derived sizes. Of the seven
+left, one was new -- a PartDesign `Mirrored` whose box read z 0..16 (its
+shape) in some progressive opens and z -31..39 (its built visual) in the
+rest and in every eager one: the shortcut's answer, cached while the
+visual was parked, outlived the drain's build, which changes no property
+and so never cleared the cache. A drain slice that builds anything now
+clears it (`0a22d41452`; 10 progressive opens of 10 agree). Why that
+visual's box is so much larger than its shape is not answered; the
+frames of both modes are identical. The other six: the legacy origin
+axes above; line-level tessellation pixels in four files (0.7-2%; in
+two of them the two eager opens agree exactly and progressive differs
+consistently, so it is the curves' level at capture, not noise); and one
+pick cell in one run of one file (a Loft against the Loft beside it),
+not confirmed.
+
 Two files did not open at all within 400 s, eagerly
 or progressively (`LS3_Lead_Screw_Mach_02_12.12.23`, and its sibling was
 skipped with it): stuck in `BRepTools::Read` under
