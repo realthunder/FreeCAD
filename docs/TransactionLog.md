@@ -8607,3 +8607,74 @@ those too).
 
 **Next:** the sixth issue of 27.68, the recompute creep; then the SIGSEGV
 at exit.
+
+### 27.76 Strings across documents: design (user, 2026-09-29; build next session)
+
+**Asked (user):** a way to handle another document's strings -- the gap 27.75
+left (a reference from a closed document). The user's original thought was a
+string table per shape.
+
+**The problem is wider than references.** A shape document A makes from
+document B's shape carries B's string ids as text. A compound in A of a link
+to B's pad names `Face1` as `#10;:G;XTR;:H11b2:7,F;:R#3;:H75:5,F`: `#10` is
+B's id (A's table has no 10), `#3` is A's (`;:X;:H11b3:3,F`). While both are
+open the element holds B's `0x10`; after A is saved and reopened it holds
+nothing. `mapSubElement` drops ids of another table ("hasher mismatch",
+`TopoShapeEx.cpp` ~1304). So A's names are right only while B keeps the same
+id for the same string: a compaction or re-mint in B changes A's names at the
+next recompute, and references into A's consumer break. `traceElement` stops
+at the boundary for the same reason (the assembly3 issue 968 comment).
+
+**Provenance is already in the names.** A link into another document appends
+the external marker (`LinkBaseExtension::checkGeoElementMap`,
+`externalTagPostfix()`, `;:X`): above, `A#3 = ;:X;:H11b3` names the source
+object by its id in B (`0x11b3`, B's pad), and the tag after it, `;:H75`, is
+the crossing object in A (the link), whose `LinkedObject` gives the document.
+`SubShapeBinder` writes `;:X;SSB:i:j` with its own negated tag: its `Support`
+entry `i`, sub `j`. Consumers keep the segments inside their own names;
+nested boundaries (A links B links C) each add a marker.
+
+**Design.**
+1. `StringHasher::import(foreign)`: find or insert a string of another table
+   by content -- data, flags, postfix, and its related ids imported the same
+   way, recursively; a SHA1-digest string (Hashed) is copied as the digest,
+   which both tables compute alike. `StringHasher::lookup(foreign)`: the same
+   without inserting. A helper rewrites every `#id` of a mapped name from one
+   table's ids to another's.
+2. *Shapes crossing a document* (`_getTopoShape` re-tagging into another
+   document's hasher; `reTagElementMap`/`copyElementMap`; the "hasher
+   mismatch" branch): import the names and their ids instead of keeping the
+   foreign text and dropping the ids.
+3. *The rule after import:* every `#id` in a shape's names is an id of the
+   shape's own table, always the file's (27.44); tags to the left of a `;:X`
+   marker are object ids of the document that marker's crossing object
+   names. Tags are not imported. Tracing may then cross the boundary: the
+   same table for strings, the source document for tags.
+4. *The marker names its document:* `;:X` followed by an imported string of
+   the source document's `Uid` (e.g. `;:X#9;:H11b3`), so a stored name says
+   which document even when the crossing object is gone or the source is not
+   loaded. Changes the name format: crossing shapes fail the element map
+   version check and recompute once, which the import needs anyway.
+5. *References into another document:* the stored form is the shadow's name
+   imported into the owner's table with those ids (27.75's `sids=`, in the
+   owner's table); the working form, in the target's ids, comes from `lookup`
+   when the reference registers against the target. A string the target does
+   not have means its current shape has no such element: missing, recovery
+   as today, retried when the target changes. The XLink stores its target's
+   file and object, so a reference needs no marker.
+
+**Not chosen:** a table per shape -- self-contained, but every operation
+combining shapes would translate, not only a document boundary, and it gives
+up the one table per file that versions share (the `HasherIndex`/`SaveHasher`
+machinery for several tables per file remains, if one import table per source
+document is wanted later). Marking strings persistent in the source document
+(the unused `StringID` persistent flag) -- the source must be saved after the
+reference is made, and could never let go.
+
+**Existing files** carrying foreign ids cannot be repaired from the text (the
+ids are ambiguous): a consumer's recompute regenerates its names, and a
+cross-document reference is verified at open (docs/TopoNamingEnhance.md 7.16)
+and falls back to the geometry search.
+
+**Order (user):** shapes first (items 1-4), then references (item 5). Next
+session.
