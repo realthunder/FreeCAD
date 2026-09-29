@@ -3395,7 +3395,7 @@ void ViewProviderPartExt::unsetHighlightedPoints()
     setHighlightedPoints(PointColorArray.getValues());
 }
 
-void ViewProviderPartExt::reload()
+void ViewProviderPartExt::reload(bool applyTessellation)
 {
     bool update = false;
     double pointsize = PointSize.getValue();
@@ -3420,16 +3420,27 @@ void ViewProviderPartExt::reload()
     tessRange.LowerBound = PartParams::getMinimumDeviation();
     angDeflectionRange.LowerBound = PartParams::getMinimumAngularDeflection();
 
-    if (Deviation.getValue() != PartParams::getMeshDeviation()
-            || Deviation.getValue() < PartParams::getMinimumDeviation()
-            || AngularDeflection.getValue() != PartParams::getMeshAngularDeflection()
-            || AngularDeflection.getValue() < PartParams::getMinimumAngularDeflection())
+    if (applyTessellation
+            && (Deviation.getValue() != PartParams::getMeshDeviation()
+                || Deviation.getValue() < PartParams::getMinimumDeviation()
+                || AngularDeflection.getValue() != PartParams::getMeshAngularDeflection()
+                || AngularDeflection.getValue() < PartParams::getMinimumAngularDeflection()))
+        update = true;
+
+    // The shape-instancing gate (render cache mode, a backend renderer
+    // attached) decides between the instanced and the flattened build; a
+    // visual built the other way is rebuilt. It used to ride on the
+    // tessellation overwrite above, so an object whose values already
+    // matched the preferences kept whichever representation it had. A
+    // candidate that the build declines anyway (divergent colours) is
+    // rebuilt on each gate change too -- rare, and the answer is the same.
+    if (!VisualTouched && bool(instanced) != instancingCandidate())
         update = true;
 
     if (!update)
         return;
 
-    if (!PartParams::getOverrideTessellation()) {
+    if (applyTessellation && !PartParams::getOverrideTessellation()) {
         Base::ObjectStatusLocker<App::Property::Status,App::Property> guard(
                 App::Property::User3, &Deviation);
 

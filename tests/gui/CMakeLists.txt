@@ -590,3 +590,13 @@ fc_add_gui_test(GuiProgressiveLoadDiff_tests_run
 fc_add_gui_test(GuiDatumSizeAfterOpen_tests_run
                 datum-size-after-open.py
                 --timeout 240)
+
+# A Part object keeps the tessellation it was saved with when a view's
+# renderer attaches or goes away: the instancing gate re-ran reload(),
+# which wrote the preferences over every object's Deviation and
+# AngularDeflection; the gate still rebuilds the representation, and the
+# minimum preferences still bound a file's values (docs/DocumentLoad.md
+# sec 16).
+fc_add_gui_test(GuiPartTessellationReload_tests_run
+                part-tessellation-reload.py
+                --timeout 240)

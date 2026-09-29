@@ -242,8 +242,13 @@ public:
     void setDisplayMode(const char* ModeName) override;
     /// returns a list of all possible modes
     std::vector<std::string> getDisplayModes() const override;
-    /// Update the view representation
-    void reload();
+    /** Update the view representation from the display preferences.
+     * @param applyTessellation: also write the tessellation preferences
+     * into Deviation and AngularDeflection -- only when one of those
+     * preferences changed. Without it the per-object values stay; the
+     * minimum preferences are still enforced where the mesh is made.
+     */
+    void reload(bool applyTessellation = true);
     /// If no other task is pending it opens a dialog to allow to change face colors
     bool changeFaceColors();
 

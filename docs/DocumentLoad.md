@@ -1237,11 +1237,31 @@ differences in two. Examined (2026-09-29, session 108):
   progressive open the binder still said +-1e100 and the datum refused to
   size over it. An unbounded shape now takes the building path
   (`b7fea11c63`).
-- **The two pixel-only files** are line-level tessellation, not load
-  state: the curve objects' coordinate counts differ between the two
-  EAGER opens as well (10351 on the first open of the process, 22520 on
-  the second, 22779 progressive) -- the level ladder had not refined the
-  first open's curves when its frame was taken.
+- **The pixel-only files were an overwrite of the file's tessellation
+  settings, not the ladder's timing** (the first reading here, that the
+  level ladder had not refined yet, was wrong: the coordinate counts
+  hold still from the load through 30 s idle at the capture camera, two
+  eager opens agree exactly, and progressive differs the same way every
+  time). The shape-instancing gate re-runs
+  `ViewProviderPartExt::reload()` on every Part view provider whenever a
+  view's renderer attaches or goes away, and `reload()` wrote the
+  Deviation and AngularDeflection preferences (0.2, 28.65 deg) into
+  every object whose own values differed. karniz_gostinaya saves 0.5 and
+  5 deg per object: eagerly the overwrite came before the exact mesh
+  (a Pocket 4342 coordinates), progressively after it, and the mesher
+  keeps a finer mesh it finds resident (8616); the first open of a
+  process happened to keep the file's values. Opening a document -- any view
+  opening or closing -- silently replaced the user's per-object
+  settings. Now only a change of a tessellation preference writes them;
+  the gate rebuilds a visual whose representation (instanced or flat)
+  no longer matches it, which the overwrite had been standing in for:
+  an object already at the preference values kept the instanced build
+  under plain Coin. The minimum preferences still bound a file's values
+  where the mesh is made (a cylinder saved at 0.001 / 0.5 deg meshes
+  exactly as one at the minimum). Test: `part-tessellation-reload.py`
+  (4 of 7 fail before). karniz now agrees across all three opens; analoy
+  keeps a 0.1% residue (a sketch at 86754 against 86661 coordinates),
+  not chased.
 - **Record order after a migration.** A visible origin whose axes a
   2021 build saved at its planes' size (27; the current rule draws them
   1.5 times longer) opened at 40.5 eagerly and 27 progressively. Eagerly,
@@ -1257,8 +1277,8 @@ differences in two. Examined (2026-09-29, session 108):
   origin saved without its point, progressive 3/3 wrong before).
 
 After it, the whole set again (73 files, two progressive runs each): 69
-identical apart from derived sizes; the four left are the line-level
-tessellation pixels above (error, analoy, karniz_gostinaya,
+identical apart from derived sizes; the four left are the tessellation
+pixels above (error, analoy, karniz_gostinaya,
 InvoluteTemplate_01.04.23) -- no state, claim, colour, box or pick
 difference in any file.
 - **The hidden Parts' origins were sized while the visuals were still
