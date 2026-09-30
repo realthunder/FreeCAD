@@ -4047,6 +4047,35 @@ static void registerShape(Part::TopoShape &shape, const Part::TopoShape &newshap
 }
 }
 
+void ViewProviderPartExt::meshingBoundsOf(MeshLadderState *ladder,
+        const TopoDS_Shape &shape,
+        double &xMin, double &yMin, double &zMin,
+        double &xMax, double &yMax, double &zMax)
+{
+    const bool anchored = ladder && !shape.IsNull()
+        && shape.TShape().get() == ladder->anchor
+        && shape.Location().IsIdentity();
+    double *box = anchored ? ladder->meshingBox : nullptr;
+    if (!anchored || !ladder->haveMeshingBox) {
+        Bnd_Box bounds;
+        meshingBounds(shape, bounds);
+        // A void box reads back inverted, min above max -- what the
+        // callers test, and what the old Get() on a void box threw on.
+        double b[6] = {1.0, 1.0, 1.0, 0.0, 0.0, 0.0};
+        if (!bounds.IsVoid())
+            bounds.Get(b[0], b[1], b[2], b[3], b[4], b[5]);
+        if (!anchored) {
+            xMin = b[0]; yMin = b[1]; zMin = b[2];
+            xMax = b[3]; yMax = b[4]; zMax = b[5];
+            return;
+        }
+        std::copy(b, b + 6, box);
+        ladder->haveMeshingBox = true;
+    }
+    xMin = box[0]; yMin = box[1]; zMin = box[2];
+    xMax = box[3]; yMax = box[4]; zMax = box[5];
+}
+
 bool ViewProviderPartExt::instancingCandidate() const
 {
     return shapeInstancingActive() && !cachedShape.isNull()
@@ -4147,12 +4176,20 @@ bool ViewProviderPartExt::buildInstanced()
     // LEAF bounding box (same formula as the flattened build, which uses
     // the whole shape) -- the same part in differently sized parents must
     // agree on one mesh. Different deviation settings key apart.
+    // From the geometry (meshingBounds): the deflection is part of the
+    // table key, and a box read off a leaf's resident mesh keyed the
+    // same TShape apart by what had meshed it before. Boxed once per
+    // leaf of this build, for the key and the coarse rung alike.
+    std::unordered_map<const void*, Bnd_Box> leafBoxes;
+    auto leafBox = [&](const TopoDS_Shape &s) -> const Bnd_Box & {
+        auto res = leafBoxes.emplace(s.TShape().get(), Bnd_Box());
+        if (res.second)
+            meshingBounds(s, res.first->second);
+        return res.first->second;
+    };
     auto leafDeflection = [&](const TopoDS_Shape &s) -> Standard_Real {
-        Bnd_Box bounds;
-        BRepBndLib::Add(s, bounds);
-        bounds.SetGap(0.0);
         Standard_Real x0, y0, z0, x1, y1, z1;
-        bounds.Get(x0, y0, z0, x1, y1, z1);
+        leafBox(s).Get(x0, y0, z0, x1, y1, z1);
         Standard_Real defl = std::max(Precision::Confusion(),
             ((x1-x0)+(y1-y0)+(z1-z0))/300.0 *
                 std::max(PartParams::getOverrideTessellation()
@@ -4188,9 +4225,7 @@ bool ViewProviderPartExt::buildInstanced()
         const int coarseLvl =
             coarseTessellationLevel(pcObject ? pcObject->getDocument() : nullptr);
         if (coarseLvl >= 0) {
-            Bnd_Box leafBounds;
-            BRepBndLib::Add(leaf.Located(TopLoc_Location()), leafBounds);
-            leafBounds.SetGap(0.0);
+            const Bnd_Box &leafBounds = leafBox(leaf.Located(TopLoc_Location()));
             if (!leafBounds.IsVoid()) {
                 Standard_Real x0, y0, z0, x1, y1, z1;
                 leafBounds.Get(x0, y0, z0, x1, y1, z1);
@@ -4831,14 +4866,11 @@ bool ViewProviderPartExt::buildCoarseStandIn(bool underPressure)
     // that produced it -- the exception itself carries no message.
     double dx = 0.0, dy = 0.0, dz = 0.0;
     try {
-        Bnd_Box bounds;
-        BRepBndLib::Add(cShape, bounds);
-        bounds.SetGap(0.0);
-        if (bounds.IsVoid()) {
+        Standard_Real xMin, yMin, zMin, xMax, yMax, zMax;
+        meshingBoundsOf(&meshLadder, cShape, xMin, yMin, zMin, xMax, yMax, zMax);
+        if (xMin > xMax) {
             return false;
         }
-        Standard_Real xMin, yMin, zMin, xMax, yMax, zMax;
-        bounds.Get(xMin, yMin, zMin, xMax, yMax, zMax);
         dx = xMax - xMin;
         dy = yMax - yMin;
         dz = zMax - zMin;
@@ -6127,11 +6159,8 @@ void ViewProviderPartExt::updateVisual()
 
     try {
         // calculating the deflection value
-        Bnd_Box bounds;
-        BRepBndLib::Add(cShape, bounds);
-        bounds.SetGap(0.0);
         Standard_Real xMin, yMin, zMin, xMax, yMax, zMax;
-        bounds.Get(xMin, yMin, zMin, xMax, yMax, zMax);
+        meshingBoundsOf(&meshLadder, cShape, xMin, yMin, zMin, xMax, yMax, zMax);
         Standard_Real deflection = std::max(Precision::Confusion(),
             ((xMax-xMin)+(yMax-yMin)+(zMax-zMin))/300.0 *
                 std::max(PartParams::getOverrideTessellation() ? PartParams::getMeshDeviation() : Deviation.getValue(),
@@ -6425,11 +6454,8 @@ bool ViewProviderPartExt::captureVisualFill(const TopoDS_Shape &cShape,
         // The default-texture-coordinate projection frame comes from this
         // shape's own bounding box (for the flattened build that is the
         // same whole-shape box the deflection derives from).
-        Bnd_Box bounds;
-        BRepBndLib::Add(cShape, bounds);
-        bounds.SetGap(0.0);
-        bounds.Get(data.xMin, data.yMin, data.zMin,
-                   data.xMax, data.yMax, data.zMax);
+        meshingBoundsOf(ladder, cShape, data.xMin, data.yMin, data.zMin,
+                        data.xMax, data.yMax, data.zMax);
 
         {
             // Separated from the node building around it: a mesh already

@@ -633,6 +633,12 @@ double PartGui::meshLevelAngle(unsigned level)
     return angleForLevel(level);
 }
 
+void PartGui::meshingBounds(const TopoDS_Shape &shape, Bnd_Box &box)
+{
+    BRepBndLib::Add(shape, box, /*useTriangulation*/ Standard_False);
+    box.SetGap(0.0);
+}
+
 bool PartGui::buildMeshLevel(const TopoDS_Shape &shape,
                              const MeshLevelJob &job,
                              const void *sourceChunk, size_t sourceSize,
@@ -661,9 +667,9 @@ bool PartGui::buildMeshLevel(const TopoDS_Shape &shape,
     try {
         BuildContext ctx;
         ctx.normalsFromUV = job.normalsFromUV;
+        // The display build's box, so a rung here is the rung it built
         Bnd_Box bounds;
-        BRepBndLib::Add(shape, bounds);
-        bounds.SetGap(0.0);
+        meshingBounds(shape, bounds);
         if (bounds.IsVoid())
             return false;
         bounds.Get(ctx.bbMin[0], ctx.bbMin[1], ctx.bbMin[2], ctx.bbMax[0],

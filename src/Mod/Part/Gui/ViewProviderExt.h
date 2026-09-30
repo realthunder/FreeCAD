@@ -747,6 +747,13 @@ protected:
             Varies,
         };
         MeshInvariance meshInvariance = MeshInvariance::Unknown;
+        /// meshingBounds() of `anchor`'s shape, the box every
+        /// tessellation parameter of the flattened build derives from.
+        /// Geometry as well, so computed once per anchor: a landing
+        /// rebuild would otherwise pay the whole box again (13 us a
+        /// face) where the mesh box it replaced was nearly free.
+        bool haveMeshingBox = false;
+        double meshingBox[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
         /// One-shot: the NEXT updateVisual is the rebuild half of a
         /// landing -- a transfer/demote/downgrade on this anchor's
         /// shape just established the very triangulation the rebuild
@@ -791,6 +798,12 @@ protected:
         }
     };
     MeshLadderState meshLadder;
+    /// meshingBounds() of \a shape, kept in \a ladder when it is that
+    /// ladder's flattened shape itself (the anchor, unlocated) and
+    /// computed otherwise, or with no ladder.
+    static void meshingBoundsOf(MeshLadderState *ladder, const TopoDS_Shape &shape,
+                                double &xMin, double &yMin, double &zMin,
+                                double &xMax, double &yMax, double &zMax);
     bool UpdatingColor;
     bool highlightFaceEdges = false;
 

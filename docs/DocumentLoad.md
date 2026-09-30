@@ -1374,22 +1374,34 @@ them. The two left differ in pixels only:
 - `analoy` -- 0.6% in this run, identical in the next, where its two
   eager opens differed from each other: the noise floor.
 - `error`, the one from `2022-10-11_w_52240` -- not a load-mode
-  difference. Its wire compound `layer_1001` (92 B-spline edges) is
-  built coarse first (10259 coordinates) and refined to the exact rung
-  in every open. The exact mesh is 86569 coordinates in a process's
-  first eager open and in every progressive one, but 86662 in every
-  later eager open of the same process; with coarse-first off
-  (`FC_COARSE_TESSELLATION=-1`) all opens agree at 86569, and from rung
-  0 the later eager opens reach 86597 instead. So the exact rung
-  depends on the process's history and on the rung it climbed from; the
-  harness sees it as eager against progressive only because its first
-  eager open is a warm-up. The deflection is derived from a
-  `BRepBndLib::Add` box, which reads any polygon the shape carries (the
-  coarse box's extents sum to 1055.12, the exact one's to 1055.36), but
-  that shifts the deflection by only 0.02%, too little to account for
-  93 points -- cause not found. The sketch beside it has a second,
-  separate difference (a 287 against 272 coordinate node, progressive
-  against eager, in every open), not looked at.
+  difference: **every tessellation parameter depended on the mesh the
+  shape already carried.** Its wire compound `layer_1001` (92 B-spline
+  edges) is built coarse first and refined in every open; the exact
+  mesh was 86569 coordinates in a process's first eager open and in
+  every progressive one, 86662 in its later eager opens, 86597 when the
+  climb started from rung 0, and all agreed with coarse-first off. The
+  deflections -- the display one, the exact one a coarse-first build
+  registers for the refine, a rung's, the texture frame -- came from a
+  `BRepBndLib::Add` box, and that reads any triangulation or 3D polygon
+  the shape holds. A traced open showed the refine meshing at 1.762003
+  when the build that armed it boxed the bare geometry and at 1.758533
+  when a second coarse build ran over the coarse polygons (their box
+  0.2% smaller): 93 more points. OCCT's mesher reuses a resident
+  polygon within 10% of the ask and checks no angle, so the display
+  rebuild after it (asking 1.758934 off the exact polygons) kept
+  whichever came first. The same box keyed the instance table, so one
+  leaf TShape could key apart by what had meshed it before. The box
+  now comes from the geometry alone (`PartGui::meshingBounds`; a face
+  with no surface and an edge with no curve still give their mesh),
+  kept per shape in the ladder state because it costs about 13 us a
+  face against the mesh box's near nothing -- 16 ms for a 1253-face
+  fusion. On the four largest corpus shapes with faces the two boxes
+  agree within 4 parts in a million, so ordinary solids keep their
+  deflection; loose-pole
+  B-splines move. All four opens of the file now agree, the sketch
+  beside it too (its 287 against 272 node was the same effect). Test:
+  `meshing-bounds-history.py` -- a premeshed and a fresh copy of the
+  same B-splines, 810 against 780 points before the fix.
 The harness numbered its captures by file name, and the corpus has
 seven `error.FCStd`: each overwrote the last one's images, so the
 failing file's pictures showed a file that passed. Numbered now.

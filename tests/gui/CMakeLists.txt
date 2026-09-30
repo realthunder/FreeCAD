@@ -615,3 +615,11 @@ fc_add_gui_test(GuiBinderMapColorRestore_tests_run
 fc_add_gui_test(GuiInstancedFaceTransparency_tests_run
                 instanced-face-transparency.py
                 --timeout 240)
+
+# A shape tessellates the same whatever mesh it already carries: every
+# tessellation parameter came from a bounding box that read the resident
+# mesh, so a coarse rung changed the exact mesh built after it
+# (docs/DocumentLoad.md sec 16).
+fc_add_gui_test(GuiMeshingBoundsHistory_tests_run
+                meshing-bounds-history.py
+                --timeout 240)
