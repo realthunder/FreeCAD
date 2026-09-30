@@ -9019,3 +9019,132 @@ binary passes (270). A fixture depends on an earlier test's set-up.
 848/848 (`Toponaming_tests_run` 270 cases).
 The GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, each in a user home and
 cache of its own.
+
+### 27.81 Three issues chased; expressions across documents (user, 2026-09-30)
+
+**Asked (user):** a way to handle an expression's reference into another
+document -- the user doubted it is supported, an expression's external link
+not opening the file -- after chasing the issue 27.80 found, then the sixth
+and seventh issues of 27.68.
+
+**The `getMemSize` crash (27.80).** `StringHasher::getID` reads
+`DocumentParams`, which needs the application; `StringHasherTest` never set
+it up and passed only behind a suite that had. The fixture now calls
+`tests::initApplication()`; every suite of `Toponaming_tests_run` passes run
+alone. `fc99f878ed`.
+
+**Issue 7, the SIGSEGV at exit: fixed** (fork). At exit, `Part.so`'s
+`static CongruenceIndex index` (`ShapeCongruence.cpp`) releases its shapes;
+a thawed copy's destructor (23.15) erases itself from the thaw side table,
+a function-local static in `TopoDS_TShape.cxx` made on the first `Thaw()` --
+after the index, so destroyed before it. The table and its mutex are now
+never destroyed (fork `991a59c66a`). A 30-step log-on T4 run exited with
+SIGSEGV before and exits 0 after.
+
+**Issue 6, the recompute creep: found, two causes, not fixed.** Measured
+with the T4 steps, log off (`scripts/transaction-log-instances.py`'s
+modeling in a probe that also times a recompute with nothing touched):
+
+| step | objects | idle recompute |
+| --- | --- | --- |
+| 400 | 1215 | 0.081 s |
+| 600 | 1185 | 0.098 s |
+| 800 | 1185 | 0.106 s |
+| 1000 | 1185 | 0.119 s |
+
+After a reopen the same files idle at 0.044-0.046 s: the growth is the
+session's. An idle recompute executes three features every time --
+`Fillet001`, which fails, `Helix001`, which fails, and `Pocket034` behind
+it -- and the growth is all `Pocket034` (0.025 -> 0.052 s over 600 steps),
+in its boolean, `IsClosedFF` walking an edge's representations (5 % of the
+samples at step 400, 16.5 % at step 1000). Plain idle recomputes creep on
+their own, with no instance steps: 0.064 -> 0.071 s over 400.
+
+1. *Caches pile up on a frozen edge.* The pocket's profile is one circle
+   edge of the sketch's frozen value; every extrusion shares it, and the
+   prism's new faces give it a pcurve each (23.12: an Immutable edge takes a
+   pcurve for a new surface, marked `IsCache`). The surfaces are new every
+   time, so nothing is ever restated or replaced: counted in place, the
+   edge held 3 representations at the first recompute, 199 at the 100th,
+   799 at the 400th -- two a recompute, each keeping a dead face's surface
+   alive. Any Pad or Pocket recompute adds its own to its sketch's edges;
+   a failing feature ahead only makes the pocket run every time. With the
+   freeze off the creep is smaller (idle 0.008 -> 0.013 s) and likely the
+   same in stock OCCT, which appends to the shared edge in place; not
+   counted.
+2. *`Fillet001` fails only with the freeze on*, `BRep_Builder::UpdateVertex`:
+   `ChFi3d_Builder::Compute` raises the tolerance of an input vertex the
+   fillet reuses (`B1.UpdateVertex(v, tolc)`), a frozen part that would have
+   to grow -- one of the "three standing errors" of 27.53, never chased, and
+   a freeze regression as 23.14's four were. It keeps 20 objects touched,
+   so every recompute re-runs `Fillet001` and `Pocket034`: about 0.09 s of
+   the idle recompute on this model, and the reason the creep shows.
+
+**Proposed for 1** (fork), for a ruling:
+- (a) when a cache is added to an edge, drop the edge's caches whose
+  surface nothing else holds (the surface's reference count is the cache's
+  own). Exact for a surface only one frozen edge touches -- the circle here,
+  a prism's side faces -- and cheap; a dead plane spanning several frozen
+  edges (the face made on a closed frozen wire) is held by each of their
+  caches and stays.
+- (b) the same with a side table of which caches hold which surface, so a
+  surface held by caches alone is dead everywhere: complete, more machinery,
+  and it edits other frozen edges' lists.
+- (c) no pcurve cache: a new face needing a pcurve on a frozen edge gets a
+  thawed copy (23.15), as a tolerance does. Nothing piles up; every
+  extrusion copies its profile's edges, and it reverses 23.12's ruling that
+  a pcurve is a cache.
+- Recommended: (a) now -- it fixes the case measured and every single-edge
+  profile -- and (b) if a closed wire's plane shows up in a measurement.
+
+**Proposed for 2** (FreeCAD): where an algorithm throws `LockedShape` on a
+frozen input, `TopoShape::makEShape` retries on a copy of the input made
+with `makECopy`, whose history keeps the names -- one net for this fillet
+and any regression the freeze has not met yet, costing a copy only when the
+throw happens. The alternative is 23.15's copy-on-write inside `ChFi3d`,
+substituting a thawed vertex in its data structure, which the edges the
+fillet does not rebuild would not share.
+
+**Expressions across documents, as they are.**
+- A whole object or property of another document works --
+  `ExB#Box.Length` -- once `doc.foreign` is granted (the sandbox's
+  permission; without it the binding fails "Permission needed"). The engine
+  keeps each target as an XLink (`<XLinks>` with `file=`), and opening the
+  owner opens the target: the probe's `exa.FCStd` brought `exb` with it.
+  So an expression's external link does open the file.
+- An element does not: `ExB#Cut.<<Edge7>>._shape.Length` is rewritten at
+  `setExpression` to `<<$Edge7>>` -- a sub-object label -- and fails "No
+  attribute named 'Length'". The document prefix alone does it, in one
+  document too (`ExB#Box.<<Edge1>>` becomes `Box.<<$Edge1>>`):
+  `ObjectIdentifier::addComponent`, for a path with a document name, takes
+  the label component as a sub-object. So no expression names another
+  document's element today, and 27.78's `<ExpressionIds>` never meets one.
+- An element path's text keeps the indexed name, and its mapped name is not
+  saved -- only its ids (27.78). Within one document that is enough: the
+  target cannot change while the owner is closed. Across documents it is
+  not.
+
+**Proposed for expressions.**
+- (A, now) Say so instead of failing silently: `addComponent` keeps a
+  document-qualified `<<...>>` an element path, and an element path whose
+  target is in another document is refused at `setExpression` with a message
+  pointing at a link or binder in the owner's document, whose shape crosses
+  by 27.76 items 1-4 and whose references by 27.80. `<ExpressionIds>` writes
+  no ids of a table not the owner's. Small; nothing else to store.
+- (B, if wanted) Support it with 27.80 as it is: an element path's shadow
+  is a `ShadowSub` and goes through `_updateElementReference`, which already
+  looks up a pending stored name. Needed: the parser fix; `<Ids>` saving the
+  shadow and its stored form (`shadow=`, `stored=`), not only ids, restored
+  pending; and the path registering when the target's document loads, which
+  the engine's XLinks already open and track.
+
+**Trap, recorded:** a `FREECAD_USER_HOME` that does not exist falls back to
+`~/.config/FreeCAD/user.cfg`; a probe run so wrote `ImmutableShapeValues=0`
+there (removed; `TransactionLog` stood at 0, who set it unknown). Scratch
+homes are created first now, and the user's file checked unchanged. And
+`ctest -j8` truncated that file to its log level (the test binaries use the
+real home and race on writing it): restored from a copy; keep one aside
+around a ctest run.
+
+**Gates** (with the fork fix): Python 2962 OK (52 skipped, 6 expected
+failures), ctest 848/848.
