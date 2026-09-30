@@ -54,6 +54,7 @@ namespace sp = std::placeholders;
     qApp->translate("Gui::TaskView::TaskWatcherCommands", "Face tools");
     qApp->translate("Gui::TaskView::TaskWatcherCommands", "Sketch tools");
     qApp->translate("Gui::TaskView::TaskWatcherCommands", "Create Geometry");
+    qApp->translate("Gui::TaskView::TaskWatcherCommands", "Modeling tools");
     //
     qApp->translate("Workbench", "Measure");
     qApp->translate("Workbench", "Refresh");
@@ -408,6 +409,30 @@ void Workbench::activated()
         Sketch,
         "Sketch tools",
         "Part_Box"
+    ));
+
+    // A binder is a profile, a section or a path (upstream ab60695ef9)
+    const char* Binder[] = {
+        "PartDesign_Pad",
+        "PartDesign_Pocket",
+        "PartDesign_Revolution",
+        "PartDesign_Groove",
+        "PartDesign_AdditiveLoft",
+        "PartDesign_SubtractiveLoft",
+        "PartDesign_AdditivePipe",
+        "PartDesign_SubtractivePipe",
+        nullptr};
+    Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
+        "SELECT PartDesign::ShapeBinder COUNT 1",
+        Binder,
+        "Modeling tools",
+        "PartDesign_Body"
+    ));
+    Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
+        "SELECT PartDesign::SubShapeBinder COUNT 1",
+        Binder,
+        "Modeling tools",
+        "PartDesign_Body"
     ));
 
     const char* Transformed[] = {
