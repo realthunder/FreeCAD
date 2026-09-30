@@ -19,6 +19,7 @@
 #*                                                                         *
 #***************************************************************************
 
+import os
 import unittest
 
 import FreeCAD
@@ -133,6 +134,28 @@ class TestChamfer(unittest.TestCase):
                                            msg="Face%d flip %s" % (face, flip))
                 finally:
                     FreeCAD.closeDocument(doc.Name)
+
+    def testV021ChamferKeepsItsEdges(self):
+        # A chamfer from a 0.21 file names its edges by the element map of
+        # then; a recompute here must chamfer the same edges (upstream
+        # e5b1d05813, its fixture)
+        path = os.path.join(os.path.dirname(__file__), 'Fixtures', 'ModelFromV021.FCStd')
+        doc = FreeCAD.openDocument(path)
+        try:
+            chamfer = doc.getObject('Chamfer')
+
+            def points(names):
+                shape = chamfer.BaseFeature.Shape
+                return [[tuple(round(c, 9) for c in v.Point)
+                         for v in shape.getElement(n).Vertexes] for n in names]
+
+            before = points(chamfer.Base[1])
+            self.assertEqual(len(before), 4)
+            doc.recompute()
+            self.assertNotIn('Invalid', chamfer.State)
+            self.assertEqual(points(chamfer.Base[1]), before)
+        finally:
+            FreeCAD.closeDocument(doc.Name)
 
     def tearDown(self):
         #closing doc

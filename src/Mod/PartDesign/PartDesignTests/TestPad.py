@@ -383,6 +383,30 @@ class TestPad(unittest.TestCase):
         self.assertNotIn("Invalid", pad.State)
         self.assertAlmostEqual(pad.Shape.BoundBox.ZMax, 31)
 
+    def testTwoLengthsIgnoresMidplane(self):
+        # A TwoLengths pad with Midplane left set from before goes Length up
+        # and Length2 down, not centred (upstream 529779fb53, the test of the
+        # fix taken as e20dcdaf5d)
+        body = self.Doc.addObject('PartDesign::Body', 'Body')
+        sketch = body.newObject('Sketcher::SketchObject', 'Sketch')
+        sketch.AttachmentSupport = (self.Doc.XY_Plane, [''])
+        sketch.MapMode = 'FlatFace'
+        sketch.addGeometry(Part.Circle(FreeCAD.Vector(), FreeCAD.Vector(0, 0, 1), 10), False)
+        self.Doc.recompute()
+        pad = body.newObject('PartDesign::Pad', 'Pad')
+        pad.Profile = sketch
+        pad.Midplane = True
+        pad.Length = 10
+        pad.Length2 = 20
+        pad.Type = 'TwoLengths'
+        self.Doc.recompute()
+        self.assertNotIn('Invalid', pad.State)
+        box = pad.Shape.BoundBox
+        self.assertAlmostEqual(box.XMin, -10)
+        self.assertAlmostEqual(box.XMax, 10)
+        self.assertAlmostEqual(box.ZMax, 10)
+        self.assertAlmostEqual(box.ZMin, -20)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestPad")

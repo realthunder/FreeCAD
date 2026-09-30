@@ -91,6 +91,34 @@ class TestPipe(unittest.TestCase):
         self.Doc.recompute()
         self.assertAlmostEqual(self.SubtractivePipe.Shape.Volume, 100 - 3.14159265)
 
+    def testBinderSpine(self):
+        # A spine given as a SubShapeBinder whose Shape was set by a script,
+        # with no support to follow, sweeps as the sketch it copies (upstream
+        # 422da33962)
+        body = self.Doc.addObject('PartDesign::Body', 'BinderSpineBody')
+        profile = body.newObject('Sketcher::SketchObject', 'Circle')
+        profile.AttachmentSupport = (self.Doc.XY_Plane, [''])
+        profile.MapMode = 'FlatFace'
+        profile.addGeometry(Part.Circle(FreeCAD.Vector(), FreeCAD.Vector(0, 0, 1), 0.5), False)
+        line = body.newObject('Sketcher::SketchObject', 'Line')
+        line.AttachmentSupport = (self.Doc.XZ_Plane, [''])
+        line.MapMode = 'FlatFace'
+        line.addGeometry(Part.LineSegment(FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(0, 1, 0)), False)
+        self.Doc.recompute()
+        volumes = []
+        for name, spine in (('SketchSpine', line), ('BinderSpine', None)):
+            if spine is None:
+                spine = body.newObject('PartDesign::SubShapeBinder', 'Binder')
+                spine.Shape = line.Shape
+            pipe = body.newObject('PartDesign::AdditivePipe', name)
+            pipe.Profile = profile
+            pipe.Spine = spine
+            self.Doc.recompute()
+            self.assertNotIn('Invalid', pipe.State, name)
+            volumes.append(pipe.AddSubShape.Volume)
+        self.assertAlmostEqual(volumes[0], math.pi * 0.25, places=3)
+        self.assertAlmostEqual(volumes[1], volumes[0], places=6)
+
     def testAuxiliarySpineNames(self):
         # The auxiliary spine properties were misspelled; upstream renamed
         # them (fa3c6e1068). A file under either spelling keeps its spine
