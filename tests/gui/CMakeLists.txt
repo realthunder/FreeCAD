@@ -322,3 +322,12 @@ fc_add_gui_test(GuiPartDesignDefects_tests_run
 fc_add_gui_test(GuiPartDesignPortFixes_tests_run
                 pd-port-fixes.py
                 --timeout 300)
+
+# The PartDesign candidates of docs/PartDesignPort.md sec 8 taken
+# 2026-10-01: Placement in the context menu, the checked active body, the
+# binder watcher and outline, the Tip of a body shown with nothing
+# visible, several table references deleted at once, New Sketch's
+# attacher, the Pad direction rows, no legacy workflow prompt.
+fc_add_gui_test(GuiPartDesignPortCandidates_tests_run
+                pd-port-candidates.py
+                --timeout 300)
