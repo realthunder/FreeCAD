@@ -62,7 +62,7 @@ FC_LOG_LEVEL_INIT("PartDesign", true,true)
 
 PROPERTY_SOURCE(PartDesign::Draft, PartDesign::DressUp)
 
-const App::PropertyAngle::Constraints Draft::floatAngle = { 0.0, 90.0 - Base::toDegrees<double>(Precision::Angular()), 0.1 };
+const App::PropertyAngle::Constraints Draft::floatAngle = { -90.0,90.0 - Base::toDegrees<double>(Precision::Angular()), 0.1 };
 
 Draft::Draft()
 {

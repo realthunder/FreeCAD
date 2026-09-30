@@ -99,6 +99,26 @@ class TestDraft(unittest.TestCase):
         self.assertNotAlmostEqual(volumes[0], 1000)
         self.assertAlmostEqual(volumes[1], volumes[0])
 
+    def testNegativeAngle(self):
+        # A negative angle drafts the other way (upstream eb886449c2); it
+        # was clamped to 0
+        volumes = []
+        for angle in (5, -5):
+            body = self.Doc.addObject('PartDesign::Body', 'NegBody')
+            box = body.newObject('PartDesign::AdditiveBox', 'NegBox')
+            box.Length = box.Width = box.Height = 20
+            self.Doc.recompute()
+            draft = body.newObject('PartDesign::Draft', 'NegDraft')
+            draft.Base = (box, ['Face1', 'Face2', 'Face3', 'Face4'])
+            draft.NeutralPlane = (box, ['Face5'])
+            draft.Angle = angle
+            self.Doc.recompute()
+            self.assertAlmostEqual(draft.Angle.Value, angle)
+            self.assertNotIn('Invalid', draft.State)
+            volumes.append(draft.Shape.Volume)
+        self.assertLess(volumes[0], 8000)
+        self.assertGreater(volumes[1], 8000)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestDraft")
