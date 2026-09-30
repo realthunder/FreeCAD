@@ -2796,7 +2796,7 @@ overlay id 7), so the unified selection's highlight cannot reach it, and
 that manager's `setHighlight` would overwrite the model's. The ruling:
 first a Coin-side move that works in every render-cache mode (option C),
 then a mode-3 highlight overlay on top of it for per-view highlight
-(option B, still to do).
+(option B, below).
 
 C: the four highlight sets (`Selected`/`PreSelected` x `Curve`/`Point`)
 already drew the highlighted elements on top, but indexed into the
@@ -2824,6 +2824,54 @@ written; the backend draws the hovered edge in the preselection colour --
 4 of its checks fail before) and `tests/gui/sketch-highlight-notify.py`.
 `sketch-bulk-selection.py` and `sketch-visual-layers.py` read the
 highlight from the overlays now, not from `CurvesMaterials`.
+
+B (session 111): in render cache mode 3 the preselection of the geometry
+itself -- the curve, the vertex, the axis under the pointer, the dragged
+element -- is the hovering view's own highlight. The sketch hands it to
+`ViewerContext::setEditingHighlight` as one `SoFCDetail` per shape node
+and colour (the solid and dashed curve sets, the point set, the cross);
+the view's editing capture takes those elements from the scene it
+already captured (`SoFCRenderCacheManager::setHighlights`, no traversal)
+and its renderer feeds them to the backend as an overlay of their own,
+`OverlayEditHighlight` = 10, past the edit graph's 7. A view that cannot
+-- outside mode 3, a served mirror -- returns false, and the sets carry
+the preselection as before, in every view. A preselection from outside
+any view (the tree, the task panel) goes to every view of the session. A
+preselected constraint stays a colour write in the graph, and so does
+what is highlighted on its behalf. Modes 0-2 are unchanged (user ruling).
+
+The draw-order question the session opened with turned out to be moot
+in mode 3: the old sets' copies were already drawn over constraint icons
+and datum label text there, whatever their layers say (a label never
+covered even the plain edge). The overlay keeps that. Whether the layers
+put the highlight under an icon in modes 0-2 was not measured.
+
+`updateHighlight()` now writes a highlight set's indices and coordinates
+only when they change: it rewrote all of them, empty ones included, on
+every call, and in mode 3 each write made the whole edit graph be
+captured again.
+
+Measured on Sketch028 (1428 geometries, 2168 constraints; llvmpipe, a
+802x543 view): a hover plus the frame it asks for cost a plain frame +35
+ms before (the edit overlay captured again), +1 ms now; the hover echo is
+0.085 ms (0.04 before). A first version took the highlight by traversing
+a path to each node with the capture manager's action, as `setHighlight`
+does: it left every later frame 12 ms dearer, the same draws each ~6 us
+more, for a cause not found -- taking the elements from the captured scene
+does not. Separately, and in the old code as much as the new: after the
+first preselection of the sketch, every frame draws 307 more draws (1822
+-> 2129) and costs 7-9 ms more, even with nothing preselected. Not chased.
+
+Guarded by `tests/gui/sketch-highlight-view.py` (a hover writes no node
+of the edit graph; the sets hold the selection only; the pointer's
+preselection shows in its own view and not a second one, one from outside
+any view in both; the hovered edge, a vertex and an axis in the
+preselection colour, over the icon and the label it crosses). Against the
+old code the node, set and per-view checks fail; the crossing check passed
+there too. `sketch-highlight-overlay.py` reads its set checks per mode, and
+`sketch-visual-layers.py` reads a hover from the preselection rather than
+the set. A synthetic pointer move DOES preselect in sketch edit now (this
+test drives two views with it), on llvmpipe and d3d12.
 
 `sketch-drag-arc-conic.py` is flaky, independently of this work: a drag
 that never starts, a different one each time, 2 of 10 runs without C and
