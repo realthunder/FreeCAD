@@ -9857,3 +9857,80 @@ once), `cb85117343` (the wrapping wire), `8fe3fa97ed`, `3ce2fd1837`,
 **Gates:** Python 2970 OK (52 skipped, 6 expected failures; +1), ctest
 850/850, the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14; the fork's
 thickness suite PASS 38, XFAIL 2.
+
+### 27.92 Thickness with the Intersection join: inside out, a blind floor, concave faces (user, 2026-09-30)
+
+Continued from 27.91, on what both the fork and upstream got wrong.
+
+**Found and fixed** (fork):
+
+1. *A thick solid inside out* (`BRepOffset_MakeOffset::MakeThickSolid`).
+   The shape's faces and the offset faces, reversed, are glued by
+   `BRepTools_Quilt`, and the solid is reversed when the offset is outward --
+   trusting the quilt to keep the shape's faces as they are. It does not: it
+   orients a shell by the faces it met first and reverses a shell it joins to
+   it when they disagree, so which way the result faces depends on the order
+   the shells meet. With the Intersection join and intersection off the T's
+   right bar top inward came back a valid solid of volume -216 while its
+   mirror image, the left bar top, gave 216 -- the same faces, every one
+   turned; so did a pocketed box's pocket wall and floor. The solid is now
+   oriented by classification (`BRepLib::OrientClosedSolid`); the sign of
+   the offset decides only when that cannot. 4 runs.
+2. *A blind floor's section the wrong way round*
+   (`BRepOffset_Inter3d::ContextIntByInt`). With the Intersection join the
+   removed face is cut with each offset face, and the section is oriented by
+   `OrientSection` and a fixed reversal, right where the removed face meets
+   its neighbour at a convex edge. A blind hole's floor meets the hole's wall
+   at a concave one: on the wall's offset the section came out reversed and
+   the band there closed on two circles running the same way -- a face of
+   area -37.7, an invalid solid. The Arc join (`ContextIntByArc`) takes the
+   offset of the removed face's edge with the orientation the offset face
+   gives it; with the Intersection join that edge is now the reference, and
+   a section that runs against it is turned on both faces. A probe first:
+   six right runs all agreed with it (counting the face's own orientation),
+   the blind floor did not. 8 runs (the blind-hole box and the pocketed
+   cylinder, floor removed, +-1, intersection off and on); 533.1327 and
+   326.8496 are worked out by hand.
+3. *Concave removed faces with intersection on* (`MakeOffsetShape`). With
+   intersection on and the Intersection join a planar shape's offset faces
+   are split by `BuildSplitsOfExtendedFaces`, which does not cut a
+   neighbour's section where it crosses the removed face's own edges -- the
+   pieces the rim face needs (27.91); the loops, with intersection off, do.
+   All twenty runs of this kind -- the L-box's notch walls, the T's bar tops
+   and post walls, the pocket's walls -- are right with intersection off, and
+   in the sweep intersection on never did better than off on a planar thick
+   solid. A shape whose removed face meets a neighbour at a concave edge
+   (`ChFi3d::DefineConnectType`) is now built with intersection off, `myInter`
+   given back on the way out (a member would change the class's size, and
+   FreeCAD holds `BRepOffset_MakeOffset` by value). What intersection mode is
+   for -- offsets crossing faces that are not neighbours -- is given up for
+   these shapes; nothing in the sweep needs it. The suite's pocket no-crash
+   case (walls twice the thickness) takes the loop path now and throws. 20
+   runs.
+
+**Result.** The sweep, in scope: the fork right in 135 (Arc, intersection
+off), 135 (Arc, on), 137 (Intersection join, off) and 137 (on) of 150;
+upstream in 106, 107, 110 and 111. Better than upstream in 110 runs, worse in
+none. What is left is the same in every mode: the filleted box with an end
+face or a fillet face removed (12 to 14 runs a mode) and the holed cone's top
+(ill-posed, 27.91). The filleted box: the removed face is tangent to the
+fillets, whose offsets never reach its plane; the rim would have to stand
+square to the removed face, as thickening an open shell builds it -- and
+thickening the filleted box's open shell (`makeOffsetShape` with fill) fails
+on every one of these too. Not attempted further.
+
+**Tests.** FreeCAD `parttests.regression_tests.
+test_thickness_with_the_intersection_join` (six cases). The fork's suite:
+`tshape_bar_top_right_join_in`, `pocket_floor_join_out/in`,
+`blindhole_floor_join_out/in`, `lbox_notch_wall_inter_join_out`,
+`tshape_post_wall_inter_join_in`, `pocket_wall_inter_join_in`; PASS 46,
+XFAIL 2.
+
+Commits: fork `a738f3c229` (oriented by classification), `b08f78fb51`
+(the section turned), `638c8064b4` (concave faces built with intersection
+off), `81740c9bbc`, `4547f0cba9`, `7ad4efdc4c` (the suite),
+`e5e6d02f70` (its README); `d5fbb83bf0` (the FreeCAD test).
+
+**Gates:** Python 2971 OK (52 skipped, 6 expected failures; +1), ctest
+850/850, the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14; the fork's
+thickness suite PASS 46, XFAIL 2.
