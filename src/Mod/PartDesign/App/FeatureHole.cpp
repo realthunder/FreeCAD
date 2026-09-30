@@ -377,6 +377,7 @@ const Hole::ThreadDescription Hole::threadDescription[][171] =
         { "7/8",        22.225, 1.814,    20.40 },
         { "1",          25.400, 2.117,    23.25 },
         { "1 1/8",      28.575, 2.117,    26.50 },
+        { "1 3/16",     30.163, 1.588,    28.58 },
         { "1 1/4",      31.750, 2.117,    29.50 },
         { "1 3/8",      34.925, 2.117,    32.75 },
         { "1 1/2",      38.100, 2.117,    36.00 },
@@ -614,7 +615,7 @@ const double Hole::metricHoleDiameters[51][4] =
         { 150.0,     155.0,  	158.0,   165.0}
 };
 
-const Hole::UTSClearanceDefinition Hole::UTSHoleDiameters[22] =
+const Hole::UTSClearanceDefinition Hole::UTSHoleDiameters[23] =
 {
     /* UTS clearance hole diameters according to ASME B18.2.8 */
     // for information: the norm defines a drill bit number (that is in turn standardized in another ASME norm).
@@ -642,6 +643,7 @@ const Hole::UTSClearanceDefinition Hole::UTSHoleDiameters[22] =
         { "7/8",   23.0, 23.8, 26.2 },
         { "1",     26.2, 27.8, 29.4 },
         { "1 1/8", 29.4, 31.0, 33.3 },
+        { "1 3/16", 31.0, 32.5, 34.9 },
         { "1 1/4", 32.5, 34.1, 36.5 },
         { "1 3/8", 36.5, 38.1, 40.9 },
         { "1 1/2", 39.7, 41.3, 44.0 }
@@ -2606,8 +2608,8 @@ TopoDS_Shape Hole::makeThread(const gp_Vec& xDir, const gp_Vec& zDir, double len
     // Nomenclature and formulae according to Figure 1 of ISO 68-1
     // this is the same for all metric and UTS threads as stated here:
     // https://en.wikipedia.org/wiki/File:ISO_and_UTS_Thread_Dimensions.svg
-    // Note that in the ISO standard, Dmaj is called D.
-    double Dmaj = threadDescription[threadType][threadSize].diameter / 2; // major diameter position
+    // Rmaj is half of the major diameter
+    double Rmaj = threadDescription[threadType][threadSize].diameter / 2;
     double Pitch = getThreadPitch();
 
     double clearance; // clearance to be added on the diameter
@@ -2615,52 +2617,67 @@ TopoDS_Shape Hole::makeThread(const gp_Vec& xDir, const gp_Vec& zDir, double len
         clearance = CustomThreadClearance.getValue() / 2;
     else
         clearance = getThreadClassClearance() / 2;
+    double RmajC = Rmaj + clearance;
+    // p1 and p4 are kept this far off the pitch lines, so that one turn of
+    // the swept profile does not touch the next
+    double marginZ = 0.001;
 
+    // The cross section is closed by a straight base at the root of the
+    // sharp V, parallel to the axis, so that it stays inside the bore when
+    // the helix follows a taper (upstream 80d4185c09)
     BRepBuilderAPI_MakeWire mkThreadWire;
     double H;
     std::string threadTypeStr = ThreadType.getValueAsString();
     if (threadTypeStr == "BSP" || threadTypeStr == "BSW" || threadTypeStr == "BSF") {
         H = 0.960491 * Pitch; // Height of Sharp V
         double radius = 0.137329 * Pitch; // radius of the crest
-        double h = 0.640627 * Pitch; // height of the thread
         // construct the cross section going counter-clockwise
+        // --------------
+        // P    | p4
+        // 5/8P |                p3
+        //      |                         crest
+        // 3/8P |                p2
+        // 0    | p1
+        // --------------
+        //      | base-sharpV             Rmaj     H
+        double marginX = std::tan(Base::toRadians(62.5)) * marginZ;
 
-        gp_Pnt p1 = toPnt((Dmaj - h + clearance) * xDir + Pitch / 8 * zDir);
-        gp_Pnt p4 = toPnt((Dmaj - h + clearance) * xDir + 7 * Pitch / 8 * zDir);
-        gp_Pnt p5 = toPnt(0.9 * (Dmaj - h) * xDir + 7 * Pitch / 8 * zDir);
-        gp_Pnt p6 = toPnt(0.9 * (Dmaj - h) * xDir + Pitch / 8 * zDir);
+        gp_Pnt p1 = toPnt((RmajC - 5 * H / 6 + marginX) * xDir + marginZ * zDir);
+        gp_Pnt p4 = toPnt((RmajC - 5 * H / 6 + marginX) * xDir + (Pitch - marginZ) * zDir);
 
-        // Calculate positions for p2 and p3 based on the arc radius
-        double p23x = Dmaj + clearance - radius * (1 - std::cos(M_PI / 4));
+        // p2 and p3 are where the flanks meet the crest's arc
+        double p23x = RmajC - radius * 0.58284013094;
 
-        gp_Pnt p2 = toPnt(p23x * xDir + 7 * Pitch / 16 * zDir);
-        gp_Pnt p3 = toPnt(p23x * xDir + 9 * Pitch / 16 * zDir);
-        gp_Pnt crest = toPnt((Dmaj + clearance) * xDir + Pitch / 2 * zDir);
+        gp_Pnt p2 = toPnt(p23x * xDir + 3 * Pitch / 8 * zDir);
+        gp_Pnt p3 = toPnt(p23x * xDir + 5 * Pitch / 8 * zDir);
+        gp_Pnt crest = toPnt(RmajC * xDir + Pitch / 2 * zDir);
 
         mkThreadWire.Add(BRepBuilderAPI_MakeEdge(p1, p2).Edge());
         Handle(Geom_TrimmedCurve) arc1 = GC_MakeArcOfCircle(p2, crest, p3).Value();
         mkThreadWire.Add(BRepBuilderAPI_MakeEdge(arc1).Edge());
         mkThreadWire.Add(BRepBuilderAPI_MakeEdge(p3, p4).Edge());
-        mkThreadWire.Add(BRepBuilderAPI_MakeEdge(p4, p5).Edge());
-        mkThreadWire.Add(BRepBuilderAPI_MakeEdge(p5, p6).Edge());
-        mkThreadWire.Add(BRepBuilderAPI_MakeEdge(p6, p1).Edge());
+        mkThreadWire.Add(BRepBuilderAPI_MakeEdge(p4, p1).Edge());
     } else {
         H = sqrt(3) / 2 * Pitch; // height of fundamental triangle
-        double h = 5 * H / 8; // height of the thread
+        double h = 7 * H / 8; // distance from Rmaj to the base
         // construct the cross section going counter-clockwise
-        // for graphical explanation of geometrical construction of p1-p6 see:
-        // https://forum.freecad.org/viewtopic.php?f=19&t=54284#p466570
-        gp_Pnt p1 = toPnt((Dmaj - h + clearance) * xDir + Pitch / 8 * zDir);
-        gp_Pnt p2 = toPnt((Dmaj + clearance) * xDir + 7 * Pitch / 16 * zDir);
-        gp_Pnt p3 = toPnt((Dmaj + clearance) * xDir + 9 * Pitch / 16 * zDir);
-        gp_Pnt p4 = toPnt((Dmaj - h + clearance) * xDir + 7 * Pitch / 8 * zDir);
-        gp_Pnt p5 = toPnt(0.9 * (Dmaj - h) * xDir + 7 * Pitch / 8 * zDir);
-        gp_Pnt p6 = toPnt(0.9 * (Dmaj - h) * xDir + Pitch / 8 * zDir);
+        // --------------
+        // P     | p4
+        // 9/16P |                p3
+        // 7/16P |                p2
+        // 0     | p1
+        // --------------
+        //       | base-sharpV    Rmaj
+        double marginX = std::tan(Base::toRadians(60.0)) * marginZ;
+        gp_Pnt p1 = toPnt((RmajC - h + marginX) * xDir + marginZ * zDir);
+        gp_Pnt p2 = toPnt(RmajC * xDir + 7 * Pitch / 16 * zDir);
+        gp_Pnt p3 = toPnt(RmajC * xDir + 9 * Pitch / 16 * zDir);
+        gp_Pnt p4 = toPnt((RmajC - h + marginX) * xDir + (Pitch - marginZ) * zDir);
 
         mkThreadWire.Add(BRepBuilderAPI_MakeEdge(p1, p2).Edge());
         if (threadTypeStr == "ISOTyre") {
             // ISO 4570 rounds the crest (upstream 551c15b48f)
-            gp_Pnt crest = toPnt((Dmaj + clearance + Pitch / 32) * xDir + Pitch / 2 * zDir);
+            gp_Pnt crest = toPnt((RmajC + Pitch / 32) * xDir + Pitch / 2 * zDir);
             Handle(Geom_TrimmedCurve) arc1 = GC_MakeArcOfCircle(p2, crest, p3).Value();
             mkThreadWire.Add(BRepBuilderAPI_MakeEdge(arc1).Edge());
         }
@@ -2668,9 +2685,7 @@ TopoDS_Shape Hole::makeThread(const gp_Vec& xDir, const gp_Vec& zDir, double len
             mkThreadWire.Add(BRepBuilderAPI_MakeEdge(p2, p3).Edge());
         }
         mkThreadWire.Add(BRepBuilderAPI_MakeEdge(p3, p4).Edge());
-        mkThreadWire.Add(BRepBuilderAPI_MakeEdge(p4, p5).Edge());
-        mkThreadWire.Add(BRepBuilderAPI_MakeEdge(p5, p6).Edge());
-        mkThreadWire.Add(BRepBuilderAPI_MakeEdge(p6, p1).Edge());
+        mkThreadWire.Add(BRepBuilderAPI_MakeEdge(p4, p1).Edge());
     }
 
     mkThreadWire.Build();
@@ -2707,7 +2722,8 @@ TopoDS_Shape Hole::makeThread(const gp_Vec& xDir, const gp_Vec& zDir, double len
                 helixLength = holeDepth + Pitch / 8;
         }
     }
-    TopoDS_Shape helix = TopoShape().makeLongHelix(Pitch, helixLength, Dmaj, 0.0, leftHanded);
+    double helixAngle = Tapered.getValue() ? TaperedAngle.getValue() - 90 : 0.0;
+    TopoDS_Shape helix = TopoShape().makeLongHelix(Pitch, helixLength, Rmaj, helixAngle, leftHanded);
 
     gp_Pnt origo(0.0, 0.0, 0.0);
     gp_Dir dir_axis1(0.0, 0.0, 1.0);  // pointing along the helix axis, as created.

@@ -19,6 +19,7 @@
 #   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  *
 #   USA                                                                   *
 #**************************************************************************
+import math
 from math import pi
 import unittest
 
@@ -609,7 +610,7 @@ class TestHole(unittest.TestCase):
                 "#0", "#1", "#2", "#3", "#4", "#5", "#6",
                 "#8", "#10", "#12",
                 "1/4", "5/16", "3/8", "7/16", "1/2", "9/16",
-                "5/8", "3/4", "7/8", "1", "1 1/8", "1 1/4",
+                "5/8", "3/4", "7/8", "1", "1 1/8", "1 3/16", "1 1/4",
                 "1 3/8", "1 1/2",
             ],
             'UNEF': [
@@ -684,6 +685,44 @@ class TestHole(unittest.TestCase):
             f"{prop} is not in {allowed_props}\n\n"
             "Verify that the tested enums names are updated \n\n"
         )
+
+    def testTaperedModelThread(self):
+        # A modelled thread follows the taper of a tapered hole (upstream
+        # df22f8060d, with the profile of 80d4185c09): its root is narrower
+        # deeper down. It was a straight thread in a tapered bore
+        body = self.Doc.addObject('PartDesign::Body', 'TaperBody')
+        box = body.newObject('PartDesign::AdditiveBox', 'TaperBox')
+        box.Length = box.Width = 60
+        box.Height = 40
+        box.Placement.Base = FreeCAD.Vector(-30, -30, -40)
+        sketch = body.newObject('Sketcher::SketchObject', 'TaperSketch')
+        sketch.AttachmentSupport = (self.Doc.XY_Plane, [''])
+        sketch.MapMode = 'FlatFace'
+        sketch.addGeometry(Part.Circle(FreeCAD.Vector(), FreeCAD.Vector(0, 0, 1), 5), False)
+        self.Doc.recompute()
+        hole = body.newObject('PartDesign::Hole', 'TaperHole')
+        hole.Profile = sketch
+        hole.Threaded = True
+        hole.ThreadType = 'NPT'
+        hole.ThreadSize = '1'
+        hole.ModelThread = True
+        hole.Tapered = True
+        hole.DepthType = 'Dimension'
+        hole.Depth = 25
+        hole.ThreadDepthType = 'Hole Depth'
+        self.Doc.recompute()
+        self.assertNotIn('Invalid', hole.State)
+        self.assertTrue(hole.Shape.isValid())
+
+        def root(z):
+            wires = hole.Shape.slice(FreeCAD.Vector(0, 0, 1), z)
+            inner = min(wires, key=lambda w: w.BoundBox.DiagonalLength)
+            return max(FreeCAD.Vector(p.x, p.y, 0).Length
+                       for e in inner.Edges for p in e.discretize(60))
+
+        drop = (root(-3) - root(-20)) / 17
+        taper = math.tan(math.radians(90 - hole.TaperedAngle.Value))
+        self.assertAlmostEqual(drop, taper, delta=taper * 0.2)
 
     def tearDown(self):
         #closing doc
