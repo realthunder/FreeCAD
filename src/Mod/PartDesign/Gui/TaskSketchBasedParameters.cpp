@@ -39,6 +39,8 @@
 # include <Precision.hxx>
 #endif
 
+#include <map>
+#include <set>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QTableWidget>
@@ -115,7 +117,7 @@ public:
             view->setShowGrid(false);
             view->setWordWrap(false);
             view->setMouseTracking(true);
-            view->setSelectionMode(QAbstractItemView::SingleSelection);
+            view->setSelectionMode(QAbstractItemView::ExtendedSelection);
             view->setEditTriggers(QAbstractItemView::DoubleClicked
                                   | QAbstractItemView::EditKeyPressed);
             view->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
@@ -527,25 +529,45 @@ bool LinkSubWidget::setRows(LinkRows &&rows)
 
 void LinkSubWidget::onDelete()
 {
-    QModelIndex index = table->currentIndex();
-    if (!index.isValid())
-        return;
+    // Every selected cell goes (upstream f7c03bb929): an object's cell takes
+    // its row with it, an element's cell that element
+    QModelIndexList indexes = table->selectionModel()->selectedIndexes();
+    if (indexes.isEmpty() && table->currentIndex().isValid())
+        indexes.push_back(table->currentIndex());
     auto rows = getRows();
-    if (index.row() >= (int)rows.size())
-        return;
-    if (index.column() == 0) {
-        if (!multiObject) {
-            onClear();
-            return;
+    std::set<int> dropRows;
+    std::map<int, std::set<int>> dropSubs;
+    for (const QModelIndex &index : indexes) {
+        if (!index.isValid() || index.row() >= (int)rows.size())
+            continue;
+        if (index.column() == 0) {
+            if (!multiObject) {
+                onClear();
+                return;
+            }
+            dropRows.insert(index.row());
         }
-        rows.erase(rows.begin() + index.row());
-    } else {
-        auto &subs = rows[index.row()].second;
-        if (index.column() - 1 >= (int)subs.size())
-            return;
-        subs.erase(subs.begin() + index.column() - 1);
+        else if (index.column() - 1 < (int)rows[index.row()].second.size())
+            dropSubs[index.row()].insert(index.column() - 1);
     }
-    setRows(std::move(rows));
+    if (dropRows.empty() && dropSubs.empty())
+        return;
+    LinkRows kept;
+    for (int i = 0; i < (int)rows.size(); ++i) {
+        if (dropRows.count(i))
+            continue;
+        auto it = dropSubs.find(i);
+        if (it != dropSubs.end()) {
+            std::vector<std::string> subs;
+            for (int j = 0; j < (int)rows[i].second.size(); ++j) {
+                if (!it->second.count(j))
+                    subs.push_back(std::move(rows[i].second[j]));
+            }
+            rows[i].second = std::move(subs);
+        }
+        kept.push_back(std::move(rows[i]));
+    }
+    setRows(std::move(kept));
 }
 
 void LinkSubWidget::onButton(bool checked)
@@ -644,6 +666,11 @@ bool LinkSubWidget::eventFilter(QObject *o, QEvent *ev)
                 if (ev->type() == QEvent::KeyPress)
                     onDelete();
             }
+        }
+        // Ctrl+A selects the table's cells, not the document's objects
+        else if (isView && ev->type() == QEvent::ShortcutOverride
+                 && kevent->matches(QKeySequence::SelectAll)) {
+            kevent->accept();
         }
         break;
     }
