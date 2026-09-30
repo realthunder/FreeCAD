@@ -9671,3 +9671,87 @@ suite); `3001db87b0` (the FreeCAD test).
 **Gates:** Python 2968 OK (52 skipped, 6 expected failures; +1), ctest
 850/850, the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14; the fork's
 thickness suite PASS 28, XFAIL 2.
+
+### 27.90 Thickness past concave corners, and with a concave face removed (user, 2026-09-30)
+
+The user: continue chasing the thickness failures. Also noted: the fork's
+loop search in `BRepAlgo_Loop` (`FindLoop`, `FindAllLoops`, `SplitWires`) is
+mostly a copy of FreeCAD's WireJoiner and has the flaw already fixed on the
+FreeCAD side; that is to be dealt with once all the failures are fixed.
+
+Continued from the 712-run sweep of 27.89, now also counting as failures a
+face removal that leaves the rest of the shell in two pieces (fourteen of the
+runs: a cylinder's, cone's or elliptic pad's lateral face, the only face of
+the sphere and the torus, a top whose hole or pocket walls become an island)
+as out of scope, and an inward result larger than its input as wrong.
+
+**Found and fixed** (fork):
+
+1. *The corner piece of an arc face* (`BRepAlgo_Loop`). Outward with the Arc
+   join past a concave corner, the arc face along one edge is cut by the arc
+   of the next along an ellipse. Its tangent line, cut there, keeps both
+   pieces -- the fork's loop keeps every piece of a cut edge (`KeepAll`), to
+   find the edges of a concave removed face, where upstream keeps only the
+   span between the edge's own intersection vertices -- and the piece beyond
+   the cut, closed by the arc's own end circle, came out as a face of its
+   own: the L-box and the T with an arm's end removed were invalid, and the
+   L-box sides in intersection mode failed. Pieces beyond the span the
+   edge's own vertices give it (first FORWARD to last REVERSED) are marked,
+   and a wire through one is dropped when a wire sharing an edge with it
+   stays inside; alone it is kept. A span open on one side is trusted on arc
+   faces only: on a plane a lone vertex can be where the stretched removed
+   face crosses the edge, far from the face, and its orientation says
+   nothing.
+   Tried first and dropped: rejecting any wire whose edges disagree in
+   orientation among themselves. It fixed the same cases but broke 30 right
+   ones -- a planar rectangle whose edges came in with inconsistent
+   orientations was the first -- so the orientations the loop gets are not
+   reliable enough to decide on; and running `SplitWires` on periodic faces
+   too, which fixed nothing and broke 2.
+2. *A neighbour skipped before its edge was renewed*
+   (`BRepOffset_MakeLoops::BuildFaces`). A face is rebuilt when one of its
+   edges has an image; a rebuilt face renews, as a copy, an unchanged edge
+   whose vertices were renewed. A neighbour met earlier and skipped as
+   unchanged kept the old edge: the T's corner sphere, and the shell had a
+   free edge. The faces are gone over again until none is rebuilt. The
+   rebuilt faces are kept in a map: a face rebuilt into nothing binds no
+   image, and the first version looped forever on the pocket box.
+   On its own this changed no result in the sweep; it is what the next one
+   needs.
+3. *A stretched edge lying on another* (`BRepAlgo_Loop::FindLoop`). The
+   context extension stretches the removed face's edges far past their ends;
+   the T's bar top, removed, left an edge that ran on along the back of the T,
+   and cut up by the vertices along it, one of its pieces lay exactly on the
+   tangent line of the arc face at the far end: the back plane got the line
+   twice. A piece of an extended edge that coincides end to end with an edge
+   from another source is left out.
+
+**Result.** The suite: PASS 32, XFAIL 2. In the sweep, FreeCAD's default
+mode (Arc, intersection off; 150 runs in scope): right in 123, from 80 at the
+start of 27.89 and 112 at its end; upstream is right in 101. Against upstream
+over all modes the fork is worse in 9 runs, all with intersection on (7 with
+the Intersection join), and better in 59. No run went from right to wrong.
+
+**Still failing in the default mode:** the T's concave bar top thickened
+inward (the stretched edge of the removed face cuts the inner back face in
+its interior: a spurious corner piece above the bar and the post split off);
+the filleted box with an end face or a fillet face removed -- upstream fails
+all of these the same way, several with exceptions from upstream code, and a
+fillet face removed inward comes back self-intersecting though `isValid()`
+passes; a box whose pocket walls are exactly twice the thickness (the pocket
+wall and the outer wall offset onto one plane -- the sweep's own bad choice,
+not counted).
+
+**Tests.** FreeCAD `parttests.regression_tests.
+test_thickness_past_a_concave_corner` (L-box and T arm ends at upstream's
+volumes, the T's bar top at the fork's own -- upstream fails it). The fork's
+suite: `lbox_arm_end_out`, `tshape_arm_end_out`, `pocketbox_wall_out`,
+`tshape_bar_top_out`, each failing before its fix; README updated.
+
+Commits: fork `9bac1d65be` (the corner piece), `8290c42760` (faces gone over again),
+`402c33ece1` (the stretched edge), `cbc47c91a7` (the suite); `3b6aa9a055` (the FreeCAD
+test).
+
+**Gates:** Python 2969 OK (52 skipped, 6 expected failures; +1), ctest
+850/850, the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14; the fork's
+thickness suite PASS 32, XFAIL 2.
