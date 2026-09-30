@@ -827,8 +827,15 @@ def run():
         # (shaders compiling, caches empty) took.
         open_file(paths[0], False)
         close_all()
+        seen = Counter()
         for path in paths:
+            # A user's files share names (seven error.FCStd in the bug report
+            # corpus): numbered past the first, or each overwrote the last
+            # one's captures and a failure's images showed a file that passed.
             base = os.path.basename(path)[:-6]
+            seen[base] += 1
+            if seen[base] > 1:
+                base = "%s.%d" % (base, seen[base])
             cam = {}
             try:
                 doc, docs, _ = open_file(path, False)
