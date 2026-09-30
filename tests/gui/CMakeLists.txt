@@ -436,6 +436,11 @@ fc_add_gui_test(GuiSketchMergedIconOverflow_tests_run
                 sketch-merged-icon-overflow.py
                 --timeout 300)
 
+# A merged constraint icon shows ten labels and a "+N" that picks the rest.
+fc_add_gui_test(GuiSketchMergedIconLabels_tests_run
+                sketch-merged-icon-labels.py
+                --timeout 300)
+
 # An SoImage is drawn pixel for pixel in mode 3, as glDrawPixels does. The
 # backend's textured quad sat wherever the anchor projected, and half a
 # pixel off the filter spread each texel over two pixels: a Sketcher

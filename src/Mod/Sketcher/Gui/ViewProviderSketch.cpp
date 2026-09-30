@@ -5108,11 +5108,16 @@ void ViewProviderSketch::drawMergedConstraintIcons(IconQueue &&iconQueue)
     QString idString;
     int lastVPad = 0;
 
+    // A row shows at most this many numbers; the rest are one "+N".
+    const std::size_t MaxMergedLabels = 10;
+
     QStringList labels;
     std::vector<int> ids;
     QString thisType;
     QColor iconColor;
     QList<QColor> labelColors;
+    // the constraints each shown label picks, in label order
+    std::vector<std::set<int>> labelIds;
     int maxColorPriority;
     double iconRotation;
 
@@ -5120,44 +5125,74 @@ void ViewProviderSketch::drawMergedConstraintIcons(IconQueue &&iconQueue)
     while(!iconQueue.empty()) {
         IconQueue::iterator i = iconQueue.begin();
 
-        labels.clear();
-        labels.append(i->label);
+        // One row per type: its icon, then the numbers of the constraints
+        // that have one. An unnamed constraint of a single-icon type has
+        // none and takes no room -- it used to reserve a separator each,
+        // and 1321 of them on one spot made an image 44879 pixels wide of
+        // nothing. Past MaxMergedLabels numbers the rest are one "+N",
+        // whose box picks them all; the icon's box picks every constraint
+        // of the type, as before.
+        struct Named
+        {
+            QString label;
+            int id;
+        };
+        std::vector<Named> named;
 
         ids.clear();
-        ids.push_back(i->constraintId);
 
         thisType = i->type;
         iconColor = constrColor(i->constraintId);
-        labelColors.clear();
-        labelColors.append(iconColor);
         iconRotation= i->iconRotation;
 
-        maxColorPriority = constrColorPriority(i->constraintId);
+        maxColorPriority = -1;
 
-        if(idString.length())
-            idString.append(QStringLiteral(","));
-        idString.append(QString::number(i->constraintId));
-
-        i = iconQueue.erase(i);
         while(i != iconQueue.end()) {
             if(i->type != thisType) {
                 ++i;
                 continue;
             }
 
-            labels.append(i->label);
             ids.push_back(i->constraintId);
-            labelColors.append(constrColor(i->constraintId));
+            if (!i->label.isEmpty())
+                named.push_back({i->label, i->constraintId});
 
             if(constrColorPriority(i->constraintId) > maxColorPriority) {
                 maxColorPriority = constrColorPriority(i->constraintId);
                 iconColor= constrColor(i->constraintId);
             }
 
-            idString.append(QStringLiteral(",") +
-                            QString::number(i->constraintId));
+            if(idString.length())
+                idString.append(QStringLiteral(","));
+            idString.append(QString::number(i->constraintId));
 
             i = iconQueue.erase(i);
+        }
+
+        labels.clear();
+        labelColors.clear();
+        labelIds.clear();
+        const std::size_t shown =
+            named.size() > MaxMergedLabels ? MaxMergedLabels : named.size();
+        for (std::size_t k = 0; k < shown; ++k) {
+            labels.append(named[k].label);
+            labelColors.append(constrColor(named[k].id));
+            labelIds.push_back({named[k].id});
+        }
+        if (shown < named.size()) {
+            std::set<int> rest;
+            int restPriority = -1;
+            QColor restColor;
+            for (std::size_t k = shown; k < named.size(); ++k) {
+                rest.insert(named[k].id);
+                if (constrColorPriority(named[k].id) > restPriority) {
+                    restPriority = constrColorPriority(named[k].id);
+                    restColor = constrColor(named[k].id);
+                }
+            }
+            labels.append(QStringLiteral("+%1").arg(rest.size()));
+            labelColors.append(restColor);
+            labelIds.push_back(std::move(rest));
         }
 
         // To be inserted into edit->combinedConstBoxes
@@ -5205,27 +5240,18 @@ void ViewProviderSketch::drawMergedConstraintIcons(IconQueue &&iconQueue)
             lastVPad = thisVPad;
         }
 
-        // Add bounding boxes for the icon we just rendered to boundingBoxes
-        std::vector<int>::iterator id = ids.begin();
-        std::set<int> nextIds;
-        for(std::vector<QRect>::iterator bb = boundingBoxesVec.begin();
-            bb != boundingBoxesVec.end(); ++bb) {
-            nextIds.clear();
+        // Add bounding boxes for the icon we just rendered to boundingBoxes:
+        // the icon at left picks all IDs of its type, each label its own.
+        for (std::size_t k = 0; k < boundingBoxesVec.size(); ++k) {
+            std::set<int> nextIds;
+            if (k == 0)
+                nextIds.insert(ids.begin(), ids.end());
+            else if (k - 1 < labelIds.size())
+                nextIds = labelIds[k - 1];
 
-            if(bb == boundingBoxesVec.begin()) {
-                // The first bounding box is for the icon at left, so assign
-                // all IDs for that type of constraint to the icon.
-                for(std::vector<int>::iterator j = ids.begin(); j != ids.end(); ++j)
-                    nextIds.insert(*j);
-            }
-            else {
-                nextIds.insert(*(id++));
-            }
-
-            ConstrIconBB newBB(bb->adjusted(0, oldHeight, 0, oldHeight),
-                               nextIds);
-
-            boundingBoxes.push_back(newBB);
+            const QRect &bb = boundingBoxesVec[k];
+            boundingBoxes.emplace_back(bb.adjusted(0, oldHeight, 0, oldHeight),
+                                       std::move(nextIds));
         }
     }
 
