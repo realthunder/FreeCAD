@@ -2881,12 +2881,20 @@ chain of neighbours is one group however far it runs, and a group is one
 image -- a row per type, the icon and every member's label in one line.
 And an unnamed constraint of a single-icon type, whose label is empty,
 still reserved a ", " of width: Sketch028's 44879 pixels were nearly all
-blank. Now an empty label takes no room, and a row shows at most ten
-labels and then "+N", whose box picks the constraints it stands for (the
-icon still picks every constraint of its type in the group). Guarded by
-`tests/gui/sketch-merged-icon-labels.py` (30 named Horizontal on one
-spot, swept with the hover pick: the icon picks 30, ten labels one each,
-one box the other 20; before, thirty labels picked one each).
+blank. Now an empty label takes no room, a two-icon constraint's number
+shows once, the labels read in constraint order, and a row wraps them:
+View/ConstraintIconLabelsPerLine (10) to a line, at most
+View/ConstraintIconLabelLines (3) lines -- both on the Sketcher Display
+preferences page, and a change redraws an open edit -- with the last slot
+"+N", whose box picks the constraints it stands for (the icon still picks
+every constraint of its type in the group). Picking a merged icon: a box
+the point is inside now outranks boxes it is only within the pick radius
+of (a click on one wrapped label took the lines above and below), and a
+blank spot picks nothing, as upstream (it picked the constraint whose
+node the merge was drawn on). Guarded by
+`tests/gui/sketch-merged-icon-labels.py` (50 named Horizontal on one
+spot, swept with the pick probe: the icon picks 50, 29 labels one each,
+one box the other 21; set to 5 and 2 during the edit, 9 and a "+41").
 
 Guarded by `tests/gui/sketch-highlight-view.py` (a hover writes no node
 of the edit graph; the sets hold the selection only; the pointer's
