@@ -9577,3 +9577,97 @@ FreeCAD test).
 **Gates:** Python 2967 OK (52 skipped, 6 expected failures; +1), ctest
 850/850, the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14; the fork's
 thickness suite PASS 13, XFAIL 8.
+
+### 27.89 The thickness suite's XFAILs, against upstream (user, 2026-09-30)
+
+The user: chase the broken thickness cases -- the fork suite's 8 XFAILs
+first. The suite's README called them casualties of the fork's MakeThickSolid
+chain, but nobody had run upstream OCCT on them; whether it passes them
+decided the approach.
+
+**Upstream, measured.** Upstream's `TKBool/BRepAlgo` and `TKOffset` sources
+at the fork's base (91be8c4c71, the eleven files the chain touches, the
+loft's `ThruSections` revert kept) were compiled from the build tree's own
+compile commands into scratch libraries and preloaded (`LD_PRELOAD`; the
+FreeCAD modules carry an RPATH, so `LD_LIBRARY_PATH` does not reach them).
+Upstream passes six of the eight XFAILs, with the four issue models still
+passing; only `cyl_side_out/in` fail there too. So six were casualties of the
+chain.
+
+A sweep of 712 thickness runs followed -- 16 solids (the suite's, a box with
+a pocket, a cone with a hole, an elliptic pad, a filleted box, a T), every
+face, +/-1, intersection off/on, Arc and Intersection joins -- once against
+each build. A run counts as right only when it is a valid solid of one closed
+shell whose volume is plausible for a skin (0.4 to 2.5 times the area left
+times the thickness, and not the input's volume): upstream returns the input
+unhollowed in places, a valid solid that is wrong. The fork was worse than
+upstream in 144 runs and better in 51 -- the concave cases the chain was
+written for. The fork gave one result per run over two sweeps; upstream
+varied in 13 runs (its hash order, 27.88).
+
+**Found and fixed** (fork), each from a `Part.showShapeOCCT("*")` trace:
+
+1. *A closed edge found twice* (`BRepAlgo_Loop::FindLoop`). On a periodic
+   face the seam wire -- two closed edges joined by the seam -- replaces the
+   plain closed-edge wires found before it. The search goes on from the other
+   vertices and, depending on the order they come in, finds the second closed
+   edge again afterwards and keeps it: the inner wall of a hollowed cylinder
+   came out with wires [1, 3, 1] and the floor went missing. A wire made only
+   of a seam wire's edges is now dropped (an edge is in one wire of a face).
+   `cyl_bottom_in`, `hole_bottom_in`; +25 in the sweep.
+2. *One seam wire per face* (`FindLoop`). A removed cylinder leaves a wall at
+   each end of it, each closed by its own piece of the seam; the loop refused
+   any second seam wire, so the other wall was built from two bare circles
+   (area 0). Now refused is only a seam wire sharing an edge with one already
+   built, and the plain wires are replaced only once the seam wire exists.
+   `hole_outer_*`, `hole_inner_*`; +40.
+3. *A const edge losing its orientation* (`BRepAlgo_Loop::Perform`). The
+   concave-face pass collects edges as FORWARD copies and, when the number of
+   const edges changed, replaced them with those copies: a closed edge came
+   out running the wrong way and the seam wire closed on two circles running
+   the same way -- no closed loop in UV. It keeps the edge as it came. +47.
+4. *The offset of an ellipse stretched past its ends*
+   (`BRepOffset_Inter3d.cxx` `ExtentEdge`). The fork's context extension
+   extends every offset edge 100 lengths each way; a periodic curve is kept to
+   one period, but the offset of an ellipse is a closed B-spline that is not
+   periodic, evaluated there at 1e34. The elliptic pad's top came back
+   unhollowed (a valid solid of the input's volume) and its bottom as two
+   shells. A closed edge on a curve that is not periodic now stays as it is.
+   +8.
+5. *A crash* (`BRepOffset_MakeOffset_1.cxx`, upstream code).
+   `BuildSplitsOfTrimmedFaces` never sets the map from trimmed to infinite
+   edges, and `UpdateIntersectedEdges` dereferenced it whenever the trimmed
+   edges cut one another -- never with upstream's edges, but with the fork's:
+   a box with a pocket, inward, intersection on, Intersection join, killed the
+   process. Guarded; the result is invalid, as upstream's is.
+
+None of the 2026-08-01 audit leads (TrimEdge's end-vertex skip,
+ContextIntByArc's second UpdateVertex, the Inter2d pair skip, WireInfo's
+orientation-blind equality) was the cause of any of these; they stay
+unverified.
+
+**Result.** The suite: PASS 28, XFAIL 2 (`cyl_side_out/in`, as upstream).
+The sweep against upstream: the fork worse in 26 runs (8 invalid, 18 throwing
+where upstream is right -- intersection mode on concave solids, the L-box and
+the T outward with Arc), better in 53, and in 36 more it throws where upstream
+returns a wrong solid without a word. No run went from right to wrong at any
+of the five steps. The determinism cases of 27.88 now settle on valid solids:
+the boss and the blind-hole box at upstream's volumes (391.0356, 433.6970),
+the L-box unchanged (399.8746).
+
+**Tests.** FreeCAD `parttests.regression_tests.
+test_thickness_of_seam_faces_and_an_ellipse` (six cases, upstream's volumes).
+The fork's suite: the six XFAILs promoted to PASS with upstream's volumes, and
+cases for each cause -- `ellipse_*` (4), `pocket_bottom_*`, `boxhole_hole_*`,
+`pocket_inter_join_no_crash`; every one fails (or crashes) before its fix.
+README rewritten for the new status.
+
+**Not chased.** The 26 runs where upstream is still better; `cyl_side_*`.
+
+Commits: fork `b93149464b`, `63736d5b74`, `62e264924d` (the loop, causes
+1-3), `2e60ee8d9e` (the ellipse), `09ffbc0cd9` (the crash), `2a15bbb52b` (the
+suite); `3001db87b0` (the FreeCAD test).
+
+**Gates:** Python 2968 OK (52 skipped, 6 expected failures; +1), ctest
+850/850, the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14; the fork's
+thickness suite PASS 28, XFAIL 2.
