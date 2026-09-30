@@ -897,6 +897,12 @@ void ViewProvider::getExtraIcons(std::vector<std::pair<QByteArray, QPixmap> > &i
     inherited::getExtraIcons(icons);
 }
 
+bool ViewProvider::isSuppressed() const
+{
+    auto feat = Base::freecad_dynamic_cast<PartDesign::Feature>(getObject());
+    return feat && feat->Suppress.getValue();
+}
+
 bool ViewProvider::iconMouseEvent(QMouseEvent *ev, const QByteArray &tag)
 {
     auto feat = Base::freecad_dynamic_cast<PartDesign::Feature>(getObject());

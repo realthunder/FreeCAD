@@ -260,6 +260,18 @@ private:
  */
 static unsigned long _TreeItemGeneration = 1;
 
+enum ItemStatus {
+    ItemStatusVisible = 1,
+    ItemStatusInvisible = 2,
+    ItemStatusError = 4,
+    ItemStatusTouched = 8,
+    ItemStatusHidden = 16,
+    ItemStatusExternal = 32,
+    ItemStatusShowOnTop = 64,
+    ItemStatusUnSelectable = 128,
+    ItemStatusSuppressed = 256,
+};
+
 /** The link between the tree and a document object.
  * Every object in the document gets its associated DocumentObjectItem which controls
  * the visibility and the functions of the object.
@@ -368,6 +380,10 @@ private:
     std::vector<std::string> mySubs;
     typedef fastsignals::connection Connection;
     int previousStatus;
+    /// whether the last status test found the object suppressed
+    bool isSuppressedStatus() const {
+        return previousStatus != -1 && (previousStatus & ItemStatusSuppressed);
+    }
     int selected;
     bool populated;
     // The claimed children this item was last fully populated from, and the
@@ -5212,17 +5228,6 @@ TreeDockWidget::~TreeDockWidget()
 {
 }
 
-enum ItemStatus {
-    ItemStatusVisible = 1,
-    ItemStatusInvisible = 2,
-    ItemStatusError = 4,
-    ItemStatusTouched = 8,
-    ItemStatusHidden = 16,
-    ItemStatusExternal = 32,
-    ItemStatusShowOnTop = 64,
-    ItemStatusUnSelectable = 128,
-};
-
 QIcon TreeWidget::Private::getItemIcon(App::Document *doc, const ViewProviderDocumentObject *vp)
 {
     App::DocumentObject *obj = vp->getObject();
@@ -7480,7 +7485,7 @@ void DocumentObjectItem::setHighlight(bool set, Gui::HighlightMode high) {
         f.setOverline(set);
         break;
     case HighlightMode::StrikeOut:
-        f.setStrikeOut(set);
+        f.setStrikeOut(set || isSuppressedStatus());
         break;
     case HighlightMode::Blue:
         highlight(QColor(200,200,255));
@@ -7503,7 +7508,8 @@ void DocumentObjectItem::setHighlight(bool set, Gui::HighlightMode high) {
         f.setItalic(false);
         f.setUnderline(false);
         f.setOverline(false);
-        f.setStrikeOut(false);
+        // a suppressed object stays struck out
+        f.setStrikeOut(isSuppressedStatus());
         highlight(QColor());
         break;
     }
@@ -7577,6 +7583,8 @@ void DocumentObjectItem::testItemStatus(bool resetStatus)
 
     if (!object()->Selectable.getValue())
         currentStatus |= ItemStatusUnSelectable;
+    if (object()->isSuppressed())
+        currentStatus |= ItemStatusSuppressed;
 
     TimingStop(testStatus2);
 
@@ -7584,6 +7592,15 @@ void DocumentObjectItem::testItemStatus(bool resetStatus)
         return;
 
     _Timing(1,testStatus3);
+
+    // A suppressed object's label is struck out (upstream f4be654473)
+    bool suppressed = (currentStatus & ItemStatusSuppressed) != 0;
+    if (suppressed != isSuppressedStatus()
+            || (resetStatus && font(0).strikeOut() != suppressed)) {
+        QFont f = font(0);
+        f.setStrikeOut(suppressed || highlightMode == HighlightMode::StrikeOut);
+        setFont(0, f);
+    }
 
     previousStatus = currentStatus;
 

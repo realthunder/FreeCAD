@@ -79,6 +79,8 @@ public:
     PyObject* getPyObject() override;
 
     void getExtraIcons(std::vector<std::pair<QByteArray, QPixmap> > &) const override;
+    /// A suppressed feature's tree label is struck out (upstream f4be654473)
+    bool isSuppressed() const override;
     bool iconMouseEvent(QMouseEvent *, const QByteArray &tag) override;
     QString getToolTip(const QByteArray &tag) const override;
 

@@ -126,6 +126,9 @@ protected:
 
 
     App::DocumentObjectExecReturn *recompute() override;
+    /// Upstream saves Suppress as Suppressed (its SuppressibleExtension)
+    void handleChangedPropertyName(Base::XMLReader &reader, const char *TypeName,
+                                   const char *PropName) override;
 
     virtual void onNewSolidChanged();
 

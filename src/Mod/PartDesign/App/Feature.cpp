@@ -110,6 +110,19 @@ TopoShape Feature::getSolid(const TopoShape& shape, bool force)
     return shape;
 }
 
+void Feature::handleChangedPropertyName(Base::XMLReader &reader, const char *TypeName,
+                                        const char *PropName)
+{
+    // An upstream file names Suppress after its SuppressibleExtension; a
+    // feature suppressed there loaded unsuppressed here
+    if (strcmp(PropName, "Suppressed") == 0
+            && strcmp(TypeName, App::PropertyBool::getClassTypeId().getName()) == 0) {
+        Suppress.Restore(reader);
+        return;
+    }
+    Part::Feature::handleChangedPropertyName(reader, TypeName, PropName);
+}
+
 void Feature::onChanged(const App::Property *prop)
 {
     if (!this->isRestoring() 

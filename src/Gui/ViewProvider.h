@@ -438,6 +438,8 @@ public:
 
     /** Tell the tree view if this object should appear there */
     virtual bool showInTree() const { return true; }
+    /** Tell the tree view the object is suppressed: its label is struck out */
+    virtual bool isSuppressed() const { return false; }
     /** Tell the tree view to remove children items from the tree root*/
     virtual bool canRemoveChildrenFromRoot() const {return true;}
 
