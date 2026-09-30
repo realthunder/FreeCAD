@@ -35,6 +35,7 @@
 #include <Mod/Part/App/TopoShapeOpCode.h>
 #include <Mod/PartDesign/App/ShapeBinder.h>
 
+#include "FeatureAddSub.h"
 #include "FeatureBoolean.h"
 #include "Body.h"
 
@@ -57,6 +58,9 @@ Boolean::Boolean()
     Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter()
         .GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("Mod/PartDesign");
     this->Refine.setValue(hGrp->GetBool("RefineModel", false));
+    ADD_PROPERTY_TYPE(FuzzyTolerance, (0.0), "Part Design", App::Prop_None,
+                      FeatureAddSub::fuzzyToleranceDoc);
+    FuzzyTolerance.setConstraints(&FeatureAddSub::fuzzyToleranceRange);
     ADD_PROPERTY_TYPE(ToolShape, (TopoShape()), "Part Design",
                       App::PropertyType(App::Prop_Output | App::Prop_Transient | App::Prop_Hidden),
                       "The tool shapes the edit preview draws");
@@ -221,7 +225,7 @@ App::DocumentObjectExecReturn *Boolean::execute()
         return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Unsupported boolean operation"));
 
     try {
-        result.makEBoolean(op, shapes);
+        result.makEBoolean(op, shapes, nullptr, FuzzyTolerance.getValue());
     } catch (Standard_Failure &e) {
         FC_ERR("Boolean operation failed: " << e.GetMessageString());
         return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Boolean operation failed"));

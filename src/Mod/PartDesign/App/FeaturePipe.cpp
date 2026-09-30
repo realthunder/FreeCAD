@@ -376,7 +376,7 @@ App::DocumentObjectExecReturn *Pipe::_execute(ProfileBased *feat,
         }
         try {
             feat->fixShape(result);
-            boolOp.makEBoolean(maker, {base,result});
+            boolOp.makEBoolean(maker, {base,result}, nullptr, feat->FuzzyTolerance.getValue());
         }catch(Standard_Failure &e) {
             FC_ERR(feat->getFullName() << ": " << e.GetMessageString());
             return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception",

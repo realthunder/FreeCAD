@@ -2355,7 +2355,7 @@ App::DocumentObjectExecReturn* Hole::execute()
                 ++i;
                 try {
                     hole.Tag = -this->getID();
-                    result.makEBoolean(maker, {base,hole});
+                    result.makEBoolean(maker, {base,hole}, nullptr, FuzzyTolerance.getValue());
                 } catch (Standard_Failure &) {
                     std::string msg(QT_TRANSLATE_NOOP("Exception", "Boolean operation failed on profile Edge"));
                     msg += std::to_string(i);

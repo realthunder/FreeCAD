@@ -3822,6 +3822,21 @@ TopoShape &TopoShape::makEBoolean(const char *maker,
         }
     }
 
+    if (tol < 0.0) {
+        // A negative tolerance asks for one from the size of the inputs:
+        // BooleanFuzzy (10 by default) times their diagonal times
+        // Precision::Confusion(), as upstream's setAutoFuzzy (PR 17119)
+        Bnd_Box bounds;
+        for (const auto &shape : shapes) {
+            if (!shape.isNull())
+                BRepBndLib::Add(shape.getShape(), bounds);
+        }
+        double factor = App::GetApplication().GetParameterGroupByPath(
+                "User parameter:BaseApp/Preferences/Mod/Part/Boolean")->GetFloat("BooleanFuzzy", 10.0);
+        tol = bounds.IsVoid() ? 0.0
+            : factor * std::sqrt(bounds.SquareExtent()) * Precision::Confusion();
+    }
+
     if (tol > 0.0 &&  _shapes.empty())
         _shapes = shapes;
 

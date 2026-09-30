@@ -48,6 +48,8 @@ public:
     App::PropertyEnumeration    Type;
 
     App::PropertyBool Refine;
+    /// As FeatureAddSub::FuzzyTolerance (upstream 73f848a3d5)
+    App::PropertyFloatConstraint FuzzyTolerance;
     /// The tool shapes, in the frame of the base shape, as the edit preview
     /// draws them. Not saved; kept current by execute(), paused or not.
     Part::PropertyPartShape ToolShape;

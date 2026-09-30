@@ -42,6 +42,13 @@ using namespace PartDesign;
 
 PROPERTY_SOURCE(PartDesign::FeatureAddSub, PartDesign::Feature)
 
+const App::PropertyFloatConstraint::Constraints FeatureAddSub::fuzzyToleranceRange = {-1.0, 1.0, 0.0001};
+const char *FeatureAddSub::fuzzyToleranceDoc =
+    "Fuzzy tolerance of the boolean operation:\n"
+    "If value > 0: use the value\n"
+    "If value = 0: leave default value\n"
+    "If value < 0: determine value";
+
 FeatureAddSub::FeatureAddSub()
 {
     ADD_PROPERTY(AddSubShape,(TopoDS_Shape()));
@@ -50,6 +57,9 @@ FeatureAddSub::FeatureAddSub()
     Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter()
         .GetGroup("BaseApp")->GetGroup("Preferences")->GetGroup("Mod/PartDesign");
     this->Refine.setValue(hGrp->GetBool("RefineModel", false));
+
+    ADD_PROPERTY_TYPE(FuzzyTolerance, (0.0), "Part Design", App::Prop_None, fuzzyToleranceDoc);
+    FuzzyTolerance.setConstraints(&fuzzyToleranceRange);
 
     static const char* TypeEnums[]= {"Additive","Subtractive","Intersecting",NULL};
     ADD_PROPERTY_TYPE(AddSubType,((long)0),"Part Design",
@@ -145,7 +155,7 @@ Part::TopoShape FeatureAddSub::makeBoolean(const Part::TopoShape &base,
             default:
                 maker = Part::OpCodes::Fuse;
             }
-            result.makEBoolean(maker, {base,tool});
+            result.makEBoolean(maker, {base,tool}, nullptr, FuzzyTolerance.getValue());
         } catch(Standard_Failure &e) {
             FC_THROWM(Base::CADKernelError,
                       QT_TRANSLATE_NOOP("Exception", "Boolean operation with base feature failed: ") <<

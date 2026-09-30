@@ -222,6 +222,26 @@ class TestPrimitive(unittest.TestCase):
         self.assertTrue(self.Box001.Placement.isSame(placement, 1e-12))
         self.assertAlmostEqual(self.Box001.Shape.Volume, volume)
 
+    def testFuzzyTolerance(self):
+        # Two boxes 2e-6 apart: the fuse leaves two solids, unless a fuzzy
+        # value closes the gap -- given, or determined from the size of the
+        # shapes (upstream 73f848a3d5)
+        results = {}
+        for fuzzy in (0.0, 1e-5, -1.0):
+            body = self.Doc.addObject('PartDesign::Body', 'FuzzyBody')
+            box = body.newObject('PartDesign::AdditiveBox', 'FuzzyBox')
+            box.Length = box.Width = box.Height = 10
+            other = body.newObject('PartDesign::AdditiveBox', 'FuzzyBox2')
+            other.Length = other.Width = other.Height = 10
+            other.Placement.Base = FreeCAD.Vector(10 + 2e-6, 0, 0)
+            other.FuzzyTolerance = fuzzy
+            self.Doc.recompute()
+            results[fuzzy] = ('Invalid' in other.State,
+                              len(other.Shape.Solids) if not other.Shape.isNull() else 0)
+        self.assertEqual(results[0.0], (False, 2), results)
+        self.assertEqual(results[1e-5], (False, 1), results)
+        self.assertEqual(results[-1.0], (False, 1), results)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestPrimitive")

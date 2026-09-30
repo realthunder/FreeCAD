@@ -53,6 +53,12 @@ public:
     Part::PropertyPartShape   AddSubShape;
     App::PropertyBool         Refine;
     App::PropertyEnumeration  AddSubType;
+    /// The fuzzy value of the boolean with the base: > 0 that value, 0 none,
+    /// < 0 one from the size of the shapes (upstream 73f848a3d5)
+    App::PropertyFloatConstraint FuzzyTolerance;
+
+    static const App::PropertyFloatConstraint::Constraints fuzzyToleranceRange;
+    static const char *fuzzyToleranceDoc;
 
     static const std::string &addsubElementPrefix();
 

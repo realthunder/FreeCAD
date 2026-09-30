@@ -743,7 +743,7 @@ App::DocumentObjectExecReturn *Transformed::execute()
                     return new App::DocumentObjectExecReturn(
                             QT_TRANSLATE_NOOP("Exception", "Unknown operation type"));
                 }
-                result.makEBoolean(maker, {support, shapeCopy});
+                result.makEBoolean(maker, {support, shapeCopy}, nullptr, FuzzyTolerance.getValue());
                 this->fixShape(result);
 
                 // Do not call getSolid() as we need the compound to hide the

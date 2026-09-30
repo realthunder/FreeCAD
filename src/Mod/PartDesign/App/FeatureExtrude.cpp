@@ -515,7 +515,7 @@ App::DocumentObjectExecReturn *FeatureExtrude::buildExtrusion(ExtrudeOptions opt
                     if (base.isNull())
                         result = prism;
                     else
-                        result.makECut({base,prism});
+                        result.makECut({base,prism}, nullptr, FuzzyTolerance.getValue());
                     result = refineShapeIfActive(result);
                     this->AddSubShape.setValue(result);
                 }catch(Standard_Failure &) {
@@ -525,9 +525,11 @@ App::DocumentObjectExecReturn *FeatureExtrude::buildExtrusion(ExtrudeOptions opt
                 if (NewSolid.getValue())
                     prism = this->AddSubShape.getShape();
                 else if (getAddSubType() == Intersecting)
-                    prism.makEBoolean(Part::OpCodes::Common, {base, this->AddSubShape.getShape()});
+                    prism.makEBoolean(Part::OpCodes::Common, {base, this->AddSubShape.getShape()},
+                                      nullptr, FuzzyTolerance.getValue());
                 else if (getAddSubType() == Additive)
-                    prism = base.makEFuse(this->AddSubShape.getShape());
+                    prism = base.makEFuse(this->AddSubShape.getShape(), nullptr,
+                                          FuzzyTolerance.getValue());
                 else
                     prism = refineShapeIfActive(prism);
 
