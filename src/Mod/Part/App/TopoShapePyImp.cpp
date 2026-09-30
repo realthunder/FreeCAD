@@ -2845,17 +2845,16 @@ PyObject* TopoShapePy::defeaturing(PyObject *args) const
 
     try {
         Py::Sequence list(l);
-        std::vector<TopoDS_Shape> shapes;
+        std::vector<TopoShape> shapes;
         for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
             Py::TopoShape sh(*it);
-            shapes.push_back(
-                sh.extensionObject()->getTopoShapePtr()->getShape()
-            );
+            shapes.push_back(*sh.extensionObject()->getTopoShapePtr());
         }
         PyTypeObject* type = this->GetType();
         PyObject* inst = type->tp_new(type, const_cast<TopoShapePy*>(this), nullptr);
-        static_cast<TopoShapePy*>(inst)->getTopoShapePtr()->setShape
-            (this->getTopoShapePtr()->defeaturing(shapes));
+        // With an element map, as upstream's makeElementDefeaturing
+        *static_cast<TopoShapePy*>(inst)->getTopoShapePtr()
+            = this->getTopoShapePtr()->makEDefeaturing(shapes);
         return inst;
     } PY_CATCH_OCC
 }

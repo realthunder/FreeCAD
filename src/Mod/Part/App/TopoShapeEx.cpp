@@ -42,6 +42,7 @@
 # include <BRepAdaptor_Surface.hxx>
 # include <BRepAlgoAPI_Common.hxx>
 # include <BRepAlgoAPI_Cut.hxx>
+# include <BRepAlgoAPI_Defeaturing.hxx>
 # include <BRepAlgoAPI_Fuse.hxx>
 # include <BRepAlgoAPI_Section.hxx>
 # include <BRepBndLib.hxx>
@@ -5442,6 +5443,39 @@ TopoShape &TopoShape::makEDraft(const TopoShape &shape, const std::vector<TopoSh
 
     mkDraft.Build();
     return makEShape(mkDraft,shape,op);
+}
+
+TopoShape &TopoShape::makEDefeaturing(const TopoShape &shape,
+                                      const std::vector<TopoShape> &faces,
+                                      const char *op)
+{
+    if(!op) op = Part::OpCodes::Defeaturing;
+
+    if(shape.isNull())
+        HANDLE_NULL_SHAPE;
+    if(faces.empty())
+        FC_THROWM(Base::CADKernelError, "No face to remove");
+
+    BRepAlgoAPI_Defeaturing mkDefeaturing;
+    mkDefeaturing.SetRunParallel(true);
+    mkDefeaturing.SetToFillHistory(true);
+    mkDefeaturing.SetShape(shape.getShape());
+    for(const auto &face : faces) {
+        if(face.isNull() || face.getShape().ShapeType() != TopAbs_FACE)
+            FC_THROWM(Base::CADKernelError, "Defeaturing takes faces only");
+        if(!shape.findShape(face.getShape()))
+            FC_THROWM(Base::CADKernelError, "Defeaturing face does not belong to the shape");
+        mkDefeaturing.AddFaceToRemove(face.getShape());
+    }
+    mkDefeaturing.Build();
+    if(!mkDefeaturing.IsDone()) {
+        Standard_SStream ss;
+        mkDefeaturing.DumpErrors(ss);
+        FC_THROWM(Base::CADKernelError, "Defeaturing failed: " << ss.str());
+    }
+    if(mkDefeaturing.Shape().IsNull())
+        HANDLE_NULL_SHAPE;
+    return makEShape(mkDefeaturing,shape,op);
 }
 
 // deprecated, see Part::Feature::getRelatedElements()
