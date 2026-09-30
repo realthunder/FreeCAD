@@ -2873,8 +2873,20 @@ until the first highlight pass. `sendConstraintIconToCoin()` now crops
 an image past 32767 pixels (what is cut lies past any screen). Guarded
 by `tests/gui/sketch-merged-icon-overflow.py` (5000 icons on one spot,
 40000 pixels here: the label is in the scene right after entering edit;
-fails before). A merged icon that wide is still rendered whole every time
-the icons are drawn; capping the labels a merge renders is left open.
+fails before).
+
+Why one image could get that wide: the icon grouping is transitive (an
+icon joins a group when it is within an icon's size of ANY member), so a
+chain of neighbours is one group however far it runs, and a group is one
+image -- a row per type, the icon and every member's label in one line.
+And an unnamed constraint of a single-icon type, whose label is empty,
+still reserved a ", " of width: Sketch028's 44879 pixels were nearly all
+blank. Now an empty label takes no room, and a row shows at most ten
+labels and then "+N", whose box picks the constraints it stands for (the
+icon still picks every constraint of its type in the group). Guarded by
+`tests/gui/sketch-merged-icon-labels.py` (30 named Horizontal on one
+spot, swept with the hover pick: the icon picks 30, ten labels one each,
+one box the other 20; before, thirty labels picked one each).
 
 Guarded by `tests/gui/sketch-highlight-view.py` (a hover writes no node
 of the edit graph; the sets hold the selection only; the pointer's
