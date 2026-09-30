@@ -144,7 +144,14 @@ void ViewProviderBody::setupContextMenu(QMenu* menu, QObject* receiver, const ch
         return;
 
     Gui::ActionFunction* func = new Gui::ActionFunction(menu);
-    QAction* act = menu->addAction(tr("Toggle active body"));
+    QAction* act = menu->addAction(tr("Active body"));
+    act->setCheckable(true);
+    auto activeDoc = Gui::Application::Instance->activeDocument();
+    if (!activeDoc)
+        activeDoc = getDocument();
+    auto activeView = activeDoc->setActiveView(this);
+    act->setChecked(activeView
+                    && activeView->getActiveObject<App::DocumentObject*>(PDBODYKEY) == getObject());
     func->trigger(act, [this]() {
         this->doubleClicked();
     });
