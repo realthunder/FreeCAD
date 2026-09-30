@@ -102,44 +102,6 @@ def polylines(name):
     return 0 if not idx else idx.count(-1) + 1
 
 
-def indices(node):
-    return list(node.coordIndex.getValues()) if node.coordIndex.getNum() else []
-
-
-def runs(indices):
-    """A line set's coordIndex, split at -1 into its polylines."""
-    out, cur = [], []
-    for i in indices:
-        if i < 0:
-            out.append(cur)
-            cur = []
-        else:
-            cur.append(i)
-    if cur:
-        out.append(cur)
-    return out
-
-
-def preselected_curves():
-    """The curves the preselection overlay draws: its polylines are copies,
-    so each is matched by its vertices against the curves' own polylines."""
-    base = coin.SoNode.getByName("CurvesCoordinate")
-    over = coin.SoNode.getByName("SelectedCurvesCoordinate")
-    pre = coin.SoNode.getByName("PreSelectedCurveSet")
-    if not (base and over and pre):
-        return None
-
-    def xy(coords, run):
-        return [(round(coords.point[i][0], 4), round(coords.point[i][1], 4)) for i in run]
-
-    curves = {}
-    for name in ("CurvesLineSet", "DashedCurvesLineSet"):
-        ls = coin.SoNode.getByName(name)
-        for k, run in enumerate(runs(indices(ls))):
-            curves[tuple(xy(base, run))] = ls.materialIndex[k]
-    return [curves.get(tuple(xy(over, run)), -1) for run in runs(indices(pre))]
-
-
 def curves_drawn():
     return polylines("CurvesLineSet") + polylines("DashedCurvesLineSet")
 
@@ -263,9 +225,14 @@ def run():
             QtCore.QEvent.MouseMove, pos, vp.mapToGlobal(pos), QtCore.Qt.NoButton,
             QtCore.Qt.NoButton, QtCore.Qt.NoModifier))
         settle(10)
-        hovered = preselected_curves()
-        check("hovering the dashed line preselects that curve", hovered == [dashedCurve],
-              "%s vs %s" % (hovered, dashedCurve))
+        # Read from the preselection itself: in render cache mode 3 the view
+        # draws it, and the PreSelectedCurveSet stays empty
+        # (sketch-highlight-view.py). The dashed line is geometry 2, Edge3.
+        pre = FreeCADGui.Selection.getPreselection()
+        hovered = ([n.split(".")[-1].lower() for n in pre.SubElementNames]
+                   if pre.ObjectName == sk.Name else [])
+        check("hovering the dashed line preselects that curve", hovered == ["edge3"],
+              "%s (dashed polyline of curve %s)" % (hovered, dashedCurve))
 
         # The elements list's context menu: Layer.
         FreeCADGui.Selection.clearSelection()

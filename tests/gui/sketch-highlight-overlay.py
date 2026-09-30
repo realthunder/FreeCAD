@@ -148,17 +148,26 @@ def hover_edges():
         if not check("the highlight overlays are found", pre is not None and mat is not None):
             finish()
             return
+        # In mode 3 the view draws the preselection itself and the sets hold
+        # the selection only (sketch-highlight-view.py); the sets carry it
+        # where no view can.
+        mode3 = (FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View")
+                 .GetInt("RenderCache", 3) == 3)
         sel.setPreselection(sk, "Edge1")
-        check("the hovered edge is in the PreSelectedCurveSet, preselection colour",
-              pre.coordIndex.getNum() > 0 and pre.materialIndex.getNum() == 1
-              and pre.materialIndex[0] == 1,
-              "%d indices, materials %s" % (pre.coordIndex.getNum(),
-                                           [pre.materialIndex[i] for i in range(pre.materialIndex.getNum())]))
+        materials = [pre.materialIndex[i] for i in range(pre.materialIndex.getNum())]
+        if mode3:
+            check("mode 3: the hovered edge is left to the view, not the PreSelectedCurveSet",
+                  pre.coordIndex.getNum() == 0, "%d indices" % pre.coordIndex.getNum())
+        else:
+            check("the hovered edge is in the PreSelectedCurveSet, preselection colour",
+                  pre.coordIndex.getNum() > 0 and materials == [1],
+                  "%d indices, materials %s" % (pre.coordIndex.getNum(), materials))
         sel.addSelection(state["doc"].Name, "Sketch", "Edge1")
         sel.setPreselection(sk, "Edge1")
-        check("a hovered selected edge takes the preselected-and-selected colour",
-              pre.materialIndex.getNum() == 1 and pre.materialIndex[0] == 2,
-              [pre.materialIndex[i] for i in range(pre.materialIndex.getNum())])
+        materials = [pre.materialIndex[i] for i in range(pre.materialIndex.getNum())]
+        if not mode3:
+            check("a hovered selected edge takes the preselected-and-selected colour",
+                  materials == [2], materials)
         sel.clearSelection()
         sel.clearPreselection()
         state["view"].redraw()

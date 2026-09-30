@@ -94,6 +94,7 @@
 #include <boost/algorithm/string/predicate.hpp>
 
 #include <Inventor/nodes/SoIndexedMarkerSet.h>
+#include <array>
 /// Here the FreeCAD includes sorted by Base,App,Gui......
 #include <Base/Converter.h>
 #include <Base/Tools.h>
@@ -127,6 +128,7 @@
 #include <Gui/Inventor/MarkerBitmaps.h>
 #include <Gui/Inventor/SoFCSwitch.h>
 #include <Gui/Inventor/SmSwitchboard.h>
+#include <Gui/Inventor/SoFCDetail.h>
 #include <Gui/InventorBase.h>
 #include <Gui/PieMenu.h>
 
@@ -358,6 +360,17 @@ struct EditData {
     // the preselection the drag started from, restored when it ends
     int DragPreselectPoint = -1;
     int DragPreselectCurve = -1;
+
+    // Which view draws the preselection (updateHighlight). The view the
+    // pointer is over, for the length of one mouseMove() call; the view
+    // the current preselection came from, null for one from outside any
+    // view (the tree, the task panel) and shown in every view of the
+    // session; the preselection that was taken for; and the views the
+    // last updateHighlight() left an editing highlight in.
+    Gui::ViewerContext *hoverViewer = nullptr;
+    Gui::ViewerContext *preselectViewer = nullptr;
+    std::array<int, 5> preselectKey = {-1, -1, -1, -1, -1};
+    std::vector<Gui::ViewerContext *> highlightViews;
     // dragged constraints
     std::set<int> DragConstraintSet;
     int DragConstraintTransactionId = 0;
@@ -1664,6 +1677,25 @@ bool ViewProviderSketch::mouseMove(const SbVec2s &cursorPos, Gui::ViewerContext 
 {
     if (!edit)
         return inherited::mouseMove(cursorPos, viewer);
+
+    // The view a preselection made during this move is drawn in. Read
+    // back through the member on the way out: a tool may end the edit
+    // inside the move.
+    struct HoverScope
+    {
+        ViewProviderSketch *vp;
+        HoverScope(ViewProviderSketch *vp, Gui::ViewerContext *viewer)
+            : vp(vp)
+        {
+            vp->edit->hoverViewer = viewer;
+        }
+        ~HoverScope()
+        {
+            if (vp->edit)
+                vp->edit->hoverViewer = nullptr;
+        }
+    } hoverScope(this, viewer);
+
     // maximum radius for mouse moves when selecting a geometry before switching to drag mode
     const int dragIgnoredDistance = 3;
 
@@ -4158,6 +4190,18 @@ void ViewProviderSketch::restoreConstraintColor(int i)
 void ViewProviderSketch::updateHighlight()
 {
     assert(edit);
+    // The view the preselection came from, taken when it changes -- here,
+    // ahead of the deferral below, while the move that made it is on the
+    // stack (see highlightInViews).
+    const std::array<int, 5> preselectKey = {edit->PreselectPoint,
+                                             edit->PreselectCurve,
+                                             edit->PreselectCross,
+                                             edit->DragPreselectPoint,
+                                             edit->DragPreselectCurve};
+    if (preselectKey != edit->preselectKey) {
+        edit->preselectKey = preselectKey;
+        edit->preselectViewer = edit->hoverViewer;
+    }
     if (edit->needUpdate) {
         edit->timer.start(100);
         return;
@@ -4190,11 +4234,13 @@ void ViewProviderSketch::updateHighlight()
     const SbVec3f *verts = edit->CurvesCoordinate->point.getValues(0);
     const SbVec3f *pverts = edit->PointsCoordinate->point.getValues(0);
 
-    // a highlighted curve: its vertices in CurvesCoordinate, and its colour
+    // a highlighted curve: its vertices in CurvesCoordinate, its curve
+    // index, and its colour
     struct HighlightCurve
     {
         int first;
         int count;
+        int curve;
         int color;
     };
     std::vector<HighlightCurve> selCurves, preCurves;
@@ -4218,32 +4264,15 @@ void ViewProviderSketch::updateHighlight()
                           || edit->isDraggedCurve(GeoId);
 
             if (preselected)
-                preCurves.push_back({j, edit->CurveVertexCount[i],
+                preCurves.push_back({j, edit->CurveVertexCount[i], i,
                                      selected ? HighlightPreselectSelected : HighlightPreselect});
             else if (selected)
-                selCurves.push_back({j, edit->CurveVertexCount[i], HighlightSelect});
+                selCurves.push_back({j, edit->CurveVertexCount[i], i, HighlightSelect});
         }
     }
-
-    // colors of the cross
-    SbColor crosscolor[2];
-    if (edit->SelCurveMap.find(-1) != edit->SelCurveMap.end())
-        crosscolor[0] = edit->PreselectCross == 1 ? PreselectSelectedColor : SelectColor;
-    else if (edit->PreselectCross == 1)
-        crosscolor[0] = PreselectColor;
-    else
-        crosscolor[0] = CrossColorH;
-
-    if (edit->SelCurveMap.find(Sketcher::GeoEnum::VAxis) != edit->SelCurveMap.end())
-        crosscolor[1] = edit->PreselectCross == 2 ? PreselectSelectedColor : SelectColor;
-    else if (edit->PreselectCross == 2)
-        crosscolor[1] = PreselectColor;
-    else
-        crosscolor[1] = CrossColorV;
-    if (edit->RootCrossMaterials->diffuseColor.getNum() != 2
-            || edit->RootCrossMaterials->diffuseColor[0] != crosscolor[0]
-            || edit->RootCrossMaterials->diffuseColor[1] != crosscolor[1])
-        edit->RootCrossMaterials->diffuseColor.setValues(0, 2, crosscolor);
+    // the curves preselected for themselves; any after these are
+    // highlighted on behalf of a preselected constraint
+    const std::size_t directPreCurves = preCurves.size();
 
     // the highlighted points, by index in PointsCoordinate
     std::map<int, int> pointColor;
@@ -4329,7 +4358,7 @@ void ViewProviderSketch::updateHighlight()
                             edit->ImplicitSelCurves.push_back(cGeoId);
                             ++edit->SelCurveMap[cGeoId];
                             auto &curves = color == HighlightPreselect ? preCurves : selCurves;
-                            curves.push_back({j, edit->CurveVertexCount[c], color});
+                            curves.push_back({j, edit->CurveVertexCount[c], c, color});
                             break;
                         }
                     }
@@ -4368,6 +4397,128 @@ void ViewProviderSketch::updateHighlight()
             preselectPoint(PtId);
     }
 
+    // The preselection of the geometry itself -- what the pointer is over,
+    // the dragged element, the origin -- belongs to the view it came from,
+    // and is drawn by that view alone over the whole edit graph
+    // (Gui::ViewerContext::setEditingHighlight) where the view can. The
+    // sets below then carry the selection only, which every view shows. A
+    // preselected constraint, and what is highlighted on its behalf, stays
+    // in the graph: its icon or label is recoloured there.
+    auto highlightInViews = [&]() {
+        Gui::EditingRoot *root = edit->viewer ? edit->viewer->editingRoot() : nullptr;
+        std::vector<Gui::ViewerContext *> views;
+        if (root)
+            views = root->views();
+        if (views.empty() && edit->viewer)
+            views.push_back(edit->viewer);
+        auto contains = [](const std::vector<Gui::ViewerContext *> &list,
+                           Gui::ViewerContext *view) {
+            return std::find(list.begin(), list.end(), view) != list.end();
+        };
+        // One from outside any view is shown in every view.
+        std::vector<Gui::ViewerContext *> targets;
+        if (edit->preselectViewer && contains(views, edit->preselectViewer))
+            targets.push_back(edit->preselectViewer);
+        else
+            targets = views;
+
+        // one detail per node and colour
+        std::map<std::pair<SoNode *, int>, SoFCDetail> details;
+        auto add = [&](SoNode *node, SoFCDetail::Type type, int index, int color) {
+            auto &detail = details[{node, color}];
+            detail.setContext(type, node);
+            detail.addIndex(type, index);
+        };
+        if (directPreCurves) {
+            std::map<int, int> curveColor;
+            for (std::size_t k = 0; k < directPreCurves; ++k)
+                curveColor[preCurves[k].curve] = preCurves[k].color;
+            for (auto *ids : {&edit->SolidCurveIds, &edit->DashedCurveIds}) {
+                SoNode *node = ids == &edit->SolidCurveIds ? edit->CurveSet : edit->DashedCurveSet;
+                for (int line = 0; line < (int)ids->size(); ++line) {
+                    auto it = curveColor.find((*ids)[line]);
+                    if (it != curveColor.end())
+                        add(node, SoFCDetail::Edge, line, it->second);
+                }
+            }
+        }
+        for (int PtId : prePoints)
+            add(edit->PointSet, SoFCDetail::Vertex, PtId, pointColor[PtId]);
+        if (edit->PreselectCross == 1 || edit->PreselectCross == 2) {
+            int axis = edit->PreselectCross == 1 ? -1 : Sketcher::GeoEnum::VAxis;
+            add(edit->RootCrossSet, SoFCDetail::Edge, edit->PreselectCross - 1,
+                edit->SelCurveMap.count(axis) ? HighlightPreselectSelected : HighlightPreselect);
+        }
+
+        const SbColor colors[] = {SelectColor, PreselectColor, PreselectSelectedColor};
+        std::vector<SoFCRenderCacheManager::HighlightItem> items;
+        for (auto &v : details)
+            items.push_back({&v.second, colors[v.first.second].getPackedValue()});
+
+        bool ok = true;
+        std::vector<Gui::ViewerContext *> holding;
+        for (auto *view : targets) {
+            // nothing to clear in a view left without one
+            if (items.empty() && !contains(edit->highlightViews, view))
+                continue;
+            if (!view->setEditingHighlight(items)) {
+                ok = false;
+                break;
+            }
+            if (!items.empty())
+                holding.push_back(view);
+        }
+        const std::vector<SoFCRenderCacheManager::HighlightItem> none;
+        for (auto *view : edit->highlightViews) {
+            if (contains(views, view) && (!ok || !contains(holding, view)))
+                view->setEditingHighlight(none);
+        }
+        if (!ok) {
+            for (auto *view : holding)
+                view->setEditingHighlight(none);
+            holding.clear();
+        }
+        edit->highlightViews = std::move(holding);
+        return ok;
+    };
+    const bool inViews = highlightInViews();
+    if (inViews) {
+        // A selected element keeps its selection colour in the sets.
+        for (std::size_t k = 0; k < directPreCurves; ++k) {
+            const auto &c = preCurves[k];
+            if (c.color == HighlightPreselectSelected)
+                selCurves.push_back({c.first, c.count, c.curve, HighlightSelect});
+        }
+        preCurves.erase(preCurves.begin(), preCurves.begin() + directPreCurves);
+        for (int PtId : prePoints) {
+            auto it = pointColor.find(PtId);
+            if (it != pointColor.end() && it->second == HighlightPreselectSelected)
+                it->second = HighlightSelect;
+        }
+        prePoints.clear();
+    }
+    const int crossPreselect = inViews ? -1 : edit->PreselectCross;
+
+    // colors of the cross
+    SbColor crosscolor[2];
+    if (edit->SelCurveMap.find(-1) != edit->SelCurveMap.end())
+        crosscolor[0] = crossPreselect == 1 ? PreselectSelectedColor : SelectColor;
+    else if (crossPreselect == 1)
+        crosscolor[0] = PreselectColor;
+    else
+        crosscolor[0] = CrossColorH;
+
+    if (edit->SelCurveMap.find(Sketcher::GeoEnum::VAxis) != edit->SelCurveMap.end())
+        crosscolor[1] = crossPreselect == 2 ? PreselectSelectedColor : SelectColor;
+    else if (crossPreselect == 2)
+        crosscolor[1] = PreselectColor;
+    else
+        crosscolor[1] = CrossColorV;
+    if (edit->RootCrossMaterials->diffuseColor.getNum() != 2
+            || edit->RootCrossMaterials->diffuseColor[0] != crosscolor[0]
+            || edit->RootCrossMaterials->diffuseColor[1] != crosscolor[1])
+        edit->RootCrossMaterials->diffuseColor.setValues(0, 2, crosscolor);
+
     auto setColors = [](SoMaterial *material) {
         const SbColor colors[] = {SelectColor, PreselectColor, PreselectSelectedColor};
         const int n = sizeof(colors) / sizeof(colors[0]);
@@ -4382,10 +4533,19 @@ void ViewProviderSketch::updateHighlight()
     setColors(edit->SelCurvesMaterials);
     setColors(edit->SelPointsMaterials);
 
+    // Each write below is made only when it changes something: a hover
+    // that changes nothing here -- one the view draws, in mode 3 -- leaves
+    // the edit graph, which mode 3 captures again on any change, alone.
+    auto sameAs = [](const auto &field, const auto &values) {
+        return field.getNum() == static_cast<int>(values.size())
+               && std::equal(values.begin(), values.end(), field.getValues(0));
+    };
     // Fill a set's indices silently and notify once.
-    auto setIndices = [](SoIndexedShape *shape,
-                         const std::vector<int32_t> &coords,
-                         const std::vector<int32_t> &materials) {
+    auto setIndices = [&](SoIndexedShape *shape,
+                          const std::vector<int32_t> &coords,
+                          const std::vector<int32_t> &materials) {
+        if (sameAs(shape->coordIndex, coords) && sameAs(shape->materialIndex, materials))
+            return;
         shape->enableNotify(false);
         shape->coordIndex.setNum(coords.size());
         if (!coords.empty())
@@ -4396,31 +4556,35 @@ void ViewProviderSketch::updateHighlight()
         shape->enableNotify(true);
         shape->touch();
     };
+    auto setCoords = [&](SoCoordinate3 *node, const std::vector<SbVec3f> &points) {
+        if (sameAs(node->point, points))
+            return;
+        node->enableNotify(false);
+        node->point.setNum(points.size());
+        if (!points.empty())
+            node->point.setValues(0, points.size(), points.data());
+        node->enableNotify(true);
+        node->touch();
+    };
 
     // the curve overlays: copies lifted to the highlight layer
     {
-        int total = 0;
-        for (auto *curves : {&selCurves, &preCurves})
-            for (auto &c : *curves)
-                total += c.count;
-        edit->SelCurvesCoordinate->point.setNum(total);
-        SbVec3f *out = edit->SelCurvesCoordinate->point.startEditing();
-        int k = 0;
+        std::vector<SbVec3f> out;
         for (auto *curves : {&selCurves, &preCurves}) {
             std::vector<int32_t> coords, materials;
             for (auto &c : *curves) {
                 if (!coords.empty())
                     coords.push_back(-1);
                 for (int v = c.first; v < c.first + c.count; ++v) {
-                    out[k].setValue(verts[v][0], verts[v][1], zdir*zHighLine);
-                    coords.push_back(k++);
+                    coords.push_back(static_cast<int32_t>(out.size()));
+                    out.emplace_back(verts[v][0], verts[v][1], zdir*zHighLine);
                 }
                 materials.push_back(c.color);
             }
             setIndices(curves == &selCurves ? edit->SelectedCurveSet : edit->PreSelectedCurveSet,
                        coords, materials);
         }
-        edit->SelCurvesCoordinate->point.finishEditing();
+        setCoords(edit->SelCurvesCoordinate, out);
     }
 
     // the point overlays, likewise
@@ -4431,14 +4595,12 @@ void ViewProviderSketch::updateHighlight()
             if (PtId >= 0)
                 selPoints.push_back(PtId);
         }
-        edit->SelPointsCoordinate->point.setNum(selPoints.size() + prePoints.size());
-        SbVec3f *out = edit->SelPointsCoordinate->point.startEditing();
-        int k = 0;
+        std::vector<SbVec3f> out;
         for (auto *points : {&selPoints, &prePoints}) {
             std::vector<int32_t> coords, materials;
             for (int PtId : *points) {
-                out[k].setValue(pverts[PtId][0], pverts[PtId][1], zdir*zHighlight);
-                coords.push_back(k++);
+                coords.push_back(static_cast<int32_t>(out.size()));
+                out.emplace_back(pverts[PtId][0], pverts[PtId][1], zdir*zHighlight);
                 auto it = pointColor.find(PtId);
                 materials.push_back(it != pointColor.end() ? it->second : HighlightSelect);
             }
@@ -4455,7 +4617,7 @@ void ViewProviderSketch::updateHighlight()
             }
             setIndices(set, coords, materials);
         }
-        edit->SelPointsCoordinate->point.finishEditing();
+        setCoords(edit->SelPointsCoordinate, out);
     }
 }
 

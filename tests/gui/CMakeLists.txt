@@ -422,6 +422,13 @@ fc_add_gui_test(GuiSketchHighlightOverlay_tests_run
                 sketch-highlight-overlay.py
                 --timeout 180)
 
+# In mode 3 the sketch preselection is the view's own highlight overlay,
+# drawn over the whole edit graph: a hover writes no edit graph node, and
+# the hovered edge wins where a datum label crosses it.
+fc_add_gui_test(GuiSketchHighlightView_tests_run
+                sketch-highlight-view.py
+                --timeout 180)
+
 # An SoImage is drawn pixel for pixel in mode 3, as glDrawPixels does. The
 # backend's textured quad sat wherever the anchor projected, and half a
 # pixel off the filter spread each texel over two pixels: a Sketcher
