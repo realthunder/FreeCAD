@@ -486,9 +486,12 @@ public:
     /** Every connected run, in one pass.
      *
      * Same answer as calling sortEdges() until the list empties, but it
-     * walks the edges once instead of once per run.
+     * walks the edges once instead of once per run. An edge that runs
+     * against its run is turned by a copy on the reversed curve, unless
+     * \a reverse is false: then it comes as it is, for a caller that lets
+     * BRepBuilderAPI_MakeWire orient it.
      */
-    static std::vector<std::deque<TopoShape>> sortEdgesAll(std::list<TopoShape> &edges, bool keepOrder=false, double tol=0.0);
+    static std::vector<std::deque<TopoShape>> sortEdgesAll(std::list<TopoShape> &edges, bool keepOrder=false, double tol=0.0, bool reverse=true);
 
     /** Make a compound shape
      * 

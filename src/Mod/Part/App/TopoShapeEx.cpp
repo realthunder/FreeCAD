@@ -3211,11 +3211,18 @@ struct EdgePoints {
 // One connected run, taken out of an edge_points list that the caller built.
 // Both entry points below drive this; keeping the list across runs is the whole
 // point, because building it walks every edge and asks OCCT for two vertices.
+// An edge that runs against the run is turned by a copy on the reversed curve
+// when <reverse> is set, and handed over as it is otherwise -- for a caller that
+// gives the run to BRepBuilderAPI_MakeWire, which orients an edge itself and
+// keeps its curve: a sketch's edge keeps its geometry's direction, which its
+// external geometry and constraints on its ends read (docs/TransactionLog.md
+// sec 27.87).
 static std::deque<TopoShape>
 extractRun(std::list<TopoShape>& edges,
            std::list<EdgePoints>& edge_points,
            bool keepOrder,
-           double tol3d)
+           double tol3d,
+           bool reverse = true)
 {
     std::deque<TopoShape> sorted;
     if (edge_points.empty())
@@ -3264,6 +3271,10 @@ extractRun(std::list<TopoShape>& edges,
         return res;
     };
 
+    auto turn = [&](const TopoShape &edge) {
+        return reverse ? reverseEdge(edge) : edge;
+    };
+
     while (!edge_points.empty()) {
         // search for adjacent edge
         std::list<EdgePoints>::iterator pEI;
@@ -3274,7 +3285,7 @@ extractRun(std::list<TopoShape>& edges,
             if (keepOrder && sorted.size() == 1) {
                 if (pEI->v2.SquareDistance(first) <= tol3d
                         || pEI->v1.SquareDistance(first) <= tol3d) {
-                    sorted[0] = reverseEdge(sorted[0]);
+                    sorted[0] = turn(sorted[0]);
                     std::swap(first, last);
                 }
             }
@@ -3297,7 +3308,7 @@ extractRun(std::list<TopoShape>& edges,
             }
             else if (pEI->v2.SquareDistance(last) <= tol3d) {
                 last = pEI->v1;
-                sorted.push_back(reverseEdge(pEI->edge));
+                sorted.push_back(turn(pEI->edge));
                 edges.erase(pEI->it);
                 edge_points.erase(pEI);
                 pEI = edge_points.begin();
@@ -3305,7 +3316,7 @@ extractRun(std::list<TopoShape>& edges,
             }
             else if (pEI->v1.SquareDistance(first) <= tol3d) {
                 first = pEI->v2;
-                sorted.push_front(reverseEdge(pEI->edge));
+                sorted.push_front(turn(pEI->edge));
                 edges.erase(pEI->it);
                 edge_points.erase(pEI);
                 pEI = edge_points.begin();
@@ -3342,7 +3353,7 @@ TopoShape::sortEdges(std::list<TopoShape>& edges, bool keepOrder, double tol)
 }
 
 std::vector<std::deque<TopoShape>>
-TopoShape::sortEdgesAll(std::list<TopoShape>& edges, bool keepOrder, double tol)
+TopoShape::sortEdgesAll(std::list<TopoShape>& edges, bool keepOrder, double tol, bool reverse)
 {
     if (tol<Precision::Confusion()) tol = Precision::Confusion();
     double tol3d = tol * tol;
@@ -3355,7 +3366,7 @@ TopoShape::sortEdgesAll(std::list<TopoShape>& edges, bool keepOrder, double tol)
 
     std::vector<std::deque<TopoShape>> runs;
     while (!edge_points.empty()) {
-        auto run = extractRun(edges, edge_points, keepOrder, tol3d);
+        auto run = extractRun(edges, edge_points, keepOrder, tol3d, reverse);
         if (run.empty())
             break;
         runs.push_back(std::move(run));
@@ -3370,13 +3381,14 @@ TopoShape::sortEdgesAll(std::list<TopoShape>& edges, bool keepOrder, double tol)
 static std::vector<TopoShape>
 wiresFromSortedRuns(std::list<TopoShape> &edge_list,
                     bool keepOrder,
+                    bool reverse,
                     double tol,
                     const char *op,
                     bool fixWires,
                     Part::TopoShapeMap *output)
 {
     std::vector<TopoShape> wires;
-    for (const auto &run : TopoShape::sortEdgesAll(edge_list, keepOrder, tol)) {
+    for (const auto &run : TopoShape::sortEdgesAll(edge_list, keepOrder, tol, reverse)) {
         // An edge shorter than tol never joins a run -- its ends coincide, so
         // the sorting calls it closed and gives it a run of its own. The wire
         // fixing used to delete such edges (they are why makEWires() fixes at
@@ -3435,7 +3447,7 @@ TopoShape &TopoShape::makEOrderedWires(const std::vector<TopoShape> &shapes,
     for(auto &e : shape.getSubTopoShapes(TopAbs_EDGE))
         edge_list.push_back(e);
 
-    return makECompound(wiresFromSortedRuns(edge_list, true, tol, op, false, output),
+    return makECompound(wiresFromSortedRuns(edge_list, true, true, tol, op, false, output),
                         0, false);
 }
 
@@ -3489,7 +3501,7 @@ TopoShape &TopoShape::makEWires(const std::vector<TopoShape> &shapes,
     // each wire by re-offering every remaining edge to MakeWire after every
     // accepted one. That rescan was quadratic twice over -- in the number of
     // wires and in the length of each -- and it never honoured tol at all.
-    return makECompound(wiresFromSortedRuns(edge_list, false, tol, op, true, output),
+    return makECompound(wiresFromSortedRuns(edge_list, false, false, tol, op, true, output),
                         0, false);
 }
 
