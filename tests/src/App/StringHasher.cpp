@@ -8,6 +8,7 @@
 #include <App/StringIDPy.h>
 #include <Base/Reader.h>
 #include <Base/Writer.h>
+#include <src/App/InitApplication.h>
 
 #include <QCryptographicHash>
 #include <algorithm>
@@ -1074,6 +1075,13 @@ TEST_F(StringIDRefTest, setPersistent)  // NOLINT
 class StringHasherTest: public ::testing::Test
 {
 protected:
+    // getID() reads DocumentParams, which needs the application: without
+    // this a suite run on its own crashed on a null Application.
+    static void SetUpTestSuite()
+    {
+        tests::initApplication();
+    }
+
     void SetUp() override
     {
         Py_Initialize();
