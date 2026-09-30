@@ -152,13 +152,18 @@ bool ReferenceSelection::allowOrigin(PartDesign::Body *body, App::OriginGroupExt
 
     if (fits) { // check that it actually belongs to the chosen body or part
         try { // here are some throwers
+            // Its origin's, a coordinate system's in it, or a lone datum
+            // element in it (upstream 9504b7e569)
+            App::OriginGroupExtension* group = originGroup;
             if (body) {
-                if (body->getOrigin ()->hasObject (pObj) ) {
+                group = body->getExtensionByType<App::OriginGroupExtension>(true);
+            }
+            if (group) {
+                if (group->hasObject(pObj, true)) {
                     return true;
                 }
-            }
-            else if (originGroup ) {
-                if (originGroup->getOrigin()->hasObject(pObj)) {
+                auto lcs = static_cast<App::DatumElement*>(pObj)->getLCS();
+                if (lcs && group->hasObject(lcs, true)) {
                     return true;
                 }
             }
