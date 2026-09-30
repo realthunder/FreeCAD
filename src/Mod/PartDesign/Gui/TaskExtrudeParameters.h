@@ -108,7 +108,6 @@ protected:
     void onInnerAngle2Changed(double);
     void onDirectionCBChanged(int);
     void onAlongSketchNormalChanged(bool);
-    void onDirectionToggled(bool);
     void onXDirectionEditChanged(double);
     void onYDirectionEditChanged(double);
     void onZDirectionEditChanged(double);
@@ -140,6 +139,8 @@ protected:
     int    getMode() const;
     void updateDirectionEdits();
     void setDirectionMode(int index);
+    /// Show the direction rows the direction combo's entry needs
+    void updateDirectionUI(int index);
     void addAxisToCombo(App::DocumentObject* linkObj, const std::string &linkSubname, const QString &itemText);
 
     /// Set one side's Type for a mode of the panel's list
@@ -187,6 +188,9 @@ protected:
     std::unique_ptr<Gui::Fw::UiForm> form;
     std::unique_ptr<Ui_TaskPadPocketParameters> ui;
     bool selectionFace;
+    /// Whether a side is measured by a length, which is what the
+    /// "along profile normal" box is about
+    bool lengthShown = true;
     std::vector<App::SubObjectT> axesInList;
 };
 

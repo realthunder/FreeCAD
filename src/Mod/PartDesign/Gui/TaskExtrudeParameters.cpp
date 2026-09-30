@@ -473,8 +473,6 @@ void TaskExtrudeParameters::connectSlots()
         });
     Base::connect(ui->checkBoxAlongDirection, &Gui::Fw::QCheckBox::toggled,
         this, &TaskExtrudeParameters::onAlongSketchNormalChanged);
-    Base::connect(ui->groupBoxDirection, &Gui::Fw::QGroupBox::toggled,
-        this, &TaskExtrudeParameters::onDirectionToggled);
     Base::connect(ui->XDirectionEdit, qOverload<double>(&Gui::Fw::DoubleSpinBox::valueChanged),
         this, &TaskExtrudeParameters::onXDirectionEditChanged);
     Base::connect(ui->YDirectionEdit, qOverload<double>(&Gui::Fw::DoubleSpinBox::valueChanged),
@@ -747,10 +745,7 @@ void TaskExtrudeParameters::fillDirectionCombo()
     if (hasCustom)
         ui->directionCB->setCurrentIndex(DirectionModes::Custom);
 
-    ui->checkBoxAlongDirection->setEnabled(ui->directionCB->currentIndex() != 0);
-    ui->XDirectionEdit->setEnabled(hasCustom);
-    ui->YDirectionEdit->setEnabled(hasCustom);
-    ui->ZDirectionEdit->setEnabled(hasCustom);
+    updateDirectionUI(ui->directionCB->currentIndex());
 
     blockUpdate = oldVal_blockUpdate;
 }
@@ -819,7 +814,8 @@ void TaskExtrudeParameters::setCheckboxes()
     ui->lengthEdit->setVisible(side1.length);
     ui->lengthEdit->setEnabled(side1.length);
     ui->labelLength->setVisible(side1.length);
-    ui->checkBoxAlongDirection->setVisible(side1.length || side2.length);
+    lengthShown = side1.length || side2.length;
+    updateDirectionUI(ui->directionCB->currentIndex());
 
     ui->offsetEdit->setVisible(side1.offset);
     ui->offsetEdit->setEnabled(side1.offset);
@@ -919,14 +915,6 @@ void TaskExtrudeParameters::onAlongSketchNormalChanged(bool on)
     recomputeFeature();
 }
 
-void TaskExtrudeParameters::onDirectionToggled(bool on)
-{
-    if (on)
-        ui->groupBoxDirection->show();
-    else
-        ui->groupBoxDirection->hide();
-}
-
 void TaskExtrudeParameters::onXDirectionEditChanged(double len)
 {
     setupTransaction();
@@ -973,34 +961,24 @@ void TaskExtrudeParameters::updateDirectionEdits()
 void TaskExtrudeParameters::setDirectionMode(int index)
 {
     PartDesign::FeatureExtrude* extrude = static_cast<PartDesign::FeatureExtrude*>(vp->getObject());
-    // disable AlongSketchNormal when the direction is already normal
-    if (index == DirectionModes::Normal)
-        ui->checkBoxAlongDirection->setEnabled(false);
-    else
-        ui->checkBoxAlongDirection->setEnabled(true);
-
     setupTransaction();
-    // if custom direction is used, show it
-    if (index == DirectionModes::Custom) {
-        ui->groupBoxDirection->setChecked(true);
-        extrude->UseCustomVector.setValue(true);
-    }
-    else {
-        extrude->UseCustomVector.setValue(false);
-    }
+    extrude->UseCustomVector.setValue(index == DirectionModes::Custom);
+    updateDirectionUI(index);
+}
 
-    // if we don't use custom direction, only allow to show its direction
-    if (index != DirectionModes::Custom) {
-        ui->XDirectionEdit->setEnabled(false);
-        ui->YDirectionEdit->setEnabled(false);
-        ui->ZDirectionEdit->setEnabled(false);
-    }
-    else {
-        ui->XDirectionEdit->setEnabled(true);
-        ui->YDirectionEdit->setEnabled(true);
-        ui->ZDirectionEdit->setEnabled(true);
-    }
-
+void TaskExtrudeParameters::updateDirectionUI(int index)
+{
+    // The profile normal needs nothing more; a reference shows its vector,
+    // read only; a custom direction is typed in (upstream 873fa449ce)
+    bool normal = index == DirectionModes::Normal;
+    bool custom = index == DirectionModes::Custom;
+    ui->groupBoxDirection->setVisible(!normal);
+    ui->XDirectionEdit->setEnabled(custom);
+    ui->YDirectionEdit->setEnabled(custom);
+    ui->ZDirectionEdit->setEnabled(custom);
+    // Measuring along the normal is the same thing when the direction is it
+    ui->checkBoxAlongDirection->setVisible(!normal && lengthShown);
+    ui->checkBoxAlongDirection->setEnabled(!normal);
 }
 
 void TaskExtrudeParameters::onUsePipeChanged(bool on)
