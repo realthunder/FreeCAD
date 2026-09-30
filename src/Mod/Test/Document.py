@@ -4978,3 +4978,131 @@ class TransactionBranchCases(unittest.TestCase):
         A = self.track(FreeCAD.openDocument(os.path.join(self.dir, "binda.FCStd")))
         after = {e: expand(A.Hasher, n) for n, e in A.Binder.Shape.ElementMap.items()}
         self.assertEqual(after, before)
+
+    def testAReferenceIntoAnotherDocumentStoresItsNameInItsOwnTable(self):
+        # Sec 27.76 item 5: a reference into another document's element
+        # stores the name imported into its own document's table, and ids of
+        # that table beside it. Opened after the target re-minted the string
+        # (dropped by a save while nothing held it, made again), the
+        # reference looks the stored name up by content and names the
+        # element in the target's new ids; opened while the target has not
+        # got the string, the lookup misses and the search by geometry the
+        # restore does for a changed target finds the face.
+        import io
+        import re
+        import zipfile
+
+        import Part
+
+        self.param.SetInt("TransactionLog", 0)
+        V = FreeCAD.Vector
+        B = self.track(FreeCAD.newDocument("StoredB"))
+        B.UndoMode = 0
+        pathB = os.path.join(self.dir, "storedb.FCStd")
+        B.saveAs(pathB)
+        body = B.addObject("PartDesign::Body", "Body")
+        corners = [(0, 0), (20, 0), (20, 20), (0, 20)]
+        for name in ("Sketch", "Sketch2"):
+            sketch = body.newObject("Sketcher::SketchObject", name)
+            for a, b in zip(corners, corners[1:] + corners[:1]):
+                sketch.addGeometry(Part.LineSegment(V(*a, 0), V(*b, 0)))
+        pad = body.newObject("PartDesign::Pad", "Pad")
+        pad.Profile = B.Sketch
+        pad.Length = 10
+        B.recompute()
+        fillet = body.newObject("PartDesign::Fillet", "Fillet")
+        fillet.Base = (pad, ["Edge1"])
+        fillet.Radius = 1
+        B.recompute()
+        B.save()
+
+        def expand(hasher, text):
+            def one(m):
+                sid = hasher.getID(int(m.group(1), 16))
+                return expand(hasher, sid.Data) if sid else "<missing>"
+
+            return re.sub(r"#([0-9a-f]+)", one, text)
+
+        def nameOf(doc, element):
+            return {e: n for n, e in doc.Fillet.Shape.ElementMap.items()}[element]
+
+        element = [
+            e
+            for n, e in sorted(fillet.Shape.ElementMap.items())
+            if e.startswith("Face") and "#" in n and "FLT" in n
+        ][0]
+        said = expand(B.Hasher, nameOf(B, element))
+
+        A = self.track(FreeCAD.newDocument("StoredA"))
+        A.UndoMode = 0
+        # So that A's ids are not B's.
+        for i in range(3):
+            A.addObject("Part::Sphere", "Sphere%d" % i)
+        A.recompute()
+        ref = A.addObject("App::FeaturePython", "Ref")
+        ref.addProperty("App::PropertyXLinkSub", "S")
+        ref.S = (fillet, [element])
+        A.recompute()
+        pathA = os.path.join(self.dir, "storeda.FCStd")
+        A.saveAs(pathA)
+
+        def saved(doc):
+            data = bytes(doc.Ref.dumpPropertyContent("S", Compression=0))
+            archive = zipfile.ZipFile(io.BytesIO(data))
+            xml = "".join(archive.read(n).decode() for n in archive.namelist())
+            attrs = dict(re.findall(r'(\w+)="([^"]*)"', xml))
+            attrs["ids"] = {int(x, 16) for x in attrs.get("sids", "").split()}
+            return attrs
+
+        def stored(doc):
+            # The stored name, in the owner's table, reads as the target's.
+            attrs = saved(doc)
+            self.assertEqual(attrs["stored"].split(".")[-1], attrs["shadow"].split(".")[-1])
+            named = {int(x, 16) for x in re.findall(r"#([0-9a-f]+)", attrs["stored"])}
+            self.assertTrue(named)
+            self.assertEqual(attrs["ids"], named)
+            self.assertEqual({i for i in named if doc.Hasher.getID(i)}, named)
+            return expand(doc.Hasher, attrs["stored"][1:].split(".")[0])
+
+        self.assertEqual(saved(A)["shadow"], ";%s.%s" % (nameOf(B, element), element))
+        self.assertEqual(stored(A), said)
+        FreeCAD.closeDocument(A.Name)
+
+        def reopenB(B):
+            # Nothing but B's own shapes holds its strings after a reopen:
+            # a save then drops the rest.
+            FreeCAD.closeDocument(B.Name)
+            B = self.track(FreeCAD.openDocument(pathB))
+            B.save()
+            return B
+
+        # B re-mints the string: gone at a save, made again after.
+        old = nameOf(B, element)
+        pad.Profile = B.Sketch2
+        B.recompute()
+        B.save()
+        B = reopenB(B)
+        B.Pad.Profile = B.Sketch
+        B.recompute()
+        B.save()
+        new = nameOf(B, element)
+        self.assertNotEqual(new, old)
+        self.assertEqual(expand(B.Hasher, new), said)
+        A = self.track(FreeCAD.openDocument(pathA))
+        self.assertEqual(A.Ref.S[1], [element])
+        self.assertEqual(saved(A)["shadow"], ";%s.%s" % (new, element))
+        self.assertEqual(stored(A), said)
+        FreeCAD.closeDocument(A.Name)
+
+        # B without the string: the face comes from the other sketch now,
+        # with the same geometry, which the restore's search finds.
+        B.Pad.Profile = B.Sketch2
+        B.recompute()
+        B.save()
+        B = reopenB(B)
+        self.assertNotIn(said, {expand(B.Hasher, n) for n in B.Fillet.Shape.ElementMap})
+        A = self.track(FreeCAD.openDocument(pathA))
+        found = A.Ref.S[1][0]
+        self.assertFalse(found.startswith("?"), found)
+        self.assertEqual(saved(A)["shadow"], ";%s.%s" % (nameOf(B, found), found))
+        self.assertEqual(stored(A), expand(B.Hasher, nameOf(B, found)))

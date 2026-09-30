@@ -905,6 +905,10 @@ public:
      */
     bool importText(const QByteArray& text, const StringHasher& from, QByteArray& out,
                     QVector<StringIDRef>* sids, ImportMemo& memo);
+    /// importText() taking nothing in: false when this table has not got
+    /// a string the text names.
+    bool lookupText(const QByteArray& text, const StringHasher& from, QByteArray& out,
+                    ImportMemo& memo) const;
     /** `name`, a name of `from`'s table, as this table would have it (sec
      * 27.76 item 2): its text rewritten, and `sids` -- the ids it holds, of
      * any table -- replaced by this table's, with every string the new text

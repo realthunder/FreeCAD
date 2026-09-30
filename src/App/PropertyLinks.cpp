@@ -310,6 +310,142 @@ void PropertyLinkBase::updateElementReferences(DocumentObject *feature, bool rev
     }
 }
 
+/// The table of the document owning 'container', null for a property no
+/// document owns.
+static StringHasherRef ownerHasher(const PropertyContainer *container)
+{
+    auto owner = dynamic_cast<const DocumentObject*>(container);
+    if (!owner || !owner->getDocument())
+        return {};
+    return owner->getDocument()->getStringHasher();
+}
+
+/// The table the names of 'geo' are in: its geometry's, else its document's.
+static StringHasherRef elementHasher(const GeoFeature *geo)
+{
+    if (!geo)
+        return {};
+    auto prop = geo->getPropertyOfGeometry();
+    auto data = prop ? prop->getComplexData() : nullptr;
+    if (data && data->Hasher)
+        return data->Hasher;
+    return geo->getDocument() ? geo->getDocument()->getStringHasher() : StringHasherRef();
+}
+
+/** The element part of a name, ';<mapped>.<indexed>', with the string ids of
+ * its mapped name rewritten from one table's to another's: imported into
+ * 'to', holding in 'sids' what the new text names, or looked up with 'sids'
+ * null, taking nothing in. False when a string cannot be had, which for a
+ * lookup means the other table has no such name. An element part with no
+ * mapped name comes back as it is.
+ */
+static bool translateElement(const char *element, const StringHasher &from, StringHasher &to,
+                             std::string &out, Data::ElementIDRefs *sids)
+{
+    const char *mapped = Data::isMappedElement(element);
+    if (!mapped) {
+        out = element;
+        return true;
+    }
+    // A mapped name has no dot: the last one starts the indexed name.
+    const char *dot = strrchr(mapped, '.');
+    QByteArray text(mapped, dot ? static_cast<int>(dot - mapped) : static_cast<int>(strlen(mapped)));
+    QByteArray res;
+    StringHasher::ImportMemo memo;
+    QVector<StringIDRef> named;
+    bool ok = sids ? to.importText(text, from, res, &named, memo)
+                   : to.lookupText(text, from, res, memo);
+    if (!ok)
+        return false;
+    out = Data::elementMapPrefix();
+    out.append(res.constData(), res.size());
+    if (dot)
+        out += dot;
+    if (sids)
+        *sids = std::move(named);
+    return true;
+}
+
+/// A reference across tables keeps 'first' imported into the owner's table:
+/// what the file stores (docs/TransactionLog.md sec 27.76 item 5).
+static void storeShadow(PropertyLinkBase::ShadowSub &shadow, StringHasher &owner,
+                        const StringHasher &target)
+{
+    shadow.pending = false;
+    const char *element = Data::findElementName(shadow.first.c_str());
+    if (!element || !Data::isMappedElement(element)
+            || !translateElement(element, target, owner, shadow.stored, &shadow.storedIds)) {
+        shadow.stored.clear();
+        shadow.storedIds.clear();
+    }
+}
+
+/** A restored reference across tables (docs/TransactionLog.md sec 27.76 item
+ * 5) takes its working form, 'first', from what the file stored: the stored
+ * name looked up by content in the target's table, which the target may have
+ * compacted or re-minted since. The ids read are held in the owner's table.
+ * False when the target's table has not got a string the name names: its
+ * current shape has no such element. 'first' is then emptied and the old
+ * style name carries the missing marker, so that nothing resolves the stale
+ * text or adopts the indexed name; the lookup is tried again each time the
+ * reference is updated.
+ */
+static bool lookupShadow(DocumentObject *obj, std::string &sub,
+                         PropertyLinkBase::ShadowSub &shadow, const StringHasherRef &owner)
+{
+    if (!shadow.pending)
+        return true;
+    if (!owner || shadow.stored.empty()) {
+        shadow.pending = false;
+        return true;
+    }
+    const std::string &names = shadow.first.empty() ? shadow.second : shadow.first;
+    const char *element = Data::findElementName(names.c_str());
+    std::string prefix(names.c_str(), element ? element - names.c_str() : names.size());
+    GeoFeature *geo = nullptr;
+    std::pair<std::string, std::string> unused;
+    GeoFeature::resolveElement(obj, prefix.c_str(), unused, false,
+            GeoFeature::ElementNameType::Export, nullptr, nullptr, &geo);
+    StringHasherRef target = elementHasher(geo);
+    if (!target)
+        return true;
+    if (!shadow.savedIds.empty()) {
+        shadow.storedIds.clear();
+        for (long id : shadow.savedIds) {
+            if (auto sid = owner->getID(id))
+                shadow.storedIds.push_back(sid);
+        }
+        shadow.savedIds.clear();
+    }
+    std::string working;
+    if (target == owner) {
+        // One table after all: the stored name is the working one.
+        working = shadow.stored;
+        shadow.sids = shadow.storedIds;
+        shadow.stored.clear();
+        shadow.storedIds.clear();
+    }
+    else if (!translateElement(shadow.stored.c_str(), *owner, *target, working, nullptr)) {
+        const char *dot = strrchr(shadow.stored.c_str(), '.');
+        std::string marked = prefix;
+        const char *indexed = dot ? dot + 1 : shadow.stored.c_str();
+        if (!boost::starts_with(indexed, Data::missingPrefix()))
+            marked += Data::missingPrefix();
+        marked += indexed;
+        // As a missing reference's value reads (_updateElementReference).
+        sub = marked;
+        shadow.second = std::move(marked);
+        shadow.first.clear();
+        return false;
+    }
+    std::string first = prefix + working;
+    if (sub == shadow.first || Data::hasMappedElementName(sub.c_str()))
+        sub = first;
+    shadow.first = std::move(first);
+    shadow.pending = false;
+    return true;
+}
+
 /** Hold the string ids of the element 'shadow' names in 'geo'
  * (docs/TransactionLog.md sec 27.75). 'element' is the element part of the
  * resolved new style name, null while the element is missing: a missing
@@ -317,25 +453,42 @@ void PropertyLinkBase::updateElementReferences(DocumentObject *feature, bool rev
  * reference moved to takes the map's ids. Otherwise the ids a file gave are
  * held first -- numbers of the target document's table, looked up as they
  * are -- and the map is asked only when nothing is held yet.
+ *
+ * A reference whose names are another table's than the owner's (sec 27.76
+ * item 5) holds the target's ids in memory, and keeps its name imported into
+ * the owner's table as well: that is what a save writes, and what outlives
+ * the target's own saves while this document is closed.
  */
 static void holdShadowIDs(PropertyLinkBase::ShadowSub &shadow, const GeoFeature *geo,
-                          const char *element, bool moved)
+                          const char *element, bool moved, const StringHasherRef &owner)
 {
     if (!geo)
         return;
+    StringHasherRef target = elementHasher(geo);
+    if (owner && target && owner != target) {
+        // Another table's numbers, as a file before sec 27.76 item 5 wrote
+        // them, say nothing once that table has been saved on its own.
+        shadow.savedIds.clear();
+        if (element && (moved || shadow.sids.empty()))
+            shadow.sids = geo->getElementIDs(element);
+        if (element && (moved || shadow.stored.empty() || shadow.pending))
+            storeShadow(shadow, *owner, *target);
+        return;
+    }
+    shadow.stored.clear();
+    shadow.storedIds.clear();
+    shadow.pending = false;
     if (moved && element) {
         shadow.sids = geo->getElementIDs(element);
         shadow.savedIds.clear();
         return;
     }
     if (!shadow.savedIds.empty()) {
-        auto doc = geo->getDocument();
-        StringHasherRef hasher = doc ? doc->getStringHasher() : StringHasherRef();
-        if (!hasher)
+        if (!target)
             return;
         shadow.sids.clear();
         for (long id : shadow.savedIds) {
-            if (auto sid = hasher->getID(id))
+            if (auto sid = target->getID(id))
                 shadow.sids.push_back(sid);
         }
         shadow.savedIds.clear();
@@ -358,6 +511,8 @@ void PropertyLinkBase::_registerElementReference(App::DocumentObject *obj, std::
 {
     if(!obj || !obj->isAttachedToDocument() || sub.empty())
         return;
+    // Missing by the lookup, 'first' is empty and the branch below takes it.
+    lookupShadow(obj, sub, shadow, ownerHasher(getContainer()));
     // A sub-name carrying the missing marker is asked about again rather
     // than taken as it is: restored with its old shadow, it is the reload
     // request of docs/TopoNamingEnhance.md section 7 (_updateElementReference
@@ -390,7 +545,7 @@ void PropertyLinkBase::_registerElementReference(App::DocumentObject *obj, std::
         return;
     }
 
-    holdShadowIDs(shadow, geo, shadowElement(shadow), false);
+    holdShadowIDs(shadow, geo, shadowElement(shadow), false, ownerHasher(getContainer()));
     if(_ElementRefs.insert(geo).second)
         _ElementRefMap[geo].insert(this);
 }
@@ -437,6 +592,11 @@ bool PropertyLinkBase::_updateElementReference(DocumentObject *feature,
         bool reverse, bool notify)
 {
     if(!obj || !obj->isAttachedToDocument()) return false;
+    auto hasher = ownerHasher(getContainer());
+    // Missing by the lookup, 'first' is empty and the old style name carries
+    // the missing marker, which is resolved below as any restored missing
+    // reference is.
+    bool found = lookupShadow(obj, sub, shadow, hasher);
     ShadowSub elementName;
     const char *subname;
     if(shadow.first.size())
@@ -483,7 +643,11 @@ bool PropertyLinkBase::_updateElementReference(DocumentObject *feature,
             || (owner && owner->getDocument()
                       && owner->getDocument()->testStatus(Document::Restoring)));
     if (!reverse) {
-        if (elementName.first.empty()) {
+        // Missing by the lookup while restoring, it was there when the file
+        // was saved: the target changed while this document was closed, and
+        // the search below is what the restore is for (TopoNamingEnhance.md
+        // 7.16).
+        if (elementName.first.empty() && !(restoring && !found)) {
             shadow.second.swap(elementName.second);
             return false;
         }
@@ -491,7 +655,7 @@ bool PropertyLinkBase::_updateElementReference(DocumentObject *feature,
         // XML pass may have resolved it before the shapes arrived, and the
         // request below is what the restore is for.
         if(shadow==elementName && !(restoring && missing)) {
-            holdShadowIDs(shadow, geo, missing ? nullptr : shadowElement(shadow), false);
+            holdShadowIDs(shadow, geo, missing ? nullptr : shadowElement(shadow), false, hasher);
             return false;
         }
     }
@@ -583,13 +747,13 @@ bool PropertyLinkBase::_updateElementReference(DocumentObject *feature,
         else
             FC_LOG(ss.str());
         shadow.second.swap(elementName.second);
-        holdShadowIDs(shadow, geo, nullptr, false);
+        holdShadowIDs(shadow, geo, nullptr, false, hasher);
     } else {
         FC_TRACE(propertyName(this) 
                 << " element reference shadow update " << ret->getFullName() << " "
                 << shadow.first << " -> " << elementName.first);
         shadow.swap(elementName);
-        holdShadowIDs(shadow, geo, shadowElement(shadow), true);
+        holdShadowIDs(shadow, geo, shadowElement(shadow), true, hasher);
         if(shadow.first.size() && Data::hasMappedElementName(sub.c_str()))
             updateSub(shadow.first);
     }
@@ -1950,20 +2114,43 @@ void PropertyLinkSub::purgeTouched() {
 #define ATTR_SHADOW "shadow"
 #define ATTR_MAPPED "mapped"
 #define ATTR_SIDS "sids"
+#define ATTR_STORED "stored"
+
+/// Whether every id of 'sids' is one of 'hasher's
+static bool allOf(const Data::ElementIDRefs &sids, const StringHasherRef &hasher)
+{
+    for (const auto &sid : sids) {
+        if (!sid.isFromSameHasher(hasher))
+            return false;
+    }
+    return true;
+}
 
 /** The string ids a shadow holds, written beside it as the element map
  * writes its own (hex, space separated), and noted for a transaction-log
  * capture of the value (sec 27.50 item 4): docs/TransactionLog.md sec
  * 27.75. Ids read and not yet held go out as they came in.
+ *
+ * Only the owner's table's: a reference across tables (sec 27.76 item 5)
+ * writes the name it stored in that table, 'stored=', and the ids of that;
+ * the target's numbers mean nothing once the target is saved on its own.
  */
-static void saveShadowIDs(Base::Writer &writer, const PropertyLinkBase::ShadowSub &shadow)
+static void saveShadowIDs(Base::Writer &writer, const PropertyLinkBase::ShadowSub &shadow,
+                          const PropertyContainer *container)
 {
-    if (shadow.sids.empty() && shadow.savedIds.empty())
-        return;
+    StringHasherRef hasher = ownerHasher(container);
+    const Data::ElementIDRefs *held = &shadow.sids;
+    if (!shadow.stored.empty() && (!hasher || allOf(shadow.storedIds, hasher))) {
+        writer.Stream() << "\" " ATTR_STORED "=\""
+                        << Base::Persistence::encodeAttribute(shadow.stored);
+        held = &shadow.storedIds;
+    }
     std::ostringstream ids;
     ids << std::hex;
     const char *sep = "";
-    for (const auto &sid : shadow.sids) {
+    for (const auto &sid : *held) {
+        if (hasher && !sid.isFromSameHasher(hasher))
+            continue;
         StringIDCollector::take(sid);
         ids << sep << sid.value();
         sep = " ";
@@ -1972,6 +2159,8 @@ static void saveShadowIDs(Base::Writer &writer, const PropertyLinkBase::ShadowSu
         ids << sep << id;
         sep = " ";
     }
+    if (!*sep)
+        return;
     writer.Stream() << "\" " ATTR_SIDS "=\"" << ids.str();
 }
 
@@ -1979,6 +2168,13 @@ static void restoreShadowIDs(Base::XMLReader &reader, PropertyLinkBase::ShadowSu
 {
     shadow.sids.clear();
     shadow.savedIds.clear();
+    shadow.stored.clear();
+    shadow.storedIds.clear();
+    shadow.pending = false;
+    if (reader.hasAttribute(ATTR_STORED)) {
+        shadow.stored = reader.getAttribute(ATTR_STORED);
+        shadow.pending = !shadow.stored.empty();
+    }
     if (!reader.hasAttribute(ATTR_SIDS))
         return;
     std::istringstream ids(reader.getAttribute(ATTR_SIDS));
@@ -1995,16 +2191,15 @@ static void restoreShadowIDs(Base::XMLReader &reader, PropertyLinkBase::ShadowSu
 static void markShadowIDs(const std::vector<PropertyLinkBase::ShadowSub> &shadows,
                           const PropertyContainer *container)
 {
-    auto owner = dynamic_cast<const DocumentObject*>(container);
-    if (!owner || !owner->getDocument())
-        return;
-    StringHasherRef hasher = owner->getDocument()->getStringHasher();
+    StringHasherRef hasher = ownerHasher(container);
     if (!hasher)
         return;
     for (const auto &shadow : shadows) {
-        for (const auto &sid : shadow.sids) {
-            if (sid.isFromSameHasher(hasher))
-                sid.mark();
+        for (const auto *sids : {&shadow.sids, &shadow.storedIds}) {
+            for (const auto &sid : *sids) {
+                if (sid.isFromSameHasher(hasher))
+                    sid.mark();
+            }
         }
     }
 }
@@ -2063,7 +2258,7 @@ void PropertyLinkSub::Save (Base::Writer &writer) const
                     writer.Stream() << "\" " ATTR_SHADOW "=\"" << encodeAttribute(shadow.first);
                 }
             }
-            saveShadowIDs(writer, shadow);
+            saveShadowIDs(writer, shadow, getContainer());
         }
         writer.Stream()<<"\"/>\n";
     }
@@ -3044,7 +3239,7 @@ void PropertyLinkSubList::Save (Base::Writer &writer) const
                     writer.Stream() << "\" " ATTR_SHADOW "=\"" << encodeAttribute(shadow.first);
                 }
             }
-            saveShadowIDs(writer, shadow);
+            saveShadowIDs(writer, shadow, getContainer());
         }
         writer.Stream() << "\"/>\n";
     }
@@ -4916,7 +5111,7 @@ void PropertyXLink::Save (Base::Writer &writer) const {
                 else if(!shadowSub.first.empty())
                     writer.Stream() << "\" " ATTR_SHADOW "=\"" << encodeAttribute(shadowSub.first);
             }
-            saveShadowIDs(writer, shadowSub);
+            saveShadowIDs(writer, shadowSub, getContainer());
         }
         writer.Stream() << "\"/>\n";
     }else {
@@ -4942,7 +5137,7 @@ void PropertyXLink::Save (Base::Writer &writer) const {
                     else if(!shadow.first.empty())
                         writer.Stream() << "\" " ATTR_SHADOW "=\"" << encodeAttribute(shadow.first);
                 }
-                saveShadowIDs(writer, shadow);
+                saveShadowIDs(writer, shadow, getContainer());
             }
             writer.Stream()<<"\"/>\n";
         }

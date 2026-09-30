@@ -652,6 +652,13 @@ bool StringHasher::importText(const QByteArray& text, const StringHasher& from, 
     return rewriteIds(text, from, out, sids, memo, true);
 }
 
+bool StringHasher::lookupText(const QByteArray& text, const StringHasher& from, QByteArray& out,
+                              ImportMemo& memo) const
+{
+    // As lookupID(): with `take` false the table is not changed.
+    return const_cast<StringHasher*>(this)->rewriteIds(text, from, out, nullptr, memo, false);
+}
+
 bool StringHasher::importName(const Data::MappedName& name, const StringHasher& from,
                               Data::MappedName& out, QVector<StringIDRef>& sids,
                               ImportMemo& memo)

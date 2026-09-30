@@ -1873,3 +1873,35 @@ TEST_F(StringHasherTest, importFailsOnAnIdItsTableLacks)  // NOLINT
     EXPECT_FALSE(Hasher()->importID(broken));
     EXPECT_EQ(Hasher()->size(), 0U);
 }
+
+TEST_F(StringHasherTest, lookupTextFindsByContentAndTakesNothingIn)  // NOLINT
+{
+    // A reference into another document stores its name in its own table
+    // and looks it up in the target's (docs/TransactionLog.md sec 27.76 item
+    // 5): the text comes back in the target's ids when the target has every
+    // string it names, and the lookup never adds one.
+    Base::Reference<App::StringHasher> other(new App::StringHasher);
+    Data::MappedName first("Edge1");
+    first += ";:G;XTR;:H12:7";
+    Data::ElementIDRefs sids;
+    Data::MappedName hashed = first.hashElementName(other, sids);
+    QByteArray text = (hashed.toString() + ";:M;FLT;:H13:7,F").c_str();
+
+    QByteArray stored;
+    QVector<App::StringIDRef> held;
+    App::StringHasher::ImportMemo memo;
+    ASSERT_TRUE(Hasher()->importText(text, *other, stored, &held, memo));
+    ASSERT_FALSE(held.isEmpty());
+
+    // Back into the table it came from: the same text.
+    QByteArray working;
+    App::StringHasher::ImportMemo lookup;
+    ASSERT_TRUE(other->lookupText(stored, *Hasher(), working, lookup));
+    EXPECT_EQ(working, text);
+
+    // A table without the string: no text, nothing taken in.
+    Base::Reference<App::StringHasher> fresh(new App::StringHasher);
+    App::StringHasher::ImportMemo none;
+    EXPECT_FALSE(fresh->lookupText(stored, *Hasher(), working, none));
+    EXPECT_EQ(fresh->size(), 0U);
+}

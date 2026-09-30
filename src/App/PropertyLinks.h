@@ -147,9 +147,25 @@ public:
 
         /// The ids held, from the target's element map
         Data::ElementIDRefs sids;
-        /// Read from a file and not yet held: the target's document may not
-        /// be loaded, and its table is what the numbers are ids of
+        /// Read from a file and not yet held: ids of the owner's table, which
+        /// is the target's for a reference within one table. Held when the
+        /// reference registers.
         std::vector<long> savedIds;
+
+        /** A reference whose names are another table's -- into another
+         * document, or through a link to one (docs/TransactionLog.md sec
+         * 27.76 item 5): the element part of 'first' with its string ids
+         * imported into the owner's table. This is what the file keeps; the
+         * working form, 'first', is looked up from it in the target's table
+         * when the reference registers. Empty for a reference within one
+         * table.
+         */
+        std::string stored;
+        /// The owner's ids 'stored' names, held
+        Data::ElementIDRefs storedIds;
+        /// 'first' is not yet looked up from 'stored': restored and not
+        /// registered, or looked up and missing (then 'first' is empty)
+        bool pending = false;
     };
 
     PropertyLinkBase();
