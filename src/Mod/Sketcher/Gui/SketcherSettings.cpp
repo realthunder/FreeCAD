@@ -370,6 +370,8 @@ void SketcherSettingsDisplay::saveSettings()
 {
     ui->ZHeight->onSave();
     ui->EditSketcherFontSize->onSave();
+    ui->ConstraintIconLabelsPerLine->onSave();
+    ui->ConstraintIconLabelLines->onSave();
     ui->ElementIconSize->onSave();
     ui->viewScalingFactor->onSave();
     ui->SegmentsPerGeometry->onSave();
@@ -395,6 +397,8 @@ void SketcherSettingsDisplay::loadSettings()
 {
     ui->ZHeight->onRestore();
     ui->EditSketcherFontSize->onRestore();
+    ui->ConstraintIconLabelsPerLine->onRestore();
+    ui->ConstraintIconLabelLines->onRestore();
     ui->ElementIconSize->onRestore();
     ui->viewScalingFactor->onRestore();
     ui->SegmentsPerGeometry->onRestore();

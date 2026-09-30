@@ -384,6 +384,10 @@ struct EditData {
     int coinFontSize;
     int labelFontSize;
     int constraintIconSize;
+    // a merged constraint icon's labels: per line, and lines before "+N"
+    // (View/ConstraintIconLabelsPerLine, View/ConstraintIconLabelLines)
+    int iconLabelsPerLine = 10;
+    int iconLabelLines = 3;
     double pixelScalingFactor;
     std::set<int> PreselectConstraintSet;
     bool blockedPreselection;
@@ -5125,8 +5129,11 @@ void ViewProviderSketch::drawMergedConstraintIcons(IconQueue &&iconQueue)
     QString idString;
     int lastVPad = 0;
 
-    // A row shows at most this many numbers; the rest are one "+N".
-    const std::size_t MaxMergedLabels = 10;
+    // A row wraps its labels, this many to a line, on at most this many
+    // lines (the preferences); past that the last slot is one "+N".
+    const int LabelsPerLine = edit->iconLabelsPerLine;
+    const std::size_t MaxMergedLabels =
+        std::size_t(edit->iconLabelsPerLine) * std::size_t(edit->iconLabelLines);
 
     QStringList labels;
     std::vector<int> ids;
@@ -5186,11 +5193,21 @@ void ViewProviderSketch::drawMergedConstraintIcons(IconQueue &&iconQueue)
             i = iconQueue.erase(i);
         }
 
+        // In constraint order, which is how they read, and each once: a
+        // two-icon constraint (Equal, Parallel, ...) has both of its icons in
+        // the group when they are close, and printed its number twice.
+        std::stable_sort(named.begin(), named.end(),
+                         [](const Named &a, const Named &b) { return a.id < b.id; });
+        named.erase(std::unique(named.begin(), named.end(),
+                                [](const Named &a, const Named &b) { return a.id == b.id; }),
+                    named.end());
+
         labels.clear();
         labelColors.clear();
         labelIds.clear();
+        // an overflowing row keeps its last slot for the "+N"
         const std::size_t shown =
-            named.size() > MaxMergedLabels ? MaxMergedLabels : named.size();
+            named.size() > MaxMergedLabels ? MaxMergedLabels - 1 : named.size();
         for (std::size_t k = 0; k < shown; ++k) {
             labels.append(named[k].label);
             labelColors.append(constrColor(named[k].id));
@@ -5224,7 +5241,8 @@ void ViewProviderSketch::drawMergedConstraintIcons(IconQueue &&iconQueue)
                                              labelColors,
                                              iconRotation,
                                              &boundingBoxesVec,
-                                             &lastVPad);
+                                             &lastVPad,
+                                             LabelsPerLine);
         } else {
             int thisVPad;
             QImage partialIcon = renderConstrIcon(thisType,
@@ -5233,7 +5251,8 @@ void ViewProviderSketch::drawMergedConstraintIcons(IconQueue &&iconQueue)
                                                   labelColors,
                                                   iconRotation,
                                                   &boundingBoxesVec,
-                                                  &thisVPad);
+                                                  &thisVPad,
+                                                  LabelsPerLine);
 
             // Stack vertically for now.  Down the road, it might make sense
             // to figure out the best orientation automatically.
@@ -5286,7 +5305,8 @@ QImage ViewProviderSketch::renderConstrIcon(const QString &type,
                                             const QList<QColor> &labelColors,
                                             double iconRotation,
                                             std::vector<QRect> *boundingBoxes,
-                                            int *vPad)
+                                            int *vPad,
+                                            int labelsPerLine)
 {
     // Constants to help create constraint icons
     QString joinStr = QStringLiteral(", ");
@@ -5305,10 +5325,23 @@ QImage ViewProviderSketch::renderConstrIcon(const QString &type,
     font.setBold(true);
     QFontMetrics qfm = QFontMetrics(font);
 
-    int labelWidth = qfm.boundingRect(labels.join(joinStr)).width();
+    // The labels in lines of labelsPerLine, each line below the last; the
+    // first sits on the icon's base as a single line always has.
+    const int perLine = labelsPerLine > 0 ? labelsPerLine : std::max<int>(1, labels.size());
+    const int numLines = labels.isEmpty() ? 1 : (int(labels.size()) + perLine - 1) / perLine;
+    const int lineStep = qfm.lineSpacing();
+    int labelWidth = 0;
+    for (int first = 0; first < labels.size(); first += perLine) {
+        QString line = labels.mid(first, perLine).join(joinStr);
+        if (first + perLine < labels.size())
+            line += joinStr;
+        labelWidth = std::max(labelWidth, qfm.boundingRect(line).width());
+    }
     // See Qt docs on qRect::bottom() for explanation of the +1
     int pxBelowBase = qfm.boundingRect(labels.join(joinStr)).bottom() + 1;
 
+    // What the last line hangs below its base: the next row of a merged
+    // icon tucks in under that, as it always has under the one line.
     if(vPad)
         *vPad = pxBelowBase;
 
@@ -5317,7 +5350,7 @@ QImage ViewProviderSketch::renderConstrIcon(const QString &type,
 
     QImage roticon = icon.transformed(rotation);
     QImage image = roticon.copy(0, 0, roticon.width() + labelWidth,
-                                                        roticon.height() + pxBelowBase);
+                                roticon.height() + pxBelowBase + (numLines - 1) * lineStep);
 
     // Make a bounding box for the icon
     if(boundingBoxes)
@@ -5336,31 +5369,35 @@ QImage ViewProviderSketch::renderConstrIcon(const QString &type,
         int cursorOffset = 0;
 
         //In Python: "for label, color in zip(labels, labelColors):"
-        QStringList::const_iterator labelItr;
         QString labelStr;
-        QList<QColor>::const_iterator colorItr;
         QRect labelBB;
-        for(labelItr = labels.begin(), colorItr = labelColors.begin();
-            labelItr != labels.end() && colorItr != labelColors.end();
-            ++labelItr, ++colorItr) {
+        const int count = std::min<int>(labels.size(), labelColors.size());
+        for (int k = 0; k < count; ++k) {
+            if (k % perLine == 0)
+                cursorOffset = 0;
+            const int base = icon.height() + (k / perLine) * lineStep;
 
-            qp.setPen(*colorItr);
+            qp.setPen(labelColors[k]);
 
-            if(labelItr + 1 == labels.end()) // if this is the last label
-                labelStr = *labelItr;
+            if(k + 1 == labels.size()) // if this is the last label
+                labelStr = labels[k];
             else
-                labelStr = *labelItr + joinStr;
+                labelStr = labels[k] + joinStr;
 
             // Note: text can sometimes draw to the left of the starting
             //       position, eg italic fonts.  Check QFontMetrics
             //       documentation for more info, but be mindful if the
             //       icon.width() is ever very small (or removed).
-            qp.drawText(icon.width() + cursorOffset, icon.height(), labelStr);
+            qp.drawText(icon.width() + cursorOffset, base, labelStr);
 
             if(boundingBoxes) {
                 labelBB = qfm.boundingRect(labelStr);
                 labelBB.moveTo(icon.width() + cursorOffset,
-                               icon.height() - qfm.height() + pxBelowBase);
+                               base - qfm.height() + pxBelowBase);
+                // A glyph box is taller than the line step: cut it to the
+                // step, or a spot between two lines picks both labels.
+                if (labelBB.height() > lineStep)
+                    labelBB.setTop(labelBB.bottom() - lineStep + 1);
                 boundingBoxes->push_back(labelBB);
             }
 
@@ -5414,6 +5451,8 @@ void ViewProviderSketch::OnChange(Base::Subject<const char*> &rCaller, const cha
         "MarkerSize",
 
         "EditSketcherFontSize",
+        "ConstraintIconLabelsPerLine",
+        "ConstraintIconLabelLines",
         "EditedVertexColor",
         "EditedEdgeColor",
         "CreateLineColor",
@@ -5564,6 +5603,8 @@ void ViewProviderSketch::initParams()
             dpi = 96.0;
         edit->labelFontSize = std::lround(sketcherfontSize * dpr * 72.0 / dpi);
         edit->constraintIconSize = std::lround(0.8 * sketcherfontSize * dpr);
+        edit->iconLabelsPerLine = std::max(1L, hGrp->GetInt("ConstraintIconLabelsPerLine", 10));
+        edit->iconLabelLines = std::max(1L, hGrp->GetInt("ConstraintIconLabelLines", 3));
 
         // Markers are bitmaps in a fixed set of sizes: scale, then take the
         // nearest one up, or the largest there is.

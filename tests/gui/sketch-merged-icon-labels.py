@@ -1,4 +1,4 @@
-"""A merged constraint icon shows at most ten labels, and a "+N" for the rest.
+"""A merged constraint icon wraps its labels, and a "+N" stands for the rest.
 
 Constraint icons on one spot of the screen are merged into one image: a row
 per constraint type, the icon and then the label of every constraint in the
@@ -8,18 +8,26 @@ whole region is one group -- and an unnamed constraint of a single-icon type
 still reserved a ", " of width for its empty label. Sketch028's merged icon
 was 44879 pixels wide, nearly all of it blank.
 
-Now empty labels take no room, and a row shows ten labels and then "+N",
-whose box picks the constraints it stands for; the icon still picks every
+Now empty labels take no room, and a row wraps its labels onto lines of
+View/ConstraintIconLabelsPerLine (10) and shows at most
+View/ConstraintIconLabelLines (3) of them; past that the last slot is "+N",
+whose box picks the constraints it stands for. The icon still picks every
 constraint of its type in the group.
 
-Measured here with 30 named Horizontal constraints on one spot, through the
+Measured here with 50 named Horizontal constraints on one spot, through the
 hover pick (SketcherGui.getActiveSketchPreselection) swept over the icon:
-- the icon picks all 30;
-- ten labels pick one constraint each, and no more do;
-- one box picks the other 20 -- the "+20".
+- with the defaults: the icon picks all 50, 29 labels pick one each, and
+  one box picks the other 21 -- the "+21";
+- set to 5 per line and 2 lines during the edit: 9 labels, and a "+41".
 
-Scored against the tree before the change: 30 labels picked one each, and
-nothing picked the 20.
+Along the way, two picking defects wrapping made common: a click inside one
+label also took the labels within the pick radius of it -- the next line up
+and down -- and a blank spot of the icon (a short line's ragged end) picked
+the constraint whose node the merge happened to be drawn on.
+
+Scored against the tree before (one line, ten labels): 10 labels picked one
+each and the settings changed nothing -- three checks fail. Against the tree
+before the cap: every label picked one, and no box picked the rest.
 """
 import os
 import traceback
@@ -31,7 +39,8 @@ from PySide import QtCore
 OUT = os.environ["GT_OUT"]
 RESULT = os.environ.get("GT_RESULT", os.path.join(OUT, "result.txt"))
 DOC = "MergedIconLabels"
-N = 30
+N = 50
+VIEW = "User parameter:BaseApp/Preferences/View"
 state = {"done": False}
 
 
@@ -85,30 +94,56 @@ def edit():
         finish()
 
 
+def picks():
+    """Every distinct set of constraints one spot of the icon picks."""
+    import SketcherGui
+
+    view = state["view"]
+    cx, cy = (int(v) for v in view.getPointOnViewport(FreeCAD.Vector(0.5, 0.15, 0)))
+    found = set()
+    for dy in range(-60, 61, 2):
+        for dx in range(-700, 701, 2):
+            info = SketcherGui.getActiveSketchPreselection((cx + dx, cy + dy))
+            if not info or not info.get("ObjectName"):
+                continue
+            names = tuple(sorted(n for n in (info.get("SubElementNames") or [])
+                                 if n.startswith("Constraint")))
+            if names:
+                found.add(names)
+    state["singles"] = sorted(int(p[0][len("Constraint"):]) for p in found if len(p) == 1)
+    return sorted(len(p) for p in found)
+
+
+def judge(tag, shown):
+    sizes = picks()
+    note("%s: pick sets by size: %s" % (tag, sizes))
+    check("%s: the icon picks all %d" % (tag, N), N in sizes, sizes)
+    singles = sizes.count(1)
+    note("%s: single picks name %s" % (tag, state["singles"]))
+    check("%s: %d labels pick one constraint each, and no more do" % (tag, shown),
+          singles == shown, "%d single picks" % singles)
+    check("%s: one box picks the other %d" % (tag, N - shown), (N - shown) in sizes, sizes)
+
+
 def sweep():
     try:
-        import SketcherGui
+        judge("defaults", 29)
+        grp = FreeCAD.ParamGet(VIEW)
+        grp.SetInt("ConstraintIconLabelsPerLine", 5)
+        grp.SetInt("ConstraintIconLabelLines", 2)
+        # a preference change redraws the edit off a 100 ms timer
+        QtCore.QTimer.singleShot(1500, resized)
+    except Exception:
+        note("ABORT:\n" + traceback.format_exc())
+        finish()
 
-        view = state["view"]
-        cx, cy = (int(v) for v in view.getPointOnViewport(FreeCAD.Vector(0.5, 0.15, 0)))
-        # every distinct set of constraints one spot of the icon picks
-        picks = set()
-        for dy in range(-40, 41, 2):
-            for dx in range(-700, 701, 2):
-                info = SketcherGui.getActiveSketchPreselection((cx + dx, cy + dy))
-                if not info or not info.get("ObjectName"):
-                    continue
-                names = tuple(sorted(n for n in (info.get("SubElementNames") or [])
-                                     if n.startswith("Constraint")))
-                if names:
-                    picks.add(names)
-        sizes = sorted(len(p) for p in picks)
-        note("pick sets by size: %s" % sizes)
-        check("the icon picks all %d" % N, N in sizes, sizes)
-        singles = sizes.count(1)
-        check("ten labels pick one constraint each, and no more do",
-              singles == 10, "%d single picks" % singles)
-        check("one box picks the other %d" % (N - 10), (N - 10) in sizes, sizes)
+
+def resized():
+    try:
+        judge("5 per line, 2 lines", 9)
+        grp = FreeCAD.ParamGet(VIEW)
+        grp.RemInt("ConstraintIconLabelsPerLine")
+        grp.RemInt("ConstraintIconLabelLines")
         FreeCADGui.activeDocument().resetEdit()
     except Exception:
         note("ABORT:\n" + traceback.format_exc())

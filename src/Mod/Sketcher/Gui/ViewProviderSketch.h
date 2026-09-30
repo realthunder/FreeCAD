@@ -649,7 +649,10 @@ protected:
                             std::vector<QRect> *boundingBoxes = nullptr,
                             //! If not nullptr, gets set to the number of pixels
                             //! that the text extends below the icon base.
-                            int *vPad = nullptr);
+                            int *vPad = nullptr,
+                            //! Labels per line, the next ones wrapping below;
+                            //! 0 puts them all on one line.
+                            int labelsPerLine = 0);
 
     /// Copies a QImage constraint icon into a SoImage*
     /*! Used by drawTypicalConstraintIcon() and drawMergedConstraintIcons() */
