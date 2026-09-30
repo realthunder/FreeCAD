@@ -8943,3 +8943,79 @@ VC 18, PC 28, FC 16. **The recovery check needs a cache of its own**
 (`XDG_CACHE_HOME`), not only a fresh user home: run after the other checks
 with the shared `~/.cache/FreeCAD/Cache`, its dialog offered their
 documents first and it failed 9 of 15; with its own cache, 15 of 15.
+
+### 27.80 27.76 item 5 as built: a reference into another document (2026-09-30)
+
+**What it closes.** 27.75's gap 1: a reference whose target is another
+document's element named that document's string ids as text, and its `sids=`
+were that table's numbers. Once the target was saved on its own -- a
+compaction dropping a string nothing there held, a later recompute making it
+again under a new id -- the referrer's text named ids that were gone, and
+the numbers it held meant nothing; opening it fell to the search by geometry
+(docs/TopoNamingEnhance.md 7.16), which needs evidence.
+
+**The stored form.** `PropertyLinkBase::ShadowSub` gains `stored`, the
+element part of `first` (`;<mapped>.<indexed>`) with every `#id` imported
+into the owner document's table (`StringHasher::importText`, 27.78), and
+`storedIds`, the owner's ids it names, held. It is made whenever the
+reference is resolved (`holdShadowIDs`) and the element's table -- the
+geometry's `Hasher`, else its document's -- is not the owner's: an XLink
+into another document, and equally a `PropertyLinkSub` reaching another
+document through a link, since it is the table that decides, not the
+property. The target's ids are still held in memory in `sids`, as 27.75.
+
+**Saved.** Beside the unchanged `shadow=` (or `shadowed=`), a reference
+across tables writes `stored="..."` and `sids=` with the owner's numbers;
+the target's numbers are never written. Every other reference writes only
+ids of the owner's table, as before. A FreeCAD that does not know `stored`
+reads the file as it always did. `beforeSave` marks `storedIds` with the
+rest; a log capture takes them.
+
+**Restored.** `stored` read marks the shadow `pending`. When the reference
+registers -- `_registerElementReference` and `_updateElementReference` both
+call `lookupShadow` first -- the numbers are held in the owner's table, and
+the stored name is looked up by content in the target's
+(`StringHasher::lookupText`, new: `importText` taking nothing in). Found:
+that is the working `first`, and a value that carried the old working text
+takes the new one. Not found -- the target's table has not got a string the
+name names, so its current shape has no such element -- `first` is emptied
+and the old style name and the value carry the missing marker, so nothing
+resolves stale text or adopts the indexed name. The lookup is tried again
+each time the reference is updated, so a target that makes the string again
+is followed. A missing lookup while restoring also reaches the search by
+geometry: `_updateElementReference` returned before the search for a name
+that is the missing marker, which is right for a reference saved missing
+and wrong for one that was there at the save.
+
+**Seen with the probe** (B: a pad on one of two identical sketches and a
+fillet; A: an `App::FeaturePython` with an XLinkSub to a fillet face):
+- A saved: `shadow=";#1c;:M;FLT;:H..:7,F.Face1" stored=";#6;:M;FLT;:H..:7,F.Face1" sids="6"`,
+  `#6` of A's table expanding to B's `#1c` text;
+- B's pad swapped to the other sketch, saved, reopened and saved (only a
+  reopen let B's compaction drop `#1c`: a feature's in-memory generation
+  held it), swapped back and saved: the face is `#78` now; A opens with
+  `shadow=";#78;..."`, found by content, no search;
+- B left on the other sketch: A's lookup misses, the search finds the face
+  of the other sketch with the same geometry, and `stored` follows it;
+- retried: missing, then B changed back: the reference resolves at B's
+  recompute.
+
+**Not built.** Expressions: an element path into another document still
+writes the target's numbers in `<ExpressionIds>` and has no stored form.
+Tracing across the `;:X` marker, as 27.78.
+
+Tests: C++ `StringHasherTest.lookupTextFindsByContentAndTakesNothingIn`;
+Python `TransactionBranchCases.
+testAReferenceIntoAnotherDocumentStoresItsNameInItsOwnTable` (the stored
+name in A's table reads as B's; B re-mints the string and A's reference
+names it in B's new ids; B without it and A's reference finds the face by
+geometry).
+
+**Found on the way, not chased.** `Toponaming_tests_run
+--gtest_filter='StringHasherTest.getMemSize'` segfaults run alone; the whole
+binary passes (270). A fixture depends on an earlier test's set-up.
+
+**Gates:** Python 2962 OK (52 skipped, 6 expected failures; +1), ctest
+848/848 (`Toponaming_tests_run` 270 cases).
+The GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, each in a user home and
+cache of its own.
