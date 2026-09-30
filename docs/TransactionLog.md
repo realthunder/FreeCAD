@@ -9475,3 +9475,55 @@ kept because it is identical on a forward edge and right on a reversed one.
 failures), ctest 850/850, the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16,
 VW 14; the thickness suite unchanged (FAIL 1 -- the loft above -- PASS 9,
 XFAIL 8).
+
+### 27.87 The thickness suite's loft: a sketch's edges ran against their geometry (user, 2026-09-30)
+
+27.86 found the fork's `tests/thickness` case `issue2_broken_loft` failing
+(volume 2055.8164, reference 6143.8106). Chased; the cause is in FreeCAD, not
+OCCT, and it is fixed.
+
+**The chain.** The AdditiveLoft lofts a ring (`Sketch001`: two concentric
+circles) to two nested rectangles (`Sketch002`), pairing the sections' wires by
+position. The circles' radii are not numbers: two point-on-object constraints
+put circle 1 through one end and circle 0 through the other end of an external
+edge, `Sketch.Edge4` -- a line of the Revolution's profile. After a recompute
+that external edge came in reversed, so the circles swapped radii, `Sketch001`'s
+wires came out outer first while `Sketch002`'s stay inner first, and the loft
+paired the outer circle with the inner rectangle and the inner with the outer:
+a tool solid of volume -393.87, inside out, where 3694.12 is right (the two
+single lofts are 24711.01 and 21016.89). Fused onto the Revolution it cut.
+
+**Cause.** `TopoShape::makEWires` -- which builds every sketch's shape -- was
+rewritten on 2026-08-23 (`dfd8d36b90`) to sort the edges into runs with
+`sortEdgesAll` and hand each run to `BRepBuilderAPI_MakeWire`. `sortEdgesAll`
+turns an edge that runs against its run by making a new edge on the reversed
+curve (`extractRun`'s `reverseEdge`); before, `MakeWire` got the edges as they
+were and oriented them. So a line drawn against its loop -- `Sketch.Edge4`,
+geometry 17.3 -> 18.5 -- became an edge whose curve runs 18.5 -> 17.3, and
+everything that reads an edge's curve saw it backwards: external geometry, and
+through it constraints on the ends. The shape stored in the file (built by the
+old code) has the geometry's curve, oriented REVERSED in the wire. Not the
+freeze, not the fork (27.86's fix changes nothing here).
+
+**Fix.** `sortEdgesAll` (and `extractRun`) take `reverse`, default true;
+`makEWires` passes false and gives `MakeWire` the edges as they are, as before
+the rewrite. `makEOrderedWires` keeps the reversed copies it always made.
+
+**Result.** The loft's tool 3694.1223, the body 6143.8106 -- the reference; the
+suite PASS 10, XFAIL 8.
+
+**Documents saved since 2026-08-23.** A sketch recomputed in that window may
+have solved on reversed external edges and saved that solution; a recompute
+with the fix solves on the geometry's direction again.
+
+Test: `SketcherTests.TestSketchExternalGeometry.
+testAnEdgeDrawnAgainstItsLoopKeepsItsDirection` (a closed profile with one
+line drawn against the loop: every shape edge's curve starts where its
+geometry does, and an external edge taken from that line runs as the line
+does). Fails without the fix ("Edge4", 2.0 off), passes with it.
+
+Commits: `a7810f1d93` (the fix), `0b0ddd9871` (the test).
+
+**Gates:** Python 2966 OK (52 skipped, 6 expected failures; +1), ctest
+850/850, the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14; the fork's
+thickness suite PASS 10, XFAIL 8.
