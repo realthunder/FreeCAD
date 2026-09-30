@@ -193,7 +193,10 @@ class SprocketTaskPanel:
         QtCore.QObject.connect(self.form.Quantity_Pitch, QtCore.SIGNAL("valueChanged(double)"), self.pitchChanged)
         QtCore.QObject.connect(self.form.Quantity_RollerDiameter, QtCore.SIGNAL("valueChanged(double)"), self.rollerDiameterChanged)
         QtCore.QObject.connect(self.form.spinBox_NumberOfTeeth, QtCore.SIGNAL("valueChanged(int)"), self.numTeethChanged)
-        QtCore.QObject.connect(self.form.comboBox_SprocketReference, QtCore.SIGNAL("currentTextChanged(const QString)"), self.sprocketReferenceChanged)
+        # The combo lists the table's keys in its order, translated: go by
+        # the index, never by the text (upstream 0de4c053a6)
+        self.references = list(Sprocket.SprocketReferenceRollerTable)
+        QtCore.QObject.connect(self.form.comboBox_SprocketReference, QtCore.SIGNAL("currentIndexChanged(int)"), self.sprocketReferenceIndexChanged)
         QtCore.QObject.connect(self.form.Quantity_Thickness, QtCore.SIGNAL("valueChanged(double)"), self.thicknessChanged)
 
         self.update()
@@ -209,7 +212,9 @@ class SprocketTaskPanel:
         self.obj.NumberOfTeeth = self.form.spinBox_NumberOfTeeth.value()
         self.obj.Pitch = self.form.Quantity_Pitch.text()
         self.obj.RollerDiameter = self.form.Quantity_RollerDiameter.text()
-        self.obj.SprocketReference = self.form.comboBox_SprocketReference.currentText()
+        index = self.form.comboBox_SprocketReference.currentIndex()
+        if 0 <= index < len(self.references):
+            self.obj.SprocketReference = self.references[index]
         self.obj.Thickness = self.form.Quantity_Thickness.text()
 
     def transferFrom(self):
@@ -219,13 +224,19 @@ class SprocketTaskPanel:
         self.form.spinBox_NumberOfTeeth.setValue(self.obj.NumberOfTeeth)
         self.form.Quantity_Pitch.setText(self.obj.Pitch.UserString)
         self.form.Quantity_RollerDiameter.setText(self.obj.RollerDiameter.UserString)
-        self.form.comboBox_SprocketReference.setCurrentText(self.obj.SprocketReference)
+        if self.obj.SprocketReference in self.references:
+            self.form.comboBox_SprocketReference.setCurrentIndex(
+                self.references.index(self.obj.SprocketReference))
         self.form.Quantity_Thickness.setText(self.obj.Thickness.UserString)
 
     def pitchChanged(self, value):
         self.obj.Pitch = value
         self.obj.Proxy.execute(self.obj)
         FreeCAD.Gui.SendMsgToActiveView("ViewFit")
+
+    def sprocketReferenceIndexChanged(self, index):
+        if 0 <= index < len(self.references):
+            self.sprocketReferenceChanged(self.references[index])
 
     def sprocketReferenceChanged(self, size):
         self.obj.Pitch          = str(Sprocket.SprocketReferenceRollerTable[size][0]) + " in"
