@@ -528,7 +528,13 @@ TopoDS_Shape shallowMove(const TopoDS_Shape& shape, const TopLoc_Location& motio
     }
     if (std::abs(motion.Transformation().ScaleFactor() - 1.0) > 1e-12)
         return {};
-    TopoDS_Shape top = shape.EmptyCopied();
+    // Built on the TShape alone, the location and orientation put back after:
+    // the children come as the TShape holds them, and Add() would move each by
+    // the inverse of a located top and reverse it under a reversed one -- a
+    // reversed face came back with its wires turned (sec 27.85).
+    TopoDS_Shape plain;
+    plain.TShape(shape.TShape());
+    TopoDS_Shape top = plain.EmptyCopied();
     if (shape.ShapeType() == TopAbs_FACE)
         moveOwnSurface(shape, top, motion);
     BRep_Builder builder;
@@ -538,6 +544,8 @@ TopoDS_Shape shallowMove(const TopoDS_Shape& shape, const TopLoc_Location& motio
     top.Orientable(shape.Orientable());
     top.Infinite(shape.Infinite());
     top.Convex(shape.Convex());
+    top.Location(shape.Location(), false);
+    top.Orientation(shape.Orientation());
     return top;
 }
 
