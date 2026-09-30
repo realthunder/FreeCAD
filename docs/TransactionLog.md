@@ -9407,3 +9407,71 @@ Commits: `0fbd74a078` (the fix), `7780ff7601` (the test).
 
 **Gates:** Python 2965 OK (52 skipped, 6 expected failures; +1), ctest
 850/850, the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14.
+
+### 27.86 Audit: shape copies built in the wrong frame (user, 2026-09-30)
+
+27.84 and 27.85 were one mistake twice: a new node made with `EmptyCopied()` of
+a shape as held -- location and orientation kept -- and filled with children
+taken as the TShape holds them. `TopoDS_Builder::Add` moves a child by the
+inverse of a located parent and reverses it under a reversed one, so parent and
+children must be in one frame: both as held (a bare copy, children without
+accumulation, then location and orientation set on the copy), or both
+accumulated. The user asked for every such site to be checked before going on.
+
+**Searched.** In FreeCAD (`src/` less `3rdParty`), every `EmptyCopied`/
+`EmptyCopy`, every `TShape(...)` setter and every `TopoDS_Iterator` without
+accumulation; in the OCCT fork, the lines the fork's own 57 commits add, for
+the same plus `Located`/`Moved`/`Move`/`Composed`/`Location(...)`/
+`Orientation(...)` and the thaw helpers.
+
+**FreeCAD.** No other site. `ThawInputs::thaw` and `restore`
+(`PropertyTopoShape.cpp`) build on the bare TShape and set location and
+orientation after -- right. The `ShapeRefSet` walks without accumulation read
+or write (the writer emits each child's own location, as the format wants);
+its reader builds each record bare and sets a token's orientation and location
+outright -- right. `freeze`, `hasFrozenPart`, `Attacher` (a type query) and
+`ImportOCAF2` (assembly children meant in their own frame) build nothing. The
+thawed-copy naming in `TopoShape::mapSubElement` swaps the TShape under the
+element's own location, which is where the copies are put -- right.
+
+**The fork.** `copyForThaw` fixed in 27.84; `thawedFor`/`replaceChildren` work
+on bare TShapes -- right; `BRepLib_MakeWire::thawVertex` and its edge copies
+take children accumulated into a copy that keeps the parent's location and
+orientation -- right, the same as upstream's copy in `Add`. `BRep_Builder`'s
+frozen-edge checks compare the location a representation stores
+(`L.Predivided(E.Location())`, and for `UpdateVertex` on a pcurve the caller's
+`L`, as upstream matches it there, BUC60407) -- consistent. The STEP
+regularity claim strips the location only to make a key; the pcurve recovery
+in `BRepTools.cxx` states its frame derivation and holds.
+
+**One more of the kind, in the fork's MakeThickSolid port** (`1789444318`,
+`TrimEdges`, the branch for a face with no offset counterpart): `NE =
+aS.EmptyCopied()` then `TopExp::Vertices(aS, V1, V2)` without `CumOri` and
+`Add(NE, V)` -- a reversed `aS` gives `NE` its ends swapped. `aS` comes from
+`TopExp::MapShapes` over the face, so it is reversed as often as not. Fixed
+by taking the vertices with the orientation composed (fork `c053760911`),
+identical for a forward edge.
+
+*Reach:* only thickness in intersection mode reaches the branch -- the fork's
+`tests/thickness` suite (intersection off) never does. A probe of 276
+thickness runs with intersection on (box, cylinder, holes, cones, sphere,
+torus, a slotted tube, boss and pocket; each face, +/-1, joins 0 and 2)
+reached it 28 times, 8 with a reversed edge (sphere, torus, two tube faces).
+Every result is the same with and without the fix: whatever those edges
+become downstream hides the swapped ends. **Not reproduced as a wrong shape**;
+kept because it is identical on a forward edge and right on a reversed one.
+
+**Found, not chased.**
+- *The thickness suite has a regression:* `issue2_broken_loft` fails, volume
+  2055.8164 where the reference is 6143.8106, the same with the freeze on and
+  off. The revert the README names as its guard (`myPercent` 0.01 in
+  `BRepFill_CompatibleWires`) is in place. 27.77's loft-cap change is naming
+  only. Cause unknown; summary otherwise PASS 9, XFAIL 8 as recorded.
+- *Thickness in intersection mode is not deterministic:* the same build gives
+  `lbox_f1_-1_j0` a valid solid in one run and `StdFail_NotDone` in the next
+  (join 0; hash order, as `933803af41` fixed elsewhere in the chain).
+
+**Gates** (with `c053760911`): Python 2965 OK (52 skipped, 6 expected
+failures), ctest 850/850, the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16,
+VW 14; the thickness suite unchanged (FAIL 1 -- the loft above -- PASS 9,
+XFAIL 8).
