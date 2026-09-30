@@ -90,6 +90,7 @@ public:
     long EditRecomputeWait;
     bool AdjustCameraForNewFeature;
     unsigned long DefaultDatumColor;
+    unsigned long DefaultDatumLineColor;
     bool RespectSystemDPI;
     bool ShapeInstancing;
     long SelectionPickThreshold;
@@ -145,6 +146,8 @@ public:
         funcs["AdjustCameraForNewFeature"] = &PartParamsP::updateAdjustCameraForNewFeature;
         DefaultDatumColor = this->handle->GetUnsigned("DefaultDatumColor", 0xFFD70066);
         funcs["DefaultDatumColor"] = &PartParamsP::updateDefaultDatumColor;
+        DefaultDatumLineColor = this->handle->GetUnsigned("DefaultDatumLineColor", 0xFA9600FF);
+        funcs["DefaultDatumLineColor"] = &PartParamsP::updateDefaultDatumLineColor;
         RespectSystemDPI = this->handle->GetBool("RespectSystemDPI", false);
         funcs["RespectSystemDPI"] = &PartParamsP::updateRespectSystemDPI;
         ShapeInstancing = this->handle->GetBool("ShapeInstancing", true);
@@ -279,6 +282,10 @@ public:
     static void updateDefaultDatumColor(PartParamsP *self) {
         self->DefaultDatumColor = self->handle->GetUnsigned("DefaultDatumColor", 0xFFD70066);
     }
+    // Auto generated code (Tools/params_utils.py:314)
+    static void updateDefaultDatumLineColor(PartParamsP *self) {
+        self->DefaultDatumLineColor = self->handle->GetUnsigned("DefaultDatumLineColor", 0xFA9600FF);
+    }
     // Auto generated code (Tools/params_utils.py:322)
     static void updateRespectSystemDPI(PartParamsP *self) {
         auto v = self->handle->GetBool("RespectSystemDPI", false);
@@ -376,6 +383,12 @@ static const App::ParamRegistry::Registrar _PartParamsRegistrar({
         .setTitle("Adjust Camera For New Feature"),
     App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "DefaultDatumColor", "DefaultDatumColor", App::ParamInfo::Hex, 0xFFD70066)
         .setTitle("Default Datum Color")
+        .setProxy("Color")
+        .setTransparency(true),
+    App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "DefaultDatumLineColor", "DefaultDatumLineColor", App::ParamInfo::Hex, 0xFA9600FF)
+        .setTitle("Default Datum Line Color")
+        .setDoc("Line and point color of a shape binder, darker than DefaultDatumColor\n"
+"so that its outline shows against the model (upstream 5dbb4d7c7e)")
         .setProxy("Color")
         .setTransparency(true),
     App::ParamInfo("PartGui", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "RespectSystemDPI", "RespectSystemDPI", App::ParamInfo::Bool, false)
@@ -1003,6 +1016,35 @@ void PartParams::setDefaultDatumColor(const unsigned long &v) {
 // Auto generated code (Tools/params_utils.py:431)
 void PartParams::removeDefaultDatumColor() {
     instance()->handle->RemoveUnsigned("DefaultDatumColor");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docDefaultDatumLineColor() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"Line and point color of a shape binder, darker than DefaultDatumColor\n"
+"so that its outline shows against the model (upstream 5dbb4d7c7e)");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const unsigned long & PartParams::getDefaultDatumLineColor() {
+    return instance()->DefaultDatumLineColor;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const unsigned long & PartParams::defaultDefaultDatumLineColor() {
+    const static unsigned long def = 0xFA9600FF;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setDefaultDatumLineColor(const unsigned long &v) {
+    instance()->handle->SetUnsigned("DefaultDatumLineColor",v);
+    instance()->DefaultDatumLineColor = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeDefaultDatumLineColor() {
+    instance()->handle->RemoveUnsigned("DefaultDatumLineColor");
 }
 
 // Auto generated code (Tools/params_utils.py:397)

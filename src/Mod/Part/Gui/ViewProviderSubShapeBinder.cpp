@@ -97,10 +97,11 @@ void ViewProviderSubShapeBinder::onChanged(const App::Property *prop) {
             //get the datum coloring scheme
             // set default color for datums (golden yellow with 60% transparency)
             shapeColor.setPackedValue(PartParams::getDefaultDatumColor());
-            lineColor = shapeColor;
-            pointColor = shapeColor;
+            // A darker outline at the usual width (upstream 5dbb4d7c7e)
+            lineColor.setPackedValue(PartParams::getDefaultDatumLineColor());
+            pointColor = lineColor;
             transparency = 60;
-            linewidth = 1;
+            linewidth = Gui::ViewParams::getDefaultShapeLineWidth();
             mapLine = mapPoint = mapTrans = false;
             mapFace = true;
         } else {
