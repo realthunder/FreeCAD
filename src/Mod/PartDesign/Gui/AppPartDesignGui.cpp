@@ -63,6 +63,7 @@
 #include "ViewProviderSolid.h"
 #include "ViewProviderSplit.h"
 #include "ViewProviderThickness.h"
+#include "ViewProviderDefeaturing.h"
 #include "ViewProviderWrap.h"
 
 // use a different name to CreateCommand()
@@ -140,6 +141,7 @@ PyMOD_INIT_FUNC(PartDesignGui)
     PartDesignGui::ViewProviderFillet        ::init();
     PartDesignGui::ViewProviderDraft         ::init();
     PartDesignGui::ViewProviderThickness     ::init();
+    PartDesignGui::ViewProviderDefeaturing   ::init();
     PartDesignGui::ViewProviderTransformed   ::init();
     PartDesignGui::ViewProviderMirrored      ::init();
     PartDesignGui::ViewProviderPattern       ::init();

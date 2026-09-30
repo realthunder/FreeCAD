@@ -275,6 +275,7 @@ void Workbench::activated()
         "PartDesign_Chamfer",
         "PartDesign_Draft",
         "PartDesign_Thickness",
+        "PartDesign_Defeaturing",
         "PartDesign_Extrusion",
         "PartDesign_Point",
         "PartDesign_Line",
@@ -377,6 +378,7 @@ void Workbench::activated()
         "PartDesign_Chamfer",
         "PartDesign_Draft",
         "PartDesign_Thickness",
+        "PartDesign_Defeaturing",
         "PartDesign_Extrusion",
         nullptr};
     Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
@@ -435,6 +437,7 @@ void Workbench::activated()
 
     const char* Offset[] = {
         "PartDesign_Thickness",
+        "PartDesign_Defeaturing",
         0};
     Watcher.push_back(new Gui::TaskView::TaskWatcherCommands(
         "SELECT PartDesign::Feature COUNT 1",
@@ -544,7 +547,8 @@ Gui::MenuItem* Workbench::setupMenuBar() const
     *dressups << "PartDesign_Fillet"
               << "PartDesign_Chamfer"
               << "PartDesign_Draft"
-              << "PartDesign_Thickness";
+              << "PartDesign_Thickness"
+              << "PartDesign_Defeaturing";
 
     *part << "PartDesign_Body"
           << "Separator"
@@ -665,6 +669,7 @@ Gui::ToolBarItem* Workbench::setupToolBars() const
           << "PartDesign_Chamfer"
           << "PartDesign_Draft"
           << "PartDesign_Thickness"
+          << "PartDesign_Defeaturing"
           << "Separator"
           << "PartDesign_Boolean"
           << "PartDesign_Split"

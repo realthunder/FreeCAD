@@ -2084,6 +2084,59 @@ bool CmdPartDesignThickness::isActive()
 }
 
 //===========================================================================
+// PartDesign_Defeaturing
+//===========================================================================
+
+DEF_STD_CMD_A(CmdPartDesignDefeaturing)
+
+CmdPartDesignDefeaturing::CmdPartDesignDefeaturing()
+  :Command("PartDesign_Defeaturing")
+{
+    sAppModule    = "PartDesign";
+    sGroup        = QT_TR_NOOP("PartDesign");
+    sMenuText     = QT_TR_NOOP("Defeaturing");
+    sToolTipText  = QT_TR_NOOP("Removes the selected faces from a solid and heals the gap: "
+                               "takes a hole, a fillet or a boss off");
+    sWhatsThis    = "PartDesign_Defeaturing";
+    sStatusTip    = sToolTipText;
+    sPixmap       = "PartDesign_Defeaturing";
+
+    Gui::Application::Instance->commandManager().registerCallback(
+            std::bind(&commandOverride, this, 0, sp::_1, sp::_2), "Part_Defeaturing");
+}
+
+void CmdPartDesignDefeaturing::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    Gui::SelectionObject selected;
+    bool useAllEdges = false;
+    bool noSelection = false;
+    if (!dressupGetSelected(this, "Defeaturing", selected, useAllEdges, noSelection))
+        return;
+
+    Part::Feature* base;
+    std::vector<std::string> SubNames;
+    if (noSelection) {
+        base = static_cast<Part::Feature*>(PartDesignGui::getBody(true)->Tip.getValue());
+    }
+    else {
+        base = static_cast<Part::Feature*>(selected.getObject());
+        // faces only (upstream c70d9b2992)
+        for (const auto &sub : selected.getSubNames()) {
+            if (sub.compare(0, 4, "Face") == 0)
+                SubNames.push_back(sub);
+        }
+    }
+
+    finishDressupFeature(this, "Defeaturing", base, SubNames, false);
+}
+
+bool CmdPartDesignDefeaturing::isActive()
+{
+    return hasActiveDocument();
+}
+
+//===========================================================================
 // Common functions for all Transformed features
 //===========================================================================
 
@@ -3196,6 +3249,7 @@ void CreatePartDesignCommands()
     rcCmdMgr.addCommand(new CmdPartDesignDraft());
     rcCmdMgr.addCommand(new CmdPartDesignChamfer());
     rcCmdMgr.addCommand(new CmdPartDesignThickness());
+    rcCmdMgr.addCommand(new CmdPartDesignDefeaturing());
 
     rcCmdMgr.addCommand(new CmdPartDesignMirrored());
     rcCmdMgr.addCommand(new CmdPartDesignLinearPattern());

@@ -1,6 +1,7 @@
 from . import TestBoolean
 from . import TestChamfer
 from . import TestDatum
+from . import TestDefeaturing
 from . import TestDraft
 from . import TestFillet
 from . import TestHole

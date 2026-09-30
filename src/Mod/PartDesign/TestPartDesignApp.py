@@ -59,6 +59,7 @@ from PartDesignTests.TestFillet import TestFillet
 from PartDesignTests.TestChamfer import TestChamfer
 from PartDesignTests.TestDraft import TestDraft
 from PartDesignTests.TestThickness import TestThickness
+from PartDesignTests.TestDefeaturing import TestDefeaturing
 
 # extras
 from PartDesignTests.TestInvoluteGear import TestInvoluteGear

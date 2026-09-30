@@ -44,6 +44,7 @@ set(PartDesignGui_UIC_SRCS
     TaskFilletParameters.ui
     TaskDraftParameters.ui
     TaskThicknessParameters.ui
+    TaskDefeaturingParameters.ui
     TaskBooleanParameters.ui
     TaskHoleParameters.ui
     TaskRevolutionParameters.ui
@@ -88,6 +89,8 @@ SET(PartDesignGuiViewProvider_SRCS
     ViewProviderDraft.h
     ViewProviderThickness.cpp
     ViewProviderThickness.h
+    ViewProviderDefeaturing.cpp
+    ViewProviderDefeaturing.h
     ViewProviderDressUp.cpp
     ViewProviderDressUp.h
     ViewProviderRevolution.cpp
@@ -172,6 +175,9 @@ SET(PartDesignGuiTaskDlgs_SRCS
     TaskThicknessParameters.ui
     TaskThicknessParameters.cpp
     TaskThicknessParameters.h
+    TaskDefeaturingParameters.ui
+    TaskDefeaturingParameters.cpp
+    TaskDefeaturingParameters.h
     TaskDressUpParameters.cpp
     TaskDressUpParameters.h
     TaskRevolutionParameters.ui
