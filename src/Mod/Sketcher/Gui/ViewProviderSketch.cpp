@@ -2772,6 +2772,7 @@ std::set<int> ViewProviderSketch::detectPreselectionConstr(const SoPickedPoint *
         auto it = edit->constraNodeMap.find(sep);
         if (it != edit->constraNodeMap.end()) {
             int i = it->second;
+            bool combined = false;
             if (sep->getNumChildren() > CONSTRAINT_SEPARATOR_INDEX_FIRST_CONSTRAINTID) {
                 SoInfo *constrIds = NULL;
                 if (tail == sep->getChild(CONSTRAINT_SEPARATOR_INDEX_FIRST_ICON)) {
@@ -2789,6 +2790,7 @@ std::set<int> ViewProviderSketch::detectPreselectionConstr(const SoPickedPoint *
                     QString constrIdsStr = QString::fromUtf8(constrIds->string.getValue().getString());
                     if (edit->combinedConstrBoxes.count(constrIdsStr) && tail->isOfType(SoImage::getClassTypeId())) {
                         // If it's a combined constraint icon
+                        combined = true;
 
                         // Screen dimensions of the icon
                         SbVec3s iconSize = getDisplayedSize(static_cast<SoImage *>(tail));
@@ -2869,6 +2871,18 @@ std::set<int> ViewProviderSketch::detectPreselectionConstr(const SoPickedPoint *
                         iconY = iconSize[1] - iconY;
 
                         auto & bboxes = edit->combinedConstrBoxes[constrIdsStr];
+                        // A box the point is inside outranks those it is only
+                        // within the pick radius of: wrapped lines of labels
+                        // are closer than two radii, and a click on one label
+                        // took the ones above and below it along.
+                        bool inside = false;
+                        for (auto &b : bboxes) {
+                            if (b.first.contains(iconX, iconY)) {
+                                inside = true;
+                                break;
+                            }
+                        }
+                        const int reach = inside ? 0 : r;
                         for (ConstrIconBBVec::iterator b = bboxes.begin(); b != bboxes.end(); ++b) {
 
 #ifdef FC_DEBUG
@@ -2878,7 +2892,7 @@ std::set<int> ViewProviderSketch::detectPreselectionConstr(const SoPickedPoint *
                             /*Base::Console().Log("Abs(%f,%f),Trans(%f,%f),Coords(%d,%d),iCoords(%f,%f),icon(%d,%d),isize(%d,%d),boundingbox([%d,%d],[%d,%d])\n", absPos[0],absPos[1],trans[0], trans[1], cursorPos[0], cursorPos[1], iconCoords[0], iconCoords[1], iconX, iconY, iconSize[0], iconSize[1], b->first.topLeft().x(),b->first.topLeft().y(),b->first.bottomRight().x(),b->first.bottomRight().y());*/
 #endif
 
-                            if (b->first.adjusted(-r, -r, r, r).contains(iconX, iconY)) {
+                            if (b->first.adjusted(-reach, -reach, reach, reach).contains(iconX, iconY)) {
                                 // We've found a bounding box that contains the mouse pointer!
                                 if (preselect) {
                                     QPointF v = QPoint(iconX, iconY) - b->first.center();
@@ -2902,7 +2916,10 @@ std::set<int> ViewProviderSketch::detectPreselectionConstr(const SoPickedPoint *
                     }
                 }
             }
-            if (constrIndices.empty()) {
+            // A blank spot of a combined icon -- the ragged end of a line of
+            // labels -- picks nothing, as upstream: the node's own constraint
+            // is only the one whose icon the merge happened to be drawn on.
+            if (constrIndices.empty() && !combined) {
                 // other constraint icons - eg radius...
                 constrIndices.insert(i);
             }
