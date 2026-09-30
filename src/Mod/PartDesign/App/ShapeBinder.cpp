@@ -28,6 +28,7 @@
 # include <BRep_Builder.hxx>
 # include <BRepBuilderAPI_MakeEdge.hxx>
 # include <BRepBuilderAPI_MakeFace.hxx>
+# include <BRepBuilderAPI_MakeVertex.hxx>
 #endif
 
 #include <unordered_map>
@@ -189,6 +190,10 @@ void ShapeBinder::getFilteredReferences(const App::PropertyLinkSubList* prop,
                 obj = static_cast<App::GeoFeature*>(it);
                 break;
             }
+            else if (it && it->isDerivedFrom<App::Point>()) {
+                obj = static_cast<App::GeoFeature*>(it);
+                break;
+            }
         }
     }
 }
@@ -234,6 +239,12 @@ Part::TopoShape ShapeBinder::buildShapeFromReferences(App::GeoFeature* obj, std:
         gp_Pln plane;
         BRepBuilderAPI_MakeFace mkFace(plane);
         Part::TopoShape shape(mkFace.Shape());
+        shape.setPlacement(obj->Placement.getValue());
+        return shape;
+    }
+    else if (obj->isDerivedFrom<App::Point>()) {
+        BRepBuilderAPI_MakeVertex mkPoint(gp_Pnt(0, 0, 0));
+        Part::TopoShape shape(mkPoint.Shape());
         shape.setPlacement(obj->Placement.getValue());
         return shape;
     }

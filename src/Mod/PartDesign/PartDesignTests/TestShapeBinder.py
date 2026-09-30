@@ -46,6 +46,18 @@ class TestShapeBinder(unittest.TestCase):
         self.assertIn('Box', self.ShapeBinder.OutList[0].Label)
         self.assertIn('Body001', self.ShapeBinder.InList[0].Label)
 
+    def testPointReference(self):
+        # A datum point binds as a vertex where it is (upstream c5fbbb3830);
+        # the binder was empty
+        body = self.Doc.addObject('PartDesign::Body', 'PointBody')
+        point = [o for o in body.Origin.OriginFeatures if o.TypeId == 'App::Point'][0]
+        binder = body.newObject('PartDesign::ShapeBinder', 'PointBinder')
+        binder.Support = [(point, '')]
+        self.Doc.recompute()
+        self.assertFalse(binder.Shape.isNull())
+        self.assertEqual(len(binder.Shape.Vertexes), 1)
+        self.assertAlmostEqual(binder.Shape.Vertexes[0].Point.Length, 0)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestShapeBinder")
