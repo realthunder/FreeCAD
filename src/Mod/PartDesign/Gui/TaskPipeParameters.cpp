@@ -181,7 +181,7 @@ TaskPipeOrientation::TaskPipeOrientation(ViewProviderPipe* PipeView, bool /*newO
     QBoxLayout * boxLayout = qobject_cast<QBoxLayout*>(ui->auxiliary->layout());
     if (boxLayout) {
         PartDesign::Pipe* pcPipe = static_cast<PartDesign::Pipe*>(PipeView->getObject());
-        auxSpineWidget = new LinkSubWidget(this, tr("Aux Path"), pcPipe->AuxillerySpine);
+        auxSpineWidget = new LinkSubWidget(this, tr("Aux Path"), pcPipe->AuxiliarySpine);
         auxSpineWidget->setSelectionMode(SelectionMode::refAuxSpine);
         boxLayout->addWidget(auxSpineWidget);
     }
@@ -224,7 +224,7 @@ void TaskPipeOrientation::refresh()
 
     PartDesign::Pipe* pipe = static_cast<PartDesign::Pipe*>(vp->getObject());
 
-    ui->curvelinear->setChecked(pipe->AuxilleryCurvelinear.getValue());
+    ui->curvelinear->setChecked(pipe->AuxiliaryCurvilinear.getValue());
 
     int idx = pipe->Mode.getValue();
     ui->comboBoxMode->setCurrentIndex(idx);
@@ -247,7 +247,7 @@ void TaskPipeOrientation::onOrientationChanged(int idx) {
     setupTransaction();
     auto pipe = static_cast<PartDesign::Pipe*>(vp->getObject());
     pipe->Mode.setValue(idx);
-    if (idx != 3 || pipe->AuxillerySpine.getValue()) {
+    if (idx != 3 || pipe->AuxiliarySpine.getValue()) {
         recomputeFeature();
     }
     if (idx == 3) {
@@ -261,7 +261,7 @@ void TaskPipeOrientation::onOrientationChanged(int idx) {
 void TaskPipeOrientation::onCurvelinearChanged(bool checked)
 {
     setupTransaction();
-    static_cast<PartDesign::Pipe*>(vp->getObject())->AuxilleryCurvelinear.setValue(checked);
+    static_cast<PartDesign::Pipe*>(vp->getObject())->AuxiliaryCurvilinear.setValue(checked);
     recomputeFeature();
 }
 

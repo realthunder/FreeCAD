@@ -73,11 +73,11 @@ Pipe::Pipe()
     ADD_PROPERTY_TYPE(Spine, (nullptr), "Sweep", App::Prop_None, "Path to sweep along");
     ADD_PROPERTY_TYPE(SpineTangent, (false), "Sweep", App::Prop_None,
         "Include tangent edges into path");
-    ADD_PROPERTY_TYPE(AuxillerySpine, (nullptr), "Sweep", App::Prop_None,
+    ADD_PROPERTY_TYPE(AuxiliarySpine, (nullptr), "Sweep", App::Prop_None,
         "Secondary path to orient sweep");
-    ADD_PROPERTY_TYPE(AuxillerySpineTangent, (false), "Sweep", App::Prop_None,
+    ADD_PROPERTY_TYPE(AuxiliarySpineTangent, (false), "Sweep", App::Prop_None,
         "Include tangent edges into secondary path");
-    ADD_PROPERTY_TYPE(AuxilleryCurvelinear, (true), "Sweep", App::Prop_None,
+    ADD_PROPERTY_TYPE(AuxiliaryCurvilinear, (true), "Sweep", App::Prop_None,
         "Calculate normal between equidistant points on both spines");
     ADD_PROPERTY_TYPE(Mode, (long(0)), "Sweep", App::Prop_None, "Profile mode");
     ADD_PROPERTY_TYPE(Binormal, (Base::Vector3d()), "Sweep", App::Prop_None,
@@ -128,7 +128,7 @@ App::DocumentObjectExecReturn *Pipe::execute()
 
         // auxiliary
         if(Mode.getValue()==3) {
-            auxpath = buildPipePath(AuxillerySpine,invObjLoc);
+            auxpath = buildPipePath(AuxiliarySpine,invObjLoc);
             if(auxpath.isNull())
                 return new App::DocumentObjectExecReturn(
                         QT_TRANSLATE_NOOP("Exception", "invalid auxiliary spine"));
@@ -147,7 +147,7 @@ App::DocumentObjectExecReturn *Pipe::execute()
                     invObjLoc,
                     Transition.getValue(),
                     auxpath,
-                    AuxilleryCurvelinear.getValue(),
+                    AuxiliaryCurvilinear.getValue(),
                     Mode.getValue(),
                     Binormal.getValue(),
                     Transformation.getValue(),
@@ -440,7 +440,7 @@ void Pipe::setupAlgorithm(BRepOffsetAPI_MakePipeShell& mkPipeShell,
 
     if(auxiliary) {
         mkPipeShell.SetMode(TopoDS::Wire(auxshape.getShape()), auxCurveLinear);
-        //mkPipeShell.SetMode(TopoDS::Wire(auxshape), AuxilleryCurvelinear.getValue(), BRepFill_ContactOnBorder);
+        //mkPipeShell.SetMode(TopoDS::Wire(auxshape), AuxiliaryCurvilinear.getValue(), BRepFill_ContactOnBorder);
     }
 }
 
@@ -533,6 +533,28 @@ void Pipe::handleChangedPropertyType(Base::XMLReader& reader, const char* TypeNa
     }
     else {
         ProfileBased::handleChangedPropertyType(reader, TypeName, prop);
+    }
+}
+
+void Pipe::handleChangedPropertyName(Base::XMLReader& reader, const char* TypeName,
+                                     const char* PropName)
+{
+    // The auxiliary spine properties were misspelled before (upstream
+    // fa3c6e1068): AuxillerySpine, AuxillerySpineTangent, AuxilleryCurvelinear
+    Base::Type type = Base::Type::fromName(TypeName);
+    if (type == AuxiliarySpine.getClassTypeId() && strcmp(PropName, "AuxillerySpine") == 0) {
+        AuxiliarySpine.Restore(reader);
+    }
+    else if (type == AuxiliarySpineTangent.getClassTypeId()
+             && strcmp(PropName, "AuxillerySpineTangent") == 0) {
+        AuxiliarySpineTangent.Restore(reader);
+    }
+    else if (type == AuxiliaryCurvilinear.getClassTypeId()
+             && strcmp(PropName, "AuxilleryCurvelinear") == 0) {
+        AuxiliaryCurvilinear.Restore(reader);
+    }
+    else {
+        ProfileBased::handleChangedPropertyName(reader, TypeName, PropName);
     }
 }
 

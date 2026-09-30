@@ -19,7 +19,11 @@
 #*                                                                         *
 #***************************************************************************
 
+import math
+import os
+import tempfile
 import unittest
+import zipfile
 
 import FreeCAD
 import Part
@@ -86,6 +90,58 @@ class TestPipe(unittest.TestCase):
         self.SubtractivePipe.Spine = self.SpineSketch
         self.Doc.recompute()
         self.assertAlmostEqual(self.SubtractivePipe.Shape.Volume, 100 - 3.14159265)
+
+    def testAuxiliarySpineNames(self):
+        # The auxiliary spine properties were misspelled; upstream renamed
+        # them (fa3c6e1068). A file under either spelling keeps its spine
+        body = self.Doc.addObject('PartDesign::Body', 'AuxBody')
+        profile = body.newObject('Sketcher::SketchObject', 'Profile')
+        profile.addGeometry(Part.Circle(FreeCAD.Vector(), FreeCAD.Vector(0, 0, 1), 2), False)
+        spine = body.newObject('Sketcher::SketchObject', 'Spine')
+        spine.Placement = FreeCAD.Placement(
+            FreeCAD.Vector(), FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), 90))
+        spine.addGeometry(Part.LineSegment(FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(0, 30, 0)), False)
+        aux = body.newObject('Sketcher::SketchObject', 'Aux')
+        aux.Placement = spine.Placement
+        aux.addGeometry(Part.LineSegment(FreeCAD.Vector(10, 0, 0), FreeCAD.Vector(20, 30, 0)), False)
+        pipe = body.newObject('PartDesign::AdditivePipe', 'AuxPipe')
+        pipe.Profile = profile
+        pipe.Spine = (spine, ['Edge1'])
+        pipe.Mode = 'Auxiliary'
+        pipe.AuxiliarySpine = (aux, ['Edge1'])
+        pipe.AuxiliaryCurvilinear = False
+        self.Doc.recompute()
+        self.assertNotIn('Invalid', pipe.State)
+        volume = pipe.Shape.Volume
+        tmp = tempfile.mkdtemp()
+        path = os.path.join(tmp, 'auxspine.FCStd')
+        # a copy: saveAs would rename the test's document
+        self.Doc.saveCopy(path)
+        # the same file under the old names
+        oldpath = os.path.join(tmp, 'auxspine-old.FCStd')
+        with zipfile.ZipFile(path) as zin, \
+                zipfile.ZipFile(oldpath, 'w', zipfile.ZIP_DEFLATED) as zout:
+            for item in zin.infolist():
+                data = zin.read(item.filename)
+                if item.filename == 'Document.xml':
+                    self.assertIn(b'name="AuxiliarySpine"', data)
+                    for new, old in ((b'AuxiliarySpine"', b'AuxillerySpine"'),
+                                     (b'AuxiliarySpineTangent"', b'AuxillerySpineTangent"'),
+                                     (b'AuxiliaryCurvilinear"', b'AuxilleryCurvelinear"')):
+                        data = data.replace(b'name="' + new, b'name="' + old)
+                zout.writestr(item, data)
+        for f in (path, oldpath):
+            doc = FreeCAD.openDocument(f)
+            try:
+                loaded = doc.getObject('AuxPipe')
+                self.assertEqual(loaded.AuxiliarySpine[0].Name, 'Aux', f)
+                self.assertFalse(loaded.AuxiliaryCurvilinear, f)
+                loaded.touch()
+                doc.recompute()
+                self.assertNotIn('Invalid', loaded.State, f)
+                self.assertAlmostEqual(loaded.Shape.Volume, volume, places=6)
+            finally:
+                FreeCAD.closeDocument(doc.Name)
 
     def tearDown(self):
         #closing doc
