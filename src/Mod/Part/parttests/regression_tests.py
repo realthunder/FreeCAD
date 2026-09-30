@@ -549,6 +549,35 @@ class RegressionTests(unittest.TestCase):
             self.assertEqual(len(result.Shells), 1, name)
             self.assertAlmostEqual(result.Volume, volume, places=3, msg=name)
 
+    def test_thickness_inward_and_in_intersection_mode(self):
+        """Three fork breaks (docs/TransactionLog.md sec 27.91): the T's
+        concave bar top inward -- where the stretched removed face crossed an
+        edge was taken for that edge's own end; the L-box's top and the T's
+        back with intersection on and the Intersection join -- an edge two
+        faces share was trimmed twice, the guard an indexed map's Add() that
+        is never 0; and a holed cone's bottom inward with intersection on -- a
+        circle running round the cylinder beyond the seam's span came out as
+        a face with no area. Each volume is worked out by hand, and upstream
+        OCCT gives all but the first (it fails that one)."""
+        lbox = lambda: Part.makeBox(10, 10, 5).cut(Part.makeBox(5, 5, 5, Vector(5, 5, 0)))
+        tshape = lambda: (
+            Part.makeBox(12, 4, 4).fuse(Part.makeBox(4, 4, 10, Vector(4, 0, 0))).removeSplitter()
+        )
+        conehole = lambda: Part.makeCone(6, 3, 8).cut(Part.makeCylinder(1.5, 8))
+        cases = [
+            ("T bar top, in", tshape, 1, -1.0, False, 0, 215.5708),
+            ("L-box top, out, intersection join", lbox, 2, 1.0, True, 2, 339.0),
+            ("L-box top, in, intersection join", lbox, 2, -1.0, True, 2, 219.0),
+            ("T back, out, intersection join", tshape, 7, 1.0, True, 2, 312.0),
+            ("holed cone bottom, in, intersection", conehole, 2, -1.0, True, 0, 307.1946),
+        ]
+        for name, make, face, offset, inter, join, volume in cases:
+            shape = make()
+            result = shape.makeThickness([shape.Faces[face]], offset, 1e-7, inter, False, 0, join)
+            self.assertTrue(result.isValid(), name)
+            self.assertEqual(len(result.Shells), 1, name)
+            self.assertAlmostEqual(result.Volume, volume, places=3, msg=name)
+
     def test_OptimalBox(self):
         box = Part.makeBox(1, 1, 1)
         self.assertTrue(box.optimalBoundingBox(True, False).isValid())
