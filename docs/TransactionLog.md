@@ -9368,3 +9368,42 @@ Commits: fork `a544f020eb` (the fix); `3cda2f1c5c` (the test).
 **Gates:** Python 2964 OK (52 skipped, 6 expected failures), ctest 850/850
 (+1), the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14 (each in a user
 home and cache of its own; `user.cfg` copied aside around ctest and unchanged).
+
+### 27.85 A reversed face restored with a motion (user: chase it, 2026-09-30)
+
+27.84's "found, not chased", chased: it is real and it is fixed.
+
+**Symptom.** Two `Part::Feature`s holding the same face reversed at two places
+(the second baked into its coordinates, so congruence shares one file and the
+second restores with `motion=`): after save and reopen the second face has its
+outer wire forward under a reversed face -- `isValid()` false, area -12 for a
+4 x 3 face. Forward faces, and the solids of 27.35/27.37's tests, come back
+right. It does not depend on the freeze.
+
+**Cause.** `shallowMove` (`PropertyTopoShape.cpp`, 27.35/27.37) built the
+instance's new top with `EmptyCopied()` of the restored geometry -- its
+orientation kept -- and added the children as the TShape holds them, each moved
+by the motion. `TopoDS_Builder::Add` reverses a child under a reversed parent,
+so the wires were turned once by `Add` and once more by the top when explored.
+The same mistake as the fork's `copyForThaw` (27.84). A located top would have
+been moved back by `Add` too; the geometry is saved without its location, so
+that half could not arise.
+
+**Fix.** The top is built on the TShape alone, and the orientation and
+location put back after -- as 27.84's fix does in the fork.
+
+**Files already saved.** The save side never calls `shallowMove`: the file
+holds the lending instance's geometry and the motion, both right, and a file
+written before the fix opens right with it. An instance opened with the bug
+and saved after a change to it would have written the turned face; one left
+alone keeps its file and motion.
+
+Test: `ShapeStorage.ShapeCongruenceCases.testAMovedReversedFaceKeepsItsWires`
+(two reversed faces baked at two places, one file; after reopen each is
+reversed, valid, of its area, centre and normal). Fails without the fix on
+"There" -- the instance restored with the motion -- and passes with it.
+
+Commits: `0fbd74a078` (the fix), `7780ff7601` (the test).
+
+**Gates:** Python 2965 OK (52 skipped, 6 expected failures; +1), ctest
+850/850, the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14.
