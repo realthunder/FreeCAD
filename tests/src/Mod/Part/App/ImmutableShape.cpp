@@ -23,6 +23,10 @@
 #include <BRep_TEdge.hxx>
 #include <BRep_TVertex.hxx>
 #include <gp_Circ.hxx>
+#include <gp.hxx>
+#include <gp_Trsf.hxx>
+#include <Geom_Curve.hxx>
+#include <TopLoc_Location.hxx>
 #include <BRepOffsetAPI_MakeThickSolid.hxx>
 #include <BRepPrimAPI_MakeSphere.hxx>
 #include <BRepPrimAPI_MakeTorus.hxx>
@@ -573,6 +577,56 @@ TEST(ImmutableShapeTest, aFaceOnAFrozenWireThawsWhatMustGrow)
     }
     EXPECT_EQ(thawed, 3);
     EXPECT_EQ(same, 1);
+}
+
+// The same on a wire that is placed and holds an edge reversed, as a pattern
+// instance does: a thawed copy of an edge keeps its vertices at its curve's
+// ends. The copy took the placed edge's location and orientation, and the
+// vertices it was given were moved back by it and turned round -- a
+// PolarPattern refined with vertices of tolerance 6.8 (docs/TransactionLog.md
+// sec 27.84).
+TEST(ImmutableShapeTest, aThawedCopyOfAPlacedEdgeKeepsItsVertices)
+{
+    BRep_Builder builder;
+    BRepBuilderAPI_MakeWire mkWire;
+    const TopoDS_Edge wide = BRepBuilderAPI_MakeEdge(gp_Pnt(0, 0, 0), gp_Pnt(10, 0, 0)).Edge();
+    builder.UpdateEdge(wide, 2e-7);
+    for (TopExp_Explorer it(wide, TopAbs_VERTEX); it.More(); it.Next())
+        builder.UpdateVertex(TopoDS::Vertex(it.Current()), 2e-7);
+    mkWire.Add(wide);
+    mkWire.Add(BRepBuilderAPI_MakeEdge(gp_Pnt(10, 0, 0), gp_Pnt(10, 5, 0)).Edge());
+    // Made the other way round, so the wire holds it reversed.
+    mkWire.Add(BRepBuilderAPI_MakeEdge(gp_Pnt(0, 5, 0), gp_Pnt(10, 5, 0)).Edge());
+    mkWire.Add(BRepBuilderAPI_MakeEdge(gp_Pnt(0, 5, 0), gp_Pnt(0, 0, 0)).Edge());
+    gp_Trsf place;
+    place.SetRotation(gp::OZ(), M_PI / 2);
+    gp_Trsf lift;
+    lift.SetTranslation(gp_Vec(0, 0, 2));
+    const TopoDS_Shape wire = mkWire.Wire().Moved(TopLoc_Location(lift * place));
+    int reversed = 0;
+    for (TopExp_Explorer it(wire, TopAbs_EDGE); it.More(); it.Next())
+        reversed += it.Current().Orientation() == TopAbs_REVERSED ? 1 : 0;
+    ASSERT_EQ(reversed, 1);
+    setImmutable(wire);
+
+    TopoDS_Face face;
+    EXPECT_NO_THROW(face = BRepBuilderAPI_MakeFace(TopoDS::Wire(wire), true).Face());
+    ASSERT_FALSE(face.IsNull());
+    int thawed = 0;
+    for (TopExp_Explorer it(face, TopAbs_EDGE); it.More(); it.Next()) {
+        const TopoDS_Edge edge = TopoDS::Edge(it.Current());
+        thawed += edge.TShape()->Thawed() ? 1 : 0;
+        double first = 0;
+        double last = 0;
+        const Handle(Geom_Curve) curve = BRep_Tool::Curve(edge, first, last);
+        TopoDS_Vertex start;
+        TopoDS_Vertex end;
+        TopExp::Vertices(TopoDS::Edge(edge.Oriented(TopAbs_FORWARD)), start, end);
+        EXPECT_LT(BRep_Tool::Pnt(start).Distance(curve->Value(first)), 1e-6);
+        EXPECT_LT(BRep_Tool::Pnt(end).Distance(curve->Value(last)), 1e-6);
+    }
+    EXPECT_EQ(thawed, 3);  // the path under test was taken
+    EXPECT_TRUE(BRepCheck_Analyzer(face).IsValid());
 }
 
 // The names a face gives the edges of a frozen wire are the ones it gives them
