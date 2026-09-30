@@ -25,7 +25,9 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <memory>
 
+#include <Inventor/details/SoDetail.h>
 #include <Inventor/lists/SoTypeList.h>
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/elements/SoGLCacheContextElement.h>
@@ -595,6 +597,10 @@ public:
   bool obeysrules;
   RenderCachePtr highlightcache;
   CoinPtr<SoPath> highlightpath;
+  // SoFCRenderCacheManager::setHighlights: the details (copies) and
+  // colours, taken again from each scene capture() builds.
+  std::vector<std::pair<std::unique_ptr<SoDetail>, uint32_t>> highlightitems;
+  void applyHighlights();
   // Whether on-top draws escape the section, as this view answers for it
   // (Section_NoOnTop, the preference behind it otherwise). The highlight
   // caches below are built with it baked in, so they are dropped whenever
@@ -944,9 +950,10 @@ SoFCRenderCacheManager::getObjectInfo(uint64_t &serial) const
 void
 SoFCRenderCacheManager::setExternalOverlay(Render::Renderer *renderer,
                                            int id,
-                                           const Render::OverlayAnchor &anchor)
+                                           const Render::OverlayAnchor &anchor,
+                                           int highlightId)
 {
-  PRIVATE(this)->renderer->setExternalOverlay(renderer, id, anchor);
+  PRIVATE(this)->renderer->setExternalOverlay(renderer, id, anchor, highlightId);
 }
 
 void
@@ -1080,9 +1087,44 @@ SoFCRenderCacheManager::setHighlight(SoPath * path,
 void
 SoFCRenderCacheManager::clearHighlight()
 {
+  PRIVATE(this)->highlightitems.clear();
   PRIVATE(this)->highlightpath.reset();
   PRIVATE(this)->highlightcache.reset();
   PRIVATE(this)->renderer->clearHighlight();
+}
+
+void
+SoFCRenderCacheManager::setHighlights(const std::vector<HighlightItem> & items)
+{
+  auto self = PRIVATE(this);
+  self->highlightpath.reset();
+  self->highlightcache.reset();
+  self->highlightitems.clear();
+  for (auto & item : items) {
+    if (item.detail)
+      self->highlightitems.emplace_back(item.detail->copy(), item.color);
+  }
+  self->applyHighlights();
+}
+
+void
+SoFCRenderCacheManagerP::applyHighlights()
+{
+  VertexCacheMap res;
+  if (auto & scene = this->renderer->getScene()) {
+    for (auto & item : this->highlightitems) {
+      for (auto & v : scene->buildHighlightCache(this->sharedcache, 0,
+                                                 item.first.get(), item.second,
+                                                 SoFCRenderCache::PreselectHighlight)) {
+        auto & entries = res[v.first];
+        entries.insert(entries.end(), v.second.begin(), v.second.end());
+      }
+    }
+  }
+  if (res.empty())
+    this->renderer->clearHighlight();
+  else
+    this->renderer->setHighlight(std::move(res), false);
 }
 
 void
@@ -1738,6 +1780,9 @@ SoFCRenderCacheManager::capture(SoGLRenderAction * action, SoNode * root)
   }
   cache->close(state);
   PRIVATE(this)->renderer->setScene(cache);
+  // The highlight names elements of the scene just replaced.
+  if (!PRIVATE(this)->highlightitems.empty())
+    PRIVATE(this)->applyHighlights();
   // Not routed anywhere in overlay mode (render() is a no-op there), but
   // kept symmetric with render() so the capture state never goes stale.
   PRIVATE(this)->renderer->setUserShaders(

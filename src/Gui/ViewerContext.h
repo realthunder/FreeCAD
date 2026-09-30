@@ -45,6 +45,7 @@
 #include <Inventor/nodes/SoEventCallback.h>
 
 #include "Inventor/SoFCVisibilityElement.h"
+#include "Inventor/SoFCRenderCacheManager.h"
 
 class SoNode;
 class SoPath;
@@ -509,6 +510,22 @@ public:
     /// Give the view provider its geometry back, and show the edited
     /// occurrence again if hideEditedObject hid it.
     void resetEditingRoot(bool updateLinks = true);
+    /** Highlight elements of the editing root in this view alone.
+     *
+     * For an edit mode that tracks its own preselection (the sketcher):
+     * the items are drawn over the whole editing graph, in this view and
+     * no other, and replace whatever the last call stated. An empty list
+     * clears them. Returns false when this view cannot -- nothing here
+     * captures the editing root for a backend: a view outside render
+     * cache mode 3, and a served mirror -- and the caller then colours
+     * the shared edit graph itself, which every view shows.
+     */
+    virtual bool setEditingHighlight(
+        const std::vector<SoFCRenderCacheManager::HighlightItem>& items)
+    {
+        (void)items;
+        return false;
+    }
     /** Hide the occurrence being edited in every view of the session.
      *
      * For an edit mode that hands setupEditingRoot a node of its own and

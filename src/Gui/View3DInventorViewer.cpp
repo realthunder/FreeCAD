@@ -636,6 +636,10 @@ struct View3DInventorViewer::Private
         OverlayEditing = 7,
         OverlayDimensions = 8,
         OverlayDebugLabel = 9,
+        // The editing capture's highlight feed (the sketcher's
+        // preselection): past OverlayEditing, so it draws over the
+        // whole edit graph, constraint icons and datum labels included.
+        OverlayEditHighlight = 10,
     };
     /// The ids above are per VIEWER. A unified-canvas cell offsets them
     /// by its sub-view id times this stride, because the backend's
@@ -980,10 +984,12 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
     // traversal. Every feed below goes through here, so the scoping
     // cannot be forgotten at one site.
     auto feedOverlay = [&](OverlayCapture &capture, int base,
-                           Render::OverlayAnchor anchor) {
+                           Render::OverlayAnchor anchor,
+                           int highlightBase = 0) {
         anchor.subView = canvasSubView;
         capture.manager->setExternalOverlay(
-            renderer.get(), canvasSubView * OverlayIdStride + base, anchor);
+            renderer.get(), canvasSubView * OverlayIdStride + base, anchor,
+            highlightBase ? canvasSubView * OverlayIdStride + highlightBase : 0);
         captureAction.apply(capture.applyRoot);
     };
 
@@ -1349,7 +1355,8 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
             initCapture(editingCapture, owner->pcEditingRoot);
         Render::OverlayAnchor editAnchor;
         editAnchor.sceneCamera = true;
-        feedOverlay(editingCapture, OverlayEditing, editAnchor);
+        feedOverlay(editingCapture, OverlayEditing, editAnchor,
+                    OverlayEditHighlight);
         editingBackendFed = true;
     }
     else {
@@ -8817,6 +8824,19 @@ void View3DInventorViewer::hangEditingRoot(EditingRoot* root, bool hang)
     else {
         root->unhangFrom(aux);
     }
+}
+
+bool View3DInventorViewer::setEditingHighlight(
+    const std::vector<SoFCRenderCacheManager::HighlightItem>& items)
+{
+    // Only while the backend draws the editing root: otherwise Coin does,
+    // and the highlight has to be in the graph it draws.
+    auto& capture = _pimpl->editingCapture;
+    if (!_pimpl->editingBackendFed || !capture.manager)
+        return false;
+    capture.manager->setHighlights(items);
+    redraw();
+    return true;
 }
 
 void View3DInventorViewer::setEditing(bool edit)

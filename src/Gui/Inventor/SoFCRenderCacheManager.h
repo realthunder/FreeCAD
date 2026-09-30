@@ -25,6 +25,7 @@
 
 #include <cstdint>
 #include <unordered_map>
+#include <vector>
 
 #include "COWData.h"
 #include "../InventorBase.h"
@@ -121,8 +122,11 @@ public:
   /// overlay root (foreground superimposition, corner axis cross) and
   /// mirrors it as Renderer::setOverlay(\a id, ..., \a anchor), while
   /// render() stops drawing any internal GL pass. Pass null to detach.
+  /// \a highlightId: the overlay the highlight feed goes to (see
+  /// SoFCRenderer::setExternalOverlay), 0 for none.
   void setExternalOverlay(Render::Renderer *renderer, int id,
-                          const Render::OverlayAnchor &anchor);
+                          const Render::OverlayAnchor &anchor,
+                          int highlightId = 0);
 
   SoPath *getHighlightPath() const;
   void setHighlight(SoPath * path,
@@ -132,6 +136,32 @@ public:
                     bool wholeontop = false);
 
   void clearHighlight();
+
+  /// One element set of a setHighlights() call: the elements \a detail
+  /// names, of the shape node its context names, in \a color.
+  struct HighlightItem
+  {
+    const SoDetail *detail;
+    uint32_t color;
+  };
+
+  /** Highlight elements of the scene this manager captured, several sets
+   * of them in one feed, each in its own colour.
+   *
+   * For an overlay capture (capture()) whose owner tracks its own
+   * preselection -- the sketcher's edit preselection. Each item's detail
+   * names its shape node by context (SoFCDetail::setContext), and its
+   * elements are taken from the captured scene: nothing is traversed,
+   * and nothing of the graph is built again. Traversing a path per call
+   * instead, as setHighlight() does, was measured to leave every later
+   * frame dearer (a 1428-curve sketch in edit: the same draws, each
+   * about 6 us more, 12 ms a frame on llvmpipe), for a cause not found.
+   *
+   * The items are kept (the details copied) and stated again after each
+   * capture that rebuilds the scene, so the highlight follows the
+   * geometry it names. An empty list clears it.
+   */
+  void setHighlights(const std::vector<HighlightItem> & items);
 
   void addSelection(const std::string & key,
                     const std::string & element,

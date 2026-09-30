@@ -512,6 +512,24 @@ public:
   bool overlaymode = false;
   int overlayid = 0;
   Render::OverlayAnchor overlayanchor;
+  // The overlay id the highlight feed goes to in overlay mode, 0 for
+  // none (see SoFCRenderer::setExternalOverlay).
+  int overlayhlid = 0;
+
+  /// Overlay mode: state the highlight feed as its own overlay, or
+  /// remove that overlay when there is nothing to highlight.
+  void feedOverlayHighlight()
+  {
+    if (!this->external || !this->overlayhlid)
+      return;
+    if (this->highlightcaches.empty())
+      this->external->removeOverlay(this->overlayhlid);
+    else
+      this->external->setOverlay(this->overlayhlid,
+          RendererBridge::translate(this->highlightcaches,
+                                    this->sectionOnTop(), 0, true, true),
+          this->overlayanchor);
+  }
 
   // User shader programs captured from scene SoShaderProgram nodes on the
   // last cache rebuild (docs/RenderDebug.md §6); pushed to the external
@@ -1160,6 +1178,7 @@ SoFCRenderer::refreshExternalFeed()
           RendererBridge::translate(self->scene->getVertexCaches(true),
                                     self->sectionOnTop(), 0, false, true),
           self->overlayanchor);
+    self->feedOverlayHighlight();
     return;
   }
   self->feedExternal();
@@ -1181,18 +1200,25 @@ SoFCRenderer::setAppearanceShaders(std::vector<Render::UserShader> && shaders)
 
 void
 SoFCRenderer::setExternalOverlay(Render::Renderer * renderer, int id,
-                                 const Render::OverlayAnchor & anchor)
+                                 const Render::OverlayAnchor & anchor,
+                                 int highlightId)
 {
   auto self = PRIVATE(this);
   if (self->external == renderer && self->overlaymode
-      && self->overlayid == id && self->overlayanchor == anchor)
+      && self->overlayid == id && self->overlayanchor == anchor
+      && self->overlayhlid == highlightId)
     return;
-  // Detaching or re-keying: remove the previously fed overlay.
-  if (self->external && self->overlaymode
-      && (self->external != renderer || self->overlayid != id))
-    self->external->removeOverlay(self->overlayid);
+  // Detaching or re-keying: remove the previously fed overlays.
+  if (self->external && self->overlaymode) {
+    if (self->external != renderer || self->overlayid != id)
+      self->external->removeOverlay(self->overlayid);
+    if (self->overlayhlid
+        && (self->external != renderer || self->overlayhlid != highlightId))
+      self->external->removeOverlay(self->overlayhlid);
+  }
   self->overlaymode = (renderer != nullptr);
   self->overlayid = id;
+  self->overlayhlid = renderer ? highlightId : 0;
   self->overlayanchor = anchor;
   self->externalview = nullptr;
   self->external = renderer;
@@ -1201,6 +1227,7 @@ SoFCRenderer::setExternalOverlay(Render::Renderer * renderer, int id,
         RendererBridge::translate(self->scene->getVertexCaches(true),
                                   self->sectionOnTop(), 0, false, true),
         anchor);
+  self->feedOverlayHighlight();
 }
 
 void
@@ -1208,6 +1235,8 @@ SoFCRenderer::clear()
 {
   if (PRIVATE(this)->external && PRIVATE(this)->overlaymode) {
     PRIVATE(this)->external->removeOverlay(PRIVATE(this)->overlayid);
+    if (PRIVATE(this)->overlayhlid)
+      PRIVATE(this)->external->removeOverlay(PRIVATE(this)->overlayhlid);
   }
   else if (PRIVATE(this)->external) {
     for (auto & sel : PRIVATE(this)->selections)
@@ -1293,6 +1322,12 @@ SoFCRendererP::applyKeys(const CacheKeySet & keys, int skip)
 void
 SoFCRenderer::clearHighlight()
 {
+  if (PRIVATE(this)->overlaymode) {
+    // Never the backend's highlight feed: that one is the main scene's.
+    PRIVATE(this)->highlightcaches.clear();
+    PRIVATE(this)->feedOverlayHighlight();
+    return;
+  }
   PRIVATE(this)->hlwholeontop = false;
   PRIVATE(this)->highlightcaches.clear();
   PRIVATE(this)->opaquehighlight.clear();
@@ -1505,6 +1540,13 @@ SoFCRenderer::setScene(const RenderCachePtr &cache)
 void
 SoFCRenderer::setHighlight(VertexCacheMap && caches, bool wholeontop)
 {
+  if (PRIVATE(this)->overlaymode) {
+    // render() draws nothing in overlay mode, so no draw entries: the
+    // caches go to the highlight overlay, if there is one, and only there.
+    PRIVATE(this)->highlightcaches = std::move(caches);
+    PRIVATE(this)->feedOverlayHighlight();
+    return;
+  }
   clearHighlight();
   PRIVATE(this)->highlightcaches = std::move(caches);
   PRIVATE(this)->hlwholeontop = wholeontop;

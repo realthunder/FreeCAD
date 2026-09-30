@@ -511,6 +511,10 @@ public:
     //@{
     void setEditing(bool edit);
     bool isEditing() const { return this->editing; }
+    /// Through the editing capture's own highlight overlay, drawn over the
+    /// whole captured editing root (see ViewerContext).
+    bool setEditingHighlight(
+        const std::vector<SoFCRenderCacheManager::HighlightItem>& items) override;
 
 protected:
     /// Under the aux root, a sibling of the render-cache-captured

@@ -93,8 +93,18 @@ public:
   /// superimposition, the corner axis cross) through the same
   /// render-cache traversal as the main scene. Pass null to detach,
   /// which removes the overlay from the backend.
+  ///
+  /// A non-zero \a highlightId gives the highlight feed an overlay of
+  /// its own under that id, drawn with the same anchor. Without one an
+  /// overlay renderer's setHighlight() reaches no backend at all: the
+  /// backend's highlight feed is the main scene's, which one overlay
+  /// must not clobber. The highlight overlay is ordered by its id like
+  /// any other, so an id past \a id draws the highlight over the whole
+  /// captured overlay (the sketcher's edit preselection over its
+  /// constraint icons and datum labels).
   void setExternalOverlay(Render::Renderer * renderer, int id,
-                          const Render::OverlayAnchor & anchor);
+                          const Render::OverlayAnchor & anchor,
+                          int highlightId = 0);
 
   void render(SoGLRenderAction * action);
 
