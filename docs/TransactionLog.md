@@ -10017,3 +10017,55 @@ test).
 **Gates:** Python 2972 OK (52 skipped, 6 expected failures; +1), ctest
 850/850, the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14; the fork's
 thickness suite PASS 50, XFAIL 2.
+
+### 27.94 The loop's minimal wires by angle: FreeCAD's WireJoiner walk ported (user, 2026-10-01)
+
+The user (27.90, 27.93): the fork's loop search in `BRepAlgo_Loop`
+(`FindLoop` / `FindAllLoops` / `SplitWires`) is mostly a copy of FreeCAD's
+WireJoiner search, and WireJoiner has since stopped searching -- port
+`f343b26542`, "find the minimal wires by angle, not by search".
+
+**What moved.** `FindAllLoops` walks every closed chain of the face's edges
+by depth-first search and `SplitWires` then prunes each wire another edge
+cuts through, leaving the minimal ones. The walk yields those directly: the
+faces of a planar edge network are the orbits of `next(d)` = the first dart
+clockwise from `rev(d)` at the vertex `d` arrives at; the bounded ones come
+out with a positive signed area, the unbounded face of each component with a
+negative one. The angles are taken from the pcurves in the face's (u, v) --
+the parametrisation keeps the cyclic order of the directions at a vertex on
+a surface that is not periodic -- with WireJoiner's two details: going
+straight back is the last resort, and a tie in direction is broken by the
+chord to a point a tenth of the way along. Tails and bridges are dropped
+from an orbit as out-and-back pairs. A periodic face keeps the search and
+its seam wires; so does a network the walk cannot describe (an orbit that
+does not close, an edge without a pcurve on the face). The walk's wires go
+through the same outside-wire rivalry (27.90) and `SplitWires` as the
+search's, which now prunes nothing, and on to `FaceRestrictor`, which nests
+the wires itself -- nothing downstream reads the orientation the walk gives
+a wire.
+
+One thing WireJoiner does not meet: a lone closed edge (a hole's circle, a
+disc) is an orbit of one dart. Sampled at its start and middle it read as
+area zero and the disc was dropped -- 72 of the suite's faces in the first
+check. Each edge is now sampled at four points.
+
+**Checked both ways.** `BREPALGO_LOOP_WALK=check` runs the walk and the search
+on every non-periodic face and compares the minimal wires after
+`SplitWires`: the suite, 371 faces, the same; the 712-run sweep, 3757 faces,
+the same, and its results identical run for run. `BREPALGO_LOOP_WALK=0`
+forces the search. The default is the walk. On the sweep's small models the
+loop is not where the time goes (a T and an L-box, every face both ways:
+0.44 s searching, 0.42 s walking); the gain is on dense faces, where
+WireJoiner measured 41.5 s against 0.44 s on a 40 x 40 lattice.
+
+The other callers of `BRepAlgo_Loop` in OCCT -- `BRepFill_Evolved`,
+`BiTgte_Blend`, `LocOpe_Generator` -- take the walk too. FreeCAD's
+`makeEvolved` on three spines, Arc and Intersection joins, gives the same
+results either way (it never reaches the loop on a face that is not
+periodic); the other two are not exercised here beyond the gates.
+
+Commit: fork `7b4c0fbbf7`.
+
+**Gates:** Python 2972 OK (52 skipped, 6 expected failures), ctest 850/850,
+the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14; the fork's thickness
+suite PASS 50, XFAIL 2.
