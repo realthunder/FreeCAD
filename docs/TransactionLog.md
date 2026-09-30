@@ -9934,3 +9934,86 @@ off), `81740c9bbc`, `4547f0cba9`, `7ad4efdc4c` (the suite),
 **Gates:** Python 2971 OK (52 skipped, 6 expected failures; +1), ctest
 850/850, the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14; the fork's
 thickness suite PASS 46, XFAIL 2.
+
+### 27.93 Thickness with a removed face tangent to its neighbours (user, 2026-10-01)
+
+The user, on the last failure class of 27.92: take it on now, then port
+FreeCAD's WireJoiner angle walk (`f343b26542`) into `BRepAlgo_Loop`.
+
+The filleted box: a box with its four vertical edges filleted (r=2), one face
+removed, thickness 1. Two kinds, as the sweep lists them:
+
+- *A planar face removed, tangent to the fillets beside it* (an end or a side
+  face). The Arc join stretches each offset beside the removed face until it
+  meets it (`ToContext`, `ExtentFace`) and cuts the rim there. A fillet's
+  offset runs parallel to the removed plane: inward it never meets it --
+  `ExtentFace` skips it, the rim had no edge but the removed face's own, and
+  the result came back unhollowed; outward (the side face) it meets it only
+  far round the cylinder, and the result, valid, had a lip in the opening
+  further than the thickness from every face kept; the end faces outward
+  failed. Upstream fails or returns the input on all of them.
+- *A fillet removed.* Inward it is ill-posed at these sizes: the two flat
+  neighbours' skins, 1 thick, cover the whole fillet arc between them (angles
+  180-240 and 210-270), so the cavity never reaches the removed face. Outward
+  the removed face is curved; see below.
+
+**Built** (fork, `BRepOffset_MakeOffset::ToContext`): where a planar removed
+face is tangent to its neighbour along an edge, the neighbour is not
+stretched to it. The gap is closed by a tube round the edge, the rounded end
+the Arc join gives a convex edge. It runs from the neighbour's offset edge to
+an edge on the removed face at the offset's distance, turning into the
+removed face (the neighbour's own offset covers the other side), and the rim
+is cut along that edge. Outward, where the tube meets the tube round a convex
+edge at the same vertex (the top and bottom edges), neither is stretched and
+the corner between them and the removed face is an eighth of a sphere, its
+arc on the removed face cut into the rim. `ContextIntByArc` takes the tube
+for the edge and the sphere for the vertex, orients the tube's section with
+the edge before it is stretched (the stretched copy has no pcurve on the
+tube), and leaves the tube out of its vertex pass; `Intersection3D` meets the
+tube with the offsets at the edge's ends. The tube's edge and the corner arc
+are found by intersecting the removed face's surface with the circle round
+the edge and the sphere round the vertex.
+
+On the way: a tube's edge on the removed plane made as a `Geom_OffsetCurve`
+got no pcurve there (the plane's projection does not take it) and never
+reached the rim -- a line is now translated; `ExtentFace` binds an edge it
+could not stretch to itself, so "was it stretched" means bound to a
+different edge.
+
+**Worked out by hand.** Inward, the input (459.3982) less the shrunk rounded
+box and the channel to the opening less two quarter discs of radius 1: the
+end face 261.1150, the side face 253.1150. Outward, by Steiner's formula the
+whole grown skin is 348.53 (area) + 70.0 (mean curvature: the fillets' 18.85
+and the top and bottom outlines' 51.15) + 4.19 = 422.72; less what lies in
+front of the removed face (its slab and the quarter pipes on its top and
+bottom edges), plus the two tubes (4.712 each) and four eighths of a sphere:
+the end face 403.9604, the side face 388.8188. All four come out to the
+fourth decimal.
+
+**Not done: a fillet removed, outward.** The tube and corner constructions
+work on a curved removed face, but there the offsets beside it cut its
+surface in whole circles and the fork's loop on the periodic face made a
+dozen pieces, one of negative area, and doubled faces in the shell. The
+handling stays with planar removed faces; the fillet faces behave as before
+(inward a wrong 647.5624 valid solid, ill-posed; outward exceptions).
+
+**Result.** The sweep: the Arc join right in 141 of 150 with intersection off
+and 141 on (upstream 106, 107); the Intersection join unchanged (137, 137).
+Better than upstream in 122 runs, worse in none. Left in scope: the fillet
+faces (8 per Arc mode: 4 ill-posed inward, 4 outward) and the holed cone's
+top; with the Intersection join also the filleted box's end and side faces
+inward (4 runs; outward they pass), for that join builds no tubes -- its
+context step (`ContextIntByInt`) would need the same construction.
+
+**Tests.** FreeCAD `parttests.regression_tests.
+test_thickness_with_a_face_tangent_to_its_neighbours` (four cases). The fork's
+suite: `filletbox_end_in/out`, `filletbox_side_in/out`.
+
+Commits: fork `061de5eda8` (the tube, inward), `72267e6608` (outward and the
+corners), `f0f7265882` (found on the cap's surface), `6ec6630585`,
+`9cfb4bbc6c` (the suite), `ed849aa806` (its README); `c7735a74a0` (the FreeCAD
+test).
+
+**Gates:** Python 2972 OK (52 skipped, 6 expected failures; +1), ctest
+850/850, the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14; the fork's
+thickness suite PASS 50, XFAIL 2.
