@@ -46,6 +46,7 @@
 # include <Inventor/C/basic.h>
 #endif
 
+#include <QElapsedTimer>
 #include <QMovie>
 
 #include <boost/algorithm/string/predicate.hpp>
@@ -216,18 +217,28 @@ public:
                 return;
         }
 
-        // showMessage() repaints at once, so the text is on screen when it
-        // returns. There used to be a 50 ms sleep here, on every message, to
-        // give the eye time to read it: some fifty messages reach it during
-        // startup, 2.5 s of sleeping (a start measured 9.1 s fell to 6.6 s,
-        // 2026-09-30). The messages still show, as fast as startup makes them.
+        // Readable without holding startup up. There used to be a 50 ms
+        // sleep here, on every message, to give the eye time to read it:
+        // some fifty messages reach it during a start, 2.5 s of sleeping (a
+        // start measured 9.1 s fell to 6.6 s without it, 2026-09-30), and
+        // 50 ms is too short to read anyway. Now a message stays up at least
+        // MinShowMs and one arriving sooner is skipped; showMessage()
+        // repaints at once, so what is shown is on screen when it returns.
+        // Nothing runs the event loop here, so a skipped message cannot be
+        // shown later: through a long quiet phase the text can lag one
+        // message behind.
+        if (shown.isValid() && shown.elapsed() < MinShowMs)
+            return;
+        shown.start();
         splash->showMessage(msg.replace(QStringLiteral("\n"), QString()), alignment, textColor);
     }
 
 private:
+    static constexpr qint64 MinShowMs = 250;
     QSplashScreen* splash;
     int alignment;
     QColor textColor;
+    QElapsedTimer shown;
 };
 } // namespace Gui
 
