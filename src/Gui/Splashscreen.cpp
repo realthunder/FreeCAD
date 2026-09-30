@@ -29,7 +29,6 @@
 # include <QFile>
 # include <QFileInfo>
 # include <QLocale>
-# include <QMutex>
 # include <QProcessEnvironment>
 # include <QRegularExpression>
 # include <QRegularExpressionMatch>
@@ -41,7 +40,6 @@
 # include <QSysInfo>
 # include <QTextBrowser>
 # include <QTextStream>
-# include <QWaitCondition>
 # include <QLabel>
 # include <QFileInfo>
 # include <QDir>
@@ -218,10 +216,12 @@ public:
                 return;
         }
 
+        // showMessage() repaints at once, so the text is on screen when it
+        // returns. There used to be a 50 ms sleep here, on every message, to
+        // give the eye time to read it: some fifty messages reach it during
+        // startup, 2.5 s of sleeping (a start measured 9.1 s fell to 6.6 s,
+        // 2026-09-30). The messages still show, as fast as startup makes them.
         splash->showMessage(msg.replace(QStringLiteral("\n"), QString()), alignment, textColor);
-        QMutex mutex;
-        QMutexLocker ml(&mutex);
-        QWaitCondition().wait(&mutex, 50);
     }
 
 private:
