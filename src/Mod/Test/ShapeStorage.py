@@ -1004,6 +1004,46 @@ class ShapeCongruenceCases(ShapeTestCase):
         for x, y in zip(a.Wires, b.Wires):
             self.assertTrue(x.isPartner(y), "an instance's wire is a copy")
 
+    def testAMovedReversedFaceKeepsItsWires(self):
+        """A face held reversed comes back as it went: the instance's new top
+        takes the orientation after its wires are in, or they are turned with
+        it -- the outer wire running the wrong way, the face invalid and its
+        area negative (docs/TransactionLog.md sec 27.85)."""
+        group = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Document")
+        previous = group.GetBool("DedupCongruentShapes", True)
+        group.SetBool("DedupCongruentShapes", True)
+        try:
+            doc = self.newDocument("CongReversed")
+            face = Part.makePlane(4, 3, FreeCAD.Vector(1, 2, 0))
+            one = FreeCAD.Matrix()
+            one.move(FreeCAD.Vector(-2, 1, 0))
+            two = FreeCAD.Matrix()
+            two.rotateZ(0.7)
+            two.move(FreeCAD.Vector(10, 5, 3))
+            expected = {}
+            for name, motion in (("Here", one), ("There", two)):
+                obj = doc.addObject("Part::Feature", name)
+                obj.Shape = face.transformGeometry(motion).reversed()
+                s = obj.Shape
+                expected[name] = (s.Area, self.centre(s), s.Faces[0].normalAt(1, 1))
+            doc.recompute()
+            project = self.directoryPath("CongReversed_dir")
+            doc.saveAs(project)
+            FreeCAD.closeDocument(doc.Name)
+            self.docs.remove("CongReversed")
+        finally:
+            group.SetBool("DedupCongruentShapes", previous)
+        self.assertEqual(len([n for n in self.blobNames(project) if n.endswith(".brp")]), 1,
+                         "the two instances should be stored once")
+        doc = self.openDocument(project)
+        for name, (area, centre, normal) in expected.items():
+            shape = doc.getObject(name).Shape
+            self.assertEqual(shape.Orientation, "Reversed", name)
+            self.assertTrue(shape.isValid(), name)
+            self.assertAlmostEqual(shape.Area, area, delta=area * 1e-9, msg=name)
+            self.assertLess((self.centre(shape) - centre).Length, 1e-8, name)
+            self.assertLess((shape.Faces[0].normalAt(1, 1) - normal).Length, 1e-9, name)
+
     def testPlacementIsNotUsedToCarryTheMotion(self):
         """The motion goes into the geometry, never into the placement.
 
