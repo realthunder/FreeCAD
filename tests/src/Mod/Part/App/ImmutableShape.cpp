@@ -20,7 +20,9 @@
 #include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRep_PointRepresentation.hxx>
+#include <BRep_TEdge.hxx>
 #include <BRep_TVertex.hxx>
+#include <gp_Circ.hxx>
 #include <BRepOffsetAPI_MakeThickSolid.hxx>
 #include <BRepPrimAPI_MakeSphere.hxx>
 #include <BRepPrimAPI_MakeTorus.hxx>
@@ -328,6 +330,39 @@ TEST(ImmutableShapeTest, onlyACachePCurveIsReplaced)
     Handle(BRep_TVertex) tv = Handle(BRep_TVertex)::DownCast(vertex.TShape());
     EXPECT_NO_THROW(tv->UpdateTolerance(BRep_Tool::Tolerance(vertex) / 2));
     EXPECT_THROW(tv->UpdateTolerance(BRep_Tool::Tolerance(vertex) * 10), TopoDS_LockedShape);
+}
+
+// A frozen edge takes a pcurve cache for each new face on it; a face that is
+// gone leaves its cache to the next one added (docs/TransactionLog.md sec
+// 27.81-27.82). Extruded over and over, a sketch's frozen edge carried a
+// cache for every extrusion ever made, and every walk of its list slowed.
+TEST(ImmutableShapeTest, aFrozenEdgeKeepsNoCacheOfAFaceThatIsGone)
+{
+    gp_Circ circle(gp_Ax2(gp_Pnt(0, 0, 0), gp::DZ()), 5);
+    TopoDS_Wire wire = BRepBuilderAPI_MakeWire(BRepBuilderAPI_MakeEdge(circle).Edge()).Wire();
+    setImmutable(wire);
+    const TopoDS_Edge edge = TopoDS::Edge(TopExp_Explorer(wire, TopAbs_EDGE).Current());
+    auto edgeCurves = [&edge]() {
+        return Handle(BRep_TEdge)::DownCast(edge.TShape())->Curves().Size();
+    };
+    auto extrude = [&wire]() {
+        TopoDS_Face face = BRepBuilderAPI_MakeFace(wire, true).Face();
+        TopoDS_Shape prism = BRepPrimAPI_MakePrism(face, gp_Vec(0, 0, 3)).Shape();
+        ASSERT_TRUE(BRepCheck_Analyzer(prism).IsValid());
+    };
+    extrude();
+    const int first = edgeCurves();
+    for (int i = 0; i < 50; ++i)
+        extrude();
+    // The caches of the live faces at most: the last extrusion's, gone too
+    // but not yet replaced.
+    EXPECT_LE(edgeCurves(), first + 2);
+    // A face still alive keeps its pcurve.
+    TopoDS_Face kept = BRepBuilderAPI_MakeFace(wire, true).Face();
+    for (int i = 0; i < 5; ++i)
+        extrude();
+    Standard_Real f, l;
+    EXPECT_FALSE(BRep_Tool::CurveOnSurface(edge, kept, f, l).IsNull());
 }
 
 // The switch defaults to what the loaded OCCT can honour.
