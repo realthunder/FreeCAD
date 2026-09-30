@@ -109,6 +109,7 @@ private:
                                              std::string& newFeatName);
     /// The sketch's normal, else the body's Z axis
     void setDefaultAxis(App::DocumentObject* Feat, PartDesign::Body* body);
+    PartDesign::Body* getTransformBody() const;
 
 private:
     std::unique_ptr<Ui_TaskMultiTransformParameters> ui;
