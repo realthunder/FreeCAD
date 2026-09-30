@@ -9277,3 +9277,22 @@ Commits: fork `8cacfed608` (the refusal count), `707e624091` (the switch);
 **Gates:** Python 2964 OK (52 skipped, 6 expected failures; +2), ctest
 848/848, the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16 (each in a user home
 and cache of its own; `user.cfg` copied aside around ctest and unchanged).
+
+### 27.83 Ruling: (a), as built (user, 2026-09-30)
+
+**Ruled (user):** (a). The sweep of 27.82 is the behaviour of the fork, the
+`CSF_FrozenPCurve` switch and the `cache` and `refuse` modes are gone (fork
+`680d68f4d8`): before a frozen edge takes a pcurve cache for a new surface, its
+caches on a surface that only caches of the edge and of its vertices hold are
+dropped, with those vertices' cached parameters on it.
+
+As built, the benchmark in the default mode: W1 6.4-6.6 ms a recompute, flat,
+1.96 s, 12 representations on the sketch's edges; W2 idle 59.5 -> 60.7 ms,
+112 representations over every sketch -- 27.82's (a) row.
+
+Test: C++ `ImmutableShapeTest.aFrozenEdgeKeepsNoCacheOfAFaceThatIsGone` (a
+frozen circle extruded 51 times keeps at most two representations more than
+after the first; a face still alive keeps its pcurve). `7494a96180`.
+
+**Gates:** Python 2964 OK (52 skipped, 6 expected failures), ctest 849/849
+(+1), the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16.
