@@ -2505,3 +2505,60 @@ to the active body and, with none, "No active body found"
 edit; the test activates the body, as a user has it.
 
 Suites: PD 296 OK (+8); Python 3168 OK (+8; 50 skipped, 6 expected failures).
+
+### Defeaturing, FuzzyTolerance, the struck-out label (2026-09-30)
+
+The user: "then port defeaturing feature, fuzzytolerance and strikethrough
+label. decide others later". The other nine candidates and the four unsure
+rows of this section wait.
+
+**Defeaturing** (`c70d9b2992`; `f519812cf1` Part, `90f9b73652` PD).
+`TopoShape::makEDefeaturing()` maps `BRepAlgoAPI_Defeaturing`'s history
+through `makEShape()` under op code `DEF`, upstream's code, and
+`Shape.defeaturing()` uses it, so Part_Defeaturing's result has names too.
+`PartDesign::Defeaturing` is a dress-up: the faces in Base go, the solid is
+healed; nothing picked, the base. The command sits after Thickness (menu,
+toolbar, task watcher), takes over Part_Defeaturing in a body, and opens
+the fork's dress-up panel rather than upstream's list. The fork's dress-up
+preview tints the faces an operation generates, and defeaturing generates
+none -- `BRepAlgoAPI_Defeaturing` rebuilds every face it touches, so the
+map marks nearly all of them modified and none generated. So
+`ViewProviderDefeaturing` shows upstream's preview instead, the volume
+filled in and the one taken off, over the translucent base, computed only
+while the panel is open. Its `isEditing()` is not yet true inside
+`setEdit()`, and still true inside `unsetEdit()`, so it keeps a flag of its
+own. Driven in the GUI: a hole and a boss taken off, preview 125.66 and
+28.27 mm^3 (the plug and the boss), OK, 1000 mm^3, Tip; menu, toolbar,
+icon. `TestDefeaturing` (5: hole, fillet, nothing picked, the base moving,
+`Shape.defeaturing()`'s map).
+
+**FuzzyTolerance** (`73f848a3d5`; `a980990ed8`). On `FeatureAddSub` and
+`Boolean`, upstream's range and doc: > 0 that fuzzy value, 0 none, < 0
+determined. It reaches `FeatureAddSub::makeBoolean()` (pad, pocket,
+revolution, loft, helix, primitives, wrap), the extrude's up-to path, the
+hole, the pipe, the Boolean and the pattern. The determined value was
+missing: the fork's `makEBoolean()` set only a positive fuzzy, and never
+took upstream's size-derived one (PR 17119). A negative tolerance now
+computes it as upstream's `setAutoFuzzy`: `BooleanFuzzy`
+(`Mod/Part/Boolean`, 10) times the inputs' diagonal times
+`Precision::Confusion()`. Upstream applies it by default to its two-shape
+booleans -- the regressions the commit message cites came from that; here
+it stays opt-in. Two boxes 2e-6 apart: two solids at 0, one at 1e-5 and
+at -1 (`TestPrimitive.testFuzzyTolerance`).
+
+**The struck-out label** (`f4be654473`; `7a4eb6d353`). Upstream asks its
+`SuppressibleExtension` from `Tree.cpp`; the fork asks the view provider,
+`ViewProvider::isSuppressed()`, which PartDesign's answers from `Suppress`.
+The tree's status test carries it as a status bit, so a change repaints
+and a reload strikes the label at once (upstream's issue #24587); an
+active-object highlight that resets the font keeps the strike. And the
+name gap of sec 7 is closed on the reading side: an upstream file's
+`Suppressed` restores into `Suppress`, so a feature suppressed there loads
+suppressed here. (The fork still writes `Suppress`, which upstream does
+not read.) Upstream's `TestSuppressed` on `Suppress`, plus the upstream
+name and the highlight case; `TestPartDesignGui` 7 OK.
+
+Suites for these three: PD 307 OK, `TestPartDesignGui` 7 OK. The full
+Python suite hung in `CAMTests.TestUpdateDocumentTools` (the endpoint
+hook's loopback `accept()`, `docs/Testing.md`) and was stopped; it and
+ctest are owed.
