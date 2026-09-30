@@ -4911,6 +4911,182 @@ class TransactionBranchCases(unittest.TestCase):
         )
         self.assertEqual(said(A), before)
 
+    def testAFeatureRefusedAFrozenInputRunsOnACopy(self):
+        # Sec 27.82: an algorithm that writes into a frozen input throws
+        # LockedShape; the feature runs once more on copies of its inputs,
+        # and the value it read is left as it was. What the algorithm
+        # changed stays in the result.
+        import Part
+
+        if not FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Part").GetBool(
+            "ImmutableShapeValues", True
+        ):
+            self.skipTest("shape values are not frozen")
+
+        class Tolerance:
+            def __init__(self, obj):
+                obj.addProperty("App::PropertyLink", "Base")
+                obj.Proxy = self
+
+            def execute(self, obj):
+                shape = obj.Base.Shape
+                edge = shape.Edges[0]
+                edge.fixTolerance(0.01)
+                obj.Shape = shape
+
+        self.param.SetInt("TransactionLog", 0)
+        doc = self.track(FreeCAD.newDocument("RefusedInput"))
+        box = doc.addObject("Part::Box", "Box")
+        doc.recompute()
+        feature = doc.addObject("Part::FeaturePython", "Tolerance")
+        Tolerance(feature)
+        feature.Base = box
+        doc.recompute()
+        self.assertNotIn("Invalid", feature.State)
+        self.assertAlmostEqual(max(e.Tolerance for e in feature.Shape.Edges), 0.01)
+        self.assertLess(max(e.Tolerance for e in box.Shape.Edges), 0.01)
+        # What the fix did not touch is the value's own again, shared as a
+        # result made on the value would share it; the faces around the
+        # edge it grew are not.
+        own = [any(f.isPartner(g) for g in box.Shape.Faces) for f in feature.Shape.Faces]
+        self.assertTrue(any(own), own)
+        self.assertFalse(all(own), own)
+
+    def testAnExpressionIntoAnotherDocumentStoresItsName(self):
+        # Sec 27.82: an expression's element path into another document --
+        # which the parser used to turn into a sub-object label -- names the
+        # element, saves its shadow with the name stored in its own table
+        # (sec 27.80), and after the target re-mints the string, finds it
+        # by content when the target's file loads with the owner.
+        import io
+        import re
+        import zipfile
+
+        import Part
+
+        self.param.SetInt("TransactionLog", 0)
+        # Evaluated on the host: the sandbox guest's image is built apart and
+        # has neither this parser nor the other document (sec 27.82).
+        routing = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Expression/Sandbox")
+        if "Evaluate" in routing.GetBools():
+            self.addCleanup(routing.SetBool, "Evaluate", routing.GetBool("Evaluate"))
+        else:
+            self.addCleanup(routing.RemBool, "Evaluate")
+        routing.SetBool("Evaluate", False)
+        V = FreeCAD.Vector
+        B = self.track(FreeCAD.newDocument("exprb"))
+        B.UndoMode = 0
+        pathB = os.path.join(self.dir, "exprb.FCStd")
+        B.saveAs(pathB)
+        body = B.addObject("PartDesign::Body", "Body")
+        corners = [(0, 0), (20, 0), (20, 20), (0, 20)]
+        for name in ("Sketch", "Sketch2"):
+            sketch = body.newObject("Sketcher::SketchObject", name)
+            for a, b in zip(corners, corners[1:] + corners[:1]):
+                sketch.addGeometry(Part.LineSegment(V(*a, 0), V(*b, 0)))
+        pad = body.newObject("PartDesign::Pad", "Pad")
+        pad.Profile = B.Sketch
+        pad.Length = 10
+        B.recompute()
+        fillet = body.newObject("PartDesign::Fillet", "Fillet")
+        fillet.Base = (pad, ["Edge1"])
+        fillet.Radius = 1
+        B.recompute()
+        B.save()
+
+        def expand(hasher, text):
+            def one(m):
+                sid = hasher.getID(int(m.group(1), 16))
+                return expand(hasher, sid.Data) if sid else "<missing>"
+
+            return re.sub(r"#([0-9a-f]+)", one, text)
+
+        def nameOf(doc, element):
+            return {e: n for n, e in doc.Fillet.Shape.ElementMap.items()}[element]
+
+        element = [
+            e
+            for n, e in sorted(fillet.Shape.ElementMap.items())
+            if e.startswith("Face") and "#" in n and "FLT" in n
+        ][0]
+        area = fillet.Shape.getElement(element).Area
+        said = expand(B.Hasher, nameOf(B, element))
+
+        A = self.track(FreeCAD.newDocument("expra"))
+        A.UndoMode = 0
+        pathA = os.path.join(self.dir, "expra.FCStd")
+        A.saveAs(pathA)
+        security = FreeCAD.ExpressionSecurity
+
+        def allowForeign(doc):
+            # The document's principal follows its content: grant what the
+            # refused binding asked for, then recompute.
+            doc.recompute()
+            for asked in security.pending():
+                if asked["permission"] == "doc.foreign":
+                    security.grant(asked["principal"], "doc.foreign", asked["target"], True, "session")
+                    security.clearPending(asked["principal"], "doc.foreign", asked["target"])
+                    self.addCleanup(security.revoke, asked["principal"], "doc.foreign", "*")
+            doc.recompute()
+
+        for i in range(3):
+            A.addObject("Part::Sphere", "Sphere%d" % i)
+        ref = A.addObject("App::FeaturePython", "Ref")
+        ref.addProperty("App::PropertyFloat", "T")
+        text = "exprb#Fillet.<<%s>>._shape.Area" % element
+        ref.setExpression("T", text)
+        self.assertEqual(dict(ref.ExpressionEngine)["T"], text)
+        allowForeign(A)
+        self.assertAlmostEqual(ref.T, area, places=6)
+        A.save()
+
+        def saved(doc):
+            data = bytes(doc.Ref.dumpPropertyContent("ExpressionEngine", Compression=0))
+            archive = zipfile.ZipFile(io.BytesIO(data))
+            xml = "".join(archive.read(n).decode() for n in archive.namelist())
+            found = re.search(r"<Ids [^>]*>", xml)
+            self.assertTrue(found, xml)
+            attrs = dict(re.findall(r'(\w+)="([^"]*)"', found.group(0)))
+            attrs["ids"] = {int(x, 16) for x in attrs.get("sids", "").split()}
+            return attrs
+
+        def stored(doc):
+            attrs = saved(doc)
+            named = {int(x, 16) for x in re.findall(r"#([0-9a-f]+)", attrs["stored"])}
+            self.assertTrue(named)
+            self.assertEqual(attrs["ids"], named)
+            self.assertEqual({i for i in named if doc.Hasher.getID(i)}, named)
+            return expand(doc.Hasher, attrs["stored"][1:].split(".")[0])
+
+        self.assertTrue(saved(A)["shadow"].endswith(";%s.%s" % (nameOf(B, element), element)))
+        self.assertEqual(stored(A), said)
+        FreeCAD.closeDocument(A.Name)
+
+        # B re-mints the string (sec 27.80's test): gone at a save, made again.
+        old = nameOf(B, element)
+        pad.Profile = B.Sketch2
+        B.recompute()
+        B.save()
+        FreeCAD.closeDocument(B.Name)
+        B = self.track(FreeCAD.openDocument(pathB))
+        B.save()
+        B.Pad.Profile = B.Sketch
+        B.recompute()
+        B.save()
+        new = nameOf(B, element)
+        self.assertNotEqual(new, old)
+        self.assertEqual(expand(B.Hasher, new), said)
+        FreeCAD.closeDocument(B.Name)
+
+        # A opens B with it; the path is looked up when B's file has loaded.
+        A = self.track(FreeCAD.openDocument(pathA))
+        self.assertIn("exprb", [d.Name for d in FreeCAD.listDocuments().values()])
+        B = FreeCAD.getDocument("exprb")
+        self.assertTrue(saved(A)["shadow"].endswith(";%s.%s" % (new, element)))
+        self.assertEqual(stored(A), said)
+        allowForeign(A)
+        self.assertAlmostEqual(A.Ref.T, area, places=6)
+
     def testAShapeThatCrossedAsTextAsksForARecompute(self):
         # Sec 27.76 item 4: a name carrying the external marker as written
         # before it named its document kept another table's ids as text; the
