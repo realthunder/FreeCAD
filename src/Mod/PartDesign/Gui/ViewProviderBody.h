@@ -69,6 +69,8 @@ public:
 
     bool doubleClicked() override;
     void setupContextMenu(QMenu* menu, QObject* receiver, const char* member) override;
+    /// Shows the Tip too when no feature of the body is visible
+    void show() override;
 
     std::vector< std::string > getDisplayModes() const override;
     void setDisplayMode(const char* ModeName) override;

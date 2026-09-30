@@ -31,6 +31,7 @@
 # include <QMessageBox>
 #endif
 
+#include <App/Document.h>
 #include <App/Part.h>
 #include <App/Origin.h>
 #include <App/DocumentObserver.h>
@@ -595,6 +596,30 @@ void ViewProviderBody::copyColorsfromTip(App::DocumentObject* tip)
         auto colors = static_cast<PartGui::ViewProviderPartExt*>(vptip)->DiffuseColor.getValues();
         this->DiffuseColor.setValues(colors);
     }
+}
+
+void ViewProviderBody::show()
+{
+    inherited::show();
+
+    // A Through body draws its features, so with every one of them hidden
+    // showing the body showed nothing: show the Tip (upstream 089d344343).
+    // Not while a document loads, which restores what the user saved.
+    auto body = Base::freecad_dynamic_cast<PartDesign::Body>(getObject());
+    if (!body || DisplayModeBody.getValue() != 0 || isRestoring()
+            || body->getDocument()->testStatus(App::Document::Restoring))
+        return;
+    auto tip = body->Tip.getValue();
+    if (!tip || tip->Visibility.getValue())
+        return;
+    for (auto feature : body->Group.getValues()) {
+        if (!feature || !feature->Visibility.getValue())
+            continue;
+        auto vp = Gui::Application::Instance->getViewProvider(feature);
+        if (vp && vp->isDerivedFrom(PartDesignGui::ViewProvider::getClassTypeId()))
+            return;
+    }
+    tip->Visibility.setValue(true);
 }
 
 void ViewProviderBody::onChanged(const App::Property* prop) {
