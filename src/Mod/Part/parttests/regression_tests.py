@@ -526,6 +526,29 @@ class RegressionTests(unittest.TestCase):
             self.assertEqual(len(result.Shells), 1, name)
             self.assertAlmostEqual(result.Volume, volume, places=3, msg=name)
 
+    def test_thickness_past_a_concave_corner(self):
+        """Outward with the Arc join past a concave corner, the loop kept the
+        corner of an arc face cut off by the next one as a face of its own;
+        with a concave face removed, a stretched edge of the removed face gave
+        a plane one of its lines twice (docs/TransactionLog.md sec 27.90).
+        The first two are upstream OCCT's volumes, the third the fork's own:
+        upstream fails it."""
+        lbox = lambda: Part.makeBox(10, 10, 5).cut(Part.makeBox(5, 5, 5, Vector(5, 5, 0)))
+        tshape = lambda: (
+            Part.makeBox(12, 4, 4).fuse(Part.makeBox(4, 4, 10, Vector(4, 0, 0))).removeSplitter()
+        )
+        cases = [
+            ("L-box arm end", lbox, 3, 388.5671),
+            ("T arm end", tshape, 0, 372.9204),
+            ("T bar top", tshape, 1, 382.4425),
+        ]
+        for name, make, face, volume in cases:
+            shape = make()
+            result = shape.makeThickness([shape.Faces[face]], 1.0, 1e-7, False, False, 0, 0)
+            self.assertTrue(result.isValid(), name)
+            self.assertEqual(len(result.Shells), 1, name)
+            self.assertAlmostEqual(result.Volume, volume, places=3, msg=name)
+
     def test_OptimalBox(self):
         box = Part.makeBox(1, 1, 1)
         self.assertTrue(box.optimalBoundingBox(True, False).isValid())
