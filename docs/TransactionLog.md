@@ -9755,3 +9755,105 @@ test).
 **Gates:** Python 2969 OK (52 skipped, 6 expected failures; +1), ctest
 850/850, the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14; the fork's
 thickness suite PASS 32, XFAIL 2.
+
+### 27.91 Thickness inward past a concave top, and in intersection mode (user, 2026-09-30)
+
+The user: chase all the remaining thickness failures -- the runs where the
+fork is worse than upstream first, then the T's concave bar top inward, the
+filleted box, and what both get wrong.
+
+The sweep was rebuilt first: the pocketed box's pocket is 5 x 5 now (walls
+2.5 thick, not twice the thickness), its geometry table regenerated, and
+upstream's libraries swept again beside the fork's. Baseline: the fork worse
+than upstream in 9 runs -- the L-box's top and side and the T's back in
+intersection mode with the Intersection join (7), and a holed cone's bottom
+inward in intersection mode (2).
+
+**Found and fixed** (fork):
+
+1. *Where the stretched removed face crosses an edge*
+   (`BRepAlgo_Loop::Perform`). The T with its concave bar top removed,
+   inward. On the inner back wall the removed face's section, stretched to
+   +-400, crossed the far end wall's inner edge (x=11) at z=4, above the
+   bar's inner top (z=3). The crossing is a vertex of both edges, and the
+   span logic of 27.90 took it for the end wall edge's own end: its span ran
+   to z=4, its piece above z=3 counted as inside, and the corner above the
+   bar's inner arc (x 7..11, z 3..4, area 3.785), closed by that piece, came
+   out as a face of its own. Its edges were free, the shell was thrown away,
+   and the offset failed. The vertices on an extended edge no longer bound
+   the span of the edges they cross. The result, 215.5708, is 288 less the
+   cavity worked out by hand: the bar 40, the post 24, under the removed top
+   8, and the corner outside the concave arc 2 (1 - pi/4). Upstream fails it.
+   4 runs (the bar top on either side, intersection off and on, Arc).
+2. *An edge two faces share, trimmed twice* (`BRepOffset_MakeOffset.cxx`,
+   `TrimEdges`). Each new edge was to be trimmed once, guarded by
+   `if (theNewEdges.Add(NE))` -- but an indexed map's `Add()` returns the
+   key's index, found or new, and is never 0, so an edge two faces share is
+   trimmed from each. Upstream has the same guard, and there a second pass is
+   a no-op unless the edge has four crossings or more. In the fork the
+   removed faces are in the face list too, and the L-box's top removed gave
+   the offset notch wall's section (x=6) three crossings: y=11 and y=6 from
+   its neighbours, y=5 where it crosses the removed face's own edge. The
+   first pass trimmed it to y 5..11; the second did not see the edge's own
+   end at y=5 as its own (why was not chased -- with the guard fixed the
+   pass does not run) and cut it to y 5..6. The rim face had an edge its
+   wall did not. 7 runs, all at upstream's volumes.
+   Twelve other runs in that mode -- concave removed faces: the L-box's notch
+   walls, the T's bar tops and post walls, a pocket wall -- threw before and
+   now come back invalid. Upstream returns an invalid or unhollowed solid
+   for all twelve. The cause is the rim: with intersection on and the
+   Intersection join the offset faces are split by
+   `BuildSplitsOfExtendedFaces`, which does not cut the wall's section where
+   it crosses the removed face's own edges, and the rim face needs those
+   pieces -- with intersection off the loop cuts them. Not fixed. Tried and
+   reverted: sending the shape's own faces that border the removed face
+   through the loop's `BuildFaces` in this mode too (as 27.90 tried) --
+   still no change.
+3. *A wire running once round a periodic face* (`BRepAlgo_Loop::FindLoop`).
+   A cone with a through hole, its bottom removed, inward, intersection on.
+   The cone's and the hole's offsets meet at z=6.485, below the top face's
+   offset at z=7, so that face has to vanish; intersection mode intersects
+   every pair of offsets, and the circle each got at z=7 -- beyond the
+   seam's span, left out of every seam wire -- was handed to the face as a
+   wire of its own: a face of no area, a second shell. A wire whose pcurves
+   add up to a period is dropped on a face with a seam wire. The result,
+   307.1946, is worked out by hand (the band between r=2.5 and the cone's
+   offset up to where they meet) and is upstream's. 2 runs.
+
+**Out of scope.** The holed cone with its top removed, inward: the wall is
+1.4 thick at the top, the two inner offsets cross at z=6.49, and no hollow
+result reaches the removed face (the pocketed box's old flaw). The holed cone
+with its bottom removed and intersection off returns a "valid" 307.955, 0.761
+too much: without intersection mode the offsets of faces that are not
+neighbours are never intersected, and the cavity runs up to z=7 with a
+sliver turned inside out. Upstream does the same and says invalid.
+
+**Result.** The sweep, in scope (150 runs a mode): Arc with intersection
+off, FreeCAD's default -- the fork right in 135, upstream in 106; Arc with
+intersection 135 / 107; the Intersection join 129 / 110 off, 113 / 111 on.
+The fork is worse than upstream in no run and better in 78. The suite: PASS
+38, XFAIL 2.
+
+**Still failing, upstream too.** With the Arc join only the filleted box
+(14 runs: an end face or a fillet face removed -- the removed face is
+tangent to its neighbours, whose offsets never reach its plane) and the holed
+cone's top. With the Intersection join also the twelve concave faces above,
+the pocket's walls in intersection mode, and with intersection off four runs
+that come back as valid solids of negative volume -- the pocketed box's
+pocket wall and floor outward, its floor inward, and the T's right bar top
+inward (the left one, its mirror image, is right) -- and the floors of the
+blind-hole box and the pocketed cylinder, invalid either way.
+
+**Tests.** FreeCAD `parttests.regression_tests.
+test_thickness_inward_and_in_intersection_mode` (five cases). The fork's
+suite: `tshape_bar_top_in`, `lbox_top_inter_join_out/in`,
+`tshape_back_inter_join_out/in`, `conehole_bottom_inter_in`; each fails
+before its fix. `thickness_case` takes the intersection flag and the join.
+
+Commits: fork `9d0ad9fd8f` (the stretched crossing), `a155728947` (trimmed
+once), `cb85117343` (the wrapping wire), `8fe3fa97ed`, `3ce2fd1837`,
+`51a0cc9b38` (the suite); `479e29a0ac` (the FreeCAD test).
+
+**Gates:** Python 2970 OK (52 skipped, 6 expected failures; +1), ctest
+850/850, the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14; the fork's
+thickness suite PASS 38, XFAIL 2.
