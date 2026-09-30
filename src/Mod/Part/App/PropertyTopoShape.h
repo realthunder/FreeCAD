@@ -43,6 +43,53 @@ namespace Part
 class Feature;
 class ShapeRefSet;
 
+/** While one lives on this thread, a frozen shape value is handed out as a
+ * copy, one per value, carrying the same element names (docs/TransactionLog.md
+ * sec 27.82). Part::Feature::recompute runs a feature again inside one when an
+ * algorithm refused to change a frozen input (TopoDS_LockedShape): the copy
+ * is the algorithm's to change.
+ */
+class PartExport ThawInputs
+{
+public:
+    ThawInputs();
+    ~ThawInputs();
+    ThawInputs(const ThawInputs&) = delete;
+    ThawInputs& operator=(const ThawInputs&) = delete;
+
+    /// Whether one lives on this thread
+    static bool active();
+    /** 'shape' when none lives or it is not frozen, else its copy: the same
+     * one for 'key' while the value is the same.
+     */
+    static const TopoShape& copyOf(const void* key, const TopoShape& shape);
+    /** A result made in the scope, with every copy the algorithm left as it
+     * was put back as its original, so that it shares with the values as a
+     * result made on them would: only what the algorithm changed stays a copy.
+     * 'shape' when none lives.
+     */
+    static TopoDS_Shape shareBack(const TopoDS_Shape& shape);
+
+private:
+    /// Copies a frozen shape, each TShape once for the scope: sub-shapes
+    /// two values share -- a feature's and its base's -- stay shared.
+    TopoDS_Shape thaw(const TopoDS_Shape& shape);
+
+    struct Copy
+    {
+        TopoDS_Shape source;
+        TopoShape copy;
+    };
+    std::map<const void*, Copy> copies;
+    std::map<const TopoDS_TShape*, TopoDS_Shape> tshapes;
+    /// Copy -> its original, bare
+    std::map<const TopoDS_TShape*, TopoDS_Shape> originals;
+    bool unchanged(const TopoDS_Shape& copy, std::map<const TopoDS_TShape*, bool>& memo) const;
+    TopoDS_Shape restore(const TopoDS_Shape& shape, std::map<const TopoDS_TShape*, bool>& memo,
+                         std::map<const TopoDS_TShape*, TopoDS_Shape>& done) const;
+    ThawInputs* outer;
+};
+
 /** The part shape property class.
  * @author Werner Mayer
  */

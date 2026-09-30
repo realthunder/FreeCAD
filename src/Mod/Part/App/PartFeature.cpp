@@ -34,6 +34,7 @@
 # include <BRepAlgoAPI_Common.hxx>
 # include <BRepBndLib.hxx>
 # include <BRepBuilderAPI_MakeShape.hxx>
+# include <TopoDS_LockedShape.hxx>
 # include <BRepExtrema_DistShapeShape.hxx>
 # include <BRepGProp.hxx>
 # include <BRepIntCurveSurface_Inter.hxx>
@@ -299,15 +300,32 @@ short Feature::mustExecute() const
 
 App::DocumentObjectExecReturn *Feature::recompute()
 {
-    try {
-        return App::GeoFeature::recompute();
-    }
-    catch (Standard_Failure& e) {
+    auto once = [this]() -> App::DocumentObjectExecReturn* {
+        try {
+            return App::GeoFeature::recompute();
+        }
+        catch (Standard_Failure& e) {
 
-        App::DocumentObjectExecReturn* ret = new App::DocumentObjectExecReturn(e.GetMessageString());
-        if (ret->Why.empty()) ret->Why = "Unknown OCC exception";
+            App::DocumentObjectExecReturn* ret = new App::DocumentObjectExecReturn(e.GetMessageString());
+            if (ret->Why.empty()) ret->Why = "Unknown OCC exception";
+            return ret;
+        }
+    };
+    // An algorithm refused to change a frozen input, and the feature took
+    // it as a failure (most turn the OCCT exception into an error message):
+    // once more, on copies of the inputs, which are the algorithm's to
+    // change (docs/TransactionLog.md sec 27.82). Counted, not caught: the
+    // refusal seldom reaches here as an exception.
+    const unsigned int refused = TopoDS_LockedShape::Raised();
+    App::DocumentObjectExecReturn* ret = once();
+    if (ret == App::DocumentObject::StdReturn || ThawInputs::active()
+            || TopoDS_LockedShape::Raised() == refused)
         return ret;
-    }
+    FC_LOG(getFullName() << ": a frozen input was refused (" << ret->Why
+                         << "), recomputing on copies");
+    delete ret;
+    ThawInputs thaw;
+    return once();
 }
 
 App::DocumentObjectExecReturn *Feature::execute()
@@ -1026,6 +1044,9 @@ static TopoShape _getTopoShape(const App::DocumentObject *obj, const char *subna
     }
 
     auto canCache = [&](const App::DocumentObject *o) {
+        // Copies handed out for a retry on thawed inputs are not cached.
+        if (ThawInputs::active())
+            return false;
         return !lastLink || 
             (hiddens.empty() && !App::GeoFeatureGroupExtension::isNonGeoGroup(o));
     };

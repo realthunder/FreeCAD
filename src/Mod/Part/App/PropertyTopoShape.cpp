@@ -73,6 +73,17 @@
 #include "PartParams.h"
 #include "PartPyCXX.h"
 #include "PropertyShapeStore.h"
+#include <BRep_Builder.hxx>
+#include <BRep_PointOnCurve.hxx>
+#include <BRep_PointOnCurveOnSurface.hxx>
+#include <BRep_PointOnSurface.hxx>
+#include <BRep_CurveOn2Surfaces.hxx>
+#include <BRep_GCurve.hxx>
+#include <BRep_TEdge.hxx>
+#include <BRep_TFace.hxx>
+#include <BRep_TVertex.hxx>
+#include <TopoDS_Iterator.hxx>
+
 #include "PropertyTopoShape.h"
 #include "ShapeCongruence.h"
 #include "ShapeRefSet.h"
@@ -1011,9 +1022,14 @@ void PropertyPartShape::setValue(const TopoShape& sh)
     // the transaction takes there is a Copy(), which carries no blob.
     aboutToSetValue();
     dropBlob(sh.getShape());
-    makeImmutable(sh.getShape());
-    _Shape = sh;
-    _ShapeNoName.setShape(sh.getShape(), true);
+    // Made on copies of frozen inputs (ThawInputs, sec 27.82): what the
+    // algorithm did not change goes back to the values' own.
+    TopoShape shared(sh);
+    if (ThawInputs::active())
+        shared.setShape(ThawInputs::shareBack(sh.getShape()), false);
+    makeImmutable(shared.getShape());
+    _Shape = shared;
+    _ShapeNoName.setShape(shared.getShape(), true);
     _ShapeNoName.Tag = -1;
     auto obj = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer());
     if(obj) {
@@ -1039,31 +1055,229 @@ void PropertyPartShape::setValue(const TopoDS_Shape& sh, bool resetElementMap)
     // Announced first, see setValue(const TopoShape&).
     aboutToSetValue();
     dropBlob(sh);
-    makeImmutable(sh);
+    const TopoDS_Shape shared = ThawInputs::shareBack(sh);
+    makeImmutable(shared);
     auto obj = dynamic_cast<App::DocumentObject*>(getContainer());
     if(obj)
         _Shape.Tag = obj->getID();
-    _Shape.setShape(sh,resetElementMap);
-    _ShapeNoName.setShape(sh, true);
+    _Shape.setShape(shared,resetElementMap);
+    _ShapeNoName.setShape(shared, true);
     _ShapeNoName.Tag = -1;
     validateShape(obj);
     hasSetValue();
     _Ver.clear();
 }
 
+namespace {
+thread_local ThawInputs* _thawInputs = nullptr;
+}
+
+ThawInputs::ThawInputs()
+    : outer(_thawInputs)
+{
+    _thawInputs = this;
+}
+
+ThawInputs::~ThawInputs()
+{
+    _thawInputs = outer;
+}
+
+bool ThawInputs::active()
+{
+    return _thawInputs != nullptr;
+}
+
+const TopoShape& ThawInputs::copyOf(const void* key, const TopoShape& shape)
+{
+    if (!_thawInputs || shape.isNull() || !shape.getShape().Immutable())
+        return shape;
+    auto& entry = _thawInputs->copies[key];
+    if (entry.copy.isNull() || !entry.source.IsEqual(shape.getShape())) {
+        entry.source = shape.getShape();
+        // The element map as it is: the copy keeps every index.
+        TopoShape copy(shape);
+        copy.setShape(_thawInputs->thaw(shape.getShape()), false);
+        entry.copy = std::move(copy);
+    }
+    return entry.copy;
+}
+
+/// The representations of an edge a copy has: EmptyCopy() leaves out the
+/// polygons.
+static int copiedCurves(const BRep_TEdge* edge)
+{
+    int count = 0;
+    for (const auto& rep : edge->Curves()) {
+        if (rep->IsKind(STANDARD_TYPE(BRep_GCurve))
+                || rep->IsKind(STANDARD_TYPE(BRep_CurveOn2Surfaces)))
+            ++count;
+    }
+    return count;
+}
+
+/// Whether a copy still carries what its original does: tolerance, point,
+/// surface and how many representations.
+static bool sameContent(const TopoDS_Shape& copy, const TopoDS_Shape& original)
+{
+    switch (copy.ShapeType()) {
+    case TopAbs_VERTEX: {
+        auto a = static_cast<const BRep_TVertex*>(copy.TShape().get());
+        auto b = static_cast<const BRep_TVertex*>(original.TShape().get());
+        return a->Tolerance() == b->Tolerance() && a->Pnt().IsEqual(b->Pnt(), 0.)
+            && a->Points().Size() == b->Points().Size();
+    }
+    case TopAbs_EDGE: {
+        auto a = static_cast<const BRep_TEdge*>(copy.TShape().get());
+        auto b = static_cast<const BRep_TEdge*>(original.TShape().get());
+        return a->Tolerance() == b->Tolerance() && copiedCurves(a) == copiedCurves(b)
+            && a->SameParameter() == b->SameParameter() && a->SameRange() == b->SameRange()
+            && a->Degenerated() == b->Degenerated();
+    }
+    case TopAbs_FACE: {
+        auto a = static_cast<const BRep_TFace*>(copy.TShape().get());
+        auto b = static_cast<const BRep_TFace*>(original.TShape().get());
+        return a->Tolerance() == b->Tolerance() && a->Surface() == b->Surface()
+            && a->NaturalRestriction() == b->NaturalRestriction();
+    }
+    default:
+        return true;
+    }
+}
+
+bool ThawInputs::unchanged(const TopoDS_Shape& copy,
+                           std::map<const TopoDS_TShape*, bool>& memo) const
+{
+    const TopoDS_TShape* tshape = copy.TShape().get();
+    auto res = memo.emplace(tshape, false);
+    if (!res.second)
+        return res.first->second;
+    // A copy the algorithm left alone, and all it holds. Modified() is set
+    // by BRep_Builder, not by a tolerance set on the TShape itself (ShapeFix
+    // does that), so what a copy carries is compared too.
+    auto orig = originals.find(tshape);
+    bool same = orig != originals.end() && !tshape->Modified()
+        && sameContent(copy, orig->second);
+    for (TopoDS_Iterator child(copy, false, false); same && child.More(); child.Next())
+        same = unchanged(child.Value(), memo);
+    res.first->second = same;
+    return same;
+}
+
+TopoDS_Shape ThawInputs::restore(const TopoDS_Shape& shape,
+                                 std::map<const TopoDS_TShape*, bool>& memo,
+                                 std::map<const TopoDS_TShape*, TopoDS_Shape>& done) const
+{
+    if (shape.IsNull())
+        return shape;
+    const TopoDS_TShape* tshape = shape.TShape().get();
+    auto it = done.find(tshape);
+    if (it == done.end()) {
+        TopoDS_Shape plain;
+        plain.TShape(shape.TShape());
+        TopoDS_Shape bare = plain;
+        if (unchanged(plain, memo)) {
+            bare = originals.at(tshape);
+        }
+        else {
+            // Rebuilt only when a child comes back as something else.
+            std::vector<TopoDS_Shape> children;
+            bool differs = false;
+            for (TopoDS_Iterator child(plain, false, false); child.More(); child.Next()) {
+                children.push_back(restore(child.Value(), memo, done));
+                differs = differs || !children.back().IsSame(child.Value());
+            }
+            if (differs) {
+                bare = plain.EmptyCopied();
+                BRep_Builder builder;
+                for (const auto& child : children)
+                    builder.Add(bare, child);
+                bare.Free(plain.Free());
+                bare.Checked(plain.Checked());
+                bare.Orientable(plain.Orientable());
+                bare.Closed(plain.Closed());
+                bare.Infinite(plain.Infinite());
+                bare.Convex(plain.Convex());
+            }
+        }
+        it = done.emplace(tshape, bare).first;
+    }
+    TopoDS_Shape res = it->second;
+    res.Location(shape.Location(), false);
+    res.Orientation(shape.Orientation());
+    return res;
+}
+
+TopoDS_Shape ThawInputs::shareBack(const TopoDS_Shape& shape)
+{
+    if (!_thawInputs || _thawInputs->originals.empty() || shape.IsNull())
+        return shape;
+    std::map<const TopoDS_TShape*, bool> memo;
+    std::map<const TopoDS_TShape*, TopoDS_Shape> done;
+    return _thawInputs->restore(shape, memo, done);
+}
+
+TopoDS_Shape ThawInputs::thaw(const TopoDS_Shape& shape)
+{
+    if (shape.IsNull())
+        return shape;
+    auto it = tshapes.find(shape.TShape().get());
+    if (it == tshapes.end()) {
+        TopoDS_Shape plain;
+        plain.TShape(shape.TShape());
+        TopoDS_Shape copy = plain.EmptyCopied();
+        BRep_Builder builder;
+        for (TopoDS_Iterator child(plain, false, false); child.More(); child.Next())
+            builder.Add(copy, thaw(child.Value()));
+        if (plain.ShapeType() == TopAbs_VERTEX) {
+            // EmptyCopied() keeps a vertex's point only; its parameters go
+            // across as new objects, not shared with the frozen original.
+            auto from = static_cast<const BRep_TVertex*>(plain.TShape().get());
+            auto to = static_cast<BRep_TVertex*>(copy.TShape().get());
+            for (const auto& pr : from->Points()) {
+                occ::handle<BRep_PointRepresentation> rep;
+                if (pr->IsPointOnCurve())
+                    rep = new BRep_PointOnCurve(pr->Parameter(), pr->Curve(), pr->Location());
+                else if (pr->IsPointOnCurveOnSurface())
+                    rep = new BRep_PointOnCurveOnSurface(pr->Parameter(), pr->PCurve(),
+                                                         pr->Surface(), pr->Location());
+                else if (pr->IsPointOnSurface())
+                    rep = new BRep_PointOnSurface(pr->Parameter(), pr->Parameter2(),
+                                                  pr->Surface(), pr->Location());
+                if (!rep.IsNull())
+                    to->ChangePoints().Append(rep);
+            }
+        }
+        copy.Free(plain.Free());
+        copy.Checked(plain.Checked());
+        copy.Orientable(plain.Orientable());
+        copy.Closed(plain.Closed());
+        copy.Infinite(plain.Infinite());
+        copy.Convex(plain.Convex());
+        // What the algorithm changes marks itself Modified (shareBack).
+        copy.TShape()->Modified(false);
+        originals.emplace(copy.TShape().get(), plain);
+        it = tshapes.emplace(shape.TShape().get(), copy).first;
+    }
+    TopoDS_Shape res = it->second;
+    res.Location(shape.Location(), false);
+    res.Orientation(shape.Orientation());
+    return res;
+}
+
 const TopoDS_Shape& PropertyPartShape::getValue() const
 {
     ensureRestored();
-    return _Shape.getShape();
+    return ThawInputs::copyOf(this, _Shape).getShape();
 }
 
 TopoShape PropertyPartShape::getShape() const
 {
     ensureRestored();
     _Shape.initCache(-1);
-    auto res = _Shape;
+    auto res = ThawInputs::copyOf(this, _Shape);
     if (Feature::isElementMappingDisabled(getContainer()))
-        return _ShapeNoName;
+        return ThawInputs::copyOf(&_ShapeNoName, _ShapeNoName);
     else if (!res.Tag) {
         if (auto parent = Base::freecad_dynamic_cast<App::DocumentObject>(getContainer()))
             res.Tag = parent->getID();
