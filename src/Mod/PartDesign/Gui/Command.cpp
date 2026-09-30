@@ -593,79 +593,85 @@ void CmdPartDesignNewSketch::activated(int iMsg)
     auto shouldMakeBody( false );
 
     App::SubObjectT bodyT;
-    App::SubObjectT reference;
 
-    if ( PartDesignGui::assureModernWorkflow( doc ) ) {
-        // We need either an active Body, or for there to be no Body
-        // objects (in which case, just make one) to make a new sketch.
-
-        pcActiveBody = PartDesignGui::getBody(bodyT, /* messageIfNot = */ false );
-        if (!pcActiveBody) {
-            if ( doc->countObjectsOfType(PartDesign::Body::getClassTypeId()) == 0 ) {
-                shouldMakeBody = true;
-            } else {
-                PartDesignGui::DlgActiveBody dia(Gui::getMainWindow(), doc);
-                if (dia.exec() == QDialog::DialogCode::Accepted)
-                    pcActiveBody = dia.getActiveBody();
-                if (!pcActiveBody)
-                    return;
-            }
+    // We need either an active Body, or for there to be no Body
+    // objects (in which case, just make one) to make a new sketch.
+    pcActiveBody = PartDesignGui::getBody(bodyT, /* messageIfNot = */ false );
+    if (!pcActiveBody) {
+        if ( doc->countObjectsOfType(PartDesign::Body::getClassTypeId()) == 0 ) {
+            shouldMakeBody = true;
+        } else {
+            PartDesignGui::DlgActiveBody dia(Gui::getMainWindow(), doc);
+            if (dia.exec() == QDialog::DialogCode::Accepted)
+                pcActiveBody = dia.getActiveBody();
+            if (!pcActiveBody)
+                return;
         }
-
-    } else {
-        // No PartDesign feature without Body past FreeCAD 0.13
-        if ( PartDesignGui::isLegacyWorkflow( doc ) ) {
-            Gui::CommandManager &rcCmdMgr = Gui::Application::Instance->commandManager();
-            rcCmdMgr.runCommandByName("Sketcher_NewSketch");
-        }
-        return;
     }
 
-    // Obtain a single selection from any object in any document. We'll use
+    // A single planar face or plane is sketched on at once. Everything else
+    // opens the attacher (upstream b43cb81c0a): Shift held, the preference,
+    // several references, a face that is not planar -- given to it, with
+    // the mode that fits them best -- and a sketch, which a user rarely
+    // means as the support of the next one and is not given to it.
+    bool useAttacher = (QApplication::queryKeyboardModifiers() & Qt::ShiftModifier)
+        || App::GetApplication().GetParameterGroupByPath(
+               "User parameter:BaseApp/Preferences/Mod/PartDesign")
+               ->GetBool("NewSketchUseAttachmentDialog", false);
+
+    // In case the selected face belongs to the body then it means its
+    // Display Mode Body is set to Tip. But the body face is not allowed
+    // to be used as support because otherwise it would cause a cyclic
+    // dependency. So, instead we use the tip object as reference.
+    // https://forum.freecadweb.org/viewtopic.php?f=3&t=37448
+    auto referTip = [pcActiveBody](App::SubObjectT &ref) {
+        if (!pcActiveBody || ref.getSubObject() != pcActiveBody)
+            return true;
+        App::DocumentObject* tip = pcActiveBody->Tip.getValue();
+        if (ref.getOldElementName().empty() || !tip || !tip->isDerivedFrom<Part::Feature>())
+            return false;
+        ref.setSubName(ref.getSubNameNoElement()
+                + tip->getNameInDocument() + "." + ref.getOldElementName());
+        // automatically switch to 'Through' mode
+        PartDesignGui::ViewProviderBody* vpBody = dynamic_cast<PartDesignGui::ViewProviderBody*>
+                (Gui::Application::Instance->getViewProvider(pcActiveBody));
+        if (vpBody)
+            vpBody->DisplayModeBody.setValue("Through");
+        return true;
+    };
+
+    // Obtain the selection from any object in any document. We'll use
     // SubShapeBinder::import() to deal with external references.
-    auto sels = Gui::Selection().getSelectionT("*", Gui::ResolveMode::NoResolve, true);
-    App::DocumentObject *obj = nullptr;
-    if (!sels.empty() && (obj = sels[0].getSubObject())!=nullptr) {
-        reference = sels[0];
-        obj = obj->getLinkedObject(true);
-        if (!obj->isDerivedFrom<App::Plane>()
+    std::vector<App::SubObjectT> references;
+    for (auto &sel : Gui::Selection().getSelectionT("*", Gui::ResolveMode::NoResolve)) {
+        if (sel.getSubObject() && referTip(sel))
+            references.push_back(sel);
+    }
+
+    if (references.size() == 1) {
+        auto &reference = references.front();
+        auto obj = reference.getSubObject()->getLinkedObject(true);
+        if (obj->isDerivedFrom<Part::Part2DObject>()) {
+            useAttacher = true;
+            references.clear();
+        }
+        else if (!obj->isDerivedFrom<App::Plane>()
                 && !obj->isDerivedFrom<PartDesign::Plane>())
         {
             auto shape = Part::Feature::getTopoShape(reference.getObject(),
                                                      reference.getSubName().c_str(),
                                                      true);
             gp_Pln pln;
-            if (!shape.findPlane(pln, Attacher::AttachEnginePlane::planarPrecision())) {
-                if (shape.isNull() || obj == pcActiveBody) {
-                    obj = nullptr;
-                    reference = App::SubObjectT();
-                } else {
-                    QMessageBox::warning(Gui::getMainWindow(), QObject::tr("No planar support"),
-                            QObject::tr("You need a planar face as support for a sketch!"));
-                    return;
-                }
-            }
+            if (shape.isNull())
+                references.clear();
+            else if (!shape.findPlane(pln, Attacher::AttachEnginePlane::planarPrecision()))
+                useAttacher = true;
         }
+    }
+    else if (references.size() > 1)
+        useAttacher = true;
 
-        // In case the selected face belongs to the body then it means its
-        // Display Mode Body is set to Tip. But the body face is not allowed
-        // to be used as support because otherwise it would cause a cyclic
-        // dependency. So, instead we use the tip object as reference.
-        // https://forum.freecadweb.org/viewtopic.php?f=3&t=37448
-        if (obj && obj == pcActiveBody) {
-            App::DocumentObject* tip = pcActiveBody->Tip.getValue();
-            if (tip && tip->isDerivedFrom<Part::Feature>()) {
-                reference.setSubName(reference.getSubNameNoElement()
-                        + tip->getNameInDocument() + "." + reference.getOldElementName());
-                // automatically switch to 'Through' mode
-                PartDesignGui::ViewProviderBody* vpBody = dynamic_cast<PartDesignGui::ViewProviderBody*>
-                        (Gui::Application::Instance->getViewProvider(pcActiveBody));
-                if (vpBody) {
-                    vpBody->DisplayModeBody.setValue("Through");
-                }
-            }
-        }
-    } else {
+    if (references.empty()) {
         Gui::Selection().selStackPush();
         Gui::Selection().clearSelection();
     }
@@ -681,7 +687,7 @@ void CmdPartDesignNewSketch::activated(int iMsg)
     }
 
     PartDesignGui::getBody(bodyT, false);
-    if (reference.getObjectName().size())
+    for (auto &reference : references)
         reference = Part::SubShapeBinder::import(reference, bodyT);
 
     // create Sketch on Face or Plane
@@ -692,15 +698,39 @@ void CmdPartDesignNewSketch::activated(int iMsg)
             << "newObjectAt('Sketcher::SketchObject', '" << FeatName << "', "
                         <<  "FreeCADGui.Selection.getSelection())");
     auto sketch = pcActiveBody->getDocument()->getObject(FeatName.c_str());
-    if (!reference.getObjectName().empty()) {
-        Gui::cmdAppObject(sketch, std::ostringstream() <<"Support = " << reference.getSubObjectPython());
+    if (!useAttacher && !references.empty()) {
+        Gui::cmdAppObject(sketch, std::ostringstream() <<"Support = " << references.front().getSubObjectPython());
         Gui::cmdAppObject(sketch, std::ostringstream() <<"MapMode = '" << Attacher::AttachEngine::getModeName(Attacher::mmFlatFace)<<"'");
         updateActive();
         PartDesignGui::setEdit(sketch,pcActiveBody);
         return;
     }
 
-    // No attachment reference. Open attachment task panel
+    // Hand the references to the attacher with the mode that fits them best,
+    // as the datum commands do; none fitting, the user picks there.
+    auto attach = sketch ? sketch->getExtensionByType<Part::AttachExtension>(true) : nullptr;
+    if (attach && !references.empty()) {
+        try {
+            attach->attacher().setReferences(references);
+            SuggestResult sugr;
+            attach->attacher().suggestMapModes(sugr);
+            if (sugr.message == Attacher::SuggestResult::srOK) {
+                std::ostringstream ss;
+                for (auto &reference : references)
+                    ss << reference.getSubObjectPython() << ", ";
+                Gui::cmdAppObject(sketch, std::ostringstream() << "Support = [" << ss.str() << "]");
+                Gui::cmdAppObject(sketch, std::ostringstream() << "MapMode = '"
+                        << Attacher::AttachEngine::getModeName(sugr.bestFitMode) << "'");
+                updateActive();
+            }
+        } catch (Base::Exception &e) {
+            e.ReportException();
+        } catch (Standard_Failure &e) {
+            FC_ERR("Failed to suggest an attachment mode: " << e.GetMessageString());
+        }
+    }
+
+    // Open attachment task panel
     auto sketchvp = Base::freecad_dynamic_cast<Gui::ViewProviderDocumentObject>(
             Gui::Application::Instance->getViewProvider(sketch));
     if (sketchvp) {
@@ -716,9 +746,6 @@ void CmdPartDesignNewSketch::activated(int iMsg)
         task->editAfterClose();
         Gui::Control().showDialog(task);
     }
-
-    // PartDesignGui::SketchWorkflow creator(getActiveGuiDocument());
-    // creator.createSketch();
 }
 
 bool CmdPartDesignNewSketch::isActive()
