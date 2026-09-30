@@ -9148,3 +9148,132 @@ around a ctest run.
 
 **Gates** (with the fork fix): Python 2962 OK (52 skipped, 6 expected
 failures), ctest 848/848.
+
+### 27.82 Pcurve caches on frozen edges benchmarked; a refused input retried on copies; expressions across documents (user, 2026-09-30)
+
+**Asked (user):** benchmark 27.81's options (a) and (c) for the piling pcurve
+caches, speed and storage; build the retry on a copy; build expressions (B).
+
+**The options, as built for the benchmark** (fork, `BRep_Builder`, a switch
+read once from `CSF_FrozenPCurve`; unset is today's behaviour):
+- `cache` -- 23.12 as it was: an Immutable edge takes a pcurve for a new
+  surface as a cache, and keeps it.
+- `sweep` -- (a): before the cache is added, the edge's caches on a surface
+  that nothing but caches of this edge and of its vertices hold are dropped,
+  with those vertices' cached parameters on it. The first version counted the
+  edge's own cache against the surface's reference count and swept nothing:
+  a frozen vertex keeps a parameter on each new face too (23.14), so a dead
+  face's surface is always held more than once. A dead surface held by
+  another frozen edge as well (a face on a closed frozen wire) is not seen
+  from one edge, and stays.
+- `refuse` -- (c): no cache; the edge throws `LockedShape`, and the feature
+  runs again on copies of its inputs (the retry below) -- copy-on-write at
+  the granularity of a feature. An edge-level (c), each algorithm copying the
+  edge it would give a pcurve, would mean changing every OCCT algorithm that
+  adds one; not attempted.
+
+**Workloads.** W1: a Body, a sketch of a rectangle and two circles, a Pad and
+a Pocket; the Pad's length set 300 times, each a recompute. W2: scanner.FCStd,
+400 recomputes with nothing touched (27.81: `Pocket034` runs every time).
+Each in its own process and fresh user home, twice.
+
+| | W1 ms a recompute, first -> last 50 | W1 total | W1 representations, the sketch's 6 edges | W2 idle ms, first -> last 100 | W2 representations, every sketch | failures added |
+| --- | --- | --- | --- | --- | --- | --- |
+| cache | 6.8-7.3 -> 18.8-19.1 | 3.6-3.7 s | 1204 | 61-64 -> 79.5-80.5 | 910 | -- |
+| sweep, first version | 6.8-7.0 -> 18.7-19.3 | 3.6-3.7 s | 1204 | 61-62 -> 78-79 | 910 | -- |
+| sweep (a) | 6.2-6.3 -> 6.2-6.7 | 1.9-2.0 s | 12 | 61-62 -> 60-61 | 112 | -- |
+| refuse (c) | 7.5-8.0, flat | 2.3-2.4 s | 0 | 51-53, flat | 0 | `Fillet003` |
+
+**Storage.** Resident memory did not move by a megabyte in any mode (W1
+123-125 MB, W2 745-758 MB, equal before and after the loop): a dead cache is a
+representation, a 2D curve and the surface it keeps alive, some hundreds of
+bytes -- W1's 1200 about half a megabyte. The saved files are the same size
+within noise (W1 11.8 KB, W2 4.29 MB): caches are not written (23.14's
+writer rule). So storage is the count of representations each edge carries,
+which is also what the walks cost: `cache` grows without bound, (a) keeps what
+live faces use, (c) nothing.
+
+**Speed.** (a) is flat and the fastest on W1 -- faster than `cache` even at
+its start, where each edge already carries the caches of the first
+recomputes. (c) is flat but a quarter slower than (a) on W1: every Pad
+recompute throws, and runs again on copies. On W2 (c) reads fastest only
+because it breaks `Fillet003` ("Fillet not possible on selected shapes"),
+which takes that feature's downstream out of every recompute: a refusal an
+algorithm catches inside and works around yields a different shape and no
+error, which no retry can see. Not chased.
+
+**Recommendation: (a).** It removes the creep with no change of result, and
+leaves a dead face shared by several frozen edges; if that shows in a
+measurement, 27.81's (b) completes it. The switch stays for now, `cache` by
+default, for the ruling.
+
+**The retry on a copy, as built** (27.81, ruled yes).
+- *Counted, not caught* (fork): `TopoDS_LockedShape` counts itself per thread
+  (`TopoDS_LockedShape::Raised()`), since features turn the exception into
+  an error message (43 sites in PartDesign alone).
+- *The retry* (`Part::Feature::recompute`): an execute that returned an error
+  while a refusal was counted runs once more inside a `Part::ThawInputs`
+  scope.
+- *Copies* (`ThawInputs`): in the scope, a frozen `PropertyPartShape` value
+  is handed out as a copy -- by `getValue()`, `getShape()` and so Python --
+  one per value while the value stays the same, each TShape copied once for
+  the scope so sub-shapes values share stay shared, a vertex's parameters as
+  new objects, the element map kept by index. `Feature::getTopoShape` caches
+  nothing in the scope.
+- *Shared back*: a result stored in the scope has every copy the algorithm
+  left alone put back as its original (`ThawInputs::shareBack`), so it shares
+  with the values as a result made on them would, and only what was changed
+  stays a copy. Left alone means not `Modified()` and the same tolerance,
+  point, surface and representation count -- `ShapeFix` sets a tolerance on
+  the TShape itself, which `Modified()` does not see.
+- scanner.FCStd's `Fillet001` recomputes now (27.81's cause 2).
+
+**Found through it: `PolarPattern` makes an invalid shape with the freeze
+on** -- a vertex of tolerance 6.8 where the freeze off gives 1e-4, and no
+refusal, so no retry. The site: `PartDesign::Transformed` refines its result,
+`ModelRefine::FaceTypedPlane::buildFace` -> `ShapeFix_Face` ->
+`ShapeFix_Wire::FixEdgeCurves` -> `FixVertexTolerance` ->
+`BRepTools_ReShape::CopyVertex` -> `UpdateVertex(v, 6.8)`. The pattern's
+instances share frozen TShapes at different locations; a cached parameter of
+one instance read for another would give such a distance. Hidden until now:
+`Fillet001` failed ahead of it. `Pocket005` then fails ("not a solid"). Not
+chased.
+
+**Expressions across documents (B), as built.**
+- *The parser*: `ObjectIdentifier::addComponent` makes a string right after a
+  document-qualified object its sub-name, as the grammar does for
+  `Obj.<<Edge1>>`; `Doc#Obj.<<Edge1>>` had become a sub-object label.
+- *Saved*: an element path whose names are another table's writes, in its
+  `<Ids>`, the shadow and the name stored in the owner's table
+  (`shadow=`, `stored=`), and `sids=` of the owner's table -- 27.80's form.
+  Another table's numbers are never written; a path within one table writes
+  what it did.
+- *Restored*: the shadow comes back pending; `ObjectIdentifier::
+  updateElementReference` leaves a pending path's ids to 27.80's lookup in
+  `_updateElementReference`.
+- *Registered when the target loads*: the engine keeps its external targets
+  as XLinks; when the target's file is opened after the owner, each XLink's
+  `restoreLink` ends in the engine's `hasSetChildValue`, which now registers
+  the element paths again.
+
+**Not working: the sandbox guest.** Routing to the guest has been on by
+default since 2026-09-16, and a path through `._shape` is evaluated there. The
+guest's image is built apart (the `fcx-image` wheel): its parser predates the
+fix and puts the label back, and it has no other document ("Document 'exprb'
+not found"). Cross-document element expressions work on the host only until
+the image is rebuilt; the test evaluates on the host.
+
+Tests: `TransactionBranchCases.testAFeatureRefusedAFrozenInputRunsOnACopy` (a
+Python feature fixing a tolerance on its input's edge: refused, run on a copy,
+the input unchanged, the untouched faces the input's own);
+`testAnExpressionIntoAnotherDocumentStoresItsName` (the path names the
+element; saved with its stored name in the owner's ids; after the target
+re-mints the string, the owner opens the target and the path names the new id
+before any recompute).
+
+Commits: fork `8cacfed608` (the refusal count), `707e624091` (the switch);
+`c6b89d90c7` (the retry), `8ba3761985` (expressions), `6b223e276f` (tests).
+
+**Gates:** Python 2964 OK (52 skipped, 6 expected failures; +2), ctest
+848/848, the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16 (each in a user home
+and cache of its own; `user.cfg` copied aside around ctest and unchanged).
