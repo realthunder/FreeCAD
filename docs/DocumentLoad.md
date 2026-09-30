@@ -1417,10 +1417,18 @@ skipped with it): stuck in `BRepTools::Read` under
 (256 in 7.7.2), and the file's datum line wrote its +-2e100 range in fixed
 notation, 101 digits; split, every later field came from the wrong token
 and the reader spun forever. Fixed in the OCCT fork (`310bfaf34f`,
-`LinkVibe-801`); both files now open (9.5 s eager, 5.9 s progressive --
-slow for 30 and 83 objects, not looked at). Test: Part
+`LinkVibe-801`); both files now open. Test: Part
 `RegressionTests.test_read_brep_with_a_long_fixed_notation_real`, which
-hangs before the fix.
+hangs before the fix. The 9.5 s eager and 5.9 s progressive first
+measured for them was not the files: it was each being the first
+document a fresh test process opened, and `gui-test.sh` gives every run
+an empty `XDG_CACHE_HOME`, so Mesa (llvmpipe under xvfb) compiled every
+shader variant from nothing. Opened second in a process they take
+0.47-0.58 s, App-only 0.3 s; opened first in launches that share one
+cache directory, 8.4, 6.1, 2.9 and then 0.85 s, the cache filling with
+the variants their materials need. What stays on a warm cache is about
+1 s of first render -- programs the startup warm-up's one frame does
+not reach -- on llvmpipe, which says little about a GPU.
 
 **Not defects, and why the test does not judge them:**
 - a coarse first tessellation (27 against 62 points on a circle) that the
