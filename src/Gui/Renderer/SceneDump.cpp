@@ -338,7 +338,12 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     position, stated as fractions so a browser of any size places it.
 //     An older snapshot has neither, which reads as the corner placement
 //     it always had.
-const uint32_t kVersion = 79;
+// 80: an overlay anchor may ask to be drawn only while hovered
+//     (OverlayAnchor::autoHideMs), after sizePixels: the served
+//     NaviCube's auto-hide preferences, which the browser applies to its
+//     own pointer. An older snapshot has none, which reads as always
+//     drawn.
+const uint32_t kVersion = 80;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -439,7 +444,7 @@ static_assert(sizeof(BloomConfig) == 16, "BloomConfig changed: stream the new fi
 static_assert(offsetof(PBRConfig, envPreset) == 32, "PBRConfig changed: stream the new field, then update this");
 static_assert(offsetof(LightConfig, groundColor) == 172,"LightConfig changed: stream the new field, then update this");
 static_assert(offsetof(RenderDebugConfig, coverage) == 7, "RenderDebugConfig changed: stream the new field, then update this");
-static_assert(sizeof(OverlayAnchor) == 60, "OverlayAnchor changed: stream the new field, then update this");
+static_assert(sizeof(OverlayAnchor) == 64, "OverlayAnchor changed: stream the new field, then update this");
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -3556,6 +3561,7 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
         w.f(a.posX);        // v79
         w.f(a.posY);
         w.f(a.sizePixels);
+        w.f(a.autoHideMs);  // v80
         writeFeed(ov.draws, 0, true);
     }
 
@@ -4043,6 +4049,8 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
                 a.posY = r.f();
                 a.sizePixels = r.f();
             }
+            if (version >= 80)
+                a.autoHideMs = r.f();
             snap.overlays.push_back(std::move(ov));
             readFeed(snap.overlays.back().draws, GroupTarget::Overlay,
                      snap.overlays.size() - 1);

@@ -99,3 +99,75 @@ export function LauncherMenu(props: {
     </Show>
   );
 }
+
+/// The NaviCube's view menu: the icon under the cube opens it where it
+/// was clicked (main.cpp fcviewer_navi_menu, the fc:navimenu event). The
+/// desktop's menu, less what the browser has no use for: this camera
+/// is perspective only, and the cube's appearance is the host's
+/// preferences, not a browser's to change (docs/ShareAccess.md sec 2.2).
+/// What it adds is a way back from a drag: the cube's place is this
+/// browser's own until reset (docs/HeadlessServe.md sec 3.5).
+export function NaviCubeMenu() {
+  const [at, setAt] = createSignal<{ x: number; y: number } | null>(null);
+  let root: HTMLDivElement | undefined;
+
+  const onOpen = (e: Event) => {
+    const d = (e as CustomEvent).detail as { x: number; y: number } | null;
+    if (d) setAt({ x: d.x, y: d.y });
+  };
+  const onDown = (e: PointerEvent) => {
+    if (at() && !(root && root.contains(e.target as Node))) setAt(null);
+  };
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') setAt(null);
+  };
+  window.addEventListener('fc:navimenu', onOpen);
+  document.addEventListener('pointerdown', onDown, true);
+  window.addEventListener('keydown', onKey);
+  onCleanup(() => {
+    window.removeEventListener('fc:navimenu', onOpen);
+    document.removeEventListener('pointerdown', onDown, true);
+    window.removeEventListener('keydown', onKey);
+  });
+
+  const items: { label: string; action: number }[] = [
+    { label: 'Isometric', action: 0 },
+    { label: 'Dimetric', action: 1 },
+    { label: 'Trimetric', action: 2 },
+    { label: 'Fit all', action: 3 },
+    { label: 'Reset cube position', action: 4 },
+  ];
+
+  // Kept on screen: the icon sits in whatever corner the cube does.
+  const style = () => {
+    const p = at()!;
+    const w = 200, h = items.length * 40 + 12;
+    const x = Math.max(8, Math.min(p.x, window.innerWidth - w - 8));
+    const y = Math.max(8, Math.min(p.y, window.innerHeight - h - 8));
+    return { left: `${x}px`, top: `${y}px` };
+  };
+
+  return (
+    <Show when={at()}>
+      <div class="fc-navimenu" ref={root} style={style()}>
+        <div class="fc-menu" role="menu" aria-label="Navigation cube">
+          <For each={items}>
+            {(item) => (
+              <button
+                class="fc-menu-item"
+                role="menuitem"
+                onClick={() => {
+                  window.fcviewerNaviAction?.(item.action);
+                  setAt(null);
+                }}
+              >
+                <span class="fc-menu-tick" />
+                {item.label}
+              </button>
+            )}
+          </For>
+        </div>
+      </div>
+    </Show>
+  );
+}

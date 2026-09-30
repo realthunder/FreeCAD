@@ -169,6 +169,7 @@ Render::SceneSnapshot makeScene()
     ov.anchor.posX = 0.25f;
     ov.anchor.posY = 0.75f;
     ov.anchor.sizePixels = 132.0f;
+    ov.anchor.autoHideMs = 300.0f;
     ov.draws.push_back(makeDraw(0x3333, meshA, 0x808080ff));
     snap.overlays.push_back(std::move(ov));
 
@@ -358,6 +359,7 @@ void expectScene(const Render::SceneSnapshot& snap)
     EXPECT_EQ(snap.overlays[0].anchor.posX, 0.25f);
     EXPECT_EQ(snap.overlays[0].anchor.posY, 0.75f);
     EXPECT_EQ(snap.overlays[0].anchor.sizePixels, 132.0f);
+    EXPECT_EQ(snap.overlays[0].anchor.autoHideMs, 300.0f);
     ASSERT_EQ(snap.overlays[0].draws.size(), 1u);
     EXPECT_EQ(snap.overlays[0].draws[0].material.diffuse, 0x808080ffu);
     ASSERT_TRUE(snap.hatch);

@@ -9,6 +9,10 @@ declare global {
     fcviewerControlSend?: (json: string) => boolean;
     /// Turn the renderer HUD on or off (main.cpp fcviewer_set_hud).
     fcviewerSetHud?: (on: boolean) => void;
+    /// The NaviCube view menu's actions (main.cpp fcviewer_navi_action):
+    /// 0 isometric, 1 dimetric, 2 trimetric, 3 fit all, 4 reset the
+    /// cube to the served view's place for it.
+    fcviewerNaviAction?: (action: number) => void;
     /// Selection menu (main.cpp, docs/ThinClientUI.md): mode 0 single /
     /// 1 multi; filter 0 elements / 1 object / 2 face / 3 edge /
     /// 4 vertex.

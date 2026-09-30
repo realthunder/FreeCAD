@@ -203,9 +203,26 @@ viewer learning to draw a second one:
   headless instance) keeps its textures as images only, and its graphs are captured by
   `SoFCRenderCacheManager::capture(root, viewport)`, a context-free capture that, unlike
   `traverse()`, pushes no view configs -- an overlay manager's would overwrite the scene's.
-- It turns by each browser's own camera; the face labels' readability flip, which a viewer
-  syncs from its camera, stays at the front view's. Auto-hide follows a viewer's mouse, so a
-  served cube and its buttons are always stated -- which is also what a touch screen needs.
+- It turns by each browser's own camera, and the browser does what a viewer does with its own
+  pointer and camera (`wasm/main.cpp`, `NaviLocal`):
+  - **Place.** A press in the middle quarter of the cube that moves drags it, mouse or one
+    finger, as on the desktop. The place is that browser's view setup: kept in localStorage,
+    not written to the served view every other browser shares, and dropped when the served
+    position itself changes, since that statement is newer.
+  - **Auto-hide.** The served cube and its buttons are always stated; the anchor carries the
+    host's AutoHideCube/AutoHideButton and AutoHideTimeout as `OverlayAnchor::autoHideMs`
+    (dump v80), and the browser feeds them only while its pointer is over the cube and for
+    that long after. A touch screen has no hover and always shows them.
+  - **Upright labels.** A label draw whose u axis points left and v axis down under the
+    browser's camera -- the desktop's test for negating its texture coordinates -- is turned
+    half a turn about its face normal through the model matrix. Every face shape is
+    symmetric, so only the text visibly changes.
+  - **Menu.** The icon under the cube opens a DOM menu at the click (`fc:navimenu`,
+    `NaviCubeMenu` in `web/src/menu.tsx`): Isometric, Dimetric, Trimetric (Camera.cpp's
+    orientations in the browser's orbit), Fit all, and Reset cube position. No
+    orthographic/perspective (the browser camera is perspective only), and none of the
+    appearance settings, which are the host's preferences. Taps try the buttons before the
+    cube, as the desktop's `pickFace` does, because the icon sits against the cube's corner.
 
 ## 4. Staging
 

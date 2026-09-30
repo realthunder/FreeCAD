@@ -1578,6 +1578,10 @@ SoSeparator *NaviCubeImplementation::getOverlayCubeGraph(Render::OverlayAnchor &
 	anchor.fovDeg =
 		float(2.0 * atan(tan(M_PI / 8.0) * 1.2) * 180.0 / M_PI);
 	anchor.orientFromScene = true;
+	// A served cube is always stated; the browser hides it on its own
+	// pointer's hover when the preference says so.
+	if (!m_View3DInventorViewer && NaviCubeShared::m_AutoHideCube)
+		anchor.autoHideMs = float(std::max(0, NaviCubeShared::m_AutoHideTimeout));
 	return m_CoinCubeRoot;
 }
 
@@ -1606,6 +1610,9 @@ SoSeparator *NaviCubeImplementation::getOverlayButtonGraph(Render::OverlayAnchor
 	anchor.fovDeg = 0.0f;
 	anchor.orthoHeight = 2.0f;
 	anchor.orientFromScene = false;
+	if (!m_View3DInventorViewer
+	    && (NaviCubeShared::m_AutoHideButton || NaviCubeShared::m_AutoHideCube))
+		anchor.autoHideMs = float(std::max(0, NaviCubeShared::m_AutoHideTimeout));
 	return m_CoinButtonRoot;
 }
 

@@ -536,6 +536,8 @@ EM_JS(void, fcviewer_install_control, (), {
     // The menu's HUD switch. Installed beside the control uplink because
     // it is the same kind of thing: a viewer state the DOM layer drives.
     window.fcviewerSetHud = function(on) { _fcviewer_set_hud(on ? 1 : 0); };
+    // The NaviCube view menu's actions (fcviewer_navi_action).
+    window.fcviewerNaviAction = function(action) { _fcviewer_navi_action(action | 0); };
     // The served viewport (docs/CyclesIntegration.md sec 7.1): a device
     // name starts it, '' stops it, for one sub-view (cell 0 = the full
     // canvas, else a split cell's id); state arrives as 'fc:cycles'
@@ -1335,6 +1337,41 @@ static int s_btnHiliteDraw = -2;          // button draw index currently tinted
 /// device pixel ratio, so the size and margins scale by it, or a hi-DPI
 /// screen would get a cube a fraction of the size of everything around
 /// it. A fractional size already scales with the viewport.
+/// What this browser does with the served NaviCube beyond drawing it
+/// (docs/HeadlessServe.md sec 3.5): its own place for it, the auto-hide
+/// the host's preferences ask for, and turning the face labels upright
+/// under this browser's camera.
+///
+/// The place is this browser's view setup, the way a desktop view has its
+/// own NaviCubeX/NaviCubeY: a drag here moves the cube here, and is kept
+/// in localStorage, not written to the served view, which every other
+/// browser of the document shares. It stands until the served position
+/// itself changes -- someone set the property -- and then the newer
+/// statement wins.
+struct NaviLocal {
+    bool loaded = false;         ///< the stored place has been read
+    bool moved = false;          ///< this browser placed the cube
+    float x = 1.0f, y = 0.0f;    ///< where, as OverlayAnchor::posX/posY
+    /// The served place the cube was moved from; a different one drops
+    /// the local place.
+    float servedX = -1.0f, servedY = -1.0f;
+    bool hover = false;          ///< the pointer is over the cube's rect
+    double leftMs = -1e9;        ///< when it left
+    bool armed = false;          ///< a press landed in the drag zone
+    bool dragging = false;       ///< and moved: the cube follows it
+    uint64_t flips = 0;          ///< label draws turned upright, as fed
+    bool fed[2] = {false, false};    ///< cube / buttons in the renderer
+};
+static NaviLocal s_navi;
+
+/// An anchor as this canvas draws it. A rect sized in pixels
+/// (OverlayAnchor::sizePixels -- the served NaviCube) was sized in the
+/// publisher's pixels, which are CSS pixels here: the buffer is at the
+/// device pixel ratio, so the size and margins scale by it, or a hi-DPI
+/// screen would get a cube a fraction of the size of everything around
+/// it. A fractional size already scales with the viewport. A rect placed
+/// by position is the NaviCube's, and takes this browser's own place for
+/// it when it has one.
 static Render::OverlayAnchor canvasAnchor(const Render::OverlayAnchor &a)
 {
     Render::OverlayAnchor out = a;
@@ -1343,7 +1380,22 @@ static Render::OverlayAnchor canvasAnchor(const Render::OverlayAnchor &a)
         out.marginX *= s_dpr;
         out.marginY *= s_dpr;
     }
+    if (out.posX >= 0.0f && s_navi.moved) {
+        out.posX = s_navi.x;
+        out.posY = s_navi.y;
+    }
     return out;
+}
+
+/// Whether an overlay with this anchor is on screen: always, unless it
+/// auto-hides -- then while the pointer is over the cube, or dragging it,
+/// and for the anchor's delay after. A touch screen has no hover to
+/// reveal it with, so there it always is.
+static bool naviShown(const Render::OverlayAnchor &a)
+{
+    if (a.autoHideMs < 0.0f || s_coarsePointer || s_navi.hover || s_navi.dragging)
+        return true;
+    return emscripten_get_now() - s_navi.leftMs < double(a.autoHideMs);
 }
 
 /// Overlay viewport rect in top-left canvas pixels, mirroring
@@ -1380,7 +1432,7 @@ static bool pickNaviCube(float px, float py, bx::Vec3 &dirOut)
             break;
         }
     }
-    if (!cube || cube->draws.empty())
+    if (!cube || cube->draws.empty() || !naviShown(cube->anchor))
         return false;
 
     const Render::OverlayAnchor &a = cube->anchor;
@@ -1492,7 +1544,7 @@ static int pickCubeDraw(float px, float py,
             break;
         }
     }
-    if (!cube || cube->draws.empty())
+    if (!cube || cube->draws.empty() || !naviShown(cube->anchor))
         return -1;
 
     const Render::OverlayAnchor &a = cube->anchor;
@@ -1654,7 +1706,7 @@ enum NaviButtonAction {
     NaviBtnOrbitLeft, NaviBtnOrbitRight,
     NaviBtnRollLeft, NaviBtnRollRight,
     NaviBtnBackside,  // the corner dot: flip 180° to the opposite side
-    NaviBtnMenu   // the view-menu icon (hover highlight only for now)
+    NaviBtnMenu   // the view-menu icon: opens the DOM layer's cube menu
 };
 
 /// Map a click on the NaviCube button overlay (the tilt/orbit arrows
@@ -1673,7 +1725,7 @@ static NaviButtonAction pickNaviButton(float px, float py)
             break;
         }
     }
-    if (!btn || btn->draws.empty())
+    if (!btn || btn->draws.empty() || !naviShown(btn->anchor))
         return NaviBtnNone;
 
     int rx, ry, rw, rh;
@@ -1718,8 +1770,10 @@ static NaviButtonAction pickNaviButton(float px, float py)
     }
     // View-menu icon: lower-right of the button rect (NaviCube.cpp
     // createMenuTex translate 12/16,13/16 -> NDC ~(0.5,-0.6)). Approximate
-    // box; disjoint from the |nx|<0.28 south arrow.
-    if (nx > 0.3f && ny < -0.5f)
+    // box; disjoint from the |nx|<0.28 south arrow, and kept below -0.6,
+    // where the icon starts: taps try the buttons before the cube, as the
+    // desktop does, so the box must not reach into the cube's corner.
+    if (nx > 0.33f && ny < -0.6f)
         return NaviBtnMenu;
     return NaviBtnNone;
 }
@@ -1824,6 +1878,372 @@ static bool updateButtonHover(float px, float py)
                                canvasAnchor(btn->anchor));
     }
     return true;
+}
+
+// ---- The browser's own NaviCube (s_navi) ------------------------------
+
+static bool fitCamera();
+
+// This browser's place for the cube, across reloads: posX, posY and the
+// served place it was moved from. Storage can be missing or refused (a
+// private window); then the place lasts as long as the page.
+EM_JS(void, fcviewer_navi_store, (int set, double x, double y, double sx, double sy), {
+    try {
+        if (set)
+            localStorage.setItem('fcviewer.navicube',
+                                 JSON.stringify({ x: x, y: y, sx: sx, sy: sy }));
+        else
+            localStorage.removeItem('fcviewer.navicube');
+    } catch (e) {}
+});
+
+EM_JS(int, fcviewer_navi_load, (float *out), {
+    try {
+        var s = localStorage.getItem('fcviewer.navicube');
+        if (!s)
+            return 0;
+        var o = JSON.parse(s);
+        var v = [+o.x, +o.y, +o.sx, +o.sy];
+        for (var i = 0; i < 4; ++i) {
+            if (!isFinite(v[i]))
+                return 0;
+            HEAPF32[(out >> 2) + i] = v[i];
+        }
+        return 1;
+    } catch (e) {
+        return 0;
+    }
+});
+
+// The cube's view menu (the icon under the cube): the DOM layer draws it,
+// at the click, in client CSS pixels.
+EM_JS(void, fcviewer_navi_menu, (double x, double y), {
+    window.dispatchEvent(new CustomEvent('fc:navimenu', { detail: { x: x, y: y } }));
+});
+
+static void naviLoad()
+{
+    if (s_navi.loaded)
+        return;
+    s_navi.loaded = true;
+    float v[4];
+    if (fcviewer_navi_load(v) && v[0] >= 0.0f && v[0] <= 1.0f
+            && v[1] >= 0.0f && v[1] <= 1.0f) {
+        s_navi.moved = true;
+        s_navi.x = v[0];
+        s_navi.y = v[1];
+        s_navi.servedX = v[2];
+        s_navi.servedY = v[3];
+    }
+}
+
+static const Render::SceneSnapshot::Overlay *naviOverlay(int id)
+{
+    for (const auto &ov : s_snap.overlays)
+        if (ov.id == id)
+            return &ov;
+    return nullptr;
+}
+
+/// Whether every mesh and texture an overlay feed names is in hand: a
+/// re-parsed feed is fed only once it is, or the cube blinks
+/// (see the replay in applySnapshot).
+static bool overlayWhole(const Render::SceneSnapshot::Overlay &ov)
+{
+    for (const auto &d : ov.draws) {
+        if ((d.mesh && !(d.mesh->numVertices > 0 && d.mesh->positions))
+                || (d.material.texture && d.material.texture->deferred))
+            return false;
+    }
+    return true;
+}
+
+/// The cube's label draws that read upside down under this browser's
+/// camera, one bit per draw. The desktop flips a text face's texture
+/// coordinates when its u axis points left on screen and its v axis
+/// down (NaviCubeImplementation::getOverlayCubeGraph); a served cube is
+/// turned by each browser's own camera, so the browser decides. Only a
+/// textured draw can read either way; every face shape is symmetric, so
+/// turning a label's backing does no harm.
+static uint64_t naviLabelFlips(const Render::SceneSnapshot::Overlay &cube)
+{
+    float viewMtx[16], projMtx[16];
+    buildCamera(viewMtx, projMtx);
+    uint64_t flips = 0;
+    const size_t n = std::min<size_t>(cube.draws.size(), 64);
+    for (size_t di = 0; di < n; ++di) {
+        const auto &dc = cube.draws[di];
+        const auto &m = dc.mesh;
+        if (dc.material.type != Render::Material::Triangle || !dc.material.texture
+                || !m || !m->texCoords || !m->positions || !m->triangleIndices)
+            continue;
+        const int start = dc.indexStart;
+        if (start < 0 || start + 3 > m->numTriangleIndices)
+            continue;
+        const int32_t *idx = m->triangleIndices + start;
+        const float *p0 = m->positions + 3 * idx[0];
+        const float *p1 = m->positions + 3 * idx[1];
+        const float *p2 = m->positions + 3 * idx[2];
+        const float *t0 = m->texCoords + 4 * idx[0];
+        const float *t1 = m->texCoords + 4 * idx[1];
+        const float *t2 = m->texCoords + 4 * idx[2];
+        const bx::Vec3 e1(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]);
+        const bx::Vec3 e2(p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]);
+        const float du1 = t1[0] - t0[0], dv1 = t1[1] - t0[1];
+        const float du2 = t2[0] - t0[0], dv2 = t2[1] - t0[1];
+        const float det = du1 * dv2 - du2 * dv1;
+        if (std::fabs(det) < 1e-8f)
+            continue;
+        // The directions of increasing u and v across the face.
+        bx::Vec3 tu = bx::mul(bx::sub(bx::mul(e1, dv2), bx::mul(e2, dv1)), 1.0f / det);
+        bx::Vec3 tv = bx::mul(bx::sub(bx::mul(e2, du1), bx::mul(e1, du2)), 1.0f / det);
+        if (!dc.identity) {
+            tu = bx::mulXyz0(tu, dc.model);
+            tv = bx::mulXyz0(tv, dc.model);
+        }
+        tu = bx::mulXyz0(tu, viewMtx);
+        tv = bx::mulXyz0(tv, viewMtx);
+        const float eps = 1e-3f;
+        if (tu.x < -eps * bx::length(tu) && tv.y < -eps * bx::length(tv))
+            flips |= uint64_t(1) << di;
+    }
+    return flips;
+}
+
+/// Turn the draws \a flips names half a turn about their own face normal
+/// through their centre: the same picture as the desktop's negated
+/// texture coordinates on a square label, done with the model matrix so
+/// the shared mesh stays as it is.
+static void applyLabelFlips(Render::DrawCallList &draws, uint64_t flips)
+{
+    for (size_t di = 0; di < draws.size() && di < 64; ++di) {
+        if (!(flips & (uint64_t(1) << di)))
+            continue;
+        auto &dc = draws[di];
+        const auto &m = dc.mesh;
+        const int total = m->numTriangleIndices;
+        const int start = dc.indexStart;
+        const int count = dc.indexCount ? dc.indexCount : total - start;
+        const int32_t *idx = m->triangleIndices;
+        bx::Vec3 c(0.0f, 0.0f, 0.0f);
+        for (int i = start; i < start + count; ++i) {
+            const float *p = m->positions + 3 * idx[i];
+            c = bx::add(c, bx::Vec3(p[0], p[1], p[2]));
+        }
+        c = bx::mul(c, 1.0f / float(std::max(count, 1)));
+        const float *p0 = m->positions + 3 * idx[start];
+        const float *p1 = m->positions + 3 * idx[start + 1];
+        const float *p2 = m->positions + 3 * idx[start + 2];
+        const bx::Vec3 nrm = bx::normalize(bx::cross(
+            bx::Vec3(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]),
+            bx::Vec3(p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2])));
+        // R = 2 n n^T - I, symmetric, so row and column layouts agree;
+        // translation keeps the centre where it is.
+        const float nv[3] = {nrm.x, nrm.y, nrm.z};
+        const float cv[3] = {c.x, c.y, c.z};
+        float flip[16];
+        bx::mtxIdentity(flip);
+        for (int r = 0; r < 3; ++r)
+            for (int k = 0; k < 3; ++k)
+                flip[r * 4 + k] = 2.0f * nv[r] * nv[k] - (r == k ? 1.0f : 0.0f);
+        for (int k = 0; k < 3; ++k) {
+            float rc = 0.0f;
+            for (int r = 0; r < 3; ++r)
+                rc += flip[r * 4 + k] * cv[r];
+            flip[12 + k] = cv[k] - rc;
+        }
+        if (dc.identity) {
+            std::memcpy(dc.model, flip, sizeof(flip));
+        }
+        else {
+            float model[16];
+            bx::mtxMul(model, flip, dc.model);
+            std::memcpy(dc.model, model, sizeof(model));
+        }
+        dc.identity = false;
+    }
+}
+
+/// Feed one of the cube's two overlays (the cube, its buttons) as this
+/// browser has it: at its own place, upright, or not at all while
+/// auto-hidden.
+static void naviFeed(const Render::SceneSnapshot::Overlay &ov)
+{
+    naviLoad();
+    const int slot = ov.id == kNaviCubeOverlayId ? 0 : 1;
+    // Someone moved the served cube: that is newer than this browser's
+    // own place for it.
+    if (slot == 0 && s_navi.moved && !s_navi.dragging
+            && (ov.anchor.posX != s_navi.servedX || ov.anchor.posY != s_navi.servedY)) {
+        s_navi.moved = false;
+        fcviewer_navi_store(0, 0, 0, 0, 0);
+    }
+    if (!naviShown(ov.anchor)) {
+        if (s_navi.fed[slot]) {
+            s_renderer->removeOverlay(ov.id);
+            s_navi.fed[slot] = false;
+        }
+        return;
+    }
+    // A feed still arriving waits while the last one is on screen.
+    if (!overlayWhole(ov) && s_navi.fed[slot])
+        return;
+    Render::DrawCallList draws = ov.draws;
+    if (slot == 0) {
+        s_navi.flips = naviLabelFlips(ov);
+        applyLabelFlips(draws, s_navi.flips);
+    }
+    s_renderer->setOverlay(ov.id, std::move(draws), canvasAnchor(ov.anchor));
+    s_navi.fed[slot] = true;
+}
+
+static void naviRefeed()
+{
+    for (const auto &ov : s_snap.overlays)
+        if (ov.id == kNaviCubeOverlayId || ov.id == kNaviButtonsOverlayId)
+            naviFeed(ov);
+    markDirty();
+}
+
+/// Per frame: the auto-hide delay running out, and the labels turning
+/// over as the camera does. Refeeds only when either changed.
+static void tickNaviCube()
+{
+    if (!s_haveScene)
+        return;
+    bool stale = false;
+    for (const auto &ov : s_snap.overlays) {
+        if (ov.id != kNaviCubeOverlayId && ov.id != kNaviButtonsOverlayId)
+            continue;
+        const int slot = ov.id == kNaviCubeOverlayId ? 0 : 1;
+        const bool shown = naviShown(ov.anchor);
+        if (shown != s_navi.fed[slot])
+            stale = true;
+        else if (slot == 0 && shown && naviLabelFlips(ov) != s_navi.flips)
+            stale = true;
+    }
+    if (stale)
+        naviRefeed();
+}
+
+/// The cube's rect in canvas pixels, and whether there is a cube.
+static bool naviRect(int &rx, int &ry, int &rw, int &rh)
+{
+    const auto *cube = naviOverlay(kNaviCubeOverlayId);
+    if (!cube || cube->draws.empty())
+        return false;
+    overlayRect(cube->anchor, rx, ry, rw, rh);
+    return rw > 0 && rh > 0;
+}
+
+/// Follow the pointer for auto-hide: over the cube's rect reveals it.
+static void naviTrackHover(float px, float py)
+{
+    int rx, ry, rw, rh;
+    const bool over = naviRect(rx, ry, rw, rh) && px >= float(rx) && py >= float(ry)
+        && px <= float(rx + rw) && py <= float(ry + rh);
+    if (over == s_navi.hover)
+        return;
+    s_navi.hover = over;
+    if (!over)
+        s_navi.leftMs = emscripten_get_now();
+    tickNaviCube();
+}
+
+/// A press here, then a move, drags the cube rather than turning to the
+/// face under it: the middle quarter of the cube, as on the desktop
+/// (NaviCubeImplementation::inDragZone).
+static bool naviInDragZone(float px, float py)
+{
+    const auto *cube = naviOverlay(kNaviCubeOverlayId);
+    int rx, ry, rw, rh;
+    if (!cube || !naviShown(cube->anchor) || !naviRect(rx, ry, rw, rh))
+        return false;
+    const float cx = float(rx) + 0.5f * float(rw), cy = float(ry) + 0.5f * float(rh);
+    const float limit = 0.25f * float(rw);
+    return std::fabs(px - cx) < limit && std::fabs(py - cy) < limit;
+}
+
+/// Put the cube's centre at canvas pixel (px, py), as far as the room
+/// allows: the inverse of OverlayAnchor::cornerRect.
+static void naviDragTo(float px, float py)
+{
+    const auto *cube = naviOverlay(kNaviCubeOverlayId);
+    if (!cube)
+        return;
+    const Render::OverlayAnchor a = canvasAnchor(cube->anchor);
+    int rx, ry, rw, rh;
+    overlayRect(cube->anchor, rx, ry, rw, rh);
+    const float edge = float(rw);
+    const float roomX = vpW() - edge - 2.0f * a.marginX;
+    const float roomY = vpH() - edge - 2.0f * a.marginY;
+    const float left = px - vpX() - 0.5f * edge - a.marginX;
+    const float top = py - vpY() - 0.5f * edge - a.marginY;
+    s_navi.x = roomX > 0.0f ? bx::clamp(left / roomX, 0.0f, 1.0f) : s_navi.x;
+    s_navi.y = roomY > 0.0f ? bx::clamp(top / roomY, 0.0f, 1.0f) : s_navi.y;
+    s_navi.servedX = cube->anchor.posX;
+    s_navi.servedY = cube->anchor.posY;
+    s_navi.moved = true;
+    clearCubeHover();
+    clearButtonHover();
+    naviRefeed();
+}
+
+static void naviDragEnd()
+{
+    s_navi.dragging = false;
+    s_navi.armed = false;
+    if (s_navi.moved)
+        fcviewer_navi_store(1, s_navi.x, s_navi.y, s_navi.servedX, s_navi.servedY);
+}
+
+/// Turn the orbit camera to a camera orientation stated the way Coin
+/// states one (a quaternion x, y, z, w taking the camera frame, which
+/// looks down -z with +y up, to the world): FreeCAD's axonometric
+/// presets (Camera.cpp) in the browser's yaw/pitch/roll.
+static void orientToQuat(float qx, float qy, float qz, float qw)
+{
+    auto rot = [&](const bx::Vec3 &v) {
+        const bx::Vec3 q(qx, qy, qz);
+        const bx::Vec3 t = bx::mul(bx::cross(q, v), 2.0f);
+        return bx::add(bx::add(v, bx::mul(t, qw)), bx::cross(q, t));
+    };
+    const bx::Vec3 dir = bx::normalize(rot(bx::Vec3(0.0f, 0.0f, 1.0f)));
+    const bx::Vec3 upq = bx::normalize(rot(bx::Vec3(0.0f, 1.0f, 0.0f)));
+    orientToDir(dir);
+    // The frame orientToDir leaves (roll 0), and the roll that takes its
+    // up to the preset's (camFrame's sign convention).
+    const CamFrame f = camFrame();
+    s_roll = std::atan2(-bx::dot(upq, f.right), bx::dot(upq, f.up));
+}
+
+/// The cube menu's actions (the DOM layer's navi menu): 0 isometric,
+/// 1 dimetric, 2 trimetric, 3 fit all, 4 forget this browser's place for
+/// the cube and take the served one again.
+extern "C" EMSCRIPTEN_KEEPALIVE void fcviewer_navi_action(int action)
+{
+    switch (action) {
+    case 0:
+        orientToQuat(0.424708f, 0.17592f, 0.339851f, 0.820473f);
+        break;
+    case 1:
+        orientToQuat(0.567952f, 0.103751f, 0.146726f, 0.803205f);
+        break;
+    case 2:
+        orientToQuat(0.446015f, 0.119509f, 0.229575f, 0.856787f);
+        break;
+    case 3:
+        fitCamera();
+        break;
+    case 4:
+        s_navi.moved = false;
+        fcviewer_navi_store(0, 0, 0, 0, 0);
+        naviRefeed();
+        break;
+    default:
+        return;
+    }
+    interact();
 }
 
 // Hover highlight state: a local setHighlight() built from the hit
@@ -4313,6 +4733,9 @@ static void mainLoop()
     // that a move and the camera it was made in go up in that order.
     flushEditMove();
 
+    // The cube's auto-hide delay and its labels turning with the camera.
+    tickNaviCube();
+
     // One-shot dumpFrame capture: the mode override applies to just
     // this frame's debug pass, then the staged config is restored
     // after the readback below.
@@ -4454,18 +4877,27 @@ static void doTapPick(float px, float py, bool ctrl, bool shift = false)
     }) != 0;
     bx::Vec3 dir(bx::InitZero);
     NaviButtonAction btn = NaviBtnNone;
-    if (s_haveScene && pickNaviCube(px, py, dir)) {
+    // The buttons first, as the desktop picks them (pickFace): the view
+    // menu icon sits against the cube's corner.
+    if (s_haveScene && (btn = pickNaviButton(px, py)) != NaviBtnNone) {
+        if (debugPick)
+            std::printf("fcviewer: navicube button (%g,%g) -> %d\n",
+                        px, py, int(btn));
+        if (btn == NaviBtnMenu) {
+            // The view menu, drawn by the DOM layer at the click.
+            double origin[2] = {0.0, 0.0};
+            fcviewer_canvas_origin(origin);
+            fcviewer_navi_menu(px / s_dpr + origin[0], py / s_dpr + origin[1]);
+            return;
+        }
+        applyNaviButton(btn);
+        interact();
+    }
+    else if (s_haveScene && pickNaviCube(px, py, dir)) {
         if (debugPick)
             std::printf("fcviewer: navicube orient (%g,%g) -> dir %g,%g,%g\n",
                         px, py, dir.x, dir.y, dir.z);
         orientToDir(dir);
-        interact();
-    }
-    else if (s_haveScene && (btn = pickNaviButton(px, py)) != NaviBtnNone) {
-        if (debugPick)
-            std::printf("fcviewer: navicube button (%g,%g) -> %d\n",
-                        px, py, int(btn));
-        applyNaviButton(btn);
         interact();
     }
     else {
@@ -4552,6 +4984,8 @@ static void updateHoverAt(float clientX, float clientY)
         applyHover(PickHit{});
         return;
     }
+    // Auto-hide follows the pointer over the cube's rect.
+    naviTrackHover(px, py);
     // NaviCube face hover highlight wins over scene preselection: when the
     // cursor is over the cube, tint the face and clear any scene hover.
     if (updateCubeHover(px, py)) {
@@ -4608,6 +5042,15 @@ static EM_BOOL onMouseDown(int, const EmscriptenMouseEvent *e, void *)
     // Shift+left is grab-pan once it moves, but a motionless shift+click
     // is the whole-object select — the slop check on move/up arbitrates.
     s_clickOk = e->button == 0;
+    // A left press in the middle of the cube drags it once it moves; not
+    // moving, it is the click on the face under it, as ever.
+    {
+        float px, py;
+        canvasPos(e, px, py);
+        s_navi.armed = e->button == 0 && !e->shiftKey && s_haveScene
+            && naviInDragZone(px, py);
+        s_navi.dragging = false;
+    }
     // The cube geometry is about to move under any active hover tint.
     clearCubeHover();
     clearButtonHover();
@@ -4629,6 +5072,12 @@ static EM_BOOL onMouseUp(int, const EmscriptenMouseEvent *e, void *)
         return EM_TRUE;
     }
     s_dragging = false;
+    if (s_navi.dragging) {
+        naviDragEnd();
+        s_clickOk = false;
+        return EM_TRUE;
+    }
+    s_navi.armed = false;
     if (s_clickOk && std::abs(int(e->clientX) - s_downX) <= 6
             && std::abs(int(e->clientY) - s_downY) <= 6) {
         if (activeIsPage()) {
@@ -4674,6 +5123,20 @@ static EM_BOOL onMouseMove(int, const EmscriptenMouseEvent *e, void *)
     if (std::abs(int(e->clientX) - s_downX) > 6
             || std::abs(int(e->clientY) - s_downY) > 6)
         s_clickOk = false;
+    if (s_navi.armed) {
+        // Inside the slop it may still be a click on the cube; past it,
+        // the cube follows the pointer and the camera stays.
+        if (!s_clickOk)
+            s_navi.dragging = true;
+        if (s_navi.dragging) {
+            float px, py;
+            canvasPos(e, px, py);
+            naviDragTo(px, py);
+        }
+        s_lastX = int(e->clientX);
+        s_lastY = int(e->clientY);
+        return EM_TRUE;
+    }
     interact();
     int dx = int(e->clientX) - s_lastX;
     int dy = int(e->clientY) - s_lastY;
@@ -5040,6 +5503,11 @@ static EM_BOOL onTouch(int type, const EmscriptenTouchEvent *e, void *)
             s_tapOk = true;
             s_tapX = x[0];
             s_tapY = y[0];
+            // A finger on the middle of the cube drags it once it moves.
+            float px, py;
+            clientToCanvas(x[0], y[0], px, py);
+            s_navi.armed = s_haveScene && naviInDragZone(px, py);
+            s_navi.dragging = false;
             // Arm the hold: if this finger is still here, and still still,
             // when the timer fires, the press becomes a preselection.
             s_loupeX = x[0];
@@ -5054,6 +5522,9 @@ static EM_BOOL onTouch(int type, const EmscriptenTouchEvent *e, void *)
             // A second finger is a camera gesture, whatever the first was
             // doing.
             cancelLoupe();
+            if (s_navi.dragging)
+                naviDragEnd();
+            s_navi.armed = false;
         }
     }
     else if (type == EMSCRIPTEN_EVENT_TOUCHMOVE && n == s_numTouch) {
@@ -5109,6 +5580,20 @@ static EM_BOOL onTouch(int type, const EmscriptenTouchEvent *e, void *)
             if (std::abs(x[0] - s_tapX) > 8.0f
                     || std::abs(y[0] - s_tapY) > 8.0f)
                 s_tapOk = false;
+            if (s_navi.armed) {
+                // The cube follows the finger past the slop; the camera
+                // stays.
+                if (!s_tapOk) {
+                    s_navi.dragging = true;
+                    float px, py;
+                    clientToCanvas(x[0], y[0], px, py);
+                    naviDragTo(px, py);
+                }
+                s_numTouch = n;
+                s_touchX[0] = x[0];
+                s_touchY[0] = y[0];
+                return EM_TRUE;
+            }
             s_yaw -= (x[0] - s_touchX[0]) * 0.01f;
             s_pitch = bx::clamp(s_pitch + (y[0] - s_touchY[0]) * 0.01f,
                                 -1.55f, 1.55f);
@@ -5138,6 +5623,11 @@ static EM_BOOL onTouch(int type, const EmscriptenTouchEvent *e, void *)
         // run the same NaviCube-first pick as a mouse click, at the touch-down
         // point. (On a clean tap the lone touch is the one just lifted, so
         // e->numTouches == 1.)
+        if (s_navi.dragging) {
+            naviDragEnd();
+            s_tapOk = false;
+        }
+        s_navi.armed = false;
         if (s_loupe) {
             // The lift commits what the loupe is showing — the user has
             // already seen it, so this never goes through the double-tap
@@ -5430,26 +5920,27 @@ static void applySnapshot(bool fit)
             // only once every mesh and texture it names is in hand.
             // Without this the navigation cube blinked once per
             // announcement of a 62-delta chain.
-            bool whole = true;
-            for (const auto &d : ov.draws) {
-                if ((d.mesh
-                     && !(d.mesh->numVertices > 0 && d.mesh->positions))
-                        || (d.material.texture
-                            && d.material.texture->deferred)) {
-                    whole = false;
-                    break;
-                }
-            }
-            if (!whole && s_overlayIds.count(ov.id)) {
+            if (!overlayWhole(ov) && s_overlayIds.count(ov.id)) {
                 decLog("overlay %d held (feed not whole yet)", ov.id);
+                continue;
+            }
+            // The cube and its buttons as this browser has them: its own
+            // place, auto-hide, upright labels.
+            if (ov.id == kNaviCubeOverlayId || ov.id == kNaviButtonsOverlayId) {
+                naviFeed(ov);
                 continue;
             }
             Render::DrawCallList odraws = ov.draws;
             s_renderer->setOverlay(ov.id, std::move(odraws), canvasAnchor(ov.anchor));
         }
         for (int id : s_overlayIds) {
-            if (!ovIds.count(id))
+            if (!ovIds.count(id)) {
                 s_renderer->removeOverlay(id);
+                if (id == kNaviCubeOverlayId)
+                    s_navi.fed[0] = false;
+                else if (id == kNaviButtonsOverlayId)
+                    s_navi.fed[1] = false;
+            }
         }
         s_overlayIds.swap(ovIds);
     }

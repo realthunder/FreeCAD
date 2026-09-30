@@ -8,7 +8,7 @@ import { SheetPanel } from './sheet';
 import { ConsolePanel } from './console';
 import { TaskPanelCard } from './widgets/panel';
 import { HudCard } from './hud';
-import { LauncherMenu } from './menu';
+import { LauncherMenu, NaviCubeMenu } from './menu';
 import { LoupeOverlay } from './loupe';
 import { OnViewParams } from './onview';
 import type { OnViewParam, OnViewPlace } from './onview';
@@ -341,6 +341,7 @@ render(() => (
     <LoupeOverlay mark={loupe} />
     <OnViewParams params={onView} places={onViewPlaces} />
     <HudCard text={hud} onClose={() => window.fcviewerSetHud?.(false)} />
+    <NaviCubeMenu />
     <LauncherMenu
       hidden={() => (cardOpen() || taskPanelOpen() || sheetOpen()
                      || consoleOpen()) && window.innerWidth <= NARROW}

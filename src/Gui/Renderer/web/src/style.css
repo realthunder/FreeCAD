@@ -1691,3 +1691,14 @@
 @media (max-width: 640px) {
   .fc-complete-btn { min-width: 44px; min-height: 44px; }
 }
+
+/* The NaviCube's view menu: at the click on the icon under the cube,
+ * wherever the cube is, so it is placed rather than hung off a corner. */
+.fc-navimenu {
+  position: fixed;
+  z-index: 40;
+  pointer-events: auto;
+}
+.fc-navimenu .fc-menu {
+  position: static;
+}

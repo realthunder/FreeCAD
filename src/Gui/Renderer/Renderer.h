@@ -365,6 +365,14 @@ struct OverlayAnchor {
     /// Rect edge length in pixels; 0 = sizeFraction of the smaller
     /// viewport side. Ignored for FullViewport.
     float sizePixels = 0.0f;
+    /// Auto-hide (the NaviCube's AutoHideCube/AutoHideButton): >= 0 means
+    /// a consumer with a hovering pointer draws the feed only while the
+    /// pointer is over its rect, and for this many milliseconds after it
+    /// leaves. A producer with a pointer of its own (a desktop viewer)
+    /// hides the feed itself and leaves this at -1; the served cube
+    /// cannot, so it states the preference here. A consumer with no
+    /// hover (a touch screen) draws the feed regardless.
+    float autoHideMs = -1.0f;
 
     /// The square rect of a corner-anchored overlay in a \a vw x \a vh
     /// viewport: top-left corner (\a x, \a y) in top-left-origin pixels
@@ -390,6 +398,7 @@ struct OverlayAnchor {
     bool operator==(const OverlayAnchor &o) const {
         return corner == o.corner && sizeFraction == o.sizeFraction
             && posX == o.posX && posY == o.posY && sizePixels == o.sizePixels
+            && autoHideMs == o.autoHideMs
             && fovDeg == o.fovDeg && orthoHeight == o.orthoHeight
             && cameraDistance == o.cameraDistance
             && nearPlane == o.nearPlane && farPlane == o.farPlane
