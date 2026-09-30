@@ -9296,3 +9296,75 @@ after the first; a face still alive keeps its pcurve). `7494a96180`.
 
 **Gates:** Python 2964 OK (52 skipped, 6 expected failures), ctest 849/849
 (+1), the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16.
+
+### 27.84 PolarPattern with the freeze on: a thawed copy placed twice (2026-09-30)
+
+27.82 found `PolarPattern` in scanner.FCStd invalid with the freeze on -- a
+vertex of tolerance 6.8 where the freeze off gives 1e-4 -- and `Pocket005`
+failing after it. Chased; the cause is in the OCCT fork, and it is fixed.
+
+**Cause.** The copy-on-write of `BRepLib::UpdateTolerances` (23.15) gives a
+frozen sub-shape whose tolerance must grow a thawed copy (`copyForThaw`). The
+copy was made with `EmptyCopied()` of the sub-shape as the shape holds it --
+its location and orientation kept -- and the children added as the TShape
+holds them. `TopoDS_Builder::Add` moves each child by the inverse of a located
+parent and reverses it under a reversed one. So the thawed copy of a frozen
+edge that sits placed or reversed had its vertices somewhere else, or its ends
+swapped; one at identity and forward, the only case 23.15's test built, was
+right. `thawedFor`, the other caller, passes the bare TShape and was right.
+
+**Why the pattern.** A pattern's instances are the original's TShapes moved
+by a location, so every instance but the first is placed. The refine merges
+coplanar faces across instances (`ModelRefine::FaceTypedPlane::buildFace`);
+`BRepLib_MakeFace` on the merged wire raises the narrower edges to the widest
+one's tolerance, which is copy-on-write for frozen edges; the copies of placed
+edges came out with their vertices 1.7 to 38 away, most by 2 (the pattern's
+lift in z).
+`ShapeFix_Face` then widened each such vertex to its distance -- the 6.8 of
+27.82 is an edge 6.5 long at z = 2 whose vertices had landed at z = 0 and
+swapped ends, sqrt(6.5^2 + 2^2). The site 27.82 recorded (`FixVertexTolerance`)
+was the effect. Hidden until 27.81 because `Fillet001` failed ahead of it.
+
+**How it was found.** The pattern's unrefined result, exported to BREP and set
+on a `Part::Feature` with the freeze on, reproduces it outside the document:
+`removeSplitter()` gives 13 vertices of tolerance 2 to 54, the freeze off
+none. A temporary check in `buildFace` of every edge's vertices against its
+curve's ends put the first misplaced vertex after `BRepLib_MakeFace`, on
+thawed copies of located edges; the edges going in and the wire were right.
+
+**Fix** (fork `a544f020eb`): the copy is made on the TShape alone and given
+the location and orientation afterwards.
+
+**Result.** `PolarPattern` valid with the freeze on, the largest vertex
+tolerance 1e-4 as with it off; `Pocket005` a valid solid; the chain's volumes
+and face counts equal with the freeze on and off.
+
+Test: C++ `ImmutableShapeTest.aThawedCopyOfAPlacedEdgeKeepsItsVertices` --
+23.15's wire of unequal tolerances, rotated, lifted by 2 and holding one edge
+reversed, made a face on while frozen: three edges thawed, every edge's
+vertices at its curve's ends, the face valid. Without the fix the vertices are
+2 to 16 off and a fourth edge is thawed. `3cda2f1c5c`.
+
+**Trap.** A probe that sets `ImmutableShapeValues` false through `ParamGet`
+writes it into the scratch home's `user.cfg`, and the next run in that home
+meant to have the freeze on has it off; this chase lost two runs to it, one
+of them looking like a race with TechDraw's worker. Set the flag both ways
+explicitly in every probe.
+
+**Found, not chased.** `shallowMove` (`PropertyTopoShape.cpp`, 27.35/27.37)
+builds its new top node the same way -- `EmptyCopied()` of the geometry, the
+children added as the TShape holds them. Its input is saved without its
+location, so the location half cannot arise; a reversed top -- a lone face
+held reversed, restored from another instance's file with a motion -- would
+come back with its wires turned. Not reproduced.
+
+**Still open from 27.82:** the sandbox guest image lacks the expression parser
+fix (cross-document element expressions evaluate on the host only until
+`fcx-image` is rebuilt and published). (c)'s `Fillet003` is moot: (c) is gone
+(27.83).
+
+Commits: fork `a544f020eb` (the fix); `3cda2f1c5c` (the test).
+
+**Gates:** Python 2964 OK (52 skipped, 6 expected failures), ctest 850/850
+(+1), the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14 (each in a user
+home and cache of its own; `user.cfg` copied aside around ctest and unchanged).
