@@ -95,6 +95,7 @@
 
 #include <Inventor/nodes/SoIndexedMarkerSet.h>
 #include <array>
+#include <limits>
 /// Here the FreeCAD includes sorted by Base,App,Gui......
 #include <Base/Converter.h>
 #include <Base/Tools.h>
@@ -4790,8 +4791,18 @@ QString ViewProviderSketch::iconTypeFromConstraint(Constraint *constraint)
     }
 }
 
-void ViewProviderSketch::sendConstraintIconToCoin(const QImage &icon, SoImage *soImagePtr)
+void ViewProviderSketch::sendConstraintIconToCoin(const QImage &image, SoImage *soImagePtr)
 {
+    // Coin keeps an image size in shorts. A merged icon past 32767 pixels --
+    // a thousand constraints on one spot of a big sketch seen whole -- wrapped
+    // negative, the copy asked for 2^64 bytes, and the exception left draw()
+    // before it enabled the constraints: none of them showed until a hover.
+    // What lies past the limit lies past any screen too; it is cut off.
+    const int limit = std::numeric_limits<short>::max();
+    const QImage icon = image.width() > limit || image.height() > limit
+        ? image.copy(0, 0, std::min(image.width(), limit), std::min(image.height(), limit))
+        : image;
+
     SoSFImage icondata = SoSFImage();
 
     Gui::BitmapFactory().convert(icon, icondata);

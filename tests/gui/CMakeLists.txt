@@ -429,6 +429,13 @@ fc_add_gui_test(GuiSketchHighlightView_tests_run
                 sketch-highlight-view.py
                 --timeout 180)
 
+# A merged constraint icon wider than 32767 pixels wrapped Coin's image size
+# negative; the exception left draw() before it enabled the constraints, so
+# none showed on entering edit until a hover.
+fc_add_gui_test(GuiSketchMergedIconOverflow_tests_run
+                sketch-merged-icon-overflow.py
+                --timeout 300)
+
 # An SoImage is drawn pixel for pixel in mode 3, as glDrawPixels does. The
 # backend's textured quad sat wherever the anchor projected, and half a
 # pixel off the filter spread each texel over two pixels: a Sketcher
