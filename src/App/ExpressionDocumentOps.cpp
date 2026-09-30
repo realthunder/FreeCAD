@@ -727,7 +727,9 @@ bool ObjectIdentifier::updateElementReference(ExpressionVisitor &v,
     // link's are on registering, whether the element is there or missing
     // (docs/TransactionLog.md sec 27.77): else the next save's compaction
     // drops the strings the reference names.
-    if (!shadowSub.savedIds.empty()) {
+    // A stored name's ids are the owner's, held by the lookup in
+    // _updateElementReference (sec 27.82).
+    if (!shadowSub.savedIds.empty() && !shadowSub.pending) {
         App::DocumentObject *target = result.resolvedDocumentObject;
         if (!target && owner && owner->getDocument()) {
             auto doc = result.resolvedDocument ? result.resolvedDocument : owner->getDocument();

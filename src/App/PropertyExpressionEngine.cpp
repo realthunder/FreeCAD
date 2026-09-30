@@ -363,9 +363,12 @@ void PropertyExpressionEngine::beforeSave(Base::Writer &writer) const
         if (!v.second.expression)
             continue;
         for (auto var : elementPaths(*v.second.expression)) {
-            for (const auto &sid : var->getPath().getShadowSub().sids) {
-                if (sid.isFromSameHasher(hasher))
-                    sid.mark();
+            const auto &shadow = var->getPath().getShadowSub();
+            for (const auto *sids : {&shadow.sids, &shadow.storedIds}) {
+                for (const auto &sid : *sids) {
+                    if (sid.isFromSameHasher(hasher))
+                        sid.mark();
+                }
             }
         }
     }
@@ -384,10 +387,14 @@ static void saveElementPathIds(Base::Writer &writer, const DocumentObject *owner
 {
     if (owner && owner->isExporting())
         return;
+    StringHasherRef hasher =
+        owner && owner->getDocument() ? owner->getDocument()->getStringHasher() : StringHasherRef();
     struct Entry {
         int index;
         int ref;
         std::string ids;
+        std::string shadow;
+        std::string stored;
     };
     std::vector<Entry> entries;
     int index = -1;
@@ -397,12 +404,17 @@ static void saveElementPathIds(Base::Writer &writer, const DocumentObject *owner
         for (auto var : elementPaths(*expr)) {
             ++ref;
             const auto &shadow = var->getPath().getShadowSub();
-            if (shadow.sids.empty() && shadow.savedIds.empty())
-                continue;
+            // A path into another table saves its shadow and the name stored
+            // in the owner's table, with the owner's ids (sec 27.82, as a link
+            // does, sec 27.80); another table's numbers are never written.
+            const bool crossing = !shadow.stored.empty();
+            const auto &held = crossing ? shadow.storedIds : shadow.sids;
             std::ostringstream ids;
             ids << std::hex;
             const char *sep = "";
-            for (const auto &sid : shadow.sids) {
+            for (const auto &sid : held) {
+                if (hasher && !sid.isFromSameHasher(hasher))
+                    continue;
                 StringIDCollector::take(sid);
                 ids << sep << sid.value();
                 sep = " ";
@@ -411,7 +423,10 @@ static void saveElementPathIds(Base::Writer &writer, const DocumentObject *owner
                 ids << sep << id;
                 sep = " ";
             }
-            entries.push_back({index, ref, ids.str()});
+            if (!*sep && !crossing)
+                continue;
+            entries.push_back({index, ref, ids.str(), crossing ? shadow.first : std::string(),
+                               crossing ? shadow.stored : std::string()});
         }
     }
     if (entries.empty())
@@ -420,7 +435,12 @@ static void saveElementPathIds(Base::Writer &writer, const DocumentObject *owner
     writer.incInd();
     for (const auto &e : entries) {
         writer.Stream() << writer.ind() << "<Ids index=\"" << e.index << "\" ref=\"" << e.ref
-                        << "\" sids=\"" << e.ids << "\"/>\n";
+                        << "\" sids=\"" << e.ids;
+        if (!e.stored.empty()) {
+            writer.Stream() << "\" shadow=\"" << Base::Persistence::encodeAttribute(e.shadow)
+                            << "\" stored=\"" << Base::Persistence::encodeAttribute(e.stored);
+        }
+        writer.Stream() << "\"/>\n";
     }
     writer.decInd();
     writer.Stream() << writer.ind() << "</ExpressionIds>\n";
@@ -547,8 +567,11 @@ void PropertyExpressionEngine::Restore(Base::XMLReader &reader)
                 if (id > 0)
                     ids.push_back(id);
             }
-            if (index >= 0 && index < count && ref >= 0 && !ids.empty())
-                (*restoredExpressions)[index].ids.emplace_back(static_cast<int>(ref), std::move(ids));
+            std::string shadow = reader.getAttribute("shadow", "");
+            std::string stored = reader.getAttribute("stored", "");
+            if (index >= 0 && index < count && ref >= 0 && (!ids.empty() || !stored.empty()))
+                (*restoredExpressions)[index].ids.push_back(
+                        {static_cast<int>(ref), std::move(ids), std::move(shadow), std::move(stored)});
         }
         reader.readEndElement("ExpressionIds");
     }
@@ -694,8 +717,13 @@ void PropertyExpressionEngine::afterRestore()
                         if (!info.ids.empty()) {
                             auto vars = elementPaths(*expression);
                             for (auto &v : info.ids) {
-                                if (v.first < static_cast<int>(vars.size()))
-                                    vars[v.first]->setSavedShadowIds(std::move(v.second));
+                                if (v.ref >= static_cast<int>(vars.size()))
+                                    continue;
+                                if (v.stored.empty())
+                                    vars[v.ref]->setSavedShadowIds(std::move(v.ids));
+                                else
+                                    vars[v.ref]->setSavedShadow(std::move(v.shadow),
+                                            std::move(v.stored), std::move(v.ids));
                             }
                         }
                     }
@@ -715,6 +743,13 @@ void PropertyExpressionEngine::afterRestore()
 
     if (hasError && docObj && docObj->getDocument())
         docObj->getDocument()->setErrorDescription(docObj, "Failed to restore some expression");
+}
+
+void PropertyExpressionEngine::hasSetChildValue(Property &prop) {
+    PropertyExpressionContainer::hasSetChildValue(prop);
+    auto xlink = Base::freecad_dynamic_cast<PropertyXLink>(&prop);
+    if (xlink && xlink->testFlag(LinkRestoring) && xlink->getValue())
+        onContainerRestored();
 }
 
 void PropertyExpressionEngine::onContainerRestored() {

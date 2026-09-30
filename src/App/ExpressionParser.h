@@ -311,6 +311,10 @@ public:
     void setSavedShadowIds(std::vector<long> ids) {
         var.setSavedShadowIds(std::move(ids));
     }
+    /// And for a path into another table, its shadow and stored name (sec 27.82)
+    void setSavedShadow(std::string first, std::string stored, std::vector<long> ids) {
+        var.setSavedShadow(std::move(first), std::move(stored), std::move(ids));
+    }
 
     void addComponent(ComponentPtr &&component) override;
 

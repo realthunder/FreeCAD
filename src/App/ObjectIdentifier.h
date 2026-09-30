@@ -411,6 +411,19 @@ public:
     void setSavedShadowIds(std::vector<long> ids) {
         shadowSub.savedIds = std::move(ids);
     }
+    /** A shadow a file gave for an element path into another table (sec
+     * 27.82): the working name as saved, and the name stored in the owner's
+     * table with the owner's ids it names, looked up when the path resolves,
+     * as a link's is (sec 27.80).
+     */
+    void setSavedShadow(std::string first, std::string stored, std::vector<long> ids) {
+        shadowSub.first = std::move(first);
+        shadowSub.stored = std::move(stored);
+        shadowSub.pending = !shadowSub.stored.empty();
+        shadowSub.savedIds = std::move(ids);
+        if (shadowSub.second.empty())
+            shadowSub.second = subObjectName.getString();
+    }
 
     using SubNameMap = std::map<std::pair<App::DocumentObject*,std::string>,std::string>;
     void importSubNames(const SubNameMap &subNameMap);

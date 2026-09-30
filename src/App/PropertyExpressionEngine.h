@@ -208,6 +208,9 @@ public:
 
     void afterRestore() override;
     void onContainerRestored() override;
+    /// An external target restored after this document (its file loaded
+    /// later): the element paths into it register now (sec 27.82).
+    void hasSetChildValue(Property &prop) override;
 
     virtual void getLinksTo(std::vector<App::ObjectIdentifier> &identifiers,
                             App::DocumentObject *obj,
@@ -274,9 +277,16 @@ private:
         std::string path;
         std::string expr;
         std::string comment;
-        /// The string ids the element paths hold, by their order in a
-        /// visit (docs/TransactionLog.md sec 27.77).
-        std::vector<std::pair<int, std::vector<long>>> ids;
+        /// What the element paths hold, by their order in a visit
+        /// (docs/TransactionLog.md sec 27.77): the string ids, and for a
+        /// path into another table its shadow and stored name (sec 27.82).
+        struct PathIds {
+            int ref;
+            std::vector<long> ids;
+            std::string shadow;
+            std::string stored;
+        };
+        std::vector<PathIds> ids;
     };
     /**< Expressions are read from file to this map first before they are validated and inserted into the actual map */
     std::unique_ptr<std::vector<RestoredExpression> > restoredExpressions;
