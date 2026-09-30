@@ -2447,3 +2447,61 @@ Small things seen, not taken: the "Boolean operataion" typo
 (`FeatureHole.cpp:2363`), `Transformed::divideTools` without callers,
 `Gui/FeaturePickDialog.cpp` uncompiled, `remapSupportShape` a `#if 1`
 stub.
+
+### The 6 picks and 11 adapts, taken (2026-09-30)
+
+The user: "do the 17 small fixes first". Each was run on the fork build
+before its change -- a FreeCADCmd probe for the App ones, the GUI for the
+rest -- and again after; each commit carries the test that states it.
+
+| upstream | fork | before | after |
+|---|---|---|---|
+| `df22f8060d`, `80d4185c09`, `e17a83fa1f` | `5a22f0712e` | an NPT 1 modelled thread: root 16.70 mm both 3 and 20 mm down (a straight thread in a tapered bore); no UNF 1 3/16 | 16.58 and 16.05: 0.0312/mm, tan 1.79 deg; UNF 1 3/16-16, 28.58 mm tap drill |
+| `eb886449c2` | `343e22b093` | Draft Angle = -5 read back 0 | -5, drafts outward (9481 against 8000 mm^3) |
+| `c5fbbb3830` | `6ba59cf4da` | a ShapeBinder of the origin point: null shape | a vertex |
+| `e38fe196d5` | `fc27030179` | revolving a binder of an open L wire: "Axis must not be perpendicular to the sketch plane" | 6283 mm^3, the cylinder of r 10, h 20 |
+| `fa3c6e1068` | `e242a5044e` | an upstream file's `AuxiliarySpine`: dropped, the sweep "No auxiliary spine linked" | kept; the fork's old spelling still loads |
+| `1555f65075` | `aa74352bb8` | `Boolean::UsePlacement` set, never registered or read | gone |
+| `3604e57d6d`, `a7470332f7` | `5e2fe3badc` | MultiTransform's Add mirrored: into the ACTIVE body (and its Tip), nothing with none active | the MultiTransform's body |
+| `288255f074` | `d5894bad8d` | a first feature draggable to the document or a Part | only to a body; a sketch still leaves |
+| `9504b7e569` | `b8c057357c` | a lone App::Line or an LCS axis in the body refused as a Pad direction | taken (A/B: rebuilt without it, both refused again) |
+| `0de4c053a6` | `59df0ffa96` | a translated sprocket reference: KeyError | sized from the table |
+| `e91c16aae1` | `0be51a985b` | the shaft wizard would not open unless FreeCAD was the active application; its constraint combo never fired under Qt 6 | opens; Bearing makes a ConstraintBearing |
+| `529779fb53`, `e5b1d05813`, `422da33962` | `e5ed43de27` | (tests only) | TestPad, TestChamfer (upstream's 0.21 fixture), TestPipe |
+
+How the rows came out differently from upstream:
+
+- **The thread profile** is upstream's tip version, which already carries
+  the fork's BSW/BSF grouping and the ISO tyre-valve crest. It changes the
+  geometry of every modelled thread a little, tapered or not, as upstream's
+  did; no test pinned the old volumes.
+- **The Pipe** takes upstream's property names and reads the old ones, so
+  files go both ways; the panel's own "Curvelinear" wording is left.
+- **The Sprocket** keeps the English keys as the property's values and
+  reads the combo by index; upstream stores the translated text, which
+  makes a file depend on its author's language.
+- **The shaft wizard** had a Qt 6 break upstream still has:
+  `currentIndexChanged(QString)` connects silently under PySide 6 and
+  never fires. And upstream's `widget.data(Qt.UserRole)` is not a
+  QComboBox method; `currentData()` is.
+- **The drag rule** sits in the fork's `canDragObject`, which knows the
+  drop target from the selection context, not in upstream's
+  `canDragObjectToTarget`.
+- **The reference gate** takes whatever the body (or Part) holds, and a
+  coordinate system's datum elements through it -- the fork keeps an
+  LCS's elements with the LCS (`40d2b60fe1`).
+
+`tests/gui/pd-port-fixes.py` (`GuiPartDesignPortFixes_tests_run`) drives
+the Gui ones: 23 checks, green. Two traps it met: a task panel goes by
+`deleteLater`, which the nested event loop a script waits in does not run
+(flush `DeferredDelete`, or the next panel finds the old one too); and the
+PD panels' reference combos listen to `activated`, which `setCurrentIndex`
+does not emit.
+
+Seen, not fixed: after a MultiTransform edit in one document, a Pad
+opened in the next had no edit body in the Monitor, so a pick fell back
+to the active body and, with none, "No active body found"
+(`importExternalObject`). It needs a scripted open right after another
+edit; the test activates the body, as a user has it.
+
+Suites: PD 296 OK (+8); Python 3168 OK (+8; 50 skipped, 6 expected failures).
