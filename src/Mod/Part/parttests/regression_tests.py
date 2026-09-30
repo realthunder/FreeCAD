@@ -578,6 +578,34 @@ class RegressionTests(unittest.TestCase):
             self.assertEqual(len(result.Shells), 1, name)
             self.assertAlmostEqual(result.Volume, volume, places=3, msg=name)
 
+    def test_thickness_with_the_intersection_join(self):
+        """The Intersection join (docs/TransactionLog.md sec 27.92): a thick solid
+        came back inside out, oriented by the order its shells were glued in; a
+        blind hole's floor, met at a concave edge, got its section on the hole's
+        offset the wrong way round; and with intersection on, a removed face at
+        a concave edge got a rim the splits had not cut. Each volume is worked
+        out by hand or is intersection-off's; upstream OCCT fails them all."""
+        tshape = lambda: (
+            Part.makeBox(12, 4, 4).fuse(Part.makeBox(4, 4, 10, Vector(4, 0, 0))).removeSplitter()
+        )
+        pocket = lambda: Part.makeBox(10, 10, 6).cut(Part.makeBox(5, 5, 3, Vector(2.5, 2.5, 3)))
+        blindhole = lambda: Part.makeBox(10, 10, 5).cut(Part.makeCylinder(2, 3, Vector(5, 5, 2)))
+        lbox = lambda: Part.makeBox(10, 10, 5).cut(Part.makeBox(5, 5, 5, Vector(5, 5, 0)))
+        cases = [
+            ("T right bar top, in", tshape, 6, -1.0, False, 216.0),
+            ("pocket floor, in", pocket, 10, -1.0, False, 367.0),
+            ("blind hole floor, out", blindhole, 7, 1.0, False, 533.1327),
+            ("blind hole floor, in", blindhole, 7, -1.0, False, 326.8496),
+            ("L-box notch wall, out, intersection", lbox, 6, 1.0, True, 423.0),
+            ("T post wall, in, intersection", tshape, 2, -1.0, True, 212.0),
+        ]
+        for name, make, face, offset, inter, volume in cases:
+            shape = make()
+            result = shape.makeThickness([shape.Faces[face]], offset, 1e-7, inter, False, 0, 2)
+            self.assertTrue(result.isValid(), name)
+            self.assertEqual(len(result.Shells), 1, name)
+            self.assertAlmostEqual(result.Volume, volume, places=3, msg=name)
+
     def test_OptimalBox(self):
         box = Part.makeBox(1, 1, 1)
         self.assertTrue(box.optimalBoundingBox(True, False).isValid())
