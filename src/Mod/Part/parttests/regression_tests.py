@@ -474,6 +474,32 @@ class RegressionTests(unittest.TestCase):
         self.assertEqual(len(result.Wires), 40)
         self.assertEqual(len(result.Edges), 40)
 
+    def test_thickness_by_arc_is_the_same_every_run(self):
+        """Thickness with intersection and the Arc join put the offsets in hash
+        order -- a shape's hash is its TShape's address -- and the result
+        depended on that order: the same input gave up to four different
+        results in eight runs (docs/TransactionLog.md sec 27.88)."""
+        cases = {
+            "boss": (lambda: Part.makeCylinder(6, 4).fuse(
+                Part.makeCylinder(3, 4, Vector(0, 0, 4))), 2),
+            "lbox": (lambda: Part.makeBox(10, 10, 5).cut(
+                Part.makeBox(5, 5, 5, Vector(5, 5, 0))), 6),
+        }
+        for name, (make, face) in cases.items():
+            outcomes = set()
+            for _ in range(8):
+                shape = make()  # new TShapes, new addresses, every run
+                try:
+                    result = shape.makeThickness([shape.Faces[face]], 1.0, 1e-3, True, False, 0, 0)
+                    outcomes.add((result.isValid(), round(result.Volume, 6)))
+                except Exception as e:
+                    outcomes.add(type(e).__name__)
+            self.assertEqual(len(outcomes), 1, "%s: %s" % (name, outcomes))
+        # And the order it settles on gives the lbox its solid.
+        valid, volume = outcomes.pop()
+        self.assertTrue(valid)
+        self.assertAlmostEqual(volume, 399.8746, places=3)
+
     def test_OptimalBox(self):
         box = Part.makeBox(1, 1, 1)
         self.assertTrue(box.optimalBoundingBox(True, False).isValid())
