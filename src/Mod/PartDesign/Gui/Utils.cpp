@@ -146,7 +146,7 @@ PartDesign::Body *getBody(bool messageIfNot, bool autoActivate, bool assertModer
     Gui::MDIView *activeView = Gui::Application::Instance->activeView();
 
     if (activeView) {
-        if (assertModern && PartDesignGui::assureModernWorkflow ( activeView->getAppDocument() ) ) {
+        if (assertModern) {
             activeBody = activeView->getActiveObject<PartDesign::Body*>(PDBODYKEY,topParent,subname);
             auto doc = activeView->getAppDocument();
 
