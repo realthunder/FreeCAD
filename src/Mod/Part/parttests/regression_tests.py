@@ -500,6 +500,32 @@ class RegressionTests(unittest.TestCase):
         self.assertTrue(valid)
         self.assertAlmostEqual(volume, 399.8746, places=3)
 
+    def test_thickness_of_seam_faces_and_an_ellipse(self):
+        """The fork's loop builder broke thickness on faces with a seam: a
+        closed edge found twice, one seam wire allowed per face, a closed edge
+        losing its orientation; and the offset of an ellipse, a closed B-spline,
+        was stretched past its ends. Upstream OCCT gives these volumes
+        (docs/TransactionLog.md sec 27.89)."""
+        hole = lambda: Part.makeCylinder(5, 10).cut(Part.makeCylinder(2, 10))
+        ellipse = lambda: Part.Face(
+            Part.Wire(Part.Ellipse(Vector(0, 0, 0), 10, 5).toShape())
+        ).extrude(Vector(0, 0, 8))
+        pocket = lambda: Part.makeCylinder(6, 6).cut(Part.makeCylinder(3, 3, Vector(0, 0, 3)))
+        cases = [
+            ("cylinder top, in", lambda: Part.makeCylinder(4, 20), 1, -1.0, 468.0973),
+            ("hole wall, out", hole, 3, 1.0, 531.0589),
+            ("outer wall, in", hole, 0, -1.0, 257.6106),
+            ("ellipse top, out", ellipse, 2, 1.0, 608.6631),
+            ("ellipse bottom, in", ellipse, 1, -1.0, 473.2070),
+            ("pocketed cylinder bottom, in", pocket, 2, -1.0, 346.7660),
+        ]
+        for name, make, face, offset, volume in cases:
+            shape = make()
+            result = shape.makeThickness([shape.Faces[face]], offset, 1e-7, False, False, 0, 0)
+            self.assertTrue(result.isValid(), name)
+            self.assertEqual(len(result.Shells), 1, name)
+            self.assertAlmostEqual(result.Volume, volume, places=3, msg=name)
+
     def test_OptimalBox(self):
         box = Part.makeBox(1, 1, 1)
         self.assertTrue(box.optimalBoundingBox(True, False).isValid())
