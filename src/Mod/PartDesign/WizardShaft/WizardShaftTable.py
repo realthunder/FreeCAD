@@ -147,24 +147,27 @@ class WizardShaftTable:
         widget.editingFinished.connect(self.slotEditingFinished)
         # Constraint type
         widget = QtGui.QComboBox(self.widget)
-        widget.insertItem(0, "None")
-        widget.insertItem(1, "Fixed")
-        widget.insertItem(2, "Force")
-        widget.insertItem(3, "Bearing")
-        widget.insertItem(4, "Gear")
-        widget.insertItem(5, "Pulley")
+        # Shown translated, the English name as the item's data, which is
+        # what the shaft is given (upstream e91c16aae1)
+        widget.insertItem(0, translate("WizardShaftTable", "None"), "None")
+        widget.insertItem(1, translate("WizardShaftTable", "Fixed"), "Fixed")
+        widget.insertItem(2, translate("WizardShaftTable", "Force"), "Force")
+        widget.insertItem(3, translate("WizardShaftTable", "Bearing"), "Bearing")
+        widget.insertItem(4, translate("WizardShaftTable", "Gear"), "Gear")
+        widget.insertItem(5, translate("WizardShaftTable", "Pulley"), "Pulley")
         action = QtGui.QAction("Edit constraint", widget)
         action.triggered.connect(self.slotEditConstraint)
         widget.addAction(action)
         widget.setContextMenuPolicy(QtCore.Qt.ActionsContextMenu)
         self.widget.setCellWidget(self.rowDict["ConstraintType"], index, widget)
         widget.setCurrentIndex(0)
-        self.widget.connect(widget, QtCore.SIGNAL("currentIndexChanged(const QString&)"), self.slotConstraintType)
+        # Qt 6 has no currentIndexChanged(QString)
+        widget.currentIndexChanged.connect(self.slotConstraintType)
         # Start edge type
         widget = QtGui.QComboBox(self.widget)
-        widget.insertItem(0, "None",)
-        widget.insertItem(1, "Chamfer")
-        widget.insertItem(2, "Fillet")
+        widget.insertItem(0, translate("WizardShaftTable", "None"), "None")
+        widget.insertItem(1, translate("WizardShaftTable", "Chamfer"), "Chamfer")
+        widget.insertItem(2, translate("WizardShaftTable", "Fillet"), "Fillet")
         self.widget.setCellWidget(self.rowDict["StartEdgeType"],index, widget)
         widget.setCurrentIndex(0)
         widget.setEnabled(False)
@@ -180,9 +183,9 @@ class WizardShaftTable:
         widget.setEnabled(False)
         # End edge type
         widget = QtGui.QComboBox(self.widget)
-        widget.insertItem(0, "None",)
-        widget.insertItem(1, "Chamfer")
-        widget.insertItem(2, "Fillet")
+        widget.insertItem(0, translate("WizardShaftTable", "None"), "None")
+        widget.insertItem(1, translate("WizardShaftTable", "Chamfer"), "Chamfer")
+        widget.insertItem(2, translate("WizardShaftTable", "Fillet"), "Fillet")
         self.widget.setCellWidget(self.rowDict["EndEdgeType"],index, widget)
         widget.setCurrentIndex(0)
         widget.setEnabled(False)
@@ -213,7 +216,7 @@ class WizardShaftTable:
             self.shaft.updateSegment(self.editedColumn, diameter = self.getDoubleValue(rowName, self.editedColumn))
         elif rowName == "InnerDiameter":
             self.shaft.updateSegment(self.editedColumn, innerdiameter = self.getDoubleValue(rowName, self.editedColumn))
-        elif rowName == "Constraintype":
+        elif rowName == "ConstraintType":
             self.shaft.updateConstraint(self.editedColumn, self.getListValue(rowName, self.editedColumn))
         elif rowName == "StartEdgeType":
             pass
@@ -252,9 +255,9 @@ class WizardShaftTable:
     def getInnerDiameter(self, column):
         return self.getDoubleValue("InnerDiameter", column)
 
-    @QtCore.Slot('QString')
-    def slotConstraintType(self, text):
-        self.shaft.updateConstraint(self.getFocusedColumn(), text)
+    def slotConstraintType(self, index):
+        column = self.getFocusedColumn()
+        self.shaft.updateConstraint(column, self.getListValue("ConstraintType", column))
 
     def setConstraintType(self, column, t):
         self.setListValue("ConstraintType", column, t)
@@ -310,13 +313,17 @@ class WizardShaftTable:
     def setListValue(self, row, column, v):
         widget = self.widget.cellWidget(self.rowDict[row], column)
         widget.blockSignals(True)
-        widget.setCurrentIndex(widget.findText(v, QtCore.Qt.MatchExactly))
+        index = widget.findData(v)
+        if index < 0:
+            index = widget.findText(v, QtCore.Qt.MatchExactly)
+        widget.setCurrentIndex(index)
         widget.blockSignals(False)
 
     def getListValue(self, row, column):
         widget = self.widget.cellWidget(self.rowDict[row], column)
         if widget is not None:
-            return widget.currentText() #[0].upper()
+            value = widget.currentData()
+            return value if value is not None else widget.currentText()
         else:
             return None
 
