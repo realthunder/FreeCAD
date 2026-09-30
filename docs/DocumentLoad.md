@@ -1368,6 +1368,32 @@ two left differ in pixels only, the same way in both progressive runs:
     `instanced-face-transparency.py` (all four claims fail before the
     fix, the eager open included).
 
+**The rerun after session 110's fix** (the instanced colour; 73 files,
+two progressive runs each): 71 identical, both Lead Screw files among
+them. The two left differ in pixels only:
+- `analoy` -- 0.6% in this run, identical in the next, where its two
+  eager opens differed from each other: the noise floor.
+- `error`, the one from `2022-10-11_w_52240` -- not a load-mode
+  difference. Its wire compound `layer_1001` (92 B-spline edges) is
+  built coarse first (10259 coordinates) and refined to the exact rung
+  in every open. The exact mesh is 86569 coordinates in a process's
+  first eager open and in every progressive one, but 86662 in every
+  later eager open of the same process; with coarse-first off
+  (`FC_COARSE_TESSELLATION=-1`) all opens agree at 86569, and from rung
+  0 the later eager opens reach 86597 instead. So the exact rung
+  depends on the process's history and on the rung it climbed from; the
+  harness sees it as eager against progressive only because its first
+  eager open is a warm-up. The deflection is derived from a
+  `BRepBndLib::Add` box, which reads any polygon the shape carries (the
+  coarse box's extents sum to 1055.12, the exact one's to 1055.36), but
+  that shifts the deflection by only 0.02%, too little to account for
+  93 points -- cause not found. The sketch beside it has a second,
+  separate difference (a 287 against 272 coordinate node, progressive
+  against eager, in every open), not looked at.
+The harness numbered its captures by file name, and the corpus has
+seven `error.FCStd`: each overwrote the last one's images, so the
+failing file's pictures showed a file that passed. Numbered now.
+
 Two files did not open at all within 400 s, eagerly
 or progressively (`LS3_Lead_Screw_Mach_02_12.12.23`, and its sibling was
 skipped with it): stuck in `BRepTools::Read` under
