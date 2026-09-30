@@ -9527,3 +9527,53 @@ Commits: `a7810f1d93` (the fix), `0b0ddd9871` (the test).
 **Gates:** Python 2966 OK (52 skipped, 6 expected failures; +1), ctest
 850/850, the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14; the fork's
 thickness suite PASS 10, XFAIL 8.
+
+### 27.88 Thickness in intersection mode, the same every run (user, 2026-09-30)
+
+27.86 found thickness with intersection on giving different results from run
+to run of one build. Chased and fixed in the fork.
+
+**Measured.** A probe of 156 thickness runs (seven solids -- box, cylinder,
+hole, L-box, box with a blind hole, boss, pocket -- each face, +/-1, joins Arc
+and Intersection), each repeated six times on freshly built shapes in one
+process: 14 cases gave more than one result, every one of them with the Arc
+join. The worst, a boss's top face at +1, gave four results in eight runs
+(invalid solids of volume 272.0, 282.9, 196.2 and -363.0); an L-box face gave
+a solid four times and `StdFail_NotDone` twice.
+
+**Found.** The fork's `SHOW_TOPO_SHAPE` hook (`Part.showShapeOCCT("*")` turns
+every point on; each becomes a document object) gives a trace of every
+intermediate shape. The traces of runs with different results first differ at
+`BuildOffsetByArc`'s `SI`/`OF` points: the same offsets, visited in another
+order. That loop walks `MapSF` -- a DataMap of the faces, edges and vertices
+being offset -- in hash order, and a shape's hash is its TShape's address;
+it sets the roots of `myInitOffsetFace` and `myImageOffset` in that order, and
+what runs after takes it from there. Upstream OCCT has the same loop.
+
+**Fix** (fork): the loop takes `MapSF`'s keys in the shape's topological order
+-- their index in `TopExp::MapShapes` of the faces being offset, then of the
+analysis' new faces -- rather than the map's (`orderedKeys`,
+`BRepOffset_MakeOffset.cxx`). No key fell outside that order in any run.
+
+**Result.** All 156 cases give one result, over 12 repetitions and in a second
+process alike. No case that was stable before changed. The 14 each settle on
+one of the results they gave before; valid results went from 63 to 67. What it
+does not do is make the order-dependent cases right: those settle on the
+order's result, and for a boss face, a blind-hole box and a pocket that is an
+invalid solid, for three L-box faces `StdFail_NotDone`. The algorithm's
+dependence on the order stays; not chased.
+
+**Tests.** FreeCAD `parttests.regression_tests.
+test_thickness_by_arc_is_the_same_every_run` (the boss and an L-box, eight
+runs each, one result; the L-box's is a valid solid of 399.8746). The fork's
+`tests/thickness` gains three determinism cases (the boss, the L-box, the
+blind-hole box), README updated. Without the fix both fail -- the FreeCAD test
+on the boss with two results, the suite on the boss and the blind-hole box
+with four each.
+
+Commits: fork `f64f58c291` (the fix), `050c66d58e` (the suite); `fe6cc3c77a` (the
+FreeCAD test).
+
+**Gates:** Python 2967 OK (52 skipped, 6 expected failures; +1), ctest
+850/850, the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14; the fork's
+thickness suite PASS 13, XFAIL 8.
