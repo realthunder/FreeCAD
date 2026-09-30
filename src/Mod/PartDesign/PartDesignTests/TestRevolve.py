@@ -19,9 +19,11 @@
 #*                                                                         *
 #***************************************************************************
 
+import math
 import unittest
 
 import FreeCAD
+import Part
 
 class TestRevolve(unittest.TestCase):
     def setUp(self):
@@ -383,6 +385,31 @@ class TestRevolve(unittest.TestCase):
         groove.UpToFace2 = (stop, [''])
         self.Doc.recompute()
         self.assertSweep(groove, 180)
+
+    def testOpenWireBinderProfile(self):
+        # A binder of an open wire is a profile a revolution takes: its plane
+        # gives the normal (upstream e38fe196d5). It failed "Axis must not be
+        # perpendicular to the sketch plane"
+        body = self.Doc.addObject('PartDesign::Body', 'OpenBody')
+        sketch = self.Doc.addObject('Sketcher::SketchObject', 'OpenSketch')
+        sketch.Placement = FreeCAD.Placement(
+            FreeCAD.Vector(), FreeCAD.Rotation(FreeCAD.Vector(1, 0, 0), 90))
+        pts = [FreeCAD.Vector(0, 0, 0), FreeCAD.Vector(10, 0, 0),
+               FreeCAD.Vector(10, 20, 0), FreeCAD.Vector(0, 20, 0)]
+        for a, b in zip(pts, pts[1:]):
+            sketch.addGeometry(Part.LineSegment(a, b), False)
+        self.Doc.recompute()
+        binder = body.newObject('PartDesign::SubShapeBinder', 'OpenBinder')
+        binder.Support = [(sketch, '')]
+        self.Doc.recompute()
+        rev = body.newObject('PartDesign::Revolution', 'OpenRevolution')
+        rev.Profile = binder
+        rev.ReferenceAxis = ([o for o in body.Origin.OriginFeatures
+                              if o.Role == 'Z_Axis'][0], [''])
+        rev.Angle = 360
+        self.Doc.recompute()
+        self.assertNotIn('Invalid', rev.State)
+        self.assertAlmostEqual(rev.Shape.Volume, math.pi * 100 * 20, places=3)
 
     def tearDown(self):
         #closing doc

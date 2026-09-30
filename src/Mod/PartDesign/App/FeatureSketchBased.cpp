@@ -1355,8 +1355,9 @@ Base::Vector3d ProfileBased::getProfileNormal() const {
     }
 
     // For newer version, do not do fitting, as it may flip the face normal for
-    // some reason.
-    TopoShape shape = getVerifiedFace(true, _ProfileBasedVersion.getValue() <= 0);
+    // some reason. An open wire is a valid profile of a revolution; its
+    // plane gives the normal all the same (upstream e38fe196d5)
+    TopoShape shape = getVerifiedFace(true, _ProfileBasedVersion.getValue() <= 0, true);
 
     gp_Pln pln;
     if (shape.findPlane(pln)) {
