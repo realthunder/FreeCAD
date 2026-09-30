@@ -57,6 +57,7 @@
 #include <Base/Tools.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
+#include <App/PropertyStandard.h>
 #include <Base/Console.h>
 
 #include "SceneServeSource.h"
@@ -73,6 +74,7 @@
 #include "Renderer/SceneServer.h"
 #include "RenderParams.h"
 #include "MirrorViewer.h"
+#include "NaviCube.h"
 #include "ViewerContext.h"
 #include "ObjectMetaFeed.h"
 #include "SceneControl.h"
@@ -195,6 +197,47 @@ protected:
             changed();
     }
 };
+
+/// The served view's navigation cube setup, as a 3D view carries it in
+/// its own ShowNaviCube/NaviCubeX/NaviCubeY (View3DInventor.h): here
+/// dynamic, on the container that stands in for the view, and seeded from
+/// the same preferences a new view starts from. Not saved: a serve lasts
+/// as long as the process.
+void initNaviCubeProperties(App::PropertyContainer *props)
+{
+    auto hGrp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/View");
+    if (auto show = Base::freecad_dynamic_cast<App::PropertyBool>(props->addDynamicProperty(
+            "App::PropertyBool", "ShowNaviCube", "Base",
+            "Show the navigation cube in the served view"))) {
+        show->setValue(hGrp->GetBool("ShowNaviCube", true));
+    }
+    static const App::PropertyFloatConstraint::Constraints range = {0.0, 1.0, 0.05};
+    float x, y;
+    NaviCube::cornerPosition(NaviCube::Corner(hGrp->GetInt("CornerNaviCube", 1)), x, y);
+    const struct {
+        const char *name;
+        float value;
+        const char *doc;
+    } axes[] = {
+        {"NaviCubeX", x,
+         "Horizontal position of the navigation cube in the served view:\n"
+         "0 at the left edge, 1 at the right, as a fraction of the room\n"
+         "each browser's view leaves it."},
+        {"NaviCubeY", y,
+         "Vertical position of the navigation cube in the served view:\n"
+         "0 at the top edge, 1 at the bottom, as a fraction of the room\n"
+         "each browser's view leaves it."},
+    };
+    for (const auto &axis : axes) {
+        if (auto prop = Base::freecad_dynamic_cast<App::PropertyFloatConstraint>(
+                props->addDynamicProperty("App::PropertyFloatConstraint", axis.name,
+                                          "Base", axis.doc))) {
+            prop->setConstraints(&range);
+            prop->setValue(axis.value);
+        }
+    }
+}
 
 /// A 4x4 from a JSON array of 16 numbers (GL layout, as the viewer
 /// builds it). False when absent or malformed.
@@ -328,6 +371,82 @@ public:
     /// The selection observer a view is and this source was not; see
     /// its definition below.
     std::unique_ptr<SelectionMirror> selectionMirror;
+
+    /** The served view's navigation cube (docs/HeadlessServe.md sec 2).
+     *
+     * A viewer's cube reached a browser only while that viewer's renderer
+     * held the stream, and once the serve source alone publishes a served
+     * document there was none. The source states its own: a view-less
+     * NaviCube builds the same overlay graphs, placed by this source's
+     * ShowNaviCube/NaviCubeX/NaviCubeY -- the served view's setup, which
+     * a browser edits as "#.ActiveView.ShowNaviCube" as a desktop user
+     * edits a view's -- and each is captured without a context under the
+     * ids a viewer feeds (View3DInventorViewer::Private::OverlayNaviCube,
+     * OverlayNaviButtons), which are what the browser's local cube
+     * picking keys on. The browser turns it with its own camera.
+     */
+    std::unique_ptr<NaviCube> naviCube;
+    struct NaviFeed {
+        CoinPtr<SoSeparator> root;
+        std::unique_ptr<SoFCRenderCacheManager> manager;
+    };
+    NaviFeed naviCubeFeed;
+    NaviFeed naviButtonFeed;
+    static constexpr int OverlayNaviCube = 5;
+    static constexpr int OverlayNaviButtons = 6;
+
+    void dropNaviFeed(NaviFeed &feed, int id)
+    {
+        if (feed.manager)
+            feed.manager->setExternalOverlay(nullptr, id, Render::OverlayAnchor());
+        feed.manager.reset();
+        feed.root.reset();
+    }
+
+    void naviFeed(NaviFeed &feed, int id, SoSeparator *graph,
+                  const Render::OverlayAnchor &anchor, const SbViewportRegion &viewport)
+    {
+        if (!graph) {
+            dropNaviFeed(feed, id);
+            return;
+        }
+        // A rebuilt graph (the cube's preferences changed) is a new
+        // capture, as a viewer's feedNaviGraph has it.
+        if (feed.manager && feed.root != graph)
+            dropNaviFeed(feed, id);
+        if (!feed.manager) {
+            feed.root = graph;
+            feed.manager = std::make_unique<SoFCRenderCacheManager>();
+        }
+        feed.manager->setExternalOverlay(renderer.get(), id, anchor);
+        feed.manager->capture(graph, viewport);
+    }
+
+    /// State the cube as the served view's properties have it, or take
+    /// it away.
+    void feedNaviCube(const SbViewportRegion &viewport)
+    {
+        auto show = Base::freecad_dynamic_cast<App::PropertyBool>(
+            renderProps.getPropertyByName("ShowNaviCube"));
+        auto x = Base::freecad_dynamic_cast<App::PropertyFloat>(
+            renderProps.getPropertyByName("NaviCubeX"));
+        auto y = Base::freecad_dynamic_cast<App::PropertyFloat>(
+            renderProps.getPropertyByName("NaviCubeY"));
+        if (!naviCube || !show || !show->getValue()) {
+            dropNaviFeed(naviCubeFeed, OverlayNaviCube);
+            dropNaviFeed(naviButtonFeed, OverlayNaviButtons);
+            return;
+        }
+        if (x && y)
+            naviCube->setPosition(float(x->getValue()), float(y->getValue()));
+        // The cube first: it builds the shared data the buttons draw from.
+        Render::OverlayAnchor cubeAnchor;
+        SoSeparator *cube = naviCube->getOverlayCubeGraph(cubeAnchor);
+        naviFeed(naviCubeFeed, OverlayNaviCube, cube, cubeAnchor, viewport);
+        Render::OverlayAnchor buttonAnchor;
+        SoSeparator *buttons = naviCube->getOverlayButtonGraph(buttonAnchor);
+        naviFeed(naviButtonFeed, OverlayNaviButtons, buttons, buttonAnchor, viewport);
+    }
 
     /** One client's own selection, told back to that client
      * (docs/ThinClient.md 8.11, view mode).
@@ -738,6 +857,11 @@ public:
             streams->byClient.clear();
         }
         cyclesInput.reset();
+        // The cube's captures push into the renderer, which goes
+        // before them in member order.
+        dropNaviFeed(naviCubeFeed, OverlayNaviCube);
+        dropNaviFeed(naviButtonFeed, OverlayNaviButtons);
+        naviCube.reset();
         // The label feed remembers renderers by address; this one is
         // about to stop being one.
         if (renderer)
@@ -1402,7 +1526,10 @@ SceneServeSource::SceneServeSource(Document *doc)
     // editing one shows up, which without a frame loop takes an explicit
     // republish.
     initRenderProperties(&pimpl->renderProps);
+    initNaviCubeProperties(&pimpl->renderProps);
     pimpl->renderProps.changed = [this]() { schedulePublish(); };
+    pimpl->naviCube = std::make_unique<NaviCube>(nullptr);
+    pimpl->naviCube->setChangedCallback([this]() { schedulePublish(); });
     pimpl->root->setViewObject(&pimpl->renderProps);
     pimpl->root->setExternalRenderer(pimpl->renderer.get(),
                                      &pimpl->renderProps);
@@ -2078,6 +2205,7 @@ bool SceneServeSource::publishNow()
     // drawing viewer's render path did for the feed.
     SbViewportRegion viewport{short(kDefaultWidth), short(kDefaultHeight)};
     manager->traverse(pimpl->root, viewport);
+    pimpl->feedNaviCube(viewport);
 
     float viewMatrix[16];
     float projMatrix[16];

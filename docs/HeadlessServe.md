@@ -93,7 +93,7 @@ found both; `SceneServeSource::Private::SelectionMirror` is the observer now, an
 
 Plus the overlays — axis cross, navigation cube — which are viewer furniture captured through
 `setExternalOverlay()`. A headless source has no business producing them; the viewer draws its
-own.
+own. **The navigation cube is the exception, since 2026-09-30** -- see sec 3.5.
 
 ## 3. The shape of the fix
 
@@ -175,6 +175,37 @@ first publish: an `SoOrthographicCamera` fitted to the scene bounding box (the c
 has `getBoundingBox()`), at a fixed isometric-ish orientation, with a default 1280×720
 viewport. Every joining viewer already re-frames with its own `fitAll`, so this only has to be
 sane, not correct. Making it settable over the control channel is a follow-up.
+
+### 3.5 The served view's navigation cube
+
+Added 2026-09-30. "The viewer draws its own" was never built: a browser only ever had the cube
+a desktop view's renderer happened to publish, and when the serve source became the only
+publisher of a served document (MultiDocServe.md sec 5) it had none. The browser's cube
+picking, hover tint and rotate buttons all key on the overlay ids a viewer feeds (5 and 6)
+and on the graph `NaviCube` builds, so the source states that same graph rather than the
+viewer learning to draw a second one:
+
+- The cube is configured per view. A 3D view carries `ShowNaviCube` (it always did) and
+  `NaviCubeX`/`NaviCubeY`: each 0..1, the fraction of the room the view leaves the cube, x
+  from the left and y from the top, so 0 and 1 are the corners and a resize keeps the cube
+  where it was. The `CornerNaviCube` preference only seeds a new view; a drag writes the
+  dragged view's properties and nothing else (it used to write the `OffsetX`/`OffsetY`
+  preferences, moving every view's cube). The docked overlay panels and the share pill keep
+  clear of the active view's cube.
+- The served view has the same three, dynamic, on the source's render-property container --
+  `#.ActiveView.NaviCubeX` in the browser's omni box, `setProperty` with target `view3d` on
+  the wire -- seeded from the same preferences and not saved.
+- The anchor carries the position, not pixels: `OverlayAnchor::posX`/`posY` and a
+  `sizePixels` edge (scene dump v79), and `OverlayAnchor::cornerRect` is the one placement
+  the backend's frame, the browser's frame and picks, and the desktop cube's own GL draw and
+  hit test all make from it. A browser scales a pixel-sized rect by its device pixel ratio.
+- `NaviCube(nullptr)` is a cube with no viewer: its shared data (`NaviCubeShared`, a separate
+  headless instance) keeps its textures as images only, and its graphs are captured by
+  `SoFCRenderCacheManager::capture(root, viewport)`, a context-free capture that, unlike
+  `traverse()`, pushes no view configs -- an overlay manager's would overwrite the scene's.
+- It turns by each browser's own camera; the face labels' readability flip, which a viewer
+  syncs from its camera, stays at the front view's. Auto-hide follows a viewer's mouse, so a
+  served cube and its buttons are always stated -- which is also what a touch screen needs.
 
 ## 4. Staging
 

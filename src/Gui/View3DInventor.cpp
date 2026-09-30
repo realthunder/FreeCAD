@@ -138,6 +138,20 @@ View3DInventor::View3DInventor(Gui::Document* pcDocument, QWidget* parent,
     ExternalRenderType.setEnums(_externalRenderTypeNames);
     ADD_PROPERTY_TYPE(ShowNaviCube, (false), nullptr, App::Prop_None,
             "Show navigation cube in this view");
+    static const App::PropertyFloatConstraint::Constraints _naviCubeRange =
+        {0.0, 1.0, 0.05};
+    // The preference corner is only the value a new view starts from:
+    // applySettings() below states it again, and a restore overrides it.
+    ADD_PROPERTY_TYPE(NaviCubeX, (1.0), nullptr, App::Prop_None,
+            "Horizontal position of the navigation cube in this view:\n"
+            "0 at the left edge, 1 at the right, as a fraction of the\n"
+            "room the view leaves it, so a resize keeps it in place.");
+    NaviCubeX.setConstraints(&_naviCubeRange);
+    ADD_PROPERTY_TYPE(NaviCubeY, (0.0), nullptr, App::Prop_None,
+            "Vertical position of the navigation cube in this view:\n"
+            "0 at the top edge, 1 at the bottom, as a fraction of the\n"
+            "room the view leaves it, so a resize keeps it in place.");
+    NaviCubeY.setConstraints(&_naviCubeRange);
     ADD_PROPERTY_TYPE(ThumbnailView, (false), nullptr, App::Prop_None,
             "Mark this view for capturing document thumbnail on saving");
     ADD_PROPERTY_TYPE(ObjectDisplayModes, (), nullptr, App::Prop_Hidden,

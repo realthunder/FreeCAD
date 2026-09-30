@@ -708,6 +708,9 @@ public:
     void setEnabledNaviCube(bool on);
     bool isEnabledNaviCube() const;
     void setNaviCubeCorner(int);
+    /// Place this viewer's cube (NaviCube::setPosition) and state it on
+    /// its view's NaviCubeX/NaviCubeY, when it has a view.
+    void setNaviCubePosition(float x, float y);
     NaviCube* getNaviCube() const;
     void setEnabledVBO(bool on);
     bool isEnabledVBO() const;

@@ -178,8 +178,8 @@ all, and none of what its own edit hangs in the served graph. A pattern's on-vie
 and a sketch's edit geometry were drawn by nothing in the browser, while the clicks on them,
 which go through the mirror, worked. A renderer with no group now publishes on the
 `FC_BGFX_SERVE_SCENE` path only. The browser loses the desktop's navigation cube with it; a
-headless serve never had one (HeadlessServe.md sec 2: the viewer is to draw its own, and does
-not yet).
+headless serve never had one. Since 2026-09-30 the source states the served view's own
+(HeadlessServe.md sec 3.5).
 
 ### 5.1 A connection sees one document, and what it links out to
 

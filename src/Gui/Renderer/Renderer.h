@@ -353,9 +353,43 @@ struct OverlayAnchor {
     /// so without this every cell would draw the feeding cell's cube,
     /// turned by the feeding cell's camera (docs/SplitViews.md sec 16.3).
     int subView = 0;
+    /// Placement by position instead of by corner (the NaviCube's
+    /// per-view position): when posX >= 0 the rect sits posX of the way
+    /// across the room the viewport leaves it inside the margins, and
+    /// posY of the way down (x from the left, y from the TOP), and
+    /// \a corner only says the rect is not FullViewport. Stated as
+    /// fractions, not pixels, because the consumer's viewport is not
+    /// the producer's: a served cube is placed by browsers of every size.
+    float posX = -1.0f;
+    float posY = -1.0f;
+    /// Rect edge length in pixels; 0 = sizeFraction of the smaller
+    /// viewport side. Ignored for FullViewport.
+    float sizePixels = 0.0f;
+
+    /// The square rect of a corner-anchored overlay in a \a vw x \a vh
+    /// viewport: top-left corner (\a x, \a y) in top-left-origin pixels
+    /// and edge length \a edge. The one placement every consumer -- the
+    /// backend's frame, the browser's frame and picks, the NaviCube's own
+    /// GL draw and hit test -- makes from an anchor. Not for FullViewport.
+    void cornerRect(int vw, int vh, int &x, int &y, int &edge) const {
+        edge = int(std::max(1.0f, sizePixels > 0.0f
+                                      ? sizePixels
+                                      : sizeFraction * float(std::min(vw, vh))));
+        const int mx = int(marginX), my = int(marginY);
+        if (posX >= 0.0f) {
+            x = mx + int(std::lround(posX * float(std::max(0, vw - edge - 2 * mx))));
+            y = my + int(std::lround(posY * float(std::max(0, vh - edge - 2 * my))));
+            return;
+        }
+        const bool right = corner == BottomRight || corner == TopRight;
+        const bool top = corner == TopLeft || corner == TopRight;
+        x = std::max(0, right ? vw - edge - mx : mx);
+        y = std::max(0, top ? my : vh - edge - my);
+    }
 
     bool operator==(const OverlayAnchor &o) const {
         return corner == o.corner && sizeFraction == o.sizeFraction
+            && posX == o.posX && posY == o.posY && sizePixels == o.sizePixels
             && fovDeg == o.fovDeg && orthoHeight == o.orthoHeight
             && cameraDistance == o.cameraDistance
             && nearPlane == o.nearPlane && farPlane == o.farPlane

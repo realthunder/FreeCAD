@@ -129,6 +129,15 @@ public:
     /// list, like ShadingType: a bare index reaches the file.
     App::PropertyEnumeration ExternalRenderType;
     App::PropertyBool ShowNaviCube;
+    /// Where this view's navigation cube sits, each 0..1: the fraction
+    /// of the room the view leaves the cube along that axis, x from the
+    /// left edge and y from the TOP edge. 0 and 1 are the corners, so a
+    /// resize keeps a cube in its corner and a cube placed mid-edge
+    /// proportionally where it was. A new view takes its corner from
+    /// the CornerNaviCube preference; dragging the cube writes these,
+    /// for this view only.
+    App::PropertyFloatConstraint NaviCubeX;
+    App::PropertyFloatConstraint NaviCubeY;
     App::PropertyBool ThumbnailView;
     /// Per-object display mode overrides of THIS view
     /// (docs/CoinRetirement.md 5.9). Key: a subname path rooted at a

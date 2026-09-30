@@ -65,6 +65,7 @@
 #include "TaskView/TaskView.h"
 #include "Tree.h"
 #include "TreeParams.h"
+#include "View3DInventor.h"
 #include "View3DInventorViewer.h"
 
 FC_LOG_LEVEL_INIT("Dock", true, true);
@@ -683,7 +684,19 @@ public:
             h -= tabbar->height();
 
         int naviCubeSize = NaviCube::getNaviCubeSize();
-        int naviCorner = OverlayParams::getDockOverlayCheckNaviCube() ?  OverlayParams::getCornerNaviCube() : -1;
+        // The cube is placed per view: keep clear of the active view's,
+        // and of none when that view does not show one.
+        int naviCorner = -1;
+        if (OverlayParams::getDockOverlayCheckNaviCube()) {
+            naviCorner = OverlayParams::getCornerNaviCube();
+            if (auto view = qobject_cast<View3DInventor*>(getMainWindow()->activeWindow())) {
+                auto viewer = view->getViewer();
+                if (!viewer->isEnabledNaviCube() || !viewer->getNaviCube())
+                    naviCorner = -1;
+                else
+                    naviCorner = int(viewer->getNaviCube()->getCorner());
+            }
+        }
 
         QRect rect;
         QRect rectBottom(0,0,0,0);

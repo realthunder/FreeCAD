@@ -1329,11 +1329,29 @@ static int s_cubeHiliteDraw = -2;         // cube draw index currently tinted
 static const int kNaviButtonHiliteOverlayId = 21;
 static int s_btnHiliteDraw = -2;          // button draw index currently tinted
 
+/// An anchor as this canvas draws it. A rect sized in pixels
+/// (OverlayAnchor::sizePixels -- the served NaviCube) was sized in the
+/// publisher's pixels, which are CSS pixels here: the buffer is at the
+/// device pixel ratio, so the size and margins scale by it, or a hi-DPI
+/// screen would get a cube a fraction of the size of everything around
+/// it. A fractional size already scales with the viewport.
+static Render::OverlayAnchor canvasAnchor(const Render::OverlayAnchor &a)
+{
+    Render::OverlayAnchor out = a;
+    if (out.sizePixels > 0.0f && s_dpr > 1.0f) {
+        out.sizePixels *= s_dpr;
+        out.marginX *= s_dpr;
+        out.marginY *= s_dpr;
+    }
+    return out;
+}
+
 /// Overlay viewport rect in top-left canvas pixels, mirroring
-/// BGFXRenderer's per-frame anchor placement (corner + margins).
-static void overlayRect(const Render::OverlayAnchor &a,
+/// BGFXRenderer's per-frame anchor placement (OverlayAnchor::cornerRect).
+static void overlayRect(const Render::OverlayAnchor &anchor,
                         int &rx, int &ry, int &rw, int &rh)
 {
+    const Render::OverlayAnchor a = canvasAnchor(anchor);
     const int vx = int(vpX()), vy = int(vpY());
     const int vw = int(vpW()), vh = int(vpH());
     if (a.corner == Render::OverlayAnchor::FullViewport) {
@@ -1343,16 +1361,11 @@ static void overlayRect(const Render::OverlayAnchor &a,
         rh = vh;
         return;
     }
-    int edge = int(std::max(1.0f,
-        a.sizeFraction * float(std::min(vw, vh))));
+    int x, y, edge;
+    a.cornerRect(vw, vh, x, y, edge);
+    rx = vx + x;
+    ry = vy + y;
     rw = rh = edge;
-    const bool right = a.corner == Render::OverlayAnchor::BottomRight
-        || a.corner == Render::OverlayAnchor::TopRight;
-    const bool top = a.corner == Render::OverlayAnchor::TopLeft
-        || a.corner == Render::OverlayAnchor::TopRight;
-    const int mx = int(a.marginX), my = int(a.marginY);
-    rx = vx + std::max(0, right ? vw - edge - mx : mx);
-    ry = vy + std::max(0, top ? my : vh - edge - my);
 }
 
 /// If canvas pixel (px, py) lands on the NaviCube overlay, return in
@@ -1602,7 +1615,7 @@ static bool updateCubeHover(float px, float py)
         Render::DrawCallList draws;
         draws.push_back(std::move(hl));
         s_renderer->setOverlay(kCubeHiliteOverlayId, std::move(draws),
-                               cube->anchor);
+                               canvasAnchor(cube->anchor));
     }
     return true;
 }
@@ -1808,7 +1821,7 @@ static bool updateButtonHover(float px, float py)
         Render::DrawCallList draws;
         draws.push_back(std::move(hl));
         s_renderer->setOverlay(kNaviButtonHiliteOverlayId, std::move(draws),
-                               btn->anchor);
+                               canvasAnchor(btn->anchor));
     }
     return true;
 }
@@ -5432,7 +5445,7 @@ static void applySnapshot(bool fit)
                 continue;
             }
             Render::DrawCallList odraws = ov.draws;
-            s_renderer->setOverlay(ov.id, std::move(odraws), ov.anchor);
+            s_renderer->setOverlay(ov.id, std::move(odraws), canvasAnchor(ov.anchor));
         }
         for (int id : s_overlayIds) {
             if (!ovIds.count(id))

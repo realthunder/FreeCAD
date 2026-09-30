@@ -147,6 +147,7 @@
 #include "GLPainter.h"
 #include "MainWindow.h"
 #include "NaviCube.h"
+#include "OverlayManager.h"
 #include "NavigationStyle.h"
 #include "Selection.h"
 #include "SoAxisCrossKit.h"
@@ -2056,6 +2057,13 @@ void View3DInventorViewer::onViewPropertyChanged(const App::Property &prop)
     if (&prop == &_pimpl->view->ShowNaviCube) {
         naviCubeEnabled  = _pimpl->view->ShowNaviCube.getValue();
         this->getSoRenderManager()->scheduleRedraw();
+        // The docked panels keep clear of the active view's cube.
+        OverlayManager::instance()->refresh();
+    } else if (&prop == &_pimpl->view->NaviCubeX || &prop == &_pimpl->view->NaviCubeY) {
+        if (naviCube)
+            naviCube->setPosition(float(_pimpl->view->NaviCubeX.getValue()),
+                                  float(_pimpl->view->NaviCubeY.getValue()));
+        OverlayManager::instance()->refresh();
     } else if(!_applyingOverride) {
         if (boost::starts_with(prop.getName(),"HiddenLine_")
              && overrideMode == "Hidden Line")
@@ -3474,8 +3482,21 @@ bool View3DInventorViewer::isEnabledNaviCube() const
 
 void View3DInventorViewer::setNaviCubeCorner(int cc)
 {
-    if (naviCube) {
-        naviCube->setCorner(static_cast<NaviCube::Corner>(cc));
+    float x, y;
+    NaviCube::cornerPosition(static_cast<NaviCube::Corner>(cc), x, y);
+    setNaviCubePosition(x, y);
+}
+
+void View3DInventorViewer::setNaviCubePosition(float x, float y)
+{
+    if (naviCube)
+        naviCube->setPosition(x, y);
+    // The view's properties are the position's storage, as ShowNaviCube
+    // is the switch's: a restore, a macro or the property editor lands
+    // back here through onViewPropertyChanged.
+    if (_pimpl->view) {
+        _pimpl->view->NaviCubeX.setValue(x);
+        _pimpl->view->NaviCubeY.setValue(y);
     }
 }
 

@@ -3897,23 +3897,12 @@ bool BGFXRenderer::Private::render(const QColor &col,
         }
         uint16_t rx = 0, ry = 0, rw = width, rh = height;
         if (anchor->corner != Render::OverlayAnchor::FullViewport) {
-            uint16_t edge = uint16_t(std::max(1.0f,
-                anchor->sizeFraction
-                    * float(std::min(width, height))));
-            rw = rh = edge;
-            bool right =
-                anchor->corner == Render::OverlayAnchor::BottomRight
-                || anchor->corner == Render::OverlayAnchor::TopRight;
-            bool top =
-                anchor->corner == Render::OverlayAnchor::TopLeft
-                || anchor->corner == Render::OverlayAnchor::TopRight;
-            // bgfx view rects are top-left anchored.
-            int mx = int(anchor->marginX);
-            int my = int(anchor->marginY);
-            rx = uint16_t(std::max(0,
-                right ? width - edge - mx : mx));
-            ry = uint16_t(std::max(0,
-                top ? my : height - edge - my));
+            // bgfx view rects are top-left anchored, as cornerRect's are.
+            int x, y, edge;
+            anchor->cornerRect(width, height, x, y, edge);
+            rx = uint16_t(x);
+            ry = uint16_t(y);
+            rw = rh = uint16_t(edge);
         }
         const auto *caps = bgfx::getCaps();
         float ovProj[16];
@@ -6302,11 +6291,10 @@ bool BGFXRenderer::Private::render(const QColor &col,
                 view->overlayAnchor = &anchor;
                 // Rect pixel height the overlay renders into (mirrors the
                 // view-config loop), so fixed-pixel glyph sizing lands.
-                view->overlayRectHeight =
-                    anchor.corner == Render::OverlayAnchor::FullViewport
-                    ? float(height)
-                    : std::max(1.0f, anchor.sizeFraction
-                                     * float(std::min(width, height)));
+                int rx, ry, edge = int(height);
+                if (anchor.corner != Render::OverlayAnchor::FullViewport)
+                    anchor.cornerRect(width, height, rx, ry, edge);
+                view->overlayRectHeight = float(edge);
             }
             else {
                 view->overlayAnchor = nullptr;

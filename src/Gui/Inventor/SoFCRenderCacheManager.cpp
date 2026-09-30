@@ -1726,8 +1726,22 @@ SoFCRenderCacheManager::capture(SoGLRenderAction * action, SoNode * root)
   // overlay roots (foreground superimposition, corner axis cross) that
   // are captured outside their own traversal and mirrored to the backend
   // through the overlay feed (setExternalOverlay()).
+  captureOverlay(action->getState(), root);
+}
+
+void
+SoFCRenderCacheManager::capture(SoNode * root, const SbViewportRegion & viewport)
+{
+  // The seed traverse() makes: complete, and GL-free.
+  SoCallbackAction seedaction(viewport);
+  captureOverlay(seedaction.getState(), root);
+}
+
+void
+SoFCRenderCacheManager::captureOverlay(SoState * state, SoNode * root)
+{
   // Real viewport for screen-space captures; see render().
-  PRIVATE(this)->lastvp = SoViewportRegionElement::get(action->getState());
+  PRIVATE(this)->lastvp = SoViewportRegionElement::get(state);
   PRIVATE(this)->lastvpset = true;
   PRIVATE(this)->action->setViewportRegion(PRIVATE(this)->lastvp);
 
@@ -1735,7 +1749,6 @@ SoFCRenderCacheManager::capture(SoGLRenderAction * action, SoNode * root)
     return;
   PRIVATE(this)->sceneid = root->getNodeId();
 
-  SoState * state = action->getState();
   RenderCachePtr cache = new SoFCRenderCache(state, root);
   cache->open(state);
   cache->resetActionStateStackDepth();

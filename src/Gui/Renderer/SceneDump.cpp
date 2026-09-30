@@ -332,7 +332,13 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     which reads as the face's own frame, face-wide -- all a finish
 //     could state before. The material chunk carries the palette, so
 //     kChunkVersion moves with it.
-const uint32_t kVersion = 78;
+// 79: an overlay anchor may place its rect by position rather than by
+//     corner (OverlayAnchor::posX/posY) and size it in pixels
+//     (sizePixels), after the sub-view: the NaviCube's per-view
+//     position, stated as fractions so a browser of any size places it.
+//     An older snapshot has neither, which reads as the corner placement
+//     it always had.
+const uint32_t kVersion = 79;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -433,6 +439,7 @@ static_assert(sizeof(BloomConfig) == 16, "BloomConfig changed: stream the new fi
 static_assert(offsetof(PBRConfig, envPreset) == 32, "PBRConfig changed: stream the new field, then update this");
 static_assert(offsetof(LightConfig, groundColor) == 172,"LightConfig changed: stream the new field, then update this");
 static_assert(offsetof(RenderDebugConfig, coverage) == 7, "RenderDebugConfig changed: stream the new field, then update this");
+static_assert(sizeof(OverlayAnchor) == 60, "OverlayAnchor changed: stream the new field, then update this");
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -3546,6 +3553,9 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
         w.f(a.marginY);
         w.b(a.sceneCamera); // v6
         w.i32(a.subView);   // v69
+        w.f(a.posX);        // v79
+        w.f(a.posY);
+        w.f(a.sizePixels);
         writeFeed(ov.draws, 0, true);
     }
 
@@ -4028,6 +4038,11 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
             }
             a.sceneCamera = version >= 6 ? r.b() : false;
             a.subView = version >= 69 ? r.i32() : 0;
+            if (version >= 79) {
+                a.posX = r.f();
+                a.posY = r.f();
+                a.sizePixels = r.f();
+            }
             snap.overlays.push_back(std::move(ov));
             readFeed(snap.overlays.back().draws, GroupTarget::Overlay,
                      snap.overlays.size() - 1);
