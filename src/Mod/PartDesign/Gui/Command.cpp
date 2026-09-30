@@ -2985,7 +2985,6 @@ void CmdPartDesignBoolean::activated(int iMsg)
             << "newObjectAt('PartDesign::Boolean','" << FeatName << "', "
                         <<  "FreeCADGui.Selection.getSelection())");
     auto Feat = pcActiveBody->getDocument()->getObject(FeatName.c_str());
-    static_cast<PartDesign::Boolean*>(Feat)->UsePlacement.setValue(true);
 
     switch(iMsg) {
     case 1:
