@@ -1406,6 +1406,9 @@ The harness numbered its captures by file name, and the corpus has
 seven `error.FCStd`: each overwrote the last one's images, so the
 failing file's pictures showed a file that passed. Numbered now.
 
+**The rerun after the meshing box fix** (73 files, two progressive runs
+each): all 73 identical, no eager-against-eager noise either.
+
 Two files did not open at all within 400 s, eagerly
 or progressively (`LS3_Lead_Screw_Mach_02_12.12.23`, and its sibling was
 skipped with it): stuck in `BRepTools::Read` under
