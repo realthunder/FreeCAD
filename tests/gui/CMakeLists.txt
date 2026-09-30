@@ -314,3 +314,11 @@ fc_add_gui_test(GuiSketchConstraintHints_tests_run
 fc_add_gui_test(GuiPartDesignDefects_tests_run
                 pd-gui-defects.py
                 --timeout 300)
+
+# The small PartDesign fixes of docs/PartDesignPort.md sec 8 only the Gui
+# shows: a MultiTransform's new transformation in its own body, a feature
+# kept in a body when dragged, a body's own datum lines as references, the
+# Sprocket panel under a translation, the shaft wizard's constraint combo.
+fc_add_gui_test(GuiPartDesignPortFixes_tests_run
+                pd-port-fixes.py
+                --timeout 300)
