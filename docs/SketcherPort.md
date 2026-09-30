@@ -2858,9 +2858,23 @@ ms before (the edit overlay captured again), +1 ms now; the hover echo is
 a path to each node with the capture manager's action, as `setHighlight`
 does: it left every later frame 12 ms dearer, the same draws each ~6 us
 more, for a cause not found -- taking the elements from the captured scene
-does not. Separately, and in the old code as much as the new: after the
-first preselection of the sketch, every frame draws 307 more draws (1822
--> 2129) and costs 7-9 ms more, even with nothing preselected. Not chased.
+does not.
+
+The 307 more draws after the first hover (1822 -> 2129, both codes) were
+not a cost of the hover: they were the sketch's 103 datum labels, which
+had never been drawn. On entering edit, `drawConstraintIcons()` merged
+1321 Horizontal icons that fall on one spot of the fitted view into one
+image 44879 pixels wide; Coin keeps an image size in shorts, the width
+wrapped negative, `SbImage::setValue` asked for 2^64 bytes, and the new
+handler's `Base::MemoryException` left `draw()` before `updateColor()`.
+So `updateVirtualSpace()` never enabled the constraint switchboard, and
+no constraint -- label or icon -- was in the scene, in any render mode,
+until the first highlight pass. `sendConstraintIconToCoin()` now crops
+an image past 32767 pixels (what is cut lies past any screen). Guarded
+by `tests/gui/sketch-merged-icon-overflow.py` (5000 icons on one spot,
+40000 pixels here: the label is in the scene right after entering edit;
+fails before). A merged icon that wide is still rendered whole every time
+the icons are drawn; capping the labels a merge renders is left open.
 
 Guarded by `tests/gui/sketch-highlight-view.py` (a hover writes no node
 of the edit graph; the sets hold the selection only; the pointer's
