@@ -20,6 +20,7 @@
 # *   USA                                                                   *
 # *                                                                         *
 # ***************************************************************************
+import atexit
 import logging
 import asyncio
 import threading
@@ -47,6 +48,51 @@ from .cache import AssetCache, CacheKey
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.ERROR)
+
+_thread_loops = threading.local()
+
+
+def _run_sync(coro):
+    """Runs coro to completion on this thread's long-lived event loop.
+
+    asyncio.run() builds and tears down a loop per call. On Windows each
+    new Proactor loop makes a loopback socketpair for its self-pipe, one
+    accept() per call, and an endpoint-security hook in accept() has been
+    seen never to return -- the manager hangs, or FreeCAD freezes. One loop
+    per thread, created once and reused, keeps that to one accept().
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    else:
+        coro.close()
+        raise RuntimeError("AssetManager sync API cannot be called from a running event loop")
+    loop = getattr(_thread_loops, "loop", None)
+    if loop is None or loop.is_closed():
+        loop = asyncio.new_event_loop()
+        _thread_loops.loop = loop
+        if threading.current_thread() is threading.main_thread():
+            atexit.register(_close_loop, loop)
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        # What asyncio.run() does on exit: nothing started here outlives the call.
+        pending = asyncio.all_tasks(loop)
+        if pending:
+            for task in pending:
+                task.cancel()
+            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+
+
+def _close_loop(loop):
+    if loop.is_closed():
+        return
+    try:
+        loop.run_until_complete(loop.shutdown_asyncgens())
+        loop.run_until_complete(loop.shutdown_default_executor())
+    finally:
+        loop.close()
 
 
 @dataclass
@@ -425,7 +471,7 @@ class AssetManager:
             logger.debug(
                 f"Get: Starting asyncio.run for data fetching of '{asset_uri_obj}', depth {depth}."
             )
-            all_construction_data = asyncio.run(
+            all_construction_data = _run_sync(
                 self._fetch_asset_construction_data_recursive_async(
                     asset_uri_obj, stores_list, set(), depth
                 )
@@ -532,7 +578,7 @@ class AssetManager:
         )
 
         try:
-            return asyncio.run(self.get_raw_async(uri, stores_list))
+            return _run_sync(self.get_raw_async(uri, stores_list))
         except Exception as e:
             logger.error(
                 f"GetRaw: Error during asyncio.run for '{uri}': {e}",
@@ -599,7 +645,7 @@ class AssetManager:
 
         try:
             logger.debug("GetBulk: Starting bulk data fetching")
-            all_construction_data_list = asyncio.run(_fetch_all_construction_data_bulk_async())
+            all_construction_data_list = _run_sync(_fetch_all_construction_data_bulk_async())
             logger.debug("GetBulk: bulk data fetching completed")
         except Exception as e:  # Should ideally not happen if gather returns exceptions
             logger.error(
@@ -710,7 +756,7 @@ class AssetManager:
 
         stores_list = [store] if isinstance(store, str) else store
         try:
-            return asyncio.run(_exists_async(stores_list))
+            return _run_sync(_exists_async(stores_list))
         except Exception as e:
             logger.error(
                 f"AssetManager.exists: Error during asyncio.run for '{uri}': {e}",
@@ -772,7 +818,7 @@ class AssetManager:
         # If listing from multiple stores is needed, this needs to be updated.
         # For now, list from the first store.
         list_store = stores_list[0] if stores_list else "local"
-        return asyncio.run(self.list_assets_async(asset_type, limit, offset, list_store))
+        return _run_sync(self.list_assets_async(asset_type, limit, offset, list_store))
 
     async def list_assets_async(
         self,
@@ -807,7 +853,7 @@ class AssetManager:
         # If counting across multiple stores is needed, this needs to be updated.
         # For now, count from the first store.
         count_store = stores_list[0] if stores_list else "local"
-        return asyncio.run(self.count_assets_async(asset_type, count_store))
+        return _run_sync(self.count_assets_async(asset_type, count_store))
 
     async def count_assets_async(
         self,
@@ -855,7 +901,7 @@ class AssetManager:
         logger.debug(
             f"Add: Adding {type(obj).__name__} to store '{store}' from T:{threading.current_thread().name}"
         )
-        return asyncio.run(self.add_async(obj, store))
+        return _run_sync(self.add_async(obj, store))
 
     async def add_raw_async(
         self, asset_type: str, asset_id: str, data: bytes, store: str = "local"
@@ -893,7 +939,7 @@ class AssetManager:
             f"AddRaw: type='{asset_type}', id='{asset_id}', store='{store}' from T:{threading.current_thread().name}"
         )
         try:
-            return asyncio.run(self.add_raw_async(asset_type, asset_id, data, store))
+            return _run_sync(self.add_raw_async(asset_type, asset_id, data, store))
         except Exception as e:
             logger.error(
                 f"AddRaw: Error for type='{asset_type}', id='{asset_id}': {e}",
@@ -942,7 +988,7 @@ class AssetManager:
         dest_store.
         If the destination already exists it should be silently overwritten.
         """
-        return asyncio.run(self.copy_async(src, dest_store, store, dest))
+        return _run_sync(self.copy_async(src, dest_store, store, dest))
 
     async def deepcopy_async(
         self,
@@ -1078,7 +1124,7 @@ class AssetManager:
         logger.debug(
             f"Deepcopy URI '{src}' from store '{store}' to '{dest_store}'" f" with dest '{dest}'"
         )
-        return asyncio.run(self.deepcopy_async(src, dest_store, store, dest))
+        return _run_sync(self.deepcopy_async(src, dest_store, store, dest))
 
     def add_file(
         self,
@@ -1103,7 +1149,7 @@ class AssetManager:
             if store in self._cacheable_stores:
                 self.asset_cache.invalidate_for_uri(str(asset_uri_obj))
 
-        asyncio.run(_do_delete_async())
+        _run_sync(_do_delete_async())
 
     async def delete_async(self, uri: Union[AssetUri, str], store: str = "local") -> None:
         logger.debug(f"DeleteAsync URI '{uri}' from store '{store}'")
@@ -1130,7 +1176,7 @@ class AssetManager:
             f"IsEmpty: type='{asset_type}', store='{store}' from T:{threading.current_thread().name}"
         )
         try:
-            return asyncio.run(self.is_empty_async(asset_type, store))
+            return _run_sync(self.is_empty_async(asset_type, store))
         except Exception as e:
             logger.error(
                 f"IsEmpty: Error for type='{asset_type}', store='{store}': {e}",
@@ -1171,7 +1217,7 @@ class AssetManager:
             f"ListVersions: uri='{uri}', stores='{stores_list}' from T:{threading.current_thread().name}"
         )
         try:
-            return asyncio.run(self.list_versions_async(uri, stores_list))
+            return _run_sync(self.list_versions_async(uri, stores_list))
         except Exception as e:
             logger.error(
                 f"ListVersions: Error for uri='{uri}', stores='{stores_list}': {e}",
