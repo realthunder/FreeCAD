@@ -832,7 +832,14 @@ bool ViewProviderBody::canDragObject(App::DocumentObject *obj) const
     // position 1 stores full object path to the dropping target.
     // position 0 (default) stores the dragging source, which points to this object.
     auto target = Gui::Selection().getContext(1).getSubObject();
-    if (PartDesign::Body::findBodyOf(target) == body)
+    auto targetBody = PartDesign::Body::findBodyOf(target);
+    if (targetBody == body)
+        return false;
+
+    // A PartDesign feature lives in a body: it may move to another one, not
+    // out to the document or a Part (upstream 288255f074)
+    if (obj->isDerivedFrom<PartDesign::Feature>() && !targetBody
+            && !(target && target->isDerivedFrom<PartDesign::Body>()))
         return false;
 
     if (body->BaseFeature.getValue() == obj)
