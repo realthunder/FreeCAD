@@ -739,21 +739,22 @@ runs that day; it failed when ctest scheduled it 32nd, among many
 parallel jobs, and passed when it was scheduled last. Alone it passes
 3/3 in about 10 s.
 
-It is not a defect in the test's subject and not a flake in the usual
-sense either. `SceneServer.cpp`'s `'B'` handler says each ray is
-dispatched in order "so the queued GUI-thread picks coalesce into a
-single scene republish", but `dispatchPick` calls the handler on the
-socket thread and that posts to the GUI thread: the coalescing happens
-only when both posted picks are handled before the publisher next runs.
-Under load they are not, and the client gets two full scene pushes where
-the design promises one. **The test asserts a guarantee the
-implementation provides as a tendency** -- the same shape as the
-form-widget mirror tests that waited a fixed 50 ms for a repaint-driven
-op (`6d4dee5cb5`). Making the coalescing explicit -- mark dirty on a
-pick, publish once on the next tick -- is the fix if it is worth one;
-an extra full scene push per batch is real bandwidth on a thin client's
-link. Recorded so the next person sees a known interaction rather than a
-new failure.
+It was a defect in the test's subject, **fixed 2026-09-30**.
+`SceneServer.cpp`'s `'B'` handler dispatched each ray on its own, and
+each became its own queued call on the GUI thread. Marking dirty and
+publishing on the next zero-interval tick is what the source already
+did; what it could not do was see the second pick in time. Under load the
+socket thread was preempted between the two posts, the GUI thread ran
+the first pick, the tick published it, and the second pick published
+again. The two failures on 2026-09-30 (2 runs in 13 alone) had their
+first frame 2.4 and 2.9 ms after the send: one pick (1.2 ms) plus a fast
+publish (1.5 ms), where a whole batch comes back in 7 to 8 ms (the 32.3
+ms above is presumably the same, slowed by eight parallel jobs). A traced
+run showed no publish that a pick had not asked for. The pick handler
+now takes every ray of a message in one call
+(`SceneStreamServer::setPickHandler`), and both installers apply them in
+one queued call, so a batch has one publish by construction. Wire test:
+`SceneServerWire.aBatchIsDeliveredInOneCall`.
 
 **On macOS they do not register either** -- the same `xvfb-run` guard -- but
 there the box has `.conda/run.sh` and a window server, so a hand run is the

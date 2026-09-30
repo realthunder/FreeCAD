@@ -1625,13 +1625,16 @@ void SceneServeSource::installHandlers()
     // Remote-viewer click selection: a viewer's click arrives as a world
     // ray, picked against this source's graph and -- once that viewer
     // has stated one -- through its own mirror's camera.
-    server.setPickHandler([self](const Render::ScenePickRequest &req) {
-        Render::ScenePickRequest r = req;
-        QMetaObject::invokeMethod(qApp, [self, r]() {
-            if (self)
+    // A batch in one queued call, so its picks share one publish.
+    server.setPickHandler([self](const std::vector<Render::ScenePickRequest> &reqs) {
+        QMetaObject::invokeMethod(qApp, [self, reqs]() {
+            for (const auto &r : reqs) {
+                if (!self)
+                    return;
                 self->pickAndSelect(SbVec3f(r.origin[0], r.origin[1], r.origin[2]),
                                     SbVec3f(r.dir[0], r.dir[1], r.dir[2]),
                                     r.modifiers, r.client);
+            }
         }, Qt::QueuedConnection);
     }, pimpl->groupName);
 

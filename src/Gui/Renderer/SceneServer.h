@@ -497,8 +497,17 @@ public:
     /// Install the consumer of viewer pick requests. Called on a
     /// server connection thread — the handler must marshal to the GUI
     /// thread itself before touching any scene graph.
-    void setPickHandler(std::function<void(const ScenePickRequest &)> handler,
-                        const std::string &doc = {});
+    ///
+    /// One call per message, holding every ray it carried in order: one
+    /// for a 'P', all of a 'B' batch. So the consumer can apply a batch
+    /// in ONE hop to the GUI thread. Handed over a ray at a time, each
+    /// ray was its own queued call, and under load the GUI thread ran
+    /// the first, fired its zero-interval publish and only then saw the
+    /// second -- a batch of two ctrl-picks pushed two frames, the first
+    /// showing half the selection.
+    void setPickHandler(
+            std::function<void(const std::vector<ScenePickRequest> &)> handler,
+            const std::string &doc = {});
 
     /// Install the consumer of viewer camera frames (docs/ThinClient.md
     /// sec 8.5). Same contract as setPickHandler: called on a server

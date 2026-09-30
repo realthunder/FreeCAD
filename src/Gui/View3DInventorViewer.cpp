@@ -5156,14 +5156,17 @@ void View3DInventorViewer::setRendererType(const std::string &type)
         if (_pimpl->renderer && getenv("FC_BGFX_SERVE_SCENE")) {
             QPointer<View3DInventorViewer> self(this);
             Render::SceneStreamServer::instance().setPickHandler(
-                [self](const Render::ScenePickRequest &req) {
-                    Render::ScenePickRequest r = req;
-                    QMetaObject::invokeMethod(qApp, [self, r]() {
-                        if (self)
+                [self](const std::vector<Render::ScenePickRequest> &reqs) {
+                    // A batch in one queued call, one frame for all of it.
+                    QMetaObject::invokeMethod(qApp, [self, reqs]() {
+                        for (const auto &r : reqs) {
+                            if (!self)
+                                return;
                             self->pickAndSelect(
                                 SbVec3f(r.origin[0], r.origin[1], r.origin[2]),
                                 SbVec3f(r.dir[0], r.dir[1], r.dir[2]),
                                 r.modifiers & 1);
+                        }
                     }, Qt::QueuedConnection);
                 });
             // The semantic control channel (docs/ThinClient.md §4.2):
