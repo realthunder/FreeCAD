@@ -13,6 +13,9 @@ and the App defects among them fixed (sec 7). The Gui defects of sec 7
 are fixed too, and the rest of its small rows and its 4 unsure ones are
 settled (sec 7, the last subsection, 2026-09-25 late). Next: the sec 7
 candidates, small before large, then the deferred families (decision 2).
+The rest of the ledger is read too (sec 8, 2026-09-30): of the 259 rows
+the subject line had sorted, 226 settle and 33 stay open (6 pick, 11
+adapt, 12 candidates, 4 unsure).
 
 Branch `PartDesignPort` off `SketcherPort` `4fa781fc58`, with `LinkVibe`
 `312b62c995` merged in (section 5). Upstream reference: `upstream/main`
@@ -2350,3 +2353,97 @@ Tests: `TestLinkArray.testLabelFollowsTheKind`,
 axis, the sketch's axes, saved as `PartDesign::PolarPattern` and read
 back, undo/redo, inside a MultiTransform). Suites: Python 3160 OK (50
 skipped, 6 expected failures; +8), ctest 750/750, the PD suite 288 OK.
+
+## 8. The rows the subject line sorted, read (2026-09-30)
+
+Sections 6 and 7 read the `fix` and the unclassified rows. The 259 rows
+left were the ones whose subject line had guessed `feature` (92),
+`refactor` (100) or `noise` (67), never read. Six agents read them by the
+method of sec 7 (one verdict per commit, fork `file:line` evidence, a
+corrected kind); nothing was changed, and a few verdicts rest on a
+FreeCADCmd probe of the fork build (a negative draft angle, the revolution
+of an open wire, upstream's two-face loft test, the 17553 tests).
+
+226 settle: 102 `declined` (style sweeps, `.pyi` churn, CMake and PCH
+plumbing, wording, compiler warnings, upstream's C++ tests for a directory
+the fork does not have), 64 `have`, 49 `n/a`, 7 `deferred`, 4
+`superseded`. Many `feature` and `refactor` rows are upstream porting the
+fork's own element-map code back (the dress-up, chamfer, fillet and binder
+rows): `have`. Every row touching only `TestTopologicalNamingProblem.py`
+is `have` -- `d425f51d31` took that file whole at the tip.
+
+The kind guess hid real fixes, three of them under `noise`, and some rows
+the fork must not take:
+
+- `fdf59be4cd`, a "light refactor" of the feature-pick dialog, brought
+  three regressions upstream's tip still has (an independent copy strips
+  the SOURCE sketch's external constraints; `addObject<Part::Datum>` of an
+  abstract class; a binder built from itself). Declined; the fork's
+  `TaskFeaturePick.cpp` is right.
+- `f93396e566` shadows `holeCutTypeStr` in the Hole type switch, so its
+  read-only block never runs (still at the tip). Declined.
+- `5d11b2938f` makes `FCMD_SET_EDIT` drop the user edit mode; the fork
+  took `f34f15dc60` instead. Superseded.
+- `45bb606095` (TransformMode, "Transform body"): the fork's pattern with
+  no originals already patterns the whole base, and upstream's body-mode
+  files store none. Superseded; `9535371265` renames its saved strings, so
+  a later port must read both.
+
+33 stay open, the kind column corrected:
+
+- **6 pick, S.** A MultiTransform's added sub-feature goes to the ACTIVE
+  body, or nowhere without one (`3604e57d6d`), and one static_cast of
+  `findBodyOf()` there (`a7470332f7`); ShapeBinder refuses an App::Point
+  (`c5fbbb3830`); a modelled thread ignores Tapered, its helix angle
+  hard-coded 0 though NPT/BSP taper (`df22f8060d`); Draft's Angle clamps
+  to 0..90, so an upstream file's negative draft loads as 0 (`eb886449c2`,
+  probed); UNF 1 3/16-16 missing from the thread table (`e17a83fa1f`).
+- **11 adapt, S.** The Pipe's `AuxillerySpine`/`...Tangent`/
+  `AuxilleryCurvelinear` were renamed upstream (`fa3c6e1068`) and nothing
+  maps the new names, so an upstream sweep with an auxiliary spine loads
+  without it; the revolution of a binder of an open wire fails "Axis must
+  not be perpendicular" (`e38fe196d5`, probed: `getProfileNormal()`
+  verifies the face without allowOpen); the 4-point thread cut profile
+  that fixes tapered modelled threads (`80d4185c09`, changes thread
+  geometry in existing files -- reproduce first); `allowOrigin()` refuses
+  a body's own LCS or lone datum as a reference (`9504b7e569`); a first
+  feature can be dragged out of its body (`288255f074`); the Sprocket
+  panel keys its table by translated combo text (`0de4c053a6`); the shaft
+  wizard's `e.message` and `"Constraintype"` (`e91c16aae1`); the dead
+  `Boolean::UsePlacement` (`1555f65075`, sec 7 saw it); and three tests to
+  write in Python, for the TwoLengths+Midplane fix taken without one
+  (`529779fb53`), a 0.21 file's chamfer edges (`e5b1d05813`) and a
+  scripted binder as pipe spine (`422da33962`).
+- **12 candidates.** S: Placement in the context menus (`f4167b48c0`);
+  the task panel's binder watcher (`ab60695ef9`); the Pad/Pocket panel
+  hiding the direction box for the sketch normal (`873fa449ce`); a
+  Through body with every feature hidden showing its Tip (`089d344343`);
+  deleting several pipe edges at once (`f7c03bb929`); a struck-out label
+  for a suppressed feature (`f4be654473`); NewSketch opening the attacher
+  on Shift or a non-planar / multiple selection (`b43cb81c0a`); a
+  per-feature `FuzzyTolerance` (`73f848a3d5`, whose automatic mode needs
+  upstream's size-derived fuzzy); binder edges in the datum line colour
+  (`5dbb4d7c7e`); a checkable "Active body" item (`aac3003dcf`); dropping
+  the legacy-workflow prompts (`5ee788447c`, a policy call). M: the
+  Defeaturing dress-up (`c70d9b2992`, needs an element-mapped
+  `makEDefeaturing`).
+- **4 unsure.** Upstream's null view-provider guards in the panels
+  (`5731a27609`: delete the edited Pipe or Revolution with the panel open,
+  undo, close); upstream's two-face loft test gives 9190.13 here against
+  its 9220 (`123b3b066b`, run it on an upstream build); upstream's Boolean
+  placement tests in App::Part (`f608705825`); the modelled thread
+  compounded into the hole tool instead of fused (`70b9305f2e`, time and
+  validity of a threaded hole and its pattern).
+
+Deferred behind a missing upstream facility: object freeze
+(`e607b5757e`), `App::VarSet` (`ec841ed6d4`), `App::MeasureManager`
+(`4f5dd40fa7`), Part's FaceMakerUnified (`7186d30f6e`, an M Part port of
+its own), PreviewExtension (`f9a6044828`), TransformMode (`9535371265`),
+the PD gtest directory (`46c32a8c1b`). Tests the tip has and the fork
+lacks, seen on the way: `TestLoft.testPadOnLoftBetweenCones`,
+`TestMultiTransform.testMultiTransformDressup`/`...Body`.
+
+Small things seen, not taken: the "Boolean operataion" typo
+(`FeatureHole.cpp:2363`), `Transformed::divideTools` without callers,
+`Gui/FeaturePickDialog.cpp` uncompiled, `remapSupportShape` a `#if 1`
+stub.
