@@ -652,13 +652,15 @@ void StdWorkbench::setupContextMenu(const char* recipient, MenuItem* item) const
 
         if (Gui::Selection().hasSelection()) {
             setupCommon("Std_TreeSelection");
-            *item << "Std_TransformManip";
+            *item << "Std_TransformManip" << "Std_Placement";
         }
     }
     else if (strcmp(recipient,"Tree") == 0)
     {
-        if (Gui::Selection().hasSelection())
+        if (Gui::Selection().hasSelection()) {
+            *item << "Std_Placement";
             setupCommon(nullptr);
+        }
     }
 }
 
