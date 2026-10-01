@@ -724,6 +724,57 @@ class TestHole(unittest.TestCase):
         taper = math.tan(math.radians(90 - hole.TaperedAngle.Value))
         self.assertAlmostEqual(drop, taper, delta=taper * 0.2)
 
+    def testThroughAllThreadAndTaperStopPastTheMaterial(self):
+        # Through all used to mean twice the diagonal of everything: a
+        # modelled thread that long is hundreds of turns of helix past the
+        # material, and a taper that long has its radius cross zero, which
+        # failed with "Could not revolve sketch". Both now stop just past
+        # the far face; the plain bore stays long, so a pattern that copies
+        # the hole into thicker material still gets a hole through
+        body = self.Doc.addObject('PartDesign::Body', 'PlateBody')
+        box = body.newObject('PartDesign::AdditiveBox', 'Plate')
+        box.Length = box.Width = 60
+        box.Height = 20
+        sketch = body.newObject('Sketcher::SketchObject', 'PlateSketch')
+        sketch.Placement.Base = FreeCAD.Vector(0, 0, 20)
+        sketch.addGeometry(Part.Circle(FreeCAD.Vector(30, 30, 0), FreeCAD.Vector(0, 0, 1), 3))
+        self.Doc.recompute()
+        hole = body.newObject('PartDesign::Hole', 'PlateHole')
+        hole.Profile = sketch
+        hole.ThreadType = 'ISOMetricProfile'
+        hole.ThreadSize = 'M6'
+        hole.DepthType = 'ThroughAll'
+        self.Doc.recompute()
+        self.assertTrue(hole.Shape.isValid())
+        self.assertLess(hole.AddSubShape.BoundBox.ZMin, -100)
+
+        def holedBottom():
+            return [len(f.Wires) for f in hole.Shape.Faces
+                    if f.BoundBox.ZMax < 1e-6 and f.Area > 3000]
+
+        hole.Threaded = True
+        hole.ModelThread = True
+        hole.ThreadDepthType = 'Hole Depth'
+        self.Doc.recompute()
+        self.assertNotIn('Invalid', hole.State)
+        self.assertTrue(hole.Shape.isValid())
+        self.assertEqual(holedBottom(), [2])
+        # The thread ends a hair past the 20 mm of material
+        self.assertGreater(hole.ThreadDepth.Value, 20)
+        self.assertLess(hole.ThreadDepth.Value, 21)
+        # and the bore below it is still the long one
+        self.assertLess(hole.AddSubShape.BoundBox.ZMin, -100)
+
+        hole.Threaded = False
+        hole.Tapered = True
+        hole.TaperedAngle = 89
+        self.Doc.recompute()
+        self.assertNotIn('Invalid', hole.State)
+        self.assertTrue(hole.Shape.isValid())
+        self.assertEqual(holedBottom(), [2])
+        # the drill point's tip a little past that
+        self.assertGreater(hole.AddSubShape.BoundBox.ZMin, -10)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestHole")

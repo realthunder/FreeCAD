@@ -23,8 +23,11 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
+# include <gp_Ax3.hxx>
 # include <gp_Dir.hxx>
+# include <Bnd_Box.hxx>
 # include <BRep_Builder.hxx>
+# include <BRepBndLib.hxx>
 # include <BRepAlgoAPI_Cut.hxx>
 # include <BRepAlgoAPI_Fuse.hxx>
 # include <BRepBuilderAPI_MakeEdge.hxx>
@@ -885,6 +888,51 @@ double Hole::startOffset(const TopoShape& profileshape, const gp_Dir& holeDirect
         return getStartReferenceOffset(profileshape, StartReference, holeDirection,
                                        StartOffset.getValue(), invObjLoc);
     return 0.0;
+}
+
+double Hole::throughAllLength(const TopoShape& base, const TopoShape& profileshape,
+                              const gp_Dir& holeDirection) const
+{
+    if (base.isNull() || profileshape.isNull())
+        return getThroughAllLength();
+
+    // getThroughAllLength() is twice the diagonal of everything, for the
+    // pad's midplane: a modelled thread that long is hundreds of turns of
+    // helix past the material (an M6 through a 1 m plate took two minutes),
+    // and a taper that long has its radius cross zero. The hole only has to
+    // get out of the far side, so measure that side in a frame whose Z is
+    // the hole direction. The far side of this hole's base only: a copy a
+    // pattern moves into thicker material is not covered, which is why
+    // execute() clips the thread and the taper with this and leaves the
+    // plain bore long.
+    gp_Trsf toHoleFrame;
+    toHoleFrame.SetTransformation(gp_Ax3(gp::Origin(), holeDirection));
+    const TopLoc_Location loc(toHoleFrame);
+    Bnd_Box baseBox, profileBox;
+    BRepBndLib::Add(base.getShape().Moved(loc), baseBox);
+    BRepBndLib::Add(profileshape.getShape().Moved(loc), profileBox);
+    if (baseBox.IsVoid() || profileBox.IsVoid())
+        return getThroughAllLength();
+    baseBox.SetGap(0.0);
+    profileBox.SetGap(0.0);
+    double xMin, yMin, zMin, xMax, yMax, zMax;
+    baseBox.Get(xMin, yMin, zMin, xMax, yMax, zMax);
+    const double baseFar = zMax;
+    const double baseThickness = zMax - zMin;
+    // The hole starting furthest back needs the longest tool
+    profileBox.Get(xMin, yMin, zMin, xMax, yMax, zMax);
+    double length = std::max(baseFar - zMin, 0.0);
+
+    // Past the far face, clear of it the way the 1% of the old length was
+    length += std::max(0.01 * baseThickness, 1000.0 * Precision::Confusion());
+
+    // execute() refuses a counterbore or countersink deeper than its hole:
+    // in a plate thinner than the cut, give the hole the cut's depth and
+    // more, which also covers a countersink cone of 53 deg or wider
+    const std::string holeCutType = HoleCutType.getValueAsString();
+    if (holeCutType != "None")
+        length = std::max(length, HoleCutDepth.getValue() + HoleCutDiameter.getValue());
+    return length;
 }
 
 double Hole::getStartOffset() const
@@ -2125,17 +2173,27 @@ App::DocumentObjectExecReturn* Hole::execute()
         profileshape = moveProfileToStart(profileshape, holeDirection,
                                           startOffset(profileshape, holeDirection, invObjLoc));
 
+        // How far the modelled thread goes, which through all is only as
+        // far as the material, see throughAllLength()
+        double threadLength = 0.0;
         if (method == "Dimension")
             length = Depth.getValue();
         else if (method == "UpToFirst") {
             /* TODO */
         }
         else if (method == "ThroughAll") {
-            length = getThroughAllLength();
+            threadLength = throughAllLength(base, profileshape, holeDirection);
+            // The plain bore keeps the long length: it is cheap, and a
+            // pattern or mirror that copies the hole into thicker material
+            // still gets a hole through. A taper that long has its radius
+            // cross zero, so it gets the short one.
+            length = Tapered.getValue() ? threadLength : getThroughAllLength();
         }
         else
             return new App::DocumentObjectExecReturn(
                 QT_TRANSLATE_NOOP("Exception", "Hole error: Unsupported length specification"));
+        if (method != "ThroughAll")
+            threadLength = length;
 
         if (length <= 0.0)
             return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Hole error: Invalid hole depth"));
@@ -2298,7 +2356,7 @@ App::DocumentObjectExecReturn* Hole::execute()
 
         // Make thread
         if (Threaded.getValue() && ModelThread.getValue()) {
-            TopoDS_Shape protoThread = makeThread(xDir, zDir, length);
+            TopoDS_Shape protoThread = makeThread(xDir, zDir, threadLength);
 
             // fuse the thread to the hole
             BRepAlgoAPI_Fuse mkFuse(protoHole, protoThread);
@@ -2528,8 +2586,13 @@ std::vector<Hole::CosmeticThreadBore> Hole::getCosmeticThreads() const
                                           startOffset(profileshape, holeDirection, invObjLoc));
 
         const std::string depthType = DepthType.getValueAsString();
-        const double holeLength =
-            depthType == "ThroughAll" ? getThroughAllLength() : Depth.getValue();
+        TopoShape base;
+        if (depthType == "ThroughAll" && !NewSolid.getValue()) {
+            base = getBaseShape();
+            base.move(invObjLoc);
+        }
+        const double holeLength = depthType == "ThroughAll"
+            ? throughAllLength(base, profileshape, holeDirection) : Depth.getValue();
         const std::string threadDepthType = ThreadDepthType.getValueAsString();
         const double length = threadDepthType == "Hole Depth"
             ? holeLength : std::min(ThreadDepth.getValue(), holeLength);
@@ -2720,6 +2783,11 @@ TopoDS_Shape Hole::makeThread(const gp_Vec& xDir, const gp_Vec& zDir, double len
             // thus the max helixLength is holeDepth + P / 8;
             if (threadDepth > (holeDepth - Pitch / 2))
                 helixLength = holeDepth + Pitch / 8;
+        }
+        else if (threadDepth > length) {
+            // through all, and the thread asked for is longer than the way
+            // out: what is past it would cut nothing
+            helixLength = length + 2 * Pitch;
         }
     }
     double helixAngle = Tapered.getValue() ? TaperedAngle.getValue() - 90 : 0.0;

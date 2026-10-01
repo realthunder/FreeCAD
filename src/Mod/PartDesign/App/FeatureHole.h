@@ -310,6 +310,11 @@ private:
      */
     double startOffset(const TopoShape& profileshape, const gp_Dir& holeDirection,
                        const TopLoc_Location& invObjLoc) const;
+    /** How far a through-all hole goes: from the profile along
+     * holeDirection to just past the far side of  base, both in one frame
+     */
+    double throughAllLength(const TopoShape& base, const TopoShape& profileshape,
+                            const gp_Dir& holeDirection) const;
     TopoShape findHoles(std::vector<TopoShape> &holes, const TopoShape& profileshape, const TopoDS_Shape& protohole) const;
 
     // helpers for nlohmann json
