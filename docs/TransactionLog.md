@@ -10605,3 +10605,95 @@ section, one commit).
 **Gates:** Python 2975 OK (52 skipped, 6 expected failures; +1), ctest
 856/856, the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14; the fork's
 thickness suite PASS 66, XFAIL 2.
+
+### 27.101 Thickness: faces left in pieces, and down to one face of a short shape (user, 2026-10-01)
+
+The user, "continue as planned": chase thickness, starting with
+`cyl_side_out/in`, the fork suite's last XFAIL. Asked what thickness should
+return when the faces that stay fall apart into pieces, the user chose a
+compound of solids, fused where they overlap, over one solid of many shells
+or keeping the refusal.
+
+**The case.** `makeCylinder(4, 20)`, its side removed, +-1. The suite blamed
+the seam; it has nothing to do with it. A box 10 x 10 x 20 with its four
+sides removed fails the same, upstream and fork alike: removing faces leaves
+the caps as two pieces sharing no edge, and `CheckInputData` refuses such a
+shell before anything starts (`BRepOffset_NotConnectedShell`, error 5).
+
+**Causes and fixes** (fork):
+
+1. *Pieces* (`BRepOffset_MakeOffset::MakeThickSolidByPieces`, called first
+   by `MakeThickSolid`). The faces that stay are joined by the edges they
+   share; with more than one piece, each is a thick solid of the shape with
+   the other pieces removed as well, and the result is their union: a
+   compound, fused (`BRepAlgoAPI_Fuse`) only where the pieces' boxes meet,
+   or the one solid left. Each piece's face and edge images are merged into
+   this object's (`myInitOffsetFace`, `myInitOffsetEdge`, through the fuse's
+   history, the plane-face map, the removed faces, `myAnalyse` on the faces
+   that stay), so `Generated`/`Modified` answer as for one shape: FreeCAD's
+   element names carry `THK`, and `PartDesign::Thickness` on a cylinder's
+   side recomputes to a compound of two discs. One private non-virtual
+   member added; no layout change, the ABI stands.
+2. *A piece is checked.* A piece that throws, or is not one valid closed
+   shell of positive volume, refuses the whole, as before. The sweep's
+   pockets need it: a blind hole's top removed leaves the hole's wall and
+   floor as one piece and the outside as another, and the fork builds the
+   hole's piece wrong (invalid, a stray shell, inside out -- an open-shell
+   formulation of the piece did no better, though upstream gets that one
+   right); their union came out a "valid" 849.2 where about 380.6 is right.
+   A union of wrong pieces would pass for an answer where the shape used to
+   be refused.
+3. *The loop kept the far piece of a short wall* (`BRepAlgo_Loop::Perform`).
+   Found on the way: a cylinder 1.5 high, inward, must fuse into the whole
+   cylinder, and its pieces were not plates. Keep only the bottom of a box
+   1.5 high, inward by 1: on each removed side, the edge it shares with the
+   next side is stretched and split where the bottom's offset crosses it,
+   and the crossing was oriented to keep the piece nearer an end -- above
+   the offset, where the band below it is the longer one (walls under twice
+   the thickness). The orientation rule dates from the chain's port,
+   `1789444318`. Now, when only one end of the edge lies on a const edge (an
+   edge of a face that stays), the piece from that end is kept; otherwise
+   the nearer end's. The fork had given the box with the plate's complement
+   as a void (27.100's sealed cavity took that closed shell for one) and,
+   before 27.100, an empty shell; upstream is right.
+
+**Found, not fixed.** The Intersection join with one face left -- a cylinder
+with its side and a cap removed, a box with five faces removed -- throws
+`BRepAlgo_Image::Bind` in `BuildOffsetByInter`: the fork puts the removed
+faces in its face list (`aLFaces`), a removed face already has its own image
+from `SetFaces`, and of the three branches that bind, two skip a face that
+has one and the first does not. Guarding it gives the box's plate and the
+cylinder's cap inward, but the cap outward comes out as the whole cylinder
+(the removed faces, unoffset, in the shell), so the guard is not in. Upstream
+answers all of these (the cylinder's outward cap inside out). Pieces with
+this join are refused for the same reason.
+
+**Tests.** The fork's suite: `pieces_case` (a list of faces removed, each
+solid's volume, a Compound for several): `cyl_side_{out,in,in_inter}`,
+`box_sides_{out,in,in_inter}`, `ring_walls_in`, `short_cyl_side_in`,
+`short_box_bottom_in{,_inter}`, `short_cyl_bottom_in`; all eleven fail on the
+fork before. PASS 77, no XFAIL left. FreeCAD:
+`RegressionTests.test_thickness_of_faces_left_in_pieces` (the cylinder's
+side in four modes, the short cylinder fused, the blind hole still refused)
+and `test_thickness_down_to_one_face_of_a_short_shape` (heights 1.5, 2, 2.5,
+intersection off and on). Pictures: `cyl_side_out`, `cyl_side_in`,
+`short_cyl_side_in`, `short_box_bottom_in` (stage `s101`, the fork at
+`b21dabe1c4`); a picture case may remove a list of faces, and `SOLIDS` in
+`cases.py` gives a compound's solids. The fork's `Thickness.md` and the
+suite's `README.md` have the sections.
+
+**Sweep.** 712 runs: the 150 in scope of every mode unchanged. Out of scope
+-- a face whose removal leaves pieces -- the cylinder's, the cone's and the
+elliptic pad's side with the Arc join are answered now, checked by hand:
+2 x 16 pi; frustum slabs 84.58 + 10.36 = 94.94 outward, 72.80 + 15.07 =
+87.87 inward; 2 x 50 pi. The pockets (`boxhole2` Face3 and Face7, `pocket`
+Face3, `cylpocket` Face2, `cylboss` Face2) and every piece run with the
+Intersection join stay refused.
+
+Commits: fork `1e783879ad` (the loop), `7c91639424` (pieces), `2cc8bc508b`
+(the suite), `d4d2fe0719` (pictures, tools, Thickness.md); FreeCAD (the tests
+and this section, one commit).
+
+**Gates:** Python 2977 OK (52 skipped, 6 expected failures; +2), ctest
+856/856; the fork's thickness suite PASS 77. The GUI checks were not run:
+nothing on the GUI side changed.

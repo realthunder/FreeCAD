@@ -1,3 +1,5 @@
+import math
+
 from FreeCAD import Vector
 import Part
 
@@ -698,6 +700,51 @@ class RegressionTests(unittest.TestCase):
             self.assertTrue(result.isValid(), name)
             self.assertEqual(len(result.Shells), 1, name)
             self.assertAlmostEqual(result.Volume, 307.1946, places=3, msg=name)
+
+    def test_thickness_of_faces_left_in_pieces(self):
+        """Removing a cylinder's side leaves its two caps, which share no
+        edge: each is a thick solid of its own, a disc of 16 pi, and the
+        result is a compound of the two (docs/TransactionLog.md sec 27.101;
+        refused before, as upstream refuses it). Where the cylinder is
+        shorter than twice the thickness the inward discs overlap and fuse
+        into the whole cylinder. A piece that is a pocket inside the shape
+        is not built right yet and stays refused."""
+        cyl = Part.makeCylinder(4, 20)
+        for offset in (1.0, -1.0):
+            for inter in (False, True):
+                name = "offset=%g, inter=%s" % (offset, inter)
+                result = cyl.makeThickness([cyl.Faces[0]], offset, 1e-7, inter, False, 0, 0)
+                self.assertEqual(result.ShapeType, "Compound", name)
+                self.assertTrue(result.isValid(), name)
+                self.assertEqual(len(result.Solids), 2, name)
+                for solid in result.Solids:
+                    self.assertEqual(len(solid.Shells), 1, name)
+                    self.assertAlmostEqual(solid.Volume, 16 * math.pi, places=3, msg=name)
+        short = Part.makeCylinder(4, 1.5)
+        result = short.makeThickness([short.Faces[0]], -1.0, 1e-7, False, False, 0, 0)
+        self.assertEqual(result.ShapeType, "Solid")
+        self.assertTrue(result.isValid())
+        self.assertAlmostEqual(result.Volume, 24 * math.pi, places=3)
+        blind = Part.makeBox(10, 10, 5).cut(Part.makeCylinder(2, 3, Vector(5, 5, 2)))
+        with self.assertRaises(Exception):
+            blind.makeThickness([blind.Faces[2]], 1.0, 1e-7, False, False, 0, 0)
+
+    def test_thickness_down_to_one_face_of_a_short_shape(self):
+        """Only the bottom of a box 1.5 high stays, inward by 1: a plate of
+        10 x 10 x 1. The loop split each removed side at the bottom's offset
+        and kept the piece nearer an end of the side's edge, the one above the
+        offset here: the box came out with the plate's complement as a void
+        (docs/TransactionLog.md sec 27.101). Upstream is right."""
+        for height in (1.5, 2.0, 2.5):
+            box = Part.makeBox(10, 10, height)
+            removed = [f for i, f in enumerate(box.Faces) if i != 4]
+            for inter in (False, True):
+                name = "height=%g, inter=%s" % (height, inter)
+                result = box.makeThickness(removed, -1.0, 1e-7, inter, False, 0, 0)
+                self.assertTrue(result.isValid(), name)
+                self.assertEqual(len(result.Shells), 1, name)
+                self.assertAlmostEqual(result.Volume, 100.0, places=3, msg=name)
+                self.assertAlmostEqual(result.BoundBox.ZMax, 1.0, places=6, msg=name)
 
     def test_OptimalBox(self):
         box = Part.makeBox(1, 1, 1)
