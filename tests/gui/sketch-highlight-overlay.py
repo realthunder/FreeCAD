@@ -18,7 +18,8 @@ Measured here:
   coordinates, line set) with the node ids they had;
 - the PreSelectedCurveSet then holds the hovered edge in the preselection
   colour, and in the preselected-and-selected colour once it is selected;
-- leaving a hovered constraint writes that constraint's label and no other,
+- leaving a hovered constraint writes no label (in mode 3 the view draws
+  a preselected constraint; before s112 it wrote that label and no other),
   and hovering between edges writes none;
 - the hovered edge is drawn in the preselection colour by the mode 3
   backend.
@@ -136,8 +137,11 @@ def hover_edges():
             ids0 = [l.getNodeId() for l in ls]
             sel.setPreselection(sk, "Edge3")
             ids1 = [l.getNodeId() for l in ls]
-            check("leaving a constraint for an edge writes that label and no other",
-                  ids1[0] == ids0[0] and ids1[1] != ids0[1], "%s -> %s" % (ids0, ids1))
+            # In mode 3 the view draws a preselected constraint itself
+            # (sketch-constraint-highlight-view.py): not even its own label
+            # is written. It was that one and no other before.
+            check("leaving a constraint for an edge writes no label",
+                  ids1 == ids0, "%s -> %s" % (ids0, ids1))
             sel.setPreselection(sk, "Edge2")
             ids2 = [l.getNodeId() for l in ls]
             check("hovering between edges writes no constraint label",

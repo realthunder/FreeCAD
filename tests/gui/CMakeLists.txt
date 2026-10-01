@@ -429,6 +429,12 @@ fc_add_gui_test(GuiSketchHighlightView_tests_run
                 sketch-highlight-view.py
                 --timeout 180)
 
+# A preselected constraint is the view's own highlight in mode 3 too: its
+# label or icon shown on top, its coincident points as elements.
+fc_add_gui_test(GuiSketchConstraintHighlightView_tests_run
+                sketch-constraint-highlight-view.py
+                --timeout 180)
+
 # A merged constraint icon wider than 32767 pixels wrapped Coin's image size
 # negative; the exception left draw() before it enabled the constraints, so
 # none showed on entering edit until a hover.

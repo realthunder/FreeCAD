@@ -38,6 +38,7 @@
 # include <Standard_Failure.hxx>
 # include <TopoDS.hxx>
 # include <Inventor/actions/SoGetBoundingBoxAction.h>
+# include <Inventor/actions/SoSearchAction.h>
 # include <Inventor/SoPath.h>
 # include <Inventor/SbBox3f.h>
 # include <Inventor/SbImage.h>
@@ -371,7 +372,14 @@ struct EditData {
     Gui::ViewerContext *hoverViewer = nullptr;
     Gui::ViewerContext *preselectViewer = nullptr;
     std::array<int, 5> preselectKey = {-1, -1, -1, -1, -1};
+    std::set<int> preselectConstraints;
     std::vector<Gui::ViewerContext *> highlightViews;
+    // the editing root's path to constrGroup (constraintPath)
+    Gui::CoinPtr<SoPath> constrGroupPath;
+    // whether this icon draw colours the preselected constraints, and
+    // whether the icons drawn last show a preselection
+    bool iconPreselect = true;
+    bool iconsShowPreselection = false;
     // dragged constraints
     std::set<int> DragConstraintSet;
     int DragConstraintTransactionId = 0;
@@ -1771,7 +1779,7 @@ bool ViewProviderSketch::mouseMove(const SbVec2s &cursorPos, Gui::ViewerContext 
     switch (_Mode) {
         case STATUS_NONE:
             if (preselectChanged) {
-                this->drawConstraintIcons();
+                this->drawConstraintIconsForPreselection();
                 this->updateHighlight();
                 return true;
             }
@@ -2730,7 +2738,7 @@ void ViewProviderSketch::onSelectionChanged(const Gui::SelectionChanges& msg)
                             edit->PreselectConstraintSet.insert(index);
                             if (edit->sketchHandler)
                                 edit->sketchHandler->applyCursor();
-                            this->drawConstraintIcons();
+                            this->drawConstraintIconsForPreselection();
                             this->updateHighlight();
                         }
                     }
@@ -2749,7 +2757,7 @@ void ViewProviderSketch::onSelectionChanged(const Gui::SelectionChanges& msg)
                     edit->sketchHandler->applyCursor();
                 if (!edit->PreselectConstraintSet.empty()) {
                     edit->PreselectConstraintSet.clear();
-                    this->drawConstraintIcons();
+                    this->drawConstraintIconsForPreselection();
                 }
                 this->updateHighlight();
             }
@@ -4071,21 +4079,94 @@ void ViewProviderSketch::restoreConstraintColor(int i)
     }
 }
 
+void ViewProviderSketch::trackPreselectSource()
+{
+    // The view the preselection came from, taken when it changes, while the
+    // move that made it is on the stack: null outside a mouseMove() call.
+    const std::array<int, 5> key = {edit->PreselectPoint,
+                                    edit->PreselectCurve,
+                                    edit->PreselectCross,
+                                    edit->DragPreselectPoint,
+                                    edit->DragPreselectCurve};
+    if (key != edit->preselectKey || edit->PreselectConstraintSet != edit->preselectConstraints) {
+        edit->preselectKey = key;
+        edit->preselectConstraints = edit->PreselectConstraintSet;
+        edit->preselectViewer = edit->hoverViewer;
+    }
+}
+
+std::vector<Gui::ViewerContext *>
+ViewProviderSketch::preselectTargets(std::vector<Gui::ViewerContext *> *views) const
+{
+    Gui::EditingRoot *root = edit->viewer ? edit->viewer->editingRoot() : nullptr;
+    std::vector<Gui::ViewerContext *> all;
+    if (root)
+        all = root->views();
+    if (all.empty() && edit->viewer)
+        all.push_back(edit->viewer);
+    // One from outside any view is shown in every view.
+    std::vector<Gui::ViewerContext *> targets;
+    if (edit->preselectViewer
+            && std::find(all.begin(), all.end(), edit->preselectViewer) != all.end())
+        targets.push_back(edit->preselectViewer);
+    else
+        targets = all;
+    if (views)
+        *views = std::move(all);
+    return targets;
+}
+
+bool ViewProviderSketch::constraintPreselectInViews() const
+{
+    // the constraint's node is named by a path from the editing root
+    if (!edit->viewer || !edit->viewer->editingRoot())
+        return false;
+    const auto targets = preselectTargets();
+    for (auto *view : targets) {
+        if (!view->canEditingHighlight())
+            return false;
+    }
+    return !targets.empty();
+}
+
+SoPath *ViewProviderSketch::constraintPath(int i)
+{
+    Gui::EditingRoot *root = edit->viewer ? edit->viewer->editingRoot() : nullptr;
+    if (!root || i < 0 || i >= edit->constrGroup->getNumChildren())
+        return nullptr;
+    auto &group = edit->constrGroupPath;
+    if (!group || group->getHead() != root->node() || group->getTail() != edit->constrGroup) {
+        SoSearchAction sa;
+        sa.setNode(edit->constrGroup);
+        sa.setInterest(SoSearchAction::FIRST);
+        sa.setSearchingAll(true);
+        sa.apply(root->node());
+        group.reset(sa.getPath() ? sa.getPath()->copy() : nullptr);
+        if (!group)
+            return nullptr;
+    }
+    SoPath *path = group->copy();
+    path->append(i);
+    return path;
+}
+
+void ViewProviderSketch::drawConstraintIconsForPreselection()
+{
+    // An icon takes the preselection colour only where its views do not
+    // draw the preselection themselves: nothing to redraw unless the icons
+    // show one, or are to.
+    trackPreselectSource();
+    if (!edit->iconsShowPreselection
+            && (edit->PreselectConstraintSet.empty() || constraintPreselectInViews()))
+        return;
+    drawConstraintIcons();
+}
+
 void ViewProviderSketch::updateHighlight()
 {
     assert(edit);
-    // The view the preselection came from, taken when it changes -- here,
-    // ahead of the deferral below, while the move that made it is on the
-    // stack (see highlightInViews).
-    const std::array<int, 5> preselectKey = {edit->PreselectPoint,
-                                             edit->PreselectCurve,
-                                             edit->PreselectCross,
-                                             edit->DragPreselectPoint,
-                                             edit->DragPreselectCurve};
-    if (preselectKey != edit->preselectKey) {
-        edit->preselectKey = preselectKey;
-        edit->preselectViewer = edit->hoverViewer;
-    }
+    // ahead of the deferral below, while the move that made it is on the stack
+    trackPreselectSource();
     if (edit->needUpdate) {
         edit->timer.start(100);
         return;
@@ -4177,15 +4258,28 @@ void ViewProviderSketch::updateHighlight()
     if(getSketchObject()->Constraints.hasInvalidGeometry())
         count = 0;
 
+    // A preselected constraint is drawn by the views it is for, over the
+    // edit graph, where all of them can (constraintPreselectInViews): its
+    // label or icon whole, and what it holds -- a coincidence's points, an
+    // alignment's curve -- as elements. The graph keeps the selection alone.
+    const bool constrInViews = !edit->PreselectConstraintSet.empty()
+                               && constraintPreselectInViews();
+    std::vector<int> preConstraints;
+
     // Both sets can name a constraint that is gone: an undo redraws from
     // inside its solve, before anything has had the chance to prune them.
     std::map<int, const SbColor *> highlighted;
     for (int i : edit->SelConstraintSet)
         if (i >= 0 && i < count)
             highlighted[i] = &SelectColor;
-    for (int i : edit->PreselectConstraintSet)
-        if (i >= 0 && i < count)
+    for (int i : edit->PreselectConstraintSet) {
+        if (i < 0 || i >= count)
+            continue;
+        if (constrInViews)
+            preConstraints.push_back(i);
+        else
             highlighted[i] = &PreselectColor;
+    }
 
     for (auto &v : edit->HighlightedConstraints) {
         auto it = highlighted.find(v.first);
@@ -4193,18 +4287,71 @@ void ViewProviderSketch::updateHighlight()
             restoreConstraintColor(v.first);
     }
 
+    // what a preselected constraint holds, for its views: the point's index
+    // in PointsCoordinate or the curve's index, and the colour
+    std::vector<std::pair<int, int>> viewPrePoints, viewPreCurves;
+
     // A constraint drawn with a node of its own is coloured there; a
     // coincidence or an internal alignment is drawn by highlighting what it holds.
-    auto highlightPoint = [&](int GeoId, Sketcher::PointPos PosId, int color) {
+    auto highlightPoint = [&](int GeoId, Sketcher::PointPos PosId, int color, bool inView) {
         int index = getSolvedSketch().getPointId(GeoId, PosId);
         if (index < 0 || index >= (int)edit->VertexIdToPointId.size())
             return;
         int PtId = edit->VertexIdToPointId[index];
         if (PtId < 0 || PtId >= PtNum)
             return;
+        if (inView) {
+            auto it = pointColor.find(PtId);
+            viewPrePoints.emplace_back(PtId, it != pointColor.end() && it->second == HighlightSelect ?
+                                                 HighlightPreselectSelected : HighlightPreselect);
+            return;
+        }
         edit->ImplicitSelPoints.push_back(index+1);
         ++edit->SelPointMap[index+1];
         pointColor[PtId] = color;
+    };
+    auto highlightCurve = [&](int GeoId, int color, bool inView) {
+        int j = 0;
+        for (int c = 0; c < CurvNum; j += edit->CurveVertexCount[c], ++c) {
+            if (edit->CurvIdToGeoId[c] != GeoId)
+                continue;
+            if (inView) {
+                viewPreCurves.emplace_back(c, edit->SelCurveMap.count(GeoId) ?
+                                                  HighlightPreselectSelected : HighlightPreselect);
+                return;
+            }
+            edit->ImplicitSelCurves.push_back(GeoId);
+            ++edit->SelCurveMap[GeoId];
+            auto &curves = color == HighlightPreselect ? preCurves : selCurves;
+            curves.push_back({j, edit->CurveVertexCount[c], c, color});
+            return;
+        }
+    };
+    auto highlightHeld = [&](const Sketcher::Constraint *constraint, int color, bool inView) {
+        if (constraint->Type == Sketcher::Coincident) {
+            for (int k=0; k<2; ++k) {
+                int geoid = k ? constraint->Second : constraint->First;
+                if (geoid >= 0)
+                    highlightPoint(geoid, k ? constraint->SecondPos : constraint->FirstPos,
+                                   color, inView);
+            }
+        }
+        else if (constraint->Type == Sketcher::InternalAlignment) {
+            switch(constraint->AlignmentType) {
+                case EllipseMajorDiameter:
+                case EllipseMinorDiameter:
+                case BSplineControlPoint:
+                    highlightCurve(constraint->First, color, inView);
+                break;
+                case EllipseFocus1:
+                case EllipseFocus2:
+                case BSplineKnotPoint:
+                    highlightPoint(constraint->First, constraint->FirstPos, color, inView);
+                break;
+                default:
+                break;
+            }
+        }
     };
 
     for (auto &v : highlighted) {
@@ -4222,40 +4369,8 @@ void ViewProviderSketch::updateHighlight()
                 static_cast<Gui::SoDatumLabel *>(s->getChild(CONSTRAINT_SEPARATOR_INDEX_MATERIAL_OR_DATUMLABEL))
                     ->textColor = *highlightColor;
         }
-        else if (type == Sketcher::Coincident) {
-            for (int k=0; k<2; ++k) {
-                int geoid = k ? constraint->Second : constraint->First;
-                if (geoid >= 0)
-                    highlightPoint(geoid, k ? constraint->SecondPos : constraint->FirstPos, color);
-            }
-        }
-        else if (type == Sketcher::InternalAlignment) {
-            switch(constraint->AlignmentType) {
-                case EllipseMajorDiameter:
-                case EllipseMinorDiameter:
-                case BSplineControlPoint:
-                {
-                    int j = 0;
-                    for (int c = 0; c < CurvNum; j += edit->CurveVertexCount[c], ++c) {
-                        int cGeoId = edit->CurvIdToGeoId[c];
-                        if (cGeoId == constraint->First) {
-                            edit->ImplicitSelCurves.push_back(cGeoId);
-                            ++edit->SelCurveMap[cGeoId];
-                            auto &curves = color == HighlightPreselect ? preCurves : selCurves;
-                            curves.push_back({j, edit->CurveVertexCount[c], c, color});
-                            break;
-                        }
-                    }
-                }
-                break;
-                case EllipseFocus1:
-                case EllipseFocus2:
-                case BSplineKnotPoint:
-                    highlightPoint(constraint->First, constraint->FirstPos, color);
-                break;
-                default:
-                break;
-            }
+        else if (type == Sketcher::Coincident || type == Sketcher::InternalAlignment) {
+            highlightHeld(constraint, color, false);
         }
         else if (write) {
             static_cast<SoMaterial *>(s->getChild(CONSTRAINT_SEPARATOR_INDEX_MATERIAL_OR_DATUMLABEL))
@@ -4263,6 +4378,8 @@ void ViewProviderSketch::updateHighlight()
         }
     }
     edit->HighlightedConstraints = std::move(highlighted);
+    for (int i : preConstraints)
+        highlightHeld(getSketchObject()->Constraints.getValues()[i], HighlightPreselect, true);
 
     // the point under the cursor, and the origin
     std::vector<int> prePoints;
@@ -4285,26 +4402,16 @@ void ViewProviderSketch::updateHighlight()
     // the dragged element, the origin -- belongs to the view it came from,
     // and is drawn by that view alone over the whole edit graph
     // (Gui::ViewerContext::setEditingHighlight) where the view can. The
-    // sets below then carry the selection only, which every view shows. A
-    // preselected constraint, and what is highlighted on its behalf, stays
-    // in the graph: its icon or label is recoloured there.
+    // sets below then carry the selection only, which every view shows. So
+    // is a preselected constraint (preConstraints, above): its node whole,
+    // shown on top the way a whole object is, and what it holds.
     auto highlightInViews = [&]() {
-        Gui::EditingRoot *root = edit->viewer ? edit->viewer->editingRoot() : nullptr;
         std::vector<Gui::ViewerContext *> views;
-        if (root)
-            views = root->views();
-        if (views.empty() && edit->viewer)
-            views.push_back(edit->viewer);
+        const std::vector<Gui::ViewerContext *> targets = preselectTargets(&views);
         auto contains = [](const std::vector<Gui::ViewerContext *> &list,
                            Gui::ViewerContext *view) {
             return std::find(list.begin(), list.end(), view) != list.end();
         };
-        // One from outside any view is shown in every view.
-        std::vector<Gui::ViewerContext *> targets;
-        if (edit->preselectViewer && contains(views, edit->preselectViewer))
-            targets.push_back(edit->preselectViewer);
-        else
-            targets = views;
 
         // one detail per node and colour
         std::map<std::pair<SoNode *, int>, SoFCDetail> details;
@@ -4333,11 +4440,32 @@ void ViewProviderSketch::updateHighlight()
             add(edit->RootCrossSet, SoFCDetail::Edge, edit->PreselectCross - 1,
                 edit->SelCurveMap.count(axis) ? HighlightPreselectSelected : HighlightPreselect);
         }
+        for (auto &c : viewPreCurves) {
+            for (auto *ids : {&edit->SolidCurveIds, &edit->DashedCurveIds}) {
+                auto it = std::find(ids->begin(), ids->end(), c.first);
+                if (it != ids->end())
+                    add(ids == &edit->SolidCurveIds ? edit->CurveSet : edit->DashedCurveSet,
+                        SoFCDetail::Edge, static_cast<int>(it - ids->begin()), c.second);
+            }
+        }
+        for (auto &p : viewPrePoints)
+            add(edit->PointSet, SoFCDetail::Vertex, p.first, p.second);
+        // a preselected constraint's own node: its label or icon
+        std::vector<Gui::CoinPtr<SoPath>> paths;
+        for (int i : preConstraints) {
+            ConstraintType type = sketch->Constraints.getValues()[i]->Type;
+            if (type == Sketcher::Coincident || type == Sketcher::InternalAlignment)
+                continue;
+            if (SoPath *path = constraintPath(i))
+                paths.emplace_back(path);
+        }
 
         const SbColor colors[] = {SelectColor, PreselectColor, PreselectSelectedColor};
         std::vector<SoFCRenderCacheManager::HighlightItem> items;
         for (auto &v : details)
             items.push_back({&v.second, colors[v.first.second].getPackedValue()});
+        for (auto &path : paths)
+            items.push_back({nullptr, PreselectColor.getPackedValue(), path.get()});
 
         bool ok = true;
         std::vector<Gui::ViewerContext *> holding;
@@ -4726,7 +4854,7 @@ QColor ViewProviderSketch::constrColor(int constraintId)
 
     const std::vector<Sketcher::Constraint *> &constraints = getSketchObject()->Constraints.getValues();
 
-    if (edit->PreselectConstraintSet.count(constraintId))
+    if (edit->iconPreselect && edit->PreselectConstraintSet.count(constraintId))
         return constrIconPreselColor;
     else if (edit->SelConstraintSet.find(constraintId) != edit->SelConstraintSet.end())
         return constrIconSelColor;
@@ -4741,7 +4869,7 @@ QColor ViewProviderSketch::constrColor(int constraintId)
 
 int ViewProviderSketch::constrColorPriority(int constraintId)
 {
-    if (edit->PreselectConstraintSet.count(constraintId))
+    if (edit->iconPreselect && edit->PreselectConstraintSet.count(constraintId))
         return 3;
     else if (edit->SelConstraintSet.find(constraintId) != edit->SelConstraintSet.end())
         return 2;
@@ -4772,10 +4900,13 @@ void ViewProviderSketch::drawConstraintIcons()
 
 void ViewProviderSketch::drawConstraintIconsImpl()
 {
+    trackPreselectSource();
     if (edit->needUpdate) {
         edit->timer.start(100);
         return;
     }
+    // A preselected constraint whose views draw it keeps its own colours here.
+    edit->iconPreselect = !constraintPreselectInViews();
 
     const std::vector<Sketcher::Constraint *> &constraints = getSketchObject()->Constraints.getValues();
     int constrId = 0;
@@ -4947,6 +5078,7 @@ void ViewProviderSketch::drawConstraintIconsImpl()
     }
 
     combineConstraintIcons(std::move(iconQueue));
+    edit->iconsShowPreselection = edit->iconPreselect && !edit->PreselectConstraintSet.empty();
 }
 
 void ViewProviderSketch::combineConstraintIcons(IconQueue &&iconQueue)

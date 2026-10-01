@@ -2837,8 +2837,8 @@ and its renderer feeds them to the backend as an overlay of their own,
 -- outside mode 3, a served mirror -- returns false, and the sets carry
 the preselection as before, in every view. A preselection from outside
 any view (the tree, the task panel) goes to every view of the session. A
-preselected constraint stays a colour write in the graph, and so does
-what is highlighted on its behalf. Modes 0-2 are unchanged (user ruling).
+preselected constraint stayed a colour write in the graph until s112 (see
+below). Modes 0-2 are unchanged (user ruling).
 
 The draw-order question the session opened with turned out to be moot
 in mode 3: the old sets' copies were already drawn over constraint icons
@@ -2946,6 +2946,38 @@ the "+N" once; 9 and a "+41" at 5 and 2 -- before, one image naming all 50),
 `sketch-merged-icon-labels.py` (each icon picks its own constraint, the
 "+N" the rest, no spot two -- before, the icon picked all 50) and
 `sketch-merged-icon-overflow.py` (5000 on one spot: the "+4971").
+
+**A preselected constraint is the view's own highlight too** (s112). Where
+every view the preselection is for can draw it (mode 3, not a served
+mirror: `ViewerContext::canEditingHighlight`), the sketch no longer writes
+the preselection colour into the label, the icon or the points a
+coincidence holds. It hands the hovering view a highlight item with a
+*path* to the constraint's node (`SoFCRenderCacheManager::HighlightItem::
+path`): the editing capture's manager captures that path once
+(`pathCache`, shared with `setHighlight`) and shows all of it in the
+preselection colour, the way a preselected object is shown on top; a
+coincidence's points and an alignment's curve go as elements, as the
+geometry does. The icons no longer take the preselection colour
+(`iconPreselect`), and a hover redraws them only when that changes. The
+view a constraint preselection came from is tracked with the geometry's
+(`trackPreselectSource`). The selection stays in the graph, every view.
+
+What made the label text and the icons answer a highlight at all: mode 3
+drew them as textures that replace the fragment colour, the colour baked
+into the pixels, so the highlight's colour was ignored and the copy drawn
+on top looked the same. A one-colour image is now captured as its alpha,
+white, modulated by that colour (`a9abceb7b9`); the label's text by its
+own material. The baked pixels had been blended with their colour
+premultiplied, which darkened their edges a second time: the text reads
+the label's colour now. Modes 0-2 draw the baked images as before.
+
+Guarded by `tests/gui/sketch-constraint-highlight-view.py`: preselecting a
+label, an icon and a coincidence leaves the edit graph's nodes alone; the
+label's text and the icon take the preselection colour, the coincident
+point too; with two views, the pointer over the icon colours it in that
+view and not the other. (A datum label picks only within about a model
+unit of its line in one view, and not at all after tiling two views -- not
+chased; the two-view check uses the icon.)
 
 Guarded by `tests/gui/sketch-highlight-view.py` (a hover writes no node
 of the edit graph; the sets hold the selection only; the pointer's

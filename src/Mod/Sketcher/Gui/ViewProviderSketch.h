@@ -61,6 +61,7 @@ class SoTransform;
 class SoLineSet;
 class SoMarkerSet;
 class SoPickedPoint;
+class SoPath;
 
 class SoImage;
 class QImage;
@@ -591,6 +592,30 @@ protected:
     /// Used by layoutConstraintIcons to decide what color to make a "+N"
     /*! See constrColor() */
     int constrColorPriority(int constraintId);
+
+    /** @name Which view draws the preselection
+     *
+     * The preselection belongs to the view it came from: a hover in a
+     * view that captures the edit for a backend (render cache mode 3) is
+     * drawn by that view alone, over the edit graph
+     * (Gui::ViewerContext::setEditingHighlight). One from outside any view
+     * (the tree, the task panel) goes to every view of the session.
+     */
+    //@{
+    /// Note the view a preselection came from, when the preselection changes.
+    void trackPreselectSource();
+    /// The views the preselection is for; \a views gets every view of the session.
+    std::vector<Gui::ViewerContext *> preselectTargets(
+            std::vector<Gui::ViewerContext *> *views = nullptr) const;
+    /// Whether a preselected constraint is drawn by its views rather than
+    /// coloured in the edit graph, which every view shows.
+    bool constraintPreselectInViews() const;
+    /// The path from the session's editing root to constraint \a i's node,
+    /// new and unreferenced; null if there is none.
+    SoPath *constraintPath(int i);
+    /// Redraw the icons for a preselection change, if that changes them.
+    void drawConstraintIconsForPreselection();
+    //@}
 
     /// Internal type used for drawing constraint icons
     struct constrIconQueueItem {
