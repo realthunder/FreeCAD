@@ -13,6 +13,8 @@ in the editing capture's highlight overlay (ViewerContext::
 setEditingHighlight). The graph keeps the selection colours alone.
 
 Measured here, all in mode 3:
+- a constraint resolves to no path in the sketch's own scene graph, so
+  the main highlight and selection slots get nothing for it;
 - preselecting a datum label, an icon and a coincidence in turn leaves
   every node of the edit graph with the node id it had;
 - the label and the icon change while preselected, and some of their
@@ -116,6 +118,16 @@ def nodes_alone():
         check("preselecting a label, an icon and a coincidence leaves the edit graph alone",
               not changed, "%d of %d changed: %s" % (
                   sum(1 for b, a in zip(before, after) if a != b), len(before), changed))
+        # A constraint names no element of the sketch's shape: resolved as
+        # one, it fell through to the whole object, and every preselected or
+        # selected constraint highlighted that (hidden) shape in the main
+        # highlight and selection slots.
+        vp = sk.ViewObject
+        check("a constraint resolves to no path in the sketch's own scene",
+              vp.getDetailPathNode("Constraint1") is None
+              and vp.getDetailPathNode("Edge1") is not None,
+              "Constraint1 %s, Edge1 %s" % (vp.getDetailPathNode("Constraint1") is not None,
+                                            vp.getDetailPathNode("Edge1") is not None))
         state["want"] = by_name(root)["SelectedCurvesMaterials"].diffuseColor[1]
         view.redraw()
         QtCore.QTimer.singleShot(800, lambda: shots(["plain", "Constraint1", "Constraint2",

@@ -106,6 +106,7 @@
 #include <Base/Interpreter.h>
 #include <Base/UnitsSchema.h>
 #include <Base/UnitsApi.h>
+#include <App/ElementNamingUtils.h>
 #include <App/MappedElement.h>
 #include <Gui/Application.h>
 #include <Gui/BitmapFactory.h>
@@ -1683,6 +1684,14 @@ bool ViewProviderSketch::getDetailPath(
             return true;
         }
     }
+    // A constraint is no element of the shape: the edit draws it, and its
+    // highlight with it. Passed on, the name found no element and so
+    // resolved to the whole object -- every preselected or selected
+    // constraint highlighted the sketch's own shape, hidden in the editing
+    // view and drawn there for nothing.
+    const char *element = subname ? Data::findElementName(subname) : nullptr;
+    if (element && boost::starts_with(element, "Constraint"))
+        return false;
     return inherited::getDetailPath(subname, pPath, append, det);
 }
 
