@@ -8938,7 +8938,10 @@ void ViewProviderSketch::UpdateSolverInformation()
     bool hasPartiallyRedundant = getSketchObject()->getLastHasPartialRedundancies();
     bool hasMalformed = getSketchObject()->getLastHasMalformedConstraints();
 
-    if (getSketchObject()->Geometry.getSize() == 0) {
+    // External geometry always holds the two axes; a reference past them
+    // is something to constrain to, not an empty sketch.
+    if (getSketchObject()->Geometry.getSize() == 0
+        && getSketchObject()->getExternalGeometryCount() <= 2) {
         signalSetUp(QString::fromUtf8("empty_sketch"), tr("Empty sketch"), QString(), QString());
     }
     else if (dofs < 0 || hasConflicts) {// over-constrained sketch

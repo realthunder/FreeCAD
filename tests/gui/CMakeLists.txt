@@ -446,6 +446,11 @@ fc_add_gui_test(GuiSketchNewPointSize_tests_run
                 sketch-new-point-size.py
                 --timeout 120)
 
+# A sketch holding only external geometry is not reported empty.
+fc_add_gui_test(GuiSketchEmptyMessage_tests_run
+                sketch-empty-message.py
+                --timeout 120)
+
 # A merged constraint icon wider than 32767 pixels wrapped Coin's image size
 # negative; the exception left draw() before it enabled the constraints, so
 # none showed on entering edit until a hover.
