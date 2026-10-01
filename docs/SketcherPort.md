@@ -2766,11 +2766,15 @@ Four things differ from upstream:
   colours is not enough: every view provider change also touches the
   object's `ViewObject`, which the Gui document counts as one. The update
   puts the flag back as it found it; nothing else changes there.
-- **The face colour is not included.** Upstream's end state also drives
-  `ShapeAppearance` from `SketchFaceColor`. The fork's faces are its own
-  (`MakeInternals`, preference `FaceColor`), carried by `ShapeColor`,
-  `Transparency` and `ShapeAppearance` together, and fork files from
-  before AutoColor can hold a face colour set by hand. Open question.
+- **The face colour follows the fork's preference** (session 113, user
+  ruling, `94d76ec9c2`). Upstream drives `ShapeAppearance` from
+  `SketchFaceColor`; here it is the fork's `FaceColor` with the fork's 50%
+  transparent blue as default, not upstream's orange (`8a6f859a57`). All
+  five stores join the automatic set (`ShapeColor`, `Transparency`,
+  `ShapeAppearance`, `DiffuseColor`, `ShapeMaterial`). A file from before
+  saved its face colour: if that is neither the default nor the current
+  preference it was set by hand, and AutoColor goes off so the file keeps
+  it -- upstream would follow the preference and drop it on the next save.
 
 A preference change reaches every sketch through one `ParamHandlers`
 delayed handler; the edit-time observer is attached only while editing.
@@ -3040,7 +3044,7 @@ the Gui document's `Modified` flag set; `Std_Save` clears both.
 `sketch-hidpi-sizes.py` needs `QT_SCALE_FACTOR=2`, which its ctest
 entry sets and a hand-run loop does not.
 
-### The later rows (session 113): 27 -> 12
+### The later rows (session 113): 27 -> 11
 
 The open `ViewProviderSketch.cpp` rows from 2025-07 on, read one at a time
 against the fork's own code, each measured before it was changed.
@@ -3060,8 +3064,10 @@ against the fork's own code, each measured before it was changed.
 | `289411f51c`, `8c1d03ccb4` | **n/a**: an include for a core header change, and a line serving a Core `NavigationStyle` change |
 | `6321ac28a3` | **declined**: the fork draws a drag from the solved sketch (`draw(true)` extracts it), so `moveConstraint` reading the same is what is on screen; reading the object instead measured no faster (about 18 ms a move on 2000 lines, the redraw dominates) |
 
-Left open, each a decision or larger than a row: the face colour default
-(`8a6f859a57`, a taste question on the fork's own `FaceColor`), the
+`8a6f859a57` was ruled after: the faces follow the preference as upstream's
+do, with the fork's default colour (`94d76ec9c2`, see AutoColor above).
+
+Left open, each a decision or larger than a row: the
 annotation pick priority (`a2468774d3`, needs a probe of a sketch face on
 a solid face), the broken-external report (`07b2d9973d`, the fork's tree
 tooltip takes an icon tag), the resetEdit lifecycle (`e6d3f9d6db`, needs
@@ -3077,8 +3083,10 @@ a second after the last reads as 0.2 s after it, and
 `NavigationStyle::processClickEvent` holds it as a double click until the
 release. The rate swings with the phase between a run and the step period
 -- it once made a correct commit look guilty (12 of 12 passed without it,
-then a run without it failed the same way). Not fixed: deciding a double
-click by a monotonic clock read in `processClickEvent` is the candidate.
+then a run without it failed the same way). Fixed on the user's ruling in
+`e35e9990b4`: `processClickEvent` measures on `std::chrono::steady_clock`.
+A vertex dragged once every 1.1 s for 75 s lost 3 drags of 68 to 3 clock
+steps before, none after.
 
 ## 7a. The constraint-tool hints (session 85)
 

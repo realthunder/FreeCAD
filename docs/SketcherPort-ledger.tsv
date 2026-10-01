@@ -1085,7 +1085,7 @@ bfe1295b6b	2026-07-25	PaddleStroke	feature	0	0	open	1009		Merge pull request #30
 0eb37323f0	2026-07-10	Joao Matos	feature	0	0	open	3	n/a: .pyi bindings model, the fork keeps the .xml bindings	Bindings: add structured Python API deprecation metadata	App/SketchObject.pyi
 1e3dbc7ff2	2026-07-10	Joao Matos	?	0	0	open	15	n/a: .pyi bindings model, the fork keeps the .xml bindings	Bindings: migrate legacy deprecation metadata	App/SketchObject.pyi
 ddd3beaf84	2026-07-29	PaddleStroke	fix	0	0	open	120		Sketcher : Fix Polyline parallel/perp helper doesn't stay arc segment FreeCAD#31568	Gui/DrawSketchHandler.cpp Gui/DrawSketchHandler.h
-8a6f859a57	2026-07-16	Max Wilfinger	?	0	0	open	10		Sketcher: Increase contrast of default face color	Gui/SketcherSettingsAppearance.ui Gui/ViewProviderSketch.cpp
+8a6f859a57	2026-07-16	Max Wilfinger	?	0	0	open	10	adapted 94d76ec9c2 (user ruling: faces follow the preference as upstream, the fork default kept)	Sketcher: Increase contrast of default face color	Gui/SketcherSettingsAppearance.ui Gui/ViewProviderSketch.cpp
 ff47e5d523	2026-07-24	Max Wilfinger	feature	0	0	open	55	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Sketcher: Add hints for pattern tools	Gui/DrawSketchHandlerBSpline.h Gui/DrawSketchHandlerPolygon.h Gui/DrawSketchHandlerRotate.h Gui/DrawSketchHandlerTranslate.h
 fe9b559779	2026-08-02	Jakub Vanek	refactor	0	0	n/a(uncompiled)	9		Sketcher: Simplify constraint icon conversion for Coin3D	Gui/EditModeConstraintCoinManager.cpp
 770015798f	2026-07-29	Lokestrom	fix	0	0	open	3	have: file is upstream tip blob, whitespace aside (2026-09-21 resync check)	Fix arc of ellipse arc OVP flip	Gui/DrawSketchHandlerArcOfEllipse.h
