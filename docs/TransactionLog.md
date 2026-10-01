@@ -10168,3 +10168,114 @@ faces), `c97bdbdbca` (the gate lifted), `7de830e6a2` (the suite),
 **Gates:** Python 2973 OK (52 skipped, 6 expected failures; +1), ctest
 850/850, the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14; the fork's
 thickness suite PASS 52, XFAIL 2.
+
+### 27.96 Thickness with the Intersection join: a removed face tangent to its neighbours (user, 2026-10-01)
+
+The user, after 27.95: continue on the failures. Left in the sweep: the
+holed cone's top inward (ill-posed) and the filleted box with the
+Intersection join -- the end and side faces inward, a fillet face either
+way. The sweep's classifier also passed the end and side faces outward
+(382.017, 366.017), which a hand count shows are wrong: a lip.
+
+**The join's answer to a tangent edge -- the user's call.** The Arc join
+closes the gap at a tangent edge with a quarter tube turning a thickness
+into the removed face (27.93). The Intersection join extends faces to sharp
+corners, and offered three ways (a square corner, a flush cut at the edge,
+or leave it), the user chose the square corner: the tube's sharp
+counterpart. In section it is the box the tube is rounded from -- the
+neighbour's offset carried on along its tangent plane, meeting a wall that
+stands square to the removed face a thickness into it; at the corners with
+the top and bottom, cubes where the Arc join has eighths of a sphere. The
+opening is the Arc join's.
+
+**Built** (fork). The Intersection join's pipeline (`BuildOffsetByInter`)
+intersects enlarged offset faces pairwise, not by the Arc join's tubes and
+context stretching, so the closure enters as faces of the analysis, the way
+`BRepOffset_Analyse::TreatTangentFaces` closes the step between tangent
+faces with different offsets -- new faces the whole pipeline takes in.
+`BRepOffset_Analyse::TreatTangentCaps` (thick solids, Intersection join, not
+the planar split path), for a straight edge where a removed face is tangent
+to one kept face whose normal does not change along it:
+
+- a *strip*: the kept face's tangent plane, from the edge a thickness into
+  the removed face, offset with the faces; it is tangent to the kept face,
+  so their offsets share the offset edge (`MakeOffsetFaces`' tangent
+  sharing). A planar kept face is its own strip: its offset runs on, and a
+  strip would only lie on it (its sections doubling the face's) -- then
+  there is none.
+- a *wall*: on the strip's far edge, square to the removed face, across the
+  thickness, not offset. Its far edge replaces the strip's (or the kept
+  face's tangent edge); its edge on the removed face replaces the tangent
+  edge there, so `ContextIntByInt` cuts the removed face with the wall --
+  for a fillet, where the wall's plane meets the cylinder.
+- the ends of both are edges with the face at that end of the tangent edge
+  (the top, the bottom), and the edges at the tangent edge's ends.
+
+It changes no class layout -- the strip's offset rides in the face-offset
+map, the wall and strip are found through the edge replacements -- so code
+built against the fork needs no rebuild. The first attempt added maps to
+`BRepOffset_Analyse`, held by value in `BRepOffset_MakeOffset`: FreeCAD,
+built against the old header, crashed in the destructor.
+
+What the pipeline needed besides, each found on the way:
+
+- `ConnexIntByInt` visits the new faces' edges (it took only the shape's,
+  and the new faces' only for planar shapes).
+- `TrimEdges` dropped every edge of a new face that no other new face shares
+  -- right for `TreatTangentFaces`' walls, whose edges come from sections;
+  the strip is offset, and its tangent edge's image is the shared offset
+  edge. Now only for new faces not offset. And an edge its face holds
+  through a replacement, with no section of its own, is left to the face
+  owning the replacement (the planar kept face's tangent edge came through
+  as an untrimmed infinite line).
+- `SelectShells` takes the closed tangent edges as free borders (the strip
+  made them a second ancestor); `ReplaceRoots` gives the strip and wall the
+  tangent edge for their origin, merging the two into one root (a second
+  `ReplaceRoot` to the same root listed it twice, and `Bind` threw).
+- `Inter2d::ConnexIntByInt`: where a closure stands at a vertex of a face
+  (the top or bottom), the face's two edges there meet the closure's lines,
+  the removed face's side the wall, the kept face's side the strip (or the
+  wall), not each other: inward on a fillet, the cylinder's circle in the
+  floor's offset was cut where it crossed the kept face's offset, short of
+  the walls, and the floor never closed.
+
+**Coincident walls.** At the sweep's sizes (fillet 2, thickness 1) the wall
+of one tangent edge of a fillet lies in the plane of the other side's
+offset: r = 2t. Two of the four fillets came out right by luck at first, the
+other two not, and a fillet of 2.5 or a thickness of 0.8 failed all four
+inward -- that is how the vertex rule above was found. With it, all cases
+pass at all three sizes.
+
+**Worked out by hand** (the input exactly 480 - 24(4 - pi) = 459.398224; the
+27.95 values used 459.39816 and move by 0.00006, still right to four
+decimals). The sharp-grown box (12 x 10 x 8, corners r + t) less the input
+is the whole skin. Outward: less the slab in front of the removed face over
+the full height, plus a t x t square at each tangent edge over it; for a
+fillet, less its annulus quarter, plus at each side t^2 + rt - (t/2 sqrt(r^2
+- t^2) + r^2/2 asin(t/r)) -- the square and the sliver between the strip's
+plane and the cylinder. Inward: the input less the shrunk box and the
+channel, narrowed by a square at each side; for a fillet the cavity's corner
+by Green's theorem round the strip offsets, the walls and the fillet's arc
+between them. Fillet 2, thickness 1: end face 422.7964 out, 262.8319 in;
+side face 406.7964, 254.8319; a fillet 424.7690, 268.7129. Fillet 2.5:
+420.0664, 259.5354; 404.0664, 251.5354; 407.4611, 258.4221. Thickness 0.8:
+321.1984, 219.8451; 309.0384, 212.8051; 323.2624, 224.6933. All 72 runs --
+six faces, both ways, intersection off and on, three sizes -- valid, one
+closed shell, equal to these volumes in all six decimals printed.
+
+**Checked.** The sweep: the 32 Intersection-join runs of the filleted box
+changed, all to the hand values, nothing else; each mode right in 149 of
+150 (upstream 106-111), better than upstream in 162, worse in none. The one
+left in every mode is the holed cone's top inward.
+
+**Tests.** FreeCAD `parttests.regression_tests.
+test_thickness_intersection_join_with_a_face_tangent_to_its_neighbours`
+(eight cases). The fork's suite: `filletbox_{end,side,fillet}_join_{in,out}`,
+`filletbox25_fillet_join_{in,out}`.
+
+Commits: fork `917b7451d1` (the closure), `b921c4c25d` (the suite),
+`e6d99299fb` (its README); `7153b5f2d8` (the FreeCAD test).
+
+**Gates:** Python 2974 OK (52 skipped, 6 expected failures; +1), ctest
+850/850, the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14; the fork's
+thickness suite PASS 60, XFAIL 2.
