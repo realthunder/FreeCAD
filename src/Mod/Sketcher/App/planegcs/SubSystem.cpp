@@ -57,10 +57,14 @@ void SubSystem::initialize(VEC_pD& params, MAP_pD_pD& reductionmap)
     csize = static_cast<int>(clist.size());
 
     // tmpplist will contain the subset of parameters from params that are
-    // relevant for the constraints listed in clist
+    // relevant for the constraints listed in clist, in the order of params.
+    // Not in address order: tmpplist becomes plist, the order of the unknowns
+    // and of the Jacobian's columns, and the parameters are separate heap
+    // blocks whose addresses come in a different order on every run. Solving
+    // the same sketch twice then rounded differently and ended up to 1e-14
+    // apart, enough to flip a boolean on the shapes built from it.
     VEC_pD tmpplist;
     {
-        SET_pD s1(params.begin(), params.end());
         SET_pD s2;
         for (std::vector<Constraint*>::iterator constr = clist.begin(); constr != clist.end();
              ++constr) {
@@ -68,7 +72,12 @@ void SubSystem::initialize(VEC_pD& params, MAP_pD_pD& reductionmap)
             VEC_pD constr_params = (*constr)->params();
             s2.insert(constr_params.begin(), constr_params.end());
         }
-        std::set_intersection(s1.begin(), s1.end(), s2.begin(), s2.end(), std::back_inserter(tmpplist));
+        SET_pD seen;
+        for (double* param : params) {
+            if (s2.count(param) && seen.insert(param).second) {
+                tmpplist.push_back(param);
+            }
+        }
     }
 
     plist.clear();
@@ -136,9 +145,15 @@ void SubSystem::initialize(VEC_pD& params, MAP_pD_pD& reductionmap)
 
 void SubSystem::redirectParams()
 {
-    // copying values to pvals
-    for (MAP_pD_pD::const_iterator p = pmap.begin(); p != pmap.end(); ++p) {
-        *(p->second) = *(p->first);
+    // copying values to pvals, each from the parameter it stands for. Not by
+    // walking pmap: a reduced parameter (one an equality made the same as
+    // another) maps to the same pval as the one it was reduced to, the map
+    // is ordered by address, and whichever of the two sat higher in the heap
+    // would give the unknown its starting value -- before the equality holds
+    // they differ, and the solve started from a different point on every
+    // run (see SubSystem::initialize).
+    for (int j = 0; j < psize; j++) {
+        pvals[j] = *plist[j];
     }
 
     // redirect constraints to point to pvals
