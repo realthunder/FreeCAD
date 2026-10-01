@@ -2775,6 +2775,12 @@ Four things differ from upstream:
   saved its face colour: if that is neither the default nor the current
   preference it was set by hand, and AutoColor goes off so the file keeps
   it -- upstream would follow the preference and drop it on the next save.
+- **Automatic colours are display only** (`be034d08f9`, user ruling). With
+  Part's colour mapping on (`MapLineColor`/`MapPointColor`, off by
+  default) a shape made from a sketch copied the sketch's edge colour into
+  its own file. `ViewProviderPartExt::mapsElementColors()` lets a view
+  provider decline; a sketch does while AutoColor is on. Faces never
+  mapped: a sketch's `Shape` has none. Upstream has no colour mapping.
 
 A preference change reaches every sketch through one `ParamHandlers`
 delayed handler; the edit-time observer is attached only while editing.
