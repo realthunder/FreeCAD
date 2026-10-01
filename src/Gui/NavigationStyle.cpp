@@ -1665,10 +1665,17 @@ SbBool NavigationStyle::processClickEvent(const SoMouseButtonEvent * const event
     SbBool processed = false;
     const SbBool press = event->getState() == SoButtonEvent::DOWN ? true : false;
     if (press) {
-        SbTime tmp = (event->getTime() - mouseDownConsumedEvent.getTime());
+        // Measured on the steady clock, not by the events' stamps: those are
+        // the time of day, and where the clock is resynced in steps (WSL2
+        // moves it back about a second every half minute) a press a second
+        // after the last read as a double click, and was held until the
+        // release -- the drag it started never began.
+        auto now = std::chrono::steady_clock::now();
+        double tmp = std::chrono::duration<double>(now - mouseDownSteadyTime).count();
+        mouseDownSteadyTime = now;
         float dci = (float)QApplication::doubleClickInterval()/1000.0f;
         // a double-click?
-        if (tmp.getValue() < dci) {
+        if (tmp < dci) {
             mouseDownConsumedEvent = *event;
             mouseDownConsumedEvent.setTime(event->getTime());
             processed = true;

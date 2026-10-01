@@ -24,6 +24,8 @@
 #ifndef GUI_NAVIGATIONSTYLE_H
 #define GUI_NAVIGATIONSTYLE_H
 
+#include <chrono>
+
 #include <Inventor/C/basic.h>
 #include <Inventor/SbBox2s.h>
 #include <Inventor/SbPlane.h>
@@ -250,6 +252,10 @@ protected:
     SbBool animationEnabled;
     ViewerMode currentmode;
     SoMouseButtonEvent mouseDownConsumedEvent;
+    // When the last press was processed, by a clock that never steps: what
+    // processClickEvent() tells a double click by (the event stamps are wall
+    // clock time, which a clock resync moves back)
+    std::chrono::steady_clock::time_point mouseDownSteadyTime;
     SbVec2f lastmouseposition;
     SbVec2s globalPos;
     SbVec2s localPos;
