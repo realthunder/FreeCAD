@@ -9877,7 +9877,7 @@ bool ViewProviderSketch::onDelete(const std::vector<std::string> &subList)
 
         for (rit = delConstraints.rbegin(); rit != delConstraints.rend(); ++rit) {
             try {
-                Gui::cmdAppObjectArgs(getObject(), "delConstraint(%i)", *rit);
+                Gui::cmdAppObjectArgs(getObject(), "delConstraint(%i, True)", *rit);
             }
             catch (const Base::Exception& e) {
                 Base::Console().Error("%s\n", e.what());
@@ -9924,7 +9924,7 @@ bool ViewProviderSketch::onDelete(const std::vector<std::string> &subList)
             stream << *endit;
 
             try {
-                Gui::cmdAppObjectArgs(getObject(), "delGeometries([%s])", stream.str().c_str());
+                Gui::cmdAppObjectArgs(getObject(), "delGeometries([%s], True)", stream.str().c_str());
             }
             catch (const Base::Exception& e) {
                 Base::Console().Error("%s\n", e.what());
@@ -9948,7 +9948,14 @@ bool ViewProviderSketch::onDelete(const std::vector<std::string> &subList)
             }
         }
 
-        getSketchObject()->solve();
+        // The deletions above do not solve, each of them (upstream 36786d4794):
+        // one solve here. Where it fails nothing redraws on its own, so draw.
+        if (getSketchObject()->solve() != Sketcher::SketchSolveStatus::Success) {
+            UpdateSolverInformation();
+            draw(false, true);
+            signalConstraintsChanged();
+            signalElementsChanged();
+        }
 
         // Notes on solving and recomputing:
         //

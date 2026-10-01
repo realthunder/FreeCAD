@@ -1721,7 +1721,10 @@ public:
     void deactivated() override
     {
         Gui::Command::abortCommand();
-        Obj->solve();
+        // Nothing was made, so the abort changed nothing to solve for
+        // (upstream 36786d4794).
+        if (availableConstraint != AvailableConstraint::FIRST)
+            Obj->solve();
         sketchgui->draw(false, false); // Redraw
     }
 
