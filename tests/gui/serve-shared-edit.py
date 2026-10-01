@@ -215,9 +215,21 @@ class Client(threading.Thread):
         # The host routes this client to `host` while we wait, so the
         # same pick made again is the one the room must follow.
         room_sampled_on.wait(30.0)
+        # Two picks, two instance changes. The push is coalesced onto the
+        # publish timer, so on an idle box both land in one message; under
+        # load the timer can run between them and the toggle's empty state
+        # goes out on its own first. Each push is the whole instance, so
+        # the one to read is the first that states the line, not the first.
         ws.send(2, wsclient.pick_frame(*ray_to(2.0, 0.0), TOGGLE))
         ws.send(2, wsclient.pick_frame(*ray_to(2.0, 0.0), REPLACE))
-        self.told_off = ws.next_push("selection", 5.0, since=len(ws.pushes))
+        deadline = clock() + 5.0
+        while True:
+            text = ws.next_push("selection", max(0.0, deadline - clock()),
+                                since=len(ws.pushes))
+            if text is not None:
+                self.told_off = text
+            if text is None or b'"obj":"Sketch"' in text:
+                break
         ws.drain(0.3)
         self.picked_off.set()
         room_sampled_off.wait(30.0)
