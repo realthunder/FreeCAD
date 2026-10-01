@@ -8234,12 +8234,26 @@ void View3DInventorViewer::setRotationCenterSelection()
 }
 
 void View3DInventorViewer::viewBoundBox(const SbBox3f &box) {
+    SoCamera* cam = getSoRenderManager()->getCamera();
+    if(!cam || box.isEmpty())
+        return;
+
+    // A point -- a vertex's box, at most a shape's tolerance across -- has
+    // nothing to frame: Coin would give an orthographic camera a height of
+    // 0 and put a perspective one on the point, and the animated fit would
+    // shrink the height towards that. Move the view's centre onto it and
+    // keep the zoom.
+    SbSphere sphere;
+    sphere.circumscribe(box);
+    if (sphere.getRadius() <= 1e-5f) {
+        SbVec3f direction;
+        cam->orientation.getValue().multVec(SbVec3f(0, 0, -1), direction);
+        cam->position = box.getCenter() - direction * cam->focalDistance.getValue();
+        return;
+    }
+
     if (isAnimationEnabled())
         animatedViewAll(box, 10, 20);
-
-    SoCamera* cam = getSoRenderManager()->getCamera();
-    if(!cam)
-        return;
 
 #if (COIN_MAJOR_VERSION >= 4)
     float aspectratio = getSoRenderManager()->getViewportRegion().getViewportAspectRatio();

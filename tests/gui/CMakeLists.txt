@@ -491,6 +491,11 @@ fc_add_gui_test(GuiSketchViewFitEdit_tests_run
                 sketch-view-fit-edit.py
                 --timeout 150)
 
+# View Selection on a single point recentres the view and keeps its zoom.
+fc_add_gui_test(GuiViewSelectionPoint_tests_run
+                view-selection-point.py
+                --timeout 120)
+
 # A sketch's face colour follows the preference under AutoColor, with the fork's default.
 fc_add_gui_test(GuiSketchAutoFaceColor_tests_run
                 sketch-auto-face-color.py
