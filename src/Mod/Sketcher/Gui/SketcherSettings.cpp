@@ -515,7 +515,6 @@ void SketcherSettingsColors::saveSettings()
 
     ui->CursorTextColor->onSave();
     ui->CursorCrosshairColor->onSave();
-    ui->CreateLineColor->onSave();
 }
 
 void SketcherSettingsColors::loadSettings()
@@ -550,7 +549,6 @@ void SketcherSettingsColors::loadSettings()
 
     ui->CursorTextColor->onRestore();
     ui->CursorCrosshairColor->onRestore();
-    ui->CreateLineColor->onRestore();
 }
 
 /**

@@ -753,7 +753,6 @@ protected:
     // colors
     static SbColor VertexColor;
     static SbColor CurveColor;
-    static SbColor CreateCurveColor;
     static SbColor CurveDraftColor;
     static SbColor CurveExternalColor;
     static SbColor CurveFrozenColor;
@@ -833,6 +832,8 @@ protected:
 
     /// the active sketch GeometryCreationMode
     GeometryCreationMode geometryCreationMode = GeometryCreationMode::Normal;
+    /// colour a tool's preview curves by geometryCreationMode
+    void updateEditCurveColor();
 
     using Connection = fastsignals::connection;
     Connection connectionToolWidget;

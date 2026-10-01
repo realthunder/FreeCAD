@@ -205,7 +205,6 @@ SbColor ViewProviderSketch::DirectionalHintColor                    (0.7f,0.7f,0
 SbColor ViewProviderSketch::PreselectColor                          (0.88f,0.88f,0.0f);   // #E1E100 -> (225,225,  0)
 SbColor ViewProviderSketch::SelectColor                             (0.11f,0.68f,0.11f);  // #1CAD1C -> ( 28,173, 28)
 SbColor ViewProviderSketch::PreselectSelectedColor                  (0.36f,0.48f,0.11f);  // #5D7B1C -> ( 93,123, 28)
-SbColor ViewProviderSketch::CreateCurveColor                        (0.8f,0.8f,0.8f);     // #CCCCCC -> (204,204,204)
 SbColor ViewProviderSketch::DeactivatedConstrDimColor               (0.8f,0.8f,0.8f);     // #CCCCCC -> (204,204,204)
 SbColor ViewProviderSketch::InternalAlignedGeoColor                 (0.7f,0.7f,0.5f);     // #B2B27F -> (178,178,127)
 SbColor ViewProviderSketch::FullyConstraintElementColor             (0.50f,0.81f,0.62f);  // #80D0A0 -> (128,208,160)
@@ -3757,7 +3756,26 @@ bool ViewProviderSketch::isConstructionMode() const
 
 void ViewProviderSketch::setGeometryCreationMode(GeometryCreationMode newMode)
 {
+    if (geometryCreationMode == newMode)
+        return;
     geometryCreationMode = newMode;
+    // A tool's preview is recoloured now, not at the pointer's next move.
+    if (edit)
+        updateEditCurveColor();
+}
+
+void ViewProviderSketch::updateEditCurveColor()
+{
+    // The curve being drawn is coloured as what it will be. Only the
+    // colour: a new curve goes to visual layer 0 in either mode, so the
+    // preview's solid line is already its pattern.
+    const SbColor &color = geometryCreationMode == GeometryCreationMode::Construction
+        ? CurveDraftColor : CurveColor;
+    auto &field = edit->EditCurvesMaterials->diffuseColor;
+    SbColor *colors = field.startEditing();
+    for (int i = 0; i < field.getNum(); ++i)
+        colors[i] = color;
+    field.finishEditing();
 }
 
 GeometryCreationMode ViewProviderSketch::getGeometryCreationMode() const
@@ -5436,7 +5454,6 @@ void ViewProviderSketch::OnChange(Base::Subject<const char*> &rCaller, const cha
         "ConstraintIconLabelLines",
         "EditedVertexColor",
         "EditedEdgeColor",
-        "CreateLineColor",
         "ConstructionColor",
         "InternalAlignedGeoColor",
         "FullyConstraintElementColor",
@@ -5631,7 +5648,7 @@ void ViewProviderSketch::initParams()
     static bool _ColorInited;
 
     unsigned long color;
-    static unsigned long defVertexColor, defCurveColor, defCreateCurveColor,
+    static unsigned long defVertexColor, defCurveColor,
                          defCurveDraftColor, defInternalAlignedGeoColor, defFullyConstraintElementColor,
                          defFullyConstraintConstructionElementColor, defFullyConstraintInternalAlignmentColor,
                          defFullyConstraintConstructionPointColor, defInvalidSketchColor, defFullyConstrainedColor,
@@ -5642,7 +5659,6 @@ void ViewProviderSketch::initParams()
         _ColorInited = true;
         defVertexColor = (unsigned long)(VertexColor.getPackedValue());
         defCurveColor = (unsigned long)(CurveColor.getPackedValue());
-        defCreateCurveColor = (unsigned long)(CreateCurveColor.getPackedValue());
         defCurveDraftColor = (unsigned long)(CurveDraftColor.getPackedValue());
         defInternalAlignedGeoColor = (unsigned long)(InternalAlignedGeoColor.getPackedValue());
         defFullyConstraintElementColor = (unsigned long)(FullyConstraintElementColor.getPackedValue());
@@ -5667,9 +5683,6 @@ void ViewProviderSketch::initParams()
     // set the curve color
     color = hGrp->GetUnsigned("EditedEdgeColor", defCurveColor);
     CurveColor.setPackedValue((uint32_t)color, transparency);
-    // set the create line (curve) color
-    color = hGrp->GetUnsigned("CreateLineColor", defCreateCurveColor);
-    CreateCurveColor.setPackedValue((uint32_t)color, transparency);
     // set the construction curve color
     color = hGrp->GetUnsigned("ConstructionColor", defCurveDraftColor);
     CurveDraftColor.setPackedValue((uint32_t)color, transparency);
@@ -8334,18 +8347,16 @@ void ViewProviderSketch::drawEdit(const std::vector<Base::Vector2d> &EditCurve)
     edit->EditCurvesMaterials->diffuseColor.setNum(EditCurve.size());
     SbVec3f *verts = edit->EditCurvesCoordinate->point.startEditing();
     int32_t *index = edit->EditCurveSet->numVertices.startEditing();
-    SbColor *color = edit->EditCurvesMaterials->diffuseColor.startEditing();
 
     int i=0; // setting up the line set
     for (std::vector<Base::Vector2d>::const_iterator it = EditCurve.begin(); it != EditCurve.end(); ++it,i++) {
         verts[i].setValue(it->x,it->y,zEdit);
-        color[i] = CreateCurveColor;
     }
 
     index[0] = EditCurve.size();
     edit->EditCurvesCoordinate->point.finishEditing();
     edit->EditCurveSet->numVertices.finishEditing();
-    edit->EditCurvesMaterials->diffuseColor.finishEditing();
+    updateEditCurveColor();
 }
 
 void ViewProviderSketch::drawEdit(const std::list<std::vector<Base::Vector2d>> &list)
@@ -8360,14 +8371,12 @@ void ViewProviderSketch::drawEdit(const std::list<std::vector<Base::Vector2d>> &
     edit->EditCurvesMaterials->diffuseColor.setNum(ncoords);
     SbVec3f *verts = edit->EditCurvesCoordinate->point.startEditing();
     int32_t *index = edit->EditCurveSet->numVertices.startEditing();
-    SbColor *color = edit->EditCurvesMaterials->diffuseColor.startEditing();
 
     int coordindex=0;
     int indexindex=0;
     for(const auto & v : list) {
         for (const auto & p : v) {
             verts[coordindex].setValue(p.x, p.y, zEdit);
-            color[coordindex] = CreateCurveColor;
             coordindex++;
         }
         index[indexindex] = v.size();
@@ -8376,7 +8385,7 @@ void ViewProviderSketch::drawEdit(const std::list<std::vector<Base::Vector2d>> &
 
     edit->EditCurvesCoordinate->point.finishEditing();
     edit->EditCurveSet->numVertices.finishEditing();
-    edit->EditCurvesMaterials->diffuseColor.finishEditing();
+    updateEditCurveColor();
 }
 
 void ViewProviderSketch::drawEditMarkers(const std::vector<Base::Vector2d> &EditMarkers, unsigned int augmentationlevel)

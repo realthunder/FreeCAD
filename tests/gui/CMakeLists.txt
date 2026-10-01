@@ -466,6 +466,11 @@ fc_add_gui_test(GuiSketchTransformEditTools_tests_run
                 sketch-transform-edit-tools.py
                 --timeout 120)
 
+# A curve being drawn takes the edge or the construction colour, and a toggle recolours it.
+fc_add_gui_test(GuiSketchPreviewConstructionColor_tests_run
+                sketch-preview-construction-color.py
+                --timeout 120)
+
 # A sketch's face colour follows the preference under AutoColor, with the fork's default.
 fc_add_gui_test(GuiSketchAutoFaceColor_tests_run
                 sketch-auto-face-color.py
