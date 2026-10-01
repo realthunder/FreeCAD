@@ -87,6 +87,9 @@
 #   include <QDesktopWidget>
 # endif
 # include <QTimer>
+# include <QToolTip>
+# include <QHelpEvent>
+# include <QPointer>
 # include <QTreeWidget>
 
 # include <boost/scoped_ptr.hpp>
@@ -523,10 +526,34 @@ struct EditData {
     SoDrawStyle * InformationDrawStyle;
 
     QTimer timer;
+    // the view whose widget carries an expression tooltip (updateExpressionToolTip)
+    QPointer<QWidget> toolTipWidget;
     // the edit viewer's device pixel ratio changing -> timer
     QMetaObject::Connection dprConnection;
 };
 
+
+namespace {
+// The 3D view does not show its widget's tooltip by itself: it takes the
+// delayed QEvent::ToolTip. This shows it, after Qt's usual delay.
+class ExpressionToolTipFilter : public QObject
+{
+public:
+    bool eventFilter(QObject *obj, QEvent *event) override
+    {
+        if (event->type() == QEvent::ToolTip) {
+            auto widget = qobject_cast<QWidget *>(obj);
+            if (widget && !widget->toolTip().isEmpty()) {
+                QToolTip::showText(static_cast<QHelpEvent *>(event)->globalPos(),
+                                   widget->toolTip(), widget);
+                return true;
+            }
+        }
+        return QObject::eventFilter(obj, event);
+    }
+};
+ExpressionToolTipFilter expressionToolTipFilter;
+} // namespace
 
 // this function is used to simulate cyclic periodic negative geometry indices (for external geometry)
 const Part::Geometry* GeoById(const std::vector<Part::Geometry*> GeoList, int Id)
@@ -1787,6 +1814,7 @@ bool ViewProviderSketch::mouseMove(const SbVec2s &cursorPos, Gui::ViewerContext 
 
         boost::scoped_ptr<SoPickedPoint> pp(this->getPointOnRay(cursorPos, viewer));
         preselectChanged = detectPreselection(pp.get(), viewer, cursorPos);
+        updateExpressionToolTip(viewer);
     }
 
     switch (_Mode) {
@@ -4161,6 +4189,41 @@ SoPath *ViewProviderSketch::constraintPath(int i)
     SoPath *path = group->copy();
     path->append(i);
     return path;
+}
+
+void ViewProviderSketch::updateExpressionToolTip(Gui::ViewerContext *viewer)
+{
+    // A preselected constraint driven by an expression names it on the view
+    // the pointer is in (upstream 00c3422c1f). A view without a widget -- a
+    // served mirror -- shows none; null clears the last one.
+    QWidget *widget = viewer ? viewer->getGLWidget() : nullptr;
+    QString text;
+    if (widget) {
+        auto sketch = getSketchObject();
+        for (int id : edit->PreselectConstraintSet) {
+            if (!sketch->constraintHasExpression(id))
+                continue;
+            std::string expr = sketch->getConstraintExpression(id);
+            if (!expr.empty()) {
+                // "fx = " in mathematical italics
+                text = QString::fromUtf8("\U0001D453\U0001D465 = ") + QString::fromStdString(expr);
+                break;
+            }
+        }
+    }
+    QWidget *last = edit->toolTipWidget;
+    if (last && (last != widget || text.isEmpty())) {
+        QToolTip::hideText();
+        last->removeEventFilter(&expressionToolTipFilter);
+        last->setToolTip(QString());
+        edit->toolTipWidget = nullptr;
+    }
+    if (text.isEmpty() || widget->toolTip() == text)
+        return;
+    widget->setToolTip(text);
+    widget->removeEventFilter(&expressionToolTipFilter);
+    widget->installEventFilter(&expressionToolTipFilter);
+    edit->toolTipWidget = widget;
 }
 
 void ViewProviderSketch::drawConstraintIconsForPreselection()
@@ -9373,6 +9436,8 @@ void ViewProviderSketch::unsetEdit(int ModNum)
     if (edit) {
         if (edit->sketchHandler)
             deactivateHandler();
+
+        updateExpressionToolTip(nullptr);
 
         if (edit->dragAutoConstraintHandler) {
             edit->dragAutoConstraintHandler->clear();

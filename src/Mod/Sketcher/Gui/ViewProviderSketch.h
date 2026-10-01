@@ -359,6 +359,8 @@ public:
     /// highlighted constraints. What a selection change needs; the geometry's
     /// own colours and layers are left as the last updateColor() made them.
     void updateHighlight();
+    /// The expression of a preselected constraint as the view's tooltip
+    void updateExpressionToolTip(Gui::ViewerContext *viewer);
     /// get the pointer to the sketch document object
     Sketcher::SketchObject *getSketchObject() const;
 
