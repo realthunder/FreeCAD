@@ -8607,6 +8607,12 @@ std::vector<App::Property*> ViewProviderSketch::automaticColorProperties()
             &ShapeColor, &Transparency, &ShapeAppearance, &DiffuseColor, &ShapeMaterial};
 }
 
+bool ViewProviderSketch::mapsElementColors(int type) const
+{
+    (void)type;
+    return !AutoColor.getValue();
+}
+
 void ViewProviderSketch::faceColorFromPreference(App::Color &color, long &transparency)
 {
     // The alpha byte is an opacity, like every colour preference since the

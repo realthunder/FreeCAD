@@ -310,6 +310,17 @@ public:
 
     virtual void checkColorUpdate() override;
 
+    /** Whether this view provider's colours of an element type -- TopAbs_FACE,
+     * TopAbs_EDGE or TopAbs_VERTEX -- may be mapped onto the shapes made from
+     * it (MapFaceColor and the rest). A colour that follows a preference is
+     * display state, not the object's: a sketch's under AutoColor is.
+     */
+    virtual bool mapsElementColors(int type) const
+    {
+        (void)type;
+        return true;
+    }
+
     static std::vector<App::Color> getShapeColors(const Part::TopoShape &shape, App::Color &defColor,
             App::Document *sourceDoc=0, bool linkOnly=false);
 

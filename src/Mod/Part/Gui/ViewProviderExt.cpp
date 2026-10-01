@@ -3644,6 +3644,11 @@ static App::Color getElementColor(App::Color color,
         if(colorFound)
             return color;
 
+        // A colour that is only display state goes no further: the shape
+        // made from it keeps its own.
+        if (!vp->mapsElementColors(type))
+            return color;
+
         float trans = vp->Transparency.getValue()/100.0;
         ElementColors prop((TopAbs_ShapeEnum)type, vp);
         if(prop.getSize()==0)
