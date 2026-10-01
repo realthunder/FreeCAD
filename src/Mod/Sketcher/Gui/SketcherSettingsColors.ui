@@ -197,7 +197,7 @@
            </sizepolicy>
           </property>
           <property name="toolTip">
-           <string>Color of geometry indicating an invalid sketch</string>
+           <string>Color of a sketch's faces; every sketch with AutoColor on follows it</string>
           </property>
           <property name="color" stdset="0">
            <color alpha="128">

@@ -725,16 +725,11 @@ ViewProviderSketch::ViewProviderSketch()
         this->Autoconstraints.setValue(hGrp->GetBool("AutoConstraints", true));
         this->AvoidRedundant.setValue(hGrp->GetBool("AvoidRedundantAutoconstraints", true));
 
-        // The alpha byte is an opacity, like every colour preference since
-        // the convention flip (Base/Color.h); the default is the same 50%
-        // transparent blue it always was, stated the new way round.
-        unsigned long shcol = hGrp->GetUnsigned("FaceColor", 0x54abff7f);
-        float r = ((shcol >> 24) & 0xff) / 255.0;
-        float g = ((shcol >> 16) & 0xff) / 255.0;
-        float b = ((shcol >> 8) & 0xff) / 255.0;
-        int t = 100 * (255 - (shcol & 0xff)) / 255;
-        this->ShapeColor.setValue(App::Color(r, g, b));
-        this->Transparency.setValue(t);
+        App::Color faceColor;
+        long faceTransparency;
+        faceColorFromPreference(faceColor, faceTransparency);
+        this->ShapeColor.setValue(faceColor);
+        this->Transparency.setValue(faceTransparency);
     }
 
     sPixmap = "Sketcher_Sketch";
@@ -8566,10 +8561,32 @@ void ViewProviderSketch::finishRestoring()
     // Neither means a file from before AutoColor: follow the preferences
     // only where the colours were never changed from the white the sketch
     // always had (upstream 8def94e6f8).
+    // Both questions are asked of the colours as restored, and AutoColor is
+    // written once: turning it on applies the preferences at once.
+    bool automatic = AutoColor.getValue();
     if (!autoColorRestored && !LineColor.testStatus(App::Property::Transient)) {
         App::Color white(1.f, 1.f, 1.f);
-        AutoColor.setValue(LineColor.getValue() == white && PointColor.getValue() == white);
+        automatic = LineColor.getValue() == white && PointColor.getValue() == white;
     }
+    // A face colour the file saved is from before the face joined AutoColor.
+    // The default, or the preference the sketch would follow now, was
+    // automatic; anything else was set by hand, and following the preference
+    // would drop it on the next save -- so the file keeps its colours.
+    if (automatic && !ShapeColor.testStatus(App::Property::Transient)) {
+        auto near = [this](const App::Color &color, long transparency) {
+            const App::Color &c = ShapeColor.getValue();
+            return std::abs(c.r - color.r) < 1.5f / 255 && std::abs(c.g - color.g) < 1.5f / 255
+                && std::abs(c.b - color.b) < 1.5f / 255
+                && std::abs(Transparency.getValue() - transparency) <= 1;
+        };
+        App::Color preferred;
+        long preferredTransparency;
+        faceColorFromPreference(preferred, preferredTransparency);
+        if (!near(App::Color(0x54 / 255.f, 0xab / 255.f, 1.f), 50)
+                && !near(preferred, preferredTransparency))
+            automatic = false;
+    }
+    AutoColor.setValue(automatic);
     updateAutomaticColorProperties();
     updateColorPropertiesVisibility();
 
@@ -8583,8 +8600,24 @@ std::vector<App::Property*> ViewProviderSketch::automaticColorProperties()
     // A colour is kept three times over here: the colour, the per-element
     // array and the material, each written when the colour is (upstream
     // marks only the colour, and the file still carries the other two).
+    // The face colour likewise: ShapeColor and Transparency, the appearance
+    // they are written into, and its two mirrors.
     return {&LineColor, &LineColorArray, &LineMaterial,
-            &PointColor, &PointColorArray, &PointMaterial};
+            &PointColor, &PointColorArray, &PointMaterial,
+            &ShapeColor, &Transparency, &ShapeAppearance, &DiffuseColor, &ShapeMaterial};
+}
+
+void ViewProviderSketch::faceColorFromPreference(App::Color &color, long &transparency)
+{
+    // The alpha byte is an opacity, like every colour preference since the
+    // convention flip (Base/Color.h). The default is the fork's 50%
+    // transparent blue, not upstream's orange (8a6f859a57).
+    unsigned long shcol = App::GetApplication()
+        .GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Sketcher/General")
+        ->GetUnsigned("FaceColor", 0x54abff7f);
+    color = App::Color(((shcol >> 24) & 0xff) / 255.f, ((shcol >> 16) & 0xff) / 255.f,
+                       ((shcol >> 8) & 0xff) / 255.f);
+    transparency = 100 * (255 - long(shcol & 0xff)) / 255;
 }
 
 void ViewProviderSketch::updateColorPropertiesVisibility()
@@ -8598,7 +8631,8 @@ void ViewProviderSketch::updateColorPropertiesVisibility()
         prop->setStatus(App::Property::NoModify, automatic);
     }
     // and not editable while it is automatic
-    for (App::Property *prop : {&LineColor, &PointColor}) {
+    for (App::Property *prop : std::initializer_list<App::Property*>{
+             &LineColor, &PointColor, &ShapeColor, &Transparency, &ShapeAppearance}) {
         prop->setStatus(App::Property::ReadOnly, automatic);
         prop->setStatus(App::Property::Hidden, automatic);
     }
@@ -8629,6 +8663,15 @@ void ViewProviderSketch::updateAutomaticColorProperties()
     bool modified = gdoc && gdoc->isModified();
     follow(LineColor, "SketchEdgeColor");
     follow(PointColor, "SketchVertexColor");
+    // The faces as upstream drives them (SketchFaceColor there), from the
+    // fork's FaceColor and with the fork's default.
+    App::Color faceColor;
+    long faceTransparency;
+    faceColorFromPreference(faceColor, faceTransparency);
+    if (ShapeColor.getValue() != faceColor)
+        ShapeColor.setValue(faceColor);
+    if (Transparency.getValue() != faceTransparency)
+        Transparency.setValue(faceTransparency);
     if (gdoc && !modified && gdoc->isModified())
         gdoc->setModified(false);
 }
@@ -8640,9 +8683,7 @@ void ViewProviderSketch::attachColorObserver()
     if (attached)
         return;
     attached = true;
-    handlers.addDelayedHandler("BaseApp/Preferences/View",
-                               {"SketchEdgeColor", "SketchVertexColor"},
-                               [](ParameterGrp *) {
+    auto updateAll = [](ParameterGrp *) {
         for (App::Document *doc : App::GetApplication().getDocuments()) {
             Gui::Document *gdoc = Gui::Application::Instance->getDocument(doc);
             if (!gdoc)
@@ -8651,7 +8692,11 @@ void ViewProviderSketch::attachColorObserver()
                     gdoc->getViewProvidersOfType(ViewProviderSketch::getClassTypeId()))
                 static_cast<ViewProviderSketch*>(vp)->updateAutomaticColorProperties();
         }
-    });
+    };
+    handlers.addDelayedHandler("BaseApp/Preferences/View",
+                               {"SketchEdgeColor", "SketchVertexColor"}, updateAll);
+    handlers.addDelayedHandler("BaseApp/Preferences/Mod/Sketcher/General",
+                               {"FaceColor"}, updateAll);
 }
 
 void ViewProviderSketch::slotSolverUpdate()

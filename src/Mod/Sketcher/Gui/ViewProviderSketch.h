@@ -547,6 +547,8 @@ protected:
 
     /// AutoColor: every property that carries the edge or vertex colour
     std::vector<App::Property*> automaticColorProperties();
+    /// The face colour and transparency Mod/Sketcher/General/FaceColor asks for
+    static void faceColorFromPreference(App::Color &color, long &transparency);
     /// AutoColor: marks the colours it owns as not saved and not editable
     void updateColorPropertiesVisibility();
     /// AutoColor: takes the edge and vertex colours from the preferences

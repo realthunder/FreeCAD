@@ -466,6 +466,11 @@ fc_add_gui_test(GuiSketchTransformEditTools_tests_run
                 sketch-transform-edit-tools.py
                 --timeout 120)
 
+# A sketch's face colour follows the preference under AutoColor, with the fork's default.
+fc_add_gui_test(GuiSketchAutoFaceColor_tests_run
+                sketch-auto-face-color.py
+                --timeout 200)
+
 # A merged constraint icon wider than 32767 pixels wrapped Coin's image size
 # negative; the exception left draw() before it enabled the constraints, so
 # none showed on entering edit until a hover.
