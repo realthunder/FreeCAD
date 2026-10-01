@@ -2734,4 +2734,25 @@ than the clipped length stops there too. Measured, before -> after:
 Test: `testThroughAllThreadAndTaperStopPastTheMaterial`. PD 318 OK.
 `TestLoft.testTwoFacesAdditiveLoftCase` (from `ddd8c6735a`) is flaky
 on this box with or without the change -- "Resulting shape is not a
-solid" in 4 of 10 runs on HEAD, 6 of 10 with it -- not chased yet.
+solid" in 4 of 10 runs on HEAD, 6 of 10 with it.
+
+**The flaky loft test, chased: an OCCT bug.** The loft's tool shares
+the pad's flank face (the profile face is the pad's own, same TShape),
+and FreeCAD's booleans run non-destructive. There OCCT's
+`UpdateBlocksWithSharedVertices` replaced a vertex both faces share
+after it had filled the faces' ON vertices, `MakeBlocks` then put the
+old vertex on the section curves, the section edges did not connect,
+the faces stayed whole, and the fuse came back empty with no error.
+Whether that vertex is replaced turns on an on-curve test, and the
+sketch solver's result moves by ~1e-14 from process to process (all
+eight of eight runs solved `Sketch` to different last bits), so a run
+landed on either side. Same on FreeCAD 1.1.4's OCCT 7.8.1. A fuzzy
+value hid it only because `makEBoolean` copies the tool when given
+one. Recorded as occ-issues `local02` (a failing and a passing pair as
+BREP plus a script, occt `abbe0f6070`), fixed in the OCCT fork
+(`4024d6d31c`, the faces' ON vertices remapped to the replacements);
+`TestLoft` 10/10 after, Python 3190 OK, ctest 750/750.
+The solver's run-to-run noise itself is not chased. A likely source,
+not verified: planegcs keys several maps by parameter address
+(`std::map<double*, ...>` in `GCS.h`, `SubSystem.h`), so their order
+can follow the heap.
