@@ -644,6 +644,14 @@ private:
         corners.push_back(pnt1);
         corners.push_back(pnt2);
 
+        // The number's box, which is what a pick takes (generateDiameter-
+        // Primitives): the points above all lie on the dimension line, and a
+        // box of no height culled the pick to the line whenever it was cached.
+        for (float side : {-1.0F, 1.0F}) {
+            corners.push_back(pos + dir * (imgWidth / 2.0F) + normal * (side * imgHeight / 2.0F));
+            corners.push_back(pos - dir * (imgWidth / 2.0F) + normal * (side * imgHeight / 2.0F));
+        }
+
         return corners;
     }
 
@@ -1050,10 +1058,13 @@ void SoDatumLabel::generateDistancePrimitives(SoAction * action, const SbVec3f& 
     img3 += textOffset;
     img4 += textOffset;
 
-    // Primitive Shape is only for text as this should only be selectable
+    // Primitive Shape is only for text as this should only be selectable.
+    // The corners go lower-left, upper-left, lower-right, upper-right: a
+    // strip in that order is the box, a QUAD is a bowtie that leaves the
+    // triangle above the centre unpicked.
     SoPrimitiveVertex pv;
 
-    this->beginShape(action, QUADS);
+    this->beginShape(action, TRIANGLE_STRIP);
 
     pv.setNormal( SbVec3f(0.f, 0.f, 1.f) );
 
@@ -1101,10 +1112,13 @@ void SoDatumLabel::generateDiameterPrimitives(SoAction * action, const SbVec3f& 
     img3 += textOffset;
     img4 += textOffset;
 
-    // Primitive Shape is only for text as this should only be selectable
+    // Primitive Shape is only for text as this should only be selectable.
+    // The corners go lower-left, upper-left, lower-right, upper-right: a
+    // strip in that order is the box, a QUAD is a bowtie that leaves the
+    // triangle above the centre unpicked.
     SoPrimitiveVertex pv;
 
-    this->beginShape(action, QUADS);
+    this->beginShape(action, TRIANGLE_STRIP);
 
     pv.setNormal( SbVec3f(0.f, 0.f, 1.f) );
 
@@ -1138,10 +1152,13 @@ void SoDatumLabel::generateAnglePrimitives(SoAction * action, const SbVec3f& p0)
     img3 += textOffset;
     img4 += textOffset;
 
-    // Primitive Shape is only for text as this should only be selectable
+    // Primitive Shape is only for text as this should only be selectable.
+    // The corners go lower-left, upper-left, lower-right, upper-right: a
+    // strip in that order is the box, a QUAD is a bowtie that leaves the
+    // triangle above the centre unpicked.
     SoPrimitiveVertex pv;
 
-    this->beginShape(action, QUADS);
+    this->beginShape(action, TRIANGLE_STRIP);
 
     pv.setNormal( SbVec3f(0.f, 0.f, 1.f) );
 

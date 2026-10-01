@@ -435,6 +435,12 @@ fc_add_gui_test(GuiSketchConstraintHighlightView_tests_run
                 sketch-constraint-highlight-view.py
                 --timeout 180)
 
+# The number of a dimension picks over the whole of its text: no bowtie
+# hole in its pick box, no bounding box that culls it to the line.
+fc_add_gui_test(GuiSketchDatumLabelPick_tests_run
+                sketch-datum-label-pick.py
+                --timeout 240)
+
 # A merged constraint icon wider than 32767 pixels wrapped Coin's image size
 # negative; the exception left draw() before it enabled the constraints, so
 # none showed on entering edit until a hover.
