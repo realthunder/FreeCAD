@@ -10289,7 +10289,10 @@ show them.
 
 **Made.** 46 pictures, `tests/thickness/models/pictures/<case>.png` in the
 fork, one per case of the suite that a fix turned from failing to passing;
-docs/Thickness.md walks through them fix by fix. Each has three columns --
+`tests/thickness/models/Thickness.md` in the fork walks through them fix by
+fix (written as FreeCAD docs/Thickness.md first, moved there at the user's
+word: OCCT modelling fixes are documented in the OCCT repository, beside the
+models). Each has three columns --
 upstream (its eleven chain files at `91be8c4c71`, as 27.89 measured it), the
 fork just before the case's fix, the fork now -- and two rows, the result
 and the result cut open (cut faces orange). The "before" libraries are the
@@ -10351,4 +10354,4 @@ model logs `Exception on making thick solid: BRep_Builder::UpdateEdge` from
 (1241.0718), as the suite has it.
 
 Commits: fork `45d6a96922` (the pictures and the tools), `6e7ffdd034` (the
-README); FreeCAD docs/Thickness.md and this section in one.
+README); FreeCAD `f1a8bc0004` (the doc, since moved, and this section).
