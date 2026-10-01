@@ -1166,14 +1166,18 @@ Base::BoundBox3d ViewProviderSketch::_getBoundingBox(const char *subname,
 
     if (!bbox.IsValid())
         return bbox;
-    // As the Shape's box composes: the parents' matrix, then this object's
-    // own Placement. Not the editing placement, which is already global and
-    // would apply a Body's placement twice when reached through the Body.
+    // Reached through a parent (Body.Sketch.Edge3), the parent has already
+    // applied every placement down to and including this one: mat is global
+    // and transform false. Asked directly, transform is true and the answer
+    // is the occurrence being edited, which only the edit session knows --
+    // the editing placement, which follows the edit's own path, through a
+    // Link too. The object's Placement is local, and globalPlacement() does
+    // not see a Link.
     Base::Matrix4D m;
     if (mat)
         m = *mat;
     if (transform)
-        m = m * obj->Placement.getValue().toMatrix();
+        m = m * getEditingPlacement();
     return bbox.Transformed(m);
 }
 

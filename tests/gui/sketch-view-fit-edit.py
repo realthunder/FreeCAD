@@ -92,17 +92,29 @@ def run():
         body.addObject(inner)
         inner.addGeometry(Part.LineSegment(V(-5, 0, 0), V(5, 0, 0)), False)
         inner.addGeometry(Part.LineSegment(V(400, 300, 0), V(420, 300, 0)), True)
+        # And the same container through a Link placed elsewhere. With
+        # LinkTransform off (the default) the Link's Placement replaces the
+        # Part's, so through it the line is drawn at (410, 1300).
+        link = doc.addObject("App::Link", "Link")
+        link.LinkedObject = body
+        link.Placement.Base = V(0, 1000, 0)
         doc.recompute()
         far.ViewObject.Visibility = False
         view = FreeCADGui.activeDocument().activeView()
         view.setCameraType("Orthographic")
         view.viewTop()
-        state.update(sk=sk, far=far, body=body, inner=inner, doc=doc, view=view)
+        state.update(sk=sk, far=far, body=body, inner=inner, link=link, doc=doc, view=view)
         FreeCADGui.activeDocument().setEdit(sk)
         QtCore.QTimer.singleShot(2000, probe_selection)
     except Exception:
         note("ABORT:\n" + traceback.format_exc())
         finish()
+
+
+def box_centre(obj, sub):
+    box = obj.ViewObject.getBoundingBox(sub)
+    note("INFO %s.%s box %s" % (obj.Name, sub, box))
+    return (box.XMin + box.XMax) / 2, (box.YMin + box.YMax) / 2
 
 
 def view_selection(sub, obj=None):
@@ -121,10 +133,13 @@ def probe_selection():
         check("View Selection on a construction line centres on it",
               near((x, y), (410, 300), 2.0), "(%.2f, %.2f)" % (x, y))
         check("and fits to its size", h < 100.0, "%.2f" % h)
+        before = h
         x, y, h = view_selection("Vertex3")
         note("INFO vertex: centre (%.2f, %.2f) height %.2f" % (x, y, h))
         check("View Selection on a vertex centres on the point",
               near((x, y), (400, 300), 2.0), "(%.2f, %.2f)" % (x, y))
+        check("and keeps the zoom (a point has nothing to frame)",
+              abs(h - before) < 1e-3, "height %.4f, was %.4f" % (h, before))
         FreeCADGui.Selection.clearSelection()
         FreeCADGui.activeDocument().resetEdit()
         settle(0.5)
@@ -135,6 +150,23 @@ def probe_selection():
              % (x, y, h))
         check("in a placed container it centres where the line is drawn",
               near((x, y), (510, 300), 2.0), "(%.2f, %.2f), want (510, 300)" % (x, y))
+        # Asked of the sketch itself, with no parent path: the box of the
+        # occurrence being edited, which only the edit session knows.
+        x, y = box_centre(state["inner"], "Edge2")
+        check("asked directly, the sketch answers where its edited occurrence is",
+              near((x, y), (510, 300), 2.0), "(%.2f, %.2f), want (510, 300)" % (x, y))
+        FreeCADGui.Selection.clearSelection()
+        FreeCADGui.activeDocument().resetEdit()
+        settle(0.5)
+
+        FreeCADGui.activeDocument().setEdit(state["link"], 0, "Inner.")
+        settle(1.0)
+        x, y = box_centre(state["inner"], "Edge2")
+        check("edited through a Link, asked directly: the Link's occurrence",
+              near((x, y), (410, 1300), 2.0), "(%.2f, %.2f), want (410, 1300)" % (x, y))
+        x, y, h = view_selection("Inner.Edge2", state["link"])
+        check("and View Selection through the Link centres there",
+              near((x, y), (410, 1300), 2.0), "(%.2f, %.2f), want (410, 1300)" % (x, y))
         FreeCADGui.Selection.clearSelection()
         FreeCADGui.activeDocument().resetEdit()
         settle(0.5)
