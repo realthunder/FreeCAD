@@ -5591,7 +5591,7 @@ bool GeomElementarySurface::isSame(const Geometry& _other, double tol, double at
 
 // -------------------------------------------------
 
-TYPESYSTEM_SOURCE(Part::GeomCylinder, Part::GeomSurface)
+TYPESYSTEM_SOURCE(Part::GeomCylinder, Part::GeomElementarySurface)
 
 GeomCylinder::GeomCylinder()
 {
@@ -5665,7 +5665,7 @@ bool GeomCylinder::isSame(const Geometry& _other, double tol, double atol) const
 
 // -------------------------------------------------
 
-TYPESYSTEM_SOURCE(Part::GeomCone, Part::GeomSurface)
+TYPESYSTEM_SOURCE(Part::GeomCone, Part::GeomElementarySurface)
 
 GeomCone::GeomCone()
 {
@@ -5799,7 +5799,7 @@ bool GeomCone::isSame(const Geometry& _other, double tol, double atol) const
 
 // -------------------------------------------------
 
-TYPESYSTEM_SOURCE(Part::GeomToroid, Part::GeomSurface)
+TYPESYSTEM_SOURCE(Part::GeomToroid, Part::GeomElementarySurface)
 
 GeomToroid::GeomToroid()
 {
@@ -5879,7 +5879,7 @@ bool GeomToroid::isSame(const Geometry& _other, double tol, double atol) const
 
 // -------------------------------------------------
 
-TYPESYSTEM_SOURCE(Part::GeomSphere, Part::GeomSurface)
+TYPESYSTEM_SOURCE(Part::GeomSphere, Part::GeomElementarySurface)
 
 GeomSphere::GeomSphere()
 {
@@ -5953,7 +5953,7 @@ bool GeomSphere::isSame(const Geometry& _other, double tol, double atol) const
 
 // -------------------------------------------------
 
-TYPESYSTEM_SOURCE(Part::GeomPlane, Part::GeomSurface)
+TYPESYSTEM_SOURCE(Part::GeomPlane, Part::GeomElementarySurface)
 
 GeomPlane::GeomPlane()
 {
@@ -6301,7 +6301,7 @@ bool GeomSweptSurface::isSame(const Geometry& _other, double tol, double atol) c
 }
 
 // -------------------------------------------------
-TYPESYSTEM_SOURCE(Part::GeomSurfaceOfRevolution, Part::GeomSurface)
+TYPESYSTEM_SOURCE(Part::GeomSurfaceOfRevolution, Part::GeomSweptSurface)
 
 GeomSurfaceOfRevolution::GeomSurfaceOfRevolution() = default;
 
@@ -6357,7 +6357,7 @@ PyObject* GeomSurfaceOfRevolution::getPyObject()
 
 // -------------------------------------------------
 
-TYPESYSTEM_SOURCE(Part::GeomSurfaceOfExtrusion, Part::GeomSurface)
+TYPESYSTEM_SOURCE(Part::GeomSurfaceOfExtrusion, Part::GeomSweptSurface)
 
 GeomSurfaceOfExtrusion::GeomSurfaceOfExtrusion() = default;
 
