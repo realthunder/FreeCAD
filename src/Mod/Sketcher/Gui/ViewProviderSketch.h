@@ -322,20 +322,13 @@ public:
                            SbLine&) const;
 
     /// helper to detect preselection
-    /*! Without \a nearestConstraint, a spot within the pick radius of
-     *  several boxes of a merged icon takes all their constraints: the
-     *  pick list offers each; a hover takes the nearest box. */
     bool detectPreselection(const SoPickedPoint *Point,
                             const Gui::ViewerContext *viewer,
                             const SbVec2s &cursorPos,
-                            bool preselect=true,
-                            bool nearestConstraint=true);
+                            bool preselect=true);
 
     /// Helper for detectPreselection(), for constraints only.
-    std::set<int> detectPreselectionConstr(const SoPickedPoint *Point,
-                                           const Gui::ViewerContext *viewer,
-                                           const SbVec2s &cursorPos,
-                                           bool nearest=true);
+    std::set<int> detectPreselectionConstr(const SoPickedPoint *Point);
 
     /** What a hover at a viewport position of the edit view would
      * preselect, without preselecting it: the element names (several for
@@ -595,7 +588,7 @@ protected:
      *  the constraint with the highest priority from constrColorPriority()
      */
     QColor constrColor(int constraintId);
-    /// Used by drawMergedConstraintIcons to decide what color to make icons
+    /// Used by layoutConstraintIcons to decide what color to make a "+N"
     /*! See constrColor() */
     int constrColorPriority(int constraintId);
 
@@ -614,6 +607,15 @@ protected:
         /// Absolute coordinates of the constraint icon
         SbVec3f position;
 
+        /// Which of the constraint's icons this is: 0 the first, 1 the second
+        int slot = 0;
+
+        /// Where draw() put the icon, before any layout: the world anchor
+        /// and the screen-constant offset (SoZoomTranslation units), both
+        /// summed down the constraint's translations
+        SbVec3f anchor;
+        SbVec3f offset;
+
         /// Pointer to the SoImage object where the icon should be written
         SoImage *destination;
 
@@ -628,10 +630,6 @@ protected:
 
     /// Internal type used for drawing constraint icons
     typedef std::vector<constrIconQueueItem> IconQueue;
-    /// For constraint icon bounding boxes
-    typedef std::pair<QRect, std::set<int> > ConstrIconBB;
-    /// For constraint icon bounding boxes
-    typedef std::vector<ConstrIconBB> ConstrIconBBVec;
 
     /// drawConstraintIcons() without its guard: may throw
     void drawConstraintIconsImpl();
@@ -641,10 +639,28 @@ protected:
     /// Renders an icon for a single constraint and sends it to Coin
     void drawTypicalConstraintIcon(const constrIconQueueItem &i);
 
-    /// Combines multiple constraint icons and sends them to Coin
-    void drawMergedConstraintIcons(IconQueue &&iconQueue);
+    /// Where an icon is: its world anchor, its offset in SoZoomTranslation
+    /// units, and a further offset in pixels (SoZoomTranslation::pixelOffset)
+    struct IconPlace
+    {
+        SbVec3f anchor;
+        SbVec3f offset;
+        SbVec2f pixels;
+    };
+    /// Icon places by constraint and slot
+    typedef std::map<std::pair<int, int>, IconPlace> IconPlaces;
 
-    /// Helper for drawMergedConstraintIcons and drawTypicalConstraintIcon
+    /** Lay out icons that fall on one spot side by side, from the first
+     * one's place: View/ConstraintIconLabelsPerLine to a line, at most
+     * View/ConstraintIconLabelLines lines, the last slot a "+N" for the
+     * rest when they do not fit. Sets each icon's place in \a targets.
+     */
+    void layoutConstraintIcons(IconQueue &&group, IconPlaces &targets);
+
+    /// The "+N" that stands for the icons a layout has no room for
+    QImage renderConstrIconCount(int count, const QColor &color);
+
+    /// Helper for drawTypicalConstraintIcon
     QImage renderConstrIcon(const QString &type,
                             const QColor &iconColor,
                             const QStringList &labels,
@@ -662,7 +678,6 @@ protected:
                             int labelsPerLine = 0);
 
     /// Copies a QImage constraint icon into a SoImage*
-    /*! Used by drawTypicalConstraintIcon() and drawMergedConstraintIcons() */
     void sendConstraintIconToCoin(const QImage &icon, SoImage *soImagePtr);
 
     /// Essentially a version of sendConstraintIconToCoin, with a blank icon

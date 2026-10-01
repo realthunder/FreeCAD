@@ -10,10 +10,14 @@ constraint group's switchboard was then never enabled: every constraint --
 datum labels, icons -- stayed out of the scene, in every render mode, until
 the first hover ran the highlight pass.
 
-Measured here, with the icons of 1400 Horizontal constraints on one spot:
+Icons on one spot are no longer merged but laid out side by side, with a
+"+N" past the default 30 slots (tests/gui/sketch-icon-layout.py); the
+constraints must still all be in the scene.
+
+Measured here, with the icons of 5000 Horizontal constraints on one spot:
 - right after entering edit, with nothing hovered, the Distance label is in
   the scene the view draws;
-- so is the merged icon, at most 32767 pixels wide.
+- so is the "+N" that stands for the icons not drawn.
 
 Scored against the tree before the change: no label, no icon reachable.
 """
@@ -105,14 +109,15 @@ def inspect():
         labels = reachable(group, "SoDatumLabel")
         check("right after entering edit, the Distance label is in the scene",
               len(labels) == 1, "%d labels" % len(labels))
-        # A merged icon names its constraints in the SoInfo beside it.
-        merged = 0
+        # The "+N" names the constraints it stands for in the SoInfo beside
+        # it: all but the 29 icons drawn (the default 10 per line, 3 lines).
+        rest = 0
         for info in reachable(group, "SoInfo"):
             text = info.string.getValue().getString()
             if text:
-                merged = max(merged, text.count(",") + 1)
-        check("and so is the merged icon, of all %d Horizontal constraints" % N,
-              merged == N, "largest merged icon: %d" % merged)
+                rest = max(rest, text.count(",") + 1)
+        check("and so is the \"+N\" of the %d Horizontal icons not drawn" % (N - 29),
+              rest == N - 29, "largest: %d" % rest)
         FreeCADGui.activeDocument().resetEdit()
     except Exception:
         note("ABORT:\n" + traceback.format_exc())

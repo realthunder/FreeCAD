@@ -436,15 +436,15 @@ fc_add_gui_test(GuiSketchMergedIconOverflow_tests_run
                 sketch-merged-icon-overflow.py
                 --timeout 300)
 
-# A merged constraint icon shows ten labels and a "+N" that picks the rest.
+# Icons on one spot pick one constraint each, and a "+N" picks the rest.
 fc_add_gui_test(GuiSketchMergedIconLabels_tests_run
                 sketch-merged-icon-labels.py
                 --timeout 300)
 
-# A merged constraint icon gathers the icons near its own, not a chain of
-# neighbours however far it runs.
-fc_add_gui_test(GuiSketchIconGroupBounded_tests_run
-                sketch-icon-group-bounded.py
+# Constraint icons on one spot are laid out side by side, a "+N" past the
+# slots the settings give them.
+fc_add_gui_test(GuiSketchIconLayout_tests_run
+                sketch-icon-layout.py
                 --timeout 300)
 
 # An SoImage is drawn pixel for pixel in mode 3, as glDrawPixels does. The

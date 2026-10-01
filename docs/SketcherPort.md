@@ -2910,25 +2910,42 @@ node the merge was drawn on). Guarded by
 spot, swept with the pick probe: the icon picks 50, 29 labels one each,
 one box the other 21; set to 5 and 2 during the edit, 9 and a "+41").
 
-The pick probe takes the box a hover takes (`65545338e4`).
-`detectPreselection()`'s `preselect=false` also meant "every box within
-the pick radius", the answer `getElementPicked()` wants for the pick
-list, so between two wrapped lines the probe named both where a hover
-takes the nearest; dozens of spots in that test picked 2-4 labels.
-`nearestConstraint` now carries that choice and only `getElementPicked()`
-turns it off. And `drawConstraintIcons()` reports an exception and
-returns (`1744c224a1`), so a throw there can no longer skip
-`updateColor()` and hide every constraint; checked by forcing one in a
-scratch build.
+`drawConstraintIcons()` reports an exception and returns (`1744c224a1`),
+so a throw there can no longer skip `updateColor()` and hide every
+constraint; checked by forcing one in a scratch build.
 
-The icon grouping is no longer transitive: an icon joins a group when it
-is within the merge distance of the icon the group starts from (where
-the merged image is drawn), not of any member, in one pass instead of a
-rescan after every join. A group spans at most twice the distance.
-Sketch028 fitted: 32 merged icons of 1320 constraints, the largest 154
-(one icon of 1321 in s111). Guarded by
-`tests/gui/sketch-icon-group-bounded.py` (200 lines 3 px apart: 50 icons
-of 4, 9 px wide; before, one icon of 200 spanning 542 px).
+**Icons on one spot are laid out, not merged** (s112, user ruling: rid of
+the merge, but place the icons as if they merged, keep the two settings,
+and a "+N" for what does not fit). A merged image has one material, so a
+hover could not colour one constraint of it and its colours were baked
+into its pixels -- in the way of a per-view constraint highlight. Now each
+constraint keeps its own icon. A group -- the icons within the merge
+distance of the one it starts from, no longer a transitive chain -- is
+laid out from that first icon's place, ordered by type then number:
+View/ConstraintIconLabelsPerLine to a line, at most
+View/ConstraintIconLabelLines lines (the Display page calls them icons per
+line and lines now), an eighth of an icon apart. Past that the last slot
+is a "+N" drawn in the first left-over icon's node, whose SoInfo names
+every left-over constraint, so a click on it picks them through the
+ordinary list in the SoInfo; the left-overs' own images are cleared.
+
+The layout offset is in pixels: `SoZoomTranslation::pixelOffset` (new),
+turned into model units per render on the Coin path and carried by
+`SoFCZoomOffsetElement` to the image quad in mode 3. Put in zoom units (a
+50th of the view's height) instead, the grid stretched or overlapped once
+the view was resized after the layout. The layout writes the icon's
+translations, which `draw()` owns, so the view provider keeps what it
+wrote (`iconLayout`) and lays out again from `draw()`'s values. Gone with
+the merge: the merged-box pick, its nearest-or-union choice
+(`65545338e4`, which only served it) and the transitive-chain fix's
+merged groups (`576ff93c00`).
+
+Guarded by `tests/gui/sketch-icon-layout.py` (50 named Horizontal on one
+spot: 29 icons and a "+21", none overlapping, every constraint drawn or in
+the "+N" once; 9 and a "+41" at 5 and 2 -- before, one image naming all 50),
+`sketch-merged-icon-labels.py` (each icon picks its own constraint, the
+"+N" the rest, no spot two -- before, the icon picked all 50) and
+`sketch-merged-icon-overflow.py` (5000 on one spot: the "+4971").
 
 Guarded by `tests/gui/sketch-highlight-view.py` (a hover writes no node
 of the edit graph; the sets hold the selection only; the pointer's

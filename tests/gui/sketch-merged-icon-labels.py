@@ -1,38 +1,24 @@
-"""A merged constraint icon wraps its labels, and a "+N" stands for the rest.
+"""Icons on one spot are picked one by one, and a "+N" picks the rest.
 
-Constraint icons on one spot of the screen are merged into one image: a row
-per constraint type, the icon and then the label of every constraint in the
-group, in one line. Nothing bounded the line: the grouping is transitive (an
-icon joins when it is near ANY member), so on a big sketch seen whole a
-whole region is one group -- and an unnamed constraint of a single-icon type
-still reserved a ", " of width for its empty label. Sketch028's merged icon
-was 44879 pixels wide, nearly all of it blank.
-
-Now empty labels take no room, and a row wraps its labels onto lines of
-View/ConstraintIconLabelsPerLine (10) and shows at most
-View/ConstraintIconLabelLines (3) of them; past that the last slot is "+N",
-whose box picks the constraints it stands for. The icon still picks every
-constraint of its type in the group.
+Constraint icons on one spot of the screen were merged into one image: a row
+per constraint type, the icon and then every constraint's label. Picking it
+took a box per label, and the icon picked every constraint of its type.
+Now each constraint keeps its own icon, laid out side by side from the
+first one's place (tests/gui/sketch-icon-layout.py):
+View/ConstraintIconLabelsPerLine (10) to a line, at most
+View/ConstraintIconLabelLines (3) lines, and past that a "+N" that picks
+the constraints it stands for.
 
 Measured here with 50 named Horizontal constraints on one spot, through the
-hover pick (SketcherGui.getActiveSketchPreselection) swept over the icon:
-- with the defaults: the icon picks all 50, 29 labels pick one each, and
-  one box picks the other 21 -- the "+21";
-- set to 5 per line and 2 lines during the edit: 9 labels, and a "+41".
+hover pick (SketcherGui.getActiveSketchPreselection) swept over the icons:
+- with the defaults: 29 icons pick one constraint each, and the "+21" the
+  other 21;
+- set to 5 per line and 2 lines during the edit: 9 icons, and a "+41";
+- no spot picks two icons at once.
 
-Along the way, two picking defects wrapping made common: a click inside one
-label also took the labels within the pick radius of it -- the next line up
-and down -- and a blank spot of the icon (a short line's ragged end) picked
-the constraint whose node the merge happened to be drawn on.
-
-The probe takes the box a hover takes: a spot outside every box but within
-the pick radius of two -- between two lines of labels -- picks the nearest.
-It used to take both, the pick list's answer, so a spot a hover gave one
-label came back as two.
-
-Scored against the tree before (one line, ten labels): 10 labels picked one
-each and the settings changed nothing -- three checks fail. Against the tree
-before the cap: every label picked one, and no box picked the rest.
+Scored against the tree with merged icons: the icon picked all 50 and spots
+between wrapped lines picked two labels or more. Against the tree before
+the label cap: every label picked one, and no box picked the rest.
 """
 import os
 import traceback
@@ -122,14 +108,13 @@ def picks():
 def judge(tag, shown):
     sizes = picks()
     note("%s: pick sets by size: %s" % (tag, sizes))
-    check("%s: the icon picks all %d" % (tag, N), N in sizes, sizes)
     singles = sizes.count(1)
     note("%s: single picks name %s" % (tag, state["singles"]))
-    check("%s: %d labels pick one constraint each, and no more do" % (tag, shown),
+    check("%s: %d icons pick one constraint each, and no more do" % (tag, shown),
           singles == shown, "%d single picks" % singles)
-    check("%s: one box picks the other %d" % (tag, N - shown), (N - shown) in sizes, sizes)
-    check("%s: no spot picks two boxes at once" % tag,
-          set(sizes) <= {1, N - shown, N}, sizes)
+    check("%s: the \"+%d\" picks the rest" % (tag, N - shown), (N - shown) in sizes, sizes)
+    check("%s: no spot picks two icons at once" % tag,
+          set(sizes) <= {1, N - shown}, sizes)
 
 
 def sweep():

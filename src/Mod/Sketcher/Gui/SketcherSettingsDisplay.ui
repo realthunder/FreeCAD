@@ -373,7 +373,7 @@ Supports all unit systems except 'US customary' and 'Building US/Euro'.</string>
       <item row="13" column="0">
        <widget class="QLabel" name="labelIconLabelsPerLine">
         <property name="text">
-         <string>Merged icon labels per line</string>
+         <string>Icons on one spot, per line</string>
         </property>
         <property name="buddy">
          <cstring>ConstraintIconLabelsPerLine</cstring>
@@ -383,7 +383,7 @@ Supports all unit systems except 'US customary' and 'Building US/Euro'.</string>
       <item row="13" column="1">
        <widget class="Gui::PrefSpinBox" name="ConstraintIconLabelsPerLine">
         <property name="toolTip">
-         <string>Constraint icons that fall on the same spot are merged into one, followed by the constraints' numbers. This many numbers go on a line before the next line starts.</string>
+         <string>Constraint icons that fall on the same spot are laid out side by side from there. This many go on a line before the next line starts.</string>
         </property>
         <property name="minimum">
          <number>1</number>
@@ -405,7 +405,7 @@ Supports all unit systems except 'US customary' and 'Building US/Euro'.</string>
       <item row="14" column="0">
        <widget class="QLabel" name="labelIconLabelLines">
         <property name="text">
-         <string>Merged icon label lines</string>
+         <string>Icons on one spot, lines</string>
         </property>
         <property name="buddy">
          <cstring>ConstraintIconLabelLines</cstring>
@@ -415,7 +415,7 @@ Supports all unit systems except 'US customary' and 'Building US/Euro'.</string>
       <item row="14" column="1">
        <widget class="Gui::PrefSpinBox" name="ConstraintIconLabelLines">
         <property name="toolTip">
-         <string>The most lines of numbers a merged constraint icon shows. Past that, the last one reads "+N" for the rest, and picks them.</string>
+         <string>The most lines of icons laid out on one spot. Past that, the last one reads "+N" for the rest, and picks them.</string>
         </property>
         <property name="minimum">
          <number>1</number>
