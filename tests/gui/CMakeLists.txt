@@ -441,6 +441,11 @@ fc_add_gui_test(GuiSketchDatumLabelPick_tests_run
                 sketch-datum-label-pick.py
                 --timeout 240)
 
+# A new sketch's vertex size is the shape point size preference.
+fc_add_gui_test(GuiSketchNewPointSize_tests_run
+                sketch-new-point-size.py
+                --timeout 120)
+
 # A merged constraint icon wider than 32767 pixels wrapped Coin's image size
 # negative; the exception left draw() before it enabled the constraints, so
 # none showed on entering edit until a hover.

@@ -713,7 +713,11 @@ ViewProviderSketch::ViewProviderSketch()
     sPixmap = "Sketcher_Sketch";
     LineColor.setValue(1,1,1);
     PointColor.setValue(1,1,1);
-    PointSize.setValue(4);
+    // A new sketch's vertices follow the shape point size preference, and
+    // are 4 pixels where it was never set (upstream c14d6f8848).
+    PointSize.setValue(App::GetApplication()
+                           .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
+                           ->GetInt("DefaultShapePointSize", 4L));
 
     xInit=0;
     yInit=0;
