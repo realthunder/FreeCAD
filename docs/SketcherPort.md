@@ -2975,9 +2975,43 @@ Guarded by `tests/gui/sketch-constraint-highlight-view.py`: preselecting a
 label, an icon and a coincidence leaves the edit graph's nodes alone; the
 label's text and the icon take the preselection colour, the coincident
 point too; with two views, the pointer over the icon colours it in that
-view and not the other. (A datum label picks only within about a model
-unit of its line in one view, and not at all after tiling two views -- not
-chased; the two-view check uses the icon.)
+view and not the other. The two-view check uses the icon, written while a
+datum label seemed not to pick after tiling two views.
+
+That was two holes in the label's pick box (`c4f305c018`), both in
+`SoDatumLabel`, neither about views. The distance, diameter and angle
+boxes were emitted as a QUAD in the corner order lower-left, upper-left,
+lower-right, upper-right -- a bowtie: Coin cuts a quad into (v0,v1,v2) and
+(v0,v2,v3), and the triangle from the upper corners down to the centre
+never picked. The probe point was the label's centre, the apex of that
+hole, in every view. Same order as a TRIANGLE_STRIP now, as upstream emits
+it since #29904. And a diameter's bounding box held only points on its
+dimension line: no height. Coin culls a ray pick by a shape's cached
+bounding box only while that cache is valid, which depends on what
+traversed last, so the number picked 17 pixels high in one run and 10 --
+the pick radius around the line -- in the next. Its text corners are in
+the box now. `tests/gui/sketch-datum-label-pick.py` sweeps each label pixel
+by pixel with the bounding boxes cached for the camera (a
+`SoGetBoundingBoxAction` over the render manager's scene graph before each
+probe): the hits fill their rectangle, and it is the size of the text
+(`QFontMetrics` of the label's font). Before: fill 0.74-0.77; the diameter
+10 pixels high.
+
+A preselected or selected constraint also highlighted the sketch's own
+shape (`5451ba3327`). `getDetailPath("ConstraintN")` fell through to the
+Part view provider, found no element of that name and resolved to the
+whole object; in mode 3 the edit keeps the shape under its root, hidden
+per view, so the main highlight slot drew it for nothing. Nothing showed
+in the editing view (0 changed pixels at the vertices the constraint does
+not touch). The "rings" on the endpoints a smoothed crop suggested were
+the preselected extension lines, drawn on top, crossing the endpoint dots.
+A constraint name resolves to no path now.
+
+`renderConstrIcon` lost the merged icon's parameters -- a label list with
+a colour each, label boxes, the text's descent, the per-line wrap
+(`d62c877aff`); every caller passes one label since icons on one spot are
+laid out rather than merged. The icon images hash the same before and
+after.
 
 Guarded by `tests/gui/sketch-highlight-view.py` (a hover writes no node
 of the edit graph; the sets hold the selection only; the pointer's
