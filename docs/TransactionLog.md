@@ -10069,3 +10069,102 @@ Commit: fork `7b4c0fbbf7`.
 **Gates:** Python 2972 OK (52 skipped, 6 expected failures), ctest 850/850,
 the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14; the fork's thickness
 suite PASS 50, XFAIL 2.
+
+### 27.95 Thickness with a fillet removed: a curved face tangent to its neighbours (user, 2026-10-01)
+
+The user, after 27.94: keep chasing the failing thickness cases. First on
+the list, a fillet removed outward -- 27.93 left the tube and corner
+constructions gated to planar removed faces.
+
+The filleted box of 27.93 (10 x 8 x 6, vertical edges r=2, thickness 1),
+with one of the four fillets removed. Before: outward an exception
+(`BRep_Tool:: no parameter on edge` on two fillets, `ConstructionError` on
+the other two), inward a valid solid of 647.5624, more than the input's
+459.3982. Upstream fails both ways.
+
+**Outward, with the gate lifted** the result was invalid, 449.4512 with 53
+faces. The tubes (area 10.941, an arc of 104.48 deg on the r=1 circle) and
+the four corners came out right; what broke was the removed face itself.
+Its surface is a cylinder, so the loop on it took the periodic path -- the
+exhaustive search and the seam wires -- and that keeps every closed wire
+that is not pruned as a seam's: fifteen faces on the cylinder, the removed
+fillet's own outline among them, one of area -33.85 with six wires, and no
+bottom strip. But every edge on it lies within the fillet's quarter turn
+(u 4.71 to 6.28): there the (u, v) is a chart of the whole network, as a
+plane's is.
+
+**Fixed** (fork, `BRepAlgo_Loop::FindLoop`): a periodic face whose edges all
+lie within one period -- sampled, short of a period by a tenth at least --
+none of them a seam, and with no degenerated edge, is sorted as a face that
+is not periodic: the angle walk of 27.94, then `SplitWires`. Outward the
+result is then valid at 405.9034, 42 faces, as worked out by hand.
+
+**Inward, with the gate lifted**, the build failed (`StdFail_NotDone`). Not
+ill-posed after all -- 27.93 judged that with the neighbours stretched to the
+removed face, where their skins cover the whole arc; with the tubes, the
+cavity reaches the fillet between the two tubes' edges (29 deg in from each
+tangent edge). The floor's offset (z=1) is stretched to the fillet's
+cylinder, which it cuts in a whole circle; `ExtentFace` bounds the circle
+where it meets the walls' offsets (x=1, y=1) and takes the far crossing,
+(1, 3.732), the long way round. The tubes cut it at the right points, but
+beyond them the circle crosses the wall's offset inside the wall, and the
+floor's loop gets a second face there (area 1.930, at each end, top and
+bottom) besides the cavity's section (48.095, the hand value). Its circle
+pieces belong to no other face, and `Deboucle3D` drops a shell with a free
+edge -- the only one.
+
+**Fixed** (fork, `BRepOffset_MakeOffset::SelectShells`): in a thick solid, a
+face with an edge no other face of its shell has (and not one the shell may
+leave free) hangs on the shell; it is dropped, then any this leaves hanging,
+as long as the shell keeps a piece of a removed face -- the rim. What is left
+is kept if nothing hangs any more; otherwise the shell goes on to
+`Deboucle3D` as it came. Kept to thick solids and to a shell with the rim so
+that a parasitic shell of an offset -- the loops `Deboucle3D` exists to throw
+out -- cannot lose its hanging faces and pass as closed. In the sweep it
+keeps a pruned shell in exactly the eight inward fillet runs; in 24 others it
+runs out of rim faces and hands the shell back unchanged.
+
+With both, the gate in `ToContext` is gone: the tube and corner
+constructions apply to any removed face tangent to a neighbour.
+
+**Worked out by hand.** Outward (Steiner, as 27.93): the whole skin 422.7244,
+less the fillet's slab (5pi/4 x 6 = 23.5619) and the two quarter tori over
+its arcs (pi^2/4 + pi/6 = 2.9910 each), plus the two tubes -- a sector of
+104.48 deg of the r=1 disc less the segment the r=2 arc cuts off, 0.8693 x 6
+= 5.2156 each -- and four sphere pieces (the quarter ball above the tube's end
+and beyond the convex tube's, outside the cylinder: 0.5729 each, by
+integrating the same section over the height): 405.9034. Inward: the input
+less the cavity, whose section is the shrunk rounded box with the removed
+corner replaced -- by Green's theorem round the x=1 wall, the tube arc, the
+fillet's arc between the tubes' edges, the other tube arc and the y=1 wall,
+the corner region is 9.7385 against the regular corner's 8.7854 -- 48.0947
+over the height 4: 267.0193. Both come out to the fourth decimal, on all
+four fillets, intersection off and on.
+
+**Checked.** The sweep: only the 16 fillet runs changed, all to the hand
+values; the Arc join right in 149 of 150 with intersection off and 149 on
+(upstream 106, 107), the Intersection join unchanged (137, 137); better than
+upstream in 138 runs, worse in none. `BREPALGO_LOOP_WALK=check` over the
+sweep compares the walk with the search plus `SplitWires` on 4577 faces --
+820 more than in 27.94, the periodic faces now taken as charts among them -- all the
+same, and the sweep's results the same run for run either way. A first
+version dropped hanging faces in `Deboucle3D` itself, for every offset: the
+sweep the same, but kept narrow for the reason above.
+
+**Left.** The Arc join's last failure in scope is the holed cone's top
+inward (ill-posed: the wall is thinner than twice the thickness). The
+Intersection join builds no tubes (`ContextIntByInt`): the filleted box's
+end and side faces inward fail, and a fillet face either way -- outward
+returns the input unhollowed, inward throws.
+
+**Tests.** FreeCAD `parttests.regression_tests.
+test_thickness_with_a_curved_face_tangent_to_its_neighbours` (two cases).
+The fork's suite: `filletbox_fillet_in`, `filletbox_fillet_out`.
+
+Commits: fork `36d34e9d05` (the loop on a chart), `badcca2a1d` (hanging
+faces), `c97bdbdbca` (the gate lifted), `7de830e6a2` (the suite),
+`c4be5548f9` (its README); `1c5b84a523` (the FreeCAD test).
+
+**Gates:** Python 2973 OK (52 skipped, 6 expected failures; +1), ctest
+850/850, the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14; the fork's
+thickness suite PASS 52, XFAIL 2.
