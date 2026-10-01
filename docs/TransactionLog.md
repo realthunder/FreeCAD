@@ -10746,3 +10746,87 @@ Commits: fork `3835fa1a4d` (the fix), `0914bb292c` (the suite),
 
 **Gates:** Python 2978 OK (52 skipped, 6 expected failures; +1), ctest
 856/856; the fork's thickness suite PASS 82. GUI checks not run.
+
+### 27.103 Thickness: pockets left in pieces (user, 2026-10-01)
+
+The user, "continue as planned": the first of 27.102's candidates. Removing
+the face round a pocket's rim leaves the pocket's walls and floor as a piece
+of their own (27.101), and the fork built that piece wrong, so the per-piece
+check refused the whole: `boxhole2` Face3 and Face7, `pocket` Face3,
+`cylpocket` Face2, `cylboss` Face2 in the sweep.
+
+**The case.** A box 10 x 10 x 5 with a blind hole of radius 2, 3 deep, its
+top removed. Two probes: the piece as 27.101 built it -- the whole shape with
+the outside's faces removed as well -- and the piece as an open shell, the
+hole's wall and floor with the top beside them, the top removed. Upstream
+gets the open shell right (10 pi outward, 71.6543 inward) and the first form
+wrong too: it brings the removed outside back as a second shell (571.65,
+invalid). The fork got both wrong.
+
+**Bisecting** over the fork's chain found the open shell wrong already at the
+port of the chain, `1789444318`, so the fault was traced, not bisected. The
+offset faces are right; the removed top's piece is not. Upstream's and the
+fork's loops on the top are fed the same edges -- the hole's rim, its offset,
+and the top's square boundary, stretched -- and differ in what they make of
+them: upstream's oriented walk cannot chain the four stretched edges (their
+orientations disagree) and is left with the rim and the offset rim, the ring
+between them; the fork's walk, which takes edges either way, closes the
+square, and the fork's restrictor, which nests wires by containment
+(orientation correction on), alternates square / rim / offset rim into "square
+with a hole" and "disc inside the offset rim". The ring is never built.
+
+**Causes and fixes** (fork, `TKOffset`):
+
+1. *A removed face's free edges in its loop* (`BRepOffset_Inter3d`). An edge
+   of a removed face that no other face shares -- the rim of an open shell
+   -- was stretched and added to the face's loop as an edge between two
+   removed faces is. It bounds no material. `ContextIntByArc` and
+   `ContextIntByInt` now leave such edges out (`MapFreeBounds`: an edge on
+   one removed face only, no ancestor among the faces that stay, not a seam
+   or degenerate; the analysis itself knows only the faces that stay). On a
+   closed shape every edge has two faces: nothing changes. The open shell
+   comes out at upstream's values in every mode.
+2. *The ancestors of a free rim* (`BRepOffset_MakeOffset_1.cxx`,
+   `FindInvalidEdges`). With the Intersection join and intersection on, the
+   outside's open shell (walls, bottom, the top removed) threw
+   `NoSuchObject`: an image edge's origin on the top's free rim, asked of the
+   analysis, which does not know it. Upstream's call, upstream's lines; it is
+   reached in the fork because the fork puts removed faces in that face list
+   (27.102). It has no ancestor among the faces that stay and adds none.
+3. *A piece is an open shell* (`MakeThickSolidByPieces`): its faces and the
+   removed faces sharing an edge with them, not the whole shape with the
+   other pieces removed, which brought the far removed faces back as a shell.
+   Per-face offsets are set on the piece's own faces only.
+
+**Hand values.** The blind hole, top removed: outward two solids, the
+outside with arcs 300 + 15 pi + 2 pi / 3 = 349.2183 and the hole's pot
+10 pi (the Intersection join 364 + 10 pi); inward the pot sits on the floor's
+plate and they fuse, 244 + 19 pi + (pi^2 / 2)(2 + 4 / (3 pi)) = 315.6543
+(244 + 24 pi with the Intersection join). Every run the sweep newly answers --
+68 of them: `boxhole2` Faces 3 and 7, `pocket` Face3, `cylpocket` Faces 1, 2
+and 4, `cylboss` Faces 1, 2 and 4, each join, both ways -- was worked out by
+hand and matches; e.g. `cylboss` with the boss's side removed, outward,
+Intersection join 150 pi, Arc join 150 pi less two rims of 13 pi - (pi^2 /
+2)(6 + 4 / (3 pi)) each, 452.964. A pocket's piece inward can float in the
+cavity, apart from the walls (`pocket` Face3: 280 and 112.2271, a compound).
+
+**Tests.** The fork's suite: `blind_top_out/in`,
+`blind_top_in_inter_join`, `blind_wall_out_join`, `blind_pot_shell_out/in`
+(the open shell alone), `pocket_top_in`, `pocket_top_out_inter_join`,
+`cylpocket_top_out_join`, `cylboss_shoulder_in`; all ten fail on the fork
+before. PASS 92. FreeCAD: `RegressionTests.test_thickness_of_a_pocket_left_in_pieces`,
+and `test_thickness_of_faces_left_in_pieces` no longer expects the blind hole
+refused.
+
+**Sweep.** 712 runs: in scope unchanged (the classifier's 149 of 150 in
+every mode, 27.100's sealed void counted wrong by it, as before). 68 runs
+out of scope answered, all by hand as above. The one refusal left in the
+sweep is the torus's face (8 runs).
+
+Commits: fork `5f7ed8024a` (the free rim, the guard), `53cef7005e` (pieces as
+open shells), `1371acb6a2` (the suite), `839a3e4606` (pictures, Thickness.md);
+FreeCAD (the test and this section).
+
+**Gates:** Python 2979 OK (52 skipped, 6 expected failures; +1), ctest
+856/856; the fork's thickness suite PASS 92. GUI checks not run: nothing on
+the GUI side changed.

@@ -707,8 +707,7 @@ class RegressionTests(unittest.TestCase):
         result is a compound of the two (docs/TransactionLog.md sec 27.101;
         refused before, as upstream refuses it). Where the cylinder is
         shorter than twice the thickness the inward discs overlap and fuse
-        into the whole cylinder. A piece that is a pocket inside the shape
-        is not built right yet and stays refused."""
+        into the whole cylinder."""
         cyl = Part.makeCylinder(4, 20)
         for offset in (1.0, -1.0):
             for inter in (False, True):
@@ -725,9 +724,34 @@ class RegressionTests(unittest.TestCase):
         self.assertEqual(result.ShapeType, "Solid")
         self.assertTrue(result.isValid())
         self.assertAlmostEqual(result.Volume, 24 * math.pi, places=3)
+
+    def test_thickness_of_a_pocket_left_in_pieces(self):
+        """A box with a blind hole, its top removed: the hole's wall and floor
+        are a piece of their own beside the outside's. They were refused
+        (docs/TransactionLog.md sec 27.103): a piece built as the shape with
+        the other piece removed kept the outside as a shell of its own, and
+        the top's free rim, stretched into the top's loop, closed round the
+        hole's rim so the ring between it and the offset rim was never built.
+        Outward the result is two solids, the outside with arcs and the
+        hole's pot; inward the pot sits on the floor's plate and they fuse.
+        Each volume is worked out by hand."""
         blind = Part.makeBox(10, 10, 5).cut(Part.makeCylinder(2, 3, Vector(5, 5, 2)))
-        with self.assertRaises(Exception):
-            blind.makeThickness([blind.Faces[2]], 1.0, 1e-7, False, False, 0, 0)
+        top = [blind.Faces[2]]
+        result = blind.makeThickness(top, 1.0, 1e-7, False, False, 0, 0)
+        self.assertEqual(result.ShapeType, "Compound")
+        self.assertTrue(result.isValid())
+        volumes = sorted(s.Volume for s in result.Solids)
+        self.assertEqual(len(volumes), 2)
+        self.assertAlmostEqual(volumes[0], 10 * math.pi, places=3)
+        self.assertAlmostEqual(volumes[1], 300 + 15 * math.pi + 2 * math.pi / 3, places=3)
+        pot = 19 * math.pi + math.pi**2 / 2 * (2 + 4 / (3 * math.pi))
+        for inter, join, expected in ((False, 0, 244 + pot), (True, 2, 244 + 24 * math.pi)):
+            name = "inter=%s, join=%d" % (inter, join)
+            result = blind.makeThickness(top, -1.0, 1e-7, inter, False, 0, join)
+            self.assertEqual(result.ShapeType, "Solid", name)
+            self.assertTrue(result.isValid(), name)
+            self.assertEqual(len(result.Shells), 1, name)
+            self.assertAlmostEqual(result.Volume, expected, places=3, msg=name)
 
     def test_thickness_intersection_join_with_one_face_left(self):
         """The Intersection join where one face stays beside the removed ones:
