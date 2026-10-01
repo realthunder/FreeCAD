@@ -3040,6 +3040,46 @@ the Gui document's `Modified` flag set; `Std_Save` clears both.
 `sketch-hidpi-sizes.py` needs `QT_SCALE_FACTOR=2`, which its ctest
 entry sets and a hand-run loop does not.
 
+### The later rows (session 113): 27 -> 12
+
+The open `ViewProviderSketch.cpp` rows from 2025-07 on, read one at a time
+against the fork's own code, each measured before it was changed.
+
+| row | verdict |
+|---|---|
+| `c14d6f8848`, `0a45527b8b` | **adapted** `983d83aa45`: a new sketch's `PointSize` takes `View/DefaultShapePointSize`, 4 where unset -- read from the group, since `ViewParams`' own default is 2. `sketch-new-point-size.py` (6 with the preference; was 4) |
+| `5961651547` | **adapted** `b1bfb15d5b`: a sketch holding only external geometry is not "Empty sketch". `sketch-empty-message.py` reads the task panel label |
+| `a7b501c95c` | **adapted** `1be540f2a9`: the context menu offers "Change value" for one dimension alone; a Horizontal offered it and the dialog did nothing. `sketch-context-menu-value.py` right-clicks with the selection set |
+| `36786d4794` | **adapted** `bb3b05857f`: deleting solves once (`noSolve` on each delete, the final solve redraws on failure); the dimension tool skips its solve on leaving in mode FIRST. gdb solve counter: a delete 7 -> 2 solves, Escape 1 -> 0. The label-release half is not needed: measured 0 solves here |
+| `00c3422c1f` | **adapted** `ed86b7af3e`: hovering an expression-driven constraint shows the expression as the view's tooltip; one update in `mouseMove`, on the hovering view's widget only (a mirror has none). `sketch-expression-tooltip.py` |
+| `93abfc4fa4` | **adapted** `4e6197113a`: a LIVE CRASH here -- with a sketch in Transform edit every Sketcher tool was active and `Sketcher_CreateLine` segfaulted in `deactivateHandler()`. The gates ask `isInEditMode()`. `sketch-transform-edit-tools.py` |
+| `4bdaa0180a` | **have**: every mode write goes through `setSketchMode`, which calls `updateActions()` |
+| `de3de7624a` | **have**: the fork's internal view is a `ViewProviderPart` with Lighting "Two side" |
+| `e2346dabd6`, `bf009d41e4` | **n/a**: upstream's port of this fork's internal faces, and a fix to its own `SoSketchFaces` node path; the fork resolves faces through `pInternalView` |
+| `16a836743a` | **n/a**: `slotSolverUpdate` has no edit-view gate here |
+| `289411f51c`, `8c1d03ccb4` | **n/a**: an include for a core header change, and a line serving a Core `NavigationStyle` change |
+| `6321ac28a3` | **declined**: the fork draws a drag from the solved sketch (`draw(true)` extracts it), so `moveConstraint` reading the same is what is on screen; reading the object instead measured no faster (about 18 ms a move on 2000 lines, the redraw dominates) |
+
+Left open, each a decision or larger than a row: the face colour default
+(`8a6f859a57`, a taste question on the fork's own `FaceColor`), the
+annotation pick priority (`a2468774d3`, needs a probe of a sketch face on
+a solid face), the broken-external report (`07b2d9973d`, the fork's tree
+tooltip takes an icon tag), the resetEdit lifecycle (`e6d3f9d6db`, needs
+Core's `setAutoCloseOnResetEdit`), and the features `aa785f78d6`,
+`2da7c9ff17`, `35f151d99e`, `8a6872e69d`, `387d25c219`, `9ce1cae190`,
+`5587b48a0f`, `566a724c26`.
+
+**The arc-label "flake" is a clock.** `sketch-arc-labels.py` and
+`sketch-drag-arc-conic.py` fail now and then with a drag that never
+starts. Measured: this WSL2 box's wall clock steps back about 0.97 s every
+32 s; Quarter stamps mouse events with `getTimeOfDay()`, so a press about
+a second after the last reads as 0.2 s after it, and
+`NavigationStyle::processClickEvent` holds it as a double click until the
+release. The rate swings with the phase between a run and the step period
+-- it once made a correct commit look guilty (12 of 12 passed without it,
+then a run without it failed the same way). Not fixed: deciding a double
+click by a monotonic clock read in `processClickEvent` is the candidate.
+
 ## 7a. The constraint-tool hints (session 85)
 
 Thirteen rows, not the eleven the sweep sized: `580d538798`, the commit
