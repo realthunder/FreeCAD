@@ -10882,4 +10882,13 @@ the gates below are on the merged kernel.
 
 **Gates** (merged kernel): Python 2980 OK (52 skipped, 6 expected failures;
 +1), ctest 856/856; the fork's thickness suite PASS 94 unfrozen and frozen.
-GUI checks not run.
+GUI checks not run. Then, at the user's word ("from now on run Test with
+freeze on and off"), unfrozen too: Python 2980 OK (53 skipped) in a home with
+`ImmutableShapeValues=0`, ctest 856/856 with `-j1` -- under `-j6` the
+processes race on `user.cfg` and the setting was gone by the end, so that
+run did not count.
+
+Pictures (the user: "as usual, including the pocket one"): fork `5319514b16`
+-- `sector_outer_arc_input`, pictured for what the call leaves of its input
+(a new `INPUT` kind in `cases.py`: the panels show the input after the
+thickness), and the six 27.103 suite cases not yet pictured.
