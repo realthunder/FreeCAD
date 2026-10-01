@@ -2711,3 +2711,27 @@ length is why a tapered through-all hole of 1/8 or 1/4 fails ("Could not
 revolve sketch"): the taper takes the radius past zero long before the
 end. Clipping a hole's through-all length to the material along its axis
 would speed both ways and fix those -- proposed, not done.
+
+**Through all, clipped (done).** `Hole::throughAllLength()` measures the
+base along the hole's axis, from the profile to just past the far face
+(1% of the material's thickness; never shorter than a hole cut's depth
+plus its diameter). The modelled thread and a tapered bore use it; the
+plain bore keeps `getThroughAllLength()`, because the hole's tool is
+what a pattern copies: clipped, a mirror of a hole in a 5 mm leg into a
+10 mm leg came out blind (it goes through before and after this
+change). A thread copied into thicker material is cut only as deep as
+the original's, the bore still through. A "Dimension" thread longer
+than the clipped length stops there too. Measured, before -> after:
+
+| case | before | after |
+|---|---|---|
+| M6 modelled, 100x100x30 plate | 11.2 s | 1.4 s, same volume |
+| M6 modelled, 1000x1000x10 plate | 125.5 s | 1.1 s, same volume |
+| M6, Dimension thread 200 in 30 mm | 7.8 s | 2.5 s |
+| tapered 85 / 89 deg, plain or threaded | "Could not revolve sketch" | valid |
+| TestHole (23 tests) | 21.7 s | 10.1 s |
+
+Test: `testThroughAllThreadAndTaperStopPastTheMaterial`. PD 318 OK.
+`TestLoft.testTwoFacesAdditiveLoftCase` (from `ddd8c6735a`) is flaky
+on this box with or without the change -- "Resulting shape is not a
+solid" in 4 of 10 runs on HEAD, 6 of 10 with it -- not chased yet.
