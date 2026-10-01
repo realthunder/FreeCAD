@@ -5211,8 +5211,7 @@ void ViewProviderSketch::layoutConstraintIcons(IconQueue &&group, IconPlaces &ta
     for (std::size_t k = 0; k < shown; ++k) {
         const auto &i = group[k];
         QColor color = constrColor(i.constraintId);
-        images.push_back(renderConstrIcon(i.type, color, QStringList(i.label),
-                                          QList<QColor>() << color, i.iconRotation));
+        images.push_back(renderConstrIcon(i.type, color, i.label, i.iconRotation));
         i.infoPtr->string.setValue(QString::number(i.constraintId).toUtf8().data());
     }
     if (shown < group.size()) {
@@ -5280,17 +5279,10 @@ QImage ViewProviderSketch::renderConstrIconCount(int count, const QColor &color)
 }
 
 QImage ViewProviderSketch::renderConstrIcon(const QString &type,
-                                            const QColor &iconColor,
-                                            const QStringList &labels,
-                                            const QList<QColor> &labelColors,
-                                            double iconRotation,
-                                            std::vector<QRect> *boundingBoxes,
-                                            int *vPad,
-                                            int labelsPerLine)
+                                            const QColor &color,
+                                            const QString &label,
+                                            double iconRotation)
 {
-    // Constants to help create constraint icons
-    QString joinStr = QStringLiteral(", ");
-
     QPixmap pxMap;
     std::stringstream constraintName;
     constraintName << type.toUtf8().data() << edit->constraintIconSize; // allow resizing by embedding size
@@ -5305,84 +5297,32 @@ QImage ViewProviderSketch::renderConstrIcon(const QString &type,
     font.setBold(true);
     QFontMetrics qfm = QFontMetrics(font);
 
-    // The labels in lines of labelsPerLine, each line below the last; the
-    // first sits on the icon's base as a single line always has.
-    const int perLine = labelsPerLine > 0 ? labelsPerLine : std::max<int>(1, labels.size());
-    const int numLines = labels.isEmpty() ? 1 : (int(labels.size()) + perLine - 1) / perLine;
-    const int lineStep = qfm.lineSpacing();
-    int labelWidth = 0;
-    for (int first = 0; first < labels.size(); first += perLine) {
-        QString line = labels.mid(first, perLine).join(joinStr);
-        if (first + perLine < labels.size())
-            line += joinStr;
-        labelWidth = std::max(labelWidth, qfm.boundingRect(line).width());
-    }
+    const QRect labelRect = qfm.boundingRect(label);
     // See Qt docs on qRect::bottom() for explanation of the +1
-    int pxBelowBase = qfm.boundingRect(labels.join(joinStr)).bottom() + 1;
-
-    // What the last line hangs below its base: the next row of a merged
-    // icon tucks in under that, as it always has under the one line.
-    if(vPad)
-        *vPad = pxBelowBase;
+    int pxBelowBase = labelRect.bottom() + 1;
 
     QTransform rotation;
     rotation.rotate(iconRotation);
 
     QImage roticon = icon.transformed(rotation);
-    QImage image = roticon.copy(0, 0, roticon.width() + labelWidth,
-                                roticon.height() + pxBelowBase + (numLines - 1) * lineStep);
-
-    // Make a bounding box for the icon
-    if(boundingBoxes)
-        boundingBoxes->push_back(QRect(0, 0, roticon.width(), roticon.height()));
+    QImage image = roticon.copy(0, 0, roticon.width() + labelRect.width(),
+                                roticon.height() + pxBelowBase);
 
     // Render the Icons
     QPainter qp(&image);
     qp.setCompositionMode(QPainter::CompositionMode_SourceIn);
-    qp.fillRect(roticon.rect(), iconColor);
+    qp.fillRect(roticon.rect(), color);
 
     // Render constraint label if necessary
-    if (!labels.join(QString()).isEmpty()) {
+    if (!label.isEmpty()) {
         qp.setCompositionMode(QPainter::CompositionMode_SourceOver);
         qp.setFont(font);
-
-        int cursorOffset = 0;
-
-        //In Python: "for label, color in zip(labels, labelColors):"
-        QString labelStr;
-        QRect labelBB;
-        const int count = std::min<int>(labels.size(), labelColors.size());
-        for (int k = 0; k < count; ++k) {
-            if (k % perLine == 0)
-                cursorOffset = 0;
-            const int base = icon.height() + (k / perLine) * lineStep;
-
-            qp.setPen(labelColors[k]);
-
-            if(k + 1 == labels.size()) // if this is the last label
-                labelStr = labels[k];
-            else
-                labelStr = labels[k] + joinStr;
-
-            // Note: text can sometimes draw to the left of the starting
-            //       position, eg italic fonts.  Check QFontMetrics
-            //       documentation for more info, but be mindful if the
-            //       icon.width() is ever very small (or removed).
-            qp.drawText(icon.width() + cursorOffset, base, labelStr);
-
-            if(boundingBoxes) {
-                labelBB = qfm.boundingRect(labelStr);
-                labelBB.moveTo(icon.width() + cursorOffset,
-                               base - qfm.height() + pxBelowBase);
-                // A glyph box is taller than the line step: cut it to the
-                // step, or a spot between two lines picks both labels.
-                if (labelBB.height() > lineStep)
-                    labelBB.setTop(labelBB.bottom() - lineStep + 1);
-                boundingBoxes->push_back(labelBB);
-            }
-
-            cursorOffset += Gui::QtTools::horizontalAdvance(qfm, labelStr);
-        }
+        qp.setPen(color);
+        // Note: text can sometimes draw to the left of the starting
+        //       position, eg italic fonts.  Check QFontMetrics
+        //       documentation for more info, but be mindful if the
+        //       icon.width() is ever very small (or removed).
+        qp.drawText(icon.width(), icon.height(), label);
     }
 
     return image;
@@ -5392,11 +5332,7 @@ void ViewProviderSketch::drawTypicalConstraintIcon(const constrIconQueueItem &i)
 {
     QColor color = constrColor(i.constraintId);
 
-    QImage image = renderConstrIcon(i.type,
-                                    color,
-                                    QStringList(i.label),
-                                    QList<QColor>() << color,
-                                    i.iconRotation);
+    QImage image = renderConstrIcon(i.type, color, i.label, i.iconRotation);
 
     i.infoPtr->string.setValue(QString::number(i.constraintId).toUtf8().data());
     sendConstraintIconToCoin(image, i.destination);

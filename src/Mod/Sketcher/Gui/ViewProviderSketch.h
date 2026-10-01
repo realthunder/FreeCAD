@@ -685,22 +685,12 @@ protected:
     /// The "+N" that stands for the icons a layout has no room for
     QImage renderConstrIconCount(int count, const QColor &color);
 
-    /// Helper for drawTypicalConstraintIcon
+    /// A constraint icon of the type in the colour, its label (if any) to
+    /// its right in the same colour
     QImage renderConstrIcon(const QString &type,
-                            const QColor &iconColor,
-                            const QStringList &labels,
-                            const QList<QColor> &labelColors,
-                            double iconRotation,
-                            //! Gets populated with bounding boxes (in icon
-                            //! image coordinates) for the icon at left, then
-                            //! labels for different constraints.
-                            std::vector<QRect> *boundingBoxes = nullptr,
-                            //! If not nullptr, gets set to the number of pixels
-                            //! that the text extends below the icon base.
-                            int *vPad = nullptr,
-                            //! Labels per line, the next ones wrapping below;
-                            //! 0 puts them all on one line.
-                            int labelsPerLine = 0);
+                            const QColor &color,
+                            const QString &label,
+                            double iconRotation);
 
     /// Copies a QImage constraint icon into a SoImage*
     void sendConstraintIconToCoin(const QImage &icon, SoImage *soImagePtr);
