@@ -148,6 +148,9 @@ public:
 
     App::Property *Copy(void) const override;
     void Paste(const App::Property &from) override;
+    /// False while the TShapes are not frozen: they are shared, and may be
+    /// edited in place (docs/TransactionLog.md sec 27.99).
+    bool canSaveOffThread() const override;
     unsigned int getMemSize (void) const override;
     //@}
 

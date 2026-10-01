@@ -2478,6 +2478,14 @@ void TransactionLog::ValueTask::captureNow(const CaptureConfig& config)
         isCaptured = true;
         copy.reset();
     }
+    else if (!copy->canSaveOffThread()) {
+        // A value sharing what the main thread may still change in place --
+        // an unfrozen shape (sec 27.99) -- is written now, as committed.
+        // The copy stays: the worker reads only its blob handle
+        // (contentBlob()), and TransactionCopyCache hands it out again.
+        captured = captureValue(config, *copy);
+        isCaptured = true;
+    }
 }
 
 void TransactionLog::writeValues(std::vector<ValueTask>& tasks, std::vector<LogOp>& ops)

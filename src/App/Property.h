@@ -331,6 +331,20 @@ public:
     /// Paste the value from the property (mainly for Undo/Redo and transactions)
     virtual void Paste(const Property &from) = 0;
 
+    /** Whether this value, a Copy(), may be written on another thread.
+     *
+     * The transaction log serialises the copies a commit takes on its
+     * worker (docs/TransactionLog.md sec 27.99). That is safe for a copy
+     * that owns its value outright, which is the default. A copy that
+     * shares data the main thread may still change in place answers false
+     * and is serialised on the main thread as the commit takes it: a shape
+     * whose TShapes are not frozen (ImmutableShapeValues off, or an OCCT
+     * without the flag) shares them with the live value and every other
+     * holder, so the worker would read them while the main thread edits
+     * them -- a crash, or bytes that are not the committed value.
+     */
+    virtual bool canSaveOffThread() const { return true; }
+
     /// Set value by interpolate between two values
     virtual void interpolate(const Property &from, const Property &to, float t) {
         (void)from;

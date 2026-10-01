@@ -1407,6 +1407,16 @@ App::Property *PropertyPartShape::Copy() const
     return prop;
 }
 
+bool PropertyPartShape::canSaveOffThread() const
+{
+    // A frozen value's TShapes are all marked (freeze() marks children
+    // first), and what may still change on them -- the mesher's caches --
+    // is written under the OCCT fork's lock (sec 27.98). Anything else is
+    // shared with whoever else holds it, and may be edited in place.
+    ensureRestored();
+    return _Shape.isNull() || _Shape.getShape().Immutable();
+}
+
 void PropertyPartShape::Paste(const App::Property &from)
 {
     auto prop = Base::freecad_dynamic_cast<const PropertyPartShape>(&from);

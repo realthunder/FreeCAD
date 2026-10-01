@@ -10446,3 +10446,64 @@ tests and this section, one commit).
 **Gates:** Python 2974 OK (52 skipped, 6 expected failures), ctest 854/854
 (+4), the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14; the fork's
 thickness suite PASS 60, XFAIL 2.
+
+### 27.99 The freeze off: an unfrozen shape is written on the main thread (user, 2026-10-01)
+
+The user, after 27.98: fix the log with the freeze off, option 1 of three --
+an unfrozen shape value is captured on the main thread at commit, the way
+links and Python objects already are (`ValueTask::captureNow`, 24.3 and
+24.10). Rejected with it: a deep copy for the worker (dearer than the export
+it would feed), a lock on every TShape (no crash, but the history still
+wrong), the log off whenever the freeze is.
+
+**Why the lock of 27.98 is not enough.** With `ImmutableShapeValues` off --
+or on an OCCT without the flag: upstream, or the frozen 7.7.2 fork -- a
+shape value's TShapes are shared with the live property and with whoever
+else holds them, and nothing stops the main thread editing them in place
+after the commit. The worker then reads them while they change, which is
+27.97's crash, and when it does not crash it logs what they had become by
+the time it got there, not what was committed.
+
+**Fixed.** `App::Property::canSaveOffThread()`, a new virtual, true by
+default: a copy that owns its value may be written by the worker.
+`PropertyPartShape` answers false unless its value is null or its top TShape
+is Immutable -- `freeze()` marks children before their parent, so a marked
+top stands for every sub-shape, and what still changes on a frozen one is
+written under 27.98's lock. `ValueTask::captureNow` captures a copy that
+answers false then and there, on the main thread, as the commit takes it --
+before values, after values (25.4) and the copies `resolvePending` makes
+alike. The copy is kept, unlike a Python object's: the worker reads only
+its blob handle (`contentBlob()`, a shape notes no blob of its own), and
+`TransactionCopyCache` hands it out again as the next before value, with
+the hash the worker wrote it under.
+
+**What it costs.** Nothing with the freeze on, which is the default on the
+fork: frozen values keep the worker path. With it off each changed shape is
+exported on the main thread at commit -- 27.98 measured that export at 5.5
+ms for a box less 196 pins and 28.4 ms for 900. A shape that has not changed
+since it was saved costs a hash: its copy holds the file and the capture
+names it (the BlobRef mode, 20.2).
+
+**Test** (FreeCAD gtest, `TransactionLogShape.cpp`):
+`anUnfrozenShapeIsLoggedAsCommitted` -- the freeze off, the worker held on
+a gate posted to the file's log core, a box committed into a feature's
+Shape, one of its vertices moved in place with `BRep_Builder`, the gate
+opened: the logged after value must be the committed geometry, byte for
+byte, and a capture taken after the move must differ (the test is
+sensitive). Without the fix it failed three runs of three on the bytes.
+`aFrozenShapeIsSavedOffThread`: a null value and a frozen one stay with the
+worker.
+
+**Left.** The direct `ChangeCurves()` edit and the unlocked `BRep_Tool`
+readers of 27.98 stand. A property type that shares mutable data and is
+not a shape still answers true; none is known.
+
+Commit: FreeCAD (the virtual, the shape's answer, `captureNow`, the tests
+and this section, one commit); no fork change.
+
+**Gates:** Python 2974 OK (52 skipped, 6 expected failures); with
+`ImmutableShapeValues=0` in a fresh `user.cfg` and the log on, also 2974 OK,
+53 skipped -- the extra one `testAFeatureRefusedAFrozenInputRunsOnACopy`,
+which skips when nothing is frozen -- every changed shape of the suite
+written on the main thread; ctest 856/856 (+2); the GUI checks RC 15, BC 27,
+VC 18, PC 28, FC 16, VW 14; the fork's thickness suite PASS 60, XFAIL 2.

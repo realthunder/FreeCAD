@@ -6,8 +6,14 @@
 
 #include "gtest/gtest.h"
 
+#include <future>
+
 #include <BRepGProp.hxx>
+#include <BRepPrimAPI_MakeBox.hxx>
+#include <BRep_Builder.hxx>
 #include <GProp_GProps.hxx>
+#include <TopExp_Explorer.hxx>
+#include <TopoDS.hxx>
 
 #include <App/Application.h>
 #include <App/Document.h>
@@ -18,6 +24,8 @@
 #include <Base/FileInfo.h>
 #include <Mod/Part/App/FeatureCompound.h>
 #include <Mod/Part/App/FeaturePartBox.h>
+#include <Mod/Part/App/PartFeature.h>
+#include <Mod/Part/App/PartParams.h>
 #include <Mod/Part/App/PrimitiveFeature.h>
 #include <src/App/InitApplication.h>
 
@@ -378,4 +386,80 @@ TEST_F(TransactionLogShapeTest, coldUndoReadoptsADeltaBlob)
     ASSERT_TRUE(_doc->redo());
     EXPECT_NEAR(volumeOf(box), 3000.0, 1e-6);
     Base::FileInfo(path).deleteFile();
+}
+
+// Sec 27.99: with the freeze off a shape value shares its TShapes with
+// whoever else holds them, and they may be edited in place. Its copy is
+// written as the commit takes it, on the main thread -- not by the worker,
+// which would read the TShapes while they change (the crash of sec 27.97)
+// and log whatever they had become by then.
+TEST_F(TransactionLogShapeTest, anUnfrozenShapeIsLoggedAsCommitted)
+{
+    struct Freeze
+    {
+        Freeze() { Part::PartParams::setImmutableShapeValues(false); }
+        ~Freeze() { Part::PartParams::removeImmutableShapeValues(); }
+    } freezeOff;
+    _doc->openTransaction("feature");
+    auto feat = static_cast<Part::Feature*>(_doc->addObject("Part::Feature", "Feature"));
+    _doc->commitTransaction();
+    auto log = _doc->getTransactionLog();
+    ASSERT_TRUE(log);
+
+    TopoDS_Shape box = BRepPrimAPI_MakeBox(10, 10, 10).Shape();
+    // The worker is held until the edit below is done, so a value it
+    // wrote itself would have the moved vertex.
+    struct Gate
+    {
+        std::promise<void> open;
+        ~Gate()
+        {
+            try {
+                open.set_value();
+            }
+            catch (const std::future_error&) {
+            }
+        }
+    } gate;
+    std::shared_future<void> opened = gate.open.get_future().share();
+    App::TransactionLogCore::of(_doc->getFileHistory()).post([opened]() { opened.wait(); });
+
+    _doc->openTransaction("shape");
+    feat->Shape.setValue(box);
+    _doc->commitTransaction();
+    ASSERT_FALSE(feat->Shape.getValue().Immutable());
+    EXPECT_FALSE(feat->Shape.canSaveOffThread());
+    const App::CapturedValue committed = App::captureValue(*_doc, feat->Shape);
+    ASSERT_TRUE(committed.ok);
+    ASSERT_EQ(committed.attachments.size(), 1u);
+
+    TopExp_Explorer vertex(box, TopAbs_VERTEX);
+    ASSERT_TRUE(vertex.More());
+    BRep_Builder().UpdateVertex(TopoDS::Vertex(vertex.Current()), gp_Pnt(100, 100, 100), 1e-7);
+    const App::CapturedValue edited = App::captureValue(*_doc, feat->Shape);
+    ASSERT_EQ(edited.attachments.size(), 1u);
+    ASSERT_NE(edited.attachments[0].bytes, committed.attachments[0].bytes);
+    gate.open.set_value();
+
+    auto& store = log->store();   // waits for the worker
+    std::string after;
+    for (auto& t : store.transactions()) {
+        auto ops = store.ops(t.seq);
+        if (auto o = shapeOp(ops, feat->getID()))
+            after = o->vafter;
+    }
+    ASSERT_FALSE(after.empty());
+    App::CapturedValue logged;
+    ASSERT_TRUE(log->readValue(after, logged));
+    ASSERT_EQ(logged.attachments.size(), 1u);
+    EXPECT_EQ(logged.attachments[0].bytes, committed.attachments[0].bytes);
+}
+
+// A null value and a frozen one stay with the worker.
+TEST_F(TransactionLogShapeTest, aFrozenShapeIsSavedOffThread)
+{
+    Part::PropertyPartShape prop;
+    EXPECT_TRUE(prop.canSaveOffThread());
+    prop.setValue(BRepPrimAPI_MakeBox(10, 10, 10).Shape());
+    EXPECT_EQ(prop.canSaveOffThread(), Part::PartParams::getImmutableShapeValues());
 }
