@@ -3050,7 +3050,7 @@ the Gui document's `Modified` flag set; `Std_Save` clears both.
 `sketch-hidpi-sizes.py` needs `QT_SCALE_FACTOR=2`, which its ctest
 entry sets and a hand-run loop does not.
 
-### The later rows (sessions 113-114): 27 -> 9
+### The later rows (sessions 113-114): 27 -> 5
 
 The open `ViewProviderSketch.cpp` rows from 2025-07 on, read one at a time
 against the fork's own code, each measured before it was changed.
@@ -3069,6 +3069,10 @@ against the fork's own code, each measured before it was changed.
 | `16a836743a` | **n/a**: `slotSolverUpdate` has no edit-view gate here |
 | `289411f51c`, `8c1d03ccb4` | **n/a**: an include for a core header change, and a line serving a Core `NavigationStyle` change |
 | `2da7c9ff17`, `566a724c26` | **adapted** `a3e4beb17f` (session 114): a tool's preview takes the edge colour, or the construction colour in construction mode, and a toggle recolours it at once. Colour only -- the fork patterns curves by visual layer and a new curve goes to layer 0 in either mode. `CreateLineColor` reads nothing now and its button is gone. `sketch-preview-construction-color.py` (0/4 before) |
+| `8a6872e69d` | **adapted** `3982c0e4d6` (session 114): `signalConstraintAdded`, and the view in edit scales a new Distance/DistanceX/DistanceY label still at the default 10 to 2 x its scale factor, however the constraint was made. `finishDatumConstraint` keeps scaling every datum type -- upstream dropped that line, leaving its radius/diameter/angle labels at 10 mm whatever the zoom, which the commit does not mention. `sketch-distance-label-scale.py` (6/9 failed before: 10 against 0.447) |
+| `aa785f78d6` | **adapted** `24982ee5f9` (session 114): the Dimension tool's preview label is pulled back by 1% of the view's width plus height, measured on the session's editing view (a served client's own). `OffsetMode` without `using enum`. `sketch-dimension-label-offset.py` (label 6.004 under a pointer at 6.0 before, 4.972 after) |
+| `387d25c219` | **have**: the line-extension hint and its PointOnObject snap came in with group C (`338b27fea2`); every function the commit adds is here, guarded by `sketch-line-extension-autoconstraint.py` |
+| `9ce1cae190` | **n/a**: the invalid projections it guards cannot reach the fork's sketch. A mirror exists only once its client has stated a camera (`mirrorFor`), the wire refuses a non-finite, zero-size or zero-extent camera, a desktop view always has one, and a view parallel to the plane already throws `ZeroDivisionError` to callers that catch it. The no-camera early return in `getProjectingLine` leaves the line uninitialised, but nothing reaches it |
 | `6321ac28a3` | **declined**: the fork draws a drag from the solved sketch (`draw(true)` extracts it), so `moveConstraint` reading the same is what is on screen; reading the object instead measured no faster (about 18 ms a move on 2000 lines, the redraw dominates) |
 
 `8a6f859a57` was ruled after: the faces follow the preference as upstream's
@@ -3078,8 +3082,14 @@ Left open, each a decision or larger than a row: the
 annotation pick priority (`a2468774d3`, needs a probe of a sketch face on
 a solid face), the broken-external report (`07b2d9973d`, the fork's tree
 tooltip takes an icon tag), the resetEdit lifecycle (`e6d3f9d6db`, needs
-Core's `setAutoCloseOnResetEdit`), and the features `aa785f78d6`,
-`35f151d99e`, `8a6872e69d`, `387d25c219`, `9ce1cae190`, `5587b48a0f`.
+Core's `setAutoCloseOnResetEdit`), and two that change what the user
+sees, put to the user (session 114): `35f151d99e` -- the solver panel
+onto Core's `TaskSolverMessages`, which the fork already has from the
+Assembly port; its end state retitles the panel "Sketch Edit" and adds
+a settings menu (auto-update, grid, snap, rendering order) -- and the
+Sketcher half of `5587b48a0f` (the Core half is this fork's own work):
+the in-edit bounding box per element, so View Selection fits a picked
+edge, and a fit to the sketch on EVERY edit entry, ungated.
 
 **The arc-label "flake" is a clock.** `sketch-arc-labels.py` and
 `sketch-drag-arc-conic.py` fail now and then with a drag that never
@@ -3093,6 +3103,10 @@ then a run without it failed the same way). Fixed on the user's ruling in
 `e35e9990b4`: `processClickEvent` measures on `std::chrono::steady_clock`.
 A vertex dragged once every 1.1 s for 75 s lost 3 drags of 68 to 3 clock
 steps before, none after.
+It is not the only cause: `sketch-drag-arc-conic.py` failed once more
+under `ctest -j6` in session 114, after the fix (the second drag never
+started; 6 of 6 alone). Its two presses are 1.4 s apart on the steady
+clock, so the double-click hold cannot be it. Not chased.
 
 ## 7a. The constraint-tool hints (session 85)
 
