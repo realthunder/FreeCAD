@@ -25,6 +25,11 @@ label also took the labels within the pick radius of it -- the next line up
 and down -- and a blank spot of the icon (a short line's ragged end) picked
 the constraint whose node the merge happened to be drawn on.
 
+The probe takes the box a hover takes: a spot outside every box but within
+the pick radius of two -- between two lines of labels -- picks the nearest.
+It used to take both, the pick list's answer, so a spot a hover gave one
+label came back as two.
+
 Scored against the tree before (one line, ten labels): 10 labels picked one
 each and the settings changed nothing -- three checks fail. Against the tree
 before the cap: every label picked one, and no box picked the rest.
@@ -123,6 +128,8 @@ def judge(tag, shown):
     check("%s: %d labels pick one constraint each, and no more do" % (tag, shown),
           singles == shown, "%d single picks" % singles)
     check("%s: one box picks the other %d" % (tag, N - shown), (N - shown) in sizes, sizes)
+    check("%s: no spot picks two boxes at once" % tag,
+          set(sizes) <= {1, N - shown, N}, sizes)
 
 
 def sweep():

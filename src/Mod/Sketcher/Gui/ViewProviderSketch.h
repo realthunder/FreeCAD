@@ -322,16 +322,20 @@ public:
                            SbLine&) const;
 
     /// helper to detect preselection
+    /*! Without \a nearestConstraint, a spot within the pick radius of
+     *  several boxes of a merged icon takes all their constraints: the
+     *  pick list offers each; a hover takes the nearest box. */
     bool detectPreselection(const SoPickedPoint *Point,
                             const Gui::ViewerContext *viewer,
                             const SbVec2s &cursorPos,
-                            bool preselect=true);
+                            bool preselect=true,
+                            bool nearestConstraint=true);
 
     /// Helper for detectPreselection(), for constraints only.
     std::set<int> detectPreselectionConstr(const SoPickedPoint *Point,
                                            const Gui::ViewerContext *viewer,
                                            const SbVec2s &cursorPos,
-                                           bool preselect=true);
+                                           bool nearest=true);
 
     /** What a hover at a viewport position of the edit view would
      * preselect, without preselecting it: the element names (several for

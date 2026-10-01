@@ -1597,7 +1597,7 @@ bool ViewProviderSketch::getElementPicked(const SoPickedPoint *pp, std::string &
     // is the shape's element, not the edit's.
     if (edit && editViewer() && isPointOnSketch(pp)) {
         const_cast<ViewProviderSketch*>(this)->detectPreselection(
-                pp, editViewer(), edit->curCursorPos, false);
+                pp, editViewer(), edit->curCursorPos, false, false);
         if (edit->lastPreselection.empty())
             return false;
         if (edit->lastCstrPreselections.empty()) {
@@ -2752,7 +2752,7 @@ void ViewProviderSketch::onSelectionChanged(const Gui::SelectionChanges& msg)
 std::set<int> ViewProviderSketch::detectPreselectionConstr(const SoPickedPoint *Point,
                                                            const Gui::ViewerContext *viewer,
                                                            const SbVec2s &cursorPos,
-                                                           bool preselect)
+                                                           bool nearest)
 {
     std::set<int> constrIndices;
     double distance = DBL_MAX;
@@ -2898,7 +2898,7 @@ std::set<int> ViewProviderSketch::detectPreselectionConstr(const SoPickedPoint *
 
                             if (b->first.adjusted(-reach, -reach, reach, reach).contains(iconX, iconY)) {
                                 // We've found a bounding box that contains the mouse pointer!
-                                if (preselect) {
+                                if (nearest) {
                                     QPointF v = QPoint(iconX, iconY) - b->first.center();
                                     double d = v.manhattanLength();
                                     if (d >= distance)
@@ -2937,7 +2937,8 @@ std::set<int> ViewProviderSketch::detectPreselectionConstr(const SoPickedPoint *
 bool ViewProviderSketch::detectPreselection(const SoPickedPoint *Point,
                                             const Gui::ViewerContext *viewer,
                                             const SbVec2s &cursorPos,
-                                            bool preselect)
+                                            bool preselect,
+                                            bool nearestConstraint)
 {
     assert(edit);
     edit->lastPreselection.clear();
@@ -2984,7 +2985,7 @@ bool ViewProviderSketch::detectPreselection(const SoPickedPoint *Point,
                 }
             } else {
                 // checking if a constraint is hit
-                constrIndices = detectPreselectionConstr(Point, viewer, cursorPos, preselect);
+                constrIndices = detectPreselectionConstr(Point, viewer, cursorPos, nearestConstraint);
                 edit->lastCstrPreselections.insert(
                         edit->lastCstrPreselections.end(), constrIndices.begin(), constrIndices.end());
             }
