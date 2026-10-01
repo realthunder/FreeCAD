@@ -729,6 +729,32 @@ class RegressionTests(unittest.TestCase):
         with self.assertRaises(Exception):
             blind.makeThickness([blind.Faces[2]], 1.0, 1e-7, False, False, 0, 0)
 
+    def test_thickness_intersection_join_with_one_face_left(self):
+        """The Intersection join where one face stays beside the removed ones:
+        a cylinder down to its top, a box down to its bottom. It threw
+        (BRepAlgo_Image::Bind), and once that was mended the cap outward came
+        out as the whole cylinder: the removed side's seam reached its loop
+        once, not once each way (docs/TransactionLog.md sec 27.102). The
+        cylinder's side removed now gives its two discs with this join too."""
+        cyl = Part.makeCylinder(4, 20)
+        for offset in (1.0, -1.0):
+            name = "cap, offset=%g" % offset
+            caps = [cyl.Faces[0], cyl.Faces[2]]
+            result = cyl.makeThickness(caps, offset, 1e-7, False, False, 0, 2)
+            self.assertTrue(result.isValid(), name)
+            self.assertEqual(len(result.Shells), 1, name)
+            self.assertAlmostEqual(result.Volume, 16 * math.pi, places=3, msg=name)
+            name = "side, offset=%g" % offset
+            result = cyl.makeThickness([cyl.Faces[0]], offset, 1e-7, True, False, 0, 2)
+            self.assertEqual(result.ShapeType, "Compound", name)
+            self.assertEqual(len(result.Solids), 2, name)
+            self.assertAlmostEqual(result.Volume, 32 * math.pi, places=3, msg=name)
+        box = Part.makeBox(10, 10, 6)
+        removed = [f for i, f in enumerate(box.Faces) if i != 4]
+        result = box.makeThickness(removed, -1.0, 1e-7, False, False, 0, 2)
+        self.assertTrue(result.isValid())
+        self.assertAlmostEqual(result.Volume, 100.0, places=3)
+
     def test_thickness_down_to_one_face_of_a_short_shape(self):
         """Only the bottom of a box 1.5 high stays, inward by 1: a plate of
         10 x 10 x 1. The loop split each removed side at the bottom's offset

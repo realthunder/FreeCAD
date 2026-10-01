@@ -10697,3 +10697,52 @@ and this section, one commit).
 **Gates:** Python 2977 OK (52 skipped, 6 expected failures; +2), ctest
 856/856; the fork's thickness suite PASS 77. The GUI checks were not run:
 nothing on the GUI side changed.
+
+### 27.102 Thickness: the Intersection join with one face left (user, 2026-10-01)
+
+The user, "continue": the next of 27.101's leftovers, the throw it found.
+
+**The case.** `makeCylinder(4, 20)`, side and bottom removed, the
+Intersection join; a box 10 x 10 x 6 with all but its bottom removed. The
+fork threw `BRepAlgo_Image::Bind` in `BuildOffsetByInter`; upstream answers
+(the cap outward inside out, -50.27).
+
+**Causes and fixes** (fork, `TKOffset`):
+
+1. *A removed face bound as an offset.* The fork puts the removed faces in
+   `aLFaces` for the intersections; a removed face keeps the image
+   `SetFaces` gave it. Of the three branches that fill the history, the
+   second and third skip a face that has an image; the first -- the
+   enlarged face was split -- did not, and with one face left the removed
+   faces' enlarged faces are split. A removed face now takes the second
+   branch: its edges recorded, nothing bound. Guarding the first branch's
+   `Bind` alone left the splits as offset faces; either way the box came
+   out right and the cylinder's cap outward came out as the whole cylinder.
+2. *The seam given once.* `ContextIntByInt` takes a removed face's edges
+   from an indexed map, which holds a seam once; `ContextIntByArc` walks them
+   with an explorer and meets it once each way. In the side's loop
+   (`BuildOnContext`) the stretched seam then had the side as its ascendant
+   once, so the loop kept every piece of it, and with one orientation built
+   no band: it kept the side whole, the bottom with it. The stretched seam
+   is recorded both ways now. (Adding the twin in the loop instead was
+   tried: the edge then counted as running between two removed faces in
+   neither place, and the band from 0 to 20 won.)
+
+**Tests.** The fork's suite: `cyl_cap_alone_join_{out,in}`,
+`box_bottom_alone_join_in`, `cyl_side_join_out`, `cyl_side_join_in_inter`;
+all five fail on the fork before. PASS 82. FreeCAD:
+`RegressionTests.test_thickness_intersection_join_with_one_face_left`.
+Pictures: `cyl_cap_alone_join_out`, `box_bottom_alone_join_in`,
+`cyl_side_join_out` (stage `s102`, the fork at `d4d2fe0719`).
+
+**Sweep.** 712 runs: in scope unchanged. The cylinder's, cone's and
+elliptic pad's side are answered with the Intersection join too, at the Arc
+join's volumes (one face to a piece: no edge between faces that stay for the
+joins to differ on). The pocket shapes and the torus's face stay refused,
+`NotDone` now in place of `Bind` or `NoSuchObject` thrown.
+
+Commits: fork `3835fa1a4d` (the fix), `0914bb292c` (the suite),
+`d8d480ef65` (pictures, Thickness.md); FreeCAD (the test and this section).
+
+**Gates:** Python 2978 OK (52 skipped, 6 expected failures; +1), ctest
+856/856; the fork's thickness suite PASS 82. GUI checks not run.
