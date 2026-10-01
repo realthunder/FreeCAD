@@ -515,6 +515,7 @@ public:
     /// whole captured editing root (see ViewerContext).
     bool setEditingHighlight(
         const std::vector<SoFCRenderCacheManager::HighlightItem>& items) override;
+    bool canEditingHighlight() const override;
 
 protected:
     /// Under the aux root, a sibling of the render-cache-captured

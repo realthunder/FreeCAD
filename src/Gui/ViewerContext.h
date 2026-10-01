@@ -526,6 +526,12 @@ public:
         (void)items;
         return false;
     }
+    /// Whether setEditingHighlight() would take a highlight now: asked
+    /// before a caller decides what to colour in the shared graph.
+    virtual bool canEditingHighlight() const
+    {
+        return false;
+    }
     /** Hide the occurrence being edited in every view of the session.
      *
      * For an edit mode that hands setupEditingRoot a node of its own and

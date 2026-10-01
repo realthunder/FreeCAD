@@ -602,10 +602,18 @@ public:
   bool obeysrules;
   RenderCachePtr highlightcache;
   CoinPtr<SoPath> highlightpath;
-  // SoFCRenderCacheManager::setHighlights: the details (copies) and
-  // colours, taken again from each scene capture() builds.
-  std::vector<std::pair<std::unique_ptr<SoDetail>, uint32_t>> highlightitems;
+  // SoFCRenderCacheManager::setHighlights: the details or paths (copies)
+  // and colours, taken again from each scene capture() builds.
+  struct HighlightEntry
+  {
+    std::unique_ptr<SoDetail> detail;
+    CoinPtr<SoPath> path;
+    uint32_t color;
+  };
+  std::vector<HighlightEntry> highlightitems;
   void applyHighlights();
+  // What \a path draws, captured once and kept until a node on it changes.
+  RenderCachePtr pathCache(SoPath * path, bool ontop);
   // Whether on-top draws escape the section, as this view answers for it
   // (Section_NoOnTop, the preference behind it otherwise). The highlight
   // caches below are built with it baked in, so they are dropped whenever
@@ -1033,50 +1041,9 @@ SoFCRenderCacheManager::setHighlight(SoPath * path,
 {
   if (!path || path->getLength() == 0)
     return;
-  SoState * state = PRIVATE(this)->action->getState();
-
   PRIVATE(this)->highlightpath = path;
 
-  RenderCachePtr cache;
-  if (PRIVATE(this)->nosectionontop != PRIVATE(this)->sectionNoOnTop()) {
-    PRIVATE(this)->nosectionontop = PRIVATE(this)->sectionNoOnTop();
-    PRIVATE(this)->pathcachetable.clear();
-  }
-  auto it = PRIVATE(this)->pathcachetable.find(path);
-  if (it != PRIVATE(this)->pathcachetable.end())
-    cache = it->second.cache;
-  else {
-    cache = new SoFCRenderCache(state, path->getHead());
-    cache->open(state);
-    PRIVATE(this)->stack.resize(1, cache);
-    if (ontop) {
-      SoFCSwitch::setOverrideSwitch(state, true);
-      SoFCSwitch::pushSwitchPath(path);
-    }
-    PRIVATE(this)->override_selectstyle = false;
-    {
-      CaptureFlagGuard capguard;
-      PRIVATE(this)->action->apply(path);
-    }
-    if (ontop) {
-      SoFCSwitch::popSwitchPath();
-      SoFCSwitch::setOverrideSwitch(state, false);
-    }
-    cache->close(state);
-    PRIVATE(this)->stack.clear();
-    PRIVATE(this)->selnodeid.clear();
-    if (!cache->isEmpty()) {
-      // Must use SoTempPath as key to avoid path changes, because we are using
-      // the path as key which is supposed to be immutable.
-      PathPtr tmppath = new SoTempPath(path->getLength());
-      tmppath->append(path);
-      auto &sensor = PRIVATE(this)->pathcachetable[tmppath];
-      sensor.path = tmppath;
-      sensor.master = PRIVATE(this);
-      sensor.attach(path->copy());
-      sensor.cache = cache;
-    }
-  }
+  RenderCachePtr cache = PRIVATE(this)->pathCache(path, ontop);
 
   int order = ontop ? 1 : 0;
   PRIVATE(this)->highlightcache = cache;
@@ -1087,6 +1054,52 @@ SoFCRenderCacheManager::setHighlight(SoPath * path,
           | SoFCRenderCache::CheckIndices
           | (wholeontop ? SoFCRenderCache::WholeOnTop : 0)),
         wholeontop);
+}
+
+RenderCachePtr
+SoFCRenderCacheManagerP::pathCache(SoPath * path, bool ontop)
+{
+  SoState * state = this->action->getState();
+
+  if (this->nosectionontop != this->sectionNoOnTop()) {
+    this->nosectionontop = this->sectionNoOnTop();
+    this->pathcachetable.clear();
+  }
+  auto it = this->pathcachetable.find(path);
+  if (it != this->pathcachetable.end())
+    return it->second.cache;
+
+  RenderCachePtr cache = new SoFCRenderCache(state, path->getHead());
+  cache->open(state);
+  this->stack.resize(1, cache);
+  if (ontop) {
+    SoFCSwitch::setOverrideSwitch(state, true);
+    SoFCSwitch::pushSwitchPath(path);
+  }
+  this->override_selectstyle = false;
+  {
+    CaptureFlagGuard capguard;
+    this->action->apply(path);
+  }
+  if (ontop) {
+    SoFCSwitch::popSwitchPath();
+    SoFCSwitch::setOverrideSwitch(state, false);
+  }
+  cache->close(state);
+  this->stack.clear();
+  this->selnodeid.clear();
+  if (!cache->isEmpty()) {
+    // Must use SoTempPath as key to avoid path changes, because we are using
+    // the path as key which is supposed to be immutable.
+    PathPtr tmppath = new SoTempPath(path->getLength());
+    tmppath->append(path);
+    auto &sensor = this->pathcachetable[tmppath];
+    sensor.path = tmppath;
+    sensor.master = this;
+    sensor.attach(path->copy());
+    sensor.cache = cache;
+  }
+  return cache;
 }
 
 void
@@ -1107,7 +1120,11 @@ SoFCRenderCacheManager::setHighlights(const std::vector<HighlightItem> & items)
   self->highlightitems.clear();
   for (auto & item : items) {
     if (item.detail)
-      self->highlightitems.emplace_back(item.detail->copy(), item.color);
+      self->highlightitems.push_back({std::unique_ptr<SoDetail>(item.detail->copy()),
+                                      CoinPtr<SoPath>(), item.color});
+    else if (item.path && item.path->getLength())
+      self->highlightitems.push_back({nullptr, CoinPtr<SoPath>(item.path->copy()),
+                                      item.color});
   }
   self->applyHighlights();
 }
@@ -1118,9 +1135,19 @@ SoFCRenderCacheManagerP::applyHighlights()
   VertexCacheMap res;
   if (auto & scene = this->renderer->getScene()) {
     for (auto & item : this->highlightitems) {
-      for (auto & v : scene->buildHighlightCache(this->sharedcache, 0,
-                                                 item.first.get(), item.second,
-                                                 SoFCRenderCache::PreselectHighlight)) {
+      VertexCacheMap caches;
+      if (item.path) {
+        // all the path draws, in the item's colour
+        RenderCachePtr cache = pathCache(item.path, false);
+        if (cache && !cache->isEmpty())
+          caches = cache->buildHighlightCache(this->sharedcache, 0, nullptr, item.color,
+                                              SoFCRenderCache::PreselectHighlight);
+      }
+      else
+        caches = scene->buildHighlightCache(this->sharedcache, 0,
+                                            item.detail.get(), item.color,
+                                            SoFCRenderCache::PreselectHighlight);
+      for (auto & v : caches) {
         auto & entries = res[v.first];
         entries.insert(entries.end(), v.second.begin(), v.second.end());
       }

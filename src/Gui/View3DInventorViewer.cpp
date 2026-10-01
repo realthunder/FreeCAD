@@ -8831,12 +8831,16 @@ bool View3DInventorViewer::setEditingHighlight(
 {
     // Only while the backend draws the editing root: otherwise Coin does,
     // and the highlight has to be in the graph it draws.
-    auto& capture = _pimpl->editingCapture;
-    if (!_pimpl->editingBackendFed || !capture.manager)
+    if (!canEditingHighlight())
         return false;
-    capture.manager->setHighlights(items);
+    _pimpl->editingCapture.manager->setHighlights(items);
     redraw();
     return true;
+}
+
+bool View3DInventorViewer::canEditingHighlight() const
+{
+    return _pimpl->editingBackendFed && _pimpl->editingCapture.manager;
 }
 
 void View3DInventorViewer::setEditing(bool edit)

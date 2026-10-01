@@ -138,11 +138,13 @@ public:
   void clearHighlight();
 
   /// One element set of a setHighlights() call: the elements \a detail
-  /// names, of the shape node its context names, in \a color.
+  /// names, of the shape node its context names, in \a color. Or, with
+  /// \a path and no detail, all that path draws (from the captured root).
   struct HighlightItem
   {
     const SoDetail *detail;
     uint32_t color;
+    const SoPath *path = nullptr;
   };
 
   /** Highlight elements of the scene this manager captured, several sets
@@ -152,14 +154,16 @@ public:
    * preselection -- the sketcher's edit preselection. Each item's detail
    * names its shape node by context (SoFCDetail::setContext), and its
    * elements are taken from the captured scene: nothing is traversed,
-   * and nothing of the graph is built again. Traversing a path per call
-   * instead, as setHighlight() does, was measured to leave every later
-   * frame dearer (a 1428-curve sketch in edit: the same draws, each
-   * about 6 us more, 12 ms a frame on llvmpipe), for a cause not found.
+   * and nothing of the graph is built again. An item with a path instead
+   * is everything that path draws -- a sketch constraint's label and
+   * icon -- shown in its colour the way setHighlight() shows a whole
+   * object: the path is traversed once and its capture kept until a node
+   * on it changes. (A traversal per call once seemed to leave later frames
+   * dearer; that residue is llvmpipe's alone, about 2%, none on a GPU.)
    *
-   * The items are kept (the details copied) and stated again after each
-   * capture that rebuilds the scene, so the highlight follows the
-   * geometry it names. An empty list clears it.
+   * The items are kept (the details and paths copied) and stated again
+   * after each capture that rebuilds the scene, so the highlight follows
+   * the geometry it names. An empty list clears it.
    */
   void setHighlights(const std::vector<HighlightItem> & items);
 
