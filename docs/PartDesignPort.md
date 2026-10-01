@@ -2664,3 +2664,50 @@ ShortcutOverride the change is about), and the view's context menu.
 
 Suites: PD 307 OK + TestLoft 11 OK, `TestPartDesignGui` 7 OK, Gui tests
 pd-port-candidates 25, pd-port-fixes 27, pd-gui-defects 34, all pass.
+
+### The Boolean's tools as references, the thread compound again (2026-10-01)
+
+The user: "Do the Boolean tools fix. The thread compound is for speed or
+some rare case workaround".
+
+**Boolean** (`a014714837` App, `f7320062b0` PD). The fork's Boolean
+command and panel wrap each tool in a SubShapeBinder the Boolean owns,
+so `9c7a761589`'s non-owning Group would have orphaned them. Instead a
+new Boolean owns only its SubShapeBinders and takes any other tool as a
+reference: `hasObject()` says no, it stays in its Part, its shape comes
+into the body's frame from where its groups put it, the Boolean's delete
+spares it, and Tools display does not draw it in the Boolean's frame.
+`App::GeoFeatureGroupExtension`'s Group checks skip a member the group
+does not own, or the reference was thrown out of the list for being in
+its Part. Upstream's `UseLegacyBodyPlacement` keeps the old way for a
+restored file that does not say: a file saved by FreeCAD 1.1.4 with a
+body linked straight in loads legacy and gives 1.1.4's result (1000
+mm^3, the body out of its Part), a new fork file saves False and
+reopens at 500 with the body in its Part. TestBoolean 13 OK (upstream's
+7 and two of the fork's), Gui driven (tree under both, Tools display,
+delete, undo).
+
+**The thread compound, measured again.** The PR it came in (27127) is
+"hole fix tapered threads not cutting properly". The fork took that
+PR's thread profile earlier (`5a22f0712e`) and its tapered threads cut
+the same fused or compounded: NPT and BSP 1/8 to 1, 15 mm and through,
+the removed volume equal to 0.01 mm^3, all valid. For a lone hole the
+compound is 3-6x faster (NPT 1/2 through 8.66 -> 1.75 s, M6 through
+16.75 -> 5.49 s); patterned it loses, the fused tool built once and
+copied where the compound's thread and hole are cut apart again per
+copy:
+
+| M6, one hole, pattern | fused, hole + pattern | compound |
+|---|---|---|
+| through, x2 | 10.1 + 5.6 s | 2.5 + 11.4 s |
+| through, x4 | 22.5 + 8.3 s | 8.4 + 33.6 s |
+| through, x8 | 39.9 + 19.2 s | 18.7 + 192.2 s |
+| 12 mm, x8 | 1.0 + 2.9 s | 0.6 + 10.2 s |
+
+Still declined. What makes a through-all thread slow is its length:
+`getThroughAllLength()` is 2.02 times the bounding box diagonal, so a
+30 mm plate 270 mm long gets about 550 turns of M6 helix. The same
+length is why a tapered through-all hole of 1/8 or 1/4 fails ("Could not
+revolve sketch"): the taper takes the radius past zero long before the
+end. Clipping a hole's through-all length to the material along its axis
+would speed both ways and fix those -- proposed, not done.
