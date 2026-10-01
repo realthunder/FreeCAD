@@ -4891,6 +4891,26 @@ int ViewProviderSketch::constrColorPriority(int constraintId)
 // public function that triggers drawing of most constraint icons
 void ViewProviderSketch::drawConstraintIcons()
 {
+    // A throw out of the icons must not skip what the caller does next:
+    // draw() enables the constraints in updateColor() after this, and a
+    // merged icon past Coin's image size once threw here and left every
+    // constraint out of the scene until the first hover (307d0ccad4).
+    try {
+        drawConstraintIconsImpl();
+    }
+    catch (Base::Exception &e) {
+        Base::Console().Error("Exception drawing constraint icons: %s\n", e.what());
+    }
+    catch (std::exception &e) {
+        Base::Console().Error("Exception drawing constraint icons: %s\n", e.what());
+    }
+    catch (...) {
+        Base::Console().Error("Exception drawing constraint icons: unknown\n");
+    }
+}
+
+void ViewProviderSketch::drawConstraintIconsImpl()
+{
     if (edit->needUpdate) {
         edit->timer.start(100);
         return;

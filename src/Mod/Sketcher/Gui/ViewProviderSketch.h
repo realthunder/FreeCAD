@@ -633,6 +633,9 @@ protected:
     /// For constraint icon bounding boxes
     typedef std::vector<ConstrIconBB> ConstrIconBBVec;
 
+    /// drawConstraintIcons() without its guard: may throw
+    void drawConstraintIconsImpl();
+
     void combineConstraintIcons(IconQueue &&iconQueue);
 
     /// Renders an icon for a single constraint and sends it to Coin
