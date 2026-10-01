@@ -895,6 +895,9 @@ void ViewProviderSketch::deactivateHandler()
 /// removes the active handler
 void ViewProviderSketch::purgeHandler(void)
 {
+    // In another edit mode (Transform) there is no handler to purge.
+    if (!edit)
+        return;
     deactivateHandler();
     Gui::Selection().clearSelection();
 

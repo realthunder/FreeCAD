@@ -359,6 +359,9 @@ public:
     /// highlighted constraints. What a selection change needs; the geometry's
     /// own colours and layers are left as the last updateColor() made them.
     void updateHighlight();
+    /// Editing the sketch itself: false in another edit mode, such as
+    /// Transform, where no edit data exists for a tool to act on
+    bool isInEditMode() const { return edit != nullptr; }
     /// The expression of a preselected constraint as the view's tooltip
     void updateExpressionToolTip(Gui::ViewerContext *viewer);
     /// get the pointer to the sketch document object

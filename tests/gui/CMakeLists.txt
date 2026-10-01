@@ -461,6 +461,11 @@ fc_add_gui_test(GuiSketchExpressionToolTip_tests_run
                 sketch-expression-tooltip.py
                 --timeout 120)
 
+# Sketcher tools stay off, and do not crash, while a sketch is in Transform edit.
+fc_add_gui_test(GuiSketchTransformEditTools_tests_run
+                sketch-transform-edit-tools.py
+                --timeout 120)
+
 # A merged constraint icon wider than 32767 pixels wrapped Coin's image size
 # negative; the exception left draw() before it enabled the constraints, so
 # none showed on entering edit until a hover.

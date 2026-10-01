@@ -177,8 +177,7 @@ std::string SketcherGui::getStrippedPythonExceptionString(const Base::Exception&
 bool SketcherGui::ReleaseHandler(Gui::Document* doc)
 {
     if (doc) {
-        if (doc->getInEdit()
-            && doc->getInEdit()->isDerivedFrom(SketcherGui::ViewProviderSketch::getClassTypeId())) {
+        if (SketcherGui::isSketchInEdit(doc)) {
             SketcherGui::ViewProviderSketch* vp =
                 static_cast<SketcherGui::ViewProviderSketch*>(doc->getInEdit());
 
@@ -483,8 +482,7 @@ void SketcherGui::ActivateHandler(Gui::Document* doc, DrawSketchHandler* handler
 {
     std::unique_ptr<DrawSketchHandler> ptr(handler);
     if (doc) {
-        if (doc->getInEdit()
-            && doc->getInEdit()->isDerivedFrom(SketcherGui::ViewProviderSketch::getClassTypeId())) {
+        if (SketcherGui::isSketchInEdit(doc)) {
             SketcherGui::ViewProviderSketch* vp =
                 static_cast<SketcherGui::ViewProviderSketch*> (doc->getInEdit());
             if (auto cur = vp->currentHandler()) {
@@ -501,8 +499,10 @@ bool SketcherGui::isSketchInEdit(Gui::Document* doc)
 {
     if (doc) {
         // checks if a Sketch Viewprovider is in Edit and is in no special mode
+        // and editing the sketch itself, not moving it in Transform (upstream
+        // 93abfc4fa4): there a tool has no edit data and crashed
         auto* vp = Base::freecad_dynamic_cast<SketcherGui::ViewProviderSketch>(doc->getInEdit());
-        return (vp != nullptr);
+        return vp && vp->isInEditMode();
     }
     return false;
 }
@@ -533,8 +533,7 @@ bool SketcherGui::isSketcherBSplineActive(Gui::Document* doc, bool actsOnSelecti
 {
     if (doc) {
         // checks if a Sketch Viewprovider is in Edit and is in no special mode
-        if (doc->getInEdit()
-            && doc->getInEdit()->isDerivedFrom(SketcherGui::ViewProviderSketch::getClassTypeId())) {
+        if (SketcherGui::isSketchInEdit(doc)) {
             if (static_cast<SketcherGui::ViewProviderSketch*>(doc->getInEdit())->getSketchMode()
                 == ViewProviderSketch::STATUS_NONE) {
                 if (!actsOnSelection) {
@@ -555,7 +554,8 @@ SketcherGui::ViewProviderSketch*
 SketcherGui::getInactiveHandlerEditModeSketchViewProvider(Gui::Document* doc)
 {
     if (doc) {
-        return dynamic_cast<SketcherGui::ViewProviderSketch*>(doc->getInEdit());
+        auto vp = dynamic_cast<SketcherGui::ViewProviderSketch*>(doc->getInEdit());
+        return vp && vp->isInEditMode() ? vp : nullptr;
     }
 
     return nullptr;

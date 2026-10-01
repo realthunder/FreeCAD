@@ -81,8 +81,7 @@ bool isCreateConstraintActive(Gui::Document* doc)
 {
     if (doc) {
         // checks if a Sketch View provider is in Edit and is in no special mode
-        if (doc->getInEdit()
-            && doc->getInEdit()->isDerivedFrom(SketcherGui::ViewProviderSketch::getClassTypeId())) {
+        if (SketcherGui::isSketchInEdit(doc)) {
             if (static_cast<SketcherGui::ViewProviderSketch*>(doc->getInEdit())->getSketchMode()
                 == ViewProviderSketch::STATUS_NONE) {
                 if (Gui::Selection().countObjectsOfType(Sketcher::SketchObject::getClassTypeId())
@@ -132,8 +131,7 @@ void finishDatumConstraint(Gui::Command* cmd,
         }
     }
 
-    if (doc && doc->getInEdit()
-        && doc->getInEdit()->isDerivedFrom(SketcherGui::ViewProviderSketch::getClassTypeId())) {
+    if (doc && SketcherGui::isSketchInEdit(doc)) {
         SketcherGui::ViewProviderSketch* vp =
             static_cast<SketcherGui::ViewProviderSketch*>(doc->getInEdit());
         scaleFactor = vp->getScaleFactor();

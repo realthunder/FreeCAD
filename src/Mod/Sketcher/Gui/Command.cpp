@@ -1294,7 +1294,8 @@ private:
         Gui::Document* doc = Gui::Application::Instance->activeDocument();
 
         if (doc) {
-            return dynamic_cast<SketcherGui::ViewProviderSketch*>(doc->getInEdit());
+            auto vp = dynamic_cast<SketcherGui::ViewProviderSketch*>(doc->getInEdit());
+            return vp && vp->isInEditMode() ? vp : nullptr;
         }
 
         return nullptr;
