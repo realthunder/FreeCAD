@@ -30,8 +30,14 @@
 # include <Standard_Failure.hxx>
 #endif
 
+#include <algorithm>
+#include <set>
+
 #include <App/Application.h>
 #include <App/Document.h>
+#include <App/GeoFeature.h>
+#include <Base/Tools.h>
+#include <Mod/Part/App/SubShapeBinder.h>
 #include <Mod/Part/App/TopoShapeOpCode.h>
 #include <Mod/PartDesign/App/ShapeBinder.h>
 
@@ -64,12 +70,99 @@ Boolean::Boolean()
     ADD_PROPERTY_TYPE(ToolShape, (TopoShape()), "Part Design",
                       App::PropertyType(App::Prop_Output | App::Prop_Transient | App::Prop_Hidden),
                       "The tool shapes the edit preview draws");
+    ADD_PROPERTY_TYPE(UseLegacyBodyPlacement, (App::GetApplication().isRestoring()),
+                      "Compatibility", App::Prop_Hidden,
+                      "The Boolean owns every tool and takes its shape as it is, as\n"
+                      "Booleans made before tools could be references did");
     initExtension(this);
+    // A tool may be a reference, in another body or Part (upstream 9c7a761589)
+    Group.setScope(App::LinkScope::Global);
+}
+
+namespace {
+
+// The placement of an object in the document: its own and its groups'. Not
+// GeoFeature::getGlobalPlacement(), whose group placement refuses to work
+// for a group that is recomputing, as the Boolean's body may be.
+Base::Placement placementInDocument(const App::DocumentObject *obj)
+{
+    Base::Placement plc = App::GeoFeature::getPlacementFromProp(
+            const_cast<App::DocumentObject*>(obj), "Placement");
+    std::set<const App::DocumentObject*> visited {obj};
+    for (auto group = App::GeoFeatureGroupExtension::getGroupOfObject(obj);
+            group && visited.insert(group).second;
+            group = App::GeoFeatureGroupExtension::getGroupOfObject(group))
+        plc = App::GeoFeature::getPlacementFromProp(group, "Placement") * plc;
+    return plc;
+}
+
+} // namespace
+
+bool Boolean::ownsTool(const App::DocumentObject *tool) const
+{
+    return UseLegacyBodyPlacement.getValue()
+        || (tool && tool->isDerivedFrom<Part::SubShapeBinder>());
+}
+
+bool Boolean::hasObject(const App::DocumentObject* obj, bool recursive) const
+{
+    if (!ownsTool(obj))
+        return false;
+    return App::GeoFeatureGroupExtension::hasObject(obj, recursive);
+}
+
+std::vector<App::DocumentObject*> Boolean::addObjects(std::vector<App::DocumentObject*> objects)
+{
+    // The owned ones the group's way, moved in from where they were; a
+    // reference only joins the list
+    std::vector<App::DocumentObject*> owned, refs;
+    for (auto obj : objects) {
+        if (obj)
+            (ownsTool(obj) ? owned : refs).push_back(obj);
+    }
+    auto added = App::GeoFeatureGroupExtension::addObjects(owned);
+    auto tools = Group.getValues();
+    for (auto obj : refs) {
+        if (obj == this || std::find(tools.begin(), tools.end(), obj) != tools.end())
+            continue;
+        tools.push_back(obj);
+        added.push_back(obj);
+    }
+    if (tools.size() != Group.getSize()) {
+        Base::ObjectStatusLocker<App::Property::Status, App::Property> guard(
+                App::Property::User3, &Group);
+        Group.setValues(tools);
+    }
+    return added;
+}
+
+std::vector<App::DocumentObject*> Boolean::setObjects(std::vector<App::DocumentObject*> objects)
+{
+    removeObjects(Group.getValues());
+    return addObjects(objects);
+}
+
+TopoShape Boolean::getToolShape(const App::DocumentObject *tool) const
+{
+    auto shape = getTopoShape(tool);
+    if (ownsTool(tool) || shape.isNull())
+        return shape;
+    // A reference: a feature of this body is in the body's frame already;
+    // anything else is where its own group puts it, brought into the body's
+    auto body = getFeatureBody();
+    if (!body || Body::findBodyOf(tool) == body)
+        return shape;
+    Base::Placement toBody = placementInDocument(body).inverse();
+    if (auto group = App::GeoFeatureGroupExtension::getGroupOfObject(tool))
+        toBody *= placementInDocument(group);
+    if (!toBody.isIdentity())
+        shape.transformShape(toBody.toMatrix(), false, true);
+    return shape;
 }
 
 short Boolean::mustExecute() const
 {
-    if (Group.isTouched())
+    if (Group.isTouched() || UseLegacyBodyPlacement.isTouched())
         return 1;
     return PartDesign::Feature::mustExecute();
 }
@@ -141,7 +234,7 @@ App::DocumentObjectExecReturn *Boolean::collectOperands(std::vector<TopoShape> &
             else
                 ++itBegin;
         }
-        baseShape = getTopoShape(feature);
+        baseShape = getToolShape(feature);
         if (baseShape.isNull()) {
             return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception",
                     "Cannot do boolean operation with invalid base shape"));
@@ -150,7 +243,7 @@ App::DocumentObjectExecReturn *Boolean::collectOperands(std::vector<TopoShape> &
 
     shapes.push_back(baseShape);
     for(auto it=itBegin; it<itEnd; ++it) {
-        auto shape = getTopoShape(*it);
+        auto shape = getToolShape(*it);
         if (shape.isNull())
             return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception","Tool shape is null"));
         shapes.push_back(shape);
@@ -308,6 +401,9 @@ void Boolean::onNewSolidChanged()
 void Boolean::unsetupObject() {
     std::vector<App::DocumentObjectT> objsT;
     for (auto obj : Group.getValues()) {
+        // a reference is not the Boolean's to delete
+        if (!ownsTool(obj))
+            continue;
         if (!obj->isRemoving() && obj->getInList().size() <= 1) {
             objsT.emplace_back(obj);
         }

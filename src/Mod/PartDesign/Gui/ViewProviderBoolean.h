@@ -59,6 +59,9 @@ public:
     void checkAddSubColor() override;
 
     void extensionModeSwitchChange() override;
+    /// The tools the Boolean owns: a reference is drawn where it is, not
+    /// in the Boolean's frame
+    std::vector<App::DocumentObject*> claimChildren3D() const override;
 
 protected:
     TaskDlgFeatureParameters *getEditDialog() override;

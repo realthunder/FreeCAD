@@ -24,6 +24,8 @@
 
 #include "PreCompiled.h"
 
+#include <algorithm>
+
 #ifndef _PreComp_
 # include <QMenu>
 # include <QMessageBox>
@@ -46,6 +48,20 @@ PROPERTY_SOURCE_WITH_EXTENSIONS(PartDesignGui::ViewProviderBoolean,PartDesignGui
 
 const char* PartDesignGui::ViewProviderBoolean::DisplayEnum[] = {"Result","Tools",nullptr};
 
+
+std::vector<App::DocumentObject*> ViewProviderBoolean::claimChildren3D() const
+{
+    auto children = ViewProviderAddSub::claimChildren3D();
+    auto boolean = Base::freecad_dynamic_cast<PartDesign::Boolean>(getObject());
+    if (boolean) {
+        children.erase(std::remove_if(children.begin(), children.end(),
+                                      [boolean](App::DocumentObject *obj) {
+                                          return !boolean->hasObject(obj);
+                                      }),
+                       children.end());
+    }
+    return children;
+}
 
 ViewProviderBoolean::ViewProviderBoolean()
 {
