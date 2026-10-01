@@ -753,6 +753,34 @@ class RegressionTests(unittest.TestCase):
             self.assertEqual(len(result.Shells), 1, name)
             self.assertAlmostEqual(result.Volume, expected, places=3, msg=name)
 
+    def test_thickness_leaves_its_input(self):
+        """A pad of a ring sector straddling angle 0, its outer arc's face
+        and both caps removed: the thickness came back right and left its
+        input inside out. The loop on the removed cylinder ran ShapeFix on a
+        test face made of the input's edges on the input face's own surface,
+        and the pcurve it shifted by a period was the input's
+        (docs/TransactionLog.md sec 27.104; a PartDesign Pad under a
+        Thickness where shape values are not frozen, occ-issues local03)."""
+        for past in (0.0, 2 * math.pi):
+            outer = Part.ArcOfCircle(
+                Part.Circle(Vector(), Vector(0, 0, 1), 59.3), past - 0.29, past + 0.29
+            ).toShape()
+            inner = Part.ArcOfCircle(
+                Part.Circle(Vector(), Vector(0, 0, 1), 46.85), past - 0.23, past + 0.23
+            ).toShape()
+            sides = [
+                Part.makeLine(inner.Vertexes[k].Point, outer.Vertexes[k].Point) for k in (0, 1)
+            ]
+            wire = Part.Wire(Part.__sortEdges__([outer, sides[0], inner, sides[1]]))
+            pad = Part.Face(wire).extrude(Vector(0, 0, 27))
+            volume = pad.Volume
+            removed = [pad.Faces[2], pad.Faces[4], pad.Faces[5]]
+            result = pad.makeThickness(removed, 1.0, 1e-7, False, False, 0, 0)
+            name = "past=%g" % past
+            self.assertTrue(result.isValid(), name)
+            self.assertTrue(pad.isValid(), name)
+            self.assertAlmostEqual(pad.Volume, volume, places=6, msg=name)
+
     def test_thickness_intersection_join_with_one_face_left(self):
         """The Intersection join where one face stays beside the removed ones:
         a cylinder down to its top, a box down to its bottom. It threw

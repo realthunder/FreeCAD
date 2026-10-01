@@ -10830,3 +10830,56 @@ FreeCAD (the test and this section).
 **Gates:** Python 2979 OK (52 skipped, 6 expected failures; +1), ctest
 856/856; the fork's thickness suite PASS 92. GUI checks not run: nothing on
 the GUI side changed.
+
+### 27.104 Thickness edited its input: a Pad inside out where values are not frozen (peer, 2026-10-01)
+
+A peer session on the Windows box (fcad `PartDesignPort`), after merging the
+fork's `LinkVibe-801`, reported the thickness suite's `issue3_pad_thickness`
+failing: the document's Pad, a prism of a sketch of two arcs and two lines,
+inside out (-189356.2997, Face3 a cylinder of area -9128.6), and asked
+whether this box saw it (occ-issues `local03`).
+
+**Reproduced here exactly, with `ImmutableShapeValues` off.** With it on --
+this branch's default once it finds the fork at run time (23.12) -- the Pad
+is a valid 9503.3915; `PartDesignPort` freezes nothing. The thickness suite
+set nothing, so it always ran frozen here and never saw it.
+
+**Not the Pad.** Recomputed alone the Pad is valid; the Thickness on top
+(faces 5, 3 and 6 removed, Arc join, Skin) then leaves it inside out, and a
+fresh prism of the sketch's face given to `Part`'s `makeThickness` comes back
+the same. The sketch's arcs run past 2 pi (5.99226-6.57411); on the Pad's
+cylinder the generatrix at the arc's far end sat at u = 0.29093 instead of
+6.57411, folded by a period. A frozen input is protected by copy-on-write;
+an unfrozen one is edited where it lies.
+
+**Bisected** with scratch `TKBool`/`TKOffset` libraries over the 27 chain
+commits the peer's merge brought in: first bad `36d34e9d05` (27.95: a
+periodic face whose edges lie within one period takes the plane path).
+`FindLoop`'s pruning builds a test face of each wire on the face's own
+surface and location from the loop's own edges -- some of them the input's
+-- and ran `ShapeFix_Shape` on it when it was invalid. ShapeFix edits the
+edges it is given in place; the pcurve it shifted by a period, on that
+surface, is the input face's own. **Fix** (fork `1e5f89c06f`): ShapeFix
+works on a copy (`BRepBuilderAPI_Copy`, geometry too); the test face only
+classifies. Thickness results are unchanged: the 712-run sweep gives the
+same lines, and with an input check added no run of it alters its input,
+before the fix or after (its 16 solids never cut a periodic face across its
+seam).
+
+**Guard.** The fork's thickness suite now runs unfrozen (`THICK_FREEZE=1`
+for frozen) and every case checks its input comes back valid with the same
+volume (`e22e4be177`); `sector_outer_arc_input` and
+`sector_outer_arc_past_period_input` -- a ring sector straddling angle 0,
+padded 27, its outer arc's face and caps removed -- are inside out before,
+frozen or not (a shape made in Python is not frozen). PASS 94 both ways.
+FreeCAD: `RegressionTests.test_thickness_leaves_its_input`, the same sector;
+it fails on the loop before the fix. occ-issues `local03` is marked fixed
+(`6280dc5215`), the Windows rerun pending.
+
+The local branch merged `origin/LinkVibe-801` (the peer's `BOPAlgo` fix
+`4024d6d31c` and the occ-issues records) before the row was rewritten, so
+the gates below are on the merged kernel.
+
+**Gates** (merged kernel): Python 2980 OK (52 skipped, 6 expected failures;
++1), ctest 856/856; the fork's thickness suite PASS 94 unfrozen and frozen.
+GUI checks not run.
