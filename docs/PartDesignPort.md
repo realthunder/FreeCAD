@@ -2562,3 +2562,105 @@ Suites for these three: PD 307 OK, `TestPartDesignGui` 7 OK. The full
 Python suite hung in `CAMTests.TestUpdateDocumentTools` (the endpoint
 hook's loopback `accept()`, `docs/Testing.md`) and was stopped; it and
 ctest are owed.
+
+(Both ran on 2026-10-01, `1ed00a1122`: Python 3179 OK, ctest 749/750 --
+`docs/Testing.md`.)
+
+### The candidates, the legacy workflow, the unsure rows (2026-10-01)
+
+The user, after the list above was read out: "Agree your plan. Remove
+legacy workflow." So the nine candidates went in (the three of the last
+subsection were already done), `5ee788447c` with them, and each of the
+four unsure rows got the measurement it needed.
+
+Every Gui one was reproduced first: `tests/gui/pd-port-candidates.py`
+(`GuiPartDesignPortCandidates_tests_run`) has 25 checks, run by hand
+with the build before them -- 19 failed, the six that passed are
+preconditions or cases meant to stay as they were -- and after, 25
+pass.
+
+| upstream | fork | before | after |
+|---|---|---|---|
+| `f4167b48c0` | `c83d750d6d` | no Placement... in any context menu | in the tree's and the view's |
+| `aac3003dcf` | `3d199043b0` | "Toggle active body/part" | "Active body" / "Active object", checked while active |
+| `089d344343` | `edda6379c9` | every feature hidden, the body shown: nothing drawn | the Tip shows |
+| `ab60695ef9` | `cdaf95a097` | a binder selected: an empty task view | Pad, Pocket, Revolution, Groove, loft, pipe |
+| `f7c03bb929` | `b5442445fe` | Edge1, Ctrl+Edge2, Delete: only Edge2 went | both |
+| `873fa449ce` | `6e9b15e197` | profile normal: a disabled x/y/z box and along-normal box | hidden; custom shows them, editable |
+| `5dbb4d7c7e` | `e7ed30af69` | binder outline in its face color, width 1 | 0xFA9600FF, the default width |
+| `b43cb81c0a` | `3fdc177283` | two faces: the attacher, empty; a cylinder: "You need a planar face"; a sketch: sketched on; Shift: ignored | the attacher with both, the cylinder face, nothing, the face |
+| `5ee788447c` | `ac396f8ff0` | a saved body-less PD feature, reopened, then Pad: "designed with an old version" | no prompt |
+
+How they came out differently from upstream:
+
+- **Placement** goes in `StdWorkbench`'s menus, tree and view, which PD's
+  calls; upstream's addition to PD's own menu would list it twice here.
+- **Several references at once** is the fork's `LinkSubWidget` table, so
+  every panel that has one gets it, not just the pipe's path. Removing a
+  row's last element still leaves the object linked whole, as before.
+- **New Sketch** is the fork's own command, not `SketchWorkflow` (which
+  the fork compiles and never calls). The several-references case never
+  reached it: it read the selection with `single`, which comes back empty
+  for two. The references go to the attacher with the mode
+  `suggestMapModes()` picks, as the datum commands do -- two faces of a
+  box and a cylinder's side both come out `InertialCS`, which the user
+  then changes; upstream does the same.
+- **The Pad direction**: "along profile normal" keeps the fork's other
+  condition, a side measured by a length.
+- **The binder color** is a `PartParams` parameter (the fork keeps its
+  datum colors under `Mod/Part`); the preference packs only restated the
+  default.
+- **The legacy workflow**: the checks go, `WorkflowManager` and the
+  Migrate command stay, as upstream left them -- Migrate is how an old
+  body-less file's features get into a body, and getBody()'s message
+  points at it.
+
+Not driven: Ctrl+A in a reference table (the test's key events skip the
+ShortcutOverride the change is about), and the view's context menu.
+
+**The unsure rows.**
+
+- `70b9305f2e`, the thread as a compound instead of fused: declined.
+  `thread_bench.py`, M6 modelled threads in a box, fork build both ways:
+
+  | case | fused | compound |
+  |---|---|---|
+  | 1 hole, 12 mm | 0.63 s | 0.24 s |
+  | + linear pattern x2 | 1.58 s | 1.65 s |
+  | 4 holes, 12 mm | 1.41 s | 1.64 s |
+  | + linear pattern x2 | 9.28 s | 14.56 s |
+  | 4 holes, through all | 18.49 s | 22.12 s |
+  | + linear pattern x2 | 32.63 s | 142.41 s |
+
+  Same volumes and valid solids. The fork cuts a compound of one tool per
+  hole centre, so the compound nests and the cut meets every thread
+  overlapping its hole.
+- `5731a27609`, null guards in 13 panels: declined, not reproduced.
+  Pad, Pocket, Revolution, Pipe, Loft, Helix and Hole each deleted with
+  its panel open, undone or not, then the panel's values and boxes
+  changed, then closed: 14 cases, no crash. The panel stays open on a
+  deleted feature, which is odd but harmless.
+- `123b3b066b`, the two-face loft at 9190.13 against upstream's > 9220:
+  not the loft. Beside FreeCAD 1.1.4 (OCCT 7.8.1) the pad before it is
+  identical (8720.024152 both), but the fork numbers its faces
+  differently: upstream's Face7 (the 100.26 mm^2 flank at y = -39.9) is
+  Face6 here. From that face the body is 9221.776242 on both. Taken,
+  `ddd8c6735a`, with the face picked by geometry. An upstream file whose
+  references carry only an index would meet the same thing; ones with
+  element maps should not -- not checked.
+- `f608705825`, Boolean placement tests: 2 of 6 pass (the first feature
+  from a Part::Box and from a binder, minus `UseLegacyBodyPlacement`,
+  which the fork does not have; the test of that property dropped). The
+  4 that fail link a tool body straight into the Boolean, as a script or
+  an upstream file does -- the fork's Gui wraps it in a binder, which is
+  why `9c7a761589` was called superseded. Two real differences:
+  - the tool's placement is not brought into the Boolean's body: bodies
+    at x = 25 and x = 20 cut nothing (1000 mm^3, not 500);
+  - the Boolean's Group owns its tools, so a tool body leaves the Part
+    it was in.
+
+  Upstream's `9c7a761589` (non-owning Group, tools in body-local
+  coordinates) is the fix. Left for the user.
+
+Suites: PD 307 OK + TestLoft 11 OK, `TestPartDesignGui` 7 OK, Gui tests
+pd-port-candidates 25, pd-port-fixes 27, pd-gui-defects 34, all pass.
