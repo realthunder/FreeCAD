@@ -10076,6 +10076,7 @@ void ViewProviderSketch::generateContextMenu()
     int selectedConics = 0;
     int selectedPoints = 0;
     int selectedConstraints = 0;
+    int selectedDimensions = 0;
     int selectedBsplines = 0;
     int selectedBsplineKnots = 0;
     int selectedOrigin = 0;
@@ -10138,6 +10139,10 @@ void ViewProviderSketch::generateContextMenu()
                 }
                 else if (boost::starts_with(name, "Cons")) {
                     ++selectedConstraints;
+                    const auto &constraints = obj->Constraints.getValues();
+                    int id = Sketcher::PropertyConstraintList::getIndexFromConstraintName(name);
+                    if (id >= 0 && id < int(constraints.size()) && constraints[id]->isDimensional())
+                        ++selectedDimensions;
                 }
                 else if (boost::starts_with(name, "Axis")) {
                     ++selectedEdges;
@@ -10265,7 +10270,8 @@ void ViewProviderSketch::generateContextMenu()
 
         // context menu if only constraints are selected
         else if (selectedConstraints >= 1) {
-            if (selectedConstraints == 1) {
+            // A value to change: one dimension alone (upstream a7b501c95c).
+            if (selectedConstraints == 1 && selectedDimensions == 1) {
                 menu << "Sketcher_ChangeDimensionConstraint";
             }
             menu << "Sketcher_ToggleDrivingConstraint"

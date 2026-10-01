@@ -451,6 +451,11 @@ fc_add_gui_test(GuiSketchEmptyMessage_tests_run
                 sketch-empty-message.py
                 --timeout 120)
 
+# The context menu offers to change a value for one dimension alone.
+fc_add_gui_test(GuiSketchContextMenuValue_tests_run
+                sketch-context-menu-value.py
+                --timeout 150)
+
 # A merged constraint icon wider than 32767 pixels wrapped Coin's image size
 # negative; the exception left draw() before it enabled the constraints, so
 # none showed on entering edit until a hover.
