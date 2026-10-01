@@ -2752,7 +2752,13 @@ one. Recorded as occ-issues `local02` (a failing and a passing pair as
 BREP plus a script, occt `abbe0f6070`), fixed in the OCCT fork
 (`4024d6d31c`, the faces' ON vertices remapped to the replacements);
 `TestLoft` 10/10 after, Python 3190 OK, ctest 750/750.
-The solver's run-to-run noise itself is not chased. A likely source,
-not verified: planegcs keys several maps by parameter address
-(`std::map<double*, ...>` in `GCS.h`, `SubSystem.h`), so their order
-can follow the heap.
+The solver's run-to-run noise, chased after (`886d2f6af7`): the
+parameters are separate heap blocks, and three places took their
+address order -- the order of a subsystem's unknowns, the order of the
+priority solve's unknowns (dragging), and which of two parameters an
+equality reduced together seeded their shared unknown (0.4188 or
+-2.0604 in this sketch: a different starting point, not just rounding).
+Each one alone keeps the results scattered; with all three, 24 solves
+in 8 processes give one result. Same input, same sketch, every run.
+The OCCT side (input vertices changed by the same booleans) is in the
+occ-issues `local02` row.
