@@ -55,6 +55,7 @@
 #include <Mod/Sketcher/App/Constraint.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 
+#include "Command.h"
 #include "SketchMirrorDialog.h"
 #include "SketchOrientationDialog.h"
 #include "TaskSketcherValidation.h"
@@ -1953,6 +1954,38 @@ bool CmdRenderingOrder::isActive()
     ;
 }
 
+
+// The view settings the toolbar's Grid, Snap and Rendering Order buttons
+// drop down, gathered into one menu for the solver panel's settings
+// button. Each action keeps the toolbar's widget and refreshes it as the
+// menu opens. They start disabled -- the toolbar's group enables them in
+// edit -- and the panel exists only in edit, so they are enabled here.
+void SketcherGui::addViewSettingsActions(QMenu* menu)
+{
+    auto* gridAction = new GridSpaceAction(menu);
+    auto* snapAction = new SnapSpaceAction(menu);
+    auto* renderingAction = new RenderingOrderAction(menu);
+    for (QAction* action : {static_cast<QAction*>(gridAction),
+                             static_cast<QAction*>(snapAction),
+                             static_cast<QAction*>(renderingAction)}) {
+        action->setEnabled(true);
+    }
+
+    menu->addAction(gridAction);
+    menu->addSeparator();
+    menu->addAction(snapAction);
+    menu->addSeparator();
+    menu->addAction(renderingAction);
+
+    QObject::connect(menu, &QMenu::aboutToShow, [gridAction, snapAction, renderingAction]() {
+        gridAction->updateWidget();
+        snapAction->updateWidget(App::GetApplication()
+                                     .GetParameterGroupByPath(
+                                         "User parameter:BaseApp/Preferences/Mod/Sketcher/Snap")
+                                     ->GetBool("Snap", true));
+        renderingAction->updateWidget();
+    });
+}
 
 void CreateSketcherCommands()
 {

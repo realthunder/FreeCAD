@@ -481,6 +481,11 @@ fc_add_gui_test(GuiSketchDimensionLabelOffset_tests_run
                 sketch-dimension-label-offset.py
                 --timeout 120)
 
+# The sketch's solver panel is Core's TaskSolverMessages, with its settings menu.
+fc_add_gui_test(GuiSketchSolverPanelSettings_tests_run
+                sketch-solver-panel-settings.py
+                --timeout 120)
+
 # A sketch's face colour follows the preference under AutoColor, with the fork's default.
 fc_add_gui_test(GuiSketchAutoFaceColor_tests_run
                 sketch-auto-face-color.py

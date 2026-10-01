@@ -36,7 +36,7 @@ def check(name, cond, detail=""):
 
 def status_text():
     labels = [w for w in FreeCADGui.getMainWindow().findChildren(QtWidgets.QLabel)
-              if w.objectName() == "labelConstrainStatus" and w.isVisible()]
+              if w.objectName() == "labelStatus" and w.isVisible()]
     return labels[0].text() if labels else None
 
 

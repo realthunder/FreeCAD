@@ -9102,7 +9102,7 @@ void ViewProviderSketch::UpdateSolverInformation()
     // is something to constrain to, not an empty sketch.
     if (getSketchObject()->Geometry.getSize() == 0
         && getSketchObject()->getExternalGeometryCount() <= 2) {
-        signalSetUp(QString::fromUtf8("empty_sketch"), tr("Empty sketch"), QString(), QString());
+        signalSetUp(QString::fromUtf8("empty"), tr("Empty sketch"), QString(), QString());
     }
     else if (dofs < 0 || hasConflicts) {// over-constrained sketch
         signalSetUp(
