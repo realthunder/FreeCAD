@@ -46,6 +46,7 @@ SoFCZoomOffsetElement::init(SoState * state)
 {
   inherited::init(state);
   this->offset = SbVec2f(0.f, 0.f);
+  this->pixels = SbVec2f(0.f, 0.f);
 }
 
 void
@@ -55,6 +56,7 @@ SoFCZoomOffsetElement::push(SoState * state)
   SoFCZoomOffsetElement *elem =
       static_cast<SoFCZoomOffsetElement*>(getNextInStack());
   this->offset = elem->offset;
+  this->pixels = elem->pixels;
 }
 
 SbBool
@@ -62,7 +64,7 @@ SoFCZoomOffsetElement::matches(const SoElement * element) const
 {
   const SoFCZoomOffsetElement *other =
       static_cast<const SoFCZoomOffsetElement *>(element);
-  return other->offset == this->offset;
+  return other->offset == this->offset && other->pixels == this->pixels;
 }
 
 SoElement *
@@ -72,6 +74,7 @@ SoFCZoomOffsetElement::copyMatchInfo(void) const
   SoFCZoomOffsetElement * element =
       static_cast<SoFCZoomOffsetElement *>(getTypeId().createInstance());
   element->offset = this->offset;
+  element->pixels = this->pixels;
   return element;
 }
 
@@ -93,6 +96,26 @@ SoFCZoomOffsetElement::get(SoState * state)
   if (!elem)
     return SbVec2f(0.f, 0.f);
   return elem->offset;
+}
+
+void
+SoFCZoomOffsetElement::addPixels(SoState * state, const SbVec2f & pixels)
+{
+  SoFCZoomOffsetElement * elem = static_cast<SoFCZoomOffsetElement *>(
+      SoElement::getElement(state, getClassStackIndex()));
+  if (elem)
+    elem->pixels += pixels;
+}
+
+SbVec2f
+SoFCZoomOffsetElement::getPixels(SoState * state)
+{
+  const SoFCZoomOffsetElement * elem =
+      static_cast<const SoFCZoomOffsetElement*>(
+          SoElement::getConstElement(state, getClassStackIndex()));
+  if (!elem)
+    return SbVec2f(0.f, 0.f);
+  return elem->pixels;
 }
 
 bool

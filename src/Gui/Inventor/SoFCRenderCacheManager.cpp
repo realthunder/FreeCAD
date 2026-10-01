@@ -2654,7 +2654,9 @@ SoFCRenderCacheManagerP::preImage(SoFCRenderCacheManagerP *self,
   SbVec2f zoomoff = SoFCZoomOffsetElement::get(state);
   float vph = float(
       SoViewportRegionElement::get(state).getViewportSizePixels()[1]);
-  SbVec3f offpx(zoomoff[0] * 0.02f * vph, zoomoff[1] * 0.02f * vph, 0.f);
+  SbVec2f pixels = SoFCZoomOffsetElement::getPixels(state);
+  SbVec3f offpx(zoomoff[0] * 0.02f * vph + pixels[0],
+                zoomoff[1] * 0.02f * vph + pixels[1], 0.f);
   static int dbg = std::getenv("FC_DEBUG_IMAGEQUAD") ? 1 : 0;
   if (dbg)
     fprintf(stderr, "preImage %p zoomoff=(%g,%g) vph=%g offpx=(%g,%g)\n",

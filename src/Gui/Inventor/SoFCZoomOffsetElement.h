@@ -53,6 +53,9 @@ public:
   /// chain, mirroring their model-matrix accumulation on the GL path).
   static void add(SoState * state, const SbVec2f & offset);
   static SbVec2f get(SoState * state);
+  /// The same for an offset in pixels (SoZoomTranslation::pixelOffset).
+  static void addPixels(SoState * state, const SbVec2f & pixels);
+  static SbVec2f getPixels(SoState * state);
 
   /// True while a SoFCRenderCacheManager capture traversal runs on this
   /// thread — the zoom translations divert their scaled part here only
@@ -62,6 +65,7 @@ public:
 
 protected:
   SbVec2f offset;
+  SbVec2f pixels;
 };
 
 #endif // FC_ZOOMOFFSETELEMENT_H
