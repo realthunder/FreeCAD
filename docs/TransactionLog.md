@@ -10355,3 +10355,94 @@ model logs `Exception on making thick solid: BRep_Builder::UpdateEdge` from
 
 Commits: fork `45d6a96922` (the pictures and the tools), `6e7ffdd034` (the
 README); FreeCAD `f1a8bc0004` (the doc, since moved, and this section).
+
+### 27.98 The log's worker and a meshed shape: frozen representations under a lock (user, 2026-10-01)
+
+The user: chase the crash of 27.97. Then, offered three fixes, chose the
+fork-side lock, "but make sure no abi break".
+
+**Reproduced.** Five full GUI render runs under gdb with the log on came
+out clean (the worker did export: 14 shapes in a 12-panel run, from
+`onCommit`); the window is narrow. Forced instead: gdb in non-stop mode,
+its Python API holding only the worker -- armed when it enters
+`writeValues`, it stops in `BRep_CurveRepresentation::IsCurve3D` (called on
+every node of the walk) when the node is a `BRep_PolygonOnTriangulation`,
+read from RTTI -- for four seconds, while `FreeCADCmd` remeshes the same
+committed shape (`tessellate(d, True)`). On release the worker took SIGSEGV
+in `BRepTools_ShapeSet::AddGeometry`, the same walk as 27.97's
+`WriteGeometry`. Every time.
+
+**Cause.** The log's copy of a shape shares its TShapes with the live value
+(`PropertyPartShape::Copy`, `ShapePropertyCopy` off), and the worker walks
+each edge's `Curves()` and each vertex's `Points()` unsynchronised. The
+freeze (sec 23.6, 23.13) leaves a frozen TShape open to caches, and every one
+of them edits those lists on the main thread: a remesh
+(`BRep_Builder::UpdateEdge` with a polygon on a triangulation) removes the
+old node, freeing it, and appends a new one; a cache pcurve or regularity
+for a new face appends, the sweep of dead caches (27.82) removes from the
+edge and its vertices; a cache vertex parameter appends; `BRepTools::Clean`
+removes; `UpdateFaceUVPoints` updates a pcurve's points in place. A walker
+on a freed node reads garbage on `Next()`.
+
+**Rejected, measured.** A snapshot for the worker on the main thread -- the
+topology copied, the geometry shared -- costs about 70% of the export it
+saves the worker: `copy(False, False)` against `exportBrepToString` on a
+box less 36, 196 and 900 pins, 0.6 / 1.0, 3.8 / 5.5, 19.8 / 28.4 ms. Exporting
+on the main thread costs it all.
+
+**Fixed** (fork, TKBRep): `BRep_RepresentationLock`, a new class -- no
+class changes size and no existing header changes, so nothing built
+against the fork needs a rebuild (the user's condition). For an Immutable
+TShape it holds a recursive mutex, striped by address, a table per kind;
+for any other TShape it does nothing. Taken by every `BRep_Builder` method
+that edits an Immutable TShape (26 sites, at the handle each method takes
+on its target), by the sweep for each vertex it edits, by the three
+`BRepTools` functions that edit an edge's list directly (`Clean`,
+`RemoveUnusedPCurves`, `UpdateFaceUVPoints`), and by the writers for each
+shape whose representations they walk (`BRepTools_ShapeSet` `AddGeometry`,
+`WriteGeometry`, `DumpGeometry` and the own-surface pass,
+`BinTools_ShapeSet` `AddShape` and `WriteShape`, `BinTools_ShapeWriter`
+around one shape's geometry, released before its sub-shapes). A method
+locks only what it writes (`UpdateVertex` on an edge locks the vertex,
+`Transfert` the edge it fills), the only nesting is an edge's lock and then
+its vertices' (the sweep), and the writers take one at a time: no cycle.
+While the worker's tables hold a surface, the sweep's "held by caches
+alone" refcount test fails and that cache lives a little longer --
+harmless.
+
+**Checked.** The forced race with the fix: the worker held on a polygon
+node, the main thread's remesh waits on the lock for the whole hold
+("remeshed 1 times" in the two-second window), no crash. The control, the
+same frozen run with an unpatched `libTKBRep` built from the stashed tree
+and preloaded: SIGSEGV. A first run "with the fix" crashed too: its
+`FREECAD_USER_HOME` did not exist, so it read the default
+`~/.config/FreeCAD/user.cfg`, which holds `ImmutableShapeValues=0` -- the
+shape was never frozen and nothing locked. That file is byte-identical to
+the snapshot 27.96's gates took of it: it predates this session.
+
+**Tests** (FreeCAD gtests, `ImmutableShape.cpp`):
+`aRemeshWaitsForAWriterOfAFrozenEdge` and
+`aWriterWaitsForAnEditOfAFrozenEdge` hold the lock on one thread and check
+the other waits -- both fail without the fix; `aShapeThatIsNotFrozenTakesNoLock`;
+and `aFrozenShapeIsWrittenWhileItIsRemeshed`, the race unforced: a thread
+writes the value over and over while this one cleans and remeshes it 200
+times, and every write must give the same bytes. Without the fix it crashed
+in one run of four, in `WriteGeometry` under `exportBrep` -- 27.97's stack;
+with it four of four pass (2.2 s).
+
+**Left.** With `ImmutableShapeValues` off nothing is frozen, so nothing
+locks, and the log's worker still shares TShapes the main thread may edit
+-- not only caches but the value itself. The log assumes the freeze. And
+any code that edits a frozen TShape's lists without `BRep_Builder` or the
+three `BRepTools` functions (a direct `ChangeCurves()`) is unguarded --
+though such an edit already breaks the freeze. Readers on other threads
+that go through `BRep_Tool` take no lock either; today the log's writers
+are the only ones.
+
+Commits: fork `890083ee61` (the lock, its uses, the note in
+`BRep_Builder.cxx`), `457b652f42` (the picture tools' notes); FreeCAD (the
+tests and this section, one commit).
+
+**Gates:** Python 2974 OK (52 skipped, 6 expected failures), ctest 854/854
+(+4), the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14; the fork's
+thickness suite PASS 60, XFAIL 2.

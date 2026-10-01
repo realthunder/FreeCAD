@@ -50,6 +50,16 @@
 #include <TopoDS_Iterator.hxx>
 #include <TopoDS_LockedShape.hxx>
 #include <TopoDS_FrozenShape.hxx>
+#include <BRep_RepresentationLock.hxx>
+#include <BRepTools.hxx>
+#include <BRepAlgoAPI_Cut.hxx>
+#include <BRepPrimAPI_MakeCylinder.hxx>
+#include <gp_Ax2.hxx>
+
+#include <atomic>
+#include <chrono>
+#include <future>
+#include <thread>
 
 // The OCCT fork's Immutable flag (docs/TransactionLog.md sec 23.6): a
 // shape held as a property value refuses every change to its geometry and
@@ -699,4 +709,100 @@ TEST(ImmutableShapeTest, fixLeavesAFrozenPartAlone)
                                          M_PI / 2));
     EXPECT_FALSE(revolved.isNull());
     EXPECT_EQ(storedBytes(face), before);
+}
+
+// A frozen shape is read on another thread -- the transaction log writes the
+// values it is given on a worker -- while it still takes caches here: a
+// mesher's polygons, a pcurve for a new face. Both edit the edge's list of
+// representations, and the writer walked a node the remesh had freed
+// (docs/TransactionLog.md sec 27.98). In the OCCT fork every edit of an
+// Immutable TShape's representations, and every walk of them by a writer,
+// holds BRep_RepresentationLock.
+namespace {
+
+TopoDS_Edge firstEdge(const TopoDS_Shape& shape)
+{
+    return TopoDS::Edge(TopExp_Explorer(shape, TopAbs_EDGE).Current());
+}
+
+} // namespace
+
+TEST(ImmutableShapeTest, aRemeshWaitsForAWriterOfAFrozenEdge)
+{
+    TopoDS_Shape box = BRepPrimAPI_MakeBox(10, 20, 30).Shape();
+    setImmutable(box);
+    const TopoDS_Edge edge = firstEdge(box);
+    std::atomic<bool> released {false};
+    std::promise<void> holding;
+    std::thread writer([&]() {
+        BRep_RepresentationLock lock(edge.TShape().get());
+        holding.set_value();
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        released = true;
+    });
+    holding.get_future().wait();
+    // Writes a polygon into every edge, the held one among them.
+    BRepMesh_IncrementalMesh mesh(box, 0.5);
+    EXPECT_TRUE(released.load());
+    writer.join();
+}
+
+TEST(ImmutableShapeTest, aWriterWaitsForAnEditOfAFrozenEdge)
+{
+    tests::initApplication();  // the storage options read DocumentParams
+    TopoDS_Shape box = BRepPrimAPI_MakeBox(10, 20, 30).Shape();
+    setImmutable(box);
+    BRepMesh_IncrementalMesh mesh(box, 0.5);
+    const std::string expected = storedBytes(box);
+    std::future<std::string> written;
+    {
+        BRep_RepresentationLock lock(firstEdge(box).TShape().get());
+        written = std::async(std::launch::async, [&box]() { return storedBytes(box); });
+        EXPECT_EQ(written.wait_for(std::chrono::milliseconds(200)), std::future_status::timeout);
+    }
+    EXPECT_EQ(written.get(), expected);
+}
+
+TEST(ImmutableShapeTest, aShapeThatIsNotFrozenTakesNoLock)
+{
+    TopoDS_Shape box = BRepPrimAPI_MakeBox(10, 20, 30).Shape();
+    BRep_RepresentationLock lock(firstEdge(box).TShape().get());
+    auto meshed = std::async(std::launch::async, [&box]() { BRepMesh_IncrementalMesh(box, 0.5); });
+    EXPECT_EQ(meshed.wait_for(std::chrono::seconds(10)), std::future_status::ready);
+}
+
+TEST(ImmutableShapeTest, aFrozenShapeIsWrittenWhileItIsRemeshed)
+{
+    tests::initApplication();  // the storage options read DocumentParams
+    // The race itself, unforced: one thread writes the value over and over
+    // while this one remeshes it at changing deflections, replacing every
+    // edge's polygons. Before the lock this could crash; it must give the
+    // same bytes every time, since polygons are not stored.
+    TopoDS_Shape shape = BRepPrimAPI_MakeBox(10, 10, 10).Shape();
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 4; ++j) {
+            gp_Ax2 axis(gp_Pnt(1.5 + i * 2.3, 1.5 + j * 2.3, 0), gp::DZ());
+            shape = BRepAlgoAPI_Cut(shape, BRepPrimAPI_MakeCylinder(axis, 0.4, 10).Shape()).Shape();
+        }
+    }
+    setImmutable(shape);
+    BRepMesh_IncrementalMesh(shape, 0.5);
+    const std::string expected = storedBytes(shape);
+    std::atomic<bool> stop {false};
+    std::atomic<int> differ {0};
+    std::thread writer([&]() {
+        while (!stop) {
+            if (storedBytes(shape) != expected)
+                ++differ;
+        }
+    });
+    // Cleaned first, or a coarser request keeps the finer mesh and edits
+    // nothing; the clean removes every polygon node too.
+    for (int k = 0; k < 200; ++k) {
+        BRepTools::Clean(shape);
+        BRepMesh_IncrementalMesh(shape, 0.2 + 0.1 * (k % 3));
+    }
+    stop = true;
+    writer.join();
+    EXPECT_EQ(differ.load(), 0);
 }
