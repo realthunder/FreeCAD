@@ -2263,7 +2263,7 @@ void ViewProviderSketch::cancelDragMove()
     resetPositionText();
 }
 
-void ViewProviderSketch::moveConstraint(int constNum, const Base::Vector2d &toPos)
+void ViewProviderSketch::moveConstraint(int constNum, const Base::Vector2d &toPos, OffsetMode offset)
 {
     // are we in edit?
     if (!edit)
@@ -2431,12 +2431,28 @@ void ViewProviderSketch::moveConstraint(int constNum, const Base::Vector2d &toPo
         else if (Constr->Type == DistanceY)
             dir = Base::Vector3d(0, (p2.y - p1.y >= FLT_EPSILON) ? 1 : -1, 0);
 
+        // A tool placing the label at the pointer pulls it back by 1% of the
+        // view, so the pointer does not sit on the value; the view is the one
+        // being edited in, which for a served client is its own.
+        double offsetVal = 0.0;
+        if (offset == OffsetConstraint) {
+            if (auto viewer = editViewer()) {
+                float fHeight = -1.0f;
+                float fWidth = -1.0f;
+                viewer->getDimensions(fHeight, fWidth);
+                offsetVal = (fHeight + fWidth) * 0.01;
+            }
+        }
+
         if (Constr->Type == Radius || Constr->Type == Diameter || Constr->Type == Weight) {
-            Constr->LabelDistance = vec.x * dir.x + vec.y * dir.y;
+            double distance = vec.x * dir.x + vec.y * dir.y;
+            if (distance > offsetVal)
+                distance -= offsetVal;
+            Constr->LabelDistance = distance;
             Constr->LabelPosition = atan2(dir.y, dir.x);
         } else {
             Base::Vector3d normal(-dir.y,dir.x,0);
-            Constr->LabelDistance = vec.x * normal.x + vec.y * normal.y;
+            Constr->LabelDistance = vec.x * normal.x + vec.y * normal.y - offsetVal;
             if (Constr->Type == Distance ||
                 Constr->Type == DistanceX || Constr->Type == DistanceY) {
                 vec = Base::Vector3d(toPos.x, toPos.y, 0) - (p2 + p1) / 2;

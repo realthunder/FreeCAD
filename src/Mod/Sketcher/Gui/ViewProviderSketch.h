@@ -47,6 +47,7 @@
 #include "PropertyVisualLayerList.h"
 
 #include "ShortcutListener.h"
+#include "Utils.h"
 
 
 class TopoDS_Shape;
@@ -381,7 +382,7 @@ public:
 
 
     /// moves a selected constraint
-    void moveConstraint(int constNum, const Base::Vector2d &toPos);
+    void moveConstraint(int constNum, const Base::Vector2d &toPos, OffsetMode offset = NoOffset);
     /// finds a free position for placing a constraint icon
     Base::Vector3d seekConstraintPosition(const Base::Vector3d &origPos,
                                           const Base::Vector3d &norm,

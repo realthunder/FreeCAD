@@ -476,6 +476,11 @@ fc_add_gui_test(GuiSketchDistanceLabelScale_tests_run
                 sketch-distance-label-scale.py
                 --timeout 120)
 
+# The Dimension tool's preview label is pulled back from the pointer, not put under it.
+fc_add_gui_test(GuiSketchDimensionLabelOffset_tests_run
+                sketch-dimension-label-offset.py
+                --timeout 120)
+
 # A sketch's face colour follows the preference under AutoColor, with the fork's default.
 fc_add_gui_test(GuiSketchAutoFaceColor_tests_run
                 sketch-auto-face-color.py
