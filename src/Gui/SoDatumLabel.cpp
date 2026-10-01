@@ -331,9 +331,10 @@ SoNode* SoDatumLabel::getImageNode()
 {
     if (!this->imageRoot) {
         this->imageTexture = new SoTexture2;
-        // The glyph bitmap already bakes in the text colour, so replace the
-        // fragment colour with the texel (alpha-blended); no material tint.
-        this->imageTexture->model = SoTexture2::REPLACE;
+        // The glyph's alpha, white, tinted by the material below (the
+        // label's colour): the pixels GLRender draws, in a colour a
+        // highlight can override (syncImageTexture).
+        this->imageTexture->model = SoTexture2::MODULATE;
 
         // Anchor places the quad at textOffset/textAngle; the autozoom that
         // follows makes it screen-constant (native glyph pixels), matching the
@@ -397,8 +398,20 @@ void SoDatumLabel::syncImageTexture()
     SbVec2s size;
     int nc;
     const unsigned char* bytes = this->image.getValue(size, nc);
-    if (bytes && size[0] > 0 && size[1] > 0)
+    if (bytes && size[0] > 0 && size[1] > 0 && nc == 4) {
+        // drawImage() paints the glyph in textColor alone: keep its alpha
+        std::vector<unsigned char> mask(bytes, bytes + std::size_t(size[0]) * size[1] * 4);
+        for (std::size_t i = 0; i < mask.size(); i += 4) {
+            mask[i] = mask[i + 1] = mask[i + 2] = 255;
+        }
+        this->imageTexture->image.setValue(size, 4, mask.data());
+        this->imageTexture->model = SoTexture2::MODULATE;
+    }
+    else if (bytes && size[0] > 0 && size[1] > 0) {
+        // no alpha to keep: the texel as it is
         this->imageTexture->image.setValue(size, nc, bytes);
+        this->imageTexture->model = SoTexture2::REPLACE;
+    }
     else
         this->imageTexture->image.setValue(SbVec2s(0, 0), 0, nullptr);
 }

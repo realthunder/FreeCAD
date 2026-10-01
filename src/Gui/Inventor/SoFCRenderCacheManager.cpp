@@ -425,6 +425,8 @@ public:
   static SoCallbackAction::Response postSkipBounds(void *, SoCallbackAction *action, const SoNode * node);
   static SoCallbackAction::Response preShape(void *, SoCallbackAction *action, const SoNode * node);
   static SoCallbackAction::Response preImage(SoFCRenderCacheManagerP *self, SoCallbackAction *action, const SoImage * node);
+  /// The image companion's texture and colour, from its owner's pixels
+  static void syncImageTexture(SoTexture2 * texture, SoBaseColor * color, const SoImage * node);
   static SoCallbackAction::Response postShape(void *, SoCallbackAction *action, const SoNode * node);
   static SoCallbackAction::Response postClipPlane(void *, SoCallbackAction *action, const SoNode * node);
   static SoCallbackAction::Response preAutoZoom(void *, SoCallbackAction *action, const SoNode * node);
@@ -512,13 +514,16 @@ public:
     SbFCVector<VertexCachePtr> caches;
 
     // SoImage nodes only: the capture companion sub-graph
-    // [SoTexture2(REPLACE) -> SoAutoZoomTranslation(billboard, pixelScale 1)
-    //  -> SoFCImageQuad] traversed in the node's place by preShape(), and
-    // the owner node-id it was last captured against (a change retires the
-    // companion quad's vertex cache — the quad's own node-id cannot see
-    // owner edits like an icon recolour/resize).
+    // [SoLightModel(BASE_COLOR) -> SoBaseColor -> SoTexture2
+    //  -> SoAutoZoomTranslation(billboard, pixelScale 1) -> SoFCImageQuad]
+    // traversed in the node's place by preShape(), and the owner node-id
+    // it was last captured against (a change retires the companion quad's
+    // vertex cache -- the quad's own node-id cannot see owner edits like an
+    // icon recolour/resize -- and takes the owner's pixels again).
     CoinPtr<SoSeparator> imageroot;
     SoFCImageQuad *imagequad = nullptr;
+    SoTexture2 *imagetexture = nullptr;
+    SoBaseColor *imagecolor = nullptr;
     SbFCUniqueId imageid = 0;
   };
 
@@ -2596,6 +2601,71 @@ SoFCRenderCacheManagerP::preShape(void *userdata,
   return SoCallbackAction::CONTINUE;
 }
 
+// The one colour an image is drawn in -- a glyph, an icon's silhouette --
+// if every pixel that shows has it, up to the rounding of antialiased
+// edges (whether their colour is premultiplied or not). False for an image
+// of several colours, or one without alpha.
+static bool flatImageColor(const unsigned char * px, const SbVec2s & size, int nc,
+                           SbColor & color)
+{
+  if (nc != 4)
+    return false;
+  const int count = size[0] * size[1];
+  // the most opaque pixel stands for the colour
+  int ref = -1;
+  for (int i = 0; i < count; ++i) {
+    if (ref < 0 || px[i * 4 + 3] > px[ref * 4 + 3])
+      ref = i;
+  }
+  if (ref < 0 || px[ref * 4 + 3] < 128)
+    return false;
+  const unsigned char * r = px + ref * 4;
+  for (int i = 0; i < count; ++i) {
+    const unsigned char * p = px + i * 4;
+    const int a = p[3];
+    if (a < 32)
+      continue;
+    bool same = true;
+    bool premultiplied = true;
+    for (int c = 0; c < 3; ++c) {
+      same = same && std::abs(int(p[c]) - int(r[c])) <= 16;
+      premultiplied = premultiplied && std::abs(int(p[c]) - int(r[c]) * a / 255) <= 16;
+    }
+    if (!same && !premultiplied)
+      return false;
+  }
+  color.setValue(r[0] / 255.f, r[1] / 255.f, r[2] / 255.f);
+  return true;
+}
+
+void
+SoFCRenderCacheManagerP::syncImageTexture(SoTexture2 * texture,
+                                          SoBaseColor * color,
+                                          const SoImage * node)
+{
+  // An image of one colour is drawn as its alpha in that colour: the same
+  // pixels, but a colour a highlight can override -- a preselected
+  // constraint icon shown on top in the preselection colour. Any other
+  // keeps its own colours, the texel replacing the fragment colour.
+  SbVec2s size;
+  int nc;
+  const unsigned char * px = node->image.getValue(size, nc);
+  SbColor flat;
+  if (px && flatImageColor(px, size, nc, flat)) {
+    std::vector<unsigned char> mask(px, px + std::size_t(size[0]) * size[1] * 4);
+    for (std::size_t i = 0; i < mask.size(); i += 4)
+      mask[i] = mask[i + 1] = mask[i + 2] = 255;
+    texture->image.setValue(size, 4, mask.data());
+    texture->model = SoTexture2::MODULATE;
+    color->rgb = flat;
+  }
+  else {
+    texture->image.setValue(size, nc, px);
+    texture->model = SoTexture2::REPLACE;
+    color->rgb = SbColor(1.f, 1.f, 1.f);
+  }
+}
+
 SoCallbackAction::Response
 SoFCRenderCacheManagerP::preImage(SoFCRenderCacheManagerP *self,
                                   SoCallbackAction *action,
@@ -2609,12 +2679,12 @@ SoFCRenderCacheManagerP::preImage(SoFCRenderCacheManagerP *self,
   VCacheSensor & sensor = self->vcachetable[node];
   sensor.attach(self, node);
   if (!sensor.imageroot) {
+    // Unlit: the quad shows the image's own colours (glDrawPixels
+    // semantics), taken by syncImageTexture() from the owner's pixels.
+    auto *lightmodel = new SoLightModel;
+    lightmodel->model = SoLightModel::BASE_COLOR;
+    auto *color = new SoBaseColor;
     auto *texture = new SoTexture2;
-    // The image bakes its own colours (glDrawPixels semantics): replace
-    // the fragment colour with the texel, alpha-blended, no material tint.
-    texture->model = SoTexture2::REPLACE;
-    // Track the owner's pixels live (icon recolour on selection etc.).
-    texture->image.connectFrom(&const_cast<SoImage *>(node)->image);
 
     auto *zoom = new SoAutoZoomTranslation;
     // SoImage is always screen-aligned; pixelScale 1 renders the
@@ -2630,10 +2700,14 @@ SoFCRenderCacheManagerP::preImage(SoFCRenderCacheManagerP *self,
     // out of the render/bbox caches so owner edits always re-emit.
     sensor.imageroot->renderCaching = SoSeparator::OFF;
     sensor.imageroot->boundingBoxCaching = SoSeparator::OFF;
+    sensor.imageroot->addChild(lightmodel);
+    sensor.imageroot->addChild(color);
     sensor.imageroot->addChild(texture);
     sensor.imageroot->addChild(zoom);
     sensor.imageroot->addChild(quad);
     sensor.imagequad = quad;
+    sensor.imagetexture = texture;
+    sensor.imagecolor = color;
   }
 
   // The companion quad's vertex cache is keyed on the quad's own node id,
@@ -2641,6 +2715,7 @@ SoFCRenderCacheManagerP::preImage(SoFCRenderCacheManagerP *self,
   if (sensor.imageid != node->getNodeId()) {
     sensor.imageid = node->getNodeId();
     sensor.imagequad->touch();
+    syncImageTexture(sensor.imagetexture, sensor.imagecolor, node);
   }
 
   // Fold the accumulated Sketcher zoom-translation offset into the quad
