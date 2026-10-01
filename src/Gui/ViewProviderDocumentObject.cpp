@@ -1121,7 +1121,12 @@ Base::BoundBox3d ViewProviderDocumentObject::_getBoundingBox(
     if(Data::isMappedElement(subname)
             || (dot=strchr(subname,'.'))==0)
     {
-        return ViewProvider::_getBoundingBox(subname,&smat,false,viewer,depth+1);
+        // An element of this object: its own placement counts as the
+        // caller asked. Passing false here dropped it for a direct query
+        // (mat empty, transform true), so every face, edge and vertex of a
+        // placed object came back where it would be unplaced. A parent's
+        // walk already passes false with the placement in mat.
+        return ViewProvider::_getBoundingBox(subname,&smat,transform,viewer,depth+1);
     }
 
     if(ViewParams::getMapChildrenPlacement()) {
