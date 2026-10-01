@@ -672,6 +672,33 @@ class RegressionTests(unittest.TestCase):
             self.assertEqual(len(result.Shells), 1, name)
             self.assertAlmostEqual(result.Volume, volume, places=3, msg=name)
 
+    def test_thickness_sealed_below_a_removed_face(self):
+        """A cone with a through hole, its top removed, inward: the wall is 1.4
+        thick at the top, the cone's and the hole's inner offsets cross at
+        z=6.485, and no cavity reaches the removed face. The material is every
+        point within the thickness of a face that stays, so the cavity is
+        closed and the top stays as skin over it (docs/TransactionLog.md sec
+        27.100): two shells, in every mode. With its bottom removed and
+        intersection off the cavity ran on past the crossing, 0.761 too much.
+        Worked out by hand."""
+        cone = Part.makeCone(6, 3, 8).cut(Part.makeCylinder(1.5, 8))
+        for inter in (False, True):
+            for join in (0, 2):
+                name = "top, inter=%s, join=%d" % (inter, join)
+                result = cone.makeThickness([cone.Faces[1]], -1.0, 1e-7, inter, False, 0, join)
+                self.assertTrue(result.isValid(), name)
+                volumes = sorted(abs(Part.Solid(s).Volume) for s in result.Shells)
+                self.assertEqual(len(volumes), 2, name)
+                self.assertAlmostEqual(volumes[0], 112.9243, places=3, msg=name)
+                self.assertAlmostEqual(volumes[1], 471.2389, places=3, msg=name)
+                self.assertAlmostEqual(result.Volume, 358.3146, places=3, msg=name)
+        for join in (0, 2):
+            name = "bottom, join=%d" % join
+            result = cone.makeThickness([cone.Faces[2]], -1.0, 1e-7, False, False, 0, join)
+            self.assertTrue(result.isValid(), name)
+            self.assertEqual(len(result.Shells), 1, name)
+            self.assertAlmostEqual(result.Volume, 307.1946, places=3, msg=name)
+
     def test_OptimalBox(self):
         box = Part.makeBox(1, 1, 1)
         self.assertTrue(box.optimalBoundingBox(True, False).isValid())

@@ -10507,3 +10507,101 @@ and this section, one commit); no fork change.
 which skips when nothing is frozen -- every changed shape of the suite
 written on the main thread; ctest 856/856 (+2); the GUI checks RC 15, BC 27,
 VC 18, PC 28, FC 16, VW 14; the fork's thickness suite PASS 60, XFAIL 2.
+
+### 27.100 Thickness: a cavity sealed below the removed face (user, 2026-10-01)
+
+The user, "continue": the holed cone's top inward (`conehole_f2_-1`, the
+last failure in the sweep, every mode). Asked what the right result is, the
+user chose the sealed void, in every mode, over failing loudly or an opt-in.
+
+**The case.** `makeCone(6, 3, 8)` less a cylinder of radius 1.5, the top
+removed, thickness 1 inward. The wall is 1.4 thick at the top, thinner than
+twice the thickness: the cone's inner offset (`r = 4.932 - 0.375 z`) and the
+hole's (`r = 2.5`) cross at z = 6.4853. The material is every point within
+the thickness of a face that stays; the cavity -- r > 2.5, inside the cone's
+offset, z > 1 -- is closed below the crossing, and no cavity reaches the
+removed face, which stays as skin over it. By hand: skin 471.2389, void
+112.9243 (the band between the two offsets from z = 1 to the crossing),
+result 358.3146. A groove the fork once left at the top is material: every
+point of it is within the thickness of both walls.
+
+**What it was.** Upstream: invalid with intersection off (the void inverted,
+-106.68), the sealed void with it on -- by luck of order, it turns out.
+The fork: a "valid" 577.918 with intersection off, larger than its input, a
+shell crossing itself (`isValid()` does not see faces crossing; a
+self-intersection check, `check(True)`, costs more than the thickness itself
+and flags results already checked by hand, so it was no way to catch it),
+and invalid shapes with intersection on. Already broken by the chain's first
+port, `1789444318`: a single-file bisect could not split it further (the
+loop and `Inter2d` do not compile alone), and the trace told the rest.
+
+**Causes and fixes** (fork):
+
+1. *The loop gave the crossing circle to the wrong band* (`BRepAlgo_Loop::
+   FindLoop`). The cone's offset is cut by circles at z = 1 (the floor's
+   offset), 6.485 (the hole's) and 8 (the removed top). A band of a periodic
+   face is two closed edges joined by a piece of the seam, and no two seam
+   wires may share an edge (sec 27.89's rule): the band from z = 8 down to
+   the crossing, found first, took the crossing circle, and the band below
+   -- the cavity -- was never built. Allowing bands to share a closed edge
+   fixed the cone and broke 22 other runs (bands built past the extended
+   offsets' real span: removed cylinders with the Intersection join, the
+   cone's bottom). Now a band whose seam piece lies beyond the seam's span
+   (`myOutsideEdges`, the pieces past the first and last crossing) gives way
+   to one on it: the band from z = 8 is on such a piece.
+2. *ShapeFix turned the next band round.* The band's wire was made with
+   `ShapeFix_Wire` (`FixSeam` among others), which edits the seam's pcurves
+   in place on the shared edge to suit the wire in hand; with the
+   Intersection join the hole's offset came out "unorientable". The band is
+   now made straight from the seam's two pcurves (`MakeSeamBand`): the piece
+   one way, the far closed edge, the piece back, the near one, each closed
+   edge taken the way that runs on in (u, v) and its pcurve moved a whole
+   period onto the band when it lies one over (the hole's circle sat at
+   u in [-2 pi, 0]). ShapeFix stays as the fallback.
+3. *The skin left open* (`MakeThickSolid`). With the cavity's bands built,
+   the offset faces of the cone close up on their own -- in a thick solid
+   they stay open where the cavity meets the removed faces -- and gluing them
+   to the original faces left the skin open at the top. When every offset
+   face is in a closed shell, the result is the original skin, the removed
+   faces in it, with those shells as voids, oriented by volume
+   (`MakeSealedThickSolid`, inward only; refused if an original face was
+   rebuilt or the skin does not close). A first version sorted the offset
+   pieces by distance to the faces that stay (a piece nearer than the
+   thickness to another face bounds material); with the bands right the
+   closed shells say it alone, and the distance pass is gone.
+4. *Intersection off never meets the two offsets*: they are not neighbours.
+   `WallsCrossAtRemovedFace`: for each removed face, the inward offsets of
+   the faces beside it that share no vertex (`BRepOffset_Offset`, Arc), and
+   if any two meet (`BRepExtrema_DistShapeShape` within the tolerance) the
+   shape is built with intersection on, as `638c8064b4` builds the opposite
+   way round. It also fixed the cone's bottom removed with intersection off
+   (sec 27.91's "valid" 307.955, 0.761 too much): 307.1946, the hand value.
+
+No header changes; the fork's ABI stands.
+
+**Tests.** The fork's suite (`tests/thickness/run_tests.py`):
+`conehole_top_in_sealed_{nointer,inter}_j{0,2}` (a `sealed_case`: two closed
+shells, skin and void at the hand values) and `conehole_bottom_in`,
+`conehole_bottom_join_in`; all six fail on the fork before. PASS 66, XFAIL 2.
+FreeCAD: `RegressionTests.test_thickness_sealed_below_a_removed_face`, the
+four modes of the top and the bottom with intersection off. Pictures:
+`conehole_top_in`, `conehole_top_inter_in`, `conehole_bottom_in` (stage
+`s100`, the fork at `457b652f42`); the picture tools take a case's shell
+count from `SHELLS` in `cases.py`. The thickness doc moved to the fork in
+27.97: `tests/thickness/models/Thickness.md` has the section.
+
+**Sweep.** 712 runs: only the six intended changed (the top in four modes,
+the bottom with intersection off in two). Counting the sealed void right,
+the fork is right in all 150 runs in scope of every mode; upstream 106 /
+108 / 110 / 112; better than upstream in 164, worse in none. The thickness
+suite's walk-or-search check is untouched: the bands are periodic, which
+keeps the search.
+
+Commits: fork `7062430660` (the loop: bands), `f759c0c533` (the sealed
+thick solid and the switch to intersection on), `1047da8394` (the suite),
+`b21dabe1c4` (pictures, tools, Thickness.md); FreeCAD (the test and this
+section, one commit).
+
+**Gates:** Python 2975 OK (52 skipped, 6 expected failures; +1), ctest
+856/856, the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14; the fork's
+thickness suite PASS 66, XFAIL 2.
