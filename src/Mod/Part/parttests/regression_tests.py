@@ -626,6 +626,26 @@ class RegressionTests(unittest.TestCase):
             self.assertEqual(len(result.Shells), 1, name)
             self.assertAlmostEqual(result.Volume, volume, places=3, msg=name)
 
+    def test_thickness_with_a_curved_face_tangent_to_its_neighbours(self):
+        """A filleted box with a fillet removed: the removed face is curved and
+        tangent to the planes beside it. Outward the offset failed, inward it
+        came back valid with more volume than the input (upstream OCCT fails
+        too). The tubes and corners are built on the fillet's cylinder, the
+        loop on it walks the angles as on a plane, and a piece of an offset
+        face left hanging on the shell is dropped (docs/TransactionLog.md sec
+        27.95). Worked out by hand."""
+        box = Part.makeBox(10, 8, 6)
+        cases = [
+            ("fillet, in", -1.0, 267.0193),
+            ("fillet, out", 1.0, 405.9034),
+        ]
+        for name, offset, volume in cases:
+            shape = box.makeFillet(2, [box.Edges[i] for i in (0, 2, 4, 6)])
+            result = shape.makeThickness([shape.Faces[2]], offset, 1e-7, False, False, 0, 0)
+            self.assertTrue(result.isValid(), name)
+            self.assertEqual(len(result.Shells), 1, name)
+            self.assertAlmostEqual(result.Volume, volume, places=3, msg=name)
+
     def test_OptimalBox(self):
         box = Part.makeBox(1, 1, 1)
         self.assertTrue(box.optimalBoundingBox(True, False).isValid())
