@@ -390,6 +390,7 @@ void SketcherSettingsDisplay::saveSettings()
     ui->checkBoxTVForceOrtho->onSave();
     ui->checkBoxTVSectionView->onSave();
     ui->checkBoxAdjustCamera->onSave();
+    ui->checkBoxFitOnEdit->onSave();
 
 }
 
@@ -418,6 +419,7 @@ void SketcherSettingsDisplay::loadSettings()
     this->ui->checkBoxTVForceOrtho->setEnabled(this->ui->checkBoxTVRestoreCamera->isChecked());
     ui->checkBoxTVSectionView->onRestore();
     ui->checkBoxAdjustCamera->onRestore();
+    ui->checkBoxFitOnEdit->onRestore();
 }
 
 /**

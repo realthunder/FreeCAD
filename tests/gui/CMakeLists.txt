@@ -486,6 +486,11 @@ fc_add_gui_test(GuiSketchSolverPanelSettings_tests_run
                 sketch-solver-panel-settings.py
                 --timeout 120)
 
+# View Selection fits a sketch's edit element; FitSketchOnEdit fits the sketch on entering edit.
+fc_add_gui_test(GuiSketchViewFitEdit_tests_run
+                sketch-view-fit-edit.py
+                --timeout 150)
+
 # A sketch's face colour follows the preference under AutoColor, with the fork's default.
 fc_add_gui_test(GuiSketchAutoFaceColor_tests_run
                 sketch-auto-face-color.py

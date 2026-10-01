@@ -544,6 +544,25 @@ Supports all unit systems except 'US customary' and 'Building US/Euro'.</string>
        </widget>
       </item>
       <item>
+       <widget class="Gui::PrefCheckBox" name="checkBoxFitOnEdit">
+        <property name="toolTip">
+         <string>When the camera is adjusted on editing, also centre it on the sketch and zoom to fit the sketch's geometry.</string>
+        </property>
+        <property name="text">
+         <string>Fit the view to the sketch on editing</string>
+        </property>
+        <property name="checked">
+         <bool>false</bool>
+        </property>
+        <property name="prefPath" stdset="0">
+         <cstring>Mod/Sketcher/General</cstring>
+        </property>
+        <property name="prefEntry" stdset="0">
+         <cstring>FitSketchOnEdit</cstring>
+        </property>
+       </widget>
+      </item>
+      <item>
        <widget class="Gui::PrefCheckBox" name="checkBoxTVRestoreCamera">
         <property name="toolTip">
          <string>When closing a sketch, move camera back to where it was before the sketch was opened.</string>

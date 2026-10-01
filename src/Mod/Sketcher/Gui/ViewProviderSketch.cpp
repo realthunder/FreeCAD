@@ -224,10 +224,12 @@ static bool _AllowFaceExternal = true;
 static double _SnapTolerance;
 static bool _ViewBottomOnEdit;
 static bool _AdjustCamera;
+static bool _FitOnEdit;
 static const char *_ParamAllowFaceExternal = "AllowFaceExternalPick";
 static const char *_ParamSnapTolerance = "SnapTolerance";
 static const char *_ParamViewBottomOnEdit = "ViewBottomOnEdit";
 static const char *_ParamAdjustCamera = "AdjustCamera";
+static const char *_ParamFitOnEdit = "FitSketchOnEdit";
 
 
 //**************************************************************************
@@ -306,6 +308,7 @@ struct EditData {
         _SnapTolerance = hSketchGeneral->GetFloat(_ParamSnapTolerance, 0.2);
         _ViewBottomOnEdit = hSketchGeneral->GetBool(_ParamViewBottomOnEdit, false);
         _AdjustCamera = hSketchGeneral->GetBool(_ParamAdjustCamera, true);
+        _FitOnEdit = hSketchGeneral->GetBool(_ParamFitOnEdit, false);
 
         timer.setSingleShot(true);
         QObject::connect(&timer, &QTimer::timeout, [master]() {
@@ -1105,6 +1108,73 @@ void ViewProviderSketch::getProjectingLine(const SbVec2s& pnt, const Gui::Viewer
     // and every off-centre click landed aspect times too far out in x,
     // which is invisible at the centre of the viewport and nowhere else.
     vol.projectPointToLine(viewer->getNormalizedPosition(pnt), line);
+}
+
+Base::BoundBox3d ViewProviderSketch::_getBoundingBox(const char *subname,
+        const Base::Matrix4D *mat, bool transform,
+        const Gui::View3DInventorViewer *view, int depth) const
+{
+    if (!isInEditMode())
+        return inherited::_getBoundingBox(subname, mat, transform, view, depth);
+
+    // The element is the last component; what comes before it is the path
+    // down to this sketch (Body.Sketch.Edge3).
+    std::string name(subname ? subname : "");
+    auto lastDot = name.find_last_of('.');
+    if (lastDot != std::string::npos)
+        name = name.substr(lastDot + 1);
+
+    auto obj = getSketchObject();
+    Base::BoundBox3d bbox;
+    auto addGeometry = [&](int geoId) {
+        if (auto geo = obj->getGeometry(geoId))
+            bbox.Add(geo->getBoundBox());
+    };
+    auto indexAfter = [&](const char *prefix, int &index) {
+        std::size_t len = std::strlen(prefix);
+        if (name.size() <= len || name.compare(0, len, prefix) != 0)
+            return false;
+        index = std::atoi(name.c_str() + len) - 1;
+        return index >= 0;
+    };
+
+    int index = -1;
+    if (name.empty() || name == "H_Axis" || name == "V_Axis") {
+        for (int i = 0; i <= obj->getHighestCurveIndex(); ++i)
+            addGeometry(i);
+        for (int i = 0; i < obj->getExternalGeometryCount(); ++i)
+            addGeometry(Sketcher::GeoEnum::RefExt - i);
+        bbox.Add(Base::Vector3d(0.0, 0.0, 0.0));
+    }
+    else if (name == "RootPoint")
+        bbox.Add(Base::Vector3d(0.0, 0.0, 0.0));
+    else if (indexAfter("ExternalEdge", index))
+        addGeometry(Sketcher::GeoEnum::RefExt - index);
+    else if (indexAfter("Edge", index))
+        addGeometry(index);
+    else if (indexAfter("Vertex", index)) {
+        int geoId = Sketcher::GeoEnum::GeoUndef;
+        Sketcher::PointPos posId = Sketcher::PointPos::none;
+        obj->getGeoVertexIndex(index, geoId, posId);
+        if (geoId != Sketcher::GeoEnum::GeoUndef)
+            bbox.Add(obj->getPoint(geoId, posId));
+    }
+    else {
+        // Not an edit element (a constraint, a mapped name): the Shape's.
+        return inherited::_getBoundingBox(subname, mat, transform, view, depth);
+    }
+
+    if (!bbox.IsValid())
+        return bbox;
+    // As the Shape's box composes: the parents' matrix, then this object's
+    // own Placement. Not the editing placement, which is already global and
+    // would apply a Body's placement twice when reached through the Body.
+    Base::Matrix4D m;
+    if (mat)
+        m = *mat;
+    if (transform)
+        m = m * obj->Placement.getValue().toMatrix();
+    return bbox.Transformed(m);
 }
 
 Base::Matrix4D ViewProviderSketch::getEditingPlacement() const {
@@ -5515,11 +5585,57 @@ void ViewProviderSketch::OnChange(Base::Subject<const char*> &rCaller, const cha
         _ViewBottomOnEdit = edit->hSketchGeneral->GetBool(_ParamViewBottomOnEdit, false);
     else if (boost::equals(sReason, _ParamAdjustCamera))
         _AdjustCamera = edit->hSketchGeneral->GetBool(_ParamAdjustCamera, false);
+    else if (boost::equals(sReason, _ParamFitOnEdit))
+        _FitOnEdit = edit->hSketchGeneral->GetBool(_ParamFitOnEdit, false);
 }
 
 bool ViewProviderSketch::allowFaceExternalPick()
 {
     return _AllowFaceExternal;
+}
+
+void ViewProviderSketch::fitOnEdit(Gui::ViewerContext *viewer)
+{
+    // Upstream 5587b48a0f, behind Mod/Sketcher/General FitSketchOnEdit (off
+    // by default; upstream does it on every edit): look at the sketch's
+    // plane head on, centred on its origin, and fit the view to its
+    // geometry.
+    SoCamera *camera = viewer->getSoRenderManager()->getCamera();
+    if (!camera)
+        return;
+    auto transform = getEditingPlacement();
+    Base::Vector3d t, s;
+    Base::Rotation r, so;
+    transform.getTransform(t, r, s, so);
+    SbRotation rot((float)r[0], (float)r[1], (float)r[2], (float)r[3]);
+    if (viewBottomOnEdit())
+        rot = SbRotation(SbVec3f(0, 1, 0), M_PI) * rot;
+
+    // The final pose at once rather than through setCameraOrientation: with
+    // navigation animations on, that turn would still be running when the
+    // fit below measures the view, and would finish on top of it. The fit
+    // animates by itself.
+    SbVec3f newdir;
+    rot.multVec(SbVec3f(0, 0, -1), newdir);
+    camera->orientation = rot;
+    camera->position = SbVec3f(t.x, t.y, t.z) - camera->focalDistance.getValue() * newdir;
+
+    auto sketch = getSketchObject();
+    if (sketch->Geometry.getSize() == 0 && sketch->ExternalGeometry.getSize() == 0)
+        return;
+    auto view = dynamic_cast<Gui::View3DInventorViewer *>(viewer);
+    if (!view)
+        return;
+    // Through the edit's own path when there is one (Body.Sketch.), so a
+    // sketch inside a placed container is framed where it is drawn.
+    App::SubObjectT target(getObject(), "");
+    if (auto doc = App::GetApplication().getDocument(editDocName.c_str())) {
+        if (auto parent = doc->getObject(editObjName.c_str())) {
+            if (parent != getObject())
+                target = App::SubObjectT(parent, editSubName.c_str());
+        }
+    }
+    view->viewObjects({target});
 }
 
 bool ViewProviderSketch::viewBottomOnEdit()
@@ -9731,7 +9847,10 @@ void ViewProviderSketch::setEditViewer(Gui::ViewerContext* viewer, int ModNum)
     // would land somewhere the client cannot see -- which is how a
     // browser's click in a sketch picked nothing on the move and something
     // else on the press.
-    if (_AdjustCamera && !viewer->cameraIsRemote()) {
+    if (_AdjustCamera && _FitOnEdit && !viewer->cameraIsRemote()) {
+        fitOnEdit(viewer);
+    }
+    else if (_AdjustCamera && !viewer->cameraIsRemote()) {
         auto transform = getEditingPlacement();
 
         // Will the sketch be visible from the new position (#0000957)?

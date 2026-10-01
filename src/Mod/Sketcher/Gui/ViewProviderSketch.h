@@ -363,6 +363,11 @@ public:
     /// Editing the sketch itself: false in another edit mode, such as
     /// Transform, where no edit data exists for a tool to act on
     bool isInEditMode() const { return edit != nullptr; }
+    /// In edit, an edit element's box by geometry id: the sketch's Shape
+    /// numbers edges and vertices differently and leaves construction out
+    Base::BoundBox3d _getBoundingBox(const char *subname=nullptr,
+            const Base::Matrix4D *mat=nullptr, bool transform=true,
+            const Gui::View3DInventorViewer *view=nullptr, int depth=0) const override;
     /// The expression of a preselected constraint as the view's tooltip
     void updateExpressionToolTip(Gui::ViewerContext *viewer);
     /// get the pointer to the sketch document object
@@ -474,6 +479,8 @@ public:
     static bool allowFaceExternalPick();
     /// check if by default viewing sketch from bottom on start editing
     static bool viewBottomOnEdit();
+    /// The camera on entering edit when FitSketchOnEdit is set
+    void fitOnEdit(Gui::ViewerContext *viewer);
     void setViewBottomOnEdit(bool enable);
     void toggleViewSection(int toggle=-1);
     static ViewProviderSketch *getEditingViewProvider();
