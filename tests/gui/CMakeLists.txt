@@ -441,6 +441,12 @@ fc_add_gui_test(GuiSketchMergedIconLabels_tests_run
                 sketch-merged-icon-labels.py
                 --timeout 300)
 
+# A merged constraint icon gathers the icons near its own, not a chain of
+# neighbours however far it runs.
+fc_add_gui_test(GuiSketchIconGroupBounded_tests_run
+                sketch-icon-group-bounded.py
+                --timeout 300)
+
 # An SoImage is drawn pixel for pixel in mode 3, as glDrawPixels does. The
 # backend's textured quad sat wherever the anchor projected, and half a
 # pixel off the filter spread each texel over two pixels: a Sketcher

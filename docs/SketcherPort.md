@@ -2921,6 +2921,15 @@ returns (`1744c224a1`), so a throw there can no longer skip
 `updateColor()` and hide every constraint; checked by forcing one in a
 scratch build.
 
+The icon grouping is no longer transitive: an icon joins a group when it
+is within the merge distance of the icon the group starts from (where
+the merged image is drawn), not of any member, in one pass instead of a
+rescan after every join. A group spans at most twice the distance.
+Sketch028 fitted: 32 merged icons of 1320 constraints, the largest 154
+(one icon of 1321 in s111). Guarded by
+`tests/gui/sketch-icon-group-bounded.py` (200 lines 3 px apart: 50 icons
+of 4, 9 px wide; before, one icon of 200 spanning 542 px).
+
 Guarded by `tests/gui/sketch-highlight-view.py` (a hover writes no node
 of the edit graph; the sets hold the selection only; the pointer's
 preselection shows in its own view and not a second one, one from outside

@@ -5087,42 +5087,22 @@ void ViewProviderSketch::combineConstraintIcons(IconQueue &&iconQueue)
         // we group only icons not being Symmetry icons, because we want those on the line
         // and only icons that are visible
         if(init.type != QStringLiteral("Constraint_Symmetric") && init.visible){
-
-            IconQueue::iterator i = iconQueue.begin();
-
-
-            while(i != iconQueue.end()) {
-                if((*i).visible) {
-                    bool addedToGroup = false;
-
-                    for(IconQueue::iterator j = thisGroup.begin();
-                        j != thisGroup.end(); ++j) {
-                        float distSquared = pow(i->position[0]-j->position[0],2) + pow(i->position[1]-j->position[1],2);
-                        if(distSquared <= maxDistSquared && (*i).type != QStringLiteral("Constraint_Symmetric")) {
-                            // Found an icon in iconQueue that's close enough to
-                            // a member of thisGroup, so move it into thisGroup
-                            thisGroup.push_back(*i);
-                            i = iconQueue.erase(i);
-                            addedToGroup = true;
-                            break;
-                        }
-                    }
-
-                    if(addedToGroup) {
-                        if(i == iconQueue.end())
-                            // We just got the last icon out of iconQueue
-                            break;
-                        else
-                            // Start looking through the iconQueue again, in case
-                            // we have an icon that's now close enough to thisGroup
-                            i = iconQueue.begin();
-                    } else
-                        ++i;
-                }
-                else // if !visible we skip it
-                   i++;
+            // An icon joins the group when it is near the icon the group
+            // starts from, where the merged image is drawn. Near ANY member
+            // made a chain of neighbours one group however far it ran:
+            // Sketch028's merged icon took 1321 constraints of a region.
+            IconQueue rest;
+            rest.reserve(iconQueue.size());
+            for (auto &item : iconQueue) {
+                float distSquared = pow(item.position[0]-init.position[0],2)
+                                    + pow(item.position[1]-init.position[1],2);
+                if (item.visible && distSquared <= maxDistSquared
+                        && item.type != QStringLiteral("Constraint_Symmetric"))
+                    thisGroup.push_back(std::move(item));
+                else
+                    rest.push_back(std::move(item));
             }
-
+            iconQueue.swap(rest);
         }
 
         if(thisGroup.size() == 1) {
