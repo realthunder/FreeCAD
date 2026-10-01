@@ -2860,6 +2860,20 @@ does: it left every later frame 12 ms dearer, the same draws each ~6 us
 more, for a cause not found -- taking the elements from the captured scene
 does not.
 
+Does a main-scene hover, which still goes through `setHighlight` that way,
+leave the same residue? Measured 2026-10-01, phased (frames, one hover and
+clear, frames, ten more, frames), corpus `portal_2.FCStd` (239 objects,
+218 draws): no. On d3d12 (RTX 3070 Ti) the frames before and after hold
+8.5-9.0 ms and 3.1-3.3 us a draw. The same probe on Sketch028 in edit on
+d3d12 holds too, 8.6 us a draw either side. On llvmpipe what is left is
++2.4 and +2.8 ms a frame after one hover (about 2%) against -0.3 and -0.9
+ms without one, so it lives in llvmpipe's state, not in the submit our
+code does. TRAP: `Gui.Selection.setPreselection(obj, "Face1")` on an
+object inside a Body highlights nothing in mode 3 -- `beginDetailPath`
+needs the path from the top: preselect `obj.Parents[0]` with the subname.
+`FC_BGFX_DEBUG_FEED=1` prints a `bgfx feed hl` line per highlight that
+reaches the backend.
+
 The 307 more draws after the first hover (1822 -> 2129, both codes) were
 not a cost of the hover: they were the sketch's 103 datum labels, which
 had never been drawn. On entering edit, `drawConstraintIcons()` merged
@@ -2896,6 +2910,17 @@ node the merge was drawn on). Guarded by
 spot, swept with the pick probe: the icon picks 50, 29 labels one each,
 one box the other 21; set to 5 and 2 during the edit, 9 and a "+41").
 
+The pick probe takes the box a hover takes (`65545338e4`).
+`detectPreselection()`'s `preselect=false` also meant "every box within
+the pick radius", the answer `getElementPicked()` wants for the pick
+list, so between two wrapped lines the probe named both where a hover
+takes the nearest; dozens of spots in that test picked 2-4 labels.
+`nearestConstraint` now carries that choice and only `getElementPicked()`
+turns it off. And `drawConstraintIcons()` reports an exception and
+returns (`1744c224a1`), so a throw there can no longer skip
+`updateColor()` and hide every constraint; checked by forcing one in a
+scratch build.
+
 Guarded by `tests/gui/sketch-highlight-view.py` (a hover writes no node
 of the edit graph; the sets hold the selection only; the pointer's
 preselection shows in its own view and not a second one, one from outside
@@ -2910,6 +2935,9 @@ test drives two views with it), on llvmpipe and d3d12.
 `sketch-drag-arc-conic.py` is flaky, independently of this work: a drag
 that never starts, a different one each time, 2 of 10 runs without C and
 2 of 9 with it.
+`sketch-arc-labels.py` failed once the same way under `ctest -j 6`
+(2026-10-01: the angle label's drag past the centre never started) and
+passed 3 of 3 alone.
 
 **Harness notes.** To make a file from before a property existed, taking
 its `<Property>` out of `GuiDocument.xml` is not enough: the reader loops
