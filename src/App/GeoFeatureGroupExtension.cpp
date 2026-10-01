@@ -288,6 +288,12 @@ void GeoFeatureGroupExtension::extensionOnChanged(const Property* p) {
 
                 bool &valid = res.first->second;
 
+                // A member the group does not own (hasObject() says so: a
+                // PartDesign::Boolean's tool body, say) is a reference: it
+                // has its own place, and neither of the checks below is about it
+                if (!hasObject(obj))
+                    continue;
+
                 //we have already set the obj into the group, so in a case of multiple groups getGroupOfObject
                 //would return anyone of it and hence it is possible that we miss an error. We need a custom check
                 for (auto in : obj->getInList()) {
@@ -310,6 +316,8 @@ void GeoFeatureGroupExtension::extensionOnChanged(const Property* p) {
                 retry = false;
                 for(auto it=children.begin();it!=children.end();++it) {
                     auto obj = *it;
+                    if (!hasObject(obj))
+                        continue;
                     auto &valid = objMap[obj];
                     for(auto link : getCSRelevantLinks(obj)) {
                         auto iter = objMap.find(link);
