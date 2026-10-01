@@ -646,6 +646,32 @@ class RegressionTests(unittest.TestCase):
             self.assertEqual(len(result.Shells), 1, name)
             self.assertAlmostEqual(result.Volume, volume, places=3, msg=name)
 
+    def test_thickness_intersection_join_with_a_face_tangent_to_its_neighbours(self):
+        """A filleted box with an end, side or fillet face removed, with the
+        Intersection join, which builds no tubes: the neighbour's offset ran
+        round its cylinder into a lip or never met the removed face, and the
+        result came back wrong, unhollowed or not at all. The gap is closed with
+        the tube's sharp counterpart, a strip of the neighbour's tangent plane
+        and a wall square to the removed face (docs/TransactionLog.md sec
+        27.96). Worked out by hand; the fillet of 2.5 has no coincident walls."""
+        box = Part.makeBox(10, 8, 6)
+        cases = [
+            ("end face, in", 2, 0, -1.0, 262.8319),
+            ("end face, out", 2, 0, 1.0, 422.7964),
+            ("side face, in", 2, 5, -1.0, 254.8319),
+            ("side face, out", 2, 5, 1.0, 406.7964),
+            ("fillet, in", 2, 2, -1.0, 268.7129),
+            ("fillet, out", 2, 2, 1.0, 424.7690),
+            ("fillet 2.5, in", 2.5, 2, -1.0, 258.4221),
+            ("fillet 2.5, out", 2.5, 2, 1.0, 407.4611),
+        ]
+        for name, radius, face, offset, volume in cases:
+            shape = box.makeFillet(radius, [box.Edges[i] for i in (0, 2, 4, 6)])
+            result = shape.makeThickness([shape.Faces[face]], offset, 1e-7, False, False, 0, 2)
+            self.assertTrue(result.isValid(), name)
+            self.assertEqual(len(result.Shells), 1, name)
+            self.assertAlmostEqual(result.Volume, volume, places=3, msg=name)
+
     def test_OptimalBox(self):
         box = Part.makeBox(1, 1, 1)
         self.assertTrue(box.optimalBoundingBox(True, False).isValid())
