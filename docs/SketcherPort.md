@@ -3050,7 +3050,7 @@ the Gui document's `Modified` flag set; `Std_Save` clears both.
 `sketch-hidpi-sizes.py` needs `QT_SCALE_FACTOR=2`, which its ctest
 entry sets and a hand-run loop does not.
 
-### The later rows (sessions 113-114): 27 -> 5
+### The later rows (sessions 113-114): 27 -> 3
 
 The open `ViewProviderSketch.cpp` rows from 2025-07 on, read one at a time
 against the fork's own code, each measured before it was changed.
@@ -3073,6 +3073,8 @@ against the fork's own code, each measured before it was changed.
 | `aa785f78d6` | **adapted** `24982ee5f9` (session 114): the Dimension tool's preview label is pulled back by 1% of the view's width plus height, measured on the session's editing view (a served client's own). `OffsetMode` without `using enum`. `sketch-dimension-label-offset.py` (label 6.004 under a pointer at 6.0 before, 4.972 after) |
 | `387d25c219` | **have**: the line-extension hint and its PointOnObject snap came in with group C (`338b27fea2`); every function the commit adds is here, guarded by `sketch-line-extension-autoconstraint.py` |
 | `9ce1cae190` | **n/a**: the invalid projections it guards cannot reach the fork's sketch. A mirror exists only once its client has stated a camera (`mirrorFor`), the wire refuses a non-finite, zero-size or zero-extent camera, a desktop view always has one, and a view parallel to the plane already throws `ZeroDivisionError` to callers that catch it. The no-camera early return in `getProjectingLine` leaves the line uninitialised, but nothing reaches it |
+| `35f151d99e` | **adapted** `56aa886d28` (session 114, user ruling): the panel is Core's `TaskSolverMessages` (already here from the Assembly port), "Sketch Edit", with a settings menu: auto-update and the toolbar's grid, snap and rendering order widgets, built by `addViewSettingsActions` (`Command.h`) because the fork keeps those classes inside `Command.cpp`. State `empty_sketch` -> `empty` in the eight stylesheets. `sketch-solver-panel-settings.py` (no Core panel before) |
+| `5587b48a0f` | **adapted** `8013767cd2` (session 114, user ruling; the Core half is the fork's own): an edit element's box by geometry id, composed with the sketch's own Placement where upstream uses the global editing placement (a container's placement would count twice); the fit on entering edit behind `Mod/Sketcher/General/FitSketchOnEdit`, off by default, orientation set directly so an animated turn cannot outlive the fit. `sketch-view-fit-edit.py` (5/7 failed before) |
 | `6321ac28a3` | **declined**: the fork draws a drag from the solved sketch (`draw(true)` extracts it), so `moveConstraint` reading the same is what is on screen; reading the object instead measured no faster (about 18 ms a move on 2000 lines, the redraw dominates) |
 
 `8a6f859a57` was ruled after: the faces follow the preference as upstream's
@@ -3082,14 +3084,7 @@ Left open, each a decision or larger than a row: the
 annotation pick priority (`a2468774d3`, needs a probe of a sketch face on
 a solid face), the broken-external report (`07b2d9973d`, the fork's tree
 tooltip takes an icon tag), the resetEdit lifecycle (`e6d3f9d6db`, needs
-Core's `setAutoCloseOnResetEdit`), and two that change what the user
-sees, put to the user (session 114): `35f151d99e` -- the solver panel
-onto Core's `TaskSolverMessages`, which the fork already has from the
-Assembly port; its end state retitles the panel "Sketch Edit" and adds
-a settings menu (auto-update, grid, snap, rendering order) -- and the
-Sketcher half of `5587b48a0f` (the Core half is this fork's own work):
-the in-edit bounding box per element, so View Selection fits a picked
-edge, and a fit to the sketch on EVERY edit entry, ungated.
+Core's `setAutoCloseOnResetEdit`).
 
 **The arc-label "flake" is a clock.** `sketch-arc-labels.py` and
 `sketch-drag-arc-conic.py` fail now and then with a drag that never
