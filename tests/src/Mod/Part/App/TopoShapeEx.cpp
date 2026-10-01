@@ -3,6 +3,7 @@
 #include <TColgp_Array2OfPnt.hxx>
 #include <gtest/gtest.h>
 #include "src/App/InitApplication.h"
+#include <Mod/Part/App/Geometry.h>
 #include <Mod/Part/App/TopoShape.h>
 #include <Mod/Part/App/TopoShapeOpCode.h>
 
@@ -23,7 +24,10 @@
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepFeat_SplitShape.hxx>
 #include <BRepOffsetAPI_MakeEvolved.hxx>
+#include <BRepBuilderAPI_Copy.hxx>
 #include <BRepPrimAPI_MakeBox.hxx>
+#include <BRepPrimAPI_MakeCylinder.hxx>
+#include <Geom_Circle.hxx>
 #include <BRepAlgoAPI_Fuse.hxx>
 #include <GeomAPI_PointsToBSpline.hxx>
 #include <Geom_BezierCurve.hxx>
@@ -1308,6 +1312,49 @@ TEST_F(TopoShapeExpansionTest, searchSubShapeClose)
     EXPECT_EQ(names1.size(), 1);
     EXPECT_EQ(shapes2.size(), 1);
     EXPECT_EQ(names2.size(), 1);
+}
+
+// A surface compares the same as its copy.  isSame() of the elementary and
+// swept surfaces opens with isDerivedFrom() on their common base, which only
+// works while the type system declares that base as the parent; upstream's
+// Geometry.cpp names GeomSurface instead, and taking it made every one of
+// these compare different from itself.
+TEST_F(TopoShapeExpansionTest, surfaceIsSameAsItsCopy)
+{
+    // Arrange
+    Handle(Geom_Circle) circle = new Geom_Circle(gp_Ax2(gp_Pnt(5, 0, 0), gp_Dir(0, 1, 0)), 1);
+    std::vector<std::unique_ptr<Geometry>> surfaces;
+    surfaces.emplace_back(new GeomPlane());
+    surfaces.emplace_back(new GeomCylinder());
+    surfaces.emplace_back(new GeomCone());
+    surfaces.emplace_back(new GeomSphere());
+    surfaces.emplace_back(new GeomToroid());
+    surfaces.emplace_back(new GeomSurfaceOfExtrusion(circle, gp_Dir(0, 1, 0)));
+    surfaces.emplace_back(new GeomSurfaceOfRevolution(circle, gp_Ax1(gp_Pnt(), gp_Dir(0, 0, 1))));
+    for (const auto& surface : surfaces) {
+        // Act
+        std::unique_ptr<Geometry> copy(surface->copy());
+        // Assert
+        EXPECT_TRUE(surface->isSame(*copy, 1e-7, 1e-10)) << surface->getTypeId().getName();
+    }
+}
+
+// The geometry search a missing element reference falls back to (it runs with
+// these tolerances) finds a curved face by its exact geometry.  Planes skip
+// the geometry comparison, so the box tests above never needed it.
+TEST_F(TopoShapeExpansionTest, searchSubShapeCylinderFace)
+{
+    // Arrange
+    TopoShape cylinder {BRepPrimAPI_MakeCylinder(2, 5).Shape()};
+    auto lateral = cylinder.getSubTopoShape("Face1");
+    ASSERT_EQ(BRepAdaptor_Surface(TopoDS::Face(lateral.getShape())).GetType(), GeomAbs_Cylinder);
+    TopoShape copy {BRepBuilderAPI_Copy(cylinder.getShape()).Shape()};
+    std::vector<std::string> names;
+    // Act
+    auto shapes = copy.searchSubShape(lateral, &names, Data::SearchOption::CheckGeometry, 1e-7, 1e-10);
+    // Assert
+    ASSERT_EQ(names.size(), 1);
+    EXPECT_EQ(names[0], "Face1");
 }
 
 TEST_F(TopoShapeExpansionTest, makEShellInvalid)
