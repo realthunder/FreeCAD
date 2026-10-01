@@ -3050,7 +3050,7 @@ the Gui document's `Modified` flag set; `Std_Save` clears both.
 `sketch-hidpi-sizes.py` needs `QT_SCALE_FACTOR=2`, which its ctest
 entry sets and a hand-run loop does not.
 
-### The later rows (session 113): 27 -> 11
+### The later rows (sessions 113-114): 27 -> 9
 
 The open `ViewProviderSketch.cpp` rows from 2025-07 on, read one at a time
 against the fork's own code, each measured before it was changed.
@@ -3068,6 +3068,7 @@ against the fork's own code, each measured before it was changed.
 | `e2346dabd6`, `bf009d41e4` | **n/a**: upstream's port of this fork's internal faces, and a fix to its own `SoSketchFaces` node path; the fork resolves faces through `pInternalView` |
 | `16a836743a` | **n/a**: `slotSolverUpdate` has no edit-view gate here |
 | `289411f51c`, `8c1d03ccb4` | **n/a**: an include for a core header change, and a line serving a Core `NavigationStyle` change |
+| `2da7c9ff17`, `566a724c26` | **adapted** `a3e4beb17f` (session 114): a tool's preview takes the edge colour, or the construction colour in construction mode, and a toggle recolours it at once. Colour only -- the fork patterns curves by visual layer and a new curve goes to layer 0 in either mode. `CreateLineColor` reads nothing now and its button is gone. `sketch-preview-construction-color.py` (0/4 before) |
 | `6321ac28a3` | **declined**: the fork draws a drag from the solved sketch (`draw(true)` extracts it), so `moveConstraint` reading the same is what is on screen; reading the object instead measured no faster (about 18 ms a move on 2000 lines, the redraw dominates) |
 
 `8a6f859a57` was ruled after: the faces follow the preference as upstream's
@@ -3078,8 +3079,7 @@ annotation pick priority (`a2468774d3`, needs a probe of a sketch face on
 a solid face), the broken-external report (`07b2d9973d`, the fork's tree
 tooltip takes an icon tag), the resetEdit lifecycle (`e6d3f9d6db`, needs
 Core's `setAutoCloseOnResetEdit`), and the features `aa785f78d6`,
-`2da7c9ff17`, `35f151d99e`, `8a6872e69d`, `387d25c219`, `9ce1cae190`,
-`5587b48a0f`, `566a724c26`.
+`35f151d99e`, `8a6872e69d`, `387d25c219`, `9ce1cae190`, `5587b48a0f`.
 
 **The arc-label "flake" is a clock.** `sketch-arc-labels.py` and
 `sketch-drag-arc-conic.py` fail now and then with a drag that never
