@@ -8714,6 +8714,22 @@ void ViewProviderSketch::attachColorObserver()
                                {"FaceColor"}, updateAll);
 }
 
+void ViewProviderSketch::slotConstraintAdded(Sketcher::Constraint *constraint)
+{
+    // A new distance's label goes at a distance scaled to the view, however
+    // the constraint was made -- a tool, a macro, the console -- not only
+    // through the dimension command, which scales every datum it makes
+    // (finishDatumConstraint). A label distance of its own is kept: only
+    // the default is replaced.
+    if (!constraint || !edit)
+        return;
+    if (constraint->Type != Sketcher::Distance && constraint->Type != Sketcher::DistanceX
+            && constraint->Type != Sketcher::DistanceY)
+        return;
+    if (std::abs(constraint->LabelDistance - 10.f) < 1e-5f)
+        constraint->LabelDistance = 2.f * getScaleFactor();
+}
+
 void ViewProviderSketch::slotSolverUpdate()
 {
     if (!edit)
@@ -8962,7 +8978,9 @@ bool ViewProviderSketch::setEdit(int ModNum)
         ->signalRedoDocument.connect(std::bind(&ViewProviderSketch::slotRedoDocument, this, sp::_1));
     connectSolverUpdate = getSketchObject()
         ->signalSolverUpdate.connect(std::bind(&ViewProviderSketch::slotSolverUpdate, this));
-    connectMoved = getDocument()->signalEditingTransformChanged.connect([this](const Gui::Document &) {
+    connectConstraintAdded = getSketchObject()->signalConstraintAdded.connect(
+        [this](Sketcher::Constraint *constraint) { slotConstraintAdded(constraint); });
+    connectMoved =getDocument()->signalEditingTransformChanged.connect([this](const Gui::Document &) {
         if (edit && SectionView.getValue()) {
             toggleViewSection(0);
             toggleViewSection(1);
@@ -9540,6 +9558,7 @@ void ViewProviderSketch::unsetEdit(int ModNum)
     connectUndoDocument.disconnect();
     connectRedoDocument.disconnect();
     connectSolverUpdate.disconnect();
+    connectConstraintAdded.disconnect();
     connectMoved.disconnect();
 
     // when pressing ESC make sure to close the dialog

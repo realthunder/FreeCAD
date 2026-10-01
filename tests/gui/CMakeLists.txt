@@ -471,6 +471,11 @@ fc_add_gui_test(GuiSketchPreviewConstructionColor_tests_run
                 sketch-preview-construction-color.py
                 --timeout 120)
 
+# A distance made in edit, however it was made, puts its label at a view-scaled distance.
+fc_add_gui_test(GuiSketchDistanceLabelScale_tests_run
+                sketch-distance-label-scale.py
+                --timeout 120)
+
 # A sketch's face colour follows the preference under AutoColor, with the fork's default.
 fc_add_gui_test(GuiSketchAutoFaceColor_tests_run
                 sketch-auto-face-color.py

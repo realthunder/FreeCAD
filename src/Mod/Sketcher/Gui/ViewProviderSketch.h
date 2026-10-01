@@ -538,6 +538,7 @@ protected:
     void slotRedoDocument(const Gui::Document&);
     void cancelInteractionOnUndoRedo();
     void slotSolverUpdate();
+    void slotConstraintAdded(Sketcher::Constraint *constraint);
 
     /** @name base class implementer */
     //@{
@@ -566,6 +567,7 @@ protected:
     fastsignals::connection connectUndoDocument;
     fastsignals::connection connectRedoDocument;
     fastsignals::connection connectSolverUpdate;
+    fastsignals::connection connectConstraintAdded;
     fastsignals::connection connectMoved;
 
     /// set color, icon & font sizes

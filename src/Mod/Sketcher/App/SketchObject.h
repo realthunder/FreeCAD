@@ -949,6 +949,9 @@ public:
     // Signaled when solver has done update
     fastsignals::signal<void ()> signalSolverUpdate;
     fastsignals::signal<void ()> signalElementsChanged;
+    /// A constraint is about to join Constraints, already cloned: a slot
+    /// may adjust it (the view scales a new label's distance).
+    fastsignals::signal<void (Constraint*)> signalConstraintAdded;
 
     Part::TopoShape buildInternals(const Part::TopoShape &edges) const;
 

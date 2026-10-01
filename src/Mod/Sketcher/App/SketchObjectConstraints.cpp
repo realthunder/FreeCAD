@@ -942,6 +942,8 @@ int SketchObject::addConstraints(const std::vector<Constraint*>& ConstraintList)
         setOrientation(cnew, false);
 
         addGeometryState(cnew);
+
+        signalConstraintAdded(cnew);
     }
 
     this->Constraints.setValues(std::move(newVals));
@@ -1016,6 +1018,8 @@ int SketchObject::addConstraint(std::unique_ptr<Constraint> constraint)
     setOrientation(constNew, false);
 
     addGeometryState(constNew);
+
+    signalConstraintAdded(constNew);
 
     newVals.push_back(constNew);// add new constraint at the back
 
