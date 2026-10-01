@@ -10279,3 +10279,76 @@ Commits: fork `917b7451d1` (the closure), `b921c4c25d` (the suite),
 **Gates:** Python 2974 OK (52 skipped, 6 expected failures; +1), ctest
 850/850, the GUI checks RC 15, BC 27, VC 18, PC 28, FC 16, VW 14; the fork's
 thickness suite PASS 60, XFAIL 2.
+
+### 27.97 Thickness in pictures, before and after (user, 2026-10-01)
+
+The user: render each thickness failure fixed in 27.88-27.96 as it was
+before and as it is after, keep the pictures with the fork's thickness
+models, write a doc of the thickness work of its own that shows them, and
+show them.
+
+**Made.** 46 pictures, `tests/thickness/models/pictures/<case>.png` in the
+fork, one per case of the suite that a fix turned from failing to passing;
+docs/Thickness.md walks through them fix by fix. Each has three columns --
+upstream (its eleven chain files at `91be8c4c71`, as 27.89 measured it), the
+fork just before the case's fix, the fork now -- and two rows, the result
+and the result cut open (cut faces orange). The "before" libraries are the
+fork's `TKBool`/`TKOffset` sources at the commit before each stage
+(`050c66d58e`, `2a15bbb52b`, `cbc47c91a7`, `51a0cc9b38`, `e5e6d02f70`,
+`9a14fb9db5`, `c4be5548f9`), compiled from the build tree's commands and
+preloaded, as 27.89 did for upstream. Every case fails at its stage's
+"before" commit, so each picture shows a real before. Of the 46, upstream
+gets 21 right (the chain's casualties: all of 27.89, two of 27.90, five of
+27.91) and fails 25. The determinism of 27.88 and the loop walk of 27.94 are
+not pictured; the captured models are not either (upstream 8.0.1 gets them
+right).
+
+How a wrong result is shown, since a picture of an invalid solid can look
+right: edges not used once each way round by the faces are drawn red, faces
+failing `isValid()` red, faces of no area left out and counted, an
+inside-out solid comes out black and is cut by a clip plane, an unhollowed
+one (the input's volume) is labelled, and where the thickness threw the
+input is drawn greyed. The tools are in the fork,
+`tests/thickness/pictures/` (`make_pictures.sh`: the libraries, the cases
+under `FreeCADCmd` once per library set, the panels in the GUI under
+`xvfb-run`, the layout with Pillow). Run end to end from an empty scratch
+directory it gave the same 138 results but two, and those two are
+upstream's: `tshape_bar_top_out` and `filletbox_end_out`, invalid both times
+but of another volume (-401.32 for -148.96, -236.37 for 209.72) -- upstream
+iterates in hash order and varies from run to run (27.88, 27.89). The
+fork's columns came out the same, pixel for pixel.
+
+**Found on the way: the log's worker crashed serialising a shape** (not
+fixed). The first render run -- each panel a new document, a
+`Part::Feature` given the shape, `saveImage`, `closeDocument` -- died with
+SIGSEGV on the transaction log's worker thread:
+`TransactionLogCore::run` -> `writeValues` -> `captureValue` ->
+`PropertyPartShape::SaveDocFile` -> `TopoShape::exportBrep` ->
+`BRepTools_ShapeSet::WriteGeometry`, at `BRepTools_ShapeSet.cxx:760`, the
+walk of an edge's `TE->Curves()` (a `BRep_CurveRepresentation` handle that
+was garbage). The `ValueTask`'s copy keeps the shape alive, so the TShape
+had not been freed; its list of curve representations was being changed
+while the worker walked it. The copy shares the TShape with the live
+property (as every `Copy()` of a shape does), and the freeze of sec 23.6 is
+by design open to the cache setters -- the triangulation and the edge
+polygons `BRepMesh` writes, and since 23.13 the pcurves an Immutable edge
+takes as a cache -- each of which inserts into or removes from that same
+list. The likely writer is the view provider meshing the new shape on the
+main thread while the worker exports it: nothing orders the two. Only the
+worker's stack was in the crash log, and a headless attempt (commit a
+shape, then remesh it at changing deflections on the main thread, 100 to
+300 times, three runs) did not crash, so the main thread's side is
+inferred, not seen. With the log off (`TransactionLog=0`, which the
+renderer now sets) the whole set rendered three times without a crash. Any GUI
+session that displays a shape while its value is being written is exposed;
+an export taken on the main thread, a lock shared with the cache setters,
+or cache representations kept out of the list the writer walks would each
+close it.
+
+Also seen, not chased: recomputing the captured `issue3_pad_thickness`
+model logs `Exception on making thick solid: BRep_Builder::UpdateEdge` from
+`FeatureThickness.cpp`, yet the Thickness ends up to date and right
+(1241.0718), as the suite has it.
+
+Commits: fork `45d6a96922` (the pictures and the tools), `6e7ffdd034` (the
+README); FreeCAD docs/Thickness.md and this section in one.
