@@ -346,6 +346,8 @@ struct EditData {
         }
         DimensionLineWidth = std::max(1L, hSketchView->GetInt("DimensionalConstraintLineWidth", 2));
         DimensionLinePattern = hSketchView->GetInt("DimensionalConstraintLinePattern", 0xFFFF) & 0xFFFF;
+        AxisTransparency =
+            Base::clamp<long>(hSketchGeneral->GetInt("AxisTransparency", 30), 0, 100) / 100.0f;
         AxisLineWidth = std::max(1L, hSketchView->GetInt("AxisLineWidth", 2));
         AxisLinePattern = hSketchView->GetInt("AxisLinePattern", 0xFFFF) & 0xFFFF;
         InformationWidth = std::max(1L, hSketchView->GetInt("InformationWidth", 1));
@@ -384,6 +386,10 @@ struct EditData {
             set(InformationDrawStyle, InformationWidth * pixelScalingFactor, InformationPattern, 2);
         if (RootCrossDrawStyle)
             set(RootCrossDrawStyle, AxisLineWidth * pixelScalingFactor, AxisLinePattern, 1);
+        if (RootCrossMaterials
+            && (RootCrossMaterials->transparency.getNum() != 1
+                || RootCrossMaterials->transparency[0] != AxisTransparency))
+            RootCrossMaterials->transparency.setValue(AxisTransparency);
     }
 
     /// is this edge one of the geometries being dragged?
@@ -567,6 +573,9 @@ struct EditData {
     int DimensionLineWidth = 2;
     unsigned int DimensionLinePattern = 0xFFFF;
     /// the sketch's two axes (upstream 90ca7a30d9)
+    /// how much of what is behind an axis shows through it (upstream
+    /// cda241dbd0), 0 to 1
+    float AxisTransparency = 0.3f;
     int AxisLineWidth = 2;
     unsigned int AxisLinePattern = 0xFFFF;
     int InformationWidth = 1;
@@ -5736,6 +5745,8 @@ void ViewProviderSketch::OnChange(Base::Subject<const char*> &rCaller, const cha
         "InformationPattern",
         "AxisLineWidth",
         "AxisLinePattern",
+        // Mod/Sketcher/General
+        "AxisTransparency",
         "DimensionalConstraintLineWidth",
         "DimensionalConstraintLinePattern",
     };

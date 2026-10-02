@@ -566,6 +566,7 @@ void SketcherSettingsDisplay::saveSettings()
     ui->ConstraintIconLabelsPerLine->onSave();
     ui->ConstraintIconLabelLines->onSave();
     ui->ElementIconSize->onSave();
+    ui->axisTransparency->onSave();
     ui->ConstraintSymbolSize->onSave();
     ui->viewScalingFactor->onSave();
     ui->SegmentsPerGeometry->onSave();
@@ -598,6 +599,7 @@ void SketcherSettingsDisplay::loadSettings()
     ui->ConstraintIconLabelsPerLine->onRestore();
     ui->ConstraintIconLabelLines->onRestore();
     ui->ElementIconSize->onRestore();
+    ui->axisTransparency->onRestore();
     // Unset, a symbol is as high as the application font: show that, not
     // the number the form was drawn with
     ui->ConstraintSymbolSize->setValue(QApplication::fontMetrics().height());
