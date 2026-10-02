@@ -144,9 +144,12 @@ std::vector<TopoShape> DressUp::getContinuousEdges(const TopoShape &shape) {
 
         if (subshape.ShapeType() == TopAbs_EDGE)
             addEdge(subshape, ref);
-        else if(subshape.ShapeType() == TopAbs_FACE || subshape.ShapeType() == TopAbs_WIRE) {
+        // A solid stands for all its edges (upstream f87d968447), as a face
+        // or a wire does for its own; a skipped one names its reference
+        else if(subshape.ShapeType() == TopAbs_FACE || subshape.ShapeType() == TopAbs_WIRE
+                || subshape.ShapeType() == TopAbs_SOLID) {
             for(TopExp_Explorer exp(subshape,TopAbs_EDGE);exp.More();exp.Next())
-                addEdge(exp.Current(), std::string());
+                addEdge(exp.Current(), ref);
         } else
             FC_WARN(getFullName() << ": skip invalid shape '"
                     << ref << "' with type " << TopoShape::shapeName(subshape.ShapeType()));

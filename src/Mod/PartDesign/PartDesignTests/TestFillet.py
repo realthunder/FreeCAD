@@ -104,6 +104,23 @@ class TestFillet(unittest.TestCase):
         self.Doc.recompute()
         self.assertFalse(followup.isValid())
 
+    def testSolidReferenceIsAllItsEdges(self):
+        # (upstream f87d968447) a solid in Base stands for all its edges,
+        # as a face does for its own; it was skipped as an invalid shape
+        body = self.Doc.addObject('PartDesign::Body', 'SolidRefBody')
+        box = body.newObject('PartDesign::AdditiveBox', 'SolidRefBox')
+        self.Doc.recompute()
+        fillet = body.newObject('PartDesign::Fillet', 'SolidRefFillet')
+        fillet.Base = (box, ['Solid1'])
+        fillet.Radius = 1
+        self.Doc.recompute()
+        self.assertTrue(fillet.isValid())
+        byRef = fillet.Shape.Volume
+        fillet.Base = (box, ['Edge1'])
+        fillet.UseAllEdges = True
+        self.Doc.recompute()
+        self.assertAlmostEqual(byRef, fillet.Shape.Volume, places=6)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestFillet")
