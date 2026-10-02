@@ -195,7 +195,7 @@ Defaults to: %N = %V
       <item row="6" column="0" colspan="2">
        <widget class="Gui::PrefCheckBox" name="continueMode">
         <property name="toolTip">
-         <string>The current sketcher creation tool will remain active after creation.</string>
+         <string>Keeps the current Sketcher tool active after creating geometry</string>
         </property>
         <property name="text">
          <string>Geometry creation &quot;Continue Mode&quot;</string>
@@ -473,7 +473,7 @@ Supports all unit systems except 'US customary' and 'Building US/Euro'.</string>
       <item>
        <widget class="Gui::PrefCheckBox" name="checkBoxTVHideDependent">
         <property name="toolTip">
-         <string>When opening a sketch, hide all features that depend on it.</string>
+         <string>Hides all object features that depend on the opened sketch</string>
         </property>
         <property name="text">
          <string>Hide all objects that depend on the sketch</string>
@@ -492,7 +492,7 @@ Supports all unit systems except 'US customary' and 'Building US/Euro'.</string>
       <item>
        <widget class="Gui::PrefCheckBox" name="checkBoxTVShowLinks">
         <property name="toolTip">
-         <string>When opening a sketch, show sources for external geometry links.</string>
+         <string>Shows source objects which are used for external geometry in the opened sketch</string>
         </property>
         <property name="text">
          <string>Show objects used for external geometry</string>
@@ -565,7 +565,7 @@ Supports all unit systems except 'US customary' and 'Building US/Euro'.</string>
       <item>
        <widget class="Gui::PrefCheckBox" name="checkBoxTVRestoreCamera">
         <property name="toolTip">
-         <string>When closing a sketch, move camera back to where it was before the sketch was opened.</string>
+         <string>Restores the camera position after closing the sketch</string>
         </property>
         <property name="text">
          <string>Restore camera position after editing</string>
@@ -584,7 +584,7 @@ Supports all unit systems except 'US customary' and 'Building US/Euro'.</string>
       <item>
        <widget class="Gui::PrefCheckBox" name="checkBoxTVForceOrtho">
         <property name="toolTip">
-         <string>When entering edit mode, force orthographic view of camera.
+         <string>Forces the camera to an orthographic view when editing a sketch.
 Works only when &quot;Restore camera position after editing&quot; is enabled.</string>
         </property>
         <property name="text">
