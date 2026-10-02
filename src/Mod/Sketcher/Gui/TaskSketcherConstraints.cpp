@@ -1762,6 +1762,9 @@ bool TaskSketcherConstraints::isConstraintFiltered(QListWidgetItem* item)
                 break;
         }
 
+        visible |= !constraint->Name.empty()
+            && checkFilterBitset(multiFilterStatus, FilterValue::Named);
+
         // Then we re-filter based on selected/associated if such mode selected.
         if (visible && specialFilterMode == SpecialFilterType::Selected) {
             visible = (std::find(selectionFilter.begin(), selectionFilter.end(), it->ConstraintNbr)
