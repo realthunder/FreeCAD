@@ -55,6 +55,13 @@ namespace sp = std::placeholders;
     qApp->translate("Gui::TaskView::TaskWatcherCommands", "Sketch tools");
     qApp->translate("Gui::TaskView::TaskWatcherCommands", "Create Geometry");
     qApp->translate("Gui::TaskView::TaskWatcherCommands", "Modeling tools");
+    // every watcher title below, as upstream 6c0a141ac7 added Start Part
+    qApp->translate("Gui::TaskView::TaskWatcherCommands", "Vertex tools");
+    qApp->translate("Gui::TaskView::TaskWatcherCommands", "Edge tools");
+    qApp->translate("Gui::TaskView::TaskWatcherCommands", "Start Body");
+    qApp->translate("Gui::TaskView::TaskWatcherCommands", "Start Boolean");
+    qApp->translate("Gui::TaskView::TaskWatcherCommands", "Start Part");
+    qApp->translate("Gui::TaskView::TaskWatcherCommands", "Transformation tools");
     //
     qApp->translate("Workbench", "Measure");
     qApp->translate("Workbench", "Refresh");
