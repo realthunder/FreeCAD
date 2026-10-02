@@ -776,3 +776,10 @@ fc_add_gui_test(GuiSketchConstraintValuePrecision_tests_run
 fc_add_gui_test(GuiSketchMissingExternalTree_tests_run
                 sketch-missing-external-tree.py
                 --timeout 120)
+
+# A new distance's label goes on a fixed side, clear of both points:
+# below for a horizontal distance, beside for a vertical one, upper left
+# of an aligned one (upstream 3d87975faf).
+fc_add_gui_test(GuiSketchDistanceLabelSide_tests_run
+                sketch-distance-label-side.py
+                --timeout 150)

@@ -95,6 +95,105 @@ bool isCreateConstraintActive(Gui::Document* doc)
 }
 
 // Utility method to avoid repeating the same code over and over again
+namespace
+{
+/** Where the label of a new distance goes: on a fixed side, clear of both points by the
+ * constraint's label distance -- below them for a horizontal distance, beside them for a
+ * vertical one (on the side of the upper point), up and to the left of an aligned one.
+ * Left to the label distance alone the side follows the order of the two points, and
+ * the label of a line drawn downhill lands between its ends.
+ */
+bool computeLinearLabelPosition(const Sketcher::SketchObject* sketch,
+                                const Sketcher::Constraint* constraint,
+                                Base::Vector2d& position)
+{
+    if (constraint->Type != Sketcher::DistanceX && constraint->Type != Sketcher::DistanceY
+        && constraint->Type != Sketcher::Distance) {
+        return false;
+    }
+
+    const auto projectPoint = [](const Base::Vector3d& point) {
+        return Base::Vector2d(point.x, point.y);
+    };
+
+    Base::Vector2d firstPoint;
+    Base::Vector2d secondPoint;
+
+    if (constraint->SecondPos != Sketcher::PointPos::none) {
+        firstPoint = projectPoint(sketch->getPoint(constraint->First, constraint->FirstPos));
+        secondPoint = projectPoint(sketch->getPoint(constraint->Second, constraint->SecondPos));
+    }
+    else if (constraint->FirstPos != Sketcher::PointPos::none
+             && constraint->Second == Sketcher::GeoEnum::GeoUndef) {
+        firstPoint = Base::Vector2d(0.0, 0.0);
+        secondPoint = projectPoint(sketch->getPoint(constraint->First, constraint->FirstPos));
+    }
+    else if (constraint->Type == Sketcher::Distance
+             && constraint->Second == Sketcher::GeoEnum::GeoUndef
+             && constraint->First >= 0
+             && constraint->FirstPos == Sketcher::PointPos::none) {
+        const Part::Geometry* geo = sketch->getGeometry(constraint->First);
+
+        if (!geo || !isLineSegment(*geo)) {
+            return false;
+        }
+
+        const auto* lineSegment = static_cast<const Part::GeomLineSegment*>(geo);
+        firstPoint = projectPoint(lineSegment->getStartPoint());
+        secondPoint = projectPoint(lineSegment->getEndPoint());
+    }
+    else {
+        return false;
+    }
+
+    const double eps = Precision::Confusion();
+    Base::Vector2d labelDirection(0.0, 0.0);
+
+    switch (constraint->Type) {
+        case Sketcher::DistanceX:
+            if (secondPoint.x < firstPoint.x - eps) {
+                std::swap(firstPoint, secondPoint);
+            }
+            labelDirection = Base::Vector2d(0.0, -1.0);
+            break;
+        case Sketcher::DistanceY:
+            if (secondPoint.y < firstPoint.y - eps) {
+                std::swap(firstPoint, secondPoint);
+            }
+            labelDirection = secondPoint.x < firstPoint.x - eps ? Base::Vector2d(-1.0, 0.0)
+                                                                : Base::Vector2d(1.0, 0.0);
+            break;
+        case Sketcher::Distance: {
+            if (secondPoint.y < firstPoint.y - eps
+                || (std::abs(secondPoint.y - firstPoint.y) <= eps
+                    && secondPoint.x < firstPoint.x - eps)) {
+                std::swap(firstPoint, secondPoint);
+            }
+            const Base::Vector2d span = secondPoint - firstPoint;
+            const double spanLength = span.Length();
+            if (spanLength <= eps) {
+                return false;
+            }
+            labelDirection = span.x >= 0.0
+                ? Base::Vector2d(-span.y / spanLength, span.x / spanLength)
+                : Base::Vector2d(span.y / spanLength, -span.x / spanLength);
+            break;
+        }
+        default:
+            return false;
+    }
+
+    // from the middle: half the span across the dimension line, to get past the farther
+    // point, and then the label distance
+    const Base::Vector2d span = secondPoint - firstPoint;
+    position = (firstPoint + secondPoint) * 0.5
+        + labelDirection
+            * (std::abs(constraint->LabelDistance)
+               + 0.5 * std::abs(span.x * labelDirection.x + span.y * labelDirection.y));
+    return true;
+}
+}  // namespace
+
 void finishDatumConstraint(Gui::Command* cmd,
                            Sketcher::SketchObject* sketch,
                            bool isDriving = true,
@@ -146,6 +245,13 @@ void finishDatumConstraint(Gui::Command* cmd,
 
                 if (geo && isCircle(*geo)) {
                     ConStr[i]->LabelPosition = labelPosition;
+                }
+            }
+            else {
+                Base::Vector2d position;
+
+                if (computeLinearLabelPosition(sketch, ConStr[i], position)) {
+                    vp->moveConstraint(i, position);
                 }
             }
         }
