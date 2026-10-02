@@ -40,7 +40,7 @@
 
 #include "SketcherSettings.h"
 #include "ui_SketcherSettings.h"
-#include "ui_SketcherSettingsColors.h"
+#include "ui_SketcherSettingsAppearance.h"
 #include "ui_SketcherSettingsDisplay.h"
 #include "ui_SketcherSettingsGrid.h"
 
@@ -641,39 +641,100 @@ void SketcherSettingsDisplay::onBtnTVApplyClicked(bool)
 }
 
 
-/* TRANSLATOR SketcherGui::SketcherSettingsColors */
+/* TRANSLATOR SketcherGui::SketcherSettingsAppearance */
 
-SketcherSettingsColors::SketcherSettingsColors(QWidget* parent)
+namespace
+{
+// A line type combo box of the appearance page: its preference in
+// Mod/Sketcher/View and the pattern drawn when that is not set
+struct LinePatternBox
+{
+    QComboBox* box;
+    const char* entry;
+    int defaultPattern;
+};
+
+std::array<LinePatternBox, 8> linePatternBoxes(Ui_SketcherSettingsAppearance* ui)
+{
+    return {{
+        {ui->EdgePattern, "EdgePattern", 0b1111111111111111},
+        {ui->ConstructionPattern, "ConstructionPattern", 0b1111110011111100},
+        {ui->InternalPattern, "InternalPattern", 0b1111110011111100},
+        {ui->ExternalPattern, "ExternalPattern", 0b1111110011111100},
+        {ui->ExternalDefiningPattern, "ExternalDefiningPattern", 0b1111111111111111},
+        {ui->InformationPattern, "InformationPattern", 0b1111110011111100},
+        {ui->DimensionalConstraintLinePattern,
+         "DimensionalConstraintLinePattern",
+         0b1111111111111111},
+        {ui->AxisLinePattern, "AxisLinePattern", 0b1111111111111111},
+    }};
+}
+
+const char* const SketcherViewGroup = "User parameter:BaseApp/Preferences/Mod/Sketcher/View";
+}  // namespace
+
+SketcherSettingsAppearance::SketcherSettingsAppearance(QWidget* parent)
     : PreferencePage(parent)
-    , ui(new Ui_SketcherSettingsColors)
+    , ui(new Ui_SketcherSettingsAppearance)
 {
     ui->setupUi(this);
+
+    // The entries get their icons in event(), as the grid page's do
+    const auto lineStyleDelegate = new QStyledItemDelegate(this);
+    for (const auto& line : linePatternBoxes(ui.get())) {
+        line.box->setIconSize(LineIconSize);
+        line.box->setItemDelegate(lineStyleDelegate);
+        for (auto style : PenStyles) {
+            line.box->addItem(QString(), QVariant(style.pattern));
+        }
+    }
 }
 
 /**
  *  Destroys the object and frees any allocated resources
  */
-SketcherSettingsColors::~SketcherSettingsColors()
+SketcherSettingsAppearance::~SketcherSettingsAppearance()
 {
     // no need to delete child widgets, Qt does it all for us
 }
 
-void SketcherSettingsColors::saveSettings()
+bool SketcherSettingsAppearance::event(QEvent* event)
+{
+    // Painted from the page's own palette once the style has reached it,
+    // as on the grid page. Upstream (efec2c6795) shows a label of its own
+    // to read the style sheet's colour from; a styled page already has it.
+    if (event->type() == QEvent::StyleChange) {
+        PreferencePage::event(event);
+        const qreal dpr = devicePixelRatioF();
+        const QBrush brush = palette().windowText();
+        for (size_t i = 0; i < PenStyles.size(); ++i) {
+            const QIcon icon = PenStyles[i].toIcon(LineIconSize, dpr, brush);
+            for (const auto& line : linePatternBoxes(ui.get())) {
+                line.box->setItemIcon(static_cast<int>(i), icon);
+            }
+        }
+        return true;
+    }
+    return PreferencePage::event(event);
+}
+
+void SketcherSettingsAppearance::saveSettings()
 {
     // Sketcher
     ui->SketchEdgeColor->onSave();
     ui->SketchVertexColor->onSave();
     ui->EditedEdgeColor->onSave();
-    ui->EditedVertexColor->onSave();
     ui->ConstructionColor->onSave();
     ui->ExternalColor->onSave();
+    ui->ExternalDefiningColor->onSave();
     ui->InvalidSketchColor->onSave();
     ui->FullyConstrainedColor->onSave();
     ui->InternalAlignedGeoColor->onSave();
     ui->FullyConstraintElementColor->onSave();
     ui->FullyConstraintConstructionElementColor->onSave();
     ui->FullyConstraintInternalAlignmentColor->onSave();
-    ui->FullyConstraintConstructionPointColor->onSave();
+    ui->InformationColor->onSave();
+    ui->GridLineColor->onSave();
 
     ui->FrozenColor->onSave();
     ui->DetachedColor->onSave();
@@ -689,24 +750,39 @@ void SketcherSettingsColors::saveSettings()
 
     ui->CursorTextColor->onSave();
     ui->CursorCrosshairColor->onSave();
+
+    ui->EdgeWidth->onSave();
+    ui->ConstructionWidth->onSave();
+    ui->InternalWidth->onSave();
+    ui->ExternalWidth->onSave();
+    ui->ExternalDefiningWidth->onSave();
+    ui->InformationWidth->onSave();
+    ui->DimensionalConstraintLineWidth->onSave();
+    ui->AxisLineWidth->onSave();
+
+    ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(SketcherViewGroup);
+    for (const auto& line : linePatternBoxes(ui.get())) {
+        hGrp->SetInt(line.entry, line.box->itemData(line.box->currentIndex()).toInt());
+    }
 }
 
-void SketcherSettingsColors::loadSettings()
+void SketcherSettingsAppearance::loadSettings()
 {
     // Sketcher
     ui->SketchEdgeColor->onRestore();
     ui->SketchVertexColor->onRestore();
     ui->EditedEdgeColor->onRestore();
-    ui->EditedVertexColor->onRestore();
     ui->ConstructionColor->onRestore();
     ui->ExternalColor->onRestore();
+    ui->ExternalDefiningColor->onRestore();
     ui->InvalidSketchColor->onRestore();
     ui->FullyConstrainedColor->onRestore();
     ui->InternalAlignedGeoColor->onRestore();
     ui->FullyConstraintElementColor->onRestore();
     ui->FullyConstraintConstructionElementColor->onRestore();
     ui->FullyConstraintInternalAlignmentColor->onRestore();
-    ui->FullyConstraintConstructionPointColor->onRestore();
+    ui->InformationColor->onRestore();
+    ui->GridLineColor->onRestore();
 
     ui->FrozenColor->onRestore();
     ui->DetachedColor->onRestore();
@@ -723,12 +799,37 @@ void SketcherSettingsColors::loadSettings()
 
     ui->CursorTextColor->onRestore();
     ui->CursorCrosshairColor->onRestore();
+
+    ui->EdgeWidth->onRestore();
+    ui->ConstructionWidth->onRestore();
+    ui->InternalWidth->onRestore();
+    ui->ExternalWidth->onRestore();
+    ui->ExternalDefiningWidth->onRestore();
+    ui->InformationWidth->onRestore();
+    ui->DimensionalConstraintLineWidth->onRestore();
+    ui->AxisLineWidth->onRestore();
+
+    ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(SketcherViewGroup);
+    for (const auto& line : linePatternBoxes(ui.get())) {
+        int index = line.box->findData(QVariant(int(hGrp->GetInt(line.entry, line.defaultPattern))));
+        line.box->setCurrentIndex(index < 0 ? 0 : index);
+    }
+}
+
+void SketcherSettingsAppearance::resetSettingsToDefaults()
+{
+    // the line types are stored by hand, so the base class does not know them
+    ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(SketcherViewGroup);
+    for (const auto& line : linePatternBoxes(ui.get())) {
+        hGrp->RemoveInt(line.entry);
+    }
+    PreferencePage::resetSettingsToDefaults();
 }
 
 /**
  * Sets the strings of the subwidgets using the current language.
  */
-void SketcherSettingsColors::changeEvent(QEvent* e)
+void SketcherSettingsAppearance::changeEvent(QEvent* e)
 {
     if (e->type() == QEvent::LanguageChange) {
         ui->retranslateUi(this);

@@ -83,7 +83,7 @@ def clear():
 
 
 def in_preferences(action, page=0):
-    """Open one of the Sketcher's pages (0 General, 1 Grid), run
+    """Open one of the Sketcher's pages (0 General, 1 Grid, 3 Appearance), run
     action(dialog) inside the dialog's event loop and press OK. Returns
     what action returned."""
     got = {}
@@ -265,9 +265,45 @@ def run():
               patterns is not None and patterns["text"] == (240, 240, 240)
               and all(e[1] > 0 and e[2] == [patterns["text"]] for e in patterns["entries"]),
               patterns)
+
+        # -- the appearance page: a line type and a width per kind ---------
+        view = FreeCAD.ParamGet(SKETCHER + "/View")
+        for name in ("ConstructionPattern", "ConstructionWidth"):
+            view.RemInt(name)
+        shown = in_preferences(appearance, page=3)
+        note("appearance page: %s" % (shown,))
+        check("the appearance page has a line type and a width for each of the eight kinds",
+              shown is not None and shown["boxes"] == [7] * 8 and shown["widths"] == 8, shown)
+        check("with upstream's defaults shown",
+              shown is not None and shown["construction"] == (0xFCFC, 2), shown)
+        check("and no vertex colour: a point is coloured as its geometry",
+              shown is not None and shown["vertex"] is False, shown)
+        stored = (view.GetInt("ConstructionPattern", 0), view.GetInt("ConstructionWidth", 0))
+        check("OK stores what was chosen", stored == (0xAAAA, 4), stored)
+        in_preferences(reset_page, page=3)
+        stored = (view.GetInt("ConstructionPattern", 0xFCFC), view.GetInt("ConstructionWidth", 2))
+        check("Reset page takes the line types back too, which the page stores by hand",
+              stored == (0xFCFC, 2), stored)
+        for name in ("ConstructionPattern", "ConstructionWidth"):
+            view.RemInt(name)
     except Exception:
         note("ABORT:\n" + traceback.format_exc())
     finish()
+
+
+def appearance(dialog):
+    """Read the appearance page, then choose a construction line type and
+    width for the OK to store."""
+    kinds = ("Edge", "Construction", "Internal", "External", "ExternalDefining",
+             "Information", "DimensionalConstraintLine", "AxisLine")
+    boxes = [widget(dialog, k + "Pattern").count() for k in kinds]
+    widths = sum(1 for k in kinds if widget(dialog, k + "Width") is not None)
+    combo, spin = widget(dialog, "ConstructionPattern"), widget(dialog, "ConstructionWidth")
+    shown = (combo.itemData(combo.currentIndex()), spin.value())
+    combo.setCurrentIndex(combo.findData(0xAAAA))
+    spin.setValue(4)
+    return {"boxes": boxes, "widths": widths, "construction": shown,
+            "vertex": dialog.findChild(QtWidgets.QWidget, "EditedVertexColor") is not None}
 
 
 def pattern_icons(dialog):
