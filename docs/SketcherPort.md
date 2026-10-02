@@ -3311,6 +3311,41 @@ Open, each for the user:
 - *Another body or document.* The external tool makes a binder without
   asking. Proposed: the same here, since it is the same act.
 
+**Ruled after that (user, 2026-10-02), and what was built:**
+
+- *The edge in a face*, agreed: `ed018fd5d8`. What lies in the plane of the
+  face hit first is not behind it; an edge or a vertex there takes the pick
+  within the pick radius, whichever object it belongs to. The probe
+  corrected the paragraph above first: with hidden-line selection on top
+  (the default) an object's OWN edges and vertices already won, because the
+  gathered list is searched for a better hit of the same object. The loss
+  was across objects (the sketch's outline on a solid's face) and, with the
+  option off, for an object's own elements too. `pick-edge-in-face.py`
+  (4 of 24 failed, all with the option off); `sketch-face-on-solid-pick.py`
+  now claims the sketch's edge on the outline.
+- *The wording rows*, "take, and translation sync". Measured before
+  anything was touched: of the fork's 1381 translatable strings 457 had no
+  entry in the fork's own (2023-12) translation files and 726 had none in
+  upstream's catalogue, so taking upstream's files alone would have lost
+  about 270 translations. The nine rows are follow-ups of upstream's
+  rewording of the whole workbench (`cf082f7642`), whose code the fork had
+  and whose strings it had not. So the wording went first, `d7074e36be`:
+  the menu text and tooltip of every command class both sides have, paired
+  by class and member (220 strings), and 168 other strings whose upstream
+  form is the same string reworded, read pair by pair. Kept: the
+  Intersection command's text (it toggles here), tool hints, the element
+  panel's layer names, texts that say what only the fork does. Then the
+  files, `33f8ec9f15`: upstream's 49 at `bd6be559e8`. 365 strings are left
+  without an upstream entry, the fork's own; German covers 1116 of 1388.
+  `46e2c45e2e` (the three menu classes name their translation context) is
+  `72831da284`.
+- *`999fed9c4e`*: one undo step for the reference and the constraint,
+  aborted when the tool is left before the constraint; a binder made
+  without asking for another body or document. Which tools -- Dimension
+  alone, or the eighteen individual constraint commands as well -- was
+  asked back and is open. If both: a step whose picks are all external is
+  refused, which upstream does not do.
+
 ## 7a. The constraint-tool hints (session 85)
 
 Thirteen rows, not the eleven the sweep sized: `580d538798`, the commit
