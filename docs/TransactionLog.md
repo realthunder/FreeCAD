@@ -10960,7 +10960,7 @@ the OCCT changes that concern the transaction log; a thickness fix is
 written up in the fork). A dome with its flat face removed came back
 invalid, and the thickness sweep was judged by a ratio that passed wrong
 volumes. Both are in the OCCT fork: `tests/thickness/models/Thickness.md`,
-"Sec 27.106", and `tests/thickness/README.md`, "A face closed at a pole" and
+"Sec 16", and `tests/thickness/README.md`, "A face closed at a pole" and
 "The sweep". Fork `e626b499d9`, `ba82939489`, `890be7d0e0`, `95d9f6ae67`;
 FreeCAD `RegressionTests.test_thickness_of_a_face_closed_at_a_pole`.
 
@@ -10976,7 +10976,7 @@ unfrozen), the fork's thickness suite PASS 110, its sweep 712 of 712.
 
 Not log work; a pointer (27.106). The user, "fix the found issue now":
 27.106's candidates. The write-up is the OCCT fork's
-`tests/thickness/models/Thickness.md`, "Sec 27.107", and
+`tests/thickness/models/Thickness.md`, "Sec 17", and
 `tests/thickness/README.md`. Fork `aca7df93b0` (the edge at an offset cone's
 new apex had an infinite range: the cone inward, and unhollowed with the
 Intersection join), `d964dc081b` (half a dome), `92568cb0da` (a result that
@@ -10996,7 +10996,7 @@ unfrozen), the fork's thickness suite PASS 127 XFAIL 5, its sweep 712 of
 
 Not log work; a pointer (27.106). The user, "continue as planned": the
 five cases 27.107 left marked known broken, in order. The write-up is the
-OCCT fork's `tests/thickness/models/Thickness.md`, "Sec 27.108", and
+OCCT fork's `tests/thickness/models/Thickness.md`, "Sec 18", and
 `tests/thickness/README.md`. Fork `ed836d0120` (the half dome's mirror side
 inward: a stretched edge's piece beyond its own ends is outside),
 `c13b1e5540` (the Intersection join on faces in coplanar pieces: a box
