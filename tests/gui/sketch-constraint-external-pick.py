@@ -11,7 +11,7 @@ these tools and it stays from one tool to the next. The tool's cursor says
 so: the icon of the command that switched it on, above the tool's own.
 
 A box, and a sketch on the XY plane with two lines beside the box, seen
-from the top. Claims:
+from the top. The sketch has a circle too. Claims:
 
   Parallel (a constraint command):
   - with outside picking off, a click on the box's edge does nothing;
@@ -31,6 +31,14 @@ from the top. Claims:
     still drawn as picked, although the view cleared the selection to
     select the edge.
 
+  What a step can take:
+  - Parallel, the line and then the box's corner: a vertex is not offered
+    where an edge is asked for, nothing is made;
+  - Coincident, the line's end and the box's corner: an external point and
+    the constraint, one undo step;
+  - Parallel, two of the box's edges: the command refuses a constraint
+    between two fixed things, and neither reference stays.
+
   Dimension:
   - the setting left on reaches the Dimension tool started afterwards;
   - the box's edge, the sketch's line, then a click on empty space: the
@@ -43,7 +51,11 @@ from the top. Claims:
     selected (the tool starts its transaction over at each pick, and the
     sketch clears the selection when one is aborted);
   - the sketch's line picked before an outside edge is still selected
-    after it.
+    after it;
+  - a circle and a click on empty space finish its dimension although the
+    dimension's label, which follows the pointer, is under the click;
+  - the box's face and a click on empty space: the pieces of the face go
+    again, with nothing dimensioned there is nothing to keep.
 
 Scored against the tree before the change: the External command replaced
 the running tool, and nothing outside the sketch could be picked in one.
@@ -68,6 +80,10 @@ GENERAL = "User parameter:BaseApp/Preferences/Mod/Sketcher/General"
 LINE = V(7, -5.5, 0)      # on the sketch's line, beside the box
 END = V(3, -6, 0)         # the line's first end
 LINE2 = V(7, -9.25, 0)    # on the sketch's second line
+CIRCLE = V(-6, -6, 0)     # on the sketch's circle
+CORNER = V(2, 3, 10)      # a corner of the box
+BACK = V(7, 13, 10)       # on the box's top back edge
+TOP = V(7, 8, 10)         # on the box's top face
 FRONT = V(7, 3, 10)       # on the box's top front edge (y = 3)
 RIGHT = V(12, 8, 10)      # on the box's top right edge (x = 12)
 EMPTY = V(-8, -10, 0)
@@ -183,6 +199,7 @@ def run():
         sk = doc.addObject("Sketcher::SketchObject", "Sketch")
         sk.addGeometry(Part.LineSegment(V(3, -6, 0), V(11, -5, 0)), False)
         sk.addGeometry(Part.LineSegment(V(3, -9, 0), V(11, -9.5, 0)), False)
+        sk.addGeometry(Part.Circle(V(-8, -6, 0), V(0, 0, 1), 2), False)
         doc.recompute()
         gdoc = FreeCADGui.getDocument(DOC)
         view = gdoc.activeView()
@@ -283,6 +300,45 @@ def probe(doc, sk, view):
         escape()
         check("left: nothing stays", state_of(sk) == clean, state_of(sk))
 
+        # -- what a step can take --------------------------------------
+        FreeCADGui.runCommand("Sketcher_ConstrainParallel")
+        settle()
+        undo0 = doc.UndoCount
+        click(view, LINE)
+        click(view, CORNER)
+        check("parallel: the box's corner is not taken where an edge is asked for",
+              state_of(sk) == clean and doc.UndoCount == undo0,
+              (state_of(sk), undo0, doc.UndoCount))
+        escape()
+
+        FreeCADGui.runCommand("Sketcher_ConstrainCoincidentUnified")
+        settle()
+        undo0 = doc.UndoCount
+        click(view, END)
+        click(view, CORNER)
+        st = state_of(sk)
+        check("coincident: the line's end on the box's corner, an external point",
+              st[0] == 1 and externals(sk)[0][1].startswith("Vertex")
+              and st[1] in ([("Coincident", 0, -3)], [("Coincident", -3, 0)]),
+              (st, externals(sk)))
+        check("in one undo step", doc.UndoCount == undo0 + 1,
+              (undo0, doc.UndoCount, doc.UndoNames[:3]))
+        doc.undo()
+        settle()
+        check("undoing it takes both", state_of(sk) == clean, state_of(sk))
+        escape()
+
+        FreeCADGui.runCommand("Sketcher_ConstrainParallel")
+        settle()
+        undo0 = doc.UndoCount
+        click(view, FRONT)
+        check("parallel: the box's edge first is taken", state_of(sk)[0] == 1, state_of(sk))
+        click(view, BACK)
+        check("two of the box's edges: refused, and neither reference stays",
+              state_of(sk) == clean and doc.UndoCount == undo0,
+              (state_of(sk), undo0, doc.UndoCount, doc.UndoNames[:3]))
+        escape()
+
         # -- the Dimension tool ---------------------------------------
         FreeCADGui.Selection.clearSelection()
         FreeCADGui.runCommand("Sketcher_Dimension")
@@ -320,6 +376,29 @@ def probe(doc, sk, view):
         check("and both are still selected", sorted(selected(sk)) == ["Edge1", "Edge2"],
               selected(sk))
         escape()
+        # The diameter's label follows the pointer, so the sketch has
+        # something of its own under the click that ends the dimension.
+        undo0 = doc.UndoCount
+        click(view, CIRCLE)
+        click(view, EMPTY)
+        st = state_of(sk)
+        check("dimension: a circle and a click on empty space finish its dimension",
+              selected(sk) == [] and [t for t, _f, _s in st[1]] == ["Diameter"]
+              and doc.UndoCount == undo0 + 1,
+              (selected(sk), st, undo0, doc.UndoCount))
+        doc.undo()
+        settle()
+
+        undo0 = doc.UndoCount
+        click(view, TOP)
+        check("dimension: the box's face puts its outline in the sketch",
+              state_of(sk)[0] == 1 and len(sk.ExternalGeo) == 6,
+              (state_of(sk), len(sk.ExternalGeo)))
+        click(view, EMPTY)
+        check("nothing dimensioned: the outline goes again and no undo step is left",
+              state_of(sk) == clean and doc.UndoCount == undo0,
+              (state_of(sk), undo0, doc.UndoCount, doc.UndoNames[:3]))
+
         click(view, LINE)
         check("dimension: the line is selected", selected(sk) == ["Edge1"], selected(sk))
         FreeCADGui.runCommand("Sketcher_Defining")

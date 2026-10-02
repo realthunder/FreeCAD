@@ -1335,6 +1335,22 @@ struct StackedExternalPick
         return names;
     }
 
+    /** Whether the view has something outside the sketch under the pointer
+     *
+     * Its click is that pick then, and not a click on empty space. The
+     * sketch's own things do not count: a dimension's label follows the
+     * pointer, so there is one under it at every click.
+     */
+    static bool outsidePreselected(ViewProviderSketch* sketchgui)
+    {
+        const auto& pre = sketchgui->sessionSelection().getPreselection();
+        if (!pre.pObjectName || !pre.pObjectName[0]) {
+            return false;
+        }
+        App::DocumentObject* obj = pre.Object.getObject();
+        return obj && obj->getLinkedObject() != sketchgui->getObject();
+    }
+
     /// The icon of the command that switches the mode in force on
     const char* icon() const
     {
@@ -1641,7 +1657,7 @@ public:
         if (selIdPair.GeoId == GeoEnum::GeoUndef) {
             // With outside picking on, "blank" for the sketch may be an
             // object the view is picking: that pick is the click then.
-            if (external.on() && sketchgui->sessionSelection().hasPreselection()) {
+            if (external.on() && StackedExternalPick::outsidePreselected(sketchgui)) {
                 return true;
             }
             // If mouse is released on "blank" space, start over
@@ -2639,7 +2655,7 @@ public:
             // Released on blank space: finalize and start over. With
             // outside picking on, "blank" for the sketch may be an object
             // the view is about to pick -- that pick is the click then.
-            if (external.on() && sketchgui->sessionSelection().hasPreselection()) {
+            if (external.on() && StackedExternalPick::outsidePreselected(sketchgui)) {
                 return true;
             }
             finalizeCommand();
