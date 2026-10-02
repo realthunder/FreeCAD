@@ -135,6 +135,13 @@ public:
 
     QWidget *getProxyWidget() { return proxy; }
 
+    /** Put the on-view toggles of the instances where the top transformed
+     * object's instances are now (upstream e22e537c4b), or take them away
+     * when there is no view to show them in. The top panel holds them; a
+     * MultiTransform's sub-panel asks it.
+     */
+    void updateInstanceMarkers();
+
 public Q_SLOTS:
     void onToggledExpansion();
 
@@ -149,6 +156,8 @@ protected Q_SLOTS:
     void originalSelectionChanged();
     void onChangedOffset(const QVariant &, bool, bool);
     void onUpdateViewTimer();
+    /// A marker in the view was clicked
+    void onInstanceToggled(int index, bool suppress);
 
 protected:
     /**
@@ -232,6 +241,9 @@ protected:
 
     bool blockUpdate;
     Gui::Dialog::Placement *transformOffsetPlacement = nullptr;
+
+    /// The on-view toggles of the instances, the top panel's
+    std::unique_ptr<Gui::PatternInstanceMarkers> instanceMarkers;
 
     friend class TaskDlgTransformedParameters;
 };

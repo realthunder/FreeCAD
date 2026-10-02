@@ -23,6 +23,8 @@
 #ifndef GUI_TASKLINKARRAY_H
 #define GUI_TASKLINKARRAY_H
 
+#include <memory>
+
 #include <App/DocumentObserver.h>
 
 #include "DocumentObserver.h"
@@ -47,6 +49,7 @@ namespace Gui
 {
 class ComboLinks;
 class PatternDirectionWidget;
+class PatternInstanceMarkers;
 class PatternParametersWidget;
 class ViewProviderLinkArray;
 
@@ -90,6 +93,9 @@ private:
     void recompute();
     /// Put the directions' on-view labels where the array is now
     void updateLabels();
+    /// Put the elements' on-view toggles where the elements are now
+    void updateInstanceMarkers();
+    void onInstanceToggled(int index, bool suppress);
 
 private:
     App::DocumentObjectT arrayT;
@@ -108,6 +114,7 @@ private:
     PatternDirectionWidget* direction1 = nullptr;
     PatternDirectionWidget* direction2 = nullptr;
     PatternParametersWidget* parameters = nullptr;
+    std::unique_ptr<PatternInstanceMarkers> instanceMarkers;
 
     // The reference being picked, or the linked object
     App::PropertyLinkSub* picking = nullptr;

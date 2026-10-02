@@ -135,6 +135,12 @@ fc_add_gui_test(GuiServeOnViewParams_tests_run serve-onview-params.py
 fc_add_gui_test(GuiServePatternLabels_tests_run serve-pattern-labels.py
                 --timeout 200)
 
+# A pattern's instance toggles over the wire (upstream e22e537c4b on the
+# fork's marker node): a click replayed through the scene, picked over the
+# instance the marker sits in, leaves the instance out and brings it back.
+fc_add_gui_test(GuiServePatternMarkers_tests_run serve-pattern-markers.py
+                --timeout 200)
+
 # The expression editor on a live desktop (docs/ExpressionEditor.md): its
 # tool bar shown only while an editor is the active view, the split that
 # does not evict the spreadsheet being edited, folding from the margin,

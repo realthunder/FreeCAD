@@ -50,6 +50,7 @@
 #include <Inventor/SoDB.h>
 #include <Inventor/SoInteraction.h>
 #include <Inventor/events/SoKeyboardEvent.h>
+#include <Inventor/nodes/SoCube.h>
 #include <Inventor/nodes/SoEventCallback.h>
 #include <Inventor/nodes/SoSeparator.h>
 
@@ -58,7 +59,9 @@
 
 #include <Gui/EditableDatumLabel.h>
 #include <Gui/Inventor/SoAutoZoomTranslation.h>
+#include <Gui/Inventor/SoToggleMarker.h>
 #include <Gui/MirrorViewer.h>
+#include <Gui/PatternWidgets.h>
 #include <Gui/SoDatumLabel.h>
 #include <Gui/ViewerContext.h>
 
@@ -109,6 +112,9 @@ protected:
         if (Gui::SoDatumLabel::getClassTypeId() == SoType::badType()) {
             Gui::SoDatumLabel::initClass();
             Gui::SoAutoZoomTranslation::initClass();
+        }
+        if (Gui::SoToggleMarker::getClassTypeId() == SoType::badType()) {
+            Gui::SoToggleMarker::initClass();
         }
         App::Application::Config()["ExeName"] = "OnViewParameter_tests_run";
         int argc = 1;
@@ -509,6 +515,162 @@ TEST_F(OnViewParameterTest, aBoxThatGoesAwayTakesTheFocusWithIt)
     EXPECT_TRUE(mirror->onViewParameters().empty());
     // And a key arriving after it must not be routed to freed memory.
     EXPECT_NO_FATAL_FAILURE(mirror->handleInput(keyPress('7', '7')));
+}
+
+// ----------------------------------------------------------------------------
+// A pattern's instance toggles (Gui::PatternInstanceMarkers): scene nodes, so
+// that a served view has them as it has the labels
+
+/// Where a world point on the z = 0 plane lands on the 800x600 canvas
+int canvasX(double x)
+{
+    return 400 + int(x / (60.0 * 0.41421356) * 300.0 + 0.5);
+}
+
+std::vector<Gui::PatternInstanceMarkers::Instance> twoInstances()
+{
+    std::vector<Gui::PatternInstanceMarkers::Instance> instances(2);
+    instances[0].index = 0;
+    instances[1].index = 1;
+    instances[1].center = Base::Vector3d(10, 0, 0);
+    instances[1].suppressed = true;
+    return instances;
+}
+
+TEST_F(OnViewParameterTest, aMarkerPaintsWhatAClickDoes)
+{
+    // The glyph is the image a capture takes, so it is there before any GL
+    // pass, and it changes with the state it shows
+    auto marker = new Gui::SoToggleMarker;
+    marker->ref();
+    SbVec2s size;
+    int nc = 0;
+    const unsigned char* bytes = marker->image.getValue(size, nc);
+    ASSERT_NE(bytes, nullptr);
+    EXPECT_EQ(size[0], 22);
+    EXPECT_EQ(nc, 4);
+    std::vector<unsigned char> in(bytes, bytes + size[0] * size[1] * nc);
+
+    marker->active = FALSE;
+    bytes = marker->image.getValue(size, nc);
+    std::vector<unsigned char> out(bytes, bytes + size[0] * size[1] * nc);
+    EXPECT_NE(in, out);
+
+    marker->markerSize = 48;
+    marker->image.getValue(size, nc);
+    EXPECT_EQ(size[0], 48);
+    marker->unref();
+}
+
+TEST_F(OnViewParameterTest, aClickOnAMarkerAsksToToggleItsInstance)
+{
+    Gui::PatternInstanceMarkers markers;
+    std::vector<std::pair<int, bool>> asked;
+    QObject::connect(&markers, &Gui::PatternInstanceMarkers::toggleRequested,
+                     [&asked](int index, bool suppress) { asked.emplace_back(index, suppress); });
+    markers.show(mirror.get(), twoInstances());
+    ASSERT_NE(markers.getMarker(1), nullptr);
+    EXPECT_TRUE(markers.getMarker(0)->active.getValue());
+    EXPECT_FALSE(markers.getMarker(1)->active.getValue());
+
+    using Kind = Gui::MirrorViewer::Input::Kind;
+    // The one left out is brought back, the one in is left out
+    mirror->handleInput(pointer(Kind::Press, canvasX(10), 300));
+    mirror->handleInput(pointer(Kind::Release, canvasX(10), 300));
+    mirror->handleInput(pointer(Kind::Press, canvasX(0), 300));
+    mirror->handleInput(pointer(Kind::Release, canvasX(0), 300));
+    ASSERT_EQ(asked.size(), 2U);
+    EXPECT_EQ(asked[0], std::make_pair(1, false));
+    EXPECT_EQ(asked[1], std::make_pair(0, true));
+
+    // Beside one is no click, nor a press on one released on another
+    mirror->handleInput(pointer(Kind::Press, canvasX(5), 300));
+    mirror->handleInput(pointer(Kind::Release, canvasX(5), 300));
+    mirror->handleInput(pointer(Kind::Press, canvasX(0), 300));
+    mirror->handleInput(pointer(Kind::Release, canvasX(10), 300));
+    EXPECT_EQ(asked.size(), 2U);
+
+    // The panel shows them again as the pattern has them now
+    auto instances = twoInstances();
+    instances[1].suppressed = false;
+    markers.show(mirror.get(), instances);
+    EXPECT_TRUE(markers.getMarker(1)->active.getValue());
+}
+
+TEST_F(OnViewParameterTest, aMarkerIsCentredOnItsPoint)
+{
+    // An SoImage hangs off its point to the upper right unless told
+    // otherwise, and was clicked there and not where the instance is
+    Gui::PatternInstanceMarkers markers;
+    int clicks = 0;
+    QObject::connect(&markers, &Gui::PatternInstanceMarkers::toggleRequested,
+                     [&clicks](int, bool) { ++clicks; });
+    markers.show(mirror.get(), twoInstances());
+
+    using Kind = Gui::MirrorViewer::Input::Kind;
+    int expected = 0;
+    for (int dx : {-8, 8}) {
+        for (int dy : {-8, 8}) {
+            mirror->handleInput(pointer(Kind::Press, canvasX(0) + dx, 300 + dy));
+            mirror->handleInput(pointer(Kind::Release, canvasX(0) + dx, 300 + dy));
+            EXPECT_EQ(clicks, ++expected) << "a click at " << dx << "," << dy;
+        }
+    }
+}
+
+TEST_F(OnViewParameterTest, aMarkerIsPickedThroughTheInstanceAroundIt)
+{
+    // A marker sits at the middle of its instance, inside the solid: the
+    // solid's face is nearer, and must not take the click
+    auto cube = new SoCube;
+    cube->width = 4;
+    cube->height = 4;
+    cube->depth = 4;
+    scene->addChild(cube);
+
+    Gui::PatternInstanceMarkers markers;
+    int clicks = 0;
+    QObject::connect(&markers, &Gui::PatternInstanceMarkers::toggleRequested,
+                     [&clicks](int, bool) { ++clicks; });
+    markers.show(mirror.get(), twoInstances());
+
+    using Kind = Gui::MirrorViewer::Input::Kind;
+    mirror->handleInput(pointer(Kind::Press, canvasX(0), 300));
+    mirror->handleInput(pointer(Kind::Release, canvasX(0), 300));
+    EXPECT_EQ(clicks, 1);
+}
+
+TEST_F(OnViewParameterTest, theMarkerUnderThePointerIsHighlighted)
+{
+    Gui::PatternInstanceMarkers markers;
+    markers.show(mirror.get(), twoInstances());
+    using Kind = Gui::MirrorViewer::Input::Kind;
+    mirror->handleInput(pointer(Kind::Move, canvasX(10), 300));
+    EXPECT_FALSE(markers.getMarker(0)->highlighted.getValue());
+    EXPECT_TRUE(markers.getMarker(1)->highlighted.getValue());
+    mirror->handleInput(pointer(Kind::Move, canvasX(5), 300));
+    EXPECT_FALSE(markers.getMarker(1)->highlighted.getValue());
+}
+
+TEST_F(OnViewParameterTest, theMarkersGoWhenCleared)
+{
+    Gui::PatternInstanceMarkers markers;
+    const int before = scene->getNumChildren();
+    markers.show(mirror.get(), twoInstances());
+    EXPECT_EQ(scene->getNumChildren(), before + 1);
+    // One instance is nothing to leave out
+    markers.show(mirror.get(), {});
+    EXPECT_EQ(scene->getNumChildren(), before);
+    EXPECT_EQ(markers.getMarker(0), nullptr);
+}
+
+TEST_F(OnViewParameterTest, theMarkersOutliveTheirView)
+{
+    // A document closed under an open panel takes the view first
+    auto markers = std::make_unique<Gui::PatternInstanceMarkers>();
+    markers->show(mirror.get(), twoInstances());
+    mirror.reset();
+    EXPECT_NO_FATAL_FAILURE(markers.reset());
 }
 
 }  // namespace

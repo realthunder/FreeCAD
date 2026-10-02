@@ -23,6 +23,7 @@
 #include "PreCompiled.h"
 
 #ifndef _PreComp_
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -34,6 +35,14 @@
 #include <QFormLayout>
 #include <QLabel>
 #include <QVBoxLayout>
+#include <Inventor/SoPath.h>
+#include <Inventor/SoPickedPoint.h>
+#include <Inventor/events/SoLocation2Event.h>
+#include <Inventor/events/SoMouseButtonEvent.h>
+#include <Inventor/nodes/SoAnnotation.h>
+#include <Inventor/nodes/SoEventCallback.h>
+#include <Inventor/nodes/SoPickStyle.h>
+#include <Inventor/nodes/SoTranslation.h>
 #endif
 
 #include <App/Document.h>
@@ -48,9 +57,11 @@
 
 #include "Command.h"
 #include "EditableDatumLabel.h"
+#include "Inventor/SoToggleMarker.h"
 #include "PatternWidgets.h"
 #include "QuantitySpinBox.h"
 #include "SpinBox.h"
+#include "ViewerContext.h"
 
 using namespace Gui;
 
@@ -1150,6 +1161,188 @@ void PatternParametersWidget::apply(App::DocumentObject* obj) const
             FCMD_OBJ_CMD(obj, row.name << " = " << p->getValue());
         }
     }
+}
+
+// ----------------------------------------------------------------------------
+
+PatternInstanceMarkers::PatternInstanceMarkers(QObject* parent)
+    : QObject(parent)
+{
+    // Drawn over the model, and picked over it: a marker sits at the centre
+    // of an instance, inside it
+    root = new SoAnnotation;
+    root->ref();
+    root->setName("PatternInstanceMarkers");
+    root->renderCaching = SoSeparator::OFF;
+    // Held here too: the markers after them come and go
+    callback = new SoEventCallback;
+    callback->ref();
+    callback->addEventCallback(SoMouseButtonEvent::getClassTypeId(), eventCallback, this);
+    callback->addEventCallback(SoLocation2Event::getClassTypeId(), eventCallback, this);
+    root->addChild(callback);
+    pickStyle = new SoPickStyle;
+    pickStyle->ref();
+    pickStyle->style = SoPickStyle::SHAPE_ON_TOP;
+    root->addChild(pickStyle);
+}
+
+PatternInstanceMarkers::~PatternInstanceMarkers()
+{
+    clear();
+    callback->removeEventCallback(SoMouseButtonEvent::getClassTypeId(), eventCallback, this);
+    callback->removeEventCallback(SoLocation2Event::getClassTypeId(), eventCallback, this);
+    callback->unref();
+    pickStyle->unref();
+    root->unref();
+}
+
+void PatternInstanceMarkers::show(ViewerContext* view, const std::vector<Instance>& list)
+{
+    SoGroup* where = view ? view->getOnViewParameterRoot() : nullptr;
+    if (!where || list.empty()) {
+        clear();
+        return;
+    }
+    if (where != parent) {
+        clear();
+        parent = where;
+        parent->ref();
+    }
+
+    // Kept where they are, so a toggle turns its marker over rather than
+    // making all of them anew
+    constexpr int first = 2;  // after the callback and the pick style
+    const int size = int(std::lround(24.0 * std::max(1.0, view->devicePixelRatio())));
+    while (markers.size() > list.size()) {
+        root->removeChild(first + int(markers.size()) - 1);
+        markers.pop_back();
+    }
+    while (markers.size() < list.size()) {
+        auto group = new SoSeparator;
+        group->addChild(new SoTranslation);
+        auto marker = new SoToggleMarker;
+        group->addChild(marker);
+        root->addChild(group);
+        markers.push_back(marker);
+    }
+    for (std::size_t i = 0; i < list.size(); ++i) {
+        auto group = static_cast<SoSeparator*>(root->getChild(first + int(i)));
+        auto translation = static_cast<SoTranslation*>(group->getChild(0));
+        const Base::Vector3d& c = list[i].center;
+        SbVec3f pos(float(c.x), float(c.y), float(c.z));
+        if (translation->translation.getValue() != pos) {
+            translation->translation = pos;
+        }
+        SoToggleMarker* marker = markers[i];
+        if (marker->active.getValue() == list[i].suppressed) {
+            marker->active = !list[i].suppressed;
+        }
+        if (marker->markerSize.getValue() != size) {
+            marker->markerSize = size;
+        }
+    }
+    instances = list;
+    if (highlighted >= int(markers.size())) {
+        highlighted = -1;
+    }
+    if (pressed >= int(markers.size())) {
+        pressed = -1;
+    }
+    if (parent->findChild(root) < 0) {
+        parent->addChild(root);
+    }
+}
+
+void PatternInstanceMarkers::clear()
+{
+    if (parent) {
+        int index = parent->findChild(root);
+        if (index >= 0) {
+            parent->removeChild(index);
+        }
+        parent->unref();
+        parent = nullptr;
+    }
+    while (root->getNumChildren() > 2) {
+        root->removeChild(root->getNumChildren() - 1);
+    }
+    instances.clear();
+    markers.clear();
+    pressed = -1;
+    highlighted = -1;
+}
+
+SoToggleMarker* PatternInstanceMarkers::getMarker(std::size_t i) const
+{
+    return i < markers.size() ? markers[i] : nullptr;
+}
+
+void PatternInstanceMarkers::eventCallback(void* data, SoEventCallback* cb)
+{
+    static_cast<PatternInstanceMarkers*>(data)->handleEvent(cb);
+}
+
+int PatternInstanceMarkers::markerAt(const SoPickedPoint* picked) const
+{
+    if (!picked) {
+        return -1;
+    }
+    SoNode* tail = picked->getPath()->getTail();
+    for (std::size_t i = 0; i < markers.size(); ++i) {
+        if (markers[i] == tail) {
+            return int(i);
+        }
+    }
+    return -1;
+}
+
+void PatternInstanceMarkers::setHighlighted(int which)
+{
+    if (which == highlighted) {
+        return;
+    }
+    if (highlighted >= 0) {
+        markers[highlighted]->highlighted = FALSE;
+    }
+    highlighted = which;
+    if (highlighted >= 0) {
+        markers[highlighted]->highlighted = TRUE;
+    }
+}
+
+void PatternInstanceMarkers::handleEvent(SoEventCallback* cb)
+{
+    if (markers.empty()) {
+        return;
+    }
+    const SoEvent* event = cb->getEvent();
+    const int which = markerAt(cb->getPickedPoint());
+    if (event->isOfType(SoLocation2Event::getClassTypeId())) {
+        // Not taken: the view goes on preselecting and navigating as before
+        setHighlighted(which);
+        return;
+    }
+    const auto* button = static_cast<const SoMouseButtonEvent*>(event);
+    if (button->getButton() != SoMouseButtonEvent::BUTTON1) {
+        return;
+    }
+    if (button->getState() == SoButtonEvent::DOWN) {
+        pressed = which;
+        if (which >= 0) {
+            // So that nothing behind the marker takes it for a selection
+            cb->setHandled();
+        }
+        return;
+    }
+    // The release over the marker the press was on is the click
+    const int down = pressed;
+    pressed = -1;
+    if (which < 0 || which != down) {
+        return;
+    }
+    cb->setHandled();
+    const Instance instance = instances[which];
+    Q_EMIT toggleRequested(instance.index, !instance.suppressed);
 }
 
 #include "moc_PatternWidgets.cpp"

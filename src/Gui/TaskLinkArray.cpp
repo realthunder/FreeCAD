@@ -40,6 +40,7 @@
 #include <App/Application.h>
 #include <App/Document.h>
 #include <App/GeoFeatureGroupExtension.h>
+#include <App/Link.h>
 #include <App/LinkArray.h>
 #include <App/PropertyLinks.h>
 #include <App/PropertyStandard.h>
@@ -148,6 +149,10 @@ TaskLinkArray::TaskLinkArray(ViewProviderLinkArray* vp, QWidget* parent)
     connect(comboType, qOverload<int>(&QComboBox::activated), this, &TaskLinkArray::onTypeActivated);
     connect(buttonLinked, &QPushButton::toggled, this, &TaskLinkArray::onLinkedButtonToggled);
     connect(checkShowElement, &QCheckBox::toggled, this, &TaskLinkArray::onShowElementToggled);
+
+    instanceMarkers = std::make_unique<PatternInstanceMarkers>();
+    connect(instanceMarkers.get(), &PatternInstanceMarkers::toggleRequested,
+            this, &TaskLinkArray::onInstanceToggled);
 
     retranslate();
     buildPatternWidgets();
@@ -311,6 +316,7 @@ void TaskLinkArray::buildPatternWidgets()
     // the view it runs in is recorded
     QTimer::singleShot(0, this, [this]() {
         updateLabels();
+        updateInstanceMarkers();
     });
 }
 
@@ -445,6 +451,83 @@ void TaskLinkArray::recompute()
         array->getDocument()->recompute();
     }
     updateLabels();
+    updateInstanceMarkers();
+}
+
+void TaskLinkArray::updateInstanceMarkers()
+{
+    if (!instanceMarkers) {
+        return;
+    }
+    auto array = getArray();
+    auto vp = array ? freecad_cast<ViewProviderDocumentObject*>(
+                          Application::Instance->getViewProvider(array))
+                    : nullptr;
+    ViewerContext* view = vp ? vp->getEditViewer() : nullptr;
+    std::vector<Base::Placement> placements;
+    if (array) {
+        if (array->ShowElement.getValue()) {
+            for (auto obj : array->ElementList.getValues()) {
+                auto element = freecad_cast<App::LinkElement*>(obj);
+                placements.push_back(element ? element->Placement.getValue() : Base::Placement());
+            }
+        }
+        else {
+            placements = array->PlacementList.getValues();
+        }
+    }
+    // One element is none left out
+    if (!view || placements.size() < 2) {
+        instanceMarkers->clear();
+        return;
+    }
+
+    // The middle of an element shown, in the array's own frame, carried to
+    // each of the others by their placements: the linked object is the
+    // same in all of them. One left out may have no box.
+    std::size_t ref = 0;
+    Base::Vector3d middle = placements[0].getPosition();
+    for (std::size_t i = 0; i < placements.size(); ++i) {
+        if (array->isElementSuppressed(int(i))) {
+            continue;
+        }
+        try {
+            auto box = vp->getBoundingBox((std::to_string(i) + ".").c_str(), nullptr, false);
+            if (box.IsValid()) {
+                ref = i;
+                middle = box.GetCenter();
+                break;
+            }
+        }
+        catch (const Base::Exception&) {
+            // try the next
+        }
+    }
+    const Base::Placement toElement = placements[ref].inverse();
+    const Base::Matrix4D& toWorld = vp->getDocument()->getEditingTransform();
+
+    std::vector<PatternInstanceMarkers::Instance> instances;
+    instances.reserve(placements.size());
+    for (std::size_t i = 0; i < placements.size(); ++i) {
+        PatternInstanceMarkers::Instance instance;
+        instance.index = int(i);
+        Base::Vector3d center;
+        (placements[i] * toElement).multVec(middle, center);
+        instance.center = toWorld * center;
+        instance.suppressed = array->isElementSuppressed(int(i));
+        instances.push_back(instance);
+    }
+    instanceMarkers->show(view, instances);
+}
+
+void TaskLinkArray::onInstanceToggled(int index, bool suppress)
+{
+    auto array = getArray();
+    if (!array || array->isElementSuppressed(index) == suppress) {
+        return;
+    }
+    array->setElementSuppressed(index, suppress);
+    recompute();
 }
 
 void TaskLinkArray::updateLabels()

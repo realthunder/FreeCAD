@@ -38,6 +38,12 @@ class QCheckBox;
 class QComboBox;
 class QFormLayout;
 class QLabel;
+class SoAnnotation;
+class SoEventCallback;
+class SoGroup;
+class SoNode;
+class SoPickedPoint;
+class SoPickStyle;
 
 namespace App
 {
@@ -61,6 +67,7 @@ namespace Gui
 {
 class EditableDatumLabel;
 class QuantitySpinBox;
+class SoToggleMarker;
 class UIntSpinBox;
 class ViewerContext;
 
@@ -349,6 +356,69 @@ private:
     QFormLayout* form = nullptr;
     QComboBox* comboReference = nullptr;
     std::vector<Row> rows;
+};
+
+/** On-view toggles for the instances of a pattern (upstream e22e537c4b): a
+ * marker at the centre of each, a cross on one that is in and a plus on one
+ * left out, which a click turns over.
+ *
+ * Upstream lays tool buttons over the viewer, which a served view never
+ * sees. These are scene nodes (SoToggleMarker), drawn over the model in the
+ * view's on-view root, so they reach whatever draws the view -- the GL pass,
+ * an external backend through the render cache, a browser through the
+ * served scene -- and a click is a pick in the scene, which a served view's
+ * replayed event makes as well. Leaving an instance out is the panel's
+ * business: it hears toggleRequested() and shows the markers again.
+ */
+class GuiExport PatternInstanceMarkers: public QObject
+{
+    Q_OBJECT
+
+public:
+    struct Instance
+    {
+        /// The index the pattern knows the instance by
+        int index = -1;
+        /// Its centre, in the world
+        Base::Vector3d center;
+        bool suppressed = false;
+    };
+
+    explicit PatternInstanceMarkers(QObject* parent = nullptr);
+    ~PatternInstanceMarkers() override;
+
+    /// Show a marker for each of  instances in  view, or move them there
+    void show(ViewerContext* view, const std::vector<Instance>& instances);
+    void clear();
+
+    const std::vector<Instance>& getInstances() const
+    {
+        return instances;
+    }
+    /// The marker of instances()[i]
+    SoToggleMarker* getMarker(std::size_t i) const;
+
+Q_SIGNALS:
+    /// A marker was clicked: leave the instance out, or bring it back
+    void toggleRequested(int index, bool suppress);
+
+private:
+    static void eventCallback(void* data, SoEventCallback* cb);
+    void handleEvent(SoEventCallback* cb);
+    /// Which of the instances the pick is on, or -1
+    int markerAt(const SoPickedPoint* picked) const;
+    void setHighlighted(int which);
+
+private:
+    SoAnnotation* root = nullptr;
+    SoEventCallback* callback = nullptr;
+    SoPickStyle* pickStyle = nullptr;
+    /// Where root hangs, held so that the view may go first
+    SoGroup* parent = nullptr;
+    std::vector<Instance> instances;
+    std::vector<SoToggleMarker*> markers;
+    int pressed = -1;
+    int highlighted = -1;
 };
 
 }  // namespace Gui

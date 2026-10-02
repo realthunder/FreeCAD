@@ -79,6 +79,7 @@
 #include "Inventor/SmSwitchboard.h"
 #include "Inventor/So3DAnnotation.h"
 #include "Inventor/SoToggleSwitch.h"
+#include "Inventor/SoToggleMarker.h"
 #include "Inventor/Draggers/SoTransformDragger.h"
 #include "Inventor/Draggers/SoLinearDraggerGeometry.h"
 #include "Inventor/Draggers/SoRotationDraggerGeometry.h"
@@ -209,6 +210,7 @@ void Gui::SoFCDB::init()
     SoRotatorGeometryBaseKit        ::initClass();
     SoRotatorBase                   ::initClass();
     SoToggleSwitch                  ::initClass();
+    SoToggleMarker                  ::initClass();
     So3DAnnotation                  ::initClass();
     GizmoContainer                  ::initClass();
     SoDelayedAnnotationsElement     ::initClass();
