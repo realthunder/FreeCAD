@@ -120,6 +120,8 @@ void Part::FaceMaker::Build()
     this->NotDone();
     this->myShapesToReturn = this->myInputFaces;
     this->myGenerated.Clear();
+    this->myPreSplitHistory.Nullify();
+    this->myPreSplitCompound = TopoDS_Compound();
 
     this->Build_Essence();//adds stuff to myShapesToReturn
 
@@ -184,6 +186,25 @@ void Part::FaceMaker::postBuild() {
     this->myTopoShape.setShape(this->myShape);
     this->myTopoShape.Hasher = this->MyHasher;
     this->myTopoShape.mapSubElement(this->mySourceShapes);
+
+    // A maker that split the edges (FaceMakerBuildFace) names its faces
+    // through the splitter's history, chained after any split before it, or
+    // the loop below names them from edges with no history to the sources
+    // (upstream 6780065c48)
+    std::vector<TopoShape> preSplitSources;
+    if (!myPreSplitHistory.IsNull()) {
+        MapperHistory mapper(myPreSplitHistory);
+        TopoShape preSplitShape(myTopoShape.Tag);
+        preSplitShape.makESHAPE(myPreSplitCompound, mapper, mySourceShapes);
+        preSplitSources.push_back(std::move(preSplitShape));
+    }
+    const auto &splitterSources = preSplitSources.empty() ? mySourceShapes : preSplitSources;
+    if (mySplitter.IsDone()) {
+        MapperMaker mapper(mySplitter);
+        TopoShape splitInputShape(myTopoShape.Tag);
+        splitInputShape.makESHAPE(mySplitter.Shape(), mapper, splitterSources);
+        myTopoShape.mapSubElement(splitInputShape);
+    }
     int i = 0;
     const char *op = this->MyOp;
     if(!op) op = Part::OpCodes::Face;

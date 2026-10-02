@@ -23,7 +23,9 @@
 #ifndef PART_FACEMAKER_H
 #define PART_FACEMAKER_H
 
+#include <BRepAlgoAPI_BuilderAlgo.hxx>
 #include <BRepBuilderAPI_MakeShape.hxx>
+#include <BRepTools_History.hxx>
 #include <Standard_Version.hxx>
 #include <TopoDS_Compound.hxx>
 #include <TopoDS_Face.hxx>
@@ -110,6 +112,13 @@ protected:
     std::vector<TopoShape> myTopoWires;
     std::vector<TopoDS_Compound> myCompounds; //compounds, for recursive processing
     std::vector<TopoDS_Shape> myShapesToReturn;
+    /// A maker that splits the edges at their intersections (FaceMakerBuildFace,
+    /// upstream 6780065c48) leaves its splitter here, and postBuild() names
+    /// the faces through it; a split before it (self-intersecting curves)
+    /// leaves its history and result here
+    BRepAlgoAPI_BuilderAlgo mySplitter;
+    Handle(BRepTools_History) myPreSplitHistory;
+    TopoDS_Compound myPreSplitCompound;
     std::vector<TopoDS_Shape> myInputFaces;
     TopoShape myTopoShape;
     int minElementNames = 1;

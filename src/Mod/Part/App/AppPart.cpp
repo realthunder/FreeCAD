@@ -65,8 +65,10 @@
 #include "LinkArrays.h"
 #include "EllipsePy.h"
 #include "FaceMaker.h"
+#include "FaceMakerBuildFace.h"
 #include "FaceMakerBullseye.h"
 #include "FaceMakerCheese.h"
+#include "FaceMakerUnified.h"
 #include "FeatureChamfer.h"
 #include "FeatureCompound.h"
 #include "PropertyDressUp.h"
@@ -442,6 +444,8 @@ PyMOD_INIT_FUNC(Part)
     Part::FaceMakerExtrusion    ::init();
     Part::FaceMakerBullseye     ::init();
     Part::FaceMakerRing         ::init();
+    Part::FaceMakerBuildFace    ::init();
+    Part::FaceMakerUnified      ::init();
 
     Attacher::AttachEngine        ::init();
     Attacher::AttachEngine3D      ::init();
