@@ -32,6 +32,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonValue>
+#include <QSet>
 
 #include <App/Application.h>
 #include <App/AutoTransaction.h>
@@ -815,9 +816,34 @@ namespace SceneControlDetail {
 /// it be refused (web/src/control.ts); this one decides.
 bool isBrowserSafeCommand(const QString &name)
 {
+    // The constraint commands that open no dialog, by name and not by
+    // prefix: the dimensional ones (Sketcher_Dimension, ConstrainDistance,
+    // DistanceX, DistanceY, Radius, Diameter, Radiam, Angle) ask for their
+    // value in a modal EditDatumDialog unless a preference of the host's
+    // says otherwise, Sketcher_ChangeDimensionConstraint is that dialog,
+    // and Sketcher_ConstrainSnellsLaw has one of its own.
+    static const QSet<QString> constraints = {
+        QStringLiteral("Sketcher_ConstrainHorVer"),
+        QStringLiteral("Sketcher_ConstrainHorizontal"),
+        QStringLiteral("Sketcher_ConstrainVertical"),
+        QStringLiteral("Sketcher_ConstrainLock"),
+        QStringLiteral("Sketcher_ConstrainBlock"),
+        QStringLiteral("Sketcher_ConstrainCoincident"),
+        QStringLiteral("Sketcher_ConstrainCoincidentUnified"),
+        QStringLiteral("Sketcher_ConstrainPointOnObject"),
+        QStringLiteral("Sketcher_ConstrainParallel"),
+        QStringLiteral("Sketcher_ConstrainPerpendicular"),
+        QStringLiteral("Sketcher_ConstrainTangent"),
+        QStringLiteral("Sketcher_ConstrainEqual"),
+        QStringLiteral("Sketcher_ConstrainSymmetric"),
+        QStringLiteral("Sketcher_ConstrainGroup"),
+        QStringLiteral("Sketcher_ToggleDrivingConstraint"),
+        QStringLiteral("Sketcher_ToggleActiveConstraint"),
+    };
     return name.startsWith(QLatin1String("Sketcher_Create"))
         || name == QLatin1String("Sketcher_External")
-        || name == QLatin1String("Sketcher_CarbonCopy");
+        || name == QLatin1String("Sketcher_CarbonCopy")
+        || constraints.contains(name);
 }
 
 /// The command a group's member `index` (1-based) runs, by the route the
@@ -856,8 +882,12 @@ namespace {
 /// the family that drives a DrawSketchHandler, and so exactly the family this
 /// section is about -- plus the two pick tools of 8.11 item 3,
 /// Sketcher_External and Sketcher_CarbonCopy, which activate a handler the
-/// same way and open nothing. Widening it further is gated on an answer to
-/// modality, not on taste.
+/// same way and open nothing, and the constraint commands that open no
+/// dialog (the list and what is left off it are on isBrowserSafeCommand).
+/// "No dialog" means none that runs its own event loop: what these commands
+/// have to say goes to the notification area, and a constraint substitution
+/// is told in a box that is shown, not executed. Widening it further is
+/// gated on an answer to modality, not on taste.
 ///
 /// A host connection (docs/ShareAccess.md sec 2.2) is not held to it: that
 /// is the desktop's owner, who takes the modal risk as at the machine.

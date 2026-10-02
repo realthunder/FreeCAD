@@ -489,11 +489,33 @@ export function runTool(name: string, index?: number): Promise<any> {
   return sendOp('command', fields, 60000);
 }
 
+/// The constraint commands that open no dialog. Not the dimensional ones:
+/// those ask for their value in a modal dialog on the serving machine.
+const DIALOG_FREE_CONSTRAINTS = new Set([
+  'Sketcher_ConstrainHorVer',
+  'Sketcher_ConstrainHorizontal',
+  'Sketcher_ConstrainVertical',
+  'Sketcher_ConstrainLock',
+  'Sketcher_ConstrainBlock',
+  'Sketcher_ConstrainCoincident',
+  'Sketcher_ConstrainCoincidentUnified',
+  'Sketcher_ConstrainPointOnObject',
+  'Sketcher_ConstrainParallel',
+  'Sketcher_ConstrainPerpendicular',
+  'Sketcher_ConstrainTangent',
+  'Sketcher_ConstrainEqual',
+  'Sketcher_ConstrainSymmetric',
+  'Sketcher_ConstrainGroup',
+  'Sketcher_ToggleDrivingConstraint',
+  'Sketcher_ToggleActiveConstraint',
+]);
+
 /// The `command` op's allowlist as the server has it (SceneControl.cpp
 /// isBrowserSafeCommand), for drawing a button disabled rather than
 /// letting it be refused. The server's copy is the one that decides.
 export function isBrowserSafeCommand(name: string): boolean {
   return name.startsWith('Sketcher_Create')
     || name === 'Sketcher_External'
-    || name === 'Sketcher_CarbonCopy';
+    || name === 'Sketcher_CarbonCopy'
+    || DIALOG_FREE_CONSTRAINTS.has(name);
 }

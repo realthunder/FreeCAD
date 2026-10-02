@@ -2,12 +2,12 @@
 served run of tests/gui/sketch-constraint-external-pick.py; docs/ThinClient.md
 8.11 item 3).
 
-A constraint command is not on the browser's command list (it may open a
-dialog), so a browser cannot start one; it can join one. The desktop
-enters the sketch and starts Sketcher_ConstrainParallel, and the client,
-in that same session, presses Sketcher_External -- which is on the list,
-and which a running constraint tool takes as "switch outside picking"
-instead of being replaced by it.
+A browser can join a constraint tool the desktop started, and start one of
+its own: the constraint commands that open no dialog are on the browser's
+command list, the dimensional ones are not. The desktop enters the sketch
+and starts Sketcher_ConstrainParallel, and the client, in that same
+session, presses Sketcher_External -- which a running constraint tool
+takes as "switch outside picking" instead of being replaced by it.
 
 A document with a real 3D window under xvfb AND a served connection with
 a mirror, a box beside the sketch.
@@ -28,6 +28,12 @@ the sketch, the desktop window joins it and starts the Parallel tool from
 there, as a press on its tool bar does, and the client toggles and clicks:
 the session's selection is the client's own then, and the tool has to
 listen where the clicks land.
+
+And once more in the client's session with everything from the client: it
+undoes the second run, starts Sketcher_ConstrainPerpendicular itself in
+place of the desktop's Parallel tool, switches outside picking on and
+clicks the line and the box's other top edge. Sketcher_ConstrainDistance is refused -- it
+would ask for its value in a modal dialog on the serving machine.
 
 Run through scripts/gui-test.sh (xvfb, isolated configuration, external
 timeout); registered in ctest by tests/gui/CMakeLists.txt.
@@ -64,7 +70,7 @@ VW, VH = 800, 600
 state = {"doc": None, "client": None, "done": False, "t0": clock(),
          "phase": "start", "before": None, "toggled": None, "after": None,
          "off": None, "before2": None, "toggled2": None, "after2": None,
-         "off2": None, "in_edit": []}
+         "off2": None, "toggled3": None, "after3": None, "in_edit": []}
 # GUI thread -> client thread: the desktop did its part.
 desktop_entered = threading.Event()
 toggle_sampled = threading.Event()
@@ -73,6 +79,8 @@ desktop_left = threading.Event()
 tool_started = threading.Event()
 toggle2_sampled = threading.Event()
 picks2_sampled = threading.Event()
+toggle3_sampled = threading.Event()
+picks3_sampled = threading.Event()
 
 
 def note(msg):
@@ -129,6 +137,12 @@ class Client(threading.Thread):
         self.entered = threading.Event()
         self.toggled2 = threading.Event()
         self.clicked2 = threading.Event()
+        self.toggled3 = threading.Event()
+        self.clicked3 = threading.Event()
+        self.undo_reply = None
+        self.tool_reply = None
+        self.on3_reply = None
+        self.refused = None
         self.told_entered = None
         self.on_reply = None
         self.off_reply = None
@@ -144,7 +158,7 @@ class Client(threading.Thread):
             self.error = traceback.format_exc()
             self.ready.set()
             for event in (self.toggled, self.clicked, self.switched_off, self.entered,
-                          self.toggled2, self.clicked2):
+                          self.toggled2, self.clicked2, self.toggled3, self.clicked3):
                 event.set()
 
     def talk(self):
@@ -206,6 +220,31 @@ class Client(threading.Thread):
         picks2_sampled.wait(30.0)
         self.off2_reply = ws.op('{"id":6,"op":"command","name":"Sketcher_External"}')
         ws.drain(0.5)
+
+        # Once more, all of it from here: the second run undone, the tool
+        # started by this client.
+        self.undo_reply = ws.op('{"id":8,"op":"undo"}')
+        ws.drain(0.5)
+        self.tool_reply = ws.op(
+            '{"id":9,"op":"command","name":"Sketcher_ConstrainPerpendicular"}')
+        ws.drain(0.5)
+        self.on3_reply = ws.op('{"id":10,"op":"command","name":"Sketcher_External"}')
+        ws.drain(0.5)
+        self.toggled3.set()
+        toggle3_sampled.wait(30.0)
+        px, py = pixel_of(-5.0, -8.0, 0.0)
+        click_at(ws, px, py, 5000)
+        ws.drain(0.8)
+        # the box's top edge along y, a hair outside the top face again
+        px, py = pixel_of(10.2, 5.0, 10.0)
+        click_at(ws, px, py, 6000)
+        ws.drain(1.0)
+        self.clicked3.set()
+        picks3_sampled.wait(30.0)
+        ws.op('{"id":11,"op":"command","name":"Sketcher_External"}')
+        ws.drain(0.3)
+        self.refused = ws.op('{"id":12,"op":"command","name":"Sketcher_ConstrainDistance"}')
+        ws.drain(0.3)
         self.reset = ws.op('{"id":7,"op":"resetEdit"}')
         ws.drain(0.5)
         ws.close()
@@ -364,7 +403,23 @@ def poll():
                 picks2_sampled.set()
 
             QtCore.QTimer.singleShot(400, sample_picks2)
-        elif phase == "picked2" and not client.is_alive():
+        elif phase == "picked2" and client.toggled3.is_set():
+            state["phase"] = "toggled3"
+
+            def sample_toggle3():
+                state["toggled3"] = sample()
+                toggle3_sampled.set()
+
+            QtCore.QTimer.singleShot(300, sample_toggle3)
+        elif phase == "toggled3" and client.clicked3.is_set():
+            state["phase"] = "picked3"
+
+            def sample_picks3():
+                state["after3"] = sample()
+                picks3_sampled.set()
+
+            QtCore.QTimer.singleShot(400, sample_picks3)
+        elif phase == "picked3" and not client.is_alive():
             state["phase"] = "end"
     except Exception:
         note("ABORT poll:\n" + traceback.format_exc())
@@ -444,6 +499,35 @@ def verify():
         reply = reply_of(client.off2_reply)
         check("client's session: switched off again",
               reply.get("ok") is True and mode() == 0, (reply, mode()))
+
+        # The client's own tool.
+        toggled, after = state["toggled3"], state["after3"]
+        reply = reply_of(client.undo_reply)
+        check("the client's own tool: its undo takes the second run back",
+              reply.get("ok") is True and toggled is not None
+              and toggled["ext"] == [] and toggled["cons"] == [], (reply, toggled))
+        reply = reply_of(client.tool_reply)
+        check("the client's own tool: Sketcher_ConstrainPerpendicular is admitted",
+              reply.get("ok") is True, reply)
+        reply = reply_of(client.on3_reply)
+        check("the client's own tool: Sketcher_External switches outside picking on",
+              reply.get("ok") is True and toggled is not None and toggled["mode"] == 1,
+              (reply, toggled))
+        check("the client's own tool: the two clicks added the box's edge",
+              after is not None and len(after["ext"]) == 1 and after["ext"][0][0] == BOX,
+              after)
+        check("the client's own tool: and a Perpendicular to it, not the Parallel of the "
+              "tool the desktop left running",
+              after is not None
+              and after["cons"] in ([("Perpendicular", 0, -3)], [("Perpendicular", -3, 0)]),
+              after)
+        check("the client's own tool: in one undo step",
+              after is not None and toggled is not None
+              and after["undo"] == toggled["undo"] + 1,
+              (toggled and toggled["undo"], after and after["undo"]))
+        reply = reply_of(client.refused)
+        check("a dimensional command is still refused",
+              reply.get("ok") is not True and "CommandRefused" in str(reply), reply)
         reset = reply_of(client.reset)
         check("the client's resetEdit is accepted", reset.get("ok") is True, reset)
     except Exception:
