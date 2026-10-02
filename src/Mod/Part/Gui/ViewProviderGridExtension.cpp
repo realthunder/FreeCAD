@@ -380,7 +380,11 @@ void GridExtensionP::createGridPart(int numberSubdiv, bool subDivLines, bool div
     int i_offset_x = static_cast<int>(minX / computedGridValue);
     for (int i = 0; i < vlines; i++) {
         int iStep = (i + i_offset_x);
-        if (((iStep % numberSubdiv == 0) && divLines) || ((iStep % numberSubdiv != 0) && subDivLines)) {
+        // no grid line on an axis: it would be drawn into the axis line,
+        // whatever width and pattern that has (upstream 90ca7a30d9)
+        bool atOrigin = iStep == 0;
+        if (!atOrigin
+            && (((iStep % numberSubdiv == 0) && divLines) || ((iStep % numberSubdiv != 0) && subDivLines))) {
             vertex_coords[2 * i].setValue(iStep * computedGridValue, minY, 0);
             vertex_coords[2 * i + 1].setValue(iStep * computedGridValue, maxY, 0);
         }
@@ -397,7 +401,9 @@ void GridExtensionP::createGridPart(int numberSubdiv, bool subDivLines, bool div
     int i_offset_y = static_cast<int>(minY / computedGridValue) - vlines;
     for (int i = vlines; i < nlines; i++) {
         int iStep = (i + i_offset_y);
-        if (((iStep % numberSubdiv == 0) && divLines) || ((iStep % numberSubdiv != 0) && subDivLines)) {
+        bool atOrigin = iStep == 0;
+        if (!atOrigin
+            && (((iStep % numberSubdiv == 0) && divLines) || ((iStep % numberSubdiv != 0) && subDivLines))) {
             vertex_coords[2 * i].setValue(minX, iStep * computedGridValue, 0);
             vertex_coords[2 * i + 1].setValue(maxX, iStep * computedGridValue, 0);
         }

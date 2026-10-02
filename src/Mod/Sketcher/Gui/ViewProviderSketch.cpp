@@ -346,6 +346,8 @@ struct EditData {
         }
         DimensionLineWidth = std::max(1L, hSketchView->GetInt("DimensionalConstraintLineWidth", 2));
         DimensionLinePattern = hSketchView->GetInt("DimensionalConstraintLinePattern", 0xFFFF) & 0xFFFF;
+        AxisLineWidth = std::max(1L, hSketchView->GetInt("AxisLineWidth", 2));
+        AxisLinePattern = hSketchView->GetInt("AxisLinePattern", 0xFFFF) & 0xFFFF;
         InformationWidth = std::max(1L, hSketchView->GetInt("InformationWidth", 1));
         InformationPattern = hSketchView->GetInt("InformationPattern", 0xFCFC) & 0xFFFF;
     }
@@ -380,6 +382,8 @@ struct EditData {
             set(SelCurvesDrawStyle, widest * pixelScalingFactor, 0xFFFF, 1);
         if (InformationDrawStyle)
             set(InformationDrawStyle, InformationWidth * pixelScalingFactor, InformationPattern, 2);
+        if (RootCrossDrawStyle)
+            set(RootCrossDrawStyle, AxisLineWidth * pixelScalingFactor, AxisLinePattern, 1);
     }
 
     /// is this edge one of the geometries being dragged?
@@ -560,6 +564,9 @@ struct EditData {
     /// a dimensional constraint's leaders (upstream c2d6248bc7)
     int DimensionLineWidth = 2;
     unsigned int DimensionLinePattern = 0xFFFF;
+    /// the sketch's two axes (upstream 90ca7a30d9)
+    int AxisLineWidth = 2;
+    unsigned int AxisLinePattern = 0xFFFF;
     int InformationWidth = 1;
     unsigned int InformationPattern = 0xFCFC;
     SoIndexedLineSet     *SelectedCurveSet;
@@ -5723,6 +5730,8 @@ void ViewProviderSketch::OnChange(Base::Subject<const char*> &rCaller, const cha
         "ExternalDefiningPattern",
         "InformationWidth",
         "InformationPattern",
+        "AxisLineWidth",
+        "AxisLinePattern",
         "DimensionalConstraintLineWidth",
         "DimensionalConstraintLinePattern",
     };
@@ -5851,7 +5860,6 @@ void ViewProviderSketch::updateInventorNodeSizes()
     // the one value just written covers every point, so put the origin's back
     applyOriginPointMarker();
     edit->applyLineStyles();
-    edit->RootCrossDrawStyle->lineWidth = 2 * edit->pixelScalingFactor;
     // the width and pattern of what the tool is drawing
     updateEditCurveColor();
     edit->EditMarkersDrawStyle->pointSize = 8 * edit->pixelScalingFactor;
@@ -9654,7 +9662,6 @@ void ViewProviderSketch::createEditInventorNodes(void)
 
     edit->RootCrossDrawStyle = new SoDrawStyle;
     edit->RootCrossDrawStyle->setName("RootCrossDrawStyle");
-    edit->RootCrossDrawStyle->lineWidth = 2 * edit->pixelScalingFactor;
     crossRoot->addChild(edit->RootCrossDrawStyle);
 
     edit->RootCrossMaterials = new SoMaterial;
