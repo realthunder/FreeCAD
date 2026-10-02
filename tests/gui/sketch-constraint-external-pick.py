@@ -181,6 +181,18 @@ def cursor_quarters(view):
 cursor_quarters.count = 0
 
 
+def checked_commands():
+    """Which of the four external geometry commands are drawn checked."""
+    names = ("Sketcher_External", "Sketcher_Defining", "Sketcher_Intersection",
+             "Sketcher_IntersectionDefining")
+    out = []
+    for name in names:
+        actions = FreeCADGui.Command.get(name).getAction()
+        if actions and actions[0].isCheckable() and actions[0].isChecked():
+            out.append(name)
+    return out
+
+
 def externals(sk):
     return [(o.Name, s) for o, subs in sk.ExternalGeometry for s in subs]
 
@@ -254,6 +266,8 @@ def probe(doc, sk, view):
         FreeCADGui.runCommand("Sketcher_External")
         settle()
         check("the External command sets the setting", mode() == 1, mode())
+        check("and is drawn checked, alone of the four",
+              checked_commands() == ["Sketcher_External"], checked_commands())
         tool, sign, external_sign = cursor_quarters(view)
         check("and the running tool's cursor gains its sign",
               tool > 0 and sign > 0, (tool, sign))
@@ -291,6 +305,7 @@ def probe(doc, sk, view):
         FreeCADGui.runCommand("Sketcher_External")
         settle()
         check("pressed again: the setting is off", mode() == 0, mode())
+        check("and no command is checked", checked_commands() == [], checked_commands())
         check("and the sign is gone from the cursor", cursor_quarters(view)[1] == 0,
               cursor_quarters(view)[:2])
         click(view, LINE)
@@ -420,6 +435,8 @@ def probe(doc, sk, view):
         FreeCADGui.runCommand("Sketcher_Defining")
         settle()
         check("Sketcher_Defining switches the flavour", mode() == 2, mode())
+        check("and the check mark moves to it",
+              checked_commands() == ["Sketcher_Defining"], checked_commands())
         tool, sign, defining_sign = cursor_quarters(view)
         check("and the sign on the cursor is another",
               sign > 0 and defining_sign != external_sign, (tool, sign))
@@ -436,6 +453,8 @@ def probe(doc, sk, view):
         escape()
         escape()
         check("left: nothing stays", state_of(sk) == clean, state_of(sk))
+        check("the tool left: no command is checked although the setting stays",
+              checked_commands() == [] and mode() == 2, (checked_commands(), mode()))
 
         # -- an edge taken by intersection ------------------------------
         # Seen from the top an upright edge is its own end; from the side

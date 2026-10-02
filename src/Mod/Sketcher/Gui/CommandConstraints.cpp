@@ -1259,6 +1259,41 @@ struct StackedExternalPick
     {
         return mode != Off;
     }
+
+    /** Check the command of the flavour in force, and no other
+     *
+     * The tool's cursor says the same, but a cursor does not reach a
+     * browser: its tool bar mirror shows what the desktop's actions show.
+     *
+     * @param running: false when the tool ends, and nothing is checked
+     */
+    void showOnCommands(bool running) const
+    {
+        static const std::pair<int, const char*> commands[] = {
+            {External, "Sketcher_External"},
+            {Defining, "Sketcher_Defining"},
+            {Intersection, "Sketcher_Intersection"},
+            {IntersectionDefining, "Sketcher_IntersectionDefining"},
+        };
+        auto& manager = Gui::Application::Instance->commandManager();
+        for (const auto& [flavour, name] : commands) {
+            Gui::Command* cmd = manager.getCommandByName(name);
+            Gui::Action* action = cmd ? cmd->getAction() : nullptr;
+            if (!action) {
+                continue;
+            }
+            // checkable only while it is checked: outside these tools the
+            // four are plain commands, and a plain command has no state
+            const bool checked = running && mode == flavour;
+            // silently: a change of either is a "toggled" to Qt, and that
+            // is how a checkable command is run
+            QSignalBlocker block(action->action());
+            action->setCheckable(checked);
+            if (checked) {
+                action->setChecked(true, true);
+            }
+        }
+    }
     bool defining() const
     {
         return mode == Defining || mode == IntersectionDefining;
@@ -1581,6 +1616,7 @@ public:
     {
         // A reference made for a constraint that never came goes with it.
         dropPendingExternal();
+        external.showOnCommands(false);
     }
 
     bool allowExternalPick() const override
@@ -2038,6 +2074,7 @@ protected:
 
     void applyExternalPick()
     {
+        external.showOnCommands(true);
         selFilterGate->setIntersection(external.intersection());
         // each view of the session picks what is under the pointer, or not
         sketchgui->setSessionSelectionEnabled(external.on());
@@ -2505,6 +2542,7 @@ public:
 
     void deactivated() override
     {
+        external.showOnCommands(false);
         if (gateOn) {
             Gui::Selection().rmvSelectionGate();
             gateOn = false;
@@ -2788,6 +2826,7 @@ protected:
 
     void applyExternalPick()
     {
+        external.showOnCommands(true);
         if (gateOn) {
             Gui::Selection().rmvSelectionGate();
             gateOn = false;
