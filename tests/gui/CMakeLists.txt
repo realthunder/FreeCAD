@@ -866,3 +866,11 @@ fc_add_gui_test(GuiServeConstraintExternalPick_tests_run
 fc_add_gui_test(GuiSketchConstraintToolSelectPath_tests_run
                 sketch-constraint-tool-select-path.py
                 --timeout 180)
+
+# The constraints panel: "Named" alone in the filter lists the named
+# constraints (it listed none), and a double click on a geometric
+# constraint's row opens its name for editing (upstream 67f8852697,
+# 2d5d8ab86c).
+fc_add_gui_test(GuiSketchConstraintPanel_tests_run
+                sketch-constraint-panel.py
+                --timeout 120)

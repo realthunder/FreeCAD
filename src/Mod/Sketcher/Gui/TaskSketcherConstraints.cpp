@@ -1256,6 +1256,11 @@ void TaskSketcherConstraints::onListWidgetConstraintsItemActivated(QListWidgetIt
         EditTextDialog editTextDialog(this->sketchView, it->ConstraintNbr);
         editTextDialog.exec();
     }
+    // Every other constraint (the geometric ones: Parallel, Coincident, ...)
+    // has only its name to edit.
+    else {
+        ui->listWidgetConstraints->editItem(item);
+    }
 }
 
 void TaskSketcherConstraints::onListWidgetConstraintsItemChanged(QListWidgetItem* item)
