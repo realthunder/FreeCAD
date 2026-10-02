@@ -3202,6 +3202,115 @@ Still open:
   a removal by the other path would not match. Wants a click-flow test
   inside a container before it changes.
 
+### The coplanar pick, and Command.cpp (session 116)
+
+**`a2468774d3`, adapted** `8fdf3f3325` (Gui) + `84db00d6d5` (Sketcher), as
+ruled. The probe written first said more than session 115's had:
+
+- square to the camera the frame showed the BOX's face inside the sketch's
+  outline, not the sketch's. Both faces carried the same polygon offset
+  (the internal-face view sits under the sketch's own face root and
+  inherited its (1, 1)), so the tie was real and drawing order settled it;
+- the single pick was the box's face at every pose, but not where the
+  ledger pointed. With hidden-line selection on top (the default) the pass
+  over the on-top objects leaves the ray pick action gathering every hit,
+  so the single pick is the gathered list cut at the first hit of another
+  object (`getPickedInfo`); only with that option off does the action keep
+  one hit as it goes (`afterPick`). The pick LIST already held the sketch's
+  face first.
+
+What was built: `SoFCUnifiedSelection::setCoplanarOverlay(node)` declares a
+node an overlay, and of two hits of one priority at one depth the one under
+a declared node wins, in the gather, in `afterPick` and in the list
+post-process. `PartGui::ViewProviderPartExt::setCoplanarOverlay()` gives a
+view's faces a polygon offset of (0.5, 0) -- behind an edge (none), in
+front of an ordinary face (1, 1); the constant half is zero because a depth
+buffer cannot resolve half a unit -- and declares its root. The sketch's
+internal-face view is one. `sketch-face-on-solid-pick.py`: three poses,
+both pick paths, 85 claims; run by hand with render cache 0 as well, where
+Coin draws alone, with the same result.
+
+**Not changed, and a question**: an edge lying in a face loses an exact
+depth tie to that face. This is every object's behaviour, not the
+sketch's: an edge wins only where it is the NEARER hit, so in a view square
+to a face the edge is picked from outside the face only, and on a slanted
+face from one side of the edge. A sketch's outline lying on a solid's face
+has no outside, so square on it cannot be picked at all (the test records
+what a pick on the outline returns, without claiming it). A rule that
+would mend it for all objects: a hit that lies in the plane of the kept
+face hit is not behind it, and an edge or a vertex there wins within the
+pick radius. That changes what a pick near any edge returns, so it waits
+for a ruling.
+
+**Command.cpp**, the undecided rows:
+
+| row | verdict |
+|---|---|
+| `17c3286e52` | **adapted** `40747494e0`: New Sketch with a group selected made no sketch at all (the attacher was asked what a group can carry). The group is now where the sketch goes. Upstream takes a plain group; an `App::Part` counts here too, a body does not. `sketch-new-in-group.py` |
+| `93173ba797` | **taken** `7403797c4b`: Attach Sketch leaves the selected sketches out of its list, so a sketch cannot be attached to itself. `sketch-attach-not-itself.py` reads the dialogs |
+| `d34081b9fe` | **adapted** `0a5dd8f2f5`: Merge Sketches gave the merged sketch no external geometry and moved external ids as if they were the sketch's own (a point on an external edge ended on the vertical axis). References are carried over, ids go to the merged sketch's id for the same reference -- matched by the reference string each projected geometry carries, where upstream rebuilds names -- and a constraint that cannot follow is dropped with a warning. In the body when every source is in one. `sketch-merge-external.py` |
+| `e12deea20e` | **superseded** by `d34081b9fe` |
+| `64029d3a5b` | **have**: `updateIcon` is guarded |
+| `2f2787611c` | **n/a**: the fork's View Section is `toggleViewSection()` in C++ and names no `ActiveSketch` |
+| `cfd1cdfb36` | **n/a** for this file: New Sketch finds the group from the support as a document object, with no `Part::Feature` cast |
+| `3164ee1849` | **have**, the fork's way: the list is sorted, by name, latest first |
+| `7b22027b90` | **n/a** for this file: a spelling of the same call |
+| `ccb28af4a1` | **adapted** `56aa886d28` with `35f151d99e` (session 114): the settings menu on the solver panel |
+
+Left for one decision: the wording rows (`46e2c45e2e`, `beb66d3cfb`,
+`764b9cca0e`, `57ee6870b4`, `4dbdd1031d`, `f7f3c18e52`, `67b3f4e143`,
+`b2c51665a2`, `dee977f98f`). Each changes a source string, and a changed
+source string loses its translation until the translation files are taken
+with it; so they go together with a translation resync or not at all.
+`6eecd08f7c` (a Qt deprecation) and `3c1358da10` (the Datums header name)
+are not read yet.
+
+**`999fed9c4e`, the design put to the user.** What upstream does: the
+constraint tools' gate lets an edge or a vertex of ANOTHER object through
+while the step accepts an external edge or a vertex; the selection it
+causes is turned into external geometry on the spot (`addExternal(name,
+sub)`, found again by comparing the object and the sub-name), and the tool
+goes on as if `ExternalEdgeN` had been picked. It reaches the viewer by the
+active window.
+
+The fork's external tool does more and differently
+(`DrawSketchHandlerExternal.h`), and every piece of it is needed here:
+
+1. *Reaching the pick.* `allowExternalPick()` on the handler lifts the
+   edit's exclusive pick, `setSessionSelectionEnabled(true)` turns each
+   view of the session back on, and the gate goes on
+   `sessionSelection()`. The constraint handlers would answer
+   `allowExternalPick()` from the step they are on (true only while it
+   accepts `SelExternalEdge`, `SelExternalArc` or `SelVertex`), and their
+   gate would hand anything outside the sketch to `ExternalSelection`,
+   narrowed to edges and vertices -- no faces, no wires, no whole objects,
+   no intersection.
+2. *Making the reference.* One helper, taken out of
+   `DrawSketchHandlerExternal::onSelectionChanged` and used by both:
+   `addExternal(Part.importExternalObject(<picked path>, <editing
+   context>))`, which is what carries sub-object paths, mapped element
+   names and another document or body (through a binder). It returns the
+   new external ids, found by the reference string as Merge Sketches now
+   does; a reference the sketch already has is reused, not added again.
+3. *Going on.* A vertex is `PointPos::start` of the new point; an edge is
+   classified as an arc or not from the projected geometry; then the same
+   code as a pick of `ExternalEdgeN`.
+
+Open, each for the user:
+
+- *Which tools.* Upstream changes the generic handler too, so every
+  constraint command that lists an external edge takes one from outside,
+  not only Dimension. Proposed: both, as upstream.
+- *Undo.* The generic tools open their transaction when the constraint is
+  made; the reference is made a step earlier. Proposed: one undo step for
+  both -- the tool opens the transaction at the reference and the
+  constraint joins it; a tool left before the constraint aborts it, so no
+  stray external geometry stays. Dimension already runs inside one
+  transaction and restarts it on a mode change; the references made so far
+  are made again after a restart, as upstream does.
+- *Another body or document.* The external tool makes a binder without
+  asking. Proposed: the same here, since it is the same act.
+
 ## 7a. The constraint-tool hints (session 85)
 
 Thirteen rows, not the eleven the sweep sized: `580d538798`, the commit
