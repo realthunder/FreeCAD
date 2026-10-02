@@ -170,6 +170,28 @@ public:
 
     static int getPriority(const SoPickedPoint* p);
 
+    /** Declare the geometry under a node an overlay on coplanar geometry
+     *
+     * An overlay lies in the plane of something else by design -- a
+     * sketch's face on the face of the solid it is attached to -- so depth
+     * cannot say which of the two a pick means. Whoever declares it is
+     * expected to draw it in front as well (a smaller polygon offset); the
+     * pick then follows the drawing: of two hits at one depth and of one
+     * priority, the one whose path runs through a declared node wins,
+     * whichever was visited first.
+     *
+     * The node is held by address only. Whoever declares it takes the
+     * declaration back before the node goes away.
+     */
+    static void setCoplanarOverlay(const SoNode *node, bool enable);
+    /// Whether the path runs through a node declared a coplanar overlay
+    static bool isCoplanarOverlay(const SoPath *path);
+    /** Whether two hits are at one depth as far as an overlay goes
+     *
+     * @param dist1, dist2: the distances of the hits along the view
+     */
+    static bool isCoplanarDepth(float dist1, float dist2);
+
     static bool getShowSelectionBoundingBox();
 
     void setDocument(Document *);

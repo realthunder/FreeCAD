@@ -81,6 +81,8 @@
 #endif
 
 #include <algorithm>
+#include <cmath>
+#include <unordered_set>
 #include <optional>
 #include <boost/algorithm/string/predicate.hpp>
 
@@ -600,6 +602,46 @@ int SoFCUnifiedSelection::getPriority(const SoPickedPoint* p)
     return 0;
 }
 
+// The nodes declared coplanar overlays, by address. A handful at most per
+// sketch in the scene, and only asked when two hits tie.
+static std::unordered_set<const SoNode*> &coplanarOverlays()
+{
+    static std::unordered_set<const SoNode*> nodes;
+    return nodes;
+}
+
+void SoFCUnifiedSelection::setCoplanarOverlay(const SoNode *node, bool enable)
+{
+    if (!node)
+        return;
+    if (enable)
+        coplanarOverlays().insert(node);
+    else
+        coplanarOverlays().erase(node);
+}
+
+bool SoFCUnifiedSelection::isCoplanarOverlay(const SoPath *path)
+{
+    const auto &nodes = coplanarOverlays();
+    if (!path || nodes.empty())
+        return false;
+    auto full = static_cast<const SoFullPath*>(path);
+    for (int i = 0, c = full->getLength(); i < c; ++i) {
+        if (nodes.count(full->getNode(i)))
+            return true;
+    }
+    return false;
+}
+
+bool SoFCUnifiedSelection::isCoplanarDepth(float dist1, float dist2)
+{
+    // Two faces in one plane are hit through different triangles, so the
+    // two distances differ by rounding; and an overlay a hair off the
+    // plane is drawn in front all the same, by its polygon offset.
+    float tol = 1e-4f * std::max(1.0f, std::max(std::fabs(dist1), std::fabs(dist2)));
+    return std::fabs(dist1 - dist2) <= tol;
+}
+
 void
 SoFCUnifiedSelection::Private::getPickedInfo(std::vector<PickedInfo> &ret,
                                              const SoPickedPointList &points,
@@ -616,6 +658,7 @@ SoFCUnifiedSelection::Private::getPickedInfo(std::vector<PickedInfo> &ret,
            vpEdit = nullptr;
     }
     ViewProvider *last_vp = nullptr;
+    bool overlay = false;
     for(int i=0,count=points.getLength();i<count;++i) {
         PickedInfo info;
         info.pp = points[i];
@@ -624,8 +667,22 @@ SoFCUnifiedSelection::Private::getPickedInfo(std::vector<PickedInfo> &ret,
         SoFullPath *path = static_cast<SoFullPath *>(info.pp->getPath());
         if (this->pcDocument && path) {
             vp = this->pcDocument->getViewProviderByPathFromHead(path);
-            if(singlePick && last_vp && last_vp!=vp)
-                return;
+            if(singlePick && last_vp && last_vp!=vp) {
+                // A single pick ends at the first hit of another object,
+                // but for one case: a coplanar overlay (a sketch's face
+                // on a solid's face) at the point of the first hit and of
+                // its priority. Depth could not order the two, so which
+                // came first means nothing, and the overlay is the one
+                // drawn in front: it replaces what was gathered.
+                const SoPickedPoint *first = ret.empty() ? nullptr : ret.front().pp;
+                if (!first
+                        || getPriority(first) != getPriority(info.pp)
+                        || !first->getPoint().equals(info.pp->getPoint(), 0.01F)
+                        || isCoplanarOverlay(first->getPath())
+                        || !isCoplanarOverlay(path))
+                    return;
+                overlay = true;
+            }
         }
         if(!vp || !vp->isDerivedFrom(ViewProviderDocumentObject::getClassTypeId())
                || (vpEdit && vp != vpEdit))
@@ -664,6 +721,11 @@ SoFCUnifiedSelection::Private::getPickedInfo(std::vector<PickedInfo> &ret,
         if(singlePick) {
             last_vp = vp;
             if(copy) info.copy();
+            if (overlay) {
+                ret.clear();
+                ret.push_back(std::move(info));
+                return;
+            }
             ret.push_back(std::move(info));
             continue;
         }
@@ -976,11 +1038,24 @@ SoFCUnifiedSelection::Private::postProcessPickedList(std::vector<PickedInfo> &re
     auto itPicked = ret.begin();
     for(auto it=ret.begin()+1;it!=ret.end();++it) {
         auto &info = *it;
-        if(last_vpd != info.vpd)
-            break;
-
         int cur_prio = getPriority(info.pp);
         const SbVec3f& cur_pt = info.pp->getPoint();
+
+        if(last_vpd != info.vpd) {
+            // Another object ends the search, but for one case: a
+            // coplanar overlay (a sketch's face on a solid's face) at the
+            // picked point, with the picked priority. Depth could not
+            // order the two, so the list's order between them means
+            // nothing, and the overlay is the one drawn in front.
+            if (cur_prio == picked_prio
+                    && picked_pt.equals(cur_pt, 0.2F)
+                    && isCoplanarOverlay(info.pp->getPath())
+                    && !isCoplanarOverlay(itPicked->pp->getPath()))
+            {
+                itPicked = it;
+            }
+            break;
+        }
 
         if ((cur_prio > picked_prio) && picked_pt.equals(cur_pt, 0.2F)) {
             itPicked = it;

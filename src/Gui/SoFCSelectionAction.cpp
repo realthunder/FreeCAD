@@ -1843,8 +1843,19 @@ void SoFCRayPickAction::afterPick(const SoPickedPointList &pps) {
         }
     }
     else if (pickMode != PickMode::BackFace) {
-        if(dist < lastDist 
-                || (p > lastPriority && pos.equals((*ppList)[0]->getPoint(),0.01f))) {
+        bool replace = dist < lastDist
+                || (p > lastPriority && pos.equals((*ppList)[0]->getPoint(),0.01f));
+        // Two hits of one priority at one depth: the distance says nothing
+        // (it is rounding, and the visiting order besides), so a coplanar
+        // overlay -- a sketch's face on a solid's face -- wins either way
+        // round, as it is the one drawn in front.
+        if (p == lastPriority
+                && SoFCUnifiedSelection::isCoplanarDepth(dist, lastDist)) {
+            bool overlay = SoFCUnifiedSelection::isCoplanarOverlay(pp->getPath());
+            if (overlay != SoFCUnifiedSelection::isCoplanarOverlay((*ppList)[0]->getPath()))
+                replace = overlay;
+        }
+        if(replace) {
             if (pp == ppFace && !skipFace) {
                 lastPriority = p;
                 lastDist = dist;
