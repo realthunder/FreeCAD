@@ -1,6 +1,6 @@
 import math
 
-from FreeCAD import Vector
+from FreeCAD import Placement, Rotation, Vector
 import Part
 
 import unittest
@@ -893,9 +893,9 @@ class RegressionTests(unittest.TestCase):
         coplanar pieces were intersected with each other's neighbours. Half a
         dome's side with that join, inward: the closing wall never met the
         sphere. And outward, bottom or side: the offset sphere has to grow
-        round its pole. Half a ball cut through both poles cannot, and is
-        refused rather than answered wrongly (OCCT fork,
-        tests/thickness/models/Thickness.md "Sec 27.108")."""
+        round its pole (OCCT fork, tests/thickness/models/Thickness.md
+        "Sec 27.108"). Half a ball cut through both poles could not, and was
+        refused; test_thickness_of_half_a_ball_and_of_a_placed_shape has it."""
         V = Vector
         dome = Part.makeSphere(5, V(), V(0, 0, 1), 0, 90, 180)
         for face, offset, join, volume in (
@@ -939,12 +939,6 @@ class RegressionTests(unittest.TestCase):
                     self.assertAlmostEqual(r.Volume, volume, 3, msg)
         self.assertTrue(box.isValid())
 
-        ball = Part.makeSphere(5, V(), V(0, 0, 1), -90, 90, 180)
-        for offset in (0.5, -0.5):
-            with self.assertRaises(Exception, msg="half ball %g" % offset):
-                ball.makeThickness([ball.Faces[1]], offset, 1e-7, False, False, 0, 2)
-        self.assertTrue(ball.isValid())
-
     def test_thickness_of_a_dome_past_half_a_turn_and_its_sphere_removed(self):
         """A ball cut by its equator and by planes through its axis. Three
         quarters of a dome, its bottom removed outward with the Intersection
@@ -952,10 +946,8 @@ class RegressionTests(unittest.TestCase):
         at twice the thickness a valid solid on the wrong side of the kept
         face. With the Arc join an eighth of a ball and a third of a dome were
         refused. And with the sphere itself removed, whose wall lies on the
-        sphere past its pole, every one was refused or threw outward. Half a
-        ball cut through both poles is still refused where its sphere would
-        hold them inside (OCCT fork, tests/thickness/models/Thickness.md
-        "Sec 27.109")."""
+        sphere past its pole, every one was refused or threw outward (OCCT
+        fork, tests/thickness/models/Thickness.md "Sec 27.109")."""
         V = Vector
 
         def dome(turn, low=0):
@@ -1004,11 +996,127 @@ class RegressionTests(unittest.TestCase):
             self.assertAlmostEqual(shape.Volume, volume, 3)
             self.assertEqual(shape.Faces[0].Surface.Axis, V(0, 0, 1))
 
-        ball = dome(180, -90)
-        for face, offset, join in ((2, 0.5, 2), (2, -0.5, 2), (1, 0.5, 0), (1, 0.5, 2)):
-            with self.assertRaises(Exception, msg="half ball Face%d %g join %d" % (face, offset, join)):
-                ball.makeThickness([ball.Faces[face - 1]], offset, 1e-7, False, False, 0, join)
-        self.assertTrue(ball.isValid())
+    def test_thickness_of_half_a_ball_and_of_a_placed_shape(self):
+        """Half a ball cut through both its poles: its sphere's outline is a
+        whole great circle, no axis keeps both poles off it, and it was
+        refused wherever it had to grow past that circle -- a flat half
+        removed with the Intersection join, the sphere removed outward. It is
+        cut in two first, along its equator where it stays and along a
+        meridian where it is removed. And a shape that carries a location: a
+        moved cylinder's vertices came back with a tolerance as large as the
+        move, and the next thickness of it was a valid solid of 272.73 for
+        89.93; a moved dome or cone was refused, or the cone's offset ran to
+        the apex it had before the move; a filleted box turned in space lost
+        the sphere at a corner, 459.40 for 405.90 (OCCT fork,
+        tests/thickness/models/Thickness.md "Sec 27.110")."""
+        V = Vector
+
+        def tolerance(shape):
+            return max(x.Tolerance for x in shape.Vertexes + shape.Edges + shape.Faces)
+
+        def check(name, shape, faces, offset, join, volume, solids=1):
+            tol = tolerance(shape)
+            for inter in (False, True):
+                r = shape.makeThickness(
+                    [shape.Faces[i - 1] for i in faces], offset, 1e-7, inter, False, 0, join
+                )
+                msg = "%s, %g, join %d, inter %s" % (name, offset, join, inter)
+                self.assertTrue(r.isValid(), msg)
+                self.assertEqual(len(r.Solids), solids, msg)
+                self.assertEqual(len(r.Shells), solids, msg)
+                self.assertAlmostEqual(r.Volume, volume, 3, msg)
+                # the shape given is left as it was, its tolerances too
+                self.assertTrue(shape.isValid(), msg)
+                self.assertAlmostEqual(tolerance(shape), tol, 9, msg)
+
+        ball = Part.makeSphere(5, V(), V(0, 0, 1), -90, 90, 180)
+        for name, faces, offset, join, volume in (
+            ("half ball, flat", [2], 0.5, 2, 113.0909),
+            ("half ball, flat", [2], -0.5, 2, 89.0272),
+            ("half ball, other flat", [3], 0.5, 2, 113.0909),
+            ("half ball, other flat", [3], -0.5, 2, 89.0272),
+            ("half ball, sphere", [1], 0.5, 0, 39.1390),
+            ("half ball, sphere", [1], 0.5, 2, 39.1390),
+            ("half ball, sphere", [1], -0.5, 0, 39.1390),
+            ("half ball, flat", [2], 0.5, 0, 111.6001),
+            ("half ball, flat", [2], -0.5, 0, 88.5482),
+        ):
+            check(name, ball, faces, offset, join, volume)
+        self.assertEqual(len(ball.Faces), 3)
+        self.assertAlmostEqual(ball.Volume, 261.7994, 3)
+
+        # The same ball with its sphere in two faces already.
+        meridian = Part.Arc(V(0, 0, -5), V(0, 5, 0), V(0, 0, 5)).toShape()
+        equator = Part.ArcOfCircle(Part.Circle(V(), V(0, 0, 1), 5), 0, math.pi).toShape()
+        lunes = ball.generalFuse([meridian])[0].Solids[0]
+        domes = ball.generalFuse([equator])[0].Solids[0]
+        self.assertEqual(len(lunes.Faces), 4)
+        self.assertEqual(len(domes.Faces), 4)
+        for offset in (0.5, -0.5):
+            for join in (0, 2):
+                check("two lunes, both removed", lunes, [1, 2], offset, join, 39.1390)
+        check("two domes, a flat removed", domes, [3], 0.5, 2, 113.0909)
+        check("two domes, a flat removed", domes, [3], -0.5, 2, 89.0272)
+
+        def placed(shape):
+            moved = shape.copy()
+            moved.Placement = Placement(V(3, 4, 5), Rotation(V(1, 2, 3), 40))
+            return moved
+
+        cyl = placed(Part.makeCylinder(4, 6))
+        check("placed cylinder, side", cyl, [1], 0.5, 0, 2 * 25.1327, 2)
+        check("placed cylinder, top after it", cyl, [2], -0.5, 0, 89.9281)
+        check("placed cylinder, top after it", cyl, [2], 0.5, 0, 110.4400)
+        dome = Part.makeSphere(5, V(), V(0, 0, 1), 0, 90, 360)
+        half = Part.makeSphere(5, V(), V(0, 0, 1), 0, 90, 180)
+        for name, shape, faces, offset, join, volume in (
+            ("placed dome, flat", dome, [2], 0.5, 0, 86.6556),
+            ("placed dome, flat", dome, [2], -0.5, 0, 70.9476),
+            ("placed cone, base", Part.makeCone(0, 4, 6), [2], 0.5, 2, 52.4563),
+            ("placed cone, base", Part.makeCone(0, 4, 6), [2], -0.5, 0, 38.8428),
+            ("placed cone, apex up, base", Part.makeCone(4, 0, 6), [2], 0.5, 0, 52.4095),
+            ("placed half dome, bottom", half, [2], 0.5, 2, 67.0206),
+            ("placed half dome, side", half, [3], -0.5, 2, 59.1071),
+            ("placed half ball, flat", ball, [2], 0.5, 2, 113.0909),
+            ("placed half ball, sphere", ball, [1], 0.5, 0, 39.1390),
+        ):
+            check(name, placed(shape), faces, offset, join, volume)
+
+        def turned(shape):
+            moved = shape.copy()
+            moved.transformShape(Placement(V(3, 4, 5), Rotation(V(1, 2, 3), 40)).Matrix, True)
+            return moved
+
+        # A filleted box with its geometry turned: a fillet removed outward.
+        box = Part.makeBox(10, 8, 6)
+        box = turned(box.makeFillet(2, [box.Edges[i] for i in (0, 2, 4, 6)]))
+        fillets = [
+            i + 1 for i, f in enumerate(box.Faces) if f.Surface.TypeId == "Part::GeomCylinder"
+        ]
+        self.assertEqual(len(fillets), 4)
+        for face in fillets:
+            check("turned filleted box, fillet Face%d" % face, box, [face], 1.0, 0, 405.9034)
+
+        # Half of a sphere's cap and a dome on a cylinder, turned and placed:
+        # a circle of section starts wherever the intersection puts it, and
+        # the piece its start lies in was lost; of two circles as near as each
+        # other the first found was taken.
+        cap = Part.makeSphere(5, V(), V(0, 0, 1), 30, 90, 180)
+        bullet = (
+            Part.makeCylinder(5, 4, V(0, 0, -4))
+            .fuse(Part.makeSphere(5, V(), V(0, 0, 1), 0, 90, 360))
+            .removeSplitter()
+        )
+        for how, name in ((lambda s: s, "plain"), (turned, "turned"), (placed, "placed")):
+            for faces, join, volume in (
+                ([1], 0, 19.2316),
+                ([1], 2, 19.2316),
+                ([2], 2, 22.0431),
+                ([3], 2, 28.8642),
+                ([4], 2, 28.8642),
+            ):
+                check("%s half cap, Face%d" % (name, faces[0]), how(cap), faces, -0.5, join, volume)
+            check("%s dome on a cylinder, side" % name, how(bullet), [1], 0.5, 2, 100.7315, 2)
 
     def test_thickness_intersection_join_with_one_face_left(self):
         """The Intersection join where one face stays beside the removed ones:
