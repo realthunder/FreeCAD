@@ -3103,6 +3103,12 @@ resetEdit lifecycle (`e6d3f9d6db`). Session 115 took them up:
   edge over a face of the SAME object; and the sketch's face is in front
   only because it is drawn later at equal depth, not because anything says
   so. A fix has a drawing half and a picking half, both in Core.
+  **Ruled 2026-10-02, to build next**: the internal-face view gets a small
+  polygon offset toward the viewer, so it is in front by rule in Coin and
+  bgfx alike; a view provider can declare itself an overlay on coplanar
+  geometry, and among hits at one point with one priority the overlay
+  wins, across objects. With internal faces on, the solid's face is then
+  picked outside the sketch's outline only -- upstream's trade as well.
 - `e6d3f9d6db`, **n/a until Core has it**: it moves the sketch's task
   dialog onto `TaskDialog::setAutoCloseOnResetEdit`, which is not here. The
   fork's `unsetEdit` closes the dialog itself, and no defect was shown.
@@ -3126,7 +3132,7 @@ clock, so the double-click hold cannot be it. Chased in session 115 and
 not reproduced: 24 of 24 passed with eight copies running at once, and it
 passed in that session's full `ctest -j6`.
 
-### The partial(sync) rows (session 115): 21 read, one left
+### The partial(sync) rows (session 115): 21 read
 
 The 21 rows the ledger files as `partial(sync)` that name
 `ViewProviderSketch.cpp` -- commits older than the squashed sync, which the
@@ -3147,11 +3153,11 @@ file; the line-presence count only chose the order.
 | `6ca8b2daae` | **n/a**: there is no overlay mark to redraw; the fork swaps the whole tree icon from `FullyConstrained` |
 | `51c6dbd3e3` | **declined**: `activateHandler` taking a `unique_ptr` is a signature change over nine files with no behaviour in it. `SketcherGui::ActivateHandler` owns the new handler from its first line, so the early returns leak nothing |
 | `5839134e95`, `7a5a3d1ffc`, `dd6aa9f3c7`, `ac788df608`, `34881bc82e` | **n/a** for this file: comment typos in lines the fork does not have, MDI type tests the fork replaced with `Gui::ViewerContext`, a menu entry the fork groups under `Sketcher_ExternalCmds`, a spelling of `std::find` |
-| `5969df37f4` | **open, put to the user**: upstream stretches the two axes to the viewport on every camera change. Here they are sized from the sketch (`e^ceil(ln(max coordinate))`), and the edit geometry is one drawing shared by every view and every served client -- a length taken from one viewport is wrong for the others, and one rewritten per camera move republishes the edit overlay per pan. A design question, not a port |
+| `5969df37f4` | **adapted** `d7fcfb4e4b` (user: yes), without upstream's camera sensor. Upstream stretches the two axes to the viewport on every camera change; here the edit geometry is one drawing shared by every view and every served client, so nothing in it may depend on one camera. Each axis is a polyline stepped by decades out to 1e7 -- a single line that long has its ends eight orders past a close view, beyond single precision, while a decade step keeps the piece a view cuts within a factor of ten -- and stays under its `SoSkipBoundingGroup`, so a fit still frames the sketch. `sketch-axes-reach.py` (the axes ended at 148.4; picks 3 m out found nothing) |
 
 `646b4381f9`, the 21st, was adapted in session 95 (ARCLENGTH).
 
-### CommandConstraints.cpp (session 115): 36 rows, 6 left
+### CommandConstraints.cpp (session 115): 36 rows, 2 left
 
 Every undecided row naming `Gui/CommandConstraints.cpp`, fixes first. The
 file is LF, unlike most of the module.
@@ -3173,25 +3179,28 @@ file is LF, unlike most of the module.
 | `08381b1d18`, `ed770bf849` | **n/a**: they follow a `pixmapFromSvg` that sets the device pixel ratio. The fork's returns device pixels, and the tool cursor is painted in them |
 | `651cefde4d`, `08c9a191e2`, `12a69fe296`, `65c6614081`, `f932c7e4e0`, `50f029edd4`, `8aa50c4380`, `65466d580b` | **n/a** for this file: spellings of the same call, a warning cleanup, two Core header moves |
 
-Left open:
+Ruled and taken after that (user, 2026-10-02):
 
-- `fe7c1d18be`, **put to the user**. Measured: a running Line tool survives
-  a constraint command applied to a selection -- the cursor stays the
-  tool's. Upstream releases the handler at the top of every constraint
-  command. The fork re-runs a command to toggle its tool (`90f0e23eac`),
-  so a blanket release would undo that; the question is which commands
-  should end which tools.
+| row | verdict |
+|---|---|
+| `fe7c1d18be` | **declined** (user: "keep ours"). Measured: a running Line tool survives a constraint command applied to a selection. Escape ends a tool, and the fork re-runs a command to toggle its tool (`90f0e23eac`), which upstream's release at the top of every constraint command would undo |
+| `3d87975faf` | **adapted** `ee6be8f6a7`: a new Distance / DistanceX / DistanceY label goes below both points, beside both (the upper point's side), or up and left of an aligned one, by the view-scaled label distance the fork already gives it. `moveConstraint` is public here, so no attorney class. `sketch-distance-label-side.py` (4 of 6 failed: a downhill line's horizontal label sat between its ends) |
+| `9663cf8dd4` | **adapted** `21feb2a554`: a new angle's arc goes past the nearer end of two lines that do not reach their crossing, an arc's own angle outside the arc. `sketch-angle-label-place.py` (4 of 5 failed: both at the default radius) |
+| `129c7d4d03` | **adapted** `705f37e446`: `SelArc` / `SelExternalArc`, given to a pick only when the running tool asks for them, on both ways a pick reaches the tool (the release in the view, and the selection change a served client sends). The selection gate dropped any type mask of 256 or more -- a guard sized for the old types, which made the angle tool accept nothing once the new bits were in. `sketch-angle-tool-arc.py` |
+
+Still open:
+
+- `999fed9c4e` (user: take it). Not a port: upstream builds it on its
+  `ExternalSelection` gate and finds a reference again by comparing
+  sub-names. The fork's external tool is its own and does more
+  (`DrawSketchHandlerExternal.h`: sub-object paths, mapped element names,
+  import across documents, whole-object picks), so the constraint tools
+  have to go through THAT path. A design, to be agreed first.
 - `0c34c93fe4`. Both constraint tools select by the sketch itself; the
   fork's panels select through the edited occurrence's path
   (`selectElement`). It works, because the sketch resolves the object, but
   a removal by the other path would not match. Wants a click-flow test
   inside a container before it changes.
-- `3d87975faf`, `9663cf8dd4` (275 lines): a new dimension's label put on a
-  fixed side, clear of the geometry. They touch the label distance ruled on
-  in session 114.
-- `129c7d4d03` (81 lines): an arc's angle by a click through the arc.
-- `999fed9c4e` (469 lines and a Core selection change): the Dimension tool
-  on external edges and vertices.
 
 ## 7a. The constraint-tool hints (session 85)
 
