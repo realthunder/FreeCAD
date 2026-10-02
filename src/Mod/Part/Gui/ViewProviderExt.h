@@ -39,6 +39,7 @@ class TopoDS_Wire;
 class TopoDS_Face;
 class SoSeparator;
 class SoGroup;
+class SoPolygonOffset;
 class SoSwitch;
 class SoVertexShape;
 class SoPickedPoint;
@@ -290,6 +291,19 @@ public:
     void unsetHighlightedPoints();
 
     void enableFullSelectionHighlight(bool face=true, bool line=true, bool point=true);
+
+    /** Declare this view an overlay on coplanar geometry
+     *
+     * For a shape that lies in the plane of another by design, as a
+     * sketch's faces do on the face it is attached to. Its faces are
+     * drawn with a polygon offset between an edge's (none) and an
+     * ordinary face's, so they are in front of the face under them by
+     * rule rather than by drawing order, and a pick that ties with
+     * that face goes to this view
+     * (Gui::SoFCUnifiedSelection::setCoplanarOverlay). To be called
+     * once attached.
+     */
+    void setCoplanarOverlay(bool enable);
     //@}
 
     /** @name Color management methods
@@ -407,6 +421,8 @@ protected:
     Gui::CoinPtr<SoGroup>  pFaceEdgeRoot;
     Gui::CoinPtr<SoGroup>  pEdgeRoot;
     Gui::CoinPtr<SoGroup>  pVertexRoot;
+    /// The offset of a coplanar overlay's faces, see setCoplanarOverlay()
+    Gui::CoinPtr<SoPolygonOffset> pOverlayOffset;
 
     /// Roots of the TShape-instanced representation (shared sub-shape
     /// geometry under per-instance transforms); empty while the flattened

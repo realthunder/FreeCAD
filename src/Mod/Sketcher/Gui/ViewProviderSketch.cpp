@@ -8970,6 +8970,10 @@ void ViewProviderSketch::attach(App::DocumentObject *pcFeat)
         pInternalView->enableFullSelectionHighlight(false, false, false);
         pInternalView->setStatus(Gui::SecondaryView,true);
         pInternalView->attach(getObject());
+        // The faces lie in the plane of whatever the sketch is attached
+        // to: in front of it by rule, and picked before it (upstream
+        // a2468774d3, by this fork's means).
+        pInternalView->setCoplanarOverlay(true);
         pInternalView->setDefaultMode(1);
         if(pInternalView->getModeSwitch()->isOfType(SoFCSwitch::getClassTypeId()))
             static_cast<SoFCSwitch*>(pInternalView->getModeSwitch())->defaultChild = 0;

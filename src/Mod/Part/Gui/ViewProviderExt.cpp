@@ -2035,6 +2035,8 @@ ViewProviderPartExt::ViewProviderPartExt()
 
 ViewProviderPartExt::~ViewProviderPartExt()
 {
+    // The selection node knows an overlay by its root's address.
+    Gui::SoFCUnifiedSelection::setCoplanarOverlay(pcRoot, false);
     unregisterMeshLevelSource(faceset, lineset);
     // The pooled visual fill keys its worker job on the coords node
     // (its own token slot); the unregister above cannot cancel it,
@@ -7696,6 +7698,28 @@ PyObject* ViewProviderPartExt::getPyObject()
         pyViewObject = new ViewProviderPartExtPy(this);
     pyViewObject->IncRef();
     return pyViewObject;
+}
+
+void ViewProviderPartExt::setCoplanarOverlay(bool enable)
+{
+    if (!pFaceRoot || enable == (pOverlayOffset.get() != nullptr))
+        return;
+    if (enable) {
+        // Between an edge, which has no offset, and an ordinary face at
+        // Coin's default (1, 1). The slope half is what separates this
+        // face from the lines drawn over it; the constant half stays zero
+        // because a depth buffer cannot resolve less than one unit, and
+        // one whole unit is the ordinary face's.
+        pOverlayOffset = new SoPolygonOffset;
+        pOverlayOffset->factor = 0.5f;
+        pOverlayOffset->units = 0.0f;
+        pFaceRoot->insertChild(pOverlayOffset, 0);
+    }
+    else {
+        pFaceRoot->removeChild(pOverlayOffset);
+        pOverlayOffset.reset();
+    }
+    Gui::SoFCUnifiedSelection::setCoplanarOverlay(pcRoot, enable);
 }
 
 void ViewProviderPartExt::enableFullSelectionHighlight(bool face, bool line, bool point)

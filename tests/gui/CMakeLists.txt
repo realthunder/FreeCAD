@@ -804,3 +804,11 @@ fc_add_gui_test(GuiSketchAngleToolArc_tests_run
 fc_add_gui_test(GuiSketchAxesReach_tests_run
                 sketch-axes-reach.py
                 --timeout 150)
+
+# A sketch's face lying on a solid's face is the one drawn and the one
+# picked: its view is a coplanar overlay, with a polygon offset in front
+# of an ordinary face and the win of a depth tie in the pick (upstream
+# a2468774d3, by the fork's means). Three poses, the top one square on.
+fc_add_gui_test(GuiSketchFaceOnSolidPick_tests_run
+                sketch-face-on-solid-pick.py
+                --timeout 150)
