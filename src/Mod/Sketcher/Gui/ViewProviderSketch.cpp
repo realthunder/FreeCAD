@@ -344,6 +344,8 @@ struct EditData {
             CurveWidth[c] = std::max(1L, hSketchView->GetInt(names[c].width, 2));
             CurvePattern[c] = hSketchView->GetInt(names[c].pattern, names[c].defPattern) & 0xFFFF;
         }
+        DimensionLineWidth = std::max(1L, hSketchView->GetInt("DimensionalConstraintLineWidth", 2));
+        DimensionLinePattern = hSketchView->GetInt("DimensionalConstraintLinePattern", 0xFFFF) & 0xFFFF;
         InformationWidth = std::max(1L, hSketchView->GetInt("InformationWidth", 1));
         InformationPattern = hSketchView->GetInt("InformationPattern", 0xFCFC) & 0xFFFF;
     }
@@ -555,6 +557,9 @@ struct EditData {
     unsigned int CurvePattern[CurveClassCount] = {0xFFFF, 0xFCFC, 0xFCFC, 0xFCFC, 0xFFFF};
     /// the first patterned visual layer's pattern
     unsigned int LayerPattern = 0xFFFF;
+    /// a dimensional constraint's leaders (upstream c2d6248bc7)
+    int DimensionLineWidth = 2;
+    unsigned int DimensionLinePattern = 0xFFFF;
     int InformationWidth = 1;
     unsigned int InformationPattern = 0xFCFC;
     SoIndexedLineSet     *SelectedCurveSet;
@@ -5718,6 +5723,8 @@ void ViewProviderSketch::OnChange(Base::Subject<const char*> &rCaller, const cha
         "ExternalDefiningPattern",
         "InformationWidth",
         "InformationPattern",
+        "DimensionalConstraintLineWidth",
+        "DimensionalConstraintLinePattern",
     };
     static std::unordered_set<const char *, App::CStringHasher, App::CStringHasher> gridDict = {
         "GridSizePixelThreshold",
@@ -8432,7 +8439,8 @@ void ViewProviderSketch::rebuildConstraintsVisual(void)
                                             :NonDrivingConstrDimColor)
                                         :DeactivatedConstrDimColor;
                 text->size.setValue(edit->labelFontSize);
-                text->lineWidth = 2 * edit->pixelScalingFactor;
+                text->lineWidth = edit->DimensionLineWidth * edit->pixelScalingFactor;
+                text->linePattern = edit->DimensionLinePattern;
                 text->useAntialiasing = false;
                 SoAnnotation *anno = new SoAnnotation();
                 anno->renderCaching = SoSeparator::OFF;

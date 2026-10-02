@@ -30,6 +30,7 @@
 #include <Inventor/fields/SoSFImage.h>
 #include <Inventor/fields/SoSFInt32.h>
 #include <Inventor/fields/SoSFName.h>
+#include <Inventor/fields/SoSFUShort.h>
 #include <Inventor/fields/SoSFVec3f.h>
 #include <Inventor/fields/SoMFString.h>
 #include <Inventor/fields/SoMFVec3f.h>
@@ -135,6 +136,8 @@ public:
     SoSFVec3f  norm;
     SoSFImage  image;
     SoSFFloat  lineWidth;
+    /// the leaders' line pattern, sixteen bits (upstream c2d6248bc7)
+    SoSFUShort linePattern;
     bool       useAntialiasing;
 
 protected:

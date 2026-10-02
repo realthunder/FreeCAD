@@ -285,6 +285,7 @@ SoDatumLabel::SoDatumLabel()
     SO_NODE_ADD_FIELD(name, ("Helvetica"));
     SO_NODE_ADD_FIELD(size, (10.f));
     SO_NODE_ADD_FIELD(lineWidth, (2.f));
+    SO_NODE_ADD_FIELD(linePattern, (0xFFFF));
 
     SO_NODE_ADD_FIELD(datumtype, (SoDatumLabel::DISTANCE));
 
@@ -366,6 +367,7 @@ SoNode* SoDatumLabel::getImageNode()
         material->diffuseColor.connectFrom(&this->textColor);
         auto drawStyle = new SoDrawStyle;
         drawStyle->lineWidth.connectFrom(&this->lineWidth);
+        drawStyle->linePattern.connectFrom(&this->linePattern);
         this->leaderShape = new SoDatumLabelLeader;
         this->leaderShape->owner = this;
 
@@ -1729,7 +1731,7 @@ void SoDatumLabel::notify(SoNotList * l)
     // their connected style nodes; image is written by the capture itself, as
     // is what the anchor reads.
     if (this->leaderShape && f && f != &this->textColor && f != &this->lineWidth
-        && f != &this->image) {
+        && f != &this->linePattern && f != &this->image) {
         this->leaderShape->touch();
         this->imageShape->touch();
     }
@@ -1828,8 +1830,16 @@ void SoDatumLabel::GLRender(SoGLRenderAction * action)
     state->push();
 
     //Set General OpenGL Properties
-    glPushAttrib(GL_ENABLE_BIT | GL_PIXEL_MODE_BIT | GL_COLOR_BUFFER_BIT);
+    glPushAttrib(GL_ENABLE_BIT | GL_PIXEL_MODE_BIT | GL_COLOR_BUFFER_BIT | GL_LINE_BIT);
     glDisable(GL_LIGHTING);
+    // the leaders' pattern; the number and the arrow heads are not lines
+    if (this->linePattern.getValue() != 0xFFFF) {
+        glEnable(GL_LINE_STIPPLE);
+        glLineStipple(1, this->linePattern.getValue());
+    }
+    else {
+        glDisable(GL_LINE_STIPPLE);
+    }
 
     //Enable Anti-alias
     if (action->isSmoothing()) {
