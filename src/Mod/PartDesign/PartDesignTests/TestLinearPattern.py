@@ -311,6 +311,58 @@ class TestLinearPattern(unittest.TestCase):
                         for b in (s.BoundBox for s in pattern.Shape.Solids))
         self.assertEqual(bounds, [(-50, -50, 0), (3, 4, 10), (23, 4, 10)])
 
+    def testUpstreamWholeShapeMode(self):
+        # Upstream's TransformMode 1 ("Transform body", "Whole shape" since
+        # 9535371265) patterns the whole shape and ignores the Originals,
+        # which it leaves in the file. Saved as an index, read from either.
+        import os
+        import re
+        import tempfile
+        import zipfile
+        body = self.Doc.addObject('PartDesign::Body', 'Body')
+        box = body.newObject('PartDesign::AdditiveBox', 'Box')
+        box.Length = box.Width = box.Height = 10
+        cyl = body.newObject('PartDesign::AdditiveCylinder', 'Cyl')
+        cyl.Radius = 2
+        cyl.Height = 5
+        cyl.Placement.Base = FreeCAD.Vector(5, 5, 10)
+        pattern = body.newObject('PartDesign::LinearPattern', 'Pattern')
+        pattern.Originals = [cyl]
+        pattern.Direction = (self.Doc.X_Axis, [''])
+        pattern.Length = 30
+        pattern.Occurrences = 2
+        self.Doc.recompute()
+        one = box.Shape.Volume + cyl.AddSubShape.Volume
+        self.assertAlmostEqual(pattern.Shape.Volume, one + cyl.AddSubShape.Volume, 6)
+
+        tmp = tempfile.gettempdir()
+        src = os.path.join(tmp, 'PDWholeShapeFork.FCStd')
+        dst = os.path.join(tmp, 'PDWholeShapeUpstream.FCStd')
+        self.Doc.saveAs(src)
+        with zipfile.ZipFile(src) as zi, zipfile.ZipFile(dst, 'w', zipfile.ZIP_DEFLATED) as zo:
+            for item in zi.infolist():
+                data = zi.read(item.filename)
+                if item.filename == 'Document.xml':
+                    xml = data.decode('utf-8')
+                    m = re.search(r'<Object name="Pattern"[^>]*>\s*<Properties Count="(\d+)', xml)
+                    xml = xml[:m.start(1)] + str(int(m.group(1)) + 1) + xml[m.end(1):]
+                    i = xml.index('<Property ', m.end())
+                    xml = (xml[:i] + '<Property name="TransformMode" '
+                           'type="App::PropertyEnumeration">\n<Integer value="1"/>\n'
+                           '</Property>\n' + xml[i:])
+                    data = xml.encode('utf-8')
+                zo.writestr(item, data)
+        doc = FreeCAD.openDocument(dst)
+        try:
+            pattern = doc.getObject('Pattern')
+            self.assertEqual(pattern.Originals, [])
+            self.assertFalse(pattern.SubTransform)
+            doc.recompute()
+            self.assertTrue(pattern.isValid())
+            self.assertAlmostEqual(pattern.Shape.Volume, 2 * one, 6)
+        finally:
+            FreeCAD.closeDocument(doc.Name)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestLinearPattern")

@@ -116,6 +116,7 @@ public:
 
 protected:
     void handleChangedPropertyType(Base::XMLReader &reader, const char * TypeName, App::Property * prop) override;
+    void handleChangedPropertyName(Base::XMLReader &reader, const char * TypeName, const char *PropName) override;
     virtual void positionBySupport();
     TopoShape refineShapeIfActive(const TopoShape&) const;
     void divideTools(const std::vector<TopoDS_Shape> &toolsIn, std::vector<TopoDS_Shape> &individualsOut,
@@ -126,6 +127,11 @@ protected:
 
 protected:
     rejectedMap rejected;
+
+private:
+    // An upstream file's TransformMode said "Whole shape"; see
+    // handleChangedPropertyName()
+    bool restoredWholeShape = false;
 };
 
 } //namespace PartDesign

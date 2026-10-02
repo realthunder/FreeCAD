@@ -190,6 +190,30 @@ void Transformed::handleChangedPropertyType(Base::XMLReader &reader, const char 
     }
 }
 
+void Transformed::handleChangedPropertyName(Base::XMLReader &reader, const char * TypeName, const char *PropName)
+{
+    // Upstream's TransformMode (45bb606095; 9535371265 renamed its strings,
+    // but a file keeps the index only): 0 patterns the Originals, 1 the
+    // whole shape before it and ignores the Originals -- which upstream
+    // leaves in the file when the mode is switched. The fork's whole-shape
+    // pattern is no originals with SubTransform off; with it on (the
+    // default) no originals pattern only the previous feature.
+    if (strcmp(PropName, "TransformMode") == 0
+            && strcmp(TypeName, App::PropertyEnumeration::getClassTypeId().getName()) == 0) {
+        static const char *modes[] = {"Features", "Whole shape", nullptr};
+        App::PropertyEnumeration mode;
+        mode.setEnums(modes);
+        mode.Restore(reader);
+        restoredWholeShape = mode.getValue() == 1;
+        // The saved shape is right, but onDocumentRestored() changes what
+        // it is computed from, and a restore purges what that touches
+        if (restoredWholeShape && getDocument())
+            getDocument()->addRecomputeObject(this);
+        return;
+    }
+    PartDesign::FeatureAddSub::handleChangedPropertyName(reader, TypeName, PropName);
+}
+
 short Transformed::mustExecute() const
 {
     if (OriginalSubs.isTouched())
@@ -912,6 +936,12 @@ void Transformed::divideTools(const std::vector<TopoDS_Shape> &toolsIn, std::vec
 }
 
 void Transformed::onDocumentRestored() {
+    if (restoredWholeShape) {
+        restoredWholeShape = false;
+        OriginalSubs.setValues(std::vector<App::DocumentObject*>(), std::vector<std::string>());
+        Originals.setValues({});
+        SubTransform.setValue(false);
+    }
     if(OriginalSubs.getValues().empty() && Originals.getSize()) {
         std::vector<std::string> subs(Originals.getSize());
         OriginalSubs.setValues(Originals.getValues(),subs);
