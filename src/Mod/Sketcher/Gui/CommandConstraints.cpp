@@ -1401,9 +1401,9 @@ public:
         , allowedSelTypes(0)
     {}
 
-    /// Whether something outside the sketch may be picked now; the tool's
-    /// to say (see StackedExternalPick)
-    std::function<bool()> outside;
+    /// Whether this element of something outside the sketch may be picked
+    /// now; the tool's to say (see StackedExternalPick)
+    std::function<bool(const char* element)> outside;
     /// set while the tool selects its earlier picks again, which are of the
     /// steps behind and not of the one the gate stands at
     bool reselecting = false;
@@ -1411,7 +1411,13 @@ public:
     bool allow(App::Document* pDoc, App::DocumentObject* pObj, const char* sSubName) override
     {
         if (pObj != this->object) {
-            return outside && outside() && ExternalSelection::allow(pDoc, pObj, sSubName);
+            // the element's own name, past the path and past a mapped name
+            const char* element = sSubName ? Data::findElementName(sSubName) : "";
+            if (const char* dot = strrchr(element, '.')) {
+                element = dot + 1;
+            }
+            return outside && outside(element)
+                && ExternalSelection::allow(pDoc, pObj, sSubName);
         }
         if (!sSubName || sSubName[0] == '\0') {
             return false;
@@ -1977,15 +1983,27 @@ private:
         Gui::Selection().rmvSelectionGate();
         Gui::Selection().addSelectionGate(selFilterGate);
 
-        // Outside the sketch only while the step takes an external edge or
-        // a vertex, and not while the sketch has something of its own under
-        // the pointer: that is what the click means then.
-        selFilterGate->outside = [this]() {
-            return external.on()
-                && (allowedSelTypes & (SelExternalEdge | SelExternalArc | SelVertex
-                                       | SelVertexOrRoot))
-                && getPreselectPoint() < 0 && getPreselectCross() < 0
-                && getPreselectCurve() < 0 && getPreselectCurve() > Sketcher::GeoEnum::RefExt;
+        // Outside the sketch only what the step can take -- a vertex where
+        // it takes a point, anything else where it takes an external edge
+        // -- and not while the sketch has something of its own under the
+        // pointer: that is what the click means then.
+        selFilterGate->outside = [this](const char* element) {
+            if (!external.on() || getPreselectPoint() >= 0 || getPreselectCross() >= 0
+                || getPreselectCurve() >= 0 || getPreselectCurve() <= Sketcher::GeoEnum::RefExt) {
+                return false;
+            }
+            const unsigned int points = SelVertex | SelVertexOrRoot;
+            const unsigned int edges = SelExternalEdge | SelExternalArc;
+            if (!element || !element[0]) {
+                // an object taken whole (a datum): either
+                return (allowedSelTypes & (points | edges)) != 0;
+            }
+            const bool vertex = boost::starts_with(element, "Vertex");
+            const bool face = boost::starts_with(element, "Face");
+            // Cut by the sketch plane, an edge gives a point and a face
+            // gives edges; projected, only a vertex gives a point.
+            const bool point = external.intersection() ? !face : vertex;
+            return (allowedSelTypes & (point ? points : edges)) != 0;
         };
         external.restore();
         // sets the cursor too
