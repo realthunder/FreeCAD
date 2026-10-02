@@ -143,6 +143,8 @@ class Client(threading.Thread):
         self.tool_reply = None
         self.on3_reply = None
         self.refused = None
+        self.flavour_reply = None
+        self.flavour_mode = None
         self.told_entered = None
         self.on_reply = None
         self.off_reply = None
@@ -242,6 +244,12 @@ class Client(threading.Thread):
         self.clicked3.set()
         picks3_sampled.wait(30.0)
         ws.op('{"id":11,"op":"command","name":"Sketcher_External"}')
+        ws.drain(0.3)
+        # the other flavours are on the list too: on, read, off again
+        self.flavour_reply = ws.op('{"id":13,"op":"command","name":"Sketcher_Intersection"}')
+        ws.drain(0.3)
+        self.flavour_mode = FreeCAD.ParamGet(GENERAL).GetInt("ConstraintExternalPick", 0)
+        ws.op('{"id":14,"op":"command","name":"Sketcher_Intersection"}')
         ws.drain(0.3)
         self.refused = ws.op('{"id":12,"op":"command","name":"Sketcher_ConstrainDistance"}')
         ws.drain(0.3)
@@ -525,6 +533,10 @@ def verify():
               after is not None and toggled is not None
               and after["undo"] == toggled["undo"] + 1,
               (toggled and toggled["undo"], after and after["undo"]))
+        reply = reply_of(client.flavour_reply)
+        check("the client's own tool: Sketcher_Intersection is admitted and switches the flavour",
+              reply.get("ok") is True and client.flavour_mode == 3,
+              (reply, client.flavour_mode))
         reply = reply_of(client.refused)
         check("a dimensional command is still refused",
               reply.get("ok") is not True and "CommandRefused" in str(reply), reply)

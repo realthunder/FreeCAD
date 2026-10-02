@@ -516,6 +516,9 @@ const DIALOG_FREE_CONSTRAINTS = new Set([
 export function isBrowserSafeCommand(name: string): boolean {
   return name.startsWith('Sketcher_Create')
     || name === 'Sketcher_External'
+    || name === 'Sketcher_Defining'
+    || name === 'Sketcher_Intersection'
+    || name === 'Sketcher_IntersectionDefining'
     || name === 'Sketcher_CarbonCopy'
     || DIALOG_FREE_CONSTRAINTS.has(name);
 }

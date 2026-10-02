@@ -840,8 +840,14 @@ bool isBrowserSafeCommand(const QString &name)
         QStringLiteral("Sketcher_ToggleDrivingConstraint"),
         QStringLiteral("Sketcher_ToggleActiveConstraint"),
     };
+    // Sketcher_External's three siblings start the same handler in another
+    // flavour; pressed while a constraint tool runs, each switches that
+    // tool's outside picking to its flavour.
     return name.startsWith(QLatin1String("Sketcher_Create"))
         || name == QLatin1String("Sketcher_External")
+        || name == QLatin1String("Sketcher_Defining")
+        || name == QLatin1String("Sketcher_Intersection")
+        || name == QLatin1String("Sketcher_IntersectionDefining")
         || name == QLatin1String("Sketcher_CarbonCopy")
         || constraints.contains(name);
 }

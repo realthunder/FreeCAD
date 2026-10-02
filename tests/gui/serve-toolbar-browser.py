@@ -83,8 +83,10 @@ def skip(why):
 
 def browser_safe(name):
     """The server's allowlist (SceneControl.cpp isBrowserSafeCommand)."""
-    return (name.startswith("Sketcher_Create") or name == "Sketcher_External"
-            or name == "Sketcher_CarbonCopy" or name in DIALOG_FREE_CONSTRAINTS)
+    return (name.startswith("Sketcher_Create")
+            or name in ("Sketcher_External", "Sketcher_Defining", "Sketcher_Intersection",
+                        "Sketcher_IntersectionDefining", "Sketcher_CarbonCopy")
+            or name in DIALOG_FREE_CONSTRAINTS)
 
 
 DIALOG_FREE_CONSTRAINTS = {"Sketcher_" + n for n in (
