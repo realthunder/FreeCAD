@@ -1582,8 +1582,13 @@ void ViewArea::deleteSelf()
     // view moved elsewhere. Detach the shell now, the way
     // MainWindow::removeWindow does.
     if (auto sub = qobject_cast<QMdiSubWindow*>(parentWidget())) {
-        if (sub->parent())
+        if (sub->parent()) {
             sub->setParent(nullptr);
+            // A maximized shell shows itself again once out of the area,
+            // as a top-level window covering the main one (see
+            // MainWindow::removeWindow).
+            sub->hide();
+        }
     }
 }
 

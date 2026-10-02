@@ -1690,6 +1690,12 @@ void MainWindow::removeWindow(Gui::MDIView* view, bool close)
     auto subwindow = qobject_cast<QMdiSubWindow*>(parent);
     if(subwindow && d->mdiArea->subWindowList().contains(subwindow)) {
         subwindow->setParent(nullptr);
+        // Out of the area a maximized sub window shows itself again as a
+        // top-level window of the area's size, on top of the main window
+        // until its deferred delete runs -- which a nested event loop puts
+        // off indefinitely. On macOS that window occludes the main one, so
+        // Qt stops painting every 3D view in it.
+        subwindow->hide();
 
         assert(!d->mdiArea->subWindowList().contains(subwindow));
         // d->mdiArea->removeSubWindow(parent);
