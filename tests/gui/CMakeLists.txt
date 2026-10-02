@@ -747,3 +747,11 @@ fc_add_gui_test(GuiSketchCoincidentSameElement_tests_run
 fc_add_gui_test(GuiSketchTangentSelf_tests_run
                 sketch-tangent-self.py
                 --timeout 120)
+
+# The symmetric constraint takes an element by its two ends -- a line, an
+# arc, an open B-spline -- with a symmetry line, an axis or a point, on
+# both ways into the command; an element without ends is refused
+# (upstream bc3c0dc19a).
+fc_add_gui_test(GuiSketchSymmetricElement_tests_run
+                sketch-symmetric-element.py
+                --timeout 150)

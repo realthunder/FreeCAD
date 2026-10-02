@@ -204,7 +204,12 @@ def check_context_hints():
 
     start("Sketcher_ConstrainSymmetric")
     select("Edge1")
-    check("symmetric after an edge", pick_hint() == "pick symmetry point", pick_hint())
+    check("symmetric after an edge", pick_hint() == "pick symmetry line or point",
+          pick_hint())
+
+    start("Sketcher_ConstrainSymmetric")
+    select("V_Axis")
+    check("symmetric after an axis", pick_hint() == "pick edge", pick_hint())
 
     FreeCADGui.Selection.clearSelection()
 
