@@ -6925,12 +6925,8 @@ void ViewProviderSketch::draw(bool temp /*=false*/, bool rebuildinformationlayer
     SbVec3f *verts = edit->CurvesCoordinate->point.startEditing();
     SbVec3f *pverts = edit->PointsCoordinate->point.startEditing();
 
-    float dMg = 100;
-
     int i=0; // setting up the line set
     for (std::vector<Base::Vector3d>::const_iterator it = Coords.begin(); it != Coords.end(); ++it,i++) {
-        dMg = dMg>std::abs(it->x)?dMg:std::abs(it->x);
-        dMg = dMg>std::abs(it->y)?dMg:std::abs(it->y);
         verts[i].setValue(it->x,it->y,zLowLines);
     }
 
@@ -6984,8 +6980,6 @@ void ViewProviderSketch::draw(bool temp /*=false*/, bool rebuildinformationlayer
 
     i=0; // setting up the point set
     for (std::vector<Base::Vector3d>::const_iterator it = Points.begin(); it != Points.end(); ++it,i++){
-        dMg = dMg>std::abs(it->x)?dMg:std::abs(it->x);
-        dMg = dMg>std::abs(it->y)?dMg:std::abs(it->y);
         pverts[i].setValue(it->x,it->y,zLowPoints);
     }
 
@@ -6993,28 +6987,35 @@ void ViewProviderSketch::draw(bool temp /*=false*/, bool rebuildinformationlayer
     edit->PointsCoordinate->point.finishEditing();
 
     // set cross coordinates
-    edit->RootCrossSet->numVertices.set1Value(0,2);
-    edit->RootCrossSet->numVertices.set1Value(1,2);
-
-    // This code relies on Part2D, which is generally not updated in no update mode.
-    // Additionally it does not relate to the actual sketcher geometry.
-
-    /*
-    Base::Console().Log("MinX:%d,MaxX:%d,MinY:%d,MaxY:%d\n",MinX,MaxX,MinY,MaxY);
-    // make sure that nine of the numbers are exactly zero because log(0)
-    // is not defined
-    float xMin = std::abs(MinX) < FLT_EPSILON ? 0.01f : MinX;
-    float xMax = std::abs(MaxX) < FLT_EPSILON ? 0.01f : MaxX;
-    float yMin = std::abs(MinY) < FLT_EPSILON ? 0.01f : MinY;
-    float yMax = std::abs(MaxY) < FLT_EPSILON ? 0.01f : MaxY;
-    */
-
-    float dMagF = exp(ceil(log(std::abs(dMg))));
-
-    edit->RootCrossCoordinate->point.set1Value(0,SbVec3f(-dMagF, 0.0f, zCross));
-    edit->RootCrossCoordinate->point.set1Value(1,SbVec3f(dMagF, 0.0f, zCross));
-    edit->RootCrossCoordinate->point.set1Value(2,SbVec3f(0.0f, -dMagF, zCross));
-    edit->RootCrossCoordinate->point.set1Value(3,SbVec3f(0.0f, dMagF, zCross));
+    //
+    // The axes reach across any view, and no view decides how far: the edit geometry is one
+    // drawing for every view and every served client. Each axis is a polyline stepped by
+    // decades out to ten kilometres. A single line that long would have its ends eight
+    // orders of magnitude past what a close view shows, beyond what single precision can
+    // interpolate; with a decade step, the piece a view cuts has its ends within a factor of
+    // ten. They stay out of the bounding box (the SoSkipBoundingGroup above them).
+    {
+        static const std::vector<float> reach = [] {
+            std::vector<float> steps;
+            for (int exponent = 7; exponent >= -2; --exponent)
+                steps.push_back(-std::pow(10.0f, static_cast<float>(exponent)));
+            steps.push_back(0.0f);
+            for (int exponent = -2; exponent <= 7; ++exponent)
+                steps.push_back(std::pow(10.0f, static_cast<float>(exponent)));
+            return steps;
+        }();
+        const int count = static_cast<int>(reach.size());
+        edit->RootCrossSet->numVertices.setNum(2);
+        edit->RootCrossSet->numVertices.set1Value(0, count);
+        edit->RootCrossSet->numVertices.set1Value(1, count);
+        edit->RootCrossCoordinate->point.setNum(2 * count);
+        SbVec3f *cross = edit->RootCrossCoordinate->point.startEditing();
+        for (int k = 0; k < count; ++k) {
+            cross[k].setValue(reach[k], 0.0f, zCross);
+            cross[count + k].setValue(0.0f, reach[k], zCross);
+        }
+        edit->RootCrossCoordinate->point.finishEditing();
+    }
 
     // Render Constraints ===================================================
     const std::vector<Sketcher::Constraint *> &constrlist = getSketchObject()->Constraints.getValues();

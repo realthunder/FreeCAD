@@ -797,3 +797,10 @@ fc_add_gui_test(GuiSketchAngleLabelPlace_tests_run
 fc_add_gui_test(GuiSketchAngleToolArc_tests_run
                 sketch-angle-tool-arc.py
                 --timeout 120)
+
+# The sketch's axes reach across any view: decade-stepped polylines out to
+# ten kilometres, shared by every view, still outside the bounding box
+# (upstream 5969df37f4, without a per-camera update).
+fc_add_gui_test(GuiSketchAxesReach_tests_run
+                sketch-axes-reach.py
+                --timeout 150)
