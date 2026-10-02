@@ -10971,3 +10971,23 @@ unfrozen.
 **Gates**, frozen and unfrozen each: Python 2982 OK (52 skipped frozen, 53
 unfrozen; 6 expected failures; +1), ctest 856/856 (`-j6` frozen, `-j1`
 unfrozen), the fork's thickness suite PASS 110, its sweep 712 of 712.
+
+### 27.107 Thickness: a cone with its apex, half a dome, the input never back (user, 2026-10-02)
+
+Not log work; a pointer (27.106). The user, "fix the found issue now":
+27.106's candidates. The write-up is the OCCT fork's
+`tests/thickness/models/Thickness.md`, "Sec 27.107", and
+`tests/thickness/README.md`. Fork `aca7df93b0` (the edge at an offset cone's
+new apex had an infinite range: the cone inward, and unhollowed with the
+Intersection join), `d964dc081b` (half a dome), `92568cb0da` (a result that
+is the input itself is refused), `66f358acfd` (the suite: PASS 127, XFAIL
+5); FreeCAD
+`RegressionTests.test_thickness_of_a_cone_with_its_apex_and_half_a_dome`.
+Left, and marked known broken in the fork's suite: the half dome's mirror
+side inward, the half dome and a box fused of two with the Intersection
+join.
+
+**Gates**, frozen and unfrozen each: Python 2983 OK (52 skipped frozen, 53
+unfrozen; 6 expected failures; +1), ctest 856/856 (`-j6` frozen, `-j1`
+unfrozen), the fork's thickness suite PASS 127 XFAIL 5, its sweep 712 of
+712.
