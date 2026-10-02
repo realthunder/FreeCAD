@@ -3572,6 +3572,38 @@ grow, none of them a port of lines:
   upstream's defaults for "show dimension names" (on) and the line group
   (on), both off here.
 
+### The tip comparison over every open row (session 118)
+
+For each undecided row, the files the commit really touches -- from the
+commit, the ledger's file column is cut short -- were compared with
+upstream's tip, whitespace aside. Eighteen rows touch only files that are
+the tip here (`1d7b156fa3`): the default handler's family, the on-view
+parameters of the three conic arc tools, the transform expression helper.
+`DrawSketchDefaultHandler.h` differs from the tip by one thing, the tool
+mode being a command (`90f0e23eac`).
+
+Two more rows, and what they led to:
+
+| row | verdict |
+|---|---|
+| `6dda56117a` | **superseded** `4574a91ba3`. It draws the curve while knots are placed, in `DrawSketchHandlerBSplineByInterpolation.h` -- a handler upstream later deleted, folding interpolation into the unified B-spline handler. The fork had the unified handler at the tip and still started the old one for the two "from knots" commands: no tool widget, no on-view parameters, no hints, a polygon for a preview. They start the unified handler now |
+| `aab4bf329a` | **n/a**: an enum of the uncompiled information overlay converter |
+
+Found by the test for that switch, no row for it -- `666865e05f`: **a tool's
+click did not land where the pointer was.** On a press the sketch took
+the 3D point of whatever the pick radius reached as the click's position,
+for any hit (the fork's `1b87d4f072`, so that a drag starts on the curve
+it grabs; upstream does it for a vertex only). A tool's own preview is
+under the pointer and is picked like anything else, so the B-spline tool's
+next point went ON its preview, three pixels short, while its mouse move
+drew it at the pointer. Line and polyline were exact with the same
+clicks, which is why it went unseen. A tool gets the pointer's place now,
+or the vertex under it; a drag keeps the hit on the curve.
+
+161 rows are left undecided. About a hundred of them touch at least one file that
+differs from the tip in substance and need reading; the rest also name
+files the fork does not have, or the uncompiled `EditMode*` sources.
+
 ### TaskSketcherConstraints.cpp (session 117)
 
 Twenty-six undecided rows, all decided. Read by the DECISION column of the
