@@ -121,7 +121,7 @@ public:
         if (!sketch->isExternalAllowed(pDoc, pObj, &msg)){
             switch(msg){
                 case Sketcher::SketchObject::rlCircularReference:
-                    this->notAllowedReason = QT_TR_NOOP("Linking this will cause circular dependency. ");
+                    this->notAllowedReason = QT_TR_NOOP("Linking this will cause circular dependency.");
                     break;
 
                     // We'll auto create shapebinder in the following cases.

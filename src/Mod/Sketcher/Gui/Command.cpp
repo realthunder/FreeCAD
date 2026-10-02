@@ -157,8 +157,8 @@ CmdSketcherNewSketch::CmdSketcherNewSketch()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Create sketch");
-    sToolTipText = QT_TR_NOOP("Create a new sketch.");
+    sMenuText = QT_TR_NOOP("New Sketch");
+    sToolTipText = QT_TR_NOOP("Creates a new sketch");
     sWhatsThis = "Sketcher_NewSketch";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_NewSketch";
@@ -196,14 +196,14 @@ void CmdSketcherNewSketch::activated(int iMsg)
             Gui::TranslatedUserWarning(
                 getActiveGuiDocument(),
                 QObject::tr("Sketch mapping"),
-                QObject::tr("Can't map the sketch to selected object. %1.").arg(msg_str));
+                QObject::tr("Cannot map the sketch to the selected object. %1.").arg(msg_str));
             return;
         }
         if (validModes.size() > 1) {
             validModes.insert(validModes.begin(), Attacher::mmDeactivated);
             bool ok;
             QStringList items;
-            items.push_back(QObject::tr("Don't attach"));
+            items.push_back(QObject::tr("Do not attach"));
             int iSugg = 0;// index of the auto-suggested mode in the list of valid modes
             for (size_t i = 0; i < validModes.size(); ++i) {
                 auto uiStrings =
@@ -214,7 +214,7 @@ void CmdSketcherNewSketch::activated(int iMsg)
             }
             QString text = QInputDialog::getItem(
                 Gui::getMainWindow(),
-                qApp->translate("Sketcher_NewSketch", "Sketch attachment"),
+                qApp->translate("Sketcher_NewSketch", "Sketch Attachment"),
                 qApp->translate("Sketcher_NewSketch",
                                 "Select the method to attach this sketch to selected object"),
                 items,
@@ -333,8 +333,8 @@ CmdSketcherEditSketch::CmdSketcherEditSketch()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Edit sketch");
-    sToolTipText = QT_TR_NOOP("Edit the selected sketch.");
+    sMenuText = QT_TR_NOOP("Edit Sketch");
+    sToolTipText = QT_TR_NOOP("Opens the selected sketch for editing");
     sWhatsThis = "Sketcher_EditSketch";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_EditSketch";
@@ -364,8 +364,8 @@ CmdSketcherLeaveSketch::CmdSketcherLeaveSketch()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Leave sketch");
-    sToolTipText = QT_TR_NOOP("Finish editing the active sketch. You can also press Escape to exit.");
+    sMenuText = QT_TR_NOOP("Leave Sketch");
+    sToolTipText = QT_TR_NOOP("Finishes editing the active sketch. Press Escape to exit.");
     sWhatsThis = "Sketcher_LeaveSketch";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_LeaveSketch";
@@ -404,8 +404,8 @@ CmdSketcherCancelSketch::CmdSketcherCancelSketch()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Cancel editing");
-    sToolTipText = QT_TR_NOOP("Leave 'edit' mode and revert any changes");
+    sMenuText = QT_TR_NOOP("Cancel Editing");
+    sToolTipText = QT_TR_NOOP("Leaves 'edit' mode and reverts any changes");
     sWhatsThis = "Sketcher_CancelSketch";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_CancelSketch";
@@ -461,10 +461,8 @@ CmdSketcherStopOperation::CmdSketcherStopOperation()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Stop operation");
-    sToolTipText = QT_TR_NOOP("When in edit mode, "
-                              "stop the active operation "
-                              "(drawing, constraining, etc.).");
+    sMenuText = QT_TR_NOOP("Stop Operation");
+    sToolTipText = QT_TR_NOOP("Stops the active operation while in edit mode");
     sWhatsThis = "Sketcher_StopOperation";
     sStatusTip = sToolTipText;
     sPixmap = "process-stop";
@@ -497,9 +495,9 @@ CmdSketcherReorientSketch::CmdSketcherReorientSketch()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Reorient sketch...");
-    sToolTipText = QT_TR_NOOP("Place the selected sketch on one of the global coordinate planes.\n"
-                              "This will clear the 'Support' property, if any.");
+    sMenuText = QT_TR_NOOP("Reorient Sketch");
+    sToolTipText = QT_TR_NOOP("Places the selected sketch on one of the global coordinate planes.\n"
+                              "This will clear the AttachmentSupport property.");
     sWhatsThis = "Sketcher_ReorientSketch";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_ReorientSketch";
@@ -513,7 +511,7 @@ void CmdSketcherReorientSketch::activated(int iMsg)
     if (sketch->Support.getValue()) {
         int ret = QMessageBox::question(
             Gui::getMainWindow(),
-            qApp->translate("Sketcher_ReorientSketch", "Sketch has support"),
+            qApp->translate("Sketcher_ReorientSketch", "Sketch Has Support"),
             qApp->translate("Sketcher_ReorientSketch",
                             "Sketch with a support face cannot be reoriented.\n"
                             "Do you want to detach it from the support?"),
@@ -634,11 +632,9 @@ CmdSketcherMapSketch::CmdSketcherMapSketch()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Map sketch to face...");
+    sMenuText = QT_TR_NOOP("Attach Sketch");
     sToolTipText = QT_TR_NOOP(
-        "Set the 'Support' of a sketch.\n"
-        "First select the supporting geometry, for example, a face or an edge of a solid object,\n"
-        "then call this command, then choose the desired sketch.");
+        "Attaches a sketch to the selected geometry element");
     sWhatsThis = "Sketcher_MapSketch";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_MapSketch";
@@ -701,7 +697,7 @@ void CmdSketcherMapSketch::activated(int iMsg)
             items.push_back(QString::fromUtf8((*it)->Label.getValue()));
         QString text = QInputDialog::getItem(
             Gui::getMainWindow(),
-            qApp->translate("Sketcher_MapSketch", "Select sketch"),
+            qApp->translate("Sketcher_MapSketch", "Select Sketch"),
             sketchInSelection
                 ? qApp->translate("Sketcher_MapSketch",
                     "Select a sketch (some sketches not shown to prevent a circular dependency)")
@@ -757,7 +753,7 @@ void CmdSketcherMapSketch::activated(int iMsg)
         // bool ok; //already defined
         // QStringList items; //already defined
         items.clear();
-        items.push_back(QObject::tr("Don't attach"));
+        items.push_back(QObject::tr("Do not attach"));
         int iSugg = 0;// index of the auto-suggested mode in the list of valid modes
         int iCurr = 0;// index of current mode in the list of valid modes
         for (size_t i = 0; i < validModes.size(); ++i) {
@@ -786,7 +782,7 @@ void CmdSketcherMapSketch::activated(int iMsg)
         // * execute the dialog
         text = QInputDialog::getItem(
             Gui::getMainWindow(),
-            qApp->translate("Sketcher_MapSketch", "Sketch attachment"),
+            qApp->translate("Sketcher_MapSketch", "Sketch Attachment"),
             bCurIncompatible
                 ? qApp->translate(
                     "Sketcher_MapSketch",
@@ -863,9 +859,8 @@ CmdSketcherViewSketch::CmdSketcherViewSketch()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("View sketch");
-    sToolTipText = QT_TR_NOOP("When in edit mode, "
-                              "set the camera orientation perpendicular to the sketch plane.");
+    sMenuText = QT_TR_NOOP("Align View to Sketch");
+    sToolTipText = QT_TR_NOOP("Aligns the camera orientation perpendicular to the active sketch plane");
     sWhatsThis = "Sketcher_ViewSketch";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_ViewSketch";
@@ -964,9 +959,9 @@ CmdSketcherValidateSketch::CmdSketcherValidateSketch()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Validate sketch...");
-    sToolTipText = QT_TR_NOOP("Validate a sketch by looking at missing coincidences,\n"
-                              "invalid constraints, degenerated geometry, etc.");
+    sMenuText = QT_TR_NOOP("Validate Sketch");
+    sToolTipText = QT_TR_NOOP("Validates a sketch by checking for missing coincidences,\n"
+                              "invalid constraints, and degenerate geometry");
     sWhatsThis = "Sketcher_ValidateSketch";
     sStatusTip = sToolTipText;
     eType = 0;
@@ -1004,10 +999,10 @@ CmdSketcherMirrorSketch::CmdSketcherMirrorSketch()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Mirror sketch");
-    sToolTipText = QT_TR_NOOP("Create a new mirrored sketch for each selected sketch\n"
+    sMenuText = QT_TR_NOOP("Mirror Sketch");
+    sToolTipText = QT_TR_NOOP("Creates a new mirrored sketch for each selected sketch\n"
                               "by using the X or Y axes, or the origin point,\n"
-                              "as mirroring reference.");
+                              "as mirroring reference");
     sWhatsThis = "Sketcher_MirrorSketch";
     sStatusTip = sToolTipText;
     eType = 0;
@@ -1213,8 +1208,8 @@ CmdSketcherMergeSketches::CmdSketcherMergeSketches()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Merge sketches");
-    sToolTipText = QT_TR_NOOP("Create a new sketch from merging two or more selected sketches.");
+    sMenuText = QT_TR_NOOP("Merge Sketches");
+    sToolTipText = QT_TR_NOOP("Creates a new sketch by merging at least 2 selected sketches");
     sWhatsThis = "Sketcher_MergeSketches";
     sStatusTip = sToolTipText;
     eType = 0;
@@ -1347,9 +1342,8 @@ CmdSketcherViewSection::CmdSketcherViewSection()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("View section");
-    sToolTipText = QT_TR_NOOP("When in edit mode, "
-                              "switch between section view and full view.");
+    sMenuText = QT_TR_NOOP("Toggle Section View");
+    sToolTipText = QT_TR_NOOP("Toggles between section view and full view");
     sWhatsThis = "Sketcher_ViewSection";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_ViewSection";
@@ -1511,9 +1505,9 @@ CmdSketcherGrid::CmdSketcherGrid()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Toggle grid");
+    sMenuText = QT_TR_NOOP("Toggle Grid");
     sToolTipText =
-        QT_TR_NOOP("Toggle the grid in the sketch. In the menu you can change grid settings.");
+        QT_TR_NOOP("Toggles the grid display in the active sketch");
     sWhatsThis = "Sketcher_Grid";
     sStatusTip = sToolTipText;
     eType = 0;
@@ -1762,10 +1756,9 @@ CmdSketcherSnap::CmdSketcherSnap()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Toggle snap");
+    sMenuText = QT_TR_NOOP("Toggle Snap");
     sToolTipText =
-        QT_TR_NOOP("Toggle all snap functionality. In the menu you can toggle 'Snap to grid' and "
-                   "'Snap to objects' individually, and change further snap settings.");
+        QT_TR_NOOP("Toggles snapping");
     sWhatsThis = "Sketcher_Snap";
     sStatusTip = sToolTipText;
     eType = 0;
@@ -2025,8 +2018,8 @@ CmdRenderingOrder::CmdRenderingOrder()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Configure rendering order");
-    sToolTipText = QT_TR_NOOP("Reorder the items in the list to configure rendering order.");
+    sMenuText = QT_TR_NOOP("Rendering Order");
+    sToolTipText = QT_TR_NOOP("Reorders items in the rendering order");
     sWhatsThis = "Sketcher_RenderingOrder";
     sStatusTip = sToolTipText;
     eType = 0;

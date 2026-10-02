@@ -589,12 +589,12 @@ void ConstraintView::populateMenu(QMenu &menu)
 
     // This does the same as a double-click and thus it should be the first action and with bold
     // text
-    QAction* change = menu.addAction(tr("Change value"), this, &ConstraintView::modifyCurrentItem);
+    QAction* change = menu.addAction(tr("Change Value"), this, &ConstraintView::modifyCurrentItem);
     change->setEnabled(isQuantity);
     menu.setDefaultAction(change);
 
     QAction* driven =
-        menu.addAction(tr("Toggle to/from reference"), this, &ConstraintView::updateDrivingStatus);
+        menu.addAction(tr("Toggle Driving/Reference"), this, &ConstraintView::updateDrivingStatus);
     driven->setEnabled(isToggleDriving);
 
     QAction* activate = menu.addAction(
@@ -602,9 +602,9 @@ void ConstraintView::populateMenu(QMenu &menu)
     activate->setEnabled(!items.isEmpty());
 
     menu.addSeparator();
-    QAction* show = menu.addAction(tr("Show constraints"), this, &ConstraintView::showConstraints);
+    QAction* show = menu.addAction(tr("Show Constraints"), this, &ConstraintView::showConstraints);
     show->setEnabled(!items.isEmpty());
-    QAction* hide = menu.addAction(tr("Hide constraints"), this, &ConstraintView::hideConstraints);
+    QAction* hide = menu.addAction(tr("Hide Constraints"), this, &ConstraintView::hideConstraints);
     hide->setEnabled(!items.isEmpty());
 
     menu.addSeparator();
@@ -621,7 +621,7 @@ void ConstraintView::populateMenu(QMenu &menu)
     rename->setEnabled(item != nullptr);
 
     QAction* center =
-        menu.addAction(tr("Center sketch"), this, &ConstraintView::centerSelectedItems);
+        menu.addAction(tr("Center Sketch"), this, &ConstraintView::centerSelectedItems);
     center->setEnabled(item != nullptr);
 
     QAction* remove = menu.addAction(tr("Delete"), this, &ConstraintView::deleteSelectedItems);
@@ -629,7 +629,7 @@ void ConstraintView::populateMenu(QMenu &menu)
     remove->setEnabled(!items.isEmpty());
 
     QAction* swap = menu.addAction(
-        tr("Swap constraint names"), this, &ConstraintView::swapNamedOfSelectedItems);
+        tr("Swap Constraint Names"), this, &ConstraintView::swapNamedOfSelectedItems);
     swap->setEnabled(items.size() == 2);
 }
 
@@ -732,7 +732,7 @@ void ConstraintView::swapNamedOfSelectedItems()
     ss << "DummyConstraint" << rand();
     std::string tmpname = ss.str();
 
-    Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Swap constraint names"));
+    Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Swap Constraint Names"));
     Gui::cmdAppObjectArgs(
         item1->sketch, "renameConstraint(%d, u'%s')", item1->ConstraintNbr, tmpname.c_str());
     Gui::cmdAppObjectArgs(
@@ -872,8 +872,8 @@ TaskSketcherConstraints::TaskSketcherConstraints(ViewProviderSketch* sketchView)
     // FIXME there is probably a smarter way to handle this menu
     // FIXME translations aren't updated automatically at language change
     QAction* action1 = new QAction(tr("Auto constraints"), this);
-    QAction* action2 = new QAction(tr("Auto remove redundants"), this);
-    QAction* action3 = new QAction(tr("Show only filtered Constraints"), this);
+    QAction* action2 = new QAction(tr("Auto remove redundant constraints"), this);
+    QAction* action3 = new QAction(tr("Display only filtered constraints"), this);
     QAction* action4 = new QAction(tr("Extended information (in widget)"), this);
     QAction* action5 = new QAction(tr("Hide internal alignment (in widget)"), this);
 
@@ -1639,7 +1639,7 @@ void TaskSketcherConstraints::change3DViewVisibilityToTrackFilter()
                 Gui::Command::abortCommand();
 
                 Gui::TranslatedUserError(
-                    sketch, tr("Error"), tr("Impossible to update visibility tracking: "));
+                    sketch, tr("Error"), tr("Impossible to update visibility tracking:"));
 
                 return false;
             }

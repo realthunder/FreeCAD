@@ -91,7 +91,7 @@ CmdSketcherSwitchVirtualSpace::CmdSketcherSwitchVirtualSpace()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Switch virtual space");
+    sMenuText = QT_TR_NOOP("Switch Virtual Space");
     sToolTipText =
         QT_TR_NOOP("Switches the selected constraints or the view to the other virtual space");
     sWhatsThis = "Sketcher_SwitchVirtualSpace";

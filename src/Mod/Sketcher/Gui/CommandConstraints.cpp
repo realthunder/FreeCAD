@@ -1037,7 +1037,7 @@ void SketcherGui::notifyConstraintSubstitutions(const QString& message)
         QStringLiteral("NotifyConstraintSubstitutions"),
         true,// Default ParamEntry
         true,// checkbox state
-        QObject::tr("Keep notifying me of constraint substitutions"));
+        QObject::tr("Keep notifying about constraint substitutions"));
 }
 
 // returns true if successful, false otherwise
@@ -1063,7 +1063,7 @@ bool addConstraintSafely(SketchObject* obj, std::function<void()> constraintaddi
         Gui::TranslatedUserError(
             obj,
             QObject::tr("Error"),
-            QObject::tr("Unexpected error. More information may be available in the Report View."));
+            QObject::tr("Unexpected error. More information may be available in the report view."));
 
         Gui::Command::abortCommand();
 
@@ -1115,7 +1115,7 @@ int SketchSelection::setUp()
     if (selection.size() == 1) {
         // if one selectetd, only sketch allowed. should be done by activity of command
         if (!selection[0].getObject()->isDerivedFrom<Sketcher::SketchObject>()) {
-            ErrorMsg = QObject::tr("Only sketch and its support are allowed to be selected.");
+            ErrorMsg = QObject::tr("Only the sketch and its support are allowed to be selected");
             return -1;
         }
 
@@ -1126,7 +1126,7 @@ int SketchSelection::setUp()
             SketchObj = static_cast<Sketcher::SketchObject*>(selection[0].getObject());
             // check if the none sketch object is the support of the sketch
             if (selection[1].getObject() != SketchObj->AttachmentSupport.getValue()) {
-                ErrorMsg = QObject::tr("Only sketch and its support are allowed to be selected.");
+                ErrorMsg = QObject::tr("Only the sketch and its support are allowed to be selected");
                 return -1;
             }
             // assume always a Part::Feature derived object as support
@@ -1138,7 +1138,7 @@ int SketchSelection::setUp()
             SketchObj = static_cast<Sketcher::SketchObject*>(selection[1].getObject());
             // check if the none sketch object is the support of the sketch
             if (selection[0].getObject() != SketchObj->AttachmentSupport.getValue()) {
-                ErrorMsg = QObject::tr("Only sketch and its support are allowed to be selected.");
+                ErrorMsg = QObject::tr("Only the sketch and its support are allowed to be selected");
                 return -1;
             }
             // assume always a Part::Feature derived object as support
@@ -1740,7 +1740,7 @@ public:
         sAppModule = "Sketcher";
         sGroup = "Sketcher";
         sMenuText = QT_TR_NOOP("Dimension");
-        sToolTipText = QT_TR_NOOP("Dimension tools.");
+        sToolTipText = QT_TR_NOOP("Dimension tools");
         sWhatsThis = "Sketcher_CompDimensionTools";
         sStatusTip = sToolTipText;
         eType = ForEdit | NoDefaultAction;
@@ -1812,7 +1812,7 @@ public:
         sAppModule = "Sketcher";
         sGroup = "Sketcher";
         sMenuText = QT_TR_NOOP("Constrain");
-        sToolTipText = QT_TR_NOOP("Constrain tools.");
+        sToolTipText = QT_TR_NOOP("Constrain tools");
         sWhatsThis = "Sketcher_CompConstrainTools";
         sStatusTip = sToolTipText;
         eType = ForEdit | NoDefaultAction;
@@ -1841,8 +1841,8 @@ public:
     {
         sAppModule = "Sketcher";
         sGroup = "Sketcher";
-        sMenuText = QT_TR_NOOP("Toggle constraints");
-        sToolTipText = QT_TR_NOOP("Toggle constrain tools.");
+        sMenuText = QT_TR_NOOP("Toggle Constraints");
+        sToolTipText = QT_TR_NOOP("Toggle constrain tools");
         sWhatsThis = "Sketcher_CompToggleConstraints";
         sStatusTip = sToolTipText;
         eType = ForEdit | NoDefaultAction;
@@ -3665,9 +3665,7 @@ CmdSketcherDimension::CmdSketcherDimension()
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
     sMenuText = QT_TR_NOOP("Dimension");
-    sToolTipText = QT_TR_NOOP("Constrain contextually based on your selection.\n"
-        "Depending on your selection you might have several constraints available. You can cycle through them using M key.\n"
-        "Left clicking on empty space will validate the current constraint. Right clicking or pressing Esc will cancel.");
+    sToolTipText = QT_TR_NOOP("Constrains contextually based on the selection. The type can be changed with the M key.");
     sWhatsThis = "Sketcher_Dimension";
     sStatusTip = sToolTipText;
     sPixmap = "Constraint_Dimension";
@@ -3722,7 +3720,7 @@ public:
         sAppModule = "Sketcher";
         sGroup = "Sketcher";
         sMenuText = QT_TR_NOOP("Constrain horizontal/vertical");
-        sToolTipText = QT_TR_NOOP("Constrains a single line to either horizontal or vertical.");
+        sToolTipText = QT_TR_NOOP("Constrains the selected elements either horizontally or vertically");
         sWhatsThis = "Sketcher_CompHorVer";
         sStatusTip = sToolTipText;
         eType = ForEdit | NoDefaultAction;
@@ -3769,7 +3767,7 @@ bool canHorVerBlock(Sketcher::SketchObject* Obj, int geoId)
             Gui::TranslatedUserWarning(
                 Obj,
                 QObject::tr("Impossible constraint"),
-                QObject::tr("The selected edge already has a Block constraint!"));
+                QObject::tr("The selected edge already has a block constraint!"));
             return false;
         }
     }
@@ -3845,7 +3843,7 @@ void horVerActivated(CmdSketcherConstraint* cmd, std::string type)
         Gui::TranslatedUserWarning(
             Obj,
             QObject::tr("Impossible constraint"),
-            QObject::tr("The selected item(s) can't accept a horizontal or vertical constraint!"));
+            QObject::tr("The selected items cannot be constrained horizontally or vertically!"));
         return;
     }
 
@@ -4033,8 +4031,8 @@ CmdSketcherConstrainHorVer::CmdSketcherConstrainHorVer()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Constrain horizontal/vertical");
-    sToolTipText = QT_TR_NOOP("Constrains a single line to either horizontal or vertical, whichever is closer to current alignment.");
+    sMenuText = QT_TR_NOOP("Horizontal/Vertical Constraint");
+    sToolTipText = QT_TR_NOOP("Constrains the selected elements either horizontally or vertically, based on their closest alignment");
     sWhatsThis = "Sketcher_ConstrainHorVer";
     sStatusTip = sToolTipText;
     sPixmap = "Constraint_HorVer";
@@ -4079,8 +4077,8 @@ CmdSketcherConstrainHorizontal::CmdSketcherConstrainHorizontal()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Constrain horizontal");
-    sToolTipText = QT_TR_NOOP("Create a horizontal constraint on the selected item");
+    sMenuText = QT_TR_NOOP("Horizontal Constraint");
+    sToolTipText = QT_TR_NOOP("Constrains the selected elements horizontally");
     sWhatsThis = "Sketcher_ConstrainHorizontal";
     sStatusTip = sToolTipText;
     sPixmap = "Constraint_Horizontal";
@@ -4124,8 +4122,8 @@ CmdSketcherConstrainVertical::CmdSketcherConstrainVertical()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Constrain vertical");
-    sToolTipText = QT_TR_NOOP("Create a vertical constraint on the selected item");
+    sMenuText = QT_TR_NOOP("Vertical Constraint");
+    sToolTipText = QT_TR_NOOP("Constrains the selected elements vertically");
     sWhatsThis = "Sketcher_ConstrainVertical";
     sStatusTip = sToolTipText;
     sPixmap = "Constraint_Vertical";
@@ -4170,10 +4168,8 @@ CmdSketcherConstrainLock::CmdSketcherConstrainLock()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Constrain lock");
-    sToolTipText = QT_TR_NOOP("Create both a horizontal "
-                              "and a vertical distance constraint\n"
-                              "on the selected vertex");
+    sMenuText = QT_TR_NOOP("Lock Position");
+    sToolTipText = QT_TR_NOOP("Constrains the selected vertices by adding horizontal and vertical distance constraints");
     sWhatsThis = "Sketcher_ConstrainLock";
     sStatusTip = sToolTipText;
     sPixmap = "Constraint_Lock";
@@ -4457,8 +4453,8 @@ CmdSketcherConstrainBlock::CmdSketcherConstrainBlock()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Constrain block");
-    sToolTipText = QT_TR_NOOP("Block the selected edge from moving");
+    sMenuText = QT_TR_NOOP("Block Constraint");
+    sToolTipText = QT_TR_NOOP("Constrains the selected edges as fixed");
     sWhatsThis = "Sketcher_ConstrainBlock";
     sStatusTip = sToolTipText;
     sPixmap = "Constraint_Block";
@@ -4539,7 +4535,7 @@ void CmdSketcherConstrainBlock::activated(int iMsg)
             Gui::TranslatedUserWarning(
                 Obj,
                 QObject::tr("Double constraint"),
-                QObject::tr("The selected edge already has a Block constraint!"));
+                QObject::tr("The selected edge already has a block constraint!"));
             return;
         }
 
@@ -4592,7 +4588,7 @@ void CmdSketcherConstrainBlock::applyConstraint(std::vector<SelIdPair>& selSeq, 
                 Gui::TranslatedUserWarning(
                     Obj,
                     QObject::tr("Double constraint"),
-                    QObject::tr("The selected edge already has a Block constraint!"));
+                    QObject::tr("The selected edge already has a block constraint!"));
                 return;
             }
 
@@ -4661,9 +4657,8 @@ CmdSketcherConstrainCoincidentUnified::CmdSketcherConstrainCoincidentUnified(con
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Constrain coincident");
-    sToolTipText = QT_TR_NOOP("Create a coincident constraint between points, or fix a point on an edge, "
-        "or a concentric constraint between circles, arcs, and ellipses");
+    sMenuText = QT_TR_NOOP("Coincident Constraint");
+    sToolTipText = QT_TR_NOOP("Constrains the selected elements to be coincident");
     sWhatsThis = "Sketcher_ConstrainCoincidentUnified";
     sStatusTip = sToolTipText;
     sPixmap = "Constraint_Coincident";
@@ -5202,9 +5197,8 @@ CmdSketcherConstrainCoincident::CmdSketcherConstrainCoincident()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Constrain coincident");
-    sToolTipText = QT_TR_NOOP("Create a coincident constraint between points, or a concentric "
-                              "constraint between circles, arcs, and ellipses");
+    sMenuText = QT_TR_NOOP("Coincident Constraint");
+    sToolTipText = QT_TR_NOOP("Constrains the selected elements to be coincident");
     sWhatsThis = "Sketcher_ConstrainCoincident";
     sStatusTip = sToolTipText;
     sPixmap = "Constraint_PointOnPoint";
@@ -5254,8 +5248,8 @@ CmdSketcherConstrainPointOnObject::CmdSketcherConstrainPointOnObject()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Constrain point on object");
-    sToolTipText = QT_TR_NOOP("Fix a point onto an object");
+    sMenuText = QT_TR_NOOP("Point-On-Object Constraint");
+    sToolTipText = QT_TR_NOOP("Constrains the selected point onto the selected object");
     sWhatsThis = "Sketcher_ConstrainPointOnObject";
     sStatusTip = sToolTipText;
     sPixmap = "Constraint_PointOnObject";
@@ -5306,9 +5300,8 @@ CmdSketcherConstrainDistance::CmdSketcherConstrainDistance()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Constrain distance");
-    sToolTipText = QT_TR_NOOP("Fix a length of a line or the distance between a line and a vertex "
-        "or between two circles");
+    sMenuText = QT_TR_NOOP("Distance Dimension");
+    sToolTipText = QT_TR_NOOP("Constrains the vertical distance between two points, or from a point to the origin if one is selected");
     sWhatsThis = "Sketcher_ConstrainDistance";
     sStatusTip = sToolTipText;
     sPixmap = "Constraint_Length";
@@ -5486,7 +5479,7 @@ void CmdSketcherConstrainDistance::activated(int iMsg)
             Base::Vector3d d = center - pnt;
             double ActDist = std::abs(d.Length() - radius);
 
-            openCommand(QT_TRANSLATE_NOOP("Command", "Add point to circle Distance constraint"));
+            openCommand(QT_TRANSLATE_NOOP("Command", "Add point to circle distance constraint"));
             Gui::cmdAppObjectArgs(selection[0].getObject(),
                 "addConstraint(Sketcher.Constraint('Distance',%d,%d,%d,%.15g))",
                 GeoId1,
@@ -5958,9 +5951,8 @@ CmdSketcherConstrainDistanceX::CmdSketcherConstrainDistanceX()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Constrain horizontal distance");
-    sToolTipText = QT_TR_NOOP("Fix the horizontal distance "
-                              "between two points or line ends");
+    sMenuText = QT_TR_NOOP("Horizontal Dimension");
+    sToolTipText = QT_TR_NOOP("Constrains the horizontal distance between two points, or from a point to the origin if only one is selected");
     sWhatsThis = "Sketcher_ConstrainDistanceX";
     sStatusTip = sToolTipText;
     sPixmap = "Constraint_HorizontalDistance";
@@ -6262,8 +6254,8 @@ CmdSketcherConstrainDistanceY::CmdSketcherConstrainDistanceY()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Constrain vertical distance");
-    sToolTipText = QT_TR_NOOP("Fix the vertical distance between two points or line ends");
+    sMenuText = QT_TR_NOOP("Vertical Dimension");
+    sToolTipText = QT_TR_NOOP("Constrains the vertical distance between two points, or from a point to the origin if only one is selected");
     sWhatsThis = "Sketcher_ConstrainDistanceY";
     sStatusTip = sToolTipText;
     sPixmap = "Constraint_VerticalDistance";
@@ -6560,8 +6552,8 @@ CmdSketcherConstrainParallel::CmdSketcherConstrainParallel()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Constrain parallel");
-    sToolTipText = QT_TR_NOOP("Create a parallel constraint between two lines");
+    sMenuText = QT_TR_NOOP("Parallel Constraint");
+    sToolTipText = QT_TR_NOOP("Constrains the selected lines to be parallel");
     sWhatsThis = "Sketcher_ConstrainParallel";
     sStatusTip = sToolTipText;
     sPixmap = "Constraint_Parallel";
@@ -6723,8 +6715,8 @@ CmdSketcherConstrainPerpendicular::CmdSketcherConstrainPerpendicular()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Constrain perpendicular");
-    sToolTipText = QT_TR_NOOP("Create a perpendicular constraint between two lines");
+    sMenuText = QT_TR_NOOP("Perpendicular Constraint");
+    sToolTipText = QT_TR_NOOP("Constrains the selected lines to be perpendicular");
     sWhatsThis = "Sketcher_ConstrainPerpendicular";
     sStatusTip = sToolTipText;
     sPixmap = "Constraint_Perpendicular";
@@ -7488,8 +7480,8 @@ CmdSketcherConstrainTangent::CmdSketcherConstrainTangent()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Constrain tangent or collinear");
-    sToolTipText = QT_TR_NOOP("Create a tangent or collinear constraint between two entities");
+    sMenuText = QT_TR_NOOP("Tangent/Collinear Constraint");
+    sToolTipText = QT_TR_NOOP("Constrains the selected elements to be tangent or collinear");
     sWhatsThis = "Sketcher_ConstrainTangent";
     sStatusTip = sToolTipText;
     sPixmap = "Constraint_Tangent";
@@ -8371,8 +8363,8 @@ CmdSketcherConstrainRadius::CmdSketcherConstrainRadius()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Constrain radius");
-    sToolTipText = QT_TR_NOOP("Fix the radius of a circle or an arc");
+    sMenuText = QT_TR_NOOP("Radius Dimension");
+    sToolTipText = QT_TR_NOOP("Constrains the radius of the selected circle or arc");
     sWhatsThis = "Sketcher_ConstrainRadius";
     sStatusTip = sToolTipText;
     sPixmap = "Constraint_Radius";
@@ -8734,8 +8726,8 @@ CmdSketcherConstrainDiameter::CmdSketcherConstrainDiameter()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Constrain diameter");
-    sToolTipText = QT_TR_NOOP("Fix the diameter of a circle or an arc");
+    sMenuText = QT_TR_NOOP("Diameter Dimension");
+    sToolTipText = QT_TR_NOOP("Constrains the diameter of the selected circle or arc");
     sWhatsThis = "Sketcher_ConstrainDiameter";
     sStatusTip = sToolTipText;
     sPixmap = "Constraint_Diameter";
@@ -9052,9 +9044,8 @@ CmdSketcherConstrainRadiam::CmdSketcherConstrainRadiam()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Constrain auto radius/diameter");
-    sToolTipText = QT_TR_NOOP(
-        "Fix the diameter if a circle is chosen, or the radius if an arc/spline pole is chosen");
+    sMenuText = QT_TR_NOOP("Radius/Diameter Dimension");
+    sToolTipText = QT_TR_NOOP("Constrains the radius of the selected arc or the diameter of the selected circle");
     sWhatsThis = "Sketcher_ConstrainRadiam";
     sStatusTip = sToolTipText;
     sPixmap = "Constraint_Radiam";
@@ -9423,8 +9414,8 @@ CmdSketcherCompConstrainRadDia::CmdSketcherCompConstrainRadDia()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Constrain arc or circle");
-    sToolTipText = QT_TR_NOOP("Constrain an arc or a circle");
+    sMenuText = QT_TR_NOOP("Radius/Diameter Dimension");
+    sToolTipText = QT_TR_NOOP("Constrains the radius or diameter of an arc or a circle");
     sWhatsThis = "Sketcher_CompConstrainRadDia";
     sStatusTip = sToolTipText;
     sAccel = "R";
@@ -9464,8 +9455,8 @@ CmdSketcherConstrainAngle::CmdSketcherConstrainAngle()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Constrain angle");
-    sToolTipText = QT_TR_NOOP("Fix the angle of a line or the angle between two lines");
+    sMenuText = QT_TR_NOOP("Angle Dimension");
+    sToolTipText = QT_TR_NOOP("Constrains the angle between two straight lines or between one line and the X-axis of the sketch if only one is selected");
     sWhatsThis = "Sketcher_ConstrainAngle";
     sStatusTip = sToolTipText;
     sPixmap = "Constraint_InternalAngle";
@@ -9950,9 +9941,9 @@ CmdSketcherConstrainEqual::CmdSketcherConstrainEqual()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Constrain equal");
+    sMenuText = QT_TR_NOOP("Equal Constraint");
     sToolTipText =
-        QT_TR_NOOP("Create an equality constraint between two lines or between circles and arcs");
+        QT_TR_NOOP("Constrains the selected edges or circles to be equal");
     sWhatsThis = "Sketcher_ConstrainEqual";
     sStatusTip = sToolTipText;
     sPixmap = "Constraint_EqualLength";
@@ -10202,10 +10193,8 @@ CmdSketcherConstrainSymmetric::CmdSketcherConstrainSymmetric()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Constrain symmetric");
-    sToolTipText = QT_TR_NOOP("Create a symmetry constraint "
-                              "between two points, or the two ends of an element,\n"
-                              "with respect to a line or a third point");
+    sMenuText = QT_TR_NOOP("Symmetric Constraint");
+    sToolTipText = QT_TR_NOOP("Constrains the selected elements to be symmetric");
     sWhatsThis = "Sketcher_ConstrainSymmetric";
     sStatusTip = sToolTipText;
     sPixmap = "Constraint_Symmetric";
@@ -10662,10 +10651,8 @@ CmdSketcherConstrainSnellsLaw::CmdSketcherConstrainSnellsLaw()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Constrain refraction (Snell's law)");
-    sToolTipText = QT_TR_NOOP("Create a refraction law (Snell's law)"
-                              "constraint between two endpoints of rays\n"
-                              "and an edge as an interface.");
+    sMenuText = QT_TR_NOOP("Refraction Constraint");
+    sToolTipText = QT_TR_NOOP("Constrains the selected elements based on the refraction law (Snell's Law)");
     sWhatsThis = "Sketcher_ConstrainSnellsLaw";
     sStatusTip = sToolTipText;
     sPixmap = "Constraint_SnellsLaw";
@@ -10773,7 +10760,7 @@ void CmdSketcherConstrainSnellsLaw::activated(int iMsg)
     QDialog dlg(Gui::getMainWindow());
     Ui::InsertDatum ui_Datum;
     ui_Datum.setupUi(&dlg);
-    dlg.setWindowTitle(EditDatumDialog::tr("Refractive index ratio"));
+    dlg.setWindowTitle(EditDatumDialog::tr("Refractive Index Ratio"));
     ui_Datum.label->setText(EditDatumDialog::tr("Ratio n2/n1:"));
     Base::Quantity init_val;
     init_val.setUnit(Base::Unit());
@@ -10862,13 +10849,11 @@ CmdSketcherConstrainGroup::CmdSketcherConstrainGroup()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Constrain group");
+    sMenuText = QT_TR_NOOP("Group Constraint");
     sToolTipText =
-        QT_TR_NOOP("Constrains the selected geometries together as a single entity. "
-                   "The position and size of the grouped geometries are defined by "
-                   "constraining the construction line that is generated. "
-                   "Constraints applied to grouped edges are ignored while the group "
-                   "constraint is there.");
+        QT_TR_NOOP("Constrains the selected geometries together as a single entity."
+        "The position and size of the grouped geometries can be defined by constraining the construction line that is generated."
+        "Constraints applied to grouped edges are ignored as long as the Group constraint is here.");
     sWhatsThis = "Sketcher_ConstrainGroup";
     sStatusTip = sToolTipText;
     sPixmap = "Constraint_Group";
@@ -11090,8 +11075,8 @@ CmdSketcherChangeDimensionConstraint::CmdSketcherChangeDimensionConstraint()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Change value");
-    sToolTipText = QT_TR_NOOP("Change the value of a dimensional constraint");
+    sMenuText = QT_TR_NOOP("Edit Value");
+    sToolTipText = QT_TR_NOOP("Edits the value of a dimensional constraint");
     sWhatsThis = "Sketcher_ChangeDimensionConstraint";
     sStatusTip = sToolTipText;
     eType = ForEdit;
@@ -11144,10 +11129,8 @@ CmdSketcherToggleDrivingConstraint::CmdSketcherToggleDrivingConstraint()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Toggle driving/reference constraint");
-    sToolTipText = QT_TR_NOOP("Set the toolbar, "
-                              "or the selected constraints,\n"
-                              "into driving or reference mode");
+    sMenuText = QT_TR_NOOP("Toggle Driving/Reference Constraints");
+    sToolTipText = QT_TR_NOOP("Toggles between driving and reference mode of the selected constraints and commands");
     sWhatsThis = "Sketcher_ToggleDrivingConstraint";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_ToggleConstraint";
@@ -11301,9 +11284,8 @@ CmdSketcherToggleActiveConstraint::CmdSketcherToggleActiveConstraint()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Activate/deactivate constraint");
-    sToolTipText = QT_TR_NOOP("Activates or deactivates "
-                              "the selected constraints");
+    sMenuText = QT_TR_NOOP("Toggle Constraints");
+    sToolTipText = QT_TR_NOOP("Toggles the state of the selected constraints");
     sWhatsThis = "Sketcher_ToggleActiveConstraint";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_ToggleActiveConstraint";

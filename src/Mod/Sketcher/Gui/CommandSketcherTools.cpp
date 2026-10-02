@@ -249,8 +249,8 @@ CmdSketcherCopyClipboard::CmdSketcherCopyClipboard()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("C&opy in sketcher");
-    sToolTipText = QT_TR_NOOP("Copy selected geometries and constraints to the clipboard");
+    sMenuText = QT_TR_NOOP("C&opy Elements");
+    sToolTipText = QT_TR_NOOP("Copies the selected geometries and constraints to the clipboard");
     sWhatsThis = "Sketcher_CopyClipboard";
     sStatusTip = sToolTipText;
     sPixmap = "edit-copy";
@@ -280,8 +280,8 @@ CmdSketcherCut::CmdSketcherCut()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("C&ut in sketcher");
-    sToolTipText = QT_TR_NOOP("Cut selected geometries and constraints to the clipboard");
+    sMenuText = QT_TR_NOOP("C&ut Elements");
+    sToolTipText = QT_TR_NOOP("Cuts the selected geometries and constraints to the clipboard");
     sWhatsThis = "Sketcher_Cut";
     sStatusTip = sToolTipText;
     sPixmap = "edit-cut";
@@ -320,8 +320,8 @@ CmdSketcherPaste::CmdSketcherPaste()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("P&aste in sketcher");
-    sToolTipText = QT_TR_NOOP("Paste selected geometries and constraints from the clipboard");
+    sMenuText = QT_TR_NOOP("P&aste Elements");
+    sToolTipText = QT_TR_NOOP("Pastes the geometries and constraints from the clipboard into the sketch");
     sWhatsThis = "Sketcher_Paste";
     sStatusTip = sToolTipText;
     sPixmap = "edit-paste";
@@ -368,9 +368,9 @@ CmdSketcherSelectConstraints::CmdSketcherSelectConstraints()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Select associated constraints");
+    sMenuText = QT_TR_NOOP("Select Associated Constraints");
     sToolTipText =
-        QT_TR_NOOP("Select the constraints associated with the selected geometrical elements");
+        QT_TR_NOOP("Selects the constraints associated with the selected geometrical elements");
     sWhatsThis = "Sketcher_SelectConstraints";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_SelectConstraints";
@@ -434,8 +434,8 @@ CmdSketcherSelectOrigin::CmdSketcherSelectOrigin()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Select origin");
-    sToolTipText = QT_TR_NOOP("Select the local origin point of the sketch");
+    sMenuText = QT_TR_NOOP("Select Origin");
+    sToolTipText = QT_TR_NOOP("Selects the local origin point of the sketch");
     sWhatsThis = "Sketcher_SelectOrigin";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_SelectOrigin";
@@ -478,8 +478,8 @@ CmdSketcherSelectVerticalAxis::CmdSketcherSelectVerticalAxis()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Select vertical axis");
-    sToolTipText = QT_TR_NOOP("Select the local vertical axis of the sketch");
+    sMenuText = QT_TR_NOOP("Select Vertical Axis");
+    sToolTipText = QT_TR_NOOP("Selects the local vertical axis of the sketch");
     sWhatsThis = "Sketcher_SelectVerticalAxis";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_SelectVerticalAxis";
@@ -519,8 +519,8 @@ CmdSketcherSelectHorizontalAxis::CmdSketcherSelectHorizontalAxis()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Select horizontal axis");
-    sToolTipText = QT_TR_NOOP("Select the local horizontal axis of the sketch");
+    sMenuText = QT_TR_NOOP("Select Horizontal Axis");
+    sToolTipText = QT_TR_NOOP("Selects the local horizontal axis of the sketch");
     sWhatsThis = "Sketcher_SelectHorizontalAxis";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_SelectHorizontalAxis";
@@ -559,8 +559,8 @@ CmdSketcherSelectRedundantConstraints::CmdSketcherSelectRedundantConstraints()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Select redundant constraints");
-    sToolTipText = QT_TR_NOOP("Select redundant constraints");
+    sMenuText = QT_TR_NOOP("Select Redundant Constraints");
+    sToolTipText = QT_TR_NOOP("Selects all redundant constraints");
     sWhatsThis = "Sketcher_SelectRedundantConstraints";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_SelectRedundantConstraints";
@@ -617,8 +617,8 @@ CmdSketcherSelectMalformedConstraints::CmdSketcherSelectMalformedConstraints()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Select malformed constraints");
-    sToolTipText = QT_TR_NOOP("Select malformed constraints");
+    sMenuText = QT_TR_NOOP("Select Malformed Constraints");
+    sToolTipText = QT_TR_NOOP("Selects all malformed constraints");
     sWhatsThis = "Sketcher_SelectMalformedConstraints";
     sStatusTip = sToolTipText;
     eType = ForEdit;
@@ -672,8 +672,8 @@ CmdSketcherSelectPartiallyRedundantConstraints::CmdSketcherSelectPartiallyRedund
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Select partially redundant constraints");
-    sToolTipText = QT_TR_NOOP("Select partially redundant constraints");
+    sMenuText = QT_TR_NOOP("Select Partially Redundant Constraints");
+    sToolTipText = QT_TR_NOOP("Selects all partially redundant constraints");
     sWhatsThis = "Sketcher_SelectPartiallyRedundantConstraints";
     sStatusTip = sToolTipText;
     eType = ForEdit;
@@ -728,8 +728,8 @@ CmdSketcherSelectConflictingConstraints::CmdSketcherSelectConflictingConstraints
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Select conflicting constraints");
-    sToolTipText = QT_TR_NOOP("Select conflicting constraints");
+    sMenuText = QT_TR_NOOP("Select Conflicting Constraints");
+    sToolTipText = QT_TR_NOOP("Selects all conflicting constraints");
     sWhatsThis = "Sketcher_SelectConflictingConstraints";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_SelectConflictingConstraints";
@@ -786,9 +786,9 @@ CmdSketcherSelectElementsAssociatedWithConstraints::
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Select associated geometry");
+    sMenuText = QT_TR_NOOP("Select Associated Geometry");
     sToolTipText =
-        QT_TR_NOOP("Select the geometrical elements associated with the selected constraints");
+        QT_TR_NOOP("Selects the geometrical elements associated with the selected constraints");
     sWhatsThis = "Sketcher_SelectElementsAssociatedWithConstraints";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_SelectElementsAssociatedWithConstraints";
@@ -915,9 +915,9 @@ CmdSketcherSelectElementsWithDoFs::CmdSketcherSelectElementsWithDoFs()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Select under-constrained elements");
-    sToolTipText = QT_TR_NOOP("Select geometrical elements where the solver still detects "
-                              "unconstrained degrees of freedom.");
+    sMenuText = QT_TR_NOOP("Select Under-Constrained Elements");
+    sToolTipText = QT_TR_NOOP("Selects geometrical elements where the solver still detects "
+                              "unconstrained degrees of freedom");
     sWhatsThis = "Sketcher_SelectElementsWithDoFs";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_SelectElementsWithDoFs";
@@ -1004,8 +1004,8 @@ CmdSketcherRestoreInternalAlignmentGeometry::CmdSketcherRestoreInternalAlignment
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Show/hide internal geometry");
-    sToolTipText = QT_TR_NOOP("Show all internal geometry or hide unused internal geometry");
+    sMenuText = QT_TR_NOOP("Toggle Internal Geometry");
+    sToolTipText = QT_TR_NOOP("Toggles the visibility of all internal geometry");
     sWhatsThis = "Sketcher_RestoreInternalAlignmentGeometry";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_Element_Ellipse_All";
@@ -1119,9 +1119,9 @@ CmdSketcherSymmetry::CmdSketcherSymmetry()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Symmetry");
+    sMenuText = QT_TR_NOOP("Mirror");
     sToolTipText =
-        QT_TR_NOOP("Creates symmetric of selected geometry. After starting the tool select the reference line or point.");
+        QT_TR_NOOP("Creates a mirrored copy of the selected geometry");
     sWhatsThis = "Sketcher_Symmetry";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_Symmetry";
@@ -1852,7 +1852,7 @@ CmdSketcherRectangularArray::CmdSketcherRectangularArray()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Rectangular array");
+    sMenuText = QT_TR_NOOP("Rectangular Array");
     sToolTipText = QT_TR_NOOP("Creates a rectangular array pattern of the geometry taking as "
                               "reference the last selected point");
     sWhatsThis = "Sketcher_RectangularArray";
@@ -2005,8 +2005,8 @@ CmdSketcherDeleteAllGeometry::CmdSketcherDeleteAllGeometry()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Delete all geometry");
-    sToolTipText = QT_TR_NOOP("Delete all geometry and constraints in the current sketch, "
+    sMenuText = QT_TR_NOOP("Delete All Geometry");
+    sToolTipText = QT_TR_NOOP("Deletes all geometry and their constraints in the current sketch, "
                               "with the exception of external geometry");
     sWhatsThis = "Sketcher_DeleteAllGeometry";
     sStatusTip = sToolTipText;
@@ -2022,7 +2022,7 @@ void CmdSketcherDeleteAllGeometry::activated(int iMsg)
     int ret = QMessageBox::question(
         Gui::getMainWindow(),
         QObject::tr("Delete All Geometry"),
-        QObject::tr("Are you really sure you want to delete all geometry and constraints?"),
+        QObject::tr("Delete all geometry and constraints?"),
         QMessageBox::Yes,
         QMessageBox::Cancel);
     // use an equality constraint
@@ -2071,7 +2071,7 @@ CmdSketcherDeleteAllConstraints::CmdSketcherDeleteAllConstraints()
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
     sMenuText = QT_TR_NOOP("Delete all constraints");
-    sToolTipText = QT_TR_NOOP("Delete all constraints in the sketch");
+    sToolTipText = QT_TR_NOOP("Deletes all constraints in the sketch");
     sWhatsThis = "Sketcher_DeleteAllConstraints";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_DeleteConstraints";
@@ -2085,7 +2085,7 @@ void CmdSketcherDeleteAllConstraints::activated(int iMsg)
 
     int ret = QMessageBox::question(
         Gui::getMainWindow(),
-        QObject::tr("Delete All Constraints"),
+        QObject::tr("Delete all constraints"),
         QObject::tr("Are you really sure you want to delete all the constraints?"),
         QMessageBox::Yes,
         QMessageBox::Cancel);
@@ -2095,7 +2095,7 @@ void CmdSketcherDeleteAllConstraints::activated(int iMsg)
         Sketcher::SketchObject* Obj = getSketchObject();
 
         try {
-            Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Delete All Constraints"));
+            Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Delete all constraints"));
             Gui::cmdAppObjectArgs(Obj, "deleteAllConstraints()");
             Gui::Command::commitCommand();
         }
@@ -2424,8 +2424,8 @@ CmdSketcherRemoveAxesAlignment::CmdSketcherRemoveAxesAlignment()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Remove axes alignment");
-    sToolTipText = QT_TR_NOOP("Modifies constraints to remove axes alignment while trying to "
+    sMenuText = QT_TR_NOOP("Remove Axes Alignment");
+    sToolTipText = QT_TR_NOOP("Modifies the constraints to remove axes alignment while trying to "
                               "preserve the constraint relationship of the selection");
     sWhatsThis = "Sketcher_RemoveAxesAlignment";
     sStatusTip = sToolTipText;
@@ -2544,8 +2544,8 @@ CmdSketcherOffset::CmdSketcherOffset()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Offset geometry");
-    sToolTipText = QT_TR_NOOP("Offset selected geometries. A positive offset length makes the offset go outward, a negative length inward.");
+    sMenuText = QT_TR_NOOP("Offset");
+    sToolTipText = QT_TR_NOOP("Adds an equidistant closed contour around selected geometry: positive values offset outward, negative values inward");
     sWhatsThis = "Sketcher_Offset";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_Offset";
@@ -2627,8 +2627,8 @@ CmdSketcherRotate::CmdSketcherRotate()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Rotate / Polar transform");
-    sToolTipText = QT_TR_NOOP("Rotate selected geometries, making n copies, enable creation of circular patterns.");
+    sMenuText = QT_TR_NOOP("Rotate / Polar Transform");
+    sToolTipText = QT_TR_NOOP("Rotates the selected geometry by creating 'n' copies, enabling circular pattern creation");
     sWhatsThis = "Sketcher_Rotate";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_Rotate";
@@ -2661,8 +2661,8 @@ CmdSketcherScale::CmdSketcherScale()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Scale transform");
-    sToolTipText = QT_TR_NOOP("Scale selected geometries. After selecting the center point you can either enter the scale factor, or select two reference points then scale factor = length(p2-center) / length(p1-center).");
+    sMenuText = QT_TR_NOOP("Scale");
+    sToolTipText = QT_TR_NOOP("Scales the selected geometries");
     sWhatsThis = "Sketcher_Scale";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_Scale";
@@ -2695,8 +2695,8 @@ CmdSketcherTranslate::CmdSketcherTranslate()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Move / Array transform");
-    sToolTipText = QT_TR_NOOP("Translate selected geometries. Enable creation of i * j copies.");
+    sMenuText = QT_TR_NOOP("Move / Array Transform");
+    sToolTipText = QT_TR_NOOP("Translates the selected geometries and enables the creation of 'i' * 'j' copies");
     sWhatsThis = "Sketcher_Translate";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_Translate";

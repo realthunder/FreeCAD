@@ -8999,7 +8999,7 @@ void ViewProviderSketch::reattach(App::DocumentObject *obj)
 void ViewProviderSketch::setupContextMenu(QMenu *menu, QObject *receiver, const char *member)
 {
     Gui::ActionFunction* func = new Gui::ActionFunction(menu);
-    QAction *act = menu->addAction(tr("Edit sketch"), receiver, member);
+    QAction *act = menu->addAction(tr("Edit Sketch"), receiver, member);
     func->trigger(act, std::bind(&ViewProviderSketch::doubleClicked, this));
 
     inherited::setupContextMenu(menu, receiver, member);
@@ -9024,8 +9024,8 @@ bool ViewProviderSketch::setEdit(int ModNum)
     if (!sketch->evaluateConstraints()) {
         QMessageBox box(Gui::getMainWindow());
         box.setIcon(QMessageBox::Critical);
-        box.setWindowTitle(tr("Invalid sketch"));
-        box.setText(tr("Do you want to open the sketch validation tool?"));
+        box.setWindowTitle(tr("Invalid Sketch"));
+        box.setText(tr("Open the sketch validation tool?"));
         box.setInformativeText(tr("The sketch is invalid and cannot be edited."));
         box.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
         box.setDefaultButton(QMessageBox::Yes);
@@ -9180,15 +9180,15 @@ bool ViewProviderSketch::setEdit(int ModNum)
 
 QString ViewProviderSketch::appendConflictMsg(const std::vector<int> &conflicting)
 {
-    return appendConstraintMsg(tr("Please remove the following constraint:"),
-                        tr("Please remove at least one of the following constraints:"),
+    return appendConstraintMsg(tr("Remove the following constraint:"),
+                        tr("Remove at least one of the following constraints:"),
                         conflicting);
 }
 
 QString ViewProviderSketch::appendRedundantMsg(const std::vector<int> &redundant)
 {
-    return appendConstraintMsg(tr("Please remove the following redundant constraint:"),
-                        tr("Please remove the following redundant constraints:"),
+    return appendConstraintMsg(tr("Remove the following redundant constraint:"),
+                        tr("Remove the following redundant constraints:"),
                         redundant);
 }
 
@@ -9201,8 +9201,8 @@ QString ViewProviderSketch::appendPartiallyRedundantMsg(const std::vector<int> &
 
 QString ViewProviderSketch::appendMalformedMsg(const std::vector<int> &malformed)
 {
-    return appendConstraintMsg(tr("Please remove the following malformed constraint:"),
-                        tr("Please remove the following malformed constraints:"),
+    return appendConstraintMsg(tr("Remove the following malformed constraint:"),
+                        tr("Remove the following malformed constraints:"),
                         malformed);
 }
 
