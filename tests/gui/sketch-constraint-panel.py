@@ -7,7 +7,9 @@ A sketch with six constraints, two of them named ("Width", a distance, and
 "Upright", a vertical), edited; the panel's list and its filter list are
 read as widgets.
 
-  - no filter, and the filter on with every entry checked: all six listed;
+  - no filter, and the filter on with every entry checked: all six listed,
+    a named one by its name and the others by number and type, "1-Horizontal"
+    (upstream 54d235f8a5; they were "Constraint1");
   - the filter on with nothing checked: none;
   - with "Named" alone checked: the two named ones. Before, the entry did
     nothing of its own -- a named constraint was listed only if its type
@@ -121,8 +123,8 @@ def probe(sk):
     def shown():
         return [lw.item(r).text() for r in range(lw.count()) if not lw.item(r).isHidden()]
 
-    everything = ["Constraint1", "Constraint2", "Width (10 mm)", "Upright",
-                  "Constraint5 (2 mm)", "Constraint6 (8 mm)"]
+    everything = ["1-Horizontal", "2-Coincident", "Width (10 mm)", "Upright",
+                  "5-Radius (2 mm)", "6-Distance (8 mm)"]
     check("no filter: all six", shown() == everything, shown())
     box.setChecked(True)
     settle()
@@ -183,7 +185,7 @@ def probe(sk):
           (names()[4], lw.item(4).data(QtCore.Qt.EditRole)))
     typed(2, "")
     check("an emptied row takes the name away",
-          names()[2] == "" and lw.item(2).text() == "Constraint3 (10 mm)",
+          names()[2] == "" and lw.item(2).text() == "3-Distance (10 mm)",
           (names()[2], lw.item(2).text()))
     typed(3, "  ")
     check("and so do blanks", names()[3] == "", names()[3])
@@ -264,12 +266,12 @@ def probe(sk):
     FreeCADGui.Selection.addSelection(sk, "Edge1")
     settle()
     check("the first line selected: the three constraints on it",
-          shown() == ["Base_1", "Constraint2", "Width (10 mm)"], shown())
+          shown() == ["Base_1", "2-Coincident", "Width (10 mm)"], shown())
     FreeCADGui.Selection.addSelection(sk, "Edge2")
     settle()
     check("the second line too: its own are added",
-          shown() == ["Base_1", "Constraint2", "Width (10 mm)", "Upright",
-                      "Constraint6 (8 mm)"], shown())
+          shown() == ["Base_1", "2-Coincident", "Width (10 mm)", "Upright",
+                      "6-Distance (8 mm)"], shown())
     FreeCADGui.Selection.clearSelection()
     settle()
     check("the selection cleared: none again", shown() == [], shown())
@@ -281,7 +283,7 @@ def probe(sk):
     FreeCADGui.Selection.addSelection(sk, "Constraint2")
     settle()
     check("selected: the constraint selected is the one listed",
-          shown() == ["Constraint2"], shown())
+          shown() == ["2-Coincident"], shown())
     FreeCADGui.Selection.clearSelection()
     entry("Selected constraints").setCheckState(QtCore.Qt.Unchecked)
     box.setChecked(False)
