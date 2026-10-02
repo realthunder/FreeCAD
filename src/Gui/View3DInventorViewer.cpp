@@ -610,6 +610,11 @@ struct View3DInventorViewer::Private
     // scene to it (exactly one cell of a canvas may).
     bool adoptedRenderer = false;
     bool feedsRenderer = false;
+    // Consecutive frames whose one-shot dump was held because the scene
+    // graph had changed since the last publish (renderScene). Bounded:
+    // a scene graph that changes every frame would otherwise hold a
+    // capture until pumpFrameDump gives up.
+    int staleSceneHolds = 0;
 
     // Overlay captures (raw-GL overlay Coin-ification): mirror the
     // foreground superimposition and the corner axis cross to the
@@ -6467,9 +6472,21 @@ void View3DInventorViewer::renderScene()
         // follow-up publish is scheduled below, after this frame), the
         // scene it holds is partial, and a one-shot dump must not be
         // consumed by this frame: say so before it runs.
+        // Nor if the scene graph changed since that traversal: the
+        // backend runs before this frame's traversal publishes, so an
+        // object added just before the capture -- a script adding one and
+        // saving the image -- would be missing from the dump. The cache
+        // is current when its root id is the scene root's own.
         if (selectionRoot) {
             if (auto manager = selectionRoot->getRenderManager()) {
-                if (manager->getDeferredCaptureCount() > 0)
+                bool holdStale = false;
+                if (manager->getSceneNodeId() == selectionRoot->getNodeId())
+                    _pimpl->staleSceneHolds = 0;
+                else if (_pimpl->staleSceneHolds < 3) {
+                    ++_pimpl->staleSceneHolds;
+                    holdStale = true;
+                }
+                if (manager->getDeferredCaptureCount() > 0 || holdStale)
                     _pimpl->renderer->holdFrameDump();
             }
         }
