@@ -5694,6 +5694,7 @@ void ViewProviderSketch::OnChange(Base::Subject<const char*> &rCaller, const cha
         "EditSketcherFontSize",
         "ConstraintIconLabelsPerLine",
         "ConstraintIconLabelLines",
+        "ConstraintSymbolSize",
         "EditedEdgeColor",
         "ConstructionColor",
         "InternalAlignedGeoColor",
@@ -5904,7 +5905,11 @@ void ViewProviderSketch::initParams()
         if (dpi <= 0.0)
             dpi = 96.0;
         edit->labelFontSize = std::lround(sketcherfontSize * dpr * 72.0 / dpi);
-        edit->constraintIconSize = std::lround(0.8 * sketcherfontSize * dpr);
+        // A constraint symbol has a size of its own (upstream eef738b312,
+        // dc22fb4b9b): the application font's height until it is set. It
+        // was 0.8 of the label font's size and followed that.
+        long symbolSize = hGrp->GetInt("ConstraintSymbolSize", defaultFontSizePixels);
+        edit->constraintIconSize = std::lround(std::max(6L, symbolSize) * dpr);
         edit->iconLabelsPerLine = std::max(1L, hGrp->GetInt("ConstraintIconLabelsPerLine", 10));
         edit->iconLabelLines = std::max(1L, hGrp->GetInt("ConstraintIconLabelLines", 3));
 

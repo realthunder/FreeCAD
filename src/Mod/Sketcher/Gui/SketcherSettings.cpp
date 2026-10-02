@@ -22,6 +22,7 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
+#include <QApplication>
 #include <QMessageBox>
 #include <QPainter>
 #include <QPixmap>
@@ -545,6 +546,7 @@ void SketcherSettingsDisplay::saveSettings()
     ui->ConstraintIconLabelsPerLine->onSave();
     ui->ConstraintIconLabelLines->onSave();
     ui->ElementIconSize->onSave();
+    ui->ConstraintSymbolSize->onSave();
     ui->viewScalingFactor->onSave();
     ui->SegmentsPerGeometry->onSave();
     ui->dialogOnDistanceConstraint->onSave();
@@ -573,6 +575,10 @@ void SketcherSettingsDisplay::loadSettings()
     ui->ConstraintIconLabelsPerLine->onRestore();
     ui->ConstraintIconLabelLines->onRestore();
     ui->ElementIconSize->onRestore();
+    // Unset, a symbol is as high as the application font: show that, not
+    // the number the form was drawn with
+    ui->ConstraintSymbolSize->setValue(QApplication::fontMetrics().height());
+    ui->ConstraintSymbolSize->onRestore();
     ui->viewScalingFactor->onRestore();
     ui->SegmentsPerGeometry->onRestore();
     ui->dialogOnDistanceConstraint->onRestore();
