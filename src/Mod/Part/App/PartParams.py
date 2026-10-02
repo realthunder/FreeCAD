@@ -88,6 +88,17 @@ Params = [
         "surface the face carries -- so this is sound only where the geometry is\n"
         "shared too, and it is off wherever DedupCrossFileGeometry is."),
     ParamUInt("LoftMaxDegree", 5),
+    ParamFloat("FilletPlateG0Fallback", 1e-3,
+        "How far a fillet's corner plate may miss its boundary while held tangent\n"
+        "to the fillets it joins. A corner where more than three faces meet is\n"
+        "filled by a patch kept tangent to the fillets; where a fillet's end\n"
+        "meets a face at a sharp angle the patch folds to stay tangent, misses\n"
+        "its boundary, and the corner's edges carry the miss as their tolerance.\n"
+        "A patch missing it by more than this is built again on positions alone\n"
+        "and kept if it fits better: a crease along the fillet instead of a fold.\n"
+        "0 keeps every tangent patch. Only with the OCCT fork, which has the\n"
+        "setting; another OCCT ignores it.",
+        on_change=True),
     ParamBool("ImmutableShapeValues", "Part::initOCCTExtension() >= 2",
         "Freeze a shape property's value when it is set: every TShape gets the\n"
         "OCCT fork's Immutable flag, so a later edit of its geometry, tolerance\n"
