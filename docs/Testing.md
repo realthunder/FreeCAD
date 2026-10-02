@@ -825,6 +825,34 @@ file, and quits.  14 tests, 30 s (11 until
 TechDraw change in `docs/TopoNamingEnhance.md` section 8 is measured
 against.
 
+**Three things learnt the hard way (2026-10-02), each from a failure that
+showed only in a full run.**
+
+- *A GUI test that runs into its time limit with every check so far passed
+  is a modal dialog until shown otherwise.* `GuiSketchUndoDuringDrag` hung
+  for its 300 s in one full run: `gdb -p` on the FreeCAD process (the pid
+  whose `/proc/PID/comm` is `FreeCAD`; `timeout` and `xvfb-run` carry the
+  same command line) showed `QDialog::exec` under
+  `ViewProviderSketch::editDoubleClicked`. The sketch told a double click by
+  the wall clock, which WSL2 steps back by about a second every half minute,
+  so the test's second press on a label, seconds after its first, opened the
+  datum dialog. Fixed in the product (`15ef4145c4`, the steady clock, as
+  `e35e9990b4` had done for the view's own clicks). To catch a rare one:
+  loop the test in a directory of its own beside `ctest -j6` and attach on a
+  stall -- it stalled twice in about 25 runs that way, and not in 45 after.
+- *A test keeps its configuration between runs.* `gui-test.sh` isolates a
+  test in `<outdir>/.iso`, and ctest reuses the directory, so a preference a
+  test leaves set is there at its next start. `sketch-constraint-panel.py`
+  left the constraint filter at "Named" and failed its first check the
+  second time. A test that changes a preference clears it before it begins
+  and when it ends.
+- *A synthetic click needs a mouse move with nothing between it and the
+  press.* A redraw forgets what is under a pointer that does not move; with
+  a wait between the last move and the press, a redraw that came due under
+  load left the click with nothing to pick (2 in 45 runs of
+  `sketch-constraint-external-pick.py` beside the whole suite, none in 21
+  since its helper sends a move right before the press and the release).
+
 ### Toolbar paints threw on macOS 12
 
 **Found 2026-09-07 by the echo test's log, fixed the same day** --
