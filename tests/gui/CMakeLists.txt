@@ -848,3 +848,12 @@ fc_add_gui_test(GuiPickEdgeInFace_tests_run
 fc_add_gui_test(GuiSketchConstraintExternalPick_tests_run
                 sketch-constraint-external-pick.py
                 --timeout 180)
+
+# The same from a browser, in a session the desktop began and in one the
+# client began: a constraint command is not on the browser's command list,
+# so the desktop starts it; the client's Sketcher_External switches outside
+# picking on the running tool, and its clicks, picked in its own mirror,
+# make the reference and the constraint in one undo step.
+fc_add_gui_test(GuiServeConstraintExternalPick_tests_run
+                serve-constraint-external-pick.py
+                --timeout 240)
