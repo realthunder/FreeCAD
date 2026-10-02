@@ -2903,7 +2903,12 @@ SoFCRenderCache::buildHighlightCache(SbFCMap<int, VertexCachePtr> &sharedcache,
           material.emissives.reset();
         }
         uint32_t c = material.diffuse;
-        material.diffuse = color | (material.diffuse & 0xff);
+        // A highlighted face keeps its transparency. A highlighted line or
+        // point is drawn opaque: with its own transparency (a sketch's
+        // axes have one) the highlight colour would be mixed with what is
+        // behind it, and be no colour anybody set.
+        uint32_t keptalpha = material.type == Material::Triangle ? (material.diffuse & 0xff) : 0xff;
+        material.diffuse = color | keptalpha;
         makeDistinctColor(material.diffuse, material.diffuse, c);
         material.pervertexcolor = false;
       }
