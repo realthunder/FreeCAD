@@ -1,6 +1,7 @@
-"""The constraints panel: the Named filter, renaming by double click, and
-what a constraint may be named (upstream 67f8852697, 2d5d8ab86c, 766ee41b55,
-c0d47c5ecd).
+"""The constraints panel: the Named filter, renaming by double click, what a
+constraint may be named, and showing only the filtered constraints (upstream
+67f8852697, 2d5d8ab86c, 766ee41b55, c0d47c5ecd, 9cd3b31067, 46ec53f4da and
+its follow-ups).
 
 A sketch with six constraints, two of them named ("Width", a distance, and
 "Upright", a vertical), edited; the panel's list and its filter list are
@@ -20,7 +21,22 @@ read as widgets.
     what it had, the row's edit text with it. Before, each was taken, two
     blanks as well;
   - an emptied row takes the name away. Before, it did nothing;
-  - a name another constraint has is refused.
+  - a name another constraint has is refused;
+  - a rename leaves one undo step. Before, three: any change of a row also
+    wrote the constraint's virtual space, changed or not.
+
+  "Show only filtered constraints" (Mod/Sketcher/VisualisationTrackingFilter):
+
+  - with it on and "Named" alone checked, the unnamed constraints are not
+    drawn (the edit scene's switch per constraint is off for them, and
+    each has its own visibility off), the list shows the named ones, no
+    constraint has changed its virtual space and no undo step was made.
+    Before, the unnamed were MOVED into the other virtual space, with undo
+    steps, and neither the scene nor the list followed;
+  - the option switched off, all six are drawn again. Before, they stayed
+    where the option had moved them;
+  - switched on again they go, and the filter box unchecked brings them
+    back.
 """
 import os
 import time
@@ -63,6 +79,7 @@ def run():
             "ShowNaviCube", False)
         FreeCADGui.getMainWindow().showMaximized()
         doc = FreeCAD.newDocument(DOC)
+        doc.UndoMode = 1
         sk = doc.addObject("Sketcher::SketchObject", "Sketch")
         sk.addGeometry(Part.LineSegment(V(0, 0, 0), V(10, 0, 0)), False)
         sk.addGeometry(Part.LineSegment(V(10, 0, 0), V(10, 8, 0)), False)
@@ -147,9 +164,12 @@ def probe(sk):
         check("%r is refused as a name" % text,
               names()[0] == "" and lw.item(0).data(QtCore.Qt.EditRole) == "",
               (names()[0], lw.item(0).data(QtCore.Qt.EditRole)))
+    undo0 = sk.Document.UndoCount
     typed(0, "Base_1")
     check("'Base_1' is taken", names()[0] == "Base_1" and lw.item(0).text() == "Base_1",
           (names()[0], lw.item(0).text()))
+    check("in one undo step", sk.Document.UndoCount == undo0 + 1,
+          (undo0, sk.Document.UndoCount, sk.Document.UndoNames[:3]))
     typed(4, "Base_1")
     check("a name another constraint has is refused",
           names()[4] == "" and lw.item(4).data(QtCore.Qt.EditRole) == "",
@@ -160,10 +180,73 @@ def probe(sk):
           (names()[2], lw.item(2).text()))
     typed(3, "  ")
     check("and so do blanks", names()[3] == "", names()[3])
+    typed(2, "Width")
+    typed(3, "Upright")
+
+    # -- show only the filtered constraints -----------------------------
+    from pivy import coin
+
+    view = FreeCADGui.getDocument(DOC).activeView()
+    setting = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Sketcher")
+
+    def drawn():
+        """The edit scene's switch of each constraint, "1" where it is on."""
+        sa = coin.SoSearchAction()
+        sa.setType(coin.SoType.fromName("SmSwitchboard"))
+        sa.setInterest(coin.SoSearchAction.ALL)
+        sa.setSearchingAll(True)
+        sa.apply(view.getAuxSceneGraph())
+        res = []
+        for i in range(sa.getPaths().getLength()):
+            enable = sa.getPaths()[i].getTail().getField("enable")
+            res.append("".join(str(int(v)) for v in enable.getValues(0)) if enable.getNum() else "")
+        return res
+
+    def flags():
+        return ("".join(str(int(c.InVirtualSpace)) for c in sk.Constraints),
+                "".join("0" if 'IsVisible="0"' in c.Content else "1" for c in sk.Constraints))
+
+    def track(on):
+        setting.SetBool("VisualisationTrackingFilter", on)
+        settle(0.5)
+
+    undo0 = sk.Document.UndoCount
+    check("to begin with all six are drawn",
+          drawn() == ["111111"] and flags() == ("000000", "111111"), (drawn(), flags()))
+    track(True)
+    check("the option on, no filter: still all six", drawn() == ["111111"], drawn())
+    box.setChecked(True)
+    settle()
+    for r in range(fl.count()):
+        fl.item(r).setCheckState(QtCore.Qt.Unchecked)
+    settle()
+    fl.item(named[0]).setCheckState(QtCore.Qt.Checked)
+    settle(0.5)
+    # (three are named by now: the first was named "Base_1" above)
+    check("Named alone: only the three named constraints are drawn",
+          drawn() == ["101100"], drawn())
+    check("by their own visibility, no constraint's virtual space changed",
+          flags() == ("000000", "101100"), flags())
+    check("the list shows the three",
+          shown() == ["Base_1", "Width (10 mm)", "Upright"], shown())
+    check("and no undo step was made", sk.Document.UndoCount == undo0,
+          (undo0, sk.Document.UndoCount, sk.Document.UndoNames[:3]))
+    track(False)
+    check("the option off: all six are drawn again",
+          drawn() == ["111111"] and flags() == ("000000", "111111"), (drawn(), flags()))
+    track(True)
+    check("on again: the three unnamed go", drawn() == ["101100"], drawn())
+    box.setChecked(False)
+    settle(0.5)
+    check("the filter box unchecked: all six are back",
+          drawn() == ["111111"] and flags() == ("000000", "111111"), (drawn(), flags()))
+    track(False)
 
 
 def finish():
     try:
+        FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Sketcher").SetBool(
+            "VisualisationTrackingFilter", False)
         gdoc = FreeCADGui.getDocument(DOC)
         if gdoc.getInEdit():
             gdoc.resetEdit()

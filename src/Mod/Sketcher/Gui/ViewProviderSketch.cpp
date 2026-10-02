@@ -5192,7 +5192,8 @@ void ViewProviderSketch::drawConstraintIconsImpl()
         thisIcon.slot = 0;
         thisIcon.destination = coinIconPtr;
         thisIcon.infoPtr = infoPtr;
-        thisIcon.visible = (*it)->isInVirtualSpace == getIsShownVirtualSpace();
+        thisIcon.visible = (*it)->isInVirtualSpace == getIsShownVirtualSpace()
+            && (*it)->isVisible;
 
         if ((*it)->Type==Symmetric) {
             Base::Vector3d startingpoint = getSketchObject()->getPoint((*it)->First,(*it)->FirstPos);
@@ -8428,8 +8429,10 @@ void ViewProviderSketch::updateVirtualSpace(void)
         std::vector<SbBool> sws(constrlist.size());
 
         for (size_t i = 0; i < constrlist.size(); i++) {
-            // XOR of constraint mode and VP mode, OR if the constraint is (pre)selected
-            sws[i] = !(constrlist[i]->isInVirtualSpace != isShownVirtualSpace);
+            // XOR of constraint mode and VP mode, AND not hidden by the
+            // panel's filter, OR if the constraint is (pre)selected
+            sws[i] = !(constrlist[i]->isInVirtualSpace != isShownVirtualSpace)
+                && constrlist[i]->isVisible;
         }
 
         // The sets can name a constraint an undo has just taken away: the
