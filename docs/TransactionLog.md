@@ -10952,3 +10952,22 @@ unfrozen; 6 expected failures; +1), ctest 856/856 (`-j6` frozen, `-j1`
 unfrozen, the setting still in `user.cfg` at the end), the fork's thickness
 suite PASS 101. The pick and the line endings were gated on their own before
 the fork changed: Python 2980 and ctest 856/856, both ways.
+
+### 27.106 Thickness: a face closed at a pole; the sweep judged by reference values (user, 2026-10-02)
+
+Not log work, so only a pointer (the user, 2026-10-02: this document keeps
+the OCCT changes that concern the transaction log; a thickness fix is
+written up in the fork). A dome with its flat face removed came back
+invalid, and the thickness sweep was judged by a ratio that passed wrong
+volumes. Both are in the OCCT fork: `tests/thickness/models/Thickness.md`,
+"Sec 27.106", and `tests/thickness/README.md`, "A face closed at a pole" and
+"The sweep". Fork `e626b499d9`, `ba82939489`, `890be7d0e0`, `95d9f6ae67`;
+FreeCAD `RegressionTests.test_thickness_of_a_face_closed_at_a_pole`.
+
+27.105's gates on the fork merged with the Windows box's `BOPAlgo` fix
+(`dc3a7b85d1`) finished green: Python 2981 OK and ctest 856/856, frozen and
+unfrozen.
+
+**Gates**, frozen and unfrozen each: Python 2982 OK (52 skipped frozen, 53
+unfrozen; 6 expected failures; +1), ctest 856/856 (`-j6` frozen, `-j1`
+unfrozen), the fork's thickness suite PASS 110, its sweep 712 of 712.

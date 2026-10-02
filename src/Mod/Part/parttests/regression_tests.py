@@ -801,6 +801,40 @@ class RegressionTests(unittest.TestCase):
                         )
             self.assertTrue(shape.isValid(), name)
 
+    def test_thickness_of_a_face_closed_at_a_pole(self):
+        """A dome with its flat face removed: the sphere that stays is bounded
+        by its seam, the pole and the equator. The fork's loop built no seam
+        wire where the seam ends at a pole, and the offset sphere came back
+        with the equator as its only wire -- invalid, 216.55 outward. Each
+        volume is a difference of sphere caps cut by the removed face's
+        plane; the cone's skin has its apex rounded
+        (docs/TransactionLog.md sec 27.106)."""
+        V = Vector
+        up = V(0, 0, 1)
+
+        def cap(r, h):
+            return math.pi * h * h * (3 * r - h) / 3
+
+        cases = (
+            ("dome", Part.makeSphere(5, V(), up, 0, 90, 360), 0.5, cap(5.5, 5.5) - cap(5, 5)),
+            ("dome", Part.makeSphere(5, V(), up, 0, 90, 360), -0.5, cap(5, 5) - cap(4.5, 4.5)),
+            ("bowl", Part.makeSphere(5, V(), up, -90, 0, 360), 0.5, cap(5.5, 5.5) - cap(5, 5)),
+            ("cap", Part.makeSphere(5, V(), up, 30, 90, 360), -0.5, cap(5, 2.5) - cap(4.5, 2)),
+            ("segment", Part.makeSphere(5, V(), up, -90, 30, 360), 0.5, cap(5.5, 8) - cap(5, 7.5)),
+            ("cone", Part.makeCone(0, 4, 6), 0.5, 52.4095),
+        )
+        for name, shape, offset, volume in cases:
+            flat = [f for f in shape.Faces if isinstance(f.Surface, Part.Plane)]
+            for join in (0, 2):
+                if name == "cone" and join == 2:
+                    continue
+                msg = "%s %g join %d" % (name, offset, join)
+                r = shape.makeThickness(flat, offset, 1e-7, False, False, 0, join)
+                self.assertTrue(r.isValid(), msg)
+                self.assertEqual(len(r.Shells), 1, msg)
+                self.assertAlmostEqual(r.Volume, volume, 3, msg)
+                self.assertTrue(shape.isValid(), msg)
+
     def test_thickness_intersection_join_with_one_face_left(self):
         """The Intersection join where one face stays beside the removed ones:
         a cylinder down to its top, a box down to its bottom. It threw
