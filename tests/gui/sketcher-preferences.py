@@ -1,0 +1,216 @@
+"""The Sketcher's General preference page and the tool bars it decides.
+
+Three options on the page decide which commands the Sketcher's tool bars
+carry: one coincident tool or two, one horizontal/vertical tool or two, the
+polyline and line commands in a group or apart. Workbench.cpp reads them
+when it builds the bars.
+
+Claims:
+
+  - the page shows the coincident option as the workbench reads it. Its
+    check box was unchecked by default while the workbench's default is the
+    unified tool, so opening the preferences and pressing OK, with nothing
+    touched, wrote "not unified";
+  - the polyline and line group has a check box (upstream 8ae1d9bbde,
+    255949134f; the workbench read the option, nothing could set it);
+  - a change of any of the three reaches the tool bars when the page is
+    saved, with no restart (upstream asks for one, 4f429e3288; here the
+    workbench installs its bars again, as it did for the dimensioning mode
+    alone).
+
+The preferences dialog is modal: every step into it is a timer that fires
+inside its event loop, does its part and presses OK.
+
+Scored against the tree before the change: see the commit message.
+"""
+import os
+import time
+import traceback
+
+import FreeCAD
+import FreeCADGui
+from PySide import QtCore, QtWidgets
+
+OUT = os.environ["GT_OUT"]
+RESULT = os.environ.get("GT_RESULT", os.path.join(OUT, "result.txt"))
+SKETCHER = "User parameter:BaseApp/Preferences/Mod/Sketcher"
+state = {"done": False}
+
+
+def note(msg):
+    with open(RESULT, "a") as f:
+        f.write(str(msg) + "\n")
+        f.flush()
+
+
+def check(name, cond, detail=""):
+    note(("PASS " if cond else "FAIL ") + name + (" | " + str(detail) if detail else ""))
+    return cond
+
+
+def settle(seconds=0.3):
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        QtWidgets.QApplication.processEvents()
+        time.sleep(0.01)
+
+
+def bar(name):
+    """The commands on one of the main window's tool bars, in order."""
+    for tb in FreeCADGui.getMainWindow().findChildren(QtWidgets.QToolBar):
+        if tb.objectName() == name:
+            return [a.objectName() for a in tb.actions() if a.objectName()]
+    return None
+
+
+def clear():
+    for group, names in (("Constraints", ("UnifiedCoincident", "AutoHorVer")),
+                         ("Commands", ("UnifiedLineCommands",)),
+                         ("dimensioning", ("SingleDimensioningTool",
+                                           "SeparatedDimensioningTools",
+                                           "DimensioningDiameter", "DimensioningRadius"))):
+        grp = FreeCAD.ParamGet(SKETCHER + "/" + group)
+        for name in names:
+            grp.RemBool(name)
+    FreeCAD.ParamGet(SKETCHER + "/dimensioning").RemInt("AutoScaleMode")
+    FreeCAD.ParamGet(SKETCHER + "/Tools").RemInt("OnViewParameterVisibility")
+
+
+def in_preferences(action):
+    """Open the Sketcher's General page, run action(dialog) inside the
+    dialog's event loop and press OK. Returns what action returned."""
+    got = {}
+
+    def act():
+        dialog = QtWidgets.QApplication.activeModalWidget()
+        try:
+            if dialog is None:
+                got["error"] = "no modal dialog"
+                return
+            got["value"] = action(dialog)
+        except Exception:
+            got["error"] = traceback.format_exc()
+        finally:
+            if dialog is not None:
+                box = dialog.findChild(QtWidgets.QDialogButtonBox)
+                box.button(QtWidgets.QDialogButtonBox.Ok).click()
+
+    QtCore.QTimer.singleShot(800, act)
+    FreeCADGui.showPreferences("Sketcher", 0)
+    settle(0.5)
+    if "error" in got:
+        note("in the dialog: " + got["error"])
+    return got.get("value")
+
+
+def widget(dialog, name):
+    found = dialog.findChild(QtWidgets.QWidget, name)
+    if found is None:
+        raise RuntimeError("no widget named " + name)
+    return found
+
+
+def reset_page(dialog):
+    """Press the dialog's reset button and take the menu's first entry,
+    "Reset page"."""
+    button = None
+    for b in dialog.findChildren(QtWidgets.QAbstractButton):
+        if "Reset" in b.text():
+            button = b
+    if button is None:
+        raise RuntimeError("no reset button")
+
+    def pick():
+        menu = QtWidgets.QApplication.activePopupWidget()
+        if menu is None:
+            note("no reset menu")
+            return
+        entry = menu.actions()[0]
+        note("reset menu entry: " + entry.text())
+        entry.trigger()
+        menu.close()
+
+    QtCore.QTimer.singleShot(400, pick)
+    button.click()
+    settle(0.3)
+
+
+def run():
+    try:
+        clear()
+        FreeCADGui.getMainWindow().showMaximized()
+        FreeCADGui.activateWorkbench("SketcherWorkbench")
+        settle(1.0)
+        cons, geom = bar("Sketcher constraints"), bar("Sketcher geometries")
+        start = (cons, geom)
+        check("at the start: one coincident tool, the horizontal/vertical group, "
+              "polyline and line apart",
+              cons is not None and geom is not None
+              and "Sketcher_ConstrainCoincidentUnified" in cons
+              and "Sketcher_CompHorVer" in cons
+              and "Sketcher_CreatePolyline" in geom and "Sketcher_CreateLine" in geom
+              and "Sketcher_CompLine" not in geom, (cons, geom))
+
+        # -- nothing touched ---------------------------------------------
+        shown = in_preferences(
+            lambda d: widget(d, "checkBoxUnifiedCoincident").isChecked())
+        check("the page shows the coincident tools unified, as the tool bar has them",
+              shown is True, shown)
+        constraints = FreeCAD.ParamGet(SKETCHER + "/Constraints")
+        check("OK with nothing touched leaves them unified",
+              constraints.GetBool("UnifiedCoincident", True) is True
+              and "Sketcher_ConstrainCoincidentUnified" in bar("Sketcher constraints"),
+              (constraints.GetBool("UnifiedCoincident", True), bar("Sketcher constraints")))
+
+        # -- the three options -------------------------------------------
+        def regroup(dialog):
+            widget(dialog, "checkBoxLineGroup").setChecked(True)
+            widget(dialog, "checkBoxHorVerAuto").setChecked(False)
+            widget(dialog, "checkBoxUnifiedCoincident").setChecked(False)
+            return True
+
+        check("the page has the line group's check box", in_preferences(regroup) is True)
+        cons, geom = bar("Sketcher constraints"), bar("Sketcher geometries")
+        check("saved: the polyline and line commands are a group on the tool bar",
+              geom is not None and "Sketcher_CompLine" in geom
+              and "Sketcher_CreatePolyline" not in geom, geom)
+        check("saved: horizontal and vertical are two tools",
+              cons is not None and "Sketcher_ConstrainHorizontal" in cons
+              and "Sketcher_ConstrainVertical" in cons
+              and "Sketcher_CompHorVer" not in cons, cons)
+        check("saved: coincident and point-on-object are two tools",
+              cons is not None and "Sketcher_ConstrainCoincident" in cons
+              and "Sketcher_ConstrainPointOnObject" in cons
+              and "Sketcher_ConstrainCoincidentUnified" not in cons, cons)
+
+        def swapped(names, old, new):
+            at = names.index(old[0])
+            return names[:at] + new + names[at + len(old):]
+
+        want_geom = swapped(start[1], ["Sketcher_CreatePolyline", "Sketcher_CreateLine"],
+                            ["Sketcher_CompLine"])
+        want_cons = swapped(swapped(start[0], ["Sketcher_ConstrainCoincidentUnified"],
+                                    ["Sketcher_ConstrainCoincident",
+                                     "Sketcher_ConstrainPointOnObject"]),
+                            ["Sketcher_CompHorVer"],
+                            ["Sketcher_ConstrainHorizontal", "Sketcher_ConstrainVertical"])
+        check("each in the place of what it replaces, not at the end of its bar",
+              geom == want_geom and cons == want_cons, (cons, geom))
+    except Exception:
+        note("ABORT:\n" + traceback.format_exc())
+    finish()
+
+
+def finish():
+    if state["done"]:
+        return
+    state["done"] = True
+    try:
+        clear()
+    except Exception:
+        pass
+    note("DONE")
+    QtCore.QTimer.singleShot(300, QtCore.QCoreApplication.quit)
+
+
+QtCore.QTimer.singleShot(1500, run)

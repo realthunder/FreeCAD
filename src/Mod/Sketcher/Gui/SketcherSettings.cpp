@@ -25,12 +25,14 @@
 #include <QMessageBox>
 #include <QPainter>
 #include <QPixmap>
+#include <QToolBar>
 #endif
 
 #include <App/Application.h>
 #include <Base/Console.h>
 #include <Base/Interpreter.h>
 #include <Gui/Command.h>
+#include <Gui/MainWindow.h>
 #include <Gui/Workbench.h>
 #include <Gui/WorkbenchManager.h>
 
@@ -60,8 +62,59 @@ SketcherSettings::~SketcherSettings()
     // no need to delete child widgets, Qt does it all for us
 }
 
+namespace
+{
+// The options, beside the dimensioning mode, that decide which commands the
+// Sketcher's tool bars carry (Workbench.cpp reads them when it builds them)
+struct ToolBarOptions
+{
+    bool unifiedCoincident;
+    bool autoHorVer;
+    bool unifiedLines;
+
+    static ToolBarOptions read()
+    {
+        ParameterGrp::handle constraints = App::GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/Mod/Sketcher/Constraints");
+        ParameterGrp::handle commands = App::GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/Mod/Sketcher/Commands");
+        return {constraints->GetBool("UnifiedCoincident", true),
+                constraints->GetBool("AutoHorVer", true),
+                commands->GetBool("UnifiedLineCommands", false)};
+    }
+
+    bool operator==(const ToolBarOptions& other) const
+    {
+        return unifiedCoincident == other.unifiedCoincident && autoHorVer == other.autoHorVer
+            && unifiedLines == other.unifiedLines;
+    }
+};
+
+// Build the tool bars again after an option that decides what they carry
+// has changed -- the workbench installing its UI once more, which is a good
+// deal less than the restart upstream asks for (4f429e3288).
+//
+// The two bars these options decide are emptied first. The tool bar manager
+// keeps what a bar has and adds a command it lacks at the END of the bar
+// (it does not take buttons off and put them back, against flicker), so a
+// group that replaces two buttons would land after everything else.
+void reinstallToolBars()
+{
+    for (const char* name : {"Sketcher geometries", "Sketcher constraints"}) {
+        if (auto* bar = Gui::getMainWindow()->findChild<QToolBar*>(QString::fromLatin1(name))) {
+            bar->clear();
+        }
+    }
+    if (auto* workbench = Gui::WorkbenchManager::instance()->active()) {
+        workbench->activate();
+    }
+}
+}  // namespace
+
 void SketcherSettings::saveSettings()
 {
+    const ToolBarOptions previousToolBars = ToolBarOptions::read();
+
     // Sketch editing
     ui->checkBoxAdvancedSolverTaskBox->onSave();
     ui->checkBoxRecalculateInitialSolutionWhileDragging->onSave();
@@ -71,6 +124,7 @@ void SketcherSettings::saveSettings()
     ui->checkBoxMakeInternals->onSave();
     ui->checkBoxUnifiedCoincident->onSave();
     ui->checkBoxHorVerAuto->onSave();
+    ui->checkBoxLineGroup->onSave();
 
     enum
     {
@@ -103,13 +157,11 @@ void SketcherSettings::saveSettings()
     hGrp->SetBool("SeparatedDimensioningTools", SeparatedTools);
 
     // These two decide which dimensioning commands the Sketcher's toolbar and
-    // menu carry, and they are read by Workbench::setupToolBars() -- so the
-    // workbench only has to install its UI again, which is a good deal less
-    // than restarting the application.
-    if (dimensioningChanged) {
-        if (auto* workbench = Gui::WorkbenchManager::instance()->active()) {
-            workbench->activate();
-        }
+    // menu carry, and they are read by Workbench::setupToolBars(), as are the
+    // three options that group or split the coincident, horizontal/vertical
+    // and line commands.
+    if (dimensioningChanged || !(ToolBarOptions::read() == previousToolBars)) {
+        reinstallToolBars();
     }
 
     ui->radiusDiameterMode->setEnabled(index != 1);
@@ -158,6 +210,7 @@ void SketcherSettings::loadSettings()
     ui->checkBoxMakeInternals->onRestore();
     ui->checkBoxUnifiedCoincident->onRestore();
     ui->checkBoxHorVerAuto->onRestore();
+    ui->checkBoxLineGroup->onRestore();
 
     // Dimensioning constraints mode.
     //

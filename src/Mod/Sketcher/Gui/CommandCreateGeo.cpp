@@ -265,6 +265,34 @@ CmdSketcherCompCreateRectangles::CmdSketcherCompCreateRectangles()
 
 // ======================================================================================
 
+// The polyline and line commands as one tool bar button (upstream's
+// Sketcher_CompLine). The workbench puts it on the geometry bar in place of
+// the two when Mod/Sketcher/Commands/UnifiedLineCommands is set, and both
+// must be registered before it: it takes them by name.
+class CmdSketcherCompLine : public Gui::GroupCommand
+{
+public:
+    CmdSketcherCompLine();
+    virtual const char* className() const {return "CmdSketcherCompLine";}
+};
+
+CmdSketcherCompLine::CmdSketcherCompLine()
+    : GroupCommand("Sketcher_CompLine")
+{
+    sAppModule = "Sketcher";
+    sGroup = "Sketcher";
+    sMenuText = QT_TR_NOOP("Polyline");
+    sToolTipText = QT_TR_NOOP("Creates a continuous polyline");
+    sWhatsThis = "Sketcher_CompLine";
+    sStatusTip = sToolTipText;
+    eType = ForEdit;
+
+    addCommand("Sketcher_CreatePolyline");
+    addCommand("Sketcher_CreateLine");
+}
+
+// ======================================================================================
+
 DEF_STD_CMD_AU(CmdSketcherCreatePolyline)
 
 CmdSketcherCreatePolyline::CmdSketcherCreatePolyline()
@@ -1844,6 +1872,7 @@ void CreateSketcherCommandsCreateGeo()
     rcCmdMgr.addCommand(new CmdSketcherCompCreateBSpline());
     rcCmdMgr.addCommand(new CmdSketcherCreateLine());
     rcCmdMgr.addCommand(new CmdSketcherCreatePolyline());
+    rcCmdMgr.addCommand(new CmdSketcherCompLine());
     rcCmdMgr.addCommand(new CmdSketcherCompCreateRegularPolygon());
     rcCmdMgr.addCommand(new CmdSketcherCompCreateRectangles());
     rcCmdMgr.addCommand(new CmdSketcherCreateSlot());

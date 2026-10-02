@@ -890,3 +890,12 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         "FC_CLOCK_SHIM=$<TARGET_FILE:FCClockStepShim>"
         "LD_PRELOAD=$<TARGET_FILE:FCClockStepShim>")
 endif()
+
+# The Sketcher's General preference page: the options that decide which
+# commands its tool bars carry are shown as the workbench reads them, reach
+# the bars when the page is saved, each button in its place, and "Reset
+# page" takes back the values the page keeps outside its own widgets
+# (upstream 4f429e3288, 8ae1d9bbde, 255949134f, 09209436d2).
+fc_add_gui_test(GuiSketcherPreferences_tests_run
+                sketcher-preferences.py
+                --timeout 120)
