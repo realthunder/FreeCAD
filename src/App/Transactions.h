@@ -86,6 +86,8 @@ public:
     void addObjectNew(TransactionalObject *Obj);
     void addObjectDel(const TransactionalObject *Obj);
     void addObjectChange(const TransactionalObject *Obj, const Property *Prop);
+    /// Record a document object's freeze, which is a status and no property
+    void addObjectFreeze(const TransactionalObject *Obj, bool wasFrozen);
 
     /// Check if any transaction is being applied.
     static bool isApplying(Property *prop = nullptr);
@@ -124,6 +126,8 @@ public:
 
     void setProperty(const Property* pcProp);
     void addOrRemoveProperty(const Property* pcProp, bool add);
+    /// The freeze the object had before the transaction; the first one wins
+    void setFrozen(bool wasFrozen);
 
     unsigned int getMemSize () const override;
     void Save (Base::Writer &writer) const override;
@@ -142,6 +146,8 @@ protected:
     std::unordered_map<int64_t, PropData> _PropChangeMap;
 
     std::string _NameInDocument;
+    /// -1 when the transaction did not change the object's freeze
+    signed char _frozen{-1};
 };
 
 /** Represents an entry for a document object in a transaction

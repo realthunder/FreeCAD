@@ -908,6 +908,8 @@ protected:
     void onChanged(const Property* prop) override;
     /// callback from the Document objects before property will be changed
     void onBeforeChangeProperty(const TransactionalObject *Who, const Property *What);
+    /// callback from a Document object before its freeze is changed
+    void onBeforeChangeFreeze(const DocumentObject *Who);
     /// callback from the Document objects after property was changed
     void onChangedProperty(const DocumentObject *Who, const Property *What);
     /// helper which Recompute only this feature

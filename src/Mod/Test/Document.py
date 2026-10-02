@@ -1029,6 +1029,29 @@ class DocumentRecomputeCases(unittest.TestCase):
         self.assertEqual((L1.ExecCount, L2.ExecCount, L3.ExecCount),
                          (before[0], before[1], before[2] + 1))
 
+    def testFreezeUndoRedo(self):
+        """Freezing is undone and redone as a property change is (upstream's is not)"""
+        self.Doc.UndoMode = 1
+        integer = self.L2.Integer
+        self.Doc.openTransaction("freeze")
+        self.L2.Frozen = True
+        self.Doc.commitTransaction()
+        self.Doc.openTransaction("unfreeze and edit")
+        self.L2.Frozen = False
+        self.L2.Integer = integer + 5
+        self.Doc.commitTransaction()
+
+        self.Doc.undo()
+        self.assertTrue(self.L2.Frozen)
+        self.assertEqual(self.L2.Integer, integer)
+        self.Doc.undo()
+        self.assertFalse(self.L2.Frozen)
+        self.Doc.redo()
+        self.assertTrue(self.L2.Frozen)
+        self.Doc.redo()
+        self.assertFalse(self.L2.Frozen)
+        self.assertEqual(self.L2.Integer, integer + 5)
+
     def tearDown(self):
         # closing doc
         FreeCAD.closeDocument(self.Doc.Name)

@@ -432,6 +432,25 @@ void Transaction::addObjectChange(const TransactionalObject *Obj, const Property
     To->setProperty(Prop);
 }
 
+void Transaction::addObjectFreeze(const TransactionalObject *Obj, bool wasFrozen)
+{
+    auto &index = _Objects.get<1>();
+    auto pos = index.find(Obj);
+
+    TransactionObject *To;
+
+    if (pos != index.end()) {
+        To = pos->second;
+    }
+    else {
+        To = TransactionFactory::instance().createTransaction(Obj->getTypeId());
+        To->status = TransactionObject::Chn;
+        index.emplace(Obj,To);
+    }
+
+    To->setFrozen(wasFrozen);
+}
+
 
 //**************************************************************************
 //**************************************************************************
@@ -548,6 +567,23 @@ void TransactionObject::applyChn(Document &Doc, TransactionalObject *pcObj, bool
             {}
         }
     }
+
+    // After the properties, so that a freeze taken back finds them as they
+    // were. Applying it records the other way into the transaction being
+    // built by this undo, which is what redo applies.
+    auto obj = Base::freecad_dynamic_cast<DocumentObject>(pcObj);
+    if (_frozen >= 0 && obj && (status == New || status == Chn)) {
+        if (_frozen)
+            obj->freeze();
+        else
+            obj->unfreeze();
+    }
+}
+
+void TransactionObject::setFrozen(bool wasFrozen)
+{
+    if (_frozen < 0)
+        _frozen = wasFrozen ? 1 : 0;
 }
 
 void TransactionObject::setProperty(const Property* pcProp)

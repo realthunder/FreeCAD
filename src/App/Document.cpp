@@ -836,6 +836,16 @@ void Document::onBeforeChangeProperty(const TransactionalObject *Who, const Prop
     }
 }
 
+void Document::onBeforeChangeFreeze(const DocumentObject *Who)
+{
+    // As a property change is recorded, so that freezing is undone
+    if(!d->rollback) {
+        _checkTransaction(nullptr, nullptr, __LINE__);
+        if (d->activeUndoTransaction)
+            d->activeUndoTransaction->addObjectFreeze(Who, Who->isFreezed());
+    }
+}
+
 void Document::onChangedProperty(const DocumentObject *Who, const Property *What)
 {
     if (What == &Who->TreeRank) {

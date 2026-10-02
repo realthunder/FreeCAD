@@ -2854,8 +2854,14 @@ Where the fork differs:
 - PD gets the command for every object through the shared context menu,
   where `e607b5757e` added it for a Body only.
 
-Not undoable, as upstream: a transaction records properties, and an
-object status is not one.
+Undoable, where upstream's is not (2026-10-03): a transaction recorded
+properties only, and the freeze is an object status. `freeze()` and
+`unfreeze()` now tell the document first, which records the old state in
+the open transaction (`Transaction::addObjectFreeze`, the first state in a
+transaction kept, as for a property); undo sets it back after the
+properties, and doing so records the other way into the redo it is
+building. A rollback records nothing, and a restore sets the bit without
+the call. Test `testFreezeUndoRedo`.
 
 Tests `Document.DocumentRecomputeCases.testFreeze` (a change upstream of
 it, of its own input and an explicit recompute leave it and its dependent

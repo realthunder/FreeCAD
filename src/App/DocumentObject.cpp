@@ -327,6 +327,8 @@ void DocumentObject::freeze()
 {
     if (isFreezed())
         return;
+    if (_pDoc)
+        _pDoc->onBeforeChangeFreeze(this);
     StatusBits.set(ObjectStatus::Freeze);
     // Not a property change, so nothing else tells the Gui: this refreshes
     // the tree icon and marks the document modified, the state being saved.
@@ -338,6 +340,8 @@ void DocumentObject::unfreeze(bool noRecompute)
 {
     if (!isFreezed())
         return;
+    if (_pDoc)
+        _pDoc->onBeforeChangeFreeze(this);
     StatusBits.reset(ObjectStatus::Freeze);
     // Whatever changed while frozen, in its inputs or upstream of it, was
     // never acted on, so the next recompute must run it.

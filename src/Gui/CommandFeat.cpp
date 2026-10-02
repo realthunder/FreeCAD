@@ -226,8 +226,8 @@ void StdCmdToggleFreeze::activated(int iMsg)
         if (!sel.pObject->isFreezed())
             freeze = true;
     }
-    // Not undoable: an object status is not a property, and the transaction
-    // records properties only (upstream's transaction around this is empty).
+    // Undoable: the document records a freeze in the command's transaction
+    // as it does a property change (upstream's transaction here is empty)
     for (auto obj : objs)
         cmdAppObjectArgs(obj, "Frozen = %s", freeze ? "True" : "False");
 }
