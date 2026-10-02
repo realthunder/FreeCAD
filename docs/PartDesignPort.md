@@ -2766,6 +2766,22 @@ in 8 processes give one result. Same input, same sketch, every run.
 The OCCT side (input vertices changed by the same booleans) is in the
 occ-issues `local02` row.
 
+**The tool copy under a fuzzy value, dropped (2026-10-03).** Its reason
+was a 2015 one: a fuzzy boolean corrupted its inputs (the OCCT forum's
+node/1056, comment 520, now offline; FreeCAD issue #5612 keeps the
+gist), which the non-destructive mode both of `makEBoolean` and
+`makEGeneralFuse` set has covered since. What it still did was hide OCCT
+bugs in tools sharing a vertex with the argument (`local02`, `local04`,
+both fixed in the OCCT fork), and rename the result: the same fuse with
+and without a fuzzy value gave different element names, because the
+copied tool's sub-shapes were no longer the argument's. Upstream dropped
+it in `cf8ad66373` (2024-10). A/B on a box fused with a loft from its own
+top face, a prism on its own side face, a cut, and a general fuse of the
+three, at tolerances 0, 1e-5 and 1e-3: geometry and validity identical
+before and after, the inputs untouched, and after it a fuzzy value
+renames nothing (before, the prism fuse and the general fuse did). Python
+3345 OK, ctest 758/758.
+
 ## 9. The deferred rows, settled (2026-10-02)
 
 Sec 8 left 7 rows deferred behind an upstream facility the fork lacks.

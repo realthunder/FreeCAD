@@ -3837,9 +3837,6 @@ TopoShape &TopoShape::makEBoolean(const char *maker,
             : factor * std::sqrt(bounds.SquareExtent()) * Precision::Confusion();
     }
 
-    if (tol > 0.0 &&  _shapes.empty())
-        _shapes = shapes;
-
     const auto &inputs = _shapes.size()?_shapes:shapes;
     if(inputs.empty())
         HANDLE_NULL_INPUT;
@@ -3921,18 +3918,18 @@ TopoShape &TopoShape::makEBoolean(const char *maker,
 
     TopTools_ListOfShape shapeArguments,shapeTools;
 
+    // The tools are not copied under a fuzzy value any more (upstream
+    // cf8ad66373): the copy kept a fuzzy boolean from changing its inputs
+    // (dev.opencascade.org node/1056), which the non-destructive mode set
+    // below does, and it hid OCCT bugs in tools sharing a vertex with the
+    // argument (occ-issues local02, local04), fixed in the OCCT fork.
     int i=-1;
     for(const auto &shape : inputs) {
         if(shape.isNull())
             HANDLE_NULL_INPUT;
         if(++i == 0)
             shapeArguments.Append(shape.getShape());
-        else if (tol > 0.0) {
-            auto & s = _shapes[i];
-            // workaround for http://dev.opencascade.org/index.php?q=node/1056#comment-520
-            s.setShape(BRepBuilderAPI_Copy(s.getShape()).Shape(), false);
-            shapeTools.Append(s.getShape());
-        } else
+        else
             shapeTools.Append(shape.getShape());
     }
 
@@ -5255,10 +5252,7 @@ TopoShape &TopoShape::makEGeneralFuse(const std::vector<TopoShape> &_shapes,
     for(auto &shape : shapes) {
         if(shape.isNull())
             HANDLE_NULL_INPUT;
-        if (tol > 0.0) {
-            // workaround for http://dev.opencascade.org/index.php?q=node/1056#comment-520
-            shape = shape.makECopy();
-        }
+        // Not copied under a fuzzy value: see makEBoolean
         GFAArguments.Append(shape.getShape());
     }
     mkGFA.SetArguments(GFAArguments);
