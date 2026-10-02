@@ -1983,7 +1983,7 @@ defaults are `0.8f` grey, `#CCCCCC`. A `PrefColorButton`'s `color`
 property is what it falls back to when the parameter is unset, so opening
 the page and pressing OK persisted a colour the sketch had never drawn
 with. Upstream fixed it on `SketcherSettingsAppearance.ui`, a file this
-fork does not have -- its colours live in `SketcherSettingsColors.ui` --
+fork does not have -- its colours lived in `SketcherSettingsColors.ui` then --
 which is precisely why the row had stayed open and unread.
 
 ### Auto-constraints for a drag (`ec298e9e9a` and six more)
@@ -3580,8 +3580,8 @@ lines:
 - *Axis transparency* (`cda241dbd0`): the axes drawn through geometry in
   front of them, at a second transparency.
 
-Ruled 2026-10-02: the four feature families are all to be taken (next
-session), and the defaults are upstream's -- **taken** `86c389b583`: Make
+Ruled 2026-10-02: the four feature families are all to be taken (done,
+"The appearance families (session 119)" below), and the defaults are upstream's -- **taken** `86c389b583`: Make
 Internals on for new sketches (`be1d53cf5f`), dimension names shown, the
 line group on. The line group's row above says "default off"; that held
 for one day.
@@ -3781,6 +3781,80 @@ client's mirror has no main window, so a served session's hints are
 drawn on the host and nowhere else. That is true of all ten drawing
 handlers already; putting hints on the wire is a thin-client item, not
 a port one.
+
+### The appearance families (session 119)
+
+Ruled "take all" on 2026-10-02. None is a port of lines: upstream draws a
+sketch in edit through `EditModeCoinManager` and its two helpers, which are
+not compiled here, so each family is the fork's own drawing code taught the
+same preferences -- upstream's names, groups and defaults, so a
+configuration moves between the two.
+
+**Family 1: a line's width and pattern by what it is, and the page.**
+
+| row | verdict |
+|---|---|
+| `b140feabaf`, `1155182ac3` | **adapted** `f436f45950`: normal, construction, internal alignment, external and defining external geometry each have a width and a pattern (`Mod/Sketcher/View`: `EdgeWidth`/`EdgePattern`, `Construction...`, `Internal...`, `External...`, `ExternalDefining...`), and so has the information layer. `draw()` sorts the curves into one indexed line set per class over the one coordinate and material list, each under its own draw style, where it had one solid and one dashed set |
+| `f5da655429` | **adapted** `1848e8782b`: a point is coloured as what it belongs to -- the ends of a normal curve in the curve colour, every other point (a centre, any point of construction geometry) in the construction colour, an external geometry's in its own, the origin as a fully constrained element. `EditedVertexColor` and `FullyConstraintConstructionPointColor` are read no more and have no button |
+| `e2f998f301`, `411cdadf49` | **adapted** `c340ac4113`: defining external geometry has `View/ExternalDefiningColor`, the external colour until set; what tells it from the rest is the line, solid against dashed. The fork's three states (frozen, detached, missing) keep their colours, a defining one lighter as before. `View/InformationColor` is read now too: the page has had upstream's button since, and nothing read it |
+| `c2d6248bc7` | **adapted** `82fa9adadf`: `SoDatumLabel::linePattern`, and a dimension's leaders take `DimensionalConstraintLineWidth`/`Pattern`. The label draws twice here -- by hand in `GLRender`, and through a companion node for the render cache -- so the pattern is a line stipple in the one and a connected `SoDrawStyle` field in the other |
+| `90ca7a30d9` | **taken** `d77a80324f`: `AxisLineWidth`/`AxisLinePattern` on the two axes, and the grid leaves out the line that would lie on an axis (`Part` grid extension) |
+| `efec2c6795` | **n/a**: upstream shows a label of its own to read the style sheet's text colour for the line type icons. The pages here paint them from their own palette when the style reaches them (`2cb495d103`, measured with light text) |
+| the page | **taken** `d658410b21`: `SketcherSettingsColors` is `SketcherSettingsAppearance`, upstream's form with the fork's three external state colours added, the tool preview colour left out (a preview is coloured by what it draws, `a3e4beb17f`) and the face colour kept on the fork's preference. "Reset page" takes back the eight line types, which the page stores by hand |
+
+How the classes and the visual layers meet: a layer with a pattern of its
+own (layer 1, "dashed") still wins. A class has two sets, and a curve on a
+patterned layer goes to the second, which has the class's width and the
+layer's pattern. Upstream never reads a layer's pattern.
+
+What a user sees change with nothing set, all of it upstream's defaults:
+
+- a curve is 2 pixels wide; it was 3;
+- construction, internal alignment and external geometry are dashed
+  (`0xFCFC`, drawn at twice its length); defining external geometry and
+  normal geometry are solid;
+- the information layer's lines are dashed;
+- vertices are no longer red: an end point has its curve's colour;
+- a tool's preview has the width and pattern of what it is drawing.
+
+Mode 3 draws all of it: the render cache carries a draw style's pattern
+and its scale factor to the backend. `tests/gui/sketch-line-styles.py`
+samples the backend's frame along two lines -- the normal one is lit over
+all of its length, the construction one over 0.75 of it, the twelve set
+bits of sixteen.
+
+**Family 2: constraint symbol size.**
+
+| row | verdict |
+|---|---|
+| `eef738b312`, `dc22fb4b9b` | **adapted** `5678fce295`: `View/ConstraintSymbolSize`, on the Display page. The size was 0.8 of the label font's and followed it; unset it is the application font's height, as upstream has it, so a symbol is a quarter larger than it was until someone sets it. Here it is still multiplied by the device pixel ratio, which upstream's last version of the line dropped. The page shows the font's height while the preference is unset, not the 15 the form was drawn with |
+
+**Family 3: the label's font.**
+
+| row | verdict |
+|---|---|
+| `b9a89bada1` | **adapted** `ce59ec6a15`: `View/EditSketcherFontName`, a font box on the Display page with a preview in the view's colours and a list of the glyphs a label can show that the font lacks. Not taken: the label's default font name going from "Helvetica" to "osifont" -- neither tree registers that font for the application outside TechDraw, so the name resolves by fallback either way, and changing it here would move every label for nothing. And one thing done differently: a font box always holds some font, so upstream's page stores one on the first OK whether or not anybody chose it. Here the preference is written once a font was chosen, or one is stored already |
+| `e992fef709` | **have**: the tool tip came over in its corrected wording |
+
+The two font files of that commit are a newer osifont for `data/examples`
+and the Sketcher's resources; neither file is in this tree (TechDraw
+carries its own copy), so there is nothing to update.
+
+**Family 4: axis transparency.**
+
+| row | verdict |
+|---|---|
+| `cda241dbd0` | **adapted** `4bcb25919d`: `Mod/Sketcher/General/AxisTransparency` (30 percent by default) on the two axes, and its spin box on the Display page. The other half is not applicable: upstream draws the axes a second time with the depth test reversed, at `OccludedAxisTransparency`, so that they show through a solid in front of the sketch plane. Here nothing in front hides them to begin with -- the edit graph is an overlay drawn over the model (measured: a box above the sketch plane, seen from the top, has both axes drawn across it) |
+
+Found on the way: the view's highlight kept a highlighted primitive's own
+transparency. Right for a face; a hovered axis at 30 percent was drawn in a
+mix of the preselection colour and the background, and
+`sketch-highlight-view.py` said so. A highlighted line or point is opaque
+now (`78daf4e506`, in the highlight cache, for every object).
+
+Tests: `sketch-line-styles.py` (family 1), `sketch-display-settings.py`
+(families 2 to 4), and the Appearance page in `sketcher-preferences.py`.
+Full ctest 878 of 878.
 
 ### A datum's value edited in place (design, awaiting a ruling)
 
