@@ -732,3 +732,11 @@ fc_add_gui_test(GuiMeshingBoundsHistory_tests_run
 fc_add_gui_test(GuiViewProviderBoundingBox_tests_run
                 view-provider-bounding-box.py
                 --timeout 120)
+
+# A coincidence that would fold an element onto a point is refused on
+# both ways into the command -- the two ends of one line, or an end and
+# a point already on the other end -- and a B-spline's ends still join
+# (upstream e38154474a, 084379651a).
+fc_add_gui_test(GuiSketchCoincidentSameElement_tests_run
+                sketch-coincident-same-element.py
+                --timeout 150)
