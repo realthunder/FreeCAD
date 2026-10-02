@@ -3346,6 +3346,60 @@ Open, each for the user:
   asked back and is open. If both: a step whose picks are all external is
   refused, which upstream does not do.
 
+**`999fed9c4e`, built as the user redirected it** (2026-10-02):
+`6de565629c` (Gui) + `e041fdf88e` (Sketcher). Not "which tools take outside
+picks always" but a MODE the user switches, stacked on the tool:
+
+- While the Dimension tool or a constraint command runs,
+  `Sketcher_External`, `Sketcher_Defining` and the two intersection
+  commands do not replace it. `ActivateHandler` already asks the running
+  handler `toggle(next)` (the polyline tool's hook); the constraint
+  handlers answer it for a `DrawSketchHandlerExternal` by switching
+  outside picking on in that command's flavour, off on a second press.
+- One setting for all of them, `Mod/Sketcher/General/ConstraintExternalPick`
+  (0 off, 1 external, 2 defining, 3 intersection, 4 intersection
+  defining), read when a constraint tool starts.
+- With it on the handler answers `allowExternalPick()`, the session's
+  views select again, and the gate hands anything outside the sketch to
+  `ExternalSelection` -- for a constraint command only at a step that takes
+  an external edge or a vertex, and for both tools not while the sketch has
+  something of its own under the pointer. The pick becomes external
+  geometry by `addExternalFromPick()`, the External tool's own call taken
+  out of it, and the tool goes on with the geometry made.
+
+What it took in Core: a click the selection gate refuses is no longer
+claimed by the selection node (upstream's commit has the same fix), and
+the view passes over the object in edit when that object lets the view
+pick around it -- it picked the sketch by the shape the sketch keeps in the
+scene and took the click the sketch was about to handle.
+
+Found on the way, each of which cost a build:
+
+- the sketch publishes its own hover THROUGH the selection gate, so a gate
+  cannot tell the sketch's pick of its element from the view's;
+- selection notifications arrive after the call that caused them returns:
+  a flag held around `rmvSelection()` is down again by the time the tool
+  hears of it;
+- the view clears the selection before it selects what was clicked, and a
+  constraint command read every clear as "start over";
+- a new external geometry's element name does not resolve until the
+  sketch's shape is rebuilt, so the tool is advanced directly, not by
+  selecting `ExternalEdgeN`;
+- `ExternalGeometryFacade::getRefIndex()` is for copy and paste only; new
+  geometry is found by comparing the reference strings before and after.
+
+Undo as ruled: one step for the reference and the constraint
+(`AutoTransaction::setEnable(false)` keeps the reference's transaction
+open past its event, `setEnable(true)` lets the command's own open and
+commit fold into it), gone if the tool is left, started over or the
+command makes nothing of the picks. The Dimension tool makes its
+references again after each of its aborts.
+
+`sketch-constraint-external-pick.py`, real clicks. Open: a sign on screen
+that outside picking is on (the cursor is the natural place); a run from a
+served client; the first pick's highlight is lost when the view selects
+the outside element.
+
 ## 7a. The constraint-tool hints (session 85)
 
 Thirteen rows, not the eleven the sweep sized: `580d538798`, the commit
