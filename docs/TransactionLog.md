@@ -10991,3 +10991,25 @@ join.
 unfrozen; 6 expected failures; +1), ctest 856/856 (`-j6` frozen, `-j1`
 unfrozen), the fork's thickness suite PASS 127 XFAIL 5, its sweep 712 of
 712.
+
+### 27.108 Thickness: the four groups left broken (user, 2026-10-02)
+
+Not log work; a pointer (27.106). The user, "continue as planned": the
+five cases 27.107 left marked known broken, in order. The write-up is the
+OCCT fork's `tests/thickness/models/Thickness.md`, "Sec 27.108", and
+`tests/thickness/README.md`. Fork `ed836d0120` (the half dome's mirror side
+inward: a stretched edge's piece beyond its own ends is outside),
+`c13b1e5540` (the Intersection join on faces in coplanar pieces: a box
+fused of two), `73947cfab4` (half a dome's side with that join, inward: the
+closing wall on the sphere), `3860ed4511` (and outward: the offset sphere
+grown round its pole, on the same sphere with its axis turned; a wall built
+outside its band is refused), `e63b3f86cc` (pictures, stage s108); FreeCAD
+`RegressionTests.test_thickness_of_coplanar_pieces_and_a_sphere_round_its_pole`.
+No case of the fork's suite is marked known broken. Found beside these and
+left: domes of other spans at a pole, listed at the end of the fork's
+section.
+
+**Gates**, frozen and unfrozen each: Python 2984 OK (52 skipped frozen, 53
+unfrozen; 6 expected failures; +1), ctest 856/856 (`-j6` frozen, `-j1`
+unfrozen), the fork's thickness suite PASS 156, no XFAIL, its sweep 712 of
+712.

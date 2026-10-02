@@ -885,6 +885,66 @@ class RegressionTests(unittest.TestCase):
                 "split box %g, Intersection join: the box back" % offset,
             )
 
+    def test_thickness_of_coplanar_pieces_and_a_sphere_round_its_pole(self):
+        """The four cases the fork had left broken. Half a dome, its second
+        side removed inward: an invalid result, the offset sphere bounded by
+        the wire round what was cut away. A box fused of two, a piece of a
+        face removed, the Intersection join: refused, and an end face too --
+        coplanar pieces were intersected with each other's neighbours. Half a
+        dome's side with that join, inward: the closing wall never met the
+        sphere. And outward, bottom or side: the offset sphere has to grow
+        round its pole. Half a ball cut through both poles cannot, and is
+        refused rather than answered wrongly (OCCT fork,
+        tests/thickness/models/Thickness.md "Sec 27.108")."""
+        V = Vector
+        dome = Part.makeSphere(5, V(), V(0, 0, 1), 0, 90, 180)
+        for face, offset, join, volume in (
+            (4, -0.5, 0, 58.8944),
+            (3, -0.5, 2, 59.1071),
+            (4, -0.5, 2, 59.1071),
+            (2, 0.5, 2, 67.0206),
+            (3, 0.5, 2, 81.7345),
+            (4, 0.5, 2, 81.7345),
+        ):
+            for inter in (False, True):
+                r = dome.makeThickness([dome.Faces[face - 1]], offset, 1e-7, inter, False, 0, join)
+                msg = "half dome Face%d %g join %d inter %s" % (face, offset, join, inter)
+                self.assertTrue(r.isValid(), msg)
+                self.assertEqual(len(r.Shells), 1, msg)
+                self.assertAlmostEqual(r.Volume, volume, 3, msg)
+        self.assertTrue(dome.isValid())
+
+        box = Part.makeBox(4, 8, 6).fuse(Part.makeBox(6, 8, 6, V(4, 0, 0)))
+
+        def piece(pick):
+            return [f for f in box.Faces if pick(f.BoundBox)]
+
+        top = piece(lambda b: abs(b.ZMin - 6) < 1e-9 and b.XMax < 4.5)
+        top_2 = piece(lambda b: abs(b.ZMin - 6) < 1e-9 and b.XMin > 3.5)
+        side = piece(lambda b: b.YMax < 1e-9 and b.XMax < 4.5)
+        end = piece(lambda b: b.XMax < 1e-9)
+        for name, faces, out, into in (
+            ("top piece", top, 440.0, 276.0),
+            ("other top piece", top_2, 420.0, 264.0),
+            ("side piece", side, 448.0, 280.0),
+            ("end", end, 400.0, 264.0),
+        ):
+            self.assertEqual(len(faces), 1, name)
+            for offset, volume in ((1.0, out), (-1.0, into)):
+                for inter in (False, True):
+                    r = box.makeThickness(faces, offset, 1e-7, inter, False, 0, 2)
+                    msg = "split box, %s, %g, inter %s" % (name, offset, inter)
+                    self.assertTrue(r.isValid(), msg)
+                    self.assertEqual(len(r.Shells), 1, msg)
+                    self.assertAlmostEqual(r.Volume, volume, 3, msg)
+        self.assertTrue(box.isValid())
+
+        ball = Part.makeSphere(5, V(), V(0, 0, 1), -90, 90, 180)
+        for offset in (0.5, -0.5):
+            with self.assertRaises(Exception, msg="half ball %g" % offset):
+                ball.makeThickness([ball.Faces[1]], offset, 1e-7, False, False, 0, 2)
+        self.assertTrue(ball.isValid())
+
     def test_thickness_intersection_join_with_one_face_left(self):
         """The Intersection join where one face stays beside the removed ones:
         a cylinder down to its top, a box down to its bottom. It threw
