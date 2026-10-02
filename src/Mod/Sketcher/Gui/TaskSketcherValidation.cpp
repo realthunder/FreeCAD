@@ -297,10 +297,10 @@ void SketcherValidation::onFindReversedClicked()
             Gui::TranslatedUserWarning(
                 *sketch,
                 tr("Reversed External Geometry"),
-                tr("%1 reversed external-geometry arcs were found. Their endpoints are"
-                   " encircled in 3d view.\n\n"
+                tr("%1 reversed external geometry arcs were found. Their endpoints are"
+                   " encircled in the 3D view.\n\n"
                    "%2 constraints are linking to the endpoints. The constraints have"
-                   " been listed in Report view (menu View -> Panels -> Report view).\n\n"
+                   " been listed in the report view (menu View -> Panels -> Report view).\n\n"
                    "Click \"Swap endpoints in constraints\" button to reassign endpoints."
                    " Do this only once to sketches created in FreeCAD older than v0.15")
                     .arg(points.size() / 2)
@@ -312,8 +312,8 @@ void SketcherValidation::onFindReversedClicked()
             Gui::TranslatedUserWarning(
                 *sketch,
                 tr("Reversed External Geometry"),
-                tr("%1 reversed external-geometry arcs were found. Their endpoints are "
-                   "encircled in 3d view.\n\n"
+                tr("%1 reversed external geometry arcs were found. Their endpoints are "
+                   "encircled in the 3D view.\n\n"
                    "However, no constraints linking to the endpoints were found.")
                     .arg(points.size() / 2));
 

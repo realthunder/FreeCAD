@@ -243,7 +243,7 @@ void CmdSketcherIncreaseDegree::activated(int iMsg)
         Gui::TranslatedUserWarning(Obj,
                                    QObject::tr("Wrong selection"),
                                    QObject::tr("At least one of the selected "
-                                               "objects was not a B-Spline and was ignored."));
+                                               "objects was not a B-spline and was ignored."));
     }
 
     commitCommand();
@@ -326,7 +326,7 @@ void CmdSketcherDecreaseDegree::activated(int iMsg)
         Gui::TranslatedUserWarning(Obj,
                                    QObject::tr("Wrong selection"),
                                    QObject::tr("At least one of the selected "
-                                               "objects was not a B-Spline and was ignored."));
+                                               "objects was not a B-spline and was ignored."));
     }
 
     commitCommand();
@@ -860,8 +860,8 @@ void CmdSketcherInsertKnot::activated(int iMsg)
         Gui::TranslatedUserWarning(
             Obj,
             QObject::tr("Wrong selection"),
-            QObject::tr("Please select a b-spline curve to insert a knot (not a knot on it). "
-                        "If the curve is not a b-spline, please convert it into one first."));
+            QObject::tr("Select a B-spline to insert a knot (not a knot on it). "
+                        "If the curve is not a B-spline, convert it into one first."));
     }
 
     getSelection().clearSelection();

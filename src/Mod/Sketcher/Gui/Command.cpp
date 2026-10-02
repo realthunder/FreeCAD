@@ -514,7 +514,7 @@ void CmdSketcherReorientSketch::activated(int iMsg)
             qApp->translate("Sketcher_ReorientSketch", "Sketch Has Support"),
             qApp->translate("Sketcher_ReorientSketch",
                             "Sketch with a support face cannot be reoriented.\n"
-                            "Do you want to detach it from the support?"),
+                            "Detach it from the support?"),
             QMessageBox::Yes | QMessageBox::No);
         if (ret == QMessageBox::No)
             return;
@@ -892,7 +892,7 @@ CmdSketcherViewSketchBottom::CmdSketcherViewSketchBottom()
     sGroup          = "Sketcher";
     sMenuText       = QT_TR_NOOP("View sketch bottom");
     sToolTipText    = QT_TR_NOOP("When in edit mode, "
-                                 "set the camera orientation perpendicular to the oppsite side of sketch plane.");
+                                 "set the camera orientation perpendicular to the opposite side of sketch plane.");
     sWhatsThis      = "Sketcher_ViewSketchBottom";
     sStatusTip      = sToolTipText;
     sPixmap         = "Sketcher_ViewSketchBottom";
@@ -1662,8 +1662,8 @@ public:
 
         angleLabel->setText(tr("Snap angle"));
         snapAngle->setToolTip(
-            tr("Angular step for tools that use 'Snap at Angle' (line for instance). Hold CTRL to "
-               "enable 'Snap at Angle'. The angle starts from the positive X axis of the sketch."));
+            tr("Angular step for tools that use 'Snap at angle'. Hold Ctrl to "
+               "enable 'Snap at angle'. The angle starts from the positive X axis of the sketch."));
     }
 
 protected:

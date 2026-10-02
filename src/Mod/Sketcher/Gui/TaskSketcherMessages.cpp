@@ -66,22 +66,22 @@ TaskSketcherMessages::~TaskSketcherMessages()
 void TaskSketcherMessages::updateToolTip(const QString& link)
 {
     if (link == QStringLiteral("#conflicting")) {
-        setLinkTooltip(tr("Selects these conflicting constraints"));
+        setLinkTooltip(tr("Click to select these conflicting constraints."));
     }
     else if (link == QStringLiteral("#redundant")) {
-        setLinkTooltip(tr("Selects these redundant constraints"));
+        setLinkTooltip(tr("Click to select these redundant constraints."));
     }
     else if (link == QStringLiteral("#dofs")) {
         setLinkTooltip(tr("The sketch has unconstrained elements giving rise to those "
-            "Degrees Of Freedom. Selects these unconstrained elements."));
+            "Degrees Of Freedom. Click to select these unconstrained elements."));
     }
     else if (link == QStringLiteral("#malformed")) {
-        setLinkTooltip(tr("Selects these malformed constraints"));
+        setLinkTooltip(tr("Click to select these malformed constraints."));
     }
     else if (link == QStringLiteral("#partiallyredundant")) {
         setLinkTooltip(
-            tr("Some constraints in combination are partially redundant. Selects these "
-               "partially redundant constraints."));
+            tr("Some constraints in combination are partially redundant. Click to select "
+               "these partially redundant constraints."));
     }
 }
 

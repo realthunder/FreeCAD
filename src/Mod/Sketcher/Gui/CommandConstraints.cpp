@@ -491,7 +491,7 @@ bool removeRedundantPointOnObject(SketchObject* Obj, int GeoId1, int GeoId2, int
         // at this point it is already solved.
         tryAutoRecomputeIfNotSolve(Obj);
 
-        notifyConstraintSubstitutions(QObject::tr("One or two point on object constraint(s) was/were deleted, "
+        notifyConstraintSubstitutions(QObject::tr("One or two point-on-object constraints were deleted, "
                                                   "since the latest constraint being applied internally applies point-on-object as well."));
 
         // TODO: find way to get selection here, or clear elsewhere
@@ -5162,7 +5162,7 @@ void CmdSketcherConstrainBlock::activated(int iMsg)
         || Obj->getLastHasRedundancies()) {
         Gui::TranslatedUserWarning(Obj,
                                    QObject::tr("Wrong solver status"),
-                                   QObject::tr("A Block constraint cannot be added "
+                                   QObject::tr("A block constraint cannot be added "
                                                "if the sketch is unsolved "
                                                "or there are redundant and "
                                                "conflicting constraints."));
