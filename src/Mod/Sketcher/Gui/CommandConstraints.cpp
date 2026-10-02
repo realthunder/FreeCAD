@@ -1177,7 +1177,11 @@ enum SelType
     SelEdgeOrAxis = 128,
     SelHAxis = 8,
     SelVAxis = 16,
-    SelExternalEdge = 32
+    SelExternalEdge = 32,
+    // an arc of a circle, for a tool that takes one on its own (the angle of the arc); a
+    // tool that does not ask for it sees the arc as the edge it is
+    SelArc = 256,
+    SelExternalArc = 512
 };
 
 /**
@@ -1209,10 +1213,11 @@ public:
         std::string element(sSubName);
         if ((allowedSelTypes & (SelRoot | SelVertexOrRoot) && element.substr(0, 9) == "RootPoint")
             || (allowedSelTypes & (SelVertex | SelVertexOrRoot) && element.substr(0, 6) == "Vertex")
-            || (allowedSelTypes & (SelEdge | SelEdgeOrAxis) && element.substr(0, 4) == "Edge")
+            || (allowedSelTypes & (SelEdge | SelEdgeOrAxis | SelArc) && element.substr(0, 4) == "Edge")
             || (allowedSelTypes & (SelHAxis | SelEdgeOrAxis) && element.substr(0, 6) == "H_Axis")
             || (allowedSelTypes & (SelVAxis | SelEdgeOrAxis) && element.substr(0, 6) == "V_Axis")
-            || (allowedSelTypes & SelExternalEdge && element.substr(0, 12) == "ExternalEdge")) {
+            || (allowedSelTypes & (SelExternalEdge | SelExternalArc)
+                && element.substr(0, 12) == "ExternalEdge")) {
             return true;
         }
 
@@ -1221,7 +1226,8 @@ public:
 
     void setAllowedSelTypes(unsigned int types)
     {
-        if (types < 256) {
+        // every SelType bit, SelExternalArc being the highest
+        if (types < 1024) {
             allowedSelTypes = types;
         }
     }
@@ -1349,7 +1355,7 @@ public:
                                                             selIdPair.PosId);
             ss << "Vertex" << VtId + 1;
         }
-        else if (allowedSelTypes & (SelEdge | SelEdgeOrAxis) && CrvId >= 0) {
+        else if (allowedSelTypes & (SelEdge | SelEdgeOrAxis | SelArc) && CrvId >= 0) {
             selIdPair.GeoId = CrvId;
             ss << "Edge" << CrvId + 1;
         }
@@ -1361,7 +1367,8 @@ public:
             selIdPair.GeoId = Sketcher::GeoEnum::VAxis;
             ss << "V_Axis";
         }
-        else if (allowedSelTypes & SelExternalEdge && CrvId <= Sketcher::GeoEnum::RefExt) {
+        else if (allowedSelTypes & (SelExternalEdge | SelExternalArc)
+                 && CrvId <= Sketcher::GeoEnum::RefExt) {
             // TODO: Figure out how this works
             selIdPair.GeoId = CrvId;
             ss << "ExternalEdge" << Sketcher::GeoEnum::RefExt + 1 - CrvId;
@@ -1413,6 +1420,10 @@ public:
         SelIdPair selIdPair;
         SelType newSelType = SelUnknown;
         auto sketch = sketchgui->getSketchObject();
+        const auto isArc = [sketch](int geoId) {
+            const Part::Geometry* geo = sketch->getGeometry(geoId);
+            return geo && isArcOfCircle(*geo);
+        };
         if (sketch->geoIdFromShapeType(element.c_str(), selIdPair.GeoId, selIdPair.PosId)) {
             if (selIdPair.GeoId == Sketcher::GeoEnum::RtPnt && selIdPair.PosId == Sketcher::PointPos::start)
                 newSelType = (allowedSelTypes & SelRoot) ? SelRoot : SelVertexOrRoot;
@@ -1420,12 +1431,19 @@ public:
                 newSelType = (allowedSelTypes & SelHAxis) ? SelHAxis : SelEdgeOrAxis;
             else if (selIdPair.GeoId == Sketcher::GeoEnum::VAxis)
                 newSelType = (allowedSelTypes & SelVAxis) ? SelVAxis : SelEdgeOrAxis;
-            else if (boost::starts_with(element, "Edge"))
-                newSelType = (allowedSelTypes & SelEdge) ? SelEdge : SelEdgeOrAxis;
+            else if (boost::starts_with(element, "Edge")) {
+                if ((allowedSelTypes & SelArc) && isArc(selIdPair.GeoId))
+                    newSelType = SelArc;
+                else
+                    newSelType = (allowedSelTypes & SelEdge) ? SelEdge : SelEdgeOrAxis;
+            }
             else if (boost::starts_with(element, "Vertex"))
                 newSelType = (allowedSelTypes & SelVertex) ? SelVertex : SelVertexOrRoot;
-            else if (boost::starts_with(element, "ExternalEdge"))
-                newSelType = SelExternalEdge;
+            else if (boost::starts_with(element, "ExternalEdge")) {
+                newSelType = (allowedSelTypes & SelExternalArc) && isArc(selIdPair.GeoId)
+                    ? SelExternalArc
+                    : SelExternalEdge;
+            }
         }
 
         if (selIdPair.GeoId == GeoEnum::GeoUndef) {
@@ -9468,7 +9486,9 @@ CmdSketcherConstrainAngle::CmdSketcherConstrainAngle()
                            {SelVertexOrRoot, SelEdgeOrAxis, SelEdge},
                            {SelVertexOrRoot, SelEdge, SelExternalEdge},
                            {SelVertexOrRoot, SelExternalEdge, SelEdge},
-                           {SelVertexOrRoot, SelExternalEdge, SelExternalEdge}};
+                           {SelVertexOrRoot, SelExternalEdge, SelExternalEdge},
+                           {SelArc},
+                           {SelExternalArc}};
 }
 
 void CmdSketcherConstrainAngle::activated(int iMsg)
@@ -9768,6 +9788,37 @@ void CmdSketcherConstrainAngle::applyConstraint(std::vector<SelIdPair>& selSeq, 
             GeoId3 = selSeq.at(0).GeoId;
             PosId3 = selSeq.at(0).PosId;
             break;
+        }
+        case 15:// {SelArc}
+        case 16:// {SelExternalArc}
+        {
+            // an arc on its own: the angle of the arc
+            GeoId1 = selSeq.at(0).GeoId;
+
+            const Part::Geometry* geom = Obj->getGeometry(GeoId1);
+            if (!geom || !isArcOfCircle(*geom)) {
+                return;
+            }
+            auto arc = static_cast<const Part::GeomArcOfCircle*>(geom);
+            double angle = arc->getAngle(/*EmulateCCWXY=*/true);
+
+            openCommand(QT_TRANSLATE_NOOP("Command", "Add angle constraint"));
+            Gui::cmdAppObjectArgs(Obj,
+                                  "addConstraint(Sketcher.Constraint('Angle',%d,%.15g))",
+                                  GeoId1,
+                                  angle);
+
+            if (GeoId1 <= Sketcher::GeoEnum::RefExt || constraintCreationMode == Reference) {
+                // an external arc, or reference mode: the constraint does not drive
+                const std::vector<Sketcher::Constraint*>& ConStr = Obj->Constraints.getValues();
+
+                Gui::cmdAppObjectArgs(Obj, "setDriving(%d,%s)", ConStr.size() - 1, "False");
+                finishDatumConstraint(this, Obj, false);
+            }
+            else {
+                finishDatumConstraint(this, Obj, true);
+            }
+            return;
         }
     }
 

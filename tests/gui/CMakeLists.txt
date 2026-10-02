@@ -790,3 +790,10 @@ fc_add_gui_test(GuiSketchDistanceLabelSide_tests_run
 fc_add_gui_test(GuiSketchAngleLabelPlace_tests_run
                 sketch-angle-label-place.py
                 --timeout 150)
+
+# The angle tool takes an arc's own angle by one pick; a line still waits
+# for the second, and other tools see an arc as an edge (upstream
+# 129c7d4d03).
+fc_add_gui_test(GuiSketchAngleToolArc_tests_run
+                sketch-angle-tool-arc.py
+                --timeout 120)
