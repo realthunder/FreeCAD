@@ -764,6 +764,19 @@ public:
     void setThreshold(int threshold);
     int getThreshold() const;
 
+    /** Whether a mapped name's trailing index is hashed apart from its text
+     *
+     * Upstream FreeCAD always does it: the side faces of one prism share an ID
+     * and differ by its index ("#19:3"). This fork turned it off by default in
+     * 2023, so a hasher in either mode generates names the other cannot match.
+     * The mode therefore belongs to the hasher, i.e. to the document: it is
+     * saved with it, and a table saved before the mode was stored gets the
+     * one its own entries were written in (see inferIndexedNames()). A new
+     * hasher takes DocumentParams::getHashIndexedName().
+     */
+    void setIndexedNames(bool enable);
+    bool getIndexedNames() const;
+
     /** Clear internal marks
      *
      * The internal marks on internally stored StringID instances are used to
@@ -783,6 +796,8 @@ protected:
     void saveStream(std::ostream& stream) const;
     void restoreStream(std::istream& stream, std::size_t count);
     void restoreStreamNew(std::istream& stream, std::size_t count);
+    /// Decide the mode of a table restored without one from its entries
+    void inferIndexedNames();
 
 private:
     std::unique_ptr<HashMap> _hashes;///< Bidirectional map of StringID and its index (a long int).

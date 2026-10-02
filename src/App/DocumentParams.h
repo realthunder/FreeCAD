@@ -559,8 +559,10 @@ public:
     //@{
     /// Accessor for parameter HashIndexedName
     ///
-    /// Enable special encoding of indexes name in toponaming. Disabled by
-    /// default for backward compatibility
+    /// Encode a mapped name's trailing index apart from its text, as upstream
+    /// FreeCAD does. Sets the mode of new documents only: a document keeps the
+    /// mode it was saved in, and one saved before the mode was stored gets the
+    /// one its string table was written in.
     static const bool & getHashIndexedName();
     static const bool & defaultHashIndexedName();
     static void removeHashIndexedName();

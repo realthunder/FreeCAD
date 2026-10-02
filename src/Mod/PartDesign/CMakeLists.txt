@@ -64,12 +64,15 @@ set(PartDesign_TestScripts
     PartDesignTests/TestSuppressed.py
     PartDesignTests/TestInvoluteGear.py
     PartDesignTests/TestTopologicalNamingProblem.py
+    PartDesignTests/TestNameEncoding.py
 )
 
 set(PartDesign_TestFixtures
     PartDesignTests/Fixtures/InvoluteGear_v0-20.FCStd
     PartDesignTests/Fixtures/InternalInvoluteGear_v0-20.FCStd
     PartDesignTests/Fixtures/ModelFromV021.FCStd
+    PartDesignTests/Fixtures/FaceRefs_v1-1-4.FCStd
+    PartDesignTests/Fixtures/FaceRefs_fork_whole_names.FCStd
 )
 
 set(PartDesign_GearScripts

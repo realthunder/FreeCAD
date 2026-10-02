@@ -3,6 +3,7 @@
 #include "App/MappedName.h"
 #include "gtest/gtest.h"
 
+#include <App/DocumentParams.h>
 #include <App/StringHasher.h>
 #include <App/StringHasherPy.h>
 #include <App/StringIDPy.h>
@@ -1145,18 +1146,134 @@ TEST_F(StringHasherTest, getMemSize)  // NOLINT
     EXPECT_LT(Hasher()->size(), result);
 }
 
+namespace
+{
+/// A hasher holding one element name with a trailing index, hashed in the
+/// given mode and marked so that it is saved
+Base::Reference<App::StringHasher> givenIndexableName(bool indexedNames)
+{
+    Base::Reference<App::StringHasher> hasher(new App::StringHasher);
+    hasher->setIndexedNames(indexedNames);
+    Data::MappedName name(Data::MappedName("Face3"), ";:M;FUS;:Hb:7,F");
+    QVector<App::StringIDRef> sids;
+    hasher->getID(name, sids).mark();
+    return hasher;
+}
+
+std::string saveHasher(const App::StringHasher& hasher)
+{
+    Base::StringWriter writer;
+    hasher.Save(writer);
+    return writer.getString();
+}
+
+/// What a document saved before the mode was stored has
+std::string withoutMode(std::string xml)
+{
+    for (const char* attr : {" indexed=\"0\"", " indexed=\"1\""}) {
+        auto pos = xml.find(attr);
+        if (pos != std::string::npos) {
+            xml.erase(pos, std::strlen(attr));
+        }
+    }
+    return xml;
+}
+
+Base::Reference<App::StringHasher> restoreHasher(const std::string& xml)
+{
+    std::istringstream stream(R"(<?xml version="1.0" encoding="UTF-8"?><document>)" + xml
+                              + "</document>");
+    Base::XMLReader reader("Document.xml", stream);
+    Base::Reference<App::StringHasher> hasher(new App::StringHasher);
+    hasher->Restore(reader);
+    return hasher;
+}
+}  // namespace
+
+TEST_F(StringHasherTest, indexedNamesSplitTheTrailingIndex)  // NOLINT
+{
+    // Arrange
+    Data::MappedName name(Data::MappedName("Face3"), ";:M;FUS;:Hb:7,F");
+    QVector<App::StringIDRef> sids;
+    Base::Reference<App::StringHasher> whole(new App::StringHasher);
+    whole->setIndexedNames(false);
+    Hasher()->setIndexedNames(true);
+
+    // Act
+    auto indexedID = Hasher()->getID(name, sids);
+    auto wholeID = whole->getID(name, sids);
+
+    // Assert: upstream's encoding, "Face" plus index 3, against the whole
+    // name; the same name either way
+    EXPECT_TRUE(indexedID.deref().isIndexed());
+    EXPECT_EQ(3, indexedID.getIndex());
+    EXPECT_FALSE(wholeID.deref().isIndexed());
+    EXPECT_EQ(indexedID.dataToText(), wholeID.dataToText());
+    whole->clear();
+}
+
 TEST_F(StringHasherTest, Save)  // NOLINT
 {
     // Arrange
+    auto indexed = givenIndexableName(true);
+    auto whole = givenIndexableName(false);
+
     // Act
-    // Assert
+    auto indexedXml = saveHasher(*indexed);
+    auto wholeXml = saveHasher(*whole);
+
+    // Assert: the mode is saved with the table
+    EXPECT_NE(std::string::npos, indexedXml.find(" indexed=\"1\""));
+    EXPECT_NE(std::string::npos, wholeXml.find(" indexed=\"0\""));
+    indexed->clear();
+    whole->clear();
 }
 
 TEST_F(StringHasherTest, Restore)  // NOLINT
 {
     // Arrange
+    auto indexed = givenIndexableName(true);
+    auto whole = givenIndexableName(false);
+    // A stored mode is taken as it is, whatever the entries say
+    std::string overridden = saveHasher(*indexed);
+    overridden.replace(overridden.find(" indexed=\"1\""), 12, " indexed=\"0\"");
+
     // Act
+    auto indexedBack = restoreHasher(saveHasher(*indexed));
+    auto wholeBack = restoreHasher(saveHasher(*whole));
+    auto overriddenBack = restoreHasher(overridden);
+
     // Assert
+    EXPECT_TRUE(indexedBack->getIndexedNames());
+    EXPECT_EQ(indexed->size(), indexedBack->size());
+    EXPECT_FALSE(wholeBack->getIndexedNames());
+    EXPECT_FALSE(overriddenBack->getIndexedNames());
+    for (auto hasher : {indexed, whole, indexedBack, wholeBack, overriddenBack}) {
+        hasher->clear();
+    }
+}
+
+TEST_F(StringHasherTest, restoreWithoutModeTakesTheTableOne)  // NOLINT
+{
+    // Arrange: tables saved before the mode was, one per encoding, and one
+    // with no name that the two encodings would write differently
+    auto indexed = givenIndexableName(true);
+    auto whole = givenIndexableName(false);
+    QVector<App::StringIDRef> sids;
+    Hasher()->getID(givenMappedName("SomeTestName", ";:M;FUS;:Hb:7,F"), sids).mark();
+
+    // Act
+    auto indexedBack = restoreHasher(withoutMode(saveHasher(*indexed)));
+    auto wholeBack = restoreHasher(withoutMode(saveHasher(*whole)));
+    auto neutralBack = restoreHasher(withoutMode(saveHasher(*Hasher())));
+
+    // Assert
+    EXPECT_TRUE(indexedBack->getIndexedNames());
+    EXPECT_FALSE(wholeBack->getIndexedNames());
+    EXPECT_EQ(App::DocumentParams::getHashIndexedName(), neutralBack->getIndexedNames());
+    for (auto hasher : {indexed, whole, indexedBack, wholeBack, neutralBack}) {
+        hasher->clear();
+    }
 }
 
 TEST_F(StringHasherTest, SaveDocFile)  // NOLINT
@@ -1186,10 +1303,11 @@ TEST_F(StringHasherTest, RestoreDocFile)  // NOLINT
     // Act
     restored->RestoreDocFile(reader);
 
-    // Assert: what was saved comes back, with its data
+    // Assert: what was saved comes back, with its data. The index of an
+    // indexed name is the reference's, not the entry's.
     EXPECT_GT(Hasher()->count(), 0);
     EXPECT_EQ(Hasher()->count(), restored->size());
-    auto back = restored->getID(id.value());
+    auto back = restored->getID(id.value(), id.getIndex());
     ASSERT_TRUE(back);
     EXPECT_EQ(id.dataToText(), back.dataToText());
 }

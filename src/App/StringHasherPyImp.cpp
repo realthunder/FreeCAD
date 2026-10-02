@@ -163,6 +163,16 @@ void StringHasherPy::setThreshold(Py::Long value)
     getStringHasherPtr()->setThreshold(value);
 }
 
+Py::Boolean StringHasherPy::getIndexedNames() const
+{
+    return {getStringHasherPtr()->getIndexedNames()};
+}
+
+void StringHasherPy::setIndexedNames(Py::Boolean value)
+{
+    getStringHasherPtr()->setIndexedNames(value);
+}
+
 Py::Dict StringHasherPy::getTable() const {
     Py::Dict dict;
     for(const auto &v : getStringHasherPtr()->getIDMap()) {

@@ -162,9 +162,11 @@ Params = [
     ParamBool('DuplicateLabels', False),
     ParamBool('TransactionOnRecompute', False),
     ParamBool('RelativeStringID', True),
-    ParamBool('HashIndexedName', False,
-        doc='Enable special encoding of indexes name in toponaming. Disabled by\n'
-            'default for backward compatibility'),
+    ParamBool('HashIndexedName', True,
+        doc='Encode a mapped name\'s trailing index apart from its text, as upstream\n'
+            'FreeCAD does. Sets the mode of new documents only: a document keeps the\n'
+            'mode it was saved in, and one saved before the mode was stored gets the\n'
+            'one its string table was written in.'),
     ParamBool('EnableMaterialEdit', True),
     ParamBool('MCPServerAutoStart', False,
         doc='Start the MCP debug console server (freecad.mcp_console) when the\n'

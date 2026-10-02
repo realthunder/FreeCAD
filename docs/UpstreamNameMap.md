@@ -56,6 +56,40 @@ The free functions around the constants -- `hasMissingElement`,
 `findElementName`, `hasMappedElementName` -- carry the same names and
 signatures on both sides and need no translation at all.
 
+### Except how an indexed name is hashed (2026-10-02)
+
+The strings are the same; the string *table* was not. A name with a trailing
+index -- `#f:3;:G;XTR;...`, the third side face of a prism -- is hashed by
+upstream as text plus index: all side faces share one ID and a reference
+reads `#19:3`. This fork did that only with `HashIndexedName` on, and turned
+it off by default in 2023 (`c35efd8a8b`), so here the same name got an ID of
+its own (`#2c4`). A reference saved by one side then names an ID the other
+never generates. It went unnoticed because the reference survives a plain
+recompute through the geometry search, as long as the element's geometry is
+unchanged -- and that search had silently stopped finding curved faces
+(`6a098953cd`, `GeomElementarySurface::isSame`). Measured on five bodies with
+six references, after lengthening the pads: an upstream 1.1.4 file kept 1 of
+6 here, and a fork file opened with indexing on kept 1 of 6. Neither global
+setting serves both.
+
+So the encoding belongs to the document. `StringHasher` saves it as
+`indexed="0|1"` on `<StringHasher>` (upstream ignores the attribute), and a
+table saved before then gets the encoding its entries show: an `Indexed` or
+`PrefixIDIndex` entry is the indexing encoding's, a postfixed entry holding
+text that `getID()` would have split (an `IndexedName`, or `#hex:N`) is the
+other's, and a table with neither -- where both encodings reproduce every
+stored name -- takes the preference. `HashIndexedName` now only chooses the
+encoding of new documents, and defaults to on, upstream's. Existing fork
+documents keep theirs. Python: `doc.Hasher.IndexedNames`. Tests:
+`Toponaming_tests_run` (`StringHasherTest.Save`, `Restore`,
+`restoreWithoutModeTakesTheTableOne`, `indexedNamesSplitTheTrailingIndex`)
+and `PartDesignTests/TestNameEncoding.py`, on a 1.1.4 fixture and a fork one.
+
+Not done: converting a document from one encoding to the other. It is
+possible -- switch `IndexedNames`, recompute with no edit so the geometry
+search re-points every reference, save -- but only for a model whose
+recompute reproduces its saved geometry, so it is not automatic.
+
 ## 2. The method map
 
 `makEXxx` -> `makeElementXxx`, mechanically, over 34 names. Measured

@@ -219,7 +219,7 @@ public:
         funcs["TransactionOnRecompute"] = &DocumentParamsP::updateTransactionOnRecompute;
         RelativeStringID = this->handle->GetBool("RelativeStringID", true);
         funcs["RelativeStringID"] = &DocumentParamsP::updateRelativeStringID;
-        HashIndexedName = this->handle->GetBool("HashIndexedName", false);
+        HashIndexedName = this->handle->GetBool("HashIndexedName", true);
         funcs["HashIndexedName"] = &DocumentParamsP::updateHashIndexedName;
         EnableMaterialEdit = this->handle->GetBool("EnableMaterialEdit", true);
         funcs["EnableMaterialEdit"] = &DocumentParamsP::updateEnableMaterialEdit;
@@ -402,7 +402,7 @@ public:
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateHashIndexedName(DocumentParamsP *self) {
-        self->HashIndexedName = self->handle->GetBool("HashIndexedName", false);
+        self->HashIndexedName = self->handle->GetBool("HashIndexedName", true);
     }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateEnableMaterialEdit(DocumentParamsP *self) {
@@ -592,10 +592,12 @@ static const App::ParamRegistry::Registrar _DocumentParamsRegistrar({
         .setTitle("Transaction On Recompute"),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "RelativeStringID", "RelativeStringID", App::ParamInfo::Bool, true)
         .setTitle("Relative String ID"),
-    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "HashIndexedName", "HashIndexedName", App::ParamInfo::Bool, false)
+    App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "HashIndexedName", "HashIndexedName", App::ParamInfo::Bool, true)
         .setTitle("Hash Indexed Name")
-        .setDoc("Enable special encoding of indexes name in toponaming. Disabled by\n"
-"default for backward compatibility"),
+        .setDoc("Encode a mapped name's trailing index apart from its text, as upstream\n"
+"FreeCAD does. Sets the mode of new documents only: a document keeps the\n"
+"mode it was saved in, and one saved before the mode was stored gets the\n"
+"one its string table was written in."),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "EnableMaterialEdit", "EnableMaterialEdit", App::ParamInfo::Bool, true)
         .setTitle("Enable Material Edit"),
     App::ParamInfo("App", "DocumentParams", "User parameter:BaseApp/Preferences/Document", "MCPServerAutoStart", "MCPServerAutoStart", App::ParamInfo::Bool, false)
@@ -1768,8 +1770,10 @@ void DocumentParams::removeRelativeStringID() {
 // Auto generated code (Tools/params_utils.py:397)
 const char *DocumentParams::docHashIndexedName() {
     return QT_TRANSLATE_NOOP("DocumentParams",
-"Enable special encoding of indexes name in toponaming. Disabled by\n"
-"default for backward compatibility");
+"Encode a mapped name's trailing index apart from its text, as upstream\n"
+"FreeCAD does. Sets the mode of new documents only: a document keeps the\n"
+"mode it was saved in, and one saved before the mode was stored gets the\n"
+"one its string table was written in.");
 }
 
 // Auto generated code (Tools/params_utils.py:405)
@@ -1779,7 +1783,7 @@ const bool & DocumentParams::getHashIndexedName() {
 
 // Auto generated code (Tools/params_utils.py:413)
 const bool & DocumentParams::defaultHashIndexedName() {
-    const static bool def = false;
+    const static bool def = true;
     return def;
 }
 

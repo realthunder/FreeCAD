@@ -67,3 +67,4 @@ from PartDesignTests.TestInvoluteGear import TestInvoluteGear
 
 # element names (upstream's, 83ea7e4355 and after)
 from PartDesignTests.TestTopologicalNamingProblem import TestTopologicalNamingProblem
+from PartDesignTests.TestNameEncoding import TestNameEncoding
