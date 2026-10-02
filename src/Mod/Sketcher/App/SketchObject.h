@@ -398,6 +398,15 @@ public:
     int setVirtualSpace(int ConstrId, bool isinvirtualspace);
     /// set the driving status of a group of constraints at once
     int setVirtualSpace(std::vector<int> constrIds, bool isinvirtualspace);
+    /** Set whether this constraint is drawn
+     *
+     * Apart from the virtual space it is in: the constraints panel hides
+     * what its filter leaves out with this. Nothing is written when the
+     * constraint is as asked already.
+     */
+    int setVisibility(int ConstrId, bool isVisible);
+    /// the same for a group of constraints at once
+    int setVisibility(std::vector<int> constrIds, bool isVisible);
     /// get the driving status of this constraint
     int getVirtualSpace(int ConstrId, bool& isinvirtualspace) const;
     /// toggle the driving status of this constraint

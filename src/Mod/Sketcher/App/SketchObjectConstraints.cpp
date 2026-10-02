@@ -798,6 +798,56 @@ int SketchObject::setVirtualSpace(std::vector<int> constrIds, bool isinvirtualsp
     return 0;
 }
 
+int SketchObject::setVisibility(int ConstrId, bool isVisible)
+{
+    return setVisibility(std::vector<int> {ConstrId}, isVisible);
+}
+
+int SketchObject::setVisibility(std::vector<int> constrIds, bool isVisible)
+{
+    // no need to check input data validity as this is an sketchobject managed operation.
+    Base::StateLocker lock(managedoperation, true);
+
+    if (constrIds.empty()) {
+        return 0;
+    }
+
+    std::sort(constrIds.begin(), constrIds.end());
+
+    const std::vector<Constraint*>& vals = this->Constraints.getValues();
+
+    if (constrIds.front() < 0 || constrIds.back() >= int(vals.size())) {
+        return -1;
+    }
+
+    std::vector<Constraint*> newVals(vals);
+
+    bool changed = false;
+    for (auto cid : constrIds) {
+        // clone the changed Constraint
+        if (vals[cid]->isVisible != isVisible) {
+            Constraint* constNew = vals[cid]->clone();
+            constNew->isVisible = isVisible;
+            newVals[cid] = constNew;
+            changed = true;
+        }
+    }
+
+    // Nothing to write: the panel asks for the state its filter wants each
+    // time the constraints change, and a write is one of those changes.
+    if (!changed) {
+        return 0;
+    }
+
+    this->Constraints.setValues(std::move(newVals));
+
+    // Solver didn't actually update, but we need this to inform view provider
+    // to redraw
+    signalSolverUpdate();
+
+    return 0;
+}
+
 int SketchObject::getVirtualSpace(int ConstrId, bool& isinvirtualspace) const
 {
     const std::vector<Constraint*>& vals = this->Constraints.getValues();

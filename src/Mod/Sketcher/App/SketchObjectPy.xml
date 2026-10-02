@@ -474,6 +474,16 @@ toggleDriving(constraintIndex:int)
             <UserDocu>set the VirtualSpace status of a constraint</UserDocu>
         </Documentation>
     </Methode>
+    <Methode Name="setVisibility">
+        <Documentation>
+            <UserDocu>
+Set whether a constraint, or a list of them, is drawn.
+
+setVisibility(constraintIndex:int, state:bool)
+setVisibility(constraintIndices:list, state:bool)
+            </UserDocu>
+        </Documentation>
+    </Methode>
     <Methode Name="getVirtualSpace">
         <Documentation>
             <UserDocu>Get the VirtualSpace status of a constraint</UserDocu>
