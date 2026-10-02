@@ -459,6 +459,8 @@ struct EditData {
     int MarkerSize;
     int coinFontSize;
     int labelFontSize;
+    /// the font of a dimension's number; empty for the label's own
+    std::string labelFontName;
     int constraintIconSize;
     // icons on one spot, laid out side by side: per line, and lines before "+N"
     // (View/ConstraintIconLabelsPerLine, View/ConstraintIconLabelLines)
@@ -5692,6 +5694,7 @@ void ViewProviderSketch::OnChange(Base::Subject<const char*> &rCaller, const cha
         "MarkerSize",
 
         "EditSketcherFontSize",
+        "EditSketcherFontName",
         "ConstraintIconLabelsPerLine",
         "ConstraintIconLabelLines",
         "ConstraintSymbolSize",
@@ -5905,6 +5908,8 @@ void ViewProviderSketch::initParams()
         if (dpi <= 0.0)
             dpi = 96.0;
         edit->labelFontSize = std::lround(sketcherfontSize * dpr * 72.0 / dpi);
+        // upstream b9a89bada1
+        edit->labelFontName = hGrp->GetASCII("EditSketcherFontName", "");
         // A constraint symbol has a size of its own (upstream eef738b312,
         // dc22fb4b9b): the application font's height until it is set. It
         // was 0.8 of the label font's size and followed that.
@@ -8452,6 +8457,8 @@ void ViewProviderSketch::rebuildConstraintsVisual(void)
                                             :NonDrivingConstrDimColor)
                                         :DeactivatedConstrDimColor;
                 text->size.setValue(edit->labelFontSize);
+                if (!edit->labelFontName.empty())
+                    text->name.setValue(edit->labelFontName.c_str());
                 text->lineWidth = edit->DimensionLineWidth * edit->pixelScalingFactor;
                 text->linePattern = edit->DimensionLinePattern;
                 text->useAntialiasing = false;

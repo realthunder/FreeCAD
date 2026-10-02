@@ -529,6 +529,14 @@ SketcherSettingsDisplay::SketcherSettingsDisplay(QWidget* parent)
             &QPushButton::clicked,
             this,
             &SketcherSettingsDisplay::onBtnTVApplyClicked);
+    connect(ui->fontBoxSketcherFontName,
+            &QFontComboBox::currentFontChanged,
+            this,
+            &SketcherSettingsDisplay::onFontNameChanged);
+    connect(ui->EditSketcherFontSize,
+            qOverload<int>(&QSpinBox::valueChanged),
+            this,
+            &SketcherSettingsDisplay::onFontSizeChanged);
 }
 
 /**
@@ -542,6 +550,18 @@ SketcherSettingsDisplay::~SketcherSettingsDisplay()
 void SketcherSettingsDisplay::saveSettings()
 {
     ui->ZHeight->onSave();
+    // A font box always holds some font. Stored only when it is another
+    // than the page was loaded with, or one is stored already: unset means
+    // the label's own font, and an OK on a page nobody touched must not
+    // change what a label is drawn in. (Not a flag set by the box's
+    // signal: that fires when the page is shown, too.)
+    if (ui->fontBoxSketcherFontName->currentFont().family() != loadedFontFamily
+        || !App::GetApplication()
+                .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
+                ->GetASCII("EditSketcherFontName", "")
+                .empty()) {
+        ui->fontBoxSketcherFontName->onSave();
+    }
     ui->EditSketcherFontSize->onSave();
     ui->ConstraintIconLabelsPerLine->onSave();
     ui->ConstraintIconLabelLines->onSave();
@@ -571,6 +591,9 @@ void SketcherSettingsDisplay::saveSettings()
 void SketcherSettingsDisplay::loadSettings()
 {
     ui->ZHeight->onRestore();
+    ui->fontBoxSketcherFontName->onRestore();
+    loadedFontFamily = ui->fontBoxSketcherFontName->currentFont().family();
+    onFontNameChanged(ui->fontBoxSketcherFontName->currentFont());
     ui->EditSketcherFontSize->onRestore();
     ui->ConstraintIconLabelsPerLine->onRestore();
     ui->ConstraintIconLabelLines->onRestore();
@@ -611,6 +634,92 @@ void SketcherSettingsDisplay::changeEvent(QEvent* e)
     else {
         QWidget::changeEvent(e);
     }
+}
+
+void SketcherSettingsDisplay::showEvent(QShowEvent* e)
+{
+    // the preview on the view's background, in a dimension's colour
+    QPalette previewPalette = QPalette();
+    previewPalette.setColor(QPalette::Window, getSketcherBackgroundColor());
+    previewPalette.setColor(QPalette::WindowText, getSketcherConstraintColor());
+    ui->LabelFontPreview->setPalette(previewPalette);
+
+    Gui::Dialog::PreferencePage::showEvent(e);
+}
+
+void SketcherSettingsDisplay::onFontNameChanged(const QFont& font)
+{
+    QFont testFont;
+    // For QFontMetrics::inFont() to say no, the style strategy has to be
+    // set before the family
+    testFont.setStyleStrategy(QFont::NoFontMerging);
+    testFont.setFamily(font.family());
+
+    QFontMetrics metrics(testFont);
+    auto testChars = QString::fromUtf8(RequiredCharacters).toUcs4();
+
+    QString missingChars;
+    for (uint testChar : testChars) {
+        if (!metrics.inFontUcs4(testChar)) {
+            missingChars += QStringLiteral("  ");
+            missingChars += QString::fromUcs4(reinterpret_cast<const char32_t*>(&testChar), 1);
+        }
+    }
+
+    if (missingChars.length() > 0) {
+        ui->LabelFontMessage->setText(tr("Glyphs not present:") + missingChars);
+        ui->LabelFontMessage->show();
+    }
+    else {
+        ui->LabelFontMessage->hide();
+    }
+
+    QFont previewFont(font);
+    previewFont.setPixelSize(ui->EditSketcherFontSize->value());
+    ui->LabelFontPreview->setFont(previewFont);
+}
+
+void SketcherSettingsDisplay::onFontSizeChanged(int size)
+{
+    QFont previewFont = ui->fontBoxSketcherFontName->currentFont();
+    previewFont.setPixelSize(size);
+    ui->LabelFontPreview->setFont(previewFont);
+}
+
+QColor SketcherSettingsDisplay::getSketcherBackgroundColor()
+{
+    auto parameters = App::GetApplication().GetUserParameter().GetGroup("BaseApp/Preferences/View");
+
+    uint32_t backgroundColor;
+    if (parameters->GetBool("Gradient", false) || parameters->GetBool("RadialGradient", false)) {
+        if (parameters->GetBool("UseBackgroundColorMid")) {
+            backgroundColor = parameters->GetUnsigned("BackgroundColor4", 0xFFFFFFFF);
+        }
+        else {
+            // a gradient of two colours: their average, the background in
+            // the middle of the view
+            backgroundColor = (((parameters->GetUnsigned("BackgroundColor2", 0xFFFFFFFF)) >> 8)
+                               + ((parameters->GetUnsigned("BackgroundColor3", 0xFFFFFFFF)) >> 8))
+                << 7;
+        }
+    }
+    else {
+        backgroundColor = parameters->GetUnsigned("BackgroundColor", 0xFFFFFFFF);
+    }
+
+    return QColor((backgroundColor >> 24) & 0xFF,
+                  (backgroundColor >> 16) & 0xFF,
+                  (backgroundColor >> 8) & 0xFF);
+}
+
+QColor SketcherSettingsDisplay::getSketcherConstraintColor()
+{
+    auto parameters = App::GetApplication().GetUserParameter().GetGroup("BaseApp/Preferences/View");
+    uint32_t constraintColor = parameters->GetUnsigned("ConstrainedDimColor", 0x000000FF);
+
+    return QColor((constraintColor >> 24) & 0xFF,
+                  (constraintColor >> 16) & 0xFF,
+                  (constraintColor >> 8) & 0xFF);
 }
 
 void SketcherSettingsDisplay::onBtnTVApplyClicked(bool)

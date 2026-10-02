@@ -96,14 +96,28 @@ public:
     void saveSettings() override;
     void loadSettings() override;
 
+    // Characters a label can show, which the chosen font should have:
+    //   degree sign, micro sign, f with hook, stroke overlay, diameter sign,
+    //   upper half circle, mathematical f, mathematical x
+    static constexpr const char* const RequiredCharacters =
+        "\u00B0\u00B5\u0192\u0336\u2300\u25E0\U0001D453\U0001D465";
+
 protected:
     void changeEvent(QEvent* e) override;
+    void showEvent(QShowEvent* e) override;
+
+    QColor getSketcherBackgroundColor();
+    QColor getSketcherConstraintColor();
+    void onFontNameChanged(const QFont& font);
+    void onFontSizeChanged(int size);
 
 private Q_SLOTS:
     void onBtnTVApplyClicked(bool);
 
 private:
     std::unique_ptr<Ui_SketcherSettingsDisplay> ui;
+    /// the family the font box held when the page was loaded
+    QString loadedFontFamily;
 };
 
 /**

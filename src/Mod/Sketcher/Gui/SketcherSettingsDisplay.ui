@@ -472,6 +472,96 @@ Supports all unit systems except 'US customary' and 'Building US/Euro'.</string>
         </property>
        </widget>
       </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="label_5">
+        <property name="text">
+         <string>Font name</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="Gui::PrefFontBox" name="fontBoxSketcherFontName">
+        <property name="minimumSize">
+         <size>
+          <width>250</width>
+          <height>0</height>
+         </size>
+        </property>
+        <property name="toolTip">
+         <string>Font used for labels and constraints</string>
+        </property>
+        <property name="prefEntry" stdset="0">
+         <cstring>EditSketcherFontName</cstring>
+        </property>
+        <property name="prefPath" stdset="0">
+         <cstring>View</cstring>
+        </property>
+       </widget>
+      </item>
+      <item row="16" column="0">
+       <widget class="QLabel" name="label_6">
+        <property name="text">
+         <string>Font preview</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignTop|Qt::AlignLeft|Qt::AlignLeading</set>
+        </property>
+       </widget>
+      </item>
+      <item row="16" column="1" rowspan="2">
+       <widget class="QLabel" name="LabelFontPreview">
+        <property name="toolTip">
+         <string>Preview of a constraint text when selected font family and size is used</string>
+        </property>
+        <property name="minimumSize">
+         <size>
+          <width>0</width>
+          <height>64</height>
+         </size>
+        </property>
+        <property name="text">
+         <string>&#x2300;123.45 &#xB5;m (&#x192;&#x1D465;)</string>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignCenter</set>
+        </property>
+        <property name="frameShape">
+         <enum>QFrame::Panel</enum>
+        </property>
+        <property name="frameShadow">
+         <enum>QFrame::Sunken</enum>
+        </property>
+        <property name="lineWidth">
+         <number>1</number>
+        </property>
+        <property name="autoFillBackground">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item row="17" column="0">
+       <widget class="QLabel" name="LabelFontMessage">
+        <property name="toolTip">
+         <string>Because the selected font does not contain all characters Sketcher uses,
+the characters listed here will be drawn using a substitute font.</string>
+        </property>
+        <property name="text">
+         <string/>
+        </property>
+        <property name="textInteractionFlags">
+         <set>Qt::TextSelectableByMouse</set>
+        </property>
+        <property name="alignment">
+         <set>Qt::AlignBottom|Qt::AlignRight|Qt::AlignTrailing</set>
+        </property>
+        <property name="font">
+         <font>
+          <weight>75</weight>
+          <bold>true</bold>
+         </font>
+        </property>
+       </widget>
+      </item>
      </layout>
     </widget>
    </item>
@@ -712,6 +802,11 @@ Works only when &quot;Restore camera position after editing&quot; is enabled.</s
   </layout>
  </widget>
  <customwidgets>
+  <customwidget>
+   <class>Gui::PrefFontBox</class>
+   <extends>QFontComboBox</extends>
+   <header>Gui/PrefWidgets.h</header>
+  </customwidget>
   <customwidget>
    <class>Gui::PrefCheckBox</class>
    <extends>QCheckBox</extends>
