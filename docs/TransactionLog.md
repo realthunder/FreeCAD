@@ -10892,3 +10892,63 @@ Pictures (the user: "as usual, including the pocket one"): fork `5319514b16`
 -- `sector_outer_arc_input`, pictured for what the call leaves of its input
 (a new `INPUT` kind in `cases.py`: the panels show the input after the
 thickness), and the six 27.103 suite cases not yet pictured.
+
+### 27.105 Thickness: every face removed is refused; a surface is its own copy again; five files back to CRLF (user, 2026-10-02)
+
+Three things, the user's rulings on each.
+
+**Every face removed.** The sweep's one refusal left after 27.103 was the
+torus with its face removed. That is the right answer: a torus has one face,
+and with it removed no face stays to be thickened. The fault was next to it:
+the sphere, a one-face shape too, came back as the sphere itself -- a
+"valid" 523.5988, the input unhollowed -- and so did a box with all six
+faces removed (600). The user: refuse. `BRepOffset_MakeOffset::MakeThickSolid`
+(fork `c6898b1e0b`) refuses at the start when no face of the shape stays:
+not done, `BRepOffset_UnknownError`, no shape. The fork's suite gains
+`refused_case` (the call must throw and leave its input as it was):
+`sphere_face_refused_out/in`, `sphere_face_join_refused_in`,
+`box_all_faces_refused_in`, `box_all_faces_inter_refused_out` -- all five
+answered with the input before -- and `torus_face_refused_out/in`; PASS 101
+unfrozen and frozen (`d422c8cfa0`). FreeCAD:
+`RegressionTests.test_thickness_with_every_face_removed_is_refused`; and the
+gtest `ImmutableShapeTest.aThickSolidLeavesAFrozenInput`, which removed a
+sphere's one face and expected the call done, now uses a hemisphere with its
+spherical face removed (a plate cut by the sphere, pi (12.5 - 1/24) =
+39.1390) and checks the whole sphere is refused without a throw and with its
+bytes as they were.
+
+*Found, not fixed:* the hemisphere the other way round -- its flat face
+removed, the dome kept -- comes back invalid, 216.55 outward and 231.51
+inward by 0.5, where the dome's shell is (2/3) pi (5.5^3 - 5^3) = 86.66 and
+(2/3) pi (5^3 - 4.5^3) = 70.95. The next candidate.
+
+**A surface is the same as its copy** (`4fdd0d853a`, picked with `-x` from
+the Windows box's `PartDesignPort` `6a098953cd`, the user: "you can pick
+it"). `GeomCylinder`, `GeomCone`, `GeomSphere`, `GeomToroid` and `GeomPlane`
+were registered under `GeomSurface`, while `GeomElementarySurface::isSame()`
+opens with `isDerivedFrom<GeomElementarySurface>()`: every elementary
+surface compared different from every other, itself included, and the
+geometry search a missing element reference falls back to
+(`searchSubShape`) never found a curved face. The swept surfaces the same,
+`GeomSweptSurface` never registered. Two gtests come with it.
+
+**Line endings.** The pick conflicted on the whole of `AppPart.cpp`. Not the
+Windows box's doing: the file is CRLF on `LinkVibe` and on `PartDesignPort`,
+and this branch had rewritten it to LF -- with `AppPartGui.cpp`,
+`ViewProviderDatum.cpp/.h` (`b27da9f1a0`, `1bcc1f73df`, the datum port,
+2026-09-19/20) and `Transactions.h` (`3734116a60`, the log's first slice,
+2026-09-22); a scan of every file changed since `LinkVibe` found those five.
+`c7f5d71a02` puts them back: line endings only (`git diff
+--ignore-cr-at-eol` is empty), and the diff against `LinkVibe` is down to
+the real edits. No history was rewritten -- the docs cite some 250 of this
+branch's hashes -- and nothing force-pushed.
+
+Pictures: fork `9d095f81a0` -- `sphere_face_refused_in` and
+`box_all_faces_refused_in`, a new `REFUSED` kind in `cases.py` (a throw is
+right, an answer the fault; the panels show the input). 69 pictured.
+
+**Gates**, frozen and unfrozen each: Python 2981 OK (52 skipped frozen, 53
+unfrozen; 6 expected failures; +1), ctest 856/856 (`-j6` frozen, `-j1`
+unfrozen, the setting still in `user.cfg` at the end), the fork's thickness
+suite PASS 101. The pick and the line endings were gated on their own before
+the fork changed: Python 2980 and ctest 856/856, both ways.

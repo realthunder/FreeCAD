@@ -781,6 +781,26 @@ class RegressionTests(unittest.TestCase):
             self.assertTrue(pad.isValid(), name)
             self.assertAlmostEqual(pad.Volume, volume, places=6, msg=name)
 
+    def test_thickness_with_every_face_removed_is_refused(self):
+        """No face stays to be thickened, and there is no answer. A sphere
+        with its one face removed came back as the sphere itself, valid and
+        unhollowed, and a box with all six faces removed as the box; a torus
+        was refused already (docs/TransactionLog.md sec 27.105)."""
+        box = Part.makeBox(10, 10, 6)
+        cases = (
+            ("sphere", Part.makeSphere(5), None),
+            ("torus", Part.makeTorus(8, 2), None),
+            ("box", box, box.Faces),
+        )
+        for name, shape, faces in cases:
+            for offset in (1.0, -1.0):
+                for join in (0, 2):
+                    with self.assertRaises(Exception, msg="%s %g %d" % (name, offset, join)):
+                        shape.makeThickness(
+                            faces or shape.Faces, offset, 1e-7, False, False, 0, join
+                        )
+            self.assertTrue(shape.isValid(), name)
+
     def test_thickness_intersection_join_with_one_face_left(self):
         """The Intersection join where one face stays beside the removed ones:
         a cylinder down to its top, a box down to its bottom. It threw

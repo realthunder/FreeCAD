@@ -28,6 +28,7 @@
 #include <Geom_Curve.hxx>
 #include <TopLoc_Location.hxx>
 #include <BRepOffsetAPI_MakeThickSolid.hxx>
+#include <BRepAdaptor_Surface.hxx>
 #include <BRepPrimAPI_MakeSphere.hxx>
 #include <BRepPrimAPI_MakeTorus.hxx>
 #include <Geom_Line.hxx>
@@ -676,21 +677,34 @@ TEST(ImmutableShapeTest, aThawedCopyKeepsItsName)
     }
 }
 
-// A thick solid from a frozen sphere: the offset puts the removed face's
-// vertices on the edges it extends (the first test above), and leaves the
-// sphere's bytes as they were.
+// A thick solid from a frozen hemisphere, its spherical face removed: the
+// offset puts the removed face's vertices on the edges it extends (the first
+// test above), and leaves the input's bytes as they were. A whole sphere
+// with its one face removed, which this used, leaves no face to thicken and
+// is refused (docs/TransactionLog.md sec 27.105): not done, and no throw.
 TEST(ImmutableShapeTest, aThickSolidLeavesAFrozenInput)
 {
     tests::initApplication();
+    TopoDS_Shape hemisphere = BRepPrimAPI_MakeSphere(5, 0., M_PI / 2).Shape();
+    setImmutable(hemisphere);
+    const std::string before = storedBytes(hemisphere);
+    TopTools_ListOfShape removed;
+    removed.Append(TopExp_Explorer(hemisphere, TopAbs_FACE).Current());
+    ASSERT_EQ(BRepAdaptor_Surface(TopoDS::Face(removed.First())).GetType(), GeomAbs_Sphere);
+    BRepOffsetAPI_MakeThickSolid thick;
+    EXPECT_NO_THROW(thick.MakeThickSolidByJoin(hemisphere, removed, 0.5, 1e-3));
+    EXPECT_TRUE(thick.IsDone());
+    EXPECT_EQ(storedBytes(hemisphere), before);
+
     TopoDS_Shape sphere = BRepPrimAPI_MakeSphere(5).Shape();
     setImmutable(sphere);
-    const std::string before = storedBytes(sphere);
-    TopTools_ListOfShape removed;
-    removed.Append(TopExp_Explorer(sphere, TopAbs_FACE).Current());
-    BRepOffsetAPI_MakeThickSolid thick;
-    EXPECT_NO_THROW(thick.MakeThickSolidByJoin(sphere, removed, 0.5, 1e-3));
-    EXPECT_TRUE(thick.IsDone());
-    EXPECT_EQ(storedBytes(sphere), before);
+    const std::string sphereBefore = storedBytes(sphere);
+    TopTools_ListOfShape all;
+    all.Append(TopExp_Explorer(sphere, TopAbs_FACE).Current());
+    BRepOffsetAPI_MakeThickSolid none;
+    EXPECT_NO_THROW(none.MakeThickSolidByJoin(sphere, all, 0.5, 1e-3));
+    EXPECT_FALSE(none.IsDone());
+    EXPECT_EQ(storedBytes(sphere), sphereBefore);
 }
 
 // TopoShape::fix() repairs a copy, then the shape itself in place to keep its
