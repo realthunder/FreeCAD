@@ -4,7 +4,8 @@ served run of tests/gui/sketch-constraint-external-pick.py; docs/ThinClient.md
 
 A browser can join a constraint tool the desktop started, and start one of
 its own: the constraint commands that open no dialog are on the browser's
-command list, the dimensional ones are not. The desktop enters the sketch
+command list (the dimensional ones too, since their value is typed in
+the view: serve-datum-in-place.py). The desktop enters the sketch
 and starts Sketcher_ConstrainParallel, and the client, in that same
 session, presses Sketcher_External -- which a running constraint tool
 takes as "switch outside picking" instead of being replaced by it.
@@ -32,8 +33,8 @@ listen where the clicks land.
 And once more in the client's session with everything from the client: it
 undoes the second run, starts Sketcher_ConstrainPerpendicular itself in
 place of the desktop's Parallel tool, switches outside picking on and
-clicks the line and the box's other top edge. Sketcher_ConstrainDistance is refused -- it
-would ask for its value in a modal dialog on the serving machine.
+clicks the line and the box's other top edge. Sketcher_ConstrainSnellsLaw is
+refused -- it has a modal dialog of its own.
 
 Run through scripts/gui-test.sh (xvfb, isolated configuration, external
 timeout); registered in ctest by tests/gui/CMakeLists.txt.
@@ -251,7 +252,7 @@ class Client(threading.Thread):
         self.flavour_mode = FreeCAD.ParamGet(GENERAL).GetInt("ConstraintExternalPick", 0)
         ws.op('{"id":14,"op":"command","name":"Sketcher_Intersection"}')
         ws.drain(0.3)
-        self.refused = ws.op('{"id":12,"op":"command","name":"Sketcher_ConstrainDistance"}')
+        self.refused = ws.op('{"id":12,"op":"command","name":"Sketcher_ConstrainSnellsLaw"}')
         ws.drain(0.3)
         self.reset = ws.op('{"id":7,"op":"resetEdit"}')
         ws.drain(0.5)
@@ -538,7 +539,7 @@ def verify():
               reply.get("ok") is True and client.flavour_mode == 3,
               (reply, client.flavour_mode))
         reply = reply_of(client.refused)
-        check("a dimensional command is still refused",
+        check("a command with a dialog of its own is still refused",
               reply.get("ok") is not True and "CommandRefused" in str(reply), reply)
         reset = reply_of(client.reset)
         check("the client's resetEdit is accepted", reset.get("ok") is True, reset)

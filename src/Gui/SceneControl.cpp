@@ -817,11 +817,11 @@ namespace SceneControlDetail {
 bool isBrowserSafeCommand(const QString &name)
 {
     // The constraint commands that open no dialog, by name and not by
-    // prefix: the dimensional ones (Sketcher_Dimension, ConstrainDistance,
-    // DistanceX, DistanceY, Radius, Diameter, Radiam, Angle) ask for their
-    // value in a modal EditDatumDialog unless a preference of the host's
-    // says otherwise, Sketcher_ChangeDimensionConstraint is that dialog,
-    // and Sketcher_ConstrainSnellsLaw has one of its own.
+    // prefix. The dimensional ones are among them since their value is
+    // typed at the constraint's label in a view without widgets
+    // (SketcherGui::editDatums; EditDatumDialog refuses to open for such a
+    // view). Sketcher_ConstrainSnellsLaw has a dialog of its own and is
+    // not.
     static const QSet<QString> constraints = {
         QStringLiteral("Sketcher_ConstrainHorVer"),
         QStringLiteral("Sketcher_ConstrainHorizontal"),
@@ -839,6 +839,15 @@ bool isBrowserSafeCommand(const QString &name)
         QStringLiteral("Sketcher_ConstrainGroup"),
         QStringLiteral("Sketcher_ToggleDrivingConstraint"),
         QStringLiteral("Sketcher_ToggleActiveConstraint"),
+        QStringLiteral("Sketcher_Dimension"),
+        QStringLiteral("Sketcher_ConstrainDistance"),
+        QStringLiteral("Sketcher_ConstrainDistanceX"),
+        QStringLiteral("Sketcher_ConstrainDistanceY"),
+        QStringLiteral("Sketcher_ConstrainRadius"),
+        QStringLiteral("Sketcher_ConstrainDiameter"),
+        QStringLiteral("Sketcher_ConstrainRadiam"),
+        QStringLiteral("Sketcher_ConstrainAngle"),
+        QStringLiteral("Sketcher_ChangeDimensionConstraint"),
     };
     // Sketcher_External's three siblings start the same handler in another
     // flavour; pressed while a constraint tool runs, each switches that

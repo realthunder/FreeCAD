@@ -935,3 +935,10 @@ fc_add_gui_test(GuiSketchDisplaySettings_tests_run
 fc_add_gui_test(GuiSketchDatumInPlace_tests_run
                 sketch-datum-in-place.py
                 --timeout 180)
+
+# The same from a served client: a dimensional command is on the browser's
+# list, its value box travels in the "onview" push and is typed into with
+# key frames, and the host shows no modal dialog.
+fc_add_gui_test(GuiServeDatumInPlace_tests_run
+                serve-datum-in-place.py
+                --timeout 240)

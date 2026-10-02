@@ -94,7 +94,10 @@ DIALOG_FREE_CONSTRAINTS = {"Sketcher_" + n for n in (
     "ConstrainBlock", "ConstrainCoincident", "ConstrainCoincidentUnified",
     "ConstrainPointOnObject", "ConstrainParallel", "ConstrainPerpendicular",
     "ConstrainTangent", "ConstrainEqual", "ConstrainSymmetric", "ConstrainGroup",
-    "ToggleDrivingConstraint", "ToggleActiveConstraint")}
+    "ToggleDrivingConstraint", "ToggleActiveConstraint",
+    "Dimension", "ConstrainDistance", "ConstrainDistanceX", "ConstrainDistanceY",
+    "ConstrainRadius", "ConstrainDiameter", "ConstrainRadiam", "ConstrainAngle",
+    "ChangeDimensionConstraint")}
 
 
 class Run(threading.Thread):

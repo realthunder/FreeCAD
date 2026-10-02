@@ -489,8 +489,8 @@ export function runTool(name: string, index?: number): Promise<any> {
   return sendOp('command', fields, 60000);
 }
 
-/// The constraint commands that open no dialog. Not the dimensional ones:
-/// those ask for their value in a modal dialog on the serving machine.
+/// The constraint commands that open no dialog on the serving machine. A
+/// dimensional one asks for its value in an on-view box at the label.
 const DIALOG_FREE_CONSTRAINTS = new Set([
   'Sketcher_ConstrainHorVer',
   'Sketcher_ConstrainHorizontal',
@@ -508,6 +508,15 @@ const DIALOG_FREE_CONSTRAINTS = new Set([
   'Sketcher_ConstrainGroup',
   'Sketcher_ToggleDrivingConstraint',
   'Sketcher_ToggleActiveConstraint',
+  'Sketcher_Dimension',
+  'Sketcher_ConstrainDistance',
+  'Sketcher_ConstrainDistanceX',
+  'Sketcher_ConstrainDistanceY',
+  'Sketcher_ConstrainRadius',
+  'Sketcher_ConstrainDiameter',
+  'Sketcher_ConstrainRadiam',
+  'Sketcher_ConstrainAngle',
+  'Sketcher_ChangeDimensionConstraint',
 ]);
 
 /// The `command` op's allowlist as the server has it (SceneControl.cpp
