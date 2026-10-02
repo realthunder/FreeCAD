@@ -921,3 +921,10 @@ fc_add_gui_test(GuiSketchToolClickPosition_tests_run
 fc_add_gui_test(GuiSketchLineStyles_tests_run
                 sketch-line-styles.py
                 --timeout 180)
+
+# Constraint symbol size, the label's font and the axes' transparency are
+# preferences (upstream eef738b312, b9a89bada1, cda241dbd0), and an OK on
+# the untouched Display page stores no font.
+fc_add_gui_test(GuiSketchDisplaySettings_tests_run
+                sketch-display-settings.py
+                --timeout 180)
