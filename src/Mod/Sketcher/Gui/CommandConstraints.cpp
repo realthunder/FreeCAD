@@ -2986,7 +2986,10 @@ protected:
             }
         }
 
-        if (!commandHandledInEditDatum)
+        // Nothing dimensioned: what was made on the way -- the references
+        // of picks outside the sketch -- is not kept either. The reset or
+        // the leaving below aborts it.
+        if (!commandHandledInEditDatum && !cstrIndexes.empty())
             Gui::Command::commitCommand();
 
         // This code enables the continuous creation mode.
