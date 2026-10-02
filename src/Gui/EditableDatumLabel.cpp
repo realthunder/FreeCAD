@@ -86,6 +86,7 @@ EditableDatumLabel::EditableDatumLabel(ViewerContext* view,
     , viewer(view)
     , spinBox(nullptr)
     , cameraSensor(nullptr)
+    , anchorLabel(nullptr)
     , editStartValue(0.0)
     , lockedAppearance(false)
     , function(Function::Positioning)
@@ -138,6 +139,9 @@ EditableDatumLabel::~EditableDatumLabel()
     transform->unref();
     root->unref();
     label->unref();
+    if (anchorLabel) {
+        anchorLabel->unref();
+    }
 }
 
 void EditableDatumLabel::activate()
@@ -362,7 +366,7 @@ SbVec3f EditableDatumLabel::getTextCenterPoint() const
 {
     //Here we need the 3d point and not the 2d point as are the SoLabel points.
     // First we get the 2D point (on the sketch/image plane) of the middle of the text label.
-    SbVec3f point2D = label->getLabelTextCenter();
+    SbVec3f point2D = (anchorLabel ? anchorLabel : label)->getLabelTextCenter();
     // Get the translation and rotation values from the transform
     SbVec3f translation = transform->translation.getValue();
     SbRotation rotation = transform->rotation.getValue();
@@ -631,6 +635,34 @@ EditableDatumLabel::Function EditableDatumLabel::getFunction()
 SbVec3f EditableDatumLabel::getAnchorPoint() const
 {
     return getTextCenterPoint();
+}
+
+void EditableDatumLabel::setAnchorLabel(SoDatumLabel* other)
+{
+    if (other) {
+        other->ref();
+    }
+    if (anchorLabel) {
+        anchorLabel->unref();
+    }
+    anchorLabel = other;
+    positionSpinbox();
+}
+
+bool EditableDatumLabel::getQuantity(Base::Quantity& quantity) const
+{
+    if (!spinBox || !spinBox->hasValidInput()) {
+        return false;
+    }
+    // the text, and not value(): with keyboard tracking off that is the
+    // last committed value until the box's own Enter handling runs
+    quantity = spinBox->valueFromText(spinBox->text());
+    return true;
+}
+
+bool EditableDatumLabel::hasFocus() const
+{
+    return spinBox && spinBox->hasFocus();
 }
 
 QString EditableDatumLabel::getText() const

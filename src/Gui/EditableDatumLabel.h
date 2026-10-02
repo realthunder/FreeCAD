@@ -125,6 +125,23 @@ public:
     bool sendKeyEvent(QKeyEvent* event);
     //@}
 
+    /** @name An entry box at a label that is drawn already
+     *
+     * A drawing tool's parameter draws its own dimension and sits at its
+     * number. To edit the value of a dimension the scene has -- a sketch
+     * constraint's -- the box stands at THAT label's number instead, and
+     * this one's own label stays empty.
+     */
+    //@{
+    /// Stand at the number of `other`, which shares this label's placement.
+    void setAnchorLabel(SoDatumLabel* other);
+    /// What the box holds now, committed or not. False when there is no
+    /// box or its text is not a value.
+    bool getQuantity(Base::Quantity& quantity) const;
+    /// Whether the box has the Qt focus. Never on a view without widgets.
+    bool hasFocus() const;
+    //@}
+
     // NOLINTBEGIN
     SoDatumLabel* label;
     SbColor dimConstrColor, dimConstrDeactivatedColor;
@@ -165,6 +182,7 @@ private:
     ViewerContext* viewer;
     QuantitySpinBox* spinBox;
     SoNodeSensor* cameraSensor;
+    SoDatumLabel* anchorLabel;
     SbVec3f midpos;
     double editStartValue;
     bool lockedAppearance;
