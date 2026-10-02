@@ -50,9 +50,11 @@
 
 #include <Gui/SelectionObject.h>
 #include <Mod/Part/App/Attacher.h>
+#include <Mod/Part/App/BodyBase.h>
 #include <Mod/Part/App/Part2DObject.h>
 #include <Mod/Part/Gui/AttacherTexts.h>
 #include <Mod/Sketcher/App/Constraint.h>
+#include <Mod/Sketcher/App/ExternalGeometryFacade.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 
 #include "Command.h"
@@ -167,7 +169,22 @@ void CmdSketcherNewSketch::activated(int iMsg)
     Q_UNUSED(iMsg);
     Attacher::eMapMode mapmode = Attacher::mmDeactivated;
     bool bAttach = false;
-    if (Gui::Selection().hasSelection()) {
+    // A group selected whole is where the sketch is to go, not something
+    // to attach it to (upstream 17c3286e52, which takes a plain group; an
+    // App::Part is a group in the same sense here). A body is left to
+    // PartDesign's own command. Asking the attacher about a group only
+    // got "can't map the sketch" and no sketch.
+    App::DocumentObject* container = nullptr;
+    {
+        auto sels = Gui::Selection().getSelection();
+        if (sels.size() == 1 && sels[0].pObject
+                && (!sels[0].SubName || !sels[0].SubName[0])
+                && sels[0].pObject->hasExtension(App::GroupExtension::getExtensionClassTypeId())
+                && !sels[0].pObject->isDerivedFrom(Part::BodyBase::getClassTypeId())) {
+            container = sels[0].pObject;
+        }
+    }
+    if (!container && Gui::Selection().hasSelection()) {
         Attacher::SuggestResult::eSuggestResult msgid = Attacher::SuggestResult::srOK;
         QString msg_str;
         std::vector<Attacher::eMapMode> validModes;
@@ -278,6 +295,10 @@ void CmdSketcherNewSketch::activated(int iMsg)
         doCommand(Doc,
                   "App.activeDocument().addObject('Sketcher::SketchObject', '%s')",
                   FeatName.c_str());
+        if (container) {
+            Gui::cmdAppObject(container, std::ostringstream()
+                    << "addObject(App.activeDocument()." << FeatName << ")");
+        }
         doCommand(Doc,
                   "App.activeDocument().%s.Placement = App.Placement(App.Vector(%f, %f, %f), "
                   "App.Rotation(%f, %f, %f, %f))",

@@ -812,3 +812,9 @@ fc_add_gui_test(GuiSketchAxesReach_tests_run
 fc_add_gui_test(GuiSketchFaceOnSolidPick_tests_run
                 sketch-face-on-solid-pick.py
                 --timeout 150)
+
+# A new sketch made with a group or an App::Part selected goes into it
+# (upstream 17c3286e52); the command made no sketch at all.
+fc_add_gui_test(GuiSketchNewInGroup_tests_run
+                sketch-new-in-group.py
+                --timeout 120)
