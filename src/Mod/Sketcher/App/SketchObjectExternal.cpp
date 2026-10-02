@@ -2556,7 +2556,15 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
                 break;
             }
             case TopAbs_EDGE:
-                importNamedEdge(refTopoShape.isNull() ? Part::TopoShape(refSubShape) : refTopoShape);
+                // An edge taken by intersection is where it meets the sketch
+                // plane and nothing else, as a face is. It used to come with
+                // its projection as well -- an edge standing on the plane was
+                // the same point twice -- and a sketch from before version 2
+                // keeps both: its constraints count on those geometries.
+                if (!intersection || _Version.getValue() < 2) {
+                    importNamedEdge(refTopoShape.isNull() ? Part::TopoShape(refSubShape)
+                                                          : refTopoShape);
+                }
                 break;
             case TopAbs_VERTEX:
                 importVertex(refSubShape);

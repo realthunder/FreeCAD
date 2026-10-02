@@ -13,6 +13,7 @@
 #include <App/ObjectIdentifier.h>
 #include <Mod/Part/App/FeaturePartBox.h>
 #include <Mod/Part/App/Geometry.h>
+#include <Mod/Part/App/PrimitiveFeature.h>
 #include <Mod/Sketcher/App/GeoEnum.h>
 #include <Mod/Sketcher/App/SketchObject.h>
 #include "SketcherTestHelpers.h"
@@ -74,6 +75,75 @@ TEST_F(SketchObjectTest, testAddExternalPerpendicularFaceLegacyIsLongLine)
     auto* line = freecad_cast<const Part::GeomLineSegment*>(geos.back());
     ASSERT_NE(line, nullptr);
     EXPECT_NEAR((line->getEndPoint() - line->getStartPoint()).Length(), 20000.0, 1e-3);
+}
+
+namespace
+{
+// An edge from (0,0,-5) to (10,4,5): it goes through the XY plane at (5,2)
+Part::Line* slantedLineThroughXY(App::Document* doc)
+{
+    auto* line = freecad_cast<Part::Line*>(doc->addObject("Part::Line"));
+    line->X1.setValue(0.0);
+    line->Y1.setValue(0.0);
+    line->Z1.setValue(-5.0);
+    line->X2.setValue(10.0);
+    line->Y2.setValue(4.0);
+    line->Z2.setValue(5.0);
+    doc->recompute();
+    return line;
+}
+}  // namespace
+
+TEST_F(SketchObjectTest, testAddExternalEdgeIntersectionIsTheCutAlone)
+{
+    // Arrange
+    auto* doc = getObject()->getDocument();
+    auto* edge = slantedLineThroughXY(doc);
+    ASSERT_NE(edge, nullptr);
+    int numExtPre = getObject()->ExternalGeo.getSize();
+
+    // Act: the edge by intersection, in a sketch made now
+    ASSERT_GE(getObject()->_Version.getValue(), 2);
+    getObject()->addExternal(edge, "Edge1", false, true);
+    const auto& geos = getObject()->ExternalGeo.getValues();
+
+    // Assert: the point where it meets the plane, and no projected line
+    ASSERT_EQ(static_cast<int>(geos.size()), numExtPre + 1);
+    auto* point = freecad_cast<const Part::GeomPoint*>(geos.back());
+    ASSERT_NE(point, nullptr);
+    EXPECT_NEAR(point->getPoint().x, 5.0, 1e-7);
+    EXPECT_NEAR(point->getPoint().y, 2.0, 1e-7);
+}
+
+TEST_F(SketchObjectTest, testAddExternalEdgeIntersectionLegacyKeepsTheProjection)
+{
+    // Arrange: a sketch from before version 2 was built on both geometries
+    auto* doc = getObject()->getDocument();
+    auto* edge = slantedLineThroughXY(doc);
+    ASSERT_NE(edge, nullptr);
+    int numExtPre = getObject()->ExternalGeo.getSize();
+    getObject()->_Version.setValue(1);
+
+    // Act
+    getObject()->addExternal(edge, "Edge1", false, true);
+    const auto& geos = getObject()->ExternalGeo.getValues();
+
+    // Assert: the projected line, then the cut
+    ASSERT_EQ(static_cast<int>(geos.size()), numExtPre + 2);
+    EXPECT_NE(freecad_cast<const Part::GeomLineSegment*>(geos[numExtPre]), nullptr);
+    EXPECT_NE(freecad_cast<const Part::GeomPoint*>(geos[numExtPre + 1]), nullptr);
+
+    // Act: the edge moves and the external geometry is rebuilt
+    edge->X2.setValue(12.0);
+    doc->recompute();
+    const auto& rebuilt = getObject()->ExternalGeo.getValues();
+
+    // Assert: still both, in the same places, the cut at the new crossing
+    ASSERT_EQ(static_cast<int>(rebuilt.size()), numExtPre + 2);
+    EXPECT_NE(freecad_cast<const Part::GeomLineSegment*>(rebuilt[numExtPre]), nullptr);
+    auto* point = freecad_cast<const Part::GeomPoint*>(rebuilt[numExtPre + 1]);
+    ASSERT_NE(point, nullptr);
+    EXPECT_NEAR(point->getPoint().x, 6.0, 1e-7);
 }
 
 TEST_F(SketchObjectTest, testAddExternalCurvedFaceProjectsOutline)

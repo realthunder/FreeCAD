@@ -98,7 +98,9 @@ public:
     App     ::PropertyBool           MakeInternals;
     /** Behaviour version, hidden. 0 is a sketch saved before the property
      * existed. 1: a planar external face perpendicular to the sketch projects
-     * to a segment spanning the face, not a 20000 long line.
+     * to a segment spanning the face, not a 20000 long line. 2: an external
+     * edge taken by intersection is its cut with the sketch plane alone, not
+     * its projection and the cut.
      */
     App     ::PropertyInteger        _Version;
     /** @name methods override Feature */

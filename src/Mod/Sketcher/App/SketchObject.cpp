@@ -238,7 +238,7 @@ SketchObject::~SketchObject()
 
 void SketchObject::setupObject()
 {
-    _Version.setValue(1);
+    _Version.setValue(2);
     ParameterGrp::handle hGrpp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Sketcher");
     ArcFitTolerance.setValue(hGrpp->GetFloat("ArcFitTolerance", Precision::Confusion()*10.0));

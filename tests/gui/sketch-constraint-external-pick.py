@@ -57,6 +57,13 @@ from the top. The sketch has a circle too. Claims:
   - the box's face and a click on empty space: the pieces of the face go
     again, with nothing dimensioned there is nothing to keep.
 
+  Intersection (seen from the side):
+  - Coincident, the line and an upright edge of the box with
+    Sketcher_Intersection on: the edge is ONE point in the sketch, where it
+    meets the sketch plane, and that point is put on the line. It was two
+    points at one place, the projection and the cut, and the tool, given
+    several pieces, made nothing.
+
 Scored against the tree before the change: the External command replaced
 the running tool, and nothing outside the sketch could be picked in one.
 """
@@ -86,6 +93,7 @@ BACK = V(7, 13, 10)       # on the box's top back edge
 TOP = V(7, 8, 10)         # on the box's top face
 FRONT = V(7, 3, 10)       # on the box's top front edge (y = 3)
 RIGHT = V(12, 8, 10)      # on the box's top right edge (x = 12)
+UPRIGHT = V(12, 3, 5)     # on the box's upright edge nearest an isometric view
 EMPTY = V(-8, -10, 0)
 
 
@@ -428,6 +436,32 @@ def probe(doc, sk, view):
         escape()
         escape()
         check("left: nothing stays", state_of(sk) == clean, state_of(sk))
+
+        # -- an edge taken by intersection ------------------------------
+        # Seen from the top an upright edge is its own end; from the side
+        # it is a line to click on.
+        view.viewIsometric()
+        settle(1.0)
+        FreeCADGui.runCommand("Sketcher_ConstrainCoincidentUnified")
+        settle()
+        FreeCADGui.runCommand("Sketcher_Intersection")
+        settle()
+        undo0 = doc.UndoCount
+        geos0 = len(sk.ExternalGeo)
+        click(view, LINE)
+        click(view, UPRIGHT)
+        st = state_of(sk)
+        added = [type(g).__name__ for g in sk.ExternalGeo[geos0:]]
+        check("intersection: an upright edge of the box is one point in the sketch",
+              st[0] == 1 and externals(sk)[0][1].startswith("Edge") and added == ["Point"],
+              (st, externals(sk), added))
+        check("and it is put on the line", st[1] == [("PointOnObject", -3, 0)], st)
+        check("in one undo step", doc.UndoCount == undo0 + 1,
+              (undo0, doc.UndoCount, doc.UndoNames[:3]))
+        doc.undo()
+        settle()
+        check("undoing it takes both", state_of(sk) == clean, state_of(sk))
+        escape()
     except Exception:
         note("ABORT " + traceback.format_exc().replace("\n", " | "))
     finish()
