@@ -455,6 +455,8 @@ private:
     std::multimap<float, std::unique_ptr<SoPickedPoint> > faceDistances;
     int lastPriority;
     float lastDist;
+    /// The face an edge or a vertex in its plane took the pick from
+    std::unique_ptr<SoPickedPoint> planeFace;
     float lastBackDist;
     int backFaceOrder = 0;
     PickMode pickMode = PickMode::FrontFace;

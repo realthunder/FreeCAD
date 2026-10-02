@@ -642,6 +642,32 @@ bool SoFCUnifiedSelection::isCoplanarDepth(float dist1, float dist2)
     return std::fabs(dist1 - dist2) <= tol;
 }
 
+bool SoFCUnifiedSelection::isInFacePlane(const SoPickedPoint *face, const SoPickedPoint *other)
+{
+    if (!face || !other || getPriority(face) != 1)
+        return false;
+    SbVec3f normal = face->getNormal();
+    if (normal.normalize() == 0.0f)
+        return false;
+    const SbVec3f &pt = face->getPoint();
+    // rounding, at the size of the coordinates
+    float size = std::max(std::max(std::fabs(pt[0]), std::fabs(pt[1])), std::fabs(pt[2]));
+    return std::fabs(normal.dot(other->getPoint() - pt)) <= 1e-4f * std::max(1.0f, size);
+}
+
+bool SoFCUnifiedSelection::beatsCoplanarFace(const SoPickedPoint *face, const SoPickedPoint *other)
+{
+    if (!face || !other || getPriority(face) != 1)
+        return false;
+    int prio = getPriority(other);
+    if (prio > 1)
+        return isInFacePlane(face, other);
+    return prio == 1
+        && face->getPoint().equals(other->getPoint(), 0.01F)
+        && isCoplanarOverlay(other->getPath())
+        && !isCoplanarOverlay(face->getPath());
+}
+
 void
 SoFCUnifiedSelection::Private::getPickedInfo(std::vector<PickedInfo> &ret,
                                              const SoPickedPointList &points,
@@ -658,8 +684,8 @@ SoFCUnifiedSelection::Private::getPickedInfo(std::vector<PickedInfo> &ret,
            vpEdit = nullptr;
     }
     ViewProvider *last_vp = nullptr;
-    bool overlay = false;
     for(int i=0,count=points.getLength();i<count;++i) {
+        bool coplanar = false;
         PickedInfo info;
         info.pp = points[i];
         info.vpd = nullptr;
@@ -669,19 +695,18 @@ SoFCUnifiedSelection::Private::getPickedInfo(std::vector<PickedInfo> &ret,
             vp = this->pcDocument->getViewProviderByPathFromHead(path);
             if(singlePick && last_vp && last_vp!=vp) {
                 // A single pick ends at the first hit of another object,
-                // but for one case: a coplanar overlay (a sketch's face
-                // on a solid's face) at the point of the first hit and of
-                // its priority. Depth could not order the two, so which
-                // came first means nothing, and the overlay is the one
-                // drawn in front: it replaces what was gathered.
+                // but for what lies in the plane of the face hit first:
+                // a coplanar overlay's face at the same point (a sketch's
+                // face on a solid's face), or an edge or a vertex (the
+                // sketch's outline on that face). Depth does not order
+                // those against the face, so they are gathered too, for
+                // postProcessPickedList() to choose from. Not while
+                // cycling through back faces, which counts what is
+                // gathered.
                 const SoPickedPoint *first = ret.empty() ? nullptr : ret.front().pp;
-                if (!first
-                        || getPriority(first) != getPriority(info.pp)
-                        || !first->getPoint().equals(info.pp->getPoint(), 0.01F)
-                        || isCoplanarOverlay(first->getPath())
-                        || !isCoplanarOverlay(path))
+                if (pickBackFace || !beatsCoplanarFace(first, info.pp))
                     return;
-                overlay = true;
+                coplanar = true;
             }
         }
         if(!vp || !vp->isDerivedFrom(ViewProviderDocumentObject::getClassTypeId())
@@ -719,13 +744,10 @@ SoFCUnifiedSelection::Private::getPickedInfo(std::vector<PickedInfo> &ret,
         }
 
         if(singlePick) {
-            last_vp = vp;
+            // the object hit first stays the one a change is told from
+            if (!coplanar)
+                last_vp = vp;
             if(copy) info.copy();
-            if (overlay) {
-                ret.clear();
-                ret.push_back(std::move(info));
-                return;
-            }
             ret.push_back(std::move(info));
             continue;
         }
@@ -1032,34 +1054,40 @@ SoFCUnifiedSelection::Private::postProcessPickedList(std::vector<PickedInfo> &re
     // points where the first is of a face and the second of a line with
     // almost similar coordinates we use the second point, instead.
 
-    int picked_prio = getPriority(ret[0].pp);
+    //
+    // And what lies in the plane of the face hit first is not behind it,
+    // whichever object it belongs to: an edge or a vertex there is drawn
+    // over the face and wins within the pick radius, wherever along the
+    // view its nearest point happens to be, and a coplanar overlay's face
+    // (a sketch's face on a solid's face) wins a tie with the face under
+    // it. Without that an edge lying in a face was picked only from where
+    // it was the nearer hit: from outside the face in a view square to
+    // it, from one side on a slanted one.
+
+    const SoPickedPoint *first = ret[0].pp;
+    int picked_prio = getPriority(first);
     auto last_vpd = ret[0].vpd;
-    const SbVec3f& picked_pt = ret.front().pp->getPoint();
+    const SbVec3f& picked_pt = first->getPoint();
     auto itPicked = ret.begin();
     for(auto it=ret.begin()+1;it!=ret.end();++it) {
         auto &info = *it;
         int cur_prio = getPriority(info.pp);
         const SbVec3f& cur_pt = info.pp->getPoint();
 
-        if(last_vpd != info.vpd) {
-            // Another object ends the search, but for one case: a
-            // coplanar overlay (a sketch's face on a solid's face) at the
-            // picked point, with the picked priority. Depth could not
-            // order the two, so the list's order between them means
-            // nothing, and the overlay is the one drawn in front.
-            if (cur_prio == picked_prio
-                    && picked_pt.equals(cur_pt, 0.2F)
-                    && isCoplanarOverlay(info.pp->getPath())
-                    && !isCoplanarOverlay(itPicked->pp->getPath()))
-            {
+        if (cur_prio > picked_prio) {
+            if ((last_vpd == info.vpd && picked_pt.equals(cur_pt, 0.2F))
+                    || isInFacePlane(first, info.pp)) {
                 itPicked = it;
+                picked_prio = cur_prio;
             }
-            break;
         }
-
-        if ((cur_prio > picked_prio) && picked_pt.equals(cur_pt, 0.2F)) {
+        else if (cur_prio == picked_prio && itPicked == ret.begin()
+                    && beatsCoplanarFace(first, info.pp)) {
             itPicked = it;
-            picked_prio = cur_prio;
+        }
+        else if (last_vpd != info.vpd && !isInFacePlane(first, info.pp)) {
+            // another object, behind the first: the search ends
+            break;
         }
     }
 

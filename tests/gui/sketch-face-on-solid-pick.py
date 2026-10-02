@@ -20,14 +20,15 @@ polygon offset has a slope half, an axis-aligned view cannot see it):
   - outside the outline, on the same box face, frame and pick are the
     box's.
 
-Recorded, not claimed: the pick ON the outline. An edge lying in a face
-loses an exact depth tie to that face, for every object and since long
-before this (the edge wins only where it is the nearer hit), so what a
-pick on the outline returns depends on the pose.
+And on the sketch's outline the pick is the sketch's edge: an edge lying
+in a face is not behind it (see pick-edge-in-face.py), whichever object
+the face belongs to. The points inside are kept clear of the outline by
+more than the pick radius at every pose for that reason.
 
 Scored against the tree before the change: the single pick inside the
 outline was the box's Face6 at every pose, and the top pose's frame
-showed the box's colour there.
+showed the box's colour there; on the outline the pick was the box's face
+or the sketch's by the pose.
 """
 import colorsys
 import os
@@ -46,7 +47,7 @@ V = FreeCAD.Vector
 
 # World points on the box's top face (z = 10); the sketch is the square
 # 3..7, so its plane coordinates are the world's.
-INSIDE = [V(5, 5, 10), V(4, 6, 10), V(5.8, 4.4, 10)]
+INSIDE = [V(5, 5, 10), V(4.6, 5.4, 10), V(5.4, 4.6, 10)]
 OUTSIDE = [V(1.5, 1.5, 10), V(8.5, 5, 10)]
 ON_EDGE = V(5, 3, 10)
 
@@ -143,8 +144,9 @@ def measure(view, tag, rot):
 
     p = view.getPointOnViewport(ON_EDGE)
     one = picked(view, p, True)
-    note("%s on the outline at %s (recorded only): single=%s" % (
-        tag, tuple(p), one))
+    check("%s: on the outline the pick is the sketch's edge" % tag,
+          len(one) == 1 and one[0][0] == "Sketch" and one[0][1].startswith("Edge"),
+          one)
 
 
 def run():

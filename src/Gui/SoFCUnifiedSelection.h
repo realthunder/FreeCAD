@@ -191,6 +191,24 @@ public:
      * @param dist1, dist2: the distances of the hits along the view
      */
     static bool isCoplanarDepth(float dist1, float dist2);
+    /** Whether a hit lies in the plane of a face hit
+     *
+     * An edge or a vertex lying in a face is not behind that face, though
+     * the point of it nearest the pick ray may well be farther along the
+     * view than where the ray meets the face. It is drawn over the face,
+     * and within the pick radius it is what the pick means.
+     *
+     * @param face: a hit with a face detail, whose normal gives the plane
+     * @param other: the hit to test
+     * @return false as well if \a face is not a face hit
+     */
+    static bool isInFacePlane(const SoPickedPoint *face, const SoPickedPoint *other);
+    /** Whether a hit takes a single pick from the face hit before it
+     *
+     * Either a coplanar overlay's hit of the same priority at the same
+     * point, or an edge or a vertex in the face's plane.
+     */
+    static bool beatsCoplanarFace(const SoPickedPoint *face, const SoPickedPoint *other);
 
     static bool getShowSelectionBoundingBox();
 

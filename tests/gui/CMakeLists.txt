@@ -831,3 +831,10 @@ fc_add_gui_test(GuiSketchAttachNotItself_tests_run
 fc_add_gui_test(GuiSketchMergeExternal_tests_run
                 sketch-merge-external.py
                 --timeout 120)
+
+# An edge or a vertex lying in a face is picked within the pick radius
+# from either side and at any pose: what lies in the plane of the face
+# hit first is not behind it. Both ways the single pick is decided.
+fc_add_gui_test(GuiPickEdgeInFace_tests_run
+                pick-edge-in-face.py
+                --timeout 120)

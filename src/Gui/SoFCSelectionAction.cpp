@@ -1593,6 +1593,7 @@ void SoFCRayPickAction::cleanup() {
     ppList->truncate(0);
     faceDistances.clear();
     skipFace = false;
+    planeFace.reset();
 }
 
 void SoFCRayPickAction::beginTraversal(SoNode * node) {
@@ -1854,6 +1855,25 @@ void SoFCRayPickAction::afterPick(const SoPickedPointList &pps) {
             bool overlay = SoFCUnifiedSelection::isCoplanarOverlay(pp->getPath());
             if (overlay != SoFCUnifiedSelection::isCoplanarOverlay((*ppList)[0]->getPath()))
                 replace = overlay;
+        }
+        // An edge or a vertex in the plane of a face is not behind it,
+        // wherever along the view its nearest point is: it takes the pick
+        // from the face, and keeps it from one, whichever came first.
+        // The face is remembered, so that a vertex can take the pick
+        // from an edge in the same plane as well.
+        else if (p > lastPriority
+                && SoFCUnifiedSelection::isInFacePlane((*ppList)[0], pp)) {
+            planeFace.reset((*ppList)[0]->copy());
+            replace = true;
+        }
+        else if (p > lastPriority && planeFace
+                && SoFCUnifiedSelection::isInFacePlane(planeFace.get(), pp)) {
+            replace = true;
+        }
+        else if (p < lastPriority
+                && SoFCUnifiedSelection::isInFacePlane(pp, (*ppList)[0])) {
+            planeFace.reset(pp->copy());
+            replace = false;
         }
         if(replace) {
             if (pp == ppFace && !skipFace) {
