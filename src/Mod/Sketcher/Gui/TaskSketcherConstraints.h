@@ -179,6 +179,9 @@ private:
     bool isConstraintFiltered(QListWidgetItem* item);
     void change3DViewVisibilityToTrackFilter(bool filterEnabled);
     bool doSetVisible(const std::vector<int>& constrIds, bool isVisible);
+    /// The special filter and the list, once for a batch of selection changes
+    void scheduleSpecialFilterUpdate();
+    bool specialFilterUpdatePending = false;
     void changeFilteredVisibility(bool show, ActionTarget target = ActionTarget::All);
     void updateSelectionFilter();
     void updateAssociatedConstraintsFilter();

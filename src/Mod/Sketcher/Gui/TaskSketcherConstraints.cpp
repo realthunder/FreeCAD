@@ -30,6 +30,7 @@
 #include <QRegularExpressionMatch>
 #include <QString>
 #include <QStyledItemDelegate>
+#include <QTimer>
 #include <QWidgetAction>
 #include <boost/core/ignore_unused.hpp>
 #include <algorithm>
@@ -1429,16 +1430,20 @@ void TaskSketcherConstraints::onSelectionChanged(const Gui::SelectionChanges& ms
         ui->listWidgetConstraints->clearSelection();
         ui->listWidgetConstraints->blockSignals(tmpBlock);
 
-        if (specialFilterMode == SpecialFilterType::Selected) {
-            updateSelectionFilter();
+        // The special filters count only while the filter is on (upstream
+        // 6f90c5ea61): off, the list does not depend on the selection.
+        if (ui->filterBox->checkState() == Qt::Checked) {
+            if (specialFilterMode == SpecialFilterType::Selected) {
+                updateSelectionFilter();
 
-            bool block = this->blockSelection(true);// avoid to be notified by itself
-            updateList();
-            this->blockSelection(block);
-        }
-        else if (specialFilterMode == SpecialFilterType::Associated) {
-            associatedConstraintsFilter.clear();
-            updateList();
+                bool block = this->blockSelection(true);// avoid to be notified by itself
+                updateList();
+                this->blockSelection(block);
+            }
+            else if (specialFilterMode == SpecialFilterType::Associated) {
+                associatedConstraintsFilter.clear();
+                updateList();
+            }
         }
     }
     else if (msg.Type == Gui::SelectionChanges::AddSelection
@@ -1470,16 +1475,15 @@ void TaskSketcherConstraints::onSelectionChanged(const Gui::SelectionChanges& ms
                             }
                         }
 
-                        if (specialFilterMode == SpecialFilterType::Selected) {
-                            updateSelectionFilter();
-                            bool block =
-                                this->blockSelection(true);// avoid to be notified by itself
-                            updateList();
-                            this->blockSelection(block);
+                        if (ui->filterBox->checkState() == Qt::Checked
+                            && specialFilterMode == SpecialFilterType::Selected) {
+                            scheduleSpecialFilterUpdate();
                         }
                     }
                 }
-                else if (specialFilterMode == SpecialFilterType::Associated) {// is NOT a constraint
+                else if (ui->filterBox->checkState() == Qt::Checked
+                         && specialFilterMode
+                             == SpecialFilterType::Associated) {// is NOT a constraint
                     int geoid = Sketcher::GeoEnum::GeoUndef;
                     Sketcher::PointPos pointpos = Sketcher::PointPos::none;
                     getSelectionGeoId(expr, geoid, pointpos);
@@ -1490,8 +1494,7 @@ void TaskSketcherConstraints::onSelectionChanged(const Gui::SelectionChanges& ms
                         // element, as one removal may imply removing a constraint that should be
                         // added by a different element that is still selected. The necessary checks
                         // outweigh a full rebuild of the filter.
-                        updateAssociatedConstraintsFilter();
-                        updateList();
+                        scheduleSpecialFilterUpdate();
                     }
                 }
             }
@@ -1523,6 +1526,24 @@ void TaskSketcherConstraints::onSelectionChanged(const Gui::SelectionChanges& ms
                 item->setSelected(selected.count(item->ConstraintNbr) > 0);
             }
         }
+        if (ui->filterBox->checkState() == Qt::Checked) {
+            scheduleSpecialFilterUpdate();
+        }
+    }
+}
+
+void TaskSketcherConstraints::scheduleSpecialFilterUpdate()
+{
+    // A box selection is one message per element: the filter and the list
+    // are rebuilt once when they are all in, not once for each (upstream
+    // 6f90c5ea61 defers the associated filter; the selected one is no
+    // different).
+    if (specialFilterUpdatePending) {
+        return;
+    }
+    specialFilterUpdatePending = true;
+    QTimer::singleShot(0, this, [this]() {
+        specialFilterUpdatePending = false;
         if (specialFilterMode == SpecialFilterType::Selected) {
             updateSelectionFilter();
             bool block = this->blockSelection(true);// avoid to be notified by itself
@@ -1533,7 +1554,7 @@ void TaskSketcherConstraints::onSelectionChanged(const Gui::SelectionChanges& ms
             updateAssociatedConstraintsFilter();
             updateList();
         }
-    }
+    });
 }
 
 void TaskSketcherConstraints::OnChange(Base::Subject<const char*>& rCaller, const char* rcReason)

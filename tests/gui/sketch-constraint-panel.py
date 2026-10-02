@@ -37,6 +37,13 @@ read as widgets.
     where the option had moved them;
   - switched on again they go, and the filter box unchecked brings them
     back.
+
+  The two special filters, which follow the selection (their update is
+  made once for a batch of selection changes, upstream 6f90c5ea61):
+
+  - "Associated constraints": an edge selected lists the constraints on
+    it, a second edge adds its own, and nothing selected lists none;
+  - "Selected constraints": a constraint selected is the one listed.
 """
 import os
 import time
@@ -241,6 +248,45 @@ def probe(sk):
     check("the filter box unchecked: all six are back",
           drawn() == ["111111"] and flags() == ("000000", "111111"), (drawn(), flags()))
     track(False)
+
+    # -- the filters that follow the selection --------------------------
+    def entry(text):
+        return fl.item([r for r in range(fl.count()) if fl.item(r).text() == text][0])
+
+    box.setChecked(True)
+    entry("All").setCheckState(QtCore.Qt.Checked)
+    settle()
+    entry("Associated constraints").setCheckState(QtCore.Qt.Checked)
+    settle()
+    FreeCADGui.Selection.clearSelection()
+    settle()
+    check("associated, nothing selected: none listed", shown() == [], shown())
+    FreeCADGui.Selection.addSelection(sk, "Edge1")
+    settle()
+    check("the first line selected: the three constraints on it",
+          shown() == ["Base_1", "Constraint2", "Width (10 mm)"], shown())
+    FreeCADGui.Selection.addSelection(sk, "Edge2")
+    settle()
+    check("the second line too: its own are added",
+          shown() == ["Base_1", "Constraint2", "Width (10 mm)", "Upright",
+                      "Constraint6 (8 mm)"], shown())
+    FreeCADGui.Selection.clearSelection()
+    settle()
+    check("the selection cleared: none again", shown() == [], shown())
+    entry("Selected constraints").setCheckState(QtCore.Qt.Checked)
+    settle()
+    check("the two special filters exclude each other",
+          entry("Associated constraints").checkState() == QtCore.Qt.Unchecked,
+          entry("Associated constraints").checkState())
+    FreeCADGui.Selection.addSelection(sk, "Constraint2")
+    settle()
+    check("selected: the constraint selected is the one listed",
+          shown() == ["Constraint2"], shown())
+    FreeCADGui.Selection.clearSelection()
+    entry("Selected constraints").setCheckState(QtCore.Qt.Unchecked)
+    box.setChecked(False)
+    settle()
+    check("the filter off: all six", len(shown()) == 6, shown())
 
 
 def finish():
