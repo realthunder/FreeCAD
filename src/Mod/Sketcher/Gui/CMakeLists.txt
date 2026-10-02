@@ -69,7 +69,6 @@ SET(SketcherGui_SRCS
     DrawSketchHandlerArcOfParabola.h
     DrawSketchHandlerArcSlot.h
     DrawSketchHandlerBSpline.h
-    DrawSketchHandlerBSplineByInterpolation.h
     DrawSketchHandlerPoint.h
     DrawSketchHandlerDragAutoConstraint.h
     DrawSketchHandlerDragAutoConstraint.cpp

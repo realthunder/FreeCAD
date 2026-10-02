@@ -68,7 +68,6 @@
 #include "DrawSketchHandlerArcOfParabola.h"
 #include "DrawSketchHandlerArcSlot.h"
 #include "DrawSketchHandlerBSpline.h"
-#include "DrawSketchHandlerBSplineByInterpolation.h"
 #include "DrawSketchHandlerCarbonCopy.h"
 #include "DrawSketchHandlerCircle.h"
 #include "DrawSketchHandlerEllipse.h"
@@ -754,7 +753,13 @@ CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreateBSplineByInterpolation,
 void CmdSketcherCreateBSplineByInterpolation::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerBSplineByInterpolation(0));
+    // The unified B-spline tool in its knots method, as upstream starts it.
+    // This command had a handler of its own from before the tools were
+    // rebuilt on controllers: no tool widget, no on-view parameters, and
+    // only the polygon through the knots drawn while they were placed.
+    ActivateHandler(
+        getActiveGuiDocument(),
+        new DrawSketchHandlerBSpline(ConstructionMethods::BSplineConstructionMethod::Knots));
 }
 
 bool CmdSketcherCreateBSplineByInterpolation::isActive()
@@ -787,7 +792,10 @@ CONSTRUCTION_UPDATE_ACTION(CmdSketcherCreatePeriodicBSplineByInterpolation,
 void CmdSketcherCreatePeriodicBSplineByInterpolation::activated(int iMsg)
 {
     Q_UNUSED(iMsg);
-    ActivateHandler(getActiveGuiDocument(), new DrawSketchHandlerBSplineByInterpolation(1));
+    ActivateHandler(
+        getActiveGuiDocument(),
+        new DrawSketchHandlerBSpline(ConstructionMethods::BSplineConstructionMethod::Knots,
+                                     /*periodic = */ true));
 }
 
 bool CmdSketcherCreatePeriodicBSplineByInterpolation::isActive()

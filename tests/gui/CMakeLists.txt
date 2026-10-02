@@ -900,6 +900,13 @@ fc_add_gui_test(GuiSketcherPreferences_tests_run
                 sketcher-preferences.py
                 --timeout 120)
 
+# The two "B-spline from knots" commands run the unified B-spline tool in
+# its knots method, as upstream's do: the tool widget is there, and four
+# clicks and a right click make the interpolating curve, periodic or not.
+fc_add_gui_test(GuiSketchBSplineFromKnots_tests_run
+                sketch-bspline-from-knots.py
+                --timeout 120)
+
 # A drawing tool puts its point where the pointer is, not on whatever the
 # pick radius reaches -- its own preview first: the B-spline tool's poles
 # landed three pixels short of the click.
