@@ -3486,6 +3486,63 @@ Left for a ruling:
   command checked. And whether the constraint commands that open no dialog
   go on the browser's command list.
 
+### TaskSketcherConstraints.cpp (session 117)
+
+Twenty-six undecided rows, all decided. Read by the DECISION column of the
+ledger, not its status column: eleven more rows of this file read "open"
+there and had been decided in earlier sessions.
+
+| row | verdict |
+|---|---|
+| `67f8852697` | **taken** `2ebb3f89ee`: the filter's "Named" entry was never asked for. Measured: checked alone, it listed none of two named constraints |
+| `ee1af2748a` | **taken** `e799d8c8e7`: `specialFilterMode` was read before it was ever set |
+| `2d5d8ab86c` | **taken** `0a2a7b90d2`: a double click on a geometric constraint's row edits its name. Its focus guard belongs to the refocus timer of `061e185e7f`, not taken here |
+| `766ee41b55`, `c0d47c5ecd` | **adapted** `44d7dfc55d`: a name is an identifier or empty. Measured before: "My Width", "a'b", "1st" and two blanks were all taken, and an emptied name did nothing. One thing more than upstream: a row whose text was refused gets its edit text back, or the next click on its check box asks for the same name again |
+| `9cd3b31067`, `46ec53f4da`, `498968b89c`, `33d1d80555` | **adapted** `f7f5460d62` (App) + `26688bd419` (Gui), as an end state. See below |
+| `6f90c5ea61` | **adapted** `d787c7275d`: the selection-following filters update once per batch, and only while the filter box is checked; both of them, where upstream defers one. 60 edges selected over 399 constraints: 0.29 s -> 0.225 s (0.22 s with no filter) |
+| `54d235f8a5` | **taken** `fd35bc7263`: an unnamed constraint is listed by number and type, "7-Distance" |
+| `0e1a9786e8`, `d5eda6def3`, `b8b90871a9` | **taken** `c789f0dea6`: "Delete All" and "Delete by Filter", with the Python `delConstraints` they need |
+| `ecd591450c`, `0e24e121eb`, `4eb57fb50d`, `34881bc82e`, `ae76f89759`, `9d5e68b184`, `23537d97d7`, `4a770767d3` | **taken** `073246bef7` (+ `557d82ecb6`): one line or a few each, nothing changing what the panel does here. The 24 px icon size is what the style gave already (rows 26 px before and after) |
+| `6eecd08f7c` | **taken** `5986b18091`, with Command.cpp's part |
+| `a1f5d36584`, `e9f2e8fe92`, `69058376e6` | **have**, the fork's way |
+| `0ee3c9f8e6`, `631ab0e7a4` | **n/a**: Base still has the conversion functions; Core's external icon theme is not here |
+
+**"Show only filtered constraints".** The option was to draw only what the
+list shows. Measured before, with "Named" alone checked: the four
+filtered-out constraints were MOVED into the other virtual space -- the
+user's own arrangement, and part of the document -- in two undo steps; the
+list was not filtered; nothing was hidden in the view, because the write
+did not reach the drawing; and nothing came back when the option was
+switched off. Upstream's cluster gives a constraint a visibility of its
+own (`Constraint::isVisible`, here since the take of `Constraint.*` and
+set by nothing) and the panel sets that:
+
+- `SketchObject::setVisibility(index or list, bool)`, C++ and Python,
+  which writes nothing when every constraint is as asked already;
+- the edit drawing honours it at the two places it decides a constraint is
+  shown, its switch and its icon; a constraint selected or under the
+  pointer is still drawn, as one in the other virtual space is;
+- no transaction: hiding by a filter is not something to undo;
+- switched off -- by the menu entry or by the preference, which only moved
+  the check mark before -- everything is shown again;
+- the filter's stored state moves to `SelectedConstraintFilters`, whose
+  default leaves the two special filters out.
+
+Upstream writes every constraint's visibility at every change of the
+constraints, and a write is such a change; here only the constraints that
+differ are written.
+
+On the way, `d0e614d579`: any change of a row, a rename included, ended
+with an "Update constraint's virtual space" command whether the check box
+said anything new or not -- a rename left three undo steps, one now.
+
+`tests/gui/sketch-constraint-panel.py` drives the panel's widgets for all
+of it (38 checks); `TestSketcherSolver.testConstraintVisibility` and
+`testDelConstraints` the two Python methods.
+
+Seen and left: `renameConstraint` takes "Constraint9" as a name for
+another constraint (the generated-name form is not refused).
+
 ## 7a. The constraint-tool hints (session 85)
 
 Thirteen rows, not the eleven the sweep sized: `580d538798`, the commit
