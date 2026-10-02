@@ -3395,10 +3395,80 @@ commit fold into it), gone if the tool is left, started over or the
 command makes nothing of the picks. The Dimension tool makes its
 references again after each of its aborts.
 
-`sketch-constraint-external-pick.py`, real clicks. Open: a sign on screen
-that outside picking is on (the cursor is the natural place); a run from a
-served client; the first pick's highlight is lost when the view selects
-the outside element.
+`sketch-constraint-external-pick.py`, real clicks.
+
+**The open ends, closed (session 117, 2026-10-02).**
+
+- *A sign on screen*, `24823906ab`: the tool's cursor carries, right of
+  the crosshair and above the tool's own icon, the icon of the command
+  that switched the mode on, so it tells the flavour too. Both tools built
+  the same cursor inline; it is `StackedExternalPick::cursor()` now, set
+  from `applyExternalPick()`, which the start and every toggle go through.
+  A served client sees none of it: a tool's cursor does not travel, and
+  neither does the hint bar.
+- *The lost highlight*, `5252481f4f`, was two defects. The view clears the
+  selection to select the outside element, and the sequence's picks went
+  with it: they are selected again once the outside one is taken
+  (`StackedExternalPick::reselect`; a constraint command knows the echo of
+  its own re-selection by name, and its gate lets the steps behind
+  through for the time of the call). And the Dimension tool lost its
+  picks WITHOUT any outside picking: it starts its transaction over at
+  every pick and every change of mode, and the sketch clears the selection
+  whenever a transaction is aborted (`c1285d73725`, a crash fix -- kept).
+  Of two lines picked for an angle only the second was selected, since the
+  tool was ported. It selects what it holds again after each restart.
+- *A served run*, `5f04a04793`, `serve-constraint-external-pick.py`: a
+  constraint command is not on the browser's command list
+  (`isBrowserSafeCommand`, held narrow over modal dialogs), so a browser
+  cannot start one; it can join one. The desktop starts Parallel, the
+  client's `Sketcher_External` -- which is on the list -- toggles the
+  running tool, and its clicks, picked in its own mirror, make the
+  reference and the constraint in one undo step. Both ways round (the
+  desktop's session, and one the client began); both passed as built.
+- *Clicked through*: every constraint command with an outside pick where
+  its sequences take one, the Dimension tool, a vertex, a face, two
+  outside elements, both intersection flavours, a pick in another body.
+  Three defects, each fixed and in the test:
+  - `e4f3a6a5be` -- a step offered anything outside the sketch as soon as
+    it took an external edge OR a point, so a vertex became external
+    geometry at a step that takes edges only. The gate is asked per
+    element; with the intersection flavour it is what the cut gives that
+    counts (an edge a point, a face edges).
+  - `bab35c499d` -- a face picked in the Dimension tool and a click on
+    empty space committed an undo step holding the outline and no
+    dimension. The turn is committed only if a constraint was made.
+  - `5715cde254` -- with the mode on, a click on empty space was left to
+    the view whenever anything was preselected, the sketch's own things
+    included; a diameter's label follows the pointer, so a circle's
+    dimension could not be ended. Only something outside the sketch counts
+    (`outsidePreselected`).
+
+  What the sweep found working: one reference and the constraint in one
+  undo step for Coincident, PointOnObject, the three Distances,
+  Horizontal/Vertical, Perpendicular (either order), Tangent, Equal, Angle,
+  Symmetric (three picks), Radius/Diameter on an outside circle and Lock on
+  an outside vertex (reference constraints, the element being fixed); two
+  outside elements refused by Parallel with nothing left, and taken by
+  Angle as a reference angle; a face's outline left in the sketch and one
+  piece of it then picked; a section line from a face under either
+  intersection flavour; a binder made for another body's edge and undone
+  with the constraint in the one step.
+
+Left for a ruling:
+
+- *An edge cut by the sketch plane comes back twice.*
+  `rebuildExternalGeometry` skips the projection of a FACE when it
+  intersects, but projects an EDGE and adds the cut as well. For an edge
+  normal to the plane that is the same point twice, so the tools see
+  "several pieces" and make no constraint (the plain External
+  intersection tool leaves two coincident points too); for a slanted edge
+  it is the projected line plus the cut point. Dropping the projection
+  would renumber the external geometry of files that already intersect
+  edges.
+- *What a browser is shown.* No cursor and no hint bar reach a client, so
+  it has no sign of the mode; its tool bar mirror could show the external
+  command checked. And whether the constraint commands that open no dialog
+  go on the browser's command list.
 
 ## 7a. The constraint-tool hints (session 85)
 
