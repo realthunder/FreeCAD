@@ -167,7 +167,7 @@ private:
     void executeCommands() override
     {
         try {
-            openCommand(QT_TRANSLATE_NOOP("Command", "Add sketch arc of Parabola"));
+            openCommand(QT_TRANSLATE_NOOP("Command", "Add sketch arc of parabola"));
 
             parabolaGeoId = getHighestCurveIndex() + 1;
 
@@ -183,7 +183,7 @@ private:
             Gui::NotifyError(
                 sketchgui,
                 QT_TRANSLATE_NOOP("Notifications", "Error"),
-                QT_TRANSLATE_NOOP("Notifications", "Cannot create arc of parabola")
+                QT_TRANSLATE_NOOP("Notifications", "Failed to add arc of parabola")
             );
 
             abortCommand();

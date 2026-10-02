@@ -223,7 +223,7 @@ private:
             Gui::NotifyError(
                 sketchgui,
                 QT_TRANSLATE_NOOP("Notifications", "Error"),
-                QT_TRANSLATE_NOOP("Notifications", "Cannot create arc of hyperbola")
+                QT_TRANSLATE_NOOP("Notifications", "Failed to add arc of hyperbola")
             );
 
             abortCommand();
