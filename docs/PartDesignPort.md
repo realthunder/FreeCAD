@@ -1,6 +1,9 @@
 # PartDesign: picking upstream features and fixes
 
-Status (2026-09-24): phase 0 (ledger, this doc) done; **the gizmos are in**
+Status (2026-10-02): the whole ledger is read and all but 6 rows decided
+(sec 9, sec 10): VarSet and FaceMakerUnified to port, then pattern instance
+suppression and its on-view toggles, at the user's word. Object freeze is
+ported. Earlier status (2026-09-24): phase 0 (ledger, this doc) done; **the gizmos are in**
 -- the layer (`984e714b32`) and every panel upstream enables (`a56e0777da`,
 `4394ef2827`), built and run on the Windows box (sec 4, "Verified"). The
 gizmo family's 36 ledger rows are decided; three are deferred behind App
@@ -2762,3 +2765,151 @@ Each one alone keeps the results scattered; with all three, 24 solves
 in 8 processes give one result. Same input, same sketch, every run.
 The OCCT side (input vertices changed by the same booleans) is in the
 occ-issues `local02` row.
+
+## 9. The deferred rows, settled (2026-10-02)
+
+Sec 8 left 7 rows deferred behind an upstream facility the fork lacks.
+
+- `46c32a8c1b` (the PD gtest directory): **declined**. Its only tests are
+  two existence checks; the fork's convention is upstream's PD C++ tests
+  rewritten in Python, and `TestShapeBinder.py` covers both binders.
+- `f9a6044828` (`ViewProviderTransformed::recomputeFeature` split for a
+  preview): **declined**, a refactor with no behaviour, and the fork's
+  transform preview is its own (`6caceacb95` is `have`).
+- `9535371265` (TransformMode's strings renamed): the rename itself does
+  nothing to a file, which keeps an enumeration's index only. What it hid
+  is real and is **adapted**: an upstream pattern in mode 1 ("Transform
+  body", "Whole shape") patterns the whole shape before it and ignores
+  its Originals, which upstream leaves in the file when the mode is
+  switched. The fork read it as a pattern of those Originals, and with no
+  Originals it is no better: `SubTransform` (on by default) then patterns
+  the previous feature alone. Reproduced on a crafted upstream file (the
+  fork's own pattern plus `TransformMode` = 1): 1125.66 for a box and a
+  cylinder patterned twice, where upstream gives 2125.66. Restore now maps
+  mode 1 to no Originals and `SubTransform` off, and schedules the
+  recompute. So sec 8's note on `45bb606095` was wrong: the fork's empty
+  Originals equal upstream's "Transform body" only with `SubTransform`
+  off. Test `TestLinearPattern.testUpstreamWholeShapeMode`.
+- `e607b5757e` (Std_ToggleFreeze in the PD context menu), with **object
+  freeze ported** (upstream `f633fa476a` and its follow-ups, see below).
+- `ec841ed6d4` (VarSets in groups): the user, "port VarSet core" -- the
+  object, its view provider and command, Body and group acceptance; not
+  upstream's add-property dialog rework. Open.
+- `4f5dd40fa7` (PD measure handlers): **declined**, upstream's unified
+  Measure is its own port (`Mod/Measure` is 125 files there, 9 here).
+- `7186d30f6e` (FaceMakerUnified): the user, "port as upstream, but do
+  not use it in sketcher" -- `FaceMakerBuildFace` and `FaceMakerUnified`
+  with upstream's default changes; the sketch's internal faces keep
+  WireJoiner (sec 5 of SketcherPort.md). Open.
+
+### Object freeze
+
+A frozen object keeps its result until it is unfrozen. Upstream's
+semantics, kept: it is never recomputed (`mustRecompute()`), it is saved as
+the `Object` entry's `Freeze="1"` and read back before its properties, its
+status string is "Freezed", unfreezing touches it, and the toggle works on
+the selection only (`09ab65ce1a`). Std_Placement and the default and
+transform edit modes refuse it (`1eb8496aae` refused the sketch edit and
+the placement).
+
+Where the fork differs:
+
+- A touch from what it depends on is dropped and **not passed on**:
+  upstream's recompute purges the frozen object as if it had run and so
+  touches everything depending on it, which then recomputes against an
+  unchanged input. The skip is in the recompute loop and in
+  `_recomputeFeature()`, so an explicit `obj.recompute()` or a panel's
+  `recomputeFeature()` skips it too (upstream runs it).
+- A change to its own input is kept (the property stays touched) but does
+  not touch it. Upstream returns from `onBeforeChange`/`onEarlyChange`/
+  `onChanged` for every property but Visibility, so a scripted change is
+  not recorded for undo and does not reach the view, and a relabel does
+  not reach the tree.
+- No property's `ReadOnly` bit is touched. Upstream sets every one and
+  restores them from a list on unfreeze; that bit is saved with the file.
+  Here the property editor shows a frozen object's data read only
+  (`PropertyItem::updateData`), its Label, Label2 and Visibility excepted.
+- `obj.Frozen` (read/write) and "Frozen" in `obj.State`; upstream has no
+  Python access. The command writes `Frozen = True/False` to the console,
+  each selected object once, one direction for all (freeze if any is
+  not); upstream flips each, so a mixed selection stays mixed.
+- The bit is 22 (21 is the fork's `ObjEditing`); status bits are not
+  saved by number.
+- The tree shows upstream's icon in the touched mark's corner: frozen
+  outranks touched, error outranks both.
+- PD gets the command for every object through the shared context menu,
+  where `e607b5757e` added it for a Body only.
+
+Not undoable, as upstream: a transaction records properties, and an
+object status is not one.
+
+Tests `Document.DocumentRecomputeCases.testFreeze` (a change upstream of
+it, of its own input and an explicit recompute leave it and its dependent
+alone; unfreezing recomputes both) and `testFreezeSaveRestore` (the
+attribute, by name, and a reopened file stays frozen). The Gui driven
+through MCP: the command freezes the feature picked in its body (not the
+body -- the first build's unresolved selection did), Std_Placement is
+inactive, the edit is refused, Radius and Height read only while Label
+stays editable, the context menu lists it, the tree shows the mark, and
+unfreezing restores the editor and recomputes.
+
+### A plane as a revolution axis (found by the triage of sec 10)
+
+`ProfileBased::getAxis()` built a planar reference's base from the
+location's X and the normal's Y and Z (`b.X(), d.Y(), d.Z()`, since
+`a052c71fae`, 2021). A plane whose normal is the axis went through the
+wrong point: a datum plane at y = -10 with its normal along X gave an axis
+through the origin, which cut the profile (Invalid). Fixed; test
+`TestRevolve.testPlaneAsAxisTakesItsLocation`, failing on the old line and
+passing on the new.
+
+## 10. Upstream's PD commits after the ledger's tip (2026-10-02)
+
+`upstream/main` at `b960974504` (2026-10-01) has 12 commits on the
+ledger's paths after `3383e9119f`; the ledger has a row for each but the
+Crowdin sweep `88924462e7` (PD's `.ts` files only; the fork's were last
+touched in `a679c8b818`) and the merge `ee7ae347a7`, whose five commits
+have their own rows. An agent read them against the fork, with one
+FreeCADCmd probe.
+
+- `03cc6671e3`, axis projection for Revolution and Groove: **adapted**
+  (`8cbd1ed346`). `ProjectAxis` (off by default) lays an axis off the
+  profile's plane or tilted out of it into the plane and refuses one
+  perpendicular to it; a panel checkbox, enabled for a planar profile.
+  Reproduced first: a datum line through (0,0,5) along (0,1,1) revolved
+  the circle skew (6978.86); projected it is the torus of radius 20
+  (9869.60), driven in the panel too (the panel shows a preview while
+  editing, the shape lands on OK). Its other half, `getAxis()` bringing a
+  shape reference into the body's frame, is in: a reference beside a
+  body nested in two Parts at x = 115 gave Base.x = 115, now 0. Tests
+  `TestRevolve.testProjectAxis*`, `testAxisOutsideTheBodyInItsFrame`.
+  Reading this commit turned up the fork's plane-axis bug of sec 9.
+- `293726c5d8`, a soft limit on occurrences: **adapted** (`d882d9d88b`)
+  in `App::Pattern`, so the link array is capped too, and a file above
+  the limit loads clamped with a warning and is recomputed (the user:
+  "everything, clamp on restore"). Upstream's parameter, read once as
+  upstream does. `testSpacings` now meets the cap before the 1000-gap
+  list bound. Tests in `TestLinkArray` (set and restore) and
+  `TestLinearPattern`.
+- `f87d968447`, solid selection: **adapted, App half** (`3823a29c33`): a
+  `SolidN` in a dress-up's Base is all its edges. Reproduced: "skip
+  invalid shape ... Solid1" and the fillet failed; now equal to
+  UseAllEdges (975.587). Upstream's Gui half (an `AllowSelection::SOLID`
+  flag, conversion helpers, split highlighting) is enabled by none of its
+  panels, so not taken; its flag's bit is the fork's `WIRE`.
+- `6c0a141ac7`: **adapted** (`840bb93e3c`), Start Part and the five other
+  watcher titles lupdate's list lacked.
+- `0130baa2ea`, the circular, path and point pattern commands and
+  MultiTransform's editors: **have** (sec 7, 2026-09-28/29).
+  `ad11ee94bc` (renames in that code): n/a.
+- `cdb4624675`, pattern instance suppression, and `e22e537c4b` with
+  `eefae5b29e` and `76337721a4`, its on-view toggles: **open**, the
+  user's plan -- a kind-independent suppressed mask in `App::Pattern`
+  that the link array turns into its VisibilityList and PD skips (the
+  first instance through the history rewrite), the toggles as a
+  scene-graph overlay in `src/Gui` shared with the link array panel, and
+  a point pattern in a MultiTransform keeping the original where it is
+  (upstream moves it onto the first point; sec 7's rule). Today the PD
+  linear kind shows a `SuppressedPositions` that does nothing (a 3-box
+  pattern with (1,0) suppressed stays 3000) and an upstream file's
+  `SuppressedIndices` is dropped.
