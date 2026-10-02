@@ -24,6 +24,7 @@
 #ifndef SKETCHERGUI_VIEWPROVIDERSKETCH_H
 #define SKETCHERGUI_VIEWPROVIDERSKETCH_H
 
+#include <chrono>
 #include <QCoreApplication>
 #include <fastsignals/signal.h>
 #include <Inventor/SbImage.h>
@@ -793,7 +794,9 @@ protected:
     static SbColor FullyConstraintConstructionPointColor;
     static SbColor InvalidSketchColor;
 
-    static SbTime prvClickTime;
+    /// On the steady clock: the wall clock is stepped (NTP, a hypervisor),
+    /// and two presses seconds apart then read as a double click.
+    static std::chrono::steady_clock::time_point prvClickTime;
     static SbVec2s prvClickPos; //used by double-click-detector
     static SbVec2s prvCursorPos;
     static SbVec2s newCursorPos;

@@ -214,7 +214,7 @@ SbColor ViewProviderSketch::FullyConstraintConstructionPointColor   (1.0f,0.58f,
 SbColor ViewProviderSketch::InvalidSketchColor                      (1.0f,0.42f,0.0f);    // #FF6D00 -> (255,109,  0)
 
 // Variables for holding previous click
-SbTime  ViewProviderSketch::prvClickTime;
+std::chrono::steady_clock::time_point ViewProviderSketch::prvClickTime;
 SbVec2s ViewProviderSketch::prvClickPos;
 SbVec2s ViewProviderSketch::prvCursorPos;
 SbVec2s ViewProviderSketch::newCursorPos;
@@ -1327,14 +1327,20 @@ bool ViewProviderSketch::mouseButtonPressed(int Button, bool pressed, const SbVe
                     // Double click events variables
                     float dci = (float) QApplication::doubleClickInterval()/1000.0f;
 
+                    // Measured on the steady clock, as the view's own
+                    // clicks are (e35e9990b4). By the time of day a clock
+                    // stepped back between two presses made the second a
+                    // double click: on a dimension's label that opens its
+                    // dialog, modal.
+                    const auto clickTime = std::chrono::steady_clock::now();
                     if (done &&
                         SbVec2f(cursorPos - prvClickPos).length() <  dblClickRadius &&
-                        (SbTime::getTimeOfDay() - prvClickTime).getValue() < dci) {
+                        std::chrono::duration<float>(clickTime - prvClickTime).count() < dci) {
 
                         // Double Click Event Occurred
                         editDoubleClicked();
                         // Reset Double Click Static Variables
-                        prvClickTime = SbTime();
+                        prvClickTime = {};
                         prvClickPos = SbVec2s(-16000,-16000); //certainly far away from any clickable place, to avoid re-trigger of double-click if next click happens fast.
 
                         // An edge's double click selects its wire on the
@@ -1343,7 +1349,7 @@ bool ViewProviderSketch::mouseButtonPressed(int Button, bool pressed, const SbVe
                         if (_Mode != STATUS_SELECT_Wire)
                             setSketchMode(STATUS_NONE);
                     } else {
-                        prvClickTime = SbTime::getTimeOfDay();
+                        prvClickTime = clickTime;
                         prvClickPos = cursorPos;
                         prvCursorPos = cursorPos;
                         newCursorPos = cursorPos;
