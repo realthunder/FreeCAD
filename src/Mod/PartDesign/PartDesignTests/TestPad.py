@@ -407,6 +407,25 @@ class TestPad(unittest.TestCase):
         self.assertAlmostEqual(box.ZMax, 10)
         self.assertAlmostEqual(box.ZMin, -20)
 
+    def testOverlappingWiresPadToTheirUnion(self):
+        """Two rectangles overlapping in one sketch pad to their union: the
+        profile's face maker is FaceMakerUnified (upstream 7186d30f6e). With
+        FaceMakerBullseye the face had no area."""
+        V = FreeCAD.Vector
+        body = self.Doc.addObject('PartDesign::Body', 'OverlapBody')
+        sketch = body.newObject('Sketcher::SketchObject', 'OverlapSketch')
+        for x0, y0, x1, y1 in ((0, 0, 20, 10), (10, 5, 30, 15)):
+            pts = [V(x0, y0, 0), V(x1, y0, 0), V(x1, y1, 0), V(x0, y1, 0)]
+            for a, b in zip(pts, pts[1:] + pts[:1]):
+                sketch.addGeometry(Part.LineSegment(a, b))
+        self.Doc.recompute()
+        pad = body.newObject('PartDesign::Pad', 'OverlapPad')
+        pad.Profile = sketch
+        pad.Length = 1
+        self.Doc.recompute()
+        self.assertTrue(pad.isValid())
+        self.assertAlmostEqual(pad.Shape.Volume, 200 + 200 - 50, places=6)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestPad")

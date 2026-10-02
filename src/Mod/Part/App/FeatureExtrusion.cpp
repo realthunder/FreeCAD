@@ -449,5 +449,5 @@ void Part::Extrusion::setupObject()
     Part::Feature::setupObject();
     UsePipeForDraft.setValue(PartParams::getUsePipeForExtrusionDraft());
     Linearize.setValue(Part::PartParams::getLinearizeExtrusionDraft());
-    this->FaceMakerClass.setValue("Part::FaceMakerBullseye"); //default for newly created features
+    this->FaceMakerClass.setValue("Part::FaceMakerUnified"); //default for newly created features
 }

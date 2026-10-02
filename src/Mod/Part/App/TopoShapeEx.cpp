@@ -3491,7 +3491,7 @@ TopoShape &TopoShape::makEFace(const std::vector<TopoShape> &shapes,
                                const gp_Pln *pln,
                                int minElementNames)
 {
-    if(!maker || !maker[0]) maker = "Part::FaceMakerBullseye";
+    if(!maker || !maker[0]) maker = "Part::FaceMakerUnified";
     std::unique_ptr<FaceMaker> mkFace = FaceMaker::ConstructFromType(maker);
     mkFace->MyHasher = Hasher;
     mkFace->MyOp = op;

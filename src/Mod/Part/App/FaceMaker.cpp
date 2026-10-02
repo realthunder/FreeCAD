@@ -199,11 +199,19 @@ void Part::FaceMaker::postBuild() {
         preSplitSources.push_back(std::move(preSplitShape));
     }
     const auto &splitterSources = preSplitSources.empty() ? mySourceShapes : preSplitSources;
-    if (mySplitter.IsDone()) {
+    // Only when it split something: a splitter that left every edge as it
+    // was (non-destructive, the same TShapes) has nothing to trace, and
+    // naming through it anyway adds entries and string hashes the faces of
+    // an ordinary profile never had -- 38 map entries for a pad of 30, and
+    // new hasher ids in the names of saved files' faces
+    if (mySplitter.IsDone() && mySplitter.HasModified()) {
         MapperMaker mapper(mySplitter);
         TopoShape splitInputShape(myTopoShape.Tag);
         splitInputShape.makESHAPE(mySplitter.Shape(), mapper, splitterSources);
         myTopoShape.mapSubElement(splitInputShape);
+    }
+    else if (!preSplitSources.empty()) {
+        myTopoShape.mapSubElement(preSplitSources);
     }
     int i = 0;
     const char *op = this->MyOp;
