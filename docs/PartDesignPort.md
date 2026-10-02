@@ -1,9 +1,9 @@
 # PartDesign: picking upstream features and fixes
 
-Status (2026-10-02): the whole ledger is read and all but 4 rows decided
-(sec 9, sec 10): pattern instance suppression and its on-view toggles are
-left, to be done the fork's way at the user's word. Object freeze, VarSet
-and FaceMakerUnified are ported. Earlier status (2026-09-24): phase 0 (ledger, this doc) done; **the gizmos are in**
+Status (2026-10-02): the whole ledger is read and all but 3 rows decided
+(sec 9, sec 10): the on-view toggles of pattern instance suppression are
+left, as a new marker node, next session (the user). Object freeze, VarSet,
+FaceMakerUnified and instance suppression itself are ported. Earlier status (2026-09-24): phase 0 (ledger, this doc) done; **the gizmos are in**
 -- the layer (`984e714b32`) and every panel upstream enables (`a56e0777da`,
 `4394ef2827`), built and run on the Windows box (sec 4, "Verified"). The
 gizmo family's 36 ledger rows are decided; three are deferred behind App
@@ -2971,3 +2971,56 @@ failures), ctest 758/758 (the 8 new FaceMakerUnified gtests). One run of
 ctest timed out `DeferredLoad_tests_run` with 18,535 files in `%TEMP%`;
 it passes in 25 s through `ctest-fcad-cleantmp.cmd` (docs/Testing.md),
 which the run after used throughout.
+
+### Pattern instance suppression (`3333d9b600`)
+
+Upstream's `Transformed::SuppressedIndices` (`cdb4624675`), by its name, so
+an upstream file's suppression carries over: the instances of
+`getTransformations()` that `execute()` skips, in both of its loops.
+Before it a PD pattern could not leave an instance out at all, and the
+linear kind showed a `SuppressedPositions` that did nothing.
+
+- **The first instance** takes the original with it. Upstream cuts each
+  original's before/after difference out of the support; the fork already
+  has the means -- leaving it out counts as moving the first instance, so
+  the history rewrite of a transform offset makes the support the
+  original's base. Where the rewrite is refused (the originals not the
+  immediate history) the original stays, with the rewrite's warning.
+- **Grid positions** (the user's, `SuppressedPositions`) and indices are
+  kept in step, an index following its position when the grid changes
+  size, as the link array keeps its `VisibilityList`; the mapping is in
+  `App::Pattern` (`suppressedIndices()`, `suppressedPositions()`). A fork
+  file of before, with positions and no indices, gets them on restore.
+- **A MultiTransform** leaves out every product of an instance one of its
+  steps leaves out (a mask carried through the product, Scaled's diagonal
+  too); its first instance is asked before the product exists, from each
+  step's first. A point pattern in it keeps the original where it is,
+  sec 7's rule; upstream moves it onto the first point, so its two tests
+  for that are replaced by `testPointPatternInMultiTransformKeepsTheOriginal`.
+- Cosmetic threads skip the instances left out.
+
+Two fork defects came out of upstream's MultiTransform tests. **A
+MultiTransform built on its own step**: made after a pattern and given
+that pattern as a step, it kept the pattern as its base feature -- which,
+once a step, is no solid feature any more. Results matched only because a
+step's instances are a subset of the MultiTransform's. It now takes over
+the step's base when it takes the step in. And **an empty base was always
+an error**, even where the rewritten history does not start from it -- a
+pattern before it that left out every instance, the original included.
+
+Tests: 10 of upstream's in `TestLinearPattern` (grid position kept across
+resizes, undo/redo of positions and of a resize, positions outside the
+grid, MultiTransform with the original or all left out, composed steps,
+persistence of an out-of-range suppression, the original of an additive,
+a subtractive and a whole-shape pattern), upstream's later in-grid
+projection test standing for its overflow one now that occurrences are
+capped, and the fork's point-pattern one. Verified at `3333d9b600`:
+Python 3344 OK (50 skipped, 6 expected failures), ctest 758/758.
+
+**Left: the on-view toggles** (`e22e537c4b`, `eefae5b29e`, `76337721a4`).
+Upstream lays QToolButtons over the viewer at each instance's centre,
+which a served or browser view never sees. The user, 2026-10-02: a new
+marker node -- a Coin node per instance with its own render-cache capture
+and pick path -- next session. Until then an instance is left out through
+`SuppressedIndices` or, linear, `SuppressedPositions` in the property
+editor.
