@@ -1118,6 +1118,95 @@ class RegressionTests(unittest.TestCase):
                 check("%s half cap, Face%d" % (name, faces[0]), how(cap), faces, -0.5, join, volume)
             check("%s dome on a cylinder, side" % name, how(bullet), [1], 0.5, 2, 100.7315, 2)
 
+    def test_thickness_of_a_dome_with_its_rim_in_two_arcs_and_a_half_ball_with_one_disc(self):
+        """A dome whose rim is in two arcs: the loops built the band between a
+        seam and a rim only on a rim that is one closed edge, and the dome's
+        offset came out as a face of no area -- an invalid solid of 240.68 for
+        86.6556. With its sphere removed both arcs of the flat were replaced
+        by one half of the section circle. And half a ball as a refine or a
+        cut leaves it, one disc for its flat: refused with the Intersection
+        join, or with its sphere removed outward; a cut hands it over as a
+        compound of one solid. Its sphere is put on one turned onto its
+        middle, which makes it that dome. And the half ball that comes with
+        its sphere in two faces, cut the way that does not suit what is done
+        with it: the faces are joined first (OCCT fork,
+        tests/thickness/models/Thickness.md "Sec 27.111")."""
+        V = Vector
+
+        def tolerance(shape):
+            return max(x.Tolerance for x in shape.Vertexes + shape.Edges + shape.Faces)
+
+        def check(name, shape, face, offset, join, volume):
+            faces = face if isinstance(face, list) else [face]
+            tol = tolerance(shape)
+            r = shape.makeThickness(
+                [shape.Faces[i - 1] for i in faces], offset, 1e-7, False, False, 0, join
+            )
+            msg = "%s, Face%s, %g, join %d" % (name, faces, offset, join)
+            self.assertTrue(r.isValid(), msg)
+            self.assertEqual(len(r.Solids), 1, msg)
+            self.assertEqual(len(r.Shells), 1, msg)
+            self.assertAlmostEqual(r.Volume, volume, 3, msg)
+            # the shape given is left as it was, its tolerances too
+            self.assertTrue(shape.isValid(), msg)
+            self.assertAlmostEqual(tolerance(shape), tol, 9, msg)
+
+        def every_way(name, shape):
+            sphere = [
+                i + 1 for i, f in enumerate(shape.Faces) if f.Surface.TypeId == "Part::GeomSphere"
+            ]
+            flat = [
+                i + 1 for i, f in enumerate(shape.Faces) if f.Surface.TypeId == "Part::GeomPlane"
+            ]
+            self.assertEqual((len(sphere), len(flat)), (1, 1), name)
+            for join in (0, 2):
+                check(name, shape, flat[0], 0.5, join, 86.6556)
+                check(name, shape, flat[0], -0.5, join, 70.9476)
+                check(name, shape, sphere[0], 0.5, join, 39.1390)
+                check(name, shape, sphere[0], -0.5, join, 39.1390)
+
+        dome = Part.makeSphere(5, V(), V(0, 1, 0), 0, 90, 360)
+        rim = [e for e in dome.Edges if not e.Degenerated and abs(e.Length - 10 * math.pi) < 1e-6]
+        end = rim[0].Vertexes[0].Point
+        two_arcs = dome.generalFuse([Part.Vertex(end * -1)])[0].Solids[0]
+        self.assertEqual(len(two_arcs.Faces[1].Edges), 2)
+        every_way("dome, rim in two arcs", two_arcs)
+
+        # its flat in two halves as well: the sphere removed
+        halves = dome.generalFuse([Part.makeLine(end, end * -1)])[0].Solids[0]
+        self.assertEqual(len(halves.Faces), 3)
+        for offset in (0.5, -0.5):
+            for join in (0, 2):
+                check("dome, flat in two halves", halves, 1, offset, join, 39.1390)
+
+        placement = Placement(V(3, 4, 5), Rotation(V(1, 2, 3), 40))
+        refined = Part.makeSphere(5, V(), V(0, 0, 1), -90, 90, 180).removeSplitter()
+        self.assertEqual(len(refined.Faces), 2)
+        every_way("refined half ball", refined)
+        placed = refined.copy()
+        placed.Placement = placement
+        every_way("refined half ball, placed", placed)
+        turned = refined.copy()
+        turned.transformShape(placement.Matrix, True)
+        every_way("refined half ball, turned", turned)
+        cut = Part.makeSphere(5).cut(Part.makeBox(20, 20, 20, V(-10, -20, -10)))
+        self.assertEqual(cut.ShapeType, "Compound")
+        every_way("ball cut by a box", cut)
+
+        # The half ball with two flats, its sphere in two faces already.
+        ball = Part.makeSphere(5, V(), V(0, 0, 1), -90, 90, 180)
+        meridian = Part.Arc(V(0, 0, -5), V(0, 5, 0), V(0, 0, 5)).toShape()
+        equator = Part.ArcOfCircle(Part.Circle(V(), V(0, 0, 1), 5), 0, math.pi).toShape()
+        lunes = ball.generalFuse([meridian])[0].Solids[0]
+        domes = ball.generalFuse([equator])[0].Solids[0]
+        for flat in (3, 4):
+            check("two lunes, a flat removed", lunes, flat, 0.5, 2, 113.0909)
+            check("two lunes, a flat removed", lunes, flat, -0.5, 2, 89.0272)
+        for offset in (0.5, -0.5):
+            for join in (0, 2):
+                check("two domes, both removed", domes, [1, 2], offset, join, 39.1390)
+        self.assertEqual((len(lunes.Faces), len(domes.Faces)), (4, 4))
+
     def test_thickness_intersection_join_with_one_face_left(self):
         """The Intersection join where one face stays beside the removed ones:
         a cylinder down to its top, a box down to its bottom. It threw
