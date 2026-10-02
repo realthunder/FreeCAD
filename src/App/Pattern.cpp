@@ -31,12 +31,15 @@
 #include <mutex>
 #endif
 
+#include <Base/Console.h>
 #include <Base/Exception.h>
 #include <Base/Matrix.h>
 #include <Base/Rotation.h>
 #include <Base/Tools.h>
 
+#include "Application.h"
 #include "Datums.h"
+#include "Document.h"
 #include "DocumentObject.h"
 #include "Pattern.h"
 #include "PropertyLinks.h"
@@ -58,7 +61,20 @@ namespace
 const char* ModeEnums[] = {"Extent", "Spacing", nullptr};
 const char* SpacingModeEnums[] = {"Fixed count", "Fixed spacing", "Fixed count and spacing", nullptr};
 
-const PropertyIntegerConstraint::Constraints OccurrencesRange = {1, INT_MAX, 1};
+/// Occurrences up to the soft limit upstream 293726c5d8 added: a typo
+/// asked for two billion copies, each a solid or a link element. Read once,
+/// as upstream does, and from upstream's parameter.
+const PropertyIntegerConstraint::Constraints* occurrencesRange()
+{
+    static const PropertyIntegerConstraint::Constraints range {
+        1,
+        std::max(1L,
+                 GetApplication()
+                     .GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Part")
+                     ->GetInt("MaximumPatternOccurrences", 1000)),
+        1};
+    return &range;
+}
 const PropertyIntegerConstraint::Constraints NumberCirclesRange = {2, INT_MAX, 1};
 const PropertyIntegerConstraint::Constraints SymmetryRange = {1, INT_MAX, 1};
 const PropertyQuantityConstraint::Constraints AngleRange = {-360.0, 360.0, 1.0};
@@ -753,6 +769,30 @@ void setEnums(PropertyEnumeration* prop, const char** enums)
     }
 }
 
+/** A file may hold more occurrences than the limit allows (one written
+ * before it, or with a larger MaximumPatternOccurrences): the value is
+ * brought into range on restore, with a warning, and the object recomputed.
+ */
+void clampToConstraints(PropertyContainer& obj, Property* prop)
+{
+    auto intProp = dynamic_cast<PropertyIntegerConstraint*>(prop);
+    auto constraints = intProp ? intProp->getConstraints() : nullptr;
+    if (!constraints || intProp->getValue() <= constraints->UpperBound) {
+        return;
+    }
+    auto docObj = dynamic_cast<DocumentObject*>(&obj);
+    Base::Console().Warning("%s.%s: %ld occurrences, more than MaximumPatternOccurrences "
+                            "allows; set to %ld\n",
+                            docObj ? docObj->getFullName().c_str() : "?",
+                            prop->getName(),
+                            intProp->getValue(),
+                            constraints->UpperBound);
+    intProp->setValue(constraints->UpperBound);
+    if (docObj && docObj->getDocument()) {
+        docObj->getDocument()->addRecomputeObject(docObj);
+    }
+}
+
 void setupProperty(Pattern::Type type, Property* prop, const char* name = nullptr)
 {
     if (!name) {
@@ -772,7 +812,7 @@ void setupProperty(Pattern::Type type, Property* prop, const char* name = nullpt
             intProp->setConstraints(&SymmetryRange);
         }
         else {
-            intProp->setConstraints(&OccurrencesRange);
+            intProp->setConstraints(occurrencesRange());
         }
     }
     else if (auto angleProp = dynamic_cast<PropertyAngle*>(prop)) {
@@ -1160,6 +1200,7 @@ void Pattern::setupProperties(Type type, PropertyContainer& obj)
     for (const auto& spec : getPropertySpecs(type)) {
         if (auto prop = getProperty(obj, spec.name)) {
             setupProperty(type, prop);
+            clampToConstraints(obj, prop);
         }
     }
     switch (type) {

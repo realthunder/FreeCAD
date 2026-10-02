@@ -233,9 +233,13 @@ class TestLinearPattern(unittest.TestCase):
         self._check(pattern, 5000, 90, 10)
         pattern.Spacings = [-1, -1, 12]
         self._check(pattern, 5000, 87, 10)
-        # The list grows to 1000 gaps at most; the gaps after read -1
+        # The list grows with Occurrences, which stops at
+        # MaximumPatternOccurrences (upstream 293726c5d8); the gaps after read -1
+        maximum = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Part").GetInt(
+            "MaximumPatternOccurrences", 1000)
         pattern.Occurrences = 5000
-        self.assertEqual(len(pattern.Spacings), 1000)
+        self.assertEqual(pattern.Occurrences, maximum)
+        self.assertEqual(len(pattern.Spacings), min(maximum - 1, 1000))
         self.assertEqual(pattern.Spacings[:4], [-1.0, -1.0, 12.0, -1.0])
         pattern.Occurrences = 5
         self.assertEqual(pattern.Spacings, [-1.0, -1.0, 12.0, -1.0])
@@ -310,6 +314,15 @@ class TestLinearPattern(unittest.TestCase):
         bounds = sorted((round(b.XMin, 6), round(b.YMin, 6), round(b.ZMin, 6))
                         for b in (s.BoundBox for s in pattern.Shape.Solids))
         self.assertEqual(bounds, [(-50, -50, 0), (3, 4, 10), (23, 4, 10)])
+
+    def testOccurrencesAreClampedToMaximumPatternOccurrences(self):
+        # (upstream 293726c5d8)
+        maximum = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Part").GetInt(
+            "MaximumPatternOccurrences", 1000)
+        pattern = self.Doc.addObject("PartDesign::LinearPattern", "LinearPattern")
+        pattern.Occurrences = pattern.Occurrences2 = 1 << 30
+        self.assertEqual(pattern.Occurrences, maximum)
+        self.assertEqual(pattern.Occurrences2, maximum)
 
     def testUpstreamWholeShapeMode(self):
         # Upstream's TransformMode 1 ("Transform body", "Whole shape" since

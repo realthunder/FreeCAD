@@ -264,3 +264,50 @@ class TestLinkArray(unittest.TestCase):
         self.assertEqual(self.array.PatternType, "Polar")
         self.assertFalse(hasattr(self.array, "Direction"))
         self.assertAlmostEqual(self.array.Offset.Value, 45)
+
+    def maximumOccurrences(self):
+        return App.ParamGet("User parameter:BaseApp/Preferences/Mod/Part").GetInt(
+            "MaximumPatternOccurrences", 1000
+        )
+
+    def testOccurrencesAreClampedToMaximumPatternOccurrences(self):
+        # (upstream 293726c5d8) a typo asked for two billion elements
+        maximum = self.maximumOccurrences()
+        self.array.Occurrences = self.array.Occurrences2 = 1 << 30
+        self.assertEqual(self.array.Occurrences, maximum)
+        self.assertEqual(self.array.Occurrences2, maximum)
+
+    def testRestoreClampsOccurrences(self):
+        # A file may hold more than the limit: it loads clamped and recomputed
+        import re
+        import zipfile
+
+        maximum = self.maximumOccurrences()
+        self.array.Occurrences = 3
+        self.doc.recompute()
+        # not a TemporaryDirectory: the reopened document is still open when
+        # it would be removed
+        src = os.path.join(tempfile.gettempdir(), "freecad_link_array_clamp.FCStd")
+        dst = os.path.join(tempfile.gettempdir(), "freecad_link_array_clamped.FCStd")
+        self.doc.saveAs(src)
+        App.closeDocument(self.doc.Name)
+        with zipfile.ZipFile(src) as zi, zipfile.ZipFile(dst, "w") as zo:
+            for item in zi.infolist():
+                data = zi.read(item.filename)
+                if item.filename == "Document.xml":
+                    xml = data.decode("utf-8")
+                    start = xml.index('<Object name="Array"')
+                    prop = xml.index('<Property name="Occurrences" ', start)
+                    xml = xml[:prop] + re.sub(
+                        r'<Integer value="3"/>',
+                        '<Integer value="%d"/>' % (maximum + 5),
+                        xml[prop:],
+                        count=1,
+                    )
+                    data = xml.encode("utf-8")
+                zo.writestr(item, data)
+        self.doc = App.openDocument(dst)
+        self.array = self.doc.getObject("Array")
+        self.assertEqual(self.array.Occurrences, maximum)
+        self.doc.recompute()
+        self.assertEqual(self.array.ElementCount, maximum)
