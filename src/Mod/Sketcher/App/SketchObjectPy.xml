@@ -208,6 +208,20 @@ delConstraint(constraintIndex:int)
         </UserDocu>
       </Documentation>
     </Methode>
+    <Methode Name="delConstraints">
+      <Documentation>
+        <UserDocu>
+Delete several constraints from the sketch.
+
+delConstraints(constraintIndices:list, updateGeometry:bool=True, noSolve:bool=False)
+
+    Args:
+        constraintIndices: The zero-based indices of the constraints to delete.
+        updateGeometry: Whether to update the geometry after the solve.
+        noSolve: Do not solve; for a caller making several changes.
+        </UserDocu>
+      </Documentation>
+    </Methode>
     <Methode Name="renameConstraint">
       <Documentation>
         <UserDocu>

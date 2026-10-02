@@ -710,6 +710,10 @@ void ConstraintView::populateMenu(QMenu &menu)
     remove->setShortcut(QKeySequence(QKeySequence::Delete));
     remove->setEnabled(!items.isEmpty());
 
+    // every constraint of the sketch, and the ones the list shows
+    menu.addAction(tr("Delete All"), this, &ConstraintView::deleteAllItems);
+    menu.addAction(tr("Delete by Filter"), this, &ConstraintView::deleteFilterItems);
+
     QAction* swap = menu.addAction(
         tr("Swap Constraint Names"), this, &ConstraintView::swapNamedOfSelectedItems);
     swap->setEnabled(items.size() == 2);
@@ -780,6 +784,23 @@ void ConstraintView::deleteSelectedItems()
         }
     }
     doc->commitTransaction();
+}
+
+void ConstraintView::deleteAllItems()
+{
+    Q_EMIT emitDeleteAllConstraints();
+}
+
+void ConstraintView::deleteFilterItems()
+{
+    QList<int> ids;
+    for (int index = 0; index < count(); index++) {
+        auto cit = static_cast<ConstraintItem*>(item(index));
+        if (!cit->isHidden()) {
+            ids.push_back(cit->ConstraintNbr);
+        }
+    }
+    Q_EMIT emitDeleteConstraints(ids);
 }
 
 void ConstraintView::swapNamedOfSelectedItems()
@@ -1031,6 +1052,14 @@ TaskSketcherConstraints::TaskSketcherConstraints(ViewProviderSketch* sketchView)
         &ConstraintView::emitShowSelection3DVisibility,
         this,
         &TaskSketcherConstraints::onListWidgetConstraintsEmitShowSelection3DVisibility);
+    QObject::connect(ui->listWidgetConstraints,
+                     &ConstraintView::emitDeleteAllConstraints,
+                     this,
+                     &TaskSketcherConstraints::onDeleteAllConstraints);
+    QObject::connect(ui->listWidgetConstraints,
+                     &ConstraintView::emitDeleteConstraints,
+                     this,
+                     &TaskSketcherConstraints::onDeleteConstraints);
 #if QT_VERSION >= QT_VERSION_CHECK(6,7,0)
     QObject::connect(ui->filterBox,
                      &QCheckBox::checkStateChanged,
@@ -1233,6 +1262,50 @@ void TaskSketcherConstraints::onListWidgetConstraintsEmitHideSelection3DVisibili
 void TaskSketcherConstraints::onListWidgetConstraintsEmitShowSelection3DVisibility()
 {
     changeFilteredVisibility(true, ActionTarget::Selected);
+}
+
+void TaskSketcherConstraints::onDeleteAllConstraints()
+{
+    const Sketcher::SketchObject* sketch = sketchView->getSketchObject();
+    Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Delete all constraints"));
+    try {
+        Gui::cmdAppObjectArgs(sketch, "deleteAllConstraints()");
+        Gui::Command::commitCommand();
+    }
+    catch (const Base::Exception& e) {
+        Gui::Command::abortCommand();
+        Gui::NotifyUserError(sketch, QT_TRANSLATE_NOOP("Notifications", "Value Error"), e.what());
+    }
+}
+
+void TaskSketcherConstraints::onDeleteConstraints(const QList<int>& ids)
+{
+    if (ids.isEmpty()) {
+        return;
+    }
+
+    const Sketcher::SketchObject* sketch = sketchView->getSketchObject();
+
+    std::stringstream stream;
+    stream << '[';
+    for (int i = 0; i < ids.size(); ++i) {
+        if (i > 0) {
+            stream << ", ";
+        }
+        stream << ids[i];
+    }
+    stream << ']';
+    const std::string idList = stream.str();
+
+    Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Delete constraints"));
+    try {
+        Gui::cmdAppObjectArgs(sketch, "delConstraints(%s)", idList.c_str());
+        Gui::Command::commitCommand();
+    }
+    catch (const Base::Exception& e) {
+        Gui::Command::abortCommand();
+        Gui::NotifyUserError(sketch, QT_TRANSLATE_NOOP("Notifications", "Value Error"), e.what());
+    }
 }
 
 void TaskSketcherConstraints::changeFilteredVisibility(bool show, ActionTarget target)

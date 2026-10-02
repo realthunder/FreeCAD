@@ -46,6 +46,12 @@ read as widgets.
   - "Associated constraints": an edge selected lists the constraints on
     it, a second edge adds its own, and nothing selected lists none;
   - "Selected constraints": a constraint selected is the one listed.
+
+  The context menu's two deletions (upstream 0e1a9786e8):
+
+  - "Delete by Filter", with "Named" alone checked: the named constraints
+    go, the others stay, one undo step;
+  - "Delete All": none is left, one undo step.
 """
 import os
 import time
@@ -289,6 +295,34 @@ def probe(sk):
     box.setChecked(False)
     settle()
     check("the filter off: all six", len(shown()) == 6, shown())
+
+    # -- the context menu's deletions ------------------------------------
+    box.setChecked(True)
+    for r in range(fl.count()):
+        fl.item(r).setCheckState(QtCore.Qt.Unchecked)
+    fl.item(named[0]).setCheckState(QtCore.Qt.Checked)
+    settle()
+    undo0 = sk.Document.UndoCount
+    QtCore.QMetaObject.invokeMethod(lw, "deleteFilterItems")
+    settle(0.5)
+    check("delete by filter: the three named constraints are gone, the others stay",
+          [c.Type for c in sk.Constraints] == ["Coincident", "Radius", "Distance"]
+          and names() == ["", "", ""], ([c.Type for c in sk.Constraints], names()))
+    check("in one undo step", sk.Document.UndoCount == undo0 + 1,
+          (undo0, sk.Document.UndoCount, sk.Document.UndoNames[:2]))
+    box.setChecked(False)
+    settle()
+    undo0 = sk.Document.UndoCount
+    QtCore.QMetaObject.invokeMethod(lw, "deleteAllItems")
+    settle(0.5)
+    check("delete all: none is left", sk.ConstraintCount == 0 and lw.count() == 0,
+          (sk.ConstraintCount, lw.count()))
+    check("in one undo step", sk.Document.UndoCount == undo0 + 1,
+          (undo0, sk.Document.UndoCount, sk.Document.UndoNames[:2]))
+    sk.Document.undo()
+    settle(0.5)
+    check("undone: the three are back", sk.ConstraintCount == 3 and lw.count() == 3,
+          (sk.ConstraintCount, lw.count()))
 
 
 def finish():

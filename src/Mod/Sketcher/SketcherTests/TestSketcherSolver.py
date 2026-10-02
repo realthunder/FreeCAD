@@ -1257,6 +1257,25 @@ class TestSketcherSolver(unittest.TestCase):
             [i for i, c in enumerate(copy.Constraints) if 'IsVisible="0"' in c.Content], [3]
         )
 
+    def testDelConstraints(self):
+        """Several constraints deleted in one call (upstream's delConstraints)."""
+        sketch = self.Doc.addObject("Sketcher::SketchObject", "SketchDelConstraints")
+        CreateBoxSketchSet(sketch)
+        self.Doc.recompute()
+        count = sketch.ConstraintCount
+        self.assertGreater(count, 4)
+        kept = [c.Type for i, c in enumerate(sketch.Constraints) if i not in (0, 2, 3)]
+        sketch.delConstraints([3, 0, 2])
+        self.assertEqual(sketch.ConstraintCount, count - 3)
+        self.assertEqual([c.Type for c in sketch.Constraints], kept)
+        sketch.delConstraints((0,), True, True)
+        self.assertEqual(sketch.ConstraintCount, count - 4)
+        with self.assertRaises(ValueError):
+            sketch.delConstraints([0, count])
+        with self.assertRaises(TypeError):
+            sketch.delConstraints(0)
+        self.assertEqual(sketch.ConstraintCount, count - 4)
+
     def tearDown(self):
         # closing doc
         FreeCAD.closeDocument("SketchSolverTest")
