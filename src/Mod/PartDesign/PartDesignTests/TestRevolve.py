@@ -411,6 +411,27 @@ class TestRevolve(unittest.TestCase):
         self.assertNotIn('Invalid', rev.State)
         self.assertAlmostEqual(rev.Shape.Volume, math.pi * 100 * 20, places=3)
 
+    def testPlaneAsAxisTakesItsLocation(self):
+        # A plane as the axis: its normal through its location. The base was
+        # built from the location's X and the normal's Y and Z, so an axis
+        # along X ran through y = 0 and cut the profile
+        body = self.Doc.addObject('PartDesign::Body', 'PlaneAxisBody')
+        sketch = body.newObject('Sketcher::SketchObject', 'PlaneAxisSketch')
+        sketch.addGeometry(Part.Circle(FreeCAD.Vector(20, 0, 0), FreeCAD.Vector(0, 0, 1), 5))
+        plane = body.newObject('PartDesign::Plane', 'AxisPlane')
+        plane.MapMode = 'Deactivated'
+        plane.Placement = FreeCAD.Placement(FreeCAD.Vector(0, -10, 0),
+                                            FreeCAD.Rotation(FreeCAD.Vector(0, 1, 0), 90))
+        self.Doc.recompute()
+        rev = body.newObject('PartDesign::Revolution', 'PlaneAxisRevolution')
+        rev.Profile = sketch
+        rev.ReferenceAxis = (plane, [''])
+        rev.Angle = 360
+        self.Doc.recompute()
+        self.assertNotIn('Invalid', rev.State)
+        self.assertAlmostEqual(rev.Base.y, -10, places=6)
+        self.assertAlmostEqual(rev.Shape.Volume, 2 * math.pi ** 2 * 25 * 10, places=3)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestRevolve")

@@ -1329,7 +1329,7 @@ void ProfileBased::getAxis(const App::DocumentObject * pcReferenceAxis, const st
         auto d = pln.Axis().Direction();
         auto b = pln.Location();
         dir = Base::Vector3d(d.X(), d.Y(), d.Z());
-        base = Base::Vector3d(b.X(), d.Y(), d.Z());
+        base = Base::Vector3d(b.X(), b.Y(), b.Z());
     }
     else {
         refShape = refShape.getSubTopoShape(TopAbs_EDGE, 1, true);
