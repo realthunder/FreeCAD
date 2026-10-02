@@ -525,6 +525,14 @@ bool Document::setEdit(Gui::ViewProvider* p, int ModNum, const char *subname)
         FC_ERR("cannot edit detached object");
         return false;
     }
+    // A frozen object is not recomputed, so an edit of its data would show
+    // nothing; the view-only modes (colour, cutting) stay open
+    if (obj->isFreezed()
+            && (ModNum == ViewProvider::Default || ModNum == ViewProvider::Transform)) {
+        Base::Console().Warning("%s is frozen; unfreeze it to edit it\n",
+                                obj->Label.getValue());
+        return false;
+    }
 
     std::string _subname;
     if(!subname || !subname[0]) {

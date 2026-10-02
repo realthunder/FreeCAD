@@ -1685,7 +1685,13 @@ void StdCmdPlacement::activated(int iMsg)
 
 bool StdCmdPlacement::isActive()
 {
-    return Gui::Selection().countObjectsOfType(App::GeoFeature::getClassTypeId()) >= 1;
+    // A frozen object would move without touching what depends on it
+    // (upstream 1eb8496aae refuses it the same way)
+    auto sels = Gui::Selection().getObjectsOfType(App::GeoFeature::getClassTypeId());
+    return !sels.empty()
+        && std::none_of(sels.begin(), sels.end(), [](App::DocumentObject *obj) {
+               return obj->isFreezed();
+           });
 }
 
 //===========================================================================

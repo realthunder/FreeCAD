@@ -210,6 +210,7 @@
         <file>Std_Import.svg</file>
         <file>Std_MergeProjects.svg</file>
         <file>Std_MarkToRecompute.svg</file>
+        <file>Std_ToggleFreeze.svg</file>
         <file>Std_PrintPdf.svg</file>
         <file>Std_RandomColor.svg</file>
         <file>Std_ObjectRandomColor.svg</file>

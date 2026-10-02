@@ -224,13 +224,25 @@ void PropertyItem::setPropertyData(const std::vector<App::Property*>& items)
     this->initialize();
 }
 
+// A frozen object's data shows read only, as upstream's freeze makes it --
+// but without upstream's setting of every property's ReadOnly bit, which is
+// saved with the file and has to be undone exactly on unfreeze. Its name and
+// visibility stay editable: neither is an input to its result.
+static bool isFrozenInput(App::PropertyContainer *parent, App::Property *prop)
+{
+    auto obj = Base::freecad_dynamic_cast<App::DocumentObject>(parent);
+    return obj && obj->isFreezed() && prop != &obj->Label && prop != &obj->Label2
+        && prop != &obj->Visibility;
+}
+
 void PropertyItem::updateData()
 {
     bool ro = true;
     for (auto it : propertyItems) {
         App::PropertyContainer* parent = it->getContainer();
         if (parent)
-            ro &= (parent->isReadOnly(it) || it->testStatus(App::Property::ReadOnly));
+            ro &= (parent->isReadOnly(it) || it->testStatus(App::Property::ReadOnly)
+                   || isFrozenInput(parent, it));
     }
     this->setReadOnly(ro);
 }

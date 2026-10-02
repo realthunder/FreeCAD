@@ -270,6 +270,7 @@ enum ItemStatus {
     ItemStatusShowOnTop = 64,
     ItemStatusUnSelectable = 128,
     ItemStatusSuppressed = 256,
+    ItemStatusFrozen = 512,
 };
 
 /** The link between the tree and a document object.
@@ -717,6 +718,7 @@ public:
     QPixmap pxHidden;
     QPixmap pxError;
     QPixmap pxRecompute;
+    QPixmap pxFrozen;
     QPixmap pxExternal;
     QPixmap pxInvisibleOnTop;
     QPixmap pxVisibleOnTop;
@@ -1313,6 +1315,7 @@ void TreeWidget::Private::refreshIcons()
     pxHidden = BitmapFactory().pixmap("TreeHidden").scaled(32, 32, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
     pxError = BitmapFactory().pixmap("TreeError").scaled(32, 32, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
     pxRecompute = BitmapFactory().pixmap("TreeRecompute").scaled(32, 32, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    pxFrozen = BitmapFactory().pixmap("Std_ToggleFreeze").scaled(32, 32, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
     pxExternal = BitmapFactory().pixmap("TreeExternal").scaled(32, 32, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
     pxInvisibleOnTop = BitmapFactory().pixmap("TreeItemInvisibleOnTop");
     pxVisibleOnTop = BitmapFactory().pixmap("TreeItemVisibleOnTop");
@@ -5239,6 +5242,8 @@ QIcon TreeWidget::Private::getItemIcon(App::Document *doc, const ViewProviderDoc
         currentStatus |= ItemStatusExternal;
     if (obj->isError())
         currentStatus |= ItemStatusError;
+    if (obj->isFreezed())
+        currentStatus |= ItemStatusFrozen;
     if (obj->isTouched() || obj->mustExecute()==1)
         currentStatus |= ItemStatusTouched;
 
@@ -7572,6 +7577,8 @@ void DocumentObjectItem::testItemStatus(bool resetStatus)
         currentStatus |= ItemStatusHidden;
     if (pObject->isError())
         currentStatus |= ItemStatusError;
+    if (pObject->isFreezed())
+        currentStatus |= ItemStatusFrozen;
     if (pObject->isTouched() || obj->mustExecute()==1)
         currentStatus |= ItemStatusTouched;
     if (visible)
@@ -7674,6 +7681,10 @@ QIcon TreeWidget::Private::getItemIcon(int currentStatus,
     auto &pimpl = TreeWidget::instance()->pimpl;
     if (currentStatus & ItemStatusError)
         px = pimpl->pxError;
+    // In the touched mark's corner: a frozen object may well have inputs
+    // changed since, but it is not waiting for a recompute
+    else if (currentStatus & ItemStatusFrozen)
+        px = pimpl->pxFrozen;
     else if (currentStatus & ItemStatusTouched)
         px = pimpl->pxRecompute;
 

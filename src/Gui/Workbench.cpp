@@ -623,6 +623,7 @@ void StdWorkbench::setupContextMenu(const char* recipient, MenuItem* item) const
         *item << visu << sel << edit << "Separator"
               << "Std_RenderSettings"
               << "Std_GroupRandomColor"
+              << "Std_ToggleFreeze"
               << "Std_SendToPythonConsole"
               << "Separator";
     };

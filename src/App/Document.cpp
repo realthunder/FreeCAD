@@ -1938,6 +1938,9 @@ void Document::writeObjects(const std::vector<App::DocumentObject*>& obj,
             if(desc)
                 writer.Stream() << "Error=\"" << Property::encodeAttribute(desc) << "\" ";
         }
+        // Upstream's attribute, so a freeze survives both ways
+        if ((*it)->isFreezed())
+            writer.Stream() << "Freeze=\"1\" ";
 
         if(writer.isSplitXML()) {
             std::string name((*it)->getNameInDocument());
@@ -2304,6 +2307,11 @@ Document::readObjects(Base::XMLReader& reader)
                     if(obj->isError() && reader.hasAttribute("Error"))
                         d->addRecomputeLog(reader.getAttribute("Error"),obj);
                 }
+                // Set before the properties are read, so their restore does
+                // not touch it either
+                if (reader.hasAttribute("Freeze")
+                        && reader.getAttributeAsInteger("Freeze") != 0)
+                    obj->setStatus(ObjectStatus::Freeze, true);
 
                 obj->_revision = rev;
             }
@@ -4393,6 +4401,20 @@ int Document::recompute(const std::vector<App::DocumentObject*> &objs, bool forc
                 auto obj = topoSortedObjects[idx];
                 if(!obj->isAttachedToDocument() || filter.find(obj)!=filter.end())
                     continue;
+                // A frozen object keeps its result, so the objects depending
+                // on it have nothing new to see: drop the touch an input or
+                // a dependency left, and do not pass it on. The touched
+                // properties stay, for when it is unfrozen.
+                if (obj->isFreezed()) {
+                    obj->StatusBits.reset(ObjectStatus::Enforce);
+                    if (obj->StatusBits.test(ObjectStatus::Touch)) {
+                        obj->StatusBits.reset(ObjectStatus::Touch);
+                        signalPurgeTouchedObject(*obj);
+                    }
+                    if (seq)
+                        seq->next(true);
+                    continue;
+                }
                 // ask the object if it should be recomputed
                 bool doRecompute = false;
                 if (obj->mustRecompute()) {
@@ -4700,6 +4722,14 @@ void Document::setErrorDescription(App::Property *Prop, const char *msg)
 int Document::_recomputeFeature(DocumentObject* Feat)
 {
     DocumentObjectExecReturn  *returnCode = DocumentObject::StdReturn;
+
+    // Also asked of an explicit recompute of the one object (Python's
+    // obj.recompute(), a task panel's), which upstream lets through. A
+    // frozen object keeps its result and its error, if it had one.
+    if (Feat->isFreezed()) {
+        FC_LOG("Skip recomputing frozen " << Feat->getFullName());
+        return Feat->isError() ? 1 : 0;
+    }
 
     // delete recompute log
     d->clearRecomputeLog(Feat);
