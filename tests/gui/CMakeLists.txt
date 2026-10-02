@@ -783,3 +783,10 @@ fc_add_gui_test(GuiSketchMissingExternalTree_tests_run
 fc_add_gui_test(GuiSketchDistanceLabelSide_tests_run
                 sketch-distance-label-side.py
                 --timeout 150)
+
+# A new angle's arc is drawn where the lines are -- past the nearer end
+# when they do not reach their crossing -- and an arc's own angle outside
+# the arc (upstream 9663cf8dd4).
+fc_add_gui_test(GuiSketchAngleLabelPlace_tests_run
+                sketch-angle-label-place.py
+                --timeout 150)
