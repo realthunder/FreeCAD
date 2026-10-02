@@ -189,6 +189,7 @@ namespace sp = std::placeholders;
 SbColor ViewProviderSketch::CurveColor                              (1.0f,1.0f,1.0f);     // #FFFFFF -> (255,255,255)
 SbColor ViewProviderSketch::CurveDraftColor                         (0.0f,0.0f,0.86f);    // #0000DC -> (  0,  0,220)
 SbColor ViewProviderSketch::CurveExternalColor                      (0.8f,0.2f,0.6f);     // #CC3399 -> (204, 51,153)
+SbColor ViewProviderSketch::CurveExternalDefiningColor              (0.8f,0.2f,0.6f);     // #CC3399 -> (204, 51,153)
 SbColor ViewProviderSketch::CurveFrozenColor                        (0.5f,1.0f,1.0f);     // #7FFFFF -> (127, 255, 255)
 SbColor ViewProviderSketch::CurveDetachedColor                      (0.1f,0.5f,0.1f);     // #1C7F1C -> (28, 127, 28)
 SbColor ViewProviderSketch::CurveMissingColor                       (0.5f,0.0f,1.0f);     // #7F00FF -> (127, 0, 255)
@@ -4093,8 +4094,15 @@ void ViewProviderSketch::updateBaseColor()
             color = CurveMissingColor;
         else if (egf->testFlag(ExternalGeometryExtension::Frozen))
             color = CurveFrozenColor;
+        else if (egf->testFlag(ExternalGeometryExtension::Defining))
+            // its own preference (upstream 411cdadf49), the external colour
+            // by default: what tells the two apart is the line, solid
+            // against dashed (e2f998f301)
+            return CurveExternalDefiningColor;
         else
             color = CurveExternalColor;
+        // a defining geometry in one of the fork's states: that state's
+        // colour, lighter
         if (egf->testFlag(ExternalGeometryExtension::Defining)
                 && !egf->testFlag(ExternalGeometryExtension::Missing)) {
             float hsv[3];
@@ -5689,6 +5697,8 @@ void ViewProviderSketch::OnChange(Base::Subject<const char*> &rCaller, const cha
         "ExprBasedConstrDimColor",
         "DeactivatedConstrDimColor",
         "ExternalColor",
+        "ExternalDefiningColor",
+        "InformationColor",
         "FrozenColor",
         "DetachedColor",
         "MissingColor",
@@ -6003,6 +6013,17 @@ void ViewProviderSketch::initParams()
     // set the external geometry color
     color = hGrp->GetUnsigned("ExternalColor", defCurveExternalColor);
     CurveExternalColor.setPackedValue((uint32_t)color, transparency);
+
+    static const unsigned long defCurveExternalDefiningColor =
+        (unsigned long)(CurveExternalDefiningColor.getPackedValue());
+    color = hGrp->GetUnsigned("ExternalDefiningColor", defCurveExternalDefiningColor);
+    CurveExternalDefiningColor.setPackedValue((uint32_t)color, transparency);
+
+    // the information layer: B-spline polygons, combs, the hints
+    static const unsigned long defInformationColor =
+        (unsigned long)(InformationColor.getPackedValue());
+    color = hGrp->GetUnsigned("InformationColor", defInformationColor);
+    InformationColor.setPackedValue((uint32_t)color, transparency);
 
     color = hGrp->GetUnsigned("FrozenColor", defCurveFrozenColor);
     CurveFrozenColor.setPackedValue((uint32_t)color, transparency);

@@ -770,6 +770,7 @@ protected:
     static SbColor CurveColor;
     static SbColor CurveDraftColor;
     static SbColor CurveExternalColor;
+    static SbColor CurveExternalDefiningColor;
     static SbColor CurveFrozenColor;
     static SbColor CurveDetachedColor;
     static SbColor CurveMissingColor;
