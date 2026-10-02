@@ -630,6 +630,8 @@ struct EditData {
     Gui::ViewerContext * viewer = nullptr;
 
     bool enableExternalPick = false;
+    /// the release of the press that ended a datum entry is still to come
+    bool datumEditRelease = false;
 
     SoDrawStyle * PointsDrawStyle;
     SoDrawStyle * SelCurvesDrawStyle;
@@ -972,6 +974,9 @@ DrawSketchHandler* ViewProviderSketch::currentHandler() const
 void ViewProviderSketch::activateHandler(DrawSketchHandler *newHandler)
 {
     assert(edit);
+    // a value being typed at a label is taken as it stands
+    if (datumEdit)
+        datumEdit->finish(true, false);
     assert(edit->sketchHandler == nullptr);
     edit->sketchHandler = newHandler;
     setSketchMode(STATUS_SKETCH_UseHandler);
@@ -988,6 +993,10 @@ void ViewProviderSketch::activateHandler(DrawSketchHandler *newHandler)
 void ViewProviderSketch::deactivateHandler()
 {
     assert(edit);
+    // A value being typed at a label is taken as it stands, and whoever
+    // asked for it is not told: that may be the tool going away here.
+    if (datumEdit)
+        datumEdit->finish(true, false);
     if(edit->sketchHandler != nullptr){
         std::vector<Base::Vector2d> editCurve;
         editCurve.clear();
@@ -1338,6 +1347,21 @@ bool ViewProviderSketch::mouseButtonPressed(int Button, bool pressed, const SbVe
 
     assert(edit);
 
+    // A dimension's value is being typed at its label: a press of the
+    // first button elsewhere ends that, and is used up by it together with
+    // its release -- it is not also a pick for the tool that asked.
+    if (Button == 1) {
+        if (datumEdit) {
+            edit->datumEditRelease = pressed;
+            return datumEdit->mouseButton(Button, pressed);
+        }
+        if (edit->datumEditRelease) {
+            edit->datumEditRelease = false;
+            if (!pressed)
+                return true;
+        }
+    }
+
     int dragging = 0;
     if (pressed) {
         edit->cursorDragging = 0;
@@ -1687,17 +1711,15 @@ void ViewProviderSketch::editDoubleClicked(void)
         // Find the constraint
         const std::vector<Sketcher::Constraint *> &constrlist = getSketchObject()->Constraints.getValues();
 
-        auto sels = edit->PreselectConstraintSet;
-        for(int id : sels) {
-
-            Constraint *Constr = constrlist[id];
-
-            // if its the right constraint
-            if (Constr->isDimensional()) {
-                Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Modify sketch constraints"));
-                EditDatumDialog editDatumDialog(this, id);
-                editDatumDialog.exec();
-            }
+        // the dimensions under the pointer, all of them at once
+        std::vector<int> datums;
+        for (int id : edit->PreselectConstraintSet) {
+            if (constrlist[id]->isDimensional())
+                datums.push_back(id);
+        }
+        if (!datums.empty()) {
+            Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Modify sketch constraints"));
+            editDatums(getSketchObject(), datums);
         }
     }
 }
@@ -1942,6 +1964,10 @@ bool ViewProviderSketch::mouseMove(const SbVec2s &cursorPos, Gui::ViewerContext 
 {
     if (!edit)
         return inherited::mouseMove(cursorPos, viewer);
+
+    // no tool moves on while a dimension's value is being typed
+    if (datumEdit)
+        return false;
 
     // The view a preselection made during this move is drawn in. Read
     // back through the member on the way out: a tool may end the edit
@@ -4360,6 +4386,24 @@ void ViewProviderSketch::updateBaseColor()
     for (int i=0; i < count; i++)
         restoreConstraintColor(i);
     edit->HighlightedConstraints.clear();
+}
+
+Gui::SoDatumLabel* ViewProviderSketch::getConstraintDatumLabel(int constraintId) const
+{
+    if (!edit || !edit->constrGroup || constraintId < 0
+            || constraintId >= edit->constrGroup->getNumChildren())
+        return nullptr;
+    const auto &constraints = getSketchObject()->Constraints.getValues();
+    if (constraintId >= (int)constraints.size()
+            || !constraintHasDatumLabel(constraints[constraintId]->Type))
+        return nullptr;
+    auto sep = static_cast<SoSeparator *>(edit->constrGroup->getChild(constraintId));
+    if (sep->getNumChildren() <= CONSTRAINT_SEPARATOR_INDEX_MATERIAL_OR_DATUMLABEL)
+        return nullptr;
+    SoNode *node = sep->getChild(CONSTRAINT_SEPARATOR_INDEX_MATERIAL_OR_DATUMLABEL);
+    if (!node->isOfType(Gui::SoDatumLabel::getClassTypeId()))
+        return nullptr;
+    return static_cast<Gui::SoDatumLabel *>(node);
 }
 
 void ViewProviderSketch::restoreConstraintColor(int i)
@@ -9900,6 +9944,10 @@ void ViewProviderSketch::unsetEdit(int ModNum)
 {
     if (ModNum == Transform || ModNum == TransformAt)
         return inherited::unsetEdit(ModNum);
+
+    // leaving is a click elsewhere: a value being typed is taken
+    if (datumEdit)
+        datumEdit->finish(true, false);
 
     Workbench::leaveEditMode();
 

@@ -1413,9 +1413,7 @@ void TaskSketcherConstraints::onListWidgetConstraintsItemActivated(QListWidgetIt
 
     // if its the right constraint
     if (it->isDimensional()) {
-        EditDatumDialog* editDatumDialog = new EditDatumDialog(this->sketchView, it->ConstraintNbr);
-        editDatumDialog->exec(false);
-        delete editDatumDialog;
+        editDatums(this->sketchView->getSketchObject(), {it->ConstraintNbr}, false);
     }
     else if (it->constraintType() == Sketcher::Text) {
         EditTextDialog editTextDialog(this->sketchView, it->ConstraintNbr);

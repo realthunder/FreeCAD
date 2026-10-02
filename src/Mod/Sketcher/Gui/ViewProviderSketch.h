@@ -77,6 +77,7 @@ class SbTime;
 struct EditData;
 
 namespace Gui {
+class SoDatumLabel;
 class View3DInventorViewer;
 class ViewerContext;
 }
@@ -88,6 +89,8 @@ class SketchObject;
 }
 
 namespace SketcherGui {
+
+class DatumEditSession;
 
 class SnapManager;
 class DrawSketchHandler;
@@ -148,6 +151,19 @@ public:
     ViewProviderSketch();
     /// destructor
     virtual ~ViewProviderSketch();
+
+    /** @name A dimension's value typed in the view (EditDatumDialog.h) */
+    //@{
+    /// The label of a dimensional constraint in the edit graph, or null.
+    Gui::SoDatumLabel* getConstraintDatumLabel(int constraintId) const;
+    /// The view an event of this edit is being handled in.
+    Gui::ViewerContext* getEditViewer() const
+    {
+        return editViewer();
+    }
+    /// The entry in progress. It owns itself, and clears this when it ends.
+    DatumEditSession* datumEdit = nullptr;
+    //@}
 
     /** @name Properties */
     //@{

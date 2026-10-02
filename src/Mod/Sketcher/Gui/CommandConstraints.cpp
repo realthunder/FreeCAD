@@ -417,10 +417,10 @@ void finishDatumConstraint(Gui::Command* cmd,
 
     bool show = hGrp->GetBool("ShowDialogOnDistanceConstraint", true);
 
-    // Ask for the value of the distance immediately
+    // Ask for the value of the distance immediately: at the label, or in
+    // the dialog. Either commits the command or aborts it.
     if (show && isDriving) {
-        EditDatumDialog editDatumDialog(sketch, ConStr.size() - 1);
-        editDatumDialog.exec();
+        editDatums(sketch, {int(ConStr.size()) - 1});
     }
     else {
         // no dialog was shown so commit the command
@@ -3029,24 +3029,35 @@ protected:
         bool show = hGrp->GetBool("ShowDialogOnDistanceConstraint", true);
         const std::vector<Sketcher::Constraint*>& ConStr = Obj->Constraints.getValues();
 
-        bool commandHandledInEditDatum = false;
+        std::vector<int> datums;
         for (int index : cstrIndexes | boost::adaptors::reversed) {
             if (show && ConStr[index]->isDimensional() && ConStr[index]->isDriving) {
-                commandHandledInEditDatum = true;
-                EditDatumDialog editDatumDialog(sketchgui, index);
-                editDatumDialog.exec();
-                if (!editDatumDialog.isSuccess()) {
-                    break;
-                }
+                datums.push_back(index);
             }
         }
 
-        // Nothing dimensioned: what was made on the way -- the references
-        // of picks outside the sketch -- is not kept either. The reset or
-        // the leaving below aborts it.
-        if (!commandHandledInEditDatum && !cstrIndexes.empty())
-            Gui::Command::commitCommand();
+        if (datums.empty()) {
+            // Nothing dimensioned: what was made on the way -- the
+            // references of picks outside the sketch -- is not kept
+            // either. The reset or the leaving below aborts it.
+            if (!cstrIndexes.empty())
+                Gui::Command::commitCommand();
+            afterDatums();
+            return;
+        }
 
+        // Their values, all of them at once: typed at the labels, or in
+        // one dialog after the other. Whichever it is commits the command
+        // or aborts it. At the labels this returns before they are in, and
+        // the tool goes on from afterDatums() then -- unless it is gone by
+        // then, in which case the view provider has ended the entry
+        // without calling back.
+        editDatums(Obj, datums, true, [this](bool) { afterDatums(); });
+    }
+
+    void afterDatums()
+    {
+        ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Sketcher");
         // This code enables the continuous creation mode.
         bool continuousMode = hGrp->GetBool("ContinuousCreationMode", true);
         if (continuousMode) {
@@ -11806,9 +11817,11 @@ void CmdSketcherChangeDimensionConstraint::activated(int iMsg)
     };
 
     try {
+        // "Edit Value" is the full dialog -- name, reference, expression --
+        // wherever there can be a dialog; a served client types the value
+        // at the label.
         auto value = getDimConstraint();
-        EditDatumDialog editDatumDialog(std::get<0>(value), std::get<1>(value));
-        editDatumDialog.exec(false);
+        editDatums(std::get<0>(value), {std::get<1>(value)}, false, {}, /*preferDialog = */ true);
     }
     catch (const Base::RuntimeError&) {
         Gui::TranslatedUserWarning(getActiveGuiDocument()->getDocument(),

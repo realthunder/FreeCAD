@@ -928,3 +928,10 @@ fc_add_gui_test(GuiSketchLineStyles_tests_run
 fc_add_gui_test(GuiSketchDisplaySettings_tests_run
                 sketch-display-settings.py
                 --timeout 180)
+
+# A dimension's value is typed in the view, at the constraint's label
+# (ruled 2026-10-02): Enter applies, Escape takes a new constraint back, a
+# click elsewhere applies; the dialog stays for what a box cannot edit.
+fc_add_gui_test(GuiSketchDatumInPlace_tests_run
+                sketch-datum-in-place.py
+                --timeout 180)
