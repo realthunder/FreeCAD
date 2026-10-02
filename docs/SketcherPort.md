@@ -3512,6 +3512,66 @@ Left for a ruling -- both ruled 2026-10-02, see "The rulings of session
   measured on the steady clock. docs/Testing.md has the test that makes the
   step on demand.
 
+### The preference pages (session 118)
+
+Thirty-seven undecided rows name `SketcherSettings.cpp` or one of the
+pages' `.ui` files. Twenty-three decided, fourteen left for a ruling. The
+file is 569 lines here against 935 at upstream's tip, so it was read by
+family, and the `.ui` files compared widget by widget against the tip
+(which settled every text-only row at once).
+
+| row | verdict |
+|---|---|
+| `4f429e3288` | **adapted** `e3ad693750`: upstream asks for a restart when the dimensioning mode, the unified coincident tool or the horizontal/vertical group changes. Here the workbench installs its tool bars again when the page is saved -- it did so for the dimensioning mode alone, the other two did nothing until the next start |
+| `8ae1d9bbde`, `255949134f`, `2d5d1397a9`, `0814df7488`, `3d0aaeb616` | **taken** `e3ad693750`: the line group's check box. The workbench read `Commands/UnifiedLineCommands` already, and named `Sketcher_CompLine`, which was never brought over: set by hand, the option took BOTH line commands off the bar. The group is here now. Default off, as the workbench has it (upstream's is on) |
+| `2e390f1543` | **n/a**: it syncs the restart check's property; the page compares the stored options before and after the save |
+| `09209436d2` | **taken** `86b99936a3`: "Reset page" takes back the four settings the page stores by hand. `AutoScaleMode` is one more than upstream's list |
+| `00228821d0`, `b4de78d3d7`, `ab9188a5dc`, `a00fe1e886` | **adapted** `2cb495d103`: the grid page's part -- line pattern icons painted from the palette at the device pixel ratio, upstream's seven patterns. Measured with light text: three entries, black, before |
+| `d2491541e1`, `2903f480ae`, `880335a0f2`, `ee2f327a96` | **taken** `40b24b1000` |
+| `a77f96ea86`, `5b59d94d55`, `98712d228b`, `1c591cd43a` | **have**: after `40b24b1000` no widget both sides have differs in its text, bar two kept on purpose (below) |
+| `9189abe69b` | **have**: both readers default to "when no scale feature is visible" |
+| `35700db40e` | **n/a**: "always add external geometry as reference". Here that is decided by the command (`Sketcher_External` or `Sketcher_Defining`), not by the construction mode |
+| `21b56fe3fa` | **have**: the override is here; the rest is member order in a closed file and the font page |
+
+Found on the way, no row for either:
+
+- The coincident option's check box was unchecked by default while the
+  workbench's default is the unified tool. With nothing set the page showed
+  it off, and OK with nothing touched wrote `UnifiedCoincident = false`.
+- The re-install put a button the bar did not have at the END of the bar:
+  the tool bar manager keeps what a bar has and appends the rest
+  (`ToolBarManager::setup`, deliberately, against flicker). Changing the
+  dimensioning mode had this before today. The page empties the two bars
+  its options decide before the re-install. A move of the button instead is
+  not safe: a group's drop-down is set on the tool button when the action
+  is added, and a move makes a new button.
+
+Kept as the fork has them: the scaling mode's tool tip (it describes this
+fork's rule) and the internal geometry check box (the feature here makes
+more than faces).
+
+Left for a ruling -- features the fork's own drawing code would have to
+grow, none of them a port of lines:
+
+- *Line pattern and width by geometry type, and the Appearance page*
+  (`b140feabaf`, 1572 lines; then `f5da655429` points coloured by
+  construction state and the vertex colour removed, `e2f998f301` external
+  defining solid / non-defining dashed in one colour, `411cdadf49` and
+  `1155182ac3` a colour, pattern and width for external defining geometry,
+  `c2d6248bc7` dimensional constraint line style, `90ca7a30d9` axis line
+  width, `efec2c6795` the page's icon brush). Upstream draws through
+  `EditModeCoinManager`, which is not compiled here; the fork has one
+  curve style at 3 px and one dashed style.
+- *Constraint symbol size* (`eef738b312`, `dc22fb4b9b`): a preference for
+  the icon size, which here follows the font size.
+- *Label font face* (`b9a89bada1`, `e992fef709`): a font box with a
+  preview and a missing-glyph check.
+- *Axis transparency* (`cda241dbd0`): the axes drawn through geometry in
+  front of them, at a second transparency.
+- *Make Internals on for new sketches* (`be1d53cf5f`): a default. Also
+  upstream's defaults for "show dimension names" (on) and the line group
+  (on), both off here.
+
 ### TaskSketcherConstraints.cpp (session 117)
 
 Twenty-six undecided rows, all decided. Read by the DECISION column of the
