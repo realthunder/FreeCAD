@@ -267,8 +267,6 @@ struct EditData {
     RootCrossCoordinate(0),
     EditCurvesCoordinate(0),
     EditMarkersCoordinate(0),
-    CurveSet(0),
-    DashedCurveSet(0),
     SelectedCurveSet(0),
     PreSelectedCurveSet(0),
     RootCrossSet(0),
@@ -290,8 +288,7 @@ struct EditData {
     infoGroup(0),
     pickStyleAxes(0),
     PointsDrawStyle(0),
-    CurvesDrawStyle(0),
-    DashedCurvesDrawStyle(0),
+    SelCurvesDrawStyle(0),
     RootCrossDrawStyle(0),
     EditCurvesDrawStyle(0),
     EditMarkersDrawStyle(0),
@@ -304,6 +301,9 @@ struct EditData {
         hPart->Attach(master);
         hSketchGeneral = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Sketcher/General");
         hSketchGeneral->Attach(master);
+        hSketchView = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Sketcher/View");
+        hSketchView->Attach(master);
+        readLineStyles();
         _AllowFaceExternal = hSketchGeneral->GetBool(_ParamAllowFaceExternal, true);
         _SnapTolerance = hSketchGeneral->GetFloat(_ParamSnapTolerance, 0.2);
         _ViewBottomOnEdit = hSketchGeneral->GetBool(_ParamViewBottomOnEdit, false);
@@ -323,6 +323,62 @@ struct EditData {
         hView->Detach(master);
         hPart->Detach(master);
         hSketchGeneral->Detach(master);
+        hSketchView->Detach(master);
+    }
+
+    /// The line widths and patterns of the preferences (Mod/Sketcher/View),
+    /// upstream's names and defaults.
+    void readLineStyles()
+    {
+        static const struct {
+            const char *width;
+            const char *pattern;
+            unsigned int defPattern;
+        } names[CurveClassCount] = {
+            {"EdgeWidth", "EdgePattern", 0xFFFF},
+            {"ConstructionWidth", "ConstructionPattern", 0xFCFC},
+            {"InternalWidth", "InternalPattern", 0xFCFC},
+            {"ExternalWidth", "ExternalPattern", 0xFCFC},
+            {"ExternalDefiningWidth", "ExternalDefiningPattern", 0xFFFF},
+        };
+        for (int c = 0; c < CurveClassCount; ++c) {
+            CurveWidth[c] = std::max(1L, hSketchView->GetInt(names[c].width, 2));
+            CurvePattern[c] = hSketchView->GetInt(names[c].pattern, names[c].defPattern) & 0xFFFF;
+        }
+        InformationWidth = std::max(1L, hSketchView->GetInt("InformationWidth", 1));
+        InformationPattern = hSketchView->GetInt("InformationPattern", 0xFCFC) & 0xFFFF;
+    }
+
+    /// Put them on the draw styles. A field is written only when it
+    /// changes: a write is a change to whoever watches the node.
+    void applyLineStyles()
+    {
+        auto set = [](SoDrawStyle *style, float width, unsigned int pattern, int scale) {
+            if (style->lineWidth.getValue() != width)
+                style->lineWidth = width;
+            if (style->linePattern.getValue() != pattern)
+                style->linePattern = pattern;
+            if (style->linePatternScaleFactor.getValue() != scale)
+                style->linePatternScaleFactor = scale;
+        };
+        int widest = 1;
+        for (int s = 0; s < CurveSetCount; ++s) {
+            if (!CurveSets[s].style)
+                continue;
+            int cls = s / 2;
+            widest = std::max(widest, CurveWidth[cls]);
+            // upstream draws its patterns at twice their length; a visual
+            // layer's pattern is drawn as it always was here
+            if (s % 2)
+                set(CurveSets[s].style, CurveWidth[cls] * pixelScalingFactor, LayerPattern, 1);
+            else
+                set(CurveSets[s].style, CurveWidth[cls] * pixelScalingFactor, CurvePattern[cls], 2);
+        }
+        // the highlight copies cover the curve they highlight, whichever
+        if (SelCurvesDrawStyle)
+            set(SelCurvesDrawStyle, widest * pixelScalingFactor, 0xFFFF, 1);
+        if (InformationDrawStyle)
+            set(InformationDrawStyle, InformationWidth * pixelScalingFactor, InformationPattern, 2);
     }
 
     /// is this edge one of the geometries being dragged?
@@ -354,6 +410,7 @@ struct EditData {
     ParameterGrp::handle hView;
     ParameterGrp::handle hPart;
     ParameterGrp::handle hSketchGeneral;
+    ParameterGrp::handle hSketchView;
 
     // pointer to the active handler for new sketch objects
     DrawSketchHandler *sketchHandler;
@@ -418,9 +475,6 @@ struct EditData {
     /// vertices of each curve, in curve order: CurvesCoordinate is every
     /// curve's vertices one after the other
     std::vector<int> CurveVertexCount;
-    /// the curve index of each polyline of CurveSet and of DashedCurveSet
-    std::vector<int> SolidCurveIds;
-    std::vector<int> DashedCurveIds;
     std::vector<int> PointIdToVertexId; // conversion of SoCoordinate3 index to vertex Id
     std::vector<unsigned> VertexIdToPointId; // conversion of vertex Id to SoCoordinate3 index
 
@@ -463,10 +517,47 @@ struct EditData {
     SoCoordinate3 *RootCrossCoordinate;
     SoCoordinate3 *EditCurvesCoordinate;
     SoCoordinate3 *EditMarkersCoordinate;
-    // Two sets over the one coordinate and material list: curves on a
-    // visual layer with a line pattern (layer 1) are drawn dashed.
-    SoIndexedLineSet *CurveSet;
-    SoIndexedLineSet *DashedCurveSet;
+    /// What a curve is drawn as (upstream's sub layers): each has a line
+    /// width and a pattern in the preferences.
+    enum CurveClass {
+        CurveNormal,
+        CurveConstruction,
+        CurveInternal,
+        CurveExternal,
+        CurveExternalDefining,
+        CurveClassCount
+    };
+    /// An indexed set under its own draw style. There are two per class
+    /// over the one coordinate and material list: the class's curves, and
+    /// those of them on a visual layer with a line pattern of its own
+    /// (layer 1), which is drawn instead of the class's.
+    struct CurveStyleSet {
+        SoDrawStyle *style = nullptr;
+        SoIndexedLineSet *set = nullptr;
+        /// the curve index of each polyline of the set
+        std::vector<int> ids;
+    };
+    static constexpr int CurveSetCount = CurveClassCount * 2;
+    std::array<CurveStyleSet, CurveSetCount> CurveSets;
+    static int curveSetIndex(CurveClass cls, bool layerPattern)
+    {
+        return cls * 2 + (layerPattern ? 1 : 0);
+    }
+    /// the set a picked node is, or null
+    const CurveStyleSet *curveSetOf(const SoNode *node) const
+    {
+        for (const auto &cs : CurveSets) {
+            if (cs.set == node)
+                return &cs;
+        }
+        return nullptr;
+    }
+    int CurveWidth[CurveClassCount] = {2, 2, 2, 2, 2};
+    unsigned int CurvePattern[CurveClassCount] = {0xFFFF, 0xFCFC, 0xFCFC, 0xFCFC, 0xFFFF};
+    /// the first patterned visual layer's pattern
+    unsigned int LayerPattern = 0xFFFF;
+    int InformationWidth = 1;
+    unsigned int InformationPattern = 0xFCFC;
     SoIndexedLineSet     *SelectedCurveSet;
     SoIndexedLineSet     *PreSelectedCurveSet;
     SoLineSet     *RootCrossSet;
@@ -519,8 +610,7 @@ struct EditData {
     bool enableExternalPick = false;
 
     SoDrawStyle * PointsDrawStyle;
-    SoDrawStyle * CurvesDrawStyle;
-    SoDrawStyle * DashedCurvesDrawStyle;
+    SoDrawStyle * SelCurvesDrawStyle;
     SoDrawStyle * RootCrossDrawStyle;
     SoDrawStyle * EditCurvesDrawStyle;
     SoDrawStyle * EditMarkersDrawStyle;
@@ -2984,13 +3074,12 @@ bool ViewProviderSketch::detectPreselection(const SoPickedPoint *Point,
             }
         } else {
             // checking for a hit in the curves
-            if (tail == edit->CurveSet || tail == edit->DashedCurveSet) {
+            if (const auto *curveSet = edit->curveSetOf(tail)) {
                 const SoDetail *curve_detail = Point->getDetail(tail);
                 if (curve_detail && curve_detail->getTypeId() == SoLineDetail::getClassTypeId()) {
                     // the polyline of this set, then the curve it is
                     int line = static_cast<const SoLineDetail *>(curve_detail)->getLineIndex();
-                    const std::vector<int> &ids =
-                        tail == edit->CurveSet ? edit->SolidCurveIds : edit->DashedCurveIds;
+                    const std::vector<int> &ids = curveSet->ids;
                     if (line >= 0 && line < (int)ids.size())
                         GeoIndex = edit->CurvIdToGeoId[ids[line]];
                 }
@@ -3877,11 +3966,21 @@ void ViewProviderSketch::setGeometryCreationMode(GeometryCreationMode newMode)
 
 void ViewProviderSketch::updateEditCurveColor()
 {
-    // The curve being drawn is coloured as what it will be. Only the
-    // colour: a new curve goes to visual layer 0 in either mode, so the
-    // preview's solid line is already its pattern.
-    const SbColor &color = geometryCreationMode == GeometryCreationMode::Construction
-        ? CurveDraftColor : CurveColor;
+    // The curve being drawn is coloured as what it will be, and has its
+    // width and pattern (upstream's setEditDrawStyle).
+    const bool construction = geometryCreationMode == GeometryCreationMode::Construction;
+    const SbColor &color = construction ? CurveDraftColor : CurveColor;
+    const SoDrawStyle *style = edit->CurveSets[EditData::curveSetIndex(
+        construction ? EditData::CurveConstruction : EditData::CurveNormal, false)].style;
+    if (style && edit->EditCurvesDrawStyle) {
+        SoDrawStyle *preview = edit->EditCurvesDrawStyle;
+        if (preview->lineWidth.getValue() != style->lineWidth.getValue())
+            preview->lineWidth = style->lineWidth.getValue();
+        if (preview->linePattern.getValue() != style->linePattern.getValue())
+            preview->linePattern = style->linePattern.getValue();
+        if (preview->linePatternScaleFactor.getValue() != style->linePatternScaleFactor.getValue())
+            preview->linePatternScaleFactor = style->linePatternScaleFactor.getValue();
+    }
     auto &field = edit->EditCurvesMaterials->diffuseColor;
     SbColor *colors = field.startEditing();
     for (int i = 0; i < field.getNum(); ++i)
@@ -4627,12 +4726,11 @@ void ViewProviderSketch::updateHighlight()
             std::map<int, int> curveColor;
             for (std::size_t k = 0; k < directPreCurves; ++k)
                 curveColor[preCurves[k].curve] = preCurves[k].color;
-            for (auto *ids : {&edit->SolidCurveIds, &edit->DashedCurveIds}) {
-                SoNode *node = ids == &edit->SolidCurveIds ? edit->CurveSet : edit->DashedCurveSet;
-                for (int line = 0; line < (int)ids->size(); ++line) {
-                    auto it = curveColor.find((*ids)[line]);
+            for (const auto &curveSet : edit->CurveSets) {
+                for (int line = 0; line < (int)curveSet.ids.size(); ++line) {
+                    auto it = curveColor.find(curveSet.ids[line]);
                     if (it != curveColor.end())
-                        add(node, SoFCDetail::Edge, line, it->second);
+                        add(curveSet.set, SoFCDetail::Edge, line, it->second);
                 }
             }
         }
@@ -4644,11 +4742,12 @@ void ViewProviderSketch::updateHighlight()
                 edit->SelCurveMap.count(axis) ? HighlightPreselectSelected : HighlightPreselect);
         }
         for (auto &c : viewPreCurves) {
-            for (auto *ids : {&edit->SolidCurveIds, &edit->DashedCurveIds}) {
-                auto it = std::find(ids->begin(), ids->end(), c.first);
-                if (it != ids->end())
-                    add(ids == &edit->SolidCurveIds ? edit->CurveSet : edit->DashedCurveSet,
-                        SoFCDetail::Edge, static_cast<int>(it - ids->begin()), c.second);
+            for (const auto &curveSet : edit->CurveSets) {
+                const std::vector<int> &ids = curveSet.ids;
+                auto it = std::find(ids.begin(), ids.end(), c.first);
+                if (it != ids.end())
+                    add(curveSet.set, SoFCDetail::Edge, static_cast<int>(it - ids.begin()),
+                        c.second);
             }
         }
         for (auto &p : viewPrePoints)
@@ -5586,6 +5685,20 @@ void ViewProviderSketch::OnChange(Base::Subject<const char*> &rCaller, const cha
         "MissingColor",
         "HighlightColor",
         "SelectionColor",
+
+        // Mod/Sketcher/View
+        "EdgeWidth",
+        "EdgePattern",
+        "ConstructionWidth",
+        "ConstructionPattern",
+        "InternalWidth",
+        "InternalPattern",
+        "ExternalWidth",
+        "ExternalPattern",
+        "ExternalDefiningWidth",
+        "ExternalDefiningPattern",
+        "InformationWidth",
+        "InformationPattern",
     };
     static std::unordered_set<const char *, App::CStringHasher, App::CStringHasher> gridDict = {
         "GridSizePixelThreshold",
@@ -5711,14 +5824,13 @@ void ViewProviderSketch::updateInventorNodeSizes()
     edit->PointSet->markerIndex = edit->defaultMarkerIndex;
     // the one value just written covers every point, so put the origin's back
     applyOriginPointMarker();
-    edit->CurvesDrawStyle->lineWidth = 3 * edit->pixelScalingFactor;
-    edit->DashedCurvesDrawStyle->lineWidth = 3 * edit->pixelScalingFactor;
+    edit->applyLineStyles();
     edit->RootCrossDrawStyle->lineWidth = 2 * edit->pixelScalingFactor;
-    edit->EditCurvesDrawStyle->lineWidth = 3 * edit->pixelScalingFactor;
+    // the width and pattern of what the tool is drawing
+    updateEditCurveColor();
     edit->EditMarkersDrawStyle->pointSize = 8 * edit->pixelScalingFactor;
     edit->EditMarkerSet->markerIndex = Gui::Inventor::MarkerBitmaps::getMarkerIndex("CIRCLE_LINE", edit->MarkerSize);
     edit->ConstraintDrawStyle->lineWidth = 1 * edit->pixelScalingFactor;
-    edit->InformationDrawStyle->lineWidth = 1 * edit->pixelScalingFactor;
 }
 
 void ViewProviderSketch::initParams()
@@ -5772,6 +5884,8 @@ void ViewProviderSketch::initParams()
         else if (!supportedsizes.empty())
             scaledMarkerSize = supportedsizes.back();
         edit->MarkerSize = scaledMarkerSize;
+
+        edit->readLineStyles();
 
         zCross = edit->hSketchGeneral->GetFloat("ZHeight", 1e-6f);
         if (zCross == 0.0f)
@@ -6952,16 +7066,20 @@ void ViewProviderSketch::draw(bool temp /*=false*/, bool rebuildinformationlayer
         verts[i].setValue(it->x,it->y,zLowLines);
     }
 
-    // Each curve goes to the solid or the dashed set by its visual layer's
-    // line pattern; both index the one coordinate and material list, so a
-    // curve keeps its index for colouring and highlighting. One pattern is
-    // drawn: the first patterned layer's (the default list has one, layer 1).
+    // Each curve goes to the set of what it is -- normal, construction,
+    // internal alignment, external, defining external (upstream's sub
+    // layers, b140feabaf and 1155182ac3) -- and of that class's two sets
+    // to the second when its visual layer has a line pattern of its own,
+    // which is drawn instead of the class's. All index the one coordinate
+    // and material list, so a curve keeps its index for colouring and
+    // highlighting. One layer pattern is drawn: the first patterned
+    // layer's (the default list has one, layer 1).
     edit->CurveVertexCount.assign(Index.begin(), Index.end());
-    edit->SolidCurveIds.clear();
-    edit->DashedCurveIds.clear();
     {
-        std::vector<int32_t> solid, dashed, solidMat, dashedMat;
-        unsigned int dashPattern = 0xFFFF;
+        std::array<std::vector<int32_t>, EditData::CurveSetCount> coords, mats;
+        for (auto &curveSet : edit->CurveSets)
+            curveSet.ids.clear();
+        unsigned int layerPattern = 0xFFFF;
         const std::vector<VisualLayer> &layers = VisualLayerList.getValues();
         const std::vector<Part::Geometry *> &geos = sketch->Geometry.getValues();
         int vertex = 0;
@@ -6969,35 +7087,50 @@ void ViewProviderSketch::draw(bool temp /*=false*/, bool rebuildinformationlayer
             int count = int(Index[c]);
             int geoId = edit->CurvIdToGeoId[c];
             unsigned int pattern = 0xFFFF;
-            if (geoId >= 0 && geoId < (int)geos.size()) {
+            EditData::CurveClass cls = EditData::CurveNormal;
+            if (geoId <= Sketcher::GeoEnum::RefExt) {
+                cls = EditData::CurveExternal;
+                const Part::Geometry *geo = sketch->getGeometry(geoId);
+                if (geo && ExternalGeometryFacade::getFacade(geo)->testFlag(
+                               ExternalGeometryExtension::Defining))
+                    cls = EditData::CurveExternalDefining;
+            }
+            else if (geoId >= 0 && geoId < (int)geos.size()) {
+                if (GeometryFacade::isInternalAligned(geos[geoId]))
+                    cls = EditData::CurveInternal;
+                else if (GeometryFacade::getConstruction(geos[geoId]))
+                    cls = EditData::CurveConstruction;
                 int layer = getSafeGeomLayerId(geos[geoId]);
                 if (layer >= 0 && layer < (int)layers.size())
                     pattern = layers[layer].getLinePattern() & 0xFFFF;
             }
-            bool isDashed = pattern != 0xFFFF;
-            if (isDashed && dashPattern == 0xFFFF)
-                dashPattern = pattern;
-            auto &target = isDashed ? dashed : solid;
-            (isDashed ? dashedMat : solidMat).push_back(c);
-            (isDashed ? edit->DashedCurveIds : edit->SolidCurveIds).push_back(c);
+            bool onPatternedLayer = pattern != 0xFFFF;
+            if (onPatternedLayer && layerPattern == 0xFFFF)
+                layerPattern = pattern;
+            int s = EditData::curveSetIndex(cls, onPatternedLayer);
+            mats[s].push_back(c);
+            edit->CurveSets[s].ids.push_back(c);
             for (int k = 0; k < count; ++k)
-                target.push_back(vertex + k);
-            target.push_back(-1);
+                coords[s].push_back(vertex + k);
+            coords[s].push_back(-1);
             vertex += count;
         }
-        if (!solid.empty())
-            solid.pop_back();
-        if (!dashed.empty())
-            dashed.pop_back();
-        edit->CurveSet->coordIndex.setValues(0, solid.size(), solid.data());
-        edit->CurveSet->coordIndex.setNum(solid.size());
-        edit->CurveSet->materialIndex.setValues(0, solidMat.size(), solidMat.data());
-        edit->CurveSet->materialIndex.setNum(solidMat.size());
-        edit->DashedCurveSet->coordIndex.setValues(0, dashed.size(), dashed.data());
-        edit->DashedCurveSet->coordIndex.setNum(dashed.size());
-        edit->DashedCurveSet->materialIndex.setValues(0, dashedMat.size(), dashedMat.data());
-        edit->DashedCurveSet->materialIndex.setNum(dashedMat.size());
-        edit->DashedCurvesDrawStyle->linePattern = dashPattern;
+        for (int s = 0; s < EditData::CurveSetCount; ++s) {
+            SoIndexedLineSet *set = edit->CurveSets[s].set;
+            // most sets of most sketches are empty and stay so
+            if (coords[s].empty() && set->coordIndex.getNum() == 0)
+                continue;
+            if (!coords[s].empty())
+                coords[s].pop_back();
+            set->coordIndex.setValues(0, coords[s].size(), coords[s].data());
+            set->coordIndex.setNum(coords[s].size());
+            set->materialIndex.setValues(0, mats[s].size(), mats[s].data());
+            set->materialIndex.setNum(mats[s].size());
+        }
+        if (edit->LayerPattern != layerPattern) {
+            edit->LayerPattern = layerPattern;
+            edit->applyLineStyles();
+        }
     }
 
     i=0; // setting up the point set
@@ -9433,25 +9566,24 @@ void ViewProviderSketch::createEditInventorNodes(void)
     edit->CurvesCoordinate->setName("CurvesCoordinate");
     curvesRoot->addChild(edit->CurvesCoordinate);
 
-    edit->CurvesDrawStyle = new SoDrawStyle;
-    edit->CurvesDrawStyle->setName("CurvesDrawStyle");
-    edit->CurvesDrawStyle->lineWidth = 3 * edit->pixelScalingFactor;
-    curvesRoot->addChild(edit->CurvesDrawStyle);
+    // A draw style and an indexed set per curve class, and a second pair
+    // for the class's curves on a patterned visual layer (layer 1): the
+    // same coordinates and materials, their own width and line pattern.
+    // "CurvesDrawStyle"/"CurvesLineSet" for normal geometry, then
+    // "CurvesConstruction...", and "Dashed..." for the layer's.
+    static const char *curveClassNames[EditData::CurveClassCount] = {
+        "", "Construction", "Internal", "External", "ExternalDefining"};
+    for (int s = 0; s < EditData::CurveSetCount; ++s) {
+        auto &curveSet = edit->CurveSets[s];
+        std::string name = std::string(s % 2 ? "Dashed" : "") + "Curves" + curveClassNames[s / 2];
+        curveSet.style = new SoDrawStyle;
+        curveSet.style->setName((name + "DrawStyle").c_str());
+        curvesRoot->addChild(curveSet.style);
 
-    edit->CurveSet = new SoIndexedLineSet;
-    edit->CurveSet->setName("CurvesLineSet");
-    curvesRoot->addChild(edit->CurveSet);
-
-    // curves on a patterned visual layer (layer 1): same coordinates and
-    // materials, their own line pattern
-    edit->DashedCurvesDrawStyle = new SoDrawStyle;
-    edit->DashedCurvesDrawStyle->setName("DashedCurvesDrawStyle");
-    edit->DashedCurvesDrawStyle->lineWidth = 3 * edit->pixelScalingFactor;
-    curvesRoot->addChild(edit->DashedCurvesDrawStyle);
-
-    edit->DashedCurveSet = new SoIndexedLineSet;
-    edit->DashedCurveSet->setName("DashedCurvesLineSet");
-    curvesRoot->addChild(edit->DashedCurveSet);
+        curveSet.set = new SoIndexedLineSet;
+        curveSet.set->setName((name + "LineSet").c_str());
+        curvesRoot->addChild(curveSet.set);
+    }
 
     // stuff for the selected Curves +++++++++++++++++++++++++++++++++++++++
     // Copies of the highlighted curves, as for the points above.
@@ -9463,7 +9595,9 @@ void ViewProviderSketch::createEditInventorNodes(void)
     edit->SelCurvesCoordinate = new SoCoordinate3;
     edit->SelCurvesCoordinate->setName("SelectedCurvesCoordinate");
     selCurvesRoot->addChild(edit->SelCurvesCoordinate);
-    selCurvesRoot->addChild(edit->CurvesDrawStyle);
+    edit->SelCurvesDrawStyle = new SoDrawStyle;
+    edit->SelCurvesDrawStyle->setName("SelectedCurvesDrawStyle");
+    selCurvesRoot->addChild(edit->SelCurvesDrawStyle);
 
     MtlBind = new SoMaterialBinding;
     MtlBind->value = SoMaterialBinding::PER_FACE_INDEXED;
@@ -9602,7 +9736,7 @@ void ViewProviderSketch::createEditInventorNodes(void)
     // use small line width for the information visual
     edit->InformationDrawStyle = new SoDrawStyle;
     edit->InformationDrawStyle->setName("InformationDrawStyle");
-    edit->InformationDrawStyle->lineWidth = 1 * edit->pixelScalingFactor;
+    edit->applyLineStyles();
 
     // add the group where all the information entity has its SoSeparator
     edit->infoGroup = new SoGroup();

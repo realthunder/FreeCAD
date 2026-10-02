@@ -90,8 +90,8 @@ def run():
         points = find(view, name="PointsDrawStyle")
         width = curves.lineWidth.getValue() if curves else None
         size = points.pointSize.getValue() if points else None
-        check("curve line width is 3 device pixels per logical pixel",
-              width == 6.0, width)
+        check("curve line width is its preference (EdgeWidth, 2) in device pixels",
+              width == 4.0, width)
         check("point size is 8 device pixels per logical pixel",
               size == 16.0, size)
 

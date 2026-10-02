@@ -913,3 +913,11 @@ fc_add_gui_test(GuiSketchBSplineFromKnots_tests_run
 fc_add_gui_test(GuiSketchToolClickPosition_tests_run
                 sketch-tool-click-position.py
                 --timeout 120)
+
+# A sketch's curves are drawn with a line width and a pattern by what they
+# are -- normal, construction, internal, external, defining external --
+# from the preferences (upstream b140feabaf, 1155182ac3); a visual layer's
+# own pattern wins; the mode 3 backend draws the gaps.
+fc_add_gui_test(GuiSketchLineStyles_tests_run
+                sketch-line-styles.py
+                --timeout 180)
