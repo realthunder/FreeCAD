@@ -3128,6 +3128,48 @@ file; the line-presence count only chose the order.
 
 `646b4381f9`, the 21st, was adapted in session 95 (ARCLENGTH).
 
+### CommandConstraints.cpp (session 115): 36 rows, 6 left
+
+Every undecided row naming `Gui/CommandConstraints.cpp`, fixes first. The
+file is LF, unlike most of the module.
+
+| row | verdict |
+|---|---|
+| `e38154474a`, `084379651a` | **adapted** `42931f6f46`: a coincidence that would fold an element onto a point is refused. The two ways into the command checked different things: started on a selection it joined the two ends of one line (the solver then says "Both points are equal"), as a tool it refused any two points of one element, a B-spline's ends included, and neither saw an end joined to a point already on the other end. Both ask `isCoincidentSelectionValid` now. `sketch-coincident-same-element.py` (4 of 8 failed) |
+| `1050996387` | **adapted** `5a621c16c0`: upstream's guard is on its tool being given one edge twice, which adds nothing here -- a second pick of a selected edge does not advance the tool. What did add a constraint, and still does upstream: an arc selected with its OWN end point wrote `Tangent(arc, start, arc)`. Refused, with upstream's message. `sketch-tangent-self.py` |
+| `bc3c0dc19a` | **adapted** `6c0dcb8578`: the symmetric constraint takes an element by its two ends -- a line, an arc of any conic, an open B-spline -- with a symmetry line, an axis or a point. On the fork's own sequences, four added. Found with it: the tool took a circle with a point and wrote a constraint between ends a circle does not have. Hints: "pick symmetry line or point" after an edge, "pick edge" after an axis. `sketch-symmetric-element.py` (8 of 14 failed) |
+| `71eed18cb1`, `abf9762abb` | **have**: the fork's sequences already take the root picked first and three points |
+| `36dd4b983c` | **taken** `1d00ac7d19`: the Dimension tool counts coincident points once, so a corner's two vertices and a third point are two points |
+| `76a84f63ab` | **taken** `8be2333ea9`: a horizontal or vertical line keeps the distance along its own axis wherever the pointer goes. `sketch-dimension-tool-points.py` guards both (3 of 7 failed) |
+| `b9155035fe` | **adapted** `bb5fcd8cd4`: constraint values, and what the datum dialog writes, went through `"%f"` -- 0.000158101832 became 0.000158. Upstream's `"%.8g"` mends the small values and is WORSE than `"%f"` above 100 (1234.123456789 -> 1234.1235), so the fork writes `"%.15g"`. The right angle of two perpendicular lines is taken with it. The tool handlers and `Utils.cpp` still write `"%f"`, as upstream's do. `sketch-constraint-value-precision.py` (5 of 5 failed, relative errors up to 6e-4) |
+| `9fc40b33de` | **taken** `536a207770`: the one string that still differed |
+| `a7251a6c3a`, `3d2419effc`, `7d21d9edb8`, `6a1afdc4e2`, `c0c6df10ec` | **have** |
+| `aa785f78d6`, `8a6872e69d` | **adapted** in session 114 (`24982ee5f9`, `3982c0e4d6`); the ledger had not been told |
+| `75c8749189`, `a283855697` | **declined**: tooltips the fork words itself |
+| `f4665aa7b5` | **declined** (user ruling) |
+| `08381b1d18`, `ed770bf849` | **n/a**: they follow a `pixmapFromSvg` that sets the device pixel ratio. The fork's returns device pixels, and the tool cursor is painted in them |
+| `651cefde4d`, `08c9a191e2`, `12a69fe296`, `65c6614081`, `f932c7e4e0`, `50f029edd4`, `8aa50c4380`, `65466d580b` | **n/a** for this file: spellings of the same call, a warning cleanup, two Core header moves |
+
+Left open:
+
+- `fe7c1d18be`, **put to the user**. Measured: a running Line tool survives
+  a constraint command applied to a selection -- the cursor stays the
+  tool's. Upstream releases the handler at the top of every constraint
+  command. The fork re-runs a command to toggle its tool (`90f0e23eac`),
+  so a blanket release would undo that; the question is which commands
+  should end which tools.
+- `0c34c93fe4`. Both constraint tools select by the sketch itself; the
+  fork's panels select through the edited occurrence's path
+  (`selectElement`). It works, because the sketch resolves the object, but
+  a removal by the other path would not match. Wants a click-flow test
+  inside a container before it changes.
+- `3d87975faf`, `9663cf8dd4` (275 lines): a new dimension's label put on a
+  fixed side, clear of the geometry. They touch the label distance ruled on
+  in session 114.
+- `129c7d4d03` (81 lines): an arc's angle by a click through the arc.
+- `999fed9c4e` (469 lines and a Core selection change): the Dimension tool
+  on external edges and vertices.
+
 ## 7a. The constraint-tool hints (session 85)
 
 Thirteen rows, not the eleven the sweep sized: `580d538798`, the commit
