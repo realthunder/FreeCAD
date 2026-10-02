@@ -666,7 +666,7 @@ PyObject *ViewProviderPy::getBoundingBox(PyObject *args, PyObject *kwd) {
     static char *kwlist[] = {"subname","transform","view","mat","depth", NULL};
     if (!PyArg_ParseTupleAndKeywords(args, kwd, "|sOO!O!i", kwlist,
                 &subname, &transform, &View3DInventorPy::Type, &pyView,
-                &subname,&Base::MatrixPy::Type, &pyMat, &depth))
+                &Base::MatrixPy::Type, &pyMat, &depth))
         return nullptr;
     PY_TRY {
         View3DInventorViewer *viewer = nullptr;

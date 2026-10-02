@@ -725,3 +725,10 @@ fc_add_gui_test(GuiInstancedFaceTransparency_tests_run
 fc_add_gui_test(GuiMeshingBoundsHistory_tests_run
                 meshing-bounds-history.py
                 --timeout 240)
+
+# ViewObject.getBoundingBox takes each of its five arguments: the parse
+# passed one pointer too many, so `mat` was checked against something
+# that is no type and `depth` was written into the matrix pointer.
+fc_add_gui_test(GuiViewProviderBoundingBox_tests_run
+                view-provider-bounding-box.py
+                --timeout 120)
