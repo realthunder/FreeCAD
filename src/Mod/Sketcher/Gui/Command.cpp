@@ -1124,6 +1124,88 @@ bool CmdSketcherMirrorSketch::isActive()
     return Gui::Selection().countObjectsOfType(Sketcher::SketchObject::getClassTypeId()) > 0;
 }
 
+// Helpers of CmdSketcherMergeSketches::activated()
+namespace {
+
+/// The external geometry ids of a sketch by the reference each was
+/// projected from, in the sketch's own order. The two axes have none.
+std::map<std::string, std::vector<int>> externalIdsByRef(const Sketcher::SketchObject* sketch)
+{
+    std::map<std::string, std::vector<int>> res;
+    int geoId = 0;
+    for (const auto geo : sketch->getExternalGeometry()) {
+        --geoId;
+        if (geoId > Sketcher::GeoEnum::RefExt) {
+            continue;
+        }
+        const std::string& ref = Sketcher::ExternalGeometryFacade::getFacade(geo)->getRef();
+        if (!ref.empty()) {
+            res[ref].push_back(geoId);
+        }
+    }
+    return res;
+}
+
+/** Give the merged sketch the external geometry of a source sketch
+ *
+ * @return the merged sketch's id for each external id of the source, and
+ * GeoUndef for one that could not be carried over (upstream d34081b9fe).
+ *
+ * A reference the merged sketch already has, from a source merged before,
+ * is not added twice. One the sketch may not take -- another body's, say --
+ * is refused by addExternal() itself. The ids are matched through the
+ * reference each projected geometry carries, which is the same string in
+ * both sketches.
+ */
+std::map<int, int> importExternalGeometry(const Sketcher::SketchObject* src,
+                                          Sketcher::SketchObject* dst)
+{
+    const auto srcIds = externalIdsByRef(src);
+    const auto had = externalIdsByRef(dst);
+
+    const auto& objs = src->ExternalGeometry.getValues();
+    const auto& subs = src->ExternalGeometry.getSubValues();
+    for (std::size_t i = 0; i < objs.size() && i < subs.size(); ++i) {
+        if (!objs[i]) {
+            continue;
+        }
+        std::string ref = std::string(objs[i]->getNameInDocument()) + "." + subs[i];
+        if (had.count(ref)) {
+            continue;
+        }
+        try {
+            dst->addExternal(objs[i], subs[i].c_str());
+        }
+        catch (const Base::Exception& e) {
+            Base::Console().Warning("%s\n", e.what());
+        }
+    }
+
+    const auto dstIds = externalIdsByRef(dst);
+    std::map<int, int> res;
+    for (const auto& [ref, ids] : srcIds) {
+        auto it = dstIds.find(ref);
+        for (std::size_t i = 0; i < ids.size(); ++i) {
+            res[ids[i]] = (it != dstIds.end() && i < it->second.size())
+                ? it->second[i]
+                : Sketcher::GeoEnum::GeoUndef;
+        }
+        if (it == dstIds.end()) {
+            Base::Console().Warning(
+                "%s",
+                qApp->translate("CmdSketcherMergeSketches",
+                                "External geometry '%1' of '%2' is not merged.\n")
+                    .arg(QString::fromUtf8(ref.c_str()),
+                         QString::fromUtf8(src->getNameInDocument()))
+                    .toUtf8()
+                    .constData());
+        }
+    }
+    return res;
+}
+
+}// namespace
+
 DEF_STD_CMD_A(CmdSketcherMergeSketches)
 
 CmdSketcherMergeSketches::CmdSketcherMergeSketches()
@@ -1158,47 +1240,89 @@ void CmdSketcherMergeSketches::activated(int iMsg)
     std::string FeatName = getUniqueObjectName("Sketch");
 
     openCommand(QT_TRANSLATE_NOOP("Command", "Merge sketches"));
-    doCommand(
-        Doc, "App.activeDocument().addObject('Sketcher::SketchObject', '%s')", FeatName.c_str());
+
+    // In the body, when every source is in one and the same: the merged
+    // sketch can then refer to what they referred to.
+    std::set<Part::BodyBase*> bodies;
+    for (const auto& sel : selection) {
+        bodies.insert(Part::BodyBase::findBodyOf(sel.getObject()));
+    }
+    if (bodies.size() == 1 && *bodies.begin()) {
+        doCommand(Doc,
+                  "App.activeDocument().%s.newObject('Sketcher::SketchObject', '%s')",
+                  (*bodies.begin())->getNameInDocument(),
+                  FeatName.c_str());
+    }
+    else {
+        doCommand(Doc,
+                  "App.activeDocument().addObject('Sketcher::SketchObject', '%s')",
+                  FeatName.c_str());
+    }
 
     Sketcher::SketchObject* mergesketch =
         static_cast<Sketcher::SketchObject*>(doc->getObject(FeatName.c_str()));
 
     int baseGeometry = 0;
     int baseConstraints = 0;
+    std::vector<int> constraintsToDelete;
 
-    for (std::vector<Gui::SelectionObject>::const_iterator it = selection.begin();
-         it != selection.end();
-         ++it) {
+    for (const auto& sel : selection) {
         const Sketcher::SketchObject* Obj =
-            static_cast<const Sketcher::SketchObject*>((*it).getObject());
-        int addedGeometries = mergesketch->addGeometry(Obj->getInternalGeometry());
+            static_cast<const Sketcher::SketchObject*>(sel.getObject());
 
-        int addedConstraints = mergesketch->addCopyOfConstraints(*Obj);
+        // Both return the index of the last element, not a count.
+        int afterGeometry = 1 + mergesketch->addGeometry(Obj->getInternalGeometry());
+        const std::map<int, int> extGeoIdMap = importExternalGeometry(Obj, mergesketch);
+        int afterConstraints = 1 + mergesketch->addCopyOfConstraints(*Obj);
 
-        for (int i = 0; i <= (addedConstraints - baseConstraints); i++) {
-            Sketcher::Constraint* constraint =
-                mergesketch->Constraints.getValues()[i + baseConstraints];
+        // An id of the source's own geometry moves by what was merged
+        // before it. An external id is negative and counts the other way:
+        // it goes to the merged sketch's id for the same reference. The
+        // axes and the origin stay.
+        auto remapGeoId = [&](int& geoId) {
+            if (geoId == Sketcher::GeoEnum::GeoUndef || geoId == Sketcher::GeoEnum::HAxis
+                || geoId == Sketcher::GeoEnum::VAxis) {
+                return true;
+            }
+            if (geoId <= Sketcher::GeoEnum::RefExt) {
+                auto it = extGeoIdMap.find(geoId);
+                if (it == extGeoIdMap.end() || it->second == Sketcher::GeoEnum::GeoUndef) {
+                    return false;
+                }
+                geoId = it->second;
+                return true;
+            }
+            if (geoId + baseGeometry >= afterGeometry) {
+                return false;
+            }
+            geoId += baseGeometry;
+            return true;
+        };
 
-            if (constraint->First != Sketcher::GeoEnum::GeoUndef
-                && constraint->First != Sketcher::GeoEnum::HAxis
-                && constraint->First != Sketcher::GeoEnum::VAxis)
-                // not x, y axes or origin
-                constraint->First += baseGeometry;
-            if (constraint->Second != Sketcher::GeoEnum::GeoUndef
-                && constraint->Second != Sketcher::GeoEnum::HAxis
-                && constraint->Second != Sketcher::GeoEnum::VAxis)
-                // not x, y axes or origin
-                constraint->Second += baseGeometry;
-            if (constraint->Third != Sketcher::GeoEnum::GeoUndef
-                && constraint->Third != Sketcher::GeoEnum::HAxis
-                && constraint->Third != Sketcher::GeoEnum::VAxis)
-                // not x, y axes or origin
-                constraint->Third += baseGeometry;
+        for (int index = baseConstraints; index < afterConstraints; ++index) {
+            Sketcher::Constraint* constraint = mergesketch->Constraints.getValues()[index];
+            if (!remapGeoId(constraint->First) || !remapGeoId(constraint->Second)
+                || !remapGeoId(constraint->Third)) {
+                constraintsToDelete.push_back(index);
+                Base::Console().Warning(
+                    "%s",
+                    qApp->translate("CmdSketcherMergeSketches",
+                                    "Skipping constraint #%1 of '%2': references unmerged "
+                                    "geometry.\n")
+                        .arg(index - baseConstraints + 1)
+                        .arg(QString::fromUtf8(Obj->getNameInDocument()))
+                        .toUtf8()
+                        .constData());
+            }
         }
 
-        baseGeometry = addedGeometries + 1;
-        baseConstraints = addedConstraints + 1;
+        baseGeometry = afterGeometry;
+        baseConstraints = afterConstraints;
+    }
+
+    // last first, so the indices stay good
+    for (auto it = constraintsToDelete.rbegin(); it != constraintsToDelete.rend(); ++it) {
+        mergesketch->delConstraint(*it);
     }
 
     // apply the placement of the first sketch in the list (#0002434)

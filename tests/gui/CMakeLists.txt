@@ -824,3 +824,10 @@ fc_add_gui_test(GuiSketchNewInGroup_tests_run
 fc_add_gui_test(GuiSketchAttachNotItself_tests_run
                 sketch-attach-not-itself.py
                 --timeout 120)
+
+# Merge Sketches carries external geometry over and remaps the constraints
+# onto it (upstream d34081b9fe): the merged sketch had none, and an
+# external id was moved as if it were the sketch's own geometry.
+fc_add_gui_test(GuiSketchMergeExternal_tests_run
+                sketch-merge-external.py
+                --timeout 120)
