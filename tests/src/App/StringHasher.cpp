@@ -1212,6 +1212,24 @@ TEST_F(StringHasherTest, indexedNamesSplitTheTrailingIndex)  // NOLINT
     whole->clear();
 }
 
+TEST_F(StringHasherTest, indexedNamesLeaveAStringIdWhole)  // NOLINT
+{
+    // Arrange: a name built on a string id, as a binder's name of an element
+    // taken from another document is. Its digits are no element index.
+    Data::MappedName name(Data::MappedName("#22"), ";:X;BND:0:0;:H1f4:b,F");
+    QVector<App::StringIDRef> sids;
+    Hasher()->setIndexedNames(true);
+
+    // Act
+    auto first = Hasher()->getID(name, sids);
+    auto again = Hasher()->getID(name, sids);
+
+    // Assert: unindexed, and the same name when asked again -- it was "#N:16"
+    // the first time and "#N" after, so a recompute renamed the element
+    EXPECT_EQ(0, first.getIndex());
+    EXPECT_EQ(first.toString(), again.toString());
+}
+
 TEST_F(StringHasherTest, Save)  // NOLINT
 {
     // Arrange

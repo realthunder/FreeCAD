@@ -18,6 +18,7 @@ import tempfile
 import unittest
 
 import FreeCAD
+import Part
 
 FIXTURES = os.path.join(os.path.dirname(__file__), "Fixtures")
 
@@ -122,3 +123,90 @@ class TestNameEncoding(unittest.TestCase):
         self.Doc = FreeCAD.newDocument("PartDesignTestNameEncoding")
         param = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Document")
         self.assertEqual(self.Doc.Hasher.IndexedNames, param.GetBool("HashIndexedName", True))
+
+
+class TestNameEncodingAcrossDocuments(unittest.TestCase):
+    """A binder in a document that indexes names, bound to a pad in one that
+    does not. The binder's names are built on string ids of its own document,
+    "#22;:X;BND...", whose digits a hasher indexing names took for an element
+    index (upstream 275e534a5b): the names then changed at every recompute
+    and were saved naming ids the document never kept."""
+
+    def setUp(self):
+        self.names = []
+        self.files = []
+
+    def tearDown(self):
+        for name in reversed(self.names):
+            if name in FreeCAD.listDocuments():
+                FreeCAD.closeDocument(name)
+        for path in self.files:
+            if os.path.exists(path):
+                os.remove(path)
+
+    def newDocument(self, name, indexed):
+        doc = FreeCAD.newDocument(name)
+        doc.Hasher.IndexedNames = indexed
+        self.names.append(doc.Name)
+        return doc
+
+    def save(self, doc):
+        path = os.path.join(tempfile.gettempdir(), doc.Name + ".FCStd")
+        doc.saveAs(path)
+        self.files.append(path)
+        return path
+
+    @staticmethod
+    def elementMaps(binders):
+        return [b.Shape.ElementMap for b in binders]
+
+    def makePad(self, doc):
+        body = doc.addObject("PartDesign::Body", "Body")
+        sketch = body.newObject("Sketcher::SketchObject", "Sketch")
+        plane = [f for f in body.Origin.OriginFeatures if f.Role == "XY_Plane"][0]
+        sketch.AttachmentSupport = (plane, [""])
+        sketch.MapMode = "FlatFace"
+        corners = [
+            FreeCAD.Vector(0, 0, 0),
+            FreeCAD.Vector(20, 0, 0),
+            FreeCAD.Vector(20, 10, 0),
+            FreeCAD.Vector(0, 10, 0),
+        ]
+        for i in range(4):
+            sketch.addGeometry(Part.LineSegment(corners[i], corners[(i + 1) % 4]), False)
+        pad = body.newObject("PartDesign::Pad", "Pad")
+        pad.Profile = sketch
+        pad.Length = 10
+        doc.recompute()
+        return pad
+
+    def testBinderNamesAreStable(self):
+        source = self.newDocument("PartDesignTestNameEncodingSource", False)
+        pad = self.makePad(source)
+        doc = self.newDocument("PartDesignTestNameEncodingBinder", True)
+        # A face each: a whole shape is bound as a child map, which hashes
+        # no name of its own
+        binders = []
+        for i in range(len(pad.Shape.Faces)):
+            binder = doc.addObject("PartDesign::SubShapeBinder", "Binder%d" % i)
+            binder.Support = [(pad, ["Face%d" % (i + 1)])]
+            binders.append(binder)
+        doc.recompute()
+        built = self.elementMaps(binders)
+        self.assertTrue(all(built))
+
+        for binder in binders:
+            binder.touch()
+        doc.recompute()
+        self.assertEqual(self.elementMaps(binders), built, "names changed by a recompute")
+
+        self.save(source)
+        path = self.save(doc)
+        FreeCAD.closeDocument(doc.Name)
+        doc = FreeCAD.openDocument(path)
+        binders = [doc.getObject(b) for b in ["Binder%d" % i for i in range(len(built))]]
+        self.assertEqual(self.elementMaps(binders), built, "names changed by a reload")
+        for binder in binders:
+            binder.touch()
+        doc.recompute()
+        self.assertEqual(self.elementMaps(binders), built, "names changed by a recompute after reload")

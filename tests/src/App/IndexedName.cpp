@@ -107,6 +107,18 @@ TEST_F(IndexedNameTest, constructionInvalidCharInName)
     }
 }
 
+// A rejected name keeps no index either: "#22" is a string id, and a caller
+// reading the index of a name that failed to parse took it for element 22
+TEST_F(IndexedNameTest, constructionInvalidCharDropsIndex)
+{
+    // Act
+    auto indexedName = Data::IndexedName("#22");
+
+    // Assert
+    EXPECT_FALSE(indexedName);
+    EXPECT_EQ(indexedName.getIndex(), 0);
+}
+
 // Names must not contain numbers in the middle:
 TEST_F(IndexedNameTest, constructionNumberInName)
 {
