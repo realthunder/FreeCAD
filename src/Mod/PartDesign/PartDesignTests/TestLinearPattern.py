@@ -376,8 +376,229 @@ class TestLinearPattern(unittest.TestCase):
         finally:
             FreeCAD.closeDocument(doc.Name)
 
+    # Instance suppression (upstream cdb4624675)
+
+    def makeSuppressionPattern(self):
+        body = self.Doc.addObject("PartDesign::Body", "Body")
+        box = body.newObject("PartDesign::AdditiveBox", "Box")
+        box.Length = box.Width = box.Height = 10
+        self.Doc.recompute()
+        pattern = body.newObject("PartDesign::LinearPattern", "LinearPattern")
+        pattern.Originals = [box]
+        pattern.Direction = (self.Doc.X_Axis, [""])
+        pattern.Direction2 = (self.Doc.Y_Axis, [""])
+        pattern.Mode = pattern.Mode2 = "Spacing"
+        pattern.Offset = pattern.Offset2 = 10
+        pattern.Occurrences = pattern.Occurrences2 = 3
+        pattern.Spacings = pattern.Spacings2 = [-1, -1]
+        self.Doc.recompute()
+        return pattern
+
+    def testSuppressionKeepsGridPosition(self):
+        pattern = self.makeSuppressionPattern()
+        pattern.SuppressedIndices = [5]  # (1, 2)
+        self.assertEqual(pattern.SuppressedPositions, [(1, 2)])
+        pattern.Occurrences2 = 4
+        self.Doc.recompute()
+        self.assertEqual(pattern.SuppressedIndices, [6])
+        self.assertAlmostEqual(pattern.Shape.Volume, 11000)
+        self.assertFalse(pattern.Shape.isInside(FreeCAD.Vector(15, 25, 5), 1e-7, True))
+        self.assertTrue(pattern.Shape.isInside(FreeCAD.Vector(15, 15, 5), 1e-7, True))
+
+        pattern.Occurrences = 1
+        pattern.Occurrences2 = 2
+        self.Doc.recompute()
+        self.assertEqual(pattern.SuppressedIndices, [])
+        self.assertAlmostEqual(pattern.Shape.Volume, 2000)
+        pattern.Occurrences = pattern.Occurrences2 = 3
+        self.Doc.recompute()
+        self.assertEqual(pattern.SuppressedIndices, [5])
+        self.assertAlmostEqual(pattern.Shape.Volume, 8000)
+
+    def testCoordinateSuppressionUndoRedo(self):
+        pattern = self.makeSuppressionPattern()
+        self.Doc.UndoMode = 1
+        self.Doc.openTransaction("Suppress instance")
+        pattern.SuppressedPositions = [(1, 2)]
+        self.Doc.recompute()
+        self.Doc.commitTransaction()
+        self.assertAlmostEqual(pattern.Shape.Volume, 8000)
+        self.Doc.undo()
+        self.Doc.recompute()
+        self.assertEqual(pattern.SuppressedPositions, [])
+        self.assertAlmostEqual(pattern.Shape.Volume, 9000)
+        self.Doc.redo()
+        self.Doc.recompute()
+        self.assertEqual(pattern.SuppressedIndices, [5])
+        self.assertAlmostEqual(pattern.Shape.Volume, 8000)
+
+        self.Doc.openTransaction("Resize pattern")
+        pattern.Occurrences2 = 4
+        self.Doc.recompute()
+        self.Doc.commitTransaction()
+        self.Doc.undo()
+        self.Doc.recompute()
+        self.assertEqual(pattern.SuppressedIndices, [5])
+        self.Doc.redo()
+        self.Doc.recompute()
+        self.assertEqual(pattern.SuppressedIndices, [6])
+
+    def testSuppressedIndicesOnlyProjectPositionsInsideTheGrid(self):
+        pattern = self.Doc.addObject("PartDesign::LinearPattern", "LinearPattern")
+        pattern.Occurrences = 3
+        pattern.Occurrences2 = 2
+        pattern.SuppressedPositions = [(0, 1), (2, 1), (-1, 0), (3, 0), (0, 2)]
+        self.assertEqual(pattern.SuppressedIndices, [1, 5])
+        self.assertEqual(len(pattern.SuppressedPositions), 5)
+
+    def testSuppressedOriginalInMultiTransform(self):
+        pattern = self.makeSuppressionPattern()
+        pattern.Occurrences2 = 1
+        multi = self.Doc.Body.newObject("PartDesign::MultiTransform", "MultiTransform")
+        multi.Originals = [self.Doc.Box]
+        multi.Transformations = [pattern]
+        self.Doc.recompute()
+        pattern.SuppressedIndices = [0]
+        self.Doc.recompute()
+        self.assertAlmostEqual(multi.Shape.Volume, 2000)
+        self.assertAlmostEqual(multi.Shape.BoundBox.XMin, 10)
+        self.assertFalse(multi.Shape.isInside(FreeCAD.Vector(5, 5, 5), 1e-7, True))
+        self.assertTrue(multi.Shape.isInside(FreeCAD.Vector(15, 5, 5), 1e-7, True))
+
+        pattern.SuppressedIndices = [0, 1, 2]
+        self.Doc.recompute()
+        self.assertTrue(multi.Shape.isNull() or multi.Shape.Volume == 0)
+        pattern.SuppressedIndices = []
+        self.Doc.recompute()
+        self.assertAlmostEqual(multi.Shape.Volume, 3000)
+
+    def testSuppressionComposesAcrossHelpers(self):
+        pattern = self.makeSuppressionPattern()
+        pattern.Occurrences2 = 1
+        multi = self.Doc.Body.newObject("PartDesign::MultiTransform", "MultiTransform")
+        multi.Originals = [self.Doc.Box]
+        second = self.Doc.Body.newObject("PartDesign::LinearPattern", "SecondPattern")
+        second.Direction = (self.Doc.Y_Axis, [""])
+        second.Mode = "Spacing"
+        second.Offset = 10
+        second.Occurrences = 2
+        multi.Transformations = [pattern, second]
+        pattern.SuppressedIndices = [0]
+        self.Doc.recompute()
+        self.assertAlmostEqual(multi.Shape.Volume, 4000)
+        self.assertAlmostEqual(multi.Shape.BoundBox.XMin, 10)
+        pattern.SuppressedIndices = [0, 1, 2]
+        self.Doc.recompute()
+        self.assertTrue(multi.Shape.isNull() or multi.Shape.Volume == 0)
+
+    def testSuppressionInMultiTransform(self):
+        pattern = self.makeSuppressionPattern()
+        multi = self.Doc.Body.newObject("PartDesign::MultiTransform", "MultiTransform")
+        multi.Originals = [self.Doc.Box]
+        multi.Transformations = [pattern]
+        pattern.SuppressedIndices = [5]
+        self.Doc.recompute()
+        self.assertAlmostEqual(multi.Shape.Volume, 8000)
+        pattern.Occurrences2 = 4
+        self.Doc.recompute()
+        self.assertEqual(pattern.SuppressedIndices, [6])
+        self.assertAlmostEqual(multi.Shape.Volume, 11000)
+        self.assertFalse(multi.Shape.isInside(FreeCAD.Vector(15, 25, 5), 1e-7, True))
+
+    def testSuppressionPersistence(self):
+        import os
+        import tempfile
+        pattern = self.makeSuppressionPattern()
+        pattern.SuppressedIndices = [5]
+        pattern.Occurrences2 = 1  # Save an out-of-range suppression.
+        self.Doc.recompute()
+        path = os.path.join(tempfile.gettempdir(), "PDSuppressionPersistence.FCStd")
+        self.Doc.saveAs(path)
+        FreeCAD.closeDocument(self.Doc.Name)
+        self.Doc = FreeCAD.openDocument(path)
+        pattern = self.Doc.getObject("LinearPattern")
+        pattern.Occurrences2 = 4
+        pattern.Spacings2 = [-1, -1, -1]
+        self.Doc.recompute()
+        self.assertEqual(pattern.SuppressedIndices, [6])
+        self.assertAlmostEqual(pattern.Shape.Volume, 11000)
+
+    def _boxOnBase(self, typeName, height, z):
+        body = self.Doc.addObject("PartDesign::Body", "Body")
+        base = body.newObject("PartDesign::AdditiveBox", "BaseBox")
+        base.Length = 40
+        base.Width = base.Height = 10
+        box = body.newObject(typeName, "Box")
+        box.Length = box.Width = 10
+        box.Height = height
+        box.Placement.Base.z = z
+        self.Doc.recompute()
+        pattern = body.newObject("PartDesign::LinearPattern", "LinearPattern")
+        pattern.Originals = [box]
+        pattern.Direction = (self.Doc.X_Axis, [""])
+        pattern.Length = 20
+        pattern.Occurrences = 3
+        self.Doc.recompute()
+        return pattern
+
+    def testSuppressOriginalFeatureOccurrence(self):
+        # The original goes with its instance: the history is rewritten so
+        # that the pattern's support is the original's base
+        pattern = self._boxOnBase("PartDesign::AdditiveBox", 10, 10)
+        self.assertAlmostEqual(pattern.Shape.Volume, 7e3)
+        pattern.SuppressedIndices = [0]
+        self.Doc.recompute()
+        self.assertAlmostEqual(pattern.Shape.Volume, 6e3)
+        self.assertFalse(pattern.Shape.isInside(FreeCAD.Vector(5, 5, 15), 1e-7, True))
+
+    def testSuppressOriginalSubtractiveOccurrence(self):
+        pattern = self._boxOnBase("PartDesign::SubtractiveBox", 5, 5)
+        self.assertAlmostEqual(pattern.Shape.Volume, 2.5e3)
+        pattern.SuppressedIndices = [0]
+        self.Doc.recompute()
+        self.assertAlmostEqual(pattern.Shape.Volume, 3e3)
+
+    def testSuppressOriginalWholeShapeOccurrence(self):
+        # Upstream's "Whole shape" is no originals with SubTransform off here
+        body = self.Doc.addObject("PartDesign::Body", "Body")
+        box = body.newObject("PartDesign::AdditiveBox", "Box")
+        box.Length = box.Width = box.Height = 10
+        self.Doc.recompute()
+        pattern = body.newObject("PartDesign::LinearPattern", "LinearPattern")
+        pattern.SubTransform = False
+        pattern.Direction = (self.Doc.X_Axis, [""])
+        pattern.Length = 20
+        pattern.Occurrences = 3
+        pattern.SuppressedIndices = [0]
+        self.Doc.recompute()
+        self.assertAlmostEqual(pattern.Shape.Volume, 2e3)
+        self.assertAlmostEqual(pattern.Shape.BoundBox.XMin, 10)
+
+    def testPointPatternInMultiTransformKeepsTheOriginal(self):
+        # Upstream's point pattern in a MultiTransform moves the original onto
+        # the first point (cdb4624675); here the base never moves and the
+        # copies are laid out relative to the first point (sec 7, 2026-09-28)
+        import Part
+        body = self.Doc.addObject("PartDesign::Body", "Body")
+        points = body.newObject("PartDesign::Feature", "Points")
+        points.Shape = Part.makeCompound(
+            [Part.Vertex(FreeCAD.Vector(5, 5, 5)), Part.Vertex(FreeCAD.Vector(10, 5, 5))])
+        box = body.newObject("PartDesign::AdditiveBox", "Box")
+        box.Length = box.Width = box.Height = 1
+        self.Doc.recompute()
+        multi = body.newObject("PartDesign::MultiTransform", "MultiTransform")
+        multi.Originals = [box]
+        helper = body.newObject("PartDesign::PointPattern", "PointPattern")
+        helper.PointObject = points
+        multi.Transformations = [helper]
+        self.Doc.recompute()
+        self.assertEqual(multi.getStatusString(), "Valid")
+        self.assertAlmostEqual(multi.Shape.Volume, 2)
+        self.assertAlmostEqual(multi.Shape.BoundBox.XMin, 0)
+        self.assertAlmostEqual(multi.Shape.BoundBox.XMax, 6)
+
     def tearDown(self):
         #closing doc
-        FreeCAD.closeDocument("PartDesignTestLinearPattern")
+        FreeCAD.closeDocument(self.Doc.Name)
         # print ("omit closing document for debugging")
 

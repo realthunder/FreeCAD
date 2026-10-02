@@ -87,6 +87,8 @@ Transformed::Transformed()
         "Hide the original base feature and leave only the transformed one(s).");
 
     ADD_PROPERTY_TYPE(_Version,(0),"Part Design",(App::PropertyType)(App::Prop_Hidden), 0);
+    ADD_PROPERTY_TYPE(SuppressedIndices,(std::vector<long>()),"Part Design",App::Prop_None,
+        "Indices of the instances left out; 0 is the original");
 
     //init Refine property
     Base::Reference<ParameterGrp> hGrp = App::GetApplication().GetUserParameter()
@@ -214,8 +216,34 @@ void Transformed::handleChangedPropertyName(Base::XMLReader &reader, const char 
     PartDesign::FeatureAddSub::handleChangedPropertyName(reader, TypeName, PropName);
 }
 
+bool Transformed::isTransformationSuppressed(int index) const
+{
+    if (index < 0)
+        return false;
+    const auto& suppressed = SuppressedIndices.getValues();
+    return std::find(suppressed.begin(), suppressed.end(), static_cast<long>(index))
+        != suppressed.end();
+}
+
+void Transformed::setTransformationSuppressed(int index, bool suppressed)
+{
+    if (index < 0 || Transformed::isTransformationSuppressed(index) == suppressed)
+        return;
+    auto values = SuppressedIndices.getValues();
+    if (suppressed)
+        values.push_back(index);
+    else
+        values.erase(std::remove(values.begin(), values.end(), static_cast<long>(index)),
+                     values.end());
+    std::sort(values.begin(), values.end());
+    values.erase(std::unique(values.begin(), values.end()), values.end());
+    SuppressedIndices.setValues(values);
+}
+
 short Transformed::mustExecute() const
 {
+    if (SuppressedIndices.isTouched())
+        return 1;
     if (OriginalSubs.isTouched())
         return 1;
     return PartDesign::Feature::mustExecute();
@@ -278,8 +306,10 @@ App::DocumentObjectExecReturn *Transformed::execute()
 
     this->positionBySupport();
     bool hasOffset = !TransformOffset.getValue().isIdentity();
-    // The first instance is moved, by the offset or by the pattern itself
-    bool moveFirst = hasOffset || isFirstInstanceTransformed();
+    // The first instance is moved, by the offset or by the pattern itself,
+    // or left out: either way the original must not stay in the support,
+    // which the history rewrite below takes care of
+    bool moveFirst = hasOffset || isFirstInstanceTransformed() || isTransformationSuppressed(0);
 
     // Get the support
     TopoShape support;
@@ -287,8 +317,11 @@ App::DocumentObjectExecReturn *Transformed::execute()
     auto baseObj = getBaseObject(true);
     if (!canSkipFirst && !NewSolid.getValue() && baseObj)  {
         support = getBaseShape(true, false, false);
-        if (support.isNull())
-            return new App::DocumentObjectExecReturn("Cannot transform invalid support shape");
+        // Checked below: a rewritten history does not start from it, and
+        // the base may be empty for that very reason -- a pattern before
+        // this one that left out all its instances, the original included
+        bool baseIsNull = support.isNull();
+        bool rewritten = false;
 
         // This is the old behavior of the first instance of pattern. It's kept for
         // backward compatibility.
@@ -306,6 +339,7 @@ App::DocumentObjectExecReturn *Transformed::execute()
                 PartDesign::FeatureAddSub* feature = static_cast<PartDesign::FeatureAddSub*>(v.first);
                 if(!feature->Suppress.getValue()) {
                     support = feature->getBaseShape(true, false, false);
+                    rewritten = true;
                     if (baseObj)
                         this->Placement.setValue(baseObj->Placement.getValue());
                 }
@@ -377,6 +411,7 @@ App::DocumentObjectExecReturn *Transformed::execute()
                     // A base without a solid, points or a path, is none, as
                     // it was to the original itself
                     support = feature->getBaseShape(true, false, true);
+                    rewritten = true;
                     if (baseObj)
                         this->Placement.setValue(baseObj->Placement.getValue());
                 }
@@ -384,7 +419,10 @@ App::DocumentObjectExecReturn *Transformed::execute()
         }
         else if (_Version.getValue() > 3 && OffsetBaseFeature.getValue() && !SubTransform.getValue()) {
             support = TopoShape();
+            rewritten = true;
         }
+        if (baseIsNull && !rewritten)
+            return new App::DocumentObjectExecReturn("Cannot transform invalid support shape");
     }
 
     const auto placementInv = TopoShape::convert(this->Placement.getValue().toMatrix()).Inverted();
@@ -647,6 +685,8 @@ App::DocumentObjectExecReturn *Transformed::execute()
                 // made (upstream eadd0bc191, 638f86a10f): every 500 ms the
                 // events are seen, and a confirmed abort throws
                 Base::Sequencer().checkAbort();
+                if (isTransformationSuppressed(idx))
+                    continue;
                 ss.str("");
                 if (idx)
                     ss << 'I' << idx;
@@ -707,6 +747,8 @@ App::DocumentObjectExecReturn *Transformed::execute()
         std::vector<gp_Trsf>::const_iterator t = transformations.begin() + idx;
         for (; t != transformations.end(); ++t,++idx) {
             Base::Sequencer().checkAbort();
+            if (isTransformationSuppressed(idx))
+                continue;
             auto shapeCopy = CopyShape.getValue()?shape.makECopy():shape;
             if (shapeCopy.isNull())
                 return new App::DocumentObjectExecReturn("Transformed: Linked shape object is empty");

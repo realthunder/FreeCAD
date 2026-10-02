@@ -29,6 +29,8 @@
 #include <App/Document.h>
 #include <App/Origin.h>
 #include <App/PropertyLinks.h>
+#include <App/PropertyStandard.h>
+#include <Base/Tools.h>
 #include <Mod/Part/App/Part2DObject.h>
 #include <Mod/Part/App/TopoShape.h>
 
@@ -177,6 +179,22 @@ void PatternFeature::positionBySupport()
 void PatternFeature::onChanged(const App::Property* prop)
 {
     Transformed::onChanged(prop);
+    // The grid positions are what the user picks, the indices what execute()
+    // skips: an index follows its position when the grid changes size
+    if (!isRestoring() && !syncingSuppression && getDocument()
+        && !getDocument()->isPerformingTransaction()
+        && getPatternType() == App::Pattern::Type::Linear) {
+        if (prop == &SuppressedIndices) {
+            syncSuppression(true);
+        }
+        else if (prop->getName()
+                 && (std::strcmp(prop->getName(), "SuppressedPositions") == 0
+                     || std::strcmp(prop->getName(), "Occurrences") == 0
+                     || std::strcmp(prop->getName(), "Occurrences2") == 0)
+                 && App::Pattern::getProperty(*this, prop->getName()) == prop) {
+            syncSuppression(false);
+        }
+    }
     if (prop == &PatternType && !isRestoring() && getDocument()
         && !getDocument()->isPerformingTransaction()) {
         setDefaultReferences();
@@ -217,6 +235,47 @@ void PatternFeature::setDefaultReferences()
         default:
             // A path or the points are picked
             break;
+    }
+}
+
+void PatternFeature::syncSuppression(bool fromIndices)
+{
+    auto positions = dynamic_cast<App::PropertyIntPairList*>(
+        App::Pattern::getProperty(*this, "SuppressedPositions"));
+    auto occurrences =
+        dynamic_cast<App::PropertyInteger*>(App::Pattern::getProperty(*this, "Occurrences"));
+    auto occurrences2 =
+        dynamic_cast<App::PropertyInteger*>(App::Pattern::getProperty(*this, "Occurrences2"));
+    if (!positions || !occurrences) {
+        return;
+    }
+    const long count = occurrences->getValue();
+    const long count2 = occurrences2 ? occurrences2->getValue() : 1;
+    Base::StateLocker guard(syncingSuppression);
+    if (fromIndices) {
+        auto values = App::Pattern::suppressedPositions(SuppressedIndices.getValues(),
+                                                        count,
+                                                        count2,
+                                                        positions->getValues());
+        if (values != positions->getValues()) {
+            positions->setValues(values);
+        }
+    }
+    else {
+        auto values = App::Pattern::suppressedIndices(positions->getValues(), count, count2);
+        if (values != SuppressedIndices.getValues()) {
+            SuppressedIndices.setValues(values);
+        }
+    }
+}
+
+void PatternFeature::onDocumentRestored()
+{
+    Transformed::onDocumentRestored();
+    // A fork file of before kept positions that did nothing; an upstream
+    // file carries both, in step
+    if (getPatternType() == App::Pattern::Type::Linear && SuppressedIndices.getValues().empty()) {
+        syncSuppression(false);
     }
 }
 

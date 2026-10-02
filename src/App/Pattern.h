@@ -196,6 +196,22 @@ public:
      * one value, else the offset. A list shorter than the gaps reads -1 where
      * it is short.
      */
+    /** The indices of a linear pattern's suppressed grid positions, the
+     * occurrence at (i, j) being i *  occurrences2 + j as getPlacements()
+     * lists them. Positions outside the grid are left out.
+     */
+    static std::vector<long> suppressedIndices(const std::vector<std::pair<long, long>>& positions,
+                                               long occurrences,
+                                               long occurrences2);
+    /** The grid positions of  indices, with the positions of  keep that
+     * lie outside the grid, for when it grows back
+     */
+    static std::vector<std::pair<long, long>>
+    suppressedPositions(const std::vector<long>& indices,
+                        long occurrences,
+                        long occurrences2,
+                        const std::vector<std::pair<long, long>>& keep);
+
     static double getSpacing(const std::vector<double>& spacings,
                              const std::vector<double>& pattern,
                              double offset,

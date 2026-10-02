@@ -59,6 +59,14 @@ public:
     App::PropertyBool OffsetBaseFeature;
     App::PropertyBool HideBaseFeature;
     App::PropertyInteger _Version;
+    /// Instances left out, by their index in getTransformations() (upstream
+    /// cdb4624675, its name); 0 is the original
+    App::PropertyIntegerList SuppressedIndices;
+
+    /// Whether the instance at  index of getTransformations() is left out
+    virtual bool isTransformationSuppressed(int index) const;
+    /// Leave out the instance at  index, or bring it back
+    virtual void setTransformationSuppressed(int index, bool suppressed);
 
     /**
      * Returns the BaseFeature property's object(if any) otherwise return first original,

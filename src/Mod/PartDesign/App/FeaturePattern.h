@@ -91,12 +91,17 @@ protected:
     void positionBySupport() override;
     void onChanged(const App::Property* prop) override;
     void onUndoRedoFinished() override;
+    void onDocumentRestored() override;
     void handleChangedPropertyType(Base::XMLReader& reader,
                                    const char* TypeName,
                                    App::Property* prop) override;
 
 private:
     void setDefaultReferences();
+    /// A linear pattern's SuppressedPositions and SuppressedIndices, kept in
+    /// step as the link array keeps its VisibilityList
+    void syncSuppression(bool fromIndices);
+    bool syncingSuppression = false;
 };
 
 }  // namespace PartDesign

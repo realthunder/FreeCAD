@@ -551,7 +551,11 @@ std::vector<Bore> threadsReaching(const PartDesign::Feature *last, bool first)
         catch (const Standard_Failure &) {
             continue;
         }
+        int index = -1;
         for (const gp_Trsf &trsf : transforms) {
+            // an instance left out has no thread either
+            if (pattern->isTransformationSuppressed(++index))
+                continue;
             if (std::fabs(std::fabs(trsf.ScaleFactor()) - 1.0) > 1e-9)
                 continue;
             for (Bore bore : sources) {

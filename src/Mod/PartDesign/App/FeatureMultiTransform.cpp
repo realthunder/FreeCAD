@@ -28,6 +28,8 @@
 # include <Precision.hxx>
 #endif
 
+#include <App/Document.h>
+
 #include "FeatureMultiTransform.h"
 #include "FeatureAddSub.h"
 #include "FeatureScaled.h"
@@ -68,8 +70,15 @@ void MultiTransform::onChanged(const App::Property *prop)
 {
     if (prop == &Transformations) {
         for (auto obj : Transformations.getValues()) {
-            if (auto child = Base::freecad_dynamic_cast<PartDesign::Feature>(obj))
+            if (auto child = Base::freecad_dynamic_cast<PartDesign::Feature>(obj)) {
+                // A pattern made before this and taken in as a step was this
+                // one's base; it is no solid feature any more, so its own
+                // base is (else the MultiTransform builds on its own step)
+                if (BaseFeature.getValue() == child && !isRestoring()
+                        && getDocument() && !getDocument()->isPerformingTransaction())
+                    BaseFeature.setValue(child->BaseFeature.getValue());
                 child->BaseFeature.setValue(nullptr);
+            }
         }
     }
     return Transformed::onChanged(prop);
@@ -96,6 +105,8 @@ std::list<gp_Trsf> MultiTransform::getTransformations(const std::vector<Part::To
 
     std::list<gp_Trsf> result;
     std::list<gp_Pnt> cogs;
+    // Which instance a sub-feature leaves out, in step with result
+    std::vector<bool> suppressed;
     std::vector<App::DocumentObject*>::const_iterator f;
 
     for (f = transFeatures.begin(); f != transFeatures.end(); ++f) {
@@ -103,10 +114,14 @@ std::list<gp_Trsf> MultiTransform::getTransformations(const std::vector<Part::To
             THROWM(Base::TypeError, "Transformation features must be subclasses of Transformed")
         PartDesign::Transformed* transFeature = static_cast<PartDesign::Transformed*>(*f);
         std::list<gp_Trsf> newTransformations = transFeature->getTransformations(originals);
+        std::vector<bool> newSuppressed;
+        for (std::size_t k = 0; k < newTransformations.size(); ++k)
+            newSuppressed.push_back(transFeature->isTransformationSuppressed(static_cast<int>(k)));
 
         if (result.empty()) {
             // First transformation Feature
             result = newTransformations;
+            suppressed = newSuppressed;
             for (std::list<gp_Trsf>::const_iterator nt = newTransformations.begin(); nt != newTransformations.end(); ++nt) {
                 cogs.push_back(cog.Transformed(*nt));
             }
@@ -136,9 +151,14 @@ std::list<gp_Trsf> MultiTransform::getTransformations(const std::vector<Part::To
                 unsigned sliceLength = oldTransformations.size() / newTransformations.size();
                 std::list<gp_Trsf>::const_iterator ot = oldTransformations.begin();
                 std::list<gp_Pnt>::const_iterator oc = oldCogs.begin();
+                // instance j*slice+s is old j*slice+s scaled by new j
+                std::vector<bool> oldSuppressed;
+                oldSuppressed.swap(suppressed);
+                std::size_t k = 0, o = 0;
 
-                for (std::list<gp_Trsf>::const_iterator nt = newTransformations.begin(); nt != newTransformations.end(); ++nt) {
-                    for (unsigned s = 0; s < sliceLength; s++) {
+                for (std::list<gp_Trsf>::const_iterator nt = newTransformations.begin(); nt != newTransformations.end(); ++nt, ++k) {
+                    for (unsigned s = 0; s < sliceLength; s++, ++o) {
+                        suppressed.push_back(oldSuppressed[o] || newSuppressed[k]);
                         gp_Trsf trans;
                         double factor = nt->ScaleFactor(); // extract scale factor
 
@@ -162,10 +182,15 @@ std::list<gp_Trsf> MultiTransform::getTransformations(const std::vector<Part::To
                 // a11 a12         b1    a11*b1 a12*b1 a11*b2 a12*b2 a11*b3 a12*b3
                 // a21 a22   mul   b2  = a21*b1 a22*b1 a21*b2 a22*b2 a21*b3 a22*b3
                 //                 b3
-                for (std::list<gp_Trsf>::const_iterator nt = newTransformations.begin(); nt != newTransformations.end(); ++nt) {
+                std::vector<bool> oldSuppressed;
+                oldSuppressed.swap(suppressed);
+                std::size_t k = 0;
+                for (std::list<gp_Trsf>::const_iterator nt = newTransformations.begin(); nt != newTransformations.end(); ++nt, ++k) {
                     std::list<gp_Pnt>::const_iterator oc = oldCogs.begin();
 
-                    for (std::list<gp_Trsf>::const_iterator ot = oldTransformations.begin(); ot != oldTransformations.end(); ++ot) {
+                    std::size_t o = 0;
+                    for (std::list<gp_Trsf>::const_iterator ot = oldTransformations.begin(); ot != oldTransformations.end(); ++ot, ++o) {
+                        suppressed.push_back(oldSuppressed[o] || newSuppressed[k]);
                         result.push_back((*nt) * (*ot));
                         cogs.push_back(oc->Transformed(*nt));
                         ++oc;
@@ -178,7 +203,26 @@ std::list<gp_Trsf> MultiTransform::getTransformations(const std::vector<Part::To
         }
     }
 
+    generatedSuppression = std::move(suppressed);
     return result;
+}
+
+bool MultiTransform::isTransformationSuppressed(int index) const
+{
+    if (Transformed::isTransformationSuppressed(index))
+        return true;
+    if (index == 0) {
+        // Asked before getTransformations(), to decide the support: the
+        // first instance is the product of every sub-feature's first
+        for (auto obj : Transformations.getValues()) {
+            auto sub = Base::freecad_dynamic_cast<Transformed>(obj);
+            if (sub && sub->isTransformationSuppressed(0))
+                return true;
+        }
+        return false;
+    }
+    return index > 0 && index < static_cast<int>(generatedSuppression.size())
+        && generatedSuppression[index];
 }
 
 }

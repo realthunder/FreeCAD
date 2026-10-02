@@ -1017,6 +1017,46 @@ std::vector<Base::Vector3d> Pattern::resolvePoints(DocumentObject* obj,
     throw Base::TypeError("Point object must reference an object with a shape or a datum point");
 }
 
+std::vector<long> Pattern::suppressedIndices(const std::vector<std::pair<long, long>>& positions,
+                                             long occurrences,
+                                             long occurrences2)
+{
+    occurrences2 = std::max(1L, occurrences2);
+    std::vector<long> res;
+    for (const auto& [first, second] : positions) {
+        if (first >= 0 && first < occurrences && second >= 0 && second < occurrences2) {
+            res.push_back(first * occurrences2 + second);
+        }
+    }
+    std::sort(res.begin(), res.end());
+    res.erase(std::unique(res.begin(), res.end()), res.end());
+    return res;
+}
+
+std::vector<std::pair<long, long>>
+Pattern::suppressedPositions(const std::vector<long>& indices,
+                             long occurrences,
+                             long occurrences2,
+                             const std::vector<std::pair<long, long>>& keep)
+{
+    occurrences2 = std::max(1L, occurrences2);
+    std::vector<std::pair<long, long>> res;
+    for (const auto& position : keep) {
+        const auto& [first, second] = position;
+        if (first < 0 || first >= occurrences || second < 0 || second >= occurrences2) {
+            res.push_back(position);
+        }
+    }
+    for (long index : indices) {
+        if (index >= 0 && index < occurrences * occurrences2) {
+            res.emplace_back(index / occurrences2, index % occurrences2);
+        }
+    }
+    std::sort(res.begin(), res.end());
+    res.erase(std::unique(res.begin(), res.end()), res.end());
+    return res;
+}
+
 double Pattern::getSpacing(const std::vector<double>& spacings,
                            const std::vector<double>& pattern,
                            double offset,
