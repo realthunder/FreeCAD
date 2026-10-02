@@ -3103,6 +3103,31 @@ under `ctest -j6` in session 114, after the fix (the second drag never
 started; 6 of 6 alone). Its two presses are 1.4 s apart on the steady
 clock, so the double-click hold cannot be it. Not chased.
 
+### The partial(sync) rows (session 115): 21 read, one left
+
+The 21 rows the ledger files as `partial(sync)` that name
+`ViewProviderSketch.cpp` -- commits older than the squashed sync, which the
+fork's own file may or may not have seen. Each hunk was read against the
+file; the line-presence count only chose the order.
+
+| row | verdict |
+|---|---|
+| `476089a2ad` | **have**: the contextual menu is `generateContextMenu`, reshaped since by `8145eed95f` and `a7b501c95c`; it offers the fork's own `Sketcher_CreateFillet` and `Sketcher_ExternalCmds` |
+| `df7e783513`, `8145eed95f`, `b92bda03da`, `2ea8a633ac` | **have**: the `STATUS_SELECT_Wire` case and the end point count; Horizontal before Vertical in every branch; `moveGeometriesTemporary`; `Quantity::parse` on a `std::string` |
+| `4a486b21ed` | **have**: an external edge is preselected, selected and box-selected by its `ExternalEdge` name |
+| `e15646d158` | **have**: `slotSolverUpdate` on the sketch's `signalSolverUpdate`, connected before the first solve of `setEdit` |
+| `a72a63232a` | **have**: `App::Color` is an alias of `Base::Color` |
+| `a8ae56e06a` | **adapted** `efa015725d`: the edit snippet reads `AttachmentSupport`. The fork keeps both properties and copies each into the other, so nothing changes on screen |
+| `d9fc266772` | **taken** `b726b26547`: two of the five linked solver messages had a trailing space inside `tr()` and three had none; all five are the bare text with the space appended, at upstream's tip wording ("Under-constrained") |
+| `4b589088f6` | **taken** `112b7ef540` (an `open` row with a partial note): `<limits>` in `App/PropertyConstraintList.cpp` |
+| `4e8f3f0381`, `b07caa732e` | **superseded** / **n/a**: the draw-style switch on entering edit and its removal; the fork never had it (as `e7c11a01be` above) |
+| `6ca8b2daae` | **n/a**: there is no overlay mark to redraw; the fork swaps the whole tree icon from `FullyConstrained` |
+| `51c6dbd3e3` | **declined**: `activateHandler` taking a `unique_ptr` is a signature change over nine files with no behaviour in it. `SketcherGui::ActivateHandler` owns the new handler from its first line, so the early returns leak nothing |
+| `5839134e95`, `7a5a3d1ffc`, `dd6aa9f3c7`, `ac788df608`, `34881bc82e` | **n/a** for this file: comment typos in lines the fork does not have, MDI type tests the fork replaced with `Gui::ViewerContext`, a menu entry the fork groups under `Sketcher_ExternalCmds`, a spelling of `std::find` |
+| `5969df37f4` | **open, put to the user**: upstream stretches the two axes to the viewport on every camera change. Here they are sized from the sketch (`e^ceil(ln(max coordinate))`), and the edit geometry is one drawing shared by every view and every served client -- a length taken from one viewport is wrong for the others, and one rewritten per camera move republishes the edit overlay per pan. A design question, not a port |
+
+`646b4381f9`, the 21st, was adapted in session 95 (ARCLENGTH).
+
 ## 7a. The constraint-tool hints (session 85)
 
 Thirteen rows, not the eleven the sweep sized: `580d538798`, the commit
