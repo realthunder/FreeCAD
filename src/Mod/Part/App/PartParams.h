@@ -295,6 +295,27 @@ public:
 
     // Auto generated code (Tools/params_utils.py:139)
     //@{
+    /// Accessor for parameter FilletPlateG0Fallback
+    ///
+    /// How far a fillet's corner plate may miss its boundary while held tangent
+    /// to the fillets it joins. A corner where more than three faces meet is
+    /// filled by a patch kept tangent to the fillets; where a fillet's end
+    /// meets a face at a sharp angle the patch folds to stay tangent, misses
+    /// its boundary, and the corner's edges carry the miss as their tolerance.
+    /// A patch missing it by more than this is built again on positions alone
+    /// and kept if it fits better: a crease along the fillet instead of a fold.
+    /// 0 keeps every tangent patch. Only with the OCCT fork, which has the
+    /// setting; another OCCT ignores it.
+    static const double & getFilletPlateG0Fallback();
+    static const double & defaultFilletPlateG0Fallback();
+    static void removeFilletPlateG0Fallback();
+    static void setFilletPlateG0Fallback(const double &v);
+    static const char *docFilletPlateG0Fallback();
+    static void onFilletPlateG0FallbackChanged();
+    //@}
+
+    // Auto generated code (Tools/params_utils.py:139)
+    //@{
     /// Accessor for parameter WarnUnnamedInput
     ///
     /// Report a shape operation whose input shapes carry no element map, so

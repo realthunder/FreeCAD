@@ -22,6 +22,11 @@
 
 #include "PreCompiled.h"
 
+namespace Part {
+// AppPartPy.cpp: hands FilletPlateG0Fallback to the OCCT fork's fillet.
+PartExport bool setOCCTPlateG0Fallback(double distance);
+}
+
 /*[[[cog
 import PartParams
 PartParams.define()
@@ -62,6 +67,7 @@ public:
     bool ShareStoredSubShapes;
     long BorrowBelowFace;
     unsigned long LoftMaxDegree;
+    double FilletPlateG0Fallback;
     long WarnUnnamedInput;
     double MinimumDeviation;
     double MeshDeviation;
@@ -115,6 +121,8 @@ public:
         funcs["BorrowBelowFace"] = &PartParamsP::updateBorrowBelowFace;
         LoftMaxDegree = this->handle->GetUnsigned("LoftMaxDegree", 5);
         funcs["LoftMaxDegree"] = &PartParamsP::updateLoftMaxDegree;
+        FilletPlateG0Fallback = this->handle->GetFloat("FilletPlateG0Fallback", 0.001);
+        funcs["FilletPlateG0Fallback"] = &PartParamsP::updateFilletPlateG0Fallback;
         WarnUnnamedInput = this->handle->GetInt("WarnUnnamedInput", 0);
         funcs["WarnUnnamedInput"] = &PartParamsP::updateWarnUnnamedInput;
         MinimumDeviation = this->handle->GetFloat("MinimumDeviation", 0.05);
@@ -225,6 +233,14 @@ public:
     static void updateLoftMaxDegree(PartParamsP *self) {
         self->LoftMaxDegree = self->handle->GetUnsigned("LoftMaxDegree", 5);
     }
+    // Auto generated code (Tools/params_utils.py:322)
+    static void updateFilletPlateG0Fallback(PartParamsP *self) {
+        auto v = self->handle->GetFloat("FilletPlateG0Fallback", 0.001);
+        if (self->FilletPlateG0Fallback != v) {
+            self->FilletPlateG0Fallback = v;
+            PartParams::onFilletPlateG0FallbackChanged();
+        }
+    }
     // Auto generated code (Tools/params_utils.py:314)
     static void updateWarnUnnamedInput(PartParamsP *self) {
         self->WarnUnnamedInput = self->handle->GetInt("WarnUnnamedInput", 0);
@@ -310,6 +326,18 @@ static const App::ParamRegistry::Registrar _PartParamsRegistrar({
 "shared too, and it is off wherever DedupCrossFileGeometry is."),
     App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "LoftMaxDegree", "LoftMaxDegree", App::ParamInfo::UInt, 5)
         .setTitle("Loft Max Degree"),
+    App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "FilletPlateG0Fallback", "FilletPlateG0Fallback", App::ParamInfo::Float, 0.001)
+        .setTitle("Fillet Plate G0 Fallback")
+        .setDoc("How far a fillet's corner plate may miss its boundary while held tangent\n"
+"to the fillets it joins. A corner where more than three faces meet is\n"
+"filled by a patch kept tangent to the fillets; where a fillet's end\n"
+"meets a face at a sharp angle the patch folds to stay tangent, misses\n"
+"its boundary, and the corner's edges carry the miss as their tolerance.\n"
+"A patch missing it by more than this is built again on positions alone\n"
+"and kept if it fits better: a crease along the fillet instead of a fold.\n"
+"0 keeps every tangent patch. Only with the OCCT fork, which has the\n"
+"setting; another OCCT ignores it.")
+        .setOnChange(),
     App::ParamInfo("Part", "PartParams", "User parameter:BaseApp/Preferences/Mod/Part", "WarnUnnamedInput", "WarnUnnamedInput", App::ParamInfo::Int, 0)
         .setTitle("Warn Unnamed Input")
         .setDoc("Report a shape operation whose input shapes carry no element map, so\n"
@@ -915,6 +943,42 @@ void PartParams::removeLoftMaxDegree() {
 }
 
 // Auto generated code (Tools/params_utils.py:397)
+const char *PartParams::docFilletPlateG0Fallback() {
+    return QT_TRANSLATE_NOOP("PartParams",
+"How far a fillet's corner plate may miss its boundary while held tangent\n"
+"to the fillets it joins. A corner where more than three faces meet is\n"
+"filled by a patch kept tangent to the fillets; where a fillet's end\n"
+"meets a face at a sharp angle the patch folds to stay tangent, misses\n"
+"its boundary, and the corner's edges carry the miss as their tolerance.\n"
+"A patch missing it by more than this is built again on positions alone\n"
+"and kept if it fits better: a crease along the fillet instead of a fold.\n"
+"0 keeps every tangent patch. Only with the OCCT fork, which has the\n"
+"setting; another OCCT ignores it.");
+}
+
+// Auto generated code (Tools/params_utils.py:405)
+const double & PartParams::getFilletPlateG0Fallback() {
+    return instance()->FilletPlateG0Fallback;
+}
+
+// Auto generated code (Tools/params_utils.py:413)
+const double & PartParams::defaultFilletPlateG0Fallback() {
+    const static double def = 0.001;
+    return def;
+}
+
+// Auto generated code (Tools/params_utils.py:422)
+void PartParams::setFilletPlateG0Fallback(const double &v) {
+    instance()->handle->SetFloat("FilletPlateG0Fallback",v);
+    instance()->FilletPlateG0Fallback = v;
+}
+
+// Auto generated code (Tools/params_utils.py:431)
+void PartParams::removeFilletPlateG0Fallback() {
+    instance()->handle->RemoveFloat("FilletPlateG0Fallback");
+}
+
+// Auto generated code (Tools/params_utils.py:397)
 const char *PartParams::docWarnUnnamedInput() {
     return QT_TRANSLATE_NOOP("PartParams",
 "Report a shape operation whose input shapes carry no element map, so\n"
@@ -1058,3 +1122,8 @@ void PartParams::removeMinimumAngularDeflection() {
     instance()->handle->RemoveFloat("MinimumAngularDeflection");
 }
 //[[[end]]]
+
+void Part::PartParams::onFilletPlateG0FallbackChanged()
+{
+    Part::setOCCTPlateG0Fallback(getFilletPlateG0Fallback());
+}
