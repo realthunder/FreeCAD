@@ -1278,6 +1278,63 @@ struct StackedExternalPick
         }
         return "ExternalEdge" + std::to_string(Sketcher::GeoEnum::RefExt + 1 - geoId);
     }
+
+    /// The icon of the command that switches the mode in force on
+    const char* icon() const
+    {
+        switch (mode) {
+            case External:
+                return "Sketcher_External";
+            case Defining:
+                return "Sketcher_Defining";
+            case Intersection:
+                return "Sketcher_Intersection";
+            case IntersectionDefining:
+                return "Sketcher_IntersectionDefining";
+            default:
+                return nullptr;
+        }
+    }
+
+    /** The cursor of a tool that outside picking stacks on
+     *
+     * The crosshair with the tool's icon at its lower right, as these tools
+     * always had it, and at its upper right, while outside picking is on,
+     * the icon of the command that switched it on: the sign that a click
+     * outside the sketch now means something, and what.
+     *
+     * @param toolIcon: the tool's own icon
+     * @param pixelRatio: of the view the cursor is for
+     * @param color: of the crosshair
+     */
+    QPixmap cursor(const char* toolIcon, qreal pixelRatio, unsigned long color) const
+    {
+        const unsigned long defaultCrosshairColor = 0xFFFFFF;
+        auto colorMapping = std::map<unsigned long, unsigned long>();
+        colorMapping[defaultCrosshairColor] = color;
+
+        qreal fullIconWidth = 32 * pixelRatio;
+        qreal iconWidth = 16 * pixelRatio;
+        QPixmap cursorPixmap = Gui::BitmapFactory().pixmapFromSvg(
+            "Sketcher_Crosshair",
+            QSizeF(fullIconWidth, fullIconWidth),
+            colorMapping);
+        QPainter cursorPainter;
+        cursorPainter.begin(&cursorPixmap);
+        cursorPainter.drawPixmap(
+            16 * pixelRatio,
+            16 * pixelRatio,
+            Gui::BitmapFactory().pixmapFromSvg(toolIcon, QSizeF(iconWidth, iconWidth)));
+        if (const char* badge = icon()) {
+            cursorPainter.drawPixmap(
+                16 * pixelRatio,
+                0,
+                Gui::BitmapFactory().pixmapFromSvg(badge, QSizeF(iconWidth, iconWidth)));
+        }
+        cursorPainter.end();
+        cursorPixmap.setDevicePixelRatio(pixelRatio);
+        return cursorPixmap;
+    }
 };
 
 class GenericConstraintSelection: public ExternalSelection
@@ -1861,36 +1918,8 @@ private:
                 && getPreselectCurve() < 0 && getPreselectCurve() > Sketcher::GeoEnum::RefExt;
         };
         external.restore();
+        // sets the cursor too
         applyExternalPick();
-
-        // Constrain icon size in px
-        qreal pixelRatio = devicePixelRatio();
-        const unsigned long defaultCrosshairColor = 0xFFFFFF;
-        unsigned long color = getCrosshairColor();
-        auto colorMapping = std::map<unsigned long, unsigned long>();
-        colorMapping[defaultCrosshairColor] = color;
-
-        qreal fullIconWidth = 32 * pixelRatio;
-        qreal iconWidth = 16 * pixelRatio;
-        QPixmap cursorPixmap =
-                    Gui::BitmapFactory().pixmapFromSvg("Sketcher_Crosshair",
-                                                       QSizeF(fullIconWidth, fullIconWidth),
-                                                       colorMapping),
-                icon = Gui::BitmapFactory().pixmapFromSvg(cmd->getPixmap(),
-                                                          QSizeF(iconWidth, iconWidth));
-        QPainter cursorPainter;
-        cursorPainter.begin(&cursorPixmap);
-        cursorPainter.drawPixmap(16 * pixelRatio, 16 * pixelRatio, icon);
-        cursorPainter.end();
-        int hotX = 8;
-        int hotY = 8;
-        cursorPixmap.setDevicePixelRatio(pixelRatio);
-        // only X11 needs hot point coordinates to be scaled
-        if (qGuiApp->platformName() == QStringLiteral("xcb")) {
-            hotX *= pixelRatio;
-            hotY *= pixelRatio;
-        }
-        setCursor(cursorPixmap, hotX, hotY, false);
     }
 
 protected:
@@ -1908,6 +1937,20 @@ protected:
         selFilterGate->setIntersection(external.intersection());
         // each view of the session picks what is under the pointer, or not
         sketchgui->setSessionSelectionEnabled(external.on());
+
+        // the cursor says whether it is on, and in which flavour
+        qreal pixelRatio = devicePixelRatio();
+        int hotX = 8;
+        int hotY = 8;
+        // only X11 needs hot point coordinates to be scaled
+        if (qGuiApp->platformName() == QStringLiteral("xcb")) {
+            hotX *= pixelRatio;
+            hotY *= pixelRatio;
+        }
+        setCursor(external.cursor(cmd->getPixmap(), pixelRatio, getCrosshairColor()),
+                  hotX,
+                  hotY,
+                  false);
     }
 
     void dropPendingExternal()
@@ -2271,32 +2314,8 @@ public:
 
         Obj = sketchgui->getSketchObject();
 
-        // Constrain icon size in px
-        qreal pixelRatio = devicePixelRatio();
-        const unsigned long defaultCrosshairColor = 0xFFFFFF;
-        unsigned long color = getCrosshairColor();
-        auto colorMapping = std::map<unsigned long, unsigned long>();
-        colorMapping[defaultCrosshairColor] = color;
-
-        qreal fullIconWidth = 32 * pixelRatio;
-        qreal iconWidth = 16 * pixelRatio;
-        QPixmap cursorPixmap = Gui::BitmapFactory().pixmapFromSvg("Sketcher_Crosshair", QSizeF(fullIconWidth, fullIconWidth), colorMapping),
-            icon = Gui::BitmapFactory().pixmapFromSvg("Constraint_Dimension", QSizeF(iconWidth, iconWidth));
-        QPainter cursorPainter;
-        cursorPainter.begin(&cursorPixmap);
-        cursorPainter.drawPixmap(16 * pixelRatio, 16 * pixelRatio, icon);
-        cursorPainter.end();
-        int hotX = 8;
-        int hotY = 8;
-        cursorPixmap.setDevicePixelRatio(pixelRatio);
-        // only X11 needs hot point coordinates to be scaled
-        if (qGuiApp->platformName() == QStringLiteral("xcb")) {
-            hotX *= pixelRatio;
-            hotY *= pixelRatio;
-        }
-        setCursor(cursorPixmap, hotX, hotY, false);
-
         external.restore();
+        // sets the cursor too
         applyExternalPick();
 
         // After, not before: ToolHandler::activate() shows the hints ahead of
@@ -2690,6 +2709,20 @@ protected:
         }
         // each view of the session picks what is under the pointer, or not
         sketchgui->setSessionSelectionEnabled(external.on());
+
+        // the cursor says whether it is on, and in which flavour
+        qreal pixelRatio = devicePixelRatio();
+        int hotX = 8;
+        int hotY = 8;
+        // only X11 needs hot point coordinates to be scaled
+        if (qGuiApp->platformName() == QStringLiteral("xcb")) {
+            hotX *= pixelRatio;
+            hotY *= pixelRatio;
+        }
+        setCursor(external.cursor("Constraint_Dimension", pixelRatio, getCrosshairColor()),
+                  hotX,
+                  hotY,
+                  false);
     }
 
     /// Make the references of this dimension again after an abort took

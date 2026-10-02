@@ -7,7 +7,8 @@ and the two intersection commands switch outside picking on for the
 running tool, in their own flavour, and off again on a second press. With
 it on, an edge or a vertex picked outside the sketch becomes external
 geometry and the tool goes on with it. The state is one setting for all of
-these tools and it stays from one tool to the next.
+these tools and it stays from one tool to the next. The tool's cursor says
+so: the icon of the command that switched it on, above the tool's own.
 
 A box, and a sketch on the XY plane with a line beside the box, seen from
 the top. Claims:
@@ -21,14 +22,18 @@ the top. Claims:
     it takes both;
   - the box's edge first and then Escape: nothing stays in the sketch and
     no undo step is left;
-  - pressed again, outside picking is off and the setting says so.
+  - pressed again, outside picking is off and the setting says so;
+  - the cursor carries the tool's icon alone while it is off, the External
+    command's icon too once that is pressed, and loses it on the next press.
 
   Dimension:
   - the setting left on reaches the Dimension tool started afterwards;
   - the box's edge, the sketch's line, then a click on empty space: the
     external geometry and a dimension to it, in one undo step;
   - Sketcher_Defining pressed while it runs switches the flavour, and the
-    edge picked next is defining external geometry.
+    edge picked next is defining external geometry;
+  - its cursor starts with the External sign, and the sign changes with
+    the flavour.
 
 Scored against the tree before the change: the External command replaced
 the running tool, and nothing outside the sketch could be picked in one.
@@ -115,6 +120,24 @@ def mode():
     return FreeCAD.ParamGet(GENERAL).GetInt("ConstraintExternalPick", 0)
 
 
+def cursor_quarters(view):
+    """The view's cursor: opaque pixels of the tool's quarter (lower right)
+    and of the sign's (upper right), and the sign's pixels themselves."""
+    img = view.graphicsView().viewport().cursor().pixmap().toImage()
+    cursor_quarters.count += 1
+    img.save(os.path.join(OUT, "cursor-%d.png" % cursor_quarters.count))
+    w, h = img.width(), img.height()
+    if not w or not h:
+        return 0, 0, ()
+    tool = sum(1 for y in range(h // 2, h) for x in range(w // 2, w)
+               if QtGui.qAlpha(img.pixel(x, y)))
+    sign = tuple(img.pixel(x, y) for y in range(h // 2) for x in range(w // 2, w))
+    return tool, sum(1 for p in sign if QtGui.qAlpha(p)), sign
+
+
+cursor_quarters.count = 0
+
+
 def externals(sk):
     return [(o.Name, s) for o, subs in sk.ExternalGeometry for s in subs]
 
@@ -167,6 +190,9 @@ def probe(doc, sk, view):
         # -- a constraint command -------------------------------------
         FreeCADGui.runCommand("Sketcher_ConstrainParallel")
         settle()
+        tool, sign, _ = cursor_quarters(view)
+        check("off: the cursor carries the tool's icon and no sign",
+              tool > 0 and sign == 0, (tool, sign))
         click(view, LINE)
         click(view, FRONT)
         check("off: a click on the box's edge does nothing", state_of(sk) == clean,
@@ -178,6 +204,9 @@ def probe(doc, sk, view):
         FreeCADGui.runCommand("Sketcher_External")
         settle()
         check("the External command sets the setting", mode() == 1, mode())
+        tool, sign, external_sign = cursor_quarters(view)
+        check("and the running tool's cursor gains its sign",
+              tool > 0 and sign > 0, (tool, sign))
         undo0 = doc.UndoCount
         click(view, LINE)
         click(view, FRONT)
@@ -212,6 +241,8 @@ def probe(doc, sk, view):
         FreeCADGui.runCommand("Sketcher_External")
         settle()
         check("pressed again: the setting is off", mode() == 0, mode())
+        check("and the sign is gone from the cursor", cursor_quarters(view)[1] == 0,
+              cursor_quarters(view)[:2])
         click(view, LINE)
         click(view, FRONT)
         check("and a click on the box's edge does nothing again",
@@ -226,6 +257,9 @@ def probe(doc, sk, view):
         FreeCADGui.runCommand("Sketcher_Dimension")
         settle()
         undo0 = doc.UndoCount
+        tool, sign, dim_sign = cursor_quarters(view)
+        check("the Dimension tool starts with the External sign on its cursor",
+              tool > 0 and sign > 0 and dim_sign == external_sign, (tool, sign))
         click(view, FRONT)
         note("dimension, after the box edge: %s" % (state_of(sk),))
         check("the setting reached the Dimension tool: the box's edge is taken",
@@ -248,6 +282,9 @@ def probe(doc, sk, view):
         FreeCADGui.runCommand("Sketcher_Defining")
         settle()
         check("Sketcher_Defining switches the flavour", mode() == 2, mode())
+        tool, sign, defining_sign = cursor_quarters(view)
+        check("and the sign on the cursor is another",
+              sign > 0 and defining_sign != external_sign, (tool, sign))
         click(view, RIGHT)
         st = state_of(sk)
         note("dimension, defining: %s" % (st,))
