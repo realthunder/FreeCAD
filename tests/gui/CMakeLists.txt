@@ -818,3 +818,9 @@ fc_add_gui_test(GuiSketchFaceOnSolidPick_tests_run
 fc_add_gui_test(GuiSketchNewInGroup_tests_run
                 sketch-new-in-group.py
                 --timeout 120)
+
+# Attach Sketch does not offer the selected sketch as the one to attach
+# (upstream 93173ba797): it could be attached to itself.
+fc_add_gui_test(GuiSketchAttachNotItself_tests_run
+                sketch-attach-not-itself.py
+                --timeout 120)
