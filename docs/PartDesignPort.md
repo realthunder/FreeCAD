@@ -2955,16 +2955,16 @@ FreeCADCmd probe.
   MultiTransform's editors: **have** (sec 7, 2026-09-28/29).
   `ad11ee94bc` (renames in that code): n/a.
 - `cdb4624675`, pattern instance suppression, and `e22e537c4b` with
-  `eefae5b29e` and `76337721a4`, its on-view toggles: **open**, the
-  user's plan -- a kind-independent suppressed mask in `App::Pattern`
-  that the link array turns into its VisibilityList and PD skips (the
-  first instance through the history rewrite), the toggles as a
-  scene-graph overlay in `src/Gui` shared with the link array panel, and
-  a point pattern in a MultiTransform keeping the original where it is
-  (upstream moves it onto the first point; sec 7's rule). Today the PD
-  linear kind shows a `SuppressedPositions` that does nothing (a 3-box
-  pattern with (1,0) suppressed stays 3000) and an upstream file's
-  `SuppressedIndices` is dropped.
+  `eefae5b29e` and `76337721a4`, its on-view toggles: **adapted** (the
+  two subsections below), as planned -- a kind-independent suppressed
+  mask in `App::Pattern` that the link array turns into its
+  VisibilityList and PD skips (the first instance through the history
+  rewrite), the toggles as a scene-graph overlay in `src/Gui` shared with
+  the link array panel, and a point pattern in a MultiTransform keeping
+  the original where it is (upstream moves it onto the first point; sec
+  7's rule). Before them the PD linear kind showed a `SuppressedPositions`
+  that did nothing (a 3-box pattern with (1,0) suppressed stayed 3000)
+  and an upstream file's `SuppressedIndices` was dropped.
 
 Verified at `3161b908e3`: Python 3333 OK (50 skipped, 6 expected
 failures), ctest 758/758 (the 8 new FaceMakerUnified gtests). One run of
@@ -3017,10 +3017,57 @@ projection test standing for its overflow one now that occurrences are
 capped, and the fork's point-pattern one. Verified at `3333d9b600`:
 Python 3344 OK (50 skipped, 6 expected failures), ctest 758/758.
 
-**Left: the on-view toggles** (`e22e537c4b`, `eefae5b29e`, `76337721a4`).
-Upstream lays QToolButtons over the viewer at each instance's centre,
-which a served or browser view never sees. The user, 2026-10-02: a new
-marker node -- a Coin node per instance with its own render-cache capture
-and pick path -- next session. Until then an instance is left out through
-`SuppressedIndices` or, linear, `SuppressedPositions` in the property
-editor.
+### Pattern instance toggles (`eeebaa748f`)
+
+Upstream's on-view toggles (`e22e537c4b`, `eefae5b29e`, `76337721a4`):
+while a pattern's panel is open, a marker at the middle of each instance,
+a cross on one that is in and a plus on one left out, which a click turns
+over. Upstream lays QToolButtons over the viewer, which a served or
+browser view never sees; the user chose a marker node (2026-10-02).
+
+- **The node**, `Gui::SoToggleMarker` (`src/Gui/Inventor`), is an
+  `SoImage` that paints its own glyph whenever `active`, `highlighted` or
+  `markerSize` change -- at once, not at the next GL pass, because the
+  render cache reads the image field before any method of the node runs
+  and under a backend there may be no GL pass. Being an `SoImage`, it goes
+  where a screen-space image goes with nothing new: drawn by the GL pass,
+  captured for bgfx by the image companion every `SoImage` gets
+  (`SoFCImageQuad`), streamed to a browser in the served scene, and ray
+  picked where it is drawn in whichever view picks. A trap on the way:
+  Coin's `SoImage` hangs off its point to the upper right (LEFT/BOTTOM
+  alignment), so the marker was clicked half a marker away from the
+  instance; it is centred.
+- **The controller**, `Gui::PatternInstanceMarkers` (`PatternWidgets`),
+  hangs the markers under `ViewerContext::getOnViewParameterRoot()`, the
+  on-view labels' root: an overlay feed of its own on the desktop, the
+  served root on a mirror. An `SoAnnotation` with `SHAPE_ON_TOP` picking,
+  since a marker sits inside its instance and the face in front of it
+  must not take the click. A press on a marker is taken, so nothing behind
+  it is selected; the release on the same marker says
+  `toggleRequested(index, suppress)`; the pointer over one rings it in the
+  highlight colour without taking the move. It holds the root it hangs
+  under, so a view closed first leaves it nothing dangling.
+- **PD**: on `TaskTransformedParameters`, the top panel's, so every kind
+  has them -- the patterns, Mirrored, Scaled and a MultiTransform, whose
+  markers are its products; a step's sub-panel asks the top panel. The
+  centres are the originals' middle in the pattern's frame, taken as
+  `execute()` takes them (located, not copied), moved by each of
+  `getTransformations()` and mapped by the editing transform; refreshed
+  after every recompute of the panel and after an undo. A click sets
+  `setTransformationSuppressed()` in the edit's transaction and
+  recomputes. Upstream's rules kept: none for a single instance.
+- **The link array panel**: the elements' middle, from the box of an
+  element shown, carried to each by its placement; `setElementSuppressed()`.
+
+Verified: `OnViewParameter_tests_run` (six new cases: the glyph is there
+before any GL pass and changes with the state, a click through a mirror
+asks for the right instance and only a press and release on the same
+marker does, the marker centred on its point, picked through a cube
+around it, highlighted under the pointer, and outliving its view);
+`tests/gui/serve-pattern-markers.py`, run by hand here: a served linear
+pattern edited from a client, a replayed click on the second instance's
+marker gives `SuppressedIndices` [1], again [], on the first [0]. On the
+desktop under bgfx: a linear pattern, a MultiTransform of two linear
+steps (six products) and a 3x2 link array, each clicked with a real mouse
+event, the instance gone and its marker a plus; the hover ring drawn.
+`serve-pattern-labels.py` still passes beside them.

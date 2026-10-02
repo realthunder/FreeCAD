@@ -1095,7 +1095,11 @@ under `ViewerContext::getOnViewParameterRoot()`: the served root on a mirror, an
 feed of its own on the desktop. A label can also be clicked (`setPickable`), which on a
 mirror is a replayed pointer event through the scene with nothing new on the wire; a
 pattern's spacing labels use that (docs/PartDesignPort.md, 2026-09-29), and
-`tests/gui/serve-pattern-labels.py` drives it over a socket.
+`tests/gui/serve-pattern-labels.py` drives it over a socket. A pattern's instance toggles
+(2026-10-02) take the same root and the same route with no box at all: each is an
+`SoImage` that paints its own glyph (`Gui::SoToggleMarker`), so the render cache's image
+companion carries it, and a replayed click picks it over the instance it sits in
+(`tests/gui/serve-pattern-markers.py`).
 
 Two things ARE the client's, and the line between them and the server is frequency -- the
 same line 8.2a draws for hover:
