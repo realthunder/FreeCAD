@@ -9059,7 +9059,7 @@ bool ViewProviderSketch::setEdit(int ModNum)
                         "if ActiveSketch.ViewObject.HideDependent:\n"
                         "  tv.hide(tv.get_all_dependent(%3, '%4'))\n"
                         "if ActiveSketch.ViewObject.ShowSupport:\n"
-                        "  tv.show([ref[0] for ref in ActiveSketch.Support if not ("
+                        "  tv.show([ref[0] for ref in ActiveSketch.AttachmentSupport if not ("
                         "ref[0].isDerivedFrom(\"App::Plane\") or "
                         "ref[0].isDerivedFrom(\"App::LocalCoordinateSystem\"))])\n"
                         "if ActiveSketch.ViewObject.ShowLinks:\n"
