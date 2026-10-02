@@ -755,3 +755,10 @@ fc_add_gui_test(GuiSketchTangentSelf_tests_run
 fc_add_gui_test(GuiSketchSymmetricElement_tests_run
                 sketch-symmetric-element.py
                 --timeout 150)
+
+# The Dimension tool: a level line keeps the distance along its own axis
+# wherever the pointer goes (upstream 76a84f63ab), and a corner's
+# coincident vertices count as one point (upstream 36dd4b983c).
+fc_add_gui_test(GuiSketchDimensionToolPoints_tests_run
+                sketch-dimension-tool-points.py
+                --timeout 150)
