@@ -762,3 +762,10 @@ fc_add_gui_test(GuiSketchSymmetricElement_tests_run
 fc_add_gui_test(GuiSketchDimensionToolPoints_tests_run
                 sketch-dimension-tool-points.py
                 --timeout 150)
+
+# A dimension made from the geometry states the geometry's value to
+# fifteen significant digits, not six decimals (the subject of upstream
+# b9155035fe); two perpendicular lines are a right angle.
+fc_add_gui_test(GuiSketchConstraintValuePrecision_tests_run
+                sketch-constraint-value-precision.py
+                --timeout 120)

@@ -221,7 +221,7 @@ void EditDatumDialog::accepted()
                     performAutoScale(newDatum);
 
                     Gui::cmdAppObjectArgs(sketch,
-                                          "setDatum(%i,App.Units.Quantity('%f %s'))",
+                                          "setDatum(%i,App.Units.Quantity('%.15g %s'))",
                                           ConstrNbr,
                                           newDatum,
                                           Base::Tools::escapeEncodeString(
