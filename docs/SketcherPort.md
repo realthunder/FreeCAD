@@ -3501,12 +3501,23 @@ Left for a ruling -- both ruled 2026-10-02, see "The rulings of session
 - *A browser may start the constraint commands that open no dialog*
   (`5f761d0de6`). Sixteen by name; the dimensional ones, the datum editor and
   Snell's law stay off for their modal dialog. The list is in
-  docs/ThinClient.md 8.7. Still open, not ruled: what a browser is shown of
-  the outside-picking mode (its tool bar mirror could draw the external
-  command checked), and whether `Sketcher_Defining` and the two intersection
-  commands join `Sketcher_External` on the list -- they activate the same
-  handler, and without them a browser can switch outside picking on in one
-  flavour only.
+  docs/ThinClient.md 8.7. Ruled the same day and built: `Sketcher_Defining`
+  and the two intersection commands join `Sketcher_External` on the list
+  -- they activate the same handler, and without them a browser could
+  switch outside picking on in one flavour only -- and while a constraint
+  tool runs with outside picking on, the command of the flavour in force
+  is checkable and checked, and no other (`StackedExternalPick::
+  showOnCommands`). That is what a browser is shown of the mode: its tool
+  bar mirror carries an action's checked state, and the cursor's sign does
+  not travel. The four are one group button, and a group's face is not
+  drawn pressed for a checked member: the tick is on the drop-down's
+  entry, on the desktop and in the browser alike. The commands are
+  checkable only while checked, since outside these tools they are plain
+  commands with no state. One trap on the way: `QAction::setCheckable` and
+  `setChecked` emit `toggled`, which is how a checkable command is RUN, so
+  setting the mark from the tool ran the command, which set the mark --
+  the recursion ended in a segfault. The signals are blocked for the
+  change.
 - *The wall clock* (`dbc440f64c`): the spin after a rotation, a click
   against a hold in the navigation styles, and the hover pick's delay are
   measured on the steady clock. docs/Testing.md has the test that makes the

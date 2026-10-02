@@ -1373,9 +1373,10 @@ Each step is a standalone landing with the desktop as its regression oracle.
 - The mirror answers `logicalDotsPerInchX()` with 96, the CSS reference, because it has no
   screen to ask and its client is a browser. Whether the edit modes that size things in
   millimetres want that or the client's real density is a stage 4 question.
-- **The `command` op admits `Sketcher_Create*`, `Sketcher_External`,
-  `Sketcher_CarbonCopy` and the constraint commands that open no dialog, and nothing
-  else** (8.7, 8.11 item 3). Those are, by name: `Sketcher_ConstrainHorVer`,
+- **The `command` op admits `Sketcher_Create*`, `Sketcher_External` and its three
+  flavours (`Sketcher_Defining`, `Sketcher_Intersection`,
+  `Sketcher_IntersectionDefining`), `Sketcher_CarbonCopy` and the constraint commands
+  that open no dialog, and nothing else** (8.7, 8.11 item 3). Those are, by name: `Sketcher_ConstrainHorVer`,
   `Horizontal`, `Vertical`, `Lock`, `Block`, `Coincident`, `CoincidentUnified`,
   `PointOnObject`, `Parallel`, `Perpendicular`, `Tangent`, `Equal`, `Symmetric`, `Group`,
   and `Sketcher_ToggleDrivingConstraint`, `Sketcher_ToggleActiveConstraint`. Left off:
