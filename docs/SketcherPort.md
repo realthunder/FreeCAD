@@ -3550,8 +3550,8 @@ Kept as the fork has them: the scaling mode's tool tip (it describes this
 fork's rule) and the internal geometry check box (the feature here makes
 more than faces).
 
-Left for a ruling -- features the fork's own drawing code would have to
-grow, none of them a port of lines:
+Features the fork's own drawing code has to grow, none of them a port of
+lines:
 
 - *Line pattern and width by geometry type, and the Appearance page*
   (`b140feabaf`, 1572 lines; then `f5da655429` points coloured by
@@ -3568,9 +3568,12 @@ grow, none of them a port of lines:
   preview and a missing-glyph check.
 - *Axis transparency* (`cda241dbd0`): the axes drawn through geometry in
   front of them, at a second transparency.
-- *Make Internals on for new sketches* (`be1d53cf5f`): a default. Also
-  upstream's defaults for "show dimension names" (on) and the line group
-  (on), both off here.
+
+Ruled 2026-10-02: the four feature families are all to be taken (next
+session), and the defaults are upstream's -- **taken** `86c389b583`: Make
+Internals on for new sketches (`be1d53cf5f`), dimension names shown, the
+line group on. The line group's row above says "default off"; that held
+for one day.
 
 ### The tip comparison over every open row (session 118)
 
