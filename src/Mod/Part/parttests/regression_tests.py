@@ -945,6 +945,71 @@ class RegressionTests(unittest.TestCase):
                 ball.makeThickness([ball.Faces[1]], offset, 1e-7, False, False, 0, 2)
         self.assertTrue(ball.isValid())
 
+    def test_thickness_of_a_dome_past_half_a_turn_and_its_sphere_removed(self):
+        """A ball cut by its equator and by planes through its axis. Three
+        quarters of a dome, its bottom removed outward with the Intersection
+        join, came back as the input; a side removed was refused, invalid, or
+        at twice the thickness a valid solid on the wrong side of the kept
+        face. With the Arc join an eighth of a ball and a third of a dome were
+        refused. And with the sphere itself removed, whose wall lies on the
+        sphere past its pole, every one was refused or threw outward. Half a
+        ball cut through both poles is still refused where its sphere would
+        hold them inside (OCCT fork, tests/thickness/models/Thickness.md
+        "Sec 27.109")."""
+        V = Vector
+
+        def dome(turn, low=0):
+            return Part.makeSphere(5, V(), V(0, 0, 1), low, 90, turn)
+
+        # (shape, face, offset, join, volume)
+        dome270, eighth, third, half, lune = dome(270), dome(90), dome(120), dome(180), dome(90, -90)
+        for name, shape, face, offset, join, volume in (
+            ("three quarters, bottom", dome270, 2, 0.5, 2, 87.3133),
+            ("three quarters, side", dome270, 3, 0.5, 2, 113.7486),
+            ("three quarters, other side", dome270, 4, 0.5, 2, 113.7486),
+            ("three quarters, side", dome270, 3, -0.5, 2, 83.7681),
+            ("three quarters, side", dome270, 3, -0.5, 0, 83.7681),
+            ("three quarters, other side", dome270, 4, -0.5, 0, 83.7681),
+            ("three quarters, side, thick", dome270, 3, 1.0, 2, 260.9367),
+            ("eighth, bottom", eighth, 2, 0.5, 0, 45.5612),
+            ("third, bottom", third, 2, 0.5, 0, 52.4334),
+            ("third, side", third, 3, -0.5, 0, 41.2951),
+            ("third, other side", third, 4, -0.5, 0, 41.2951),
+            ("eighth, sphere", eighth, 1, 0.5, 0, 32.3576),
+            ("eighth, sphere", eighth, 1, 0.5, 2, 33.2167),
+            ("eighth, sphere", eighth, 1, -0.5, 0, 25.7418),
+            ("third, sphere", third, 1, 0.5, 0, 35.2709),
+            ("third, sphere", third, 1, 0.5, 2, 35.8993),
+            ("half, sphere", half, 1, 0.5, 0, 41.0976),
+            ("half, sphere", half, 1, 0.5, 2, 41.6307),
+            ("half, sphere", half, 1, -0.5, 0, 36.6474),
+            ("on its side, sphere", lune, 1, 0.5, 0, 41.0976),
+            ("on its side, sphere", lune, 1, 0.5, 2, 41.6307),
+            ("on its side, sphere", lune, 1, -0.5, 0, 36.6474),
+            ("three quarters, sphere", dome270, 1, 0.5, 2, 50.0446),
+            ("three quarters, sphere", dome270, 1, -0.5, 0, 47.3132),
+            ("three quarters, sphere, thick", dome270, 1, 1.0, 0, 99.0413),
+            ("three quarters, sphere, thick", dome270, 1, 1.0, 2, 100.7985),
+        ):
+            for inter in (False, True):
+                r = shape.makeThickness([shape.Faces[face - 1]], offset, 1e-7, inter, False, 0, join)
+                msg = "%s, %g, join %d, inter %s" % (name, offset, join, inter)
+                self.assertTrue(r.isValid(), msg)
+                self.assertEqual(len(r.Shells), 1, msg)
+                self.assertAlmostEqual(r.Volume, volume, 3, msg)
+        # The removed sphere gets a twin for its wall; the faces given stay.
+        for shape, volume in ((dome270, 196.3495), (eighth, 65.4498), (third, 87.2665),
+                              (half, 130.8997), (lune, 130.8997)):
+            self.assertTrue(shape.isValid())
+            self.assertAlmostEqual(shape.Volume, volume, 3)
+            self.assertEqual(shape.Faces[0].Surface.Axis, V(0, 0, 1))
+
+        ball = dome(180, -90)
+        for face, offset, join in ((2, 0.5, 2), (2, -0.5, 2), (1, 0.5, 0), (1, 0.5, 2)):
+            with self.assertRaises(Exception, msg="half ball Face%d %g join %d" % (face, offset, join)):
+                ball.makeThickness([ball.Faces[face - 1]], offset, 1e-7, False, False, 0, join)
+        self.assertTrue(ball.isValid())
+
     def test_thickness_intersection_join_with_one_face_left(self):
         """The Intersection join where one face stays beside the removed ones:
         a cylinder down to its top, a box down to its bottom. It threw
