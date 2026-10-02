@@ -857,3 +857,12 @@ fc_add_gui_test(GuiSketchConstraintExternalPick_tests_run
 fc_add_gui_test(GuiServeConstraintExternalPick_tests_run
                 serve-constraint-external-pick.py
                 --timeout 240)
+
+# Upstream 0c34c93fe4 is not applicable here, and this is the evidence:
+# a constraint tool selects by the bare sketch, the sketch and its panels
+# through the edited occurrence's path, and the fork's selection puts both
+# on the top parent's path, so one element is one entry and what one way
+# selected the other unselects. A sketch edited inside an App::Part.
+fc_add_gui_test(GuiSketchConstraintToolSelectPath_tests_run
+                sketch-constraint-tool-select-path.py
+                --timeout 180)

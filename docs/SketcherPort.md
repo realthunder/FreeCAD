@@ -3202,6 +3202,15 @@ Still open:
   a removal by the other path would not match. Wants a click-flow test
   inside a container before it changes.
 
+  **n/a** (session 117), by that test, `sketch-constraint-tool-select-path.py`:
+  a sketch edited inside an `App::Part`, the line clicked with no tool,
+  then picked and unpicked in the Dimension tool and in Parallel. Every
+  entry is on the Part's path whichever way it was made, and what one way
+  selected the other unselects. The fork's selection puts an object on its
+  top parent's path for every add, removal and query
+  (`SelectionSingleton::checkTopParent`); upstream's does not, which is
+  what its commit works around in the tool.
+
 ### The coplanar pick, and Command.cpp (session 116)
 
 **`a2468774d3`, adapted** `8fdf3f3325` (Gui) + `84db00d6d5` (Sketcher), as
@@ -3264,6 +3273,13 @@ source string loses its translation until the translation files are taken
 with it; so they go together with a translation resync or not at all.
 `6eecd08f7c` (a Qt deprecation) and `3c1358da10` (the Datums header name)
 are not read yet.
+
+Read (session 117): `3c1358da10` **taken** `8c5430ed73` (one include);
+`6eecd08f7c` **taken** `5986b18091`, its Sketcher part -- six connections,
+this tree builds against Qt 6.11 where `stateChanged` warns. The strings
+`d7074e36be` passed over because they are written across several literals:
+`71768887ff`, 11 of 41 are upstream's wording now, the rest are the fork's
+own or have no upstream form.
 
 **`999fed9c4e`, the design put to the user.** What upstream does: the
 constraint tools' gate lets an edge or a vertex of ANOTHER object through
