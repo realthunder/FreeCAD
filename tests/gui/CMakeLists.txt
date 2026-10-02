@@ -838,3 +838,13 @@ fc_add_gui_test(GuiSketchMergeExternal_tests_run
 fc_add_gui_test(GuiPickEdgeInFace_tests_run
                 pick-edge-in-face.py
                 --timeout 120)
+
+# Outside picking stacked on the constraint tools: an external geometry
+# command pressed while the Dimension tool or a constraint command runs
+# switches outside picking on that tool instead of replacing it, one
+# persistent setting for all of them (the fork's form of upstream
+# 999fed9c4e). Real clicks: the reference and the constraint are one undo
+# step, and a tool left before the constraint leaves nothing.
+fc_add_gui_test(GuiSketchConstraintExternalPick_tests_run
+                sketch-constraint-external-pick.py
+                --timeout 180)

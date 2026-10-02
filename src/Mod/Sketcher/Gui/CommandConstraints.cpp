@@ -53,6 +53,7 @@
 
 #include "CommandConstraints.h"
 #include "DrawSketchHandler.h"
+#include "DrawSketchHandlerExternal.h"
 #include "EditDatumDialog.h"
 #include "Utils.h"
 #include "ViewProviderSketch.h"
@@ -1191,21 +1192,110 @@ enum SelType
  * has to be a curve for the constraint to make sense. Thus filters are
  * changeable so that same filter can be kept on while in one mode.
  */
-class GenericConstraintSelection: public Gui::SelectionFilterGate
+/** Outside picking stacked on a constraint tool
+ *
+ * While the Dimension tool or one of the constraint commands runs, the
+ * external geometry commands (Sketcher_External, Sketcher_Defining and the
+ * two intersection ones) do not replace it: they switch outside picking on
+ * for the running tool, in their own flavour, and off again when pressed a
+ * second time. With it on, something picked outside the sketch becomes
+ * external geometry as that command would make it, and the constraint tool
+ * goes on with it.
+ *
+ * The state is ONE setting for all of these tools, and it stays: the next
+ * constraint tool starts as the last one was left.
+ */
+struct StackedExternalPick
 {
-    App::DocumentObject* object;
+    enum Mode
+    {
+        Off = 0,
+        External,
+        Defining,
+        Intersection,
+        IntersectionDefining
+    };
 
+    int mode = Off;
+    /// set while the tool itself changes the selection
+    bool busy = false;
+    /// an outside pick was just taken; the release of that same click is
+    /// not a click on empty space
+    bool skipRelease = false;
+
+    static ParameterGrp::handle group()
+    {
+        return App::GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/Mod/Sketcher/General");
+    }
+
+    void restore()
+    {
+        long stored = group()->GetInt("ConstraintExternalPick", Off);
+        mode = (stored >= Off && stored <= IntersectionDefining) ? static_cast<int>(stored) : Off;
+    }
+
+    /** Take the press of an external geometry command
+     *
+     * @param next: the handler the command made
+     * @return false if it is not one of those commands, and the tool is to
+     * be replaced as ever
+     */
+    bool toggle(DrawSketchHandler* next)
+    {
+        auto ext = dynamic_cast<DrawSketchHandlerExternal*>(next);
+        // attaching is another job altogether
+        if (!ext || !ext->attaching.empty()) {
+            return false;
+        }
+        int asked = ext->intersection ? (ext->defining ? IntersectionDefining : Intersection)
+                                      : (ext->defining ? Defining : External);
+        mode = (mode == asked) ? Off : asked;
+        group()->SetInt("ConstraintExternalPick", mode);
+        return true;
+    }
+
+    bool on() const
+    {
+        return mode != Off;
+    }
+    bool defining() const
+    {
+        return mode == Defining || mode == IntersectionDefining;
+    }
+    bool intersection() const
+    {
+        return mode == Intersection || mode == IntersectionDefining;
+    }
+
+    /// The name by which the sketch selects an external geometry of its own
+    static std::string elementName(Sketcher::SketchObject* sketch, int geoId)
+    {
+        const Part::Geometry* geo = sketch->getGeometry(geoId);
+        if (geo && geo->is<Part::GeomPoint>()) {
+            int vertex = sketch->getVertexIndexGeoPos(geoId, Sketcher::PointPos::start);
+            return "Vertex" + std::to_string(vertex + 1);
+        }
+        return "ExternalEdge" + std::to_string(Sketcher::GeoEnum::RefExt + 1 - geoId);
+    }
+};
+
+class GenericConstraintSelection: public ExternalSelection
+{
 public:
     explicit GenericConstraintSelection(App::DocumentObject* obj)
-        : Gui::SelectionFilterGate(nullPointer())
-        , object(obj)
+        : ExternalSelection(obj, false)
         , allowedSelTypes(0)
     {}
 
-    bool allow(App::Document*, App::DocumentObject* pObj, const char* sSubName) override
+    /// Whether something outside the sketch may be picked now; the tool's
+    /// to say (see StackedExternalPick)
+    std::function<bool()> outside;
+
+    bool allow(App::Document* pDoc, App::DocumentObject* pObj, const char* sSubName) override
     {
         if (pObj != this->object) {
-            return false;
+            return outside && outside() && ExternalSelection::allow(pDoc, pObj, sSubName);
         }
         if (!sSubName || sSubName[0] == '\0') {
             return false;
@@ -1234,6 +1324,27 @@ public:
 
 protected:
     int allowedSelTypes;
+};
+
+/// The Dimension tool's gate while outside picking is stacked on it: the
+/// sketch's own elements as ever, anything else as the External tool
+/// would take it.
+class DimensionExternalSelection: public ExternalSelection
+{
+public:
+    explicit DimensionExternalSelection(App::DocumentObject* obj)
+        : ExternalSelection(obj, false)
+    {}
+
+    std::function<bool()> outside;
+
+    bool allow(App::Document* pDoc, App::DocumentObject* pObj, const char* sSubName) override
+    {
+        if (pObj == this->object) {
+            return true;
+        }
+        return outside && outside() && ExternalSelection::allow(pDoc, pObj, sSubName);
+    }
 };
 }// namespace SketcherGui
 
@@ -1325,8 +1436,32 @@ public:
         Gui::Selection().rmvSelectionGate();
     }
 
+    void deactivated() override
+    {
+        // A reference made for a constraint that never came goes with it.
+        dropPendingExternal();
+    }
+
+    bool allowExternalPick() const override
+    {
+        return external.on();
+    }
+
+    /// An external geometry command pressed while this tool runs switches
+    /// outside picking instead of replacing the tool.
+    bool toggle(DrawSketchHandler* next) override
+    {
+        if (!external.toggle(next)) {
+            return false;
+        }
+        applyExternalPick();
+        return true;
+    }
+
     void mouseMove(SnapManager::SnapHandle /*snapHandle*/) override
-    {}
+    {
+        external.skipRelease = false;
+    }
 
     bool pressButton(Base::Vector2d /*onSketchPos*/) override
     {
@@ -1335,6 +1470,10 @@ public:
 
     bool releaseButton(Base::Vector2d onSketchPos) override
     {
+        if (external.skipRelease) {
+            external.skipRelease = false;
+            return true;
+        }
         SelIdPair selIdPair;
         selIdPair.GeoId = GeoEnum::GeoUndef;
         selIdPair.PosId = Sketcher::PointPos::none;
@@ -1375,7 +1514,13 @@ public:
         }
 
         if (selIdPair.GeoId == GeoEnum::GeoUndef) {
+            // With outside picking on, "blank" for the sketch may be an
+            // object the view is picking: that pick is the click then.
+            if (external.on() && sketchgui->sessionSelection().hasPreselection()) {
+                return true;
+            }
             // If mouse is released on "blank" space, start over
+            dropPendingExternal();
             selSeq.clear();
             resetOngoingSequences();
             Gui::Selection().clearSelection();
@@ -1393,11 +1538,30 @@ public:
     }
 
     virtual bool onSelectionChanged(const Gui::SelectionChanges &msg) {
+        // What happens to something outside the sketch in the selection is
+        // this tool's own doing (it takes the pick out again once it is
+        // external geometry), told after the fact: not a user unselecting,
+        // which starts the sequence over.
+        if (external.on() && msg.Type != Gui::SelectionChanges::AddSelection
+            && msg.pObjectName && msg.pObjectName[0]) {
+            App::DocumentObject* obj = msg.Object.getObject();
+            if (obj && obj->getLinkedObject() != sketchgui->getObject()) {
+                return true;
+            }
+        }
         switch (msg.Type) {
         case Gui::SelectionChanges::RmvSelection:
             Gui::Selection().clearSelection();
             return false;
         case Gui::SelectionChanges::ClrSelection:
+            // With outside picking on, the view clears the selection each
+            // time it selects what was clicked outside the sketch, which
+            // is a pick for this sequence and not the end of it. The
+            // tool's own start-over, a click on empty space, resets the
+            // sequence itself.
+            if (external.on()) {
+                return false;
+            }
             selSeq.clear();
             resetOngoingSequences();
             return false;
@@ -1410,8 +1574,12 @@ public:
         App::DocumentObject *selObj = msg.Object.getObject();
         if (selObj)
             selObj = selObj->getLinkedObject();
-        if (selObj != sketchgui->getObject())
-            return false;
+        if (selObj != sketchgui->getObject()) {
+            if (!external.on())
+                return false;
+            pickOutside(msg);
+            return true;
+        }
 
         auto element = msg.Object.getOldElementName();
         if (element.empty())
@@ -1446,6 +1614,14 @@ public:
             }
         }
 
+        advance(selIdPair, newSelType);
+        return false;
+    }
+
+    /// Take a picked element into the sequence, and make the constraint
+    /// when that completes one.
+    void advance(const SelIdPair& selIdPair, SelType newSelType)
+    {
         if (selIdPair.GeoId == GeoEnum::GeoUndef) {
             // If mouse is released on "blank" space, start over
             selSeq.clear();
@@ -1461,11 +1637,30 @@ public:
                 if ((cmd->allowedSelSequences).at(*token).at(seqIndex) == newSelType) {
                     if (seqIndex == (cmd->allowedSelSequences).at(*token).size() - 1) {
                         // One of the sequences is completed. Pass to cmd->applyConstraint
+                        const bool withReference = externalPending;
+                        const int constraints =
+                            sketchgui->getSketchObject()->Constraints.getSize();
+                        if (externalPending) {
+                            // The reference's transaction is still open,
+                            // kept so by hand. Under an enabled guard the
+                            // command's own open and commit fold into it:
+                            // one undo step for the reference and the
+                            // constraint.
+                            App::AutoTransaction::setEnable(true);
+                            externalPending = false;
+                        }
                         cmd->applyConstraint(selSeq, *token);// replace arg 2 by ongoingToken
+                        if (withReference
+                            && sketchgui->getSketchObject()->Constraints.getSize()
+                                   <= constraints) {
+                            // the command made nothing of it: the reference
+                            // made for it goes too
+                            Gui::Command::abortCommand();
+                        }
 
                         selSeq.clear();
                         resetOngoingSequences();
-                        return false;
+                        return;
                     }
                     _tempOnSequences.insert(*token);
                     allowedSelTypes =
@@ -1478,7 +1673,6 @@ public:
             selFilterGate->setAllowedSelTypes(allowedSelTypes);
             updateHint();
         }
-        return false;
     }
 
     /** What the user can pick next, for the step of the sequence we are on.
@@ -1656,6 +1850,19 @@ private:
         Gui::Selection().rmvSelectionGate();
         Gui::Selection().addSelectionGate(selFilterGate);
 
+        // Outside the sketch only while the step takes an external edge or
+        // a vertex, and not while the sketch has something of its own under
+        // the pointer: that is what the click means then.
+        selFilterGate->outside = [this]() {
+            return external.on()
+                && (allowedSelTypes & (SelExternalEdge | SelExternalArc | SelVertex
+                                       | SelVertexOrRoot))
+                && getPreselectPoint() < 0 && getPreselectCross() < 0
+                && getPreselectCurve() < 0 && getPreselectCurve() > Sketcher::GeoEnum::RefExt;
+        };
+        external.restore();
+        applyExternalPick();
+
         // Constrain icon size in px
         qreal pixelRatio = devicePixelRatio();
         const unsigned long defaultCrosshairColor = 0xFFFFFF;
@@ -1690,6 +1897,85 @@ protected:
     CmdSketcherConstraint* cmd;
 
     GenericConstraintSelection* selFilterGate = nullptr;
+
+    StackedExternalPick external;
+    /// a reference was made for the constraint under way, in a transaction
+    /// still open
+    bool externalPending = false;
+
+    void applyExternalPick()
+    {
+        selFilterGate->setIntersection(external.intersection());
+        // each view of the session picks what is under the pointer, or not
+        sketchgui->setSessionSelectionEnabled(external.on());
+    }
+
+    void dropPendingExternal()
+    {
+        if (externalPending) {
+            externalPending = false;
+            Gui::Command::abortCommand();
+        }
+    }
+
+    /// Something outside the sketch was picked: make it external geometry
+    /// and go on as if that had been picked.
+    void pickOutside(const Gui::SelectionChanges& msg)
+    {
+        auto sketch = sketchgui->getSketchObject();
+        if (!externalPending) {
+            Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Add external geometry"));
+            // kept open past this event, for the constraint to join
+            App::AutoTransaction::setEnable(false);
+            externalPending = true;
+        }
+        external.skipRelease = true;
+        std::vector<int> ids;
+        try {
+            ids = addExternalFromPick(sketchgui,
+                                      msg.pOriginalMsg ? msg.pOriginalMsg->Object : msg.Object,
+                                      msg.Object,
+                                      external.defining(),
+                                      external.intersection());
+        }
+        catch (Base::Exception& e) {
+            e.ReportException();
+        }
+        Gui::Selection().rmvSelection(msg.pDocName, msg.pObjectName, msg.pSubName);
+        // Several pieces (a face's outline): they are in the sketch now,
+        // for the user to pick from.
+        if (ids.size() != 1) {
+            if (ids.empty() && selSeq.empty()) {
+                dropPendingExternal();
+            }
+            return;
+        }
+        // Straight into the sequence, not by way of the selection: the
+        // sketch cannot resolve the new geometry's element name before its
+        // shape is rebuilt.
+        const Part::Geometry* geo = sketch->getGeometry(ids[0]);
+        if (!geo) {
+            return;
+        }
+        SelIdPair selIdPair;
+        selIdPair.GeoId = ids[0];
+        SelType type;
+        if (geo->is<Part::GeomPoint>()) {
+            selIdPair.PosId = Sketcher::PointPos::start;
+            type = (allowedSelTypes & SelVertex) ? SelVertex : SelVertexOrRoot;
+        }
+        else {
+            selIdPair.PosId = Sketcher::PointPos::none;
+            type = ((allowedSelTypes & SelExternalArc) && isArcOfCircle(*geo)) ? SelExternalArc
+                                                                              : SelExternalEdge;
+        }
+        if (!(allowedSelTypes & type)) {
+            // not what this step takes; it stays as external geometry only
+            // if a constraint comes of the sequence
+            return;
+        }
+        advance(selIdPair, type);
+    }
 
     std::vector<SelIdPair> selSeq;
     unsigned int allowedSelTypes = 0;
@@ -2010,6 +2296,9 @@ public:
         }
         setCursor(cursorPixmap, hotX, hotY, false);
 
+        external.restore();
+        applyExternalPick();
+
         // After, not before: ToolHandler::activate() shows the hints ahead of
         // this hook, and a tool started on a selection has none of it yet at
         // that point -- its first hint would describe an empty selection.
@@ -2017,8 +2306,93 @@ public:
         updateHint();
     }
 
+    bool allowExternalPick() const override
+    {
+        return external.on();
+    }
+
+    /// An external geometry command pressed while this tool runs switches
+    /// outside picking instead of replacing the tool.
+    bool toggle(DrawSketchHandler* next) override
+    {
+        if (!external.toggle(next)) {
+            return false;
+        }
+        applyExternalPick();
+        return true;
+    }
+
+    /// Something outside the sketch was picked (outside picking on): it
+    /// becomes external geometry and is taken as the pick.
+    bool onSelectionChanged(const Gui::SelectionChanges& msg) override
+    {
+        if (external.busy) {
+            return true;
+        }
+        if (!external.on() || msg.Type != Gui::SelectionChanges::AddSelection) {
+            return false;
+        }
+        App::DocumentObject* selObj = msg.Object.getObject();
+        if (selObj) {
+            selObj = selObj->getLinkedObject();
+        }
+        if (!selObj || selObj == sketchgui->getObject()) {
+            return false;
+        }
+
+        external.skipRelease = true;
+        ExternalPick pick {msg.pOriginalMsg ? msg.pOriginalMsg->Object : msg.Object,
+                           msg.Object,
+                           external.defining(),
+                           external.intersection(),
+                           {}};
+        try {
+            pick.geoIds = addExternalFromPick(sketchgui,
+                                              pick.picked,
+                                              pick.resolved,
+                                              pick.defining,
+                                              pick.intersection);
+        }
+        catch (Base::Exception& e) {
+            e.ReportException();
+        }
+        {
+            Base::StateLocker lock(external.busy);
+            Gui::Selection().rmvSelection(msg.pDocName, msg.pObjectName, msg.pSubName);
+        }
+        if (pick.geoIds.empty()) {
+            return true;
+        }
+        const int geoId = pick.geoIds.size() == 1 ? pick.geoIds[0] : GeoEnum::GeoUndef;
+        externalPicks.push_back(std::move(pick));
+        // Several pieces (a face's outline): they are in the sketch now,
+        // for the user to pick from.
+        if (geoId == GeoEnum::GeoUndef) {
+            return true;
+        }
+
+        const Part::Geometry* geo = Obj->getGeometry(geoId);
+        if (!geo) {
+            return true;
+        }
+        SelIdPair selIdPair;
+        selIdPair.GeoId = geoId;
+        selIdPair.PosId = geo->is<Part::GeomPoint>() ? Sketcher::PointPos::start
+                                                     : Sketcher::PointPos::none;
+        availableConstraint = AvailableConstraint::FIRST;
+        selectGeometry(selIdPair,
+                       geo->getTypeId(),
+                       StackedExternalPick::elementName(Obj, geoId),
+                       previousOnSketchPos);
+        return true;
+    }
+
     void deactivated() override
     {
+        if (gateOn) {
+            Gui::Selection().rmvSelectionGate();
+            gateOn = false;
+        }
         Gui::Command::abortCommand();
         // Nothing was made, so the abort changed nothing to solve for
         // (upstream 36786d4794).
@@ -2060,6 +2434,7 @@ public:
 
     void mouseMove(SnapManager::SnapHandle snapHandle) override
     {
+        external.skipRelease = false;
         if (hasBeenAborted()) {
             resetTool();
             return;
@@ -2109,7 +2484,10 @@ public:
 
     bool releaseButton(Base::Vector2d onSketchPos) override
     {
-        Q_UNUSED(onSketchPos);
+        if (external.skipRelease) {
+            external.skipRelease = false;
+            return true;
+        }
         availableConstraint = AvailableConstraint::FIRST;
         SelIdPair selIdPair;
         selIdPair.GeoId = GeoEnum::GeoUndef;
@@ -2158,11 +2536,25 @@ public:
         }
 
         if (selIdPair.GeoId == GeoEnum::GeoUndef) {
-            // If mouse is released on "blank" space, finalize and start over
+            // Released on blank space: finalize and start over. With
+            // outside picking on, "blank" for the sketch may be an object
+            // the view is about to pick -- that pick is the click then.
+            if (external.on() && sketchgui->sessionSelection().hasPreselection()) {
+                return true;
+            }
             finalizeCommand();
             return true;
         }
 
+        return selectGeometry(selIdPair, newselGeoType, ss.str(), onSketchPos);
+    }
+
+    /// Take a picked element, the sketch's own or an external one just made.
+    bool selectGeometry(const SelIdPair& selIdPair,
+                        Base::Type newselGeoType,
+                        const std::string& name,
+                        Base::Vector2d onSketchPos)
+    {
         std::vector<SelIdPair>& selVector = getSelectionVector(newselGeoType);
 
         if (notSelectedYet(selIdPair)) {
@@ -2173,9 +2565,10 @@ public:
 
             if (selAllowed) {
                 // If mouse is released on something allowed, select it
+                Base::StateLocker lock(external.busy);
                 Gui::Selection().addSelection(Obj->getDocument()->getName(),
                     Obj->getNameInDocument(),
-                    ss.str().c_str(), onSketchPos.x, onSketchPos.y, 0.f);
+                    name.c_str(), onSketchPos.x, onSketchPos.y, 0.f);
                 sketchgui->draw(false, false); // Redraw
             }
             else {
@@ -2192,9 +2585,10 @@ public:
                 restartCommand(QT_TRANSLATE_NOOP("Command", "Dimension"));
             }
 
+            Base::StateLocker lock(external.busy);
             Gui::Selection().rmvSelection(Obj->getDocument()->getName(),
                 Obj->getNameInDocument(),
-                ss.str().c_str());
+                name.c_str());
             sketchgui->draw(false, false); // Redraw
         }
 
@@ -2255,6 +2649,83 @@ protected:
     bool singleCircleReverseOrder;
 
     Sketcher::SketchObject* Obj;
+
+    /// Outside picking stacked on this tool
+    StackedExternalPick external;
+    bool gateOn = false;
+
+    /** A pick outside the sketch, and the external geometry made of it
+     *
+     * Kept because this tool aborts and reopens its transaction at every
+     * change of mode, and the references made inside it go with each
+     * abort: they are made again from this (restoreExternalPicks()).
+     */
+    struct ExternalPick
+    {
+        App::SubObjectT picked;
+        App::SubObjectT resolved;
+        bool defining;
+        bool intersection;
+        std::vector<int> geoIds;
+    };
+    std::vector<ExternalPick> externalPicks;
+
+    void applyExternalPick()
+    {
+        if (gateOn) {
+            Gui::Selection().rmvSelectionGate();
+            gateOn = false;
+        }
+        if (external.on()) {
+            auto gate = new DimensionExternalSelection(sketchgui->getObject());
+            gate->setIntersection(external.intersection());
+            // not while the sketch has something of its own under the
+            // pointer: that is what the click means then
+            gate->outside = [this]() {
+                return getPreselectPoint() < 0 && getPreselectCross() < 0
+                    && getPreselectCurve() < 0 && getPreselectCurve() > Sketcher::GeoEnum::RefExt;
+            };
+            Gui::Selection().addSelectionGate(gate);
+            gateOn = true;
+        }
+        // each view of the session picks what is under the pointer, or not
+        sketchgui->setSessionSelectionEnabled(external.on());
+    }
+
+    /// Make the references of this dimension again after an abort took
+    /// them, and follow them if they came back under other ids.
+    void restoreExternalPicks()
+    {
+        for (auto& pick : externalPicks) {
+            std::vector<int> ids;
+            try {
+                ids = addExternalFromPick(sketchgui,
+                                          pick.picked,
+                                          pick.resolved,
+                                          pick.defining,
+                                          pick.intersection);
+            }
+            catch (Base::Exception& e) {
+                e.ReportException();
+            }
+            if (ids.size() == pick.geoIds.size() && ids != pick.geoIds) {
+                for (auto* sel : {&selPoints, &selLine, &selCircleArc, &selEllipseAndCo,
+                                  &selSplineAndCo}) {
+                    for (auto& elem : *sel) {
+                        for (std::size_t i = 0; i < ids.size(); ++i) {
+                            if (elem.GeoId == pick.geoIds[i]) {
+                                elem.GeoId = ids[i];
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            if (!ids.empty()) {
+                pick.geoIds = ids;
+            }
+        }
+    }
 
     void clearRefVectors()
     {
@@ -3357,6 +3828,11 @@ protected:
 
         //make sure we are not taking into account the constraint created in previous mode.
         Gui::Command::abortCommand();
+        // the abort took the external references of this dimension as well
+        if (!externalPicks.empty()) {
+            Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Dimension"));
+            restoreExternalPicks();
+        }
         Obj->solve();
 
         auto solvext = Obj->getSolvedSketch().getSolverExtension(geoId);
@@ -3407,6 +3883,7 @@ protected:
         Obj->solve();
         sketchgui->draw(false, false); // Redraw
         Gui::Command::openCommand(cstrName);
+        restoreExternalPicks();
 
         cstrIndexes.clear();
     }
@@ -3646,7 +4123,11 @@ protected:
     void resetTool()
     {
         Gui::Command::abortCommand();
-        Gui::Selection().clearSelection();
+        externalPicks.clear();
+        {
+            Base::StateLocker lock(external.busy);
+            Gui::Selection().clearSelection();
+        }
         Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Dimension"));
         cstrIndexes.clear();
         specialConstraint = SpecialConstraint::None;
