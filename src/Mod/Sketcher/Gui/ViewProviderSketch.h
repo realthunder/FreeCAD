@@ -767,7 +767,6 @@ protected:
     SketchMode _Mode;
 
     // colors
-    static SbColor VertexColor;
     static SbColor CurveColor;
     static SbColor CurveDraftColor;
     static SbColor CurveExternalColor;
@@ -791,7 +790,6 @@ protected:
     static SbColor FullyConstraintElementColor;
     static SbColor FullyConstraintConstructionElementColor;
     static SbColor FullyConstraintInternalAlignmentColor;
-    static SbColor FullyConstraintConstructionPointColor;
     static SbColor InvalidSketchColor;
 
     /// On the steady clock: the wall clock is stepped (NTP, a hypervisor),

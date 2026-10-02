@@ -186,7 +186,6 @@ using namespace SketcherGui;
 using namespace Sketcher;
 namespace sp = std::placeholders;
 
-SbColor ViewProviderSketch::VertexColor                             (1.0f,0.149f,0.0f);   // #FF2600 -> (255, 38,  0)
 SbColor ViewProviderSketch::CurveColor                              (1.0f,1.0f,1.0f);     // #FFFFFF -> (255,255,255)
 SbColor ViewProviderSketch::CurveDraftColor                         (0.0f,0.0f,0.86f);    // #0000DC -> (  0,  0,220)
 SbColor ViewProviderSketch::CurveExternalColor                      (0.8f,0.2f,0.6f);     // #CC3399 -> (204, 51,153)
@@ -210,7 +209,6 @@ SbColor ViewProviderSketch::InternalAlignedGeoColor                 (0.7f,0.7f,0
 SbColor ViewProviderSketch::FullyConstraintElementColor             (0.50f,0.81f,0.62f);  // #80D0A0 -> (128,208,160)
 SbColor ViewProviderSketch::FullyConstraintConstructionElementColor (0.56f,0.66f,0.99f);  // #8FA9FD -> (143,169,253)
 SbColor ViewProviderSketch::FullyConstraintInternalAlignmentColor   (0.87f,0.87f,0.78f);  // #DEDEC8 -> (222,222,200)
-SbColor ViewProviderSketch::FullyConstraintConstructionPointColor   (1.0f,0.58f,0.50f);   // #FF9580 -> (255,149,128)
 SbColor ViewProviderSketch::InvalidSketchColor                      (1.0f,0.42f,0.0f);    // #FF6D00 -> (255,109,  0)
 
 // Variables for holding previous click
@@ -4074,11 +4072,38 @@ void ViewProviderSketch::updateBaseColor()
         return false;
     };
 
-    auto isDefinedGeomPoint = [](Sketcher::SketchObject* obj, int GeoId) -> bool {
+    // the end of a curve that is not construction geometry (and a point
+    // that is not): drawn as the curve is
+    auto isDefinedGeomPoint = [](Sketcher::SketchObject* obj, int GeoId, PointPos PosId) -> bool {
         const Part::Geometry* geom = obj->getGeometry(GeoId);
-        if (geom)
-            return geom->getTypeId() == Part::GeomPoint::getClassTypeId() && !Sketcher::GeometryFacade::getConstruction(geom);
+        if (geom) {
+            bool isStartOrEnd = PosId == PointPos::start || PosId == PointPos::end;
+            return isStartOrEnd && !Sketcher::GeometryFacade::getConstruction(geom);
+        }
         return false;
+    };
+
+    // an external geometry's colour, by its state
+    auto externalColor = [](const Part::Geometry* geo) -> SbColor {
+        auto egf = ExternalGeometryFacade::getFacade(geo);
+        SbColor color;
+        if (egf->getRef().empty())
+            color = CurveDetachedColor;
+        else if (egf->testFlag(ExternalGeometryExtension::Missing))
+            color = CurveMissingColor;
+        else if (egf->testFlag(ExternalGeometryExtension::Frozen))
+            color = CurveFrozenColor;
+        else
+            color = CurveExternalColor;
+        if (egf->testFlag(ExternalGeometryExtension::Defining)
+                && !egf->testFlag(ExternalGeometryExtension::Missing)) {
+            float hsv[3];
+            color.getHSVValue(hsv);
+            hsv[1] = 0.4;
+            hsv[2] = 1.0;
+            color.setHSVValue(hsv);
+        }
+        return color;
     };
 
     auto isInternalAlignedGeom = [](Sketcher::SketchObject* obj, int GeoId) -> bool {
@@ -4112,46 +4137,48 @@ void ViewProviderSketch::updateBaseColor()
                             getSketchObject()->getLastHasMalformedConstraints()) && !showOriginalColor;
     bool fullyConstrained = edit->FullyConstrained && !showOriginalColor;
 
-    // colors of the point set
-    if( invalidSketch ) {
-        for (int  i=0; i < PtNum; i++)
-            pcolor[i] = InvalidSketchColor;
-    }
-    else if (fullyConstrained) {
-        for (int  i=0; i < PtNum; i++)
-            pcolor[i] = FullyConstrainedColor;
-    }
-    else {
-        for (int  i=0; i < PtNum; i++) {
-            int GeoId;
-            PointPos PosId;
-            if (i == 0)
-                GeoId = Sketcher::GeoEnum::RtPnt;
-            else
-                getSketchObject()->getGeoVertexIndex(edit->PointIdToVertexId[i], GeoId, PosId);
+    // colors of the point set. A point is drawn as what it belongs to
+    // (upstream f5da655429): the end of a normal curve in the curve's
+    // colour, every other point -- a centre, any point of construction
+    // geometry -- in the construction colour, an external geometry's in its
+    // own. There is no vertex colour beside these any more.
+    for (int i = 0; i < PtNum; i++) {
+        int GeoId;
+        PointPos PosId = PointPos::none;
+        if (i == 0)
+            GeoId = Sketcher::GeoEnum::RtPnt;
+        else
+            getSketchObject()->getGeoVertexIndex(edit->PointIdToVertexId[i], GeoId, PosId);
 
+        if (GeoId <= Sketcher::GeoEnum::RefExt) {
+            if (auto geo = getSketchObject()->getGeometry(GeoId))
+                pcolor[i] = externalColor(geo);
+            else
+                pcolor[i] = CurveExternalColor;
+        }
+        else if (invalidSketch) {
+            pcolor[i] = InvalidSketchColor;
+        }
+        else if (fullyConstrained) {
+            pcolor[i] = FullyConstrainedColor;
+        }
+        else if (i == 0) {
+            // the origin is where it is
+            pcolor[i] = FullyConstraintElementColor;
+        }
+        else {
             bool constrainedElement = isFullyConstraintElement(getSketchObject(), GeoId);
 
-            if(isInternalAlignedGeom(getSketchObject(), GeoId)) {
-                if(constrainedElement)
-                    pcolor[i] = FullyConstraintInternalAlignmentColor;
-                else
-                    pcolor[i] = InternalAlignedGeoColor;
+            if (isInternalAlignedGeom(getSketchObject(), GeoId)) {
+                pcolor[i] = constrainedElement ? FullyConstraintInternalAlignmentColor
+                                               : InternalAlignedGeoColor;
+            }
+            else if (!isDefinedGeomPoint(getSketchObject(), GeoId, PosId)) {
+                pcolor[i] = constrainedElement ? FullyConstraintConstructionElementColor
+                                               : CurveDraftColor;
             }
             else {
-                if(!isDefinedGeomPoint(getSketchObject(), GeoId)) {
-
-                    if(constrainedElement)
-                        pcolor[i] = FullyConstraintConstructionPointColor;
-                    else
-                        pcolor[i] = VertexColor;
-                }
-                else { // this is a defined GeomPoint
-                    if(constrainedElement)
-                        pcolor[i] = FullyConstraintElementColor;
-                    else
-                        pcolor[i] = CurveColor;
-                }
+                pcolor[i] = constrainedElement ? FullyConstraintElementColor : CurveColor;
             }
         }
     }
@@ -4234,23 +4261,7 @@ void ViewProviderSketch::updateBaseColor()
             auto geo = getSketchObject()->getGeometry(GeoId);
             if (!geo)
                 continue;
-            auto egf = ExternalGeometryFacade::getFacade(geo);
-            if(egf->getRef().empty())
-                color[i] = CurveDetachedColor;
-            else if(egf->testFlag(ExternalGeometryExtension::Missing))
-                color[i] = CurveMissingColor;
-            else if(egf->testFlag(ExternalGeometryExtension::Frozen))
-                color[i] = CurveFrozenColor;
-            else
-                color[i] = CurveExternalColor;
-            if(egf->testFlag(ExternalGeometryExtension::Defining)
-                    && !egf->testFlag(ExternalGeometryExtension::Missing)) {
-                float hsv[3];
-                color[i].getHSVValue(hsv);
-                hsv[1] = 0.4;
-                hsv[2] = 1.0;
-                color[i].setHSVValue(hsv);
-            }
+            color[i] = externalColor(geo);
             for (int k=j; k<j+vcount; k++) {
                 verts[k].getValue(x,y,z);
                 verts[k] = SbVec3f(x,y,zExtLine);
@@ -5663,14 +5674,12 @@ void ViewProviderSketch::OnChange(Base::Subject<const char*> &rCaller, const cha
         "EditSketcherFontSize",
         "ConstraintIconLabelsPerLine",
         "ConstraintIconLabelLines",
-        "EditedVertexColor",
         "EditedEdgeColor",
         "ConstructionColor",
         "InternalAlignedGeoColor",
         "FullyConstraintElementColor",
         "FullyConstraintConstructionElementColor",
         "FullyConstraintInternalAlignmentColor",
-        "FullyConstraintConstructionPointColor",
         "FullyConstraintElementColor",
         "InvalidSketchColor",
         "FullyConstrainedColor",
@@ -5920,23 +5929,21 @@ void ViewProviderSketch::initParams()
     static bool _ColorInited;
 
     unsigned long color;
-    static unsigned long defVertexColor, defCurveColor,
+    static unsigned long defCurveColor,
                          defCurveDraftColor, defInternalAlignedGeoColor, defFullyConstraintElementColor,
                          defFullyConstraintConstructionElementColor, defFullyConstraintInternalAlignmentColor,
-                         defFullyConstraintConstructionPointColor, defInvalidSketchColor, defFullyConstrainedColor,
+                         defInvalidSketchColor, defFullyConstrainedColor,
                          defConstrDimColor, defConstrIcoColor, defNonDrivingConstrDimColor, defExprBasedConstrDimColor,
                          defDeactivatedConstrDimColor, defCurveExternalColor,defCurveFrozenColor, defCurveDetachedColor,
                          defCurveMissingColor;
     if (!_ColorInited) {
         _ColorInited = true;
-        defVertexColor = (unsigned long)(VertexColor.getPackedValue());
         defCurveColor = (unsigned long)(CurveColor.getPackedValue());
         defCurveDraftColor = (unsigned long)(CurveDraftColor.getPackedValue());
         defInternalAlignedGeoColor = (unsigned long)(InternalAlignedGeoColor.getPackedValue());
         defFullyConstraintElementColor = (unsigned long)(FullyConstraintElementColor.getPackedValue());
         defFullyConstraintConstructionElementColor = (unsigned long)(FullyConstraintConstructionElementColor.getPackedValue());
         defFullyConstraintInternalAlignmentColor = (unsigned long)(FullyConstraintInternalAlignmentColor.getPackedValue());
-        defFullyConstraintConstructionPointColor = (unsigned long)(FullyConstraintConstructionPointColor.getPackedValue());
         defInvalidSketchColor = (unsigned long)(InvalidSketchColor.getPackedValue());
         defFullyConstrainedColor = (unsigned long)(FullyConstrainedColor.getPackedValue());
         defConstrDimColor = (unsigned long)(ConstrDimColor.getPackedValue());
@@ -5949,9 +5956,6 @@ void ViewProviderSketch::initParams()
         defCurveDetachedColor = (unsigned long)(CurveDetachedColor.getPackedValue());
         defCurveMissingColor = (unsigned long)(CurveMissingColor.getPackedValue());
     }
-    // set the point color
-    color = hGrp->GetUnsigned("EditedVertexColor", defVertexColor);
-    VertexColor.setPackedValue((uint32_t)color, transparency);
     // set the curve color
     color = hGrp->GetUnsigned("EditedEdgeColor", defCurveColor);
     CurveColor.setPackedValue((uint32_t)color, transparency);
@@ -5971,8 +5975,6 @@ void ViewProviderSketch::initParams()
     color = hGrp->GetUnsigned("FullyConstraintInternalAlignmentColor", defFullyConstraintInternalAlignmentColor);
     FullyConstraintInternalAlignmentColor.setPackedValue((uint32_t)color, transparency);
     // set the color for fully constrained construction points
-    color = hGrp->GetUnsigned("FullyConstraintConstructionPointColor", defFullyConstraintConstructionPointColor);
-    FullyConstraintConstructionPointColor.setPackedValue((uint32_t)color, transparency);
     // set the cross lines color
     //CrossColorV.setPackedValue((uint32_t)color, transparency);
     //CrossColorH.setPackedValue((uint32_t)color, transparency);
