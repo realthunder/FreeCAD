@@ -154,7 +154,7 @@ struct ToolBarOptions
             "User parameter:BaseApp/Preferences/Mod/Sketcher/Commands");
         return {constraints->GetBool("UnifiedCoincident", true),
                 constraints->GetBool("AutoHorVer", true),
-                commands->GetBool("UnifiedLineCommands", false)};
+                commands->GetBool("UnifiedLineCommands", true)};
     }
 
     bool operator==(const ToolBarOptions& other) const

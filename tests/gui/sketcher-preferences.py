@@ -151,12 +151,13 @@ def run():
         cons, geom = bar("Sketcher constraints"), bar("Sketcher geometries")
         start = (cons, geom)
         check("at the start: one coincident tool, the horizontal/vertical group, "
-              "polyline and line apart",
+              "polyline and line in a group (upstream's defaults)",
               cons is not None and geom is not None
               and "Sketcher_ConstrainCoincidentUnified" in cons
               and "Sketcher_CompHorVer" in cons
-              and "Sketcher_CreatePolyline" in geom and "Sketcher_CreateLine" in geom
-              and "Sketcher_CompLine" not in geom, (cons, geom))
+              and "Sketcher_CompLine" in geom
+              and "Sketcher_CreatePolyline" not in geom and "Sketcher_CreateLine" not in geom,
+              (cons, geom))
 
         # -- nothing touched ---------------------------------------------
         shown = in_preferences(
@@ -171,16 +172,16 @@ def run():
 
         # -- the three options -------------------------------------------
         def regroup(dialog):
-            widget(dialog, "checkBoxLineGroup").setChecked(True)
+            widget(dialog, "checkBoxLineGroup").setChecked(False)
             widget(dialog, "checkBoxHorVerAuto").setChecked(False)
             widget(dialog, "checkBoxUnifiedCoincident").setChecked(False)
             return True
 
         check("the page has the line group's check box", in_preferences(regroup) is True)
         cons, geom = bar("Sketcher constraints"), bar("Sketcher geometries")
-        check("saved: the polyline and line commands are a group on the tool bar",
-              geom is not None and "Sketcher_CompLine" in geom
-              and "Sketcher_CreatePolyline" not in geom, geom)
+        check("saved: the polyline and line commands are two buttons on the tool bar",
+              geom is not None and "Sketcher_CreatePolyline" in geom
+              and "Sketcher_CreateLine" in geom and "Sketcher_CompLine" not in geom, geom)
         check("saved: horizontal and vertical are two tools",
               cons is not None and "Sketcher_ConstrainHorizontal" in cons
               and "Sketcher_ConstrainVertical" in cons
@@ -194,8 +195,8 @@ def run():
             at = names.index(old[0])
             return names[:at] + new + names[at + len(old):]
 
-        want_geom = swapped(start[1], ["Sketcher_CreatePolyline", "Sketcher_CreateLine"],
-                            ["Sketcher_CompLine"])
+        want_geom = swapped(start[1], ["Sketcher_CompLine"],
+                            ["Sketcher_CreatePolyline", "Sketcher_CreateLine"])
         want_cons = swapped(swapped(start[0], ["Sketcher_ConstrainCoincidentUnified"],
                                     ["Sketcher_ConstrainCoincident",
                                      "Sketcher_ConstrainPointOnObject"]),
@@ -225,10 +226,10 @@ def run():
                     "scale": dim.GetInt("AutoScaleMode", 2),
                     "onview": tools.GetInt("OnViewParameterVisibility", 1),
                     "lines": FreeCAD.ParamGet(SKETCHER + "/Commands").GetBool(
-                        "UnifiedLineCommands", False)}
+                        "UnifiedLineCommands", True)}
 
         defaults = {"single": True, "separated": False, "diameter": True, "radius": True,
-                    "scale": 2, "onview": 1, "lines": False}
+                    "scale": 2, "onview": 1, "lines": True}
         before = stored()
         check("the dimensioning, scaling and on-view settings are stored, none at its default",
               all(before[k] != defaults[k] for k in ("single", "separated", "diameter",

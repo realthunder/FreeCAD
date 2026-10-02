@@ -244,7 +244,7 @@ void SketchObject::setupObject()
     ArcFitTolerance.setValue(hGrpp->GetFloat("ArcFitTolerance", Precision::Confusion()*10.0));
     ExternalBSplineMaxDegree.setValue(hGrpp->GetInt("ExternalBSplineMaxDegree", 5));
     ExternalBSplineTolerance.setValue(hGrpp->GetFloat("ExternalBSplineTolerance", 1e-4));
-    MakeInternals.setValue(hGrpp->GetBool("MakeInternals", false));
+    MakeInternals.setValue(hGrpp->GetBool("MakeInternals", true));
     inherited::setupObject();
 }
 

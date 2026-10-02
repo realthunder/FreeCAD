@@ -94,6 +94,10 @@ def square(doc, name):
            FreeCAD.Vector(10, 10, 0), FreeCAD.Vector(0, 10, 0)]
     for i in range(4):
         sk.addGeometry(Part.LineSegment(pts[i], pts[(i + 1) % 4]), False)
+    # No internal face until section D asks for one (new sketches have them
+    # by default now): the samples sit on an edge, and one pixel on the
+    # boundary of a face is the edge or the face by rounding.
+    sk.MakeInternals = False
     return sk
 
 

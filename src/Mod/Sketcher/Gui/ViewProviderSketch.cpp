@@ -4879,7 +4879,7 @@ QString ViewProviderSketch::getPresentationString(const Constraint *constraint)
     // Get value of HideUnits option. Default is false.
     iHideUnits = hGrpSketcher->GetBool("HideUnits", 0);
     // Get Value of ShowDimensionalName option. Default is true.
-    iShowDimName = hGrpSketcher->GetBool("ShowDimensionalName", false);
+    iShowDimName = hGrpSketcher->GetBool("ShowDimensionalName", true);
     // Get the defined format string
     formatStr = QString::fromStdString(hGrpSketcher->GetASCII("DimensionalStringFormat", "%N = %V"));
 

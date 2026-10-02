@@ -301,7 +301,7 @@ inline void SketcherAddWorkspaceLines<Gui::ToolBarItem>(Gui::ToolBarItem& geom)
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher/Commands");
 
-    if (hGrp->GetBool("UnifiedLineCommands", false)) {
+    if (hGrp->GetBool("UnifiedLineCommands", true)) {
         geom << "Sketcher_CompLine";
     }
     else {
