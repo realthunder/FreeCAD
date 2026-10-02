@@ -1266,11 +1266,26 @@ bool ViewProviderSketch::mouseButtonPressed(int Button, bool pressed, const SbVe
         }
     }
 
+    // What a running tool is given instead: the pointer's place on the
+    // sketch plane, or the vertex under it -- upstream's rule, and what the
+    // tool's own mouse move gets. The hit on a CURVE is for a drag, which
+    // has to start on the curve it grabs (1b87d4f072). A tool given it lands
+    // on whatever the pick radius reaches, and its own preview is drawn
+    // right there: a B-spline's second point was put on the preview segment,
+    // three pixels short of the click.
+    double toolX,toolY;
     try {
         getCoordsOnSketchPlane(pos, normal, x, y);
         snapPoint(x, y);
         prvPickedPoint[0] = x;
         prvPickedPoint[1] = y;
+        toolX = x;
+        toolY = y;
+        if (pp && pp->getDetail()
+            && pp->getDetail()->getTypeId() != SoPointDetail::getClassTypeId()) {
+            getCoordsOnSketchPlane(point, normal, toolX, toolY);
+            snapPoint(toolX, toolY);
+        }
     }
     catch (const Base::ZeroDivisionError&) {
         return false;
@@ -1360,7 +1375,7 @@ bool ViewProviderSketch::mouseButtonPressed(int Button, bool pressed, const SbVe
                     return done;
                 }
                 case STATUS_SKETCH_UseHandler:
-                    return edit->sketchHandler->pressButton(Base::Vector2d(x,y));
+                    return edit->sketchHandler->pressButton(Base::Vector2d(toolX,toolY));
                 default:
                     return false;
             }
@@ -1504,7 +1519,7 @@ bool ViewProviderSketch::mouseButtonPressed(int Button, bool pressed, const SbVe
                     // edit cursor back in place of the tool's (upstream
                     // a1487106ab)
                     edit->sketchHandler->applyCursor();
-                    return edit->sketchHandler->releaseButton(Base::Vector2d(x,y));
+                    return edit->sketchHandler->releaseButton(Base::Vector2d(toolX,toolY));
                 }
                 case STATUS_NONE:
                 default:

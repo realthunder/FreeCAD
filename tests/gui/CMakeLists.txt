@@ -899,3 +899,10 @@ endif()
 fc_add_gui_test(GuiSketcherPreferences_tests_run
                 sketcher-preferences.py
                 --timeout 120)
+
+# A drawing tool puts its point where the pointer is, not on whatever the
+# pick radius reaches -- its own preview first: the B-spline tool's poles
+# landed three pixels short of the click.
+fc_add_gui_test(GuiSketchToolClickPosition_tests_run
+                sketch-tool-click-position.py
+                --timeout 120)
