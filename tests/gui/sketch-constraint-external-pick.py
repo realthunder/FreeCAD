@@ -126,8 +126,15 @@ def click(view, pt):
     for _ in range(2):
         mouse(view, QtCore.QEvent.MouseMove, pt, QtCore.Qt.NoButton, QtCore.Qt.NoButton)
         settle(0.4)
+    # And once more with nothing in between, before the press and before
+    # the release: any redraw forgets it, not only the tool's own, and
+    # under load one came due inside those waits -- the click then found
+    # nothing under a pointer that had not moved (2 in 45 runs beside the
+    # whole suite).
+    mouse(view, QtCore.QEvent.MouseMove, pt, QtCore.Qt.NoButton, QtCore.Qt.NoButton)
     mouse(view, QtCore.QEvent.MouseButtonPress, pt, QtCore.Qt.LeftButton, QtCore.Qt.LeftButton)
     settle(0.15)
+    mouse(view, QtCore.QEvent.MouseMove, pt, QtCore.Qt.NoButton, QtCore.Qt.LeftButton)
     mouse(view, QtCore.QEvent.MouseButtonRelease, pt, QtCore.Qt.LeftButton, QtCore.Qt.NoButton)
     settle(0.5)
 
@@ -380,6 +387,7 @@ def probe(doc, sk, view):
         # something of its own under the click that ends the dimension.
         undo0 = doc.UndoCount
         click(view, CIRCLE)
+        note("dimension, after the circle: %s %s" % (selected(sk), state_of(sk)))
         click(view, EMPTY)
         st = state_of(sk)
         check("dimension: a circle and a click on empty space finish its dimension",
