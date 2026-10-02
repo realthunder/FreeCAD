@@ -192,6 +192,11 @@ public:
 
     SbVec3f getRotationCenter(SbBool&) const;
 
+    /// The time on a clock that never steps, for an interval between two
+    /// events (an event's own stamp is the time of day, which a clock
+    /// resync moves back). Only the difference of two has a meaning.
+    static SbTime steadyTime();
+
 protected:
     void initialize();
     void finalize();
@@ -235,7 +240,7 @@ protected:
     virtual void openPopupMenu(const SbVec2s& position);
 
     void clearLog();
-    void addToLog(const SbVec2s pos, const SbTime time);
+    void addToLog(const SbVec2s pos);
 
     void syncModifierKeys(const SoEvent * const ev);
 
@@ -260,6 +265,8 @@ protected:
     SbVec2s globalPos;
     SbVec2s localPos;
     SbPlane panningplane;
+    // From steadyTime(), as the mouse log's stamps are: a press and its
+    // release are told apart from a click by a clock that does not step
     SbTime centerTime;
     SbBool lockrecenter;
     SbBool menuenabled;

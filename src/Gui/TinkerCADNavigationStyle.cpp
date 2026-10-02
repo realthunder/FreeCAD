@@ -139,7 +139,7 @@ SbBool TinkerCADNavigationStyle::processSoEvent(const SoEvent * const ev)
             if (press && (curmode == NavigationStyle::IDLE)) {
                 // Use this variable to spot move events
                 saveCursorPosition(ev);
-                this->centerTime = ev->getTime();
+                this->centerTime = steadyTime();
                 processed = true;
             }
             // Don't show the context menu after dragging, panning or zooming
@@ -162,7 +162,7 @@ SbBool TinkerCADNavigationStyle::processSoEvent(const SoEvent * const ev)
         case SoMouseButtonEvent::BUTTON3:
             this->button3down = press;
             if (press) {
-                this->centerTime = ev->getTime();
+                this->centerTime = steadyTime();
                 float ratio = vp.getViewportAspectRatio();
                 SbViewVolume vv = viewer->getSoRenderManager()->getCamera()->getViewVolume(ratio);
                 this->panningplane = vv.getPlane(viewer->getSoRenderManager()->getCamera()->focalDistance.getValue());
@@ -186,7 +186,7 @@ SbBool TinkerCADNavigationStyle::processSoEvent(const SoEvent * const ev)
             processed = true;
         }
         else if (curmode == NavigationStyle::DRAGGING) {
-            this->addToLog(event->getPosition(), event->getTime());
+            this->addToLog(event->getPosition());
             this->spin(posn);
             moveCursorPosition();
             processed = true;

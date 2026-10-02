@@ -158,7 +158,7 @@ SbBool OpenCascadeNavigationStyle::processSoEvent(const SoEvent * const ev)
                           this->currentmode == NavigationStyle::ZOOMING)) {
                 newmode = NavigationStyle::DRAGGING;
                 saveCursorPosition(ev);
-                this->centerTime = ev->getTime();
+                this->centerTime = steadyTime();
                 processed = true;
             }
             else if (!press && (this->currentmode == NavigationStyle::DRAGGING)) {
@@ -169,7 +169,7 @@ SbBool OpenCascadeNavigationStyle::processSoEvent(const SoEvent * const ev)
             break;
         case SoMouseButtonEvent::BUTTON3:
             if (press) {
-                this->centerTime = ev->getTime();
+                this->centerTime = steadyTime();
                 float ratio = vp.getViewportAspectRatio();
                 SbViewVolume vv = viewer->getSoRenderManager()->getCamera()->getViewVolume(ratio);
                 this->panningplane = vv.getPlane(viewer->getSoRenderManager()->getCamera()->focalDistance.getValue());
@@ -219,7 +219,7 @@ SbBool OpenCascadeNavigationStyle::processSoEvent(const SoEvent * const ev)
             processed = true;
         }
         else if (this->currentmode == NavigationStyle::DRAGGING) {
-            this->addToLog(event->getPosition(), event->getTime());
+            this->addToLog(event->getPosition());
             this->spin(posn);
             moveCursorPosition();
             processed = true;

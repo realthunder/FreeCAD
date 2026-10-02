@@ -158,7 +158,7 @@ SbBool OpenSCADNavigationStyle::processSoEvent(const SoEvent * const ev)
                           curmode == NavigationStyle::ZOOMING)) {
                 newmode = NavigationStyle::DRAGGING;
                 saveCursorPosition(ev);
-                this->centerTime = ev->getTime();
+                this->centerTime = steadyTime();
                 processed = true;
             }
             else if (!press && (curmode == NavigationStyle::DRAGGING)) {
@@ -169,7 +169,7 @@ SbBool OpenSCADNavigationStyle::processSoEvent(const SoEvent * const ev)
         case SoMouseButtonEvent::BUTTON3:
             this->button3down = press;
             if (press) {
-                this->centerTime = ev->getTime();
+                this->centerTime = steadyTime();
                 float ratio = vp.getViewportAspectRatio();
                 SbViewVolume vv = viewer->getSoRenderManager()->getCamera()->getViewVolume(ratio);
                 this->panningplane = vv.getPlane(viewer->getSoRenderManager()->getCamera()->focalDistance.getValue());
@@ -192,7 +192,7 @@ SbBool OpenSCADNavigationStyle::processSoEvent(const SoEvent * const ev)
         if (curmode == NavigationStyle::SELECTION) {
             newmode = NavigationStyle::DRAGGING;
             saveCursorPosition(ev);
-            this->centerTime = ev->getTime();
+            this->centerTime = steadyTime();
         }
         else if (curmode == NavigationStyle::ZOOMING) {
             // OpenSCAD uses vertical mouse position, not horizontal
@@ -209,7 +209,7 @@ SbBool OpenSCADNavigationStyle::processSoEvent(const SoEvent * const ev)
             processed = true;
         }
         else if (curmode == NavigationStyle::DRAGGING) {
-            this->addToLog(event->getPosition(), event->getTime());
+            this->addToLog(event->getPosition());
             this->spin(posn);
             moveCursorPosition();
             processed = true;

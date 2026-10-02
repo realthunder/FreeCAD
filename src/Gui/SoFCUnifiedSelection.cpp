@@ -81,6 +81,7 @@
 #endif
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <unordered_set>
 #include <optional>
@@ -191,6 +192,12 @@ public:
     }
 
     ~Private() {
+    }
+
+    /// Seconds since the last preselection pick ran
+    double sincePreselect() const {
+        return std::chrono::duration<double>(
+                std::chrono::steady_clock::now() - preselTime).count();
     }
 
     bool useRenderer() const {
@@ -386,7 +393,9 @@ public:
     int32_t preSelection;
     SoColorPacker colorpacker;
 
-    SbTime preselTime;
+    // On the steady clock: the time of day is stepped back where it is
+    // resynced, and each step put one hover pick off by the delay
+    std::chrono::steady_clock::time_point preselTime;
     SoTimerSensor preselTimer;
     SbVec2s preselPos;
     SbViewportRegion preselViewport;
@@ -1475,7 +1484,7 @@ void SoFCUnifiedSelection::Private::onPreselectTimer() {
         }
     }
 
-    preselTime = SbTime::getTimeOfDay();
+    preselTime = std::chrono::steady_clock::now();
 }
 
 bool SoFCUnifiedSelection::Private::setHighlight(PickedInfo &&info) {
@@ -2020,7 +2029,7 @@ SoFCUnifiedSelection::Private::handleEvent(SoHandleEventAction * action)
             // and its one position slot cannot belong to N clients whose
             // moves interleave, so each replayed move picks inline -- the
             // per-move cost an edit mode's own pick already pays there.
-            if(pcViewer && delay>0.0 && (SbTime::getTimeOfDay()-preselTime).getValue()<delay) {
+            if(pcViewer && delay>0.0 && sincePreselect()<delay) {
                 if(!preselTimer.isScheduled()) {
                     preselTimer.setInterval(delay);
                     preselTimer.schedule();

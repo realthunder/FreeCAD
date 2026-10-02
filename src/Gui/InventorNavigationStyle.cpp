@@ -125,7 +125,7 @@ SbBool InventorNavigationStyle::processSoEvent(const SoEvent * const ev)
             this->button1down = press;
             if (press && ev->wasShiftDown() &&
                 (this->currentmode != NavigationStyle::SELECTION)) {
-                this->centerTime = ev->getTime();
+                this->centerTime = steadyTime();
                 float ratio = vp.getViewportAspectRatio();
                 SbViewVolume vv = viewer->getSoRenderManager()->getCamera()->getViewVolume(ratio);
                 this->panningplane = vv.getPlane(viewer->getSoRenderManager()->getCamera()->focalDistance.getValue());
@@ -133,7 +133,7 @@ SbBool InventorNavigationStyle::processSoEvent(const SoEvent * const ev)
             }
             else if (!press && ev->wasShiftDown() &&
                 (this->currentmode != NavigationStyle::SELECTION)) {
-                SbTime tmp = (ev->getTime() - this->centerTime);
+                SbTime tmp = (steadyTime() - this->centerTime);
                 float dci = (float)QApplication::doubleClickInterval()/1000.0f;
                 // is it just a left click?
                 if (tmp.getValue() < dci && !this->lockrecenter) {
@@ -190,14 +190,14 @@ SbBool InventorNavigationStyle::processSoEvent(const SoEvent * const ev)
             break;
         case SoMouseButtonEvent::BUTTON3:
             if (press) {
-                this->centerTime = ev->getTime();
+                this->centerTime = steadyTime();
                 float ratio = vp.getViewportAspectRatio();
                 SbViewVolume vv = viewer->getSoRenderManager()->getCamera()->getViewVolume(ratio);
                 this->panningplane = vv.getPlane(viewer->getSoRenderManager()->getCamera()->focalDistance.getValue());
                 this->lockrecenter = false;
             }
             else {
-                SbTime tmp = (ev->getTime() - this->centerTime);
+                SbTime tmp = (steadyTime() - this->centerTime);
                 float dci = (float)QApplication::doubleClickInterval()/1000.0f;
                 // is it just a middle click?
                 if (tmp.getValue() < dci && !this->lockrecenter) {
@@ -229,7 +229,7 @@ SbBool InventorNavigationStyle::processSoEvent(const SoEvent * const ev)
             processed = true;
         }
         else if (this->currentmode == NavigationStyle::DRAGGING) {
-            this->addToLog(event->getPosition(), event->getTime());
+            this->addToLog(event->getPosition());
             this->spin(posn);
             moveCursorPosition();
             processed = true;

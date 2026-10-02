@@ -874,3 +874,19 @@ fc_add_gui_test(GuiSketchConstraintToolSelectPath_tests_run
 fc_add_gui_test(GuiSketchConstraintPanel_tests_run
                 sketch-constraint-panel.py
                 --timeout 120)
+
+# A step of the wall clock changes nothing the pointer does: no spin after
+# a rest, no click out of a held button, no hover pick put off. The step
+# is made on demand by a preloaded gettimeofday(), so the test needs a
+# loader that takes LD_PRELOAD.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_library(FCClockStepShim MODULE clock-step-shim.c)
+    target_link_libraries(FCClockStepShim PRIVATE ${CMAKE_DL_LIBS})
+    set_target_properties(FCClockStepShim PROPERTIES
+        PREFIX "" C_VISIBILITY_PRESET default
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/tests/gui")
+    fc_add_gui_test(GuiClockStep_tests_run clock-step.py --timeout 180)
+    set_property(TEST GuiClockStep_tests_run APPEND PROPERTY ENVIRONMENT
+        "FC_CLOCK_SHIM=$<TARGET_FILE:FCClockStepShim>"
+        "LD_PRELOAD=$<TARGET_FILE:FCClockStepShim>")
+endif()
