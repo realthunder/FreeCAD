@@ -293,6 +293,44 @@ void SketcherSettings::changeEvent(QEvent* e)
     }
 }
 
+void SketcherSettings::resetSettingsToDefaults()
+{
+    // What this page keeps outside its Gui::Pref* widgets: the combo boxes
+    // are filled and stored by hand, so the base class does not know them
+    ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Mod/Sketcher/dimensioning");
+    const ToolBarOptions previousToolBars = ToolBarOptions::read();
+    const bool previousSingleTool = hGrp->GetBool("SingleDimensioningTool", true);
+    const bool previousSeparatedTools = hGrp->GetBool("SeparatedDimensioningTools", false);
+
+    // the dimensioning tools on the tool bar
+    hGrp->RemoveBool("SingleDimensioningTool");
+    hGrp->RemoveBool("SeparatedDimensioningTools");
+
+    // radius or diameter for the Dimension tool
+    hGrp->RemoveBool("DimensioningDiameter");
+    hGrp->RemoveBool("DimensioningRadius");
+
+    hGrp->RemoveInt("AutoScaleMode");
+
+    hGrp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Mod/Sketcher/Tools");
+    hGrp->RemoveInt("OnViewParameterVisibility");
+
+    // and what the Gui::Pref* widgets keep
+    PreferencePage::resetSettingsToDefaults();
+
+    // The dialog makes a new page after this and never saves the old one, so
+    // the tool bars follow here
+    hGrp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Mod/Sketcher/dimensioning");
+    if (previousSingleTool != hGrp->GetBool("SingleDimensioningTool", true)
+        || previousSeparatedTools != hGrp->GetBool("SeparatedDimensioningTools", false)
+        || !(ToolBarOptions::read() == previousToolBars)) {
+        reinstallToolBars();
+    }
+}
+
 /* TRANSLATOR SketcherGui::SketcherSettingsGrid */
 
 SketcherSettingsGrid::SketcherSettingsGrid(QWidget* parent)

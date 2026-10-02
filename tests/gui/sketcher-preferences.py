@@ -16,7 +16,10 @@ Claims:
   - a change of any of the three reaches the tool bars when the page is
     saved, with no restart (upstream asks for one, 4f429e3288; here the
     workbench installs its bars again, as it did for the dimensioning mode
-    alone).
+    alone);
+  - "Reset page" takes back what the page keeps outside its own widgets too:
+    the dimensioning tools, the radius/diameter mode, the scaling mode, the
+    on-view parameters (upstream 09209436d2).
 
 The preferences dialog is modal: every step into it is a timer that fires
 inside its event loop, does its part and presses OK.
@@ -196,6 +199,45 @@ def run():
                             ["Sketcher_ConstrainHorizontal", "Sketcher_ConstrainVertical"])
         check("each in the place of what it replaces, not at the end of its bar",
               geom == want_geom and cons == want_cons, (cons, geom))
+
+        # -- reset page ----------------------------------------------------
+        def other_settings(dialog):
+            widget(dialog, "dimensioningMode").setCurrentIndex(1)
+            widget(dialog, "radiusDiameterMode").setCurrentIndex(2)
+            widget(dialog, "autoScaleMode").setCurrentIndex(1)
+            widget(dialog, "ovpVisibility").setCurrentIndex(2)
+            return True
+
+        in_preferences(other_settings)
+        dim = FreeCAD.ParamGet(SKETCHER + "/dimensioning")
+        tools = FreeCAD.ParamGet(SKETCHER + "/Tools")
+
+        def stored():
+            # with the defaults the page and the workbench read them with
+            return {"single": dim.GetBool("SingleDimensioningTool", True),
+                    "separated": dim.GetBool("SeparatedDimensioningTools", False),
+                    "diameter": dim.GetBool("DimensioningDiameter", True),
+                    "radius": dim.GetBool("DimensioningRadius", True),
+                    "scale": dim.GetInt("AutoScaleMode", 2),
+                    "onview": tools.GetInt("OnViewParameterVisibility", 1),
+                    "lines": FreeCAD.ParamGet(SKETCHER + "/Commands").GetBool(
+                        "UnifiedLineCommands", False)}
+
+        defaults = {"single": True, "separated": False, "diameter": True, "radius": True,
+                    "scale": 2, "onview": 1, "lines": False}
+        before = stored()
+        check("the dimensioning, scaling and on-view settings are stored, none at its default",
+              all(before[k] != defaults[k] for k in ("single", "separated", "diameter",
+                                                     "scale", "onview", "lines")), before)
+        # The OK that follows saves the page the dialog made anew, so the
+        # values are there again afterwards -- as the defaults.
+        in_preferences(reset_page)
+        after = stored()
+        check("Reset page puts every one of them back to its default", after == defaults,
+              after)
+        cons, geom = bar("Sketcher constraints"), bar("Sketcher geometries")
+        check("and the tool bars are as at the start, button for button",
+              (cons, geom) == start, (cons, geom))
     except Exception:
         note("ABORT:\n" + traceback.format_exc())
     finish()
