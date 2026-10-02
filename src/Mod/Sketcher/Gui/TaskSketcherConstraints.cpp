@@ -1282,6 +1282,8 @@ void TaskSketcherConstraints::onListWidgetConstraintsItemChanged(QListWidgetItem
     const std::vector<Sketcher::Constraint*>& vals = sketch->Constraints.getValues();
     const Sketcher::Constraint* v = vals[it->ConstraintNbr];
     const std::string currConstraintName = v->Name;
+    // read now: a rename below replaces the constraint v points at
+    const bool wasInVirtualSpace = v->isInVirtualSpace;
 
     // The item's edit text is the name as it is, empty for a constraint
     // without one (slotConstraintsChanged sets it), so a changed check box
@@ -1317,21 +1319,28 @@ void TaskSketcherConstraints::onListWidgetConstraintsItemChanged(QListWidgetItem
         }
     }
 
-    // update constraint virtual space status
-    Gui::Command::openCommand(QT_TRANSLATE_NOOP("Command", "Update constraint's virtual space"));
-    try {
-        Gui::cmdAppObjectArgs(
-            sketch,
-            "setVirtualSpace(%d, %s)",
-            it->ConstraintNbr,
-            ((item->checkState() == Qt::Checked) != sketchView->getIsShownVirtualSpace()) ? "False"
-                                                                                          : "True");
-        Gui::Command::commitCommand();
-    }
-    catch (const Base::Exception& e) {
-        Gui::Command::abortCommand();
+    // update constraint virtual space status, if the check box says another
+    // than the constraint has: any change of the item comes here, a rename
+    // too, and each used to leave an undo step that changed nothing
+    const bool toVirtualSpace =
+        (item->checkState() == Qt::Checked) == sketchView->getIsShownVirtualSpace();
+    if (toVirtualSpace != wasInVirtualSpace) {
+        Gui::Command::openCommand(
+            QT_TRANSLATE_NOOP("Command", "Update constraint's virtual space"));
+        try {
+            Gui::cmdAppObjectArgs(sketch,
+                                  "setVirtualSpace(%d, %s)",
+                                  it->ConstraintNbr,
+                                  toVirtualSpace ? "True" : "False");
+            Gui::Command::commitCommand();
+        }
+        catch (const Base::Exception& e) {
+            Gui::Command::abortCommand();
 
-        Gui::NotifyUserError(sketch, QT_TRANSLATE_NOOP("Notifications", "Value Error"), e.what());
+            Gui::NotifyUserError(sketch,
+                                 QT_TRANSLATE_NOOP("Notifications", "Value Error"),
+                                 e.what());
+        }
     }
 
     inEditMode = false;
