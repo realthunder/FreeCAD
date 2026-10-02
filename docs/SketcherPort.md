@@ -3080,11 +3080,32 @@ against the fork's own code, each measured before it was changed.
 `8a6f859a57` was ruled after: the faces follow the preference as upstream's
 do, with the fork's default colour (`94d76ec9c2`, see AutoColor above).
 
-Left open, each a decision or larger than a row: the
-annotation pick priority (`a2468774d3`, needs a probe of a sketch face on
-a solid face), the broken-external report (`07b2d9973d`, the fork's tree
-tooltip takes an icon tag), the resetEdit lifecycle (`e6d3f9d6db`, needs
-Core's `setAutoCloseOnResetEdit`).
+Left open then, each a decision or larger than a row: the annotation pick
+priority (`a2468774d3`), the broken-external report (`07b2d9973d`), the
+resetEdit lifecycle (`e6d3f9d6db`). Session 115 took them up:
+
+- `07b2d9973d`, **adapted** `8cdfeb6711`. Upstream merges a warning into
+  the sketch's icon and adds a tooltip hook to the tree. The fork's tree
+  already carries state marks as extra icons beside the item, each with its
+  own tooltip (`getExtraIcons`, `getToolTip` by icon tag), so the sketch
+  adds the Warning icon while an external geometry that has a reference is
+  flagged Missing, and refreshes the item only when that state flips.
+  `sketch-missing-external-tree.py` reads the icon from the tree's model: a
+  box edge as external geometry, the box turned into a cylinder and back
+  (width 192, 256, 192; it never changed before).
+- `a2468774d3`, **probed, put to the user**. A box, a sketch on its top
+  face with internal faces on: inside the sketch's region the frame shows
+  the SKETCH's face (pixel (83,195,194) against the box's (58,210,58)) and
+  a click selects the BOX's `Face6`. The pick list holds both at the same
+  depth, the box first. Two things differ from upstream. The fork's
+  coincident-pick loop (`SoFCUnifiedSelection.cpp`, `getPickedList`) stops
+  at the first hit of another view provider, so it only ever prefers an
+  edge over a face of the SAME object; and the sketch's face is in front
+  only because it is drawn later at equal depth, not because anything says
+  so. A fix has a drawing half and a picking half, both in Core.
+- `e6d3f9d6db`, **n/a until Core has it**: it moves the sketch's task
+  dialog onto `TaskDialog::setAutoCloseOnResetEdit`, which is not here. The
+  fork's `unsetEdit` closes the dialog itself, and no defect was shown.
 
 **The arc-label "flake" is a clock.** `sketch-arc-labels.py` and
 `sketch-drag-arc-conic.py` fail now and then with a drag that never
@@ -3101,7 +3122,9 @@ steps before, none after.
 It is not the only cause: `sketch-drag-arc-conic.py` failed once more
 under `ctest -j6` in session 114, after the fix (the second drag never
 started; 6 of 6 alone). Its two presses are 1.4 s apart on the steady
-clock, so the double-click hold cannot be it. Not chased.
+clock, so the double-click hold cannot be it. Chased in session 115 and
+not reproduced: 24 of 24 passed with eight copies running at once, and it
+passed in that session's full `ctest -j6`.
 
 ### The partial(sync) rows (session 115): 21 read, one left
 
