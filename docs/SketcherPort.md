@@ -3856,11 +3856,73 @@ Tests: `sketch-line-styles.py` (family 1), `sketch-display-settings.py`
 (families 2 to 4), and the Appearance page in `sketcher-preferences.py`.
 Full ctest 878 of 878.
 
-### A datum's value edited in place (design, awaiting a ruling)
+### A datum's value edited in place
 
 Ruling 4 of 2026-10-02 asked whether a dimension's value could be typed
-at its label in a browser instead of in a modal dialog. This is the
-proposal; nothing of it is built.
+at its label in a browser instead of in a modal dialog.
+
+**Ruled 2026-10-02 and built** ("1 commit. 2 in place. 3 all at once. 4 on
+enter"): a click elsewhere applies a valid value; in place is the default
+on the desktop too; several dimensions get all their boxes at once with
+Tab between them; a value is applied on Enter, with no preview while
+typing. What follows is the proposal as it was put; this is what stands:
+
+- `SketcherGui::editDatums()` (EditDatumDialog.h) is the one way to ask
+  for a value. All five sites call it. In place -- when the view the event
+  came through has no widgets, or `Mod/Sketcher/General/EditDatumInPlace`
+  is on, which is its default and a check box on the Display page -- it
+  starts a `DatumEditSession`: one `Gui::EditableDatumLabel` per
+  constraint, each standing at its constraint's own label
+  (`setAnchorLabel`). Otherwise, and for a reference or an
+  expression-driven value, the modal dialog as before. "Edit Value" in the
+  context menu is the full dialog wherever there can be one.
+- Enter applies every box as it stands in one transaction; Escape applies
+  none and aborts the open command; Tab and Shift+Tab move between the
+  boxes; a press of the first button elsewhere in the view applies, and is
+  used up by that together with its release. A box that holds no value
+  keeps the session open on Enter and makes a click elsewhere a cancel.
+- The callers return before the value is in. The Dimension tool goes on
+  from a continuation (`afterDatums`); the view provider ends a session
+  without calling back when the tool or the edit goes away, and the tool
+  gets no mouse event while one runs.
+- `EditDatumDialog::exec` refuses for a view without widgets, whoever
+  calls it. With that the dimensional commands and
+  `Sketcher_ChangeDimensionConstraint` are on the browser's command list;
+  Snell's law is not.
+
+Three things the build found:
+
+- **A command's transaction is closed when the command returns.** The
+  dialog never returned before the value was in, so the constraint and its
+  value were one undo step by accident of modality. In place they were
+  two, and Escape had nothing left to abort: the constraint stayed. The
+  session keeps the transaction open past the command's scope
+  (`App::AutoTransaction::setEnable(false)`, what entering an edit does).
+- **A box's `value()` is the last committed value**, not what is typed:
+  with keyboard tracking off the typed text waits in a cache for the box's
+  own Enter handling, which the session's filter runs ahead of. The
+  session reads the text.
+- **A key off the wire ends the session from inside the label it is
+  delivered to** (`sendKeyEvent`). Destroying the labels there was a use
+  after free, a crash on the first Enter a client sent. They are taken off
+  the screen at once and deleted later.
+
+The first dimension of a freehand sketch still scales the whole sketch
+(the auto scale), in place as in the dialog -- with one value only: the
+scaling drops what it cannot scale, and the other boxes' numbers would
+name other constraints.
+
+Tests: `tests/gui/sketch-datum-in-place.py` (a command on a selection, the
+panel, the Dimension tool, Escape, text that is no value, a click
+elsewhere, the two cases that go to the dialog) and
+`tests/gui/serve-datum-in-place.py` (a client starts
+`Sketcher_ConstrainDistance`, picks, is shown the box in its "onview"
+push, types through key frames; one undo step; no dialog on the host).
+Not covered by a test: several boxes at once and Tab between them --
+nothing a test can drive makes two driving dimensions in one go. And not
+scored against the build before: the old binary was gone by the time the
+tests were written; with the preference off the desktop test still shows
+the dialog opening, which is the old behaviour.
 
 **What is there today.** A constraint's value is edited in one place, the
 modal `EditDatumDialog`, here and at upstream's tip, opened from five

@@ -302,7 +302,8 @@ and `{"op":"resetEdit"}` are an edit session's two edges (sec 8.9 step 4);
 `{"op":"command","name":"Sketcher_CreateLine"}` starts a sketch tool, allowlisted
 for the reason sec 8.7 gives (the `Sketcher_Create*` family, plus `Sketcher_External`
 and `Sketcher_CarbonCopy` since 8.11 item 3, plus the constraint commands that open no
-dialog since 2026-10-02); `{"op":"onViewFocus","index":1}` moves the keys
+dialog since 2026-10-02, the dimensional ones among them: their value is typed at the
+label); `{"op":"onViewFocus","index":1}` moves the keys
 between that tool's on-view entry boxes, which the server states back on the
 `{"cmd":"onview"}` push (sec 8.7). `{"op":"undo"}` and `{"op":"redo"}` (an optional
 `steps`, default 1) are the document's transactions, everyone's under the shared
@@ -1379,14 +1380,15 @@ Each step is a standalone landing with the desktop as its regression oracle.
   that open no dialog, and nothing else** (8.7, 8.11 item 3). Those are, by name: `Sketcher_ConstrainHorVer`,
   `Horizontal`, `Vertical`, `Lock`, `Block`, `Coincident`, `CoincidentUnified`,
   `PointOnObject`, `Parallel`, `Perpendicular`, `Tangent`, `Equal`, `Symmetric`, `Group`,
-  and `Sketcher_ToggleDrivingConstraint`, `Sketcher_ToggleActiveConstraint`. Left off:
-  the dimensional commands (`Sketcher_Dimension`, `ConstrainDistance`, `DistanceX`,
-  `DistanceY`, `Radius`, `Diameter`, `Radiam`, `Angle`), which ask for their value in a
-  modal `EditDatumDialog` unless the host's `ShowDialogOnDistanceConstraint` is off;
-  `Sketcher_ChangeDimensionConstraint`, which is that dialog; and
-  `Sketcher_ConstrainSnellsLaw`, which has one of its own. Two things this does not
-  close: a browser's pick can still finish a dimensional tool the DESKTOP started, and
-  so open that dialog on the host; and a constraint substitution is told in a box that
+  and `Sketcher_ToggleDrivingConstraint`, `Sketcher_ToggleActiveConstraint`. And the
+  dimensional ones (`Sketcher_Dimension`, `ConstrainDistance`, `DistanceX`, `DistanceY`,
+  `Radius`, `Diameter`, `Radiam`, `Angle`) with `Sketcher_ChangeDimensionConstraint`:
+  a dimension's value is typed at its label, in the entry box of 8.7, and
+  `EditDatumDialog` refuses to open for a view without widgets whoever asks -- so a
+  browser's pick that finishes a dimensional tool the DESKTOP started gets a box too,
+  not a dialog on the host (docs/SketcherPort.md, "A datum's value edited in place").
+  Left off: `Sketcher_ConstrainSnellsLaw`, which has a dialog of its own. One thing
+  this does not close: a constraint substitution is told in a box that
   is shown, not executed -- it stops nothing, and on a host with nobody at it nobody
   closes it. The gate is
   modality, not authority: the connection may already set properties and enter edit modes,
