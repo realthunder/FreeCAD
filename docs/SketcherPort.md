@@ -3543,6 +3543,26 @@ of it (38 checks); `TestSketcherSolver.testConstraintVisibility` and
 Seen and left: `renameConstraint` takes "Constraint9" as a name for
 another constraint (the generated-name form is not refused).
 
+### DrawSketchController.h (session 117)
+
+Fourteen undecided rows, none of them open in fact. The fork's file is
+upstream's at `bd6be559e8` but for one deliberate difference -- the view an
+on-view parameter is made for is a `Gui::ViewerContext`, desktop or mirror
+-- and every handler header those rows name is identical to upstream's
+tip. A tip comparison settles a file's whole history at once; the rows'
+other files were read where they differ (`DrawSketchDefaultHandler.h`: the
+tool mode is a command here, the Escape handling is in;
+`DrawSketchHandler.cpp`: the transaction ids declined with `f4665aa7b5`).
+
+One thing the adaptation had dropped: upstream returns from
+`initNOnViewParameters` when the document is not in edit, and the fork
+asked the application for the edit document and used it unchecked. The
+guard is back.
+
+Kept, a look: `8bf54ad82f` greys the deactivated dimension colour further
+(0.8 -> 0.5). The files it changes are not the fork's; the default is
+`ViewProviderSketch`'s own here.
+
 ## 7a. The constraint-tool hints (session 85)
 
 Thirteen rows, not the eleven the sweep sized: `580d538798`, the commit

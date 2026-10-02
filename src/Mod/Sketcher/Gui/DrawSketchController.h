@@ -656,7 +656,14 @@ protected:
             return;
         }
 
+        // No document in edit (the tool starting as the edit ends): nothing
+        // to place a parameter in. Upstream asks the viewer's document for
+        // getInEdit() here; this is that guard for a view that may be a
+        // mirror.
         auto doc = Gui::Application::Instance->editDocument();
+        if (!doc) {
+            return;
+        }
         auto placement = Base::Placement(doc->getEditingTransform());
 
         for (int i = 0; i < n; i++) {
