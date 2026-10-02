@@ -3782,6 +3782,108 @@ drawn on the host and nowhere else. That is true of all ten drawing
 handlers already; putting hints on the wire is a thin-client item, not
 a port one.
 
+### A datum's value edited in place (design, awaiting a ruling)
+
+Ruling 4 of 2026-10-02 asked whether a dimension's value could be typed
+at its label in a browser instead of in a modal dialog. This is the
+proposal; nothing of it is built.
+
+**What is there today.** A constraint's value is edited in one place, the
+modal `EditDatumDialog`, here and at upstream's tip, opened from five
+sites: the constraint commands on a selection (`finishDatumConstraint`),
+the Dimension tool's `finalizeCommand`, a double click on a label
+(`ViewProviderSketch::editDoubleClicked`), an activated row of the
+constraints panel, and `Sketcher_ChangeDimensionConstraint`. What is in
+line is something else: the on-view parameters of a drawing tool
+(`Gui::EditableDatumLabel`), and those already reach a browser -- the
+"onview" push, the `onViewFocus` op and the key frames of
+docs/ThinClient.md 8.7. The modal dialog is the reason the dimensional
+commands are off the browser's command list: it blocks the GUI thread of
+a process that serves several clients, with nobody at the host to close
+it.
+
+**The proposal: the entry box of 8.7 at the constraint's own label.**
+An `EditableDatumLabel` in the acting view, its `SoDatumLabel` given the
+constraint's type, points and label parameters so that it stands exactly
+where the constraint's label is drawn, the constraint's own label hidden
+for the extent of the edit (the same switch a virtual space uses). The
+box holds the value selected, as the dialog does. On the desktop it is
+the `QuantitySpinBox` over the view; on a mirror it is the unshown box
+whose text is streamed, and the client draws and places it with the code
+it already has. No new wire message, no new client code: the set of
+on-view parameters simply has one member while a datum is edited.
+
+- Enter commits: the same `setDatum` in the same "Edit sketch datum"
+  transaction, the same first-dimension auto scale, the same history
+  entry. The commit is taken out of the dialog into one function that
+  both call, so the two cannot drift.
+- Escape cancels. Where the constraint was just made (a command or the
+  Dimension tool), that aborts the creation, as the dialog's Cancel does.
+- The units, the parser and the validation are the spin box's, so
+  "10 mm", "1 in" and "2*3" behave as in the dialog.
+- Which view: the one the event came from. Two clients of a shared
+  session each edit their own datum in their own view.
+
+**What changes shape: the callers are synchronous and this is not.**
+All five sites run `exec()` and read the result on the next line; the
+Dimension tool loops over the constraints it made and stops at the first
+rejected one. A box in the view returns at once. So the editor takes a
+continuation -- `editDatum(view, index, done)` with `done(accepted)` --
+and each site moves what followed `exec()` into it. The Dimension tool's
+loop becomes "edit the next one from `done`"; continuous mode restarts
+the tool from the last `done`. This is the one part that is real work,
+and the part to test hardest (undo steps counted before and after for
+every site).
+
+**The dialog's other three fields, and where each goes.**
+
+| field | proposal |
+|---|---|
+| name | not in the box. The constraints panel renames in place already (its context menu and F2); the dialog stays reachable on the desktop for those who want both at once |
+| reference check box | not in the box. `Sketcher_ToggleDrivingConstraint` does it and is on the browser's list already |
+| expression | the box is not bound to the property, so "=" does not open the formula editor. A constraint that HAS an expression is not edited in place: the desktop opens the dialog as today, a browser is told the value is driven by an expression |
+
+**Desktop too, or browsers only?** Proposed: one preference, in place by
+default for a view without a widget (it has no alternative), and the
+user's choice on the desktop, default the dialog as today -- so nothing
+changes for a desktop user until they ask, and `Edit Value` in the
+context menu keeps opening the full dialog either way. Prior art is on
+the side of in place: Onshape, Fusion and SolidWorks all put a small
+value box at the dimension when it is placed or double clicked, with
+name and expression elsewhere. `ShowDialogOnDistanceConstraint` keeps
+its meaning under either: whether a new dimension asks for its value at
+all.
+
+**The guarantee a served process needs** is not the box but the absence
+of the dialog: `EditDatumDialog::exec` refuses when the acting view is a
+mirror, whatever called it, and says so in the report view. With that
+in, the dimensional commands and `Sketcher_ChangeDimensionConstraint`
+join the browser's command list; Snell's law keeps its own dialog and
+stays off.
+
+**Questions for the ruling.**
+
+1. A click elsewhere while the box is open: commit what is typed (a
+   spreadsheet's rule, and what a touch user expects), or cancel (the
+   dialog's rule for a click on its close button)? Proposed: commit a
+   valid value, cancel an invalid one.
+2. The desktop default: dialog (proposed) or in place?
+3. Several dimensions made at once (the Dimension tool on a rectangle's
+   two sides): one box after another, as the dialogs come today
+   (proposed), or all boxes at once with Tab between them, as a drawing
+   tool's parameters work?
+4. A live preview while typing -- the sketch re-solved on each valid
+   value, put back on Escape -- or the value applied on Enter only, as
+   the dialog does (proposed for the first cut)?
+
+**Tests it would come with**: a desktop one (double click, type, Enter;
+Escape; a new dimension; the Dimension tool's two-constraint case; an
+expression-driven datum falls to the dialog), and a served one (the
+client starts `Sketcher_ConstrainDistance`, picks, receives the box in
+its "onview" push, types through key frames, Enter sets the datum in one
+undo step; the host shows no dialog -- measured first on today's build,
+where the dialog opens on the host and the test must fail).
+
 ## 8. Phases
 
 0. Groundwork: ledger, the split, the App-level Python tests.
