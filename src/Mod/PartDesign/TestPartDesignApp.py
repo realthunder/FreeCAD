@@ -29,6 +29,7 @@ from PartDesignTests.TestDatum import TestDatumPoint, TestDatumLine, TestDatumPl
 from PartDesignTests.TestDatum import TestCoordinateSystemInBody
 from PartDesignTests.TestShapeBinder import TestShapeBinder
 from PartDesignTests.TestShapeBinder import TestSubShapeBinder
+from PartDesignTests.TestVarSet import TestVarSet
 from PartDesignTests.TestBaseFeature import TestBaseFeature
 from PartDesignTests.TestBodyMaterial import TestBodyMaterial
 

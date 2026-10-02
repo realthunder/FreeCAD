@@ -793,6 +793,7 @@ MenuItem* StdWorkbench::setupMenuBar() const
           << "Std_MeasureDistance"
           << "Separator"
           << "Std_TextDocument"
+          << "Std_VarSet"
           << "Separator"
           << "Std_MCPServer"
           << "Separator"
@@ -887,7 +888,7 @@ ToolBarItem* StdWorkbench::setupToolBars() const
     // Structure
     auto structure = new ToolBarItem( root );
     structure->setCommand("Structure");
-    *structure << "Std_PartActions" << "Std_Group" << "Std_LinkActions" << "Std_LinkArrayActions" << "Std_DatumActions";
+    *structure << "Std_PartActions" << "Std_Group" << "Std_VarSet" << "Std_LinkActions" << "Std_LinkArrayActions" << "Std_DatumActions";
 
     // Help
     auto help = new ToolBarItem( root );

@@ -28,6 +28,7 @@
 #include <Base/Tools.h>
 #include <App/Document.h>
 #include <App/Origin.h>
+#include <App/VarSet.h>
 
 
 #include "Body.h"
@@ -243,7 +244,9 @@ bool Body::isAllowed(const Base::Type &type)
             // takes them; an origin belongs to its own container
             type.isDerivedFrom(App::DatumElement::getClassTypeId()) ||
             (type.isDerivedFrom(App::LocalCoordinateSystem::getClassTypeId())
-                && !type.isDerivedFrom(App::Origin::getClassTypeId())));
+                && !type.isDerivedFrom(App::Origin::getClassTypeId())) ||
+            // the parameters of the body (upstream ec841ed6d4)
+            type.isDerivedFrom(App::VarSet::getClassTypeId()));
 }
 
 

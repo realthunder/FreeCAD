@@ -37,6 +37,7 @@
 #include "Document.h"
 #include "MDIView.h"
 #include "MainWindow.h"
+#include "Selection.h"
 #include "ViewProviderDocumentObject.h"
 
 FC_LOG_LEVEL_INIT("Gui", true, true);
@@ -357,6 +358,59 @@ bool StdCmdGroup::isActive()
     return hasActiveDocument();
 }
 
+//===========================================================================
+// Std_VarSet (upstream 095e94183a, ec841ed6d4)
+//===========================================================================
+DEF_STD_CMD_A(StdCmdVarSet)
+
+StdCmdVarSet::StdCmdVarSet()
+  : Command("Std_VarSet")
+{
+    sGroup        = "Structure";
+    sMenuText     = QT_TR_NOOP("Variable set");
+    sToolTipText  = QT_TR_NOOP("Creates a variable set, an object that holds a set of "
+                               "properties to be used as variables");
+    sWhatsThis    = "Std_VarSet";
+    sStatusTip    = sToolTipText;
+    sPixmap       = "VarSet";
+}
+
+void StdCmdVarSet::activated(int iMsg)
+{
+    Q_UNUSED(iMsg);
+    App::Document* doc = getActiveGuiDocument()->getDocument();
+
+    openCommand(QT_TRANSLATE_NOOP("Command", "Add a variable set"));
+    std::string name = getUniqueObjectName("VarSet");
+    cmdAppDocument(doc, std::ostringstream() << "addObject('App::VarSet','" << name << "')");
+    auto varSet = doc->getObject(name.c_str());
+
+    // Into a group picked alone, a body included, when it takes one; not
+    // the selection into a new group, as Std_Group does
+    auto sels = Selection().getSelectionEx(nullptr, App::DocumentObject::getClassTypeId(),
+                                           ResolveMode::OldStyleElement, true);
+    if (varSet && sels.size() == 1) {
+        App::DocumentObject* obj = sels[0].getObject();
+        auto group = obj ? obj->getExtensionByType<App::GroupExtension>(true) : nullptr;
+        if (group && group->allowObject(varSet))
+            cmdAppObjectArgs(obj, "addObject(%s)", varSet->getFullName(true));
+    }
+
+    Selection().clearSelection();
+    Selection().addSelection(doc->getName(), name.c_str());
+    commitCommand();
+
+    if (varSet) {
+        if (auto vp = Application::Instance->getViewProvider(varSet))
+            vp->doubleClicked();
+    }
+}
+
+bool StdCmdVarSet::isActive()
+{
+    return hasActiveDocument();
+}
+
 /* Datum feature commands
  * Brought here as a shortcut for quick access. The actual command still lives in PartDesign
  */
@@ -426,6 +480,7 @@ void CreateStructureCommands()
 
     rcCmdMgr.addCommand(new StdCmdPartActions());
     rcCmdMgr.addCommand(new StdCmdGroup());
+    rcCmdMgr.addCommand(new StdCmdVarSet());
     rcCmdMgr.addCommand(new StdCmdDatumActions());
 }
 

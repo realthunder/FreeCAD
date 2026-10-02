@@ -476,6 +476,7 @@ SET(Document_CPP_SRCS
     MergeDocuments.cpp
     ShaderObject.cpp
     TextDocument.cpp
+    VarSet.cpp
     ExpressionLibrary.cpp
     Link.cpp
     LinkArray.cpp
@@ -548,6 +549,7 @@ SET(Document_HPP_SRCS
     MergeDocuments.h
     ShaderObject.h
     TextDocument.h
+    VarSet.h
     ExpressionLibrary.h
     Link.h
     LinkArray.h

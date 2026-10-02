@@ -171,6 +171,7 @@
 #include "ViewProviderPart.h"
 #include "ViewProviderFeaturePython.h"
 #include "ViewProviderTextDocument.h"
+#include "ViewProviderVarSet.h"
 #include "ViewProviderSavedView.h"
 #include "ViewProviderSavedViewPy.h"
 
@@ -2524,6 +2525,7 @@ void Application::initTypes()
     Gui::ViewProviderMaterialObject             ::init();
     Gui::ViewProviderMaterialObjectPython       ::init();
     Gui::ViewProviderTextDocument               ::init();
+    Gui::ViewProviderVarSet                     ::init();
     Gui::ViewProviderLinkObserver               ::init();
     Gui::LinkView                               ::init();
     Gui::ViewProviderLink                       ::init();

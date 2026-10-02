@@ -1879,6 +1879,44 @@ class DocumentPropertyCases(unittest.TestCase):
         FreeCAD.closeDocument("PropertyTests")
 
 
+class DocumentVarSetCases(unittest.TestCase):
+    """App::VarSet, a bag of variables (upstream 095e94183a, ec841ed6d4)"""
+
+    def setUp(self):
+        self.Doc = FreeCAD.newDocument("VarSetTests")
+
+    def testVarSetHoldsVariablesForExpressions(self):
+        varSet = self.Doc.addObject("App::VarSet", "VarSet")
+        self.assertEqual(varSet.TypeId, "App::VarSet")
+        varSet.addProperty("App::PropertyLength", "Width", "Variables")
+        varSet.Width = 12
+        feature = self.Doc.addObject("App::FeatureTest", "Feature")
+        feature.setExpression("Float", "VarSet.Width * 2")
+        self.Doc.recompute()
+        self.assertAlmostEqual(feature.Float, 24)
+        varSet.Width = 5
+        self.Doc.recompute()
+        self.assertAlmostEqual(feature.Float, 10)
+
+    def testVarSetGoesInAGroupAndSurvivesReload(self):
+        group = self.Doc.addObject("App::DocumentObjectGroup", "Group")
+        varSet = self.Doc.addObject("App::VarSet", "VarSet")
+        varSet.addProperty("App::PropertyInteger", "Count", "Variables")
+        varSet.Count = 3
+        group.addObject(varSet)
+        path = os.path.join(tempfile.gettempdir(), "VarSetTests.FCStd")
+        self.Doc.saveAs(path)
+        FreeCAD.closeDocument(self.Doc.Name)
+        self.Doc = FreeCAD.openDocument(path)
+        varSet = self.Doc.getObject("VarSet")
+        self.assertEqual(varSet.TypeId, "App::VarSet")
+        self.assertEqual(varSet.Count, 3)
+        self.assertIn(varSet, self.Doc.getObject("Group").Group)
+
+    def tearDown(self):
+        FreeCAD.closeDocument(self.Doc.Name)
+
+
 class DocumentExpressionCases(unittest.TestCase):
     def setUp(self):
         self.Doc = FreeCAD.newDocument()

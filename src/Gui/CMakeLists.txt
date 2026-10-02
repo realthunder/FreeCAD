@@ -1076,6 +1076,7 @@ SET(Viewprovider_CPP_SRCS
     ViewProviderMaterialObject.cpp
     ViewProviderShaderObject.cpp
     ViewProviderTextDocument.cpp
+    ViewProviderVarSet.cpp
     ViewProviderLink.cpp
     ViewProviderLinkArray.cpp
     TaskLinkArray.cpp
@@ -1123,6 +1124,7 @@ SET(Viewprovider_SRCS
     ViewProviderMaterialObject.h
     ViewProviderShaderObject.h
     ViewProviderTextDocument.h
+    ViewProviderVarSet.h
     ViewProviderLink.h
     ViewProviderLinkArray.h
     TaskLinkArray.h
