@@ -1456,7 +1456,7 @@ MultIcon & MultIcon::operator=(const char* name)
 {
     int hue, sat, val, alp;
     Normal = Gui::BitmapFactory().iconFromTheme(name);
-    QImage imgConstr(Normal.pixmap(qAsConst(Normal).availableSizes()[0]).toImage());
+    QImage imgConstr(Normal.pixmap(std::as_const(Normal).availableSizes()[0]).toImage());
     QImage imgExt(imgConstr);
     QImage imgInt(imgConstr);
 
