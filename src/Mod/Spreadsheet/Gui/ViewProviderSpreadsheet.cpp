@@ -54,6 +54,7 @@ ViewProviderSheet::ViewProviderSheet()
     : Gui::ViewProviderDocumentObject()
 {
     sPixmap = "Spreadsheet";
+    setToggleVisibility(ToggleVisibilityMode::NoToggleVisibility);
 }
 
 ViewProviderSheet::~ViewProviderSheet()

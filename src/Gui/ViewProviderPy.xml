@@ -379,5 +379,13 @@ depth: current recursion depth
       </Documentation>
       <Parameter Name="DropPrefix" Type="String" />
     </Attribute>
+    <Attribute Name="ToggleVisibility">
+      <Documentation>
+          <UserDocu>Get/set whether the tree offers to toggle the object's visibility:
+'CanToggleVisibility' or 'NoToggleVisibility', or a member of
+FreeCADGui.ToggleVisibilityMode.</UserDocu>
+      </Documentation>
+      <Parameter Name="ToggleVisibility" Type="Object" />
+    </Attribute>
   </PythonExport>
 </GenerateModel>

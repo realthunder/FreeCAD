@@ -46,6 +46,8 @@ ViewProviderVarSet::ViewProviderVarSet()
     OnTopWhenSelected.setStatus(App::Property::Hidden, true);
     SelectionStyle.setStatus(App::Property::Hidden, true);
     Visibility.setStatus(App::Property::Hidden, true);
+    // Nor an eye in the tree (upstream 17c601eaca)
+    setToggleVisibility(ToggleVisibilityMode::NoToggleVisibility);
 }
 
 bool ViewProviderVarSet::doubleClicked()

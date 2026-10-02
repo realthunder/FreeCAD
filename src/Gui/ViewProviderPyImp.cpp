@@ -831,3 +831,35 @@ Py::String ViewProviderPy::getDropPrefix() const
 {
     return {getViewProviderPtr()->getDropPrefix()};
 }
+
+// Upstream 381cb92f0a
+Py::Object ViewProviderPy::getToggleVisibility() const
+{
+    bool canToggleVisibility = getViewProviderPtr()->canToggleVisibility();
+    return Py::String(canToggleVisibility ? "CanToggleVisibility" : "NoToggleVisibility");
+}
+
+void ViewProviderPy::setToggleVisibility(Py::Object arg)
+{
+    std::string val;
+    if (PyObject_HasAttrString(arg.ptr(), "value")) {
+        // FreeCADGui.ToggleVisibilityMode
+        val = Py::String(arg.getAttr("value"));
+    }
+    else {
+        val = Py::String(arg);
+    }
+
+    if (val == "CanToggleVisibility") {
+        getViewProviderPtr()->setToggleVisibility(
+            ViewProvider::ToggleVisibilityMode::CanToggleVisibility);
+    }
+    else if (val == "NoToggleVisibility") {
+        getViewProviderPtr()->setToggleVisibility(
+            ViewProvider::ToggleVisibilityMode::NoToggleVisibility);
+    }
+    else {
+        throw Py::ValueError(
+            "Invalid ToggleVisibility mode. Use 'CanToggleVisibility' or 'NoToggleVisibility'.");
+    }
+}

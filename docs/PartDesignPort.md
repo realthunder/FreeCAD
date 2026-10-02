@@ -2878,9 +2878,13 @@ fork's add-property dialog -- as a double click does. A body takes one
 (`ec841ed6d4`): `Body::isAllowed()`, which the body's drop check already
 asks, so dragging works too, and the tip stays. Not taken: upstream's
 rework of the add-property dialog for VarSets (some 40 commits:
-expressions, units, enum editors in the dialog) and its hiding of the
-visibility toggle for objects with nothing to show (`17c601eaca`), so a
-VarSet has an eye in the tree. Tests `Document.DocumentVarSetCases` (a
+expressions, units, enum editors in the dialog). Its hiding of the
+visibility toggle for objects with nothing to show (`17c601eaca`) came
+after (2026-10-03), with the facility behind it (`381cb92f0a`:
+`ViewProvider::canToggleVisibility()`, `ViewObject.ToggleVisibility` and
+`FreeCADGui.ToggleVisibilityMode`): the tree draws no eye, so offers no
+click, for a VarSet, a spreadsheet, a FEM analysis or solver
+(`tests/gui/pd-port-fixes.py`). Tests `Document.DocumentVarSetCases` (a
 variable read by an expression, a VarSet in a group surviving a reload)
 and `TestVarSet` (in a body, driving a box). Driven through MCP: the
 command with the body picked puts the VarSet in it and opens the dialog,

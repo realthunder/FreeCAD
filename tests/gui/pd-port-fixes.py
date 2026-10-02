@@ -13,7 +13,9 @@ Gui shows, each as the user meets it.
   - the Sprocket panel sizes the sprocket from a translated reference
     (upstream 0de4c053a6 -- it looked the translated text up, KeyError);
   - the shaft wizard's constraint type combo reaches the shaft (Qt 6 has
-    no currentIndexChanged(QString); upstream e91c16aae1's fixes with it).
+    no currentIndexChanged(QString); upstream e91c16aae1's fixes with it);
+  - a VarSet has no eye in the tree, and a view provider's ToggleVisibility
+    says so from Python (upstream 381cb92f0a, 17c601eaca).
 
 Run: FreeCAD <this script>, GT_OUT set to a directory; result.txt there.
 """
@@ -284,13 +286,54 @@ def test_shaft_constraint_type():
     events()
 
 
+def tree_icon_ratio(obj):
+    """Width over height of the tree item's icon: the eye, if any, is an
+    icon of its own beside the object's"""
+    for tree in FreeCADGui.getMainWindow().findChildren(QtWidgets.QTreeWidget):
+        found = tree.findItems(obj.Label, QtCore.Qt.MatchExactly | QtCore.Qt.MatchRecursive, 0)
+        if found:
+            # The tree's icon engine lists no sizes; ask for the pixmap
+            size = found[0].icon(0).pixmap(64).size()
+            if size.height():
+                return size.width() / float(size.height())
+    return None
+
+
+def test_no_eye_for_varset():
+    doc = FreeCAD.newDocument("PDFixEye")
+    varset = doc.addObject("App::VarSet", "VarSet")
+    box = doc.addObject("Part::Box", "Box")
+    doc.recompute()
+    settle(500)
+    check("a VarSet offers no visibility toggle",
+          varset.ViewObject.ToggleVisibility == "NoToggleVisibility",
+          varset.ViewObject.ToggleVisibility)
+    check("a box does", box.ViewObject.ToggleVisibility == "CanToggleVisibility")
+    ratios = (tree_icon_ratio(varset), tree_icon_ratio(box))
+    check("the tree draws no eye for the VarSet, one for the box",
+          None not in ratios and ratios[0] < 1.5 <= ratios[1], ratios)
+    box.ViewObject.ToggleVisibility = FreeCADGui.ToggleVisibilityMode.NoToggleVisibility
+    check("the mode is set from Python by the enum",
+          box.ViewObject.ToggleVisibility == "NoToggleVisibility")
+    box.ViewObject.ToggleVisibility = "CanToggleVisibility"
+    check("or by its value", box.ViewObject.ToggleVisibility == "CanToggleVisibility")
+    try:
+        box.ViewObject.ToggleVisibility = "Sometimes"
+        check("another value is refused", False)
+    except ValueError:
+        check("another value is refused", True)
+    FreeCAD.closeDocument(doc.Name)
+    events()
+
+
 def run():
     timer = QtCore.QTimer()
     timer.timeout.connect(sweep)
     timer.start(50)
     try:
         for test in (test_multitransform_body, test_drag_out_of_body, test_datum_direction,
-                     test_sprocket_translated, test_shaft_constraint_type):
+                     test_sprocket_translated, test_shaft_constraint_type,
+                     test_no_eye_for_varset):
             try:
                 test()
             except Exception:

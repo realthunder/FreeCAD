@@ -7729,7 +7729,9 @@ QIcon TreeWidget::Private::getItemIcon(int currentStatus,
         } else {
             pixmap = (currentStatus & ItemStatusVisible) ? &pimpl->pxVisible : &pimpl->pxInvisible;
         }
-        icons.emplace_back(Gui::treeVisibilityIconTag(), *pixmap);
+        // No eye for what is not drawn (upstream 381cb92f0a)
+        if (vp->canToggleVisibility())
+            icons.emplace_back(Gui::treeVisibilityIconTag(), *pixmap);
 
         if (currentStatus & ItemStatusUnSelectable) {
             icons.emplace_back(Gui::treeUnselectableIconTag(), pimpl->pxUnselectable);

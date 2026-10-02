@@ -29,7 +29,7 @@
 
 # imports the one and only
 import FreeCAD, FreeCADGui
-from enum import IntEnum
+from enum import IntEnum, Enum
 
 # shortcuts
 Gui = FreeCADGui
@@ -53,6 +53,13 @@ class SelectionStyle(IntEnum):
     GreedySelection = 1
 
 Gui.Selection.SelectionStyle = SelectionStyle
+
+# ViewProvider.ToggleVisibility takes these, or their values (upstream 381cb92f0a)
+class ToggleVisibilityMode(Enum):
+    CanToggleVisibility = "CanToggleVisibility"
+    NoToggleVisibility = "NoToggleVisibility"
+
+Gui.ToggleVisibilityMode = ToggleVisibilityMode
 
 # Gui.InputHint / Gui.HintManager
 #

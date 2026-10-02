@@ -107,6 +107,11 @@ class GuiExport ViewProvider : public App::TransactionalObject
     PROPERTY_HEADER_WITH_OVERRIDE(Gui::ViewProvider);
 
 public:
+    enum class ToggleVisibilityMode : bool {
+        CanToggleVisibility = true,
+        NoToggleVisibility = false
+    };
+
     /// constructor.
     ViewProvider();
 
@@ -294,6 +299,15 @@ public:
     //@{
     /// deliver the icon shown in the tree view
     virtual QIcon getIcon() const;
+
+    /** Whether the tree offers to toggle the object's visibility
+     *
+     * Not for an object that is not drawn, such as a VarSet or a
+     * spreadsheet: the tree shows no eye for it (upstream 381cb92f0a).
+     */
+    bool canToggleVisibility() const {
+        return toggleVisibilityMode == ToggleVisibilityMode::CanToggleVisibility;
+    }
 
     /** Deliver extra icons shown in the tree view
      *
@@ -710,6 +724,8 @@ protected:
     /// Turn on mode switch
     virtual void setModeSwitch();
 
+    void setToggleVisibility(ToggleVisibilityMode mode) { toggleVisibilityMode = mode; }
+
     /// Internal use to customize bounding box retrieval
     virtual Base::BoundBox3d _getBoundingBox(const char *subname=0,
             const Base::Matrix4D *mat=0, bool transform=true,
@@ -730,6 +746,10 @@ protected:
     std::bitset<32> StatusBits;
     /// Whether the tree item collapses when this provider is deactivated
     bool autoCollapseOnDeactivation{true};
+    /// Whether the tree offers to toggle the visibility
+    ToggleVisibilityMode toggleVisibilityMode{ToggleVisibilityMode::CanToggleVisibility};
+
+    friend class ViewProviderPy;
 
 protected:
     CoinPtr<SoGroup> pcChildGroup;
