@@ -1279,6 +1279,62 @@ struct StackedExternalPick
         return "ExternalEdge" + std::to_string(Sketcher::GeoEnum::RefExt + 1 - geoId);
     }
 
+    /// The name by which the sketch selects what a tool picked, its own or
+    /// external; empty if there is none
+    static std::string elementName(Sketcher::SketchObject* sketch,
+                                   int geoId,
+                                   Sketcher::PointPos pos)
+    {
+        if (geoId == Sketcher::GeoEnum::RtPnt) {
+            return "RootPoint";
+        }
+        if (geoId == Sketcher::GeoEnum::HAxis) {
+            return "H_Axis";
+        }
+        if (geoId == Sketcher::GeoEnum::VAxis) {
+            return "V_Axis";
+        }
+        if (!sketch->getGeometry(geoId)) {
+            return {};
+        }
+        if (pos != Sketcher::PointPos::none) {
+            int vertex = sketch->getVertexIndexGeoPos(geoId, pos);
+            return vertex < 0 ? std::string() : "Vertex" + std::to_string(vertex + 1);
+        }
+        if (geoId >= 0) {
+            return "Edge" + std::to_string(geoId + 1);
+        }
+        return elementName(sketch, geoId);
+    }
+
+    /** Select again what the tool had picked
+     *
+     * The view clears the selection to select what was clicked outside the
+     * sketch, and the tool's earlier picks go with it: they would no longer
+     * be drawn as picked although the tool still holds them.
+     *
+     * @param picks: what the tool holds
+     * @return the names selected again, each of which comes back to the
+     * tool as a selection message it must not read as a new pick
+     */
+    static std::vector<std::string> reselect(Sketcher::SketchObject* sketch,
+                                             const std::vector<SelIdPair>& picks)
+    {
+        std::vector<std::string> names;
+        const char* doc = sketch->getDocument()->getName();
+        const char* obj = sketch->getNameInDocument();
+        for (const auto& pick : picks) {
+            std::string name = elementName(sketch, pick.GeoId, pick.PosId);
+            if (name.empty() || Gui::Selection().isSelected(doc, obj, name.c_str())) {
+                continue;
+            }
+            if (Gui::Selection().addSelection(doc, obj, name.c_str())) {
+                names.push_back(std::move(name));
+            }
+        }
+        return names;
+    }
+
     /// The icon of the command that switches the mode in force on
     const char* icon() const
     {
@@ -1348,6 +1404,9 @@ public:
     /// Whether something outside the sketch may be picked now; the tool's
     /// to say (see StackedExternalPick)
     std::function<bool()> outside;
+    /// set while the tool selects its earlier picks again, which are of the
+    /// steps behind and not of the one the gate stands at
+    bool reselecting = false;
 
     bool allow(App::Document* pDoc, App::DocumentObject* pObj, const char* sSubName) override
     {
@@ -1356,6 +1415,9 @@ public:
         }
         if (!sSubName || sSubName[0] == '\0') {
             return false;
+        }
+        if (reselecting) {
+            return true;
         }
         std::string element(sSubName);
         if ((allowedSelTypes & (SelRoot | SelVertexOrRoot) && element.substr(0, 9) == "RootPoint")
@@ -1635,12 +1697,20 @@ public:
             if (!external.on())
                 return false;
             pickOutside(msg);
+            reselect();
             return true;
         }
 
         auto element = msg.Object.getOldElementName();
         if (element.empty())
             return false;
+
+        // one of the earlier picks, selected again by reselect()
+        auto echo = reselected.find(element);
+        if (echo != reselected.end()) {
+            reselected.erase(echo);
+            return false;
+        }
 
         SelIdPair selIdPair;
         SelType newSelType = SelUnknown;
@@ -2020,7 +2090,19 @@ protected:
         advance(selIdPair, type);
     }
 
+    /// The picks of the sequence under way, back into the selection after
+    /// the view cleared it for a pick outside the sketch.
+    void reselect()
+    {
+        Base::StateLocker lock(selFilterGate->reselecting);
+        for (auto& name : StackedExternalPick::reselect(sketchgui->getSketchObject(), selSeq)) {
+            reselected.insert(std::move(name));
+        }
+    }
+
     std::vector<SelIdPair> selSeq;
+    /// names reselect() put back, whose selection messages are still to come
+    std::multiset<std::string> reselected;
     unsigned int allowedSelTypes = 0;
 
     /// indices of currently ongoing sequences in cmd->allowedSequences
@@ -2379,30 +2461,11 @@ public:
             Base::StateLocker lock(external.busy);
             Gui::Selection().rmvSelection(msg.pDocName, msg.pObjectName, msg.pSubName);
         }
-        if (pick.geoIds.empty()) {
-            return true;
-        }
-        const int geoId = pick.geoIds.size() == 1 ? pick.geoIds[0] : GeoEnum::GeoUndef;
-        externalPicks.push_back(std::move(pick));
-        // Several pieces (a face's outline): they are in the sketch now,
-        // for the user to pick from.
-        if (geoId == GeoEnum::GeoUndef) {
-            return true;
-        }
+        takeExternalPick(std::move(pick));
 
-        const Part::Geometry* geo = Obj->getGeometry(geoId);
-        if (!geo) {
-            return true;
-        }
-        SelIdPair selIdPair;
-        selIdPair.GeoId = geoId;
-        selIdPair.PosId = geo->is<Part::GeomPoint>() ? Sketcher::PointPos::start
-                                                     : Sketcher::PointPos::none;
-        availableConstraint = AvailableConstraint::FIRST;
-        selectGeometry(selIdPair,
-                       geo->getTypeId(),
-                       StackedExternalPick::elementName(Obj, geoId),
-                       previousOnSketchPos);
+        // The view cleared the selection to select what was clicked: the
+        // picks made before it go back in, to stay drawn as picked.
+        reselectPicks();
         return true;
     }
 
@@ -2723,6 +2786,53 @@ protected:
                   hotX,
                   hotY,
                   false);
+    }
+
+    /** What this tool holds, back into the selection
+     *
+     * The picks are drawn as picked by being selected, and the selection
+     * does not outlast this tool's way of working: it starts its
+     * transaction over at every pick and every change of mode, and the
+     * sketch clears the selection when a transaction is aborted
+     * (c1285d73725, the names may be stale by then).
+     */
+    void reselectPicks()
+    {
+        Base::StateLocker lock(external.busy);
+        for (auto* sel : {&selPoints, &selLine, &selCircleArc, &selEllipseAndCo,
+                          &selSplineAndCo}) {
+            StackedExternalPick::reselect(Obj, *sel);
+        }
+    }
+
+    /// The external geometry made of a pick outside the sketch goes into
+    /// the dimension as a pick of the sketch's own would.
+    void takeExternalPick(ExternalPick&& pick)
+    {
+        if (pick.geoIds.empty()) {
+            return;
+        }
+        const int geoId = pick.geoIds.size() == 1 ? pick.geoIds[0] : GeoEnum::GeoUndef;
+        externalPicks.push_back(std::move(pick));
+        // Several pieces (a face's outline): they are in the sketch now,
+        // for the user to pick from.
+        if (geoId == GeoEnum::GeoUndef) {
+            return;
+        }
+
+        const Part::Geometry* geo = Obj->getGeometry(geoId);
+        if (!geo) {
+            return;
+        }
+        SelIdPair selIdPair;
+        selIdPair.GeoId = geoId;
+        selIdPair.PosId = geo->is<Part::GeomPoint>() ? Sketcher::PointPos::start
+                                                     : Sketcher::PointPos::none;
+        availableConstraint = AvailableConstraint::FIRST;
+        selectGeometry(selIdPair,
+                       geo->getTypeId(),
+                       StackedExternalPick::elementName(Obj, geoId),
+                       previousOnSketchPos);
     }
 
     /// Make the references of this dimension again after an abort took
@@ -3917,6 +4027,8 @@ protected:
         sketchgui->draw(false, false); // Redraw
         Gui::Command::openCommand(cstrName);
         restoreExternalPicks();
+        // the abort took the selection
+        reselectPicks();
 
         cstrIndexes.clear();
     }

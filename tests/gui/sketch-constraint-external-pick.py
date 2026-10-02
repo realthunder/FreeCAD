@@ -10,8 +10,8 @@ geometry and the tool goes on with it. The state is one setting for all of
 these tools and it stays from one tool to the next. The tool's cursor says
 so: the icon of the command that switched it on, above the tool's own.
 
-A box, and a sketch on the XY plane with a line beside the box, seen from
-the top. Claims:
+A box, and a sketch on the XY plane with two lines beside the box, seen
+from the top. Claims:
 
   Parallel (a constraint command):
   - with outside picking off, a click on the box's edge does nothing;
@@ -26,6 +26,11 @@ the top. Claims:
   - the cursor carries the tool's icon alone while it is off, the External
     command's icon too once that is pressed, and loses it on the next press.
 
+  Symmetric (a sequence of three):
+  - the line's end, then the box's edge: the end is still selected, so
+    still drawn as picked, although the view cleared the selection to
+    select the edge.
+
   Dimension:
   - the setting left on reaches the Dimension tool started afterwards;
   - the box's edge, the sketch's line, then a click on empty space: the
@@ -33,7 +38,12 @@ the top. Claims:
   - Sketcher_Defining pressed while it runs switches the flavour, and the
     edge picked next is defining external geometry;
   - its cursor starts with the External sign, and the sign changes with
-    the flavour.
+    the flavour;
+  - two lines of the sketch picked one after the other are both still
+    selected (the tool starts its transaction over at each pick, and the
+    sketch clears the selection when one is aborted);
+  - the sketch's line picked before an outside edge is still selected
+    after it.
 
 Scored against the tree before the change: the External command replaced
 the running tool, and nothing outside the sketch could be picked in one.
@@ -56,6 +66,8 @@ GENERAL = "User parameter:BaseApp/Preferences/Mod/Sketcher/General"
 # The box stands off the sketch's axes: seen from the top, an edge over an
 # axis would be a pick of the axis.
 LINE = V(7, -5.5, 0)      # on the sketch's line, beside the box
+END = V(3, -6, 0)         # the line's first end
+LINE2 = V(7, -9.25, 0)    # on the sketch's second line
 FRONT = V(7, 3, 10)       # on the box's top front edge (y = 3)
 RIGHT = V(12, 8, 10)      # on the box's top right edge (x = 12)
 EMPTY = V(-8, -10, 0)
@@ -142,6 +154,11 @@ def externals(sk):
     return [(o.Name, s) for o, subs in sk.ExternalGeometry for s in subs]
 
 
+def selected(sk):
+    return [s for o in FreeCADGui.Selection.getSelectionEx()
+            if o.Object == sk for s in o.SubElementNames]
+
+
 def state_of(sk):
     return (len(externals(sk)), [(c.Type, c.First, c.Second) for c in sk.Constraints])
 
@@ -165,6 +182,7 @@ def run():
         box.Placement.Base = V(2, 3, 0)
         sk = doc.addObject("Sketcher::SketchObject", "Sketch")
         sk.addGeometry(Part.LineSegment(V(3, -6, 0), V(11, -5, 0)), False)
+        sk.addGeometry(Part.LineSegment(V(3, -9, 0), V(11, -9.5, 0)), False)
         doc.recompute()
         gdoc = FreeCADGui.getDocument(DOC)
         view = gdoc.activeView()
@@ -252,6 +270,19 @@ def probe(doc, sk, view):
         check("on once more, for the next tool", mode() == 1, mode())
         escape()
 
+        # -- an earlier pick stays drawn as picked ---------------------
+        FreeCADGui.runCommand("Sketcher_ConstrainSymmetric")
+        settle()
+        click(view, END)
+        check("symmetric: the line's end is selected", selected(sk) == ["Vertex1"],
+              selected(sk))
+        click(view, FRONT)
+        check("and the box's edge is taken", state_of(sk)[0] == 1, state_of(sk))
+        check("with the line's end still selected", "Vertex1" in selected(sk),
+              selected(sk))
+        escape()
+        check("left: nothing stays", state_of(sk) == clean, state_of(sk))
+
         # -- the Dimension tool ---------------------------------------
         FreeCADGui.Selection.clearSelection()
         FreeCADGui.runCommand("Sketcher_Dimension")
@@ -279,6 +310,18 @@ def probe(doc, sk, view):
         check("undoing it takes the geometry and the dimension",
               state_of(sk) == clean, state_of(sk))
 
+        # Nothing of outside picking: the tool starts its transaction
+        # over at each pick, and the sketch clears the selection on an
+        # abort, so the first of two picks was no longer drawn as picked.
+        click(view, LINE)
+        click(view, LINE2)
+        check("dimension: two lines of the sketch picked, an angle between them",
+              [t for t, _f, _s in state_of(sk)[1]] == ["Angle"], state_of(sk))
+        check("and both are still selected", sorted(selected(sk)) == ["Edge1", "Edge2"],
+              selected(sk))
+        escape()
+        click(view, LINE)
+        check("dimension: the line is selected", selected(sk) == ["Edge1"], selected(sk))
         FreeCADGui.runCommand("Sketcher_Defining")
         settle()
         check("Sketcher_Defining switches the flavour", mode() == 2, mode())
@@ -294,6 +337,7 @@ def probe(doc, sk, view):
             defining = Sketcher.ExternalGeometryFacade(sk.ExternalGeo[-1]).testFlag("Defining")
         check("the edge picked next is defining external geometry",
               st[0] == 1 and defining is True, (st, defining))
+        check("with the line still selected", "Edge1" in selected(sk), selected(sk))
         escape()
         escape()
         check("left: nothing stays", state_of(sk) == clean, state_of(sk))
