@@ -32,7 +32,9 @@
 #include <QStyledItemDelegate>
 #include <QWidgetAction>
 #include <boost/core/ignore_unused.hpp>
+#include <algorithm>
 #include <cmath>
+#include <utility>
 #endif
 
 #include <App/Application.h>
@@ -274,7 +276,7 @@ public:
                                   const QIcon& driven) -> QIcon {
                 if (!sketch->isConstraintActiveInSketch(constr)) {
                     QIcon darkIcon;
-                    int w = QApplication::style()->pixelMetric(QStyle::PM_ListViewIconSize);
+                    int w = listWidget()->style()->pixelMetric(QStyle::PM_ListViewIconSize);
                     darkIcon.addPixmap(normal.pixmap(w, w, QIcon::Disabled, QIcon::Off),
                                        QIcon::Normal,
                                        QIcon::Off);
@@ -589,7 +591,7 @@ void ConstraintView::populateMenu(QMenu &menu)
 
     // This does the same as a double-click and thus it should be the first action and with bold
     // text
-    QAction* change = menu.addAction(tr("Change Value"), this, &ConstraintView::modifyCurrentItem);
+    QAction* change = menu.addAction(tr("Edit Value"), this, &ConstraintView::modifyCurrentItem);
     change->setEnabled(isQuantity);
     menu.setDefaultAction(change);
 
@@ -846,7 +848,10 @@ FilterValueBitset ConstraintFilterList::getMultiFilter()
 // ----------------------------------------------------------------------------
 
 TaskSketcherConstraints::TaskSketcherConstraints(ViewProviderSketch* sketchView)
-    : TaskBox(Gui::BitmapFactory().pixmap("document-new"), tr("Constraints"), true, nullptr)
+    : TaskBox(Gui::BitmapFactory().pixmap("Sketcher_CreateLineAngleLength"),
+              tr("Constraints"),
+              true,
+              nullptr)
     , specialFilterMode {SpecialFilterType::None}
     , sketchView(sketchView)
     , inEditMode(false)
@@ -867,7 +872,7 @@ TaskSketcherConstraints::TaskSketcherConstraints(ViewProviderSketch* sketchView)
     QWidgetAction* action = new QWidgetAction(this);
     filterList = new ConstraintFilterList(this);
     action->setDefaultWidget(filterList);
-    qAsConst(ui->filterButton)->addAction(action);
+    std::as_const(ui->filterButton)->addAction(action);
 
     // Create local settings menu
     // FIXME there is probably a smarter way to handle this menu
@@ -896,7 +901,7 @@ TaskSketcherConstraints::TaskSketcherConstraints(ViewProviderSketch* sketchView)
     }
     hGrp->Attach(this);
 
-    auto settingsBut = qAsConst(ui->settingsButton);
+    auto settingsBut = std::as_const(ui->settingsButton);
 
     settingsBut->addAction(action1);
     settingsBut->addAction(action2);
@@ -1100,8 +1105,8 @@ void TaskSketcherConstraints::onChangedSketchView(const Gui::ViewProvider& vp,
 {
     if (sketchView == &vp) {
         if (&sketchView->Autoconstraints == &prop) {
-            QSignalBlocker block(qAsConst(ui->settingsButton)->actions()[0]);
-            qAsConst(ui->settingsButton)
+            QSignalBlocker block(std::as_const(ui->settingsButton)->actions()[0]);
+            std::as_const(ui->settingsButton)
                 ->actions()[0]
                 ->setChecked(sketchView->Autoconstraints.getValue());
         }
@@ -1161,7 +1166,7 @@ void TaskSketcherConstraints::changeFilteredVisibility(bool show, ActionTarget t
             processItem = !item->isHidden();
         }
         else if (target == ActionTarget::Selected) {
-            if (std::find(selecteditems.begin(), selecteditems.end(), item) != selecteditems.end())
+            if (selecteditems.contains(item))
                 processItem = true;
         }
 
@@ -1530,7 +1535,9 @@ void TaskSketcherConstraints::OnChange(Base::Subject<const char*>& rCaller, cons
     }
     if (actNum >= 0) {
         assert(actNum < static_cast<int>(ui->settingsButton->actions().size()));
-        qAsConst(ui->settingsButton)->actions()[actNum]->setChecked(hGrp->GetBool(rcReason, false));
+        std::as_const(ui->settingsButton)
+            ->actions()[actNum]
+            ->setChecked(hGrp->GetBool(rcReason, false));
     }
 }
 
@@ -1773,13 +1780,11 @@ bool TaskSketcherConstraints::isConstraintFiltered(QListWidgetItem* item)
 
         // Then we re-filter based on selected/associated if such mode selected.
         if (visible && specialFilterMode == SpecialFilterType::Selected) {
-            visible = (std::find(selectionFilter.begin(), selectionFilter.end(), it->ConstraintNbr)
-                       != selectionFilter.end());
+            visible =
+                (std::ranges::find(selectionFilter, it->ConstraintNbr) != selectionFilter.end());
         }
         else if (visible && specialFilterMode == SpecialFilterType::Associated) {
-            visible = (std::find(associatedConstraintsFilter.begin(),
-                                 associatedConstraintsFilter.end(),
-                                 it->ConstraintNbr)
+            visible = (std::ranges::find(associatedConstraintsFilter, it->ConstraintNbr)
                        != associatedConstraintsFilter.end());
         }
     }
@@ -1900,7 +1905,7 @@ void TaskSketcherConstraints::onFilterListItemChanged(QListWidgetItem* item)
     for (int i = filterList->count() - 1; i >= 0; i--) {
         bool isChecked = filterList->item(i)->checkState() == Qt::Checked;
         filterState = filterState << 1;// we shift left first, else the list is shifted at the end.
-        filterState = filterState | isChecked;
+        filterState = filterState | (isChecked ? 1 : 0);
     }
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher/General");

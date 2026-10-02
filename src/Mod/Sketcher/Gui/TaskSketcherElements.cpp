@@ -673,7 +673,7 @@ void ElementView::deleteSelectedItems()
 /* TRANSLATOR SketcherGui::TaskSketcherElements */
 
 TaskSketcherElements::TaskSketcherElements(ViewProviderSketch* sketchView)
-    : TaskBox(Gui::BitmapFactory().pixmap("document-new"), tr("Elements"), true, nullptr)
+    : TaskBox(Gui::BitmapFactory().pixmap("Sketcher_CreateLine"), tr("Elements"), true, nullptr)
     , sketchView(sketchView)
     , ui(new Ui_TaskSketcherElements())
     , focusItemIndex(-1)
