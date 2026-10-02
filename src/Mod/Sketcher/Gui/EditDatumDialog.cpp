@@ -56,6 +56,22 @@ using namespace SketcherGui;
 
 /* TRANSLATOR SketcherGui::EditDatumDialog */
 
+bool SketcherGui::checkConstraintName(const Sketcher::SketchObject* sketch,
+                                      const std::string& constraintName)
+{
+    if (!constraintName.empty() && constraintName != Base::Tools::getIdentifier(constraintName)) {
+        Gui::NotifyUserError(
+            sketch,
+            QT_TRANSLATE_NOOP("Notifications", "Value Error"),
+            QT_TRANSLATE_NOOP("Notifications",
+                              "Invalid constraint name (must only contain alphanumericals and "
+                              "underscores, and must not start with digit)"));
+        return false;
+    }
+
+    return true;
+}
+
 EditDatumDialog::EditDatumDialog(ViewProviderSketch* vp, int ConstrNbr)
     : ConstrNbr(ConstrNbr)
     , success(false)
@@ -231,12 +247,13 @@ void EditDatumDialog::accepted()
                 }
             }
 
-            QString constraintName = ui_ins_datum->name->text().trimmed();
-            if (Base::Tools::toStdString(constraintName) != sketch->Constraints[ConstrNbr]->Name) {
+            std::string constraintName = ui_ins_datum->name->text().trimmed().toStdString();
+            if (constraintName != sketch->Constraints[ConstrNbr]->Name
+                && SketcherGui::checkConstraintName(sketch, constraintName)) {
                 Gui::cmdAppObjectArgs(sketch,
                                       "renameConstraint(%d, u'%s')",
                                       ConstrNbr,
-                                      Base::Tools::escapeEncodeString(constraintName).toUtf8().constData());
+                                      constraintName.c_str());
             }
 
             Gui::Command::commitCommand();

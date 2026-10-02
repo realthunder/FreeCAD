@@ -38,6 +38,14 @@ namespace SketcherGui
 class ViewProviderSketch;
 class Ui_InsertDatum;
 
+/** Whether a constraint may be given this name
+ *
+ * Empty (the constraint is unnamed again), or letters, digits and
+ * underscores not starting with a digit: what an expression can refer to
+ * without escaping. Tells the user when it is not.
+ */
+bool checkConstraintName(const Sketcher::SketchObject* sketch, const std::string& constraintName);
+
 class EditDatumDialog: public QObject
 {
     Q_OBJECT

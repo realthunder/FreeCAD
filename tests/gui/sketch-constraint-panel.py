@@ -1,5 +1,6 @@
-"""The constraints panel: the Named filter, and renaming by double click
-(upstream 67f8852697 and 2d5d8ab86c).
+"""The constraints panel: the Named filter, renaming by double click, and
+what a constraint may be named (upstream 67f8852697, 2d5d8ab86c, 766ee41b55,
+c0d47c5ecd).
 
 A sketch with six constraints, two of them named ("Width", a distance, and
 "Upright", a vertical), edited; the panel's list and its filter list are
@@ -12,7 +13,14 @@ read as widgets.
     was checked too, so "Named" alone listed none;
   - activating (a double click) the row of a geometric constraint opens its
     name for editing. Before, only F2 did: a double click edits the value of
-    a dimension and did nothing for the rest.
+    a dimension and did nothing for the rest;
+  - a name typed into a row is taken if it is letters, digits and
+    underscores not starting with a digit, so that an expression can refer
+    to it; "My Width", "a'b" and "1st" are refused and the constraint keeps
+    what it had, the row's edit text with it. Before, each was taken, two
+    blanks as well;
+  - an emptied row takes the name away. Before, it did nothing;
+  - a name another constraint has is refused.
 """
 import os
 import time
@@ -126,6 +134,32 @@ def probe(sk):
     settle()
     check("the sketch is as it was", [c.Name for c in sk.Constraints]
           == ["", "", "Width", "Upright", "", ""], [c.Name for c in sk.Constraints])
+
+    def names():
+        return [c.Name for c in sk.Constraints]
+
+    def typed(row, text):
+        lw.item(row).setData(QtCore.Qt.EditRole, text)
+        settle(0.4)
+
+    for text in ("My Width", "a'b", "1st"):
+        typed(0, text)
+        check("%r is refused as a name" % text,
+              names()[0] == "" and lw.item(0).data(QtCore.Qt.EditRole) == "",
+              (names()[0], lw.item(0).data(QtCore.Qt.EditRole)))
+    typed(0, "Base_1")
+    check("'Base_1' is taken", names()[0] == "Base_1" and lw.item(0).text() == "Base_1",
+          (names()[0], lw.item(0).text()))
+    typed(4, "Base_1")
+    check("a name another constraint has is refused",
+          names()[4] == "" and lw.item(4).data(QtCore.Qt.EditRole) == "",
+          (names()[4], lw.item(4).data(QtCore.Qt.EditRole)))
+    typed(2, "")
+    check("an emptied row takes the name away",
+          names()[2] == "" and lw.item(2).text() == "Constraint3 (10 mm)",
+          (names()[2], lw.item(2).text()))
+    typed(3, "  ")
+    check("and so do blanks", names()[3] == "", names()[3])
 
 
 def finish():
