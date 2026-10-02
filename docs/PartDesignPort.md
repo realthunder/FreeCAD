@@ -3071,3 +3071,21 @@ desktop under bgfx: a linear pattern, a MultiTransform of two linear
 steps (six products) and a 3x2 link array, each clicked with a real mouse
 event, the instance gone and its marker a plus; the hover ring drawn.
 `serve-pattern-labels.py` still passes beside them.
+
+In a real browser (2026-10-03): headful Chrome on the GPU against the
+served WASM viewer, a PD linear pattern of three and a 3x2 link array
+edited from the page (`window.fcviewerEdit` -- the web viewer has no
+button for editing an existing object), every marker clicked with real
+mouse events. The crosses, the plus of an instance left out and the hover
+ring are drawn; each click turned over the instance it was aimed at
+(`SuppressedIndices` [0,1] -> [0] -> [] -> [2] -> [], the middle one
+clicked through the spacing label's text; the array's
+`SuppressedPositions` [(1,1)] -> [(1,1),(2,1)] -> [(2,1)]), and a server-side
+probe logged the marker as the first thing picked under every press. What
+first looked like an intermittent miss was the driver: it resized the page
+just before each click, and the camera frame that rides with a click
+carries the canvas size the client's render loop last saw, which a
+background window had not run -- so the mirror placed the click in the old
+canvas. A real click follows a drawn frame, so nothing was changed for it.
+Cosmetic, left as it is: a spacing label's text is drawn over a marker it
+crosses.
