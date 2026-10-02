@@ -19,7 +19,10 @@ Claims:
     alone);
   - "Reset page" takes back what the page keeps outside its own widgets too:
     the dimensioning tools, the radius/diameter mode, the scaling mode, the
-    on-view parameters (upstream 09209436d2).
+    on-view parameters (upstream 09209436d2);
+  - the Grid page's line pattern entries are painted in the theme's text
+    colour (they were black, whatever the theme) and are upstream's seven
+    (00228821d0, b4de78d3d7, ab9188a5dc, a00fe1e886).
 
 The preferences dialog is modal: every step into it is a timer that fires
 inside its event loop, does its part and presses OK.
@@ -32,7 +35,7 @@ import traceback
 
 import FreeCAD
 import FreeCADGui
-from PySide import QtCore, QtWidgets
+from PySide import QtCore, QtGui, QtWidgets
 
 OUT = os.environ["GT_OUT"]
 RESULT = os.environ.get("GT_RESULT", os.path.join(OUT, "result.txt"))
@@ -79,9 +82,10 @@ def clear():
     FreeCAD.ParamGet(SKETCHER + "/Tools").RemInt("OnViewParameterVisibility")
 
 
-def in_preferences(action):
-    """Open the Sketcher's General page, run action(dialog) inside the
-    dialog's event loop and press OK. Returns what action returned."""
+def in_preferences(action, page=0):
+    """Open one of the Sketcher's pages (0 General, 1 Grid), run
+    action(dialog) inside the dialog's event loop and press OK. Returns
+    what action returned."""
     got = {}
 
     def act():
@@ -99,7 +103,7 @@ def in_preferences(action):
                 box.button(QtWidgets.QDialogButtonBox.Ok).click()
 
     QtCore.QTimer.singleShot(800, act)
-    FreeCADGui.showPreferences("Sketcher", 0)
+    FreeCADGui.showPreferences("Sketcher", page)
     settle(0.5)
     if "error" in got:
         note("in the dialog: " + got["error"])
@@ -238,9 +242,54 @@ def run():
         cons, geom = bar("Sketcher constraints"), bar("Sketcher geometries")
         check("and the tool bars are as at the start, button for button",
               (cons, geom) == start, (cons, geom))
+
+        # -- the grid page's line patterns ---------------------------------
+        # Light text, as a dark theme has it: an icon painted black would
+        # not be the text's colour.
+        app = QtWidgets.QApplication.instance()
+        palette = app.palette()
+        light = QtGui.QPalette(palette)
+        light.setColor(QtGui.QPalette.WindowText, QtGui.QColor(240, 240, 240))
+        app.setPalette(light)
+        settle(0.3)
+        try:
+            patterns = in_preferences(pattern_icons, page=1)
+        finally:
+            app.setPalette(palette)
+        note("grid patterns: %s" % (patterns,))
+        check("the grid's line pattern has upstream's seven entries, the old three among them",
+              patterns is not None and len(patterns["entries"]) == 7
+              and {0xffff, 0x0f0f, 0xaaaa} <= {e[0] for e in patterns["entries"]}, patterns)
+        check("every entry has an icon, painted in the page's text colour",
+              patterns is not None and patterns["text"] == (240, 240, 240)
+              and all(e[1] > 0 and e[2] == [patterns["text"]] for e in patterns["entries"]),
+              patterns)
     except Exception:
         note("ABORT:\n" + traceback.format_exc())
     finish()
+
+
+def pattern_icons(dialog):
+    """The grid page's minor line pattern entries: (pattern, opaque pixels
+    of its icon, their colours), and the page's text colour."""
+    combo = widget(dialog, "gridLinePattern")
+    page = combo
+    while page is not None and "SketcherSettingsGrid" not in page.metaObject().className():
+        page = page.parentWidget()
+    text = (page or combo).palette().color(QtGui.QPalette.WindowText)
+    entries = []
+    for i in range(combo.count()):
+        image = combo.itemIcon(i).pixmap(combo.iconSize()).toImage()
+        colours = set()
+        count = 0
+        for y in range(image.height()):
+            for x in range(image.width()):
+                c = QtGui.QColor.fromRgba(image.pixel(x, y))
+                if c.alpha() == 255:
+                    count += 1
+                    colours.add((c.red(), c.green(), c.blue()))
+        entries.append((combo.itemData(i), count, sorted(colours)))
+    return {"text": (text.red(), text.green(), text.blue()), "entries": entries}
 
 
 def finish():

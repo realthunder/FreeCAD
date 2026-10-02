@@ -25,7 +25,9 @@
 #include <QMessageBox>
 #include <QPainter>
 #include <QPixmap>
+#include <QStyledItemDelegate>
 #include <QToolBar>
+#include <array>
 #endif
 
 #include <App/Application.h>
@@ -44,6 +46,78 @@
 
 
 using namespace SketcherGui;
+
+namespace
+{
+// A line pattern as the grid is drawn with it: sixteen bits, a set bit a
+// drawn pixel (upstream's PenStyle)
+struct PenStyle
+{
+    uint16_t pattern;
+
+    QVector<qreal> toDashPattern() const
+    {
+        QVector<qreal> dashPattern;
+        int count = 0;
+        bool isDash = (pattern & 0x8000) != 0;  // Check the highest bit
+
+        for (int i = 0; i < 16; ++i) {
+            bool currentBit = (pattern & (0x8000 >> i)) != 0;
+            if (currentBit == isDash) {
+                ++count;  // Counting dashes or spaces
+            }
+            else {
+                // Adjust count to be odd for dashes and even for spaces (see qt doc)
+                count = (count % 2 == (isDash ? 0 : 1)) ? count + 1 : count;
+                dashPattern << count;
+                count = 1;  // Reset count for next dash/space
+                isDash = !isDash;
+            }
+        }
+        count = (count % 2 == (isDash ? 0 : 1)) ? count + 1 : count;
+        dashPattern << count;  // Add the last count
+
+        if ((dashPattern.size() % 2) == 1) {
+            // prevent this error : qWarning("QPen::setDashPattern: Pattern not of even length");
+            dashPattern << 1;
+        }
+
+        return dashPattern;
+    }
+
+    QIcon toIcon(QSize size, qreal dpr, const QBrush& brush) const
+    {
+        QPixmap px(size * dpr);
+        px.setDevicePixelRatio(dpr);
+        px.fill(Qt::transparent);
+
+        QPen pen;
+        pen.setDashPattern(toDashPattern());
+        pen.setBrush(brush);
+        pen.setWidth(2);
+
+        QPainter painter(&px);
+        painter.setPen(pen);
+        auto mid = size.height() / 2;
+        painter.drawLine(0, mid, size.width(), mid);
+        painter.end();
+
+        return px;
+    }
+};
+
+constexpr auto PenStyles = std::to_array<PenStyle>({
+    {.pattern = 0b1111111111111111},  // solid
+    {.pattern = 0b1110111011101110},  // dashed 3:1
+    {.pattern = 0b1111110011111100},  // dashed 6:2
+    {.pattern = 0b0000111100001111},  // dashed 4:4
+    {.pattern = 0b1010101010101010},  // point 1:1
+    {.pattern = 0b1110010011100100},  // dash point
+    {.pattern = 0b1111111100111100},  // dash long-dash
+});
+
+constexpr QSize LineIconSize(80, 12);
+}  // namespace
 
 /* TRANSLATOR SketcherGui::SketcherSettings */
 
@@ -339,34 +413,41 @@ SketcherSettingsGrid::SketcherSettingsGrid(QWidget* parent)
 {
     ui->setupUi(this);
 
-    QList<QPair<Qt::PenStyle, int>> styles;
-    styles << qMakePair(Qt::SolidLine, 0xffff) << qMakePair(Qt::DashLine, 0x0f0f)
-           << qMakePair(Qt::DotLine, 0xaaaa);
-
-    ui->gridLinePattern->setIconSize(QSize(80, 12));
-    ui->gridDivLinePattern->setIconSize(QSize(80, 12));
-    for (QList<QPair<Qt::PenStyle, int>>::iterator it = styles.begin(); it != styles.end(); ++it) {
-        QPixmap px(ui->gridLinePattern->iconSize());
-        px.fill(Qt::transparent);
-        QBrush brush(Qt::black);
-        QPen pen(it->first);
-        pen.setBrush(brush);
-        pen.setWidth(2);
-
-        QPainter painter(&px);
-        painter.setPen(pen);
-        double mid = ui->gridLinePattern->iconSize().height() / 2.0;
-        painter.drawLine(0, mid, ui->gridLinePattern->iconSize().width(), mid);
-        painter.end();
-
-        ui->gridLinePattern->addItem(QIcon(px), QString(), QVariant(it->second));
-        ui->gridDivLinePattern->addItem(QIcon(px), QString(), QVariant(it->second));
+    // The entries get their icons in event(): painted in the theme's text
+    // colour, which is not known before the style has reached the page
+    const auto lineStyleDelegate = new QStyledItemDelegate(this);
+    ui->gridLinePattern->setIconSize(LineIconSize);
+    ui->gridLinePattern->setItemDelegate(lineStyleDelegate);
+    ui->gridDivLinePattern->setIconSize(LineIconSize);
+    ui->gridDivLinePattern->setItemDelegate(lineStyleDelegate);
+    for (auto style : PenStyles) {
+        ui->gridLinePattern->addItem(QString(), QVariant(style.pattern));
+        ui->gridDivLinePattern->addItem(QString(), QVariant(style.pattern));
     }
 }
 
 SketcherSettingsGrid::~SketcherSettingsGrid()
 {
     // no need to delete child widgets, Qt does it all for us
+}
+
+bool SketcherSettingsGrid::event(QEvent* event)
+{
+    // StyleChange and not PaletteChange: without a style sheet the palette
+    // change is never sent, the style change is, and by then the palette is
+    // set either way (upstream a00fe1e886)
+    if (event->type() == QEvent::StyleChange) {
+        PreferencePage::event(event);
+        const qreal dpr = devicePixelRatioF();
+        const QBrush brush = palette().windowText();
+        for (size_t i = 0; i < PenStyles.size(); ++i) {
+            const QIcon icon = PenStyles[i].toIcon(LineIconSize, dpr, brush);
+            ui->gridLinePattern->setItemIcon(static_cast<int>(i), icon);
+            ui->gridDivLinePattern->setItemIcon(static_cast<int>(i), icon);
+        }
+        return true;
+    }
+    return PreferencePage::event(event);
 }
 
 void SketcherSettingsGrid::saveSettings()

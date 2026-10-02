@@ -74,6 +74,7 @@ public:
     void loadSettings() override;
 
 protected:
+    bool event(QEvent* event) override;
     void changeEvent(QEvent* e) override;
 
 private:
