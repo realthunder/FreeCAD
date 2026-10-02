@@ -54,6 +54,8 @@ Revolution::Revolution()
     ADD_PROPERTY_TYPE(UpToFace2, (nullptr), "Revolution", App::Prop_None,
                       "Face where the second side of the revolution will end");
     ADD_PROPERTY_TYPE(ReferenceAxis, (nullptr), "Revolution", App::Prop_None, "Reference axis of revolution");
+    ADD_PROPERTY_TYPE(ProjectAxis, (false), "Revolution", App::Prop_None,
+                      "Projects the reference axis onto the profile plane");
     Type2.setReadOnly(true);
     Angle2.setReadOnly(true);
     UpToFace.setReadOnly(true);

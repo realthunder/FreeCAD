@@ -67,6 +67,8 @@ public:
      *  are calculated according to the linked line
     */
     App::PropertyLinkSub ReferenceAxis;
+    /// Project the reference axis onto the profile plane (upstream 03cc6671e3)
+    App::PropertyBool ProjectAxis;
 
     static const char* SideTypeEnums[];
 

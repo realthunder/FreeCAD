@@ -24,6 +24,7 @@
 #include "PreCompiled.h"
 
 #include <QHBoxLayout>
+#include <gp_Pln.hxx>
 
 #include <App/Document.h>
 #include <App/DocumentObject.h>
@@ -304,6 +305,11 @@ void TaskRevolutionParameters::refresh()
     ui->startOffsetEdit->setValue(feat->StartOffset.getValue());
     ui->sideTypeCB->setCurrentIndex(feat->SideType.getValue());
     ui->checkBoxReversed->setChecked(feat->Reversed.getValue());
+    ui->checkBoxProjectAxis->setChecked(feat->ProjectAxis.getValue());
+    // only a planar profile has a plane to project onto
+    gp_Pln profilePlane;
+    ui->checkBoxProjectAxis->setEnabled(
+        feat->getVerifiedFace(true, false, true).findPlane(profilePlane));
 
     ui->revolveAngle->setMinimum(feat->Angle.getMinimum());
     ui->revolveAngle->setMaximum(feat->Angle.getMaximum());
@@ -478,6 +484,8 @@ void TaskRevolutionParameters::connectSignals()
     Base::connect(ui->axis, QOverload<int>::of(&QComboBox::currentIndexChanged),
                   this, &TaskRevolutionParameters::onAxisChanged);
     Base::connect(ui->checkBoxReversed, &QCheckBox::toggled, this, &TaskRevolutionParameters::onReversed);
+    Base::connect(ui->checkBoxProjectAxis, &QCheckBox::toggled,
+                  this, &TaskRevolutionParameters::onProjectAxisChanged);
     Base::connect(ui->buttonAxis, &QPushButton::clicked, this, &TaskRevolutionParameters::onAxisButton);
     Base::connect(ui->changeMode, qOverload<int>(&QComboBox::currentIndexChanged),
                  this, &TaskRevolutionParameters::onModeChanged);
@@ -614,6 +622,14 @@ void TaskRevolutionParameters::onReversed(bool on)
     recomputeFeature();
 }
 
+void TaskRevolutionParameters::onProjectAxisChanged(bool on)
+{
+    setupTransaction();
+    getRevolved()->ProjectAxis.setValue(on);
+    recomputeFeature();
+    setGizmoPositions();
+}
+
 void TaskRevolutionParameters::onModeChanged(int index)
 {
     setupTransaction();
@@ -741,6 +757,7 @@ void TaskRevolutionParameters::apply()
     auto tobj = vp->getObject();
     PartDesign::Revolved* feat = getRevolved();
     FCMD_OBJ_CMD(tobj, "ReferenceAxis = " << axis);
+    FCMD_OBJ_CMD(tobj, "ProjectAxis = " << (feat->ProjectAxis.getValue() ? 1 : 0));
     FCMD_OBJ_CMD(tobj, "SideType = '" << feat->SideType.getValueAsString() << "'");
     FCMD_OBJ_CMD(tobj, "Reversed = " << (feat->Reversed.getValue() ? 1 : 0));
     FCMD_OBJ_CMD(tobj, "Type = '" << feat->Type.getValueAsString() << "'");

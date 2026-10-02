@@ -158,7 +158,8 @@ short Revolved::mustExecute() const
         Angle2.isTouched() ||
         StartType.isTouched() ||
         StartOffset.isTouched() ||
-        StartReference.isTouched())
+        StartReference.isTouched() ||
+        ProjectAxis.isTouched())
         return 1;
     return ProfileBased::mustExecute();
 }
@@ -499,7 +500,28 @@ void Revolved::updateAxis()
     const std::vector<std::string> &subReferenceAxis = ReferenceAxis.getSubValues();
     Base::Vector3d base;
     Base::Vector3d dir;
-    getAxis(pcReferenceAxis, subReferenceAxis, base, dir, ForbiddenAxis::NotParallelWithNormal);
+    bool project = ProjectAxis.getValue();
+    getAxis(pcReferenceAxis, subReferenceAxis, base, dir,
+            project ? ForbiddenAxis::NoCheck : ForbiddenAxis::NotParallelWithNormal);
+
+    // Onto the profile's plane (upstream 03cc6671e3): an axis off the plane,
+    // or tilted out of it, is laid into it, the way a sketch projects an
+    // external edge
+    if (project && dir.Length() > Precision::Confusion()) {
+        gp_Pln plane;
+        if (!getVerifiedFace(true, false, true).findPlane(plane))
+            THROWM(Base::ValueError, "Cannot project the axis because the profile is not planar")
+        const gp_Dir& d = plane.Axis().Direction();
+        const gp_Pnt& p = plane.Location();
+        Base::Vector3d normal(d.X(), d.Y(), d.Z());
+        Base::Vector3d origin(p.X(), p.Y(), p.Z());
+        dir.Normalize();
+        dir -= normal * dir.Dot(normal);
+        if (dir.Length() <= Precision::Angular())
+            THROWM(Base::ValueError, "Cannot project an axis perpendicular to the profile plane")
+        dir.Normalize();
+        base -= normal * (base - origin).Dot(normal);
+    }
 
     if (dir.Length() > Precision::Confusion()) {
         Base.setValue(base.x,base.y,base.z);

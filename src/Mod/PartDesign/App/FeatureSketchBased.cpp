@@ -1322,8 +1322,16 @@ void ProfileBased::getAxis(const App::DocumentObject * pcReferenceAxis, const st
     }
 
     const Part::Feature* refFeature = static_cast<const Part::Feature*>(pcReferenceAxis);
+    // Into the body's frame from wherever the reference sits (upstream
+    // 03cc6671e3): its own placement alone misplaces a reference outside the
+    // body's groups, e.g. one beside a body nested in two Parts
     auto refShape = Part::Feature::getTopoShape(refFeature,
-            subReferenceAxis.empty() ? "" : subReferenceAxis[0].c_str(), true);
+            subReferenceAxis.empty() ? "" : subReferenceAxis[0].c_str(), true,
+            nullptr, nullptr, true, false);
+    Base::Placement transform = App::GeoFeature::getGlobalPlacement(refFeature);
+    if (auto body = Body::findBodyOf(this))
+        transform = body->globalPlacement().inverse() * transform;
+    refShape.transformShape(transform.toMatrix(), false, true);
     gp_Pln pln;
     if (refShape.findPlane(pln)) {
         auto d = pln.Axis().Direction();

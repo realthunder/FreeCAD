@@ -432,6 +432,68 @@ class TestRevolve(unittest.TestCase):
         self.assertAlmostEqual(rev.Base.y, -10, places=6)
         self.assertAlmostEqual(rev.Shape.Volume, 2 * math.pi ** 2 * 25 * 10, places=3)
 
+    def _circleRevolution(self, name):
+        body = self.Doc.addObject('PartDesign::Body', name + 'Body')
+        sketch = body.newObject('Sketcher::SketchObject', name + 'Sketch')
+        sketch.addGeometry(Part.Circle(FreeCAD.Vector(20, 0, 0), FreeCAD.Vector(0, 0, 1), 5))
+        self.Doc.recompute()
+        rev = body.newObject('PartDesign::Revolution', name + 'Revolution')
+        rev.Profile = sketch
+        rev.Angle = 360
+        return body, rev
+
+    def _datumLine(self, body, base, direction):
+        line = body.newObject('PartDesign::Line', body.Name + 'Line')
+        line.MapMode = 'Deactivated'
+        line.Placement = FreeCAD.Placement(
+            base, FreeCAD.Rotation(FreeCAD.Vector(0, 0, 1), direction))
+        self.Doc.recompute()
+        return line
+
+    def testProjectAxisOntoTheProfilePlane(self):
+        # (upstream 03cc6671e3) an axis tilted out of the sketch plane and
+        # off it is laid into it; without ProjectAxis it is taken as it is
+        torus = 2 * math.pi ** 2 * 25 * 20
+        body, rev = self._circleRevolution('Tilted')
+        rev.ReferenceAxis = (self._datumLine(body, FreeCAD.Vector(0, 0, 5),
+                                             FreeCAD.Vector(0, 1, 1)), [''])
+        self.Doc.recompute()
+        self.assertNotIn('Invalid', rev.State)
+        self.assertGreater(abs(rev.Shape.Volume - torus), 100)
+        rev.ProjectAxis = True
+        self.Doc.recompute()
+        self.assertNotIn('Invalid', rev.State)
+        self.assertAlmostEqual(rev.Base.z, 0, places=6)
+        self.assertAlmostEqual(rev.Axis.z, 0, places=6)
+        self.assertAlmostEqual(rev.Shape.Volume, torus, places=2)
+
+    def testProjectAxisPerpendicularIsAnError(self):
+        body, rev = self._circleRevolution('Normal')
+        rev.ReferenceAxis = (self._datumLine(body, FreeCAD.Vector(0, 0, 0),
+                                             FreeCAD.Vector(0, 0, 1)), [''])
+        rev.ProjectAxis = True
+        self.Doc.recompute()
+        self.assertIn('Invalid', rev.State)
+
+    def testAxisOutsideTheBodyInItsFrame(self):
+        # (upstream 03cc6671e3) a reference beside a body nested in two Parts
+        # is brought into the body's frame, not taken at its own placement
+        body, rev = self._circleRevolution('Nested')
+        outer = self.Doc.addObject('App::Part', 'NestedOuter')
+        inner = self.Doc.addObject('App::Part', 'NestedInner')
+        outer.addObject(inner)
+        inner.addObject(body)
+        outer.Placement.Base = FreeCAD.Vector(100, 0, 0)
+        inner.Placement.Base = FreeCAD.Vector(10, 0, 0)
+        body.Placement.Base = FreeCAD.Vector(5, 0, 0)
+        axis = self.Doc.addObject('Part::Feature', 'NestedAxis')
+        axis.Shape = Part.makeLine(FreeCAD.Vector(115, 0, 0), FreeCAD.Vector(115, 1, 0))
+        rev.ReferenceAxis = (axis, ['Edge1'])
+        self.Doc.recompute()
+        self.assertNotIn('Invalid', rev.State)
+        self.assertAlmostEqual(rev.Base.x, 0, places=6)
+        self.assertAlmostEqual(rev.Shape.Volume, 2 * math.pi ** 2 * 25 * 20, places=2)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestRevolve")
