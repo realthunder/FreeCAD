@@ -15,7 +15,8 @@ class's pattern: such a curve goes to its class's second set ("Dashed..."),
 which has the class's width and the layer's pattern.
 
 Sketch: a line, a construction line, an ellipse with its internal geometry
-exposed, one edge of a box as external geometry and one as defining.
+exposed, a circle, one edge of a box as external geometry and one as
+defining, and a short line with a dimension.
 
 Checks:
 
@@ -33,6 +34,19 @@ Checks:
 Scored against the tree before the change: every curve is in the one solid
 set, the construction, internal and external sets do not exist, and the
 construction line is drawn unbroken.
+
+With them, upstream's other appearance settings of the same page:
+
+  - a point is coloured as what it belongs to (f5da655429): the ends of a
+    normal line in the curve colour, a construction line's and a
+    circle's centre in the construction colour, an external edge's in the
+    external colour. Before: all of them the vertex colour, red;
+  - defining external geometry has a colour preference of its own
+    (411cdadf49, View/ExternalDefiningColor), the external colour until
+    set. Before: the external colour made lighter, and no preference;
+  - a dimension's leaders have a width and a pattern (c2d6248bc7,
+    DimensionalConstraintLineWidth/Pattern), and so have the two axes
+    (90ca7a30d9, AxisLineWidth/Pattern). Before: neither is read.
 """
 import os
 import time
@@ -47,7 +61,9 @@ OUT = os.environ["GT_OUT"]
 RESULT = os.environ.get("GT_RESULT", os.path.join(OUT, "result.txt"))
 VIEW = "User parameter:BaseApp/Preferences/Mod/Sketcher/View"
 CLASSES = ("", "Construction", "Internal", "External", "ExternalDefining")
-PREFS = ("Edge", "Construction", "Internal", "External", "ExternalDefining")
+PREFS = ("Edge", "Construction", "Internal", "External", "ExternalDefining",
+         "DimensionalConstraintLine", "AxisLine")
+COLOURS = "User parameter:BaseApp/Preferences/View"
 state = {"done": False}
 
 
@@ -73,6 +89,7 @@ def clear_prefs():
     for name in PREFS:
         grp.RemInt(name + "Width")
         grp.RemInt(name + "Pattern")
+    FreeCAD.ParamGet(COLOURS).RemUnsigned("ExternalDefiningColor")
 
 
 def polylines(name):
@@ -135,6 +152,48 @@ def blue(c):
     return c.blue() > 150 and c.red() < 90 and c.green() < 90
 
 
+def rgb(c):
+    return tuple(int(round(v * 255)) for v in (c[0], c[1], c[2]))
+
+
+def point_colours(sk):
+    """{(GeoId, PosId): colour} of the drawn points, by position."""
+    coords = coin.SoNode.getByName("PointsCoordinate").point.getValues()
+    colours = coin.SoNode.getByName("PointsMaterials").diffuseColor.getValues()
+    found = {}
+    for name, (x, y) in {"line start": (-30, 10), "line end": (30, 10),
+                         "construction start": (-30, 20), "circle centre": (-20, -15),
+                         "external start": (-40, -45), "defining start": (-40, -37)}.items():
+        for i, p in enumerate(coords):
+            if abs(p[0] - x) < 1e-4 and abs(p[1] - y) < 1e-4:
+                found[name] = rgb(colours[i])
+    return found
+
+
+def curve_colour(set_name):
+    """the colour of the first curve of a class's set"""
+    node = coin.SoNode.getByName(set_name)
+    mats = coin.SoNode.getByName("CurvesMaterials").diffuseColor.getValues()
+    if node is None or node.materialIndex.getNum() == 0:
+        return None
+    return rgb(mats[node.materialIndex.getValues()[0]])
+
+
+def label_style(view):
+    sa = coin.SoSearchAction()
+    sa.setType(coin.SoType.fromName(coin.SbName("SoDatumLabel")))
+    sa.setInterest(coin.SoSearchAction.FIRST)
+    sa.setSearchingAll(True)
+    sa.apply(view.getAuxSceneGraph())
+    path = sa.getPath()
+    if path is None:
+        return None
+    label = path.getTail()
+    pattern = label.getField("linePattern")
+    return (float(label.getField("lineWidth").get().getString()),
+            int(pattern.get().getString(), 0) if pattern is not None else None)
+
+
 def run():
     try:
         import Part
@@ -153,6 +212,12 @@ def run():
         sk.addGeometry(Part.LineSegment(V(-30, 20, 0), V(30, 20, 0)), True)
         ellipse = sk.addGeometry(Part.Ellipse(V(20, -20, 0), V(0, -10, 0), V(0, -20, 0)), False)
         sk.exposeInternalGeometry(ellipse)
+        import Sketcher
+        # a circle, for a point that is no end: its centre
+        sk.addGeometry(Part.Circle(V(-20, -15, 0), V(0, 0, 1), 5), False)
+        # a dimension, on a line of its own clear of the others
+        dimensioned = sk.addGeometry(Part.LineSegment(V(45, -10, 0), V(45, 5, 0)), False)
+        sk.addConstraint(Sketcher.Constraint("Distance", dimensioned, 15.0))
         doc.recompute()
         # the box's bottom edges along X: y = -45 and y = -37
         edges = [i + 1 for i, e in enumerate(box.Shape.Edges)
@@ -164,7 +229,7 @@ def run():
         sk.addExternal("Box", "Edge%d" % high, True)
         doc.recompute()
         internal = sum(1 for g in sk.Geometry
-                       if g.TypeId == "Part::GeomLineSegment") - 2
+                       if g.TypeId == "Part::GeomLineSegment") - 3
         note("internal lines: %d, external: %s" % (internal, sk.ExternalGeometry))
 
         FreeCADGui.getDocument(doc.Name).setEdit(sk)
@@ -176,7 +241,7 @@ def run():
         got = counts()
         note("sets: %s" % (got,))
         check("each class's set holds its curves",
-              got == [2, 1, internal, 1, 1] and internal >= 2, got)
+              got == [4, 1, internal, 1, 1] and internal >= 2, got)
 
         styles = [style(c) for c in CLASSES]
         note("styles: %s" % (styles,))
@@ -227,6 +292,54 @@ def run():
             check("the normal line is drawn unbroken", solid > 0.97, "%.2f" % solid)
             check("the construction line is drawn with gaps", 0.4 < dashed < 0.92,
                   "%.2f" % dashed)
+
+        # -- points, the defining colour, a dimension's leaders, the axes --
+        # the construction colour is 0.86 of 255
+        WHITE, BLUE, PINK = (255, 255, 255), (0, 0, 219), (204, 51, 153)
+        got = point_colours(sk)
+        note("points: %s" % (got,))
+        check("the ends of a normal line are drawn in the curve colour",
+              got.get("line start") == WHITE and got.get("line end") == WHITE, got)
+        check("a construction line's points and a centre in the construction colour",
+              got.get("construction start") == BLUE and got.get("circle centre") == BLUE, got)
+        check("external geometry's points in the external colour",
+              got.get("external start") == PINK and got.get("defining start") == PINK, got)
+
+        check("defining external geometry is the external colour until its own is set",
+              curve_colour("CurvesExternalDefiningLineSet") == PINK,
+              curve_colour("CurvesExternalDefiningLineSet"))
+        FreeCAD.ParamGet(COLOURS).SetUnsigned("ExternalDefiningColor", 0x00ff00ff)
+        settle(40)
+        check("and its own preference then",
+              curve_colour("CurvesExternalDefiningLineSet") == (0, 255, 0)
+              and curve_colour("CurvesExternalLineSet") == PINK,
+              (curve_colour("CurvesExternalDefiningLineSet"),
+               curve_colour("CurvesExternalLineSet")))
+        FreeCAD.ParamGet(COLOURS).RemUnsigned("ExternalDefiningColor")
+
+        normal = style("")
+        unit = normal[0] / 2.0 if normal else 1.0
+        cross = coin.SoNode.getByName("RootCrossDrawStyle")
+        before = (label_style(view), (cross.lineWidth.getValue(), cross.linePattern.getValue()))
+        grp = FreeCAD.ParamGet(VIEW)
+        grp.SetInt("DimensionalConstraintLineWidth", 4)
+        grp.SetInt("DimensionalConstraintLinePattern", 0xFCFC)
+        grp.SetInt("AxisLineWidth", 3)
+        grp.SetInt("AxisLinePattern", 0xAAAA)
+        settle(40)
+        cross = coin.SoNode.getByName("RootCrossDrawStyle")
+        after = (label_style(view), (cross.lineWidth.getValue(), cross.linePattern.getValue()))
+        note("label and axis style: %s -> %s" % (before, after))
+        check("a dimension's leaders take their width and pattern from the preferences",
+              before[0] == (2 * unit, 0xFFFF) and after[0] == (4 * unit, 0xFCFC),
+              (before[0], after[0]))
+        check("and so do the axes",
+              before[1] == (2 * unit, 0xFFFF) and after[1] == (3 * unit, 0xAAAA),
+              (before[1], after[1]))
+        for name in ("DimensionalConstraintLine", "AxisLine"):
+            grp.RemInt(name + "Width")
+            grp.RemInt(name + "Pattern")
+        settle(40)
 
         # a visual layer's own pattern wins over the class's
         FreeCADGui.getDocument(doc.Name).resetEdit()
