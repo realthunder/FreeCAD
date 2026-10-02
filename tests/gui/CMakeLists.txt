@@ -740,3 +740,10 @@ fc_add_gui_test(GuiViewProviderBoundingBox_tests_run
 fc_add_gui_test(GuiSketchCoincidentSameElement_tests_run
                 sketch-coincident-same-element.py
                 --timeout 150)
+
+# A curve is not made tangent to itself: an arc selected with its own end
+# point added Tangent(arc, start, arc) (the subject of upstream
+# 1050996387, on the path the fork can reach).
+fc_add_gui_test(GuiSketchTangentSelf_tests_run
+                sketch-tangent-self.py
+                --timeout 120)

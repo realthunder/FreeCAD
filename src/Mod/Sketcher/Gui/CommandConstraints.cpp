@@ -7441,6 +7441,14 @@ void CmdSketcherConstrainTangent::activated(int iMsg)
                 std::swap(PosId1, PosId2);
             }
 
+            // the point is one of the curve's own
+            if (GeoId1 == GeoId2) {
+                Gui::TranslatedUserWarning(Obj,
+                                           QObject::tr("Wrong selection"),
+                                           QObject::tr("Geometry cannot be tangent to itself"));
+                return;
+            }
+
             if (isSimpleVertex(Obj, GeoId1, PosId1)) {
                 if (isBsplineKnot(Obj, GeoId1)) {
                     const Part::Geometry* geom2 = Obj->getGeometry(GeoId2);
