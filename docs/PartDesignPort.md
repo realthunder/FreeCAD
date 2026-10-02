@@ -1,9 +1,9 @@
 # PartDesign: picking upstream features and fixes
 
-Status (2026-10-02): the whole ledger is read and all but 6 rows decided
-(sec 9, sec 10): VarSet and FaceMakerUnified to port, then pattern instance
-suppression and its on-view toggles, at the user's word. Object freeze is
-ported. Earlier status (2026-09-24): phase 0 (ledger, this doc) done; **the gizmos are in**
+Status (2026-10-02): the whole ledger is read and all but 4 rows decided
+(sec 9, sec 10): pattern instance suppression and its on-view toggles are
+left, to be done the fork's way at the user's word. Object freeze, VarSet
+and FaceMakerUnified are ported. Earlier status (2026-09-24): phase 0 (ledger, this doc) done; **the gizmos are in**
 -- the layer (`984e714b32`) and every panel upstream enables (`a56e0777da`,
 `4394ef2827`), built and run on the Windows box (sec 4, "Verified"). The
 gizmo family's 36 ledger rows are decided; three are deferred behind App
@@ -2792,15 +2792,13 @@ Sec 8 left 7 rows deferred behind an upstream facility the fork lacks.
   off. Test `TestLinearPattern.testUpstreamWholeShapeMode`.
 - `e607b5757e` (Std_ToggleFreeze in the PD context menu), with **object
   freeze ported** (upstream `f633fa476a` and its follow-ups, see below).
-- `ec841ed6d4` (VarSets in groups): the user, "port VarSet core" -- the
-  object, its view provider and command, Body and group acceptance; not
-  upstream's add-property dialog rework. Open.
+- `ec841ed6d4` (VarSets in groups): the user, "port VarSet core" --
+  **adapted** with `App::VarSet` itself (`9acde8b5b4`, below).
 - `4f5dd40fa7` (PD measure handlers): **declined**, upstream's unified
   Measure is its own port (`Mod/Measure` is 125 files there, 9 here).
 - `7186d30f6e` (FaceMakerUnified): the user, "port as upstream, but do
-  not use it in sketcher" -- `FaceMakerBuildFace` and `FaceMakerUnified`
-  with upstream's default changes; the sketch's internal faces keep
-  WireJoiner (sec 5 of SketcherPort.md). Open.
+  not use it in sketcher" -- **adapted** with `FaceMakerBuildFace`
+  (`72ddacb5ec`, below); the sketch's internal faces keep WireJoiner.
 
 ### Object freeze
 
@@ -2852,6 +2850,60 @@ body -- the first build's unresolved selection did), Std_Placement is
 inactive, the edit is refused, Radius and Height read only while Label
 stays editable, the context menu lists it, the tree shows the mark, and
 unfreezing restores the editor and recomputes.
+
+### VarSet (`9acde8b5b4`)
+
+`App::VarSet` (upstream `095e94183a`), a document object holding only
+dynamic properties, the user's variables for expressions. Upstream files
+with VarSets loaded without them ("Cannot create object"). Std_VarSet in
+the Structure toolbar and the Tools menu creates one, puts it into a
+group picked alone when the group takes it, selects it and opens the
+fork's add-property dialog -- as a double click does. A body takes one
+(`ec841ed6d4`): `Body::isAllowed()`, which the body's drop check already
+asks, so dragging works too, and the tip stays. Not taken: upstream's
+rework of the add-property dialog for VarSets (some 40 commits:
+expressions, units, enum editors in the dialog) and its hiding of the
+visibility toggle for objects with nothing to show (`17c601eaca`), so a
+VarSet has an eye in the tree. Tests `Document.DocumentVarSetCases` (a
+variable read by an expression, a VarSet in a group surviving a reload)
+and `TestVarSet` (in a body, driving a box). Driven through MCP: the
+command with the body picked puts the VarSet in it and opens the dialog,
+one undo step.
+
+### FaceMakerBuildFace and FaceMakerUnified (`72ddacb5ec`, `3161b908e3`)
+
+The user: "port as upstream, but do not use it in sketcher". Upstream's
+`FaceMakerBuildFace` (`24ab301685`, its sketch half declined in
+SketcherPort.md) splits all edges at their intersections, self-
+intersecting B-splines first, and builds every bounded region with
+`BOPAlgo_BuilderFace`; `FaceMakerUnified` (`7186d30f6e`) classifies
+those regions even-odd by overlap group, so partly overlapping wires fuse
+while nested ones still make holes, and fills a non-planar closed wire
+with `BRepFill_Filling`. `FaceMaker::postBuild()` names faces through the
+splitter's history, chained after the pre-split (`6780065c48`,
+`0939408c21`). Upstream's tests: 116 + 13 Python, 8 gtest naming cases;
+the two degenerate cases accept the fork's `RuntimeError` (its Part
+module raises that for any FreeCAD exception, upstream's the exception's
+own type).
+
+The defaults follow upstream: `makEFace()` with no maker, so every PD
+profile (`AllowMultiFace` is on for new features), a Part Face, Extrusion
+or Revolution made new, and the PD loft's last fallback. The sketch is
+untouched -- it names `FaceMakerRing` itself. A/B over 20 files of the
+repo and the OCCT thickness models (174 objects, every one recomputed;
+the dump is deterministic run to run): geometry identical throughout
+(validity, volume, area, face and edge counts). Names were not at first:
+naming through the splitter even when it split nothing added map entries
+and string hashes -- a pad's map 38 entries where upstream's own test
+says 30, and new hasher ids in the faces of `ModelFromV021`'s revolution
+and a loft of `FaceRefs_v1-1-4`. The fork names through the splitter only
+when it modified something; after that the revolution matches exactly,
+and the loft (a profile that is a pad's face, where the splitter does
+report a change) keeps two faces with other hasher ids, which the fork's
+face-reference tests on that very file (`TestNameEncoding`) still
+resolve. What it buys: two overlapping rectangles in one sketch pad to
+their union, 350; Bullseye made a face of no area of them
+(`TestPad.testOverlappingWiresPadToTheirUnion`).
 
 ### A plane as a revolution axis (found by the triage of sec 10)
 
@@ -2913,3 +2965,9 @@ FreeCADCmd probe.
   linear kind shows a `SuppressedPositions` that does nothing (a 3-box
   pattern with (1,0) suppressed stays 3000) and an upstream file's
   `SuppressedIndices` is dropped.
+
+Verified at `3161b908e3`: Python 3333 OK (50 skipped, 6 expected
+failures), ctest 758/758 (the 8 new FaceMakerUnified gtests). One run of
+ctest timed out `DeferredLoad_tests_run` with 18,535 files in `%TEMP%`;
+it passes in 25 s through `ctest-fcad-cleantmp.cmd` (docs/Testing.md),
+which the run after used throughout.
