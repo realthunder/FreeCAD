@@ -3470,7 +3470,8 @@ references again after each of its aborts.
   intersection flavour; a binder made for another body's edge and undone
   with the constraint in the one step.
 
-Left for a ruling:
+Left for a ruling -- both ruled 2026-10-02, see "The rulings of session
+117, built (session 118)" below:
 
 - *An edge cut by the sketch plane comes back twice.*
   `rebuildExternalGeometry` skips the projection of a FACE when it
@@ -3485,6 +3486,31 @@ Left for a ruling:
   it has no sign of the mode; its tool bar mirror could show the external
   command checked. And whether the constraint commands that open no dialog
   go on the browser's command list.
+
+### The rulings of session 117, built (session 118)
+
+- *An edge taken by intersection is its cut alone* (`878becdec5`). The
+  projection is dropped, by the sketch's hidden `_Version`: a new sketch is
+  version 2, a sketch restored at 0 or 1 keeps projection and cut, since its
+  constraints count on those geometries. Measured, sketch at z = 5: upright
+  edge Point, Point -> Point; slanted Line, Point -> Point; lying in the
+  plane Line, Line -> Line; an edge that never meets the plane was its
+  projection and is refused now, as a face is. The Coincident tool with
+  `Sketcher_Intersection` on takes an upright edge of a box as one point
+  and makes its constraint.
+- *A browser may start the constraint commands that open no dialog*
+  (`5f761d0de6`). Sixteen by name; the dimensional ones, the datum editor and
+  Snell's law stay off for their modal dialog. The list is in
+  docs/ThinClient.md 8.7. Still open, not ruled: what a browser is shown of
+  the outside-picking mode (its tool bar mirror could draw the external
+  command checked), and whether `Sketcher_Defining` and the two intersection
+  commands join `Sketcher_External` on the list -- they activate the same
+  handler, and without them a browser can switch outside picking on in one
+  flavour only.
+- *The wall clock* (`dbc440f64c`): the spin after a rotation, a click
+  against a hold in the navigation styles, and the hover pick's delay are
+  measured on the steady clock. docs/Testing.md has the test that makes the
+  step on demand.
 
 ### TaskSketcherConstraints.cpp (session 117)
 

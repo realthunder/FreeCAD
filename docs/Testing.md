@@ -853,6 +853,21 @@ showed only in a full run.**
   `sketch-constraint-external-pick.py` beside the whole suite, none in 21
   since its helper sends a move right before the press and the release).
 
+**The clock step can be made on demand.** Waiting for WSL2 to step the
+wall clock is how the first two of these were caught, in tens of runs.
+`tests/gui/clock-step-shim.c` is a preloaded `gettimeofday()` -- what
+Coin's `SbTime::getTimeOfDay` reads, so every event stamp and sensor --
+with a function that moves it; `clock-step.py` (`GuiClockStep_tests_run`,
+Linux) calls it through ctypes at the moment a case names, back 0.97 s.
+It found a third family the reading had missed, a press stamp against a
+release stamp (`centerTime`, nine navigation styles): a middle button held
+for a second and released across a step recentred the view. Fixed with
+the spin and the hover pick's delay in `dbc440f64c`. To put any other
+interval to the test: `LD_PRELOAD` and `FC_CLOCK_SHIM` set to the built
+`tests/gui/FCClockStepShim.so`, and `ctypes.CDLL(path).fc_clock_step(-0.97)`
+where the step should fall. What is left on the time of day in `src/Gui`
+is stamps (Quarter, the touch events) and Coin's own sensors, no interval.
+
 ### Toolbar paints threw on macOS 12
 
 **Found 2026-09-07 by the echo test's log, fixed the same day** --
