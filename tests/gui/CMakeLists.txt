@@ -769,3 +769,10 @@ fc_add_gui_test(GuiSketchDimensionToolPoints_tests_run
 fc_add_gui_test(GuiSketchConstraintValuePrecision_tests_run
                 sketch-constraint-value-precision.py
                 --timeout 120)
+
+# A sketch whose external reference broke says so in the tree: an extra
+# icon beside the item, with a tooltip, gone again once the reference is
+# mended (upstream 07b2d9973d, by the fork's extra-icon mechanism).
+fc_add_gui_test(GuiSketchMissingExternalTree_tests_run
+                sketch-missing-external-tree.py
+                --timeout 120)

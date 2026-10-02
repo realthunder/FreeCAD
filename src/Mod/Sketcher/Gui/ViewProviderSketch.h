@@ -404,6 +404,11 @@ public:
     //@{
     void attach(App::DocumentObject *) override;
     void updateData(const App::Property *) override;
+    /// A warning beside the tree item while an external reference is broken
+    void getExtraIcons(std::vector<std::pair<QByteArray, QPixmap> > &) const override;
+    QString getToolTip(const QByteArray &iconTag) const override;
+    /// Whether an external geometry has lost the element it refers to
+    bool hasMissingExternalGeometry() const;
 
     void setupContextMenu(QMenu* menu, QObject* receiver, const char* member) override;
     /// is called when the Provider is in edit and a deletion request occurs
@@ -821,6 +826,8 @@ protected:
 
     // information layer variables
     bool visibleInformationChanged;
+    /// what the tree was last told by hasMissingExternalGeometry()
+    bool missingExternalShown = false;
     double combrepscalehyst;
 
     std::string editDocName;

@@ -8659,6 +8659,15 @@ void ViewProviderSketch::updateData(const App::Property *prop)
 
     auto sketch = getSketchObject();
 
+    if (prop == &sketch->ExternalGeo) {
+        // the tree item carries a warning while an external reference is broken
+        bool missing = hasMissingExternalGeometry();
+        if (missing != missingExternalShown) {
+            missingExternalShown = missing;
+            signalChangeIcon();
+        }
+    }
+
     if (edit) {
         if (prop == &sketch->Geometry
                 || prop == &sketch->ExternalGeo
@@ -8683,6 +8692,33 @@ void ViewProviderSketch::updateData(const App::Property *prop)
         if (pInternalView)
             pInternalView->updateVisual();
     }
+}
+
+static const QByteArray _iconTagMissingExternal("sketch:MissingExternal");
+
+bool ViewProviderSketch::hasMissingExternalGeometry() const
+{
+    for (const Part::Geometry *geo : getSketchObject()->ExternalGeo.getValues()) {
+        auto egf = ExternalGeometryFacade::getFacade(geo);
+        // without a reference it is detached, which is not an error
+        if (!egf->getRef().empty() && egf->testFlag(ExternalGeometryExtension::Missing))
+            return true;
+    }
+    return false;
+}
+
+void ViewProviderSketch::getExtraIcons(std::vector<std::pair<QByteArray, QPixmap> > &icons) const
+{
+    inherited::getExtraIcons(icons);
+    if (hasMissingExternalGeometry())
+        icons.emplace_back(_iconTagMissingExternal, Gui::BitmapFactory().pixmap("Warning"));
+}
+
+QString ViewProviderSketch::getToolTip(const QByteArray &iconTag) const
+{
+    if (iconTag == _iconTagMissingExternal)
+        return tr("Missing external geometry");
+    return inherited::getToolTip(iconTag);
 }
 
 void ViewProviderSketch::startRestoring()
