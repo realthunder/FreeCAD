@@ -209,4 +209,6 @@ class TestNameEncodingAcrossDocuments(unittest.TestCase):
         for binder in binders:
             binder.touch()
         doc.recompute()
-        self.assertEqual(self.elementMaps(binders), built, "names changed by a recompute after reload")
+        self.assertEqual(
+            self.elementMaps(binders), built, "names changed by a recompute after reload"
+        )
