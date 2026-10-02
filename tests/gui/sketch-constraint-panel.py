@@ -88,8 +88,19 @@ def settle(seconds=0.3):
         time.sleep(0.01)
 
 
+def forget_settings():
+    """The panel keeps its filter and its options as preferences, and this
+    test keeps its configuration from one run to the next."""
+    FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Sketcher/General").RemInt(
+        "SelectedConstraintFilters")
+    sketcher = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Sketcher")
+    sketcher.SetBool("VisualisationTrackingFilter", False)
+    sketcher.SetBool("HideInternalAlignment", False)
+
+
 def run():
     try:
+        forget_settings()
         FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View").SetBool(
             "ShowNaviCube", False)
         FreeCADGui.getMainWindow().showMaximized()
@@ -327,8 +338,7 @@ def probe(sk):
 
 def finish():
     try:
-        FreeCAD.ParamGet("User parameter:BaseApp/Preferences/Mod/Sketcher").SetBool(
-            "VisualisationTrackingFilter", False)
+        forget_settings()
         gdoc = FreeCADGui.getDocument(DOC)
         if gdoc.getInEdit():
             gdoc.resetEdit()
