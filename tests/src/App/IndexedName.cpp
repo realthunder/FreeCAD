@@ -155,6 +155,17 @@ TEST_F(IndexedNameTest, nameAndTypeListConstructionWithAllowOthers)
     EXPECT_EQ(indexedName.getIndex(), 42);
 }
 
+TEST_F(IndexedNameTest, nameAndTypeListConstructionNullName)
+{
+    // Act: Mesh::Feature::getSubObject() passes no subname this way
+    auto indexedName = Data::IndexedName(nullptr, allowedTypes, false);
+
+    // Assert
+    EXPECT_TRUE(indexedName.isNull());
+    EXPECT_STREQ(indexedName.getType(), "");
+    EXPECT_EQ(indexedName.getIndex(), 0);
+}
+
 // Check that the same memory location is used for two names that are not in the allowedTypes list
 TEST_F(IndexedNameTest, nameAndTypeListConstructionReusedMemoryCheck)
 {
