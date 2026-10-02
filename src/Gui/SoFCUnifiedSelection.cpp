@@ -678,9 +678,17 @@ SoFCUnifiedSelection::Private::getPickedInfo(std::vector<PickedInfo> &ret,
     ViewProvider *vpEdit = nullptr;
     ViewProviderDocumentObject *vpParent = nullptr;
     std::string editSub;
+    // The object in edit that lets the view pick what is around it (a
+    // sketch running the external geometry tool). It still picks its own
+    // elements itself, so the view passes over them.
+    ViewProvider *vpEditOpen = nullptr;
     if (this->pcDocument) {
        vpEdit = this->pcDocument->getInEdit(&vpParent, &editSub);
-       if (!vpEdit || !vpEdit->isEditingPickExclusive())
+       if (vpEdit && !vpEdit->isEditingPickExclusive()) {
+           vpEditOpen = vpEdit;
+           vpEdit = nullptr;
+       }
+       else if (!vpEdit)
            vpEdit = nullptr;
     }
     ViewProvider *last_vp = nullptr;
@@ -736,6 +744,12 @@ SoFCUnifiedSelection::Private::getPickedInfo(std::vector<PickedInfo> &ret,
         }
 
         if(!info.vpd->getElementPicked(info.pp,info.subname))
+            continue;
+
+        if (vpEditOpen
+                && (info.vpd == vpEditOpen
+                    || (info.vpd == vpParent && !editSub.empty()
+                        && boost::starts_with(info.subname, editSub))))
             continue;
 
         if (info.vpd == vpEdit && vpParent && vpParent != vpEdit) {
@@ -1910,8 +1924,23 @@ SoFCUnifiedSelection::Private::handleEvent(SoHandleEventAction * action)
             if (SoMouseButtonEvent::isButtonReleaseEvent(e,SoMouseButtonEvent::BUTTON1)) {
                 // check to see if the mouse is over a geometry...
                 auto infos = this->getPickedList(action,!Selection().needPickedList());
-                if(skipMouseRelease || \
-                        setSelection(infos,event->wasCtrlDown(),event->wasShiftDown(),event->wasAltDown()))
+                // What the selection gate refuses is not there to be
+                // clicked: the click goes on to whoever is next, a view
+                // provider in edit for one (upstream 999fed9c4e). A
+                // constraint tool of the sketcher with outside picking on
+                // has the view pick what is outside the sketch and takes
+                // the sketch's own elements itself.
+                bool refused = false;
+                if (!skipMouseRelease && !infos.empty() && infos[0].vpd
+                        && infos[0].vpd->getObject()
+                        && infos[0].vpd->getObject()->isAttachedToDocument()) {
+                    auto obj = infos[0].vpd->getObject();
+                    refused = !Selection().isAllowedByGate(obj->getDocument()->getName(),
+                                                           obj->getNameInDocument(),
+                                                           infos[0].subname.c_str());
+                }
+                if(!refused && (skipMouseRelease || \
+                        setSelection(infos,event->wasCtrlDown(),event->wasShiftDown(),event->wasAltDown())))
                     action->setHandled();
             }
             if (!skipMouseRelease) {

@@ -1229,6 +1229,21 @@ void SelectionSingleton::_SelObj::log(bool remove, bool clearPreselect) const {
 
 static bool _SelStackLock;
 
+bool SelectionSingleton::isAllowedByGate(const char* pDocName, const char* pObjectName,
+        const char* pSubName)
+{
+    if (!ActiveGate)
+        return true;
+    _SelObj temp;
+    if (checkSelection(pDocName, pObjectName, pSubName, ResolveMode::NoResolve, temp) != 0)
+        return false;
+    const char *subelement = nullptr;
+    auto pObject = getObjectOfType(temp,App::DocumentObject::getClassTypeId(),gateResolve,&subelement);
+    bool allowed = ActiveGate->allow(pObject?pObject->getDocument():temp.pDoc,pObject,subelement);
+    ActiveGate->notAllowedReason.clear();
+    return allowed;
+}
+
 bool SelectionSingleton::addSelection(const char* pDocName, const char* pObjectName,
         const char* pSubName, float x, float y, float z,
         const std::vector<SelObj> *pickedList, bool clearPreselect)

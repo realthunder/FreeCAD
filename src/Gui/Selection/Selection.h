@@ -505,6 +505,12 @@ public:
     SelectionGate *currentSelectionGate() const {
         return ActiveGate;
     }
+    /** Whether the active gate would let this be selected
+     *
+     * Asked without selecting and without a message. True when there is
+     * no gate.
+     */
+    bool isAllowedByGate(const char* pDocName, const char* pObjectName, const char* pSubName);
 
     int disableCommandLog();
     int enableCommandLog(bool silent=false);
