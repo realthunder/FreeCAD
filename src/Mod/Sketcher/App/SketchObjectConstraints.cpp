@@ -651,6 +651,58 @@ int SketchObject::moveDatumsToEnd()
     return 0;
 }
 
+namespace
+{
+
+/// Whether the expression's VALUE is an angle. Asked of the value, not of the
+/// text: an expression can be an angle with no unit written in it
+/// (atan(0.03)), and "180 - " in front of that is a unit mismatch.
+bool evaluatesToAngle(const App::Expression& expression)
+{
+    try {
+        App::ExpressionPtr result = expression.eval();
+        auto number = Base::freecad_dynamic_cast<App::NumberExpression>(result.get());
+        return number && number->getQuantity().getUnit() == Base::Unit::Angle;
+    }
+    catch (const Base::Exception&) {
+        return false;
+    }
+}
+
+/// The text of the supplementary angle of \a expression (upstream 8b06bca68a,
+/// which builds the tree node by node; this expression tree keeps its
+/// operator codes to itself, so the same two questions are asked through what
+/// it does offer).
+std::string supplementaryAngleExpression(const App::DocumentObject* owner,
+                                         const App::Expression& expression)
+{
+    const std::string text = expression.toString();
+
+    // "180 - x", with the unit or without, goes back to x -- if that is what
+    // the expression IS, and not only how its text begins: "180 - 60 + 5" is
+    // (180 - 60) + 5, and taking the front off it would leave 60 + 5.
+    for (const char* prefix : {"180 \xC2\xB0 - ", "180 - "}) {
+        if (!boost::starts_with(text, prefix)) {
+            continue;
+        }
+        std::string rest = text.substr(std::strlen(prefix));
+        try {
+            App::ExpressionPtr whole =
+                App::Expression::parse(owner, std::string(prefix) + "(" + rest + ")");
+            if (whole && whole->isSame(expression)) {
+                return rest;
+            }
+        }
+        catch (const Base::Exception&) {
+        }
+    }
+
+    return std::string(evaluatesToAngle(expression) ? "180 \xC2\xB0 - (" : "180 - (")
+        + text + ")";
+}
+
+}  // namespace
+
 void SketchObject::reverseAngleConstraintToSupplementary(Constraint* constr, int constNum)
 {
     std::swap(constr->First, constr->Second);
@@ -663,9 +715,10 @@ void SketchObject::reverseAngleConstraintToSupplementary(Constraint* constr, int
     }
 
     // Edit the expression if any, else modify constraint value directly
-    if (constraintHasExpression(constNum)) {
-        std::string expression = getConstraintExpression(constNum);
-        setConstraintExpression(constNum, reverseAngleConstraintExpression(expression));
+    App::ObjectIdentifier path = Constraints.createPath(constNum);
+    auto info = getExpression(path);
+    if (info.expression) {
+        setConstraintExpression(constNum, supplementaryAngleExpression(this, *info.expression));
     }
     else {
         double actAngle = constr->getValue();
@@ -714,30 +767,6 @@ void SketchObject::setConstraintExpression(int constNum, const std::string& newE
             Base::Console().Error("Failed to set constraint expression.");
         }
     }
-}
-
-std::string SketchObject::reverseAngleConstraintExpression(std::string expression)
-{
-    // Check if expression contains units (°, deg, rad)
-    if (expression.find("°") != std::string::npos
-        || expression.find("deg") != std::string::npos
-        || expression.find("rad") != std::string::npos) {
-        if (expression.substr(0, 9) == "180 ° - ") {
-            expression = expression.substr(9, expression.size() - 9);
-        }
-        else {
-            expression = "180 ° - (" + expression + ")";
-        }
-    }
-    else {
-        if (expression.substr(0, 6) == "180 - ") {
-            expression = expression.substr(6, expression.size() - 6);
-        }
-        else {
-            expression = "180 - (" + expression + ")";
-        }
-    }
-    return expression;
 }
 
 int SketchObject::setVirtualSpace(int ConstrId, bool isinvirtualspace)

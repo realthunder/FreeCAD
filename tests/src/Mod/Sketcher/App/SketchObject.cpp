@@ -809,8 +809,7 @@ TEST_F(SketchObjectTest, testReverseAngleConstraintToSupplementaryExpressionAppl
     EXPECT_EQ(std::string("32 °"), getObject()->getConstraintExpression(id));
 }
 
-// Pending upstream 8b06bca68a: supplementary angle expression built as an AST, keeping the unit.
-TEST_F(SketchObjectTest, DISABLED_testReverseAngleConstraintToSupplementaryExpressionFunction)
+TEST_F(SketchObjectTest, testReverseAngleConstraintToSupplementaryExpressionFunction)
 {
     auto [constraint, id] = setupAngleConstraint(getObject(), "atan(0.03)");
     getObject()->reverseAngleConstraintToSupplementary(constraint.get(), id);
@@ -818,6 +817,18 @@ TEST_F(SketchObjectTest, DISABLED_testReverseAngleConstraintToSupplementaryExpre
     getObject()->reverseAngleConstraintToSupplementary(constraint.get(), id);
     EXPECT_EQ(std::string("180 ° - atan(0.03)"), supExpr);
     EXPECT_EQ(std::string("atan(0.03)"), getObject()->getConstraintExpression(id));
+}
+
+// (180 - 60) + 5 begins as "180 - x" does and is not one: it is wrapped whole,
+// and wrapping it again gives it back.
+TEST_F(SketchObjectTest, testReverseAngleConstraintToSupplementaryExpressionNotAPrefix)
+{
+    auto [constraint, id] = setupAngleConstraint(getObject(), "180 - 60 + 5");
+    getObject()->reverseAngleConstraintToSupplementary(constraint.get(), id);
+    auto supExpr = getObject()->getConstraintExpression(id);
+    getObject()->reverseAngleConstraintToSupplementary(constraint.get(), id);
+    EXPECT_EQ(std::string("180 - (180 - 60 + 5)"), supExpr);
+    EXPECT_EQ(std::string("180 - 60 + 5"), getObject()->getConstraintExpression(id));
 }
 
 TEST_F(SketchObjectTest, testGetElementName)

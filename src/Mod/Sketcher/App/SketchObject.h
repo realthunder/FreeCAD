@@ -386,8 +386,6 @@ public:
     /// Change an angle constraint to its supplementary angle.
     void reverseAngleConstraintToSupplementary(Constraint* constr, int constNum);
     void inverseAngleConstraint(Constraint* constr);
-    /// Modify an angle constraint expression string to its supplementary angle
-    static std::string reverseAngleConstraintExpression(std::string expression);
 
     // Check if a constraint has an expression associated.
     bool constraintHasExpression(int constNum) const;
