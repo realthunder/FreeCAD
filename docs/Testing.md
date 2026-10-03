@@ -5,8 +5,9 @@ Status as of **2026-09-02**, measured on `build/conda-relwithdebinfo-801`
 
 *** **The suites run on the RelWithDebInfo tree.** `conda-relwithdebinfo-801`
 -> `build/conda-relwithdebinfo-801` is the standard build and the one every
-test run uses. `conda-debug-local` -> `build/conda-debug-occt801` is for
-debugger sessions only. An earlier revision of this page named the debug tree
+test run uses, and a debugger session too: the debug stack
+(`conda-debug-local` -> `build/conda-debug-occt801`) was retired on
+2026-10-03, its OCCT prefix deleted. An earlier revision of this page named the debug tree
 as "the primary tree"; that was wrong.
 
 | Suite | Result |

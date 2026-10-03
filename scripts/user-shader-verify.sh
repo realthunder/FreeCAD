@@ -53,9 +53,9 @@
 set -u
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 RUN="$REPO/.conda/run.sh"
-# The OCCT 8.0.1 conda tree is what the fork builds against
-# (docs/DevEnvironment.md); FC_BUILD repoints the suites at another one.
-BUILD=${FC_BUILD:-"$REPO/build/conda-debug-occt801"}
+# The standard build, the one every test run uses (CLAUDE.md,
+# docs/DevEnvironment.md); FC_BUILD repoints the suites at another one.
+BUILD=${FC_BUILD:-"$REPO/build/conda-relwithdebinfo-801"}
 FCBIN="$BUILD/bin/FreeCAD"
 [ -x "$FCBIN" ] || {
     echo "no FreeCAD binary at $FCBIN (set FC_BUILD to another build tree)"

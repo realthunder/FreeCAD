@@ -387,11 +387,19 @@ rebuild -- the imported target's path is read at configure time.
 Build dirs / installs are parallel to the system stack and never collide:
 `<repo>/build_conda_debug` → `<repo>/install/conda-debug`.
 
-**Both OCCT installs on this box are 8.0.1**, from `LinkVibe-801`:
-`install/conda-debug-801` (what the debug FreeCAD links) and
-`install/conda-relwithdebinfo-801` (the standard stack, where anything
-version-guarded is built and measured). The recipe below makes the debug one;
-swap `CMAKE_BUILD_TYPE` and `INSTALL_DIR` for the other.
+**There is one OCCT install on this box**, 8.0.1 from `LinkVibe-801`:
+`install/conda-relwithdebinfo-801`, the standard stack, where everything is
+built, tested and measured. The recipe below makes it.
+
+A Debug one (`build_conda_debug_801` -> `install/conda-debug-801`) stood
+beside it until 2026-10-03 and was deleted then. In its last month it was
+rebuilt after every sync and never run: the debug FreeCAD tree that linked it
+was last built on 2026-08-31, and every debugger session of that month ran on
+the RelWithDebInfo tree, which carries full debug info. To have one again it is
+this recipe with `CMAKE_BUILD_TYPE=Debug` and a build and install directory of
+its own. The Coin and pivy recipes under it still name their debug prefixes;
+for the standard stack they are `build_conda_relwithdebinfo` ->
+`install/conda-relwithdebinfo`.
 
 ```sh
 RUN=~/works/sw/fcad/.conda/run.sh
@@ -400,17 +408,17 @@ RUN=~/works/sw/fcad/.conda/run.sh
 # (OCCT installs libs with empty RUNPATH otherwise, and RUNPATH is not
 # transitive: Part.so finds libTKPart, but libTKPart can't find libTKXDE)
 git -C ~/works/sw/occt switch LinkVibe-801
-$RUN cmake -S ~/works/sw/occt -B ~/works/sw/occt/build_conda_debug_801 -G Ninja \
+$RUN cmake -S ~/works/sw/occt -B ~/works/sw/occt/build_conda_relwithdebinfo_801 -G Ninja \
   -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
-  -DCMAKE_BUILD_TYPE=Debug \
-  -DINSTALL_DIR=$HOME/works/sw/occt/install/conda-debug-801 \
+  -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+  -DINSTALL_DIR=$HOME/works/sw/occt/install/conda-relwithdebinfo-801 \
   -DCMAKE_INSTALL_RPATH='$ORIGIN' \
   -DBUILD_LIBRARY_TYPE=Shared -DBUILD_MODULE_Draw=OFF \
   -DUSE_TBB=OFF -DUSE_VTK=OFF -DUSE_DRACO=OFF \
   -DUSE_FREETYPE=ON -DUSE_FREEIMAGE=ON -DUSE_RAPIDJSON=ON \
   -DBUILD_RELEASE_DISABLE_EXCEPTIONS=OFF
-$RUN cmake --build ~/works/sw/occt/build_conda_debug_801 \
-  && $RUN cmake --install ~/works/sw/occt/build_conda_debug_801
+$RUN cmake --build ~/works/sw/occt/build_conda_relwithdebinfo_801 \
+  && $RUN cmake --install ~/works/sw/occt/build_conda_relwithdebinfo_801
 
 # Coin
 $RUN cmake -S ~/works/sw/coin -B ~/works/sw/coin/build_conda_debug -G Ninja \
@@ -519,6 +527,12 @@ toolchain to have produced a wheel first -- see [the guest
 toolchain](#the-pyodide-sandbox-guest-toolchain)), and anything naming a
 directory outside `${sourceDir}` or `$env{HOME}/works/sw`.
 
+**The debug stack is retired (2026-10-03).** What follows is what it was. Its
+OCCT prefix, `occt/install/conda-debug-801`, is deleted (see "Building the
+dependencies"), so the preset no longer configures and
+`build/conda-debug-occt801` cannot run; a debugger session uses the
+RelWithDebInfo tree.
+
 The debug preset `conda-debug-local` (in `CMakeUserPresets.json`, gitignored)
 inherits `conda-linux-debug` and overrides: build dir
 `build/conda-debug-occt801`, `CMAKE_PREFIX_PATH`/`OCC_INCLUDE_DIR` pointing at
@@ -537,7 +551,7 @@ the RelWithDebInfo tree -- but the stack is known-good rather than assumed.
 Building it needs the debug **Coin and pivy** prefixes to be current first; see
 the two warnings in the dependency section.
 
-**Both stacks are OCCT 8.0.1; there is no 7.7.2 on this box any more.** The
+**The stack is OCCT 8.0.1; there is no 7.7.2 on this box any more.** The
 frozen 7.7.2 prefixes (`occt/install/conda-debug`,
 `occt/install/conda-relwithdebinfo`) and the FreeCAD trees that linked them
 (`build/conda-debug`, `build/conda-relwithdebinfo`) were deleted on 2026-08-28
@@ -717,7 +731,7 @@ visible in the preset.
 ### Cycles (path-traced renderer)
 
 **Cycles is OFF unless you ask for it.** `BUILD_CYCLES` defaults OFF and neither
-preset sets it, so a plain `cmake --preset conda-debug-local` gives a tree with
+preset sets it, so a plain `cmake --preset conda-linux-801-relwithdebinfo` gives a tree with
 no path tracer in it. There is deliberately no Cycles preset: the OptiX and CUDA
 prefixes are machine-specific, so the flags are stated on the command line.
 
@@ -759,14 +773,13 @@ Configure and build:
 ```sh
 RUN=~/works/sw/fcad/.conda/run.sh
 cd ~/works/sw/fcad
-$RUN cmake --preset conda-debug-local -DBUILD_CYCLES=ON \
+$RUN cmake --preset conda-linux-801-relwithdebinfo -DBUILD_CYCLES=ON \
     -DOPTIX_ROOT_DIR=$HOME/works/sw/optix-dev \
     -DCYCLES_RUNTIME_OPTIX_ROOT_DIR=$HOME/works/sw/optix-dev
-$RUN cmake --build build/conda-debug-occt801
+$RUN cmake --build build/conda-relwithdebinfo-801
 ```
 
-(Same flags on `conda-relwithdebinfo-801` for the standard tree. Cycles is a
-heavy build; that is why it does not default on.)
+(Cycles is a heavy build; that is why it does not default on.)
 
 #### CUDA_BIN_PATH is a RUN-time variable, and forgetting it looks like a bug
 
@@ -1458,11 +1471,9 @@ gets detected but its headers are not on the conda sysroot's search path, so the
 RUN=~/works/sw/fcad/.conda/run.sh
 $RUN ~/works/sw/fcad/build/conda-relwithdebinfo-801/bin/FreeCAD     # GUI (WSLg)
 $RUN ~/works/sw/fcad/build/conda-relwithdebinfo-801/bin/FreeCADCmd  # headless
-# gdb: use the debug tree, which carries unoptimized frames.
-# PYTHONPATH is REQUIRED here -- it selects the pivy built against the debug
-# Coin. Without it the debug binary pulls the release Coin through pivy.
-PYTHONPATH=$HOME/works/sw/pivy/install/conda-debug \
-  $RUN gdb --args ~/works/sw/fcad/build/conda-debug-occt801/bin/FreeCADCmd script.py
+# gdb: the same tree. It carries full debug info; its frames are optimized,
+# so a local can read <optimized out>. The debug stack is retired.
+$RUN gdb --args ~/works/sw/fcad/build/conda-relwithdebinfo-801/bin/FreeCADCmd script.py
 ```
 
 - All of fcad/OCCT/Coin have full debug info; gdb breakpoints resolve with source lines
