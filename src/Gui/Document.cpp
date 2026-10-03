@@ -4955,9 +4955,22 @@ bool Document::isPerformingTransaction() const {
     return d->_isTransacting;
 }
 
+/// Whether the view provider in edit, in whichever document it is,
+/// takes an undo or redo as its own (ViewProvider::undoRedoInEdit). A
+/// transaction may span documents, so not only this one's.
+static bool undoRedoInEdit(bool redo)
+{
+    Gui::Document* editDoc = Application::Instance->editDocument();
+    ViewProvider* vp = editDoc ? editDoc->getInEdit() : nullptr;
+    return vp && vp->undoRedoInEdit(redo);
+}
+
 /// Will UNDO one or more steps
 void Document::undo(int iSteps)
 {
+    if (undoRedoInEdit(false))
+        return;
+
     Base::FlagToggler<> flag(d->_isTransacting);
 
     Gui::Selection().clearCompleteSelection();
@@ -4977,6 +4990,9 @@ void Document::undo(int iSteps)
 /// Will REDO one or more steps
 void Document::redo(int iSteps)
 {
+    if (undoRedoInEdit(true))
+        return;
+
     Base::FlagToggler<> flag(d->_isTransacting);
 
     Gui::Selection().clearCompleteSelection();

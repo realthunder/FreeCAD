@@ -542,6 +542,18 @@ public:
     virtual bool isEditingPickExclusive() const { return false; }
     bool isEditing() const;
     void finishEditing();
+    /** An undo or redo asked for while this is in edit, before anything
+     * is undone. True takes the request as answered, and nothing in the
+     * document is undone: an entry being typed is ended by it, as a
+     * spreadsheet ends the edit of a cell. Asked by Gui::Document, so
+     * Std_Undo and a client's undo come here; an undo straight on the App
+     * document does not.
+     */
+    virtual bool undoRedoInEdit(bool redo)
+    {
+        (void)redo;
+        return false;
+    }
     /// adjust viewer settings when editing a view provider
     virtual void setEditViewer(ViewerContext*, int ModNum);
     /// restores viewer settings when leaving editing mode
