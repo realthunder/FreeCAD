@@ -13,13 +13,16 @@ Sketch: two lines, 10 long. A client over a real socket:
   - starts Sketcher_ConstrainDistance: admitted, not refused;
   - clicks the first line: one entry box is stated, with the line's length
     in it and the keys;
-  - types 2, 5 and Enter: the box is gone, the constraint is there with
-    25, and the two are ONE undo step;
+  - types 2, 5: the box is the value's editor ("datum": the anchor's away
+    point, the name row, the driving toggle);
+  - turns it into an expression through onViewAction (a completion the
+    client offered is taken that way) and flips the toggle there and back;
+  - Enter: the box is gone, the constraint is there with 25 from the
+    expression, and the two are ONE undo step;
   - clicks the second line, and Escape in its box: no constraint is left;
   - all through, the host shows no modal dialog -- watched from the GUI
     thread while the client talks;
-  - Sketcher_ConstrainSnellsLaw, which has a dialog of its own, is still
-    refused.
+  - Sketcher_MapSketch, which has a dialog of its own, is still refused.
 
 Run through scripts/gui-test.sh (xvfb, isolated configuration, external
 timeout); registered in ctest by tests/gui/CMakeLists.txt.
@@ -120,6 +123,8 @@ class Client(threading.Thread):
         self.opened_again = None
         self.after_escape = None
         self.refused = None
+        self.expr = None
+        self.toggled = []
         self.all_pushes = []
         self.phase = ""
 
@@ -168,6 +173,28 @@ class Client(threading.Thread):
             got = parsed(raw)
             if got and got.get("cmd") == "onview":
                 self.typed = got.get("params", [])
+        # An expression in place of the text, as a taken completion does,
+        # and the toggle there and back
+        text = str((self.typed or [{}])[0].get("text", ""))
+        index = (self.typed or [{}])[0].get("i", 0)
+        mark = len(ws.pushes)
+        ws.op(jsonlib.dumps({"id": 10, "op": "onViewAction", "index": index,
+                             "action": "replace", "start": 0, "length": len(text),
+                             "text": "=2 * 12.5 mm"}))
+        ws.drain(1.2)
+        for raw in ws.pushes[mark:]:
+            got = parsed(raw)
+            if got and got.get("cmd") == "onview" and got.get("params"):
+                self.expr = got["params"]
+        for n in (11, 12):
+            mark = len(ws.pushes)
+            ws.op(jsonlib.dumps({"id": n, "op": "onViewAction", "index": index,
+                                 "action": "toggle"}))
+            ws.drain(0.5)
+            for raw in ws.pushes[mark:]:
+                got = parsed(raw)
+                if got and got.get("cmd") == "onview" and got.get("params"):
+                    self.toggled.append(got["params"][0].get("driving"))
         mark = len(ws.pushes)
         key(ws, RETURN, 2300)
         ws.drain(0.8)
@@ -197,7 +224,7 @@ class Client(threading.Thread):
         self.sampled.wait(30.0)
 
         self.refused = parsed(ws.op(
-            '{"id":3,"op":"command","name":"Sketcher_ConstrainSnellsLaw"}'))
+            '{"id":3,"op":"command","name":"Sketcher_MapSketch"}'))
         ws.op('{"id":4,"op":"resetEdit"}')
         ws.drain(0.5)
         self.all_pushes = [p[:160] for p in ws.pushes]
@@ -258,7 +285,8 @@ def poll():
     if client.phase == "entered" and "entered" not in state:
         state["entered"] = (sketch.ConstraintCount,
                             [round(c.Value, 6) for c in sketch.Constraints],
-                            state["doc"].UndoCount - state["undo0"])
+                            state["doc"].UndoCount - state["undo0"],
+                            [e[1] for e in sketch.ExpressionEngine])
         client.sampled.set()
     if client.phase == "escaped" and "escaped" not in state:
         state["escaped"] = (sketch.ConstraintCount,
@@ -290,10 +318,21 @@ def verify():
         check("the typed digits replace the number in the box",
               bool(client.typed) and str(client.typed[0].get("text", "")).startswith("25"),
               client.typed)
+        if opened:
+            first = opened[0]
+            check("the box is a value's editor: its away point, its name row, its toggle",
+                  first.get("kind") == "datum" and "ax" in first and first.get("nameShown")
+                  and first.get("driving") == 1, first)
+        expr = client.expr or [{}]
+        check("an action puts an expression in, and its result is stated",
+              expr[0].get("expr") is True and "25" in str(expr[0].get("result", "")), expr)
+        check("the toggle flips there and back through actions",
+              client.toggled == [0, 1], client.toggled)
         check("Enter takes the box away", client.after_enter == [], client.after_enter)
         entered = state.get("entered")
-        check("and the constraint is there with the typed value",
-              entered is not None and entered[0] == 1 and entered[1] == [25.0], entered)
+        check("and the constraint is there with the expression's value, bound",
+              entered is not None and entered[0] == 1 and entered[1] == [25.0]
+              and len(entered[3]) == 1, entered)
         check("the constraint and its value are one undo step",
               entered is not None and entered[2] == 1, entered)
         check("the second pick states a box again",

@@ -507,8 +507,9 @@ EM_JS(void, fcviewer_onview_event, (const char *json), {
     window.dispatchEvent(new CustomEvent('fc:onview', { detail: params }));
 });
 
-// Where those boxes belong on the canvas, this frame. Sent as "i,x,y;..."
-// in CSS pixels, and only when something moved.
+// Where those boxes belong on the canvas, this frame. Sent as
+// "i,x,y,visible,ax,ay;..." in CSS pixels, and only when something moved;
+// ax,ay is the projected away point (the anchor itself when there is none).
 //
 // Projected here, per frame, from the world anchor the server sent -- the
 // camera of the frame being drawn is the only one that cannot be behind
@@ -522,7 +523,12 @@ EM_JS(void, fcviewer_onview_layout, (const char *spec), {
         var parts = s.split(';');
         for (var i = 0; i < parts.length; ++i) {
             var f = parts[i].split(',');
-            out.push({ i: +f[0], x: +f[1], y: +f[2], visible: +f[3] !== 0 });
+            var place = { i: +f[0], x: +f[1], y: +f[2], visible: +f[3] !== 0 };
+            if (f.length >= 6) {
+                place.ax = +f[4];
+                place.ay = +f[5];
+            }
+            out.push(place);
         }
     }
     window.dispatchEvent(new CustomEvent('fc:onviewlayout', { detail: out }));
@@ -2631,8 +2637,15 @@ static void selectAt(float px, float py, bool ctrl, bool shift = false)
 struct OnViewParam {
     int index = 0;
     bx::Vec3 anchor {bx::InitZero};
+    /// A value's editor also sends a point one unit away from the anchor,
+    /// in the direction its other rows grow so that they hide nothing it
+    /// edits; projected beside the anchor, it is a direction on the screen.
+    bool hasAway = false;
+    bx::Vec3 away {bx::InitZero};
     float lastX = -1e9f;
     float lastY = -1e9f;
+    float lastAwayX = -1e9f;
+    float lastAwayY = -1e9f;
     bool lastVisible = false;
 };
 static std::vector<OnViewParam> s_onView;
@@ -2659,6 +2672,19 @@ static void parseOnViewAnchors(const char *json)
         param.anchor = bx::Vec3(float(std::atof(px + 4)),
                                 float(std::atof(py + 4)),
                                 float(std::atof(pz + 4)));
+        // The away point, written after the anchor and before the text --
+        // and looked for only there, so that a later entry's is not taken
+        // for this one's.
+        const char *pt = std::strstr(pz, "\"text\":");
+        const char *pax = std::strstr(pz, "\"ax\":");
+        const char *pay = std::strstr(pz, "\"ay\":");
+        const char *paz = std::strstr(pz, "\"az\":");
+        if (pt && pax && pay && paz && paz < pt) {
+            param.hasAway = true;
+            param.away = bx::Vec3(float(std::atof(pax + 5)),
+                                  float(std::atof(pay + 5)),
+                                  float(std::atof(paz + 5)));
+        }
         s_onView.push_back(param);
         p += 5;
     }
@@ -4294,9 +4320,19 @@ static void updateOnViewLayout()
         // Canvas pixels are device pixels; the DOM places in CSS ones.
         const float cx = visible ? sx / s_dpr : param.lastX;
         const float cy = visible ? sy / s_dpr : param.lastY;
+        float ax = cx, ay = cy;
+        if (param.hasAway && visible) {
+            float wx = 0.0f, wy = 0.0f, wdepth = 0.0f;
+            if (projectToScreen(param.away, f, fwd, th, aspect, wx, wy, wdepth)) {
+                ax = wx / s_dpr;
+                ay = wy / s_dpr;
+            }
+        }
         if (visible != param.lastVisible
                 || (visible && (std::fabs(cx - param.lastX) >= 0.5f
-                                || std::fabs(cy - param.lastY) >= 0.5f))) {
+                                || std::fabs(cy - param.lastY) >= 0.5f
+                                || std::fabs(ax - param.lastAwayX) >= 0.5f
+                                || std::fabs(ay - param.lastAwayY) >= 0.5f))) {
             // A box behind the camera keeps its last position and is
             // reported hidden: zeroing it would move every one of them to
             // the corner and back as the view swung past.
@@ -4304,12 +4340,14 @@ static void updateOnViewLayout()
         }
         param.lastX = cx;
         param.lastY = cy;
+        param.lastAwayX = ax;
+        param.lastAwayY = ay;
         param.lastVisible = visible;
         if (!spec.empty())
             spec += ';';
-        char buf[64];
-        std::snprintf(buf, sizeof(buf), "%d,%.1f,%.1f,%d", param.index,
-                      double(cx), double(cy), visible ? 1 : 0);
+        char buf[96];
+        std::snprintf(buf, sizeof(buf), "%d,%.1f,%.1f,%d,%.1f,%.1f", param.index,
+                      double(cx), double(cy), visible ? 1 : 0, double(ax), double(ay));
         spec += buf;
     }
     if (moved)

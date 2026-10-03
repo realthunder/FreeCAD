@@ -877,6 +877,110 @@
   box-shadow: 0 0 0 2px rgba(127, 182, 255, 0.35);
 }
 
+/* A value's editor (docs/SketcherPort.md "One editor for a constraint's
+   value"): the line over the number, the other rows away from what the
+   dimension measures -- below, or above with .fc-onview-datum-above,
+   which reverses the column so the line stays nearest the dimension. */
+.fc-onview-datum {
+  position: absolute;
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 2px;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #cfd3dc;
+  background: rgba(24, 26, 31, 0.92);
+  border: 1px solid rgba(150, 156, 170, 0.55);
+  border-radius: 3px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+}
+
+.fc-onview-datum.fc-onview-datum-above {
+  flex-direction: column-reverse;
+}
+
+.fc-onview-datum-line {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.fc-onview-datum .fc-onview-datum-value {
+  position: static;
+  transform: none;
+  width: 14ch;
+  text-align: left;
+  box-shadow: none;
+}
+
+.fc-onview-datum-value.fc-onview-datum-measured {
+  color: #8a8f99;
+}
+
+.fc-onview-datum-toggle {
+  font: inherit;
+  font-size: 10px;
+  padding: 1px 3px;
+  color: #cfd3dc;
+  background: #2b3d55;
+  border: 1px solid rgba(127, 182, 255, 0.6);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.fc-onview-datum-toggle.fc-onview-datum-reference {
+  background: transparent;
+  color: #8a8f99;
+  border-color: rgba(150, 156, 170, 0.55);
+}
+
+.fc-onview-datum-name {
+  font: inherit;
+  font-size: 11px;
+  padding: 0 4px;
+  color: #cfd3dc;
+  background: transparent;
+  border: 1px solid rgba(150, 156, 170, 0.35);
+  border-radius: 3px;
+}
+
+.fc-onview-datum-name:focus {
+  outline: none;
+  border-color: #7fb6ff;
+}
+
+.fc-onview-datum-result {
+  font-size: 11px;
+  padding: 0 4px;
+}
+
+.fc-onview-datum-log { color: #7fb6ff; }
+.fc-onview-datum-warning { color: #e0b040; }
+.fc-onview-datum-error { color: #ff8a80; }
+
+.fc-onview-datum-complete {
+  max-height: 14em;
+  overflow-y: auto;
+  border-top: 1px solid rgba(150, 156, 170, 0.35);
+}
+
+.fc-onview-datum-row {
+  display: flex;
+  gap: 1ch;
+  padding: 0 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.fc-onview-datum-row.fc-onview-datum-hi {
+  background: rgba(127, 182, 255, 0.25);
+}
+
+.fc-onview-datum-desc {
+  color: #8a8f99;
+}
+
 /* The omni search box (docs/OmniSearch.md sec 6): the desktop's
  * floating box at the top centre, one line and a list under it, and a
  * panel below the list once a row is picked. Same surface as the other
