@@ -2267,6 +2267,72 @@ In headful Chrome (viewer-harness `context-menu-pick-*.png`,
   0.6 s hold selected the face and opened no menu;
 - after the menu closed, the mouse preselected again.
 
+**Phase 3 (2026-10-04).** The two leftovers of phase 2. The policy question it
+also listed went to 8.11c.
+
+*A pick entry's preview on touch.* A finger has no pointer to hover with, so a
+tap that only selected gave no chance to see what would be selected. On touch
+(the press's `pointerType`), the first tap on a pick entry previews it and
+marks the entry armed, with "Tap to select" in place of a shortcut. A second
+tap on the same entry selects it. A tap on another pick entry moves the
+preview there. Going back, opening a submenu or closing the menu drops it.
+The mouse and the pen are unchanged: the entry under the pointer previews, and
+one click selects.
+
+*"Pick geometry" inside an edit.* The desktop reaches the pick menu in an edit
+through Std_PickGeometry's shortcut (G, G), since the sketcher's right click is
+its own menu. A browser has no keyboard to press it with, a phone least of
+all, so when an edit answers the right click (`editContextMenu`), "Pick
+geometry" heads its menu whenever the ray hit something.
+
+What the ray hits in a sketch's edit is the edit's own geometry, named as
+`ViewProviderSketch::getElementPicked` names it for a pick that is not the
+sketcher's own: "edge3", "vertex2", lower case, the geometry index. The
+viewer has no names for that geometry, since the edit draws it on the host.
+Such an entry carries `pick.edit: true`, and the host does both halves:
+- the preview is a new op, `contextMenu.hover {menu, item}` (item 0 for none).
+  It preselects the entry in the client's view, as `SelectionMenu::onHover`
+  does on the desktop, and the edit repaints. A menu that goes drops its
+  preview with it.
+- the trigger selects as for any pick, then republishes, because inside an
+  edit the selection is the scene (as `pickAndSelect` does). The viewer does
+  not take it into its own selection.
+
+The sketcher draws such a choice as its own selection, lower-case name and
+all. A reading of its `onSelectionChanged`, whose add tests "Edge" by case,
+said it would not. A build with that test made case-blind drew it no
+differently from one without, so the reading was wrong and nothing was
+changed there.
+
+The kind group read "edge" beside "Face". Groups are capitalised now, so a
+sketch's edges and a solid's share "Edge".
+
+*Left as it is:* the edit's own pointer preselection, the element under the
+mouse when the right button went down, stays lit under the menu until an entry
+is pointed at. The first hover replaces it and leaving that entry clears both.
+A `Selection().rmvPreselect()` when the menu is built, as
+`SelectionMenu::doPick` does before it shows, did not clear it, and was taken
+out again. A touch never meets this: inside an edit a touch is the tool's, and
+the long-press opens no menu there.
+
+**Verified (phase 3):** `tests/gui/serve-context-menu.py`, now 49 checks:
+- in the edit, a ray onto the sketch's line heads the menu with "Pick
+  geometry", listing it as `{obj: Sketch, sub: edge2, edit: true}`;
+- `contextMenu.hover` previews it and drops the preview, and refuses an entry
+  that is not a pick (UnknownItem);
+- choosing it selects it, the client is told, and the sketcher's next menu is
+  the one for a selected line.
+
+In headful Chrome (viewer-harness `sk-pick-*.png`, `touch-preview-*.png`,
+`serve_sketch_pick.py`; step.js gained `menutap`, a CDP touch tap on an entry):
+- in a sketch's edit, "Pick geometry > Edge > Sketch (edge3)" lit the line
+  while pointed at and let it go when the pointer left;
+- choosing it drew the line in the selection colour;
+- outside the edit, a first tap on "Crate (Face5)" outlined the bottom face
+  through the box, armed and "Tap to select";
+- a tap on "Crate (Face6)" moved the preview to the top face, and a second tap
+  selected it, with `fc:selection` naming it.
+
 ### 8.11c Questions a command asks: ask, roll back, replay (design, 2026-10-03)
 
 **Recorded, not built.** It is built after the transaction log

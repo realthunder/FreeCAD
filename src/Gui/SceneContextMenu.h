@@ -101,6 +101,14 @@ public:
     const char* trigger(int item, Render::ClientAccess access, QString& message,
                         bool extend = false);
 
+    /// Preview pick entry \a item, or none for 0, where only the host can
+    /// draw it: geometry of the client's edit, preselected in the client's
+    /// view as the desktop's pick menu preselects the entry under its
+    /// cursor. Null on success, else an error code and, in \a message, why.
+    const char* preview(int item, QString& message);
+    /// Drop a preview still showing
+    void endPreview();
+
     int token() const
     {
         return _token;
@@ -144,6 +152,8 @@ private:
     /// "Pick geometry", put after \a after (the target's own submenu), or
     /// first
     void addPickMenu(QAction* after);
+    /// Whether \a sel names geometry of the edit the menu was built in
+    bool editOwned(const App::SubObjectT& sel) const;
     QJsonObject describeEntry(QAction* action, int id, Render::ClientAccess access);
     /// Every entry of the menu built, judged for \a access
     QJsonArray describe(Render::ClientAccess access);
@@ -162,13 +172,18 @@ private:
     QPointer<QAction> _finishEdit;
     /// The menu is the client's edit mode's own (ViewProvider::editContextMenu)
     bool _inEdit = false;
+    /// The object in that edit
+    App::DocumentObjectT _editObject;
+    /// A preview() is showing
+    bool _previewing = false;
     QHash<int, Entry> _entries;
     /// What the last edit entry answered, for trigger()'s reply
     QJsonObject _editReply;
 };
 
 /// Register the context menu's control ops: `contextMenu` (build one for a
-/// ray), `contextMenu.trigger` and `contextMenu.close`. Idempotent.
+/// ray), `contextMenu.trigger`, `contextMenu.hover` and `contextMenu.close`.
+/// Idempotent.
 GuiExport void installSceneContextMenuOps();
 
 /// Forget \a client's menu: it left.

@@ -29,7 +29,13 @@ What is asserted, on an edit (non-host) connection:
   - in a sketch's edit the right click is the sketcher's own menu, not the
     view's: its create tools allowed, its "Leave sketch" the edit's way out
     (and taken, it leaves); with a tool running the click ends the tool and
-    there is no menu, the next one being the menu again.
+    there is no menu, the next one being the menu again;
+  - and a click onto the sketch's geometry heads that menu with "Pick
+    geometry", the line named as the edit names it ("edge2") and marked as
+    the edit's to draw: the host previews it (contextMenu.hover) and drops
+    the preview, refuses to preview an entry that is not a pick, and
+    choosing it selects it in this client's selection, where the sketcher
+    takes it as its own (its menu is then the one for a selected line).
 
 Run through scripts/gui-test.sh (xvfb, isolated configuration, external
 timeout), or by hand as `FreeCAD <this script>` with GT_OUT set and this
@@ -209,12 +215,49 @@ class Client(threading.Thread):
             '{"id":18,"op":"contextMenu","ray":%s}' % ray_down(150, 150)))
         r["sk_menu2"] = reply_of(ws.op(
             '{"id":19,"op":"contextMenu","ray":%s}' % ray_down(150, 150)))
-        leave = [e for e in walk((r["sk_menu2"] or {}).get("items"))
+        # "Pick geometry" in the edit: the line under the ray is geometry
+        # the edit draws, which the host previews and selects
+        r["sk_picks"] = reply_of(ws.op(
+            '{"id":30,"op":"contextMenu","ray":%s}' % ray_down(30, 40)))
+        menu = r["sk_picks"] or {}
+        edges = [e for e in walk(menu.get("items"))
+                 if e.get("kind") == "pick" and (e.get("pick") or {}).get("obj") == "Sketch"]
+        others = [e for e in walk(menu.get("items")) if e.get("kind") != "pick"]
+        if edges:
+            r["sk_hover"] = reply_of(ws.op(
+                '{"id":31,"op":"contextMenu.hover","menu":%d,"item":%d}'
+                % (menu["menu"], edges[0]["id"])))
+            ws.drain(0.3)
+            self.sample()
+            r["sk_unhover"] = reply_of(ws.op(
+                '{"id":32,"op":"contextMenu.hover","menu":%d,"item":0}' % menu["menu"]))
+            ws.drain(0.3)
+            self.sample()
+            if others:
+                r["sk_hover_other"] = reply_of(ws.op(
+                    '{"id":33,"op":"contextMenu.hover","menu":%d,"item":%d}'
+                    % (menu["menu"], others[0]["id"])))
+            since = len(ws.pushes)
+            r["sk_pick"] = reply_of(ws.op(
+                '{"id":34,"op":"contextMenu.trigger","menu":%d,"item":%d}'
+                % (menu["menu"], edges[0]["id"])))
+            r["sk_sel"] = reply_of(ws.next_push("selection", 5.0, since=since))
+            ws.drain(0.3)
+            self.sample()
+        # With the edge selected the sketcher's menu is the one for it
+        r["sk_menu_sel"] = reply_of(ws.op(
+            '{"id":36,"op":"contextMenu","ray":%s}' % ray_down(150, 150)))
+        # A click on nothing drops it, and the menu has its way out again
+        ws.send(2, wsclient.pick_frame((150.0, 150.0, EYE[2]), (0.0, 0.0, -1.0), 0))
+        ws.drain(0.5)
+        r["sk_menu3"] = reply_of(ws.op(
+            '{"id":35,"op":"contextMenu","ray":%s}' % ray_down(150, 150)))
+        leave = [e for e in walk((r["sk_menu3"] or {}).get("items"))
                  if e.get("command") == "Sketcher_LeaveSketch"]
         if leave:
             r["sk_leave"] = reply_of(ws.op(
                 '{"id":20,"op":"contextMenu.trigger","menu":%d,"item":%d}'
-                % (r["sk_menu2"]["menu"], leave[0]["id"])))
+                % (r["sk_menu3"]["menu"], leave[0]["id"])))
             ws.drain(0.5)
             self.sample()
         ws.close()
@@ -261,6 +304,9 @@ def build():
         sketch = doc.addObject("Sketcher::SketchObject", "Sketch")
         sketch.addGeometry(Part.LineSegment(FreeCAD.Vector(100, 100, 0),
                                             FreeCAD.Vector(120, 100, 0)), False)
+        # In sight of the camera, clear of the box and the pad
+        sketch.addGeometry(Part.LineSegment(FreeCAD.Vector(20, 40, 0),
+                                            FreeCAD.Vector(40, 40, 0)), False)
         doc.recompute()
 
         port = free_port()
@@ -410,8 +456,32 @@ def verify():
         check("the next right click is the menu again",
               any(e.get("command") == "Sketcher_CreatePoint"
                   for e in walk((r.get("sk_menu2") or {}).get("items"))))
+        skp = r.get("sk_picks") or {}
+        sk_top = skp.get("items") or [{}]
+        check("in the edit a ray onto its geometry heads the menu with \"Pick geometry\"",
+              sk_top[0].get("text") == "Pick geometry", [i.get("text") for i in sk_top[:3]])
+        sk_edges = [e for e in walk(sk_top[0].get("items")) if e.get("kind") == "pick"]
+        check("listing the line as the edit names it, marked as the edit's to draw",
+              any(e.get("pick") == {"obj": "Sketch", "sub": "edge2", "edit": True}
+                  and e.get("allowed") is True for e in sk_edges), sk_edges)
+        check("the host previews it", (r.get("sk_hover") or {}).get("ok") is True,
+              r.get("sk_hover"))
+        check("and drops the preview", (r.get("sk_unhover") or {}).get("ok") is True,
+              r.get("sk_unhover"))
+        check("an entry that is not a pick has no preview",
+              (r.get("sk_hover_other") or {}).get("code") == "UnknownItem",
+              r.get("sk_hover_other"))
+        check("choosing it selects it", (r.get("sk_pick") or {}).get("ok") is True,
+              r.get("sk_pick"))
+        sel = (r.get("sk_sel") or {}).get("items") or []
+        check("in this client's selection, which it is told",
+              len(sel) == 1 and sel[0].get("obj") == "Sketch"
+              and sel[0].get("sub", "").endswith("edge2"), r.get("sk_sel"))
+        sel_cmds = [e.get("command") for e in walk((r.get("sk_menu_sel") or {}).get("items"))]
+        check("and the sketcher takes it as its own: its menu is the one for a line",
+              "Sketcher_ConstrainHorizontal" in sel_cmds, sel_cmds)
         check("Leave sketch leaves the edit", (r.get("sk_leave") or {}).get("ok") is True
-              and len(views) > 2 and views[2][0] is False, (r.get("sk_leave"), views))
+              and views and views[-1][0] is False, (r.get("sk_leave"), views))
 
         check("and a pick is refused on trigger",
               (r.get("view_pick") or {}).get("ok") is not True

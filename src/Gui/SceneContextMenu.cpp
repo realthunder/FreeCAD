@@ -20,6 +20,7 @@
 
 #include "PreCompiled.h"
 
+#include <cctype>
 #include <cstring>
 #include <functional>
 #include <map>
@@ -70,8 +71,11 @@ std::map<uint64_t, std::unique_ptr<SceneContextMenu>>& openMenus()
 /// menu's children
 void release(std::unique_ptr<SceneContextMenu> menu)
 {
-    if (menu)
-        menu.release()->deleteLater();
+    if (!menu)
+        return;
+    // An entry's preview goes with the menu, as a popup's does
+    menu->endPreview();
+    menu.release()->deleteLater();
 }
 
 /// A menu text as the eye reads it: a mnemonic's '&' dropped, '&&' one '&'
@@ -225,7 +229,13 @@ QJsonArray SceneContextMenu::build(Render::ClientAccess access)
         MenuItem editMenu;
         if (editVp->editContextMenu(&editMenu)) {
             _inEdit = true;
+            if (auto vpd = dynamic_cast<ViewProviderDocumentObject*>(editVp))
+                _editObject = App::DocumentObjectT(vpd->getObject());
             MenuManager::getInstance()->setupContextMenu(&editMenu, *_menu);
+            // The desktop reaches "Pick geometry" in an edit by its
+            // shortcut (Std_PickGeometry); a browser, and a phone above
+            // all, has no keyboard to press it with, so it heads the menu
+            addPickMenu(nullptr);
             return describe(access);
         }
     }
@@ -293,8 +303,13 @@ void SceneContextMenu::addPickMenu(QAction* after)
         std::string element = _picks[i].getOldElementName(&index);
         if (index < 0 || element.empty())
             element.clear();
-        else
+        else {
             element = element.substr(0, element.find_first_of("0123456789"));
+            // An edit's own geometry ("edge", the sketcher's) under the
+            // kind it is
+            if (!element.empty())
+                element[0] = char(std::toupper(static_cast<unsigned char>(element[0])));
+        }
         byKind[element].push_back(i);
     }
     auto addKind = [&](const std::string& kind, const std::vector<int>& indices) {
@@ -370,6 +385,10 @@ QJsonObject SceneContextMenu::describeEntry(QAction* action, int id, Render::Cli
         QJsonObject names;
         names[QLatin1String("obj")] = QString::fromUtf8(sel.getObjectName().c_str());
         names[QLatin1String("sub")] = QString::fromUtf8(sel.getSubName().c_str());
+        // Geometry the edit draws, which the browser has no names for:
+        // the host previews and paints it (contextMenu.hover)
+        if (editOwned(sel))
+            names[QLatin1String("edit")] = true;
         item[QLatin1String("pick")] = names;
     }
     else if (cmd) {
@@ -530,6 +549,8 @@ const char* SceneContextMenu::trigger(int item, Render::ClientAccess access, QSt
         }
         ViewerScope scope(viewer);
         SelectionNoTopParentCheck guard;
+        Selection().rmvPreselect();
+        _previewing = false;
         if (!extend) {
             Selection().selStackPush();
             Selection().clearSelection();
@@ -538,6 +559,13 @@ const char* SceneContextMenu::trigger(int item, Render::ClientAccess access, QSt
                                  sel.getObjectName().c_str(),
                                  sel.getSubName().c_str());
         Selection().selStackPush();
+        // Inside an edit the selection is the scene: the edit recolours its
+        // geometry, and that is what the wire carries
+        // (SceneServeSource::pickAndSelect)
+        if (gdoc->getInEdit()) {
+            if (SceneServeSource* source = SceneServeSource::sourceFor(doc))
+                source->schedulePublish();
+        }
         return nullptr;
     }
 
@@ -575,6 +603,57 @@ const char* SceneContextMenu::trigger(int item, Render::ClientAccess access, QSt
         return code == QLatin1String("NoView") ? "NoView" : "EditRefused";
     }
     return nullptr;
+}
+
+bool SceneContextMenu::editOwned(const App::SubObjectT& sel) const
+{
+    App::DocumentObject* edited = _editObject.getObject();
+    return edited && sel.getSubObject() == edited;
+}
+
+const char* SceneContextMenu::preview(int item, QString& message)
+{
+    App::Document* doc = App::GetApplication().getDocument(_doc.c_str());
+    SceneServeSource* source = doc ? SceneServeSource::sourceFor(doc) : nullptr;
+    ViewerContext* viewer = clientViewer(doc, _client);
+    if (!source || !viewer) {
+        message = QString::fromUtf8(_doc.c_str());
+        return "Stale";
+    }
+    const App::SubObjectT* sel = nullptr;
+    if (item) {
+        auto it = _entries.find(item);
+        if (it == _entries.end() || it.value().kind != Kind::Pick) {
+            message = QString::number(item);
+            return "UnknownItem";
+        }
+        sel = &_picks[it.value().pick];
+        if (!editOwned(*sel)) {
+            message = QStringLiteral("the browser previews this one itself");
+            return "Local";
+        }
+    }
+    // As the desktop's pick menu preselects the entry under its cursor
+    // (SelectionMenu::onHover), in the client's view, where its edit
+    // listens; nothing, or an entry that is not a pick, drops it
+    ViewerScope scope(viewer);
+    _previewing = sel != nullptr;
+    if (sel)
+        Selection().setPreselect(sel->getDocumentName().c_str(), sel->getObjectName().c_str(),
+                                 sel->getSubName().c_str(), 0, 0, 0,
+                                 SelectionChanges::MsgSource::TreeView);
+    else
+        Selection().rmvPreselect();
+    source->schedulePublish();
+    return nullptr;
+}
+
+void SceneContextMenu::endPreview()
+{
+    if (!_previewing)
+        return;
+    QString ignored;
+    preview(0, ignored);
 }
 
 void SceneContextMenu::onEditEntry()
@@ -698,6 +777,27 @@ void Gui::installSceneContextMenuOps()
             }
         }
         if (error)
+            return sceneControlError(id, error, message);
+        QJsonObject reply;
+        reply[QLatin1String("id")] = id;
+        reply[QLatin1String("ok")] = true;
+        reply[QLatin1String("item")] = item;
+        return reply;
+    });
+
+    // A pick entry pointed at, or nothing (item 0): the host previews what
+    // only it can draw -- the edit's own geometry (the entry's pick.edit)
+    registerSceneControlOp(QStringLiteral("contextMenu.hover"), false,
+                           [](const QJsonObject& req, const std::string&, uint64_t client) {
+        const QJsonValue id = req.value(QLatin1String("id"));
+        const int token = req.value(QLatin1String("menu")).toInt(0);
+        const int item = req.value(QLatin1String("item")).toInt(0);
+        auto& menus = openMenus();
+        auto it = menus.find(client);
+        if (it == menus.end() || !it->second || it->second->token() != token)
+            return sceneControlError(id, "Stale", QStringLiteral("no such menu open"));
+        QString message;
+        if (const char* error = it->second->preview(item, message))
             return sceneControlError(id, error, message);
         QJsonObject reply;
         reply[QLatin1String("id")] = id;

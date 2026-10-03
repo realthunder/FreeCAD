@@ -1720,6 +1720,7 @@
 .fc-ctx-disabled { opacity: 0.4; cursor: default; }
 .fc-ctx-disabled:hover { background: transparent; }
 .fc-ctx-back { color: #8ab4f8; }
+.fc-ctx-armed, .fc-ctx-armed:hover { background: rgba(138, 180, 248, 0.22); }
 .fc-ctx-icon {
   flex: none;
   width: 18px;
