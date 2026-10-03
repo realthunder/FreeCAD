@@ -548,6 +548,27 @@ TEST(SceneDump, thePerFaceTexturePaletteCrossesTheWire)
     EXPECT_FALSE(loaded.scene[1].material.texturepalette);
 }
 
+/// The rendering order of an on-top draw crosses the wire (v81). A
+/// browser that read every on-top draw as one order drew a pattern's
+/// instance toggles under the dimension line crossing them.
+TEST(SceneDump, theOnTopOrderCrossesTheWire)
+{
+    Render::SceneSnapshot snap = makeScene();
+    ASSERT_GT(snap.scene.size(), 1u);
+    snap.scene[0].material.ontop = true;
+    snap.scene[0].material.ontoplayer = 1001;
+    snap.scene[1].material.ontop = true;
+
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(payload.data(), payload.size(), loaded));
+    ASSERT_GT(loaded.scene.size(), 1u);
+    EXPECT_EQ(loaded.scene[0].material.ontoplayer, 1001);
+    EXPECT_EQ(loaded.scene[1].material.ontoplayer, 0);
+}
+
 TEST(SceneDump, manifestRoundTrip)
 {
     BlobStore store;

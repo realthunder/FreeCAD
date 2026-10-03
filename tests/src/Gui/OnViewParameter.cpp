@@ -63,6 +63,7 @@
 #include <Gui/MirrorViewer.h>
 #include <Gui/PatternWidgets.h>
 #include <Gui/SoDatumLabel.h>
+#include <Gui/SoFCUnifiedSelection.h>
 #include <Gui/ViewerContext.h>
 
 namespace
@@ -115,6 +116,10 @@ protected:
         }
         if (Gui::SoToggleMarker::getClassTypeId() == SoType::badType()) {
             Gui::SoToggleMarker::initClass();
+        }
+        // What the markers hang from, to be drawn over the labels
+        if (Gui::SoFCPathAnnotation::getClassTypeId() == SoType::badType()) {
+            Gui::SoFCPathAnnotation::initClass();
         }
         App::Application::Config()["ExeName"] = "OnViewParameter_tests_run";
         int argc = 1;

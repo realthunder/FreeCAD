@@ -56,6 +56,15 @@ public:
         Forced
     };
 
+    /** The rendering order of a label's dimension (SoFCPathAnnotation::
+     * priority). Over the plain annotations and the priority -2 shape
+     * preview of a feature in edit: on a served view the label is in the
+     * scene with them, where the desktop draws it as an overlay over all
+     * of the frame. What else hangs from the on-view root and must stay
+     * over the labels takes a higher one.
+     */
+    static constexpr int OnViewPriority = 1;
+
     EditableDatumLabel(ViewerContext* view, const Base::Placement& plc, SbColor color, bool autoDistance = false, bool avoidMouseCursor = false);
     EditableDatumLabel(ViewerContext* view, const Base::Placement& plc, bool autoDistance = false, bool avoidMouseCursor = false);
 

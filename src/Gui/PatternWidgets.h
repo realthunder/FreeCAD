@@ -38,7 +38,6 @@ class QCheckBox;
 class QComboBox;
 class QFormLayout;
 class QLabel;
-class SoAnnotation;
 class SoEventCallback;
 class SoGroup;
 class SoNode;
@@ -67,6 +66,7 @@ namespace Gui
 {
 class EditableDatumLabel;
 class QuantitySpinBox;
+class SoFCPathAnnotation;
 class SoToggleMarker;
 class UIntSpinBox;
 class ViewerContext;
@@ -410,7 +410,7 @@ private:
     void setHighlighted(int which);
 
 private:
-    SoAnnotation* root = nullptr;
+    SoFCPathAnnotation* root = nullptr;
     SoEventCallback* callback = nullptr;
     SoPickStyle* pickStyle = nullptr;
     /// Where root hangs, held so that the view may go first

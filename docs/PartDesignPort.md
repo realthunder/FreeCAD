@@ -3098,6 +3098,26 @@ steps (six products) and a 3x2 link array, each clicked with a real mouse
 event, the instance gone and its marker a plus; the hover ring drawn.
 `serve-pattern-labels.py` still passes beside them.
 
+**Draw order (2026-10-03).** In a browser the spacing label's text and
+its dimension line were drawn over the markers they cross. The labels
+and the markers were both plain `SoAnnotation`s, and the backend draws
+every plain on-top draw as one group: on-top fills first, then all
+on-top lines, so a line crossed every image. Nothing told the backend
+which annotation goes over which. GL already has a rule for that, an
+`SoFCPathAnnotation` priority (late delayed paths, a priority at a time
+after the plain annotations), and the render cache recorded it but the
+bridge dropped it into a bool. It travels now as `Material::ontoplayer`
+(scene dump v81, chunk 20), and the frame (scene on-top passes, overlay
+feeds, id pass) draws each order after the plain on-top draws. The label
+is priority 1 (`EditableDatumLabel::OnViewPriority`), over the shape
+preview's -2, which with orders honoured would otherwise draw over a
+browser's label text; the markers are 2. Pictured on all three paths:
+the browser (`viewer-harness/pattern-markers-ontop.png`), desktop bgfx
+and desktop GL, the markers over the label text, the dimension and
+extension lines and the preview's edges, a real click in the browser
+still toggling. Tests: `RenderCacheMaterial.BridgeCarriesTheOnTopOrder`,
+`SceneDump.theOnTopOrderCrossesTheWire`.
+
 In a real browser (2026-10-03): headful Chrome on the GPU against the
 served WASM viewer, a PD linear pattern of three and a 3x2 link array
 edited from the page (`window.fcviewerEdit` -- the web viewer has no

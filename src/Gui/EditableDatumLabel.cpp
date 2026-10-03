@@ -31,7 +31,6 @@
 # include <Inventor/SoPickedPoint.h>
 # include <Inventor/events/SoMouseButtonEvent.h>
 # include <Inventor/sensors/SoNodeSensor.h>
-# include <Inventor/nodes/SoAnnotation.h>
 # include <Inventor/nodes/SoEventCallback.h>
 # include <Inventor/nodes/SoGroup.h>
 # include <Inventor/nodes/SoOrthographicCamera.h>
@@ -42,6 +41,7 @@
 #include <Gui/Application.h>
 #include <Gui/View3DInventor.h>
 #include <Gui/View3DInventorViewer.h>
+#include <Gui/SoFCUnifiedSelection.h>
 #include <Gui/ViewerContext.h>
 
 #include "EditableDatumLabel.h"
@@ -102,7 +102,9 @@ EditableDatumLabel::EditableDatumLabel(ViewerContext* view,
         viewer->addOnViewParameter(this);
     }
     // NOLINTBEGIN
-    root = new SoAnnotation;
+    auto annotation = new SoFCPathAnnotation;
+    annotation->priority = OnViewPriority;
+    root = annotation;
     root->ref();
     root->renderCaching = SoSeparator::OFF;
 

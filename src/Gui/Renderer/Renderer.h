@@ -2301,6 +2301,15 @@ struct Material {
     bool ccw = true;             ///< front face vertex ordering
     bool transparent = false;    ///< uniform-color / texture transparency
     bool ontop = false;          ///< render after (over) the normal scene
+    /// Where an on-top draw falls among the others. 0 is a plain
+    /// annotation (SoAnnotation); anything else is the rendering order
+    /// of the SoFCPathAnnotation priority the draw is under, which GL
+    /// draws after every plain annotation, an order at a time, lowest
+    /// first, and each whole -- fills and lines in traversal order (the
+    /// late delayed paths of SoBoxSelectionRenderAction). It is what
+    /// keeps a pattern's instance toggles over the dimension crossing
+    /// them. Meaningful only with ontop.
+    int16_t ontoplayer = 0;
     bool polygonoffset = false;  ///< glPolygonOffset on filled triangles
     /// SoDrawStyleElement::Style as the render cache captured it. The GL
     /// renderer hands LINES/POINTS to glPolygonMode; no modern API has

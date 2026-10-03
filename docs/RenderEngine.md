@@ -313,6 +313,12 @@ order:
 12. **Debug** — `RenderDebug_ViewMode` buffer visualization
     (`docs/RenderDebug.md` §2).
 13. **On-top / highlight** — on-top materials, selection/preselection.
+    An on-top draw under an `SoFCPathAnnotation` priority carries its
+    rendering order (`Material::ontoplayer`, wire v81) and draws after
+    every other on-top fill and line, an order at a time, fills and
+    lines together -- GL's late delayed paths. The overlay feeds keep
+    the same order inside a feed. On-view labels (priority 1) and a
+    pattern's instance toggles (2) are what needs it.
 14. **Overlays** — up to 9 overlay feeds (NaviCube, axis cross, HUD
     text, rubberband...) via `Renderer::setOverlay`.
 15. **Present** — standalone tier only: copy to the default backbuffer.

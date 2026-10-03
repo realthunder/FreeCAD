@@ -898,6 +898,10 @@ translateMaterial(const CoinMaterial & m, int selId, bool highlight,
     res.transparent = m.transptexture
         || (!m.pervertexcolor && (m.diffuse & 0xff) != 0xff);
     res.ontop = m.isOnTop();
+    // A plain SoAnnotation counts 1, however deep (the manager counts
+    // the outermost alone); a priority adds 1000 + priority on top, so
+    // any more than 1 is a priority's order, and they sort as GL's do.
+    res.ontoplayer = m.annotation > 1 ? m.annotation : 0;
 
     // GL polygon offset only affects filled polygons (the LINES/POINTS
     // styles matter only with glPolygonMode, which the renderer never uses).

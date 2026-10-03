@@ -39,7 +39,6 @@
 #include <Inventor/SoPickedPoint.h>
 #include <Inventor/events/SoLocation2Event.h>
 #include <Inventor/events/SoMouseButtonEvent.h>
-#include <Inventor/nodes/SoAnnotation.h>
 #include <Inventor/nodes/SoEventCallback.h>
 #include <Inventor/nodes/SoPickStyle.h>
 #include <Inventor/nodes/SoTranslation.h>
@@ -60,6 +59,7 @@
 #include "Inventor/SoToggleMarker.h"
 #include "PatternWidgets.h"
 #include "QuantitySpinBox.h"
+#include "SoFCUnifiedSelection.h"
 #include "SpinBox.h"
 #include "ViewerContext.h"
 
@@ -1169,8 +1169,14 @@ PatternInstanceMarkers::PatternInstanceMarkers(QObject* parent)
     : QObject(parent)
 {
     // Drawn over the model, and picked over it: a marker sits at the centre
-    // of an instance, inside it
-    root = new SoAnnotation;
+    // of an instance, inside it. Over the spacing labels as well, which share
+    // the on-view root and cross the markers between the instances: in one
+    // rendering order they draw as they were added, and the labels may come
+    // later. A higher priority than theirs sorts after them on each path --
+    // the GL pass's late delayed paths, and the render cache's rendering
+    // order that an external backend and a served view are fed in.
+    root = new SoFCPathAnnotation;
+    root->priority = EditableDatumLabel::OnViewPriority + 1;
     root->ref();
     root->setName("PatternInstanceMarkers");
     root->renderCaching = SoSeparator::OFF;

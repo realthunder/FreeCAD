@@ -343,7 +343,13 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     NaviCube's auto-hide preferences, which the browser applies to its
 //     own pointer. An older snapshot has none, which reads as always
 //     drawn.
-const uint32_t kVersion = 80;
+// 81: a material carries ontoplayer after perfacepbr: which rendering
+//     order an on-top draw is in (an SoFCPathAnnotation's priority).
+//     An older snapshot has none, which reads as a plain annotation,
+//     all of them drawn in one -- the pattern instance toggles under the
+//     dimension lines crossing them. The material chunk carries it, so
+//     kChunkVersion moves with it.
+const uint32_t kVersion = 81;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -394,8 +400,11 @@ const uint32_t kVersion = 80;
 ///     cached chunk would answer "no offsets" forever and draw a datum
 ///     without its arrowheads.
 /// 19: a material chunk's finish palette entries carry their extent
-///     (v78). The bytes moved.)
-const uint32_t kChunkVersion = 19;
+///     (v78). The bytes moved.
+/// 20: a material chunk carries ontoplayer (v81) after perfacepbr.
+///     Appended, so nothing moved -- but an older cached chunk would
+///     answer "plain annotation" forever.)
+const uint32_t kChunkVersion = 20;
 
 /// Bytes per vertex of MeshData::materials, whose layout Renderer.h
 /// documents. Named here because the stride is what a reader of an
@@ -1802,6 +1811,8 @@ void writeMaterial(Writer &w, const Material &m, const RefWriter &refs)
     w.b(m.perfacematerial);
     // v48: that stream's alpha slots carry the PBR factor pair.
     w.b(m.perfacepbr);
+    // v81: the rendering order of an on-top draw.
+    w.i32(m.ontoplayer);
 }
 
 void readMaterial(Reader &r, Material &m, const RefReader &refs,
@@ -2034,6 +2045,9 @@ void readMaterial(Reader &r, Material &m, const RefReader &refs,
     // v48: the stream's PBR reading. Absent means the Phong one.
     if (version >= 48)
         m.perfacepbr = r.b();
+    // v81: the on-top rendering order. Absent means a plain annotation.
+    if (version >= 81)
+        m.ontoplayer = int16_t(r.i32());
 }
 
 //////////////////////////////////////////////////////////////////////

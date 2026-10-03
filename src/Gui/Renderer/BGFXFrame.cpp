@@ -4567,15 +4567,31 @@ bool BGFXRenderer::Private::render(const QColor &col,
             || (d.material.pervertexcolor
                 && d.mesh && d.mesh->hasTransparency);
     };
+    // An on-top draw of a rendering order of its own (Material::
+    // ontoplayer): it keeps out of the on-top passes below and draws
+    // after all of them, fills and lines together, an order at a time.
+    auto layered = [](const Render::DrawCall &d) {
+        return d.material.ontop && d.material.ontoplayer != 0;
+    };
 
     // Decide whether on-top lines/points need the two-pass hidden-line
     // rendering (SoFCRenderer's hassel/hasontop/hlwholeontop check).
     bool sceneOnTopTri = false, sceneOnTopLine = false;
+    // The on-top rendering orders the layered draws are in, lowest
+    // first (the late delayed paths' order in GL).
+    std::vector<int16_t> onTopLayers;
     for (const auto &draw : scene) {
         if (!draw.material.ontop)
             continue;
+        if (layered(draw)) {
+            onTopLayers.push_back(draw.material.ontoplayer);
+            continue;
+        }
         (isTriangle(draw) ? sceneOnTopTri : sceneOnTopLine) = true;
     }
+    std::sort(onTopLayers.begin(), onTopLayers.end());
+    onTopLayers.erase(std::unique(onTopLayers.begin(), onTopLayers.end()),
+                      onTopLayers.end());
     bool selOnTopLine = false;
     for (const auto &sel : selections) {
         if (sel.first <= 0)
@@ -5160,15 +5176,20 @@ bool BGFXRenderer::Private::render(const QColor &col,
     // truth is taken from the same draw list under the same camera
     // as the verdict it is about to be compared against.
     //
-    // Two rounds: on-top draws render with the depth test off and
-    // win their pixels in the beauty frame by arriving in a later
-    // view. This pass has one view, so the order has to supply what
-    // the view ids otherwise would.
+    // Rounds: on-top draws render with the depth test off and win
+    // their pixels in the beauty frame by arriving in a later view,
+    // and the layered ones later still, an order at a time. This pass
+    // has one view, so the order has to supply what the view ids
+    // otherwise would.
     if (idPassRender) {
-        for (int round = 0; round < 2; ++round) {
+        const int rounds = 2 + int(onTopLayers.size());
+        for (int round = 0; round < rounds; ++round) {
             for (size_t i = 0; i < scene.size(); ++i) {
                 const auto &draw = scene[i];
-                if (draw.material.ontop != (round == 1))
+                if (draw.material.ontop != (round > 0)
+                        || layered(draw) != (round > 1)
+                        || (round > 1 && draw.material.ontoplayer
+                                != onTopLayers[size_t(round - 2)]))
                     continue;
                 // gatedForMemory belongs here with the other
                 // display rules and NOT with the cull mask: the id
@@ -5854,7 +5875,8 @@ bool BGFXRenderer::Private::render(const QColor &col,
     for (const auto &draw : scene) {
         if (draw.material.ontop && isTriangle(draw) && !isTransp(draw)
                 && !isHidden(draw) && !hideFill(draw)) {
-            bool cullDraw = culled(draw);
+            // A layered one draws later (5b), and casts its shadow here
+            bool cullDraw = culled(draw) || layered(draw);
             if (!cullDraw)
                 view->submit(draw, viewMat);
             // On-top geometry keeps casting its shadow (the view
@@ -5869,7 +5891,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
     for (const auto &draw : scene) {
         if (draw.material.ontop && isTriangle(draw) && isTransp(draw)
                 && !isHidden(draw) && !hideFill(draw)) {
-            bool cullDraw = culled(draw);
+            bool cullDraw = culled(draw) || layered(draw);
             if (!cullDraw)
                 view->submit(draw, viewMat);
             if (shadowRender && (draw.material.shadowstyle & 1)
@@ -6068,6 +6090,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
         if (sceneTwoPass) {
             for (const auto &draw : scene) {
                 if (draw.material.ontop && isTriangle(draw)
+                        && !layered(draw)
                         && !isHidden(draw) && !hideFill(draw)
                         && !culled(draw))
                     view->submit(draw, viewMat, BGFXView::PassDepthOnly);
@@ -6098,6 +6121,7 @@ bool BGFXRenderer::Private::render(const QColor &col,
                          int(BGFXView::PassLineSolid)}) {
             for (const auto &draw : scene) {
                 if (draw.material.ontop && !isTriangle(draw)
+                        && !layered(draw)
                         && !isHidden(draw) && !hidePoints(draw)
                         && !culled(draw))
                     view->submit(draw, viewMat, pass,
@@ -6132,10 +6156,36 @@ bool BGFXRenderer::Private::render(const QColor &col,
         // No fills on top: scene on-top lines draw in a single pass.
         for (const auto &draw : scene) {
             if (draw.material.ontop && !isTriangle(draw)
+                    && !layered(draw)
                     && !isHidden(draw) && !hidePoints(draw)
                     && !culled(draw))
                 view->submit(draw, viewMat, BGFXView::PassNormal,
                              sceneNoSeam(draw));
+        }
+    }
+
+    // 5b. The on-top draws of a rendering order of their own
+    // (Material::ontoplayer, an SoFCPathAnnotation's priority): after
+    // every other on-top fill and line, an order at a time and each in
+    // scene order, fills and lines together and none of them dimmed --
+    // GL's late delayed paths, which it draws with the depth test off.
+    // Routed (view->ontop) to the sequential highlight view, the one
+    // the on-top lines above went to.
+    for (int16_t layer : onTopLayers) {
+        for (const auto &draw : scene) {
+            if (!layered(draw) || draw.material.ontoplayer != layer
+                    || isHidden(draw) || culled(draw))
+                continue;
+            if (isTriangle(draw)) {
+                if (hideFill(draw))
+                    continue;
+                view->submit(draw, viewMat);
+                submitSceneOutline(draw, BGFXView::ViewHighlight);
+            }
+            else if (!hidePoints(draw)) {
+                view->submit(draw, viewMat, BGFXView::PassNormal,
+                             sceneNoSeam(draw));
+            }
         }
     }
 
@@ -6306,10 +6356,30 @@ bool BGFXRenderer::Private::render(const QColor &col,
             // the on-top draws go second: in feed order the Sketcher's grid,
             // translucent and later in the edit graph than the constraints,
             // was blended over every dimension line that lies on a grid line.
+            // The on-top ones of a rendering order of their own after
+            // those, an order at a time (the late delayed paths): a
+            // pattern's instance toggles, under the on-view root with the
+            // dimension crossing them, were drawn in the order they came.
             if (anchor.sceneCamera) {
+                std::vector<int16_t> layers;
+                for (const auto &draw : ov.second->draws) {
+                    if (layered(draw))
+                        layers.push_back(draw.material.ontoplayer);
+                }
+                std::sort(layers.begin(), layers.end());
+                layers.erase(std::unique(layers.begin(), layers.end()),
+                             layers.end());
                 for (bool ontop : {false, true}) {
                     for (const auto &draw : ov.second->draws) {
-                        if (bool(draw.material.ontop) == ontop)
+                        if (bool(draw.material.ontop) == ontop
+                                && !layered(draw))
+                            view->submit(draw, viewMat);
+                    }
+                }
+                for (int16_t layer : layers) {
+                    for (const auto &draw : ov.second->draws) {
+                        if (layered(draw)
+                                && draw.material.ontoplayer == layer)
                             view->submit(draw, viewMat);
                     }
                 }
