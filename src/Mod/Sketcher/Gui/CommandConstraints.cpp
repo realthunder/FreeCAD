@@ -11466,35 +11466,28 @@ void CmdSketcherConstrainSnellsLaw::activated(int iMsg)
         return;
     }
 
-    double n2divn1 = 0;
-
-    // the essence.
-    // Unlike other constraints, we'll ask for a value immediately.
-    QDialog dlg(Gui::getMainWindow());
-    Ui::InsertDatum ui_Datum;
-    ui_Datum.setupUi(&dlg);
-    dlg.setWindowTitle(EditDatumDialog::tr("Refractive Index Ratio"));
-    ui_Datum.label->setText(EditDatumDialog::tr("Ratio n2/n1:"));
-    Base::Quantity init_val;
-    init_val.setUnit(Base::Unit());
-    init_val.setValue(0.0);
-
-    ui_Datum.labelEdit->setValue(init_val);
-    ui_Datum.labelEdit->setParamGrpPath(
-        QByteArray("User parameter:BaseApp/History/SketcherRefrIndexRatio"));
-    ui_Datum.labelEdit->setEntryName(QByteArray("DatumValue"));
-    ui_Datum.labelEdit->setToLastUsedValue();
-    ui_Datum.labelEdit->selectNumber();
-    ui_Datum.labelEdit->setSingleStep(0.05);
-    // Unable to bind, because the constraint does not yet exist
-
-    if (dlg.exec() != QDialog::Accepted) {
-        return;
+    // The ratio is asked for once the constraint is there, in the editor at
+    // the refraction point, as a dimension's value is (editDatums): it
+    // starts from the last ratio given, and Escape takes the constraint
+    // back. The history is the dialog's, kept by a box nobody sees.
+    auto ratioHistory = []() {
+        auto box = std::make_unique<Gui::PrefQuantitySpinBox>();
+        box->setParamGrpPath(QByteArray("User parameter:BaseApp/History/SketcherRefrIndexRatio"));
+        box->setEntryName(QByteArray("DatumValue"));
+        box->setUnit(Base::Unit());
+        return box;
+    };
+    double n2divn1 = 1.0;
+    {
+        auto box = ratioHistory();
+        box->setToLastUsedValue();
+        if (box->hasValidInput()) {
+            const double last = box->valueFromText(box->text()).getValue();
+            if (last > 0.0) {
+                n2divn1 = last;
+            }
+        }
     }
-    ui_Datum.labelEdit->pushToHistory();
-
-    Base::Quantity newQuant = ui_Datum.labelEdit->value();
-    n2divn1 = newQuant.getValue();
 
     // add constraint
     openCommand(QT_TRANSLATE_NOOP("Command", "Add Snell's law constraint"));
@@ -11539,13 +11532,21 @@ void CmdSketcherConstrainSnellsLaw::activated(int iMsg)
     if (!safe) {
         return;
     }
-    else {
-        commitCommand();
-        tryAutoRecompute(Obj);
-    }
 
     // clear the selection (convenience)
     getSelection().clearSelection();
+
+    // The command stays open until the ratio is in; the entry commits it
+    // or aborts it.
+    const int index = int(Obj->Constraints.getSize()) - 1;
+    editDatums(Obj, {index}, true, [Obj, index, ratioHistory](bool taken) {
+        const auto& all = Obj->Constraints.getValues();
+        if (taken && index < int(all.size()) && all[index]->Type == Sketcher::SnellsLaw) {
+            auto box = ratioHistory();
+            box->setValue(Base::Quantity(all[index]->getValue(), Base::Unit()));
+            box->pushToHistory();
+        }
+    });
 }
 
 bool CmdSketcherConstrainSnellsLaw::isActive()

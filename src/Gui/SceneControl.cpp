@@ -820,8 +820,8 @@ bool isBrowserSafeCommand(const QString &name)
     // prefix. The dimensional ones are among them since their value is
     // typed at the constraint's label in a view without widgets
     // (SketcherGui::editDatums; EditDatumDialog refuses to open for such a
-    // view). Sketcher_ConstrainSnellsLaw has a dialog of its own and is
-    // not.
+    // view). Snell's law the same: its ratio is typed at the refraction
+    // point once the constraint is made.
     static const QSet<QString> constraints = {
         QStringLiteral("Sketcher_ConstrainHorVer"),
         QStringLiteral("Sketcher_ConstrainHorizontal"),
@@ -848,6 +848,7 @@ bool isBrowserSafeCommand(const QString &name)
         QStringLiteral("Sketcher_ConstrainRadiam"),
         QStringLiteral("Sketcher_ConstrainAngle"),
         QStringLiteral("Sketcher_ChangeDimensionConstraint"),
+        QStringLiteral("Sketcher_ConstrainSnellsLaw"),
     };
     // Sketcher_External's three siblings start the same handler in another
     // flavour; pressed while a constraint tool runs, each switches that

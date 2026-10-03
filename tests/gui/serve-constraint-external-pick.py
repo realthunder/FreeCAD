@@ -33,7 +33,7 @@ listen where the clicks land.
 And once more in the client's session with everything from the client: it
 undoes the second run, starts Sketcher_ConstrainPerpendicular itself in
 place of the desktop's Parallel tool, switches outside picking on and
-clicks the line and the box's other top edge. Sketcher_ConstrainSnellsLaw is
+clicks the line and the box's other top edge. Sketcher_MapSketch is
 refused -- it has a modal dialog of its own.
 
 Run through scripts/gui-test.sh (xvfb, isolated configuration, external
@@ -252,7 +252,7 @@ class Client(threading.Thread):
         self.flavour_mode = FreeCAD.ParamGet(GENERAL).GetInt("ConstraintExternalPick", 0)
         ws.op('{"id":14,"op":"command","name":"Sketcher_Intersection"}')
         ws.drain(0.3)
-        self.refused = ws.op('{"id":12,"op":"command","name":"Sketcher_ConstrainSnellsLaw"}')
+        self.refused = ws.op('{"id":12,"op":"command","name":"Sketcher_MapSketch"}')
         ws.drain(0.3)
         self.reset = ws.op('{"id":7,"op":"resetEdit"}')
         ws.drain(0.5)

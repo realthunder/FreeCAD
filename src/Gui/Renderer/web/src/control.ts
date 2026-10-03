@@ -517,6 +517,7 @@ const DIALOG_FREE_CONSTRAINTS = new Set([
   'Sketcher_ConstrainRadiam',
   'Sketcher_ConstrainAngle',
   'Sketcher_ChangeDimensionConstraint',
+  'Sketcher_ConstrainSnellsLaw',
 ]);
 
 /// The `command` op's allowlist as the server has it (SceneControl.cpp
