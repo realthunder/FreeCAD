@@ -1350,6 +1350,48 @@ class RegressionTests(unittest.TestCase):
             for c in curves:
                 self.assertIsInstance(c, Part.ArcOfCircle, str(axis))
 
+    def test_thickness_with_a_seam_in_pieces(self):
+        """A vertex that only cuts an edge in two must change nothing. A seam
+        in two pieces, joined, came back parameterised from 0, and stretched
+        below its start its crossings fell at negative parameters, which the
+        loop's periodic wrap never reached (a trimmed circle says it is not
+        periodic): a cap with its seam split, its sphere removed outward, an
+        invalid 105.98 for 31.285; a dome on a cylinder with the cylinder's
+        seam split, an invalid 808.26 for 152.629. And three quarters of a
+        dome with a vertex on an edge came out invalid after crossings on a
+        sphere crossed an edge stretched over the pole (OCCT fork,
+        tests/fork/thickness/models/Thickness.md "Sec 24")."""
+        V = Vector
+
+        def split_at(shape, index):
+            e = shape.Edges[index]
+            p = e.valueAt((e.FirstParameter + e.LastParameter) / 2)
+            return shape.generalFuse([Part.Vertex(p)])[0].Solids[0]
+
+        def check(name, shape, face, offset, join, volume):
+            r = shape.makeThickness([shape.Faces[face - 1]], offset, 1e-7, False, False, 0, join)
+            msg = "%s, Face%d, %g, join %d" % (name, face, offset, join)
+            self.assertTrue(r.isValid(), msg)
+            self.assertEqual(len(r.Shells), 1, msg)
+            self.assertAlmostEqual(r.Volume, volume, 3, msg)
+
+        cap = split_at(Part.makeSphere(5, V(), V(0, 0, 1), 30, 90, 360), 1)
+        for join in (0, 2):
+            check("cap, seam in two", cap, 1, 0.5, join, 31.285)
+            check("cap, seam in two", cap, 1, -0.5, join, 27.358)
+        bullet = (
+            Part.makeCylinder(5, 4, V(0, 0, -4))
+            .fuse(Part.makeSphere(5, V(), V(0, 0, 1), 0, 90, 360))
+            .removeSplitter()
+        )
+        bullet = split_at(bullet, 1)
+        check("dome on a cylinder, seam in two", bullet, 3, 0.5, 0, 152.629)
+        check("dome on a cylinder, seam in two", bullet, 2, -0.5, 0, 97.2749)
+        dome = Part.makeSphere(5, V(), V(0, 0, 1), 0, 90, 270)
+        for index in (3, 5, 6):
+            name = "three quarters of a dome, a vertex on Edge%d" % (index + 1)
+            check(name, split_at(dome, index), 3, 0.5, 0, 111.7391)
+
     def test_thickness_intersection_join_with_one_face_left(self):
         """The Intersection join where one face stays beside the removed ones:
         a cylinder down to its top, a box down to its bottom. It threw
