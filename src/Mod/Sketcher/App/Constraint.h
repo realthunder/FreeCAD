@@ -270,6 +270,13 @@ public:
     bool getIsTextHeight() const;
     void setIsTextHeight(bool val);
 
+    /// What the constraint is, whatever its place in the list: kept by
+    /// an undo, and by clone() (copy() makes a new one)
+    const boost::uuids::uuid& getTag() const
+    {
+        return tag;
+    }
+
 #ifdef SKETCHER_CONSTRAINT_USE_LEGACY_ELEMENTS
     // Deprecated, use getElement/setElement instead
     int First {GeoEnum::GeoUndef};
