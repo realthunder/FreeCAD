@@ -607,9 +607,11 @@ private:
 
         if (state() == SelectMode::SeekSecond) {
             if (geoIds.size() > 1) {
-                // create B-spline from existing poles/knots
+                // create B-spline from existing poles/knots. The state
+                // change finishes (onModeChanged), and with continuous mode
+                // off that deletes this handler: upstream's finish() after
+                // it ran on the deleted object, a crash here.
                 setState(SelectMode::End);
-                finish();
             }
             else {
                 // We don't want to finish() as that'll create auto-constraints
