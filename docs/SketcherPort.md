@@ -4302,6 +4302,18 @@ Not done: completion of a sketch's own constraint names
 (`Sketch.Constraints.Width`) in the browser -- the property descriptors do
 not list a constraint list's members; the desktop completer does.
 
+**Escape, ruled 2026-10-03 after the build** ("make escape equal to enter.
+for a vim user like me, I hate escape means anything other than escape",
+then "make that a setting default to escape instead of undo"): Escape in
+the value editor leaves it as Enter does -- what is typed is applied, the
+entry committed; text that is no value keeps it open, as Enter does.
+Taking an entry back is an undo: Std_Undo while it runs (the whole entry,
+a new dimension with it, nothing older), or one undo after, the entry
+being one step. The preference `Mod/Sketcher/General/DatumEscapeTakesBack`
+(Display page, off by default) makes Escape the cancel it was. A
+completion list open over the line still closes on Escape: that is the
+list's, as vim's own completion menu.
+
 ## 8. Phases
 
 0. Groundwork: ledger, the split, the App-level Python tests.
