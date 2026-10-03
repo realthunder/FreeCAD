@@ -65,8 +65,8 @@ CmdSketcherBSplineDegree::CmdSketcherBSplineDegree()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Show/hide B-spline degree");
-    sToolTipText = QT_TR_NOOP("Switches between showing and hiding the degree for all B-splines");
+    sMenuText = QT_TR_NOOP("Toggle B-Spline Degree");
+    sToolTipText = QT_TR_NOOP("Toggles the visibility of the degree for all B-splines");
     sWhatsThis = "Sketcher_BSplineDegree";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_BSplineDegree";
@@ -94,9 +94,9 @@ CmdSketcherBSplinePolygon::CmdSketcherBSplinePolygon()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Show/hide B-spline control polygon");
+    sMenuText = QT_TR_NOOP("Toggle B-Spline Control Polygon");
     sToolTipText =
-        QT_TR_NOOP("Switches between showing and hiding the control polygons for all B-splines");
+        QT_TR_NOOP("Toggles the visibility of the control polygons for all B-splines");
     sWhatsThis = "Sketcher_BSplinePolygon";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_BSplinePolygon";
@@ -124,9 +124,9 @@ CmdSketcherBSplineComb::CmdSketcherBSplineComb()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Show/hide B-spline curvature comb");
+    sMenuText = QT_TR_NOOP("Toggle B-Spline Curvature Comb");
     sToolTipText =
-        QT_TR_NOOP("Switches between showing and hiding the curvature comb for all B-splines");
+        QT_TR_NOOP("Toggles the visibility of the curvature comb for all B-splines");
     sWhatsThis = "Sketcher_BSplineComb";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_BSplineComb";
@@ -154,9 +154,9 @@ CmdSketcherBSplineKnotMultiplicity::CmdSketcherBSplineKnotMultiplicity()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Show/hide B-spline knot multiplicity");
+    sMenuText = QT_TR_NOOP("Toggle B-Spline Knot Multiplicity");
     sToolTipText =
-        QT_TR_NOOP("Switches between showing and hiding the knot multiplicity for all B-splines");
+        QT_TR_NOOP("Toggles the visibility of the knot multiplicity for all B-splines");
     sWhatsThis = "Sketcher_BSplineKnotMultiplicity";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_BSplineKnotMultiplicity";
@@ -184,9 +184,8 @@ CmdSketcherBSplinePoleWeight::CmdSketcherBSplinePoleWeight()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Show/hide B-spline control point weight");
-    sToolTipText = QT_TR_NOOP(
-        "Switches between showing and hiding the control point weight for all B-splines");
+    sMenuText = QT_TR_NOOP("Toggle B-Spline Control Point Weight");
+    sToolTipText = QT_TR_NOOP("Toggles the visibility of control point weights for all B-splines");
     sWhatsThis = "Sketcher_BSplinePoleWeight";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_BSplinePoleWeight";
@@ -215,7 +214,7 @@ CmdSketcherCompBSplineShowHideGeometryInformation::
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Show/hide B-spline information layer");
+    sMenuText = QT_TR_NOOP("Toggle B-Spline Information Layer");
     sToolTipText = sMenuText;
     sWhatsThis = "Sketcher_CompBSplineShowHideGeometryInformation";
     sStatusTip = sToolTipText;
@@ -298,50 +297,50 @@ void CmdSketcherCompBSplineShowHideGeometryInformation::languageChange()
 
     QAction* c1 = a[0];
     c1->setText(QApplication::translate("CmdSketcherCompBSplineShowHideGeometryInformation",
-                                        "Show/hide B-spline degree"));
+                                        "Toggle B-Spline Degree"));
     c1->setToolTip(QApplication::translate(
         "Sketcher_BSplineDegree",
-        "Switches between showing and hiding the degree for all B-splines"));
+        "Toggles the visibility of the degree for all B-splines"));
     c1->setStatusTip(QApplication::translate(
         "Sketcher_BSplineDegree",
-        "Switches between showing and hiding the degree for all B-splines"));
+        "Toggles the visibility of the degree for all B-splines"));
     QAction* c2 = a[1];
     c2->setText(QApplication::translate("CmdSketcherCompBSplineShowHideGeometryInformation",
-                                        "Show/hide B-spline control polygon"));
+                                        "Toggle B-Spline Control Polygon"));
     c2->setToolTip(QApplication::translate(
         "Sketcher_BSplinePolygon",
-        "Switches between showing and hiding the control polygons for all B-splines"));
+        "Toggles the visibility of the control polygons for all B-splines"));
     c2->setStatusTip(QApplication::translate(
         "Sketcher_BSplinePolygon",
-        "Switches between showing and hiding the control polygons for all B-splines"));
+        "Toggles the visibility of the control polygons for all B-splines"));
     QAction* c3 = a[2];
     c3->setText(QApplication::translate("CmdSketcherCompBSplineShowHideGeometryInformation",
-                                        "Show/hide B-spline curvature comb"));
+                                        "Toggle B-Spline Curvature Comb"));
     c3->setToolTip(QApplication::translate(
         "Sketcher_BSplineComb",
-        "Switches between showing and hiding the curvature comb for all B-splines"));
+        "Toggles the visibility of the curvature comb for all B-splines"));
     c3->setStatusTip(QApplication::translate(
         "Sketcher_BSplineComb",
-        "Switches between showing and hiding the curvature comb for all B-splines"));
+        "Toggles the visibility of the curvature comb for all B-splines"));
     QAction* c4 = a[3];
     c4->setText(QApplication::translate("CmdSketcherCompBSplineShowHideGeometryInformation",
-                                        "Show/hide B-spline knot multiplicity"));
+                                        "Toggle B-Spline Knot Multiplicity"));
     c4->setToolTip(QApplication::translate(
         "Sketcher_BSplineKnotMultiplicity",
-        "Switches between showing and hiding the knot multiplicity for all B-splines"));
+        "Toggles the visibility of the knot multiplicity for all B-splines"));
     c4->setStatusTip(QApplication::translate(
         "Sketcher_BSplineKnotMultiplicity",
-        "Switches between showing and hiding the knot multiplicity for all B-splines"));
+        "Toggles the visibility of the knot multiplicity for all B-splines"));
 
     QAction* c5 = a[4];
     c5->setText(QApplication::translate("CmdSketcherCompBSplineShowHideGeometryInformation",
-                                        "Show/hide B-spline control point weight"));
+                                        "Toggle B-Spline Control Point Weight"));
     c5->setToolTip(QApplication::translate(
         "Sketcher_BSplinePoleWeight",
-        "Switches between showing and hiding the control point weight for all B-splines"));
+        "Toggles the visibility of the control point weight for all B-splines"));
     c5->setStatusTip(QApplication::translate(
         "Sketcher_BSplinePoleWeight",
-        "Switches between showing and hiding the control point weight for all B-splines"));
+        "Toggles the visibility of the control point weight for all B-splines"));
 }
 
 void CmdSketcherCompBSplineShowHideGeometryInformation::updateAction(int /*mode*/)
@@ -360,9 +359,9 @@ CmdSketcherArcOverlay::CmdSketcherArcOverlay()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Show/hide circular helper for arcs");
+    sMenuText = QT_TR_NOOP("Toggle Circular Helper for Arcs");
     sToolTipText =
-        QT_TR_NOOP("Switches between showing and hiding the circular helper for all arcs");
+        QT_TR_NOOP("Toggles the visibility of the circular helpers for all arcs");
     sWhatsThis = "Sketcher_ArcOverlay";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_ArcOverlay";

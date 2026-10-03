@@ -70,6 +70,18 @@
 
 using namespace Gui;
 
+namespace {
+// Which way the glyph's own y axis points relative to the outward normal at
+// the middle of an ARCLENGTH dimension arc: +1 when textShift moves the
+// number away from the centre.
+float arcLengthShiftSign(float textAngle, float midAngle)
+{
+    const SbVec3f up(-sin(textAngle), cos(textAngle), 0.f);
+    const SbVec3f out(cos(midAngle), sin(midAngle), 0.f);
+    return up.dot(out) >= 0.f ? 1.f : -1.f;
+}
+}
+
 // ------------------------------------------------------
 
 // ------------------------------------------------------
@@ -273,6 +285,7 @@ SoDatumLabel::SoDatumLabel()
     SO_NODE_ADD_FIELD(name, ("Helvetica"));
     SO_NODE_ADD_FIELD(size, (10.f));
     SO_NODE_ADD_FIELD(lineWidth, (2.f));
+    SO_NODE_ADD_FIELD(linePattern, (0xFFFF));
 
     SO_NODE_ADD_FIELD(datumtype, (SoDatumLabel::DISTANCE));
 
@@ -282,10 +295,13 @@ SoDatumLabel::SoDatumLabel()
     SO_NODE_DEFINE_ENUM_VALUE(Type, ANGLE);
     SO_NODE_DEFINE_ENUM_VALUE(Type, RADIUS);
     SO_NODE_DEFINE_ENUM_VALUE(Type, DIAMETER);
+    SO_NODE_DEFINE_ENUM_VALUE(Type, ARCLENGTH);
     SO_NODE_SET_SF_ENUM_TYPE(datumtype, Type);
 
     SO_NODE_ADD_FIELD(param1, (0.f));
     SO_NODE_ADD_FIELD(param2, (0.f));
+    // An angle's range; unregistered it notified nobody when it changed.
+    SO_NODE_ADD_FIELD(param3, (0.f));
     SO_NODE_ADD_FIELD(param4, (0.f));
     SO_NODE_ADD_FIELD(param5, (0.f));
 
@@ -316,9 +332,10 @@ SoNode* SoDatumLabel::getImageNode()
 {
     if (!this->imageRoot) {
         this->imageTexture = new SoTexture2;
-        // The glyph bitmap already bakes in the text colour, so replace the
-        // fragment colour with the texel (alpha-blended); no material tint.
-        this->imageTexture->model = SoTexture2::REPLACE;
+        // The glyph's alpha, white, tinted by the material below (the
+        // label's colour): the pixels GLRender draws, in a colour a
+        // highlight can override (syncImageTexture).
+        this->imageTexture->model = SoTexture2::MODULATE;
 
         // Anchor places the quad at textOffset/textAngle; the autozoom that
         // follows makes it screen-constant (native glyph pixels), matching the
@@ -331,6 +348,11 @@ SoNode* SoDatumLabel::getImageNode()
         // tracks the datum's (world-space) plane normal.
         this->imageZoom->datumFlip = TRUE;
         this->imageZoom->flipNormal.connectFrom(&this->norm);
+        // One screen pixel per glyph pixel, resolved by the backend against
+        // the view that draws it -- which is not always the one this was
+        // captured in (a browser, a served capture). The scaleFactor below
+        // stays for a view with a camera of its own.
+        this->imageZoom->pixelScale = 1.0f;
 
         this->imageShape = new SoDatumLabelImage;
         this->imageShape->owner = this;
@@ -345,6 +367,7 @@ SoNode* SoDatumLabel::getImageNode()
         material->diffuseColor.connectFrom(&this->textColor);
         auto drawStyle = new SoDrawStyle;
         drawStyle->lineWidth.connectFrom(&this->lineWidth);
+        drawStyle->linePattern.connectFrom(&this->linePattern);
         this->leaderShape = new SoDatumLabelLeader;
         this->leaderShape->owner = this;
 
@@ -377,8 +400,20 @@ void SoDatumLabel::syncImageTexture()
     SbVec2s size;
     int nc;
     const unsigned char* bytes = this->image.getValue(size, nc);
-    if (bytes && size[0] > 0 && size[1] > 0)
+    if (bytes && size[0] > 0 && size[1] > 0 && nc == 4) {
+        // drawImage() paints the glyph in textColor alone: keep its alpha
+        std::vector<unsigned char> mask(bytes, bytes + std::size_t(size[0]) * size[1] * 4);
+        for (std::size_t i = 0; i < mask.size(); i += 4) {
+            mask[i] = mask[i + 1] = mask[i + 2] = 255;
+        }
+        this->imageTexture->image.setValue(size, 4, mask.data());
+        this->imageTexture->model = SoTexture2::MODULATE;
+    }
+    else if (bytes && size[0] > 0 && size[1] > 0) {
+        // no alpha to keep: the texel as it is
         this->imageTexture->image.setValue(size, nc, bytes);
+        this->imageTexture->model = SoTexture2::REPLACE;
+    }
     else
         this->imageTexture->image.setValue(SbVec2s(0, 0), 0, nullptr);
 }
@@ -452,6 +487,9 @@ public:
         }
         else if (label->datumtype.getValue() == SoDatumLabel::SYMMETRIC) {
             corners = computeSymmetricBBox();
+        }
+        else if (label->datumtype.getValue() == SoDatumLabel::ARCLENGTH) {
+            corners = computeArcLengthBBox();
         }
 
         getBBox(corners, box, center);
@@ -608,6 +646,14 @@ private:
         corners.push_back(pnt1);
         corners.push_back(pnt2);
 
+        // The number's box, which is what a pick takes (generateDiameter-
+        // Primitives): the points above all lie on the dimension line, and a
+        // box of no height culled the pick to the line whenever it was cached.
+        for (float side : {-1.0F, 1.0F}) {
+            corners.push_back(pos + dir * (imgWidth / 2.0F) + normal * (side * imgHeight / 2.0F));
+            corners.push_back(pos - dir * (imgWidth / 2.0F) + normal * (side * imgHeight / 2.0F));
+        }
+
         return corners;
     }
 
@@ -709,6 +755,47 @@ private:
         return corners;
     }
 
+    std::vector<SbVec3f> computeArcLengthBBox() const
+    {
+        SoDatumLabel::ArcLengthGeometry geom;
+        if (!label->arcLengthGeometry(geom)) {
+            return {};
+        }
+
+        SbVec2s imgsize;
+        int nc;
+        int srcw = 1;
+        int srch = 1;
+        const unsigned char * dataptr = label->image.getValue(imgsize, nc);
+        if (dataptr) {
+            srcw = imgsize[0];
+            srch = imgsize[1];
+        }
+        float imgHeight = scale * (float) (srch);
+        float imgWidth  = imgHeight * (float) srcw / (float) srch;
+
+        std::vector<SbVec3f> corners {geom.pnt1, geom.pnt2, geom.pnt3, geom.pnt4};
+        // the dimension arc, closely enough for a box
+        const int steps = 8;
+        for (int i = 0; i <= steps; ++i) {
+            float a = geom.startangle + (geom.endangle - geom.startangle) * float(i) / steps;
+            corners.push_back(geom.arcCenter + geom.arcRadius * SbVec3f(cos(a), sin(a), 0.f));
+        }
+
+        // the number, turned along the chord and shifted outward
+        const float mid = (geom.startangle + geom.endangle) / 2;
+        const float shift = arcLengthShiftSign(geom.textAngle, mid) * imgHeight;
+        const float s = sin(geom.textAngle);
+        const float c = cos(geom.textAngle);
+        for (float x : {-imgWidth / 2, imgWidth / 2}) {
+            for (float y : {-imgHeight / 2, imgHeight / 2}) {
+                float yy = y + shift;
+                corners.push_back(geom.textOffset + SbVec3f(x * c - yy * s, x * s + yy * c, 0.f));
+            }
+        }
+        return corners;
+    }
+
 private:
     float scale;
     SoDatumLabel* label;
@@ -752,8 +839,79 @@ SbVec3f SoDatumLabel::getLabelTextCenter()
     else if (datumtype.getValue() == SoDatumLabel::ANGLE) {
         return getLabelTextCenterAngle(p1);
     }
+    else if (datumtype.getValue() == SoDatumLabel::ARCLENGTH) {
+        ArcLengthGeometry geom;
+        if (arcLengthGeometry(geom)) {
+            const float mid = (geom.startangle + geom.endangle) / 2;
+            const float shift = arcLengthShiftSign(geom.textAngle, mid) * this->imgHeight;
+            return geom.textOffset
+                + SbVec3f(-sin(geom.textAngle), cos(geom.textAngle), 0.f) * shift;
+        }
+    }
 
     return p1;
+}
+
+SbVec3f SoDatumLabel::getLabelAwayDirection()
+{
+    SbVec3f away(0, 1, 0);
+    if (this->pnts.getNum() < 2) {
+        return away;
+    }
+    const SbVec3f* points = this->pnts.getValues(0);
+    const SbVec3f p1 = points[0];
+    const SbVec3f p2 = points[1];
+    const float side = this->param1.getValue() < 0 ? -1.0F : 1.0F;
+    switch (datumtype.getValue()) {
+        case DISTANCE:
+        case DISTANCEX:
+        case DISTANCEY:
+        case SYMMETRIC: {
+            // across the dimension line, on the side the text was put
+            SbVec3f dir = p2 - p1;
+            if (datumtype.getValue() == DISTANCEX) {
+                dir = SbVec3f((p2[0] - p1[0] >= FLT_EPSILON) ? 1 : -1, 0, 0);
+            }
+            else if (datumtype.getValue() == DISTANCEY) {
+                dir = SbVec3f(0, (p2[1] - p1[1] >= FLT_EPSILON) ? 1 : -1, 0);
+            }
+            if (dir.length() > FLT_EPSILON) {
+                dir.normalize();
+                away = SbVec3f(-dir[1], dir[0], 0) * (datumtype.getValue() == SYMMETRIC ? 1.0F : side);
+            }
+            break;
+        }
+        case RADIUS:
+        case DIAMETER: {
+            // along the radius, out past the arc or in toward the centre
+            SbVec3f dir = p2 - p1;
+            if (dir.length() > FLT_EPSILON) {
+                dir.normalize();
+                away = dir * side;
+            }
+            break;
+        }
+        case ANGLE: {
+            // along the bisector the text sits on
+            const float mid = param2.getValue() + param3.getValue() / 2;
+            away = SbVec3f(cos(mid), sin(mid), 0) * side;
+            break;
+        }
+        case ARCLENGTH: {
+            ArcLengthGeometry geom;
+            if (arcLengthGeometry(geom)) {
+                SbVec3f dir = getLabelTextCenter() - geom.arcCenter;
+                if (dir.length() > FLT_EPSILON) {
+                    away = dir;
+                }
+            }
+            break;
+        }
+        default:
+            break;
+    }
+    away.normalize();
+    return away;
 }
 
 SbVec3f SoDatumLabel::getLabelTextCenterDistance(const SbVec3f& p1, const SbVec3f& p2)
@@ -812,6 +970,129 @@ SbVec3f SoDatumLabel::getLabelTextCenterAngle(const SbVec3f& p0)
     return textCenter;
 }
 
+// Taken from upstream's calculateArcLengthGeometry (646b4381f9, reworked
+// since), with one change: the number is placed ON the dimension arc and
+// textShift carries it outward, where upstream puts it one text height out in
+// world units -- see textShift.
+bool SoDatumLabel::arcLengthGeometry(ArcLengthGeometry& geom) const
+{
+    if (this->pnts.getNum() < 3) {
+        return false;
+    }
+    const SbVec3f* points = this->pnts.getValues(0);
+    const SbVec3f ctr = points[0];
+    const SbVec3f p1 = points[1];
+    const SbVec3f p2 = points[2];
+    const float length = this->param1.getValue();
+
+    SbVec3f vc1 = p1 - ctr;
+    SbVec3f vc2 = p2 - ctr;
+    const float radius = vc1.length();
+    if (radius <= FLT_EPSILON) {
+        return false;
+    }
+
+    // The sweep from the start point to the end point, counter-clockwise.
+    auto sweepEnd = [](float start, float end) {
+        constexpr float tau = 2.0f * float(M_PI);
+        const float delta = end - start;
+        return delta >= 0.f ? end : end + tau * std::ceil(-delta / tau);
+    };
+    float startangle = atan2f(vc1[1], vc1[0]);
+    float endangle = sweepEnd(startangle, atan2f(vc2[1], vc2[0]));
+    const float range = endangle - startangle;
+
+    // The extension lines run along the chord's normal, away from the centre.
+    // A half circle has its chord through the centre; its middle direction
+    // is the same line.
+    SbVec3f vm = (p1 + p2) / 2 - ctr;
+    if (vm.length() <= radius * 1e-4f) {
+        const float mid = startangle + range / 2;
+        vm = SbVec3f(cos(mid), sin(mid), 0.f);
+    }
+    vm.normalize();
+
+    geom.pnt1 = p1;
+    geom.pnt3 = p2;
+    if (range > float(M_PI)) {
+        // More than half a circle: the chord's side is the short side, so
+        // the lines go that way, out to a circle about the same centre.
+        const float desiredRadius = std::max(length, radius);
+        const float proj = std::clamp(
+            0.5f * (vc1.dot(vm) + vc2.dot(vm)) / radius, -1.0f, 1.0f);
+        const float offset = -radius * proj
+            + std::sqrt(std::max(0.0f,
+                                 desiredRadius * desiredRadius
+                                     - radius * radius * (1.0f - proj * proj)));
+        SbVec3f o1 = p1 + offset * vm - ctr;
+        SbVec3f o2 = p2 + offset * vm - ctr;
+        o1.normalize();
+        o2.normalize();
+
+        geom.arcCenter = ctr;
+        geom.arcRadius = desiredRadius;
+        geom.pnt2 = ctr + desiredRadius * o1;
+        geom.pnt4 = ctr + desiredRadius * o2;
+        startangle = atan2f(o1[1], o1[0]);
+        endangle = sweepEnd(startangle, atan2f(o2[1], o2[0]));
+    }
+    else {
+        // The arc itself, moved along its middle direction: out, in, or past
+        // the centre when length is negative.
+        const float offset = length - radius;
+        geom.pnt2 = p1 + offset * vm;
+        geom.pnt4 = p2 + offset * vm;
+        geom.arcCenter = ctr + offset * vm;
+        geom.arcRadius = radius;
+    }
+    geom.startangle = startangle;
+    geom.endangle = endangle;
+
+    const float mid = (startangle + endangle) / 2;
+    geom.textOffset = geom.arcCenter + geom.arcRadius * SbVec3f(cos(mid), sin(mid), 0.f);
+
+    // Along the chord, kept upright as the distance labels are.
+    SbVec3f dir = p2 - p1;
+    dir.normalize();
+    float angle = atan2f(dir[1], dir[0]);
+    if (angle > float(M_PI_2 + M_PI / 12)) {
+        angle -= float(M_PI);
+    }
+    else if (angle <= float(-M_PI_2 + M_PI / 12)) {
+        angle += float(M_PI);
+    }
+    geom.textAngle = angle;
+    return true;
+}
+
+void SoDatumLabel::generateArcLengthPrimitives(SoAction * action)
+{
+    ArcLengthGeometry geom;
+    if (!arcLengthGeometry(geom)) {
+        return;
+    }
+    // The number only, as for the other types: that is what picks the label.
+    const float mid = (geom.startangle + geom.endangle) / 2;
+    const float s = sin(geom.textAngle);
+    const float c = cos(geom.textAngle);
+    const float shift = arcLengthShiftSign(geom.textAngle, mid) * this->imgHeight;
+    auto corner = [&](float x, float y) {
+        y += shift;
+        return geom.textOffset + SbVec3f(x * c - y * s, x * s + y * c, 0.f);
+    };
+    const float hw = this->imgWidth / 2;
+    const float hh = this->imgHeight / 2;
+
+    SoPrimitiveVertex pv;
+    this->beginShape(action, QUADS);
+    pv.setNormal(SbVec3f(0.f, 0.f, 1.f));
+    for (const SbVec3f& p : {corner(-hw, -hh), corner(-hw, hh), corner(hw, hh), corner(hw, -hh)}) {
+        pv.setPoint(p);
+        shapeVertex(&pv);
+    }
+    this->endShape();
+}
+
 void SoDatumLabel::generateDistancePrimitives(SoAction * action, const SbVec3f& p1, const SbVec3f& p2)
 {
     SbVec3f dir;
@@ -849,26 +1130,27 @@ void SoDatumLabel::generateDistancePrimitives(SoAction * action, const SbVec3f& 
     img3 += textOffset;
     img4 += textOffset;
 
-    // Primitive Shape is only for text as this should only be selectable
+    // Primitive Shape is only for text as this should only be selectable.
+    // The corners go lower-left, upper-left, lower-right, upper-right: a
+    // strip in that order is the box, a QUAD is a bowtie that leaves the
+    // triangle above the centre unpicked.
     SoPrimitiveVertex pv;
 
-    this->beginShape(action, QUADS);
+    this->beginShape(action, TRIANGLE_STRIP);
 
     pv.setNormal( SbVec3f(0.f, 0.f, 1.f) );
 
-    // Set coordinates, around the rim: a quad is picked as the triangles
-    // (0,1,2) and (0,2,3), and the corners taken row by row made a bowtie
-    // that left the top of the number unpickable and its centre on an edge
+    // Set coordinates
     pv.setPoint( img1 );
+    shapeVertex(&pv);
+
+    pv.setPoint( img2 );
     shapeVertex(&pv);
 
     pv.setPoint( img3 );
     shapeVertex(&pv);
 
     pv.setPoint( img4 );
-    shapeVertex(&pv);
-
-    pv.setPoint( img2 );
     shapeVertex(&pv);
 
     this->endShape();
@@ -902,26 +1184,27 @@ void SoDatumLabel::generateDiameterPrimitives(SoAction * action, const SbVec3f& 
     img3 += textOffset;
     img4 += textOffset;
 
-    // Primitive Shape is only for text as this should only be selectable
+    // Primitive Shape is only for text as this should only be selectable.
+    // The corners go lower-left, upper-left, lower-right, upper-right: a
+    // strip in that order is the box, a QUAD is a bowtie that leaves the
+    // triangle above the centre unpicked.
     SoPrimitiveVertex pv;
 
-    this->beginShape(action, QUADS);
+    this->beginShape(action, TRIANGLE_STRIP);
 
     pv.setNormal( SbVec3f(0.f, 0.f, 1.f) );
 
-    // Set coordinates, around the rim: a quad is picked as the triangles
-    // (0,1,2) and (0,2,3), and the corners taken row by row made a bowtie
-    // that left the top of the number unpickable and its centre on an edge
+    // Set coordinates
     pv.setPoint( img1 );
+    shapeVertex(&pv);
+
+    pv.setPoint( img2 );
     shapeVertex(&pv);
 
     pv.setPoint( img3 );
     shapeVertex(&pv);
 
     pv.setPoint( img4 );
-    shapeVertex(&pv);
-
-    pv.setPoint( img2 );
     shapeVertex(&pv);
 
     this->endShape();
@@ -941,26 +1224,27 @@ void SoDatumLabel::generateAnglePrimitives(SoAction * action, const SbVec3f& p0)
     img3 += textOffset;
     img4 += textOffset;
 
-    // Primitive Shape is only for text as this should only be selectable
+    // Primitive Shape is only for text as this should only be selectable.
+    // The corners go lower-left, upper-left, lower-right, upper-right: a
+    // strip in that order is the box, a QUAD is a bowtie that leaves the
+    // triangle above the centre unpicked.
     SoPrimitiveVertex pv;
 
-    this->beginShape(action, QUADS);
+    this->beginShape(action, TRIANGLE_STRIP);
 
     pv.setNormal( SbVec3f(0.f, 0.f, 1.f) );
 
-    // Set coordinates, around the rim: a quad is picked as the triangles
-    // (0,1,2) and (0,2,3), and the corners taken row by row made a bowtie
-    // that left the top of the number unpickable and its centre on an edge
+    // Set coordinates
     pv.setPoint( img1 );
+    shapeVertex(&pv);
+
+    pv.setPoint( img2 );
     shapeVertex(&pv);
 
     pv.setPoint( img3 );
     shapeVertex(&pv);
 
     pv.setPoint( img4 );
-    shapeVertex(&pv);
-
-    pv.setPoint( img2 );
     shapeVertex(&pv);
 
     this->endShape();
@@ -1024,43 +1308,15 @@ bool SoDatumLabel::updateImageSize(SoState * state, int & srcw, int & srch)
     // is needed during render-cache capture because GLRender never runs then
     // (in render-cache modes SoFCSelectionRoot draws through the render cache,
     // not the per-shape GL traversal), so the members would otherwise be stale.
-    float scale = getScaleFactor(state);
+    bool hasText = computeImageSize(state, srcw, srch);
 
-    const SbString* s = string.getValues(0);
-    bool hasText = (s->getLength() > 0);
-    srcw = 1;
-    srch = 1;
-
-    if (hasText) {
-        if (!this->glimagevalid) {
-            drawImage();
-            this->glimagevalid = true;
-        }
-        // Keep the companion quad's texture in step with the current bitmap.
-        // Gated on imagesynced (not glimagevalid) because GLRender may have
-        // already validated the bitmap without ever feeding the companion.
-        if (this->imageTexture && !this->imagesynced) {
-            syncImageTexture();
-            this->imagesynced = true;
-        }
-        SbVec2s imgsize;
-        int nc;
-        const unsigned char* dataptr = this->image.getValue(imgsize, nc);
-        if (!dataptr) {
-            hasText = false;
-        }
-        else {
-            srcw = imgsize[0];
-            srch = imgsize[1];
-            float aspectRatio = (float)srcw / (float)srch;
-            this->imgHeight = scale * (float)srch;
-            this->imgWidth  = aspectRatio * (float)this->imgHeight;
-        }
-    }
-
-    if (this->datumtype.getValue() == SYMMETRIC) {
-        this->imgHeight = scale * 25.0f;
-        this->imgWidth  = scale * 25.0f;
+    // Keep the companion quad's texture in step with the current bitmap.
+    // Gated on imagesynced (not glimagevalid) because GLRender may have
+    // already validated the bitmap without ever feeding the companion.
+    if (this->string.getValues(0)->getLength() > 0 && this->imageTexture
+        && !this->imagesynced) {
+        syncImageTexture();
+        this->imagesynced = true;
     }
 
     // Calibrate the companion autozoom so the glyph quad (emitted in native
@@ -1081,6 +1337,43 @@ bool SoDatumLabel::updateImageSize(SoState * state, int & srcw, int & srch)
             if (this->imageZoom->scaleFactor.getValue() != sf)
                 this->imageZoom->scaleFactor.setValue(sf);
         }
+    }
+
+    return hasText;
+}
+
+bool SoDatumLabel::computeImageSize(SoState * state, int & srcw, int & srch)
+{
+    float scale = getScaleFactor(state);
+
+    const SbString* s = string.getValues(0);
+    bool hasText = (s->getLength() > 0);
+    srcw = 1;
+    srch = 1;
+
+    if (hasText) {
+        if (!this->glimagevalid) {
+            drawImage();
+            this->glimagevalid = true;
+        }
+        SbVec2s imgsize;
+        int nc;
+        const unsigned char* dataptr = this->image.getValue(imgsize, nc);
+        if (!dataptr) {
+            hasText = false;
+        }
+        else {
+            srcw = imgsize[0];
+            srch = imgsize[1];
+            float aspectRatio = (float)srcw / (float)srch;
+            this->imgHeight = scale * (float)srch;
+            this->imgWidth  = aspectRatio * (float)this->imgHeight;
+        }
+    }
+
+    if (this->datumtype.getValue() == SYMMETRIC) {
+        this->imgHeight = scale * 25.0f;
+        this->imgWidth  = scale * 25.0f;
     }
 
     return hasText;
@@ -1123,6 +1416,7 @@ void SoDatumLabel::generateLeaderPrimitives(SoAction * action)
     const float textW = float(srcw);
     const float margin = (dt == SYMMETRIC ? 25.0f : float(srch)) / 4.0f;
     const SbVec3f none(0.f, 0.f, 0.f);
+    this->textShift = 0.f;
 
     struct Pt {
         SbVec3f p;   // world, in this node's coordinates
@@ -1305,7 +1599,10 @@ void SoDatumLabel::generateLeaderPrimitives(SoAction * action)
         // moves back along its tangent by i / (2c - 2) of half that width.
         int countSegments = std::max(6, abs(int(50.0 * range / (2 * M_PI))));
         double segment = range / (2 * countSegments - 2);
-        float sgn = range >= 0 ? 1.f : -1.f;
+        // Toward the start along the arc is -tangent for a positive radius;
+        // a negative one (the number past the centre) draws the arc turned
+        // half way round, and the tangent with it.
+        float sgn = (range >= 0 ? 1.f : -1.f) * (r >= 0 ? 1.f : -1.f);
         float step = textW / (2.f * float(2 * countSegments - 2));
 
         this->beginShape(action, LINE_STRIP);
@@ -1360,6 +1657,36 @@ void SoDatumLabel::generateLeaderPrimitives(SoAction * action)
         emitLine(Pt{p2 + zc, head * -1.f}, Pt{p2 + zc, base * -1.f - side});
         emitLine(Pt{p2 + zc, head * -1.f}, Pt{p2 + zc, base * -1.f + side});
     }
+    else if (dt == ARCLENGTH) {
+        ArcLengthGeometry geom;
+        if (!arcLengthGeometry(geom))
+            return;
+
+        const float mid = (geom.startangle + geom.endangle) / 2;
+        this->textOffset = geom.textOffset;
+        this->textAngle = geom.textAngle;
+        this->textShift = arcLengthShiftSign(geom.textAngle, mid) * float(srch);
+
+        const float range = geom.endangle - geom.startangle;
+        int countSegments = std::max(6, abs(int(50.0 * range / (2 * M_PI))));
+        double segment = range / (countSegments - 1);
+        this->beginShape(action, LINE_STRIP);
+        for (int i = 0; i < countSegments; i++) {
+            double theta = geom.startangle + segment * i;
+            put(at(geom.arcCenter
+                   + SbVec3f(geom.arcRadius * cos(theta), geom.arcRadius * sin(theta), 0)));
+        }
+        this->endShape();
+
+        emitLine(at(geom.pnt1), at(geom.pnt2));
+        emitLine(at(geom.pnt3), at(geom.pnt4));
+
+        // Tips on the extension lines, bodies along the arc.
+        auto radial = [](float a) { return SbVec3f(cos(a), sin(a), 0.f); };
+        auto tangent = [](float a) { return SbVec3f(-sin(a), cos(a), 0.f); };
+        emitArrow(geom.pnt2, tangent(geom.startangle), radial(geom.startangle));
+        emitArrow(geom.pnt4, tangent(geom.endangle) * -1.f, radial(geom.endangle));
+    }
 }
 
 void SoDatumLabel::generateTextQuad(SoAction * action)
@@ -1383,11 +1710,12 @@ void SoDatumLabel::generateTextQuad(SoAction * action)
     // Local corners at the origin with matching UVs. The glyph bitmap is stored
     // bottom-up (GL convention), so v=0 is the bottom row.
     struct Corner { float x, y, u, v; };
+    const float dy = this->textShift;
     const Corner corners[4] = {
-        {-hw, -hh, 0.f, 0.f},
-        { hw, -hh, 1.f, 0.f},
-        { hw,  hh, 1.f, 1.f},
-        {-hw,  hh, 0.f, 1.f},
+        {-hw, dy - hh, 0.f, 0.f},
+        { hw, dy - hh, 1.f, 0.f},
+        { hw, dy + hh, 1.f, 1.f},
+        {-hw, dy + hh, 0.f, 1.f},
     };
 
     SoPrimitiveVertex pv;
@@ -1416,11 +1744,12 @@ void SoDatumLabel::generatePrimitives(SoAction * action)
         return;
 
     // Ray-pick path: keep only the text label box selectable (unchanged).
-    // The box sized for the view being picked in: GLRender is what sized it,
-    // and with an external backend drawing it never runs -- the capture's
-    // sizing has no camera of the viewer's, and a mirror's pick has its own.
+    // The box is sized for the view picked in. The members were last set by
+    // whatever traversed before -- GLRender for this view in mode 0, but in
+    // the render-cache modes GLRender never runs, and the number of a
+    // dimension could not be picked at all.
     int srcw = 1, srch = 1;
-    updateImageSize(action->getState(), srcw, srch);
+    computeImageSize(action->getState(), srcw, srch);
     // Initialisation check (needs something more sensible) prevents an infinite loop bug
     if (this->imgHeight <= FLT_EPSILON || this->imgWidth <= FLT_EPSILON)
         return;
@@ -1450,6 +1779,10 @@ void SoDatumLabel::generatePrimitives(SoAction * action)
 
         generateSymmetricPrimitives(action, p1, p2);
     }
+    else if (this->datumtype.getValue() == ARCLENGTH) {
+
+        generateArcLengthPrimitives(action);
+    }
 }
 
 void SoDatumLabel::notify(SoNotList * l)
@@ -1461,15 +1794,17 @@ void SoDatumLabel::notify(SoNotList * l)
         // The glyph bitmap changed; the companion texture must be re-fed.
         this->imagesynced = false;
     }
-    // The companion's leaders are generated from this node's fields, the
-    // number is placed by them, and the companion is a node of its own: a
-    // capture would keep what it first made of them. The two it draws in
-    // are connected to its style nodes already, and the image is made from
-    // the string, during the capture itself.
-    if (f && f != &this->textColor && f != &this->lineWidth && f != &this->image) {
-        if (this->leaderShape) {
-            this->leaderShape->touch();
-        }
+    // The companion shapes draw this label for the render-cache capture, from
+    // these fields, but are not below this node: nothing tells the capture
+    // they changed, and it kept drawing the label as it first found it -- the
+    // old number, at the old place. textColor and lineWidth reach it through
+    // their connected style nodes; image is written by the capture itself, as
+    // is what the anchor reads.
+    if (this->leaderShape && f && f != &this->textColor && f != &this->lineWidth
+        && f != &this->linePattern && f != &this->image) {
+        this->leaderShape->touch();
+        this->imageShape->touch();
+        // and the anchor that places the number by them
         if (this->imageAnchor) {
             this->imageAnchor->touch();
         }
@@ -1569,8 +1904,16 @@ void SoDatumLabel::GLRender(SoGLRenderAction * action)
     state->push();
 
     //Set General OpenGL Properties
-    glPushAttrib(GL_ENABLE_BIT | GL_PIXEL_MODE_BIT | GL_COLOR_BUFFER_BIT);
+    glPushAttrib(GL_ENABLE_BIT | GL_PIXEL_MODE_BIT | GL_COLOR_BUFFER_BIT | GL_LINE_BIT);
     glDisable(GL_LIGHTING);
+    // the leaders' pattern; the number and the arrow heads are not lines
+    if (this->linePattern.getValue() != 0xFFFF) {
+        glEnable(GL_LINE_STIPPLE);
+        glLineStipple(1, this->linePattern.getValue());
+    }
+    else {
+        glDisable(GL_LINE_STIPPLE);
+    }
 
     //Enable Anti-alias
     if (action->isSmoothing()) {
@@ -1827,11 +2170,12 @@ void SoDatumLabel::GLRender(SoGLRenderAction * action)
         // p0 - vector for angle intersect
         SbVec3f v0(cos(startangle+range/2),sin(startangle+range/2),0);
 
-        // leave some space for the text
+        // leave some space for the text; r is negative when the number is
+        // past the centre, and the gap is the same size then
         if (range >= 0)
-            range = std::max(0.2f*range, range - this->imgWidth/(2*r));
+            range = std::max(0.2f*range, range - this->imgWidth/(2*std::fabs(r)));
         else
-            range = std::min(0.2f*range, range + this->imgWidth/(2*r));
+            range = std::min(0.2f*range, range + this->imgWidth/(2*std::fabs(r)));
 
         int countSegments = std::max(6, abs(int(50.0 * range / (2 * M_PI))));
         double segment = range / (2*countSegments-2);
@@ -1917,6 +2261,54 @@ void SoDatumLabel::GLRender(SoGLRenderAction * action)
             glVertex3f(ar3[0], ar3[1], ZCONSTR);
             glVertex3f(ar5[0], ar5[1], ZCONSTR);
         glEnd();
+    }
+    else if (this->datumtype.getValue() == ARCLENGTH) {
+        ArcLengthGeometry geom;
+        if (arcLengthGeometry(geom)) {
+            const float mid = (geom.startangle + geom.endangle) / 2;
+            angle = geom.textAngle;
+            const float shift = arcLengthShiftSign(angle, mid) * this->imgHeight;
+            textOffset = geom.textOffset + SbVec3f(-sin(angle), cos(angle), 0.f) * shift;
+
+            const float range = geom.endangle - geom.startangle;
+            int countSegments = std::max(6, abs(int(50.0 * range / (2 * M_PI))));
+            double segment = range / (countSegments - 1);
+            glBegin(GL_LINE_STRIP);
+            for (int i = 0; i < countSegments; i++) {
+                double theta = geom.startangle + segment * i;
+                SbVec3f v = geom.arcCenter
+                    + SbVec3f(geom.arcRadius * cos(theta), geom.arcRadius * sin(theta), 0);
+                glVertex2f(v[0], v[1]);
+            }
+            glEnd();
+
+            glBegin(GL_LINES);
+                glVertex2f(geom.pnt1[0], geom.pnt1[1]);
+                glVertex2f(geom.pnt2[0], geom.pnt2[1]);
+                glVertex2f(geom.pnt3[0], geom.pnt3[1]);
+                glVertex2f(geom.pnt4[0], geom.pnt4[1]);
+            glEnd();
+
+            // Tips on the extension lines, bodies along the arc, sized as
+            // the distance labels' are.
+            float margin = this->imgHeight / 4.0f;
+            auto arrow = [&](const SbVec3f& tip, const SbVec3f& back, const SbVec3f& side) {
+                SbVec3f base = tip + back * (0.866f * 2 * margin);
+                SbVec3f a = base + side * margin;
+                SbVec3f b = base - side * margin;
+                glVertex2f(tip[0], tip[1]);
+                glVertex2f(a[0], a[1]);
+                glVertex2f(b[0], b[1]);
+            };
+            glBegin(GL_TRIANGLES);
+                arrow(geom.pnt2,
+                      SbVec3f(-sin(geom.startangle), cos(geom.startangle), 0.f),
+                      SbVec3f(cos(geom.startangle), sin(geom.startangle), 0.f));
+                arrow(geom.pnt4,
+                      SbVec3f(sin(geom.endangle), -cos(geom.endangle), 0.f),
+                      SbVec3f(cos(geom.endangle), sin(geom.endangle), 0.f));
+            glEnd();
+        }
     }
 
     if (hasText) {

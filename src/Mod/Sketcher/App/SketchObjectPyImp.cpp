@@ -546,6 +546,50 @@ PyObject* SketchObjectPy::delConstraint(PyObject* args)
     Py_Return;
 }
 
+PyObject* SketchObjectPy::delConstraints(PyObject* args)
+{
+    PyObject* pcObj;
+    PyObject* updateGeometry = Py_True;
+    PyObject* noSolve = Py_False;
+
+    if (!PyArg_ParseTuple(args,
+                          "O|O!O!",
+                          &pcObj,
+                          &PyBool_Type,
+                          &updateGeometry,
+                          &PyBool_Type,
+                          &noSolve)) {
+        return nullptr;
+    }
+
+    if (PyObject_TypeCheck(pcObj, &(PyList_Type)) || PyObject_TypeCheck(pcObj, &(PyTuple_Type))) {
+
+        std::vector<int> constraintIdList;
+        Py::Sequence list(pcObj);
+        for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
+            if (PyLong_Check((*it).ptr())) {
+                constraintIdList.push_back(PyLong_AsLong((*it).ptr()));
+            }
+        }
+
+        if (this->getSketchObjectPtr()->delConstraints(
+                constraintIdList,
+                (Base::asBoolean(updateGeometry) ? DeleteOption::UpdateGeometry
+                                                 : DeleteOption::NoFlag)
+                    | (Base::asBoolean(noSolve) ? DeleteOption::NoSolve : DeleteOption::NoFlag))
+            == -1) {
+            PyErr_SetString(PyExc_ValueError, "Not able to delete constraints, invalid indices");
+            return nullptr;
+        }
+
+        Py_Return;
+    }
+
+    std::string error = std::string("type must be list of constraint indices (int), not ");
+    error += pcObj->ob_type->tp_name;
+    throw Py::TypeError(error);
+}
+
 PyObject* SketchObjectPy::renameConstraint(PyObject* args)
 {
     int Index;
@@ -1083,6 +1127,74 @@ PyObject* SketchObjectPy::setDatum(PyObject* args)
     Py_Return;
 }
 
+PyObject* SketchObjectPy::getLabelPosition(PyObject* args) const
+{
+    int constrid {};
+    float value {};
+
+    if (!PyArg_ParseTuple(args, "i", &constrid)) {
+        return nullptr;
+    }
+
+    if (this->getSketchObjectPtr()->getLabelPosition(constrid, value)) {
+        PyErr_SetString(PyExc_ValueError, "Invalid constraint id");
+        return nullptr;
+    }
+
+    return Py::new_reference_to(Py::Float(value));
+}
+
+PyObject* SketchObjectPy::setLabelPosition(PyObject* args)
+{
+    int constrid {};
+    float value {};
+
+    if (!PyArg_ParseTuple(args, "if", &constrid, &value)) {
+        return nullptr;
+    }
+
+    if (this->getSketchObjectPtr()->setLabelPosition(constrid, value)) {
+        PyErr_SetString(PyExc_ValueError, "Invalid constraint id");
+        return nullptr;
+    }
+
+    Py_Return;
+}
+
+PyObject* SketchObjectPy::getLabelDistance(PyObject* args) const
+{
+    int constrid {};
+    float value {};
+
+    if (!PyArg_ParseTuple(args, "i", &constrid)) {
+        return nullptr;
+    }
+
+    if (this->getSketchObjectPtr()->getLabelDistance(constrid, value)) {
+        PyErr_SetString(PyExc_ValueError, "Invalid constraint id");
+        return nullptr;
+    }
+
+    return Py::new_reference_to(Py::Float(value));
+}
+
+PyObject* SketchObjectPy::setLabelDistance(PyObject* args)
+{
+    int constrid {};
+    float value {};
+
+    if (!PyArg_ParseTuple(args, "if", &constrid, &value)) {
+        return nullptr;
+    }
+
+    if (this->getSketchObjectPtr()->setLabelDistance(constrid, value)) {
+        PyErr_SetString(PyExc_ValueError, "Invalid constraint id");
+        return nullptr;
+    }
+
+    Py_Return;
+}
+
 PyObject* SketchObjectPy::getDatum(PyObject* args) const
 {
     const std::vector<Constraint*>& vals = this->getSketchObjectPtr()->Constraints.getValues();
@@ -1160,6 +1272,25 @@ PyObject* SketchObjectPy::setDriving(PyObject* args)
     if (this->getSketchObjectPtr()->setDriving(constrid, Base::asBoolean(driving))) {
         std::stringstream str;
         str << "Not able set Driving/reference for constraint with the given index: " << constrid;
+        PyErr_SetString(PyExc_ValueError, str.str().c_str());
+        return nullptr;
+    }
+
+    Py_Return;
+}
+
+PyObject* SketchObjectPy::setDiameter(PyObject* args)
+{
+    PyObject* diameter;
+    int constrid;
+
+    if (!PyArg_ParseTuple(args, "iO!", &constrid, &PyBool_Type, &diameter)) {
+        return nullptr;
+    }
+
+    if (this->getSketchObjectPtr()->setDiameter(constrid, Base::asBoolean(diameter))) {
+        std::stringstream str;
+        str << "Not a radius or a diameter constraint, the one with the given index: " << constrid;
         PyErr_SetString(PyExc_ValueError, str.str().c_str());
         return nullptr;
     }
@@ -1275,6 +1406,57 @@ PyObject* SketchObjectPy::setVirtualSpace(PyObject* args)
                                                         Base::asBoolean(invirtualspace))) {
             std::stringstream str;
             str << "Not able set virtual space for constraint with the given index: "
+                << PyLong_AsLong(id_or_ids);
+            PyErr_SetString(PyExc_ValueError, str.str().c_str());
+            return nullptr;
+        }
+
+        Py_Return;
+    }
+
+    std::string error = std::string("type must be list of Constraint Ids, not ");
+    error += id_or_ids->ob_type->tp_name;
+    throw Py::TypeError(error);
+}
+
+PyObject* SketchObjectPy::setVisibility(PyObject* args)
+{
+    PyObject* isVisible;
+    PyObject* id_or_ids;
+
+    if (!PyArg_ParseTuple(args, "OO!", &id_or_ids, &PyBool_Type, &isVisible)) {
+        return nullptr;
+    }
+
+    if (PyObject_TypeCheck(id_or_ids, &(PyList_Type))
+        || PyObject_TypeCheck(id_or_ids, &(PyTuple_Type))) {
+        std::vector<int> constrIds;
+        Py::Sequence list(id_or_ids);
+        for (Py::Sequence::iterator it = list.begin(); it != list.end(); ++it) {
+            if (PyLong_Check((*it).ptr())) {
+                constrIds.push_back(PyLong_AsLong((*it).ptr()));
+            }
+        }
+
+        try {
+            int ret =
+                this->getSketchObjectPtr()->setVisibility(constrIds, Base::asBoolean(isVisible));
+
+            if (ret == -1) {
+                throw Py::TypeError("Impossible to set visibility!");
+            }
+        }
+        catch (const Base::ValueError& e) {
+            throw Py::ValueError(e.getMessage());
+        }
+
+        Py_Return;
+    }
+    else if (PyLong_Check(id_or_ids)) {
+        if (this->getSketchObjectPtr()->setVisibility(PyLong_AsLong(id_or_ids),
+                                                      Base::asBoolean(isVisible))) {
+            std::stringstream str;
+            str << "Not able set visibility for constraint with the given index: "
                 << PyLong_AsLong(id_or_ids);
             PyErr_SetString(PyExc_ValueError, str.str().c_str());
             return nullptr;

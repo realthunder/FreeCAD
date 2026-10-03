@@ -3468,6 +3468,9 @@ struct GpuMesh
     /// Per-point instance data (position + color) feeding the point
     /// sprite path; invalid without instancing support.
     bgfx::VertexBufferHandle pointInst = BGFX_INVALID_HANDLE;
+    /// pointInst carries marker codes (MeshData::pointMarkers): its
+    /// points draw as their bitmaps through the marker programs.
+    bool markers = false;
     /// Seam-filtered variant of lineInst (hidden-line hideSeam).
     bgfx::VertexBufferHandle lineNoSeamInst = BGFX_INVALID_HANDLE;
     uint64_t lastUsed = 0;
@@ -3497,7 +3500,11 @@ struct GpuMesh
         bytes = 0;
     }
 
-    void upload(const Render::MeshData &mesh)
+    /// \a markerCodes: per MeshData::markers entry, the code the marker
+    /// vertex program reads from the instance's w (fc_point_vs.sh);
+    /// empty for a mesh without markers.
+    void upload(const Render::MeshData &mesh,
+                const std::vector<float> &markerCodes = {})
     {
         if (mesh.colors) {
             ColorVertex::init();
@@ -3535,6 +3542,10 @@ struct GpuMesh
                 d[1] = mesh.positions[ip*3 + 1];
                 d[2] = mesh.positions[ip*3 + 2];
                 d[3] = 0.0f;
+                if (!markerCodes.empty()) {
+                    const uint8_t m = mesh.pointMarkers[i];
+                    d[3] = m < markerCodes.size() ? markerCodes[m] : -1.0f;
+                }
                 if (mesh.colors) {
                     for (int c = 0; c < 4; ++c)
                         d[4 + c] = mesh.colors[ip*4 + c] / 255.0f;
@@ -3545,6 +3556,7 @@ struct GpuMesh
             }
             pointInst = bgfx::createVertexBuffer(
                 imem, LineQuadVertex::ms_pointInstLayout);
+            markers = !markerCodes.empty();
             track(imem->size);
         }
     }
@@ -4066,6 +4078,27 @@ inline void setDrawTransform(const Render::DrawCall &draw,
             std::memcpy(m, entry.matrix, sizeof(m));
         float sf = entry.scaleFactor == 0.0f
             ? 1.0f : entry.scaleFactor * autozoomScale;
+        // An entry sized in screen pixels (pixelscale set) that keeps its
+        // own orientation -- a datum's number, which lies in its dimension
+        // plane. Sized like a billboard, against the view it is drawn with
+        // and at its own depth: its scaleFactor was calibrated against the
+        // viewport of the traversal that captured it, and a different view
+        // -- a browser window, a served capture's fixed 1280x720 -- drew it
+        // at the ratio of the two heights (docs/RenderEngine.md "Autozoom
+        // in pixels"). Views with a camera of their own (overlayAnchor)
+        // keep the scaleFactor path.
+        if (!entry.billboard && entry.pixelscale > 0.f && !overlayAnchor
+                && viewMatrix && projMatrix && viewportHeight > 0.f) {
+            const float *V = viewMatrix;
+            const float *P = projMatrix;
+            const bool persp = std::abs(P[15]) < 1e-6f;
+            const float zview = m[12]*V[2] + m[13]*V[6] + m[14]*V[10] + V[14];
+            const float depth = -zview;
+            const float p5 = std::abs(P[5]) > 1e-8f ? std::abs(P[5]) : 1.0f;
+            sf = entry.pixelscale * 2.0f / (p5 * viewportHeight);
+            if (persp)
+                sf *= (depth > 1e-4f ? depth : 1e-4f);
+        }
         if (entry.billboard && viewMatrix && projMatrix && viewportHeight > 0.f) {
             // Screen-align: substitute the upper 3x3 with the camera basis so
             // the geometry always faces the viewer (SoText2-style text). The
@@ -4169,6 +4202,41 @@ inline void setDrawTransform(const Render::DrawCall &draw,
                 sfb = kBillboard * 2.0f / (p5 * viewportHeight);
                 if (persp)
                     sfb *= (depth > 1e-4f ? depth : 1e-4f);
+
+                // An image quad (pixelscale set: native pixels, 1:1) is
+                // glDrawPixels in GL, whose raster position is the anchor's
+                // window position TRUNCATED to a whole pixel. Put the anchor
+                // there too: with the quad's corners on whole-pixel offsets
+                // (SoFCImageQuad), every texel then covers exactly one pixel
+                // and the filter hands it back unchanged. Left at the
+                // fractional position, a Sketcher constraint icon's 2-pixel
+                // stroke came out as three rows at a third of its colour.
+                if (entry.pixelscale > 0.f && std::abs(P[0]) > 1e-8f) {
+                    const float vx = ax*V[0] + ay*V[4] + az*V[8] + V[12];
+                    const float vy = ax*V[1] + ay*V[5] + az*V[9] + V[13];
+                    const float cx = vx*P[0] + vy*P[4] + zview*P[8] + P[12];
+                    const float cy = vx*P[1] + vy*P[5] + zview*P[9] + P[13];
+                    const float cw = vx*P[3] + vy*P[7] + zview*P[11] + P[15];
+                    // The width is not passed in; the projection carries
+                    // the aspect (P[0] = P[5] * H / W).
+                    const float W = std::round(
+                        viewportHeight * std::abs(P[5] / P[0]));
+                    if (std::abs(cw) > 1e-8f && W > 0.f) {
+                        const float wx = (cx / cw * 0.5f + 0.5f) * W;
+                        const float wy = (cy / cw * 0.5f + 0.5f)
+                            * viewportHeight;
+                        // The epsilon keeps an anchor that is on a pixel
+                        // edge but for rounding from hopping a whole pixel.
+                        const float dx = std::floor(wx + 1e-3f) - wx;
+                        const float dy = std::floor(wy + 1e-3f) - wy;
+                        // Window pixels back to view units at the
+                        // anchor's depth; w is constant across the move.
+                        const float ux = dx * 2.0f / W * cw / P[0];
+                        const float uy = dy * 2.0f / viewportHeight * cw / P[5];
+                        for (int k = 0; k < 3; ++k)
+                            m[12 + k] += right[k] * ux + up[k] * uy;
+                    }
+                }
             }
 
             for (int k = 0; k < 3; ++k) {
@@ -4432,12 +4500,34 @@ public:
     const Render::CaptureInterestTable *ovInterest = nullptr;
     /// The override for \a objectKey, or null (BGFXViewSubmit.cpp).
     const OvStyle *lookupStyleOverride(uint64_t objectKey);
+
+    /// This sub-view's own object visibility (the view's
+    /// ObjectVisibilities), as the producer resolved it per objectKey
+    /// (docs/CoinRetirement.md 5.23). Latched at the top of the frame;
+    /// null when the sub-view has no entries.
+    const Render::VisibilitySet *visSet = nullptr;
+    /// Whether this sub-view's own visibility hides \a draw: its
+    /// object, or a container it is reached through, is hidden here
+    /// (BGFXViewSubmit.cpp). Checked beside the on-top replacement
+    /// (BGFXRenderer::Private isHidden), so a hidden draw neither
+    /// renders nor casts nor outlines nor caps.
+    bool visibilityHides(const Render::DrawCall &draw);
+    /// Whether this sub-view's own table HIDES \a draw's object or a
+    /// container of it -- visibilityHides without the per-view-shown
+    /// rule. What a snapshot drops: a per-view-shown draw travels, and
+    /// the viewer that loads it admits it by its own table.
+    bool visibilityHidesObject(const Render::DrawCall &draw);
+    /// \a draw's VisibilitySet flags in this sub-view; 0 without a set
+    /// (or for a gizmo).
+    uint8_t visibilityFlags(const Render::DrawCall &draw) const;
     /// Whether this sub-view's per-object style resolution (override,
     /// then view style where registered, then own mode -- 5.8/5.9)
     /// admits \a draw's bucket. Asked by the per-draw submit AND by
     /// the instanced group partition: a group merges by geometry and
     /// material, not objectKey, so members can resolve differently.
     bool styleAdmits(const Render::DrawCall &draw);
+    /// styleAdmits with the draw's captured-mode tag taken as \a captured.
+    bool styleAdmitsAs(const Render::DrawCall &draw, uint16_t captured);
 };
 
 class BGFXView : public BGFXStyleState
@@ -5303,6 +5393,10 @@ public:
         fn(m_progLinePatClip, LifeProgram);
         fn(m_progPoint, LifeProgram);
         fn(m_progPointClip, LifeProgram);
+        fn(m_progMarker, LifeProgram);
+        fn(m_progMarkerClip, LifeProgram);
+        fn(s_markerAtlas, LifeProgram);
+        fn(m_markerAtlas, LifeProgram);
         fn(m_progMeshTex, LifeProgram);
         fn(m_progMeshTexClip, LifeProgram);
         fn(m_progMeshOitTex, LifeProgram);
@@ -5525,6 +5619,13 @@ public:
         }
     }
 
+    /// The marker codes of \a data's palette (GpuMesh::upload), giving
+    /// each bitmap an atlas cell; empty when the mesh has no markers.
+    std::vector<float> markerCodes(const Render::MeshData &data);
+    /// Bind the marker atlas for a draw through the marker programs,
+    /// creating (or refilling) it first when it is not there.
+    void bindMarkerAtlas();
+
     GpuMesh *getMesh(const Render::MeshData &data)
     {
         GpuMesh &mesh = meshes[data.cacheId];
@@ -5550,7 +5651,7 @@ public:
             GpuGeometry &geom = res.first->second;
             tryUploadGeometry(geom, data);
             mesh.geom = &geom;
-            mesh.upload(data);
+            mesh.upload(data, markerCodes(data));
             static const bool dbgfeed =
                 (getenv("FC_BGFX_DEBUG_FEED") != nullptr);
             if (dbgfeed)
@@ -6575,7 +6676,7 @@ public:
                                     : mesh->lineInst);
         patterned = patterned && thickline;
         bool thickpoint = mat.type == Render::Material::Point
-            && mat.pointsize > 1.001f
+            && (mat.pointsize > 1.001f || mesh->markers)
             && m_instancing && bgfx::isValid(mesh->pointInst);
 
         bool transparent = mat.transparent
@@ -6671,7 +6772,9 @@ public:
                 ? (patterned ? (clipped ? m_progLinePatClip : m_progLinePat)
                              : (clipped ? m_progLineClip : m_progLine))
                 : thickpoint
-                    ? (clipped ? m_progPointClip : m_progPoint)
+                    ? (mesh->markers
+                        ? (clipped ? m_progMarkerClip : m_progMarker)
+                        : (clipped ? m_progPointClip : m_progPoint))
                     : (clipped ? m_progFlatClip : m_progFlat);
         }
         if (!bgfx::isValid(prog))
@@ -6702,6 +6805,8 @@ public:
             bgfx::setVertexBuffer(0, m_lineQuadVb);
             bgfx::setIndexBuffer(m_lineQuadIb);
             bgfx::setInstanceDataBuffer(mesh->pointInst, startPt, numPt);
+            if (mesh->markers)
+                bindMarkerAtlas();
         }
         else {
             setMeshVertexBuffers(mesh, *draw.mesh);
@@ -7222,6 +7327,20 @@ public:
     bgfx::ProgramHandle m_progLinePatClip = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progPoint = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progPointClip = BGFX_INVALID_HANDLE;
+    /// Points drawn as SoMarkerSet bitmaps (fs_fc_marker), and the atlas
+    /// the bitmaps are drawn from: cells of kMarkerCell pixels,
+    /// kMarkerColumns to a row, one byte a pixel. A cell, once given to
+    /// a bitmap, is that bitmap's for the life of the view -- the codes
+    /// in the instance buffers name cells -- so the atlas keeps the
+    /// bitmaps on the CPU too and refills itself if it is recreated.
+    bgfx::ProgramHandle m_progMarker = BGFX_INVALID_HANDLE;
+    bgfx::ProgramHandle m_progMarkerClip = BGFX_INVALID_HANDLE;
+    bgfx::UniformHandle s_markerAtlas = BGFX_INVALID_HANDLE;
+    bgfx::TextureHandle m_markerAtlas = BGFX_INVALID_HANDLE;
+    static constexpr int kMarkerCell = 32;
+    static constexpr int kMarkerColumns = 16;
+    std::vector<Render::MeshData::PointMarker> m_markerCells;
+    std::map<std::string, int> m_markerCellIndex;
     bgfx::ProgramHandle m_progMeshTex = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progMeshTexClip = BGFX_INVALID_HANDLE;
     bgfx::ProgramHandle m_progMeshOitTex = BGFX_INVALID_HANDLE;
@@ -9769,6 +9888,8 @@ public:
         /// The cell's per-object override table (5.9), restated per
         /// submit like the style; the producer owns the storage.
         const Render::StyleOverrideTable *styleOverrides = nullptr;
+        /// The cell's own object visibility, restated per submit.
+        const Render::VisibilitySet *visibilities = nullptr;
     } subCtx;
 
     /// The plain (sub-view id 0) frame's style context, stated by the
@@ -9782,6 +9903,13 @@ public:
     bool mainFromSuperset = false;
     uint16_t mainStyleMode = 0;
     const Render::StyleOverrideTable *mainStyleOverrides = nullptr;
+    /// The plain frame's own object visibility, stated through
+    /// setMainViewVisibility(); null = the view hides nothing of its own.
+    const Render::VisibilitySet *mainVisibilities = nullptr;
+    /// The visibility set (and its version) the scene bounds were last
+    /// computed under: a change re-runs updateBBox.
+    const Render::VisibilitySet *bboxVisTable = nullptr;
+    uint32_t bboxVisVersion = 0;
     /// The capture's additive-mode interest list, stated through
     /// setCaptureInterest() (docs/CoinRetirement.md 5.9 "Non-standard
     /// modes"). One per renderer -- the interest belongs to the shared
@@ -10550,6 +10678,13 @@ public:
     /// does not trigger (it still corrects back to the budget when it
     /// does). See the plan callback for the dither it removes.
     float levelBudgetDeadband = 0.03f;
+    /// PerViewShownEvictWatermark parameter: the fraction of the GPU
+    /// budget above which the plan evicts released per-view-shown
+    /// objects first (MeshSourceRegistry::evictReleasedShown).
+    float shownEvictWatermark = 0.9f;
+    /// Whether the last frame stood over that watermark, for the
+    /// rising-edge wake, as gpuOverBudget is for the budget.
+    bool gpuOverShownWatermark = false;
     // GPU geometry budget (setGpuMemoryBudget); 0 = automatic.
     size_t gpuBudget = 0;
 

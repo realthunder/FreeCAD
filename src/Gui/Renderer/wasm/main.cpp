@@ -173,6 +173,23 @@ static void decLog(const char *fmt, ...)
 }
 static std::set<int> s_selIds;
 static std::set<int> s_overlayIds;
+/// The edit session the host says this viewer is in (the `session` of
+/// the `edit` push), 0 when none. A served document's edit geometry is
+/// an overlay tagged with its session in the snapshot every client
+/// shares, and it is drawn only by that session's viewers
+/// (docs/ThinClient.md 8.12 item J).
+static uint32_t s_editSession = 0;
+/// Whether the automatic camera has ever framed the scene's own objects
+/// (fitCamera). Until it has, a scene with nothing to frame is framed by
+/// its scene-camera overlays instead; after, it is left where it is.
+static bool s_framed = false;
+
+/// Whether an overlay of the snapshot is this viewer's to draw: every
+/// untagged one, and the tagged one of the session it is in.
+static bool overlayIsMine(const Render::OverlayAnchor &a)
+{
+    return a.session == 0 || a.session == s_editSession;
+}
 
 // Live streaming (?scene=<http://host:port> page parameter): connect a
 // WebSocket to the desktop scene server (FC_BGFX_SERVE_SCENE) and
@@ -508,8 +525,9 @@ EM_JS(void, fcviewer_onview_event, (const char *json), {
     window.dispatchEvent(new CustomEvent('fc:onview', { detail: params }));
 });
 
-// Where those boxes belong on the canvas, this frame. Sent as "i,x,y;..."
-// in CSS pixels, and only when something moved.
+// Where those boxes belong on the canvas, this frame. Sent as
+// "i,x,y,visible,ax,ay;..." in CSS pixels, and only when something moved;
+// ax,ay is the projected away point (the anchor itself when there is none).
 //
 // Projected here, per frame, from the world anchor the server sent -- the
 // camera of the frame being drawn is the only one that cannot be behind
@@ -523,7 +541,12 @@ EM_JS(void, fcviewer_onview_layout, (const char *spec), {
         var parts = s.split(';');
         for (var i = 0; i < parts.length; ++i) {
             var f = parts[i].split(',');
-            out.push({ i: +f[0], x: +f[1], y: +f[2], visible: +f[3] !== 0 });
+            var place = { i: +f[0], x: +f[1], y: +f[2], visible: +f[3] !== 0 };
+            if (f.length >= 6) {
+                place.ax = +f[4];
+                place.ay = +f[5];
+            }
+            out.push(place);
         }
     }
     window.dispatchEvent(new CustomEvent('fc:onviewlayout', { detail: out }));
@@ -980,6 +1003,15 @@ static void screenRay(float px, float py, bx::Vec3 &orig, bx::Vec3 &rdir)
                 bx::mul(f.up, ny * th))));
 }
 
+/// The autozoom (screen-constant) scale for the orbit camera, as the
+/// desktop's RendererBridge::translateAutoZoomScale gives it for a Coin
+/// camera: getWorldToScreenScale(0, 0.1) / (5 * aspect), which for a
+/// perspective camera at distance d is 2 * 0.1 / 5 * d * tan(fovY / 2).
+static float autoZoomScaleForOrbit()
+{
+    return 0.04f * s_dist * std::tan(0.5f * kFovY * bx::kPi / 180.0f);
+}
+
 static void buildCamera(float *viewMtx, float *projMtx,
                         int vw = 0, int vh = 0)
 {
@@ -1183,6 +1215,53 @@ static bool pickFilterAllows(PickKind k)
     }
 }
 
+/// This client's own object visibility (docs/CoinRetirement.md 5.18,
+/// 5.23): the host resolves the map this client set with the
+/// `view.visibility` op per draw of the served scene, with the rule its
+/// own traversals follow, and tells the answer ({"cmd":"visibility"}: the
+/// objectKeys hidden and those shown). The backend draws by it
+/// (setMainViewVisibility); the local pick and the framing ask
+/// clientHides and clientSkipsEntry. Nothing here resolves anything.
+static Render::VisibilitySet s_visibility;
+
+/// This client's flags for objectKey \a key.
+static uint8_t clientFlags(uint64_t key)
+{
+    return key ? s_visibility.flagsOf(key) : 0;
+}
+
+/// Whether this client keeps \a d out: its object, or a container it is
+/// reached through, hidden -- or a draw of a hidden object some view
+/// shows on its own that this client does not show. The backend's rule
+/// (BGFXStyleState::visibilityHides), for the pick.
+static bool clientHides(const Render::DrawCall &d)
+{
+    const bool pershown = d.capturedMode
+        && d.capturedMode == Render::perViewShownModeId();
+    const uint8_t flags = d.skipbounds ? 0 : clientFlags(d.objectKey);
+    return (flags & Render::VisibilitySet::Hidden)
+        || (pershown && !(flags & Render::VisibilitySet::Shown));
+}
+
+/// Whether this client keeps object entry \a e off its screen before any
+/// of its geometry is in: an object it hides, or one only in the scene
+/// because some view shows it (SceneDump v80) which this client does not
+/// show.
+static bool clientSkipsEntry(const Render::SceneSnapshot::ObjectEntry &e)
+{
+    const uint8_t flags = clientFlags(e.objectKey);
+    if (flags & Render::VisibilitySet::Hidden)
+        return true;
+    return e.perViewShown && !(flags & Render::VisibilitySet::Shown);
+}
+
+/// Hand the backend this client's set.
+static void feedVisibility()
+{
+    if (s_renderer)
+        s_renderer->setMainViewVisibility(&s_visibility);
+}
+
 /// Nearest face (exact ray/triangle), edge and vertex (screen-space proximity
 /// within the pick radius) of the draw scene at canvas pixel (px, py), then
 /// resolve by the desktop's vertex > edge > face priority — a higher-priority
@@ -1208,6 +1287,9 @@ static PickHit pickScene(float px, float py)
     for (size_t di = 0; di < s_snap.scene.size(); ++di) {
         const auto &dc = s_snap.scene[di];
         if (!dc.mesh || !dc.mesh->positions)
+            continue;
+        // What this client does not see, it does not pick.
+        if (clientHides(dc))
             continue;
         const float *pos = dc.mesh->positions;
 
@@ -2891,6 +2973,42 @@ EM_JS(void, fcviewer_peerselection_event, (const char *json), {
     } catch (e) {}
 });
 
+/// The objectKeys of the list \a name opens ("\"hidden\":[") in \a json,
+/// each hex in quotes, flagged \a flag in \a keys.
+static void readVisibilityKeys(const char *json, const char *name, uint8_t flag,
+                               std::unordered_map<uint64_t, uint8_t> &keys)
+{
+    const char *p = std::strstr(json, name);
+    if (!p)
+        return;
+    p += std::strlen(name);
+    while (*p && *p != ']') {
+        if (*p != '"') {
+            ++p;
+            continue;
+        }
+        char *end = nullptr;
+        const uint64_t key = std::strtoull(p + 1, &end, 16);
+        if (!end || *end != '"')
+            break;
+        keys[key] |= flag;
+        p = end + 1;
+    }
+}
+
+/// {"cmd":"visibility","hidden":["<hex key>",...],"shown":[...]}: this
+/// client's own visibility, resolved on the host (SceneServeSource::
+/// announceVisibility). Replaces the whole set.
+static void applyVisibility(const char *json)
+{
+    std::unordered_map<uint64_t, uint8_t> keys;
+    readVisibilityKeys(json, "\"hidden\":[", Render::VisibilitySet::Hidden, keys);
+    readVisibilityKeys(json, "\"shown\":[", Render::VisibilitySet::Shown, keys);
+    s_visibility.keys = std::move(keys);
+    ++s_visibility.version;
+    feedVisibility();
+}
+
 /// Take in one peerselection push: resolve it, paint it, and tell the DOM
 /// layer who has what. The event is deliberately NOT 'fc:selection' -- a
 /// page that shows a roster can listen for it, and the inspector, which
@@ -3107,8 +3225,15 @@ static void selectAt(float px, float py, bool ctrl, bool shift = false)
 struct OnViewParam {
     int index = 0;
     bx::Vec3 anchor {bx::InitZero};
+    /// A value's editor also sends a point one unit away from the anchor,
+    /// in the direction its other rows grow so that they hide nothing it
+    /// edits; projected beside the anchor, it is a direction on the screen.
+    bool hasAway = false;
+    bx::Vec3 away {bx::InitZero};
     float lastX = -1e9f;
     float lastY = -1e9f;
+    float lastAwayX = -1e9f;
+    float lastAwayY = -1e9f;
     bool lastVisible = false;
 };
 static std::vector<OnViewParam> s_onView;
@@ -3135,6 +3260,19 @@ static void parseOnViewAnchors(const char *json)
         param.anchor = bx::Vec3(float(std::atof(px + 4)),
                                 float(std::atof(py + 4)),
                                 float(std::atof(pz + 4)));
+        // The away point, written after the anchor and before the text --
+        // and looked for only there, so that a later entry's is not taken
+        // for this one's.
+        const char *pt = std::strstr(pz, "\"text\":");
+        const char *pax = std::strstr(pz, "\"ax\":");
+        const char *pay = std::strstr(pz, "\"ay\":");
+        const char *paz = std::strstr(pz, "\"az\":");
+        if (pt && pax && pay && paz && paz < pt) {
+            param.hasAway = true;
+            param.away = bx::Vec3(float(std::atof(pax + 5)),
+                                  float(std::atof(pay + 5)),
+                                  float(std::atof(paz + 5)));
+        }
         s_onView.push_back(param);
         p += 5;
     }
@@ -4065,8 +4203,7 @@ static void renderLayoutFrame()
         const float *am = static_cast<const float *>(
             frames[activeFrame >= 0 ? activeFrame : 0].viewMatrix);
         relightForCamera(am);
-        s_renderer->setAutoZoomScale(
-            s_dist * std::tan(0.5f * kFovY * bx::kPi / 180.0f) * 0.0857f);
+        s_renderer->setAutoZoomScale(autoZoomScaleForOrbit());
         const double renderT0 = emscripten_get_now();
         s_renderer->renderSubViews(bg, frames.data(),
                                    int(frames.size()));
@@ -4771,9 +4908,19 @@ static void updateOnViewLayout()
         // Canvas pixels are device pixels; the DOM places in CSS ones.
         const float cx = visible ? sx / s_dpr : param.lastX;
         const float cy = visible ? sy / s_dpr : param.lastY;
+        float ax = cx, ay = cy;
+        if (param.hasAway && visible) {
+            float wx = 0.0f, wy = 0.0f, wdepth = 0.0f;
+            if (projectToScreen(param.away, f, fwd, th, aspect, wx, wy, wdepth)) {
+                ax = wx / s_dpr;
+                ay = wy / s_dpr;
+            }
+        }
         if (visible != param.lastVisible
                 || (visible && (std::fabs(cx - param.lastX) >= 0.5f
-                                || std::fabs(cy - param.lastY) >= 0.5f))) {
+                                || std::fabs(cy - param.lastY) >= 0.5f
+                                || std::fabs(ax - param.lastAwayX) >= 0.5f
+                                || std::fabs(ay - param.lastAwayY) >= 0.5f))) {
             // A box behind the camera keeps its last position and is
             // reported hidden: zeroing it would move every one of them to
             // the corner and back as the view swung past.
@@ -4781,12 +4928,14 @@ static void updateOnViewLayout()
         }
         param.lastX = cx;
         param.lastY = cy;
+        param.lastAwayX = ax;
+        param.lastAwayY = ay;
         param.lastVisible = visible;
         if (!spec.empty())
             spec += ';';
-        char buf[64];
-        std::snprintf(buf, sizeof(buf), "%d,%.1f,%.1f,%d", param.index,
-                      double(cx), double(cy), visible ? 1 : 0);
+        char buf[96];
+        std::snprintf(buf, sizeof(buf), "%d,%.1f,%.1f,%d,%.1f,%.1f", param.index,
+                      double(cx), double(cy), visible ? 1 : 0, double(ax), double(ay));
         spec += buf;
     }
     if (moved)
@@ -4932,12 +5081,16 @@ static void mainLoop()
     // Recompute the autozoom (screen-constant) scale from THIS viewer's camera
     // each frame, replacing the value baked into the snapshot from the desktop
     // camera; otherwise screen-constant content (datum labels) keeps the desktop
-    // size and grows/shrinks as the browser user zooms. Mirrors Coin's
-    // translateAutoZoomScale (worldToScreenScale/(5*aspect)), which for this
-    // perspective camera is proportional to the focal distance; the constant is
-    // calibrated so the glyph keeps the size the captured desktop scale gave.
-    s_renderer->setAutoZoomScale(
-        s_dist * std::tan(0.5f * kFovY * bx::kPi / 180.0f) * 0.0857f);
+    // size and grows/shrinks as the browser user zooms. The desktop's
+    // translateAutoZoomScale, getWorldToScreenScale(0, 0.1) / (5 * aspect):
+    // a tenth of the view's width at the orbit distance over five aspects,
+    // 2 * 0.1 / 5 * d * tan(fovY / 2) for this perspective camera. It read
+    // 0.0857 while it was fitted by eye against a datum glyph whose own
+    // factor was itself fitted (SoDatumLabel, 7.5 / vpHeight then). The
+    // glyph no longer rides on it: it is sized in pixels against this
+    // view (AutoZoomEntry::pixelscale), so this is what the plain,
+    // fraction-of-the-view entries get, as they do on the desktop.
+    s_renderer->setAutoZoomScale(autoZoomScaleForOrbit());
     QColor bg((s_snap.clearColor >> 24) & 0xff,
               (s_snap.clearColor >> 16) & 0xff,
               (s_snap.clearColor >> 8) & 0xff);
@@ -5909,7 +6062,23 @@ static bool fitCamera()
     // first payload. Falls back to the renderer's bound box for a
     // scene that carries no object manifest at all — a bundled
     // capture, or a publish from before v33.
-    bool have = s_objects.boundBox(bmin, bmax)
+    // What this client's own visibility keeps off its screen it does not
+    // frame either: an object hidden by its table, or a hidden object
+    // captured only because some OTHER client shows it. Judged by the
+    // entry's own flag, then by the draws that have arrived; an object
+    // with none yet is framed.
+    auto unseen = [](const Render::SceneObjectModel::Object &o) {
+        if (clientSkipsEntry(o.entry))
+            return true;
+        if (o.draws.empty())
+            return false;
+        for (const auto &d : o.draws) {
+            if (!clientHides(d))
+                return false;
+        }
+        return true;
+    };
+    bool have = s_objects.boundBox(bmin, bmax, unseen)
         || (s_renderer && s_renderer->boundBox(bmin[0], bmin[1], bmin[2],
                                                bmax[0], bmax[1], bmax[2]));
     // A staged publish has not reached the model yet, and on a cold
@@ -5926,6 +6095,39 @@ static bool fitCamera()
             bmax[i] = have ? std::max(bmax[i], b[3 + i]) : b[3 + i];
         }
         have = true;
+    }
+    if (have)
+        s_framed = true;
+    // Nothing in the scene at all: frame what the scene camera shows
+    // instead. A sketch being edited is the whole of a document that holds
+    // only it, and all of it rides the editing overlay -- which drew, and
+    // drew at the right size, into a camera that had framed nothing, so it
+    // was off screen and a ?cam= parameter, which waits for a fit, never
+    // applied. Only the scene-camera overlays: the others are anchored to
+    // the screen and have no place in the world to frame.
+    //
+    // And only while the camera has framed nothing, which is that case.
+    // A scene that goes empty LATER is a client hiding what it had -- a
+    // served edit hides the edited sketch in the session's views, and its
+    // geometry rides the session's overlay (docs/ThinClient.md 8.12 item
+    // J) -- and refitting then threw the view the user was looking at
+    // away for one framing the sketch's axes, measured as a 10 mm line
+    // shrinking from 880 pixels to 20 on entering the edit.
+    if (!have && !s_framed) {
+        for (const auto &ov : s_snap.overlays) {
+            if (!ov.anchor.sceneCamera || !overlayIsMine(ov.anchor))
+                continue;
+            for (const auto &d : ov.draws) {
+                if (d.bboxMin[0] > d.bboxMax[0] || d.bboxMin[1] > d.bboxMax[1]
+                        || d.bboxMin[2] > d.bboxMax[2])
+                    continue;   // no bounds
+                for (int i = 0; i < 3; ++i) {
+                    bmin[i] = have ? std::min(bmin[i], d.bboxMin[i]) : d.bboxMin[i];
+                    bmax[i] = have ? std::max(bmax[i], d.bboxMax[i]) : d.bboxMax[i];
+                }
+                have = true;
+            }
+        }
     }
     if (have) {
         for (int i = 0; i < 3; ++i)
@@ -6039,6 +6241,53 @@ static int s_accumSamples = 0;
 /// an instrument.
 static bool s_levelDebug = false;
 
+/// Hand the snapshot's overlays to the renderer: the ones this viewer
+/// draws, and only once whole. Run by every commit, and again when the
+/// host moves this viewer into or out of an edit session -- which
+/// overlays are its own changes then with no new snapshot.
+static void feedOverlays()
+{
+    std::set<int> ovIds;
+    for (const auto &ov : s_snap.overlays) {
+        // Another session's edit geometry: left out of ovIds too, so a
+        // feed this viewer drew before it left that session goes away.
+        if (!overlayIsMine(ov.anchor))
+            continue;
+        ovIds.insert(ov.id);
+        // A republish re-parses the overlay feed into fresh payload
+        // objects, and for the length of their re-read (a local
+        // cache hit, usually, but a visible frame regardless) the
+        // feed is a cube with no faces or no glyphs. While a
+        // previous feed is on screen, hold it: the renderer keeps
+        // drawing what it was last given, and the new feed goes up
+        // only once every mesh and texture it names is in hand.
+        // Without this the navigation cube blinked once per
+        // announcement of a 62-delta chain.
+        if (!overlayWhole(ov) && s_overlayIds.count(ov.id)) {
+            decLog("overlay %d held (feed not whole yet)", ov.id);
+            continue;
+        }
+        // The cube and its buttons as this browser has them: its own
+        // place, auto-hide, upright labels.
+        if (ov.id == kNaviCubeOverlayId || ov.id == kNaviButtonsOverlayId) {
+            naviFeed(ov);
+            continue;
+        }
+        Render::DrawCallList odraws = ov.draws;
+        s_renderer->setOverlay(ov.id, std::move(odraws), canvasAnchor(ov.anchor));
+    }
+    for (int id : s_overlayIds) {
+        if (!ovIds.count(id)) {
+            s_renderer->removeOverlay(id);
+            if (id == kNaviCubeOverlayId)
+                s_navi.fed[0] = false;
+            else if (id == kNaviButtonsOverlayId)
+                s_navi.fed[1] = false;
+        }
+    }
+    s_overlayIds.swap(ovIds);
+}
+
 /// Feed the loaded snapshot to the renderer; a first load also fits
 /// the camera (streamed updates keep the user's).
 static void applySnapshot(bool fit)
@@ -6146,41 +6395,7 @@ static void applySnapshot(bool fit)
         // renderer re-derives viewport and camera each frame, so
         // overlays re-anchor on resize and follow the local orbit
         // camera.
-        std::set<int> ovIds;
-        for (const auto &ov : s_snap.overlays) {
-            ovIds.insert(ov.id);
-            // A republish re-parses the overlay feed into fresh payload
-            // objects, and for the length of their re-read (a local
-            // cache hit, usually, but a visible frame regardless) the
-            // feed is a cube with no faces or no glyphs. While a
-            // previous feed is on screen, hold it: the renderer keeps
-            // drawing what it was last given, and the new feed goes up
-            // only once every mesh and texture it names is in hand.
-            // Without this the navigation cube blinked once per
-            // announcement of a 62-delta chain.
-            if (!overlayWhole(ov) && s_overlayIds.count(ov.id)) {
-                decLog("overlay %d held (feed not whole yet)", ov.id);
-                continue;
-            }
-            // The cube and its buttons as this browser has them: its own
-            // place, auto-hide, upright labels.
-            if (ov.id == kNaviCubeOverlayId || ov.id == kNaviButtonsOverlayId) {
-                naviFeed(ov);
-                continue;
-            }
-            Render::DrawCallList odraws = ov.draws;
-            s_renderer->setOverlay(ov.id, std::move(odraws), canvasAnchor(ov.anchor));
-        }
-        for (int id : s_overlayIds) {
-            if (!ovIds.count(id)) {
-                s_renderer->removeOverlay(id);
-                if (id == kNaviCubeOverlayId)
-                    s_navi.fed[0] = false;
-                else if (id == kNaviButtonsOverlayId)
-                    s_navi.fed[1] = false;
-            }
-        }
-        s_overlayIds.swap(ovIds);
+        feedOverlays();
     }
     if (!s_snap.highlight.empty()) {
         Render::DrawCallList hdraws = s_snap.highlight;
@@ -7904,6 +8119,8 @@ static void indexPendingBoxes(const Render::SceneSnapshot &snap)
 {
     s_pendingBox.clear();
     for (const auto &up : snap.objectUpdates) {
+        if (clientSkipsEntry(up.entry))
+            continue;
         std::array<float, 6> box{};
         std::memcpy(box.data(), up.entry.bbox, sizeof(box));
         s_pendingBox[up.entry.objectKey] = box;
@@ -9148,6 +9365,7 @@ static bool applyScenePayload(const char *data, size_t size)
                             "dropping the object model\n");
             s_sessionId = snap.sessionId;
             s_objects = Render::SceneObjectModel();
+            s_framed = false;
             s_textureMemo->clear();
             s_sceneVersion = 0;
             // Deltas held from the old session chain to nothing now.
@@ -9543,6 +9761,21 @@ static void handleControlMessage(const char *json)
             }
         }
         setEditing(on, obj);
+        // Which tagged overlay is this viewer's now (8.12 item J). Only
+        // this push carries it: the answer to this viewer's own request
+        // does not, and the push reaches every view of the session, this
+        // one included, ahead of that answer (it is sent from inside
+        // setEdit, the answer after it returns).
+        uint32_t session = 0;
+        if (const char *p = on ? std::strstr(json, "\"session\":") : nullptr)
+            session = uint32_t(std::strtoul(p + 10, nullptr, 10));
+        if (session != s_editSession) {
+            s_editSession = session;
+            if (s_renderer && s_haveScene) {
+                feedOverlays();
+                markDirty();
+            }
+        }
     }
     else if (std::strstr(json, "\"cmd\":\"onview\"")) {
         // The entry boxes this client's edit session has open (sec 8.7).
@@ -9558,6 +9791,13 @@ static void handleControlMessage(const char *json)
         // pick, which is instant; the DOM layer gets the server's word,
         // which is what a filtered pick or an in-edit element comes back
         // as. Nothing here is rerouted by it.
+        fcviewer_control_event(json);
+    }
+    else if (std::strstr(json, "\"cmd\":\"visibility\"")) {
+        // This client's own object visibility, parsed on the host: the
+        // backend draws by it and the local pick asks it. Handed on to
+        // the DOM layer too, which may show it.
+        applyVisibility(json);
         fcviewer_control_event(json);
     }
     else if (std::strstr(json, "\"cmd\":\"peerselection\"")) {

@@ -3107,7 +3107,8 @@ which annotation goes over which. GL already has a rule for that, an
 `SoFCPathAnnotation` priority (late delayed paths, a priority at a time
 after the plain annotations), and the render cache recorded it but the
 bridge dropped it into a bool. It travels now as `Material::ontoplayer`
-(scene dump v81, chunk 20), and the frame (scene on-top passes, overlay
+(scene dump v86, chunk 23 since the SketcherPort merge renumbered it;
+v81, chunk 20 when written), and the frame (scene on-top passes, overlay
 feeds, id pass) draws each order after the plain on-top draws. The label
 is priority 1 (`EditableDatumLabel::OnViewPriority`), over the shape
 preview's -2, which with orders honoured would otherwise draw over a
@@ -3153,3 +3154,73 @@ every panel for its labels, through a virtual `updateLabels()` that
 box, the box made 30 long from Python: markers 5/105 -> 15/115, the label
 from 5 -> 15, and both gone when the panel closes). A/B on one binary
 with the hook switched off: the four "moved" checks fail, as reported.
+
+## 11. SketcherPort merged in (2026-10-04)
+
+`origin/SketcherPort` at `e6a4f89a93` (339 commits) was merged into this
+branch at `1f777d8350` (407 commits since the shared base `4fa781fc58`).
+Twenty-two files conflicted, and 81 had changes from both sides. The
+cleanly merged regions of all 81 were read too, because a clean merge
+was where the worst one hid.
+
+**What was decided, and where:**
+
+- *SceneDump wire versions.* Both sides had used 78-81. SketcherPort's
+  78-82 keep their numbers. This branch's former 78-81 are now 83 (finish
+  extent), 84 (overlay posX/posY/sizePixels, written after SketcherPort's
+  `session`), 85 (autoHideMs) and 86 (`Material::ontoplayer`).
+  `kChunkVersion` is 23. A snapshot written by this branch before the
+  merge would be misread past 77. The `OverlayAnchor`
+  size guard went from 64 to 68 for the `session` field.
+- *On-view parameters.* SketcherPort's `OnViewEntry` scheme stands: a
+  client names an entry by its place in the whole set (`param.index`).
+  That also covers what this branch's "count only the boxes on screen" did,
+  a pattern's spacing labels being in the set and not in the feed. This
+  branch's `pointSize` moved into `OnViewEntry::State` ("pt" on the wire).
+  The test of the old index, `aClientIndexCountsOnlyTheBoxesOnScreen`, is
+  restated as `aClientIndexNamesTheBoxItWasGivenFor`.
+- *Overlay ids.* Both sides took 10. `OverlayEditHighlight` keeps it, and
+  `OverlayOnView` is 11, so a tool's dimension draws over the sketcher's
+  highlight.
+- *The wasm overlay feed.* SketcherPort's `feedOverlays()` (the session
+  filter) carries this branch's NaviCube feed, `overlayWhole` and
+  `canvasAnchor`.
+- *Datum labels.* Both sides fixed the bowtie that made the top of a
+  number unpickable:
+  - SketcherPort used a `TRIANGLE_STRIP` in corner order;
+  - this branch kept `QUADS` and reordered the corners.
+
+  Git merged both with no conflict, into a strip in the reordered order,
+  which leaves a corner unpickable. `SoDatumLabel.cpp` is SketcherPort's
+  now, plus this branch's bounding-box image and an anchor touch. The
+  ray-pick sizing is SketcherPort's side-effect-free `computeImageSize`.
+- *Render cache.* SketcherPort's `pathCache()` carries this branch's
+  deferred sensor purge (`purgeDeadSensors`).
+- *Part visuals.* Both sides stopped the double build of a restored visual:
+  this branch refuses the nested build (`faultingIn`), and SketcherPort's
+  `visualFillSeq` check stays as the backstop. Both stopped the
+  tessellation box from reading a resident mesh. SketcherPort's
+  `meshingBoundsOf` (geometry only) is the same box the pre-mesh measures,
+  so `preMeshBox` is now unused. The pre-mesh park no longer parks a
+  secondary view, which SketcherPort had stopped `deferVisualForLoad` from
+  doing.
+- *Sketcher menu.* The desktop's `blockContextMenu` guard (a right press
+  that cancelled a box selection) stays on the desktop path. A served right
+  click goes through `editContextMenu`, where nothing would clear it.
+- *Windows.* Two of SketcherPort's spellings did not build with MSVC:
+  - `std::numbers` without `<numbers>` (`SketchAnalysis.h`);
+  - a lambda called `near`, a macro there (`ViewProviderSketch.cpp`).
+
+  Its new `PublishOnly` helper used the raw-text `httpGet` this branch had
+  replaced.
+
+**Verified on the merge (Windows):**
+- ctest 764/764;
+- Python 3356 OK;
+- by hand, all passing: serve-context-menu 49, serve-selection-echo 11,
+  serve-pattern-markers 8, serve-pattern-labels 12,
+  pattern-markers-follow-recompute 12, serve-mirror-edit 22,
+  serve-external-pick 20, serve-datum-in-place 16, serve-datum-measure 10,
+  serve-constraint-external-pick 32, sketch-datum-in-place 18,
+  sketch-datum-editor 30;
+- web typecheck clean, and the wasm viewer builds.

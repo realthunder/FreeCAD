@@ -966,6 +966,7 @@ SET(View3D_CPP_SRCS
     View3DInventorSelection.cpp
     View3DInventorViewer.cpp
     ViewerContext.cpp
+    ViewVisibility.cpp
     MirrorViewer.cpp
     OmniControl.cpp
     SceneControl.cpp
@@ -1001,6 +1002,7 @@ SET(View3D_SRCS
     View3DInventorSelection.h
     View3DInventorViewer.h
     ViewerContext.h
+    ViewVisibility.h
     MirrorViewer.h
     OmniControl.h
     SceneControl.h
@@ -1159,6 +1161,7 @@ SET(Inventor_CPP_SRCS
     Inventor/SoFCSwitch.cpp
     Inventor/SoFCDisplayModeElement.cpp
     Inventor/SoFCOwnDisplayModeElement.cpp
+    Inventor/SoFCVisibilityElement.cpp
     Inventor/SoFCDisplayMode.cpp
     Inventor/SoFCShapeInfo.cpp
     Inventor/So3DAnnotation.cpp
@@ -1228,6 +1231,7 @@ SET(Inventor_SRCS
     Inventor/SoFCSwitch.h
     Inventor/SoFCDisplayModeElement.h
     Inventor/SoFCOwnDisplayModeElement.h
+    Inventor/SoFCVisibilityElement.h
     Inventor/SoFCDisplayMode.h
     Inventor/SoFCShapeInfo.h
     Inventor/So3DAnnotation.h
@@ -1459,6 +1463,7 @@ SET(FreeCADGui_CPP_SRCS
     DocumentPyImp.cpp
     DocumentObserver.cpp
     DocumentObserverPython.cpp
+    DatumValueEditor.cpp
     EditableDatumLabel.cpp
     ExpressionBinding.cpp
     ExpressionBindingPy.cpp
@@ -1496,7 +1501,9 @@ SET(FreeCADGui_SRCS
     DocumentModel.h
     DocumentObserver.h
     DocumentObserverPython.h
+    DatumValueEditor.h
     EditableDatumLabel.h
+    OnViewEntry.h
     ExpressionBinding.h
     ExpressionBindingPy.h
     ExpressionCompleter.h

@@ -1414,3 +1414,436 @@ batch covers 7172 of the 17057 shapes -- the rest are refused for sharing
 a face or an edge TShape with another root -- so the GUI thread goes on
 tessellating everything the collector would not claim. That remainder is
 the next thing to attack here, not the hook.
+
+## 19. Progressive load against eager (2026-09-29)
+
+ProgressiveLoad (sec 13, default on since `d53ba63848`) builds a restored
+document's view providers after the App load, in slices: phase one creates
+every view provider, phase two replays its GuiDocument.xml record, phase
+three sweeps the properties and runs `finishRestoring`. That changes two
+things an eager load relied on without saying so: the ORDER things are
+created in (App properties are complete before any view provider exists,
+so a container claims children that have none yet), and the SIGNALS (the
+replay raises no per-property Gui change, so whatever an eager load put
+right on `slotChangedObject` is not put right). It had already lost a
+Part's children on reopen for seven weeks (`002c5c1d7f`). This section is
+the systematic pass that asked what else.
+
+**The method: a differential.** `tests/gui/progressive-load-diff.py` opens
+each file eagerly (ProgressiveLoad off, the reference), progressively N
+times -- which view provider a load reaches first follows allocation
+order, so one green run proves little -- and eagerly again, the noise
+floor (an item the two eager opens disagree on is not judged). Each open
+waits for the drain and for the level ladder's idle refinement, then
+records, for every document the file brings in:
+
+- per view provider: Visibility, isVisible, isShowable, the display
+  switch, display mode, claimChildren, ClaimedChildren and ClaimedBy,
+  element colours, bounding box (to 1% of its size);
+- the scene: every node path to every SoFCSelectionRoot as the chain of
+  objects whose roots it passes -- per OCCURRENCE, since a name-only probe
+  once called a half-broken scene green; past 300 objects, the depths of
+  each root's occurrences (pivy casts every node it returns through a
+  linear type lookup, and the chains cost 130 s a snapshot on a
+  653-object file); past `PL_PATHS_LIMIT` roots (1500) not at all -- links
+  and binders multiply occurrences, and one search over a 494-object file
+  with 92 SubShapeBinders ran for half an hour, so the user files were
+  run with the limit at 300;
+- a pick grid from one camera, an edge or vertex hit not judged (a
+  boundary cell a pixel flips);
+- the backend's frame, forced fresh after the camera is set (a frame
+  staged before it came back once, NaviCube and unlit faces included).
+
+The generated corpus: children created after their Part and before it,
+nested Parts and Links to Links, a LinkGroup with a hidden element, link
+arrays, a PartDesign Body with a Link to it, groups with a hidden, a
+wireframe, a face-coloured and a transparent member, booleans, a sketch
+attached to a face, 327 objects in interleaved creation order, and a
+cross-document pair -- placements off identity throughout, identity being
+what hid the lost Part children. Then operations made while the drain
+still runs, against the same made after an eager open: an edit and
+recompute, a delete, a move between Parts, an undo, hides, a recompute of
+everything, a revert, and closes during the drain.
+
+**Found and fixed** (each reproduced on every progressive run):
+
+1. **A shape built twice.** `updateVisual`'s read of a blob-held shape is
+   the fault-in, and the landing shape's notification builds the visual
+   inside that read; the outer call built it again. Every blob-held shape
+   of every progressive load (docs/CoinRetirement.md 5.27, `2b184941bf`).
+2. **A Body's Origin in no occurrence of the scene.** A container
+   rebuilding its 3D children while a child's view provider was being
+   created -- registered with the Gui document, not yet announced to the
+   application -- cached the child as claimed, and a claim through a
+   LinkView (a GeoFeatureGroup's) looks it up application-wide and left
+   it out. Every later rebuild compared the claim equal. The Body's
+   Origin, and with it the planes a sketch edit shows, were nowhere.
+   `Document::handleChildren3D` now leaves an unannounced child out and
+   claims it again once `slotNewObject` has announced it.
+3. **A secondary view never built.** The drain's queue names objects and
+   finds the object's own view provider, so a second one attached to the
+   same object -- a sketch's internal faces, a PartDesign feature's
+   add/sub preview or suppressed shape -- stayed parked, and the
+   bounding-box hook leaves a parked visual alone: a sketch's internal
+   face view kept a stray point at the sketch origin, which its bounding
+   box and every fit took in. Secondary views (`Gui::SecondaryView`) are
+   no longer parked.
+4. **The origin size never recomputed, then infinite.** The size follows
+   the content through `updateData`, which the replay never raises: a
+   progressive Body kept the size saved with it. Scheduling the update
+   from `finishRestoring` exposed a latent defect -- a SubShapeBinder
+   bound to a datum plane reports +-1e100, and the origin planes came out
+   with a Size of inf and NaN geometry. `updateOriginSize` now skips an
+   unbounded box, which an eager load could hit as well.
+5. **A hide during the drain undone.** Phase three's sweep pushes a view
+   provider's restored Visibility onto its object, so a Part or a Link
+   hidden while the drain ran came back visible (a box did not). A
+   visibility set outside the drain's own slices is kept and re-applied
+   after the object's `finishRestoring`.
+6. **Document data changed by opening it.** An image plane's view
+   provider writes the image's own size into `XSize`/`YSize` unless it is
+   restoring, and phase three sweeps with the restore status dropped: six
+   reference images of a user file came out 5-14 times smaller.
+   `RestoreDrainGuard` suppressed the touch but not the write, so a save
+   for any other reason would have kept it; its report
+   (`progressive restore X: N document changes suppressed ...`) named
+   them. The plane now also refuses during `RestoreDrain`.
+7. **An image plane untextured after an EAGER open** -- the one defect
+   the differential found on the other side. The image is a file included
+   in the archive, which an eager load writes out after the objects are
+   restored, so the load at restore found no file; the drain, replaying
+   later, had it. `finishRestoring` now loads the texture, and only the
+   texture (the size is the saved one).
+
+8. **A Link to an image plane drew nothing.** A view provider whose
+   record names an archive entry or a blob is restored inside the
+   blocking window (`restoreCapturedViewProvider`, the content is held
+   open only that long) -- and was then finished by the App's
+   finish-restore signal, before any other view provider existed. The
+   Link linked nothing, and, no longer restoring, phase three passed it
+   over. Three user files lost Links that way (one a Body under a Part).
+   It is now left restoring for phase three while the document parks its
+   view providers.
+
+Commits: `284429b4cc` (2), `1759f7a3f2` (5), `1aa780f7de` (3),
+`6fd064cd5f` (4), `836ba8aa2a` (6), `76a0345254` (7), `62172a0e88` (8);
+(1) is `2b184941bf`.
+
+**The drain now runs in the eager order (was: records before updates).**
+An eager load raises every property's update as Document.xml restores it
+(`DocumentObject::onChanged` -> `signalChangedObject` ->
+`Gui::Document::slotChangedObject` -> `updateData`), with the view
+providers not yet restoring -- `Gui::Document::Restore` marks them only at
+`signalRestoreDocument` -- and reads the GuiDocument.xml records after all
+the data files: the saved Gui state overrules whatever a handler did on an
+update. The drain replayed the records in phase two and swept the updates
+in phase three, so the handler overruled the file: a `Part::MultiFuse`
+hides its inputs on an update, and the Body a user had shown again came
+back hidden. Guarding each such handler (every boolean, every feature that
+hides its base, every Python feature) is a list that never closes; the
+drain now has four phases in the eager order -- create, sweep (the
+restoring flag down, as for the eager updates), records, finish (and,
+since `1c12f663cc`, the updates `afterRestore()` raised after the records
+were read, replayed per object in the finish phase). Two more pieces were
+needed before the user files agreed:
+
+- a view provider restored at once (sec 19 item 8) had its record before
+  the sweep, and in older files that is most of them: a colour array saved
+  as `DiffuseColor.bin` makes a record name an archive entry. Its record
+  XML is kept and replayed in phase three like the parked ones -- the XML,
+  not copies by property name, because a legacy name (`ShapeColor`)
+  migrates to another property on restore and a copy undid the migration;
+  what only an archive entry holds cannot be read twice, so those
+  properties are copied as the sweep begins (after phase zero has served
+  the entries) and pasted after the replay; and the Python proxies are
+  held across it and put back -- restored twice, a proxy is a new
+  instance, a view provider attaches its proxy once, and a Draft array
+  whose new proxy had no `self.Object` claimed none of its children;
+- `ViewProviderPartExt::updateColors` maps a boolean's colours from its
+  inputs on a shape change, and returned only while the DOCUMENT restores.
+  A shape served after the load (a deferred entry, a blob faulted in by
+  the visual build) lands under the OBJECT's Restore status instead, and
+  the mapping overwrote the saved colour; it now returns then too.
+
+**The user files.** 73 distinct FCStd from `~/works/sw/bug_reports`, two
+progressive runs each, scene paths compared up to 300 objects. After the
+fixes above, 61 of the 71 that opened are identical apart from derived
+sizes, and two more differ in one run of two only (a pick, a frame);
+the Link losses (8) and the image sizes (6) came from here. What is
+left was almost all the ordering finding above: objects hidden after a
+progressive open that eager leaves shown (Draft wires, a fusion that is
+another boolean's input, a placement feature's input -- four files) and a
+face colour taken from an input (a Mirroring, a MultiFuse). After the
+reorder, the files that still differed were run again (22, same-named
+siblings included): every
+visibility, claim and colour difference is gone; what remains is derived
+sizes, a wireframe's line-level pixels in one file (0.5-0.8%, a coarse
+first tessellation not refined within the 3 s wait), a Body's bounding
+box wider in one file (and in one copy of another) and small pixel-only
+differences in two. Examined (2026-09-29, session 108):
+
+- **The wider Body was a datum plane sized by the load's timing, in both
+  modes.** A PartDesign datum in Automatic resize mode sizes itself to
+  the visible content of its container and writes the result into its
+  own `Length`/`Width` -- App data -- and during a load it asked only
+  from its own `updateData`, when the features restored after it had no
+  visual yet. A plane saved at 312 x 11.9 opened at 150 x 10 eagerly and
+  175 x 50 progressively; the Body's box, and the origin sized over the
+  datums, followed. Neither was the saved size, so the "derived size"
+  entry below was partly a defect. `finishRestoring` now queues the
+  datum, and one deferred pass sizes every queued datum once no document
+  restores or recomputes, then re-sizes every origin enclosing it,
+  innermost first (`a112b87e67`, `656837b508`; before the second, a
+  Part's origin over the Body came out 50 in six opens and 60 in four).
+- **An unbounded shape's box outlived its build.** The same file's other
+  copy has a SubShapeBinder of a Part's origin plane -- an infinite face,
+  drawn as a +-50 patch -- with a datum plane attached to it.
+  `ViewProviderPartExt::_getBoundingBox` answers from the shape while the
+  visual is unbuilt (so a bounds question never tessellates), which for
+  that face is +-1e100; the bounding-box cache is cleared only by
+  property changes, and the drain's build makes none, so after a
+  progressive open the binder still said +-1e100 and the datum refused to
+  size over it. An unbounded shape now takes the building path
+  (`b7fea11c63`).
+- **The pixel-only files were an overwrite of the file's tessellation
+  settings, not the ladder's timing** (the first reading here, that the
+  level ladder had not refined yet, was wrong: the coordinate counts
+  hold still from the load through 30 s idle at the capture camera, two
+  eager opens agree exactly, and progressive differs the same way every
+  time). The shape-instancing gate re-runs
+  `ViewProviderPartExt::reload()` on every Part view provider whenever a
+  view's renderer attaches or goes away, and `reload()` wrote the
+  Deviation and AngularDeflection preferences (0.2, 28.65 deg) into
+  every object whose own values differed. karniz_gostinaya saves 0.5 and
+  5 deg per object: eagerly the overwrite came before the exact mesh
+  (a Pocket 4342 coordinates), progressively after it, and the mesher
+  keeps a finer mesh it finds resident (8616); the first open of a
+  process happened to keep the file's values. Opening a document -- any view
+  opening or closing -- silently replaced the user's per-object
+  settings. Now only a change of a tessellation preference writes them;
+  the gate rebuilds a visual whose representation (instanced or flat)
+  no longer matches it, which the overwrite had been standing in for:
+  an object already at the preference values kept the instanced build
+  under plain Coin. The minimum preferences still bound a file's values
+  where the mesh is made (a cylinder saved at 0.001 / 0.5 deg meshes
+  exactly as one at the minimum). Test: `part-tessellation-reload.py`
+  (4 of 7 fail before). karniz now agrees across all three opens; analoy
+  keeps a 0.1% residue (a sketch at 86754 against 86661 coordinates),
+  not chased.
+- **Record order after a migration.** A visible origin whose axes a
+  2021 build saved at its planes' size (27; the current rule draws them
+  1.5 times longer) opened at 40.5 eagerly and 27 progressively. Eagerly,
+  `App::Origin::onDocumentRestored()` migrates the origin point into
+  `OriginFeatures` during `App::Document::afterRestore`, AFTER
+  GuiDocument.xml was read, and that update re-applies the rule over the
+  axes' records; the drain folded the same update into its phase-two
+  sweep, before the records, which then won. A change made after the
+  document's records were parked, while the App load still runs and the
+  object has no view provider, is now noted by name and replayed in phase
+  four just before that object is finished -- `afterRestore()`'s own
+  per-object order (`1c12f663cc`; test: `datum-size-after-open.py`, an
+  origin saved without its point, progressive 3/3 wrong before).
+
+After it, the whole set again (73 files, two progressive runs each): 69
+identical apart from derived sizes; the four left are the tessellation
+pixels above (error, analoy, karniz_gostinaya,
+InvoluteTemplate_01.04.23) -- no state, claim, colour, box or pick
+difference in any file.
+- **The hidden Parts' origins were sized while the visuals were still
+  being built.** A ChineseWindlass copy's hidden Parts, and the Bodies
+  in them, opened with origins of 200 x 270 eagerly and 227 x 284
+  progressively -- the same 227 x 284 for different Parts. The origin
+  sizing timer, and the automatic datums' pass after it, waited out the
+  restore and any recompute but not the visual build that follows a
+  progressive drain, so they ran in the middle of it. An unbuilt visual
+  answers a bounds question from its shape
+  (`ViewProviderPartExt::_getBoundingBox`, above), and a curved shape
+  nothing has meshed yet answers the box of its poles: the helix that
+  draws 207.8 x 277.5 read 226.97 x 284.27 -- exactly its box without
+  a triangulation -- and two Parts whose helices have that same
+  unmeshed box (an additive and a subtractive one) got the same wrong
+  size. Nothing sized them again once the build was
+  done. Both passes now wait for
+  `Gui::Application::isBuildingVisuals()` too, through one rule,
+  `ViewProviderOriginGroupExtension::sizingMustWait()`. All twelve
+  origins of the file now agree across the two modes. Test: the helix
+  scene of `datum-size-after-open.py`, which saves the origins at a
+  size no sizing computes and watches when the open replaces it (3/3
+  progressive opens sized mid-build before the fix). The scene only
+  needs the build to be running when the timer fires; whether the
+  helix is still unmeshed then is a race with the refine pool, which
+  in the user file the helix lost and in a small test file it wins.
+
+**The full rerun after these fixes** (73 files, two progressive runs
+each, session 108): 66 identical apart from derived sizes. Of the seven
+left, one was new -- a PartDesign `Mirrored` whose box read z 0..16 (its
+shape) in some progressive opens and z -31..39 (its built visual) in the
+rest and in every eager one: the shortcut's answer, cached while the
+visual was parked, outlived the drain's build, which changes no property
+and so never cleared the cache. A drain slice that builds anything now
+clears it (`0a22d41452`; 10 progressive opens of 10 agree). The built
+visual's box is larger than its shape's because the feature is
+placed with a rotation: Coin boxes the points in the local frame and
+transforms that box, so the world box is the axis-aligned box of a
+rotated box -- the local box's eight corners, transformed, give the
+reported x -36.31..36.31, z -30.98..38.98 to the hundredth. OCCT
+boxes the located shape itself, so the shortcut's answer is tight.
+Both are valid bounds; any rotated shape answers the tighter one
+before its visual is built and the looser one after. Not a defect. The other six: the legacy origin
+axes above (since fixed); line-level tessellation pixels in four files (0.7-2%; in
+two of them the two eager opens agree exactly and progressive differs
+consistently, so it is the curves' level at capture, not noise); and one
+pick cell in one run of one file (a Loft against the Loft beside it),
+not confirmed.
+
+**The rerun after session 109's fixes** (the origin sizing, the
+tessellation overwrite; 73 files, two progressive runs each): 71
+identical. analoy, karniz_gostinaya and InvoluteTemplate agree now; the
+two left differ in pixels only, the same way in both progressive runs:
+- `error` -- the 0.1% tessellation residue analoy had (a sketch at 86754
+  against 86661 coordinates), not chased.
+- `FC0.21.1_Lead_Screw_12.12.23`, new in the list, and three defects
+  under it:
+  - **A LinkStage3 file's colours were read inverted** (since
+    `139376f184`, 2026-08-12). A colour's alpha means opacity from
+    upstream 1.1 on and a transparency before, and the reader decides by
+    the release in the document's ProgramVersion. LinkStage3 numbered its
+    builds by date (`2023.131R26244`), which read as release 2023.131 --
+    past 1.1 -- so an old-convention list went unconverted and a face
+    saved opaque came back fully transparent (Transparency 100). 46 of the
+    73 files carry a date version. A year for a major number now reads as
+    the old convention (`Base::alphaIsOpacity`, unit test
+    `ProgramVersion.aLinkStage3DateIsTransparency`).
+  - **An eager open switched a binder's colour mapping off.**
+    `ViewProviderSubShapeBinder::onChanged` ends a Map*Color when its
+    colour is set, and properties restore in name order, so reading
+    ShapeColor after MapFaceColor switched it off; only UseBinderStyle had
+    the restore guard. Now none of the four react to a restore or an
+    undo (test: `binder-map-color-restore.py`).
+  - **An instanced object drew a uniform colour list at the wrong
+    transparency** -- not a load defect. With the colours read right, the
+    progressive frame showed a Lattice `Populate` (a compound of repeated
+    solids, so built instanced) with its faces fully transparent while
+    its DiffuseColor and Transparency said opaque; before the fix above
+    it was the other way round. The uniform branch of
+    `ViewProviderPartExt::applyInstancedFaceColors` gave the Coin
+    material the colour's alpha as its transparency, where an alpha is an
+    opacity (`Base::Color::transparency()` converts; the flat path and
+    the per-instance override materials did). Any uniform list set on an
+    instanced object drew inverted, live as much as on open; the user
+    file's eager open escaped only because its colours landed before the
+    instanced representation was built. Test:
+    `instanced-face-transparency.py` (all four claims fail before the
+    fix, the eager open included).
+
+**The rerun after session 110's fix** (the instanced colour; 73 files,
+two progressive runs each): 71 identical, both Lead Screw files among
+them. The two left differ in pixels only:
+- `analoy` -- 0.6% in this run, identical in the next, where its two
+  eager opens differed from each other: the noise floor.
+- `error`, the one from `2022-10-11_w_52240` -- not a load-mode
+  difference: **every tessellation parameter depended on the mesh the
+  shape already carried.** Its wire compound `layer_1001` (92 B-spline
+  edges) is built coarse first and refined in every open; the exact
+  mesh was 86569 coordinates in a process's first eager open and in
+  every progressive one, 86662 in its later eager opens, 86597 when the
+  climb started from rung 0, and all agreed with coarse-first off. The
+  deflections -- the display one, the exact one a coarse-first build
+  registers for the refine, a rung's, the texture frame -- came from a
+  `BRepBndLib::Add` box, and that reads any triangulation or 3D polygon
+  the shape holds. A traced open showed the refine meshing at 1.762003
+  when the build that armed it boxed the bare geometry and at 1.758533
+  when a second coarse build ran over the coarse polygons (their box
+  0.2% smaller): 93 more points. OCCT's mesher reuses a resident
+  polygon within 10% of the ask and checks no angle, so the display
+  rebuild after it (asking 1.758934 off the exact polygons) kept
+  whichever came first. The same box keyed the instance table, so one
+  leaf TShape could key apart by what had meshed it before. The box
+  now comes from the geometry alone (`PartGui::meshingBounds`; a face
+  with no surface and an edge with no curve still give their mesh),
+  kept per shape in the ladder state because it costs about 13 us a
+  face against the mesh box's near nothing -- 16 ms for a 1253-face
+  fusion. On the four largest corpus shapes with faces the two boxes
+  agree within 4 parts in a million, so ordinary solids keep their
+  deflection; loose-pole
+  B-splines move. All four opens of the file now agree, the sketch
+  beside it too (its 287 against 272 node was the same effect). Test:
+  `meshing-bounds-history.py` -- a premeshed and a fresh copy of the
+  same B-splines, 810 against 780 points before the fix.
+The harness numbered its captures by file name, and the corpus has
+seven `error.FCStd`: each overwrote the last one's images, so the
+failing file's pictures showed a file that passed. Numbered now.
+
+**The rerun after the meshing box fix** (73 files, two progressive runs
+each): all 73 identical, no eager-against-eager noise either.
+
+Two files did not open at all within 400 s, eagerly
+or progressively (`LS3_Lead_Screw_Mach_02_12.12.23`, and its sibling was
+skipped with it): stuck in `BRepTools::Read` under
+`App::Document::restoreDeferredFile`, a load defect of its own -- an OCCT
+8.0 regression: `GeomTools::GetReal` reads a real through a 32-byte buffer
+(256 in 7.7.2), and the file's datum line wrote its +-2e100 range in fixed
+notation, 101 digits; split, every later field came from the wrong token
+and the reader spun forever. Fixed in the OCCT fork (`310bfaf34f`,
+`LinkVibe-801`); both files now open. Test: Part
+`RegressionTests.test_read_brep_with_a_long_fixed_notation_real`, which
+hangs before the fix. The 9.5 s eager and 5.9 s progressive first
+measured for them was not the files: it was each being the first
+document a fresh test process opened, and `gui-test.sh` gives every run
+an empty `XDG_CACHE_HOME`, so Mesa (llvmpipe under xvfb) compiled every
+shader variant from nothing. Opened second in a process they take
+0.47-0.58 s, App-only 0.3 s; opened first in launches that share one
+cache directory, 8.4, 6.1, 2.9 and then 0.85 s, the cache filling with
+the variants their materials need. What stays on a warm cache is about
+1 s of first render -- programs the startup warm-up's one frame does
+not reach -- on llvmpipe, which says little about a GPU.
+
+**Not defects, and why the test does not judge them:**
+- a coarse first tessellation (27 against 62 points on a circle) that the
+  level ladder refines on idle -- waited out;
+- the size of a datum or an origin feature: derived from the content at
+  whatever moment it was last asked for (272 against 286 on the same
+  file) -- reported apart, not judged. Partly a defect after all: an
+  automatic datum was sized mid-load in BOTH modes, and is now sized once
+  the load is over (above); what still differs is listed there;
+- an eager open and another eager open differing in a frame's pixels
+  (transparency) -- the noise floor.
+
+In the generated corpus those derived sizes come out the same every time,
+so there the test does judge them (it caught (4)); only for files handed
+in with `PL_FILES` are they reported apart. A non-finite bounding box is
+judged everywhere.
+
+**The harness's own traps**, each of which once made a run lie:
+the first render of a process took 4.9 s inside ONE `processEvents`
+call, and a wait that measured only elapsed time ended right after it,
+with the post-load sizing timers still pending -- the first eager open
+agreed with no later one and was set aside as noise; the wait now also
+runs until 1 s after the last slow event call.
+`vp.isShow()` does not exist, and one `try` around all the reads blanked
+every field after it (show, showable, switch, mode, claims) -- the first
+runs compared none of them; each read is now guarded on its own. A file
+written by an older release asks, modally, whether to recompute for
+migration, which held a run for its whole timeout: the test turns
+`WarnRecomputeOnRestore` off and dismisses any other modal dialog on a
+timer, logging it.
+
+**Test.** `tests/gui/progressive-load-diff.py` (registered,
+`GuiProgressiveLoadDiff_tests_run`, ~5 min): 12 corpus files x 2
+progressive runs, 7 operations during the drain, 3 closes during it and a
+whole reopen after -- 23/23; with a fusion whose input the user showed
+again (the ordering finding), 24/24; with a datum plane over a binder of
+an origin plane (`s_unbounded`), 25/25, and that scene FAILS on the old
+order (the input hidden, 35 pick cells hitting the fusion). Before-state (the six fixes above reverted,
+(1) kept): body FAILS (the Origin's 16 scene paths, 6 origin sizes, the
+sketch's internal view), sketch FAILS (the stray origin point), image
+FAILS (the overwritten size, and the eager frame untextured), and the
+hide during the drain FAILS (two Parts and a Link visible again); the
+other 19 pass both ways. (4)'s guard alone was seen before it existed:
+the size fix without it gave a user file's origin planes Size = inf.
+The datum sizing has its own test, `tests/gui/datum-size-after-open.py`
+(`GuiDatumSizeAfterOpen`, 27 checks): a plane saved against a Pad drawn
+after it (10 x 10 eagerly and 50 x 50 progressively before the fix,
+60 x 30 saved), and a plane over an unbounded binder with 300 boxes
+ahead of it in the visual queue, its box asked during the drain, five
+opens per mode (one progressive open in three failed before).

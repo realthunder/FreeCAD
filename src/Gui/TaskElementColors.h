@@ -58,7 +58,11 @@ private:
     void onElementListItemEntered(QListWidgetItem *item);
     void onTopClicked(bool checked);
     void onHideSelectionClicked();
+    void onShowSelectionClicked();
     void onBoxSelectClicked();
+    /// Add the selected elements under the edited object with \a marker
+    /// (ViewProvider::hiddenMarker() or shownMarker()) and apply.
+    void addVisibilityMarker(const std::string &marker);
 
 protected:
     void onSelectionChanged(const SelectionChanges& msg) override;

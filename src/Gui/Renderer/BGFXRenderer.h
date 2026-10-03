@@ -85,6 +85,8 @@ public:
                                   bool fromSuperset,
                                   const StyleOverrideTable *overrides,
                                   uint16_t styleMode = 0) override;
+    virtual void setMainViewVisibility(
+            const VisibilitySet *set) override;
     virtual void setCaptureInterest(
             const CaptureInterestTable *table) override;
     virtual void prepareSubViews(const QColor &bg,
@@ -223,6 +225,7 @@ public:
     virtual void setClimbAdmission(bool hardLimit, int batch) override;
     virtual void setDescentOrderBatch(int batch) override;
     virtual void setLevelBudgetDeadband(float fraction) override;
+    virtual void setPerViewShownEvictWatermark(float fraction) override;
 #endif
 
 #ifdef FC_RENDERER_STANDALONE

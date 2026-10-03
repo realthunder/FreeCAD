@@ -726,9 +726,9 @@ TEST_F(SceneServerWire, fragmentedMessagesAreReassembled)
     std::mutex mutex;
     std::vector<Render::ScenePickRequest> picks;
     std::vector<std::string> ops;
-    server.setPickHandler([&](const Render::ScenePickRequest& req) {
+    server.setPickHandler([&](const std::vector<Render::ScenePickRequest>& reqs) {
         std::lock_guard<std::mutex> guard(mutex);
-        picks.push_back(req);
+        picks.insert(picks.end(), reqs.begin(), reqs.end());
     });
     server.setControlHandler([&](Render::SceneControlRequest&& req) {
         std::lock_guard<std::mutex> guard(mutex);
@@ -798,6 +798,57 @@ TEST_F(SceneServerWire, fragmentedMessagesAreReassembled)
 
     server.setPickHandler(nullptr);
     server.setControlHandler(nullptr);
+}
+
+/// A 'B' batch reaches the pick handler in ONE call, its rays in order
+/// (setPickHandler). Handed over a ray at a time, each became its own
+/// queued call on the GUI thread, and under load the first one published
+/// before the second arrived: a batch of two ctrl-picks pushed two
+/// frames (serve-selection-echo.py, two runs in thirteen under ctest).
+TEST_F(SceneServerWire, aBatchIsDeliveredInOneCall)
+{
+    auto& server = Render::SceneStreamServer::instance();
+    std::mutex mutex;
+    std::vector<std::vector<Render::ScenePickRequest>> calls;
+    server.setPickHandler([&](const std::vector<Render::ScenePickRequest>& reqs) {
+        std::lock_guard<std::mutex> guard(mutex);
+        calls.push_back(reqs);
+    });
+
+    WsClient c(port, "/scene");
+    c.hello("wire-batch");
+    WsClient::Msg m = c.readBinary();
+    ASSERT_TRUE(m.ok) << m.ec.message();
+
+    // 'B', a count byte, then per ray a modifiers byte and six floats.
+    const size_t stride = 1 + 6 * sizeof(float);
+    std::vector<uint8_t> batch(2 + 3 * stride);
+    batch[0] = 'B';
+    batch[1] = 3;
+    for (int i = 0; i < 3; ++i) {
+        uint8_t* at = batch.data() + 2 + i * stride;
+        at[0] = uint8_t(i + 1);
+        const float v[6] = {float(i), 0.0f, 60.0f, 0.0f, 0.0f, -1.0f};
+        std::memcpy(at + 1, v, sizeof(v));
+    }
+    c.sendBinary(batch);
+    c.sendBinary(pickFrame(7.0f));  // a lone pick after it: its own call
+    ASSERT_TRUE(waitFor([&] {
+        std::lock_guard<std::mutex> guard(mutex);
+        return calls.size() >= 2;
+    })) << "the picks never reached the handler";
+    {
+        std::lock_guard<std::mutex> guard(mutex);
+        ASSERT_EQ(calls.size(), 2u) << "one call per message";
+        ASSERT_EQ(calls[0].size(), 3u) << "the whole batch in one call";
+        for (int i = 0; i < 3; ++i) {
+            EXPECT_EQ(calls[0][i].modifiers, uint32_t(i + 1));
+            EXPECT_EQ(calls[0][i].origin[0], float(i)) << "in the order sent";
+        }
+        ASSERT_EQ(calls[1].size(), 1u);
+        EXPECT_EQ(calls[1][0].origin[0], 7.0f);
+    }
+    server.setPickHandler(nullptr);
 }
 
 TEST_F(SceneServerWire, pingIsAnsweredWithItsPayload)
@@ -1337,9 +1388,9 @@ TEST_F(SceneServerWire, aDroppedPickIsStillCountedAsUplink)
     auto& server = Render::SceneStreamServer::instance();
     std::mutex mutex;
     int picks = 0;
-    server.setPickHandler([&](const Render::ScenePickRequest&) {
+    server.setPickHandler([&](const std::vector<Render::ScenePickRequest>& reqs) {
         std::lock_guard<std::mutex> guard(mutex);
-        ++picks;
+        picks += int(reqs.size());
     });
 
     WsClient c(port, "/scene");
@@ -1382,10 +1433,12 @@ TEST_F(SceneServerWire, aCombinedFrameIsBothItsHalvesInOrder)
         gotCamera = f;
         order.push_back("camera");
     });
-    server.setPickHandler([&](const Render::ScenePickRequest& r) {
+    server.setPickHandler([&](const std::vector<Render::ScenePickRequest>& reqs) {
         std::lock_guard<std::mutex> guard(mutex);
-        gotPick = r;
-        order.push_back("pick");
+        for (const auto& r : reqs) {
+            gotPick = r;
+            order.push_back("pick");
+        }
     });
 
     WsClient c(port, "/scene");

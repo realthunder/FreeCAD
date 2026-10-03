@@ -135,8 +135,11 @@ bool ToolBarMirror::owns(const QString& id)
 
 void ToolBarMirror::start()
 {
-    if (_running)
+    if (_running) {
+        // a subscriber arriving while a stop waits out a rebuild keeps it
+        _stopPending = false;
         return;
+    }
     if (!getMainWindow() || !ToolBarManager::getInstance()) {
         Base::Console().Warning("ToolBarMirror: no main window to mirror\n");
         return;
@@ -156,6 +159,15 @@ void ToolBarMirror::stop()
 {
     if (!_running)
         return;
+    // Every push rebuild() makes can end here: a push that fails drops its
+    // subscriber, and the last one out stops the mirror. Tearing down then
+    // deleted the bar rebuild() was writing into and the models its items
+    // point at, and cleared the tables it walks -- a served desktop whose
+    // browser left mid-rebuild crashed, on a freed bar or later in malloc.
+    if (_rebuilding) {
+        _stopPending = true;
+        return;
+    }
     _running = false;
     _rebuildTimer.stop();
     _flushTimer.stop();
@@ -439,14 +451,20 @@ void ToolBarMirror::rebuildCommandMap()
 
 Fw::QAction* ToolBarMirror::commandModel(::QAction* real)
 {
-    auto ref = _commands.constFind(real);
-    if (ref == _commands.constEnd())
+    auto found = _commands.constFind(real);
+    if (found == _commands.constEnd())
         return nullptr;
-    Fw::QAction* model = modelOf(real, commandId(ref->name, ref->index), ref->name, ref->index,
-                                 ref->memberCommand);
-    if (ref->index == 0) {
+    // A copy, not the iterator: the member loop below inserts into
+    // _commands, and so does modelOf, which was handed the node's name by
+    // reference. An insert that grows the table rehashes it and frees the
+    // node the iterator points into -- and copying the QString out of the
+    // freed node bumps a reference count in memory malloc has taken back.
+    const CommandRef ref = found.value();
+    Fw::QAction* model = modelOf(real, commandId(ref.name, ref.index), ref.name, ref.index,
+                                 ref.memberCommand);
+    if (ref.index == 0) {
         // a group's members get their models with the group, in order
-        if (Command* cmd = commandByName(ref->name)) {
+        if (Command* cmd = commandByName(ref.name)) {
             if (auto group = qobject_cast<ActionGroup*>(cmd->getAction())) {
                 const QList<::QAction*> members = group->actions();
                 for (int k = 0; k < members.size(); ++k) {
@@ -454,12 +472,12 @@ Fw::QAction* ToolBarMirror::commandModel(::QAction* real)
                     if (_models.contains(m) && _models.value(m))
                         continue;
                     CommandRef mref;
-                    mref.name = ref->name;
+                    mref.name = ref.name;
                     mref.index = k + 1;
                     if (Command* owner = commandOfMember(m))
                         mref.memberCommand = QString::fromUtf8(owner->getName());
                     _commands.insert(m, mref);
-                    modelOf(m, commandId(ref->name, k + 1), ref->name, k + 1, mref.memberCommand);
+                    modelOf(m, commandId(ref.name, k + 1), ref.name, k + 1, mref.memberCommand);
                 }
                 // the members exist now: the group's own refs resolve
                 refresh(real, model, false);
@@ -686,6 +704,11 @@ void ToolBarMirror::rebuild()
     }
     _rebuilding = false;
     _dirty.clear();
+    if (_stopPending) {
+        _stopPending = false;
+        stop();
+        return;
+    }
     Q_EMIT rebuilt();
 }
 

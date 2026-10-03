@@ -331,6 +331,10 @@ public:
 
   int getNumPointIndices(void) const;
   const GLint * getPointIndices(void) const;
+  /// The SoMarkerSet marker index of each point index (parallel to
+  /// getPointIndices(), SoMarkerSet::NONE included), or null when the
+  /// points are plain points.
+  const int * getPointMarkers(void) const;
 
   /** Pin the current generation of every CPU array exposed by the raw
    * pointer accessors above. The pointers point into copy-on-write

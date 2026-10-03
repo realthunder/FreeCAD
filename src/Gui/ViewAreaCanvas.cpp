@@ -31,6 +31,7 @@
 # include <QMouseEvent>
 # include <QOpenGLContext>
 # include <QOpenGLFunctions>
+# include <QResizeEvent>
 # include <QWheelEvent>
 # include <Inventor/SbViewVolume.h>
 # include <Inventor/SbViewportRegion.h>
@@ -52,6 +53,7 @@
 #include "SoFCUnifiedSelection.h"
 #include "Inventor/SoFCOwnDisplayModeElement.h"
 #include "RenderParams.h"
+#include "Utilities.h"
 #include "View3DInventor.h"
 #include "View3DInventorViewer.h"
 #include "ViewArea.h"
@@ -62,6 +64,38 @@ FC_LOG_LEVEL_INIT("ViewArea", true, true)
 using namespace Gui;
 
 namespace {
+
+/// Deliver what Qt holds back from a hidden widget and its subtree: a
+/// geometry change there is only recorded (WA_PendingResizeEvent), with
+/// no resize event and so no layout pass, until the widget is shown.
+/// Top down, the way showing it would: the resize (which also runs the
+/// widget's layout, placing its children), then the children.
+void deliverPendingResize(QWidget *widget)
+{
+    if (widget->testAttribute(Qt::WA_PendingResizeEvent)) {
+        widget->setAttribute(Qt::WA_PendingResizeEvent, false);
+        QResizeEvent event(widget->size(), QSize());
+        QCoreApplication::sendEvent(widget, &event);
+    }
+    if (QLayout *lay = widget->layout())
+        lay->activate();
+    for (QObject *child : widget->children()) {
+        auto w = qobject_cast<QWidget*>(child);
+        if (w && !w->isWindow())
+            deliverPendingResize(w);
+    }
+}
+
+/// Put a claimed cell's HIDDEN child view on the cell's tile. Setting
+/// the geometry alone moves the hidden View3DInventor and nothing in
+/// it: the viewer inside keeps the size it last had while shown, and
+/// its viewport -- which every pick, projection and forwarded event is
+/// read against -- disagrees with the cell the canvas draws.
+void placeHiddenView(QWidget *view, const QRect &rect)
+{
+    view->setGeometry(rect);
+    deliverPendingResize(view);
+}
 
 /// A surface for the canvas that can hold what the Coin residue needs
 /// on top of the backend blit: a depth buffer to test against, and the
@@ -446,8 +480,8 @@ void ViewAreaCanvas::claim(ViewAreaCell *cell, int id)
     // reparent as the view being torn away and collapses the tile.
     if (QLayout *lay = cell->layout())
         lay->removeWidget(view);
-    view->setGeometry(cell->rect());
     view->hide();
+    placeHiddenView(view, cell->rect());
 
     // The cell now shows the canvas through itself, and takes the input
     // its hidden child can no longer receive.
@@ -678,7 +712,7 @@ void ViewAreaCanvas::syncOnce()
     // Keep the hidden children on their tiles.
     for (auto &c : _cells) {
         if (c.cell && c.cell->childView())
-            c.cell->childView()->setGeometry(c.cell->rect());
+            placeHiddenView(c.cell->childView(), c.cell->rect());
     }
 
     show();
@@ -726,7 +760,7 @@ void ViewAreaCanvas::paintGL()
         // The camera is read against the CELL's aspect, not the
         // canvas's: each sub-view is a viewport of its own.
         SbViewportRegion vp(short(r.width()), short(r.height()));
-        SbViewVolume vol = cam->getViewVolume(vp.getViewportAspectRatio());
+        SbViewVolume vol = getMappedViewVolume(cam, vp.getViewportAspectRatio());
         mats.emplace_back();
         mats.emplace_back();
         SbMatrix &viewMat = mats[mats.size() - 2];
@@ -786,6 +820,10 @@ void ViewAreaCanvas::paintGL()
                     && viewer->hasObjectStyleOverrides())
                 s.styleOverrides = viewer->objectStyleOverrides();
         }
+        // The cell's own object visibility: a draw-time filter over the
+        // shared capture, so every service hosts it -- resolved over the
+        // draws of that capture, the feeder's.
+        s.visibilities = viewer->objectVisibilities(feeder->getRenderCacheManager());
         subs.push_back(s);
         rects.push_back(r);
         drawnCells.push_back(c.cell);
@@ -939,7 +977,7 @@ bool ViewAreaCanvas::eventFilter(QObject *watched, QEvent *event)
     switch (event->type()) {
     case QEvent::Resize:
         if (MDIView *view = cell->childView())
-            view->setGeometry(cell->rect());
+            placeHiddenView(view, cell->rect());
         update();
         return false;
     case QEvent::MouseButtonPress:

@@ -391,6 +391,44 @@ int SketchObject::setDriving(int ConstrId, bool isdriving)
     return 0;
 }
 
+int SketchObject::setDiameter(int ConstrId, bool diameter)
+{
+    // no need to check input data validity as this is an sketchobject managed operation.
+    Base::StateLocker lock(managedoperation, true);
+
+    const std::vector<Constraint*>& vals = this->Constraints.getValues();
+
+    if (ConstrId < 0 || ConstrId >= int(vals.size())) {
+        return -1;
+    }
+    const ConstraintType type = vals[ConstrId]->Type;
+    if (type != Radius && type != Diameter) {
+        return -1;
+    }
+    if ((type == Diameter) == diameter) {
+        return 0;
+    }
+
+    // copy the list
+    std::vector<Constraint*> newVals(vals);
+    newVals[ConstrId] = newVals[ConstrId]->clone();
+    newVals[ConstrId]->Type = diameter ? Diameter : Radius;
+    // The same size in the other measure -- unless an expression gives the
+    // value: that is the expression's, and what it gives is the new measure.
+    if (!constraintHasExpression(ConstrId)) {
+        newVals[ConstrId]->setValue(newVals[ConstrId]->getValue() * (diameter ? 2.0 : 0.5));
+    }
+
+    this->Constraints.setValues(std::move(newVals));
+
+    // if we do not have a recompute, the sketch must be solved to update the DoF of the solver
+    if (noRecomputes) {
+        solve();
+    }
+
+    return 0;
+}
+
 int SketchObject::getDriving(int ConstrId, bool& isdriving)
 {
     const std::vector<Constraint*>& vals = this->Constraints.getValues();
@@ -651,6 +689,58 @@ int SketchObject::moveDatumsToEnd()
     return 0;
 }
 
+namespace
+{
+
+/// Whether the expression's VALUE is an angle. Asked of the value, not of the
+/// text: an expression can be an angle with no unit written in it
+/// (atan(0.03)), and "180 - " in front of that is a unit mismatch.
+bool evaluatesToAngle(const App::Expression& expression)
+{
+    try {
+        App::ExpressionPtr result = expression.eval();
+        auto number = Base::freecad_dynamic_cast<App::NumberExpression>(result.get());
+        return number && number->getQuantity().getUnit() == Base::Unit::Angle;
+    }
+    catch (const Base::Exception&) {
+        return false;
+    }
+}
+
+/// The text of the supplementary angle of \a expression (upstream 8b06bca68a,
+/// which builds the tree node by node; this expression tree keeps its
+/// operator codes to itself, so the same two questions are asked through what
+/// it does offer).
+std::string supplementaryAngleExpression(const App::DocumentObject* owner,
+                                         const App::Expression& expression)
+{
+    const std::string text = expression.toString();
+
+    // "180 - x", with the unit or without, goes back to x -- if that is what
+    // the expression IS, and not only how its text begins: "180 - 60 + 5" is
+    // (180 - 60) + 5, and taking the front off it would leave 60 + 5.
+    for (const char* prefix : {"180 \xC2\xB0 - ", "180 - "}) {
+        if (!boost::starts_with(text, prefix)) {
+            continue;
+        }
+        std::string rest = text.substr(std::strlen(prefix));
+        try {
+            App::ExpressionPtr whole =
+                App::Expression::parse(owner, std::string(prefix) + "(" + rest + ")");
+            if (whole && whole->isSame(expression)) {
+                return rest;
+            }
+        }
+        catch (const Base::Exception&) {
+        }
+    }
+
+    return std::string(evaluatesToAngle(expression) ? "180 \xC2\xB0 - (" : "180 - (")
+        + text + ")";
+}
+
+}  // namespace
+
 void SketchObject::reverseAngleConstraintToSupplementary(Constraint* constr, int constNum)
 {
     std::swap(constr->First, constr->Second);
@@ -663,9 +753,10 @@ void SketchObject::reverseAngleConstraintToSupplementary(Constraint* constr, int
     }
 
     // Edit the expression if any, else modify constraint value directly
-    if (constraintHasExpression(constNum)) {
-        std::string expression = getConstraintExpression(constNum);
-        setConstraintExpression(constNum, reverseAngleConstraintExpression(expression));
+    App::ObjectIdentifier path = Constraints.createPath(constNum);
+    auto info = getExpression(path);
+    if (info.expression) {
+        setConstraintExpression(constNum, supplementaryAngleExpression(this, *info.expression));
     }
     else {
         double actAngle = constr->getValue();
@@ -714,30 +805,6 @@ void SketchObject::setConstraintExpression(int constNum, const std::string& newE
             Base::Console().Error("Failed to set constraint expression.");
         }
     }
-}
-
-std::string SketchObject::reverseAngleConstraintExpression(std::string expression)
-{
-    // Check if expression contains units (°, deg, rad)
-    if (expression.find("°") != std::string::npos
-        || expression.find("deg") != std::string::npos
-        || expression.find("rad") != std::string::npos) {
-        if (expression.substr(0, 9) == "180 ° - ") {
-            expression = expression.substr(9, expression.size() - 9);
-        }
-        else {
-            expression = "180 ° - (" + expression + ")";
-        }
-    }
-    else {
-        if (expression.substr(0, 6) == "180 - ") {
-            expression = expression.substr(6, expression.size() - 6);
-        }
-        else {
-            expression = "180 - (" + expression + ")";
-        }
-    }
-    return expression;
 }
 
 int SketchObject::setVirtualSpace(int ConstrId, bool isinvirtualspace)
@@ -794,6 +861,56 @@ int SketchObject::setVirtualSpace(std::vector<int> constrIds, bool isinvirtualsp
     }
 
     this->Constraints.setValues(std::move(newVals));
+
+    return 0;
+}
+
+int SketchObject::setVisibility(int ConstrId, bool isVisible)
+{
+    return setVisibility(std::vector<int> {ConstrId}, isVisible);
+}
+
+int SketchObject::setVisibility(std::vector<int> constrIds, bool isVisible)
+{
+    // no need to check input data validity as this is an sketchobject managed operation.
+    Base::StateLocker lock(managedoperation, true);
+
+    if (constrIds.empty()) {
+        return 0;
+    }
+
+    std::sort(constrIds.begin(), constrIds.end());
+
+    const std::vector<Constraint*>& vals = this->Constraints.getValues();
+
+    if (constrIds.front() < 0 || constrIds.back() >= int(vals.size())) {
+        return -1;
+    }
+
+    std::vector<Constraint*> newVals(vals);
+
+    bool changed = false;
+    for (auto cid : constrIds) {
+        // clone the changed Constraint
+        if (vals[cid]->isVisible != isVisible) {
+            Constraint* constNew = vals[cid]->clone();
+            constNew->isVisible = isVisible;
+            newVals[cid] = constNew;
+            changed = true;
+        }
+    }
+
+    // Nothing to write: the panel asks for the state its filter wants each
+    // time the constraints change, and a write is one of those changes.
+    if (!changed) {
+        return 0;
+    }
+
+    this->Constraints.setValues(std::move(newVals));
+
+    // Solver didn't actually update, but we need this to inform view provider
+    // to redraw
+    signalSolverUpdate();
 
     return 0;
 }
@@ -942,6 +1059,8 @@ int SketchObject::addConstraints(const std::vector<Constraint*>& ConstraintList)
         setOrientation(cnew, false);
 
         addGeometryState(cnew);
+
+        signalConstraintAdded(cnew);
     }
 
     this->Constraints.setValues(std::move(newVals));
@@ -1016,6 +1135,8 @@ int SketchObject::addConstraint(std::unique_ptr<Constraint> constraint)
     setOrientation(constNew, false);
 
     addGeometryState(constNew);
+
+    signalConstraintAdded(constNew);
 
     newVals.push_back(constNew);// add new constraint at the back
 

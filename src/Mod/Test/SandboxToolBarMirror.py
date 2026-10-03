@@ -378,3 +378,28 @@ class SandboxToolBarMirrorTest(unittest.TestCase):
                                        orders[-1]["content"]["layoutSpec"]["items"]])
         self.Gui.activateWorkbench("DraftWorkbench")
         self.spin(60, 6)
+
+    def test_gone_subscriber_stops_mid_rebuild(self):
+        """A subscriber whose connection is gone, as the only one: its
+        subscribe starts the mirror, the start's rebuild pushes to it, the
+        push fails, and the last one out stops the mirror -- from INSIDE
+        that rebuild. stop() used to tear everything down there, and the
+        rebuild went on writing into the bar it had just freed: a served
+        desktop whose browser had left crashed at exit, in malloc. The
+        stop now waits for the rebuild to finish; the mirror is off, and
+        starts clean for the next subscriber."""
+        self.FW.mirrorToolBars(False)
+        self.spin()
+        self.FW.pushed()
+        self.control({"op": "widgets.subscribe", "toolbars": True}, 1001)
+        self.spin()
+        # stopped, and stopped last: what the rebuild made after a stop
+        # in its middle stayed in the store under a mirror that was off
+        left = [i for i in self.FW.ids() if i.startswith("toolbar")]
+        self.assertEqual(left, [], "the last one out stops the mirror")
+        reply = self.control({"op": "widgets.subscribe", "toolbars": True}, 7)
+        self.assertTrue(reply["ok"], reply)
+        self.spin()
+        opened = [m["id"] for _, m in self.pushed(7) if m["method"] == "open"]
+        self.assertIn("toolbars", opened)
+        self.assertIn("toolbar:Draft Creation", opened)

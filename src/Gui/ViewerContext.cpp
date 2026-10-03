@@ -53,7 +53,9 @@
 #include "Selection.h"
 #include "ViewProvider.h"
 #include "ViewProviderLink.h"
+#include "ViewVisibility.h"
 #include "ViewerContext.h"
+#include "Renderer/Renderer.h"
 
 using namespace Gui;
 
@@ -215,12 +217,58 @@ void EditingRoot::attachView(ViewerContext* view)
 {
     if (view && std::find(viewList.begin(), viewList.end(), view) == viewList.end()) {
         viewList.push_back(view);
+        if (editHide) {
+            view->setEditHide(editHide.get());
+        }
     }
 }
 
 void EditingRoot::detachView(ViewerContext* view)
 {
-    viewList.erase(std::remove(viewList.begin(), viewList.end(), view), viewList.end());
+    auto it = std::find(viewList.begin(), viewList.end(), view);
+    if (it == viewList.end()) {
+        return;
+    }
+    viewList.erase(it);
+    if (editHide) {
+        view->setEditHide(nullptr);
+    }
+}
+
+bool EditingRoot::hideEdited(App::DocumentObject* parent, const char* subname)
+{
+    showEdited();
+    // The occurrence as a path entry: resolved to its node key by each
+    // view's table, which also resolves it again should the scene move.
+    std::vector<Render::ObjectRef> path;
+    if (!parent || !resolveObjectPath(parent, subname, path)) {
+        return false;
+    }
+    auto hide = std::make_unique<VisibilityEntry>();
+    hide->doc = path.front().doc;
+    hide->obj = path.front().obj;
+    hide->subname = subname ? subname : "";
+    hide->rooted = true;
+    hide->visible = false;
+    editHide = std::move(hide);
+    for (ViewerContext* view : viewList) {
+        if (!view->setEditHide(editHide.get())) {
+            showEdited();
+            return false;
+        }
+    }
+    return true;
+}
+
+void EditingRoot::showEdited()
+{
+    if (!editHide) {
+        return;
+    }
+    editHide.reset();
+    for (ViewerContext* view : viewList) {
+        view->setEditHide(nullptr);
+    }
 }
 
 void EditingRoot::setTransform(const Base::Matrix4D& mat)
@@ -620,7 +668,37 @@ void ViewerContext::resetEditingRoot(bool updateLinks)
     if (!editViewProvider || joinedEditing) {
         return;
     }
+    editRoot->showEdited();
     editRoot->reset(editViewProvider, updateLinks);
+}
+
+bool ViewerContext::hideEditedObject()
+{
+    if (!editViewProvider || joinedEditing) {
+        return false;
+    }
+    auto vp = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(editViewProvider);
+    if (!vp) {
+        return false;
+    }
+    App::DocumentObject* parent = vp->getObject();
+    std::string subname;
+    if (Gui::Document* doc = editRoot->document()) {
+        ViewProviderDocumentObject* parentVp = nullptr;
+        doc->getInEdit(&parentVp, &subname);
+        if (parentVp) {
+            parent = parentVp->getObject();
+        }
+        else {
+            subname.clear();
+        }
+    }
+    return editRoot->hideEdited(parent, subname.c_str());
+}
+
+bool ViewerContext::setEditHide(const VisibilityEntry*)
+{
+    return false;
 }
 
 PyObject* ViewerContext::getPyObject()

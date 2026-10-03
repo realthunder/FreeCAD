@@ -238,13 +238,13 @@ SketchObject::~SketchObject()
 
 void SketchObject::setupObject()
 {
-    _Version.setValue(1);
+    _Version.setValue(2);
     ParameterGrp::handle hGrpp = App::GetApplication().GetParameterGroupByPath(
             "User parameter:BaseApp/Preferences/Mod/Sketcher");
     ArcFitTolerance.setValue(hGrpp->GetFloat("ArcFitTolerance", Precision::Confusion()*10.0));
     ExternalBSplineMaxDegree.setValue(hGrpp->GetInt("ExternalBSplineMaxDegree", 5));
     ExternalBSplineTolerance.setValue(hGrpp->GetFloat("ExternalBSplineTolerance", 1e-4));
-    MakeInternals.setValue(hGrpp->GetBool("MakeInternals", false));
+    MakeInternals.setValue(hGrpp->GetBool("MakeInternals", true));
     inherited::setupObject();
 }
 
@@ -839,57 +839,43 @@ SketchSolveStatus SketchObject::setTextAndFont(int ConstrId,
     return solve();
 }
 
-bool SketchObject::isInGroup(int geoId, bool includeHandle) const
+const SketchObject::GroupIndex& SketchObject::getGroupIndex() const
 {
-    const std::vector<Sketcher::Constraint*>& vals = Constraints.getValues();
-
-    for (const auto& constr : vals) {
-        if (constr->Type == Group || constr->Type == Text) {
-            // First is the group construction line. We include it or not in our search.
-            int iStart = includeHandle ? 0 : 1;
-            for (int i = iStart; constr->hasElement(i); ++i) {
-                if (constr->getGeoId(i) == geoId) {
-                    return true;
+    if (!groupIndex) {
+        auto index = std::make_unique<GroupIndex>();
+        for (const auto& constr : Constraints.getValues()) {
+            if (constr->Type == Group || constr->Type == Text) {
+                // First is the group construction line. A member of two
+                // groups answers with the first, as the scan this replaces did.
+                int handle = constr->getGeoId(0);
+                index->handles.insert(handle);
+                for (int i = 1; constr->hasElement(i); ++i) {
+                    index->members.emplace(constr->getGeoId(i), handle);
                 }
             }
         }
+        groupIndex = std::move(index);
     }
-    return false;
+    return *groupIndex;
+}
+
+bool SketchObject::isInGroup(int geoId, bool includeHandle) const
+{
+    const GroupIndex& index = getGroupIndex();
+    // The group construction line is included or not in our search.
+    return index.members.count(geoId) || (includeHandle && index.handles.count(geoId));
 }
 
 bool SketchObject::isGroupHandle(int geoId) const
 {
-    const std::vector<Sketcher::Constraint*>& vals = Constraints.getValues();
-
-    for (const auto& constr : vals) {
-        if (constr->Type == Group || constr->Type == Text) {
-            if (constr->getGeoId(0) == geoId) {
-                return true;
-            }
-        }
-    }
-    return false;
+    return getGroupIndex().handles.count(geoId) > 0;
 }
 
 int SketchObject::getGroupHandleIfInGroup(int geoId) const
 {
-    const std::vector<Sketcher::Constraint*>& vals = Constraints.getValues();
-
-    for (const auto& constr : vals) {
-        if (constr->Type == Group || constr->Type == Text) {
-            // First is the group construction line.
-            int groupHandleGeoId = GeoEnum::GeoUndef;
-            for (int i = 0; constr->hasElement(i); ++i) {
-                if (i == 0) {
-                    groupHandleGeoId = constr->getGeoId(i);
-                }
-                else if (constr->getGeoId(i) == geoId) {
-                    return groupHandleGeoId;
-                }
-            }
-        }
-    }
-    return geoId;
+    const GroupIndex& index = getGroupIndex();
+    auto it = index.members.find(geoId);
+    return it == index.members.end() ? geoId : it->second;
 }
 
 std::set<int> SketchObject::getGroupGeometries(int handleGeoId) const
@@ -987,6 +973,9 @@ static inline bool checkMigration(Part::PropertyGeometryList &prop)
 
 void SketchObject::onChanged(const App::Property* prop)
 {
+    if (prop == &Constraints) {
+        groupIndex.reset();
+    }
     if (prop == &Geometry) {
         if (isRestoring() && checkMigration(Geometry)) {
             // Construction migration to extension
@@ -2069,20 +2058,36 @@ void SketchObject::setMissingPointOnPointConstraints(std::vector<ConstraintIds>&
 
 void SketchObject::makeMissingPointOnPointCoincident(bool onebyone)
 {
-    if (analyser)
-        analyser->makeMissingPointOnPointCoincident(onebyone);
+    if (analyser) {
+        onebyone ? analyser->makeMissingPointOnPointCoincidentOneByOne()
+                 : analyser->makeMissingPointOnPointCoincident();
+    }
 }
 
 void SketchObject::makeMissingVerticalHorizontal(bool onebyone)
 {
-    if (analyser)
-        analyser->makeMissingVerticalHorizontal(onebyone);
+    if (analyser) {
+        onebyone ? analyser->makeMissingVerticalHorizontalOneByOne()
+                 : analyser->makeMissingVerticalHorizontal();
+    }
 }
 
 void SketchObject::makeMissingEquality(bool onebyone)
 {
-    if (analyser)
-        analyser->makeMissingEquality(onebyone);
+    if (analyser) {
+        onebyone ? analyser->makeMissingEqualityOneByOne()
+                 : analyser->makeMissingEquality();
+    }
+}
+
+int SketchObject::detectDegeneratedGeometries(double tolerance)
+{
+    return analyser ? analyser->detectDegeneratedGeometries(tolerance) : 0;
+}
+
+int SketchObject::removeDegeneratedGeometries(double tolerance)
+{
+    return analyser ? analyser->removeDegeneratedGeometries(tolerance) : 0;
 }
 
 std::vector<Base::Vector3d> SketchObject::getOpenVertices() const

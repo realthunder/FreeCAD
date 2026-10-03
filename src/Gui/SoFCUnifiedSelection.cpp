@@ -69,6 +69,7 @@
 
 #include <Inventor/annex/FXViz/elements/SoShadowStyleElement.h>
 #include <Inventor/SbDPLine.h>
+#include <Inventor/caches/SoCache.h>
 
 #ifdef FC_OS_MACOSX
 # include <OpenGL/gl.h>
@@ -80,8 +81,13 @@
 #endif
 
 #include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <unordered_set>
 #include <optional>
 #include <boost/algorithm/string/predicate.hpp>
+
+#include <Inventor/SoRenderManager.h>
 
 #include <QApplication>
 #include <QtOpenGL.h>
@@ -101,6 +107,8 @@
 
 #include "Inventor/SoFCRenderCacheManager.h"
 #include "Inventor/SoFCDiffuseElement.h"
+#include "Inventor/SoFCVisibilityElement.h"
+#include "Inventor/SoFCZoomOffsetElement.h"
 #include "SoFCUnifiedSelection.h"
 #include "Application.h"
 #include "Document.h"
@@ -184,6 +192,12 @@ public:
     }
 
     ~Private() {
+    }
+
+    /// Seconds since the last preselection pick ran
+    double sincePreselect() const {
+        return std::chrono::duration<double>(
+                std::chrono::steady_clock::now() - preselTime).count();
     }
 
     bool useRenderer() const {
@@ -271,6 +285,18 @@ public:
     bool doAction(SoAction *);
     bool handleEvent(SoHandleEventAction * action);
     void applyOverrideMode(SoState * state) const;
+    void applyVisibility(SoState * state,
+                         SoFCVisibilityElement::Mode mode = SoFCVisibilityElement::Exact) const;
+    /// Whether \a action is the auto clipping of the view it traverses
+    /// for: a bounding box pass over that view's render manager's scene,
+    /// which nothing else applies one to.
+    bool isClipPass(SoAction *action) const {
+        ViewerContext *view = pickView();
+        if (!view || action->getWhatAppliedTo() != SoAction::NODE)
+            return false;
+        SoRenderManager *manager = view->getSoRenderManager();
+        return manager && action->getNodeAppliedTo() == manager->getSceneGraph();
+    }
 
     /// The capture's additive-mode interest set (5.9 "Non-standard
     /// modes"); owned by the viewer, pushed onto the element in
@@ -367,7 +393,9 @@ public:
     int32_t preSelection;
     SoColorPacker colorpacker;
 
-    SbTime preselTime;
+    // On the steady clock: the time of day is stepped back where it is
+    // resynced, and each step put one hover pick off by the delay
+    std::chrono::steady_clock::time_point preselTime;
     SoTimerSensor preselTimer;
     SbVec2s preselPos;
     SbViewportRegion preselViewport;
@@ -483,7 +511,37 @@ void SoFCUnifiedSelection::getBoundingBox(SoGetBoundingBoxAction * action)
     // SoSeparator::getBoundingBox already answers from it without
     // descending; when it does not, the descent is what builds that cache
     // and every per-object one below it.
+    //
+    // Pushed around the base class, which does not come through
+    // doAction(): the view's own visibility has to reach the switches
+    // below, and must not leak past this node.
+    //
+    // The auto clipping every view runs on every render answers for no
+    // view in particular (SoFCVisibilityElement::Superset): what it builds
+    // below is then every view's, where this view's own answer would have
+    // made the next view rebuild the caches of every object an entry of
+    // any view names (docs/CoinRetirement.md 5.25).
+    SoState *state = action->getState();
+    state->push();
+    pimpl->applyVisibility(state, pimpl->isClipPass(action)
+                                  ? SoFCVisibilityElement::Superset
+                                  : SoFCVisibilityElement::Exact);
     inherited::getBoundingBox(action);
+    state->pop();
+}
+
+void SoFCUnifiedSelection::rayPick(SoRayPickAction * action)
+{
+    // SoSeparator::rayPick does not come through doAction() either, and
+    // a pick has to see this view's own visibility like everything else
+    // it traverses; see getBoundingBox().
+    // It answers by this view's table, and may cull with a box every
+    // view shares.
+    SoState *state = action->getState();
+    state->push();
+    pimpl->applyVisibility(state, SoFCVisibilityElement::Cull);
+    inherited::rayPick(action);
+    state->pop();
 }
 
 void SoFCUnifiedSelection::setSelectAll(bool enable)
@@ -553,6 +611,72 @@ int SoFCUnifiedSelection::getPriority(const SoPickedPoint* p)
     return 0;
 }
 
+// The nodes declared coplanar overlays, by address. A handful at most per
+// sketch in the scene, and only asked when two hits tie.
+static std::unordered_set<const SoNode*> &coplanarOverlays()
+{
+    static std::unordered_set<const SoNode*> nodes;
+    return nodes;
+}
+
+void SoFCUnifiedSelection::setCoplanarOverlay(const SoNode *node, bool enable)
+{
+    if (!node)
+        return;
+    if (enable)
+        coplanarOverlays().insert(node);
+    else
+        coplanarOverlays().erase(node);
+}
+
+bool SoFCUnifiedSelection::isCoplanarOverlay(const SoPath *path)
+{
+    const auto &nodes = coplanarOverlays();
+    if (!path || nodes.empty())
+        return false;
+    auto full = static_cast<const SoFullPath*>(path);
+    for (int i = 0, c = full->getLength(); i < c; ++i) {
+        if (nodes.count(full->getNode(i)))
+            return true;
+    }
+    return false;
+}
+
+bool SoFCUnifiedSelection::isCoplanarDepth(float dist1, float dist2)
+{
+    // Two faces in one plane are hit through different triangles, so the
+    // two distances differ by rounding; and an overlay a hair off the
+    // plane is drawn in front all the same, by its polygon offset.
+    float tol = 1e-4f * std::max(1.0f, std::max(std::fabs(dist1), std::fabs(dist2)));
+    return std::fabs(dist1 - dist2) <= tol;
+}
+
+bool SoFCUnifiedSelection::isInFacePlane(const SoPickedPoint *face, const SoPickedPoint *other)
+{
+    if (!face || !other || getPriority(face) != 1)
+        return false;
+    SbVec3f normal = face->getNormal();
+    if (normal.normalize() == 0.0f)
+        return false;
+    const SbVec3f &pt = face->getPoint();
+    // rounding, at the size of the coordinates
+    float size = std::max(std::max(std::fabs(pt[0]), std::fabs(pt[1])), std::fabs(pt[2]));
+    return std::fabs(normal.dot(other->getPoint() - pt)) <= 1e-4f * std::max(1.0f, size);
+}
+
+bool SoFCUnifiedSelection::beatsCoplanarFace(const SoPickedPoint *face, const SoPickedPoint *other)
+{
+    if (!face || !other || getPriority(face) != 1)
+        return false;
+    int prio = getPriority(other);
+    if (prio > 1)
+        return isInFacePlane(face, other);
+    return prio == 1
+        && face->getPoint().equals(other->getPoint(), 0.01F)
+        && isCoplanarOverlay(other->getPath())
+        && !isCoplanarOverlay(face->getPath());
+}
+
 void
 SoFCUnifiedSelection::Private::getPickedInfo(std::vector<PickedInfo> &ret,
                                              const SoPickedPointList &points,
@@ -563,13 +687,22 @@ SoFCUnifiedSelection::Private::getPickedInfo(std::vector<PickedInfo> &ret,
     ViewProvider *vpEdit = nullptr;
     ViewProviderDocumentObject *vpParent = nullptr;
     std::string editSub;
+    // The object in edit that lets the view pick what is around it (a
+    // sketch running the external geometry tool). It still picks its own
+    // elements itself, so the view passes over them.
+    ViewProvider *vpEditOpen = nullptr;
     if (this->pcDocument) {
        vpEdit = this->pcDocument->getInEdit(&vpParent, &editSub);
-       if (!vpEdit || !vpEdit->isEditingPickExclusive())
+       if (vpEdit && !vpEdit->isEditingPickExclusive()) {
+           vpEditOpen = vpEdit;
+           vpEdit = nullptr;
+       }
+       else if (!vpEdit)
            vpEdit = nullptr;
     }
     ViewProvider *last_vp = nullptr;
     for(int i=0,count=points.getLength();i<count;++i) {
+        bool coplanar = false;
         PickedInfo info;
         info.pp = points[i];
         info.vpd = nullptr;
@@ -577,8 +710,21 @@ SoFCUnifiedSelection::Private::getPickedInfo(std::vector<PickedInfo> &ret,
         SoFullPath *path = static_cast<SoFullPath *>(info.pp->getPath());
         if (this->pcDocument && path) {
             vp = this->pcDocument->getViewProviderByPathFromHead(path);
-            if(singlePick && last_vp && last_vp!=vp)
-                return;
+            if(singlePick && last_vp && last_vp!=vp) {
+                // A single pick ends at the first hit of another object,
+                // but for what lies in the plane of the face hit first:
+                // a coplanar overlay's face at the same point (a sketch's
+                // face on a solid's face), or an edge or a vertex (the
+                // sketch's outline on that face). Depth does not order
+                // those against the face, so they are gathered too, for
+                // postProcessPickedList() to choose from. Not while
+                // cycling through back faces, which counts what is
+                // gathered.
+                const SoPickedPoint *first = ret.empty() ? nullptr : ret.front().pp;
+                if (pickBackFace || !beatsCoplanarFace(first, info.pp))
+                    return;
+                coplanar = true;
+            }
         }
         if(!vp || !vp->isDerivedFrom(ViewProviderDocumentObject::getClassTypeId())
                || (vpEdit && vp != vpEdit))
@@ -609,13 +755,21 @@ SoFCUnifiedSelection::Private::getPickedInfo(std::vector<PickedInfo> &ret,
         if(!info.vpd->getElementPicked(info.pp,info.subname))
             continue;
 
+        if (vpEditOpen
+                && (info.vpd == vpEditOpen
+                    || (info.vpd == vpParent && !editSub.empty()
+                        && boost::starts_with(info.subname, editSub))))
+            continue;
+
         if (info.vpd == vpEdit && vpParent && vpParent != vpEdit) {
             info.vpd = vpParent;
             info.subname = editSub + info.subname;
         }
 
         if(singlePick) {
-            last_vp = vp;
+            // the object hit first stays the one a change is told from
+            if (!coplanar)
+                last_vp = vp;
             if(copy) info.copy();
             ret.push_back(std::move(info));
             continue;
@@ -802,6 +956,7 @@ SoFCUnifiedSelection::Private::getPickedList(const SbVec2s &pos,
         SoOverrideElement::setPickStyleOverride(this->rayPickAction.getState(),0,true);
 
     SoFCDisplayModeElement::set(this->rayPickAction.getState(),0,SbName::empty(),false);
+    applyVisibility(this->rayPickAction.getState());
 
     this->rayPickAction.cleanup();
 
@@ -922,21 +1077,40 @@ SoFCUnifiedSelection::Private::postProcessPickedList(std::vector<PickedInfo> &re
     // points where the first is of a face and the second of a line with
     // almost similar coordinates we use the second point, instead.
 
-    int picked_prio = getPriority(ret[0].pp);
+    //
+    // And what lies in the plane of the face hit first is not behind it,
+    // whichever object it belongs to: an edge or a vertex there is drawn
+    // over the face and wins within the pick radius, wherever along the
+    // view its nearest point happens to be, and a coplanar overlay's face
+    // (a sketch's face on a solid's face) wins a tie with the face under
+    // it. Without that an edge lying in a face was picked only from where
+    // it was the nearer hit: from outside the face in a view square to
+    // it, from one side on a slanted one.
+
+    const SoPickedPoint *first = ret[0].pp;
+    int picked_prio = getPriority(first);
     auto last_vpd = ret[0].vpd;
-    const SbVec3f& picked_pt = ret.front().pp->getPoint();
+    const SbVec3f& picked_pt = first->getPoint();
     auto itPicked = ret.begin();
     for(auto it=ret.begin()+1;it!=ret.end();++it) {
         auto &info = *it;
-        if(last_vpd != info.vpd)
-            break;
-
         int cur_prio = getPriority(info.pp);
         const SbVec3f& cur_pt = info.pp->getPoint();
 
-        if ((cur_prio > picked_prio) && picked_pt.equals(cur_pt, 0.2F)) {
+        if (cur_prio > picked_prio) {
+            if ((last_vpd == info.vpd && picked_pt.equals(cur_pt, 0.2F))
+                    || isInFacePlane(first, info.pp)) {
+                itPicked = it;
+                picked_prio = cur_prio;
+            }
+        }
+        else if (cur_prio == picked_prio && itPicked == ret.begin()
+                    && beatsCoplanarFace(first, info.pp)) {
             itPicked = it;
-            picked_prio = cur_prio;
+        }
+        else if (last_vpd != info.vpd && !isInFacePlane(first, info.pp)) {
+            // another object, behind the first: the search ends
+            break;
         }
     }
 
@@ -1030,8 +1204,23 @@ SbName SoFCUnifiedSelection::DisplayModeNoShading("No Shading");
 SbName SoFCUnifiedSelection::DisplayModeWireframe("Wireframe");
 SbName SoFCUnifiedSelection::DisplayModePoints("Points");
 
+void SoFCUnifiedSelection::Private::applyVisibility(SoState * state,
+                                                   SoFCVisibilityElement::Mode mode) const
+{
+    // This view's own object visibility, for the per-view traversals
+    // the element is enabled in (SoFCVisibilityElement). The view is the
+    // pick view: this root's own viewer, or -- on a root several views
+    // share, the served one -- the view whose traversal this is, so each
+    // client picks and bounds by its own table.
+    if (!state->isElementEnabled(SoFCVisibilityElement::getClassStackIndex()))
+        return;
+    if (ViewerContext *view = pickView())
+        SoFCVisibilityElement::set(state, view->visibilityElementTable(), mode);
+}
+
 void SoFCUnifiedSelection::Private::applyOverrideMode(SoState * state) const
 {
+    applyVisibility(state);
     bool shading = true;
     if (state->isElementEnabled(SoFCDisplayModeElement::getClassStackIndex())) {
         SbName mode = master->overrideMode.getValue();
@@ -1295,7 +1484,7 @@ void SoFCUnifiedSelection::Private::onPreselectTimer() {
         }
     }
 
-    preselTime = SbTime::getTimeOfDay();
+    preselTime = std::chrono::steady_clock::now();
 }
 
 bool SoFCUnifiedSelection::Private::setHighlight(PickedInfo &&info) {
@@ -1744,8 +1933,23 @@ SoFCUnifiedSelection::Private::handleEvent(SoHandleEventAction * action)
             if (SoMouseButtonEvent::isButtonReleaseEvent(e,SoMouseButtonEvent::BUTTON1)) {
                 // check to see if the mouse is over a geometry...
                 auto infos = this->getPickedList(action,!Selection().needPickedList());
-                if(skipMouseRelease || \
-                        setSelection(infos,event->wasCtrlDown(),event->wasShiftDown(),event->wasAltDown()))
+                // What the selection gate refuses is not there to be
+                // clicked: the click goes on to whoever is next, a view
+                // provider in edit for one (upstream 999fed9c4e). A
+                // constraint tool of the sketcher with outside picking on
+                // has the view pick what is outside the sketch and takes
+                // the sketch's own elements itself.
+                bool refused = false;
+                if (!skipMouseRelease && !infos.empty() && infos[0].vpd
+                        && infos[0].vpd->getObject()
+                        && infos[0].vpd->getObject()->isAttachedToDocument()) {
+                    auto obj = infos[0].vpd->getObject();
+                    refused = !Selection().isAllowedByGate(obj->getDocument()->getName(),
+                                                           obj->getNameInDocument(),
+                                                           infos[0].subname.c_str());
+                }
+                if(!refused && (skipMouseRelease || \
+                        setSelection(infos,event->wasCtrlDown(),event->wasShiftDown(),event->wasAltDown())))
                     action->setHandled();
             }
             if (!skipMouseRelease) {
@@ -1825,7 +2029,7 @@ SoFCUnifiedSelection::Private::handleEvent(SoHandleEventAction * action)
             // and its one position slot cannot belong to N clients whose
             // moves interleave, so each replayed move picks inline -- the
             // per-move cost an edit mode's own pick already pays there.
-            if(pcViewer && delay>0.0 && (SbTime::getTimeOfDay()-preselTime).getValue()<delay) {
+            if(pcViewer && delay>0.0 && sincePreselect()<delay) {
                 if(!preselTimer.isScheduled()) {
                     preselTimer.setInterval(delay);
                     preselTimer.schedule();
@@ -2207,6 +2411,91 @@ SO_NODE_SOURCE(SoFCSelectionRoot)
 static FC_COIN_COUNTER(uint32_t) SelectionRootCount;
 static FC_COIN_COUNTER(uint32_t) SelectionRootId;
 FC_COIN_COUNTER(int) SoFCSelectionRoot::SecondaryContextCount;
+FC_COIN_COUNTER(int) SoFCSelectionRoot::HiddenContextCount;
+FC_COIN_COUNTER(int) SoFCSelectionRoot::ShownContextCount;
+
+/// Hold (or release) the tessellation of the object \a doc#\a obj a force
+/// show brings in: its view provider skips the visual update of a hidden
+/// object otherwise, and a shown one would draw nothing.
+static void forceShownUpdate(const std::string &doc, const std::string &obj, bool enable)
+{
+    if (doc.empty() || obj.empty() || !Application::Instance)
+        return;
+    auto d = App::GetApplication().getDocument(doc.c_str());
+    auto o = d ? d->getObject(obj.c_str()) : nullptr;
+    if (auto vp = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(
+                o ? Application::Instance->getViewProvider(o) : nullptr))
+        vp->forceUpdate(enable);
+}
+
+void SoFCSelectionRoot::SelContext::setVisibility(int8_t vis, const char *doc, const char *obj)
+{
+    if (vis == visibility)
+        return;
+    if (visibility == 0)
+        --HiddenContextCount;
+    else if (visibility == 1) {
+        --ShownContextCount;
+        forceShownUpdate(shownDoc, shownObj, false);
+        shownDoc.clear();
+        shownObj.clear();
+    }
+    visibility = vis;
+    if (visibility == 0)
+        ++HiddenContextCount;
+    else if (visibility == 1) {
+        ++ShownContextCount;
+        if (doc && obj) {
+            shownDoc = doc;
+            shownObj = obj;
+            forceShownUpdate(shownDoc, shownObj, true);
+        }
+    }
+}
+
+SoNode *SoFCSelectionRoot::getOwnSwitch() const
+{
+    for (int i = 0, n = getNumChildren(); i < n; ++i) {
+        SoNode *child = getChild(i);
+        if (child->isOfType(SoFCSwitch::getClassTypeId()))
+            return child;
+    }
+    return nullptr;
+}
+
+bool SoFCSelectionRoot::isSwitchShown(SoAction *action, const SoNode *sw, bool capture)
+{
+    if (!hasShownContext())
+        return false;
+    SoFCSelectionRoot *root = getInnermostRoot(action);
+    if (!root || root->contextMap2.empty())
+        return false;
+    const SoPath *path = action->getCurPath();
+    if (!path || path->getLength() < 2 || path->getNodeFromTail(0) != sw
+            || path->getNodeFromTail(1) != root)
+        return false;
+    if (capture) {
+        for (const auto &v : root->contextMap2) {
+            auto ctx = std::dynamic_pointer_cast<SelContext>(v.second);
+            if (ctx && ctx->visibility == 1)
+                return true;
+        }
+        return false;
+    }
+    Stack *stack = action->isOfType(SoGLRenderAction::getClassTypeId())
+        ? &SelStack : getActionStack(action);
+    if (!stack || stack->empty() || stack->back() != root)
+        return false;
+    // The answer depends on the chain, and it is made below the root: the
+    // root's OWN cache is open now -- the one checkSecondaryCache() at its
+    // entry cannot reach, since a hide returns before it is opened -- and
+    // would carry this occurrence's answer to the others (a bounding box
+    // culling a pick through the occurrence the show is for).
+    root->checkSecondaryCache(action->getState(), *stack);
+    auto ctx = std::static_pointer_cast<SelContext>(
+            getNodeContext2(*stack, root, SelContext::merge));
+    return ctx && ctx->visibility == 1;
+}
 std::unordered_map<uint32_t, SoFCSelectionRoot*> SelectionRootMap;
 FC_COIN_STATIC_MUTEX(SelectionRootMapMutex);
 #define SelectionRootMapLock(_name) FC_COIN_LOCK(_name, SelectionRootMapMutex)
@@ -2239,6 +2528,25 @@ bool SoFCSelectionRoot::NodeKey::convert(SoFCSelectionRoot::Stack &stack, bool c
     if (next)
         return next->convert(stack, false);
     return true;
+}
+
+void SoFCSelectionRoot::NodeKey::getNodeIds(std::vector<uint32_t> &ids) const
+{
+    uint32_t id = 0;
+    int len = 0;
+    for (uint8_t i=0; i<data.back(); ++i) {
+        uint8_t d = data[i];
+        id |= uint32_t(d & 127) << (len*7);
+        if (d & 128)
+            ++len;
+        else {
+            ids.push_back(id);
+            id = 0;
+            len = 0;
+        }
+    }
+    if (next)
+        next->getNodeIds(ids);
 }
 
 SoFCSelectionRoot *
@@ -2294,6 +2602,71 @@ SoFCSelectionRoot::NodeKey::getSecondaryContext(Stack &stack, SoNode *node)
     }
     stack.resize(len);
     return ctx;
+}
+
+bool SoFCSelectionRoot::NodeKey::isHidden() const
+{
+    if (!hasHiddenContext())
+        return false;
+    static FC_COIN_THREAD_LOCAL Stack chain;
+    static FC_COIN_THREAD_LOCAL Stack prefix;
+    // A key may end in an id that is no root (forcePush); convert() stops
+    // there with the roots before it in hand, which are all a hide can be
+    // held by.
+    convert(chain);
+    prefix.clear();
+    bool hidden = false;
+    for (auto node : chain) {
+        prefix.push_back(node);
+        auto root = static_cast<SoFCSelectionRoot*>(node);
+        if (root->contextMap2.empty())
+            continue;
+        // The same lookup a traversal makes at this root: its hides keyed
+        // by a tail of the chain that reaches it.
+        auto ctx = std::static_pointer_cast<SelContext>(
+                getNodeContext2(prefix, root, SelContext::merge));
+        if (ctx && ctx->visibility == 0) {
+            hidden = true;
+            break;
+        }
+    }
+    chain.clear();
+    prefix.clear();
+    return hidden;
+}
+
+bool SoFCSelectionRoot::NodeKey::isShown() const
+{
+    if (!hasShownContext())
+        return false;
+    static FC_COIN_THREAD_LOCAL Stack chain;
+    static FC_COIN_THREAD_LOCAL Stack prefix;
+    convert(chain);
+    prefix.clear();
+    // Only a root whose own switch hides its object took the draw in
+    // tagged (SoFCSwitch), and each such root must hold a show for this
+    // chain -- a show held for another occurrence, or an object some
+    // single view shows on its own, leaves the draw tagged.
+    bool shown = false;
+    for (auto node : chain) {
+        prefix.push_back(node);
+        auto root = static_cast<SoFCSelectionRoot*>(node);
+        auto sw = root->getOwnSwitch();
+        if (!sw || static_cast<SoSwitch*>(sw)->whichChild.getValue() != SO_SWITCH_NONE)
+            continue;
+        SelContextPtr ctx;
+        if (!root->contextMap2.empty())
+            ctx = std::static_pointer_cast<SelContext>(
+                    getNodeContext2(prefix, root, SelContext::merge));
+        if (!ctx || ctx->visibility != 1) {
+            shown = false;
+            break;
+        }
+        shown = true;
+    }
+    chain.clear();
+    prefix.clear();
+    return shown;
 }
 
 void SoFCSelectionRoot::NodeKey::noteOrigin(SoFCSelectionRoot *node)
@@ -2430,6 +2803,42 @@ SoFCSelectionRoot *SoFCSelectionRoot::getCurrentActionRoot(
     if (!stack || stack->empty())
         return def;
     return static_cast<SoFCSelectionRoot*>(front?stack->front():stack->back());
+}
+
+SoFCSelectionRoot *SoFCSelectionRoot::getInnermostRoot(SoAction *action)
+{
+    if (action->isOfType(SoGLRenderAction::getClassTypeId()))
+        return getCurrentRoot();
+    return getCurrentActionRoot(action);
+}
+
+bool SoFCSelectionRoot::getRenderedObject(const char *&doc, const char *&obj) const
+{
+    auto vpd = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(viewProvider);
+    if (vpd) {
+        auto o = vpd->getObject();
+        if (!o || !o->isAttachedToDocument() || !o->getDocument())
+            return false;
+        doc = o->getDocument()->getName();
+        obj = o->getNameInDocument();
+        return true;
+    }
+    if (!nodeOrigin)
+        return false;
+    doc = nodeOrigin->doc.c_str();
+    obj = nodeOrigin->obj.c_str();
+    return true;
+}
+
+void SoFCSelectionRoot::getActionRootIds(SoAction *action, std::vector<uint32_t> &ids)
+{
+    ids.clear();
+    const Stack *stack = action->isOfType(SoGLRenderAction::getClassTypeId())
+        ? &SelStack : getActionStack(action);
+    if (!stack)
+        return;
+    for (auto node : *stack)
+        ids.push_back(static_cast<const SoFCSelectionRoot*>(node)->getSelNodeId());
 }
 
 int SoFCSelectionRoot::getRenderPathCode() const {
@@ -2822,6 +3231,16 @@ void SoFCSeparator::_GLRenderInPath(SoNode *node, SoGLRenderAction * action)
     }
 }
 
+/// The innermost cache open in \a state, or null -- also for an action
+/// that does not enable SoCacheElement (the selection actions), where
+/// SoCacheElement::getCurrentCache() would read a missing element.
+static SoCache *currentCache(SoState *state)
+{
+    if (!state || !state->isElementEnabled(SoCacheElement::getClassStackIndex()))
+        return nullptr;
+    return SoCacheElement::getCurrentCache(state);
+}
+
 void SoFCSelectionRoot::renderPrivate(SoGLRenderAction * action, bool inPath) {
     if(renderPathCode) {
         reportCyclicScene(action, this);
@@ -2832,6 +3251,8 @@ void SoFCSelectionRoot::renderPrivate(SoGLRenderAction * action, bool inPath) {
     auto state = action->getState();
     bool pushed = false;
     SelStack.push_back(this);
+    SelStack.entryCaches.resize(SelStack.size() - 1);
+    SelStack.entryCaches.push_back({currentCache(state), state->getDepth()});
     if(_renderPrivate(action,inPath,pushed)) {
         if(inPath)
             _GLRenderInPath(this, action);
@@ -2841,18 +3262,20 @@ void SoFCSelectionRoot::renderPrivate(SoGLRenderAction * action, bool inPath) {
     if(pushed)
         state->pop();
     SelStack.pop_back();
+    if (SelStack.entryCaches.size() > SelStack.size())
+        SelStack.entryCaches.resize(SelStack.size());
 }
 
 bool SoFCSelectionRoot::_renderPrivate(SoGLRenderAction * action, bool inPath, bool &pushed) {
 
     auto state = action->getState();
-    selCounter.checkCache(state,true);
+    checkSecondaryCache(state, SelStack);
 
     if(!SoFCSwitch::testTraverseState(SoFCSwitch::TraverseOverride)
             || action->getCurPathCode()!=SoAction::IN_PATH)
     {
         auto ctx2 = std::static_pointer_cast<SelContext>(getNodeContext2(SelStack,this,SelContext::merge));
-        if(ctx2 && ctx2->hideAll)
+        if(ctx2 && ctx2->visibility == 0)
             return false;
     }
 
@@ -2870,7 +3293,7 @@ bool SoFCSelectionRoot::_renderPrivate(SoGLRenderAction * action, bool inPath, b
 
     int style = selectionStyle.getValue();
     if((style==SoFCSelectionRoot::Box || SoFCUnifiedSelection::getShowSelectionBoundingBox())
-       && ctx && !ctx->hideAll && (ctx->selAll || ctx->hlAll))
+       && ctx && ctx->visibility != 0 && (ctx->selAll || ctx->hlAll))
     {
         if (style==SoFCSelectionRoot::PassThrough) {
             style = SoFCSelectionRoot::Box;
@@ -2909,7 +3332,7 @@ bool SoFCSelectionRoot::_renderPrivate(SoGLRenderAction * action, bool inPath, b
     // honour the secondary color override.
 
     bool colorPushed = false;
-    if(style==SoFCSelectionRoot::Box || !ctx || (!ctx->selAll && !ctx->hideAll)) {
+    if(style==SoFCSelectionRoot::Box || !ctx || (!ctx->selAll && ctx->visibility != 0)) {
         colorPushed = setupColorOverride(state, pushed);
         if (colorPushed)
             pushed = true;
@@ -3047,7 +3470,86 @@ SoFCSelectionRoot::beginAction(SoAction *action, bool checkcycle)
         return nullptr;
     }
     stack->push_back(this);
+    // Where this root entered the traversal's caches. A stack handed in by
+    // setActionStack() carries no mark for the roots it was seeded with.
+    stack->entryCaches.resize(stack->size() - 1);
+    stack->entryCaches.push_back({currentCache(action->getState()),
+                                  action->getState()->getDepth()});
     return stack;
+}
+
+void SoFCSelectionRoot::invalidateCachesInside(SoState *state, const Stack &stack, size_t index)
+{
+    if (index >= stack.size() || index >= stack.entryCaches.size()) {
+        SoCacheElement::invalidate(state);
+        return;
+    }
+    if (!state->isElementEnabled(SoCacheElement::getClassStackIndex()))
+        return;
+    // Innermost first, the way SoCacheElement::invalidate() walks them,
+    // stopping at the cache that was already open when the root was
+    // entered: that one, and every cache outside it, keeps its answer.
+    const auto &entry = stack.entryCaches[index];
+    auto elem = static_cast<const SoCacheElement*>(
+            state->getElementNoPush(SoCacheElement::getClassStackIndex()));
+    for (; elem && elem->getCache() && elem->getCache() != entry.cache;
+           elem = elem->getNextCacheElement())
+    {
+        // So does the root's own cache. Its separator pushes the state and
+        // sets the cache at the new depth before any child runs, so nothing
+        // else is opened at that depth; every node below opens deeper. It
+        // holds the whole chain the answer depends on, and keeping it is
+        // what lets a pick cull the root. Where the root pushed once more
+        // first (a colour override on the GL render), its cache sits
+        // deeper and is spoiled like the rest -- the safe side.
+        if (entry.depth >= 0 && elem->getDepth() == entry.depth + 1)
+            continue;
+        elem->getCache()->invalidate();
+    }
+    SoCacheElement::setInvalid(TRUE);
+}
+
+void SoFCSelectionRoot::checkSecondaryCache(SoState *state, const Stack &stack)
+{
+    if (SoFCSwitch::testTraverseState(SoFCSwitch::TraverseOverride)
+            || !selCounter.hasCounted() || contextMap2.empty()) {
+        selCounter.checkCache(state, true);
+        return;
+    }
+    // A secondary context answers by the tail of the chain of roots this
+    // node is reached through, never a longer tail than its longest key
+    // (the map orders keys by length). Whether a key matches is therefore
+    // decided within the subtree of the root that tail starts at: only the
+    // caches opened inside it are shared by chains that can answer
+    // differently -- a Link reuses the Part's children root -- and every
+    // cache above it gets the same answer whichever way it is reached. The
+    // view's auto clipping runs a bounding box pass per frame; spoiling the
+    // scene root's cache made that pass walk every object.
+    const auto &longest = contextMap2.rbegin()->first;
+    size_t len = longest.size() - longest.offset;
+    invalidateCachesInside(state, stack, len >= stack.size() ? 0 : stack.size() - len);
+}
+
+void SoFCSelectionRoot::invalidateKeyCaches(SoAction *action, size_t keyLength)
+{
+    SoState *state = action->getState();
+    const Stack *stack = action->isOfType(SoGLRenderAction::getClassTypeId())
+        ? &SelStack : getActionStack(action);
+    if (!stack || stack->empty()) {
+        SoCacheElement::invalidate(state);
+        return;
+    }
+    // As checkSecondaryCache(): a key longer than the chain cannot match
+    // here, but may through a longer one that reuses these caches.
+    invalidateCachesInside(state, *stack,
+                           keyLength >= stack->size() ? 0 : stack->size() - keyLength);
+}
+
+SoFCSelectionRoot *SoFCSelectionRoot::getRootById(uint32_t id)
+{
+    SelectionRootMapLock(guard);
+    auto it = SelectionRootMap.find(id);
+    return it == SelectionRootMap.end() ? nullptr : it->second;
 }
 
 void SoFCSelectionRoot::endAction(SoAction *action, Stack &stack, bool checkcycle)
@@ -3058,6 +3560,8 @@ void SoFCSelectionRoot::endAction(SoAction *action, Stack &stack, bool checkcycl
         if(checkcycle && ViewParams::getCoinCycleCheck())
             stack.nodeSet.erase(this);
         stack.pop_back();
+        if (stack.entryCaches.size() > stack.size())
+            stack.entryCaches.resize(stack.size());
         if(stack.empty())
             ActionStacks.erase(action);
     }
@@ -3120,10 +3624,14 @@ void SoFCSelectionRoot::getBoundingBox(SoGetBoundingBoxAction * action)
     auto stack = beginAction(action);
     if (!stack)
         return;
-    if(doActionPrivate(*stack,action)) {
-        selCounter.checkCache(action->getState(),true);
+    // Before the hide test, not after it: a node hidden in THIS occurrence
+    // must spoil the caches above it all the same. They are shared with the
+    // node's other occurrences -- a Link to the Part holding it -- and one
+    // built without it answers for those too, where a pick is then culled
+    // at the separator and misses the node that is shown there.
+    checkSecondaryCache(action->getState(), *stack);
+    if(doActionPrivate(*stack,action))
         inherited::getBoundingBox(action);
-    }
     endAction(action, *stack);
 }
 
@@ -3169,6 +3677,21 @@ void SoFCSelectionRoot::doAction(SoAction *action) {
     endAction(action, *stack);
 }
 
+/// Whether \a action is the render cache capture, which keeps what a
+/// whole-object secondary hide takes out. Its caches are per NODE, reused
+/// through every occurrence of it -- a Link to a Part reuses the Part's
+/// children root -- while a hide answers per chain: one keyed from a Link's
+/// own root hides that occurrence and not the Part's. Taken out during the
+/// capture, whichever occurrence built the shared cache first decided for
+/// all of them, and a Link's own element hide was drawn. The feed drops a
+/// hidden draw instead, per draw from its full key (NodeKey::isHidden).
+/// Every other callback traversal -- an export -- still leaves it out.
+static bool keepsHidden(SoAction *action)
+{
+    return SoFCZoomOffsetElement::isCapturing()
+        && action->isOfType(SoCallbackAction::getClassTypeId());
+}
+
 bool SoFCSelectionRoot::doActionPrivate(Stack &stack, SoAction *action) {
     // Selection action short-circuit optimization. In case of whole object
     // selection/pre-selection, we shall store a SelContext keyed by ourself.
@@ -3194,7 +3717,7 @@ bool SoFCSelectionRoot::doActionPrivate(Stack &stack, SoAction *action) {
         {
             ctx2Searched = true;
             ctx2 = std::static_pointer_cast<SelContext>(getNodeContext2(stack,this,SelContext::merge));
-            if(ctx2 && ctx2->hideAll)
+            if(ctx2 && ctx2->visibility == 0 && !keepsHidden(action))
                 return false;
         }
         if(!isTail)
@@ -3212,9 +3735,11 @@ bool SoFCSelectionRoot::doActionPrivate(Stack &stack, SoAction *action) {
                 action->getWhatAppliedTo()==SoAction::NODE))
             {
                 auto ctx = getActionContext(action,this,SelContextPtr(),false);
-                selCounter.checkAction(selAction,ctx);
-                if(ctx && ctx->hideAll) {
-                    ctx->hideAll = false;
+                if(ctx && ctx->visibility >= 0) {
+                    ctx->setVisibility(-1);
+                    // Give the count back, or this node spoils the caches
+                    // above it on every pass from now on.
+                    selCounter.recount(ctx);
                     if(!ctx->hlAll && !ctx->selAll)
                         removeActionContext(action,this);
                     touch();
@@ -3227,9 +3752,25 @@ bool SoFCSelectionRoot::doActionPrivate(Stack &stack, SoAction *action) {
             }else if(selAction->getType() == SoSelectionElementAction::Hide) {
                 if(action->getCurPathCode()==SoAction::BELOW_PATH || isTail) {
                     auto ctx = getActionContext(action,this,SelContextPtr());
-                    selCounter.checkAction(selAction,ctx);
-                    if(ctx && !ctx->hideAll) {
-                        ctx->hideAll = true;
+                    if(ctx && ctx->visibility != 0) {
+                        ctx->setVisibility(0);
+                        // Counted once hidden, not before: checkAction()
+                        // read the context before the change and so counted
+                        // the show instead of the hide.
+                        selCounter.recount(ctx);
+                        touch();
+                    }
+                    return false;
+                }
+            }else if(selAction->getType() == SoSelectionElementAction::ForceShow) {
+                if(action->getCurPathCode()==SoAction::BELOW_PATH || isTail) {
+                    auto ctx = getActionContext(action,this,SelContextPtr());
+                    if(ctx && ctx->visibility != 1) {
+                        const char *doc = nullptr, *obj = nullptr;
+                        if (!getRenderedObject(doc, obj))
+                            doc = obj = nullptr;
+                        ctx->setVisibility(1, doc, obj);
+                        selCounter.recount(ctx);
                         touch();
                     }
                     return false;
@@ -3305,7 +3846,7 @@ bool SoFCSelectionRoot::doActionPrivate(Stack &stack, SoAction *action) {
                 || !SoFCSwitch::testTraverseState(SoFCSwitch::TraverseOverride)))
     {
         ctx2 = std::static_pointer_cast<SelContext>(getNodeContext2(stack,this,SelContext::merge));
-        if(ctx2 && ctx2->hideAll)
+        if(ctx2 && ctx2->visibility == 0 && !keepsHidden(action))
             return false;
     }
     return true;
@@ -3315,7 +3856,9 @@ int SoFCSelectionRoot::SelContext::merge(int status, SoFCSelectionContextBasePtr
         SoFCSelectionContextBasePtr input, SoNode *)
 {
     auto ctx = std::dynamic_pointer_cast<SelContext>(input);
-    if(ctx && ctx->hideAll) {
+    // The longest key with an override decides: a hide or a show held for
+    // this very chain beats one held for a shorter tail of it.
+    if(ctx && ctx->visibility >= 0) {
         output = ctx;
         return -1;
     }

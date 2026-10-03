@@ -276,6 +276,21 @@ bool SoFCSelectionCounter::checkCache(SoState *state, bool secondary) {
     return true;
 }
 
+void SoFCSelectionCounter::recount(const SoFCSelectionContextBasePtr &ctx) {
+    if(!ctx)
+        return;
+    if(ctx->isCounted()) {
+        if(!ctx->counter) {
+            *counter += 1;
+            ctx->counter = counter;
+        }
+    }
+    else if(ctx->counter) {
+        *ctx->counter -= 1;
+        ctx->counter.reset();
+    }
+}
+
 void SoFCSelectionCounter::checkAction(SoHighlightElementAction *hlaction) {
     if(hlaction->isHighlighted())
         hasPreselection = true;

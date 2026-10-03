@@ -24,6 +24,7 @@
 #ifndef SKETCHERGUI_VIEWPROVIDERSKETCH_H
 #define SKETCHERGUI_VIEWPROVIDERSKETCH_H
 
+#include <chrono>
 #include <QCoreApplication>
 #include <fastsignals/signal.h>
 #include <Inventor/SbImage.h>
@@ -47,6 +48,7 @@
 #include "PropertyVisualLayerList.h"
 
 #include "ShortcutListener.h"
+#include "Utils.h"
 
 
 class TopoDS_Shape;
@@ -61,6 +63,7 @@ class SoTransform;
 class SoLineSet;
 class SoMarkerSet;
 class SoPickedPoint;
+class SoPath;
 
 class SoImage;
 class QImage;
@@ -75,6 +78,7 @@ struct EditData;
 
 namespace Gui {
 class MenuItem;
+class SoDatumLabel;
 class View3DInventorViewer;
 class ViewerContext;
 }
@@ -86,6 +90,8 @@ class SketchObject;
 }
 
 namespace SketcherGui {
+
+class DatumEditSession;
 
 class SnapManager;
 class DrawSketchHandler;
@@ -147,6 +153,19 @@ public:
     /// destructor
     virtual ~ViewProviderSketch();
 
+    /** @name A dimension's value typed in the view (EditDatumDialog.h) */
+    //@{
+    /// The label of a dimensional constraint in the edit graph, or null.
+    Gui::SoDatumLabel* getConstraintDatumLabel(int constraintId) const;
+    /// The view an event of this edit is being handled in.
+    Gui::ViewerContext* getEditViewer() const
+    {
+        return editViewer();
+    }
+    /// The entry in progress. It owns itself, and clears this when it ends.
+    DatumEditSession* datumEdit = nullptr;
+    //@}
+
     /** @name Properties */
     //@{
     App::PropertyBool Autoconstraints;
@@ -159,6 +178,7 @@ public:
     App::PropertyBool ForceOrtho;
     App::PropertyBool SectionView;
     App::PropertyString EditingWorkbench;
+    App::PropertyBool AutoColor;
     SketcherGui::PropertyVisualLayerList VisualLayerList;
     //@}
 
@@ -206,6 +226,9 @@ public:
     bool isSelectable() const override;
     /// Observer message from the Selection
     virtual void onSelectionChanged(const Gui::SelectionChanges& msg) override;
+    /// Record one selected element ("Edge3", "Vertex1", "Constraint2", ...) in
+    /// the edit data, without redrawing. True for a constraint.
+    bool addSelectedElement(const char *shapetype);
 
     /// Toggle angle snapping and set the reference point
     void setAngleSnapping(bool enable, Base::Vector2d referencePoint = Base::Vector2d(0., 0.));
@@ -228,6 +251,12 @@ public:
     void activateHandler(DrawSketchHandler *newHandler);
     /// removes the active handler
     void purgeHandler();
+    /** Leaves the edit and reverts what it did (upstream 189d86ee53).
+     * By undo, back to where the undo history stood when the edit began,
+     * so the edit can be redone; when the history no longer reaches back
+     * that far, by the copy of the sketch taken then, in one transaction.
+     */
+    void cancelEditing();
     /** Turn the views' own selection on or off for the whole session.
      *
      * Entering the edit turns it off in every view (the initiator through
@@ -286,7 +315,8 @@ public:
         STATUS_SKETCH_DragConstraint,  /**< enum value while dragging a compatible constraint. */
         STATUS_SKETCH_UseHandler,      /**< enum value a DrawSketchHandler is in control. */
         STATUS_SKETCH_StartRubberBand, /**< enum value for initiating a rubber band selection */
-        STATUS_SKETCH_UseRubberBand    /**< enum value when making a rubber band selection */
+        STATUS_SKETCH_UseRubberBand,   /**< enum value when making a rubber band selection */
+        STATUS_SELECT_Wire             /**< enum value an edge was double clicked, its wire is selected on release. */
     };
     /// is called by GuiCommands to set the drawing mode
     void setSketchMode(SketchMode mode);
@@ -323,10 +353,17 @@ public:
                             bool preselect=true);
 
     /// Helper for detectPreselection(), for constraints only.
-    std::set<int> detectPreselectionConstr(const SoPickedPoint *Point,
-                                           const Gui::ViewerContext *viewer,
-                                           const SbVec2s &cursorPos,
-                                           bool preselect=true);
+    std::set<int> detectPreselectionConstr(const SoPickedPoint *Point);
+
+    /** What a hover at a viewport position of the edit view would
+     * preselect, without preselecting it: the element names (several for
+     * a combined constraint icon) and the picked point. False for nothing.
+     * The position is in the coordinates of View3DInventor's
+     * getPointOnViewport(). Upstream's name, for its preselection tests.
+     */
+    bool getPreselectionAtViewportPos(const SbVec2s &pos,
+                                      std::vector<std::string> &subElementNames,
+                                      Base::Vector3d &pickedPoint);
 
     /*! Look at the center of the bounding of all selected items */
     void centerSelection();
@@ -334,9 +371,28 @@ public:
     /// box selection method
     void doBoxSelection(const SbVec2s &startPos, const SbVec2s &endPos,
                         const Gui::ViewerContext *viewer);
+    /// Std_SelectAll in edit: every element and constraint, or only what a
+    /// focused task panel list shows
+    bool selectAll() override;
+    /// Whether a geometry is on a hidden visual layer: not drawn, not picked
+    bool isGeometryHidden(int GeoId) const;
 
     /// helper change the color of the sketch according to selection and solver status
     void updateColor();
+    /// Redraw only the (pre)selection: the highlight overlays and the
+    /// highlighted constraints. What a selection change needs; the geometry's
+    /// own colours and layers are left as the last updateColor() made them.
+    void updateHighlight();
+    /// Editing the sketch itself: false in another edit mode, such as
+    /// Transform, where no edit data exists for a tool to act on
+    bool isInEditMode() const { return edit != nullptr; }
+    /// In edit, an edit element's box by geometry id: the sketch's Shape
+    /// numbers edges and vertices differently and leaves construction out
+    Base::BoundBox3d _getBoundingBox(const char *subname=nullptr,
+            const Base::Matrix4D *mat=nullptr, bool transform=true,
+            const Gui::View3DInventorViewer *view=nullptr, int depth=0) const override;
+    /// The expression of a preselected constraint as the view's tooltip
+    void updateExpressionToolTip(Gui::ViewerContext *viewer);
     /// get the pointer to the sketch document object
     Sketcher::SketchObject *getSketchObject() const;
 
@@ -354,7 +410,7 @@ public:
 
 
     /// moves a selected constraint
-    void moveConstraint(int constNum, const Base::Vector2d &toPos);
+    void moveConstraint(int constNum, const Base::Vector2d &toPos, OffsetMode offset = NoOffset);
     /// finds a free position for placing a constraint icon
     Base::Vector3d seekConstraintPosition(const Base::Vector3d &origPos,
                                           const Base::Vector3d &norm,
@@ -371,6 +427,11 @@ public:
     //@{
     void attach(App::DocumentObject *) override;
     void updateData(const App::Property *) override;
+    /// A warning beside the tree item while an external reference is broken
+    void getExtraIcons(std::vector<std::pair<QByteArray, QPixmap> > &) const override;
+    QString getToolTip(const QByteArray &iconTag) const override;
+    /// Whether an external geometry has lost the element it refers to
+    bool hasMissingExternalGeometry() const;
 
     void setupContextMenu(QMenu* menu, QObject* receiver, const char* member) override;
     /// is called when the Provider is in edit and a deletion request occurs
@@ -390,6 +451,9 @@ public:
     bool isGestureInProgress() const override;
     /// is called when the Provider is in edit and a key event ocours. Only ESC ends edit.
     bool keyPressed(bool pressed, int key) override;
+    /// Std_Undo or Std_Redo while a value is typed at a label takes the
+    /// entry back, and undoes nothing older
+    bool undoRedoInEdit(bool redo) override;
     /// is called when the Provider is in edit and the mouse is clicked
     bool mouseButtonPressed(int Button,
                             bool pressed,
@@ -437,6 +501,7 @@ public:
 
     virtual void reattach(App::DocumentObject *);
     virtual void beforeDelete();
+    void startRestoring() override;
     virtual void finishRestoring();
 
     virtual bool isEditingPickExclusive() const;
@@ -445,6 +510,8 @@ public:
     static bool allowFaceExternalPick();
     /// check if by default viewing sketch from bottom on start editing
     static bool viewBottomOnEdit();
+    /// The camera on entering edit when FitSketchOnEdit is set
+    void fitOnEdit(Gui::ViewerContext *viewer);
     void setViewBottomOnEdit(bool enable);
     void toggleViewSection(int toggle=-1);
     static ViewProviderSketch *getEditingViewProvider();
@@ -478,6 +545,9 @@ protected:
     void deactivateHandler();
     /// get called if a subelement is double clicked while editing
     void editDoubleClicked();
+    /// selects, or deselects, the edges connected end to end with an edge,
+    /// external ones included, following the edge's own selection state
+    void toggleWireSelection(int clickedGeoId);
     //@}
 
 
@@ -485,6 +555,10 @@ protected:
     void createEditInventorNodes();
     /// pointer to the edit data structure if the ViewProvider is in edit.
     std::unique_ptr<EditData> edit;
+    /// the sketch when its edit began, and the undo transaction on top then
+    /// (0: none), for cancelEditing()
+    std::string editBackup;
+    int editUndoMark = 0;
     /** The view an event of this edit is being handled in.
      *
      * A session has one initiator (edit->viewer) and N views that joined
@@ -501,7 +575,9 @@ protected:
     //@{
     void slotUndoDocument(const Gui::Document&);
     void slotRedoDocument(const Gui::Document&);
+    void cancelInteractionOnUndoRedo();
     void slotSolverUpdate();
+    void slotConstraintAdded(Sketcher::Constraint *constraint);
 
     /** @name base class implementer */
     //@{
@@ -509,11 +585,28 @@ protected:
     void onChanged(const App::Property* prop) override;
     //@}
 
+    /// AutoColor: every property that carries the edge or vertex colour
+    std::vector<App::Property*> automaticColorProperties();
+    /// The face colour and transparency Mod/Sketcher/General/FaceColor asks for
+    static void faceColorFromPreference(App::Color &color, long &transparency);
+public:
+    /// Under AutoColor the colours follow the preferences: display state,
+    /// not mapped onto shapes made from the sketch
+    bool mapsElementColors(int type) const override;
+protected:
+    /// AutoColor: marks the colours it owns as not saved and not editable
+    void updateColorPropertiesVisibility();
+    /// AutoColor: takes the edge and vertex colours from the preferences
+    void updateAutomaticColorProperties();
+    /// AutoColor: follows a change of those preferences in every sketch
+    static void attachColorObserver();
+
 protected:
     fastsignals::connection connectAbortTransaction;
     fastsignals::connection connectUndoDocument;
     fastsignals::connection connectRedoDocument;
     fastsignals::connection connectSolverUpdate;
+    fastsignals::connection connectConstraintAdded;
     fastsignals::connection connectMoved;
 
     /// set color, icon & font sizes
@@ -549,9 +642,33 @@ protected:
      *  the constraint with the highest priority from constrColorPriority()
      */
     QColor constrColor(int constraintId);
-    /// Used by drawMergedConstraintIcons to decide what color to make icons
+    /// Used by layoutConstraintIcons to decide what color to make a "+N"
     /*! See constrColor() */
     int constrColorPriority(int constraintId);
+
+    /** @name Which view draws the preselection
+     *
+     * The preselection belongs to the view it came from: a hover in a
+     * view that captures the edit for a backend (render cache mode 3) is
+     * drawn by that view alone, over the edit graph
+     * (Gui::ViewerContext::setEditingHighlight). One from outside any view
+     * (the tree, the task panel) goes to every view of the session.
+     */
+    //@{
+    /// Note the view a preselection came from, when the preselection changes.
+    void trackPreselectSource();
+    /// The views the preselection is for; \a views gets every view of the session.
+    std::vector<Gui::ViewerContext *> preselectTargets(
+            std::vector<Gui::ViewerContext *> *views = nullptr) const;
+    /// Whether a preselected constraint is drawn by its views rather than
+    /// coloured in the edit graph, which every view shows.
+    bool constraintPreselectInViews() const;
+    /// The path from the session's editing root to constraint \a i's node,
+    /// new and unreferenced; null if there is none.
+    SoPath *constraintPath(int i);
+    /// Redraw the icons for a preselection change, if that changes them.
+    void drawConstraintIconsForPreselection();
+    //@}
 
     /// Internal type used for drawing constraint icons
     struct constrIconQueueItem {
@@ -568,6 +685,15 @@ protected:
         /// Absolute coordinates of the constraint icon
         SbVec3f position;
 
+        /// Which of the constraint's icons this is: 0 the first, 1 the second
+        int slot = 0;
+
+        /// Where draw() put the icon, before any layout: the world anchor
+        /// and the screen-constant offset (SoZoomTranslation units), both
+        /// summed down the constraint's translations
+        SbVec3f anchor;
+        SbVec3f offset;
+
         /// Pointer to the SoImage object where the icon should be written
         SoImage *destination;
 
@@ -582,35 +708,44 @@ protected:
 
     /// Internal type used for drawing constraint icons
     typedef std::vector<constrIconQueueItem> IconQueue;
-    /// For constraint icon bounding boxes
-    typedef std::pair<QRect, std::set<int> > ConstrIconBB;
-    /// For constraint icon bounding boxes
-    typedef std::vector<ConstrIconBB> ConstrIconBBVec;
+
+    /// drawConstraintIcons() without its guard: may throw
+    void drawConstraintIconsImpl();
 
     void combineConstraintIcons(IconQueue &&iconQueue);
 
     /// Renders an icon for a single constraint and sends it to Coin
     void drawTypicalConstraintIcon(const constrIconQueueItem &i);
 
-    /// Combines multiple constraint icons and sends them to Coin
-    void drawMergedConstraintIcons(IconQueue &&iconQueue);
+    /// Where an icon is: its world anchor, its offset in SoZoomTranslation
+    /// units, and a further offset in pixels (SoZoomTranslation::pixelOffset)
+    struct IconPlace
+    {
+        SbVec3f anchor;
+        SbVec3f offset;
+        SbVec2f pixels;
+    };
+    /// Icon places by constraint and slot
+    typedef std::map<std::pair<int, int>, IconPlace> IconPlaces;
 
-    /// Helper for drawMergedConstraintIcons and drawTypicalConstraintIcon
+    /** Lay out icons that fall on one spot side by side, from the first
+     * one's place: View/ConstraintIconLabelsPerLine to a line, at most
+     * View/ConstraintIconLabelLines lines, the last slot a "+N" for the
+     * rest when they do not fit. Sets each icon's place in \a targets.
+     */
+    void layoutConstraintIcons(IconQueue &&group, IconPlaces &targets);
+
+    /// The "+N" that stands for the icons a layout has no room for
+    QImage renderConstrIconCount(int count, const QColor &color);
+
+    /// A constraint icon of the type in the colour, its label (if any) to
+    /// its right in the same colour
     QImage renderConstrIcon(const QString &type,
-                            const QColor &iconColor,
-                            const QStringList &labels,
-                            const QList<QColor> &labelColors,
-                            double iconRotation,
-                            //! Gets populated with bounding boxes (in icon
-                            //! image coordinates) for the icon at left, then
-                            //! labels for different constraints.
-                            std::vector<QRect> *boundingBoxes = nullptr,
-                            //! If not nullptr, gets set to the number of pixels
-                            //! that the text extends below the icon base.
-                            int *vPad = nullptr);
+                            const QColor &color,
+                            const QString &label,
+                            double iconRotation);
 
     /// Copies a QImage constraint icon into a SoImage*
-    /*! Used by drawTypicalConstraintIcon() and drawMergedConstraintIcons() */
     void sendConstraintIconToCoin(const QImage &icon, SoImage *soImagePtr);
 
     /// Essentially a version of sendConstraintIconToCoin, with a blank icon
@@ -646,15 +781,21 @@ protected:
     void removeSelectPoint(int SelectPoint);
     void clearSelectPoints();
 
+    // the two halves of updateColor()
+    void updateBaseColor();
+    /// +1 or -1: which way the sketch's layers stack as seen from the camera
+    float getEditZDir() const;
+    /// a constraint's colour when it is not highlighted
+    void restoreConstraintColor(int ConstrId);
+
     // modes while sketching
     SketchMode _Mode;
 
     // colors
-    static SbColor VertexColor;
     static SbColor CurveColor;
-    static SbColor CreateCurveColor;
     static SbColor CurveDraftColor;
     static SbColor CurveExternalColor;
+    static SbColor CurveExternalDefiningColor;
     static SbColor CurveFrozenColor;
     static SbColor CurveDetachedColor;
     static SbColor CurveMissingColor;
@@ -675,10 +816,11 @@ protected:
     static SbColor FullyConstraintElementColor;
     static SbColor FullyConstraintConstructionElementColor;
     static SbColor FullyConstraintInternalAlignmentColor;
-    static SbColor FullyConstraintConstructionPointColor;
     static SbColor InvalidSketchColor;
 
-    static SbTime prvClickTime;
+    /// On the steady clock: the wall clock is stepped (NTP, a hypervisor),
+    /// and two presses seconds apart then read as a double click.
+    static std::chrono::steady_clock::time_point prvClickTime;
     static SbVec2s prvClickPos; //used by double-click-detector
     static SbVec2s prvCursorPos;
     static SbVec2s newCursorPos;
@@ -704,11 +846,15 @@ protected:
     // reference coordinates for relative operations
     double xInit,yInit;
     bool relative;
+    /// the file being restored turned AutoColor off
+    bool autoColorRestored = false;
 
     std::unique_ptr<Gui::Rubberband> rubberband;
 
     // information layer variables
     bool visibleInformationChanged;
+    /// what the tree was last told by hasMissingExternalGeometry()
+    bool missingExternalShown = false;
     double combrepscalehyst;
 
     std::string editDocName;
@@ -718,15 +864,20 @@ protected:
 
     // Virtual space variables
     bool isShownVirtualSpace; // indicates whether the present virtual space view is the Real Space or the Virtual Space (virtual space 1 or 2)
+    // set when a right press cancels a box selection, so that button's
+    // release opens no context menu; cleared by the next right press
+    bool blockContextMenu = false;
 
     std::unique_ptr<PartGui::ViewProviderPart> pInternalView;
 
-    ShortcutListener* listener;
+    std::unique_ptr<ShortcutListener> listener;
 
     std::unique_ptr<SnapManager> snapManager;
 
     /// the active sketch GeometryCreationMode
     GeometryCreationMode geometryCreationMode = GeometryCreationMode::Normal;
+    /// colour a tool's preview curves by geometryCreationMode
+    void updateEditCurveColor();
 
     using Connection = fastsignals::connection;
     Connection connectionToolWidget;

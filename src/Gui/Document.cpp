@@ -50,6 +50,7 @@
 #include <App/DocumentObject.h>
 #include <App/DocumentParams.h>
 #include <App/DocumentObjectGroup.h>
+#include <App/PropertyPythonObject.h>
 #include <App/FileBlobManager.h>
 #include <App/GeoFeatureGroupExtension.h>
 #include <App/PropertyFile.h>
@@ -87,6 +88,7 @@
 #include "ViewProviderDocumentObject.h"
 #include "ViewProviderDocumentObjectGroup.h"
 #include "ViewProviderLink.h"
+#include "ViewVisibility.h"
 #include "ViewProviderShaderObject.h"
 #include "WaitCursor.h"
 
@@ -171,6 +173,11 @@ struct DocumentP
 
     // cache map from view provider to its 3D claimed children
     std::unordered_map<const ViewProvider*,std::vector<App::DocumentObject*> > _ChildrenMap;
+    // Children a container claimed in 3D while their view provider was
+    // still being created (not yet announced), and the containers to
+    // claim them again once it is: handleChildren3D.
+    std::unordered_map<const App::DocumentObject*,
+                       std::vector<const App::DocumentObject*>> _UnannouncedClaims;
 
     // Gui-side share of a document load: the per-object finishRestoring()
     // calls, counted so the App restore line can be read against them, and
@@ -215,18 +222,52 @@ struct DocumentP
     std::unique_ptr<Base::XMLReader> _deferReader;
     bool _deferVPs = false;       // this load parks its view providers
     bool _deferApplying = false;  // a drain slice is building them now
+    // Visibility given to an object while the drain still owed it its
+    // record -- by the user, a script, a recompute -- and re-applied over
+    // that record once its view provider is finished (phase four).
+    std::unordered_map<const App::DocumentObject*, bool> _deferUserVisibility;
+    // Properties App::Document::afterRestore() changed -- a migration in
+    // onDocumentRestored(), say -- while this document's view providers
+    // were parked. Eagerly those updates come after GuiDocument.xml was
+    // read, and overrule it; the drain's sweep (phase two) would deliver
+    // them BEFORE the records, which then won. Replayed in phase four,
+    // just before each object is finished, as afterRestore() has it.
+    std::unordered_map<const App::DocumentObject*, std::vector<std::string>> _deferLateChanges;
+    bool _deferRecordsRead = false;  // GuiDocument.xml parked: what changes now is late
     bool _deferScheduled = false;
-    // The drain runs in two phases: first every object gets its view
-    // provider, then the parked record is replayed onto them. Creating
-    // them all first restores the eager path's invariant -- a parent's
+    // The drain runs in the eager load's order: every object gets its view
+    // provider, then every property its update (the sweep), then the parked
+    // records are replayed onto them, then each is finished. Creating them
+    // all first restores the eager path's invariant -- a parent's
     // properties are never applied while its children have no view
-    // provider -- which is what keeps the link machinery linear.
+    // provider -- which is what keeps the link machinery linear; the
+    // records after the updates are the other half of it -- the saved
+    // state overrules what a handler does on an update.
     bool _deferCreated = false;
+    bool _deferSwept = false;     // phase two done: every update applied
+    bool _deferCapturedApplied = false;  // phase three put them back
+    // The record of a view provider restored at once
+    // (restoreCapturedViewProvider) precedes the sweep; phase three replays
+    // it again, after the updates, as every other record is replayed --
+    // the XML itself, so a legacy property name migrates as it did at load
+    // (copying 'ShapeColor' by name undid the colour it had migrated to).
+    // What the XML only names by an archive entry cannot be read twice:
+    // those properties are copied as the sweep begins, once phase zero has
+    // served the entries (a DiffuseColor.bin arrives after its record), and
+    // pasted after the replay. By object name -- the document is live
+    // between slices.
+    struct CapturedRecord {
+        std::string object;
+        std::string xml;
+        std::vector<std::pair<std::string, std::unique_ptr<App::Property>>> fileProps;
+    };
+    std::vector<CapturedRecord> _deferCaptured;
     bool _deferPhase1 = false;    // creating, not yet restoring
     // Both phases walk the objects the document had when the drain
     // started, by name: the document is live between slices and an index
     // into its object array does not survive a deletion. See DrainCursor.h.
     DrainCursor _deferCreate;
+    DrainCursor _deferSweep;
     DrainCursor _deferFinish;
     std::size_t _deferSlices = 0;
     std::size_t _deferBuilt = 0;
@@ -241,7 +282,7 @@ struct DocumentP
     // property replay costs against what finishing the view provider does.
     FC_DURATION _deferReadTime {0};
     FC_DURATION _deferFinishTime {0};
-    FC_DURATION _deferSweepTime {0};   // phase three's updateView share
+    FC_DURATION _deferSweepTime {0};   // phase two, the updateView sweep
     FC_DURATION _deferModeTime {0};    // ...and its setModeSwitch share
 
     /** What a <Defaults> block says a view provider class holds.
@@ -1078,11 +1119,9 @@ void Document::slotNewObject(const App::DocumentObject& Obj)
         try {
             pcProvider->attachDocumentObject(const_cast<App::DocumentObject*>(&Obj));
             FC_DURATION_PLUS(d->_newObjAttachTime, t);
-            // The drain's first phase only creates; the property sweep runs
-            // after the parked record is applied, so the visual is queued
-            // with its restored properties -- a color landing on a built
-            // faceset costs a scene traversal that landing on an unbuilt
-            // one does not.
+            // The drain's first phase only creates; the property sweep is its
+            // own phase, once every object has a view provider -- the eager
+            // load's updates see them all too.
             if (!d->_deferPhase1)
                 pcProvider->updateView();
             pcProvider->setActiveMode();
@@ -1124,6 +1163,19 @@ void Document::slotNewObject(const App::DocumentObject& Obj)
 
         // it is possible that a new viewprovider already claims children
         handleChildren3D(pcProvider);
+        // ...and that a container claimed this one while it was being
+        // created, which handleChildren3D put off until now.
+        auto waiting = d->_UnannouncedClaims.find(&Obj);
+        if (waiting != d->_UnannouncedClaims.end()) {
+            const auto containers = std::move(waiting->second);
+            d->_UnannouncedClaims.erase(waiting);
+            for (auto container : containers) {
+                // Looked up, never dereferenced: a container deleted
+                // meanwhile has no view provider left to find.
+                if (auto vp = getViewProvider(container))
+                    handleChildren3D(vp);
+            }
+        }
         FC_DURATION_PLUS(d->_newObjAnnounceTime, t);
         if (d->_isTransacting) {
             d->_redoObjects.push_back(&Obj);
@@ -1133,6 +1185,8 @@ void Document::slotNewObject(const App::DocumentObject& Obj)
 
 void Document::slotDeletedObject(const App::DocumentObject& Obj)
 {
+    d->_deferUserVisibility.erase(&Obj);
+    d->_deferLateChanges.erase(&Obj);
     std::list<Gui::BaseView*>::iterator vIt;
     setModified(true);
 
@@ -1181,7 +1235,9 @@ void Document::beforeDelete() {
     d->_deferReader.reset();
     d->_deferStream.reset();
     d->_deferBuf.clear();
+    d->_deferCaptured.clear();
     d->_deferCreate.clear();
+    d->_deferSweep.clear();
     d->_deferFinish.clear();
 
     auto editDoc = Application::Instance->editDocument();
@@ -1210,7 +1266,22 @@ void Document::beforeDelete() {
 
 void Document::slotChangedObject(const App::DocumentObject& Obj, const App::Property& Prop)
 {
+    // A change made while the drain still owes this document its records:
+    // the record, replayed later (phase three), would put the file's
+    // visibility back. Kept, and re-applied after it.
+    if (&Prop == &Obj.Visibility && d->_deferVPs && !d->_deferApplying
+            && !d->_pcDocument->testStatus(App::Document::Restoring))
+        d->_deferUserVisibility[&Obj] = Obj.Visibility.getValue();
     ViewProvider* viewProvider = getViewProvider(&Obj);
+    // After this document's records were read (parked), with the App load
+    // still running: afterRestore(), which the eager load runs after it
+    // read GuiDocument.xml.
+    if (!viewProvider && d->_deferVPs && d->_deferRecordsRead && !d->_deferApplying
+            && d->_pcDocument->testStatus(App::Document::Restoring) && Prop.getName()) {
+        auto &names = d->_deferLateChanges[&Obj];
+        if (std::find(names.begin(), names.end(), Prop.getName()) == names.end())
+            names.emplace_back(Prop.getName());
+    }
     if (viewProvider) {
         ViewProvider::clearBoundingBoxCache();
         try {
@@ -2580,8 +2651,10 @@ void Document::RestoreDocFile(Base::Reader &reader)
                     readObject(xmlReader);
                 xmlReader.readEndElement("ViewProvider",&guard);
             }
-            if (d->_deferVPs)
+            if (d->_deferVPs) {
                 d->_deferBuf += "</ViewProviderData>";
+                d->_deferRecordsRead = true;
+            }
             // This one archive entry is the single biggest thing a large
             // document load parses -- larger than the document itself -- and
             // the view providers in it are almost all default. Report what
@@ -2698,14 +2771,20 @@ void Document::slotStartRestoreDocument(const App::Document& doc)
     // partial-document reload) is dropped: the new file speaks for every
     // object now.
     d->_deferVPs = Gui::RenderParams::getProgressiveLoad();
+    d->_deferRecordsRead = false;
+    d->_deferLateChanges.clear();
     d->_deferBuf.clear();
     d->_deferCount = 0;
     d->_deferReader.reset();
     d->_deferStream.reset();
     d->_deferCreated = false;
+    d->_deferSwept = false;
+    d->_deferCapturedApplied = false;
+    d->_deferCaptured.clear();
     // Not snapshotted here: the objects this load owes work to do not all
     // exist yet. The first slice takes it, once the load has let go.
     d->_deferCreate.clear();
+    d->_deferSweep.clear();
     d->_deferFinish.clear();
     d->_deferSlices = d->_deferBuilt = 0;
     d->_deferSpent = FC_DURATION(0);
@@ -2724,6 +2803,15 @@ void Document::slotStartRestoreDocument(const App::Document& doc)
 
 void Document::slotFinishRestoreObject(const App::DocumentObject &obj) {
     auto vpd = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(getViewProvider(&obj));
+    if (vpd && d->_deferVPs) {
+        // A view provider a progressive load restored at once
+        // (restoreCapturedViewProvider: its record names an archive entry
+        // or a blob) is finished by the drain's phase four with all the
+        // others. Finished here, before the view providers it links to
+        // exist, a Link to an image plane linked nothing and drew nothing
+        // -- and, no longer restoring, phase four passed it over.
+        return;
+    }
     if(vpd) {
         FC_TIME_INIT(t);
         vpd->setStatus(Gui::isRestoring,false);
@@ -3071,12 +3159,28 @@ void Document::restoreCapturedViewProvider(const std::string &xml,
         slotNewObject(*obj);
     if (auto vpd = obj ? Base::freecad_dynamic_cast<ViewProviderDocumentObject>(
                 getViewProvider(obj)) : nullptr) {
-        // finishRestoring() arrives with signalFinishRestoreObject, like
-        // any eagerly restored view provider.
+        // finishRestoring() arrives with the drain's phase four, like the
+        // parked ones (slotFinishRestoreObject leaves it alone): what it
+        // links to has no view provider yet.
         vpd->startRestoring();
         vpd->setStatus(Gui::isRestoring, true);
     }
     readObject(reader);
+    // Its record came before the drain's sweep of updates, where the eager
+    // order has every record after them -- and a handler acting on an
+    // update (a boolean hiding its inputs, mapping its colours) would win
+    // over it. Kept, to be replayed in phase three (_deferCaptured).
+    if (obj && d->_deferVPs) {
+        DocumentP::CapturedRecord rec;
+        rec.object = obj->getNameInDocument();
+        rec.xml = xml;
+        for (const auto &e : reader.getFileList()) {
+            auto prop = dynamic_cast<App::Property*>(e.Object);
+            if (prop && prop->getName())
+                rec.fileProps.emplace_back(prop->getName(), nullptr);
+        }
+        d->_deferCaptured.push_back(std::move(rec));
+    }
     // The files the restore just asked for belong to the archive walk.
     for (const auto &e : reader.getFileList())
         archiveReader.addFile(e.FileName, e.Object);
@@ -3138,7 +3242,10 @@ void Document::runDeferredRestoreSlice()
         // Phase one in the document's own order: its eager counterpart is
         // slotNewObject() riding the create pass, which is that order.
         d->_deferCreate.snapshot(d->_pcDocument);
-        // Phase three is not. Eagerly, finishRestoring() rides
+        // So does phase two, the property sweep: eagerly, those updates ride
+        // the properties of Document.xml as each object's are restored.
+        d->_deferSweep.snapshot(d->_pcDocument);
+        // Phase four is not. Eagerly, finishRestoring() rides
         // signalFinishRestoreObject, which App::Document::afterRestore()
         // emits from its *dependency-sorted* walk -- so an object's view
         // provider is always finished before that of anything depending on
@@ -3153,7 +3260,7 @@ void Document::runDeferredRestoreSlice()
                                                  App::Document::DepSort));
     }
     if (!d->_deferSeq) {
-        const std::size_t total = d->_deferCreate.size()
+        const std::size_t total = d->_deferCreate.size() + d->_deferSweep.size()
             + std::size_t(d->_deferCount) + d->_deferFinish.size();
         if (total)
             d->_deferSeq = std::make_unique<Base::SequencerLauncher>(
@@ -3174,7 +3281,7 @@ void Document::runDeferredRestoreSlice()
     // restore when they were read eagerly, and each of them charges real
     // time per property when told otherwise.
     App::Document::RestoringScopeGuard restoringScope;
-    // And the half that isAnyRestoring() cannot say. Phase three drops the
+    // And the half that isAnyRestoring() cannot say. Phase two drops the
     // view provider's restore status before sweeping its properties, because
     // with the guards on the handlers render nothing at all -- so they run
     // here as they never ran eagerly: past afterRestore()'s purge, where a
@@ -3223,6 +3330,61 @@ void Document::runDeferredRestoreSlice()
             }
             d->_deferCreated = true;
         }
+        // Phase two: the property sweep -- updateView, which is updateData
+        // for every property -- BEFORE any record, as an eager load has it:
+        // there every property raises its update as Document.xml restores
+        // it, with the view providers not yet restoring, and the records of
+        // GuiDocument.xml are read after all of it. So a handler that acts
+        // on an update (a boolean hiding its inputs, a feature mapping its
+        // colours from them) is overruled by the saved state. Swept after
+        // the records instead, the handler overruled the file: a Body the
+        // user had shown again came back hidden, a fusion lost its colour.
+        // The flag drops for the sweep, as it is down for the eager
+        // updates, and goes back up for the records.
+        if (!d->_deferSwept) {
+            if (d->_deferSweep.position() == 0) {
+                // What the records restored at once hold, now that phase
+                // zero has served every archive entry they read (their
+                // colour arrays among them): phase three puts it back.
+                for (auto &rec : d->_deferCaptured) {
+                    auto obj = d->_pcDocument->getObject(rec.object.c_str());
+                    auto vpd = obj ? Base::freecad_dynamic_cast<ViewProviderDocumentObject>(
+                            getViewProvider(obj)) : nullptr;
+                    for (auto &[propName, copy] : rec.fileProps) {
+                        auto prop = vpd ? vpd->getPropertyByName(propName.c_str()) : nullptr;
+                        if (prop)
+                            copy.reset(prop->Copy());
+                    }
+                }
+            }
+            while (auto obj = d->_deferSweep.next(d->_pcDocument)) {
+                if (d->_deferSeq)
+                    d->_deferSeq->next();
+                auto vpd = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(
+                        getViewProvider(obj));
+                if (vpd && vpd->testStatus(Gui::isRestoring)) {
+                    FC_TIME_INIT(tSweep);
+                    vpd->setStatus(Gui::isRestoring, false);
+                    vpd->updateView();
+                    vpd->setStatus(Gui::isRestoring, true);
+                    auto dSweep = Base::GetDuration(tSweep);
+                    d->_deferSweepTime += dSweep;
+                    if (dSweep > FC_DURATION(0.005))
+                        FC_LOG("slow deferred sweep " << obj->getFullName()
+                                << " (" << vpd->getTypeId().getName() << "): "
+                                << dSweep.count() << 's');
+                }
+                if (elapsed().count() >= budget)
+                    break;
+            }
+            if (!d->_deferSweep.done()) {
+                d->_pcDocument->setStatus(App::Document::Restoring, false);
+                d->_deferSpent += elapsed();
+                scheduleDeferredRestore();
+                return;
+            }
+            d->_deferSwept = true;
+        }
         if (d->_deferCount && !d->_deferReader) {
             d->_deferStream = std::make_unique<std::istringstream>(
                     std::move(d->_deferBuf));
@@ -3233,6 +3395,60 @@ void Document::runDeferredRestoreSlice()
             d->_deferReader->DocumentSchema = d->_deferDocSchema;
             d->_deferReader->ProgramVersion = d->_deferProgramVersion;
             d->_deferReader->readElement("ViewProviderData");
+        }
+        // Phase three: the records -- first those restored at once, set again
+        // from their copies, then the parked ones.
+        if (!d->_deferCapturedApplied) {
+            d->_deferCapturedApplied = true;
+            for (auto &rec : d->_deferCaptured) {
+                auto obj = d->_pcDocument->getObject(rec.object.c_str());
+                auto vpd = obj ? Base::freecad_dynamic_cast<ViewProviderDocumentObject>(
+                        getViewProvider(obj)) : nullptr;
+                if (!vpd || !vpd->testStatus(Gui::isRestoring))
+                    continue;
+                // Not the Python proxies: restored again each is a new
+                // instance, and a view provider attaches its proxy once --
+                // the new one never got its attach (a Draft array lost
+                // self.Object, and every child it claims). The attached
+                // instances are held and put back; they carry no saved Gui
+                // state a handler could have overruled.
+                std::vector<std::pair<App::PropertyPythonObject*, Py::Object>> proxies;
+                {
+                    Base::PyGILStateLocker lock;
+                    std::vector<App::Property*> props;
+                    vpd->getPropertyList(props);
+                    for (auto prop : props) {
+                        if (auto py = dynamic_cast<App::PropertyPythonObject*>(prop))
+                            proxies.emplace_back(py, py->getValue());
+                    }
+                }
+                try {
+                    std::istringstream str(rec.xml);
+                    Base::XMLReader reader("GuiDocument.xml", str);
+                    reader.FileVersion = d->_deferFileVersion;
+                    reader.DocumentSchema = d->_deferDocSchema;
+                    reader.ProgramVersion = d->_deferProgramVersion;
+                    reader.readElement("ViewProvider");
+                    readObject(reader);
+                    // Its archive entries are not read again; their values
+                    // come from the copies.
+                } catch (Base::Exception &e) {
+                    e.ReportException();
+                }
+                {
+                    Base::PyGILStateLocker lock;
+                    for (auto &[prop, value] : proxies) {
+                        if (!prop->getValue().is(value))
+                            prop->setValue(value);
+                    }
+                }
+                for (auto &[propName, copy] : rec.fileProps) {
+                    auto prop = copy ? vpd->getPropertyByName(propName.c_str()) : nullptr;
+                    if (prop)
+                        prop->Paste(*copy);
+                }
+            }
+            d->_deferCaptured.clear();
         }
         while (d->_deferCount) {
             --d->_deferCount;
@@ -3270,10 +3486,10 @@ void Document::runDeferredRestoreSlice()
             if (elapsed().count() >= budget)
                 break;
         }
-        // Phase three, once every record is in: the property sweep phase
-        // one held back, then finishRestoring -- for all view providers,
-        // in one pass, exactly as the eager load ran them. Not per
-        // element inside phase two: a link element finished against a
+        // Phase four, once every record is in: finishRestoring -- for all
+        // view providers, in one pass, exactly as the eager load ran them
+        // (the updates went first, phase two). Not per element inside
+        // phase three: a link element finished against a
         // link whose own record is still parked settles on the record's
         // stale visibility, which the link machinery only corrects once
         // the whole web is restored.
@@ -3295,18 +3511,26 @@ void Document::runDeferredRestoreSlice()
                             getViewProvider(obj));
                     fresh = true;
                 }
+                auto late = d->_deferLateChanges.find(obj);
+                if (late != d->_deferLateChanges.end()) {
+                    auto names = std::move(late->second);
+                    d->_deferLateChanges.erase(late);
+                    for (const auto &name : names) {
+                        if (auto prop = obj->getPropertyByName(name.c_str()))
+                            slotChangedObject(*obj, *prop);
+                    }
+                }
                 if (vpd && (fresh || vpd->testStatus(Gui::isRestoring))) {
                     FC_TIME_INIT(tFinish);
-                    bool held = vpd->testStatus(Gui::isRestoring);
-                    // isRestoring drops before the sweep: the handlers take
-                    // their slow restore branches otherwise, and with every
-                    // record already in there is nothing left to protect.
                     vpd->setStatus(Gui::isRestoring, false);
-                    if (held)
-                        vpd->updateView();
-                    auto dSweep = Base::GetDuration(tFinish);
-                    d->_deferSweepTime += dSweep;
                     vpd->finishRestoring();
+                    auto user = d->_deferUserVisibility.find(obj);
+                    if (user != d->_deferUserVisibility.end()) {
+                        // Hidden or shown since the open, over the file.
+                        vpd->Visibility.setValue(user->second);
+                        obj->Visibility.setValue(user->second);
+                        d->_deferUserVisibility.erase(user);
+                    }
                     auto dRest = Base::GetDuration(tFinish);
                     if (!vpd->canAddToSceneGraph())
                         toggleInSceneGraph(vpd);
@@ -3314,12 +3538,11 @@ void Document::runDeferredRestoreSlice()
                         vpd->setModeSwitch();
                     auto dMode = Base::GetDuration(tFinish);
                     d->_deferModeTime += dMode;
-                    d->_deferFinishTime += dSweep + dRest + dMode;
-                    if (dSweep + dRest + dMode > FC_DURATION(0.005))
+                    d->_deferFinishTime += dRest + dMode;
+                    if (dRest + dMode > FC_DURATION(0.005))
                         FC_LOG("slow deferred finish " << obj->getFullName()
                                 << " (" << vpd->getTypeId().getName()
-                                << "): sweep " << dSweep.count()
-                                << "s + finish " << dRest.count()
+                                << "): finish " << dRest.count()
                                 << "s + mode " << dMode.count() << 's');
                 }
                 if (elapsed().count() >= budget)
@@ -3344,7 +3567,7 @@ void Document::runDeferredRestoreSlice()
         }
     }
     // A record that cannot be read is given up on -- but only the record.
-    // The parked buffer goes, and phase three still runs over every object,
+    // The parked buffer goes, and phase four still runs over every object,
     // which is what "falls back to defaults" has to mean: a view provider
     // abandoned mid-drain keeps Gui::isRestoring set, never gets its mode
     // switch, and shows nothing at all.
@@ -3368,7 +3591,7 @@ void Document::runDeferredRestoreSlice()
     d->_pcDocument->setStatus(App::Document::Restoring, false);
     d->_deferSpent += elapsed();
 
-    // Phase three is unfinished here only when a phase above threw out of
+    // Phase four is unfinished here only when a phase above threw out of
     // its slice; the normal budget exit reports and reschedules in place.
     if (d->_deferCount || !d->_deferFinish.done()) {
         // A load this size drains for a while; say how it is going, and
@@ -3424,6 +3647,9 @@ void Document::finishDeferredRestore()
     d->_deferCreate.clear();
     d->_deferFinish.clear();
     d->_restoreDefaults.clear();
+    d->_deferUserVisibility.clear();
+    d->_deferLateChanges.clear();
+    d->_deferRecordsRead = false;
     d->_deferVPs = false;
     // One of the two phases that outlive the blocking open; the visual drain
     // reports the other through Application::setBuildingVisuals().
@@ -3975,6 +4201,16 @@ void Document::slotFinishImportObjects(const std::vector<App::DocumentObject*> &
         if(vpd) {
             vpd->isShowable(true);
             vpd->updateChildren(false);
+            // The 3D side of the same reconciliation. A load creates the
+            // view providers in its own order, and each claims its 3D
+            // children as it is created (slotNewObject), so a parent made
+            // before a child built its child group without it -- and
+            // nothing re-ran it once the child existed: the child stayed
+            // at the top level of the scene, out of its container, and a
+            // Link to the container showed an empty copy. The call caches
+            // only the children that had a view provider, so it redoes
+            // exactly what was missed and is a compare otherwise.
+            handleChildren3D(vpd);
         }
     }
 }
@@ -4744,9 +4980,22 @@ bool Document::isPerformingTransaction() const {
     return d->_isTransacting;
 }
 
+/// Whether the view provider in edit, in whichever document it is,
+/// takes an undo or redo as its own (ViewProvider::undoRedoInEdit). A
+/// transaction may span documents, so not only this one's.
+static bool undoRedoInEdit(bool redo)
+{
+    Gui::Document* editDoc = Application::Instance->editDocument();
+    ViewProvider* vp = editDoc ? editDoc->getInEdit() : nullptr;
+    return vp && vp->undoRedoInEdit(redo);
+}
+
 /// Will UNDO one or more steps
 void Document::undo(int iSteps)
 {
+    if (undoRedoInEdit(false))
+        return;
+
     Base::FlagToggler<> flag(d->_isTransacting);
 
     Gui::Selection().clearCompleteSelection();
@@ -4766,6 +5015,9 @@ void Document::undo(int iSteps)
 /// Will REDO one or more steps
 void Document::redo(int iSteps)
 {
+    if (undoRedoInEdit(true))
+        return;
+
     Base::FlagToggler<> flag(d->_isTransacting);
 
     Gui::Selection().clearCompleteSelection();
@@ -4826,6 +5078,11 @@ void Document::handleChildren3D(ViewProvider* viewProvider, bool deleting)
             return;
     }
 
+    // Nodes move below: a view's visibility entries name nodes, and those
+    // through this container must be resolved against the new structure.
+    auto container = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(viewProvider);
+    ViewVisibility::sceneChanged(container ? container->getObject() : nullptr);
+
     // Obtained the old view provider
     std::set<ViewProviderDocumentObject*> oldChildren;
     for(auto child : *childCache) {
@@ -4851,6 +5108,26 @@ void Document::handleChildren3D(ViewProvider* viewProvider, bool deleting)
             auto child = *it;
             auto vp = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(getViewProvider(child));
             if(!vp || !vp->getRoot()) {
+                it = children.erase(it);
+                continue;
+            }
+            // A view provider still being created: registered here, but not
+            // yet announced (slotNewObject's signalNewObject), which is when
+            // the application learns of it -- and a container claiming
+            // through a LinkView (a GeoFeatureGroup's, handled above) looks
+            // it up there and leaves it out. Left in the cache, the claim
+            // compared equal from then on and the child was never attached:
+            // a load creating the view providers in document order had a
+            // Body rebuild inside its Origin's creation, and the Origin was
+            // in no occurrence of the scene. Claimed again once announced.
+            if (!Application::Instance->getViewProvider(child)) {
+                auto container = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(viewProvider);
+                if (container && container->getObject()) {
+                    auto &waiting = d->_UnannouncedClaims[child];
+                    if (std::find(waiting.begin(), waiting.end(), container->getObject())
+                            == waiting.end())
+                        waiting.push_back(container->getObject());
+                }
                 it = children.erase(it);
                 continue;
             }

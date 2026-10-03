@@ -2098,6 +2098,8 @@ ViewProviderPartExt::ViewProviderPartExt()
 
 ViewProviderPartExt::~ViewProviderPartExt()
 {
+    // The selection node knows an overlay by its root's address.
+    Gui::SoFCUnifiedSelection::setCoplanarOverlay(pcRoot, false);
     unregisterMeshLevelSource(faceset, lineset);
     // The pooled visual fill keys its worker job on the coords node
     // (its own token slot); the unregister above cannot cancel it,
@@ -2669,6 +2671,12 @@ bool ViewProviderPartExt::getDetailPath(const char *subname,
         pPath->append(pcRoot);
         pPath->append(pcModeSwitch);
     }
+
+    // No element: the whole object, which needs no shape. Asking for it
+    // would restore a shape a load left in the blob store, and so rebuild
+    // the object's visual, for a path that does not depend on either.
+    if (!*subelement)
+        return true;
 
     // TShape-instanced representation: per-instance sub-element
     // highlight. The instance wrappers are SoFCSelectionRoot and the
@@ -3452,7 +3460,7 @@ void ViewProviderPartExt::unsetHighlightedPoints()
     setHighlightedPoints(PointColorArray.getValues());
 }
 
-void ViewProviderPartExt::reload()
+void ViewProviderPartExt::reload(bool applyTessellation)
 {
     bool update = false;
     double pointsize = PointSize.getValue();
@@ -3477,16 +3485,27 @@ void ViewProviderPartExt::reload()
     tessRange.LowerBound = PartParams::getMinimumDeviation();
     angDeflectionRange.LowerBound = PartParams::getMinimumAngularDeflection();
 
-    if (Deviation.getValue() != PartParams::getMeshDeviation()
-            || Deviation.getValue() < PartParams::getMinimumDeviation()
-            || AngularDeflection.getValue() != PartParams::getMeshAngularDeflection()
-            || AngularDeflection.getValue() < PartParams::getMinimumAngularDeflection())
+    if (applyTessellation
+            && (Deviation.getValue() != PartParams::getMeshDeviation()
+                || Deviation.getValue() < PartParams::getMinimumDeviation()
+                || AngularDeflection.getValue() != PartParams::getMeshAngularDeflection()
+                || AngularDeflection.getValue() < PartParams::getMinimumAngularDeflection()))
+        update = true;
+
+    // The shape-instancing gate (render cache mode, a backend renderer
+    // attached) decides between the instanced and the flattened build; a
+    // visual built the other way is rebuilt. It used to ride on the
+    // tessellation overwrite above, so an object whose values already
+    // matched the preferences kept whichever representation it had. A
+    // candidate that the build declines anyway (divergent colours) is
+    // rebuilt on each gate change too -- rare, and the answer is the same.
+    if (!VisualTouched && bool(instanced) != instancingCandidate())
         update = true;
 
     if (!update)
         return;
 
-    if (!PartParams::getOverrideTessellation()) {
+    if (applyTessellation && !PartParams::getOverrideTessellation()) {
         Base::ObjectStatusLocker<App::Property::Status,App::Property> guard(
                 App::Property::User3, &Deviation);
 
@@ -3690,6 +3709,11 @@ static App::Color getElementColor(App::Color color,
         if(colorFound)
             return color;
 
+        // A colour that is only display state goes no further: the shape
+        // made from it keeps its own.
+        if (!vp->mapsElementColors(type))
+            return color;
+
         float trans = vp->Transparency.getValue()/100.0;
         ElementColors prop((TopAbs_ShapeEnum)type, vp);
         if(prop.getSize()==0)
@@ -3841,10 +3865,17 @@ void ViewProviderPartExt::checkColorUpdate()
 
 void ViewProviderPartExt::updateColors(App::Document *sourceDoc, bool forceColorMap) 
 {
+    // Not while restoring -- the document, or the object alone: a shape
+    // served after the load (a deferred archive entry, a blob faulted in by
+    // the visual build) lands as a property change under the object's
+    // Restore status, and mapping the inputs' colours then wrote over the
+    // colour the file saved, which an eager load, landing every shape inside
+    // the restore, never did.
     if (UpdatingColor
             || !getObject()
             || !getObject()->getDocument()
-            || getObject()->getDocument()->testStatus(App::Document::Restoring))
+            || getObject()->getDocument()->testStatus(App::Document::Restoring)
+            || getObject()->isRestoring())
         return;
 
     auto geoFeature = Base::freecad_dynamic_cast<App::GeoFeature>(pcObject);
@@ -4086,6 +4117,35 @@ static void registerShape(Part::TopoShape &shape, const Part::TopoShape &newshap
 }
 }
 
+void ViewProviderPartExt::meshingBoundsOf(MeshLadderState *ladder,
+        const TopoDS_Shape &shape,
+        double &xMin, double &yMin, double &zMin,
+        double &xMax, double &yMax, double &zMax)
+{
+    const bool anchored = ladder && !shape.IsNull()
+        && shape.TShape().get() == ladder->anchor
+        && shape.Location().IsIdentity();
+    double *box = anchored ? ladder->meshingBox : nullptr;
+    if (!anchored || !ladder->haveMeshingBox) {
+        Bnd_Box bounds;
+        meshingBounds(shape, bounds);
+        // A void box reads back inverted, min above max -- what the
+        // callers test, and what the old Get() on a void box threw on.
+        double b[6] = {1.0, 1.0, 1.0, 0.0, 0.0, 0.0};
+        if (!bounds.IsVoid())
+            bounds.Get(b[0], b[1], b[2], b[3], b[4], b[5]);
+        if (!anchored) {
+            xMin = b[0]; yMin = b[1]; zMin = b[2];
+            xMax = b[3]; yMax = b[4]; zMax = b[5];
+            return;
+        }
+        std::copy(b, b + 6, box);
+        ladder->haveMeshingBox = true;
+    }
+    xMin = box[0]; yMin = box[1]; zMin = box[2];
+    xMax = box[3]; yMax = box[4]; zMax = box[5];
+}
+
 bool ViewProviderPartExt::instancingCandidate() const
 {
     return shapeInstancingActive() && !cachedShape.isNull()
@@ -4186,12 +4246,20 @@ bool ViewProviderPartExt::buildInstanced()
     // LEAF bounding box (same formula as the flattened build, which uses
     // the whole shape) -- the same part in differently sized parents must
     // agree on one mesh. Different deviation settings key apart.
+    // From the geometry (meshingBounds): the deflection is part of the
+    // table key, and a box read off a leaf's resident mesh keyed the
+    // same TShape apart by what had meshed it before. Boxed once per
+    // leaf of this build, for the key and the coarse rung alike.
+    std::unordered_map<const void*, Bnd_Box> leafBoxes;
+    auto leafBox = [&](const TopoDS_Shape &s) -> const Bnd_Box & {
+        auto res = leafBoxes.emplace(s.TShape().get(), Bnd_Box());
+        if (res.second)
+            meshingBounds(s, res.first->second);
+        return res.first->second;
+    };
     auto leafDeflection = [&](const TopoDS_Shape &s) -> Standard_Real {
-        Bnd_Box bounds;
-        BRepBndLib::Add(s, bounds);
-        bounds.SetGap(0.0);
         Standard_Real x0, y0, z0, x1, y1, z1;
-        bounds.Get(x0, y0, z0, x1, y1, z1);
+        leafBox(s).Get(x0, y0, z0, x1, y1, z1);
         Standard_Real defl = std::max(Precision::Confusion(),
             ((x1-x0)+(y1-y0)+(z1-z0))/300.0 *
                 std::max(PartParams::getOverrideTessellation()
@@ -4227,9 +4295,7 @@ bool ViewProviderPartExt::buildInstanced()
         const int coarseLvl =
             coarseTessellationLevel(pcObject ? pcObject->getDocument() : nullptr);
         if (coarseLvl >= 0) {
-            Bnd_Box leafBounds;
-            BRepBndLib::Add(leaf.Located(TopLoc_Location()), leafBounds);
-            leafBounds.SetGap(0.0);
+            const Bnd_Box &leafBounds = leafBox(leaf.Located(TopLoc_Location()));
             if (!leafBounds.IsVoid()) {
                 Standard_Real x0, y0, z0, x1, y1, z1;
                 leafBounds.Get(x0, y0, z0, x1, y1, z1);
@@ -4450,7 +4516,8 @@ void ViewProviderPartExt::applyInstancedFaceColors(const std::vector<App::Color>
     if (uniform) {
         clearInstanceColors();
         const App::Color &c = resolved.empty() ? base : resolved[0];
-        setOverall(c, c.a);
+        // The alpha is an opacity; the node takes a transparency.
+        setOverall(c, c.transparency());
         return;
     }
 
@@ -4869,14 +4936,11 @@ bool ViewProviderPartExt::buildCoarseStandIn(bool underPressure)
     // that produced it -- the exception itself carries no message.
     double dx = 0.0, dy = 0.0, dz = 0.0;
     try {
-        Bnd_Box bounds;
-        BRepBndLib::Add(cShape, bounds);
-        bounds.SetGap(0.0);
-        if (bounds.IsVoid()) {
+        Standard_Real xMin, yMin, zMin, xMax, yMax, zMax;
+        meshingBoundsOf(&meshLadder, cShape, xMin, yMin, zMin, xMax, yMax, zMax);
+        if (xMin > xMax) {
             return false;
         }
-        Standard_Real xMin, yMin, zMin, xMax, yMax, zMax;
-        bounds.Get(xMin, yMin, zMin, xMax, yMax, zMax);
         dx = xMax - xMin;
         dy = yMax - yMin;
         dz = zMax - zMin;
@@ -5469,6 +5533,16 @@ bool ViewProviderPartExt::deferVisualForLoad()
 {
     if (!Gui::RenderParams::getProgressiveLoad())
         return false;
+    // A secondary view -- a sketch's internal faces, a PartDesign
+    // feature's add/sub preview or suppressed shape -- shares its object
+    // with the object's own view provider, and the queue names objects:
+    // the slice finds the OWN one and never this. Parked, it stayed
+    // parked for good, and the bounding-box hook, which leaves a parked
+    // visual alone, never built it either: a sketch's internal-face view
+    // kept a stray point at the sketch origin, which its bounding box and
+    // every fit took in. Built when asked instead, as an eager load does.
+    if (testStatus(Gui::SecondaryView))
+        return false;
     auto obj = getObject();
     auto doc = obj ? obj->getDocument() : nullptr;
     if (!doc)
@@ -5850,6 +5924,7 @@ void ViewProviderPartExt::runDeferredVisualSlice()
     // serialization the single shared queue used to impose.
     const double share = budget / ready;
     bool more = false;
+    bool builtAny = false;
     for (auto it = visuals.docs.begin(); it != visuals.docs.end(); ) {
         auto &queue = it->second;
         auto doc = eligible(it->first);
@@ -5924,6 +5999,7 @@ void ViewProviderPartExt::runDeferredVisualSlice()
                         break;
                     }
                     ++queue.built;
+                    builtAny = true;
                 }
             }
             if (elapsed().count() >= limit)
@@ -5952,6 +6028,15 @@ void ViewProviderPartExt::runDeferredVisualSlice()
         }
         it = visuals.docs.erase(it);
     }
+
+    // A box asked for while a visual was parked came from its shape
+    // (_getBoundingBox's shortcut) and was cached; the cache is cleared by
+    // property changes, and a drain build makes none. Where the visual's
+    // box differs from the shape's, the stale answer outlived the build: a
+    // user file's Mirrored said z 0..16 after two progressive opens in six,
+    // z -31..39 (its built visual) after the rest and after every eager one.
+    if (builtAny)
+        Gui::ViewProvider::clearBoundingBoxCache();
 
     // After every erase this slice made, so the state falls on the slice
     // that empties the queue -- the frame after it is the first one that
@@ -6141,6 +6226,7 @@ void ViewProviderPartExt::updateVisual()
     // finished. The second build was not idempotent: it meshed over what the
     // first left on shared TShapes, and drew 45867 draws / 18.16 M triangles
     // where any single build of the same document draws 45903 / 17.88 M.
+    const unsigned fillSeq = meshLadder.visualFillSeq;
     bool missing;
     {
         struct FaultInScope {
@@ -6155,6 +6241,15 @@ void ViewProviderPartExt::updateVisual()
         VisualTouched = true;
         return;
     }
+    // That read may have been the fault-in, and a shape landing is a
+    // property change: updateData has already built (or queued) this
+    // visual inside it, colours and all, taking the arrays over as every
+    // rebuild does. Going on would build the same shape a second time --
+    // what every blob-held shape cost the progressive drain. (The nested
+    // updateVisual is refused by faultingIn now, so this is the backstop
+    // for a fill that ran some other way.)
+    if (meshLadder.visualFillSeq != fillSeq)
+        return;
 
     // A giant rebuild called from a pump item is deferred into its OWN
     // pump item (Render_VisualFillOnPool): the landing that called this
@@ -6299,7 +6394,10 @@ void ViewProviderPartExt::updateVisual()
         // backstop against a claim that never publishes, not a policy
         // knob: every path that abandons a batch releases its claims,
         // and a load that hit it would still be correct, just parked.
-        const bool parks = Gui::RenderParams::getProgressiveLoad();
+        // A secondary view is never parked either (deferVisualForLoad):
+        // the drain names objects and would never find it again.
+        const bool parks = Gui::RenderParams::getProgressiveLoad()
+            && !testStatus(Gui::SecondaryView);
         if (parks
                 || !waitPreMesh(cachedShape.getShape().TShape().get(), 120.0)) {
             VisualTouched = true;
@@ -6465,22 +6563,8 @@ void ViewProviderPartExt::updateVisual()
 
     try {
         // calculating the deflection value
-        Bnd_Box bounds;
-        // The pre-mesh measured this shape BEFORE it had any
-        // triangulation, and the ask has to be derived from THAT box
-        // (docs/DocumentLoad.md sec 18): with a mesh resident,
-        // BRepBndLib::Add prefers it over the geometry and enlarges the
-        // box by the mesh's own deflection, so measuring again here
-        // would ask for something coarser than what is resident -- and
-        // the redundancy check refuses a finer resident mesh, so the
-        // call would re-tessellate exactly what the pre-mesh built.
-        const bool preMeshBoxUsed = preMeshEnabled()
-            && preMeshBox(cShape.TShape().get(), bounds);
-        if (!preMeshBoxUsed)
-            BRepBndLib::Add(cShape, bounds);
-        bounds.SetGap(0.0);
         Standard_Real xMin, yMin, zMin, xMax, yMax, zMax;
-        bounds.Get(xMin, yMin, zMin, xMax, yMax, zMax);
+        meshingBoundsOf(&meshLadder, cShape, xMin, yMin, zMin, xMax, yMax, zMax);
         Standard_Real deflection = std::max(Precision::Confusion(),
             ((xMax-xMin)+(yMax-yMin)+(zMax-zMin))/300.0 *
                 std::max(PartParams::getOverrideTessellation() ? PartParams::getMeshDeviation() : Deviation.getValue(),
@@ -6774,11 +6858,8 @@ bool ViewProviderPartExt::captureVisualFill(const TopoDS_Shape &cShape,
         // The default-texture-coordinate projection frame comes from this
         // shape's own bounding box (for the flattened build that is the
         // same whole-shape box the deflection derives from).
-        Bnd_Box bounds;
-        BRepBndLib::Add(cShape, bounds);
-        bounds.SetGap(0.0);
-        bounds.Get(data.xMin, data.yMin, data.zMin,
-                   data.xMax, data.yMax, data.zMax);
+        meshingBoundsOf(ladder, cShape, data.xMin, data.yMin, data.zMin,
+                        data.xMax, data.yMax, data.zMax);
 
         {
             // Separated from the node building around it: a mesh already
@@ -8021,6 +8102,28 @@ PyObject* ViewProviderPartExt::getPyObject()
     return pyViewObject;
 }
 
+void ViewProviderPartExt::setCoplanarOverlay(bool enable)
+{
+    if (!pFaceRoot || enable == (pOverlayOffset.get() != nullptr))
+        return;
+    if (enable) {
+        // Between an edge, which has no offset, and an ordinary face at
+        // Coin's default (1, 1). The slope half is what separates this
+        // face from the lines drawn over it; the constant half stays zero
+        // because a depth buffer cannot resolve less than one unit, and
+        // one whole unit is the ordinary face's.
+        pOverlayOffset = new SoPolygonOffset;
+        pOverlayOffset->factor = 0.5f;
+        pOverlayOffset->units = 0.0f;
+        pFaceRoot->insertChild(pOverlayOffset, 0);
+    }
+    else {
+        pFaceRoot->removeChild(pOverlayOffset);
+        pOverlayOffset.reset();
+    }
+    Gui::SoFCUnifiedSelection::setCoplanarOverlay(pcRoot, enable);
+}
+
 void ViewProviderPartExt::enableFullSelectionHighlight(bool face, bool line, bool point)
 {
     if(!face) 
@@ -8133,6 +8236,14 @@ ViewProviderPartExt::_getBoundingBox(const char *subname,
     // detail-path machinery of the node graph, and asking about one
     // sub-element of a never-built shape is rare enough that the
     // build is acceptable there.
+    //
+    // So does an unbounded shape -- a binder of an origin plane is an
+    // infinite face, drawn as a bounded patch. Its bounds are +-1e100
+    // and say nothing about what the visual will draw, and the answer
+    // outlives the build: the bounding-box cache is cleared by property
+    // changes, and a progressive load's drain builds without one. The
+    // binder of a user file kept +-1e100 after the drain (eager, which
+    // builds before anyone asks: +-50), and a datum plane sized over it.
     if (VisualTouched && !(subname && subname[0])) {
         try {
             TopoDS_Shape shape = getShape().getShape();
@@ -8142,9 +8253,13 @@ ViewProviderPartExt::_getBoundingBox(const char *subname,
                 Bnd_Box bounds;
                 BRepBndLib::Add(shape, bounds);
                 bounds.SetGap(0.0);
-                if (!bounds.IsVoid()) {
-                    Standard_Real xMin, yMin, zMin, xMax, yMax, zMax;
+                Standard_Real xMin = 0, yMin = 0, zMin = 0, xMax = 0, yMax = 0, zMax = 0;
+                if (!bounds.IsVoid())
                     bounds.Get(xMin, yMin, zMin, xMax, yMax, zMax);
+                if (!bounds.IsVoid() && !bounds.IsOpen()
+                        && !Precision::IsInfinite(xMin) && !Precision::IsInfinite(xMax)
+                        && !Precision::IsInfinite(yMin) && !Precision::IsInfinite(yMax)
+                        && !Precision::IsInfinite(zMin) && !Precision::IsInfinite(zMax)) {
                     Base::BoundBox3d bbox(xMin, yMin, zMin,
                                           xMax, yMax, zMax);
                     if (mat)

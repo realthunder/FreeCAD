@@ -23,12 +23,16 @@ set(Sketcher_TestScripts
     SketcherTests/TestSketcherEllipse.py
     SketcherTests/TestSketchExternalGeometry.py
     SketcherTests/TestSketcherText.py
+    SketcherTests/TestSketchRadiusDiameter.py
 )
 
 if(BUILD_GUI)
     list (APPEND Sketcher_Scripts
           InitGui.py
           TestSketcherGui.py
+    )
+    list (APPEND Sketcher_TestScripts
+          SketcherTests/TestConstraintPreselectionGui.py
     )
 endif(BUILD_GUI)
 

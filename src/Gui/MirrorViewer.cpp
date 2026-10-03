@@ -66,6 +66,7 @@
 #include "SoFCUnifiedSelection.h"
 #include "SoMouseWheelEvent.h"
 #include "Utilities.h"
+#include "ViewVisibility.h"
 #include "ViewProvider.h"
 
 using namespace Gui;
@@ -111,6 +112,11 @@ public:
     SoNode* scene = nullptr;
     SoFCRenderCacheManager* cacheManager = nullptr;
     Render::Renderer* renderer = nullptr;
+
+    /// The client's own object visibility (setObjectVisibilities), and
+    /// an edit session's hide (setEditHide).
+    ViewVisibility visibility;
+    std::function<void()> onVisibilityChanged;
 
     /// The client's, as of its last 'C' frame.
     MirrorViewer::Camera state;
@@ -168,6 +174,19 @@ public:
      */
     SoEventCallback* selectionProbe = nullptr;
     SoFCUnifiedSelection* selectionRoot = nullptr;
+    /** The session's editing root while this view hangs it: the last
+     * child of the event root, beside the served scene rather than in it.
+     *
+     * The desktop's shape. There the root hangs under the aux root, a
+     * sibling of the captured selection root, so an edit never reaches
+     * the scene feed and is captured as an overlay of its own. A mirror
+     * used to hang it INSIDE the served graph, where it was published as
+     * part of the one scene every client shares -- and every drag spoiled
+     * that scene's caches above it. The serving source captures it as an
+     * overlay now (docs/ThinClient.md 8.12 item J), and here it is only
+     * what this client's events and picks go through.
+     */
+    SoSeparator* editRoot = nullptr;
 
     /// What the client's pointer and keyboard last said. Coin's events
     /// carry the modifier state on every event, and the button state is
@@ -188,14 +207,14 @@ public:
      * are owned by the controller and merely registered here, which is why
      * this is a vector of raw pointers and why removal is by identity.
      */
-    std::vector<EditableDatumLabel*> onViewParams;
+    std::vector<OnViewEntry*> onViewParams;
     /** Which of them takes the keys.
      *
      * Focus on the desktop is Qt's, and a widget that is never shown is
      * never focused, so for a mirror it is recorded here instead -- set
      * through the same setFocusToSpinbox() the controller already calls.
      */
-    EditableDatumLabel* focusedParam = nullptr;
+    OnViewEntry* focusedParam = nullptr;
     std::function<void()> onViewParamsChanged;
     /** The key frame being routed into an entry box, if any.
      *
@@ -264,6 +283,9 @@ public:
         CoinPtr<SoSeparator> root(new SoSeparator, true);
         root->addChild(camera);
         root->addChild(scene);
+        if (editRoot) {
+            root->addChild(editRoot);
+        }
         return root;
     }
 
@@ -324,6 +346,13 @@ MirrorViewer::MirrorViewer(Document* doc, SoNode* scene,
     pimpl->cacheManager = cacheManager;
     pimpl->renderer = renderer;
     pimpl->renderManager = new SoRenderManager;
+    // The entries resolved again after a structure change moved the nodes
+    // they name: the same duty as a change of the edit's hide.
+    pimpl->visibility.setOnChanged([this]() {
+        if (pimpl->onVisibilityChanged) {
+            pimpl->onVisibilityChanged();
+        }
+    });
 
     // The event path. The callback node's user data is the ViewerContext
     // base subobject deliberately: a pointer to this object and a pointer
@@ -382,6 +411,10 @@ MirrorViewer::~MirrorViewer()
     // first; their dimensions come out of the served graph now
     releaseOnViewParameters();
 
+    // Leaving the session below shows the edited object again here, and
+    // a client going away is not told anything: its serving source would
+    // look this mirror up while it is being destroyed.
+    pimpl->onVisibilityChanged = nullptr;
     // A connection can drop in the middle of an edit, and this view is
     // what the document's edit session was bound to. Ending the session
     // first is what keeps Gui::Document from being left holding a pointer
@@ -714,7 +747,7 @@ bool MirrorViewer::replayKey(const Input& input)
 
 bool MirrorViewer::routeKeyToParameter(const Input& input)
 {
-    EditableDatumLabel* param = pimpl->focusedParam;
+    OnViewEntry* param = pimpl->focusedParam;
     if (!param) {
         return false;
     }
@@ -767,20 +800,22 @@ std::vector<MirrorViewer::OnViewParam> MirrorViewer::onViewParameters() const
 {
     std::vector<OnViewParam> params;
     params.reserve(pimpl->onViewParams.size());
-    for (EditableDatumLabel* label : pimpl->onViewParams) {
+    for (std::size_t i = 0; i < pimpl->onViewParams.size(); ++i) {
+        OnViewEntry* entry = pimpl->onViewParams[i];
         // A box that is not in edit is not on screen: the controller
         // deactivates the ones that do not belong to the current mode, and
         // the client should stop showing them at the same moment.
-        if (!label->isActive() || !label->isInEdit()) {
+        if (!entry->isShownOnView()) {
             continue;
         }
         OnViewParam param;
-        param.anchor = label->getAnchorPoint();
-        param.text = label->getText().toStdString();
-        label->getSelection(param.selStart, param.selLength);
-        param.focus = label == pimpl->focusedParam;
-        param.set = label->isSet;
-        param.pointSize = label->getFontPointSize();
+        entry->describe(param);
+        // Its place in the whole set, which is what focusOnViewParameter
+        // and actOnViewParameter look it up by -- not its place among the
+        // shown ones, which named another box once a hidden one sat
+        // before it.
+        param.index = int(i);
+        param.focus = entry == pimpl->focusedParam;
         params.push_back(param);
     }
     return params;
@@ -793,45 +828,54 @@ void MirrorViewer::setOnViewParametersCallback(std::function<void()> callback)
 
 bool MirrorViewer::focusOnViewParameter(int index)
 {
-    // Counted as onViewParameters() numbers them, over the boxes on screen:
-    // a label shown but not in edit, as a pattern's spacings are, is in the
-    // list and not in the feed
-    for (EditableDatumLabel* label : pimpl->onViewParams) {
-        if (!label->isActive() || !label->isInEdit()) {
-            continue;
-        }
-        if (index-- == 0) {
-            ViewerScope scope(this);
-            label->setFocusToSpinbox();
-            return true;
-        }
+    if (index < 0 || size_t(index) >= pimpl->onViewParams.size()) {
+        return false;
     }
-    return false;
+    OnViewEntry* entry = pimpl->onViewParams[size_t(index)];
+    if (!entry->isShownOnView()) {
+        return false;
+    }
+    ViewerScope scope(this);
+    entry->takeKeys();
+    return true;
 }
 
-void MirrorViewer::addOnViewParameter(EditableDatumLabel* label)
+bool MirrorViewer::actOnViewParameter(int index, const OnViewEntry::Action& action)
 {
-    if (label) {
-        pimpl->onViewParams.push_back(label);
+    if (index < 0 || size_t(index) >= pimpl->onViewParams.size()) {
+        return false;
+    }
+    OnViewEntry* entry = pimpl->onViewParams[size_t(index)];
+    if (!entry->isShownOnView()) {
+        return false;
+    }
+    ViewerScope scope(this);
+    return entry->act(action);
+}
+
+void MirrorViewer::addOnViewParameter(OnViewEntry* entry)
+{
+    if (entry) {
+        pimpl->onViewParams.push_back(entry);
     }
 }
 
-void MirrorViewer::removeOnViewParameter(EditableDatumLabel* label)
+void MirrorViewer::removeOnViewParameter(OnViewEntry* entry)
 {
     auto it = std::find(pimpl->onViewParams.begin(), pimpl->onViewParams.end(),
-                        label);
+                        entry);
     if (it != pimpl->onViewParams.end()) {
         pimpl->onViewParams.erase(it);
     }
-    if (pimpl->focusedParam == label) {
+    if (pimpl->focusedParam == entry) {
         pimpl->focusedParam = nullptr;
     }
     onViewParametersChanged();
 }
 
-void MirrorViewer::onViewParameterFocused(EditableDatumLabel* label)
+void MirrorViewer::onViewParameterFocused(OnViewEntry* entry)
 {
-    pimpl->focusedParam = label;
+    pimpl->focusedParam = entry;
 }
 
 void MirrorViewer::onViewParametersChanged()
@@ -887,6 +931,44 @@ SoFCRenderCacheManager* MirrorViewer::getRenderCacheManager() const
 Render::Renderer* MirrorViewer::getExternalRenderer() const
 {
     return pimpl->renderer;
+}
+
+const SoFCVisibilityElement::Table* MirrorViewer::visibilityElementTable() const
+{
+    return pimpl->visibility.elementTable();
+}
+
+bool MirrorViewer::setObjectVisibilities(std::vector<VisibilityEntry>&& entries)
+{
+    // No node to touch: the shared root reads the element below its own
+    // cache check, and the pick root above it holds the camera, which no
+    // bounding box cache survives.
+    return pimpl->visibility.set(std::move(entries));
+}
+
+bool MirrorViewer::setEditHide(const VisibilityEntry* hide)
+{
+    if (!pimpl->cacheManager) {
+        return false;
+    }
+    std::vector<VisibilityEntry> entries;
+    if (hide) {
+        entries.push_back(*hide);
+    }
+    if (pimpl->visibility.setTransient(std::move(entries)) && pimpl->onVisibilityChanged) {
+        pimpl->onVisibilityChanged();
+    }
+    return true;
+}
+
+void MirrorViewer::setOnVisibilityCallback(std::function<void()> callback)
+{
+    pimpl->onVisibilityChanged = std::move(callback);
+}
+
+const Render::VisibilitySet* MirrorViewer::objectVisibilities()
+{
+    return pimpl->visibility.drawSet(pimpl->cacheManager);
 }
 
 float MirrorViewer::getPickRadius() const
@@ -1027,7 +1109,7 @@ SbVec2s MirrorViewer::getPointOnViewport(const SbVec3f& pnt) const
     }
     const SbVec2s& size = pimpl->viewport.getViewportSizePixels();
     SbViewVolume vol =
-        pimpl->camera->getViewVolume(pimpl->viewport.getViewportAspectRatio());
+        getMappedViewVolume(pimpl->camera, pimpl->viewport.getViewportAspectRatio());
     SbVec3f point(pnt);
     vol.projectToScreen(point, point);
     return {short(std::lround(point[0] * size[0])), short(std::lround(point[1] * size[1]))};
@@ -1102,7 +1184,17 @@ bool MirrorViewer::getSceneBoundBox(SbBox3f& box) const
         return false;
     }
     SoGetBoundingBoxAction action(pimpl->viewport);
-    action.apply(pimpl->scene);
+    if (pimpl->editRoot) {
+        // The edit is part of what this view shows, as the aux root is
+        // part of a desktop view's scene.
+        CoinPtr<SoGroup> both(new SoGroup, true);
+        both->addChild(pimpl->scene);
+        both->addChild(pimpl->editRoot);
+        action.apply(both);
+    }
+    else {
+        action.apply(pimpl->scene);
+    }
     const SbBox3f bbox = action.getBoundingBox();
     if (bbox.isEmpty()) {
         return false;
@@ -1251,23 +1343,27 @@ bool MirrorViewer::isEditing() const
 
 void MirrorViewer::hangEditingRoot(EditingRoot* root, bool hang)
 {
-    // Into the published graph when bound, which the base does before the
-    // initiator fills it, because filling it is what the change-driven
-    // traversal has to notice; out of it when unbound, which the base does
-    // after the restore, so the children leaving is published too. First
-    // child, which is where the desktop's sits: the aux root is added to
-    // the selection root at construction, ahead of every view provider.
-    // One session's root under N mirrors is N parents of one node, which
-    // is a Coin graph's ordinary condition.
-    if (!pimpl->scene || !pimpl->scene->isOfType(SoGroup::getClassTypeId())) {
+    // Beside the served scene in this client's own event graph, last,
+    // which is where the desktop's sits: the aux root follows the
+    // selection root under the scene node. Events reach it after the
+    // callbacks and the scene, as they do there, and a dragger an edit
+    // hangs in it grabs from this view alone. What the client SEES of it
+    // is the serving source's overlay capture of the same node, tagged
+    // with the session (SceneServeSource), not this graph -- nothing
+    // publishes the event root. One session under N mirrors is N parents
+    // of one node, one each.
+    if (!root || !pimpl->eventRoot) {
         return;
     }
-    auto* group = static_cast<SoGroup*>(pimpl->scene);
     if (hang) {
-        root->hangUnder(group, 0);
+        root->hangUnder(pimpl->eventRoot);
+        pimpl->editRoot = root->node();
     }
     else {
-        root->unhangFrom(group);
+        root->unhangFrom(pimpl->eventRoot);
+        if (pimpl->editRoot == root->node()) {
+            pimpl->editRoot = nullptr;
+        }
     }
 }
 

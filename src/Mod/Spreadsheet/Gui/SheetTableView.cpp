@@ -944,6 +944,10 @@ bool SheetTableView::event(QEvent* event)
                 break;
         }
 
+        if (kevent->matches(QKeySequence::SelectAll)) {
+            QTableView::selectAll();
+            return true;
+        }
         if (kevent->matches(QKeySequence::Cut)) {
             cutSelection();
             return true;
@@ -994,6 +998,11 @@ bool SheetTableView::event(QEvent* event)
             }
         }
 
+        // Ctrl+A is Std_SelectAll's window shortcut; claim it so a focused
+        // table selects its cells instead of the document's objects.
+        if (kevent->matches(QKeySequence::SelectAll)) {
+            kevent->accept();
+        }
         if (kevent->matches(QKeySequence::Cut)) {
             kevent->accept();
         }

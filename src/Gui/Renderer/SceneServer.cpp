@@ -569,7 +569,7 @@ public:
         /// \a handlerMutex, not \a mutex — a handler runs arbitrary
         /// marshaling code and must not be looked up under the payload
         /// lock.
-        std::function<void(const ScenePickRequest &)> pickHandler;
+        std::function<void(const std::vector<ScenePickRequest> &)> pickHandler;
         std::function<void(const SceneCameraFrame &)> cameraHandler;
         std::function<void(const SceneInputFrame &)> inputHandler;
         std::function<void(SceneControlRequest &&)> controlHandler;
@@ -1928,15 +1928,15 @@ public:
         std::fflush(stderr);
     }
 
-    void dispatchPick(DocGroup &g, const ScenePickRequest &req)
+    void dispatchPick(DocGroup &g, const std::vector<ScenePickRequest> &reqs)
     {
-        std::function<void(const ScenePickRequest &)> handler;
+        std::function<void(const std::vector<ScenePickRequest> &)> handler;
         {
             std::lock_guard<std::mutex> guard(handlerMutex);
             handler = g.pickHandler;
         }
-        if (handler)
-            handler(req);
+        if (handler && !reqs.empty())
+            handler(reqs);
     }
 
     void dispatchCamera(DocGroup &g, const SceneCameraFrame &frame)
@@ -3888,17 +3888,20 @@ public:
                 req.dir[i] = v[3 + i];
             }
             if (conn.group)
-                dispatchPick(*conn.group, req);
+                dispatchPick(*conn.group, {req});
         }
         // Batched pick: 'B', count byte, then count * (modifiers byte + six
         // little-endian floats). The viewer batches a burst of client-side
-        // selections into one message; each ray is dispatched in order so the
-        // backend Gui::Selection ends up matching the client, and the queued
-        // GUI-thread picks coalesce into a single scene republish.
+        // selections into one message; the rays are dispatched together, in
+        // order, so the backend Gui::Selection ends up matching the client
+        // and the picks land in one GUI-thread turn -- one republish, never
+        // one per ray (setPickHandler).
         else if (event.size() >= 2 && event[0] == 'B') {
             const size_t stride = 1 + 6 * sizeof(float);
             const uint8_t n = event[1];
             if (event.size() == 2 + size_t(n) * stride) {
+                std::vector<ScenePickRequest> reqs;
+                reqs.reserve(n);
                 size_t off = 2;
                 for (uint8_t i = 0; i < n; ++i) {
                     ScenePickRequest req;
@@ -3910,10 +3913,11 @@ public:
                         req.origin[k] = v[k];
                         req.dir[k] = v[3 + k];
                     }
-                    if (conn.group)
-                        dispatchPick(*conn.group, req);
+                    reqs.push_back(req);
                     off += stride;
                 }
+                if (conn.group)
+                    dispatchPick(*conn.group, reqs);
             }
         }
     }
@@ -4262,7 +4266,7 @@ size_t SceneStreamServer::levelsBuilt(const std::string &doc)
 
 
 void SceneStreamServer::setPickHandler(
-        std::function<void(const ScenePickRequest &)> handler,
+        std::function<void(const std::vector<ScenePickRequest> &)> handler,
         const std::string &doc)
 {
     Private *p = ensure();

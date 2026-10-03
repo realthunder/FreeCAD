@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
  *   Copyright (c) 2018 Abdullah Tahiri <abdullah.tahiri.yo@gmail.com>     *
  *   Copyright (c) 2013 Werner Mayer <wmayer[at]users.sourceforge.net>     *
@@ -21,11 +23,9 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef SKETCHER_SKETCHANALYSIS_H
-#define SKETCHER_SKETCHANALYSIS_H
+#pragma once
 
-#include <cstdint>
-#include <memory>
+#include <numbers>
 #include <vector>
 
 #include <Precision.hxx>
@@ -40,18 +40,18 @@ namespace Sketcher
 
 class SketchObject;
 
-/// Result of solve() and the SketchObject operations that solve. The values are the integers these
-/// calls used to return, and Python still receives them as numbers.
+
 enum class SketchSolveStatus : int8_t
 {
     Success = 0,
+    Overconstrained = -4,
+    ConflictingConstraints = -3,
+    MalformedConstraints = -5,
     SolverError = -1,
     RedundantConstraints = -2,
-    ConflictingConstraints = -3,
-    Overconstrained = -4,
-    MalformedConstraints = -5,
     InvalidGeometry = -6,
 };
+
 
 class SketcherExport SketchAnalysis
 {
@@ -96,10 +96,12 @@ public:
     /// Point on Point constraint simple routine Detect step (see constructor)
     /// Detect detects only coincident constraints, Analyse converts coincident to endpoint
     /// perpendicular/tangent where appropriate
-    int detectMissingPointOnPointConstraints(double precision = Precision::Confusion() * 1000,
-                                             bool includeconstruction = true);
+    int detectMissingPointOnPointConstraints(
+        double precision = Precision::Confusion() * 1000,
+        bool includeconstruction = true
+    );
     /// Point on Point constraint simple routine Analyse step (see constructor)
-    void analyseMissingPointOnPointCoincident(double angleprecision = M_PI / 8);
+    void analyseMissingPointOnPointCoincident(double angleprecision = std::numbers::pi / 8);
     /// Point on Point constraint simple routine Get step (see constructor)
     std::vector<ConstraintIds>& getMissingPointOnPointConstraints()
     {
@@ -111,12 +113,14 @@ public:
         vertexConstraints = cl;
     }
     /// Point on Point constraint simple routine Make step (see constructor)
-    /// if onebyone, then the sketch is solved after each individual constraint addition and any
+    void makeMissingPointOnPointCoincident();
+    /// Point on Point constraint simple routine Make step (see constructor)
+    /// The sketch is solved after each individual constraint addition and any
     /// redundancy removed.
-    void makeMissingPointOnPointCoincident(bool onebyone = false);
+    void makeMissingPointOnPointCoincidentOneByOne();
 
     /// Vertical/Horizontal constraints simple routine Detect step (see constructor)
-    int detectMissingVerticalHorizontalConstraints(double angleprecision = M_PI / 8);
+    int detectMissingVerticalHorizontalConstraints(double angleprecision = std::numbers::pi / 8);
     /// Vertical/Horizontal constraints simple routine Get step (see constructor)
     std::vector<ConstraintIds>& getMissingVerticalHorizontalConstraints()
     {
@@ -128,7 +132,8 @@ public:
         verthorizConstraints = cl;
     }
     /// Vertical/Horizontal constraints simple routine Make step (see constructor)
-    void makeMissingVerticalHorizontal(bool onebyone = false);
+    void makeMissingVerticalHorizontal();
+    void makeMissingVerticalHorizontalOneByOne();
 
     /// Equality constraints simple routine Detect step (see constructor)
     int detectMissingEqualityConstraints(double precision);
@@ -153,10 +158,11 @@ public:
         radiusequalityConstraints = cl;
     }
     /// Equality constraints simple routine Make step (see constructor)
-    void makeMissingEquality(bool onebyone = true);
+    void makeMissingEquality();
+    void makeMissingEqualityOneByOne();
 
     /// Detect degenerated geometries
-    int detectDegeneratedGeometries(double tolerance);
+    int detectDegeneratedGeometries(double tolerance) const;
     /// Remove degenerated geometries
     int removeDegeneratedGeometries(double tolerance);
 
@@ -168,9 +174,11 @@ public:
     /// makes assumptions to avoid redundancies.
     ///
     /// It applies coincidents - vertical/horizontal constraints and equality constraints.
-    int autoconstraint(double precision = Precision::Confusion() * 1000,
-                       double angleprecision = M_PI / 8,
-                       bool includeconstruction = true);
+    int autoconstraint(
+        double precision = Precision::Confusion() * 1000,
+        double angleprecision = std::numbers::pi / 8,
+        bool includeconstruction = true
+    );
 
     // helper functions, which may be used by more complex methods, and/or called directly by user
     // space (python) methods
@@ -183,26 +191,26 @@ public:
     // third type of routines
     std::vector<Base::Vector3d> getOpenVertices() const;
 
-protected:
+private:
     Sketcher::SketchObject* sketch;
 
-    struct VertexIds;
-    struct Vertex_Less;
-    struct VertexID_Less;
-    struct Vertex_EqualTo;
-    struct EdgeIds;
-    struct Edge_Less;
-    struct Edge_EqualTo;
     std::vector<ConstraintIds> vertexConstraints;
     std::vector<ConstraintIds> verthorizConstraints;
     std::vector<ConstraintIds> lineequalityConstraints;
     std::vector<ConstraintIds> radiusequalityConstraints;
 
-protected:
+private:
+    void autoDeleteAllConstraints();
+    void autoHorizontalVerticalConstraints();
+    void autoPointOnPointCoincident();
+    void autoMissingEquality();
     bool checkHorizontal(Base::Vector3d dir, double angleprecision);
     bool checkVertical(Base::Vector3d dir, double angleprecision);
+    void makeConstraints(std::vector<ConstraintIds>&);
+    void makeConstraintsOneByOne(std::vector<ConstraintIds>&, const char* errorText);
+    std::set<int> getDegeneratedGeometries(double tolerance) const;
+    void solveSketch(const char* errorText);
+    static Sketcher::Constraint* create(const ConstraintIds& id);
 };
 
 }  // namespace Sketcher
-
-#endif  // SKETCHER_SKETCHANALYSIS_H

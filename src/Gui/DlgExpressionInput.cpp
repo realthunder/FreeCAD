@@ -218,16 +218,46 @@ void DlgExpressionInput::onTimer()
             setFixedSize(width(), height());
     }
 
-    try {
-        const QString &text = ui->expression->toPlainText();
-        if (text.trimmed().isEmpty()) {
-            ui->okBtn->setDisabled(true);
-            ui->discardBtn->setDefault(true);
-            ui->msg->setPlainText(QString());
-            ui->msg->setStyleSheet(textColorStyle);
-            return;
-        }
+    const QString &text = ui->expression->toPlainText();
+    ExpressionCheck check = checkExpression(path, text, impliedUnit, &numberRange,
+                                            ui->expression->completerActive());
+    if (check.expression)
+        expression = check.expression;
+    if (text.trimmed().isEmpty()) {
+        ui->okBtn->setDisabled(true);
+        ui->discardBtn->setDefault(true);
+    }
+    else {
         ui->okBtn->setDefault(true);
+        ui->okBtn->setEnabled(check.acceptable);
+    }
+    ui->msg->setPlainText(check.message);
+    switch (check.level) {
+    case ExpressionCheck::Log:
+        ui->msg->setStyleSheet(logColorStyle);
+        break;
+    case ExpressionCheck::Warning:
+        ui->msg->setStyleSheet(warningColorStyle);
+        break;
+    case ExpressionCheck::Error:
+        ui->msg->setStyleSheet(errorColorStyle);
+        break;
+    default:
+        ui->msg->setStyleSheet(textColorStyle);
+        break;
+    }
+}
+
+ExpressionCheck Gui::Dialog::checkExpression(const App::ObjectIdentifier& path,
+                                             const QString& text,
+                                             const Base::Unit& impliedUnit,
+                                             const NumberRange* range,
+                                             bool completing)
+{
+    ExpressionCheck check;
+    if (text.trimmed().isEmpty())
+        return check;
+    try {
         std::shared_ptr<Expression> expr(
                 Expression::parse(path.getDocumentObject(), text.toUtf8().constData()));
 
@@ -241,10 +271,9 @@ void DlgExpressionInput::onTimer()
             App::ExpressionSecurity::Runtime::Scope secScope("session");
             std::unique_ptr<Expression> result(expr->eval());
 
-            expression = expr;
-            ui->okBtn->setEnabled(true);
-            ui->msg->setPlainText(QString());
-            ui->msg->setStyleSheet(logColorStyle);
+            check.expression = expr;
+            check.acceptable = true;
+            check.level = ExpressionCheck::Log;
 
             auto * n = Base::freecad_dynamic_cast<NumberExpression>(result.get());
             if (n) {
@@ -263,44 +292,49 @@ void DlgExpressionInput::onTimer()
                 }
                 else if (!value.getUnit().isEmpty()) {
                     msg += QString::fromUtf8(" (Warning: unit discarded)");
-                    ui->msg->setStyleSheet(warningColorStyle);
+                    check.level = ExpressionCheck::Warning;
                 }
 
-                numberRange.throwIfOutOfRange(value);
+                if (range)
+                    range->throwIfOutOfRange(value);
 
-                ui->msg->setPlainText(msg);
+                check.message = msg;
             }
             else
-                ui->msg->setPlainText(QString::fromUtf8(result->toString().c_str()));
+                check.message = QString::fromUtf8(result->toString().c_str());
         }
     }
     catch (App::ExpressionFunctionDisabledException &) {
-        ui->msg->setStyleSheet(warningColorStyle);
-        ui->msg->setPlainText(tr("Function evaluation and attribute writing are disabled while editing. "
-                                 "You can enable it by checking 'Evaluate function' here. "
-                                 "Be aware that invoking function may cause unexpected change "
-                                 "to various objects."));
-        ui->okBtn->setDisabled(false);
+        check.level = ExpressionCheck::Warning;
+        check.message = DlgExpressionInput::tr(
+                "Function evaluation and attribute writing are disabled while editing. "
+                "You can enable it by checking 'Evaluate function' here. "
+                "Be aware that invoking function may cause unexpected change "
+                "to various objects.");
+        check.acceptable = true;
     }
     catch (Base::ParserError & e) {
-        if (ui->expression->completerActive()
+        check.acceptable = false;
+        if (completing
                 || boost::starts_with(e.what(), "syntax error, unexpected end of input")) {
-            ui->msg->setPlainText(QString());
+            check.message.clear();
+            check.level = ExpressionCheck::Text;
         } else {
-            ui->msg->setStyleSheet(errorColorStyle);
-            ui->msg->setPlainText(QString::fromUtf8(e.what()));
+            check.level = ExpressionCheck::Error;
+            check.message = QString::fromUtf8(e.what());
         }
-        ui->okBtn->setDisabled(true);
     }
     catch (Base::Exception & e) {
-        if (ui->expression->completerActive()) {
-            ui->msg->setPlainText(QString());
+        check.acceptable = false;
+        if (completing) {
+            check.message.clear();
+            check.level = ExpressionCheck::Text;
         } else {
-            ui->msg->setStyleSheet(errorColorStyle);
-            ui->msg->setPlainText(QString::fromUtf8(e.what()));
-            ui->okBtn->setDisabled(true);
+            check.level = ExpressionCheck::Error;
+            check.message = QString::fromUtf8(e.what());
         }
     }
+    return check;
 }
 
 void DlgExpressionInput::setDiscarded()

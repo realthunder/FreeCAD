@@ -68,6 +68,7 @@ public:
 
     Py::Object setupEditingRoot(const Py::Tuple &args);
     Py::Object resetEditingRoot(const Py::Tuple &args);
+    Py::Object hideEditedObject(const Py::Tuple &args);
 
     Py::Object setGradientBackground(const Py::Tuple& args);
     Py::Object setGradientBackgroundColor(const Py::Tuple& args);

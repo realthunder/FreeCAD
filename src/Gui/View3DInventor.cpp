@@ -85,6 +85,7 @@
 #include "SoFCVectorizeSVGAction.h"
 #include "View3DInventorExamples.h"
 #include "View3DInventorViewer.h"
+#include "ViewVisibility.h"
 #include "ViewArea.h"
 #include "View3DInventorPy.h"
 #include "ViewProvider.h"
@@ -162,6 +163,14 @@ View3DInventor::View3DInventor(Gui::Document* pcDocument, QWidget* parent,
     ADD_PROPERTY_TYPE(OnTopObjects, (), nullptr, App::Prop_Hidden,
             "Objects this view draws on top of everything else.\n"
             "One entry per object, as '<internal name>.<subname path>'.");
+    ADD_PROPERTY_TYPE(PerViewVisibilities, (false), nullptr, App::Prop_None,
+            "Let this view show and hide objects on its own, independent\n"
+            "of their Visibility.");
+    ADD_PROPERTY_TYPE(ObjectVisibilities, (), nullptr, App::Prop_Hidden,
+            "Per-object visibility of this view.\n"
+            "Key: a subname path (one occurrence) or a bare internal\n"
+            "name (the object anywhere in this view); value: '1' shown,\n"
+            "'0' hidden. Bare keys count only with PerViewVisibilities.");
 
     stack = new QStackedWidget(this);
     // important for highlighting
@@ -1325,50 +1334,49 @@ Render::StyleOverrideTable parseObjectDisplayModes(
                 ov.mask =
                     View3DInventorViewer::drawStyleMaskFromName(mode.c_str());
         }
-        if (key.find('.') == std::string::npos) {
-            // Bare form: the object wherever it appears in this view.
-            // "Doc#Obj" names an object of another document shown here
-            // through a link; a plain name is of this view's document.
-            ov.rooted = false;
-            auto sep = key.find('#');
-            if (sep != std::string::npos)
-                ov.path.push_back({key.substr(0, sep),
-                                   key.substr(sep + 1)});
-            else
-                ov.path.push_back({doc->getName(), key});
-        }
-        else {
-            // Path form: one occurrence, resolved token by token so
-            // every element carries its true document -- getSubObject
-            // follows links across documents the same way the scene
-            // graph does.
-            ov.rooted = true;
-            std::istringstream iss(key);
-            std::string tok;
-            App::DocumentObject *cur = nullptr;
-            bool ok = true;
-            while (std::getline(iss, tok, '.')) {
-                if (tok.empty())
-                    continue;
-                if (!cur)
-                    cur = doc->getObject(tok.c_str());
-                else
-                    cur = cur->getSubObject((tok + ".").c_str());
-                if (!cur || !cur->isAttachedToDocument()) {
-                    ok = false;
-                    break;
-                }
-                ov.path.push_back({cur->getDocument()->getName(),
-                                   cur->getNameInDocument()});
-            }
-            if (!ok || ov.path.empty())
-                continue;
-        }
+        if (!parseOverrideKey(key, doc, ov.path, ov.rooted))
+            continue;
         table.entries.push_back(std::move(ov));
     }
     return table;
 }
 } // namespace
+
+bool View3DInventor::visibilityValue(const std::string &value)
+{
+    return !(value == "0" || value == "false" || value == "False");
+}
+
+bool View3DInventor::setObjectVisibility(const std::string &key,
+                                         const bool *visible)
+{
+    if (key.empty())
+        return false;
+    auto values = ObjectVisibilities.getValues();
+    auto it = values.find(key);
+    if (!visible) {
+        if (it == values.end())
+            return false;
+        values.erase(it);
+    }
+    else {
+        const char *value = *visible ? "1" : "0";
+        if (it != values.end() && it->second == value)
+            return false;
+        values[key] = value;
+    }
+    ObjectVisibilities.setValues(std::move(values));
+    return true;
+}
+
+int View3DInventor::getObjectVisibility(const std::string &key) const
+{
+    const auto &values = ObjectVisibilities.getValues();
+    auto it = values.find(key);
+    if (it == values.end())
+        return -1;
+    return visibilityValue(it->second) ? 1 : 0;
+}
 
 void View3DInventor::applyOnTopObjects()
 {
@@ -1465,6 +1473,13 @@ void View3DInventor::onChanged(const App::Property *prop)
                         App::Property::User1, &DrawStyle);
                 _viewer->setOverrideMode(DrawStyle.getValueAsString());
             }
+        }
+        else if (prop == &ObjectVisibilities || prop == &PerViewVisibilities) {
+            _viewer->setObjectVisibilities(parseObjectVisibilities(
+                    ObjectVisibilities.getValues(),
+                    getGuiDocument() ? getGuiDocument()->getDocument()
+                                     : nullptr,
+                    PerViewVisibilities.getValue()));
         }
         else if (prop == &ObjectDisplayModes) {
             _viewer->setObjectStyleOverrides(parseObjectDisplayModes(

@@ -2123,6 +2123,17 @@ SoFCRenderCacheP::mergeChildCache(SoFCRenderCache::VertexCacheMap &vcachemap,
   bool sliceable = slicesout != nullptr;
   auto it = vcachemap.end();
   const auto & childvcaches = entry.cache->getVertexCaches(canmerge, depth+1);
+  // Whole-object secondary hides (partialRender, a Part's or Link's element
+  // hide list) are dropped here, per entry, from the key composed at this
+  // level: the capture keeps what they hide (SoFCSelectionRoot::
+  // doActionPrivate), since its caches are shared by the occurrences a
+  // hide tells apart. A key matched within this cache's subtree matches
+  // wherever the subtree is reused, so each level may drop what it can
+  // tell; the top level holds the whole chain and tells the rest.
+  const bool hides = this->selnode && SoFCRenderCache::CacheKey::anyHidden();
+  // ...and a force show admits, from the same key, what the capture took
+  // in tagged for it (SoFCSwitch): the entry becomes the object's own.
+  const bool shows = this->selnode && SoFCRenderCache::CacheKey::anyShown();
   for (const auto & child : childvcaches) {
     bool identity = entry.identity;
     Material material = this->mergeMaterial(
@@ -2152,12 +2163,27 @@ SoFCRenderCacheP::mergeChildCache(SoFCRenderCache::VertexCacheMap &vcachemap,
           key->append(childentry.key);
         }
       }
+      if (hides && key->isHidden())
+        continue;
+      bool untag = false;
+      if (shows && material.capturedmode == Render::perViewShownModeId()
+          && key->isShown()) {
+        material.capturedmode = 0;
+        untag = true;
+      }
       SoFCSelectionContextExPtr ctx;
       if (this->selnode)
         ctx = key->getSecondaryContext(SoFCRenderCacheP::RenderCacheStack, vcache->getNode());
       res = checkSelectionContext(material, ctx, vcache);
-      if (!res)
+      if (!res) {
+        if (untag)
+          material = value.first;
         continue;
+      }
+      // An untagged entry lands in a bucket of its own, as one whose
+      // material a context rewrote.
+      if (untag && res > 0)
+        res = -1;
 
       if (res < 0) {
         // The context rewrote the material, so this entry lands in a
@@ -2384,6 +2410,9 @@ SoFCRenderCache::getVertexCaches(bool canmerge, int depth)
   PRIVATE(this)->spliceprev.reset();
   PRIVATE(this)->splicematch.clear();
 
+  // This cache's own shapes, hidden as a whole by a hide on its own root
+  // (see mergeChildCache): asked once, their key is the same.
+  int selfhidden = -1;
   if (!spliced)
   for (auto & entry : PRIVATE(this)->caches) {
     if (entry.vcache) {
@@ -2396,6 +2425,10 @@ SoFCRenderCache::getVertexCaches(bool canmerge, int depth)
             selfkey->forcePush(id);
         }
       }
+      if (selfkey && selfhidden < 0)
+        selfhidden = CacheKey::anyHidden() && selfkey->isHidden() ? 1 : 0;
+      if (selfhidden > 0)
+        continue;
       SoFCSelectionContextExPtr ctx;
       if (selfkey)
           ctx = selfkey->getSecondaryContext(
@@ -2879,7 +2912,12 @@ SoFCRenderCache::buildHighlightCache(SbFCMap<int, VertexCachePtr> &sharedcache,
           material.emissives.reset();
         }
         uint32_t c = material.diffuse;
-        material.diffuse = color | (material.diffuse & 0xff);
+        // A highlighted face keeps its transparency. A highlighted line or
+        // point is drawn opaque: with its own transparency (a sketch's
+        // axes have one) the highlight colour would be mixed with what is
+        // behind it, and be no colour anybody set.
+        uint32_t keptalpha = material.type == Material::Triangle ? (material.diffuse & 0xff) : 0xff;
+        material.diffuse = color | keptalpha;
         makeDistinctColor(material.diffuse, material.diffuse, c);
         material.pervertexcolor = false;
       }

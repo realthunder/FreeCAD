@@ -32,7 +32,6 @@ set(SketcherGui_UIC_SRCS
     TaskSketcherElements.ui
     TaskSketcherGeneral.ui
     SketcherToolDefaultWidget.ui
-    TaskSketcherMessages.ui
     TaskSketcherSolverAdvanced.ui
     TaskSketcherValidation.ui
     InsertDatum.ui
@@ -41,7 +40,7 @@ set(SketcherGui_UIC_SRCS
     SketchMirrorDialog.ui
     SketcherSettings.ui
     SketcherSettingsGrid.ui
-    SketcherSettingsColors.ui
+    SketcherSettingsAppearance.ui
     SketcherSettingsDisplay.ui
     SketchRectangularArrayDialog.ui
     SketcherRegularPolygonDialog.ui
@@ -53,6 +52,7 @@ SET(SketcherGui_SRCS
     AppSketcherGui.cpp
     GeometryCreationMode.h
     Command.cpp
+    Command.h
     AutoConstraint.h
     Utils.h
     Utils.cpp
@@ -69,7 +69,6 @@ SET(SketcherGui_SRCS
     DrawSketchHandlerArcOfParabola.h
     DrawSketchHandlerArcSlot.h
     DrawSketchHandlerBSpline.h
-    DrawSketchHandlerBSplineByInterpolation.h
     DrawSketchHandlerPoint.h
     DrawSketchHandlerDragAutoConstraint.h
     DrawSketchHandlerDragAutoConstraint.cpp
@@ -82,6 +81,9 @@ SET(SketcherGui_SRCS
     DrawSketchHandlerSlot.h
     DrawSketchHandlerOffset.h
     DrawSketchHandlerRotate.h
+    DrawSketchHandlerScale.h
+    DrawSketchHandlerSymmetry.h
+    DrawSketchHandlerTranslate.h
     DrawSketchHandlerText.h
     CommandCreateGeo.cpp
     CommandConstraints.h
@@ -116,7 +118,6 @@ SET(SketcherGui_SRCS
     SketcherToolDefaultWidget.h
     TaskSketcherTool.cpp
     TaskSketcherTool.h
-    TaskSketcherMessages.ui
     TaskSketcherMessages.cpp
     TaskSketcherMessages.h
     TaskSketcherSolverAdvanced.ui
@@ -174,6 +175,7 @@ SET(SketcherGui_SRCS
     SketcherRegularPolygonDialog.cpp
     SnapManager.cpp
     SnapManager.h
+    StyleParameters.h
     TaskDlgEditSketch.cpp
     TaskDlgEditSketch.h
     ViewProviderPython.cpp

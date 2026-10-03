@@ -136,21 +136,26 @@ void ViewProviderSubShapeBinder::onChanged(const App::Property *prop) {
         setProperty(MapTransparency, mapTrans);
         updateColors();
     }
+    // A colour set here is a colour picked, which ends the mapping -- but not
+    // one read from the file or replayed by undo: properties restore in name
+    // order, so MapFaceColor was read before ShapeColor, which then switched
+    // it off, and an eagerly opened file lost its saved mapping.
+    else if (prop->testStatus(App::Property::User3)
+             || isRestoring()
+             || (getObject() && getObject()->getDocument()
+                 && getObject()->getDocument()->isPerformingTransaction())) {
+    }
     else if (prop == &ShapeColor) {
-        if (!prop->testStatus(App::Property::User3))
-            setProperty(MapFaceColor, false);
+        setProperty(MapFaceColor, false);
     }
     else if (prop == &LineColor) {
-        if (!prop->testStatus(App::Property::User3))
-            setProperty(MapLineColor, false);
+        setProperty(MapLineColor, false);
     }
     else if (prop == &PointColor) {
-        if (!prop->testStatus(App::Property::User3))
-            setProperty(MapPointColor, false);
+        setProperty(MapPointColor, false);
     }
     else if (prop == &Transparency) {
-        if (!prop->testStatus(App::Property::User3))
-            setProperty(MapTransparency, false);
+        setProperty(MapTransparency, false);
     }
 
     ViewProviderPart::onChanged(prop);

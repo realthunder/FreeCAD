@@ -215,9 +215,21 @@ class Client(threading.Thread):
         # The host routes this client to `host` while we wait, so the
         # same pick made again is the one the room must follow.
         room_sampled_on.wait(30.0)
+        # Two picks, two instance changes. The push is coalesced onto the
+        # publish timer, so on an idle box both land in one message; under
+        # load the timer can run between them and the toggle's empty state
+        # goes out on its own first. Each push is the whole instance, so
+        # the one to read is the first that states the line, not the first.
         ws.send(2, wsclient.pick_frame(*ray_to(2.0, 0.0), TOGGLE))
         ws.send(2, wsclient.pick_frame(*ray_to(2.0, 0.0), REPLACE))
-        self.told_off = ws.next_push("selection", 5.0, since=len(ws.pushes))
+        deadline = clock() + 5.0
+        while True:
+            text = ws.next_push("selection", max(0.0, deadline - clock()),
+                                since=len(ws.pushes))
+            if text is not None:
+                self.told_off = text
+            if text is None or b'"obj":"Sketch"' in text:
+                break
         ws.drain(0.3)
         self.picked_off.set()
         room_sampled_off.wait(30.0)
@@ -258,7 +270,8 @@ def desktop_edit_root():
     EditingRoot appears in the desktop window's scene graph. Idle, a
     window shows through a private root that is in no graph: zero. In
     a session the document's root is under its aux root: one, and its
-    children are the transform plus the sketch's moved geometry."""
+    children are the transform plus the sketch's moved geometry (modes
+    0-2) or the edit node it handed (mode 3)."""
     from pivy import coin
 
     views = gdoc().mdiViewsOfType("Gui::View3DInventor")
@@ -437,8 +450,17 @@ def verify():
         told = client.told_entered or b""
         check("a watching client is told the desktop's edit began",
               b'"editing":true' in told, told[:120])
-        check("the desktop's edit moved the sketch under the editing root",
-              any(s[1] and s[2] == 0 for s in a), [(s[1], s[2]) for s in a[:10]])
+        params = FreeCAD.ParamGet("User parameter:BaseApp/Preferences/View")
+        mode3 = params.GetInt("RenderCache", 3) == 3
+        # Mode 3: the sketch hands the root its own edit node and its
+        # children stay (the edited occurrence is hidden per view).
+        if mode3:
+            check("mode 3: the desktop's edit kept the sketch's children",
+                  any(s[1] for s in a) and all(s[2] == before for s in a if s[1]),
+                  [(s[1], s[2]) for s in a[:10]])
+        else:
+            check("the desktop's edit moved the sketch under the editing root",
+                  any(s[1] and s[2] == 0 for s in a), [(s[1], s[2]) for s in a[:10]])
         check("the editing root is in the desktop window's graph, with content",
               any(s[4][0] == 1 and s[4][1] > 1 for s in a), [s[4] for s in a[:10]])
         check("a pointer move from the client is replayed into the desktop's session",
@@ -457,8 +479,12 @@ def verify():
               all(s[3] == 1 for s in samples), sorted({s[3] for s in samples}))
         check("the client's edit put the editing root in the window's graph, with content",
               any(s[4][0] == 1 and s[4][1] > 1 for s in b), [s[4] for s in b[:10]])
-        check("and moved the sketch under it",
-              any(s[2] == 0 for s in b), [s[2] for s in b[:10]])
+        if mode3:
+            check("mode 3: and kept the sketch's children",
+                  all(s[2] == before for s in b if s[1]), [s[2] for s in b[:10]])
+        else:
+            check("and moved the sketch under it",
+                  any(s[2] == 0 for s in b), [s[2] for s in b[:10]])
         panels = [s[5] for s in b]
         if any(p is None for p in panels):
             note("INFO the task panel state is not readable from Python here")

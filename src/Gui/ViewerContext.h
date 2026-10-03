@@ -46,6 +46,9 @@
 
 #include <fastsignals/signal.h>
 
+#include "Inventor/SoFCVisibilityElement.h"
+#include "Inventor/SoFCRenderCacheManager.h"
+
 class SoNode;
 class SoPath;
 class SoPickedPoint;
@@ -69,9 +72,16 @@ class Placement;
 
 namespace Render {
 class Renderer;
+struct VisibilitySet;
+}
+
+namespace App {
+class DocumentObject;
 }
 
 namespace Gui {
+
+struct VisibilityEntry;
 
 class Document;
 class ViewProvider;
@@ -80,6 +90,7 @@ class GLGraphicsItem;
 class SelectionScope;
 class SelectionSingleton;
 class EditableDatumLabel;
+class OnViewEntry;
 
 /** The node an edit session's geometry hangs under (EditingRoot::node()).
  *
@@ -121,8 +132,8 @@ protected:
  * desktop's windows and every client's mirror all show the same edit, so
  * they all hang the same node -- a Coin node takes several parents -- and
  * each of them decides only WHERE it hangs (under the aux root on the
- * desktop, outside the render-cache feed; inside the served graph for a
- * mirror). Gui::Document owns its session's root; a ViewerContext with no
+ * desktop, outside the render-cache feed; beside the served scene in a
+ * mirror's own event graph). Gui::Document owns its session's root; a ViewerContext with no
  * document (the unit harness) builds a private one.
  *
  * Not a view. Nothing here reads a camera or a viewport; the bodies used to
@@ -167,10 +178,10 @@ public:
     void reset(Gui::ViewProvider* vp, bool updateLinks);
     /** Put the node under \a parent (at \a index; -1 appends), counted.
      *
-     * N views may share one parent -- every client's mirror hangs the
-     * root in the one served graph -- so the first to hang it inserts it
-     * and the last to unhang it takes it out; the desktop's aux roots are
-     * one parent per view and count to one.
+     * N views may share one parent, so the first to hang it inserts it
+     * and the last to unhang it takes it out. Today every view hangs it
+     * under a parent of its own -- a desktop view's aux root, a mirror's
+     * event root -- and each counts to one.
      */
     void hangUnder(SoGroup* parent, int index = -1);
     void unhangFrom(SoGroup* parent);
@@ -235,6 +246,36 @@ public:
     void detachView(ViewerContext* view);
     //@}
 
+    /** @name The edited occurrence's own hide
+     *
+     * An edit that draws its object itself -- a sketch hands its edit
+     * graph rather than moving the view provider's children -- leaves the
+     * object's own geometry where it was, in every view that shows it. In
+     * the views of the session that geometry is hidden: the ONE occurrence
+     * being edited, \a subname under \a parent (Gui::Document::getInEdit),
+     * as a path entry of each view's own visibility table, TRANSIENT
+     * (ViewerContext::setEditHide) -- never written into a view's map, and
+     * gone when the edit ends. A view joining later hides it on attach and
+     * shows it again on detach; a view outside the session -- another
+     * document's showing the object through a link -- keeps it.
+     */
+    //@{
+    /** Hide the edited occurrence in every view of the session.
+     *
+     * False, and nothing hidden anywhere, when the path does not resolve or
+     * some view cannot hide one (render-cache modes 0-2, which have no
+     * per-view table): the caller falls back to moving the children.
+     */
+    bool hideEdited(App::DocumentObject* parent, const char* subname);
+    /// Undo hideEdited. Idempotent.
+    void showEdited();
+    /// Whether hideEdited is in force.
+    bool isEditedHidden() const
+    {
+        return editHide != nullptr;
+    }
+    //@}
+
 private:
     SoSeparator* root {nullptr};
     SoTransform* transform {nullptr};
@@ -246,6 +287,7 @@ private:
     bool restore {false};
     ViewerContext* holder {nullptr};
     unsigned held {0};
+    std::unique_ptr<VisibilityEntry> editHide;
 };
 
 /** What an edit mode is allowed to ask of the view it is running in.
@@ -286,6 +328,16 @@ public:
     virtual Gui::Document* getDocument() = 0;
     virtual SoFCRenderCacheManager* getRenderCacheManager() const = 0;
     virtual Render::Renderer* getExternalRenderer() const = 0;
+    /** This view's own object visibility as SoFCVisibilityElement
+     * carries it (docs/CoinRetirement.md 5.18), or null for none. A
+     * selection root shared by several views -- the served root, one per
+     * document for every client -- sets the element for the view whose
+     * traversal it is, so each client's picks follow its own table.
+     */
+    virtual const SoFCVisibilityElement::Table *visibilityElementTable() const
+    {
+        return nullptr;
+    }
     //@}
 
     /** @name Values the input device supplies
@@ -458,7 +510,50 @@ public:
     /// Hang an edit mode's geometry under the session's root; see
     /// EditingRoot::setup. A no-op with no editing view provider.
     void setupEditingRoot(SoNode* node = nullptr, const Base::Matrix4D* mat = nullptr);
+    /// Give the view provider its geometry back, and show the edited
+    /// occurrence again if hideEditedObject hid it.
     void resetEditingRoot(bool updateLinks = true);
+    /** Highlight elements of the editing root in this view alone.
+     *
+     * For an edit mode that tracks its own preselection (the sketcher):
+     * the items are drawn over the whole editing graph, in this view and
+     * no other, and replace whatever the last call stated. An empty list
+     * clears them. Returns false when this view cannot -- nothing here
+     * captures the editing root for a backend: a view outside render
+     * cache mode 3, and a served mirror -- and the caller then colours
+     * the shared edit graph itself, which every view shows.
+     */
+    virtual bool setEditingHighlight(
+        const std::vector<SoFCRenderCacheManager::HighlightItem>& items)
+    {
+        (void)items;
+        return false;
+    }
+    /// Whether setEditingHighlight() would take a highlight now: asked
+    /// before a caller decides what to colour in the shared graph.
+    virtual bool canEditingHighlight() const
+    {
+        return false;
+    }
+    /** Hide the occurrence being edited in every view of the session.
+     *
+     * For an edit mode that hands setupEditingRoot a node of its own and
+     * leaves the view provider's geometry where it is; see
+     * EditingRoot::hideEdited. The occurrence is the document's
+     * (Gui::Document::getInEdit), else the edited object itself. Only the
+     * initiator may ask. False when it could not be hidden: the edit mode
+     * moves the children instead (setupEditingRoot with no node).
+     */
+    bool hideEditedObject();
+    /** Hide \a hide's occurrence in this view, or with null show it again.
+     *
+     * An edit session's own, transient entry of the view's visibility
+     * table (EditingRoot::hideEdited), ahead of the view's persisted map
+     * and never written into it. False when the view has no per-view
+     * table to put it in -- no render-cache manager, modes 0-2 -- which is
+     * what the base answers.
+     */
+    virtual bool setEditHide(const VisibilityEntry* hide);
     void setEditingTransform(const Base::Matrix4D& mat);
     /** The root this view shows the edit through.
      *
@@ -580,9 +675,9 @@ public:
         return false;
     }
     /// Track the set this view is showing, in the order it was built.
-    virtual void addOnViewParameter(EditableDatumLabel*)
+    virtual void addOnViewParameter(OnViewEntry*)
     {}
-    virtual void removeOnViewParameter(EditableDatumLabel*)
+    virtual void removeOnViewParameter(OnViewEntry*)
     {}
     /** Which box takes the keys.
      *
@@ -590,7 +685,7 @@ public:
      * and this is ignored, and a widget that is never shown is never focused
      * by Qt at all, so a mirror keeps the record here.
      */
-    virtual void onViewParameterFocused(EditableDatumLabel*)
+    virtual void onViewParameterFocused(OnViewEntry*)
     {}
     /** Something about that set changed: a value, the focus, a position.
      *
@@ -675,8 +770,9 @@ protected:
      *
      * Called with the root just bound (\a hang true) and with the root
      * about to be unbound (false), always in pairs, never twice in a row.
-     * The desktop puts it under the aux root; a mirror inserts it into the
-     * served graph. The base does nothing, for a view that only picks.
+     * The desktop puts it under the aux root; a mirror beside the served
+     * scene in its own event graph. The base does nothing, for a view
+     * that only picks.
      */
     virtual void hangEditingRoot(EditingRoot* root, bool hang);
 

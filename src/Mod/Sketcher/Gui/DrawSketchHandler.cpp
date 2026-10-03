@@ -39,6 +39,8 @@
 #include <Inventor/events/SoKeyboardEvent.h>
 #endif  // #ifndef _PreComp_
 
+#include <App/Application.h>
+#include <App/AutoTransaction.h>
 #include <Base/Console.h>
 #include <Base/Exception.h>
 #include <Gui/Application.h>
@@ -227,10 +229,11 @@ inline void ViewProviderSketchDrawSketchHandlerAttorney::setAngleSnapping(
 inline void ViewProviderSketchDrawSketchHandlerAttorney::moveConstraint(
     ViewProviderSketch& vp,
     int constNum,
-    const Base::Vector2d& toPos
+    const Base::Vector2d& toPos,
+    OffsetMode offset
 )
 {
-    vp.moveConstraint(constNum, toPos);
+    vp.moveConstraint(constNum, toPos, offset);
 }
 
 inline void ViewProviderSketchDrawSketchHandlerAttorney::signalToolChanged(
@@ -410,10 +413,22 @@ void DrawSketchHandler::setSketchGui(ViewProviderSketch* vp)
 
 void DrawSketchHandler::deactivate()
 {
-    // Upstream aborts any transaction still open here. It can: its
-    // abortCommand() names the handler's own transaction id. This fork has
-    // one active transaction (see openCommand), so aborting blindly would
-    // take one that something else opened.
+    // A tool can be left with its command still open -- a B-spline
+    // cancelled after its first point -- and what it had put in the sketch
+    // stayed there (upstream 55c36e8c03, issue 12473). Upstream aborts
+    // whatever is open here. It can: its abortCommand() names the handler's
+    // own transaction id. This fork has one active transaction, so it is
+    // aborted only while it is still the one this tool opened; one that
+    // something else has opened since is not this tool's to take.
+    int active = 0;
+    if (ownTransactionId != 0 && App::GetApplication().getActiveTransaction(&active)
+        && active == ownTransactionId) {
+        abortCommand();
+        // or the preselection goes on naming the points just removed
+        tryAutoRecomputeIfNotSolve(sketchgui->getSketchObject());
+    }
+    ownTransactionId = 0;
+
     Gui::ToolHandler::deactivate();
     ViewProviderSketchDrawSketchHandlerAttorney::setOriginPointMarker(*sketchgui, false);
     ViewProviderSketchDrawSketchHandlerAttorney::setConstraintSelectability(*sketchgui, true);
@@ -1234,17 +1249,29 @@ bool DrawSketchHandler::seekTangentAutoConstraint(
 
 void DrawSketchHandler::openCommand(const std::string& name)
 {
+    // A tool that opens its command as it starts -- the B-spline, the
+    // polyline -- does so inside the command that started the tool, and
+    // Gui::Command closes whatever transaction is open when it returns
+    // (_invoke's committer). The tool's command was closed before the first
+    // click, and its points went into the document with no transaction at
+    // all: nothing to undo, nothing to abort. The tool's command outlives
+    // the one that started it. Outside a command this changes nothing.
+    App::AutoTransaction::setEnable(false);
     Gui::Command::openCommand(name.c_str());
+    ownTransactionId = 0;
+    App::GetApplication().getActiveTransaction(&ownTransactionId);
 }
 
 void DrawSketchHandler::commitCommand()
 {
     Gui::Command::commitCommand();
+    ownTransactionId = 0;
 }
 
 void DrawSketchHandler::abortCommand()
 {
     Gui::Command::abortCommand();
+    ownTransactionId = 0;
 }
 
 int DrawSketchHandler::seekAutoConstraint(
@@ -2205,9 +2232,9 @@ void DrawSketchHandler::setAngleSnapping(bool enable, Base::Vector2d referencePo
     ViewProviderSketchDrawSketchHandlerAttorney::setAngleSnapping(*sketchgui, enable, referencePoint);
 }
 
-void DrawSketchHandler::moveConstraint(int constNum, const Base::Vector2d& toPos)
+void DrawSketchHandler::moveConstraint(int constNum, const Base::Vector2d& toPos, OffsetMode offset)
 {
-    ViewProviderSketchDrawSketchHandlerAttorney::moveConstraint(*sketchgui, constNum, toPos);
+    ViewProviderSketchDrawSketchHandlerAttorney::moveConstraint(*sketchgui, constNum, toPos, offset);
 }
 
 void DrawSketchHandler::signalToolChanged() const

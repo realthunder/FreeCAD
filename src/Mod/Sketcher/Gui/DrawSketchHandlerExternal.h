@@ -26,6 +26,13 @@
 #include <array>
 
 #include <App/Datums.h>
+#include <boost/algorithm/string/predicate.hpp>
+
+#include <App/IndexedName.h>
+#include <Gui/ViewParams.h>
+#include <Mod/Part/App/DatumFeature.h>
+#include <Mod/Part/App/PartFeature.h>
+#include <Mod/Sketcher/App/ExternalGeometryFacade.h>
 
 #include "Utils.h"
 #include <Gui/ViewerContext.h>
@@ -121,7 +128,7 @@ public:
         if (!sketch->isExternalAllowed(pDoc, pObj, &msg)){
             switch(msg){
                 case Sketcher::SketchObject::rlCircularReference:
-                    this->notAllowedReason = QT_TR_NOOP("Linking this will cause circular dependency. ");
+                    this->notAllowedReason = QT_TR_NOOP("Linking this will cause circular dependency.");
                     break;
 
                     // We'll auto create shapebinder in the following cases.
@@ -168,9 +175,106 @@ public:
         return false;
     }
 
+    /// Whether a pick is taken for its intersection with the sketch plane
+    void setIntersection(bool on)
+    {
+        intersection = on;
+    }
+
 private:
     bool intersection = false;
 };
+
+/** Make what was picked external geometry of the sketch in edit
+ *
+ * The one way a pick becomes external geometry: the External tool's, and a
+ * constraint tool's with outside picking stacked on it. The pick goes
+ * through Part.importExternalObject(), which is what carries sub-object
+ * paths and mapped element names, and makes a binder for an object of
+ * another body or document.
+ *
+ * No transaction is opened or closed here.
+ *
+ * @param picked: the selection as it was made (the original one, where the
+ * selection was resolved)
+ * @param resolved: the same, resolved
+ * @return the ids of the external geometry made -- or, where the sketch
+ * already refers to that element, of the geometry it has for it. Empty if
+ * nothing came of the pick.
+ */
+inline std::vector<int> addExternalFromPick(ViewProviderSketch* sketchgui,
+                                            const App::SubObjectT& picked,
+                                            const App::SubObjectT& resolved,
+                                            bool defining,
+                                            bool intersection)
+{
+    auto sketch = sketchgui->getSketchObject();
+
+    // The external geometry by the reference each piece was projected
+    // from: "<object>.<element>", the same key the sketch keeps.
+    auto idsByRef = [sketch]() {
+        std::map<std::string, std::vector<int>> res;
+        int geoId = 0;
+        for (const auto geo : sketch->getExternalGeometry()) {
+            --geoId;
+            if (geoId > Sketcher::GeoEnum::RefExt) {
+                continue;
+            }
+            const std::string& ref = Sketcher::ExternalGeometryFacade::getFacade(geo)->getRef();
+            if (!ref.empty()) {
+                res[ref].push_back(geoId);
+            }
+        }
+        return res;
+    };
+    const auto had = idsByRef();
+
+    // Already referred to? addExternal() would refuse it with an error.
+    if (App::DocumentObject* obj = resolved.getSubObject()) {
+        const std::string element = resolved.getOldElementName();
+        const auto& objs = sketch->ExternalGeometry.getValues();
+        const auto subs = sketch->ExternalGeometry.getSubValues(false);
+        const auto names = sketch->ExternalGeometry.getSubValues(true);
+        for (std::size_t i = 0; i < objs.size() && i < subs.size() && i < names.size(); ++i) {
+            if (objs[i] == obj && subs[i] == element) {
+                auto it = had.find(std::string(obj->getNameInDocument()) + "."
+                                   + Data::newElementName(names[i].c_str()));
+                if (it != had.end()) {
+                    return it->second;
+                }
+            }
+        }
+    }
+
+    std::ostringstream ss;
+    ss << "[";
+    if (defining) {
+        ss << "'defining',";
+    }
+    if (intersection) {
+        ss << "'intersection',";
+    }
+    ss << "]";
+    Gui::cmdAppObjectArgs(sketch,
+                          "addExternal(Part.importExternalObject(%s, %s), %s)",
+                          picked.getSubObjectPython(),
+                          sketchgui->getEditingContext().getSubObjectPython(false),
+                          ss.str());
+
+    // adding external geometry does not require a solve() per se (the DoF is the same),
+    // however a solve is required to update the amount of solver geometry, because we only
+    // redraw a changed Sketch if the solver geometry amount is the same as the SkethObject
+    // geometry amount (as this avoids other issues).
+    // This solver is a very low cost one anyway (there is actually nothing to solve).
+    tryAutoRecomputeIfNotSolve(sketch);
+    std::vector<int> ids;
+    for (const auto& [ref, made] : idsByRef()) {
+        if (!had.count(ref)) {
+            ids.insert(ids.end(), made.begin(), made.end());
+        }
+    }
+    return ids;
+}
 
 class DrawSketchHandlerExternal: public DrawSketchHandler
                                , public ParameterGrp::ObserverType
@@ -363,20 +467,15 @@ public:
                     } else {
                         Gui::Command::openCommand(
                                 QT_TRANSLATE_NOOP("Command", "Add external geometry"));
-                        std::ostringstream ss;
-                        ss << "[";
-                        if (defining)
-                            ss << "'defining',";
-                        if (intersection)
-                            ss << "'intersection',";
-                        ss << "]";
-                        Gui::cmdAppObjectArgs(sketchgui->getObject(),
-                                "addExternal(Part.importExternalObject(%s, %s), %s)",
-                                msg.pOriginalMsg ?
-                                    msg.pOriginalMsg->Object.getSubObjectPython() :
-                                    msg.Object.getSubObjectPython(),
-                                sketchgui->getEditingContext().getSubObjectPython(false),
-                                ss.str());
+                        addExternalFromPick(sketchgui,
+                                            msg.pOriginalMsg ? msg.pOriginalMsg->Object
+                                                             : msg.Object,
+                                            msg.Object,
+                                            defining,
+                                            intersection);
+                        sketchgui->sessionSelection().clearSelection();
+                        Gui::Command::commitCommand();
+                        return true;
                     }
 
                     sketchgui->sessionSelection().clearSelection();
@@ -400,6 +499,39 @@ public:
             }
         }
         return false;
+    }
+
+    /// What the tool waits for, by flavour. The second line is the gate's own
+    /// rule: an object as a whole is taken only with Alt held.
+    std::list<Gui::InputHint> getToolHints() const override
+    {
+        using enum Gui::InputHint::UserInput;
+
+        QString pick;
+        if (attaching.size()) {
+            pick = tr("%1 pick geometry to attach the external geometry to",
+                      "Sketcher External: hint");
+        }
+        else if (intersection && defining) {
+            pick = tr("%1 pick geometry to add its intersection with the sketch plane "
+                      "as defining geometry",
+                      "Sketcher External: hint");
+        }
+        else if (intersection) {
+            pick = tr("%1 pick geometry to add its intersection with the sketch plane",
+                      "Sketcher External: hint");
+        }
+        else if (defining) {
+            pick = tr("%1 pick geometry to add its projection as defining geometry",
+                      "Sketcher External: hint");
+        }
+        else {
+            pick = tr("%1 pick geometry to add its projection", "Sketcher External: hint");
+        }
+        return {
+            {pick, {MouseLeft}},
+            {tr("%1 pick a whole object", "Sketcher External: hint"), {{KeyAlt, MouseLeft}}},
+        };
     }
 };
 

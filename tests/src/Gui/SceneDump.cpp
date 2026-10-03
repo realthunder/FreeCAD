@@ -306,6 +306,17 @@ void expectScene(const Render::SceneSnapshot& snap)
     EXPECT_EQ(perObject[0x2222], 1u);
     EXPECT_EQ(perObject[0], 1u);
 
+    // The draw no object owns wears its own material, not the default.
+    // Keyless draws are how an edit mode's graph travels (it hangs under
+    // no object), and one left on the default material is a Triangle
+    // draw of a line mesh: nothing on screen.
+    for (const auto& d : snap.scene) {
+        if (d.objectKey == 0) {
+            EXPECT_EQ(d.material.diffuse, 0x0000ffffu)
+                << "the keyless draw kept the default appearance";
+        }
+    }
+
     size_t textured = 0;
     for (const auto& d : snap.scene) {
         ASSERT_TRUE(d.mesh) << "every draw keeps its geometry";
@@ -428,6 +439,44 @@ TEST(SceneDump, monolithicRoundTrip)
     expectScene(loaded);
 }
 
+/// An autozoom entry's pixel scale crosses the wire (v79). A viewer
+/// without it sized every billboard image with the text factor -- a
+/// constraint icon at 1.35 of its pixels -- and a datum's number, which is
+/// not a billboard, from the scaleFactor its capture calibrated against
+/// its own viewport: 2.6 times too large in a 900 px browser window
+/// showing a served 720 px capture.
+TEST(SceneDump, anAutozoomPixelScaleCrossesTheWire)
+{
+    Render::SceneSnapshot snap;
+    snap.scene.push_back(makeDraw(0x1111, makeMesh(1, 8), 0xff0000ff));
+    Render::Material::AutoZoomEntry icon;
+    icon.billboard = true;
+    icon.pixelscale = 1.0f;
+    Render::Material::AutoZoomEntry number;
+    number.scaleFactor = 50.0f / 720.0f;
+    number.pixelscale = 1.0f;
+    number.datumFlip = true;
+    Render::Material::AutoZoomEntry plain;
+    plain.scaleFactor = 2.0f;
+    snap.scene.back().material.autozoom = {icon, number, plain};
+
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(Render::loadSceneSnapshot(payload.data(), payload.size(), loaded));
+    ASSERT_EQ(loaded.scene.size(), 1u);
+    const auto& az = loaded.scene[0].material.autozoom;
+    ASSERT_EQ(az.size(), 3u);
+    EXPECT_TRUE(az[0].billboard);
+    EXPECT_EQ(az[0].pixelscale, 1.0f);
+    EXPECT_FALSE(az[1].billboard);
+    EXPECT_EQ(az[1].pixelscale, 1.0f);
+    EXPECT_TRUE(az[1].datumFlip);
+    EXPECT_EQ(az[1].scaleFactor, 50.0f / 720.0f);
+    EXPECT_EQ(az[2].pixelscale, 0.0f) << "unset stays unset";
+    EXPECT_EQ(az[2].scaleFactor, 2.0f);
+}
+
 /// The output colour transform crosses the wire (v60).
 ///
 /// It has to: the desktop, the headless-serve backend and the browser
@@ -548,7 +597,7 @@ TEST(SceneDump, thePerFaceTexturePaletteCrossesTheWire)
     EXPECT_FALSE(loaded.scene[1].material.texturepalette);
 }
 
-/// The rendering order of an on-top draw crosses the wire (v81). A
+/// The rendering order of an on-top draw crosses the wire (v86). A
 /// browser that read every on-top draw as one order drew a pattern's
 /// instance toggles under the dimension line crossing them.
 TEST(SceneDump, theOnTopOrderCrossesTheWire)
@@ -1203,6 +1252,64 @@ TEST(SceneDump, anObjectEntryNamesItsDocumentObject)
     ASSERT_TRUE(unnamed != model.objects.end());
     EXPECT_TRUE(unnamed->second.entry.info.obj.empty());
     EXPECT_TRUE(unnamed->second.entry.info.doc.empty());
+}
+
+/// Per-client visibility (v80, docs/CoinRetirement.md 5.18): a client
+/// admits a draw of a hidden object some view shows on its own only when
+/// its own visibility shows it, so the per-view-shown tag has to cross, on
+/// the draw (as a flag -- the id is interned per process). Before v80 it
+/// did not, and the snapshot dropped the draws. v80 also sent the object's
+/// CHAIN for the client to resolve its table against; since v82 the host
+/// resolves (5.23) and tells the client objectKeys, so the chain stays home.
+TEST(SceneDump, aDrawCarriesItsPerViewShownTagAndNoChain)
+{
+    BlobStore store;
+    Render::SceneSnapshot snap = makeScene();
+    // The second draw of 0x1111 is one only some view shows.
+    int tagged = 0;
+    for (auto& d : snap.scene) {
+        if (d.objectKey == 0x1111 && tagged++ == 1)
+            d.capturedMode = Render::perViewShownModeId();
+        // All of 0x2222 is per-view shown: its entry says so, so a viewer
+        // that does not show it can leave it out before its draws arrive.
+        if (d.objectKey == 0x2222)
+            d.capturedMode = Render::perViewShownModeId();
+    }
+    attachSinks(snap, store);
+    Render::ObjectInfoMap info;
+    info[0x1111] = {"MainDoc", "Box", "Box", "Part::Box",
+                    {{"MainDoc", "Asm"}, {"OtherDoc", "Box"}}};
+    snap.objectInfo = &info;
+    std::vector<Render::SceneSnapshot::ObjectEntry> entries;
+    snap.objectEntries = &entries;
+
+    std::vector<uint8_t> payload;
+    ASSERT_TRUE(Render::saveSceneSnapshot(payload, snap));
+    Render::SceneSnapshot loaded;
+    ASSERT_TRUE(
+        Render::loadSceneSnapshot(payload.data(), payload.size(), loaded));
+    Render::SceneObjectModel model;
+    ASSERT_TRUE(resolveInto(loaded, store, model));
+
+    auto named = model.objects.find(0x1111);
+    ASSERT_TRUE(named != model.objects.end());
+    EXPECT_EQ(named->second.entry.info.obj, "Box");
+    EXPECT_TRUE(named->second.entry.info.path.empty());
+
+    int shown = 0, plain = 0;
+    for (const auto& d : named->second.draws) {
+        if (d.capturedMode == Render::perViewShownModeId())
+            ++shown;
+        else
+            ++plain;
+    }
+    EXPECT_EQ(shown, 1);
+    EXPECT_EQ(plain, 1);
+    EXPECT_FALSE(named->second.entry.perViewShown);
+
+    auto whole = model.objects.find(0x2222);
+    ASSERT_TRUE(whole != model.objects.end());
+    EXPECT_TRUE(whole->second.entry.perViewShown);
 }
 
 /// What the whole phase is for: publishing an unchanged scene again
@@ -2630,6 +2737,55 @@ TEST(SceneDump, aMeshChunkRoundTripsThroughThePublicParse)
     std::vector<uint8_t> again;
     ASSERT_TRUE(Render::encodeMeshChunk(parsed, again));
     EXPECT_EQ(chunk, again);
+}
+
+/// Point markers cross the wire by content: the palette of bitmaps and
+/// the palette entry of every point index, NoMarker included. A reader
+/// that lost them draws a sketch's vertices as squares of the point
+/// size where GL draws the marker's bitmap.
+TEST(SceneDump, pointMarkersCrossTheWire)
+{
+    Render::ParsedMeshChunk mesh;
+    mesh.posStore = {0, 0, 0, 1, 0, 0, 2, 0, 0};
+    mesh.positions = mesh.posStore.data();
+    mesh.numVertices = 3;
+    mesh.pointStore = {0, 1, 2};
+    mesh.pointIndices = mesh.pointStore.data();
+    mesh.numPointIndices = 3;
+    Render::MeshData::PointMarker disk;
+    disk.width = 3;
+    disk.height = 2;
+    disk.mask = {0, 255, 0, 255, 255, 255};
+    Render::MeshData::PointMarker dot;
+    dot.width = 1;
+    dot.height = 1;
+    dot.mask = {255};
+    mesh.markers = {disk, dot};
+    mesh.markerStore = {1, Render::MeshData::NoMarker, 0};
+    mesh.pointMarkers = mesh.markerStore.data();
+
+    std::vector<uint8_t> chunk;
+    ASSERT_TRUE(Render::encodeMeshChunk(mesh, chunk));
+    Render::ParsedMeshChunk parsed;
+    ASSERT_TRUE(Render::parseMeshChunk(chunk.data(), chunk.size(), parsed));
+    ASSERT_EQ(parsed.markers.size(), 2u);
+    EXPECT_EQ(parsed.markers[0].width, 3);
+    EXPECT_EQ(parsed.markers[0].height, 2);
+    EXPECT_EQ(parsed.markers[0].mask, disk.mask);
+    EXPECT_EQ(parsed.markers[1].mask, dot.mask);
+    ASSERT_TRUE(parsed.pointMarkers);
+    EXPECT_EQ(std::vector<uint8_t>(parsed.pointMarkers, parsed.pointMarkers + 3),
+              mesh.markerStore);
+
+    // A plain point set says nothing about markers.
+    mesh.markers.clear();
+    mesh.pointMarkers = nullptr;
+    std::vector<uint8_t> plainChunk;
+    ASSERT_TRUE(Render::encodeMeshChunk(mesh, plainChunk));
+    Render::ParsedMeshChunk plain;
+    ASSERT_TRUE(Render::parseMeshChunk(plainChunk.data(), plainChunk.size(), plain));
+    EXPECT_TRUE(plain.markers.empty());
+    EXPECT_FALSE(plain.pointMarkers);
 }
 
 /// A line mesh declares its ladder at a fraction of the triangle

@@ -98,7 +98,9 @@ public:
     App     ::PropertyBool           MakeInternals;
     /** Behaviour version, hidden. 0 is a sketch saved before the property
      * existed. 1: a planar external face perpendicular to the sketch projects
-     * to a segment spanning the face, not a 20000 long line.
+     * to a segment spanning the face, not a 20000 long line. 2: an external
+     * edge taken by intersection is its cut with the sketch plane alone, not
+     * its projection and the cut.
      */
     App     ::PropertyInteger        _Version;
     /** @name methods override Feature */
@@ -338,6 +340,18 @@ public:
     int setDriving(int ConstrId, bool isdriving);
     /// get the driving status of this constraint
     int getDriving(int ConstrId, bool& isdriving);
+    /** Say a circle's or an arc's size as its diameter (true) or as its
+     * radius (false): the one kind of constraint becomes the other, in place,
+     * with its name, its label and everything else it has.
+     *
+     * The size stays what it is: the constraint's value is doubled or halved
+     * with its kind. Not so a value an expression gives. That is the
+     * expression's, which now gives the other measure.
+     *
+     * Returns 0, also when the constraint is that kind already; -1 for a
+     * constraint that is neither a radius nor a diameter.
+     */
+    int setDiameter(int ConstrId, bool diameter);
     /// toggle the driving status of this constraint
     int toggleDriving(int ConstrId)
     {
@@ -384,8 +398,6 @@ public:
     /// Change an angle constraint to its supplementary angle.
     void reverseAngleConstraintToSupplementary(Constraint* constr, int constNum);
     void inverseAngleConstraint(Constraint* constr);
-    /// Modify an angle constraint expression string to its supplementary angle
-    static std::string reverseAngleConstraintExpression(std::string expression);
 
     // Check if a constraint has an expression associated.
     bool constraintHasExpression(int constNum) const;
@@ -398,6 +410,15 @@ public:
     int setVirtualSpace(int ConstrId, bool isinvirtualspace);
     /// set the driving status of a group of constraints at once
     int setVirtualSpace(std::vector<int> constrIds, bool isinvirtualspace);
+    /** Set whether this constraint is drawn
+     *
+     * Apart from the virtual space it is in: the constraints panel hides
+     * what its filter leaves out with this. Nothing is written when the
+     * constraint is as asked already.
+     */
+    int setVisibility(int ConstrId, bool isVisible);
+    /// the same for a group of constraints at once
+    int setVisibility(std::vector<int> constrIds, bool isVisible);
     /// get the driving status of this constraint
     int getVirtualSpace(int ConstrId, bool& isinvirtualspace) const;
     /// toggle the driving status of this constraint
@@ -937,6 +958,11 @@ public:
     void makeMissingVerticalHorizontal(bool onebyone = false);
     void makeMissingEquality(bool onebyone = true);
 
+    /// Detect degenerated geometries
+    int detectDegeneratedGeometries(double tolerance);
+    /// Remove degenerated geometries
+    int removeDegeneratedGeometries(double tolerance);
+
     // helper
     /// returns the number of redundant constraints detected
     int autoRemoveRedundants(DeleteOptions options = DeleteOption::UpdateGeometry);
@@ -949,6 +975,9 @@ public:
     // Signaled when solver has done update
     fastsignals::signal<void ()> signalSolverUpdate;
     fastsignals::signal<void ()> signalElementsChanged;
+    /// A constraint is about to join Constraints, already cloned: a slot
+    /// may adjust it (the view scales a new label's distance).
+    fastsignals::signal<void (Constraint*)> signalConstraintAdded;
 
     Part::TopoShape buildInternals(const Part::TopoShape &edges) const;
 
@@ -1103,6 +1132,19 @@ private:
     std::vector<int> VertexId2GeoId;
     std::vector<PointPos> VertexId2PosId;
     std::map<std::pair<int,PointPos>,size_t> GeoPos2VertexId;
+
+    /// Who is in a Group or Text: built on the first question, dropped when
+    /// Constraints change. Without it isConstraintActiveInSketch() scanned
+    /// every constraint for each element of each constraint it was asked
+    /// about, and the view asks about all of them on every redraw -- and
+    /// getGroupHandleIfInGroup() did the same for every curve.
+    struct GroupIndex
+    {
+        std::map<int, int> members;  // the elements after the handle, to their handle
+        std::set<int> handles;       // the construction line first in each
+    };
+    mutable std::unique_ptr<GroupIndex> groupIndex;
+    const GroupIndex& getGroupIndex() const;
 
     Sketch solvedSketch;
 

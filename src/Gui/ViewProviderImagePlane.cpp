@@ -178,7 +178,7 @@ void ViewProviderImagePlane::resizePlane(float xsize, float ysize)
     pcCoords->point.set1Value(3,-(xsize/2),+(ysize/2),0.0);
 }
 
-void ViewProviderImagePlane::loadImage()
+void ViewProviderImagePlane::loadImage(bool resize)
 {
     Image::ImagePlane* imagePlane = static_cast<Image::ImagePlane*>(pcObject);
     std::string fileName = imagePlane->ImageFile.getValue();
@@ -193,7 +193,8 @@ void ViewProviderImagePlane::loadImage()
         }
 
         QSizeF size = getSizeInMM(impQ);
-        setPlaneSize(size, impQ);
+        if (resize)
+            setPlaneSize(size, impQ);
         convertToSFImage(impQ);
     }
 }
@@ -202,7 +203,13 @@ void ViewProviderImagePlane::setPlaneSize(const QSizeF& size, const QImage& img)
 {
     if (!img.isNull()) {
         Image::ImagePlane* imagePlane = static_cast<Image::ImagePlane*>(pcObject);
-        if (!isRestoring()) {
+        // Not while restoring -- and not while a progressive load's drain
+        // replays this view provider, which it does with the restore status
+        // already dropped: the saved size is the user's, and the image's
+        // own was written over it on every progressive open (six image
+        // planes of one file came out 5-14 times smaller).
+        if (!isRestoring()
+                && !imagePlane->getDocument()->testStatus(App::Document::RestoreDrain)) {
             imagePlane->XSize.setValue(size.width());
             imagePlane->YSize.setValue(size.height());
         }
@@ -303,6 +310,17 @@ void ViewProviderImagePlane::convertToSFImage(const QImage& img)
         BitmapFactory().convert(img, sfimg);
         texture->image = sfimg;
     }
+}
+
+void ViewProviderImagePlane::finishRestoring()
+{
+    ViewProviderGeometryObject::finishRestoring();
+    // The image is a file included in the archive, which an eager load
+    // writes out after the objects are restored: the load at restore found
+    // no file and the plane stayed untextured (a progressive load, whose
+    // drain replays this later, had it). The texture only -- the size is
+    // the saved one, the user's.
+    loadImage(false);
 }
 
 void ViewProviderImagePlane::updateData(const App::Property* prop)

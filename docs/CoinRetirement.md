@@ -2625,6 +2625,883 @@ designed.
   cell and reads its own confusion as a product bug. Click into the
   cell instead.
 
+### 5.18 Per-view object visibility (2026-09-26)
+
+A view can show and hide objects on its own, independent of their
+`Visibility`: the first half of editing per view (each client editing
+without the others seeing the edit geometry replace the shape).
+
+**Storage (user ruling).** One bool map on the view,
+`View3DInventor::ObjectVisibilities`, persisted in GuiDocument.xml like
+`ObjectDisplayModes` and keyed the same two ways: a bare name ("Part",
+"Doc#Part") is the object wherever it appears in the view, a subname
+path ("Asm.Sub.Part.") is one occurrence. Value "1" shows, "0" hides.
+Bare entries count only while the view's `PerViewVisibilities` switch
+is on; path entries -- the "path hide" an edit uses -- always count.
+Python: `view.setObjectVisibility(obj, visible=None, subname=None)` and
+`getObjectVisibility`. One rule resolves both forms,
+`Render::resolveVisibility`: an entry counts for the object it ENDS at,
+rooted beats bare, and a draw is hidden when any object on its chain
+resolves hidden.
+
+**Coin side (user design).** `SoFCVisibilityElement` mirrors the map,
+set by the view's `SoFCUnifiedSelection` for GL render, bounding box,
+pick and event traversals; `SoFCSwitch` reads it, but only for the
+object's own display-mode switch (a direct child of the innermost
+`SoFCSelectionRoot`). So picks and fit-all of one view follow its map.
+Fit-all did not until 2026-09-26: in mode 3 `getSceneBoundBox` answered
+from the render cache's scene box, which describes the one capture all
+views share, and its fallbacks start below `selectionRoot`, the node
+that sets the element. A view with a map now sets the element on its
+own action and takes the traversal (the tight per-ViewProvider box asks
+only `Visibility`, so it is skipped too).
+Not enabled for `SoCallbackAction` (the capture, and exports) nor for
+`SoSearchAction` (a hidden object must stay addressable). The element
+read records a cache dependency, so a table change re-validates the
+bounding box caches below the root; the root itself is touched, since
+the caches above it cannot see the table.
+
+Only an object some view has an entry for reads the element
+(`SoFCVisibilityElement::countOverride`, counted per view). The
+per-object separators are shared by every view of the document, and a
+cache that read the element matches only the view that built it: when
+every switch read it, one view's entry cost every other view its pick
+culling, since `SoSeparator::rayPick` culls only with a valid bounding
+box cache (400 boxes, a pick through a gap in the other view: 266 us ->
+1882 us; `tests/gui/per-view-visibility-pick-cull.py`). Any other
+object answers the same in every view and records nothing. An object
+entering or leaving that set gets its switch touched, because the
+caches above it were built without the dependency, or will stop having
+it; a toggle of an object already in the set touches nothing.
+
+**Capture side: shared, filtered at draw.** The mode-3 capture is one
+traversal shared by every view, canvas cell and served client, so it
+stays view-independent and each view drops what it hides when it DRAWS:
+`BGFXStyleState::visibilityHides`, resolved once per objectKey and
+cached per sub-view like the style overrides, checked beside the on-top
+replacement in every pass (fill, shadow casters, outlines, section caps,
+instance groups), in the scene bounds and in the snapshot. A per-view
+hide or unhide therefore re-captures nothing.
+
+A per-view SHOW of a hidden object needs the object in the capture. The
+view counts the object's switch (`SoFCSwitch::setPerViewShown`) and
+forces its ViewProvider to tessellate; the capture then traverses the
+switch's defaultChild although whichChild is off, every draw tagged
+`Render::perViewShownModeId()`. A tagged draw is admitted only by a
+view whose own table shows the object (and never by the internal-GL
+renderer or a served snapshot). Only the first count touches the node;
+a release leaves the entry, so toggling back re-captures nothing either.
+
+**Eviction (user design, 2026-09-26): released entries go first under
+memory pressure.** A released entry is stamped with the time its count
+fell to zero. The level plan (docs/SceneStreaming.md sec 13) evicts
+released entries before either of its sweeps trades anything visible:
+on the GPU from `PerViewShownEvictWatermark`, a fraction of the GPU
+budget (0.9 by default, so BELOW the budget), and under an observed CPU
+ceiling against its shortfall. It prices each tagged draw in the
+currency of the pressure it answers (`uploadedBytesOf`, or the resident
+bytes), hands the candidates to the Gui evictor through
+`MeshSourceRegistry::evictReleasedShown`, and takes what that freed off
+the sweep's deficit for the round. The evictor charges each draw to the
+innermost object on its chain that has an entry (a shown container's
+children draw under their own names), never evicts one a view still
+counts, and ranks the released by size times time since release: the
+big and the long unwanted go first, a quick hide and show keeps what it
+toggles. An evicted entry is erased and its switch touched, so the next
+capture leaves the object out; showing it again re-captures it. No GPU
+budget (GL states none) means no GPU trigger. `LevelDebug` names every
+eviction. Verified by `tests/gui/per-view-shown-eviction.py`.
+
+Why not capture every hidden object up front with box stand-ins (the
+first plan): hidden objects outnumber visible ones about 6 to 1 in the
+sketcher corpus (3332 against 570 shape objects, 5.5x the BRep bytes),
+tessellation is synchronous so a box would never be on screen, and
+every consumer of the draw list would need the new filter at once.
+Capture on first show touches only objects someone shows.
+
+- **Found on the way:** `Material::operator<` compared the style
+  resolution fields (ownstyle, registeredstyles, capturedmode,
+  traversedmode, interestbits) only for triangles. A line or point draw
+  fell into the bucket of an equal-looking draw of another object and
+  took its tag: the shown object's faces were admitted and its edges
+  counted in every view's bounds. Now compared for every type.
+- **Found here, fixed after (`e0c37b32ce`):** in a portrait cell the
+  backend frame (and `getPointOnViewport`) placed objects 1/aspect
+  farther from the centre than the Coin ray pick, in both axes: the
+  backend feed skipped Coin's `ADJUST_CAMERA` widening.
+
+**Per client on the served tier (user design, 2026-09-26: the table on
+the mirror).** A browser client sets its own map with the `view.visibility`
+op (`{map, perView}`, the ObjectVisibilities keys and values; it replaces
+the whole table). The host parses it -- a subname path needs the document
+-- onto that client's `MirrorViewer`, which holds a `ViewVisibility` exactly
+as a desktop view does (`ViewVisibility.h`: the table, the element form,
+the per-object counts). The served root is one `SoFCUnifiedSelection` per
+document shared by every client, so it takes the element from its pick
+view -- `ViewerContext::current()` inside the client's `ViewerScope` --
+through the new `ViewerContext::visibilityElementTable()`: the host's
+picks and bounds for a client follow that client's table and no one
+else's. A client may set its own table with view access only: it is view
+state, not an edit. Verified by `tests/gui/serve-client-visibility.py`.
+
+What the client DRAWS (user design: ship the chains and the table). The
+host tells the client its table as parsed (`{"cmd":"visibility"}`, each
+entry's object chain, rooted, shown), and the WASM viewer hands it to its
+own backend with `setMainViewVisibility`, against the object chains the
+scene now carries (`SceneDump` v80: `ObjectInfo::path` on each scene object
+entry). So the SAME rule filters every pass in the browser as on the
+desktop, `Render::resolveChainVisibility` (shared with the viewer's local
+pick, which skips what the client does not see). A hidden object some view
+shows on its own now TRAVELS: the snapshot drops only what its own table
+hides (`visibilityHidesObject`), each draw says whether it is per-view
+shown (a flag -- the id is interned per process), and so does the object
+entry when all of it is, so a viewer that does not show it leaves it out
+of its framing before its geometry arrives. The host republishes when a
+client's table changes: the serve source publishes on document signals,
+and a client's show raises none. Verified in a real browser by
+`tests/gui/serve-client-visibility-browser.py`.
+
+**An edit's own hide (user ruling 2026-09-26: transient, 2026-09-27).**
+Entering a sketch used to turn its `Visibility` off in every view
+(TempoVis `tv.hide(ActiveSketch)`) and MOVE its view provider's children
+under the editing root, so the sketch vanished from every view and from
+every Link to it. In mode 3 it now does neither: it hands the editing
+root its own node (`Sketch_EditContent`: the grid and `Sketch_EditRoot`)
+and asks `ViewerContext::hideEditedObject()`, which hides the ONE
+occurrence being edited (`Gui::Document::getInEdit`'s parent and
+subname) in every view of the edit session. The hide is a path entry of
+each view's table from a second, TRANSIENT source
+(`ViewVisibility::setTransient`), placed ahead of the persisted map so
+it beats a persisted show of the same path, and never written into
+`ObjectVisibilities`. `EditingRoot` holds it and applies it to each view
+as it attaches -- a view opened mid-edit hides it too -- and
+`resetEditingRoot` clears it everywhere. A served client's mirror
+republishes and re-announces its table when the hide comes or goes.
+Modes 0-2 have no per-view table (`setEditHide` answers false there) and
+keep the move and the TempoVis hide. What changes in-session is nothing
+visible, since every view of the document joins the session; the payoff
+is a view outside it -- another document showing the sketch through a
+link -- and per-client sessions later. The sketch's `getElementPicked`
+now answers as edit geometry only for a pick through the edit graph: a
+pick of another occurrence of the shape, now in the scene during the
+edit, is the shape's element. Verified by `tests/gui/edit-hide.py` (the
+mechanism, a Python view provider, two views and one opened mid-edit)
+and `tests/gui/sketch-edit-hide.py` (a sketch in a Body, in a Part a
+Link shows, and edited through that Link).
+
+- **Found on the way (`5124c6cc87`):** a path hide leaked to every
+  other occurrence of the same node. An object's root sits under each
+  group and link that shows it, and the caches above its switch -- its
+  root's bounding box cache, which culls a pick -- keyed only on the
+  table: built under the hidden occurrence, the empty box was reused
+  for the Link's. `SoFCVisibilityElement::check` now invalidates the
+  open caches when the view has a rooted entry ending at the object.
+
+**Verified** by `tests/gui/per-view-visibility.py`
+(`GuiPerViewVisibility_tests_run`), two views of one document, 38
+checks: picks, scene bounds and backend frame pixels per view, bare
+entries gated, path entries through an App::Part and a Link, each
+occurrence of one node hidden alone (a Link showing the Part), a bare
+show of a hidden object drawn in one view only, and the other view
+untouched throughout.
+
+### 5.19 Measured: tail-matched contexts against path entries (2026-09-27)
+
+Step 1 of the served edit root plan, before the per-view contexts are
+built on the selection roots' secondary contexts (`contextMap2`, matched
+by tail in `SoFCSelectionRoot::getNodeContext2`) instead of the path
+entries of 5.18. `tests/gui/visibility-context-bench.py`: 20 App::Parts
+of 50 boxes and a Link to each Part (2000 drawn occurrences), top view;
+k boxes hidden in their Part occurrence, either as a path entry
+(`setObjectVisibility(part, False, "Box.")`) or as a tail hide
+(`partialRender(["Box.!hide"])`); median of five batches, two rounds
+that agree to about 10%.
+
+First as the hides were built (after the two bookkeeping fixes at the end
+of this section), then with the invalidation confined to the key's span.
+Microseconds, frame in milliseconds, mode 3 (mode 0 measures the same for
+bbox and picks):
+
+| arm, k | bbox | pick, gap | pick, hit | frame |
+|---|---|---|---|---|
+| none | 2.5 | 58 | 95 | 0.14 |
+| tail 1 | 105 | 110-136 | 155 | 0.35-0.44 |
+| path 1 | 110-128 | 127-135 | 172-184 | 0.38-0.67 |
+| tail 10 | 835-841 | 668-673 | 732 | 1.33-1.76 |
+| path 10 | 1002-1026 | 747-760 | 791-806 | 1.48 |
+| tail 100 | 1593-1602 | 1177-1179 | 1231-1250 | 2.30-2.38 |
+| path 100 | 3025-3537 | 2104-2142 | 2199-2219 | 5.00 |
+| **confined:** tail 1-100 | 2.5-2.6 | 56-59 | 89-105 | 0.12-0.21 |
+| **confined:** path 1-100 | 2.4-2.6 | 60-70 | 97-122 | 0.13-0.15 |
+
+The frame is `SoRenderManager::render()` in the viewport's GL context:
+traversal and submission. The mode-0 GL frame (llvmpipe, 36-46 ms, about
+5 ms of noise between identical cells) showed nothing either way.
+
+**The frame slowdown was the bounding box pass.** `SoRenderManager` runs
+one per render for auto clipping, so every frame paid what the bbox
+column shows. That pass, and the picks, were slow because a hide spoiled
+every open cache up to the scene root -- `SoCacheElement::invalidate()`
+walks them all -- so each pass walked every object, and each pick every
+Part or Link carrying a hide. Only the caches INSIDE the key's span can
+answer wrongly. A key is matched by the tail of the chain of roots, so
+whether it matches is decided within the subtree of the root it starts
+at: that root's own cache and every cache above it get the same answer
+however they are reached. The caches between it and the node are the
+ones other occurrences share (a Link reuses the Part's children root).
+
+Now each root on a traversal's stack records where it entered: the cache
+open then and the state depth (`Stack::entryCaches`, pushed by
+`beginAction` and `renderPrivate`). `SoFCSelectionRoot::
+invalidateCachesInside()` invalidates innermost-first like Coin but stops
+at the entry cache, and skips the root's own -- the one set at entry depth
++ 1, since its separator pushes and sets the cache before any child runs.
+The span is the node's longest secondary key for a tail context
+(`checkSecondaryCache`, replacing `selCounter.checkCache(state, true)` in
+bbox and GL render) and the chain from its first object for a path entry
+(`invalidateObjectChainCaches`, in `SoFCVisibilityElement::check`). A
+stack without a mark, or an action without a cache element, falls back to
+the full invalidation.
+
+- **A hide now costs next to nothing**: bbox and frame at the no-hide
+  baseline for either mechanism and any k; picks within 10-25 us of it at
+  k = 100 (the few Parts a ray enters walk their boxes).
+- **Before that, the tail context was never the dearer one**: at k = 100
+  about half the path entry's cost, although it hid twice the occurrences
+  (below); a path entry resolves the chain of every overridden switch
+  against the whole table. Confined, the two are level.
+- **No hide costs nothing** in either: both are gated by a count of the
+  nodes that carry one.
+
+The tail arm hides the box through the Link too, as `partialRender`
+means to: it changes what the object itself draws, so its key is the
+object's own content (`getDetailPath` without append), starting at the
+Part's children root -- which a Link to the Part reuses, replacing only
+the Part's own root and switch. A per-view hide of one occurrence keys
+from the top instead (5.18's user model: `getDetailPath` WITH append,
+`[Part root, children root, box]`); it makes the same lookups, so it
+costs the same.
+
+Found on the way, fixed in the same round: the tail hide's cache
+bookkeeping was broken twice over, which contaminated every cell after
+the first unhide until fixed.
+- `SoFCSelectionCounter::checkAction` read the context BEFORE it changed,
+  so a hide was never counted and a SHOW was, and the count was never
+  given back: from the first unhide on, the node spoiled every cache
+  above it on every pass (bbox 2.5 us -> 1.6 ms on this scene, for good).
+  Now `recount()` after the change.
+- A hidden root returned from `doActionPrivate` before its count was
+  checked, so the caches above it were built without it and answered for
+  every other occurrence -- the leak `5124c6cc87` fixed for path entries.
+  `getBoundingBox` now checks first; GL render already did.
+Both pinned by `tests/src/Gui/SecondaryHide.cpp`, a Part-and-Link graph
+reduced to its nodes, as is the confinement (the scene root and the key's
+first root keep their caches).
+
+### 5.20 Measured: bare entries against a one-node tail key (2026-09-28)
+
+Step 4 of the served edit root plan moves path entries and the edit hide
+onto per-view tail contexts. Whether BARE entries (the object wherever
+it appears; `PerViewVisibilities` on) follow, as a one-node key
+`[object root]`, or keep their name match in `SoFCVisibilityElement`, was
+measured first. `visibility-context-bench.py` gained a `bare` arm
+(`setObjectVisibility(box, False)`). The `tail` arm stands in for the
+one-node key: its key `[children root, box]` is shared by the Link, so it
+reaches the same two occurrences, and `getNodeContext2` makes the same
+lookups whatever a key's length. Median of five batches, two rounds.
+
+| mode 3, k = 1-100 | bbox | pick, gap | pick, hit | frame |
+|---|---|---|---|---|
+| none | 2.6-2.8 | 64-73 | 103-116 | 0.15-0.17 |
+| tail | 2.7-3.0 | 63-73 | 102-110 | 0.12-0.18 |
+| path | 2.7 | 67-74 | 103-127 | 0.14-0.25 |
+| bare | 2.7-3.1 | 68-73 | 108-117 | 0.13-0.19 |
+
+Mode 0 is the same picture (bbox 2.1-2.8 us for every arm, picks within
+the no-hide spread, the llvmpipe frame 39-47 ms either way). **Every arm
+is at the baseline**, the differences inside the run-to-run spread: since
+the invalidation was confined (5.19), no mechanism costs anything a
+traversal can see, and the choice for bare entries is one of meaning, not
+of speed. The meanings do differ: a Link REPLACES its target's root, so
+a one-node key on a leaf object does not reach a Link to that object (as
+its own Visibility does not), where the name match does; an object
+INSIDE a linked container is reached by both, its root being shared.
+
+### 5.21 A hide keyed per occurrence was drawn anyway (fixed 2026-09-28)
+
+Found writing the colour-dialog test (`tests/gui/element-color-hide.py`)
+for step 4. A Link's own colour-dialog hide of a grandchild
+(`Link2: "Sub.Box2.!hide"`, Link2 -> Asm -> Sub -> Box2) was honoured by
+picks and the bounding box and still DRAWN in mode 3; the Part's own hide
+of the same grandchild worked everywhere.
+
+**What a Link shares with a Part** (measured, `getDetailPath` dumps):
+- `LinkChildrenDirect` on (the default, 96e6abfaf2 / 54478c3596): the
+  Part holds its children through its own `LinkView` with type
+  `SnapshotMax`, i.e. the children's REAL roots, and a Link replaces only
+  the Part's root and switch (`LinkInfo::getSnapshot`). Everything below
+  the Part's children root -- Sub's root, its children root, Box2's root
+  -- is the same node for Asm, Link2 and any other Link to Asm.
+- Off: the original scheme. `LinkInfo::updateChildren` mirrors the
+  children as `SnapshotChild` nodes, recursively, which lets the Links
+  override them; nothing is shared with Asm, but the mirror belongs to
+  the linked object's `LinkInfo`, so every Link to Asm shares it. A
+  linked object with no child root (and not a plain group) is always
+  mirrored this way. By design a Part's own hide does not reach a mirror.
+- Element switches (`LinkView` elements of a LinkGroup, an array, an
+  Assembly3 group in `GroupMode` with `VisibilityList`) are the structural
+  per-child override: a container's OWN children. The colour dialog is
+  for what lies below them (user ruling).
+
+**Cause.** A whole-object secondary hide (`SelContext::hideAll`) took
+effect during the capture traversal, but the render cache keeps one cache
+per NODE (`SoFCRenderCacheManagerP::preSeparator`, `cachetable[node]`,
+reused while `isValid(state)`), which the hide is no dependency of. The
+first occurrence to build a shared node's cache decided for all of them.
+A Part's hide keys its content, which every occurrence matches, so it
+never showed; a Link's keys from the Link's own root. The flatten
+re-checks secondary contexts per composed key, but only ELEMENT contexts
+on the shape node.
+
+**Fix.** The render-cache capture keeps what a hide takes out
+(`keepsHidden()` in `SoFCSelectionRoot::doActionPrivate`, gated on the
+capture flag so an export still leaves it out); the flatten drops a
+hidden entry per the key composed at each level
+(`NodeKey::isHidden()`, the traversal's own tail lookup at every root of
+the chain; gated on a count of hiding contexts). A key matched inside a
+cache's subtree matches wherever the subtree is reused, so a level may
+drop what it can tell, and the top level holds the whole chain. Every
+consumer of the flattened map -- the backend feed, the render-cache GL
+modes, selection and highlight -- sees the same. Cost: an object hidden
+this way is tessellated and captured (not one whose own Visibility is
+off: `SoFCSwitch` keeps those out).
+
+Before-state, HEAD code with the new test: direct mode, Link2's hide drawn
+(3 FAIL); mirror mode, Link2's hide took Link3's Box2 out of the frame
+through the shared mirror (3 FAIL). After: 322/322 in both modes.
+
+### 5.22 Force show: the colour dialog's `!show` (2026-09-28)
+
+The counterpart of `!hide` (user design, step 4 of the served edit root
+plan): a container's colour dialog forces a grandchild shown through that
+container although the grandchild's own Visibility is off. The secondary
+context's hide became a tri-state `SelContext::visibility` (-1 none, 0
+hidden, 1 shown); `SoSelectionElementAction::ForceShow` sets 1 and `Show`
+clears either. `App::DocumentObject::shownMarker()` (`"!show"`) sits beside
+`hiddenMarker()`; `partialRender`, `ViewProviderLink::applyColorsTo`, the
+`"!show*"` colour query and the dialog's new Show button all take it.
+
+**App and Part** (full symmetry with the hide, user ruling):
+`LinkBaseExtension::getShownSubnames`/`isSubnameShown` beside the hidden
+ones; `Part::Feature`'s shape building carries a map of marks (subname ->
+shown) where it carried the hidden set, and a force-shown child enters the
+container's shape although its own Visibility is off;
+`extensionIsElementVisibleEx` answers 1 for it (the Link's always, the
+group's for selection); the STEP export writes it visible for that usage
+(with `ExportHiddenObject`, the default -- otherwise the hidden child is
+not written at all). Found on the way: a Link to an App::Part took the
+Part's shape as it is, so a Link's OWN hide of a grandchild never left the
+Link's shape; the short cut is now skipped while marks apply. Not done: the
+STEP import maps an invisible usage back to `!hide` but has no counterpart
+for a visible usage of a hidden component.
+
+Where the answer is made, each for the reason of 5.21:
+- **Coin traversals** (GL, pick, bounding box): the object's own
+  `SoFCSwitch` asks its root (`SoFCSelectionRoot::isSwitchShown`) and
+  traverses the default child when a show matches the chain. The root's
+  OWN cache is open at that point, which `checkSecondaryCache()` at the
+  root's entry cannot reach (a hide returns before it opens), so the switch
+  runs it again: without that, the bounding box built through the hidden
+  occurrence culled every pick through the shown one.
+- **The capture** cannot answer per chain, so a root holding any show
+  takes its hidden object in TAGGED -- the per-view show's tag,
+  `Render::perViewShownModeId()` -- and the flatten untags an entry whose
+  key `NodeKey::isShown()`: every root on the chain whose own switch hides
+  its object holds a show matching the chain up to it. Anything else stays
+  tagged, which every view drops unless it shows the object itself.
+- **Tessellation**: a view provider skips the visual update of a hidden
+  object, so a show holds `forceUpdate()` on it while it lasts, as a
+  per-view show does.
+
+`merge()` now takes the first override of either kind scanning longest key
+first: a show held for this very chain beats a hide held for a shorter tail
+of it, and the reverse.
+
+Before-state, the extended `element-color-hide.py`: 32 FAIL (the marker did
+not even survive storage: `GeoFeature` resolved `!show` as an element name
+and dropped it). After: 588/588, both LinkChildrenDirect modes. With the
+container shape volumes: 8 FAIL before the App side, 2 more for the Link's
+own hide; after, 624/624.
+
+### 5.23 Per-view entries are node keys (2026-09-28)
+
+Step 4 of the served edit root plan, the per-view half (user rulings:
+path entry = OCCURRENCE key, bare entry = one-node key, storage B, the
+host resolves the draws). 5.18 matched a view's entries by OBJECT NAME:
+the chain of objects a traversal passes through, with an ordered
+subsequence rule so a subname could elide a Link's target. That chain is
+not the scene: which object a Link snapshot "is" was my own `setNodeOrigin`
+naming (5.9), and a bare name reached a Link to the object that the Link's
+own Visibility does not. The entries are now what the selection contexts
+of `contextMap2` are: keys of selection root NODES, matched by tail.
+
+**The key.** A path entry ("Asm.Box2.") is the selection roots of
+`getDetailPath(subname, append = true)` from the top-level object's real
+root -- `[Asm root, Box2 root]` -- so its first node is at the top of the
+scene and it names ONE occurrence: Link2 -> Asm reaches Box2 through
+Link2's own root and does not match. A bare entry is the object's own root
+alone: every occurrence that draws that root (inside a container a Link
+shows, since the Link shares the container's children -- 5.21), and not a
+Link to the object itself, which replaces the root with its own. The edit
+session's transient hide is the edited occurrence's path entry. Ids are
+never reused, so a key naming a deleted node matches nothing.
+
+**Storage B: the view owns the keys.** `ViewVisibility` resolves its
+entries (`VisibilityEntry`: document, top object, subname, rooted,
+visible -- names, since the scene under them changes) into
+`SoFCVisibilityElement::Table`, keyed by the root each entry ENDS at, the
+lists longest key first. `contextMap2` stays document-level (the colour
+dialog, `partialRender`); no shared node is touched when a view's table
+changes, which would recapture and republish for everyone.
+
+**One matcher.** `Table::resolve(ids, len)`: a key matches when it is a
+tail of the chain of roots, the longest match decides -- `getNodeContext2`'s
+rule. Two callers:
+- **Coin** (`SoFCVisibilityElement::check`, at the object's own switch):
+  the chain is the action's stack of roots (`getActionRootIds`). The quick
+  reject is a process-wide count of END root ids (was object names). Caches
+  are spoiled only inside the root the longest key starts at
+  (`invalidateKeyCaches`, `checkSecondaryCache`'s span); a one-node key
+  spoils nothing. `5124c6cc87`'s `invalidateObjectChainCaches` is gone, its
+  test stands.
+- **The host, per draw** (`ViewVisibility::drawSet`): each draw's key is a
+  chain of the same root ids (`NodeKey::getNodeIds`, recorded once per key
+  as `Render::ObjectInfo::nodes`); `Table::resolveDraw` asks `resolve` at
+  every root on it that an entry ends at -- hidden if any prefix resolves
+  hidden, shown if any resolves shown. The answer is a
+  `Render::VisibilitySet` (objectKey -> Hidden/Shown), resolved over the
+  object info of the render-cache manager that feeds the backend (a canvas
+  cell's over the feeder's), again only when that map or the table
+  changed. The backend only looks draws up: `VisibilityOverrideTable`,
+  `resolveVisibility`, `resolveChainVisibility` and the backend's per
+  sub-view resolve cache are gone.
+
+**Served.** A client is told its SET (`{"cmd":"visibility","hidden":[..],
+"shown":[..]}`, objectKeys in hex), re-told by a publish that changed it,
+before the scene goes out. The WASM viewer draws, picks and frames by a
+lookup. SceneDump v82 drops the object chain v80 added (the per-view-shown
+flag stays); a v80/v81 chain is read and discarded.
+
+**Keys follow the scene.** Resolved when set, and again after a STRUCTURE
+change -- an object added or removed, any link property changed (a group's
+members, a link's target), a document restored -- once the event loop is
+back, since the view providers rebuild their nodes on the same signals; a
+holder whose keys changed is told. Not per recompute: a recompute moves no
+node. And whenever a container's 3D children actually change
+(`Document::handleChildren3D` past its "unchanged" return,
+`ViewVisibility::sceneChanged()`): nodes move there with no App signal to
+say so, the case that matters being a load, whose view is restored with
+its map before the drain has put the children in their containers -- the
+saved path entry resolved against the half-built scene and never matched.
+
+**Verified.** Before-state first: `per-view-visibility.py` with the bare
+claim ruled (Q2: a Link to the object is NOT affected) failed on HEAD in
+exactly those two checks, the pick and the frame. After, green across the
+set: per-view-visibility (with a new save/reopen check: the saved path
+entry applies to the reopened scene), edit-hide 25, sketch-edit-hide A-C,
+serve-client-visibility 16, per-view-shown-eviction 5, pick-cull 4,
+element-color-hide 624, serve-mirror-edit 22 (the push now carries keys),
+sketch-edit-root 14, serve-shared-edit 29, and in a real browser
+serve-client-visibility-browser 17 on the rebuilt v82 viewer.
+
+- **The sketch's own paths during an edit** (a commit of its own):
+  `ViewProviderSketch::getDetailPath` skipped its internal view whenever
+  it was in edit, which was right only while the edit moved its children
+  away. In mode 3 they stay, and another occurrence -- a Link showing the
+  sketch's Part -- is drawn during the edit, so an element of it (an
+  internal face) must resolve for a highlight. It skips the view now only
+  when the display switch has left the root. `sketch-edit-hide.py` D:
+  failed before, 25/25 after; the Sketch ctest entries 136/136.
+- **Found on the way, fixed after (a commit of its own):** after a save and
+  reopen, nothing inside an App::Part a Link also shows picked any more, in
+  either occurrence, though it stayed drawn -- no visibility entry needed.
+  A load creates the view providers in its own order (the progressive
+  drain, phase one), and each claims its children as it is created, so a
+  Part made before its child claimed it while the child had no view
+  provider. Two things were lost, and nothing after the load put either
+  back:
+  - **the claim**: `ViewProviderDocumentObject::updateChildren` could not
+    put the Part in the child's `parentSet`, and with the child already in
+    `claimedChildren` the retry (`Document::slotFinishImportObjects`) found
+    the list unchanged. `isShowable()` then judged the child by the Link
+    alone, which draws it through nodes of its own, and switched the
+    child's display off; with no Link the empty set counted as showable.
+    A claimed child without a view provider now defeats "unchanged" until
+    it is registered -- only once it HAS one, since the call re-enters
+    itself through `signalChangedChildren` and "unchanged" is what ends
+    that (a first cut without this recursed to a stack overflow);
+  - **the 3D structure**: the Part's child group was built without the
+    child, which stayed at the top level of the scene, and the Link's copy
+    of the Part was empty. `slotFinishImportObjects` now also runs
+    `handleChildren3D`, which caches only children that had a view
+    provider, so it redoes exactly what was missed.
+  Which parent a load reaches first follows allocation order (pointer-keyed
+  sets, dependency-sort ties), so a scene failed most runs, not every run --
+  the same file flipped between runs, a synchronous `flushLoad()` too. With
+  both halves, 21 scene/order cells over three runs all hold; each half
+  alone leaves failures. `reopen-claimed-child-pick.py`: before, every Link
+  claim FAILS; with only the claim half, the Link's occurrence still does not
+  pick; after both, all pass.
+
+### 5.24 Measured: re-resolution after structure changes, against node sensors (2026-09-28)
+
+5.23 resolves a view's entries into node keys when they are set and again
+after every STRUCTURE change: a new or deleted object, any
+`PropertyLinkBase` change, a restore, a container's 3D children rebuilt
+(`sceneChanged()`). Each change schedules ONE deferred pass for the
+event-loop turn, and the pass rebuilds every table that has entries, in
+every document, resolving every entry again (object lookup, subname walk,
+`getDetailPath`). The question asked: how does that scale, and would
+SoNodeSensors on the keys' nodes -- resolving only an entry whose path
+changed -- be cheaper?
+
+`tests/gui/visibility-resolve-bench.py`, mode 3, the 5.19 scene (20
+App::Parts of 50 boxes, a Link to each Part), up to four 3D views; E
+entries hiding boxes, as path entries (`PartN.Bn_i.`), through the Link
+(`LinkN.Bn_i.`) or bare (`Bn_i`). Timed in C++ by counters kept for this
+(`ViewVisibility::Stats`, `FreeCADGui.viewVisibilityStats()`: exact pass
+counts and the passes' own time, so no frame leaks into the numbers). Two
+rounds, agreeing to about 10%.
+
+**One pass**, triggered by flipping a PropertyLink of a lone
+FeaturePython, microseconds per pass:
+
+| E | path T=1 | path T=4 | link T=1 | link T=4 | bare T=1 | bare T=4 |
+|---|---|---|---|---|---|---|
+| 1 | 10-13 | 17-18 | 12 | 19-20 | 1.5-1.7 | 2.9 |
+| 10 | 40-48 | 97-120 | 52 | 124-126 | 6.4 | 12 |
+| 100 | 292-315 | 1028-1053 | 381 | 1377-1386 | 77-78 | 164-193 |
+| 1000 | 4294-4509 | 14481-15351 | 5378-5471 | 18694-19777 | 674-697 | 1978-2033 |
+
+Linear in entries x views: about 3-4.5 us per path entry, 3.5-5.5 through
+a Link, 0.5-0.8 bare (no `getDetailPath`). Setting a table
+(`ObjectVisibilities = map`) is the same full rebuild, 6.5-14 us per entry
+at E = 1000, so a map built one `setObjectVisibility` at a time is
+quadratic (inferred from the per-set cost, not timed: about 2.5 s for 1000).
+
+**Over an operation** (path entries):
+- **geometry recompute** (every box's Height, `recompute()`): **zero**
+  triggers, zero passes, at every E and T. A recompute moves no node and
+  says so.
+- **20 turns each adding a box to a Part**: exactly one pass per turn. Per
+  turn: E=100 T=1 0.75 ms, E=1000 T=1 5.5 ms, E=100 T=4 1.7 ms, E=1000 T=4
+  22 ms -- against a turn that takes 190-250 ms itself. `drawSet`
+  rescans each view's ~2100-2400 draw keys once per turn, 0.6-1.1 ms per
+  view. The wall clock at E=1000 T=4 grows by ~130 ms per turn, of which
+  pass and rescans are ~27 ms; the rest is not resolution (not attributed
+  here -- the frame side of 5.19 is the likely place).
+- **a spreadsheet-driven PartDesign Body in a SECOND document**: every
+  recompute fires one trigger (the sheet's `PropertySheet` is a
+  `PropertyLinkBase`), and so does every expression edit, so each costs
+  the FIRST document's tables a pass (0.7-0.9 ms at E=100). The pass is
+  process-wide.
+- **reopen** with E entries saved: one pass, after the drain. It is dear
+  -- 32-42 ms at E=100, 345-373 ms at E=1000, ~350 us per entry -- while
+  the next pass on the loaded scene is back to 6-9 us per entry. The
+  load's wall clock does not grow with E (2.15-2.30 s at 0, 1.85-1.97 s at
+  1000), so the first pass is taking over work the load does anyway
+  (inferred, not traced); it is still one 0.35 s turn at E = 1000.
+
+**The node-sensor alternative.** A sensor that can tell a structure
+change (a child added, removed, replaced ON the watched node) from a
+field change below it has to be priority 0: Coin records the trigger
+node and operation only for immediate sensors (`SoDataSensor::notify`),
+so its callback runs synchronously for EVERY notification passing through
+the node, and filters there. A standalone Coin program (a chain of
+groups, a leaf field changed 200k times) prices that filter at 47-58 ns
+per watched node per notification -- the notification itself costs ~60 ns
+per level, so a sensor on every level doubles it. A delayed sensor is
+11-17 ns once scheduled but cannot tell geometry from structure, so it
+would resolve again after every recompute. Counted in the bench (pivy,
+priority 0, on every group node of each resolved path but its last):
+
+| E | watched | geometry recompute: calls / hits | 20 turns: calls / hits |
+|---|---|---|---|
+| 100 | 160 | 223,280 / 0 | 140 / 20 |
+| 1000 | 1060 | 288,080 / 0 | 140 / 20 |
+
+So the sensors would cost a 1000-box recompute 11-14 ms of callbacks
+(now: nothing) and save on a turn: a hit re-resolves only the entries
+through the changed node (5 or 50 here), ~20-250 us per view instead of
+0.75-5.5 ms. It is also not a replacement: an entry that does not resolve
+has no nodes to watch, and a bare key changes only when its object is
+recreated, so the new/deleted/restore signals stay; the sensors would be
+attached and detached as keys change, per view, on nodes views share.
+
+**Decision: keep the structure-signal pass.** It costs nothing on the hot
+path -- geometry changes, recomputes, drags -- and at plausible sizes
+(E <= 100, T <= 4) under 2 ms on a structure turn that takes ~200 ms;
+the sensor moves cost onto every geometry notification to save it on the
+rare turn, and needs the signals anyway. What the numbers do flag, for
+when served clients multiply T or maps grow:
+- the pass is linear in T and process-wide. The cheap levers, NOT
+  measured: resolve an entry once per pass for all tables that hold it;
+  skip the tables of a document no signal touched (the PartDesign case);
+  remember the objects on each entry's path (including link targets) and
+  resolve again only entries whose path holds the changed object, plus
+  the unresolved -- the sensor's selectivity at no per-notification cost;
+- the first pass after a reopen (0.35 s at E = 1000);
+- building a map entry by entry (quadratic).
+
+### 5.25 The auto clipping answered per view, and every view paid for it (fixed 2026-09-28)
+
+Chasing 5.24's scaling found that the passes were not the dear part. With
+1000 path entries in four views a structure turn cost ~166 ms more than
+with none, and a profile of the turns (DWARF call graphs, the four corners
+E = 0/1000 x T = 1/4) put 107 ms of it in ONE place: the bounding box pass
+`SoRenderManagerP::setClippingPlanes` applies on EVERY render of every view
+(auto clipping; there is no delay -- coin3d's `7ee8ef260a` removed a clip
+sensor that only ran a SECOND pass on scene changes, the per-render one was
+always there). The pass itself was cheap while its caches held (3 us); it
+was the caches that did not hold.
+
+**Why.** A view's table is read at the switch of every object some view has
+an entry for, and every cache open above records the read -- in particular
+the bounding box cache of each Part's root, which 5.23 keeps (it spoils only
+the caches inside a key's span). `SoFCVisibilityElement::matches` compared
+the table by ADDRESS, and every view has its own table. After any change
+(one box added to one Part, or anything a drag or a recompute touches) each
+view's clip pass found every Part root's cache built by the previous view,
+invalid, and walked every box under it. Measured by the loop (touch one
+Part's root, one clip pass per view): 62 ms a round in four views with 1000
+entries, 0.13 ms with none; 0.11 ms in one view. Disabling the element for
+bounding boxes (a probe, reverted) brought the four-view round to 0.13 ms:
+the cause. Coin keeps ONE match record per element per cache (the first
+read, `SoCache::addElement`), so a cache cannot depend on "the answers of
+the roots below me" -- only on the whole table.
+
+**The fix (user ruling: both halves).**
+- **The clip pass answers for no view** (`SoFCVisibilityElement::Superset`):
+  nothing hidden, and shown whatever some view shows
+  (`SoFCSwitch::isPerViewShown`). The same answer in every view and every
+  occurrence, so it spoils nothing and every view's clip pass shares what
+  the last one built. A box too large only loosens the near and far planes.
+  It is recognised as the bounding box pass applied to the traversing view's
+  render-manager scene (`SoFCUnifiedSelection::Private::isClipPass`), which
+  nothing else applies one to.
+- **Picks cull with it** (`Cull`): a pick answers by its view's table but
+  accepts a Superset cache, a box that holds everything it can hit. Without
+  this, a pick in any view with entries would have found no valid cache and
+  culled nothing (`SoFCUnifiedSelection::getBoundingBox`'s note: 222 us
+against 13 us over 400 boxes).
+- **Every other pass matches by CONTENT**: `Table::identity`, interned by
+  `ViewVisibility` (equal entries, equal identity; never reused), replaces
+  the address. Exact passes -- the viewer's scene box, which fit-all takes
+  when the view has a map -- stay per view and share caches between views
+  whose maps are equal.
+
+**Measured.** The loop's clip round after a one-Part change, four views,
+1000 entries: 0.17 ms with equal maps, 0.18 ms with a different map per
+view, 0.15 ms with none (was 62 / 57 ms). The turn profile at E=1000 T=4:
+clip bbox 108 -> 2.0 ms per turn (1.5 with different maps; 2.0 with no
+entries); the whole turn's excess over no entries ~166 -> ~50 ms, of which
+the resolution pass is 20-23 ms (5.24) and bgfx ~15 ms (not chased yet).
+
+**Tests.** `tests/gui/per-view-clip-cache.py` (three views, different maps):
+A the clip pass holds an object only one view shows and one only one view
+hides, in every view; B the exact box stays per view right after the clip
+passes rebuilt the shared caches (the order a superset would leak in); C
+picks answer per view and a miss through a gap still culls (31 us, 30 with
+no entries); D the clip round after a one-Part change costs what it does
+with no entries (258 vs 255 us). Before-state, the same test against the
+old code (the four source files stashed, rebuilt): A fails as meant (each
+view's clip box was its own), B passes (it does both before and after), C
+FAILS -- a gap pick cost 235 us against 31 with no entries: with more than
+one view, pick culling never worked under per-view entries, every other
+view's clip pass having rebuilt the caches -- and D fails, 1511 us against
+374 on this small scene.
+
+### 5.26 A structure change resolves only the entries it can have moved (2026-09-28)
+
+After 5.25 the resolution pass was the largest cost left in a structure
+turn: every change anywhere in the process resolved every entry of every
+table again, 20-23 ms a turn with 1000 path entries in four views (5.24's
+linear 3-5 us per entry per view), and a spreadsheet recompute in ANOTHER
+document cost the first one a pass. The node-sensor alternative 5.24
+priced (~50 ns per callback on every geometry notification) buys the same
+selectivity at a per-notification cost; this gets it from the App signals
+the pass already hears, which name the object they touched.
+
+**Dependencies.** Each resolution (`ViewVisibility::Resolution`) keeps the
+objects it went through: the top object, every step of the subname and,
+for each, what it links to, link by link (`addDependency`) -- `L.B4.` on a
+Link to PartB depends on L, PartB and B4, so PartB losing B4 reaches it
+though PartB is no step of the path. An entry that does not resolve keeps
+the steps it did get through, and the path is walked before the view
+provider is asked for, so a failure there still depends on its path. The
+pointers are compared, never dereferenced: a reused address costs one
+resolution too many, nothing else.
+
+**Triggers.** A deleted object and a changed link property mark their
+object; the pass resolves again the entries (resolved or not) whose
+dependencies hold a marked object. A new object and a container's rebuilt
+3D children (`sceneChanged(container)`, which now names the container)
+also retry every unresolved entry -- what a missing top object or a view
+provider still to be built waits for. A restore resolves everything. The
+trigger sources are 5.23's; where they miss a structure change (a link
+array's ElementCount is no link property) the gap is the same as before.
+Marks made while no table has entries are dropped: a table set later
+resolves in full, and stale marks would make its first pass resolve what
+they named.
+
+**Measured.** Turns adding a box to Part19 with 1000 entries: the pass
+22 -> 1.3 ms a turn in four views, 7 -> 0.6 ms in one; ~50 entries resolved
+per view per pass (those through Part19) instead of 1000. The PartDesign
+Body in a second document: 0 entries resolved per recompute or expression
+edit (0.02-0.05 ms a pass, was 0.7-0.9 ms). A reopen still resolves every
+entry once (a restore), 330-350 ms for 1000 -- 5.24's first pass after a
+load, fixed in 5.27.
+
+**Test.** `tests/gui/per-view-resolve-selective.py`, by the counters
+(`passResolves`, entries resolved again; `passResolved`, entries that
+resolve): an unrelated link change resolves nothing; a box moved out of
+its Part, a child taken out of a Link's target, a relink, a new object an
+entry waited for and a deleted object each resolve their entry, and picks
+follow. 11/11. The first check failed on the first cut (4 of 5 resolved:
+the stale marks above, and every link change retrying the unresolved
+entries, which their partial dependencies make unnecessary). Visibility set
+green (per-view-clip-cache 15, per-view-visibility 45, pick-cull 4,
+eviction 5, edit-hide 25, sketch-edit-hide 25, element-color-hide 624,
+reopen-claimed-child-pick 9, serve-client-visibility 16, serve-mirror-edit
+22, sketch-edit-root 14, serve-shared-edit 29); ctest 823/823.
+
+### 5.27 The first pass after a reopen built the visuals it resolved through (fixed 2026-09-29)
+
+5.24 left the first pass after a reopen open: ~350 us per entry (0.35 s at
+E = 1000) against 6-9 us for the next one, and a load whose wall clock did
+not grow with E, so the pass looked like work pulled forward. It was, and
+the work was the load's visual builds.
+
+**Why.** A DWARF profile of the pass (the 5.24 scene, one view, 1000 path
+entries): 97% of it in `ViewProviderPartExt::getDetailPath`, which the
+resolution calls for each entry's leaf with an empty element
+(`Part0.B0_3.` names the whole box). The function appended the root and
+the mode switch and then asked for the shape anyway, to find no element in
+it and return with no detail. A progressive load leaves each shape in the
+blob store until first use, so the ask restored it
+(`PropertyPartShape::serveFromBlob`), and the restore's `setValue` is a
+property change: `updateData` -> `updateVisual`, a full visual build of
+the box, inside the pass, per entry. The fix returns before the shape when
+there is no element -- the same answer.
+
+**What that uncovered.** With the pass no longer building them, the
+hidden boxes were built by the load's drain, and the reopen got slower,
+not faster: 1.23 -> 1.46 s over five reopens. The drain builds a queued
+object with `updateVisual`, whose first act (`shapeStillMissing`) reads the
+shape property -- documented as the fault-in -- and that read lands the
+blob the same way: the notification builds the visual inside the read,
+colours and all, and the outer call then found the shape present and built
+it again. Every blob-held shape of every progressive load was built twice
+(profile: 391 samples in the nested build, 288 in the outer one). The fix:
+`updateVisual` notes `meshLadder.visualFillSeq`, which every rebuild path
+bumps as it takes the display arrays over (the full build, the pooled
+deferral, the rung rewrite), and returns when the fault-in moved it. An
+object the nested call did not build -- hidden, or its shape unchanged --
+leaves the seq alone and is built by the outer call as before.
+
+**Measured** (five reopens each, the 5.24 scene, one view):
+
+| | E = 0 | E = 1000 | first pass, E = 1000 |
+|---|---|---|---|
+| before | 1.39-1.43 s | 1.16-1.33 s | 273-358 ms |
+| getDetailPath only | -- | 1.42-1.50 s | 7.5-8.8 ms |
+| both | 1.22-1.27 s | 1.27-1.33 s | 7.7-8.6 ms |
+
+A reopen is ~12% faster with no entries at all, and 1000 entries now add
+~40 ms to it instead of ~270 ms of pass; the first pass costs what a full
+re-set of the same map does on the loaded scene (8-13 ms).
+
+**Counters.** `viewVisibilityStats()` gains `passBuilds`, the visual builds
+that happened inside the passes (a resolution is a lookup and should build
+nothing), and `FreeCADGui.visualBuildStats()` reads
+`ViewProvider::VisualBuildCount`/`VisualBuildTime`, which a document open
+zeroes -- so, read after the drain, a load's builds.
+
+**Test.** `tests/gui/reopen-visual-builds.py`: four Parts of 50 boxes with
+a Link each, saved without entries and with 100; after each reopen every
+box is built once and has geometry, and with entries the pass resolves
+all 100 and builds nothing. 8/8. Before-state (the two fixes reverted,
+counters kept): 400 builds for 200 boxes without entries; with them 300,
+100 of them inside the pass (31 ms for 100 entries) -- three FAILs, the
+geometry checks passing both ways. ctest 824/824 on the fixes.
+
+### 5.28 Measured: what entries cost a structure turn after 5.25-5.27 (2026-09-29)
+
+5.25 left ~50 ms of excess on a structure turn at E = 1000, T = 4, with
+"bgfx ~15 ms" in it unattributed. Measured again with the same loop (the
+5.24 scene, four views, 20 turns each adding a box to Part19, DWARF
+profile around the turns only, E = 0 against 1000 path entries in every
+view), per turn:
+
+- **wall clock: no excess left** -- 181-184 ms at E = 1000, 184-193 at 0
+  (three untimed-by-perf rounds: 154-187 against 178-188).
+- **the bgfx render is 3.2 ms CHEAPER** at E = 1000: the entries hide
+  half the Part occurrences, so it submits less. The +15 ms does not
+  reproduce; what the per-view answer costs inside the backend is the
+  per-draw `BGFXStyleState::visibilityFlags` lookup, 1.9 ms.
+- **the render-cache manager, +6.3 ms**: `ViewVisibility::drawSet` 2.4
+  (each view rescans its ~2400 draw keys when the object info moves, 0.6
+  ms a view), `RendererBridge::translate` +2.4, `setScene` +1.2.
+- **the pass**, 0.7 ms (5.26).
+
+So entries cost a structure turn ~7-9 ms at this size, against a turn of
+~180 ms, and the frame they save pays most of it back. Not taken, noted
+for when T grows: views whose tables share an identity (5.25) could share
+one `drawSet` scan -- four equal maps here, one scan instead of four.
+
+### 5.29 A set resolves only the entries the view did not hold (2026-09-29)
+
+Setting a table (`set()`, `setTransient()`) resolved every entry of both
+sources again. No GUI command edits a view's map entry by entry -- the
+only per-entry caller is the Python `view.setObjectVisibility`, and a map
+built with it was quadratic (5.24) -- but a served client's
+`view.visibility` op sends its WHOLE map for every toggle
+(`SceneControl`), so each toggle resolved all of it again.
+
+**The change.** A set replaces one source, and an entry that source
+already held (same document, object, subname and bare/path form) keeps
+its resolution, whatever its new value; only the new entries are resolved
+(`setResolves` counts them). The other source is not touched at all. A
+kept resolution is exactly as current as it was before the set: a
+structure change since it was made has marked it for the pass already
+queued (5.26), which runs over the table this set leaves and resolves it
+again there. The one thing lost: setting a map again no longer resolves
+it afresh, so it no longer papers over a structure change the signals
+miss (5.26's ElementCount gap) -- which it never did reliably, as a
+signal-less change between sets was just as missed.
+
+**Measured** (the 5.24 scene, one view, 1000 path entries, three rounds):
+
+| | before | after |
+|---|---|---|
+| one value flipped: set | 6.3-7.2 ms, 1000 resolved | 3.4-3.5 ms, 0 resolved |
+| 1000 entries one `setObjectVisibility` at a time: sets | 2.38-2.43 s, 500500 resolved | 0.76-0.87 s, 1000 resolved |
+| ...wall clock | 3.05-3.22 s | 1.23-1.47 s |
+
+What is left of a set is `commit()`, ~3.4 us per entry: the table rebuilt
+by end root and its identity interned (5.25) -- so a map built singly is
+still quadratic, at a third of the constant. Not taken.
+
+**Test.** `tests/gui/per-view-resolve-selective.py` cases 7-10: a flipped
+value resolves nothing and the pick follows; one entry added resolves
+one and hides its box; a box moved out of its Part and the map set again
+in the same turn -- the kept resolution stale -- is still resolved again
+by the pass (the entry stops resolving, the box picks in its new Part);
+twenty entries added singly resolve twenty. 23/23. Before-state (the
+lookup made to miss, so every entry resolves as before, counter kept):
+the four count checks FAIL, every behaviour check passes. GUI tests 67/67,
+the rest of ctest (expression-image suites aside) 685/685.
+
 ## 5. Evaluated and not taken: one capture root to catch everything
 
 Stage 1b left an obvious-looking follow-on: if what Coin still draws is

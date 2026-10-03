@@ -248,6 +248,35 @@ PanelMirror& PanelMirror::instance()
     return mirror;
 }
 
+/// Every push can stop the mirror: a push that fails drops its subscriber,
+/// and the last one out stops it (SceneWidgetStream::checkMirror). Torn down
+/// from inside start(), start() went on and brought the mirror back up with
+/// nobody subscribed; from inside rebuild() or flush(), those went on with
+/// the models, the list and the tables stop() had just freed. So a stop
+/// asked for while an entry point is on the stack waits for the outermost
+/// to leave.
+class PanelMirror::BusyScope
+{
+public:
+    explicit BusyScope(PanelMirror& mirror)
+        : _mirror(mirror)
+    {
+        ++_mirror._busy;
+    }
+    ~BusyScope()
+    {
+        if (--_mirror._busy == 0 && _mirror._stopPending) {
+            _mirror._stopPending = false;
+            _mirror.stop();
+        }
+    }
+    BusyScope(const BusyScope&) = delete;
+    BusyScope& operator=(const BusyScope&) = delete;
+
+private:
+    PanelMirror& _mirror;
+};
+
 PanelMirror::PanelMirror()
 {
     _rebuildTimer.setSingleShot(true);
@@ -324,8 +353,12 @@ Widget* PanelMirror::modelOf(QWidget* widget) const
 
 void PanelMirror::start()
 {
-    if (_running)
+    if (_running) {
+        // a subscriber arriving while a stop waits for an entry point keeps it
+        _stopPending = false;
         return;
+    }
+    BusyScope busy(*this);
     _running = true;
     _rebuilds = 0;
     _list = new Widget;
@@ -371,6 +404,12 @@ void PanelMirror::stop()
 {
     if (!_running)
         return;
+    if (_busy) {
+        _stopPending = true;
+        return;
+    }
+    // its own pushes can ask again: that one runs, finds it stopped, returns
+    BusyScope busy(*this);
     _showTimer.stop();
     _connShow.disconnect();
     _connRemove.disconnect();
@@ -430,6 +469,7 @@ bool PanelMirror::allowed(const QString& dialogClass) const
 void PanelMirror::show(const QString& dialogClass, const QList<QWidget*>& contents,
                        ::QDialogButtonBox* buttons)
 {
+    BusyScope busy(*this);
     if (!_running)
         start();
     if (_root)
@@ -466,6 +506,7 @@ void PanelMirror::show(const QString& dialogClass, const QList<QWidget*>& conten
 
 void PanelMirror::hide()
 {
+    BusyScope busy(*this);
     if (!_root)
         return;
     Store& store = Store::instance();
@@ -521,6 +562,7 @@ void PanelMirror::scheduleDialog(QWidget* window)
 
 void PanelMirror::showDialog(QWidget* window)
 {
+    BusyScope busy(*this);
     if (!window || !topLevelDialog(window) || _roots.contains(window))
         return;
     if (!_running)
@@ -545,6 +587,7 @@ void PanelMirror::showDialog(QWidget* window)
 
 void PanelMirror::hideDialog(QWidget* window)
 {
+    BusyScope busy(*this);
     if (_roots.contains(window))
         closeRoot(window, true);
 }
@@ -657,6 +700,7 @@ void PanelMirror::startPoll()
 
 void PanelMirror::poll()
 {
+    BusyScope busy(*this);
     if (!_running || _walking || _models.isEmpty())
         return;
     // Everything, not just what is dirty -- the point is the widgets no
@@ -682,6 +726,7 @@ void PanelMirror::poll()
 
 void PanelMirror::flush()
 {
+    BusyScope busy(*this);
     QSet<QWidget*> dirty;
     dirty.swap(_dirty);
     if (dirty.isEmpty())
@@ -741,6 +786,7 @@ void PanelMirror::withoutBackends(const std::function<void()>& fn)
 
 void PanelMirror::rebuild()
 {
+    BusyScope busy(*this);
     if (!active())
         return;
     _walking = true;

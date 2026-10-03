@@ -31,7 +31,7 @@ Upstream's `f4665aa7b5` ("Core: support multiple active transactions") was
 evaluated and **declined**; `docs/TransactionLog.md` records why, and the
 direction the user wants instead.
 
-**Where the ledger stands (2026-09-23).** 1149 rows, of which 323 are open
+**Where the ledger stands (2026-09-25).** 1149 rows, of which 278 are open
 and undecided, down from 503 over three sessions of reading blobs rather
 than commits. First the 33 files the handler resyncs touched: 21 are
 identical to upstream's tip modulo whitespace, closing 74 rows at once
@@ -45,6 +45,15 @@ families, the constraint-tool hints, has since been taken whole --
 thirteen rows, two of which the per-file sweep could not see (section
 7a). Of what is left, `Gui/ViewProviderSketch.cpp` carries the most, and
 the `EditMode*` family is n/a by decision 3.
+
+**Where the ledger stands (2026-10-03, session 122).** No row is undecided.
+The last 53 were read family by family and ruled on with the user
+("The ledger, session 122", before section 8): 24 were here already or do
+not apply, 9 declined, 20 taken or adapted. What is left of the port is not
+in the ledger: the rows marked `deferred` (upstream's Sketcher GUI test
+files, whose ground the fork's `tests/gui` covers) and whatever upstream
+has added after `bd6be559e8`.
+
 Branch `SketcherPort` off `RemoteEdit`
 `b7dbdd191d`. Upstream reference: `upstream/main` `bd6be559e8`
 (2026-09-12).
@@ -1983,7 +1992,7 @@ defaults are `0.8f` grey, `#CCCCCC`. A `PrefColorButton`'s `color`
 property is what it falls back to when the parameter is unset, so opening
 the page and pressing OK persisted a colour the sketch had never drawn
 with. Upstream fixed it on `SketcherSettingsAppearance.ui`, a file this
-fork does not have -- its colours live in `SketcherSettingsColors.ui` --
+fork does not have -- its colours lived in `SketcherSettingsColors.ui` then --
 which is precisely why the row had stayed open and unread.
 
 ### Auto-constraints for a drag (`ec298e9e9a` and six more)
@@ -2375,6 +2384,1326 @@ rotated 180 deg about X -- the switched edit gets exactly the transform B
 gets on its own. The fork's `setEdit` asks the selection *context*
 first, and that still names the Link path after the re-select.
 
+### Select All and bulk selection (session 93): 55 -> 48, and a crash
+
+Seven named rows -- select-all (`3b76d77ed8`, `95840a79d3`, `061e185e7f`,
+`ca8bfc6180`, `e278d22d42`), the bulk-selection speed-up `0fa707c523` and
+its box-selection follow-up `af053f19f5` -- plus `887c8d3bdf` from the
+subject search, and the core half of `b9db90ea20`, which the ledger had
+marked have(sync) on its Sketcher files alone. Five fork commits:
+
+- `26ce6d0b25` **A bulk selection reached no observer of a sketch edit.**
+  `Selection().addSelections()` pauses notification, and past
+  `MaxSelectionNotification` (100) the core replaces the queued adds with
+  one `SetSelection`, "re-read the selection". `ViewProviderSketch` and
+  both task panels ignored it: 200 of 200 selected, 0 coloured, 0 rows.
+  All three now re-read -- the instance they *observe*
+  (`SelectionObserver::observedSelection()`, new), since a served edit's
+  view provider listens to its client's instance, not `Gui::Selection()`.
+- `4d7427e0ff` **A pre-existing SIGSEGV**: `sketchClosed()` cleared the
+  elements tree but not `itemMap`, and the panel keeps observing until it
+  is deleted. Re-edit the same sketch in one event-loop turn, select an
+  edge, crash. Found because the re-read walks every `itemMap` entry.
+- `e5ea2e9118` Box selection as one `addSelections()` batch. Measured,
+  release to selection: 600 elements 0.314 s -> 0.032 s, 3000 elements
+  3.738 s -> 0.120 s; the old cost grew with the square of the count
+  (gdb stack samples: the elements tree's per-item `setSelected`, the
+  selection stack copying the whole selection per add, the sketch's
+  per-item recolour).
+- `7a31d66c3b` The spreadsheet keeps Ctrl+A (upstream `4f4e9244e6`), taken
+  first because of the next one.
+- `745518e1e8` Select All: Ctrl+A bound to `Std_SelectAll` (upstream bound
+  it in `3b76d77ed8`, outside the ledger's paths), the command asks the
+  edited view provider first and is `AlterSelection` only (with the
+  default `AlterDoc` the sketch's task dialog disables it), and
+  `ViewProviderSketch::selectAll()` at upstream's end state.
+
+**The fork route, not upstream's.** Upstream buffers in every observer
+(`selectionBuffering`, a selection buffer flushed on a timer in each panel
+-- and `887c8d3bdf` is that buffer's dangling-pointer crash). The fork's
+core already coalesces a paused batch; the observers only had to honour
+it. So no timers were imported, and `887c8d3bdf` is n/a.
+
+Adapted: `selectAll()` asks the sketch for each element's start/end/mid
+vertex index instead of counting vertices per geometry type (what
+`e278d22d42` had to fix, and the fork's text geometry is not in that
+list). Not taken: `061e185e7f`'s timer handing focus back to a list after
+a click -- a QTest click keeps focus in both lists here, measured.
+
+Guards: `GuiSketchBulkSelection_tests_run` (batches and a synthetic desktop
+box drag, counted by a Python selection observer: 600 single adds before,
+one SetSelection after), `GuiSketchReEditSelect_tests_run`,
+`GuiSketchSelectAll_tests_run`, `GuiSpreadsheetSelectAll_tests_run`.
+
+Two lessons. **A row's decision is only as wide as the ledger's path
+filter**: `b9db90ea20` read have(sync), and `3b76d77ed8` read as touching
+one file, while both carried a core half the fork lacked -- the second
+one a global shortcut. List a family's commits with `--stat` over the
+whole tree. And **a synthetic desktop box drag works** (QMouseEvents sent
+to the `View3DInventorViewer`, pixels from `view.getPointOnViewport`, y
+flipped), unlike synthetic preselection; keep the geometry off the axes
+and hide other sketches, or the press lands on something.
+
+Left open: clicking a row of the elements list with synthetic QTest
+input selected nothing (the constraints list did). The panel acts on the
+row it saw through hover (`itemEntered`), so this may be the known limit
+of synthetic hover, not a defect -- not established either way.
+
+### The elements list: the fork's own, extended (session 93): 308 -> 300
+
+**User ruling (2026-09-25): keep the fork's elements list, with one icon per
+row; do not port upstream's list, whose rows carry an icon per part.** What
+upstream's list can do that the fork's could not was added to the fork's
+list instead. Seven commits:
+
+- `1434da42d1` **A geometry on a hidden visual layer is not drawn.** The
+  fork stored a layer per geometry and `VisualLayerList` per sketch, and
+  its `draw()` read neither: a layer changed nothing on screen. Hidden
+  geometry is now not drawn, not picked, not boxed and not taken by Select
+  All from the view. The vertex-to-point map defaulted to 0 -- the root
+  point's slot -- for a vertex not drawn; it is -1 now and six readers
+  check.
+- `739c19f67f` The row checkbox: ticked shown, unticked the hidden layer,
+  one transaction, applied a turn later (the change rebuilds the list that
+  is delivering the checkbox's signal).
+- `e390940d01` **Mode** becomes upstream's checkable filter -- kinds
+  (Normal, Construction, Internal, External) and nine geometry types,
+  combined -- in the Mode button's pop-up, stored in upstream's
+  `ElementFilterState` parameter bit for bit.
+- `fc0df4590b` **The single icon is a drop-down button**: it lists the
+  parts of that element with upstream's per-part icons and picks one (Ctrl
+  adds); the icon and the Name column follow the part selected last. The
+  global Type combo, its Z key and "Auto-switch to Edge" are retired.
+  Rebuilding the scene selection from the rows now pushes every selected
+  part, not the first. Both panels stop observing the selection when the
+  edit dialog closes.
+- `2ebaa7626d` Icon size is a preference, `ElementIconSize` (32 px), and
+  the arrow has a strip of its own left of the icon.
+- `78f0b1ef1e` **Layer 1 is drawn dashed.** Upstream does not: its
+  `EditModeGeometryCoinManager` only switches coin layers on and off, and
+  `VisualLayer::getLinePattern()` has no caller, so upstream's
+  "discontinuous line layer" draws solid. The fork's curves are now two
+  `SoIndexedLineSet`s over one coordinate and material list, the second
+  under the layer's pattern.
+- `a0dab1d6f6` The list's context menu: Layer > Layer 0 (solid), Layer 1
+  (dashed), Hidden.
+
+Ledger: the rows that are upstream's list itself are declined citing the
+ruling (`122f163d0c`, `da6a4fe57b`, `b46ba096b2`, `8fd9c19013`); the
+checkbox fixes are adapted (`2fac012226`, `34b6b36547`, `6bed2e663e`);
+`00f547d67c` is n/a. The 17 elements-panel rows still open are general --
+Qt warnings, texts, auto-scroll, selection speed -- and go with their own
+families.
+
+### The crash fixes (session 94): 48 -> 45, and one crash of the fork's own
+
+Three upstream rows fix crashes in `ViewProviderSketch.cpp`. One was live
+here, one latent, one not reproduced; the test written for the first
+found a fourth crash that was the fork's own.
+
+| row | verdict |
+|---|---|
+| `16aff10544` | **adapted** `79e570b5b4` -- undo with the button held, below |
+| `d3d6459484` | **taken** `ecf0c288e7`. The listener was a raw pointer, never initialised and dangling after `unsetEdit()`. Latent here: `unsetEdit()` only follows a `setEdit()` that created it |
+| `955efa639e` | **adapted** `2407af8624`: the catch sits in `setEditViewer()`, where the fork runs the first solve. Escaping from there skipped `attachViewer()`, the base call and the caller's event callback. No failing sketch reproduced |
+
+**Undo with the button held.** A press or drag holds what it acts on by
+index (the preselected point, edge or constraint, then `Dragged` and
+`DragConstraintSet`), and an undo can remove that element. Measured
+before the fix: a label drag whose constraint was undone away hit a
+SIGSEGV in `moveConstraint()` on the next move, because the id is read
+from the list unchecked. A point drag whose line was undone away threw
+on every move. Its release then opened a command that aborted, and
+opening it had already cleared the redo stack, so the line could not be
+redone. Upstream resets the drag in the undo/redo slots. The fork's
+version also drops an unmoved press (the SELECT modes act on the
+preselected index at the next move or release). It also closes a label
+drag's active transaction, whose id would otherwise stay set and stop
+the next label drag from opening its own.
+
+**The fork's own crash** (`06cc7a7a87`). After a label drag lands, its
+constraint stays preselected. Undoing that constraint away runs a solve
+inside the undo, and that solve redraws before any slot can prune the
+id sets. The result was a SIGSEGV in `updateVirtualSpace()` and, with
+that guarded, a second one in `updateColor()`. Both were measured, and
+both now skip ids outside the list. Upstream's `updateVirtualSpace()`
+has no (pre)selection override at all, so this is fork code.
+
+Guarded by `tests/gui/sketch-undo-during-drag.py`
+(`GuiSketchUndoDuringDrag_tests_run`). It was scored per fix: with the
+reset disabled it fails the redo check and then crashes in
+`moveConstraint()`; with the guards reverted it crashes in
+`updateVirtualSpace()`.
+
+**Harness notes, reusable.** It is a desktop test, not a served one.
+Setting the preselection through `Gui.Selection.setPreselection()` fills
+the view provider's preselect state, as a list hover does, and a press
+then starts the drag with no pick. That sidesteps two problems:
+synthetic moves preselect nothing, and datum labels are hard to hit over
+the mirror. A label's pick box is sized in world units by whichever view
+last drew it, so the desktop's zoom decides how big it is on a client.
+It is also lost to an axis running under it. After a drag lands, wait
+about 0.5 s: its recompute redraws off a timer and drops a preselection
+set before it, and the next drag then silently never starts. A drag in
+progress shows only in the edit scene's `SoCoordinate3` nodes, because
+`Geometry` is written on release.
+
+### Box selection (session 94): 45 -> 40
+
+| row | verdict |
+|---|---|
+| `9bff63e38d` | **taken** `08c58fabce`, for parity. The box's redraw now draws the object's geometry, not the solver's copy. Upstream's symptom (construction lines turning solid) cannot happen here, measured: the fork's toggle command solves on the way out, construction is a colour read off the object, and `draw()` does not recolour while the mode is still the rubber band's. All the flag decides here is draw order |
+| `39329e547f` + `e469eb5ccb` | **adapted** `dbf819f658`. A right press during a box already cancelled it here (the both-buttons branch), but the right release then found the edit idle and opened the context menu, measured. The block flag is set where the fork cancels and cleared by the next right press |
+| `7b85239093` | **adapted** `8b24f4785f`: blue and solid left to right (window), green and dashed right to left (touch). Uses upstream's `StyleParameters.h`, resolved through `Gui::Application`'s manager. The fork's `Rubberband` carries both colour and stipple into its Coin overlay, so mode 3 draws them too |
+| `a5bf17b144` | **adapted** `d15b8e026a` (core half, taken on request), **have** (Sketcher half). The Sketcher half restores a gate's forbidden cursor when the pointer leaves geometry, which the fork already does: `blockedPreselection` plus `rmvPreselect()`. The core half is below |
+
+Guarded by `tests/gui/sketch-box-selection.py`
+(`GuiSketchBoxSelection_tests_run`). The menu and colour checks fail
+without their fixes. The construction check passes either way and
+guards what the user sees.
+
+**Box selection under a selection gate** (`d15b8e026a`, core). The
+fork's box already selected only what an active gate allows: it adds
+each pick through `addSelection()`, which asks the gate. But every
+element turned away counted as a refused click, with a status bar
+message, the forbidden cursor and a beep. That was 15 refusals for one
+box over a Part box under a vertex-only gate, counted with a Python gate
+that counts what it refuses. Now `addSelections()` sets `gateQuiet` for
+its batch, a refusal under it returns without a word (as upstream's
+batch does), and the box command adds its picks as one batch.
+
+Upstream's `getGatedTypes()` and `getFirstVertexFromSubElement()` were
+not taken. Upstream's box stopped at the first element type with a hit,
+so a vertex filter needed them to reach vertices at all. The fork's box
+visits every type and finds all 8. Measured on 400 boxes (2400 faces):
+the gated box takes 0.08 s against 0.9 s ungated, so skipping types
+could save a fraction of 0.08 s. Guarded by
+`tests/gui/box-selection-gate.py` (`GuiBoxSelectionGate_tests_run`).
+
+**Harness traps.**
+- A box pressed within the double-click interval of the last click is
+  not a box. The test waits 0.8 s before each one.
+- The both-buttons cancel reads `QApplication::mouseButtons()`, which
+  `sendEvent()` never updates. `QTest` mouse events go through the
+  window system and do update it.
+- A context menu's `exec()` is modal, so a timer closes and records any
+  popup.
+- Check that the test's coordinates are on screen: the first empty box
+  sat below the fitted view. Events there still work, but a picture of
+  it shows nothing.
+
+### Arc labels and drags (session 95): 40 -> 36
+
+| row | verdict |
+|---|---|
+| `646b4381f9` | **adapted** `01fd3490ea`. Ledgered `partial(sync)`, but the `ARCLENGTH` datum type was not here at all: an arc length constraint drew an EMPTY label, measured, and dragging it went down the radius code, which rewrote its `LabelPosition` (0 -> 30.09). Taken at upstream's end state (`calculateArcLengthGeometry`, large-arc case included), fed from the fork's own `drawConstraints` |
+| `f3e1e6cec0` | **adapted** `01fd3490ea`. An arc's length and angle labels drag by the cursor's distance along the arc's middle direction, negative past the centre. The fork's angle drawing opened its number gap from `r` with its sign, which closes the gap once `r` is negative; both paths use `abs(r)` now |
+| `7bcaa766de` | **taken** `01fd3490ea`, the factor with it |
+| `df867a25b2` | **adapted** `01fd3490ea`, the arc case: an arc angle's end lines run back to the arc, through the centre when the label is past it. Ledgered `n/a(uncompiled)` -- see below |
+| `2cd45b07f7` | **adapted** `e8f9e4ac1d`. A selected arc grabbed by its centre dragged its rim, and a conic grabbed by its edge jumped its centre to the cursor, both measured. Not "rigid", whatever the upstream comment says: the solver holds only the centre (the same `initMove` upstream), so the radius grows on a centre drag, selected or not; what is restored is the unselected behaviour |
+| `eb61ee36a6` | **have**. The fork's press handler snaps `x, y` for the release too, and `setRelative()` snaps the start |
+
+**The number sits outside the arc, in pixels.** Upstream puts the arc
+length's number one text height beyond the dimension arc, in world
+units. The capture for the backend has no camera, so a screen distance
+cannot become a world one there. The glyph quad is emitted in native
+pixels behind the anchor, so it is shifted in its own y by the glyph's
+height (`textShift`); GL, the pick and the bounding box have a view and
+use `imgHeight`.
+
+**`n/a(uncompiled)` hid a missing feature.** `EditModeConstraintCoinManager.cpp`
+is not compiled here (decision 3): the fork draws constraints in
+`ViewProviderSketch::drawConstraints`. But a commit that changes what
+upstream's manager DRAWS is a change the fork's drawing may lack too.
+`df867a25b2` was one. So are the line cases of the same work: the fork's
+`SoDatumLabel` reads an angle's end-line lengths (`param4`, `param5`, the
+`74dd736e3c` half that is here), but `drawConstraints` set them only for
+an arc, so a line or line-line angle label kept the pixel-minimum ticks
+(`827781ab3f`, `dca00ec80e`). Taken after the family in `4b4e56c5d6`, see
+"Line angle end lines" below. The other n/a rows under that file deserve
+the same reading.
+
+**Found on the way: a label never followed its constraint under bgfx.**
+`4711c5578f`. The capture reads a datum label through companion shapes
+that are not below it, and no field change reached them: set a DistanceX
+from 60 to 30 and "60 mm" stayed drawn across the old 60 units. Every
+drawing check above failed for that reason first. Guarded by
+`tests/gui/sketch-datum-follows-mode3.py`.
+
+Guarded by `tests/gui/sketch-arc-labels.py` (12 checks, 11 fail before,
+also run in mode 0) and `tests/gui/sketch-drag-arc-conic.py` (3 of 4 fail
+before).
+
+### Line angle end lines (session 96)
+
+| row | verdict |
+|---|---|
+| `827781ab3f` | **adapted** `4b4e56c5d6`. Each line of a line-line angle gets an end line from the label's arc to its far end (the line inside the arc) or its near end (beyond it); none where the arc crosses the line. Directions normalised as upstream |
+| `dca00ec80e` | **adapted** `4b4e56c5d6`. A single line's angle is from the horizontal through its middle: that reference is drawn from the middle to the arc, and the line's own end line back to its end when the arc is past it |
+
+Both rows stay `n/a(uncompiled)` in the ledger (the file is not built
+here), so the open count does not move: 288. The feed is all that was
+missing -- both leader paths already read `param4`/`param5`.
+
+Guarded by `tests/gui/sketch-line-angle-labels.py` (5 end-line checks, all
+5 fail before in mode 3 and in mode 0). Its geometry sits 15 above the
+sketch's X axis: the axis is drawn in a red the label check cannot tell
+from a label's, and a first version on y = 0 passed its horizontal
+probes before the fix.
+
+### Screen-space preselection (session 96): 36 -> 31
+
+Upstream reworked the edit-mode hover pick over ten commits: a constraint
+anywhere on the ray first (`2f3161f312`), then a screen-space scan that
+projects every point and every curve polyline vertex to the viewport on
+each mouse move and takes the nearest (`b8b8a3e2a0`, `96ab8a5be3`, and the
+n/a `57650b8067`, `400f6b3ac5`), a click that re-detects and so needed the
+hover's result cached to agree with it (`9efe08b33b`), and finally typed
+candidates resolved by a priority table (`b178a7aede`, `93feb3ce51`,
+`b9368b17a8`). It lives in `EditModeCoinManager`, which is not built here.
+
+What it is for is written down in upstream's
+`SketcherTests/TestConstraintPreselectionGui.py`: a vertex beats a label
+over it, a curve beats a dimension line over it, a dimension's number
+beats the curve or the axis under it, and the PointOnObject icon of issue
+25840 keeps its hit area on a slightly tilted view. That file is taken
+unchanged and run on the fork's own pick, through upstream's probe
+`SketcherGui.getActiveSketchPreselection()` (`882d030012`; it needed
+`setLabelDistance`/`setLabelPosition` from Python, `b9b3ddbf57`):
+
+| mode | before | after `b8c15f572f` |
+|---|---|---|
+| 0 (GL) | 5/5 | 5/5 |
+| 3 (bgfx, default) | 3/5 | 5/5 |
+
+**The failure was not the priority rules.** In mode 3 a dimension's
+number could not be picked at all -- a lone distance label with nothing
+under it was not found within 48 px. `SoDatumLabel`'s ray pick is the box
+of the number, sized by `imgWidth`/`imgHeight`, and only `GLRender` sized
+them for the view; in the render cache modes it never runs. The pick now
+sizes the box for the view it picks in (`b8c15f572f`). Also measured:
+the fork's pick already takes the element nearest on screen -- two
+vertices, and two parallel lines, 8 px apart switch at the midpoint to
+the pixel.
+
+| row | verdict |
+|---|---|
+| `2f3161f312`, `b8b8a3e2a0`, `9efe08b33b`, `96ab8a5be3` | **declined**, user ruling: the fork keeps its own pick. It meets upstream's own tests, and the scan costs a projection of every point and curve vertex per mouse move on the sketches this fork is tuned for |
+| `57650b8067`, `400f6b3ac5`, `b178a7aede`, `93feb3ce51`, `b9368b17a8` | **declined** with them (n/a anyway: `EditModeCoinManager` only) |
+| `2ba97bf783` | **n/a**, user ruling: it extends upstream's `Std_ClarifySelection`; the fork has `Std_PickGeometry` instead |
+
+Guarded by `tests/gui/sketch-preselection-upstream.py`
+(`GuiSketchPreselectionUpstream_tests_run`), upstream's file in mode 3.
+
+### Double click and cancel (session 96): 31 -> 48, after reopening 20
+
+| row | verdict |
+|---|---|
+| `6db820a580`, `a9bff78974` | **adapted** `2239784e9b`. Ledgered `have(sync)`, but ABSENT: a double click on an edge only logged. Now it selects the wire the edge is part of, on the release (a new `STATUS_SELECT_Wire`, as upstream), and a second one deselects it. Upstream rescans every remaining edge after each one it joins; here endpoints are bucketed by position and the wire walked once |
+| `0b1187b2cd` | **adapted** `2239784e9b`: external edges join the wire |
+| `321a782eff` | **adapted** `5cf7e29e3b`. Double clicking the sketch in edit set its edit again, which dropped the selection; it now aligns the view |
+| `189d86ee53` | **adapted** `494cb6f23f`, `7630034293`. Ok/Cancel in place of Close, `Sketcher_CancelSketch`, a Leave drop-down on the edit tool bar. Cancel reverts by **undo** to where the history stood when the edit began (user ruling), so it can be redone; upstream restores a copy taken on entry. The history keeps `MaxUndoSize` (20) steps, so for a longer edit, or with undo off, the copy is restored instead, in one "Cancel sketch editing" step (user ruling). The copy costs 11 ms on the largest corpus sketch. Not taken: the panel's widget reorder, and the `Base/Reader.cpp` change only upstream's restore needs |
+| `facca5c426` | **adapted** `494cb6f23f`: Esc presses Ok, through the new `TaskDialog::roleOnEscape` |
+| `8d3c8076b2` | **superseded**: upstream reverted it in `facca5c426` |
+
+Guarded by `tests/gui/sketch-double-click.py` (3 of 6 fail before) and
+`tests/gui/sketch-cancel-edit.py` (11 checks).
+
+**`have(sync)` is wrong for `Gui/ViewProviderSketch.cpp`.** The status
+means "every file it touches was synced and it predates that file's
+baseline", but the fork kept its own view provider. Of the 28 rows so
+marked, the lines each one added were looked for in the fork's file
+(whitespace aside): 6 are there (88-100%: `0bef2e927b`, `e135f68e8a`,
+`4ca8e3b283`, `33abd923b3`, `b64e3e750f`, `b9db90ea20`) and stay; 2 are
+taken above; the other 20 are reopened as `open`, undecided -- 18 with
+0-30% of their lines here (`4164919e58`, `a38e73135e`, `9961f2949a`,
+`7075e3c1d5`, `e7c11a01be`, `5c7d287f6b`, `8def94e6f8`, `22a98d81f0`,
+`a1487106ab`, `5f74b4b299`, `e260cf5c8a`, `3da4b59b37`, `fd28d94f6a`,
+`fbd7f7090c`, `1eb8496aae`, `738a044f3c`, `7f984811e8`, `fa61131590`),
+and the compiler-warning pair `51a01b9e2b`, `d92267c6a7`. Absent lines may
+still be a change the fork made its own way; that is the triage.
+
+
+**Harness notes.** `Constraint.LabelDistance` is read-only from Python,
+so the test places labels by dragging them. A label drag that lands
+leaves the label preselected and drawn in the preselection colour, which
+a red-pixel check reads as nothing: clear it with
+`Gui.Selection.clearPreselection()` (there is no `removePreselection`).
+
+### The twenty reopened rows (session 97): 48 -> 27, with `97e7b9d1f2`
+
+Each row's lines were looked for in the fork's own terms, not as text:
+the fork's view provider is its own design, so a missing line is only a
+lead.
+
+| row | verdict |
+|---|---|
+| `4164919e58` | **have**, the fork's own way: `generateContextMenu` folds the preselection into the selection (Shift keeps the rest), counts `ExternalEdge` as an edge, and offers Copy/Cut/Paste, and Paste on the empty menu |
+| `a38e73135e` | **have**, the fork's own way: `moveConstraint` clones and `set1Value()`s inside a "Drag Constraint" transaction opened on the first move, so undo restores the label; `sketch-undo-during-drag.py` |
+| `3da4b59b37`, `51a01b9e2b`, `d92267c6a7` | **have**: `convertSubName` in `SEL_PARAMS`; the warning fixes are here or need `_DEBUG` with `NDEBUG` |
+| `738a044f3c` | **have** (Sketcher part): `attach`/`onChanged` already call `ViewProvider2DObject`. ShowPlane itself is a Part/Gui feature, outside this ledger |
+| `9961f2949a`, `7075e3c1d5`, `1eb8496aae`, `fa61131590` | **n/a**: no camera sensor; the fork tests `FirstPos` before the swap upstream fixed; no object freeze; no parentless box in `setEdit` |
+| `e7c11a01be`, `5c7d287f6b`, `fd28d94f6a`, `7f984811e8` | **superseded**: the headlight and draw-style switch upstream removed again in `b07caa732e` (Revert #14386 and #16378); the fork never had it |
+| `5f74b4b299` | **adapted** `b386a561f5`: the lock around the `TempoVis` read only, not over the whole function and its solve |
+| `22a98d81f0` | **adapted** `3b5af6dfe9`: an edit entered from the tree left the keyboard there and Escape did nothing (measured); `setEditViewer` focuses its view through `ViewerContext`, which a mirror ignores. Upstream's second half, focus after a purged tool, was never lost here (measured) and is not taken |
+| `a1487106ab` | **taken** `3b5af6dfe9`: measured, a click with the line tool put the edit cursor back until the next move |
+| `8def94e6f8`, `e260cf5c8a`, `97e7b9d1f2` | **adapted** `51d863d806`, see below |
+| `fbd7f7090c` | **n/a** (session 98, user ruling): the in-edit highlight overlay made a hover echo cost 0.035 ms, so the twice-per-hover repaint it removes is harmless; see below |
+
+Guarded by `tests/gui/sketch-focus-cursor.py` (2 of 6 fail before) and
+`tests/gui/sketch-auto-color.py` (23 checks).
+
+**AutoColor.** A sketch's edge and vertex colours follow
+`SketchEdgeColor`/`SketchVertexColor` and stay out of the file, so a
+sketch drawn on a dark theme is not stuck with its colours on a light one.
+Four things differ from upstream:
+
+- **Six properties, not two.** A colour is kept three times here, the
+  colour, the per-element array and the material, and each is written
+  when the colour is. Upstream marks only the colour Transient, and its
+  file still carries the other two.
+- **Which file it was is read off the colours, not the Touched bit.**
+  Upstream asks whether restoring touched `AutoColor`. Here writing the
+  value a property already holds is silent (`Property::hasSetValue`, the
+  recompute optimisation), and a file's "on" equals the constructor's, so
+  only an "off" is heard -- and the shared defaults block, which pastes an
+  elided "on", is silent the same way. What does show is the colours'
+  status: the restore gives each recorded property the status its file
+  saved, a Transient property is never left to the defaults block, and
+  the colours were saved Transient exactly when automatic.
+- **A preference change is not a modification.** `NoModify` on the
+  colours is not enough: every view provider change also touches the
+  object's `ViewObject`, which the Gui document counts as one. The update
+  puts the flag back as it found it; nothing else changes there.
+- **The face colour follows the fork's preference** (session 113, user
+  ruling, `94d76ec9c2`). Upstream drives `ShapeAppearance` from
+  `SketchFaceColor`; here it is the fork's `FaceColor` with the fork's 50%
+  transparent blue as default, not upstream's orange (`8a6f859a57`). All
+  five stores join the automatic set (`ShapeColor`, `Transparency`,
+  `ShapeAppearance`, `DiffuseColor`, `ShapeMaterial`). A file from before
+  saved its face colour: if that is neither the default nor the current
+  preference it was set by hand, and AutoColor goes off so the file keeps
+  it -- upstream would follow the preference and drop it on the next save.
+- **Automatic colours are display only** (`be034d08f9`, user ruling). With
+  Part's colour mapping on (`MapLineColor`/`MapPointColor`, off by
+  default) a shape made from a sketch copied the sketch's edge colour into
+  its own file. `ViewProviderPartExt::mapsElementColors()` lets a view
+  provider decline; a sketch does while AutoColor is on. Faces never
+  mapped: a sketch's `Shape` has none. Upstream has no colour mapping.
+
+A preference change reaches every sketch through one `ParamHandlers`
+delayed handler; the edit-time observer is attached only while editing.
+
+**The hover cost, and why `fbd7f7090c` waits.** Measured on the largest
+corpus sketch (Sketch028 of shirma_s_vitrazhom_N7, 1428 geometries, 2168
+constraints): one hover change's `SetPreselect` echo costs 13.2 ms, 0.03
+ms on a 3-geometry control, and `perf` puts 98% of it in `updateColor()`
+-- which runs twice per hover change here, once from the echo and once
+from `mouseMove`. Half of `updateColor()` was a quadratic this port
+introduced (`3e275d5e8d`): `isConstraintActiveInSketch()` scanned every
+constraint for each element of each constraint, looking for groups the
+sketch does not have; fixed in `a7ddac3021` (13.2 ms to 4.7 ms per hover change, `SketchObjectTest.groupQueriesFollowConstraintChanges`). The rest is
+`updateColor()` itself rewriting every colour on a hover. That is what
+the in-edit highlight move (evaluated 2026-09-10: draw the
+(pre)selection at render time, as the rest of the shapes do) removes
+outright, so `fbd7f7090c`'s echo is left to it rather than patched.
+
+**The highlight overlay (session 98).** The move was re-scoped once its
+route was checked: the edit graph is not under the selection root but is
+captured into the backend by its own overlay manager (`editingCapture`,
+overlay id 7), so the unified selection's highlight cannot reach it, and
+that manager's `setHighlight` would overwrite the model's. The ruling:
+first a Coin-side move that works in every render-cache mode (option C),
+then a mode-3 highlight overlay on top of it for per-view highlight
+(option B, below).
+
+C: the four highlight sets (`Selected`/`PreSelected` x `Curve`/`Point`)
+already drew the highlighted elements on top, but indexed into the
+geometry's own coordinates and material, so `updateColor()` had to rewrite
+every colour and every layer (z) to change one. They now draw copies of
+the highlighted vertices, lifted to the highlight layer, from coordinates
+and a three-colour material of their own, and are unpickable.
+`updateColor()` is split into `updateBaseColor()` (semantic colours and
+layers, run by every caller that was not a selection change, and again
+when the camera turns to the other side of the sketch) and
+`updateHighlight()` (the overlays, the constraints whose highlight
+changed, and `updateVirtualSpace()`, which now writes only on a change).
+`onSelectionChanged` and `mouseMove`'s preselection call only the second.
+The point selection helpers keep state only.
+
+On the way: the three defects of the 2026-09-10 evaluation were two
+(`f6dea571ce`, the third already gone), and
+`getGroupHandleIfInGroup()` was the sibling of the `isInGroup()`
+quadratic (`257e490b44`), 94% of what was left of a hover. Sketch028's
+hover echo: 4.6 ms before, 1.26 ms with C alone, 0.035 ms with both; the
+3-geometry control 0.03 -> 0.014 ms. Guarded by
+`tests/gui/sketch-highlight-overlay.py` (a hover leaves the geometry's
+nodes alone; the overlay colours; only the changed constraint's label is
+written; the backend draws the hovered edge in the preselection colour --
+4 of its checks fail before) and `tests/gui/sketch-highlight-notify.py`.
+`sketch-bulk-selection.py` and `sketch-visual-layers.py` read the
+highlight from the overlays now, not from `CurvesMaterials`.
+
+B (session 111): in render cache mode 3 the preselection of the geometry
+itself -- the curve, the vertex, the axis under the pointer, the dragged
+element -- is the hovering view's own highlight. The sketch hands it to
+`ViewerContext::setEditingHighlight` as one `SoFCDetail` per shape node
+and colour (the solid and dashed curve sets, the point set, the cross);
+the view's editing capture takes those elements from the scene it
+already captured (`SoFCRenderCacheManager::setHighlights`, no traversal)
+and its renderer feeds them to the backend as an overlay of their own,
+`OverlayEditHighlight` = 10, past the edit graph's 7. A view that cannot
+-- outside mode 3, a served mirror -- returns false, and the sets carry
+the preselection as before, in every view. A preselection from outside
+any view (the tree, the task panel) goes to every view of the session. A
+preselected constraint stayed a colour write in the graph until s112 (see
+below). Modes 0-2 are unchanged (user ruling).
+
+The draw-order question the session opened with turned out to be moot
+in mode 3: the old sets' copies were already drawn over constraint icons
+and datum label text there, whatever their layers say (a label never
+covered even the plain edge). The overlay keeps that. Whether the layers
+put the highlight under an icon in modes 0-2 was not measured.
+
+`updateHighlight()` now writes a highlight set's indices and coordinates
+only when they change: it rewrote all of them, empty ones included, on
+every call, and in mode 3 each write made the whole edit graph be
+captured again.
+
+Measured on Sketch028 (1428 geometries, 2168 constraints; llvmpipe, a
+802x543 view): a hover plus the frame it asks for cost a plain frame +35
+ms before (the edit overlay captured again), +1 ms now; the hover echo is
+0.085 ms (0.04 before). A first version took the highlight by traversing
+a path to each node with the capture manager's action, as `setHighlight`
+does: it left every later frame 12 ms dearer, the same draws each ~6 us
+more, for a cause not found -- taking the elements from the captured scene
+does not.
+
+Does a main-scene hover, which still goes through `setHighlight` that way,
+leave the same residue? Measured 2026-10-01, phased (frames, one hover and
+clear, frames, ten more, frames), corpus `portal_2.FCStd` (239 objects,
+218 draws): no. On d3d12 (RTX 3070 Ti) the frames before and after hold
+8.5-9.0 ms and 3.1-3.3 us a draw. The same probe on Sketch028 in edit on
+d3d12 holds too, 8.6 us a draw either side. On llvmpipe what is left is
++2.4 and +2.8 ms a frame after one hover (about 2%) against -0.3 and -0.9
+ms without one, so it lives in llvmpipe's state, not in the submit our
+code does. TRAP: `Gui.Selection.setPreselection(obj, "Face1")` on an
+object inside a Body highlights nothing in mode 3 -- `beginDetailPath`
+needs the path from the top: preselect `obj.Parents[0]` with the subname.
+`FC_BGFX_DEBUG_FEED=1` prints a `bgfx feed hl` line per highlight that
+reaches the backend.
+
+The 307 more draws after the first hover (1822 -> 2129, both codes) were
+not a cost of the hover: they were the sketch's 103 datum labels, which
+had never been drawn. On entering edit, `drawConstraintIcons()` merged
+1321 Horizontal icons that fall on one spot of the fitted view into one
+image 44879 pixels wide; Coin keeps an image size in shorts, the width
+wrapped negative, `SbImage::setValue` asked for 2^64 bytes, and the new
+handler's `Base::MemoryException` left `draw()` before `updateColor()`.
+So `updateVirtualSpace()` never enabled the constraint switchboard, and
+no constraint -- label or icon -- was in the scene, in any render mode,
+until the first highlight pass. `sendConstraintIconToCoin()` now crops
+an image past 32767 pixels (what is cut lies past any screen). Guarded
+by `tests/gui/sketch-merged-icon-overflow.py` (5000 icons on one spot,
+40000 pixels here: the label is in the scene right after entering edit;
+fails before).
+
+Why one image could get that wide: the icon grouping is transitive (an
+icon joins a group when it is within an icon's size of ANY member), so a
+chain of neighbours is one group however far it runs, and a group is one
+image -- a row per type, the icon and every member's label in one line.
+And an unnamed constraint of a single-icon type, whose label is empty,
+still reserved a ", " of width: Sketch028's 44879 pixels were nearly all
+blank. Now an empty label takes no room, a two-icon constraint's number
+shows once, the labels read in constraint order, and a row wraps them:
+View/ConstraintIconLabelsPerLine (10) to a line, at most
+View/ConstraintIconLabelLines (3) lines -- both on the Sketcher Display
+preferences page, and a change redraws an open edit -- with the last slot
+"+N", whose box picks the constraints it stands for (the icon still picks
+every constraint of its type in the group). Picking a merged icon: a box
+the point is inside now outranks boxes it is only within the pick radius
+of (a click on one wrapped label took the lines above and below), and a
+blank spot picks nothing, as upstream (it picked the constraint whose
+node the merge was drawn on). Guarded by
+`tests/gui/sketch-merged-icon-labels.py` (50 named Horizontal on one
+spot, swept with the pick probe: the icon picks 50, 29 labels one each,
+one box the other 21; set to 5 and 2 during the edit, 9 and a "+41").
+
+`drawConstraintIcons()` reports an exception and returns (`1744c224a1`),
+so a throw there can no longer skip `updateColor()` and hide every
+constraint; checked by forcing one in a scratch build.
+
+**Icons on one spot are laid out, not merged** (s112, user ruling: rid of
+the merge, but place the icons as if they merged, keep the two settings,
+and a "+N" for what does not fit). A merged image has one material, so a
+hover could not colour one constraint of it and its colours were baked
+into its pixels -- in the way of a per-view constraint highlight. Now each
+constraint keeps its own icon. A group -- the icons within the merge
+distance of the one it starts from, no longer a transitive chain -- is
+laid out from that first icon's place, ordered by type then number:
+View/ConstraintIconLabelsPerLine to a line, at most
+View/ConstraintIconLabelLines lines (the Display page calls them icons per
+line and lines now), an eighth of an icon apart. Past that the last slot
+is a "+N" drawn in the first left-over icon's node, whose SoInfo names
+every left-over constraint, so a click on it picks them through the
+ordinary list in the SoInfo; the left-overs' own images are cleared.
+
+The layout offset is in pixels: `SoZoomTranslation::pixelOffset` (new),
+turned into model units per render on the Coin path and carried by
+`SoFCZoomOffsetElement` to the image quad in mode 3. Put in zoom units (a
+50th of the view's height) instead, the grid stretched or overlapped once
+the view was resized after the layout. The layout writes the icon's
+translations, which `draw()` owns, so the view provider keeps what it
+wrote (`iconLayout`) and lays out again from `draw()`'s values. Gone with
+the merge: the merged-box pick, its nearest-or-union choice
+(`65545338e4`, which only served it) and the transitive-chain fix's
+merged groups (`576ff93c00`).
+
+Guarded by `tests/gui/sketch-icon-layout.py` (50 named Horizontal on one
+spot: 29 icons and a "+21", none overlapping, every constraint drawn or in
+the "+N" once; 9 and a "+41" at 5 and 2 -- before, one image naming all 50),
+`sketch-merged-icon-labels.py` (each icon picks its own constraint, the
+"+N" the rest, no spot two -- before, the icon picked all 50) and
+`sketch-merged-icon-overflow.py` (5000 on one spot: the "+4971").
+
+**A preselected constraint is the view's own highlight too** (s112). Where
+every view the preselection is for can draw it (mode 3, not a served
+mirror: `ViewerContext::canEditingHighlight`), the sketch no longer writes
+the preselection colour into the label, the icon or the points a
+coincidence holds. It hands the hovering view a highlight item with a
+*path* to the constraint's node (`SoFCRenderCacheManager::HighlightItem::
+path`): the editing capture's manager captures that path once
+(`pathCache`, shared with `setHighlight`) and shows all of it in the
+preselection colour, the way a preselected object is shown on top; a
+coincidence's points and an alignment's curve go as elements, as the
+geometry does. The icons no longer take the preselection colour
+(`iconPreselect`), and a hover redraws them only when that changes. The
+view a constraint preselection came from is tracked with the geometry's
+(`trackPreselectSource`). The selection stays in the graph, every view.
+
+What made the label text and the icons answer a highlight at all: mode 3
+drew them as textures that replace the fragment colour, the colour baked
+into the pixels, so the highlight's colour was ignored and the copy drawn
+on top looked the same. A one-colour image is now captured as its alpha,
+white, modulated by that colour (`a9abceb7b9`); the label's text by its
+own material. The baked pixels had been blended with their colour
+premultiplied, which darkened their edges a second time: the text reads
+the label's colour now. Modes 0-2 draw the baked images as before.
+
+Guarded by `tests/gui/sketch-constraint-highlight-view.py`: preselecting a
+label, an icon and a coincidence leaves the edit graph's nodes alone; the
+label's text and the icon take the preselection colour, the coincident
+point too; with two views, the pointer over the icon colours it in that
+view and not the other. The two-view check uses the icon, written while a
+datum label seemed not to pick after tiling two views.
+
+That was two holes in the label's pick box (`c4f305c018`), both in
+`SoDatumLabel`, neither about views. The distance, diameter and angle
+boxes were emitted as a QUAD in the corner order lower-left, upper-left,
+lower-right, upper-right -- a bowtie: Coin cuts a quad into (v0,v1,v2) and
+(v0,v2,v3), and the triangle from the upper corners down to the centre
+never picked. The probe point was the label's centre, the apex of that
+hole, in every view. Same order as a TRIANGLE_STRIP now, as upstream emits
+it since #29904. And a diameter's bounding box held only points on its
+dimension line: no height. Coin culls a ray pick by a shape's cached
+bounding box only while that cache is valid, which depends on what
+traversed last, so the number picked 17 pixels high in one run and 10 --
+the pick radius around the line -- in the next. Its text corners are in
+the box now. `tests/gui/sketch-datum-label-pick.py` sweeps each label pixel
+by pixel with the bounding boxes cached for the camera (a
+`SoGetBoundingBoxAction` over the render manager's scene graph before each
+probe): the hits fill their rectangle, and it is the size of the text
+(`QFontMetrics` of the label's font). Before: fill 0.74-0.77; the diameter
+10 pixels high.
+
+A preselected or selected constraint also highlighted the sketch's own
+shape (`5451ba3327`). `getDetailPath("ConstraintN")` fell through to the
+Part view provider, found no element of that name and resolved to the
+whole object; in mode 3 the edit keeps the shape under its root, hidden
+per view, so the main highlight slot drew it for nothing. Nothing showed
+in the editing view (0 changed pixels at the vertices the constraint does
+not touch). The "rings" on the endpoints a smoothed crop suggested were
+the preselected extension lines, drawn on top, crossing the endpoint dots.
+A constraint name resolves to no path now.
+
+`renderConstrIcon` lost the merged icon's parameters -- a label list with
+a colour each, label boxes, the text's descent, the per-line wrap
+(`d62c877aff`); every caller passes one label since icons on one spot are
+laid out rather than merged. The icon images hash the same before and
+after.
+
+Guarded by `tests/gui/sketch-highlight-view.py` (a hover writes no node
+of the edit graph; the sets hold the selection only; the pointer's
+preselection shows in its own view and not a second one, one from outside
+any view in both; the hovered edge, a vertex and an axis in the
+preselection colour, over the icon and the label it crosses). Against the
+old code the node, set and per-view checks fail; the crossing check passed
+there too. `sketch-highlight-overlay.py` reads its set checks per mode, and
+`sketch-visual-layers.py` reads a hover from the preselection rather than
+the set. A synthetic pointer move DOES preselect in sketch edit now (this
+test drives two views with it), on llvmpipe and d3d12.
+
+`sketch-drag-arc-conic.py` is flaky, independently of this work: a drag
+that never starts, a different one each time, 2 of 10 runs without C and
+2 of 9 with it.
+`sketch-arc-labels.py` failed once the same way under `ctest -j 6`
+(2026-10-01: the angle label's drag past the centre never started) and
+passed 3 of 3 alone.
+
+**Harness notes.** To make a file from before a property existed, taking
+its `<Property>` out of `GuiDocument.xml` is not enough: the reader loops
+over a record's `<Properties Count="N">`, so each record that loses one
+must say one fewer, or it reads on into the next record and that view
+provider silently restores nothing. An App-level `doc.saveAs()` leaves
+the Gui document's `Modified` flag set; `Std_Save` clears both.
+`sketch-hidpi-sizes.py` needs `QT_SCALE_FACTOR=2`, which its ctest
+entry sets and a hand-run loop does not.
+
+### The later rows (sessions 113-114): 27 -> 3
+
+The open `ViewProviderSketch.cpp` rows from 2025-07 on, read one at a time
+against the fork's own code, each measured before it was changed.
+
+| row | verdict |
+|---|---|
+| `c14d6f8848`, `0a45527b8b` | **adapted** `983d83aa45`: a new sketch's `PointSize` takes `View/DefaultShapePointSize`, 4 where unset -- read from the group, since `ViewParams`' own default is 2. `sketch-new-point-size.py` (6 with the preference; was 4) |
+| `5961651547` | **adapted** `b1bfb15d5b`: a sketch holding only external geometry is not "Empty sketch". `sketch-empty-message.py` reads the task panel label |
+| `a7b501c95c` | **adapted** `1be540f2a9`: the context menu offers "Change value" for one dimension alone; a Horizontal offered it and the dialog did nothing. `sketch-context-menu-value.py` right-clicks with the selection set |
+| `36786d4794` | **adapted** `bb3b05857f`: deleting solves once (`noSolve` on each delete, the final solve redraws on failure); the dimension tool skips its solve on leaving in mode FIRST. gdb solve counter: a delete 7 -> 2 solves, Escape 1 -> 0. The label-release half is not needed: measured 0 solves here |
+| `00c3422c1f` | **adapted** `ed86b7af3e`: hovering an expression-driven constraint shows the expression as the view's tooltip; one update in `mouseMove`, on the hovering view's widget only (a mirror has none). `sketch-expression-tooltip.py` |
+| `93abfc4fa4` | **adapted** `4e6197113a`: a LIVE CRASH here -- with a sketch in Transform edit every Sketcher tool was active and `Sketcher_CreateLine` segfaulted in `deactivateHandler()`. The gates ask `isInEditMode()`. `sketch-transform-edit-tools.py` |
+| `4bdaa0180a` | **have**: every mode write goes through `setSketchMode`, which calls `updateActions()` |
+| `de3de7624a` | **have**: the fork's internal view is a `ViewProviderPart` with Lighting "Two side" |
+| `e2346dabd6`, `bf009d41e4` | **n/a**: upstream's port of this fork's internal faces, and a fix to its own `SoSketchFaces` node path; the fork resolves faces through `pInternalView` |
+| `16a836743a` | **n/a**: `slotSolverUpdate` has no edit-view gate here |
+| `289411f51c`, `8c1d03ccb4` | **n/a**: an include for a core header change, and a line serving a Core `NavigationStyle` change |
+| `2da7c9ff17`, `566a724c26` | **adapted** `a3e4beb17f` (session 114): a tool's preview takes the edge colour, or the construction colour in construction mode, and a toggle recolours it at once. Colour only -- the fork patterns curves by visual layer and a new curve goes to layer 0 in either mode. `CreateLineColor` reads nothing now and its button is gone. `sketch-preview-construction-color.py` (0/4 before) |
+| `8a6872e69d` | **adapted** `3982c0e4d6` (session 114): `signalConstraintAdded`, and the view in edit scales a new Distance/DistanceX/DistanceY label still at the default 10 to 2 x its scale factor, however the constraint was made. `finishDatumConstraint` keeps scaling every datum type -- upstream dropped that line, leaving its radius/diameter/angle labels at 10 mm whatever the zoom, which the commit does not mention. `sketch-distance-label-scale.py` (6/9 failed before: 10 against 0.447) |
+| `aa785f78d6` | **adapted** `24982ee5f9` (session 114): the Dimension tool's preview label is pulled back by 1% of the view's width plus height, measured on the session's editing view (a served client's own). `OffsetMode` without `using enum`. `sketch-dimension-label-offset.py` (label 6.004 under a pointer at 6.0 before, 4.972 after) |
+| `387d25c219` | **have**: the line-extension hint and its PointOnObject snap came in with group C (`338b27fea2`); every function the commit adds is here, guarded by `sketch-line-extension-autoconstraint.py` |
+| `9ce1cae190` | **n/a**: the invalid projections it guards cannot reach the fork's sketch. A mirror exists only once its client has stated a camera (`mirrorFor`), the wire refuses a non-finite, zero-size or zero-extent camera, a desktop view always has one, and a view parallel to the plane already throws `ZeroDivisionError` to callers that catch it. The no-camera early return in `getProjectingLine` leaves the line uninitialised, but nothing reaches it |
+| `35f151d99e` | **adapted** `56aa886d28` (session 114, user ruling): the panel is Core's `TaskSolverMessages` (already here from the Assembly port), "Sketch Edit", with a settings menu: auto-update and the toolbar's grid, snap and rendering order widgets, built by `addViewSettingsActions` (`Command.h`) because the fork keeps those classes inside `Command.cpp`. State `empty_sketch` -> `empty` in the eight stylesheets. `sketch-solver-panel-settings.py` (no Core panel before) |
+| `5587b48a0f` | **adapted** `8013767cd2` (session 114, user ruling; the Core half is the fork's own): an edit element's box by geometry id, composed with the editing placement as upstream does (`aaf94ad58c` corrected the first version, which used the sketch's own Placement on a wrong argument that a container's placement counts twice: a container's walk passes transform=false with the matrix already global, and asked directly only the editing placement knows the edited occurrence, through a Link too); the fit on entering edit behind `Mod/Sketcher/General/FitSketchOnEdit`, off by default, orientation set directly so an animated turn cannot outlive the fit. `sketch-view-fit-edit.py` (5/7 failed before; 10 checks now, with direct and Link queries). Found on the way, Core: an element's box dropped its object's own placement (`9ad0f2098b`), and a point's fit zeroed the zoom (`d15ea789aa`), `view-selection-point.py` |
+| `6321ac28a3` | **declined**: the fork draws a drag from the solved sketch (`draw(true)` extracts it), so `moveConstraint` reading the same is what is on screen; reading the object instead measured no faster (about 18 ms a move on 2000 lines, the redraw dominates) |
+
+`8a6f859a57` was ruled after: the faces follow the preference as upstream's
+do, with the fork's default colour (`94d76ec9c2`, see AutoColor above).
+
+Left open then, each a decision or larger than a row: the annotation pick
+priority (`a2468774d3`), the broken-external report (`07b2d9973d`), the
+resetEdit lifecycle (`e6d3f9d6db`). Session 115 took them up:
+
+- `07b2d9973d`, **adapted** `8cdfeb6711`. Upstream merges a warning into
+  the sketch's icon and adds a tooltip hook to the tree. The fork's tree
+  already carries state marks as extra icons beside the item, each with its
+  own tooltip (`getExtraIcons`, `getToolTip` by icon tag), so the sketch
+  adds the Warning icon while an external geometry that has a reference is
+  flagged Missing, and refreshes the item only when that state flips.
+  `sketch-missing-external-tree.py` reads the icon from the tree's model: a
+  box edge as external geometry, the box turned into a cylinder and back
+  (width 192, 256, 192; it never changed before).
+- `a2468774d3`, **probed, put to the user**. A box, a sketch on its top
+  face with internal faces on: inside the sketch's region the frame shows
+  the SKETCH's face (pixel (83,195,194) against the box's (58,210,58)) and
+  a click selects the BOX's `Face6`. The pick list holds both at the same
+  depth, the box first. Two things differ from upstream. The fork's
+  coincident-pick loop (`SoFCUnifiedSelection.cpp`, `getPickedList`) stops
+  at the first hit of another view provider, so it only ever prefers an
+  edge over a face of the SAME object; and the sketch's face is in front
+  only because it is drawn later at equal depth, not because anything says
+  so. A fix has a drawing half and a picking half, both in Core.
+  **Ruled 2026-10-02, to build next**: the internal-face view gets a small
+  polygon offset toward the viewer, so it is in front by rule in Coin and
+  bgfx alike; a view provider can declare itself an overlay on coplanar
+  geometry, and among hits at one point with one priority the overlay
+  wins, across objects. With internal faces on, the solid's face is then
+  picked outside the sketch's outline only -- upstream's trade as well.
+- `e6d3f9d6db`, **n/a until Core has it**: it moves the sketch's task
+  dialog onto `TaskDialog::setAutoCloseOnResetEdit`, which is not here. The
+  fork's `unsetEdit` closes the dialog itself, and no defect was shown.
+
+**The arc-label "flake" is a clock.** `sketch-arc-labels.py` and
+`sketch-drag-arc-conic.py` fail now and then with a drag that never
+starts. Measured: this WSL2 box's wall clock steps back about 0.97 s every
+32 s; Quarter stamps mouse events with `getTimeOfDay()`, so a press about
+a second after the last reads as 0.2 s after it, and
+`NavigationStyle::processClickEvent` holds it as a double click until the
+release. The rate swings with the phase between a run and the step period
+-- it once made a correct commit look guilty (12 of 12 passed without it,
+then a run without it failed the same way). Fixed on the user's ruling in
+`e35e9990b4`: `processClickEvent` measures on `std::chrono::steady_clock`.
+A vertex dragged once every 1.1 s for 75 s lost 3 drags of 68 to 3 clock
+steps before, none after.
+It is not the only cause: `sketch-drag-arc-conic.py` failed once more
+under `ctest -j6` in session 114, after the fix (the second drag never
+started; 6 of 6 alone). Its two presses are 1.4 s apart on the steady
+clock, so the double-click hold cannot be it. Chased in session 115 and
+not reproduced: 24 of 24 passed with eight copies running at once, and it
+passed in that session's full `ctest -j6`.
+
+### The partial(sync) rows (session 115): 21 read
+
+The 21 rows the ledger files as `partial(sync)` that name
+`ViewProviderSketch.cpp` -- commits older than the squashed sync, which the
+fork's own file may or may not have seen. Each hunk was read against the
+file; the line-presence count only chose the order.
+
+| row | verdict |
+|---|---|
+| `476089a2ad` | **have**: the contextual menu is `generateContextMenu`, reshaped since by `8145eed95f` and `a7b501c95c`; it offers the fork's own `Sketcher_CreateFillet` and `Sketcher_ExternalCmds` |
+| `df7e783513`, `8145eed95f`, `b92bda03da`, `2ea8a633ac` | **have**: the `STATUS_SELECT_Wire` case and the end point count; Horizontal before Vertical in every branch; `moveGeometriesTemporary`; `Quantity::parse` on a `std::string` |
+| `4a486b21ed` | **have**: an external edge is preselected, selected and box-selected by its `ExternalEdge` name |
+| `e15646d158` | **have**: `slotSolverUpdate` on the sketch's `signalSolverUpdate`, connected before the first solve of `setEdit` |
+| `a72a63232a` | **have**: `App::Color` is an alias of `Base::Color` |
+| `a8ae56e06a` | **adapted** `efa015725d`: the edit snippet reads `AttachmentSupport`. The fork keeps both properties and copies each into the other, so nothing changes on screen |
+| `d9fc266772` | **taken** `b726b26547`: two of the five linked solver messages had a trailing space inside `tr()` and three had none; all five are the bare text with the space appended, at upstream's tip wording ("Under-constrained") |
+| `4b589088f6` | **taken** `112b7ef540` (an `open` row with a partial note): `<limits>` in `App/PropertyConstraintList.cpp` |
+| `4e8f3f0381`, `b07caa732e` | **superseded** / **n/a**: the draw-style switch on entering edit and its removal; the fork never had it (as `e7c11a01be` above) |
+| `6ca8b2daae` | **n/a**: there is no overlay mark to redraw; the fork swaps the whole tree icon from `FullyConstrained` |
+| `51c6dbd3e3` | **declined**: `activateHandler` taking a `unique_ptr` is a signature change over nine files with no behaviour in it. `SketcherGui::ActivateHandler` owns the new handler from its first line, so the early returns leak nothing |
+| `5839134e95`, `7a5a3d1ffc`, `dd6aa9f3c7`, `ac788df608`, `34881bc82e` | **n/a** for this file: comment typos in lines the fork does not have, MDI type tests the fork replaced with `Gui::ViewerContext`, a menu entry the fork groups under `Sketcher_ExternalCmds`, a spelling of `std::find` |
+| `5969df37f4` | **adapted** `d7fcfb4e4b` (user: yes), without upstream's camera sensor. Upstream stretches the two axes to the viewport on every camera change; here the edit geometry is one drawing shared by every view and every served client, so nothing in it may depend on one camera. Each axis is a polyline stepped by decades out to 1e7 -- a single line that long has its ends eight orders past a close view, beyond single precision, while a decade step keeps the piece a view cuts within a factor of ten -- and stays under its `SoSkipBoundingGroup`, so a fit still frames the sketch. `sketch-axes-reach.py` (the axes ended at 148.4; picks 3 m out found nothing) |
+
+`646b4381f9`, the 21st, was adapted in session 95 (ARCLENGTH).
+
+### CommandConstraints.cpp (session 115): 36 rows, 2 left
+
+Every undecided row naming `Gui/CommandConstraints.cpp`, fixes first. The
+file is LF, unlike most of the module.
+
+| row | verdict |
+|---|---|
+| `e38154474a`, `084379651a` | **adapted** `42931f6f46`: a coincidence that would fold an element onto a point is refused. The two ways into the command checked different things: started on a selection it joined the two ends of one line (the solver then says "Both points are equal"), as a tool it refused any two points of one element, a B-spline's ends included, and neither saw an end joined to a point already on the other end. Both ask `isCoincidentSelectionValid` now. `sketch-coincident-same-element.py` (4 of 8 failed) |
+| `1050996387` | **adapted** `5a621c16c0`: upstream's guard is on its tool being given one edge twice, which adds nothing here -- a second pick of a selected edge does not advance the tool. What did add a constraint, and still does upstream: an arc selected with its OWN end point wrote `Tangent(arc, start, arc)`. Refused, with upstream's message. `sketch-tangent-self.py` |
+| `bc3c0dc19a` | **adapted** `6c0dcb8578`: the symmetric constraint takes an element by its two ends -- a line, an arc of any conic, an open B-spline -- with a symmetry line, an axis or a point. On the fork's own sequences, four added. Found with it: the tool took a circle with a point and wrote a constraint between ends a circle does not have. Hints: "pick symmetry line or point" after an edge, "pick edge" after an axis. `sketch-symmetric-element.py` (8 of 14 failed) |
+| `71eed18cb1`, `abf9762abb` | **have**: the fork's sequences already take the root picked first and three points |
+| `36dd4b983c` | **taken** `1d00ac7d19`: the Dimension tool counts coincident points once, so a corner's two vertices and a third point are two points |
+| `76a84f63ab` | **taken** `8be2333ea9`: a horizontal or vertical line keeps the distance along its own axis wherever the pointer goes. `sketch-dimension-tool-points.py` guards both (3 of 7 failed) |
+| `b9155035fe` | **adapted** `bb5fcd8cd4`: constraint values, and what the datum dialog writes, went through `"%f"` -- 0.000158101832 became 0.000158. Upstream's `"%.8g"` mends the small values and is WORSE than `"%f"` above 100 (1234.123456789 -> 1234.1235), so the fork writes `"%.15g"`. The right angle of two perpendicular lines is taken with it. The tool handlers and `Utils.cpp` still write `"%f"`, as upstream's do. `sketch-constraint-value-precision.py` (5 of 5 failed, relative errors up to 6e-4) |
+| `9fc40b33de` | **taken** `536a207770`: the one string that still differed |
+| `a7251a6c3a`, `3d2419effc`, `7d21d9edb8`, `6a1afdc4e2`, `c0c6df10ec` | **have** |
+| `aa785f78d6`, `8a6872e69d` | **adapted** in session 114 (`24982ee5f9`, `3982c0e4d6`); the ledger had not been told |
+| `75c8749189`, `a283855697` | **declined**: tooltips the fork words itself |
+| `f4665aa7b5` | **declined** (user ruling) |
+| `08381b1d18`, `ed770bf849` | **n/a**: they follow a `pixmapFromSvg` that sets the device pixel ratio. The fork's returns device pixels, and the tool cursor is painted in them |
+| `651cefde4d`, `08c9a191e2`, `12a69fe296`, `65c6614081`, `f932c7e4e0`, `50f029edd4`, `8aa50c4380`, `65466d580b` | **n/a** for this file: spellings of the same call, a warning cleanup, two Core header moves |
+
+Ruled and taken after that (user, 2026-10-02):
+
+| row | verdict |
+|---|---|
+| `fe7c1d18be` | **declined** (user: "keep ours"). Measured: a running Line tool survives a constraint command applied to a selection. Escape ends a tool, and the fork re-runs a command to toggle its tool (`90f0e23eac`), which upstream's release at the top of every constraint command would undo |
+| `3d87975faf` | **adapted** `ee6be8f6a7`: a new Distance / DistanceX / DistanceY label goes below both points, beside both (the upper point's side), or up and left of an aligned one, by the view-scaled label distance the fork already gives it. `moveConstraint` is public here, so no attorney class. `sketch-distance-label-side.py` (4 of 6 failed: a downhill line's horizontal label sat between its ends) |
+| `9663cf8dd4` | **adapted** `21feb2a554`: a new angle's arc goes past the nearer end of two lines that do not reach their crossing, an arc's own angle outside the arc. `sketch-angle-label-place.py` (4 of 5 failed: both at the default radius) |
+| `129c7d4d03` | **adapted** `705f37e446`: `SelArc` / `SelExternalArc`, given to a pick only when the running tool asks for them, on both ways a pick reaches the tool (the release in the view, and the selection change a served client sends). The selection gate dropped any type mask of 256 or more -- a guard sized for the old types, which made the angle tool accept nothing once the new bits were in. `sketch-angle-tool-arc.py` |
+
+Still open:
+
+- `999fed9c4e` (user: take it). Not a port: upstream builds it on its
+  `ExternalSelection` gate and finds a reference again by comparing
+  sub-names. The fork's external tool is its own and does more
+  (`DrawSketchHandlerExternal.h`: sub-object paths, mapped element names,
+  import across documents, whole-object picks), so the constraint tools
+  have to go through THAT path. A design, to be agreed first.
+- `0c34c93fe4`. Both constraint tools select by the sketch itself; the
+  fork's panels select through the edited occurrence's path
+  (`selectElement`). It works, because the sketch resolves the object, but
+  a removal by the other path would not match. Wants a click-flow test
+  inside a container before it changes.
+
+  **n/a** (session 117), by that test, `sketch-constraint-tool-select-path.py`:
+  a sketch edited inside an `App::Part`, the line clicked with no tool,
+  then picked and unpicked in the Dimension tool and in Parallel. Every
+  entry is on the Part's path whichever way it was made, and what one way
+  selected the other unselects. The fork's selection puts an object on its
+  top parent's path for every add, removal and query
+  (`SelectionSingleton::checkTopParent`); upstream's does not, which is
+  what its commit works around in the tool.
+
+### The coplanar pick, and Command.cpp (session 116)
+
+**`a2468774d3`, adapted** `8fdf3f3325` (Gui) + `84db00d6d5` (Sketcher), as
+ruled. The probe written first said more than session 115's had:
+
+- square to the camera the frame showed the BOX's face inside the sketch's
+  outline, not the sketch's. Both faces carried the same polygon offset
+  (the internal-face view sits under the sketch's own face root and
+  inherited its (1, 1)), so the tie was real and drawing order settled it;
+- the single pick was the box's face at every pose, but not where the
+  ledger pointed. With hidden-line selection on top (the default) the pass
+  over the on-top objects leaves the ray pick action gathering every hit,
+  so the single pick is the gathered list cut at the first hit of another
+  object (`getPickedInfo`); only with that option off does the action keep
+  one hit as it goes (`afterPick`). The pick LIST already held the sketch's
+  face first.
+
+What was built: `SoFCUnifiedSelection::setCoplanarOverlay(node)` declares a
+node an overlay, and of two hits of one priority at one depth the one under
+a declared node wins, in the gather, in `afterPick` and in the list
+post-process. `PartGui::ViewProviderPartExt::setCoplanarOverlay()` gives a
+view's faces a polygon offset of (0.5, 0) -- behind an edge (none), in
+front of an ordinary face (1, 1); the constant half is zero because a depth
+buffer cannot resolve half a unit -- and declares its root. The sketch's
+internal-face view is one. `sketch-face-on-solid-pick.py`: three poses,
+both pick paths, 85 claims; run by hand with render cache 0 as well, where
+Coin draws alone, with the same result.
+
+**Not changed, and a question**: an edge lying in a face loses an exact
+depth tie to that face. This is every object's behaviour, not the
+sketch's: an edge wins only where it is the NEARER hit, so in a view square
+to a face the edge is picked from outside the face only, and on a slanted
+face from one side of the edge. A sketch's outline lying on a solid's face
+has no outside, so square on it cannot be picked at all (the test records
+what a pick on the outline returns, without claiming it). A rule that
+would mend it for all objects: a hit that lies in the plane of the kept
+face hit is not behind it, and an edge or a vertex there wins within the
+pick radius. That changes what a pick near any edge returns, so it waits
+for a ruling.
+
+**Command.cpp**, the undecided rows:
+
+| row | verdict |
+|---|---|
+| `17c3286e52` | **adapted** `40747494e0`: New Sketch with a group selected made no sketch at all (the attacher was asked what a group can carry). The group is now where the sketch goes. Upstream takes a plain group; an `App::Part` counts here too, a body does not. `sketch-new-in-group.py` |
+| `93173ba797` | **taken** `7403797c4b`: Attach Sketch leaves the selected sketches out of its list, so a sketch cannot be attached to itself. `sketch-attach-not-itself.py` reads the dialogs |
+| `d34081b9fe` | **adapted** `0a5dd8f2f5`: Merge Sketches gave the merged sketch no external geometry and moved external ids as if they were the sketch's own (a point on an external edge ended on the vertical axis). References are carried over, ids go to the merged sketch's id for the same reference -- matched by the reference string each projected geometry carries, where upstream rebuilds names -- and a constraint that cannot follow is dropped with a warning. In the body when every source is in one. `sketch-merge-external.py` |
+| `e12deea20e` | **superseded** by `d34081b9fe` |
+| `64029d3a5b` | **have**: `updateIcon` is guarded |
+| `2f2787611c` | **n/a**: the fork's View Section is `toggleViewSection()` in C++ and names no `ActiveSketch` |
+| `cfd1cdfb36` | **n/a** for this file: New Sketch finds the group from the support as a document object, with no `Part::Feature` cast |
+| `3164ee1849` | **have**, the fork's way: the list is sorted, by name, latest first |
+| `7b22027b90` | **n/a** for this file: a spelling of the same call |
+| `ccb28af4a1` | **adapted** `56aa886d28` with `35f151d99e` (session 114): the settings menu on the solver panel |
+
+Left for one decision: the wording rows (`46e2c45e2e`, `beb66d3cfb`,
+`764b9cca0e`, `57ee6870b4`, `4dbdd1031d`, `f7f3c18e52`, `67b3f4e143`,
+`b2c51665a2`, `dee977f98f`). Each changes a source string, and a changed
+source string loses its translation until the translation files are taken
+with it; so they go together with a translation resync or not at all.
+`6eecd08f7c` (a Qt deprecation) and `3c1358da10` (the Datums header name)
+are not read yet.
+
+Read (session 117): `3c1358da10` **taken** `8c5430ed73` (one include);
+`6eecd08f7c` **taken** `5986b18091`, its Sketcher part -- six connections,
+this tree builds against Qt 6.11 where `stateChanged` warns. The strings
+`d7074e36be` passed over because they are written across several literals:
+`71768887ff`, 11 of 41 are upstream's wording now, the rest are the fork's
+own or have no upstream form.
+
+**`999fed9c4e`, the design put to the user.** What upstream does: the
+constraint tools' gate lets an edge or a vertex of ANOTHER object through
+while the step accepts an external edge or a vertex; the selection it
+causes is turned into external geometry on the spot (`addExternal(name,
+sub)`, found again by comparing the object and the sub-name), and the tool
+goes on as if `ExternalEdgeN` had been picked. It reaches the viewer by the
+active window.
+
+The fork's external tool does more and differently
+(`DrawSketchHandlerExternal.h`), and every piece of it is needed here:
+
+1. *Reaching the pick.* `allowExternalPick()` on the handler lifts the
+   edit's exclusive pick, `setSessionSelectionEnabled(true)` turns each
+   view of the session back on, and the gate goes on
+   `sessionSelection()`. The constraint handlers would answer
+   `allowExternalPick()` from the step they are on (true only while it
+   accepts `SelExternalEdge`, `SelExternalArc` or `SelVertex`), and their
+   gate would hand anything outside the sketch to `ExternalSelection`,
+   narrowed to edges and vertices -- no faces, no wires, no whole objects,
+   no intersection.
+2. *Making the reference.* One helper, taken out of
+   `DrawSketchHandlerExternal::onSelectionChanged` and used by both:
+   `addExternal(Part.importExternalObject(<picked path>, <editing
+   context>))`, which is what carries sub-object paths, mapped element
+   names and another document or body (through a binder). It returns the
+   new external ids, found by the reference string as Merge Sketches now
+   does; a reference the sketch already has is reused, not added again.
+3. *Going on.* A vertex is `PointPos::start` of the new point; an edge is
+   classified as an arc or not from the projected geometry; then the same
+   code as a pick of `ExternalEdgeN`.
+
+Open, each for the user:
+
+- *Which tools.* Upstream changes the generic handler too, so every
+  constraint command that lists an external edge takes one from outside,
+  not only Dimension. Proposed: both, as upstream.
+- *Undo.* The generic tools open their transaction when the constraint is
+  made; the reference is made a step earlier. Proposed: one undo step for
+  both -- the tool opens the transaction at the reference and the
+  constraint joins it; a tool left before the constraint aborts it, so no
+  stray external geometry stays. Dimension already runs inside one
+  transaction and restarts it on a mode change; the references made so far
+  are made again after a restart, as upstream does.
+- *Another body or document.* The external tool makes a binder without
+  asking. Proposed: the same here, since it is the same act.
+
+**Ruled after that (user, 2026-10-02), and what was built:**
+
+- *The edge in a face*, agreed: `ed018fd5d8`. What lies in the plane of the
+  face hit first is not behind it; an edge or a vertex there takes the pick
+  within the pick radius, whichever object it belongs to. The probe
+  corrected the paragraph above first: with hidden-line selection on top
+  (the default) an object's OWN edges and vertices already won, because the
+  gathered list is searched for a better hit of the same object. The loss
+  was across objects (the sketch's outline on a solid's face) and, with the
+  option off, for an object's own elements too. `pick-edge-in-face.py`
+  (4 of 24 failed, all with the option off); `sketch-face-on-solid-pick.py`
+  now claims the sketch's edge on the outline.
+- *The wording rows*, "take, and translation sync". Measured before
+  anything was touched: of the fork's 1381 translatable strings 457 had no
+  entry in the fork's own (2023-12) translation files and 726 had none in
+  upstream's catalogue, so taking upstream's files alone would have lost
+  about 270 translations. The nine rows are follow-ups of upstream's
+  rewording of the whole workbench (`cf082f7642`), whose code the fork had
+  and whose strings it had not. So the wording went first, `d7074e36be`:
+  the menu text and tooltip of every command class both sides have, paired
+  by class and member (220 strings), and 168 other strings whose upstream
+  form is the same string reworded, read pair by pair. Kept: the
+  Intersection command's text (it toggles here), tool hints, the element
+  panel's layer names, texts that say what only the fork does. Then the
+  files, `33f8ec9f15`: upstream's 49 at `bd6be559e8`. 365 strings are left
+  without an upstream entry, the fork's own; German covers 1116 of 1388.
+  `46e2c45e2e` (the three menu classes name their translation context) is
+  `72831da284`.
+- *`999fed9c4e`*: one undo step for the reference and the constraint,
+  aborted when the tool is left before the constraint; a binder made
+  without asking for another body or document. Which tools -- Dimension
+  alone, or the eighteen individual constraint commands as well -- was
+  asked back and is open. If both: a step whose picks are all external is
+  refused, which upstream does not do.
+
+**`999fed9c4e`, built as the user redirected it** (2026-10-02):
+`6de565629c` (Gui) + `e041fdf88e` (Sketcher). Not "which tools take outside
+picks always" but a MODE the user switches, stacked on the tool:
+
+- While the Dimension tool or a constraint command runs,
+  `Sketcher_External`, `Sketcher_Defining` and the two intersection
+  commands do not replace it. `ActivateHandler` already asks the running
+  handler `toggle(next)` (the polyline tool's hook); the constraint
+  handlers answer it for a `DrawSketchHandlerExternal` by switching
+  outside picking on in that command's flavour, off on a second press.
+- One setting for all of them, `Mod/Sketcher/General/ConstraintExternalPick`
+  (0 off, 1 external, 2 defining, 3 intersection, 4 intersection
+  defining), read when a constraint tool starts.
+- With it on the handler answers `allowExternalPick()`, the session's
+  views select again, and the gate hands anything outside the sketch to
+  `ExternalSelection` -- for a constraint command only at a step that takes
+  an external edge or a vertex, and for both tools not while the sketch has
+  something of its own under the pointer. The pick becomes external
+  geometry by `addExternalFromPick()`, the External tool's own call taken
+  out of it, and the tool goes on with the geometry made.
+
+What it took in Core: a click the selection gate refuses is no longer
+claimed by the selection node (upstream's commit has the same fix), and
+the view passes over the object in edit when that object lets the view
+pick around it -- it picked the sketch by the shape the sketch keeps in the
+scene and took the click the sketch was about to handle.
+
+Found on the way, each of which cost a build:
+
+- the sketch publishes its own hover THROUGH the selection gate, so a gate
+  cannot tell the sketch's pick of its element from the view's;
+- selection notifications arrive after the call that caused them returns:
+  a flag held around `rmvSelection()` is down again by the time the tool
+  hears of it;
+- the view clears the selection before it selects what was clicked, and a
+  constraint command read every clear as "start over";
+- a new external geometry's element name does not resolve until the
+  sketch's shape is rebuilt, so the tool is advanced directly, not by
+  selecting `ExternalEdgeN`;
+- `ExternalGeometryFacade::getRefIndex()` is for copy and paste only; new
+  geometry is found by comparing the reference strings before and after.
+
+Undo as ruled: one step for the reference and the constraint
+(`AutoTransaction::setEnable(false)` keeps the reference's transaction
+open past its event, `setEnable(true)` lets the command's own open and
+commit fold into it), gone if the tool is left, started over or the
+command makes nothing of the picks. The Dimension tool makes its
+references again after each of its aborts.
+
+`sketch-constraint-external-pick.py`, real clicks.
+
+**The open ends, closed (session 117, 2026-10-02).**
+
+- *A sign on screen*, `24823906ab`: the tool's cursor carries, right of
+  the crosshair and above the tool's own icon, the icon of the command
+  that switched the mode on, so it tells the flavour too. Both tools built
+  the same cursor inline; it is `StackedExternalPick::cursor()` now, set
+  from `applyExternalPick()`, which the start and every toggle go through.
+  A served client sees none of it: a tool's cursor does not travel, and
+  neither does the hint bar.
+- *The lost highlight*, `5252481f4f`, was two defects. The view clears the
+  selection to select the outside element, and the sequence's picks went
+  with it: they are selected again once the outside one is taken
+  (`StackedExternalPick::reselect`; a constraint command knows the echo of
+  its own re-selection by name, and its gate lets the steps behind
+  through for the time of the call). And the Dimension tool lost its
+  picks WITHOUT any outside picking: it starts its transaction over at
+  every pick and every change of mode, and the sketch clears the selection
+  whenever a transaction is aborted (`c1285d73725`, a crash fix -- kept).
+  Of two lines picked for an angle only the second was selected, since the
+  tool was ported. It selects what it holds again after each restart.
+- *A served run*, `5f04a04793`, `serve-constraint-external-pick.py`: a
+  constraint command is not on the browser's command list
+  (`isBrowserSafeCommand`, held narrow over modal dialogs), so a browser
+  cannot start one; it can join one. The desktop starts Parallel, the
+  client's `Sketcher_External` -- which is on the list -- toggles the
+  running tool, and its clicks, picked in its own mirror, make the
+  reference and the constraint in one undo step. Both ways round (the
+  desktop's session, and one the client began); both passed as built.
+- *Clicked through*: every constraint command with an outside pick where
+  its sequences take one, the Dimension tool, a vertex, a face, two
+  outside elements, both intersection flavours, a pick in another body.
+  Three defects, each fixed and in the test:
+  - `e4f3a6a5be` -- a step offered anything outside the sketch as soon as
+    it took an external edge OR a point, so a vertex became external
+    geometry at a step that takes edges only. The gate is asked per
+    element; with the intersection flavour it is what the cut gives that
+    counts (an edge a point, a face edges).
+  - `bab35c499d` -- a face picked in the Dimension tool and a click on
+    empty space committed an undo step holding the outline and no
+    dimension. The turn is committed only if a constraint was made.
+  - `5715cde254` -- with the mode on, a click on empty space was left to
+    the view whenever anything was preselected, the sketch's own things
+    included; a diameter's label follows the pointer, so a circle's
+    dimension could not be ended. Only something outside the sketch counts
+    (`outsidePreselected`).
+
+  What the sweep found working: one reference and the constraint in one
+  undo step for Coincident, PointOnObject, the three Distances,
+  Horizontal/Vertical, Perpendicular (either order), Tangent, Equal, Angle,
+  Symmetric (three picks), Radius/Diameter on an outside circle and Lock on
+  an outside vertex (reference constraints, the element being fixed); two
+  outside elements refused by Parallel with nothing left, and taken by
+  Angle as a reference angle; a face's outline left in the sketch and one
+  piece of it then picked; a section line from a face under either
+  intersection flavour; a binder made for another body's edge and undone
+  with the constraint in the one step.
+
+Left for a ruling -- both ruled 2026-10-02, see "The rulings of session
+117, built (session 118)" below:
+
+- *An edge cut by the sketch plane comes back twice.*
+  `rebuildExternalGeometry` skips the projection of a FACE when it
+  intersects, but projects an EDGE and adds the cut as well. For an edge
+  normal to the plane that is the same point twice, so the tools see
+  "several pieces" and make no constraint (the plain External
+  intersection tool leaves two coincident points too); for a slanted edge
+  it is the projected line plus the cut point. Dropping the projection
+  would renumber the external geometry of files that already intersect
+  edges.
+- *What a browser is shown.* No cursor and no hint bar reach a client, so
+  it has no sign of the mode; its tool bar mirror could show the external
+  command checked. And whether the constraint commands that open no dialog
+  go on the browser's command list.
+
+### The rulings of session 117, built (session 118)
+
+- *An edge taken by intersection is its cut alone* (`878becdec5`). The
+  projection is dropped, by the sketch's hidden `_Version`: a new sketch is
+  version 2, a sketch restored at 0 or 1 keeps projection and cut, since its
+  constraints count on those geometries. Measured, sketch at z = 5: upright
+  edge Point, Point -> Point; slanted Line, Point -> Point; lying in the
+  plane Line, Line -> Line; an edge that never meets the plane was its
+  projection and is refused now, as a face is. The Coincident tool with
+  `Sketcher_Intersection` on takes an upright edge of a box as one point
+  and makes its constraint.
+- *A browser may start the constraint commands that open no dialog*
+  (`5f761d0de6`). Sixteen by name; the dimensional ones, the datum editor and
+  Snell's law stay off for their modal dialog. The list is in
+  docs/ThinClient.md 8.7. Ruled the same day and built: `Sketcher_Defining`
+  and the two intersection commands join `Sketcher_External` on the list
+  -- they activate the same handler, and without them a browser could
+  switch outside picking on in one flavour only -- and while a constraint
+  tool runs with outside picking on, the command of the flavour in force
+  is checkable and checked, and no other (`StackedExternalPick::
+  showOnCommands`). That is what a browser is shown of the mode: its tool
+  bar mirror carries an action's checked state, and the cursor's sign does
+  not travel. The four are one group button, and a group's face is not
+  drawn pressed for a checked member: the tick is on the drop-down's
+  entry, on the desktop and in the browser alike. The commands are
+  checkable only while checked, since outside these tools they are plain
+  commands with no state. One trap on the way: `QAction::setCheckable` and
+  `setChecked` emit `toggled`, which is how a checkable command is RUN, so
+  setting the mark from the tool ran the command, which set the mark --
+  the recursion ended in a segfault. The signals are blocked for the
+  change.
+- *The wall clock* (`dbc440f64c`): the spin after a rotation, a click
+  against a hold in the navigation styles, and the hover pick's delay are
+  measured on the steady clock. docs/Testing.md has the test that makes the
+  step on demand.
+
+### The preference pages (session 118)
+
+Thirty-seven undecided rows name `SketcherSettings.cpp` or one of the
+pages' `.ui` files. Twenty-three decided, fourteen left for a ruling. The
+file is 569 lines here against 935 at upstream's tip, so it was read by
+family, and the `.ui` files compared widget by widget against the tip
+(which settled every text-only row at once).
+
+| row | verdict |
+|---|---|
+| `4f429e3288` | **adapted** `e3ad693750`: upstream asks for a restart when the dimensioning mode, the unified coincident tool or the horizontal/vertical group changes. Here the workbench installs its tool bars again when the page is saved -- it did so for the dimensioning mode alone, the other two did nothing until the next start |
+| `8ae1d9bbde`, `255949134f`, `2d5d1397a9`, `0814df7488`, `3d0aaeb616` | **taken** `e3ad693750`: the line group's check box. The workbench read `Commands/UnifiedLineCommands` already, and named `Sketcher_CompLine`, which was never brought over: set by hand, the option took BOTH line commands off the bar. The group is here now. Default off, as the workbench has it (upstream's is on) |
+| `2e390f1543` | **n/a**: it syncs the restart check's property; the page compares the stored options before and after the save |
+| `09209436d2` | **taken** `86b99936a3`: "Reset page" takes back the four settings the page stores by hand. `AutoScaleMode` is one more than upstream's list |
+| `00228821d0`, `b4de78d3d7`, `ab9188a5dc`, `a00fe1e886` | **adapted** `2cb495d103`: the grid page's part -- line pattern icons painted from the palette at the device pixel ratio, upstream's seven patterns. Measured with light text: three entries, black, before |
+| `d2491541e1`, `2903f480ae`, `880335a0f2`, `ee2f327a96` | **taken** `40b24b1000` |
+| `a77f96ea86`, `5b59d94d55`, `98712d228b`, `1c591cd43a` | **have**: after `40b24b1000` no widget both sides have differs in its text, bar two kept on purpose (below) |
+| `9189abe69b` | **have**: both readers default to "when no scale feature is visible" |
+| `35700db40e` | **n/a**: "always add external geometry as reference". Here that is decided by the command (`Sketcher_External` or `Sketcher_Defining`), not by the construction mode |
+| `21b56fe3fa` | **have**: the override is here; the rest is member order in a closed file and the font page |
+
+Found on the way, no row for either:
+
+- The coincident option's check box was unchecked by default while the
+  workbench's default is the unified tool. With nothing set the page showed
+  it off, and OK with nothing touched wrote `UnifiedCoincident = false`.
+- The re-install put a button the bar did not have at the END of the bar:
+  the tool bar manager keeps what a bar has and appends the rest
+  (`ToolBarManager::setup`, deliberately, against flicker). Changing the
+  dimensioning mode had this before today. The page empties the two bars
+  its options decide before the re-install. A move of the button instead is
+  not safe: a group's drop-down is set on the tool button when the action
+  is added, and a move makes a new button.
+
+Kept as the fork has them: the scaling mode's tool tip (it describes this
+fork's rule) and the internal geometry check box (the feature here makes
+more than faces).
+
+Features the fork's own drawing code has to grow, none of them a port of
+lines:
+
+- *Line pattern and width by geometry type, and the Appearance page*
+  (`b140feabaf`, 1572 lines; then `f5da655429` points coloured by
+  construction state and the vertex colour removed, `e2f998f301` external
+  defining solid / non-defining dashed in one colour, `411cdadf49` and
+  `1155182ac3` a colour, pattern and width for external defining geometry,
+  `c2d6248bc7` dimensional constraint line style, `90ca7a30d9` axis line
+  width, `efec2c6795` the page's icon brush). Upstream draws through
+  `EditModeCoinManager`, which is not compiled here; the fork has one
+  curve style at 3 px and one dashed style.
+- *Constraint symbol size* (`eef738b312`, `dc22fb4b9b`): a preference for
+  the icon size, which here follows the font size.
+- *Label font face* (`b9a89bada1`, `e992fef709`): a font box with a
+  preview and a missing-glyph check.
+- *Axis transparency* (`cda241dbd0`): the axes drawn through geometry in
+  front of them, at a second transparency.
+
+Ruled 2026-10-02: the four feature families are all to be taken (done,
+"The appearance families (session 119)" below), and the defaults are upstream's -- **taken** `86c389b583`: Make
+Internals on for new sketches (`be1d53cf5f`), dimension names shown, the
+line group on. The line group's row above says "default off"; that held
+for one day.
+
+### The tip comparison over every open row (session 118)
+
+For each undecided row, the files the commit really touches -- from the
+commit, the ledger's file column is cut short -- were compared with
+upstream's tip, whitespace aside. Eighteen rows touch only files that are
+the tip here (`1d7b156fa3`): the default handler's family, the on-view
+parameters of the three conic arc tools, the transform expression helper.
+`DrawSketchDefaultHandler.h` differs from the tip by one thing, the tool
+mode being a command (`90f0e23eac`).
+
+Two more rows, and what they led to:
+
+| row | verdict |
+|---|---|
+| `6dda56117a` | **superseded** `4574a91ba3`. It draws the curve while knots are placed, in `DrawSketchHandlerBSplineByInterpolation.h` -- a handler upstream later deleted, folding interpolation into the unified B-spline handler. The fork had the unified handler at the tip and still started the old one for the two "from knots" commands: no tool widget, no on-view parameters, no hints, a polygon for a preview. They start the unified handler now |
+| `aab4bf329a` | **n/a**: an enum of the uncompiled information overlay converter |
+
+Found by the test for that switch, no row for it -- `666865e05f`: **a tool's
+click did not land where the pointer was.** On a press the sketch took
+the 3D point of whatever the pick radius reached as the click's position,
+for any hit (the fork's `1b87d4f072`, so that a drag starts on the curve
+it grabs; upstream does it for a vertex only). A tool's own preview is
+under the pointer and is picked like anything else, so the B-spline tool's
+next point went ON its preview, three pixels short, while its mouse move
+drew it at the pointer. Line and polyline were exact with the same
+clicks, which is why it went unseen. A tool gets the pointer's place now,
+or the vertex under it; a drag keeps the hit on the curve.
+
+161 rows are left undecided. About a hundred of them touch at least one file that
+differs from the tip in substance and need reading; the rest also name
+files the fork does not have, or the uncompiled `EditMode*` sources.
+
+### TaskSketcherConstraints.cpp (session 117)
+
+Twenty-six undecided rows, all decided. Read by the DECISION column of the
+ledger, not its status column: eleven more rows of this file read "open"
+there and had been decided in earlier sessions.
+
+| row | verdict |
+|---|---|
+| `67f8852697` | **taken** `2ebb3f89ee`: the filter's "Named" entry was never asked for. Measured: checked alone, it listed none of two named constraints |
+| `ee1af2748a` | **taken** `e799d8c8e7`: `specialFilterMode` was read before it was ever set |
+| `2d5d8ab86c` | **taken** `0a2a7b90d2`: a double click on a geometric constraint's row edits its name. Its focus guard belongs to the refocus timer of `061e185e7f`, not taken here |
+| `766ee41b55`, `c0d47c5ecd` | **adapted** `44d7dfc55d`: a name is an identifier or empty. Measured before: "My Width", "a'b", "1st" and two blanks were all taken, and an emptied name did nothing. One thing more than upstream: a row whose text was refused gets its edit text back, or the next click on its check box asks for the same name again |
+| `9cd3b31067`, `46ec53f4da`, `498968b89c`, `33d1d80555` | **adapted** `f7f5460d62` (App) + `26688bd419` (Gui), as an end state. See below |
+| `6f90c5ea61` | **adapted** `d787c7275d`: the selection-following filters update once per batch, and only while the filter box is checked; both of them, where upstream defers one. 60 edges selected over 399 constraints: 0.29 s -> 0.225 s (0.22 s with no filter) |
+| `54d235f8a5` | **taken** `fd35bc7263`: an unnamed constraint is listed by number and type, "7-Distance" |
+| `0e1a9786e8`, `d5eda6def3`, `b8b90871a9` | **taken** `c789f0dea6`: "Delete All" and "Delete by Filter", with the Python `delConstraints` they need |
+| `ecd591450c`, `0e24e121eb`, `4eb57fb50d`, `34881bc82e`, `ae76f89759`, `9d5e68b184`, `23537d97d7`, `4a770767d3` | **taken** `073246bef7` (+ `557d82ecb6`): one line or a few each, nothing changing what the panel does here. The 24 px icon size is what the style gave already (rows 26 px before and after) |
+| `6eecd08f7c` | **taken** `5986b18091`, with Command.cpp's part |
+| `a1f5d36584`, `e9f2e8fe92`, `69058376e6` | **have**, the fork's way |
+| `0ee3c9f8e6`, `631ab0e7a4` | **n/a**: Base still has the conversion functions; Core's external icon theme is not here |
+
+**"Show only filtered constraints".** The option was to draw only what the
+list shows. Measured before, with "Named" alone checked: the four
+filtered-out constraints were MOVED into the other virtual space -- the
+user's own arrangement, and part of the document -- in two undo steps; the
+list was not filtered; nothing was hidden in the view, because the write
+did not reach the drawing; and nothing came back when the option was
+switched off. Upstream's cluster gives a constraint a visibility of its
+own (`Constraint::isVisible`, here since the take of `Constraint.*` and
+set by nothing) and the panel sets that:
+
+- `SketchObject::setVisibility(index or list, bool)`, C++ and Python,
+  which writes nothing when every constraint is as asked already;
+- the edit drawing honours it at the two places it decides a constraint is
+  shown, its switch and its icon; a constraint selected or under the
+  pointer is still drawn, as one in the other virtual space is;
+- no transaction: hiding by a filter is not something to undo;
+- switched off -- by the menu entry or by the preference, which only moved
+  the check mark before -- everything is shown again;
+- the filter's stored state moves to `SelectedConstraintFilters`, whose
+  default leaves the two special filters out.
+
+Upstream writes every constraint's visibility at every change of the
+constraints, and a write is such a change; here only the constraints that
+differ are written.
+
+On the way, `d0e614d579`: any change of a row, a rename included, ended
+with an "Update constraint's virtual space" command whether the check box
+said anything new or not -- a rename left three undo steps, one now.
+
+`tests/gui/sketch-constraint-panel.py` drives the panel's widgets for all
+of it (38 checks); `TestSketcherSolver.testConstraintVisibility` and
+`testDelConstraints` the two Python methods.
+
+Seen and left: `renameConstraint` takes "Constraint9" as a name for
+another constraint (the generated-name form is not refused).
+
+### DrawSketchController.h (session 117)
+
+Fourteen undecided rows, none of them open in fact. The fork's file is
+upstream's at `bd6be559e8` but for one deliberate difference -- the view an
+on-view parameter is made for is a `Gui::ViewerContext`, desktop or mirror
+-- and every handler header those rows name is identical to upstream's
+tip. A tip comparison settles a file's whole history at once; the rows'
+other files were read where they differ (`DrawSketchDefaultHandler.h`: the
+tool mode is a command here, the Escape handling is in;
+`DrawSketchHandler.cpp`: the transaction ids declined with `f4665aa7b5`).
+
+One thing the adaptation had dropped: upstream returns from
+`initNOnViewParameters` when the document is not in edit, and the fork
+asked the application for the edit document and used it unchecked. The
+guard is back.
+
+Kept, a look: `8bf54ad82f` greys the deactivated dimension colour further
+(0.8 -> 0.5). The files it changes are not the fork's; the default is
+`ViewProviderSketch`'s own here.
+
 ## 7a. The constraint-tool hints (session 85)
 
 Thirteen rows, not the eleven the sweep sized: `580d538798`, the commit
@@ -2461,6 +3790,798 @@ client's mirror has no main window, so a served session's hints are
 drawn on the host and nowhere else. That is true of all ten drawing
 handlers already; putting hints on the wire is a thin-client item, not
 a port one.
+
+### The appearance families (session 119)
+
+Ruled "take all" on 2026-10-02. None is a port of lines: upstream draws a
+sketch in edit through `EditModeCoinManager` and its two helpers, which are
+not compiled here, so each family is the fork's own drawing code taught the
+same preferences -- upstream's names, groups and defaults, so a
+configuration moves between the two.
+
+**Family 1: a line's width and pattern by what it is, and the page.**
+
+| row | verdict |
+|---|---|
+| `b140feabaf`, `1155182ac3` | **adapted** `f436f45950`: normal, construction, internal alignment, external and defining external geometry each have a width and a pattern (`Mod/Sketcher/View`: `EdgeWidth`/`EdgePattern`, `Construction...`, `Internal...`, `External...`, `ExternalDefining...`), and so has the information layer. `draw()` sorts the curves into one indexed line set per class over the one coordinate and material list, each under its own draw style, where it had one solid and one dashed set |
+| `f5da655429` | **adapted** `1848e8782b`: a point is coloured as what it belongs to -- the ends of a normal curve in the curve colour, every other point (a centre, any point of construction geometry) in the construction colour, an external geometry's in its own, the origin as a fully constrained element. `EditedVertexColor` and `FullyConstraintConstructionPointColor` are read no more and have no button |
+| `e2f998f301`, `411cdadf49` | **adapted** `c340ac4113`: defining external geometry has `View/ExternalDefiningColor`, the external colour until set; what tells it from the rest is the line, solid against dashed. The fork's three states (frozen, detached, missing) keep their colours, a defining one lighter as before. `View/InformationColor` is read now too: the page has had upstream's button since, and nothing read it |
+| `c2d6248bc7` | **adapted** `82fa9adadf`: `SoDatumLabel::linePattern`, and a dimension's leaders take `DimensionalConstraintLineWidth`/`Pattern`. The label draws twice here -- by hand in `GLRender`, and through a companion node for the render cache -- so the pattern is a line stipple in the one and a connected `SoDrawStyle` field in the other |
+| `90ca7a30d9` | **taken** `d77a80324f`: `AxisLineWidth`/`AxisLinePattern` on the two axes, and the grid leaves out the line that would lie on an axis (`Part` grid extension) |
+| `efec2c6795` | **n/a**: upstream shows a label of its own to read the style sheet's text colour for the line type icons. The pages here paint them from their own palette when the style reaches them (`2cb495d103`, measured with light text) |
+| the page | **taken** `d658410b21`: `SketcherSettingsColors` is `SketcherSettingsAppearance`, upstream's form with the fork's three external state colours added, the tool preview colour left out (a preview is coloured by what it draws, `a3e4beb17f`) and the face colour kept on the fork's preference. "Reset page" takes back the eight line types, which the page stores by hand |
+
+How the classes and the visual layers meet: a layer with a pattern of its
+own (layer 1, "dashed") still wins. A class has two sets, and a curve on a
+patterned layer goes to the second, which has the class's width and the
+layer's pattern. Upstream never reads a layer's pattern.
+
+What a user sees change with nothing set, all of it upstream's defaults:
+
+- a curve is 2 pixels wide; it was 3;
+- construction, internal alignment and external geometry are dashed
+  (`0xFCFC`, drawn at twice its length); defining external geometry and
+  normal geometry are solid;
+- the information layer's lines are dashed;
+- vertices are no longer red: an end point has its curve's colour;
+- a tool's preview has the width and pattern of what it is drawing.
+
+Mode 3 draws all of it: the render cache carries a draw style's pattern
+and its scale factor to the backend. `tests/gui/sketch-line-styles.py`
+samples the backend's frame along two lines -- the normal one is lit over
+all of its length, the construction one over 0.75 of it, the twelve set
+bits of sixteen.
+
+**Family 2: constraint symbol size.**
+
+| row | verdict |
+|---|---|
+| `eef738b312`, `dc22fb4b9b` | **adapted** `5678fce295`: `View/ConstraintSymbolSize`, on the Display page. The size was 0.8 of the label font's and followed it; unset it is the application font's height, as upstream has it, so a symbol is a quarter larger than it was until someone sets it. Here it is still multiplied by the device pixel ratio, which upstream's last version of the line dropped. The page shows the font's height while the preference is unset, not the 15 the form was drawn with |
+
+**Family 3: the label's font.**
+
+| row | verdict |
+|---|---|
+| `b9a89bada1` | **adapted** `ce59ec6a15`: `View/EditSketcherFontName`, a font box on the Display page with a preview in the view's colours and a list of the glyphs a label can show that the font lacks. Not taken: the label's default font name going from "Helvetica" to "osifont" -- neither tree registers that font for the application outside TechDraw, so the name resolves by fallback either way, and changing it here would move every label for nothing. And one thing done differently: a font box always holds some font, so upstream's page stores one on the first OK whether or not anybody chose it. Here the preference is written once a font was chosen, or one is stored already |
+| `e992fef709` | **have**: the tool tip came over in its corrected wording |
+
+The two font files of that commit are a newer osifont for `data/examples`
+and the Sketcher's resources; neither file is in this tree (TechDraw
+carries its own copy), so there is nothing to update.
+
+**Family 4: axis transparency.**
+
+| row | verdict |
+|---|---|
+| `cda241dbd0` | **adapted** `4bcb25919d`: `Mod/Sketcher/General/AxisTransparency` (30 percent by default) on the two axes, and its spin box on the Display page. The other half is not applicable: upstream draws the axes a second time with the depth test reversed, at `OccludedAxisTransparency`, so that they show through a solid in front of the sketch plane. Here nothing in front hides them to begin with -- the edit graph is an overlay drawn over the model (measured: a box above the sketch plane, seen from the top, has both axes drawn across it) |
+
+Found on the way: the view's highlight kept a highlighted primitive's own
+transparency. Right for a face; a hovered axis at 30 percent was drawn in a
+mix of the preselection colour and the background, and
+`sketch-highlight-view.py` said so. A highlighted line or point is opaque
+now (`78daf4e506`, in the highlight cache, for every object).
+
+Tests: `sketch-line-styles.py` (family 1), `sketch-display-settings.py`
+(families 2 to 4), and the Appearance page in `sketcher-preferences.py`.
+Full ctest 878 of 878.
+
+### A datum's value edited in place
+
+Ruling 4 of 2026-10-02 asked whether a dimension's value could be typed
+at its label in a browser instead of in a modal dialog.
+
+**Ruled 2026-10-02 and built** ("1 commit. 2 in place. 3 all at once. 4 on
+enter"): a click elsewhere applies a valid value; in place is the default
+on the desktop too; several dimensions get all their boxes at once with
+Tab between them; a value is applied on Enter, with no preview while
+typing. What follows is the proposal as it was put; this is what stands:
+
+- `SketcherGui::editDatums()` (EditDatumDialog.h) is the one way to ask
+  for a value. All five sites call it. In place -- when the view the event
+  came through has no widgets, or `Mod/Sketcher/General/EditDatumInPlace`
+  is on, which is its default and a check box on the Display page -- it
+  starts a `DatumEditSession`: one `Gui::EditableDatumLabel` per
+  constraint, each standing at its constraint's own label
+  (`setAnchorLabel`). Otherwise, and for a reference or an
+  expression-driven value, the modal dialog as before. "Edit Value" in the
+  context menu is the full dialog wherever there can be one.
+- Enter applies every box as it stands in one transaction; Escape applies
+  none and aborts the open command; Tab and Shift+Tab move between the
+  boxes; a press of the first button elsewhere in the view applies, and is
+  used up by that together with its release. A box that holds no value
+  keeps the session open on Enter and makes a click elsewhere a cancel.
+- The callers return before the value is in. The Dimension tool goes on
+  from a continuation (`afterDatums`); the view provider ends a session
+  without calling back when the tool or the edit goes away, and the tool
+  gets no mouse event while one runs.
+- `EditDatumDialog::exec` refuses for a view without widgets, whoever
+  calls it. With that the dimensional commands and
+  `Sketcher_ChangeDimensionConstraint` are on the browser's command list;
+  Snell's law is not.
+
+Three things the build found:
+
+- **A command's transaction is closed when the command returns.** The
+  dialog never returned before the value was in, so the constraint and its
+  value were one undo step by accident of modality. In place they were
+  two, and Escape had nothing left to abort: the constraint stayed. The
+  session keeps the transaction open past the command's scope
+  (`App::AutoTransaction::setEnable(false)`, what entering an edit does).
+- **A box's `value()` is the last committed value**, not what is typed:
+  with keyboard tracking off the typed text waits in a cache for the box's
+  own Enter handling, which the session's filter runs ahead of. The
+  session reads the text.
+- **A key off the wire ends the session from inside the label it is
+  delivered to** (`sendKeyEvent`). Destroying the labels there was a use
+  after free, a crash on the first Enter a client sent. They are taken off
+  the screen at once and deleted later.
+
+The first dimension of a freehand sketch still scales the whole sketch
+(the auto scale), in place as in the dialog -- with one value only: the
+scaling drops what it cannot scale, and the other boxes' numbers would
+name other constraints.
+
+Tests: `tests/gui/sketch-datum-in-place.py` (a command on a selection, the
+panel, the Dimension tool, Escape, text that is no value, a click
+elsewhere, the two cases that go to the dialog) and
+`tests/gui/serve-datum-in-place.py` (a client starts
+`Sketcher_ConstrainDistance`, picks, is shown the box in its "onview"
+push, types through key frames; one undo step; no dialog on the host).
+Not covered by a test: several boxes at once and Tab between them --
+nothing a test can drive makes two driving dimensions in one go. And not
+scored against the build before: the old binary was gone by the time the
+tests were written; with the preference off the desktop test still shows
+the dialog opening, which is the old behaviour.
+
+**What is there today.** A constraint's value is edited in one place, the
+modal `EditDatumDialog`, here and at upstream's tip, opened from five
+sites: the constraint commands on a selection (`finishDatumConstraint`),
+the Dimension tool's `finalizeCommand`, a double click on a label
+(`ViewProviderSketch::editDoubleClicked`), an activated row of the
+constraints panel, and `Sketcher_ChangeDimensionConstraint`. What is in
+line is something else: the on-view parameters of a drawing tool
+(`Gui::EditableDatumLabel`), and those already reach a browser -- the
+"onview" push, the `onViewFocus` op and the key frames of
+docs/ThinClient.md 8.7. The modal dialog is the reason the dimensional
+commands are off the browser's command list: it blocks the GUI thread of
+a process that serves several clients, with nobody at the host to close
+it.
+
+**The proposal: the entry box of 8.7 at the constraint's own label.**
+An `EditableDatumLabel` in the acting view, its `SoDatumLabel` given the
+constraint's type, points and label parameters so that it stands exactly
+where the constraint's label is drawn, the constraint's own label hidden
+for the extent of the edit (the same switch a virtual space uses). The
+box holds the value selected, as the dialog does. On the desktop it is
+the `QuantitySpinBox` over the view; on a mirror it is the unshown box
+whose text is streamed, and the client draws and places it with the code
+it already has. No new wire message, no new client code: the set of
+on-view parameters simply has one member while a datum is edited.
+
+- Enter commits: the same `setDatum` in the same "Edit sketch datum"
+  transaction, the same first-dimension auto scale, the same history
+  entry. The commit is taken out of the dialog into one function that
+  both call, so the two cannot drift.
+- Escape cancels. Where the constraint was just made (a command or the
+  Dimension tool), that aborts the creation, as the dialog's Cancel does.
+- The units, the parser and the validation are the spin box's, so
+  "10 mm", "1 in" and "2*3" behave as in the dialog.
+- Which view: the one the event came from. Two clients of a shared
+  session each edit their own datum in their own view.
+
+**What changes shape: the callers are synchronous and this is not.**
+All five sites run `exec()` and read the result on the next line; the
+Dimension tool loops over the constraints it made and stops at the first
+rejected one. A box in the view returns at once. So the editor takes a
+continuation -- `editDatum(view, index, done)` with `done(accepted)` --
+and each site moves what followed `exec()` into it. The Dimension tool's
+loop becomes "edit the next one from `done`"; continuous mode restarts
+the tool from the last `done`. This is the one part that is real work,
+and the part to test hardest (undo steps counted before and after for
+every site).
+
+**The dialog's other three fields, and where each goes.**
+
+| field | proposal |
+|---|---|
+| name | not in the box. The constraints panel renames in place already (its context menu and F2); the dialog stays reachable on the desktop for those who want both at once |
+| reference check box | not in the box. `Sketcher_ToggleDrivingConstraint` does it and is on the browser's list already |
+| expression | the box is not bound to the property, so "=" does not open the formula editor. A constraint that HAS an expression is not edited in place: the desktop opens the dialog as today, a browser is told the value is driven by an expression |
+
+**Desktop too, or browsers only?** Proposed: one preference, in place by
+default for a view without a widget (it has no alternative), and the
+user's choice on the desktop, default the dialog as today -- so nothing
+changes for a desktop user until they ask, and `Edit Value` in the
+context menu keeps opening the full dialog either way. Prior art is on
+the side of in place: Onshape, Fusion and SolidWorks all put a small
+value box at the dimension when it is placed or double clicked, with
+name and expression elsewhere. `ShowDialogOnDistanceConstraint` keeps
+its meaning under either: whether a new dimension asks for its value at
+all.
+
+**The guarantee a served process needs** is not the box but the absence
+of the dialog: `EditDatumDialog::exec` refuses when the acting view is a
+mirror, whatever called it, and says so in the report view. With that
+in, the dimensional commands and `Sketcher_ChangeDimensionConstraint`
+join the browser's command list; Snell's law keeps its own dialog and
+stays off.
+
+**Questions for the ruling.**
+
+1. A click elsewhere while the box is open: commit what is typed (a
+   spreadsheet's rule, and what a touch user expects), or cancel (the
+   dialog's rule for a click on its close button)? Proposed: commit a
+   valid value, cancel an invalid one.
+2. The desktop default: dialog (proposed) or in place?
+3. Several dimensions made at once (the Dimension tool on a rectangle's
+   two sides): one box after another, as the dialogs come today
+   (proposed), or all boxes at once with Tab between them, as a drawing
+   tool's parameters work?
+4. A live preview while typing -- the sketch re-solved on each valid
+   value, put back on Escape -- or the value applied on Enter only, as
+   the dialog does (proposed for the first cut)?
+
+**Tests it would come with**: a desktop one (double click, type, Enter;
+Escape; a new dimension; the Dimension tool's two-constraint case; an
+expression-driven datum falls to the dialog), and a served one (the
+client starts `Sketcher_ConstrainDistance`, picks, receives the box in
+its "onview" push, types through key frames, Enter sets the datum in one
+undo step; the host shows no dialog -- measured first on today's build,
+where the dialog opens on the host and the test must fail).
+
+### One editor for a constraint's value, all of it (session 120, design)
+
+Asked at the end of session 119 (2026-10-03): "migrate all constraint
+value editing with in place editor including expression and reference
+driving. Current expression editor already has an in place mode. You can
+reference that implementation. Build a 'super' editor that can do
+everything. Mirror that in browser. Also since the editor got complex,
+lets use one editor only and use tab to move the editor among multiple
+constraints. Also when moving you need to consider the extra space of the
+editor to not obscure. Also check cases when in the middle of editing what
+will happen if someone undo".
+
+**Status: ruled 2026-10-03 and built; see the end of this section.**
+
+#### Measured first: an undo while a box is open
+
+A probe against the session 119 build (one box per constraint, held by
+constraint INDEX). Each case opens a box, does the thing, then types a
+value and presses Enter:
+
+| case | what happens today |
+|---|---|
+| a new dimension, then Std_Undo (menu, tool bar) | `Document::undo` commits the open creation and undoes it: the constraint is gone, the box stays open over nothing. Enter applies nothing; the only word is in the notification area |
+| Ctrl+Z typed into the box | the line edit keeps it (its own text undo); the document is not touched |
+| an existing dimension, then an undo that puts a deleted constraint back BELOW it | **the wrong constraint is written.** The box was on Edge2's 50; the undo put Edge1's constraint back at index 0; Enter wrote 77 into Edge1's, without a word |
+| an existing dimension, then an undo that removes it | the box stays; Enter does nothing (notification) |
+| a redo that appends a constraint; a recompute | the box stays and is still right |
+
+The cause is the index. `ViewProviderSketch::slotUndoDocument` already
+drops a drag for the same reason (`cancelInteractionOnUndoRedo`, upstream
+16aff10544, where an index past the end crashed `moveConstraint`), and
+nothing does the same for the datum session. The third row is a defect
+in what session 119 shipped, whatever becomes of the editor.
+
+#### Prior art
+
+- **Onshape**: a double click on a dimension makes its number an entry
+  field, Enter applies. Expressions in the same field, variables as
+  `#name`. Driving/driven is the dimension's context menu, not the field.
+- **SolidWorks**: the Modify box at the dimension; an `=` in it starts an
+  equation, with a type-ahead list of names and functions.
+- **Fusion**: one field takes a value or an expression, autocompletes
+  parameter names, and Tab moves the focus to the next dimension.
+  Typing `name=value` there names the dimension as it sets it.
+- **FreeCAD itself**: `DlgExpressionInput` in its frameless mode (no
+  system background, a proxy widget for the mouse, placed over the spin
+  box that opened it by `adjustPosition`), opened by `=` in a bound spin
+  box: a text field with the completer, a result line under it that says
+  what the expression gives or why it cannot (re-evaluated 300 ms after
+  the last key, function calls disabled while editing), Discard, and Enter
+  to accept.
+
+#### The proposal
+
+**1. One editor, holding everything the dialog held.**
+
+- **The value line** is one field. FreeCAD's own rule decides what it
+  holds: text that starts with `=` is an expression, anything else a
+  value, parsed with the units and arithmetic the spin box takes today.
+  Typing `=` turns the line into an `ExpressionTextEdit`, with its
+  completer, and opens a **result line** under it: the value the
+  expression gives, or why it gives none. That is `DlgExpressionInput`'s
+  validation taken whole (`validateExpression`, the unit check, the
+  function-call disabler), not a second copy. Deleting the `=` turns
+  the line back into a value, and applying a value then removes the
+  expression, which is what the dialog's Discard did. A constraint that
+  has an expression opens with the line showing it.
+- **Driving or reference** is a toggle at the start of the line, drawn
+  with `Sketcher_ToggleDrivingConstraint`'s icon. A reference opens
+  showing its measured value, greyed. Typing a value or an `=` makes it
+  driving, the dialog's rule (`datumChanged`, `formEditorOpened`).
+- **The name** is a small header row over the line, showing the name or
+  a greyed "name" when there is none. A click or F2 moves the keys there.
+  The name is checked as now (`checkConstraintName`) and applied with
+  the value.
+- Weight and Snell's ratio take a plain number in the same editor, so
+  Snell's law can join the browser's command list.
+
+**2. One editor that Tab moves.** One transaction runs from the start of
+the session to its end. For a new constraint that is the transaction of
+the command that made it, as now. For an existing constraint it is
+"Edit sketch datum", opened at the first change.
+
+- **Tab applies the entry to the sketch and moves on.** The value,
+  expression, driving flag and name go into that transaction (the sketch
+  solves, the labels move), and the editor moves to the next constraint;
+  Shift+Tab moves to the previous one. Ruling 4 stands as it was meant:
+  there is no preview while typing. Tab is a commit point, as it is for
+  a drawing tool's parameter.
+- **Enter** applies the current entry and commits: the whole session is
+  ONE undo step. **Escape** aborts the transaction, so everything the
+  session applied goes, a new constraint included. **A click elsewhere**
+  is Enter (ruling 1). Text that is no value stops Tab and Enter, and
+  the result line says why.
+- The other way -- keep every value pending and apply all of them on
+  Enter -- would need the labels to show numbers the sketch does not have
+  yet, and would put the solver's verdict at the end, where one value
+  that cannot be met spoils all the others. Applying on Tab costs one
+  thing: the geometry moves between two Tabs.
+- **Which constraints Tab visits.** When the editor is opened for
+  several constraints (the Dimension tool's two), it visits those. When
+  it is opened for one (a double click, the panel, Edit Value), it visits
+  every dimensional constraint whose label the view shows, in constraint
+  order, starting from that one. Labels off the screen are skipped.
+- The auto scale of a freehand sketch's first dimension happens when that
+  dimension is applied. The session follows its constraints by tag (next
+  item), so the constraints the scaling drops do not throw it off.
+
+**3. Where the editor goes, so that it hides nothing it edits.** The
+value line sits over the number it edits, as the box does today: that is
+what "in place" means. Everything else -- the header, the result line --
+grows AWAY from the constraint's geometry:
+
+- "Away" is a direction on the screen: from the label's foot on the
+  dimension (the point of the dimension line under the text; for a radius
+  or diameter, the point on the arc) to the text's centre. The extra rows
+  go on that side of the line, in an order that keeps the line nearest to
+  the dimension. For a dimension whose text sits to the side (a vertical
+  distance), the rows go below.
+- If the editor would leave the view on that side, it flips to the other
+  side, and only then is it clamped into the view.
+- The editor is placed again whenever it changes size (the result line
+  appears), the camera moves (the sensor it has), or Tab moves it.
+- Covering the constraint's own geometry and dimension line is what this
+  avoids. Other constraints' labels may still be covered: they are not
+  tracked.
+- A browser applies the same rule itself: the push carries the foot as a
+  second world point beside the anchor, and the client projects both on
+  every frame. Placement is the client's job (ThinClient.md 8.7).
+
+**4. The browser.** The editor travels in the "onview" push as a
+parameter of a kind of its own. Everything in it is display state: the
+line's text and selection, which field has the keys (the line or the
+name), the mode (value or expression), the result line and its level
+(value, warning, error), the driving flag, the name, the visible
+completions and the current one, and the foot. Keys go up as `'E'`
+frames to whichever field has them, as now. The rest is one op,
+`onViewAction {index, action, arg}`, for the toggle, a click into the
+name, and a click on a completion. The client draws a DOM editor with the
+same layout and implements none of its behaviour (8.7's rule).
+
+- **The completer is the one hard part.** `QCompleter` shows its list
+  in a popup widget, and the keys that drive the list go through that
+  popup. A mirror shows no widget, so on a mirror the server needs
+  `ExpressionTextEdit` to handle Up, Down and Enter for the completion
+  itself, and the push carries the rows of the list.
+- Not the panel mirror (Sandbox.md 7.19). It reflects a task dialog of a
+  document to every subscriber, it writes back through setters
+  (`textEdited`), so the `=` handling and the completer would be passed
+  by, and it has no anchor in the 3D view.
+
+**5. An undo while the editor is open.**
+
+- **Std_Undo or Std_Redo during a session ends the session as Escape
+  does, and does nothing older.** That is a spreadsheet's rule: while a
+  cell is being edited, undo cancels the edit and goes no further back.
+  The work done before the session needs a second undo. To build it,
+  `Gui::Document::undo`/`redo` ask the view provider in edit first: one
+  virtual, false by default, which the sketch answers while a session
+  runs.
+- **An undo the session cannot catch first** -- a Python `doc.undo()`,
+  another client of a shared session -- reaches it only afterwards,
+  through `slotUndoDocument`/`slotRedoDocument`. If the session's
+  transaction was open, `Document::undo` has committed it and undone it:
+  the document has moved past the session, and the session ends. If
+  nothing was applied yet, the session follows its constraints by TAG
+  (`Constraint::tag` survives an undo; the expression engine uses it for
+  the same reason). A constraint that has gone leaves the cycle, and if it
+  was the one being edited, the session ends.
+- **Following by tag fixes the wrong-constraint defect** in the table
+  above, and it can go in before the rest, as its own commit, with the
+  probe turned into a test.
+
+**Questions for the ruling.**
+
+1. Tab applies as it moves, with the whole session one undo step and
+   Escape taking all of it back (proposed), or values held pending until
+   Enter?
+2. An editor opened on one existing dimension: should Tab visit every
+   dimension the view shows (proposed), or only the set it was opened for
+   (for one constraint, Tab does nothing)?
+3. The name: a header row, reached by a click or F2 (proposed), or
+   Fusion's `Name = value` typed into the line?
+4. Std_Undo while editing: end the edit and nothing more (proposed), or
+   end it and also undo the step before it?
+5. The modal dialog: does it stay for desktop users who turn
+   `EditDatumInPlace` off (proposed), or is it removed together with the
+   preference?
+6. A key for the driving toggle (Ctrl+Shift+D, say), or the mouse
+   alone?
+7. Fix the wrong-constraint defect now, on its own, before the editor
+   (proposed)?
+
+
+**Ruled 2026-10-03: all seven as proposed; the toggle gets a key.** The
+user added: the browser already has completion logic -- reuse it. As
+built:
+
+- **Undo first** (`Gui::ViewProvider::undoRedoInEdit`, asked by
+  `Gui::Document::undo`/`redo` before anything is undone, so Std_Undo and a
+  client's `undo` op both reach it; the sketch answers it while an entry
+  runs, as Escape). An undo it cannot catch reaches
+  `DatumEditSession::documentRewound` after the redraw: the editor follows
+  its constraint by `Constraint::getTag()` (new, read-only), or ends when the
+  constraint is gone or the undo took the entry's transaction. Test
+  `sketch-datum-undo.py`, written from the probe and failing on the session
+  119 build. The same run found a **segfault**: `DatumEditSession::start`
+  looked the labels up, then ended the previous session -- whose apply
+  redraws and can free them. Reordered.
+- **`Gui::DatumValueEditor`**: one `ExpressionLineEdit` with the lead '='
+  (the spreadsheet cell's rule: completion only after '='), parsed and
+  formatted by a never-shown `QuantitySpinBox`; a result line fed by
+  `Gui::Dialog::checkExpression`, the formula editor's validation taken out
+  of `DlgExpressionInput::onTimer` so both judge alike (one difference:
+  with the completer open a half-typed name leaves OK disabled rather than
+  as it was); the driving toggle (Ctrl+Shift+D -- the command's own "K, X"
+  is letters, which the line takes); the name row (F2). Function calls are
+  disabled only around the evaluation of the typed text: the dialog held
+  the global disabler while shown, which an editor that applies on Tab
+  would have held across its own recomputes.
+- **Placement**: `SoDatumLabel::getLabelAwayDirection()` -- across the
+  dimension line on the text's side, along the radius, along the angle's
+  bisector, from the arc's centre. The line stands over the number, the
+  other rows go to that side (up only when the geometry is clearly below
+  the text), flip when they would leave the view, then clamp.
+- **The session** (`DatumEditSession`, rewritten): one editor; Tab applies
+  into the one transaction and moves; the cycle is the set given, or every
+  dimension the view shows; an App transaction is made active at the start
+  ("Edit sketch datum" unless one is), opened for the document lazily so
+  an entry that changes nothing leaves no step. "Edit Value" is in place
+  too; the dialog is reached only with `EditDatumInPlace` off.
+- **Snell's law** draws an icon, not a label: the editor stands at the
+  refraction point (`Target::point`), with no toggle. The command makes the
+  constraint with the last ratio given (the dialog's history, read and
+  written through a never-shown `PrefQuantitySpinBox`; 1 when there is
+  none) and hands it to the editor. On the browser's command list now.
+- **The browser**: `Gui::OnViewEntry` is the seam the view's registry and
+  the mirror use (`EditableDatumLabel` and `DatumValueEditor` both stand on
+  it). The push gains `ax/ay/az` (after the anchor, before the text, where
+  the viewer's scanner looks), `kind`, and for a datum `field`, `expr`,
+  `result`, `level`, `driving`, `nameShown`, `name`, `nameSel`, `obj`; the
+  uplink gains `onViewAction` (`toggle`, `field`, `replace`). The completion
+  list is the client's: `pathcomplete.ts`, the omni box's object and
+  property completion moved out of `omni.tsx` so both use it; a taken row
+  goes up as `replace`. **Found on the way**: the push numbered boxes by
+  their place among the SHOWN ones and `onViewFocus` looked them up in the
+  whole set, so a tool that hid a parameter made a tap focus the wrong box.
+  The push now carries the registry index.
+
+Two defects the tests found on the way:
+
+- **The auto scale split the entry in two.** Editing the one dimension of
+  a freehand sketch scales it (`performDatumAutoScale` -> `centerScale`),
+  and the scaler opens and commits a command of its own, "Scale
+  geometries": `openCommand` with a transaction active commits it and
+  starts another unless an enabled `App::AutoTransaction` is on the stack.
+  Session 119's apply had one around it; an entry that stays open across
+  Tabs cannot. The scaler takes `inTransaction` now (set when it is part of
+  a larger operation, which `centerScale` always is) and opens and commits
+  nothing.
+- **'=' left the unit behind.** The line opens with the NUMBER selected
+  (as the dialog's box), so '=' typed over it gave "= mm", and a taken
+  completion "=Sketch mm". Found by the browser drive, which types; the
+  desktop test had set the text. '=' at the start of a value, or over a
+  selection that starts there, now makes the whole line "=".
+
+Tests: `sketch-datum-editor.py` (26: one editor, Tab and Shift+Tab apply
+and move, one undo step, Escape takes back what Tab applied, '=', an
+expression set and removed, one that cannot be bound, Ctrl+Shift+D,
+typing into a reference, F2 and the name, placement off the measured line,
+Snell's law), `sketch-datum-undo.py` (15), `sketch-datum-in-place.py` (16,
+an expression now opens in the editor), `serve-datum-in-place.py` (16: the
+datum fields, an expression and the toggle through `onViewAction`; the
+refused-command check moved to `Sketcher_MapSketch`), and by hand, in a
+real Chrome, `serve-datum-browser.py` (13, `scripts/datum-drive.js`: the
+DOM editor, kept off the line, the client's completion offering `Sketch`
+and taken through the server, the toggle, Escape).
+
+**A property's members, completed in the browser (session 121).** What
+was left of the editor: typing `=Sketch.Constraints.` offered nothing in a
+browser, while the desktop's completer lists the named constraints. The
+desktop asks the property (`Property::getPaths`, which
+`PropertyConstraintList` answers with its named constraints, a vector with
+`x`/`y`/`z`, a placement with `Base.x` ... `Rotation.Angle`); the browser
+completes from the property descriptors `getProperties` sends, and those
+named the property and stopped. Two ways to close it were weighed: a new
+op asking one property's paths when `Obj.Prop.` is typed, or the members
+in the descriptor. The second was built. Every `getPaths` in the tree is a
+short list of strings, so the descriptor of an object's property gains
+`members` (`ThinClient.md`, the property descriptor) and the reply the
+client already holds for `Sketch.` answers `Sketch.Constraints.` too: no
+op, no round trip, no second cache.
+
+- `Gui/SceneControl.cpp`, `describeProperty`: `members`, the sub-paths as
+  `ObjectIdentifier::getSubPathStr` spells them -- the string the desktop's
+  completer shows. Only for a document object's properties: an expression
+  names no others.
+- `web/src/pathcomplete.ts`: `rows()` takes an `ExprPath`. With it the
+  path goes on past the property (`Sketch.Constraints.Wi`,
+  `Box.Placement.Base.`), the object being the first name and then down
+  while the next names a sub-object; and the properties of the object the
+  expression is on need no object in front (`Constraints.Width`), or the
+  grammar's own leading dot (`.Constraints.Width`; `.5` stays a number). A
+  name that is no identifier completes as `Constraints[<<a name>>]`, the
+  bracket in the dot's place. Without the argument nothing changed: the
+  omni box opens a property's editor, and a member leads to none.
+- `web/src/onview.tsx`: the editor passes its sketch as the expression's
+  object. It names constraints itself and moves from one to the next, so
+  the descriptors are asked again each time it moves
+  (`forgetProperties`). And the lit row is the first again when the token
+  changes -- it stayed where the last list had left it.
+
+Before: `serve-datum-browser.py`, extended first, failed its four new
+checks on the build as it was (`rows: []` after `=Sketch.Constraints.` and
+after `=Constraints.`). Not done: a member's value beside its name in the
+list (the desktop shows none either), and members of a view provider's
+properties, which no expression can name.
+
+**Escape, ruled 2026-10-03 after the build** ("make escape equal to enter.
+for a vim user like me, I hate escape means anything other than escape",
+then "make that a setting default to escape instead of undo"): Escape in
+the value editor leaves it as Enter does -- what is typed is applied, the
+entry committed; text that is no value keeps it open, as Enter does.
+Taking an entry back is an undo: Std_Undo while it runs (the whole entry,
+a new dimension with it, nothing older), or one undo after, the entry
+being one step. The preference `Mod/Sketcher/General/DatumEscapeTakesBack`
+(Display page, off by default) makes Escape the cancel it was. A
+completion list open over the line still closes on Escape: that is the
+list's, as vim's own completion menu.
+
+### The ledger, session 121: 145 rows to 54
+
+**What "undecided" counts.** A row is undecided when its status is `open`
+or `partial` and its decision column is empty: 145 at the start of the
+session. Counting the empty decision column alone gives 357, because the
+`have` and `n/a` statuses never needed a decision -- the two numbers that
+earlier notes quoted (359 and 161) were these two counts.
+
+**The method: relative to upstream's tip, not to the commit.** The older
+sweep asked of each line a commit added whether the fork has it. Most of
+these rows are old, and upstream has since rewritten much of what they
+wrote, so "missing here" was mostly "gone there too". Three measures per
+row instead:
+
+- per added line: here; or missing here and still at the tip (a real
+  absence); or gone at the tip as well (superseded, says nothing);
+- per removed line: still here while gone at the tip (stale);
+- per file the row touches: its distance from the tip's file, whitespace
+  aside. `DrawSketchHandlerSlot.h`, `...Arc.h`, `...Translate.h` and
+  fourteen more are the tip's blob; `DrawSketchHandler.cpp` is the tip but
+  for the fork's transaction, viewer and pixel-ratio deltas.
+
+42 rows came out with nothing missing and nothing stale.
+
+**Two things the numbers do not say, both met here.**
+
+- *A missing line is not a missing behaviour.* `efb10e1b28`'s null check,
+  `a0847c22c7`'s `std::remainder` and `5f90e988a0`'s id map all read
+  "missing" and are all here, in the fork's own words. Each was read.
+- *"Superseded upstream" is not "kept here" in a file that has diverged.*
+  `a7e1760bfb` (the Elements panel no longer redraws the whole list per
+  selected element) has no line left at the tip, and the fork's panel,
+  2449 lines from the tip, batches selections its own way. Whether it has
+  the quadratic redraw is a question about the fork's code. So a clean
+  score decided a row only where the row is a test, a text, a build change
+  or noise, or its files sit at the tip; fix and feature rows in diverged
+  files were read or left.
+
+**Decided: 91.** 41 by the sweep (`have` or `superseded`; the 42 less
+`a7e1760bfb`), 4 already decided in this document and never written to the ledger (`387d25c219`,
+`9ce1cae190`, `5587b48a0f`, `9a1020929e`), 16 build rows and 5 Core rows
+as `n/a` with the missing facility named and checked (no
+`target_compile_warn_error`, no `disable_occt8_deprecation_warnings`, no
+`FrameOption`, no `associateToObject3dView`, `createEditor` without a
+`std::function`), and the rest read one by one.
+
+**What reading found.**
+
+- `55c36e8c03`, declined in an earlier session on principle, **was a bug
+  here, and a deeper one** (`f67388f543`). The B-spline tools open their
+  command in `activated()`, inside the tool bar command, and
+  `Gui::Command` closes the open transaction when it returns. On the first
+  use of the tool the points went into the document with no transaction:
+  cancelling after one point left its circle, with nothing to undo it.
+  `DrawSketchHandler::openCommand()` takes the transaction out of the
+  enclosing command's hands and remembers its id; `deactivate()` aborts
+  that one and no other. The polyline opens its command the same way.
+- The test for it **crashed**: with continuous mode off, finishing a
+  B-spline by a right click ran `finish()` twice, the second time on the
+  deleted handler (`ed7668fbf0`). Upstream's text has the same second call
+  in both tools.
+- `7432ce131f` (`0cfd91c04d`): Toggle Construction stopped at an ellipse's
+  axis and left the rest of the selection untoggled.
+- `e828c5da4d` (`d2e9f8559d`): a named reference dimension was editable in
+  the property editor.
+- `ca4660167e` (`60c324cbcf`): `*.ttc` font collections.
+- Three icons the commands name and the resources lacked (`3b504408f6`):
+  the periodic B-spline by interpolation had none at all.
+- Six rows without behaviour in one commit (`e626f51909`).
+
+Tests: `sketch-bspline-cancel.py` (23), `sketch-toggle-construction-
+internal.py` (6), `sketch-constraint-property-readonly.py` (4), each
+scored against the tree before its change.
+
+**Left: 54, by family.** Each needs the file read as the constraints panel
+was in session 117, not a sweep.
+
+| Family | Rows | What is known |
+| --- | --- | --- |
+| `CommandSketcherTools.cpp` | 7 | copy/cut/paste (`fd2e35b7eb`) is mostly here; related constraints for non-edges (`732501d89d`), the leak fix (`5268aa43db`) and two cleanups are not scored |
+| `TaskSketcherElements.cpp` | 7 | the panel is 2449 lines from the tip; the selection speedup, the hover-during-rename fix, clearing the selection from an empty click, the context menu |
+| `CommandCreateGeo.cpp` | 6 | the group command class (`d18a48ddb1`), the file's rearrangement, the line group, the polyline shortcut |
+| `SketchAnalysis` and the validation panel | 6 | three refactors, `5696ee821c` (#14240), `37f0ad43f9` (validation cannot be scripted) |
+| Topological naming, which began in this fork | 7 | `71870bd6f3`, `ecf7e51ab3`, `55acedb83d`, `38c6d842f2`, `4aaf72dcc2`, `0bddc51805`, `27ca64a201`: upstream's import of the fork's own code, to be compared as a whole |
+| `EditDatumDialog.cpp` | 5 | the dialog is the fallback since the value editor of session 120; the radius/diameter switch (`c9041132f9`) is the one feature |
+| Large features nearly all here | 6 | chamfer (`b3fe5bba28`: one line missing, two stale), symmetry (`e4213fc10f`: eleven stale lines), intersection externals (the fork's own; two icons absent), the perpendicular hint lines, offset with external input, the angle expression as an AST |
+| Others | 10 | `155edc0f53` (isActive), `6e1826295b` (a test hook the fork's copy of the test calls and does not have), `94d39087d3` (the External tool shows no hint), strings, two refactors |
+
+**Ruled the same day** ("Keep the name"), `bb19c35c18`, which leaves 53.
+
+- The tool bar and menu stay "Sketcher visual" (upstream: "Visual
+  Helpers", `945ba15e18`): a tool bar's name is also the key its place is
+  saved under. What that row fixed on upstream's side -- the translation
+  marker not matching the name -- was true here too: the marker block
+  listed "Sketcher virtual space", a tool bar that does not exist. It
+  names this one now.
+- `Sketcher_ViewSketchGroup` is the fork's own (`3b620b713e`, 2022): the
+  drop-down of "Align View to Sketch" and "View sketch bottom". Upstream
+  has the first command only, with the icon `Sketcher_ViewSketch`. The
+  group named an icon of its own, `Sketcher_ViewSketchGroup`, that no file
+  ever was: a group command shows the icon of one of its members and needs
+  none (ruled the same day; none of the fork's other group commands names
+  one). `bb19c35c18` first pointed the name at upstream's icon, which was
+  the wrong answer to a line that should not be there; the line is gone.
+
+### The ledger, session 122: the last 53 rows
+
+Decided with the user, family by family: each row read against the fork's
+code, laid out with a recommendation, and ruled on (2026-10-03). No row of
+the ledger is undecided now.
+
+| Outcome | Rows |
+| --- | --- |
+| have, or n/a | 24 |
+| declined | 9 |
+| taken or adapted | 20, in 13 commits |
+
+**Have or n/a, 24.** All seven topological naming rows: upstream's import
+of this fork's own code, and the one loop upstream fixed on the way in (an
+erase while iterating) is written with a saved next iterator here. The
+chamfer, symmetry and offset rows, whose upstream tests run here; the group
+command class (the fork's groups were `Gui::GroupCommand` already); copy,
+cut and paste; the Elements panel's "quadratic redraw" (`a7e1760bfb`: the
+fork's panel finds the row in a map and touches that row alone) and its
+context menu, which is built from the commands.
+
+*A note of the session before was wrong:* `6e1826295b`'s hook,
+`SketcherGui.getActiveSketchPreselection`, is here (`AppSketcherGui.cpp`)
+and its test runs in ctest.
+
+**Declined, 9.** By earlier rulings: the tool bar's rename (`3e32ea5dd4`;
+asked whether upstream's Core adds the workbench's name to a tool bar's --
+it does not: the string given to `setCommand()` is the object name, the
+title's source and the key the bar's visibility is saved under, on both
+sides, and upstream migrates nothing); a fifth variant of upstream's
+per-part icons (`aa26d9ff8a`); the polyline's shortcut (`855bce62cd`,
+`c71c15c009`: it is M here). As no behaviour: the file's reordering
+(`f9d6609687`), review-comment style (`1cfb85a71f`), name-parsing helpers
+(`f4134951e5`). By the user, the finer `isActive` (`155edc0f53`): a greyed
+button in place of the message the command gives already, for a walk over
+the selection per command at every state update. And `913c30429c`, which
+reads as a refactor and is not one: `!isDimensionless()` is true of an
+invalid quantity, `isQuantity()` is not.
+
+**Taken.** Each measured before its change.
+
+- `732501d89d` (`eb3e1a7f71`): Select Associated Constraints looked at
+  names beginning with "Edge" only; an end point or an axis selected
+  nothing.
+- `5268aa43db`, `fe8d2845ea` (`2f749e8b18`): the clipboard copy never freed
+  its clones. 63.5 MB over 30 copies of 3000 lines; under 1 MB after.
+- `1d4a09366c` (`a90371e71c`): hovering the Elements list took the keyboard
+  from a text being typed. Here that includes the value editor at a
+  dimension's label, which takes a lost focus as "done".
+- `98d64f9939` (`777535259e`): **not upstream's defect.** A press on the
+  empty part of the list cleared the selection here already -- unless the
+  pointer had rested on a row. The list toggled the row last *entered*,
+  whichever row the press was on: a press with no move before it (a tap, a
+  click forwarded from a browser) selected nothing, and a press on the
+  empty part selected the row hovered last. The view now says which row a
+  press is on.
+- `581dee4d48` (`9ffada9e3e`): the icon's name only. The list entries the
+  commit adds are not needed here -- a group hands the construction mode
+  on to its members -- and `sketch-construction-icons.py` is that
+  measurement, kept.
+- The six `SketchAnalysis` and validation rows (`659ef5ee0d`): four files
+  in which the fork had nothing of its own, taken at upstream's tip. The
+  validation panel's fixes are Python commands on the sketch now, so a
+  macro keeps them.
+- `8b06bca68a` (`64fffd18d4`): the supplement of an angle given by
+  `atan(0.03)` came out as `180 - atan(0.03)`, a number minus an angle.
+  Upstream builds the expression as a tree; this fork's tree keeps its
+  operator codes private, so the unit is that of the *evaluated* value and
+  "180 - x" is undone only when a re-parse `isSame()` -- which also stops
+  `180 - 60 + 5` being read as a supplement. No upstream Sketcher test is
+  left disabled.
+- `94d39087d3` (`5ee1ec9a1b`): the External tool's hint, for each of the
+  fork's flavours.
+- `bfe1295b6b` (`53ed49bc4f`): the helper lines were drawn already; the
+  check box that turns them off was missing.
+- Four rows without behaviour (`f71163ef6e`).
+
+**Found on the way, not a row** (`f5c3e9b5ab`): a clipboard copy grew with
+the square of the selection -- an id table rebuilt per constraint, a linear
+search per constraint element, and `PythonConverter` formatting each whole
+list anew per element. 0.93 s for 4000 lines before, 0.023 s after.
+
+**The radius/diameter switch** (`c9041132f9`; ruled: "add to in-place
+editor"). Upstream has two radio buttons in its datum dialog and writes
+the constraint's type on the live constraint. Here:
+
+- `SketchObject::setDiameter(index, state)`, Python too (`744d2a7d45`):
+  the constraint changes kind in place -- index, name, driving kept -- and
+  the circle keeps its size, the value doubled or halved with the kind. A
+  value an expression gives is left to the expression, which then gives
+  the other measure.
+- `Gui::DatumValueEditor` (`bf40d0fee9`) can switch a value between two
+  measures, generically: a target names the two and the factor between
+  them. A button beside the driving toggle, Ctrl+Shift+R. While nothing
+  has been typed the number is restated (5 mm as a radius reads 10 mm as a
+  diameter); a number that was typed is left as typed, and so is an
+  expression. The push to a client states the measure and its name, and
+  `onViewAction` takes `measure`.
+- The Sketcher's session (`8acf9665c8`) names Radius and Diameter with the
+  factor 2 and applies the kind with the value, in the one undo step.
+
+  This differs from upstream in one visible way: there a radius of 5
+  switched and accepted untouched becomes a diameter of 5, half the
+  circle; here it becomes a diameter of 10, the same circle.
+
+Tests: `sketch-datum-measure.py` (24), `serve-datum-measure.py` (10),
+`SketcherTests/TestSketchRadiusDiameter.py` (7), and by hand
+`serve-datum-measure-browser.py` in a real Chrome (10).
+
+**Verified** at `f5c3e9b5ab`: full build, ctest 897/897 (885 before, plus
+ten GUI tests and two C++ cases), `FreeCADCmd -t 0` 2896 OK (2889 before,
+plus the seven `setDiameter` cases).
+
+**Not checked.** A file saved by *upstream* with intersection externals:
+upstream keeps the kind in an `ExternalTypes` property this fork does not
+read. Keyboard navigation in the Elements list (arrow keys change the
+list's selection with no press): it goes through the same "row last
+entered" logic the press no longer does.
 
 ## 8. Phases
 

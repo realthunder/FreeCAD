@@ -53,12 +53,24 @@ public:
     ~ElementView() override;
 
 
+    /// The rectangle of \a item's icon in column 0, in viewport coordinates.
+    /// The icon is a button: it drops down the element's parts.
+    QRect iconRect(QTreeWidgetItem *item) const;
+
 Q_SIGNALS:
-    void onFilterShortcutPressed();
-    
+    /// \a item's icon was clicked; \a globalPos is where its menu goes
+    void partButtonClicked(QTreeWidgetItem *item, const QPoint &globalPos);
+    /// the context menu's Layer entry: move the selected elements, or the
+    /// clicked row's when nothing is selected, to visual layer \a layer
+    void layerRequested(int layer, int clickedGeoId);
+    /// a button went down on \a item's row, or on none of them (nullptr): the
+    /// row the selection change that follows is about
+    void rowPressed(QTreeWidgetItem *item);
+
 protected:
     void contextMenuEvent (QContextMenuEvent* event);
-    void keyPressEvent(QKeyEvent * event);
+    void mousePressEvent(QMouseEvent *event) override;
+    bool viewportEvent(QEvent *event) override;
 
 protected Q_SLOTS:
     void deleteSelectedItems();
@@ -87,19 +99,34 @@ private:
     void slotConstraintsChanged(void);
     /// geoId -> the constraint type it is a handle of, or None for a group member
     std::map<int, int> collectGroupRoles() const;
-    void updateIcons(int element);
+    /// every row's icon, from the part of its element selected last
+    void updateIcons();
+    /// Rebuild the scene selection from the rows' part flags
+    void syncSceneSelection();
     void updatePreselection();
-    void updateVisibility(int filterindex);
-    void setItemVisibility(int elementindex,int filterindex);
+    /// filterState: the Mode filter as a bitmask, see filterState()
+    void updateVisibility(int filterState);
+    void setItemVisibility(int elementindex,int filterState);
+    /// The Mode filter's ticks, one bit per entry of its list
+    int filterState() const;
+    void updateFilterButton();
     void clearWidget();
 
 public Q_SLOTS:
     void on_elementsWidget_itemSelectionChanged(void); 
     void on_elementsWidget_itemEntered(QTreeWidgetItem *item);
-    void on_elementsWidget_filterShortcutPressed();
-    void on_elementsWidget_currentFilterChanged ( int index );
-    void on_elementsWidget_currentModeFilterChanged ( int index );
-    void on_autoSwitchBox_stateChanged(int state);
+    void onRowPressed(QTreeWidgetItem *item);
+    void onFilterItemChanged(QListWidgetItem *item);
+    void onPartButtonClicked(QTreeWidgetItem *item, const QPoint &globalPos);
+    void onLayerRequested(int layer, int clickedGeoId);
+    void on_elementsWidget_itemChanged(QTreeWidgetItem *item, int column);
+
+public:
+    /// Move an internal geometry to a visual layer (0 shown, 2 hidden), in
+    /// its own transaction; hiding it also deselects it.
+    void setGeometryLayer(int geoId, int layer);
+    /// the same for several, in one transaction
+    void setGeometryLayers(const std::set<int> &geoIds, int layer);
 
 protected:
     void changeEvent(QEvent *e) override;
@@ -111,6 +138,7 @@ protected:
 
 private:
     QWidget* proxy;
+    QListWidget* filterList = nullptr;
     std::unique_ptr<Ui_TaskSketcherElements> ui;
     int focusItemIndex;
     int previouslySelectedItemIndex;
@@ -120,7 +148,6 @@ private:
     /// group does not rebuild it
     std::map<int, int> groupRoles;
     
-    bool isautoSwitchBoxChecked;
 
     bool inhibitSelectionUpdate;
 };

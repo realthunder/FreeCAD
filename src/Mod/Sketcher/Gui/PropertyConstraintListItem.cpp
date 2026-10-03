@@ -115,6 +115,7 @@ void PropertyConstraintListItem::initialize()
 
             item->bind(list->createPath(id - 1));
             item->setAutoApply(false);
+            item->setReadOnly(!(*it)->isDriving);
         }
     }
 
@@ -207,7 +208,7 @@ void PropertyConstraintListItem::assignProperty(const App::Property* prop)
             else {
                 // search inside this item
                 if (namedIndex < numNamed) {
-                    child = dynamic_cast<PropertyUnitItem*>(this->child(namedIndex));
+                    child = qobject_cast<PropertyUnitItem*>(this->child(namedIndex));
                 }
 
                 if (!child) {

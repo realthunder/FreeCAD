@@ -54,8 +54,7 @@ void ActivateBSplineHandler(Gui::Document* doc, DrawSketchHandler* handler)
 {
     std::unique_ptr<DrawSketchHandler> ptr(handler);
     if (doc) {
-        if (doc->getInEdit()
-            && doc->getInEdit()->isDerivedFrom(SketcherGui::ViewProviderSketch::getClassTypeId())) {
+        if (SketcherGui::isSketchInEdit(doc)) {
             SketcherGui::ViewProviderSketch* vp =
                 static_cast<SketcherGui::ViewProviderSketch*>(doc->getInEdit());
             vp->purgeHandler();
@@ -113,11 +112,11 @@ CmdSketcherConvertToNURBS::CmdSketcherConvertToNURBS()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Convert geometry to B-spline");
-    sToolTipText = QT_TR_NOOP("Converts the selected geometry to a B-spline");
+    sMenuText = QT_TR_NOOP("Geometry to B-Spline");
+    sToolTipText = QT_TR_NOOP("Converts the selected geometry to B-splines");
     sWhatsThis = "Sketcher_BSplineConvertToNURBS";
     sStatusTip = sToolTipText;
-    sPixmap = "Sketcher_BSplineApproximate";
+    sPixmap = "Sketcher_BSplineConvertToNURBS";
     sAccel = "";
     eType = ForEdit;
 }
@@ -189,7 +188,7 @@ CmdSketcherIncreaseDegree::CmdSketcherIncreaseDegree()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Increase B-spline degree");
+    sMenuText = QT_TR_NOOP("Increase B-Spline Degree");
     sToolTipText = QT_TR_NOOP("Increases the degree of the B-spline");
     sWhatsThis = "Sketcher_BSplineIncreaseDegree";
     sStatusTip = sToolTipText;
@@ -215,7 +214,7 @@ void CmdSketcherIncreaseDegree::activated(int iMsg)
     const std::vector<std::string>& SubNames = selection[0].getSubNames();
     Sketcher::SketchObject* Obj = static_cast<Sketcher::SketchObject*>(selection[0].getObject());
 
-    openCommand(QT_TRANSLATE_NOOP("Command", "Increase spline degree"));
+    openCommand(QT_TRANSLATE_NOOP("Command", "Increase B-spline degree"));
 
     bool ignored = false;
 
@@ -244,7 +243,7 @@ void CmdSketcherIncreaseDegree::activated(int iMsg)
         Gui::TranslatedUserWarning(Obj,
                                    QObject::tr("Wrong selection"),
                                    QObject::tr("At least one of the selected "
-                                               "objects was not a B-Spline and was ignored."));
+                                               "objects was not a B-spline and was ignored."));
     }
 
     commitCommand();
@@ -266,7 +265,7 @@ CmdSketcherDecreaseDegree::CmdSketcherDecreaseDegree()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Decrease B-spline degree");
+    sMenuText = QT_TR_NOOP("Decrease B-Spline Degree");
     sToolTipText = QT_TR_NOOP("Decreases the degree of the B-spline");
     sWhatsThis = "Sketcher_BSplineDecreaseDegree";
     sStatusTip = sToolTipText;
@@ -294,7 +293,7 @@ void CmdSketcherDecreaseDegree::activated(int iMsg)
     const std::vector<std::string>& SubNames = selection[0].getSubNames();
     Sketcher::SketchObject* Obj = static_cast<Sketcher::SketchObject*>(selection[0].getObject());
 
-    openCommand(QT_TRANSLATE_NOOP("Command", "Decrease spline degree"));
+    openCommand(QT_TRANSLATE_NOOP("Command", "Decrease B-spline degree"));
 
     bool ignored = false;
 
@@ -327,7 +326,7 @@ void CmdSketcherDecreaseDegree::activated(int iMsg)
         Gui::TranslatedUserWarning(Obj,
                                    QObject::tr("Wrong selection"),
                                    QObject::tr("At least one of the selected "
-                                               "objects was not a B-Spline and was ignored."));
+                                               "objects was not a B-spline and was ignored."));
     }
 
     commitCommand();
@@ -348,7 +347,7 @@ CmdSketcherIncreaseKnotMultiplicity::CmdSketcherIncreaseKnotMultiplicity()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Increase knot multiplicity");
+    sMenuText = QT_TR_NOOP("Increase Knot Multiplicity");
     sToolTipText = QT_TR_NOOP("Increases the multiplicity of the selected knot of a B-spline");
     sWhatsThis = "Sketcher_BSplineIncreaseKnotMultiplicity";
     sStatusTip = sToolTipText;
@@ -380,7 +379,7 @@ void CmdSketcherIncreaseKnotMultiplicity::activated(int iMsg)
             getActiveGuiDocument()->getDocument(),
             QObject::tr("Wrong selection"),
             QObject::tr(
-                "The selection comprises more than one item. Please select just one knot."));
+                "The selection comprises more than one item. Select just one knot."));
         return;
     }
 
@@ -496,7 +495,7 @@ CmdSketcherDecreaseKnotMultiplicity::CmdSketcherDecreaseKnotMultiplicity()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Decrease knot multiplicity");
+    sMenuText = QT_TR_NOOP("Decrease Knot Multiplicity");
     sToolTipText = QT_TR_NOOP("Decreases the multiplicity of the selected knot of a B-spline");
     sWhatsThis = "Sketcher_BSplineDecreaseKnotMultiplicity";
     sStatusTip = sToolTipText;
@@ -528,7 +527,7 @@ void CmdSketcherDecreaseKnotMultiplicity::activated(int iMsg)
             getActiveGuiDocument()->getDocument(),
             QObject::tr("Wrong selection"),
             QObject::tr(
-                "The selection comprises more than one item. Please select just one knot."));
+                "The selection comprises more than one item. Select just one knot."));
         return;
     }
 
@@ -634,7 +633,7 @@ CmdSketcherCompModifyKnotMultiplicity::CmdSketcherCompModifyKnotMultiplicity()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Modify knot multiplicity");
+    sMenuText = QT_TR_NOOP("Modify Knot Multiplicity");
     sToolTipText = QT_TR_NOOP("Modifies the multiplicity of the selected knot of a B-spline");
     sWhatsThis = "Sketcher_CompModifyKnotMultiplicity";
     sStatusTip = sToolTipText;
@@ -810,9 +809,11 @@ CmdSketcherInsertKnot::CmdSketcherInsertKnot()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Insert knot");
-    sToolTipText = QT_TR_NOOP("Inserts knot at given parameter. If a knot already exists at that "
-                              "parameter, it's multiplicity is increased by one.");
+    sMenuText = QT_TR_NOOP("Insert Knot");
+    sToolTipText = QT_TR_NOOP(
+        "Inserts a knot at a given parameter. If a knot already exists at that "
+        "parameter, its multiplicity is increased by 1."
+    );
     sWhatsThis = "Sketcher_BSplineInsertKnot";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_BSplineInsertKnot";
@@ -841,7 +842,7 @@ void CmdSketcherInsertKnot::activated(int iMsg)
         // as we need only one object to get the new GeoId after multiplicity change
         Gui::TranslatedUserWarning(getActiveGuiDocument()->getDocument(),
                                    QObject::tr("Selection is empty"),
-                                   QObject::tr("Nothing is selected. Please select a b-spline."));
+                                   QObject::tr("Nothing is selected. Select a B-spline."));
 
         return;
     }
@@ -859,8 +860,8 @@ void CmdSketcherInsertKnot::activated(int iMsg)
         Gui::TranslatedUserWarning(
             Obj,
             QObject::tr("Wrong selection"),
-            QObject::tr("Please select a b-spline curve to insert a knot (not a knot on it). "
-                        "If the curve is not a b-spline, please convert it into one first."));
+            QObject::tr("Select a B-spline to insert a knot (not a knot on it). "
+                        "If the curve is not a B-spline, convert it into one first."));
     }
 
     getSelection().clearSelection();
@@ -878,8 +879,8 @@ CmdSketcherJoinCurves::CmdSketcherJoinCurves()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Join curves");
-    sToolTipText = QT_TR_NOOP("Join two curves at selected end points");
+    sMenuText = QT_TR_NOOP("Join Curves");
+    sToolTipText = QT_TR_NOOP("Joins 2 curves at selected end points");
     sWhatsThis = "Sketcher_JoinCurves";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_JoinCurves";
@@ -914,7 +915,7 @@ void CmdSketcherJoinCurves::activated(int iMsg)
             Gui::TranslatedUserWarning(
                 Obj,
                 QObject::tr("Selection is empty"),
-                QObject::tr("Nothing is selected. Please select end points of curves."));
+                QObject::tr("Nothing is selected. Select end points of curves."));
             return;
         }
         case 1: {

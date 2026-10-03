@@ -976,7 +976,7 @@ void NavigationStyle::spin_simplified(SoCamera* cam, SbVec2f curpos, SbVec2f pre
 SbBool NavigationStyle::doSpin()
 {
     if (this->log.historysize >= 3) {
-        SbTime stoptime = (SbTime::getTimeOfDay() - this->log.time[0]);
+        SbTime stoptime = (steadyTime() - this->log.time[0]);
         if (isSpinningAnimationEnabled() && stoptime.getValue() < 0.100) {
             const SbViewportRegion & vp = viewer->getSoRenderManager()->getViewportRegion();
             const SbVec2s glsize(vp.getViewportSizePixels());
@@ -1334,8 +1334,13 @@ const std::vector<SbVec2s>& NavigationStyle::getPolygon(SelectionRole* role) con
 
 // This method adds another point to the mouse location log, used for spin
 // animation calculations.
-void NavigationStyle::addToLog(const SbVec2s pos, const SbTime time)
+// The entries are stamped here, on the steady clock, and doSpin() reads the
+// same clock: an event's own stamp is the time of day, and a step of that
+// clock between the last move and the release made a long rest read as a
+// flick (a spin nobody asked for), or a flick as none.
+void NavigationStyle::addToLog(const SbVec2s pos)
 {
+    const SbTime time = steadyTime();
     // In case someone changes the const size setting at the top of this
     // file too small.
     assert (this->log.size > 2 && "mouse log too small!");
@@ -1358,6 +1363,15 @@ void NavigationStyle::addToLog(const SbVec2s pos, const SbTime time)
     this->log.time[0] = time;
     if (this->log.historysize < this->log.size)
         this->log.historysize += 1;
+}
+
+// The time on a clock that never steps, for the intervals the navigation
+// styles measure between two events. Not a time of day: only differences
+// of two of these mean anything.
+SbTime NavigationStyle::steadyTime()
+{
+    return SbTime(std::chrono::duration<double>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
 }
 
 // This method "clears" the mouse location log, used for spin
@@ -1665,10 +1679,17 @@ SbBool NavigationStyle::processClickEvent(const SoMouseButtonEvent * const event
     SbBool processed = false;
     const SbBool press = event->getState() == SoButtonEvent::DOWN ? true : false;
     if (press) {
-        SbTime tmp = (event->getTime() - mouseDownConsumedEvent.getTime());
+        // Measured on the steady clock, not by the events' stamps: those are
+        // the time of day, and where the clock is resynced in steps (WSL2
+        // moves it back about a second every half minute) a press a second
+        // after the last read as a double click, and was held until the
+        // release -- the drag it started never began.
+        auto now = std::chrono::steady_clock::now();
+        double tmp = std::chrono::duration<double>(now - mouseDownSteadyTime).count();
+        mouseDownSteadyTime = now;
         float dci = (float)QApplication::doubleClickInterval()/1000.0f;
         // a double-click?
-        if (tmp.getValue() < dci) {
+        if (tmp < dci) {
             mouseDownConsumedEvent = *event;
             mouseDownConsumedEvent.setTime(event->getTime());
             processed = true;

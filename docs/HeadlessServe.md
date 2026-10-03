@@ -196,7 +196,7 @@ viewer learning to draw a second one:
   `#.ActiveView.NaviCubeX` in the browser's omni box, `setProperty` with target `view3d` on
   the wire -- seeded from the same preferences and not saved.
 - The anchor carries the position, not pixels: `OverlayAnchor::posX`/`posY` and a
-  `sizePixels` edge (scene dump v79), and `OverlayAnchor::cornerRect` is the one placement
+  `sizePixels` edge (scene dump v84), and `OverlayAnchor::cornerRect` is the one placement
   the backend's frame, the browser's frame and picks, and the desktop cube's own GL draw and
   hit test all make from it. A browser scales a pixel-sized rect by its device pixel ratio.
 - `NaviCube(nullptr)` is a cube with no viewer: its shared data (`NaviCubeShared`, a separate
@@ -211,7 +211,7 @@ viewer learning to draw a second one:
     position itself changes, since that statement is newer.
   - **Auto-hide.** The served cube and its buttons are always stated; the anchor carries the
     host's AutoHideCube/AutoHideButton and AutoHideTimeout as `OverlayAnchor::autoHideMs`
-    (dump v80), and the browser feeds them only while its pointer is over the cube and for
+    (dump v85), and the browser feeds them only while its pointer is over the cube and for
     that long after. A touch screen has no hover and always shows them.
   - **Upright labels.** A label draw whose u axis points left and v axis down under the
     browser's camera -- the desktop's test for negating its texture coordinates -- is turned

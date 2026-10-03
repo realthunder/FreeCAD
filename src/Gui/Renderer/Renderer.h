@@ -179,6 +179,25 @@ struct MeshData {
     /// included. Resolved by the backend against the view it draws
     /// with (scene-camera feeds only). Null for ordinary meshes.
     const float *screenOffsets = nullptr;
+
+    /// Point markers (SoMarkerSet): the bitmap each point is drawn as
+    /// in place of a square of the point size, as GL's glBitmap draws
+    /// it -- a fixed pixel pattern centred on the projected point.
+    /// \ref markers is the palette of distinct bitmaps the mesh uses,
+    /// carried by content so that a consumer with no Coin (the browser)
+    /// draws the same thing; \ref pointMarkers gives, per point index,
+    /// the palette entry, or NoMarker for a point GL draws nothing for
+    /// (SoMarkerSet::NONE). Null for ordinary point sets.
+    struct PointMarker {
+        uint16_t width = 0;
+        uint16_t height = 0;
+        /// One byte per pixel, nonzero = drawn; rows bottom-up, as GL
+        /// bitmaps are.
+        std::vector<uint8_t> mask;
+    };
+    static constexpr uint8_t NoMarker = 0xff;
+    std::vector<PointMarker> markers;
+    const uint8_t *pointMarkers = nullptr;
 };
 
 /// CPU-side snapshot of a texture image applied to triangle draws
@@ -394,6 +413,14 @@ struct OverlayAnchor {
         x = std::max(0, right ? vw - edge - mx : mx);
         y = std::max(0, top ? my : vh - edge - my);
     }
+    /// Which edit session this feed belongs to (docs/ThinClient.md 8.12
+    /// item J). 0 -- the default -- means every viewer. A non-zero id is
+    /// one session's edit geometry, published in the one snapshot every
+    /// client of a served document shares and drawn only by a viewer the
+    /// host told it is in that session (the `session` of the `edit`
+    /// push). A process drawing its own feeds ignores it: whatever a
+    /// desktop view is fed is its own.
+    uint32_t session = 0;
 
     bool operator==(const OverlayAnchor &o) const {
         return corner == o.corner && sizeFraction == o.sizeFraction
@@ -406,6 +433,7 @@ struct OverlayAnchor {
             && pixelSpace == o.pixelSpace
             && sceneCamera == o.sceneCamera
             && subView == o.subView
+            && session == o.session
             && marginX == o.marginX && marginY == o.marginY;
     }
     bool operator!=(const OverlayAnchor &o) const { return !(*this == o); }
@@ -2639,10 +2667,13 @@ struct Material {
         /// viewer, like SoText2) instead of keeping the model rotation. Used
         /// by SoTextImage glyph quads.
         bool billboard = false;
-        /// Billboard draws only: on-screen pixels per emitted geometry unit.
-        /// 0 keeps the backend's glyph-legibility text factor; image quads
-        /// emitted in native pixels (SoImage capture companions) use 1 for
-        /// raw-GL pixel parity.
+        /// On-screen pixels per emitted geometry unit, resolved by the
+        /// backend against the view it draws with. On a billboard, 0 keeps
+        /// the backend's glyph-legibility text factor; image quads emitted
+        /// in native pixels (SoImage capture companions) use 1 for raw-GL
+        /// pixel parity. On an entry that is not a billboard, 0 keeps
+        /// scaleFactor * the autozoom scale, and a value sizes it in pixels
+        /// instead (a datum's number, SoDatumLabel).
         float pixelscale = 0.0f;
         /// Datum-label auto-flip: keep the glyph in its dimension plane, but
         /// mirror its local X/Y per frame so the number always reads
@@ -2863,6 +2894,14 @@ struct ObjectInfo {
     /// serialized by SceneDump: a remote viewer holds no per-view
     /// override table to resolve against.
     std::vector<ObjectRef> path;
+    /// The draw's key itself: the ids of the scene-graph nodes it was
+    /// composed from (Gui's selection root ids), outermost first, as
+    /// the producer reads them off the key. Identity like the rest --
+    /// an id is never reused -- and opaque here: the producer resolves
+    /// a view's visibility entries against it (docs/CoinRetirement.md
+    /// 5.23) and hands the backend the answer (VisibilitySet). Not
+    /// serialized.
+    std::vector<uint32_t> nodes;
 };
 
 typedef std::unordered_map<uint64_t, ObjectInfo> ObjectInfoMap;
@@ -2925,6 +2964,41 @@ struct StyleOverrideTable {
     std::vector<StyleOverride> entries;
     uint32_t version = 0;
 };
+
+/// A view's own object visibility (docs/CoinRetirement.md 5.18, 5.23),
+/// as the answer per objectKey. The producer resolves the view's entries
+/// -- node keys, matched by tail against each draw's key (ObjectInfo::
+/// nodes), the same rule its Coin traversals follow -- and the backend
+/// only looks the draw up: a key absent from \c keys is one the view has
+/// no entry for. Handed by pointer, per sub-view via SubViewFrame::
+/// visibilities, for the plain view via setMainViewVisibility(); the
+/// producer owns it and keeps it alive while the backend may render with
+/// it, and bumps \c version on every content change.
+struct VisibilitySet {
+    enum : uint8_t {
+        /// The object, or a container it is reached through, is hidden
+        /// in this view.
+        Hidden = 1,
+        /// Something on the draw's chain is shown in this view: what
+        /// admits a per-view-shown draw.
+        Shown = 2,
+    };
+    std::unordered_map<uint64_t, uint8_t> keys;
+    uint32_t version = 0;
+
+    uint8_t flagsOf(uint64_t objectKey) const
+    {
+        auto it = keys.find(objectKey);
+        return it == keys.end() ? 0 : it->second;
+    }
+};
+
+/// The captured-mode id (DrawCall::capturedMode) tagging the draws of
+/// a HIDDEN object captured only because some view shows it on its own
+/// (ObjectVisibilities). Every view -- and every snapshot -- drops such
+/// a draw unless its own table shows the object; one that does draws
+/// it as the object's own, untagged draw.
+RendererExport uint16_t perViewShownModeId();
 
 /// Process-lifetime intern table for display mode NAMES outside the
 /// four Class-A styles (docs/CoinRetirement.md 5.9 "Non-standard
@@ -3115,6 +3189,11 @@ public:
         /// owns the table and keeps it alive across the frame; null
         /// means no overrides.
         const StyleOverrideTable *styleOverrides = nullptr;
+        /// This sub-view's own object visibility: draws whose object
+        /// (or a container above it) is hidden are dropped from every
+        /// pass of this sub-view only. The producer owns the set; null
+        /// means the sub-view hides and shows nothing of its own.
+        const VisibilitySet *visibilities = nullptr;
     };
     /// Render one frame as \a count sub-views tiling the backbuffer:
     /// the same resident scene feeds every sub-view, each drawn with
@@ -3147,6 +3226,13 @@ public:
     {
         (void)styleMask; (void)styleNameBit;
         (void)fromSuperset; (void)overrides; (void)styleMode;
+    }
+    /// The plain (sub-view id 0) frame's own object visibility, the
+    /// counterpart of SubViewFrame::visibilities. The caller owns the
+    /// set and keeps it alive; null = none.
+    virtual void setMainViewVisibility(const VisibilitySet *set)
+    {
+        (void)set;
     }
     /// The additive-mode interest list of the capture feeding this
     /// backend (docs/CoinRetirement.md 5.9 "Non-standard modes") --
@@ -3576,6 +3662,13 @@ public:
     /// direction acts. 0 restores the bare line and with it the
     /// boundary dither.
     virtual void setLevelBudgetDeadband(float fraction) { (void)fraction; }
+    /// The memory level, as a fraction of the GPU budget
+    /// (Render_PerViewShownEvictWatermark), above which the level plan
+    /// evicts released per-view-shown objects -- hidden objects no view
+    /// shows any more, kept in the capture for a quick show again --
+    /// before any sweep that costs visible quality
+    /// (MeshSourceRegistry::evictReleasedShown).
+    virtual void setPerViewShownEvictWatermark(float fraction) { (void)fraction; }
     /// The element contract's inputs (docs/SceneStreaming.md #13b),
     /// pushed in like every other parameter -- this library knows
     /// nothing of RenderParams. The contract itself lives in the

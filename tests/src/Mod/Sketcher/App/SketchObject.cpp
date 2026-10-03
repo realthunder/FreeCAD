@@ -810,8 +810,7 @@ TEST_F(SketchObjectTest, testReverseAngleConstraintToSupplementaryExpressionAppl
     EXPECT_EQ(std::string("32 °"), getObject()->getConstraintExpression(id));
 }
 
-// Pending upstream 8b06bca68a: supplementary angle expression built as an AST, keeping the unit.
-TEST_F(SketchObjectTest, DISABLED_testReverseAngleConstraintToSupplementaryExpressionFunction)
+TEST_F(SketchObjectTest, testReverseAngleConstraintToSupplementaryExpressionFunction)
 {
     auto [constraint, id] = setupAngleConstraint(getObject(), "atan(0.03)");
     getObject()->reverseAngleConstraintToSupplementary(constraint.get(), id);
@@ -819,6 +818,18 @@ TEST_F(SketchObjectTest, DISABLED_testReverseAngleConstraintToSupplementaryExpre
     getObject()->reverseAngleConstraintToSupplementary(constraint.get(), id);
     EXPECT_EQ(std::string("180 ° - atan(0.03)"), supExpr);
     EXPECT_EQ(std::string("atan(0.03)"), getObject()->getConstraintExpression(id));
+}
+
+// (180 - 60) + 5 begins as "180 - x" does and is not one: it is wrapped whole,
+// and wrapping it again gives it back.
+TEST_F(SketchObjectTest, testReverseAngleConstraintToSupplementaryExpressionNotAPrefix)
+{
+    auto [constraint, id] = setupAngleConstraint(getObject(), "180 - 60 + 5");
+    getObject()->reverseAngleConstraintToSupplementary(constraint.get(), id);
+    auto supExpr = getObject()->getConstraintExpression(id);
+    getObject()->reverseAngleConstraintToSupplementary(constraint.get(), id);
+    EXPECT_EQ(std::string("180 - (180 - 60 + 5)"), supExpr);
+    EXPECT_EQ(std::string("180 - 60 + 5"), getObject()->getConstraintExpression(id));
 }
 
 TEST_F(SketchObjectTest, testGetElementName)
@@ -1044,4 +1055,59 @@ TEST_F(SketchObjectTest, testSolverDiagnosisSurvivesAnUnchangedSolve)
     getObject()->getGeometryWithDependentParameters(dependent);
 
     EXPECT_TRUE(dependent.empty());
+}
+
+TEST_F(SketchObjectTest, groupQueriesFollowConstraintChanges)  // NOLINT
+{
+    // Arrange: a handle line and two members in a group, a third line outside
+    // it, and a Horizontal on a member and on the outsider.
+    std::vector<int> ids;
+    for (int i = 0; i < 4; ++i) {
+        Part::GeomLineSegment line;
+        line.setPoints(Base::Vector3d(0, i, 0), Base::Vector3d(10, i, 0));
+        ids.push_back(getObject()->addGeometry(&line));
+    }
+    auto* group = new Sketcher::Constraint();
+    group->Type = Sketcher::ConstraintType::Group;
+    for (int i = 0; i < 3; ++i) {
+        // as Sketcher.Constraint('Group', ...) does: a fresh constraint
+        // already holds element slots, which addElement() would append after
+        group->setElement(i, Sketcher::GeoElementId(ids[i]));
+    }
+    int groupId = getObject()->addConstraint(group);
+    auto* onMember = new Sketcher::Constraint();
+    onMember->Type = Sketcher::ConstraintType::Horizontal;
+    onMember->First = ids[1];
+    getObject()->addConstraint(onMember);
+    auto* onOutsider = new Sketcher::Constraint();
+    onOutsider->Type = Sketcher::ConstraintType::Horizontal;
+    onOutsider->First = ids[3];
+    getObject()->addConstraint(onOutsider);
+
+    // Assert: the handle is in the group only when asked to count it.
+    EXPECT_TRUE(getObject()->isGroupHandle(ids[0]));
+    EXPECT_TRUE(getObject()->isInGroup(ids[0], true));
+    EXPECT_FALSE(getObject()->isInGroup(ids[0], false));
+    EXPECT_TRUE(getObject()->isInGroup(ids[1], false));
+    EXPECT_FALSE(getObject()->isGroupHandle(ids[1]));
+    EXPECT_FALSE(getObject()->isInGroup(ids[3], true));
+    EXPECT_EQ(getObject()->getGroupHandleIfInGroup(ids[1]), ids[0]);
+    EXPECT_EQ(getObject()->getGroupHandleIfInGroup(ids[2]), ids[0]);
+    EXPECT_EQ(getObject()->getGroupHandleIfInGroup(ids[0]), ids[0]);
+    EXPECT_EQ(getObject()->getGroupHandleIfInGroup(ids[3]), ids[3]);
+    const auto& constraints = getObject()->Constraints.getValues();
+    EXPECT_FALSE(getObject()->isConstraintActiveInSketch(constraints[1]));
+    EXPECT_TRUE(getObject()->isConstraintActiveInSketch(constraints[2]));
+
+    // Act: the group goes. The answers were cached on the first question and
+    // must follow the change of Constraints.
+    getObject()->delConstraint(groupId);
+
+    // Assert
+    EXPECT_FALSE(getObject()->isGroupHandle(ids[0]));
+    EXPECT_FALSE(getObject()->isInGroup(ids[1], true));
+    EXPECT_EQ(getObject()->getGroupHandleIfInGroup(ids[1]), ids[1]);
+    for (const auto* constr : getObject()->Constraints.getValues()) {
+        EXPECT_TRUE(getObject()->isConstraintActiveInSketch(constr));
+    }
 }

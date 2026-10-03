@@ -191,6 +191,25 @@ if(TARGET FreeCADGui)
     add_test(NAME PickCull_tests_run
              COMMAND PickCull_tests_run)
 
+    # A secondary hide of one occurrence (partialRender, a LinkGroup
+    # element's hide list) keeps the bounding box caches above the node
+    # honest: the other occurrence still picks, and showing it again gives
+    # the caches back. Same standalone Coin graph as PickCull.
+    add_executable(SecondaryHide_tests_run
+                   ${CMAKE_CURRENT_SOURCE_DIR}/SecondaryHide.cpp)
+    target_include_directories(SecondaryHide_tests_run PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_BINARY_DIR}/src
+        ${Python3_INCLUDE_DIRS}
+        ${XercesC_INCLUDE_DIRS}
+        ${COIN3D_INCLUDE_DIRS}
+        ${Boost_INCLUDE_DIRS})
+    target_link_libraries(SecondaryHide_tests_run
+                          gtest_main FreeCADGui FreeCADApp FreeCADBase)
+    add_test(NAME SecondaryHide_tests_run
+             COMMAND SecondaryHide_tests_run)
+
     # The on-view parameters an edit mode opens in a view with no widget
     # (docs/ThinClient.md sec 8.7). Unlike the mirror set above this one
     # DOES need a QApplication, because the claim being tested is that the

@@ -76,6 +76,22 @@ int matchStyleOverride(const Render::StyleOverride &ov,
 
 bool BGFXStyleState::styleAdmits(const Render::DrawCall &draw)
 {
+    // A draw of a hidden object captured only because some view shows
+    // it on its own (Render::perViewShownModeId): not a mode copy, but
+    // the object's own draw, admitted where this view's visibility
+    // shows it and then styled like any untagged draw.
+    uint16_t captured = draw.capturedMode;
+    if (captured && captured == Render::perViewShownModeId()) {
+        if (visibilityHides(draw))
+            return false;
+        captured = 0;
+    }
+    return styleAdmitsAs(draw, captured);
+}
+
+bool BGFXStyleState::styleAdmitsAs(const Render::DrawCall &draw,
+                                   uint16_t captured)
+{
     // This sub-view's Class-A display style, resolved PER OBJECT the
     // way Rhino and SolidWorks resolve a display mode
     // (docs/CoinRetirement.md 5.8, 5.9), in order:
@@ -133,8 +149,8 @@ bool BGFXStyleState::styleAdmits(const Render::DrawCall &draw)
         //   over the superset, where the name is registered;
         // - and an object with no child of the name keeps its own
         //   mode, the same fallback a Class-A style takes.
-        if (draw.capturedMode)
-            return draw.capturedMode == ov->modeId;
+        if (captured)
+            return captured == ov->modeId;
         if (draw.traversedMode == ov->modeId)
             return true;
         if (ov->interestBit && (draw.interestBits & ov->interestBit))
@@ -161,14 +177,14 @@ bool BGFXStyleState::styleAdmits(const Render::DrawCall &draw)
         // Falling through means the switch has no child of the name:
         // the object keeps its own mode, the same fallback the mask
         // path below reaches through registeredStyles.
-        if (draw.capturedMode)
-            return draw.capturedMode == drawStyleMode;
+        if (captured)
+            return captured == drawStyleMode;
         if (draw.traversedMode == drawStyleMode)
             return true;
         if (draw.interestBits & drawStyleModeBit)
             return false;
     }
-    if (draw.capturedMode) {
+    if (captured) {
         // An additively captured draw serves exactly one thing: an
         // override -- or, since 5.11, a view style -- resolving to its
         // very mode. Every other resolution must drop it, or the
@@ -189,6 +205,30 @@ bool BGFXStyleState::styleAdmits(const Render::DrawCall &draw)
     return effective == Render::StyleAsIs
         || effective == Render::StyleUnknown
         || (effective & Render::styleBitOf(draw.material)) != 0;
+}
+
+bool BGFXStyleState::visibilityHides(const Render::DrawCall &draw)
+{
+    // A draw captured only because SOME view shows its hidden object
+    // is hidden in every view that does not show it itself.
+    const bool pershown = draw.capturedMode
+        && draw.capturedMode == Render::perViewShownModeId();
+    const uint8_t flags = visibilityFlags(draw);
+    return (flags & Render::VisibilitySet::Hidden)
+        || (pershown && !(flags & Render::VisibilitySet::Shown));
+}
+
+bool BGFXStyleState::visibilityHidesObject(const Render::DrawCall &draw)
+{
+    return (visibilityFlags(draw) & Render::VisibilitySet::Hidden) != 0;
+}
+
+uint8_t BGFXStyleState::visibilityFlags(const Render::DrawCall &draw) const
+{
+    // Gizmos sit under no object, like the style filter's exemption.
+    if (!visSet || !draw.objectKey || draw.skipbounds)
+        return 0;
+    return visSet->flagsOf(draw.objectKey);
 }
 
 const BGFXStyleState::OvStyle *
@@ -326,7 +366,21 @@ void BGFXView::bindTextureStage(const Render::Material &mat, bool bumped,
     if (mapped && mat.occlusionmap)
         texParams[3] = 1.0f;
     bool mrmapped = mapped && mat.metallicroughnessmap;
-    bgfx::setTexture(0, s_texColor, color);
+    // An image quad (an SoImage, a billboard in native pixels) is
+    // glDrawPixels in GL: one texel to one pixel, never filtered.
+    // setDrawTransform puts it on the pixel grid; the texture's own
+    // anisotropic sampler still took taps across neighbouring texels
+    // there (llvmpipe), which drew a 2-pixel icon stroke dull and ringed
+    // it with a darker row either side.
+    bool pixelExact = false;
+    for (const auto &entry : mat.autozoom)
+        if (entry.billboard && entry.pixelscale > 0.f)
+            pixelExact = true;
+    if (pixelExact)
+        bgfx::setTexture(0, s_texColor, color,
+                         BGFX_SAMPLER_POINT | BGFX_SAMPLER_UVW_CLAMP);
+    else
+        bgfx::setTexture(0, s_texColor, color);
     bgfx::setUniform(u_texParams, texParams);
     bgfx::setUniform(u_texBlendColor, blend);
     float texmat[16];
@@ -916,6 +970,70 @@ bool BGFXView::submitPrepassInstanced(const Render::DrawCall &draw,
     return true;
 }
 
+std::vector<float> BGFXView::markerCodes(const Render::MeshData &data)
+{
+    std::vector<float> codes;
+    if (!data.pointMarkers || data.markers.empty() || !m_instancing
+            || !bgfx::isValid(m_progMarker))
+        return codes;
+    const int maxCells = kMarkerColumns * kMarkerColumns;
+    for (const auto &marker : data.markers) {
+        // A bitmap wider than a cell, or one past the atlas, keeps the
+        // plain square (code 0) rather than drawing nothing.
+        float code = 0.0f;
+        if (marker.width > 0 && marker.height > 0
+                && marker.width <= kMarkerCell && marker.height <= kMarkerCell
+                && marker.mask.size() == size_t(marker.width) * marker.height) {
+            std::string key(reinterpret_cast<const char *>(&marker.width),
+                            sizeof(marker.width));
+            key.append(reinterpret_cast<const char *>(&marker.height),
+                       sizeof(marker.height));
+            key.append(marker.mask.begin(), marker.mask.end());
+            auto it = m_markerCellIndex.find(key);
+            if (it == m_markerCellIndex.end()
+                    && int(m_markerCells.size()) < maxCells) {
+                it = m_markerCellIndex.emplace(
+                    key, int(m_markerCells.size())).first;
+                m_markerCells.push_back(marker);
+                // Filled on the next bind; a new cell and a recreated
+                // atlas are the same job.
+                if (bgfx::isValid(m_markerAtlas)) {
+                    bgfx::destroy(m_markerAtlas);
+                    m_markerAtlas = BGFX_INVALID_HANDLE;
+                }
+            }
+            if (it != m_markerCellIndex.end())
+                code = float(it->second + 1)
+                    + 4096.0f * float(marker.width + 64 * marker.height);
+        }
+        codes.push_back(code);
+    }
+    return codes;
+}
+
+void BGFXView::bindMarkerAtlas()
+{
+    if (!bgfx::isValid(m_markerAtlas)) {
+        const int side = kMarkerCell * kMarkerColumns;
+        const bgfx::Memory *mem = bgfx::alloc(uint32_t(side * side));
+        std::memset(mem->data, 0, mem->size);
+        for (size_t c = 0; c < m_markerCells.size(); ++c) {
+            const auto &marker = m_markerCells[c];
+            const int x0 = int(c % kMarkerColumns) * kMarkerCell;
+            const int y0 = int(c / kMarkerColumns) * kMarkerCell;
+            for (int y = 0; y < marker.height; ++y)
+                std::memcpy(mem->data + size_t(y0 + y) * side + x0,
+                            marker.mask.data() + size_t(y) * marker.width,
+                            marker.width);
+        }
+        m_markerAtlas = bgfx::createTexture2D(
+            uint16_t(side), uint16_t(side), false, 1,
+            bgfx::TextureFormat::R8,
+            BGFX_SAMPLER_POINT | BGFX_SAMPLER_UVW_CLAMP, mem);
+    }
+    bgfx::setTexture(0, s_markerAtlas, m_markerAtlas);
+}
+
 void BGFXView::submit(const Render::DrawCall &input, const float *viewMatrix,
             int pass, bool noseam)
 {
@@ -938,7 +1056,7 @@ void BGFXView::submit(const Render::DrawCall &input, const float *viewMatrix,
     // The per-object per-view display style resolution
     // (docs/CoinRetirement.md 5.8, 5.9) -- see styleAdmits, which the
     // instanced group partition shares.
-    if (!styleAdmits(draw))
+    if (!styleAdmits(draw) || visibilityHides(draw))
         return;
 
     GpuMesh *mesh = getMesh(*draw.mesh);
@@ -1062,7 +1180,7 @@ void BGFXView::submit(const Render::DrawCall &input, const float *viewMatrix,
     // as well: BGFX_STATE_POINT_SIZE only exists on the OpenGL
     // backend, the quad path is the portable one.
     bool thickpoint = mat.type == Render::Material::Point
-        && mat.pointsize > 1.001f
+        && (mat.pointsize > 1.001f || mesh->markers)
         && m_instancing && bgfx::isValid(mesh->pointInst);
 
     bool transparent = mat.transparent
@@ -1401,6 +1519,8 @@ void BGFXView::submit(const Render::DrawCall &input, const float *viewMatrix,
         bgfx::setVertexBuffer(0, m_lineQuadVb);
         bgfx::setIndexBuffer(m_lineQuadIb);
         bgfx::setInstanceDataBuffer(mesh->pointInst, startPt, numPt);
+        if (mesh->markers)
+            bindMarkerAtlas();
     }
     else {
         setMeshVertexBuffers(mesh, *draw.mesh);
@@ -1460,7 +1580,9 @@ void BGFXView::submit(const Render::DrawCall &input, const float *viewMatrix,
                                : m_progLinePat)
                     : (clipped ? m_progLineClip : m_progLine))
                 : thickpoint
-                    ? (clipped ? m_progPointClip : m_progPoint)
+                    ? (mesh->markers
+                        ? (clipped ? m_progMarkerClip : m_progMarker)
+                        : (clipped ? m_progPointClip : m_progPoint))
                     : (clipped ? m_progFlatClip : m_progFlat);
 
     // User "material"-stage shader (docs/RenderDebug.md §6): replace

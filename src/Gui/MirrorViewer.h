@@ -28,6 +28,7 @@
 #include <string>
 #include <vector>
 
+#include "OnViewEntry.h"
 #include "ViewerContext.h"
 
 class SoCamera;
@@ -201,25 +202,17 @@ public:
      * inside one is taken on this side.
      */
     //@{
-    struct OnViewParam
+    /** One entry as a client is told it (OnViewEntry::State), with what
+     * only the view knows: its place in the set, which is what the client
+     * names it by, and whether it takes the keys.
+     */
+    struct OnViewParam: OnViewEntry::State
     {
-        /// Where the box belongs, in world coordinates: the client projects
-        /// it with the camera of the frame it is drawing, which is the only
-        /// camera that is never behind the picture (section 8.7).
-        SbVec3f anchor {0, 0, 0};
-        /// The text a desktop user would read in the box, units included.
-        std::string text;
-        /// What is selected in it, so a client shows the same highlight.
-        int selStart = 0;
-        int selLength = 0;
-        /// Whether this is the box taking the keys.
+        /// Its place in the set the view keeps, shown or not: the index a
+        /// client's focus or action names
+        int index = 0;
+        /// Whether this is the entry taking the keys
         bool focus = false;
-        /// Whether the value has been fixed by the user rather than driven
-        /// by the pointer -- the desktop says it in the label colour.
-        bool set = false;
-        /// The point size the label draws its number in, which the desktop
-        /// box takes too; the client keeps a minimum of its own.
-        double pointSize = 0.0;
     };
     std::vector<OnViewParam> onViewParameters() const;
     /// Told when any of that changes, so the connection can restate it.
@@ -231,9 +224,12 @@ public:
      * whichever box now sits there.
      */
     bool focusOnViewParameter(int index);
-    void addOnViewParameter(EditableDatumLabel* label) override;
-    void removeOnViewParameter(EditableDatumLabel* label) override;
-    void onViewParameterFocused(EditableDatumLabel* label) override;
+    /// A client's act on an entry that is not a key (OnViewEntry::act),
+    /// refused for a stale index as focusing is
+    bool actOnViewParameter(int index, const OnViewEntry::Action& action);
+    void addOnViewParameter(OnViewEntry* entry) override;
+    void removeOnViewParameter(OnViewEntry* entry) override;
+    void onViewParameterFocused(OnViewEntry* entry) override;
     void onViewParametersChanged() override;
     bool sendKeyEvent(QKeyEvent* event) override;
     //@}
@@ -251,6 +247,31 @@ public:
     }
     SoFCRenderCacheManager* getRenderCacheManager() const override;
     Render::Renderer* getExternalRenderer() const override;
+    const SoFCVisibilityElement::Table* visibilityElementTable() const override;
+    //@}
+
+    /** @name The client's own object visibility (docs/CoinRetirement.md 5.18)
+     *
+     * A client's ObjectVisibilities map, parsed on the host (a subname path
+     * needs the document), held here like a desktop view holds its own:
+     * host picks and bounds for this client follow it, and the client draws
+     * by the same table (docs/ThinClient.md, per-client visibility).
+     */
+    //@{
+    /// Replace the table; false when nothing changed.
+    bool setObjectVisibilities(std::vector<VisibilityEntry>&& entries);
+    /// An edit session's transient hide, ahead of the table above (see
+    /// ViewerContext::setEditHide). Raised by the session rather than by
+    /// the client, so a change is reported through the callback below.
+    bool setEditHide(const VisibilityEntry* hide) override;
+    /// Told when setEditHide -- or a structure change resolving the
+    /// entries again -- changes the table, so the serving source
+    /// republishes and tells the client what it draws by.
+    void setOnVisibilityCallback(std::function<void()> callback);
+    /// What this client draws by -- the edit hide, then the parsed map --
+    /// resolved per draw of the served scene, or null when the table is
+    /// empty.
+    const Render::VisibilitySet* objectVisibilities();
     //@}
 
     /** @name ViewerContext -- what the input device supplies */
@@ -287,20 +308,20 @@ public:
     SoPickedPoint* getPointOnRay(const SbVec3f& pos, const SbVec3f& dir,
                                  const ViewProvider* vp) const override;
     void appendDetailPath(SoPath* path, ViewProvider* vp) override;
-    /// The event root: the client's camera, then the served scene.
+    /// The event root: the client's camera, then the served scene, then
+    /// the session's editing root while this view is in one.
     SoNode* getPickRoot() const override;
     //@}
 
     /** @name ViewerContext -- edit mode
      *
      * The editing root and what is done to it are ViewerContext's. What is
-     * this mirror's is where that root hangs: in the graph the server
-     * publishes, because the change-driven traversal is the only thing here
-     * that plays the part a redraw plays on the desktop, and it only sees
-     * what is in that graph (docs/ThinClient.md section 8.5). It is hung
-     * there for the duration of an edit and taken out again after, so a
-     * connected client that is not editing does not put an empty separator
-     * in everybody's scene.
+     * this mirror's is where that root hangs: beside the served scene in
+     * this client's event graph, the desktop's aux-root shape, for the
+     * duration of an edit. It is not published from here -- the serving
+     * source captures the session's root as an overlay tagged with the
+     * session (docs/ThinClient.md 8.12 item J), so a drag spoils no cache
+     * of the scene every client shares.
      */
     //@{
     void setEditing(bool edit) override;

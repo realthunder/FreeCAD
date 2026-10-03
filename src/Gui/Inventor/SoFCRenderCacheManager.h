@@ -23,6 +23,10 @@
 #ifndef GUI_SOFCRENDERCACHEMANAGER_H
 #define GUI_SOFCRENDERCACHEMANAGER_H
 
+#include <cstdint>
+#include <unordered_map>
+#include <vector>
+
 #include "COWData.h"
 #include "../InventorBase.h"
 
@@ -38,6 +42,7 @@ class SoDetail;
 
 namespace Render {
 class Renderer;
+struct ObjectInfo;
 struct OverlayAnchor;
 struct UserShader;
 }
@@ -61,6 +66,12 @@ public:
   /// when an external backend already draws their captured companions, so
   /// the icon is not doubled — mirrors SoDatumLabel::SuppressGLRender.
   static bool SuppressImageGLRender;
+
+  /// Whether \a action is a render cache manager's own capture
+  /// traversal -- as opposed to any other SoCallbackAction, an export
+  /// most of all. What a capture alone may traverse (a hidden object
+  /// some view shows on its own, SoFCSwitch) must not reach those.
+  static bool isCaptureAction(const SoAction *action);
 
   void render(SoGLRenderAction *action);
 
@@ -108,13 +119,21 @@ public:
   /// SoFCRenderer::refreshExternalFeed).
   void refreshExternalFeed();
 
+  /// The identities of the draws this manager fed its backend, and a
+  /// serial that changes with them (SoFCRenderer::getObjectInfo).
+  const std::unordered_map<uint64_t, Render::ObjectInfo> &
+  getObjectInfo(uint64_t &serial) const;
+
   /// Route the scene feed to the backend's overlay feed instead (see
   /// SoFCRenderer::setExternalOverlay()): this manager then captures an
   /// overlay root (foreground superimposition, corner axis cross) and
   /// mirrors it as Renderer::setOverlay(\a id, ..., \a anchor), while
   /// render() stops drawing any internal GL pass. Pass null to detach.
+  /// \a highlightId: the overlay the highlight feed goes to (see
+  /// SoFCRenderer::setExternalOverlay), 0 for none.
   void setExternalOverlay(Render::Renderer *renderer, int id,
-                          const Render::OverlayAnchor &anchor);
+                          const Render::OverlayAnchor &anchor,
+                          int highlightId = 0);
 
   SoPath *getHighlightPath() const;
   void setHighlight(SoPath * path,
@@ -124,6 +143,36 @@ public:
                     bool wholeontop = false);
 
   void clearHighlight();
+
+  /// One element set of a setHighlights() call: the elements \a detail
+  /// names, of the shape node its context names, in \a color. Or, with
+  /// \a path and no detail, all that path draws (from the captured root).
+  struct HighlightItem
+  {
+    const SoDetail *detail;
+    uint32_t color;
+    const SoPath *path = nullptr;
+  };
+
+  /** Highlight elements of the scene this manager captured, several sets
+   * of them in one feed, each in its own colour.
+   *
+   * For an overlay capture (capture()) whose owner tracks its own
+   * preselection -- the sketcher's edit preselection. Each item's detail
+   * names its shape node by context (SoFCDetail::setContext), and its
+   * elements are taken from the captured scene: nothing is traversed,
+   * and nothing of the graph is built again. An item with a path instead
+   * is everything that path draws -- a sketch constraint's label and
+   * icon -- shown in its colour the way setHighlight() shows a whole
+   * object: the path is traversed once and its capture kept until a node
+   * on it changes. (A traversal per call once seemed to leave later frames
+   * dearer; that residue is llvmpipe's alone, about 2%, none on a GPU.)
+   *
+   * The items are kept (the details and paths copied) and stated again
+   * after each capture that rebuilds the scene, so the highlight follows
+   * the geometry it names. An empty list clears it.
+   */
+  void setHighlights(const std::vector<HighlightItem> & items);
 
   void addSelection(const std::string & key,
                     const std::string & element,

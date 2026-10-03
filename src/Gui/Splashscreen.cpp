@@ -29,7 +29,6 @@
 # include <QFile>
 # include <QFileInfo>
 # include <QLocale>
-# include <QMutex>
 # include <QProcessEnvironment>
 # include <QRegularExpression>
 # include <QRegularExpressionMatch>
@@ -41,13 +40,13 @@
 # include <QSysInfo>
 # include <QTextBrowser>
 # include <QTextStream>
-# include <QWaitCondition>
 # include <QLabel>
 # include <QFileInfo>
 # include <QDir>
 # include <Inventor/C/basic.h>
 #endif
 
+#include <QElapsedTimer>
 #include <QMovie>
 
 #include <boost/algorithm/string/predicate.hpp>
@@ -218,16 +217,28 @@ public:
                 return;
         }
 
+        // Readable without holding startup up. There used to be a 50 ms
+        // sleep here, on every message, to give the eye time to read it:
+        // some fifty messages reach it during a start, 2.5 s of sleeping (a
+        // start measured 9.1 s fell to 6.6 s without it, 2026-09-30), and
+        // 50 ms is too short to read anyway. Now a message stays up at least
+        // MinShowMs and one arriving sooner is skipped; showMessage()
+        // repaints at once, so what is shown is on screen when it returns.
+        // Nothing runs the event loop here, so a skipped message cannot be
+        // shown later: through a long quiet phase the text can lag one
+        // message behind.
+        if (shown.isValid() && shown.elapsed() < MinShowMs)
+            return;
+        shown.start();
         splash->showMessage(msg.replace(QStringLiteral("\n"), QString()), alignment, textColor);
-        QMutex mutex;
-        QMutexLocker ml(&mutex);
-        QWaitCondition().wait(&mutex, 50);
     }
 
 private:
+    static constexpr qint64 MinShowMs = 250;
     QSplashScreen* splash;
     int alignment;
     QColor textColor;
+    QElapsedTimer shown;
 };
 } // namespace Gui
 

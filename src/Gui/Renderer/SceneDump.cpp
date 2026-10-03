@@ -326,30 +326,58 @@ const uint32_t kMagic = 0x46435344;  // 'FCSD'
 //     Sketcher datum -- arrowheads, the gap left for the number --
 //     resolved against the viewer's own camera. An older reader would
 //     fail the chunk on its version; refused here instead.
-// 78: a finish palette entry carries its extent (FinishPalette::Entry::
+// 78: a mesh may carry point markers (MeshData::markers/pointMarkers,
+//     flag 64, after the point parts): the bitmap each vertex of a
+//     sketch is drawn as. Without them a reader draws every point as a
+//     square of the point size.
+// 79: an autozoom entry carries its pixel scale (AutoZoomEntry::pixelscale,
+//     after the plane normal). Without it a viewer sized every billboard
+//     image with the text factor -- a constraint icon at 1.35 of its
+//     pixels -- and a datum's number from the capture's viewport height.
+// 80: per-client visibility (docs/CoinRetirement.md 5.18). A scene object
+//     entry carries its object chain (ObjectInfo::path, after the type) and
+//     whether all of it is per-view shown (after the chain), and
+//     a draw says whether it belongs to a hidden object some view shows on
+//     its own (the per-view-shown tag, after skipbounds). A client resolves
+//     its own table against both, with the renderer's own rule; before, the
+//     snapshot dropped those draws and a remote viewer could match no path.
+// 81: an overlay anchor carries its edit session (OverlayAnchor::session,
+//     after the sub-view). A served document's edit geometry left the
+//     scene for an overlay the host tags with its session, and a viewer
+//     draws only its own session's (docs/ThinClient.md 8.12 item J).
+// 82: the object chain v80 put on a scene object entry is gone again
+//     (the per-view-shown flag stays): a client no longer resolves its
+//     own visibility, the host does, per draw with its node keys, and
+//     tells it the objectKeys hidden and shown (docs/CoinRetirement.md
+//     5.23). A v80/v81 chain is read and dropped.
+//
+// 83-86 were 78-81 on PartDesignPort until SketcherPort was merged into
+// it (2026-10-04), whose 78-82 kept their numbers; a snapshot written by
+// PartDesignPort before the merge is misread past 77.
+// 83: a finish palette entry carries its extent (FinishPalette::Entry::
 //     extent) after the angle: the axis a screw thread is laid about
 //     and the band of it the thread covers. An older snapshot has none,
 //     which reads as the face's own frame, face-wide -- all a finish
 //     could state before. The material chunk carries the palette, so
 //     kChunkVersion moves with it.
-// 79: an overlay anchor may place its rect by position rather than by
+// 84: an overlay anchor may place its rect by position rather than by
 //     corner (OverlayAnchor::posX/posY) and size it in pixels
-//     (sizePixels), after the sub-view: the NaviCube's per-view
+//     (sizePixels), after the session: the NaviCube's per-view
 //     position, stated as fractions so a browser of any size places it.
 //     An older snapshot has neither, which reads as the corner placement
 //     it always had.
-// 80: an overlay anchor may ask to be drawn only while hovered
+// 85: an overlay anchor may ask to be drawn only while hovered
 //     (OverlayAnchor::autoHideMs), after sizePixels: the served
 //     NaviCube's auto-hide preferences, which the browser applies to its
 //     own pointer. An older snapshot has none, which reads as always
 //     drawn.
-// 81: a material carries ontoplayer after perfacepbr: which rendering
+// 86: a material carries ontoplayer after perfacepbr: which rendering
 //     order an on-top draw is in (an SoFCPathAnnotation's priority).
 //     An older snapshot has none, which reads as a plain annotation,
 //     all of them drawn in one -- the pattern instance toggles under the
 //     dimension lines crossing them. The material chunk carries it, so
 //     kChunkVersion moves with it.
-const uint32_t kVersion = 81;
+const uint32_t kVersion = 86;
 
 /// Layout revision of the out-of-band chunks (mesh, material, shader,
 /// group manifest). Written as the first field of each chunk, so it is
@@ -398,13 +426,18 @@ const uint32_t kVersion = 81;
 /// 18: a mesh chunk may carry screen-space offsets after the material
 ///     stream (v77), said by flag 32. Nothing older moved, but an older
 ///     cached chunk would answer "no offsets" forever and draw a datum
-///     without its arrowheads.
-/// 19: a material chunk's finish palette entries carry their extent
-///     (v78). The bytes moved.
-/// 20: a material chunk carries ontoplayer (v81) after perfacepbr.
+///     without its arrowheads.)
+/// 19: a mesh chunk may carry point markers after the point parts
+///     (v78), said by flag 64.
+/// 20: a material chunk's autozoom entries carry their pixel scale (v79).
+/// 21: a group chunk's draws carry the per-view-shown flag (v80). The bytes
+///     moved, so an older cached chunk would be misread.
+/// 22: a material chunk's finish palette entries carry their extent
+///     (v83). The bytes moved.
+/// 23: a material chunk carries ontoplayer (v86) after perfacepbr.
 ///     Appended, so nothing moved -- but an older cached chunk would
-///     answer "plain annotation" forever.)
-const uint32_t kChunkVersion = 20;
+///     answer "plain annotation" forever.
+const uint32_t kChunkVersion = 23;
 
 /// Bytes per vertex of MeshData::materials, whose layout Renderer.h
 /// documents. Named here because the stride is what a reader of an
@@ -453,7 +486,7 @@ static_assert(sizeof(BloomConfig) == 16, "BloomConfig changed: stream the new fi
 static_assert(offsetof(PBRConfig, envPreset) == 32, "PBRConfig changed: stream the new field, then update this");
 static_assert(offsetof(LightConfig, groundColor) == 172,"LightConfig changed: stream the new field, then update this");
 static_assert(offsetof(RenderDebugConfig, coverage) == 7, "RenderDebugConfig changed: stream the new field, then update this");
-static_assert(sizeof(OverlayAnchor) == 64, "OverlayAnchor changed: stream the new field, then update this");
+static_assert(sizeof(OverlayAnchor) == 68, "OverlayAnchor changed: stream the new field, then update this");
 
 //////////////////////////////////////////////////////////////////////
 // Little-endian raw stream helpers. Every scalar goes through num()
@@ -615,6 +648,10 @@ void writeMeshChunk(Writer &w, const MeshData &m)
     uint8_t flags = (m.normals ? 1 : 0) | (m.colors ? 2 : 0)
         | (m.texCoords ? 4 : 0) | (m.materials ? 8 : 0)
         | (m.attachedOnly ? 16 : 0) | (m.screenOffsets ? 32 : 0);
+    const bool markers = m.pointMarkers && m.pointIndices
+        && m.numPointIndices > 0 && !m.markers.empty();
+    if (markers)
+        flags |= 64;
     w.u8(flags);
     w.raw(m.positions, size_t(m.numVertices) * 3 * sizeof(float));
     if (m.normals)
@@ -646,6 +683,15 @@ void writeMeshChunk(Writer &w, const MeshData &m)
     w.b(m.hasOpaqueParts);
     w.parts(m.lineParts);   // v11
     w.parts(m.pointParts);  // v11
+    if (markers) {           // v78
+        w.u32(uint32_t(m.markers.size()));
+        for (const auto &marker : m.markers) {
+            w.u32(marker.width);
+            w.u32(marker.height);
+            w.raw(marker.mask.data(), marker.mask.size());
+        }
+        w.raw(m.pointMarkers, size_t(m.numPointIndices));
+    }
 }
 
 /// Meshes whose payload reaches this size declare coarser levels
@@ -881,6 +927,30 @@ void readMeshChunk(Reader &r, OwnedMeshData *mesh, uint32_t version)
         r.parts(mesh->lineParts);
         r.parts(mesh->pointParts);
     }
+    if (flags & 64) {
+        const uint32_t n = r.u32();
+        if (!r.ok || n >= Render::MeshData::NoMarker
+                || mesh->numPointIndices <= 0) {
+            r.ok = false;
+            return;
+        }
+        mesh->markers.resize(n);
+        for (auto &marker : mesh->markers) {
+            const uint32_t mw = r.u32();
+            const uint32_t mh = r.u32();
+            if (!r.ok || mw == 0 || mh == 0 || mw > 256 || mh > 256) {
+                r.ok = false;
+                return;
+            }
+            marker.width = uint16_t(mw);
+            marker.height = uint16_t(mh);
+            marker.mask.resize(size_t(mw) * mh);
+            r.raw(marker.mask.data(), marker.mask.size());
+        }
+        mesh->markerStore.resize(size_t(mesh->numPointIndices));
+        r.raw(mesh->markerStore.data(), mesh->markerStore.size());
+        mesh->pointMarkers = mesh->markerStore.data();
+    }
 }
 
 } // anonymous namespace — resumed below; the level generator has
@@ -1091,6 +1161,8 @@ private:
         dst.texCoords = src.texCoords ? dst.uvStore.data() : nullptr;
         dst.screenOffsets =
             src.screenOffsets ? dst.offsetStore.data() : nullptr;
+        dst.pointMarkers =
+            src.pointMarkers ? dst.markerStore.data() : nullptr;
         dst.triangleIndices =
             src.triangleIndices ? dst.triStore.data() : nullptr;
         dst.lineIndices = src.lineIndices ? dst.lineStore.data() : nullptr;
@@ -1704,7 +1776,7 @@ void writeMaterial(Writer &w, const Material &m, const RefWriter &refs)
         w.f(entry.pitch);
         w.f(entry.depth);
         w.f(entry.angle);
-        for (int k = 0; k < 4; ++k)   // v78
+        for (int k = 0; k < 4; ++k)   // v83
             w.f(entry.extent[k]);
     }
     // The projection frames the finish is laid out in (v51). The draw's
@@ -1789,6 +1861,7 @@ void writeMaterial(Writer &w, const Material &m, const RefWriter &refs)
         w.b(az.billboard);  // v7
         w.b(az.datumFlip);  // v8
         w.floats(az.normal, 3);  // v8
+        w.f(az.pixelscale);  // v79
     }
     w.u8(m.numclipplanes);
     w.b(m.clipconcave);
@@ -1811,7 +1884,7 @@ void writeMaterial(Writer &w, const Material &m, const RefWriter &refs)
     w.b(m.perfacematerial);
     // v48: that stream's alpha slots carry the PBR factor pair.
     w.b(m.perfacepbr);
-    // v81: the rendering order of an on-top draw.
+    // v86: the rendering order of an on-top draw.
     w.i32(m.ontoplayer);
 }
 
@@ -1873,7 +1946,7 @@ void readMaterial(Reader &r, Material &m, const RefReader &refs,
                 entry.pitch = r.f();
                 entry.depth = r.f();
                 entry.angle = r.f();
-                if (version >= 78) {
+                if (version >= 83) {
                     for (int k = 0; k < 4; ++k)
                         entry.extent[k] = r.f();
                 }
@@ -2013,6 +2086,7 @@ void readMaterial(Reader &r, Material &m, const RefReader &refs,
             az.datumFlip = r.b();
             r.floats(az.normal, 3);
         }
+        az.pixelscale = version >= 79 ? r.f() : 0.0f;
     }
     m.numclipplanes = r.u8();
     m.clipconcave = r.b();
@@ -2045,8 +2119,8 @@ void readMaterial(Reader &r, Material &m, const RefReader &refs,
     // v48: the stream's PBR reading. Absent means the Phong one.
     if (version >= 48)
         m.perfacepbr = r.b();
-    // v81: the on-top rendering order. Absent means a plain annotation.
-    if (version >= 81)
+    // v86: the on-top rendering order. Absent means a plain annotation.
+    if (version >= 86)
         m.ontoplayer = int16_t(r.i32());
 }
 
@@ -2189,6 +2263,8 @@ void writeDraw(Writer &w, const DrawCall &d, const DrawRefWriter &refs)
     w.floats(d.bboxMax, 3);
     // v67
     w.b(d.skipbounds);
+    // v80: the tag is an id interned per process, so it travels as a flag.
+    w.b(d.capturedMode == perViewShownModeId());
 }
 
 typedef std::vector<Material> MaterialTable;
@@ -2218,6 +2294,8 @@ void readDraw(Reader &r, DrawCall &d, const DrawRefReader &refs,
     r.floats(d.bboxMax, 3);
     if (version >= 67)
         d.skipbounds = r.b();
+    if (version >= 80 && r.b())
+        d.capturedMode = perViewShownModeId();
 }
 
 void writeDrawList(Writer &w, const DrawCallList &draws,
@@ -2554,7 +2632,7 @@ void groupScene(const DrawCallList &scene,
 /// (that entry goes by reference), a missing provider on a delta is a
 /// format error the reader cannot detect.
 template<typename EntryPtr>
-void writeObjectSection(Writer &w,
+void writeObjectSection(bool withShown, Writer &w,
                         const std::vector<uint64_t> &removed,
                         const std::vector<EntryPtr> &carried,
                         const ChunkBytesFor *bytesFor = nullptr)
@@ -2572,6 +2650,10 @@ void writeObjectSection(Writer &w,
         w.str(e.info.obj);
         w.str(e.info.label);
         w.str(e.info.type);
+        // v80: whether all of the object is per-view shown (its chain,
+        // v80-81, is no longer written). Not in the 2D page form.
+        if (withShown)
+            w.b(e.perViewShown);
         // v55: whether this publish held part of the object back.
         w.b(e.incomplete);
         writeGroupRef(w, e);
@@ -2595,7 +2677,7 @@ void writeObjectList(Writer &w,
     for (const auto &e : entries)
         all.push_back(&e);
     // Nothing retired: this list replaces whatever was held.
-    writeObjectSection(w, std::vector<uint64_t>(), all);
+    writeObjectSection(true, w, std::vector<uint64_t>(), all);
 }
 
 /// Both lists are ordered by objectKey, so the difference is one linear
@@ -2644,7 +2726,7 @@ void writeObjectDelta(Writer &w,
     std::vector<uint64_t> removed;
     std::vector<const SceneSnapshot::ObjectEntry *> changed;
     diffObjectPtrs(base, entries, changed, removed);
-    writeObjectSection(w, removed, changed, &bytesFor);
+    writeObjectSection(true, w, removed, changed, &bytesFor);
 }
 
 //////////////////////////////////////////////////////////////////////
@@ -3126,11 +3208,13 @@ void setManifestFinalize(SceneSnapshot &snap, const LoaderPtr &st)
         };
         apply(s.scene);
         apply(s.highlight);
-        // The draws no object claims too: they are taken without waiting
-        // for their appearance, so this is the only way their material
-        // reaches them -- and with it what places them. An on-view
-        // label's number drew grey and unscaled, a quad the size of its
-        // glyph in pixels, laid out in millimetres.
+        // The keyless draws too. They were taken above without waiting
+        // for their appearance, and applySceneObjects rebuilds the scene
+        // from s.keyless on every assembly -- so a material landing after
+        // them reached only the scene copy it was about to replace, and
+        // they drew on the default one for good. An edit mode's graph is
+        // keyless (it hangs under no object), and the default material is
+        // a Triangle draw: its lines and points drew nothing at all.
         apply(s.keyless);
         // The object groups are patched in place, where they wait for
         // the model to take them.
@@ -3293,6 +3377,14 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
             for (const DrawCall *d : group.second) {
                 if (d->objectIncomplete) {
                     entry.incomplete = true;
+                    break;
+                }
+            }
+            // v80: all of it here only because some view shows it.
+            entry.perViewShown = !group.second.empty();
+            for (const DrawCall *d : group.second) {
+                if (d->capturedMode != perViewShownModeId()) {
+                    entry.perViewShown = false;
                     break;
                 }
             }
@@ -3572,10 +3664,11 @@ static bool saveSnapshotFp(FILE *fp, const SceneSnapshot &snap)
         w.f(a.marginY);
         w.b(a.sceneCamera); // v6
         w.i32(a.subView);   // v69
-        w.f(a.posX);        // v79
+        w.u32(a.session);   // v81
+        w.f(a.posX);        // v84
         w.f(a.posY);
         w.f(a.sizePixels);
-        w.f(a.autoHideMs);  // v80
+        w.f(a.autoHideMs);  // v85
         writeFeed(ov.draws, 0, true);
     }
 
@@ -3805,6 +3898,19 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
                 r.str(up.entry.info.label, 0x1000u);
                 r.str(up.entry.info.type, 0x1000u);
             }
+            if (version >= 80 && version < 82) {
+                // The v80-81 object chain, which nothing reads any more.
+                uint32_t npath = r.u32();
+                if (!r.ok || npath > 0x10000u)
+                    r.ok = false;
+                std::string skip;
+                for (uint32_t k = 0; r.ok && k < npath; ++k) {
+                    r.str(skip, 0x1000u);
+                    r.str(skip, 0x1000u);
+                }
+            }
+            if (version >= 80)
+                up.entry.perViewShown = r.b();
             if (version >= 55)
                 up.entry.incomplete = r.b();
             up.group = snap.groups.size();
@@ -4058,12 +4164,13 @@ static bool loadSnapshotFp(FILE *fp, SceneSnapshot &snap)
             }
             a.sceneCamera = version >= 6 ? r.b() : false;
             a.subView = version >= 69 ? r.i32() : 0;
-            if (version >= 79) {
+            a.session = version >= 81 ? r.u32() : 0;
+            if (version >= 84) {
                 a.posX = r.f();
                 a.posY = r.f();
                 a.sizePixels = r.f();
             }
-            if (version >= 80)
+            if (version >= 85)
                 a.autoHideMs = r.f();
             snap.overlays.push_back(std::move(ov));
             readFeed(snap.overlays.back().draws, GroupTarget::Overlay,
@@ -4120,10 +4227,14 @@ size_t Render::SceneObjectModel::unresolved() const
     return n;
 }
 
-bool Render::SceneObjectModel::boundBox(float *min3, float *max3) const
+bool Render::SceneObjectModel::boundBox(
+        float *min3, float *max3,
+        const std::function<bool(const Object &)> &skip) const
 {
     bool any = false;
     for (const auto &entry : objects) {
+        if (skip && skip(entry.second))
+            continue;
         const float *b = entry.second.entry.bbox;
         // The producer writes an empty box as one that is inside out,
         // which would otherwise swallow the origin and pull the fit
@@ -4605,7 +4716,7 @@ bool Render::spliceObjectDelta(
     refs.reserve(changed.size());
     for (const auto &e : changed)
         refs.push_back(&e);
-    writeObjectSection(w, removed, refs, &bytesFor);
+    writeObjectSection(true, w, removed, refs, &bytesFor);
     if (!w.ok)
         return false;
 
@@ -4633,7 +4744,7 @@ bool Render::writeObjectSection(
     refs.reserve(entries.size());
     for (const auto &e : entries)
         refs.push_back(&e);
-    ::writeObjectSection(w, removed, refs, bytesFor);
+    ::writeObjectSection(false, w, removed, refs, bytesFor);
     return w.ok;
 }
 

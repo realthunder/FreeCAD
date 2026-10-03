@@ -30,22 +30,37 @@
 #include "ViewProvider.h"
 
 namespace {
+/// Whether a tessellation preference changed since the last reload. Only
+/// then are the preferences written into every object's Deviation and
+/// AngularDeflection: the same timer also answers the shape-instancing
+/// gate -- a view's renderer attaching or going away -- and taking that
+/// for a preference change overwrote the per-object values a file was
+/// saved with each time a document opened a view.
+bool tessellationChanged;
+
 QTimer &getTimer() {
     static QTimer *timer;
     if (!timer) {
         timer = new QTimer();
         timer->setSingleShot(true);
         QObject::connect(timer, &QTimer::timeout, [](){
+            const bool applyTessellation = tessellationChanged;
+            tessellationChanged = false;
             // search for Part view providers and apply the new settings
             for (auto doc : App::GetApplication().getDocuments()) {
                 auto gdoc = Gui::Application::Instance->getDocument(doc);
                 for (auto vp : gdoc->getViewProvidersOfType(
                             PartGui::ViewProviderPart::getClassTypeId()))
-                    static_cast<PartGui::ViewProviderPart*>(vp)->reload();
+                    static_cast<PartGui::ViewProviderPart*>(vp)->reload(applyTessellation);
             }
         });
     }
     return *timer;
+}
+
+void tessellationParamChanged() {
+    tessellationChanged = true;
+    getTimer().start(100);
 }
 } // anonymous namespace
 
@@ -1198,23 +1213,23 @@ void PartParams::removeSelectionPickRTree() {
 //[[[end]]]
 
 void PartParams::onMeshDeviationChanged() {
-    getTimer().start(100);
+    tessellationParamChanged();
 }
 
 void PartParams::onMeshAngularDeflectionChanged() {
-    getTimer().start(100);
+    tessellationParamChanged();
 }
 
 void PartParams::onMinimumDeviationChanged() {
-    getTimer().start(100);
+    tessellationParamChanged();
 }
 
 void PartParams::onMinimumAngularDeflectionChanged() {
-    getTimer().start(100);
+    tessellationParamChanged();
 }
 
 void PartParams::onOverrideTessellationChanged() {
-    getTimer().start(100);
+    tessellationParamChanged();
 }
 
 void PartParams::onRespectSystemDPIChanged() {

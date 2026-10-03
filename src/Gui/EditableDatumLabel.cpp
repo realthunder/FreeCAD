@@ -92,6 +92,7 @@ EditableDatumLabel::EditableDatumLabel(ViewerContext* view,
     , viewer(view)
     , spinBox(nullptr)
     , cameraSensor(nullptr)
+    , anchorLabel(nullptr)
     , editStartValue(0.0)
     , lockedAppearance(false)
     , function(Function::Positioning)
@@ -138,10 +139,11 @@ EditableDatumLabel::EditableDatumLabel(ViewerContext* view,
         setLabelRecommendedDistance();
     }
     root->addChild(label);
-    // The lines and the number as the render cache captures them: the label
-    // itself only draws on the GL path, so without this an external backend
-    // -- and a served client, which is fed the same capture -- has nothing to
-    // draw (the Sketcher hangs the same companion by its constraints)
+    // The label's own GLRender stands down while the backend draws the edit
+    // graph (render cache mode 3), and it gives the capture nothing: its
+    // leaders and number reach the backend only through this companion, as
+    // a Sketcher constraint's do. Without it the on-view parameters were
+    // drawn by nobody -- not on the desktop, not in a browser.
     root->addChild(label->getImageNode());
 
     setPlacement(plc);
@@ -157,6 +159,9 @@ EditableDatumLabel::~EditableDatumLabel()
     pickStyle->unref();
     root->unref();
     label->unref();
+    if (anchorLabel) {
+        anchorLabel->unref();
+    }
 }
 
 void EditableDatumLabel::activate()
@@ -428,7 +433,7 @@ SbVec3f EditableDatumLabel::getTextCenterPoint() const
 {
     //Here we need the 3d point and not the 2d point as are the SoLabel points.
     // First we get the 2D point (on the sketch/image plane) of the middle of the text label.
-    SbVec3f point2D = label->getLabelTextCenter();
+    SbVec3f point2D = (anchorLabel ? anchorLabel : label)->getLabelTextCenter();
     // Get the translation and rotation values from the transform
     SbVec3f translation = transform->translation.getValue();
     SbRotation rotation = transform->rotation.getValue();
@@ -752,6 +757,34 @@ double EditableDatumLabel::getFontPointSize() const
     return label->size.getValue();
 }
 
+void EditableDatumLabel::setAnchorLabel(SoDatumLabel* other)
+{
+    if (other) {
+        other->ref();
+    }
+    if (anchorLabel) {
+        anchorLabel->unref();
+    }
+    anchorLabel = other;
+    positionSpinbox();
+}
+
+bool EditableDatumLabel::getQuantity(Base::Quantity& quantity) const
+{
+    if (!spinBox || !spinBox->hasValidInput()) {
+        return false;
+    }
+    // the text, and not value(): with keyboard tracking off that is the
+    // last committed value until the box's own Enter handling runs
+    quantity = spinBox->valueFromText(spinBox->text());
+    return true;
+}
+
+bool EditableDatumLabel::hasFocus() const
+{
+    return spinBox && spinBox->hasFocus();
+}
+
 QString EditableDatumLabel::getText() const
 {
     return spinBox ? spinBox->text() : QString();
@@ -779,6 +812,26 @@ bool EditableDatumLabel::sendKeyEvent(QKeyEvent* event)
     const bool handled = QApplication::sendEvent(spinBox, event);
     notifyChanged();
     return handled;
+}
+
+bool EditableDatumLabel::isShownOnView() const
+{
+    return isActive() && isInEdit();
+}
+
+void EditableDatumLabel::describe(State& state) const
+{
+    state.kind = "param";
+    state.anchor = getAnchorPoint();
+    state.text = getText().toStdString();
+    getSelection(state.selStart, state.selLength);
+    state.set = isSet;
+    state.pointSize = getFontPointSize();
+}
+
+void EditableDatumLabel::takeKeys()
+{
+    setFocusToSpinbox();
 }
 
 void EditableDatumLabel::notifyChanged()

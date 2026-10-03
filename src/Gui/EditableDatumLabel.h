@@ -29,6 +29,7 @@
 #include <fastsignals/signal.h>
 #include <Gui/QuantitySpinBox.h>
 
+#include "OnViewEntry.h"
 #include "SoDatumLabel.h"
 
 #include <FCGlobal.h>
@@ -44,7 +45,7 @@ namespace Gui {
 class ViewerContext;
 
 
-class GuiExport EditableDatumLabel : public QObject
+class GuiExport EditableDatumLabel : public QObject, public OnViewEntry
 {
     Q_OBJECT
     Q_DISABLE_COPY(EditableDatumLabel)
@@ -145,7 +146,29 @@ public:
     /// What selectNumber() left selected, so the client can show the same.
     void getSelection(int& start, int& length) const;
     /// Deliver a key to the box, the desktop's focus having done it there.
-    bool sendKeyEvent(QKeyEvent* event);
+    bool sendKeyEvent(QKeyEvent* event) override;
+    /// In edit and on the view
+    bool isShownOnView() const override;
+    void describe(State& state) const override;
+    /// setFocusToSpinbox()
+    void takeKeys() override;
+    //@}
+
+    /** @name An entry box at a label that is drawn already
+     *
+     * A drawing tool's parameter draws its own dimension and sits at its
+     * number. To edit the value of a dimension the scene has -- a sketch
+     * constraint's -- the box stands at THAT label's number instead, and
+     * this one's own label stays empty.
+     */
+    //@{
+    /// Stand at the number of `other`, which shares this label's placement.
+    void setAnchorLabel(SoDatumLabel* other);
+    /// What the box holds now, committed or not. False when there is no
+    /// box or its text is not a value.
+    bool getQuantity(Base::Quantity& quantity) const;
+    /// Whether the box has the Qt focus. Never on a view without widgets.
+    bool hasFocus() const;
     //@}
 
     // NOLINTBEGIN
@@ -205,6 +228,7 @@ private:
     ViewerContext* viewer;
     QuantitySpinBox* spinBox;
     SoNodeSensor* cameraSensor;
+    SoDatumLabel* anchorLabel;
     SbVec3f midpos;
     double editStartValue;
     bool lockedAppearance;

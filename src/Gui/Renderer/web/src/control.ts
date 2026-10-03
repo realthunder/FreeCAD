@@ -222,6 +222,10 @@ export interface PropDescriptor {
   unit?: string;
   enums?: string[];
   constraints?: { min?: number; max?: number; step?: number };
+  /// What the property holds under its name, as an expression spells it:
+  /// "Width" of a sketch's Constraints, "Base.x" of a Placement,
+  /// "[<<a name>>]" for a name that is no identifier
+  members?: string[];
   doc?: string;
   readonly: boolean;
   hidden: boolean;
@@ -515,11 +519,46 @@ export function runTool(name: string, index?: number): Promise<any> {
   return sendOp('command', fields, 60000);
 }
 
+/// The constraint commands that open no dialog on the serving machine. A
+/// dimensional one asks for its value in an on-view box at the label.
+const DIALOG_FREE_CONSTRAINTS = new Set([
+  'Sketcher_ConstrainHorVer',
+  'Sketcher_ConstrainHorizontal',
+  'Sketcher_ConstrainVertical',
+  'Sketcher_ConstrainLock',
+  'Sketcher_ConstrainBlock',
+  'Sketcher_ConstrainCoincident',
+  'Sketcher_ConstrainCoincidentUnified',
+  'Sketcher_ConstrainPointOnObject',
+  'Sketcher_ConstrainParallel',
+  'Sketcher_ConstrainPerpendicular',
+  'Sketcher_ConstrainTangent',
+  'Sketcher_ConstrainEqual',
+  'Sketcher_ConstrainSymmetric',
+  'Sketcher_ConstrainGroup',
+  'Sketcher_ToggleDrivingConstraint',
+  'Sketcher_ToggleActiveConstraint',
+  'Sketcher_Dimension',
+  'Sketcher_ConstrainDistance',
+  'Sketcher_ConstrainDistanceX',
+  'Sketcher_ConstrainDistanceY',
+  'Sketcher_ConstrainRadius',
+  'Sketcher_ConstrainDiameter',
+  'Sketcher_ConstrainRadiam',
+  'Sketcher_ConstrainAngle',
+  'Sketcher_ChangeDimensionConstraint',
+  'Sketcher_ConstrainSnellsLaw',
+]);
+
 /// The `command` op's allowlist as the server has it (SceneControl.cpp
 /// isBrowserSafeCommand), for drawing a button disabled rather than
 /// letting it be refused. The server's copy is the one that decides.
 export function isBrowserSafeCommand(name: string): boolean {
   return name.startsWith('Sketcher_Create')
     || name === 'Sketcher_External'
-    || name === 'Sketcher_CarbonCopy';
+    || name === 'Sketcher_Defining'
+    || name === 'Sketcher_Intersection'
+    || name === 'Sketcher_IntersectionDefining'
+    || name === 'Sketcher_CarbonCopy'
+    || DIALOG_FREE_CONSTRAINTS.has(name);
 }

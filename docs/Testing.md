@@ -5,18 +5,19 @@ Status as of **2026-09-02**, measured on `build/conda-relwithdebinfo-801`
 
 *** **The suites run on the RelWithDebInfo tree.** `conda-relwithdebinfo-801`
 -> `build/conda-relwithdebinfo-801` is the standard build and the one every
-test run uses. `conda-debug-local` -> `build/conda-debug-occt801` is for
-debugger sessions only. An earlier revision of this page named the debug tree
+test run uses, and a debugger session too: the debug stack
+(`conda-debug-local` -> `build/conda-debug-occt801`) was retired on
+2026-10-03, its OCCT prefix deleted. An earlier revision of this page named the debug tree
 as "the primary tree"; that was wrong.
 
 | Suite | Result |
 |---|---|
 | Python (`FreeCADCmd -t 0`) | **2886 tests, OK** -- 0 failures, 0 errors, 50 skipped, 6 expected failures (2026-09-19, SketcherPort after datum external geometry: +3 in `SketcherTests/TestSketchExternalGeometry.py`; 2883 on 2026-09-17, SketcherPort after the groups and Text family: +6 in the new `SketcherTests/TestSketcherText.py`, +22 from the sessions before it; 2855 on 2026-09-16, +1 for the WireJoiner tight bound regression test in `parttests/regression_tests.py`; 2854 on 2026-09-15, SketcherPort after the fillet pick: 3 markers off, +2 fork tests; 2852 and 9 after the internal faces fix in WireJoiner: 3 markers off, +1 fork test; 12 expected failures after phase 2's standalone App fixes: +72 from upstream's App-level Sketcher tests, 6 of them still marked expected failures until their upstream picks land, +1 document-label test; 22 expected failures after the signed-orientation pick; before that 2778, 6 expected failures, 2026-09-14, after the SecurePython merge, unchanged after merging 7.17 D4; SecurePython alone 2778, RemoteEdit alone 2688). Pass `FCX_PYODIDE` here too: in a fresh `FREECAD_USER_HOME` without it the 28 `SandboxProgram` / `FeaturePythonChain` cases skip ("no sandbox guest in this build") and the run still says OK -- 78 skipped is the tell |
-| C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **781 of 781 passing** (2026-09-23, SketcherPort after the sketch support-visibility fix: +1, `GuiSketchSupportVisibility_tests_run`, which watches that entering a sketch does not show the datum it is attached to; 780 on 2026-09-23 after the pick cull fix: +1, `PickCull_tests_run`, which counts the ray picks that reach the geometry; 779 on 2026-09-21 after the constraint-tool hints: +1, `GuiSketchConstraintHints_tests_run`, which reads the rendered hint bar; 778 on 2026-09-21 after session 84's drag auto-constraint and two crash guards; 773 on 2026-09-20, SketcherPort after the GeoList facade ownership fix: +4 `GeoListTest` cases, two of them `static_assert`s pinning which form owns the facade; 769 on 2026-09-19, SketcherPort after group C: +1, `GuiSketchLineExtensionAutoConstraint_tests_run`; 768 on 2026-09-18 after the handler resync, +6 for construction mode and the tool-mode command; 762 on 2026-09-17, SketcherPort after the groups and Text family: +3 `SketchObjectTest` cases for the group queries, the multi-element move and the group-aware active test; 748 on 2026-09-15, SketcherPort after porting upstream's Sketcher C++ tests: +81, and 8 more of upstream's are disabled until their picks land; 667 on 2026-09-14, after merging SecurePython sandbox 7.17 D4, which adds 10; 657 with GuiServeClaimChildren; 656 after the first SecurePython merge; SecurePython alone 625, RemoteEdit alone 634), 0 failures, 16 ctest entries disabled, 1 skipped -- 60 of them need the sandbox guest runtime: in a FRESH `FREECAD_USER_HOME` pass `FCX_PYODIDE=$HOME/.local/share/FreeCAD/Pyodide/314.0.6` or they fail with "expression sandbox image is not available". **A merge that brings guest image changes (`src/App/ExpressionImage/`) needs `cmake --build build/pyodide-guest` and `--target fcx_image_wheel` first**: the host build keeps the old wheel, and the first run of this merge failed 16 sandbox cases (`module '_fcx' has no attribute 'surface'`) for that reason alone |
-| C++ on Windows (`build/win-relwithdebinfo-801`) | **750 of 750** (2026-10-01, PartDesignPort at `3dcd78cc7d` + the OCCT fork at `4024d6d31c`, `-j 6`). Before that, **749 of 750** (2026-09-30, PartDesignPort at `1ed00a1122`, `-j 8`): the one red was `SceneDump.aReparsedMeshBridgesFromTheLastLiveCopy`, an access violation (SEH 0xc0000005) 73 ms into a single-threaded test, with the binary at 4.4 s instead of its usual 1.6 s. It did not come back: 10 ctest re-runs alone, then ~136 runs of the binary with 8 copies in parallel, all clean. Nothing in the tested path spawns a thread, so if it recurs, suspect an uninitialized or freed read that load-dependent heap layout exposes, and run it under page heap. Before that, **648 of 648 passing** (2026-09-21, re-measured after merging the Windows portability fixes and the G1a corpus fix; unchanged because the tests those commits added are all Python. 2026-09-20, fully green: the sandbox is live here now -- `v8-embed` installed, the published `fcx_image` 0.1.0 wheel, and a bootstrapped 314.0.6 runtime -- which brings in the `ExpressionImage*` suites, and `PublishOnly_tests_run` builds on Windows for the first time. 549 on 2026-09-19 after merging RemoteEdit, which added 52; `BUILD_FEM=ON` adds none, FEM's tests are all Python. 497 on 2026-09-12, including the two new `FileWriterTest` cases; 487 on 2026-09-10, 477 on 2026-09-06/08), 1 disabled -- see "C++ on Windows" |
+| C++ (`ctest`, `ENABLE_DEVELOPER_TESTS=ON`) | **821 of 821 passing** (2026-09-28, SketcherPort after the colour-dialog hide fix: +1, `GuiElementColorHide_tests_run`; 820 after the served edit overlay; 819 on 2026-09-27 after the per-view edit hide: +2, `GuiEditHide_tests_run` and `GuiSketchEditHide_tests_run`; 817 on 2026-09-26 after per-client visibility on the host: +1, `GuiServeClientVisibility_tests_run`; 816 after released per-view-shown eviction: +1, `GuiPerViewShownEviction_tests_run`; 815 after the per-view visibility pick-cull fix: +1, `GuiPerViewVisibilityPickCull_tests_run`, which times a pick in one view while another has a visibility table; 814 after the portrait projection fix: +1, `GuiPortraitPickVsDraw_tests_run`, which checks that a portrait view draws, projects and picks with one projection; 813 on 2026-09-26 after per-view visibility; 781 on 2026-09-23, SketcherPort after the sketch support-visibility fix: +1, `GuiSketchSupportVisibility_tests_run`, which watches that entering a sketch does not show the datum it is attached to; 780 on 2026-09-23 after the pick cull fix: +1, `PickCull_tests_run`, which counts the ray picks that reach the geometry; 779 on 2026-09-21 after the constraint-tool hints: +1, `GuiSketchConstraintHints_tests_run`, which reads the rendered hint bar; 778 on 2026-09-21 after session 84's drag auto-constraint and two crash guards; 773 on 2026-09-20, SketcherPort after the GeoList facade ownership fix: +4 `GeoListTest` cases, two of them `static_assert`s pinning which form owns the facade; 769 on 2026-09-19, SketcherPort after group C: +1, `GuiSketchLineExtensionAutoConstraint_tests_run`; 768 on 2026-09-18 after the handler resync, +6 for construction mode and the tool-mode command; 762 on 2026-09-17, SketcherPort after the groups and Text family: +3 `SketchObjectTest` cases for the group queries, the multi-element move and the group-aware active test; 748 on 2026-09-15, SketcherPort after porting upstream's Sketcher C++ tests: +81, and 8 more of upstream's are disabled until their picks land; 667 on 2026-09-14, after merging SecurePython sandbox 7.17 D4, which adds 10; 657 with GuiServeClaimChildren; 656 after the first SecurePython merge; SecurePython alone 625, RemoteEdit alone 634), 0 failures, 16 ctest entries disabled, 1 skipped -- 60 of them need the sandbox guest runtime: in a FRESH `FREECAD_USER_HOME` pass `FCX_PYODIDE=$HOME/.local/share/FreeCAD/Pyodide/314.0.6` or they fail with "expression sandbox image is not available". **A merge that brings guest image changes (`src/App/ExpressionImage/`) needs `cmake --build build/pyodide-guest` and `--target fcx_image_wheel` first**: the host build keeps the old wheel, and the first run of this merge failed 16 sandbox cases (`module '_fcx' has no attribute 'surface'`) for that reason alone |
+| C++ on Windows (`build/win-relwithdebinfo-801`) | **764 of 764** (2026-10-04, PartDesignPort after merging SketcherPort `e6a4f89a93`; the one red of the first run, `OnViewParameterTest.aClientIndexCountsOnlyTheBoxesOnScreen`, tested the index scheme the merge replaced and was restated). Before that, **750 of 750** (2026-10-01, PartDesignPort at `3dcd78cc7d` + the OCCT fork at `4024d6d31c`, `-j 6`). Before that, **749 of 750** (2026-09-30, PartDesignPort at `1ed00a1122`, `-j 8`): the one red was `SceneDump.aReparsedMeshBridgesFromTheLastLiveCopy`, an access violation (SEH 0xc0000005) 73 ms into a single-threaded test, with the binary at 4.4 s instead of its usual 1.6 s. It did not come back: 10 ctest re-runs alone, then ~136 runs of the binary with 8 copies in parallel, all clean. Nothing in the tested path spawns a thread, so if it recurs, suspect an uninitialized or freed read that load-dependent heap layout exposes, and run it under page heap. Before that, **648 of 648 passing** (2026-09-21, re-measured after merging the Windows portability fixes and the G1a corpus fix; unchanged because the tests those commits added are all Python. 2026-09-20, fully green: the sandbox is live here now -- `v8-embed` installed, the published `fcx_image` 0.1.0 wheel, and a bootstrapped 314.0.6 runtime -- which brings in the `ExpressionImage*` suites, and `PublishOnly_tests_run` builds on Windows for the first time. 549 on 2026-09-19 after merging RemoteEdit, which added 52; `BUILD_FEM=ON` adds none, FEM's tests are all Python. 497 on 2026-09-12, including the two new `FileWriterTest` cases; 487 on 2026-09-10, 477 on 2026-09-06/08), 1 disabled -- see "C++ on Windows" |
 | C++ on macOS (`build/mac-relwithdebinfo-801`) | **490 of 490 passing** (2026-09-10), 1 disabled -- see "C++ on macOS" |
 | Python on macOS | **2680 tests** (2026-09-10, the first full run there), 2 failures + 1 error, 49 skipped, 6 expected failures -- all three are this box's missing meshers, see "Python on macOS" |
-| Python on Windows | **3190 tests, OK** (2026-10-01, PartDesignPort at `3dcd78cc7d` + the OCCT fork at `4024d6d31c`) -- 50 skipped, 6 expected failures, 540 s; `TestLoft.testTwoFacesAdditiveLoftCase`, which had failed 4-6 runs in 10 on an OCCT shared-face boolean bug (occ-issues `local02`), passes 10 of 10 on the fixed fork. Before that, **3179 tests, OK** (2026-09-30, PartDesignPort at `1ed00a1122`) -- 50 skipped, 6 expected failures, 597 s, and CAM ran through without the `accept()` hang (see "One run in two hung" below). Before that, **2794 tests, OK** (2026-09-21) -- 0 failures, 0 errors, 50 skipped, 6 expected failures. Green again after the token-wise BRep comparison landed; the four new tests are that fallback's own guard plus the Draft fixes. The history is worth keeping because it is why the tolerance exists: the skips fell 80 -> 50 when the sandbox became functional here, so ~30 `SandboxProgram` / `FeaturePythonChain` cases stopped idling and started running, and that surfaced a failure which had been invisible rather than new -- `SandboxProgramFixtureCases.testProgramsRoutedMatchNative [ProgramFlangeSheet.FCStd]`, "Flange2: the BRep differs". Measured: the BReps differed in exactly one token, `30*sin(45deg)`, by exactly **1.0000 ULP** -- MSVC's CRT gives `21.213203435596427`, the wasm guest `...423`. **The direction is the opposite of `docs/Sandbox.md` 7.17 D3's pentagon, so do not read that section as covering this one.** The divergence is in the HOST libm, not the guest: MSVC's `sin` at that argument returns `3fe6a09e667f3bcd`, one ULP above the correctly rounded `3fe6a09e667f3bcc` that glibc returns, and glibc agrees with the guest to the bit -- which is why Linux still passes byte-exact and this box does not. Note MSVC's *product* is nonetheless the one nearer the ideal `21.2132034355964257...` (7.8e-16 against 2.8e-15), but that is not accuracy: a one-ULP-high sine happens to cancel the double rounding of the multiply, so the less correct libm wins on the product by luck. Byte-exactness on this fixture was never "guest matches host"; it was glibc and musl happening to agree, and a third libm that rounds *better* breaks the tie. Note also the vertices are bit-identical, so `assertSameGeometry` passes here without ever inspecting the differing value -- a pass from that assertion is not evidence of ULP-bounded drift. 2790 OK on 2026-09-19 before the sandbox ran; 2600 on 2026-09-15; 2590 on 2026-09-12, the ten new are `FileBlobs.BlobArchiveStoreCases`. **FEM needs `ply` in the env** (`femtools/tokrules.py` imports `ply.lex`) or `test_pyimport_all_FEM_modules` errors. The nine Windows-only failures it carried from 2026-09-07 are fixed; see "Python on Windows" |
+| Python on Windows | **3356 tests, OK** (2026-10-04, PartDesignPort after merging SketcherPort `e6a4f89a93`, 50 skipped, 6 expected failures). Before that, **3190 tests, OK** (2026-10-01, PartDesignPort at `3dcd78cc7d` + the OCCT fork at `4024d6d31c`) -- 50 skipped, 6 expected failures, 540 s; `TestLoft.testTwoFacesAdditiveLoftCase`, which had failed 4-6 runs in 10 on an OCCT shared-face boolean bug (occ-issues `local02`), passes 10 of 10 on the fixed fork. Before that, **3179 tests, OK** (2026-09-30, PartDesignPort at `1ed00a1122`) -- 50 skipped, 6 expected failures, 597 s, and CAM ran through without the `accept()` hang (see "One run in two hung" below). Before that, **2794 tests, OK** (2026-09-21) -- 0 failures, 0 errors, 50 skipped, 6 expected failures. Green again after the token-wise BRep comparison landed; the four new tests are that fallback's own guard plus the Draft fixes. The history is worth keeping because it is why the tolerance exists: the skips fell 80 -> 50 when the sandbox became functional here, so ~30 `SandboxProgram` / `FeaturePythonChain` cases stopped idling and started running, and that surfaced a failure which had been invisible rather than new -- `SandboxProgramFixtureCases.testProgramsRoutedMatchNative [ProgramFlangeSheet.FCStd]`, "Flange2: the BRep differs". Measured: the BReps differed in exactly one token, `30*sin(45deg)`, by exactly **1.0000 ULP** -- MSVC's CRT gives `21.213203435596427`, the wasm guest `...423`. **The direction is the opposite of `docs/Sandbox.md` 7.17 D3's pentagon, so do not read that section as covering this one.** The divergence is in the HOST libm, not the guest: MSVC's `sin` at that argument returns `3fe6a09e667f3bcd`, one ULP above the correctly rounded `3fe6a09e667f3bcc` that glibc returns, and glibc agrees with the guest to the bit -- which is why Linux still passes byte-exact and this box does not. Note MSVC's *product* is nonetheless the one nearer the ideal `21.2132034355964257...` (7.8e-16 against 2.8e-15), but that is not accuracy: a one-ULP-high sine happens to cancel the double rounding of the multiply, so the less correct libm wins on the product by luck. Byte-exactness on this fixture was never "guest matches host"; it was glibc and musl happening to agree, and a third libm that rounds *better* breaks the tie. Note also the vertices are bit-identical, so `assertSameGeometry` passes here without ever inspecting the differing value -- a pass from that assertion is not evidence of ULP-bounded drift. 2790 OK on 2026-09-19 before the sandbox ran; 2600 on 2026-09-15; 2590 on 2026-09-12, the ten new are `FileBlobs.BlobArchiveStoreCases`. **FEM needs `ply` in the env** (`femtools/tokrules.py` imports `ply.lex`) or `test_pyimport_all_FEM_modules` errors. The nine Windows-only failures it carried from 2026-09-07 are fixed; see "Python on Windows" |
 
 Two traps when running the suites (2026-09-09): give the Python suite and
 `Tests_run` **separate `FREECAD_USER_HOME`s** if they run at the same time
@@ -793,9 +794,10 @@ being filled, all live at once.
 The table is the two oldest; `tests/gui/CMakeLists.txt` is the list that is
 current.
 
-**Eight of them are not registered, and are meant not to be**:
-`camera-uplink-browser.py`, `serve-edit-browser.py` and
-`serve-peer-selection-browser.py` drive a real Chrome
+**Nine of them are not registered, and are meant not to be**:
+`camera-uplink-browser.py`, `serve-edit-browser.py`,
+`serve-peer-selection-browser.py` and `serve-client-visibility-browser.py`
+drive a real Chrome
 through the built WASM viewer, `sandbox-console-browser.py` boots the
 sandbox guest in a page served by FreeCAD (docs/Sandbox.md 7.20, C1; its
 endpoints without a browser are the registered `GuiSandboxConsoleServe`), and
@@ -880,6 +882,16 @@ line records the GL backend, since headless swiftshader answers this test
 too and has masked GPU bugs before. Scored against the viewer WITHOUT the
 paint, five of its sixteen checks fail and the control checks still pass.
 
+`serve-client-visibility-browser.py` (2026-09-26, `scripts/clientvis-drive.js`)
+is judged by pixels too, counted by COLOUR: two browsers over a red, a green
+and a hidden yellow box; client A hides the green one and shows the yellow
+one for itself with the `view.visibility` op (`docs/CoinRetirement.md`
+5.18), B sets nothing. 17 checks: A's canvas loses the green and gains the
+yellow, B's canvas does not change at all -- not even its framing, which is
+what caught the viewer fitting to an object only another client shows. Its
+first runs found two more on the way: a client's show raised no publish on
+the host, and the snapshot never carried a per-view-shown draw at all.
+
 **On Windows they do not register**, and cannot: `tests/gui/CMakeLists.txt`
 wants `xvfb-run` and `.conda/run.sh`, and the box has neither. Run one by
 hand instead -- nothing in these scripts needs a display of its own, only a
@@ -901,21 +913,22 @@ runs that day; it failed when ctest scheduled it 32nd, among many
 parallel jobs, and passed when it was scheduled last. Alone it passes
 3/3 in about 10 s.
 
-It is not a defect in the test's subject and not a flake in the usual
-sense either. `SceneServer.cpp`'s `'B'` handler says each ray is
-dispatched in order "so the queued GUI-thread picks coalesce into a
-single scene republish", but `dispatchPick` calls the handler on the
-socket thread and that posts to the GUI thread: the coalescing happens
-only when both posted picks are handled before the publisher next runs.
-Under load they are not, and the client gets two full scene pushes where
-the design promises one. **The test asserts a guarantee the
-implementation provides as a tendency** -- the same shape as the
-form-widget mirror tests that waited a fixed 50 ms for a repaint-driven
-op (`6d4dee5cb5`). Making the coalescing explicit -- mark dirty on a
-pick, publish once on the next tick -- is the fix if it is worth one;
-an extra full scene push per batch is real bandwidth on a thin client's
-link. Recorded so the next person sees a known interaction rather than a
-new failure.
+It was a defect in the test's subject, **fixed 2026-09-30**.
+`SceneServer.cpp`'s `'B'` handler dispatched each ray on its own, and
+each became its own queued call on the GUI thread. Marking dirty and
+publishing on the next zero-interval tick is what the source already
+did; what it could not do was see the second pick in time. Under load the
+socket thread was preempted between the two posts, the GUI thread ran
+the first pick, the tick published it, and the second pick published
+again. The two failures on 2026-09-30 (2 runs in 13 alone) had their
+first frame 2.4 and 2.9 ms after the send: one pick (1.2 ms) plus a fast
+publish (1.5 ms), where a whole batch comes back in 7 to 8 ms (the 32.3
+ms above is presumably the same, slowed by eight parallel jobs). A traced
+run showed no publish that a pick had not asked for. The pick handler
+now takes every ray of a message in one call
+(`SceneStreamServer::setPickHandler`), and both installers apply them in
+one queued call, so a batch has one publish by construction. Wire test:
+`SceneServerWire.aBatchIsDeliveredInOneCall`.
 
 **On macOS they do not register either** -- the same `xvfb-run` guard -- but
 there the box has `.conda/run.sh` and a window server, so a hand run is the
@@ -1020,6 +1033,49 @@ file, and quits.  14 tests, 30 s (11 until
 `docs/TechDrawStoredGeometry.md` added three).  That is the gate every
 TechDraw change in `docs/TopoNamingEnhance.md` section 8 is measured
 against.
+
+**Three things learnt the hard way (2026-10-02), each from a failure that
+showed only in a full run.**
+
+- *A GUI test that runs into its time limit with every check so far passed
+  is a modal dialog until shown otherwise.* `GuiSketchUndoDuringDrag` hung
+  for its 300 s in one full run: `gdb -p` on the FreeCAD process (the pid
+  whose `/proc/PID/comm` is `FreeCAD`; `timeout` and `xvfb-run` carry the
+  same command line) showed `QDialog::exec` under
+  `ViewProviderSketch::editDoubleClicked`. The sketch told a double click by
+  the wall clock, which WSL2 steps back by about a second every half minute,
+  so the test's second press on a label, seconds after its first, opened the
+  datum dialog. Fixed in the product (`15ef4145c4`, the steady clock, as
+  `e35e9990b4` had done for the view's own clicks). To catch a rare one:
+  loop the test in a directory of its own beside `ctest -j6` and attach on a
+  stall -- it stalled twice in about 25 runs that way, and not in 45 after.
+- *A test keeps its configuration between runs.* `gui-test.sh` isolates a
+  test in `<outdir>/.iso`, and ctest reuses the directory, so a preference a
+  test leaves set is there at its next start. `sketch-constraint-panel.py`
+  left the constraint filter at "Named" and failed its first check the
+  second time. A test that changes a preference clears it before it begins
+  and when it ends.
+- *A synthetic click needs a mouse move with nothing between it and the
+  press.* A redraw forgets what is under a pointer that does not move; with
+  a wait between the last move and the press, a redraw that came due under
+  load left the click with nothing to pick (2 in 45 runs of
+  `sketch-constraint-external-pick.py` beside the whole suite, none in 21
+  since its helper sends a move right before the press and the release).
+
+**The clock step can be made on demand.** Waiting for WSL2 to step the
+wall clock is how the first two of these were caught, in tens of runs.
+`tests/gui/clock-step-shim.c` is a preloaded `gettimeofday()` -- what
+Coin's `SbTime::getTimeOfDay` reads, so every event stamp and sensor --
+with a function that moves it; `clock-step.py` (`GuiClockStep_tests_run`,
+Linux) calls it through ctypes at the moment a case names, back 0.97 s.
+It found a third family the reading had missed, a press stamp against a
+release stamp (`centerTime`, nine navigation styles): a middle button held
+for a second and released across a step recentred the view. Fixed with
+the spin and the hover pick's delay in `dbc440f64c`. To put any other
+interval to the test: `LD_PRELOAD` and `FC_CLOCK_SHIM` set to the built
+`tests/gui/FCClockStepShim.so`, and `ctypes.CDLL(path).fc_clock_step(-0.97)`
+where the step should fall. What is left on the time of day in `src/Gui`
+is stamps (Quarter, the touch events) and Coin's own sensors, no interval.
 
 ### Toolbar paints threw on macOS 12
 

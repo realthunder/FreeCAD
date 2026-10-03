@@ -23,6 +23,7 @@
 #ifndef SKETCHERGUI_SOZOOMTRANSLATION_H
 #define SKETCHERGUI_SOZOOMTRANSLATION_H
 
+#include <Inventor/fields/SoSFVec2f.h>
 #include <Inventor/nodes/SoTranslation.h>
 
 #include <Mod/Sketcher/SketcherGlobal.h>
@@ -41,6 +42,9 @@ public:
     static void initClass();
     SoZoomTranslation();
     SoSFVec3f abPos;
+    /// A further offset in screen pixels, applied after the translation:
+    /// where a layout puts an icon among others (constraint icons).
+    SoSFVec2f pixelOffset;
     float getScaleFactor() const
     {
         return scaleFactor;
@@ -57,6 +61,8 @@ protected:
     void callback(SoCallbackAction* action) override;
     void pick(SoPickAction* action) override;
     float calculateScaleFactor(SoAction* action) const;
+    /// pixelOffset in model units, for the view the action renders
+    SbVec3f pixelVector(SoAction* action) const;
 
     mutable float scaleFactor;
 };

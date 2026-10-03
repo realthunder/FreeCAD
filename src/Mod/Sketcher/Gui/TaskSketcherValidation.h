@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
+
 /***************************************************************************
  *   Copyright (c) 2013 Werner Mayer <wmayer[at]users.sourceforge.net>     *
  *                                                                         *
@@ -20,8 +22,7 @@
  *                                                                         *
  ***************************************************************************/
 
-#ifndef SKETCHERGUI_TASKSKETCHERVALIDATION_H
-#define SKETCHERGUI_TASKSKETCHERVALIDATION_H
+#pragma once
 
 #include <memory>
 #include <vector>
@@ -29,7 +30,6 @@
 #include <App/DocumentObserver.h>
 #include <Base/Vector3D.h>
 #include <Gui/TaskView/TaskDialog.h>
-#include <Mod/Sketcher/App/SketchAnalysis.h>
 
 
 class SoGroup;
@@ -75,7 +75,6 @@ private:
 private:
     std::unique_ptr<Ui_TaskSketcherValidation> ui;
     App::WeakPtrT<Sketcher::SketchObject> sketch;
-    Sketcher::SketchAnalysis sketchAnalyser;
     SoGroup* coincidenceRoot;
 };
 
@@ -93,5 +92,3 @@ public:
 };
 
 }  // namespace SketcherGui
-
-#endif  // SKETCHERGUI_TASKSKETCHERVALIDATION_H

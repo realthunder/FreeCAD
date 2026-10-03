@@ -603,6 +603,14 @@ public:
 
     static bool isSubnameHidden(const App::DocumentObject *obj, const char *subname);
 
+    /// The counterparts for the shown marker (DocumentObject::shownMarker):
+    /// what the element colours force shown through \a obj although its own
+    /// Visibility is off.
+    static std::vector<std::string> getShownSubnames(
+            const App::DocumentObject *obj, const char *prefix=0);
+
+    static bool isSubnameShown(const App::DocumentObject *obj, const char *subname);
+
     DocumentObject *getContainer();
     const DocumentObject *getContainer() const;
 

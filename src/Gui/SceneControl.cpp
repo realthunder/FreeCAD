@@ -32,11 +32,13 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonValue>
+#include <QSet>
 
 #include <App/Application.h>
 #include <App/AutoTransaction.h>
 #include <App/Document.h>
 #include <App/DocumentObject.h>
+#include <App/ObjectIdentifier.h>
 #include <App/PropertyStandard.h>
 #include <App/PropertyUnits.h>
 #include <App/PropertyGeo.h>
@@ -57,6 +59,7 @@
 #include "SceneWidgets.h"
 #include "SceneControlP.h"
 #include "SceneServeSource.h"
+#include "ViewVisibility.h"
 #include "Selection.h"
 #include "View3DInventor.h"
 #include "ViewProvider.h"
@@ -359,6 +362,30 @@ QJsonObject describeProperty(const App::PropertyContainer *container,
         readonly = true;
     }
 
+    // What the property holds under its name, spelled as an expression
+    // spells it: "Width" of a sketch's Constraints, "Base.x" of a
+    // Placement. The desktop's completer asks the property the same
+    // question (ExpressionCompleter, initPaths); a client completes
+    // "Sketch.Constraints." from this with nothing more off the wire.
+    // An expression names an object's properties only, so only those.
+    if (container->isDerivedFrom(App::DocumentObject::getClassTypeId())) {
+        QJsonArray members;
+        try {
+            std::vector<App::ObjectIdentifier> paths;
+            prop->getPaths(paths);
+            for (const auto &path : paths) {
+                std::string sub = path.getSubPathStr(false, false);
+                if (!sub.empty())
+                    members.push_back(QString::fromStdString(sub));
+            }
+        }
+        catch (Base::Exception &) {
+            members = QJsonArray();
+        }
+        if (!members.isEmpty())
+            d[QLatin1String("members")] = members;
+    }
+
     d[QLatin1String("readonly")] = readonly;
     d[QLatin1String("hidden")] = hidden;
     return d;
@@ -468,7 +495,8 @@ QJsonObject getProperties(const QJsonObject &req,
     QJsonArray props;
     if (wantObject)
         describeContainer(obj, "object", props);
-    if (wantView) {
+    // No Gui::Application (a test, or a console session): no view provider
+    if (wantView && Application::Instance) {
         if (auto vp = Application::Instance->getViewProvider(obj))
             describeContainer(vp, "view", props);
     }
@@ -783,9 +811,50 @@ namespace SceneControlDetail {
 /// it be refused (web/src/control.ts); this one decides.
 bool isBrowserSafeCommand(const QString &name)
 {
+    // The constraint commands that open no dialog, by name and not by
+    // prefix. The dimensional ones are among them since their value is
+    // typed at the constraint's label in a view without widgets
+    // (SketcherGui::editDatums; EditDatumDialog refuses to open for such a
+    // view). Snell's law the same: its ratio is typed at the refraction
+    // point once the constraint is made.
+    static const QSet<QString> constraints = {
+        QStringLiteral("Sketcher_ConstrainHorVer"),
+        QStringLiteral("Sketcher_ConstrainHorizontal"),
+        QStringLiteral("Sketcher_ConstrainVertical"),
+        QStringLiteral("Sketcher_ConstrainLock"),
+        QStringLiteral("Sketcher_ConstrainBlock"),
+        QStringLiteral("Sketcher_ConstrainCoincident"),
+        QStringLiteral("Sketcher_ConstrainCoincidentUnified"),
+        QStringLiteral("Sketcher_ConstrainPointOnObject"),
+        QStringLiteral("Sketcher_ConstrainParallel"),
+        QStringLiteral("Sketcher_ConstrainPerpendicular"),
+        QStringLiteral("Sketcher_ConstrainTangent"),
+        QStringLiteral("Sketcher_ConstrainEqual"),
+        QStringLiteral("Sketcher_ConstrainSymmetric"),
+        QStringLiteral("Sketcher_ConstrainGroup"),
+        QStringLiteral("Sketcher_ToggleDrivingConstraint"),
+        QStringLiteral("Sketcher_ToggleActiveConstraint"),
+        QStringLiteral("Sketcher_Dimension"),
+        QStringLiteral("Sketcher_ConstrainDistance"),
+        QStringLiteral("Sketcher_ConstrainDistanceX"),
+        QStringLiteral("Sketcher_ConstrainDistanceY"),
+        QStringLiteral("Sketcher_ConstrainRadius"),
+        QStringLiteral("Sketcher_ConstrainDiameter"),
+        QStringLiteral("Sketcher_ConstrainRadiam"),
+        QStringLiteral("Sketcher_ConstrainAngle"),
+        QStringLiteral("Sketcher_ChangeDimensionConstraint"),
+        QStringLiteral("Sketcher_ConstrainSnellsLaw"),
+    };
+    // Sketcher_External's three siblings start the same handler in another
+    // flavour; pressed while a constraint tool runs, each switches that
+    // tool's outside picking to its flavour.
     return name.startsWith(QLatin1String("Sketcher_Create"))
         || name == QLatin1String("Sketcher_External")
-        || name == QLatin1String("Sketcher_CarbonCopy");
+        || name == QLatin1String("Sketcher_Defining")
+        || name == QLatin1String("Sketcher_Intersection")
+        || name == QLatin1String("Sketcher_IntersectionDefining")
+        || name == QLatin1String("Sketcher_CarbonCopy")
+        || constraints.contains(name);
 }
 
 /// The command a group's member `index` (1-based) runs, by the route the
@@ -876,8 +945,12 @@ namespace {
 /// the family that drives a DrawSketchHandler, and so exactly the family this
 /// section is about -- plus the two pick tools of 8.11 item 3,
 /// Sketcher_External and Sketcher_CarbonCopy, which activate a handler the
-/// same way and open nothing. Widening it further is gated on an answer to
-/// modality, not on taste.
+/// same way and open nothing, and the constraint commands that open no
+/// dialog (the list and what is left off it are on isBrowserSafeCommand).
+/// "No dialog" means none that runs its own event loop: what these commands
+/// have to say goes to the notification area, and a constraint substitution
+/// is told in a box that is shown, not executed. Widening it further is
+/// gated on an answer to modality, not on taste.
 ///
 /// A host connection (docs/ShareAccess.md sec 2.2) is not held to it: that
 /// is the desktop's owner, who takes the modal risk as at the machine.
@@ -984,6 +1057,98 @@ QJsonObject onViewFocusOp(const QJsonObject &req, const std::string &boundDoc,
     reply[QLatin1String("id")] = id;
     reply[QLatin1String("ok")] = true;
     reply[QLatin1String("index")] = index;
+    return reply;
+}
+
+/// A client's act on an on-view entry that is not a key: a value's editor's
+/// toggle, a click into one of its fields, a completion it offered and the
+/// user took (Gui::OnViewEntry::Action). What the act then does is decided
+/// by the editor, as for a key.
+QJsonObject onViewActionOp(const QJsonObject &req, const std::string &boundDoc,
+                           uint64_t client)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+
+    const QString docName = req.value(QLatin1String("doc")).toString();
+    App::Document *doc = requestDocument(req, boundDoc);
+    if (!doc)
+        return errorReply(id, "UnknownDocument", docName);
+
+    SceneServeSource *source = SceneServeSource::sourceFor(doc);
+    MirrorViewer *mirror = source ? source->mirrorViewerFor(client) : nullptr;
+    if (!mirror)
+        return errorReply(id, "NoView",
+                          QStringLiteral("state a camera before editing"));
+
+    const int index = req.value(QLatin1String("index")).toInt(-1);
+    OnViewEntry::Action action;
+    action.name = req.value(QLatin1String("action")).toString().toStdString();
+    action.text = req.value(QLatin1String("text")).toString().toStdString();
+    action.start = req.value(QLatin1String("start")).toInt(0);
+    action.length = req.value(QLatin1String("length")).toInt(0);
+    if (!mirror->actOnViewParameter(index, action))
+        return errorReply(id, "NoSuchParameter", QString::number(index));
+
+    QJsonObject reply;
+    reply[QLatin1String("id")] = id;
+    reply[QLatin1String("ok")] = true;
+    reply[QLatin1String("index")] = index;
+    return reply;
+}
+
+
+/// The client's own object visibility (docs/CoinRetirement.md 5.18,
+/// per client): `map` is an ObjectVisibilities map -- a bare key is the
+/// object wherever it appears, a subname path one occurrence; "1" shows,
+/// "0" hides -- and `perView` its PerViewVisibilities switch. It replaces
+/// the client's whole table, parsed here, where a subname path can be
+/// resolved, onto the client's mirror, so the host's picks and bounds for
+/// that client follow it. View state, not an edit: a view-only client may
+/// set its own.
+QJsonObject viewVisibilityOp(const QJsonObject &req, const std::string &boundDoc,
+                             uint64_t client)
+{
+    const QJsonValue id = req.value(QLatin1String("id"));
+    const QString docName = req.value(QLatin1String("doc")).toString();
+    App::Document *doc = requestDocument(req, boundDoc);
+    if (!doc)
+        return errorReply(id, "UnknownDocument", docName);
+    SceneServeSource *source = SceneServeSource::sourceFor(doc);
+    MirrorViewer *mirror = source ? source->clientViewer(client) : nullptr;
+    if (!mirror)
+        return errorReply(id, "NoView", QStringLiteral("no view for this client"));
+
+    std::map<std::string, std::string> values;
+    const QJsonObject map = req.value(QLatin1String("map")).toObject();
+    for (auto it = map.begin(); it != map.end(); ++it) {
+        const QJsonValue v = it.value();
+        std::string value;
+        if (v.isBool())
+            value = v.toBool() ? "1" : "0";
+        else if (v.isString())
+            value = v.toString().toStdString();
+        else
+            continue;
+        values[it.key().toStdString()] = value;
+    }
+    const bool perView = req.value(QLatin1String("perView")).toBool(false);
+    std::vector<VisibilityEntry> table = parseObjectVisibilities(values, doc, perView);
+    const int entries = int(table.size());
+    const bool changed = mirror->setObjectVisibilities(std::move(table));
+    // A show changes what the one capture carries (a hidden object is
+    // captured, flagged, for whoever shows it), and this source publishes
+    // on document signals, of which a client's table raises none. A
+    // publish that changes nothing sends nothing.
+    if (changed)
+        source->schedulePublish();
+    // The client draws by the same table: it is told it, parsed.
+    source->announceVisibility(client);
+
+    QJsonObject reply;
+    reply[QLatin1String("id")] = id;
+    reply[QLatin1String("ok")] = true;
+    reply[QLatin1String("entries")] = entries;
+    reply[QLatin1String("changed")] = changed;
     return reply;
 }
 
@@ -1145,6 +1310,7 @@ std::string Gui::handleSceneControlRequest(const std::string &json,
             || op == QLatin1String("resetEdit")
             || op == QLatin1String("command")
             || op == QLatin1String("onViewFocus")
+            || op == QLatin1String("onViewAction")
             || op == QLatin1String("undo")
             || op == QLatin1String("redo")
             || (registered != registeredOps().end() && registered->second.mutating);
@@ -1176,6 +1342,10 @@ std::string Gui::handleSceneControlRequest(const std::string &json,
             reply = runCommandOp(req, boundDoc, client);
         else if (op == QLatin1String("onViewFocus"))
             reply = onViewFocusOp(req, boundDoc, client);
+        else if (op == QLatin1String("onViewAction"))
+            reply = onViewActionOp(req, boundDoc, client);
+        else if (op == QLatin1String("view.visibility"))
+            reply = viewVisibilityOp(req, boundDoc, client);
         else if (op == QLatin1String("undo"))
             reply = undoRedoOp(req, boundDoc, false);
         else if (op == QLatin1String("redo"))

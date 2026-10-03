@@ -291,6 +291,12 @@ public:
      * goes on hearing the one it attached to, and detaches from that one.
      */
     void attachSelectionToCurrent();
+    /** The instance this observer hears: the room, unless
+     * attachSelectionToCurrent() bound it to a client's. What a handler must
+     * read when a message says "re-read the selection" (SetSelection), since
+     * Gui::Selection() is whichever scope happens to be open at the time.
+     */
+    SelectionSingleton& observedSelection() const;
     /** Detaches from the selection. */
     void detachSelection();
 
@@ -391,9 +397,10 @@ public:
     /// Add to selection
     bool addSelection(const SelectionObject&, bool clearPreSelect=true);
     /// Add to selection with several sub-elements
-    int addSelections(const char* pDocName, const char* pObjectName, const std::vector<std::string>& pSubNames);
+    int addSelections(const char* pDocName, const char* pObjectName, const std::vector<std::string>& pSubNames,
+                      bool clearPreselect=true);
     /// Add multiple selections
-    int addSelections(const std::vector<App::SubObjectT> &objs);
+    int addSelections(const std::vector<App::SubObjectT> &objs, bool clearPreselect=true);
     /// Update a selection
     bool updateSelection(bool show, const char* pDocName, const char* pObjectName=nullptr, const char* pSubName=nullptr);
     /// Remove from selection
@@ -498,6 +505,12 @@ public:
     SelectionGate *currentSelectionGate() const {
         return ActiveGate;
     }
+    /** Whether the active gate would let this be selected
+     *
+     * Asked without selecting and without a message. True when there is
+     * no gate.
+     */
+    bool isAllowedByGate(const char* pDocName, const char* pObjectName, const char* pSubName);
 
     int disableCommandLog();
     int enableCommandLog(bool silent=false);
@@ -1000,6 +1013,10 @@ protected:
 
     Gui::SelectionGate *ActiveGate;
     ResolveMode gateResolve;
+    // Set while addSelections() adds a batch: an element the gate refuses
+    // is skipped quietly -- a box over a part would otherwise beep, post
+    // and set the forbidden cursor once per face or edge it turns away.
+    bool gateQuiet = false;
 
     int logDisabled = 0;
     bool logHasSelection = false;

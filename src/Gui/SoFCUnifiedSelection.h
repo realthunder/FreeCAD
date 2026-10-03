@@ -46,6 +46,7 @@
 #include "SoFCSelectionContext.h"
 #include "View3DInventorViewer.h"
 
+class SoCache;
 class SoFullPath;
 class SoPickedPoint;
 class SoDetail;
@@ -163,10 +164,51 @@ public:
     void callback(SoCallbackAction *action) override;
 
     void getBoundingBox(SoGetBoundingBoxAction * action) override;
+    void rayPick(SoRayPickAction * action) override;
 
     bool hasHighlight();
 
     static int getPriority(const SoPickedPoint* p);
+
+    /** Declare the geometry under a node an overlay on coplanar geometry
+     *
+     * An overlay lies in the plane of something else by design -- a
+     * sketch's face on the face of the solid it is attached to -- so depth
+     * cannot say which of the two a pick means. Whoever declares it is
+     * expected to draw it in front as well (a smaller polygon offset); the
+     * pick then follows the drawing: of two hits at one depth and of one
+     * priority, the one whose path runs through a declared node wins,
+     * whichever was visited first.
+     *
+     * The node is held by address only. Whoever declares it takes the
+     * declaration back before the node goes away.
+     */
+    static void setCoplanarOverlay(const SoNode *node, bool enable);
+    /// Whether the path runs through a node declared a coplanar overlay
+    static bool isCoplanarOverlay(const SoPath *path);
+    /** Whether two hits are at one depth as far as an overlay goes
+     *
+     * @param dist1, dist2: the distances of the hits along the view
+     */
+    static bool isCoplanarDepth(float dist1, float dist2);
+    /** Whether a hit lies in the plane of a face hit
+     *
+     * An edge or a vertex lying in a face is not behind that face, though
+     * the point of it nearest the pick ray may well be farther along the
+     * view than where the ray meets the face. It is drawn over the face,
+     * and within the pick radius it is what the pick means.
+     *
+     * @param face: a hit with a face detail, whose normal gives the plane
+     * @param other: the hit to test
+     * @return false as well if \a face is not a face hit
+     */
+    static bool isInFacePlane(const SoPickedPoint *face, const SoPickedPoint *other);
+    /** Whether a hit takes a single pick from the face hit before it
+     *
+     * Either a coplanar overlay's hit of the same priority at the same
+     * point, or an edge or a vertex in the face's plane.
+     */
+    static bool beatsCoplanarFace(const SoPickedPoint *face, const SoPickedPoint *other);
 
     static bool getShowSelectionBoundingBox();
 
@@ -475,6 +517,33 @@ public:
     static SoFCSelectionRoot *getCurrentActionRoot(
             SoAction *action, bool front=false, SoFCSelectionRoot *def=0);
 
+    /// The innermost root \a action is inside, whatever the action:
+    /// GL render keeps its roots on SelStack, every other action on
+    /// its own stack.
+    static SoFCSelectionRoot *getInnermostRoot(SoAction *action);
+
+    /// The document object this root renders, as internal names: its
+    /// ViewProvider's object, or the node origin a Link snapshot
+    /// stands in for (setNodeOrigin). False when it renders none.
+    bool getRenderedObject(const char *&doc, const char *&obj) const;
+
+    /// The ids (getSelNodeId) of the roots \a action is inside, outermost
+    /// first: the chain a per-view visibility key is matched against by
+    /// tail (SoFCVisibilityElement::Table::resolve), the same ids the
+    /// render cache composes a draw's key of.
+    static void getActionRootIds(SoAction *action, std::vector<uint32_t> &ids);
+
+    /// Invalidate the caches \a action opened inside the root a key of
+    /// \a keyLength roots ending at the innermost one starts at, and keep
+    /// that root's own and every cache open above it -- what
+    /// checkSecondaryCache() does for a tail context, for a view's
+    /// visibility key: whether it matches is decided within that root's
+    /// subtree.
+    static void invalidateKeyCaches(SoAction *action, size_t keyLength);
+
+    /// The live selection root whose getSelNodeId() is \a id, or null.
+    static SoFCSelectionRoot *getRootById(uint32_t id);
+
     int getRenderPathCode() const;
 
     void resetContext();
@@ -525,6 +594,16 @@ protected:
         }
         std::unordered_set<SoNode*> nodeSet;
         size_t offset = 0;
+        /// Where a root entered a traversal: the cache open then, and the
+        /// state depth (the root's own cache, if it opens one, is set one
+        /// level deeper).
+        struct EntryCache {
+            SoCache *cache = nullptr;
+            int depth = -1;
+        };
+        /// On a traversal's live stack: where each root was entered,
+        /// parallel to the nodes. What invalidateCachesInside() reads.
+        std::vector<EntryCache> entryCaches;
     };
 
     // Helper class to compress vector of SoFCSelectionRoot node pointer using
@@ -588,6 +667,13 @@ protected:
                 next->getOriginPath(path);
         }
 
+        /// The ids the key is made of, outermost first, appended to
+        /// \a ids: selection root ids (getSelNodeId) and whatever was
+        /// forcePush'ed. What a view's visibility entries are matched
+        /// against per draw (SoFCVisibilityElement::Table), since an id
+        /// is never reused.
+        void getNodeIds(std::vector<uint32_t> &ids) const;
+
         std::size_t hash(std::size_t seed = 0) const {
             if (empty())
                 return seed;
@@ -634,6 +720,25 @@ protected:
 
         SoFCSelectionContextExPtr getSecondaryContext(Stack &stack, SoNode *node);
 
+        /// Whether a whole-object secondary hide -- partialRender with the
+        /// hidden marker, a Part's or a Link's element hide list -- applies
+        /// to the chain of roots this key names: some root on it holds a
+        /// hide whose key is a tail of the chain up to that root. What the
+        /// render cache feed asks per draw, since the capture keeps what a
+        /// hide takes out (see doActionPrivate).
+        bool isHidden() const;
+        /// Whether any such hide exists anywhere: the feed's gate.
+        static bool anyHidden() { return hasHiddenContext(); }
+
+        /// Whether a force show (the shown marker) admits a draw captured
+        /// tagged under this chain (SoFCSwitch takes an object whose own
+        /// Visibility is off in, tagged, while its root holds a show):
+        /// every root on the chain whose own switch hides its object holds
+        /// a show matching the chain up to it.
+        bool isShown() const;
+        /// Whether any force show exists anywhere: the feed's gate.
+        static bool anyShown() { return hasShownContext(); }
+
         void append(const std::shared_ptr<NodeKey> &other);
 
     private:
@@ -674,10 +779,38 @@ protected:
     /// that has no element colours or partial rendering in it.
     static bool hasSecondaryContext() { return SecondaryContextCount > 0; }
 
+    /// Whether any whole-object secondary hide exists anywhere; the gate on
+    /// NodeKey::isHidden(), which is asked per draw.
+    static bool hasHiddenContext() { return HiddenContextCount > 0; }
+    static bool hasShownContext() { return ShownContextCount > 0; }
+
+public:
+    /// Whether the display-mode switch \a sw the action is traversing, the
+    /// own switch of the innermost root, shows its object by a force show
+    /// held by that root. In the render cache capture (\a capture) any
+    /// show the root holds answers yes -- the capture is shared by every
+    /// occurrence, so the object goes in tagged and the flatten admits it
+    /// per key (NodeKey::isShown); elsewhere the show must match the
+    /// traversal's own chain.
+    static bool isSwitchShown(SoAction *action, const SoNode *sw, bool capture);
+
+protected:
+
     static void setActionStack(SoAction *action, Stack *stack);
     static Stack *getActionStack(SoAction *action, bool create=false);
 
     Stack *beginAction(SoAction *action, bool checkcycle=true);
+
+    /// Invalidate the caches the traversal opened inside the root at
+    /// \a index of \a stack -- but not the root's own, which holds the
+    /// whole chain below it -- and none outside it.
+    /// Everything, as SoCacheElement::invalidate() does, when the stack
+    /// does not know where that root was entered.
+    static void invalidateCachesInside(SoState *state, const Stack &stack, size_t index);
+
+    /// What selCounter.checkCache(state, true) did, but spoiling only the
+    /// caches a secondary context of this node can make answer wrongly.
+    void checkSecondaryCache(SoState *state, const Stack &stack);
     void endAction(SoAction *action, Stack &stack, bool checkcycle=true);
 
     bool doActionPrivate(Stack &stack, SoAction *);
@@ -706,6 +839,12 @@ protected:
     /// findActionContext(), which is the only place contextMap2 is added to
     /// or erased from, and by the destructor.
     static FC_COIN_COUNTER(int) SecondaryContextCount;
+    /// How many SelContexts hold a hide, and a show; kept by SelContext.
+    static FC_COIN_COUNTER(int) HiddenContextCount;
+    static FC_COIN_COUNTER(int) ShownContextCount;
+
+    /// The display-mode switch that is this root's own child, or null.
+    SoNode *getOwnSwitch() const;
 
     struct SelContext: SoFCSelectionContextBase {
     public:
@@ -713,12 +852,31 @@ protected:
         SbColor hlColor;
         bool selAll = false;
         bool hlAll = false;
-        bool hideAll = false;
+        /// A secondary context's override of the whole object: -1 none,
+        /// 0 hidden, 1 shown. Read freely, written only through
+        /// setVisibility(), which keeps the counts, and holds the shown
+        /// object's tessellation while it is shown.
+        int8_t visibility = -1;
         static MergeFunc merge;
 
-        bool isCounted() const override {
-            return selAll || hideAll;
+        SelContext() = default;
+        SelContext(const SelContext &) = delete;
+        SelContext &operator=(const SelContext &) = delete;
+        ~SelContext() override {
+            setVisibility(-1);
         }
+        /// \a doc / \a obj: the object a show brings in, whose view
+        /// provider has to keep tessellating it while its own Visibility is
+        /// off (ViewProvider::forceUpdate); ignored for anything but 1.
+        void setVisibility(int8_t vis, const char *doc = nullptr, const char *obj = nullptr);
+
+        bool isCounted() const override {
+            return selAll || visibility >= 0;
+        }
+
+    private:
+        std::string shownDoc;
+        std::string shownObj;
     };
     using SelContextPtr = std::shared_ptr<SelContext>;
     using ColorStack = std::vector<SbColor>;
@@ -780,7 +938,9 @@ class GuiExport SoSelectionElementAction : public SoAction
     SO_ACTION_HEADER(SoSelectionElementAction);
 
 public:
-    enum Type {None, Append, Remove, All, Color, Hide, Show, Retrieve, RetrieveAll};
+    /// Hide and ForceShow set a secondary whole-object visibility (the
+    /// hidden and shown markers); Show clears either.
+    enum Type {None, Append, Remove, All, Color, Hide, Show, Retrieve, RetrieveAll, ForceShow};
 
     SoSelectionElementAction (Type=None, bool secondary = false, bool noTouch = false);
     ~SoSelectionElementAction() override;

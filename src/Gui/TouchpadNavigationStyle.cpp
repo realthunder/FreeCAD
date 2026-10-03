@@ -124,7 +124,7 @@ SbBool TouchpadNavigationStyle::processSoEvent(const SoEvent * const ev)
                                this->currentmode == NavigationStyle::ZOOMING)) {
                 newmode = NavigationStyle::DRAGGING;
                 saveCursorPosition(ev);
-                this->centerTime = ev->getTime();
+                this->centerTime = steadyTime();
                 processed = true;
             }
             else if (viewer->isEditing() && (this->currentmode == NavigationStyle::SPINNING)) {
@@ -157,7 +157,7 @@ SbBool TouchpadNavigationStyle::processSoEvent(const SoEvent * const ev)
                           this->currentmode == NavigationStyle::ZOOMING)) {
                 newmode = NavigationStyle::DRAGGING;
                 saveCursorPosition(ev);
-                this->centerTime = ev->getTime();
+                this->centerTime = steadyTime();
                 processed = true;
             }
             this->button2down = press;
@@ -181,7 +181,7 @@ SbBool TouchpadNavigationStyle::processSoEvent(const SoEvent * const ev)
             processed = true;
         }
         else if (this->currentmode == NavigationStyle::DRAGGING) {
-            this->addToLog(event->getPosition(), event->getTime());
+            this->addToLog(event->getPosition());
             this->spin(posn);
             moveCursorPosition();
             processed = true;

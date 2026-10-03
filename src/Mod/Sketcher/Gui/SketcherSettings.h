@@ -32,7 +32,7 @@ namespace SketcherGui
 class Ui_SketcherSettings;
 class Ui_SketcherSettingsGrid;
 class Ui_SketcherSettingsDisplay;
-class Ui_SketcherSettingsColors;
+class Ui_SketcherSettingsAppearance;
 class SketcherGeneralWidget;
 /**
  * The SketcherSettings class implements a preference page to change sketcher settings.
@@ -48,6 +48,8 @@ public:
 
     void saveSettings() override;
     void loadSettings() override;
+
+    void resetSettingsToDefaults() override;
 
 protected:
     void changeEvent(QEvent* e) override;
@@ -72,6 +74,7 @@ public:
     void loadSettings() override;
 
 protected:
+    bool event(QEvent* event) override;
     void changeEvent(QEvent* e) override;
 
 private:
@@ -93,36 +96,53 @@ public:
     void saveSettings() override;
     void loadSettings() override;
 
+    // Characters a label can show, which the chosen font should have:
+    //   degree sign, micro sign, f with hook, stroke overlay, diameter sign,
+    //   upper half circle, mathematical f, mathematical x
+    static constexpr const char* const RequiredCharacters =
+        "\u00B0\u00B5\u0192\u0336\u2300\u25E0\U0001D453\U0001D465";
+
 protected:
     void changeEvent(QEvent* e) override;
+    void showEvent(QShowEvent* e) override;
+
+    QColor getSketcherBackgroundColor();
+    QColor getSketcherConstraintColor();
+    void onFontNameChanged(const QFont& font);
+    void onFontSizeChanged(int size);
 
 private Q_SLOTS:
     void onBtnTVApplyClicked(bool);
 
 private:
     std::unique_ptr<Ui_SketcherSettingsDisplay> ui;
+    /// the family the font box held when the page was loaded
+    QString loadedFontFamily;
 };
 
 /**
  * The SketcherSettings class implements a preference page to change sketcher settings.
  * @author Werner Mayer
  */
-class SketcherSettingsColors: public Gui::Dialog::PreferencePage
+class SketcherSettingsAppearance: public Gui::Dialog::PreferencePage
 {
     Q_OBJECT
 
 public:
-    explicit SketcherSettingsColors(QWidget* parent = nullptr);
-    ~SketcherSettingsColors() override;
+    explicit SketcherSettingsAppearance(QWidget* parent = nullptr);
+    ~SketcherSettingsAppearance() override;
 
     void saveSettings() override;
     void loadSettings() override;
 
+    void resetSettingsToDefaults() override;
+
 protected:
+    bool event(QEvent* event) override;
     void changeEvent(QEvent* e) override;
 
 private:
-    std::unique_ptr<Ui_SketcherSettingsColors> ui;
+    std::unique_ptr<Ui_SketcherSettingsAppearance> ui;
 };
 
 // Mode of the sketch autoscale feature, which scales the geometry and the

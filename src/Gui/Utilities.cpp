@@ -29,12 +29,32 @@
 # include <QItemSelectionModel>
 #endif
 
+#include <Inventor/nodes/SoCamera.h>
+
 #include <App/DocumentObject.h>
 
 #include "Utilities.h"
 
 
 using namespace Gui;
+
+SbViewVolume Gui::getMappedViewVolume(const SoCamera *camera, float aspect)
+{
+    // SoCamera::getView, less the viewport cropping of the CROP_*
+    // mappings, which a volume alone cannot say (nothing here uses them).
+    switch (camera->viewportMapping.getValue()) {
+    case SoCamera::LEAVE_ALONE:
+        return camera->getViewVolume(0.0F);
+    case SoCamera::ADJUST_CAMERA: {
+        SbViewVolume vol = camera->getViewVolume(aspect);
+        if (aspect < 1.0F)
+            vol.scale(1.0F / aspect);
+        return vol;
+    }
+    default:
+        return camera->getViewVolume(aspect);
+    }
+}
 
 
 ViewVolumeProjection::ViewVolumeProjection (const SbViewVolume &vv)

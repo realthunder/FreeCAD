@@ -136,6 +136,14 @@ inline ReleaseNumber getReleaseNumber(std::string_view str)
  * change actually is, and it is the answer that leaves a colour alone rather
  * than inverting one that was already right.
  *
+ * A LinkStage3 release is numbered by date ("2023.131R26244",
+ * "2024.123.0") and wrote the old convention, as this fork still does: read
+ * as a release number it would be 2023.131, past 1.1, and its colours were
+ * taken as opacities -- a face saved opaque came back fully transparent. A
+ * major number that is a four-digit year is one of those. Upstream numbers
+ * by year too since 1.1, but by the last two digits ("26.3R..."), and those
+ * are past 1.1 and mean opacity; the two never meet.
+ *
  * NOTE: the gate is the release number, and this fork's own is still 0.22
  * (PACKAGE_VERSION in the top level CMakeLists), so the documents it writes
  * are old-convention documents and it converts its own files on the way in.
@@ -145,6 +153,8 @@ inline ReleaseNumber getReleaseNumber(std::string_view str)
 inline bool alphaIsOpacity(std::string_view programVersion)
 {
     const ReleaseNumber release = getReleaseNumber(programVersion);
+    if (release.major >= 2000)
+        return false;  // a LinkStage3 date, see above
     return release.major > 1 || (release.major == 1 && release.minor >= 1);
 }
 

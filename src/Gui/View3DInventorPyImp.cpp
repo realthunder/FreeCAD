@@ -2653,6 +2653,83 @@ PyObject* View3DInventorPy::hasClippingPlane(PyObject *args)
     } PY_CATCH
 }
 
+namespace {
+/// The ObjectVisibilities key of \a obj in \a view: bare without a
+/// subname ("Doc#Obj" for an object of another document), a path
+/// ("Obj.sub.") with one.
+std::string visibilityKey(View3DInventor *view,
+                          App::DocumentObject *obj,
+                          const char *subname)
+{
+    if (!obj || !obj->isAttachedToDocument())
+        throw Py::ValueError("Invalid document object");
+    auto gdoc = view->getGuiDocument();
+    App::Document *doc = gdoc ? gdoc->getDocument() : nullptr;
+    if (!subname) {
+        if (obj->getDocument() == doc)
+            return obj->getNameInDocument();
+        return std::string(obj->getDocument()->getName()) + "#"
+            + obj->getNameInDocument();
+    }
+    if (obj->getDocument() != doc)
+        throw Py::ValueError("A subname path starts at an object of the view's document");
+    std::string key = obj->getNameInDocument();
+    key += ".";
+    key += subname;
+    // The path form is told apart by its dots; keep the trailing one
+    // a subname carries, and drop any element name after it.
+    auto pos = key.rfind('.');
+    key.resize(pos + 1);
+    return key;
+}
+} // namespace
+
+PyObject* View3DInventorPy::setObjectVisibility(PyObject *args, PyObject *kwds)
+{
+    PyObject *pyObj;
+    PyObject *pyVisible = Py_None;
+    PyObject *pySub = Py_None;
+    static char *kwlist[] = {"obj", "visible", "subname", nullptr};
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O!|OO", kwlist,
+                &App::DocumentObjectPy::Type, &pyObj, &pyVisible, &pySub))
+        return nullptr;
+    try {
+        auto obj = static_cast<App::DocumentObjectPy*>(pyObj)->getDocumentObjectPtr();
+        std::string sub;
+        if (pySub != Py_None)
+            sub = Py::String(pySub).as_std_string("utf-8");
+        auto view = getView3DInventorPtr();
+        std::string key = visibilityKey(view, obj,
+                pySub == Py_None ? nullptr : sub.c_str());
+        bool visible = PyObject_IsTrue(pyVisible) > 0;
+        bool changed = view->setObjectVisibility(
+                key, pyVisible == Py_None ? nullptr : &visible);
+        return Py::new_reference_to(Py::Boolean(changed));
+    } PY_CATCH
+}
+
+PyObject* View3DInventorPy::getObjectVisibility(PyObject *args, PyObject *kwds)
+{
+    PyObject *pyObj;
+    PyObject *pySub = Py_None;
+    static char *kwlist[] = {"obj", "subname", nullptr};
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O!|O", kwlist,
+                &App::DocumentObjectPy::Type, &pyObj, &pySub))
+        return nullptr;
+    try {
+        auto obj = static_cast<App::DocumentObjectPy*>(pyObj)->getDocumentObjectPtr();
+        std::string sub;
+        if (pySub != Py_None)
+            sub = Py::String(pySub).as_std_string("utf-8");
+        auto view = getView3DInventorPtr();
+        int res = view->getObjectVisibility(visibilityKey(view, obj,
+                pySub == Py_None ? nullptr : sub.c_str()));
+        if (res < 0)
+            Py_Return;
+        return Py::new_reference_to(Py::Boolean(res > 0));
+    } PY_CATCH
+}
+
 PyObject* View3DInventorPy::addObjectOnTop(PyObject * args) {
     PyObject *pyObj;
     const char *subname = 0;

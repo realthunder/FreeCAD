@@ -1128,6 +1128,8 @@ int LinkBaseExtension::extensionIsElementVisibleEx(const char *subname, int reas
     auto element = Data::findElementName(subname);
     if(subname != element && isSubnameHidden(getContainer(),subname))
         return 0;
+    if(subname != element && isSubnameShown(getContainer(),subname))
+        return 1;
 
     int index = std::isdigit((int)element[0]) ? getArrayIndex(element) : getElementIndex(element);
     if (index < 0) {
@@ -2540,8 +2542,10 @@ bool LinkBaseExtension::isLinkMutated() const
             || (getLinkedObjectValue() != getLinkCopyOnChangeSourceValue()));
 }
 
-std::vector<std::string> LinkBaseExtension::getHiddenSubnames(
-        const App::DocumentObject *obj, const char *prefix) 
+/// The subnames under \a obj whose element colours end with \a marker (the
+/// hidden or the shown marker), through the Link chain; \a prefix filters.
+static std::vector<std::string> getMarkedSubnames(
+        const App::DocumentObject *obj, const char *prefix, const std::string &marker)
 {
     std::vector<std::string> res;
     if(!obj || !obj->isAttachedToDocument())
@@ -2555,8 +2559,8 @@ std::vector<std::string> LinkBaseExtension::getHiddenSubnames(
             if(prefix && !boost::starts_with(v.first,prefix) && !boost::starts_with(v.second,prefix))
                 continue;
             auto &s = v.second;
-            if(boost::ends_with(s,DocumentObject::hiddenMarker()))
-                res.push_back(s.substr(0,s.size()-DocumentObject::hiddenMarker().size()));
+            if(boost::ends_with(s,marker))
+                res.push_back(s.substr(0,s.size()-marker.size()));
         }
         auto o = Base::freecad_dynamic_cast<DocumentObject>(prop->getContainer());
         if(!o)
@@ -2569,7 +2573,9 @@ std::vector<std::string> LinkBaseExtension::getHiddenSubnames(
     return res;
 }
 
-bool LinkBaseExtension::isSubnameHidden(const App::DocumentObject *obj, const char *subname) 
+/// Whether \a subname under \a obj is marked with \a marker, as above.
+static bool isSubnameMarked(const App::DocumentObject *obj, const char *subname,
+                            const std::string &marker)
 {
     if(!obj || !obj->isAttachedToDocument() || !subname || !subname[0])
         return false;
@@ -2580,7 +2586,7 @@ bool LinkBaseExtension::isSubnameHidden(const App::DocumentObject *obj, const ch
     {
         for(auto &v : prop->getShadowSubs()) {
             if((boost::starts_with(v.first,subname) || boost::starts_with(v.second,subname))
-                    && boost::ends_with(v.second, DocumentObject::hiddenMarker()))
+                    && boost::ends_with(v.second, marker))
                 return true;
         }
         auto o = Base::freecad_dynamic_cast<DocumentObject>(prop->getContainer());
@@ -2592,6 +2598,28 @@ bool LinkBaseExtension::isSubnameHidden(const App::DocumentObject *obj, const ch
         obj = o;
     }
     return false;
+}
+
+std::vector<std::string> LinkBaseExtension::getHiddenSubnames(
+        const App::DocumentObject *obj, const char *prefix) 
+{
+    return getMarkedSubnames(obj, prefix, DocumentObject::hiddenMarker());
+}
+
+std::vector<std::string> LinkBaseExtension::getShownSubnames(
+        const App::DocumentObject *obj, const char *prefix)
+{
+    return getMarkedSubnames(obj, prefix, DocumentObject::shownMarker());
+}
+
+bool LinkBaseExtension::isSubnameHidden(const App::DocumentObject *obj, const char *subname) 
+{
+    return isSubnameMarked(obj, subname, DocumentObject::hiddenMarker());
+}
+
+bool LinkBaseExtension::isSubnameShown(const App::DocumentObject *obj, const char *subname)
+{
+    return isSubnameMarked(obj, subname, DocumentObject::shownMarker());
 }
 
 void LinkBaseExtension::extensionGetPropertyNamedList(

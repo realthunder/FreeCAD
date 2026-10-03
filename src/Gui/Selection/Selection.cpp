@@ -148,6 +148,11 @@ void SelectionObserver::attachSelectionToCurrent()
     attachTo(Selection());
 }
 
+SelectionSingleton& SelectionObserver::observedSelection() const
+{
+    return observed ? *observed : SelectionRoom();
+}
+
 void SelectionObserver::attachTo(SelectionSingleton& sel)
 {
     if (!connectSelection.connected()) {
@@ -1236,6 +1241,21 @@ void SelectionSingleton::_SelObj::log(bool remove, bool clearPreselect) const {
 
 static bool _SelStackLock;
 
+bool SelectionSingleton::isAllowedByGate(const char* pDocName, const char* pObjectName,
+        const char* pSubName)
+{
+    if (!ActiveGate)
+        return true;
+    _SelObj temp;
+    if (checkSelection(pDocName, pObjectName, pSubName, ResolveMode::NoResolve, temp) != 0)
+        return false;
+    const char *subelement = nullptr;
+    auto pObject = getObjectOfType(temp,App::DocumentObject::getClassTypeId(),gateResolve,&subelement);
+    bool allowed = ActiveGate->allow(pObject?pObject->getDocument():temp.pDoc,pObject,subelement);
+    ActiveGate->notAllowedReason.clear();
+    return allowed;
+}
+
 bool SelectionSingleton::addSelection(const char* pDocName, const char* pObjectName,
         const char* pSubName, float x, float y, float z,
         const std::vector<SelObj> *pickedList, bool clearPreselect)
@@ -1272,6 +1292,10 @@ bool SelectionSingleton::addSelection(const char* pDocName, const char* pObjectN
         const char *subelement = nullptr;
         auto pObject = getObjectOfType(temp,App::DocumentObject::getClassTypeId(),gateResolve,&subelement);
         if (!ActiveGate->allow(pObject?pObject->getDocument():temp.pDoc,pObject,subelement)) {
+            if (gateQuiet) {
+                ActiveGate->notAllowedReason.clear();
+                return false;
+            }
             if (getMainWindow()) {
                 QString msg;
                 if (ActiveGate->notAllowedReason.length() > 0) {
@@ -1482,7 +1506,7 @@ SelectionSingleton::selStackGetT(const char* pDocName, ResolveMode resolve, int 
     return res;
 }
 
-int SelectionSingleton::addSelections(const std::vector<App::SubObjectT> &objs)
+int SelectionSingleton::addSelections(const std::vector<App::SubObjectT> &objs, bool clearPreselect)
 {
     if(!logDisabled) {
         std::ostringstream ss;
@@ -1501,14 +1525,18 @@ int SelectionSingleton::addSelections(const std::vector<App::SubObjectT> &objs)
     int count = 0;
     SelectionPauseNotification guard;
     SelectionLogDisabler disabler(true);
+    // A batch is a box or a select-all, not a click: what the gate turns
+    // away is simply left out (upstream a5bf17b144).
+    Base::StateLocker quiet(gateQuiet, true);
     for (const auto &objT : objs) {
-        if (addSelection(objT))
+        if (addSelection(objT, clearPreselect))
             ++count;
     }
     return count;
 }
 
-int SelectionSingleton::addSelections(const char* pDocName, const char* pObjectName, const std::vector<std::string>& pSubNames)
+int SelectionSingleton::addSelections(const char* pDocName, const char* pObjectName,
+                                      const std::vector<std::string>& pSubNames, bool clearPreselect)
 {
     std::vector<App::SubObjectT> objs;
     App::SubObjectT objT(pDocName, pObjectName, "");
@@ -1516,7 +1544,7 @@ int SelectionSingleton::addSelections(const char* pDocName, const char* pObjectN
         objT.setSubName(sub);
         objs.push_back(objT);
     }
-    return addSelections(objs);
+    return addSelections(objs, clearPreselect);
 }
 
 bool SelectionSingleton::updateSelection(bool show, const char* pDocName,

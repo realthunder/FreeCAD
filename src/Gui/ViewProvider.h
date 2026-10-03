@@ -535,6 +535,9 @@ public:
     }
     static const std::string &hiddenMarker();
     static const char *hasHiddenMarker(const char *subname);
+    static const std::string &shownMarker();
+    static const char *hasShownMarker(const char *subname);
+    static const char *hasVisibilityMarker(const char *subname, bool *shown = nullptr);
     //@}
 
     /** @name Edit methods
@@ -567,6 +570,18 @@ public:
     virtual bool isEditingPickExclusive() const { return false; }
     bool isEditing() const;
     void finishEditing();
+    /** An undo or redo asked for while this is in edit, before anything
+     * is undone. True takes the request as answered, and nothing in the
+     * document is undone: an entry being typed is ended by it, as a
+     * spreadsheet ends the edit of a cell. Asked by Gui::Document, so
+     * Std_Undo and a client's undo come here; an undo straight on the App
+     * document does not.
+     */
+    virtual bool undoRedoInEdit(bool redo)
+    {
+        (void)redo;
+        return false;
+    }
     /// adjust viewer settings when editing a view provider
     virtual void setEditViewer(ViewerContext*, int ModNum);
     /// restores viewer settings when leaving editing mode
@@ -598,6 +613,9 @@ public:
     virtual void getTaskViewContent(std::vector<Gui::TaskView::TaskContent*>&) const {}
     //@}
 
+    /// Is called when the provider is in edit and "Select All" was issued.
+    /// Returns false to leave it to the document (select every object).
+    virtual bool selectAll() { return false; }
     /// is called when the provider is in edit and a key event occurs. Only ESC ends edit.
     virtual bool keyPressed(bool pressed, int key);
     /// Is called by the tree if the user double clicks on the object. It returns the string

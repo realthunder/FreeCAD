@@ -175,6 +175,7 @@ bool BGFXRenderer::renderSubViews(const QColor &col,
         ctx.fromSuperset = s.styleFromSuperset;
         ctx.styleMode = s.drawStyleMode;
         ctx.styleOverrides = s.styleOverrides;
+        ctx.visibilities = s.visibilities;
         _BGFXLib.captureWidth = uint16_t(s.width);
         _BGFXLib.captureHeight = uint16_t(s.height);
         ok = render(col, s.viewMatrix, s.projMatrix) && ok;
@@ -223,6 +224,7 @@ bool BGFXRenderer::renderSubViews(const QColor &col,
         ctx.fromSuperset = s.styleFromSuperset;
         ctx.styleMode = s.drawStyleMode;
         ctx.styleOverrides = s.styleOverrides;
+        ctx.visibilities = s.visibilities;
         _BGFXLib.standaloneSubWidth = uint16_t(s.width);
         _BGFXLib.standaloneSubHeight = uint16_t(s.height);
         const bool subOk = render(col, s.viewMatrix, s.projMatrix);
@@ -293,6 +295,14 @@ void BGFXRenderer::setMainViewStyle(uint8_t styleMask, uint8_t styleNameBit,
     pimpl->mainStyleMode = styleMode;
 }
 
+void BGFXRenderer::setMainViewVisibility(const VisibilitySet *set)
+{
+    pimpl->mainVisibilities = set;
+    const uint32_t version = pimpl->mainVisibilities ? pimpl->mainVisibilities->version : 0;
+    if (pimpl->bboxVisTable != pimpl->mainVisibilities || pimpl->bboxVisVersion != version)
+        pimpl->updateBBox();
+}
+
 void BGFXRenderer::setCaptureInterest(const CaptureInterestTable *table)
 {
     pimpl->captureInterest = (table && !table->ids.empty()) ? table : nullptr;
@@ -354,6 +364,7 @@ void BGFXRenderer::prepareSubViews(const QColor &col,
         ctx.fromSuperset = s.styleFromSuperset;
         ctx.styleMode = s.drawStyleMode;
         ctx.styleOverrides = s.styleOverrides;
+        ctx.visibilities = s.visibilities;
         _BGFXLib.standaloneSubWidth = uint16_t(s.width);
         _BGFXLib.standaloneSubHeight = uint16_t(s.height);
         pimpl->render(col, s.viewMatrix, s.projMatrix);
@@ -1120,12 +1131,45 @@ void BGFXRenderer::setLightConfig(const LightConfig &config)
     }
 }
 
+/// \a a and \a b light the scene the same under ANY camera: a
+/// camera-relative light is compared by its eye-space direction and
+/// position, not by the world-space ones the producing camera turned
+/// them into.
+static bool sameForAnyCamera(const ViewLightConfig &a,
+                             const ViewLightConfig &b)
+{
+    if (a.fed != b.fed || a.count != b.count || a.ambient != b.ambient)
+        return false;
+    for (int i = 0; i < a.count; ++i) {
+        const ViewLight &la = a.lights[i];
+        const ViewLight &lb = b.lights[i];
+        if (!la.eyeSpace || !lb.eyeSpace) {
+            if (la != lb)
+                return false;
+            continue;
+        }
+        ViewLight camA = la;
+        std::copy(lb.direction, lb.direction + 3, camA.direction);
+        std::copy(lb.position, lb.position + 3, camA.position);
+        if (camA != lb)
+            return false;
+    }
+    return true;
+}
+
 void BGFXRenderer::setViewLightConfig(const ViewLightConfig &config)
 {
-    if (pimpl->viewlightconf != config) {
-        pimpl->viewlightconf = config;
+    // The headlight's world direction is fed anew on every camera move.
+    // It is taken, since this renderer's own frame lights with it, but
+    // it is not a scene change: the frame caches already key on the
+    // camera, and a streamed viewer re-derives the direction from the
+    // eye-space one under a camera of its own. Dirtying on it
+    // republished the whole snapshot for every frame of an orbit.
+    if (pimpl->viewlightconf == config)
+        return;
+    if (!sameForAnyCamera(pimpl->viewlightconf, config))
         pimpl->sceneDirty = true;
-    }
+    pimpl->viewlightconf = config;
 }
 
 void BGFXRenderer::setVolumetricConfig(const VolumetricConfig &config)
@@ -1411,6 +1455,16 @@ void BGFXRenderer::setLevelBudgetDeadband(float fraction)
     pimpl->levelBudgetDeadband = band;
     // Same staleness as the budget: narrowing the band can put the
     // standing total outside it, and only a plan pass can act on that.
+    pimpl->levelPlanner.markDirty();
+}
+
+void BGFXRenderer::setPerViewShownEvictWatermark(float fraction)
+{
+    const float mark = fraction > 0.0f ? fraction : 0.0f;
+    if (pimpl->shownEvictWatermark == mark)
+        return;
+    pimpl->shownEvictWatermark = mark;
+    // Lowering it can put the standing use over it.
     pimpl->levelPlanner.markDirty();
 }
 #endif

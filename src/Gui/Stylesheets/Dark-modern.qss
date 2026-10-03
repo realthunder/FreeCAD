@@ -2614,7 +2614,7 @@ PlotWidget {
 SKETCHER
 ==================================================================================================*/
 
-Gui--StatefulLabel[state="empty_sketch"] {
+Gui--StatefulLabel[state="empty"] {
   color : rgba(255,255,255,127); /* 50% opacity white */
 }
 Gui--StatefulLabel[state="under_constrained"] {

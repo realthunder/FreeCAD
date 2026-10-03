@@ -51,8 +51,7 @@ bool isAlterGeoActive(Gui::Document* doc)
 {
     if (doc) {
         // checks if a Sketch Viewprovider is in Edit
-        if (doc->getInEdit()
-            && doc->getInEdit()->isDerivedFrom(SketcherGui::ViewProviderSketch::getClassTypeId())) {
+        if (SketcherGui::isSketchInEdit(doc)) {
             return true;
         }
     }
@@ -106,8 +105,8 @@ CmdSketcherToggleConstruction::CmdSketcherToggleConstruction()
 {
     sAppModule = "Sketcher";
     sGroup = "Sketcher";
-    sMenuText = QT_TR_NOOP("Toggle construction geometry");
-    sToolTipText = QT_TR_NOOP("Toggles the toolbar or selected geometry to/from construction mode");
+    sMenuText = QT_TR_NOOP("Toggle Construction Geometry");
+    sToolTipText = QT_TR_NOOP("Toggles between defining geometry and construction geometry modes");
     sWhatsThis = "Sketcher_ToggleConstruction";
     sStatusTip = sToolTipText;
     sPixmap = "Sketcher_ToggleConstruction";
@@ -218,7 +217,7 @@ void CmdSketcherToggleConstruction::activated(int iMsg)
         if (selection.size() != 1) {
             Gui::TranslatedUserWarning(Obj,
                                        QObject::tr("Wrong selection"),
-                                       QObject::tr("Select edge(s) from the sketch."));
+                                       QObject::tr("Select edges from the sketch"));
             return;
         }
 
@@ -227,7 +226,7 @@ void CmdSketcherToggleConstruction::activated(int iMsg)
         if (SubNames.empty()) {
             Gui::TranslatedUserWarning(Obj,
                                        QObject::tr("Wrong selection"),
-                                       QObject::tr("Select edge(s) from the sketch."));
+                                       QObject::tr("Select edges from the sketch"));
             return;
         }
 
@@ -259,6 +258,17 @@ void CmdSketcherToggleConstruction::activated(int iMsg)
 
             // only handle edges
             if (boost::starts_with(sub,"Edge") || boost::starts_with(sub, "ExternalEdge")) {
+                // What cannot be toggled is passed over (upstream 7432ce131f):
+                // the axes and foci of an ellipse come with it in a box
+                // selection, the sketch refuses them, and the refusal stopped
+                // the command before the rest was done.
+                int geoId = 0;
+                if (Obj->geoIdFromShapeType(sub.c_str(), geoId)) {
+                    auto gf = Obj->getGeometryFacade(geoId);
+                    if (!gf || gf->isInternalAligned()) {
+                        continue;
+                    }
+                }
                 // issue the actual commands to toggle
                 Gui::cmdAppObjectArgs(selection[0].getObject(),"toggleConstruction('%s')", sub);
             }

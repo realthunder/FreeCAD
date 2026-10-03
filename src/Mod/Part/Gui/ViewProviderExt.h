@@ -39,6 +39,7 @@ class TopoDS_Wire;
 class TopoDS_Face;
 class SoSeparator;
 class SoGroup;
+class SoPolygonOffset;
 class SoSwitch;
 class SoVertexShape;
 class SoPickedPoint;
@@ -242,8 +243,13 @@ public:
     void setDisplayMode(const char* ModeName) override;
     /// returns a list of all possible modes
     std::vector<std::string> getDisplayModes() const override;
-    /// Update the view representation
-    void reload();
+    /** Update the view representation from the display preferences.
+     * @param applyTessellation: also write the tessellation preferences
+     * into Deviation and AngularDeflection -- only when one of those
+     * preferences changed. Without it the per-object values stay; the
+     * minimum preferences are still enforced where the mesh is made.
+     */
+    void reload(bool applyTessellation = true);
     /// If no other task is pending it opens a dialog to allow to change face colors
     bool changeFaceColors();
 
@@ -285,6 +291,19 @@ public:
     void unsetHighlightedPoints();
 
     void enableFullSelectionHighlight(bool face=true, bool line=true, bool point=true);
+
+    /** Declare this view an overlay on coplanar geometry
+     *
+     * For a shape that lies in the plane of another by design, as a
+     * sketch's faces do on the face it is attached to. Its faces are
+     * drawn with a polygon offset between an edge's (none) and an
+     * ordinary face's, so they are in front of the face under them by
+     * rule rather than by drawing order, and a pick that ties with
+     * that face goes to this view
+     * (Gui::SoFCUnifiedSelection::setCoplanarOverlay). To be called
+     * once attached.
+     */
+    void setCoplanarOverlay(bool enable);
     //@}
 
     /** @name Color management methods
@@ -304,6 +323,17 @@ public:
     virtual void updateColors(App::Document *sourceDoc=0, bool forceColorMap=false) override;
 
     virtual void checkColorUpdate() override;
+
+    /** Whether this view provider's colours of an element type -- TopAbs_FACE,
+     * TopAbs_EDGE or TopAbs_VERTEX -- may be mapped onto the shapes made from
+     * it (MapFaceColor and the rest). A colour that follows a preference is
+     * display state, not the object's: a sketch's under AutoColor is.
+     */
+    virtual bool mapsElementColors(int type) const
+    {
+        (void)type;
+        return true;
+    }
 
     static std::vector<App::Color> getShapeColors(const Part::TopoShape &shape, App::Color &defColor,
             App::Document *sourceDoc=0, bool linkOnly=false);
@@ -391,6 +421,8 @@ protected:
     Gui::CoinPtr<SoGroup>  pFaceEdgeRoot;
     Gui::CoinPtr<SoGroup>  pEdgeRoot;
     Gui::CoinPtr<SoGroup>  pVertexRoot;
+    /// The offset of a coplanar overlay's faces, see setCoplanarOverlay()
+    Gui::CoinPtr<SoPolygonOffset> pOverlayOffset;
 
     /// Roots of the TShape-instanced representation (shared sub-shape
     /// geometry under per-instance transforms); empty while the flattened
@@ -747,6 +779,13 @@ protected:
             Varies,
         };
         MeshInvariance meshInvariance = MeshInvariance::Unknown;
+        /// meshingBounds() of `anchor`'s shape, the box every
+        /// tessellation parameter of the flattened build derives from.
+        /// Geometry as well, so computed once per anchor: a landing
+        /// rebuild would otherwise pay the whole box again (13 us a
+        /// face) where the mesh box it replaced was nearly free.
+        bool haveMeshingBox = false;
+        double meshingBox[6] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
         /// One-shot: the NEXT updateVisual is the rebuild half of a
         /// landing -- a transfer/demote/downgrade on this anchor's
         /// shape just established the very triangulation the rebuild
@@ -791,6 +830,12 @@ protected:
         }
     };
     MeshLadderState meshLadder;
+    /// meshingBounds() of \a shape, kept in \a ladder when it is that
+    /// ladder's flattened shape itself (the anchor, unlocated) and
+    /// computed otherwise, or with no ladder.
+    static void meshingBoundsOf(MeshLadderState *ladder, const TopoDS_Shape &shape,
+                                double &xMin, double &yMin, double &zMin,
+                                double &xMax, double &yMax, double &zMax);
     bool UpdatingColor;
     bool highlightFaceEdges = false;
 

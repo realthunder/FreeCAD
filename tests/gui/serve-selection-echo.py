@@ -56,6 +56,8 @@ RESULT = os.environ.get("GT_RESULT", os.path.join(OUT, "result.txt"))
 DOC = "ServeSelectionEcho"
 ECHO_BOUND_MS = 1000.0
 CLIENT_WAIT_S = 90
+# How long the server is given to take a gone client's selection back
+TAKE_BACK_WAIT_S = 2.0
 
 state = {"doc": None, "port": 0, "client": None, "done": False, "t0": clock()}
 
@@ -348,9 +350,9 @@ def poll():
     # back when the connection ends (8.11a), so the room after the client
     # has gone says nothing about what its picks did.
     try:
-        # Only while a connection is listed: the tick after it closes has
-        # already seen the take-back, and that is the state the check
-        # below makes separately.
+        # Only while a connection is listed: after it closes the take-back
+        # is on its way, and that is the state the check below makes
+        # separately, once leave() has waited for it.
         if FreeCADGui.serveClients():
             state["room"] = room_now()
     except Exception:
@@ -362,21 +364,25 @@ def poll():
             return
         QtCore.QTimer.singleShot(50, poll)
         return
-    # The client closed its socket; the server hears of it on its own
-    # thread and takes the route's contribution back in a call queued to
-    # this one. Verified before then, the room still holds it -- every
-    # time on the Windows box (2026-10-03).
-    state.setdefault("closed_at", clock())
-    gone = False
-    try:
-        gone = not FreeCADGui.serveClients()
-    except Exception:
-        gone = True
-    if not gone and clock() - state["closed_at"] < 10.0:
-        QtCore.QTimer.singleShot(50, poll)
+    state["gone"] = clock()
+    leave()
+
+
+def leave():
+    """Wait for the server to have seen the client go.
+
+    The client closes its socket and its thread ends; the server takes the
+    client's selection back when it has processed that close, a moment
+    later and on this thread's event loop. The tick that finds the thread
+    dead can come first: measured, 1.2 to 1.7 ms between the two on an idle
+    box, the connection already off the list for part of it. Checked on
+    that same tick, the room was now and then still full.
+    """
+    if room_now() and clock() - state["gone"] < TAKE_BACK_WAIT_S:
+        QtCore.QTimer.singleShot(5, leave)
         return
-    # One more turn for the queued take-back behind the listing
-    QtCore.QTimer.singleShot(200, verify)
+    state["taken_back_ms"] = (clock() - state["gone"]) * 1000.0
+    verify()
 
 
 def verify():
@@ -404,7 +410,8 @@ def verify():
     want = [("Box0", ("Face6",)), ("Box1", ("Face6",)), ("Box2", ("Face6",))]
     check("the routed selection matches the picks", sel == want, str(sel))
     check("and the room is empty again once the client has gone",
-          not room_now(), str(room_now()))
+          not room_now(),
+          "%s, %.1f ms after its thread ended" % (room_now(), state.get("taken_back_ms", -1.0)))
     check("on the default route the pick stayed out of the room",
           state.get("unrouted_room") == [], str(state.get("unrouted_room")))
     check("the client was told the host had routed it",

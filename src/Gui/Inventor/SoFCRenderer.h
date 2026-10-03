@@ -23,6 +23,9 @@
 #ifndef GUI_SOFCRENDERER_H
 #define GUI_SOFCRENDERER_H
 
+#include <cstdint>
+#include <unordered_map>
+
 #include "../InventorBase.h"
 #include "SoFCRenderCache.h"
 
@@ -34,6 +37,7 @@ class SoFCRendererP;
 
 namespace Render {
 class Renderer;
+struct ObjectInfo;
 struct OverlayAnchor;
 struct UserShaderConfig;
 }
@@ -89,8 +93,18 @@ public:
   /// superimposition, the corner axis cross) through the same
   /// render-cache traversal as the main scene. Pass null to detach,
   /// which removes the overlay from the backend.
+  ///
+  /// A non-zero \a highlightId gives the highlight feed an overlay of
+  /// its own under that id, drawn with the same anchor. Without one an
+  /// overlay renderer's setHighlight() reaches no backend at all: the
+  /// backend's highlight feed is the main scene's, which one overlay
+  /// must not clobber. The highlight overlay is ordered by its id like
+  /// any other, so an id past \a id draws the highlight over the whole
+  /// captured overlay (the sketcher's edit preselection over its
+  /// constraint icons and datum labels).
   void setExternalOverlay(Render::Renderer * renderer, int id,
-                          const Render::OverlayAnchor & anchor);
+                          const Render::OverlayAnchor & anchor,
+                          int highlightId = 0);
 
   void render(SoGLRenderAction * action);
 
@@ -113,6 +127,15 @@ public:
   /// The scene cache last given to setScene(); null before the first
   /// build. Read-only inspection (tests, external consumers).
   const Gui::CoinPtr<SoFCRenderCache> & getScene() const;
+
+  /// The identities of the draws the external backend holds, by
+  /// objectKey (Render::ObjectInfoMap: every key of the scene fed to it,
+  /// and possibly some that have left since), and in \a serial a number
+  /// that changes whenever the map does. What a view resolves its own
+  /// visibility over per draw (Gui::ViewVisibility). Empty without a
+  /// backend.
+  const std::unordered_map<uint64_t, Render::ObjectInfo> &
+  getObjectInfo(uint64_t & serial) const;
 
   /// User shader programs captured from scene SoShaderProgram nodes by
   /// the render cache manager during the last cache rebuild; mirrored to

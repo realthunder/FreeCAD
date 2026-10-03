@@ -301,7 +301,9 @@ streams the frame; docs/CyclesIntegration.md sec 7.1 spells them. `{"op":"edit"}
 and `{"op":"resetEdit"}` are an edit session's two edges (sec 8.9 step 4);
 `{"op":"command","name":"Sketcher_CreateLine"}` starts a sketch tool, allowlisted
 for the reason sec 8.7 gives (the `Sketcher_Create*` family, plus `Sketcher_External`
-and `Sketcher_CarbonCopy` since 8.11 item 3); `{"op":"onViewFocus","index":1}` moves the keys
+and `Sketcher_CarbonCopy` since 8.11 item 3, plus the constraint commands that open no
+dialog since 2026-10-02, the dimensional ones among them: their value is typed at the
+label); `{"op":"onViewFocus","index":1}` moves the keys
 between that tool's on-view entry boxes, which the server states back on the
 `{"cmd":"onview"}` push (sec 8.7). `{"op":"undo"}` and `{"op":"redo"}` (an optional
 `steps`, default 1) are the document's transactions, everyone's under the shared
@@ -349,7 +351,12 @@ shape). The e2e suite includes a CJK-named document/object/property pass.
 
 The **property descriptor** is the serializable generalization of the hand-written table in
 `TaskRenderSettings.cpp:331`: `{ name, group, type, value, readonly, hidden, unit?,
-constraints?{min,max,step}, enums?[] }`. The `type` set maps 1:1 onto DOM controls:
+constraints?{min,max,step}, enums?[], members?[] }`. `members` is what the property holds
+under its name, spelled as an expression spells it -- `Width` of a sketch's `Constraints`,
+`Base.x` of a `Placement`, `[<<a name>>]` for a name that is no identifier. It is the
+answer of `Property::getPaths`, the question the desktop's expression completer asks, sent
+for an object's properties that have any; a client completes `Sketch.Constraints.` from it
+with nothing more off the wire. The `type` set maps 1:1 onto DOM controls:
 
 | FreeCAD property | descriptor `type` | DOM control |
 |---|---|---|
@@ -1140,6 +1147,24 @@ modal dialog, and a modal dialog on the GUI thread of a process serving several 
 stops serving all of them, with nobody at the machine to dismiss it. Widening the list is
 gated on an answer to modality, not on appetite.
 
+**A second kind of entry: a value's editor (session 120).** A sketch dimension's value is
+edited in place by one editor (docs/SketcherPort.md "One editor for a constraint's value"):
+the value or an expression, a driving toggle, a name. It stands on the same seam,
+`Gui::OnViewEntry`, which the view's registry and the mirror now use for both kinds. The push
+carries `"kind":"datum"` and that editor's display state (`field`, `expr`, `result`, `level`,
+`driving`, `measure`, `measureName`, `nameShown`, `name`, `nameSel`, `obj`), plus `ax/ay/az`: a world point one unit from
+the anchor in the direction its other rows grow, so that the client, which places it, keeps
+them off what the dimension measures. Clicks that are not keys go up as one op,
+`onViewAction {index, action: toggle | measure | field | replace}`. `measure` (session 122) is
+for a value that can be stated two ways -- a circle's size as its radius or as its diameter:
+the push says which (`measure` 0 or 1, -1 for a value with one way only) and that way's name
+for the client's button, and the action switches it. The one piece of behaviour the client
+owns is the completion list of an expression: it completes names from what it already holds
+(`pathcomplete.ts`, the omni box's completion) and a taken row goes up as `replace`, so that
+no keystroke waits a round trip for a name to be offered. The `i` of a pushed entry is now its
+place in the view's whole set -- the index `onViewFocus` and `onViewAction` look it up by; it
+was its place among the shown ones, which named another box once a hidden one sat before it.
+
 **What is not solved.** A soft keyboard is not a keyboard: Android's in particular reports
 `keydown` for very few keys and expresses the rest through `beforeinput`, so a phone may
 need those synthesized into key frames before this surface is usable by thumb. Nothing here
@@ -1386,8 +1411,23 @@ Each step is a standalone landing with the desktop as its regression oracle.
 - The mirror answers `logicalDotsPerInchX()` with 96, the CSS reference, because it has no
   screen to ask and its client is a browser. Whether the edit modes that size things in
   millimetres want that or the client's real density is a stage 4 question.
-- **The `command` op admits `Sketcher_Create*`, `Sketcher_External` and
-  `Sketcher_CarbonCopy`, and nothing else** (8.7, 8.11 item 3). The gate is
+- **The `command` op admits `Sketcher_Create*`, `Sketcher_External` and its three
+  flavours (`Sketcher_Defining`, `Sketcher_Intersection`,
+  `Sketcher_IntersectionDefining`), `Sketcher_CarbonCopy` and the constraint commands
+  that open no dialog, and nothing else** (8.7, 8.11 item 3). Those are, by name: `Sketcher_ConstrainHorVer`,
+  `Horizontal`, `Vertical`, `Lock`, `Block`, `Coincident`, `CoincidentUnified`,
+  `PointOnObject`, `Parallel`, `Perpendicular`, `Tangent`, `Equal`, `Symmetric`, `Group`,
+  and `Sketcher_ToggleDrivingConstraint`, `Sketcher_ToggleActiveConstraint`. And the
+  dimensional ones (`Sketcher_Dimension`, `ConstrainDistance`, `DistanceX`, `DistanceY`,
+  `Radius`, `Diameter`, `Radiam`, `Angle`) with `Sketcher_ChangeDimensionConstraint`:
+  a dimension's value is typed at its label, in the entry box of 8.7, and
+  `EditDatumDialog` refuses to open for a view without widgets whoever asks -- so a
+  browser's pick that finishes a dimensional tool the DESKTOP started gets a box too,
+  not a dialog on the host (docs/SketcherPort.md, "A datum's value edited in place").
+  Left off: `Sketcher_ConstrainSnellsLaw`, which has a dialog of its own. One thing
+  this does not close: a constraint substitution is told in a box that
+  is shown, not executed -- it stops nothing, and on a host with nobody at it nobody
+  closes it. The gate is
   modality, not authority: the connection may already set properties and enter edit modes,
   so it is not that a wider list would grant more power, it is that a command opening a
   modal dialog would stop the GUI thread of a process serving several browsers with nobody
@@ -1759,7 +1799,8 @@ flag and the move/restore bodies that used to sit on every `ViewerContext`, and
 `Gui::Document::editingRoot()` builds one on first need. A view hangs it through
 `hangEditingRoot(root, hang)` -- the desktop under its aux root (outside the render-cache
 feed, captured by `editingCapture`, which re-inits when the node changes), a mirror at the
-head of the served graph -- and the root counts its parents (`hangUnder`/`unhangFrom`), so
+head of the served graph (since 2026-09-27 beside it, in the mirror's own event graph; 8.12
+item J) -- and the root counts its parents (`hangUnder`/`unhangFrom`), so
 N mirrors on one served graph insert it once and the last to leave takes it out. The
 capture-policy spike answered itself: one node under a desktop aux root and inside a served
 graph at the same time is a Coin multi-parent, and the render cache manager keys its caches
@@ -2508,8 +2549,9 @@ fork has. `ToolBarManager::setState` and `tv.activateWorkbench`: one active work
 layer's singleton store, one producer, no focus arbitration between producers, modal
 dialogs as nested `exec()`; per client, a store keyed per client, `open()` plus a callback
 carrying a client tag, a focus owner per client. TempoVis and `Visibility`: document
-state, `ViewProvider::isShow()` global; per client, per-view visibility overrides, which
-exist today only as the browser's local hide. The main window's status bar and dock
+state, `ViewProvider::isShow()` global; per client, per-view visibility overrides --
+built 2026-09-26 (`docs/CoinRetirement.md` 5.18, the `view.visibility` op: the client's
+table on its mirror). The main window's status bar and dock
 registry, `WaitCursor`, `Base::Console` reports; per client, routed to the session that
 caused them.
 
@@ -2549,6 +2591,33 @@ millimetres is the everyday case.
 assumes it; `SceneServeSource` publishes one delta stream for all. Per client: deltas per
 client for per-client state (highlight, hides, a session's edit geometry). Connection
 identity and grants are per connection already, and `announceEdit` targets one.
+
+**Built 2026-09-27: a session's edit geometry is a tagged overlay.** A mirror no longer
+hangs the session's editing root inside the served `SoFCUnifiedSelection`; it hangs it last
+in its own event graph (camera, selection probe, edit callback, served scene, edit root) --
+the desktop's aux-root shape -- and its pick root and scene bound box take it in. Nothing
+publishes the event root, so the serving source captures the root itself
+(`SceneServeSource::Private::feedEditOverlay`, the desktop's `editingCapture` restated) into
+overlay 7 with a scene-camera anchor carrying `OverlayAnchor::session`, a per-source counter
+minted on `signalInEdit`. A node sensor on the root schedules the publish a change under it
+needs (a desktop drag in a shared session replays no client input). The overlay rides the one
+snapshot every client shares (`SceneDump` v81 carries the tag); the `edit` push names the
+session (`"session":N`, absent on the leaving edge), and the WASM viewer feeds only the
+overlays that are untagged or its own, refeeding when the push moves it. Chosen over a
+per-client binary message because under 8.11 every client with a view joins the one
+session, so the bytes are identical and the shared stream already deltas an overlay as a
+root plus one group chunk; the tag keeps the targeting explicit for when sessions fork, which
+is when a per-client channel would earn its extra serializer. A drag no longer spoils the
+served scene's caches above the edited object. Two rules came with it. An overlay-mode render
+cache manager never pushes scene configs (`SoFCRenderer::pushExternalConfigs`), since the
+headless `traverse()` would otherwise restate every default onto the shared backend. And the
+viewer frames its scene-camera overlays only while its camera has framed nothing (`s_framed`,
+reset with the object model): the edit hides the sketch in the session's views, so a document
+holding only that sketch looks empty to the automatic fit, which then framed the overlay's
+sketch axes -- `serve-edit-browser.py` measured the 10 mm edit line at 20 pixels instead of the
+880 it had in view mode, where the old in-scene geometry, keyless, had framed nothing and left
+the camera alone. That test now counts the edit overlay's pixels before, during and after the
+session (the edited-edge colour set to magenta).
 
 **Reading the list.** A is done; C, D and J have their seams built; B, E, F and I are
 wide but mechanical -- each is the move stages 1-5 made, a global becoming a row on a

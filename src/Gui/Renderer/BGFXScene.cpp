@@ -78,13 +78,19 @@ void BGFXRenderer::Private::makeSnapshot(Render::SceneSnapshot &snap,
         }
         mainStyle.ovInterest = captureInterest;
     }
+    // ...and against the main view's own object visibility: what it
+    // hides is not in what it draws. A draw captured only because some
+    // view shows a hidden object TRAVELS, flagged (SceneDump v80): the
+    // viewer that loads it admits it by its own table, which is how a
+    // served client shows a hidden object on its own.
+    mainStyle.visSet = mainVisibilities;
     auto copyFeed = [&](const Render::DrawCallList &src) {
-        if (!resolving)
-            return src;
         Render::DrawCallList out;
         out.reserve(src.size());
         for (const auto &d : src) {
-            if (mainStyle.styleAdmits(d))
+            if (mainStyle.visibilityHidesObject(d))
+                continue;
+            if (!resolving || mainStyle.styleAdmits(d))
                 out.push_back(d);
         }
         return out;
@@ -103,6 +109,18 @@ void BGFXRenderer::Private::makeSnapshot(Render::SceneSnapshot &snap,
         sov.id = ov.first;
         sov.anchor = ov.second.anchor;
         sov.draws = copyFeed(ov.second.draws);
+        // A draw with no vertices draws nothing here (submit returns on
+        // it), and on the other side of the wire it is indistinguishable
+        // from a mesh whose chunk has not landed yet. The viewer holds an
+        // overlay until every mesh in it is in -- so one empty draw held
+        // a feed forever: a Sketcher edit graph carries one, and a sketch
+        // in edit showed nothing in a streamed viewer.
+        sov.draws.erase(
+            std::remove_if(sov.draws.begin(), sov.draws.end(),
+                           [](const Render::DrawCall &d) {
+                               return d.mesh && d.mesh->numVertices == 0;
+                           }),
+            sov.draws.end());
         snap.overlays.push_back(std::move(sov));
     }
     snap.background = background;
@@ -704,12 +722,22 @@ void BGFXRenderer::Private::updateBBox()
 {
     static const bool dbg = getenv("FC_BGFX_DEBUG_BBOX") != nullptr;
     bboxValid = false;
+    // What the main view hides of its own accord is not in its scene,
+    // nor is a draw captured only because ANOTHER view shows a hidden
+    // object: the bounds fit-all frames and the shadow ground covers are
+    // this view's.
+    BGFXStyleState vis;
+    vis.visSet = mainVisibilities;
+    bboxVisTable = mainVisibilities;
+    bboxVisVersion = mainVisibilities ? mainVisibilities->version : 0;
     for (const auto &draw : scene) {
         // A navigation gizmo is not the scene (DrawCall::skipbounds):
         // the rotation-centre sphere sits wherever the spin is centred
         // and moves with it, and counting it would drag the shadow
         // ground and the auto near/far along with the mouse.
         if (draw.skipbounds)
+            continue;
+        if (vis.visibilityHides(draw))
             continue;
         if (draw.bboxMin[0] > draw.bboxMax[0])
             continue;

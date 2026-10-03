@@ -105,6 +105,13 @@ std::uint64_t Render::CacheSerial::forNode(const void *node)
     return res.first->second;
 }
 
+uint16_t Render::perViewShownModeId()
+{
+    // Not a display mode name any object can register.
+    static const uint16_t id = internModeName("<per-view shown>");
+    return id;
+}
+
 uint16_t Render::internModeName(const char *name)
 {
     if (!name || !name[0])

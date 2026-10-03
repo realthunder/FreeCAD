@@ -28,6 +28,9 @@
 # include <QMessageBox>
 # include <QAction>
 # include <QMenu>
+# include <QTimer>
+# include <functional>
+# include <map>
 # include <Inventor/actions/SoGetBoundingBoxAction.h>
 # include <Inventor/nodes/SoSeparator.h>
 # include <Inventor/nodes/SoPickStyle.h>
@@ -48,6 +51,7 @@
 
 #include <App/Document.h>
 #include <App/DocumentObjectGroup.h>
+#include <App/DocumentObserver.h>
 #include <App/GeoFeatureGroupExtension.h>
 #include <Gui/Application.h>
 #include <Gui/BitmapFactory.h>
@@ -58,6 +62,7 @@
 #include <Gui/View3DInventor.h>
 #include <Gui/View3DInventorViewer.h>
 #include <Gui/ViewProviderCoordinateSystem.h>
+#include <Gui/ViewProviderOriginGroupExtension.h>
 #include <Mod/Part/App/DatumFeature.h>
 
 #include "ViewProviderDatum.h"
@@ -280,6 +285,69 @@ void ViewProviderDatum::unsetEdit(int ModNum)
 
 void ViewProviderDatum::updateExtents () {
     setExtents ( getRelevantBoundBox () );
+}
+
+namespace {
+/// Datums of a restored document waiting to be sized against it.
+std::vector<App::DocumentObjectT> pendingExtents;
+bool extentsArmed = false;
+
+void sizeRestoredDatums()
+{
+    // The origin sizing timer's rule: wait out any restore -- a
+    // progressive load's drain included -- any recompute, and the
+    // visual build that follows a progressive drain.
+    if (Gui::ViewProviderOriginGroupExtension::sizingMustWait()) {
+        QTimer::singleShot(300, sizeRestoredDatums);
+        return;
+    }
+    extentsArmed = false;
+    std::vector<App::DocumentObjectT> pending;
+    pending.swap(pendingExtents);
+    // Containers by depth, the innermost first: an origin is sized over
+    // its container's content, which includes the containers inside it.
+    std::map<int, std::set<App::DocumentObject*>, std::greater<int>> groups;
+    for (auto &objT : pending) {
+        auto obj = objT.getObject();
+        auto vp = Base::freecad_dynamic_cast<ViewProviderDatum>(
+            Gui::Application::Instance->getViewProvider(obj));
+        if (!vp)
+            continue;
+        vp->updateExtents();
+        std::vector<App::DocumentObject*> chain;
+        for (auto group = App::GeoFeatureGroupExtension::getGroupOfObject(obj);
+                group && chain.size() < 100;
+                group = App::GeoFeatureGroupExtension::getGroupOfObject(group))
+            chain.push_back(group);
+        for (std::size_t i = 0; i < chain.size(); ++i)
+            groups[int(chain.size() - i)].insert(chain[i]);
+    }
+    // The origins are sized over the datums' extents, so after them --
+    // every enclosing one, not just the datum's own: their post-restore
+    // sizing may already have run, against the old extents.
+    for (auto &entry : groups) for (auto group : entry.second) {
+        auto vp = Gui::Application::Instance->getViewProvider(group);
+        if (auto ext = vp ? vp->getExtensionByType<Gui::ViewProviderOriginGroupExtension>(true)
+                          : nullptr)
+            ext->updateOriginSize();
+    }
+}
+} // namespace
+
+void ViewProviderDatum::finishRestoring()
+{
+    Gui::ViewProviderGeometryObject::finishRestoring();
+    // An automatic datum sizes itself to the visible content of its
+    // container and keeps the result in Length/Width -- App data. The only
+    // ask during a load is its own updateData, when the features restored
+    // after it have no visual yet: an eager open shrank a plane saved at
+    // 60 x 30 to 10 x 10, a progressive one gave 50 x 50. Asked again once
+    // the whole document is there, which gives back the saved size.
+    pendingExtents.emplace_back(getObject());
+    if (!extentsArmed) {
+        extentsArmed = true;
+        QTimer::singleShot(300, sizeRestoredDatums);
+    }
 }
 
 void ViewProviderDatum::setExtents (const SbBox3f &bbox) {

@@ -319,6 +319,37 @@ void MeshSourceRegistry::observeMemoryCeiling(size_t shortfallBytes)
                  double(shortfallBytes) / 1048576.0);
 }
 
+void MeshSourceRegistry::setShownEvictor(ShownEvictor evictor,
+                                         std::function<size_t()> pending)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    shownEvictor = std::move(evictor);
+    shownPending = std::move(pending);
+}
+
+size_t MeshSourceRegistry::releasedShownCount() const
+{
+    std::function<size_t()> pending;
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        pending = shownPending;
+    }
+    return pending ? pending() : 0;
+}
+
+size_t MeshSourceRegistry::evictReleasedShown(
+        const std::vector<ShownCandidate> &candidates, size_t deficit)
+{
+    ShownEvictor evictor;
+    {
+        std::lock_guard<std::mutex> lock(mutex);
+        evictor = shownEvictor;
+    }
+    // Called outside the lock, like the level hooks: eviction touches
+    // scene-graph nodes, and whatever that notifies may come back here.
+    return (evictor && deficit && !candidates.empty()) ? evictor(candidates, deficit) : 0;
+}
+
 bool MeshSourceRegistry::generate(const std::string &key, uint32_t level,
                                   const void *sourceChunk, size_t sourceSize,
                                   std::vector<uint8_t> &out)

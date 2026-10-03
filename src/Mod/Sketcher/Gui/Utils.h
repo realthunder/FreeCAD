@@ -76,6 +76,14 @@ namespace SketcherGui
 class DrawSketchHandler;
 class ViewProviderSketch;
 
+/// Whether a label placed at the pointer is pulled back so the pointer is
+/// not on it (the Dimension tool's preview), or put exactly there.
+enum OffsetMode : bool
+{
+    NoOffset = false,
+    OffsetConstraint = true
+};
+
 /// This function tries to auto-recompute the active document if the option
 /// is set in the user parameter. If the option is not set nothing will be done
 /// @return true if a recompute was undertaken, false if not.

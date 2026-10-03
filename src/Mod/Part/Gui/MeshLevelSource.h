@@ -45,6 +45,7 @@
 #include <vector>
 
 class SoNode;
+class Bnd_Box;
 class TopoDS_Shape;
 
 namespace App {
@@ -292,6 +293,23 @@ bool meshLevelFinerResident(const TopoDS_Shape &shape);
 /// display build tessellates exactly the rung it will publish as.
 double meshLevelDeflection(double diagonal, unsigned level);
 double meshLevelAngle(unsigned level);
+
+/// The bounding box a tessellation's parameters derive from: its
+/// deflection, a ladder rung's, the default texture projection frame.
+/// From the geometry alone, never from a mesh resident on the shape.
+/// BRepBndLib::Add reads any triangulation or 3D polygon it finds, and
+/// what the shape carries depends on what meshed it before -- nothing,
+/// a coarse rung, an exact one -- so the same shape asked three
+/// different deflections, and the exact mesh a refine built followed
+/// the history of the process (a wire compound: 86569 points in a
+/// first open, 86662 after a coarse rebuild; docs/DocumentLoad.md sec
+/// 16). The mesher reuses whatever polygon is resident within 10% of
+/// the ask, so nothing later corrects it. A face with no surface and an
+/// edge with no curve still contribute their mesh -- it is all the
+/// geometry they have. Costs about 13 us a face, where the mesh box is
+/// far cheaper: a caller that rebuilds the same shape keeps the answer
+/// (ViewProviderPartExt::meshingBoundsOf). The gap is cleared.
+void meshingBounds(const TopoDS_Shape &shape, Bnd_Box &box);
 
 } // namespace PartGui
 

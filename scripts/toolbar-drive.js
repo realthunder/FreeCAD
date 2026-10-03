@@ -203,10 +203,13 @@ const HELPERS = () => {
     out.buttons2 = await page.evaluate(() => window.__fcButtons());
 
     // 4. A group's face: the default member runs, in this view -- the
-    // tool's on-view parameters are the proof it is running here.
+    // tool's on-view parameters are the proof it is running here. Not the
+    // line group while its face is the polyline: that tool is the classic
+    // handler here and has no on-view parameters to show.
     out.face = await page.evaluate(async () => {
       const btn = Array.from(document.querySelectorAll('.fc-tb-btn')).find(
           b => !b.disabled && b.dataset.command.startsWith('Sketcher_Create')
+            && b.dataset.command !== 'Sketcher_CreatePolyline'
             && b.parentElement.querySelector('.fc-tb-caret'));
       if (!btn) return {why: 'no enabled sketch group'};
       const cmd = btn.dataset.command;

@@ -234,6 +234,8 @@ private:
     ~PanelMirror() override;
 
     struct Walk;
+    /// Held by every entry point that can push to a subscriber (see stop())
+    class BusyScope;
     /// Whether anything is mirrored: the panel root or a dialog root.
     bool active() const
     {
@@ -277,6 +279,10 @@ private:
     void withoutBackends(const std::function<void()>& fn);
 
     bool _running = false;
+    /// entry points on the stack, and a stop() asked for meanwhile: the
+    /// outermost one to leave does it (BusyScope)
+    int _busy = 0;
+    bool _stopPending = false;
     bool _appFiltered = false;
     bool _walking = false;
     bool _relaying = false;

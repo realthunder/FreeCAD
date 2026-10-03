@@ -58,10 +58,18 @@ def arrow_height(view, tag):
     right = view.getPointOnViewport(FreeCAD.Vector(60, 20, 0))
     x0, x1 = int(left[0]), int(right[0])
     y0 = h - int(left[1])
+    # The X axis is label-coloured as well, runs the whole width, and has
+    # no gap for a number, so it outscores the dimension line whenever it
+    # is in reach. Coin drew it over the backend's frame until the edit
+    # graph was drawn once (4fa781fc58); the backend's axis is what shows
+    # now, and it passes is_label.
+    axis = h - int(view.getPointOnViewport(FreeCAD.Vector(0, 0, 0))[1])
     # The dimension line: the row with the most label-coloured pixels over
     # the middle half of the dimension, above or below the sketch line.
     best, row = 0, None
     for y in range(max(0, y0 - 200), min(h, y0 + 200)):
+        if abs(y - axis) <= 3:
+            continue
         n = sum(1 for x in range((3 * x0 + x1) // 4, (x0 + 3 * x1) // 4, 3)
                 if is_label(QtGui.QColor(img.pixel(x, y))))
         if n > best:

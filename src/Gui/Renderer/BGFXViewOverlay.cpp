@@ -343,7 +343,7 @@ void BGFXView::submitOutline(const Render::DrawCall &draw, uint32_t refCounter,
     // show must not leave its silhouette behind, and the ADDITIVELY
     // captured copy of an overridden object must not outline the same
     // object twice. submit() asks the same question of the fill.
-    if (!styleAdmits(draw))
+    if (!styleAdmits(draw) || visibilityHides(draw))
         return;
     // Validate the edge passes up front so a mesh that cannot draw
     // them leaves no stray stencil marks.
@@ -398,7 +398,7 @@ bool BGFXView::submitOutlineMark(const Render::DrawCall &draw,
     // Also reached directly, for the whole-scene silhouette: the same
     // rule, and the same answer as the edges pass below, so a dropped
     // draw leaves no stencil mark for edges that never come.
-    if (!styleAdmits(draw))
+    if (!styleAdmits(draw) || visibilityHides(draw))
         return false;
     const Render::MeshData &mesh = *draw.mesh;
     if (count <= 0) {
@@ -442,7 +442,7 @@ void BGFXView::submitOutlineEdges(const Render::DrawCall &draw,
 {
     if (!m_instancing || !draw.mesh || !draw.mesh->triangleIndices)
         return;
-    if (!styleAdmits(draw))
+    if (!styleAdmits(draw) || visibilityHides(draw))
         return;
     const Render::MeshData &mesh = *draw.mesh;
     int start = spec.start;

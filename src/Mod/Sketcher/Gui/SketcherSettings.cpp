@@ -22,26 +22,103 @@
 
 #include "PreCompiled.h"
 #ifndef _PreComp_
+#include <QApplication>
 #include <QMessageBox>
 #include <QPainter>
 #include <QPixmap>
+#include <QStyledItemDelegate>
+#include <QToolBar>
+#include <array>
 #endif
 
 #include <App/Application.h>
 #include <Base/Console.h>
 #include <Base/Interpreter.h>
 #include <Gui/Command.h>
+#include <Gui/MainWindow.h>
 #include <Gui/Workbench.h>
 #include <Gui/WorkbenchManager.h>
 
 #include "SketcherSettings.h"
 #include "ui_SketcherSettings.h"
-#include "ui_SketcherSettingsColors.h"
+#include "ui_SketcherSettingsAppearance.h"
 #include "ui_SketcherSettingsDisplay.h"
 #include "ui_SketcherSettingsGrid.h"
 
 
 using namespace SketcherGui;
+
+namespace
+{
+// A line pattern as the grid is drawn with it: sixteen bits, a set bit a
+// drawn pixel (upstream's PenStyle)
+struct PenStyle
+{
+    uint16_t pattern;
+
+    QVector<qreal> toDashPattern() const
+    {
+        QVector<qreal> dashPattern;
+        int count = 0;
+        bool isDash = (pattern & 0x8000) != 0;  // Check the highest bit
+
+        for (int i = 0; i < 16; ++i) {
+            bool currentBit = (pattern & (0x8000 >> i)) != 0;
+            if (currentBit == isDash) {
+                ++count;  // Counting dashes or spaces
+            }
+            else {
+                // Adjust count to be odd for dashes and even for spaces (see qt doc)
+                count = (count % 2 == (isDash ? 0 : 1)) ? count + 1 : count;
+                dashPattern << count;
+                count = 1;  // Reset count for next dash/space
+                isDash = !isDash;
+            }
+        }
+        count = (count % 2 == (isDash ? 0 : 1)) ? count + 1 : count;
+        dashPattern << count;  // Add the last count
+
+        if ((dashPattern.size() % 2) == 1) {
+            // prevent this error : qWarning("QPen::setDashPattern: Pattern not of even length");
+            dashPattern << 1;
+        }
+
+        return dashPattern;
+    }
+
+    QIcon toIcon(QSize size, qreal dpr, const QBrush& brush) const
+    {
+        QPixmap px(size * dpr);
+        px.setDevicePixelRatio(dpr);
+        px.fill(Qt::transparent);
+
+        QPen pen;
+        pen.setDashPattern(toDashPattern());
+        pen.setBrush(brush);
+        pen.setWidth(2);
+
+        QPainter painter(&px);
+        painter.setPen(pen);
+        auto mid = size.height() / 2;
+        painter.drawLine(0, mid, size.width(), mid);
+        painter.end();
+
+        return px;
+    }
+};
+
+constexpr auto PenStyles = std::to_array<PenStyle>({
+    {.pattern = 0b1111111111111111},  // solid
+    {.pattern = 0b1110111011101110},  // dashed 3:1
+    {.pattern = 0b1111110011111100},  // dashed 6:2
+    {.pattern = 0b0000111100001111},  // dashed 4:4
+    {.pattern = 0b1010101010101010},  // point 1:1
+    {.pattern = 0b1110010011100100},  // dash point
+    {.pattern = 0b1111111100111100},  // dash long-dash
+});
+
+constexpr QSize LineIconSize(80, 12);
+}  // namespace
 
 /* TRANSLATOR SketcherGui::SketcherSettings */
 
@@ -60,8 +137,59 @@ SketcherSettings::~SketcherSettings()
     // no need to delete child widgets, Qt does it all for us
 }
 
+namespace
+{
+// The options, beside the dimensioning mode, that decide which commands the
+// Sketcher's tool bars carry (Workbench.cpp reads them when it builds them)
+struct ToolBarOptions
+{
+    bool unifiedCoincident;
+    bool autoHorVer;
+    bool unifiedLines;
+
+    static ToolBarOptions read()
+    {
+        ParameterGrp::handle constraints = App::GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/Mod/Sketcher/Constraints");
+        ParameterGrp::handle commands = App::GetApplication().GetParameterGroupByPath(
+            "User parameter:BaseApp/Preferences/Mod/Sketcher/Commands");
+        return {constraints->GetBool("UnifiedCoincident", true),
+                constraints->GetBool("AutoHorVer", true),
+                commands->GetBool("UnifiedLineCommands", true)};
+    }
+
+    bool operator==(const ToolBarOptions& other) const
+    {
+        return unifiedCoincident == other.unifiedCoincident && autoHorVer == other.autoHorVer
+            && unifiedLines == other.unifiedLines;
+    }
+};
+
+// Build the tool bars again after an option that decides what they carry
+// has changed -- the workbench installing its UI once more, which is a good
+// deal less than the restart upstream asks for (4f429e3288).
+//
+// The two bars these options decide are emptied first. The tool bar manager
+// keeps what a bar has and adds a command it lacks at the END of the bar
+// (it does not take buttons off and put them back, against flicker), so a
+// group that replaces two buttons would land after everything else.
+void reinstallToolBars()
+{
+    for (const char* name : {"Sketcher geometries", "Sketcher constraints"}) {
+        if (auto* bar = Gui::getMainWindow()->findChild<QToolBar*>(QString::fromLatin1(name))) {
+            bar->clear();
+        }
+    }
+    if (auto* workbench = Gui::WorkbenchManager::instance()->active()) {
+        workbench->activate();
+    }
+}
+}  // namespace
+
 void SketcherSettings::saveSettings()
 {
+    const ToolBarOptions previousToolBars = ToolBarOptions::read();
+
     // Sketch editing
     ui->checkBoxAdvancedSolverTaskBox->onSave();
     ui->checkBoxRecalculateInitialSolutionWhileDragging->onSave();
@@ -71,6 +199,7 @@ void SketcherSettings::saveSettings()
     ui->checkBoxMakeInternals->onSave();
     ui->checkBoxUnifiedCoincident->onSave();
     ui->checkBoxHorVerAuto->onSave();
+    ui->checkBoxLineGroup->onSave();
 
     enum
     {
@@ -103,13 +232,11 @@ void SketcherSettings::saveSettings()
     hGrp->SetBool("SeparatedDimensioningTools", SeparatedTools);
 
     // These two decide which dimensioning commands the Sketcher's toolbar and
-    // menu carry, and they are read by Workbench::setupToolBars() -- so the
-    // workbench only has to install its UI again, which is a good deal less
-    // than restarting the application.
-    if (dimensioningChanged) {
-        if (auto* workbench = Gui::WorkbenchManager::instance()->active()) {
-            workbench->activate();
-        }
+    // menu carry, and they are read by Workbench::setupToolBars(), as are the
+    // three options that group or split the coincident, horizontal/vertical
+    // and line commands.
+    if (dimensioningChanged || !(ToolBarOptions::read() == previousToolBars)) {
+        reinstallToolBars();
     }
 
     ui->radiusDiameterMode->setEnabled(index != 1);
@@ -158,6 +285,7 @@ void SketcherSettings::loadSettings()
     ui->checkBoxMakeInternals->onRestore();
     ui->checkBoxUnifiedCoincident->onRestore();
     ui->checkBoxHorVerAuto->onRestore();
+    ui->checkBoxLineGroup->onRestore();
 
     // Dimensioning constraints mode.
     //
@@ -214,9 +342,9 @@ void SketcherSettings::loadSettings()
     hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher/Tools");
     ui->ovpVisibility->clear();
-    ui->ovpVisibility->addItem(tr("Disabled"));
-    ui->ovpVisibility->addItem(tr("Only dimensional"));
-    ui->ovpVisibility->addItem(tr("All"));
+    ui->ovpVisibility->addItem(tr("None"));
+    ui->ovpVisibility->addItem(tr("Dimensions only"));
+    ui->ovpVisibility->addItem(tr("Position and dimensions"));
 
     index = hGrp->GetInt("OnViewParameterVisibility", 1);
     ui->ovpVisibility->setCurrentIndex(index);
@@ -240,6 +368,44 @@ void SketcherSettings::changeEvent(QEvent* e)
     }
 }
 
+void SketcherSettings::resetSettingsToDefaults()
+{
+    // What this page keeps outside its Gui::Pref* widgets: the combo boxes
+    // are filled and stored by hand, so the base class does not know them
+    ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Mod/Sketcher/dimensioning");
+    const ToolBarOptions previousToolBars = ToolBarOptions::read();
+    const bool previousSingleTool = hGrp->GetBool("SingleDimensioningTool", true);
+    const bool previousSeparatedTools = hGrp->GetBool("SeparatedDimensioningTools", false);
+
+    // the dimensioning tools on the tool bar
+    hGrp->RemoveBool("SingleDimensioningTool");
+    hGrp->RemoveBool("SeparatedDimensioningTools");
+
+    // radius or diameter for the Dimension tool
+    hGrp->RemoveBool("DimensioningDiameter");
+    hGrp->RemoveBool("DimensioningRadius");
+
+    hGrp->RemoveInt("AutoScaleMode");
+
+    hGrp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Mod/Sketcher/Tools");
+    hGrp->RemoveInt("OnViewParameterVisibility");
+
+    // and what the Gui::Pref* widgets keep
+    PreferencePage::resetSettingsToDefaults();
+
+    // The dialog makes a new page after this and never saves the old one, so
+    // the tool bars follow here
+    hGrp = App::GetApplication().GetParameterGroupByPath(
+        "User parameter:BaseApp/Preferences/Mod/Sketcher/dimensioning");
+    if (previousSingleTool != hGrp->GetBool("SingleDimensioningTool", true)
+        || previousSeparatedTools != hGrp->GetBool("SeparatedDimensioningTools", false)
+        || !(ToolBarOptions::read() == previousToolBars)) {
+        reinstallToolBars();
+    }
+}
+
 /* TRANSLATOR SketcherGui::SketcherSettingsGrid */
 
 SketcherSettingsGrid::SketcherSettingsGrid(QWidget* parent)
@@ -248,34 +414,41 @@ SketcherSettingsGrid::SketcherSettingsGrid(QWidget* parent)
 {
     ui->setupUi(this);
 
-    QList<QPair<Qt::PenStyle, int>> styles;
-    styles << qMakePair(Qt::SolidLine, 0xffff) << qMakePair(Qt::DashLine, 0x0f0f)
-           << qMakePair(Qt::DotLine, 0xaaaa);
-
-    ui->gridLinePattern->setIconSize(QSize(80, 12));
-    ui->gridDivLinePattern->setIconSize(QSize(80, 12));
-    for (QList<QPair<Qt::PenStyle, int>>::iterator it = styles.begin(); it != styles.end(); ++it) {
-        QPixmap px(ui->gridLinePattern->iconSize());
-        px.fill(Qt::transparent);
-        QBrush brush(Qt::black);
-        QPen pen(it->first);
-        pen.setBrush(brush);
-        pen.setWidth(2);
-
-        QPainter painter(&px);
-        painter.setPen(pen);
-        double mid = ui->gridLinePattern->iconSize().height() / 2.0;
-        painter.drawLine(0, mid, ui->gridLinePattern->iconSize().width(), mid);
-        painter.end();
-
-        ui->gridLinePattern->addItem(QIcon(px), QString(), QVariant(it->second));
-        ui->gridDivLinePattern->addItem(QIcon(px), QString(), QVariant(it->second));
+    // The entries get their icons in event(): painted in the theme's text
+    // colour, which is not known before the style has reached the page
+    const auto lineStyleDelegate = new QStyledItemDelegate(this);
+    ui->gridLinePattern->setIconSize(LineIconSize);
+    ui->gridLinePattern->setItemDelegate(lineStyleDelegate);
+    ui->gridDivLinePattern->setIconSize(LineIconSize);
+    ui->gridDivLinePattern->setItemDelegate(lineStyleDelegate);
+    for (auto style : PenStyles) {
+        ui->gridLinePattern->addItem(QString(), QVariant(style.pattern));
+        ui->gridDivLinePattern->addItem(QString(), QVariant(style.pattern));
     }
 }
 
 SketcherSettingsGrid::~SketcherSettingsGrid()
 {
     // no need to delete child widgets, Qt does it all for us
+}
+
+bool SketcherSettingsGrid::event(QEvent* event)
+{
+    // StyleChange and not PaletteChange: without a style sheet the palette
+    // change is never sent, the style change is, and by then the palette is
+    // set either way (upstream a00fe1e886)
+    if (event->type() == QEvent::StyleChange) {
+        PreferencePage::event(event);
+        const qreal dpr = devicePixelRatioF();
+        const QBrush brush = palette().windowText();
+        for (size_t i = 0; i < PenStyles.size(); ++i) {
+            const QIcon icon = PenStyles[i].toIcon(LineIconSize, dpr, brush);
+            ui->gridLinePattern->setItemIcon(static_cast<int>(i), icon);
+            ui->gridDivLinePattern->setItemIcon(static_cast<int>(i), icon);
+        }
+        return true;
+    }
+    return PreferencePage::event(event);
 }
 
 void SketcherSettingsGrid::saveSettings()
@@ -356,6 +529,14 @@ SketcherSettingsDisplay::SketcherSettingsDisplay(QWidget* parent)
             &QPushButton::clicked,
             this,
             &SketcherSettingsDisplay::onBtnTVApplyClicked);
+    connect(ui->fontBoxSketcherFontName,
+            &QFontComboBox::currentFontChanged,
+            this,
+            &SketcherSettingsDisplay::onFontNameChanged);
+    connect(ui->EditSketcherFontSize,
+            qOverload<int>(&QSpinBox::valueChanged),
+            this,
+            &SketcherSettingsDisplay::onFontSizeChanged);
 }
 
 /**
@@ -369,10 +550,30 @@ SketcherSettingsDisplay::~SketcherSettingsDisplay()
 void SketcherSettingsDisplay::saveSettings()
 {
     ui->ZHeight->onSave();
+    // A font box always holds some font. Stored only when it is another
+    // than the page was loaded with, or one is stored already: unset means
+    // the label's own font, and an OK on a page nobody touched must not
+    // change what a label is drawn in. (Not a flag set by the box's
+    // signal: that fires when the page is shown, too.)
+    if (ui->fontBoxSketcherFontName->currentFont().family() != loadedFontFamily
+        || !App::GetApplication()
+                .GetParameterGroupByPath("User parameter:BaseApp/Preferences/View")
+                ->GetASCII("EditSketcherFontName", "")
+                .empty()) {
+        ui->fontBoxSketcherFontName->onSave();
+    }
     ui->EditSketcherFontSize->onSave();
+    ui->ConstraintIconLabelsPerLine->onSave();
+    ui->ConstraintIconLabelLines->onSave();
+    ui->ElementIconSize->onSave();
+    ui->axisTransparency->onSave();
+    ui->ConstraintSymbolSize->onSave();
     ui->viewScalingFactor->onSave();
     ui->SegmentsPerGeometry->onSave();
     ui->dialogOnDistanceConstraint->onSave();
+    ui->checkBoxEditDatumInPlace->onSave();
+    ui->checkBoxDatumEscapeTakesBack->onSave();
+    ui->checkBoxShowDirectionalAutoConstraintHints->onSave();
     ui->continueMode->onSave();
     ui->constraintMode->onSave();
     ui->checkBoxHideUnits->onSave();
@@ -387,16 +588,31 @@ void SketcherSettingsDisplay::saveSettings()
     ui->checkBoxTVForceOrtho->onSave();
     ui->checkBoxTVSectionView->onSave();
     ui->checkBoxAdjustCamera->onSave();
+    ui->checkBoxFitOnEdit->onSave();
 
 }
 
 void SketcherSettingsDisplay::loadSettings()
 {
     ui->ZHeight->onRestore();
+    ui->fontBoxSketcherFontName->onRestore();
+    loadedFontFamily = ui->fontBoxSketcherFontName->currentFont().family();
+    onFontNameChanged(ui->fontBoxSketcherFontName->currentFont());
     ui->EditSketcherFontSize->onRestore();
+    ui->ConstraintIconLabelsPerLine->onRestore();
+    ui->ConstraintIconLabelLines->onRestore();
+    ui->ElementIconSize->onRestore();
+    ui->axisTransparency->onRestore();
+    // Unset, a symbol is as high as the application font: show that, not
+    // the number the form was drawn with
+    ui->ConstraintSymbolSize->setValue(QApplication::fontMetrics().height());
+    ui->ConstraintSymbolSize->onRestore();
     ui->viewScalingFactor->onRestore();
     ui->SegmentsPerGeometry->onRestore();
     ui->dialogOnDistanceConstraint->onRestore();
+    ui->checkBoxEditDatumInPlace->onRestore();
+    ui->checkBoxDatumEscapeTakesBack->onRestore();
+    ui->checkBoxShowDirectionalAutoConstraintHints->onRestore();
     ui->continueMode->onRestore();
     ui->constraintMode->onRestore();
     ui->checkBoxHideUnits->onRestore();
@@ -412,6 +628,7 @@ void SketcherSettingsDisplay::loadSettings()
     this->ui->checkBoxTVForceOrtho->setEnabled(this->ui->checkBoxTVRestoreCamera->isChecked());
     ui->checkBoxTVSectionView->onRestore();
     ui->checkBoxAdjustCamera->onRestore();
+    ui->checkBoxFitOnEdit->onRestore();
 }
 
 /**
@@ -425,6 +642,92 @@ void SketcherSettingsDisplay::changeEvent(QEvent* e)
     else {
         QWidget::changeEvent(e);
     }
+}
+
+void SketcherSettingsDisplay::showEvent(QShowEvent* e)
+{
+    // the preview on the view's background, in a dimension's colour
+    QPalette previewPalette = QPalette();
+    previewPalette.setColor(QPalette::Window, getSketcherBackgroundColor());
+    previewPalette.setColor(QPalette::WindowText, getSketcherConstraintColor());
+    ui->LabelFontPreview->setPalette(previewPalette);
+
+    Gui::Dialog::PreferencePage::showEvent(e);
+}
+
+void SketcherSettingsDisplay::onFontNameChanged(const QFont& font)
+{
+    QFont testFont;
+    // For QFontMetrics::inFont() to say no, the style strategy has to be
+    // set before the family
+    testFont.setStyleStrategy(QFont::NoFontMerging);
+    testFont.setFamily(font.family());
+
+    QFontMetrics metrics(testFont);
+    auto testChars = QString::fromUtf8(RequiredCharacters).toUcs4();
+
+    QString missingChars;
+    for (uint testChar : testChars) {
+        if (!metrics.inFontUcs4(testChar)) {
+            missingChars += QStringLiteral("  ");
+            missingChars += QString::fromUcs4(reinterpret_cast<const char32_t*>(&testChar), 1);
+        }
+    }
+
+    if (missingChars.length() > 0) {
+        ui->LabelFontMessage->setText(tr("Glyphs not present:") + missingChars);
+        ui->LabelFontMessage->show();
+    }
+    else {
+        ui->LabelFontMessage->hide();
+    }
+
+    QFont previewFont(font);
+    previewFont.setPixelSize(ui->EditSketcherFontSize->value());
+    ui->LabelFontPreview->setFont(previewFont);
+}
+
+void SketcherSettingsDisplay::onFontSizeChanged(int size)
+{
+    QFont previewFont = ui->fontBoxSketcherFontName->currentFont();
+    previewFont.setPixelSize(size);
+    ui->LabelFontPreview->setFont(previewFont);
+}
+
+QColor SketcherSettingsDisplay::getSketcherBackgroundColor()
+{
+    auto parameters = App::GetApplication().GetUserParameter().GetGroup("BaseApp/Preferences/View");
+
+    uint32_t backgroundColor;
+    if (parameters->GetBool("Gradient", false) || parameters->GetBool("RadialGradient", false)) {
+        if (parameters->GetBool("UseBackgroundColorMid")) {
+            backgroundColor = parameters->GetUnsigned("BackgroundColor4", 0xFFFFFFFF);
+        }
+        else {
+            // a gradient of two colours: their average, the background in
+            // the middle of the view
+            backgroundColor = (((parameters->GetUnsigned("BackgroundColor2", 0xFFFFFFFF)) >> 8)
+                               + ((parameters->GetUnsigned("BackgroundColor3", 0xFFFFFFFF)) >> 8))
+                << 7;
+        }
+    }
+    else {
+        backgroundColor = parameters->GetUnsigned("BackgroundColor", 0xFFFFFFFF);
+    }
+
+    return QColor((backgroundColor >> 24) & 0xFF,
+                  (backgroundColor >> 16) & 0xFF,
+                  (backgroundColor >> 8) & 0xFF);
+}
+
+QColor SketcherSettingsDisplay::getSketcherConstraintColor()
+{
+    auto parameters = App::GetApplication().GetUserParameter().GetGroup("BaseApp/Preferences/View");
+    uint32_t constraintColor = parameters->GetUnsigned("ConstrainedDimColor", 0x000000FF);
+
+    return QColor((constraintColor >> 24) & 0xFF,
+                  (constraintColor >> 16) & 0xFF,
+                  (constraintColor >> 8) & 0xFF);
 }
 
 void SketcherSettingsDisplay::onBtnTVApplyClicked(bool)
@@ -461,39 +764,100 @@ void SketcherSettingsDisplay::onBtnTVApplyClicked(bool)
 }
 
 
-/* TRANSLATOR SketcherGui::SketcherSettingsColors */
+/* TRANSLATOR SketcherGui::SketcherSettingsAppearance */
 
-SketcherSettingsColors::SketcherSettingsColors(QWidget* parent)
+namespace
+{
+// A line type combo box of the appearance page: its preference in
+// Mod/Sketcher/View and the pattern drawn when that is not set
+struct LinePatternBox
+{
+    QComboBox* box;
+    const char* entry;
+    int defaultPattern;
+};
+
+std::array<LinePatternBox, 8> linePatternBoxes(Ui_SketcherSettingsAppearance* ui)
+{
+    return {{
+        {ui->EdgePattern, "EdgePattern", 0b1111111111111111},
+        {ui->ConstructionPattern, "ConstructionPattern", 0b1111110011111100},
+        {ui->InternalPattern, "InternalPattern", 0b1111110011111100},
+        {ui->ExternalPattern, "ExternalPattern", 0b1111110011111100},
+        {ui->ExternalDefiningPattern, "ExternalDefiningPattern", 0b1111111111111111},
+        {ui->InformationPattern, "InformationPattern", 0b1111110011111100},
+        {ui->DimensionalConstraintLinePattern,
+         "DimensionalConstraintLinePattern",
+         0b1111111111111111},
+        {ui->AxisLinePattern, "AxisLinePattern", 0b1111111111111111},
+    }};
+}
+
+const char* const SketcherViewGroup = "User parameter:BaseApp/Preferences/Mod/Sketcher/View";
+}  // namespace
+
+SketcherSettingsAppearance::SketcherSettingsAppearance(QWidget* parent)
     : PreferencePage(parent)
-    , ui(new Ui_SketcherSettingsColors)
+    , ui(new Ui_SketcherSettingsAppearance)
 {
     ui->setupUi(this);
+
+    // The entries get their icons in event(), as the grid page's do
+    const auto lineStyleDelegate = new QStyledItemDelegate(this);
+    for (const auto& line : linePatternBoxes(ui.get())) {
+        line.box->setIconSize(LineIconSize);
+        line.box->setItemDelegate(lineStyleDelegate);
+        for (auto style : PenStyles) {
+            line.box->addItem(QString(), QVariant(style.pattern));
+        }
+    }
 }
 
 /**
  *  Destroys the object and frees any allocated resources
  */
-SketcherSettingsColors::~SketcherSettingsColors()
+SketcherSettingsAppearance::~SketcherSettingsAppearance()
 {
     // no need to delete child widgets, Qt does it all for us
 }
 
-void SketcherSettingsColors::saveSettings()
+bool SketcherSettingsAppearance::event(QEvent* event)
+{
+    // Painted from the page's own palette once the style has reached it,
+    // as on the grid page. Upstream (efec2c6795) shows a label of its own
+    // to read the style sheet's colour from; a styled page already has it.
+    if (event->type() == QEvent::StyleChange) {
+        PreferencePage::event(event);
+        const qreal dpr = devicePixelRatioF();
+        const QBrush brush = palette().windowText();
+        for (size_t i = 0; i < PenStyles.size(); ++i) {
+            const QIcon icon = PenStyles[i].toIcon(LineIconSize, dpr, brush);
+            for (const auto& line : linePatternBoxes(ui.get())) {
+                line.box->setItemIcon(static_cast<int>(i), icon);
+            }
+        }
+        return true;
+    }
+    return PreferencePage::event(event);
+}
+
+void SketcherSettingsAppearance::saveSettings()
 {
     // Sketcher
     ui->SketchEdgeColor->onSave();
     ui->SketchVertexColor->onSave();
     ui->EditedEdgeColor->onSave();
-    ui->EditedVertexColor->onSave();
     ui->ConstructionColor->onSave();
     ui->ExternalColor->onSave();
+    ui->ExternalDefiningColor->onSave();
     ui->InvalidSketchColor->onSave();
     ui->FullyConstrainedColor->onSave();
     ui->InternalAlignedGeoColor->onSave();
     ui->FullyConstraintElementColor->onSave();
     ui->FullyConstraintConstructionElementColor->onSave();
     ui->FullyConstraintInternalAlignmentColor->onSave();
-    ui->FullyConstraintConstructionPointColor->onSave();
+    ui->InformationColor->onSave();
+    ui->GridLineColor->onSave();
 
     ui->FrozenColor->onSave();
     ui->DetachedColor->onSave();
@@ -509,25 +873,39 @@ void SketcherSettingsColors::saveSettings()
 
     ui->CursorTextColor->onSave();
     ui->CursorCrosshairColor->onSave();
-    ui->CreateLineColor->onSave();
+
+    ui->EdgeWidth->onSave();
+    ui->ConstructionWidth->onSave();
+    ui->InternalWidth->onSave();
+    ui->ExternalWidth->onSave();
+    ui->ExternalDefiningWidth->onSave();
+    ui->InformationWidth->onSave();
+    ui->DimensionalConstraintLineWidth->onSave();
+    ui->AxisLineWidth->onSave();
+
+    ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(SketcherViewGroup);
+    for (const auto& line : linePatternBoxes(ui.get())) {
+        hGrp->SetInt(line.entry, line.box->itemData(line.box->currentIndex()).toInt());
+    }
 }
 
-void SketcherSettingsColors::loadSettings()
+void SketcherSettingsAppearance::loadSettings()
 {
     // Sketcher
     ui->SketchEdgeColor->onRestore();
     ui->SketchVertexColor->onRestore();
     ui->EditedEdgeColor->onRestore();
-    ui->EditedVertexColor->onRestore();
     ui->ConstructionColor->onRestore();
     ui->ExternalColor->onRestore();
+    ui->ExternalDefiningColor->onRestore();
     ui->InvalidSketchColor->onRestore();
     ui->FullyConstrainedColor->onRestore();
     ui->InternalAlignedGeoColor->onRestore();
     ui->FullyConstraintElementColor->onRestore();
     ui->FullyConstraintConstructionElementColor->onRestore();
     ui->FullyConstraintInternalAlignmentColor->onRestore();
-    ui->FullyConstraintConstructionPointColor->onRestore();
+    ui->InformationColor->onRestore();
+    ui->GridLineColor->onRestore();
 
     ui->FrozenColor->onRestore();
     ui->DetachedColor->onRestore();
@@ -544,13 +922,37 @@ void SketcherSettingsColors::loadSettings()
 
     ui->CursorTextColor->onRestore();
     ui->CursorCrosshairColor->onRestore();
-    ui->CreateLineColor->onRestore();
+
+    ui->EdgeWidth->onRestore();
+    ui->ConstructionWidth->onRestore();
+    ui->InternalWidth->onRestore();
+    ui->ExternalWidth->onRestore();
+    ui->ExternalDefiningWidth->onRestore();
+    ui->InformationWidth->onRestore();
+    ui->DimensionalConstraintLineWidth->onRestore();
+    ui->AxisLineWidth->onRestore();
+
+    ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(SketcherViewGroup);
+    for (const auto& line : linePatternBoxes(ui.get())) {
+        int index = line.box->findData(QVariant(int(hGrp->GetInt(line.entry, line.defaultPattern))));
+        line.box->setCurrentIndex(index < 0 ? 0 : index);
+    }
+}
+
+void SketcherSettingsAppearance::resetSettingsToDefaults()
+{
+    // the line types are stored by hand, so the base class does not know them
+    ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(SketcherViewGroup);
+    for (const auto& line : linePatternBoxes(ui.get())) {
+        hGrp->RemoveInt(line.entry);
+    }
+    PreferencePage::resetSettingsToDefaults();
 }
 
 /**
  * Sets the strings of the subwidgets using the current language.
  */
-void SketcherSettingsColors::changeEvent(QEvent* e)
+void SketcherSettingsAppearance::changeEvent(QEvent* e)
 {
     if (e->type() == QEvent::LanguageChange) {
         ui->retranslateUi(this);

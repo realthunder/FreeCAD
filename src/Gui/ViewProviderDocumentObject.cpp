@@ -1122,7 +1122,12 @@ Base::BoundBox3d ViewProviderDocumentObject::_getBoundingBox(
     if(Data::isMappedElement(subname)
             || (dot=strchr(subname,'.'))==0)
     {
-        return ViewProvider::_getBoundingBox(subname,&smat,false,viewer,depth+1);
+        // An element of this object: its own placement counts as the
+        // caller asked. Passing false here dropped it for a direct query
+        // (mat empty, transform true), so every face, edge and vertex of a
+        // placed object came back where it would be unplaced. A parent's
+        // walk already passes false with the placement in mat.
+        return ViewProvider::_getBoundingBox(subname,&smat,transform,viewer,depth+1);
     }
 
     if(ViewParams::getMapChildrenPlacement()) {
@@ -1172,14 +1177,44 @@ void ViewProviderDocumentObject::updateChildren(bool propagate) {
         return;
 
     auto newChildren = claimChildren();
-    if(claimedChildren == newChildren)
-        return;
+    // A child claimed before its view provider exists -- a document load
+    // creates them in its own order, and slices it -- cannot be told who
+    // claims it. It stays out of childSet, and a later call (Document::
+    // slotFinishImportObjects runs one for every object) must look again
+    // rather than find the list unchanged -- but only once such a child HAS
+    // a view provider: this call re-enters itself through
+    // signalChangedChildren, and "unchanged" is what ends that. Lost, the
+    // parent was missing from the child's parentSet for good, and
+    // isShowable() judged the child by its other claimers alone: with only
+    // a Link to its Part left, the child was switched off after every
+    // reopen and never picked.
+    if(claimedChildren == newChildren) {
+        if (!_childVpMissing)
+            return;
+        bool registrable = false;
+        for (auto child : newChildren) {
+            if (!childSet.count(child)
+                    && Base::freecad_dynamic_cast<ViewProviderDocumentObject>(
+                            Application::Instance->getViewProvider(child))) {
+                registrable = true;
+                break;
+            }
+        }
+        if (!registrable)
+            return;
+    }
 
+    _childVpMissing = false;
     std::set<App::DocumentObject *> newSet;
     for (auto child : newChildren) {
         auto vpd = Base::freecad_dynamic_cast<ViewProviderDocumentObject>(
                 Application::Instance->getViewProvider(child));
-        if(!vpd || !newSet.insert(child).second)
+        if(!vpd) {
+            if (child && child->isAttachedToDocument())
+                _childVpMissing = true;
+            continue;
+        }
+        if(!newSet.insert(child).second)
             continue;
         if(!childSet.erase(child)) {
             // this means new child detected

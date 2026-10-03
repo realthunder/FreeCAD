@@ -88,6 +88,34 @@ private Q_SLOTS:
         QCOMPARE(reply.value("code").toString(), QStringLiteral("ViewOnly"));
     }
 
+    /// A property's descriptor says what the property holds under its
+    /// name, as an expression spells it: a client completes
+    /// "Part.Placement." from it (docs/ThinClient.md, the property
+    /// descriptor). A property that holds nothing has no such field.
+    void test_propertyMembers()  // NOLINT
+    {
+        auto reply = ask(op("getProperties", {{"obj", "Part"}}));
+        QVERIFY2(reply.value("ok").toBool(),
+                 QJsonDocument(reply).toJson(QJsonDocument::Compact).constData());
+        QJsonObject placement, label;
+        for (const auto &v : reply.value("props").toArray()) {
+            const QJsonObject d = v.toObject();
+            if (d.value("scope").toString() != QStringLiteral("object"))
+                continue;
+            if (d.value("name").toString() == QStringLiteral("Placement"))
+                placement = d;
+            else if (d.value("name").toString() == QStringLiteral("Label"))
+                label = d;
+        }
+        QVERIFY(!placement.isEmpty());
+        QVERIFY(!label.isEmpty());
+        const QJsonArray members = placement.value("members").toArray();
+        QVERIFY2(members.contains(QStringLiteral("Base.x")),
+                 QJsonDocument(members).toJson(QJsonDocument::Compact).constData());
+        QVERIFY(members.contains(QStringLiteral("Rotation.Angle")));
+        QVERIFY(!label.contains("members"));
+    }
+
     void test_paramCatalog()  // NOLINT
     {
         auto reply = ask(op("omni.catalog", {{"list", "params"}}));

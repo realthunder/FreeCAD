@@ -344,7 +344,7 @@ public:
 
 private:
     SbVec2s base_pos;
-    SbTime since; //the time of mouse-down event
+    SbTime since; //the time of mouse-down event, on the steady clock
     int hold_timeout; //in milliseconds
 
 public:
@@ -355,7 +355,7 @@ public:
             Base::Console().Log(" -> AwaitingMoveState\n");
         ns.setViewingMode(NavigationStyle::IDLE);
         this->base_pos = static_cast<const NS::Event*>(this->triggering_event())->inventor_event->getPosition();
-        this->since = static_cast<const NS::Event*>(this->triggering_event())->inventor_event->getTime();
+        this->since = NavigationStyle::steadyTime();
 
         ns.mouseMoveThreshold = App::GetApplication().GetParameterGroupByPath
                     ("User parameter:BaseApp/Preferences/View")->GetInt("GestureMoveThreshold", ns.mouseMoveThreshold);
@@ -387,7 +387,7 @@ public:
             ev.flags->propagated = true;
         };
 
-        bool long_click = (ev.inventor_event->getTime() - this->since).getValue()*1000.0 >= this->hold_timeout;
+        bool long_click = (NavigationStyle::steadyTime() - this->since).getValue()*1000.0 >= this->hold_timeout;
 
         //this state consumes all mouse events.
         ev.flags->processed = ev.isMouseButtonEvent() || ev.isLocation2Event();

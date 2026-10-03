@@ -162,12 +162,20 @@ public:
     /// Invalids cache if there are selections
     bool checkCache(SoState *state, bool secondary=false);
 
+    /// Whether any context of this node is counted now.
+    bool hasCounted() const { return *counter != 0; }
+
     /// Count highlight action
     void checkAction(SoHighlightElementAction *hlaction);
 
     /// Count selection action
     void checkAction(SoSelectionElementAction *selaction,
             SoFCSelectionContextBasePtr ctx = SoFCSelectionContextBasePtr());
+
+    /// Hold one count for \a ctx exactly while it is counted (isCounted()).
+    /// Called AFTER the context changed, unlike checkAction(), which reads
+    /// it before.
+    void recount(const SoFCSelectionContextBasePtr &ctx);
 
 protected:
     std::shared_ptr<int> counter;

@@ -105,6 +105,7 @@
     </qresource>
     <qresource>
         <file>icons/general/Sketcher_EditSketch.svg</file>
+        <file>icons/general/Sketcher_CancelSketch.svg</file>
         <file>icons/general/Sketcher_LeaveSketch.svg</file>
         <file>icons/general/Sketcher_MapSketch.svg</file>
         <file>icons/general/Sketcher_MergeSketch.svg</file>
@@ -144,8 +145,8 @@
         <file>icons/geometry/Sketcher_CreateBSpline_Constr.svg</file>
         <file>icons/geometry/Sketcher_CreateBSplineByInterpolation.svg</file>
         <file>icons/geometry/Sketcher_CreateBSplineByInterpolation_Constr.svg</file>
-        <file>icons/geometry/Sketcher_Create_Periodic_BSplineByInterpolation.svg</file>
-        <file>icons/geometry/Sketcher_Create_Periodic_BSplineByInterpolation_Constr.svg</file>
+        <file>icons/geometry/Sketcher_CreatePeriodicBSplineByInterpolation.svg</file>
+        <file>icons/geometry/Sketcher_CreatePeriodicBSplineByInterpolation_Constr.svg</file>
         <file>icons/geometry/Sketcher_CreateChamfer.svg</file>
         <file>icons/geometry/Sketcher_CreateCircle.svg</file>
         <file>icons/geometry/Sketcher_CreateCircle_Constr.svg</file>
@@ -156,6 +157,7 @@
         <file>icons/geometry/Sketcher_CreateElliptical_Arc.svg</file>
         <file>icons/geometry/Sketcher_CreateElliptical_Arc_Constr.svg</file>
         <file>icons/geometry/Sketcher_CreateFillet.svg</file>
+        <file>icons/geometry/Sketcher_CreateFillet_Constr.svg</file>
         <file>icons/geometry/Sketcher_CreateFrame.svg</file>
         <file>icons/geometry/Sketcher_CreateFrame_Constr.svg</file>
         <file>icons/geometry/Sketcher_CreatePointFillet.svg</file>
@@ -288,7 +290,7 @@
         <file>icons/pointers/Sketcher_Pointer_Trimming.svg</file>
     </qresource>
     <qresource>
-        <file>icons/splines/Sketcher_BSplineApproximate.svg</file>
+        <file>icons/splines/Sketcher_BSplineConvertToNURBS.svg</file>
         <file>icons/splines/Sketcher_BSplineDecreaseDegree.svg</file>
         <file>icons/splines/Sketcher_BSplineDecreaseKnotMultiplicity.svg</file>
         <file>icons/splines/Sketcher_BSplineIncreaseDegree.svg</file>

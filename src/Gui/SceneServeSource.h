@@ -242,6 +242,23 @@ public:
     std::vector<App::SubObjectT> pickAllSubObjects(const SbVec3f &origin, const SbVec3f &dir,
                                                    uint64_t client);
 
+    /*!
+     * The client's mirror, built on first contact, whether or not the
+     * client has stated a camera yet: for the client's own view state --
+     * its object visibility -- which a client sets before it looks.
+     * Null only without a root or a client. GUI thread only.
+     */
+    MirrorViewer *clientViewer(uint64_t client);
+
+    /*!
+     * Tell \a client its own visibility as the host resolved it per draw
+     * of the served scene ({"cmd":"visibility"}: the objectKeys it hides
+     * and those it shows, hex). The client draws and picks by that set
+     * alone (docs/CoinRetirement.md 5.18, 5.23); a publish that changes
+     * it tells it again, before the scene goes out. GUI thread only.
+     */
+    void announceVisibility(uint64_t client);
+
 private Q_SLOTS:
     void onPublishTimeout();
 

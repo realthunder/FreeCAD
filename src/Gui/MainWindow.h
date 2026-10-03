@@ -414,6 +414,8 @@ protected:
     void childEvent(QChildEvent *e) override;
 
 private:
+    /// Emit statusBar()->messageChanged for the action label's text.
+    void announceActionMessage(const QString &msg);
     /*! Fold the menu bar behind a logo button in the title bar, and tell the
      * stylesheets which platform backend is drawing it. Called on every entry
      * into custom mode -- the constructor's and the run-time switch's -- because

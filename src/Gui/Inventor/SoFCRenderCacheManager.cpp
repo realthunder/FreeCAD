@@ -22,9 +22,12 @@
 
 #include "PreCompiled.h"
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <memory>
 
+#include <Inventor/details/SoDetail.h>
 #include <Inventor/lists/SoTypeList.h>
 #include <Inventor/actions/SoGLRenderAction.h>
 #include <Inventor/elements/SoGLCacheContextElement.h>
@@ -232,20 +235,24 @@ SoFCImageQuad::generatePrimitives(SoAction * action)
   const float w = float(size[0]);
   const float h = float(size[1]);
 
-  // GL parity (SoImage::getQuad): quad centred on the projected anchor
-  // point, then shifted half a size per alignment.
+  // GL parity (SoImage::GLRender): the image's lower-left corner is the
+  // truncated window position of the anchor less a WHOLE number of pixels
+  // per alignment -- size>>1 when centred, not half the size. Corners on
+  // whole-pixel offsets are what let the backend, which puts the anchor
+  // itself on a whole pixel, draw every texel onto exactly one pixel; half a
+  // pixel off, the filter spreads a 2-pixel icon stroke over three pale rows.
   const SbVec3f & off = this->pixelOffset.getValue();
-  float x0 = off[0] - 0.5f * w;
+  float x0 = std::round(off[0]);
   switch (this->owner->horAlignment.getValue()) {
-  case SoImage::LEFT:  x0 += 0.5f * w; break;
-  case SoImage::RIGHT: x0 -= 0.5f * w; break;
-  default: break; // CENTER
+  case SoImage::LEFT:  break;
+  case SoImage::RIGHT: x0 -= w; break;
+  default: x0 -= float(size[0] >> 1); break; // CENTER
   }
-  float y0 = off[1] - 0.5f * h;
+  float y0 = std::round(off[1]);
   switch (this->owner->vertAlignment.getValue()) {
-  case SoImage::TOP:    y0 -= 0.5f * h; break;
-  case SoImage::BOTTOM: y0 += 0.5f * h; break;
-  default: break; // HALF
+  case SoImage::TOP:    y0 -= h; break;
+  case SoImage::BOTTOM: break;
+  default: y0 -= float(size[1] >> 1); break; // HALF
   }
   const float x1 = x0 + w;
   const float y1 = y0 + h;
@@ -418,6 +425,8 @@ public:
   static SoCallbackAction::Response postSkipBounds(void *, SoCallbackAction *action, const SoNode * node);
   static SoCallbackAction::Response preShape(void *, SoCallbackAction *action, const SoNode * node);
   static SoCallbackAction::Response preImage(SoFCRenderCacheManagerP *self, SoCallbackAction *action, const SoImage * node);
+  /// The image companion's texture and colour, from its owner's pixels
+  static void syncImageTexture(SoTexture2 * texture, SoBaseColor * color, const SoImage * node);
   static SoCallbackAction::Response postShape(void *, SoCallbackAction *action, const SoNode * node);
   static SoCallbackAction::Response postClipPlane(void *, SoCallbackAction *action, const SoNode * node);
   static SoCallbackAction::Response preAutoZoom(void *, SoCallbackAction *action, const SoNode * node);
@@ -518,13 +527,16 @@ public:
     SbFCVector<VertexCachePtr> caches;
 
     // SoImage nodes only: the capture companion sub-graph
-    // [SoTexture2(REPLACE) -> SoAutoZoomTranslation(billboard, pixelScale 1)
-    //  -> SoFCImageQuad] traversed in the node's place by preShape(), and
-    // the owner node-id it was last captured against (a change retires the
-    // companion quad's vertex cache — the quad's own node-id cannot see
-    // owner edits like an icon recolour/resize).
+    // [SoLightModel(BASE_COLOR) -> SoBaseColor -> SoTexture2
+    //  -> SoAutoZoomTranslation(billboard, pixelScale 1) -> SoFCImageQuad]
+    // traversed in the node's place by preShape(), and the owner node-id
+    // it was last captured against (a change retires the companion quad's
+    // vertex cache -- the quad's own node-id cannot see owner edits like an
+    // icon recolour/resize -- and takes the owner's pixels again).
     CoinPtr<SoSeparator> imageroot;
     SoFCImageQuad *imagequad = nullptr;
+    SoTexture2 *imagetexture = nullptr;
+    SoBaseColor *imagecolor = nullptr;
     SbFCUniqueId imageid = 0;
   };
 
@@ -624,6 +636,18 @@ public:
   bool obeysrules;
   RenderCachePtr highlightcache;
   CoinPtr<SoPath> highlightpath;
+  // SoFCRenderCacheManager::setHighlights: the details or paths (copies)
+  // and colours, taken again from each scene capture() builds.
+  struct HighlightEntry
+  {
+    std::unique_ptr<SoDetail> detail;
+    CoinPtr<SoPath> path;
+    uint32_t color;
+  };
+  std::vector<HighlightEntry> highlightitems;
+  void applyHighlights();
+  // What \a path draws, captured once and kept until a node on it changes.
+  RenderCachePtr pathCache(SoPath * path, bool ontop);
   // Whether on-top draws escape the section, as this view answers for it
   // (Section_NoOnTop, the preference behind it otherwise). The highlight
   // caches below are built with it baked in, so they are dropped whenever
@@ -846,13 +870,24 @@ SoFCRenderCacheManagerP::SoFCRenderCacheManagerP()
   this->renderer = new SoFCRenderer;
 }
 
+// Every manager's capture action, for SoFCRenderCacheManager::
+// isCaptureAction.
+static FC_COIN_THREAD_LOCAL std::unordered_set<const SoAction *> _CaptureActions;
+
+bool SoFCRenderCacheManager::isCaptureAction(const SoAction *action)
+{
+  return action && _CaptureActions.count(action) != 0;
+}
+
 void SoFCRenderCacheManagerP::initAction()
 {
   if (this->action && this->shapetypeid && _shapetypeid == this->shapetypeid)
     return;
+  _CaptureActions.erase(this->action);
   delete this->action;
   _shapetypeid = this->shapetypeid = getMaxShapeTypeId();
   this->action = new SoCallbackAction;
+  _CaptureActions.insert(this->action);
   if (this->lastvpset)
     this->action->setViewportRegion(this->lastvp);
   this->action->addPreCallback(SoFCSelectionRoot::getClassTypeId(), &preSeparator, this);
@@ -910,6 +945,7 @@ void SoFCRenderCacheManagerP::initAction()
 
 SoFCRenderCacheManagerP::~SoFCRenderCacheManagerP()
 {
+  _CaptureActions.erase(this->action);
   delete this->action;
   delete this->renderer;
 }
@@ -952,12 +988,19 @@ SoFCRenderCacheManager::refreshExternalFeed()
   PRIVATE(this)->renderer->refreshExternalFeed();
 }
 
+const std::unordered_map<uint64_t, Render::ObjectInfo> &
+SoFCRenderCacheManager::getObjectInfo(uint64_t &serial) const
+{
+  return PRIVATE(this)->renderer->getObjectInfo(serial);
+}
+
 void
 SoFCRenderCacheManager::setExternalOverlay(Render::Renderer *renderer,
                                            int id,
-                                           const Render::OverlayAnchor &anchor)
+                                           const Render::OverlayAnchor &anchor,
+                                           int highlightId)
 {
-  PRIVATE(this)->renderer->setExternalOverlay(renderer, id, anchor);
+  PRIVATE(this)->renderer->setExternalOverlay(renderer, id, anchor, highlightId);
 }
 
 void
@@ -1034,52 +1077,9 @@ SoFCRenderCacheManager::setHighlight(SoPath * path,
 {
   if (!path || path->getLength() == 0)
     return;
-  SoState * state = PRIVATE(this)->action->getState();
-
   PRIVATE(this)->highlightpath = path;
 
-  RenderCachePtr cache;
-  if (PRIVATE(this)->nosectionontop != PRIVATE(this)->sectionNoOnTop()) {
-    PRIVATE(this)->nosectionontop = PRIVATE(this)->sectionNoOnTop();
-    PRIVATE(this)->pathcachetable.clear();
-    PRIVATE(this)->deadpathcaches.clear();
-  }
-  PRIVATE(this)->purgeDeadSensors();
-  auto it = PRIVATE(this)->pathcachetable.find(path);
-  if (it != PRIVATE(this)->pathcachetable.end())
-    cache = it->second.cache;
-  else {
-    cache = new SoFCRenderCache(state, path->getHead());
-    cache->open(state);
-    PRIVATE(this)->stack.resize(1, cache);
-    if (ontop) {
-      SoFCSwitch::setOverrideSwitch(state, true);
-      SoFCSwitch::pushSwitchPath(path);
-    }
-    PRIVATE(this)->override_selectstyle = false;
-    {
-      CaptureFlagGuard capguard;
-      PRIVATE(this)->action->apply(path);
-    }
-    if (ontop) {
-      SoFCSwitch::popSwitchPath();
-      SoFCSwitch::setOverrideSwitch(state, false);
-    }
-    cache->close(state);
-    PRIVATE(this)->stack.clear();
-    PRIVATE(this)->selnodeid.clear();
-    if (!cache->isEmpty()) {
-      // Must use SoTempPath as key to avoid path changes, because we are using
-      // the path as key which is supposed to be immutable.
-      PathPtr tmppath = new SoTempPath(path->getLength());
-      tmppath->append(path);
-      auto &sensor = PRIVATE(this)->pathcachetable[tmppath];
-      sensor.path = tmppath;
-      sensor.master = PRIVATE(this);
-      sensor.attach(path->copy());
-      sensor.cache = cache;
-    }
-  }
+  RenderCachePtr cache = PRIVATE(this)->pathCache(path, ontop);
 
   int order = ontop ? 1 : 0;
   PRIVATE(this)->highlightcache = cache;
@@ -1092,12 +1092,109 @@ SoFCRenderCacheManager::setHighlight(SoPath * path,
         wholeontop);
 }
 
+RenderCachePtr
+SoFCRenderCacheManagerP::pathCache(SoPath * path, bool ontop)
+{
+  SoState * state = this->action->getState();
+
+  if (this->nosectionontop != this->sectionNoOnTop()) {
+    this->nosectionontop = this->sectionNoOnTop();
+    this->pathcachetable.clear();
+    this->deadpathcaches.clear();
+  }
+  this->purgeDeadSensors();
+  auto it = this->pathcachetable.find(path);
+  if (it != this->pathcachetable.end())
+    return it->second.cache;
+
+  RenderCachePtr cache = new SoFCRenderCache(state, path->getHead());
+  cache->open(state);
+  this->stack.resize(1, cache);
+  if (ontop) {
+    SoFCSwitch::setOverrideSwitch(state, true);
+    SoFCSwitch::pushSwitchPath(path);
+  }
+  this->override_selectstyle = false;
+  {
+    CaptureFlagGuard capguard;
+    this->action->apply(path);
+  }
+  if (ontop) {
+    SoFCSwitch::popSwitchPath();
+    SoFCSwitch::setOverrideSwitch(state, false);
+  }
+  cache->close(state);
+  this->stack.clear();
+  this->selnodeid.clear();
+  if (!cache->isEmpty()) {
+    // Must use SoTempPath as key to avoid path changes, because we are using
+    // the path as key which is supposed to be immutable.
+    PathPtr tmppath = new SoTempPath(path->getLength());
+    tmppath->append(path);
+    auto &sensor = this->pathcachetable[tmppath];
+    sensor.path = tmppath;
+    sensor.master = this;
+    sensor.attach(path->copy());
+    sensor.cache = cache;
+  }
+  return cache;
+}
+
 void
 SoFCRenderCacheManager::clearHighlight()
 {
+  PRIVATE(this)->highlightitems.clear();
   PRIVATE(this)->highlightpath.reset();
   PRIVATE(this)->highlightcache.reset();
   PRIVATE(this)->renderer->clearHighlight();
+}
+
+void
+SoFCRenderCacheManager::setHighlights(const std::vector<HighlightItem> & items)
+{
+  auto self = PRIVATE(this);
+  self->highlightpath.reset();
+  self->highlightcache.reset();
+  self->highlightitems.clear();
+  for (auto & item : items) {
+    if (item.detail)
+      self->highlightitems.push_back({std::unique_ptr<SoDetail>(item.detail->copy()),
+                                      CoinPtr<SoPath>(), item.color});
+    else if (item.path && item.path->getLength())
+      self->highlightitems.push_back({nullptr, CoinPtr<SoPath>(item.path->copy()),
+                                      item.color});
+  }
+  self->applyHighlights();
+}
+
+void
+SoFCRenderCacheManagerP::applyHighlights()
+{
+  VertexCacheMap res;
+  if (auto & scene = this->renderer->getScene()) {
+    for (auto & item : this->highlightitems) {
+      VertexCacheMap caches;
+      if (item.path) {
+        // all the path draws, in the item's colour
+        RenderCachePtr cache = pathCache(item.path, false);
+        if (cache && !cache->isEmpty())
+          caches = cache->buildHighlightCache(this->sharedcache, 0, nullptr, item.color,
+                                              SoFCRenderCache::PreselectHighlight);
+      }
+      else
+        caches = scene->buildHighlightCache(this->sharedcache, 0,
+                                            item.detail.get(), item.color,
+                                            SoFCRenderCache::PreselectHighlight);
+      for (auto & v : caches) {
+        auto & entries = res[v.first];
+        entries.insert(entries.end(), v.second.begin(), v.second.end());
+      }
+    }
+  }
+  if (res.empty())
+    this->renderer->clearHighlight();
+  else
+    this->renderer->setHighlight(std::move(res), false);
 }
 
 void
@@ -1766,6 +1863,9 @@ SoFCRenderCacheManager::captureOverlay(SoState * state, SoNode * root)
   }
   cache->close(state);
   PRIVATE(this)->renderer->setScene(cache);
+  // The highlight names elements of the scene just replaced.
+  if (!PRIVATE(this)->highlightitems.empty())
+    PRIVATE(this)->applyHighlights();
   // Not routed anywhere in overlay mode (render() is a no-op there), but
   // kept symmetric with render() so the capture state never goes stale.
   PRIVATE(this)->renderer->setUserShaders(
@@ -2581,6 +2681,71 @@ SoFCRenderCacheManagerP::preShape(void *userdata,
   return SoCallbackAction::CONTINUE;
 }
 
+// The one colour an image is drawn in -- a glyph, an icon's silhouette --
+// if every pixel that shows has it, up to the rounding of antialiased
+// edges (whether their colour is premultiplied or not). False for an image
+// of several colours, or one without alpha.
+static bool flatImageColor(const unsigned char * px, const SbVec2s & size, int nc,
+                           SbColor & color)
+{
+  if (nc != 4)
+    return false;
+  const int count = size[0] * size[1];
+  // the most opaque pixel stands for the colour
+  int ref = -1;
+  for (int i = 0; i < count; ++i) {
+    if (ref < 0 || px[i * 4 + 3] > px[ref * 4 + 3])
+      ref = i;
+  }
+  if (ref < 0 || px[ref * 4 + 3] < 128)
+    return false;
+  const unsigned char * r = px + ref * 4;
+  for (int i = 0; i < count; ++i) {
+    const unsigned char * p = px + i * 4;
+    const int a = p[3];
+    if (a < 32)
+      continue;
+    bool same = true;
+    bool premultiplied = true;
+    for (int c = 0; c < 3; ++c) {
+      same = same && std::abs(int(p[c]) - int(r[c])) <= 16;
+      premultiplied = premultiplied && std::abs(int(p[c]) - int(r[c]) * a / 255) <= 16;
+    }
+    if (!same && !premultiplied)
+      return false;
+  }
+  color.setValue(r[0] / 255.f, r[1] / 255.f, r[2] / 255.f);
+  return true;
+}
+
+void
+SoFCRenderCacheManagerP::syncImageTexture(SoTexture2 * texture,
+                                          SoBaseColor * color,
+                                          const SoImage * node)
+{
+  // An image of one colour is drawn as its alpha in that colour: the same
+  // pixels, but a colour a highlight can override -- a preselected
+  // constraint icon shown on top in the preselection colour. Any other
+  // keeps its own colours, the texel replacing the fragment colour.
+  SbVec2s size;
+  int nc;
+  const unsigned char * px = node->image.getValue(size, nc);
+  SbColor flat;
+  if (px && flatImageColor(px, size, nc, flat)) {
+    std::vector<unsigned char> mask(px, px + std::size_t(size[0]) * size[1] * 4);
+    for (std::size_t i = 0; i < mask.size(); i += 4)
+      mask[i] = mask[i + 1] = mask[i + 2] = 255;
+    texture->image.setValue(size, 4, mask.data());
+    texture->model = SoTexture2::MODULATE;
+    color->rgb = flat;
+  }
+  else {
+    texture->image.setValue(size, nc, px);
+    texture->model = SoTexture2::REPLACE;
+    color->rgb = SbColor(1.f, 1.f, 1.f);
+  }
+}
+
 SoCallbackAction::Response
 SoFCRenderCacheManagerP::preImage(SoFCRenderCacheManagerP *self,
                                   SoCallbackAction *action,
@@ -2594,12 +2759,12 @@ SoFCRenderCacheManagerP::preImage(SoFCRenderCacheManagerP *self,
   VCacheSensor & sensor = self->vcachetable[node];
   sensor.attach(self, node);
   if (!sensor.imageroot) {
+    // Unlit: the quad shows the image's own colours (glDrawPixels
+    // semantics), taken by syncImageTexture() from the owner's pixels.
+    auto *lightmodel = new SoLightModel;
+    lightmodel->model = SoLightModel::BASE_COLOR;
+    auto *color = new SoBaseColor;
     auto *texture = new SoTexture2;
-    // The image bakes its own colours (glDrawPixels semantics): replace
-    // the fragment colour with the texel, alpha-blended, no material tint.
-    texture->model = SoTexture2::REPLACE;
-    // Track the owner's pixels live (icon recolour on selection etc.).
-    texture->image.connectFrom(&const_cast<SoImage *>(node)->image);
 
     auto *zoom = new SoAutoZoomTranslation;
     // SoImage is always screen-aligned; pixelScale 1 renders the
@@ -2615,10 +2780,14 @@ SoFCRenderCacheManagerP::preImage(SoFCRenderCacheManagerP *self,
     // out of the render/bbox caches so owner edits always re-emit.
     sensor.imageroot->renderCaching = SoSeparator::OFF;
     sensor.imageroot->boundingBoxCaching = SoSeparator::OFF;
+    sensor.imageroot->addChild(lightmodel);
+    sensor.imageroot->addChild(color);
     sensor.imageroot->addChild(texture);
     sensor.imageroot->addChild(zoom);
     sensor.imageroot->addChild(quad);
     sensor.imagequad = quad;
+    sensor.imagetexture = texture;
+    sensor.imagecolor = color;
   }
 
   // The companion quad's vertex cache is keyed on the quad's own node id,
@@ -2626,6 +2795,7 @@ SoFCRenderCacheManagerP::preImage(SoFCRenderCacheManagerP *self,
   if (sensor.imageid != node->getNodeId()) {
     sensor.imageid = node->getNodeId();
     sensor.imagequad->touch();
+    syncImageTexture(sensor.imagetexture, sensor.imagecolor, node);
   }
 
   // Fold the accumulated Sketcher zoom-translation offset into the quad
@@ -2639,7 +2809,9 @@ SoFCRenderCacheManagerP::preImage(SoFCRenderCacheManagerP *self,
   SbVec2f zoomoff = SoFCZoomOffsetElement::get(state);
   float vph = float(
       SoViewportRegionElement::get(state).getViewportSizePixels()[1]);
-  SbVec3f offpx(zoomoff[0] * 0.02f * vph, zoomoff[1] * 0.02f * vph, 0.f);
+  SbVec2f pixels = SoFCZoomOffsetElement::getPixels(state);
+  SbVec3f offpx(zoomoff[0] * 0.02f * vph + pixels[0],
+                zoomoff[1] * 0.02f * vph + pixels[1], 0.f);
   static int dbg = std::getenv("FC_DEBUG_IMAGEQUAD") ? 1 : 0;
   if (dbg)
     fprintf(stderr, "preImage %p zoomoff=(%g,%g) vph=%g offpx=(%g,%g)\n",

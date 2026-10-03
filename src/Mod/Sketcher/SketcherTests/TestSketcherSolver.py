@@ -1264,6 +1264,71 @@ class TestSketcherSolver(unittest.TestCase):
             msg=msg or "The given shapes are not spaced by the expected distance.",
         )
 
+    def testConstraintVisibility(self):
+        """A constraint's own visibility (upstream 46ec53f4da): set for one
+        or for several, kept by a copy of the document's content, apart from
+        the virtual space, and nothing written when it is as asked already."""
+        sketch = self.Doc.addObject("Sketcher::SketchObject", "SketchVisibility")
+        CreateBoxSketchSet(sketch)
+        self.Doc.recompute()
+        count = sketch.ConstraintCount
+        self.assertGreater(count, 3)
+
+        def hidden():
+            return [i for i, c in enumerate(sketch.Constraints) if 'IsVisible="0"' in c.Content]
+
+        self.assertEqual(hidden(), [])
+        sketch.setVisibility(1, False)
+        self.assertEqual(hidden(), [1])
+        sketch.setVisibility([0, 2, 3], False)
+        self.assertEqual(hidden(), [0, 1, 2, 3])
+        self.assertFalse(any(c.InVirtualSpace for c in sketch.Constraints))
+        sketch.setVisibility((0, 1), True)
+        self.assertEqual(hidden(), [2, 3])
+
+        # as asked already: the property is not written
+        self.Doc.recompute()
+        self.assertNotIn("Touched", sketch.State)
+        sketch.setVisibility([2, 3], False)
+        sketch.setVisibility(0, True)
+        self.assertNotIn("Touched", sketch.State)
+        sketch.setVisibility(2, True)
+        self.assertIn("Touched", sketch.State)
+        self.assertEqual(hidden(), [3])
+
+        with self.assertRaises(Exception):
+            sketch.setVisibility(count, False)
+        with self.assertRaises(Exception):
+            sketch.setVisibility([0, count], False)
+        with self.assertRaises(TypeError):
+            sketch.setVisibility("0", False)
+        self.assertEqual(hidden(), [3])
+
+        # it travels with the sketch
+        copy = self.Doc.copyObject(sketch)
+        self.assertEqual(
+            [i for i, c in enumerate(copy.Constraints) if 'IsVisible="0"' in c.Content], [3]
+        )
+
+    def testDelConstraints(self):
+        """Several constraints deleted in one call (upstream's delConstraints)."""
+        sketch = self.Doc.addObject("Sketcher::SketchObject", "SketchDelConstraints")
+        CreateBoxSketchSet(sketch)
+        self.Doc.recompute()
+        count = sketch.ConstraintCount
+        self.assertGreater(count, 4)
+        kept = [c.Type for i, c in enumerate(sketch.Constraints) if i not in (0, 2, 3)]
+        sketch.delConstraints([3, 0, 2])
+        self.assertEqual(sketch.ConstraintCount, count - 3)
+        self.assertEqual([c.Type for c in sketch.Constraints], kept)
+        sketch.delConstraints((0,), True, True)
+        self.assertEqual(sketch.ConstraintCount, count - 4)
+        with self.assertRaises(ValueError):
+            sketch.delConstraints([0, count])
+        with self.assertRaises(TypeError):
+            sketch.delConstraints(0)
+        self.assertEqual(sketch.ConstraintCount, count - 4)
+
     def tearDown(self):
         # closing doc
         FreeCAD.closeDocument("SketchSolverTest")

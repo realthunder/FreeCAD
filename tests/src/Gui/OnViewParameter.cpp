@@ -376,11 +376,13 @@ TEST_F(OnViewParameterTest, aStaleIndexFromAClientIsRefused)
     EXPECT_FALSE(mirror->focusOnViewParameter(-1));
 }
 
-TEST_F(OnViewParameterTest, aClientIndexCountsOnlyTheBoxesOnScreen)
+TEST_F(OnViewParameterTest, aClientIndexNamesTheBoxItWasGivenFor)
 {
     // A label shown and not in edit, as a pattern's gaps are until one is
-    // clicked, is in the view's set but not in the feed. The client's
-    // index is the feed's, so it must land on the box it was given for.
+    // clicked, is in the view's set but not in the feed. The client names a
+    // box by the index the feed gives it -- its place in the whole set --
+    // so it must land on the box it was given for, and the label not in
+    // the feed cannot be named at all.
     auto shown = std::make_unique<Gui::EditableDatumLabel>(
         mirror.get(), Base::Placement(), SbColor(1, 1, 1), false, false);
     shown->activate();
@@ -390,10 +392,12 @@ TEST_F(OnViewParameterTest, aClientIndexCountsOnlyTheBoxesOnScreen)
     const auto before = mirror->onViewParameters();
     ASSERT_EQ(before.size(), 2U);
     EXPECT_FALSE(before[0].focus);
-    EXPECT_TRUE(mirror->focusOnViewParameter(0));
+    EXPECT_EQ(before[0].index, 1) << "the label not in the feed still holds its place";
+    EXPECT_TRUE(mirror->focusOnViewParameter(before[0].index));
     EXPECT_TRUE(mirror->onViewParameters()[0].focus);
     EXPECT_FALSE(mirror->onViewParameters()[1].focus);
-    EXPECT_FALSE(mirror->focusOnViewParameter(2));
+    EXPECT_FALSE(mirror->focusOnViewParameter(0)) << "the label not in the feed";
+    EXPECT_FALSE(mirror->focusOnViewParameter(3));
     shown.reset();
 }
 

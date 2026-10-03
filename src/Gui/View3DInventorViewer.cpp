@@ -192,6 +192,8 @@
 #include "Inventor/SoFCVertexCache.h"
 #include "Inventor/ScenePublishDelta.h"
 #include "ViewProviderDocumentObject.h"
+#include "ViewVisibility.h"
+#include "Inventor/SoFCSwitch.h"
 #include "ViewProviderLink.h"
 #include "Renderer/CyclesRenderer.h"
 #include "Renderer/Renderer.h"
@@ -315,7 +317,10 @@ public:
         else if (event->type() == QEvent::KeyPress) {
             auto ke = static_cast<QKeyEvent*>(event);  // NOLINT
             if (ke->matches(QKeySequence::SelectAll)) {
-                static_cast<View3DInventorViewer*>(obj)->selectAll();
+                auto viewer = static_cast<View3DInventorViewer*>(obj);
+                auto editingVP = viewer->getEditingViewProvider();
+                if (!editingVP || !editingVP->selectAll())
+                    viewer->selectAll();
                 return true;
             }
         }
@@ -580,6 +585,11 @@ struct View3DInventorViewer::Private
     Render::StyleOverrideTable styleOverrides;
     uint32_t styleOverrideSerial = 0;
 
+    /// This view's per-object visibility, parsed by View3DInventor
+    /// from its ObjectVisibilities property. Kept for the viewer's
+    /// lifetime for the same reason as styleOverrides.
+    ViewVisibility visibility;
+
     /// The capture's additive-mode interest (docs/CoinRetirement.md
     /// 5.9 "Non-standard modes"): the Coin-side list pushed to the
     /// traversal (via the selection root) and the Render-side list
@@ -627,7 +637,13 @@ struct View3DInventorViewer::Private
         OverlayEditing = 7,
         OverlayDimensions = 8,
         OverlayDebugLabel = 9,
-        OverlayOnView = 10,
+        // The editing capture's highlight feed (the sketcher's
+        // preselection): past OverlayEditing, so it draws over the
+        // whole edit graph, constraint icons and datum labels included.
+        OverlayEditHighlight = 10,
+        // The on-view parameters' root (getOnViewParameterRoot): last, so
+        // a tool's dimension and its box are over the highlight too.
+        OverlayOnView = 11,
     };
     /// The ids above are per VIEWER. A unified-canvas cell offsets them
     /// by its sub-view id times this stride, because the backend's
@@ -977,10 +993,12 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
     // traversal. Every feed below goes through here, so the scoping
     // cannot be forgotten at one site.
     auto feedOverlay = [&](OverlayCapture &capture, int base,
-                           Render::OverlayAnchor anchor) {
+                           Render::OverlayAnchor anchor,
+                           int highlightBase = 0) {
         anchor.subView = canvasSubView;
         capture.manager->setExternalOverlay(
-            renderer.get(), canvasSubView * OverlayIdStride + base, anchor);
+            renderer.get(), canvasSubView * OverlayIdStride + base, anchor,
+            highlightBase ? canvasSubView * OverlayIdStride + highlightBase : 0);
         captureAction.apply(capture.applyRoot);
     };
 
@@ -1346,7 +1364,8 @@ void View3DInventorViewer::Private::updateOverlayCaptures(SoGLRenderAction *glra
             initCapture(editingCapture, owner->pcEditingRoot);
         Render::OverlayAnchor editAnchor;
         editAnchor.sceneCamera = true;
-        feedOverlay(editingCapture, OverlayEditing, editAnchor);
+        feedOverlay(editingCapture, OverlayEditing, editAnchor,
+                    OverlayEditHighlight);
         editingBackendFed = true;
     }
     else {
@@ -1602,6 +1621,10 @@ View3DInventorViewer* View3DInventorViewer::fromEventCallback(const SoEventCallb
 void View3DInventorViewer::init()
 {
     _pimpl.reset(new Private(this));
+
+    // This view's visibility entries resolved again after a change to the
+    // document's structure moved the nodes they name.
+    _pimpl->visibility.setOnChanged([this] { onVisibilityChanged(); });
 
     // A redraw held back by the throttle comes back through this timer, so a
     // scene that stops changing still gets its last frame.
@@ -1867,6 +1890,9 @@ View3DInventorViewer::~View3DInventorViewer()
     // The Cycles session first: its threads ask this widget to repaint,
     // and destroying it joins them before anything they name goes.
     setCyclesViewport(nullptr, nullptr);
+
+    // What this view showed on its own is no longer shown by it.
+    _pimpl->visibility.clear();
 
     // to prevent following OpenGL error message: "Texture is not valid in the current context. Texture has not been destroyed"
     aboutToDestroyGLContext();
@@ -2418,7 +2444,7 @@ bool View3DInventorViewer::renderWithCycles(const std::string &path, int width, 
     // Framed for the requested size, not the widget's: the camera's
     // viewport mapping adjusts the volume to the aspect asked for.
     SbMatrix viewMat, projMat;
-    SbViewVolume vol = cam->getViewVolume(float(width) / float(height));
+    SbViewVolume vol = getMappedViewVolume(cam, float(width) / float(height));
     vol.getMatrices(viewMat, projMat);
     std::memcpy(input.camera.view, viewMat.getValue(), sizeof(input.camera.view));
     std::memcpy(input.camera.proj, projMat.getValue(), sizeof(input.camera.proj));
@@ -2943,6 +2969,56 @@ void View3DInventorViewer::setObjectStyleOverrides(
     // in the same sense a style change is.
     if (_pimpl->view)
         Application::Instance->signalViewModeChanged(_pimpl->view);
+}
+
+void View3DInventorViewer::setObjectVisibilities(std::vector<VisibilityEntry> &&entries)
+{
+    if (_pimpl->visibility.set(std::move(entries)))
+        onVisibilityChanged();
+}
+
+bool View3DInventorViewer::setEditHide(const VisibilityEntry *hide)
+{
+    // The table is read only where the render-cache manager is (mode 3);
+    // modes 0-2 have no per-view visibility at all.
+    if (!getRenderCacheManager())
+        return false;
+    std::vector<VisibilityEntry> entries;
+    if (hide)
+        entries.push_back(*hide);
+    if (_pimpl->visibility.setTransient(std::move(entries)))
+        onVisibilityChanged();
+    return true;
+}
+
+void View3DInventorViewer::onVisibilityChanged()
+{
+    // The element is set by selectionRoot from this viewer's state, which
+    // no cache ABOVE that node can see: a separator caching its bounding
+    // box there would keep answering with the old table. Touching the node
+    // tells them. Below it the element's own version does the work, and
+    // the render caches of the objects are left alone -- their nodes did
+    // not move.
+    // The backend's scene bounds answer for this view too (onGetBoundingBox).
+    if (_pimpl->renderer)
+        _pimpl->renderer->setMainViewVisibility(objectVisibilities());
+    if (selectionRoot)
+        selectionRoot->touch();
+    // The element's version is what re-validates the Coin caches that
+    // read it; the traversals themselves are per frame.
+    getSoRenderManager()->scheduleRedraw();
+}
+
+const SoFCVisibilityElement::Table *
+View3DInventorViewer::visibilityElementTable() const
+{
+    return _pimpl->visibility.elementTable();
+}
+
+const Render::VisibilitySet *
+View3DInventorViewer::objectVisibilities(SoFCRenderCacheManager *feed)
+{
+    return _pimpl->visibility.drawSet(feed ? feed : getRenderCacheManager());
 }
 
 const Render::StyleOverrideTable *
@@ -4667,7 +4743,7 @@ void View3DInventorViewer::renderToFramebuffer(QtGLFramebufferObject* fbo)
                                          : nullptr) {
         SbMatrix viewMat, projMat;
         SbViewportRegion capvp {short(width), short(height)};
-        SbViewVolume vol = cam->getViewVolume(capvp.getViewportAspectRatio());
+        SbViewVolume vol = getMappedViewVolume(cam, capvp.getViewportAspectRatio());
         vol.getMatrices(viewMat, projMat);
         // Same style context as the on-screen frame (docs/
         // CoinRetirement.md 5.9): a capture of a view with per-object
@@ -4679,6 +4755,7 @@ void View3DInventorViewer::renderToFramebuffer(QtGLFramebufferObject* fbo)
         else
             _pimpl->renderer->setMainViewStyle(
                     Render::StyleAsIs, 0, false, nullptr, 0);
+        _pimpl->renderer->setMainViewVisibility(objectVisibilities());
         _pimpl->renderer->setCaptureInterest(captureInterestTable());
         _pimpl->renderer->setBackground(_pimpl->backgroundFeed(col));
         externalRendered = _pimpl->renderer->renderOffscreen(
@@ -5148,14 +5225,17 @@ void View3DInventorViewer::setRendererType(const std::string &type)
         if (_pimpl->renderer && getenv("FC_BGFX_SERVE_SCENE")) {
             QPointer<View3DInventorViewer> self(this);
             Render::SceneStreamServer::instance().setPickHandler(
-                [self](const Render::ScenePickRequest &req) {
-                    Render::ScenePickRequest r = req;
-                    QMetaObject::invokeMethod(qApp, [self, r]() {
-                        if (self)
+                [self](const std::vector<Render::ScenePickRequest> &reqs) {
+                    // A batch in one queued call, one frame for all of it.
+                    QMetaObject::invokeMethod(qApp, [self, reqs]() {
+                        for (const auto &r : reqs) {
+                            if (!self)
+                                return;
                             self->pickAndSelect(
                                 SbVec3f(r.origin[0], r.origin[1], r.origin[2]),
                                 SbVec3f(r.dir[0], r.dir[1], r.dir[2]),
                                 r.modifiers & 1);
+                        }
                     }, Qt::QueuedConnection);
                 });
             // The semantic control channel (docs/ThinClient.md §4.2):
@@ -6501,7 +6581,9 @@ void View3DInventorViewer::renderScene()
     else if (cam && _pimpl->renderer) {
         SbMatrix viewMat, projMat;
         const SbViewportRegion vp = getSoRenderManager()->getViewportRegion();
-        SbViewVolume vol = cam->getViewVolume(vp.getViewportAspectRatio());
+        // Coin's own mapping, the one its pick and the residue drawn
+        // over this frame use: a portrait view widens the volume.
+        SbViewVolume vol = getMappedViewVolume(cam, vp.getViewportAspectRatio());
         vol.getMatrices(viewMat, projMat);
         // The plain frame's style context (docs/CoinRetirement.md
         // 5.9): at rest unless this view carries per-object display
@@ -6516,6 +6598,7 @@ void View3DInventorViewer::renderScene()
         else
             _pimpl->renderer->setMainViewStyle(
                     Render::StyleAsIs, 0, false, nullptr, 0);
+        _pimpl->renderer->setMainViewVisibility(objectVisibilities());
         _pimpl->renderer->setCaptureInterest(captureInterestTable());
         _pimpl->renderer->setBackground(_pimpl->backgroundFeed(col));
         // The backend draws what the LAST traversal fed it. If that
@@ -7123,7 +7206,7 @@ SbVec2s View3DInventorViewer::getPointOnViewport(const SbVec3f& pnt) const
     const SbViewportRegion& vp = this->getSoRenderManager()->getViewportRegion();
     float fRatio = vp.getViewportAspectRatio();
     const SbVec2s& sp = vp.getViewportSizePixels();
-    SbViewVolume vv = this->getSoRenderManager()->getCamera()->getViewVolume(fRatio);
+    SbViewVolume vv = getMappedViewVolume(this->getSoRenderManager()->getCamera(), fRatio);
 
     SbVec3f pt(pnt);
     vv.projectToScreen(pt, pt);
@@ -7511,10 +7594,19 @@ bool View3DInventorViewer::getSceneBoundBox(Base::BoundBox3d &box) const {
 
     SoGetBoundingBoxAction action(this->getSoRenderManager()->getViewportRegion());
     SoSkipBoundingBoxElement::set(action.getState(), SoSkipBoundingGroup::EXCLUDE_BBOX);
+    // This view's own visibility (docs/CoinRetirement.md 5.18). The
+    // traversals below start under selectionRoot, which is what sets it
+    // for every other action, so they set it themselves.
+    const SoFCVisibilityElement::Table *visibility = visibilityElementTable();
+    if (visibility)
+        SoFCVisibilityElement::set(action.getState(), visibility);
 
+    // The render cache's scene box answers for the one capture every
+    // view shares, so it cannot follow a view's own map: a view with one
+    // takes the traversal.
     auto manager = selectionRoot->getRenderManager();
     SbBox3f bbox;
-    if (manager && manager->getSceneNodeId() == selectionRoot->getNodeId())
+    if (manager && !visibility && manager->getSceneNodeId() == selectionRoot->getNodeId())
         manager->getBoundingBox(bbox);
     if (isValidBBox(bbox)) {
         float minx,miny,minz,maxx,maxy,maxz;
@@ -7526,7 +7618,10 @@ bool View3DInventorViewer::getSceneBoundBox(Base::BoundBox3d &box) const {
         box.MaxY = maxy;
         box.MaxZ = maxz;
     } else {
-        if(guiDocument && ViewParams::getUseTightBoundingBox()) {
+        // Per ViewProvider, the tight box asks only the object's own
+        // Visibility; a view with its own map takes the traversal, which
+        // answers every entry form (a path entry below a container too).
+        if(guiDocument && ViewParams::getUseTightBoundingBox() && !visibility) {
             for(int i=0;i<pcViewProviderRoot->getNumChildren();++i) {
                 auto node = pcViewProviderRoot->getChild(i);
                 auto vp = guiDocument->getViewProvider(node);
@@ -7634,10 +7729,6 @@ void View3DInventorViewer::animatedViewAll(const SbBox3f &box, int steps, int ms
 
     SbVec3f campos = cam->position.getValue();
     SbRotation camrot = cam->orientation.getValue();
-    SbViewportRegion vp = this->getSoRenderManager()->getViewportRegion();
-
-    float aspectRatio = vp.getViewportAspectRatio();
-
     if (box.isEmpty()) {
         return;
     }
@@ -7659,12 +7750,10 @@ void View3DInventorViewer::animatedViewAll(const SbBox3f &box, int steps, int ms
     if (cam->isOfType(SoOrthographicCamera::getClassTypeId())) {
         isOrthographic = true;
         height = static_cast<SoOrthographicCamera*>(cam)->height.getValue();  // NOLINT
-        if (aspectRatio < 1.0F) {
-            diff = sphere.getRadius() * 2 - height * aspectRatio;
-        }
-        else {
-            diff = sphere.getRadius() * 2 - height;
-        }
+        // Toward the height viewBoundBox ends on: the diameter, at any
+        // aspect, since the mapped volume puts the height across the
+        // smaller side.
+        diff = sphere.getRadius() * 2 - height;
         pos = (box.getCenter() - direction * sphere.getRadius());
     }
     else if (cam->isOfType(SoPerspectiveCamera::getClassTypeId())) {
@@ -8215,12 +8304,26 @@ void View3DInventorViewer::setRotationCenterSelection()
 }
 
 void View3DInventorViewer::viewBoundBox(const SbBox3f &box) {
+    SoCamera* cam = getSoRenderManager()->getCamera();
+    if(!cam || box.isEmpty())
+        return;
+
+    // A point -- a vertex's box, at most a shape's tolerance across -- has
+    // nothing to frame: Coin would give an orthographic camera a height of
+    // 0 and put a perspective one on the point, and the animated fit would
+    // shrink the height towards that. Move the view's centre onto it and
+    // keep the zoom.
+    SbSphere sphere;
+    sphere.circumscribe(box);
+    if (sphere.getRadius() <= 1e-5f) {
+        SbVec3f direction;
+        cam->orientation.getValue().multVec(SbVec3f(0, 0, -1), direction);
+        cam->position = box.getCenter() - direction * cam->focalDistance.getValue();
+        return;
+    }
+
     if (isAnimationEnabled())
         animatedViewAll(box, 10, 20);
-
-    SoCamera* cam = getSoRenderManager()->getCamera();
-    if(!cam)
-        return;
 
 #if (COIN_MAJOR_VERSION >= 4)
     float aspectratio = getSoRenderManager()->getViewportRegion().getViewportAspectRatio();
@@ -8229,6 +8332,14 @@ void View3DInventorViewer::viewBoundBox(const SbBox3f &box) {
         case SoCamera::CROP_VIEWPORT_LINE_FRAME:
         case SoCamera::CROP_VIEWPORT_NO_FRAME:
             aspectratio = 1.0f;
+            break;
+        case SoCamera::ADJUST_CAMERA:
+            // Coin's viewBoundingBox divides the height by a portrait
+            // aspect, and ADJUST_CAMERA then widens the volume by
+            // 1/aspect again when it draws (getMappedViewVolume): the
+            // scene would fill only `aspect` of the width. Under this
+            // mapping the camera height already spans the smaller side.
+            aspectratio = std::max(aspectratio, 1.0f);
             break;
         default:
             break;
@@ -8797,6 +8908,23 @@ void View3DInventorViewer::hangEditingRoot(EditingRoot* root, bool hang)
     else {
         root->unhangFrom(aux);
     }
+}
+
+bool View3DInventorViewer::setEditingHighlight(
+    const std::vector<SoFCRenderCacheManager::HighlightItem>& items)
+{
+    // Only while the backend draws the editing root: otherwise Coin does,
+    // and the highlight has to be in the graph it draws.
+    if (!canEditingHighlight())
+        return false;
+    _pimpl->editingCapture.manager->setHighlights(items);
+    redraw();
+    return true;
+}
+
+bool View3DInventorViewer::canEditingHighlight() const
+{
+    return _pimpl->editingBackendFed && _pimpl->editingCapture.manager;
 }
 
 void View3DInventorViewer::setEditing(bool edit)

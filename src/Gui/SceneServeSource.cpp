@@ -30,6 +30,7 @@
 #include <Inventor/actions/SoRayPickAction.h>
 #include <Inventor/nodes/SoOrthographicCamera.h>
 #include <Inventor/nodes/SoSeparator.h>
+#include <Inventor/sensors/SoNodeSensor.h>
 #include <QApplication>
 #include <QColor>
 #include <QJsonArray>
@@ -83,6 +84,7 @@
 #include "Selection.h"
 #include "SoFCSelectionAction.h"
 #include "SoFCUnifiedSelection.h"
+#include "Utilities.h"
 #include "ViewProviderDocumentObject.h"
 
 using namespace Gui;
@@ -450,6 +452,37 @@ public:
         naviFeed(naviButtonFeed, OverlayNaviButtons, buttons, buttonAnchor, viewport);
     }
 
+    /** The edit session's geometry, published as an overlay of its own
+     * (docs/ThinClient.md 8.12 item J).
+     *
+     * A mirror hangs the session's editing root beside the served scene
+     * in its own event graph, not in it, so nothing here would publish it;
+     * this is the desktop's editingCapture restated for the serving
+     * backend. The overlay rides the one snapshot every client of this
+     * document shares, tagged with the session, and a viewer draws it
+     * only once the `edit` push has told it that session is its own.
+     * Under 8.11 every client with a view joins the one session, so all
+     * of them draw it today; the tag is what keeps that a decision rather
+     * than an accident once sessions fork.
+     */
+    std::unique_ptr<SoFCRenderCacheManager> editCapture;
+    /// The node the capture was built on: a new session's root is a
+    /// new capture.
+    SoNode *editCaptureRoot = nullptr;
+    /// The session running now, 0 when none. Minted per session here
+    /// and nowhere else -- it only has to tell this document's sessions
+    /// apart on this document's wire.
+    uint32_t editSession = 0;
+    uint32_t lastEditSession = 0;
+    /** Republishes a change under the session's root that no replayed
+     * input asked for: a desktop drag in a shared session, a solve
+     * finishing, a tool redrawing on a timer. Input from a client
+     * schedules its own publish; nothing else did, because the root used
+     * to hang in the served graph, whose changes the document signals
+     * cover.
+     */
+    SoNodeSensor editSensor;
+
     /** One client's own selection, told back to that client
      * (docs/ThinClient.md 8.11, view mode).
      *
@@ -516,6 +549,9 @@ public:
      * handler and the pick handler both marshal.
      */
     std::map<uint64_t, std::unique_ptr<MirrorViewer>> mirrors;
+    /// The version of each client's visibility set it was last told
+    /// (announceVisibility), so a publish that changed it re-tells it.
+    std::map<uint64_t, uint32_t> visibilityTold;
 
     /** This connection's mirror viewer, built on first contact.
      *
@@ -553,6 +589,16 @@ public:
             onViewDirty.insert(client);
             if (owner)
                 owner->schedulePublish();
+        });
+        // An edit session hides the occurrence it draws itself in
+        // every view of the session, this client's included: what the
+        // capture carries and the table the client draws by changed
+        // with no document signal and no op from the client.
+        mirror->setOnVisibilityCallback([this, client]() {
+            if (owner) {
+                owner->schedulePublish();
+                owner->announceVisibility(client);
+            }
         });
         // What the others already have selected, for the ones whose
         // route says this client may see it (8.11a). Said now rather
@@ -600,9 +646,9 @@ public:
      * Nothing happens for a client with no mirror: an event is a place
      * in a view, and without a stated camera there is no view to place
      * it in. The publish afterwards is what carries the result back --
-     * an edit mode's geometry lives under the mirror's editing root,
-     * which is in the served graph exactly so that the change-driven
-     * traversal sees it. Coalesced, so a drag's worth of moves costs
+     * an edit mode's geometry lives under the session's editing root,
+     * which the publish captures as the session's overlay
+     * (feedEditOverlay). Coalesced, so a drag's worth of moves costs
      * one traversal rather than one each. GUI thread only.
      */
     void replayInput(const Render::SceneInputFrame &frame)
@@ -692,6 +738,9 @@ public:
             json += obj->getNameInDocument() ? obj->getNameInDocument() : "";
             json += "\"";
         }
+        // Which session's overlay is this client's to draw (8.12 item J).
+        if (editing && editSession)
+            json += ",\"session\":" + std::to_string(editSession);
         json += ",\"doc\":\"" + groupName + "\"}";
         auto &server = Render::SceneStreamServer::instance();
         if (onlyClient) {
@@ -724,6 +773,65 @@ public:
     {
         for (auto &entry : mirrors)
             entry.second->leaveEditing();
+    }
+
+    /// A session began (signalInEdit): mint its id and watch its root.
+    void beginEditSession()
+    {
+        editSession = ++lastEditSession;
+        if (lastEditSession == 0)   // wrapped; 0 means "every viewer"
+            editSession = lastEditSession = 1;
+        editSensor.detach();
+        if (doc)
+            editSensor.attach(doc->editingRoot()->node());
+    }
+
+    void endEditSession()
+    {
+        editSession = 0;
+        editSensor.detach();
+    }
+
+    /// The overlay id: the desktop's OverlayEditing, the one feed of its
+    /// kind a document has while one session runs at a time.
+    static constexpr int kEditOverlayId = 7;
+
+    void dropEditOverlay()
+    {
+        if (!editCapture)
+            return;
+        editCapture->setExternalOverlay(nullptr, kEditOverlayId, Render::OverlayAnchor());
+        editCapture.reset();
+        editCaptureRoot = nullptr;
+    }
+
+    /** Capture the session's editing root into the serving backend's
+     * overlay feed, or take the overlay away when there is nothing to
+     * show. Part of every publish, after the scene's own traversal; an
+     * unchanged root is a node-id compare (SoFCRenderCacheManager::
+     * traverse).
+     *
+     * Content means more than the editing transform, the desktop's own
+     * gate (View3DInventorViewer::Private::updateOverlayCaptures).
+     */
+    void feedEditOverlay(const SbViewportRegion &viewport)
+    {
+        EditingRoot *edit = editSession && doc ? doc->editingRoot() : nullptr;
+        SoNode *node = edit && edit->hasContent() ? edit->node() : nullptr;
+        if (editCapture && editCaptureRoot != node)
+            dropEditOverlay();
+        if (!node || !renderer)
+            return;
+        if (!editCapture) {
+            editCapture = std::make_unique<SoFCRenderCacheManager>();
+            editCaptureRoot = node;
+        }
+        Render::OverlayAnchor anchor;
+        anchor.sceneCamera = true;
+        anchor.session = editSession;
+        // A no-op unless the session moved on: the anchor is compared.
+        editCapture->setExternalOverlay(renderer.get(), kEditOverlayId, anchor);
+        editCapture->traverse(node, viewport);
     }
 
     /** Restate one client's on-view parameters to it (sec 8.7).
@@ -806,22 +914,50 @@ public:
         std::string json = "{\"cmd\":\"onview\",\"doc\":\"" + groupName
             + "\",\"params\":[";
         bool first = true;
-        int index = 0;
         for (const auto &param : mirror->onViewParameters()) {
             if (!first)
                 json += ',';
             first = false;
-            json += "{\"i\":" + std::to_string(index++);
+            json += "{\"i\":" + std::to_string(param.index);
             json += ",\"x\":" + floatJson(param.anchor[0]);
             json += ",\"y\":" + floatJson(param.anchor[1]);
             json += ",\"z\":" + floatJson(param.anchor[2]);
+            // After the anchor and before the text, where the viewer
+            // looks for it (wasm parseOnViewAnchors)
+            if (param.hasAway) {
+                json += ",\"ax\":" + floatJson(param.away[0]);
+                json += ",\"ay\":" + floatJson(param.away[1]);
+                json += ",\"az\":" + floatJson(param.away[2]);
+            }
             json += ",\"text\":";
             jsonQuoted(json, param.text);
             json += ",\"sel\":[" + std::to_string(param.selStart) + ','
                 + std::to_string(param.selLength) + ']';
             json += param.focus ? ",\"focus\":true" : ",\"focus\":false";
             json += ",\"pt\":" + floatJson(float(param.pointSize));
-            json += param.set ? ",\"set\":true}" : ",\"set\":false}";
+            json += param.set ? ",\"set\":true" : ",\"set\":false";
+            json += ",\"kind\":";
+            jsonQuoted(json, param.kind);
+            if (std::string(param.kind) == "datum") {
+                json += ",\"field\":";
+                jsonQuoted(json, param.field);
+                json += param.expression ? ",\"expr\":true" : ",\"expr\":false";
+                json += ",\"result\":";
+                jsonQuoted(json, param.result);
+                json += ",\"level\":" + std::to_string(param.resultLevel);
+                json += ",\"driving\":" + std::to_string(param.driving);
+                json += ",\"measure\":" + std::to_string(param.measure);
+                json += ",\"measureName\":";
+                jsonQuoted(json, param.measureName);
+                json += param.nameShown ? ",\"nameShown\":true" : ",\"nameShown\":false";
+                json += ",\"name\":";
+                jsonQuoted(json, param.name);
+                json += ",\"nameSel\":[" + std::to_string(param.nameSelStart) + ','
+                    + std::to_string(param.nameSelLength) + ']';
+                json += ",\"obj\":";
+                jsonQuoted(json, param.objectName);
+            }
+            json += '}';
         }
         json += "]}";
         Render::SceneStreamServer::instance().sendControl(client, json);
@@ -852,6 +988,9 @@ public:
         // The observers on the mirrors' instances before the mirrors.
         clientSelections.clear();
         mirrors.clear();
+        // Before the backend it feeds: detaching removes its overlay.
+        editSensor.detach();
+        dropEditOverlay();
         // The path tracers next: each joins its encoder thread and
         // tears its session down, and nothing below feeds them again.
         {
@@ -952,7 +1091,7 @@ public:
 
         SbMatrix viewMat;
         SbMatrix projMat;
-        camera->getViewVolume(viewport.getViewportAspectRatio())
+        getMappedViewVolume(camera, viewport.getViewportAspectRatio())
             .getMatrices(viewMat, projMat);
         std::memcpy(viewMatrix, viewMat.getValue(), 16 * sizeof(float));
         std::memcpy(projMatrix, projMat.getValue(), 16 * sizeof(float));
@@ -1578,6 +1717,10 @@ SceneServeSource::SceneServeSource(Document *doc)
     pimpl->timer.setInterval(0);
     connect(&pimpl->timer, &QTimer::timeout,
             this, &SceneServeSource::onPublishTimeout);
+    pimpl->editSensor.setFunction([](void *data, SoSensor *) {
+        static_cast<SceneServeSource *>(data)->schedulePublish();
+    });
+    pimpl->editSensor.setData(this);
 
     if (doc) {
         pimpl->connections.emplace_back(doc->signalNewObject.connect(
@@ -1619,13 +1762,17 @@ SceneServeSource::SceneServeSource(Document *doc)
         // handler rather than anything that runs later.
         pimpl->connections.emplace_back(doc->signalInEdit.connect(
             [this](const ViewProviderDocumentObject &vp) {
+                pimpl->beginEditSession();
                 pimpl->joinEditing();
                 pimpl->announceEdit(true, vp);
+                schedulePublish();
             }));
         pimpl->connections.emplace_back(doc->signalResetEdit.connect(
             [this](const ViewProviderDocumentObject &vp) {
                 pimpl->leaveEditing();
                 pimpl->announceEdit(false, vp);
+                pimpl->endEditSession();
+                schedulePublish();
             }));
         pimpl->connections.emplace_back(doc->signalDeleteDocument.connect(
             [this](const Document &) { unserve(pimpl->doc); }));
@@ -1671,13 +1818,16 @@ void SceneServeSource::installHandlers()
     // Remote-viewer click selection: a viewer's click arrives as a world
     // ray, picked against this source's graph and -- once that viewer
     // has stated one -- through its own mirror's camera.
-    server.setPickHandler([self](const Render::ScenePickRequest &req) {
-        Render::ScenePickRequest r = req;
-        QMetaObject::invokeMethod(qApp, [self, r]() {
-            if (self)
+    // A batch in one queued call, so its picks share one publish.
+    server.setPickHandler([self](const std::vector<Render::ScenePickRequest> &reqs) {
+        QMetaObject::invokeMethod(qApp, [self, reqs]() {
+            for (const auto &r : reqs) {
+                if (!self)
+                    return;
                 self->pickAndSelect(SbVec3f(r.origin[0], r.origin[1], r.origin[2]),
                                     SbVec3f(r.dir[0], r.dir[1], r.dir[2]),
                                     r.modifiers, r.client);
+            }
         }, Qt::QueuedConnection);
     }, pimpl->groupName);
 
@@ -1797,6 +1947,7 @@ void SceneServeSource::installHandlers()
                 self->pimpl->clientSelections.erase(client);
                 self->pimpl->selectionDirty.erase(client);
                 self->pimpl->mirrors.erase(client);
+                self->pimpl->visibilityTold.erase(client);
             }
         }, Qt::QueuedConnection);
     }, docName);
@@ -1882,6 +2033,40 @@ SceneServeSource::pickAllSubObjects(const SbVec3f &origin, const SbVec3f &dir,
             return false;
         }));
     return picks;
+}
+
+MirrorViewer *SceneServeSource::clientViewer(uint64_t client)
+{
+    return pimpl->ensureClient(client);
+}
+
+void SceneServeSource::announceVisibility(uint64_t client)
+{
+    MirrorViewer *mirror = pimpl->mirrorFor(client);
+    if (!mirror)
+        return;
+    // The client's table as the host resolved it per draw of the served
+    // scene (docs/CoinRetirement.md 5.23): the objectKeys it hides, and
+    // those it shows. Hex strings, since a JSON number cannot carry 64
+    // bits, and the viewer reads them with a string scanner.
+    const Render::VisibilitySet *set = mirror->objectVisibilities();
+    pimpl->visibilityTold[client] = set ? set->version : 0;
+    std::string hidden, shown;
+    if (set) {
+        char buf[24];
+        for (const auto &item : set->keys) {
+            std::snprintf(buf, sizeof(buf), "\"%016llx\"",
+                          static_cast<unsigned long long>(item.first));
+            if (item.second & Render::VisibilitySet::Hidden)
+                (hidden.empty() ? hidden : hidden += ',') += buf;
+            if (item.second & Render::VisibilitySet::Shown)
+                (shown.empty() ? shown : shown += ',') += buf;
+        }
+    }
+    std::string json = "{\"cmd\":\"visibility\",\"doc\":";
+    jsonQuoted(json, pimpl->groupName);
+    json += ",\"hidden\":[" + hidden + "],\"shown\":[" + shown + "]}";
+    Render::SceneStreamServer::instance().sendControl(client, json);
 }
 
 namespace
@@ -2270,6 +2455,18 @@ bool SceneServeSource::publishNow()
     SbViewportRegion viewport{short(kDefaultWidth), short(kDefaultHeight)};
     manager->traverse(pimpl->root, viewport);
     pimpl->feedNaviCube(viewport);
+    pimpl->feedEditOverlay(viewport);
+
+    // Each client's visibility answers per draw, and the draws may have
+    // just changed: a client whose answer did is told before the scene
+    // it describes goes out.
+    for (const auto &entry : pimpl->mirrors) {
+        const Render::VisibilitySet *set = entry.second->objectVisibilities();
+        const uint32_t version = set ? set->version : 0;
+        auto told = pimpl->visibilityTold.find(entry.first);
+        if (told != pimpl->visibilityTold.end() && told->second != version)
+            announceVisibility(entry.first);
+    }
 
     float viewMatrix[16];
     float projMatrix[16];

@@ -1294,8 +1294,10 @@ private:
             return;
         }
 
+        // The state change finishes (onModeChanged), and with continuous
+        // mode off that deletes this handler: upstream's finish() after it
+        // ran on the deleted object.
         setState(SelectMode::End);
-        finish();
     }
 
     void rightButtonOrEsc() override

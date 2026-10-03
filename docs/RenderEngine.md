@@ -314,7 +314,7 @@ order:
     (`docs/RenderDebug.md` §2).
 13. **On-top / highlight** — on-top materials, selection/preselection.
     An on-top draw under an `SoFCPathAnnotation` priority carries its
-    rendering order (`Material::ontoplayer`, wire v81) and draws after
+    rendering order (`Material::ontoplayer`, wire v86) and draws after
     every other on-top fill and line, an order at a time, fills and
     lines together -- GL's late delayed paths. The overlay feeds keep
     the same order inside a feed. On-view labels (priority 1) and a
@@ -1109,7 +1109,7 @@ clip against `[0, 1]`, and `caps->homogeneousDepth` says which. Every
 projection the engine *builds* -- the shadow crop, the bulb tiles, the
 overlays, the 2D page -- is built to the caps flag. The camera
 projection is the one it does not build: Coin hands it over in GL
-convention (`View3DInventorViewer`, `cam->getViewVolume`). `render()`
+convention (`View3DInventorViewer`, `getMappedViewVolume`). `render()`
 remaps it once, at the top of the frame, `z -> (z + w) / 2` on the z row
 alone, and everything downstream -- `setViewTransform`, the predefined
 `u_proj`, `BGFXView::projMatrix`, the frustum planes, the proxy
@@ -1120,6 +1120,18 @@ on a backend of its own.
 The w row is deliberately left alone: `u_proj[2][3]` is how a dozen
 shaders tell a perspective camera from an orthographic one, and no
 shader reads the z row at all, so the remap stays confined to clipping.
+
+**Viewport mapping.** The fed camera volume is Coin's own mapping,
+`Gui::getMappedViewVolume` (`Utilities.h`), never
+`SoCamera::getViewVolume(aspect)` alone. Under the default
+`ADJUST_CAMERA` a viewport taller than wide widens the volume by
+`1 / aspect`, so the camera's height spans the width; Coin's draw, ray
+pick and pan all do that (`SoCamera::getView`), and the bare call does
+not. Every feed goes through the helper -- `renderScene`, the offscreen
+capture, the unified canvas cells, `getPointOnViewport`, Cycles --
+because a feed that skips it draws a portrait view `1 / aspect` larger
+than it picks, in both axes, and exactly right at the centre where one
+would check (`tests/gui/portrait-pick-vs-draw.py`, 2026-09-26).
 
 **Texture origin.** A render target's texture v = 0 is the bottom row
 under OpenGL and the top row everywhere else (`caps->originBottomLeft`),
@@ -1212,6 +1224,53 @@ fragment.
 Points keep `fs_fc_flat` and integer sizes. A sprite is a square whose
 apparent weight does not turn with the model, so it has nothing to gain.
 
+**Point markers.** A `SoMarkerSet` point is not a square of the point
+size: GL draws it with `glBitmap`, a fixed pixel pattern (a sketch
+vertex is the 7x7 `CIRCLE_FILLED`). The bridge unpacks the bitmaps a
+point set uses into a per-mesh palette carried by content
+(`MeshData::markers`, plus a palette entry per point index in
+`pointMarkers`), so the browser draws them without knowing Coin's
+marker indices; SceneDump v78 carries both. The view keeps one R8
+atlas of 32 px cells, a cell per distinct bitmap for the life of the
+view, and the point instance's spare `w` names the cell and the
+bitmap's size. `vs_fc_marker`/`fs_fc_marker` (the `MARKER` variants of
+the point and flat bodies) draw a bitmap-sized quad and discard the
+unset bits, anchored where GL anchors the bitmap,
+`floor(point - (size - 1) / 2)`. Measured pixel-identical to Coin's GL
+draw for Coin's built-in markers and for `MarkerBitmaps`' own. A
+bitmap over 32 px, or past the 256th cell, keeps the square; a
+simplified ladder rung (`MeshSimplify`) carries no markers and draws
+squares, which does not arise for the small sets markers are used on.
+
+**Autozoom in pixels.** An autozoom entry (`Material::AutoZoomEntry`,
+from `SoAutoZoomTranslation`) is replayed per frame with its scale
+substituted. Plain entries take `scaleFactor * autozoomScale`, Coin's
+fraction of the view: `autozoomScale` is `H/50`, H the view height in
+world units (`translateAutoZoomScale` on the desktop; the browser
+computes the same from its orbit camera, `0.04 * d * tan(fovY/2)`).
+An entry that sets `pixelscale` is sized in screen pixels instead,
+against the view that draws it and at its own depth: a billboard
+(constraint icons, SoTextImage) and, since v79, a datum's number, which
+lies in its dimension plane. The number used to take the plain path
+with `scaleFactor = 50 / capture viewport height`, which is one pixel
+only in a view as tall as the one that captured it: a served capture is
+1280x720, so a 900 px browser drew it at 900/720 of that, times the
+fitted 0.0857 the browser used for `H/50` -- 2.6 times the desktop's
+10 px glyph, measured. Now both measure 10 px. SceneDump carries
+`pixelscale` from v79; before that no billboard's reached a viewer
+either. A view with a camera of its own (an `OverlayAnchor` corner
+overlay) keeps the `scaleFactor` path for non-billboard entries.
+
+A billboard with `pixelscale` is an SoImage (`SoFCImageQuad`), which GL
+draws with glDrawPixels, so it is drawn to the same rule: the anchor
+snapped to a whole window pixel (`setDrawTransform`, the scene-camera
+branch), the quad's corners whole pixels from it (size>>1 when centred,
+as `SoImage::GLRender`), and the texture sampled point through a
+per-draw override in `bindTextureStage`. Each half alone leaves a 2 px
+constraint-icon stroke smeared over three pale rows -- the snap alone
+still loses to the anisotropic sampler's taps across the neighbouring
+transparent texels. Guard: `GuiImagePixelsMode3`.
+
 **Through glass.** A glass body refracts by resampling the scene-color
 copy through a per-pixel UV displacement, and wherever that field
 converges -- which is what a curved body IS -- it magnifies whatever it
@@ -1294,7 +1353,7 @@ uniform-selected branch that costs nothing on a scene that states none.
   slope into the roughness, and the mean occlusion.
 - **Where a pattern lies, when the frame cannot say**: a finish palette
   entry may carry an extent beside it (`FinishPalette::Entry::extent`,
-  `u_finishExtent`, SceneDump v78): the axis, octahedrally encoded, and
+  `u_finishExtent`, SceneDump v83): the axis, octahedrally encoded, and
   the band of `dot(p, axis)` the pattern covers. All zero for everything
   an appearance authors. A thread needs it twice over -- a tapped hole's
   thread stops at the thread depth, part way down one face (and runs

@@ -47,6 +47,7 @@
 #include "Selection.h"
 #include "InventorBase.h"
 #include "Inventor/SoFCDisplayModeElement.h"
+#include "Inventor/SoFCVisibilityElement.h"
 #include "View3DInventorSelection.h"
 #include "ViewerContext.h"
 #include "Quarter/SoQTQuarterAdaptor.h"
@@ -85,6 +86,7 @@ namespace Quarter = SIM::Coin3D::Quarter;
 namespace Render {
 class Renderer;
 struct StyleOverrideTable;
+struct VisibilitySet;
 struct CaptureInterestTable;
 }
 
@@ -113,6 +115,7 @@ class SoFCSelectionAction;
 class SoFCHighlightAction;
 class SoFCPathAnnotation;
 class Document;
+struct VisibilityEntry;
 class GLGraphicsItem;
 class SoShapeScale;
 class ViewerEventFilter;
@@ -425,6 +428,21 @@ public:
     /// child even outside a canvas, because an override can ADD
     /// geometry the object's own mode does not draw.
     void setObjectStyleOverrides(Render::StyleOverrideTable &&table);
+    /// This view's per-object visibility, parsed from View3DInventor's
+    /// ObjectVisibilities property (bare entries only while its
+    /// PerViewVisibilities switch is on).
+    void setObjectVisibilities(std::vector<VisibilityEntry> &&entries);
+    /// An edit session's transient hide in this view, ahead of the table
+    /// above; see ViewerContext::setEditHide.
+    bool setEditHide(const VisibilityEntry *hide) override;
+    /// What this view draws by -- the edit hide, then the parsed map --
+    /// resolved per draw of the scene \a feed captures (this viewer's
+    /// own render-cache manager when null), or null when the table is
+    /// empty. The pointer stays valid for the viewer's lifetime.
+    const Render::VisibilitySet *objectVisibilities(SoFCRenderCacheManager *feed = nullptr);
+    /// The same table as SoFCVisibilityElement carries it, or null when
+    /// empty; SoFCUnifiedSelection sets it for this view's traversals.
+    const SoFCVisibilityElement::Table *visibilityElementTable() const override;
     /// The table above, or null when it is empty. The pointer stays
     /// valid for the viewer's lifetime; a unified canvas puts it on
     /// its SubViewFrame, the plain frame states it through
@@ -493,6 +511,11 @@ public:
     //@{
     void setEditing(bool edit);
     bool isEditing() const { return this->editing; }
+    /// Through the editing capture's own highlight overlay, drawn over the
+    /// whole captured editing root (see ViewerContext).
+    bool setEditingHighlight(
+        const std::vector<SoFCRenderCacheManager::HighlightItem>& items) override;
+    bool canEditingHighlight() const override;
 
 protected:
     /// Under the aux root, a sibling of the render-cache-captured
@@ -1013,6 +1036,9 @@ private:
     /// Rebuild the additive-mode interest (own overrides + imposed),
     /// push it to the selection root, and schedule the re-capture.
     void rebuildCaptureInterest();
+    /// Tell what caches this view's visibility answers that its table
+    /// changed: the selection root, the backend, the next frame.
+    void onVisibilityChanged();
     void drawAxisCross();
     static void drawArrow();
     static void drawSingleBackground(const QColor&);

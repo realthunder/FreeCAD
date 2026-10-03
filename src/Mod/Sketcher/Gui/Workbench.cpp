@@ -42,7 +42,7 @@ using namespace SketcherGui;
     qApp->translate("Workbench", "Sketcher constraints");
     qApp->translate("Workbench", "Sketcher tools");
     qApp->translate("Workbench", "Sketcher B-spline tools");
-    qApp->translate("Workbench", "Sketcher virtual space");
+    qApp->translate("Workbench", "Sketcher visual");
     qApp->translate("Workbench", "Sketcher edit tools");
 #endif
 
@@ -269,6 +269,7 @@ template<>
 inline void SketcherAddWorkbenchSketchEditModeActions(Gui::MenuItem& sketch)
 {
     sketch  << "Sketcher_LeaveSketch"
+            << "Sketcher_CancelSketch"
             << "Sketcher_ViewSketchGroup"
             << "Sketcher_ViewSection"
             << "Sketcher_StopOperation";
@@ -276,7 +277,7 @@ inline void SketcherAddWorkbenchSketchEditModeActions(Gui::MenuItem& sketch)
 template<>
 inline void SketcherAddWorkbenchSketchEditModeActions(Gui::ToolBarItem& sketch)
 {
-    sketch << "Sketcher_LeaveSketch"
+    sketch << "Sketcher_LeaveGroup"
            << "Sketcher_ViewSketchGroup"
            << "Sketcher_ViewSection";
 }
@@ -300,7 +301,7 @@ inline void SketcherAddWorkspaceLines<Gui::ToolBarItem>(Gui::ToolBarItem& geom)
     ParameterGrp::handle hGrp = App::GetApplication().GetParameterGroupByPath(
         "User parameter:BaseApp/Preferences/Mod/Sketcher/Commands");
 
-    if (hGrp->GetBool("UnifiedLineCommands", false)) {
+    if (hGrp->GetBool("UnifiedLineCommands", true)) {
         geom << "Sketcher_CompLine";
     }
     else {

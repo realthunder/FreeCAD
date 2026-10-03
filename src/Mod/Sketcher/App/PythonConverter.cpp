@@ -46,11 +46,11 @@ std::string PythonConverter::convert(const Part::Geometry* geo, Mode mode)
     command = boost::str(boost::format("addGeometry(%s,%s)\n") % sg.creation
                          % (sg.construction ? "True" : "False"));
 
-    if ((geo->getTypeId() != Part::GeomEllipse::getClassTypeId()
-         || geo->getTypeId() != Part::GeomArcOfEllipse::getClassTypeId()
-         || geo->getTypeId() != Part::GeomArcOfHyperbola::getClassTypeId()
-         || geo->getTypeId() != Part::GeomArcOfParabola::getClassTypeId()
-         || geo->getTypeId() != Part::GeomBSplineCurve::getClassTypeId())
+    if ((!geo->is<Part::GeomEllipse>()
+         || !geo->is<Part::GeomArcOfEllipse>()
+         || !geo->is<Part::GeomArcOfHyperbola>()
+         || !geo->is<Part::GeomArcOfParabola>()
+         || !geo->is<Part::GeomBSplineCurve>())
         && mode == Mode::CreateInternalGeometry) {
         command +=
             boost::str(boost::format("exposeInternalGeometry(len(ActiveSketch.Geometry))\n"));
@@ -132,13 +132,11 @@ std::string PythonConverter::convert(const std::string& doc,
             currentconstruction = sg.construction;
         }
 
-        if (sg.construction) {
-            geolist =
-                boost::str(boost::format("%sconstrGeoList.append(%s)\n") % geolist % sg.creation);
-        }
-        else {
-            geolist = boost::str(boost::format("%sgeoList.append(%s)\n") % geolist % sg.creation);
-        }
+        // appended, not formatted anew with all that came before: that
+        // copied the whole list once per geometry
+        geolist += sg.construction ? "constrGeoList.append(" : "geoList.append(";
+        geolist += sg.creation;
+        geolist += ")\n";
 
         ngeos++;
     }
@@ -149,11 +147,11 @@ std::string PythonConverter::convert(const std::string& doc,
     if (mode == Mode::CreateInternalGeometry) {
         for (auto geo : geos) {
             index++;
-            if (geo->getTypeId() != Part::GeomEllipse::getClassTypeId()
-                || geo->getTypeId() != Part::GeomArcOfEllipse::getClassTypeId()
-                || geo->getTypeId() != Part::GeomArcOfHyperbola::getClassTypeId()
-                || geo->getTypeId() != Part::GeomArcOfParabola::getClassTypeId()
-                || geo->getTypeId() != Part::GeomBSplineCurve::getClassTypeId()) {
+            if (!geo->is<Part::GeomEllipse>()
+                || !geo->is<Part::GeomArcOfEllipse>()
+                || !geo->is<Part::GeomArcOfHyperbola>()
+                || !geo->is<Part::GeomArcOfParabola>()
+                || !geo->is<Part::GeomBSplineCurve>()) {
                 std::string newcommand =
                     boost::str(boost::format("exposeInternalGeometry(lastGeoId + %d)\n") % (index));
                 command += newcommand;
@@ -179,8 +177,9 @@ std::string PythonConverter::convert(const std::string& doc,
     for (auto constraint : constraints) {
         auto cg = process(constraint, geoIdMode);
 
-        constraintlist =
-            boost::str(boost::format("%s\nconstraintList.append(%s)") % constraintlist % cg);
+        constraintlist += "\nconstraintList.append(";
+        constraintlist += cg;
+        constraintlist += ")";
     }
 
     if (!constraints.empty()) {

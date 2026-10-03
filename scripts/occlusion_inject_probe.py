@@ -48,7 +48,7 @@
 #   cd ~/works/sw/fcad && timeout -k 10 900 .conda/run.sh \
 #     xvfb-run -a --server-args='-screen 0 1024x768x24' \
 #     env -u WAYLAND_DISPLAY QT_QPA_PLATFORM=xcb PROBE_OUT=/tmp/occl \
-#     build/conda-debug-occt801/bin/FreeCAD --user-cfg /tmp/occl/user.cfg \
+#     build/conda-relwithdebinfo-801/bin/FreeCAD --user-cfg /tmp/occl/user.cfg \
 #     --log-file /tmp/occl/fc.log scripts/occlusion_inject_probe.py
 #
 # PROBE_OUT is where the report and the PNGs go (default /tmp); the
