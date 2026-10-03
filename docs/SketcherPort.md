@@ -45,6 +45,15 @@ families, the constraint-tool hints, has since been taken whole --
 thirteen rows, two of which the per-file sweep could not see (section
 7a). Of what is left, `Gui/ViewProviderSketch.cpp` carries the most, and
 the `EditMode*` family is n/a by decision 3.
+
+**Where the ledger stands (2026-10-03, session 122).** No row is undecided.
+The last 53 were read family by family and ruled on with the user
+("The ledger, session 122", before section 8): 24 were here already or do
+not apply, 9 declined, 20 taken or adapted. What is left of the port is not
+in the ledger: the rows marked `deferred` (upstream's Sketcher GUI test
+files, whose ground the fork's `tests/gui` covers) and whatever upstream
+has added after `bd6be559e8`.
+
 Branch `SketcherPort` off `RemoteEdit`
 `b7dbdd191d`. Upstream reference: `upstream/main` `bd6be559e8`
 (2026-09-12).
@@ -4454,6 +4463,125 @@ was in session 117, not a sweep.
   none (ruled the same day; none of the fork's other group commands names
   one). `bb19c35c18` first pointed the name at upstream's icon, which was
   the wrong answer to a line that should not be there; the line is gone.
+
+### The ledger, session 122: the last 53 rows
+
+Decided with the user, family by family: each row read against the fork's
+code, laid out with a recommendation, and ruled on (2026-10-03). No row of
+the ledger is undecided now.
+
+| Outcome | Rows |
+| --- | --- |
+| have, or n/a | 24 |
+| declined | 9 |
+| taken or adapted | 20, in 13 commits |
+
+**Have or n/a, 24.** All seven topological naming rows: upstream's import
+of this fork's own code, and the one loop upstream fixed on the way in (an
+erase while iterating) is written with a saved next iterator here. The
+chamfer, symmetry and offset rows, whose upstream tests run here; the group
+command class (the fork's groups were `Gui::GroupCommand` already); copy,
+cut and paste; the Elements panel's "quadratic redraw" (`a7e1760bfb`: the
+fork's panel finds the row in a map and touches that row alone) and its
+context menu, which is built from the commands.
+
+*A note of the session before was wrong:* `6e1826295b`'s hook,
+`SketcherGui.getActiveSketchPreselection`, is here (`AppSketcherGui.cpp`)
+and its test runs in ctest.
+
+**Declined, 9.** By earlier rulings: the tool bar's rename (`3e32ea5dd4`;
+asked whether upstream's Core adds the workbench's name to a tool bar's --
+it does not: the string given to `setCommand()` is the object name, the
+title's source and the key the bar's visibility is saved under, on both
+sides, and upstream migrates nothing); a fifth variant of upstream's
+per-part icons (`aa26d9ff8a`); the polyline's shortcut (`855bce62cd`,
+`c71c15c009`: it is M here). As no behaviour: the file's reordering
+(`f9d6609687`), review-comment style (`1cfb85a71f`), name-parsing helpers
+(`f4134951e5`). By the user, the finer `isActive` (`155edc0f53`): a greyed
+button in place of the message the command gives already, for a walk over
+the selection per command at every state update. And `913c30429c`, which
+reads as a refactor and is not one: `!isDimensionless()` is true of an
+invalid quantity, `isQuantity()` is not.
+
+**Taken.** Each measured before its change.
+
+- `732501d89d` (`eb3e1a7f71`): Select Associated Constraints looked at
+  names beginning with "Edge" only; an end point or an axis selected
+  nothing.
+- `5268aa43db`, `fe8d2845ea` (`2f749e8b18`): the clipboard copy never freed
+  its clones. 63.5 MB over 30 copies of 3000 lines; under 1 MB after.
+- `1d4a09366c` (`a90371e71c`): hovering the Elements list took the keyboard
+  from a text being typed. Here that includes the value editor at a
+  dimension's label, which takes a lost focus as "done".
+- `98d64f9939` (`777535259e`): **not upstream's defect.** A press on the
+  empty part of the list cleared the selection here already -- unless the
+  pointer had rested on a row. The list toggled the row last *entered*,
+  whichever row the press was on: a press with no move before it (a tap, a
+  click forwarded from a browser) selected nothing, and a press on the
+  empty part selected the row hovered last. The view now says which row a
+  press is on.
+- `581dee4d48` (`9ffada9e3e`): the icon's name only. The list entries the
+  commit adds are not needed here -- a group hands the construction mode
+  on to its members -- and `sketch-construction-icons.py` is that
+  measurement, kept.
+- The six `SketchAnalysis` and validation rows (`659ef5ee0d`): four files
+  in which the fork had nothing of its own, taken at upstream's tip. The
+  validation panel's fixes are Python commands on the sketch now, so a
+  macro keeps them.
+- `8b06bca68a` (`64fffd18d4`): the supplement of an angle given by
+  `atan(0.03)` came out as `180 - atan(0.03)`, a number minus an angle.
+  Upstream builds the expression as a tree; this fork's tree keeps its
+  operator codes private, so the unit is that of the *evaluated* value and
+  "180 - x" is undone only when a re-parse `isSame()` -- which also stops
+  `180 - 60 + 5` being read as a supplement. No upstream Sketcher test is
+  left disabled.
+- `94d39087d3` (`5ee1ec9a1b`): the External tool's hint, for each of the
+  fork's flavours.
+- `bfe1295b6b` (`53ed49bc4f`): the helper lines were drawn already; the
+  check box that turns them off was missing.
+- Four rows without behaviour (`f71163ef6e`).
+
+**Found on the way, not a row** (`f5c3e9b5ab`): a clipboard copy grew with
+the square of the selection -- an id table rebuilt per constraint, a linear
+search per constraint element, and `PythonConverter` formatting each whole
+list anew per element. 0.93 s for 4000 lines before, 0.023 s after.
+
+**The radius/diameter switch** (`c9041132f9`; ruled: "add to in-place
+editor"). Upstream has two radio buttons in its datum dialog and writes
+the constraint's type on the live constraint. Here:
+
+- `SketchObject::setDiameter(index, state)`, Python too (`744d2a7d45`):
+  the constraint changes kind in place -- index, name, driving kept -- and
+  the circle keeps its size, the value doubled or halved with the kind. A
+  value an expression gives is left to the expression, which then gives
+  the other measure.
+- `Gui::DatumValueEditor` (`bf40d0fee9`) can switch a value between two
+  measures, generically: a target names the two and the factor between
+  them. A button beside the driving toggle, Ctrl+Shift+R. While nothing
+  has been typed the number is restated (5 mm as a radius reads 10 mm as a
+  diameter); a number that was typed is left as typed, and so is an
+  expression. The push to a client states the measure and its name, and
+  `onViewAction` takes `measure`.
+- The Sketcher's session (`8acf9665c8`) names Radius and Diameter with the
+  factor 2 and applies the kind with the value, in the one undo step.
+
+  This differs from upstream in one visible way: there a radius of 5
+  switched and accepted untouched becomes a diameter of 5, half the
+  circle; here it becomes a diameter of 10, the same circle.
+
+Tests: `sketch-datum-measure.py` (24), `serve-datum-measure.py` (10),
+`SketcherTests/TestSketchRadiusDiameter.py` (7), and by hand
+`serve-datum-measure-browser.py` in a real Chrome (10).
+
+**Verified** at `f5c3e9b5ab`: full build, ctest 897/897 (885 before, plus
+ten GUI tests and two C++ cases), `FreeCADCmd -t 0` 2896 OK (2889 before,
+plus the seven `setDiameter` cases).
+
+**Not checked.** A file saved by *upstream* with intersection externals:
+upstream keeps the kind in an `ExternalTypes` property this fork does not
+read. Keyboard navigation in the Elements list (arrow keys change the
+list's selection with no press): it goes through the same "row last
+entered" logic the press no longer does.
 
 ## 8. Phases
 
