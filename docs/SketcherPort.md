@@ -4350,6 +4350,103 @@ being one step. The preference `Mod/Sketcher/General/DatumEscapeTakesBack`
 completion list open over the line still closes on Escape: that is the
 list's, as vim's own completion menu.
 
+### The ledger, session 121: 145 rows to 54
+
+**What "undecided" counts.** A row is undecided when its status is `open`
+or `partial` and its decision column is empty: 145 at the start of the
+session. Counting the empty decision column alone gives 357, because the
+`have` and `n/a` statuses never needed a decision -- the two numbers that
+earlier notes quoted (359 and 161) were these two counts.
+
+**The method: relative to upstream's tip, not to the commit.** The older
+sweep asked of each line a commit added whether the fork has it. Most of
+these rows are old, and upstream has since rewritten much of what they
+wrote, so "missing here" was mostly "gone there too". Three measures per
+row instead:
+
+- per added line: here; or missing here and still at the tip (a real
+  absence); or gone at the tip as well (superseded, says nothing);
+- per removed line: still here while gone at the tip (stale);
+- per file the row touches: its distance from the tip's file, whitespace
+  aside. `DrawSketchHandlerSlot.h`, `...Arc.h`, `...Translate.h` and
+  fourteen more are the tip's blob; `DrawSketchHandler.cpp` is the tip but
+  for the fork's transaction, viewer and pixel-ratio deltas.
+
+42 rows came out with nothing missing and nothing stale.
+
+**Two things the numbers do not say, both met here.**
+
+- *A missing line is not a missing behaviour.* `efb10e1b28`'s null check,
+  `a0847c22c7`'s `std::remainder` and `5f90e988a0`'s id map all read
+  "missing" and are all here, in the fork's own words. Each was read.
+- *"Superseded upstream" is not "kept here" in a file that has diverged.*
+  `a7e1760bfb` (the Elements panel no longer redraws the whole list per
+  selected element) has no line left at the tip, and the fork's panel,
+  2449 lines from the tip, batches selections its own way. Whether it has
+  the quadratic redraw is a question about the fork's code. So a clean
+  score decided a row only where the row is a test, a text, a build change
+  or noise, or its files sit at the tip; fix and feature rows in diverged
+  files were read or left.
+
+**Decided: 91.** 41 by the sweep (`have` or `superseded`; the 42 less
+`a7e1760bfb`), 4 already decided in this document and never written to the ledger (`387d25c219`,
+`9ce1cae190`, `5587b48a0f`, `9a1020929e`), 16 build rows and 5 Core rows
+as `n/a` with the missing facility named and checked (no
+`target_compile_warn_error`, no `disable_occt8_deprecation_warnings`, no
+`FrameOption`, no `associateToObject3dView`, `createEditor` without a
+`std::function`), and the rest read one by one.
+
+**What reading found.**
+
+- `55c36e8c03`, declined in an earlier session on principle, **was a bug
+  here, and a deeper one** (`f67388f543`). The B-spline tools open their
+  command in `activated()`, inside the tool bar command, and
+  `Gui::Command` closes the open transaction when it returns. On the first
+  use of the tool the points went into the document with no transaction:
+  cancelling after one point left its circle, with nothing to undo it.
+  `DrawSketchHandler::openCommand()` takes the transaction out of the
+  enclosing command's hands and remembers its id; `deactivate()` aborts
+  that one and no other. The polyline opens its command the same way.
+- The test for it **crashed**: with continuous mode off, finishing a
+  B-spline by a right click ran `finish()` twice, the second time on the
+  deleted handler (`ed7668fbf0`). Upstream's text has the same second call
+  in both tools.
+- `7432ce131f` (`0cfd91c04d`): Toggle Construction stopped at an ellipse's
+  axis and left the rest of the selection untoggled.
+- `e828c5da4d` (`d2e9f8559d`): a named reference dimension was editable in
+  the property editor.
+- `ca4660167e` (`60c324cbcf`): `*.ttc` font collections.
+- Three icons the commands name and the resources lacked (`3b504408f6`):
+  the periodic B-spline by interpolation had none at all.
+- Six rows without behaviour in one commit (`e626f51909`).
+
+Tests: `sketch-bspline-cancel.py` (23), `sketch-toggle-construction-
+internal.py` (6), `sketch-constraint-property-readonly.py` (4), each
+scored against the tree before its change.
+
+**Left: 54, by family.** Each needs the file read as the constraints panel
+was in session 117, not a sweep.
+
+| Family | Rows | What is known |
+| --- | --- | --- |
+| `CommandSketcherTools.cpp` | 7 | copy/cut/paste (`fd2e35b7eb`) is mostly here; related constraints for non-edges (`732501d89d`), the leak fix (`5268aa43db`) and two cleanups are not scored |
+| `TaskSketcherElements.cpp` | 7 | the panel is 2449 lines from the tip; the selection speedup, the hover-during-rename fix, clearing the selection from an empty click, the context menu |
+| `CommandCreateGeo.cpp` | 6 | the group command class (`d18a48ddb1`), the file's rearrangement, the line group, the polyline shortcut |
+| `SketchAnalysis` and the validation panel | 6 | three refactors, `5696ee821c` (#14240), `37f0ad43f9` (validation cannot be scripted) |
+| Topological naming, which began in this fork | 7 | `71870bd6f3`, `ecf7e51ab3`, `55acedb83d`, `38c6d842f2`, `4aaf72dcc2`, `0bddc51805`, `27ca64a201`: upstream's import of the fork's own code, to be compared as a whole |
+| `EditDatumDialog.cpp` | 5 | the dialog is the fallback since the value editor of session 120; the radius/diameter switch (`c9041132f9`) is the one feature |
+| Large features nearly all here | 6 | chamfer (`b3fe5bba28`: one line missing, two stale), symmetry (`e4213fc10f`: eleven stale lines), intersection externals (the fork's own; two icons absent), the perpendicular hint lines, offset with external input, the angle expression as an AST |
+| Others | 10 | `155edc0f53` (isActive), `6e1826295b` (a test hook the fork's copy of the test calls and does not have), `94d39087d3` (the External tool shows no hint), strings, two refactors |
+
+**Put to the user.**
+
+- The tool bar and menu the fork calls "Sketcher visual" are "Visual
+  Helpers" upstream (`945ba15e18`). A tool bar's name is also the key its
+  place is saved under, so renaming it moves a user's tool bar back to its
+  default place once.
+- The fork's own `Sketcher_ViewSketchGroup` command names an icon that
+  does not exist.
+
 ## 8. Phases
 
 0. Groundwork: ledger, the split, the App-level Python tests.
