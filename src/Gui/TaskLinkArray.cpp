@@ -153,6 +153,24 @@ TaskLinkArray::TaskLinkArray(ViewProviderLinkArray* vp, QWidget* parent)
     instanceMarkers = std::make_unique<PatternInstanceMarkers>();
     connect(instanceMarkers.get(), &PatternInstanceMarkers::toggleRequested,
             this, &TaskLinkArray::onInstanceToggled);
+    // The linked object edited elsewhere -- in the property view, the
+    // console, or in another document -- moves and resizes the elements,
+    // and only a recompute says so. Every recompute, of a document or of
+    // one object, tells of each object.
+    connRecomputedObject = App::GetApplication().signalRecomputedObject.connect(
+        [this](const App::Document&, const App::DocumentObject&) {
+            // Once, after the recompute: the view providers have the new
+            // shapes then
+            if (onViewRefreshPending) {
+                return;
+            }
+            onViewRefreshPending = true;
+            QTimer::singleShot(0, this, [this]() {
+                onViewRefreshPending = false;
+                updateLabels();
+                updateInstanceMarkers();
+            });
+        });
 
     retranslate();
     buildPatternWidgets();

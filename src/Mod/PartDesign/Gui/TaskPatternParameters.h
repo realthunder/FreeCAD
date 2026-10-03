@@ -85,7 +85,7 @@ private:
     void onDirection2Toggled(bool on);
     void setDefaultDirection2();
     /// Put the directions' on-view labels where the pattern is now
-    void updateLabels();
+    void updateLabels() override;
 
 private:
     std::unique_ptr<Ui_TaskPatternParameters> ui;

@@ -142,6 +142,10 @@ public:
      */
     void updateInstanceMarkers();
 
+    /// Put the on-view labels where the pattern is now, for a panel that
+    /// has them
+    virtual void updateLabels() {}
+
 public Q_SLOTS:
     void onToggledExpansion();
 
@@ -244,6 +248,12 @@ protected:
 
     /// The on-view toggles of the instances, the top panel's
     std::unique_ptr<Gui::PatternInstanceMarkers> instanceMarkers;
+
+private:
+    /// The markers and labels follow a recompute the panel did not ask for
+    void watchRecompute();
+    fastsignals::scoped_connection connRecomputedObject;
+    bool onViewRefreshPending = false;
 
     friend class TaskDlgTransformedParameters;
 };

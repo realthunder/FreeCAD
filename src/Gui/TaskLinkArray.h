@@ -25,6 +25,8 @@
 
 #include <memory>
 
+#include <fastsignals/signal.h>
+
 #include <App/DocumentObserver.h>
 
 #include "DocumentObserver.h"
@@ -115,6 +117,9 @@ private:
     PatternDirectionWidget* direction2 = nullptr;
     PatternParametersWidget* parameters = nullptr;
     std::unique_ptr<PatternInstanceMarkers> instanceMarkers;
+    /// The labels and toggles follow a recompute the panel did not ask for
+    fastsignals::scoped_connection connRecomputedObject;
+    bool onViewRefreshPending = false;
 
     // The reference being picked, or the linked object
     App::PropertyLinkSub* picking = nullptr;

@@ -141,6 +141,7 @@ TaskTransformedParameters::TaskTransformedParameters(ViewProviderTransformed *Tr
         Gui::ViewParams::setShowSelectionOnTop(true);
     // remember initial transaction ID
     App::GetApplication().getActiveTransaction(&transactionID);
+    watchRecompute();
 }
 
 TaskTransformedParameters::TaskTransformedParameters(TaskMultiTransformParameters *parentTask)
@@ -152,6 +153,29 @@ TaskTransformedParameters::TaskTransformedParameters(TaskMultiTransformParameter
       blockUpdate(false)
 {
     selectionMode = none;
+    watchRecompute();
+}
+
+void TaskTransformedParameters::watchRecompute()
+{
+    // An original edited elsewhere -- in the property view, the console, or
+    // in another document the originals come from -- moves the instances
+    // and what the labels measure, and only a recompute says so. Every
+    // recompute, of the document or of one feature, tells of each object.
+    connRecomputedObject = App::GetApplication().signalRecomputedObject.connect(
+        [this](const App::Document&, const App::DocumentObject&) {
+            // Once, after the recompute: the view providers have the new
+            // shapes then
+            if (onViewRefreshPending)
+                return;
+            onViewRefreshPending = true;
+            QTimer::singleShot(0, this, [this]() {
+                onViewRefreshPending = false;
+                if (!insideMultiTransform)
+                    updateInstanceMarkers();
+                updateLabels();
+            });
+        });
 }
 
 TaskTransformedParameters::~TaskTransformedParameters()

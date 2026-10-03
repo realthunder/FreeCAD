@@ -3133,5 +3133,23 @@ just before each click, and the camera frame that rides with a click
 carries the canvas size the client's render loop last saw, which a
 background window had not run -- so the mirror placed the click in the old
 canvas. A real click follows a drawn frame, so nothing was changed for it.
-Cosmetic, left as it is: a spacing label's text is drawn over a marker it
-crosses.
+Cosmetic, left as it is that day: a spacing label's text is drawn over a
+marker it crosses -- fixed since, "Draw order" above.
+
+**After a recompute the panel did not ask for (2026-10-03).** Both
+panels moved their markers and labels only after their own edits, their
+own recompute and an undo. With a pattern's panel open, an original
+resized in the property view or the console and then recomputed left
+them where the old shape's middle was; the same for a link array's
+linked object, which may live in another document. Now each panel
+listens to `App::Application::signalRecomputedObject` -- a document's
+recompute and a single feature's both tell of every object -- and puts
+both back once the recompute is over (one queued refresh however many
+objects were recomputed; the view providers hold the new shapes by
+then). PD: `TaskTransformedParameters`, the top panel for the markers and
+every panel for its labels, through a virtual `updateLabels()` that
+`TaskPatternParameters` gives. Test: `tests/gui/pattern-markers-follow-recompute.py`
+(by hand: a PD linear pattern and a `Part::LinkArrayLinear` over a 10 mm
+box, the box made 30 long from Python: markers 5/105 -> 15/115, the label
+from 5 -> 15, and both gone when the panel closes). A/B on one binary
+with the hook switched off: the four "moved" checks fail, as reported.
