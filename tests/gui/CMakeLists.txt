@@ -1018,3 +1018,15 @@ fc_add_gui_test(GuiSketchExternalToolHint_tests_run
 fc_add_gui_test(GuiSketchValidationPanel_tests_run
                 sketch-validation-panel.py
                 --timeout 120)
+
+# A circle's size said as its radius or as its diameter, switched in the
+# value editor (upstream's dialog has it as radio buttons, c9041132f9).
+fc_add_gui_test(GuiSketchDatumMeasure_tests_run
+                sketch-datum-measure.py
+                --timeout 180)
+
+# The same switch from a served client: stated in the "onview" push,
+# flipped by an onViewAction.
+fc_add_gui_test(GuiServeDatumMeasure_tests_run
+                serve-datum-measure.py
+                --timeout 240)

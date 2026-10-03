@@ -633,6 +633,12 @@ bool DatumEditSession::start(ViewProviderSketch* vp,
     session->editor->setDrivingIcons(
         Gui::BitmapFactory().iconFromTheme("Sketcher_Toggle_Constraint_Driving"),
         Gui::BitmapFactory().iconFromTheme("Sketcher_Toggle_Constraint_Driven"));
+    // A circle's size, as its radius or as its diameter (upstream's dialog
+    // has two radio buttons for it, c9041132f9)
+    session->editor->setMeasures(Gui::BitmapFactory().iconFromTheme("Constraint_Radius"),
+                                 tr("Radius"),
+                                 Gui::BitmapFactory().iconFromTheme("Constraint_Diameter"),
+                                 tr("Diameter"));
     // After the editor's own: Tab, Enter and Escape are the session's.
     session->editor->installKeyFilter(session);
     session->show(constraints.front());
@@ -696,6 +702,11 @@ void DatumEditSession::show(int index)
     }
     // Snell's law is a ratio to meet, never a measurement
     target.driving = constraint->Type == Sketcher::SnellsLaw ? -1 : (constraint->isDriving ? 1 : 0);
+    // a radius can be said as a diameter, twice the number, and back
+    if (constraint->Type == Sketcher::Radius || constraint->Type == Sketcher::Diameter) {
+        target.measure = constraint->Type == Sketcher::Diameter ? 1 : 0;
+        target.measureFactor = 2.0;
+    }
     target.nameShown = true;
     target.name = QString::fromStdString(constraint->Name);
 
@@ -731,8 +742,21 @@ bool DatumEditSession::applyCurrent()
 
     try {
         int target = index;
+        // read now: every command below replaces the constraint
+        const bool wasDriving = constraint->isDriving;
+        const bool isDiameter = constraint->Type == Sketcher::Diameter;
+        const bool isRadial = isDiameter || constraint->Type == Sketcher::Radius;
+        // The kind first: what follows is applied to the constraint as the
+        // kind it was typed for. The sketch keeps the circle's size through
+        // the change, so a number nobody typed over changes nothing.
+        if (entry.measure >= 0 && isRadial && (entry.measure == 1) != isDiameter) {
+            Gui::cmdAppObjectArgs(sketch,
+                                  "setDiameter(%i, %s)",
+                                  target,
+                                  entry.measure == 1 ? "True" : "False");
+        }
         const bool driving = entry.driving != 0;
-        if (driving != constraint->isDriving) {
+        if (driving != wasDriving) {
             Gui::cmdAppObjectArgs(sketch,
                                   "setDriving(%i, %s)",
                                   target,
