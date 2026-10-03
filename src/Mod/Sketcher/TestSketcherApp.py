@@ -30,6 +30,7 @@ from SketcherTests.TestSketchCarbonCopyReverseMapping import TestSketchCarbonCop
 from SketcherTests.TestSketchInternalFaces import TestSketchInternalFaces
 from SketcherTests.TestSketcherEllipse import TestSketcherEllipse
 from SketcherTests.TestSketchExternalGeometry import TestSketchExternalGeometry
+from SketcherTests.TestSketchExternalTypes import TestSketchExternalTypes
 from SketcherTests.TestSketcherText import TestSketcherText
 from SketcherTests.TestSketchRadiusDiameter import TestSketchRadiusDiameter
 

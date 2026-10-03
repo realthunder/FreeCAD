@@ -115,20 +115,26 @@ TEST_F(SketchObjectTest, testAddExternalEdgeIntersectionIsTheCutAlone)
     EXPECT_NEAR(point->getPoint().y, 2.0, 1e-7);
 }
 
-TEST_F(SketchObjectTest, testAddExternalEdgeIntersectionLegacyKeepsTheProjection)
+TEST_F(SketchObjectTest, testAddExternalEdgeBothWaysKeepsTheProjection)
 {
-    // Arrange: a sketch from before version 2 was built on both geometries
+    // Arrange: an edge taken by projection, then by intersection as well, is
+    // one reference of both kinds. It is also what a sketch from before
+    // version 2 has for an edge taken by intersection, which came with its
+    // projection then (SketcherTests/TestSketchExternalTypes.py reads one).
     auto* doc = getObject()->getDocument();
     auto* edge = slantedLineThroughXY(doc);
     ASSERT_NE(edge, nullptr);
     int numExtPre = getObject()->ExternalGeo.getSize();
-    getObject()->_Version.setValue(1);
 
     // Act
+    getObject()->addExternal(edge, "Edge1");
     getObject()->addExternal(edge, "Edge1", false, true);
     const auto& geos = getObject()->ExternalGeo.getValues();
 
     // Assert: the projected line, then the cut
+    EXPECT_EQ(getObject()->ExternalGeometry.getSize(), 1);
+    ASSERT_EQ(getObject()->ExternalTypes.getSize(), 1);
+    EXPECT_EQ(getObject()->ExternalTypes[0], static_cast<long>(Sketcher::ExtType::Both));
     ASSERT_EQ(static_cast<int>(geos.size()), numExtPre + 2);
     EXPECT_NE(freecad_cast<const Part::GeomLineSegment*>(geos[numExtPre]), nullptr);
     EXPECT_NE(freecad_cast<const Part::GeomPoint*>(geos[numExtPre + 1]), nullptr);
@@ -144,6 +150,64 @@ TEST_F(SketchObjectTest, testAddExternalEdgeIntersectionLegacyKeepsTheProjection
     auto* point = freecad_cast<const Part::GeomPoint*>(rebuilt[numExtPre + 1]);
     ASSERT_NE(point, nullptr);
     EXPECT_NEAR(point->getPoint().x, 6.0, 1e-7);
+}
+
+TEST_F(SketchObjectTest, testAddExternalEdgeIntersectionInAnOlderSketchIsTheCutAlone)
+{
+    // Arrange: the version of the sketch is no longer asked when an edge is
+    // added; what an older sketch already has is kept by its kind
+    auto* doc = getObject()->getDocument();
+    auto* edge = slantedLineThroughXY(doc);
+    ASSERT_NE(edge, nullptr);
+    int numExtPre = getObject()->ExternalGeo.getSize();
+    getObject()->_Version.setValue(1);
+
+    // Act
+    getObject()->addExternal(edge, "Edge1", false, true);
+    const auto& geos = getObject()->ExternalGeo.getValues();
+
+    // Assert
+    ASSERT_EQ(static_cast<int>(geos.size()), numExtPre + 1);
+    EXPECT_NE(freecad_cast<const Part::GeomPoint*>(geos.back()), nullptr);
+}
+
+TEST_F(SketchObjectTest, testToggleIntersectionChangesTheKindOfTheReference)
+{
+    // Arrange: an edge taken by projection
+    auto* doc = getObject()->getDocument();
+    auto* edge = slantedLineThroughXY(doc);
+    ASSERT_NE(edge, nullptr);
+    int numExtPre = getObject()->ExternalGeo.getSize();
+    getObject()->addExternal(edge, "Edge1");
+    ASSERT_EQ(getObject()->ExternalGeo.getSize(), numExtPre + 1);
+    ASSERT_NE(freecad_cast<const Part::GeomLineSegment*>(getObject()->ExternalGeo.getValues().back()),
+              nullptr);
+    const int geoId = -numExtPre - 1;
+
+    // Act
+    EXPECT_EQ(getObject()->toggleIntersection({geoId}), 0);
+
+    // Assert: the cut, and the reference says so
+    ASSERT_EQ(getObject()->ExternalTypes.getSize(), 1);
+    EXPECT_EQ(getObject()->ExternalTypes[0], static_cast<long>(Sketcher::ExtType::Intersection));
+    ASSERT_EQ(getObject()->ExternalGeo.getSize(), numExtPre + 1);
+    auto* point = freecad_cast<const Part::GeomPoint*>(getObject()->ExternalGeo.getValues().back());
+    ASSERT_NE(point, nullptr);
+    EXPECT_NEAR(point->getPoint().x, 5.0, 1e-7);
+    EXPECT_NEAR(point->getPoint().y, 2.0, 1e-7);
+
+    // Act: and back, after a rebuild in between
+    edge->X2.setValue(12.0);
+    doc->recompute();
+    EXPECT_NE(freecad_cast<const Part::GeomPoint*>(getObject()->ExternalGeo.getValues().back()),
+              nullptr);
+    EXPECT_EQ(getObject()->toggleIntersection({geoId}), 0);
+
+    // Assert
+    EXPECT_EQ(getObject()->ExternalTypes[0], static_cast<long>(Sketcher::ExtType::Projection));
+    ASSERT_EQ(getObject()->ExternalGeo.getSize(), numExtPre + 1);
+    EXPECT_NE(freecad_cast<const Part::GeomLineSegment*>(getObject()->ExternalGeo.getValues().back()),
+              nullptr);
 }
 
 TEST_F(SketchObjectTest, testAddExternalCurvedFaceProjectsOutline)

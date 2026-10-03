@@ -158,11 +158,168 @@ int SketchObject::toggleFreeze(const std::vector<int> &geoIds)
 
 int SketchObject::toggleIntersection(const std::vector<int> &geoIds, bool defining)
 {
-    std::vector<ExternalGeometryExtension::Flag> flags;
-    flags.push_back(ExternalGeometryExtension::Intersection);
-    if (defining)
-        flags.push_back(ExternalGeometryExtension::Defining);
-    return toggleExternalGeometryFlag(geoIds, flags);
+    Base::StateLocker lock(managedoperation, true); // no need to check input data validity as this is an sketchobject managed operation.
+
+    // The kind is the reference's: a projection becomes a cut, and a cut --
+    // or a reference of both kinds -- a projection.
+    std::map<std::string, bool> refs; // reference -> a cut after the toggle
+    for (int geoId : geoIds) {
+        if (geoId > GeoEnum::RefExt || -geoId-1 >= ExternalGeo.getSize())
+            continue;
+        const std::string ref = ExternalGeometryFacade::getFacade(ExternalGeo[-geoId-1])->getRef();
+        if (ref.empty() || refs.count(ref))
+            continue;
+        ExtType kind = externalTypeFromGeometry(ref);
+        auto types = getExternalTypes();
+        for (std::size_t i = 0; i < externalGeoRef.size() && i < types.size(); ++i) {
+            if (externalGeoRef[i] == ref)
+                kind = static_cast<ExtType>(types[i]);
+        }
+        refs.emplace(ref, kind == ExtType::Projection);
+    }
+    if (refs.empty())
+        return -1;
+
+    auto types = getExternalTypes();
+    for (std::size_t i = 0; i < externalGeoRef.size() && i < types.size(); ++i) {
+        auto it = refs.find(externalGeoRef[i]);
+        if (it != refs.end())
+            types[i] = static_cast<long>(it->second ? ExtType::Intersection : ExtType::Projection);
+    }
+
+    // The flag goes on the geometry as well. A reference missing its element
+    // has no entry in the list, and its geometry is what keeps its kind; and
+    // the rebuild hands the ids on from cut to cut.
+    auto geos = ExternalGeo.getValues();
+    for (auto &geo : geos) {
+        auto it = refs.find(ExternalGeometryFacade::getFacade(geo)->getRef());
+        if (it == refs.end())
+            continue;
+        geo = geo->clone();
+        auto egf = ExternalGeometryFacade::getFacade(geo);
+        egf->setFlag(ExternalGeometryExtension::Intersection, it->second);
+        if (defining)
+            egf->setFlag(ExternalGeometryExtension::Defining, it->second);
+    }
+    ExternalGeo.setValues(geos);
+    ExternalTypes.setValues(types);
+    rebuildExternalGeometry();
+    return 0;
+}
+
+std::vector<long> SketchObject::getExternalTypes() const
+{
+    std::vector<long> types = ExternalTypes.getValues();
+    types.resize(ExternalGeometry.getSize(), static_cast<long>(ExtType::Projection));
+    return types;
+}
+
+ExtType SketchObject::externalTypeFromGeometry(const std::string &ref) const
+{
+    std::size_t count = 0;
+    std::size_t cuts = 0;
+    auto it = externalGeoRefMap.find(ref);
+    if (it != externalGeoRefMap.end()) {
+        for (long id : it->second) {
+            auto iter = externalGeoMap.find(id);
+            if (iter == externalGeoMap.end())
+                continue;
+            ++count;
+            if (ExternalGeometryFacade::getFacade(ExternalGeo[iter->second])->testFlag(
+                        ExternalGeometryExtension::Intersection))
+                ++cuts;
+        }
+    }
+    if (cuts == 0)
+        return ExtType::Projection;
+    return cuts == count ? ExtType::Intersection : ExtType::Both;
+}
+
+void SketchObject::syncExternalTypes(const std::vector<std::string> &oldRefs)
+{
+    // An undo or a redo puts both properties back itself.
+    if (getDocument() && getDocument()->isPerformingTransaction())
+        return;
+
+    // The references are written in a dozen places -- one deleted, one
+    // dropped because its element is gone, one put back, a sketch copied in
+    // -- and by the document itself when an object goes. Here is the one
+    // place they all pass: each reference keeps the kind it had, by what it
+    // refers to. (Upstream writes the kinds where a reference is added and
+    // nowhere else, so that deleting one shifts the kinds of those after it.)
+    // A reference new to the list takes what its geometry says: nothing for
+    // one just added, the flag for one whose element was missing.
+    const std::vector<long> &oldTypes = ExternalTypes.getValues();
+    std::map<std::string, long> kinds;
+    for (std::size_t i = 0; i < oldRefs.size() && i < oldTypes.size(); ++i)
+        kinds.emplace(oldRefs[i], oldTypes[i]);
+
+    std::vector<long> types;
+    types.reserve(externalGeoRef.size());
+    for (const auto &ref : externalGeoRef) {
+        auto it = kinds.find(ref);
+        types.push_back(it != kinds.end() ? it->second
+                                          : static_cast<long>(externalTypeFromGeometry(ref)));
+    }
+    if (types != oldTypes)
+        ExternalTypes.setValues(std::move(types));
+}
+
+void SketchObject::migrateExternalTypes()
+{
+    std::vector<long> types;
+    if (restoredExternalTypes) {
+        types = getExternalTypes();
+        // The kinds and no version: the file is upstream's. It has the kinds
+        // since its 1.1.0, which builds a face square to the sketch, and an
+        // edge the sketch cuts, the way version 2 does here.
+        if (!restoredVersion)
+            _Version.setValue(2);
+    }
+    else {
+        // A file from before the property, where the kind was the flag on
+        // the geometry. Before version 2 an edge so flagged came with its
+        // projection as well, every piece flagged: a reference of both
+        // kinds, and its constraints count on both.
+        const auto &subs = ExternalGeometry.getSubValues();
+        for (std::size_t i = 0; i < externalGeoRef.size(); ++i) {
+            ExtType kind = externalTypeFromGeometry(externalGeoRef[i]);
+            if (kind != ExtType::Projection && _Version.getValue() < 2 && i < subs.size()
+                    && boost::starts_with(Data::oldElementName(subs[i].c_str()), "Edge"))
+                kind = ExtType::Both;
+            types.push_back(static_cast<long>(kind));
+        }
+    }
+    if (types != ExternalTypes.getValues())
+        ExternalTypes.setValues(types);
+    restoredExternalTypes = false;
+    restoredVersion = false;
+
+    // What the geometry must say for the list to be found again when a
+    // reference is dropped and put back. A cut is all cut: upstream's file
+    // has no flag at all. Of a reference of both kinds only a rebuild can
+    // tell the pieces apart.
+    unsplitExternalRefs.clear();
+    for (std::size_t i = 0; i < externalGeoRef.size() && i < types.size(); ++i) {
+        const std::string &ref = externalGeoRef[i];
+        const ExtType said = externalTypeFromGeometry(ref);
+        if (types[i] == static_cast<long>(ExtType::Both)) {
+            if (said != ExtType::Both)
+                unsplitExternalRefs.insert(ref);
+        }
+        else if (types[i] == static_cast<long>(ExtType::Intersection)
+                 && said != ExtType::Intersection) {
+            auto it = externalGeoRefMap.find(ref);
+            if (it == externalGeoRefMap.end())
+                continue;
+            for (long id : it->second) {
+                auto iter = externalGeoMap.find(id);
+                if (iter != externalGeoMap.end())
+                    ExternalGeometryFacade::getFacade(ExternalGeo[iter->second])->setFlag(
+                            ExternalGeometryExtension::Intersection);
+            }
+        }
+    }
 }
 
 int SketchObject::toggleExternalGeometryFlag(const std::vector<int> &geoIds,
@@ -856,10 +1013,21 @@ int SketchObject::addExternal(App::DocumentObject *Obj, const char* SubName, boo
                               "geometry links do not match\n");
         return -1;
     }
+    const long kind = static_cast<long>(intersection ? ExtType::Intersection
+                                                     : ExtType::Projection);
+    std::vector<long> Types = getExternalTypes();
     for (size_t i = 0  ;  i < Objects.size()  ;  ++i){
         if (Objects[i] == Obj   &&   SubElements[i] == SubName) {
-            Base::Console().Error("Link to %s already exists in this sketch.\n",SubName);
-            return -1;
+            if (Types[i] == kind || Types[i] == static_cast<long>(ExtType::Both)) {
+                Base::Console().Error("Link to %s already exists in this sketch.\n",SubName);
+                return -1;
+            }
+            // Taken the other way already: it is of both kinds now, and one
+            // reference still (upstream 0e5e071d72).
+            Types[i] = static_cast<long>(ExtType::Both);
+            ExternalTypes.setValues(Types);
+            rebuildExternalGeometry(defining);
+            return static_cast<int>(i);
         }
     }
 
@@ -867,9 +1035,13 @@ int SketchObject::addExternal(App::DocumentObject *Obj, const char* SubName, boo
     Objects.push_back(Obj);
     SubElements.emplace_back(SubName);
 
-    // set the Link list.
+    // set the Link list, and the kind of its new entry beside it
     ExternalGeometry.setValues(Objects,SubElements);
-    rebuildExternalGeometry(defining, intersection);
+    Types = getExternalTypes();
+    if (!Types.empty())
+        Types.back() = kind;
+    ExternalTypes.setValues(Types);
+    rebuildExternalGeometry(defining);
     if(ExternalGeometry.getSize() == (int)Objects.size())
         return ExternalGeometry.getSize()-1;
     return -1;
@@ -1156,9 +1328,23 @@ int SketchObject::attachExternal(
     Objects.push_back(Obj);
     SubElements.push_back(std::string(SubName));
 
+    // The geometry takes its kind along to the reference it is attached to
+    std::size_t cuts = 0;
+    for (int geoId : idSet) {
+        if (ExternalGeometryFacade::getFacade(geos[-geoId-1])->testFlag(
+                    ExternalGeometryExtension::Intersection))
+            ++cuts;
+    }
+    const ExtType kind = cuts == 0 ? ExtType::Projection
+                       : cuts == idSet.size() ? ExtType::Intersection : ExtType::Both;
+
     ExternalGeometry.setValues(Objects,SubElements);
     if(externalGeoRef.size()!=Objects.size())
         return -1;
+
+    std::vector<long> Types = getExternalTypes();
+    Types.back() = static_cast<long>(kind);
+    ExternalTypes.setValues(Types);
 
     std::string ref = externalGeoRef.back();
     for(auto geoId : idSet) {
@@ -1559,7 +1745,7 @@ static Part::Geometry *fitArcs(std::vector<std::unique_ptr<Part::Geometry> > &ar
     return geo;
 }
 
-void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
+void SketchObject::rebuildExternalGeometry(bool defining)
 {
     Base::StateLocker lock(managedoperation, true); // no need to check input data validity as this is an sketchobject managed operation.
 
@@ -1655,6 +1841,13 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
     BRepBuilderAPI_MakeFace mkFace(sketchPlane);
     TopoDS_Shape aProjFace = mkFace.Shape();
 
+    // The kind of each reference (upstream 0e5e071d72). One put back above,
+    // its element found again, lost its entry with its link: its geometry
+    // still says what it was.
+    std::vector<long> Types = getExternalTypes();
+    for (std::size_t i = Types.size(); i < keys.size(); ++i)
+        Types.push_back(static_cast<long>(externalTypeFromGeometry(keys[i])));
+
     std::set<std::string> refSet;
     // We use a vector here to keep the order (roughly) the same as ExternalGeometry
     std::vector<std::vector<std::unique_ptr<Part::Geometry> > > newGeos;
@@ -1665,10 +1858,12 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
         const std::string &SubElement=SubElements[i];
         const std::string &key = keys[i];
 
+        const bool projection = Types[i] != static_cast<long>(ExtType::Intersection);
+        const bool intersection = Types[i] != static_cast<long>(ExtType::Projection);
+
         // Skip frozen geometries
         bool frozen = false;
         bool sync = false;
-        bool intersection = addIntersection && (i+1 == (int)Objects.size());
         for(auto id : externalGeoRefMap[key]) {
             auto it = externalGeoMap.find(id);
             if(it != externalGeoMap.end()) {
@@ -1677,8 +1872,6 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
                     frozen = true;
                 if(egf->testFlag(ExternalGeometryExtension::Sync))
                     sync = true;
-                if (egf->testFlag(ExternalGeometryExtension::Intersection))
-                    intersection = true;
             }
         }
         if(frozen && !sync) {
@@ -2546,7 +2739,7 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
             switch (refSubShape.ShapeType())
             {
             case TopAbs_FACE:
-                if (!intersection)
+                if (projection)
                     importFace(refSubShape);
                 break;
             case TopAbs_WIRE: {
@@ -2560,8 +2753,10 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
                 // plane and nothing else, as a face is. It used to come with
                 // its projection as well -- an edge standing on the plane was
                 // the same point twice -- and a sketch from before version 2
-                // keeps both: its constraints count on those geometries.
-                if (!intersection || _Version.getValue() < 2) {
+                // keeps both, its constraints counting on those geometries:
+                // such an edge is a reference of both kinds there
+                // (migrateExternalTypes).
+                if (projection) {
                     importNamedEdge(refTopoShape.isNull() ? Part::TopoShape(refSubShape)
                                                           : refTopoShape);
                 }
@@ -2577,6 +2772,11 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
             if (intersection && (refSubShape.ShapeType() == TopAbs_EDGE
                                  || refSubShape.ShapeType() == TopAbs_FACE))
             {
+                // The cut is fitted and flagged on its own. A reference of
+                // both kinds has its projection in front of it.
+                std::vector<std::unique_ptr<Part::Geometry> > projected;
+                projected.swap(geos);
+
                 BRepAlgoAPI_Section maker(refSubShape, sketchPlane);
                 maker.Approximation(Standard_True);
                 if (!maker.IsDone())
@@ -2607,6 +2807,12 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
                 }
                 for (const auto &s : intersectionShape.getSubShapes(TopAbs_VERTEX, TopAbs_EDGE))
                     importVertex(s);
+
+                for (auto &geo : geos)
+                    ExternalGeometryFacade::getFacade(geo.get())->setFlag(
+                            ExternalGeometryExtension::Intersection);
+                geos.insert(geos.begin(), std::make_move_iterator(projected.begin()),
+                            std::make_move_iterator(projected.end()));
             }
 
         } catch (Base::Exception &e) {
@@ -2634,11 +2840,9 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
             continue;
         }
         if (intersection) {
-            for(auto &geo : geos) {
-                auto egf = ExternalGeometryFacade::getFacade(geo.get());
-                egf->setFlag(ExternalGeometryExtension::Intersection);
-                egf->setFlag(ExternalGeometryExtension::Defining, defining);
-            }
+            for(auto &geo : geos)
+                ExternalGeometryFacade::getFacade(geo.get())->setFlag(
+                        ExternalGeometryExtension::Defining, defining);
         } else if (defining && i+1==(int)Objects.size()) {
             for(auto &geo : geos)
                 ExternalGeometryFacade::getFacade(geo.get())->setFlag(
@@ -2662,15 +2866,28 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
         // (the first rebuild of a sketch saved before the names), take the
         // ids of the unnamed geometries in order, the positional rule these
         // always had. Ids nothing claims are deleted.
+        //
+        // The cut of a reference and its projection each take their ids from
+        // their own: an edge that is cut, then projected as well, must not
+        // hand the id of its point to the line. The flag says which is
+        // which -- but for a reference of both kinds as a file gave it,
+        // where no piece or every piece is flagged, and the pieces go by
+        // position this once.
+        const bool split = unsplitExternalRefs.erase(egf->getRef()) == 0;
         std::vector<std::string> oldElements;
+        std::vector<bool> oldCut;
         oldElements.reserve(refs.size());
+        oldCut.reserve(refs.size());
         for (long id : refs) {
             auto it = externalGeoMap.find(id);
-            if (it == externalGeoMap.end())
+            if (it == externalGeoMap.end()) {
                 oldElements.emplace_back();
-            else
-                oldElements.push_back(ExternalGeometryFacade::getFacade(
-                            ExternalGeo[it->second])->getRefElement());
+                oldCut.push_back(false);
+                continue;
+            }
+            auto old = ExternalGeometryFacade::getFacade(ExternalGeo[it->second]);
+            oldElements.push_back(old->getRefElement());
+            oldCut.push_back(old->testFlag(ExternalGeometryExtension::Intersection));
         }
         std::vector<bool> taken(refs.size(), false);
         std::vector<long> ids(geos.size(), 0);
@@ -2686,11 +2903,15 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
                 }
             }
         }
-        std::size_t next = 0;
+        std::size_t nexts[2] = {0, 0};
         for (std::size_t i = 0; i < geos.size(); ++i) {
             if (ids[i])
                 continue;
-            while (next < refs.size() && (taken[next] || !oldElements[next].empty()))
+            const bool cut = split && ExternalGeometryFacade::getFacade(geos[i].get())->testFlag(
+                    ExternalGeometryExtension::Intersection);
+            std::size_t &next = nexts[cut ? 1 : 0];
+            while (next < refs.size()
+                    && (taken[next] || !oldElements[next].empty() || (split && oldCut[next] != cut)))
                 ++next;
             if (next < refs.size()) {
                 ids[i] = refs[next];
@@ -2734,8 +2955,13 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
                 geoms.push_back(geo.release());
                 continue;
             }
-            // This is an existing geometry. Update it while keeping the old flags
+            // This is an existing geometry. Update it while keeping the old
+            // flags -- but for whether it is a cut, which was decided above
+            const bool cut = ExternalGeometryFacade::getFacade(geo.get())->testFlag(
+                    ExternalGeometryExtension::Intersection);
             ExternalGeometryFacade::copyFlags(geoms[it->second], geo.get());
+            ExternalGeometryFacade::getFacade(geo.get())->setFlag(
+                    ExternalGeometryExtension::Intersection, cut);
             geoms[it->second] = geo.release();
         }
     }
@@ -2780,17 +3006,23 @@ void SketchObject::rebuildExternalGeometry(bool defining, bool addIntersection)
         if(refSet.size() < keys.size()) {
             auto itObj = Objects.begin();
             auto itSub = SubElements.begin();
+            auto itType = Types.begin();
             for(auto &ref : keys) {
                 if(!refSet.count(ref)) {
                     itObj = Objects.erase(itObj);
                     itSub = SubElements.erase(itSub);
+                    itType = Types.erase(itType);
                 }else {
                     ++itObj;
                     ++itSub;
+                    ++itType;
                 }
             }
         }
         ExternalGeometry.setValues(Objects,SubElements);
+        // the kinds this rebuild went by, for the references it kept
+        if (Types.size() == Objects.size() && Types != ExternalTypes.getValues())
+            ExternalTypes.setValues(Types);
     }
 
     solverNeedsUpdate=true;

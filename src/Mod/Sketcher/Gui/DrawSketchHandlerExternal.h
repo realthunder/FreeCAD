@@ -229,14 +229,26 @@ inline std::vector<int> addExternalFromPick(ViewProviderSketch* sketchgui,
     };
     const auto had = idsByRef();
 
-    // Already referred to? addExternal() would refuse it with an error.
+    // Already referred to, this way? addExternal() would refuse it with an
+    // error. Referred to the other way -- projected, and now picked for its
+    // cut, or the reverse -- it is taken both ways, and addExternal() does
+    // that.
     if (App::DocumentObject* obj = resolved.getSubObject()) {
         const std::string element = resolved.getOldElementName();
         const auto& objs = sketch->ExternalGeometry.getValues();
         const auto subs = sketch->ExternalGeometry.getSubValues(false);
         const auto names = sketch->ExternalGeometry.getSubValues(true);
+        const auto& types = sketch->ExternalTypes.getValues();
+        const long kind = static_cast<long>(intersection ? Sketcher::ExtType::Intersection
+                                                         : Sketcher::ExtType::Projection);
         for (std::size_t i = 0; i < objs.size() && i < subs.size() && i < names.size(); ++i) {
             if (objs[i] == obj && subs[i] == element) {
+                const long has = i < types.size()
+                    ? types[i]
+                    : static_cast<long>(Sketcher::ExtType::Projection);
+                if (has != kind && has != static_cast<long>(Sketcher::ExtType::Both)) {
+                    break;
+                }
                 auto it = had.find(std::string(obj->getNameInDocument()) + "."
                                    + Data::newElementName(names[i].c_str()));
                 if (it != had.end()) {
@@ -267,10 +279,18 @@ inline std::vector<int> addExternalFromPick(ViewProviderSketch* sketchgui,
     // geometry amount (as this avoids other issues).
     // This solver is a very low cost one anyway (there is actually nothing to solve).
     tryAutoRecomputeIfNotSolve(sketch);
+    // what was not there before: a new reference's geometry, or the half
+    // an old one gained
+    std::set<int> before;
+    for (const auto& [ref, was] : had) {
+        before.insert(was.begin(), was.end());
+    }
     std::vector<int> ids;
     for (const auto& [ref, made] : idsByRef()) {
-        if (!had.count(ref)) {
-            ids.insert(ids.end(), made.begin(), made.end());
+        for (int id : made) {
+            if (!before.count(id)) {
+                ids.push_back(id);
+            }
         }
     }
     return ids;

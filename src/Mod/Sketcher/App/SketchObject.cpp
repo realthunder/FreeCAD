@@ -188,6 +188,11 @@ SketchObject::SketchObject()
                       "Tolerance used check vertex conincidents when making internal geometry");
     ADD_PROPERTY_TYPE(_Version, (0), "Base",
                       (App::PropertyType)(App::Prop_Hidden | App::Prop_ReadOnly), "");
+    ADD_PROPERTY_TYPE(ExternalTypes,
+                      (std::vector<long>{}),
+                      "Sketch",
+                      (App::PropertyType)(App::Prop_Hidden),
+                      "Sketch external geometry type: 0 = projection, 1 = intersection, 2 = both.");
 
     ParameterGrp::handle hGrpp = App::GetApplication().GetParameterGroupByPath("User parameter:BaseApp/Preferences/Mod/Sketcher");
     geoHistoryLevel = hGrpp->GetInt("GeometryHistoryLevel",1);
@@ -948,8 +953,27 @@ void SketchObject::Save(Writer& writer) const
 
 void SketchObject::Restore(XMLReader& reader)
 {
+    // Whether the file states these two tells who wrote the sketch, and when
+    // (migrateExternalTypes). Each is given a value no file has, to see
+    // whether the file puts another in its place.
+    const long version = _Version.getValue();
+    const std::vector<long> types = ExternalTypes.getValues();
+    _Version.setValue(-1);
+    ExternalTypes.setValues(std::vector<long>{-1});
+
     // read the father classes
     Part::Part2DObject::Restore(reader);
+
+    // A file in this fork's own schema leaves a property out when it is at
+    // its default, which was put back before this was called: there the
+    // version is stated either way. The kinds are not told apart, and need
+    // not be: left out they are none, and the geometry says the same.
+    restoredVersion = _Version.getValue() >= 0 || reader.DocumentSchema >= 5;
+    if (_Version.getValue() < 0)
+        _Version.setValue(version);
+    restoredExternalTypes = !(ExternalTypes.getSize() == 1 && ExternalTypes[0] < 0);
+    if (!restoredExternalTypes)
+        ExternalTypes.setValues(types);
 }
 
 void SketchObject::handleChangedPropertyType(Base::XMLReader &reader,
@@ -1174,7 +1198,9 @@ void SketchObject::onChanged(const App::Property* prop)
         if(!isRestoring()) {
             // must wait till onDocumentRestored() when shadow references are
             // fully restored
+            const std::vector<std::string> oldRefs = externalGeoRef;
             updateGeometryRefs();
+            syncExternalTypes(oldRefs);
 
             // Make sure to inform view provider first before emit signal for
             // editting task
@@ -1308,6 +1334,7 @@ void SketchObject::restoreFinished()
         migrateSketch();
 
         updateGeometryRefs();
+        migrateExternalTypes();
         if(ExternalGeo.getSize()<=2) {
             if (ExternalGeo.getSize() < 2)
                 initExternalGeo();

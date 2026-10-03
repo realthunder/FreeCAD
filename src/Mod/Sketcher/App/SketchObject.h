@@ -65,6 +65,15 @@ namespace Sketcher
 
 class SketchAnalysis;
 
+/// How an external reference is taken into the sketch (upstream 0e5e071d72).
+/// The values are what ExternalTypes stores.
+enum class ExtType
+{
+    Projection,    // projected onto the sketch plane
+    Intersection,  // cut by the sketch plane
+    Both           // the projection, then the cut
+};
+
 class SketcherExport SketchObject: public Part::Part2DObject
 {
     typedef Part::Part2DObject inherited;
@@ -87,6 +96,12 @@ public:
     Part ::PropertyGeometryList Geometry;
     Sketcher::PropertyConstraintList Constraints;
     App     ::PropertyLinkSubList    ExternalGeometry;
+    /** The kind of each reference of ExternalGeometry, an ExtType, hidden. It
+     * follows the references by what they refer to, not by their position:
+     * see syncExternalTypes(). A list shorter than the references reads as
+     * projections.
+     */
+    App     ::PropertyIntegerList    ExternalTypes;
     App     ::PropertyLinkListHidden Exports;
     Part    ::PropertyGeometryList   ExternalGeo;
     App     ::PropertyBool           FullyConstrained;
@@ -100,7 +115,9 @@ public:
      * existed. 1: a planar external face perpendicular to the sketch projects
      * to a segment spanning the face, not a 20000 long line. 2: an external
      * edge taken by intersection is its cut with the sketch plane alone, not
-     * its projection and the cut.
+     * its projection and the cut -- which is no longer asked of the version:
+     * such an edge of an older sketch is a reference of both kinds, see
+     * migrateExternalTypes().
      */
     App     ::PropertyInteger        _Version;
     /** @name methods override Feature */
@@ -285,7 +302,7 @@ public:
         return ExternalGeo.getValues();
     }
     /// rebuilds external geometry (projection onto the sketch plane)
-    void rebuildExternalGeometry(bool defining=false, bool intersection=false);
+    void rebuildExternalGeometry(bool defining=false);
     /// returns the number of external Geometry entities
     int getExternalGeometryCount() const
     {
@@ -1058,6 +1075,18 @@ protected:
 
     void updateGeometryRefs();
 
+    /// ExternalTypes, one entry for every reference of ExternalGeometry
+    std::vector<long> getExternalTypes() const;
+    /// The kind the geometry of a reference says: all of it flagged as a
+    /// cut, some of it, or none
+    ExtType externalTypeFromGeometry(const std::string &ref) const;
+    /// ExternalTypes after ExternalGeometry changed, \a oldRefs being what
+    /// externalGeoRef was before: every reference keeps its kind
+    void syncExternalTypes(const std::vector<std::string> &oldRefs);
+    /// ExternalTypes of a sketch read from a file that has none, or that
+    /// upstream wrote
+    void migrateExternalTypes();
+
     void onUndoRedoFinished() override;
 
     // migration functions
@@ -1203,6 +1232,16 @@ private:
 
     // backup of ExternalGeometry in case of element reference change
     std::vector<std::string> externalGeoRef;
+
+    // Whether the file the sketch was read from states these two properties:
+    // it tells who wrote it, see Restore() and migrateExternalTypes()
+    bool restoredExternalTypes = false;
+    bool restoredVersion = false;
+
+    // References of both kinds whose geometry does not say yet which piece
+    // is the cut, as read from a file: their first rebuild gives the pieces
+    // their ids by position
+    std::set<std::string> unsplitExternalRefs;
 
     // mapping from ExternalGeo[*].Id to index of ExternalGeo
     std::map<long,int> externalGeoMap;

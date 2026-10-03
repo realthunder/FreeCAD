@@ -1043,3 +1043,10 @@ fc_add_gui_test(GuiSketchCopyClipboardCost_tests_run
 fc_add_gui_test(GuiSketchElementsKeys_tests_run
                 sketch-elements-keys.py
                 --timeout 120)
+
+# An element the sketch already refers to, picked the other way -- projected,
+# then by intersection -- is one reference of both kinds
+# (SketchObject.ExternalTypes, upstream 0e5e071d72).
+fc_add_gui_test(GuiSketchExternalBothWays_tests_run
+                sketch-external-both-ways.py
+                --timeout 120)

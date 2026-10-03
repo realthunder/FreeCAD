@@ -22,6 +22,7 @@ set(Sketcher_TestScripts
     SketcherTests/TestSketchInternalFaces.py
     SketcherTests/TestSketcherEllipse.py
     SketcherTests/TestSketchExternalGeometry.py
+    SketcherTests/TestSketchExternalTypes.py
     SketcherTests/TestSketcherText.py
     SketcherTests/TestSketchRadiusDiameter.py
 )
