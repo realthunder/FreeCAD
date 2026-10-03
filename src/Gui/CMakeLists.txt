@@ -1429,6 +1429,7 @@ SET(FreeCADGui_CPP_SRCS
     DocumentPyImp.cpp
     DocumentObserver.cpp
     DocumentObserverPython.cpp
+    DatumValueEditor.cpp
     EditableDatumLabel.cpp
     ExpressionBinding.cpp
     ExpressionBindingPy.cpp
@@ -1466,7 +1467,9 @@ SET(FreeCADGui_SRCS
     DocumentModel.h
     DocumentObserver.h
     DocumentObserverPython.h
+    DatumValueEditor.h
     EditableDatumLabel.h
+    OnViewEntry.h
     ExpressionBinding.h
     ExpressionBindingPy.h
     ExpressionCompleter.h
