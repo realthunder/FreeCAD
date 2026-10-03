@@ -60,6 +60,10 @@ export interface OnViewParam {
   level?: number;
   /// -1 no toggle, 0 a reference, 1 driving
   driving?: number;
+  /// A value that can be stated in two measures (a radius, a diameter): -1
+  /// for none, else which one it is stated in now, and that measure's name
+  measure?: number;
+  measureName?: string;
   nameShown?: boolean;
   name?: string;
   nameSel?: [number, number];
@@ -363,6 +367,20 @@ function OnViewDatumEditor(props: {
                       .catch(() => {});
                   }}>
             {props.param().driving === 0 ? 'ref' : 'drv'}
+          </button>
+        </Show>
+        <Show when={(props.param().measure ?? -1) >= 0}>
+          <button type="button"
+                  class="fc-onview-datum-toggle fc-onview-datum-measure"
+                  title={`${props.param().measureName ?? ''}: switch measure (Ctrl+Shift+R)`}
+                  tabIndex={-1}
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    sendOp('onViewAction', { index: props.param().i, action: 'measure' })
+                      .catch(() => {});
+                  }}>
+            {props.param().measureName ?? ''}
           </button>
         </Show>
         <input ref={setLine}

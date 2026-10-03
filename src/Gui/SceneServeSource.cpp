@@ -822,6 +822,9 @@ public:
                 jsonQuoted(json, param.result);
                 json += ",\"level\":" + std::to_string(param.resultLevel);
                 json += ",\"driving\":" + std::to_string(param.driving);
+                json += ",\"measure\":" + std::to_string(param.measure);
+                json += ",\"measureName\":";
+                jsonQuoted(json, param.measureName);
                 json += param.nameShown ? ",\"nameShown\":true" : ",\"nameShown\":false";
                 json += ",\"name\":";
                 jsonQuoted(json, param.name);

@@ -63,7 +63,8 @@ class ViewerContext;
  * One line, which holds a value or, when its text starts with '=', an
  * expression (FreeCAD's own rule, the spreadsheet cell's), with a line
  * under it that says what the expression gives or why the text gives
- * nothing; a toggle between driving and reference; and a name. It stands
+ * nothing; a toggle between driving and reference; for a value that can be
+ * stated in two measures, a toggle between those; and a name. It stands
  * with its line over the number it edits, and the other rows grow away from
  * what the dimension measures, so that it hides nothing it edits
  * (docs/SketcherPort.md "One editor for a constraint's value").
@@ -98,6 +99,13 @@ public:
         QString expression;
         /// -1 for no toggle, 0 a reference, 1 driving
         int driving = -1;
+        /// A value that can be stated in either of two measures (a circle's
+        /// size as its radius or as its diameter): -1 for none, else the
+        /// one `value` is stated in, 0 or 1
+        int measure = -1;
+        /// What a value in measure 0 is multiplied by to say the same in
+        /// measure 1
+        double measureFactor = 1.0;
         bool nameShown = false;
         QString name;
     };
@@ -109,6 +117,8 @@ public:
         Base::Quantity value;
         std::shared_ptr<App::Expression> expression;
         int driving = -1;
+        /// The measure the value or the expression is meant in
+        int measure = -1;
         QString name;
     };
 
@@ -123,6 +133,12 @@ public:
 
     /// The toggle's two faces
     void setDrivingIcons(const QIcon& driving, const QIcon& reference);
+    /// The two measures a value can be stated in, each with its face and
+    /// its name: the first is Target::measure 0
+    void setMeasures(const QIcon& first,
+                     const QString& firstName,
+                     const QIcon& second,
+                     const QString& secondName);
 
     /// Show the editor for `target`, or move it there: the line holds the
     /// value or "=" and the expression, the number selected
@@ -168,6 +184,8 @@ public:
 Q_SIGNALS:
     /// The toggle flipped, by a click, its key, or typing into a reference
     void drivingToggled(bool driving);
+    /// The value is stated in the other measure now
+    void measureToggled(int measure);
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -177,6 +195,8 @@ private:
     void checkText();
     void toggleDriving();
     void setDriving(int driving);
+    void toggleMeasure();
+    void setMeasure(int measure);
     void updateRows();
     void place();
     void notifyChanged();
@@ -199,6 +219,10 @@ private:
     QLineEdit* nameEdit = nullptr;
     QWidget* lineRow = nullptr;
     QToolButton* toggle = nullptr;
+    QToolButton* measureToggle = nullptr;
+    int measure = -1;
+    QIcon measureIcons[2];
+    QString measureNames[2];
     ExpressionLineEdit* line = nullptr;
     QLabel* resultLabel = nullptr;
     QIcon drivingIcon;
@@ -207,6 +231,9 @@ private:
     std::unique_ptr<QuantitySpinBox> parser;
 
     QString startText;
+    /// The text the editor itself last put in the line: while the line still
+    /// holds it, nothing has been typed
+    QString ownText;
     QString result;
     int resultLevel = 0;
     QTimer checkTimer;

@@ -71,6 +71,7 @@ bool isClaimedKey(const QKeyEvent* key)
         case Qt::Key_F2:
             return true;
         case Qt::Key_D:
+        case Qt::Key_R:
             return mods == (Qt::ControlModifier | Qt::ShiftModifier);
         default:
             return false;
@@ -124,11 +125,17 @@ DatumValueEditor::DatumValueEditor(ViewerContext* viewer, const Base::Placement&
     // the keys stay in the line while it is clicked
     toggle->setFocusPolicy(Qt::NoFocus);
     toggle->setToolTip(tr("Driving or reference (Ctrl+Shift+D)"));
+    measureToggle = new QToolButton(lineRow);
+    measureToggle->setObjectName(QStringLiteral("DatumValueEditorMeasure"));
+    measureToggle->setAutoRaise(true);
+    measureToggle->setFocusPolicy(Qt::NoFocus);
+    measureToggle->hide();
     line = new ExpressionLineEdit(lineRow, false, '=');
     line->setObjectName(QStringLiteral("DatumValueEditorLine"));
     line->setFocusPolicy(Qt::ClickFocus);
     line->setMinimumWidth(line->fontMetrics().horizontalAdvance(QStringLiteral("000000.00 mm")));
     row->addWidget(toggle);
+    row->addWidget(measureToggle);
     row->addWidget(line, 1);
 
     resultLabel = new QLabel(frame);
@@ -151,6 +158,9 @@ DatumValueEditor::DatumValueEditor(ViewerContext* viewer, const Base::Placement&
     });
     connect(toggle, &QToolButton::clicked, this, [this]() {
         toggleDriving();
+    });
+    connect(measureToggle, &QToolButton::clicked, this, [this]() {
+        toggleMeasure();
     });
 
     checkTimer.setSingleShot(true);
@@ -188,6 +198,18 @@ void DatumValueEditor::setDrivingIcons(const QIcon& drivingFace, const QIcon& re
     setDriving(driving);
 }
 
+void DatumValueEditor::setMeasures(const QIcon& first,
+                                   const QString& firstName,
+                                   const QIcon& second,
+                                   const QString& secondName)
+{
+    measureIcons[0] = first;
+    measureIcons[1] = second;
+    measureNames[0] = firstName;
+    measureNames[1] = secondName;
+    setMeasure(measure);
+}
+
 void DatumValueEditor::edit(const Target& next)
 {
     if (next.label) {
@@ -210,9 +232,11 @@ void DatumValueEditor::edit(const Target& next)
         ? parser->textFromValue(Base::Quantity(target.value, target.unit))
         : QStringLiteral("=") + target.expression;
     line->setText(startText);
+    ownText = startText;
     nameEdit->setText(target.name);
     driving = target.driving;
     setDriving(driving);
+    setMeasure(target.measure);
     result.clear();
     resultLevel = 0;
     if (!target.expression.isEmpty()) {
@@ -304,6 +328,7 @@ bool DatumValueEditor::read(Entry& entry, QString* why) const
 {
     const QString text = line->text().trimmed();
     entry.driving = driving;
+    entry.measure = measure;
     entry.name = nameEdit->text().trimmed();
     if (text.startsWith(QLatin1Char('='))) {
         App::ExpressionFunctionCallDisabler disabler(!ExprParams::getEvalFuncOnEdit());
@@ -334,7 +359,7 @@ bool DatumValueEditor::read(Entry& entry, QString* why) const
 bool DatumValueEditor::isModified() const
 {
     return line->text() != startText || nameEdit->text().trimmed() != target.name.trimmed()
-        || driving != target.driving;
+        || driving != target.driving || measure != target.measure;
 }
 
 void DatumValueEditor::showError(const QString& message)
@@ -420,6 +445,53 @@ void DatumValueEditor::setDriving(int value)
                      driving == 0 ? palette.color(QPalette::Disabled, QPalette::Text)
                                   : QApplication::palette().color(QPalette::Text));
     line->setPalette(palette);
+}
+
+void DatumValueEditor::toggleMeasure()
+{
+    if (measure < 0) {
+        return;
+    }
+    const int next = measure ? 0 : 1;
+
+    // The size stays what it is while nothing has been typed: the number the
+    // editor put in the line is restated in the other measure. A number that
+    // was typed is what the user means in the measure being chosen, and an
+    // expression says what it says: both are left as they are.
+    const QString text = line->text();
+    if (text == ownText && !text.trimmed().startsWith(QLatin1Char('='))
+        && target.measureFactor > 0.0) {
+        QString copy = text;
+        int pos = 0;
+        if (parser->validate(copy, pos) == QValidator::Acceptable) {
+            const Base::Quantity now = parser->valueFromText(text);
+            const double factor = next == 1 ? target.measureFactor : 1.0 / target.measureFactor;
+            ownText = parser->textFromValue(Base::Quantity(now.getValue() * factor, now.getUnit()));
+            line->setText(ownText);
+            line->setSelection(0, numberLength(ownText));
+        }
+    }
+
+    setMeasure(next);
+    Q_EMIT measureToggled(measure);
+    notifyChanged();
+}
+
+void DatumValueEditor::setMeasure(int value)
+{
+    measure = value;
+    measureToggle->setVisible(measure >= 0);
+    if (measure < 0) {
+        return;
+    }
+    const int which = measure ? 1 : 0;
+    measureToggle->setIcon(measureIcons[which]);
+    if (measureIcons[which].isNull()) {
+        measureToggle->setText(measureNames[which]);
+    }
+    //: %1 is the measure a value is stated in now, e.g. Radius; %2 the other one
+    measureToggle->setToolTip(tr("%1: switch to %2 (Ctrl+Shift+R)")
+                                  .arg(measureNames[which], measureNames[which ? 0 : 1]));
 }
 
 void DatumValueEditor::updateRows()
@@ -562,6 +634,12 @@ bool DatumValueEditor::eventFilter(QObject* watched, QEvent* event)
             toggleDriving();
             return true;
         }
+        if (key->key() == Qt::Key_R
+            && (key->modifiers() & (Qt::ControlModifier | Qt::ShiftModifier))
+                == (Qt::ControlModifier | Qt::ShiftModifier)) {
+            toggleMeasure();
+            return true;
+        }
         if (key->key() == Qt::Key_F2) {
             setKeysTo(watched == nameEdit ? Field::Value : Field::Name);
             return true;
@@ -608,6 +686,10 @@ void DatumValueEditor::describe(State& state) const
     state.result = result.toStdString();
     state.resultLevel = resultLevel;
     state.driving = driving;
+    state.measure = measure;
+    if (measure >= 0) {
+        state.measureName = measureNames[measure ? 1 : 0].toStdString();
+    }
     state.nameShown = target.nameShown;
     state.name = nameEdit->text().toStdString();
     if (nameEdit->hasSelectedText()) {
@@ -651,6 +733,10 @@ bool DatumValueEditor::act(const Action& action)
     if (action.name == "toggle") {
         toggleDriving();
         return driving >= 0;
+    }
+    if (action.name == "measure") {
+        toggleMeasure();
+        return measure >= 0;
     }
     if (action.name == "field") {
         setKeysTo(action.text == "name" ? Field::Name : Field::Value);

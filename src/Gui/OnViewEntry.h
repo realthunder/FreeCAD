@@ -78,6 +78,11 @@ public:
         int resultLevel = 0;
         /// -1 no toggle, 0 a reference, 1 driving
         int driving = -1;
+        /// A value that can be stated in either of two measures (a circle's
+        /// size as its radius or as its diameter): -1 for none, else which
+        /// of the two it is stated in now, and that measure's name
+        int measure = -1;
+        std::string measureName;
         /// The name row, when there is one
         bool nameShown = false;
         std::string name;

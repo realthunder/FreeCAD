@@ -1138,10 +1138,13 @@ edited in place by one editor (docs/SketcherPort.md "One editor for a constraint
 the value or an expression, a driving toggle, a name. It stands on the same seam,
 `Gui::OnViewEntry`, which the view's registry and the mirror now use for both kinds. The push
 carries `"kind":"datum"` and that editor's display state (`field`, `expr`, `result`, `level`,
-`driving`, `nameShown`, `name`, `nameSel`, `obj`), plus `ax/ay/az`: a world point one unit from
+`driving`, `measure`, `measureName`, `nameShown`, `name`, `nameSel`, `obj`), plus `ax/ay/az`: a world point one unit from
 the anchor in the direction its other rows grow, so that the client, which places it, keeps
 them off what the dimension measures. Clicks that are not keys go up as one op,
-`onViewAction {index, action: toggle | field | replace}`. The one piece of behaviour the client
+`onViewAction {index, action: toggle | measure | field | replace}`. `measure` (session 122) is
+for a value that can be stated two ways -- a circle's size as its radius or as its diameter:
+the push says which (`measure` 0 or 1, -1 for a value with one way only) and that way's name
+for the client's button, and the action switches it. The one piece of behaviour the client
 owns is the completion list of an expression: it completes names from what it already holds
 (`pathcomplete.ts`, the omni box's completion) and a taken row goes up as `replace`, so that
 no keystroke waits a round trip for a name to be offered. The `i` of a pushed entry is now its
