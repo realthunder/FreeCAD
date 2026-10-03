@@ -21,7 +21,7 @@
 // being drawn (under the default uplink policy the server is not told
 // where this client is looking between clicks at all), and which box has
 // the DOM focus, so that a phone raises its keyboard.
-import { For, Index, Show, createEffect, createMemo, createSignal, onCleanup } from 'solid-js';
+import { For, Index, Show, createEffect, createMemo, createSignal, on, onCleanup } from 'solid-js';
 import { sendOp } from './control';
 import { createPathCompleter } from './pathcomplete';
 import type { PathRow } from './pathcomplete';
@@ -233,14 +233,9 @@ function OnViewDatumEditor(props: {
     paths.ensureObjects();
     const objs = paths.objects();
     if (!objs) return null;
-    const rows: PathRow[] = [];
-    // the object's own properties need no prefix, as on the desktop
-    if (param.obj && !at.token.includes('.')) {
-      rows.push(...paths.objectMemberRows(objs.doc, paths.findObject(param.obj), param.obj,
-                                          at.token, '', false)
-                     .filter((r) => r.kind === 'property'));
-    }
-    rows.push(...paths.rows(at.token, [], 12).rows);
+    // An expression's path: the object's own properties need no prefix, and
+    // a property's name is followed by what it holds, as on the desktop
+    const rows = paths.rows(at.token, [], 12, { self: param.obj }).rows;
     const shown = rows.filter((r) => r.complete !== undefined && r.complete !== at.token)
                       .slice(0, 12);
     return shown.length ? { start: at.start, token: at.token, rows: shown } : null;
@@ -249,6 +244,15 @@ function OnViewDatumEditor(props: {
     const c = completion();
     if (!c || hi() >= c.rows.length) setHi(0);
   });
+  // Another token is another list: the lit row is its first again. Through
+  // a memo, as below: the list and the parameter are new objects at every
+  // push, and only a value that changed is a reason.
+  const token = createMemo(() => completion()?.token);
+  createEffect(on(token, () => setHi(0), { defer: true }));
+  // The editor names constraints, and it moves from one to the next: what
+  // the sketch's Constraints holds is asked again for each
+  const edited = createMemo(() => props.param().i);
+  createEffect(on(edited, () => paths.forgetProperties(), { defer: true }));
 
   const take = (r: PathRow) => {
     const c = completion();

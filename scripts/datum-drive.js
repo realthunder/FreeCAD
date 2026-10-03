@@ -12,7 +12,7 @@
 //
 // Usage:  node scripts/datum-drive.js <url> <object> <settle_ms>
 // Phases (also appended to DATUM_PHASES): settled | entered | opened |
-//   completed | toggled | escaped | done
+//   completed | members | toggled | escaped | done
 // DATUM_RESULT names a file the page's readings are written to as JSON.
 const ppPath = process.env.PUPPETEER_PATH || 'puppeteer-core';
 const puppeteer = require(ppPath);
@@ -38,6 +38,19 @@ const HELPERS = () => {
     const d = e.detail;
     if (d && typeof d.id === 'number' && d.id >= 9200 && d.id < 9300) window.__fcReplies[d.id] = d;
   });
+  // how often the page asks for an object's property descriptors
+  window.__fcPropAsks = 0;
+  const send = WebSocket.prototype.send;
+  WebSocket.prototype.send = function (data) {
+    let text = '';
+    if (typeof data === 'string') text = data;
+    else if (data && data.byteLength !== undefined && data.byteLength < 4096) {
+      try { text = new TextDecoder().decode(data); }
+      catch (e) { /* not text */ }
+    }
+    if (text.indexOf('"getProperties"') >= 0) ++window.__fcPropAsks;
+    return send.call(this, data);
+  };
   window.__fcRect = () => {
     const c = document.getElementById('canvas');
     const r = c.getBoundingClientRect();
@@ -67,7 +80,20 @@ const HELPERS = () => {
       result: (el.querySelector('.fc-onview-datum-result') || {}).textContent || '',
       rows: Array.from(el.querySelectorAll('.fc-onview-datum-row'))
         .map(row => row.firstChild ? row.firstChild.textContent : ''),
+      hi: Array.from(el.querySelectorAll('.fc-onview-datum-row'))
+        .findIndex(row => row.classList.contains('fc-onview-datum-hi')),
     };
+  };
+  // Take the completion with that title, by the keys: down to it from the
+  // row that is lit, then Enter
+  window.__fcTake = async (title) => {
+    const e = window.__fcEditor();
+    const at = e ? e.rows.indexOf(title) : -1;
+    if (at < 0) return false;
+    const n = e.rows.length;
+    for (let i = (at - Math.max(e.hi, 0) + n) % n; i > 0; --i) await window.__fcKey('ArrowDown');
+    await window.__fcKey('Enter');
+    return true;
   };
   window.__fcKey = async (key) => {
     const el = document.querySelector('.fc-onview-datum-value');
@@ -180,6 +206,58 @@ async function waitFor(page, fn, ms) {
     }, 10000);
     out.completed = await page.evaluate(() => window.__fcEditor());
     phase('completed');
+
+    // What a property holds under its name: the sketch's named constraints
+    // after "Sketch.Constraints.", from the descriptors the client fetched
+    // for "Sketch." -- nothing more crosses the wire. Then the same with no
+    // object in front, the edited sketch's own.
+    const editor = () => page.evaluate(() => window.__fcEditor());
+    const type = async (keys) => {
+      for (const key of keys) await page.evaluate((k) => window.__fcKey(k), key);
+    };
+    const offered = (title) => waitFor(page,
+        `((window.__fcEditor() || {}).rows || []).indexOf(${JSON.stringify(title)}) >= 0`, 6000);
+    const reads = (value) => waitFor(page,
+        `(window.__fcEditor() || {}).value === ${JSON.stringify(value)}`, 6000);
+    const take = (title) => page.evaluate((t) => window.__fcTake(t), title);
+    // The line under the value is judged once the typing pauses: wait for
+    // it to say something else than it said of the text before
+    const judged = async (was) => {
+      await waitFor(page,
+          `(window.__fcEditor() || {}).result !== ${JSON.stringify(was)}`, 4000);
+      await sleep(500);
+      return editor();
+    };
+    const members = out.members = {};
+    await type(['.', 'C', 'o', 'n']);
+    members.property = await offered('Constraints');
+    await take('Constraints');
+    await reads('=Sketch.Constraints');
+    await type(['.']);
+    members.listed = await offered('Width');
+    members.rows = ((await editor()) || {}).rows;
+    let before = ((await editor()) || {}).result;
+    await take('Width');
+    members.taken = await reads('=Sketch.Constraints.Width');
+    members.full = await judged(before);
+    // back to the '=' alone
+    for (let i = ((members.full || {}).value || '=').length; i > 1; --i) {
+      await page.evaluate(() => window.__fcKey('Backspace'));
+    }
+    members.cleared = await reads('=');
+    await type(['C', 'o', 'n']);
+    members.ownProperty = await offered('Constraints');
+    await take('Constraints');
+    await reads('=Constraints');
+    await type(['.']);
+    members.ownListed = await offered('Width');
+    members.ownRows = ((await editor()) || {}).rows;
+    before = ((await editor()) || {}).result;
+    await take('Width');
+    members.ownTaken = await reads('=Constraints.Width');
+    members.own = await judged(before);
+    members.asks = await page.evaluate(() => window.__fcPropAsks);
+    phase('members');
 
     // The toggle is a click, not a key
     await page.evaluate(() => {

@@ -12,6 +12,9 @@ the "datum" entry of the onview push, through scripts/datum-drive.js:
   - typing '=' and the start of a name offers names from the client's own
     completion (pathcomplete.ts, shared with the omni box), and taking one
     goes up and comes back as the server's text;
+  - after a property's name the list is what the property holds -- the
+    sketch's named constraints after "Sketch.Constraints." -- and the
+    edited sketch's own are offered with no object in front;
   - the toggle is a click, and the server's word comes back;
   - Escape takes the editor away -- applied, as Enter by default -- and the
     client's undo op takes the entry back in one step.
@@ -49,6 +52,7 @@ WASM = os.path.join(REPO, "build", "wasm")
 DRIVER = os.path.join(REPO, "scripts", "datum-drive.js")
 DOC = "ServeDatumBrowser"
 OBJ = "Sketch"
+NAMED = "Width"
 SETTLE_MS = 8000
 RUN_WAIT_S = 300
 
@@ -173,6 +177,16 @@ def build():
         # origin: a click there would pick the sketch's root point
         sketch.addGeometry(Part.LineSegment(FreeCAD.Vector(-20, 5, 0),
                                             FreeCAD.Vector(20, 5, 0)), False)
+        # A constraint with a name, for the completion to offer. Its line
+        # and one more, as far the other side, keep the middle where it is.
+        import Sketcher
+
+        sketch.addGeometry(Part.LineSegment(FreeCAD.Vector(-10, 15, 0),
+                                            FreeCAD.Vector(10, 15, 0)), False)
+        sketch.addGeometry(Part.LineSegment(FreeCAD.Vector(-10, -5, 0),
+                                            FreeCAD.Vector(10, -5, 0)), False)
+        sketch.addConstraint(Sketcher.Constraint("Distance", 1, 20))
+        sketch.renameConstraint(0, NAMED)
         doc.recompute()
 
         port = free_port()
@@ -242,17 +256,35 @@ def verify():
         completed = out.get("completed") or {}
         check("taking one comes back as the server's text",
               completed.get("value") == "=Sketch", completed)
+        members = out.get("members") or {}
+        check("after the object's name, its properties",
+              members.get("property") is True, members)
+        check("after a property's name, what it holds: the named constraint",
+              members.get("listed") is True and NAMED in (members.get("rows") or []),
+              members.get("rows"))
+        full = members.get("full") or {}
+        check("taken, the whole path is the server's text and has a value",
+              members.get("taken") is True and "20" in str(full.get("result", "")), full)
+        check("the sketch's own need no object in front",
+              members.get("cleared") is True and members.get("ownProperty") is True
+              and members.get("ownListed") is True
+              and NAMED in (members.get("ownRows") or []), members)
+        own = members.get("own") or {}
+        check("and that path has the same value",
+              members.get("ownTaken") is True and "20" in str(own.get("result", "")), own)
+        check("all of it from one asking for the sketch's properties",
+              members.get("asks") == 1, members.get("asks"))
         toggled = out.get("toggled") or {}
         check("the toggle is a click, and the server's word comes back",
               toggled.get("toggle") is False, toggled)
         check("Escape takes the editor away", out.get("atEnd") is None, out.get("atEnd"))
         if "escaped" in state:
-            check("applied, as Enter: the dimension is there", state["escaped"] == 1,
+            check("applied, as Enter: the dimension is there", state["escaped"] == 2,
                   state["escaped"])
         check("the client's undo op answered", (out.get("undoReply") or {}).get("ok") is True,
               out.get("undoReply"))
         sketch = state["doc"].getObject(OBJ)
-        check("and one undo takes the whole entry back", sketch.ConstraintCount == 0,
+        check("and one undo takes the whole entry back", sketch.ConstraintCount == 1,
               sketch.ConstraintCount)
     except Exception:
         note("ABORT verify:\n" + traceback.format_exc())

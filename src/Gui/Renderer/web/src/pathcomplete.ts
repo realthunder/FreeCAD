@@ -47,6 +47,15 @@ export const stripLabel = (s: string) =>
 export const has = (hay: string, needle: string) =>
   !needle || hay.toLowerCase().includes(needle.toLowerCase());
 
+/// The path is an expression's, not the omni box's. It goes on past the
+/// property -- "Sketch.Constraints.Width", "Box.Placement.Base.x", from the
+/// descriptor's members -- and the properties of `self`, the object the
+/// expression is on, are named with no object in front: "Length",
+/// "Constraints.Width", or ".Length" as the expression grammar has it.
+export interface ExprPath {
+  self?: string;
+}
+
 export interface PathCompleter {
   /// The document's objects, null until they have arrived
   objects: Accessor<ObjectsReply | null>;
@@ -54,13 +63,16 @@ export interface PathCompleter {
   ensureObjects(): void;
   /// Forget everything: a new opening, another document
   reset(): void;
+  /// Forget the property descriptors, and what they hold with them: what
+  /// was edited since may have named a member
+  forgetProperties(): void;
   findObject(name: string): ObjectEntry | undefined;
   /// The rows after "Obj.": sub-objects, properties, "ViewObject."
   objectMemberRows(doc: string, obj: ObjectEntry | undefined, objName: string,
                    tail: string, prefix: string, viewObject: boolean,
                    objs?: string[]): PathRow[];
   /// The rows for a path as typed: "Bo", "Box.Le", "#.", ".Height"
-  rows(query: string, selection: SelectionItem[], limit: number)
+  rows(query: string, selection: SelectionItem[], limit: number, expr?: ExprPath)
     : { rows: PathRow[]; total: number };
 }
 
@@ -75,6 +87,11 @@ export function createPathCompleter(fail: (e: any, what: string) => void): PathC
     setObjects(null);
     objectsAsked = false;
     propCache.clear();
+  };
+
+  const forgetProperties = () => {
+    propCache.clear();
+    setPropGen(propGen() + 1);
   };
 
   const ensureObjects = () => {
@@ -157,12 +174,54 @@ export function createPathCompleter(fail: (e: any, what: string) => void): PathC
     return out;
   };
 
-  const rows = (query: string, selection: SelectionItem[], limit: number)
+  /// The rows after "Obj.Prop.": what the property holds under its name
+  /// (the descriptor's members). `path` is the property and what was
+  /// typed under it already: ["Placement", "Base"] after
+  /// "Box.Placement.Base.".
+  const memberRows = (doc: string, objName: string, path: string[], tail: string,
+                      prefix: string): PathRow[] => {
+    const r = propsFor('object', doc, objName);
+    const p = r?.props.find((d) => d.scope === 'object' && d.name === path[0]);
+    if (!p?.members) return [];
+    const under = path.slice(1).map((s) => s + '.').join('');
+    const out: PathRow[] = [];
+    for (const m of p.members) {
+      if (!m.startsWith(under)) continue;
+      const rest = m.slice(under.length);
+      if (!rest || !has(rest, tail)) continue;
+      // "[<<a name>>]" follows the property with no dot
+      const complete = (rest.startsWith('[') ? prefix.slice(0, -1) : prefix) + rest;
+      out.push({ key: complete, kind: 'member', title: rest, desc: `in ${p.name}`, complete });
+    }
+    return out;
+  };
+
+  /// The rows of a path on the object an expression is on: its properties
+  /// for one name, what a property holds for more
+  const ownRows = (doc: string, self: string, path: string, prefix: string): PathRow[] => {
+    const dot = path.lastIndexOf('.');
+    if (dot < 0) {
+      return objectMemberRows(doc, findObject(self), self, path, prefix, false)
+        .filter((r) => r.kind === 'property');
+    }
+    return memberRows(doc, self, path.slice(0, dot).split('.'), path.slice(dot + 1),
+                      prefix + path.slice(0, dot + 1));
+  };
+
+  const rows = (query: string, selection: SelectionItem[], limit: number, expr?: ExprPath)
       : { rows: PathRow[]; total: number } => {
     const objs = objects();
     propGen();
     if (!objs) return { rows: [], total: 0 };
     let q = query;
+
+    // ".Length", ".Constraints.Width" in an expression: its own object's.
+    // ".5" is a number.
+    if (expr && q.startsWith('.')) {
+      const rows = expr.self && !/^\.\d/.test(q)
+        ? ownRows(objs.doc, expr.self, q.slice(1), '.') : [];
+      return { rows, total: rows.length };
+    }
 
     // "#." forms: the document itself, or one of its views
     const m = /^(.*?)#\.(?:([A-Za-z_]\w*)\.)?([^.]*)$/.exec(q);
@@ -227,9 +286,9 @@ export function createPathCompleter(fail: (e: any, what: string) => void): PathC
 
     const dot = q.lastIndexOf('.');
     if (dot < 0) {
-      // Objects by name or label
-      const out: PathRow[] = [];
-      let total = 0;
+      // An expression's own properties, then the objects by name or label
+      const out: PathRow[] = expr?.self ? ownRows(objs.doc, expr.self, q, '') : [];
+      let total = out.length;
       for (const o of objs.objects) {
         if (!has(o.name, q) && !has(o.label ?? '', q)) continue;
         ++total;
@@ -255,11 +314,33 @@ export function createPathCompleter(fail: (e: any, what: string) => void): PathC
       leaf = parts[parts.length - 2];
     }
     const o = findObject(leaf);
-    if (!o) return { rows: [], total: 0 };
-    const rows = objectMemberRows(objs.doc, o, o.name, tail, head + '.', viewObject);
+    if (o) {
+      const rows = objectMemberRows(objs.doc, o, o.name, tail, head + '.', viewObject);
+      return { rows, total: rows.length };
+    }
+    if (!expr || viewObject) return { rows: [], total: 0 };
+
+    // The last name is no object, so it is under a property. The object is
+    // the first name, or down from it while the next names a sub-object;
+    // what is left is the property and its members. No object at the
+    // front: the expression's own.
+    const first = findObject(parts[0]);
+    if (!first) {
+      const rows = expr.self ? ownRows(objs.doc, expr.self, q, '') : [];
+      return { rows, total: rows.length };
+    }
+    let owner: ObjectEntry = first;
+    let at = 1;
+    for (; at < parts.length; ++at) {
+      const child: ObjectEntry | undefined =
+        (owner.children ?? []).includes(parts[at]) ? findObject(parts[at]) : undefined;
+      if (!child) break;
+      owner = child;
+    }
+    const rows = memberRows(objs.doc, owner.name, parts.slice(at), tail, head + '.');
     return { rows, total: rows.length };
   };
 
 
-  return { objects, ensureObjects, reset, findObject, objectMemberRows, rows };
+  return { objects, ensureObjects, reset, forgetProperties, findObject, objectMemberRows, rows };
 }
