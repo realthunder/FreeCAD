@@ -4020,6 +4020,200 @@ its "onview" push, types through key frames, Enter sets the datum in one
 undo step; the host shows no dialog -- measured first on today's build,
 where the dialog opens on the host and the test must fail).
 
+### One editor for a constraint's value, all of it (session 120, design)
+
+Asked at the end of session 119 (2026-10-03): "migrate all constraint
+value editing with in place editor including expression and reference
+driving. Current expression editor already has an in place mode. You can
+reference that implementation. Build a 'super' editor that can do
+everything. Mirror that in browser. Also since the editor got complex,
+lets use one editor only and use tab to move the editor among multiple
+constraints. Also when moving you need to consider the extra space of the
+editor to not obscure. Also check cases when in the middle of editing what
+will happen if someone undo".
+
+**Status: a proposal, nothing built.** The questions at the end are for
+a ruling.
+
+#### Measured first: an undo while a box is open
+
+A probe against the session 119 build (one box per constraint, held by
+constraint INDEX). Each case opens a box, does the thing, then types a
+value and presses Enter:
+
+| case | what happens today |
+|---|---|
+| a new dimension, then Std_Undo (menu, tool bar) | `Document::undo` commits the open creation and undoes it: the constraint is gone, the box stays open over nothing. Enter applies nothing; the only word is in the notification area |
+| Ctrl+Z typed into the box | the line edit keeps it (its own text undo); the document is not touched |
+| an existing dimension, then an undo that puts a deleted constraint back BELOW it | **the wrong constraint is written.** The box was on Edge2's 50; the undo put Edge1's constraint back at index 0; Enter wrote 77 into Edge1's, without a word |
+| an existing dimension, then an undo that removes it | the box stays; Enter does nothing (notification) |
+| a redo that appends a constraint; a recompute | the box stays and is still right |
+
+The cause is the index. `ViewProviderSketch::slotUndoDocument` already
+drops a drag for the same reason (`cancelInteractionOnUndoRedo`, upstream
+16aff10544, where an index past the end crashed `moveConstraint`), and
+nothing does the same for the datum session. The third row is a defect
+in what session 119 shipped, whatever becomes of the editor.
+
+#### Prior art
+
+- **Onshape**: a double click on a dimension makes its number an entry
+  field, Enter applies. Expressions in the same field, variables as
+  `#name`. Driving/driven is the dimension's context menu, not the field.
+- **SolidWorks**: the Modify box at the dimension; an `=` in it starts an
+  equation, with a type-ahead list of names and functions.
+- **Fusion**: one field takes a value or an expression, autocompletes
+  parameter names, and Tab moves the focus to the next dimension.
+  Typing `name=value` there names the dimension as it sets it.
+- **FreeCAD itself**: `DlgExpressionInput` in its frameless mode (no
+  system background, a proxy widget for the mouse, placed over the spin
+  box that opened it by `adjustPosition`), opened by `=` in a bound spin
+  box: a text field with the completer, a result line under it that says
+  what the expression gives or why it cannot (re-evaluated 300 ms after
+  the last key, function calls disabled while editing), Discard, and Enter
+  to accept.
+
+#### The proposal
+
+**1. One editor, holding everything the dialog held.**
+
+- **The value line** is one field. FreeCAD's own rule decides what it
+  holds: text that starts with `=` is an expression, anything else a
+  value, parsed with the units and arithmetic the spin box takes today.
+  Typing `=` turns the line into an `ExpressionTextEdit`, with its
+  completer, and opens a **result line** under it: the value the
+  expression gives, or why it gives none. That is `DlgExpressionInput`'s
+  validation taken whole (`validateExpression`, the unit check, the
+  function-call disabler), not a second copy. Deleting the `=` turns
+  the line back into a value, and applying a value then removes the
+  expression, which is what the dialog's Discard did. A constraint that
+  has an expression opens with the line showing it.
+- **Driving or reference** is a toggle at the start of the line, drawn
+  with `Sketcher_ToggleDrivingConstraint`'s icon. A reference opens
+  showing its measured value, greyed. Typing a value or an `=` makes it
+  driving, the dialog's rule (`datumChanged`, `formEditorOpened`).
+- **The name** is a small header row over the line, showing the name or
+  a greyed "name" when there is none. A click or F2 moves the keys there.
+  The name is checked as now (`checkConstraintName`) and applied with
+  the value.
+- Weight and Snell's ratio take a plain number in the same editor, so
+  Snell's law can join the browser's command list.
+
+**2. One editor that Tab moves.** One transaction runs from the start of
+the session to its end. For a new constraint that is the transaction of
+the command that made it, as now. For an existing constraint it is
+"Edit sketch datum", opened at the first change.
+
+- **Tab applies the entry to the sketch and moves on.** The value,
+  expression, driving flag and name go into that transaction (the sketch
+  solves, the labels move), and the editor moves to the next constraint;
+  Shift+Tab moves to the previous one. Ruling 4 stands as it was meant:
+  there is no preview while typing. Tab is a commit point, as it is for
+  a drawing tool's parameter.
+- **Enter** applies the current entry and commits: the whole session is
+  ONE undo step. **Escape** aborts the transaction, so everything the
+  session applied goes, a new constraint included. **A click elsewhere**
+  is Enter (ruling 1). Text that is no value stops Tab and Enter, and
+  the result line says why.
+- The other way -- keep every value pending and apply all of them on
+  Enter -- would need the labels to show numbers the sketch does not have
+  yet, and would put the solver's verdict at the end, where one value
+  that cannot be met spoils all the others. Applying on Tab costs one
+  thing: the geometry moves between two Tabs.
+- **Which constraints Tab visits.** When the editor is opened for
+  several constraints (the Dimension tool's two), it visits those. When
+  it is opened for one (a double click, the panel, Edit Value), it visits
+  every dimensional constraint whose label the view shows, in constraint
+  order, starting from that one. Labels off the screen are skipped.
+- The auto scale of a freehand sketch's first dimension happens when that
+  dimension is applied. The session follows its constraints by tag (next
+  item), so the constraints the scaling drops do not throw it off.
+
+**3. Where the editor goes, so that it hides nothing it edits.** The
+value line sits over the number it edits, as the box does today: that is
+what "in place" means. Everything else -- the header, the result line --
+grows AWAY from the constraint's geometry:
+
+- "Away" is a direction on the screen: from the label's foot on the
+  dimension (the point of the dimension line under the text; for a radius
+  or diameter, the point on the arc) to the text's centre. The extra rows
+  go on that side of the line, in an order that keeps the line nearest to
+  the dimension. For a dimension whose text sits to the side (a vertical
+  distance), the rows go below.
+- If the editor would leave the view on that side, it flips to the other
+  side, and only then is it clamped into the view.
+- The editor is placed again whenever it changes size (the result line
+  appears), the camera moves (the sensor it has), or Tab moves it.
+- Covering the constraint's own geometry and dimension line is what this
+  avoids. Other constraints' labels may still be covered: they are not
+  tracked.
+- A browser applies the same rule itself: the push carries the foot as a
+  second world point beside the anchor, and the client projects both on
+  every frame. Placement is the client's job (ThinClient.md 8.7).
+
+**4. The browser.** The editor travels in the "onview" push as a
+parameter of a kind of its own. Everything in it is display state: the
+line's text and selection, which field has the keys (the line or the
+name), the mode (value or expression), the result line and its level
+(value, warning, error), the driving flag, the name, the visible
+completions and the current one, and the foot. Keys go up as `'E'`
+frames to whichever field has them, as now. The rest is one op,
+`onViewAction {index, action, arg}`, for the toggle, a click into the
+name, and a click on a completion. The client draws a DOM editor with the
+same layout and implements none of its behaviour (8.7's rule).
+
+- **The completer is the one hard part.** `QCompleter` shows its list
+  in a popup widget, and the keys that drive the list go through that
+  popup. A mirror shows no widget, so on a mirror the server needs
+  `ExpressionTextEdit` to handle Up, Down and Enter for the completion
+  itself, and the push carries the rows of the list.
+- Not the panel mirror (Sandbox.md 7.19). It reflects a task dialog of a
+  document to every subscriber, it writes back through setters
+  (`textEdited`), so the `=` handling and the completer would be passed
+  by, and it has no anchor in the 3D view.
+
+**5. An undo while the editor is open.**
+
+- **Std_Undo or Std_Redo during a session ends the session as Escape
+  does, and does nothing older.** That is a spreadsheet's rule: while a
+  cell is being edited, undo cancels the edit and goes no further back.
+  The work done before the session needs a second undo. To build it,
+  `Gui::Document::undo`/`redo` ask the view provider in edit first: one
+  virtual, false by default, which the sketch answers while a session
+  runs.
+- **An undo the session cannot catch first** -- a Python `doc.undo()`,
+  another client of a shared session -- reaches it only afterwards,
+  through `slotUndoDocument`/`slotRedoDocument`. If the session's
+  transaction was open, `Document::undo` has committed it and undone it:
+  the document has moved past the session, and the session ends. If
+  nothing was applied yet, the session follows its constraints by TAG
+  (`Constraint::tag` survives an undo; the expression engine uses it for
+  the same reason). A constraint that has gone leaves the cycle, and if it
+  was the one being edited, the session ends.
+- **Following by tag fixes the wrong-constraint defect** in the table
+  above, and it can go in before the rest, as its own commit, with the
+  probe turned into a test.
+
+**Questions for the ruling.**
+
+1. Tab applies as it moves, with the whole session one undo step and
+   Escape taking all of it back (proposed), or values held pending until
+   Enter?
+2. An editor opened on one existing dimension: should Tab visit every
+   dimension the view shows (proposed), or only the set it was opened for
+   (for one constraint, Tab does nothing)?
+3. The name: a header row, reached by a click or F2 (proposed), or
+   Fusion's `Name = value` typed into the line?
+4. Std_Undo while editing: end the edit and nothing more (proposed), or
+   end it and also undo the step before it?
+5. The modal dialog: does it stay for desktop users who turn
+   `EditDatumInPlace` off (proposed), or is it removed together with the
+   preference?
+6. A key for the driving toggle (Ctrl+Shift+D, say), or the mouse
+   alone?
+7. Fix the wrong-constraint defect now, on its own, before the editor
+   (proposed)?
+
 ## 8. Phases
 
 0. Groundwork: ledger, the split, the App-level Python tests.
