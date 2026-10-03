@@ -134,6 +134,13 @@ App::DocumentObjectExecReturn *Fillet::execute()
             shape = getSolid(shape);
         }
         this->Shape.setValue(shape);
+        // An invalid result that a fix "repairs" by dropping faces -- the one
+        // above, or the property's own (FixShape) as it takes the value --
+        // leaves an open shell: valid, and no solid. Features after it would
+        // take it for a missing base -- a Pocket then hands back its own tool.
+        if (!failed && baseShape.hasSubShape(TopAbs_SOLID)
+                && !Shape.getShape().hasSubShape(TopAbs_SOLID))
+            return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Resulting shape is not a solid"));
 
         if (failed)
             return new App::DocumentObjectExecReturn("Resulting shape is invalid");

@@ -170,6 +170,13 @@ Part::TopoShape FeatureAddSub::makeBoolean(const Part::TopoShape &base,
         }
         return refineShapeIfActive(solRes);
     } else if (tool.hasSubShape(TopAbs_SOLID)) {
+        // A solid tool on a base with no solid starts the solid: right for an
+        // additive feature. Cutting it from (or intersecting it with) that base
+        // would hand back the tool itself -- the pocket as material.
+        if (!base.isNull() && getAddSubType() != Additive) {
+            FC_THROWM(Base::RuntimeError,
+                      QT_TRANSLATE_NOOP("Exception", "Base feature's shape is not a solid"));
+        }
         if (tool.countSubShapes(TopAbs_SOLID) > 1)
             tool.makEFuse(tool.getSubTopoShapes(TopAbs_SOLID));
         return getSolid(refineShapeIfActive(tool));

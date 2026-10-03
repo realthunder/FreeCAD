@@ -349,6 +349,35 @@ class TestPocket(unittest.TestCase):
         finally:
             FreeCAD.closeDocument(doc.Name)
 
+    def testPocketOnShellBaseCase(self):
+        # A feature before the pocket whose shape is an open shell (no solid)
+        # -- what a fillet left once a fix dropped its bad faces. The pocket
+        # must fail, not hand back its own tool as the body.
+        import Part
+
+        class OpenBox:
+            def __init__(self, obj):
+                obj.Proxy = self
+
+            def execute(self, obj):
+                obj.Shape = Part.Shell(Part.makeBox(10, 10, 10).Faces[:-1])
+
+        self.Body = self.Doc.addObject('PartDesign::Body', 'Body')
+        self.Base = self.Doc.addObject('PartDesign::FeaturePython', 'OpenBox')
+        OpenBox(self.Base)
+        self.Body.addObject(self.Base)
+        self.PocketSketch = self.Doc.addObject('Sketcher::SketchObject', 'PocketSketch')
+        self.Body.addObject(self.PocketSketch)
+        self.PocketSketch.Placement = FreeCAD.Placement(FreeCAD.Vector(0, 0, 10), FreeCAD.Rotation())
+        TestSketcherApp.CreateRectangleSketch(self.PocketSketch, (2.5, 2.5), (5, 5))
+        self.Doc.recompute()
+        self.Pocket = self.Doc.addObject("PartDesign::Pocket", "Pocket")
+        self.Body.addObject(self.Pocket)
+        self.Pocket.Profile = self.PocketSketch
+        self.Pocket.Length = 1
+        self.Doc.recompute()
+        self.assertIn('Invalid', self.Pocket.State)
+
     def tearDown(self):
         #closing doc
         FreeCAD.closeDocument("PartDesignTestPocket")

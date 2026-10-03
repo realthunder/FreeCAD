@@ -415,6 +415,12 @@ App::DocumentObjectExecReturn *FeatureExtrude::buildExtrusion(ExtrudeOptions opt
 
     // if the Base property has a valid shape, fuse the prism into it
     TopoShape base = getBaseShape(/*silent*/true, /*force*/false, /*checkSolid*/!makeface);
+    // A base feature whose shape has no solid comes back null above. Cutting
+    // from (or intersecting with) nothing would hand back the tool itself, the
+    // pocket as material: refuse instead.
+    if (base.isNull() && !NewSolid.getValue() && getBaseObject(/*silent*/true)
+            && getAddSubType() != Additive)
+        return new App::DocumentObjectExecReturn(QT_TRANSLATE_NOOP("Exception", "Base feature's shape is not a solid"));
 
     // get the normal vector of the sketch
     Base::Vector3d SketchVector = getProfileNormal();
