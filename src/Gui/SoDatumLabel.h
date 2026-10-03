@@ -86,6 +86,11 @@ public:
 
     /* returns the center point of the text of the label */
     SbVec3f getLabelTextCenter();
+    /** The direction, from the text, away from what the label measures: a
+     * unit vector in the label's plane. An editor standing over the number
+     * grows its other rows this way so that it hides nothing it edits.
+     */
+    SbVec3f getLabelAwayDirection();
 
     // Where an ARCLENGTH label's lines go, all in world terms: the dimension
     // arc (arcCenter, arcRadius, startangle..endangle, counter-clockwise), the

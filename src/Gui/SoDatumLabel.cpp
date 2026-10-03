@@ -844,6 +844,68 @@ SbVec3f SoDatumLabel::getLabelTextCenter()
     return p1;
 }
 
+SbVec3f SoDatumLabel::getLabelAwayDirection()
+{
+    SbVec3f away(0, 1, 0);
+    if (this->pnts.getNum() < 2) {
+        return away;
+    }
+    const SbVec3f* points = this->pnts.getValues(0);
+    const SbVec3f p1 = points[0];
+    const SbVec3f p2 = points[1];
+    const float side = this->param1.getValue() < 0 ? -1.0F : 1.0F;
+    switch (datumtype.getValue()) {
+        case DISTANCE:
+        case DISTANCEX:
+        case DISTANCEY:
+        case SYMMETRIC: {
+            // across the dimension line, on the side the text was put
+            SbVec3f dir = p2 - p1;
+            if (datumtype.getValue() == DISTANCEX) {
+                dir = SbVec3f((p2[0] - p1[0] >= FLT_EPSILON) ? 1 : -1, 0, 0);
+            }
+            else if (datumtype.getValue() == DISTANCEY) {
+                dir = SbVec3f(0, (p2[1] - p1[1] >= FLT_EPSILON) ? 1 : -1, 0);
+            }
+            if (dir.length() > FLT_EPSILON) {
+                dir.normalize();
+                away = SbVec3f(-dir[1], dir[0], 0) * (datumtype.getValue() == SYMMETRIC ? 1.0F : side);
+            }
+            break;
+        }
+        case RADIUS:
+        case DIAMETER: {
+            // along the radius, out past the arc or in toward the centre
+            SbVec3f dir = p2 - p1;
+            if (dir.length() > FLT_EPSILON) {
+                dir.normalize();
+                away = dir * side;
+            }
+            break;
+        }
+        case ANGLE: {
+            // along the bisector the text sits on
+            const float mid = param2.getValue() + param3.getValue() / 2;
+            away = SbVec3f(cos(mid), sin(mid), 0) * side;
+            break;
+        }
+        case ARCLENGTH: {
+            ArcLengthGeometry geom;
+            if (arcLengthGeometry(geom)) {
+                SbVec3f dir = getLabelTextCenter() - geom.arcCenter;
+                if (dir.length() > FLT_EPSILON) {
+                    away = dir;
+                }
+            }
+            break;
+        }
+        default:
+            break;
+    }
+    away.normalize();
+    return away;
+}
+
 SbVec3f SoDatumLabel::getLabelTextCenterDistance(const SbVec3f& p1, const SbVec3f& p2)
 {
     float length = param1.getValue();
