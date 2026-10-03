@@ -981,3 +981,9 @@ fc_add_gui_test(GuiSketchConstraintPropertyReadOnly_tests_run
 fc_add_gui_test(GuiSketchSelectConstraintsParts_tests_run
                 sketch-select-constraints-parts.py
                 --timeout 120)
+
+# Copying sketch elements to the clipboard frees the copies it makes
+# (upstream 5268aa43db, fe8d2845ea): measured as the process's growth.
+fc_add_gui_test(GuiSketchCopyClipboardLeak_tests_run
+                sketch-copy-clipboard-leak.py
+                --timeout 240)
