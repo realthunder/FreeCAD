@@ -1294,13 +1294,12 @@ class RegressionTests(unittest.TestCase):
         placed.Placement = Placement(V(3, 4, 5), Rotation(V(1, 2, 3), 40))
         check("box, a vertex on an edge, placed", placed, 1, 0.5, 0, 177.6136)
 
-        # the half ball with its sphere in two domes, one removed: refused, not
-        # a solid 1e100 across
+        # the half ball with its sphere in two domes, one removed: a solid
+        # 1e100 across, then refused, and built since the fork's sec 25
         ball = Part.makeSphere(5, V(), V(0, 0, 1), -90, 90, 180)
         equator = Part.ArcOfCircle(Part.Circle(V(), V(0, 0, 1), 5), 0, math.pi).toShape()
         domes = ball.generalFuse([equator])[0].Solids[0]
-        with self.assertRaises(Exception):
-            domes.makeThickness([domes.Faces[0]], 0.5, 1e-7, False, False, 0, 0)
+        check("half a ball in two domes, one removed", domes, 1, 0.5, 0, 89.1638)
 
     def test_thickness_of_half_a_ball_with_one_of_its_two_domes_or_lunes_removed(self):
         """The half ball with its sphere in two domes or two lunes, one of them
@@ -1349,6 +1348,46 @@ class RegressionTests(unittest.TestCase):
             self.assertTrue(curves, str(axis))
             for c in curves:
                 self.assertIsInstance(c, Part.ArcOfCircle, str(axis))
+
+    def test_thickness_arc_join_of_half_a_ball_with_one_of_its_two_faces_removed(self):
+        """The same half ball with the Arc join: a tube round the tangent edge
+        and, outward, a ball round each of its ends. The flat's offset is cut
+        by the removed face's sphere on one side and bounded by its own rim's
+        offset on the other, two circles about one centre t^2 / 2R apart that
+        never meet, and the face was left without a wire; in two lunes the gap
+        falls along the line between the flat's halves. A step joins them, an
+        edge of the ball: 89.1638 outward, 73.5777 inward. The sliver face the
+        exact answer has beside the step, 0.025 by 0.0006, is not built (OCCT
+        fork, tests/fork/thickness/models/Thickness.md "Sec 25")."""
+        V = Vector
+        ball = Part.makeSphere(5, V(), V(0, 0, 1), -90, 90, 180)
+        equator = Part.ArcOfCircle(Part.Circle(V(), V(0, 0, 1), 5), 0, math.pi).toShape()
+        meridian = Part.Arc(V(0, 0, -5), V(0, 5, 0), V(0, 0, 5)).toShape()
+        domes = ball.generalFuse([equator])[0].Solids[0]
+        lunes = ball.generalFuse([meridian])[0].Solids[0]
+        placed = domes.copy()
+        placed.Placement = Placement(V(3, 4, 5), Rotation(V(1, 2, 3), 40))
+        turned = lunes.copy()
+        turned.transformShape(Placement(V(3, 4, 5), Rotation(V(1, 2, 3), 40)).Matrix, True)
+        shapes = (
+            ("domes", domes),
+            ("lunes", lunes),
+            ("placed domes", placed),
+            ("turned lunes", turned),
+        )
+        for name, shape in shapes:
+            for face in (1, 2):
+                for offset, volume in ((0.5, 89.1638), (-0.5, 73.5777)):
+                    msg = "%s, Face%d, %g" % (name, face, offset)
+                    r = shape.makeThickness(
+                        [shape.Faces[face - 1]], offset, 1e-7, False, False, 0, 0
+                    )
+                    self.assertTrue(r.isValid(), msg)
+                    self.assertEqual(len(r.Solids), 1, msg)
+                    self.assertEqual(len(r.Shells), 1, msg)
+                    self.assertAlmostEqual(r.Volume, volume, 3, msg)
+                    # no sliver: the smallest face is a ball's
+                    self.assertGreater(min(f.Area for f in r.Faces), 0.1, msg)
 
     def test_thickness_with_a_seam_in_pieces(self):
         """A vertex that only cuts an edge in two must change nothing. A seam
