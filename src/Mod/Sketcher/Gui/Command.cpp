@@ -927,7 +927,9 @@ public:
         sToolTipText    = QT_TR_NOOP("Set sketch view orientation");
         sWhatsThis      = "Sketcher_ViewSketchGroup";
         sStatusTip      = sToolTipText;
-        sPixmap         = "Sketcher_ViewSketchGroup";
+        // The button shows its default member's icon; this is the name
+        // for anything that asks the group itself, and it has to exist.
+        sPixmap         = "Sketcher_ViewSketch";
         eType           = 0;
         bCanLog       = false;
 
