@@ -963,3 +963,9 @@ fc_add_gui_test(GuiSketchDatumEditor_tests_run
 fc_add_gui_test(GuiSketchBSplineCancel_tests_run
                 sketch-bspline-cancel.py
                 --timeout 240)
+
+# Toggle Construction passes over what the sketch refuses to toggle -- an
+# ellipse's axes -- and goes on to the rest of the selection.
+fc_add_gui_test(GuiSketchToggleConstructionInternal_tests_run
+                sketch-toggle-construction-internal.py
+                --timeout 120)

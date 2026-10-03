@@ -258,6 +258,17 @@ void CmdSketcherToggleConstruction::activated(int iMsg)
 
             // only handle edges
             if (boost::starts_with(sub,"Edge") || boost::starts_with(sub, "ExternalEdge")) {
+                // What cannot be toggled is passed over (upstream 7432ce131f):
+                // the axes and foci of an ellipse come with it in a box
+                // selection, the sketch refuses them, and the refusal stopped
+                // the command before the rest was done.
+                int geoId = 0;
+                if (Obj->geoIdFromShapeType(sub.c_str(), geoId)) {
+                    auto gf = Obj->getGeometryFacade(geoId);
+                    if (!gf || gf->isInternalAligned()) {
+                        continue;
+                    }
+                }
                 // issue the actual commands to toggle
                 Gui::cmdAppObjectArgs(selection[0].getObject(),"toggleConstruction('%s')", sub);
             }
